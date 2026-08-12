@@ -493,6 +493,8 @@ function adminSyncFingerprint(s: AppState): string {
 export default function AdminPage() {
   const router = useRouter();
   const [user, setUser] = useState<{ id: string; companyName: string; name?: string; remainingDays?: number | null; unlimited?: boolean } | null>(null);
+  /** /api/auth/me 완료 전 — 미리보기에 가짜 '재로그인' 문구를 띄우지 않기 위함 */
+  const [authReady, setAuthReady] = useState(false);
   /** 오버레이 URL·미리보기 — finalent 폴백 금지(타계정 후원 노출) */
   const overlayUserId = resolveScopedOverlayUserId(user?.id);
   const [state, setState] = useState<AppState>(defaultState());
@@ -1296,15 +1298,37 @@ export default function AdminPage() {
   };
 
   useEffect(() => {
-    fetch("/api/auth/me", { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data?.user) {
-          setUser(data.user);
-        } else {
+    let cancelled = false;
+    const loadMe = (attempt: number) => {
+      fetch("/api/auth/me", { credentials: "include" })
+        .then(async (r) => {
+          if (!r.ok) throw new Error(`auth_me_${r.status}`);
+          return r.json();
+        })
+        .then((data) => {
+          if (cancelled) return;
+          if (data?.user?.id) {
+            setUser(data.user);
+            setAuthReady(true);
+            return;
+          }
+          setAuthReady(true);
           router.replace("/login");
-        }
-      });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (attempt < 3) {
+            window.setTimeout(() => loadMe(attempt + 1), 400 * attempt);
+            return;
+          }
+          /** 쿠키로 /admin 은 열려 있는데 me 만 실패 — 재로그인 강제 대신 안내 */
+          setAuthReady(true);
+        });
+    };
+    loadMe(1);
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   useEffect(() => {
@@ -12891,7 +12915,7 @@ export default function AdminPage() {
                       />
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-500">
-                        로그인 필요
+                        {authReady ? "계정 ID 대기 중" : "계정 불러오는 중…"}
                       </div>
                     )}
                   </div>
@@ -12924,19 +12948,36 @@ export default function AdminPage() {
                       className="absolute inset-0 h-full w-full border-0"
                       style={{ background: "transparent" }}
                     />
+                  ) : !authReady ? (
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-400">
+                      계정 정보 불러오는 중…
+                    </div>
                   ) : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-xs text-neutral-400 px-4 text-center">
-                      <p>로그인이 필요합니다. 세션이 만료되면 미리보기를 불러올 수 없습니다.</p>
-                      <a href="/login" className="rounded bg-sky-700 px-3 py-1.5 text-sky-50 hover:bg-sky-600">
-                        다시 로그인
-                      </a>
-                      <p className="text-[10px] text-neutral-500">
-                        비밀번호를 잊었다면{" "}
-                        <a href="/create-accounts" className="text-sky-400 underline">
-                          /create-accounts
-                        </a>
-                        에서 수정 → 재설정하세요.
+                      <p>
+                        미리보기용 계정 ID를 아직 받지 못했습니다. 관리자 화면은 열려 있어도 미리보기 iframe에는{" "}
+                        <code className="text-neutral-300">u=</code> 가 필요합니다.
                       </p>
+                      <button
+                        type="button"
+                        className="rounded bg-sky-700 px-3 py-1.5 text-sky-50 hover:bg-sky-600"
+                        onClick={() => {
+                          setAuthReady(false);
+                          fetch("/api/auth/me", { credentials: "include" })
+                            .then(async (r) => {
+                              if (!r.ok) throw new Error("auth_me");
+                              return r.json();
+                            })
+                            .then((data) => {
+                              if (data?.user?.id) setUser(data.user);
+                              else router.replace("/login?reason=expired&from=/admin");
+                            })
+                            .catch(() => router.replace("/login?reason=expired&from=/admin"))
+                            .finally(() => setAuthReady(true));
+                        }}
+                      >
+                        계정 다시 불러오기
+                      </button>
                     </div>
                   )}
                 </div>
