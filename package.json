@@ -6,8 +6,8 @@
     "node": ">=20 <23"
   },
   "scripts": {
-    "dev": "next dev -p 3000",
-    "dev:lan": "next dev -p 3000 -H 0.0.0.0",
+    "dev": "next dev -p 3001",
+    "dev:lan": "next dev -p 3001 -H 0.0.0.0",
     "dev:clean": "node scripts/dev-clean.mjs",
     "dev:overlay": "node scripts/print-overlay-dev-hub.mjs",
     "verify:battle-ui": "node scripts/print-battle-verify-url.mjs",

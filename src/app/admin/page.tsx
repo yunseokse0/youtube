@@ -12448,6 +12448,67 @@ export default function AdminPage() {
                   );
                 })()}
               </div>
+              <div className="mb-3 rounded border border-amber-500/35 bg-amber-950/25 p-3 space-y-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm font-semibold text-amber-100">상류사회 · 세로(9:16) 오버레이</h4>
+                    <p className="mt-1 text-[11px] text-neutral-400 leading-snug max-w-xl">
+                      계좌·투네 후원 합산으로 상단 영토 바·우측 상단 미니맵을 갱신합니다. OBS 캔버스·브라우저 소스
+                      해상도는 <strong className="text-neutral-300">1080×1920</strong> 권장. 중앙 인물 가림을 피하려면
+                      미니맵은 기본 우측 상단입니다 (<code className="text-amber-200/90">corner=left</code> 로 좌측 가능).
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <code className="max-w-[min(100%,420px)] break-all text-[11px] text-amber-100/90">
+                      /overlay/high-society?u={overlayUserId}&host=obs
+                    </code>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        className={`rounded px-2 py-1 text-xs ${copiedId === "dash-high-society" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                        onClick={() => {
+                          const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs`;
+                          void copyUrl(u, "dash-high-society");
+                        }}
+                      >
+                        {copiedId === "dash-high-society" ? "복사됨!" : "OBS URL 복사"}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded bg-amber-700 hover:bg-amber-600 px-2 py-1 text-xs font-semibold text-white"
+                        onClick={() =>
+                          window.open(
+                            `/overlay/high-society?u=${overlayUserId}&test=true`,
+                            "_blank",
+                            "noopener,noreferrer"
+                          )
+                        }
+                      >
+                        테스트 미리보기
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-black/30 overflow-hidden">
+                  <div className="relative w-full bg-black/50 mx-auto" style={{ maxWidth: 270, aspectRatio: "9 / 16" }}>
+                    {overlayUserId ? (
+                      <iframe
+                        src={appendAdminPreviewEmbedToOverlayUrl(
+                          `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}`
+                        )}
+                        title="상류사회 세로 오버레이 미리보기"
+                        className="absolute inset-0 h-full w-full border-0"
+                        style={{ background: "transparent" }}
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-500">
+                        로그인 필요
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div className="mb-3 rounded-lg border border-white/10 bg-black/30 overflow-hidden">
                 <div className="flex items-center justify-between border-b border-white/5 px-2 py-1.5">
                   <span className="text-xs font-medium text-neutral-300">후원 순위 (상위 N) 미리보기</span>

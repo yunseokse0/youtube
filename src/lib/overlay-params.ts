@@ -1597,7 +1597,7 @@ export function donorRankingsThemeToSearchParams(theme: DonorRankingsTheme): URL
     q.set("outlineWidth", String(Math.max(0, Math.min(3, theme.outlineWidth))));
   }
   if (theme.zoomPct != null && Number.isFinite(theme.zoomPct)) {
-    q.set("zoomPct", String(Math.max(30, Math.min(300, Math.floor(theme.zoomPct))));
+    q.set("zoomPct", String(Math.max(30, Math.min(300, Math.floor(theme.zoomPct)))));
   }
   return q;
 }

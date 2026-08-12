@@ -118,6 +118,19 @@ export default function OverlayDevHubClient() {
         obsPath: `/overlay/donation-lists?u={u}`,
       },
       {
+        id: "high-society",
+        title: "상류사회 (세로 9:16)",
+        desc: "영토 바 + 우측 상단 미니맵. 계좌·투네 합산 연동. OBS 캔버스 1080×1920.",
+        obsPath: `/overlay/high-society?u={u}&host=obs&bar=field`,
+        testPath: `/overlay/high-society?u={u}&host=obs&test=true&bar=field`,
+      },
+      {
+        id: "high-society-demo",
+        title: "상류사회 데모 페이지",
+        desc: "로그인 없이 세로 미리보기·미니맵 좌/우 전환.",
+        obsPath: `/overlay/high-society/demo`,
+      },
+      {
         id: "obs-text",
         title: "OBS 텍스트 (기본 인스턴스)",
         desc: "다중 텍스트는 textId마다 브라우저 소스 추가. /admin/obs-text 에서 인스턴스 ID 확인.",
