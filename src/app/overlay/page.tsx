@@ -1859,8 +1859,8 @@ function OverlayInner() {
   const lastStablePresetRef = useRef<OverlayPresetLike | null>(null);
   const lastStableTimerStyleRef = useRef<ResolvedTimerOverlayStyle | null>(null);
   const timerStyleEmptySinceRef = useRef<number | null>(null);
-  /** OBS: URL로 끄기 전까지 화장실 열 유지(프리셋·SSE 동기화 깜빡임 방지) */
-  const restroomColumnLatchRef = useRef<boolean | null>(hostObs ? true : null);
+  /** OBS: 프리셋 필드가 잠깐 빠질 때만 직전 값 유지. 명시 false는 항상 반영 */
+  const restroomColumnLatchRef = useRef<boolean | null>(null);
   if (activePreset) {
     lastStablePresetRef.current = lastStablePresetRef.current
       ? mergeDonationTablePresetFields(activePreset, lastStablePresetRef.current)
@@ -2039,7 +2039,7 @@ function OverlayInner() {
   const showCombinedColumn = resolvePresetBool("showCombinedColumn", true);
   const showContributionColumn = resolvePresetBool("showContributionColumn", true);
   const showRestroomColumn = (() => {
-    const url = rawSp.get("showRestroomColumn");
+    const url = (rawSp.get("showRestroomColumn") || "").toLowerCase();
     if (url === "false") {
       restroomColumnLatchRef.current = false;
       return false;
@@ -2048,20 +2048,23 @@ function OverlayInner() {
       restroomColumnLatchRef.current = true;
       return true;
     }
-    /** 한 번 켜지면 URL로 끄기 전까지 유지(SSE·프리셋 전환 깜빡임 방지) */
-    if (restroomColumnLatchRef.current === true) return true;
-    if (restroomColumnLatchRef.current === false) return false;
     const mergedPreset = effectivePreset
       ? mergeDonationTablePresetFields(effectivePreset, lastStablePresetRef.current)
       : lastStablePresetRef.current;
+    /** 프리셋에 명시된 true/false는 즉시 반영(관리자 체크 해제 포함) */
+    if (mergedPreset && typeof mergedPreset.showRestroomColumn === "boolean") {
+      restroomColumnLatchRef.current = mergedPreset.showRestroomColumn;
+      return mergedPreset.showRestroomColumn;
+    }
     const resolved = mergedPreset
       ? resolveDonationTableColumnsOptions(mergedPreset).showRestroomColumn
       : true;
-    if (resolved || hostObs) {
-      restroomColumnLatchRef.current = true;
-      return true;
+    /** OBS·ready 전: 필드 누락 깜빡임만 latch로 방지 */
+    if (hostObs && !ready && restroomColumnLatchRef.current != null) {
+      return restroomColumnLatchRef.current;
     }
-    return false;
+    restroomColumnLatchRef.current = resolved;
+    return resolved;
   })();
   const showContributionSum = showContributionColumn && resolvePresetBool("showContributionSum", true);
   const showTableSumRow = (() => {
