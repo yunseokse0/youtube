@@ -2975,7 +2975,14 @@ export default function AdminPage() {
 
   const updateMember = (m: Member) => {
     setState((prev: AppState) => {
-      const next: AppState = { ...prev, members: prev.members.map((x: Member) => (x.id === m.id ? m : x)) };
+      let next: AppState = {
+        ...prev,
+        members: prev.members.map((x: Member) => (x.id === m.id ? m : x)),
+        updatedAt: Date.now(),
+      };
+      if (normalizeDonorsArray(next.donors).length > 0) {
+        next = syncMemberTotalsFromDonors(next);
+      }
       persistState(next, { includeDonationFields: true });
       return next;
     });
@@ -2983,7 +2990,14 @@ export default function AdminPage() {
 
   const renameMember = (id: string, name: string) => {
     setState((prev: AppState) => {
-      const next: AppState = { ...prev, members: prev.members.map((x: Member) => (x.id === id ? { ...x, name } : x)) };
+      let next: AppState = {
+        ...prev,
+        members: prev.members.map((x: Member) => (x.id === id ? { ...x, name } : x)),
+        updatedAt: Date.now(),
+      };
+      if (normalizeDonorsArray(next.donors).length > 0) {
+        next = syncMemberTotalsFromDonors(next);
+      }
       persistState(next, { includeDonationFields: true });
       return next;
     });
@@ -13307,7 +13321,7 @@ export default function AdminPage() {
                 <div className="rounded-lg border border-white/10 bg-black/30 overflow-hidden p-2">
                   <div
                     className="relative w-full bg-black/60 mx-auto overflow-hidden rounded-md"
-                    style={{ maxWidth: 720, minHeight: 120, aspectRatio: "18 / 4" }}
+                    style={{ maxWidth: 720, minHeight: 148, aspectRatio: "18 / 5" }}
                   >
                     {overlayUserId ? (
                       <iframe
@@ -13317,7 +13331,9 @@ export default function AdminPage() {
                           highSocietySettings.fx?.contestedEdge ? 1 : 0,
                           highSocietySettings.fx?.arrowBlade ? 1 : 0,
                           highSocietySettings.fx?.strongOutline ? 1 : 0,
-                        ].join("")}`}
+                        ].join("")}-${(state.members || [])
+                          .map((m) => `${m.id}:${m.name || ""}`)
+                          .join("|")}`}
                         src={appendAdminPreviewEmbedToOverlayUrl(
                           `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&fieldCm=${encodeURIComponent(String(highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM))}`
                         )}

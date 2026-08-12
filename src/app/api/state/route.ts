@@ -155,14 +155,24 @@ function memberCombinedTotal(members: Member[] | undefined): number {
   return (members || []).reduce((sum, m) => sum + (m.account || 0) + (m.toon || 0), 0);
 }
 
-/** 계좌·투네 0 리셋 차단 시에도 화장실·수동 기여도는 patch 반영 */
+/** 계좌·투네 0 리셋 차단 시에도 이름·목표·운영비·화장실·수동 기여도는 patch 반영 */
 function mergeManualMemberFieldsFromPatch(baseMembers: Member[], patchMembers: Member[]): Member[] {
   const patchById = new Map(patchMembers.map((m) => [m.id, m]));
   return (baseMembers || []).map((baseM) => {
     const patchM = patchById.get(baseM.id);
     if (!patchM) return baseM;
+    const patchName = String(patchM.name ?? "").trim();
     return {
       ...baseM,
+      /** 금액 0 wipe 가드가 이름 변경까지 삼키지 않게 — 오버레이 실시간 반영용 */
+      name: patchName || baseM.name,
+      goal:
+        typeof patchM.goal === "number" && Number.isFinite(patchM.goal)
+          ? Math.max(0, Math.floor(patchM.goal)) || undefined
+          : patchM.goal === undefined
+            ? baseM.goal
+            : undefined,
+      operating: Boolean(patchM.operating),
       restroom: normalizeRestroomCount(patchM.restroom),
       contribution:
         typeof patchM.contribution === "number" && Number.isFinite(patchM.contribution)
