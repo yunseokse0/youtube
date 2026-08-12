@@ -195,7 +195,7 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
   });
   const bar = v.barStyle === "arrow" ? "arrow" : "flat";
   const round = Math.max(1, Math.min(99, Math.floor(Number(v.round) || 1)));
-  const fieldCm = Math.max(4, Math.floor(Number(v.fieldCm) || HIGH_SOCIETY_DEFAULT_FIELD_CM));
+  const fieldCm = Math.max(100, Math.min(20000, Math.floor(Number(v.fieldCm) || HIGH_SOCIETY_DEFAULT_FIELD_CM)));
   return {
     enabled: Boolean(v.enabled),
     seatMemberIds,

@@ -10709,6 +10709,45 @@ export default function AdminPage() {
                 </div>
                 {highSocietySettings.enabled ? (
                   <div className="space-y-3">
+                    <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
+                      전장 총길이 (cm)
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={100}
+                        max={20000}
+                        step={100}
+                        className="w-28 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm text-amber-50"
+                        value={highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM}
+                        onChange={(e) => {
+                          const n = parseInt(e.target.value.replace(/[^\d]/g, "") || "0", 10);
+                          if (!Number.isFinite(n)) return;
+                          patchHighSocietySettings({
+                            fieldCm: Math.max(100, Math.min(20000, n)),
+                          });
+                        }}
+                      />
+                      <span className="text-neutral-500">
+                        참가 {hsSeatPlayers.length || 0}명 → 1인 시작{" "}
+                        <strong className="text-neutral-200">{formatCm(hsStartCm)}</strong>
+                      </span>
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[600, 1200, 1800, 2400, 3600].map((cm) => (
+                        <button
+                          key={`hs-field-${cm}`}
+                          type="button"
+                          className={`rounded px-2 py-0.5 text-[10px] font-semibold border ${
+                            (highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM) === cm
+                              ? "border-amber-400 bg-amber-700/80 text-white"
+                              : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
+                          }`}
+                          onClick={() => patchHighSocietySettings({ fieldCm: cm })}
+                        >
+                          {cm.toLocaleString("ko-KR")}cm
+                        </button>
+                      ))}
+                    </div>
                     <div className="text-[11px] text-neutral-400">
                       좌석 순서(좌→우). 비우면 운영비 제외 <strong className="text-neutral-300">전원 N등분</strong>.
                     </div>
@@ -11609,7 +11648,25 @@ export default function AdminPage() {
                 </div>
                 {highSocietySettings.enabled ? (
                   <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
-                    <span className="text-neutral-400">가운데 시스템 기본</span>
+                    <span className="text-neutral-400">전장</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={100}
+                      max={20000}
+                      step={100}
+                      className="w-24 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-amber-50"
+                      value={highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM}
+                      onChange={(e) => {
+                        const n = parseInt(e.target.value.replace(/[^\d]/g, "") || "0", 10);
+                        if (!Number.isFinite(n)) return;
+                        patchHighSocietySettings({
+                          fieldCm: Math.max(100, Math.min(20000, n)),
+                        });
+                      }}
+                    />
+                    <span className="text-neutral-500">cm</span>
+                    <span className="text-neutral-400 ml-1">가운데 기본</span>
                     <button
                       type="button"
                       className={`rounded px-2.5 py-1 font-semibold border ${
