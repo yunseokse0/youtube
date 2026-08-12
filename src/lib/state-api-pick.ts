@@ -162,6 +162,7 @@ export function projectStateForGetPick(
   if (pick === STATE_PICK_DONOR_RANKINGS) {
     return {
       updatedAt: state.updatedAt,
+      settlementResetAt: state.settlementResetAt,
       donorRankingsUpdatedAt: revisionForStatePick(state, STATE_PICK_DONOR_RANKINGS),
       donors: capDonorsForOverlayWire(state.donors),
       donorsFormat: state.donorsFormat,

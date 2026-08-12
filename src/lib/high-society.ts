@@ -154,6 +154,18 @@ export function pushDirToLeftRight(
   return { left: half, right: half };
 }
 
+export type HighSocietyTerritoryUpdateMode = "realtime" | "onRoundEnd";
+
+export function parseHighSocietyTerritoryUpdateMode(
+  raw: unknown
+): HighSocietyTerritoryUpdateMode {
+  const v = String(raw || "").trim().toLowerCase();
+  if (v === "onroundend" || v === "on_round_end" || v === "end" || v === "round") {
+    return "onRoundEnd";
+  }
+  return "realtime";
+}
+
 export function defaultHighSocietySettings(): HighSocietySettings {
   return {
     enabled: false,
@@ -165,6 +177,7 @@ export function defaultHighSocietySettings(): HighSocietySettings {
     barStyle: "flat",
     round: 1,
     fieldCm: HIGH_SOCIETY_DEFAULT_FIELD_CM,
+    territoryUpdateMode: "realtime",
   };
 }
 
@@ -196,6 +209,7 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
   const bar = v.barStyle === "arrow" ? "arrow" : "flat";
   const round = Math.max(1, Math.min(99, Math.floor(Number(v.round) || 1)));
   const fieldCm = Math.max(100, Math.min(20000, Math.floor(Number(v.fieldCm) || HIGH_SOCIETY_DEFAULT_FIELD_CM)));
+  const territoryUpdateMode = parseHighSocietyTerritoryUpdateMode(v.territoryUpdateMode);
   return {
     enabled: Boolean(v.enabled),
     seatMemberIds,
@@ -205,6 +219,7 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     barStyle: bar,
     round,
     fieldCm,
+    territoryUpdateMode,
   };
 }
 
@@ -631,6 +646,28 @@ export function parseHighSocietySplit(
     return clamp01(n > 1 ? n / 100 : n);
   };
   return { bLeft: parse(bLeftRaw, 0.5), cLeft: parse(cLeftRaw, 0.5) };
+}
+
+/** 전장 총길이 (?fieldCm=1600) — 100..20000 */
+export function parseHighSocietyFieldCm(raw: string | null | undefined): number | null {
+  if (raw == null || String(raw).trim() === "") return null;
+  const n = Math.floor(Number(String(raw).replace(/[^\d]/g, "")));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.max(100, Math.min(20000, n));
+}
+
+/** 1인 시작 cm → 전장 총길이 (참가 N명) */
+export function fieldCmFromStartPerMember(startCm: number, seatCount: number): number {
+  const n = Math.max(2, Math.min(HIGH_SOCIETY_MAX_SEATS, Math.floor(seatCount) || 4));
+  const start = Math.max(1, Math.floor(Number(startCm) || 0));
+  return Math.max(100, Math.min(20000, start * n));
+}
+
+/** 전장 총길이 → 1인 시작 cm */
+export function startCmFromField(fieldCm: number, seatCount: number): number {
+  const n = Math.max(2, Math.min(HIGH_SOCIETY_MAX_SEATS, Math.floor(seatCount) || 4));
+  const field = Math.max(100, Math.floor(Number(fieldCm) || HIGH_SOCIETY_DEFAULT_FIELD_CM));
+  return Math.max(1, Math.round(field / n));
 }
 
 /** 라운드 번호 (?round=1) — 1..99 */

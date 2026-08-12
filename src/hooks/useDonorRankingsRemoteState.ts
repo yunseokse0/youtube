@@ -51,7 +51,22 @@ function donorRankingsPollSourceKey(userId?: string): string {
 function mergeDonorRankingsApiState(prev: AppState | null, remote: Partial<AppState>): AppState {
   const next = { ...defaultState(), ...prev, ...remote } as AppState;
   if (Array.isArray(remote.donors)) {
-    next.donors = normalizeDonorsArray(remote.donors);
+    const remoteDonors = normalizeDonorsArray(remote.donors);
+    const prevDonors = normalizeDonorsArray(prev?.donors);
+    const remoteReset = Number(remote.settlementResetAt || 0);
+    const prevReset = Number(prev?.settlementResetAt || 0);
+    /** 정산 리셋 stamp 상승 없이 빈 원격으로 명단을 지우지 않음(새로고침·부분 GET 경합) */
+    if (remoteDonors.length === 0 && prevDonors.length > 0 && remoteReset <= prevReset) {
+      next.donors = prevDonors;
+    } else {
+      next.donors = remoteDonors;
+    }
+  }
+  if (typeof remote.settlementResetAt === "number" && Number.isFinite(remote.settlementResetAt)) {
+    next.settlementResetAt = Math.max(
+      Number(prev?.settlementResetAt || 0),
+      remote.settlementResetAt
+    );
   }
   /** 원격이 기본 테마인데 로컬이 커스텀이면 유지 — 제목「후원 순위」가 기본「👑 웹후원 순위 👑」로 덮이는 것 방지 */
   if (

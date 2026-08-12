@@ -12,56 +12,17 @@ import {
   buildHighSocietyFieldFromAppState,
   buildHighSocietyFieldFromMembers,
   formatCm,
-  formatHighSocietyTimer,
+  HIGH_SOCIETY_DEFAULT_FIELD_CM,
   HIGH_SOCIETY_ROUND_SEC,
   HIGH_SOCIETY_TEST_MEMBERS,
   normalizeHighSocietySettings,
   parseHighSocietyBarStyle,
-  parseHighSocietyRound,
+  parseHighSocietyFieldCm,
   parseHighSocietySplit,
   type HighSocietyBarStyle,
   type HighSocietySeat,
 } from "@/lib/high-society";
 import "./high-society.css";
-
-function RoundTimerHud({
-  round,
-  remainingSec,
-  active,
-  paused,
-  ended,
-}: {
-  round: number;
-  remainingSec: number;
-  active: boolean;
-  paused: boolean;
-  ended: boolean;
-}) {
-  const low = !ended && remainingSec > 0 && remainingSec <= 5 * 60;
-  const critical = !ended && remainingSec > 0 && remainingSec <= 60;
-  const label = ended
-    ? "종료"
-    : paused
-      ? "일시정지"
-      : active
-        ? "진행"
-        : "대기";
-
-  return (
-    <div
-      className={`hs-round-timer${low ? " hs-round-low" : ""}${critical ? " hs-round-critical" : ""}${
-        ended ? " hs-round-ended" : ""
-      }${paused ? " hs-round-paused" : ""}`}
-      aria-label={`라운드 ${round} 타이머 ${formatHighSocietyTimer(remainingSec)}`}
-    >
-      <span className="hs-round-badge">ROUND {round}</span>
-      <span className="hs-round-clock">{formatHighSocietyTimer(remainingSec)}</span>
-      <span className="hs-round-state">
-        {active && !paused && !ended ? "●" : "○"} {label}
-      </span>
-    </div>
-  );
-}
 
 function dirGlyph(dir: HighSocietySeat["expandDir"]): string {
   if (dir === "right") return "→";
@@ -72,22 +33,32 @@ function dirGlyph(dir: HighSocietySeat["expandDir"]): string {
 function TerritoryGauge({
   style,
   seats,
+  /** 관리자 프리뷰 등 — 입장/성장 모션·flex 트랜지션 유발 움찔 방지 */
+  motion = true,
 }: {
   style: HighSocietyBarStyle;
   seats: HighSocietySeat[];
   fieldCm?: number;
+  motion?: boolean;
 }) {
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(!motion);
   const [flashIds, setFlashIds] = useState<Record<string, number>>({});
   const prevWidthsRef = useRef<Record<string, number>>({});
   const flashSeq = useRef(0);
+  const seatsSig = seats.map((s) => `${s.id}:${s.widthCm}`).join("|");
 
   useEffect(() => {
+    if (!motion) {
+      setReady(true);
+      return;
+    }
+    setReady(false);
     const id = window.setTimeout(() => setReady(true), 40);
     return () => window.clearTimeout(id);
-  }, []);
+  }, [motion]);
 
   useEffect(() => {
+    if (!motion) return;
     const grown: string[] = [];
     for (const seat of seats) {
       const prev = prevWidthsRef.current[seat.id];
@@ -112,7 +83,9 @@ function TerritoryGauge({
       });
     }, 1100);
     return () => window.clearTimeout(t);
-  }, [seats]);
+    // seatsSig: 동일 폭이면 폴링 재렌더로 움찔리지 않게
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seats content via seatsSig
+  }, [motion, seatsSig]);
 
   const alive = seats.filter((s) => !s.eliminated);
   if (alive.length === 0) {
@@ -131,9 +104,13 @@ function TerritoryGauge({
     );
   }
 
+  const showAtFull = ready || !motion;
+
   return (
     <div
-      className={`hs-field hs-field-${style}${ready ? " hs-field-ready" : ""}`}
+      className={`hs-field hs-field-${style}${showAtFull ? " hs-field-ready" : ""}${
+        motion ? "" : " hs-field-static"
+      }`}
       aria-label={`영토 전장 (${style === "arrow" ? "화살표" : "평평"})`}
     >
       <div className="hs-field-wall" title="장벽(이동 불가)">
@@ -141,7 +118,7 @@ function TerritoryGauge({
       </div>
       <div className="hs-field-track">
         {alive.map((seat) => {
-          const growing = Boolean(flashIds[seat.id]);
+          const growing = motion && Boolean(flashIds[seat.id]);
           return (
             <div
               key={seat.id}
@@ -149,14 +126,15 @@ function TerritoryGauge({
                 growing ? " hs-field-seg-growing" : ""
               }`}
               style={{
-                flexGrow: ready ? Math.max(seat.widthCm, 0.01) : 0.01,
+                flexGrow: showAtFull ? Math.max(seat.widthCm, 0.01) : 0.01,
                 flexBasis: 0,
                 background: seat.color,
               }}
-              title={`${seat.letter} ${seat.name} · ${formatCm(seat.widthCm)} · 확장 ${formatCm(seat.expandCm)}`}
+              title={`${seat.name} · ${formatCm(seat.widthCm)} · 확장 ${formatCm(seat.expandCm)}`}
             >
               <span className="hs-field-label">
-                {seat.letter} : {formatCm(seat.widthCm)}
+                <span className="hs-field-name">{seat.name || seat.letter}</span>
+                <span className="hs-field-cm">{formatCm(seat.widthCm)}</span>
               </span>
               <span className="hs-field-dir" aria-hidden>
                 {dirGlyph(seat.expandDir)}
@@ -178,30 +156,38 @@ export default function HighSocietyOverlayPage() {
   const userId = getOverlayUserIdFromSearchParams(sp);
   const hostObs = isOverlayBroadcastHost(sp);
   const useTest = (sp.get("test") || "").toLowerCase() === "true";
+  const adminPreview =
+    sp.get("adminPreviewEmbed") === "1" || sp.get("hubPreview") === "1";
   const barFromUrl = sp.get("bar") || sp.get("gauge");
-  const roundFromUrl = sp.get("round") || sp.get("r");
   const split = parseHighSocietySplit(sp.get("bLeft") || sp.get("b"), sp.get("cLeft") || sp.get("c"));
   const hasUrlSplit = Boolean(sp.get("bLeft") || sp.get("b") || sp.get("cLeft") || sp.get("c"));
 
   const { state, ready } = useOverlayRemoteState(userId);
   const [nowTick, setNowTick] = useState(() => Date.now());
-  /** test 전용: 서버 타이머 없을 때 로컬 카운트다운 앵커 */
+  /** test 전용: 서버 타이머 없을 때 로컬 카운트다운 앵커 (라운드 종료 후 모드용) */
   const [demoAnchor] = useState(() => Date.now());
-
-  useEffect(() => {
-    const id = window.setInterval(() => setNowTick(Date.now()), 250);
-    return () => window.clearInterval(id);
-  }, []);
 
   const hsSettings = useMemo(
     () => normalizeHighSocietySettings(state?.highSocietySettings),
     [state?.highSocietySettings]
   );
 
+  /** 실시간 모드에서는 250ms 틱이 게이지를 불필요하게 재렌더 → 프리뷰 움찔 유발 */
+  const needsTimerTick =
+    hsSettings.territoryUpdateMode === "onRoundEnd" || useTest;
+
+  useEffect(() => {
+    if (!needsTimerTick) return;
+    const id = window.setInterval(() => setNowTick(Date.now()), 250);
+    return () => window.clearInterval(id);
+  }, [needsTimerTick]);
+
   const barStyle: HighSocietyBarStyle = barFromUrl
     ? parseHighSocietyBarStyle(barFromUrl)
     : hsSettings.barStyle || "flat";
-  const round = roundFromUrl ? parseHighSocietyRound(roundFromUrl) : hsSettings.round || 1;
+
+  const fieldCmFromUrl = parseHighSocietyFieldCm(sp.get("fieldCm") || sp.get("field"));
+  const effectiveFieldCm = fieldCmFromUrl ?? hsSettings.fieldCm ?? HIGH_SOCIETY_DEFAULT_FIELD_CM;
 
   const demoTimerSec = useMemo(() => {
     const raw = Number(sp.get("timerSec") || sp.get("timer"));
@@ -209,9 +195,10 @@ export default function HighSocietyOverlayPage() {
   }, [sp]);
 
   const field = useMemo(() => {
+    const fieldOpts = { fieldCm: effectiveFieldCm };
     if (useTest) {
       return buildHighSocietyFieldFromMembers(HIGH_SOCIETY_TEST_MEMBERS, {
-        fieldCm: hsSettings.fieldCm,
+        ...fieldOpts,
         split: hasUrlSplit
           ? split
           : {
@@ -231,13 +218,18 @@ export default function HighSocietyOverlayPage() {
       });
     }
     if (!state) {
-      return buildHighSocietyFieldFromMembers([], { fieldCm: hsSettings.fieldCm });
+      return buildHighSocietyFieldFromMembers([], fieldOpts);
     }
-    return buildHighSocietyFieldFromAppState(state);
-  }, [useTest, state, hsSettings, hasUrlSplit, split]);
+    return buildHighSocietyFieldFromAppState({
+      ...state,
+      highSocietySettings: {
+        ...normalizeHighSocietySettings(state.highSocietySettings),
+        fieldCm: effectiveFieldCm,
+      },
+    });
+  }, [useTest, state, hsSettings, hasUrlSplit, split, effectiveFieldCm]);
 
   const timerState = state?.generalTimer || null;
-  const timerEnabled = state?.matchTimerEnabled?.general !== false;
 
   const remainingSec = useMemo(() => {
     if (timerState) {
@@ -250,11 +242,36 @@ export default function HighSocietyOverlayPage() {
     return 0;
   }, [timerState, nowTick, useTest, demoTimerSec, demoAnchor]);
 
-  const timerActive = timerState
-    ? Boolean(timerState.isActive) && remainingSec > 0
-    : useTest && remainingSec > 0;
-  const timerPaused = timerState ? !timerState.isActive && remainingSec > 0 : false;
-  const timerEnded = remainingSec <= 0 && (Boolean(timerState) || useTest);
+  /** 라운드 종료 후 모드: 타이머 남은 동안 게이지 동결, 종료 시 라이브 반영 (HUD 없음) */
+  const roundInProgress = remainingSec > 0;
+  const freezeTerritory = hsSettings.territoryUpdateMode === "onRoundEnd" && roundInProgress;
+  const [frozenSeats, setFrozenSeats] = useState<HighSocietySeat[] | null>(null);
+  const wasRoundInProgressRef = useRef(false);
+
+  const fieldSeatsSig = field.seats.map((s) => `${s.id}:${s.widthCm}`).join("|");
+
+  useEffect(() => {
+    if (hsSettings.territoryUpdateMode !== "onRoundEnd") {
+      wasRoundInProgressRef.current = false;
+      setFrozenSeats(null);
+      return;
+    }
+    if (roundInProgress) {
+      if (!wasRoundInProgressRef.current) {
+        setFrozenSeats(field.seats.map((s) => ({ ...s })));
+      }
+      wasRoundInProgressRef.current = true;
+      return;
+    }
+    if (wasRoundInProgressRef.current) {
+      wasRoundInProgressRef.current = false;
+      setFrozenSeats(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- field.seats via fieldSeatsSig
+  }, [hsSettings.territoryUpdateMode, roundInProgress, fieldSeatsSig]);
+
+  const displaySeats =
+    freezeTerritory && frozenSeats && frozenSeats.length > 0 ? frozenSeats : field.seats;
 
   if (!spReady) return null;
   if (!ready && !useTest) {
@@ -266,21 +283,14 @@ export default function HighSocietyOverlayPage() {
   }
 
   return (
-    <main className={`hs-overlay-root${hostObs ? " hs-host-obs" : ""}`}>
+    <main
+      className={`hs-overlay-root${hostObs ? " hs-host-obs" : ""}${
+        adminPreview ? " hs-preview-embed" : ""
+      }`}
+    >
       <div id="hs-overlay-container">
         {useTest ? <div className="hs-test-badge">TEST</div> : null}
-
-        <TerritoryGauge style={barStyle} seats={field.seats} />
-
-        {timerEnabled ? (
-          <RoundTimerHud
-            round={round}
-            remainingSec={remainingSec}
-            active={timerActive}
-            paused={timerPaused}
-            ended={timerEnded}
-          />
-        ) : null}
+        <TerritoryGauge style={barStyle} seats={displaySeats} motion={!adminPreview} />
       </div>
     </main>
   );

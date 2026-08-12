@@ -98,11 +98,27 @@
 }
 
 .hs-field-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
   font-size: 13px;
   font-weight: 800;
   color: #fff;
   text-shadow: 0 1px 3px #000;
   white-space: nowrap;
+  overflow: hidden;
+}
+
+.hs-field-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hs-field-cm {
+  flex-shrink: 0;
+  opacity: 0.95;
 }
 
 .hs-field-dir {
@@ -114,6 +130,54 @@
 
 .hs-field-ready .hs-field-seg {
   transition: flex-grow 0.55s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* 관리자 iframe 프리뷰 — 입장/성장 모션·flex 트랜지션으로 움찔거림 방지 */
+.hs-preview-embed .hs-field-seg,
+.hs-field-static .hs-field-seg {
+  transition: none !important;
+  filter: none !important;
+  animation: none !important;
+}
+
+/* 관리자 프리뷰: 게이지를 iframe 폭에 크게 맞춤 (작은 9:16 축소 방지) */
+.hs-overlay-root.hs-preview-embed {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  aspect-ratio: auto !important;
+}
+
+.hs-preview-embed #hs-overlay-container {
+  padding: 8px 10px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.hs-preview-embed .hs-field {
+  min-height: 64px;
+  border-width: 3px;
+}
+
+.hs-preview-embed .hs-field-track {
+  height: 64px;
+}
+
+.hs-preview-embed .hs-field-wall {
+  flex-basis: 36px;
+  font-size: 12px;
+}
+
+.hs-preview-embed .hs-field-label {
+  font-size: 16px;
+}
+
+.hs-preview-embed .hs-field-dir {
+  font-size: 14px;
 }
 
 .hs-field-seg-growing {
@@ -148,88 +212,6 @@
 .hs-cushion {
   margin-top: 2px;
   color: #fca5a5;
-}
-
-/* 라운드 타이머 — generalTimer 연동 HUD (게이지 바로 아래) */
-.hs-round-timer {
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  padding: 8px 14px;
-  background: rgba(8, 6, 4, 0.88);
-  border: 3px solid rgba(212, 175, 55, 0.85);
-  border-radius: 6px;
-  box-shadow:
-    0 0 0 2px rgba(0, 0, 0, 0.8),
-    0 4px 12px rgba(0, 0, 0, 0.55);
-  font-variant-numeric: tabular-nums;
-}
-
-.hs-round-badge {
-  font-family: "Cinzel", "Times New Roman", Georgia, serif;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: #e8c76a;
-  text-shadow: 0 1px 2px #000;
-}
-
-.hs-round-clock {
-  font-family: "Cinzel", "Times New Roman", Georgia, serif;
-  font-size: 22px;
-  font-weight: 700;
-  color: #fff8e7;
-  letter-spacing: 0.04em;
-  text-shadow: 0 0 12px rgba(212, 175, 55, 0.35), 0 1px 3px #000;
-  min-width: 5.5ch;
-  text-align: center;
-}
-
-.hs-round-state {
-  font-size: 11px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.7);
-  text-shadow: 0 1px 2px #000;
-}
-
-.hs-round-timer.hs-round-low .hs-round-clock {
-  color: #ffd28a;
-}
-
-.hs-round-timer.hs-round-critical {
-  border-color: rgba(248, 113, 113, 0.7);
-  animation: hs-round-pulse 1s ease-in-out infinite;
-}
-
-.hs-round-timer.hs-round-critical .hs-round-clock {
-  color: #fecaca;
-}
-
-.hs-round-timer.hs-round-paused .hs-round-clock {
-  color: #94a3b8;
-}
-
-.hs-round-timer.hs-round-ended .hs-round-badge,
-.hs-round-timer.hs-round-ended .hs-round-clock {
-  color: #f87171;
-}
-
-@keyframes hs-round-pulse {
-  0%,
-  100% {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
-  }
-  50% {
-    box-shadow: 0 0 18px rgba(248, 113, 113, 0.45);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hs-round-timer.hs-round-critical {
-    animation: none;
-  }
 }
 
 /* 1b. 상단 영토 프로그래스 — share (점유 스트립) */

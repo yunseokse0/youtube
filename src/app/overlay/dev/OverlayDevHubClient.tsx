@@ -121,8 +121,8 @@ export default function OverlayDevHubClient() {
         id: "high-society",
         title: "상류사회 (세로 9:16)",
         desc: "영토 바 + 우측 상단 미니맵. 계좌·투네 합산 연동. OBS 캔버스 1080×1920.",
-        obsPath: `/overlay/high-society?u={u}&host=obs&bar=flat&round=1`,
-        testPath: `/overlay/high-society?u={u}&host=obs&test=true&bar=flat&round=1&timerSec=120`,
+        obsPath: `/overlay/high-society?u={u}&host=obs&bar=flat`,
+        testPath: `/overlay/high-society?u={u}&host=obs&test=true&bar=flat`,
       },
       {
         id: "high-society-demo",

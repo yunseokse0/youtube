@@ -12,6 +12,11 @@ import {
   parseHighSocietyBarStyle,
   parseHighSocietyRound,
   parseHighSocietySplit,
+  parseHighSocietyTerritoryUpdateMode,
+  normalizeHighSocietySettings,
+  fieldCmFromStartPerMember,
+  startCmFromField,
+  parseHighSocietyFieldCm,
   resolveHighSocietyField,
 } from "./high-society";
 
@@ -189,5 +194,22 @@ describe("high-society territory (aux)", () => {
     expect(formatHighSocietyTimer(125)).toBe("02:05");
     expect(formatHighSocietyTimer(3723)).toBe("01:02:03");
     expect(formatManWon(50000)).toBe("5만");
+  });
+
+  it("parses territory update mode (realtime | onRoundEnd)", () => {
+    expect(parseHighSocietyTerritoryUpdateMode("realtime")).toBe("realtime");
+    expect(parseHighSocietyTerritoryUpdateMode("onRoundEnd")).toBe("onRoundEnd");
+    expect(parseHighSocietyTerritoryUpdateMode("end")).toBe("onRoundEnd");
+    expect(parseHighSocietyTerritoryUpdateMode("")).toBe("realtime");
+    expect(normalizeHighSocietySettings({ territoryUpdateMode: "onRoundEnd" }).territoryUpdateMode).toBe(
+      "onRoundEnd"
+    );
+  });
+
+  it("maps 1인 시작 cm ↔ 전장 총길이", () => {
+    expect(fieldCmFromStartPerMember(400, 4)).toBe(1600);
+    expect(startCmFromField(1600, 4)).toBe(400);
+    expect(startCmFromField(1200, 4)).toBe(300);
+    expect(parseHighSocietyFieldCm("1600")).toBe(1600);
   });
 });

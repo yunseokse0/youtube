@@ -144,6 +144,7 @@ import {
   resolveTimerFontFamilyCss,
 } from "@/lib/timer-font-style";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
+import { pickSettingsPreservedAcrossSettlementReset } from "@/lib/settlement-reset-preserve";
 import { planSigBulkReupload, sigBulkFilesWithoutNameMatch } from "@/lib/sig-image-bulk";
 import { parseSigMetaFromFileName } from "@/lib/sig-filename-meta";
 import { createSafeFilePreviewUrl, revokeSafeFilePreviewUrl } from "@/lib/safe-file-preview";
@@ -216,6 +217,8 @@ import {
   resolveHighSocietySeatMembers,
   resolveSystemMiddlePushDir,
   seatRoleForMemberId,
+  fieldCmFromStartPerMember,
+  startCmFromField,
   HIGH_SOCIETY_DEFAULT_FIELD_CM,
 } from "@/lib/high-society";
 import {
@@ -6650,10 +6653,6 @@ export default function AdminPage() {
     () => resolveHighSocietySeatMembers(state.members || [], highSocietySettings.seatMemberIds),
     [state.members, highSocietySettings.seatMemberIds]
   );
-  const hsStartCm =
-    hsSeatPlayers.length > 0
-      ? (highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM) / hsSeatPlayers.length
-      : 0;
   const patchHighSocietySettings = useCallback(
     (patch: Partial<ReturnType<typeof normalizeHighSocietySettings>>) => {
       const wasOn = normalizeHighSocietySettings(stateRef.current.highSocietySettings).enabled;
@@ -6689,6 +6688,22 @@ export default function AdminPage() {
       }
     },
     [persistState]
+  );
+  const hsStartCm =
+    hsSeatPlayers.length > 0
+      ? startCmFromField(
+          highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM,
+          hsSeatPlayers.length
+        )
+      : 0;
+  const patchHighSocietyStartCm = useCallback(
+    (startCm: number) => {
+      const seats = Math.max(2, hsSeatPlayers.length || 4);
+      patchHighSocietySettings({
+        fieldCm: fieldCmFromStartPerMember(startCm, seats),
+      });
+    },
+    [hsSeatPlayers.length, patchHighSocietySettings]
   );
   const sigMatchDonors = useMemo(
     () =>
@@ -6885,8 +6900,10 @@ export default function AdminPage() {
 
   const onResetKeepMembers = () => {
     const resetPresets = resetOverlayPresetsGoalForDonationInit(state.overlayPresets) as OverlayPreset[];
+    const preserved = pickSettingsPreservedAcrossSettlementReset(state);
     const next: AppState = {
       ...state,
+      ...preserved,
       members: state.members.map((m) => ({ ...m, account: 0, toon: 0, contribution: 0, restroom: 0 })),
       donors: [],
       mealBattle: {
@@ -6894,7 +6911,7 @@ export default function AdminPage() {
         participants: (state.mealBattle?.participants || []).map((p) => ({ ...p, score: 0 })),
       },
       overlayPresets: resetPresets,
-      missions: state.missions || [],
+      missions: preserved.missions || state.missions || [],
       updatedAt: Date.now(),
     };
     void commitSettlementReset(next, resetPresets);
@@ -6908,31 +6925,17 @@ export default function AdminPage() {
     const filteredMealParticipants = (state.mealBattle?.participants || [])
       .filter((p) => nextMemberIds.has(p.memberId))
       .map((p) => ({ ...p, score: 0 }));
+    const preserved = pickSettingsPreservedAcrossSettlementReset(state);
     const next: AppState = {
       ...ds,
+      ...preserved,
       members: nextMembers,
       memberPositions: {},
-      rankPositionLabels: state.rankPositionLabels,
-      memberPositionMode: state.memberPositionMode,
-      sigInventory: state.sigInventory,
-      sigSoldOutStampUrl: state.sigSoldOutStampUrl,
-      sigSalesMemberPresets: state.sigSalesMemberPresets,
-      sigSalesExcludedIds: state.sigSalesExcludedIds,
-      rouletteState: state.rouletteState,
-      donationListsOverlayConfig: state.donationListsOverlayConfig,
-      donorRankingsOverlayConfig: state.donorRankingsOverlayConfig,
-      donorRankingsFullTheme: state.donorRankingsFullTheme,
-      donorRankingsFullOverlayConfig: state.donorRankingsFullOverlayConfig,
-      donorRankingsTheme: state.donorRankingsTheme,
-      donorRankingsPresets: state.donorRankingsPresets,
-      donorRankingsPresetId: state.donorRankingsPresetId,
-      missions: state.missions || [],
+      donors: [],
       overlayPresets: resetPresets,
-      overlaySettings: state.overlaySettings,
       sigMatch: Object.fromEntries(
         Object.entries(state.sigMatch || {}).filter(([memberId]) => nextMemberIds.has(memberId))
       ),
-      sigMatchSettings: state.sigMatchSettings,
       mealBattle: {
         ...state.mealBattle,
         participants: filteredMealParticipants,
@@ -6951,12 +6954,6 @@ export default function AdminPage() {
       mealMatch: Object.fromEntries(
         Object.entries(state.mealMatch || {}).filter(([memberId]) => nextMemberIds.has(memberId))
       ),
-      mealMatchSettings: state.mealMatchSettings,
-      generalTimer: state.generalTimer,
-      matchTimerEnabled: state.matchTimerEnabled,
-      timerDisplayStyles: state.timerDisplayStyles,
-      forbiddenWords: state.forbiddenWords,
-      donationSyncMode: state.donationSyncMode,
       updatedAt: Date.now(),
     };
     void commitSettlementReset(next, resetPresets);
@@ -10701,13 +10698,14 @@ export default function AdminPage() {
                   <div>
                     <div className="text-sm font-semibold text-amber-100">상류사회 모드 (땅따먹기)</div>
                     <p className="mt-0.5 text-[11px] text-neutral-400 leading-snug">
-                      전장 총길이{" "}
+                      1인 시작{" "}
+                      <strong className="text-neutral-200">{formatCm(hsStartCm)}</strong>
+                      · 전장 총길이{" "}
                       <strong className="text-neutral-200">
                         {(highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM).toLocaleString("ko-KR")}cm
                       </strong>
-                      고정 · 참가 {hsSeatPlayers.length || 0}명 → 1인 시작{" "}
-                      <strong className="text-neutral-200">{formatCm(hsStartCm)}</strong>
-                      . 양끝은 단방향, 가운데는 <strong className="text-neutral-300">시스템 한쪽 방향</strong>
+                      ({hsSeatPlayers.length || 0}명). 양끝은 단방향, 가운데는{" "}
+                      <strong className="text-neutral-300">시스템 한쪽 방향</strong>
                       (수동 변경은 모드 ON일 때만 · 원복 후 적용).
                     </p>
                   </div>
@@ -10726,41 +10724,42 @@ export default function AdminPage() {
                 {highSocietySettings.enabled ? (
                   <div className="space-y-3">
                     <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
-                      전장 총길이 (cm)
+                      1인 시작 (cm)
                       <input
                         type="number"
                         inputMode="numeric"
-                        min={100}
-                        max={20000}
-                        step={100}
+                        min={25}
+                        max={5000}
+                        step={50}
                         className="w-28 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm text-amber-50"
-                        value={highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM}
+                        value={hsStartCm || 300}
                         onChange={(e) => {
                           const n = parseInt(e.target.value.replace(/[^\d]/g, "") || "0", 10);
-                          if (!Number.isFinite(n)) return;
-                          patchHighSocietySettings({
-                            fieldCm: Math.max(100, Math.min(20000, n)),
-                          });
+                          if (!Number.isFinite(n) || n <= 0) return;
+                          patchHighSocietyStartCm(Math.max(25, Math.min(5000, n)));
                         }}
                       />
                       <span className="text-neutral-500">
-                        참가 {hsSeatPlayers.length || 0}명 → 1인 시작{" "}
-                        <strong className="text-neutral-200">{formatCm(hsStartCm)}</strong>
+                        → 전장{" "}
+                        <strong className="text-neutral-200">
+                          {(highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM).toLocaleString("ko-KR")}cm
+                        </strong>
+                        ({hsSeatPlayers.length || 0}명)
                       </span>
                     </label>
                     <div className="flex flex-wrap gap-1.5">
-                      {[600, 1200, 1800, 2400, 3600].map((cm) => (
+                      {[200, 300, 400, 500, 600].map((cm) => (
                         <button
-                          key={`hs-field-${cm}`}
+                          key={`hs-start-${cm}`}
                           type="button"
                           className={`rounded px-2 py-0.5 text-[10px] font-semibold border ${
-                            (highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM) === cm
+                            hsStartCm === cm
                               ? "border-amber-400 bg-amber-700/80 text-white"
                               : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
                           }`}
-                          onClick={() => patchHighSocietySettings({ fieldCm: cm })}
+                          onClick={() => patchHighSocietyStartCm(cm)}
                         >
-                          {cm.toLocaleString("ko-KR")}cm
+                          1인 {cm}cm
                         </button>
                       ))}
                     </div>
@@ -11665,24 +11664,25 @@ export default function AdminPage() {
                 </div>
                 {highSocietySettings.enabled ? (
                   <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
-                    <span className="text-neutral-400">전장</span>
+                    <span className="text-neutral-400">1인 시작</span>
                     <input
                       type="number"
                       inputMode="numeric"
-                      min={100}
-                      max={20000}
-                      step={100}
+                      min={25}
+                      max={5000}
+                      step={50}
                       className="w-24 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-amber-50"
-                      value={highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM}
+                      value={hsStartCm || 300}
                       onChange={(e) => {
                         const n = parseInt(e.target.value.replace(/[^\d]/g, "") || "0", 10);
-                        if (!Number.isFinite(n)) return;
-                        patchHighSocietySettings({
-                          fieldCm: Math.max(100, Math.min(20000, n)),
-                        });
+                        if (!Number.isFinite(n) || n <= 0) return;
+                        patchHighSocietyStartCm(Math.max(25, Math.min(5000, n)));
                       }}
                     />
                     <span className="text-neutral-500">cm</span>
+                    <span className="text-neutral-500">
+                      (전장 {(highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM).toLocaleString("ko-KR")}cm)
+                    </span>
                     <span className="text-neutral-400 ml-1">가운데 기본</span>
                     <button
                       type="button"
@@ -12981,10 +12981,9 @@ export default function AdminPage() {
                   <div>
                     <h4 className="text-sm font-semibold text-amber-100">상류사회 · 세로(9:16) 오버레이</h4>
                     <p className="mt-1 text-[11px] text-neutral-400 leading-snug max-w-xl">
-                      계좌·투네 후원 합산으로 상단 영토 게이지를 갱신합니다.{" "}
-                      <strong className="text-neutral-300">라운드 타이머</strong>는 「타이머 제어」
-                      일반 타이머(<code className="text-amber-200/90">generalTimer</code>)와 동기화 —
-                      권장 60분. 라운드 번호는 URL <code className="text-amber-200/90">round=1</code>.
+                      계좌·투네 후원 합산으로 상단 영토 게이지만 표시합니다.{" "}
+                      <strong className="text-neutral-300">갱신 시점</strong>은 아래 옵션으로 선택합니다.
+                      「라운드 종료 후」는 「타이머 제어」 일반 타이머가 0이 될 때 반영됩니다(오버레이에 타이머 UI 없음).
                       OBS 캔버스·브라우저 소스 <strong className="text-neutral-300">1080×1920</strong>.
                     </p>
                   </div>
@@ -12999,6 +12998,38 @@ export default function AdminPage() {
                   >
                     {highSocietySettings.enabled ? "상류사회 ON" : "상류사회 OFF"}
                   </button>
+                </div>
+
+                <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
+                  <div className="text-[11px] font-semibold text-amber-100/95">영토 게이지 갱신</div>
+                  <p className="text-[10px] text-neutral-400 leading-snug">
+                    실시간은 후원이 들어올 때마다 게이지가 움직이고, 라운드 종료 후는 「타이머 제어」 일반
+                    타이머가 0이 될 때까지 게이지를 고정한 뒤 한 번에 반영합니다.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className={`rounded px-3 py-1.5 text-xs font-semibold border ${
+                        (highSocietySettings.territoryUpdateMode || "realtime") === "realtime"
+                          ? "border-amber-400 bg-amber-700/90 text-white"
+                          : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
+                      }`}
+                      onClick={() => patchHighSocietySettings({ territoryUpdateMode: "realtime" })}
+                    >
+                      실시간
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded px-3 py-1.5 text-xs font-semibold border ${
+                        highSocietySettings.territoryUpdateMode === "onRoundEnd"
+                          ? "border-amber-400 bg-amber-700/90 text-white"
+                          : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
+                      }`}
+                      onClick={() => patchHighSocietySettings({ territoryUpdateMode: "onRoundEnd" })}
+                    >
+                      라운드 종료 후
+                    </button>
+                  </div>
                 </div>
 
                 <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
@@ -13057,7 +13088,6 @@ export default function AdminPage() {
                   <code className="max-w-full break-all text-[11px] text-amber-100/90">
                     /overlay/high-society?u={overlayUserId}&host=obs&bar=
                     {highSocietySettings.barStyle || "flat"}
-                    &round={highSocietySettings.round || 1}
                   </code>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -13065,7 +13095,7 @@ export default function AdminPage() {
                       className={`rounded px-2 py-1 text-xs ${copiedId === "dash-high-society" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                       onClick={() => {
                         patchHighSocietySettings({ barStyle: "flat" });
-                        const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs&bar=flat&round=${highSocietySettings.round || 1}`;
+                        const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs&bar=flat`;
                         void copyUrl(u, "dash-high-society");
                       }}
                     >
@@ -13076,7 +13106,7 @@ export default function AdminPage() {
                       className={`rounded px-2 py-1 text-xs ${copiedId === "dash-high-society-arrow" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                       onClick={() => {
                         patchHighSocietySettings({ barStyle: "arrow" });
-                        const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs&bar=arrow&round=${highSocietySettings.round || 1}`;
+                        const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs&bar=arrow`;
                         void copyUrl(u, "dash-high-society-arrow");
                       }}
                     >
@@ -13087,7 +13117,7 @@ export default function AdminPage() {
                       className="rounded bg-amber-700 hover:bg-amber-600 px-2 py-1 text-xs font-semibold text-white"
                       onClick={() =>
                         window.open(
-                          `/overlay/high-society?u=${overlayUserId}&test=true&bar=${highSocietySettings.barStyle || "flat"}&round=${highSocietySettings.round || 1}&timerSec=120`,
+                          `/overlay/high-society?u=${overlayUserId}&test=true&bar=${highSocietySettings.barStyle || "flat"}`,
                           "_blank",
                           "noopener,noreferrer"
                         )
@@ -13097,13 +13127,16 @@ export default function AdminPage() {
                     </button>
                   </div>
                 </div>
-                <div className="rounded-lg border border-white/10 bg-black/30 overflow-hidden">
-                  <div className="relative w-full bg-black/50 mx-auto" style={{ maxWidth: 270, aspectRatio: "9 / 16" }}>
+                <div className="rounded-lg border border-white/10 bg-black/30 overflow-hidden p-2">
+                  <div
+                    className="relative w-full bg-black/60 mx-auto overflow-hidden rounded-md"
+                    style={{ maxWidth: 720, minHeight: 120, aspectRatio: "18 / 4" }}
+                  >
                     {overlayUserId ? (
                       <iframe
-                        key={`hs-preview-${highSocietySettings.barStyle || "flat"}`}
+                        key={`hs-preview-${highSocietySettings.barStyle || "flat"}-${highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM}`}
                         src={appendAdminPreviewEmbedToOverlayUrl(
-                          `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&round=${highSocietySettings.round || 1}`
+                          `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&fieldCm=${encodeURIComponent(String(highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM))}`
                         )}
                         title="상류사회 세로 오버레이 미리보기"
                         className="absolute inset-0 h-full w-full border-0"
@@ -13115,6 +13148,9 @@ export default function AdminPage() {
                       </div>
                     )}
                   </div>
+                  <p className="mt-1.5 text-[10px] text-neutral-500 text-center">
+                    게이지 미리보기 · OBS는 1080×1920 세로 소스 사용
+                  </p>
                 </div>
               </div>
 

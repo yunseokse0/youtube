@@ -427,6 +427,12 @@ export type HighSocietySettings = {
   round?: number;
   /** 전장 총 가로(cm) — 멤버 수와 무관하게 고정 */
   fieldCm?: number;
+  /**
+   * 영토 게이지 갱신 시점
+   * - realtime: 계좌·투네 합산이 들어올 때마다 즉시 반영
+   * - onRoundEnd: generalTimer 라운드가 끝날 때까지 동결, 종료 후 반영
+   */
+  territoryUpdateMode?: "realtime" | "onRoundEnd";
 };
 
 /** `/overlay/sig-rolling` — 이미지/GIF 순환 한 장 항목 */

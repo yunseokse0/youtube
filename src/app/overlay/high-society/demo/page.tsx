@@ -13,7 +13,6 @@ import {
 export default function HighSocietyDemoPage() {
   const [hostObs, setHostObs] = useState(false);
   const [barStyle, setBarStyle] = useState<HighSocietyBarStyle>("flat");
-  const [round, setRound] = useState(1);
   const [bLeft, setBLeft] = useState(50);
   const [cLeft, setCLeft] = useState(50);
   const [origin, setOrigin] = useState("");
@@ -26,16 +25,14 @@ export default function HighSocietyDemoPage() {
     const q = new URLSearchParams({
       test: "true",
       bar: barStyle,
-      round: String(round),
-      timerSec: "3600",
       bLeft: String(bLeft),
       cLeft: String(cLeft),
     });
     if (hostObs) q.set("host", "obs");
     return `/overlay/high-society?${q.toString()}`;
-  }, [hostObs, barStyle, round, bLeft, cLeft]);
+  }, [hostObs, barStyle, bLeft, cLeft]);
 
-  const obsPath = `/overlay/high-society?u=din&host=obs&bar=${barStyle}&round=${round}`;
+  const obsPath = `/overlay/high-society?u=din&host=obs&bar=${barStyle}`;
   const obsUrl = origin ? `${origin}${obsPath}` : obsPath;
 
   return (
@@ -69,25 +66,6 @@ export default function HighSocietyDemoPage() {
                 </button>
               ))}
             </div>
-          </div>
-
-          <div className="space-y-3 rounded-xl border border-white/10 bg-neutral-900/80 p-3">
-            <p className="text-[11px] font-semibold text-amber-200/90">라운드</p>
-            <label className="flex items-center gap-3 text-[11px] text-neutral-400">
-              ROUND
-              <input
-                type="number"
-                min={1}
-                max={99}
-                value={round}
-                onChange={(e) => setRound(Math.max(1, Math.min(99, Number(e.target.value) || 1)))}
-                className="w-16 rounded border border-white/15 bg-neutral-950 px-2 py-1 text-neutral-100"
-              />
-            </label>
-            <p className="text-[10px] leading-relaxed text-neutral-500">
-              실방송 타이머는 관리자 「타이머 제어」의 <strong className="text-neutral-300">일반 타이머</strong>와
-              동기화됩니다. 룰 권장 60분. URL: <code className="text-neutral-400">round=</code>
-            </p>
           </div>
 
           <div className="space-y-3 rounded-xl border border-white/10 bg-neutral-900/80 p-3">
