@@ -868,19 +868,20 @@ const TABLE_BROADCAST_PANEL_BG = "#fde8f2";
 /** 밝은 시트 본문 — 테마 핑크/블루 대신 고대비 잉크 */
 const TABLE_BROADCAST_TEXT_ON_LIGHT = "#111827";
 const TABLE_BROADCAST_TEXT_ON_DARK = "#f8fafc";
-/** 엑셀 계열 본문(이름·금액) — 테마 컬러 글자 대신 가독성 우선 */
-const EXCEL_BODY_TEXT_ON_LIGHT = "#0f172a";
-const EXCEL_BODY_TEXT_ON_DARK = "#f8fafc";
-const EXCEL_LIGHT_NAME_CLS = "text-[#0f172a] font-semibold";
+/** 엑셀 계열 본문(이름·금액) — OBS 기본은 흰색 */
+const EXCEL_BODY_TEXT_DEFAULT = "#ffffff";
+const EXCEL_BODY_TEXT_ON_LIGHT = EXCEL_BODY_TEXT_DEFAULT;
+const EXCEL_BODY_TEXT_ON_DARK = EXCEL_BODY_TEXT_DEFAULT;
+const EXCEL_LIGHT_NAME_CLS = "text-white font-semibold";
 const EXCEL_LIGHT_ACCOUNT_CLS =
-  "text-[#0f172a] font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden";
+  "text-white font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden";
 const EXCEL_LIGHT_TOON_CLS =
-  "text-[#1e293b] font-semibold whitespace-nowrap font-mono tabular-nums overflow-hidden";
-const EXCEL_DARK_NAME_CLS = "text-[#f8fafc] font-semibold";
+  "text-white/90 font-semibold whitespace-nowrap font-mono tabular-nums overflow-hidden";
+const EXCEL_DARK_NAME_CLS = "text-white font-semibold";
 const EXCEL_DARK_ACCOUNT_CLS =
-  "text-[#f8fafc] font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden";
+  "text-white font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden";
 const EXCEL_DARK_TOON_CLS =
-  "text-[#e2e8f0] font-semibold whitespace-nowrap font-mono tabular-nums overflow-hidden";
+  "text-white/90 font-semibold whitespace-nowrap font-mono tabular-nums overflow-hidden";
 
 const THEMES: Record<ThemeId, {
   label: string;
@@ -2504,9 +2505,8 @@ function OverlayInner() {
           color: ${tableThemeAutoTextColor} !important;
         }`
         : "";
-  /** 엑셀 테마: 본문만 고대비(헤더·총합 행 흰색 유지). 테마 컬러 글자 대신 잉크색 */
-  const excelReadableBodyText =
-    isLightTableSheet ? EXCEL_BODY_TEXT_ON_LIGHT : EXCEL_BODY_TEXT_ON_DARK;
+  /** 엑셀 테마: 본문 기본 흰색(헤더·총합 행 테마 유지). 테마 자동=흰색 */
+  const excelReadableBodyText = EXCEL_BODY_TEXT_ON_DARK;
   const excelAutoBodyTextCss =
     !useBroadcastTableChrome && !hasTableTextColorOverride
       ? `
@@ -2517,9 +2517,10 @@ function OverlayInner() {
           color: ${excelReadableBodyText} !important;
         }`
       : "";
-  const tableBodyTextStroke = tableTextIsLight && !externalSafeMode
-    ? "0.75px rgba(6, 12, 24, 0.95)"
-    : "0";
+  const tableBodyTextStroke =
+    (hasTableTextColorOverride ? isLightTextHex(tableTextColorRaw) : true) && !externalSafeMode
+      ? "0.75px rgba(6, 12, 24, 0.95)"
+      : "0";
   const stripTextColor = (cls: string) =>
     hasTableTextColorOverride || hasTableHeaderTextColorOverride || Boolean(excelAutoBodyTextCss)
       ? cls.replace(/\btext-[^\s]+/g, "").replace(/\s+/g, " ").trim()

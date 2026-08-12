@@ -13442,10 +13442,10 @@ export default function AdminPage() {
                                         <input
                                           type="color"
                                           className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                                          value={toColorPickerValue(p.tableTextColor, "#111827")}
+                                          value={toColorPickerValue(p.tableTextColor, "#ffffff")}
                                           onChange={(e) => updatePreset(p.id, { tableTextColor: e.target.value })}
                                         />
-                                        <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.tableTextColor || "테마 자동"}</span>
+                                        <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.tableTextColor || "테마 자동(#fff)"}</span>
                                         <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableTextColor: "" })}>테마 자동</button>
                                       </div>
                                       <label className="text-xs text-neutral-400">총합 글자색</label>
