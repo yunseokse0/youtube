@@ -1574,7 +1574,7 @@ export function appendGoalBarStyleParams(target: URLSearchParams, preset: Overla
   }
 }
 
-/** 후원순위 OBS URL에 테마·폰트 크기 반영(관리자 저장값과 동일하게) */
+/** 후원순위 테마 → 쿼리 (레거시/디버그용). OBS URL에는 쓰지 말고 관리자 저장값을 사용하세요. */
 export function donorRankingsThemeToSearchParams(theme: DonorRankingsTheme): URLSearchParams {
   const q = new URLSearchParams();
   q.set("top", String(theme.top));
@@ -1596,6 +1596,21 @@ export function donorRankingsThemeToSearchParams(theme: DonorRankingsTheme): URL
   if (theme.outlineWidth != null && Number.isFinite(theme.outlineWidth)) {
     q.set("outlineWidth", String(Math.max(0, Math.min(3, theme.outlineWidth))));
   }
+  if (theme.zoomPct != null && Number.isFinite(theme.zoomPct)) {
+    q.set("zoomPct", String(Math.max(30, Math.min(300, Math.floor(theme.zoomPct))));
+  }
+  return q;
+}
+
+/** OBS용 짧은 후원순위 URL (?u=&host=obs[,&test=true]) */
+export function buildDonorRankingsObsSearchParams(opts: {
+  userId: string;
+  test?: boolean;
+}): URLSearchParams {
+  const q = new URLSearchParams();
+  q.set("u", opts.userId);
+  q.set("host", "obs");
+  if (opts.test) q.set("test", "true");
   return q;
 }
 

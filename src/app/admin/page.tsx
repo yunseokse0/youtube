@@ -132,7 +132,6 @@ import {
   buildCompactBroadcastOverlayParams,
   appendGoalBarStyleParams,
   normalizeGoalHexColor,
-  donorRankingsThemeToSearchParams,
   sanitizeBroadcastOverlayUrl,
   resolveScopedOverlayUserId,
   type OverlayPresetLike,
@@ -909,7 +908,6 @@ export default function AdminPage() {
   const obsTextRegistry = useMemo(() => readObsTextRegistryFromState(state), [state]);
   const obsTextPreviewId =
     obsTextPreviewInstanceId ?? obsTextRegistry.instances[0]?.id ?? "default";
-  const [donorRankingsZoomPct, setDonorRankingsZoomPct] = useState("100");
   const [timerUiNow, setTimerUiNow] = useState(Date.now());
   const [timerMinuteInputs, setTimerMinuteInputs] = useState<Record<"generalTimer", string>>({
     generalTimer: "0",
@@ -2730,18 +2728,16 @@ export default function AdminPage() {
     };
   }, [state.rouletteState]);
   const getDonorRankingsZoomPct = (): number => {
-    const raw = donorRankingsZoomPct.replace(/[^\d]/g, "");
-    const n = parseInt(raw || "100", 10);
-    if (!Number.isFinite(n)) return 100;
-    return Math.max(30, Math.min(300, n));
+    const raw = Number(state.donorRankingsTheme?.zoomPct);
+    if (!Number.isFinite(raw)) return 100;
+    return Math.max(30, Math.min(300, Math.floor(raw)));
   };
   const buildDonorRankingsUrl = (opts?: { test?: boolean }): string => {
     if (typeof window === "undefined") return "";
-    const theme = state.donorRankingsTheme || defaultState().donorRankingsTheme;
-    const q = donorRankingsThemeToSearchParams(theme);
+    /** OBS URL은 짧게 — 테마·줌·색은 관리자 저장값(서버)에서 로드 */
+    const q = new URLSearchParams();
     q.set("u", overlayUserId);
     q.set("host", "obs");
-    q.set("zoomPct", String(getDonorRankingsZoomPct()));
     if (opts?.test) q.set("test", "true");
     return `${window.location.origin}/overlay/donor-rankings?${q.toString()}`;
   };
@@ -8665,9 +8661,9 @@ export default function AdminPage() {
                     </div>
                   </div>
                   <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
-                    <span>실시간 URL:</span>
+                    <span>OBS URL (짧게):</span>
                     <code className="text-neutral-300 break-all">
-                      /overlay/donor-rankings?u={overlayUserId}&zoomPct={getDonorRankingsZoomPct()}
+                      /overlay/donor-rankings?u={overlayUserId}&host=obs
                     </code>
                     <button
                       type="button"
@@ -8683,7 +8679,7 @@ export default function AdminPage() {
                   <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                     <span>테스트 URL:</span>
                     <code className="text-neutral-300 break-all">
-                      /overlay/donor-rankings?u={overlayUserId}&zoomPct={getDonorRankingsZoomPct()}&test=true
+                      /overlay/donor-rankings?u={overlayUserId}&host=obs&test=true
                     </code>
                     <button
                       type="button"
@@ -8716,13 +8712,19 @@ export default function AdminPage() {
                     <span>OBS 크기(%)</span>
                     <input
                       className="w-20 rounded bg-neutral-900/80 border border-white/10 px-2 py-1 text-sm text-right"
-                      value={donorRankingsZoomPct}
-                      onChange={(e) => setDonorRankingsZoomPct(e.target.value.replace(/[^\d]/g, ""))}
+                      value={String(getDonorRankingsZoomPct())}
+                      onChange={(e) => {
+                        const n = parseInt(e.target.value.replace(/[^\d]/g, "") || "100", 10);
+                        updateDonorRankingsTheme({
+                          zoomPct: Math.max(30, Math.min(300, Number.isFinite(n) ? n : 100)),
+                        });
+                      }}
                     />
-                    <span className="text-neutral-500">30~300 (기본 100)</span>
+                    <span className="text-neutral-500">30~300 (서버 저장 · URL에 넣지 않음)</span>
                   </div>
-                  <div className="text-[11px] text-neutral-500">
-                    필요 시 URL 파라미터로 임시 오버라이드 가능: <code>top</code>, <code>test</code>, <code>zoomPct</code>, <code>overlayOpacity</code>, <code>titleSize</code>, <code>rowSize</code>, <code>rankSize</code>, <code>headerAccountBg</code>, <code>headerToonBg</code>, <code>rowEvenBg</code>, <code>rowOddBg</code>, <code>nameColor</code>, <code>amountColor</code>, <code>rankColor</code>, <code>panelBg</code>, <code>border</code>, <code>outline</code>, <code>outlineWidth</code>, <code>bg</code>
+                  <div className="text-[11px] text-emerald-200/90 rounded border border-emerald-500/25 bg-emerald-950/30 px-3 py-2 leading-relaxed">
+                    OBS 브라우저 소스는 <code className="text-emerald-100">?u=계정&amp;host=obs</code>만 쓰면 됩니다.
+                    제목·색·크기·투명도·줌 등 모든 옵션은 이 페이지에서 저장되며 오버레이가 서버에서 불러옵니다.
                   </div>
                   <p className="text-[11px] text-neutral-500">
                     배경 GIF·본문 이미지는{" "}
@@ -11802,7 +11804,7 @@ export default function AdminPage() {
               </p>
               <div className="mb-3 rounded border border-white/10 bg-black/20 p-2 text-xs text-neutral-400 flex flex-wrap items-center gap-2">
                 <span>후원 리스트 오버레이:</span>
-                <code className="text-neutral-300 break-all">/overlay/donor-rankings?u={overlayUserId}&zoomPct={getDonorRankingsZoomPct()}</code>
+                <code className="text-neutral-300 break-all">/overlay/donor-rankings?u={overlayUserId}&host=obs</code>
                 <button
                   type="button"
                   className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donor-rankings-inline" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
@@ -12010,7 +12012,7 @@ export default function AdminPage() {
                   </div>
                   <div className="flex flex-col items-end gap-2 shrink-0">
                     <code className="max-w-[min(100%,420px)] break-all text-[11px] text-fuchsia-100/90">
-                      /overlay/donor-rankings?u={overlayUserId}&zoomPct={getDonorRankingsZoomPct()}
+                      /overlay/donor-rankings?u={overlayUserId}&host=obs
                     </code>
                     <div className="flex flex-wrap justify-end gap-2">
                       <button
@@ -12460,15 +12462,11 @@ export default function AdminPage() {
                 <div className="relative w-full bg-black/40" style={{ minHeight: "260px", aspectRatio: "16 / 9" }}>
                   {overlayUserId ? (
                     <iframe
-                      key={`donor-rankings-${donorRankingsPreviewIframeKey}-${overlayUserId}-${state.donorRankingsTheme?.titleText || ""}`}
+                      key={`donor-rankings-${donorRankingsPreviewIframeKey}-${overlayUserId}`}
                       src={appendAdminPreviewEmbedToOverlayUrl(
                         (() => {
-                          const title = String(state.donorRankingsTheme?.titleText || "").trim();
-                          const q = new URLSearchParams({
-                            u: overlayUserId,
-                            zoomPct: String(getDonorRankingsZoomPct()),
-                          });
-                          if (title) q.set("title", title);
+                          /** OBS용 host=obs 는 미리보기에 넣지 않음 — fixed 레이아웃·빈 화면 유발 */
+                          const q = new URLSearchParams({ u: overlayUserId });
                           return `/overlay/donor-rankings?${q.toString()}`;
                         })()
                       )}
@@ -12477,8 +12475,18 @@ export default function AdminPage() {
                       style={{ background: "transparent" }}
                     />
                   ) : (
-                    <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-500">
-                      로그인 계정 확인 중…
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-xs text-neutral-400 px-4 text-center">
+                      <p>로그인이 필요합니다. 세션이 만료되면 미리보기를 불러올 수 없습니다.</p>
+                      <a href="/login" className="rounded bg-sky-700 px-3 py-1.5 text-sky-50 hover:bg-sky-600">
+                        다시 로그인
+                      </a>
+                      <p className="text-[10px] text-neutral-500">
+                        비밀번호를 잊었다면{" "}
+                        <a href="/create-accounts" className="text-sky-400 underline">
+                          /create-accounts
+                        </a>
+                        에서 수정 → 재설정하세요.
+                      </p>
                     </div>
                   )}
                 </div>

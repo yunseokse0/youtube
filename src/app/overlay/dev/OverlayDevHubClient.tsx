@@ -3,10 +3,8 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   appendAdminPreviewEmbedToOverlayUrl,
-  donorRankingsThemeToSearchParams,
   sanitizeBroadcastOverlayUrl,
 } from "@/lib/overlay-params";
-import { defaultState } from "@/lib/state";
 
 type OverlayLink = {
   id: string;
@@ -94,17 +92,9 @@ function OverlayDevCard({
 
 export default function OverlayDevHubClient() {
   const [userId, setUserId] = useState("finalent");
-  const [zoomPct, setZoomPct] = useState("100");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
-
-  const donorThemeQ = useMemo(() => {
-    const theme = defaultState().donorRankingsTheme;
-    const q = donorRankingsThemeToSearchParams(theme);
-    q.set("zoomPct", zoomPct);
-    return q.toString();
-  }, [zoomPct]);
 
   const links: OverlayLink[] = useMemo(
     () => [
@@ -117,9 +107,9 @@ export default function OverlayDevHubClient() {
       {
         id: "donor-rankings",
         title: "후원 순위 (상위 N)",
-        desc: "기존 후원 순위. 관리자 저장 테마가 서버에서 반영됩니다.",
-        obsPath: `/overlay/donor-rankings?u={u}&${donorThemeQ}`,
-        testPath: `/overlay/donor-rankings?u={u}&test=true&zoomPct=${zoomPct}`,
+        desc: "테마·줌은 관리자 페이지에서 저장. OBS URL은 u·host만.",
+        obsPath: `/overlay/donor-rankings?u={u}&host=obs`,
+        testPath: `/overlay/donor-rankings?u={u}&host=obs&test=true`,
       },
       {
         id: "donation-lists",
@@ -164,7 +154,7 @@ export default function OverlayDevHubClient() {
         obsPath: `/overlay/meal-match?u={u}`,
       },
     ],
-    [donorThemeQ, zoomPct]
+    []
   );
 
   const copyUrl = useCallback(async (url: string, id: string) => {
@@ -210,17 +200,6 @@ export default function OverlayDevHubClient() {
             className="mt-1 block w-40 rounded border border-white/15 bg-black/40 px-2 py-1.5 text-sm text-white"
             value={userId}
             onChange={(e) => setUserId(e.target.value.trim() || "finalent")}
-          />
-        </label>
-        <label className="text-xs text-neutral-400">
-          zoomPct
-          <input
-            type="number"
-            min={30}
-            max={300}
-            className="mt-1 block w-24 rounded border border-white/15 bg-black/40 px-2 py-1.5 text-sm text-white"
-            value={zoomPct}
-            onChange={(e) => setZoomPct(e.target.value)}
           />
         </label>
         <a

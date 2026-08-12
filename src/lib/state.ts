@@ -450,6 +450,7 @@ export const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
   titleColor: "#ffffff",
   outlineColor: "rgba(20, 12, 6, 0.96)",
   outlineWidth: 2.25,
+  zoomPct: 100,
 };
 
 /** 후원순위 기본 제공 테마 5종 (관리자 원클릭 적용) */
@@ -482,6 +483,7 @@ export const BUILT_IN_DONOR_RANKINGS_PRESETS: DonorRankingsPreset[] = [
       titleColor: "#22d3ee",
       outlineColor: "rgba(2, 6, 23, 0.95)",
       outlineWidth: 1.75,
+      zoomPct: 100,
     },
   },
   {
@@ -507,6 +509,7 @@ export const BUILT_IN_DONOR_RANKINGS_PRESETS: DonorRankingsPreset[] = [
       titleColor: "#9d174d",
       outlineColor: "rgba(255, 255, 255, 0.85)",
       outlineWidth: 1.25,
+      zoomPct: 100,
     },
   },
   {
@@ -532,6 +535,7 @@ export const BUILT_IN_DONOR_RANKINGS_PRESETS: DonorRankingsPreset[] = [
       titleColor: "#f8fafc",
       outlineColor: "rgba(0, 0, 0, 0.88)",
       outlineWidth: 1.5,
+      zoomPct: 100,
     },
   },
   {
@@ -557,6 +561,7 @@ export const BUILT_IN_DONOR_RANKINGS_PRESETS: DonorRankingsPreset[] = [
       titleColor: "#064e3b",
       outlineColor: "rgba(255, 255, 255, 0.9)",
       outlineWidth: 1.35,
+      zoomPct: 100,
     },
   },
 ];
@@ -611,6 +616,7 @@ export const DEFAULT_DONOR_RANKINGS_FULL_THEME: DonorRankingsTheme = {
   titleColor: "#9d174d",
   outlineColor: "rgba(255, 255, 255, 0.82)",
   outlineWidth: 1.25,
+  zoomPct: 100,
 };
 
 function normalizeDonorRankingsTheme(
@@ -663,6 +669,7 @@ function normalizeDonorRankingsTheme(
       if (!Number.isFinite(n)) return defaults.outlineWidth;
       return Math.max(0, Math.min(3, Math.round(n * 100) / 100));
     })(),
+    zoomPct: n(v.zoomPct, 30, 300, defaults.zoomPct ?? 100),
   };
 }
 
@@ -729,7 +736,8 @@ export function isDefaultLikeDonorRankingsTheme(
     n.amountColor === d.amountColor &&
     n.titleColor === d.titleColor &&
     n.outlineColor === d.outlineColor &&
-    n.outlineWidth === d.outlineWidth
+    n.outlineWidth === d.outlineWidth &&
+    n.zoomPct === d.zoomPct
   );
 }
 

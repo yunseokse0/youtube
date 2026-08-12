@@ -350,6 +350,8 @@ export type DonorRankingsTheme = {
   outlineColor: string;
   /** 텍스트 외곽선 두께(px). 0이면 없음 */
   outlineWidth: number;
+  /** OBS 확대(%) — URL이 아니라 관리자 저장값으로 반영 */
+  zoomPct: number;
 };
 
 export type DonorRankingsPreset = {

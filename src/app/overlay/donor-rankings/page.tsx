@@ -702,31 +702,43 @@ export default function DonorRankingsOverlayPage() {
   );
 
   const useTest = (sp.get("test") || "false").toLowerCase() === "true";
+  const isAdminPreview =
+    sp.get("adminPreviewEmbed") === "1" || sp.get("hubPreview") === "1";
+  /** 관리자 미리보기는 API 완료 전에도 저장·기본 테마를 즉시 적용 */
+  const themeLive = ready || isAdminPreview;
   const layoutDual = (sp.get("layout") || "").toLowerCase() === "dual";
   const savedTheme = state?.donorRankingsTheme || defaultState().donorRankingsTheme;
 
   const showAllDonors = (sp.get("all") || "").trim() === "1" || (sp.get("top") || "").trim() === "0";
   const topN = showAllDonors
     ? 0
-    : liveThemeNumber(ready, useTest, savedTheme.top, sp, "top", 1, 50);
-  const titleSize = liveThemeNumber(ready, useTest, savedTheme.titleSize, sp, "titleSize", 14, 80);
-  const rowSize = liveThemeNumber(ready, useTest, savedTheme.rowSize, sp, "rowSize", 12, 64);
-  const rankSize = liveThemeNumber(ready, useTest, savedTheme.rankSize, sp, "rankSize", 12, 72);
-  const overlayOpacity = liveThemeNumber(ready, useTest, savedTheme.overlayOpacity, sp, "overlayOpacity", 0, 100);
-  const zoomPct = Math.floor(readNumber(sp, "zoomPct", 100, 30, 300));
+    : liveThemeNumber(themeLive, useTest, savedTheme.top, sp, "top", 1, 50);
+  const titleSize = liveThemeNumber(themeLive, useTest, savedTheme.titleSize, sp, "titleSize", 14, 80);
+  const rowSize = liveThemeNumber(themeLive, useTest, savedTheme.rowSize, sp, "rowSize", 12, 64);
+  const rankSize = liveThemeNumber(themeLive, useTest, savedTheme.rankSize, sp, "rankSize", 12, 72);
+  const overlayOpacity = liveThemeNumber(themeLive, useTest, savedTheme.overlayOpacity, sp, "overlayOpacity", 0, 100);
+  const zoomPct = liveThemeNumber(
+    themeLive,
+    useTest,
+    Number(savedTheme.zoomPct) || 100,
+    sp,
+    "zoomPct",
+    30,
+    300
+  );
   const viewportSize = useOverlayViewportSize();
   const zoomScale = useMemo(
     () => resolveBroadcastZoomScale(zoomPct, viewportSize.w, 1500),
     [zoomPct, viewportSize.w]
   );
   const bg =
-    ready && !useTest
+    themeLive && !useTest
       ? (savedTheme.bg || "").trim() || "transparent"
       : readColor(sp, "bg", savedTheme.bg) || "transparent";
   /** 웹후원 순위 기본 — 반투명 밝은 패널 */
-  const panelBg = resolveThemeColorLive(ready, useTest, sp, "panelBg", savedTheme.panelBg, "rgba(232, 232, 236, 0.7)");
+  const panelBg = resolveThemeColorLive(themeLive, useTest, sp, "panelBg", savedTheme.panelBg, "rgba(232, 232, 236, 0.7)");
   const borderColor = resolveThemeColorLive(
-    ready,
+    themeLive,
     useTest,
     sp,
     "border",
@@ -734,7 +746,7 @@ export default function DonorRankingsOverlayPage() {
     "transparent"
   );
   const headerAccountBg = liveThemeColor(
-    ready,
+    themeLive,
     useTest,
     savedTheme.headerAccountBg,
     sp,
@@ -742,7 +754,7 @@ export default function DonorRankingsOverlayPage() {
     "rgba(232, 232, 236, 0.55)"
   );
   const headerToonBg = liveThemeColor(
-    ready,
+    themeLive,
     useTest,
     savedTheme.headerToonBg,
     sp,
@@ -750,22 +762,22 @@ export default function DonorRankingsOverlayPage() {
     "rgba(232, 232, 236, 0.55)"
   );
   const headerUnifiedBg = readColor(sp, "headerBg", headerAccountBg) || headerAccountBg;
-  const rankingTitle = liveThemeTitle(ready, useTest, savedTheme.titleText, sp, "👑 웹후원 순위 👑");
-  const rowEvenBg = liveThemeColor(ready, useTest, savedTheme.rowEvenBg, sp, "rowEvenBg", "transparent");
-  const rowOddBg = liveThemeColor(ready, useTest, savedTheme.rowOddBg, sp, "rowOddBg", "rgba(255, 255, 255, 0.14)");
-  const rankColor = liveThemeColor(ready, useTest, savedTheme.rankColor, sp, "rankColor", "#ffffff");
-  const nameColor = liveThemeColor(ready, useTest, savedTheme.nameColor, sp, "nameColor", "#ffc107");
-  const amountColor = liveThemeColor(ready, useTest, savedTheme.amountColor, sp, "amountColor", "#ffc107");
-  const titleColor = liveThemeColor(ready, useTest, savedTheme.titleColor, sp, "titleColor", "#ffffff");
+  const rankingTitle = liveThemeTitle(themeLive, useTest, savedTheme.titleText, sp, "👑 웹후원 순위 👑");
+  const rowEvenBg = liveThemeColor(themeLive, useTest, savedTheme.rowEvenBg, sp, "rowEvenBg", "transparent");
+  const rowOddBg = liveThemeColor(themeLive, useTest, savedTheme.rowOddBg, sp, "rowOddBg", "rgba(255, 255, 255, 0.14)");
+  const rankColor = liveThemeColor(themeLive, useTest, savedTheme.rankColor, sp, "rankColor", "#ffffff");
+  const nameColor = liveThemeColor(themeLive, useTest, savedTheme.nameColor, sp, "nameColor", "#ffc107");
+  const amountColor = liveThemeColor(themeLive, useTest, savedTheme.amountColor, sp, "amountColor", "#ffc107");
+  const titleColor = liveThemeColor(themeLive, useTest, savedTheme.titleColor, sp, "titleColor", "#ffffff");
   const outlineColor = liveThemeColor(
-    ready,
+    themeLive,
     useTest,
     savedTheme.outlineColor,
     sp,
     "outline",
     "rgba(20, 12, 6, 0.96)"
   );
-  const outlineWidthPx = liveThemeOutlineWidth(ready, useTest, savedTheme.outlineWidth, sp);
+  const outlineWidthPx = liveThemeOutlineWidth(themeLive, useTest, savedTheme.outlineWidth, sp);
   const showBgLayer = overlayCfg.isBgEnabled && Boolean(overlayCfg.bgGifUrl.trim());
   const bgAnimated = useMemo(() => resolveAnimatedSourceForEmbed(overlayCfg.bgGifUrl), [overlayCfg.bgGifUrl]);
   const bgOpacityPct = Math.max(0, Math.min(100, overlayCfg.bgOpacity)) / 100;
@@ -800,7 +812,15 @@ export default function DonorRankingsOverlayPage() {
     return buildDonorRankingsFromDonors(donors, topN);
   }, [state?.donors, useTest, donorsOverride, topN]);
 
-  if (!spReady || (!ready && !useTest)) {
+  if (!spReady) {
+    return null;
+  }
+
+  /**
+   * 관리자 미리보기: API ready 대기 중에도 기본/로컬 테마로 그리기.
+   * (iframe remount·느린 GET 때문에 「불러오는 중」에 고착되지 않게)
+   */
+  if (!ready && !useTest && !isAdminPreview) {
     return null;
   }
 
