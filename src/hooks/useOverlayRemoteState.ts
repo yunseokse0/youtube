@@ -15,6 +15,7 @@ import {
   isDefaultLikeTimerDisplayStyle,
   loadState,
   loadStateFromApi,
+  shouldAvoidOverwritingLocalStateWithRemote,
   storageKey,
   type AppState,
 } from "@/lib/state";
@@ -482,6 +483,12 @@ export function useOverlayRemoteState(
           shouldRejectPoorerDonationRemote(lastGoodRef.current, remoteForApply)
         ) {
           /** forceFull 이어도 빈/구 Redis 로 엑셀 금액을 지우지 않음 */
+          return;
+        }
+        if (
+          (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
+          shouldAvoidOverwritingLocalStateWithRemote(lastGoodRef.current, remoteForApply)
+        ) {
           return;
         }
 

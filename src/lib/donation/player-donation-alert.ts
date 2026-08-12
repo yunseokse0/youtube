@@ -43,7 +43,7 @@ function mapInventoryRowToQueueSig(x: {
 
 async function sigListSnapshotFromState(userId: string): Promise<QueueSigItem[]> {
   const state = await loadAppStateForUserId(userId);
-  const inv = Array.isArray(state.sigInventory) ? state.sigInventory : [];
+  const inv = Array.isArray(state?.sigInventory) ? state.sigInventory : [];
   return inv
     .map((x) => mapInventoryRowToQueueSig(x))
     .filter((s): s is QueueSigItem => Boolean(s));
@@ -77,7 +77,7 @@ export async function enrichDonationEventWithSigMatch(
   let finalAutoMatched = isAutoMatched;
 
   const state = await loadAppStateForUserId(userId);
-  const selected = readManualSigBroadcastFromState(state)?.selectedSigs || [];
+  const selected = readManualSigBroadcastFromState(state ?? undefined)?.selectedSigs || [];
 
   if (!finalAutoMatched) {
     const roundSig = selected.find((s) => Math.round(Number(s.price || 0)) === event.amount);

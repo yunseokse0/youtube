@@ -1,6 +1,7 @@
 import type { AppState } from "@/types";
 import { readManualSigBroadcastFromState } from "@/lib/manual-sig-broadcast-state";
 import { canonicalSigIdFromWheelSliceId } from "@/lib/sig-roulette";
+import { hasMeaningfulMemberRoster, shouldBlockAccidentalEmptyOverwrite } from "@/lib/state";
 
 const MANUAL_SIG_DRAFT_STATE_KEY = "sigSalesManualDraftV1";
 
@@ -205,7 +206,7 @@ export function isNewerIntentionalDonationShrink(
 
 /**
  * 빈/축소 원격으로 로컬·엑셀 후원을 시스템에 의해 지우면 안 된다.
- * - 정산 리셋(remote.settlementResetAt 상승)만 빈 원격 허용
+ * - 정산 리셋(remote.settlementResetAt 상승)만 빈 원격 허용 — 단 플레이스홀더 사고성 빈 상태 제외
  * - 의도적 부분 삭제(subset shrink)는 허용
  * - 신규 id·revision 만으로 poorer 원격 허용하지 않음
  *   (투네 1건이 수동 계좌 붙여넣기를 통째로 덮지 않게 — 호출측에서 union)
@@ -218,7 +219,11 @@ export function shouldRejectPoorerDonationRemote(
   if (!local || !remote) return false;
   const remoteReset = Number(remote.settlementResetAt || 0);
   const localReset = Number(local.settlementResetAt || 0);
-  if (remoteReset > localReset) return false;
+  if (remoteReset > localReset) {
+    /** stamp만 앞서고 멤버1·2…/빈 후원이면 강제 리셋으로 보지 않음 */
+    if (shouldBlockAccidentalEmptyOverwrite(local, remote)) return true;
+    return false;
+  }
 
   const localDonorList = Array.isArray(local.donors) ? local.donors : [];
   const remoteDonorList = Array.isArray(remote.donors) ? remote.donors : [];
@@ -227,14 +232,26 @@ export function shouldRejectPoorerDonationRemote(
   /** 정산 리셋 없이 완전 빈 원격은 로컬 후원을 덮지 않음 */
   if (localDonors > 0 && remoteDonors === 0) return true;
 
+  /** 엑셀 실멤버가 플레이스홀더/빈 슬롯으로 덮이지 않게 */
+  if (hasMeaningfulMemberRoster(local) && !hasMeaningfulMemberRoster(remote)) return true;
+
+  const localTotal = (local.members || []).reduce(
+    (sum, m) =>
+      sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)),
+    0
+  );
+  const remoteTotal = (remote.members || []).reduce(
+    (sum, m) =>
+      sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)),
+    0
+  );
+  if (localTotal > 0 && remoteTotal === 0 && remoteDonors === 0) return true;
+
   /**
    * 엑셀 members 합계가 0인데 서버 donors·revision 만 앞선 경우
    * (후원순위는 되고 엑셀만 0) — poorer 고스트로 막지 않음
    */
-  const localMemberTotal = (local.members || []).reduce(
-    (sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)),
-    0
-  );
+  const localMemberTotal = localTotal;
   const remoteDr = Number(remote.donorRankingsUpdatedAt || 0);
   const localDr = Number(local.donorRankingsUpdatedAt || 0);
   if (localMemberTotal === 0 && remoteDonors > 0 && remoteDr > localDr) {

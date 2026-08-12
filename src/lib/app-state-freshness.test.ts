@@ -55,6 +55,49 @@ describe("pickFresherAppState", () => {
     expect(pickFresherAppState(redis, memory)?.settlementResetAt).toBe(900);
     expect(pickFresherAppState(redis, memory)?.donors).toHaveLength(0);
   });
+
+  it("does not prefer higher reset when winner is accidental placeholder wipe", () => {
+    const wiped = {
+      ...snap({ updatedAt: 9000, donorsLen: 0, settlementResetAt: 900 }),
+      members: [
+        { id: "m1", name: "멤버1", account: 0, toon: 0, contribution: 0 },
+        { id: "m2", name: "멤버2", account: 0, toon: 0, contribution: 0 },
+      ],
+    } as AppState;
+    const rich = {
+      ...snap({ updatedAt: 1000, donorsLen: 5, settlementResetAt: 100 }),
+      members: [{ id: "m1", name: "홍쓰", account: 50000, toon: 0, contribution: 50000 }],
+    } as AppState;
+    expect(pickFresherAppState(wiped, rich)?.donors).toHaveLength(5);
+    expect(pickFresherAppState(wiped, rich)?.members[0]?.name).toBe("홍쓰");
+  });
+
+  it("prefers meaningful member roster over newer placeholder", () => {
+    const placeholder = {
+      ...snap({ updatedAt: 9000, donorsLen: 0, settlementResetAt: 100 }),
+      members: [
+        { id: "m1", name: "멤버1", account: 0, toon: 0, contribution: 0 },
+        { id: "m2", name: "멤버2", account: 0, toon: 0, contribution: 0 },
+      ],
+    } as AppState;
+    const real = {
+      ...snap({ updatedAt: 1000, donorsLen: 0, settlementResetAt: 100 }),
+      members: [{ id: "m1", name: "홍쓰", account: 0, toon: 0, contribution: 0 }],
+    } as AppState;
+    expect(pickFresherAppState(placeholder, real)?.members[0]?.name).toBe("홍쓰");
+  });
+
+  it("prefers non-zero member totals over newer zero totals", () => {
+    const zero = {
+      ...snap({ updatedAt: 9000, donorsLen: 0, settlementResetAt: 100 }),
+      members: [{ id: "m1", name: "홍쓰", account: 0, toon: 0, contribution: 0 }],
+    } as AppState;
+    const rich = {
+      ...snap({ updatedAt: 1000, donorsLen: 0, settlementResetAt: 100 }),
+      members: [{ id: "m1", name: "홍쓰", account: 40000, toon: 0, contribution: 40000 }],
+    } as AppState;
+    expect(pickFresherAppState(zero, rich)?.members[0]?.account).toBe(40000);
+  });
 });
 
 describe("coalesceAppStateRedisAndMemory", () => {

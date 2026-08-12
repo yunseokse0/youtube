@@ -3484,6 +3484,36 @@ export function isDefaultLikeState(state: AppState): boolean {
   return allDefaultNames && noData;
 }
 
+/**
+ * 사용자 「정산 리셋」이 아닌 사고성 빈 상태.
+ * - 멤버1·2… 플레이스홀더(또는 멤버 없음) + 후원 0 + 합계 0
+ * - 정상 정산 리셋은 실멤버명을 유지하므로 여기에 해당하지 않음
+ */
+export function isAccidentalEmptyRosterState(state: AppState | null | undefined): boolean {
+  if (!state) return true;
+  const members = state.members;
+  if (!Array.isArray(members) || members.length === 0) {
+    return normalizeDonorsArray(state.donors).length === 0 && totalCombined(state) === 0;
+  }
+  if (!isDefaultPlaceholderMemberList(members)) return false;
+  return normalizeDonorsArray(state.donors).length === 0 && totalCombined(state) === 0;
+}
+
+/** 사고성 빈 원격이 실데이터를 stamp만으로 덮지 못하게 */
+export function shouldBlockAccidentalEmptyOverwrite(
+  existing: AppState | null | undefined,
+  incoming: AppState | null | undefined
+): boolean {
+  if (!existing || !incoming) return false;
+  if (!isAccidentalEmptyRosterState(incoming)) return false;
+  if (isAccidentalEmptyRosterState(existing)) return false;
+  return (
+    hasMeaningfulMemberRoster(existing) ||
+    normalizeDonorsArray(existing.donors).length > 0 ||
+    totalCombined(existing) > 0
+  );
+}
+
 /** 멤버1·멤버2… 초기 슬롯만 있고 금액·후원이 없는 목록(인원 수는 1~30) */
 export function isDefaultPlaceholderMemberList(members: Member[] | null | undefined): boolean {
   if (!Array.isArray(members) || members.length === 0) return true;
@@ -3535,6 +3565,9 @@ export function shouldAvoidOverwritingLocalStateWithRemote(
 ): boolean {
   if (!existing || !incoming) return false;
   if (hasMeaningfulMemberRoster(existing) && !hasMeaningfulMemberRoster(incoming)) {
+    return true;
+  }
+  if (shouldBlockAccidentalEmptyOverwrite(existing, incoming)) {
     return true;
   }
   const existingReset = Number(existing.settlementResetAt || 0);

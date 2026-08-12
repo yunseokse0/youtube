@@ -8,7 +8,7 @@
 #   NODE_HEAP_MB=1536|2048
 #   SWAP_SIZE=1G              # 빌드용 스왑 (기본 1G — 20GB 디스크용)
 #   KEEP_SWAP=1              # 빌드 후 스왑 유지(기본). 0 이면 빌드 후 제거
-#   STOP_MYSQL_FOR_BUILD=1   # 빌드 중 MySQL 일시 정지(기본 1, OOM 완화)
+#   STOP_MYSQL_FOR_BUILD=1   # 빌드 중 MySQL 일시 정지(기본 0 — 엑셀/후원 유실 방지. OOM 시에만 1)
 #   SKIP_GIT_PULL=0
 set -euo pipefail
 
@@ -22,7 +22,7 @@ PORT="${PORT:-3000}"
 SWAP_FILE="${SWAP_FILE:-/swapfile}"
 SWAP_SIZE="${SWAP_SIZE:-1G}"
 KEEP_SWAP="${KEEP_SWAP:-1}"
-STOP_MYSQL_FOR_BUILD="${STOP_MYSQL_FOR_BUILD:-1}"
+STOP_MYSQL_FOR_BUILD="${STOP_MYSQL_FOR_BUILD:-0}"
 SKIP_GIT_PULL="${SKIP_GIT_PULL:-0}"
 MYSQL_WAS_STOPPED=0
 SWAP_CREATED_BY_US=0
@@ -124,8 +124,10 @@ echo "== 메모리 =="
 free -h
 
 # ----- 빌드 중 MySQL 일시 정지 (OOM 방지) -----
+# MySQL 을 끄면 앱이 빈/메모리 상태를 서빙·저장할 수 있음 → 반드시 앱을 먼저 중지
 if [[ "$STOP_MYSQL_FOR_BUILD" == "1" ]] && systemctl is-active --quiet mysql 2>/dev/null; then
-  echo "== 빌드 중 MySQL 일시 정지 =="
+  echo "== 빌드 중 앱·MySQL 일시 정지 (데이터 유실 방지: 앱 먼저 중지) =="
+  pm2 stop "$PM2_APP" 2>/dev/null || true
   run systemctl stop mysql
   MYSQL_WAS_STOPPED=1
 fi
@@ -148,6 +150,7 @@ if [[ "$BUILD_CODE" -ne 0 ]]; then
   if [[ "$MYSQL_WAS_STOPPED" == "1" ]]; then
     run systemctl start mysql
     MYSQL_WAS_STOPPED=0
+    sleep 1
   fi
   pm2 restart "$PM2_APP" 2>/dev/null || pm2 start "$PM2_APP" 2>/dev/null || true
   exit "$BUILD_CODE"

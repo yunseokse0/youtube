@@ -36,6 +36,7 @@ async function resolveAlreadyAppliedOrDefer(
   event: DonationEvent
 ): Promise<ToonationAutoApplyOutcome | "retry"> {
   const state = await loadAppStateForUserId(userId);
+  if (!state) return "not_applied";
   if (isDuplicateDonationEvent(state, event)) return "applied";
   return "retry";
 }
@@ -78,6 +79,7 @@ export async function tryAutoApplyToonationDonationOnServer(
       listenerCfg?.ownerName
     );
     const state = await loadAppStateForUserId(userId);
+    if (!state) return "not_applied";
     if (isDuplicateDonationEvent(state, event)) return "applied";
     if (!(await tryClaimDonationApply(userId, event))) {
       const deferred = await resolveAlreadyAppliedOrDefer(userId, event);
@@ -91,6 +93,10 @@ export async function tryAutoApplyToonationDonationOnServer(
     }
 
     const freshState = await loadAppStateForUserId(userId);
+    if (!freshState) {
+      await releaseDonationApplyClaim(userId, event);
+      return "not_applied";
+    }
     if (isDuplicateDonationEvent(freshState, event)) return "applied";
 
     const aliases = await readDonationAliases(userId);

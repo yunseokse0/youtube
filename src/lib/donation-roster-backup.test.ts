@@ -5,7 +5,7 @@ import {
   shouldRestoreDonationRosterFromBackup,
   type DonationRosterBackupPayload,
 } from "@/lib/donation-roster-backup";
-import { defaultState } from "@/lib/state";
+import { defaultState, isDefaultPlaceholderMemberList } from "@/lib/state";
 import type { AppState } from "@/types";
 
 function richState(): AppState {
@@ -48,6 +48,17 @@ describe("donation-roster-backup", () => {
       members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 }],
     };
     expect(shouldRestoreDonationRosterFromBackup(cleared, backup)).toBe(false);
+  });
+
+  it("restores accidental placeholder wipe even when settlementResetAt is newer", () => {
+    const backup = buildDonationRosterBackupPayload(richState())!;
+    const wiped = {
+      ...defaultState(),
+      settlementResetAt: (backup.settlementResetAt || 0) + 99_000,
+      donors: [],
+    };
+    expect(isDefaultPlaceholderMemberList(wiped.members)).toBe(true);
+    expect(shouldRestoreDonationRosterFromBackup(wiped, backup)).toBe(true);
   });
 
   it("does not restore old backup after reset when a new small donation exists", () => {

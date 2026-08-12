@@ -36,52 +36,77 @@
   pointer-events: none;
 }
 
-/* 1. 룰 전장 — 장벽 + A→D 연속 영토 */
+/* 1. 룰 전장 — 장벽 + A→D 연속 영토 (땅따먹기) */
 .hs-field {
   display: flex;
   align-items: stretch;
   width: 100%;
-  min-height: 48px;
-  background: rgba(0, 0, 0, 0.88);
-  border: 2px solid #d4af37;
+  min-height: 64px;
+  background: rgba(0, 0, 0, 0.92);
+  border: 3px solid #d4af37;
   border-radius: 6px;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.9),
+    0 6px 18px rgba(0, 0, 0, 0.85);
+}
+
+/* 방송용 강한 외곽선 — 배경 위에 글자 시인성 */
+.hs-text-outline {
+  -webkit-text-stroke: 1.35px #000;
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 2px #000,
+    1px 1px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    2px 2px 0 #000,
+    -2px 2px 0 #000,
+    2px -2px 0 #000,
+    -2px -2px 0 #000,
+    0 2px 0 #000,
+    0 -2px 0 #000,
+    2px 0 0 #000,
+    -2px 0 0 #000,
+    0 4px 8px rgba(0, 0, 0, 0.9);
 }
 
 .hs-field-wall {
-  flex: 0 0 28px;
+  flex: 0 0 30px;
   display: flex;
   align-items: center;
   justify-content: center;
   writing-mode: vertical-rl;
   text-orientation: mixed;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  color: rgba(212, 175, 55, 0.95);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  color: #ffe566;
   background:
     repeating-linear-gradient(
       -45deg,
-      rgba(212, 175, 55, 0.12),
-      rgba(212, 175, 55, 0.12) 4px,
-      rgba(0, 0, 0, 0.35) 4px,
-      rgba(0, 0, 0, 0.35) 8px
+      rgba(212, 175, 55, 0.22),
+      rgba(212, 175, 55, 0.22) 5px,
+      rgba(0, 0, 0, 0.55) 5px,
+      rgba(0, 0, 0, 0.55) 10px
     );
-  border-right: 1px solid rgba(212, 175, 55, 0.45);
-  text-shadow: 0 1px 2px #000;
+  border-right: 2px solid rgba(212, 175, 55, 0.65);
+  z-index: 30;
 }
 
 .hs-field-wall:last-child {
   border-right: none;
-  border-left: 1px solid rgba(212, 175, 55, 0.45);
+  border-left: 2px solid rgba(212, 175, 55, 0.65);
 }
 
 .hs-field-track {
   flex: 1 1 auto;
   display: flex;
   min-width: 0;
-  height: 48px;
+  height: 64px;
+  position: relative;
+  overflow: hidden;
 }
 
 .hs-field-seg {
@@ -90,57 +115,156 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 0 6px;
-  transition: flex-grow 0.55s cubic-bezier(0.25, 1, 0.5, 1);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset -1px 0 0 rgba(0, 0, 0, 0.25);
+  gap: 0;
+  padding: 2px 10px;
+  transition: flex-grow 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.28);
   overflow: hidden;
 }
 
+/* —— 평평: 사각 영토 + 분쟁 경계선 —— */
+.hs-field-flat .hs-field-seg:not(:last-child) {
+  border-right: 3px solid rgba(0, 0, 0, 0.75);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.28),
+    inset -3px 0 0 rgba(255, 230, 120, 0.55);
+}
+
+.hs-field-flat .hs-field-seg:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: repeating-linear-gradient(
+    180deg,
+    #ffe566 0 3px,
+    #000 3px 6px
+  );
+  opacity: 0.85;
+  z-index: 4;
+  pointer-events: none;
+}
+
+/* 잠식 전선( frontier ) — 확장 방향 쪽 빛 */
+.hs-field-front {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  pointer-events: none;
+  z-index: 5;
+  opacity: 0.9;
+}
+
+.hs-field-front-right {
+  right: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.15) 40%,
+    rgba(255, 230, 102, 0.85) 100%
+  );
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.55);
+}
+
+.hs-field-front-left {
+  left: 0;
+  background: linear-gradient(
+    270deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.15) 40%,
+    rgba(255, 230, 102, 0.85) 100%
+  );
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.55);
+}
+
+.hs-field-front-both {
+  inset: 0;
+  width: auto;
+  background:
+    linear-gradient(90deg, rgba(255, 230, 102, 0.75), transparent 12px),
+    linear-gradient(270deg, rgba(255, 230, 102, 0.75), transparent 12px);
+  box-shadow: none;
+  opacity: 0.75;
+}
+
+/* 두 줄: 멤버명 / cm + 방향 */
 .hs-field-label {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   max-width: 100%;
-  font-size: 13px;
-  font-weight: 800;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 900;
   color: #fff;
-  text-shadow: 0 1px 3px #000;
-  white-space: nowrap;
-  overflow: hidden;
+  line-height: 1.12;
+  text-align: center;
+  pointer-events: none;
+  z-index: 6;
 }
 
 .hs-field-name {
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 1.05em;
+  letter-spacing: -0.01em;
+}
+
+.hs-field-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  max-width: 100%;
+  font-size: 0.92em;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .hs-field-cm {
   flex-shrink: 0;
-  opacity: 0.95;
 }
 
 .hs-field-dir {
-  font-size: 12px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.85);
-  text-shadow: 0 1px 2px #000;
+  flex-shrink: 0;
+  font-size: 1.05em;
+  font-weight: 900;
+  color: #ffe566;
 }
 
 .hs-field-ready .hs-field-seg {
-  transition: flex-grow 0.55s cubic-bezier(0.25, 1, 0.5, 1);
+  transition: flex-grow 0.65s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* 관리자 iframe 프리뷰 — 입장/성장 모션·flex 트랜지션으로 움찔거림 방지 */
+/* 관리자 iframe 프리뷰 — flex 움찔만 끄고, 화살/전선 형태는 유지 */
 .hs-preview-embed .hs-field-seg,
 .hs-field-static .hs-field-seg {
   transition: none !important;
+}
+
+.hs-preview-embed .hs-field-seg-growing,
+.hs-field-static .hs-field-seg-growing {
+  animation: none !important;
   filter: none !important;
+}
+
+.hs-preview-embed .hs-field-front,
+.hs-field-static .hs-field-front {
   animation: none !important;
 }
 
-/* 관리자 프리뷰: 게이지를 iframe 폭에 크게 맞춤 (작은 9:16 축소 방지) */
+/* 관리자 프리뷰: 게이지를 iframe 폭에 크게 맞춤 */
 .hs-overlay-root.hs-preview-embed {
   width: 100% !important;
   height: 100% !important;
@@ -159,44 +283,170 @@
 }
 
 .hs-preview-embed .hs-field {
-  min-height: 64px;
+  min-height: 80px;
   border-width: 3px;
 }
 
 .hs-preview-embed .hs-field-track {
-  height: 64px;
+  height: 80px;
 }
 
 .hs-preview-embed .hs-field-wall {
-  flex-basis: 36px;
-  font-size: 12px;
+  flex-basis: 38px;
+  font-size: 13px;
 }
 
 .hs-preview-embed .hs-field-label {
   font-size: 16px;
+  gap: 3px;
 }
 
-.hs-preview-embed .hs-field-dir {
-  font-size: 14px;
+.hs-preview-embed .hs-field-meta {
+  font-size: 0.95em;
 }
 
+/* 땅 먹힘(성장) 연출 */
 .hs-field-seg-growing {
-  filter: brightness(1.18);
+  filter: brightness(1.22) saturate(1.15);
+  z-index: 25 !important;
+  animation: hs-land-take 1.35s ease-out;
+}
+
+.hs-field-seg-growing .hs-field-front {
+  opacity: 1;
+  animation: hs-front-pulse 0.55s ease-in-out 3;
+}
+
+.hs-field-seg-growing .hs-field-front-right {
+  width: 18px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    inset -1px 0 0 rgba(0, 0, 0, 0.25),
-    0 0 14px rgba(255, 215, 0, 0.45);
+    0 0 18px rgba(255, 230, 102, 0.95),
+    4px 0 24px rgba(255, 80, 40, 0.55);
+}
+
+.hs-field-seg-growing .hs-field-front-left {
+  width: 18px;
+  box-shadow:
+    0 0 18px rgba(255, 230, 102, 0.95),
+    -4px 0 24px rgba(255, 80, 40, 0.55);
+}
+
+@keyframes hs-land-take {
+  0% {
+    filter: brightness(1.45) saturate(1.35);
+  }
+  35% {
+    filter: brightness(1.28) saturate(1.2);
+  }
+  100% {
+    filter: brightness(1.1) saturate(1.05);
+  }
+}
+
+@keyframes hs-front-pulse {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scaleX(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleX(1.35);
+  }
+}
+
+/**
+ * 화살표: 확장 방향으로 뾰족한 잠식 팁 (땅따먹기 핵심)
+ * 왼쪽 칸이 위(z-index)에 그려져 팁이 가려지지 않음
+ */
+.hs-field-arrow {
+  overflow: visible;
+}
+
+.hs-field-arrow .hs-field-track {
+  overflow: visible;
 }
 
 .hs-field-arrow .hs-field-seg {
-  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%);
-  margin-right: -6px;
-  padding-right: 12px;
+  overflow: visible;
+  border-right: none;
+  z-index: calc(22 - var(--hs-i, 0));
 }
 
-.hs-field-arrow .hs-field-seg:last-child {
-  clip-path: none;
-  margin-right: 0;
+.hs-field-arrow .hs-field-seg.hs-expand-right {
+  clip-path: polygon(
+    0 0,
+    calc(100% - 26px) 0,
+    100% 50%,
+    calc(100% - 26px) 100%,
+    0 100%
+  );
+  margin-right: -18px;
+  padding-right: 28px;
+  padding-left: 10px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.32),
+    3px 0 0 rgba(0, 0, 0, 0.35);
+}
+
+.hs-field-arrow .hs-field-seg.hs-expand-left {
+  clip-path: polygon(
+    26px 0,
+    100% 0,
+    100% 100%,
+    26px 100%,
+    0 50%
+  );
+  margin-left: -18px;
+  padding-left: 28px;
+  padding-right: 10px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.32),
+    -3px 0 0 rgba(0, 0, 0, 0.35);
+}
+
+.hs-field-arrow .hs-field-seg.hs-expand-both {
+  clip-path: polygon(
+    18px 0,
+    calc(100% - 18px) 0,
+    100% 50%,
+    calc(100% - 18px) 100%,
+    18px 100%,
+    0 50%
+  );
+  margin-left: -10px;
+  margin-right: -10px;
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+/* 화살 끝 금색 칼날(잠식 강조) */
+.hs-field-arrow .hs-field-seg.hs-expand-right .hs-field-front-right {
+  right: 0;
+  width: 26px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.2) 35%,
+    #ffe566 72%,
+    #fff8c8 100%
+  );
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  box-shadow: 2px 0 14px rgba(255, 215, 0, 0.75);
+}
+
+.hs-field-arrow .hs-field-seg.hs-expand-left .hs-field-front-left {
+  left: 0;
+  width: 26px;
+  background: linear-gradient(
+    270deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.2) 35%,
+    #ffe566 72%,
+    #fff8c8 100%
+  );
+  clip-path: polygon(100% 0, 0 50%, 100% 100%);
+  box-shadow: -2px 0 14px rgba(255, 215, 0, 0.75);
 }
 
 .hs-field-arrow-tip {
@@ -204,9 +454,49 @@
 }
 
 .hs-field-track .hs-territory-empty {
-  height: 48px;
+  height: 64px;
   border: none;
   background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  font-weight: 800;
+  color: #fff;
+}
+
+/* 연출 OFF 시 숨김 — 루트에 hs-fx-* 없으면 해당 효과 비활성 */
+.hs-overlay-root:not(.hs-fx-frontier) .hs-field-front {
+  display: none !important;
+}
+
+.hs-overlay-root:not(.hs-fx-contested) .hs-field-flat .hs-field-seg:not(:last-child)::after {
+  display: none !important;
+}
+
+.hs-overlay-root:not(.hs-fx-contested) .hs-field-flat .hs-field-seg:not(:last-child) {
+  border-right: 2px solid rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.28), inset 0 -2px 0 rgba(0, 0, 0, 0.28);
+}
+
+.hs-overlay-root:not(.hs-fx-blade) .hs-field-arrow .hs-field-seg.hs-expand-right .hs-field-front-right,
+.hs-overlay-root:not(.hs-fx-blade) .hs-field-arrow .hs-field-seg.hs-expand-left .hs-field-front-left {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25));
+  box-shadow: none;
+  clip-path: none;
+  width: 8px;
+  opacity: 0.5;
+}
+
+.hs-overlay-root:not(.hs-fx-grow) .hs-field-seg-growing {
+  animation: none !important;
+  filter: none !important;
+}
+
+.hs-overlay-root:not(.hs-fx-outline) .hs-text-outline {
+  -webkit-text-stroke: 0 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65) !important;
+  paint-order: normal !important;
 }
 
 .hs-cushion {
@@ -244,9 +534,18 @@
   justify-content: center;
   gap: 4px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 800;
   color: #fff;
-  text-shadow: 1px 1px 3px #000;
+  -webkit-text-stroke: 1.2px #000;
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 2px #000,
+    1px 1px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    2px 2px 0 #000,
+    0 3px 6px rgba(0, 0, 0, 0.85);
   white-space: nowrap;
   overflow: hidden;
   padding: 0 4px;
@@ -319,7 +618,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  -webkit-text-stroke: 0.6px #000;
+  -webkit-text-stroke: 1.25px #000;
   paint-order: stroke fill;
   text-shadow:
     0 0 2px #000,
@@ -327,7 +626,11 @@
     -1px -1px 0 #000,
     1px -1px 0 #000,
     -1px 1px 0 #000,
-    0 2px 4px rgba(0, 0, 0, 0.85);
+    2px 2px 0 #000,
+    -2px 2px 0 #000,
+    2px -2px 0 #000,
+    -2px -2px 0 #000,
+    0 3px 6px rgba(0, 0, 0, 0.9);
 }
 
 .hs-lane-track {
@@ -479,7 +782,7 @@
   opacity: 0;
   animation: hs-label-in 0.4s ease forwards;
   animation-delay: calc(0.25s + var(--hs-i, 0) * 70ms);
-  -webkit-text-stroke: 0.7px #000;
+  -webkit-text-stroke: 1.3px #000;
   paint-order: stroke fill;
   text-shadow:
     0 0 2px #000,
@@ -487,7 +790,11 @@
     -1px -1px 0 #000,
     1px -1px 0 #000,
     -1px 1px 0 #000,
-    0 2px 5px rgba(0, 0, 0, 0.9);
+    2px 2px 0 #000,
+    -2px 2px 0 #000,
+    2px -2px 0 #000,
+    -2px -2px 0 #000,
+    0 3px 6px rgba(0, 0, 0, 0.9);
 }
 
 .hs-lane-meta {
@@ -495,14 +802,18 @@
   font-weight: 800;
   color: #fff;
   text-align: right;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  -webkit-text-stroke: 0.5px #000;
+  -webkit-text-stroke: 1.15px #000;
   paint-order: stroke fill;
   text-shadow:
     0 0 2px #000,
     1px 1px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
     -1px 1px 0 #000,
-    0 2px 4px rgba(0, 0, 0, 0.85);
+    2px 2px 0 #000,
+    0 3px 5px rgba(0, 0, 0, 0.9);
 }
 
 .hs-lane-meta-pop {

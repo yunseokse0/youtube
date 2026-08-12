@@ -24,6 +24,7 @@ import {
   saveMissionsBackup,
   loadMissionsBackup,
   isDefaultLikeState,
+  isAccidentalEmptyRosterState,
   isDefaultPlaceholderMemberList,
   membersDifferByIds,
   hasMeaningfulBroadcastData,
@@ -213,6 +214,7 @@ import { persistDonationStateViaApi } from "@/lib/donation/persist-donation-clie
 import { applyDonationDummySeed } from "@/lib/dev/seed-donation-dummy";
 import {
   formatCm,
+  normalizeHighSocietyFxSettings,
   normalizeHighSocietySettings,
   resolveHighSocietySeatMembers,
   resolveSystemMiddlePushDir,
@@ -1931,13 +1933,22 @@ export default function AdminPage() {
       const localResetAt = Number(stateRef.current.settlementResetAt || 0);
       /**
        * 다른 브라우저에서 사용자가 정산 리셋함(settlementResetAt 상승).
-       * stamp 상승은 서버가 settlementReset 플래그일 때만 허용한다.
+       * 단, 원격이 멤버1·2… 플레이스홀더+빈 후원이면 사고성 유실 — stamp만으로 덮지 않음.
        */
-      const remoteSettlementWins = remoteResetAt > localResetAt;
+      const remoteAccidentalEmpty =
+        isAccidentalEmptyRosterState(remote) &&
+        (hasMeaningfulMemberRoster(stateRef.current) ||
+          normalizeDonorsArray(stateRef.current.donors).length > 0 ||
+          totalCombined(stateRef.current) > 0);
+      const remoteSettlementWins = remoteResetAt > localResetAt && !remoteAccidentalEmpty;
       if (remoteSettlementWins) {
         settlementResetUntilRef.current = Date.now() + 30_000;
         pendingUnsyncedRef.current = false;
         donationAuthoritativeSaveUntilRef.current = 0;
+      }
+      if (remoteAccidentalEmpty && remoteResetAt > localResetAt) {
+        healLocalDonorsToServerIfRicher();
+        return false;
       }
       if (amountInputEditingRef.current && !remoteSettlementWins) return false;
       if (Date.now() < settlementResetUntilRef.current) {
@@ -1994,6 +2005,11 @@ export default function AdminPage() {
         }
         /** 보호창 밖에서도 poorer/empty Redis 가 실후원을 시스템 삭제처럼 덮지 않음 */
         if (shouldRejectPoorerDonationRemote(stateRef.current, remoteForGuards)) {
+          healLocalDonorsToServerIfRicher();
+          return false;
+        }
+        /** 엑셀 실멤버·금액이 빈 원격으로 덮이지 않게 (정산 리셋만 예외) */
+        if (shouldAvoidOverwritingLocalStateWithRemote(stateRef.current, remoteForGuards)) {
           healLocalDonorsToServerIfRicher();
           return false;
         }
@@ -4245,6 +4261,70 @@ export default function AdminPage() {
       window.alert("브라우저 저장본을 읽지 못했습니다.");
     }
   }, [user?.id, restoreBroadcastStateFromJsonPatch]);
+
+  const restoreFromServerDonationBackup = useCallback(async () => {
+    if (
+      !window.confirm(
+        "서버 후원 백업(MySQL/디스크)에서 엑셀표·후원 리스트를 복구합니다.\n" +
+          "현재가 멤버1·2… 초기화면·0원일 때 사용하세요. 계속할까요?"
+      )
+    ) {
+      return;
+    }
+    try {
+      const res = await fetch("/api/donations/restore-backup", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        message?: string;
+        donorsCount?: number;
+        total?: number;
+        membersCount?: number;
+        state?: AppState;
+      } | null;
+      if (!res.ok || !data?.ok || !data.state) {
+        window.alert(
+          data?.message ||
+            (data?.error === "no_backup"
+              ? "서버 후원 백업이 없습니다. 「브라우저 저장본 복구」 또는 「일일 로그에서 후원 복구」를 시도하세요."
+              : `서버 백업 복구 실패 (${res.status})`)
+        );
+        return;
+      }
+      const now = Date.now();
+      const next = {
+        ...data.state,
+        updatedAt: Math.max(Number(data.state.updatedAt || 0), now),
+        donorRankingsUpdatedAt: Math.max(
+          Number(data.state.donorRankingsUpdatedAt || 0),
+          now
+        ),
+      };
+      const preserved = markAuthoritativeDonationSave(
+        { serverUpdatedAt: next.updatedAt },
+        next,
+        { replaceDonors: true, awaitingServerSave: false }
+      );
+      setState(preserved);
+      try {
+        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(preserved));
+      } catch {}
+      notifyBroadcastStateLocalUpdated(user?.id, preserved.updatedAt);
+      setSyncStatus("synced");
+      window.alert(
+        `서버 후원 백업 복구 완료: 후원 ${data.donorsCount ?? 0}건 · 합계 ${
+          data.total ?? 0
+        }원 · 멤버 ${data.membersCount ?? 0}명`
+      );
+    } catch {
+      window.alert("서버 후원 백업 복구 요청에 실패했습니다.");
+    }
+  }, [user?.id]);
 
   const restoreSigInventoryFromExcelFile = useCallback(
     async (file: File | null) => {
@@ -7219,6 +7299,13 @@ export default function AdminPage() {
               title="이 PC 브라우저 localStorage에 남아 있는 오전 방송 설정·후원·시그를 서버로 복구"
             >
               브라우저 저장본 복구
+            </button>
+            <button
+              className="px-2 py-1 rounded bg-amber-800 hover:bg-amber-700 text-xs font-medium text-white"
+              onClick={() => void restoreFromServerDonationBackup()}
+              title="서버 MySQL/디스크 후원 백업에서 엑셀·후원 리스트 강제 복구 (멤버1·2 초기화면일 때)"
+            >
+              서버 후원 백업 복구
             </button>
             <button
               className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
@@ -13084,6 +13171,96 @@ export default function AdminPage() {
                   ) : null}
                 </div>
 
+                <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-[11px] font-semibold text-amber-100/95">연출 효과</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        className="rounded px-2 py-0.5 text-[10px] border border-white/15 bg-neutral-900 text-neutral-300 hover:border-amber-400/50"
+                        onClick={() =>
+                          patchHighSocietySettings({
+                            fx: {
+                              frontier: true,
+                              growFlash: true,
+                              contestedEdge: true,
+                              arrowBlade: true,
+                              strongOutline: true,
+                            },
+                          })
+                        }
+                      >
+                        전부 ON
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded px-2 py-0.5 text-[10px] border border-white/15 bg-neutral-900 text-neutral-300 hover:border-amber-400/50"
+                        onClick={() =>
+                          patchHighSocietySettings({
+                            fx: {
+                              frontier: false,
+                              growFlash: false,
+                              contestedEdge: false,
+                              arrowBlade: false,
+                              strongOutline: false,
+                            },
+                          })
+                        }
+                      >
+                        전부 OFF
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-neutral-400 leading-snug">
+                    땅따먹기 잠식·경계·외곽선 연출을 개별로 켜고 끕니다. 저장되면 OBS에 반영됩니다.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {(
+                      [
+                        { key: "frontier" as const, label: "잠식 전선", desc: "확장 방향 경계 빛" },
+                        { key: "growFlash" as const, label: "확장 플래시", desc: "땅이 늘 때 번쩍" },
+                        { key: "contestedEdge" as const, label: "분쟁 경계", desc: "평평 모드 줄무늬" },
+                        { key: "arrowBlade" as const, label: "화살 칼날", desc: "화살표 금색 팁" },
+                        { key: "strongOutline" as const, label: "강한 외곽선", desc: "텍스트 stroke" },
+                      ] as const
+                    ).map((opt) => {
+                      const fxNow = normalizeHighSocietyFxSettings(highSocietySettings.fx);
+                      const on = Boolean(fxNow[opt.key]);
+                      return (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          className={`flex items-center justify-between gap-2 rounded px-2.5 py-1.5 text-left border ${
+                            on
+                              ? "border-amber-400/70 bg-amber-900/40 text-amber-50"
+                              : "border-white/10 bg-neutral-900 text-neutral-400"
+                          }`}
+                          onClick={() =>
+                            patchHighSocietySettings({
+                              fx: {
+                                ...fxNow,
+                                [opt.key]: !on,
+                              },
+                            })
+                          }
+                        >
+                          <span>
+                            <span className="block text-[11px] font-semibold">{opt.label}</span>
+                            <span className="block text-[9px] opacity-80">{opt.desc}</span>
+                          </span>
+                          <span
+                            className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                              on ? "bg-amber-500 text-black" : "bg-neutral-700 text-neutral-300"
+                            }`}
+                          >
+                            {on ? "ON" : "OFF"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div className="flex flex-col items-stretch gap-2">
                   <code className="max-w-full break-all text-[11px] text-amber-100/90">
                     /overlay/high-society?u={overlayUserId}&host=obs&bar=
@@ -13134,7 +13311,13 @@ export default function AdminPage() {
                   >
                     {overlayUserId ? (
                       <iframe
-                        key={`hs-preview-${highSocietySettings.barStyle || "flat"}-${highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM}`}
+                        key={`hs-preview-${highSocietySettings.barStyle || "flat"}-${highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM}-${[
+                          highSocietySettings.fx?.frontier ? 1 : 0,
+                          highSocietySettings.fx?.growFlash ? 1 : 0,
+                          highSocietySettings.fx?.contestedEdge ? 1 : 0,
+                          highSocietySettings.fx?.arrowBlade ? 1 : 0,
+                          highSocietySettings.fx?.strongOutline ? 1 : 0,
+                        ].join("")}`}
                         src={appendAdminPreviewEmbedToOverlayUrl(
                           `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&fieldCm=${encodeURIComponent(String(highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM))}`
                         )}

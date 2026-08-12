@@ -1,6 +1,7 @@
 import type {
   AppState,
   Donor,
+  HighSocietyFxSettings,
   HighSocietyPushDir,
   HighSocietySettings,
   Member,
@@ -166,6 +167,29 @@ export function parseHighSocietyTerritoryUpdateMode(
   return "realtime";
 }
 
+export function defaultHighSocietyFxSettings(): HighSocietyFxSettings {
+  return {
+    frontier: true,
+    growFlash: true,
+    contestedEdge: true,
+    arrowBlade: true,
+    strongOutline: true,
+  };
+}
+
+export function normalizeHighSocietyFxSettings(input: unknown): HighSocietyFxSettings {
+  const base = defaultHighSocietyFxSettings();
+  if (!input || typeof input !== "object") return base;
+  const v = input as Partial<HighSocietyFxSettings>;
+  return {
+    frontier: v.frontier !== false,
+    growFlash: v.growFlash !== false,
+    contestedEdge: v.contestedEdge !== false,
+    arrowBlade: v.arrowBlade !== false,
+    strongOutline: v.strongOutline !== false,
+  };
+}
+
 export function defaultHighSocietySettings(): HighSocietySettings {
   return {
     enabled: false,
@@ -178,6 +202,7 @@ export function defaultHighSocietySettings(): HighSocietySettings {
     round: 1,
     fieldCm: HIGH_SOCIETY_DEFAULT_FIELD_CM,
     territoryUpdateMode: "realtime",
+    fx: defaultHighSocietyFxSettings(),
   };
 }
 
@@ -210,6 +235,7 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
   const round = Math.max(1, Math.min(99, Math.floor(Number(v.round) || 1)));
   const fieldCm = Math.max(100, Math.min(20000, Math.floor(Number(v.fieldCm) || HIGH_SOCIETY_DEFAULT_FIELD_CM)));
   const territoryUpdateMode = parseHighSocietyTerritoryUpdateMode(v.territoryUpdateMode);
+  const fx = normalizeHighSocietyFxSettings(v.fx);
   return {
     enabled: Boolean(v.enabled),
     seatMemberIds,
@@ -220,6 +246,7 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     round,
     fieldCm,
     territoryUpdateMode,
+    fx,
   };
 }
 

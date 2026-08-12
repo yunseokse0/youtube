@@ -94,6 +94,12 @@ export async function POST(req: Request) {
 
   const aliases = await readDonationAliases(userId);
   let state = await loadAppStateForUserId(userId);
+  if (!state) {
+    return new Response(
+      JSON.stringify({ error: "state_unavailable", reason: "kv_down", retry: true }),
+      { status: 503, headers: { "Content-Type": "application/json" } }
+    );
+  }
   const appliedEvents: DonationEvent[] = [];
   let lastEvent: DonationEvent | null = null;
 

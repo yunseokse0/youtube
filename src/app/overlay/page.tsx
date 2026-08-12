@@ -798,10 +798,6 @@ function resolveTableSheetRgb(
   return TABLE_BG_RGB[theme] ?? defaultTableBgRgb;
 }
 
-function isLightTableSheetRgb(rgb: [number, number, number]): boolean {
-  return rgb[0] + rgb[1] + rgb[2] >= 200;
-}
-
 function parseHexRgb(hex: string): [number, number, number] | null {
   const norm = hex.trim();
   if (!/^#[0-9a-fA-F]{3,8}$/.test(norm)) return null;
@@ -865,9 +861,8 @@ const TABLE_NUMERIC_OUTLINE_DARK_ON_LIGHT =
 const TABLE_BROADCAST_PANEL_BORDER = "#f5b8d4";
 const TABLE_BROADCAST_TOTAL_BORDER = "rgba(244, 170, 205, 0.45)";
 const TABLE_BROADCAST_PANEL_BG = "#fde8f2";
-/** 밝은 시트 본문 — 테마 핑크/블루 대신 고대비 잉크 */
-const TABLE_BROADCAST_TEXT_ON_LIGHT = "#111827";
-const TABLE_BROADCAST_TEXT_ON_DARK = "#f8fafc";
+/** 테마 자동(본문·헤더) — OBS 기본 흰색(+어두운 외곽선). 검은 글자는 본문 글자색에서 지정 */
+const TABLE_BROADCAST_TEXT_AUTO = "#ffffff";
 /** 엑셀 계열 본문(이름·금액) — OBS 기본은 흰색 */
 const EXCEL_BODY_TEXT_DEFAULT = "#ffffff";
 const EXCEL_BODY_TEXT_ON_LIGHT = EXCEL_BODY_TEXT_DEFAULT;
@@ -904,10 +899,10 @@ const THEMES: Record<ThemeId, {
   default: {
     label: "핑크 그라데이션",
     memberCls: "font-bold tracking-tight",
-    nameCls: "text-[#111827] font-semibold",
-    accountCls: "text-[#111827] font-bold",
-    toonCls: "text-[#1f2937] font-semibold",
-    totalCls: "font-extrabold text-[#111827] drop-shadow-[0_0_6px_rgba(255,255,255,0.45)]",
+    nameCls: "text-white font-semibold",
+    accountCls: "text-white font-bold",
+    toonCls: "text-white/90 font-semibold",
+    totalCls: "font-extrabold text-white drop-shadow-[0_0_6px_rgba(0,0,0,0.55)]",
     totalWrapCls: "bg-[linear-gradient(135deg,#FFDEE9_0%,#FCE4EC_50%,#FFD1FF_100%)] border border-white/40 px-2 py-1 rounded backdrop-blur-xl shadow-[0_8px_32px_0_rgba(255,182,193,0.3)]",
     rowCls: "px-2 py-1 bg-white/30 hover:bg-pink-50/50 transition-colors",
     tableCls: "bg-white/30 border border-white/40 rounded-lg overflow-hidden border-collapse backdrop-blur-xl shadow-[0_8px_32px_0_rgba(255,182,193,0.3)]",
@@ -916,8 +911,8 @@ const THEMES: Record<ThemeId, {
     goalBarFill: "bg-gradient-to-r from-[#FFDEE9] via-[#FCE4EC] to-[#FFD1FF]",
     goalText: "text-white font-bold drop-shadow-[0_0_4px_rgba(0,0,0,1)]",
     goalWrap: "border border-white/40 bg-white/30 rounded p-1 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(255,182,193,0.25)]",
-    tickerCls: "text-[#111827] font-semibold",
-    timerCls: "font-mono text-[#1f2937]",
+    tickerCls: "text-white font-semibold",
+    timerCls: "font-mono text-white/90",
   },
   excel: {
     label: "엑셀(녹색)",
@@ -2445,14 +2440,11 @@ function OverlayInner() {
   const hasTotalTextColorOverride = /^#[0-9a-fA-F]{3,8}$/.test(totalTextColorRaw);
   const hasTableHeaderTextColorOverride = /^#[0-9a-fA-F]{3,8}$/.test(tableHeaderTextColorRaw);
   const hasTableHeaderBgColorOverride = /^#[0-9a-fA-F]{3,8}$/.test(tableHeaderBgColorRaw);
-  const isLightTableSheet = isLightTableSheetRgb(tableSheetRgb);
-  /** 미설정 시 테마 글자색 유지; 밝은 시트=진한 글자, 어두운 시트=밝은 글자 */
+  /** 테마 자동 = 흰색(+외곽선). 검은 글자는 본문/헤더 글자색에서 직접 지정 */
   const tableTextIsLight = hasTableTextColorOverride
     ? isLightTextHex(tableTextColorRaw)
-    : !isLightTableSheet;
-  const tableThemeAutoTextColor = isLightTableSheet
-    ? TABLE_BROADCAST_TEXT_ON_LIGHT
-    : TABLE_BROADCAST_TEXT_ON_DARK;
+    : true;
+  const tableThemeAutoTextColor = TABLE_BROADCAST_TEXT_AUTO;
   const totalRowTextColor = hasTotalTextColorOverride
     ? totalTextColorRaw
     : tableThemeAutoTextColor;
@@ -2486,7 +2478,7 @@ function OverlayInner() {
         }`
     : "";
   const tableForcedTextColorCss = `${tableBodyForcedTextColorCss}${tableTotalForcedTextColorCss}${tableHeaderForcedTextColorCss}`;
-  /** 테마 자동: 방송 기본(핑크)만 — 엑셀 테마는 THEMES 글자색 유지 */
+  /** 테마 자동: 방송 테마 본문·헤더 기본 흰색(엑셀 테마는 별도 excelAutoBodyTextCss) */
   const tableAutoTextColorCss =
     useBroadcastTableChrome && !hasTableTextColorOverride && !hasTableHeaderTextColorOverride
       ? `
@@ -3425,7 +3417,7 @@ function OverlayInner() {
     const excelHeaderTextCss =
       tableHeaderTextColorRaw ||
       excelMemberAccent?.headerText ||
-      TABLE_BROADCAST_TEXT_ON_LIGHT;
+      TABLE_BROADCAST_TEXT_AUTO;
     const excelMemberTableStyle: React.CSSProperties | undefined = excelMemberAccent
       ? {
           ["--excel-header-bg" as string]: excelHeaderBgCss,
@@ -3443,7 +3435,7 @@ function OverlayInner() {
     const broadcastTheadBg = hasTableHeaderBgColorOverride
       ? applyAlphaToCssColor(tableHeaderBgColorRaw, effectiveTableTintAlpha)
       : applyAlphaToCssColor("rgb(253, 232, 242)", effectiveTableTintAlpha);
-    const broadcastTheadTextCss = tableHeaderTextColorRaw || TABLE_BROADCAST_TEXT_ON_LIGHT;
+    const broadcastTheadTextCss = tableHeaderTextColorRaw || TABLE_BROADCAST_TEXT_AUTO;
     let effectiveScale = centerFixed || hasTableFreePos
       ? (scale * (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale)))
       : (externalHost ? scale : (viewportScale * scale));

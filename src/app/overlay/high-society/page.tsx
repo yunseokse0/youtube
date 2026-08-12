@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import {
@@ -15,6 +15,7 @@ import {
   HIGH_SOCIETY_DEFAULT_FIELD_CM,
   HIGH_SOCIETY_ROUND_SEC,
   HIGH_SOCIETY_TEST_MEMBERS,
+  normalizeHighSocietyFxSettings,
   normalizeHighSocietySettings,
   parseHighSocietyBarStyle,
   parseHighSocietyFieldCm,
@@ -33,11 +34,13 @@ function dirGlyph(dir: HighSocietySeat["expandDir"]): string {
 function TerritoryGauge({
   style,
   seats,
+  fx,
   /** 관리자 프리뷰 등 — 입장/성장 모션·flex 트랜지션 유발 움찔 방지 */
   motion = true,
 }: {
   style: HighSocietyBarStyle;
   seats: HighSocietySeat[];
+  fx: ReturnType<typeof normalizeHighSocietyFxSettings>;
   fieldCm?: number;
   motion?: boolean;
 }) {
@@ -58,7 +61,7 @@ function TerritoryGauge({
   }, [motion]);
 
   useEffect(() => {
-    if (!motion) return;
+    if (!motion || !fx.growFlash) return;
     const grown: string[] = [];
     for (const seat of seats) {
       const prev = prevWidthsRef.current[seat.id];
@@ -81,23 +84,24 @@ function TerritoryGauge({
         }
         return next;
       });
-    }, 1100);
+    }, 1400);
     return () => window.clearTimeout(t);
-    // seatsSig: 동일 폭이면 폴링 재렌더로 움찔리지 않게
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seats content via seatsSig
-  }, [motion, seatsSig]);
+  }, [motion, seatsSig, fx.growFlash]);
 
   const alive = seats.filter((s) => !s.eliminated);
   if (alive.length === 0) {
     return (
       <div className="hs-field" aria-label="영토 전장">
-        <div className="hs-field-wall" title="장벽">
+        <div className={`hs-field-wall${fx.strongOutline ? " hs-text-outline" : ""}`} title="장벽">
           벽
         </div>
         <div className="hs-field-track">
-          <div className="hs-territory-empty">후원 대기 중 · 상류사회</div>
+          <div className={`hs-territory-empty${fx.strongOutline ? " hs-text-outline" : ""}`}>
+            후원 대기 중 · 상류사회
+          </div>
         </div>
-        <div className="hs-field-wall" title="장벽">
+        <div className={`hs-field-wall${fx.strongOutline ? " hs-text-outline" : ""}`} title="장벽">
           벽
         </div>
       </div>
@@ -113,38 +117,53 @@ function TerritoryGauge({
       }`}
       aria-label={`영토 전장 (${style === "arrow" ? "화살표" : "평평"})`}
     >
-      <div className="hs-field-wall" title="장벽(이동 불가)">
+      <div
+        className={`hs-field-wall${fx.strongOutline ? " hs-text-outline" : ""}`}
+        title="장벽(이동 불가)"
+      >
         벽
       </div>
       <div className="hs-field-track">
-        {alive.map((seat) => {
-          const growing = motion && Boolean(flashIds[seat.id]);
+        {alive.map((seat, index) => {
+          const growing = motion && fx.growFlash && Boolean(flashIds[seat.id]);
+          const expand = seat.expandDir === "left" || seat.expandDir === "right" ? seat.expandDir : "both";
           return (
             <div
               key={seat.id}
-              className={`hs-field-seg hs-field-${seat.letter.toLowerCase()}${
+              className={`hs-field-seg hs-field-${seat.letter.toLowerCase()} hs-expand-${expand}${
                 growing ? " hs-field-seg-growing" : ""
               }`}
-              style={{
-                flexGrow: showAtFull ? Math.max(seat.widthCm, 0.01) : 0.01,
-                flexBasis: 0,
-                background: seat.color,
-              }}
+              style={
+                {
+                  flexGrow: showAtFull ? Math.max(seat.widthCm, 0.01) : 0.01,
+                  flexBasis: 0,
+                  background: seat.color,
+                  ["--hs-i" as string]: index,
+                  ["--hs-seg-color" as string]: seat.color,
+                } as CSSProperties
+              }
               title={`${seat.name} · ${formatCm(seat.widthCm)} · 확장 ${formatCm(seat.expandCm)}`}
             >
-              <span className="hs-field-label">
+              {fx.frontier ? (
+                <span className={`hs-field-front hs-field-front-${expand}`} aria-hidden />
+              ) : null}
+              <span className={`hs-field-label${fx.strongOutline ? " hs-text-outline" : ""}`}>
                 <span className="hs-field-name">{seat.name || seat.letter}</span>
-                <span className="hs-field-cm">{formatCm(seat.widthCm)}</span>
+                <span className="hs-field-meta">
+                  <span className="hs-field-cm">{formatCm(seat.widthCm)}</span>
+                  <span className="hs-field-dir" aria-hidden>
+                    {dirGlyph(seat.expandDir)}
+                  </span>
+                </span>
               </span>
-              <span className="hs-field-dir" aria-hidden>
-                {dirGlyph(seat.expandDir)}
-              </span>
-              {style === "arrow" ? <span className="hs-field-arrow-tip" aria-hidden /> : null}
             </div>
           );
         })}
       </div>
-      <div className="hs-field-wall" title="장벽(이동 불가)">
+      <div
+        className={`hs-field-wall${fx.strongOutline ? " hs-text-outline" : ""}`}
+        title="장벽(이동 불가)"
+      >
         벽
       </div>
     </div>
@@ -273,6 +292,17 @@ export default function HighSocietyOverlayPage() {
   const displaySeats =
     freezeTerritory && frozenSeats && frozenSeats.length > 0 ? frozenSeats : field.seats;
 
+  const fx = normalizeHighSocietyFxSettings(hsSettings.fx);
+  const fxClass = [
+    fx.frontier ? "hs-fx-frontier" : "",
+    fx.growFlash ? "hs-fx-grow" : "",
+    fx.contestedEdge ? "hs-fx-contested" : "",
+    fx.arrowBlade ? "hs-fx-blade" : "",
+    fx.strongOutline ? "hs-fx-outline" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   if (!spReady) return null;
   if (!ready && !useTest) {
     return (
@@ -284,13 +314,23 @@ export default function HighSocietyOverlayPage() {
 
   return (
     <main
-      className={`hs-overlay-root${hostObs ? " hs-host-obs" : ""}${
-        adminPreview ? " hs-preview-embed" : ""
-      }`}
+      className={[
+        "hs-overlay-root",
+        hostObs ? "hs-host-obs" : "",
+        adminPreview ? "hs-preview-embed" : "",
+        fxClass,
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       <div id="hs-overlay-container">
         {useTest ? <div className="hs-test-badge">TEST</div> : null}
-        <TerritoryGauge style={barStyle} seats={displaySeats} motion={!adminPreview} />
+        <TerritoryGauge
+          style={barStyle}
+          seats={displaySeats}
+          fx={fx}
+          motion={!adminPreview && fx.growFlash}
+        />
       </div>
     </main>
   );

@@ -338,6 +338,37 @@ describe("mergeStatePreservingDonorsUntilSettlementReset", () => {
     expect(merged.settlementResetAt).toBe(9000);
   });
 
+  it("blocks accidental placeholder wipe even when settlementResetAt advances", async () => {
+    const { mergeStatePreservingDonorsUntilSettlementReset } = await import(
+      "./merge-donation-apply-base"
+    );
+    const existing: AppState = {
+      ...defaultState(),
+      settlementResetAt: 1000,
+      members: members(["BT태호"]).map((m) => ({ ...m, account: 50000, contribution: 50000 })),
+      donors: [
+        {
+          id: "d_bulk_1",
+          name: "계좌후원",
+          amount: 50000,
+          memberId: "m1",
+          at: 2000,
+          target: "account",
+        },
+      ],
+    };
+    const incoming: AppState = {
+      ...defaultState(),
+      settlementResetAt: 9000,
+      donors: [],
+      updatedAt: 9000,
+    };
+    const merged = mergeStatePreservingDonorsUntilSettlementReset(incoming, existing);
+    expect(merged.donors).toHaveLength(1);
+    expect(merged.members[0]?.name).toBe("BT태호");
+    expect(merged.settlementResetAt).toBe(1000);
+  });
+
   it("preserves manual group-split rows when toonation account donation arrives", async () => {
     const { mergeStatePreservingDonorsUntilSettlementReset } = await import(
       "./merge-donation-apply-base"

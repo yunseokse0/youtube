@@ -130,6 +130,26 @@ describe("shouldRejectPoorerDonationRemote", () => {
     expect(shouldRejectPoorerDonationRemote(local, resetRemote)).toBe(false);
   });
 
+  it("rejects placeholder wipe even when settlementResetAt is newer", async () => {
+    const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      settlementResetAt: 500,
+      donors: [
+        { id: "d1", name: "a", amount: 10000, memberId: "m1", at: 1, target: "account" as const },
+      ],
+      members: [{ id: "m1", name: "홍쓰", account: 10000, toon: 0, contribution: 10000 }],
+    };
+    const wipeRemote = {
+      ...defaultState(),
+      updatedAt: 2000,
+      settlementResetAt: 900,
+      donors: [] as typeof local.donors,
+    };
+    expect(shouldRejectPoorerDonationRemote(local, wipeRemote)).toBe(true);
+  });
+
   it("allows intentional single-donor delete shrink", async () => {
     const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
     const local = {
@@ -249,6 +269,43 @@ describe("shouldRejectPoorerDonationRemote", () => {
       members: [{ id: "m1", name: "홍쓰", account: 0, toon: 120000, contribution: 120000 }],
     };
     expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(false);
+  });
+
+  it("rejects placeholder-member remote when local has real excel roster", async () => {
+    const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      settlementResetAt: 500,
+      donors: [] as [],
+      members: [{ id: "m1", name: "홍쓰", account: 0, toon: 0, contribution: 0 }],
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: 2000,
+      settlementResetAt: 500,
+      donors: [] as [],
+    };
+    expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(true);
+  });
+
+  it("rejects zero-amount remote when local excel totals exist", async () => {
+    const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      settlementResetAt: 500,
+      donors: [] as [],
+      members: [{ id: "m1", name: "홍쓰", account: 50000, toon: 0, contribution: 50000 }],
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: 2000,
+      settlementResetAt: 500,
+      donors: [] as [],
+      members: [{ id: "m1", name: "홍쓰", account: 0, toon: 0, contribution: 0 }],
+    };
+    expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(true);
   });
 });
 

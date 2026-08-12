@@ -5,6 +5,7 @@ import {
   isIntentionalDonorListShrink,
   normalizeDonorsArray,
   pickOverlayPresetsPreferCustom,
+  shouldBlockAccidentalEmptyOverwrite,
 } from "@/lib/state";
 import type { AppState, Donor, Member } from "@/types";
 import {
@@ -182,6 +183,17 @@ export function mergeStatePreservingDonorsUntilSettlementReset(
   const incomingReset = Number(incoming.settlementResetAt || 0);
   const existingReset = Number(existing.settlementResetAt || 0);
   if (incomingReset > existingReset) {
+    /** stamp만 앞서고 멤버1·2…/빈 후원이면 강제 리셋으로 취급하지 않음 */
+    if (shouldBlockAccidentalEmptyOverwrite(existing, incoming)) {
+      return {
+        ...incoming,
+        members: existing.members,
+        memberPositions: existing.memberPositions ?? incoming.memberPositions,
+        donors: normalizeDonorsArray(existing.donors),
+        settlementResetAt: existing.settlementResetAt,
+        updatedAt: Math.max(Number(incoming.updatedAt || 0), Number(existing.updatedAt || 0)) || Date.now(),
+      };
+    }
     return syncMemberTotalsFromDonors({
       ...incoming,
       settlementResetAt: incomingReset,
@@ -228,6 +240,19 @@ export function mergeDonationReplaceForPersist(
   const incomingReset = Number(incoming.settlementResetAt || 0);
   const existingReset = Number(existing.settlementResetAt || 0);
   if (incomingReset > existingReset) {
+    if (shouldBlockAccidentalEmptyOverwrite(existing, incoming)) {
+      return repairMemberTotalsForDonorRoster(
+        syncMemberTotalsFromDonors({
+          ...incoming,
+          members: hasMeaningfulMemberRoster(existing) ? existing.members : incoming.members,
+          memberPositions: existing.memberPositions ?? incoming.memberPositions,
+          donors: normalizeDonorsArray(existing.donors),
+          settlementResetAt: existing.settlementResetAt,
+        }),
+        existing,
+        incoming
+      );
+    }
     return repairMemberTotalsForDonorRoster(
       syncMemberTotalsFromDonors({
         ...incoming,

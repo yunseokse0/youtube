@@ -10,7 +10,7 @@ import type { DonationEvent, QueueSigItem } from "../types";
 
 function sigListSnapshotFromState(userId: string): Promise<QueueSigItem[]> {
   return loadAppStateForUserId(userId).then((state) => {
-    const inv = Array.isArray(state.sigInventory) ? state.sigInventory : [];
+    const inv = Array.isArray(state?.sigInventory) ? state.sigInventory : [];
     return inv
       .filter((x) => Boolean(x && x.id && x.name))
       .map((x) => {
@@ -46,7 +46,7 @@ export async function enqueueDonationEvent(
     sigListSnapshot: withMatch.sigListSnapshot ?? snapshot,
   };
   const state = await loadAppStateForUserId(userId);
-  if (isDuplicateDonationEvent(state, enriched)) return false;
+  if (state && isDuplicateDonationEvent(state, enriched)) return false;
 
   const list = await readDonationQueue(userId);
   const externalKey =

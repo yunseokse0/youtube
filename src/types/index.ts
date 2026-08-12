@@ -407,6 +407,20 @@ export type GroupSplitDonationSettings = {
 /** 상류사회 땅따먹기 — 총 길이 고정, 멤버 N등분 시작, 양끝만 단방향 */
 export type HighSocietyPushDir = "left" | "right" | "split";
 
+/** 상류사회 오버레이 연출 토글 */
+export type HighSocietyFxSettings = {
+  /** 확장 방향 쪽 전선(경계 빛) */
+  frontier: boolean;
+  /** 영토가 늘 때 잠식 플래시 */
+  growFlash: boolean;
+  /** 평평 모드 분쟁 경계선 */
+  contestedEdge: boolean;
+  /** 화살표 모드 금색 칼날 팁 */
+  arrowBlade: boolean;
+  /** 강한 텍스트 외곽선 */
+  strongOutline: boolean;
+};
+
 export type HighSocietySettings = {
   /** 후원 목록에서 상류사회 모드·방향 설정 표시 */
   enabled: boolean;
@@ -433,6 +447,8 @@ export type HighSocietySettings = {
    * - onRoundEnd: generalTimer 라운드가 끝날 때까지 동결, 종료 후 반영
    */
   territoryUpdateMode?: "realtime" | "onRoundEnd";
+  /** 땅따먹기 연출 ON/OFF (기본 전부) */
+  fx?: HighSocietyFxSettings;
 };
 
 /** `/overlay/sig-rolling` — 이미지/GIF 순환 한 장 항목 */

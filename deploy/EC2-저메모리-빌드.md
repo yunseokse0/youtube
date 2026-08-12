@@ -34,7 +34,14 @@ cd ~/youtube6   # 또는 ~/youtube — 실제 clone 경로
 bash deploy/deploy-on-ec2.sh
 ```
 
-**수동 배포는 `deploy/deploy-on-ec2.sh` 권장** (스테이징 빌드 → 짧게 `.next` 교체만, 배포 중 502 최소화).
+**수동 배포는 `deploy/deploy-on-ec2.sh` 권장** (스테이징 빌드 → `.next` 교체).
+
+**기본은 MySQL을 끄지 않습니다** (`STOP_MYSQL_FOR_BUILD=0`).  
+OOM이 날 때만 `STOP_MYSQL_FOR_BUILD=1` — 이때도 **앱(pm2)을 먼저 중지**한 뒤 MySQL을 정지합니다.  
+(앱만 떠 있고 DB가 꺼지면 빈/메모리 상태가 엑셀표·후원을 덮을 수 있음.)
+
+빌드 자체는 `.next`만 갈아끼우며 **MySQL `app_kv` 데이터를 지우지 않습니다.**  
+엑셀표·후원 리스트는 **관리자「정산 리셋」외에는 자동 초기화되면 안 됩니다.**
 
 아래는 **비권장** (빌드 내내 502 — OBS 텍스트·시그 오버레이 전부 nginx 502):
 

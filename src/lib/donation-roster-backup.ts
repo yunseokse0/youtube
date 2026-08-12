@@ -6,7 +6,11 @@ import {
   upstashSetAppStateJson,
 } from "@/app/api/_shared/upstash-app-state";
 import { getSigUploadPersistentDataDir } from "@/lib/sig-upload-storage";
-import { normalizeDonorsArray, totalCombined } from "@/lib/state";
+import {
+  isDefaultPlaceholderMemberList,
+  normalizeDonorsArray,
+  totalCombined,
+} from "@/lib/state";
 import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 
 const STORAGE_KEY_BASE = "excel-broadcast-donation-roster-v1";
@@ -62,6 +66,17 @@ export function shouldRestoreDonationRosterFromBackup(
   const curTotal = current ? totalCombined(current as AppState) : 0;
   const curReset = Number(current?.settlementResetAt || 0);
   const backupReset = Number(backup.settlementResetAt || 0);
+  const placeholderMembers = isDefaultPlaceholderMemberList(current?.members);
+  /**
+   * 멤버1·2·3 플레이스홀더 + 빈 후원 = 사고성 초기화(정상 정산 리셋은 실멤버명 유지).
+   * settlementResetAt 이 앞서 있어도 백업에서 되살린다.
+   */
+  if (placeholderMembers && curDonors.length === 0 && backup.donorsCount > 0) {
+    return true;
+  }
+  if (placeholderMembers && curTotal === 0 && backup.total > 0) {
+    return true;
+  }
   /**
    * 정산 리셋 이후에는 백업이 더 풍부해 보여도 되살리지 않음.
    * (리셋 직후 소액 후원만 있을 때 구 백업이 donorsCount/total 로 이기는 회귀 방지)
@@ -82,7 +97,18 @@ export function applyDonationRosterBackupToState(
   state: AppState,
   backup: DonationRosterBackupPayload
 ): AppState {
-  const resetAt = Number(state.settlementResetAt || backup.settlementResetAt || 0);
+  const curDonors = normalizeDonorsArray(state.donors);
+  const placeholderWipe =
+    isDefaultPlaceholderMemberList(state.members) &&
+    curDonors.length === 0 &&
+    totalCombined(state) === 0;
+  /**
+   * 사고성 플레이스홀더 초기화면 빈 상태의 높은 settlementResetAt 로
+   * 백업 후원을 전부 필터링하지 않음 — 백업 stamp 기준으로 복구.
+   */
+  const resetAt = placeholderWipe
+    ? Number(backup.settlementResetAt || 0)
+    : Number(state.settlementResetAt || backup.settlementResetAt || 0);
   const rawDonors = normalizeDonorsArray(backup.donors);
   const donors =
     resetAt > 0
@@ -93,7 +119,10 @@ export function applyDonationRosterBackupToState(
     members: backup.members.length > 0 ? backup.members : state.members,
     donors,
     memberPositions: backup.memberPositions ?? state.memberPositions,
-    settlementResetAt: state.settlementResetAt ?? backup.settlementResetAt,
+    settlementResetAt: placeholderWipe
+      ? backup.settlementResetAt
+      : state.settlementResetAt ?? backup.settlementResetAt,
+    updatedAt: Math.max(Number(state.updatedAt || 0), Number(backup.savedAt || 0), Date.now()),
   };
   return syncMemberTotalsFromDonors(merged);
 }

@@ -93,6 +93,7 @@ export async function mysqlKvGet(key: string): Promise<string | null> {
       [key]
     );
     const row = rows[0];
+    lastMysqlError = null;
     if (!row) return null;
     const exp = row.expires_at == null ? null : Number(row.expires_at);
     if (exp != null && Number.isFinite(exp) && exp > 0 && exp < now) {

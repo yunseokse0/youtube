@@ -42,6 +42,12 @@ export async function POST(req: Request) {
   };
 
   const current = await loadAppStateForUserId(userId);
+  if (!current) {
+    return new Response(JSON.stringify({ error: "state_unavailable" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   const { state, added, mode } = applyDonationDummySeed(current, {
     mode: body.mode === "append" ? "append" : "replace",
     includeGroupSplitCandidate: body.includeGroupSplitCandidate !== false,

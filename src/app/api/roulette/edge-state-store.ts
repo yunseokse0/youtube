@@ -1,6 +1,11 @@
 import type { AppState } from "@/lib/state";
-import { defaultState } from "@/lib/state";
-import { coalesceAppStateRedisAndMemory } from "@/lib/app-state-server-load";
+import {
+  defaultState,
+  hasMeaningfulMemberRoster,
+  isAccidentalEmptyRosterState,
+  shouldBlockAccidentalEmptyOverwrite,
+} from "@/lib/state";
+import { coalesceAppStateRedisAndMemory, loadAppStateForUserId } from "@/lib/app-state-server-load";
 import {
   mergeDonationReplaceForPersist,
   mergeStatePreservingDonorsUntilSettlementReset,
@@ -33,20 +38,20 @@ async function upstashSet(key: string, value: unknown): Promise<boolean> {
   return upstashSetAppStateJson(key, value);
 }
 
+/**
+ * 룰렛·후원 저장용 로드.
+ * Edge 번들에 fs 백업을 넣지 않음 — 디스크 복구는 /api/state·restore-backup(Node) 경로.
+ * KV/메모리에 실데이터가 있으면 그걸 쓰고, 없을 때만 default.
+ */
 export async function loadAppStateForRoulette(userId: string): Promise<AppState> {
-  const mem = getServerMemoryAppState(userId);
-  if (isPersistentKvConfigured()) {
-    const raw = await upstashGet(stateKey(userId));
-    const redis = raw as AppState | null;
-    const picked = coalesceAppStateRedisAndMemory(redis, mem);
-    if (picked) {
-      /** 오래된 Redis로 최신 메모리(방금 반영된 후원)를 덮어쓰지 않음 */
-      if (mem !== picked) setServerMemoryAppState(userId, picked);
-      return picked;
-    }
+  const loaded = await loadAppStateForUserId(userId);
+  if (loaded && !isAccidentalEmptyRosterState(loaded)) {
+    return loaded;
   }
-  if (mem && Array.isArray(mem.members)) return mem;
-  return defaultState();
+  if (loaded) return loaded;
+  const mem = getServerMemoryAppState(userId);
+  if (mem && Array.isArray(mem.members) && !isAccidentalEmptyRosterState(mem)) return mem;
+  return mem || defaultState();
 }
 
 export type DonorsPersistMode = "add" | "replace";
@@ -54,6 +59,8 @@ export type DonorsPersistMode = "add" | "replace";
 export type SaveAppStateForRouletteOptions = {
   /** add=투네·수동 추가(union), replace=삭제·나누기·재배치(incoming donors 그대로) */
   donorsMode?: DonorsPersistMode;
+  /** true 일 때만 사고성 빈 로스터로 기존 실데이터를 덮을 수 있음(정산 리셋) */
+  allowEmptyRosterWipe?: boolean;
 };
 
 export async function saveAppStateForRoulette(
@@ -73,14 +80,65 @@ export async function saveAppStateForRoulette(
     const raw = await upstashGet(stateKey(userId));
     existing = coalesceAppStateRedisAndMemory(raw as AppState | null, mem);
   }
+
+  let incoming = next;
+  if (
+    !opts?.allowEmptyRosterWipe &&
+    existing &&
+    shouldBlockAccidentalEmptyOverwrite(existing, next)
+  ) {
+    /** 사고성 멤버1·2…/빈 후원으로 실데이터 덮지 않음 */
+    incoming = {
+      ...next,
+      members: existing.members,
+      memberPositions: existing.memberPositions ?? next.memberPositions,
+      donors: existing.donors,
+      settlementResetAt: existing.settlementResetAt,
+      donorRankingsUpdatedAt: Math.max(
+        Number(existing.donorRankingsUpdatedAt || 0),
+        Number(next.donorRankingsUpdatedAt || 0)
+      ),
+    };
+  }
+
   const merged =
     opts?.donorsMode === "replace"
-      ? mergeDonationReplaceForPersist(next, existing)
-      : mergeStatePreservingDonorsUntilSettlementReset(next, existing);
-  const persisted: AppState = {
+      ? mergeDonationReplaceForPersist(incoming, existing)
+      : mergeStatePreservingDonorsUntilSettlementReset(incoming, existing);
+
+  let persisted: AppState = {
     ...merged,
     generalTimer: snapshotTimerForPersist(merged.generalTimer),
   };
+
+  if (
+    !opts?.allowEmptyRosterWipe &&
+    existing &&
+    shouldBlockAccidentalEmptyOverwrite(existing, persisted)
+  ) {
+    persisted = {
+      ...persisted,
+      members: existing.members,
+      memberPositions: existing.memberPositions ?? persisted.memberPositions,
+      donors: existing.donors,
+      settlementResetAt: existing.settlementResetAt,
+    };
+  }
+
+  /** 실멤버가 플레이스홀더로 바뀌지 않게 */
+  if (
+    !opts?.allowEmptyRosterWipe &&
+    existing &&
+    hasMeaningfulMemberRoster(existing) &&
+    !hasMeaningfulMemberRoster(persisted)
+  ) {
+    persisted = {
+      ...persisted,
+      members: existing.members,
+      memberPositions: existing.memberPositions ?? persisted.memberPositions,
+    };
+  }
+
   setServerMemoryAppState(userId, persisted);
   if (kvOk) {
     await upstashSet(stateKey(userId), persisted);

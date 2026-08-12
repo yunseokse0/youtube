@@ -30,6 +30,7 @@ import {
   normalizeDonorsArray,
   normalizeRouletteState,
   normalizeSigRolling,
+  shouldBlockAccidentalEmptyOverwrite,
   totalCombined,
 } from "@/lib/state";
 import type { SigItem } from "@/types";
@@ -46,7 +47,7 @@ import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-m
 import { isRouletteLocked } from "../roulette/roulette-lock";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { getUserIdFromRequest } from "../_shared/user-id";
-import { isPersistentKvConfigured } from "../_shared/upstash";
+import { getPersistentKvLastError, isPersistentKvConfigured } from "../_shared/upstash";
 import {
   upstashGetAppStateJson,
   upstashSetAppStateJson,
@@ -443,6 +444,33 @@ function stateNotModifiedResponse(storage: string): Response {
   });
 }
 
+/** KV 장애 시 빈 defaultState 를 200으로 주면 클라이언트가 엑셀/후원을 자동 초기화함 */
+function stateUnavailableResponse(reason: string): Response {
+  return new Response(JSON.stringify({ error: "state_unavailable", reason, retry: true }), {
+    status: 503,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store, max-age=0, s-maxage=0",
+      [HDR_STATE_STORAGE]: "unavailable",
+    },
+  });
+}
+
+/** 정산 리셋 없이 엑셀·후원을 통째로 비우는 POST 로 보이는지 */
+function looksLikeEmptyRosterPersist(
+  body: Partial<AppState>,
+  donorsInPatch: boolean,
+  incomingDonorCount: number
+): boolean {
+  const donorsEmpty = !donorsInPatch || incomingDonorCount === 0;
+  if (!donorsEmpty) return false;
+  if (!("members" in body)) return incomingDonorCount === 0 && donorsInPatch;
+  const members = body.members;
+  if (!Array.isArray(members)) return true;
+  if (isDefaultPlaceholderMemberList(members)) return true;
+  return memberCombinedTotal(members) === 0;
+}
+
 export async function GET(req: Request) {
   const since = parseSinceParam(req);
   const userId = getUserId(req);
@@ -518,14 +546,26 @@ export async function GET(req: Request) {
     }
     const memState = getServerMemoryAppState(userId);
     /** Redis·메모리 donors union — pickFresher 만 쓰면 split·수동 계좌가 유실될 수 있음 */
-    const effective =
+    let effective =
       coalesceAppStateRedisAndMemory(state, memState) ||
       pickFresherAppState(state, memState) ||
       state ||
       memState ||
-      defaultState();
-    if (!state && !memState) {
-      logger.warn('Redis/메모리 모두 비어있음 - 기본값 반환 (서버 재시작 시 발생. Redis 설정 권장)', { userId });
+      null;
+    if (!effective) {
+      const kvErr = await getPersistentKvLastError();
+      if (kvErr) {
+        logger.error("KV 조회 실패 — 빈 defaultState 반환 금지 (엑셀/후원 자동 초기화 방지)", {
+          userId,
+          kvErr,
+        });
+        return stateUnavailableResponse("kv_read_failed");
+      }
+      logger.warn(
+        "Redis/메모리 모두 비어있음 - 기본값 반환 (신규 계정 또는 키 없음)",
+        { userId }
+      );
+      effective = defaultState();
     }
     let mergedForResponse = applyDonationGoalPresetNormalization(effective as AppState);
     /** 위에서 이미 동일 키로 조회한 `effective`를 쓴다. GET당 Upstash 2회 호출은 지연·대기열을 키워 pending 폭주에 기여함 */
@@ -621,13 +661,16 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     logger.error('상태 조회 실패', error);
-    const fallback = applyDonationGoalPresetNormalization(
-      getServerMemoryAppState(userId) || defaultState()
-    );
-    return new Response(JSON.stringify(bodyForPick(fallback)), {
-      headers: { "Content-Type": "application/json", [HDR_STATE_STORAGE]: "memory" },
-      status: 200,
-    });
+    const mem = getServerMemoryAppState(userId);
+    if (mem && (normalizeDonorsArray(mem.donors).length > 0 || totalCombined(mem) > 0 || hasMeaningfulMemberRoster(mem))) {
+      const fallback = applyDonationGoalPresetNormalization(mem);
+      return new Response(JSON.stringify(bodyForPick(fallback)), {
+        headers: { "Content-Type": "application/json", [HDR_STATE_STORAGE]: "memory" },
+        status: 200,
+      });
+    }
+    /** 빈 defaultState 를 200으로 주면 관리자/오버레이가 엑셀·후원을 자동 초기화함 */
+    return stateUnavailableResponse("get_exception");
   }
 }
 
@@ -671,6 +714,26 @@ export async function POST(req: Request) {
       resetAt > 0 && !settlementReset && donorsInPatch
         ? applySettlementResetDonorPipeline(incomingDonorsRaw, resetAt)
         : incomingDonorsRaw;
+    /**
+     * MySQL/Redis 일시 장애로 existing 을 못 읽은 채 빈 후원·플레이스홀더 멤버를
+     * persist 하면 복구 후 엑셀/후원이 통째로 초기화됨 — 명시 리셋만 허용.
+     */
+    if (kvOk && !existing && !settlementReset && !donationInitReset) {
+      const kvErr = await getPersistentKvLastError();
+      if (kvErr && looksLikeEmptyRosterPersist(body, donorsInPatch, incomingDonorsFiltered.length)) {
+        logger.error("refused empty roster persist while KV unavailable", {
+          userId,
+          kvErr,
+        });
+        return new Response(
+          JSON.stringify({ error: "state_unavailable", reason: "kv_down_refuse_empty", retry: true }),
+          {
+            status: 503,
+            headers: { "Content-Type": "application/json", [HDR_STATE_STORAGE]: "unavailable" },
+          }
+        );
+      }
+    }
     if (
       resetAt > 0 &&
       !settlementReset &&
@@ -861,11 +924,8 @@ export async function POST(req: Request) {
       void saveSigInventoryBackup(userId, next.sigInventory);
     }
 
-    /** 후원 금액 — 재시작·메인 상태 유실 대비 별도 백업. 정산·의도적 전체삭제 시에만 빈 백업 */
-    if (
-      settlementReset ||
-      (authoritativeReplace && normalizeDonorsArray(next.donors).length === 0)
-    ) {
+    /** 후원 금액 — 재시작·메인 상태 유실 대비 별도 백업. 명시 정산 리셋일 때만 백업도 비움 */
+    if (settlementReset) {
       await clearDonationRosterBackup(userId, next.settlementResetAt);
     } else if (normalizeDonorsArray(next.donors).length > 0 || totalCombined(next) > 0) {
       void saveDonationRosterBackup(userId, next);
@@ -876,9 +936,26 @@ export async function POST(req: Request) {
       if (donorsInPatch) {
         memNext = await saveAppStateForRoulette(userId, next, {
           donorsMode: authoritativeReplace ? "replace" : "add",
+          allowEmptyRosterWipe: settlementReset || donationInitReset,
         });
       } else {
-        setServerMemoryAppState(userId, next);
+        const memExisting = getServerMemoryAppState(userId);
+        if (
+          !settlementReset &&
+          !donationInitReset &&
+          memExisting &&
+          shouldBlockAccidentalEmptyOverwrite(memExisting, next)
+        ) {
+          logger.warn("refused accidental empty persist (memory mode)", { userId });
+          memNext = {
+            ...next,
+            members: memExisting.members,
+            memberPositions: memExisting.memberPositions ?? next.memberPositions,
+            donors: memExisting.donors,
+            settlementResetAt: memExisting.settlementResetAt,
+          };
+        }
+        setServerMemoryAppState(userId, memNext);
       }
       logger.info('메모리 상태 업데이트', { updatedAt: memNext.updatedAt });
       return new Response(
@@ -902,6 +979,7 @@ export async function POST(req: Request) {
     if (donorsInPatch) {
       persistedNext = await saveAppStateForRoulette(userId, next, {
         donorsMode: authoritativeReplace ? "replace" : "add",
+        allowEmptyRosterWipe: settlementReset || donationInitReset,
       });
       logger.info('Redis 상태 업데이트 (roulette pipeline)', {
         updatedAt: persistedNext.updatedAt,
@@ -909,15 +987,34 @@ export async function POST(req: Request) {
         userId,
       });
     } else {
-      const ok = await upstashSet(stateKey(userId), next);
-      logger.info('Redis 상태 업데이트', { updatedAt: next.updatedAt, success: ok, userId });
-      if (!ok) {
-        setServerMemoryAppState(userId, next);
-        redisFallback = "memory";
-        logger.warn('Redis 업데이트 실패로 메모리에 기록', { updatedAt: next.updatedAt, userId });
-      } else {
-        setServerMemoryAppState(userId, next);
+      const memExisting = getServerMemoryAppState(userId);
+      const blockEmpty =
+        !settlementReset &&
+        !donationInitReset &&
+        memExisting &&
+        shouldBlockAccidentalEmptyOverwrite(memExisting, next);
+      const toPersist = blockEmpty
+        ? {
+            ...next,
+            members: memExisting.members,
+            memberPositions: memExisting.memberPositions ?? next.memberPositions,
+            donors: memExisting.donors,
+            settlementResetAt: memExisting.settlementResetAt,
+          }
+        : next;
+      if (blockEmpty) {
+        logger.warn("refused accidental empty persist on non-donor PATCH", { userId });
       }
+      const ok = await upstashSet(stateKey(userId), toPersist);
+      logger.info('Redis 상태 업데이트', { updatedAt: toPersist.updatedAt, success: ok, userId });
+      if (!ok) {
+        setServerMemoryAppState(userId, toPersist);
+        redisFallback = "memory";
+        logger.warn('Redis 업데이트 실패로 메모리에 기록', { updatedAt: toPersist.updatedAt, userId });
+      } else {
+        setServerMemoryAppState(userId, toPersist);
+      }
+      persistedNext = toPersist;
     }
     return new Response(
       JSON.stringify({
@@ -937,25 +1034,13 @@ export async function POST(req: Request) {
     );
   } catch (error) {
     logger.error('상태 업데이트 실패', error);
-    // 예외 발생 시에도 메모리에 저장 시도
-    let memUpdatedAt: number | undefined;
-    try {
-      const body = (await req.json()) as AppState;
-      const memNext = { ...body, updatedAt: Date.now() };
-      memUpdatedAt = memNext.updatedAt;
-      setServerMemoryAppState(userId, memNext);
-      logger.warn('예외 발생으로 메모리에 기록', { updatedAt: memNext.updatedAt, userId });
-    } catch {}
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        fallback: "memory",
-        ...(typeof memUpdatedAt === "number" ? { updatedAt: memUpdatedAt } : {}),
-      }),
-      {
-        headers: { "Content-Type": "application/json" },
-        status: 200,
-      }
-    );
+    /**
+     * 예외 시 body 를 무가드로 메모리에 쓰면 빈/플레이스홀더가 정본이 됨.
+     * 실패로 응답하고 메모리·KV 는 건드리지 않음.
+     */
+    return new Response(JSON.stringify({ ok: false, error: "persist_failed", retry: true }), {
+      headers: { "Content-Type": "application/json" },
+      status: 500,
+    });
   }
 }

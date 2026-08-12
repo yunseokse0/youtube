@@ -55,7 +55,7 @@ export async function persistDonationStateToServer(
       (memSaved ? isDuplicateDonationEvent(memSaved, opts.verifyEvent) : false);
     if (!ok) {
       const verify = await loadAppStateForUserId(userId);
-      if (!isDuplicateDonationEvent(verify, opts.verifyEvent)) return { ok: false };
+      if (!verify || !isDuplicateDonationEvent(verify, opts.verifyEvent)) return { ok: false };
     }
   }
 
