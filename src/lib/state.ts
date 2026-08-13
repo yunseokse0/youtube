@@ -3672,6 +3672,25 @@ export function membersDifferByIds(a: Member[], b: Member[]): boolean {
 }
 
 /**
+ * local 로스터가 remote 의 모든 id 를 포함하고 더 김 — 멤버 추가 직후 옛 원격으로 덮이면 안 됨.
+ * (placeholder 여부·stamp 와 무관하게 구조적 상위집합만 본다)
+ */
+export function isMemberRosterStrictSuperset(
+  local: Member[] | null | undefined,
+  remote: Member[] | null | undefined
+): boolean {
+  const localMembers = Array.isArray(local) ? local : [];
+  const remoteMembers = Array.isArray(remote) ? remote : [];
+  if (localMembers.length <= remoteMembers.length) return false;
+  if (remoteMembers.length === 0) return localMembers.length > 0;
+  const localIds = new Set(
+    localMembers.map((m) => String(m.id || "").trim()).filter(Boolean)
+  );
+  if (localIds.size === 0) return false;
+  return remoteMembers.every((m) => localIds.has(String(m.id || "").trim()));
+}
+
+/**
  * 멤버 추가·삭제 후 새로고침/병합 시 — stamp가 같거나 더 최신인 로스터를 고른다.
  * (후원 금액은 syncMemberTotalsFromDonors 가 donors 기준으로 다시 맞춘다)
  */
@@ -3681,6 +3700,19 @@ export function pickMemberRosterPreferNewer(
 ): Member[] {
   const a = Array.isArray(primary?.members) ? primary!.members! : [];
   const b = Array.isArray(secondary?.members) ? secondary!.members! : [];
+  const aAt = Number(primary?.updatedAt || 0);
+  const bAt = Number(secondary?.updatedAt || 0);
+  /**
+   * 멤버 추가분(상위집합)은 stamp가 살짝 뒤처져도 유지(테마 PATCH 경합).
+   * 다만 상대 stamp가 멀리 앞서면(다른 기기 삭제) 긴 쪽을 강제하지 않음.
+   */
+  const SUPERSET_GRACE_MS = 120_000;
+  if (isMemberRosterStrictSuperset(a, b) && (aAt >= bAt || aAt + SUPERSET_GRACE_MS >= bAt)) {
+    return a;
+  }
+  if (isMemberRosterStrictSuperset(b, a) && (bAt >= aAt || bAt + SUPERSET_GRACE_MS >= aAt)) {
+    return b;
+  }
   const aState = { members: a } as AppState;
   const bState = { members: b } as AppState;
   const aOk = hasMeaningfulMemberRoster(aState);

@@ -27,6 +27,7 @@ import {
   isAccidentalEmptyRosterState,
   isDefaultPlaceholderMemberList,
   membersDifferByIds,
+  isMemberRosterStrictSuperset,
   pickMemberRosterPreferNewer,
   hasMeaningfulBroadcastData,
   hasMeaningfulMemberRoster,
@@ -1166,8 +1167,11 @@ export default function AdminPage() {
           setSigExcelResult(
             "후원·금액이 줄어든 저장은 차단했습니다. 정산/후원 초기화는 메뉴에서 직접 실행해 주세요."
           );
-          /** 후원 제외하고 나머지 설정만 저장 시도 */
-          saveStateAsync(s, user?.id, { omitDonationFields: true }).then((r) => {
+          /** 후원 제외하고 나머지 설정만 저장 시도 — 멤버 권위 플래그는 유지 */
+          saveStateAsync(s, user?.id, {
+            omitDonationFields: true,
+            ...(resolvedOpts.membersAuthoritative ? { membersAuthoritative: true as const } : {}),
+          }).then((r) => {
             if (r.ok) {
               pendingUnsyncedRef.current = false;
               setSyncStatus(r.storageFallback ? "error" : "synced");
@@ -1446,17 +1450,24 @@ export default function AdminPage() {
 
     /**
      * 멤버 추가·삭제 직후: 서버/다른 탭이 옛 실멤버 로스터를 주더라도
-     * 로컬 stamp가 같거나 더 최신이면 로컬 멤버 구성을 유지한다.
+     * 로컬이 상위집합이거나 stamp가 같거나 더 최신이면 로컬 멤버 구성을 유지한다.
      * 보호창 안에서는 서버 stamp가 살짝 앞서도(테마 PATCH 등) 로컬 로스터를 지킨다.
      */
     const inMembersAuthWindow = Date.now() < membersAuthoritativeSaveUntilRef.current;
+    const localAt = Number(local.updatedAt || 0);
+    const incomingAt = Number(incoming.updatedAt || 0);
+    const localIsSuperset =
+      isMemberRosterStrictSuperset(local.members, incoming.members) &&
+      (inMembersAuthWindow || localAt >= incomingAt || localAt + 120_000 >= incomingAt);
     const preferLocalMemberRoster =
-      hasMeaningfulMemberRoster(local) &&
       Array.isArray(incoming.members) &&
       membersDifferByIds(local.members || [], incoming.members || []) &&
-      (Number(local.updatedAt || 0) >= Number(incoming.updatedAt || 0) ||
-        (inMembersAuthWindow &&
-          (local.members || []).length >= (incoming.members || []).length));
+      (local.members || []).length > 0 &&
+      (localIsSuperset ||
+        (hasMeaningfulMemberRoster(local) &&
+          (localAt >= incomingAt ||
+            (inMembersAuthWindow &&
+              (local.members || []).length >= (incoming.members || []).length))));
 
     let merged: AppState = preferLocalMemberRoster
       ? {
@@ -1759,8 +1770,25 @@ export default function AdminPage() {
     } catch {}
     loadStateFromApi(user?.id, { forceFull: true }).then((apiState) => {
       /** 후원·금액은 계정 서버 정본. LS는 테마·시그 등 보조 캐시만.
-       * 단, 빈/축소 Redis 가 LS 실후원을 덮어 시스템 삭제처럼 보이면 안 됨. */
-      const local = localFallback;
+       * 단, 빈/축소 Redis 가 LS 실후원을 덮어 시스템 삭제처럼 보이면 안 됨.
+       * 로드 중 멤버 추가가 있으면 effect 시작 시점 localFallback 이 아니라
+       * 최신 LS·stateRef 를 쓴다(stale fallback 이 추가분을 지우지 않게). */
+      const fromLs = loadState(user.id);
+      const fromRef = stateRef.current;
+      const localMembers = pickMemberRosterPreferNewer(fromRef, fromLs);
+      const localBase =
+        Number(fromRef.updatedAt || 0) >= Number(fromLs.updatedAt || 0) ? fromRef : fromLs;
+      const local: AppState = {
+        ...localBase,
+        members: localMembers,
+        memberPositions: normalizeMemberPositions(
+          isMemberRosterStrictSuperset(localMembers, fromLs.members)
+            ? fromRef.memberPositions ?? fromLs.memberPositions
+            : localBase.memberPositions,
+          localMembers
+        ),
+        updatedAt: Math.max(Number(fromRef.updatedAt || 0), Number(fromLs.updatedAt || 0)),
+      };
       if (apiState) {
         const rejectPoorer = shouldRejectPoorerDonationRemote(local, apiState);
         stateUpdatedAtRef.current = rejectPoorer
@@ -2115,16 +2143,37 @@ export default function AdminPage() {
           localDonors.length > 0 && remoteDonors.length === 0;
         if (inAuthoritativeWindow && !remoteRicher) return false;
         /**
-         * 멤버 추가·삭제 직후: 서버 stamp만 앞서고 로스터가 옛것이면 적용하지 않음.
-         * (테마/시그 PATCH가 updatedAt만 올린 뒤 GET이 추가 멤버를 지우는 경합)
+         * 멤버 추가 직후: 로컬이 원격의 상위집합이면 보호창·120초 grace 안에서는 거부 후 재푸시.
+         * (테마/시그 PATCH·2초 폴링이 추가 멤버를 지우는 경합)
          */
+        const localAt = Number(stateRef.current.updatedAt || 0);
+        const remoteAt = Number(remote.updatedAt || 0);
+        const localSupersetProtected =
+          isMemberRosterStrictSuperset(stateRef.current.members, remote.members) &&
+          (inMembersAuthWindow || localAt >= remoteAt || localAt + 120_000 >= remoteAt);
         if (
-          inMembersAuthWindow &&
-          hasMeaningfulMemberRoster(stateRef.current) &&
-          Array.isArray(remote.members) &&
-          membersDifferByIds(stateRef.current.members || [], remote.members || []) &&
-          (stateRef.current.members || []).length >= (remote.members || []).length
+          localSupersetProtected ||
+          (inMembersAuthWindow &&
+            hasMeaningfulMemberRoster(stateRef.current) &&
+            Array.isArray(remote.members) &&
+            membersDifferByIds(stateRef.current.members || [], remote.members || []) &&
+            (stateRef.current.members || []).length >= (remote.members || []).length)
         ) {
+          if (localSupersetProtected) {
+            healLocalDonorsToServerIfRicher();
+            /** 후원 없어도 멤버 로스터만 서버에 재푸시 (heal 쿨다운 공유) */
+            if (
+              normalizeDonorsArray(stateRef.current.donors).length === 0 &&
+              (stateRef.current.members || []).length > 0 &&
+              Date.now() - lastEmptyRemoteDonationHealAtRef.current >= 500
+            ) {
+              lastEmptyRemoteDonationHealAtRef.current = Date.now();
+              persistState(stateRef.current, {
+                omitDonationFields: true,
+                membersAuthoritative: true,
+              });
+            }
+          }
           return false;
         }
         /** forceDonorMerge 여도 빈 원격으로 수동 입력을 초기화하지 않음 — 대신 서버에 복구 푸시 */
@@ -3293,9 +3342,14 @@ export default function AdminPage() {
 
   const addMember = () => {
     const base = (newMemberName || `멤버${state.members.length + 1}`).trim();
-    const id = `m_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
+    if (!base) return;
+    const id = `m_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     setState((prev: AppState) => {
-      const members = [...prev.members, { id, name: base, account: 0, toon: 0, contribution: 0, restroom: 0 }];
+      const members = [
+        ...prev.members,
+        { id, name: base, account: 0, toon: 0, contribution: 0, restroom: 0 },
+      ];
+      const now = Date.now();
       const next: AppState = {
         ...prev,
         members,
@@ -3310,16 +3364,24 @@ export default function AdminPage() {
           ...prev.mealBattle,
           participants: [...(prev.mealBattle?.participants || [])],
         },
-        updatedAt: Date.now(),
+        updatedAt: now,
       };
-      /** 폴링·다른 탭보다 먼저 LS·ref에 올려 경합으로 멤버가 사라지지 않게 */
+      /** 폴링·다른 탭보다 먼저 LS·ref·stamp에 올려 경합으로 멤버가 사라지지 않게 */
       stateRef.current = next;
-      membersAuthoritativeSaveUntilRef.current = Date.now() + 45_000;
+      stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, now);
+      membersAuthoritativeSaveUntilRef.current = Date.now() + 120_000;
+      pendingUnsyncedRef.current = true;
       try {
         window.localStorage.setItem(storageKey(user?.id), JSON.stringify(next));
       } catch {}
       notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
-      persistState(next, { includeDonationFields: true, membersAuthoritative: true });
+      persistState(next, {
+        includeDonationFields: true,
+        membersAuthoritative: true,
+        ...(normalizeDonorsArray(next.donors).length > 0
+          ? { donorsAuthoritative: true as const }
+          : {}),
+      });
       return next;
     });
     setNewMemberName("");

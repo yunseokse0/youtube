@@ -10,6 +10,7 @@ import {
   isDefaultPlaceholderMemberList,
   isShrunkToDefaultSigInventory,
   membersDifferByIds,
+  isMemberRosterStrictSuperset,
   pickMemberRosterPreferNewer,
   mergeServerSaveApiBodies,
   shouldAvoidOverwritingLocalStateWithRemote,
@@ -233,7 +234,7 @@ describe("member sync helpers", () => {
     expect(picked.map((m) => m.id)).toEqual(["m1", "m2"]);
   });
 
-  it("pickMemberRosterPreferNewer prefers server when stamp is newer", () => {
+  it("pickMemberRosterPreferNewer keeps local superset even when server stamp is newer", () => {
     const localMembers: Member[] = [
       { id: "m1", name: "쟈키", account: 0, toon: 0, contribution: 0 },
       { id: "m2", name: "사기", account: 0, toon: 0, contribution: 0 },
@@ -245,7 +246,44 @@ describe("member sync helpers", () => {
       { members: localMembers, updatedAt: 100 },
       { members: serverMembers, updatedAt: 200 }
     );
+    /** 멤버 추가분(상위집합)은 stamp보다 우선 — 테마 PATCH가 추가를 지우지 않게 */
+    expect(picked.map((m) => m.id)).toEqual(["m1", "m2"]);
+  });
+
+  it("pickMemberRosterPreferNewer yields to much-newer shorter remote (other-device delete)", () => {
+    const localMembers: Member[] = [
+      { id: "m1", name: "쟈키", account: 0, toon: 0, contribution: 0 },
+      { id: "m2", name: "사기", account: 0, toon: 0, contribution: 0 },
+    ];
+    const serverMembers: Member[] = [
+      { id: "m1", name: "쟈키", account: 0, toon: 0, contribution: 0 },
+    ];
+    const picked = pickMemberRosterPreferNewer(
+      { members: localMembers, updatedAt: 100 },
+      { members: serverMembers, updatedAt: 100 + 120_000 + 1 }
+    );
     expect(picked.map((m) => m.id)).toEqual(["m1"]);
+  });
+
+  it("isMemberRosterStrictSuperset detects added member", () => {
+    expect(
+      isMemberRosterStrictSuperset(
+        [
+          { id: "m1", name: "a", account: 0, toon: 0, contribution: 0 },
+          { id: "m2", name: "b", account: 0, toon: 0, contribution: 0 },
+        ],
+        [{ id: "m1", name: "a", account: 0, toon: 0, contribution: 0 }]
+      )
+    ).toBe(true);
+    expect(
+      isMemberRosterStrictSuperset(
+        [{ id: "m1", name: "a", account: 0, toon: 0, contribution: 0 }],
+        [
+          { id: "m1", name: "a", account: 0, toon: 0, contribution: 0 },
+          { id: "m2", name: "b", account: 0, toon: 0, contribution: 0 },
+        ]
+      )
+    ).toBe(false);
   });
 
   it("mergeServerSaveApiBodies keeps membersAuthoritative roster over later theme patch", () => {
