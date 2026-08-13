@@ -2030,6 +2030,13 @@ async function runServerSaveQueue(): Promise<void> {
           pl && typeof pl === "object" && "overlaySettings" in (pl as object)
             ? revisionForStatePick(pl as AppState, STATE_PICK_OBS_TEXT)
             : 0;
+        let membersRosterUpdated = false;
+        try {
+          const body = JSON.parse(job.apiBodyJson) as { membersAuthoritative?: boolean };
+          membersRosterUpdated = body.membersAuthoritative === true;
+        } catch {
+          /* ignore */
+        }
         void sendSSEUpdate({
           type: "state_updated",
           updatedAt,
@@ -2040,6 +2047,8 @@ async function runServerSaveQueue(): Promise<void> {
             ? { donorRankingsUpdatedAt }
             : {}),
           ...(obsTextRevision > 0 ? { obsTextRevision } : {}),
+          /** OBS·오버레이가 멤버 추가/삭제를 디바운스 GET이 아니라 즉시 forceFull 하도록 */
+          ...(membersRosterUpdated ? { membersRosterUpdatedAt: updatedAt } : {}),
         }).catch(() => {});
       } catch {
         /* ignore */

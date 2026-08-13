@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers, mergeLocalMemberIdentityOntoRemote, normalizeDonorsArray, membersDifferByIds } from "@/lib/state";
+import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers, mergeLocalMemberIdentityOntoRemote, normalizeDonorsArray, membersDifferByIds, isMemberRosterStrictSuperset } from "@/lib/state";
 import {
   repairMemberTotalsForDonorRoster,
   syncMemberTotalsFromDonors,
@@ -332,6 +332,11 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         void syncOnceRef.current({ forceFull: true });
         return;
       }
+      const membersRosterAt = Number(incoming.membersRosterUpdatedAt);
+      if (Number.isFinite(membersRosterAt) && membersRosterAt > 0) {
+        void syncOnceRef.current({ forceFull: true });
+        return;
+      }
       const dr = Number(incoming.donorRankingsUpdatedAt);
       if (Number.isFinite(dr) && dr > 0) {
         void syncOnceRef.current({ forceFull: true });
@@ -518,19 +523,30 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         const remoteRicher = Boolean(
           remoteForApply && isRicherDonationSnapshot(remoteForApply, lastGoodRef.current)
         );
+        /** 서버에 멤버가 늘어난 경우(추가) — last-good 보호로 막지 않음 */
+        const remoteAddedMembers =
+          Boolean(remoteForApply) &&
+          Boolean(lastGoodRef.current) &&
+          isMemberRosterStrictSuperset(
+            remoteForApply!.members,
+            lastGoodRef.current!.members
+          );
         /**
          * OBS: 서버에 후원·금액이 있으면 last-good 옛 값을 버리지 않고 서버를 따름.
          * 그 외: 삭제 SSE → forceFull 이 빈/구 Redis 를 덮어쓰면 엑셀표가 0 초기화된다.
          */
-        const rejectPoorer = preferServerOnlyRef.current
-          ? shouldKeepStaleOverlayOverRemote(lastGoodRef.current, remoteForApply)
-          : shouldRejectPoorerDonationRemote(lastGoodRef.current, remoteForApply);
+        const rejectPoorer =
+          !remoteAddedMembers &&
+          (preferServerOnlyRef.current
+            ? shouldKeepStaleOverlayOverRemote(lastGoodRef.current, remoteForApply)
+            : shouldRejectPoorerDonationRemote(lastGoodRef.current, remoteForApply));
         const shouldApplyRemote =
           !!remoteForApply &&
           !shouldKeepLastGoodInsteadOf(remoteForApply, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current) &&
           !rejectPoorer &&
           (Boolean(opts?.forceFull) ||
             preferServerOnlyRef.current ||
+            remoteAddedMembers ||
             remoteRev > overlaySinceRef.current ||
             remoteRicher ||
             (needRosterHydration && remoteStrong) ||

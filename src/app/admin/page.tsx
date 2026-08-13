@@ -3388,17 +3388,41 @@ export default function AdminPage() {
         ...(normalizeDonorsArray(next.donors).length > 0
           ? { donorsAuthoritative: true as const }
           : { omitDonationFields: true as const }),
-      }).then((r) => {
-        if (r.ok) {
-          pendingUnsyncedRef.current = false;
-          setSyncStatus(r.storageFallback ? "error" : "synced");
-          if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
-            stateUpdatedAtRef.current = r.serverUpdatedAt;
-            lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
-          }
-        } else {
+      }).then(async (r) => {
+        if (!r.ok) {
           setSyncStatus(typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error");
           setSigExcelResult("멤버 추가를 서버에 저장하지 못했습니다. 네트워크 후 다시 추가해 주세요.");
+          return;
+        }
+        pendingUnsyncedRef.current = false;
+        setSyncStatus(r.storageFallback ? "error" : "synced");
+        if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
+          stateUpdatedAtRef.current = r.serverUpdatedAt;
+          lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
+        }
+        /** 서버에 추가분이 안 붙었으면 한 번 더 권위 저장(OBS·새로고침 유실 방지) */
+        try {
+          const remote = await loadStateFromApi(user?.id, { forceFull: true });
+          const localNow = stateRef.current;
+          if (
+            remote &&
+            localNow &&
+            isMemberRosterStrictSuperset(localNow.members, remote.members)
+          ) {
+            membersAuthoritativeSaveUntilRef.current = Date.now() + 120_000;
+            const again = await saveStateAsync(localNow, user?.id, {
+              membersAuthoritative: true,
+              ...(normalizeDonorsArray(localNow.donors).length > 0
+                ? { donorsAuthoritative: true as const }
+                : { omitDonationFields: true as const }),
+            });
+            if (again.ok && typeof again.serverUpdatedAt === "number") {
+              stateUpdatedAtRef.current = again.serverUpdatedAt;
+              lastAppliedRemoteUpdatedAtRef.current = again.serverUpdatedAt;
+            }
+          }
+        } catch {
+          /* ignore verify errors */
         }
       });
       return next;

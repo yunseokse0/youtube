@@ -565,6 +565,14 @@ export function useOverlayRemoteState(
       return;
     }
 
+    const membersRosterAt = Number(
+      (o as { membersRosterUpdatedAt?: unknown }).membersRosterUpdatedAt
+    );
+    if (Number.isFinite(membersRosterAt) && membersRosterAt > 0) {
+      void syncFromApiRef.current({ forceFull: true });
+      return;
+    }
+
     if (obsTextPick) {
       if (
         shouldSyncObsTextFromStateUpdatedEvent(
