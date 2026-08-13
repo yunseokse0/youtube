@@ -131,6 +131,28 @@ describe("shouldRejectPoorerDonationRemote", () => {
     expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(false);
   });
 
+  it("rejects remote that drops a just-added member when stamp is only slightly newer", async () => {
+    const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 2000,
+      donors: [
+        { id: "d1", name: "a", amount: 10000, memberId: "m1", at: 1, target: "account" as const },
+      ],
+      members: [
+        { id: "m1", name: "샤니", account: 10000, toon: 0, contribution: 10000 },
+        { id: "m2", name: "수시", account: 0, toon: 0, contribution: 0 },
+      ],
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: 2500,
+      donors: local.donors,
+      members: [{ id: "m1", name: "샤니", account: 10000, toon: 0, contribution: 10000 }],
+    };
+    expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(true);
+  });
+
   it("allows empty remote when settlementResetAt is newer", async () => {
     const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
     const local = {

@@ -54,32 +54,57 @@ export function overlayTableCellGridCss(opts: {
   widthPx: number;
   /** thead 하단을 조금 더 굵게 (헤더/본문 구분) */
   headerBottomExtraPx?: number;
+  /** 총합 행 — 분홍 헤더색 배경에서도 보이게 별도 색(미지정 시 lineColor) */
+  totalRowLineColor?: string;
+  /** 합계열(overlay-col-total) 좌측 선을 조금 더 굵게 */
+  emphasizeTotalColumn?: boolean;
 }): string {
   const w = Math.max(1, Math.round(opts.widthPx) || 1);
   const headerBottom = Math.max(w, Math.round(opts.headerBottomExtraPx ?? w + (w > 1 ? 0 : 1)));
+  const totalLeft = opts.emphasizeTotalColumn ? w + 1 : w;
   const c = opts.lineColor;
-  const cell = (sides: OverlayTableHairlineSides) => overlayTableHairlineShadow(c, sides, w);
+  const totalC = opts.totalRowLineColor || opts.lineColor;
+  const cell = (color: string, sides: OverlayTableHairlineSides) =>
+    overlayTableHairlineShadow(color, sides, w);
   return `
 .overlay-root .overlay-elegant-table thead td {
   border: none !important;
-  box-shadow: ${cell({ top: w, left: w, bottom: headerBottom })} !important;
+  box-shadow: ${cell(c, { top: w, left: w, bottom: headerBottom })} !important;
 }
 .overlay-root .overlay-elegant-table thead td:last-child {
-  box-shadow: ${cell({ top: w, left: w, right: w, bottom: headerBottom })} !important;
+  box-shadow: ${cell(c, { top: w, left: w, right: w, bottom: headerBottom })} !important;
 }
 .overlay-root .overlay-elegant-table tbody tr.overlay-row td {
   border: none !important;
-  box-shadow: ${cell({ top: w, left: w })} !important;
+  box-shadow: ${cell(c, { top: w, left: w })} !important;
 }
 .overlay-root .overlay-elegant-table tbody tr.overlay-row td:last-child {
-  box-shadow: ${cell({ top: w, left: w, right: w })} !important;
+  box-shadow: ${cell(c, { top: w, left: w, right: w })} !important;
 }
+.overlay-root .overlay-elegant-table tbody tr.overlay-total-row td,
 .overlay-root .overlay-elegant-table .overlay-total-row td {
   border: none !important;
-  box-shadow: ${cell({ top: w, left: w, bottom: w })} !important;
+  box-shadow: ${cell(totalC, { top: w, left: w, bottom: w })} !important;
 }
+.overlay-root .overlay-elegant-table tbody tr.overlay-total-row td:last-child,
 .overlay-root .overlay-elegant-table .overlay-total-row td:last-child {
-  box-shadow: ${cell({ top: w, left: w, right: w, bottom: w })} !important;
+  box-shadow: ${cell(totalC, { top: w, left: w, right: w, bottom: w })} !important;
+}
+.overlay-root .overlay-elegant-table thead td.overlay-col-total,
+.overlay-root .overlay-elegant-table tbody tr.overlay-row td.overlay-col-total {
+  box-shadow: ${cell(c, { top: w, left: totalLeft })} !important;
+}
+.overlay-root .overlay-elegant-table thead td.overlay-col-total:last-child,
+.overlay-root .overlay-elegant-table tbody tr.overlay-row td.overlay-col-total:last-child {
+  box-shadow: ${cell(c, { top: w, left: totalLeft, right: w })} !important;
+}
+.overlay-root .overlay-elegant-table tbody tr.overlay-total-row td.overlay-col-total,
+.overlay-root .overlay-elegant-table .overlay-total-row td.overlay-col-total {
+  box-shadow: ${cell(totalC, { top: w, left: totalLeft, bottom: w })} !important;
+}
+.overlay-root .overlay-elegant-table tbody tr.overlay-total-row td.overlay-col-total:last-child,
+.overlay-root .overlay-elegant-table .overlay-total-row td.overlay-col-total:last-child {
+  box-shadow: ${cell(totalC, { top: w, left: totalLeft, right: w, bottom: w })} !important;
 }
 `.trim();
 }

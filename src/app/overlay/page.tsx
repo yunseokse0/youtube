@@ -308,6 +308,19 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
     (incoming: AppState): AppState => {
       const merged = mergeKeepingStrongRoster(incoming);
       const synced = syncMemberTotalsFromDonors(merged);
+      const good = lastGoodRef.current;
+      /**
+       * 멤버 추가·삭제(id 집합 변경) 직후는 옛 last-good 로스터로 repair 하지 않음.
+       * (후원이 옛 memberId 에만 맞아 신규 멤버가 통째로 사라지는 것 방지)
+       */
+      if (
+        good &&
+        Array.isArray(synced.members) &&
+        membersDifferByIds(synced.members, good.members || []) &&
+        Number(synced.updatedAt || 0) >= Number(good.updatedAt || 0)
+      ) {
+        return synced;
+      }
       return repairMemberTotalsForDonorRoster(synced, lastGoodRef.current, merged);
     },
     [mergeKeepingStrongRoster]
@@ -4037,16 +4050,17 @@ function OverlayInner() {
           background: ${excelLiveTotalRowBg} !important;
         }
         .overlay-root .overlay-elegant-table:not(.excel-live-table):not(.pastel-member-table) tbody tr.overlay-total-row td {
-          background: ${tableBodySheetBgCss} !important;
+          /* 방송 크롬: 헤더와 같은 분홍 띠 — 선은 흰 헤어라인으로 대비 */
+          background: ${useBroadcastTableChrome ? broadcastTheadBg : tableBodySheetBgCss} !important;
         }
-        ${totalLineVisible ? "" : `
-        .overlay-root .overlay-elegant-table tbody td.overlay-col-total,
-        .overlay-root .overlay-elegant-table th.overlay-col-total {
-          border: none !important;
-          box-shadow: none !important;
-          outline: none !important;
+        ${
+          /**
+           * totalLineVisible=false 기본값은 “합계열 강조 선 OFF”용.
+           * 셀 그리드 구조선까지 지우면 총합 행·합계열 구분선이 통째로 사라지므로
+           * box-shadow 를 여기서 비우지 않는다(아래 overlayTableCellGridCss 가 담당).
+           */
+          ""
         }
-        `}
         /* 마지막 열(기여도·화장실): 합성 환경에서 stroke로 인한 우측 1~2px 잘림 방지 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution,
@@ -4201,6 +4215,9 @@ function OverlayInner() {
           lineColor: tableGridLineColor,
           widthPx: tableGridLineWidthPx,
           headerBottomExtraPx: tableGridLineWidthPx + 1,
+          /** 총합 행이 헤더와 같은 분홍 계열일 때 분홍 선이 묻히지 않게 */
+          totalRowLineColor: tableLineColorRaw || "rgba(255, 255, 255, 0.72)",
+          emphasizeTotalColumn: totalLineVisible,
         })}
         .overlay-root .overlay-elegant-table {
           border-collapse: separate !important;

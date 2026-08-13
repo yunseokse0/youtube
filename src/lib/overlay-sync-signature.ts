@@ -234,6 +234,8 @@ export function shouldRejectPoorerDonationRemote(
   /**
    * 의도적 멤버 추가·삭제: id 집합이 바뀌고 원격 stamp 가 최신이면
    * 금액이 잠깐 0이어도(옛 후원이 옛 memberId) poorer 로 막지 않음.
+   * 단, 로컬이 방금 멤버를 추가해 더 긴 로스터인데 원격이 그 부분집합(옛 로스터)만
+   * stamp만 앞세워 오면(테마 PATCH 경합) 거부한다.
    */
   if (
     hasMeaningfulMemberRoster(remote) &&
@@ -242,6 +244,18 @@ export function shouldRejectPoorerDonationRemote(
     membersDifferByIds(local.members || [], remote.members) &&
     Number(remote.updatedAt || 0) >= Number(local.updatedAt || 0)
   ) {
+    const localMembers = local.members || [];
+    const remoteMembers = remote.members || [];
+    const localIds = new Set(localMembers.map((m) => String(m.id || "")).filter(Boolean));
+    const remoteIsSubsetShrink =
+      remoteMembers.length < localMembers.length &&
+      remoteMembers.every((m) => localIds.has(String(m.id || "")));
+    if (
+      remoteIsSubsetShrink &&
+      Number(local.updatedAt || 0) + 60_000 >= Number(remote.updatedAt || 0)
+    ) {
+      return true;
+    }
     return false;
   }
 

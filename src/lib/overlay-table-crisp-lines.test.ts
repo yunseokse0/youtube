@@ -36,6 +36,17 @@ describe("overlay table crisp lines", () => {
     expect(css).toContain("inset -2px 0 0 0 #abc");
   });
 
+  it("uses contrasting total-row line color when provided", () => {
+    const css = overlayTableCellGridCss({
+      lineColor: "#f5b8d4",
+      widthPx: 2,
+      totalRowLineColor: "rgba(255, 255, 255, 0.72)",
+    });
+    expect(css).toContain("overlay-total-row td");
+    expect(css).toContain("rgba(255, 255, 255, 0.72)");
+    expect(css).toContain("overlay-col-total");
+  });
+
   it("snaps scale near whole DPR steps", () => {
     expect(snapOverlayScaleForCrispLines(1.004, 1)).toBe(1);
     expect(snapOverlayScaleForCrispLines(1.01, 2)).toBe(1.01);

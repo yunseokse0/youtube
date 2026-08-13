@@ -511,7 +511,11 @@ export default function AdminPage() {
   const [authReady, setAuthReady] = useState(false);
   /** 오버레이 URL·미리보기 — finalent 폴백 금지(타계정 후원 노출) */
   const overlayUserId = resolveScopedOverlayUserId(user?.id);
-  const [state, setState] = useState<AppState>(defaultState());
+  const [state, setState] = useState<AppState>(() => ({
+    ...defaultState(),
+    /** 첫 페인트만 — hydrate로 비우거나 초기화하지 않음. 로드 중에는 플레이스홀더 UI만 가림 */
+    members: [],
+  }));
   const [syncStatus, setSyncStatus] = useState<"loading" | "synced" | "local" | "error">("loading");
   const stateUpdatedAtRef = useRef<number>(0);
   const stateRef = useRef<AppState>(state);
@@ -520,6 +524,8 @@ export default function AdminPage() {
   const pendingUnsyncedRef = useRef<boolean>(false);
   /** donorsAuthoritative 저장 직후 SSE·폴링이 빈 서버 스냅샷으로 덮어쓰지 않게 */
   const donationAuthoritativeSaveUntilRef = useRef<number>(0);
+  /** 멤버 추가·삭제 직후 폴링이 옛(더 짧은) 로스터로 덮지 않게 */
+  const membersAuthoritativeSaveUntilRef = useRef<number>(0);
   /** 빈 Redis 거부 후 로컬→서버 heal 연속 POST 방지 */
   const lastEmptyRemoteDonationHealAtRef = useRef<number>(0);
   /** 방금 삭제한 후원 id — richer remote 가 삭제분을 되살리지 않게 */
@@ -1134,6 +1140,21 @@ export default function AdminPage() {
       ...(forceAuthoritativeDonors ? { donorsAuthoritative: true as const } : {}),
       ...(omitDonationFields ? { omitDonationFields: true as const } : {}),
     };
+    if (resolvedOpts.membersAuthoritative) {
+      membersAuthoritativeSaveUntilRef.current = Date.now() + 45_000;
+    }
+    /**
+     * 로딩 중 플레이스홀더 로스터만 서버에 올리지 않음.
+     * hydrate 미완료를 이유로 전체 저장·로스터 초기화는 하지 않는다.
+     */
+    if (
+      !resolvedOpts.settlementReset &&
+      !resolvedOpts.membersAuthoritative &&
+      syncStatusRef.current === "loading" &&
+      isDefaultPlaceholderMemberList(s.members)
+    ) {
+      return;
+    }
     /** 후원 포함 저장에서만 축소 스냅샷 차단 (비후원 저장은 어차피 donors 미전송) */
     if (!resolvedOpts.settlementReset && !resolvedOpts.donorsAuthoritative && !omitDonationFields) {
       try {
@@ -1426,12 +1447,16 @@ export default function AdminPage() {
     /**
      * 멤버 추가·삭제 직후: 서버/다른 탭이 옛 실멤버 로스터를 주더라도
      * 로컬 stamp가 같거나 더 최신이면 로컬 멤버 구성을 유지한다.
+     * 보호창 안에서는 서버 stamp가 살짝 앞서도(테마 PATCH 등) 로컬 로스터를 지킨다.
      */
+    const inMembersAuthWindow = Date.now() < membersAuthoritativeSaveUntilRef.current;
     const preferLocalMemberRoster =
       hasMeaningfulMemberRoster(local) &&
       Array.isArray(incoming.members) &&
       membersDifferByIds(local.members || [], incoming.members || []) &&
-      Number(local.updatedAt || 0) >= Number(incoming.updatedAt || 0);
+      (Number(local.updatedAt || 0) >= Number(incoming.updatedAt || 0) ||
+        (inMembersAuthWindow &&
+          (local.members || []).length >= (incoming.members || []).length));
 
     let merged: AppState = preferLocalMemberRoster
       ? {
@@ -1672,6 +1697,20 @@ export default function AdminPage() {
         setPresets(localPresets);
       }
       setSyncStatus("local");
+    } else if (hasMeaningfulMemberRoster(localFallback)) {
+      /**
+       * hydrate는 비우지 않음. API 대기 중 LS 실멤버만 미리 보여 멤버1 플래시를 피함.
+       * (금액은 이후 서버 정본으로 맞춤)
+       */
+      setState((prev) => ({
+        ...prev,
+        ...localFallback,
+        members: localFallback.members,
+        memberPositions: normalizeMemberPositions(
+          localFallback.memberPositions,
+          localFallback.members
+        ),
+      }));
     }
     // 우선 서버의 일일 로그를 소스로 사용(장치 간 일관성)
     loadDailyLogFromApi(user?.id).then((serverLog) => {
@@ -1731,12 +1770,24 @@ export default function AdminPage() {
         const { merged, didPreserve } = mergeIncomingStateSafely(apiState, local);
         const donationSource = rejectPoorer ? local : apiState;
         /** 후원 금액은 donationSource, 멤버 로스터는 merge(로컬 최신 추가 보존) 우선 */
-        const rosterMembers = rejectPoorer
+        let rosterMembers = rejectPoorer
           ? pickMemberRosterPreferNewer(local, apiState)
           : pickMemberRosterPreferNewer(merged, apiState);
-        const rosterPositions = rejectPoorer
+        /** API가 멤버1 플레이스홀더인데 LS에 실멤버가 있으면 LS 로스터 유지 */
+        if (
+          isDefaultPlaceholderMemberList(rosterMembers) &&
+          hasMeaningfulMemberRoster(local)
+        ) {
+          rosterMembers = local.members;
+        }
+        const rosterFromLocal =
+          hasMeaningfulMemberRoster(local) &&
+          !membersDifferByIds(rosterMembers, local.members || []);
+        const rosterPositions = rosterFromLocal
           ? local.memberPositions ?? merged.memberPositions ?? apiState.memberPositions
-          : merged.memberPositions ?? apiState.memberPositions;
+          : rejectPoorer
+            ? local.memberPositions ?? merged.memberPositions ?? apiState.memberPositions
+            : merged.memberPositions ?? apiState.memberPositions;
         const toApplyBase = syncMemberTotalsFromDonors({
           ...merged,
           donors: normalizeDonorsArray(donationSource.donors),
@@ -1794,15 +1845,24 @@ export default function AdminPage() {
             };
           }
         }
+        /** 같은 id(m1)에서 원격 멤버1이 로컬 실명을 덮지 않게 */
+        toApply = mergeLocalMemberIdentityOntoRemote(toApply, local);
+        const rosterNeedsServerPush =
+          hasMeaningfulMemberRoster(toApply) &&
+          (membersDifferByIds(toApply.members || [], apiState.members || []) ||
+            isDefaultPlaceholderMemberList(apiState.members));
         if (didPreserve && !rejectPoorer) {
           /** 테마·시그 등만 보존 — 후원 필드는 서버 값 유지(LS로 서버에 밀어 올리지 않음).
            * 멤버 추가·삭제로 로스터만 보존된 경우는 서버에도 권위적으로 올려 새로고침 유실을 막음. */
-          const rosterNeedsServerPush =
-            hasMeaningfulMemberRoster(toApply) &&
-            membersDifferByIds(toApply.members || [], apiState.members || []);
           persistState(toApply, {
             omitDonationFields: true,
             ...(rosterNeedsServerPush ? { membersAuthoritative: true } : {}),
+          });
+        } else if (rosterNeedsServerPush && !rejectPoorer) {
+          /** API 플레이스홀더·옛 로스터를 LS 실멤버로 고친 경우 서버에 재푸시 */
+          persistState(toApply, {
+            omitDonationFields: true,
+            membersAuthoritative: true,
           });
         }
         if (rejectPoorer) {
@@ -1824,7 +1884,10 @@ export default function AdminPage() {
             ),
           });
           stateRef.current = healState;
-          void saveStateAsync(healState, user?.id, { donorsAuthoritative: true }).then((r) => {
+          void saveStateAsync(healState, user?.id, {
+            donorsAuthoritative: true,
+            ...(hasMeaningfulMemberRoster(healState) ? { membersAuthoritative: true } : {}),
+          }).then((r) => {
             if (r.ok) {
               setSyncStatus(r.storageFallback ? "error" : "synced");
               if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
@@ -1944,6 +2007,10 @@ export default function AdminPage() {
       if (localDonors.length === 0 && totalCombined(local) <= 0) return;
       lastEmptyRemoteDonationHealAtRef.current = now;
       donationAuthoritativeSaveUntilRef.current = now + 20_000;
+      membersAuthoritativeSaveUntilRef.current = Math.max(
+        membersAuthoritativeSaveUntilRef.current,
+        now + 45_000
+      );
       pendingUnsyncedRef.current = true;
       const resetAt = Number(local.settlementResetAt || 0);
       const healState = syncMemberTotalsFromDonors({
@@ -1957,7 +2024,10 @@ export default function AdminPage() {
       try {
         window.localStorage.setItem(storageKey(user?.id), JSON.stringify(healState));
       } catch {}
-      void saveStateAsync(healState, user?.id, { donorsAuthoritative: true }).then((r) => {
+      void saveStateAsync(healState, user?.id, {
+        donorsAuthoritative: true,
+        ...(hasMeaningfulMemberRoster(healState) ? { membersAuthoritative: true as const } : {}),
+      }).then((r) => {
         if (r.ok) {
           pendingUnsyncedRef.current = false;
           setSyncStatus(r.storageFallback ? "error" : "synced");
@@ -2040,9 +2110,23 @@ export default function AdminPage() {
           totalCombined(remoteSansRemoved) > totalCombined(stateRef.current) ||
           remoteOnlyFresh.length > 0;
         const inAuthoritativeWindow = Date.now() < donationAuthoritativeSaveUntilRef.current;
+        const inMembersAuthWindow = Date.now() < membersAuthoritativeSaveUntilRef.current;
         const localRicherThanEmptyRemote =
           localDonors.length > 0 && remoteDonors.length === 0;
         if (inAuthoritativeWindow && !remoteRicher) return false;
+        /**
+         * 멤버 추가·삭제 직후: 서버 stamp만 앞서고 로스터가 옛것이면 적용하지 않음.
+         * (테마/시그 PATCH가 updatedAt만 올린 뒤 GET이 추가 멤버를 지우는 경합)
+         */
+        if (
+          inMembersAuthWindow &&
+          hasMeaningfulMemberRoster(stateRef.current) &&
+          Array.isArray(remote.members) &&
+          membersDifferByIds(stateRef.current.members || [], remote.members || []) &&
+          (stateRef.current.members || []).length >= (remote.members || []).length
+        ) {
+          return false;
+        }
         /** forceDonorMerge 여도 빈 원격으로 수동 입력을 초기화하지 않음 — 대신 서버에 복구 푸시 */
         if (opts?.forceDonorMerge && localRicherThanEmptyRemote && !remoteRicher) {
           healLocalDonorsToServerIfRicher();
@@ -3186,6 +3270,12 @@ export default function AdminPage() {
           },
           updatedAt: Date.now(),
         };
+        stateRef.current = next;
+        membersAuthoritativeSaveUntilRef.current = Date.now() + 45_000;
+        try {
+          window.localStorage.setItem(storageKey(user?.id), JSON.stringify(next));
+        } catch {}
+        notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
         persistState(next, {
           includeDonationFields: true,
           membersAuthoritative: true,
@@ -3222,6 +3312,13 @@ export default function AdminPage() {
         },
         updatedAt: Date.now(),
       };
+      /** 폴링·다른 탭보다 먼저 LS·ref에 올려 경합으로 멤버가 사라지지 않게 */
+      stateRef.current = next;
+      membersAuthoritativeSaveUntilRef.current = Date.now() + 45_000;
+      try {
+        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(next));
+      } catch {}
+      notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
       persistState(next, { includeDonationFields: true, membersAuthoritative: true });
       return next;
     });
@@ -5644,15 +5741,24 @@ export default function AdminPage() {
           <div className="flex flex-wrap items-center gap-2 pt-0 md:pt-5">
             <button
               type="button"
-              className="rounded bg-emerald-700 px-3 py-1.5 text-xs font-semibold hover:bg-emerald-600"
-              onClick={() => startSigMatchOverlayTimerSynced()}
+              className={`rounded px-3 py-1.5 text-xs font-semibold ${
+                running
+                  ? "bg-amber-700 hover:bg-amber-600"
+                  : "bg-emerald-700 hover:bg-emerald-600"
+              }`}
+              onClick={() =>
+                running
+                  ? stopSigMatchOverlayTimerSynced()
+                  : startSigMatchOverlayTimerSynced()
+              }
             >
-              시작
+              {running ? "일시정지" : "시작"}
             </button>
             <button
               type="button"
               className="rounded bg-neutral-700 px-3 py-1.5 text-xs font-semibold hover:bg-neutral-600"
               onClick={() => stopSigMatchOverlayTimerSynced()}
+              disabled={!running && rem <= 0}
             >
               정지
             </button>
@@ -5660,7 +5766,7 @@ export default function AdminPage() {
               href="#timer-control-section"
               className="text-[11px] text-cyan-300/90 hover:text-cyan-200 underline-offset-2 hover:underline"
             >
-              타이머 제어(±분·일시정지) →
+              타이머 제어(±분·재개) →
             </a>
           </div>
         </div>
@@ -7678,7 +7784,12 @@ export default function AdminPage() {
                 </button>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                {state.members.map((m: Member) => (
+                {syncStatus === "loading" && isDefaultPlaceholderMemberList(state.members) ? (
+                  <div className="lg:col-span-3 rounded-lg border border-white/10 bg-neutral-900/50 px-4 py-8 text-center text-sm text-neutral-400">
+                    서버에서 멤버를 불러오는 중…
+                  </div>
+                ) : (
+                  state.members.map((m: Member) => (
                   <MemberRow
                     key={m.id}
                     member={m}
@@ -7693,7 +7804,8 @@ export default function AdminPage() {
                     }
                     onToggleDonationLink={() => toggleMealDonationLink(m.id)}
                   />
-                ))}
+                  ))
+                )}
               </div>
               <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-2">
                 <div>
