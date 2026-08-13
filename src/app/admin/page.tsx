@@ -939,6 +939,8 @@ export default function AdminPage() {
   const [battleContentWidthPct, setBattleContentWidthPct] = useState("100");
   const [sigSalesMenuCount, setSigSalesMenuCount] = useState("10");
   const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
+  /** 상류사회 1인 시작 cm — 입력 중 25 클램프에 막히지 않게 초안 문자열 유지 */
+  const [hsStartCmDraft, setHsStartCmDraft] = useState<string | null>(null);
   const [obsTextPreviewIframeKey, setObsTextPreviewIframeKey] = useState(0);
   const [obsTextPreviewInstanceId, setObsTextPreviewInstanceId] = useState<string | null>(null);
   const obsTextRegistry = useMemo(() => readObsTextRegistryFromState(state), [state]);
@@ -6847,12 +6849,29 @@ export default function AdminPage() {
   const patchHighSocietyStartCm = useCallback(
     (startCm: number) => {
       const seats = Math.max(2, hsSeatPlayers.length || 4);
+      const clamped = Math.max(1, Math.min(5000, Math.floor(Number(startCm) || 0)));
+      setHsStartCmDraft(null);
       patchHighSocietySettings({
-        fieldCm: fieldCmFromStartPerMember(startCm, seats),
+        fieldCm: fieldCmFromStartPerMember(clamped, seats),
       });
     },
     [hsSeatPlayers.length, patchHighSocietySettings]
   );
+  const hsStartCmInputValue =
+    hsStartCmDraft !== null ? hsStartCmDraft : String(Math.max(0, Math.round(hsStartCm || 300)));
+  const onHsStartCmDraftChange = useCallback((raw: string) => {
+    setHsStartCmDraft(raw.replace(/[^\d]/g, "").slice(0, 5));
+  }, []);
+  const commitHsStartCmDraft = useCallback(() => {
+    const raw = hsStartCmDraft;
+    if (raw === null) return;
+    const n = parseInt(raw || "0", 10);
+    if (!Number.isFinite(n) || n <= 0) {
+      setHsStartCmDraft(null);
+      return;
+    }
+    patchHighSocietyStartCm(n);
+  }, [hsStartCmDraft, patchHighSocietyStartCm]);
   const sigMatchDonors = useMemo(
     () =>
       donationSyncMode === "sigMatch" || state.sigMatchSettings?.isActive
@@ -10881,17 +10900,16 @@ export default function AdminPage() {
                     <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
                       1인 시작 (cm)
                       <input
-                        type="number"
+                        type="text"
                         inputMode="numeric"
-                        min={25}
-                        max={5000}
-                        step={50}
                         className="w-28 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm text-amber-50"
-                        value={hsStartCm || 300}
-                        onChange={(e) => {
-                          const n = parseInt(e.target.value.replace(/[^\d]/g, "") || "0", 10);
-                          if (!Number.isFinite(n) || n <= 0) return;
-                          patchHighSocietyStartCm(Math.max(25, Math.min(5000, n)));
+                        value={hsStartCmInputValue}
+                        onChange={(e) => onHsStartCmDraftChange(e.target.value)}
+                        onBlur={() => commitHsStartCmDraft()}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.currentTarget.blur();
+                          }
                         }}
                       />
                       <span className="text-neutral-500">
@@ -10903,12 +10921,12 @@ export default function AdminPage() {
                       </span>
                     </label>
                     <div className="flex flex-wrap gap-1.5">
-                      {[200, 300, 400, 500, 600].map((cm) => (
+                      {[100, 200, 300, 400, 500, 600].map((cm) => (
                         <button
                           key={`hs-start-${cm}`}
                           type="button"
                           className={`rounded px-2 py-0.5 text-[10px] font-semibold border ${
-                            hsStartCm === cm
+                            Math.round(hsStartCm) === cm
                               ? "border-amber-400 bg-amber-700/80 text-white"
                               : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
                           }`}
@@ -11821,17 +11839,16 @@ export default function AdminPage() {
                   <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
                     <span className="text-neutral-400">1인 시작</span>
                     <input
-                      type="number"
+                      type="text"
                       inputMode="numeric"
-                      min={25}
-                      max={5000}
-                      step={50}
                       className="w-24 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-amber-50"
-                      value={hsStartCm || 300}
-                      onChange={(e) => {
-                        const n = parseInt(e.target.value.replace(/[^\d]/g, "") || "0", 10);
-                        if (!Number.isFinite(n) || n <= 0) return;
-                        patchHighSocietyStartCm(Math.max(25, Math.min(5000, n)));
+                      value={hsStartCmInputValue}
+                      onChange={(e) => onHsStartCmDraftChange(e.target.value)}
+                      onBlur={() => commitHsStartCmDraft()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.currentTarget.blur();
+                        }
                       }}
                     />
                     <span className="text-neutral-500">cm</span>
