@@ -27,6 +27,7 @@ import {
   isAccidentalEmptyRosterState,
   isDefaultPlaceholderMemberList,
   membersDifferByIds,
+  pickMemberRosterPreferNewer,
   hasMeaningfulBroadcastData,
   hasMeaningfulMemberRoster,
   hasExpandedSigInventory,
@@ -1422,8 +1423,26 @@ export default function AdminPage() {
       };
     }
 
-    let merged = incoming;
-    let didPreserve = false;
+    /**
+     * 멤버 추가·삭제 직후: 서버/다른 탭이 옛 실멤버 로스터를 주더라도
+     * 로컬 stamp가 같거나 더 최신이면 로컬 멤버 구성을 유지한다.
+     */
+    const preferLocalMemberRoster =
+      hasMeaningfulMemberRoster(local) &&
+      Array.isArray(incoming.members) &&
+      membersDifferByIds(local.members || [], incoming.members || []) &&
+      Number(local.updatedAt || 0) >= Number(incoming.updatedAt || 0);
+
+    let merged: AppState = preferLocalMemberRoster
+      ? {
+          ...incoming,
+          members: local.members,
+          memberPositions: normalizeMemberPositions(local.memberPositions, local.members),
+          rankPositionLabels: local.rankPositionLabels ?? incoming.rankPositionLabels,
+          updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
+        }
+      : incoming;
+    let didPreserve = preferLocalMemberRoster;
     if (!incoming.missions?.length && local.missions?.length) {
       merged = { ...merged, missions: local.missions };
       didPreserve = true;
@@ -1711,11 +1730,18 @@ export default function AdminPage() {
         lastAppliedRemoteUpdatedAtRef.current = stateUpdatedAtRef.current;
         const { merged, didPreserve } = mergeIncomingStateSafely(apiState, local);
         const donationSource = rejectPoorer ? local : apiState;
+        /** 후원 금액은 donationSource, 멤버 로스터는 merge(로컬 최신 추가 보존) 우선 */
+        const rosterMembers = rejectPoorer
+          ? pickMemberRosterPreferNewer(local, apiState)
+          : pickMemberRosterPreferNewer(merged, apiState);
+        const rosterPositions = rejectPoorer
+          ? local.memberPositions ?? merged.memberPositions ?? apiState.memberPositions
+          : merged.memberPositions ?? apiState.memberPositions;
         const toApplyBase = syncMemberTotalsFromDonors({
           ...merged,
           donors: normalizeDonorsArray(donationSource.donors),
-          members: donationSource.members,
-          memberPositions: donationSource.memberPositions ?? apiState.memberPositions,
+          members: rosterMembers,
+          memberPositions: normalizeMemberPositions(rosterPositions, rosterMembers),
           contributionLogs: rejectPoorer
             ? local.contributionLogs ?? apiState.contributionLogs
             : apiState.contributionLogs,
@@ -1769,8 +1795,15 @@ export default function AdminPage() {
           }
         }
         if (didPreserve && !rejectPoorer) {
-          /** 테마·시그 등만 보존 — 후원 필드는 서버 값 유지(LS로 서버에 밀어 올리지 않음) */
-          persistState(toApply, { omitDonationFields: true });
+          /** 테마·시그 등만 보존 — 후원 필드는 서버 값 유지(LS로 서버에 밀어 올리지 않음).
+           * 멤버 추가·삭제로 로스터만 보존된 경우는 서버에도 권위적으로 올려 새로고침 유실을 막음. */
+          const rosterNeedsServerPush =
+            hasMeaningfulMemberRoster(toApply) &&
+            membersDifferByIds(toApply.members || [], apiState.members || []);
+          persistState(toApply, {
+            omitDonationFields: true,
+            ...(rosterNeedsServerPush ? { membersAuthoritative: true } : {}),
+          });
         }
         if (rejectPoorer) {
           /** 빈 Redis 복구 — LS 후원을 계정 정본으로 한 번 올림(리셋 이전 at 은 rebump) */
@@ -2100,8 +2133,15 @@ export default function AdminPage() {
           stateRef.current = toApply;
           healLocalDonorsToServerIfRicher();
         } else {
-          /** 시각·시그 보존만 서버에 올리고 후원 필드는 건드리지 않음 */
-          persistState(toApply, { omitDonationFields: true });
+          /** 시각·시그 보존만 서버에 올리고 후원 필드는 건드리지 않음.
+           * 멤버 추가·삭제로 로스터만 보존된 경우는 권위적으로 올려 유실을 막음. */
+          const rosterNeedsServerPush =
+            hasMeaningfulMemberRoster(toApply) &&
+            membersDifferByIds(toApply.members || [], remote.members || []);
+          persistState(toApply, {
+            omitDonationFields: true,
+            ...(rosterNeedsServerPush ? { membersAuthoritative: true } : {}),
+          });
         }
       }
       stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, remoteUpdatedAt);

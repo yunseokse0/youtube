@@ -10,6 +10,8 @@ import {
   isDefaultPlaceholderMemberList,
   isShrunkToDefaultSigInventory,
   membersDifferByIds,
+  pickMemberRosterPreferNewer,
+  mergeServerSaveApiBodies,
   shouldAvoidOverwritingLocalStateWithRemote,
   shouldPreferLocalSigInventoryOverIncoming,
   wouldShrinkDonationData,
@@ -214,5 +216,60 @@ describe("member sync helpers", () => {
     expect(hasSigSalesMemberPresets({})).toBe(false);
     expect(hasSigSalesMemberPresets({ m1: [] })).toBe(false);
     expect(hasSigSalesMemberPresets({ m1: ["sig_a"] })).toBe(true);
+  });
+
+  it("pickMemberRosterPreferNewer keeps newer local add over older server roster", () => {
+    const localMembers: Member[] = [
+      { id: "m1", name: "쟈키", account: 0, toon: 0, contribution: 0 },
+      { id: "m2", name: "사기", account: 0, toon: 0, contribution: 0 },
+    ];
+    const serverMembers: Member[] = [
+      { id: "m1", name: "쟈키", account: 1000, toon: 0, contribution: 1000 },
+    ];
+    const picked = pickMemberRosterPreferNewer(
+      { members: localMembers, updatedAt: 200 },
+      { members: serverMembers, updatedAt: 100 }
+    );
+    expect(picked.map((m) => m.id)).toEqual(["m1", "m2"]);
+  });
+
+  it("pickMemberRosterPreferNewer prefers server when stamp is newer", () => {
+    const localMembers: Member[] = [
+      { id: "m1", name: "쟈키", account: 0, toon: 0, contribution: 0 },
+      { id: "m2", name: "사기", account: 0, toon: 0, contribution: 0 },
+    ];
+    const serverMembers: Member[] = [
+      { id: "m1", name: "쟈키", account: 0, toon: 0, contribution: 0 },
+    ];
+    const picked = pickMemberRosterPreferNewer(
+      { members: localMembers, updatedAt: 100 },
+      { members: serverMembers, updatedAt: 200 }
+    );
+    expect(picked.map((m) => m.id)).toEqual(["m1"]);
+  });
+
+  it("mergeServerSaveApiBodies keeps membersAuthoritative roster over later theme patch", () => {
+    const prev = JSON.stringify({
+      updatedAt: 200,
+      membersAuthoritative: true,
+      members: [
+        { id: "m1", name: "쟈키", account: 0, toon: 0, contribution: 0 },
+        { id: "m2", name: "사기", account: 0, toon: 0, contribution: 0 },
+      ],
+      overlaySettings: { a: 1 },
+    });
+    const next = JSON.stringify({
+      updatedAt: 201,
+      members: [{ id: "m1", name: "쟈키", account: 0, toon: 0, contribution: 0 }],
+      overlaySettings: { a: 2 },
+    });
+    const merged = JSON.parse(mergeServerSaveApiBodies(prev, next)) as {
+      membersAuthoritative?: boolean;
+      members: Member[];
+      overlaySettings: { a: number };
+    };
+    expect(merged.membersAuthoritative).toBe(true);
+    expect(merged.members.map((m) => m.id)).toEqual(["m1", "m2"]);
+    expect(merged.overlaySettings.a).toBe(2);
   });
 });

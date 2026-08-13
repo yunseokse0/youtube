@@ -1852,6 +1852,31 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
     ) {
       delete merged.members;
     }
+    /**
+     * 멤버 추가·삭제(membersAuthoritative)가 큐에서 테마 PATCH와 합쳐질 때
+     * 뒤쪽 저장이 옛 로스터·플래그 없이 덮지 않게 한다.
+     */
+    {
+      const prevMembersAuth = prev.membersAuthoritative === true;
+      const nextMembersAuth = next.membersAuthoritative === true;
+      if (prevMembersAuth || nextMembersAuth) {
+        merged.membersAuthoritative = true;
+        const prevMembers = Array.isArray(prev.members) ? (prev.members as Member[]) : null;
+        const nextMembers = Array.isArray(next.members) ? (next.members as Member[]) : null;
+        if (prevMembersAuth && !nextMembersAuth && prevMembers) {
+          merged.members = prevMembers;
+          if (prev.memberPositions !== undefined) merged.memberPositions = prev.memberPositions;
+          if (prev.rankPositionLabels !== undefined) merged.rankPositionLabels = prev.rankPositionLabels;
+        } else if (nextMembersAuth && !prevMembersAuth && nextMembers) {
+          merged.members = nextMembers;
+        } else if (prevMembers && nextMembers) {
+          merged.members = pickMemberRosterPreferNewer(
+            { members: nextMembers, updatedAt: Number(next.updatedAt || 0) },
+            { members: prevMembers, updatedAt: Number(prev.updatedAt || 0) }
+          );
+        }
+      }
+    }
     /** overlaySettings 는 얕은 병합으로 키가 날아가지 않게 */
     if (
       prev.overlaySettings &&
@@ -2310,6 +2335,7 @@ export async function saveStateAsync(
     const localResetAt = Number(local?.settlementResetAt || 0);
     if (
       local &&
+      !saveOpts?.membersAuthoritative &&
       guardedResetAt <= localResetAt &&
       (shouldAvoidOverwritingLocalStateWithRemote(local, guarded) || wouldShrinkDonationData(local, guarded))
     ) {
@@ -2329,6 +2355,7 @@ export async function saveStateAsync(
       const nextDonors = normalizeDonorsArray(guarded.donors);
       const localDonorsForOmit = normalizeDonorsArray(local.donors);
       const preferLocalDonations =
+        !saveOpts?.membersAuthoritative &&
         guardedResetAt <= localResetAt &&
         (wouldShrinkDonationData(local, guarded) ||
           localDonorsForOmit.length > nextDonors.length ||
@@ -3642,6 +3669,30 @@ export function membersDifferByIds(a: Member[], b: Member[]): boolean {
       .sort()
       .join("\u001e");
   return sig(a) !== sig(b);
+}
+
+/**
+ * 멤버 추가·삭제 후 새로고침/병합 시 — stamp가 같거나 더 최신인 로스터를 고른다.
+ * (후원 금액은 syncMemberTotalsFromDonors 가 donors 기준으로 다시 맞춘다)
+ */
+export function pickMemberRosterPreferNewer(
+  primary: { members?: Member[] | null; updatedAt?: number } | null | undefined,
+  secondary: { members?: Member[] | null; updatedAt?: number } | null | undefined
+): Member[] {
+  const a = Array.isArray(primary?.members) ? primary!.members! : [];
+  const b = Array.isArray(secondary?.members) ? secondary!.members! : [];
+  const aState = { members: a } as AppState;
+  const bState = { members: b } as AppState;
+  const aOk = hasMeaningfulMemberRoster(aState);
+  const bOk = hasMeaningfulMemberRoster(bState);
+  if (aOk && !bOk) return a;
+  if (bOk && !aOk) return b;
+  if (!a.length && !b.length) return a;
+  if (!aOk && !bOk) return a.length >= b.length ? a : b;
+  if (!membersDifferByIds(a, b)) {
+    return Number(secondary?.updatedAt || 0) > Number(primary?.updatedAt || 0) ? b : a;
+  }
+  return Number(primary?.updatedAt || 0) >= Number(secondary?.updatedAt || 0) ? a : b;
 }
 
 /**
