@@ -261,9 +261,9 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
       Number(incoming.updatedAt || 0) >= Number(good!.updatedAt || 0);
     if (preferServerOnlyRef.current) {
       /**
-       * OBS: 서버 이름·금액이 정본. last-good 옛 실명으로 개명을 덮지 않음.
+       * OBS: 서버 이름·금액·로스터가 정본. last-good 옛 실명/옛 인원으로 덮지 않음.
        * 원격만 플레이스홀더/빈 로스터일 때만 세션 로스터 유지 —
-       * 단, 멤버 삭제·교체(id 집합 변경 + 최신 stamp)는 서버 로스터를 수용.
+       * 단, 멤버 추가·삭제·교체(id 집합 변경 + 최신 stamp)는 서버 로스터를 수용.
        */
       if (
         good &&
@@ -279,6 +279,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
           rankPositionLabels: good.rankPositionLabels,
         };
       }
+      /** else: incoming 그대로 — 개명·멤버 추가가 last-good에 막히지 않음 */
     } else if (
       good &&
       hasMeaningfulMemberRoster(good) &&
@@ -293,8 +294,16 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         rankPositionLabels: good.rankPositionLabels,
       };
     } else if (good && hasMeaningfulMemberRoster(good) && !remoteRosterChanged) {
-      /** 미리보기/동일 PC: 로컬 개명이 서버보다 최신이면 이름만 유지 */
-      merged = mergeLocalMemberIdentityOntoRemote(incoming, good);
+      /**
+       * 미리보기: 서버가 더 최신 실명이면 서버 이름 유지.
+       * (예전에는 localNewerOrEqual 만으로 last-good 옛 이름이 OBS/미리보기를 덮을 수 있었음)
+       */
+      const remoteNewer = Number(incoming.updatedAt || 0) > Number(good.updatedAt || 0);
+      if (remoteNewer) {
+        merged = incoming;
+      } else {
+        merged = mergeLocalMemberIdentityOntoRemote(incoming, good);
+      }
     }
     const prevTimer = lastGoodRef.current?.generalTimer ?? merged.generalTimer;
     merged = {

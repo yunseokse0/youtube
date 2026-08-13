@@ -2032,8 +2032,13 @@ async function runServerSaveQueue(): Promise<void> {
             : 0;
         let membersRosterUpdated = false;
         try {
-          const body = JSON.parse(job.apiBodyJson) as { membersAuthoritative?: boolean };
-          membersRosterUpdated = body.membersAuthoritative === true;
+          const body = JSON.parse(job.apiBodyJson) as {
+            membersAuthoritative?: boolean;
+            members?: unknown;
+          };
+          membersRosterUpdated =
+            body.membersAuthoritative === true ||
+            (Array.isArray(body.members) && body.members.length > 0);
         } catch {
           /* ignore */
         }

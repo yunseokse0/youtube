@@ -3191,13 +3191,13 @@ export default function AdminPage() {
   };
 
   const renameMember = (id: string, name: string) => {
+    const cleaned = (name || "무명").trim() || "무명";
     setState((prev: AppState) => {
       let next: AppState = {
         ...prev,
-        members: prev.members.map((x: Member) => (x.id === id ? { ...x, name } : x)),
+        members: prev.members.map((x: Member) => (x.id === id ? { ...x, name: cleaned } : x)),
         updatedAt: Date.now(),
       };
-      /** React 상태가 비어 있어도 LS에 후원이 있으면 합계를 맞춰 서버 zero-wipe 가드에 걸리지 않게 */
       if (normalizeDonorsArray(next.donors).length === 0) {
         try {
           const fromLs = loadState(user?.id);
@@ -3209,37 +3209,37 @@ export default function AdminPage() {
       if (normalizeDonorsArray(next.donors).length > 0) {
         next = syncMemberTotalsFromDonors(next);
       }
-      persistState(next, { includeDonationFields: true });
-      /** 서버 실후원 위에 로컬 멤버명을 강제 병합·저장 (omitDonation 경로·축소 가드로 OBS 미반영 방지) */
-      const localSnapshot = next;
-      void (async () => {
-        try {
-          const remote = await loadStateFromApi(user?.id, { forceFull: true });
-          if (!remote) return;
-          const latestLocal = stateRef.current || localSnapshot;
-          const merged = mergeLocalMemberIdentityOntoRemote(remote, latestLocal);
-          const sig = (members: Member[] | undefined) =>
-            (members || []).map((m) => `${m.id}:${String(m.name || "").trim()}`).join("|");
-          if (sig(merged.members) === sig(remote.members)) return;
-          const hasDonors = normalizeDonorsArray(merged.donors).length > 0;
-          const result = await saveStateAsync(merged, user?.id, {
-            ...(hasDonors ? { donorsAuthoritative: true as const } : {}),
-          });
-          if (result.ok) {
-            stateRef.current = merged;
-            setState(merged);
-            try {
-              window.localStorage.setItem(storageKey(user?.id), JSON.stringify(merged));
-            } catch {}
-            notifyBroadcastStateLocalUpdated(user?.id, merged.updatedAt);
-            if (typeof result.serverUpdatedAt === "number" && Number.isFinite(result.serverUpdatedAt)) {
-              stateUpdatedAtRef.current = result.serverUpdatedAt;
-              lastAppliedRemoteUpdatedAtRef.current = result.serverUpdatedAt;
-            }
-            setSyncStatus(result.storageFallback ? "error" : "synced");
+      const now = Date.now();
+      next = { ...next, updatedAt: now };
+      stateRef.current = next;
+      stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, now);
+      membersAuthoritativeSaveUntilRef.current = Date.now() + 120_000;
+      pendingUnsyncedRef.current = true;
+      try {
+        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(next));
+      } catch {}
+      notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
+      /**
+       * 개명도 membersAuthoritative 로 즉시 저장·SSE 힌트.
+       * (GET 재병합 경합·omit 경로로 OBS에 옛 이름이 남는 회귀 방지)
+       */
+      void saveStateAsync(next, user?.id, {
+        membersAuthoritative: true,
+        ...(normalizeDonorsArray(next.donors).length > 0
+          ? { donorsAuthoritative: true as const }
+          : { omitDonationFields: true as const }),
+      }).then((r) => {
+        if (r.ok) {
+          pendingUnsyncedRef.current = false;
+          setSyncStatus(r.storageFallback ? "error" : "synced");
+          if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
+            stateUpdatedAtRef.current = r.serverUpdatedAt;
+            lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
           }
-        } catch {}
-      })();
+        } else {
+          setSyncStatus(typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error");
+        }
+      });
       return next;
     });
   };
