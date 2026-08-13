@@ -53,6 +53,19 @@ describe("member-roster-merge", () => {
     expect(result.members[1]?.name).toBe("베타");
   });
 
+  it("does not shrink roster on zero-wipe when patch is shorter", () => {
+    const base = [
+      m({ id: "a", name: "자키", account: 5000, toon: 2000 }),
+      m({ id: "b", name: "수지", account: 0, toon: 0 }),
+    ];
+    const patch = [m({ id: "a", name: "자키", account: 0, toon: 0 })];
+    const result = resolveMembersAgainstZeroWipe({ baseMembers: base, patchMembers: patch });
+    expect(result.blockedWipe).toBe(true);
+    expect(result.members.map((x) => x.id)).toEqual(["a", "b"]);
+    expect(result.members[0]?.account).toBe(5000);
+    expect(result.members[1]?.name).toBe("수지");
+  });
+
   it("preserves amounts onto patch roster order", () => {
     const base = [m({ id: "a", name: "옛이름", account: 9000 })];
     const patch = [m({ id: "a", name: "새이름", account: 0 })];

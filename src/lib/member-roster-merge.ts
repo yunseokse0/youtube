@@ -89,7 +89,8 @@ export function mergeMemberRosterPreservingAmounts(
 
 /**
  * base에 금액이 있고 patch 멤버 금액이 전부 0일 때 —
- * 동일 로스터면 금액 wipe 차단, 멤버 추가·삭제(id 집합 변경)면 로스터는 수용하고 금액만 보존.
+ * 동일 로스터면 금액 wipe 차단, 멤버 추가(id 증가)면 로스터는 수용하고 금액만 보존.
+ * 멤버 축소(짧은 patch)는 여기서 수용하지 않음 — membersAuthoritative 경로만 축소 허용.
  */
 export function resolveMembersAgainstZeroWipe(opts: {
   baseMembers: Member[];
@@ -106,6 +107,14 @@ export function resolveMembersAgainstZeroWipe(opts: {
     membersDifferByIds(baseMembers, patchMembers) ||
     patchMembers.length !== baseMembers.length;
   if (rosterChanged) {
+    /** 비권한 축소 patch 는 base 유지 + 필드만 병합(추가분만 append) */
+    if (patchMembers.length < baseMembers.length) {
+      return {
+        members: mergeManualMemberFieldsFromPatch(baseMembers, patchMembers),
+        blockedWipe: true,
+        rosterChanged: true,
+      };
+    }
     return {
       members: mergeMemberRosterPreservingAmounts(baseMembers, patchMembers),
       blockedWipe: true,

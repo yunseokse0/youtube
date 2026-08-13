@@ -1808,6 +1808,13 @@ export default function AdminPage() {
         ) {
           rosterMembers = local.members;
         }
+        /**
+         * 새로고침 복구: LS가 서버보다 멤버가 많은 상위집합이면 stamp와 무관하게 LS 유지.
+         * (추가 직후 비권한 PATCH 로 서버만 짧아진 뒤 새로고침해도 추가분 복구)
+         */
+        if (isMemberRosterStrictSuperset(local.members, apiState.members)) {
+          rosterMembers = local.members;
+        }
         const rosterFromLocal =
           hasMeaningfulMemberRoster(local) &&
           !membersDifferByIds(rosterMembers, local.members || []);
@@ -3375,12 +3382,24 @@ export default function AdminPage() {
         window.localStorage.setItem(storageKey(user?.id), JSON.stringify(next));
       } catch {}
       notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
-      persistState(next, {
-        includeDonationFields: true,
+      /** persistState 큐 경합을 피하고 멤버 권위 저장을 즉시 보냄 */
+      void saveStateAsync(next, user?.id, {
         membersAuthoritative: true,
         ...(normalizeDonorsArray(next.donors).length > 0
           ? { donorsAuthoritative: true as const }
-          : {}),
+          : { omitDonationFields: true as const }),
+      }).then((r) => {
+        if (r.ok) {
+          pendingUnsyncedRef.current = false;
+          setSyncStatus(r.storageFallback ? "error" : "synced");
+          if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
+            stateUpdatedAtRef.current = r.serverUpdatedAt;
+            lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
+          }
+        } else {
+          setSyncStatus(typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error");
+          setSigExcelResult("멤버 추가를 서버에 저장하지 못했습니다. 네트워크 후 다시 추가해 주세요.");
+        }
       });
       return next;
     });

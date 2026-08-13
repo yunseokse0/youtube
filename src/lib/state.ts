@@ -1845,6 +1845,7 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
     }
     if (
       !nextAuthoritative &&
+      next.membersAuthoritative !== true &&
       next.settlementReset !== true &&
       Array.isArray(next.members) &&
       !("members" in prev) &&

@@ -27,6 +27,7 @@ import {
   isIntentionalDonorListShrink,
   isDonorListMemberReassignment,
   membersDifferByIds,
+  isMemberRosterStrictSuperset,
   mergeOverlaySettingsPreservingObsText,
   normalizeDonorsArray,
   normalizeRouletteState,
@@ -40,6 +41,7 @@ import { dedupeDonorRows, repairMemberTotalsForDonorRoster, syncMemberTotalsFrom
 import { isGroupSplitDonorListMutation } from "@/lib/donation/group-split-donation";
 import {
   mergeManualMemberFieldsFromPatch,
+  mergeMemberRosterPreservingAmounts,
   resolveMembersAgainstZeroWipe,
 } from "@/lib/member-roster-merge";
 import { isManualOverlaySessionId } from "@/lib/sig-sales-manual-round";
@@ -206,23 +208,47 @@ function mergePartialState(
     next.memberPositions = base.memberPositions;
     logger.warn("members placeholder wipe blocked (theme/preset save)", { userId });
   } else if (Array.isArray(patch.members) && !isDonationInitGoalResetPatch(patch)) {
-    const zero = resolveMembersAgainstZeroWipe({
-      baseMembers: base.members || [],
-      patchMembers: patch.members as Member[],
-    });
-    if (zero.blockedWipe) {
-      next.members = zero.members;
-      logger.warn(
-        zero.rosterChanged
-          ? "members zero wipe blocked — roster change accepted, amounts preserved"
-          : "members zero wipe blocked — restroom/contribution merged from patch",
-        { userId }
-      );
+    const baseMembers = base.members || [];
+    const patchMembers = patch.members as Member[];
+    /**
+     * 테마·시그 등 비권한 저장이 짧은 members 로 서버 로스터를 덮지 않음.
+     * (멤버 추가 직후 stale PATCH 가 추가분을 지우는 회귀 — 축소는 membersAuthoritative 만)
+     */
+    if (
+      patchMembers.length < baseMembers.length ||
+      (baseMembers.length > 0 &&
+        membersDifferByIds(baseMembers, patchMembers) &&
+        isMemberRosterStrictSuperset(baseMembers, patchMembers))
+    ) {
+      next.members = mergeManualMemberFieldsFromPatch(baseMembers, patchMembers);
+      logger.warn("members non-authoritative shrink blocked", {
+        userId,
+        baseCount: baseMembers.length,
+        patchCount: patchMembers.length,
+      });
+    } else {
+      const zero = resolveMembersAgainstZeroWipe({
+        baseMembers,
+        patchMembers,
+      });
+      if (zero.blockedWipe) {
+        next.members = zero.members;
+        logger.warn(
+          zero.rosterChanged
+            ? "members zero wipe blocked — roster change accepted, amounts preserved"
+            : "members zero wipe blocked — restroom/contribution merged from patch",
+          { userId }
+        );
+      } else if (membersDifferByIds(baseMembers, patchMembers)) {
+        /** 금액 있는 추가·개명 — patch 로스터를 따르되 base 금액 보존 */
+        next.members = mergeMemberRosterPreservingAmounts(baseMembers, patchMembers);
+      }
+      /** else: 동일 id·금액 있음 → spread 의 patch.members 유지 후 아래 identity merge */
     }
   }
   /**
    * 금액 가드/부분 병합 후에도 patch의 실멤버명·목표·운영비는 항상 반영.
-   * (omitDonationFields 저장이 이름만 보낼 때 OBS 엑셀/게이지 갱신)
+   * base 기준으로 병합해 비권한 축소가 다시 끼어들지 않게 한다.
    */
   if (
     Array.isArray(patch.members) &&
@@ -232,6 +258,7 @@ function mergePartialState(
     Array.isArray(next.members)
   ) {
     const before = next.members;
+    /** 이미 base 상위집합을 지킨 경우 before 가 base — patch 필드만 얹음 */
     next.members = mergeManualMemberFieldsFromPatch(before, patch.members as Member[]);
     const nameChanged = before.some((b, i) => b.name !== next.members[i]?.name);
     if (nameChanged) {
