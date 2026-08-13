@@ -1,5 +1,5 @@
 import type { AppState } from "@/types";
-import { hasMeaningfulMemberRoster } from "@/lib/state";
+import { hasMeaningfulMemberRoster, membersDifferByIds } from "@/lib/state";
 import {
   STATE_PICK_OBS_TEXT,
   STATE_PICK_OVERLAY,
@@ -164,7 +164,19 @@ export function shouldKeepLastGoodInsteadOf(
       return true;
     }
   }
-  if (!isOverlayStateViable(incoming, pick)) return true;
+  if (!isOverlayStateViable(incoming, pick)) {
+    /** 멤버 삭제 후 멤버1만 남은 경우 등 — id 집합이 바뀌고 stamp가 최신이면 수용 */
+    if (
+      (pick === STATE_PICK_OVERLAY || pick === STATE_PICK_OVERLAY_DONORS) &&
+      Array.isArray(incoming.members) &&
+      incoming.members.length > 0 &&
+      Number(incoming.updatedAt || 0) >= Number(lastGood.updatedAt || 0) &&
+      membersDifferByIds(incoming.members, lastGood.members || [])
+    ) {
+      return false;
+    }
+    return true;
+  }
   if (shouldDiscardEmptyMembersSnapshot(incoming, pick, lastGood)) return true;
   return false;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
+import BattleGaugeFitScore from "@/components/battle/BattleGaugeFitScore";
 
 function scoreTextStyle(): CSSProperties {
   return {
@@ -67,11 +68,10 @@ export default function BattleTeamScoreHeader({
       ? gapLabel.trim()
       : formatScore(scoreGap);
   const barH = compact ? "h-12 sm:h-14" : "h-14 sm:h-16";
-  const scoreSize = compact
-    ? "text-xl sm:text-2xl md:text-3xl"
-    : "text-2xl sm:text-3xl md:text-4xl";
   const nameSize = compact ? "text-xs sm:text-sm" : "text-sm sm:text-base";
   const gapSize = compact ? "text-[10px] sm:text-xs" : "text-xs sm:text-sm";
+  const leftLabel = formatScore(leftScore);
+  const rightLabel = formatScore(rightScore);
 
   const vsBadge = (
     <span
@@ -124,12 +124,11 @@ export default function BattleTeamScoreHeader({
             }}
           >
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
-            <span
-              className={`relative z-[1] px-2 font-black tabular-nums leading-none tracking-tight ${scoreSize}`}
+            <BattleGaugeFitScore
+              label={leftLabel}
+              className="relative z-[1] px-1.5 font-black tabular-nums tracking-tight"
               style={scoreTextStyle()}
-            >
-              {formatScore(leftScore)}
-            </span>
+            />
           </div>
 
           <div
@@ -142,12 +141,11 @@ export default function BattleTeamScoreHeader({
             }}
           >
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
-            <span
-              className={`relative z-[1] px-2 font-black tabular-nums leading-none tracking-tight ${scoreSize}`}
+            <BattleGaugeFitScore
+              label={rightLabel}
+              className="relative z-[1] px-1.5 font-black tabular-nums tracking-tight"
               style={scoreTextStyle()}
-            >
-              {formatScore(rightScore)}
-            </span>
+            />
           </div>
         </div>
 

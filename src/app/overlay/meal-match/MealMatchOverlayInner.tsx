@@ -25,6 +25,7 @@ import {
 } from "@/lib/overlay-battle-scale";
 import BattleRulesBox from "@/components/battle/BattleRulesBox";
 import BattleTeamColumnBoard from "@/components/battle/BattleTeamColumnBoard";
+import BattleGaugeFitScore from "@/components/battle/BattleGaugeFitScore";
 import { mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 
@@ -449,6 +450,7 @@ export default function MealMatchOverlayInner() {
   const mealBattleUseRawScore = mealBattleUsesRawDonationScore(mb);
 
   const overlayRulesText = String(mb?.overlayRulesText || "").trim();
+  const overlayRulesFontSize = Number(mb?.overlayRulesFontSize);
 
   const segments = useMemo(() => {
     if (!coreMealParticipants.length || fillGaugeMode) return [];
@@ -602,6 +604,7 @@ export default function MealMatchOverlayInner() {
           <BattleRulesBox
             text={overlayRulesText}
             compact={compact}
+            fontSizePx={overlayRulesFontSize}
             className="right-0 top-0 max-sm:left-0 max-sm:right-0 max-sm:mx-auto sm:right-1"
           />
           <div className="pastel-text-outline text-4xl font-black tracking-wide text-pink-100" style={outlineStyle()}>
@@ -913,30 +916,28 @@ export default function MealMatchOverlayInner() {
                 ) : null}
 
                 {!fillGaugeMode ? (
-                  <div className="pointer-events-none absolute inset-0 z-[30] flex items-center" aria-hidden>
+                  <div className="pointer-events-none absolute inset-0 z-[30]" aria-hidden>
                     {segments.map((seg) => {
-                      const narrow = seg.percent < 22;
-                      const lineSize = narrow
-                        ? "text-[11px] leading-none sm:text-xs"
-                        : seg.percent < 34
-                          ? "text-xs leading-none sm:text-sm"
-                          : "text-sm leading-none sm:text-base";
+                      const label = `${Math.round(seg.score)} / ${Math.round(seg.goal)}`;
+                      const leftPct = Math.max(0, seg.center - seg.percent / 2);
                       return (
-                        <motion.div
+                        <div
                           key={`gauge-score-${seg.memberId}`}
-                          className="absolute top-1/2 max-w-[92%] -translate-x-1/2 -translate-y-1/2 px-0.5 text-center"
-                          style={{ left: `${seg.center}%` }}
-                          animate={{ left: `${seg.center}%` }}
-                          transition={{ type: "spring", stiffness: 120, damping: 20 }}
+                          className="absolute top-0 bottom-0 flex items-center justify-center px-0.5 text-center"
+                          style={{
+                            left: `${leftPct}%`,
+                            width: `${Math.max(1, seg.percent)}%`,
+                          }}
                         >
-                          <span
-                            className={`inline-block whitespace-nowrap font-black tabular-nums ${lineSize}`}
+                          <BattleGaugeFitScore
+                            label={label}
+                            className="inline-block max-w-full whitespace-nowrap font-black tabular-nums"
                             style={gaugeInBarScoreStyle(scoreTextColor)}
                           >
                             {Math.round(seg.score)}
                             <span className="font-bold opacity-90"> / {Math.round(seg.goal)}</span>
-                          </span>
-                        </motion.div>
+                          </BattleGaugeFitScore>
+                        </div>
                       );
                     })}
                   </div>

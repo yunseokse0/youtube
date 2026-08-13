@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers, mergeLocalMemberIdentityOntoRemote, normalizeDonorsArray } from "@/lib/state";
+import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers, mergeLocalMemberIdentityOntoRemote, normalizeDonorsArray, membersDifferByIds } from "@/lib/state";
 import {
   repairMemberTotalsForDonorRoster,
   syncMemberTotalsFromDonors,
@@ -247,15 +247,23 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
   const mergeKeepingStrongRoster = useCallback((incoming: AppState): AppState => {
     const good = lastGoodRef.current;
     let merged = incoming;
+    const remoteRosterChanged =
+      Boolean(good) &&
+      Array.isArray(incoming.members) &&
+      incoming.members.length > 0 &&
+      membersDifferByIds(good!.members || [], incoming.members) &&
+      Number(incoming.updatedAt || 0) >= Number(good!.updatedAt || 0);
     if (preferServerOnlyRef.current) {
       /**
        * OBS: 서버 이름·금액이 정본. last-good 옛 실명으로 개명을 덮지 않음.
-       * 원격만 플레이스홀더/빈 로스터일 때만 세션 로스터 유지.
+       * 원격만 플레이스홀더/빈 로스터일 때만 세션 로스터 유지 —
+       * 단, 멤버 삭제·교체(id 집합 변경 + 최신 stamp)는 서버 로스터를 수용.
        */
       if (
         good &&
         hasMeaningfulMemberRoster(good) &&
-        !hasMeaningfulMemberRoster(incoming)
+        !hasMeaningfulMemberRoster(incoming) &&
+        !remoteRosterChanged
       ) {
         merged = {
           ...incoming,
@@ -268,7 +276,8 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
     } else if (
       good &&
       hasMeaningfulMemberRoster(good) &&
-      !hasMeaningfulMemberRoster(incoming)
+      !hasMeaningfulMemberRoster(incoming) &&
+      !remoteRosterChanged
     ) {
       merged = {
         ...incoming,
@@ -277,7 +286,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         memberPositionMode: good.memberPositionMode,
         rankPositionLabels: good.rankPositionLabels,
       };
-    } else if (good && hasMeaningfulMemberRoster(good)) {
+    } else if (good && hasMeaningfulMemberRoster(good) && !remoteRosterChanged) {
       /** 미리보기/동일 PC: 로컬 개명이 서버보다 최신이면 이름만 유지 */
       merged = mergeLocalMemberIdentityOntoRemote(incoming, good);
     }
@@ -2047,6 +2056,16 @@ function OverlayInner() {
     const raw = (sp.get(key) || "auto").trim();
     if (raw === "auto" || !raw) {
       if (key === "membersTheme" || key === "totalTheme" || key === "tickerBaseTheme" || key === "missionTheme") {
+        const fromPresetKey = String(
+          (effectivePreset as Record<string, unknown> | null)?.[key] || ""
+        ).trim();
+        if (
+          fromPresetKey &&
+          fromPresetKey !== "auto" &&
+          Object.prototype.hasOwnProperty.call(THEMES, fromPresetKey)
+        ) {
+          return fromPresetKey as ThemeId;
+        }
         const presetTheme = String((effectivePreset as { theme?: string })?.theme || "").trim();
         if (presetTheme && Object.prototype.hasOwnProperty.call(THEMES, presetTheme)) {
           return presetTheme as ThemeId;
@@ -2253,12 +2272,19 @@ function OverlayInner() {
       timerStyleEmptySinceRef.current = null;
       return next;
     }
-    /** 다른 옵션 저장·동기화로 잠깐 기본색이 오면 즉시 지우지 않고 유지(왔다갔다 방지) */
+    /** 다른 옵션 저장·동기화로 잠깐 기본색이 오면 색만 유지 — 글꼴·크기·시:분:초는 최신 반영 */
     if (lastStableTimerStyleRef.current) {
       const now = Date.now();
       if (timerStyleEmptySinceRef.current == null) timerStyleEmptySinceRef.current = now;
       if (now - timerStyleEmptySinceRef.current < 2800) {
-        return lastStableTimerStyleRef.current;
+        return {
+          ...lastStableTimerStyleRef.current,
+          fontFamily: next.fontFamily,
+          showHours: next.showHours,
+          scalePercent: next.scalePercent,
+          outlineWidth: next.outlineWidth,
+          bgOpacity: next.bgOpacity,
+        };
       }
       lastStableTimerStyleRef.current = null;
       timerStyleEmptySinceRef.current = null;

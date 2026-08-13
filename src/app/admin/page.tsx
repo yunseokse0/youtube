@@ -1102,8 +1102,10 @@ export default function AdminPage() {
     s: AppState,
     opts?: {
       donorsAuthoritative?: boolean;
+      donorsReplace?: boolean;
       settlementReset?: boolean;
       omitDonationFields?: boolean;
+      membersAuthoritative?: boolean;
       /** 후원·멤버 로스터/금액을 API에 포함할 때만 true. 미지정 시 오버레이·시그 등 비후원 저장으로 처리 */
       includeDonationFields?: boolean;
       /** 판매완료 도장을 기본(빈 URL)으로 되돌릴 때만 */
@@ -3103,6 +3105,9 @@ export default function AdminPage() {
         const nextMealMatch = { ...(prev.mealMatch || {}) };
         delete nextSigMatch[id];
         delete nextMealMatch[id];
+        const prevLinks = prev.sigMatchSettings?.donationLinks || {};
+        const nextLinks = { ...prevLinks };
+        delete nextLinks[id];
         const next: AppState = {
           ...prev,
           members,
@@ -3116,6 +3121,15 @@ export default function AdminPage() {
           donors,
           sigMatch: nextSigMatch,
           mealMatch: nextMealMatch,
+          sigMatchSettings: {
+            ...prev.sigMatchSettings,
+            participantMemberIds: (prev.sigMatchSettings?.participantMemberIds || []).filter((x) => x !== id),
+            donationLinks: nextLinks,
+            sigMatchPools: (prev.sigMatchSettings?.sigMatchPools || []).map((pool) => ({
+              ...pool,
+              memberIds: (pool.memberIds || []).filter((x) => x !== id),
+            })),
+          },
           mealBattle: {
             ...prev.mealBattle,
             participants: (prev.mealBattle?.participants || []).filter((p) => p.memberId !== id),
@@ -3130,8 +3144,14 @@ export default function AdminPage() {
             teamAMemberIds: (prev.mealMatchSettings?.teamAMemberIds || []).filter((x) => x !== id),
             teamBMemberIds: (prev.mealMatchSettings?.teamBMemberIds || []).filter((x) => x !== id),
           },
+          updatedAt: Date.now(),
         };
-        persistState(next, { includeDonationFields: true });
+        persistState(next, {
+          includeDonationFields: true,
+          membersAuthoritative: true,
+          donorsAuthoritative: true,
+          donorsReplace: true,
+        });
         return next;
       });
       if (donorMemberId === id) {
@@ -3160,8 +3180,9 @@ export default function AdminPage() {
           ...prev.mealBattle,
           participants: [...(prev.mealBattle?.participants || [])],
         },
+        updatedAt: Date.now(),
       };
-      persistState(next, { includeDonationFields: true });
+      persistState(next, { includeDonationFields: true, membersAuthoritative: true });
       return next;
     });
     setNewMemberName("");
@@ -5537,6 +5558,79 @@ export default function AdminPage() {
     });
   };
 
+  /** 시그·식사 대전 상단 공통: 시작/정지·초 설정 (generalTimer 동기화) */
+  const renderBattleOverlayTimerControls = (opts?: { id?: string }) => {
+    const rem = getEffectiveRemainingTime(state.generalTimer, timerUiNow);
+    const mm = Math.floor(rem / 60);
+    const ss = rem % 60;
+    const running = Boolean(state.generalTimer?.isActive && rem > 0);
+    return (
+      <div
+        id={opts?.id}
+        className="rounded-lg border border-cyan-500/35 bg-cyan-950/25 p-3 space-y-2"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-sm font-semibold text-cyan-100">대전 오버레이 타이머</div>
+          <div className="text-xs tabular-nums text-neutral-300">
+            남은 {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")} ·{" "}
+            <span className={running ? "text-emerald-300" : "text-neutral-400"}>
+              {running ? "진행중" : "대기"}
+            </span>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-[160px_1fr] gap-2 items-center">
+          <label className="block space-y-1">
+            <span className="text-[11px] text-neutral-400">시간 설정 (초)</span>
+            <input
+              className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+              type="number"
+              min={0}
+              max={86400}
+              placeholder="초(0=숨김)"
+              value={sigMatchNumericDraft.overlayTimerDurationSec}
+              onFocus={() => setSigMatchDraftEditing("overlayTimerDurationSec", true)}
+              onChange={(e) =>
+                setSigMatchNumericDraft((prev) => ({
+                  ...prev,
+                  overlayTimerDurationSec: e.target.value.replace(/[^\d]/g, ""),
+                }))
+              }
+              onBlur={commitSigMatchTimerDurationDraft}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+              }}
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-2 pt-0 md:pt-5">
+            <button
+              type="button"
+              className="rounded bg-emerald-700 px-3 py-1.5 text-xs font-semibold hover:bg-emerald-600"
+              onClick={() => startSigMatchOverlayTimerSynced()}
+            >
+              시작
+            </button>
+            <button
+              type="button"
+              className="rounded bg-neutral-700 px-3 py-1.5 text-xs font-semibold hover:bg-neutral-600"
+              onClick={() => stopSigMatchOverlayTimerSynced()}
+            >
+              정지
+            </button>
+            <a
+              href="#timer-control-section"
+              className="text-[11px] text-cyan-300/90 hover:text-cyan-200 underline-offset-2 hover:underline"
+            >
+              타이머 제어(±분·일시정지) →
+            </a>
+          </div>
+        </div>
+        <p className="text-[11px] text-neutral-500">
+          시그·식사 대전·OBS 일반 타이머가 같은 남은 시간을 봅니다. 시작 시 위 초 값으로 리셋됩니다.
+        </p>
+      </div>
+    );
+  };
+
   const updateTimerDisplayStyle = (key: "general", patch: Partial<AppState["timerDisplayStyles"]["general"]>) => {
     setState((prev: AppState) => {
       const baseStyles = prev.timerDisplayStyles || {
@@ -5553,7 +5647,7 @@ export default function AdminPage() {
       /** 타이머 제어 색을 오버레이 프리셋에도 반영 — 둘 중 하나만 바뀌어 기본색처럼 보이는 회귀 방지 */
       const nextPresets = normalizeOverlayPresetLabels(
         (Array.isArray(prev.overlayPresets) ? (prev.overlayPresets as OverlayPreset[]) : presets).map((p) => {
-          if (!p.showTimer) return p;
+          /** 글꼴·색은 전 프리셋에 동기화 — showTimer 없는 프리셋의 구 mono 가 타이머 전용 URL을 덮지 않게 */
           return {
             ...p,
             ...(patch.fontFamily !== undefined ? { timerFontFamily: String(patch.fontFamily || "mono") } : {}),
@@ -7709,6 +7803,7 @@ export default function AdminPage() {
                     {state.sigMatchSettings?.isActive ? "활성화됨" : "비활성화됨"}
                   </button>
                 </div>
+                {renderBattleOverlayTimerControls({ id: "sig-battle-overlay-timer" })}
                 <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_140px] gap-2">
                   <input
                     className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
@@ -7749,13 +7844,27 @@ export default function AdminPage() {
                   모든 후원 금액 집계 (시그 키워드 없이 · 벌칙/금액 대전)
                 </label>
                 <label className="block space-y-1">
-                  <span className="text-xs text-neutral-400">오버레이 규칙 박스 (우상단, 비우면 숨김)</span>
+                  <span className="text-xs text-neutral-400">벌칙/규칙 설명 (오버레이 우상단, 비우면 숨김)</span>
                   <textarea
                     className="w-full min-h-[4rem] px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
                     placeholder="예: 벌칙대전 — 핵불닭 소스 한 숟가락. 10만원 이상 차이로 승리해야 면제."
                     value={state.sigMatchSettings?.rulesText || ""}
                     onChange={(e) => updateSigMatchSettings({ rulesText: e.target.value })}
                   />
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-[11px] text-neutral-500 shrink-0">글자 크기</span>
+                    <input
+                      type="range"
+                      min={10}
+                      max={36}
+                      value={state.sigMatchSettings?.rulesFontSize ?? 16}
+                      onChange={(e) => updateSigMatchSettings({ rulesFontSize: Number(e.target.value) })}
+                      className="flex-1 accent-emerald-500"
+                    />
+                    <span className="w-10 text-right text-xs text-neutral-300">
+                      {state.sigMatchSettings?.rulesFontSize ?? 16}px
+                    </span>
+                  </div>
                 </label>
                 <div className="rounded-lg border border-white/10 bg-black/20 p-3 space-y-2">
                   <span className="text-xs font-medium text-neutral-300">하단 후원 표 옵션</span>
@@ -7809,52 +7918,6 @@ export default function AdminPage() {
                     }}
                   />
                   <div className="text-xs text-neutral-400">세션 종료 시 &quot;시그 인센티브 정산&quot;이 자동 생성됩니다. (count 모드: 점수 x 단가, amount 모드: 점수=금액)</div>
-                </div>
-                <div className="rounded-lg border border-white/10 bg-neutral-950/40 p-3 space-y-2">
-                  <div className="text-sm font-semibold text-neutral-200">오버레이 타이머</div>
-                  <div className="grid grid-cols-1 md:grid-cols-[160px_1fr] gap-2 items-center">
-                    <input
-                      className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
-                      type="number"
-                      min={0}
-                      max={86400}
-                      placeholder="초(0=숨김)"
-                      value={sigMatchNumericDraft.overlayTimerDurationSec}
-                      onFocus={() => setSigMatchDraftEditing("overlayTimerDurationSec", true)}
-                      onChange={(e) =>
-                        setSigMatchNumericDraft((prev) => ({ ...prev, overlayTimerDurationSec: e.target.value.replace(/[^\d]/g, "") }))
-                      }
-                      onBlur={commitSigMatchTimerDurationDraft}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") e.currentTarget.blur();
-                      }}
-                    />
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        className="rounded bg-emerald-700 px-2 py-1 text-xs hover:bg-emerald-600"
-                        onClick={() => startSigMatchOverlayTimerSynced()}
-                      >
-                        시작
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded bg-neutral-700 px-2 py-1 text-xs hover:bg-neutral-600"
-                        onClick={() => stopSigMatchOverlayTimerSynced()}
-                      >
-                        정지
-                      </button>
-                      <span className="text-xs text-neutral-400">
-                        상태:{" "}
-                        {state.generalTimer?.isActive && getEffectiveRemainingTime(state.generalTimer) > 0
-                          ? "진행중"
-                          : "대기"}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="text-[11px] text-neutral-500">
-                    「타이머 제어」의 일반 타이머(generalTimer)와 동일 소스입니다. 시그/식사 오버레이·OBS 여러 소스가 같은 남은 시간을 보게 됩니다. 중앙 VS 위에 표시됩니다.
-                  </div>
                 </div>
                 <div className="rounded-lg border border-white/10 bg-neutral-950/30 p-3 space-y-2">
                   <div>
@@ -8258,6 +8321,7 @@ export default function AdminPage() {
                     식사대전 오버레이 열기
                   </button>
                 </div>
+                {renderBattleOverlayTimerControls({ id: "meal-battle-overlay-timer" })}
                 <p className="text-[11px] text-neutral-500">
                   위 &quot;대전 배율(%)&quot;·&quot;가로 폭(%)&quot;는 시그 대전과 공유됩니다. 아래 미리보기는 스냅샷이 아닌{" "}
                   <code className="text-neutral-400">/overlay/meal-match</code> 실시간 URL이며, 식사 대전 설정·점수 변경이 곧바로
@@ -8323,13 +8387,27 @@ export default function AdminPage() {
                   </label>
                 </div>
                 <label className="block space-y-1">
-                  <span className="text-xs text-neutral-400">오버레이 규칙 박스 (우상단, 비우면 숨김)</span>
+                  <span className="text-xs text-neutral-400">벌칙/규칙 설명 (오버레이 우상단, 비우면 숨김)</span>
                   <textarea
                     className="w-full min-h-[4rem] px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
                     placeholder="예: 벌칙대전 규칙 — 10만원 이상 차이로 승리해야 면제"
                     value={state.mealBattle?.overlayRulesText || ""}
                     onChange={(e) => updateMealBattle({ overlayRulesText: e.target.value })}
                   />
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-[11px] text-neutral-500 shrink-0">글자 크기</span>
+                    <input
+                      type="range"
+                      min={10}
+                      max={36}
+                      value={state.mealBattle?.overlayRulesFontSize ?? 16}
+                      onChange={(e) => updateMealBattle({ overlayRulesFontSize: Number(e.target.value) })}
+                      className="flex-1 accent-emerald-500"
+                    />
+                    <span className="w-10 text-right text-xs text-neutral-300">
+                      {state.mealBattle?.overlayRulesFontSize ?? 16}px
+                    </span>
+                  </div>
                 </label>
                 <div className="rounded-lg border border-white/10 bg-black/20 p-3 space-y-2">
                   <span className="text-xs font-medium text-neutral-300">하단 후원 표 옵션</span>
@@ -8862,7 +8940,7 @@ export default function AdminPage() {
                         <div className="text-xs text-neutral-300">{state.donorRankingsTheme.rankSize}px</div>
                       </label>
                       <label className="text-[11px] text-neutral-400">
-                        오버레이 투명도(헤더·순위 목록 배경 공통, 색상은 유지)
+                        오버레이 투명도(헤더·목록·행 배경 공통 · 중간 구간은 덜 어둡게)
                         <input
                           type="range"
                           min={0}
@@ -9064,7 +9142,7 @@ export default function AdminPage() {
                   </div>
                   <div className="rounded border border-white/10 bg-black/20 px-3 py-2">
                     <div className="text-xs text-neutral-300 mb-1">
-                      후원 리스트 패널 배경 투명도(실시간 · 계좌/투네 헤더·목록 공통)
+                      후원 리스트 패널 투명도(헤더·목록·행 공통 · 중간 구간은 덜 어둡게)
                     </div>
                     <div className="flex items-center gap-2">
                       <input
@@ -10625,11 +10703,12 @@ export default function AdminPage() {
                   </div>
                 </div>
               ) : null}
-              <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
+              <div id="timer-control-section" className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
                 <div>
                   <h3 className="text-base font-semibold">타이머 제어</h3>
                   <p className="text-xs text-neutral-400 mt-1">
-                    일반 타이머 하나만 사용합니다. 오버레이에서 숨기려면 &quot;오버레이 사용&quot;을 끄세요. (제어 버튼은 그대로 사용 가능)
+                    일반 타이머 하나만 사용합니다. 시그·식사 대전의 「대전 오버레이 타이머」(시작·정지·초 설정)와 동일 소스입니다.
+                    여기서는 ±분·일시정지·글꼴·오버레이 ON/OFF를 조정합니다. 오버레이에서 숨기려면 &quot;오버레이 사용&quot;을 끄세요.
                   </p>
                 </div>
                 {([{ key: "generalTimer", flag: "general" as const, label: "일반 타이머" }] as const).map((timerDef) => {
@@ -12684,7 +12763,7 @@ export default function AdminPage() {
                     <span className="text-xs text-neutral-300">{state.donorRankingsTheme.rankSize}px</span>
                   </label>
                   <label className="text-[11px] text-neutral-400">
-                    배경 투명도
+                    배경 투명도(헤더·목록·행 · 덜 어둡게)
                     <input
                       type="range"
                       min={0}

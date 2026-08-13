@@ -183,6 +183,8 @@ export type MealBattleState = {
   currentMission: string;
   /** 오버레이 우상단 규칙 박스(비우면 숨김). 말풍선과 별도 */
   overlayRulesText?: string;
+  /** 규칙 박스 본문 글자 크기(px). 기본 16 */
+  overlayRulesFontSize?: number;
   /** 하단 후원 표 열·총합 표시 옵션 */
   donationTableOptions?: DonationTableColumnsOptions;
   /** 신규 참가 시 기본 개인 목표·구버전 단일 목표 호환 */
@@ -318,6 +320,8 @@ export type SigMatchSettings = {
   overlayTimerEndAt?: number | null;
   /** 오버레이 우상단 규칙 박스 문구(비우면 숨김) */
   rulesText?: string;
+  /** 규칙 박스 본문 글자 크기(px). 기본 16 */
+  rulesFontSize?: number;
   /** 하단 후원 표 열·총합 표시 옵션 */
   donationTableOptions?: DonationTableColumnsOptions;
 };

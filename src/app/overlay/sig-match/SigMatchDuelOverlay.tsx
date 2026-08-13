@@ -21,6 +21,7 @@ import {
 } from "@/lib/settlement-utils";
 import BattleRulesBox from "@/components/battle/BattleRulesBox";
 import BattleTeamColumnBoard from "@/components/battle/BattleTeamColumnBoard";
+import BattleGaugeFitScore from "@/components/battle/BattleGaugeFitScore";
 
 type SigMatchSide = { ids: string[]; label: string; score: number; teamLabel?: string };
 
@@ -42,9 +43,7 @@ function sigGaugeInBarScoreStyle(leading: boolean): React.CSSProperties {
 function SigVsBarSegmentLabel({
   score,
   scoringMode,
-  narrow,
   leading = false,
-  compact = false,
 }: {
   score: number;
   scoringMode: "count" | "amount";
@@ -52,29 +51,18 @@ function SigVsBarSegmentLabel({
   leading?: boolean;
   compact?: boolean;
 }) {
-  const lineSize = narrow
-    ? leading
-      ? "text-xs leading-tight sm:text-sm"
-      : "text-[10px] leading-tight sm:text-[11px]"
-    : leading
-      ? compact
-        ? "text-sm leading-tight sm:text-base"
-        : "text-base leading-tight sm:text-lg md:text-xl"
-      : compact
-        ? "text-xs leading-tight sm:text-sm"
-        : "text-sm leading-tight sm:text-base md:text-lg";
+  const label = formatSigMatchScoreLabel(score, scoringMode);
   return (
     <div
       className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center px-1 text-center"
       data-sig-vs-segment-label="true"
       data-sig-leading={leading ? "true" : "false"}
     >
-      <span
-        className={`block whitespace-nowrap font-black tabular-nums ${lineSize}`}
+      <BattleGaugeFitScore
+        label={label}
+        className="block max-w-full whitespace-nowrap font-black tabular-nums"
         style={sigGaugeInBarScoreStyle(leading)}
-      >
-        {formatSigMatchScoreLabel(score, scoringMode)}
-      </span>
+      />
     </div>
   );
 }
@@ -818,6 +806,7 @@ export default function SigMatchDuelOverlay({
           <BattleRulesBox
             text={rulesText}
             compact={compact}
+            fontSizePx={sigSettings.rulesFontSize}
             className="right-0 top-0 max-sm:left-0 max-sm:right-0 max-sm:mx-auto sm:right-1"
           />
           {devHud && sigPreview ? (

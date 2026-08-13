@@ -76,6 +76,59 @@ describe("admin preview hot-reload params", () => {
     expect(merged[0]?.goalTextColor).toBe("#ddeeff");
   });
 
+  it("OBS view keeps local excel theme when remote presets look default", () => {
+    const remote: OverlayPresetLike[] = [
+      { id: "ov_1", theme: "default", membersTheme: "auto", showMembers: true },
+    ];
+    const local: OverlayPresetLike[] = [
+      { id: "ov_1", theme: "excelBlue", membersTheme: "excelBlue", showMembers: true },
+    ];
+    const sp = new URLSearchParams("host=obs&u=din&p=ov_1");
+    const merged = mergeOverlayPresetsForOverlayView(remote, local, sp);
+    expect(merged[0]?.theme).toBe("excelBlue");
+    expect(merged[0]?.membersTheme).toBe("excelBlue");
+  });
+
+  it("OBS view applies remote rankTop3 even when local has custom theme", () => {
+    const remote: OverlayPresetLike[] = [
+      {
+        id: "ov_1",
+        theme: "default",
+        membersTheme: "auto",
+        rankTop3Mode: "text",
+        rankTop3Effect: "glow",
+        showMembers: true,
+      },
+    ];
+    const local: OverlayPresetLike[] = [
+      {
+        id: "ov_1",
+        theme: "excelBlue",
+        membersTheme: "excelBlue",
+        rankTop3Mode: "off",
+        rankTop3Effect: "none",
+        showMembers: true,
+      },
+    ];
+    const sp = new URLSearchParams("host=obs&u=din&p=ov_1");
+    const merged = mergeOverlayPresetsForOverlayView(remote, local, sp);
+    expect(merged[0]?.theme).toBe("excelBlue");
+    expect(merged[0]?.rankTop3Mode).toBe("text");
+    expect(merged[0]?.rankTop3Effect).toBe("glow");
+  });
+
+  it("OBS view prefers remote theme when server has custom theme", () => {
+    const remote: OverlayPresetLike[] = [
+      { id: "ov_1", theme: "excelRose", membersTheme: "excelRose", showMembers: true },
+    ];
+    const local: OverlayPresetLike[] = [
+      { id: "ov_1", theme: "excelBlue", membersTheme: "excelBlue", showMembers: true },
+    ];
+    const sp = new URLSearchParams("host=obs&u=din&p=ov_1");
+    const merged = mergeOverlayPresetsForOverlayView(remote, local, sp);
+    expect(merged[0]?.theme).toBe("excelRose");
+  });
+
   it("prefers preset timer colors over stale URL when ready", () => {
     const preset: OverlayPresetLike = {
       id: "ov_timer",
@@ -131,6 +184,31 @@ describe("admin preview hot-reload params", () => {
     expect(style.bgOpacity).toBe(0);
     expect(style.scalePercent).toBe(120);
     expect(style.showHours).toBe(true);
+  });
+
+  it("prefers timerDisplayStyles font over stale preset mono", () => {
+    const preset: OverlayPresetLike = {
+      id: "ov_stale_font",
+      showTimer: false,
+      timerFontFamily: "mono",
+    };
+    const style = resolveTimerOverlayStyle(
+      new URLSearchParams(),
+      preset,
+      {
+        fontFamily: "gaegu",
+        fontColor: "",
+        bgColor: "",
+        borderColor: "",
+        outlineColor: "",
+        outlineWidth: 0.8,
+        bgOpacity: 40,
+        scalePercent: 100,
+        showHours: false,
+      },
+      { ready: true }
+    );
+    expect(style.fontFamily).toBe("gaegu");
   });
 
   it("keeps structural params needed for member table when stripping hot-reload keys", () => {

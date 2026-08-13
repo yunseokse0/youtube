@@ -121,4 +121,17 @@ describe("overlay-last-good", () => {
     expect(isOverlayStateViable(incoming, STATE_PICK_OBS_TEXT)).toBe(true);
     expect(shouldKeepLastGoodInsteadOf(incoming, STATE_PICK_OBS_TEXT, last)).toBe(false);
   });
+
+  it("accepts newer placeholder roster when member ids changed (delete)", () => {
+    const last = defaultState();
+    last.updatedAt = 1000;
+    last.members = [
+      { id: "a", name: "111", account: 0, toon: 0 },
+      { id: "b", name: "222", account: 0, toon: 0 },
+    ];
+    const incoming = defaultState();
+    incoming.updatedAt = 2000;
+    incoming.members = [{ id: "m1", name: "멤버1", account: 0, toon: 0 }];
+    expect(shouldKeepLastGoodInsteadOf(incoming, STATE_PICK_OVERLAY, last)).toBe(false);
+  });
 });

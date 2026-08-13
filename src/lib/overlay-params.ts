@@ -2,7 +2,7 @@ import type { DonorRankingsTheme, SigItem } from "@/types";
 import { appendExcelRankTop3Params } from "@/lib/excel-rank-top3-style";
 import { mergeDonationTablePresetFields } from "@/lib/donation-table-options";
 import { normalizeTableFontFamily, type TableFontFamilyId } from "@/lib/table-font-style";
-import { normalizeTimerFontFamily } from "@/lib/timer-font-style";
+import { isDefaultTimerFontFamily, normalizeTimerFontFamily } from "@/lib/timer-font-style";
 import {
   normalizeGoalBarAnimation,
   resolveGoalBarFillColor,
@@ -809,6 +809,63 @@ export function shouldPreferLocalOverlayPresets(searchParams?: SearchParamsLike)
   return true;
 }
 
+/** 테마·표 색만 기본인지 — 1~3위 효과·외곽선 등 시각 옵션은 별개로 본다 */
+export function isDefaultLikeOverlayThemeFields(preset: unknown): boolean {
+  if (!preset || typeof preset !== "object") return true;
+  const p = preset as Record<string, unknown>;
+  if (String(p.theme || "default") !== "default") return false;
+  if (String(p.membersTheme || "auto") !== "auto") return false;
+  if (String(p.totalTheme || "auto") !== "auto") return false;
+  const colorKeys = [
+    "tableBgColor",
+    "tableHeaderBgColor",
+    "tableHeaderTextColor",
+    "tableLineColor",
+    "accountColor",
+    "toonColor",
+    "tableBgGifUrl",
+    "tableTextColor",
+    "tableTextOutlineColor",
+  ];
+  return !colorKeys.some((k) => typeof p[k] === "string" && String(p[k]).trim());
+}
+
+const OVERLAY_THEME_FALLBACK_KEYS = [
+  "theme",
+  "membersTheme",
+  "totalTheme",
+  "goalTheme",
+  "tickerBaseTheme",
+  "timerTheme",
+  "missionTheme",
+  "tableBgColor",
+  "tableHeaderBgColor",
+  "tableHeaderTextColor",
+  "tableLineColor",
+  "accountColor",
+  "toonColor",
+  "tableBgGifUrl",
+  "tableTextColor",
+  "tableBgOpacity",
+] as const;
+
+/** 서버 테마가 기본일 때만 local 테마·표색을 얹음 — 1~3위/외곽선 등 서버 설정은 유지 */
+export function mergeOverlayPresetThemeFallbackFromLocal<T extends OverlayPresetLike>(
+  remotePreset: T,
+  localPreset: T | undefined
+): T {
+  if (!localPreset || !isDefaultLikeOverlayThemeFields(remotePreset)) return remotePreset;
+  if (isDefaultLikeOverlayThemeFields(localPreset)) return remotePreset;
+  const next: Record<string, unknown> = { ...remotePreset };
+  for (const key of OVERLAY_THEME_FALLBACK_KEYS) {
+    const lv = (localPreset as Record<string, unknown>)[key];
+    if (lv === undefined || lv === null) continue;
+    if (typeof lv === "string" && !String(lv).trim()) continue;
+    next[key] = lv;
+  }
+  return next as T;
+}
+
 export function mergeOverlayPresetsForOverlayView(
   remote: OverlayPresetLike[],
   local: OverlayPresetLike[],
@@ -817,7 +874,18 @@ export function mergeOverlayPresetsForOverlayView(
   if (shouldPreferLocalOverlayPresets(searchParams)) {
     return mergeOverlayPresetsPreferLocal(remote, local);
   }
-  return mergeOverlayPresetsPreferRemote(remote, local);
+  /** OBS: 서버 프리셋이 정본. 테마만 서버가 기본일 때 local 로 보강(설정 변경이 로컬 옛 테마에 막히지 않게). */
+  const remotePreferred = mergeOverlayPresetsPreferRemote(remote, local);
+  if (!local.length) return remotePreferred;
+  const localById = new Map(
+    local
+      .filter((p) => p && typeof p.id === "string" && p.id)
+      .map((p) => [String(p.id), p] as const)
+  );
+  return remotePreferred.map((p) => {
+    const id = p && typeof p.id === "string" ? p.id : "";
+    return mergeOverlayPresetThemeFallbackFromLocal(p, id ? localById.get(id) : undefined);
+  });
 }
 
 export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
@@ -873,6 +941,26 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "theme",
   "membersTheme",
   "totalTheme",
+  /** 1~3위·선명·열 옵션 — 컴팩트 OBS URL에 없어도 ready 후 프리셋 반영 */
+  "textSharp",
+  "rankTop3Mode",
+  "rankTop3Effect",
+  "rankLabelFormat",
+  "rank1Effect",
+  "rank2Effect",
+  "rank3Effect",
+  "rank1TextColor",
+  "rank2TextColor",
+  "rank3TextColor",
+  "rank1TextColorAlt",
+  "rank2TextColorAlt",
+  "rank3TextColorAlt",
+  "rank1Bg",
+  "rank2Bg",
+  "rank3Bg",
+  "rank1Mark",
+  "rank2Mark",
+  "rank3Mark",
 ]);
 
 /** presetToParams에 비어 있으면 URL에 넣지 않는 키 — ready 후 URL 스테일 무시(테마·글꼴 자동) */
@@ -1058,9 +1146,23 @@ export function resolveTimerOverlayStyle(
     ? showHoursRaw.toLowerCase() === "true"
     : (stateStyle?.showHours ?? !opts.timerOnlyDefaultShowHours);
 
+  /**
+   * 글꼴: 타이머 제어(`timerDisplayStyles`)가 정본.
+   * 프리셋에 남은 mono/구 값이 개구 등 최신 선택을 덮지 않게 함.
+   */
+  const stateFontRaw = (stateStyle?.fontFamily || "").trim();
+  const stateFont = stateFontRaw ? normalizeTimerFontFamily(stateFontRaw) : null;
+  const presetOrUrlFont = pickTimerPresetOrParam(
+    "timerFontFamily",
+    "timerFontFamily",
+    rawSp,
+    preset,
+    opts
+  );
   const fontFamilyRaw =
-    pickTimerPresetOrParam("timerFontFamily", "timerFontFamily", rawSp, preset, opts) ||
-    (stateStyle?.fontFamily || "").trim() ||
+    (stateFont && !isDefaultTimerFontFamily(stateFont) ? stateFont : "") ||
+    presetOrUrlFont ||
+    stateFont ||
     "mono";
 
   return {
@@ -1816,11 +1918,14 @@ export function stripOverlayPollMsFromBrowserLocation(): void {
 /**
  * OBS·Prism·외부 방송 호스트 — SSE 정책과 별개로 주기 폴링·즉시 동기화 대상.
  * `host=obs|prism|external`
+ * 관리자 미리보기 iframe(`adminPreviewEmbed`)은 제외 — LS·핫리로드가 막히면 테마/설정이 안 바뀐다.
  */
 export function isExternalOverlayBroadcastHost(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    const h = new URLSearchParams(window.location.search).get("host")?.trim().toLowerCase();
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get("adminPreviewEmbed") === "1" || sp.get("hubPreview") === "1") return false;
+    const h = sp.get("host")?.trim().toLowerCase();
     return h === "prism" || h === "obs" || h === "external";
   } catch {
     return false;
@@ -1837,6 +1942,8 @@ export function shouldSkipOverlaySseForObsBroadcast(): boolean {
   try {
     const sp = new URLSearchParams(window.location.search);
     if (sp.get("overlayAllowSse") === "1") return false;
+    /** 관리자 미리보기는 LS 핫리로드 — OBS SSE 스킵 정책에서 제외 */
+    if (sp.get("adminPreviewEmbed") === "1" || sp.get("hubPreview") === "1") return false;
     /** prism 도 SSE 중복·레이스로 엑셀표만 갱신 누락되기 쉬움 — 폴링(forceFull)만 사용 */
     const host = sp.get("host")?.trim().toLowerCase();
     return host === "obs" || host === "prism" || host === "external";

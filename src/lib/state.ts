@@ -1049,6 +1049,7 @@ export function defaultState(): AppState {
     overlayTitle: "식사 대전",
     currentMission: "",
     overlayRulesText: "",
+    overlayRulesFontSize: 16,
     donationTableOptions: normalizeDonationTableColumnsOptions(null),
     totalGoal: 100,
     timerTheme: "default",
@@ -1125,6 +1126,7 @@ export function defaultState(): AppState {
       overlayTimerDurationSec: 180,
       overlayTimerEndAt: null,
       rulesText: "",
+      rulesFontSize: 16,
       donationTableOptions: normalizeDonationTableColumnsOptions(null),
     },
     mealMatchSettings: defaultMealSettings,
@@ -1200,6 +1202,11 @@ function normalizeMealBattle(input: unknown): MealBattleState {
     overlayTitle: otRaw || "식사 대전",
     currentMission: cmRaw,
     overlayRulesText: orRaw,
+    overlayRulesFontSize: (() => {
+      const n = Number((v as Record<string, unknown>).overlayRulesFontSize);
+      if (!Number.isFinite(n)) return 16;
+      return Math.max(10, Math.min(36, Math.round(n)));
+    })(),
     totalGoal,
     timerTheme: v.timerTheme === "neon" || v.timerTheme === "minimal" || v.timerTheme === "danger" ? v.timerTheme : "default",
     timerSize: Number.isFinite(v.timerSize) ? Math.max(16, Math.min(120, Math.floor(v.timerSize as number))) : 36,
@@ -1618,6 +1625,11 @@ export function loadState(userId?: string | null): AppState {
         typeof (data as AppState).sigMatchSettings?.rulesText === "string"
           ? String((data as AppState).sigMatchSettings!.rulesText).trim()
           : "",
+      rulesFontSize: (() => {
+        const n = Number((data as AppState).sigMatchSettings?.rulesFontSize);
+        if (!Number.isFinite(n)) return 16;
+        return Math.max(10, Math.min(36, Math.round(n)));
+      })(),
       donationTableOptions: normalizeDonationTableColumnsOptions(
         (data as AppState).sigMatchSettings?.donationTableOptions
       ),
@@ -1708,6 +1720,11 @@ export type SaveStateAsyncOptions = {
   donorsReplace?: boolean;
   /** 정산 리셋 — placeholder member LS 복원·후원 merge 되살림 방지 */
   settlementReset?: boolean;
+  /**
+   * 멤버 추가·삭제·로스터 교체 — placeholder(멤버1)여도 API에 members 를 보내고
+   * 서버·LS 가드가 옛 실멤버를 되살리지 않게 함.
+   */
+  membersAuthoritative?: boolean;
   /**
    * 시그/테마/오버레이 등 — API 본문에서 members/donors 를 빼 서버 후원을 건드리지 않음.
    * 관리자 persistState 는 기본적으로 이 플래그를 켠다(includeDonationFields 미지정 시).
@@ -2011,18 +2028,24 @@ async function runServerSaveQueue(): Promise<void> {
   }
 }
 
-/** placeholder 멤버를 API에 실어내면 Redis 실멤버를 덮을 수 있어 필드 자체를 생략한다. */
+/** placeholder 멤버를 API에 실어내면 Redis 실멤버를 덮을 수 있어 필드 자체를 생략한다.
+ * membersAuthoritative / settlementReset 이면 의도적 로스터 교체이므로 생략하지 않음. */
 function omitPlaceholderMembersFromApiPayload(
   payload: Partial<AppState> & {
     donorsAuthoritative?: boolean;
     donorsReplace?: boolean;
     settlementReset?: boolean;
+    membersAuthoritative?: boolean;
   }
 ): Partial<AppState> & {
   donorsAuthoritative?: boolean;
   donorsReplace?: boolean;
   settlementReset?: boolean;
+  membersAuthoritative?: boolean;
 } {
+  if (payload.membersAuthoritative === true || payload.settlementReset === true) {
+    return payload;
+  }
   if (!isDefaultPlaceholderMemberList(payload.members as Member[] | undefined)) {
     return payload;
   }
@@ -2062,6 +2085,7 @@ function appStatePayloadForApi(
     donorsAuthoritative?: boolean;
     donorsReplace?: boolean;
     settlementReset?: boolean;
+    membersAuthoritative?: boolean;
   } = {
     ...rest,
     donors,
@@ -2073,6 +2097,7 @@ function appStatePayloadForApi(
     ...(options?.donorsAuthoritative ? { donorsAuthoritative: true as const } : {}),
     ...(options?.donorsReplace ? { donorsReplace: true as const } : {}),
     ...(options?.settlementReset ? { settlementReset: true as const } : {}),
+    ...(options?.membersAuthoritative ? { membersAuthoritative: true as const } : {}),
   };
   let payload = omitPlaceholderMembersFromApiPayload({ ...base, ...flags });
   /** 시그/테마/자동 저장 — 후원 금액은 API에서 제거. 실멤버명은 OBS 반영을 위해 유지 */
@@ -2087,9 +2112,10 @@ function appStatePayloadForApi(
       ...restSafe
     } = payload;
     const keepMemberIdentity =
-      Array.isArray(_m) &&
-      !isDefaultPlaceholderMemberList(_m as Member[]) &&
-      (_m as Member[]).length > 0;
+      options?.membersAuthoritative === true ||
+      (Array.isArray(_m) &&
+        !isDefaultPlaceholderMemberList(_m as Member[]) &&
+        (_m as Member[]).length > 0);
     payload = keepMemberIdentity
       ? {
           ...restSafe,
@@ -2097,6 +2123,7 @@ function appStatePayloadForApi(
           ...(_mp !== undefined ? { memberPositions: _mp } : {}),
           ...(_mpm !== undefined ? { memberPositionMode: _mpm } : {}),
           ...(_rpl !== undefined ? { rankPositionLabels: _rpl } : {}),
+          ...(options?.membersAuthoritative ? { membersAuthoritative: true as const } : {}),
         }
       : restSafe;
   }
@@ -2131,9 +2158,14 @@ function appStatePayloadForApi(
   } as Partial<AppState> & { donorsAuthoritative?: boolean; settlementReset?: boolean };
 }
 
-/** LS에 실멤버가 있을 때 placeholder 로 덮지 않음 */
-function preserveLocalMeaningfulRoster(next: AppState, userId?: string | null): AppState {
+/** LS에 실멤버가 있을 때 placeholder 로 덮지 않음 (의도적 로스터 교체 제외) */
+function preserveLocalMeaningfulRoster(
+  next: AppState,
+  userId?: string | null,
+  opts?: { membersAuthoritative?: boolean; settlementReset?: boolean }
+): AppState {
   if (typeof window === "undefined") return next;
+  if (opts?.membersAuthoritative || opts?.settlementReset) return next;
   if (hasMeaningfulMemberRoster(next)) return next;
   const existing = loadState(userId);
   if (!existing || !hasMeaningfulMemberRoster(existing)) return next;
@@ -2197,9 +2229,10 @@ export async function saveStateAsync(
   const normalized = normalizeStateForPersistence(
     syncBattleStateWithMembers({ ...state, updatedAt: Date.now() })
   );
-  const next = options?.settlementReset
-    ? normalized
-    : preserveLocalMeaningfulRoster(normalized, userId);
+  const next =
+    options?.settlementReset || options?.membersAuthoritative
+      ? normalized
+      : preserveLocalMeaningfulRoster(normalized, userId, options);
   let saveOpts: SaveStateAsyncOptions | undefined = options?.settlementReset
     ? { ...options, donorsAuthoritative: true, settlementReset: true }
     : options;
@@ -2523,6 +2556,9 @@ export async function saveOverlayPresetsPatchAsync(
     updatedAt: now,
     overlayPresets: normalizeOverlayPresetsMedia(mergedLocal.overlayPresets),
     overlaySettings: overlaySettingsPatchWithoutObsText(mergedLocal.overlaySettings),
+    ...(hasCustomTimerDisplayStyles(mergedLocal.timerDisplayStyles)
+      ? { timerDisplayStyles: mergedLocal.timerDisplayStyles }
+      : {}),
   };
   try {
     return await enqueueServerSave(JSON.stringify(patch), userId, mergedLocal);
@@ -3154,6 +3190,11 @@ async function doLoadStateFromApi(
           typeof (data as AppState).sigMatchSettings?.rulesText === "string"
             ? String((data as AppState).sigMatchSettings!.rulesText).trim()
             : "",
+        rulesFontSize: (() => {
+          const n = Number((data as AppState).sigMatchSettings?.rulesFontSize);
+          if (!Number.isFinite(n)) return 16;
+          return Math.max(10, Math.min(36, Math.round(n)));
+        })(),
         donationTableOptions: normalizeDonationTableColumnsOptions(
           (data as AppState).sigMatchSettings?.donationTableOptions
         ),

@@ -28,6 +28,7 @@ import {
 } from "@/lib/text-outline-style";
 import { resolveBroadcastZoomScale } from "@/lib/overlay-mobile-fit";
 import { useOverlayViewportSize } from "@/hooks/useOverlayViewportSize";
+import { backgroundWithOpacityFrac, solidBackgroundWithOpacityFrac } from "@/lib/donor-rankings-opacity";
 
 function readOutlineWidth(sp: URLSearchParams, key: string, fallback: number): number {
   const raw = sp.get(key);
@@ -293,7 +294,7 @@ function useDonorsOverrideFromUrl(sp: URLSearchParams): Array<Record<string, unk
 /**
  * 패널 등: 저장값이 `transparent`일 때 방송 기본 채색(URL 덮어쓰기 가능).
  * 구버전은 여기서 알파가 큰 그라데이션을 넣어 슬라이더와 무관하게 항상 어둡게 보였음 → 기본은 불투명 단색으로 두고,
- * 헤더(`headerBg`)·목록(`panelBg`) 배경에 동일하게 `overlayOpacity`를 곱한다.
+ * 헤더(`headerBg`)·목록(`panelBg`)·행(짝/홀수) 배경에 동일하게 `overlayOpacity`를 곱한다.
  */
 function resolveThemeColor(
   sp: URLSearchParams,
@@ -324,56 +325,6 @@ function resolveThemeColorLive(
   return resolveThemeColor(sp, key, saved, broadcastDefault);
 }
 
-/**
- * 슬라이더 불투명도를 배경에 반영. hex/rgb/rgba는 알파를 색에 직접 넣어 헤더·목록이 동일 규칙으로 섞이게 하고,
- * linear-gradient 등은 레이어 opacity 유지(OBS·backdrop-blur 조합에서 안정적).
- */
-function backgroundWithOpacityFrac(
-  bg: string,
-  frac: number
-): { background: string; opacity?: number } {
-  const f = Math.max(0, Math.min(1, frac));
-  if (f <= 0) return { background: "transparent" };
-  const t = (bg || "").trim();
-  if (!t || t.toLowerCase() === "transparent") return { background: "transparent" };
-
-  if (/^linear-gradient\s*\(/i.test(t) || /^radial-gradient\s*\(/i.test(t) || /^url\s*\(/i.test(t)) {
-    return { background: t, opacity: f };
-  }
-
-  const hex = /^#([0-9a-f]{3}|[0-9a-f]{8}|[0-9a-f]{6})$/i.exec(t);
-  if (hex) {
-    const h = hex[1];
-    const expand = (s: string) =>
-      s.length === 3 ? s.split("").map((c) => c + c).join("") : s;
-    const full = expand(h);
-    if (full.length === 8) {
-      const r = parseInt(full.slice(0, 2), 16);
-      const g = parseInt(full.slice(2, 4), 16);
-      const b = parseInt(full.slice(4, 6), 16);
-      const aByte = parseInt(full.slice(6, 8), 16) / 255;
-      return { background: `rgba(${r},${g},${b},${aByte * f})` };
-    }
-    const r = parseInt(full.slice(0, 2), 16);
-    const g = parseInt(full.slice(2, 4), 16);
-    const b = parseInt(full.slice(4, 6), 16);
-    return { background: `rgba(${r},${g},${b},${f})` };
-  }
-
-  const rgb = /^rgb\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)$/i.exec(t);
-  if (rgb) {
-    return { background: `rgba(${rgb[1]},${rgb[2]},${rgb[3]},${f})` };
-  }
-
-  const rgbaM = /^rgba\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)$/i.exec(t);
-  if (rgbaM) {
-    const a = Number(rgbaM[4]) * f;
-    return { background: `rgba(${rgbaM[1]},${rgbaM[2]},${rgbaM[3]},${a})` };
-  }
-
-  return { background: t, opacity: f };
-}
-
 function RankingRow({
   item,
   idx,
@@ -386,6 +337,7 @@ function RankingRow({
   outlineWidthPx,
   rowEvenBg,
   rowOddBg,
+  rowOpacityFrac = 1,
   amountFormat,
   suffix,
   disableMotion,
@@ -401,6 +353,8 @@ function RankingRow({
   outlineWidthPx?: number;
   rowEvenBg?: string;
   rowOddBg?: string;
+  /** 헤더·패널과 동일 슬라이더 (0~1) */
+  rowOpacityFrac?: number;
   amountFormat: DonorsAmountFormat;
   suffix?: string;
   disableMotion?: boolean;
@@ -417,9 +371,10 @@ function RankingRow({
     outlineWidthPx,
   });
   const isTrophy = idx <= 2;
+  const rowBgRaw = idx % 2 === 0 ? rowEvenBg || "transparent" : rowOddBg || "transparent";
   const rowStyle: CSSProperties = {
     fontSize: `${rowSize}px`,
-    backgroundColor: idx % 2 === 0 ? rowEvenBg || "transparent" : rowOddBg || "transparent",
+    background: solidBackgroundWithOpacityFrac(rowBgRaw, rowOpacityFrac),
   };
   const inner = (
     <>
@@ -558,7 +513,7 @@ function RankingColumn({
   unified?: boolean;
   /** unified일 때 좌측 칼럼 오른쪽 구분선(md 이상) */
   showColumnDivider?: boolean;
-  /** unified: 목록은 `panelBg`, 헤더는 `headerBg`에 각각 투명도 적용 */
+  /** unified: 헤더·목록·짝/홀수 행 배경에 동일 투명도 */
   panelOpacityFrac?: number;
   rowEvenBg?: string;
   rowOddBg?: string;
@@ -578,16 +533,13 @@ function RankingColumn({
           ? "border-b border-solid border-r-0 md:border-b-0 md:border-r md:border-solid"
           : ""
       }`
-    : "relative z-[1] w-full overflow-visible rounded-2xl border shadow-[0_8px_28px_rgba(15,23,42,0.18)] backdrop-blur-md";
-  const outerStyle: CSSProperties | undefined = unified
-    ? { borderColor }
-    : {
-        background: panelBg,
-        borderColor,
-      };
+    : "relative z-[1] w-full overflow-visible rounded-2xl border shadow-[0_8px_28px_rgba(15,23,42,0.18)]";
+  const panelFrac = Math.max(0, Math.min(1, panelOpacityFrac ?? 1));
+  const panelBgResolved = backgroundWithOpacityFrac(panelBg, panelFrac);
+  const outerStyle: CSSProperties | undefined = { borderColor };
 
   const headerOpacityFrac = unified
-    ? Math.max(0, Math.min(1, panelOpacityFrac ?? 1))
+    ? panelFrac
     : Math.max(0, Math.min(100, headerOpacity)) / 100;
   const headerBgResolved = backgroundWithOpacityFrac(headerBg, headerOpacityFrac);
 
@@ -607,6 +559,7 @@ function RankingColumn({
           outlineWidthPx={outlineWidthPx}
           rowEvenBg={rowEvenBg}
           rowOddBg={rowOddBg}
+          rowOpacityFrac={Math.max(0, Math.min(1, panelOpacityFrac ?? 1))}
           amountFormat={amountFormat}
           suffix={suffix}
           disableMotion
@@ -629,6 +582,7 @@ function RankingColumn({
           outlineWidthPx={outlineWidthPx}
           rowEvenBg={rowEvenBg}
           rowOddBg={rowOddBg}
+          rowOpacityFrac={Math.max(0, Math.min(1, panelOpacityFrac ?? 1))}
           amountFormat={amountFormat}
           suffix={suffix}
         />
@@ -638,6 +592,16 @@ function RankingColumn({
 
   return (
     <section className={outerClass} style={outerStyle}>
+      {!unified ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-0 rounded-2xl"
+          aria-hidden
+          style={{
+            background: panelBgResolved.background,
+            ...(panelBgResolved.opacity !== undefined ? { opacity: panelBgResolved.opacity } : {}),
+          }}
+        />
+      ) : null}
       <div
         className={`relative overflow-hidden px-4 py-2.5 font-black text-center ${
           unified ? "border-b border-white/40" : "border-b border-white/28"
@@ -663,12 +627,15 @@ function RankingColumn({
           <div
             className="pointer-events-none absolute inset-0 z-0 rounded-none"
             aria-hidden
-            style={backgroundWithOpacityFrac(panelBg, Math.max(0, Math.min(1, panelOpacityFrac ?? 1)))}
+            style={{
+              background: panelBgResolved.background,
+              ...(panelBgResolved.opacity !== undefined ? { opacity: panelBgResolved.opacity } : {}),
+            }}
           />
           <div className="relative z-[1] px-2 py-1.5">{rowList}</div>
         </div>
       ) : (
-        <div className="p-2">{rowList}</div>
+        <div className="relative z-[1] p-2">{rowList}</div>
       )}
       {bodyImageBelowList}
     </section>

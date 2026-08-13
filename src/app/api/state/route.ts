@@ -9,7 +9,6 @@ import {
   normalizeOverlayPresetDonationGoals,
 } from "@/lib/goal-preset-math";
 import { DEFAULT_SIG_INVENTORY } from "@/lib/constants";
-import { normalizeRestroomCount } from "@/lib/restroom-utils";
 import {
   defaultState,
   DEFAULT_DONOR_RANKINGS_FULL_THEME,
@@ -20,6 +19,7 @@ import {
   hasMeaningfulMemberRoster,
   hasCustomTimerDisplayStyles,
   isDefaultLikeDonorRankingsTheme,
+  isDefaultLikeOverlayPresets,
   isDefaultLikeTimerDisplayStyle,
   isDefaultPlaceholderMemberList,
   isShrunkToDefaultSigInventory,
@@ -37,6 +37,10 @@ import type { SigItem } from "@/types";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
 import { dedupeDonorRows, repairMemberTotalsForDonorRoster, syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import { isGroupSplitDonorListMutation } from "@/lib/donation/group-split-donation";
+import {
+  mergeManualMemberFieldsFromPatch,
+  resolveMembersAgainstZeroWipe,
+} from "@/lib/member-roster-merge";
 import { isManualOverlaySessionId } from "@/lib/sig-sales-manual-round";
 import { createModuleLogger } from "@/lib/logger";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
@@ -155,42 +159,13 @@ function memberCombinedTotal(members: Member[] | undefined): number {
   return (members || []).reduce((sum, m) => sum + (m.account || 0) + (m.toon || 0), 0);
 }
 
-/** 계좌·투네 0 리셋 차단 시에도 이름·목표·운영비·화장실·수동 기여도는 patch 반영 */
-function mergeManualMemberFieldsFromPatch(baseMembers: Member[], patchMembers: Member[]): Member[] {
-  const patchById = new Map(patchMembers.map((m) => [m.id, m]));
-  return (baseMembers || []).map((baseM) => {
-    const patchM = patchById.get(baseM.id);
-    if (!patchM) return baseM;
-    const patchName = String(patchM.name ?? "").trim();
-    const baseName = String(baseM.name ?? "").trim();
-    /** 플레이스홀더(멤버N)로 실멤버명을 덮지 않음 */
-    const placeholderPatch =
-      !patchName ||
-      /^멤버\d+$/.test(patchName) ||
-      (baseM.id && /^m(\d+)$/.test(baseM.id) && patchName === `멤버${baseM.id.slice(1)}`);
-    const nextName = placeholderPatch && baseName ? baseName : patchName || baseName;
-    return {
-      ...baseM,
-      name: nextName || baseM.name,
-      goal:
-        typeof patchM.goal === "number" && Number.isFinite(patchM.goal)
-          ? Math.max(0, Math.floor(patchM.goal)) || undefined
-          : patchM.goal === undefined
-            ? baseM.goal
-            : undefined,
-      operating: Boolean(patchM.operating),
-      restroom: normalizeRestroomCount(patchM.restroom),
-      contribution:
-        typeof patchM.contribution === "number" && Number.isFinite(patchM.contribution)
-          ? Math.max(0, Math.floor(patchM.contribution))
-          : baseM.contribution,
-    };
-  });
-}
-
 function mergePartialState(
   base: AppState,
-  patch: Partial<AppState> & { settlementReset?: boolean; clearSigSoldOutStamp?: boolean },
+  patch: Partial<AppState> & {
+    settlementReset?: boolean;
+    clearSigSoldOutStamp?: boolean;
+    membersAuthoritative?: boolean;
+  },
   userId: string
 ): AppState {
   const next: AppState = {
@@ -210,8 +185,9 @@ function mergePartialState(
 
   // patch에 없는 필드가 undefined로 덮이지 않도록 보정
   const patchSettlementReset = patch.settlementReset === true;
+  const membersAuthoritative = patch.membersAuthoritative === true;
   if (!("members" in patch)) next.members = base.members;
-  else if (patchSettlementReset || isDonationInitGoalResetPatch(patch)) {
+  else if (patchSettlementReset || membersAuthoritative || isDonationInitGoalResetPatch(patch)) {
     next.members = patch.members as Member[];
   } else if (
     base.settlementResetAt &&
@@ -222,20 +198,26 @@ function mergePartialState(
     logger.warn("members amount restore blocked after settlement reset", { userId });
   } else if (
     Array.isArray(patch.members) &&
-    !isDonationInitGoalResetPatch(patch) &&
-    (base.members || []).some((m) => (m.account || 0) + (m.toon || 0) > 0) &&
-    patch.members.every((m) => (m.account || 0) + (m.toon || 0) === 0)
-  ) {
-    next.members = mergeManualMemberFieldsFromPatch(base.members || [], patch.members as Member[]);
-    logger.warn("members zero wipe blocked — restroom/contribution merged from patch", { userId });
-  } else if (
-    Array.isArray(patch.members) &&
     isDefaultPlaceholderMemberList(patch.members) &&
     hasMeaningfulMemberRoster(base)
   ) {
     next.members = base.members;
     next.memberPositions = base.memberPositions;
     logger.warn("members placeholder wipe blocked (theme/preset save)", { userId });
+  } else if (Array.isArray(patch.members) && !isDonationInitGoalResetPatch(patch)) {
+    const zero = resolveMembersAgainstZeroWipe({
+      baseMembers: base.members || [],
+      patchMembers: patch.members as Member[],
+    });
+    if (zero.blockedWipe) {
+      next.members = zero.members;
+      logger.warn(
+        zero.rosterChanged
+          ? "members zero wipe blocked — roster change accepted, amounts preserved"
+          : "members zero wipe blocked — restroom/contribution merged from patch",
+        { userId }
+      );
+    }
   }
   /**
    * 금액 가드/부분 병합 후에도 patch의 실멤버명·목표·운영비는 항상 반영.
@@ -244,6 +226,7 @@ function mergePartialState(
   if (
     Array.isArray(patch.members) &&
     !patchSettlementReset &&
+    !membersAuthoritative &&
     !isDonationInitGoalResetPatch(patch) &&
     Array.isArray(next.members)
   ) {
@@ -255,6 +238,9 @@ function mergePartialState(
     }
   }
   if (!("memberPositions" in patch)) next.memberPositions = base.memberPositions;
+  else if (membersAuthoritative || patchSettlementReset) {
+    next.memberPositions = patch.memberPositions as AppState["memberPositions"];
+  }
   if (!("memberPositionMode" in patch)) next.memberPositionMode = base.memberPositionMode;
   if (!("rankPositionLabels" in patch)) next.rankPositionLabels = base.rankPositionLabels;
   if (!("donorRankingsTheme" in patch)) next.donorRankingsTheme = base.donorRankingsTheme;
@@ -325,6 +311,12 @@ function mergePartialState(
     next.overlayPresets = base.overlayPresets;
   } else if (isDonationInitGoalResetPatch(patch)) {
     next.overlayPresets = patch.overlayPresets as AppState["overlayPresets"];
+  } else if (
+    isDefaultLikeOverlayPresets(patch.overlayPresets) &&
+    !isDefaultLikeOverlayPresets(base.overlayPresets)
+  ) {
+    next.overlayPresets = base.overlayPresets;
+    logger.warn("overlayPresets default wipe blocked", { userId });
   } else {
     next.overlayPresets = mergeOverlayPresetsPreservingEscalatedGoals(
       base.overlayPresets,
@@ -721,10 +713,12 @@ export async function POST(req: Request) {
       donorsAuthoritative?: boolean;
       donorsReplace?: boolean;
       settlementReset?: boolean;
+      membersAuthoritative?: boolean;
     };
     const donorsAuthoritative = body.donorsAuthoritative === true;
     const donorsReplace = body.donorsReplace === true;
     const settlementReset = body.settlementReset === true;
+    const membersAuthoritative = body.membersAuthoritative === true;
     const kvOk = isPersistentKvConfigured();
     const memExisting = getServerMemoryAppState(userId);
     let existing: AppState | null = null;
@@ -883,7 +877,15 @@ export async function POST(req: Request) {
             return rest;
           })()
         : body;
-    const merged = mergePartialState(baseState, bodyForMerge, userId);
+    const merged = mergePartialState(
+      baseState,
+      {
+        ...bodyForMerge,
+        ...(membersAuthoritative ? { membersAuthoritative: true as const } : {}),
+        ...(settlementReset ? { settlementReset: true as const } : {}),
+      },
+      userId
+    );
     const dedupedDonors = donorsInPatch ? dedupeDonorRows(safeMergedDonors) : normalizeDonorsArray(baseState.donors);
     /**
      * 글자색·테마 등 시각 PATCH(members/donors 미포함)에서는
