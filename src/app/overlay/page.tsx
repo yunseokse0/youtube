@@ -106,6 +106,8 @@ import {
   resolveExcelMemberTableAccent,
 } from "@/lib/excel-member-table-theme";
 import {
+  overlayTableCellGridCss,
+  overlayTableGridLineWidthPx,
   overlayTableHairlineShadow,
   snapOverlayScaleForCrispLines,
 } from "@/lib/overlay-table-crisp-lines";
@@ -3499,10 +3501,8 @@ function OverlayInner() {
       tableLineColorRaw ||
       excelMemberAccent?.totalRowBorder ||
       TABLE_BROADCAST_TOTAL_BORDER;
-    const tablePanelBorder =
-      tableLineColorRaw ||
-      excelMemberAccent?.panelBorder ||
-      TABLE_BROADCAST_PANEL_BORDER;
+    const tableGridLineWidthPx = overlayTableGridLineWidthPx(Boolean(externalHost));
+    const tableGridLineColor = tableLineColorRaw || tableHeaderLineColor;
     const tablePanelShadow = excelMemberAccent?.panelShadow ?? "0 2px 10px rgba(255, 140, 190, 0.22)";
     const excelMemberTableClass = excelMemberAccent
       ? `${isExcelLiveTheme ? " excel-live-table" : " excel-member-table"}`
@@ -3682,7 +3682,7 @@ function OverlayInner() {
           -webkit-text-stroke: ${tableStrokeCss} !important;
           paint-order: stroke fill;
           border: none !important;
-          box-shadow: ${overlayTableHairlineShadow(tableHeaderLineColor, { bottom: 1 })} !important;
+          box-shadow: ${overlayTableHairlineShadow(tableHeaderLineColor, { bottom: true }, tableGridLineWidthPx)} !important;
         }
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,
@@ -3701,7 +3701,7 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table .overlay-total-row td {
           border: none !important;
-          box-shadow: ${overlayTableHairlineShadow(tableTotalLineColor, { top: 2 })} !important;
+          box-shadow: ${overlayTableHairlineShadow(tableTotalLineColor, { top: true }, tableGridLineWidthPx)} !important;
         }`
       : `
         .overlay-root .overlay-elegant-table.excel-member-table thead td,
@@ -3713,7 +3713,7 @@ function OverlayInner() {
           -webkit-text-stroke: ${excelTheadStroke} !important;
           paint-order: stroke fill;
           border: none !important;
-          box-shadow: ${overlayTableHairlineShadow("var(--excel-header-border)", { bottom: 1 })} !important;
+          box-shadow: ${overlayTableHairlineShadow("var(--excel-header-border)", { bottom: true }, tableGridLineWidthPx)} !important;
         }
         .overlay-root .overlay-elegant-table.excel-member-table thead td span,
         .overlay-root .overlay-elegant-table.excel-member-table thead td strong,
@@ -3727,7 +3727,7 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table.excel-member-table .overlay-total-row td,
         .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
           border: none !important;
-          box-shadow: ${overlayTableHairlineShadow("var(--excel-total-border)", { top: 2 })} !important;
+          box-shadow: ${overlayTableHairlineShadow("var(--excel-total-border)", { top: true }, tableGridLineWidthPx)} !important;
         }`;
     /** OBS·Prism: stroke 생략 시에도 shadow 링 + 인라인으로 이름·숫자·직급에 동일 적용 */
     const overlayCellOutlineStyle: React.CSSProperties = tableOutlineDisabled
@@ -3876,7 +3876,7 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table tbody tr.overlay-row td {
           background: transparent !important;
           background-image: none !important;
-          box-shadow: none !important;
+          /* 셀 그리드 선은 overlayTableCellGridCss(box-shadow)로 그림 — 여기서 지우지 않음 */
           text-shadow: none !important;
           -webkit-text-stroke: 0 !important;
         }
@@ -3920,7 +3920,7 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table.excel-live-table thead td {
           color: var(--excel-header-text) !important;
           border: none !important;
-          box-shadow: ${overlayTableHairlineShadow("var(--excel-header-border)", { bottom: 1 })} !important;
+          box-shadow: ${overlayTableHairlineShadow("var(--excel-header-border)", { bottom: true }, tableGridLineWidthPx)} !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-role,
@@ -3937,11 +3937,10 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table.excel-member-table tbody tr.overlay-row td {
           background: transparent !important;
           border: none !important;
-          box-shadow: none !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
           border: none !important;
-          box-shadow: ${overlayTableHairlineShadow("rgba(26, 82, 118, 0.45)", { top: 2 })} !important;
+          box-shadow: ${overlayTableHairlineShadow("rgba(26, 82, 118, 0.45)", { top: true }, tableGridLineWidthPx)} !important;
           background: ${excelLiveTotalRowBg} !important;
         }
         ${
@@ -3949,11 +3948,11 @@ function OverlayInner() {
             ? `
         .overlay-root .overlay-elegant-table.excel-live-table thead td {
           border: none !important;
-          box-shadow: ${overlayTableHairlineShadow(tableLineColorRaw, { bottom: 1 })} !important;
+          box-shadow: ${overlayTableHairlineShadow(tableLineColorRaw, { bottom: true }, tableGridLineWidthPx)} !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
           border: none !important;
-          box-shadow: ${overlayTableHairlineShadow(tableLineColorRaw, { top: 2 })} !important;
+          box-shadow: ${overlayTableHairlineShadow(tableLineColorRaw, { top: true }, tableGridLineWidthPx)} !important;
         }
         `
             : ""
@@ -4021,7 +4020,7 @@ function OverlayInner() {
             : ""
         }
         /* 총합 행: 셀마다 그라데이션 박스 제거 → 본문과 동일한 시트색(excelLive는 위에서 별도 지정)
-         * 상단 구분선은 inset box-shadow 헤어라인으로 유지(CSS border 는 스케일 때 들쭉날쭉) */
+         * 구분선은 아래 overlayTableCellGridCss 가 최종 적용 */
         .overlay-root .overlay-elegant-table .overlay-total-row td {
           background: transparent !important;
           background-image: none !important;
@@ -4029,20 +4028,13 @@ function OverlayInner() {
           -webkit-backdrop-filter: none !important;
           border: none !important;
           border-bottom: none !important;
-          box-shadow: ${overlayTableHairlineShadow(
-            useBroadcastTableChrome ? tableTotalLineColor : "var(--excel-total-border, rgba(244, 170, 205, 0.45))",
-            { top: 2 }
-          )} !important;
           padding: ${Math.round(memberFontPx * 0.28)}px ${Math.round(memberFontPx * 0.4)}px !important;
           font-size: ${memberFontPx}px !important;
           font-weight: ${tableFontWeight} !important;
           vertical-align: middle;
         }
         .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
-          box-shadow: ${overlayTableHairlineShadow(
-            tableLineColorRaw || "rgba(26, 82, 118, 0.45)",
-            { top: 2 }
-          )} !important;
+          background: ${excelLiveTotalRowBg} !important;
         }
         .overlay-root .overlay-elegant-table:not(.excel-live-table):not(.pastel-member-table) tbody tr.overlay-total-row td {
           background: ${tableBodySheetBgCss} !important;
@@ -4130,10 +4122,6 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table tbody td.overlay-col-restroom {
           text-align: center !important;
         }
-        /* 헤더 세로선 제거: 스트림 오버레이에서 칸 분리선 없이 한 덩어리로 보이게 한다. */
-        .overlay-root .overlay-elegant-table thead td {
-          border-right: none !important;
-        }
         /* 직급: ellipsis+hidden 은 스트로크 있는 한글(대표 등) 끝 글자가 잘려 작아 보임 → 가운데 정렬·잘림 없음 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-role {
@@ -4205,12 +4193,18 @@ function OverlayInner() {
           -webkit-font-smoothing: antialiased;
           text-rendering: geometricPrecision;
         }
+        `
+            : ""
+        }
+        /* 헤더·본문·총합 셀 그리드(가로·세로). OBS 스케일에서도 선이 남도록 마지막에 적용 */
+        ${overlayTableCellGridCss({
+          lineColor: tableGridLineColor,
+          widthPx: tableGridLineWidthPx,
+          headerBottomExtraPx: tableGridLineWidthPx + 1,
+        })}
         .overlay-root .overlay-elegant-table {
           border-collapse: separate !important;
           border-spacing: 0 !important;
-        }
-        `
-            : ""
         }
       ` }} />
     );
@@ -4319,12 +4313,11 @@ function OverlayInner() {
                     zIndex: 1,
                     borderRadius: showTableFrame ? 0 : 10,
                     border: "none",
-                    boxShadow: showTableFrame
-                      ? "none"
-                      : `0 0 0 1px ${tablePanelBorder}, ${tablePanelShadow}`,
-                    padding: 2,
+                    /** 외곽 선은 셀 그리드가 담당 — 여기선 그림자만 (이중 테두리 방지) */
+                    boxShadow: showTableFrame ? "none" : tablePanelShadow || "none",
+                    padding: 0,
                     backgroundColor: tableBodySheetBgCss,
-                    /** CEF에서 1px 외곽선이 스케일 때 깨지지 않게 레이어 고정 */
+                    /** CEF에서 외곽선이 스케일 때 깨지지 않게 레이어 고정 */
                     transform: "translateZ(0)",
                     WebkitBackfaceVisibility: "hidden",
                     backfaceVisibility: "hidden",
