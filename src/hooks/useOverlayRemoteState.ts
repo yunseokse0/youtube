@@ -46,6 +46,7 @@ import {
   buildOverlaySyncSignature,
   buildSigSalesOverlaySyncSignature,
   shouldRejectPoorerDonationRemote,
+  shouldKeepStaleOverlayOverRemote,
 } from "@/lib/overlay-sync-signature";
 import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base";
@@ -284,10 +285,15 @@ function applySyncedState(
 
   refs.setState(next);
 
-  if (refs.persistLastGood && isOverlayStateViable(next, pick)) {
+  /** 세션 last-good 은 항상 갱신. LS 저장만 persistLastGood 일 때 */
+  if (isOverlayStateViable(next, pick)) {
     refs.lastGoodRef.current = next;
-
-    saveOverlayLastGood(next, refs.userId, pick);
+    if (refs.persistLastGood) {
+      saveOverlayLastGood(next, refs.userId, pick);
+    }
+  } else if (!refs.persistLastGood) {
+    /** OBS: placeholder 로스터여도 서버 스냅샷을 세션에 유지(빈 원격 보호) */
+    refs.lastGoodRef.current = next;
   }
 
   return true;
@@ -316,6 +322,15 @@ export function useOverlayRemoteState(
 
   const persistLastGood = options.persistLastGood !== false;
 
+  const preferServerOnly =
+    typeof window !== "undefined" && isExternalOverlayBroadcastHost();
+
+  const skipLocalSnapshot =
+    options.skipLocalSnapshot === true || preferServerOnly;
+
+  /** OBS: CEF LS last-good 금지 — 세션 메모리만 */
+  const persistLastGoodEffective = persistLastGood && !preferServerOnly;
+
   const sigSalesPick = statePick === STATE_PICK_SIG_SALES;
   const sigSalesIncrementalPoll = Boolean(options.sigSalesIncrementalPoll);
   const obsTextPick = statePick === STATE_PICK_OBS_TEXT;
@@ -327,8 +342,8 @@ export function useOverlayRemoteState(
     return bootstrapOverlayCache(
       userId,
       pick,
-      options.skipLocalSnapshot === true,
-      options.persistLastGood !== false
+      skipLocalSnapshot,
+      persistLastGoodEffective
     );
   });
 
@@ -358,8 +373,9 @@ export function useOverlayRemoteState(
   const scheduleSseSyncRef = useRef<(() => void) | null>(null);
 
   const restoreFallback = useCallback(() => {
-    const cached =
-      lastGoodRef.current || loadOverlayLastGood(userId, statePick);
+    const cached = preferServerOnly
+      ? lastGoodRef.current
+      : lastGoodRef.current || loadOverlayLastGood(userId, statePick);
 
     if (!cached || !isOverlayStateViable(cached, statePick)) return;
 
@@ -386,7 +402,7 @@ export function useOverlayRemoteState(
     }
 
     setState(cached);
-  }, [userId, statePick]);
+  }, [userId, statePick, preferServerOnly]);
 
   const syncFromApi = useCallback(
     async (opts?: { forceFull?: boolean }) => {
@@ -407,7 +423,7 @@ export function useOverlayRemoteState(
 
         lastGoodRef,
 
-        persistLastGood,
+        persistLastGood: persistLastGoodEffective,
 
         userId,
 
@@ -453,6 +469,7 @@ export function useOverlayRemoteState(
 
         let remoteForApply = remote;
         if (
+          !preferServerOnly &&
           (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
           lastGoodRef.current
         ) {
@@ -481,19 +498,23 @@ export function useOverlayRemoteState(
 
         if (
           (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
-          shouldRejectPoorerDonationRemote(lastGoodRef.current, remoteForApply)
+          (preferServerOnly
+            ? shouldKeepStaleOverlayOverRemote(lastGoodRef.current, remoteForApply)
+            : shouldRejectPoorerDonationRemote(lastGoodRef.current, remoteForApply))
         ) {
           /** forceFull 이어도 빈/구 Redis 로 엑셀 금액을 지우지 않음 */
           return;
         }
         if (
           (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
+          !preferServerOnly &&
           shouldAvoidOverwritingLocalStateWithRemote(lastGoodRef.current, remoteForApply)
         ) {
           return;
         }
 
         if (
+          !preferServerOnly &&
           (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
           lastGoodRef.current
         ) {
@@ -522,7 +543,7 @@ export function useOverlayRemoteState(
       }
     },
 
-    [enabled, userId, statePick, persistLastGood, restoreFallback, sigSalesPick]
+    [enabled, userId, statePick, persistLastGoodEffective, restoreFallback, sigSalesPick, preferServerOnly, obsTextPick]
   );
 
   const { connected: sseConnected } = useSSEConnection((d: unknown) => {
@@ -613,12 +634,12 @@ export function useOverlayRemoteState(
 
     if (!enabled) return;
 
-    const skipLocal = options.skipLocalSnapshot === true;
+    const skipLocal = skipLocalSnapshot;
     const bootstrap = bootstrapOverlayCache(
       userId,
       statePick,
       skipLocal,
-      persistLastGood
+      persistLastGoodEffective
     );
 
     lastSyncedDonorRevRef.current = 0;
@@ -729,6 +750,10 @@ export function useOverlayRemoteState(
     let storageDebounce: ReturnType<typeof setTimeout> | null = null;
 
     const applyLocalBroadcastState = () => {
+      if (preferServerOnly) {
+        void syncFromApiRef.current({ forceFull: true });
+        return;
+      }
       const localNow = readLocalBroadcastState(userId);
       if (!localNow) return;
       const pickRev = revisionForStatePick(localNow, statePick);
@@ -745,7 +770,7 @@ export function useOverlayRemoteState(
         lastSyncedUpdatedAtRef,
         lastSyncedDonorRevRef,
         lastGoodRef,
-        persistLastGood,
+        persistLastGood: persistLastGoodEffective,
         userId,
         setState,
       });
@@ -818,13 +843,15 @@ export function useOverlayRemoteState(
 
     syncFromApi,
 
-    persistLastGood,
+    persistLastGoodEffective,
+
+    preferServerOnly,
+
+    skipLocalSnapshot,
 
     options.noLocalBaseline,
 
     options.storageDebounceMs,
-
-    options.skipLocalSnapshot,
 
     options.forceInitialFull,
 
@@ -833,6 +860,10 @@ export function useOverlayRemoteState(
     statePick,
 
     sigSalesPick,
+
+    sigSalesIncrementalPoll,
+
+    obsTextPick,
   ]);
 
   /** SSE 끊김 시 폴링 — 메인 effect deps 와 분리(SSE 재연결마다 전체 재초기화 방지) */

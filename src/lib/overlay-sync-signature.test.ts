@@ -336,6 +336,64 @@ describe("shouldRejectPoorerDonationRemote", () => {
   });
 });
 
+describe("shouldKeepStaleOverlayOverRemote", () => {
+  it("keeps local only when remote donation payload is empty", async () => {
+    const { shouldKeepStaleOverlayOverRemote, shouldRejectPoorerDonationRemote } = await import(
+      "@/lib/overlay-sync-signature"
+    );
+    const local = {
+      ...defaultState(),
+      updatedAt: 3000,
+      donors: [
+        { id: "d1", name: "a", amount: 150_000, memberId: "m1", at: 1, target: "account" as const },
+      ],
+      members: [{ id: "m1", name: "홍쓰", account: 150_000, toon: 0, contribution: 150_000 }],
+    };
+    const emptyRemote = {
+      ...defaultState(),
+      updatedAt: 1000,
+      donors: [] as [],
+      members: [{ id: "m1", name: "멤버1", account: 0, toon: 0, contribution: 0 }],
+    };
+    expect(shouldRejectPoorerDonationRemote(local, emptyRemote)).toBe(true);
+    expect(shouldKeepStaleOverlayOverRemote(local, emptyRemote)).toBe(true);
+  });
+
+  it("accepts poorer-but-nonempty server so OBS does not stick to CEF last-good", async () => {
+    const { shouldKeepStaleOverlayOverRemote, shouldRejectPoorerDonationRemote } = await import(
+      "@/lib/overlay-sync-signature"
+    );
+    const staleCef = {
+      ...defaultState(),
+      updatedAt: 5000,
+      donors: [
+        { id: "old", name: "ghost", amount: 230_000, memberId: "m3", at: 1, target: "account" as const },
+      ],
+      members: [
+        { id: "m1", name: "멤버1", account: 101_000, toon: 0, contribution: 101_000 },
+        { id: "m2", name: "멤버2", account: 130_000, toon: 0, contribution: 130_000 },
+        { id: "m3", name: "멤버3", account: 230_000, toon: 0, contribution: 230_000 },
+        { id: "m4", name: "멤버4", account: 0, toon: 0, contribution: 0 },
+      ],
+    };
+    const serverNow = {
+      ...defaultState(),
+      updatedAt: 6000,
+      donors: [
+        { id: "d1", name: "익명", amount: 150_000, memberId: "m1", at: 2, target: "account" as const },
+      ],
+      members: [
+        { id: "m1", name: "지키", account: 150_000, toon: 0, contribution: 150_000 },
+        { id: "m2", name: "멤버2", account: 0, toon: 0, contribution: 0 },
+        { id: "m3", name: "멤버3", account: 0, toon: 0, contribution: 0 },
+        { id: "m4", name: "멤버4", account: 0, toon: 0, contribution: 0 },
+      ],
+    };
+    expect(shouldRejectPoorerDonationRemote(staleCef, serverNow)).toBe(true);
+    expect(shouldKeepStaleOverlayOverRemote(staleCef, serverNow)).toBe(false);
+  });
+});
+
 describe("isRicherDonationSnapshot", () => {
   it("detects higher toon even when account is equal", async () => {
     const { isRicherDonationSnapshot } = await import("@/lib/overlay-sync-signature");

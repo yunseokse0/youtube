@@ -8,16 +8,18 @@ import {
 import type { AppState } from "@/types";
 
 function baseState(
-  members: Array<{ id: string; name: string; operating?: boolean }>,
+  members: Array<{ id: string; name: string; operating?: boolean; account?: number; toon?: number }>,
   memberPositions?: Record<string, string>
 ): AppState {
   return {
     members: members.map((m) => ({
       id: m.id,
       name: m.name,
-      account: 0,
-      toon: 0,
-      contribution: 0,
+      account: Math.max(0, Math.floor(Number(m.account) || 0)),
+      toon: Math.max(0, Math.floor(Number(m.toon) || 0)),
+      contribution:
+        Math.max(0, Math.floor(Number(m.account) || 0)) +
+        Math.max(0, Math.floor(Number(m.toon) || 0)),
       ...(m.operating ? { operating: true } : {}),
     })),
     donors: [],
@@ -27,12 +29,12 @@ function baseState(
 }
 
 describe("toonation auto-apply flow (parse → apply)", () => {
-  it("text 후원 테스트 → 투네 열·운영비 자동 배치", () => {
+  it("text 후원 테스트(멤버 힌트 없음) → 투네 열·후원 1위 자동 배치", () => {
     const raw = JSON.stringify({
       code: 101,
       content: {
-        nickname: "익명 홍쓰",
-        amount: 10000,
+        nickname: "익명",
+        amount: 1000,
         comment: "",
         isTest: true,
       },
@@ -44,20 +46,48 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     const result = applyDonationToAppState(
       baseState([
         { id: "op", name: "운영비", operating: true },
-        { id: "m1", name: "BT태호" },
+        { id: "m1", name: "지키", account: 150000 },
+        { id: "m2", name: "444", account: 50000 },
       ]),
       event!,
       []
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.members.find((m) => m.id === "op")?.toon).toBe(10000);
-    expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(0);
-    expect(result.state.members[0]?.account).toBe(0);
+    /** 운영비가 있어도 힌트 없으면 후원 1위(지키) */
+    expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(1000);
+    expect(result.state.members.find((m) => m.id === "op")?.toon).toBe(0);
     expect(result.state.donors?.[0]?.target).toBe("toon");
     expect(result.event.memberAutoAssigned).toBe(true);
   });
 
+  it("멤버·후원자 힌트 없고 대표·운영비·국고 없음 → 후원 1위", () => {
+    const raw = JSON.stringify({
+      code: 101,
+      content: {
+        nickname: "Unknown",
+        amount: 1000,
+        comment: "후원 테스트 입니다.",
+        isTest: true,
+      },
+    });
+    const event = parseToonationWebSocketMessage(raw);
+    expect(event).not.toBeNull();
+
+    const result = applyDonationToAppState(
+      baseState([
+        { id: "m1", name: "지키", account: 200000 },
+        { id: "m2", name: "333", account: 0 },
+        { id: "m3", name: "444", account: 150000 },
+      ]),
+      event!,
+      []
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(1000);
+    expect(result.event.memberAutoAssigned).toBe(true);
+  });
   it("계좌 포맷 WS → 계좌 열 반영", () => {
     const raw = JSON.stringify({
       code: 101,
@@ -294,7 +324,7 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     expect(result.event.memberAutoAssigned).toBeFalsy();
   });
 
-  it("잘못된 멤버명 힌트 → 운영비로 자동 반영", () => {
+  it("잘못된 멤버명 힌트 → 후원 1위로 자동 반영", () => {
     const raw = JSON.stringify({
       code: 101,
       content: {
@@ -306,7 +336,7 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     const event = parseToonationWebSocketMessage(raw);
     const result = applyDonationToAppState(
       baseState([
-        { id: "m1", name: "BT태호" },
+        { id: "m1", name: "BT태호", account: 10_000 },
         { id: "op", name: "운영비", operating: true },
       ]),
       event!,
@@ -314,12 +344,12 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.event.memberId).toBe("op");
+    expect(result.event.memberId).toBe("m1");
     expect(result.event.memberAutoAssigned).toBe(true);
-    expect(result.state.members.find((m) => m.id === "op")?.toon).toBe(3000);
+    expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(3000);
   });
 
-  it("잘못된 멤버명 힌트·운영비 없음 → 국고로 자동 반영", () => {
+  it("잘못된 멤버명 힌트·운영비 없음 → 후원 1위(국고보다 높은 멤버)", () => {
     const raw = JSON.stringify({
       code: 101,
       content: {
@@ -331,7 +361,7 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     const event = parseToonationWebSocketMessage(raw);
     const result = applyDonationToAppState(
       baseState([
-        { id: "m1", name: "BT태호" },
+        { id: "m1", name: "BT태호", account: 50_000 },
         { id: "tr", name: "국고" },
       ]),
       event!,
@@ -339,8 +369,8 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.event.memberId).toBe("tr");
+    expect(result.event.memberId).toBe("m1");
     expect(result.event.memberAutoAssigned).toBe(true);
-    expect(result.state.members.find((m) => m.id === "tr")?.toon).toBe(2500);
+    expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(2500);
   });
 });

@@ -3550,6 +3550,11 @@ export function isPlaceholderMemberName(name: string | null | undefined, id?: st
 /**
  * 로컬에서 바꾼 실멤버명·목표·운영비를 원격 스냅샷에 얹음.
  * (관리자에서 이름만 바꾼 뒤 서버 후원 금액을 받을 때 OBS에 이름이 남도록)
+ *
+ * 이름 우선순위:
+ * - 원격이 멤버N 플레이스홀더이고 로컬이 실명 → 로컬
+ * - 둘 다 실명인데 로컬 updatedAt 이 같거나 더 최신 → 로컬(방금 관리자 개명)
+ * - 그 외(OBS last-good 옛 실명 vs 서버 새 이름) → 원격 유지
  */
 export function mergeLocalMemberIdentityOntoRemote(
   remote: AppState,
@@ -3557,6 +3562,8 @@ export function mergeLocalMemberIdentityOntoRemote(
 ): AppState {
   if (!remote || !local || !hasMeaningfulMemberRoster(local)) return remote;
   const localById = new Map((local.members || []).map((m) => [m.id, m]));
+  const localNewerOrEqual =
+    Number(local.updatedAt || 0) >= Number(remote.updatedAt || 0);
   let changed = false;
   const members = (remote.members || []).map((rm) => {
     const lm = localById.get(rm.id);
@@ -3568,17 +3575,17 @@ export function mergeLocalMemberIdentityOntoRemote(
     const goalDiff = lm.goal !== rm.goal;
     const opDiff = Boolean(lm.operating) !== Boolean(rm.operating);
     if (!nameDiff && !goalDiff && !opDiff) return rm;
-    /** 원격이 플레이스홀더이거나 로컬이 이름을 바꾼 경우 로컬 identity 유지 */
-    if (isPlaceholderMemberName(remoteName, rm.id) || nameDiff || goalDiff || opDiff) {
-      changed = true;
-      return {
-        ...rm,
-        name: localName,
-        goal: lm.goal !== undefined ? lm.goal : rm.goal,
-        operating: Boolean(lm.operating),
-      };
-    }
-    return rm;
+    const preferLocalName =
+      nameDiff &&
+      (isPlaceholderMemberName(remoteName, rm.id) || localNewerOrEqual);
+    if (!preferLocalName && !goalDiff && !opDiff) return rm;
+    changed = true;
+    return {
+      ...rm,
+      name: preferLocalName ? localName : rm.name,
+      goal: lm.goal !== undefined ? lm.goal : rm.goal,
+      operating: Boolean(lm.operating),
+    };
   });
   if (!changed) return remote;
   return { ...remote, members };

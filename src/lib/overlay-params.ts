@@ -790,8 +790,19 @@ export function mergeOverlayPresetsPreferRemote(
   return merged;
 }
 
-/** 관리자 iframe 미리보기는 LS 핫리로드, OBS 방송 URL은 서버 프리셋 우선 */
+/** 관리자 iframe 미리보기는 LS 핫리로드, OBS 방송 URL은 서버 프리셋 우선.
+ * `broadcastMatch=1` 이면 미리보기도 서버 프리셋(OBS와 동일)을 씀. */
 export function shouldPreferLocalOverlayPresets(searchParams?: SearchParamsLike): boolean {
+  try {
+    const sp =
+      searchParams ||
+      (typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search)
+        : null);
+    if (sp && String(sp.get("broadcastMatch") || "").trim() === "1") return false;
+  } catch {
+    /* ignore */
+  }
   if (isAdminDashboardPreviewEmbed()) return true;
   if (isEmbeddedInSameOriginAdminFrame()) return true;
   if (searchParams && isOverlayBroadcastHost(searchParams)) return false;

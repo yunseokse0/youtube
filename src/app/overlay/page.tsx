@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers } from "@/lib/state";
+import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers, mergeLocalMemberIdentityOntoRemote, normalizeDonorsArray } from "@/lib/state";
 import {
   repairMemberTotalsForDonorRoster,
   syncMemberTotalsFromDonors,
@@ -87,7 +87,7 @@ import {
   readDonationListsOverlayPollMs,
   readOverlayLiveSyncPollMs,
 } from "@/lib/overlay-pull-policy";
-import { buildOverlaySyncSignature, isRicherDonationSnapshot, isNewerIntentionalDonationShrink, shouldRejectPoorerDonationRemote } from "@/lib/overlay-sync-signature";
+import { buildOverlaySyncSignature, isRicherDonationSnapshot, isNewerIntentionalDonationShrink, shouldRejectPoorerDonationRemote, shouldKeepStaleOverlayOverRemote, isEmptyDonationRemote } from "@/lib/overlay-sync-signature";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import {
   overlayUserIdsMatch,
@@ -172,7 +172,14 @@ function migrateLegacyOverlayLastGood(userId?: string): AppState | null {
 }
 
 function useRemoteState(userId?: string, enabled = true): { state: AppState | null; ready: boolean } {
+  /** OBS/Prism — CEF LS·last-good 옛 금액으로 서버와 무관한 값이 나오지 않게 서버 우선 */
+  const preferServerOnly =
+    typeof window !== "undefined" && isExternalOverlayBroadcastHost();
+  const preferServerOnlyRef = useRef(preferServerOnly);
+  preferServerOnlyRef.current = preferServerOnly;
+
   const readInitialLastGood = (): AppState | null => {
+    if (preferServerOnly) return null;
     return (
       loadOverlayLastGood(userId, STATE_PICK_OVERLAY_DONORS) ||
       migrateLegacyOverlayLastGood(userId)
@@ -180,6 +187,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
   };
   const [state, setState] = useState<AppState | null>(() => {
     if (typeof window === "undefined") return null;
+    if (preferServerOnly) return null;
     try {
       const local = loadState(userId);
       if (local && hasMeaningfulMemberRoster(local)) {
@@ -204,20 +212,30 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
   const syncOnceRef = useRef<(opts?: { forceFull?: boolean }) => Promise<void>>(async () => {});
   const scheduleStateUpdatedRef = useRef<(() => void) | null>(null);
   const lastGoodRef = useRef<AppState | null>(
-    state && hasMeaningfulMemberRoster(state) ? state : readInitialLastGood()
+    preferServerOnly
+      ? null
+      : state && hasMeaningfulMemberRoster(state)
+        ? state
+        : readInitialLastGood()
   );
   const isViable = (s: AppState | null) => !!(s && hasMeaningfulMemberRoster(s));
   const loadLastGood = useCallback((): AppState | null => {
+    if (preferServerOnlyRef.current) return null;
     const cached = loadOverlayLastGood(userId, STATE_PICK_OVERLAY_DONORS);
     if (cached && hasMeaningfulMemberRoster(cached)) return cached;
     return migrateLegacyOverlayLastGood(userId);
   }, [userId]);
   const saveLastGood = useCallback((s: AppState) => {
     if (!hasMeaningfulMemberRoster(s)) return;
+    /** OBS CEF LS에 옛 금액을 쌓지 않음 — 세션 lastGoodRef 만 사용 */
+    if (preferServerOnlyRef.current) return;
     saveOverlayLastGood(s, userId, STATE_PICK_OVERLAY_DONORS);
   }, [userId]);
   const restoreLastGood = useCallback(() => {
-    const cached = lastGoodRef.current || loadLastGood();
+    /** OBS: LS 복원 금지, 이번 세션에 받은 서버 스냅샷만 복구 */
+    const cached = preferServerOnlyRef.current
+      ? lastGoodRef.current
+      : lastGoodRef.current || loadLastGood();
     if (!cached || !hasMeaningfulMemberRoster(cached)) return;
     const nextSig = buildOverlaySyncSignature(cached);
     if (nextSig !== lastVisualSigRef.current) {
@@ -229,7 +247,25 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
   const mergeKeepingStrongRoster = useCallback((incoming: AppState): AppState => {
     const good = lastGoodRef.current;
     let merged = incoming;
-    if (
+    if (preferServerOnlyRef.current) {
+      /**
+       * OBS: 서버 이름·금액이 정본. last-good 옛 실명으로 개명을 덮지 않음.
+       * 원격만 플레이스홀더/빈 로스터일 때만 세션 로스터 유지.
+       */
+      if (
+        good &&
+        hasMeaningfulMemberRoster(good) &&
+        !hasMeaningfulMemberRoster(incoming)
+      ) {
+        merged = {
+          ...incoming,
+          members: good.members,
+          memberPositions: good.memberPositions,
+          memberPositionMode: good.memberPositionMode,
+          rankPositionLabels: good.rankPositionLabels,
+        };
+      }
+    } else if (
       good &&
       hasMeaningfulMemberRoster(good) &&
       !hasMeaningfulMemberRoster(incoming)
@@ -241,6 +277,9 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         memberPositionMode: good.memberPositionMode,
         rankPositionLabels: good.rankPositionLabels,
       };
+    } else if (good && hasMeaningfulMemberRoster(good)) {
+      /** 미리보기/동일 PC: 로컬 개명이 서버보다 최신이면 이름만 유지 */
+      merged = mergeLocalMemberIdentityOntoRemote(incoming, good);
     }
     const prevTimer = lastGoodRef.current?.generalTimer ?? merged.generalTimer;
     merged = {
@@ -309,8 +348,9 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
   }, [userId]);
   useEffect(() => {
     if (!enabled) return;
-    const local = readLocalStateIfExists();
-    const lastGood = loadLastGood();
+    const preferServer = preferServerOnlyRef.current;
+    const local = preferServer ? null : readLocalStateIfExists();
+    const lastGood = preferServer ? null : loadLastGood();
     const hasStrongRosterRef = { current: false };
     const preferLocal =
       local && isViable(local)
@@ -318,7 +358,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         : lastGood && isViable(lastGood)
           ? lastGood
           : null;
-    if (preferLocal) {
+    if (preferLocal && !preferServer) {
       lastVisualSigRef.current = buildOverlaySyncSignature(preferLocal);
       setState(preferLocal);
       /** placeholder 로컬의 updatedAt 이 API since/비교를 막지 않게 함 */
@@ -334,6 +374,8 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
       }
     } else {
       lastUpdatedRef.current = 0;
+      lastDonorRevRef.current = 0;
+      lastGoodRef.current = null;
     }
     const syncOnce = async (opts?: { forceFull?: boolean }) => {
       if (syncingRef.current) {
@@ -342,10 +384,11 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
       }
       syncingRef.current = true;
       try {
-        const localNow = readLocalStateIfExists();
+        const localNow = preferServerOnlyRef.current ? null : readLocalStateIfExists();
         const localStrong = hasMeaningfulMemberRoster(localNow);
         const shownForCompare = lastGoodRef.current;
         if (
+          !preferServerOnlyRef.current &&
           localNow &&
           localStrong &&
           localNow.updatedAt &&
@@ -373,6 +416,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         /** 관리자 iframe 미리보기 — LS donors 기준으로 엑셀 금액을 매 sync 마다 재계산 */
         if (
           !opts?.forceFull &&
+          !preferServerOnlyRef.current &&
           (isAdminDashboardPreviewEmbed() || isEmbeddedInSameOriginAdminFrame())
         ) {
           const peek = readLocalStateIfExists();
@@ -399,7 +443,8 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
           }
         }
         const needRosterHydration = !hasStrongRosterRef.current;
-        const forceFull = Boolean(opts?.forceFull) || needRosterHydration;
+        const forceFull =
+          Boolean(opts?.forceFull) || needRosterHydration || preferServerOnlyRef.current;
         const data = await loadStateFromApi(userId, {
           pick: "overlay-donors",
           ifUpdatedSince: forceFull ? 0 : overlaySinceRef.current,
@@ -408,7 +453,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         const remoteRev = Math.max(data?.updatedAt || 0, readDonorRankingsRevision(data || ({} as AppState)));
         const remoteStrong = hasMeaningfulMemberRoster(data);
         let remoteForApply = data;
-        if (data && lastGoodRef.current) {
+        if (data && lastGoodRef.current && !preferServerOnlyRef.current) {
           const localReset = Number(lastGoodRef.current.settlementResetAt || 0);
           const remoteReset = Number(data.settlementResetAt || 0);
           if (remoteReset <= localReset) {
@@ -446,25 +491,37 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
           remoteForApply && isRicherDonationSnapshot(remoteForApply, lastGoodRef.current)
         );
         /**
-         * 삭제 SSE → forceFull 이 빈/구 Redis 를 덮어쓰면 엑셀표가 0 초기화된다.
-         * 의도적 축소·정산 리셋만 허용하고, 그 외 poorer 스냅샷은 last-good 유지.
+         * OBS: 서버에 후원·금액이 있으면 last-good 옛 값을 버리지 않고 서버를 따름.
+         * 그 외: 삭제 SSE → forceFull 이 빈/구 Redis 를 덮어쓰면 엑셀표가 0 초기화된다.
          */
+        const rejectPoorer = preferServerOnlyRef.current
+          ? shouldKeepStaleOverlayOverRemote(lastGoodRef.current, remoteForApply)
+          : shouldRejectPoorerDonationRemote(lastGoodRef.current, remoteForApply);
         const shouldApplyRemote =
           !!remoteForApply &&
           !shouldKeepLastGoodInsteadOf(remoteForApply, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current) &&
-          !shouldRejectPoorerDonationRemote(lastGoodRef.current, remoteForApply) &&
+          !rejectPoorer &&
           (Boolean(opts?.forceFull) ||
+            preferServerOnlyRef.current ||
             remoteRev > overlaySinceRef.current ||
             remoteRicher ||
-            (needRosterHydration && remoteStrong));
+            (needRosterHydration && remoteStrong) ||
+            (preferServerOnlyRef.current && !isEmptyDonationRemote(remoteForApply)));
         if (shouldApplyRemote && remoteForApply) {
           /** donors 는 있는데 members 합계가 비면 엑셀만 0 — 순위와 맞추기 */
           const toApply = applyOverlayDonationSync(remoteForApply);
           const appliedStrong = hasMeaningfulMemberRoster(toApply);
+          const hasDonationData =
+            normalizeDonorsArray(toApply.donors).length > 0 ||
+            (toApply.members || []).some(
+              (m) => Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)) > 0
+            );
           const nextSig = buildOverlaySyncSignature(toApply);
           lastUpdatedRef.current = toApply.updatedAt || 0;
           lastDonorRevRef.current = readDonorRankingsRevision(toApply);
-          if (appliedStrong) hasStrongRosterRef.current = true;
+          if (appliedStrong || (preferServerOnlyRef.current && hasDonationData)) {
+            hasStrongRosterRef.current = true;
+          }
           if (nextSig !== lastVisualSigRef.current) {
             lastVisualSigRef.current = nextSig;
             setState(toApply);
@@ -472,12 +529,15 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
           if (isViable(toApply) && appliedStrong) {
             lastGoodRef.current = toApply;
             saveLastGood(toApply);
+          } else if (preferServerOnlyRef.current && hasDonationData) {
+            /** placeholder 로스터여도 OBS 세션 last-good으로 서버 스냅샷 유지 */
+            lastGoodRef.current = toApply;
           }
         } else if (!localNow && !data) {
           restoreLastGood();
         }
       } catch {
-        const localNow = readLocalStateIfExists();
+        const localNow = preferServerOnlyRef.current ? null : readLocalStateIfExists();
         if (!localNow || !hasMeaningfulMemberRoster(localNow)) {
           restoreLastGood();
         }
@@ -498,6 +558,10 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
     scheduleStateUpdatedRef.current = schedule;
     syncOnceRef.current = syncOnce;
     const onStorage = (e: StorageEvent) => {
+      if (preferServerOnlyRef.current) {
+        void syncOnceRef.current({ forceFull: true });
+        return;
+      }
       if (e.key !== storageKey(userId ?? undefined)) return;
       const localNow = readLocalStateIfExists();
       if (
@@ -537,6 +601,10 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
     }
     window.addEventListener("storage", onStorage);
     const unsubscribeLocal = subscribeBroadcastStateLocalUpdated((detail) => {
+      if (preferServerOnlyRef.current) {
+        void syncOnceRef.current({ forceFull: true });
+        return;
+      }
       if (!overlayUserIdsMatch(userId, detail.userId)) return;
       const localNow = readLocalBroadcastState(userId);
       if (!localNow || shouldKeepLastGoodInsteadOf(localNow, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current)) return;

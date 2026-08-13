@@ -3,6 +3,7 @@ import {
   buildCompactBroadcastOverlayParams,
   mergeOverlayPresetsPreferLocal,
   mergeOverlayPresetsPreferRemote,
+  mergeOverlayPresetsForOverlayView,
   mergePresetBroadcastVisualParams,
   presetToParams,
   resolveOverlayTextSharpRender,
@@ -232,5 +233,18 @@ describe("admin preview hot-reload params", () => {
     };
     const url = new URLSearchParams("tableBgColor=%23ff0000");
     expect(resolveTableBgColor(url, preset, { ready: true })).toBe("");
+  });
+
+  it("prefers remote when broadcastMatch=1 even in admin preview", () => {
+    const remote: OverlayPresetLike[] = [
+      { id: "ov_1", theme: "excel", accountHeaderLabel: "캐시", showMembers: true },
+    ];
+    const local: OverlayPresetLike[] = [
+      { id: "ov_1", theme: "excelRose", accountHeaderLabel: "계좌", showMembers: true },
+    ];
+    const sp = new URLSearchParams("adminPreviewEmbed=1&broadcastMatch=1&host=prism");
+    const merged = mergeOverlayPresetsForOverlayView(remote, local, sp);
+    expect(merged[0]?.theme).toBe("excel");
+    expect(merged[0]?.accountHeaderLabel).toBe("캐시");
   });
 });

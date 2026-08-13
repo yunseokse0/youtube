@@ -18,6 +18,11 @@ import { MealGaugeFillMotion } from "@/components/meal-match/MealGaugeFillMotion
 import { resolveMealGaugeAnimStyle } from "@/lib/meal-gauge-motion";
 import { MEAL_MATCH_OVERLAY_UI_REV } from "@/lib/overlay-ui-revision";
 import { showOverlayDevHud, useOverlayHubCompactLayout } from "@/lib/overlay-dev-hud";
+import {
+  buildBattleOverlayContainerStyle,
+  clampBattleOverlayContentWidthPct,
+  clampBattleOverlayScalePct,
+} from "@/lib/overlay-battle-scale";
 import BattleRulesBox from "@/components/battle/BattleRulesBox";
 import BattleTeamColumnBoard from "@/components/battle/BattleTeamColumnBoard";
 import { mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
@@ -122,27 +127,11 @@ export default function MealMatchOverlayInner() {
   const userId = getOverlayUserIdFromSearchParams(sp);
   const hubPreview = sp.get("hubPreview") === "1";
   const compact = useOverlayHubCompactLayout(hubPreview);
-  const overlayScalePct = (() => {
-    const raw = sp.get("scalePct") || sp.get("zoomPct") || "100";
-    const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
-    if (!Number.isFinite(n)) return 100;
-    return Math.max(50, Math.min(300, n));
-  })();
-  const overlayScale = overlayScalePct / 100;
-  const overlayScaleStyle = overlayScale === 1
-    ? undefined
-    : ({ zoom: overlayScale } as React.CSSProperties);
-  const contentWidthPct = (() => {
-    const raw = sp.get("contentWidthPct") || sp.get("maxWidthPct") || "";
-    const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
-    if (!Number.isFinite(n)) return 100;
-    return Math.max(40, Math.min(100, n));
-  })();
-  const overlayContainerStyle: React.CSSProperties = {
-    width: "100%",
-    maxWidth: `${contentWidthPct}%`,
-    ...(overlayScaleStyle || {}),
-  };
+  const overlayScalePct = clampBattleOverlayScalePct(sp.get("scalePct") || sp.get("zoomPct") || "100");
+  const contentWidthPct = clampBattleOverlayContentWidthPct(
+    sp.get("contentWidthPct") || sp.get("maxWidthPct") || "100"
+  );
+  const overlayContainerStyle = buildBattleOverlayContainerStyle(overlayScalePct, contentWidthPct);
   useEffect(() => {
     if (!hubPreview || typeof document === "undefined") return;
     document.documentElement.classList.add("overlay-hub-preview");

@@ -1,7 +1,12 @@
 import type { AppState } from "@/types";
 import { readManualSigBroadcastFromState } from "@/lib/manual-sig-broadcast-state";
 import { canonicalSigIdFromWheelSliceId } from "@/lib/sig-roulette";
-import { hasMeaningfulMemberRoster, shouldBlockAccidentalEmptyOverwrite } from "@/lib/state";
+import {
+  hasMeaningfulMemberRoster,
+  normalizeDonorsArray,
+  shouldBlockAccidentalEmptyOverwrite,
+  totalCombined,
+} from "@/lib/state";
 
 const MANUAL_SIG_DRAFT_STATE_KEY = "sigSalesManualDraftV1";
 
@@ -271,5 +276,30 @@ export function shouldRejectPoorerDonationRemote(
 
   if (!isRicherDonationSnapshot(local, remote)) return false;
   if (isNewerIntentionalDonationShrink(remote, local)) return false;
+  return true;
+}
+
+/** 후원·멤버 금액이 모두 비어 서버/네트워크 공백으로 볼 수 있는지 */
+export function isEmptyDonationRemote(remote: AppState | null | undefined): boolean {
+  if (!remote) return true;
+  if (normalizeDonorsArray(remote.donors).length > 0) return false;
+  if (totalCombined(remote) > 0) return false;
+  return true;
+}
+
+/**
+ * OBS·방송 오버레이: last-good/LS 옛 값이 서버(비어 있지 않은) 스냅샷을 막지 않게.
+ * 빈 원격만 로컬 보호 — 새로고침 시 서버와 무관한 숫자 고착 방지.
+ */
+export function shouldKeepStaleOverlayOverRemote(
+  local: AppState | null | undefined,
+  remote: AppState | null | undefined
+): boolean {
+  if (!local || !remote) return false;
+  if (!shouldRejectPoorerDonationRemote(local, remote)) return false;
+  if (!isEmptyDonationRemote(remote)) return false;
+  const remoteReset = Number(remote.settlementResetAt || 0);
+  const localReset = Number(local.settlementResetAt || 0);
+  if (remoteReset > localReset) return false;
   return true;
 }

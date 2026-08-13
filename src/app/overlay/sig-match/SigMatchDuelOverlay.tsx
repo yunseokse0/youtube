@@ -11,6 +11,7 @@ import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 import { SIG_MATCH_OVERLAY_UI_REV } from "@/lib/overlay-ui-revision";
 import { showOverlayDevHud, useOverlayHubCompactLayout } from "@/lib/overlay-dev-hud";
+import { buildBattleOverlayContainerStyle, clampBattleOverlayContentWidthPct, clampBattleOverlayScalePct } from "@/lib/overlay-battle-scale";
 import {
   formatSigMatchGapLabel,
   formatSigMatchScoreLabel,
@@ -390,30 +391,17 @@ export default function SigMatchDuelOverlay({
   const compact = useOverlayHubCompactLayout(hubPreview);
   const overlayScalePct = (() => {
     if (embeddedDemo?.scalePct != null) {
-      return Math.max(50, Math.min(300, Math.floor(embeddedDemo.scalePct)));
+      return clampBattleOverlayScalePct(embeddedDemo.scalePct);
     }
-    const raw = sp.get("scalePct") || sp.get("zoomPct") || "100";
-    const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
-    if (!Number.isFinite(n)) return 100;
-    return Math.max(50, Math.min(300, n));
+    return clampBattleOverlayScalePct(sp.get("scalePct") || sp.get("zoomPct") || "100");
   })();
-  const overlayScale = overlayScalePct / 100;
-  const overlayScaleStyle =
-    overlayScale === 1 ? undefined : ({ zoom: overlayScale } as React.CSSProperties);
   const contentWidthPct = (() => {
     if (embeddedDemo?.contentWidthPct != null) {
-      return Math.max(40, Math.min(100, Math.floor(embeddedDemo.contentWidthPct)));
+      return clampBattleOverlayContentWidthPct(embeddedDemo.contentWidthPct);
     }
-    const raw = sp.get("contentWidthPct") || sp.get("maxWidthPct") || "";
-    const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
-    if (!Number.isFinite(n)) return 100;
-    return Math.max(40, Math.min(100, n));
+    return clampBattleOverlayContentWidthPct(sp.get("contentWidthPct") || sp.get("maxWidthPct") || "100");
   })();
-  const overlayContainerStyle: React.CSSProperties = {
-    width: "100%",
-    maxWidth: `${contentWidthPct}%`,
-    ...(overlayScaleStyle || {}),
-  };
+  const overlayContainerStyle = buildBattleOverlayContainerStyle(overlayScalePct, contentWidthPct);
 
   const lockedSnapshot = useMemo(
     () => embeddedDemo?.frozenState ?? parseSigMatchSnapshot(sp),

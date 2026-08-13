@@ -224,6 +224,7 @@ import {
   startCmFromField,
   HIGH_SOCIETY_DEFAULT_FIELD_CM,
 } from "@/lib/high-society";
+import { formatHsPushDirLabel, showAppToast } from "@/lib/app-toast";
 import {
   parseBulkDonationText,
   resolveBulkDonationRows,
@@ -2673,10 +2674,12 @@ export default function AdminPage() {
      * 미리보기 iframe src 는 구조 키만 유지한다.
      * 시각·레이아웃 옵션을 URL에 넣으면 옵션 변경마다 리마운트되어 멤버1·2·3 초기 화면이 깜빡인다.
      * 스타일은 localStorage 프리셋(`/api/state`) 핫리로드로 반영.
+     * host=prism: OBS와 동일하게 서버 금액·externalSafe 렌더(미리보기만 로컬 금액이 어긋나던 문제 방지).
      */
     const q = new URLSearchParams();
     q.set("p", p.id);
     q.set("u", overlayUserId);
+    q.set("host", "prism");
     q.set("previewGuide", "true");
     if (p.tableOnly) q.set("tableOnly", "true");
     const isVertical = !!p.vertical;
@@ -5664,6 +5667,19 @@ export default function AdminPage() {
       notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
       setState(bumped);
       setSyncStatus("synced");
+      if (hsSettingsNow.enabled && seatRole) {
+        const memberName =
+          (stateRef.current.members || []).find((m) => m.id === memberId)?.name || memberId;
+        const systemDir = resolveSystemMiddlePushDir(hsSettingsNow);
+        const dirLabel = seatRole.canChoosePush
+          ? formatHsPushDirLabel(hsPushForApply || "system", systemDir)
+          : seatRole.expandDir === "right"
+            ? "→고정(끝자리)"
+            : "←고정(끝자리)";
+        showAppToast(
+          `상류사회 · 합산 반영: 「${donorNameClean}」→${memberName} ${amount.toLocaleString("ko-KR")}원 · ${dirLabel}`
+        );
+      }
     });
   };
 
@@ -6806,11 +6822,14 @@ export default function AdminPage() {
   const patchHighSocietySettings = useCallback(
     (patch: Partial<ReturnType<typeof normalizeHighSocietySettings>>) => {
       const wasOn = normalizeHighSocietySettings(stateRef.current.highSocietySettings).enabled;
+      const before = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
+      let applied: ReturnType<typeof normalizeHighSocietySettings> | null = null;
       setState((prev: AppState) => {
         const nextSettings = normalizeHighSocietySettings({
           ...normalizeHighSocietySettings(prev.highSocietySettings),
           ...patch,
         });
+        applied = nextSettings;
         let next: AppState = {
           ...prev,
           highSocietySettings: nextSettings,
@@ -6835,6 +6854,70 @@ export default function AdminPage() {
       if (wasOn && !nextEnabled) {
         setPendingHsPushDirByDonorId({});
         setHsPushDirApplyBusyId(null);
+      }
+
+      /** 수동 설정 반영 요약 토스트 */
+      const after = applied || normalizeHighSocietySettings({ ...before, ...patch });
+      if (typeof patch.enabled === "boolean" && patch.enabled !== wasOn) {
+        showAppToast(
+          patch.enabled
+            ? "상류사회 ON — 오버레이·후원 확장 방향이 활성화되었습니다"
+            : "상류사회 OFF — 수동 확장 방향이 원복되고 모드가 꺼졌습니다"
+        );
+      } else if (patch.defaultMiddlePush && after.defaultMiddlePush !== before.defaultMiddlePush) {
+        const dir = resolveSystemMiddlePushDir(after);
+        showAppToast(
+          `상류사회 · 가운데 기본 확장 → ${dir === "left" ? "← 왼쪽" : "→ 오른쪽"} (시스템 추종 후원에 적용)`
+        );
+      } else if (
+        typeof patch.fieldCm === "number" &&
+        Number(patch.fieldCm) !== Number(before.fieldCm)
+      ) {
+        const seats = Math.max(
+          2,
+          resolveHighSocietySeatMembers(stateRef.current.members || [], after.seatMemberIds).length || 4
+        );
+        const start = Math.round(startCmFromField(after.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM, seats));
+        showAppToast(
+          `상류사회 · 1인 시작 ${start.toLocaleString("ko-KR")}cm (전장 ${(after.fieldCm || 0).toLocaleString("ko-KR")}cm · ${seats}명)`
+        );
+      } else if (
+        patch.territoryUpdateMode &&
+        patch.territoryUpdateMode !== before.territoryUpdateMode
+      ) {
+        showAppToast(
+          patch.territoryUpdateMode === "onRoundEnd"
+            ? "상류사회 · 영토 갱신: 라운드 종료 후"
+            : "상류사회 · 영토 갱신: 실시간"
+        );
+      } else if (patch.fx) {
+        const fx = normalizeHighSocietyFxSettings(after.fx);
+        const labels = [
+          fx.frontier ? "전선" : null,
+          fx.growFlash ? "플래시" : null,
+          fx.contestedEdge ? "분쟁" : null,
+          fx.arrowBlade ? "칼날" : null,
+          fx.strongOutline ? "외곽선" : null,
+        ].filter(Boolean);
+        showAppToast(
+          labels.length > 0
+            ? `상류사회 · 연출 ON: ${labels.join(" · ")}`
+            : "상류사회 · 연출 효과 전부 OFF"
+        );
+      } else if (Array.isArray(patch.seatMemberIds)) {
+        const seats = resolveHighSocietySeatMembers(
+          stateRef.current.members || [],
+          after.seatMemberIds
+        );
+        showAppToast(
+          seats.length >= 2
+            ? `상류사회 · 좌석 배치: ${seats.map((s) => s.name).join(" → ")}`
+            : "상류사회 · 좌석 지정 해제 — 운영비 제외 전원 N등분"
+        );
+      } else if (patch.barStyle && patch.barStyle !== before.barStyle) {
+        showAppToast(
+          `상류사회 · 게이지 스타일: ${patch.barStyle === "arrow" ? "화살표" : "평평"}`
+        );
       }
     },
     [persistState]
@@ -8140,7 +8223,7 @@ export default function AdminPage() {
                     </button>
                   </div>
                   <div
-                    className="relative w-full overflow-auto bg-black/40"
+                    className="relative w-full overflow-hidden bg-black/40"
                     style={{
                       height: `${Math.min(720, Math.max(280, Math.round(280 * (getBattleScalePct() / 100))))}px`,
                     }}
@@ -8201,7 +8284,7 @@ export default function AdminPage() {
                     </button>
                   </div>
                   <div
-                    className="relative w-full overflow-auto bg-black/40"
+                    className="relative w-full overflow-hidden bg-black/40"
                     style={{
                       height: `${Math.min(720, Math.max(280, Math.round(280 * (getBattleScalePct() / 100))))}px`,
                     }}
@@ -11224,9 +11307,10 @@ export default function AdminPage() {
                   예: <span className="text-neutral-300">BT태호</span> / 공백·기호 차이는 자동 무시합니다.
                   <br />
                   자동 반영 시 멤버명은 <span className="text-neutral-300">유사 일치</span>(
-                  <span className="text-neutral-300">태호</span>→BT태호, 오타·호칭 포함)로 엑셀표에 배치합니다. 멤버
-                  힌트가 없을 때는 <span className="text-neutral-300">운영비 → 대표 → 국고</span> 순으로 자동
-                  배치됩니다.
+                  <span className="text-neutral-300">태호</span>→BT태호, 오타·호칭 포함)로 엑셀표에 배치합니다. 멤버·후원자
+                  힌트가 없거나 매칭 실패 시에는 <span className="text-neutral-300">후원 순위 1위</span>
+                  (대표·운영비 제외)로 보냅니다. 플레이어 멤버가 없을 때만{" "}
+                  <span className="text-neutral-300">운영비 → 대표 → 국고</span> 순으로 대체합니다.
                 </div>
                 {toonationResolvedAlertboxUrl && user?.id ? (
                   <div className="text-[11px] text-cyan-200/90 mt-1 leading-snug">
@@ -12042,13 +12126,24 @@ export default function AdminPage() {
                                           onClick={() => {
                                             void (async () => {
                                               const prev = stateRef.current;
-                                              if (
-                                                !normalizeHighSocietySettings(prev.highSocietySettings)
-                                                  .enabled
-                                              ) {
+                                              const hsNow = normalizeHighSocietySettings(
+                                                prev.highSocietySettings
+                                              );
+                                              if (!hsNow.enabled) {
+                                                showAppToast(
+                                                  "상류사회가 OFF입니다. 먼저 모드를 켜 주세요.",
+                                                  { variant: "info" }
+                                                );
                                                 return;
                                               }
                                               const nextDir = draftDir;
+                                              const systemDir = resolveSystemMiddlePushDir(hsNow);
+                                              const memberName =
+                                                state.members.find((x) => x.id === d.memberId)?.name ||
+                                                d.memberId ||
+                                                "—";
+                                              const fromLabel = formatHsPushDirLabel(savedDir, systemDir);
+                                              const toLabel = formatHsPushDirLabel(nextDir, systemDir);
                                               setHsPushDirApplyBusyId(d.id);
                                               try {
                                                 const next = applyManualHsPushDirChange(
@@ -12063,6 +12158,10 @@ export default function AdminPage() {
                                                 if (!next) {
                                                   // 시스템과 동일한 수동 선택 등 — 저장값과 같아져 dirty 해제만
                                                   setSyncStatus("synced");
+                                                  showAppToast(
+                                                    `상류사회 · 「${d.name}」→${memberName}: 이미 ${toLabel} 상태입니다`,
+                                                    { variant: "info" }
+                                                  );
                                                   return;
                                                 }
                                                 const preserved = markAuthoritativeDonationSave(
@@ -12075,8 +12174,13 @@ export default function AdminPage() {
                                                   preserved
                                                 );
                                                 if (!ok) {
-                                                  window.alert(
-                                                    "확장 방향 저장에 실패했습니다. 잠시 후 다시 적용해 주세요."
+                                                  showAppToast(
+                                                    "확장 방향 저장에 실패했습니다. 잠시 후 다시 적용해 주세요.",
+                                                    { variant: "error" }
+                                                  );
+                                                } else {
+                                                  showAppToast(
+                                                    `상류사회 확장 적용: 「${d.name}」→${memberName} · ${fromLabel} → ${toLabel}`
                                                   );
                                                 }
                                               } finally {
@@ -16085,13 +16189,14 @@ function ClientPreviewWrapper({ preset, buildUrl }: { preset: OverlayPreset; bui
   useEffect(() => {
     if (computed !== url) setUrl(computed);
   }, [computed, url]);
-  return <VerticalPreview url={url} />;
+  return <VerticalPreview url={url} presetName={preset.name || preset.id} />;
 }
 
-function VerticalPreview({ url }: { url: string }) {
+function VerticalPreview({ url, presetName }: { url: string; presetName?: string }) {
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
   const [showFrame, setShowFrame] = useState(true);
   const [showGuides, setShowGuides] = useState(true);
+  const [broadcastMatch, setBroadcastMatch] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [iframeKey, setIframeKey] = useState(0);
@@ -16103,11 +16208,14 @@ function VerticalPreview({ url }: { url: string }) {
     try {
       const u = new URL(url);
       u.searchParams.set("previewGuide", "true");
+      if (!u.searchParams.get("host")) u.searchParams.set("host", "prism");
+      if (broadcastMatch) u.searchParams.set("broadcastMatch", "1");
+      else u.searchParams.delete("broadcastMatch");
       return appendAdminPreviewEmbedToOverlayUrl(u.toString());
     } catch {
       return appendAdminPreviewEmbedToOverlayUrl(url);
     }
-  }, [url]);
+  }, [url, broadcastMatch]);
   useEffect(() => {
     if (loadTimeoutRef.current) {
       clearTimeout(loadTimeoutRef.current);
@@ -16163,8 +16271,23 @@ function VerticalPreview({ url }: { url: string }) {
   return (
     <div className="rounded border border-white/10 bg-black/70 p-2">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-        <div className="text-xs text-neutral-400">프리뷰(단일 영상)</div>
+        <div className="text-xs text-neutral-400">프리뷰(단일 영상){presetName ? ` · ${presetName}` : ""}</div>
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className={`rounded px-2 py-0.5 text-[11px] border ${
+              broadcastMatch
+                ? "border-amber-400 bg-amber-800/80 text-amber-50"
+                : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
+            }`}
+            title="켜면 서버에 저장된 테마·헤더명(캐시/계좌 등)을 OBS와 동일하게 표시합니다"
+            onClick={() => {
+              setBroadcastMatch((v) => !v);
+              setIframeKey((k) => k + 1);
+            }}
+          >
+            {broadcastMatch ? "OBS 동일 ON" : "OBS 동일"}
+          </button>
           <button
             className={`px-2 py-0.5 rounded border text-xs ${showFrame ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-300"}`}
             onClick={() => setShowFrame(!showFrame)}
@@ -16202,6 +16325,12 @@ function VerticalPreview({ url }: { url: string }) {
           </button>
         </div>
       </div>
+      <p className="mb-1 text-[10px] leading-snug text-neutral-500">
+        기본 미리보기는 편집 중 테마를 바로 보여 줍니다. OBS(
+        <code className="text-neutral-400">host=prism</code>
+        )는 서버 저장본을 씁니다. 헤더색·「계좌/캐시」라벨이 다르면{" "}
+        <strong className="text-neutral-400">OBS 동일</strong>을 켜거나, 테마 저장 후 OBS 브라우저 소스를 새로고침하세요.
+      </p>
       {showDiagnostics && (
         <div className="mb-2 p-2 rounded bg-neutral-900/80 border border-amber-500/40 text-xs space-y-1">
           <div><span className="text-neutral-500">URL 길이:</span> {previewUrl ? previewUrl.length : 0}자 (브라우저 한도 ~2000자)</div>

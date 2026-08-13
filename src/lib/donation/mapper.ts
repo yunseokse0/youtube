@@ -14,7 +14,8 @@ export function normalizeName(name: string): string {
   return normalizeComparableName(name);
 }
 
-/** 투네 후원 — 메시지에 플레이어 없을 때 기본 배치: 운영비 → 대표 → 국고 */
+/** 투네 후원 — 메시지에 플레이어 없을 때 대체 배치: 운영비 → 대표 → 국고
+ * (후원 1위는 `pickTopRankedDonationMember`가 우선 — 플레이어 멤버가 있을 때) */
 export type PickDefaultToonationMemberOptions = {
   memberPositions?: Record<string, string> | null;
 };
@@ -411,13 +412,16 @@ export function mapToMember(
   }
 
   /**
-   * 유사 일치로도 못 찾으면 운영비 → 대표 → 국고 순으로 반영.
-   * (자동 반영 옵션이 켜진 서버/관리자 경로)
+   * 유사 일치로도 못 찾으면 엑셀 후원 1위 → 없으면 운영비 → 대표 → 국고.
+   * (멤버·후원자 힌트 없는 1천원 등 — 운영비로만 가지 않고 순위 1위에 반영)
    */
   if (opts?.autoAssignToonPlayer) {
-    const fallback = pickDefaultToonationMember(members, {
-      memberPositions: opts.memberPositions,
-    });
+    const top = pickTopRankedDonationMember(members, opts.memberPositions);
+    const fallback =
+      top ||
+      pickDefaultToonationMember(members, {
+        memberPositions: opts.memberPositions,
+      });
     if (fallback) {
       return {
         ...event,
@@ -449,5 +453,8 @@ export function suggestMemberForDonationEvent(
     const relaxed = matchMemberByRelaxedFuzzy(lookupName, members, aliases);
     if (relaxed) return relaxed;
   }
-  return pickDefaultToonationMember(members, { memberPositions });
+  return (
+    pickTopRankedDonationMember(members, memberPositions) ||
+    pickDefaultToonationMember(members, { memberPositions })
+  );
 }
