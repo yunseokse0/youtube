@@ -151,7 +151,9 @@ export function rosterDonorMatchScore(
   return score;
 }
 
-/** donors.memberId 와 맞는 로스터로 재동기화 — 후원은 있는데 members 합계가 donors 와 어긋날 때 */
+/** 후원자 리스트(donors) 기준으로 멤버 계좌·투네 합계가 어긋날 때 보정.
+ * 단, 의도적 멤버 추가·삭제(id 집합이 바뀐 최신 로스터)는 donors 가 옛 id 를 가리켜도
+ * 폴백 로스터로 되돌리지 않는다. */
 export function repairMemberTotalsForDonorRoster(
   state: AppState,
   ...fallbacks: Array<AppState | null | undefined>
@@ -163,10 +165,23 @@ export function repairMemberTotalsForDonorRoster(
   const currentScore = rosterDonorMatchScore(state.members, donors);
   if (currentScore >= countable * 0.99) return state;
 
+  const stateIdSig = memberRosterIdSignature(state.members);
+  const stateUpdatedAt = Number(state.updatedAt || 0);
+
   let bestMembers = state.members;
   let bestScore = currentScore;
   for (const fb of fallbacks) {
     if (!fb?.members?.length) continue;
+    const fbIdSig = memberRosterIdSignature(fb.members);
+    if (
+      stateIdSig &&
+      fbIdSig &&
+      stateIdSig !== fbIdSig &&
+      stateUpdatedAt >= Number(fb.updatedAt || 0)
+    ) {
+      /** 최신 로스터 교체(멤버 추가/삭제) — 옛 donors 매칭용 로스터로 되돌리지 않음 */
+      continue;
+    }
     const score = rosterDonorMatchScore(fb.members, donors);
     if (score > bestScore) {
       bestScore = score;
@@ -175,6 +190,14 @@ export function repairMemberTotalsForDonorRoster(
   }
   if (bestScore <= 0) return state;
   return syncMemberTotalsFromDonors({ ...state, members: bestMembers });
+}
+
+function memberRosterIdSignature(members: Member[] | null | undefined): string {
+  return (members || [])
+    .map((m) => String(m.id || ""))
+    .filter(Boolean)
+    .sort()
+    .join("\u001e");
 }
 
 /** 후원자 리스트(donors) 기준으로 멤버 계좌·투네 합계 재계산 — 순위·엑셀표 금액 불일치 방지 */

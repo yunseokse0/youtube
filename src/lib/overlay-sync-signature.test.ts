@@ -109,6 +109,28 @@ describe("shouldRejectPoorerDonationRemote", () => {
     expect(shouldRejectPoorerDonationRemote(local, emptyRemote)).toBe(true);
   });
 
+  it("allows newer remote roster replace even if member totals drop", async () => {
+    const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      donors: [
+        { id: "d1", name: "a", amount: 53800, memberId: "jaki", at: 1, target: "toon" as const },
+      ],
+      members: [{ id: "jaki", name: "쟈키", account: 0, toon: 53800, contribution: 53800 }],
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: 2000,
+      donors: local.donors,
+      members: [
+        { id: "sagi", name: "사기", account: 0, toon: 0, contribution: 0 },
+        { id: "susi", name: "수시", account: 0, toon: 0, contribution: 0 },
+      ],
+    };
+    expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(false);
+  });
+
   it("allows empty remote when settlementResetAt is newer", async () => {
     const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
     const local = {

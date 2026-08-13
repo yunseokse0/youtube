@@ -2255,7 +2255,10 @@ export async function saveStateAsync(
   ) {
     saveOpts = { ...saveOpts, donorsReplace: true };
   }
-  guarded = repairMemberTotalsForDonorRoster(guarded, local);
+  guarded =
+    saveOpts?.membersAuthoritative || saveOpts?.settlementReset
+      ? syncMemberTotalsFromDonors(guarded)
+      : repairMemberTotalsForDonorRoster(guarded, local);
   /**
    * donorsAuthoritative 라도 정산 리셋이 아니면, LS보다 후원이 줄어든 채 올리면
    * 미매칭 반영 등으로 엑셀표가 초기화된다.

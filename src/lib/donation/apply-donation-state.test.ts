@@ -5,11 +5,44 @@ import {
   dedupeDonorRows,
   mergeDonorRowFields,
   reassignDonorMemberInAppState,
+  repairMemberTotalsForDonorRoster,
   revertDonationFromAppState,
   syncMemberTotalsFromDonors,
   updateDonorMessageInAppState,
 } from "./apply-donation-state";
 import type { DonationEvent } from "./types";
+
+describe("repairMemberTotalsForDonorRoster", () => {
+  it("does not restore old roster when members were intentionally replaced", () => {
+    const oldRoster = {
+      ...defaultState(),
+      updatedAt: 1000,
+      members: [{ id: "jaki", name: "쟈키", account: 0, toon: 53800, contribution: 53800 }],
+      donors: [
+        {
+          id: "d1",
+          name: "후원",
+          amount: 53800,
+          memberId: "jaki",
+          at: 1,
+          target: "toon" as const,
+        },
+      ],
+    };
+    const newRoster = {
+      ...defaultState(),
+      updatedAt: 2000,
+      members: [
+        { id: "sagi", name: "사기", account: 0, toon: 0, contribution: 0 },
+        { id: "susi", name: "수시", account: 0, toon: 0, contribution: 0 },
+      ],
+      donors: oldRoster.donors,
+    };
+    const repaired = repairMemberTotalsForDonorRoster(newRoster, oldRoster);
+    expect(repaired.members.map((m) => m.id)).toEqual(["sagi", "susi"]);
+    expect(repaired.members.find((m) => m.id === "jaki")).toBeUndefined();
+  });
+});
 
 describe("reassignDonorMemberInAppState", () => {
   it("keeps donor name and moves amount between members", () => {

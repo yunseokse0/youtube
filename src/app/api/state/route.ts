@@ -26,6 +26,7 @@ import {
   mergeDonorsForMultiTabSave,
   isIntentionalDonorListShrink,
   isDonorListMemberReassignment,
+  membersDifferByIds,
   mergeOverlaySettingsPreservingObsText,
   normalizeDonorsArray,
   normalizeRouletteState,
@@ -898,10 +899,19 @@ export async function POST(req: Request) {
         : { ...merged, donors: dedupedDonors };
     /**
      * donorsAuthoritative + donors 있음인데 멤버 합계가 donors 와 어긋나면 로스터 재동기화.
+     * 멤버 추가·삭제(authoritative / id 집합 변경)는 옛 donors 매칭으로 로스터를 되돌리지 않음.
      */
     if (donorsInPatch && normalizeDonorsArray(dedupedDonors).length > 0) {
       const bodyMembers = Array.isArray(body.members) ? ({ members: body.members } as AppState) : null;
-      draft = repairMemberTotalsForDonorRoster(draft, baseState, bodyMembers);
+      const rosterReplaced =
+        membersAuthoritative ||
+        (Array.isArray(merged.members) &&
+          Array.isArray(baseState.members) &&
+          membersDifferByIds(merged.members, baseState.members) &&
+          Number(merged.updatedAt || 0) >= Number(baseState.updatedAt || 0));
+      draft = rosterReplaced
+        ? syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors })
+        : repairMemberTotalsForDonorRoster(draft, baseState, bodyMembers);
     }
     const donorRankingsUpdatedAt = computeDonorRankingsUpdatedAt(
       baseState,

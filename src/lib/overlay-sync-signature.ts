@@ -3,6 +3,7 @@ import { readManualSigBroadcastFromState } from "@/lib/manual-sig-broadcast-stat
 import { canonicalSigIdFromWheelSliceId } from "@/lib/sig-roulette";
 import {
   hasMeaningfulMemberRoster,
+  membersDifferByIds,
   normalizeDonorsArray,
   shouldBlockAccidentalEmptyOverwrite,
   totalCombined,
@@ -227,6 +228,20 @@ export function shouldRejectPoorerDonationRemote(
   if (remoteReset > localReset) {
     /** stamp만 앞서고 멤버1·2…/빈 후원이면 강제 리셋으로 보지 않음 */
     if (shouldBlockAccidentalEmptyOverwrite(local, remote)) return true;
+    return false;
+  }
+
+  /**
+   * 의도적 멤버 추가·삭제: id 집합이 바뀌고 원격 stamp 가 최신이면
+   * 금액이 잠깐 0이어도(옛 후원이 옛 memberId) poorer 로 막지 않음.
+   */
+  if (
+    hasMeaningfulMemberRoster(remote) &&
+    Array.isArray(remote.members) &&
+    remote.members.length > 0 &&
+    membersDifferByIds(local.members || [], remote.members) &&
+    Number(remote.updatedAt || 0) >= Number(local.updatedAt || 0)
+  ) {
     return false;
   }
 
