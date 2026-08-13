@@ -150,6 +150,33 @@ describe("shouldRejectPoorerDonationRemote", () => {
     expect(shouldRejectPoorerDonationRemote(local, wipeRemote)).toBe(true);
   });
 
+  it("allows richer placeholder remote when local only renamed members", async () => {
+    const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      settlementResetAt: 500,
+      donors: [] as Array<{ id: string; name: string; amount: number; memberId: string; at: number; target: "account" }>,
+      members: [
+        { id: "m1", name: "사기", account: 0, toon: 0, contribution: 0 },
+        { id: "m2", name: "히치", account: 0, toon: 0, contribution: 0 },
+      ],
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: 2000,
+      settlementResetAt: 500,
+      donors: [
+        { id: "d1", name: "a", amount: 250000, memberId: "m1", at: 1, target: "account" as const },
+      ],
+      members: [
+        { id: "m1", name: "멤버1", account: 250000, toon: 0, contribution: 250000 },
+        { id: "m2", name: "멤버2", account: 0, toon: 0, contribution: 0 },
+      ],
+    };
+    expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(false);
+  });
+
   it("allows intentional single-donor delete shrink", async () => {
     const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
     const local = {

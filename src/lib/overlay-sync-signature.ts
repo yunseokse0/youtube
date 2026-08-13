@@ -232,9 +232,6 @@ export function shouldRejectPoorerDonationRemote(
   /** 정산 리셋 없이 완전 빈 원격은 로컬 후원을 덮지 않음 */
   if (localDonors > 0 && remoteDonors === 0) return true;
 
-  /** 엑셀 실멤버가 플레이스홀더/빈 슬롯으로 덮이지 않게 */
-  if (hasMeaningfulMemberRoster(local) && !hasMeaningfulMemberRoster(remote)) return true;
-
   const localTotal = (local.members || []).reduce(
     (sum, m) =>
       sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)),
@@ -245,6 +242,20 @@ export function shouldRejectPoorerDonationRemote(
       sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)),
     0
   );
+
+  /** 엑셀 실멤버가 플레이스홀더/빈 슬롯으로 덮이지 않게 */
+  if (hasMeaningfulMemberRoster(local) && !hasMeaningfulMemberRoster(remote)) {
+    /**
+     * 이름만 로컬이 앞서고 원격 후원·합계가 더 많으면 거절하지 않음.
+     * (관리자 이름 변경 + 서버 실후원 교착 → OBS에 멤버1 고착 방지. 이름은 apply 측 병합)
+     */
+    const remoteRicher =
+      remoteDonors > localDonors ||
+      remoteTotal > localTotal ||
+      (remoteDonors > 0 && localDonors === 0);
+    if (!remoteRicher) return true;
+  }
+
   if (localTotal > 0 && remoteTotal === 0 && remoteDonors === 0) return true;
 
   /**

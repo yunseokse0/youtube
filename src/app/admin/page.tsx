@@ -43,6 +43,7 @@ import {
   isDefaultLikeTimerDisplayStyle,
   normalizeDonorsArray,
   mergeDonorsForMultiTabSave,
+  mergeLocalMemberIdentityOntoRemote,
   donorsListContentDiffers,
   isIntentionalDonorListShrink,
   rebumpDonorsPastSettlementReset,
@@ -2054,6 +2055,14 @@ export default function AdminPage() {
         };
         toApply = syncMemberTotalsFromDonors(toApply);
         didPreserve = false;
+      } else {
+        /** 로컬에서 바꾼 멤버명을 서버 후원 스냅샷에 얹고, 차이면 서버에도 즉시 푸시(OBS 반영) */
+        const beforeNames = (toApply.members || []).map((m) => `${m.id}:${m.name || ""}`).join("|");
+        toApply = mergeLocalMemberIdentityOntoRemote(toApply, prev);
+        const afterNames = (toApply.members || []).map((m) => `${m.id}:${m.name || ""}`).join("|");
+        if (beforeNames !== afterNames && hasMeaningfulMemberRoster(toApply)) {
+          persistState(toApply, { includeDonationFields: true });
+        }
       }
       /** 후원은 서버(계정) 정본 — 세션 캐시로 원격 축소본을 막지 않음 */
       if (adminSyncFingerprint(prev) === adminSyncFingerprint(toApply)) {
@@ -2995,6 +3004,15 @@ export default function AdminPage() {
         members: prev.members.map((x: Member) => (x.id === id ? { ...x, name } : x)),
         updatedAt: Date.now(),
       };
+      /** React 상태가 비어 있어도 LS에 후원이 있으면 합계를 맞춰 서버 zero-wipe 가드에 걸리지 않게 */
+      if (normalizeDonorsArray(next.donors).length === 0) {
+        try {
+          const fromLs = loadState(user?.id);
+          if (fromLs && normalizeDonorsArray(fromLs.donors).length > 0) {
+            next = { ...next, donors: fromLs.donors };
+          }
+        } catch {}
+      }
       if (normalizeDonorsArray(next.donors).length > 0) {
         next = syncMemberTotalsFromDonors(next);
       }
@@ -13768,7 +13786,9 @@ export default function AdminPage() {
                                   <option key={tid} value={tid}>{overlayThemeLabel(tid)}</option>
                                 ))}
                               </select>
-                              <ThemeThumbs value={p.theme} options={baseThemeChoices} onChange={(v) => updatePreset(p.id, { theme: v })} />
+                              <div className="col-span-full">
+                                <ThemeThumbs value={p.theme} options={baseThemeChoices} onChange={(v) => updatePreset(p.id, { theme: v })} />
+                              </div>
                               {/* Palette view removed per user preference; compact select retained */}
                               {/* 「멤버·총합 테마」UI 제거 — 상단「테마」가 membersTheme/totalTheme도 함께 맞춤. 저장값·현재 표 설정은 변경하지 않음 */}
                               {(p.showMembers || p.showTotal) && (
@@ -13906,162 +13926,170 @@ export default function AdminPage() {
                                       </div>
                                     </div>
                                   </div>
-                                  <label className="text-xs text-neutral-400">총합 행</label>
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <button
-                                      type="button"
-                                      className={`px-2.5 py-1 rounded border text-xs font-medium ${
-                                        (p.showTableSumRow ?? p.showTotal) !== false
-                                          ? "border-emerald-400 bg-emerald-800/50 text-emerald-100"
-                                          : "border-rose-400/60 bg-rose-950/40 text-rose-100"
-                                      }`}
-                                      onClick={() =>
-                                        updatePreset(p.id, {
-                                          showTableSumRow: (p.showTableSumRow ?? p.showTotal) === false,
-                                        })
-                                      }
-                                    >
-                                      {(p.showTableSumRow ?? p.showTotal) !== false ? "표시 ON" : "삭제(숨김)"}
-                                    </button>
-                                    <span className="text-[10px] text-neutral-500">표 맨 아래 총합 줄</span>
-                                  </div>
-                                  <label className="text-xs text-neutral-400">엑셀표 배경 GIF URL</label>
-                                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
-                                    <input
-                                      className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
-                                      placeholder="예: https://media.giphy.com/.../giphy.gif"
-                                      value={p.tableBgGifUrl || ""}
-                                      onChange={(e) => updatePreset(p.id, { tableBgGifUrl: e.target.value })}
-                                    />
-                                    <label className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white cursor-pointer text-center">
-                                      GIF 업로드
-                                      <input
-                                        type="file"
-                                        accept=".gif,image/gif"
-                                        className="hidden"
-                                        onChange={(e) => {
-                                          const file = e.target.files?.[0] || null;
-                                          uploadTableBgGifImage(p.id, file);
-                                          e.currentTarget.value = "";
-                                        }}
-                                      />
-                                    </label>
-                                  </div>
-                                  <label className="text-xs text-neutral-400">GIF 불투명도</label>
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="range"
-                                      min="0"
-                                      max="100"
-                                      value={p.tableBgGifOpacity || "45"}
-                                      onChange={(e) => updatePreset(p.id, { tableBgGifOpacity: e.target.value })}
-                                      className="flex-1 accent-emerald-500"
-                                    />
-                                    <input
-                                      className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
-                                      value={p.tableBgGifOpacity || "45"}
-                                      onChange={(e) => updatePreset(p.id, { tableBgGifOpacity: e.target.value.replace(/[^\\d]/g, "") })}
-                                    />
-                                    <span className="text-xs text-neutral-500">%</span>
-                                  </div>
-                                  <label className="text-xs text-neutral-400">GIF 밝기</label>
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="range"
-                                      min="40"
-                                      max="200"
-                                      value={p.tableBgGifBrightness || "100"}
-                                      onChange={(e) => updatePreset(p.id, { tableBgGifBrightness: e.target.value })}
-                                      className="flex-1 accent-emerald-500"
-                                    />
-                                    <input
-                                      className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
-                                      value={p.tableBgGifBrightness || "100"}
-                                      onChange={(e) => updatePreset(p.id, { tableBgGifBrightness: e.target.value.replace(/[^\d]/g, "") })}
-                                    />
-                                    <span className="text-xs text-neutral-500">%</span>
-                                  </div>
-                                  <details className="rounded border border-indigo-400/30 bg-indigo-950/20">
-                                    <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-indigo-200">
-                                      엑셀표 PNG 프레임 (투명 테두리)
-                                    </summary>
-                                    <div className="space-y-2 border-t border-indigo-400/20 p-3">
-                                      <p className="text-[11px] leading-relaxed text-indigo-100/85">
-                                        표 <strong className="font-semibold">바깥 장식 테두리</strong>용 PNG입니다. 중앙은 투명(알파)으로 두고, 모서리·테두리 장식만 그려 주세요.
-                                      </p>
-                                      <div className="rounded border border-white/10 bg-black/30 p-2 text-[10px] leading-relaxed text-neutral-300">
-                                        <p className="font-semibold text-emerald-200/95 mb-1">PNG 제작 가이드</p>
-                                        <ul className="list-disc pl-4 space-y-0.5">
-                                          <li>권장 캔버스: <strong>920×680px</strong> (표 기본 크기 기준)</li>
-                                          <li>중앙 투명 창(표가 보이는 영역): 약 <strong>860×580px</strong></li>
-                                          <li>프레임 두께(여백): 상·하·좌·우 각 <strong>30px</strong> 권장</li>
-                                          <li>파일 형식: <strong>PNG-24</strong> (알파 채널 필수)</li>
-                                          <li>업로드 후 「안쪽 여백」으로 표와 프레임 정렬을 미세 조정</li>
-                                        </ul>
+
+                                  <div className="col-span-full space-y-3">
+                                    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2">
+                                      <span className="text-xs font-medium text-neutral-300 shrink-0">총합 행</span>
+                                      <button
+                                        type="button"
+                                        className={`px-2.5 py-1 rounded border text-xs font-medium ${
+                                          (p.showTableSumRow ?? p.showTotal) !== false
+                                            ? "border-emerald-400 bg-emerald-800/50 text-emerald-100"
+                                            : "border-rose-400/60 bg-rose-950/40 text-rose-100"
+                                        }`}
+                                        onClick={() =>
+                                          updatePreset(p.id, {
+                                            showTableSumRow: (p.showTableSumRow ?? p.showTotal) === false,
+                                          })
+                                        }
+                                      >
+                                        {(p.showTableSumRow ?? p.showTotal) !== false ? "표시 ON" : "삭제(숨김)"}
+                                      </button>
+                                      <span className="text-[10px] text-neutral-500">표 맨 아래 총합 줄</span>
+                                      <label className="ml-auto flex items-center gap-2 text-xs text-neutral-400">
+                                        TOTAL 표시
+                                        <select
+                                          className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-neutral-200"
+                                          value={p.totalMode || "total"}
+                                          onChange={(e) => updatePreset(p.id, { totalMode: e.target.value as "total" })}
+                                        >
+                                          <option value="total">TOTAL</option>
+                                        </select>
+                                      </label>
+                                    </div>
+
+                                    <div className="rounded-lg border border-pink-400/35 bg-pink-950/25 p-3 space-y-3">
+                                      <div>
+                                        <h5 className="text-xs font-semibold text-pink-100">엑셀표 배경 GIF</h5>
+                                        <p className="mt-0.5 text-[10px] text-pink-100/70 leading-snug">
+                                          표 뒤에 깔리는 장식 GIF입니다. URL 입력 또는 업로드 후 불투명도·밝기를 조절하세요.
+                                        </p>
                                       </div>
-                                      <label className="text-xs text-neutral-400">PNG 프레임 URL</label>
-                                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
+                                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                                         <input
-                                          className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
-                                          placeholder="예: /uploads/.../frame.png"
-                                          value={p.tableFrameUrl || ""}
-                                          onChange={(e) => updatePreset(p.id, { tableFrameUrl: e.target.value })}
+                                          className="w-full min-w-0 px-2.5 py-2 rounded-lg bg-neutral-900/80 border border-white/15 text-sm"
+                                          placeholder="예: https://media.giphy.com/.../giphy.gif"
+                                          value={p.tableBgGifUrl || ""}
+                                          onChange={(e) => updatePreset(p.id, { tableBgGifUrl: e.target.value })}
                                         />
-                                        <label className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white cursor-pointer text-center">
-                                          PNG 업로드
+                                        <label className="inline-flex items-center justify-center px-3 py-2 rounded-lg bg-[#6366f1] hover:bg-[#4f46e5] text-xs font-semibold text-white cursor-pointer shrink-0">
+                                          GIF 업로드
                                           <input
                                             type="file"
-                                            accept=".png,image/png"
+                                            accept=".gif,image/gif"
                                             className="hidden"
                                             onChange={(e) => {
                                               const file = e.target.files?.[0] || null;
-                                              uploadTableFrameImage(p.id, file);
+                                              uploadTableBgGifImage(p.id, file);
                                               e.currentTarget.value = "";
                                             }}
                                           />
                                         </label>
                                       </div>
-                                      <label className="text-xs text-neutral-400">프레임 불투명도</label>
-                                      <div className="flex items-center gap-2">
-                                        <input
-                                          type="range"
-                                          min="0"
-                                          max="100"
-                                          value={p.tableFrameOpacity || "100"}
-                                          onChange={(e) => updatePreset(p.id, { tableFrameOpacity: e.target.value })}
-                                          className="flex-1 accent-indigo-500"
-                                        />
-                                        <input
-                                          className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
-                                          value={p.tableFrameOpacity || "100"}
-                                          onChange={(e) =>
-                                            updatePreset(p.id, {
-                                              tableFrameOpacity: e.target.value.replace(/[^\d]/g, ""),
-                                            })
-                                          }
-                                        />
-                                        <span className="text-xs text-neutral-500">%</span>
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <label className="block space-y-1.5">
+                                          <span className="text-xs text-neutral-300">
+                                            GIF 불투명도 ({p.tableBgGifOpacity || "45"}%)
+                                          </span>
+                                          <input
+                                            type="range"
+                                            min="0"
+                                            max="100"
+                                            value={p.tableBgGifOpacity || "45"}
+                                            onChange={(e) => updatePreset(p.id, { tableBgGifOpacity: e.target.value })}
+                                            className="w-full accent-emerald-500"
+                                          />
+                                        </label>
+                                        <label className="block space-y-1.5">
+                                          <span className="text-xs text-neutral-300">
+                                            GIF 밝기 ({p.tableBgGifBrightness || "100"}%)
+                                          </span>
+                                          <input
+                                            type="range"
+                                            min="40"
+                                            max="200"
+                                            value={p.tableBgGifBrightness || "100"}
+                                            onChange={(e) => updatePreset(p.id, { tableBgGifBrightness: e.target.value })}
+                                            className="w-full accent-emerald-500"
+                                          />
+                                        </label>
                                       </div>
-                                      <label className="text-xs text-neutral-400">프레임 안쪽 여백(px)</label>
-                                      <input
-                                        className="w-24 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
-                                        type="number"
-                                        min={0}
-                                        max={120}
-                                        value={p.tableFrameInset ?? "32"}
-                                        onChange={(e) => updatePreset(p.id, { tableFrameInset: e.target.value })}
-                                      />
-                                      <p className="text-[10px] text-neutral-500">기본 32px. PNG 가이드의 30px 여백과 맞추고, 표 크기에 따라 ±4px 조정하세요.</p>
                                     </div>
-                                  </details>
-                                  <label className="text-xs text-neutral-400">TOTAL 표시</label>
-                                  <select
-                                    className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
-                                    value={p.totalMode || "total"}
-                                    onChange={(e) => updatePreset(p.id, { totalMode: e.target.value as "total" })}
-                                  >
-                                    <option value="total">TOTAL</option>
-                                  </select>
+
+                                    <div className="rounded-lg border border-indigo-400/40 bg-indigo-950/30 p-3 space-y-3">
+                                      <div>
+                                        <h5 className="text-sm font-semibold text-indigo-100">엑셀표 PNG 프레임 (투명 테두리)</h5>
+                                        <p className="mt-1 text-xs leading-relaxed text-indigo-100/80 max-w-2xl">
+                                          표 <strong className="font-semibold text-indigo-50">바깥 장식 테두리</strong>용 PNG입니다.
+                                          중앙은 투명(알파)으로 두고, 모서리·테두리 장식만 그려 주세요.
+                                        </p>
+                                      </div>
+                                      <div className="rounded-md border border-white/10 bg-black/35 px-3 py-2.5 text-[11px] leading-relaxed text-neutral-200">
+                                        <p className="font-semibold text-emerald-200 mb-1.5">PNG 제작 가이드</p>
+                                        <ul className="list-disc pl-5 space-y-1">
+                                          <li>권장 캔버스: <strong className="text-white">920×680px</strong> (표 기본 크기 기준)</li>
+                                          <li>중앙 투명 창(표가 보이는 영역): 약 <strong className="text-white">860×580px</strong></li>
+                                          <li>프레임 두께(여백): 상·하·좌·우 각 <strong className="text-white">30px</strong> 권장</li>
+                                          <li>파일 형식: <strong className="text-white">PNG-24</strong> (알파 채널 필수)</li>
+                                          <li>업로드 후 「안쪽 여백」으로 표와 프레임 정렬을 미세 조정</li>
+                                        </ul>
+                                      </div>
+                                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                        <label className="flex flex-col gap-1.5 min-w-0">
+                                          <span className="text-xs font-medium text-indigo-100/90">PNG 프레임 URL</span>
+                                          <input
+                                            className="w-full min-w-0 px-2.5 py-2 rounded-lg bg-neutral-900/80 border border-white/15 text-sm"
+                                            placeholder="예: /uploads/.../frame.png"
+                                            value={p.tableFrameUrl || ""}
+                                            onChange={(e) => updatePreset(p.id, { tableFrameUrl: e.target.value })}
+                                          />
+                                        </label>
+                                        <label className="flex flex-col gap-1.5">
+                                          <span className="text-xs font-medium text-indigo-100/90">PNG 업로드</span>
+                                          <span className="inline-flex items-center justify-center px-3 py-2 rounded-lg bg-[#6366f1] hover:bg-[#4f46e5] text-xs font-semibold text-white cursor-pointer">
+                                            파일 선택
+                                            <input
+                                              type="file"
+                                              accept=".png,image/png"
+                                              className="hidden"
+                                              onChange={(e) => {
+                                                const file = e.target.files?.[0] || null;
+                                                uploadTableFrameImage(p.id, file);
+                                                e.currentTarget.value = "";
+                                              }}
+                                            />
+                                          </span>
+                                        </label>
+                                        <label className="flex flex-col gap-1.5 sm:col-span-1">
+                                          <span className="text-xs font-medium text-indigo-100/90">
+                                            프레임 불투명도 ({p.tableFrameOpacity || "100"}%)
+                                          </span>
+                                          <input
+                                            type="range"
+                                            min="0"
+                                            max="100"
+                                            value={p.tableFrameOpacity || "100"}
+                                            onChange={(e) => updatePreset(p.id, { tableFrameOpacity: e.target.value })}
+                                            className="w-full accent-indigo-400"
+                                          />
+                                        </label>
+                                        <label className="flex flex-col gap-1.5">
+                                          <span className="text-xs font-medium text-indigo-100/90">프레임 안쪽 여백(px)</span>
+                                          <input
+                                            className="w-full max-w-[8rem] px-2.5 py-2 rounded-lg bg-neutral-900/80 border border-white/15 text-sm"
+                                            type="number"
+                                            min={0}
+                                            max={120}
+                                            value={p.tableFrameInset ?? "32"}
+                                            onChange={(e) => updatePreset(p.id, { tableFrameInset: e.target.value })}
+                                          />
+                                          <span className="text-[10px] text-neutral-500">
+                                            기본 32px. 가이드의 30px 여백과 맞추고 ±4px 조정하세요.
+                                          </span>
+                                        </label>
+                                      </div>
+                                    </div>
+                                  </div>
                                 </>
                               )}
                               {p.showGoal && (
@@ -14140,7 +14168,7 @@ export default function AdminPage() {
                                   <input className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.tableMarginRight || "0"} onChange={(e) => updatePreset(p.id, { tableMarginRight: e.target.value.replace(/[^\d-]/g, "") })} />
                                 </div>
                               </div>
-                              <div className="flex flex-wrap gap-1">
+                              <div className="col-span-full flex flex-wrap gap-1">
                                 {[
                                   { label: "상단바(중앙)", anchor: "tc" },
                                   { label: "상단바(좌)", anchor: "tl" },

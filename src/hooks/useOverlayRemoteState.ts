@@ -15,6 +15,7 @@ import {
   isDefaultLikeTimerDisplayStyle,
   loadState,
   loadStateFromApi,
+  mergeLocalMemberIdentityOntoRemote,
   shouldAvoidOverwritingLocalStateWithRemote,
   storageKey,
   type AppState,
@@ -490,6 +491,16 @@ export function useOverlayRemoteState(
           shouldAvoidOverwritingLocalStateWithRemote(lastGoodRef.current, remoteForApply)
         ) {
           return;
+        }
+
+        if (
+          (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
+          lastGoodRef.current
+        ) {
+          remoteForApply = mergeLocalMemberIdentityOntoRemote(
+            remoteForApply,
+            lastGoodRef.current
+          );
         }
 
         if (sigSalesPick) {

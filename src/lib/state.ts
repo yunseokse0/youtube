@@ -3525,6 +3525,53 @@ export function isDefaultPlaceholderMemberList(members: Member[] | null | undefi
   });
 }
 
+/** 단일 멤버명이 초기 슬롯(멤버N) 또는 빈 이름인지 */
+export function isPlaceholderMemberName(name: string | null | undefined, id?: string): boolean {
+  const n = String(name || "").trim();
+  if (!n) return true;
+  if (/^멤버\d+$/.test(n)) return true;
+  const idMatch = String(id || "").match(/^m(\d+)$/);
+  if (idMatch && n === `멤버${idMatch[1]}`) return true;
+  return false;
+}
+
+/**
+ * 로컬에서 바꾼 실멤버명·목표·운영비를 원격 스냅샷에 얹음.
+ * (관리자에서 이름만 바꾼 뒤 서버 후원 금액을 받을 때 OBS에 이름이 남도록)
+ */
+export function mergeLocalMemberIdentityOntoRemote(
+  remote: AppState,
+  local: AppState | null | undefined
+): AppState {
+  if (!remote || !local || !hasMeaningfulMemberRoster(local)) return remote;
+  const localById = new Map((local.members || []).map((m) => [m.id, m]));
+  let changed = false;
+  const members = (remote.members || []).map((rm) => {
+    const lm = localById.get(rm.id);
+    if (!lm) return rm;
+    const localName = String(lm.name || "").trim();
+    if (!localName || isPlaceholderMemberName(localName, lm.id)) return rm;
+    const remoteName = String(rm.name || "").trim();
+    const nameDiff = remoteName !== localName;
+    const goalDiff = lm.goal !== rm.goal;
+    const opDiff = Boolean(lm.operating) !== Boolean(rm.operating);
+    if (!nameDiff && !goalDiff && !opDiff) return rm;
+    /** 원격이 플레이스홀더이거나 로컬이 이름을 바꾼 경우 로컬 identity 유지 */
+    if (isPlaceholderMemberName(remoteName, rm.id) || nameDiff || goalDiff || opDiff) {
+      changed = true;
+      return {
+        ...rm,
+        name: localName,
+        goal: lm.goal !== undefined ? lm.goal : rm.goal,
+        operating: Boolean(lm.operating),
+      };
+    }
+    return rm;
+  });
+  if (!changed) return remote;
+  return { ...remote, members };
+}
+
 export function membersDifferByIds(a: Member[], b: Member[]): boolean {
   const sig = (list: Member[]) =>
     list
@@ -3565,7 +3612,14 @@ export function shouldAvoidOverwritingLocalStateWithRemote(
 ): boolean {
   if (!existing || !incoming) return false;
   if (hasMeaningfulMemberRoster(existing) && !hasMeaningfulMemberRoster(incoming)) {
-    return true;
+    /**
+     * 로컬만 실멤버명(이름 변경)이고 원격은 멤버1·2… 이어도,
+     * 원격 후원·합계가 더 풍부하면 덮어쓰기를 허용한다(이름은 apply 측에서 병합).
+     */
+    const incomingRicher =
+      totalCombined(incoming) > totalCombined(existing) ||
+      normalizeDonorsArray(incoming.donors).length > normalizeDonorsArray(existing.donors).length;
+    if (!incomingRicher) return true;
   }
   if (shouldBlockAccidentalEmptyOverwrite(existing, incoming)) {
     return true;
