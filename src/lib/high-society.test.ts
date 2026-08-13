@@ -18,6 +18,7 @@ import {
   startCmFromField,
   parseHighSocietyFieldCm,
   resolveHighSocietyField,
+  buildHighSocietyFieldFromAppState,
 } from "./high-society";
 
 describe("high-society rule field", () => {
@@ -211,5 +212,55 @@ describe("high-society territory (aux)", () => {
     expect(startCmFromField(1600, 4)).toBe(400);
     expect(startCmFromField(1200, 4)).toBe(300);
     expect(parseHighSocietyFieldCm("1600")).toBe(1600);
+  });
+
+  it("realtime field grows/shrinks neighbors when middle push dir changes", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 100_000, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    const baseSettings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b", "c", "d"],
+      defaultMiddlePush: "right",
+      territoryUpdateMode: "realtime",
+    });
+    const rightPush = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        {
+          id: "d1",
+          name: "후원",
+          amount: 100_000,
+          memberId: "b",
+          target: "account",
+          at: 1,
+          hsPushDir: "right",
+        },
+      ],
+      highSocietySettings: baseSettings,
+    });
+    const leftPush = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        {
+          id: "d1",
+          name: "후원",
+          amount: 100_000,
+          memberId: "b",
+          target: "account",
+          at: 1,
+          hsPushDir: "left",
+        },
+      ],
+      highSocietySettings: baseSettings,
+    });
+    expect(rightPush.seats[1]!.widthCm).toBe(350);
+    expect(rightPush.seats[2]!.widthCm).toBe(250);
+    expect(leftPush.seats[1]!.widthCm).toBe(350);
+    expect(leftPush.seats[0]!.widthCm).toBe(250);
+    expect(leftPush.seats[2]!.widthCm).toBe(300);
   });
 });

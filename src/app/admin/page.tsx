@@ -5772,19 +5772,27 @@ export default function AdminPage() {
   };
 
   const startSigMatchOverlayTimerSynced = () => {
-    const sec = Math.max(0, Number(state.sigMatchSettings?.overlayTimerDurationSec || 0));
-    if (sec <= 0) {
+    const durationSec = Math.max(0, Number(state.sigMatchSettings?.overlayTimerDurationSec || 0));
+    const remNow = getEffectiveRemainingTime(state.generalTimer);
+    if (remNow <= 0 && durationSec <= 0) {
       alert("먼저 타이머 시간을 1초 이상 입력해 주세요.");
       return;
     }
     setState((prev: AppState) => {
+      const rem = getEffectiveRemainingTime(prev.generalTimer);
+      const sec = Math.max(0, Number(prev.sigMatchSettings?.overlayTimerDurationSec || durationSec || 0));
+      if (rem <= 0 && sec <= 0) return prev;
       const valid = new Set(prev.members.map((mm) => mm.id));
       const mergedSettings = { ...prev.sigMatchSettings, overlayTimerEndAt: null as number | null };
-      const started = {
-        remainingTime: sec,
-        isActive: true,
-        lastUpdated: Date.now(),
-      };
+      /** 일시정지 후 시작 = 남은 시간 재개. 남은 시간이 0일 때만 설정 초로 새로 시작 */
+      const started =
+        rem > 0
+          ? resumeTimer(prev.generalTimer)
+          : {
+              remainingTime: sec,
+              isActive: true,
+              lastUpdated: Date.now(),
+            };
       const next: AppState = {
         ...prev,
         generalTimer: started,
@@ -5800,7 +5808,33 @@ export default function AdminPage() {
     });
   };
 
-  /** 시그·식사 대전 상단 공통: 시작/정지·초 설정 (generalTimer 동기화) */
+  /** 설정 초로 되돌리고 정지(일시정지 후 시작과 구분) */
+  const resetSigMatchOverlayTimerSynced = () => {
+    const sec = Math.max(0, Number(state.sigMatchSettings?.overlayTimerDurationSec || 0));
+    setState((prev: AppState) => {
+      const valid = new Set(prev.members.map((mm) => mm.id));
+      const mergedSettings = { ...prev.sigMatchSettings, overlayTimerEndAt: null as number | null };
+      const reset = {
+        remainingTime: sec,
+        isActive: false,
+        lastUpdated: Date.now(),
+      };
+      const next: AppState = {
+        ...prev,
+        generalTimer: reset,
+        sigMatchSettings: {
+          ...mergedSettings,
+          sigMatchPools: normalizeSigMatchPools(mergedSettings.sigMatchPools || [], valid),
+          participantMemberIds: normalizeSigMatchParticipantIds(mergedSettings.participantMemberIds || [], valid),
+        },
+        updatedAt: Date.now(),
+      };
+      void saveGeneralTimerPatchAsync(reset, user?.id);
+      return next;
+    });
+  };
+
+  /** 시그·식사 대전 상단 공통: 시작/일시정지/리셋·초 설정 (generalTimer 동기화) */
   const renderBattleOverlayTimerControls = (opts?: { id?: string }) => {
     const rem = getEffectiveRemainingTime(state.generalTimer, timerUiNow);
     const mm = Math.floor(rem / 60);
@@ -5862,10 +5896,9 @@ export default function AdminPage() {
             <button
               type="button"
               className="rounded bg-neutral-700 px-3 py-1.5 text-xs font-semibold hover:bg-neutral-600"
-              onClick={() => stopSigMatchOverlayTimerSynced()}
-              disabled={!running && rem <= 0}
+              onClick={() => resetSigMatchOverlayTimerSynced()}
             >
-              정지
+              리셋
             </button>
             <a
               href="#timer-control-section"
@@ -5876,7 +5909,7 @@ export default function AdminPage() {
           </div>
         </div>
         <p className="text-[11px] text-neutral-500">
-          시그·식사 대전·OBS 일반 타이머가 같은 남은 시간을 봅니다. 시작 시 위 초 값으로 리셋됩니다.
+          시그·식사 대전·OBS 일반 타이머가 같은 남은 시간을 봅니다. 일시정지 후 시작은 이어서 진행하고, 리셋만 위 초 값으로 되돌립니다.
         </p>
       </div>
     );

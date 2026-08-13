@@ -88,6 +88,10 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
       amount: d.amount || 0,
       target: d.target || "",
       at: d.at || 0,
+      memberId: d.memberId || "",
+      /** 상류사회 확장 방향만 바꿔도 OBS 게이지가 갱신되게 */
+      hsPushDir: d.hsPushDir || "",
+      donationExcluded: Boolean(d.donationExcluded),
     }))
     .sort((a, b) => String(a.id || "").localeCompare(String(b.id || "")));
 
@@ -145,6 +149,7 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
     mealBattle: state.mealBattle || {},
     sigMatchSettings: state.sigMatchSettings || {},
     sigMatch: state.sigMatch || {},
+    highSocietySettings: state.highSocietySettings || {},
     /** 시그 롤링 표시 시간·목록 — 서명에 없으면 OBS가 설정 변경을 무시함 */
     sigRolling,
     rollingInv,

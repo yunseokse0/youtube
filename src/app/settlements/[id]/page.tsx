@@ -13,11 +13,16 @@ import {
 import { downloadTextFile, downloadBlobFile } from "@/lib/download";
 import { loadDailyLog, loadDailyLogFromApi } from "@/lib/state";
 import {
+  defaultSettlementStatementText,
   deleteSettlementLogoFromApi,
   fetchSettlementLogoFromApi,
+  fetchSettlementStatementTextFromApi,
   fileToSettlementLogoDataUrl,
   resolveSettlementLogoDataUrl,
+  resolveSettlementStatementText,
   saveSettlementLogoToApi,
+  saveSettlementStatementTextToApi,
+  type SettlementStatementText,
 } from "@/lib/settlement-branding";
 import type { Donor, DonorTarget } from "@/types";
 
@@ -61,6 +66,10 @@ export default function SettlementDetailPage() {
   const [fullPdfGenerating, setFullPdfGenerating] = useState(false);
   const [memberPdfId, setMemberPdfId] = useState<string | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [statementText, setStatementText] = useState<SettlementStatementText>(() =>
+    defaultSettlementStatementText()
+  );
+  const [statementTextBusy, setStatementTextBusy] = useState(false);
   const [editingDonors, setEditingDonors] = useState<Donor[] | null>(null);
   const [donorEditBusy, setDonorEditBusy] = useState(false);
   const [donorEditMsg, setDonorEditMsg] = useState<string | null>(null);
@@ -85,6 +94,7 @@ export default function SettlementDetailPage() {
           if (serverLog) setDailyLog(serverLog as Record<string, DailyLogEntry[]>);
         });
         void fetchSettlementLogoFromApi(u.id).then((logo) => setLogoPreview(logo));
+        void fetchSettlementStatementTextFromApi(u.id).then(setStatementText);
       });
   }, [router]);
 
@@ -358,7 +368,12 @@ export default function SettlementDetailPage() {
     setMemberPdfId(m.memberId);
     try {
       const logoDataUrl = await resolveSettlementLogoDataUrl(user?.id);
-      const blob = await memberToPaymentStatementPdfBlob(record, m, { logoDataUrl });
+      const copy = await resolveSettlementStatementText(user?.id);
+      const blob = await memberToPaymentStatementPdfBlob(record, m, {
+        logoDataUrl,
+        thankYouMessage: copy.thankYouMessage,
+        issuerLine: copy.issuerLine,
+      });
       const safeName = (m.realName || m.name || m.memberId).replace(/[\\/:*?"<>|]/g, "_");
       await downloadBlobFile(`${record.title}-지급정산서-${safeName}.pdf`, blob);
     } catch (e) {
@@ -394,6 +409,42 @@ export default function SettlementDetailPage() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : "로고 삭제에 실패했습니다.";
       window.alert(msg);
+    }
+  };
+
+  const onSaveStatementText = async () => {
+    if (!user || statementTextBusy) return;
+    setStatementTextBusy(true);
+    try {
+      const { ok, text } = await saveSettlementStatementTextToApi(statementText, user.id);
+      setStatementText(text);
+      if (!ok) {
+        window.alert("문구를 이 기기에 저장했습니다. 서버 동기화는 실패했을 수 있습니다.");
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "문구 저장에 실패했습니다.";
+      window.alert(msg);
+    } finally {
+      setStatementTextBusy(false);
+    }
+  };
+
+  const onResetStatementText = async () => {
+    if (!user || statementTextBusy) return;
+    const defaults = defaultSettlementStatementText();
+    setStatementText(defaults);
+    setStatementTextBusy(true);
+    try {
+      const { ok, text } = await saveSettlementStatementTextToApi(defaults, user.id);
+      setStatementText(text);
+      if (!ok) {
+        window.alert("기본 문구를 이 기기에 복구했습니다. 서버 동기화는 실패했을 수 있습니다.");
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "기본 문구 복구에 실패했습니다.";
+      window.alert(msg);
+    } finally {
+      setStatementTextBusy(false);
     }
   };
 
@@ -510,6 +561,55 @@ export default function SettlementDetailPage() {
           </button>
           <div className="text-xs text-neutral-400">
             계정마다 다른 로고를 씁니다. 업로드한 로고만 이 계정 지급정산서 PDF에 들어갑니다.
+          </div>
+        </div>
+
+        <div className="rounded border border-white/10 bg-neutral-900/60 p-3 space-y-3">
+          <div className="text-sm font-semibold">지급정산서 하단 문구 (계정별)</div>
+          <label className="block space-y-1">
+            <span className="text-xs text-neutral-400">감사 문구</span>
+            <input
+              className="w-full px-3 py-2 rounded bg-black/30 border border-white/10 text-sm"
+              value={statementText.thankYouMessage}
+              maxLength={160}
+              placeholder="파이팅 넘치는 스트리머의 노고에 감사드립니다"
+              onChange={(e) =>
+                setStatementText((prev) => ({ ...prev, thankYouMessage: e.target.value }))
+              }
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-xs text-neutral-400">발행자 / 서명 줄</span>
+            <input
+              className="w-full px-3 py-2 rounded bg-black/30 border border-white/10 text-sm"
+              value={statementText.issuerLine}
+              maxLength={120}
+              placeholder="BT STUDIO 대장 BT태호 이동환"
+              onChange={(e) =>
+                setStatementText((prev) => ({ ...prev, issuerLine: e.target.value }))
+              }
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="px-3 py-2 rounded bg-emerald-800 hover:bg-emerald-700 text-sm disabled:opacity-60"
+              onClick={() => void onSaveStatementText()}
+              disabled={statementTextBusy}
+            >
+              {statementTextBusy ? "저장 중..." : "문구 저장"}
+            </button>
+            <button
+              type="button"
+              className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 text-sm disabled:opacity-60"
+              onClick={() => void onResetStatementText()}
+              disabled={statementTextBusy}
+            >
+              기본값으로
+            </button>
+            <div className="text-xs text-neutral-400">
+              지급정산서 PDF 하단의 감사 문구·발행자 줄에 반영됩니다.
+            </div>
           </div>
         </div>
 

@@ -1,6 +1,10 @@
 import type { SettlementMemberResult, SettlementRecord } from "@/types";
 import { isOperatingSettlementMember, isTreasurySettlementMember } from "@/lib/settlement-utils";
 import {
+  DEFAULT_SETTLEMENT_ISSUER_LINE,
+  DEFAULT_SETTLEMENT_THANK_YOU,
+} from "@/lib/settlement-branding";
+import {
   computeExcelWithholding,
   computePaymentChannelBreakdown,
   PAYMENT_FEE_DEFAULTS,
@@ -13,8 +17,8 @@ export { computeExcelWithholding } from "@/lib/settlement-payment-math";
 /** 정산서.xlsx「지급 정산서」와 동일한 공제율 */
 export const PAYMENT_STATEMENT_DEFAULTS = {
   ...PAYMENT_FEE_DEFAULTS,
-  thankYouMessage: "파이팅 넘치는 스트리머의 노고에 감사드립니다",
-  issuerLine: "BT STUDIO 대장 BT태호 이동환",
+  thankYouMessage: DEFAULT_SETTLEMENT_THANK_YOU,
+  issuerLine: DEFAULT_SETTLEMENT_ISSUER_LINE,
 } as const;
 
 export type PaymentStatementRates = PaymentFeeRates;
@@ -308,7 +312,7 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
   .sheet { padding: 6mm; }
   .title { text-align:center; font-size:22px; font-weight:800; margin: 4px 0 10px; line-height: 1.2; }
   .date { text-align:center; font-size:13px; margin-bottom: 12px; line-height: 1.2; }
-  table.main { width:100%; border-collapse:collapse; font-size:9px; table-layout:fixed; }
+  table.main { width:100%; border-collapse:collapse; font-size:9px; table-layout:fixed; empty-cells:show; }
   table.main th, table.main td {
     border:1px solid #444;
     padding: 0 2px;
@@ -334,6 +338,7 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
   }
   table.main tfoot .lab { background:#f7f7f7; font-weight:700; }
   table.main tfoot .num { font-weight:700; font-variant-numeric: tabular-nums; }
+  table.main tfoot .blank { background:#fff; }
   .num { font-variant-numeric: tabular-nums; }
   .foot {
     margin-top: 14px;
@@ -344,32 +349,27 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
   }
   .foot-col { flex: 1; min-width: 0; }
   .foot-col.wide { flex: 1.15; }
-  .foot-row {
-    position: relative;
-    height: 34px;
-    border: 1px solid #555;
-    margin-top: -1px;
-    background: #fff;
+  table.foot-mini {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    empty-cells: show;
+    font-size: 12px;
   }
-  .foot-col > .foot-row:first-child { margin-top: 0; }
-  .foot-k, .foot-v {
-    position: absolute;
-    top: 0;
+  table.foot-mini td {
+    border: 1px solid #555;
     height: 34px;
     line-height: 34px;
     text-align: center;
-    overflow: hidden;
-    white-space: nowrap;
+    vertical-align: middle;
+    padding: 0 6px;
   }
-  .foot-k {
-    left: 0;
+  table.foot-mini td.k {
     width: 48%;
     background: #f7f7f7;
     font-weight: 700;
-    border-right: 1px solid #555;
   }
-  .foot-v {
-    left: 48%;
+  table.foot-mini td.v {
     width: 52%;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
@@ -390,24 +390,32 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
     <tbody>${bodyRows}</tbody>
     <tfoot>
       <tr>
-        <td colspan="4"></td>
+        <td class="blank">&nbsp;</td>
+        <td class="blank">&nbsp;</td>
+        <td class="blank">&nbsp;</td>
+        <td class="blank">&nbsp;</td>
         <td class="lab">계좌 부가세 합계</td>
-        <td></td>
+        <td class="blank">&nbsp;</td>
         <td class="lab">투네수수료 합계</td>
         <td class="lab">투네 부가세 합계</td>
-        <td colspan="2"></td>
+        <td class="blank">&nbsp;</td>
+        <td class="blank">&nbsp;</td>
         <td class="lab">부가세 총 합계</td>
         <td class="lab">원천세 총 합계</td>
         <td class="lab">총 지급액</td>
         <td class="lab">매출</td>
       </tr>
       <tr>
-        <td colspan="4"></td>
+        <td class="blank">&nbsp;</td>
+        <td class="blank">&nbsp;</td>
+        <td class="blank">&nbsp;</td>
+        <td class="blank">&nbsp;</td>
         <td class="num">${moneyCell(s.sumAccountVat)}</td>
-        <td></td>
+        <td class="blank">&nbsp;</td>
         <td class="num">${moneyCell(s.sumToonFee)}</td>
         <td class="num">${moneyCell(s.sumToonVat)}</td>
-        <td colspan="2"></td>
+        <td class="blank">&nbsp;</td>
+        <td class="blank">&nbsp;</td>
         <td class="num">${moneyCell(s.sumVatTotal)}</td>
         <td class="num">${moneyCell(s.sumWithholding)}</td>
         <td class="num">${moneyCell(s.sumPayout)}</td>
@@ -417,17 +425,23 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
   </table>
   <div class="foot">
     <div class="foot-col">
-      <div class="foot-row"><div class="foot-k">총매출</div><div class="foot-v">${moneyCell(s.totalGrossDonation)}</div></div>
+      <table class="foot-mini">
+        <tr><td class="k">총매출</td><td class="v">${moneyCell(s.totalGrossDonation)}</td></tr>
+      </table>
     </div>
     <div class="foot-col">
-      <div class="foot-row"><div class="foot-k">세금합계</div><div class="foot-v">${moneyCell(s.taxGrandTotal)}</div></div>
+      <table class="foot-mini">
+        <tr><td class="k">세금합계</td><td class="v">${moneyCell(s.taxGrandTotal)}</td></tr>
+      </table>
     </div>
     <div class="foot-col wide">
-      <div class="foot-row"><div class="foot-k">제작진</div><div class="foot-v">${moneyCell(s.productionShare)}</div></div>
-      <div class="foot-row"><div class="foot-k">국고 50%</div><div class="foot-v">${s.treasuryShare ? moneyCell(s.treasuryShare) : ""}</div></div>
-      <div class="foot-row"><div class="foot-k">합계</div><div class="foot-v">${moneyCell(s.remittanceSubtotal)}</div></div>
-      <div class="foot-row"><div class="foot-k">부가세 10%</div><div class="foot-v">${moneyCell(s.productionVat)}</div></div>
-      <div class="foot-row"><div class="foot-k">총 송금금액</div><div class="foot-v">${moneyCell(s.productionTransfer)}</div></div>
+      <table class="foot-mini">
+        <tr><td class="k">제작진</td><td class="v">${moneyCell(s.productionShare)}</td></tr>
+        <tr><td class="k">국고 50%</td><td class="v">${s.treasuryShare ? moneyCell(s.treasuryShare) : "&nbsp;"}</td></tr>
+        <tr><td class="k">합계</td><td class="v">${moneyCell(s.remittanceSubtotal)}</td></tr>
+        <tr><td class="k">부가세 10%</td><td class="v">${moneyCell(s.productionVat)}</td></tr>
+        <tr><td class="k">총 송금금액</td><td class="v">${moneyCell(s.productionTransfer)}</td></tr>
+      </table>
     </div>
   </div>
 </div>

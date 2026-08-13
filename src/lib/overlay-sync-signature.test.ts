@@ -40,6 +40,40 @@ describe("buildOverlaySyncSignature", () => {
     const b = { ...a, members };
     expect(buildOverlaySyncSignature(a)).not.toBe(buildOverlaySyncSignature(b));
   });
+  it("changes when high-society push direction changes", () => {
+    const a = {
+      ...defaultState(),
+      donors: [
+        {
+          id: "d1",
+          name: "후원",
+          amount: 10000,
+          memberId: "m1",
+          target: "account" as const,
+          at: 1,
+          hsPushDir: "left" as const,
+        },
+      ],
+    };
+    const b = {
+      ...a,
+      donors: [{ ...a.donors[0]!, hsPushDir: "right" as const }],
+    };
+    expect(buildOverlaySyncSignature(a)).not.toBe(buildOverlaySyncSignature(b));
+  });
+
+  it("changes when highSocietySettings territory mode changes", () => {
+    const a = defaultState();
+    const b = {
+      ...a,
+      highSocietySettings: {
+        ...(a.highSocietySettings || {}),
+        enabled: true,
+        territoryUpdateMode: "onRoundEnd" as const,
+      },
+    };
+    expect(buildOverlaySyncSignature(a)).not.toBe(buildOverlaySyncSignature(b));
+  });
 });
 
 describe("isNewerIntentionalDonationShrink", () => {

@@ -3,6 +3,7 @@ import { defaultState } from "@/lib/state";
 import {
   projectStateForGetPick,
   STATE_PICK_OVERLAY,
+  STATE_PICK_OVERLAY_DONORS,
   STATE_PICK_SIG_SALES,
 } from "@/lib/state-api-pick";
 
@@ -38,6 +39,33 @@ describe("state-api-pick", () => {
     expect(rs.historyLogs).toBeUndefined();
     expect(out.members).toEqual(state.members);
     expect(out.donors).toBeUndefined();
+    expect(out.highSocietySettings).toEqual(state.highSocietySettings);
+  });
+
+  it("overlay-donors pick includes donors for high-society territory", () => {
+    const base = defaultState();
+    const state = {
+      ...base,
+      donors: [
+        {
+          id: "d1",
+          name: "후원",
+          amount: 20000,
+          memberId: "m1",
+          target: "account" as const,
+          at: 1,
+          hsPushDir: "left" as const,
+        },
+      ],
+      highSocietySettings: {
+        ...(base.highSocietySettings || { enabled: false, seatMemberIds: [], defaultMiddlePush: "right" as const }),
+        enabled: true,
+        territoryUpdateMode: "realtime" as const,
+      },
+    };
+    const out = projectStateForGetPick(state, STATE_PICK_OVERLAY_DONORS) as Record<string, unknown>;
+    expect(out.donors).toEqual(state.donors);
+    expect(out.highSocietySettings).toEqual(state.highSocietySettings);
   });
 
   it("sig-sales pick is minimal", () => {

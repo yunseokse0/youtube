@@ -195,13 +195,16 @@ describe("buildMemberPaymentStatementHtml layout", () => {
 });
 
 describe("buildFullSettlementHtml", () => {
-  it("omits income/local tax columns and centers footer cells", () => {
+  it("omits income/local tax columns and keeps table borders on blank footer cells", () => {
     const html = buildFullSettlementHtml(record());
     expect(html).toContain("원천세");
     expect(html).toContain("정산금의 30%");
     expect(html).not.toContain(">소득세<");
     expect(html).not.toContain(">지방소득세<");
-    expect(html).toContain('class="foot-row"');
+    expect(html).toContain('class="foot-mini"');
+    expect(html).toContain("empty-cells:show");
+    expect(html).toContain('class="blank"');
+    expect(html).not.toContain('colspan="4"');
     expect(html).toContain("line-height: 34px");
   });
 });

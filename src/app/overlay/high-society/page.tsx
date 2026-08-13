@@ -7,6 +7,7 @@ import {
   getOverlayUserIdFromSearchParams,
   isOverlayBroadcastHost,
 } from "@/lib/overlay-params";
+import { STATE_PICK_OVERLAY_DONORS } from "@/lib/state-api-pick";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 import {
   buildHighSocietyFieldFromAppState,
@@ -182,6 +183,8 @@ export default function HighSocietyOverlayPage() {
   const hasUrlSplit = Boolean(sp.get("bLeft") || sp.get("b") || sp.get("cLeft") || sp.get("c"));
 
   const { state, ready } = useOverlayRemoteState(userId, {
+    /** 후원 행·hsPushDir 없으면 영토 방향/실시간 확장이 멤버 합계만 보고 어긋남 */
+    statePick: STATE_PICK_OVERLAY_DONORS,
     /** OBS: CEF LS 옛 멤버명으로 서버 개명을 덮지 않음 */
     skipLocalSnapshot: hostObs,
     forceInitialFull: hostObs,
