@@ -310,4 +310,24 @@ describe("member sync helpers", () => {
     expect(merged.members.map((m) => m.id)).toEqual(["m1", "m2"]);
     expect(merged.overlaySettings.a).toBe(2);
   });
+
+  it("mergeServerSaveApiBodies does not drop zero-amount real members behind theme patch", () => {
+    const prev = JSON.stringify({
+      updatedAt: 100,
+      overlaySettings: { theme: 1 },
+    });
+    const next = JSON.stringify({
+      updatedAt: 101,
+      members: [
+        { id: "m1", name: "사기", account: 0, toon: 0, contribution: 0 },
+        { id: "m2", name: "수시", account: 0, toon: 0, contribution: 0 },
+        { id: "m3", name: "시수", account: 0, toon: 0, contribution: 0 },
+      ],
+      overlaySettings: { theme: 1 },
+    });
+    const merged = JSON.parse(mergeServerSaveApiBodies(prev, next)) as {
+      members?: Member[];
+    };
+    expect(merged.members?.map((m) => m.name)).toEqual(["사기", "수시", "시수"]);
+  });
 });

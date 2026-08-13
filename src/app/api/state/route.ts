@@ -511,7 +511,7 @@ function stateUnavailableResponse(reason: string): Response {
 
 /** 정산 리셋 없이 엑셀·후원을 통째로 비우는 POST 로 보이는지 */
 function looksLikeEmptyRosterPersist(
-  body: Partial<AppState>,
+  body: Partial<AppState> & { membersAuthoritative?: boolean },
   donorsInPatch: boolean,
   incomingDonorCount: number
 ): boolean {
@@ -521,6 +521,9 @@ function looksLikeEmptyRosterPersist(
   const members = body.members;
   if (!Array.isArray(members)) return true;
   if (isDefaultPlaceholderMemberList(members)) return true;
+  /** 실멤버명 로스터는 금액 0이어도(추가만 한 상태) 빈 초기화가 아님 */
+  if (hasMeaningfulMemberRoster({ members } as AppState)) return false;
+  if (body.membersAuthoritative === true) return false;
   return memberCombinedTotal(members) === 0;
 }
 

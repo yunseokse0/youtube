@@ -1843,13 +1843,18 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
         });
       }
     }
+    /**
+     * 테마 PATCH가 플레이스홀더(멤버1…)만 실어 prev(멤버 없는 시각 저장)와 합쳐질 때
+     * members 를 빼 서버 실로스터를 유지한다.
+     * 금액 0인 실멤버(추가만 하고 후원 전)는 절대 제거하지 않음 — 새로고침 유실 원인.
+     */
     if (
       !nextAuthoritative &&
       next.membersAuthoritative !== true &&
       next.settlementReset !== true &&
       Array.isArray(next.members) &&
       !("members" in prev) &&
-      (next.members as Member[]).every((m) => (m.account || 0) + (m.toon || 0) === 0)
+      isDefaultPlaceholderMemberList(next.members as Member[])
     ) {
       delete merged.members;
     }
