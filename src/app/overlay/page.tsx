@@ -106,6 +106,10 @@ import {
   resolveExcelMemberTableAccent,
 } from "@/lib/excel-member-table-theme";
 import {
+  overlayTableHairlineShadow,
+  snapOverlayScaleForCrispLines,
+} from "@/lib/overlay-table-crisp-lines";
+import {
   EXCEL_RANK_TOP3_EFFECTS_CSS,
   isExcelRankTop3TextMode,
   resolveExcelRankTop3RowStyle,
@@ -3586,7 +3590,9 @@ function OverlayInner() {
         (externalHost &&
           !hasExplicitScale &&
           Math.abs(effectiveScale - 1) < 0.02));
-    const scaleCss = Number.isFinite(effectiveScale) ? Number(effectiveScale.toFixed(4)) : 1;
+    const scaleCss = Number.isFinite(effectiveScale)
+      ? snapOverlayScaleForCrispLines(Number(effectiveScale))
+      : 1;
     const scaleTransform = externalHost
       ? `translate3d(0, 0, 0) scale(${scaleCss})`
       : `scale(${scaleCss})`;
@@ -3675,9 +3681,8 @@ function OverlayInner() {
           text-shadow: ${tableOutlineShadowCss} !important;
           -webkit-text-stroke: ${tableStrokeCss} !important;
           paint-order: stroke fill;
-          box-shadow: none !important;
           border: none !important;
-          border-bottom: 1px solid ${tableHeaderLineColor} !important;
+          box-shadow: ${overlayTableHairlineShadow(tableHeaderLineColor, { bottom: 1 })} !important;
         }
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,
@@ -3695,7 +3700,8 @@ function OverlayInner() {
           color: ${broadcastTheadTextCss} !important;
         }
         .overlay-root .overlay-elegant-table .overlay-total-row td {
-          border-top: 2px solid ${tableTotalLineColor} !important;
+          border: none !important;
+          box-shadow: ${overlayTableHairlineShadow(tableTotalLineColor, { top: 2 })} !important;
         }`
       : `
         .overlay-root .overlay-elegant-table.excel-member-table thead td,
@@ -3706,9 +3712,8 @@ function OverlayInner() {
           text-shadow: ${excelTheadTextShadow} !important;
           -webkit-text-stroke: ${excelTheadStroke} !important;
           paint-order: stroke fill;
-          box-shadow: none !important;
           border: none !important;
-          border-bottom: 1px solid var(--excel-header-border) !important;
+          box-shadow: ${overlayTableHairlineShadow("var(--excel-header-border)", { bottom: 1 })} !important;
         }
         .overlay-root .overlay-elegant-table.excel-member-table thead td span,
         .overlay-root .overlay-elegant-table.excel-member-table thead td strong,
@@ -3721,7 +3726,8 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table.excel-member-table .overlay-total-row td,
         .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
-          border-top: 2px solid var(--excel-total-border) !important;
+          border: none !important;
+          box-shadow: ${overlayTableHairlineShadow("var(--excel-total-border)", { top: 2 })} !important;
         }`;
     /** OBS·Prism: stroke 생략 시에도 shadow 링 + 인라인으로 이름·숫자·직급에 동일 적용 */
     const overlayCellOutlineStyle: React.CSSProperties = tableOutlineDisabled
@@ -3913,7 +3919,8 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table.excel-live-table thead td {
           color: var(--excel-header-text) !important;
-          border-bottom: 1px solid var(--excel-header-border) !important;
+          border: none !important;
+          box-shadow: ${overlayTableHairlineShadow("var(--excel-header-border)", { bottom: 1 })} !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-role,
@@ -3933,17 +3940,20 @@ function OverlayInner() {
           box-shadow: none !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
-          border-top: 2px solid rgba(26, 82, 118, 0.45) !important;
+          border: none !important;
+          box-shadow: ${overlayTableHairlineShadow("rgba(26, 82, 118, 0.45)", { top: 2 })} !important;
           background: ${excelLiveTotalRowBg} !important;
         }
         ${
           tableLineColorRaw
             ? `
         .overlay-root .overlay-elegant-table.excel-live-table thead td {
-          border-bottom: 1px solid ${tableLineColorRaw} !important;
+          border: none !important;
+          box-shadow: ${overlayTableHairlineShadow(tableLineColorRaw, { bottom: 1 })} !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
-          border-top: 2px solid ${tableLineColorRaw} !important;
+          border: none !important;
+          box-shadow: ${overlayTableHairlineShadow(tableLineColorRaw, { top: 2 })} !important;
         }
         `
             : ""
@@ -4010,18 +4020,29 @@ function OverlayInner() {
         `
             : ""
         }
-        /* 총합 행: 셀마다 그라데이션 박스 제거 → 본문과 동일한 시트색(excelLive는 위에서 별도 지정) */
+        /* 총합 행: 셀마다 그라데이션 박스 제거 → 본문과 동일한 시트색(excelLive는 위에서 별도 지정)
+         * 상단 구분선은 inset box-shadow 헤어라인으로 유지(CSS border 는 스케일 때 들쭉날쭉) */
         .overlay-root .overlay-elegant-table .overlay-total-row td {
           background: transparent !important;
           background-image: none !important;
-          box-shadow: none !important;
           backdrop-filter: none !important;
           -webkit-backdrop-filter: none !important;
+          border: none !important;
           border-bottom: none !important;
+          box-shadow: ${overlayTableHairlineShadow(
+            useBroadcastTableChrome ? tableTotalLineColor : "var(--excel-total-border, rgba(244, 170, 205, 0.45))",
+            { top: 2 }
+          )} !important;
           padding: ${Math.round(memberFontPx * 0.28)}px ${Math.round(memberFontPx * 0.4)}px !important;
           font-size: ${memberFontPx}px !important;
           font-weight: ${tableFontWeight} !important;
           vertical-align: middle;
+        }
+        .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
+          box-shadow: ${overlayTableHairlineShadow(
+            tableLineColorRaw || "rgba(26, 82, 118, 0.45)",
+            { top: 2 }
+          )} !important;
         }
         .overlay-root .overlay-elegant-table:not(.excel-live-table):not(.pastel-member-table) tbody tr.overlay-total-row td {
           background: ${tableBodySheetBgCss} !important;
@@ -4180,6 +4201,13 @@ function OverlayInner() {
         .overlay-root .overlay-scale-target {
           -webkit-backface-visibility: hidden;
           backface-visibility: hidden;
+          /* 스케일 합성 시 표 선이 흐려지지 않게 */
+          -webkit-font-smoothing: antialiased;
+          text-rendering: geometricPrecision;
+        }
+        .overlay-root .overlay-elegant-table {
+          border-collapse: separate !important;
+          border-spacing: 0 !important;
         }
         `
             : ""
@@ -4290,10 +4318,16 @@ function OverlayInner() {
                   style={{
                     zIndex: 1,
                     borderRadius: showTableFrame ? 0 : 10,
-                    border: showTableFrame ? "none" : `1px solid ${tablePanelBorder}`,
-                    boxShadow: showTableFrame ? "none" : tablePanelShadow,
-                    padding: "0.14rem",
+                    border: "none",
+                    boxShadow: showTableFrame
+                      ? "none"
+                      : `0 0 0 1px ${tablePanelBorder}, ${tablePanelShadow}`,
+                    padding: 2,
                     backgroundColor: tableBodySheetBgCss,
+                    /** CEF에서 1px 외곽선이 스케일 때 깨지지 않게 레이어 고정 */
+                    transform: "translateZ(0)",
+                    WebkitBackfaceVisibility: "hidden",
+                    backfaceVisibility: "hidden",
                   }}
                 >
                     <table
@@ -4302,7 +4336,7 @@ function OverlayInner() {
                       style={{
                         fontSize: memberFontPx,
                         borderSpacing: 0,
-                        borderCollapse: "collapse",
+                        borderCollapse: "separate",
                         tableLayout: "fixed",
                         width: `calc(${excelTableWidthCalc})`,
                         ...excelMemberTableStyle,
