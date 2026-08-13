@@ -1142,9 +1142,16 @@ export function resolveTimerOverlayStyle(
     : (stateStyle?.scalePercent ?? 100);
 
   const showHoursRaw = pickTimerPresetOrParam("timerShowHours", "timerShowHours", rawSp, preset, opts);
-  const showHours = showHoursRaw
-    ? showHoursRaw.toLowerCase() === "true"
-    : (stateStyle?.showHours ?? !opts.timerOnlyDefaultShowHours);
+  /**
+   * 표시 형식(시:분:초): 타이머 제어(`timerDisplayStyles`)가 정본.
+   * 프리셋/URL에 남은 timerShowHours 가 관리자 실시간 토글을 덮지 않게 함.
+   */
+  const showHours =
+    typeof stateStyle?.showHours === "boolean"
+      ? stateStyle.showHours
+      : showHoursRaw
+        ? showHoursRaw.toLowerCase() === "true"
+        : !opts.timerOnlyDefaultShowHours;
 
   /**
    * 글꼴: 타이머 제어(`timerDisplayStyles`)가 정본.

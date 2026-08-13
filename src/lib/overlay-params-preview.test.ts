@@ -186,6 +186,31 @@ describe("admin preview hot-reload params", () => {
     expect(style.showHours).toBe(true);
   });
 
+  it("prefers timerDisplayStyles showHours over stale preset timerShowHours", () => {
+    const preset: OverlayPresetLike = {
+      id: "ov_stale_hours",
+      showTimer: true,
+      timerShowHours: false,
+    };
+    const style = resolveTimerOverlayStyle(
+      new URLSearchParams(),
+      preset,
+      {
+        fontFamily: "dohyeon",
+        fontColor: "",
+        bgColor: "",
+        borderColor: "",
+        outlineColor: "",
+        outlineWidth: 0.8,
+        bgOpacity: 40,
+        scalePercent: 100,
+        showHours: true,
+      },
+      { ready: true, timerOnlyDefaultShowHours: true }
+    );
+    expect(style.showHours).toBe(true);
+  });
+
   it("prefers timerDisplayStyles font over stale preset mono", () => {
     const preset: OverlayPresetLike = {
       id: "ov_stale_font",
