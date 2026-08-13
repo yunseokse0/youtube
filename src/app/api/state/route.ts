@@ -162,10 +162,16 @@ function mergeManualMemberFieldsFromPatch(baseMembers: Member[], patchMembers: M
     const patchM = patchById.get(baseM.id);
     if (!patchM) return baseM;
     const patchName = String(patchM.name ?? "").trim();
+    const baseName = String(baseM.name ?? "").trim();
+    /** 플레이스홀더(멤버N)로 실멤버명을 덮지 않음 */
+    const placeholderPatch =
+      !patchName ||
+      /^멤버\d+$/.test(patchName) ||
+      (baseM.id && /^m(\d+)$/.test(baseM.id) && patchName === `멤버${baseM.id.slice(1)}`);
+    const nextName = placeholderPatch && baseName ? baseName : patchName || baseName;
     return {
       ...baseM,
-      /** 금액 0 wipe 가드가 이름 변경까지 삼키지 않게 — 오버레이 실시간 반영용 */
-      name: patchName || baseM.name,
+      name: nextName || baseM.name,
       goal:
         typeof patchM.goal === "number" && Number.isFinite(patchM.goal)
           ? Math.max(0, Math.floor(patchM.goal)) || undefined
@@ -230,6 +236,23 @@ function mergePartialState(
     next.members = base.members;
     next.memberPositions = base.memberPositions;
     logger.warn("members placeholder wipe blocked (theme/preset save)", { userId });
+  }
+  /**
+   * 금액 가드/부분 병합 후에도 patch의 실멤버명·목표·운영비는 항상 반영.
+   * (omitDonationFields 저장이 이름만 보낼 때 OBS 엑셀/게이지 갱신)
+   */
+  if (
+    Array.isArray(patch.members) &&
+    !patchSettlementReset &&
+    !isDonationInitGoalResetPatch(patch) &&
+    Array.isArray(next.members)
+  ) {
+    const before = next.members;
+    next.members = mergeManualMemberFieldsFromPatch(before, patch.members as Member[]);
+    const nameChanged = before.some((b, i) => b.name !== next.members[i]?.name);
+    if (nameChanged) {
+      logger.info("members identity merged from patch", { userId });
+    }
   }
   if (!("memberPositions" in patch)) next.memberPositions = base.memberPositions;
   if (!("memberPositionMode" in patch)) next.memberPositionMode = base.memberPositionMode;

@@ -2075,7 +2075,7 @@ function appStatePayloadForApi(
     ...(options?.settlementReset ? { settlementReset: true as const } : {}),
   };
   let payload = omitPlaceholderMembersFromApiPayload({ ...base, ...flags });
-  /** 시그/테마/자동 저장 — 후원 필드를 API에서 제거해 서버 금액을 절대 건드리지 않음 */
+  /** 시그/테마/자동 저장 — 후원 금액은 API에서 제거. 실멤버명은 OBS 반영을 위해 유지 */
   if (options?.omitDonationFields && !options?.settlementReset && !options?.donorsAuthoritative) {
     const {
       donors: _d,
@@ -2086,7 +2086,19 @@ function appStatePayloadForApi(
       settlementResetAt: _sra,
       ...restSafe
     } = payload;
-    payload = restSafe;
+    const keepMemberIdentity =
+      Array.isArray(_m) &&
+      !isDefaultPlaceholderMemberList(_m as Member[]) &&
+      (_m as Member[]).length > 0;
+    payload = keepMemberIdentity
+      ? {
+          ...restSafe,
+          members: _m,
+          ...(_mp !== undefined ? { memberPositions: _mp } : {}),
+          ...(_mpm !== undefined ? { memberPositionMode: _mpm } : {}),
+          ...(_rpl !== undefined ? { rankPositionLabels: _rpl } : {}),
+        }
+      : restSafe;
   }
   /** 빈 판매완료 도장 URL은 실수로 커스텀을 지우지 않게 생략(「기본 도장」만 clear 플래그) */
   if (

@@ -473,6 +473,11 @@ function adminSyncFingerprint(s: AppState): string {
     (sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)),
     0
   );
+  /** 멤버명만 바뀐 동기화도 setState·OBS 푸시가 스킵되지 않게 */
+  const memberNameSig = (s.members || [])
+    .map((m) => `${m.id}:${String(m.name || "").trim()}`)
+    .sort()
+    .join(",");
   const overlayPresetsForFp = Array.isArray(s.overlayPresets)
     ? (s.overlayPresets as { showGoal?: boolean; goal?: string }[])
     : [];
@@ -486,6 +491,7 @@ function adminSyncFingerprint(s: AppState): string {
   return [
     s.updatedAt ?? 0,
     memberTotal,
+    memberNameSig,
     String(goalPreset?.goal ?? ""),
     inv.length,
     inv.map((x) => `${x.id}:${x.price}:${x.soldCount}:${x.isActive ? 1 : 0}`).join(","),
@@ -3017,6 +3023,36 @@ export default function AdminPage() {
         next = syncMemberTotalsFromDonors(next);
       }
       persistState(next, { includeDonationFields: true });
+      /** 서버 실후원 위에 로컬 멤버명을 강제 병합·저장 (omitDonation 경로·축소 가드로 OBS 미반영 방지) */
+      const localSnapshot = next;
+      void (async () => {
+        try {
+          const remote = await loadStateFromApi(user?.id, { forceFull: true });
+          if (!remote) return;
+          const latestLocal = stateRef.current || localSnapshot;
+          const merged = mergeLocalMemberIdentityOntoRemote(remote, latestLocal);
+          const sig = (members: Member[] | undefined) =>
+            (members || []).map((m) => `${m.id}:${String(m.name || "").trim()}`).join("|");
+          if (sig(merged.members) === sig(remote.members)) return;
+          const hasDonors = normalizeDonorsArray(merged.donors).length > 0;
+          const result = await saveStateAsync(merged, user?.id, {
+            ...(hasDonors ? { donorsAuthoritative: true as const } : {}),
+          });
+          if (result.ok) {
+            stateRef.current = merged;
+            setState(merged);
+            try {
+              window.localStorage.setItem(storageKey(user?.id), JSON.stringify(merged));
+            } catch {}
+            notifyBroadcastStateLocalUpdated(user?.id, merged.updatedAt);
+            if (typeof result.serverUpdatedAt === "number" && Number.isFinite(result.serverUpdatedAt)) {
+              stateUpdatedAtRef.current = result.serverUpdatedAt;
+              lastAppliedRemoteUpdatedAtRef.current = result.serverUpdatedAt;
+            }
+            setSyncStatus(result.storageFallback ? "error" : "synced");
+          }
+        } catch {}
+      })();
       return next;
     });
   };
