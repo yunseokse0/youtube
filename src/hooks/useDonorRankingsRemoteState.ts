@@ -43,6 +43,42 @@ function readLocalStateIfExists(userId?: string): AppState | null {
   }
 }
 
+/**
+ * OBS·관리자 미리보기는 CEF/iframe LS 옛 후원으로 서버 순위를 덮지 않음.
+ * (미리보기 15만 vs OBS 25.1만 불일치 방지)
+ */
+function shouldSkipLocalDonorBootstrap(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    const host = (sp.get("host") || "").toLowerCase();
+    return (
+      host === "obs" ||
+      sp.get("adminPreviewEmbed") === "1" ||
+      sp.get("hubPreview") === "1"
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 빈 원격만 로컬 보호. 원격에 후원이 있으면(축소본 포함) 서버·미리보기·OBS 정본으로 수용.
+ * — poorer 고착으로 OBS만 옛 순위(25.1만…)를 붙잡는 회귀 방지
+ */
+export function shouldKeepLocalDonorsOverRemote(local: AppState, remote: AppState): boolean {
+  if (!shouldRejectPoorerDonationRemote(local, remote)) return false;
+  const remoteDonors = normalizeDonorsArray(remote.donors);
+  if (remoteDonors.length > 0) return false;
+  const remoteReset = Number(remote.settlementResetAt || 0);
+  const localReset = Number(local.settlementResetAt || 0);
+  if (remoteReset > localReset) return false;
+  const remoteRev = readDonorRankingsRevision(remote);
+  const localRev = readDonorRankingsRevision(local);
+  if (remoteRev > localRev) return false;
+  return true;
+}
+
 function donorRankingsPollSourceKey(userId?: string): string {
   if (typeof window === "undefined") return `donor-rankings:${userId || "default"}`;
   return `${window.location.pathname || "/overlay/donor-rankings"}:${userId || "default"}`;
@@ -100,10 +136,13 @@ export function useDonorRankingsRemoteState(
   const syncingRef = useRef(false);
   const syncFromApiRef = useRef<(opts?: { forceFull?: boolean }) => Promise<void>>(async () => {});
   const scheduleSseSyncRef = useRef<(() => void) | null>(null);
+  const skipLocalDonorsRef = useRef(shouldSkipLocalDonorBootstrap());
 
   stateRef.current = state;
 
   const applyLocalDonationSnapshot = useCallback((local: AppState) => {
+    /** OBS·미리보기는 로컬 Broadcast로 서버 순위를 덮지 않음 */
+    if (skipLocalDonorsRef.current) return;
     setState((prev) => mergeDonorRankingsApiState(prev, local));
     lastSyncedRevRef.current = Math.max(
       lastSyncedRevRef.current,
@@ -129,8 +168,8 @@ export function useDonorRankingsRemoteState(
       });
       if (!remote) return;
       const localNow = stateRef.current || readLocalStateIfExists(userId);
-      if (localNow && shouldRejectPoorerDonationRemote(localNow, remote)) {
-        /** 빈/축소 Redis 로 수동 합산·순위를 지우지 않음 — 테마만 원격 수용 */
+      if (localNow && shouldKeepLocalDonorsOverRemote(localNow, remote)) {
+        /** 빈 Redis 로 수동 합산·순위를 지우지 않음 — 테마만 원격 수용 */
         setState((prev) =>
           mergeDonorRankingsApiState(prev, {
             ...remote,
@@ -161,9 +200,10 @@ export function useDonorRankingsRemoteState(
   });
 
   useEffect(() => {
-    const local = readLocalStateIfExists(userId);
+    skipLocalDonorsRef.current = shouldSkipLocalDonorBootstrap();
+    const skipLocalDonors = skipLocalDonorsRef.current;
+    const local = skipLocalDonors ? null : readLocalStateIfExists(userId);
     if (local) {
-      /** 테마만 시드하고 donors=[] 로 비우면 합산 직후 순위가 한동안 0으로 보임 */
       setState(mergeDonorRankingsApiState(null, local));
     } else {
       setState(defaultState());
@@ -200,18 +240,22 @@ export function useDonorRankingsRemoteState(
 
     const onStorage = (e: StorageEvent) => {
       if (e.key !== storageKey(userId ?? undefined)) return;
-      const localNow = readLocalStateIfExists(userId);
-      if (localNow && normalizeDonorsArray(localNow.donors).length > 0) {
-        applyLocalDonationSnapshot(localNow);
+      if (!skipLocalDonorsRef.current) {
+        const localNow = readLocalStateIfExists(userId);
+        if (localNow && normalizeDonorsArray(localNow.donors).length > 0) {
+          applyLocalDonationSnapshot(localNow);
+        }
       }
       void syncFromApiRef.current({ forceFull: true });
     };
 
     const unsubscribeLocal = subscribeBroadcastStateLocalUpdated((detail) => {
       if (!overlayUserIdsMatch(userId, detail.userId)) return;
-      const localNow = readLocalBroadcastState(userId) || readLocalStateIfExists(userId);
-      if (localNow && normalizeDonorsArray(localNow.donors).length > 0) {
-        applyLocalDonationSnapshot(localNow);
+      if (!skipLocalDonorsRef.current) {
+        const localNow = readLocalBroadcastState(userId) || readLocalStateIfExists(userId);
+        if (localNow && normalizeDonorsArray(localNow.donors).length > 0) {
+          applyLocalDonationSnapshot(localNow);
+        }
       }
       void syncFromApiRef.current({ forceFull: true });
     });
