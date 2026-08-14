@@ -225,6 +225,7 @@ import {
   fieldCmFromStartPerMember,
   startCmFromField,
   HIGH_SOCIETY_DEFAULT_FIELD_CM,
+  HIGH_SOCIETY_MAX_SEATS,
 } from "@/lib/high-society";
 import { formatHsPushDirLabel, showAppToast } from "@/lib/app-toast";
 import {
@@ -7197,6 +7198,17 @@ export default function AdminPage() {
     () => resolveHighSocietySeatMembers(state.members || [], highSocietySettings.seatMemberIds),
     [state.members, highSocietySettings.seatMemberIds]
   );
+  const hsSeatIdSet = useMemo(
+    () => new Set(highSocietySettings.seatMemberIds.map((id) => String(id))),
+    [highSocietySettings.seatMemberIds]
+  );
+  const hsUnseatedMembers = useMemo(
+    () =>
+      (state.members || []).filter(
+        (m) => !m.operating && !hsSeatIdSet.has(String(m.id))
+      ),
+    [state.members, hsSeatIdSet]
+  );
   const patchHighSocietySettings = useCallback(
     (patch: Partial<ReturnType<typeof normalizeHighSocietySettings>>) => {
       const wasOn = normalizeHighSocietySettings(stateRef.current.highSocietySettings).enabled;
@@ -7299,6 +7311,43 @@ export default function AdminPage() {
       }
     },
     [persistState]
+  );
+  const moveHighSocietySeat = useCallback(
+    (memberId: string, dir: -1 | 1) => {
+      const cur = highSocietySettings.seatMemberIds.slice();
+      const idx = cur.findIndex((id) => id === memberId);
+      if (idx < 0) return;
+      const nextIdx = idx + dir;
+      if (nextIdx < 0 || nextIdx >= cur.length) return;
+      const swapped = cur.slice();
+      const tmp = swapped[idx]!;
+      swapped[idx] = swapped[nextIdx]!;
+      swapped[nextIdx] = tmp;
+      patchHighSocietySettings({ seatMemberIds: swapped });
+    },
+    [highSocietySettings.seatMemberIds, patchHighSocietySettings]
+  );
+  const addHighSocietySeat = useCallback(
+    (memberId: string) => {
+      const id = String(memberId || "").trim();
+      if (!id) return;
+      const cur = highSocietySettings.seatMemberIds.slice();
+      if (cur.includes(id)) return;
+      if (cur.length >= HIGH_SOCIETY_MAX_SEATS) {
+        showAppToast(`상류사회 좌석은 최대 ${HIGH_SOCIETY_MAX_SEATS}명입니다`, { variant: "info" });
+        return;
+      }
+      patchHighSocietySettings({ seatMemberIds: [...cur, id] });
+    },
+    [highSocietySettings.seatMemberIds, patchHighSocietySettings]
+  );
+  const removeHighSocietySeat = useCallback(
+    (memberId: string) => {
+      patchHighSocietySettings({
+        seatMemberIds: highSocietySettings.seatMemberIds.filter((id) => id !== memberId),
+      });
+    },
+    [highSocietySettings.seatMemberIds, patchHighSocietySettings]
   );
   const hsStartCm =
     hsSeatPlayers.length > 0
@@ -11388,52 +11437,94 @@ export default function AdminPage() {
                         </button>
                       ))}
                     </div>
-                    <div className="text-[11px] text-neutral-400">
-                      좌석 순서(좌→우). 비우면 운영비 제외 <strong className="text-neutral-300">전원 N등분</strong>.
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {(state.members || [])
-                        .filter((m) => !m.operating)
-                        .map((m) => {
-                          const on = highSocietySettings.seatMemberIds.includes(m.id);
-                          return (
-                            <button
-                              key={`hs-pick-${m.id}`}
-                              type="button"
-                              className={`rounded px-2 py-1 text-[11px] font-semibold border ${
-                                on
-                                  ? "border-amber-400 bg-amber-700/80 text-white"
-                                  : "border-white/15 bg-neutral-900 text-neutral-300"
-                              }`}
-                              onClick={() => {
-                                const cur = highSocietySettings.seatMemberIds.slice();
-                                const next = on
-                                  ? cur.filter((id) => id !== m.id)
-                                  : [...cur, m.id].slice(0, 8);
-                                patchHighSocietySettings({ seatMemberIds: next });
-                              }}
-                            >
-                              {on
-                                ? `${highSocietySettings.seatMemberIds.indexOf(m.id) + 1}. ${m.name}`
-                                : m.name}
-                            </button>
-                          );
-                        })}
-                    </div>
-                    {hsSeatPlayers.length > 0 ? (
-                      <div className="text-[11px] text-amber-100/90">
-                        배치:{" "}
-                        {hsSeatPlayers.map((p, i) => (
-                          <span key={p.id}>
-                            {i > 0 ? " → " : ""}
-                            {p.name}
-                            <span className="text-neutral-500">
-                              ({i === 0 ? "→만" : i === hsSeatPlayers.length - 1 ? "←만" : "↔"})
-                            </span>
-                          </span>
-                        ))}
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-[11px] text-neutral-400">
+                          좌석 배치(좌→우). ←→로 순서 변경 · 최대 {HIGH_SOCIETY_MAX_SEATS}명.
+                          비우면 운영비 제외 <strong className="text-neutral-300">전원 N등분</strong>.
+                        </div>
+                        {highSocietySettings.seatMemberIds.length > 0 ? (
+                          <button
+                            type="button"
+                            className="rounded px-2 py-0.5 text-[10px] font-semibold border border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
+                            onClick={() => patchHighSocietySettings({ seatMemberIds: [] })}
+                          >
+                            좌석 비우기
+                          </button>
+                        ) : null}
                       </div>
-                    ) : null}
+                      {hsSeatPlayers.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {hsSeatPlayers.map((p, i) => {
+                            const expandHint =
+                              i === 0 ? "→만" : i === hsSeatPlayers.length - 1 ? "←만" : "↔";
+                            return (
+                              <div
+                                key={`hs-seat-${p.id}`}
+                                className="flex items-center gap-1 rounded border border-amber-400/50 bg-amber-900/50 px-1.5 py-1"
+                              >
+                                <span className="min-w-[1.25rem] text-center text-[10px] font-bold text-amber-200">
+                                  {i + 1}
+                                </span>
+                                <div className="leading-tight">
+                                  <div className="text-[11px] font-semibold text-white">{p.name}</div>
+                                  <div className="text-[9px] text-amber-200/70">{expandHint}</div>
+                                </div>
+                                <div className="ml-1 flex flex-col gap-0.5">
+                                  <button
+                                    type="button"
+                                    className="rounded bg-neutral-950/70 px-1.5 py-0.5 text-[10px] text-neutral-200 hover:bg-neutral-800 disabled:opacity-30"
+                                    disabled={i === 0}
+                                    title="왼쪽으로"
+                                    onClick={() => moveHighSocietySeat(p.id, -1)}
+                                  >
+                                    ←
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="rounded bg-neutral-950/70 px-1.5 py-0.5 text-[10px] text-neutral-200 hover:bg-neutral-800 disabled:opacity-30"
+                                    disabled={i >= hsSeatPlayers.length - 1}
+                                    title="오른쪽으로"
+                                    onClick={() => moveHighSocietySeat(p.id, 1)}
+                                  >
+                                    →
+                                  </button>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="rounded px-1.5 py-0.5 text-[10px] text-red-300 hover:bg-red-950/50"
+                                  title="좌석에서 제거"
+                                  onClick={() => removeHighSocietySeat(p.id)}
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="rounded border border-dashed border-white/15 bg-black/20 px-2 py-2 text-[11px] text-neutral-500">
+                          아래 멤버를 눌러 좌석에 추가하세요. (비우면 전원 N등분)
+                        </div>
+                      )}
+                      {hsUnseatedMembers.length > 0 ? (
+                        <div className="space-y-1">
+                          <div className="text-[10px] text-neutral-500">좌석에 추가</div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {hsUnseatedMembers.map((m) => (
+                              <button
+                                key={`hs-add-${m.id}`}
+                                type="button"
+                                className="rounded border border-white/15 bg-neutral-900 px-2 py-1 text-[11px] font-semibold text-neutral-300 hover:border-amber-400/50 hover:text-amber-100"
+                                onClick={() => addHighSocietySeat(m.id)}
+                              >
+                                + {m.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
                     <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
                       가운데 시스템 기본 방향
                       <select
