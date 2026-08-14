@@ -178,8 +178,9 @@ describe("buildMemberPaymentStatementHtml layout", () => {
     expect(html).toContain('colspan="2"');
     expect(html).toContain('rowspan="2"');
     expect(html).toContain("width: 680px");
-    expect(html).toMatch(/table\.pay-table tbody td\.n\s*\{[^}]*line-height:\s*42px/s);
-    expect(html).toMatch(/table\.pay-table thead th\.h\s*\{[^}]*line-height:\s*56px/s);
+    expect(html).toMatch(/table\.pay-table tbody td\.n\s*\{[^}]*line-height:\s*1\.25/s);
+    expect(html).toMatch(/table\.pay-table thead th\.h\s*\{[^}]*line-height:\s*1\.25/s);
+    expect(html).toMatch(/table\.pay-table tbody td\.n\s*\{[^}]*vertical-align:\s*middle/s);
     expect(html).toMatch(/text-align:\s*left/);
     expect(html).toContain("1,150,730");
   });
@@ -205,6 +206,7 @@ describe("buildFullSettlementHtml", () => {
     expect(html).toContain("empty-cells:show");
     expect(html).toContain('class="blank"');
     expect(html).not.toContain('colspan="4"');
-    expect(html).toContain("line-height: 34px");
+    expect(html).toContain("line-height: 1.25");
+    expect(html).toContain("vertical-align: middle");
   });
 });

@@ -315,26 +315,27 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
   table.main { width:100%; border-collapse:collapse; font-size:9px; table-layout:fixed; empty-cells:show; }
   table.main th, table.main td {
     border:1px solid #444;
-    padding: 0 2px;
+    padding: 8px 2px;
     text-align:center;
     vertical-align: middle;
     height: 34px;
-    line-height: 34px;
+    line-height: 1.25;
   }
   table.main th {
     background:#f3f3f3;
     font-weight:700;
     height: 42px;
-    line-height: 14px;
+    line-height: 1.25;
     white-space: normal;
-    padding: 4px 2px;
+    padding: 6px 2px;
     vertical-align: middle;
   }
   table.main tfoot td {
     font-size:8px;
     height: 28px;
-    line-height: 28px;
-    padding: 0 2px;
+    line-height: 1.25;
+    padding: 6px 2px;
+    vertical-align: middle;
   }
   table.main tfoot .lab { background:#f7f7f7; font-weight:700; }
   table.main tfoot .num { font-weight:700; font-variant-numeric: tabular-nums; }
@@ -359,10 +360,10 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
   table.foot-mini td {
     border: 1px solid #555;
     height: 34px;
-    line-height: 34px;
+    line-height: 1.25;
     text-align: center;
     vertical-align: middle;
-    padding: 0 6px;
+    padding: 8px 6px;
   }
   table.foot-mini td.k {
     width: 48%;
@@ -789,8 +790,8 @@ export function buildMemberPaymentStatementHtml(
   .meta td {
     border: 1px solid #333;
     height: 30px;
-    line-height: 30px;
-    padding: 0 10px;
+    line-height: 1.25;
+    padding: 6px 10px;
     text-align: center;
     vertical-align: middle;
   }
@@ -800,7 +801,9 @@ export function buildMemberPaymentStatementHtml(
     margin: 18px 0 0;
     padding: 0 10px;
     height: 34px;
-    line-height: 34px;
+    line-height: 1.25;
+    display: flex;
+    align-items: center;
     font-size: 14px;
     font-weight: 800;
     text-align: left;
@@ -830,15 +833,15 @@ export function buildMemberPaymentStatementHtml(
     text-align: center;
     vertical-align: middle;
     word-break: keep-all;
-    padding: 0 4px;
+    line-height: 1.25;
   }
   table.pay-table thead th.h {
     background: #f3f3f3;
     font-weight: 700;
     font-size: 11px;
     height: 56px;
-    line-height: 56px;
-    padding: 0 4px;
+    line-height: 1.25;
+    padding: 8px 4px;
     vertical-align: middle;
     white-space: nowrap;
   }
@@ -847,6 +850,7 @@ export function buildMemberPaymentStatementHtml(
     padding: 0;
     height: 56px;
     border: 1px solid #333;
+    vertical-align: middle;
   }
   table.deduct-inner { height: 56px; border: none; }
   table.deduct-inner td {
@@ -857,15 +861,14 @@ export function buildMemberPaymentStatementHtml(
     border-bottom: 1px solid #333;
     vertical-align: middle;
     text-align: center;
-    padding: 0 2px;
+    line-height: 1.25;
+    padding: 4px 2px;
   }
   table.deduct-inner td.d-top {
     height: 28px;
-    line-height: 28px;
   }
   table.deduct-inner td.d-bot {
     height: 28px;
-    line-height: 28px;
     border-bottom: none;
     border-right: 1px solid #333;
     width: 50%;
@@ -879,8 +882,8 @@ export function buildMemberPaymentStatementHtml(
     font-size: 13px;
     background: #fff;
     height: 42px;
-    line-height: 42px;
-    padding: 0 4px;
+    line-height: 1.25;
+    padding: 10px 4px;
     vertical-align: middle;
   }
   table.total-table {
@@ -888,32 +891,31 @@ export function buildMemberPaymentStatementHtml(
   }
   table.total-table td.left {
     width: 60%;
-    height: 72px;
-    line-height: 72px;
     font-size: 18px;
     font-weight: 800;
     background: #efefef;
     vertical-align: middle;
-    padding: 0 4px;
+    line-height: 1.25;
+    padding: 12px 4px;
   }
   table.total-table td.cap {
     width: 40%;
     height: 28px;
-    line-height: 28px;
+    line-height: 1.25;
     font-size: 12px;
     font-weight: 700;
     background: #f7f7f7;
     vertical-align: middle;
-    padding: 0 4px;
+    padding: 6px 4px;
   }
   table.total-table td.amt {
     height: 44px;
-    line-height: 44px;
+    line-height: 1.2;
     font-size: 22px;
     font-weight: 800;
     font-variant-numeric: tabular-nums;
     vertical-align: middle;
-    padding: 0 4px;
+    padding: 8px 4px;
   }
   .thanks {
     margin-top: 40px;
