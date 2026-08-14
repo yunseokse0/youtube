@@ -263,4 +263,27 @@ describe("high-society territory (aux)", () => {
     expect(leftPush.seats[0]!.widthCm).toBe(250);
     expect(leftPush.seats[2]!.widthCm).toBe(300);
   });
+
+  it("honors explicit single-seat list without falling back to all members", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+    ];
+    const { seats, playerCount } = buildHighSocietyFieldFromMembers(members, {
+      seatMemberIds: ["b"],
+    });
+    expect(playerCount).toBe(1);
+    expect(seats.map((s) => s.name)).toEqual(["B"]);
+  });
+
+  it("empty seatMemberIds falls back to all non-operating members", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "op", name: "운영", account: 0, toon: 0, operating: true },
+    ];
+    const { seats } = buildHighSocietyFieldFromMembers(members, { seatMemberIds: [] });
+    expect(seats.map((s) => s.name)).toEqual(["A", "B"]);
+  });
 });

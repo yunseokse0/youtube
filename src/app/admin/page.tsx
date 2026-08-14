@@ -7198,10 +7198,14 @@ export default function AdminPage() {
     () => resolveHighSocietySeatMembers(state.members || [], highSocietySettings.seatMemberIds),
     [state.members, highSocietySettings.seatMemberIds]
   );
-  const hsSeatIdSet = useMemo(
-    () => new Set(highSocietySettings.seatMemberIds.map((id) => String(id))),
-    [highSocietySettings.seatMemberIds]
-  );
+  /** 좌석 ID가 비면 전원 자동 배치 — 추가 후보를 전원으로 다시 보여 주지 않음 */
+  const hsSeatExplicit = highSocietySettings.seatMemberIds.length > 0;
+  const hsSeatIdSet = useMemo(() => {
+    if (hsSeatExplicit) {
+      return new Set(highSocietySettings.seatMemberIds.map((id) => String(id)));
+    }
+    return new Set(hsSeatPlayers.map((p) => String(p.id)));
+  }, [hsSeatExplicit, highSocietySettings.seatMemberIds, hsSeatPlayers]);
   const hsUnseatedMembers = useMemo(
     () =>
       (state.members || []).filter(
@@ -7300,9 +7304,11 @@ export default function AdminPage() {
           after.seatMemberIds
         );
         showAppToast(
-          seats.length >= 2
-            ? `상류사회 · 좌석 배치: ${seats.map((s) => s.name).join(" → ")}`
-            : "상류사회 · 좌석 지정 해제 — 운영비 제외 전원 N등분"
+          after.seatMemberIds.length === 0
+            ? "상류사회 · 좌석 지정 해제 — 운영비 제외 전원 N등분"
+            : seats.length >= 1
+              ? `상류사회 · 좌석 배치: ${seats.map((s) => s.name).join(" → ")}`
+              : "상류사회 · 좌석 지정 해제 — 운영비 제외 전원 N등분"
         );
       } else if (patch.barStyle && patch.barStyle !== before.barStyle) {
         showAppToast(
@@ -7314,7 +7320,11 @@ export default function AdminPage() {
   );
   const moveHighSocietySeat = useCallback(
     (memberId: string, dir: -1 | 1) => {
-      const cur = highSocietySettings.seatMemberIds.slice();
+      /** 자동(전원) 모드에서 이동하면 현재 보이는 배치를 고정 목록으로 만든 뒤 순서 변경 */
+      const cur =
+        highSocietySettings.seatMemberIds.length > 0
+          ? highSocietySettings.seatMemberIds.slice()
+          : hsSeatPlayers.map((p) => p.id);
       const idx = cur.findIndex((id) => id === memberId);
       if (idx < 0) return;
       const nextIdx = idx + dir;
@@ -7325,7 +7335,7 @@ export default function AdminPage() {
       swapped[nextIdx] = tmp;
       patchHighSocietySettings({ seatMemberIds: swapped });
     },
-    [highSocietySettings.seatMemberIds, patchHighSocietySettings]
+    [highSocietySettings.seatMemberIds, hsSeatPlayers, patchHighSocietySettings]
   );
   const addHighSocietySeat = useCallback(
     (memberId: string) => {
@@ -7337,17 +7347,21 @@ export default function AdminPage() {
         showAppToast(`상류사회 좌석은 최대 ${HIGH_SOCIETY_MAX_SEATS}명입니다`, { variant: "info" });
         return;
       }
+      /** 자동 모드에서 +추가 = 그 멤버만 단독 좌석으로 고정 시작 */
       patchHighSocietySettings({ seatMemberIds: [...cur, id] });
     },
     [highSocietySettings.seatMemberIds, patchHighSocietySettings]
   );
   const removeHighSocietySeat = useCallback(
     (memberId: string) => {
-      patchHighSocietySettings({
-        seatMemberIds: highSocietySettings.seatMemberIds.filter((id) => id !== memberId),
-      });
+      const cur =
+        highSocietySettings.seatMemberIds.length > 0
+          ? highSocietySettings.seatMemberIds.slice()
+          : hsSeatPlayers.map((p) => p.id);
+      const next = cur.filter((id) => id !== memberId);
+      patchHighSocietySettings({ seatMemberIds: next });
     },
-    [highSocietySettings.seatMemberIds, patchHighSocietySettings]
+    [highSocietySettings.seatMemberIds, hsSeatPlayers, patchHighSocietySettings]
   );
   const hsStartCm =
     hsSeatPlayers.length > 0
@@ -11441,15 +11455,26 @@ export default function AdminPage() {
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="text-[11px] text-neutral-400">
                           좌석 배치(좌→우). ←→로 순서 변경 · 최대 {HIGH_SOCIETY_MAX_SEATS}명.
-                          비우면 운영비 제외 <strong className="text-neutral-300">전원 N등분</strong>.
+                          {hsSeatExplicit ? (
+                            <>
+                              {" "}
+                              <strong className="text-amber-200/90">수동 고정</strong>
+                            </>
+                          ) : (
+                            <>
+                              {" "}
+                              지금은 <strong className="text-neutral-300">자동(전원 N등분)</strong>
+                              — 삭제/이동 시 그 배치로 고정됩니다.
+                            </>
+                          )}
                         </div>
-                        {highSocietySettings.seatMemberIds.length > 0 ? (
+                        {hsSeatExplicit ? (
                           <button
                             type="button"
                             className="rounded px-2 py-0.5 text-[10px] font-semibold border border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
                             onClick={() => patchHighSocietySettings({ seatMemberIds: [] })}
                           >
-                            좌석 비우기
+                            자동(전원)으로
                           </button>
                         ) : null}
                       </div>

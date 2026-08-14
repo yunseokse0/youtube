@@ -440,7 +440,8 @@ export function resolveHighSocietySeatMembers(
     }));
 
   const ids = (seatMemberIds || []).map((id) => String(id || "").trim()).filter(Boolean);
-  if (ids.length >= 2) {
+  /** 명시 목록(1명 이상)은 그대로 사용. 빈 배열만 전원 N등분 fallback */
+  if (ids.length >= 1) {
     const picked = ids
       .map((sid) => {
         const m = byId.get(sid);
@@ -449,7 +450,7 @@ export function resolveHighSocietySeatMembers(
       })
       .filter((x): x is { id: string; name: string; donationWon: number } => Boolean(x))
       .slice(0, HIGH_SOCIETY_MAX_SEATS);
-    if (picked.length >= 2) return picked;
+    if (picked.length >= 1) return picked;
   }
   return fallback;
 }
