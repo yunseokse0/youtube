@@ -189,6 +189,8 @@ export default function HighSocietyOverlayPage() {
     skipLocalSnapshot: hostObs,
     forceInitialFull: hostObs,
     persistLastGood: !hostObs,
+    /** 관리자 미리보기: 재배치·나누기·방향 적용이 게이지에 바로 보이게 since 폴링 */
+    adminPreviewAllowPoll: true,
   });
   const [nowTick, setNowTick] = useState(() => Date.now());
   /** test 전용: 서버 타이머 없을 때 로컬 카운트다운 앵커 (라운드 종료 후 모드용) */

@@ -13897,7 +13897,7 @@ export default function AdminPage() {
                           highSocietySettings.fx?.strongOutline ? 1 : 0,
                         ].join("")}-${(state.members || [])
                           .map((m) => `${m.id}:${m.name || ""}`)
-                          .join("|")}`}
+                          .join("|")}-d${Number(state.updatedAt || 0)}-r${Number(state.donorRankingsUpdatedAt || 0)}-n${(state.donors || []).length}`}
                         src={appendAdminPreviewEmbedToOverlayUrl(
                           `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&fieldCm=${encodeURIComponent(String(highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM))}`
                         )}

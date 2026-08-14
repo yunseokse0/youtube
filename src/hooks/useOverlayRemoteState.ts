@@ -129,6 +129,12 @@ export type UseOverlayRemoteStateOptions = {
    * 수동 OBS·다중 브라우저 소스 시 EC2 GET 폭주·502 완화.
    */
   sigSalesIncrementalPoll?: boolean;
+
+  /**
+   * 관리자 미리보기 iframe에서도 since 폴링 허용(상류사회 등).
+   * 기본 false — 시그 대전 미리보기는 LS만 써서 게이지 진동을 막음.
+   */
+  adminPreviewAllowPoll?: boolean;
 };
 
 function overlaySyncSignatureForPick(
@@ -738,16 +744,22 @@ export function useOverlayRemoteState(
     runInitialSync();
 
     const pollMs = resolveOverlayRemotePollMs(options.overlayPollMs);
-    /** 관리자 iframe 미리보기 — LS·postMessage 만 사용. 서버 forceFull 폴링과 싸우면 게이지가 진동함 */
+    /**
+     * 관리자 iframe 미리보기 기본: LS·postMessage 만 (시그 대전 forceFull 경합 방지).
+     * adminPreviewAllowPoll: 상류사회처럼 후원 조정이 게이지에 바로 필요한 경우 since 폴링 허용.
+     */
     const adminPreviewEmbed =
       isAdminDashboardPreviewEmbed() || isEmbeddedInSameOriginAdminFrame();
+    const allowAdminPreviewPoll = Boolean(options.adminPreviewAllowPoll);
 
     let stopPoll: (() => void) | undefined;
 
-    if (pollMs > 0 && !adminPreviewEmbed) {
+    if (pollMs > 0 && (!adminPreviewEmbed || allowAdminPreviewPoll)) {
       const pollSourceKey = `${statePick}:${userId || "default"}:${typeof window !== "undefined" ? window.location.pathname : ""}:${typeof window !== "undefined" ? window.location.search : ""}`;
       const obsForceFullPoll =
-        isExternalOverlayBroadcastHost() || shouldSkipOverlaySseForObsBroadcast();
+        !adminPreviewEmbed &&
+        (isExternalOverlayBroadcastHost() || shouldSkipOverlaySseForObsBroadcast());
+      const previewPollMs = adminPreviewEmbed ? Math.max(pollMs, 1500) : pollMs;
       stopPoll = startStaggeredOverlayPoll(
         () => {
           const pollOpts =
@@ -759,7 +771,7 @@ export function useOverlayRemoteState(
                 : undefined;
           void syncFromApiRef.current(pollOpts);
         },
-        pollMs,
+        previewPollMs,
         pollSourceKey
       );
     }
@@ -877,6 +889,8 @@ export function useOverlayRemoteState(
     options.forceInitialFull,
 
     options.overlayPollMs,
+
+    options.adminPreviewAllowPoll,
 
     statePick,
 

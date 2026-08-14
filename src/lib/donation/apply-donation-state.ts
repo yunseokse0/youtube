@@ -634,6 +634,7 @@ export function updateDonorHsPushDirInAppState(
   return {
     ...currentState,
     donors: nextDonors,
+    donorRankingsUpdatedAt: now,
     updatedAt: now,
   };
 }
@@ -679,6 +680,7 @@ export function applyManualHsPushDirChange(
   return {
     ...currentState,
     donors: nextDonors,
+    donorRankingsUpdatedAt: now,
     updatedAt: now,
   };
 }
