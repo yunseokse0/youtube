@@ -158,6 +158,38 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
   });
 }
 
+/**
+ * 관리자 미리보기(LS)가 서버 폴링보다 최신일 때 대전 보정(sigMatch)이 사라지지 않게 유지.
+ * 서버 updatedAt 이 더 크면 원격 보정값을 그대로 쓴다.
+ */
+export function mergeSigMatchPreferFresherLocal(
+  remote: AppState,
+  local: AppState | null | undefined
+): AppState {
+  if (!local) return remote;
+  const localAt = Number(local.updatedAt || 0);
+  const remoteAt = Number(remote.updatedAt || 0);
+  if (remoteAt > localAt) return remote;
+  const localSm =
+    local.sigMatch && typeof local.sigMatch === "object" ? { ...local.sigMatch } : {};
+  const remoteSm =
+    remote.sigMatch && typeof remote.sigMatch === "object" ? { ...remote.sigMatch } : {};
+  const localKeys = Object.keys(localSm);
+  const remoteKeys = Object.keys(remoteSm);
+  if (localKeys.length === 0 && remoteKeys.length === 0) return remote;
+  let differs = localKeys.length !== remoteKeys.length;
+  if (!differs) {
+    for (const k of localKeys) {
+      if (Number(localSm[k] || 0) !== Number(remoteSm[k] || 0)) {
+        differs = true;
+        break;
+      }
+    }
+  }
+  if (!differs) return remote;
+  return { ...remote, sigMatch: { ...remoteSm, ...localSm } };
+}
+
 /** 원격/로컬 스냅샷이 현재 표시보다 후원 금액·건수가 많으면 갱신 후보 */
 export function isRicherDonationSnapshot(
   candidate: AppState | null | undefined,

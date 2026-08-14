@@ -121,6 +121,38 @@ describe("isNewerIntentionalDonationShrink", () => {
   });
 });
 
+describe("mergeSigMatchPreferFresherLocal", () => {
+  it("keeps local sigMatch when local is same or newer", async () => {
+    const { mergeSigMatchPreferFresherLocal } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 2000,
+      sigMatch: { m1: 50000 },
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: 1500,
+      sigMatch: {},
+    };
+    expect(mergeSigMatchPreferFresherLocal(remote, local).sigMatch).toEqual({ m1: 50000 });
+  });
+
+  it("prefers remote sigMatch when remote updatedAt is newer", async () => {
+    const { mergeSigMatchPreferFresherLocal } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      sigMatch: { m1: 50000 },
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: 2000,
+      sigMatch: { m1: 10000 },
+    };
+    expect(mergeSigMatchPreferFresherLocal(remote, local).sigMatch).toEqual({ m1: 10000 });
+  });
+});
+
 describe("shouldRejectPoorerDonationRemote", () => {
   it("rejects empty remote when local has donors and reset is not newer", async () => {
     const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");

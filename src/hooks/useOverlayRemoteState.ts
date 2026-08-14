@@ -21,7 +21,13 @@ import {
   type AppState,
 } from "@/lib/state";
 
-import { shouldSuppressOverlaySseConnection, isExternalOverlayBroadcastHost } from "@/lib/overlay-params";
+import {
+  shouldSuppressOverlaySseConnection,
+  shouldSkipOverlaySseForObsBroadcast,
+  isExternalOverlayBroadcastHost,
+  isAdminDashboardPreviewEmbed,
+  isEmbeddedInSameOriginAdminFrame,
+} from "@/lib/overlay-params";
 import { startStaggeredOverlayPoll } from "@/lib/overlay-poll-stagger";
 
 import {
@@ -45,6 +51,7 @@ import { useSSEConnection } from "@/lib/sse-client";
 import {
   buildOverlaySyncSignature,
   buildSigSalesOverlaySyncSignature,
+  mergeSigMatchPreferFresherLocal,
   shouldRejectPoorerDonationRemote,
   shouldKeepStaleOverlayOverRemote,
 } from "@/lib/overlay-sync-signature";
@@ -218,11 +225,10 @@ function applySyncedState(
 
   const nextSig = overlaySyncSignatureForPick(dataForApply, pick);
 
-  /** obs-text pick 304 비교는 max(updatedAt, config.revision) — updatedAt 만 쓰면 영구 304 */
+  /** pick 304·경합 비교 — 구 스냅샷이 최신 로컬(미리보기 LS)을 덮지 않게 */
   const pickRev = revisionForStatePick(dataForApply, pick);
 
   if (
-    pick === STATE_PICK_OBS_TEXT &&
     pickRev > 0 &&
     refs.lastSyncedUpdatedAtRef.current > 0 &&
     pickRev < refs.lastSyncedUpdatedAtRef.current
@@ -522,6 +528,10 @@ export function useOverlayRemoteState(
             remoteForApply,
             lastGoodRef.current
           );
+          remoteForApply = mergeSigMatchPreferFresherLocal(
+            remoteForApply,
+            lastGoodRef.current
+          );
         }
 
         if (sigSalesPick) {
@@ -728,13 +738,16 @@ export function useOverlayRemoteState(
     runInitialSync();
 
     const pollMs = resolveOverlayRemotePollMs(options.overlayPollMs);
+    /** 관리자 iframe 미리보기 — LS·postMessage 만 사용. 서버 forceFull 폴링과 싸우면 게이지가 진동함 */
+    const adminPreviewEmbed =
+      isAdminDashboardPreviewEmbed() || isEmbeddedInSameOriginAdminFrame();
 
     let stopPoll: (() => void) | undefined;
 
-    if (pollMs > 0) {
+    if (pollMs > 0 && !adminPreviewEmbed) {
       const pollSourceKey = `${statePick}:${userId || "default"}:${typeof window !== "undefined" ? window.location.pathname : ""}:${typeof window !== "undefined" ? window.location.search : ""}`;
       const obsForceFullPoll =
-        shouldSuppressOverlaySseConnection() || isExternalOverlayBroadcastHost();
+        isExternalOverlayBroadcastHost() || shouldSkipOverlaySseForObsBroadcast();
       stopPoll = startStaggeredOverlayPoll(
         () => {
           const pollOpts =
@@ -877,6 +890,7 @@ export function useOverlayRemoteState(
   /** SSE 끊김 시 폴링 — 메인 effect deps 와 분리(SSE 재연결마다 전체 재초기화 방지) */
   useEffect(() => {
     if (!enabled || frozen) return;
+    if (isAdminDashboardPreviewEmbed() || isEmbeddedInSameOriginAdminFrame()) return;
     const pollMs = resolveOverlayRemotePollMs(options.overlayPollMs);
     const sseFallbackMs = pollMs > 0 ? 0 : readOverlaySseFallbackPollMs();
     if (sseFallbackMs <= 0 || sseConnected) return;
