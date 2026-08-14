@@ -28,12 +28,6 @@ import {
 } from "@/lib/high-society";
 import "./high-society.css";
 
-function dirGlyph(dir: HighSocietySeat["expandDir"]): string {
-  if (dir === "right") return "→";
-  if (dir === "left") return "←";
-  return "↔";
-}
-
 function TerritoryGauge({
   style,
   seats,
@@ -156,9 +150,6 @@ function TerritoryGauge({
                 <span className="hs-field-name">{seat.name || seat.letter}</span>
                 <span className="hs-field-meta">
                   <span className="hs-field-cm">{formatCm(seat.widthCm)}</span>
-                  <span className="hs-field-dir" aria-hidden>
-                    {dirGlyph(seat.expandDir)}
-                  </span>
                 </span>
               </span>
             </div>

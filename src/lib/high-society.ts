@@ -73,7 +73,7 @@ const TERRITORY_COLORS = [
   "linear-gradient(90deg, #134e4a 0%, #2dd4bf 100%)",
 ];
 
-/** 룰: 1만원 = 5cm */
+/** 룰: 1만원 = 5cm · 만원 미만(천원 단위) 버림 */
 export const HIGH_SOCIETY_WON_PER_UNIT = 10_000;
 export const HIGH_SOCIETY_CM_PER_UNIT = 5;
 /** 기본 전장 가로(cm) — 멤버 수와 무관, N등분 */
@@ -125,7 +125,12 @@ function clamp01(n: number): number {
   return Math.min(1, Math.max(0, n));
 }
 
-/** 룰4: 1만원 단위만 인정 (16900 → 10000) 후 ×5cm */
+/**
+ * 상류사회 확장 cm.
+ * - 1만원 이상만 인정 · 천원 단위(만원 미만 나머지)는 버림
+ * - 1만원 = 5cm
+ * - 예: 26,000원 → 2만원만 인정 → 10cm / 16,900원 → 5cm / 9,999원 → 0cm
+ */
 export function donationToExpandCm(won: number): number {
   const units = Math.floor(Math.max(0, won) / HIGH_SOCIETY_WON_PER_UNIT);
   return units * HIGH_SOCIETY_CM_PER_UNIT;

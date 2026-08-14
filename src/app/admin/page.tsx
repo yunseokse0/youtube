@@ -88,7 +88,10 @@ import {
   pickDailyLogEntryForRestore,
   summarizeRestoreJson,
 } from "@/lib/state-restore";
-import { shouldRejectPoorerDonationRemote } from "@/lib/overlay-sync-signature";
+import {
+  mergeSigMatchPreferFresherLocal,
+  shouldRejectPoorerDonationRemote,
+} from "@/lib/overlay-sync-signature";
 import {
   applyThemeRestorePatch,
   collectThemeRestoreCandidates,
@@ -1537,6 +1540,46 @@ export default function AdminPage() {
       merged = { ...merged, sigSalesMemberPresets: local.sigSalesMemberPresets };
       didPreserve = true;
     }
+    /**
+     * 시그 대전 수동 보정(sigMatch): 저장 직후 GET/SSE가 구 보정값으로 덮어 0원이 되지 않게.
+     * 보호창에서는 로컬이 같거나 더 최신·더 풍부하면 유지, 밖에서는 updatedAt fresher 병합.
+     */
+    {
+      const recentlyEditedSigMatch =
+        pendingUnsyncedRef.current ||
+        Date.now() - lastLocalPersistAtRef.current < SIG_INVENTORY_LOCAL_PROTECT_MS;
+      const localSm =
+        local.sigMatch && typeof local.sigMatch === "object" ? { ...local.sigMatch } : {};
+      const incomingSm =
+        merged.sigMatch && typeof merged.sigMatch === "object" ? { ...merged.sigMatch } : {};
+      const sigMatchSame =
+        Object.keys(localSm).length === Object.keys(incomingSm).length &&
+        Object.keys(localSm).every(
+          (k) => Number(localSm[k] || 0) === Number(incomingSm[k] || 0)
+        );
+      const localSigSum = Object.values(localSm).reduce(
+        (s, v) => s + Math.abs(Number(v) || 0),
+        0
+      );
+      const incomingSigSum = Object.values(incomingSm).reduce(
+        (s, v) => s + Math.abs(Number(v) || 0),
+        0
+      );
+      const localAt = Number(local.updatedAt || 0);
+      const incomingAt = Number(merged.updatedAt || incoming.updatedAt || 0);
+      if (recentlyEditedSigMatch && !sigMatchSame) {
+        if (localAt >= incomingAt || localSigSum > incomingSigSum) {
+          merged = { ...merged, sigMatch: localSm };
+          didPreserve = true;
+        }
+      } else if (!sigMatchSame) {
+        const withFresher = mergeSigMatchPreferFresherLocal(merged, local);
+        if (withFresher !== merged) {
+          merged = withFresher;
+          didPreserve = true;
+        }
+      }
+    }
     /** 후원순위 테마: 원격이 기본값인데 로컬이 커스텀이면 유지(테마 PATCH 경합·미저장 GET으로 리셋 방지) */
     if (
       !isDefaultLikeDonorRankingsTheme(local.donorRankingsTheme) &&
@@ -2223,8 +2266,13 @@ export default function AdminPage() {
       let didPreserve = false;
       if (recentlyEditedSig) {
         const mergedResult = mergeIncomingStateSafely(remote, prev);
-        toApply = { ...mergedResult.merged, sigInventory: prev.sigInventory || [] };
-        didPreserve = mergedResult.didPreserve;
+        toApply = {
+          ...mergedResult.merged,
+          sigInventory: prev.sigInventory || [],
+          /** 수동 보정 직후 폴링이 구 sigMatch(0)로 미리보기를 지우지 않게 */
+          sigMatch: prev.sigMatch || {},
+        };
+        didPreserve = true;
       } else {
         const mergedResult = mergeIncomingStateSafely(remote, prev);
         toApply = mergedResult.merged;
@@ -3969,7 +4017,9 @@ export default function AdminPage() {
       const sigMatch = { ...(prev.sigMatch || {}) };
       if (nextAdjust === 0) delete sigMatch[memberId];
       else sigMatch[memberId] = nextAdjust;
-      const next: AppState = { ...prev, sigMatch };
+      /** updatedAt 미상승 시 원격 병합이 구 보정값을 최신으로 오인하고 0으로 덮음 */
+      const next: AppState = { ...prev, sigMatch, updatedAt: Date.now() };
+      stateRef.current = next;
       persistState(next);
       return next;
     });
@@ -3981,7 +4031,8 @@ export default function AdminPage() {
       const sigMatch = { ...(prev.sigMatch || {}) };
       if (value === 0) delete sigMatch[memberId];
       else sigMatch[memberId] = value;
-      const next: AppState = { ...prev, sigMatch };
+      const next: AppState = { ...prev, sigMatch, updatedAt: Date.now() };
+      stateRef.current = next;
       persistState(next);
       return next;
     });
@@ -11291,7 +11342,9 @@ export default function AdminPage() {
                   <div>
                     <div className="text-sm font-semibold text-amber-100">상류사회 모드 (땅따먹기)</div>
                     <p className="mt-0.5 text-[11px] text-neutral-400 leading-snug">
-                      1인 시작{" "}
+                      확장 룰: <strong className="text-neutral-200">1만원 = 5cm</strong>
+                      · 1만원 이상만 인정 · 천원 단위(만원 미만)는 버림
+                      (예: 2만6천원 → 10cm). 1인 시작{" "}
                       <strong className="text-neutral-200">{formatCm(hsStartCm)}</strong>
                       · 전장 총길이{" "}
                       <strong className="text-neutral-200">
@@ -13647,6 +13700,8 @@ export default function AdminPage() {
                     <h4 className="text-sm font-semibold text-amber-100">상류사회 · 세로(9:16) 오버레이</h4>
                     <p className="mt-1 text-[11px] text-neutral-400 leading-snug max-w-xl">
                       계좌·투네 후원 합산으로 상단 영토 게이지만 표시합니다.{" "}
+                      확장: <strong className="text-neutral-300">1만원=5cm</strong>
+                      · 천원 단위 버림(예: 2만6천→10cm).{" "}
                       <strong className="text-neutral-300">갱신 시점</strong>은 아래 옵션으로 선택합니다.
                       「라운드 종료 후」는 「타이머 제어」 일반 타이머가 0이 될 때 반영됩니다(오버레이에 타이머 UI 없음).
                       OBS 캔버스·브라우저 소스 <strong className="text-neutral-300">1080×1920</strong>.

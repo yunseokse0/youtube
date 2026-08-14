@@ -751,6 +751,8 @@ export default function SigMatchDuelOverlay({
       } else if (hasPrev && r.score + 0.01 < old) {
         prev[`__dropAt_${r.memberId}`] = Date.now();
         prev[`__peak_${r.memberId}`] = Math.max(Number(prev[`__peak_${r.memberId}`] || 0), old);
+        /** 점수↓(동기화로 0 등) 직후 +금액 플로트가 0원 위에 남지 않게 */
+        setFloatingBursts([]);
       }
       prev[r.memberId] = r.score;
     }

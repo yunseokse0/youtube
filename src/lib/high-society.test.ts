@@ -28,6 +28,8 @@ describe("high-society rule field", () => {
     expect(donationToExpandCm(9999)).toBe(0);
     expect(donationToExpandCm(10000)).toBe(5);
     expect(donationToExpandCm(16900)).toBe(5);
+    /** 2만6천원 → 천원(6천) 버림 → 2만원 = 10cm */
+    expect(donationToExpandCm(26_000)).toBe(10);
     expect(donationToExpandCm(100000)).toBe(50);
   });
 

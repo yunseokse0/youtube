@@ -257,24 +257,13 @@
   flex-shrink: 0;
 }
 
-.hs-field-dir {
-  flex-shrink: 0;
-  font-size: 1.05em;
-  font-weight: 900;
-  color: #ffe566;
-}
-
-/** 좁은 영토 칸 — 방향 숨기고 칩 최소폭 확보(이웃과 겹쳐도 읽히게) */
+/** 좁은 영토 칸 — 칩 최소폭 확보(이웃과 겹쳐도 읽히게) */
 @container hs-seg (max-width: 150px) {
   .hs-field-label {
     max-width: none;
     min-width: 92px;
     padding: 5px 6px;
     font-size: clamp(13px, 2vw, 18px);
-  }
-
-  .hs-field-dir {
-    display: none;
   }
 }
 
