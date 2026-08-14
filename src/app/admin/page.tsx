@@ -2913,18 +2913,35 @@ export default function AdminPage() {
   const [sigMatchPreviewIframeSrc, setSigMatchPreviewIframeSrc] = useState("");
   const mealMatchPreviewUrlRef = useRef("");
   const [mealMatchPreviewIframeSrc, setMealMatchPreviewIframeSrc] = useState("");
-  /** 대전 배율·유저 변경 시 미리보기 iframe URL을 즉시 동기화(기존: 최초 1회만 세팅되어 배율 미반영) */
+  const sigMatchPreviewBootedRef = useRef(false);
+  const mealMatchPreviewBootedRef = useRef(false);
+  /**
+   * 대전 배율·가로폭 슬라이더마다 iframe을 즉시 리로드하면 게이지가 왔다갔다 함.
+   * URL은 디바운스하고, key는 수동 새로고침에만 바꿔 미리보기를 유지한다.
+   */
   useEffect(() => {
     if (typeof window === "undefined") return;
     const url = buildSigMatchLiveUrl();
     sigMatchPreviewUrlRef.current = url;
-    setSigMatchPreviewIframeSrc(appendAdminPreviewEmbedToOverlayUrl(url));
+    const delay = sigMatchPreviewBootedRef.current ? 400 : 0;
+    const t = window.setTimeout(() => {
+      sigMatchPreviewBootedRef.current = true;
+      const next = appendAdminPreviewEmbedToOverlayUrl(url);
+      setSigMatchPreviewIframeSrc((prev) => (prev === next ? prev : next));
+    }, delay);
+    return () => window.clearTimeout(t);
   }, [buildSigMatchLiveUrl]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const url = buildMealMatchLiveUrl();
     mealMatchPreviewUrlRef.current = url;
-    setMealMatchPreviewIframeSrc(appendAdminPreviewEmbedToOverlayUrl(url));
+    const delay = mealMatchPreviewBootedRef.current ? 400 : 0;
+    const t = window.setTimeout(() => {
+      mealMatchPreviewBootedRef.current = true;
+      const next = appendAdminPreviewEmbedToOverlayUrl(url);
+      setMealMatchPreviewIframeSrc((prev) => (prev === next ? prev : next));
+    }, delay);
+    return () => window.clearTimeout(t);
   }, [buildMealMatchLiveUrl]);
 
   const copyUrl = async (url: string, id: string) => {
@@ -8646,7 +8663,7 @@ export default function AdminPage() {
                   >
                     {sigMatchPreviewIframeSrc ? (
                       <iframe
-                        key={`sig-match-${sigMatchPreviewIframeKey}-${sigMatchPreviewIframeSrc.slice(0, 120)}`}
+                        key={`sig-match-preview-${sigMatchPreviewIframeKey}`}
                         src={sigMatchPreviewIframeSrc}
                         title="시그 대전 오버레이 미리보기"
                         className="absolute inset-0 h-full w-full border-0"
@@ -8708,7 +8725,7 @@ export default function AdminPage() {
                   >
                     {mealMatchPreviewIframeSrc ? (
                       <iframe
-                        key={`meal-match-${mealMatchPreviewIframeKey}-${mealMatchPreviewIframeSrc.slice(0, 120)}`}
+                        key={`meal-match-preview-${mealMatchPreviewIframeKey}`}
                         src={mealMatchPreviewIframeSrc}
                         title="식사 대전 오버레이 미리보기"
                         className="absolute inset-0 h-full w-full border-0"

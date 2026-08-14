@@ -703,7 +703,7 @@ export default function SigMatchDuelOverlay({
     return null;
   }, [duelData, scoringMode]);
 
-  const vsBarSpring = { type: "spring" as const, stiffness: 155, damping: 20 };
+  const vsBarSpring = { type: "spring" as const, stiffness: 170, damping: 26, mass: 0.85 };
   const [barPulseKey, setBarPulseKey] = useState(0);
   const prevAggregateRef = useRef(0);
   const lastMemberScoresRef = useRef<Record<string, number>>({});
@@ -724,23 +724,33 @@ export default function SigMatchDuelOverlay({
       const old = prev[r.memberId] ?? 0;
       if (hasPrev && r.score > old + 0.01) {
         const diff = r.score - old;
-        const floatId = ++floatingIdRef.current;
-        const onLeft = duelData.mode === "dual" && duelData.left.ids.includes(r.memberId);
-        const onRight = duelData.mode === "dual" && duelData.right.ids.includes(r.memberId);
-        const color = onLeft ? "#fbcfe8" : onRight ? "#bae6fd" : "#fde68a";
-        const x = memberFloatX(r.memberId, duelData, dualBar, tripleBar) + (Math.random() * 8 - 4);
-        setFloatingBursts((b) => [
-          ...b,
-          {
-            id: floatId,
-            value: `+${formatSigMatchStat(diff)}${scoringMode === "amount" ? "원" : ""}`,
-            color,
-            x: Math.max(6, Math.min(94, x)),
-          },
-        ]);
-        window.setTimeout(() => {
-          setFloatingBursts((b) => b.filter((f) => f.id !== floatId));
-        }, 1500);
+        const recentDrop = Number(prev[`__dropAt_${r.memberId}`] || 0);
+        const peak = Number(prev[`__peak_${r.memberId}`] || 0);
+        /** 동기화로 점수↓ 직후 같은 수준으로 복구될 때 플로트 반복 방지 */
+        const skipFloat =
+          recentDrop > 0 && Date.now() - recentDrop < 1200 && r.score <= peak + 0.01;
+        if (!skipFloat) {
+          const floatId = ++floatingIdRef.current;
+          const onLeft = duelData.mode === "dual" && duelData.left.ids.includes(r.memberId);
+          const onRight = duelData.mode === "dual" && duelData.right.ids.includes(r.memberId);
+          const color = onLeft ? "#fbcfe8" : onRight ? "#bae6fd" : "#fde68a";
+          const x = memberFloatX(r.memberId, duelData, dualBar, tripleBar) + (Math.random() * 8 - 4);
+          setFloatingBursts((b) => [
+            ...b,
+            {
+              id: floatId,
+              value: `+${formatSigMatchStat(diff)}${scoringMode === "amount" ? "원" : ""}`,
+              color,
+              x: Math.max(6, Math.min(94, x)),
+            },
+          ]);
+          window.setTimeout(() => {
+            setFloatingBursts((b) => b.filter((f) => f.id !== floatId));
+          }, 1500);
+        }
+      } else if (hasPrev && r.score + 0.01 < old) {
+        prev[`__dropAt_${r.memberId}`] = Date.now();
+        prev[`__peak_${r.memberId}`] = Math.max(Number(prev[`__peak_${r.memberId}`] || 0), old);
       }
       prev[r.memberId] = r.score;
     }
@@ -900,7 +910,6 @@ export default function SigMatchDuelOverlay({
                 data-sig-vs-bar="true"
                 animate={{ scale: barPulseKey > 0 ? [1, 1.015, 1] : 1 }}
                 transition={{ duration: 0.4 }}
-                key={barPulseKey}
               >
                 <BattleTeamColumnBoard
                   leftScore={duelData.left.score}
@@ -975,7 +984,6 @@ export default function SigMatchDuelOverlay({
                 className="relative shrink-0"
                 animate={{ scale: barPulseKey > 0 ? [1, 1.015, 1] : 1 }}
                 transition={{ duration: 0.4 }}
-                key={`triple-bar-${barPulseKey}`}
               >
                 <div className={`relative ${sigVsBarHeightClass(compact)}`} data-sig-vs-bar="true">
                   <div className="flex h-full w-full">
