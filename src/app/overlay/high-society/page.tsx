@@ -12,6 +12,7 @@ import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 import {
   buildHighSocietyFieldFromAppState,
   buildHighSocietyFieldFromMembers,
+  detectHighSocietyGrowFlashSeatIds,
   formatCm,
   HIGH_SOCIETY_DEFAULT_FIELD_CM,
   HIGH_SOCIETY_ROUND_SEC,
@@ -22,6 +23,7 @@ import {
   parseHighSocietyFieldCm,
   parseHighSocietySplit,
   type HighSocietyBarStyle,
+  type HighSocietyExpandPressure,
   type HighSocietySeat,
 } from "@/lib/high-society";
 import "./high-society.css";
@@ -47,9 +49,12 @@ function TerritoryGauge({
 }) {
   const [ready, setReady] = useState(!motion);
   const [flashIds, setFlashIds] = useState<Record<string, number>>({});
-  const prevWidthsRef = useRef<Record<string, number>>({});
+  const prevExpandRef = useRef<Record<string, HighSocietyExpandPressure>>({});
   const flashSeq = useRef(0);
-  const seatsSig = seats.map((s) => `${s.id}:${s.widthCm}`).join("|");
+  /** width만이 아니라 확장 압력(방향) 변경도 감지 */
+  const seatsSig = seats
+    .map((s) => `${s.id}:${s.widthCm}:${s.expandLeftCm}:${s.expandRightCm}`)
+    .join("|");
 
   useEffect(() => {
     if (!motion) {
@@ -63,24 +68,23 @@ function TerritoryGauge({
 
   useEffect(() => {
     if (!motion || !fx.growFlash) return;
-    const grown: string[] = [];
-    for (const seat of seats) {
-      const prev = prevWidthsRef.current[seat.id];
-      if (prev != null && seat.widthCm > prev + 0.05) grown.push(seat.id);
-      prevWidthsRef.current[seat.id] = seat.widthCm;
-    }
-    if (grown.length === 0) return;
+    const { grownIds, nextPrev } = detectHighSocietyGrowFlashSeatIds(
+      seats,
+      prevExpandRef.current
+    );
+    prevExpandRef.current = nextPrev;
+    if (grownIds.length === 0) return;
     flashSeq.current += 1;
     const token = flashSeq.current;
     setFlashIds((prev) => {
       const next = { ...prev };
-      for (const id of grown) next[id] = token;
+      for (const id of grownIds) next[id] = token;
       return next;
     });
     const t = window.setTimeout(() => {
       setFlashIds((prev) => {
         const next = { ...prev };
-        for (const id of grown) {
+        for (const id of grownIds) {
           if (next[id] === token) delete next[id];
         }
         return next;

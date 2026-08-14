@@ -733,3 +733,27 @@ export function highSocietyPushDirLabel(dir: HighSocietyPushDir): string {
   if (dir === "right") return "오른쪽 →";
   return "↔ 양분";
 }
+
+export type HighSocietyExpandPressure = { left: number; right: number };
+
+/**
+ * 성장 연출 대상 — 본인 expandLeft/Right 가 늘었을 때만.
+ * (이웃이 공격을 멈춰 수동적으로 넓어진 좌석은 연출하지 않음)
+ */
+export function detectHighSocietyGrowFlashSeatIds(
+  seats: Array<{ id: string; expandLeftCm: number; expandRightCm: number }>,
+  prev: Record<string, HighSocietyExpandPressure>
+): { grownIds: string[]; nextPrev: Record<string, HighSocietyExpandPressure> } {
+  const nextPrev: Record<string, HighSocietyExpandPressure> = { ...prev };
+  const grownIds: string[] = [];
+  for (const seat of seats) {
+    const left = Math.max(0, Number(seat.expandLeftCm) || 0);
+    const right = Math.max(0, Number(seat.expandRightCm) || 0);
+    const before = prev[seat.id];
+    if (before && (left > before.left + 0.05 || right > before.right + 0.05)) {
+      grownIds.push(seat.id);
+    }
+    nextPrev[seat.id] = { left, right };
+  }
+  return { grownIds, nextPrev };
+}

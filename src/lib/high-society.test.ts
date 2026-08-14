@@ -3,6 +3,7 @@ import {
   buildHighSocietyFieldFromMembers,
   buildHighSocietyTerritory,
   buildHighSocietyZones,
+  detectHighSocietyGrowFlashSeatIds,
   donationToExpandCm,
   formatCm,
   formatHighSocietyTimer,
@@ -285,5 +286,33 @@ describe("high-society territory (aux)", () => {
     ];
     const { seats } = buildHighSocietyFieldFromMembers(members, { seatMemberIds: [] });
     expect(seats.map((s) => s.name)).toEqual(["A", "B"]);
+  });
+});
+
+describe("detectHighSocietyGrowFlashSeatIds", () => {
+  it("flashes only the seat whose expand pressure grew (not neighbor recovery)", () => {
+    const prev = {
+      ji3: { left: 0, right: 50 },
+      ji5: { left: 0, right: 10 },
+    };
+    /** 지3: →→← 로 바꿔 left 증가, right 감소. 지5는 압력만 줄고 expand 불변 */
+    const { grownIds, nextPrev } = detectHighSocietyGrowFlashSeatIds(
+      [
+        { id: "ji3", expandLeftCm: 50, expandRightCm: 0 },
+        { id: "ji5", expandLeftCm: 0, expandRightCm: 10 },
+      ],
+      prev
+    );
+    expect(grownIds).toEqual(["ji3"]);
+    expect(nextPrev.ji3).toEqual({ left: 50, right: 0 });
+    expect(nextPrev.ji5).toEqual({ left: 0, right: 10 });
+  });
+
+  it("does not flash on first paint (no prev)", () => {
+    const { grownIds } = detectHighSocietyGrowFlashSeatIds(
+      [{ id: "a", expandLeftCm: 20, expandRightCm: 0 }],
+      {}
+    );
+    expect(grownIds).toEqual([]);
   });
 });
