@@ -7,9 +7,10 @@ import { persistDonationStateToServer } from "@/lib/donation/persist-donation-li
 import { repairMemberTotalsForDonorRoster } from "@/lib/donation/apply-donation-state";
 import {
   buildDonationRosterBackupPayload,
+  clearDonationRosterBackup,
   saveDonationRosterBackup,
 } from "@/lib/donation-roster-backup";
-import { normalizeDonorsArray } from "@/lib/state";
+import { normalizeDonorsArray, totalCombined } from "@/lib/state";
 import type { AppState } from "@/types";
 
 type PersistBody = {
@@ -47,7 +48,12 @@ export async function POST(req: Request) {
   }
 
   const repaired = repairMemberTotalsForDonorRoster(persisted.state, body.state);
-  if (buildDonationRosterBackupPayload(repaired)) {
+  const donorsEmpty =
+    normalizeDonorsArray(repaired.donors).length === 0 && totalCombined(repaired) <= 0;
+  if (mode === "replace" && donorsEmpty) {
+    /** 마지막 후원 삭제 후 구 백업이 GET에서 되살리지 않게 */
+    void clearDonationRosterBackup(userId, repaired.settlementResetAt);
+  } else if (buildDonationRosterBackupPayload(repaired)) {
     void saveDonationRosterBackup(userId, repaired);
   }
 

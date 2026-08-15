@@ -7,6 +7,7 @@ import {
 } from "@/app/api/_shared/upstash-app-state";
 import { getSigUploadPersistentDataDir } from "@/lib/sig-upload-storage";
 import {
+  hasMeaningfulMemberRoster,
   isDefaultPlaceholderMemberList,
   normalizeDonorsArray,
   totalCombined,
@@ -87,9 +88,20 @@ export function shouldRestoreDonationRosterFromBackup(
   /**
    * 완전 비었을 때만 복구. 부분 삭제(shrink)는 정상 동작이므로
    * backup.donorsCount > curDonors.length 이면 되살리지 않음.
+   * 실멤버를 유지한 채 후원만 비운 경우(마지막 1건 삭제)도 되살리지 않음.
    */
-  if (curDonors.length === 0 && backup.donorsCount > 0) return true;
-  if (curTotal === 0 && backup.total > 0) return true;
+  if (curDonors.length === 0 && backup.donorsCount > 0) {
+    if (!placeholderMembers && hasMeaningfulMemberRoster({ members: current?.members || [] } as AppState)) {
+      return false;
+    }
+    return true;
+  }
+  if (curTotal === 0 && backup.total > 0) {
+    if (!placeholderMembers && hasMeaningfulMemberRoster({ members: current?.members || [] } as AppState)) {
+      return false;
+    }
+    return true;
+  }
   return false;
 }
 

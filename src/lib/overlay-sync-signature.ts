@@ -299,8 +299,21 @@ export function shouldRejectPoorerDonationRemote(
   const remoteDonorList = Array.isArray(remote.donors) ? remote.donors : [];
   const localDonors = localDonorList.length;
   const remoteDonors = remoteDonorList.length;
-  /** 정산 리셋 없이 완전 빈 원격은 로컬 후원을 덮지 않음 */
-  if (localDonors > 0 && remoteDonors === 0) return true;
+  /**
+   * 관리자 마지막 1건 삭제 — 실멤버 유지 + donors shrink + donorRankingsUpdatedAt 상승.
+   * (테마/빈 GET 사고성 덮어쓰기는 계속 거부)
+   */
+  const allowIntentionalEmptyOrShrink =
+    isNewerIntentionalDonationShrink(remote, local) &&
+    hasMeaningfulMemberRoster(remote) &&
+    !shouldBlockAccidentalEmptyOverwrite(local, remote) &&
+    remoteDonors < localDonors &&
+    Number(remote.donorRankingsUpdatedAt || 0) > Number(local.donorRankingsUpdatedAt || 0);
+  /** 정산 리셋 없이 완전 빈 원격은 로컬 후원을 덮지 않음 — 의도적 마지막 삭제는 예외 */
+  if (localDonors > 0 && remoteDonors === 0) {
+    if (allowIntentionalEmptyOrShrink) return false;
+    return true;
+  }
 
   const localTotal = (local.members || []).reduce(
     (sum, m) =>
@@ -326,7 +339,10 @@ export function shouldRejectPoorerDonationRemote(
     if (!remoteRicher) return true;
   }
 
-  if (localTotal > 0 && remoteTotal === 0 && remoteDonors === 0) return true;
+  if (localTotal > 0 && remoteTotal === 0 && remoteDonors === 0) {
+    if (allowIntentionalEmptyOrShrink) return false;
+    return true;
+  }
 
   /**
    * 엑셀 members 합계가 0인데 서버 donors·revision 만 앞선 경우

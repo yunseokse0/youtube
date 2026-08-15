@@ -999,9 +999,13 @@ export async function POST(req: Request) {
       void saveSigInventoryBackup(userId, next.sigInventory);
     }
 
-    /** 후원 금액 — 재시작·메인 상태 유실 대비 별도 백업. 명시 정산 리셋일 때만 백업도 비움 */
+    /** 후원 금액 — 재시작·메인 상태 유실 대비 별도 백업. 리셋·의도적 전체 비움 시 백업도 비움 */
     if (settlementReset) {
       await clearDonationRosterBackup(userId, next.settlementResetAt);
+    } else if (normalizeDonorsArray(next.donors).length === 0 && totalCombined(next) <= 0) {
+      if (donorsAuthoritative || authoritativeReplace) {
+        void clearDonationRosterBackup(userId, next.settlementResetAt);
+      }
     } else if (normalizeDonorsArray(next.donors).length > 0 || totalCombined(next) > 0) {
       void saveDonationRosterBackup(userId, next);
     }

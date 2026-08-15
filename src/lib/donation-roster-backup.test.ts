@@ -125,6 +125,17 @@ describe("donation-roster-backup", () => {
     expect(shouldRestoreDonationRosterFromBackup(afterDelete, backup)).toBe(false);
   });
 
+  it("does not restore backup after intentional last-donor clear with real members", () => {
+    const backup = buildDonationRosterBackupPayload(richState())!;
+    const afterLastDelete: AppState = {
+      ...richState(),
+      donors: [],
+      members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 }],
+      updatedAt: Date.now() + 9999,
+    };
+    expect(shouldRestoreDonationRosterFromBackup(afterLastDelete, backup)).toBe(false);
+  });
+
   it("applies backup members and donors to empty state", () => {
     const backup = buildDonationRosterBackupPayload(richState()) as DonationRosterBackupPayload;
     const next = applyDonationRosterBackupToState(defaultState(), backup);

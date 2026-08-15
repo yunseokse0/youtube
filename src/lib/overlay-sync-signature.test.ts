@@ -240,6 +240,28 @@ describe("shouldRejectPoorerDonationRemote", () => {
     expect(shouldRejectPoorerDonationRemote(local, resetRemote)).toBe(false);
   });
 
+  it("allows intentional last-donor delete to empty with real members", async () => {
+    const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      donorRankingsUpdatedAt: 1000,
+      settlementResetAt: 500,
+      donors: [
+        { id: "d1", name: "a", amount: 10000, memberId: "m1", at: 1, target: "toon" as const },
+      ],
+      members: [{ id: "m1", name: "루니", account: 0, toon: 10000, contribution: 10000 }],
+    };
+    const emptied = {
+      ...local,
+      updatedAt: 2000,
+      donorRankingsUpdatedAt: 2000,
+      donors: [] as typeof local.donors,
+      members: [{ id: "m1", name: "루니", account: 0, toon: 0, contribution: 0 }],
+    };
+    expect(shouldRejectPoorerDonationRemote(local, emptied)).toBe(false);
+  });
+
   it("rejects placeholder wipe even when settlementResetAt is newer", async () => {
     const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
     const local = {
