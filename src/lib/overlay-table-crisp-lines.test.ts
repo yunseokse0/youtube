@@ -51,4 +51,26 @@ describe("overlay table crisp lines", () => {
     expect(snapOverlayScaleForCrispLines(1.004, 1)).toBe(1);
     expect(snapOverlayScaleForCrispLines(1.01, 2)).toBe(1.01);
   });
+
+  it("omits column vertical lines when verticalLines is false", () => {
+    const css = overlayTableCellGridCss({
+      lineColor: "#abc",
+      widthPx: 2,
+      verticalLines: false,
+    });
+    expect(css).toContain("thead td:first-child");
+    expect(css).toContain("tbody tr.overlay-row td:first-child");
+    // 중간 칸은 좌측(세로) 선 없음 — 기본 규칙은 top만
+    expect(css).toMatch(
+      /tbody tr\.overlay-row td \{\s*border: none !important;\s*box-shadow: inset 0 2px 0 0 #abc !important;/
+    );
+    expect(css).not.toContain("overlay-col-total");
+  });
+
+  it("keeps internal left edges when verticalLines defaults on", () => {
+    const css = overlayTableCellGridCss({ lineColor: "#abc", widthPx: 2 });
+    expect(css).toMatch(
+      /tbody tr\.overlay-row td \{\s*border: none !important;\s*box-shadow: inset 0 2px 0 0 #abc, inset 2px 0 0 0 #abc !important;/
+    );
+  });
 });

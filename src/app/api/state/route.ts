@@ -190,8 +190,17 @@ function mergePartialState(
   const patchSettlementReset = patch.settlementReset === true;
   const membersAuthoritative = patch.membersAuthoritative === true;
   if (!("members" in patch)) next.members = base.members;
-  else if (patchSettlementReset || membersAuthoritative || isDonationInitGoalResetPatch(patch)) {
+  else if (patchSettlementReset || isDonationInitGoalResetPatch(patch)) {
     next.members = patch.members as Member[];
+  } else if (membersAuthoritative) {
+    /**
+     * 멤버 추가·삭제 권위: 로스터(id·순서)는 patch 를 따르되,
+     * 기존 멤버 금액이 0으로 오면 base 금액을 유지(후원 있는 상태 멤버 추가 시 엑셀 초기화 방지).
+     */
+    next.members = mergeMemberRosterPreservingAmounts(
+      base.members || [],
+      patch.members as Member[]
+    );
   } else if (
     base.settlementResetAt &&
     memberCombinedTotal(base.members) === 0 &&
@@ -922,9 +931,11 @@ export async function POST(req: Request) {
      * 글자색·테마 등 시각 PATCH(members/donors 미포함)에서는
      * syncMemberTotalsFromDonors 를 돌리지 않는다.
      * 서버 donors 가 비어 있을 때 members 금액을 0으로 재계산해 버리는 회귀를 막는다.
+     * 멤버만 보낸 경우에도 donors 가 있을 때만 sync — 없으면 merge 가 보존한 금액 유지.
      */
     let draft: AppState =
-      donorsInPatch || "members" in bodyForMerge
+      donorsInPatch ||
+      ("members" in bodyForMerge && normalizeDonorsArray(dedupedDonors).length > 0)
         ? syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors })
         : { ...merged, donors: dedupedDonors };
     /**

@@ -10,6 +10,7 @@ import {
   shouldDefaultSharpRenderOnBroadcastHost,
   resolveTableBgColor,
   resolveTableFontFamilyId,
+  resolveTableVerticalLines,
   resolveTimerOverlayStyle,
   stripAdminPreviewHotReloadParams,
   type OverlayPresetLike,
@@ -369,5 +370,19 @@ describe("admin preview hot-reload params", () => {
     const merged = mergeOverlayPresetsForOverlayView(remote, local, sp);
     expect(merged[0]?.theme).toBe("excel");
     expect(merged[0]?.accountHeaderLabel).toBe("캐시");
+  });
+
+  it("resolveTableVerticalLines defaults on and respects false", () => {
+    expect(resolveTableVerticalLines(new URLSearchParams(), null, { ready: true })).toBe(true);
+    expect(
+      resolveTableVerticalLines(new URLSearchParams("tableVerticalLines=false"), null, {
+        ready: true,
+      })
+    ).toBe(false);
+    expect(
+      resolveTableVerticalLines(new URLSearchParams(), { id: "x", tableVerticalLines: false }, {
+        ready: true,
+      })
+    ).toBe(false);
   });
 });

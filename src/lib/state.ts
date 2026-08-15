@@ -52,6 +52,7 @@ import {
 } from "@/lib/state-api-pick";
 import { MANUAL_SIG_BROADCAST_STATE_KEY } from "@/lib/manual-sig-broadcast-state";
 import { mergeDonorRowFields, syncMemberTotalsFromDonors, repairMemberTotalsForDonorRoster } from "@/lib/donation/apply-donation-state";
+import { mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
 import { isGroupSplitDonorListMutation } from "@/lib/donation/group-split-donation";
 import { MANUAL_SIG_DRAFT_STATE_KEY } from "@/lib/manual-sig-workbench";
 import { OBS_TEXT_OVERLAY_STATE_KEY, normalizeObsTextRegistry, type ObsTextOverlayRegistry } from "@/lib/obs-text-overlay";
@@ -2301,9 +2302,39 @@ export async function saveStateAsync(
     saveOpts = { ...saveOpts, donorsReplace: true };
   }
   guarded =
-    saveOpts?.membersAuthoritative || saveOpts?.settlementReset
+    saveOpts?.settlementReset
       ? syncMemberTotalsFromDonors(guarded)
-      : repairMemberTotalsForDonorRoster(guarded, local);
+      : saveOpts?.membersAuthoritative
+        ? (() => {
+            /**
+             * 멤버 추가·삭제 권위 저장: donors 가 React에 비어 있어도 LS donors 로 합산을 맞춘다.
+             * donors 가 통째로 없으면 sync 로 금액을 0 초기화하지 않고 base 금액을 유지한다.
+             */
+            const localDonors = normalizeDonorsArray(local?.donors);
+            const nextDonors = normalizeDonorsArray(guarded.donors);
+            let withDonors = guarded;
+            if (nextDonors.length === 0 && localDonors.length > 0) {
+              withDonors = { ...guarded, donors: localDonors };
+            }
+            if (normalizeDonorsArray(withDonors.donors).length > 0) {
+              const synced = syncMemberTotalsFromDonors(withDonors);
+              if (local?.members?.length) {
+                return {
+                  ...synced,
+                  members: mergeMemberRosterPreservingAmounts(local.members, synced.members),
+                };
+              }
+              return synced;
+            }
+            if (local?.members?.length) {
+              return {
+                ...withDonors,
+                members: mergeMemberRosterPreservingAmounts(local.members, withDonors.members),
+              };
+            }
+            return withDonors;
+          })()
+        : repairMemberTotalsForDonorRoster(guarded, local);
   /**
    * donorsAuthoritative 라도 정산 리셋이 아니면, LS보다 후원이 줄어든 채 올리면
    * 미매칭 반영 등으로 엑셀표가 초기화된다.

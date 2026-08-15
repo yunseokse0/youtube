@@ -6,6 +6,7 @@ import {
   repairMemberTotalsForDonorRoster,
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
+import { mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
 import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base";
 import { maxOverlayAmountDisplayLength } from "@/lib/overlay-amount-display";
 import {
@@ -38,6 +39,7 @@ import {
   resolveTableHeaderBgColor,
   resolveTableHeaderTextColor,
   resolveTableLineColor,
+  resolveTableVerticalLines,
   resolveTableTextOutlineColor,
   resolveTableTextOutlineWidthPx,
   resolveTableHeaderTextOutlineColor,
@@ -319,8 +321,8 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
       const synced = syncMemberTotalsFromDonors(merged);
       const good = lastGoodRef.current;
       /**
-       * 멤버 추가·삭제(id 집합 변경) 직후는 옛 last-good 로스터로 repair 하지 않음.
-       * (후원이 옛 memberId 에만 맞아 신규 멤버가 통째로 사라지는 것 방지)
+       * 멤버 추가·삭제(id 집합 변경) 직후는 옛 last-good 로스터로 되돌리지 않되,
+       * 공통 멤버 금액이 0으로 오면 last-good 금액을 유지한다.
        */
       if (
         good &&
@@ -328,7 +330,10 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         membersDifferByIds(synced.members, good.members || []) &&
         Number(synced.updatedAt || 0) >= Number(good.updatedAt || 0)
       ) {
-        return synced;
+        return {
+          ...synced,
+          members: mergeMemberRosterPreservingAmounts(good.members || [], synced.members),
+        };
       }
       return repairMemberTotalsForDonorRoster(synced, lastGoodRef.current, merged);
     },
@@ -532,7 +537,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         const remoteRicher = Boolean(
           remoteForApply && isRicherDonationSnapshot(remoteForApply, lastGoodRef.current)
         );
-        /** 서버에 멤버가 늘어난 경우(추가) — last-good 보호로 막지 않음 */
+        /** 서버에 멤버가 늘어난 경우(추가) — last-good 로스터로 막지 않되, 금액이 빈약하면 last-good 금액을 합침 */
         const remoteAddedMembers =
           Boolean(remoteForApply) &&
           Boolean(lastGoodRef.current) &&
@@ -540,6 +545,23 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
             remoteForApply!.members,
             lastGoodRef.current!.members
           );
+        if (
+          remoteAddedMembers &&
+          remoteForApply &&
+          lastGoodRef.current &&
+          isRicherDonationSnapshot(lastGoodRef.current, remoteForApply)
+        ) {
+          const goodDonors = normalizeDonorsArray(lastGoodRef.current.donors);
+          const remoteDonors = normalizeDonorsArray(remoteForApply.donors);
+          remoteForApply = {
+            ...remoteForApply,
+            members: mergeMemberRosterPreservingAmounts(
+              lastGoodRef.current.members,
+              remoteForApply.members
+            ),
+            donors: remoteDonors.length > 0 ? remoteDonors : goodDonors,
+          };
+        }
         /**
          * OBS: 서버에 후원·금액이 있으면 last-good 옛 값을 버리지 않고 서버를 따름.
          * 그 외: 삭제 SSE → forceFull 이 빈/구 Redis 를 덮어쓰면 엑셀표가 0 초기화된다.
@@ -2440,6 +2462,7 @@ function OverlayInner() {
   const tableHeaderBgColorRaw = resolveTableHeaderBgColor(rawSp, effectivePreset, { ready });
   const tableHeaderTextColorRaw = resolveTableHeaderTextColor(rawSp, effectivePreset, { ready });
   const tableLineColorRaw = resolveTableLineColor(rawSp, effectivePreset, { ready });
+  const tableVerticalLines = resolveTableVerticalLines(rawSp, effectivePreset, { ready });
   const excelRankTop3Style = useMemo(
     () => resolveExcelRankTop3Style(rawSp, effectivePreset, { ready }),
     [rawSp, effectivePreset, ready]
@@ -4256,6 +4279,7 @@ function OverlayInner() {
           /** 총합 행이 헤더와 같은 분홍 계열일 때 분홍 선이 묻히지 않게 */
           totalRowLineColor: tableLineColorRaw || "rgba(255, 255, 255, 0.72)",
           emphasizeTotalColumn: totalLineVisible,
+          verticalLines: tableVerticalLines,
         })}
         .overlay-root .overlay-elegant-table {
           border-collapse: separate !important;

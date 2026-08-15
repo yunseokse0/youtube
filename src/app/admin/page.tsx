@@ -292,7 +292,7 @@ type OverlayPreset = {
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontFamily?: string; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; totalTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
+  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; tableVerticalLines?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; totalTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
   rankTop3Mode?: string; rankTop3Effect?: string; rankLabelFormat?: string; rank1Bg?: string; rank2Bg?: string; rank3Bg?: string; rank1Mark?: string; rank2Mark?: string; rank3Mark?: string; rank1Effect?: string; rank2Effect?: string; rank3Effect?: string; rank1TextColor?: string; rank2TextColor?: string; rank3TextColor?: string; rank1TextColorAlt?: string; rank2TextColorAlt?: string; rank3TextColorAlt?: string;
 };
 
@@ -911,6 +911,7 @@ export default function AdminPage() {
     confettiMilestone: "",
     tableBgOpacity: "",
     totalLineVisible: false,
+    tableVerticalLines: true,
     tableBgGifUrl: "",
     tableBgGifOpacity: "45",
     tableBgGifBrightness: "100",
@@ -3432,14 +3433,22 @@ export default function AdminPage() {
       stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, now);
       membersAuthoritativeSaveUntilRef.current = Date.now() + 120_000;
       pendingUnsyncedRef.current = true;
+      /** React donors 가 비어도 LS에 후원이 있으면 함께 보내 엑셀 금액 sync 가 0으로 덮이지 않게 */
+      const lsDonors = normalizeDonorsArray(loadState(user?.id)?.donors);
+      const reactDonors = normalizeDonorsArray(next.donors);
+      const donorsForSave = reactDonors.length > 0 ? reactDonors : lsDonors;
+      const toPersist: AppState =
+        donorsForSave.length > 0 && reactDonors.length === 0
+          ? { ...next, donors: donorsForSave }
+          : next;
       try {
-        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(next));
+        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toPersist));
       } catch {}
-      notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
+      notifyBroadcastStateLocalUpdated(user?.id, toPersist.updatedAt);
       /** persistState 큐 경합을 피하고 멤버 권위 저장을 즉시 보냄 */
-      void saveStateAsync(next, user?.id, {
+      void saveStateAsync(toPersist, user?.id, {
         membersAuthoritative: true,
-        ...(normalizeDonorsArray(next.donors).length > 0
+        ...(normalizeDonorsArray(toPersist.donors).length > 0
           ? { donorsAuthoritative: true as const }
           : { omitDonationFields: true as const }),
       }).then(async (r) => {
@@ -3464,9 +3473,17 @@ export default function AdminPage() {
             isMemberRosterStrictSuperset(localNow.members, remote.members)
           ) {
             membersAuthoritativeSaveUntilRef.current = Date.now() + 120_000;
-            const again = await saveStateAsync(localNow, user?.id, {
+            const againDonors =
+              normalizeDonorsArray(localNow.donors).length > 0
+                ? normalizeDonorsArray(localNow.donors)
+                : normalizeDonorsArray(loadState(user?.id)?.donors);
+            const againState =
+              againDonors.length > 0 && normalizeDonorsArray(localNow.donors).length === 0
+                ? { ...localNow, donors: againDonors }
+                : localNow;
+            const again = await saveStateAsync(againState, user?.id, {
               membersAuthoritative: true,
-              ...(normalizeDonorsArray(localNow.donors).length > 0
+              ...(againDonors.length > 0
                 ? { donorsAuthoritative: true as const }
                 : { omitDonationFields: true as const }),
             });
@@ -14524,6 +14541,25 @@ export default function AdminPage() {
                                         />
                                         <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.tableLineColor || "테마 자동"}</span>
                                         <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableLineColor: "" })}>테마 자동</button>
+                                      </div>
+                                      <label className="text-xs text-neutral-400">세로선</label>
+                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                        <button
+                                          type="button"
+                                          className={`px-2.5 py-1 rounded border text-xs font-medium ${
+                                            p.tableVerticalLines !== false
+                                              ? "border-emerald-400 bg-emerald-800/50 text-emerald-100"
+                                              : "border-rose-400/60 bg-rose-950/40 text-rose-100"
+                                          }`}
+                                          onClick={() =>
+                                            updatePreset(p.id, {
+                                              tableVerticalLines: p.tableVerticalLines === false,
+                                            })
+                                          }
+                                        >
+                                          {p.tableVerticalLines !== false ? "표시 ON" : "숨김 OFF"}
+                                        </button>
+                                        <span className="text-[10px] text-neutral-500">열 구분 세로선 (가로선·외곽은 유지)</span>
                                       </div>
                                     </div>
                                   </div>

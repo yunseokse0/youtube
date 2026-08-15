@@ -73,4 +73,22 @@ describe("member-roster-merge", () => {
     expect(merged[0]?.name).toBe("새이름");
     expect(merged[0]?.account).toBe(9000);
   });
+
+  it("keeps existing member totals when adding a new zero member", () => {
+    const base = [
+      m({ id: "a", name: "헛치", account: 10000, toon: 5000 }),
+      m({ id: "b", name: "현민", account: 3000, toon: 0 }),
+    ];
+    const patch = [
+      m({ id: "a", name: "헛치", account: 0, toon: 0 }),
+      m({ id: "b", name: "현민", account: 0, toon: 0 }),
+      m({ id: "c", name: "신규", account: 0, toon: 0 }),
+    ];
+    const merged = mergeMemberRosterPreservingAmounts(base, patch);
+    expect(merged.map((x) => x.id)).toEqual(["a", "b", "c"]);
+    expect(merged[0]?.account).toBe(10000);
+    expect(merged[0]?.toon).toBe(5000);
+    expect(merged[1]?.account).toBe(3000);
+    expect(merged[2]?.account).toBe(0);
+  });
 });
