@@ -397,7 +397,8 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.host && preset.host.trim()) q.set("host", preset.host.trim());
   /** showGoal 여부와 무관 — live 프리셋·URL에 목표 글자색 항상 포함 */
   appendGoalBarStyleParams(q, preset);
-  if (preset.overlayTextSharpRender) q.set("textSharp", "1");
+  if (preset.overlayTextSharpRender === false) q.set("textSharp", "0");
+  else if (preset.overlayTextSharpRender) q.set("textSharp", "1");
   return q;
 }
 
@@ -1456,16 +1457,15 @@ export function resolveOverlayTextSharpRender(
   const v = String(merged || "").trim().toLowerCase();
   if (v === "0" || v === "false" || v === "no") return false;
   if (v === "1" || v === "true" || v === "yes") return true;
+  if (opts.ready && preset?.overlayTextSharpRender === false) return false;
   if (opts.ready && preset?.overlayTextSharpRender) return true;
   return Boolean(opts.defaultSharpOnBroadcast);
 }
 
-/** OBS·Prism 방송 URL — 관리자 iframe 미리보기는 제외 */
+/** OBS·Prism 방송 URL — 관리자 iframe 미리보기도 동일하게 선명 모드(프리뷰↔OBS 불일치 방지) */
 export function shouldDefaultSharpRenderOnBroadcastHost(
   searchParams?: SearchParamsLike
 ): boolean {
-  if (isAdminDashboardPreviewEmbed()) return false;
-  if (isEmbeddedInSameOriginAdminFrame()) return false;
   return Boolean(searchParams && isOverlayBroadcastHost(searchParams));
 }
 

@@ -15017,7 +15017,8 @@ export default function AdminPage() {
                                 <span>
                                   <span className="font-medium text-sky-100">선명 렌더링</span>
                                   <span className="mt-0.5 block text-[10px] leading-snug text-neutral-400">
-                                    OBS·Prism에서 stroke 유지, 외곽선 blur·soft shadow 제거, geometricPrecision 적용
+                                    OBS·Prism에서 외곽 soft blur 제거, geometricPrecision 적용.
+                                    (CEF는 stroke 대신 선명한 shadow 링 — 관리자 프리뷰와 동일하게 맞춤)
                                   </span>
                                 </span>
                               </label>

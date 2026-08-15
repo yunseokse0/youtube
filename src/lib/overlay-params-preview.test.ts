@@ -7,6 +7,7 @@ import {
   mergePresetBroadcastVisualParams,
   presetToParams,
   resolveOverlayTextSharpRender,
+  shouldDefaultSharpRenderOnBroadcastHost,
   resolveTableBgColor,
   resolveTableFontFamilyId,
   resolveTimerOverlayStyle,
@@ -316,6 +317,25 @@ describe("admin preview hot-reload params", () => {
     expect(
       resolveOverlayTextSharpRender(new URLSearchParams(), preset, { ready: true })
     ).toBe(true);
+  });
+
+  it("preset overlayTextSharpRender false disables default broadcast sharp", () => {
+    const preset: OverlayPresetLike = {
+      id: "ov_soft",
+      overlayTextSharpRender: false,
+    };
+    expect(
+      resolveOverlayTextSharpRender(new URLSearchParams("host=obs"), preset, {
+        ready: true,
+        defaultSharpOnBroadcast: true,
+      })
+    ).toBe(false);
+  });
+
+  it("shouldDefaultSharpRenderOnBroadcastHost is true for obs/prism including preview hosts", () => {
+    expect(shouldDefaultSharpRenderOnBroadcastHost(new URLSearchParams("host=obs"))).toBe(true);
+    expect(shouldDefaultSharpRenderOnBroadcastHost(new URLSearchParams("host=prism"))).toBe(true);
+    expect(shouldDefaultSharpRenderOnBroadcastHost(new URLSearchParams())).toBe(false);
   });
 
   it("ignores stale URL tableFontFamily when ready and preset uses theme auto", () => {

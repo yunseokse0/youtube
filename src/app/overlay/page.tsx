@@ -3631,9 +3631,7 @@ function OverlayInner() {
     const scaleCss = Number.isFinite(effectiveScale)
       ? snapOverlayScaleForCrispLines(Number(effectiveScale))
       : 1;
-    const scaleTransform = externalHost
-      ? `translate3d(0, 0, 0) scale(${scaleCss})`
-      : `scale(${scaleCss})`;
+    const scaleTransform = `scale(${scaleCss})`;
     const scaleStyleTag = freezeScaleInExternalHost
       ? null
       : (
@@ -3642,8 +3640,8 @@ function OverlayInner() {
             transform: ${scaleTransform} !important;
             -webkit-transform: ${scaleTransform} !important;
             transform-origin: ${origin} !important;
-            -webkit-backface-visibility: hidden;
-            backface-visibility: hidden;
+            -webkit-font-smoothing: antialiased;
+            text-rendering: geometricPrecision;
           }
         ` }} />
       );
@@ -3655,14 +3653,18 @@ function OverlayInner() {
       memberFontPx = ensureCanvasFontPx(memberFontPx, mobileCanvasFitScale, mobileMinFontPx);
     }
     const mobileReadableOutline = mobileBroadcast;
-    const tableRowPadY = Math.round(memberFontPx * 0.34);
+    const tableRowPadY = Math.round(memberFontPx * 0.42);
     const tableRowPadX = Math.round(memberFontPx * 0.48);
-    const tableRowMinH = Math.round(memberFontPx * 1.62);
+    const tableRowMinH = Math.round(memberFontPx * 1.78);
     const tableOutlineDisabled = tableTextOutlineWidthPx === 0;
     const resolvedTableOutlineColor =
       tableTextOutlineColor || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
-    const outlineSharp = overlayTextSharpRender;
-    const obsStrokeDisabled = externalSafeMode && !overlayTextSharpRender;
+    const outlineSharp = Boolean(overlayTextSharpRender || externalHost);
+    /**
+     * OBS CEF에서 -webkit-text-stroke 는 가장/스케일과 겹치면 뭉개져 보임.
+     * 선명 모드여도 stroke는 끄고, blur 없는 shadow 링만 사용(관리자 프리뷰와 동일 선명도).
+     */
+    const obsStrokeDisabled = externalSafeMode;
     const tableBroadcastOutline = buildBroadcastTextOutlineStyle({
       fontSizePx: memberFontPx,
       outlineColor: resolvedTableOutlineColor,
@@ -3709,7 +3711,8 @@ function OverlayInner() {
     const tableStrokeCss = obsStrokeDisabled
       ? "0"
       : String(tableBroadcastOutline.WebkitTextStroke || tableBodyTextStroke || "0");
-    const tableTextRenderingCss = overlayTextSharpRender || !externalHost ? "geometricPrecision" : "auto";
+    const tableTextRenderingCss =
+      outlineSharp || !externalHost ? "geometricPrecision" : "auto";
     const broadcastTheadCss = useBroadcastTableChrome
       ? `
         .overlay-root .overlay-elegant-table thead td {
@@ -3767,15 +3770,15 @@ function OverlayInner() {
           border: none !important;
           box-shadow: ${overlayTableHairlineShadow("var(--excel-total-border)", { top: true }, tableGridLineWidthPx)} !important;
         }`;
-    /** OBS·Prism: stroke 생략 시에도 shadow 링 + 인라인으로 이름·숫자·직급에 동일 적용 */
+    /** OBS·Prism: stroke 생략 — blur 없는 shadow 링만(프리뷰·OBS 동일) */
     const overlayCellOutlineStyle: React.CSSProperties = tableOutlineDisabled
-      ? { fontWeight: tableFontWeight }
+      ? { fontWeight: tableFontWeight, textRendering: tableTextRenderingCss as React.CSSProperties["textRendering"] }
       : {
           textShadow: tableOutlineShadowCss,
-          WebkitTextStroke:
-            obsStrokeDisabled && !mobileReadableOutline ? 0 : tableBroadcastOutline.WebkitTextStroke,
+          WebkitTextStroke: obsStrokeDisabled ? 0 : tableBroadcastOutline.WebkitTextStroke,
           paintOrder: "stroke fill",
           fontWeight: tableFontWeight,
+          textRendering: tableTextRenderingCss as React.CSSProperties["textRendering"],
         };
     const mergeRankTop3TextStyle = (
       base: React.CSSProperties,
@@ -3798,8 +3801,8 @@ function OverlayInner() {
       <style dangerouslySetInnerHTML={{ __html: `
         html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
         .overlay-center-fixed table.overlay-elegant-table .overlay-row td,
-        .overlay-center-fixed table.overlay-elegant-table thead td { font-size: ${memberFontPx}px !important; min-height: ${Math.round(memberFontPx * 1.5)}px !important; line-height: 1.2 !important; padding: ${Math.round(memberFontPx * 0.25)}px ${Math.round(memberFontPx * 0.4)}px !important; }
-        .overlay-center-fixed table.overlay-elegant-table .overlay-total-row td { font-size: ${memberFontPx}px !important; min-height: ${Math.round(memberFontPx * 1.5)}px !important; padding: ${Math.round(memberFontPx * 0.25)}px ${Math.round(memberFontPx * 0.4)}px !important; font-weight: ${tableFontWeight} !important; }
+        .overlay-center-fixed table.overlay-elegant-table thead td { font-size: ${memberFontPx}px !important; min-height: ${tableRowMinH}px !important; line-height: 1.35 !important; padding: ${tableRowPadY}px ${tableRowPadX}px !important; }
+        .overlay-center-fixed table.overlay-elegant-table .overlay-total-row td { font-size: ${memberFontPx}px !important; min-height: ${tableRowMinH}px !important; padding: ${tableRowPadY}px ${tableRowPadX}px !important; font-weight: ${tableFontWeight} !important; }
         /* 시트 불투명도는 바깥 wrapper(tableBodySheetBgCss)만 담당 — table에 불투명/반투명 깔면 슬라이더가 안 먹음 */
         .overlay-center-fixed table { background: transparent !important; }
         .overlay-center-fixed table.overlay-elegant-table td { container-type: inline-size; white-space: nowrap !important; overflow: visible !important; }
@@ -3834,9 +3837,10 @@ function OverlayInner() {
           font-variant-numeric: tabular-nums;
           vertical-align: middle;
           text-shadow: ${overlayNumericOutlineShadow} !important;
-          -webkit-text-stroke: ${tableOutlineDisabled ? "0" : tableStrokeCss} !important;
+          -webkit-text-stroke: ${tableOutlineDisabled || obsStrokeDisabled ? "0" : tableStrokeCss} !important;
           paint-order: stroke fill !important;
           -webkit-font-smoothing: antialiased;
+          text-rendering: ${tableTextRenderingCss} !important;
         }
         .overlay-root .overlay-elegant-table td.overlay-col-name .overlay-cell-text-inner {
           white-space: nowrap;
@@ -3848,7 +3852,8 @@ function OverlayInner() {
         .overlay-root td.overlay-col-contribution,
         .overlay-root td.overlay-col-restroom {
           white-space: nowrap !important;
-          overflow: hidden !important;
+          /* stroke·shadow 가 셀 밖으로 살짝도 잘리지 않게 (hidden이면 하단이 잘림) */
+          overflow: visible !important;
           vertical-align: middle;
         }
         .overlay-root .overlay-account-cell .overlay-num-cell-inner,
@@ -3856,11 +3861,17 @@ function OverlayInner() {
         .overlay-root td.overlay-col-total .overlay-num-cell-inner,
         .overlay-root td.overlay-col-contribution .overlay-num-cell-inner,
         .overlay-root td.overlay-col-restroom .overlay-num-cell-inner {
-          display: inline-block;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
           max-width: 100%;
-          overflow: hidden;
-          text-overflow: clip;
+          overflow: visible;
+          line-height: 1.4;
+          /* 두꺼운 stroke/shadow 하단이 셀 경계에 닿지 않도록 상하 여유 */
+          padding-block: 0.18em;
           vertical-align: middle;
+          box-decoration-break: clone;
+          -webkit-box-decoration-break: clone;
         }
       ` }} />
     );
@@ -3901,7 +3912,7 @@ function OverlayInner() {
           outline: none !important;
           padding: ${tableRowPadY}px ${tableRowPadX}px !important;
           min-height: ${tableRowMinH}px !important;
-          line-height: 1.25 !important;
+          line-height: 1.35 !important;
           font-weight: ${tableFontWeight} !important;
           letter-spacing: -0.01em;
         }
@@ -4029,30 +4040,32 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table .overlay-total-row td {
           container-type: normal !important;
           font-size: ${memberFontPx}px !important;
-          line-height: 1.2 !important;
-          -webkit-text-stroke: ${overlayTextSharpRender ? tableStrokeCss : "0"} !important;
-          /* 스트로크 대신 다층 그림자로 외곽선(OBS CEF에서 stroke 생략) — 선명 렌더링 시 stroke 유지 */
+          line-height: 1.35 !important;
+          -webkit-text-stroke: 0 !important;
+          /* OBS CEF: stroke 대신 blur 없는 shadow 링(프리뷰와 동일 선명도) */
           text-shadow: ${tableOutlineShadowCss} !important;
-          text-rendering: ${overlayTextSharpRender ? "geometricPrecision" : "auto"} !important;
+          text-rendering: geometricPrecision !important;
         }
         .overlay-root .overlay-elegant-table tbody tr.overlay-row td {
           container-type: normal !important;
           font-size: ${memberFontPx}px !important;
-          line-height: 1.2 !important;
+          line-height: 1.35 !important;
           -webkit-text-stroke: 0 !important;
           text-shadow: none !important;
-          text-rendering: ${overlayTextSharpRender ? "geometricPrecision" : "auto"} !important;
+          text-rendering: geometricPrecision !important;
         }
         .overlay-root .overlay-elegant-table tbody td span:not(.overlay-rank-fx-colorShift):not(.overlay-rank-fx-rainbow):not(.overlay-rank-fx-glow):not(.overlay-rank-fx-sparkle),
         .overlay-root .overlay-elegant-table tbody td strong,
         .overlay-root .overlay-elegant-table thead td span,
         .overlay-root .overlay-elegant-table thead td strong {
-          -webkit-text-stroke: ${overlayTextSharpRender ? tableStrokeCss : "0"} !important;
+          -webkit-text-stroke: 0 !important;
           text-shadow: ${tableOutlineShadowCss} !important;
+          text-rendering: geometricPrecision !important;
+          -webkit-font-smoothing: antialiased;
         }
         .overlay-root .overlay-elegant-table .overlay-total-row td {
           font-size: ${memberFontPx}px !important;
-          line-height: 1.2 !important;
+          line-height: 1.35 !important;
         }
         `
             : ""
@@ -4066,7 +4079,7 @@ function OverlayInner() {
           -webkit-backdrop-filter: none !important;
           border: none !important;
           border-bottom: none !important;
-          padding: ${Math.round(memberFontPx * 0.28)}px ${Math.round(memberFontPx * 0.4)}px !important;
+          padding: ${tableRowPadY}px ${tableRowPadX}px !important;
           font-size: ${memberFontPx}px !important;
           font-weight: ${tableFontWeight} !important;
           vertical-align: middle;
@@ -4359,10 +4372,14 @@ function OverlayInner() {
                     boxShadow: showTableFrame ? "none" : tablePanelShadow || "none",
                     padding: 0,
                     backgroundColor: tableBodySheetBgCss,
-                    /** CEF에서 외곽선이 스케일 때 깨지지 않게 레이어 고정 */
-                    transform: "translateZ(0)",
-                    WebkitBackfaceVisibility: "hidden",
-                    backfaceVisibility: "hidden",
+                    /** translateZ(0) 는 OBS CEF에서 서브픽셀 블러를 유발 → 외부 호스트에서는 생략 */
+                    ...(externalHost
+                      ? {}
+                      : {
+                          transform: "translateZ(0)",
+                          WebkitBackfaceVisibility: "hidden" as const,
+                          backfaceVisibility: "hidden" as const,
+                        }),
                   }}
                 >
                     <table

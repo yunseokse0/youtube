@@ -48,11 +48,16 @@ function liveThemeOutlineWidth(
   return readOutlineWidth(sp, "outlineWidth", saved);
 }
 
-function donorRankingsOutlineCssBlock(outlineColor: string, outlineWidthPx?: number): string {
+function donorRankingsOutlineCssBlock(
+  outlineColor: string,
+  outlineWidthPx?: number,
+  sharp = true
+): string {
   const resolved = outlineColor.trim() || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
   const shadow = buildBroadcastTextOutlineShadowCss({
     outlineColor: resolved,
     outlineWidthPx,
+    sharp,
   });
   if (!shadow) return "";
   return `
@@ -62,9 +67,10 @@ function donorRankingsOutlineCssBlock(outlineColor: string, outlineWidthPx?: num
       white-space: inherit;
       vertical-align: middle;
       -webkit-font-smoothing: antialiased;
-      text-rendering: optimizeLegibility;
+      text-rendering: geometricPrecision;
       paint-order: stroke fill !important;
       text-shadow: ${shadow} !important;
+      -webkit-text-stroke: 0 !important;
     }
     /* 트로피·이모지 순위 아이콘에는 외곽선 링을 먹지 않게 (깨져 보이는 원인) */
     .donor-rankings-overlay-root .overlay-rank-icon,
@@ -360,16 +366,21 @@ function RankingRow({
   disableMotion?: boolean;
 }) {
   const resolvedOutlineColor = outlineColor.trim() || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
-  const rankOutline = buildOverlayCellOutlineStyle({
+  const rankOutlineRaw = buildOverlayCellOutlineStyle({
     fontSizePx: rankSize,
     outlineColor: resolvedOutlineColor,
     outlineWidthPx,
+    sharp: true,
   });
-  const rowOutline = buildOverlayCellOutlineStyle({
+  const rowOutlineRaw = buildOverlayCellOutlineStyle({
     fontSizePx: rowSize,
     outlineColor: resolvedOutlineColor,
     outlineWidthPx,
+    sharp: true,
   });
+  // OBS CEF: stroke 는 뭉개짐 → shadow 링만
+  const rankOutline = { ...rankOutlineRaw, WebkitTextStroke: "0" as const };
+  const rowOutline = { ...rowOutlineRaw, WebkitTextStroke: "0" as const };
   const isTrophy = idx <= 2;
   const rowBgRaw = idx % 2 === 0 ? rowEvenBg || "transparent" : rowOddBg || "transparent";
   const rowStyle: CSSProperties = {
@@ -522,11 +533,13 @@ function RankingColumn({
   bodyImageBelowTitle?: ReactNode;
   bodyImageBelowList?: ReactNode;
 }) {
-  const titleOutline = buildOverlayCellOutlineStyle({
+  const titleOutlineRaw = buildOverlayCellOutlineStyle({
     fontSizePx: titleSize,
     outlineColor: outlineColor.trim() || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR,
     outlineWidthPx,
+    sharp: true,
   });
+  const titleOutline = { ...titleOutlineRaw, WebkitTextStroke: "0" as const };
   const outerClass = unified
     ? `relative z-[1] flex min-w-0 flex-1 flex-col overflow-visible ${
         showColumnDivider
@@ -794,7 +807,7 @@ export default function DonorRankingsOverlayPage() {
   const mainClass = hostObs
     ? "donor-rankings-overlay-root pointer-events-none fixed inset-0 z-[120] w-full max-w-[100vw] overflow-visible bg-transparent p-2 sm:p-5 md:[background:var(--ov-donor-bg)]"
     : "donor-rankings-overlay-root relative min-h-screen w-full max-w-[100vw] overflow-visible bg-transparent p-2 sm:p-5 md:[background:var(--ov-donor-bg)]";
-  const outlineCss = donorRankingsOutlineCssBlock(outlineColor, outlineWidthPx);
+  const outlineCss = donorRankingsOutlineCssBlock(outlineColor, outlineWidthPx, true);
 
   return (
     <main
