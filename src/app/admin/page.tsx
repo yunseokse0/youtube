@@ -3007,6 +3007,7 @@ export default function AdminPage() {
     const scalePct = Number.isFinite(n) ? Math.max(50, Math.min(300, n)) : 100;
     const q = new URLSearchParams();
     q.set("u", uid);
+    q.set("host", "obs");
     q.set("scalePct", String(scalePct));
     q.set("contentWidthPct", String(getBattleContentWidthPct()));
     return `${window.location.origin}/overlay/sig-match?${q.toString()}`;
@@ -3019,6 +3020,7 @@ export default function AdminPage() {
     const scalePct = Number.isFinite(n) ? Math.max(50, Math.min(300, n)) : 100;
     const q = new URLSearchParams();
     q.set("u", uid);
+    q.set("host", "obs");
     q.set("scalePct", String(scalePct));
     q.set("contentWidthPct", String(getBattleContentWidthPct()));
     return `${window.location.origin}/overlay/meal-match?${q.toString()}`;
@@ -8822,7 +8824,7 @@ export default function AdminPage() {
                 <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                   <span>오버레이 URL:</span>
                   <code className="text-neutral-300 break-all">
-                    /overlay/sig-match?u={overlayUserId}&scalePct={getBattleScalePct()}&contentWidthPct=
+                    /overlay/sig-match?u={overlayUserId}&host=obs&scalePct={getBattleScalePct()}&contentWidthPct=
                     {getBattleContentWidthPct()}
                   </code>
                   <button

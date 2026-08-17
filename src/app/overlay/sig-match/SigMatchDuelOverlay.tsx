@@ -8,6 +8,7 @@ import { defaultState } from "@/lib/state";
 import { snapshotToSigMatchState } from "@/lib/sig-match-snapshot";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
+import { readDonationListsOverlayPollMs } from "@/lib/overlay-pull-policy";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 import { SIG_MATCH_OVERLAY_UI_REV } from "@/lib/overlay-ui-revision";
 import { showOverlayDevHud, useOverlayHubCompactLayout } from "@/lib/overlay-dev-hud";
@@ -44,6 +45,7 @@ function SigVsBarSegmentLabel({
   score,
   scoringMode,
   leading = false,
+  compact = false,
 }: {
   score: number;
   scoringMode: "count" | "amount";
@@ -60,6 +62,7 @@ function SigVsBarSegmentLabel({
     >
       <BattleGaugeFitScore
         label={label}
+        maxFontPx={compact ? 16 : 20}
         className="block max-w-full whitespace-nowrap font-black tabular-nums"
         style={sigGaugeInBarScoreStyle(leading)}
       />
@@ -231,21 +234,21 @@ function SigTeamMemberBox({
       aria-label={teamLeading ? "선두 팀" : undefined}
       className={`w-full min-w-[8.5rem] max-w-[11rem] rounded-md border px-2 py-1.5 backdrop-blur-sm transition-colors sm:min-w-[9.5rem] sm:max-w-[12rem] sm:px-2.5 ${borderClass} ${sigTeamBoxLeadingClasses(teamTint, teamLeading)} ${boxPos}`}
     >
-      <ul className="flex flex-col gap-1">
+      <ul className="flex flex-col gap-0.5">
         {members.map((m, idx) => {
           const amountLabel = formatSigMatchScoreLabel(m.score, scoringMode);
           return (
             <li
               key={m.memberId}
-              className={`flex min-w-0 ${rowDir} items-center gap-1.5 ${rowJustify} ${
-                idx > 0 ? "border-t border-white/8 pt-1" : ""
+              className={`flex min-w-0 ${rowDir} items-center gap-1 ${rowJustify} ${
+                idx > 0 ? "border-t border-white/8 pt-0.5" : ""
               }`}
             >
-              <span className={`min-w-0 flex-1 truncate text-xs font-semibold sm:text-sm ${nameClass}`}>
+              <span className={`min-w-0 flex-1 truncate text-[10px] font-semibold leading-tight sm:text-[11px] ${nameClass}`}>
                 {m.name}
               </span>
               <span
-                className={`shrink-0 whitespace-nowrap font-bold tabular-nums text-xs sm:text-sm ${
+                className={`max-w-[5rem] shrink-0 truncate whitespace-nowrap font-bold tabular-nums text-[10px] leading-tight sm:max-w-[5.5rem] sm:text-[11px] ${
                   teamLeading ? "text-white" : scoreClass
                 }`}
               >
@@ -350,6 +353,9 @@ function useSigMatchState(userId: string | undefined, lockedSnapshot: AppState |
     frozenState: lockedSnapshot ?? undefined,
     enabled: !lockedSnapshot,
     storageDebounceMs: 0,
+    /** host=obs 없어도 후원·점수 실시간 반영 (OBS CEF·admin iframe) */
+    adminPreviewAllowPoll: true,
+    overlayPollMs: readDonationListsOverlayPollMs() || 2500,
   });
 }
 

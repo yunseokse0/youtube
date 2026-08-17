@@ -260,13 +260,17 @@ function applySyncedState(
   }
 
   if (nextSig === refs.lastVisualSigRef.current) {
-    if (pickRev > 0) {
-      refs.lastSyncedUpdatedAtRef.current = Math.max(
-        refs.lastSyncedUpdatedAtRef.current,
-        pickRev
-      );
+    const dr = pick !== STATE_PICK_OBS_TEXT ? readDonorRankingsRevision(dataForApply) : 0;
+    const donorRevAdvanced = dr > 0 && dr > refs.lastSyncedDonorRevRef.current;
+    if (!donorRevAdvanced) {
+      if (pickRev > 0) {
+        refs.lastSyncedUpdatedAtRef.current = Math.max(
+          refs.lastSyncedUpdatedAtRef.current,
+          pickRev
+        );
+      }
+      return false;
     }
-    return false;
   }
 
   refs.lastVisualSigRef.current = nextSig;

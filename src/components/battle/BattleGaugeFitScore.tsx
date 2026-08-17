@@ -12,14 +12,17 @@ export default function BattleGaugeFitScore({
   className,
   style,
   children,
+  maxFontPx = 22,
 }: {
   label: string;
   className?: string;
   style?: CSSProperties;
   children?: ReactNode;
+  /** 막대 높이·폭 실측 후에도 넘치지 않게 상한(px) */
+  maxFontPx?: number;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const [fontPx, setFontPx] = useState(16);
+  const [fontPx, setFontPx] = useState(Math.min(14, maxFontPx));
 
   useLayoutEffect(() => {
     const parent = ref.current?.parentElement;
@@ -29,9 +32,10 @@ export default function BattleGaugeFitScore({
       const h = parent.clientHeight;
       const w = parent.clientWidth;
       if (h < 1 || w < 1) return;
-      const byH = h * 0.56;
+      const byH = h * 0.44;
       const byW = (w * battleGaugeScoreWidthCqw(Array.from(label).length)) / 100;
-      const next = Math.round(Math.max(10, Math.min(36, Math.min(byH, byW))) * 10) / 10;
+      const cap = Math.max(9, maxFontPx);
+      const next = Math.round(Math.max(9, Math.min(cap, Math.min(byH, byW))) * 10) / 10;
       setFontPx((prev) => (Math.abs(prev - next) < 0.35 ? prev : next));
     };
 
@@ -39,7 +43,7 @@ export default function BattleGaugeFitScore({
     const ro = new ResizeObserver(apply);
     ro.observe(parent);
     return () => ro.disconnect();
-  }, [label]);
+  }, [label, maxFontPx]);
 
   return (
     <span
@@ -50,6 +54,8 @@ export default function BattleGaugeFitScore({
         fontSize: `${fontPx}px`,
         lineHeight: 1,
         maxWidth: "100%",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
       }}
     >
       {children ?? label}

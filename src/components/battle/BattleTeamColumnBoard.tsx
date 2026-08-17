@@ -63,6 +63,7 @@ export default function BattleTeamColumnBoard({
   const barH = compact ? "h-12 sm:h-14" : "h-14 sm:h-16";
   const nameSize = compact ? "text-xs sm:text-sm" : "text-sm sm:text-base";
   const gapSize = compact ? "text-[10px] sm:text-xs" : "text-xs sm:text-sm";
+  const gaugeMaxFontPx = compact ? 16 : 20;
   const leftLabel = formatScore(leftScore);
   const rightLabel = formatScore(rightScore);
 
@@ -88,6 +89,7 @@ export default function BattleTeamColumnBoard({
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
             <BattleGaugeFitScore
               label={leftLabel}
+              maxFontPx={gaugeMaxFontPx}
               className="relative z-[1] px-1.5 font-black tabular-nums tracking-tight"
               style={scoreTextStyle()}
             />
@@ -106,6 +108,7 @@ export default function BattleTeamColumnBoard({
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
             <BattleGaugeFitScore
               label={rightLabel}
+              maxFontPx={gaugeMaxFontPx}
               className="relative z-[1] px-1.5 font-black tabular-nums tracking-tight"
               style={scoreTextStyle()}
             />

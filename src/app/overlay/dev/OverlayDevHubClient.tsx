@@ -158,7 +158,7 @@ export default function OverlayDevHubClient() {
         id: "sig-match",
         title: "시그 대전",
         desc: "시그 매치 게이지·듀얼 UI.",
-        obsPath: `/overlay/sig-match?u={u}`,
+        obsPath: `/overlay/sig-match?u={u}&host=obs`,
       },
       {
         id: "meal-match",
