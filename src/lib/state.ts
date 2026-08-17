@@ -3808,18 +3808,20 @@ export function shouldAvoidOverwritingLocalStateWithRemote(
   incoming: AppState | null | undefined
 ): boolean {
   if (!existing || !incoming) return false;
+  /** 사고성 멤버1…/빈 후원은 stamp·풍부도와 무관하게 실로스터를 덮지 않음 */
+  if (shouldBlockAccidentalEmptyOverwrite(existing, incoming)) {
+    return true;
+  }
   if (hasMeaningfulMemberRoster(existing) && !hasMeaningfulMemberRoster(incoming)) {
     /**
      * 로컬만 실멤버명(이름 변경)이고 원격은 멤버1·2… 이어도,
      * 원격 후원·합계가 더 풍부하면 덮어쓰기를 허용한다(이름은 apply 측에서 병합).
+     * 단 빈 플레이스홀더는 위에서 already blocked.
      */
     const incomingRicher =
       totalCombined(incoming) > totalCombined(existing) ||
       normalizeDonorsArray(incoming.donors).length > normalizeDonorsArray(existing.donors).length;
     if (!incomingRicher) return true;
-  }
-  if (shouldBlockAccidentalEmptyOverwrite(existing, incoming)) {
-    return true;
   }
   const existingReset = Number(existing.settlementResetAt || 0);
   const incomingReset = Number(incoming.settlementResetAt || 0);

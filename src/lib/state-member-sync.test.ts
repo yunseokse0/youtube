@@ -5,6 +5,8 @@ import {
   hasExpandedSigInventory,
   hasMeaningfulBroadcastData,
   hasMeaningfulMemberRoster,
+  isAccidentalEmptyRosterState,
+  shouldBlockAccidentalEmptyOverwrite,
   hasSigSalesMemberPresets,
   isDefaultLikeState,
   isDefaultPlaceholderMemberList,
@@ -62,6 +64,54 @@ describe("member sync helpers", () => {
     };
     expect(isDefaultPlaceholderMemberList(withMoney.members)).toBe(true);
     expect(hasMeaningfulMemberRoster(withMoney)).toBe(false);
+  });
+
+  it("blocks accidental placeholder wipe even when remote settlementResetAt is newer", () => {
+    const local: AppState = {
+      ...defaultState(),
+      settlementResetAt: 100,
+      updatedAt: 1000,
+      members: [
+        { id: "m1", name: "헛치", account: 10000, toon: 0, contribution: 10000 },
+        { id: "m2", name: "현민", account: 5000, toon: 0, contribution: 5000 },
+      ],
+      donors: [
+        { id: "d1", name: "a", amount: 10000, memberId: "m1", at: 1, target: "account" },
+      ],
+    };
+    const remotePlaceholder: AppState = {
+      ...defaultState(),
+      settlementResetAt: 9999,
+      updatedAt: 2000,
+      members: buildDefaultMembersCount(3),
+      donors: [],
+    };
+    expect(isAccidentalEmptyRosterState(remotePlaceholder)).toBe(true);
+    expect(shouldBlockAccidentalEmptyOverwrite(local, remotePlaceholder)).toBe(true);
+    expect(shouldAvoidOverwritingLocalStateWithRemote(local, remotePlaceholder)).toBe(true);
+  });
+
+  it("allows keep-members settlement reset (real names, zero amounts) to overwrite", () => {
+    const local: AppState = {
+      ...defaultState(),
+      settlementResetAt: 100,
+      members: [
+        { id: "m1", name: "헛치", account: 10000, toon: 0, contribution: 10000 },
+      ],
+      donors: [
+        { id: "d1", name: "a", amount: 10000, memberId: "m1", at: 1, target: "account" },
+      ],
+    };
+    const remoteKeepMembers: AppState = {
+      ...defaultState(),
+      settlementResetAt: 9999,
+      members: [
+        { id: "m1", name: "헛치", account: 0, toon: 0, contribution: 0 },
+      ],
+      donors: [],
+    };
+    expect(isAccidentalEmptyRosterState(remoteKeepMembers)).toBe(false);
+    expect(shouldBlockAccidentalEmptyOverwrite(local, remoteKeepMembers)).toBe(false);
   });
 
   it("avoids overwriting local donation totals with empty remote snapshot", () => {

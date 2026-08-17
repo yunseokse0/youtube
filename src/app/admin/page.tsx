@@ -25,6 +25,7 @@ import {
   loadMissionsBackup,
   isDefaultLikeState,
   isAccidentalEmptyRosterState,
+  shouldBlockAccidentalEmptyOverwrite,
   isDefaultPlaceholderMemberList,
   membersDifferByIds,
   isMemberRosterStrictSuperset,
@@ -1399,6 +1400,25 @@ export default function AdminPage() {
     const remoteResetAt = Number(incoming.settlementResetAt || 0);
     const localResetAt = Number(local.settlementResetAt || 0);
     if (remoteResetAt > localResetAt) {
+      /**
+       * 정산 리셋 stamp 상승이어도, 원격이 멤버1… 플레이스홀더+빈 후원이면 사고성 유실.
+       * (정산 생성 → /settlements 이동 → 관리자 remount hydrate 에서 실멤버가 초기화되던 회귀)
+       * 라이브 폴링 applyRemoteState 와 동일 가드.
+       */
+      if (shouldBlockAccidentalEmptyOverwrite(local, incoming)) {
+        return {
+          merged: {
+            ...incoming,
+            ...local,
+            members: local.members,
+            memberPositions: normalizeMemberPositions(local.memberPositions, local.members),
+            donors: normalizeDonorsArray(local.donors),
+            settlementResetAt: local.settlementResetAt,
+            updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
+          },
+          didPreserve: true,
+        };
+      }
       return {
         merged: {
           ...incoming,
@@ -1835,7 +1855,13 @@ export default function AdminPage() {
         updatedAt: Math.max(Number(fromRef.updatedAt || 0), Number(fromLs.updatedAt || 0)),
       };
       if (apiState) {
-        const rejectPoorer = shouldRejectPoorerDonationRemote(local, apiState);
+        /**
+         * 서버가 멤버1…/빈 후원으로 앞서 있어도 LS 실데이터를 유지하고,
+         * 아래 heal 로 서버에도 다시 올려 다음 hydrate 에서 유실되지 않게 한다.
+         */
+        const blockedAccidentalEmpty = shouldBlockAccidentalEmptyOverwrite(local, apiState);
+        const rejectPoorer =
+          blockedAccidentalEmpty || shouldRejectPoorerDonationRemote(local, apiState);
         stateUpdatedAtRef.current = rejectPoorer
           ? Math.max(Number(local.updatedAt || 0), Number(apiState.updatedAt || 0))
           : apiState.updatedAt || 0;
@@ -1879,10 +1905,12 @@ export default function AdminPage() {
           restroomLogs: rejectPoorer
             ? local.restroomLogs ?? apiState.restroomLogs
             : apiState.restroomLogs,
-          settlementResetAt: Math.max(
-            Number(local.settlementResetAt || 0),
-            Number(apiState.settlementResetAt || 0)
-          ),
+          settlementResetAt: blockedAccidentalEmpty
+            ? local.settlementResetAt
+            : Math.max(
+                Number(local.settlementResetAt || 0),
+                Number(apiState.settlementResetAt || 0)
+              ),
           sigSoldOutStampUrl:
             String(apiState.sigSoldOutStampUrl || "").trim() ||
             String(merged.sigSoldOutStampUrl || "").trim() ||
