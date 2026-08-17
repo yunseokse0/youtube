@@ -4,6 +4,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+# shellcheck source=deploy/ec2-free-port.sh
+source "$ROOT/deploy/ec2-free-port.sh"
 PM2_APP="${PM2_APP:-youtube}"
 PORT="${PORT:-3000}"
 
@@ -26,9 +28,19 @@ pm2 unset "$PM2_APP" NEXT_USE_STAGING_DIST 2>/dev/null || true
 unset NEXT_BUILD_DIR NEXT_USE_STAGING_DIST || true
 
 echo "== 3) pm2 재기동 (start.cjs 가 빌드 env 제거) =="
+free_listen_port "$PORT"
 NEXT_BUILD_DIR= NEXT_USE_STAGING_DIST= pm2 start npm --name "$PM2_APP" -- start
 pm2 save 2>/dev/null || true
 sleep 3
+
+if ! curl -sf "http://127.0.0.1:${PORT}/api/health" >/dev/null 2>&1; then
+  echo "== health 실패 — 포트 재정리 후 pm2 재시도 =="
+  pm2 delete "$PM2_APP" 2>/dev/null || true
+  free_listen_port "$PORT"
+  NEXT_BUILD_DIR= NEXT_USE_STAGING_DIST= pm2 start npm --name "$PM2_APP" -- start
+  pm2 save 2>/dev/null || true
+  sleep 3
+fi
 
 echo "== 4) HTTP 검증 =="
 curl -s -o /dev/null -w "manifest: %{http_code}\n" "http://127.0.0.1:${PORT}/_next/static/${BID}/_buildManifest.js"

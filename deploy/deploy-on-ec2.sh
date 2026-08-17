@@ -14,6 +14,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+# shellcheck source=deploy/ec2-free-port.sh
+source "$ROOT/deploy/ec2-free-port.sh"
 
 PM2_APP="${PM2_APP:-youtube}"
 NODE_HEAP_MB="${NODE_HEAP_MB:-1536}"
@@ -268,7 +270,9 @@ start_pm2_app() {
   export NEXT_BUILD_DIR="" NEXT_USE_STAGING_DIST=""
   pm2 unset "$PM2_APP" NEXT_BUILD_DIR 2>/dev/null || true
   pm2 unset "$PM2_APP" NEXT_USE_STAGING_DIST 2>/dev/null || true
+  pm2 stop "$PM2_APP" 2>/dev/null || true
   pm2 delete "$PM2_APP" 2>/dev/null || true
+  free_listen_port "$PORT"
   cd "$ROOT"
   NEXT_BUILD_DIR= NEXT_USE_STAGING_DIST= pm2 start npm --name "$PM2_APP" -- start
   return $?
