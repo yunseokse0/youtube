@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import type { AppState } from "@/lib/state";
@@ -56,14 +56,14 @@ function SigVsBarSegmentLabel({
   const label = formatSigMatchScoreLabel(score, scoringMode);
   return (
     <div
-      className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center px-1 text-center"
+      className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center px-2 text-center"
       data-sig-vs-segment-label="true"
       data-sig-leading={leading ? "true" : "false"}
     >
       <BattleGaugeFitScore
         label={label}
         maxFontPx={compact ? 16 : 20}
-        className="block max-w-full whitespace-nowrap font-black tabular-nums"
+        className="block max-w-full font-black tabular-nums"
         style={sigGaugeInBarScoreStyle(leading)}
       />
     </div>
@@ -127,9 +127,18 @@ function SigVsBarCenterLabel({
 
 function sigTeamBoxLeadingClasses(_tint: "pink" | "sky" | "amber", leading: boolean): string {
   return leading
-    ? "border-white/25 bg-black/55 ring-1 ring-emerald-400/40"
-    : "border-white/10 bg-black/40 opacity-90";
+    ? "border-white/30 bg-neutral-950/92 ring-1 ring-emerald-400/50 shadow-[0_2px_10px_rgba(0,0,0,0.45)]"
+    : "border-white/20 bg-neutral-950/88 ring-1 ring-white/15 shadow-[0_2px_8px_rgba(0,0,0,0.35)]";
 }
+
+const sigMemberNameStyle: CSSProperties = {
+  color: "#ffffff",
+  textShadow: "0 1px 2px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.55)",
+};
+
+const sigMemberAmountStyle: CSSProperties = {
+  textShadow: "0 1px 2px rgba(0,0,0,0.85)",
+};
 
 function SigCleanTimerPill({
   timerPaused,
@@ -207,10 +216,11 @@ function SigTeamMemberBox({
   scoringMode,
   align,
   nameClass,
-  scoreClass = "text-white/90",
+  scoreClass = "text-white/95",
   borderClass = "border-white/15",
   teamLeading = false,
   teamTint = "pink",
+  namesOnly = false,
 }: {
   members: SigMemberScoreLine[];
   scoringMode: "count" | "amount";
@@ -220,40 +230,60 @@ function SigTeamMemberBox({
   borderClass?: string;
   teamLeading?: boolean;
   teamTint?: "pink" | "sky" | "amber";
+  /** 게이지에 팀 합산이 있으면 멤버 행은 이름만 크게 */
+  namesOnly?: boolean;
 }) {
   if (members.length === 0) return <div className="min-h-[2px]" aria-hidden />;
   const boxPos =
     align === "right" ? "ml-auto" : align === "center" ? "mx-auto" : "mr-auto";
   const rowDir = align === "right" ? "flex-row-reverse" : "flex-row";
-  const rowJustify = align === "right" ? "justify-end" : "justify-between";
+  const rowJustify = namesOnly
+    ? align === "right"
+      ? "justify-end"
+      : align === "center"
+        ? "justify-center"
+        : "justify-start"
+    : align === "right"
+      ? "justify-end"
+      : "justify-between";
 
   return (
     <div
       data-sig-team-box="true"
       data-sig-team-leading={teamLeading ? "true" : "false"}
       aria-label={teamLeading ? "선두 팀" : undefined}
-      className={`w-full min-w-[8.5rem] max-w-[11rem] rounded-md border px-2 py-1.5 backdrop-blur-sm transition-colors sm:min-w-[9.5rem] sm:max-w-[12rem] sm:px-2.5 ${borderClass} ${sigTeamBoxLeadingClasses(teamTint, teamLeading)} ${boxPos}`}
+      className={`w-full min-w-[9rem] max-w-[13rem] rounded-lg border px-2.5 py-2 backdrop-blur-md transition-colors sm:min-w-[10rem] sm:max-w-[14rem] sm:px-3 ${borderClass} ${sigTeamBoxLeadingClasses(teamTint, teamLeading)} ${boxPos}`}
     >
-      <ul className="flex flex-col gap-0.5">
+      <ul className="flex flex-col gap-1">
         {members.map((m, idx) => {
           const amountLabel = formatSigMatchScoreLabel(m.score, scoringMode);
           return (
             <li
               key={m.memberId}
-              className={`flex min-w-0 ${rowDir} items-center gap-1 ${rowJustify} ${
-                idx > 0 ? "border-t border-white/8 pt-0.5" : ""
+              className={`flex min-w-0 ${rowDir} items-center gap-1.5 ${rowJustify} ${
+                idx > 0 ? "border-t border-white/12 pt-1" : ""
               }`}
             >
-              <span className={`min-w-0 flex-1 truncate text-[10px] font-semibold leading-tight sm:text-[11px] ${nameClass}`}>
+              <span
+                className={`min-w-0 truncate font-bold leading-snug ${
+                  namesOnly
+                    ? "flex-1 text-center text-sm sm:text-base"
+                    : "flex-1 text-sm sm:text-[15px]"
+                } ${nameClass}`}
+                style={sigMemberNameStyle}
+              >
                 {m.name}
               </span>
-              <span
-                className={`max-w-[5rem] shrink-0 truncate whitespace-nowrap font-bold tabular-nums text-[10px] leading-tight sm:max-w-[5.5rem] sm:text-[11px] ${
-                  teamLeading ? "text-white" : scoreClass
-                }`}
-              >
-                {amountLabel}
-              </span>
+              {!namesOnly ? (
+                <span
+                  className={`max-w-[5.5rem] shrink-0 truncate whitespace-nowrap text-xs font-semibold tabular-nums sm:max-w-[6rem] sm:text-sm ${
+                    teamLeading ? "text-white" : scoreClass
+                  }`}
+                  style={sigMemberAmountStyle}
+                >
+                  {amountLabel}
+                </span>
+              ) : null}
             </li>
           );
         })}
@@ -930,21 +960,23 @@ export default function SigMatchDuelOverlay({
                   members={leftMemberLines}
                   scoringMode={scoringMode}
                   align="left"
-                  nameClass="text-rose-100"
-                  scoreClass="text-white/85"
-                  borderClass="border-rose-300/25"
+                  nameClass="text-rose-50"
+                  scoreClass="text-white/95"
+                  borderClass="border-rose-400/35"
                   teamLeading={Boolean(dualBar?.leftLeading)}
                   teamTint="pink"
+                  namesOnly
                 />
                 <SigTeamMemberBox
                   members={rightMemberLines}
                   scoringMode={scoringMode}
                   align="right"
-                  nameClass="text-sky-100"
-                  scoreClass="text-white/85"
-                  borderClass="border-sky-300/25"
+                  nameClass="text-sky-50"
+                  scoreClass="text-white/95"
+                  borderClass="border-sky-400/35"
                   teamLeading={Boolean(dualBar?.rightLeading)}
                   teamTint="sky"
+                  namesOnly
                 />
               </div>
             </div>

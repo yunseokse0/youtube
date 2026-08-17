@@ -77,7 +77,7 @@ export default function BattleTeamColumnBoard({
           data-battle-vs-bar="true"
         >
           <div
-            className={`relative flex h-full min-w-0 items-center justify-center overflow-hidden transition-[width] duration-500 ease-out ${
+            className={`relative h-full min-w-0 overflow-hidden transition-[width] duration-500 ease-out ${
               leftLeading ? "brightness-110" : "brightness-95"
             }`}
             style={{
@@ -87,16 +87,18 @@ export default function BattleTeamColumnBoard({
             data-battle-team-box="left"
           >
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
-            <BattleGaugeFitScore
-              label={leftLabel}
-              maxFontPx={gaugeMaxFontPx}
-              className="relative z-[1] px-1.5 font-black tabular-nums tracking-tight"
-              style={scoreTextStyle()}
-            />
+            <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center px-2">
+              <BattleGaugeFitScore
+                label={leftLabel}
+                maxFontPx={gaugeMaxFontPx}
+                className="block max-w-full font-black tabular-nums tracking-tight"
+                style={scoreTextStyle()}
+              />
+            </div>
           </div>
 
           <div
-            className={`relative flex h-full min-w-0 items-center justify-center overflow-hidden transition-[width] duration-500 ease-out ${
+            className={`relative h-full min-w-0 overflow-hidden transition-[width] duration-500 ease-out ${
               rightLeading ? "brightness-110" : "brightness-95"
             }`}
             style={{
@@ -106,12 +108,14 @@ export default function BattleTeamColumnBoard({
             data-battle-team-box="right"
           >
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
-            <BattleGaugeFitScore
-              label={rightLabel}
-              maxFontPx={gaugeMaxFontPx}
-              className="relative z-[1] px-1.5 font-black tabular-nums tracking-tight"
-              style={scoreTextStyle()}
-            />
+            <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center px-2">
+              <BattleGaugeFitScore
+                label={rightLabel}
+                maxFontPx={gaugeMaxFontPx}
+                className="block max-w-full font-black tabular-nums tracking-tight"
+                style={scoreTextStyle()}
+              />
+            </div>
           </div>
         </div>
 
