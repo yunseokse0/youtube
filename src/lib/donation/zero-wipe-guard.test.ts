@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultState } from "@/lib/state";
 import { syncMemberTotalsFromDonors } from "./apply-donation-state";
-import { guardMemberTotalsAgainstAccidentalZeroWipe } from "./zero-wipe-guard";
+import { guardMemberTotalsAgainstAccidentalZeroWipe, wouldAccidentallyZeroRemainingMembers } from "./zero-wipe-guard";
 
 describe("guardMemberTotalsAgainstAccidentalZeroWipe", () => {
   it("restores remaining member totals when sync zeroed but donors still hold amounts", () => {
@@ -63,5 +63,26 @@ describe("guardMemberTotalsAgainstAccidentalZeroWipe", () => {
     const synced = syncMemberTotalsFromDonors(afterDelete);
     const guarded = guardMemberTotalsAgainstAccidentalZeroWipe(synced, baseline);
     expect(guarded.members.find((m) => m.id === "m1")?.toon).toBe(0);
+  });
+
+  it("detects remote that zeroes remaining members while donors still hold amounts", () => {
+    const local = {
+      ...defaultState(),
+      members: [
+        { id: "m1", name: "A", account: 0, toon: 10_000, contribution: 10_000 },
+        { id: "m2", name: "B", account: 0, toon: 20_000, contribution: 20_000 },
+      ],
+      donors: [
+        { id: "d1", name: "a", amount: 10_000, memberId: "m1", at: 1, target: "toon" as const },
+        { id: "d2", name: "b", amount: 20_000, memberId: "m2", at: 2, target: "toon" as const },
+      ],
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: local.updatedAt + 1000,
+      members: [{ id: "m1", name: "A", account: 0, toon: 0, contribution: 0 }],
+      donors: [{ id: "d1", name: "a", amount: 10_000, memberId: "m1", at: 1, target: "toon" as const }],
+    };
+    expect(wouldAccidentallyZeroRemainingMembers(local, remote)).toBe(true);
   });
 });

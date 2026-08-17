@@ -9,6 +9,7 @@ import {
   shouldBlockAccidentalEmptyOverwrite,
   totalCombined,
 } from "@/lib/state";
+import { wouldAccidentallyZeroRemainingMembers } from "@/lib/donation/zero-wipe-guard";
 
 const MANUAL_SIG_DRAFT_STATE_KEY = "sigSalesManualDraftV1";
 
@@ -291,7 +292,8 @@ export function shouldRejectPoorerDonationRemote(
       remoteAt >= localAt &&
       hasMeaningfulMemberRoster(remote) &&
       removedDonorsPurged &&
-      remoteDonors.length < localDonors.length
+      remoteDonors.length < localDonors.length &&
+      !wouldAccidentallyZeroRemainingMembers(local, remote)
     ) {
       return false;
     }
@@ -301,8 +303,8 @@ export function shouldRejectPoorerDonationRemote(
   }
 
   /**
-   * 의도적 멤버 추가·삭제: id 집합이 바뀌고 원격 stamp 가 최신이면
-   * 금액이 잠깐 0이어도(옛 후원이 옛 memberId) poorer 로 막지 않음.
+   * 의도적 멤버 추가·삭제: id 집합이 바뀌고 원격 stamp 가 최신이면 수용.
+   * 단, donors 에 남은 금액이 있는데 남은 멤버 합계만 0이면 poorer 로 거부.
    */
   if (
     hasMeaningfulMemberRoster(remote) &&
@@ -311,6 +313,9 @@ export function shouldRejectPoorerDonationRemote(
     membersDifferByIds(local.members || [], remote.members) &&
     Number(remote.updatedAt || 0) >= Number(local.updatedAt || 0)
   ) {
+    if (wouldAccidentallyZeroRemainingMembers(local, remote)) {
+      return true;
+    }
     return false;
   }
 

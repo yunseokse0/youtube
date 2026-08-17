@@ -53,7 +53,7 @@ import {
 } from "@/lib/state-api-pick";
 import { MANUAL_SIG_BROADCAST_STATE_KEY } from "@/lib/manual-sig-broadcast-state";
 import { mergeDonorRowFields, syncMemberTotalsFromDonors, repairMemberTotalsForDonorRoster } from "@/lib/donation/apply-donation-state";
-import { guardMemberTotalsAgainstAccidentalZeroWipe } from "@/lib/donation/zero-wipe-guard";
+import { guardMemberTotalsAgainstAccidentalZeroWipe, wouldAccidentallyZeroRemainingMembers } from "@/lib/donation/zero-wipe-guard";
 import { mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
 import { isGroupSplitDonorListMutation } from "@/lib/donation/group-split-donation";
 import { MANUAL_SIG_DRAFT_STATE_KEY } from "@/lib/manual-sig-workbench";
@@ -2501,6 +2501,25 @@ export async function saveStateAsync(
   /** 명시 리셋 없이 LS 대비 남은 멤버 금액만 0으로 sync 되면 복구 */
   if (local && !saveOpts?.settlementReset) {
     guarded = guardMemberTotalsAgainstAccidentalZeroWipe(guarded, local);
+  }
+  /** 멤버 삭제 — donorsReplace 가 불완전하면 서버 roster-shrink 에 맡기고 금액만 LS 유지 */
+  if (
+    local &&
+    saveOpts?.membersAuthoritative &&
+    saveOpts?.donorsReplace &&
+    !saveOpts?.settlementReset &&
+    wouldAccidentallyZeroRemainingMembers(local, guarded)
+  ) {
+    saveOpts = {
+      ...saveOpts,
+      donorsReplace: false,
+      donorsAuthoritative: false,
+      omitDonationFields: true,
+    };
+    guarded = {
+      ...guarded,
+      members: mergeMemberRosterPreservingAmounts(local.members, guarded.members),
+    };
   }
   /** 후원이 여전히 비거나 줄어든 채 전체 POST 되면 API에서 후원 필드 제외 (서버 기존값 유지) */
   const omitDonations =

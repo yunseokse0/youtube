@@ -204,6 +204,7 @@ import {
 } from "@/lib/donation/toonation/listener";
 import {
   dedupeDonorRows,
+  countableDonorTotal,
   donationQueueIdsForDonor,
   isDonorExcludedFromDonationTotals,
   isDuplicateDonationEvent,
@@ -216,6 +217,7 @@ import {
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
 import { guardMemberTotalsAgainstAccidentalZeroWipe } from "@/lib/donation/zero-wipe-guard";
+import { mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
 import { mergeDonationApplyBase, enrichStateBeforeAuthoritativeDonationSave } from "@/lib/donation/merge-donation-apply-base";
 import { applyBankDonationsViaApi } from "@/lib/donation/apply-bank-donation-client";
 import { persistDonationStateViaApi } from "@/lib/donation/persist-donation-client";
@@ -1747,10 +1749,11 @@ export default function AdminPage() {
      * 단, 후원 없이 멤버 금액만 보존한 경우에는 sync가 0으로 되돌리지 않게 한다. */
     const preservedTotalsWithoutDonors =
       didPreserve && donorsNorm.length === 0 && totalCombined(merged) > 0;
+    const synced = preservedTotalsWithoutDonors
+      ? { ...merged, donors: donorsNorm }
+      : syncMemberTotalsFromDonors({ ...merged, donors: donorsNorm });
     return {
-      merged: preservedTotalsWithoutDonors
-        ? { ...merged, donors: donorsNorm }
-        : syncMemberTotalsFromDonors({ ...merged, donors: donorsNorm }),
+      merged: guardMemberTotalsAgainstAccidentalZeroWipe(synced, local),
       didPreserve,
     };
   }, []);
@@ -2233,6 +2236,15 @@ export default function AdminPage() {
         const localSupersetProtected =
           isMemberRosterStrictSuperset(stateRef.current.members, remote.members) &&
           (inMembersAuthWindow || localAt >= remoteAt || localAt + 120_000 >= remoteAt);
+        /** 멤버 삭제 직후: 로컬이 더 짧고 원격에 삭제된 멤버가 남아 있으면 구 스냅샷 거부 */
+        const localRosterDeletePending =
+          inMembersAuthWindow &&
+          hasMeaningfulMemberRoster(stateRef.current) &&
+          isMemberRosterStrictSuperset(remote.members, stateRef.current.members) &&
+          (localAt >= remoteAt || localAt + 120_000 >= remoteAt);
+        if (localRosterDeletePending) {
+          return false;
+        }
         if (
           localSupersetProtected ||
           (inMembersAuthWindow &&
@@ -3373,6 +3385,7 @@ export default function AdminPage() {
       setState((prev: AppState) => {
         const members = prev.members.filter((m) => m.id !== id);
         const reactDonors = normalizeDonorsArray(prev.donors);
+        const refDonors = normalizeDonorsArray(stateRef.current?.donors);
         let lsDonors: Donor[] = [];
         let lsUpdatedAt = 0;
         try {
@@ -3380,17 +3393,31 @@ export default function AdminPage() {
           lsDonors = normalizeDonorsArray(fromLs?.donors);
           lsUpdatedAt = Number(fromLs?.updatedAt || 0);
         } catch {}
-        /** React donors 가 비거나 적을 때 LS·서버와 동기화된 후원을 써 나머지 멤버 금액 0 방지 */
-        const mergedDonors =
-          reactDonors.length > 0
-            ? lsDonors.length > reactDonors.length
-              ? mergeDonorsForMultiTabSave(reactDonors, lsDonors, {
-                  incomingUpdatedAt: Number(prev.updatedAt || 0),
-                  existingUpdatedAt: lsUpdatedAt,
-                })
-              : reactDonors
-            : lsDonors;
+        /** React·ref·LS 중 가장 풍부한 donors — 불완전 목록으로 donorsReplace 금지 */
+        let mergedDonors = reactDonors;
+        for (const source of [refDonors, lsDonors]) {
+          if (source.length === 0) continue;
+          mergedDonors =
+            mergedDonors.length === 0
+              ? source
+              : source.length > mergedDonors.length
+                ? mergeDonorsForMultiTabSave(mergedDonors, source, {
+                    incomingUpdatedAt: Number(prev.updatedAt || 0),
+                    existingUpdatedAt: lsUpdatedAt,
+                  })
+                : mergeDonorsForMultiTabSave(source, mergedDonors, {
+                    incomingUpdatedAt: lsUpdatedAt,
+                    existingUpdatedAt: Number(prev.updatedAt || 0),
+                  });
+        }
         const donors = mergedDonors.filter((d) => d.memberId !== id);
+        const remainingBeforeDelete = prev.members
+          .filter((m) => m.id !== id)
+          .reduce((sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)), 0);
+        const donorsAfterDeleteTotal = countableDonorTotal(donors);
+        const donorsCompleteForRemaining =
+          donors.length > 0 &&
+          (remainingBeforeDelete <= 0 || donorsAfterDeleteTotal >= remainingBeforeDelete * 0.99);
         const nextSigMatch = { ...(prev.sigMatch || {}) };
         const nextMealMatch = { ...(prev.mealMatch || {}) };
         delete nextSigMatch[id];
@@ -3436,12 +3463,19 @@ export default function AdminPage() {
           },
           updatedAt: Date.now(),
         };
-        const donorCount = normalizeDonorsArray(next.donors).length;
-        if (donorCount > 0) {
+        if (donorsCompleteForRemaining) {
           next = guardMemberTotalsAgainstAccidentalZeroWipe(
             syncMemberTotalsFromDonors(next),
             prev
           );
+        } else {
+          next = {
+            ...next,
+            members: mergeMemberRosterPreservingAmounts(
+              prev.members.filter((m) => m.id !== id),
+              members
+            ),
+          };
         }
         const now = Date.now();
         next = { ...next, updatedAt: now };
@@ -3455,7 +3489,7 @@ export default function AdminPage() {
         notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
         void saveStateAsync(next, user?.id, {
           membersAuthoritative: true,
-          ...(donorCount > 0
+          ...(donorsCompleteForRemaining
             ? { donorsAuthoritative: true as const, donorsReplace: true as const }
             : { omitDonationFields: true as const }),
         }).then((r) => {

@@ -909,6 +909,18 @@ export async function POST(req: Request) {
           Number(body.updatedAt || 0),
           Number(baseState.updatedAt || 0)
         ));
+    if (
+      authoritativeReplace &&
+      memberRosterShrunk &&
+      patchMembersForRoster &&
+      incomingDonorsFiltered.length < normalizeDonorsArray(purgeDonorsForMemberRoster(baseState.donors, patchMembersForRoster)).length
+    ) {
+      incomingDonorsFiltered = purgeDonorsForMemberRoster(baseState.donors, patchMembersForRoster);
+      logger.warn("member delete — replaced incomplete incoming donors with purged base", {
+        userId,
+        purgedCount: incomingDonorsFiltered.length,
+      });
+    }
     const mergedDonors = donorsInPatch
       ? donationInitReset
         ? []

@@ -1,6 +1,7 @@
 import type { AppState } from "@/types";
 import { mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
 import {
+  countableDonorTotal,
   purgeDonorsForMemberRoster,
   rosterDonorMatchScore,
   syncMemberTotalsFromDonors,
@@ -21,6 +22,24 @@ function remainingMemberCombinedTotal(
         sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)),
       0
     );
+}
+
+/** 로스터 변경 원격이 남은 멤버 금액만 0으로 덮는지 — donors 정본은 살아 있을 때 */
+export function wouldAccidentallyZeroRemainingMembers(
+  local: AppState,
+  remote: AppState
+): boolean {
+  const remoteIds = remainingMemberIds(remote);
+  if (remoteIds.size === 0) return false;
+
+  const localRemainingTotal = remainingMemberCombinedTotal(local.members, remoteIds);
+  const remoteRemainingTotal = remainingMemberCombinedTotal(remote.members, remoteIds);
+  if (localRemainingTotal <= 0) return false;
+  if (remoteRemainingTotal >= localRemainingTotal * 0.99) return false;
+
+  const rosterDonors = purgeDonorsForMemberRoster(remote.donors, remote.members);
+  const donorSupport = rosterDonorMatchScore(remote.members, rosterDonors);
+  return donorSupport >= localRemainingTotal * 0.99;
 }
 
 /**

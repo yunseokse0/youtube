@@ -222,6 +222,31 @@ describe("shouldRejectPoorerDonationRemote", () => {
     expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(false);
   });
 
+  it("rejects member delete remote that zeroes remaining member totals while donors remain", async () => {
+    const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      donors: [
+        { id: "d1", name: "a", amount: 10000, memberId: "m1", at: 1, target: "account" as const },
+        { id: "d2", name: "b", amount: 5000, memberId: "m2", at: 2, target: "toon" as const },
+      ],
+      members: [
+        { id: "m1", name: "A", account: 10000, toon: 0, contribution: 10000 },
+        { id: "m2", name: "B", account: 0, toon: 5000, contribution: 5000 },
+      ],
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: 1500,
+      donors: [
+        { id: "d1", name: "a", amount: 10000, memberId: "m1", at: 1, target: "account" as const },
+      ],
+      members: [{ id: "m1", name: "A", account: 0, toon: 0, contribution: 0 }],
+    };
+    expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(true);
+  });
+
   it("rejects remote that drops a just-added member when stamp is only slightly newer", async () => {
     const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
     const local = {
