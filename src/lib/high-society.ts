@@ -550,7 +550,6 @@ export function aggregateSeatPushesFromDonors(opts: {
       if (String(d.memberId || "") !== player.id) return false;
       if (d.donationExcluded === true) return false;
       if (Math.max(0, Number(d.amount) || 0) <= 0) return false;
-      if (!settings.enabled) return false;
       if (!link.active) return false;
       const at = highSocietyDonorAtMs(d);
       if (link.startedAt > 0 && at < link.startedAt) return false;

@@ -213,7 +213,6 @@ import {
   reassignDonorMemberInAppState,
   updateDonorMessageInAppState,
   applyManualHsPushDirChange,
-  clearAllDonorHsPushDirs,
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
 import { guardMemberTotalsAgainstAccidentalZeroWipe } from "@/lib/donation/zero-wipe-guard";
@@ -7498,7 +7497,11 @@ export default function AdminPage() {
             ...(nextSettings.donationLinks || {}),
           };
           for (const id of valid) {
-            donationLinks[id] = { active: true, startedAt: now };
+            const prevLink = donationLinks[id];
+            donationLinks[id] =
+              prevLink?.active && Number(prevLink.startedAt) > 0
+                ? { active: true, startedAt: prevLink.startedAt }
+                : { active: true, startedAt: now };
           }
           nextSettings = {
             ...nextSettings,
@@ -7516,12 +7519,7 @@ export default function AdminPage() {
               : prev.donationSyncMode || "mealBattle",
           updatedAt: Date.now(),
         };
-        if (turningOff) {
-          next = clearAllDonorHsPushDirs(next);
-          persistState(next, { includeDonationFields: true });
-        } else {
-          persistState(next, { omitDonationFields: true });
-        }
+        persistState(next, { omitDonationFields: true });
         return next;
       });
       const nextEnabled =
@@ -7542,7 +7540,7 @@ export default function AdminPage() {
         showAppToast(
           patch.enabled
             ? "상류사회 ON — 후원 연동·영토 오버레이가 활성화되었습니다"
-            : "상류사회 OFF — 수동 확장 방향이 원복되고 모드가 꺼졌습니다"
+            : "상류사회 OFF — 모드만 꺼졌습니다 (후원·영토 데이터는 유지)"
         );
       } else if (patch.defaultMiddlePush && after.defaultMiddlePush !== before.defaultMiddlePush) {
         const dir = resolveSystemMiddlePushDir(after);

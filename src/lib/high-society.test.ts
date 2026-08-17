@@ -316,6 +316,48 @@ describe("high-society territory (aux)", () => {
     expect(afterStart.seats[1]!.widthCm).toBe(350);
   });
 
+  it("keeps territory when mode is toggled off (donors not wiped from aggregation)", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    const donors = [
+      {
+        id: "d1",
+        name: "후원",
+        amount: 100_000,
+        memberId: "b",
+        target: "account" as const,
+        at: 6000,
+        hsPushDir: "right" as const,
+      },
+    ];
+    const onSettings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b", "c", "d"],
+      defaultMiddlePush: "right",
+      donationLinks: { b: { active: true, startedAt: 5000 } },
+    });
+    const offSettings = normalizeHighSocietySettings({
+      ...onSettings,
+      enabled: false,
+    });
+    const onField = buildHighSocietyFieldFromAppState({
+      members,
+      donors,
+      highSocietySettings: onSettings,
+    });
+    const offField = buildHighSocietyFieldFromAppState({
+      members,
+      donors,
+      highSocietySettings: offSettings,
+    });
+    expect(offField.seats[1]!.widthCm).toBe(onField.seats[1]!.widthCm);
+    expect(offField.seats[1]!.widthCm).toBe(350);
+  });
+
   it("honors explicit single-seat list without falling back to all members", () => {
     const members = [
       { id: "a", name: "A", account: 0, toon: 0, operating: false },
