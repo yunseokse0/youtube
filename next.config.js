@@ -50,6 +50,18 @@ const nextConfig = {
         : "public, max-age=31536000, immutable";
     return [
       {
+        source: '/admin',
+        headers: [{ key: 'Cache-Control', value: 'no-store, must-revalidate' }],
+      },
+      {
+        source: '/admin/:path*',
+        headers: [{ key: 'Cache-Control', value: 'no-store, must-revalidate' }],
+      },
+      {
+        source: '/login',
+        headers: [{ key: 'Cache-Control', value: 'no-store, must-revalidate' }],
+      },
+      {
         source: '/overlay',
         headers: [
           { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
