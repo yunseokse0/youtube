@@ -1,5 +1,5 @@
 import { dedupeDonorRows } from "@/lib/donation/apply-donation-state";
-import { normalizeAnonymousDonorDisplayName } from "@/lib/donation/toonation/parse-event";
+import { normalizeAnonymousDonorDisplayName } from "@/lib/donation/anonymous-donor-name";
 
 export type DonorRankingRow = {
   name: string;

@@ -136,6 +136,55 @@ describe("donation-roster-backup", () => {
     expect(shouldRestoreDonationRosterFromBackup(afterLastDelete, backup)).toBe(false);
   });
 
+  it("restores when donors lost but member totals remain (accidental shrink)", () => {
+    const backup = buildDonationRosterBackupPayload({
+      ...richState(),
+      members: [
+        { id: "m1", name: "힛치", account: 30000, toon: 331100, contribution: 361100 },
+        { id: "m2", name: "꽁이", account: 0, toon: 12100, contribution: 12100 },
+      ],
+      donors: [
+        {
+          id: "d1",
+          name: "익명",
+          amount: 30000,
+          memberId: "m1",
+          at: Date.now(),
+          target: "account",
+        },
+        {
+          id: "d2",
+          name: "익명",
+          amount: 331100,
+          memberId: "m1",
+          at: Date.now() + 1,
+          target: "toon",
+        },
+        {
+          id: "d3",
+          name: "익명",
+          amount: 12100,
+          memberId: "m2",
+          at: Date.now() + 2,
+          target: "toon",
+        },
+      ],
+    })!;
+    const donorsLost: AppState = {
+      ...richState(),
+      donors: [],
+      members: [
+        { id: "m1", name: "힛치", account: 30000, toon: 331100, contribution: 361100 },
+        { id: "m2", name: "꽁이", account: 0, toon: 12100, contribution: 12100 },
+      ],
+    };
+    expect(shouldRestoreDonationRosterFromBackup(donorsLost, backup)).toBe(true);
+    const restored = applyDonationRosterBackupToState(donorsLost, backup);
+    expect(restored.donors.length).toBeGreaterThan(0);
+    expect(restored.members.find((m) => m.id === "m1")?.account).toBe(30000);
+    expect(restored.members.find((m) => m.id === "m2")?.toon).toBe(12100);
+  });
+
   it("applies backup members and donors to empty state", () => {
     const backup = buildDonationRosterBackupPayload(richState()) as DonationRosterBackupPayload;
     const next = applyDonationRosterBackupToState(defaultState(), backup);

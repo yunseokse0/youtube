@@ -2,6 +2,7 @@ import { DEFAULT_MEAL_GAUGE_EFFECTS, normalizeMealGaugeEffects } from "@/lib/mea
 import { normalizeDonationTableColumnsOptions } from "@/lib/donation-table-options";
 import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
+import { normalizeAnonymousDonorDisplayName } from "@/lib/donation/anonymous-donor-name";
 import type {
   AppState,
   Donor,
@@ -1439,7 +1440,9 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
         targetRaw === "toon" ? "toon" : targetRaw === "account" ? "account" : undefined;
       const row: Donor = {
         id: idRaw || `d_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        name: typeof x.name === "string" ? x.name : String(x.name ?? ""),
+        name: normalizeAnonymousDonorDisplayName(
+          typeof x.name === "string" ? x.name : String(x.name ?? "")
+        ),
         amount: Math.max(0, Math.floor(Number(x.amount) || 0)),
         memberId: String(x.memberId ?? ""),
         at: Number.isFinite(Number(x.at)) ? Math.floor(Number(x.at)) : Date.now(),

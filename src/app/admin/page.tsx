@@ -3454,6 +3454,7 @@ export default function AdminPage() {
                 score: 0,
                 goal: Math.max(1, Math.floor(Number(prev.mealBattle?.totalGoal) || 0) || 100),
                 color: mealFallbackColors[members.length % mealFallbackColors.length],
+                donationLinkActive: true,
               },
             ]
           : prevParticipants;

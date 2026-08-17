@@ -466,6 +466,41 @@ describe("shouldRejectPoorerDonationRemote", () => {
     };
     expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(true);
   });
+
+  it("rejects single-donor remote when local has empty donors but higher member totals", async () => {
+    const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      settlementResetAt: 500,
+      donors: [] as [],
+      members: [
+        { id: "m1", name: "힛치", account: 30000, toon: 331100, contribution: 361100 },
+        { id: "m2", name: "꽁이", account: 0, toon: 12100, contribution: 12100 },
+      ],
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: 3000,
+      settlementResetAt: 500,
+      donorRankingsUpdatedAt: 3000,
+      donors: [
+        {
+          id: "d-new",
+          name: "노가리7",
+          amount: 1000,
+          memberId: "m1",
+          at: 3000,
+          target: "toon" as const,
+        },
+      ],
+      members: [
+        { id: "m1", name: "힛치", account: 0, toon: 1000, contribution: 1000 },
+        { id: "m2", name: "꽁이", account: 0, toon: 0, contribution: 0 },
+      ],
+    };
+    expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(true);
+  });
 });
 
 describe("shouldKeepStaleOverlayOverRemote", () => {

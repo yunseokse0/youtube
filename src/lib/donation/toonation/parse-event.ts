@@ -1,4 +1,13 @@
 import type { DonationEvent, QueueSigItem } from "../types";
+import {
+  isAnonymousDonorPlaceholderName,
+  normalizeAnonymousDonorDisplayName,
+} from "../anonymous-donor-name";
+
+export {
+  isAnonymousDonorPlaceholderName,
+  normalizeAnonymousDonorDisplayName,
+} from "../anonymous-donor-name";
 
 function safeRead(obj: unknown, key: string): unknown {
   if (!obj || typeof obj !== "object") return undefined;
@@ -129,16 +138,7 @@ export function isAccountFormatToken(raw: string): boolean {
 
 /** `익명 지히` — 첫 토큰이 익명 표기면 다음 토큰이 플레이어 */
 export function isAnonymousMarkerToken(raw: string): boolean {
-  const t = cleanDonorToken(raw).toLowerCase();
-  return t === "익명" || t === "anonymous" || t === "anon" || t === "unknown";
-}
-
-/** 후원순위·목록 표시용 — Unknown/anonymous 등 플레이스홀더를 「익명」으로 통일 */
-export function normalizeAnonymousDonorDisplayName(name: string): string {
-  const raw = String(name || "").trim();
-  if (!raw) return "무명";
-  if (isAnonymousMarkerToken(raw)) return "익명";
-  return raw;
+  return isAnonymousDonorPlaceholderName(raw);
 }
 
 /**

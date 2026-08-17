@@ -335,8 +335,13 @@ export function shouldRejectPoorerDonationRemote(
     const remoteRicher =
       remoteDonors > localDonors ||
       remoteTotal > localTotal ||
-      (remoteDonors > 0 && localDonors === 0);
+      (remoteDonors > 0 && localDonors === 0 && localTotal === 0);
     if (!remoteRicher) return true;
+  }
+
+  /** donors 배열 유실 + members 합계 잔존 — 신규 1건 원격으로 축소 덮어쓰기 방지 */
+  if (localDonors === 0 && localTotal > 0 && remoteTotal < localTotal) {
+    return true;
   }
 
   if (localTotal > 0 && remoteTotal === 0 && remoteDonors === 0) {

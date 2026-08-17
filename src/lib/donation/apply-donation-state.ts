@@ -1,5 +1,6 @@
 import { applyMealBattleDonationToParticipants, mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
+import { normalizeAnonymousDonorDisplayName } from "@/lib/donation/anonymous-donor-name";
 import {
   normalizeHighSocietySettings,
   resolveSystemMiddlePushDir,
@@ -373,7 +374,7 @@ export function applyDonationToAppState(
 
   const newDonor = {
     id: processedEvent.id,
-    name: processedEvent.donorName,
+    name: normalizeAnonymousDonorDisplayName(processedEvent.donorName),
     amount: Math.max(0, Math.round(Number(processedEvent.amount) || 0)),
     memberId: processedEvent.memberId,
     at: processedEvent.at,

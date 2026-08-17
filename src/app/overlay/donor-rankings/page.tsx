@@ -21,6 +21,7 @@ import {
   buildDonorRankingsFromDonors,
   type DonorRankingRow,
 } from "@/lib/donor-rankings-aggregate";
+import { normalizeAnonymousDonorDisplayName } from "@/lib/donation/anonymous-donor-name";
 import {
   buildBroadcastTextOutlineShadowCss,
   buildOverlayCellOutlineStyle,
@@ -405,7 +406,7 @@ function RankingRow({
         className="overlay-cell-text-inner break-words font-bold leading-tight"
         style={{ color: nameColor, ...rowOutline }}
       >
-        {item.name}
+        {normalizeAnonymousDonorDisplayName(item.name)}
       </span>
       <span
         className="overlay-cell-text-inner font-black tabular-nums text-right whitespace-nowrap"

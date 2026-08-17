@@ -1,7 +1,31 @@
-import { loadAccounts } from "@/lib/accounts-storage";
 import { normalizeComparableName, stripHonorificSuffix } from "../name-similarity";
 import type { DonationEvent } from "../types";
 import { isAccountFormatToken } from "./parse-event";
+
+type OwnerAccountRow = { id: string; name: string; companyName: string };
+
+function accountsApiUrl(): string {
+  if (typeof window !== "undefined") return "/api/accounts";
+  const port = String(process.env.PORT || "3000").trim();
+  const host = String(process.env.HOSTNAME || "127.0.0.1").trim();
+  return `http://${host}:${port}/api/accounts`;
+}
+
+async function loadAccountForUserId(userId: string): Promise<OwnerAccountRow | null> {
+  try {
+    const res = await fetch(accountsApiUrl(), { cache: "no-store" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { accounts?: OwnerAccountRow[] } | OwnerAccountRow[];
+    const list = Array.isArray(data)
+      ? data
+      : Array.isArray(data.accounts)
+        ? data.accounts
+        : [];
+    return list.find((a) => String(a.id || "").trim() === userId) ?? null;
+  } catch {
+    return null;
+  }
+}
 
 const OWNER_NAME_CACHE_TTL_MS = 60_000;
 const ownerNameCache = new Map<string, { names: Set<string>; expiresAt: number }>();
@@ -46,8 +70,7 @@ export async function getOwnerNameCandidates(userId: string, ownerName?: string)
   const names = new Set<string>();
   pushOwnerCandidate(names, ownerName);
   try {
-    const accounts = await loadAccounts();
-    const account = accounts.find((a) => String(a.id || "").trim() === userId);
+    const account = await loadAccountForUserId(userId);
     if (account) {
       pushOwnerCandidate(names, account.name);
       pushOwnerCandidate(names, account.companyName);
