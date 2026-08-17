@@ -59,6 +59,8 @@ import {
   mergeSigMatchPreferFresherLocal,
   shouldRejectPoorerDonationRemote,
   shouldKeepStaleOverlayOverRemote,
+  isIntentionalMemberRosterShrink,
+  isLocalMemberRosterGrowOverRemote,
 } from "@/lib/overlay-sync-signature";
 import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base";
@@ -518,18 +520,47 @@ export function useOverlayRemoteState(
          * 멤버 추가 직후 stale GET: last-good/LS 상위집합 로스터를 유지(미리보기·OBS).
          * 멤버 삭제 SSE 직후에는 서버(짧은) 로스터를 localHint 로 확장하지 않음.
          */
-        const trustMemberRosterShrinkEarly =
+        const trustMemberRosterSync =
           Boolean(opts?.membersRosterSync) || Date.now() < membersRosterSyncUntilRef.current;
+        let localRosterGrowPending =
+          Boolean(remoteForApply) &&
+          Boolean(lastGoodRef.current) &&
+          isLocalMemberRosterGrowOverRemote(lastGoodRef.current, remoteForApply!);
+        let rosterGrowMerged = false;
+        if (trustMemberRosterSync && localRosterGrowPending && remoteForApply && lastGoodRef.current) {
+          remoteForApply = {
+            ...remoteForApply,
+            members: mergeMemberRosterPreservingAmounts(
+              remoteForApply.members || [],
+              lastGoodRef.current.members
+            ),
+            memberPositions:
+              lastGoodRef.current.memberPositions ?? remoteForApply.memberPositions,
+            rankPositionLabels:
+              lastGoodRef.current.rankPositionLabels ?? remoteForApply.rankPositionLabels,
+            updatedAt: Math.max(
+              Number(lastGoodRef.current.updatedAt || 0),
+              Number(remoteForApply.updatedAt || 0)
+            ),
+          };
+          rosterGrowMerged = true;
+          localRosterGrowPending = false;
+        }
+        const remoteAddedMembers =
+          Boolean(remoteForApply) &&
+          Boolean(lastGoodRef.current) &&
+          isMemberRosterStrictSuperset(
+            remoteForApply!.members,
+            lastGoodRef.current!.members
+          );
         const remoteRosterShrinkEarly =
           Boolean(remoteForApply) &&
           Boolean(lastGoodRef.current) &&
-          (remoteForApply!.members || []).length < (lastGoodRef.current!.members || []).length &&
-          membersDifferByIds(lastGoodRef.current!.members, remoteForApply!.members) &&
-          Number(remoteForApply!.updatedAt || 0) >= Number(lastGoodRef.current!.updatedAt || 0);
+          isIntentionalMemberRosterShrink(lastGoodRef.current, remoteForApply!);
         if (
           remoteForApply &&
           (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
-          !(trustMemberRosterShrinkEarly && remoteRosterShrinkEarly)
+          !(trustMemberRosterSync && remoteRosterShrinkEarly)
         ) {
           const localHint =
             lastGoodRef.current &&
@@ -563,22 +594,21 @@ export function useOverlayRemoteState(
           }
         }
 
-        const trustMemberRosterShrink =
-          Boolean(opts?.membersRosterSync) || Date.now() < membersRosterSyncUntilRef.current;
         const remoteRosterShrink =
           Boolean(remoteForApply) &&
           Boolean(lastGoodRef.current) &&
-          (remoteForApply!.members || []).length < (lastGoodRef.current!.members || []).length &&
-          membersDifferByIds(lastGoodRef.current!.members, remoteForApply!.members) &&
-          Number(remoteForApply!.updatedAt || 0) >= Number(lastGoodRef.current!.updatedAt || 0);
+          isIntentionalMemberRosterShrink(lastGoodRef.current, remoteForApply!);
         const rejectPoorerOverlay =
           (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
+          !remoteAddedMembers &&
+          !(trustMemberRosterSync && localRosterGrowPending) &&
+          !(trustMemberRosterSync && rosterGrowMerged) &&
           (preferServerOnly
             ? shouldKeepStaleOverlayOverRemote(lastGoodRef.current, remoteForApply)
             : shouldRejectPoorerDonationRemote(lastGoodRef.current, remoteForApply));
         if (
           rejectPoorerOverlay &&
-          !(trustMemberRosterShrink && remoteRosterShrink)
+          !(trustMemberRosterSync && remoteRosterShrink)
         ) {
           /** forceFull 이어도 빈/구 Redis 로 엑셀 금액을 지우지 않음 */
           return;

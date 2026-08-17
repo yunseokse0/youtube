@@ -508,6 +508,11 @@ function adminSyncFingerprint(s: AppState): string {
     inv.map((x) => `${x.id}:${x.price}:${x.soldCount}:${x.isActive ? 1 : 0}`).join(","),
     donorSig,
     String(s.sigSoldOutStampUrl || "").trim(),
+    (() => {
+      const gt = s.generalTimer;
+      if (!gt) return "0|0|0";
+      return `${gt.remainingTime ?? 0}|${gt.isActive ? 1 : 0}|${gt.lastUpdated ?? 0}`;
+    })(),
     String(rs?.phase ?? ""),
     String(rs?.sessionId ?? ""),
     Math.floor(Number(rs?.startedAt ?? 0)),
@@ -823,6 +828,7 @@ export default function AdminPage() {
         const hint = `${placeholder} ${el.name || ""} ${el.id || ""}`.toLowerCase();
         /** 수동 합산 폼(이름·금액·멤버) 입력 중에도 빈 Redis 적용으로 표가 0 되지 않게 */
         if (/(donor|후원자|입금액|합산)/.test(hint)) return true;
+        if (el instanceof HTMLElement && el.dataset.skipAmountEditGuard === "1") return false;
         if (!(el instanceof HTMLInputElement)) return false;
         return (
           type === "number" ||
@@ -2301,7 +2307,25 @@ export default function AdminPage() {
       if (!remoteSettlementWins && pendingUnsyncedRef.current && !opts?.forceDonorMerge) {
         const localIds = new Set((stateRef.current.donors || []).map((d) => d.id));
         const hasRemoteOnly = (remote.donors || []).some((d) => !localIds.has(d.id));
-        if (!hasRemoteOnly) return false;
+        if (!hasRemoteOnly) {
+          const mergedTimer = mergeGeneralTimerPreferEffective(
+            stateRef.current.generalTimer,
+            remote.generalTimer
+          );
+          const localEff = getEffectiveRemainingTime(stateRef.current.generalTimer);
+          const remoteEff = getEffectiveRemainingTime(remote.generalTimer);
+          if (
+            mergedTimer.remainingTime !== stateRef.current.generalTimer?.remainingTime ||
+            mergedTimer.isActive !== stateRef.current.generalTimer?.isActive ||
+            mergedTimer.lastUpdated !== stateRef.current.generalTimer?.lastUpdated ||
+            Math.abs(localEff - remoteEff) > 1
+          ) {
+            const timerSynced = { ...stateRef.current, generalTimer: mergedTimer };
+            stateRef.current = timerSynced;
+            setState(timerSynced);
+          }
+          return false;
+        }
       }
       if (
         !remoteSettlementWins &&
@@ -3806,10 +3830,7 @@ export default function AdminPage() {
       }
       const next: AppState = {
         ...prev,
-        donationSyncMode:
-          active && (!prev.donationSyncMode || prev.donationSyncMode === "none")
-            ? "sigMatch"
-            : prev.donationSyncMode,
+        donationSyncMode: active ? "sigMatch" : prev.donationSyncMode,
         sigMatchSettings: {
           ...prev.sigMatchSettings,
           donationLinks: normalizeSigMatchDonationLinks(donationLinks, valid),
@@ -3846,8 +3867,50 @@ export default function AdminPage() {
     const n = Number.parseInt(sigMatchNumericDraft.overlayTimerDurationSec || "0", 10);
     const next = Number.isFinite(n) ? Math.max(0, Math.min(86400, n)) : 0;
     setSigMatchNumericDraft((prev) => ({ ...prev, overlayTimerDurationSec: String(next) }));
-    updateSigMatchSettings({ overlayTimerDurationSec: next });
+    setState((prev: AppState) => {
+      const valid = new Set(prev.members.map((mm) => mm.id));
+      const merged: AppState["sigMatchSettings"] = {
+        ...prev.sigMatchSettings,
+        sigMatchPools: prev.sigMatchSettings.sigMatchPools ?? [],
+        donationLinks: prev.sigMatchSettings.donationLinks ?? {},
+        overlayTimerDurationSec: next,
+      };
+      const now = Date.now();
+      /** 정지·대기 중이면 남은 시간도 설정 초와 맞춤 — OBS·백오피스 불일치 방지 */
+      const syncTimer =
+        !prev.generalTimer?.isActive
+          ? {
+              remainingTime: next,
+              isActive: false,
+              lastUpdated: now,
+            }
+          : prev.generalTimer;
+      const nextState: AppState = {
+        ...prev,
+        sigMatchSettings: {
+          ...merged,
+          sigMatchPools: normalizeSigMatchPools(merged.sigMatchPools, valid),
+          participantMemberIds: normalizeSigMatchParticipantIds(merged.participantMemberIds, valid),
+          donationLinks: normalizeSigMatchDonationLinks(merged.donationLinks, valid),
+        },
+        generalTimer: syncTimer,
+        updatedAt: now,
+      };
+      persistState(nextState, { omitDonationFields: true });
+      if (!prev.generalTimer?.isActive) {
+        void saveGeneralTimerPatchAsync(syncTimer, user?.id);
+      }
+      return nextState;
+    });
   };
+
+  const resolveOverlayTimerDurationSec = useCallback((): number => {
+    const raw = sigMatchNumericEditingRef.current.overlayTimerDurationSec
+      ? sigMatchNumericDraft.overlayTimerDurationSec
+      : String(state.sigMatchSettings?.overlayTimerDurationSec ?? 180);
+    const n = Number.parseInt(raw || "0", 10);
+    return Number.isFinite(n) ? Math.max(0, Math.min(86400, n)) : 0;
+  }, [sigMatchNumericDraft.overlayTimerDurationSec, state.sigMatchSettings?.overlayTimerDurationSec]);
 
   const commitSigMatchManualAddStepDraft = () => {
     setSigMatchDraftEditing("manualAddStep", false);
@@ -5904,11 +5967,14 @@ export default function AdminPage() {
 
   const setTimerMinutes = (key: "generalTimer", minutes: number) => {
     const safeMin = Math.max(0, Math.floor(minutes));
+    const sec = safeMin * 60;
     updateMatchTimer(key, (timer) => ({
-      remainingTime: safeMin * 60,
+      remainingTime: sec,
       isActive: timer.isActive,
       lastUpdated: Date.now(),
     }));
+    setSigMatchNumericDraft((prev) => ({ ...prev, overlayTimerDurationSec: String(sec) }));
+    updateSigMatchSettings({ overlayTimerDurationSec: sec });
   };
 
   const updateMatchTimerEnabled = (patch: Partial<AppState["matchTimerEnabled"]>) => {
@@ -5947,18 +6013,26 @@ export default function AdminPage() {
   };
 
   const startSigMatchOverlayTimerSynced = () => {
-    const durationSec = Math.max(0, Number(state.sigMatchSettings?.overlayTimerDurationSec || 0));
+    const durationSec = resolveOverlayTimerDurationSec();
     const remNow = getEffectiveRemainingTime(state.generalTimer);
     if (remNow <= 0 && durationSec <= 0) {
       alert("먼저 타이머 시간을 1초 이상 입력해 주세요.");
       return;
     }
+    if (sigMatchNumericEditingRef.current.overlayTimerDurationSec) {
+      setSigMatchDraftEditing("overlayTimerDurationSec", false);
+      setSigMatchNumericDraft((prev) => ({ ...prev, overlayTimerDurationSec: String(durationSec) }));
+    }
     setState((prev: AppState) => {
       const rem = getEffectiveRemainingTime(prev.generalTimer);
-      const sec = Math.max(0, Number(prev.sigMatchSettings?.overlayTimerDurationSec || durationSec || 0));
+      const sec = Math.max(0, durationSec);
       if (rem <= 0 && sec <= 0) return prev;
       const valid = new Set(prev.members.map((mm) => mm.id));
-      const mergedSettings = { ...prev.sigMatchSettings, overlayTimerEndAt: null as number | null };
+      const mergedSettings = {
+        ...prev.sigMatchSettings,
+        overlayTimerDurationSec: sec,
+        overlayTimerEndAt: null as number | null,
+      };
       /** 일시정지 후 시작 = 남은 시간 재개. 남은 시간이 0일 때만 설정 초로 새로 시작 */
       const started =
         rem > 0
@@ -5985,10 +6059,18 @@ export default function AdminPage() {
 
   /** 설정 초로 되돌리고 정지(일시정지 후 시작과 구분) */
   const resetSigMatchOverlayTimerSynced = () => {
-    const sec = Math.max(0, Number(state.sigMatchSettings?.overlayTimerDurationSec || 0));
+    const sec = resolveOverlayTimerDurationSec();
+    if (sigMatchNumericEditingRef.current.overlayTimerDurationSec) {
+      setSigMatchDraftEditing("overlayTimerDurationSec", false);
+      setSigMatchNumericDraft((prev) => ({ ...prev, overlayTimerDurationSec: String(sec) }));
+    }
     setState((prev: AppState) => {
       const valid = new Set(prev.members.map((mm) => mm.id));
-      const mergedSettings = { ...prev.sigMatchSettings, overlayTimerEndAt: null as number | null };
+      const mergedSettings = {
+        ...prev.sigMatchSettings,
+        overlayTimerDurationSec: sec,
+        overlayTimerEndAt: null as number | null,
+      };
       const reset = {
         remainingTime: sec,
         isActive: false,
@@ -6037,6 +6119,7 @@ export default function AdminPage() {
               type="number"
               min={0}
               max={86400}
+              data-skip-amount-edit-guard="1"
               placeholder="초(0=숨김)"
               value={sigMatchNumericDraft.overlayTimerDurationSec}
               onFocus={() => setSigMatchDraftEditing("overlayTimerDurationSec", true)}
@@ -6084,7 +6167,7 @@ export default function AdminPage() {
           </div>
         </div>
         <p className="text-[11px] text-neutral-500">
-          시그·식사 대전·OBS 일반 타이머가 같은 남은 시간을 봅니다. 일시정지 후 시작은 이어서 진행하고, 리셋만 위 초 값으로 되돌립니다.
+          시그·식사 대전·OBS가 같은 남은 시간을 봅니다. 위 초는 리셋·새 시작 기준이며, 정지 중 입력 후 Enter/blur 하면 남은 시간도 맞춰집니다. 진행 중에는 리셋 또는 타이머 제어(±분)로 조정하세요.
         </p>
       </div>
     );
@@ -7570,13 +7653,7 @@ export default function AdminPage() {
     }
     patchHighSocietyStartCm(n);
   }, [hsStartCmDraft, patchHighSocietyStartCm]);
-  const sigMatchDonors = useMemo(
-    () =>
-      donationSyncMode === "sigMatch" || state.sigMatchSettings?.isActive
-        ? state.donors || []
-        : [],
-    [donationSyncMode, state.donors, state.sigMatchSettings?.isActive]
-  );
+  const sigMatchDonors = state.donors || [];
   const sigMatchRanking = useMemo(
     () => getSigMatchRankings(
       sigMatchDonors,

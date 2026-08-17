@@ -249,6 +249,48 @@ export function isNewerIntentionalDonationShrink(
   return isRicherDonationSnapshot(older, newer) || newerDonors.length < olderDonors.length;
 }
 
+/** 로컬(last-good·LS)이 원격보다 멤버를 더 많이 갖는 경우(추가 직후 stale GET) */
+export function isLocalMemberRosterGrowOverRemote(
+  local: AppState | null | undefined,
+  remote: AppState | null | undefined
+): boolean {
+  if (!local || !remote) return false;
+  if (!isMemberRosterStrictSuperset(local.members, remote.members)) return false;
+  return membersDifferByIds(local.members || [], remote.members || []);
+}
+
+/**
+ * 멤버 삭제가 의도적(삭제 id 후원 purge·donors shrink)인지 — stale GET 과 구분.
+ */
+export function isIntentionalMemberRosterShrink(
+  local: AppState | null | undefined,
+  remote: AppState | null | undefined
+): boolean {
+  if (!local || !remote) return false;
+  if (!isMemberRosterStrictSuperset(local.members, remote.members)) return false;
+  const localMembers = local.members || [];
+  const remoteMembers = remote.members || [];
+  if (remoteMembers.length >= localMembers.length) return false;
+  if (!membersDifferByIds(localMembers, remoteMembers)) return false;
+  const remoteAt = Number(remote.updatedAt || 0);
+  const localAt = Number(local.updatedAt || 0);
+  if (remoteAt < localAt) return false;
+
+  const remoteIds = new Set(remoteMembers.map((m) => m.id));
+  const removedIds = localMembers.filter((m) => !remoteIds.has(m.id)).map((m) => m.id);
+  const localDonors = normalizeDonorsArray(local.donors);
+  const remoteDonors = normalizeDonorsArray(remote.donors);
+  const removedDonorsPurged =
+    removedIds.length > 0 &&
+    !removedIds.some((id) => remoteDonors.some((d) => d.memberId === id));
+  return (
+    hasMeaningfulMemberRoster(remote) &&
+    removedDonorsPurged &&
+    remoteDonors.length < localDonors.length &&
+    !wouldAccidentallyZeroRemainingMembers(local, remote)
+  );
+}
+
 /**
  * 빈/축소 원격으로 로컬·엑셀 후원을 시스템에 의해 지우면 안 된다.
  * - 정산 리셋(remote.settlementResetAt 상승)만 빈 원격 허용 — 단 플레이스홀더 사고성 빈 상태 제외
@@ -278,23 +320,7 @@ export function shouldRejectPoorerDonationRemote(
   if (isMemberRosterStrictSuperset(local.members, remote.members)) {
     const localAt = Number(local.updatedAt || 0);
     const remoteAt = Number(remote.updatedAt || 0);
-    const localMembers = local.members || [];
-    const remoteMembers = remote.members || [];
-    const remoteIds = new Set(remoteMembers.map((m) => m.id));
-    const removedIds = localMembers.filter((m) => !remoteIds.has(m.id)).map((m) => m.id);
-    const localDonors = normalizeDonorsArray(local.donors);
-    const remoteDonors = normalizeDonorsArray(remote.donors);
-    const removedDonorsPurged =
-      removedIds.length > 0 &&
-      !removedIds.some((id) => remoteDonors.some((d) => d.memberId === id));
-    if (
-      remoteMembers.length < localMembers.length &&
-      remoteAt >= localAt &&
-      hasMeaningfulMemberRoster(remote) &&
-      removedDonorsPurged &&
-      remoteDonors.length < localDonors.length &&
-      !wouldAccidentallyZeroRemainingMembers(local, remote)
-    ) {
+    if (isIntentionalMemberRosterShrink(local, remote)) {
       return false;
     }
     if (localAt >= remoteAt || localAt + 120_000 >= remoteAt) {

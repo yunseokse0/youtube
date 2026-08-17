@@ -323,22 +323,18 @@ export function getSigMatchRankings(
   }
 
   /**
-   * donors 가 OBS·폴링에 아직 없어도 members 합계(엑셀표)는 반영된 경우 — 연동 ON 멤버만 보정.
-   * donors 행이 있으면 startedAt 필터를 donors 기준으로 이미 적용했으므로 건너뜀.
+   * donors 가 OBS·폴링에 아직 없어도 members 합계(엑셀표)는 반영 — 연동 ON 멤버만.
+   * donors 목록에 해당 멤버 행이 있으면(시작 전 제외 포함) startedAt 집계를 존중하고 fallback 생략.
    */
   if (settings.scoringMode === "amount") {
+    const donorList = donors || [];
     for (const m of rankingMembers) {
       const link = resolveSigMatchDonationLink(settings, m.id);
       if (!link.active) continue;
       const b = byMember.get(m.id)!;
       if (b.amount > 0) continue;
-      const hasLinkedDonorRow = (donors || []).some((d) => {
-        if (d.memberId !== m.id) return false;
-        const donorAt = Number.isFinite(Number(d.at)) ? Math.max(0, Math.floor(Number(d.at))) : 0;
-        if (link.startedAt > 0 && donorAt > 0 && donorAt < link.startedAt) return false;
-        return true;
-      });
-      if (hasLinkedDonorRow) continue;
+      const hasAnyDonorRow = donorList.some((d) => d.memberId === m.id);
+      if (hasAnyDonorRow) continue;
       const memberTotal = Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0));
       if (memberTotal <= 0) continue;
       b.amount = memberTotal;

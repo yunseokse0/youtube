@@ -121,6 +121,26 @@ describe("getSigMatchRankings countAllDonations", () => {
     expect(rows.find((r) => r.memberId === "a")?.score).toBe(20_000);
   });
 
+  it("does not fall back to excel totals when donor rows exist but are before startedAt", () => {
+    const membersWithAmount: Member[] = [
+      { id: "a", name: "A", account: 10_000, toon: 0, contribution: 10_000 },
+    ];
+    const donors: Donor[] = [
+      { id: "d1", name: "fan", amount: 10_000, memberId: "a", at: 500, target: "toon" },
+    ];
+    const rows = getSigMatchRankings(
+      donors,
+      membersWithAmount,
+      {
+        ...baseSettings,
+        donationLinks: { a: { active: true, startedAt: 1_000 } },
+      },
+      {},
+      {}
+    );
+    expect(rows.find((r) => r.memberId === "a")?.score).toBe(0);
+  });
+
   it("applies negative manual adjust as deduction from donation score", () => {
     const donors: Donor[] = [
       { id: "d1", name: "fan", amount: 50_000, memberId: "a", at: Date.now(), target: "toon" },

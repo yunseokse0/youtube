@@ -446,14 +446,8 @@ export default function SigMatchDuelOverlay({
   const sigSettings = overlayState?.sigMatchSettings || defaultState().sigMatchSettings;
   const title = sigSettings.title || "시그 대전";
   const scoringMode: "count" | "amount" = sigSettings.scoringMode === "amount" ? "amount" : "count";
-  const donationSyncMode = (overlayState?.donationSyncMode || "mealBattle") as "none" | "mealBattle" | "sigMatch" | "sigSales";
-  const sigMatchDonors = useMemo(
-    () =>
-      donationSyncMode === "sigMatch" || sigSettings.isActive
-        ? overlayState?.donors || []
-        : [],
-    [donationSyncMode, overlayState?.donors, sigSettings.isActive]
-  );
+  /** 집계 필터(donationLinks·startedAt)는 getSigMatchRankings 에 맡김 — 타이머만 켠 경우에도 donors 전달 */
+  const sigMatchDonors = overlayState?.donors || [];
 
   const ranking = useMemo(
     () =>

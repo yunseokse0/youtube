@@ -90,7 +90,7 @@ import {
   readDonationListsOverlayPollMs,
   readOverlayLiveSyncPollMs,
 } from "@/lib/overlay-pull-policy";
-import { buildOverlaySyncSignature, isRicherDonationSnapshot, isNewerIntentionalDonationShrink, shouldRejectPoorerDonationRemote, shouldKeepStaleOverlayOverRemote, isEmptyDonationRemote } from "@/lib/overlay-sync-signature";
+import { buildOverlaySyncSignature, isRicherDonationSnapshot, isNewerIntentionalDonationShrink, shouldRejectPoorerDonationRemote, shouldKeepStaleOverlayOverRemote, isEmptyDonationRemote, isIntentionalMemberRosterShrink, isLocalMemberRosterGrowOverRemote } from "@/lib/overlay-sync-signature";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import {
   overlayUserIdsMatch,
@@ -543,6 +543,33 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
           remoteForApply && isRicherDonationSnapshot(remoteForApply, lastGoodRef.current)
         );
         /** 서버에 멤버가 늘어난 경우(추가) — last-good 로스터로 막지 않되, 금액이 빈약하면 last-good 금액을 합침 */
+        const trustMemberRosterSync =
+          Boolean(opts?.membersRosterSync) || Date.now() < membersRosterSyncUntilRef.current;
+        let localRosterGrowPending =
+          Boolean(remoteForApply) &&
+          Boolean(lastGoodRef.current) &&
+          isLocalMemberRosterGrowOverRemote(lastGoodRef.current, remoteForApply!);
+        let rosterGrowMerged = false;
+        /** 추가 SSE 직후 stale GET — last-good/LS 상위집합을 remote에 병합 */
+        if (trustMemberRosterSync && localRosterGrowPending && remoteForApply && lastGoodRef.current) {
+          remoteForApply = {
+            ...remoteForApply,
+            members: mergeMemberRosterPreservingAmounts(
+              remoteForApply.members || [],
+              lastGoodRef.current.members
+            ),
+            memberPositions:
+              lastGoodRef.current.memberPositions ?? remoteForApply.memberPositions,
+            rankPositionLabels:
+              lastGoodRef.current.rankPositionLabels ?? remoteForApply.rankPositionLabels,
+            updatedAt: Math.max(
+              Number(lastGoodRef.current.updatedAt || 0),
+              Number(remoteForApply.updatedAt || 0)
+            ),
+          };
+          rosterGrowMerged = true;
+          localRosterGrowPending = false;
+        }
         const remoteAddedMembers =
           Boolean(remoteForApply) &&
           Boolean(lastGoodRef.current) &&
@@ -554,18 +581,14 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
          * 멤버 추가 직후: 서버 GET이 옛(짧은) 로스터면 last-good/LS 상위집합을 유지.
          * 멤버 삭제 SSE 직후에는 짧은 서버 로스터를 localHint 로 되돌리지 않음.
          */
-        const trustMemberRosterShrinkEarly =
-          Boolean(opts?.membersRosterSync) || Date.now() < membersRosterSyncUntilRef.current;
         const remoteRosterShrinkEarly =
           Boolean(remoteForApply) &&
           Boolean(lastGoodRef.current) &&
-          (remoteForApply!.members || []).length < (lastGoodRef.current!.members || []).length &&
-          membersDifferByIds(lastGoodRef.current!.members, remoteForApply!.members) &&
-          Number(remoteForApply!.updatedAt || 0) >= Number(lastGoodRef.current!.updatedAt || 0);
+          isIntentionalMemberRosterShrink(lastGoodRef.current, remoteForApply!);
         if (
           remoteForApply &&
           preferServerOnlyRef.current &&
-          !(trustMemberRosterShrinkEarly && remoteRosterShrinkEarly)
+          !(trustMemberRosterSync && remoteRosterShrinkEarly)
         ) {
           const localHint =
             lastGoodRef.current &&
@@ -615,19 +638,16 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         }
         /**
          * OBS: 서버에 후원·금액이 있으면 last-good 옛 값을 버리지 않고 서버를 따름.
-         * 멤버 삭제 SSE(membersRosterSync) 직후에는 짧은 로스터도 poorer 로 막지 않음.
+         * 멤버 삭제 SSE(membersRosterSync) 직후에는 의도적 짧은 로스터만 poorer 로 막지 않음.
          */
-        const trustMemberRosterShrink =
-          Boolean(opts?.membersRosterSync) || Date.now() < membersRosterSyncUntilRef.current;
         const remoteRosterShrink =
           Boolean(remoteForApply) &&
           Boolean(lastGoodRef.current) &&
-          (remoteForApply!.members || []).length < (lastGoodRef.current!.members || []).length &&
-          membersDifferByIds(lastGoodRef.current!.members, remoteForApply!.members) &&
-          Number(remoteForApply!.updatedAt || 0) >= Number(lastGoodRef.current!.updatedAt || 0);
+          isIntentionalMemberRosterShrink(lastGoodRef.current, remoteForApply!);
         const rejectPoorer =
           !remoteAddedMembers &&
-          !(trustMemberRosterShrink && remoteRosterShrink) &&
+          !(trustMemberRosterSync && localRosterGrowPending) &&
+          !(trustMemberRosterSync && remoteRosterShrink) &&
           (preferServerOnlyRef.current
             ? shouldKeepStaleOverlayOverRemote(lastGoodRef.current, remoteForApply)
             : shouldRejectPoorerDonationRemote(lastGoodRef.current, remoteForApply));
@@ -638,6 +658,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
           (Boolean(opts?.forceFull) ||
             preferServerOnlyRef.current ||
             remoteAddedMembers ||
+            rosterGrowMerged ||
             remoteRev > overlaySinceRef.current ||
             remoteRicher ||
             (needRosterHydration && remoteStrong) ||
