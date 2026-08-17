@@ -64,6 +64,11 @@ if [[ "$AVAIL_MB" -lt 900 ]]; then
   echo "여유 ${AVAIL_MB}MB — ENOSPC 위험. bash deploy/ec2-free-disk.sh 후 재실행하세요."
   exit 1
 fi
+PCT_USED="$(df -Pk / | awk 'NR==2 {gsub(/%/,"",$5); print $5}')"
+if [[ "${PCT_USED:-0}" -ge 96 ]]; then
+  echo "디스크 사용 ${PCT_USED}% — static 빌드 누락(404) 위험. ec2-free-disk.sh 후 재실행하세요."
+  exit 1
+fi
 
 echo "== 이전 빌드 잔여 제거 =="
 rm -rf "$STAGING_DIR" .next.old .next/cache .next/types
@@ -243,16 +248,35 @@ echo "overlay/obs-text HTTP ${OBS_TEXT_CODE}"
 STATIC_OK=0
 if [[ -f .next/BUILD_ID ]]; then
   BUILD_ID="$(tr -d '\n\r' < .next/BUILD_ID)"
-  STATIC_CODE="$(curl -sf -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/_next/static/${BUILD_ID}/_buildManifest.js" || echo "000")"
-  echo "_next/static BUILD_ID=${BUILD_ID} manifest HTTP ${STATIC_CODE}"
-  if [[ "$STATIC_CODE" == "200" ]]; then
-    STATIC_OK=1
+  MANIFEST=".next/static/${BUILD_ID}/_buildManifest.js"
+  if [[ ! -f "$MANIFEST" ]]; then
+    echo "== disk: manifest 없음 ($MANIFEST) — 빌드 불완전(디스크 ENOSPC?) =="
+    ls -la ".next/static/${BUILD_ID}" 2>/dev/null || ls -la .next/static 2>/dev/null || true
+  else
+    STATIC_CODE="$(curl -sf -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/_next/static/${BUILD_ID}/_buildManifest.js" || echo "000")"
+    echo "_next/static BUILD_ID=${BUILD_ID} manifest HTTP ${STATIC_CODE}"
+    if [[ "$STATIC_CODE" == "200" ]]; then
+      STATIC_OK=1
+    fi
   fi
 fi
 if [[ "$STATIC_OK" != "1" ]]; then
-  echo "== static 자산 검증 실패 — pm2 env·브라우저 강력 새로고침(Ctrl+Shift+R) 확인 =="
+  SAMPLE_CHUNK="$(find .next/static/chunks -maxdepth 1 -name '*.js' -type f 2>/dev/null | head -1 || true)"
+  if [[ -n "$SAMPLE_CHUNK" ]]; then
+    CHUNK_NAME="${SAMPLE_CHUNK#.next/static/chunks/}"
+    CHUNK_CODE="$(curl -sf -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/_next/static/chunks/${CHUNK_NAME}" || echo "000")"
+    echo "_next/static/chunks/${CHUNK_NAME} HTTP ${CHUNK_CODE}"
+    if [[ "$CHUNK_CODE" == "200" ]]; then
+      STATIC_OK=1
+    fi
+  fi
+fi
+if [[ "$STATIC_OK" != "1" ]]; then
+  echo "== static 자산 검증 실패 — 디스크·빌드·pm2 env 확인 =="
+  df -h / | awk 'NR==1 || /root|\/$/'
   pm2 env "$PM2_APP" 2>/dev/null | grep -E 'NEXT_BUILD_DIR|NODE_ENV' || true
   pm2 logs "$PM2_APP" --lines 20 --nostream 2>/dev/null || true
+  echo "  bash deploy/ec2-free-disk.sh && bash deploy/deploy-on-ec2.sh"
   exit 1
 fi
 
