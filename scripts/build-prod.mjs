@@ -54,7 +54,7 @@ const env = {
   ...process.env,
   NODE_OPTIONS: `--max-old-space-size=${heapMb}`,
   LOW_MEMORY_BUILD: "1",
-  ...(stagingDir ? { NEXT_BUILD_DIR: stagingDir } : {}),
+  ...(stagingDir ? { NEXT_BUILD_DIR: stagingDir, NEXT_USE_STAGING_DIST: "1" } : {}),
 };
 
 const code = run("npx", ["next", "build"], { env });

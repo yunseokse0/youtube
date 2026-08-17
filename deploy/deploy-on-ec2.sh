@@ -162,18 +162,35 @@ if [[ "$BUILD_CODE" -ne 0 ]]; then
 fi
 
 if [[ ! -d "$STAGING_DIR" ]]; then
-  echo "== 빌드 산출물 없음: ${STAGING_DIR} =="
+  if [[ -f .next/BUILD_ID ]] && [[ -d .next/static/chunks ]]; then
+    echo "== ${STAGING_DIR} 없음 — .next 에 빌드됨, 교체 생략·pm2 재기동 =="
+  else
+    echo "== 빌드 산출물 없음: ${STAGING_DIR} (.next 도 불완전) =="
+    exit 1
+  fi
+else
+  # ----- .next 교체 + 서비스 기동 -----
+  echo "== .next 교체 · 서비스 기동 =="
+  pm2 stop "$PM2_APP" 2>/dev/null || true
+  rm -rf .next.old
+  if [[ -d .next ]]; then
+    mv .next .next.old
+  fi
+  mv "$STAGING_DIR" .next
+fi
+
+if [[ -d "$STAGING_DIR" ]] || [[ -f .next/BUILD_ID ]]; then
+  :
+else
   exit 1
 fi
 
-# ----- .next 교체 + 서비스 기동 -----
-echo "== .next 교체 · 서비스 기동 =="
+echo "== 서비스 기동 =="
 pm2 stop "$PM2_APP" 2>/dev/null || true
-rm -rf .next.old
-if [[ -d .next ]]; then
-  mv .next .next.old
+if [[ ! -d .next ]]; then
+  echo "== .next 없음 =="
+  exit 1
 fi
-mv "$STAGING_DIR" .next
 
 if [[ "$MYSQL_WAS_STOPPED" == "1" ]]; then
   echo "== MySQL 기동 =="
@@ -193,6 +210,7 @@ start_pm2_app() {
   unset NEXT_BUILD_DIR || true
   export NEXT_BUILD_DIR=""
   pm2 unset "$PM2_APP" NEXT_BUILD_DIR 2>/dev/null || true
+  pm2 unset "$PM2_APP" NEXT_USE_STAGING_DIST 2>/dev/null || true
   # 기존에 등록된 프로세스면 restart, 없으면 npm start 로 신규 등록
   if pm2 describe "$PM2_APP" >/dev/null 2>&1; then
     NEXT_BUILD_DIR= pm2 restart "$PM2_APP" --update-env
