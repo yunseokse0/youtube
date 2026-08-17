@@ -203,7 +203,7 @@ set +e
 env -u PM2_APP NEXT_BUILD_DIR="$STAGING_DIR" NODE_HEAP_MB="$NODE_HEAP_MB" npm run build:prod
 BUILD_CODE=$?
 set -e
-unset NEXT_BUILD_DIR || true
+unset NEXT_BUILD_DIR NEXT_USE_STAGING_DIST || true
 
 if [[ "$BUILD_CODE" -ne 0 ]]; then
   echo "== 빌드 실패 — 스테이징 제거, 서비스 복구 =="

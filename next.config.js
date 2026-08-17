@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
-/** deploy/build-prod.mjs 가 NEXT_USE_STAGING_DIST=1 일 때만 스테이징 distDir (next start 런타임 오염 방지) */
-const useStagingDist = String(process.env.NEXT_USE_STAGING_DIST || "").trim() === "1";
+/** deploy/build-prod.mjs 가 NEXT_USE_STAGING_DIST=1 일 때만 스테이징 distDir (next build 전용) */
+const isNextStart = process.argv.includes("start");
+const useStagingDist =
+  !isNextStart && String(process.env.NEXT_USE_STAGING_DIST || "").trim() === "1";
 const stagingDir = useStagingDist
   ? String(process.env.NEXT_BUILD_DIR || ".next-staging").trim()
   : "";

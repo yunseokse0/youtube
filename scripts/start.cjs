@@ -7,9 +7,14 @@ const host = process.env.HOST || "0.0.0.0";
 
 const args = [nextBin, "start", "-p", port, "-H", host];
 
+/** pm2/셸에 남은 빌드용 env 가 next start 에서 .next-staging 을 찾게 하면 static 400 */
+const env = { ...process.env };
+delete env.NEXT_BUILD_DIR;
+delete env.NEXT_USE_STAGING_DIST;
+
 const child = spawn(process.execPath, args, {
   stdio: "inherit",
-  env: process.env,
+  env,
 });
 
 child.on("exit", (code, signal) => {
