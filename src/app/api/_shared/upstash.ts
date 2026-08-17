@@ -26,12 +26,37 @@ export function registerMysqlKvBackend(api: MysqlKvBackend): void {
   mysqlLoadError = null;
 }
 
+/**
+ * instrumentation 전에 /api/state 등이 먼저 불리면 backend 미등록으로
+ * kv_read_failed·persist_failed 가 난다 — 라우트·GET/SET 경로에서 보장.
+ */
+export async function ensureMysqlKvBackend(): Promise<boolean> {
+  if (!hasMysqlDatabaseUrl()) return false;
+  if (process.env.NEXT_RUNTIME === "edge") return false;
+  if (mysqlKvBackend) return true;
+  try {
+    const mysqlKv = await import("./mysql-kv");
+    registerMysqlKvBackend(mysqlKv);
+    return Boolean(mysqlKvBackend);
+  } catch (err) {
+    mysqlLoadError =
+      err instanceof Error
+        ? `MySQL KV register failed: ${err.message}`
+        : "MySQL KV backend register failed";
+    return false;
+  }
+}
+
 async function loadMysqlKv(): Promise<MysqlKvBackend | null> {
   if (!hasMysqlDatabaseUrl()) return null;
   if (process.env.NEXT_RUNTIME === "edge") return null;
   if (mysqlKvBackend) return mysqlKvBackend;
-  mysqlLoadError =
-    "MySQL KV backend not registered — instrumentation 또는 서버 부트스트랩을 확인하세요.";
+  await ensureMysqlKvBackend();
+  if (mysqlKvBackend) return mysqlKvBackend;
+  if (!mysqlLoadError) {
+    mysqlLoadError =
+      "MySQL KV backend not registered — instrumentation 또는 서버 부트스트랩을 확인하세요.";
+  }
   return null;
 }
 

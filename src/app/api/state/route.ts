@@ -54,7 +54,7 @@ import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-m
 import { isRouletteLocked } from "../roulette/roulette-lock";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { getUserIdFromRequest } from "../_shared/user-id";
-import { getPersistentKvLastError, isPersistentKvConfigured } from "../_shared/upstash";
+import { getPersistentKvLastError, isPersistentKvConfigured, ensureMysqlKvBackend } from "../_shared/upstash";
 import {
   upstashGetAppStateJson,
   upstashSetAppStateJson,
@@ -537,6 +537,7 @@ function looksLikeEmptyRosterPersist(
 }
 
 export async function GET(req: Request) {
+  await ensureMysqlKvBackend();
   const since = parseSinceParam(req);
   const userId = getUserId(req);
   if (!userId) {
@@ -749,6 +750,7 @@ export async function POST(req: Request) {
         headers: { "Content-Type": "application/json" },
       });
     }
+    await ensureMysqlKvBackend();
     const body = (await req.json()) as Partial<AppState> & {
       donorsAuthoritative?: boolean;
       donorsReplace?: boolean;
