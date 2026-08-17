@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
@@ -226,6 +226,7 @@ import {
   formatCm,
   normalizeHighSocietyFxSettings,
   normalizeHighSocietySettings,
+  normalizeHighSocietyDonationLinks,
   resolveHighSocietySeatMembers,
   resolveSystemMiddlePushDir,
   seatRoleForMemberId,
@@ -7444,7 +7445,12 @@ export default function AdminPage() {
     () => state.members.filter((m) => !isOperatingMember(m)).length,
     [state.members, isOperatingMember]
   );
-  const donationSyncMode = (state.donationSyncMode || "mealBattle") as "none" | "mealBattle" | "sigMatch" | "sigSales";
+  const donationSyncMode = (state.donationSyncMode || "mealBattle") as
+    | "none"
+    | "mealBattle"
+    | "sigMatch"
+    | "sigSales"
+    | "highSociety";
   const highSocietySettings = useMemo(
     () => normalizeHighSocietySettings(state.highSocietySettings),
     [state.highSocietySettings]
@@ -7478,17 +7484,38 @@ export default function AdminPage() {
       const before = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
       let applied: ReturnType<typeof normalizeHighSocietySettings> | null = null;
       setState((prev: AppState) => {
-        const nextSettings = normalizeHighSocietySettings({
+        let nextSettings = normalizeHighSocietySettings({
           ...normalizeHighSocietySettings(prev.highSocietySettings),
           ...patch,
         });
+        const turningOn = !wasOn && nextSettings.enabled;
+        const turningOff = wasOn && !nextSettings.enabled;
+        if (turningOn) {
+          const now = Date.now();
+          const seatMembers = resolveHighSocietySeatMembers(prev.members || [], nextSettings.seatMemberIds);
+          const valid = new Set(seatMembers.map((s) => s.id));
+          const donationLinks: Record<string, { active: boolean; startedAt?: number }> = {
+            ...(nextSettings.donationLinks || {}),
+          };
+          for (const id of valid) {
+            donationLinks[id] = { active: true, startedAt: now };
+          }
+          nextSettings = {
+            ...nextSettings,
+            donationLinks: normalizeHighSocietyDonationLinks(donationLinks, valid),
+          };
+        }
         applied = nextSettings;
         let next: AppState = {
           ...prev,
           highSocietySettings: nextSettings,
+          donationSyncMode: turningOn
+            ? "highSociety"
+            : turningOff && (prev.donationSyncMode || "mealBattle") === "highSociety"
+              ? "mealBattle"
+              : prev.donationSyncMode || "mealBattle",
           updatedAt: Date.now(),
         };
-        const turningOff = wasOn && !nextSettings.enabled;
         if (turningOff) {
           next = clearAllDonorHsPushDirs(next);
           persistState(next, { includeDonationFields: true });
@@ -7514,7 +7541,7 @@ export default function AdminPage() {
       if (typeof patch.enabled === "boolean" && patch.enabled !== wasOn) {
         showAppToast(
           patch.enabled
-            ? "상류사회 ON — 오버레이·후원 확장 방향이 활성화되었습니다"
+            ? "상류사회 ON — 후원 연동·영토 오버레이가 활성화되었습니다"
             : "상류사회 OFF — 수동 확장 방향이 원복되고 모드가 꺼졌습니다"
         );
       } else if (patch.defaultMiddlePush && after.defaultMiddlePush !== before.defaultMiddlePush) {
@@ -8090,6 +8117,184 @@ export default function AdminPage() {
   const brokenImageUrlCount = sigImageUrlIssues.filter((x) => x.isBroken).length;
   const emptyImageUrlCount = sigImageUrlIssues.filter((x) => x.isEmpty).length;
 
+  const highSocietySeatLayoutPanel = highSocietySettings.enabled ? (
+    <div className="space-y-3">
+      <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
+        1인 시작 (cm)
+        <input
+          type="text"
+          inputMode="numeric"
+          className="w-28 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm text-amber-50"
+          value={hsStartCmInputValue}
+          onChange={(e) => onHsStartCmDraftChange(e.target.value)}
+          onBlur={() => commitHsStartCmDraft()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.currentTarget.blur();
+            }
+          }}
+        />
+        <span className="text-neutral-500">
+          → 전장{" "}
+          <strong className="text-neutral-200">
+            {(highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM).toLocaleString("ko-KR")}cm
+          </strong>
+          ({hsSeatPlayers.length || 0}명)
+        </span>
+      </label>
+      <div className="flex flex-wrap gap-1.5">
+        {[100, 200, 300, 400, 500, 600].map((cm) => (
+          <button
+            key={`hs-overlay-start-${cm}`}
+            type="button"
+            className={`rounded px-2 py-0.5 text-[10px] font-semibold border ${
+              Math.round(hsStartCm) === cm
+                ? "border-amber-400 bg-amber-700/80 text-white"
+                : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
+            }`}
+            onClick={() => patchHighSocietyStartCm(cm)}
+          >
+            1인 {cm}cm
+          </button>
+        ))}
+      </div>
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-[11px] text-neutral-400">
+            좌석 배치(좌→右). ←→로 순서 변경 · 최대 {HIGH_SOCIETY_MAX_SEATS}명.
+            {hsSeatExplicit ? (
+              <>
+                {" "}
+                <strong className="text-amber-200/90">수동 고정</strong>
+              </>
+            ) : (
+              <>
+                {" "}
+                지금은 <strong className="text-neutral-300">자동(전원 N등분)</strong>
+                — 삭제/이동 시 그 배치로 고정됩니다.
+              </>
+            )}
+          </div>
+          {hsSeatExplicit ? (
+            <button
+              type="button"
+              className="rounded px-2 py-0.5 text-[10px] font-semibold border border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
+              onClick={() => patchHighSocietySettings({ seatMemberIds: [] })}
+            >
+              자동(전원)으로
+            </button>
+          ) : null}
+        </div>
+        {hsSeatPlayers.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {hsSeatPlayers.map((p, i) => {
+              const expandHint = i === 0 ? "→만" : i === hsSeatPlayers.length - 1 ? "←만" : "↔";
+              return (
+                <div
+                  key={`hs-overlay-seat-${p.id}`}
+                  className="flex items-center gap-1 rounded border border-amber-400/50 bg-amber-900/50 px-1.5 py-1"
+                >
+                  <span className="min-w-[1.25rem] text-center text-[10px] font-bold text-amber-200">
+                    {i + 1}
+                  </span>
+                  <div className="leading-tight">
+                    <div className="text-[11px] font-semibold text-white">{p.name}</div>
+                    <div className="text-[9px] text-amber-200/70">{expandHint}</div>
+                  </div>
+                  <div className="ml-1 flex flex-col gap-0.5">
+                    <button
+                      type="button"
+                      className="rounded bg-neutral-950/70 px-1.5 py-0.5 text-[10px] text-neutral-200 hover:bg-neutral-800 disabled:opacity-30"
+                      disabled={i === 0}
+                      title="왼쪽으로"
+                      onClick={() => moveHighSocietySeat(p.id, -1)}
+                    >
+                      ←
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded bg-neutral-950/70 px-1.5 py-0.5 text-[10px] text-neutral-200 hover:bg-neutral-800 disabled:opacity-30"
+                      disabled={i >= hsSeatPlayers.length - 1}
+                      title="오른쪽으로"
+                      onClick={() => moveHighSocietySeat(p.id, 1)}
+                    >
+                      →
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded px-1.5 py-0.5 text-[10px] text-red-300 hover:bg-red-950/50"
+                    title="좌석에서 제거"
+                    onClick={() => removeHighSocietySeat(p.id)}
+                  >
+                    ✕
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded border border-dashed border-white/15 bg-black/20 px-2 py-2 text-[11px] text-neutral-500">
+            아래 멤버를 눌러 좌석에 추가하세요. (비우면 전원 N등분)
+          </div>
+        )}
+        {hsUnseatedMembers.length > 0 ? (
+          <div className="space-y-1">
+            <div className="text-[10px] text-neutral-500">좌석에 추가</div>
+            <div className="flex flex-wrap gap-1.5">
+              {hsUnseatedMembers.map((m) => (
+                <button
+                  key={`hs-overlay-add-${m.id}`}
+                  type="button"
+                  className="rounded border border-white/15 bg-neutral-900 px-2 py-1 text-[11px] font-semibold text-neutral-300 hover:border-amber-400/50 hover:text-amber-100"
+                  onClick={() => addHighSocietySeat(m.id)}
+                >
+                  + {m.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+      <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
+        가운데 시스템 기본 방향
+        <select
+          className="rounded border border-white/10 bg-neutral-950 px-2 py-1"
+          value={resolveSystemMiddlePushDir(highSocietySettings)}
+          onChange={(e) =>
+            patchHighSocietySettings({
+              defaultMiddlePush: e.target.value === "left" ? "left" : "right",
+            })
+          }
+        >
+          <option value="right">오른쪽 → (기본)</option>
+          <option value="left">← 왼쪽</option>
+        </select>
+      </label>
+      <p className="text-[10px] text-neutral-500 leading-snug">
+        ON 시 좌석 멤버 후원 연동이 켜지고, 모드 시작 이후 후원만 영토에 반영됩니다. 건별 확장 방향은{" "}
+        <button
+          type="button"
+          className="text-sky-400 underline"
+          onClick={() => {
+            moveToSection("donor", "donor-management");
+            window.setTimeout(() => {
+              document.getElementById("high-society-mode")?.scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+              });
+            }, 80);
+          }}
+        >
+          후원자 기록부
+        </button>
+        에서 설정합니다.
+      </p>
+    </div>
+  ) : (
+    <p className="text-[11px] text-neutral-500">상류사회 ON 후 좌석·전장·후원 연동을 설정할 수 있습니다.</p>
+  );
+
   return (
     <main
       className="min-h-screen p-4 md:p-8 pb-24 md:pb-10 text-neutral-100"
@@ -8325,13 +8530,14 @@ export default function AdminPage() {
                 <div className="rounded-lg border border-amber-300/30 bg-amber-500/10 p-3 space-y-2">
                   <div className="text-sm font-semibold text-amber-200">후원 동기화 일괄 관리 (중복 방지)</div>
                     <p className="text-xs text-neutral-300">
-                      후원 입력은 아래에서 선택한 대상에만 동기화됩니다. 시그/식사 대전을 켜면 모드가 자동 전환됩니다.
+                      후원 입력은 아래에서 선택한 대상에만 동기화됩니다. 시그/식사/상류사회를 켜면 모드가 자동 전환됩니다.
                       참가자별 「후원 연동 ON/OFF」로 엑셀에 배정된 후원이 해당 대전 점수에 반영될지 제어합니다.
                     </p>
                   <div className="flex flex-wrap gap-2">
                     {([
                       ["mealBattle", "식사대전 동기화"],
                       ["sigMatch", "시그대전 동기화"],
+                      ["highSociety", "상류사회 동기화"],
                       ["sigSales", "시그판매 동기화"],
                       ["none", "동기화 안 함"],
                     ] as Array<[AppState["donationSyncMode"], string]>).map(([mode, label]) => (
@@ -11646,160 +11852,24 @@ export default function AdminPage() {
                   </button>
                 </div>
                 {highSocietySettings.enabled ? (
-                  <div className="space-y-3">
-                    <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
-                      1인 시작 (cm)
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        className="w-28 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm text-amber-50"
-                        value={hsStartCmInputValue}
-                        onChange={(e) => onHsStartCmDraftChange(e.target.value)}
-                        onBlur={() => commitHsStartCmDraft()}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.currentTarget.blur();
-                          }
-                        }}
-                      />
-                      <span className="text-neutral-500">
-                        → 전장{" "}
-                        <strong className="text-neutral-200">
-                          {(highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM).toLocaleString("ko-KR")}cm
-                        </strong>
-                        ({hsSeatPlayers.length || 0}명)
-                      </span>
-                    </label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {[100, 200, 300, 400, 500, 600].map((cm) => (
-                        <button
-                          key={`hs-start-${cm}`}
-                          type="button"
-                          className={`rounded px-2 py-0.5 text-[10px] font-semibold border ${
-                            Math.round(hsStartCm) === cm
-                              ? "border-amber-400 bg-amber-700/80 text-white"
-                              : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
-                          }`}
-                          onClick={() => patchHighSocietyStartCm(cm)}
-                        >
-                          1인 {cm}cm
-                        </button>
-                      ))}
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="text-[11px] text-neutral-400">
-                          좌석 배치(좌→우). ←→로 순서 변경 · 최대 {HIGH_SOCIETY_MAX_SEATS}명.
-                          {hsSeatExplicit ? (
-                            <>
-                              {" "}
-                              <strong className="text-amber-200/90">수동 고정</strong>
-                            </>
-                          ) : (
-                            <>
-                              {" "}
-                              지금은 <strong className="text-neutral-300">자동(전원 N등분)</strong>
-                              — 삭제/이동 시 그 배치로 고정됩니다.
-                            </>
-                          )}
-                        </div>
-                        {hsSeatExplicit ? (
-                          <button
-                            type="button"
-                            className="rounded px-2 py-0.5 text-[10px] font-semibold border border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
-                            onClick={() => patchHighSocietySettings({ seatMemberIds: [] })}
-                          >
-                            자동(전원)으로
-                          </button>
-                        ) : null}
-                      </div>
-                      {hsSeatPlayers.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {hsSeatPlayers.map((p, i) => {
-                            const expandHint =
-                              i === 0 ? "→만" : i === hsSeatPlayers.length - 1 ? "←만" : "↔";
-                            return (
-                              <div
-                                key={`hs-seat-${p.id}`}
-                                className="flex items-center gap-1 rounded border border-amber-400/50 bg-amber-900/50 px-1.5 py-1"
-                              >
-                                <span className="min-w-[1.25rem] text-center text-[10px] font-bold text-amber-200">
-                                  {i + 1}
-                                </span>
-                                <div className="leading-tight">
-                                  <div className="text-[11px] font-semibold text-white">{p.name}</div>
-                                  <div className="text-[9px] text-amber-200/70">{expandHint}</div>
-                                </div>
-                                <div className="ml-1 flex flex-col gap-0.5">
-                                  <button
-                                    type="button"
-                                    className="rounded bg-neutral-950/70 px-1.5 py-0.5 text-[10px] text-neutral-200 hover:bg-neutral-800 disabled:opacity-30"
-                                    disabled={i === 0}
-                                    title="왼쪽으로"
-                                    onClick={() => moveHighSocietySeat(p.id, -1)}
-                                  >
-                                    ←
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="rounded bg-neutral-950/70 px-1.5 py-0.5 text-[10px] text-neutral-200 hover:bg-neutral-800 disabled:opacity-30"
-                                    disabled={i >= hsSeatPlayers.length - 1}
-                                    title="오른쪽으로"
-                                    onClick={() => moveHighSocietySeat(p.id, 1)}
-                                  >
-                                    →
-                                  </button>
-                                </div>
-                                <button
-                                  type="button"
-                                  className="rounded px-1.5 py-0.5 text-[10px] text-red-300 hover:bg-red-950/50"
-                                  title="좌석에서 제거"
-                                  onClick={() => removeHighSocietySeat(p.id)}
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="rounded border border-dashed border-white/15 bg-black/20 px-2 py-2 text-[11px] text-neutral-500">
-                          아래 멤버를 눌러 좌석에 추가하세요. (비우면 전원 N등분)
-                        </div>
-                      )}
-                      {hsUnseatedMembers.length > 0 ? (
-                        <div className="space-y-1">
-                          <div className="text-[10px] text-neutral-500">좌석에 추가</div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {hsUnseatedMembers.map((m) => (
-                              <button
-                                key={`hs-add-${m.id}`}
-                                type="button"
-                                className="rounded border border-white/15 bg-neutral-900 px-2 py-1 text-[11px] font-semibold text-neutral-300 hover:border-amber-400/50 hover:text-amber-100"
-                                onClick={() => addHighSocietySeat(m.id)}
-                              >
-                                + {m.name}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-                    <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
-                      가운데 시스템 기본 방향
-                      <select
-                        className="rounded border border-white/10 bg-neutral-950 px-2 py-1"
-                        value={resolveSystemMiddlePushDir(highSocietySettings)}
-                        onChange={(e) =>
-                          patchHighSocietySettings({
-                            defaultMiddlePush: e.target.value === "left" ? "left" : "right",
-                          })
-                        }
-                      >
-                        <option value="right">오른쪽 → (기본)</option>
-                        <option value="left">← 왼쪽</option>
-                      </select>
-                    </label>
+                  <div className="rounded border border-white/10 bg-black/20 px-2.5 py-2 text-[11px] text-neutral-400 leading-snug">
+                    좌석 배치·1인 시작 cm·전장 설정은{" "}
+                    <button
+                      type="button"
+                      className="text-sky-400 underline"
+                      onClick={() => {
+                        moveToSection("overlay", "overlay-settings");
+                        window.setTimeout(() => {
+                          document.getElementById("high-society-overlay")?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          });
+                        }, 80);
+                      }}
+                    >
+                      오버레이 관리 → 상류사회
+                    </button>
+                    에서 설정하세요. 아래 합산·리스트에서는 가운데 좌석 후원의 확장 방향만 바꿉니다.
                   </div>
                 ) : null}
               </div>
@@ -12641,25 +12711,7 @@ export default function AdminPage() {
                 </div>
                 {highSocietySettings.enabled ? (
                   <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
-                    <span className="text-neutral-400">1인 시작</span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      className="w-24 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-amber-50"
-                      value={hsStartCmInputValue}
-                      onChange={(e) => onHsStartCmDraftChange(e.target.value)}
-                      onBlur={() => commitHsStartCmDraft()}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.currentTarget.blur();
-                        }
-                      }}
-                    />
-                    <span className="text-neutral-500">cm</span>
-                    <span className="text-neutral-500">
-                      (전장 {(highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM).toLocaleString("ko-KR")}cm)
-                    </span>
-                    <span className="text-neutral-400 ml-1">가운데 기본</span>
+                    <span className="text-neutral-400">가운데 기본</span>
                     <button
                       type="button"
                       className={`rounded px-2.5 py-1 font-semibold border ${
@@ -12686,16 +12738,16 @@ export default function AdminPage() {
                       type="button"
                       className="text-sky-400 underline ml-1"
                       onClick={() => {
-                        moveToSection("donor", "donor-management");
+                        moveToSection("overlay", "overlay-settings");
                         window.setTimeout(() => {
-                          document.getElementById("high-society-mode")?.scrollIntoView({
+                          document.getElementById("high-society-overlay")?.scrollIntoView({
                             behavior: "smooth",
                             block: "start",
                           });
                         }, 80);
                       }}
                     >
-                      좌석·상세 설정
+                      좌석·전장 설정
                     </button>
                   </div>
                 ) : null}
@@ -13972,16 +14024,15 @@ export default function AdminPage() {
                   );
                 })()}
               </div>
-              <div className="mb-3 rounded border border-amber-500/35 bg-amber-950/25 p-3 space-y-3">
+              <div id="high-society-overlay" className="mb-3 rounded border border-amber-500/35 bg-amber-950/25 p-3 space-y-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <h4 className="text-sm font-semibold text-amber-100">상류사회 · 세로(9:16) 오버레이</h4>
                     <p className="mt-1 text-[11px] text-neutral-400 leading-snug max-w-xl">
-                      계좌·투네 후원 합산으로 상단 영토 게이지만 표시합니다.{" "}
+                      ON 시 좌석 멤버 후원 연동이 켜지고 계좌·투네 후원이 상단 영토 게이지에 반영됩니다.{" "}
                       확장: <strong className="text-neutral-300">1만원=5cm</strong>
                       · 천원 단위 버림(예: 2만6천→10cm).{" "}
                       <strong className="text-neutral-300">갱신 시점</strong>은 아래 옵션으로 선택합니다.
-                      「라운드 종료 후」는 「타이머 제어」 일반 타이머가 0이 될 때 반영됩니다(오버레이에 타이머 UI 없음).
                       OBS 캔버스·브라우저 소스 <strong className="text-neutral-300">1080×1920</strong>.
                     </p>
                   </div>
@@ -13996,6 +14047,11 @@ export default function AdminPage() {
                   >
                     {highSocietySettings.enabled ? "상류사회 ON" : "상류사회 OFF"}
                   </button>
+                </div>
+
+                <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
+                  <div className="text-[11px] font-semibold text-amber-100/95">좌석 · 전장 · 후원 연동</div>
+                  {highSocietySeatLayoutPanel}
                 </div>
 
                 <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
@@ -14033,7 +14089,7 @@ export default function AdminPage() {
                 <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
                   <div className="text-[11px] font-semibold text-amber-100/95">가운데 좌석 · 확장 방향</div>
                   <p className="text-[10px] text-neutral-400 leading-snug">
-                    양끝은 고정(좌끝→ / 우끝←). 가운데 후원은 아래 시스템 기본으로 밀고, 건별 수동은{" "}
+                    양끝은 고정(좌끝→ / 우끝←). 가운데 후원 건별 수동 방향은{" "}
                     <button
                       type="button"
                       className="text-sky-400 underline"

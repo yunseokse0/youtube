@@ -453,6 +453,8 @@ export type HighSocietySettings = {
   territoryUpdateMode?: "realtime" | "onRoundEnd";
   /** 땅따먹기 연출 ON/OFF (기본 전부) */
   fx?: HighSocietyFxSettings;
+  /** 좌석 멤버별 후원 연동(ON 시 startedAt 이후만 영토 집계) */
+  donationLinks?: Record<string, { active: boolean; startedAt?: number }>;
 };
 
 /** `/overlay/sig-rolling` — 이미지/GIF 순환 한 장 항목 */
@@ -545,7 +547,7 @@ export type AppState = {
   /** 시그 판매/회전판에서 제외할 시그 ID 목록 */
   sigSalesExcludedIds: string[];
   /** 후원 동기화 라우팅(중복 반영 방지): none | mealBattle | sigMatch | sigSales */
-  donationSyncMode?: "none" | "mealBattle" | "sigMatch" | "sigSales";
+  donationSyncMode?: "none" | "mealBattle" | "sigMatch" | "sigSales" | "highSociety";
   /** 시그 롤링 오버레이 (`/overlay/sig-rolling`) 이미지 목록·전환 설정 */
   sigRolling: SigRollingSettings;
   /** 시그 롤링 전용 메타(라벨/정렬). 실제 항목 소스는 sigInventory(isRolling=true) 우선 */

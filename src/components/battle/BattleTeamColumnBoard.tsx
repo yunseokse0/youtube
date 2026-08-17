@@ -6,9 +6,10 @@ import BattleGaugeFitScore from "@/components/battle/BattleGaugeFitScore";
 function scoreTextStyle(): CSSProperties {
   return {
     color: "#ffffff",
-    textShadow: "0 1px 2px rgba(0,0,0,0.55), 0 0 1px rgba(0,0,0,0.8)",
-    WebkitTextStroke: "0.4px rgba(0,0,0,0.35)",
+    WebkitTextStroke: "0.5px rgba(0,0,0,0.92)",
     paintOrder: "stroke fill",
+    textShadow:
+      "0 0 1px rgba(0,0,0,1), 0 1px 2px rgba(0,0,0,0.9), 1px 0 1px rgba(0,0,0,0.75), -1px 0 1px rgba(0,0,0,0.75)",
   };
 }
 

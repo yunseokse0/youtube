@@ -26,18 +26,19 @@ import BattleGaugeFitScore from "@/components/battle/BattleGaugeFitScore";
 
 type SigMatchSide = { ids: string[]; label: string; score: number; teamLabel?: string };
 
-function sigGaugeInBarScoreStyle(leading: boolean): React.CSSProperties {
-  if (leading) {
-    return {
-      color: "#ffffff",
-      textShadow: "0 1px 2px rgba(0,0,0,0.55)",
-      WebkitTextStroke: "0.35px rgba(0,0,0,0.4)",
-      paintOrder: "stroke fill",
-    };
-  }
+/** 흰 글씨 + 검은 외곽선 — OBS·밝은 배경 위 가독성 */
+const sigOutlinedWhiteTextStyle: CSSProperties = {
+  color: "#ffffff",
+  WebkitTextStroke: "0.5px rgba(0,0,0,0.92)",
+  paintOrder: "stroke fill",
+  textShadow:
+    "0 0 1px rgba(0,0,0,1), 0 1px 2px rgba(0,0,0,0.9), 1px 0 1px rgba(0,0,0,0.75), -1px 0 1px rgba(0,0,0,0.75)",
+};
+
+function sigGaugeInBarScoreStyle(leading: boolean): CSSProperties {
   return {
-    color: "rgba(255,255,255,0.95)",
-    textShadow: "0 1px 2px rgba(0,0,0,0.5)",
+    ...sigOutlinedWhiteTextStyle,
+    ...(leading ? { filter: "brightness(1.05)" } : {}),
   };
 }
 
@@ -131,14 +132,8 @@ function sigTeamBoxLeadingClasses(_tint: "pink" | "sky" | "amber", leading: bool
     : "border-white/20 bg-neutral-950/88 ring-1 ring-white/15 shadow-[0_2px_8px_rgba(0,0,0,0.35)]";
 }
 
-const sigMemberNameStyle: CSSProperties = {
-  color: "#ffffff",
-  textShadow: "0 1px 2px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.55)",
-};
-
-const sigMemberAmountStyle: CSSProperties = {
-  textShadow: "0 1px 2px rgba(0,0,0,0.85)",
-};
+const sigMemberNameStyle = sigOutlinedWhiteTextStyle;
+const sigMemberAmountStyle = sigOutlinedWhiteTextStyle;
 
 function SigCleanTimerPill({
   timerPaused,
@@ -220,7 +215,6 @@ function SigTeamMemberBox({
   borderClass = "border-white/15",
   teamLeading = false,
   teamTint = "pink",
-  namesOnly = false,
 }: {
   members: SigMemberScoreLine[];
   scoringMode: "count" | "amount";
@@ -230,22 +224,12 @@ function SigTeamMemberBox({
   borderClass?: string;
   teamLeading?: boolean;
   teamTint?: "pink" | "sky" | "amber";
-  /** 게이지에 팀 합산이 있으면 멤버 행은 이름만 크게 */
-  namesOnly?: boolean;
 }) {
   if (members.length === 0) return <div className="min-h-[2px]" aria-hidden />;
   const boxPos =
     align === "right" ? "ml-auto" : align === "center" ? "mx-auto" : "mr-auto";
   const rowDir = align === "right" ? "flex-row-reverse" : "flex-row";
-  const rowJustify = namesOnly
-    ? align === "right"
-      ? "justify-end"
-      : align === "center"
-        ? "justify-center"
-        : "justify-start"
-    : align === "right"
-      ? "justify-end"
-      : "justify-between";
+  const rowJustify = align === "right" ? "justify-end" : "justify-between";
 
   return (
     <div
@@ -260,30 +244,22 @@ function SigTeamMemberBox({
           return (
             <li
               key={m.memberId}
-              className={`flex min-w-0 ${rowDir} items-center gap-1.5 ${rowJustify} ${
+              className={`flex min-w-0 ${rowDir} items-center gap-2 ${rowJustify} ${
                 idx > 0 ? "border-t border-white/12 pt-1" : ""
               }`}
             >
               <span
-                className={`min-w-0 truncate font-bold leading-snug ${
-                  namesOnly
-                    ? "flex-1 text-center text-sm sm:text-base"
-                    : "flex-1 text-sm sm:text-[15px]"
-                } ${nameClass}`}
+                className={`min-w-0 flex-1 truncate text-sm font-bold leading-snug sm:text-[15px] ${nameClass}`}
                 style={sigMemberNameStyle}
               >
                 {m.name}
               </span>
-              {!namesOnly ? (
-                <span
-                  className={`max-w-[5.5rem] shrink-0 truncate whitespace-nowrap text-xs font-semibold tabular-nums sm:max-w-[6rem] sm:text-sm ${
-                    teamLeading ? "text-white" : scoreClass
-                  }`}
-                  style={sigMemberAmountStyle}
-                >
-                  {amountLabel}
-                </span>
-              ) : null}
+              <span
+                className="max-w-[6rem] shrink-0 truncate whitespace-nowrap text-xs font-bold tabular-nums sm:max-w-[6.5rem] sm:text-sm"
+                style={sigMemberAmountStyle}
+              >
+                {amountLabel}
+              </span>
             </li>
           );
         })}
@@ -960,23 +936,19 @@ export default function SigMatchDuelOverlay({
                   members={leftMemberLines}
                   scoringMode={scoringMode}
                   align="left"
-                  nameClass="text-rose-50"
-                  scoreClass="text-white/95"
+                  nameClass=""
                   borderClass="border-rose-400/35"
                   teamLeading={Boolean(dualBar?.leftLeading)}
                   teamTint="pink"
-                  namesOnly
                 />
                 <SigTeamMemberBox
                   members={rightMemberLines}
                   scoringMode={scoringMode}
                   align="right"
-                  nameClass="text-sky-50"
-                  scoreClass="text-white/95"
+                  nameClass=""
                   borderClass="border-sky-400/35"
                   teamLeading={Boolean(dualBar?.rightLeading)}
                   teamTint="sky"
-                  namesOnly
                 />
               </div>
             </div>

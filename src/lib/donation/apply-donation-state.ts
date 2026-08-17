@@ -450,6 +450,7 @@ export function applyDonationToAppState(
         at: atMs,
         target: newDonor.target,
         ...(newDonor.message ? { message: newDonor.message } : {}),
+        ...(newDonor.hsPushDir ? { hsPushDir: newDonor.hsPushDir } : {}),
         ...(processedEvent.memberAutoAssigned ? { memberAutoAssigned: true } : {}),
       },
     ],

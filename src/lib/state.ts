@@ -30,7 +30,7 @@ import type {
   SigRollingSettings,
   DonorsAmountFormat,
 } from "@/types";
-import { normalizeHighSocietySettings } from "@/lib/high-society";
+import { normalizeHighSocietySettings, normalizeHighSocietyDonationLinks, resolveHighSocietySeatMembers } from "@/lib/high-society";
 import { ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
 import { isBundledSigPlaceholderItem } from "@/lib/sig-placeholder";
 import { normalizeRestroomCount } from "@/lib/restroom-utils";
@@ -1562,7 +1562,8 @@ export function loadState(userId?: string | null): AppState {
       (data as AppState).donationSyncMode === "none" ||
       (data as AppState).donationSyncMode === "mealBattle" ||
       (data as AppState).donationSyncMode === "sigMatch" ||
-      (data as AppState).donationSyncMode === "sigSales"
+      (data as AppState).donationSyncMode === "sigSales" ||
+      (data as AppState).donationSyncMode === "highSociety"
         ? (data as AppState).donationSyncMode
         : "mealBattle";
     data.sigMatch = data.sigMatch && typeof data.sigMatch === "object" ? data.sigMatch : {};
@@ -1644,6 +1645,21 @@ export function loadState(userId?: string | null): AppState {
     data.highSocietySettings = normalizeHighSocietySettings(
       (data as AppState).highSocietySettings
     );
+    {
+      const hsValidIds = new Set(
+        resolveHighSocietySeatMembers(
+          data.members || [],
+          data.highSocietySettings?.seatMemberIds
+        ).map((m) => m.id)
+      );
+      data.highSocietySettings = {
+        ...data.highSocietySettings,
+        donationLinks: normalizeHighSocietyDonationLinks(
+          data.highSocietySettings?.donationLinks,
+          hsValidIds
+        ),
+      };
+    }
     data.generalTimer = normalizeTimerState((data as AppState).generalTimer);
     data.matchTimerEnabled = normalizeMatchTimerEnabled((data as AppState).matchTimerEnabled);
     data.timerDisplayStyles = normalizeTimerDisplayStyles((data as AppState).timerDisplayStyles);
@@ -3240,7 +3256,8 @@ async function doLoadStateFromApi(
         (data as AppState).donationSyncMode === "none" ||
         (data as AppState).donationSyncMode === "mealBattle" ||
         (data as AppState).donationSyncMode === "sigMatch" ||
-        (data as AppState).donationSyncMode === "sigSales"
+        (data as AppState).donationSyncMode === "sigSales" ||
+        (data as AppState).donationSyncMode === "highSociety"
           ? (data as AppState).donationSyncMode
           : "mealBattle";
       data.sigMatch = data.sigMatch && typeof data.sigMatch === "object" ? data.sigMatch : {};
@@ -3322,6 +3339,21 @@ async function doLoadStateFromApi(
     data.highSocietySettings = normalizeHighSocietySettings(
       (data as AppState).highSocietySettings
     );
+    {
+      const hsValidIds = new Set(
+        resolveHighSocietySeatMembers(
+          data.members || [],
+          data.highSocietySettings?.seatMemberIds
+        ).map((m) => m.id)
+      );
+      data.highSocietySettings = {
+        ...data.highSocietySettings,
+        donationLinks: normalizeHighSocietyDonationLinks(
+          data.highSocietySettings?.donationLinks,
+          hsValidIds
+        ),
+      };
+    }
       data.generalTimer = normalizeTimerState((data as AppState).generalTimer);
       data.matchTimerEnabled = normalizeMatchTimerEnabled((data as AppState).matchTimerEnabled);
       data.timerDisplayStyles = normalizeTimerDisplayStyles((data as AppState).timerDisplayStyles);

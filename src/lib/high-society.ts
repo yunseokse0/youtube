@@ -195,10 +195,50 @@ export function normalizeHighSocietyFxSettings(input: unknown): HighSocietyFxSet
   };
 }
 
+export function normalizeHighSocietyDonationLinks(
+  raw: unknown,
+  validMemberIds: Set<string>
+): Record<string, { active: boolean; startedAt?: number }> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, { active: boolean; startedAt?: number }> = {};
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!validMemberIds.has(id)) continue;
+    if (!v || typeof v !== "object") continue;
+    const o = v as Record<string, unknown>;
+    const active = Boolean(o.active);
+    const startedRaw = Number(o.startedAt);
+    const startedAt = Number.isFinite(startedRaw) ? Math.max(0, Math.floor(startedRaw)) : undefined;
+    out[id] = active
+      ? { active: true, ...(startedAt !== undefined ? { startedAt } : {}) }
+      : { active: false, ...(startedAt !== undefined ? { startedAt } : {}) };
+  }
+  return out;
+}
+
+/** donationLinks 없으면 하위호환 ON(전체 기간) */
+export function resolveHighSocietyDonationLink(
+  settings: Pick<HighSocietySettings, "donationLinks"> | null | undefined,
+  memberId: string
+): { active: boolean; startedAt: number } {
+  const link = settings?.donationLinks?.[memberId];
+  if (!link) return { active: true, startedAt: 0 };
+  return {
+    active: Boolean(link.active),
+    startedAt: Number.isFinite(Number(link.startedAt))
+      ? Math.max(0, Math.floor(Number(link.startedAt)))
+      : 0,
+  };
+}
+
+function highSocietyDonorAtMs(d: Pick<Donor, "at">): number {
+  return Number.isFinite(Number(d.at)) ? Math.max(0, Math.floor(Number(d.at))) : 0;
+}
+
 export function defaultHighSocietySettings(): HighSocietySettings {
   return {
     enabled: false,
     seatMemberIds: [],
+    donationLinks: {},
     /** 시스템 기본: 가운데도 한쪽(오른쪽)만 */
     defaultMiddlePush: "right",
     defaultBPush: "right",
@@ -241,6 +281,11 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
   const fieldCm = Math.max(100, Math.min(20000, Math.floor(Number(v.fieldCm) || HIGH_SOCIETY_DEFAULT_FIELD_CM)));
   const territoryUpdateMode = parseHighSocietyTerritoryUpdateMode(v.territoryUpdateMode);
   const fx = normalizeHighSocietyFxSettings(v.fx);
+  const donationLinksRaw = v.donationLinks;
+  const donationLinks =
+    donationLinksRaw && typeof donationLinksRaw === "object" && !Array.isArray(donationLinksRaw)
+      ? (donationLinksRaw as HighSocietySettings["donationLinks"])
+      : {};
   return {
     enabled: Boolean(v.enabled),
     seatMemberIds,
@@ -252,6 +297,7 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     fieldCm,
     territoryUpdateMode,
     fx,
+    donationLinks: donationLinks || {},
   };
 }
 
@@ -490,7 +536,7 @@ export function seatLetterForMemberId(
 /** 후원 행별 방향을 반영해 좌석 확장 cm 합산 */
 export function aggregateSeatPushesFromDonors(opts: {
   seatPlayers: Array<{ id: string; name: string; donationWon: number }>;
-  donors: Array<Pick<Donor, "memberId" | "amount" | "hsPushDir" | "donationExcluded">>;
+  donors: Array<Pick<Donor, "memberId" | "amount" | "hsPushDir" | "donationExcluded" | "at">>;
   settings: HighSocietySettings;
 }): HighSocietyPlayerInput[] {
   const { seatPlayers, donors, settings } = opts;
@@ -499,15 +545,20 @@ export function aggregateSeatPushesFromDonors(opts: {
 
   return seatPlayers.map((player, i) => {
     const dir = seatExpandDirForIndex(i, n);
-    const rows = (donors || []).filter(
-      (d) =>
-        String(d.memberId || "") === player.id &&
-        d.donationExcluded !== true &&
-        Math.max(0, Number(d.amount) || 0) > 0
-    );
+    const link = resolveHighSocietyDonationLink(settings, player.id);
+    const rows = (donors || []).filter((d) => {
+      if (String(d.memberId || "") !== player.id) return false;
+      if (d.donationExcluded === true) return false;
+      if (Math.max(0, Number(d.amount) || 0) <= 0) return false;
+      if (!settings.enabled) return false;
+      if (!link.active) return false;
+      const at = highSocietyDonorAtMs(d);
+      if (link.startedAt > 0 && at < link.startedAt) return false;
+      return true;
+    });
 
     if (rows.length === 0) {
-      const cm = donationToExpandCm(player.donationWon);
+      const cm = 0;
       if (dir === "right") return { ...player, expandLeftCm: 0, expandRightCm: cm };
       if (dir === "left") return { ...player, expandLeftCm: cm, expandRightCm: 0 };
       const lr = pushDirToLeftRight(cm, middleDir);

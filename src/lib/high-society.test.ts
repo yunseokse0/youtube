@@ -267,6 +267,55 @@ describe("high-society territory (aux)", () => {
     expect(leftPush.seats[2]!.widthCm).toBe(300);
   });
 
+  it("filters donors by donationLinks startedAt when enabled", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    const baseSettings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b", "c", "d"],
+      defaultMiddlePush: "right",
+      donationLinks: {
+        b: { active: true, startedAt: 5000 },
+      },
+    });
+    const beforeStart = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        {
+          id: "d-old",
+          name: "후원",
+          amount: 100_000,
+          memberId: "b",
+          target: "account",
+          at: 1000,
+          hsPushDir: "right",
+        },
+      ],
+      highSocietySettings: baseSettings,
+    });
+    const afterStart = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        {
+          id: "d-new",
+          name: "후원",
+          amount: 100_000,
+          memberId: "b",
+          target: "account",
+          at: 6000,
+          hsPushDir: "right",
+        },
+      ],
+      highSocietySettings: baseSettings,
+    });
+    expect(beforeStart.seats[1]!.widthCm).toBe(300);
+    expect(afterStart.seats[1]!.widthCm).toBe(350);
+  });
+
   it("honors explicit single-seat list without falling back to all members", () => {
     const members = [
       { id: "a", name: "A", account: 0, toon: 0, operating: false },
