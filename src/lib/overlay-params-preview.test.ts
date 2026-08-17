@@ -11,6 +11,7 @@ import {
   resolveTableBgColor,
   resolveTableFontFamilyId,
   resolveTableVerticalLines,
+  resolveTableGridLines,
   resolveTimerOverlayStyle,
   stripAdminPreviewHotReloadParams,
   type OverlayPresetLike,
@@ -381,6 +382,20 @@ describe("admin preview hot-reload params", () => {
     ).toBe(false);
     expect(
       resolveTableVerticalLines(new URLSearchParams(), { id: "x", tableVerticalLines: false }, {
+        ready: true,
+      })
+    ).toBe(false);
+  });
+
+  it("resolveTableGridLines defaults on and respects false", () => {
+    expect(resolveTableGridLines(new URLSearchParams(), null, { ready: true })).toBe(true);
+    expect(
+      resolveTableGridLines(new URLSearchParams("tableGridLines=false"), null, {
+        ready: true,
+      })
+    ).toBe(false);
+    expect(
+      resolveTableGridLines(new URLSearchParams(), { id: "x", tableGridLines: false }, {
         ready: true,
       })
     ).toBe(false);

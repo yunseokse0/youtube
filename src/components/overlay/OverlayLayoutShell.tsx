@@ -20,11 +20,14 @@ const overlayRouteCss = `
   body.overlay-mobile-broadcast .overlay-root table.overlay-elegant-table .overlay-row td {
     line-height: 1.35 !important;
   }
-  body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table tbody tr.overlay-row:nth-child(odd) td {
-    background-color: rgba(0, 0, 0, 0.22) !important;
-  }
-  body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table tbody tr.overlay-row:nth-child(even) td {
-    background-color: rgba(0, 0, 0, 0.14) !important;
+  /**
+   * 좁은/세로 OBS 뷰포트에서도 엑셀표 본문은 시트 틴트만 쓴다.
+   * (예전 nth-child 어두운 줄무늬가 프리뷰와 OBS 배경을 갈라놓음)
+   */
+  body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table tbody tr.overlay-row td {
+    background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
   }
   .overlay-root { font-size: 100%; -webkit-font-smoothing: antialiased; }
   table:not(.overlay-elegant-table) .overlay-row td { padding: 0.18em 0.25em !important; min-height: 1.5em; line-height: 1.2; vertical-align: middle; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }

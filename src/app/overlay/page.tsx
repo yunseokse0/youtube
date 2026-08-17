@@ -40,6 +40,7 @@ import {
   resolveTableHeaderTextColor,
   resolveTableLineColor,
   resolveTableVerticalLines,
+  resolveTableGridLines,
   resolveTableTextOutlineColor,
   resolveTableTextOutlineWidthPx,
   resolveTableHeaderTextOutlineColor,
@@ -2463,6 +2464,7 @@ function OverlayInner() {
   const tableHeaderTextColorRaw = resolveTableHeaderTextColor(rawSp, effectivePreset, { ready });
   const tableLineColorRaw = resolveTableLineColor(rawSp, effectivePreset, { ready });
   const tableVerticalLines = resolveTableVerticalLines(rawSp, effectivePreset, { ready });
+  const tableGridLines = resolveTableGridLines(rawSp, effectivePreset, { ready });
   const excelRankTop3Style = useMemo(
     () => resolveExcelRankTop3Style(rawSp, effectivePreset, { ready }),
     [rawSp, effectivePreset, ready]
@@ -3868,6 +3870,8 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table td.overlay-col-name .overlay-cell-text-inner {
           white-space: nowrap;
           max-width: 100%;
+          display: inline-block;
+          text-align: center;
         }
         .overlay-root .overlay-account-cell,
         .overlay-root .overlay-toon-cell,
@@ -3981,6 +3985,14 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td {
           background: transparent !important;
+        }
+        /* 세로 OBS(mobile-broadcast)에서도 시트 배경만 보이게 — 셸 줄무늬보다 우선 */
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table tbody tr.overlay-row td,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table tbody tr.overlay-row:nth-child(odd) td,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table tbody tr.overlay-row:nth-child(even) td {
+          background: transparent !important;
+          background-color: transparent !important;
+          background-image: none !important;
         }
         .overlay-root .overlay-elegant-table.pastel-member-table tbody tr.overlay-row:nth-child(odd) td,
         .overlay-root .overlay-elegant-table.pastel-member-table tbody tr.overlay-row:nth-child(even) td {
@@ -4146,6 +4158,11 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table tbody td.overlay-col-rank {
           text-align: center !important;
         }
+        /* 이름: 계좌·투네·합계와 동일하게 가운데 정렬 */
+        .overlay-root .overlay-elegant-table thead td.overlay-col-name,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-name {
+          text-align: center !important;
+        }
         /* 좌측 텍스트 칸들(순위/직급/이름)이 너무 붙어 보이지 않도록 헤더·바디 모두 좌우 여유를 둔다.
            기본 셀 패딩(0.25em)으로는 글자가 서로 붙은 것처럼 보임 → 각 칸당 0.55em 확보. */
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
@@ -4157,15 +4174,15 @@ function OverlayInner() {
           padding-left: 0.55em !important;
           padding-right: 0.55em !important;
         }
-        /* 직급↔이름 사이는 한 칸 더 넓게: 직급 우측, 이름 좌측 패딩을 추가로 늘려 시각 분리. */
+        /* 직급↔이름 사이는 한 칸 더 넓게: 직급 우측 패딩을 추가로 늘려 시각 분리. */
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-role {
           padding-right: 0.95em !important;
         }
         .overlay-root .overlay-elegant-table thead td.overlay-col-name,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-name {
-          padding-left: 0.95em !important;
-          padding-right: 1.2em !important;
+          padding-left: 0.75em !important;
+          padding-right: 0.75em !important;
         }
         /* 이름 ↔ 계좌/투네: 백만원대·두꺼운 아웃라인에서도 붙지 않게 금액 열 좌측 여백 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-account,
@@ -4279,6 +4296,7 @@ function OverlayInner() {
           /** 총합 행이 헤더와 같은 분홍 계열일 때 분홍 선이 묻히지 않게 */
           totalRowLineColor: tableLineColorRaw || "rgba(255, 255, 255, 0.72)",
           emphasizeTotalColumn: totalLineVisible,
+          gridLines: tableGridLines,
           verticalLines: tableVerticalLines,
         })}
         .overlay-root .overlay-elegant-table {
@@ -4427,7 +4445,7 @@ function OverlayInner() {
                     <tr>
                       <td className={`${effectiveHeaderCls} overlay-col-rank overlay-rank-cell text-center`}>순위</td>
                       {hasRoleColumn && <td className={`${effectiveHeaderCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
-                      <td className={`${effectiveHeaderCls} overlay-col-name`}>이름</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-name text-center`}>이름</td>
                       <td className={`${effectiveHeaderCls} overlay-col-account text-center`}>{accountHeaderLabel}</td>
                       <td className={`${effectiveHeaderCls} overlay-col-toon text-center`}>{toonHeaderLabel}</td>
                       {showCombinedColumn && (
@@ -4489,7 +4507,7 @@ function OverlayInner() {
                             )}
                           </td>
                         )}
-                        <td className={`${effectiveRowCls} overlay-col-name ${effectiveNameCls} ${nameWrapCls}`}>
+                        <td className={`${effectiveRowCls} overlay-col-name text-center ${effectiveNameCls} ${nameWrapCls}`}>
                           <span
                             className={`overlay-cell-text-inner ${nameWrapCls} ${top3Row.nameCellClass || ""}`}
                             style={mergeRankTop3TextStyle(
@@ -4579,7 +4597,7 @@ function OverlayInner() {
                             </span>
                           </td>
                         )}
-                        <td className={`${effectiveRowCls} overlay-col-name ${effectiveNameCls} ${nameWrapCls}`}>
+                        <td className={`${effectiveRowCls} overlay-col-name text-center ${effectiveNameCls} ${nameWrapCls}`}>
                           <span className={`overlay-cell-text-inner ${nameWrapCls}`} style={overlayCellOutlineStyle}>
                             {m.name}
                           </span>

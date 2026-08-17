@@ -166,7 +166,9 @@ export type OverlayPresetLike = {
   /** 엑셀표 외곽·헤더·총합 구분선 색(#rrggbb). 비우면 테마 기본 */
   tableLineColor?: string;
   totalLineVisible?: boolean;
-  /** 엑셀표 열 구분 세로선 (기본 true) */
+  /** 엑셀표 선 전체(가로·세로·외곽). 기본 true */
+  tableGridLines?: boolean;
+  /** 엑셀표 열 구분 세로선 (기본 true). tableGridLines=false 이면 무시 */
   tableVerticalLines?: boolean;
   vertical?: boolean;
   accountColor?: string;
@@ -359,6 +361,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   const tableLineColor = normalizeGoalHexColor((preset.tableLineColor || "").trim());
   if (tableLineColor) q.set("tableLineColor", tableLineColor);
   if (preset.totalLineVisible) q.set("totalLineVisible", "true");
+  if (preset.tableGridLines === false) q.set("tableGridLines", "false");
   if (preset.tableVerticalLines === false) q.set("tableVerticalLines", "false");
   if (preset.accountColor && preset.accountColor.trim()) q.set("accountColor", preset.accountColor.trim());
   if (preset.toonColor && preset.toonColor.trim()) q.set("toonColor", preset.toonColor.trim());
@@ -432,6 +435,7 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "tableHeaderBgColor",
   "tableHeaderTextColor",
   "tableLineColor",
+  "tableGridLines",
   "tableVerticalLines",
   "donorsFormat",
   "currencyLocale",
@@ -580,6 +584,7 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "tableHeaderBgColor",
   "tableHeaderTextColor",
   "tableLineColor",
+  "tableGridLines",
   "tableVerticalLines",
   "donorsFormat",
   "currencyLocale",
@@ -670,6 +675,7 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "showPersonalGoal",
   "totalMode",
   "totalLineVisible",
+  "tableGridLines",
   "tableVerticalLines",
   "goal",
   "goalLabel",
@@ -1579,6 +1585,27 @@ export function resolveTableLineColor(
     opts
   );
   return normalizeGoalHexColor(merged || "") || "";
+}
+
+/** 엑셀표 선 전체(가로·세로·외곽) — 기본 ON. false/0/off 이면 전부 숨김 */
+export function resolveTableGridLines(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): boolean {
+  if (opts.ready && preset && typeof preset.tableGridLines === "boolean") {
+    return preset.tableGridLines;
+  }
+  const merged = resolveLivePresetStyleParam(
+    "tableGridLines",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  const v = String(merged || "").trim().toLowerCase();
+  if (v === "false" || v === "0" || v === "off" || v === "no") return false;
+  if (v === "true" || v === "1" || v === "on" || v === "yes") return true;
+  return true;
 }
 
 /** 엑셀표 열 구분 세로선 — 기본 ON. false/0/off 이면 가로선·외곽만 */

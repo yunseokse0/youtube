@@ -52,6 +52,17 @@ describe("overlay table crisp lines", () => {
     expect(snapOverlayScaleForCrispLines(1.01, 2)).toBe(1.01);
   });
 
+  it("omits all grid lines when gridLines is false", () => {
+    const css = overlayTableCellGridCss({
+      lineColor: "#abc",
+      widthPx: 2,
+      gridLines: false,
+      verticalLines: true,
+    });
+    expect(css).toContain("box-shadow: none !important");
+    expect(css).not.toContain("inset 0 2px");
+  });
+
   it("omits column vertical lines when verticalLines is false", () => {
     const css = overlayTableCellGridCss({
       lineColor: "#abc",
