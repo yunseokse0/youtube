@@ -60,6 +60,8 @@ describe("overlay table crisp lines", () => {
       verticalLines: true,
     });
     expect(css).toContain("box-shadow: none !important");
+    expect(css).toContain("excel-live-table thead td");
+    expect(css).toContain("excel-live-table .overlay-total-row td");
     expect(css).not.toContain("inset 0 2px");
   });
 

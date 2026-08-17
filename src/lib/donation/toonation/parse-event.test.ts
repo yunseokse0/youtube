@@ -319,6 +319,23 @@ describe("toonation parse-event", () => {
     expect(evt?.playerName).toBe("홍쓰");
   });
 
+  it("maps Unknown nickname to 익명", () => {
+    const evt = parseToonationDonationPayload({
+      nickname: "Unknown",
+      amount: 11000,
+      comment: "후원 테스트",
+    });
+    expect(evt?.donorName).toBe("익명");
+  });
+
+  it("maps empty nickname to 익명", () => {
+    const evt = parseToonationDonationPayload({
+      amount: 1000,
+      comment: "후원합니다",
+    });
+    expect(evt?.donorName).toBe("익명");
+  });
+
   it("parses 익명 지히 message as player 지히", () => {
     expect(parseToonationMessageBody("익명 지히", "Y 철수")).toEqual({
       donorName: "Y 철수",

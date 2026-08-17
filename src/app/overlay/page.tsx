@@ -546,6 +546,40 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
             remoteForApply!.members,
             lastGoodRef.current!.members
           );
+        /**
+         * 멤버 추가 직후: 서버 GET이 옛(짧은) 로스터면 last-good/LS 상위집합을 유지.
+         * (preferServerOnly 가 저장 전 forceFull 로 추가분을 되돌리던 회귀)
+         */
+        if (remoteForApply && preferServerOnlyRef.current) {
+          const localHint =
+            lastGoodRef.current &&
+            isMemberRosterStrictSuperset(
+              lastGoodRef.current.members,
+              remoteForApply.members || []
+            )
+              ? lastGoodRef.current
+              : readLocalStateIfExists();
+          if (
+            localHint &&
+            isMemberRosterStrictSuperset(localHint.members, remoteForApply.members || [])
+          ) {
+            const localAt = Number(localHint.updatedAt || 0);
+            const ageMs = Date.now() - localAt;
+            if (localAt > 0 && ageMs >= 0 && ageMs < 120_000) {
+              remoteForApply = {
+                ...remoteForApply,
+                members: mergeMemberRosterPreservingAmounts(
+                  remoteForApply.members || [],
+                  localHint.members
+                ),
+                memberPositions: localHint.memberPositions ?? remoteForApply.memberPositions,
+                rankPositionLabels:
+                  localHint.rankPositionLabels ?? remoteForApply.rankPositionLabels,
+                updatedAt: Math.max(localAt, Number(remoteForApply.updatedAt || 0)),
+              };
+            }
+          }
+        }
         if (
           remoteAddedMembers &&
           remoteForApply &&
@@ -633,13 +667,64 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
     );
     scheduleStateUpdatedRef.current = schedule;
     syncOnceRef.current = syncOnce;
+    const applyLocalMemberRosterIfNewer = (localNow: AppState | null): boolean => {
+      if (!localNow || !Array.isArray(localNow.members) || localNow.members.length === 0) {
+        return false;
+      }
+      if (shouldKeepLastGoodInsteadOf(localNow, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current)) {
+        return false;
+      }
+      const good = lastGoodRef.current;
+      const rosterGrew =
+        !good ||
+        (isMemberRosterStrictSuperset(localNow.members, good.members || []) &&
+          Number(localNow.updatedAt || 0) >= Number(good.updatedAt || 0));
+      if (!rosterGrew) return false;
+      if (!hasMeaningfulMemberRoster(localNow)) return false;
+      /**
+       * LS 가 멤버만 늘리고 금액/후원이 비면 last-good 금액을 유지한 채 로스터만 확장.
+       * (저장 직후 stamp·omitDonation 경합으로 미리보기가 옛 4명으로 남는 회귀 방지)
+       */
+      const withRoster =
+        good && isMemberRosterStrictSuperset(localNow.members, good.members || [])
+          ? {
+              ...localNow,
+              members: mergeMemberRosterPreservingAmounts(good.members || [], localNow.members),
+              donors:
+                normalizeDonorsArray(localNow.donors).length > 0
+                  ? localNow.donors
+                  : good.donors,
+              memberPositions: localNow.memberPositions ?? good.memberPositions,
+              rankPositionLabels: localNow.rankPositionLabels ?? good.rankPositionLabels,
+            }
+          : localNow;
+      const syncedLocal = applyOverlayDonationSync(withRoster);
+      const nextSig = buildOverlaySyncSignature(syncedLocal);
+      lastUpdatedRef.current = Math.max(
+        lastUpdatedRef.current,
+        Number(syncedLocal.updatedAt || localNow.updatedAt || 0)
+      );
+      if (nextSig !== lastVisualSigRef.current) {
+        lastVisualSigRef.current = nextSig;
+        setState(syncedLocal);
+      }
+      if (isViable(syncedLocal)) {
+        lastGoodRef.current = syncedLocal;
+        saveLastGood(syncedLocal);
+      }
+      return true;
+    };
     const onStorage = (e: StorageEvent) => {
+      if (e.key !== storageKey(userId ?? undefined)) return;
+      const localNow = readLocalStateIfExists();
+      if (applyLocalMemberRosterIfNewer(localNow)) {
+        void syncOnceRef.current({ forceFull: true });
+        return;
+      }
       if (preferServerOnlyRef.current) {
         void syncOnceRef.current({ forceFull: true });
         return;
       }
-      if (e.key !== storageKey(userId ?? undefined)) return;
-      const localNow = readLocalStateIfExists();
       if (
         localNow &&
         hasMeaningfulMemberRoster(localNow) &&
@@ -677,12 +762,17 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
     }
     window.addEventListener("storage", onStorage);
     const unsubscribeLocal = subscribeBroadcastStateLocalUpdated((detail) => {
+      if (!overlayUserIdsMatch(userId, detail.userId)) return;
+      const localNow = readLocalBroadcastState(userId) || readLocalStateIfExists();
+      /** 멤버 추가: richer 가드·preferServerOnly 보다 먼저 로스터 확장 반영 */
+      if (applyLocalMemberRosterIfNewer(localNow)) {
+        void syncOnceRef.current({ forceFull: true });
+        return;
+      }
       if (preferServerOnlyRef.current) {
         void syncOnceRef.current({ forceFull: true });
         return;
       }
-      if (!overlayUserIdsMatch(userId, detail.userId)) return;
-      const localNow = readLocalBroadcastState(userId);
       if (!localNow || shouldKeepLastGoodInsteadOf(localNow, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current)) return;
       if (!hasMeaningfulMemberRoster(localNow)) {
         void syncOnceRef.current();
@@ -3566,7 +3656,9 @@ function OverlayInner() {
       TABLE_BROADCAST_TOTAL_BORDER;
     const tableGridLineWidthPx = overlayTableGridLineWidthPx(Boolean(externalHost));
     const tableGridLineColor = tableLineColorRaw || tableHeaderLineColor;
-    const tablePanelShadow = excelMemberAccent?.panelShadow ?? "0 2px 10px rgba(255, 140, 190, 0.22)";
+    const tablePanelShadow = tableGridLines
+      ? excelMemberAccent?.panelShadow ?? "0 2px 10px rgba(255, 140, 190, 0.22)"
+      : "none";
     const excelMemberTableClass = excelMemberAccent
       ? `${isExcelLiveTheme ? " excel-live-table" : " excel-member-table"}`
       : "";
@@ -3748,7 +3840,11 @@ function OverlayInner() {
           -webkit-text-stroke: ${tableStrokeCss} !important;
           paint-order: stroke fill;
           border: none !important;
-          box-shadow: ${overlayTableHairlineShadow(tableHeaderLineColor, { bottom: true }, tableGridLineWidthPx)} !important;
+          box-shadow: ${
+            tableGridLines
+              ? overlayTableHairlineShadow(tableHeaderLineColor, { bottom: true }, tableGridLineWidthPx)
+              : "none"
+          } !important;
         }
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,
@@ -3767,7 +3863,11 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table .overlay-total-row td {
           border: none !important;
-          box-shadow: ${overlayTableHairlineShadow(tableTotalLineColor, { top: true }, tableGridLineWidthPx)} !important;
+          box-shadow: ${
+            tableGridLines
+              ? overlayTableHairlineShadow(tableTotalLineColor, { top: true }, tableGridLineWidthPx)
+              : "none"
+          } !important;
         }`
       : `
         .overlay-root .overlay-elegant-table.excel-member-table thead td,
@@ -3779,7 +3879,11 @@ function OverlayInner() {
           -webkit-text-stroke: ${excelTheadStroke} !important;
           paint-order: stroke fill;
           border: none !important;
-          box-shadow: ${overlayTableHairlineShadow("var(--excel-header-border)", { bottom: true }, tableGridLineWidthPx)} !important;
+          box-shadow: ${
+            tableGridLines
+              ? overlayTableHairlineShadow("var(--excel-header-border)", { bottom: true }, tableGridLineWidthPx)
+              : "none"
+          } !important;
         }
         .overlay-root .overlay-elegant-table.excel-member-table thead td span,
         .overlay-root .overlay-elegant-table.excel-member-table thead td strong,
@@ -3793,7 +3897,11 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table.excel-member-table .overlay-total-row td,
         .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
           border: none !important;
-          box-shadow: ${overlayTableHairlineShadow("var(--excel-total-border)", { top: true }, tableGridLineWidthPx)} !important;
+          box-shadow: ${
+            tableGridLines
+              ? overlayTableHairlineShadow("var(--excel-total-border)", { top: true }, tableGridLineWidthPx)
+              : "none"
+          } !important;
         }`;
     /** OBS·Prism: stroke 생략 — blur 없는 shadow 링만(프리뷰·OBS 동일) */
     const overlayCellOutlineStyle: React.CSSProperties = tableOutlineDisabled
@@ -4004,7 +4112,11 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table.excel-live-table thead td {
           color: var(--excel-header-text) !important;
           border: none !important;
-          box-shadow: ${overlayTableHairlineShadow("var(--excel-header-border)", { bottom: true }, tableGridLineWidthPx)} !important;
+          box-shadow: ${
+            tableGridLines
+              ? overlayTableHairlineShadow("var(--excel-header-border)", { bottom: true }, tableGridLineWidthPx)
+              : "none"
+          } !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-role,
@@ -4024,11 +4136,15 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
           border: none !important;
-          box-shadow: ${overlayTableHairlineShadow("rgba(26, 82, 118, 0.45)", { top: true }, tableGridLineWidthPx)} !important;
+          box-shadow: ${
+            tableGridLines
+              ? overlayTableHairlineShadow("rgba(26, 82, 118, 0.45)", { top: true }, tableGridLineWidthPx)
+              : "none"
+          } !important;
           background: ${excelLiveTotalRowBg} !important;
         }
         ${
-          tableLineColorRaw
+          tableGridLines && tableLineColorRaw
             ? `
         .overlay-root .overlay-elegant-table.excel-live-table thead td {
           border: none !important;

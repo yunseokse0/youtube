@@ -68,10 +68,23 @@ export function overlayTableCellGridCss(opts: {
   if (opts.gridLines === false) {
     return `
 .overlay-root .overlay-elegant-table thead td,
+.overlay-root .overlay-elegant-table.excel-live-table thead td,
+.overlay-root .overlay-elegant-table.excel-member-table thead td,
 .overlay-root .overlay-elegant-table tbody tr.overlay-row td,
+.overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row td,
+.overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(odd) td,
+.overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(even) td,
+.overlay-root .overlay-elegant-table.excel-member-table tbody tr.overlay-row td,
 .overlay-root .overlay-elegant-table tbody tr.overlay-total-row td,
-.overlay-root .overlay-elegant-table .overlay-total-row td {
+.overlay-root .overlay-elegant-table .overlay-total-row td,
+.overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td,
+.overlay-root .overlay-elegant-table.excel-member-table .overlay-total-row td,
+.overlay-root .overlay-elegant-table thead td.overlay-col-total,
+.overlay-root .overlay-elegant-table tbody tr.overlay-row td.overlay-col-total,
+.overlay-root .overlay-elegant-table tbody tr.overlay-total-row td.overlay-col-total,
+.overlay-root .overlay-elegant-table .overlay-total-row td.overlay-col-total {
   border: none !important;
+  outline: none !important;
   box-shadow: none !important;
 }
 `.trim();

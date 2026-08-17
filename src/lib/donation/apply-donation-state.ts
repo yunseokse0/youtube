@@ -285,7 +285,10 @@ export function isOwnerRemapSplitDuplicate(
   if (msgB && nameA && msgB.includes(nameA)) return true;
   /** 리맵 후 메시지 비움 + 원문도 비어 있을 때 — 익명 계좌 vs 원닉 투네 */
   if (!msgA && !msgB) {
-    const anon = (n: string) => n === "익명" || n === "anonymous" || n === "anon";
+    const anon = (n: string) => {
+      const t = String(n || "").trim().toLowerCase();
+      return t === "익명" || t === "anonymous" || t === "anon" || t === "unknown";
+    };
     if (anon(nameA) || anon(nameB)) return true;
   }
   return false;

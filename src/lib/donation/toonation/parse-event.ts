@@ -67,15 +67,23 @@ export function extractToonationDonorName(data: unknown): string {
   ];
   for (const c of candidates) {
     const s = String(c || "").trim();
-    if (s) return s;
+    if (!s) continue;
+    /** Unknown/anonymous 플레이스홀더는 익명으로 — 실제 닉은 그대로 */
+    const normalized = normalizeAnonymousDonorDisplayName(s);
+    if (normalized === "익명") return "익명";
+    return s;
   }
   if (anonymous) {
     const msg = extractToonationMessage(data).trim();
     const first = msg.split(/\s+/).filter(Boolean)[0] || "";
-    if (first) return first;
+    if (first) {
+      const normalized = normalizeAnonymousDonorDisplayName(first);
+      return normalized === "익명" ? "익명" : first;
+    }
     return "익명";
   }
-  return "Unknown";
+  /** 닉 없음 → 방송 표기는 익명으로 통일 */
+  return "익명";
 }
 
 export function extractToonationMessage(data: unknown): string {
@@ -122,7 +130,15 @@ export function isAccountFormatToken(raw: string): boolean {
 /** `익명 지히` — 첫 토큰이 익명 표기면 다음 토큰이 플레이어 */
 export function isAnonymousMarkerToken(raw: string): boolean {
   const t = cleanDonorToken(raw).toLowerCase();
-  return t === "익명" || t === "anonymous" || t === "anon";
+  return t === "익명" || t === "anonymous" || t === "anon" || t === "unknown";
+}
+
+/** 후원순위·목록 표시용 — Unknown/anonymous 등 플레이스홀더를 「익명」으로 통일 */
+export function normalizeAnonymousDonorDisplayName(name: string): string {
+  const raw = String(name || "").trim();
+  if (!raw) return "무명";
+  if (isAnonymousMarkerToken(raw)) return "익명";
+  return raw;
 }
 
 /**
@@ -399,10 +415,11 @@ export function parseToonationDonationPayload(data: unknown): DonationEvent | nu
   const alertDonor = extractToonationDonorName(data);
   const rawMessage = extractToonationMessage(data);
   const parsed = parseToonationMessageBody(rawMessage, alertDonor);
-  const donorName =
+  const donorName = normalizeAnonymousDonorDisplayName(
     parsed.target === "account"
       ? parsed.donorName || alertDonor
-      : parsed.donorName || alertDonor;
+      : parsed.donorName || alertDonor
+  );
   const playerName = parsed.playerName || undefined;
 
   return {

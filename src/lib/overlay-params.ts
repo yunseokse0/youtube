@@ -942,6 +942,8 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "tableHeaderBgColor",
   "tableHeaderTextColor",
   "tableLineColor",
+  "tableGridLines",
+  "tableVerticalLines",
   /** 타이머 색·스타일 — OBS URL 스테일 방지 */
   "timerFontFamily",
   "timerFontColor",

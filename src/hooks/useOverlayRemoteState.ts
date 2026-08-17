@@ -13,13 +13,17 @@ import {
 import {
   hasCustomTimerDisplayStyles,
   isDefaultLikeTimerDisplayStyle,
+  isMemberRosterStrictSuperset,
   loadState,
   loadStateFromApi,
   mergeLocalMemberIdentityOntoRemote,
+  hasMeaningfulMemberRoster,
+  normalizeDonorsArray,
   shouldAvoidOverwritingLocalStateWithRemote,
   storageKey,
   type AppState,
 } from "@/lib/state";
+import { mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
 
 import {
   shouldSuppressOverlaySseConnection,
@@ -508,6 +512,45 @@ export function useOverlayRemoteState(
           }
         }
 
+        /**
+         * 멤버 추가 직후 stale GET: last-good/LS 상위집합 로스터를 유지(미리보기·OBS).
+         */
+        if (
+          remoteForApply &&
+          (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS)
+        ) {
+          const localHint =
+            lastGoodRef.current &&
+            isMemberRosterStrictSuperset(
+              lastGoodRef.current.members,
+              remoteForApply.members || []
+            )
+              ? lastGoodRef.current
+              : !preferServerOnly
+                ? readLocalBroadcastState(userId)
+                : null;
+          if (
+            localHint &&
+            isMemberRosterStrictSuperset(localHint.members, remoteForApply.members || [])
+          ) {
+            const localAt = Number(localHint.updatedAt || 0);
+            const ageMs = Date.now() - localAt;
+            if (localAt > 0 && ageMs >= 0 && ageMs < 120_000) {
+              remoteForApply = {
+                ...remoteForApply,
+                members: mergeMemberRosterPreservingAmounts(
+                  remoteForApply.members || [],
+                  localHint.members
+                ),
+                memberPositions: localHint.memberPositions ?? remoteForApply.memberPositions,
+                rankPositionLabels:
+                  localHint.rankPositionLabels ?? remoteForApply.rankPositionLabels,
+                updatedAt: Math.max(localAt, Number(remoteForApply.updatedAt || 0)),
+              };
+            }
+          }
+        }
+
         if (
           (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
           (preferServerOnly
@@ -783,11 +826,50 @@ export function useOverlayRemoteState(
     let storageDebounce: ReturnType<typeof setTimeout> | null = null;
 
     const applyLocalBroadcastState = () => {
+      const localNow = readLocalBroadcastState(userId);
+      if (
+        localNow &&
+        hasMeaningfulMemberRoster(localNow) &&
+        Array.isArray(localNow.members) &&
+        localNow.members.length > 0
+      ) {
+        const good = lastGoodRef.current;
+        const rosterGrew =
+          !good ||
+          (isMemberRosterStrictSuperset(localNow.members, good.members || []) &&
+            Number(localNow.updatedAt || 0) >= Number(good.updatedAt || 0));
+        if (rosterGrew && !shouldKeepLastGoodInsteadOf(localNow, statePick, good)) {
+          const withRoster =
+            good && isMemberRosterStrictSuperset(localNow.members, good.members || [])
+              ? {
+                  ...localNow,
+                  members: mergeMemberRosterPreservingAmounts(
+                    good.members || [],
+                    localNow.members
+                  ),
+                  donors:
+                    normalizeDonorsArray(localNow.donors).length > 0
+                      ? localNow.donors
+                      : good.donors,
+                }
+              : localNow;
+          applySyncedState(withRoster, statePick, {
+            lastVisualSigRef,
+            lastSyncedUpdatedAtRef,
+            lastSyncedDonorRevRef,
+            lastGoodRef,
+            persistLastGood: persistLastGoodEffective,
+            userId,
+            setState,
+          });
+          void syncFromApiRef.current({ forceFull: true });
+          return;
+        }
+      }
       if (preferServerOnly) {
         void syncFromApiRef.current({ forceFull: true });
         return;
       }
-      const localNow = readLocalBroadcastState(userId);
       if (!localNow) return;
       const pickRev = revisionForStatePick(localNow, statePick);
       if (

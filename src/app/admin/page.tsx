@@ -3441,6 +3441,22 @@ export default function AdminPage() {
         { id, name: base, account: 0, toon: 0, contribution: 0, restroom: 0 },
       ];
       const now = Date.now();
+      const prevParticipants = prev.mealBattle?.participants || [];
+      const mealFallbackColors = ["#f472b6", "#fb7185", "#f9a8d4", "#fda4af", "#e879f9"];
+      /** 식사대전 참가자가 이미 있으면 새 멤버도 슬롯에 바로 붙임(옵트인 목록 유지) */
+      const nextParticipants =
+        prevParticipants.length > 0
+          ? [
+              ...prevParticipants,
+              {
+                memberId: id,
+                name: base,
+                score: 0,
+                goal: Math.max(1, Math.floor(Number(prev.mealBattle?.totalGoal) || 0) || 100),
+                color: mealFallbackColors[members.length % mealFallbackColors.length],
+              },
+            ]
+          : prevParticipants;
       const next: AppState = {
         ...prev,
         members,
@@ -3453,7 +3469,7 @@ export default function AdminPage() {
         mealMatch: { ...(prev.mealMatch || {}), [id]: 0 },
         mealBattle: {
           ...prev.mealBattle,
-          participants: [...(prev.mealBattle?.participants || [])],
+          participants: nextParticipants,
         },
         updatedAt: now,
       };
@@ -3491,6 +3507,30 @@ export default function AdminPage() {
         if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
           stateUpdatedAtRef.current = r.serverUpdatedAt;
           lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
+        }
+        /** 저장 성공 후 미리보기 iframe·OBS 폴링이 새 로스터를 다시 끌어가게 */
+        try {
+          const stamped: AppState = {
+            ...toPersist,
+            ...stateRef.current,
+            members: stateRef.current.members,
+            memberPositions: stateRef.current.memberPositions,
+            rankPositionLabels: stateRef.current.rankPositionLabels,
+            donors:
+              normalizeDonorsArray(stateRef.current.donors).length > 0
+                ? stateRef.current.donors
+                : toPersist.donors,
+            updatedAt: Math.max(
+              Number(stateRef.current.updatedAt || 0),
+              Number(toPersist.updatedAt || 0),
+              typeof r.serverUpdatedAt === "number" ? r.serverUpdatedAt : Date.now()
+            ),
+          };
+          stateRef.current = stamped;
+          window.localStorage.setItem(storageKey(user?.id), JSON.stringify(stamped));
+          notifyBroadcastStateLocalUpdated(user?.id, stamped.updatedAt);
+        } catch {
+          notifyBroadcastStateLocalUpdated(user?.id, r.serverUpdatedAt ?? Date.now());
         }
         /** 서버에 추가분이 안 붙었으면 한 번 더 권위 저장(OBS·새로고침 유실 방지) */
         try {
@@ -14586,7 +14626,7 @@ export default function AdminPage() {
                                             })
                                           }
                                         >
-                                          {p.tableGridLines !== false ? "표시 ON" : "숨김 OFF"}
+                                          {p.tableGridLines !== false ? "표시 ON" : "OFF"}
                                         </button>
                                         <span className="text-[10px] text-neutral-500">가로·세로·외곽 전부</span>
                                       </div>
@@ -14608,7 +14648,7 @@ export default function AdminPage() {
                                             })
                                           }
                                         >
-                                          {p.tableVerticalLines !== false ? "표시 ON" : "숨김 OFF"}
+                                          {p.tableVerticalLines !== false ? "표시 ON" : "OFF"}
                                         </button>
                                         <span className="text-[10px] text-neutral-500">열 구분 세로선 (표 선 ON일 때)</span>
                                       </div>

@@ -91,4 +91,20 @@ describe("donor-rankings-aggregate", () => {
       ])
     ).toEqual([{ name: "x", amount: 3 }]);
   });
+
+  it("Unknown·anonymous·익명을 익명으로 합산한다", () => {
+    const { unifiedTop } = buildDonorRankingsFromDonors(
+      [
+        { name: "Unknown", amount: 11000, target: "account" },
+        { name: "익명", amount: 1000, target: "toon" },
+        { name: "anonymous", amount: 500, target: "account" },
+        { name: "J p", amount: 100000, target: "account" },
+      ],
+      10
+    );
+    expect(unifiedTop).toEqual([
+      { name: "J p", amount: 100000 },
+      { name: "익명", amount: 12500 },
+    ]);
+  });
 });

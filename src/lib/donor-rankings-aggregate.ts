@@ -1,4 +1,5 @@
 import { dedupeDonorRows } from "@/lib/donation/apply-donation-state";
+import { normalizeAnonymousDonorDisplayName } from "@/lib/donation/toonation/parse-event";
 
 export type DonorRankingRow = {
   name: string;
@@ -18,11 +19,11 @@ export function normalizeDonorTarget(donor: Record<string, unknown>): "account" 
   return rawTarget === "toon" ? "toon" : "account";
 }
 
-/** 동일 닉네임 금액 합산 후 내림차순 */
+/** 동일 닉네임 금액 합산 후 내림차순 (Unknown·anonymous → 익명으로 합침) */
 export function aggregateDonorRankingRows(rows: DonorRankingRow[]): DonorRankingRow[] {
   const byName = new Map<string, number>();
   for (const row of rows) {
-    const key = row.name.trim() || "무명";
+    const key = normalizeAnonymousDonorDisplayName(row.name);
     byName.set(key, (byName.get(key) || 0) + Math.max(0, row.amount || 0));
   }
   return Array.from(byName.entries())
@@ -47,7 +48,7 @@ export function buildDonorRankingsFromDonors(
   for (const d of dedupeDonorRows(donors)) {
     if (d && typeof d === "object" && (d as { donationExcluded?: boolean }).donationExcluded) continue;
     const row = {
-      name: String(d.name || "무명"),
+      name: normalizeAnonymousDonorDisplayName(String(d.name || "")),
       amount: Number(d.amount || 0),
     };
     allRows.push(row);
