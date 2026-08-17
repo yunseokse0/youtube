@@ -53,6 +53,7 @@ import {
 } from "@/lib/state-api-pick";
 import { MANUAL_SIG_BROADCAST_STATE_KEY } from "@/lib/manual-sig-broadcast-state";
 import { mergeDonorRowFields, syncMemberTotalsFromDonors, repairMemberTotalsForDonorRoster } from "@/lib/donation/apply-donation-state";
+import { guardMemberTotalsAgainstAccidentalZeroWipe } from "@/lib/donation/zero-wipe-guard";
 import { mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
 import { isGroupSplitDonorListMutation } from "@/lib/donation/group-split-donation";
 import { MANUAL_SIG_DRAFT_STATE_KEY } from "@/lib/manual-sig-workbench";
@@ -2321,13 +2322,14 @@ export async function saveStateAsync(
             }
             if (normalizeDonorsArray(withDonors.donors).length > 0) {
               const synced = syncMemberTotalsFromDonors(withDonors);
+              const guardedSync = guardMemberTotalsAgainstAccidentalZeroWipe(synced, local ?? withDonors);
               if (local?.members?.length) {
                 return {
-                  ...synced,
-                  members: mergeMemberRosterPreservingAmounts(local.members, synced.members),
+                  ...guardedSync,
+                  members: mergeMemberRosterPreservingAmounts(local.members, guardedSync.members),
                 };
               }
-              return synced;
+              return guardedSync;
             }
             if (local?.members?.length) {
               return {
@@ -2495,6 +2497,10 @@ export async function saveStateAsync(
     ) {
       guarded = { ...guarded, timerDisplayStyles: local.timerDisplayStyles };
     }
+  }
+  /** 명시 리셋 없이 LS 대비 남은 멤버 금액만 0으로 sync 되면 복구 */
+  if (local && !saveOpts?.settlementReset) {
+    guarded = guardMemberTotalsAgainstAccidentalZeroWipe(guarded, local);
   }
   /** 후원이 여전히 비거나 줄어든 채 전체 POST 되면 API에서 후원 필드 제외 (서버 기존값 유지) */
   const omitDonations =

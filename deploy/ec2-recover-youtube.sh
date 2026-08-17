@@ -73,6 +73,10 @@ if systemctl is-active nginx >/dev/null 2>&1; then
   [[ "$code" == "200" ]] || echo "WARN: nginx static ${code} — sudo nginx -t && sudo systemctl reload nginx"
 fi
 
+if ! verify_state_api "$PORT"; then
+  echo "WARN: /api/state 스모크 실패 — .env 에 DEPLOY_SMOKE_USER=din 설정 권장"
+fi
+
 echo "== 4) 상태 =="
 pm2 status "$PM2_APP" || true
 show_port_holders "$PORT"

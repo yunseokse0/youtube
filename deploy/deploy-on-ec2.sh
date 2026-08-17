@@ -10,6 +10,7 @@
 #   KEEP_SWAP=1              # 빌드 후 스왑 유지(기본). 0 이면 빌드 후 제거
 #   STOP_MYSQL_FOR_BUILD=1   # 빌드 중 MySQL 일시 정지(기본 0 — 엑셀/후원 유실 방지. OOM 시에만 1)
 #   SKIP_GIT_PULL=0
+#   DEPLOY_SMOKE_USER=din       # 배포 후 /api/state 스모크 (미설정 시 생략)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -314,6 +315,13 @@ done
 if [[ "$HEALTH_OK" != "1" ]]; then
   echo " health check 실패 — pm2 logs ${PM2_APP} 확인"
   pm2 logs "$PM2_APP" --lines 30 --nostream 2>/dev/null || true
+  exit 1
+fi
+
+if ! verify_state_api "$PORT"; then
+  echo "== /api/state 스모크 실패 — zombie·MySQL·pm2 logs 확인 =="
+  pm2 logs "$PM2_APP" --lines 30 --nostream 2>/dev/null || true
+  systemctl is-active mysql 2>/dev/null || true
   exit 1
 fi
 

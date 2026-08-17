@@ -93,3 +93,34 @@ verify_static_http() {
   echo "webpack HTTP ${code}"
   [[ "$code" == "200" ]]
 }
+
+resolve_smoke_user() {
+  local from_env="${DEPLOY_SMOKE_USER:-}"
+  if [[ -n "$from_env" ]]; then
+    echo "$from_env"
+    return 0
+  fi
+  if [[ -f .env ]]; then
+    from_env="$(grep -E '^DEPLOY_SMOKE_USER=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r"' || true)"
+    if [[ -n "$from_env" ]]; then
+      echo "$from_env"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# /api/health 만으로는 부족 — state·MySQL 장애 시 502/504 (OBS·admin 동시 마비)
+verify_state_api() {
+  local port="${1:-3000}"
+  local user code
+  user="$(resolve_smoke_user 2>/dev/null || true)"
+  if [[ -z "$user" ]]; then
+    echo "== /api/state 스모크 생략 (DEPLOY_SMOKE_USER 미설정) =="
+    return 0
+  fi
+  code="$(curl -sf --max-time 15 -o /dev/null -w "%{http_code}" \
+    "http://127.0.0.1:${port}/api/state?user=${user}&u=${user}&pick=overlay" || echo "000")"
+  echo "/api/state?user=${user} HTTP ${code}"
+  [[ "$code" == "200" || "$code" == "304" ]]
+}

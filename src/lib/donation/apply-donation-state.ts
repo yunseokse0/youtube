@@ -201,6 +201,18 @@ function memberRosterIdSignature(members: Member[] | null | undefined): string {
     .join("\u001e");
 }
 
+/** 로스터에서 빠진 memberId 의 후원 행 제거 — 멤버 삭제 시 orphan donors 방지 */
+export function purgeDonorsForMemberRoster(
+  donors: Donor[] | undefined,
+  members: Member[] | undefined
+): Donor[] {
+  const keep = new Set(
+    (members || []).map((m) => String(m.id || "").trim()).filter(Boolean)
+  );
+  if (keep.size === 0) return [];
+  return (donors || []).filter((d) => keep.has(String(d.memberId || "").trim()));
+}
+
 /** 후원자 리스트(donors) 기준으로 멤버 계좌·투네 합계 재계산 — 순위·엑셀표 금액 불일치 방지 */
 export function syncMemberTotalsFromDonors(state: AppState): AppState {
   const totals = new Map<string, { account: number; toon: number }>();

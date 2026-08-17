@@ -37,7 +37,13 @@ import {
 } from "@/lib/state";
 import type { SigItem } from "@/types";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
-import { dedupeDonorRows, repairMemberTotalsForDonorRoster, syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
+import {
+  dedupeDonorRows,
+  purgeDonorsForMemberRoster,
+  repairMemberTotalsForDonorRoster,
+  syncMemberTotalsFromDonors,
+} from "@/lib/donation/apply-donation-state";
+import { guardMemberTotalsAgainstAccidentalZeroWipe } from "@/lib/donation/zero-wipe-guard";
 import { isGroupSplitDonorListMutation } from "@/lib/donation/group-split-donation";
 import {
   mergeManualMemberFieldsFromPatch,
@@ -779,7 +785,7 @@ export async function POST(req: Request) {
      * 수동 삭제·합산·단체짠 저장: 리셋 이전 at 는 rebump 후 filter.
      * filter 만 하면 남은 후원까지 전량 탈락 → 엑셀표 0 초기화.
      */
-    const incomingDonorsFiltered =
+    let incomingDonorsFiltered =
       resetAt > 0 && !settlementReset && donorsInPatch
         ? applySettlementResetDonorPipeline(incomingDonorsRaw, resetAt)
         : incomingDonorsRaw;
@@ -813,6 +819,36 @@ export async function POST(req: Request) {
         userId,
         dropped: incomingDonorsRaw.length - incomingDonorsFiltered.length,
         donorsAuthoritative,
+      });
+    }
+    /**
+     * 멤버 삭제(membersAuthoritative + 로스터 축소): 클라이언트 donors 가 비거나
+     * 불완전해도 서버 정본에서 삭제된 memberId 후원만 제거하고 나머지는 유지.
+     */
+    const patchMembersForRoster = Array.isArray(body.members) ? (body.members as Member[]) : null;
+    const memberRosterShrunk =
+      membersAuthoritative &&
+      patchMembersForRoster != null &&
+      patchMembersForRoster.length < (baseState.members?.length ?? 0);
+    if (memberRosterShrunk && patchMembersForRoster) {
+      const purgedFromBase = purgeDonorsForMemberRoster(baseState.donors, patchMembersForRoster);
+      if (donorsInPatch) {
+        const purgedIncoming = purgeDonorsForMemberRoster(incomingDonorsFiltered, patchMembersForRoster);
+        incomingDonorsFiltered =
+          purgedIncoming.length >= purgedFromBase.length
+            ? purgedIncoming
+            : mergeDonorsForMultiTabSave(purgedIncoming, purgedFromBase, {
+                incomingUpdatedAt: Number(body.updatedAt || 0),
+                existingUpdatedAt: Number(baseState.updatedAt || 0),
+              });
+      } else {
+        donorsInPatch = true;
+        incomingDonorsFiltered = purgedFromBase;
+      }
+      logger.info("member roster shrink — purged donors for removed members", {
+        userId,
+        baseDonorCount: normalizeDonorsArray(baseState.donors).length,
+        purgedCount: incomingDonorsFiltered.length,
       });
     }
     /**
@@ -938,7 +974,10 @@ export async function POST(req: Request) {
     let draft: AppState =
       donorsInPatch ||
       ("members" in bodyForMerge && normalizeDonorsArray(dedupedDonors).length > 0)
-        ? syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors })
+        ? guardMemberTotalsAgainstAccidentalZeroWipe(
+            syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors }),
+            baseState
+          )
         : { ...merged, donors: dedupedDonors };
     /**
      * donorsAuthoritative + donors 있음인데 멤버 합계가 donors 와 어긋나면 로스터 재동기화.
@@ -953,8 +992,14 @@ export async function POST(req: Request) {
           membersDifferByIds(merged.members, baseState.members) &&
           Number(merged.updatedAt || 0) >= Number(baseState.updatedAt || 0));
       draft = rosterReplaced
-        ? syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors })
-        : repairMemberTotalsForDonorRoster(draft, baseState, bodyMembers);
+        ? guardMemberTotalsAgainstAccidentalZeroWipe(
+            syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors }),
+            baseState
+          )
+        : guardMemberTotalsAgainstAccidentalZeroWipe(
+            repairMemberTotalsForDonorRoster(draft, baseState, bodyMembers),
+            baseState
+          );
     }
     const donorRankingsUpdatedAt = computeDonorRankingsUpdatedAt(
       baseState,
@@ -1005,6 +1050,19 @@ export async function POST(req: Request) {
             dropped: before.length - after.length,
           });
         }
+      }
+    }
+
+    /** 명시 리셋 없이 남은 멤버 금액만 0으로 떨어지면 서버 정본 금액·donors 로 복구 */
+    if (!settlementReset && !donationInitReset) {
+      const beforeGuard = next;
+      next = guardMemberTotalsAgainstAccidentalZeroWipe(next, baseState);
+      if (next !== beforeGuard && totalCombined(next) > totalCombined(beforeGuard)) {
+        logger.warn("blocked accidental member total zero wipe before persist", {
+          userId,
+          beforeTotal: totalCombined(beforeGuard),
+          afterTotal: totalCombined(next),
+        });
       }
     }
 

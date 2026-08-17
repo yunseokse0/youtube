@@ -272,10 +272,29 @@ export function shouldRejectPoorerDonationRemote(
   /**
    * 로컬이 멤버를 추가한 상위집합인데 원격이 옛(짧은) 로스터만 stamp로 약간 앞세우면 거부.
    * (테마 PATCH·폴링 경합). 원격 stamp가 멀리 앞서면 다른 기기 삭제로 보고 허용.
+   * 멤버 삭제(후원 row 함께 감소·삭제 id 후원 제거)는 poorer 로 막지 않음.
    */
   if (isMemberRosterStrictSuperset(local.members, remote.members)) {
     const localAt = Number(local.updatedAt || 0);
     const remoteAt = Number(remote.updatedAt || 0);
+    const localMembers = local.members || [];
+    const remoteMembers = remote.members || [];
+    const remoteIds = new Set(remoteMembers.map((m) => m.id));
+    const removedIds = localMembers.filter((m) => !remoteIds.has(m.id)).map((m) => m.id);
+    const localDonors = normalizeDonorsArray(local.donors);
+    const remoteDonors = normalizeDonorsArray(remote.donors);
+    const removedDonorsPurged =
+      removedIds.length > 0 &&
+      !removedIds.some((id) => remoteDonors.some((d) => d.memberId === id));
+    if (
+      remoteMembers.length < localMembers.length &&
+      remoteAt >= localAt &&
+      hasMeaningfulMemberRoster(remote) &&
+      removedDonorsPurged &&
+      remoteDonors.length < localDonors.length
+    ) {
+      return false;
+    }
     if (localAt >= remoteAt || localAt + 120_000 >= remoteAt) {
       return true;
     }

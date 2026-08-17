@@ -218,7 +218,10 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
   overlaySinceRef.current = Math.max(lastUpdatedRef.current, lastDonorRevRef.current);
   const syncingRef = useRef(false);
   const pendingForceSyncRef = useRef(false);
-  const syncOnceRef = useRef<(opts?: { forceFull?: boolean }) => Promise<void>>(async () => {});
+  const membersRosterSyncUntilRef = useRef(0);
+  const syncOnceRef = useRef<
+    (opts?: { forceFull?: boolean; membersRosterSync?: boolean }) => Promise<void>
+  >(async () => {});
   const scheduleStateUpdatedRef = useRef<(() => void) | null>(null);
   const lastGoodRef = useRef<AppState | null>(
     preferServerOnly
@@ -349,7 +352,8 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
       }
       const membersRosterAt = Number(incoming.membersRosterUpdatedAt);
       if (Number.isFinite(membersRosterAt) && membersRosterAt > 0) {
-        void syncOnceRef.current({ forceFull: true });
+        membersRosterSyncUntilRef.current = Date.now() + 45_000;
+        void syncOnceRef.current({ forceFull: true, membersRosterSync: true });
         return;
       }
       const dr = Number(incoming.donorRankingsUpdatedAt);
@@ -425,7 +429,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
       lastDonorRevRef.current = 0;
       lastGoodRef.current = null;
     }
-    const syncOnce = async (opts?: { forceFull?: boolean }) => {
+    const syncOnce = async (opts?: { forceFull?: boolean; membersRosterSync?: boolean }) => {
       if (syncingRef.current) {
         if (opts?.forceFull) pendingForceSyncRef.current = true;
         return;
@@ -548,9 +552,21 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
           );
         /**
          * 멤버 추가 직후: 서버 GET이 옛(짧은) 로스터면 last-good/LS 상위집합을 유지.
-         * (preferServerOnly 가 저장 전 forceFull 로 추가분을 되돌리던 회귀)
+         * 멤버 삭제 SSE 직후에는 짧은 서버 로스터를 localHint 로 되돌리지 않음.
          */
-        if (remoteForApply && preferServerOnlyRef.current) {
+        const trustMemberRosterShrinkEarly =
+          Boolean(opts?.membersRosterSync) || Date.now() < membersRosterSyncUntilRef.current;
+        const remoteRosterShrinkEarly =
+          Boolean(remoteForApply) &&
+          Boolean(lastGoodRef.current) &&
+          (remoteForApply!.members || []).length < (lastGoodRef.current!.members || []).length &&
+          membersDifferByIds(lastGoodRef.current!.members, remoteForApply!.members) &&
+          Number(remoteForApply!.updatedAt || 0) >= Number(lastGoodRef.current!.updatedAt || 0);
+        if (
+          remoteForApply &&
+          preferServerOnlyRef.current &&
+          !(trustMemberRosterShrinkEarly && remoteRosterShrinkEarly)
+        ) {
           const localHint =
             lastGoodRef.current &&
             isMemberRosterStrictSuperset(
@@ -599,10 +615,19 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         }
         /**
          * OBS: 서버에 후원·금액이 있으면 last-good 옛 값을 버리지 않고 서버를 따름.
-         * 그 외: 삭제 SSE → forceFull 이 빈/구 Redis 를 덮어쓰면 엑셀표가 0 초기화된다.
+         * 멤버 삭제 SSE(membersRosterSync) 직후에는 짧은 로스터도 poorer 로 막지 않음.
          */
+        const trustMemberRosterShrink =
+          Boolean(opts?.membersRosterSync) || Date.now() < membersRosterSyncUntilRef.current;
+        const remoteRosterShrink =
+          Boolean(remoteForApply) &&
+          Boolean(lastGoodRef.current) &&
+          (remoteForApply!.members || []).length < (lastGoodRef.current!.members || []).length &&
+          membersDifferByIds(lastGoodRef.current!.members, remoteForApply!.members) &&
+          Number(remoteForApply!.updatedAt || 0) >= Number(lastGoodRef.current!.updatedAt || 0);
         const rejectPoorer =
           !remoteAddedMembers &&
+          !(trustMemberRosterShrink && remoteRosterShrink) &&
           (preferServerOnlyRef.current
             ? shouldKeepStaleOverlayOverRemote(lastGoodRef.current, remoteForApply)
             : shouldRejectPoorerDonationRemote(lastGoodRef.current, remoteForApply));

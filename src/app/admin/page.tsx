@@ -215,6 +215,7 @@ import {
   clearAllDonorHsPushDirs,
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
+import { guardMemberTotalsAgainstAccidentalZeroWipe } from "@/lib/donation/zero-wipe-guard";
 import { mergeDonationApplyBase, enrichStateBeforeAuthoritativeDonationSave } from "@/lib/donation/merge-donation-apply-base";
 import { applyBankDonationsViaApi } from "@/lib/donation/apply-bank-donation-client";
 import { persistDonationStateViaApi } from "@/lib/donation/persist-donation-client";
@@ -3353,8 +3354,15 @@ export default function AdminPage() {
   };
 
   const deleteMember = (id: string) => {
+    let lsForWarn: AppState | null = null;
+    try {
+      lsForWarn = loadState(user?.id) ?? null;
+    } catch {}
+    const reactDonorsForWarn = normalizeDonorsArray(state.donors);
+    const lsDonorsForWarn = normalizeDonorsArray(lsForWarn?.donors);
+    const donorsForWarn = reactDonorsForWarn.length > 0 ? reactDonorsForWarn : lsDonorsForWarn;
     const target = state.members.find((m) => m.id === id);
-    const donorsCount = state.donors.filter((d) => d.memberId === id).length;
+    const donorsCount = donorsForWarn.filter((d) => d.memberId === id).length;
     const warn =
       `멤버를 삭제합니다.\n` +
       `이름: ${target?.name ?? id}\n` +
@@ -3364,7 +3372,25 @@ export default function AdminPage() {
     requestConfirm("멤버 삭제", warn, () => {
       setState((prev: AppState) => {
         const members = prev.members.filter((m) => m.id !== id);
-        const donors = prev.donors.filter((d) => d.memberId !== id);
+        const reactDonors = normalizeDonorsArray(prev.donors);
+        let lsDonors: Donor[] = [];
+        let lsUpdatedAt = 0;
+        try {
+          const fromLs = loadState(user?.id);
+          lsDonors = normalizeDonorsArray(fromLs?.donors);
+          lsUpdatedAt = Number(fromLs?.updatedAt || 0);
+        } catch {}
+        /** React donors 가 비거나 적을 때 LS·서버와 동기화된 후원을 써 나머지 멤버 금액 0 방지 */
+        const mergedDonors =
+          reactDonors.length > 0
+            ? lsDonors.length > reactDonors.length
+              ? mergeDonorsForMultiTabSave(reactDonors, lsDonors, {
+                  incomingUpdatedAt: Number(prev.updatedAt || 0),
+                  existingUpdatedAt: lsUpdatedAt,
+                })
+              : reactDonors
+            : lsDonors;
+        const donors = mergedDonors.filter((d) => d.memberId !== id);
         const nextSigMatch = { ...(prev.sigMatch || {}) };
         const nextMealMatch = { ...(prev.mealMatch || {}) };
         delete nextSigMatch[id];
@@ -3372,7 +3398,7 @@ export default function AdminPage() {
         const prevLinks = prev.sigMatchSettings?.donationLinks || {};
         const nextLinks = { ...prevLinks };
         delete nextLinks[id];
-        const next: AppState = {
+        let next: AppState = {
           ...prev,
           members,
           memberPositions: Object.fromEntries(
@@ -3410,17 +3436,39 @@ export default function AdminPage() {
           },
           updatedAt: Date.now(),
         };
+        const donorCount = normalizeDonorsArray(next.donors).length;
+        if (donorCount > 0) {
+          next = guardMemberTotalsAgainstAccidentalZeroWipe(
+            syncMemberTotalsFromDonors(next),
+            prev
+          );
+        }
+        const now = Date.now();
+        next = { ...next, updatedAt: now };
         stateRef.current = next;
-        membersAuthoritativeSaveUntilRef.current = Date.now() + 45_000;
+        stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, now);
+        membersAuthoritativeSaveUntilRef.current = Date.now() + 120_000;
+        pendingUnsyncedRef.current = true;
         try {
           window.localStorage.setItem(storageKey(user?.id), JSON.stringify(next));
         } catch {}
         notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
-        persistState(next, {
-          includeDonationFields: true,
+        void saveStateAsync(next, user?.id, {
           membersAuthoritative: true,
-          donorsAuthoritative: true,
-          donorsReplace: true,
+          ...(donorCount > 0
+            ? { donorsAuthoritative: true as const, donorsReplace: true as const }
+            : { omitDonationFields: true as const }),
+        }).then((r) => {
+          if (r.ok) {
+            pendingUnsyncedRef.current = false;
+            setSyncStatus(r.storageFallback ? "error" : "synced");
+            if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
+              stateUpdatedAtRef.current = r.serverUpdatedAt;
+              lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
+            }
+          } else {
+            setSyncStatus(typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error");
+          }
         });
         return next;
       });

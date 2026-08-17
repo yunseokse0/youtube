@@ -18,6 +18,7 @@ import {
   loadStateFromApi,
   mergeLocalMemberIdentityOntoRemote,
   hasMeaningfulMemberRoster,
+  membersDifferByIds,
   normalizeDonorsArray,
   shouldAvoidOverwritingLocalStateWithRemote,
   storageKey,
@@ -381,9 +382,10 @@ export function useOverlayRemoteState(
   const syncingRef = useRef(false);
   /** donationApplied SSE가 in-flight GET과 겹치면 완료 후 강제 재동기화 */
   const pendingForceSyncRef = useRef(false);
+  const membersRosterSyncUntilRef = useRef(0);
 
   const syncFromApiRef = useRef<
-    (opts?: { forceFull?: boolean }) => Promise<void>
+    (opts?: { forceFull?: boolean; membersRosterSync?: boolean }) => Promise<void>
   >(async () => {});
 
   const scheduleSseSyncRef = useRef<(() => void) | null>(null);
@@ -421,7 +423,7 @@ export function useOverlayRemoteState(
   }, [userId, statePick, preferServerOnly]);
 
   const syncFromApi = useCallback(
-    async (opts?: { forceFull?: boolean }) => {
+    async (opts?: { forceFull?: boolean; membersRosterSync?: boolean }) => {
       if (!enabled) return;
       if (syncingRef.current) {
         if (opts?.forceFull) pendingForceSyncRef.current = true;
@@ -514,10 +516,20 @@ export function useOverlayRemoteState(
 
         /**
          * 멤버 추가 직후 stale GET: last-good/LS 상위집합 로스터를 유지(미리보기·OBS).
+         * 멤버 삭제 SSE 직후에는 서버(짧은) 로스터를 localHint 로 확장하지 않음.
          */
+        const trustMemberRosterShrinkEarly =
+          Boolean(opts?.membersRosterSync) || Date.now() < membersRosterSyncUntilRef.current;
+        const remoteRosterShrinkEarly =
+          Boolean(remoteForApply) &&
+          Boolean(lastGoodRef.current) &&
+          (remoteForApply!.members || []).length < (lastGoodRef.current!.members || []).length &&
+          membersDifferByIds(lastGoodRef.current!.members, remoteForApply!.members) &&
+          Number(remoteForApply!.updatedAt || 0) >= Number(lastGoodRef.current!.updatedAt || 0);
         if (
           remoteForApply &&
-          (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS)
+          (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
+          !(trustMemberRosterShrinkEarly && remoteRosterShrinkEarly)
         ) {
           const localHint =
             lastGoodRef.current &&
@@ -551,11 +563,22 @@ export function useOverlayRemoteState(
           }
         }
 
-        if (
+        const trustMemberRosterShrink =
+          Boolean(opts?.membersRosterSync) || Date.now() < membersRosterSyncUntilRef.current;
+        const remoteRosterShrink =
+          Boolean(remoteForApply) &&
+          Boolean(lastGoodRef.current) &&
+          (remoteForApply!.members || []).length < (lastGoodRef.current!.members || []).length &&
+          membersDifferByIds(lastGoodRef.current!.members, remoteForApply!.members) &&
+          Number(remoteForApply!.updatedAt || 0) >= Number(lastGoodRef.current!.updatedAt || 0);
+        const rejectPoorerOverlay =
           (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
           (preferServerOnly
             ? shouldKeepStaleOverlayOverRemote(lastGoodRef.current, remoteForApply)
-            : shouldRejectPoorerDonationRemote(lastGoodRef.current, remoteForApply))
+            : shouldRejectPoorerDonationRemote(lastGoodRef.current, remoteForApply));
+        if (
+          rejectPoorerOverlay &&
+          !(trustMemberRosterShrink && remoteRosterShrink)
         ) {
           /** forceFull 이어도 빈/구 Redis 로 엑셀 금액을 지우지 않음 */
           return;
@@ -628,7 +651,8 @@ export function useOverlayRemoteState(
       (o as { membersRosterUpdatedAt?: unknown }).membersRosterUpdatedAt
     );
     if (Number.isFinite(membersRosterAt) && membersRosterAt > 0) {
-      void syncFromApiRef.current({ forceFull: true });
+      membersRosterSyncUntilRef.current = Date.now() + 45_000;
+      void syncFromApiRef.current({ forceFull: true, membersRosterSync: true });
       return;
     }
 

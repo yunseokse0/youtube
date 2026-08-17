@@ -4,6 +4,7 @@ import {
   applyDonationToAppState,
   dedupeDonorRows,
   mergeDonorRowFields,
+  purgeDonorsForMemberRoster,
   reassignDonorMemberInAppState,
   repairMemberTotalsForDonorRoster,
   revertDonationFromAppState,
@@ -11,6 +12,29 @@ import {
   updateDonorMessageInAppState,
 } from "./apply-donation-state";
 import type { DonationEvent } from "./types";
+
+describe("purgeDonorsForMemberRoster", () => {
+  it("removes donors for deleted members and keeps remaining totals", () => {
+    const members = [
+      { id: "m1", name: "A", account: 0, toon: 0, contribution: 0 },
+      { id: "m2", name: "B", account: 0, toon: 0, contribution: 0 },
+    ];
+    const donors = [
+      { id: "d1", name: "후원1", amount: 10_000, memberId: "m1", at: 1, target: "toon" as const },
+      { id: "d2", name: "후원2", amount: 20_000, memberId: "m2", at: 2, target: "toon" as const },
+      { id: "d3", name: "후원3", amount: 5_000, memberId: "m_del", at: 3, target: "toon" as const },
+    ];
+    const purged = purgeDonorsForMemberRoster(donors, members);
+    expect(purged.map((d) => d.id)).toEqual(["d1", "d2"]);
+    const synced = syncMemberTotalsFromDonors({
+      ...defaultState(),
+      members,
+      donors: purged,
+    });
+    expect(synced.members.find((m) => m.id === "m1")?.toon).toBe(10_000);
+    expect(synced.members.find((m) => m.id === "m2")?.toon).toBe(20_000);
+  });
+});
 
 describe("repairMemberTotalsForDonorRoster", () => {
   it("does not restore old roster when members were intentionally replaced", () => {
