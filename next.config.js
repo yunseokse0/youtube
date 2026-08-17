@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
-const stagingDir = String(process.env.NEXT_BUILD_DIR || "").trim();
+/** 빌드 시에만 distDir 오버ride — pm2에 NEXT_BUILD_DIR 잔존 시 start가 .next-staging 찾아 static 400/404 */
+const stagingDir =
+  process.env.NEXT_PHASE === "phase-production-build"
+    ? String(process.env.NEXT_BUILD_DIR || "").trim()
+    : "";
 const nextConfig = {
   ...(stagingDir ? { distDir: stagingDir } : {}),
   trailingSlash: false,

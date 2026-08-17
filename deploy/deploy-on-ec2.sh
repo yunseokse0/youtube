@@ -180,15 +180,17 @@ fi
 # nginx
 if systemctl list-unit-files nginx.service >/dev/null 2>&1; then
   run systemctl start nginx 2>/dev/null || true
+  run systemctl reload nginx 2>/dev/null || true
 fi
 
 start_pm2_app() {
-  # 빌드용 NEXT_BUILD_DIR 이 런타임에 남으면 next start 가 .next-staging 을 찾아 실패함
+  # 빌드용 NEXT_BUILD_DIR 이 런타임에 남으면 next start 가 .next-staging 을 찾아 static 400/404
   unset NEXT_BUILD_DIR || true
   export NEXT_BUILD_DIR=""
+  pm2 unset "$PM2_APP" NEXT_BUILD_DIR 2>/dev/null || true
   # 기존에 등록된 프로세스면 restart, 없으면 npm start 로 신규 등록
   if pm2 describe "$PM2_APP" >/dev/null 2>&1; then
-    pm2 restart "$PM2_APP" --update-env
+    NEXT_BUILD_DIR= pm2 restart "$PM2_APP" --update-env
     return $?
   fi
   # env 를 깨끗이: distDir 기본(.next) 사용
@@ -237,6 +239,22 @@ fi
 
 OBS_TEXT_CODE="$(curl -sf -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/overlay/obs-text?u=finalent&host=obs&textId=default" || echo "000")"
 echo "overlay/obs-text HTTP ${OBS_TEXT_CODE}"
+
+STATIC_OK=0
+if [[ -f .next/BUILD_ID ]]; then
+  BUILD_ID="$(tr -d '\n\r' < .next/BUILD_ID)"
+  STATIC_CODE="$(curl -sf -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/_next/static/${BUILD_ID}/_buildManifest.js" || echo "000")"
+  echo "_next/static BUILD_ID=${BUILD_ID} manifest HTTP ${STATIC_CODE}"
+  if [[ "$STATIC_CODE" == "200" ]]; then
+    STATIC_OK=1
+  fi
+fi
+if [[ "$STATIC_OK" != "1" ]]; then
+  echo "== static 자산 검증 실패 — pm2 env·브라우저 강력 새로고침(Ctrl+Shift+R) 확인 =="
+  pm2 env "$PM2_APP" 2>/dev/null | grep -E 'NEXT_BUILD_DIR|NODE_ENV' || true
+  pm2 logs "$PM2_APP" --lines 20 --nostream 2>/dev/null || true
+  exit 1
+fi
 
 echo "== 상태 =="
 df -h / | awk 'NR==1 || /root|\/$/'
