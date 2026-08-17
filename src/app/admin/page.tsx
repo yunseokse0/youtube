@@ -3749,7 +3749,9 @@ export default function AdminPage() {
       const donationLinks = {
         ...(prev.sigMatchSettings.donationLinks || {}),
         [memberId]: nextActive
-          ? { active: true, startedAt: Date.now() }
+          ? current.active && Number(current.startedAt || 0) > 0
+            ? { active: true, startedAt: current.startedAt }
+            : { active: true, startedAt: Date.now() }
           : { active: false, startedAt: current.startedAt || undefined },
       };
       const next: AppState = {
@@ -3783,9 +3785,12 @@ export default function AdminPage() {
         ...(prev.sigMatchSettings.donationLinks || {}),
       };
       for (const id of targets) {
+        const prevLink = donationLinks[id];
         donationLinks[id] = active
-          ? { active: true, startedAt: now }
-          : { active: false, startedAt: donationLinks[id]?.startedAt };
+          ? prevLink?.active && Number(prevLink.startedAt || 0) > 0
+            ? { active: true, startedAt: prevLink.startedAt }
+            : { active: true, startedAt: now }
+          : { active: false, startedAt: prevLink?.startedAt };
       }
       const next: AppState = {
         ...prev,
@@ -7604,6 +7609,7 @@ export default function AdminPage() {
         ...(prev.sigMatchSettings.donationLinks || {}),
       };
       for (const id of targets) {
+        /** 대전 시작 시점부터 후원 집계 — 이전 연동 startedAt 은 새 라운드 기준으로 리셋 */
         donationLinks[id] = { active: true, startedAt: now };
       }
       const next: AppState = {

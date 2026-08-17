@@ -284,9 +284,11 @@ export function getSigMatchRankings(
     const donorAt = Number.isFinite(Number(d.at)) ? Math.max(0, Math.floor(Number(d.at))) : 0;
     if (link.startedAt > 0 && donorAt > 0 && donorAt < link.startedAt) continue;
     const amount = Math.max(0, Number(d.amount || 0));
+    /** 멤버별 후원 연동 ON 이면 해당 멤버 후원은 키워드 없이 집계 (연동 UI 의미) */
     const countAll =
-      settings.countAllDonations !== false &&
-      (settings.scoringMode === "amount" || settings.countAllDonations === true);
+      link.active ||
+      (settings.countAllDonations !== false &&
+        (settings.scoringMode === "amount" || settings.countAllDonations === true));
     if (countAll) {
       const b = byMember.get(memberId)!;
       b.count += 1;
@@ -317,6 +319,30 @@ export function getSigMatchRankings(
       if (!b) continue;
       b.count += incCount;
       b.amount += incAmount;
+    }
+  }
+
+  /**
+   * donors 가 OBS·폴링에 아직 없어도 members 합계(엑셀표)는 반영된 경우 — 연동 ON 멤버만 보정.
+   * donors 행이 있으면 startedAt 필터를 donors 기준으로 이미 적용했으므로 건너뜀.
+   */
+  if (settings.scoringMode === "amount") {
+    for (const m of rankingMembers) {
+      const link = resolveSigMatchDonationLink(settings, m.id);
+      if (!link.active) continue;
+      const b = byMember.get(m.id)!;
+      if (b.amount > 0) continue;
+      const hasLinkedDonorRow = (donors || []).some((d) => {
+        if (d.memberId !== m.id) return false;
+        const donorAt = Number.isFinite(Number(d.at)) ? Math.max(0, Math.floor(Number(d.at))) : 0;
+        if (link.startedAt > 0 && donorAt > 0 && donorAt < link.startedAt) return false;
+        return true;
+      });
+      if (hasLinkedDonorRow) continue;
+      const memberTotal = Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0));
+      if (memberTotal <= 0) continue;
+      b.amount = memberTotal;
+      b.count = Math.max(b.count, 1);
     }
   }
 

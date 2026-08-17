@@ -29,14 +29,14 @@ describe("getSigMatchRankings countAllDonations", () => {
     expect(rows.find((r) => r.memberId === "a")?.score).toBe(191_000);
   });
 
-  it("requires keyword when countAllDonations is false", () => {
+  it("requires keyword when countAllDonations is false and donation link is OFF", () => {
     const donors: Donor[] = [
       { id: "d1", name: "fan", amount: 191_000, memberId: "a", at: Date.now(), target: "toon" },
     ];
     const rows = getSigMatchRankings(
       donors,
       members,
-      { ...baseSettings, countAllDonations: false },
+      { ...baseSettings, countAllDonations: false, donationLinks: { a: { active: false } } },
       {},
       {}
     );
@@ -63,6 +63,44 @@ describe("getSigMatchRankings countAllDonations", () => {
     );
     expect(rows.find((r) => r.memberId === "a")?.score).toBe(0);
     expect(rows.find((r) => r.memberId === "b")?.score).toBe(80_000);
+  });
+
+  it("counts linked member donations even when countAllDonations is false", () => {
+    const donors: Donor[] = [
+      { id: "d1", name: "fan", amount: 10_000, memberId: "a", at: 2_000, target: "account" },
+    ];
+    const rows = getSigMatchRankings(
+      donors,
+      members,
+      {
+        ...baseSettings,
+        scoringMode: "count",
+        countAllDonations: false,
+        donationLinks: { a: { active: true, startedAt: 1_000 } },
+      },
+      {},
+      {}
+    );
+    expect(rows.find((r) => r.memberId === "a")?.score).toBe(1);
+    expect(rows.find((r) => r.memberId === "a")?.matchedAmount).toBe(10_000);
+  });
+
+  it("falls back to member excel totals when donors list is empty but link is ON", () => {
+    const membersWithAmount: Member[] = [
+      { id: "a", name: "A", account: 10_000, toon: 0, contribution: 10_000 },
+      { id: "b", name: "B", account: 0, toon: 0, contribution: 0 },
+    ];
+    const rows = getSigMatchRankings(
+      [],
+      membersWithAmount,
+      {
+        ...baseSettings,
+        donationLinks: { a: { active: true, startedAt: 1_000 } },
+      },
+      {},
+      {}
+    );
+    expect(rows.find((r) => r.memberId === "a")?.score).toBe(10_000);
   });
 
   it("ignores donations before donationLink startedAt", () => {
