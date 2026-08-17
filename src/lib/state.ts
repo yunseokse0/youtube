@@ -1946,6 +1946,15 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
     ) {
       merged.timerDisplayStyles = prevTimerStyles;
     }
+    /** 판매완료 도장 — 뒤쪽 PATCH가 빈 값·키 생략으로 앞선 업로드 저장을 지우지 않게 */
+    {
+      const prevStamp = String(prev.sigSoldOutStampUrl || "").trim();
+      const nextStamp = String(next.sigSoldOutStampUrl || "").trim();
+      const clearing = next.clearSigSoldOutStamp === true;
+      if (prevStamp && !clearing && !nextStamp) {
+        merged.sigSoldOutStampUrl = prev.sigSoldOutStampUrl;
+      }
+    }
     return JSON.stringify(merged);
   } catch {
     return nextJson;

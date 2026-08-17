@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { defaultState, loadState, saveStateAsync, storageKey } from "@/lib/state";
+import { defaultState, loadState, mergeServerSaveApiBodies, saveStateAsync, storageKey } from "@/lib/state";
 
 describe("sigSoldOutStampUrl persistence", () => {
   beforeEach(() => {
@@ -95,5 +95,20 @@ describe("sigSoldOutStampUrl persistence", () => {
     const body = JSON.parse(String(calls[0][1]?.body || "{}")) as Record<string, unknown>;
     expect(body.sigSoldOutStampUrl).toBe("/uploads/sigs/bttaeho/1785846410495_f.png");
     expect(loadState(userId).sigSoldOutStampUrl).toContain("1785846410495");
+  });
+
+  it("mergeServerSaveApiBodies keeps stamp when later patch omits it", () => {
+    const prev = JSON.stringify({
+      updatedAt: 100,
+      omitDonationFields: true,
+      sigSoldOutStampUrl: "/uploads/sigs/din/stamp.png",
+    });
+    const next = JSON.stringify({
+      updatedAt: 200,
+      omitDonationFields: true,
+      donorRankingsTheme: { amountColor: "#fff" },
+    });
+    const merged = JSON.parse(mergeServerSaveApiBodies(prev, next)) as Record<string, unknown>;
+    expect(merged.sigSoldOutStampUrl).toBe("/uploads/sigs/din/stamp.png");
   });
 });

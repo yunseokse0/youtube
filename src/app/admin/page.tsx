@@ -507,6 +507,7 @@ function adminSyncFingerprint(s: AppState): string {
     inv.length,
     inv.map((x) => `${x.id}:${x.price}:${x.soldCount}:${x.isActive ? 1 : 0}`).join(","),
     donorSig,
+    String(s.sigSoldOutStampUrl || "").trim(),
     String(rs?.phase ?? ""),
     String(rs?.sessionId ?? ""),
     Math.floor(Number(rs?.startedAt ?? 0)),
@@ -1660,13 +1661,20 @@ export default function AdminPage() {
       merged = { ...merged, timerDisplayStyles: local.timerDisplayStyles };
       didPreserve = true;
     }
-    /** 판매완료 도장: 빈 원격이 커스텀 URL을 지우지 않음 */
-    if (
-      String(local.sigSoldOutStampUrl || "").trim() &&
-      !String(merged.sigSoldOutStampUrl || "").trim()
-    ) {
-      merged = { ...merged, sigSoldOutStampUrl: local.sigSoldOutStampUrl };
-      didPreserve = true;
+    /** 판매완료 도장: 빈 원격·업로드 직후 GET이 커스텀 URL을 지우지 않음 */
+    {
+      const localStamp = String(local.sigSoldOutStampUrl || "").trim();
+      const mergedStamp = String(merged.sigSoldOutStampUrl || "").trim();
+      const recentlyEditedStamp =
+        pendingUnsyncedRef.current ||
+        Date.now() - lastLocalPersistAtRef.current < SIG_INVENTORY_LOCAL_PROTECT_MS;
+      if (
+        localStamp &&
+        (!mergedStamp || (recentlyEditedStamp && localStamp !== mergedStamp))
+      ) {
+        merged = { ...merged, sigSoldOutStampUrl: local.sigSoldOutStampUrl };
+        didPreserve = true;
+      }
     }
     /** 시그 롤링 표시 시간: 방금 저장한 로컬 값이 원격 기본/구값으로 덮이지 않게 */
     {
@@ -1919,6 +1927,7 @@ export default function AdminPage() {
           sigSoldOutStampUrl:
             String(apiState.sigSoldOutStampUrl || "").trim() ||
             String(merged.sigSoldOutStampUrl || "").trim() ||
+            String(local.sigSoldOutStampUrl || "").trim() ||
             "",
         });
         /** 타이머 제어 UI가 비어 보이면 프리셋에 저장된 색으로 채움 */
@@ -2314,6 +2323,9 @@ export default function AdminPage() {
           sigInventory: prev.sigInventory || [],
           /** 수동 보정 직후 폴링이 구 sigMatch(0)로 미리보기를 지우지 않게 */
           sigMatch: prev.sigMatch || {},
+          ...(String(prev.sigSoldOutStampUrl || "").trim()
+            ? { sigSoldOutStampUrl: prev.sigSoldOutStampUrl }
+            : {}),
         };
         didPreserve = true;
       } else {
@@ -5430,14 +5442,19 @@ export default function AdminPage() {
   };
 
   const updateSigSoldOutStampUrl = (url: string) => {
+    const normalized = normalizeUploadedSigImageUrl(url);
+    const now = Date.now();
+    lastLocalPersistAtRef.current = now;
     setState((prev: AppState) => {
       const next: AppState = {
         ...prev,
-        sigSoldOutStampUrl: url,
+        sigSoldOutStampUrl: normalized,
+        updatedAt: Math.max(prev.updatedAt || 0, now),
       };
+      stateRef.current = next;
       persistState(
         next,
-        url.trim()
+        normalized.trim()
           ? { omitDonationFields: true }
           : { omitDonationFields: true, clearSigSoldOutStamp: true }
       );
@@ -5446,10 +5463,17 @@ export default function AdminPage() {
   };
 
   const uploadSigSoldOutStampImage = (file: File | null) => {
+    if (!file) return;
+    lastLocalPersistAtRef.current = Date.now();
+    pendingUnsyncedRef.current = true;
     void (async () => {
       const { url } = await uploadSigImageFile(file);
-      if (!url) return;
+      if (!url) {
+        pendingUnsyncedRef.current = false;
+        return;
+      }
       updateSigSoldOutStampUrl(url);
+      setSigExcelResult("판매 완료 오버레이 이미지를 저장했습니다.");
     })();
   };
 
