@@ -1,34 +1,40 @@
 #!/usr/bin/env bash
-# EC2 즉시 복구: _next/static 400 (next start 가 .next-staging 을 찾는 경우)
+# EC2 긴급 복구: zombie :3000 + static 400/404 + EADDRINUSE 한 번에 처리
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 # shellcheck source=deploy/ec2-free-port.sh
 source "$ROOT/deploy/ec2-free-port.sh"
+
 PM2_APP="${PM2_APP:-youtube}"
 PORT="${PORT:-3000}"
 
-echo "== 1) 빌드 산출물 =="
+echo "=========================================="
+echo " EC2 youtube 긴급 복구"
+echo "=========================================="
+
 if [[ ! -f .next/BUILD_ID ]]; then
-  echo "ERROR: .next/BUILD_ID 없음 — bash deploy/deploy-on-ec2.sh 로 재빌드"
+  echo "ERROR: .next/BUILD_ID 없음 — bash deploy/deploy-on-ec2.sh"
   exit 1
 fi
+
 BID=$(tr -d '\n\r' < .next/BUILD_ID)
 W=$(grep -oE 'webpack-[a-f0-9]+\.js' .next/build-manifest.json | head -1)
 echo "BUILD_ID=$BID webpack=$W"
 ls -la ".next/static/${BID}/_buildManifest.js"
 ls -la ".next/static/chunks/${W}"
 
-echo "== 2) pm2 env 정리 =="
+echo "== 1) pm2·포트 정리 =="
 pm2 stop "$PM2_APP" 2>/dev/null || true
 pm2 delete "$PM2_APP" 2>/dev/null || true
 pm2 unset "$PM2_APP" NEXT_BUILD_DIR 2>/dev/null || true
 pm2 unset "$PM2_APP" NEXT_USE_STAGING_DIST 2>/dev/null || true
 unset NEXT_BUILD_DIR NEXT_USE_STAGING_DIST || true
-
-echo "== 3) pm2 재기동 (start.cjs 가 빌드 env 제거) =="
 free_listen_port "$PORT"
+
+echo "== 2) pm2 기동 =="
+cd "$ROOT"
 NEXT_BUILD_DIR= NEXT_USE_STAGING_DIST= pm2 start npm --name "$PM2_APP" -- start
 pm2 save 2>/dev/null || true
 
@@ -39,28 +45,38 @@ if ! wait_for_health "$PORT"; then
   NEXT_BUILD_DIR= NEXT_USE_STAGING_DIST= pm2 start npm --name "$PM2_APP" -- start
   pm2 save 2>/dev/null || true
   wait_for_health "$PORT" || {
-    echo "ERROR: health 계속 실패 — pm2 logs ${PM2_APP}"
+    echo "ERROR: health 계속 실패"
     pm2 logs "$PM2_APP" --lines 30 --nostream 2>/dev/null || true
     exit 1
   }
 fi
 
-echo "== 4) HTTP 검증 =="
+echo "== 3) static 검증 =="
 if ! verify_static_http "$PORT" "$ROOT"; then
-  echo "== static 실패 — zombie 의심, 재기동 =="
+  echo "== static 실패 — zombie 의심, 포트 강제 해제 후 재기동 =="
   pm2 delete "$PM2_APP" 2>/dev/null || true
   free_listen_port "$PORT"
   NEXT_BUILD_DIR= NEXT_USE_STAGING_DIST= pm2 start npm --name "$PM2_APP" -- start
   pm2 save 2>/dev/null || true
   sleep 4
   verify_static_http "$PORT" "$ROOT" || {
-    echo "ERROR: static 계속 실패 — bash deploy/ec2-recover-youtube.sh"
+    echo "ERROR: static 계속 실패 — bash deploy/deploy-on-ec2.sh 재배포"
+    pm2 logs "$PM2_APP" --lines 30 --nostream 2>/dev/null || true
     exit 1
   }
 fi
+
 if systemctl is-active nginx >/dev/null 2>&1; then
-  curl -s -o /dev/null -w "webpack(nginx): %{http_code}\n" "http://127.0.0.1/_next/static/chunks/${W}"
+  bash "$ROOT/deploy/ec2-nginx-static-fix.sh" 2>/dev/null || true
+  code="$(curl -sf -o /dev/null -w "%{http_code}" "http://127.0.0.1/_next/static/chunks/${W}" || echo "000")"
+  echo "webpack(nginx) HTTP ${code}"
+  [[ "$code" == "200" ]] || echo "WARN: nginx static ${code} — sudo nginx -t && sudo systemctl reload nginx"
 fi
-pm2 env "$PM2_APP" 2>/dev/null | grep -E 'NEXT_BUILD_DIR|NEXT_USE_STAGING_DIST' || echo "(pm2 env clean)"
+
+echo "== 4) 상태 =="
+pm2 status "$PM2_APP" || true
 show_port_holders "$PORT"
-echo "완료 — 브라우저 Ctrl+Shift+R"
+pm2 env "$PM2_APP" 2>/dev/null | grep -E 'NEXT_BUILD_DIR|NEXT_USE_STAGING_DIST' || echo "(pm2 env clean)"
+echo "=========================================="
+echo " 복구 완료 — 브라우저 Ctrl+Shift+R"
+echo "=========================================="

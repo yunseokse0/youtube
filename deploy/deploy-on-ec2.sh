@@ -321,11 +321,19 @@ OBS_TEXT_CODE="$(curl -sf -o /dev/null -w "%{http_code}" "http://127.0.0.1:${POR
 echo "overlay/obs-text HTTP ${OBS_TEXT_CODE}"
 
 if ! verify_static_serving; then
-  echo "== static 자산 검증 실패 — pm2 logs ${PM2_APP} 확인 =="
-  df -h / | awk 'NR==1 || /root|\/$/'
-  pm2 logs "$PM2_APP" --lines 20 --nostream 2>/dev/null || true
-  echo "  브라우저: Ctrl+Shift+R 후 재접속"
-  exit 1
+  echo "== static 자산 검증 실패 — 포트·pm2 재정리 후 1회 재시도 =="
+  pm2 delete "$PM2_APP" 2>/dev/null || true
+  free_listen_port "$PORT" || true
+  start_pm2_app || true
+  sleep 4
+  if ! verify_static_serving; then
+    echo "== static 재시도 실패 — pm2 logs ${PM2_APP} 확인 =="
+    df -h / | awk 'NR==1 || /root|\/$/'
+    pm2 logs "$PM2_APP" --lines 20 --nostream 2>/dev/null || true
+    echo "  bash deploy/ec2-recover-youtube.sh"
+    echo "  브라우저: Ctrl+Shift+R 후 재접속"
+    exit 1
+  fi
 fi
 
 echo "== 상태 =="
