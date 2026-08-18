@@ -42,9 +42,11 @@ if (legacyInPlace || stopBeforeBuild) {
   run("pm2", ["stop", pm2App], { stdio: "inherit" });
 }
 
-/** 라우트 삭제 후 남은 types 캐시가 타입 검사 실패하는 것 방지 */
-for (const dir of [stagingDir, ".next-staging", ".next/types"]) {
-  if (!dir) continue;
+/** 라우트 삭제 후 남은 types 캐시가 타입 검사 실패하는 것 방지 — 스테이징 빌드 중 실행 중 .next/types 는 건드리지 않음 */
+const cleanDirs = stagingDir
+  ? [...new Set([stagingDir, ".next-staging"].filter(Boolean))]
+  : [".next-staging", ".next/types"];
+for (const dir of cleanDirs) {
   const target = path.resolve(dir);
   console.log(`[build:prod] clean ${dir}`);
   rmSync(target, { recursive: true, force: true });

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# EC2 원클릭 배포: pull → (디스크/스왑/binlog 보장) → 스테이징 빌드 → .next 교체 → MySQL·pm2·헬스
+# EC2 원클릭 배포: pull → (디스크/스왑/binlog 보장) → 스테이징 빌드(서비스 유지) → .next 교체 → pm2 reload
 # 사용 (레포 루트):
 #   bash deploy/deploy-on-ec2.sh
 #
@@ -8,6 +8,7 @@
 #   NODE_HEAP_MB=1536|2048
 #   SWAP_SIZE=1G              # 빌드용 스왑 (기본 1G — 20GB 디스크용)
 #   KEEP_SWAP=1              # 빌드 후 스왑 유지(기본). 0 이면 빌드 후 제거
+#   PM2_STOP_BEFORE_BUILD=0  # 1 이면 빌드 전 pm2 stop (OOM 시만). 기본 0 = 빌드 중에도 서비스 유지
 #   STOP_MYSQL_FOR_BUILD=1   # 빌드 중 MySQL 일시 정지(기본 0 — 엑셀/후원 유실 방지. OOM 시에만 1)
 #   SKIP_GIT_PULL=0
 #   DEPLOY_SMOKE_USER=din       # 배포 후 /api/state 스모크 (미설정 시 생략)
@@ -25,10 +26,12 @@ PORT="${PORT:-3000}"
 SWAP_FILE="${SWAP_FILE:-/swapfile}"
 SWAP_SIZE="${SWAP_SIZE:-1G}"
 KEEP_SWAP="${KEEP_SWAP:-1}"
+PM2_STOP_BEFORE_BUILD="${PM2_STOP_BEFORE_BUILD:-0}"
 STOP_MYSQL_FOR_BUILD="${STOP_MYSQL_FOR_BUILD:-0}"
 SKIP_GIT_PULL="${SKIP_GIT_PULL:-0}"
 MYSQL_WAS_STOPPED=0
 SWAP_CREATED_BY_US=0
+PM2_STOPPED_FOR_BUILD=0
 
 run() {
   if [[ "$(id -u)" == "0" ]]; then "$@"; else sudo "$@"; fi
@@ -73,8 +76,8 @@ if [[ "${PCT_USED:-0}" -ge 96 ]]; then
   exit 1
 fi
 
-echo "== 이전 빌드 잔여 제거 =="
-rm -rf "$STAGING_DIR" .next.old .next/cache .next/types
+echo "== 이전 스테이징·백업 제거 (실행 중 .next 는 유지) =="
+rm -rf "$STAGING_DIR" .next.old
 
 # ----- MySQL binlog 만료 (디스크 재폭발 방지) -----
 BINLOG_CNF="/etc/mysql/mysql.conf.d/zzz-binlog-expire.cnf"
@@ -136,13 +139,16 @@ free -h
 if [[ "$STOP_MYSQL_FOR_BUILD" == "1" ]] && systemctl is-active --quiet mysql 2>/dev/null; then
   echo "== 빌드 중 앱·MySQL 일시 정지 (데이터 유실 방지: 앱 먼저 중지) =="
   pm2 stop "$PM2_APP" 2>/dev/null || true
+  PM2_STOPPED_FOR_BUILD=1
   run systemctl stop mysql
   MYSQL_WAS_STOPPED=1
+elif [[ "$PM2_STOP_BEFORE_BUILD" == "1" ]]; then
+  echo "== PM2_STOP_BEFORE_BUILD=1 — 빌드 전 pm2 stop (OOM/RAM 확보) =="
+  pm2 stop "$PM2_APP" 2>/dev/null || true
+  PM2_STOPPED_FOR_BUILD=1
+else
+  echo "== 빌드 중 서비스 유지 (스테이징 ${STAGING_DIR} → 완료 후 .next 교체·pm2 reload) =="
 fi
-
-# ----- 스테이징 빌드 -----
-echo "== pm2 stop (빌드 중 옛 .next 서빙 방지) =="
-pm2 stop "$PM2_APP" 2>/dev/null || true
 
 verify_build_output() {
   local dir="$1"
@@ -198,25 +204,27 @@ verify_static_serving() {
 }
 
 echo "== 스테이징 빌드 (${STAGING_DIR}) heap=${NODE_HEAP_MB}MB =="
-rm -rf "$STAGING_DIR" .next/types
+rm -rf "$STAGING_DIR"
 export NODE_HEAP_MB
 export NEXT_BUILD_DIR="$STAGING_DIR"
 set +e
-# 빌드 자식에만 NEXT_BUILD_DIR 전달 — 현재 셸/pm2 로 새지 않게
-env -u PM2_APP NEXT_BUILD_DIR="$STAGING_DIR" NODE_HEAP_MB="$NODE_HEAP_MB" npm run build:prod
+# 빌드 자식에만 NEXT_BUILD_DIR 전달 — PM2_APP 미전달·PM2_STOP_BEFORE_BUILD=0 으로 빌드 중 서비스 유지
+env -u PM2_APP NEXT_BUILD_DIR="$STAGING_DIR" NODE_HEAP_MB="$NODE_HEAP_MB" PM2_STOP_BEFORE_BUILD="${PM2_STOP_BEFORE_BUILD}" npm run build:prod
 BUILD_CODE=$?
 set -e
 unset NEXT_BUILD_DIR NEXT_USE_STAGING_DIST || true
 
 if [[ "$BUILD_CODE" -ne 0 ]]; then
-  echo "== 빌드 실패 — 스테이징 제거, 서비스 복구 =="
+  echo "== 빌드 실패 — 스테이징 제거, 실행 중 .next 유지 =="
   rm -rf "$STAGING_DIR"
   if [[ "$MYSQL_WAS_STOPPED" == "1" ]]; then
     run systemctl start mysql
     MYSQL_WAS_STOPPED=0
     sleep 1
   fi
-  pm2 restart "$PM2_APP" 2>/dev/null || pm2 start "$PM2_APP" 2>/dev/null || true
+  if [[ "$PM2_STOPPED_FOR_BUILD" == "1" ]]; then
+    pm2 restart "$PM2_APP" 2>/dev/null || pm2 start "$PM2_APP" 2>/dev/null || true
+  fi
   exit "$BUILD_CODE"
 fi
 
@@ -230,8 +238,8 @@ if [[ ! -d "$STAGING_DIR" ]]; then
   fi
 else
   verify_build_output "$STAGING_DIR" || exit 1
-  # ----- .next 교체 + 서비스 기동 -----
-  echo "== .next 교체 · 서비스 기동 =="
+  # ----- .next 교체 (수 ms) — 빌드 완료 후에만 스왑 -----
+  echo "== .next 교체 (기존 빌드 → .next.old) =="
   rm -rf .next.old
   if [[ -d .next ]]; then
     mv .next .next.old
@@ -245,8 +253,7 @@ else
   exit 1
 fi
 
-echo "== 서비스 기동 =="
-pm2 stop "$PM2_APP" 2>/dev/null || true
+echo "== 서비스 재기동 (reload — 교체 구간만 수 초) =="
 if [[ ! -d .next ]]; then
   echo "== .next 없음 =="
   exit 1
@@ -266,11 +273,29 @@ if systemctl list-unit-files nginx.service >/dev/null 2>&1; then
   run systemctl reload nginx 2>/dev/null || true
 fi
 
-start_pm2_app() {
+clear_pm2_build_env() {
   unset NEXT_BUILD_DIR NEXT_USE_STAGING_DIST || true
   export NEXT_BUILD_DIR="" NEXT_USE_STAGING_DIST=""
   pm2 unset "$PM2_APP" NEXT_BUILD_DIR 2>/dev/null || true
   pm2 unset "$PM2_APP" NEXT_USE_STAGING_DIST 2>/dev/null || true
+}
+
+reload_pm2_app() {
+  clear_pm2_build_env
+  cd "$ROOT"
+  if pm2 describe "$PM2_APP" >/dev/null 2>&1; then
+    echo "== pm2 reload ${PM2_APP} =="
+    pm2 reload "$PM2_APP" --update-env 2>/dev/null || pm2 restart "$PM2_APP" --update-env
+    return $?
+  fi
+  echo "== pm2 최초 기동 ${PM2_APP} =="
+  free_listen_port "$PORT"
+  NEXT_BUILD_DIR= NEXT_USE_STAGING_DIST= pm2 start npm --name "$PM2_APP" -- start
+  return $?
+}
+
+start_pm2_app_fresh() {
+  clear_pm2_build_env
   pm2 stop "$PM2_APP" 2>/dev/null || true
   pm2 delete "$PM2_APP" 2>/dev/null || true
   free_listen_port "$PORT"
@@ -279,13 +304,13 @@ start_pm2_app() {
   return $?
 }
 
-if ! start_pm2_app; then
-  echo "== pm2 기동 실패 — .next 롤백 =="
+if ! reload_pm2_app; then
+  echo "== pm2 reload 실패 — .next 롤백 후 fresh start =="
   rm -rf .next
   if [[ -d .next.old ]]; then
     mv .next.old .next
   fi
-  start_pm2_app || true
+  start_pm2_app_fresh || true
   exit 1
 fi
 pm2 save 2>/dev/null || true
@@ -329,10 +354,8 @@ OBS_TEXT_CODE="$(curl -sf -o /dev/null -w "%{http_code}" "http://127.0.0.1:${POR
 echo "overlay/obs-text HTTP ${OBS_TEXT_CODE}"
 
 if ! verify_static_serving; then
-  echo "== static 자산 검증 실패 — 포트·pm2 재정리 후 1회 재시도 =="
-  pm2 delete "$PM2_APP" 2>/dev/null || true
-  free_listen_port "$PORT" || true
-  start_pm2_app || true
+  echo "== static 자산 검증 실패 — pm2 reload 1회 재시도 =="
+  reload_pm2_app || start_pm2_app_fresh || true
   sleep 4
   if ! verify_static_serving; then
     echo "== static 재시도 실패 — pm2 logs ${PM2_APP} 확인 =="
@@ -356,5 +379,5 @@ echo "== 안정성 (워치독·일일 정리·pm2 startup) =="
 bash "$ROOT/deploy/ec2-setup-stability.sh" 2>/dev/null || echo "WARN: ec2-setup-stability 실패 — 수동: bash deploy/ec2-setup-stability.sh"
 
 echo "=========================================="
-echo " 배포 완료 — 바로 사용 가능"
+echo " 배포 완료 — 빌드 중 서비스 유지, 교체 구간만 reload"
 echo "=========================================="

@@ -61,7 +61,8 @@ PM2_STOP_BEFORE_BUILD=1 NEXT_BUILD_DIR=.next-staging NODE_HEAP_MB=2048 npm run b
 `build:prod` 기본(스테이징):
 
 - `NEXT_BUILD_DIR=.next-staging` → **기존 `.next` 유지**한 채 빌드 (서비스 계속)
-- `deploy-on-ec2.sh` 가 성공 시에만 `pm2 stop` → `.next` 교체 → `pm2 start` (수 초)
+- `deploy-on-ec2.sh` 가 성공 시에만 `.next` 교체 → `pm2 reload` (수 초). **빌드 중에는 서비스 유지** (기본).
+- OOM 시에만 `PM2_STOP_BEFORE_BUILD=1 bash deploy/deploy-on-ec2.sh`
 - `NODE_OPTIONS=--max-old-space-size=2048`, `LOW_MEMORY_BUILD=1`
 
 ### 3) 여전히 OOM 이면

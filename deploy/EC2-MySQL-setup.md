@@ -212,7 +212,7 @@ curl -s "http://127.0.0.1:3000/api/health?deep=1"
 | `ec2-setup-mysql.sh` | MySQL bind localhost · DB/유저 · cron 백업 |
 | `ec2-cutover-checklist.sh` | 컷오버 점검 안내 (Bash) |
 | `ec2-cutover-checklist.ps1` | 컷오버 점검 안내 (PowerShell) |
-| `deploy-on-ec2.sh` | git pull · 스테이징 빌드 · pm2 |
+| `deploy-on-ec2.sh` | git pull · 스테이징 빌드(서비스 유지) · .next 교체 · pm2 reload |
 | `ec2-setup-swap.sh` | 스왑 2GB |
 | `ec2-nginx-upload-limit.sh` | `client_max_body_size 35M` |
 | `ec2-setup-stability.sh` | 일일 정리 + 워치독 + pm2 startup 일괄 |
