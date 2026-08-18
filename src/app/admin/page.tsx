@@ -239,6 +239,7 @@ import {
   isHighSocietyReopen,
   buildTerritoryPauseToggleSettingsPatch,
   resolveDonorsForHighSocietySettingsPatch,
+  shouldMarkDonorsLocallyForHighSocietySettingsPatch,
   shouldPersistDonorsForHighSocietySettingsPatch,
   shouldApplyDonorsForHighSocietySettingsPatch,
   resolveDonationSyncModeForHighSocietySettingsChange,
@@ -2494,22 +2495,9 @@ export default function AdminPage() {
         toApply = mergeLocalMemberIdentityOntoRemote(toApply, prev);
         const afterNames = (toApply.members || []).map((m) => `${m.id}:${m.name || ""}`).join("|");
         if (beforeNames !== afterNames && hasMeaningfulMemberRoster(toApply)) {
-          const richestDonors = resolveRichestDonorsFromSources(
-            [toApply.donors, prev.donors, stateRef.current?.donors, loadState(user?.id)?.donors],
-            {
-              incomingUpdatedAt: Number(toApply.updatedAt || 0),
-              existingUpdatedAt: Number(prev.updatedAt || 0),
-            }
-          );
-          const payload: AppState =
-            richestDonors.length > 0
-              ? syncMemberTotalsFromDonors({ ...toApply, donors: richestDonors })
-              : toApply;
-          persistState(payload, {
+          persistState(toApply, {
             membersAuthoritative: true,
-            ...(richestDonors.length > 0
-              ? { donorsAuthoritative: true }
-              : { omitDonationFields: true }),
+            omitDonationFields: true,
           });
         }
       }
@@ -3489,7 +3477,10 @@ export default function AdminPage() {
         }
       );
       if (richestDonors.length > 0) {
-        next = syncMemberTotalsFromDonors({ ...next, donors: richestDonors });
+        next = {
+          ...syncMemberTotalsFromDonors({ ...next, donors: richestDonors }),
+          donors: richestDonors,
+        };
       }
       if (next.mealBattle?.participants?.length) {
         next = {
@@ -3513,14 +3504,12 @@ export default function AdminPage() {
       } catch {}
       notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
       /**
-       * 개명도 membersAuthoritative 로 즉시 저장·SSE 힌트.
-       * (GET 재병합 경합·omit 경로로 OBS에 옛 이름이 남는 회귀 방지)
+       * 개명은 membersAuthoritative + 이름만 서버 반영.
+       * donorsAuthoritative 는 불완전 React donors 로 후원 전체가 지워질 수 있음.
        */
       void saveStateAsync(next, user?.id, {
         membersAuthoritative: true,
-        ...(normalizeDonorsArray(next.donors).length > 0
-          ? { donorsAuthoritative: true as const }
-          : { omitDonationFields: true as const }),
+        omitDonationFields: true,
       }).then((r) => {
         if (r.ok) {
           pendingUnsyncedRef.current = false;
@@ -7705,13 +7694,17 @@ export default function AdminPage() {
           donors: prev.donors || [],
         });
         applied = nextSettings;
-        const needsDonorTerritoryMark = shouldPersistDonorsForHighSocietySettingsPatch({
+        const needsDonorPersist = shouldPersistDonorsForHighSocietySettingsPatch({
+          resetTerritory,
+          isFirstOn,
+        });
+        const needsDonorLocalMark = shouldMarkDonorsLocallyForHighSocietySettingsPatch({
           resetTerritory,
           isFirstOn,
         });
         /** 영토 일시정지·OFF·재ON 등 — React donors 를 비우거나 authoritative 저장하지 않음 */
         let donorsPatch: Donor[] | null = null;
-        if (needsDonorTerritoryMark) {
+        if (needsDonorLocalMark) {
           let fromLsDonors: Donor[] = [];
           try {
             fromLsDonors = normalizeDonorsArray(loadState(user?.id)?.donors);
@@ -7732,7 +7725,7 @@ export default function AdminPage() {
           turningOff,
           prevMode: prev.donationSyncMode,
         });
-        const hasDonorsToPersist = donorsPatch != null;
+        const hasDonorsToPersist = needsDonorPersist && donorsPatch != null;
         if (hasDonorsToPersist) {
           donationAuthoritativeSaveUntilRef.current = Math.max(
             donationAuthoritativeSaveUntilRef.current,

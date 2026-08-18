@@ -1176,13 +1176,39 @@ export function mergeDonorRostersPreferFullest(
 
 /**
  * 상류사회 설정 저장 시 donors 를 서버에 권위적으로 올려야 하는 patch 인지.
- * 영토 일시정지·OFF·재ON·좌석 등은 후원 rows 를 건드리지 않는다.
+ * 최초 ON 만 — 영토만 초기화는 settings-only PATCH + 서버 round bump 마킹.
  */
 export function shouldPersistDonorsForHighSocietySettingsPatch(opts: {
   resetTerritory: boolean;
   isFirstOn: boolean;
 }): boolean {
+  void opts.resetTerritory;
+  return Boolean(opts.isFirstOn);
+}
+
+/** 영토 리셋·최초 ON — 로컬 UI/LS 에 hsTerritoryExcluded 반영 (서버 authoritative 와 분리) */
+export function shouldMarkDonorsLocallyForHighSocietySettingsPatch(opts: {
+  resetTerritory: boolean;
+  isFirstOn: boolean;
+}): boolean {
   return Boolean(opts.resetTerritory || opts.isFirstOn);
+}
+
+/**
+ * settings-only PATCH 로 round 가 올라갔을 때 서버 donors 에 영토 OFF 표시만 부여.
+ * donors/members wipe 없음 — resetTerritory 전용.
+ */
+export function markDonorsForHighSocietyTerritoryRoundBump(opts: {
+  prevRound: number;
+  nextRound: number;
+  donors: Donor[] | null | undefined;
+}): Donor[] | null {
+  const prev = Math.max(1, Math.floor(Number(opts.prevRound) || 1));
+  const next = Math.max(1, Math.floor(Number(opts.nextRound) || 1));
+  if (next <= prev) return null;
+  const donors = mergeDonorRostersPreferFullest(opts.donors);
+  if (donors.length === 0) return null;
+  return markDonorsHsTerritoryExcluded(donors, true);
 }
 
 /** 상류사회 ON/OFF 시 donationSyncMode — OFF 후에도 후원 합산·투네는 mealBattle 경로 유지 */

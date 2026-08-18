@@ -2,6 +2,16 @@ import type { Member } from "@/types";
 import { isDefaultPlaceholderMemberList, membersDifferByIds } from "@/lib/state";
 import { normalizeRestroomCount } from "@/lib/restroom-utils";
 
+/** 멤버 추가·삭제 없이 id 집합만 동일 — 개명·목표 등 identity patch */
+export function isMemberRosterIdentityOnlyChange(
+  baseMembers: Member[] | undefined,
+  patchMembers: Member[] | undefined
+): boolean {
+  if (!Array.isArray(baseMembers) || !Array.isArray(patchMembers)) return false;
+  if (baseMembers.length !== patchMembers.length) return false;
+  return !membersDifferByIds(baseMembers, patchMembers);
+}
+
 /** 계좌·투네 0 리셋 차단 시에도 이름·목표·운영비·화장실·수동 기여도는 patch 반영.
  * patch 에만 있는 멤버(추가)는 맨 뒤에 붙인다 — base 만 map 하면 추가가 유실됨.
  * 단 placeholder(멤버1…) patch 는 추가하지 않음(테마 저장이 실로스터에 슬롯을 붙이지 않게). */

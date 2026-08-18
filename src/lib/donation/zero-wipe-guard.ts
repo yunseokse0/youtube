@@ -1,5 +1,5 @@
-import type { AppState } from "@/types";
-import { mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
+import type { AppState, Member } from "@/types";
+import { isMemberRosterIdentityOnlyChange, mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
 import {
   countableDonorTotal,
   purgeDonorsForMemberRoster,
@@ -41,6 +41,33 @@ export function isHighSocietySettingsOnlyPatch(opts: {
     !opts.membersAuthoritative &&
     !opts.settlementReset &&
     !opts.donationInitReset
+  );
+}
+
+/**
+ * 멤버 개명 등 identity-only PATCH 에서 donorsAuthoritative 축소를 거부할지.
+ * (클라이언트가 불완전 donors 를 실어 후원 전체가 지워지는 회귀 방지)
+ */
+export function shouldRefuseDonorShrinkOnMemberIdentityPatch(opts: {
+  membersAuthoritative: boolean;
+  donorsAuthoritative: boolean;
+  donorsInPatch: boolean;
+  settlementReset: boolean;
+  donationInitReset: boolean;
+  baseMembers: Member[] | undefined;
+  patchMembers: Member[] | undefined;
+  baseDonorCount: number;
+  incomingDonorCount: number;
+}): boolean {
+  return (
+    opts.membersAuthoritative &&
+    opts.donorsAuthoritative &&
+    opts.donorsInPatch &&
+    !opts.settlementReset &&
+    !opts.donationInitReset &&
+    opts.baseDonorCount > 0 &&
+    opts.incomingDonorCount < opts.baseDonorCount &&
+    isMemberRosterIdentityOnlyChange(opts.baseMembers, opts.patchMembers)
   );
 }
 

@@ -4,6 +4,7 @@ import { syncMemberTotalsFromDonors } from "./apply-donation-state";
 import {
   guardMemberTotalsAgainstAccidentalZeroWipe,
   isHighSocietySettingsOnlyPatch,
+  shouldRefuseDonorShrinkOnMemberIdentityPatch,
   shouldRefuseMassEmptyAuthoritativeDonorWipe,
   wouldAccidentallyZeroRemainingMembers,
 } from "./zero-wipe-guard";
@@ -158,6 +159,49 @@ describe("isHighSocietySettingsOnlyPatch", () => {
         membersAuthoritative: false,
         settlementReset: false,
         donationInitReset: false,
+      })
+    ).toBe(false);
+  });
+});
+
+describe("shouldRefuseDonorShrinkOnMemberIdentityPatch", () => {
+  const members = [
+    { id: "m1", name: "A", account: 0, toon: 0, contribution: 0, operating: false },
+    { id: "m2", name: "B", account: 0, toon: 0, contribution: 0, operating: false },
+  ];
+  const renamed = [
+    { id: "m1", name: "사기", account: 0, toon: 0, contribution: 0, operating: false },
+    { id: "m2", name: "히치", account: 0, toon: 0, contribution: 0, operating: false },
+  ];
+
+  it("refuses authoritative donor shrink when roster ids unchanged (rename)", () => {
+    expect(
+      shouldRefuseDonorShrinkOnMemberIdentityPatch({
+        membersAuthoritative: true,
+        donorsAuthoritative: true,
+        donorsInPatch: true,
+        settlementReset: false,
+        donationInitReset: false,
+        baseMembers: members,
+        patchMembers: renamed,
+        baseDonorCount: 10,
+        incomingDonorCount: 2,
+      })
+    ).toBe(true);
+  });
+
+  it("allows shrink when member roster ids changed (delete/add)", () => {
+    expect(
+      shouldRefuseDonorShrinkOnMemberIdentityPatch({
+        membersAuthoritative: true,
+        donorsAuthoritative: true,
+        donorsInPatch: true,
+        settlementReset: false,
+        donationInitReset: false,
+        baseMembers: members,
+        patchMembers: [renamed[0]!],
+        baseDonorCount: 10,
+        incomingDonorCount: 2,
       })
     ).toBe(false);
   });

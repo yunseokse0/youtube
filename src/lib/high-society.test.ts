@@ -25,9 +25,11 @@ import {
   effectiveHighSocietySeatOrder,
   buildTerritoryPauseToggleSettingsPatch,
   normalizeTerritoryPauseExcludeWindows,
+  markDonorsForHighSocietyTerritoryRoundBump,
   markDonorsHsTerritoryExcluded,
   mergeDonorRostersPreferFullest,
   resolveDonorsForHighSocietySettingsPatch,
+  shouldMarkDonorsLocallyForHighSocietySettingsPatch,
   shouldPersistDonorsForHighSocietySettingsPatch,
   shouldApplyDonorsForHighSocietySettingsPatch,
   resolveDonationSyncModeForHighSocietySettingsChange,
@@ -1168,16 +1170,44 @@ describe("high-society territory (aux)", () => {
     expect(firstOn[0]!.hsTerritoryExcluded).toBe(true);
   });
 
-  it("shouldPersistDonorsForHighSocietySettingsPatch is true only for first ON or resetTerritory", () => {
+  it("shouldPersistDonorsForHighSocietySettingsPatch is true only for first ON (not resetTerritory)", () => {
     expect(
       shouldPersistDonorsForHighSocietySettingsPatch({ resetTerritory: false, isFirstOn: false })
     ).toBe(false);
     expect(
       shouldPersistDonorsForHighSocietySettingsPatch({ resetTerritory: true, isFirstOn: false })
-    ).toBe(true);
+    ).toBe(false);
     expect(
       shouldPersistDonorsForHighSocietySettingsPatch({ resetTerritory: false, isFirstOn: true })
     ).toBe(true);
+  });
+
+  it("shouldMarkDonorsLocallyForHighSocietySettingsPatch covers resetTerritory and first ON", () => {
+    expect(
+      shouldMarkDonorsLocallyForHighSocietySettingsPatch({ resetTerritory: false, isFirstOn: false })
+    ).toBe(false);
+    expect(
+      shouldMarkDonorsLocallyForHighSocietySettingsPatch({ resetTerritory: true, isFirstOn: false })
+    ).toBe(true);
+    expect(
+      shouldMarkDonorsLocallyForHighSocietySettingsPatch({ resetTerritory: false, isFirstOn: true })
+    ).toBe(true);
+  });
+
+  it("markDonorsForHighSocietyTerritoryRoundBump marks OFF on round increase only", () => {
+    const donors = [
+      { id: "d1", name: "후원", amount: 50_000, memberId: "b", target: "account" as const, at: 100 },
+    ];
+    expect(
+      markDonorsForHighSocietyTerritoryRoundBump({ prevRound: 2, nextRound: 2, donors })
+    ).toBeNull();
+    const marked = markDonorsForHighSocietyTerritoryRoundBump({
+      prevRound: 2,
+      nextRound: 3,
+      donors,
+    });
+    expect(marked?.[0]?.hsTerritoryExcluded).toBe(true);
+    expect(marked?.[0]?.amount).toBe(50_000);
   });
 
   it("resolveDonationSyncModeForHighSocietySettingsChange restores mealBattle on OFF", () => {

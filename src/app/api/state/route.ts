@@ -45,10 +45,12 @@ import {
 import {
   guardMemberTotalsAgainstAccidentalZeroWipe,
   isHighSocietySettingsOnlyPatch,
+  shouldRefuseDonorShrinkOnMemberIdentityPatch,
   shouldRefuseMassEmptyAuthoritativeDonorWipe,
 } from "@/lib/donation/zero-wipe-guard";
 import { isGroupSplitDonorListMutation } from "@/lib/donation/group-split-donation";
 import {
+  isMemberRosterIdentityOnlyChange,
   mergeManualMemberFieldsFromPatch,
   mergeMemberRosterPreservingAmounts,
   resolveMembersAgainstZeroWipe,
@@ -77,7 +79,10 @@ import {
   enrichAppStateWithDonationRosterBackup,
   saveDonationRosterBackup,
 } from "@/lib/donation-roster-backup";
-import { shouldBlockHighSocietyRegression } from "@/lib/high-society";
+import {
+  markDonorsForHighSocietyTerritoryRoundBump,
+  shouldBlockHighSocietyRegression,
+} from "@/lib/high-society";
 
 const logger = createModuleLogger('API/State');
 
@@ -900,6 +905,26 @@ export async function POST(req: Request) {
       });
       donorsInPatch = false;
     }
+    if (
+      shouldRefuseDonorShrinkOnMemberIdentityPatch({
+        membersAuthoritative,
+        donorsAuthoritative,
+        donorsInPatch,
+        settlementReset,
+        donationInitReset,
+        baseMembers: baseState.members,
+        patchMembers: patchMembersForRoster ?? undefined,
+        baseDonorCount: baseDonorsNorm.length,
+        incomingDonorCount: incomingDonorsFiltered.length,
+      })
+    ) {
+      logger.warn("refused donor shrink on member identity-only patch", {
+        userId,
+        baseCount: baseDonorsNorm.length,
+        incomingCount: incomingDonorsFiltered.length,
+      });
+      donorsInPatch = false;
+    }
     /**
      * donorsAuthoritative 라도 삭제(shrink)·단체짠 나누기(donorsReplace)·정산 리셋이 아니면
      * Redis 기존 donors 와 union — 수동 합산이 직전 투네를 지우지 않게.
@@ -1006,15 +1031,21 @@ export async function POST(req: Request) {
       settlementReset,
       donationInitReset,
     });
+    const memberIdentityOnlyPatch =
+      membersAuthoritative &&
+      !donorsInPatch &&
+      patchMembersForRoster != null &&
+      isMemberRosterIdentityOnlyChange(baseState.members, patchMembersForRoster);
     /**
      * 글자색·테마 등 시각 PATCH(members/donors 미포함)에서는
      * syncMemberTotalsFromDonors 를 돌리지 않는다.
      * 서버 donors 가 비어 있을 때 members 금액을 0으로 재계산해 버리는 회귀를 막는다.
-     * 멤버만 보낸 경우에도 donors 가 있을 때만 sync — 없으면 merge 가 보존한 금액 유지.
+     * 멤버 개명(membersAuthoritative, donors 미포함)도 동일 — 금액·후원은 서버 정본 유지.
      * 상류사회 영토 일시정지 등 설정-only PATCH 도 동일(0원 members 동봉 시 엑셀 0화 방지).
      */
     const shouldSyncMembersFromDonors =
       !highSocietySettingsOnlyPatch &&
+      !memberIdentityOnlyPatch &&
       (donorsInPatch ||
         ("members" in bodyForMerge && normalizeDonorsArray(dedupedDonors).length > 0));
     let draft: AppState = shouldSyncMembersFromDonors
@@ -1023,11 +1054,21 @@ export async function POST(req: Request) {
           baseState
         )
       : { ...merged, donors: dedupedDonors };
-    if (highSocietySettingsOnlyPatch && Array.isArray(merged.members)) {
-      draft = {
-        ...draft,
-        members: mergeMemberRosterPreservingAmounts(baseState.members || [], merged.members),
-      };
+    if (highSocietySettingsOnlyPatch) {
+      if (Array.isArray(merged.members)) {
+        draft = {
+          ...draft,
+          members: mergeMemberRosterPreservingAmounts(baseState.members || [], merged.members),
+        };
+      }
+      const markedDonors = markDonorsForHighSocietyTerritoryRoundBump({
+        prevRound: Math.max(1, Math.floor(Number(baseState.highSocietySettings?.round) || 1)),
+        nextRound: Math.max(1, Math.floor(Number(draft.highSocietySettings?.round) || 1)),
+        donors: draft.donors,
+      });
+      if (markedDonors) {
+        draft = { ...draft, donors: markedDonors };
+      }
     }
     /**
      * donorsAuthoritative + donors 있음인데 멤버 합계가 donors 와 어긋나면 로스터 재동기화.
