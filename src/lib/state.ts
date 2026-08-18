@@ -1422,6 +1422,32 @@ export function hasCustomTimerDisplayStyles(
   return !isDefaultLikeTimerDisplayStyle(styles?.general);
 }
 
+/** 테마·타이머 PATCH — foundation(방금 UI 반영) vs LS 중 최신 timerDisplayStyles 선택 */
+export function resolveTimerDisplayStylesForVisualSave(
+  foundation: AppState | null | undefined,
+  local: AppState | null | undefined,
+  base: AppState | null | undefined
+): AppState["timerDisplayStyles"] {
+  const foundationStyles = foundation?.timerDisplayStyles;
+  const localStyles = local?.timerDisplayStyles;
+  const baseStyles = base?.timerDisplayStyles ?? normalizeTimerDisplayStyles(undefined);
+  const foundationAt = Number(foundation?.updatedAt || 0);
+  const localAt = Number(local?.updatedAt || 0);
+  const localCustom = hasCustomTimerDisplayStyles(localStyles);
+  const foundationCustom = hasCustomTimerDisplayStyles(foundationStyles);
+
+  if (foundationStyles && foundationAt >= localAt && foundationCustom) {
+    return foundationStyles;
+  }
+  if (localCustom && localStyles) {
+    return localStyles;
+  }
+  if (foundationCustom && foundationStyles) {
+    return foundationStyles;
+  }
+  return baseStyles;
+}
+
 function normalizeTimerDisplayStyle(input: unknown): TimerDisplayStyle {
   const v = input && typeof input === "object" ? (input as Partial<TimerDisplayStyle>) : {};
   const op = Number(v.bgOpacity);
@@ -2776,10 +2802,7 @@ export async function saveOverlayPresetsPatchAsync(
                 : {}) as Record<string, unknown>),
               ...nextSettings,
             } as AppState["overlaySettings"],
-            timerDisplayStyles:
-              hasCustomTimerDisplayStyles(local!.timerDisplayStyles)
-                ? local!.timerDisplayStyles
-                : base.timerDisplayStyles,
+            timerDisplayStyles: resolveTimerDisplayStylesForVisualSave(foundation, local, base),
             updatedAt: now,
           }
         : {
@@ -2788,11 +2811,7 @@ export async function saveOverlayPresetsPatchAsync(
             donors: preservedDonors,
             overlayPresets: overlayPresets as AppState["overlayPresets"],
             overlaySettings: nextSettings as AppState["overlaySettings"],
-            timerDisplayStyles:
-              hasCustomTimerDisplayStyles(local?.timerDisplayStyles) &&
-              isDefaultLikeTimerDisplayStyle(base.timerDisplayStyles?.general)
-                ? local!.timerDisplayStyles
-                : base.timerDisplayStyles,
+            timerDisplayStyles: resolveTimerDisplayStylesForVisualSave(foundation, local, base),
             updatedAt: now,
           }
     )
@@ -2896,12 +2915,7 @@ export async function saveVisualSettingsPatchAsync(
     /** 다른 시각 옵션 저장 시 타이머 커스텀 색이 기본값으로 LS에 덮이지 않게 */
     timerDisplayStyles:
       patch.timerDisplayStyles ??
-      (hasCustomTimerDisplayStyles(local?.timerDisplayStyles) &&
-      isDefaultLikeTimerDisplayStyle(base.timerDisplayStyles?.general)
-        ? local!.timerDisplayStyles
-        : hasCustomTimerDisplayStyles(base.timerDisplayStyles)
-          ? base.timerDisplayStyles
-          : local?.timerDisplayStyles ?? base.timerDisplayStyles),
+      resolveTimerDisplayStylesForVisualSave(foundation, local, base),
     memberPositions: foundation?.memberPositions ?? local?.memberPositions ?? base.memberPositions,
     settlementResetAt: foundation?.settlementResetAt ?? local?.settlementResetAt ?? base.settlementResetAt,
     updatedAt: now,
@@ -2931,6 +2945,7 @@ export async function saveGeneralTimerPatchAsync(
   extras?: {
     matchTimerEnabled?: AppState["matchTimerEnabled"];
     timerDisplayStyles?: AppState["timerDisplayStyles"];
+    overlayPresets?: AppState["overlayPresets"];
   }
 ): Promise<SaveStateAsyncResult> {
   if (typeof window === "undefined") return { ok: false };
@@ -2942,7 +2957,10 @@ export async function saveGeneralTimerPatchAsync(
     ...foundation,
     generalTimer: timer,
     ...(extras?.matchTimerEnabled ? { matchTimerEnabled: extras.matchTimerEnabled } : {}),
-    ...(extras?.timerDisplayStyles ? { timerDisplayStyles: extras.timerDisplayStyles } : {}),
+    ...(extras?.timerDisplayStyles
+      ? { timerDisplayStyles: extras.timerDisplayStyles }
+      : {}),
+    ...(extras?.overlayPresets ? { overlayPresets: extras.overlayPresets } : {}),
     updatedAt: now,
   });
   try {
@@ -2954,7 +2972,13 @@ export async function saveGeneralTimerPatchAsync(
     generalTimer: timer,
   };
   if (extras?.matchTimerEnabled) patch.matchTimerEnabled = extras.matchTimerEnabled;
-  if (extras?.timerDisplayStyles) patch.timerDisplayStyles = extras.timerDisplayStyles;
+  if (extras?.timerDisplayStyles) {
+    patch.timerDisplayStyles = extras.timerDisplayStyles;
+    patch.timerDisplayStylesUpdatedAt = now;
+  }
+  if (extras?.overlayPresets) {
+    patch.overlayPresets = normalizeOverlayPresetsMedia(extras.overlayPresets);
+  }
   try {
     return await enqueueServerSave(JSON.stringify(patch), userId, mergedLocal);
   } catch {

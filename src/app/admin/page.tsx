@@ -1017,6 +1017,7 @@ export default function AdminPage() {
   const pendingTimerStyleSaveRef = useRef<{
     generalTimer: AppState["generalTimer"];
     timerDisplayStyles: AppState["timerDisplayStyles"];
+    overlayPresets: AppState["overlayPresets"];
   } | null>(null);
   const actionConfirmRef = useRef<null | (() => void)>(null);
   const resetInProgressRef = useRef(false);
@@ -6381,6 +6382,7 @@ export default function AdminPage() {
       pendingTimerStyleSaveRef.current = {
         generalTimer: prev.generalTimer,
         timerDisplayStyles,
+        overlayPresets: nextPresets,
       };
       if (timerStyleSaveTimerRef.current) clearTimeout(timerStyleSaveTimerRef.current);
       timerStyleSaveTimerRef.current = setTimeout(() => {
@@ -6390,9 +6392,9 @@ export default function AdminPage() {
         if (!pending) return;
         void saveGeneralTimerPatchAsync(pending.generalTimer, user?.id, {
           timerDisplayStyles: pending.timerDisplayStyles,
+          overlayPresets: pending.overlayPresets,
         });
       }, 100);
-      persistOverlayPresetsOnly(nextPresets, next);
       return next;
     });
   };

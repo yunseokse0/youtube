@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { defaultState, loadState, saveVisualSettingsPatchAsync, storageKey } from "@/lib/state";
+import { defaultState, loadState, saveVisualSettingsPatchAsync, resolveTimerDisplayStylesForVisualSave, storageKey } from "@/lib/state";
 
 describe("saveVisualSettingsPatchAsync", () => {
   beforeEach(() => {
@@ -171,5 +171,35 @@ describe("saveVisualSettingsPatchAsync", () => {
     expect(saved.donors).toHaveLength(1);
     expect(saved.members[0]?.account).toBe(90000);
     expect(saved.sigRolling?.fadeMs).toBe(1200);
+  });
+
+  it("resolveTimerDisplayStylesForVisualSave prefers newer foundation hidden styles", () => {
+    const localHidden = {
+      general: {
+        ...defaultState().timerDisplayStyles.general,
+        bgColor: "transparent",
+        borderColor: "transparent",
+        bgOpacity: 0,
+      },
+    };
+    const local = { ...defaultState(), timerDisplayStyles: localHidden, updatedAt: 1000 };
+    const foundation = {
+      ...defaultState(),
+      timerDisplayStyles: {
+        general: {
+          ...defaultState().timerDisplayStyles.general,
+          fontColor: "#ffff00",
+          bgColor: "transparent",
+          borderColor: "transparent",
+          bgOpacity: 0,
+          scalePercent: 250,
+        },
+      },
+      updatedAt: 2000,
+    };
+    const resolved = resolveTimerDisplayStylesForVisualSave(foundation, local, defaultState());
+    expect(resolved.general.bgOpacity).toBe(0);
+    expect(resolved.general.scalePercent).toBe(250);
+    expect(resolved.general.fontColor).toBe("#ffff00");
   });
 });

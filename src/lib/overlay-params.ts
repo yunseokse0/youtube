@@ -1203,6 +1203,11 @@ export function resolveTimerOverlayStyle(
   })();
   const borderColor = (() => {
     if (stateBorderRaw) return stateBorderRaw;
+    const opacityForBorder = stateBgOpacity ?? 40;
+    if (stateBgOpacityDefined && stateBgOpacity === 0) return "transparent";
+    if (stateStyle && isTimerBackgroundHidden(stateBgRaw, opacityForBorder)) {
+      return "transparent";
+    }
     return pickTimerPresetOrParam("timerBorderColor", "timerBorderColor", rawSp, preset, opts) || undefined;
   })();
   const outlineColor =
