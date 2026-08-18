@@ -2,7 +2,6 @@ import { applyMealBattleDonationToParticipants, mealBattleUsesRawDonationScore }
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import { normalizeAnonymousDonorDisplayName } from "@/lib/donation/anonymous-donor-name";
 import {
-  isHighSocietyDonationIngestPaused,
   normalizeHighSocietySettings,
   resolveSystemMiddlePushDir,
 } from "@/lib/high-society";
@@ -362,9 +361,6 @@ export function applyDonationToAppState(
   rawEvent: DonationEvent,
   aliases: DonorAlias[] = []
 ): ApplyDonationResult {
-  if (isHighSocietyDonationIngestPaused(currentState)) {
-    return { ok: false, reason: "paused", event: rawEvent };
-  }
   if (isDuplicateDonationEvent(currentState, rawEvent)) {
     return { ok: false, reason: "duplicate", event: rawEvent };
   }

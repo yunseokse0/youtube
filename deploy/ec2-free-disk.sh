@@ -60,7 +60,7 @@ clean_logs_only() {
   \) -delete 2>/dev/null || true
 
   # 우리 cron 로그가 과도하게 커지면 truncate (삭제 아님)
-  for f in /var/log/youtube-disk-clean.log /var/log/youtube-mysql-backup.log; do
+  for f in /var/log/youtube-disk-clean.log /var/log/youtube-mysql-backup.log /var/log/youtube-watchdog.log; do
     if [[ -f "$f" ]]; then
       run find "$f" -size +20M -exec truncate -s 0 {} \; 2>/dev/null || true
     fi
@@ -78,6 +78,7 @@ clean_build_caches() {
   log "== 빌드 잔여·캐시 정리 (데이터 아님) =="
   rm -rf "$ROOT/.next-staging" "$ROOT/.next.old" "$ROOT/.next/cache" 2>/dev/null || true
   rm -rf "$ROOT/.next/types" 2>/dev/null || true
+  # 수동/워치독 긴급: 오래된 스테이징 빌드만 제거 (.next 본체·BUILD_ID 유지)
 
   if [[ "${PURGE_NPM_CACHE:-1}" == "1" ]]; then
     npm cache clean --force 2>/dev/null || true

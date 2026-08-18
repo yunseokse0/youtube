@@ -21,6 +21,8 @@ import {
   parseHighSocietyFxFromHsFxParam,
   mergeHighSocietyDonationLinksOnSettingsChange,
   markDonorsHsTerritoryExcluded,
+  mergeDonorRostersPreferFullest,
+  resolveDonorsForHighSocietySettingsPatch,
   isHighSocietyReopen,
   isHighSocietyDonationIngestPaused,
   shouldDonorCountForHighSocietyTerritory,
@@ -555,12 +557,12 @@ describe("high-society territory (aux)", () => {
     expect(next.donationSyncModeBeforePause).toBeUndefined();
   });
 
-  it("isHighSocietyDonationIngestPaused when enabled and territory paused", () => {
+  it("isHighSocietyDonationIngestPaused is always false (territory pause does not block ingest)", () => {
     expect(
       isHighSocietyDonationIngestPaused({
         highSocietySettings: normalizeHighSocietySettings({ enabled: true, territoryPaused: true }),
       })
-    ).toBe(true);
+    ).toBe(false);
     expect(
       isHighSocietyDonationIngestPaused({
         highSocietySettings: normalizeHighSocietySettings({ enabled: false, territoryPaused: true }),
@@ -872,6 +874,65 @@ describe("high-society territory (aux)", () => {
     ];
     const marked = markDonorsHsTerritoryExcluded(donors, true);
     expect(marked.every((d) => d.hsTerritoryExcluded === true)).toBe(true);
+  });
+
+  it("mergeDonorRostersPreferFullest unions React empty with LS donors", () => {
+    const ls = [
+      { id: "d1", name: "A", amount: 5000, memberId: "m1", at: 100 },
+      { id: "d2", name: "B", amount: 3000, memberId: "m2", at: 200 },
+    ];
+    const merged = mergeDonorRostersPreferFullest([], ls);
+    expect(merged).toHaveLength(2);
+    expect(merged.map((d) => d.id).sort()).toEqual(["d1", "d2"]);
+  });
+
+  it("resolveDonorsForHighSocietySettingsPatch preserves donors on OFF when React is empty", () => {
+    const ls = [{ id: "d1", name: "A", amount: 8000, memberId: "m1", at: 100 }];
+    const donors = resolveDonorsForHighSocietySettingsPatch({
+      prevDonorsReact: [],
+      refDonors: [],
+      lsDonors: ls,
+      resetTerritory: false,
+      isFirstOn: false,
+    });
+    expect(donors).toHaveLength(1);
+    expect(donors[0]!.amount).toBe(8000);
+    expect(donors[0]!.hsTerritoryExcluded).toBeUndefined();
+  });
+
+  it("resolveDonorsForHighSocietySettingsPatch preserves donors on territory pause when ref holds rows", () => {
+    const ref = [{ id: "d1", name: "A", amount: 12_000, memberId: "m1", at: 50 }];
+    const donors = resolveDonorsForHighSocietySettingsPatch({
+      prevDonorsReact: [],
+      refDonors: ref,
+      lsDonors: [],
+      resetTerritory: false,
+      isFirstOn: false,
+    });
+    expect(donors).toHaveLength(1);
+    expect(donors[0]!.amount).toBe(12_000);
+  });
+
+  it("resolveDonorsForHighSocietySettingsPatch marks hsTerritoryExcluded only on first ON", () => {
+    const existing = [
+      { id: "d1", name: "A", amount: 5000, memberId: "m1", at: 100 },
+    ];
+    const off = resolveDonorsForHighSocietySettingsPatch({
+      prevDonorsReact: existing,
+      refDonors: existing,
+      lsDonors: existing,
+      resetTerritory: false,
+      isFirstOn: false,
+    });
+    expect(off[0]!.hsTerritoryExcluded).toBeUndefined();
+    const firstOn = resolveDonorsForHighSocietySettingsPatch({
+      prevDonorsReact: existing,
+      refDonors: existing,
+      lsDonors: existing,
+      resetTerritory: false,
+      isFirstOn: true,
+    });
+    expect(firstOn[0]!.hsTerritoryExcluded).toBe(true);
   });
 
   it("resetTerritory bumps round and startedAt only (donors unchanged in field when no new donations)", () => {

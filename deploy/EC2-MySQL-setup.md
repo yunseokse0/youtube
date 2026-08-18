@@ -171,6 +171,37 @@ powershell -ExecutionPolicy Bypass -File deploy/ec2-cutover-checklist.ps1
 
 ---
 
+## 5. 안정성 (디스크 100%·502/500 재발 방지)
+
+**원인 요약:** 디스크가 100% 차면 MySQL·Node가 쓰기 실패 → `POST /api/state` 500 → pm2 다운 → Nginx **502**.
+
+git pull 후 **1회** 설치:
+
+```bash
+cd ~/youtube && bash deploy/ec2-setup-stability.sh
+```
+
+| 구성 | 역할 |
+|------|------|
+| `ec2-setup-daily-disk-clean.sh` | 매일 04:10 — PM2·journal·binlog 정리 |
+| `ec2-setup-watchdog.sh` | **5분마다** — 디스크 ≥85% 정리, ≥92% 강화 정리, health 실패 시 `ec2-recover-youtube` |
+| `ec2-setup-pm2-startup.sh` | **재부팅 후** pm2 자동 기동 |
+
+`deploy-on-ec2.sh` 배포 시 위 설정도 자동 재등록됩니다.
+
+확인:
+
+```bash
+tail -n 30 /var/log/youtube-watchdog.log
+df -h /
+curl -s "http://127.0.0.1:3000/api/health?deep=1"
+```
+
+디스크 진단(삭제 없음): `bash deploy/ec2-disk-report.sh`  
+긴급 수동: `bash deploy/ec2-free-disk.sh` → `bash deploy/ec2-recover-youtube.sh`
+
+---
+
 ## 스크립트 목록
 
 | 파일 | 역할 |
@@ -184,6 +215,10 @@ powershell -ExecutionPolicy Bypass -File deploy/ec2-cutover-checklist.ps1
 | `deploy-on-ec2.sh` | git pull · 스테이징 빌드 · pm2 |
 | `ec2-setup-swap.sh` | 스왑 2GB |
 | `ec2-nginx-upload-limit.sh` | `client_max_body_size 35M` |
+| `ec2-setup-stability.sh` | 일일 정리 + 워치독 + pm2 startup 일괄 |
+| `ec2-watchdog.sh` | 5분 cron 본체 (디스크·health·recover) |
+| `ec2-free-disk.sh` | 디스크 정리 (manual/daily) |
+| `ec2-recover-youtube.sh` | 502·EADDRINUSE 긴급 복구 |
 
 ---
 

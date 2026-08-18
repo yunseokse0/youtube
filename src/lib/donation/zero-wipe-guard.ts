@@ -24,6 +24,30 @@ function remainingMemberCombinedTotal(
     );
 }
 
+/**
+ * 다건 후원을 빈 authoritative 로 덮는 저장 거부 여부.
+ * 상류사회 ON/OFF·일시정지 등 설정 patch 포함 시 단건(1→0)도 차단.
+ */
+export function shouldRefuseMassEmptyAuthoritativeDonorWipe(opts: {
+  donorsAuthoritative: boolean;
+  settlementReset: boolean;
+  donationInitReset: boolean;
+  donorsInPatch: boolean;
+  incomingDonorCount: number;
+  baseDonorCount: number;
+  highSocietySettingsInPatch: boolean;
+}): boolean {
+  return (
+    opts.donorsAuthoritative &&
+    !opts.settlementReset &&
+    !opts.donationInitReset &&
+    opts.donorsInPatch &&
+    opts.incomingDonorCount === 0 &&
+    opts.baseDonorCount > 0 &&
+    (opts.baseDonorCount > 1 || opts.highSocietySettingsInPatch)
+  );
+}
+
 /** 로스터 변경 원격이 남은 멤버 금액만 0으로 덮는지 — donors 정본은 살아 있을 때 */
 export function wouldAccidentallyZeroRemainingMembers(
   local: AppState,

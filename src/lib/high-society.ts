@@ -411,12 +411,11 @@ export function isHighSocietyReopen(prevSettings: HighSocietySettings): boolean 
   return Number.isFinite(offAt) && offAt > 0;
 }
 
-/** 상류사회 ON + 영토 일시정지 — 후원 합산·투네 반영 차단 */
+/** @deprecated 영토 일시정지는 영토만 동결 — 후원 ingest 는 차단하지 않음. 하위호환용 false 고정 */
 export function isHighSocietyDonationIngestPaused(
-  state: Pick<AppState, "highSocietySettings"> | null | undefined
+  _state: Pick<AppState, "highSocietySettings"> | null | undefined
 ): boolean {
-  const settings = normalizeHighSocietySettings(state?.highSocietySettings);
-  return settings.enabled && Boolean(settings.territoryPaused);
+  return false;
 }
 
 /**
@@ -780,6 +779,59 @@ export function seatRoleForMemberId(
 
 export function isDonorHsTerritoryExcluded(d: Pick<Donor, "hsTerritoryExcluded">): boolean {
   return d.hsTerritoryExcluded === true;
+}
+
+/**
+ * 상류사회 ON/OFF 등 admin patch 직전 — React·LS·ref 중 비어 있는 쪽이
+ * 실후원을 지우지 않게 id 기준 union(금액·at 더 풍부한 행 우선).
+ */
+export function mergeDonorRostersPreferFullest(
+  ...sources: Array<Donor[] | null | undefined>
+): Donor[] {
+  const byId = new Map<string, Donor>();
+  for (const src of sources) {
+    for (const d of src || []) {
+      if (!d || typeof d !== "object") continue;
+      const id = String(d.id || "").trim();
+      if (!id) continue;
+      const existing = byId.get(id);
+      if (!existing) {
+        byId.set(id, d);
+        continue;
+      }
+      const existingAmt = Math.max(0, Math.round(Number(existing.amount) || 0));
+      const nextAmt = Math.max(0, Math.round(Number(d.amount) || 0));
+      const existingAt = Number(existing.at || 0);
+      const nextAt = Number(d.at || 0);
+      if (nextAmt > existingAmt || (nextAmt === existingAmt && nextAt >= existingAt)) {
+        byId.set(id, d);
+      }
+    }
+  }
+  return Array.from(byId.values());
+}
+
+/**
+ * 상류사회 설정 patch(OFF·일시정지·ON·영토 리셋) 직전 donors 확정.
+ * React·ref·LS union 후, 최초 ON·영토 리셋 때만 hsTerritoryExcluded 표시.
+ */
+export function resolveDonorsForHighSocietySettingsPatch(opts: {
+  prevDonorsReact: Donor[] | null | undefined;
+  refDonors: Donor[] | null | undefined;
+  lsDonors: Donor[] | null | undefined;
+  resetTerritory: boolean;
+  isFirstOn: boolean;
+}): Donor[] {
+  const prevDonors = mergeDonorRostersPreferFullest(
+    opts.prevDonorsReact,
+    opts.refDonors,
+    opts.lsDonors
+  );
+  const shouldMarkHsTerritoryOff =
+    (opts.resetTerritory || opts.isFirstOn) && prevDonors.length > 0;
+  return shouldMarkHsTerritoryOff
+    ? markDonorsHsTerritoryExcluded(prevDonors, true)
+    : prevDonors;
 }
 
 /** 영토 초기화·상류사회 ON 시 기존 후원 행 — 영토만 OFF (순위·합산 유지) */

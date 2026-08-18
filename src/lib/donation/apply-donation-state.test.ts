@@ -147,7 +147,7 @@ describe("applyDonationToAppState", () => {
     expect(result.state.donors?.[0]?.message).toBe("제트스키 부탁해요!");
   });
 
-  it("blocks apply while high society territory is paused", () => {
+  it("still applies donation while high society territory is paused", () => {
     const state = {
       ...defaultState(),
       members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 }],
@@ -174,10 +174,10 @@ describe("applyDonationToAppState", () => {
       memberId: "m1",
     };
     const result = applyDonationToAppState(state, event);
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.reason).toBe("paused");
-    expect(state.members[0]?.account).toBe(0);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.members[0]?.account).toBe(10_000);
+    expect(result.state.donors?.[0]?.amount).toBe(10_000);
   });
 
   it("credits member toon and records alert donor name for rankings", () => {

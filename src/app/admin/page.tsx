@@ -233,7 +233,7 @@ import {
   normalizeHighSocietySettings,
   mergeHighSocietyDonationLinksOnSettingsChange,
   isHighSocietyReopen,
-  markDonorsHsTerritoryExcluded,
+  resolveDonorsForHighSocietySettingsPatch,
   type HighSocietySettingsAdminPatch,
   resolveHighSocietySeatMembers,
   resolveHighSocietyStartCmPerMember,
@@ -6333,10 +6333,6 @@ export default function AdminPage() {
     const donorNameClean = (rawName || "무명").replace(/\s+/g, "") || "무명";
     const messageClean = String(rawMessage || "").trim();
     const hsSettingsNow = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
-    if (hsSettingsNow.enabled && hsSettingsNow.territoryPaused) {
-      showAppToast("상류사회 일시정지 중 — 합산·투네 반영이 차단됩니다.");
-      return;
-    }
     const seatRole = hsSettingsNow.enabled
       ? seatRoleForMemberId(hsSettingsNow, stateRef.current.members || [], memberId)
       : null;
@@ -7614,33 +7610,24 @@ export default function AdminPage() {
           resetTerritory,
         });
         applied = nextSettings;
-        const prevDonors = normalizeDonorsArray(prev.donors);
-        /** 최초 ON·영토 리셋만 기존 후원 영토 OFF — 재ON은 baseline 유지 */
-        const shouldMarkHsTerritoryOff = (resetTerritory || isFirstOn) && prevDonors.length > 0;
-        const nextDonors = shouldMarkHsTerritoryOff
-          ? markDonorsHsTerritoryExcluded(prevDonors, true)
-          : prevDonors;
-        const turningOff = wasOn && !nextSettings.enabled;
-        const pausing = !prevSettings.territoryPaused && Boolean(nextSettings.territoryPaused);
-        const unpausing = Boolean(prevSettings.territoryPaused) && !nextSettings.territoryPaused;
+        /** React donors 가 비어 있어도 LS·ref 실후원을 유지 — ON 직후 후원 0 초기화 회귀 방지 */
+        let fromLsDonors: Donor[] = [];
+        try {
+          fromLsDonors = normalizeDonorsArray(loadState(user?.id)?.donors);
+        } catch {}
+        const nextDonors = resolveDonorsForHighSocietySettingsPatch({
+          prevDonorsReact: prev.donors,
+          refDonors: stateRef.current?.donors,
+          lsDonors: fromLsDonors,
+          resetTerritory,
+          isFirstOn,
+        });
         let nextDonationSyncMode = prev.donationSyncMode || "mealBattle";
         if (turningOn) {
           nextDonationSyncMode = "highSociety";
-        } else if (pausing && nextDonationSyncMode !== "none") {
-          nextSettings = {
-            ...nextSettings,
-            donationSyncModeBeforePause: nextDonationSyncMode,
-          };
-          nextDonationSyncMode = "none";
-        } else if (unpausing) {
-          nextDonationSyncMode =
-            prevSettings.donationSyncModeBeforePause ||
-            (nextSettings.enabled ? "highSociety" : nextDonationSyncMode);
-          nextSettings = { ...nextSettings, donationSyncModeBeforePause: undefined };
-        } else if (turningOff && prevSettings.territoryPaused && prevSettings.donationSyncModeBeforePause) {
-          nextDonationSyncMode = prevSettings.donationSyncModeBeforePause;
         }
-        if (normalizeDonorsArray(prev.donors).length > 0) {
+        const hasDonorsToPreserve = nextDonors.length > 0;
+        if (hasDonorsToPreserve) {
           donationAuthoritativeSaveUntilRef.current = Math.max(
             donationAuthoritativeSaveUntilRef.current,
             Date.now() + 12_000
@@ -7653,9 +7640,15 @@ export default function AdminPage() {
           donationSyncMode: nextDonationSyncMode,
           updatedAt: Date.now(),
         };
+        if (hasDonorsToPreserve) {
+          next = syncMemberTotalsFromDonors(next);
+        }
+        stateRef.current = next;
         persistState(
           next,
-          shouldMarkHsTerritoryOff ? { donorsAuthoritative: true } : { omitDonationFields: true }
+          hasDonorsToPreserve
+            ? { donorsAuthoritative: true }
+            : { omitDonationFields: true, omitHighSocietyFields: false }
         );
         return next;
       });
@@ -7714,14 +7707,9 @@ export default function AdminPage() {
       } else if (typeof patch.territoryPaused === "boolean" && patch.territoryPaused !== before.territoryPaused) {
         showAppToast(
           patch.territoryPaused
-            ? "상류사회 · 영토 일시정지 — 후원 합산·투네 반영 차단(영토·금액 동결)"
-            : "상류사회 · 영토 재개 — 후원 반영 재개(큐 대기 건 자동 처리)"
+            ? "상류사회 · 영토 일시정지 — 게이지만 동결(후원·투네 합산은 계속 반영)"
+            : "상류사회 · 영토 재개 — 일시정지 중 누적 후원도 영토에 반영"
         );
-        if (!patch.territoryPaused) {
-          window.setTimeout(() => {
-            void autoProcessQueueRef.current?.();
-          }, 400);
-        }
       } else if (patch.fx) {
         const fx = normalizeHighSocietyFxSettings(after.fx);
         const labels = [
@@ -7754,7 +7742,7 @@ export default function AdminPage() {
         );
       }
     },
-    [persistState]
+    [persistState, user?.id]
   );
   const moveHighSocietySeat = useCallback(
     (memberId: string, dir: -1 | 1) => {
@@ -14349,7 +14337,7 @@ export default function AdminPage() {
                   <p className="text-[10px] text-neutral-400 leading-snug">
                     실시간은 후원이 들어올 때마다 게이지가 움직이고, 라운드 종료 후는 「타이머 제어」 일반
                     타이머가 0이 될 때까지 게이지를 고정한 뒤 한 번에 반영합니다. 「영토 일시정지」는
-                    모드 ON 중 영토·후원 합산·투네 반영을 모두 멈출 때 사용합니다(동기화 모드 none).
+                    게이지(영토)만 멈추고, 후원·투네 합산은 계속 반영됩니다.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <button

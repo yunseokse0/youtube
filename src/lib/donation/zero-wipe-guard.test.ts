@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { defaultState } from "@/lib/state";
 import { syncMemberTotalsFromDonors } from "./apply-donation-state";
-import { guardMemberTotalsAgainstAccidentalZeroWipe, wouldAccidentallyZeroRemainingMembers } from "./zero-wipe-guard";
+import {
+  guardMemberTotalsAgainstAccidentalZeroWipe,
+  shouldRefuseMassEmptyAuthoritativeDonorWipe,
+  wouldAccidentallyZeroRemainingMembers,
+} from "./zero-wipe-guard";
 
 describe("guardMemberTotalsAgainstAccidentalZeroWipe", () => {
   it("restores remaining member totals when sync zeroed but donors still hold amounts", () => {
@@ -84,5 +88,50 @@ describe("guardMemberTotalsAgainstAccidentalZeroWipe", () => {
       donors: [{ id: "d1", name: "a", amount: 10_000, memberId: "m1", at: 1, target: "toon" as const }],
     };
     expect(wouldAccidentallyZeroRemainingMembers(local, remote)).toBe(true);
+  });
+});
+
+describe("shouldRefuseMassEmptyAuthoritativeDonorWipe", () => {
+  const base = {
+    donorsAuthoritative: true,
+    settlementReset: false,
+    donationInitReset: false,
+    donorsInPatch: true,
+    incomingDonorCount: 0,
+    baseDonorCount: 2,
+    highSocietySettingsInPatch: false,
+  };
+
+  it("refuses multi-donor wipe without settlement reset", () => {
+    expect(shouldRefuseMassEmptyAuthoritativeDonorWipe(base)).toBe(true);
+  });
+
+  it("refuses single-donor wipe when high society settings are in patch (OFF/pause)", () => {
+    expect(
+      shouldRefuseMassEmptyAuthoritativeDonorWipe({
+        ...base,
+        baseDonorCount: 1,
+        highSocietySettingsInPatch: true,
+      })
+    ).toBe(true);
+  });
+
+  it("allows intentional single-donor delete without HS patch", () => {
+    expect(
+      shouldRefuseMassEmptyAuthoritativeDonorWipe({
+        ...base,
+        baseDonorCount: 1,
+        highSocietySettingsInPatch: false,
+      })
+    ).toBe(false);
+  });
+
+  it("allows wipe on settlement reset", () => {
+    expect(
+      shouldRefuseMassEmptyAuthoritativeDonorWipe({
+        ...base,
+        settlementReset: true,
+      })
+    ).toBe(false);
   });
 });

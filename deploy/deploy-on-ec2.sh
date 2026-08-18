@@ -351,6 +351,10 @@ pm2 status "$PM2_APP" || true
 systemctl is-active mysql 2>/dev/null && echo "mysql: active" || echo "mysql: $(systemctl is-active mysql 2>/dev/null || echo unknown)"
 
 trap - ERR
+
+echo "== 안정성 (워치독·일일 정리·pm2 startup) =="
+bash "$ROOT/deploy/ec2-setup-stability.sh" 2>/dev/null || echo "WARN: ec2-setup-stability 실패 — 수동: bash deploy/ec2-setup-stability.sh"
+
 echo "=========================================="
 echo " 배포 완료 — 바로 사용 가능"
 echo "=========================================="

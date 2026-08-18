@@ -42,7 +42,7 @@ import {
   repairMemberTotalsForDonorRoster,
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
-import { guardMemberTotalsAgainstAccidentalZeroWipe } from "@/lib/donation/zero-wipe-guard";
+import { guardMemberTotalsAgainstAccidentalZeroWipe, shouldRefuseMassEmptyAuthoritativeDonorWipe } from "@/lib/donation/zero-wipe-guard";
 import { isGroupSplitDonorListMutation } from "@/lib/donation/group-split-donation";
 import {
   mergeManualMemberFieldsFromPatch,
@@ -905,17 +905,23 @@ export async function POST(req: Request) {
      * 사용자 명시 정산 리셋(settlementReset/donationInit) 없이 허용하지 않음.
      * 단건 삭제(1→0)만 예외.
      */
-    const massEmptyAuthoritativeWipe =
-      donorsAuthoritative &&
-      !settlementReset &&
-      !donationInitReset &&
-      donorsInPatch &&
-      incomingDonorsFiltered.length === 0 &&
-      baseDonorsNorm.length > 1;
+    const highSocietySettingsInPatch =
+      body.highSocietySettings &&
+      typeof body.highSocietySettings === "object";
+    const massEmptyAuthoritativeWipe = shouldRefuseMassEmptyAuthoritativeDonorWipe({
+      donorsAuthoritative,
+      settlementReset,
+      donationInitReset,
+      donorsInPatch,
+      incomingDonorCount: incomingDonorsFiltered.length,
+      baseDonorCount: baseDonorsNorm.length,
+      highSocietySettingsInPatch: Boolean(highSocietySettingsInPatch),
+    });
     if (massEmptyAuthoritativeWipe) {
       logger.warn("refused mass empty authoritative wipe without settlementReset", {
         userId,
         baseCount: baseDonorsNorm.length,
+        highSocietySettingsInPatch,
       });
       donorsInPatch = false;
     }

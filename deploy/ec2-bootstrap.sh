@@ -106,6 +106,8 @@ if grep -qE '^DATABASE_URL=mysql://.+' "$ROOT/.env" 2>/dev/null || grep -qE '^UP
   }
   pm2 save || true
   curl -sI "http://127.0.0.1:3000/api/health" | head -n 5 || true
+  echo "== 안정성 cron·pm2 startup =="
+  bash "$ROOT/deploy/ec2-setup-stability.sh" 2>/dev/null || true
 else
   echo "DATABASE_URL 또는 UPSTASH_REDIS_REST_URL 미설정 — 빌드/pm2 생략"
   echo "MySQL 설치 후 .env 의 DATABASE_URL 확인 → bash deploy/deploy-on-ec2.sh && pm2 save"
