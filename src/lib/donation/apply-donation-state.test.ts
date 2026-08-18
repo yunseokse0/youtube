@@ -796,6 +796,14 @@ describe("mergeDonorRowFields", () => {
     );
     expect(merged2.groupSplit).toBe(true);
   });
+
+  it("marks hsTerritoryExcluded when merged amount is not 1만원 exact multiple", () => {
+    const merged = mergeDonorRowFields(
+      { id: "d1", name: "G-곱곱", amount: 14_600, memberId: "m1", at: 100 },
+      { id: "d1", name: "G-곱곱", amount: 14_600, memberId: "m1", at: 99 }
+    );
+    expect(merged.hsTerritoryExcluded).toBe(true);
+  });
 });
 
 describe("dedupeDonorRows message preservation", () => {

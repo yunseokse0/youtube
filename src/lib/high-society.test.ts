@@ -67,6 +67,7 @@ describe("high-society rule field", () => {
     expect(isDonationAmountEligibleForHighSocietyTerritory(100)).toBe(false);
     expect(isDonationAmountEligibleForHighSocietyTerritory(1000)).toBe(false);
     expect(isDonationAmountEligibleForHighSocietyTerritory(13_000)).toBe(false);
+    expect(isDonationAmountEligibleForHighSocietyTerritory(14_600)).toBe(false);
     expect(isDonationAmountEligibleForHighSocietyTerritory(10_000)).toBe(true);
     expect(isDonationAmountEligibleForHighSocietyTerritory(20_000)).toBe(true);
   });

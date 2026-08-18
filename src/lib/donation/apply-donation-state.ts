@@ -72,6 +72,7 @@ export function isDonorExcludedFromDonationTotals(donor: {
 /** 동일 id 병합 시 message·단체짠 플래그 등 선택 필드가 비는 쪽을 보완 */
 export function mergeDonorRowFields<
   T extends {
+    amount?: number;
     message?: string;
     donationExcluded?: boolean;
     hsTerritoryExcluded?: boolean;
@@ -88,12 +89,18 @@ export function mergeDonorRowFields<
     withMessage.hsPushDir || !fallback.hsPushDir
       ? withMessage
       : { ...withMessage, hsPushDir: fallback.hsPushDir };
+  const mergedAmount = Math.max(
+    0,
+    Math.round(Number(preferred.amount ?? fallback.amount) || 0)
+  );
+  const territoryExcluded =
+    preferred.hsTerritoryExcluded === true ||
+    fallback.hsTerritoryExcluded === true ||
+    !isDonationAmountEligibleForHighSocietyTerritory(mergedAmount);
   return {
     ...withPush,
     ...(preferred.donationExcluded || fallback.donationExcluded ? { donationExcluded: true as const } : {}),
-    ...(preferred.hsTerritoryExcluded || fallback.hsTerritoryExcluded
-      ? { hsTerritoryExcluded: true as const }
-      : {}),
+    ...(territoryExcluded ? { hsTerritoryExcluded: true as const } : {}),
     ...(preferred.groupSplit || fallback.groupSplit ? { groupSplit: true as const } : {}),
     ...(preferred.groupSplitSource || fallback.groupSplitSource ? { groupSplitSource: true as const } : {}),
   };

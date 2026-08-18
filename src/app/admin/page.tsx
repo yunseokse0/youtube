@@ -1331,6 +1331,8 @@ export default function AdminPage() {
         : formatDonorsAmount(amount, donorsAmountFormat),
     [donorsAmountFormat]
   );
+  /** 후원 리스트 — normalize 로 1만원 비배수(14600 등) 영토 OFF 플래그·표시 일치 */
+  const donorListRows = useMemo(() => normalizeDonorsArray(state.donors), [state.donors]);
   const applyGlobalDonorsFormat = useCallback(
     (format: "full" | "short") => {
       setState((prev) => {
@@ -13112,7 +13114,7 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {state.donors
+                    {donorListRows
                       .slice()
                       .sort((a,b)=>b.at-a.at)
                       .map((d) => {
@@ -13504,7 +13506,7 @@ export default function AdminPage() {
                           </tr>
                         );
                       })}
-                    {state.donors.length === 0 && (
+                    {donorListRows.length === 0 && (
                       <tr><td className="p-2 text-neutral-400" colSpan={8}>기록이 없습니다.</td></tr>
                     )}
                   </tbody>
