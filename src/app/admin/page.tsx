@@ -233,6 +233,7 @@ import {
   normalizeHighSocietySettings,
   mergeHighSocietyDonationLinksOnSettingsChange,
   isHighSocietyReopen,
+  buildTerritoryPauseToggleSettingsPatch,
   resolveDonorsForHighSocietySettingsPatch,
   shouldPersistDonorsForHighSocietySettingsPatch,
   resolveDonationSyncModeForHighSocietySettingsChange,
@@ -6266,9 +6267,23 @@ export default function AdminPage() {
       const baseStyles = prev.timerDisplayStyles || {
         general: { showHours: false, fontFamily: "mono", fontColor: "", bgColor: "", borderColor: "", outlineColor: "", outlineWidth: 0.8, bgOpacity: 40, scalePercent: 100 },
       };
+      const normalizedPatch = { ...patch };
+      if (patch.bgOpacity !== undefined) {
+        const op = Math.max(0, Math.min(100, Math.round(Number(patch.bgOpacity))));
+        normalizedPatch.bgOpacity = op;
+        /** 배경 없음(transparent) 후 슬라이더 올리면 pill 이 보이도록 transparent 해제 */
+        const curBg =
+          patch.bgColor !== undefined
+            ? String(patch.bgColor)
+            : String(baseStyles[key]?.bgColor ?? "");
+        const bgLower = curBg.trim().toLowerCase();
+        if (op > 0 && (bgLower === "transparent" || bgLower === "none") && patch.bgColor === undefined) {
+          normalizedPatch.bgColor = "";
+        }
+      }
       const nextGeneral = {
         ...baseStyles[key],
-        ...patch,
+        ...normalizedPatch,
       };
       const timerDisplayStyles = {
         ...baseStyles,
@@ -6280,15 +6295,15 @@ export default function AdminPage() {
           /** 글꼴·색은 전 프리셋에 동기화 — showTimer 없는 프리셋의 구 mono 가 타이머 전용 URL을 덮지 않게 */
           return {
             ...p,
-            ...(patch.fontFamily !== undefined ? { timerFontFamily: String(patch.fontFamily || "mono") } : {}),
-            ...(patch.fontColor !== undefined ? { timerFontColor: String(patch.fontColor || "") } : {}),
-            ...(patch.bgColor !== undefined ? { timerBgColor: String(patch.bgColor || "") } : {}),
-            ...(patch.borderColor !== undefined ? { timerBorderColor: String(patch.borderColor || "") } : {}),
-            ...(patch.outlineColor !== undefined ? { timerOutlineColor: String(patch.outlineColor || "") } : {}),
-            ...(patch.outlineWidth !== undefined ? { timerOutlineWidth: String(patch.outlineWidth) } : {}),
-            ...(patch.bgOpacity !== undefined ? { timerBgOpacity: String(patch.bgOpacity) } : {}),
-            ...(patch.scalePercent !== undefined ? { timerScale: String(patch.scalePercent) } : {}),
-            ...(patch.showHours !== undefined ? { timerShowHours: Boolean(patch.showHours) } : {}),
+            ...(normalizedPatch.fontFamily !== undefined ? { timerFontFamily: String(normalizedPatch.fontFamily || "mono") } : {}),
+            ...(normalizedPatch.fontColor !== undefined ? { timerFontColor: String(normalizedPatch.fontColor || "") } : {}),
+            ...(normalizedPatch.bgColor !== undefined ? { timerBgColor: String(normalizedPatch.bgColor || "") } : {}),
+            ...(normalizedPatch.borderColor !== undefined ? { timerBorderColor: String(normalizedPatch.borderColor || "") } : {}),
+            ...(normalizedPatch.outlineColor !== undefined ? { timerOutlineColor: String(normalizedPatch.outlineColor || "") } : {}),
+            ...(normalizedPatch.outlineWidth !== undefined ? { timerOutlineWidth: String(normalizedPatch.outlineWidth) } : {}),
+            ...(normalizedPatch.bgOpacity !== undefined ? { timerBgOpacity: String(normalizedPatch.bgOpacity) } : {}),
+            ...(normalizedPatch.scalePercent !== undefined ? { timerScale: String(normalizedPatch.scalePercent) } : {}),
+            ...(normalizedPatch.showHours !== undefined ? { timerShowHours: Boolean(normalizedPatch.showHours) } : {}),
           };
         })
       );
@@ -7590,11 +7605,10 @@ export default function AdminPage() {
       const prevForPause = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
       let settingsPatch = { ...settingsPatchRaw };
       if (typeof patch.territoryPaused === "boolean") {
-        if (patch.territoryPaused && !prevForPause.territoryPaused) {
-          settingsPatch = { ...settingsPatch, territoryPausedAt: Date.now() };
-        } else if (!patch.territoryPaused) {
-          settingsPatch = { ...settingsPatch, territoryPausedAt: undefined };
-        }
+        settingsPatch = {
+          ...settingsPatch,
+          ...buildTerritoryPauseToggleSettingsPatch(patch, prevForPause),
+        };
       }
       const wasOn = prevForPause.enabled;
       const before = prevForPause;
@@ -7722,7 +7736,7 @@ export default function AdminPage() {
         showAppToast(
           patch.territoryPaused
             ? "상류사회 · 영토 일시정지 — 게이지만 동결(후원·투네 합산은 계속 반영)"
-            : "상류사회 · 영토 재개 — 일시정지 중 누적 후원도 영토에 반영"
+            : "상류사회 · 영토 재개 — 일시정지 중 후원은 합산만 반영(영토 미반영)"
         );
       } else if (patch.fx) {
         const fx = normalizeHighSocietyFxSettings(after.fx);

@@ -334,6 +334,20 @@ export function resolveSystemMiddlePushDir(
   return raw === "left" ? "left" : "right";
 }
 
+export function normalizeTerritoryPauseExcludeWindows(
+  raw: unknown
+): NonNullable<HighSocietySettings["territoryPauseExcludeWindows"]> {
+  if (!Array.isArray(raw)) return [];
+  const out: Array<{ from: number; to: number }> = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const from = Math.floor(Number((item as { from?: number }).from) || 0);
+    const to = Math.floor(Number((item as { to?: number }).to) || 0);
+    if (from > 0 && to > from) out.push({ from, to });
+  }
+  return out;
+}
+
 export function normalizeHighSocietySettings(input: unknown): HighSocietySettings {
   const base = defaultHighSocietySettings();
   const v = input && typeof input === "object" ? (input as Partial<HighSocietySettings>) : {};
@@ -375,6 +389,9 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
   const pausedAtRaw = Number(v.territoryPausedAt);
   const territoryPausedAt =
     Number.isFinite(pausedAtRaw) && pausedAtRaw > 0 ? Math.floor(pausedAtRaw) : undefined;
+  const territoryPauseExcludeWindows = normalizeTerritoryPauseExcludeWindows(
+    v.territoryPauseExcludeWindows
+  );
   const syncBeforePauseRaw = v.donationSyncModeBeforePause;
   const donationSyncModeBeforePause =
     syncBeforePauseRaw === "none" ||
@@ -401,6 +418,7 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     ...(territoryReopenAt !== undefined ? { territoryReopenAt } : {}),
     ...(territoryPaused ? { territoryPaused: true } : {}),
     ...(territoryPaused && territoryPausedAt !== undefined ? { territoryPausedAt } : {}),
+    ...(territoryPauseExcludeWindows.length > 0 ? { territoryPauseExcludeWindows } : {}),
     ...(donationSyncModeBeforePause !== undefined ? { donationSyncModeBeforePause } : {}),
   };
 }
@@ -418,10 +436,47 @@ export function isHighSocietyDonationIngestPaused(
   return false;
 }
 
+function isDonorInTerritoryPauseExcludeWindows(
+  atMs: number,
+  settings: HighSocietySettings
+): boolean {
+  for (const w of normalizeTerritoryPauseExcludeWindows(settings.territoryPauseExcludeWindows)) {
+    if (atMs >= w.from && atMs < w.to) return true;
+  }
+  return false;
+}
+
+/**
+ * 영토 일시정지/재개 토글 시 settings patch — 재개 시 구간을 territoryPauseExcludeWindows 에 누적.
+ */
+export function buildTerritoryPauseToggleSettingsPatch(
+  patch: { territoryPaused?: boolean },
+  prev: HighSocietySettings,
+  now = Date.now()
+): Partial<HighSocietySettings> {
+  if (typeof patch.territoryPaused !== "boolean") return {};
+  if (patch.territoryPaused && !prev.territoryPaused) {
+    return { territoryPausedAt: Math.floor(now) };
+  }
+  if (!patch.territoryPaused && prev.territoryPaused) {
+    const pausedAt = Math.floor(Number(prev.territoryPausedAt) || 0);
+    const windows = normalizeTerritoryPauseExcludeWindows(prev.territoryPauseExcludeWindows);
+    if (pausedAt > 0 && now > pausedAt) {
+      windows.push({ from: pausedAt, to: Math.floor(now) });
+    }
+    return {
+      territoryPausedAt: undefined,
+      territoryPauseExcludeWindows: windows,
+    };
+  }
+  return {};
+}
+
 /**
  * 후원 행이 상류사회 영토 집계에 포함되는지.
  * - ON: link.startedAt 이후 + (최초 ON 구간 | OFF 이전 baseline | 재ON 이후)
  * - OFF: OFF 시각 이전만 유지(리셋 전까지 동결)
+ * - 일시정지: 진행 중·재개 후 completed windows 구간 후원은 영토 제외(합산은 유지)
  */
 export function shouldDonorCountForHighSocietyTerritory(
   d: Pick<Donor, "amount" | "donationExcluded" | "hsTerritoryExcluded" | "at">,
@@ -437,16 +492,19 @@ export function shouldDonorCountForHighSocietyTerritory(
   const startedAt = Number(link.startedAt);
   if (Number.isFinite(startedAt) && startedAt > 0 && at < Math.floor(startedAt)) return false;
 
-  const lastOffAtRaw = Number(settings.territoryCutoffAt);
-  const reopenAtRaw = Number(settings.territoryReopenAt);
-  const lastOffAt = Number.isFinite(lastOffAtRaw) && lastOffAtRaw > 0 ? Math.floor(lastOffAtRaw) : null;
-  const reopenAt = Number.isFinite(reopenAtRaw) && reopenAtRaw > 0 ? Math.floor(reopenAtRaw) : null;
+  if (isDonorInTerritoryPauseExcludeWindows(at, settings)) return false;
+
   const pausedAtRaw = Number(settings.territoryPausedAt);
   const pausedAt =
     settings.territoryPaused && Number.isFinite(pausedAtRaw) && pausedAtRaw > 0
       ? Math.floor(pausedAtRaw)
       : null;
   if (pausedAt && at >= pausedAt) return false;
+
+  const lastOffAtRaw = Number(settings.territoryCutoffAt);
+  const reopenAtRaw = Number(settings.territoryReopenAt);
+  const lastOffAt = Number.isFinite(lastOffAtRaw) && lastOffAtRaw > 0 ? Math.floor(lastOffAtRaw) : null;
+  const reopenAt = Number.isFinite(reopenAtRaw) && reopenAtRaw > 0 ? Math.floor(reopenAtRaw) : null;
 
   if (!settings.enabled) {
     /** cutoff 없으면 OFF 이후 후원이 영토에 섞이지 않게 집계 제외 */
@@ -499,14 +557,28 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
   const valid = new Set(seatMembers.map((s) => s.id));
 
   const territoryTimingPatch = (): Partial<HighSocietySettings> => {
-    if (resetTerritory) return { territoryCutoffAt: undefined, territoryReopenAt: undefined };
+    if (resetTerritory) {
+      return {
+        territoryCutoffAt: undefined,
+        territoryReopenAt: undefined,
+        territoryPaused: false,
+        territoryPausedAt: undefined,
+        territoryPauseExcludeWindows: undefined,
+      };
+    }
     if (turningOff) {
+      const windows = normalizeTerritoryPauseExcludeWindows(nextSettings.territoryPauseExcludeWindows);
+      if (nextSettings.territoryPaused && nextSettings.territoryPausedAt) {
+        const from = Math.floor(Number(nextSettings.territoryPausedAt));
+        if (now > from) windows.push({ from, to: Math.floor(now) });
+      }
       return {
         territoryCutoffAt: now,
         territoryReopenAt: undefined,
         territoryPaused: false,
         territoryPausedAt: undefined,
         donationSyncModeBeforePause: undefined,
+        ...(windows.length > 0 ? { territoryPauseExcludeWindows: windows } : {}),
       };
     }
     if (reOn) return { territoryReopenAt: now };

@@ -20,6 +20,8 @@ import {
   highSocietyFxToHsFxParam,
   parseHighSocietyFxFromHsFxParam,
   mergeHighSocietyDonationLinksOnSettingsChange,
+  buildTerritoryPauseToggleSettingsPatch,
+  normalizeTerritoryPauseExcludeWindows,
   markDonorsHsTerritoryExcluded,
   mergeDonorRostersPreferFullest,
   resolveDonorsForHighSocietySettingsPatch,
@@ -535,6 +537,74 @@ describe("high-society territory (aux)", () => {
     });
     expect(frozen.seats[1]!.widthCm).toBe(350);
     expect(withNew.seats[1]!.widthCm).toBe(350);
+  });
+
+  it("after territory resume, pause-window donations stay excluded from territory", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    const resumed = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b", "c", "d"],
+      defaultMiddlePush: "right",
+      territoryPaused: false,
+      territoryPauseExcludeWindows: [{ from: 7000, to: 10_000 }],
+      donationLinks: { b: { active: true, startedAt: 0 } },
+    });
+    const field = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        {
+          id: "d-old",
+          name: "old",
+          amount: 100_000,
+          memberId: "b",
+          target: "account" as const,
+          at: 4000,
+          hsPushDir: "right" as const,
+        },
+        {
+          id: "d-pause",
+          name: "pause",
+          amount: 200_000,
+          memberId: "b",
+          target: "account" as const,
+          at: 9000,
+          hsPushDir: "right" as const,
+        },
+        {
+          id: "d-after",
+          name: "after",
+          amount: 100_000,
+          memberId: "b",
+          target: "account" as const,
+          at: 12_000,
+          hsPushDir: "right" as const,
+        },
+      ],
+      highSocietySettings: resumed,
+    });
+    expect(field.seats[1]!.widthCm).toBe(400);
+  });
+
+  it("buildTerritoryPauseToggleSettingsPatch appends exclude window on resume", () => {
+    const prev = normalizeHighSocietySettings({
+      enabled: true,
+      territoryPaused: true,
+      territoryPausedAt: 5000,
+    });
+    const patch = buildTerritoryPauseToggleSettingsPatch(
+      { territoryPaused: false },
+      prev,
+      9000
+    );
+    expect(patch.territoryPausedAt).toBeUndefined();
+    expect(normalizeTerritoryPauseExcludeWindows(patch.territoryPauseExcludeWindows)).toEqual([
+      { from: 5000, to: 9000 },
+    ]);
   });
 
   it("clears territory pause when toggling OFF", () => {

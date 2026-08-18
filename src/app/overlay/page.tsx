@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers, mergeLocalMemberIdentityOntoRemote, normalizeDonorsArray, membersDifferByIds, isMemberRosterStrictSuperset } from "@/lib/state";
+import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers, mergeLocalMemberIdentityOntoRemote, normalizeDonorsArray, membersDifferByIds, isMemberRosterStrictSuperset, hasCustomTimerDisplayStyles, isDefaultLikeTimerDisplayStyle } from "@/lib/state";
 import {
   repairMemberTotalsForDonorRoster,
   syncMemberTotalsFromDonors,
@@ -57,6 +57,7 @@ import {
   resolveScopedOverlayUserId,
   mergeOverlayPresetsForOverlayView,
   resolveTimerOverlayStyle,
+  applyHiddenTimerStyleFromState,
   timerOverlayStyleHasCustomColors,
   applyTimerBackgroundOpacity,
   getTimerPillPaddingPx,
@@ -330,6 +331,18 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         merged.matchTimer ?? merged.generalTimer
       ),
     };
+    /** 타이머 제어 색·투명도 — 원격이 기본색·키 생략이면 last-good 커스텀 유지 */
+    const lastTimerStyles = good?.timerDisplayStyles;
+    const incomingTimerStyles = merged.timerDisplayStyles;
+    const hasIncomingTimerKey = Object.prototype.hasOwnProperty.call(merged, "timerDisplayStyles");
+    const preferLastTimer =
+      hasCustomTimerDisplayStyles(lastTimerStyles) &&
+      (!hasIncomingTimerKey || isDefaultLikeTimerDisplayStyle(incomingTimerStyles?.general));
+    if (preferLastTimer && lastTimerStyles) {
+      merged = { ...merged, timerDisplayStyles: lastTimerStyles };
+    } else if (!hasIncomingTimerKey && lastTimerStyles) {
+      merged = { ...merged, timerDisplayStyles: lastTimerStyles };
+    }
     return merged;
   }, []);
   /** donors → members 재계산 + 로스터 불일치 보정(단체짠 split 후 엑셀 0 방지) */
@@ -372,6 +385,11 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
       }
       const timerStylesAt = Number(incoming.timerDisplayStylesUpdatedAt);
       if (Number.isFinite(timerStylesAt) && timerStylesAt > 0) {
+        void syncOnceRef.current({ forceFull: true });
+        return;
+      }
+      const generalTimerAt = Number(incoming.generalTimerUpdatedAt);
+      if (Number.isFinite(generalTimerAt) && generalTimerAt > 0) {
         void syncOnceRef.current({ forceFull: true });
         return;
       }
@@ -2513,10 +2531,12 @@ function OverlayInner() {
     return null;
   }, [resolvedTimerType, s, showTimer]);
   const timerStyleResolved = useMemo(() => {
-    const next = resolveTimerOverlayStyle(rawSp, effectivePreset, timerStyleFromState, {
+    const resolvedBase = resolveTimerOverlayStyle(rawSp, effectivePreset, timerStyleFromState, {
       ready,
       timerOnlyDefaultShowHours: timerOnlyMode,
     });
+    /** timerDisplayStyles 가 정본 — 프리셋·URL·stale ref 가 배경/테두리/투명도를 덮지 않게 */
+    const next = applyHiddenTimerStyleFromState(resolvedBase, timerStyleFromState);
     const stateHiddenBg =
       timerStyleFromState &&
       isTimerBackgroundHidden(
@@ -2571,8 +2591,11 @@ function OverlayInner() {
           isTimerBackgroundHidden(next.bgColor, next.bgOpacity) ||
           isTimerBackgroundHidden(timerStyleFromState?.bgColor, timerStyleFromState?.bgOpacity ?? 40)
         ) {
-          return keepHiddenFrom(
-            isTimerBackgroundHidden(next.bgColor, next.bgOpacity) ? next : timerStyleFromState
+          return applyHiddenTimerStyleFromState(
+            keepHiddenFrom(
+              isTimerBackgroundHidden(next.bgColor, next.bgOpacity) ? next : timerStyleFromState
+            ),
+            timerStyleFromState
           );
         }
         if (
@@ -2584,18 +2607,24 @@ function OverlayInner() {
               timerStyleFromState.bgOpacity ?? 40
             ))
         ) {
-          return keepHiddenFrom(
-            isTimerBorderVisuallyHidden(next.bgColor, next.borderColor, next.bgOpacity)
-              ? next
-              : timerStyleFromState
+          return applyHiddenTimerStyleFromState(
+            keepHiddenFrom(
+              isTimerBorderVisuallyHidden(next.bgColor, next.borderColor, next.bgOpacity)
+                ? next
+                : timerStyleFromState
+            ),
+            timerStyleFromState
           );
         }
-        return { ...merged, bgOpacity: next.bgOpacity };
+        return applyHiddenTimerStyleFromState(
+          { ...merged, bgOpacity: next.bgOpacity },
+          timerStyleFromState
+        );
       }
       lastStableTimerStyleRef.current = null;
       timerStyleEmptySinceRef.current = null;
     }
-    return next;
+    return applyHiddenTimerStyleFromState(next, timerStyleFromState);
   }, [rawSp, effectivePreset, timerStyleFromState, ready, timerOnlyMode]);
   const timerShowHours = timerStyleResolved.showHours;
   const timerFontFamily = timerStyleResolved.fontFamily;

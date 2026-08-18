@@ -54,33 +54,23 @@ export function mergeGeneralTimerPreferEffective(
   const b = normalizeTimerState(incoming, now);
   const effA = getEffectiveRemainingTime(a, now);
   const effB = getEffectiveRemainingTime(b, now);
+  const aLu = a.lastUpdated || 0;
+  const bLu = b.lastUpdated || 0;
+  const incomingNewer = bLu > 0 && bLu > aLu;
 
   /** 로컬 일시정지(남은 시간 있음) — stale 원격 0 리셋으로 덮지 않음 */
   if (effB <= 0 && !b.isActive && effA > 0 && !a.isActive) {
     return a;
   }
 
-  /** 명시적 일시정지(patch) — 실행 중이더라도 incoming 정지+남은시간을 우선 */
-  if (
-    !b.isActive &&
-    effB > 0 &&
-    (b.lastUpdated || 0) > 0 &&
-    (b.lastUpdated || 0) >= (a.lastUpdated || 0)
-  ) {
+  /** 관리자 최신 PATCH(일시정지·정지·재개·±분) — lastUpdated 가 더 최신이면 incoming 정본 */
+  if (incomingNewer) {
     return b;
   }
 
-  /** 관리자 정지 — lastUpdated가 실값이고 base보다 엄격히 최신이며, 방금(15s) 이내 */
-  if (
-    effB <= 0 &&
-    !b.isActive &&
-    (b.lastUpdated || 0) > 0 &&
-    (b.lastUpdated || 0) > (a.lastUpdated || 0)
-  ) {
-    const stopAgeMs = now - (b.lastUpdated || 0);
-    if (!(effA > 0 && a.isActive) || stopAgeMs <= 15_000) {
-      return b;
-    }
+  /** 명시적 일시정지(patch) — 실행 중이더라도 incoming 정지+남은시간을 우선 */
+  if (!b.isActive && effB > 0 && bLu > 0 && bLu >= aLu) {
+    return b;
   }
 
   /** 진행 중인 타이머는 stale 원격 {0,false}·낮은 remaining 으로 덮지 않음 (원본 앵커 유지) */
@@ -96,7 +86,7 @@ export function mergeGeneralTimerPreferEffective(
     return b;
   }
 
-  if (a.isActive && effA > 0 && (a.lastUpdated || 0) >= (b.lastUpdated || 0)) {
+  if (a.isActive && effA > 0 && aLu >= bLu) {
     return a;
   }
 

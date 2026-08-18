@@ -705,6 +705,16 @@ export function useOverlayRemoteState(
       }
     }
 
+    const generalTimerAt = Number(
+      (o as { generalTimerUpdatedAt?: unknown }).generalTimerUpdatedAt
+    );
+    if (Number.isFinite(generalTimerAt) && generalTimerAt > 0) {
+      if (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) {
+        void syncFromApiRef.current({ forceFull: true });
+        return;
+      }
+    }
+
     if (obsTextPick) {
       if (
         shouldSyncObsTextFromStateUpdatedEvent(

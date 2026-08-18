@@ -2140,17 +2140,23 @@ async function runServerSaveQueue(): Promise<void> {
             : 0;
         let membersRosterUpdated = false;
         let timerDisplayStylesUpdated = false;
+        let generalTimerUpdated = false;
         try {
           const body = JSON.parse(job.apiBodyJson) as {
             membersAuthoritative?: boolean;
             members?: unknown;
             timerDisplayStyles?: unknown;
+            generalTimer?: unknown;
+            matchTimer?: unknown;
           };
           membersRosterUpdated =
             body.membersAuthoritative === true ||
             (Array.isArray(body.members) && body.members.length > 0);
           timerDisplayStylesUpdated =
             body.timerDisplayStyles != null && typeof body.timerDisplayStyles === "object";
+          generalTimerUpdated =
+            (body.generalTimer != null && typeof body.generalTimer === "object") ||
+            (body.matchTimer != null && typeof body.matchTimer === "object");
         } catch {
           /* ignore */
         }
@@ -2168,6 +2174,8 @@ async function runServerSaveQueue(): Promise<void> {
           ...(membersRosterUpdated ? { membersRosterUpdatedAt: updatedAt } : {}),
           /** 타이머 색·투명도 슬라이더 — OBS 즉시 반영 */
           ...(timerDisplayStylesUpdated ? { timerDisplayStylesUpdatedAt: updatedAt } : {}),
+          /** 일반·대전 타이머 일시정지/재개 — OBS 즉시 동기화 */
+          ...(generalTimerUpdated ? { generalTimerUpdatedAt: updatedAt } : {}),
         }).catch(() => {});
       } catch {
         /* ignore */

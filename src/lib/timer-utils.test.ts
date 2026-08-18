@@ -139,6 +139,40 @@ describe("mergeGeneralTimerPreferEffective", () => {
     expect(merged.isActive).toBe(false);
     expect(getEffectiveRemainingTime(merged, now)).toBe(3590);
   });
+
+  it("accepts admin resume over overlay running ahead on stale anchor", () => {
+    const now = 9_000_000;
+    const staleRunning: TimerState = {
+      remainingTime: 477,
+      isActive: true,
+      lastUpdated: now - 120_000,
+    };
+    const adminResumed: TimerState = {
+      remainingTime: 300,
+      isActive: true,
+      lastUpdated: now - 200,
+    };
+    const merged = mergeGeneralTimerPreferEffective(staleRunning, adminResumed, now);
+    expect(merged.isActive).toBe(true);
+    expect(getEffectiveRemainingTime(merged, now)).toBe(300);
+  });
+
+  it("accepts delayed admin stop {0,false} over overlay still running", () => {
+    const now = 10_000_000;
+    const staleRunning: TimerState = {
+      remainingTime: 600,
+      isActive: true,
+      lastUpdated: now - 90_000,
+    };
+    const stopped: TimerState = {
+      remainingTime: 0,
+      isActive: false,
+      lastUpdated: now - 20_000,
+    };
+    const merged = mergeGeneralTimerPreferEffective(staleRunning, stopped, now);
+    expect(merged.isActive).toBe(false);
+    expect(getEffectiveRemainingTime(merged, now)).toBe(0);
+  });
 });
 
 describe("resumeTimer", () => {

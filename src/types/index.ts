@@ -472,7 +472,12 @@ export type HighSocietySettings = {
   territoryPaused?: boolean;
   /** territoryPaused=true 전환 시각(ms) — 이후 후원은 영토 게이지 미반영(합산·donors는 반영) */
   territoryPausedAt?: number;
-  /** 일시정지 직전 donationSyncMode — 재개 시 복원 */
+  /**
+   * 완료된 영토 일시정지 구간 — 재개 후에도 이 ms 구간 후원은 영토만 제외.
+   * (합산·donors·멤버 금액은 유지)
+   */
+  territoryPauseExcludeWindows?: Array<{ from: number; to: number }>;
+  /** @deprecated 일시정지는 영토만 동결 — donationSyncMode 변경 없음 */
   donationSyncModeBeforePause?: "none" | "mealBattle" | "sigMatch" | "sigSales" | "highSociety";
 };
 
