@@ -1252,13 +1252,36 @@ export function isTimerBackgroundHidden(
   return lower === "transparent" || lower === "none" || lower === "rgba(0,0,0,0)";
 }
 
+/** 타이머 pill 테두리 — 배경 없음일 때도 레이아웃 폭·높이 유지 */
+export const TIMER_PILL_BORDER_PX = 1;
+
+/** tailwind px-4 py-1.5 와 동일 비율 — fontSize·scalePercent 변경 시 pill 크기 동기화 */
+export function getTimerPillPaddingPx(fontSize: number): { padX: number; padY: number } {
+  const fs = Math.max(14, Math.round(fontSize));
+  return {
+    padX: Math.max(8, Math.round(fs * 0.29)),
+    padY: Math.max(4, Math.round(fs * 0.11)),
+  };
+}
+
+export function isTimerBorderVisuallyHidden(
+  bgColor: string | undefined,
+  borderColor: string | undefined,
+  opacityPercent: number
+): boolean {
+  if (isTimerBackgroundHidden(bgColor, opacityPercent)) return true;
+  const lower = String(borderColor || "").trim().toLowerCase();
+  return lower === "transparent" || lower === "none" || lower === "rgba(0,0,0,0)";
+}
+
 export function timerOverlayStyleHasCustomColors(style: ResolvedTimerOverlayStyle): boolean {
   return Boolean(
     style.fontColor ||
       style.bgColor ||
       style.borderColor ||
       (style.outlineColor && style.outlineColor.trim()) ||
-      (style.bgOpacity !== undefined && style.bgOpacity !== 40)
+      (style.bgOpacity !== undefined && style.bgOpacity !== 40) ||
+      (style.scalePercent !== undefined && style.scalePercent !== 100)
   );
 }
 

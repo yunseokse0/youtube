@@ -874,14 +874,14 @@ export default function DonorRankingsOverlayPage() {
                 <img
                   src={overlayCfg.frameUrl}
                   alt=""
-                  className="pointer-events-none absolute inset-0 z-[2] h-full w-full object-fill"
+                  className="pointer-events-none absolute inset-0 z-0 h-full w-full object-fill"
                   style={{ opacity: frameOpacityFrac }}
                   loading="eager"
                   decoding="async"
                 />
               ) : null}
               <div
-                className={`relative z-[1] grid grid-cols-1 overflow-hidden backdrop-blur-md md:grid-cols-2 md:gap-0 ${
+                className={`relative z-[2] grid grid-cols-1 overflow-hidden backdrop-blur-md md:grid-cols-2 md:gap-0 ${
                   showFrame
                     ? "rounded-none border-0 shadow-none"
                     : "rounded-2xl border border-white/30 shadow-[0_8px_28px_rgba(15,23,42,0.2)]"
@@ -958,14 +958,14 @@ export default function DonorRankingsOverlayPage() {
               <img
                 src={overlayCfg.frameUrl}
                 alt=""
-                className="pointer-events-none absolute inset-0 z-[2] h-full w-full object-fill"
+                className="pointer-events-none absolute inset-0 z-0 h-full w-full object-fill"
                 style={{ opacity: frameOpacityFrac }}
                 loading="eager"
                 decoding="async"
               />
             ) : null}
             <div
-              className={`relative z-[1] overflow-hidden backdrop-blur-md ${
+              className={`relative z-[2] overflow-hidden backdrop-blur-md ${
                 showFrame
                   ? "rounded-none border-0 shadow-none"
                   : "rounded-2xl border border-white/30 shadow-[0_8px_28px_rgba(15,23,42,0.2)]"

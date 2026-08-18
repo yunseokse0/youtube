@@ -320,6 +320,12 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     donationLinksRaw && typeof donationLinksRaw === "object" && !Array.isArray(donationLinksRaw)
       ? (donationLinksRaw as HighSocietySettings["donationLinks"])
       : {};
+  const cutoffRaw = Number(v.territoryCutoffAt);
+  const territoryCutoffAt =
+    Number.isFinite(cutoffRaw) && cutoffRaw > 0 ? Math.floor(cutoffRaw) : undefined;
+  const reopenRaw = Number(v.territoryReopenAt);
+  const territoryReopenAt =
+    Number.isFinite(reopenRaw) && reopenRaw > 0 ? Math.floor(reopenRaw) : undefined;
   return {
     enabled: Boolean(v.enabled),
     seatMemberIds,
@@ -333,7 +339,50 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     territoryUpdateMode,
     fx,
     donationLinks: donationLinks || {},
+    ...(territoryCutoffAt !== undefined ? { territoryCutoffAt } : {}),
+    ...(territoryReopenAt !== undefined ? { territoryReopenAt } : {}),
   };
+}
+
+/** OFF 직전까지 한 번이라도 ON이었는지(재ON vs 최초 ON 구분) */
+export function isHighSocietyReopen(prevSettings: HighSocietySettings): boolean {
+  const offAt = Number(prevSettings.territoryCutoffAt);
+  return Number.isFinite(offAt) && offAt > 0;
+}
+
+/**
+ * 후원 행이 상류사회 영토 집계에 포함되는지.
+ * - ON: link.startedAt 이후 + (최초 ON 구간 | OFF 이전 baseline | 재ON 이후)
+ * - OFF: OFF 시각 이전만 유지(리셋 전까지 동결)
+ */
+export function shouldDonorCountForHighSocietyTerritory(
+  d: Pick<Donor, "amount" | "donationExcluded" | "hsTerritoryExcluded" | "at">,
+  settings: HighSocietySettings,
+  link: { active: boolean; startedAt?: number }
+): boolean {
+  if (!link.active) return false;
+  if (isDonorHsTerritoryExcluded(d)) return false;
+  if (d.donationExcluded === true) return false;
+  if (Math.max(0, Number(d.amount) || 0) <= 0) return false;
+
+  const at = highSocietyDonorAtMs(d);
+  const startedAt = Number(link.startedAt);
+  if (Number.isFinite(startedAt) && startedAt > 0 && at < Math.floor(startedAt)) return false;
+
+  const lastOffAtRaw = Number(settings.territoryCutoffAt);
+  const reopenAtRaw = Number(settings.territoryReopenAt);
+  const lastOffAt = Number.isFinite(lastOffAtRaw) && lastOffAtRaw > 0 ? Math.floor(lastOffAtRaw) : null;
+  const reopenAt = Number.isFinite(reopenAtRaw) && reopenAtRaw > 0 ? Math.floor(reopenAtRaw) : null;
+
+  if (!settings.enabled) {
+    if (!lastOffAt) return true;
+    return at < lastOffAt;
+  }
+
+  if (!lastOffAt && !reopenAt) return true;
+  if (reopenAt && at >= reopenAt) return true;
+  if (lastOffAt && at < lastOffAt) return true;
+  return false;
 }
 
 /** admin patch — 영토만 새 라운드(집계 시작 시점). donors/members 와 분리 */
@@ -363,6 +412,9 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
   const now = opts.now ?? Date.now();
   const wasOn = prevSettings.enabled;
   const turningOn = !wasOn && nextSettings.enabled;
+  const turningOff = wasOn && !nextSettings.enabled;
+  const reOn = turningOn && isHighSocietyReopen(prevSettings);
+  const firstOn = turningOn && !reOn;
   const seatsChanged = !seatMemberIdsEqual(
     prevSettings.seatMemberIds || [],
     nextSettings.seatMemberIds || []
@@ -371,10 +423,19 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
   const seatMembers = resolveHighSocietySeatMembers(members, nextSettings.seatMemberIds);
   const valid = new Set(seatMembers.map((s) => s.id));
 
+  const territoryTimingPatch = (): Partial<HighSocietySettings> => {
+    if (resetTerritory) return { territoryCutoffAt: undefined, territoryReopenAt: undefined };
+    if (turningOff) return { territoryCutoffAt: now, territoryReopenAt: undefined };
+    if (reOn) return { territoryReopenAt: now };
+    if (firstOn) return { territoryCutoffAt: undefined, territoryReopenAt: undefined };
+    return {};
+  };
+
   if (!resetTerritory && !turningOn && !(nextSettings.enabled && seatsChanged)) {
     return {
       ...nextSettings,
       donationLinks: normalizeHighSocietyDonationLinks(nextSettings.donationLinks, valid),
+      ...territoryTimingPatch(),
     };
   }
 
@@ -389,10 +450,11 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
       continue;
     }
     if (turningOn) {
-      if (prevLink?.active && Number(prevLink.startedAt) > 0) {
+      if (reOn && prevLink?.active && Number(prevLink.startedAt) > 0) {
+        /** 재ON — baseline link 유지, 신규 후원은 territoryReopenAt 으로 필터 */
         donationLinks[id] = { active: true, startedAt: prevLink.startedAt };
       } else {
-        /** ON 시점 이후 후원만 영토 반영 — 기존 donors·멤버 잔액 합계는 제외 */
+        /** 최초 ON — ON 시점 이후 후원만 영토 반영 */
         donationLinks[id] = { active: true, startedAt: now };
       }
       continue;
@@ -407,6 +469,7 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
     ...nextSettings,
     donationLinks: normalizeHighSocietyDonationLinks(donationLinks, valid),
     ...(resetTerritory ? { round: Math.min(99, prevRound + 1) } : {}),
+    ...territoryTimingPatch(),
   };
 }
 
@@ -678,13 +741,7 @@ export function aggregateSeatPushesFromDonors(opts: {
     const link = resolveHighSocietyDonationLink(settings, player.id);
     const rows = (donors || []).filter((d) => {
       if (String(d.memberId || "") !== player.id) return false;
-      if (d.donationExcluded === true) return false;
-      if (isDonorHsTerritoryExcluded(d)) return false;
-      if (Math.max(0, Number(d.amount) || 0) <= 0) return false;
-      if (!link.active) return false;
-      const at = highSocietyDonorAtMs(d);
-      if (link.startedAt > 0 && at < link.startedAt) return false;
-      return true;
+      return shouldDonorCountForHighSocietyTerritory(d, settings, link);
     });
 
     if (rows.length === 0) {

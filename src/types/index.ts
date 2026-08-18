@@ -461,6 +461,13 @@ export type HighSocietySettings = {
   fx?: HighSocietyFxSettings;
   /** 좌석 멤버별 후원 연동(ON 시 startedAt 이후만 영토 집계) */
   donationLinks?: Record<string, { active: boolean; startedAt?: number }>;
+  /**
+   * 마지막 OFF 전환 시각(ms).
+   * OFF 중·재ON 직후 baseline — 이 시각 이전 후원만 누적 영토에 포함(OFF 이후 후원 무시).
+   */
+  territoryCutoffAt?: number;
+  /** 재ON 시각(ms) — 재ON 이후 들어온 후원만 영토에 추가 반영 */
+  territoryReopenAt?: number;
 };
 
 /** `/overlay/sig-rolling` — 이미지/GIF 순환 한 장 항목 */

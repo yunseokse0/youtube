@@ -1391,12 +1391,16 @@ export function isDefaultLikeTimerDisplayStyle(
     .trim()
     .toLowerCase();
   const fontIsDefault = !font || font === "mono" || font === "default" || font === "auto";
+  const bgOpacity = Number(style.bgOpacity);
+  const scalePercent = Number(style.scalePercent);
   return (
     fontIsDefault &&
     !String(style.fontColor || "").trim() &&
     !String(style.bgColor || "").trim() &&
     !String(style.borderColor || "").trim() &&
-    !String(style.outlineColor || "").trim()
+    !String(style.outlineColor || "").trim() &&
+    (!Number.isFinite(bgOpacity) || bgOpacity === 40) &&
+    (!Number.isFinite(scalePercent) || scalePercent === 100)
   );
 }
 

@@ -229,6 +229,7 @@ import {
   highSocietyFxToHsFxParam,
   normalizeHighSocietySettings,
   mergeHighSocietyDonationLinksOnSettingsChange,
+  isHighSocietyReopen,
   markDonorsHsTerritoryExcluded,
   type HighSocietySettingsAdminPatch,
   resolveHighSocietySeatMembers,
@@ -7543,6 +7544,7 @@ export default function AdminPage() {
           ...settingsPatch,
         });
         const turningOn = !wasOn && nextSettings.enabled;
+        const isFirstOn = turningOn && !isHighSocietyReopen(prevSettings);
         nextSettings = mergeHighSocietyDonationLinksOnSettingsChange({
           prevSettings,
           nextSettings,
@@ -7551,7 +7553,8 @@ export default function AdminPage() {
         });
         applied = nextSettings;
         const prevDonors = normalizeDonorsArray(prev.donors);
-        const shouldMarkHsTerritoryOff = (resetTerritory || turningOn) && prevDonors.length > 0;
+        /** 최초 ON·영토 리셋만 기존 후원 영토 OFF — 재ON은 baseline 유지 */
+        const shouldMarkHsTerritoryOff = (resetTerritory || isFirstOn) && prevDonors.length > 0;
         const nextDonors = shouldMarkHsTerritoryOff
           ? markDonorsHsTerritoryExcluded(prevDonors, true)
           : prevDonors;
@@ -7595,8 +7598,10 @@ export default function AdminPage() {
       } else if (typeof patch.enabled === "boolean" && patch.enabled !== wasOn) {
         showAppToast(
           patch.enabled
-            ? "상류사회 ON — 기존 후원은 영토 OFF, 이후 후원부터 영토 반영"
-            : "상류사회 OFF — 모드만 꺼졌습니다 (후원·영토 데이터는 유지)"
+            ? isHighSocietyReopen(before)
+              ? "상류사회 재ON — 기존 영토 유지, 이후 후원부터 영토 반영"
+              : "상류사회 ON — 기존 후원은 영토 OFF, 이후 후원부터 영토 반영"
+            : "상류사회 OFF — 영토는 리셋 전까지 유지됩니다(OFF 이후 후원은 영토 미반영)."
         );
       } else if (patch.defaultMiddlePush && after.defaultMiddlePush !== before.defaultMiddlePush) {
         const dir = resolveSystemMiddlePushDir(after);
@@ -12768,23 +12773,22 @@ export default function AdminPage() {
               <div className="mb-3 rounded-lg border border-amber-400/40 bg-amber-950/30 p-3 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <div className="text-sm font-semibold text-amber-100">상류사회 모드</div>
+                    <div className="text-sm font-semibold text-amber-100">상류사회 · 후원 확장</div>
                     <p className="text-[11px] text-neutral-400 mt-0.5">
-                      ON이면 아래 리스트 <strong className="text-neutral-300">확장</strong>에서 이미 들어온 후원 방향을 바꾸고{" "}
-                      <strong className="text-amber-200/90">적용</strong>을 누르세요. (가운데 좌석만 · 끝자리는 ←/→고정)
+                      모드 ON/OFF는 위 「상류사회 모드」에서만 설정합니다. ON이면 아래 리스트{" "}
+                      <strong className="text-neutral-300">확장</strong>에서 이미 들어온 후원 방향을 바꾸고{" "}
+                      <strong className="text-amber-200/90">적용</strong>을 누르세요. (가운데 좌석만 · 끝자리는 ←/→ 고정)
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    className={`rounded px-3 py-1.5 text-xs font-semibold shrink-0 ${
+                  <span
+                    className={`rounded px-2.5 py-1 text-[11px] font-semibold shrink-0 ${
                       highSocietySettings.enabled
-                        ? "bg-amber-600 text-white"
-                        : "bg-neutral-700 text-neutral-200 hover:bg-neutral-600"
+                        ? "bg-amber-600/90 text-white"
+                        : "bg-neutral-800 text-neutral-400"
                     }`}
-                    onClick={() => patchHighSocietySettings({ enabled: !highSocietySettings.enabled })}
                   >
-                    {highSocietySettings.enabled ? "상류사회 ON" : "상류사회 OFF"}
-                  </button>
+                    {highSocietySettings.enabled ? "모드 ON" : "모드 OFF"}
+                  </span>
                 </div>
                 {highSocietySettings.enabled ? (
                   <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
@@ -14180,24 +14184,38 @@ export default function AdminPage() {
                   <div>
                     <h4 className="text-sm font-semibold text-amber-100">상류사회 · 세로(9:16) 오버레이</h4>
                     <p className="mt-1 text-[11px] text-neutral-400 leading-snug max-w-xl">
-                      ON 시 좌석 멤버 후원 연동이 켜지고 계좌·투네 후원이 상단 영토 게이지에 반영됩니다.{" "}
+                      모드 ON/OFF는{" "}
+                      <button
+                        type="button"
+                        className="text-sky-400 underline"
+                        onClick={() => {
+                          moveToSection("donor", "donor-management");
+                          window.setTimeout(() => {
+                            document.getElementById("high-society-mode")?.scrollIntoView({
+                              behavior: "smooth",
+                              block: "start",
+                            });
+                          }, 80);
+                        }}
+                      >
+                        후원자 기록부 → 상류사회 모드
+                      </button>
+                      에서만 설정합니다. ON이면 좌석 멤버 후원이 상단 영토 게이지에 반영됩니다.{" "}
                       확장: <strong className="text-neutral-300">1만원=5cm</strong>
                       · 천원 단위 버림(예: 2만6천→10cm).{" "}
                       <strong className="text-neutral-300">갱신 시점</strong>은 아래 옵션으로 선택합니다.
                       OBS 캔버스·브라우저 소스 <strong className="text-neutral-300">1080×1920</strong>.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    className={`rounded px-3 py-1.5 text-xs font-semibold shrink-0 ${
+                  <span
+                    className={`rounded px-2.5 py-1 text-[11px] font-semibold shrink-0 ${
                       highSocietySettings.enabled
-                        ? "bg-amber-600 text-white"
-                        : "bg-neutral-700 text-neutral-200 hover:bg-neutral-600"
+                        ? "bg-amber-600/90 text-white"
+                        : "bg-neutral-800 text-neutral-400"
                     }`}
-                    onClick={() => patchHighSocietySettings({ enabled: !highSocietySettings.enabled })}
                   >
-                    {highSocietySettings.enabled ? "상류사회 ON" : "상류사회 OFF"}
-                  </button>
+                    {highSocietySettings.enabled ? "모드 ON" : "모드 OFF"}
+                  </span>
                 </div>
 
                 <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">

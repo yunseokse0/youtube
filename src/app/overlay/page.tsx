@@ -59,7 +59,10 @@ import {
   resolveTimerOverlayStyle,
   timerOverlayStyleHasCustomColors,
   applyTimerBackgroundOpacity,
+  getTimerPillPaddingPx,
   isTimerBackgroundHidden,
+  isTimerBorderVisuallyHidden,
+  TIMER_PILL_BORDER_PX,
   type OverlayPresetLike,
   type ResolvedTimerOverlayStyle,
 } from "@/lib/overlay-params";
@@ -1990,21 +1993,22 @@ function Timer({
   const effectiveOutlineWidth = Number.isFinite(outlineWidth) ? Math.max(0, Math.min(3, outlineWidth as number)) : 0.8;
   const opacity = Math.max(0, Math.min(100, bgOpacity ?? 40));
   const noBackground = isTimerBackgroundHidden(bgColor, opacity);
-  const borderLower = String(borderColor || "").trim().toLowerCase();
-  const noBorder =
-    noBackground || borderLower === "transparent" || borderLower === "none" || borderLower === "rgba(0,0,0,0)";
+  const hideBorder = isTimerBorderVisuallyHidden(bgColor, borderColor, opacity);
   const backgroundColor = noBackground ? "transparent" : applyTimerBackgroundOpacity(bgColor, opacity);
-  const resolvedBorderColor = noBorder
+  const resolvedBorderColor = hideBorder
     ? "transparent"
     : applyTimerBackgroundOpacity(borderColor || bgColor, opacity);
+  const { padX, padY } = getTimerPillPaddingPx(fontSize);
   const fontFamilyCss = resolveTimerFontFamilyCss(fontFamily);
   return (
     <div
-      className={`inline-flex min-w-[4.5ch] items-center justify-center rounded-full px-4 py-1.5 ${noBackground ? "" : "backdrop-blur-md"}`}
+      className={`inline-flex min-w-[4.5ch] items-center justify-center rounded-full ${noBackground ? "" : "backdrop-blur-md"}`}
       style={{
+        boxSizing: "border-box",
+        padding: `${padY}px ${padX}px`,
         borderColor: resolvedBorderColor,
-        borderWidth: noBorder ? 0 : 1,
-        borderStyle: noBorder ? "none" : "solid",
+        borderWidth: TIMER_PILL_BORDER_PX,
+        borderStyle: "solid",
         backgroundColor,
       }}
       suppressHydrationWarning
@@ -4601,7 +4605,7 @@ function OverlayInner() {
                     <img
                       src={tableFrameUrl}
                       alt=""
-                      className="pointer-events-none absolute inset-0 z-[2] h-full w-full object-fill"
+                      className="pointer-events-none absolute inset-0 z-0 h-full w-full object-fill"
                       style={{ opacity: tableFrameOpacity / 100 }}
                       loading="eager"
                       decoding="async"
@@ -4610,7 +4614,7 @@ function OverlayInner() {
                 <div
                   className="relative overflow-visible"
                   style={{
-                    zIndex: 1,
+                    zIndex: 2,
                     borderRadius: showTableFrame ? 0 : 10,
                     border: "none",
                     /** 외곽 선은 셀 그리드가 담당 — 여기선 그림자만 (이중 테두리 방지) */

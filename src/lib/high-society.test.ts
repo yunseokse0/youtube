@@ -21,6 +21,8 @@ import {
   parseHighSocietyFxFromHsFxParam,
   mergeHighSocietyDonationLinksOnSettingsChange,
   markDonorsHsTerritoryExcluded,
+  isHighSocietyReopen,
+  shouldDonorCountForHighSocietyTerritory,
   fieldCmFromStartPerMember,
   startCmFromField,
   parseHighSocietyFieldCm,
@@ -351,6 +353,7 @@ describe("high-society territory (aux)", () => {
     const offSettings = normalizeHighSocietySettings({
       ...onSettings,
       enabled: false,
+      territoryCutoffAt: 7000,
     });
     const onField = buildHighSocietyFieldFromAppState({
       members,
@@ -366,7 +369,84 @@ describe("high-society territory (aux)", () => {
     expect(offField.seats[1]!.widthCm).toBe(350);
   });
 
-  it("re-ON preserves donationLinks startedAt (territory baseline not reset)", () => {
+  it("ignores donations after OFF cutoff while mode is disabled", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    const settings = normalizeHighSocietySettings({
+      enabled: false,
+      seatMemberIds: ["a", "b", "c", "d"],
+      defaultMiddlePush: "right",
+      territoryCutoffAt: 5000,
+      donationLinks: { b: { active: true, startedAt: 0 } },
+    });
+    const frozen = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        {
+          id: "d-old",
+          name: "old",
+          amount: 100_000,
+          memberId: "b",
+          target: "account" as const,
+          at: 4000,
+          hsPushDir: "right" as const,
+        },
+      ],
+      highSocietySettings: settings,
+    });
+    const withNew = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        {
+          id: "d-old",
+          name: "old",
+          amount: 100_000,
+          memberId: "b",
+          target: "account" as const,
+          at: 4000,
+          hsPushDir: "right" as const,
+        },
+        {
+          id: "d-new",
+          name: "new",
+          amount: 200_000,
+          memberId: "b",
+          target: "account" as const,
+          at: 9000,
+          hsPushDir: "right" as const,
+        },
+      ],
+      highSocietySettings: settings,
+    });
+    expect(frozen.seats[1]!.widthCm).toBe(350);
+    expect(withNew.seats[1]!.widthCm).toBe(350);
+  });
+
+  it("sets territoryCutoffAt when toggling OFF", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+    ];
+    const prev = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b"],
+    });
+    const next = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: prev,
+      nextSettings: normalizeHighSocietySettings({ ...prev, enabled: false }),
+      members,
+      now: 12_345,
+    });
+    expect(next.enabled).toBe(false);
+    expect(next.territoryCutoffAt).toBe(12_345);
+    expect(next.territoryReopenAt).toBeUndefined();
+  });
+
+  it("re-ON sets territoryReopenAt and keeps last OFF cutoff + donationLinks", () => {
     const members = [
       { id: "a", name: "A", account: 0, toon: 0, operating: false },
       { id: "b", name: "B", account: 0, toon: 0, operating: false },
@@ -376,6 +456,7 @@ describe("high-society territory (aux)", () => {
     const prev = normalizeHighSocietySettings({
       enabled: false,
       seatMemberIds: ["a", "b", "c", "d"],
+      territoryCutoffAt: 80_000,
       donationLinks: { b: { active: true, startedAt: 5000 } },
     });
     const next = mergeHighSocietyDonationLinksOnSettingsChange({
@@ -385,6 +466,107 @@ describe("high-society territory (aux)", () => {
       now: 99_000,
     });
     expect(next.donationLinks?.b?.startedAt).toBe(5000);
+    expect(next.territoryCutoffAt).toBe(80_000);
+    expect(next.territoryReopenAt).toBe(99_000);
+  });
+
+  it("re-ON keeps baseline territory and applies only post-reopen donations", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    const baseDonor = {
+      id: "d1",
+      name: "base",
+      amount: 100_000,
+      memberId: "b",
+      target: "account" as const,
+      at: 6000,
+      hsPushDir: "right" as const,
+    };
+    const onSettings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b", "c", "d"],
+      defaultMiddlePush: "right",
+      donationLinks: { b: { active: true, startedAt: 5000 } },
+    });
+    const onField = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [baseDonor],
+      highSocietySettings: onSettings,
+    });
+    const offSettings = normalizeHighSocietySettings({
+      ...onSettings,
+      enabled: false,
+      territoryCutoffAt: 7000,
+    });
+    const offField = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        baseDonor,
+        {
+          id: "d-off",
+          name: "off",
+          amount: 200_000,
+          memberId: "b",
+          target: "account" as const,
+          at: 8000,
+          hsPushDir: "right" as const,
+        },
+      ],
+      highSocietySettings: offSettings,
+    });
+    expect(offField.seats[1]!.widthCm).toBe(onField.seats[1]!.widthCm);
+
+    const reOnSettings = normalizeHighSocietySettings({
+      ...offSettings,
+      enabled: true,
+      territoryReopenAt: 9000,
+    });
+    const reOnBaseline = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        baseDonor,
+        {
+          id: "d-off",
+          name: "off",
+          amount: 200_000,
+          memberId: "b",
+          target: "account" as const,
+          at: 8000,
+          hsPushDir: "right" as const,
+        },
+      ],
+      highSocietySettings: reOnSettings,
+    });
+    expect(reOnBaseline.seats[1]!.widthCm).toBe(onField.seats[1]!.widthCm);
+
+    const reOnExpanded = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        baseDonor,
+        {
+          id: "d-new",
+          name: "new",
+          amount: 100_000,
+          memberId: "b",
+          target: "account" as const,
+          at: 9500,
+          hsPushDir: "right" as const,
+        },
+      ],
+      highSocietySettings: reOnSettings,
+    });
+    expect(reOnExpanded.seats[1]!.widthCm).toBeGreaterThan(onField.seats[1]!.widthCm);
+  });
+
+  it("isHighSocietyReopen detects prior OFF cutoff", () => {
+    expect(isHighSocietyReopen(normalizeHighSocietySettings({ enabled: false }))).toBe(false);
+    expect(
+      isHighSocietyReopen(normalizeHighSocietySettings({ enabled: false, territoryCutoffAt: 5000 }))
+    ).toBe(true);
   });
 
   it("first ON without prior link sets startedAt (only post-ON donations count)", () => {
