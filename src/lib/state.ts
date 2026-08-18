@@ -30,6 +30,7 @@ import type {
   SigRollingSettings,
   DonorsAmountFormat,
 } from "@/types";
+import { isHiddenTimerDisplayStyle } from "@/lib/overlay-params";
 import {
   normalizeHighSocietySettings,
   normalizeHighSocietyDonationLinks,
@@ -1392,6 +1393,7 @@ export function isDefaultLikeTimerDisplayStyle(
   style: TimerDisplayStyle | null | undefined
 ): boolean {
   if (!style) return true;
+  if (isHiddenTimerDisplayStyle(style)) return false;
   const font = String(style.fontFamily || "")
     .trim()
     .toLowerCase();
@@ -1998,6 +2000,15 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
               : {}),
             ...(nextTimerStyles.general.outlineColor !== undefined
               ? { outlineColor: nextTimerStyles.general.outlineColor }
+              : {}),
+            ...(nextTimerStyles.general.showHours !== undefined
+              ? { showHours: nextTimerStyles.general.showHours }
+              : {}),
+            ...(nextTimerStyles.general.fontFamily !== undefined
+              ? { fontFamily: nextTimerStyles.general.fontFamily }
+              : {}),
+            ...(nextTimerStyles.general.scalePercent !== undefined
+              ? { scalePercent: nextTimerStyles.general.scalePercent }
               : {}),
           },
         };

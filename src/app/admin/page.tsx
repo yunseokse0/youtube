@@ -143,6 +143,9 @@ import {
   normalizeGoalHexColor,
   sanitizeBroadcastOverlayUrl,
   resolveScopedOverlayUserId,
+  isTimerBackgroundHidden,
+  isTimerBorderVisuallyHidden,
+  isHiddenTimerDisplayStyle,
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
 import { TABLE_FONT_FAMILY_OPTIONS, clampTableMemberSizePx, normalizeTableFontFamily } from "@/lib/table-font-style";
@@ -1988,7 +1991,16 @@ export default function AdminPage() {
               p?.showTimer &&
               (String(p.timerFontColor || "").trim() ||
                 String(p.timerBgColor || "").trim() ||
-                String(p.timerBorderColor || "").trim())
+                String(p.timerBorderColor || "").trim() ||
+                String(p.timerBgOpacity || "").trim() === "0" ||
+                isHiddenTimerDisplayStyle({
+                  bgColor: String(p.timerBgColor || ""),
+                  borderColor: String(p.timerBorderColor || ""),
+                  bgOpacity: Math.max(
+                    0,
+                    Math.min(100, parseInt(String(p.timerBgOpacity || "40"), 10) || 40)
+                  ),
+                }))
           );
           if (presetWithTimer) {
             toApply = {

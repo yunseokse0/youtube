@@ -318,7 +318,7 @@ function mergePartialState(
       ?.general;
     const baseGeneral = base.timerDisplayStyles?.general;
     if (patchGeneral && baseGeneral) {
-      /** 색상 기본 wipe 는 막되, 외곽선 두께·색은 patch 반영 */
+      /** 색상·hidden 기본 wipe 는 막되, 표시 옵션은 patch 반영 */
       next.timerDisplayStyles = {
         ...base.timerDisplayStyles!,
         general: {
@@ -328,6 +328,11 @@ function mergePartialState(
             : {}),
           ...(patchGeneral.outlineColor !== undefined
             ? { outlineColor: patchGeneral.outlineColor }
+            : {}),
+          ...(patchGeneral.showHours !== undefined ? { showHours: patchGeneral.showHours } : {}),
+          ...(patchGeneral.fontFamily !== undefined ? { fontFamily: patchGeneral.fontFamily } : {}),
+          ...(patchGeneral.scalePercent !== undefined
+            ? { scalePercent: patchGeneral.scalePercent }
             : {}),
         },
       };

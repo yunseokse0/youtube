@@ -2517,7 +2517,20 @@ function OverlayInner() {
       ready,
       timerOnlyDefaultShowHours: timerOnlyMode,
     });
-    if (timerOverlayStyleHasCustomColors(next)) {
+    const stateHiddenBg =
+      timerStyleFromState &&
+      isTimerBackgroundHidden(
+        timerStyleFromState.bgColor,
+        timerStyleFromState.bgOpacity ?? next.bgOpacity ?? 40
+      );
+    const stateHiddenBorder =
+      timerStyleFromState &&
+      isTimerBorderVisuallyHidden(
+        timerStyleFromState.bgColor,
+        timerStyleFromState.borderColor,
+        timerStyleFromState.bgOpacity ?? next.bgOpacity ?? 40
+      );
+    if (timerOverlayStyleHasCustomColors(next) || stateHiddenBg || stateHiddenBorder) {
       lastStableTimerStyleRef.current = next;
       timerStyleEmptySinceRef.current = null;
       return next;
@@ -2533,22 +2546,51 @@ function OverlayInner() {
           showHours: next.showHours,
           scalePercent: next.scalePercent,
           outlineWidth: next.outlineWidth,
-          bgOpacity: next.bgOpacity,
         };
-        /** 배경 없음 — stale 색 복원으로 테두리·pill 이 되살아나지 않게 */
-        if (isTimerBackgroundHidden(next.bgColor, next.bgOpacity)) {
-          return {
-            ...merged,
-            bgColor: next.bgColor,
-            borderColor: next.borderColor,
-            outlineColor: next.outlineColor,
-          };
+        /** 배경/테두리 없음 — state·next hidden 유지, stale bgOpacity 로 pill 복원 방지 */
+        const keepHiddenFrom = (
+          src: { bgColor?: string; borderColor?: string; outlineColor?: string; bgOpacity?: number } | null
+        ) => {
+          if (!src) return merged;
+          const op = src.bgOpacity ?? merged.bgOpacity ?? 40;
+          if (isTimerBackgroundHidden(src.bgColor, op)) {
+            return {
+              ...merged,
+              bgColor: src.bgColor || "transparent",
+              borderColor: src.borderColor || "transparent",
+              outlineColor: src.outlineColor ?? "",
+              bgOpacity: src.bgOpacity ?? 0,
+            };
+          }
+          if (isTimerBorderVisuallyHidden(src.bgColor ?? merged.bgColor, src.borderColor, op)) {
+            return { ...merged, borderColor: src.borderColor || "transparent", bgOpacity: op };
+          }
+          return { ...merged, bgOpacity: op };
+        };
+        if (
+          isTimerBackgroundHidden(next.bgColor, next.bgOpacity) ||
+          isTimerBackgroundHidden(timerStyleFromState?.bgColor, timerStyleFromState?.bgOpacity ?? 40)
+        ) {
+          return keepHiddenFrom(
+            isTimerBackgroundHidden(next.bgColor, next.bgOpacity) ? next : timerStyleFromState
+          );
         }
-        /** 테두리 없음(배경은 유지) — stale 복원으로 pill 테두리가 되살아나지 않게 */
-        if (isTimerBorderVisuallyHidden(next.bgColor, next.borderColor, next.bgOpacity)) {
-          return { ...merged, borderColor: next.borderColor };
+        if (
+          isTimerBorderVisuallyHidden(next.bgColor, next.borderColor, next.bgOpacity) ||
+          (timerStyleFromState &&
+            isTimerBorderVisuallyHidden(
+              timerStyleFromState.bgColor,
+              timerStyleFromState.borderColor,
+              timerStyleFromState.bgOpacity ?? 40
+            ))
+        ) {
+          return keepHiddenFrom(
+            isTimerBorderVisuallyHidden(next.bgColor, next.borderColor, next.bgOpacity)
+              ? next
+              : timerStyleFromState
+          );
         }
-        return merged;
+        return { ...merged, bgOpacity: next.bgOpacity };
       }
       lastStableTimerStyleRef.current = null;
       timerStyleEmptySinceRef.current = null;

@@ -17,6 +17,7 @@ import {
   getTimerPillPaddingPx,
   isTimerBackgroundHidden,
   isTimerBorderVisuallyHidden,
+  isHiddenTimerDisplayStyle,
   TIMER_PILL_BORDER_PX,
   stripAdminPreviewHotReloadParams,
   type OverlayPresetLike,
@@ -190,9 +191,75 @@ describe("admin preview hot-reload params", () => {
       showHours: true,
     }, { ready: true });
     expect(style.fontColor).toBe("#aabbcc");
+    expect(style.bgColor).toBe("transparent");
     expect(style.bgOpacity).toBe(0);
     expect(style.scalePercent).toBe(120);
     expect(style.showHours).toBe(true);
+  });
+
+  it("keeps background hidden when state bgOpacity is 0 even if preset has colors", () => {
+    const preset: OverlayPresetLike = {
+      id: "ov_timer_bg",
+      showTimer: true,
+      timerBgColor: "#112233",
+      timerBorderColor: "#445566",
+      timerBgOpacity: "80",
+    };
+    const style = resolveTimerOverlayStyle(
+      new URLSearchParams(),
+      preset,
+      {
+        fontColor: "",
+        bgColor: "",
+        borderColor: "transparent",
+        outlineColor: "",
+        outlineWidth: 0.8,
+        bgOpacity: 0,
+        scalePercent: 100,
+        showHours: false,
+      },
+      { ready: true }
+    );
+    expect(style.bgColor).toBe("transparent");
+    expect(style.bgOpacity).toBe(0);
+    expect(style.borderColor).toBe("transparent");
+  });
+
+  it("applies border-only transparent from timerDisplayStyles over preset border", () => {
+    const preset: OverlayPresetLike = {
+      id: "ov_timer_border",
+      showTimer: true,
+      timerBgColor: "#112233",
+      timerBorderColor: "#ffffff",
+      timerBgOpacity: "60",
+    };
+    const style = resolveTimerOverlayStyle(
+      new URLSearchParams(),
+      preset,
+      {
+        fontColor: "",
+        bgColor: "",
+        borderColor: "transparent",
+        outlineColor: "",
+        outlineWidth: 0.8,
+        bgOpacity: 40,
+        scalePercent: 100,
+        showHours: false,
+      },
+      { ready: true }
+    );
+    expect(style.borderColor).toBe("transparent");
+    expect(style.bgColor).toBe("#112233");
+  });
+
+  it("isHiddenTimerDisplayStyle detects transparent background and border", () => {
+    expect(
+      isHiddenTimerDisplayStyle({ bgColor: "transparent", borderColor: "transparent", bgOpacity: 0 })
+    ).toBe(true);
+    expect(isHiddenTimerDisplayStyle({ bgColor: "", borderColor: "transparent", bgOpacity: 40 })).toBe(
+      true
+    );
+    expect(isHiddenTimerDisplayStyle({ bgColor: "", borderColor: "", bgOpacity: 40 })).toBe(false);
   });
 
   it("prefers timerDisplayStyles colors over preset when both set", () => {
@@ -467,6 +534,12 @@ describe("timer pill layout", () => {
     expect(isDefaultLikeTimerDisplayStyle(base)).toBe(true);
     expect(isDefaultLikeTimerDisplayStyle({ ...base, outlineWidth: 2 })).toBe(false);
     expect(hasCustomTimerDisplayStyles({ general: { ...base, outlineWidth: 1.5 } })).toBe(true);
+    expect(isDefaultLikeTimerDisplayStyle({ ...base, bgColor: "transparent", bgOpacity: 0 })).toBe(
+      false
+    );
+    expect(isHiddenTimerDisplayStyle({ bgColor: "transparent", borderColor: "", bgOpacity: 0 })).toBe(
+      true
+    );
   });
 });
 
