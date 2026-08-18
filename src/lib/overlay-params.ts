@@ -112,6 +112,8 @@ export type OverlayPresetLike = {
   timerFontColor?: string;
   timerBgColor?: string;
   timerBorderColor?: string;
+  timerOutlineColor?: string;
+  timerOutlineWidth?: string;
   timerBgOpacity?: string;
   timerScale?: string;
   showMission?: boolean;
@@ -1242,6 +1244,7 @@ export function applyTimerBackgroundOpacity(
   return raw;
 }
 
+/** 배경 없음(투명·opacity 0) — pill·테두리·글자 외곽선 모두 숨김 */
 export function isTimerBackgroundHidden(
   bgColor: string | undefined,
   opacityPercent: number
@@ -1252,7 +1255,7 @@ export function isTimerBackgroundHidden(
   return lower === "transparent" || lower === "none" || lower === "rgba(0,0,0,0)";
 }
 
-/** 타이머 pill 테두리 — 배경 없음일 때도 레이아웃 폭·높이 유지 */
+/** pill CSS 테두리 — 배경 없음이면 항상 숨김 */
 export const TIMER_PILL_BORDER_PX = 1;
 
 /** tailwind px-4 py-1.5 와 동일 비율 — fontSize·scalePercent 변경 시 pill 크기 동기화 */

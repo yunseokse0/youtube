@@ -438,9 +438,10 @@ describe("admin preview hot-reload params", () => {
 });
 
 describe("timer pill layout", () => {
-  it("keeps border width constant for layout stability", () => {
+  it("hides pill border when background is hidden", () => {
     expect(TIMER_PILL_BORDER_PX).toBe(1);
     expect(isTimerBorderVisuallyHidden("transparent", "transparent", 0)).toBe(true);
+    expect(isTimerBorderVisuallyHidden("#ffffff", "#ff0000", 0)).toBe(true);
     expect(isTimerBorderVisuallyHidden("#ffffff", "#ffffff", 40)).toBe(false);
   });
 

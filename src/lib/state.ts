@@ -30,7 +30,12 @@ import type {
   SigRollingSettings,
   DonorsAmountFormat,
 } from "@/types";
-import { normalizeHighSocietySettings, normalizeHighSocietyDonationLinks, resolveHighSocietySeatMembers } from "@/lib/high-society";
+import {
+  normalizeHighSocietySettings,
+  normalizeHighSocietyDonationLinks,
+  resolveHighSocietySeatMembers,
+  shouldBlockHighSocietyRegression,
+} from "@/lib/high-society";
 import { ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
 import { isBundledSigPlaceholderItem } from "@/lib/sig-placeholder";
 import { normalizeRestroomCount } from "@/lib/restroom-utils";
@@ -1770,6 +1775,11 @@ export type SaveStateAsyncOptions = {
    * 관리자 persistState 는 기본적으로 이 플래그를 켠다(includeDonationFields 미지정 시).
    */
   omitDonationFields?: boolean;
+  /**
+   * 시그 대전 후원 연동 등 — API 본문에서 highSocietySettings 를 빼
+   * 서버 상류사회 영토 설정을 건드리지 않음.
+   */
+  omitHighSocietyFields?: boolean;
   /** 판매완료 도장을 기본 도장으로 되돌릴 때만 true — 빈 URL 우연 덮어쓰기 방지 */
   clearSigSoldOutStamp?: boolean;
 };
@@ -1980,6 +1990,15 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
       hasCustomTimerDisplayStyles(prevTimerStyles)
     ) {
       merged.timerDisplayStyles = prevTimerStyles;
+    }
+    {
+      const prevHs = prev.highSocietySettings as AppState["highSocietySettings"] | undefined;
+      const nextHs = next.highSocietySettings as AppState["highSocietySettings"] | undefined;
+      if (prevHs && nextHs && shouldBlockHighSocietyRegression(prevHs, nextHs)) {
+        merged.highSocietySettings = prevHs;
+      } else if (!("highSocietySettings" in next) && prevHs) {
+        merged.highSocietySettings = prevHs;
+      }
     }
     /** 판매완료 도장 — 뒤쪽 PATCH가 빈 값·키 생략으로 앞선 업로드 저장을 지우지 않게 */
     {
@@ -2226,6 +2245,10 @@ function appStatePayloadForApi(
           ...(options?.membersAuthoritative ? { membersAuthoritative: true as const } : {}),
         }
       : restSafe;
+  }
+  if (options?.omitHighSocietyFields && !options?.settlementReset) {
+    const { highSocietySettings: _hs, ...restWithoutHs } = payload;
+    payload = restWithoutHs;
   }
   /** 빈 판매완료 도장 URL은 실수로 커스텀을 지우지 않게 생략(「기본 도장」만 clear 플래그) */
   if (
@@ -2478,6 +2501,14 @@ export async function saveStateAsync(
           local.settlementResetAt ||
           guarded.settlementResetAt,
       };
+    }
+    /** 시그 후원 연동 등 — LS 상류사회 설정이 구/React 기본값으로 줄지 않게 */
+    if (
+      local?.highSocietySettings &&
+      (saveOpts?.omitHighSocietyFields || saveOpts?.omitDonationFields) &&
+      shouldBlockHighSocietyRegression(local.highSocietySettings, guarded.highSocietySettings)
+    ) {
+      guarded = { ...guarded, highSocietySettings: local.highSocietySettings };
     }
   }
   /**

@@ -241,6 +241,8 @@ import {
   startCmFromField,
   HIGH_SOCIETY_DEFAULT_FIELD_CM,
   HIGH_SOCIETY_MAX_SEATS,
+  shouldBlockHighSocietyRegression,
+  isMeaningfulHighSocietySettings,
 } from "@/lib/high-society";
 import { formatHsPushDirLabel, showAppToast } from "@/lib/app-toast";
 import {
@@ -301,7 +303,7 @@ type OverlayPreset = {
   showTeamBattle?: boolean; teamBattleAnchor?: string;
   showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
   tickerInMembers?: boolean; tickerInGoal?: boolean; tickerInPersonalGoal?: boolean;
-  showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontFamily?: string; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
+  showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontFamily?: string; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerOutlineColor?: string; timerOutlineWidth?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
   confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; tableGridLines?: boolean; tableVerticalLines?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; totalTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
@@ -1151,6 +1153,7 @@ export default function AdminPage() {
       donorsReplace?: boolean;
       settlementReset?: boolean;
       omitDonationFields?: boolean;
+      omitHighSocietyFields?: boolean;
       membersAuthoritative?: boolean;
       /** 후원·멤버 로스터/금액을 API에 포함할 때만 true. 미지정 시 오버레이·시그 등 비후원 저장으로 처리 */
       includeDonationFields?: boolean;
@@ -1733,6 +1736,20 @@ export default function AdminPage() {
         donorRankingsPresets: local.donorRankingsPresets,
         donorRankingsPresetId: local.donorRankingsPresetId ?? merged.donorRankingsPresetId,
       };
+      didPreserve = true;
+    }
+    /** 상류사회: 시그 후원 연동·테마 PATCH 직후 GET/SSE가 enabled·영토 이력을 기본값으로 덮지 않게 */
+    if (
+      isMeaningfulHighSocietySettings(local.highSocietySettings) &&
+      shouldBlockHighSocietyRegression(local.highSocietySettings, merged.highSocietySettings)
+    ) {
+      merged = { ...merged, highSocietySettings: local.highSocietySettings };
+      didPreserve = true;
+    } else if (
+      (pendingUnsyncedRef.current || Date.now() - lastLocalPersistAtRef.current < 8000) &&
+      isMeaningfulHighSocietySettings(local.highSocietySettings)
+    ) {
+      merged = { ...merged, highSocietySettings: local.highSocietySettings };
       didPreserve = true;
     }
     const localDonorsNorm = normalizeDonorsArray(local.donors);
@@ -3811,6 +3828,10 @@ export default function AdminPage() {
     });
   };
 
+  const persistSigMatchDonationLinksOnly = (next: AppState) => {
+    persistState(next, { omitDonationFields: true, omitHighSocietyFields: true });
+  };
+
   /** 시그 대전 멤버별 후원 연동 ON/OFF (엑셀 배정 donors → 시그 점수) */
   const toggleSigDonationLink = (memberId: string) => {
     setState((prev: AppState) => {
@@ -3838,7 +3859,7 @@ export default function AdminPage() {
         },
         updatedAt: Date.now(),
       };
-      persistState(next, { omitDonationFields: true });
+      persistSigMatchDonationLinksOnly(next);
       return next;
     });
   };
@@ -3873,7 +3894,7 @@ export default function AdminPage() {
         },
         updatedAt: Date.now(),
       };
-      persistState(next, { omitDonationFields: true });
+      persistSigMatchDonationLinksOnly(next);
       return next;
     });
   };
@@ -11762,7 +11783,7 @@ export default function AdminPage() {
                           <button
                             type="button"
                             className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
-                            onClick={() => updateTimerDisplayStyle(timerDef.flag, { bgColor: "transparent", borderColor: "transparent", bgOpacity: 0 })}
+                            onClick={() => updateTimerDisplayStyle(timerDef.flag, { bgColor: "transparent", borderColor: "transparent", outlineColor: "", bgOpacity: 0 })}
                           >
                             배경 없음
                           </button>
@@ -16571,7 +16592,7 @@ export default function AdminPage() {
                                       <button
                                         type="button"
                                         className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
-                                        onClick={() => updatePreset(p.id, { timerBgColor: "transparent", timerBorderColor: "transparent", timerBgOpacity: "0" })}
+                                        onClick={() => updatePreset(p.id, { timerBgColor: "transparent", timerBorderColor: "transparent", timerOutlineColor: "", timerBgOpacity: "0" })}
                                       >
                                         배경 없음
                                       </button>

@@ -277,6 +277,49 @@ export function defaultHighSocietySettings(): HighSocietySettings {
   };
 }
 
+/** 초기값과 동일(영토·좌석·라운드 이력 없음) */
+export function isDefaultLikeHighSocietySettings(
+  settings: HighSocietySettings | null | undefined
+): boolean {
+  const s = normalizeHighSocietySettings(settings);
+  const def = defaultHighSocietySettings();
+  if (s.enabled) return false;
+  if (Number(s.territoryCutoffAt || 0) > 0) return false;
+  if (Number(s.territoryReopenAt || 0) > 0) return false;
+  if ((s.seatMemberIds || []).length > 0) return false;
+  if (Math.max(1, Math.floor(Number(s.round) || 1)) > 1) return false;
+  if (Math.floor(Number(s.fieldCm) || 0) !== def.fieldCm) return false;
+  if (Math.floor(Number(s.startCmPerMember) || 0) !== def.startCmPerMember) return false;
+  const links = s.donationLinks || {};
+  if (Object.values(links).some((l) => l?.active)) return false;
+  return true;
+}
+
+/** ON·영토 이력·좌석·라운드 등 운영 중인 상류사회 설정 */
+export function isMeaningfulHighSocietySettings(
+  settings: HighSocietySettings | null | undefined
+): boolean {
+  const s = normalizeHighSocietySettings(settings);
+  if (s.enabled) return true;
+  if (Number(s.territoryCutoffAt || 0) > 0) return true;
+  if (Number(s.territoryReopenAt || 0) > 0) return true;
+  if ((s.seatMemberIds || []).length > 0) return true;
+  if (Math.max(1, Math.floor(Number(s.round) || 1)) > 1) return true;
+  const def = defaultHighSocietySettings();
+  if (Math.floor(Number(s.fieldCm) || 0) !== def.fieldCm) return true;
+  if (Math.floor(Number(s.startCmPerMember) || 0) !== def.startCmPerMember) return true;
+  return false;
+}
+
+/** 시그·테마 PATCH 등이 구 상류사회 설정을 기본값으로 덮지 않게 */
+export function shouldBlockHighSocietyRegression(
+  base: HighSocietySettings | null | undefined,
+  patch: HighSocietySettings | null | undefined
+): boolean {
+  if (!isMeaningfulHighSocietySettings(base)) return false;
+  return isDefaultLikeHighSocietySettings(patch);
+}
+
 /** 시스템 기본 방향 — split 불가, left|right 만 */
 export function resolveSystemMiddlePushDir(
   settings: Pick<HighSocietySettings, "defaultMiddlePush" | "defaultBPush" | "defaultCPush">

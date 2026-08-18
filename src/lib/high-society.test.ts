@@ -30,6 +30,10 @@ import {
   resolveHighSocietyStartCmPerMember,
   resolveHighSocietyEffectiveFieldCm,
   buildHighSocietyFieldFromAppState,
+  isDefaultLikeHighSocietySettings,
+  isMeaningfulHighSocietySettings,
+  shouldBlockHighSocietyRegression,
+  defaultHighSocietySettings,
 } from "./high-society";
 
 describe("high-society rule field", () => {
@@ -920,5 +924,53 @@ describe("high-society startCmPerMember persistence", () => {
     expect(field.settings.startCmPerMember).toBe(450);
     expect(field.settings.fieldCm).toBe(900);
     expect(field.fieldCm).toBe(900);
+  });
+});
+
+describe("highSociety regression guards", () => {
+  it("isDefaultLikeHighSocietySettings detects fresh defaults", () => {
+    expect(isDefaultLikeHighSocietySettings(defaultHighSocietySettings())).toBe(true);
+    expect(
+      isDefaultLikeHighSocietySettings(
+        normalizeHighSocietySettings({
+          enabled: false,
+          seatMemberIds: [],
+          round: 1,
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("isMeaningfulHighSocietySettings detects active territory state", () => {
+    expect(
+      isMeaningfulHighSocietySettings(
+        normalizeHighSocietySettings({ enabled: true, seatMemberIds: ["a", "b"] })
+      )
+    ).toBe(true);
+    expect(
+      isMeaningfulHighSocietySettings(
+        normalizeHighSocietySettings({ enabled: false, territoryCutoffAt: Date.now() })
+      )
+    ).toBe(true);
+    expect(isMeaningfulHighSocietySettings(normalizeHighSocietySettings({ enabled: false }))).toBe(
+      false
+    );
+  });
+
+  it("shouldBlockHighSocietyRegression blocks default patch over meaningful base", () => {
+    const base = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b", "c", "d"],
+      round: 2,
+      fieldCm: 1600,
+      startCmPerMember: 400,
+    });
+    expect(shouldBlockHighSocietyRegression(base, defaultHighSocietySettings())).toBe(true);
+    expect(
+      shouldBlockHighSocietyRegression(
+        base,
+        normalizeHighSocietySettings({ enabled: false, territoryCutoffAt: Date.now() })
+      )
+    ).toBe(false);
   });
 });

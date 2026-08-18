@@ -73,6 +73,7 @@ import {
   enrichAppStateWithDonationRosterBackup,
   saveDonationRosterBackup,
 } from "@/lib/donation-roster-backup";
+import { shouldBlockHighSocietyRegression } from "@/lib/high-society";
 
 const logger = createModuleLogger('API/State');
 
@@ -377,6 +378,15 @@ function mergePartialState(
   }
   if (!("sigMatch" in patch)) next.sigMatch = base.sigMatch;
   if (!("sigMatchSettings" in patch)) next.sigMatchSettings = base.sigMatchSettings;
+  if (!("highSocietySettings" in patch)) {
+    next.highSocietySettings = base.highSocietySettings;
+  } else if (
+    patch.highSocietySettings &&
+    shouldBlockHighSocietyRegression(base.highSocietySettings, patch.highSocietySettings)
+  ) {
+    next.highSocietySettings = base.highSocietySettings;
+    logger.warn("highSocietySettings default wipe blocked", { userId });
+  }
   if (!("mealBattle" in patch)) next.mealBattle = base.mealBattle;
   if (!("mealMatch" in patch)) next.mealMatch = base.mealMatch;
   if (!("mealMatchSettings" in patch)) next.mealMatchSettings = base.mealMatchSettings;

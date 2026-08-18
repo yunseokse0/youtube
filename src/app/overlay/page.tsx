@@ -1988,27 +1988,47 @@ function Timer({
   if (!elapsed) return null;
   /** 관리자 「기본」(빈 값) = 흰 글자·흰 배경(투명도) — color picker placeholder(#ffffff)와 일치 */
   const effectiveFontColor = (fontColor || "").trim() || "#ffffff";
-  const hasCustomOutlineColor = Boolean(outlineColor && outlineColor.trim());
-  const effectiveOutlineColor = hasCustomOutlineColor ? outlineColor : "rgba(6, 12, 24, 0.95)";
+  const effectiveOutlineColor = outlineColor && outlineColor.trim() ? outlineColor : "rgba(6, 12, 24, 0.95)";
   const effectiveOutlineWidth = Number.isFinite(outlineWidth) ? Math.max(0, Math.min(3, outlineWidth as number)) : 0.8;
   const opacity = Math.max(0, Math.min(100, bgOpacity ?? 40));
   const noBackground = isTimerBackgroundHidden(bgColor, opacity);
-  const hideBorder = isTimerBorderVisuallyHidden(bgColor, borderColor, opacity);
+  const hideBorder = noBackground || isTimerBorderVisuallyHidden(bgColor, borderColor, opacity);
   const backgroundColor = noBackground ? "transparent" : applyTimerBackgroundOpacity(bgColor, opacity);
   const resolvedBorderColor = hideBorder
     ? "transparent"
     : applyTimerBackgroundOpacity(borderColor || bgColor, opacity);
   const { padX, padY } = getTimerPillPaddingPx(fontSize);
   const fontFamilyCss = resolveTimerFontFamilyCss(fontFamily);
+  /** 배경 없음 = pill·테두리·글자 외곽선 모두 제거(숫자만) */
+  const showTextOutline = !noBackground;
+  const textOutlineStyle = showTextOutline
+    ? {
+        textShadow: `0 0 1px ${effectiveOutlineColor}, 0 1px 0 ${effectiveOutlineColor}, 0 -1px 0 ${effectiveOutlineColor}, 1px 0 0 ${effectiveOutlineColor}, -1px 0 0 ${effectiveOutlineColor}`,
+        WebkitTextStroke: `${effectiveOutlineWidth}px ${effectiveOutlineColor}`,
+        paintOrder: "stroke fill" as const,
+      }
+    : {
+        textShadow: "none",
+        WebkitTextStroke: "0 transparent",
+      };
+  const pillMinHeight = Math.round(fontSize * 1.1 + padY * 2);
   return (
     <div
-      className={`inline-flex min-w-[4.5ch] items-center justify-center rounded-full ${noBackground ? "" : "backdrop-blur-md"}`}
+      className={`inline-flex min-w-[4.5ch] items-center justify-center ${noBackground ? "" : "rounded-full backdrop-blur-md"}`}
       style={{
         boxSizing: "border-box",
         padding: `${padY}px ${padX}px`,
-        borderColor: resolvedBorderColor,
-        borderWidth: TIMER_PILL_BORDER_PX,
-        borderStyle: "solid",
+        ...(hideBorder
+          ? {
+              borderWidth: 0,
+              borderStyle: "none",
+              minHeight: pillMinHeight,
+            }
+          : {
+              borderColor: resolvedBorderColor,
+              borderWidth: TIMER_PILL_BORDER_PX,
+              borderStyle: "solid",
+            }),
         backgroundColor,
       }}
       suppressHydrationWarning
@@ -2020,9 +2040,7 @@ function Timer({
           fontSize,
           lineHeight: 1.1,
           color: effectiveFontColor,
-          textShadow: `0 0 1px ${effectiveOutlineColor}, 0 1px 0 ${effectiveOutlineColor}, 0 -1px 0 ${effectiveOutlineColor}, 1px 0 0 ${effectiveOutlineColor}, -1px 0 0 ${effectiveOutlineColor}`,
-          WebkitTextStroke: `${effectiveOutlineWidth}px ${effectiveOutlineColor}`,
-          paintOrder: "stroke fill",
+          ...textOutlineStyle,
         }}
       >
         {elapsed}
@@ -2509,7 +2527,7 @@ function OverlayInner() {
       const now = Date.now();
       if (timerStyleEmptySinceRef.current == null) timerStyleEmptySinceRef.current = now;
       if (now - timerStyleEmptySinceRef.current < 2800) {
-        return {
+        const merged = {
           ...lastStableTimerStyleRef.current,
           fontFamily: next.fontFamily,
           showHours: next.showHours,
@@ -2517,6 +2535,16 @@ function OverlayInner() {
           outlineWidth: next.outlineWidth,
           bgOpacity: next.bgOpacity,
         };
+        /** 배경 없음 — stale 색 복원으로 테두리·pill 이 되살아나지 않게 */
+        if (isTimerBackgroundHidden(next.bgColor, next.bgOpacity)) {
+          return {
+            ...merged,
+            bgColor: next.bgColor,
+            borderColor: next.borderColor,
+            outlineColor: next.outlineColor,
+          };
+        }
+        return merged;
       }
       lastStableTimerStyleRef.current = null;
       timerStyleEmptySinceRef.current = null;
