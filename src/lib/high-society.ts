@@ -812,6 +812,38 @@ export function mergeDonorRostersPreferFullest(
 }
 
 /**
+ * 상류사회 설정 저장 시 donors 를 서버에 권위적으로 올려야 하는 patch 인지.
+ * 영토 일시정지·OFF·재ON·좌석 등은 후원 rows 를 건드리지 않는다.
+ */
+export function shouldPersistDonorsForHighSocietySettingsPatch(opts: {
+  resetTerritory: boolean;
+  isFirstOn: boolean;
+}): boolean {
+  return Boolean(opts.resetTerritory || opts.isFirstOn);
+}
+
+/** 상류사회 ON/OFF 시 donationSyncMode — OFF 후에도 후원 합산·투네는 mealBattle 경로 유지 */
+export function resolveDonationSyncModeForHighSocietySettingsChange(opts: {
+  turningOn: boolean;
+  turningOff: boolean;
+  prevMode: AppState["donationSyncMode"] | undefined;
+}): NonNullable<AppState["donationSyncMode"]> {
+  if (opts.turningOn) return "highSociety";
+  if (opts.turningOff && opts.prevMode === "highSociety") return "mealBattle";
+  const m = opts.prevMode;
+  if (
+    m === "none" ||
+    m === "mealBattle" ||
+    m === "sigMatch" ||
+    m === "sigSales" ||
+    m === "highSociety"
+  ) {
+    return m;
+  }
+  return "mealBattle";
+}
+
+/**
  * 상류사회 설정 patch(OFF·일시정지·ON·영토 리셋) 직전 donors 확정.
  * React·ref·LS union 후, 최초 ON·영토 리셋 때만 hsTerritoryExcluded 표시.
  */

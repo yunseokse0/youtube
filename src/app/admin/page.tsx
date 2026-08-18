@@ -234,6 +234,8 @@ import {
   mergeHighSocietyDonationLinksOnSettingsChange,
   isHighSocietyReopen,
   resolveDonorsForHighSocietySettingsPatch,
+  shouldPersistDonorsForHighSocietySettingsPatch,
+  resolveDonationSyncModeForHighSocietySettingsChange,
   type HighSocietySettingsAdminPatch,
   resolveHighSocietySeatMembers,
   resolveHighSocietyStartCmPerMember,
@@ -1162,6 +1164,8 @@ export default function AdminPage() {
       includeDonationFields?: boolean;
       /** 판매완료 도장을 기본(빈 URL)으로 되돌릴 때만 */
       clearSigSoldOutStamp?: boolean;
+      /** 상류사회 OFF·일시정지 등 — API 에 HS 설정만 전송 */
+      highSocietySettingsOnly?: boolean;
     }
   ) => {
     const includeDonations =
@@ -7602,6 +7606,7 @@ export default function AdminPage() {
           ...settingsPatch,
         });
         const turningOn = !wasOn && nextSettings.enabled;
+        const turningOff = wasOn && !nextSettings.enabled;
         const isFirstOn = turningOn && !isHighSocietyReopen(prevSettings);
         nextSettings = mergeHighSocietyDonationLinksOnSettingsChange({
           prevSettings,
@@ -7610,23 +7615,32 @@ export default function AdminPage() {
           resetTerritory,
         });
         applied = nextSettings;
-        /** React donors 가 비어 있어도 LS·ref 실후원을 유지 — ON 직후 후원 0 초기화 회귀 방지 */
-        let fromLsDonors: Donor[] = [];
-        try {
-          fromLsDonors = normalizeDonorsArray(loadState(user?.id)?.donors);
-        } catch {}
-        const nextDonors = resolveDonorsForHighSocietySettingsPatch({
-          prevDonorsReact: prev.donors,
-          refDonors: stateRef.current?.donors,
-          lsDonors: fromLsDonors,
+        const needsDonorTerritoryMark = shouldPersistDonorsForHighSocietySettingsPatch({
           resetTerritory,
           isFirstOn,
         });
-        let nextDonationSyncMode = prev.donationSyncMode || "mealBattle";
-        if (turningOn) {
-          nextDonationSyncMode = "highSociety";
+        /** 영토 일시정지·OFF·재ON 등 — React donors 를 비우거나 authoritative 저장하지 않음 */
+        let nextDonors = prev.donors;
+        if (needsDonorTerritoryMark) {
+          let fromLsDonors: Donor[] = [];
+          try {
+            fromLsDonors = normalizeDonorsArray(loadState(user?.id)?.donors);
+          } catch {}
+          nextDonors = resolveDonorsForHighSocietySettingsPatch({
+            prevDonorsReact: prev.donors,
+            refDonors: stateRef.current?.donors,
+            lsDonors: fromLsDonors,
+            resetTerritory,
+            isFirstOn,
+          });
         }
-        const hasDonorsToPreserve = nextDonors.length > 0;
+        let nextDonationSyncMode = resolveDonationSyncModeForHighSocietySettingsChange({
+          turningOn,
+          turningOff,
+          prevMode: prev.donationSyncMode,
+        });
+        const hasDonorsToPreserve =
+          needsDonorTerritoryMark && normalizeDonorsArray(nextDonors).length > 0;
         if (hasDonorsToPreserve) {
           donationAuthoritativeSaveUntilRef.current = Math.max(
             donationAuthoritativeSaveUntilRef.current,
@@ -7635,7 +7649,7 @@ export default function AdminPage() {
         }
         let next: AppState = {
           ...prev,
-          donors: nextDonors,
+          ...(needsDonorTerritoryMark ? { donors: nextDonors } : {}),
           highSocietySettings: nextSettings,
           donationSyncMode: nextDonationSyncMode,
           updatedAt: Date.now(),
@@ -7648,7 +7662,7 @@ export default function AdminPage() {
           next,
           hasDonorsToPreserve
             ? { donorsAuthoritative: true }
-            : { omitDonationFields: true, omitHighSocietyFields: false }
+            : { omitDonationFields: true, highSocietySettingsOnly: true }
         );
         return next;
       });

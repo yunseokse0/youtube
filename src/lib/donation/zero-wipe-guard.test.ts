@@ -3,6 +3,7 @@ import { defaultState } from "@/lib/state";
 import { syncMemberTotalsFromDonors } from "./apply-donation-state";
 import {
   guardMemberTotalsAgainstAccidentalZeroWipe,
+  isHighSocietySettingsOnlyPatch,
   shouldRefuseMassEmptyAuthoritativeDonorWipe,
   wouldAccidentallyZeroRemainingMembers,
 } from "./zero-wipe-guard";
@@ -131,6 +132,32 @@ describe("shouldRefuseMassEmptyAuthoritativeDonorWipe", () => {
       shouldRefuseMassEmptyAuthoritativeDonorWipe({
         ...base,
         settlementReset: true,
+      })
+    ).toBe(false);
+  });
+});
+
+describe("isHighSocietySettingsOnlyPatch", () => {
+  it("detects territory pause style patch (HS settings, no donors/members authority)", () => {
+    expect(
+      isHighSocietySettingsOnlyPatch({
+        highSocietySettingsInPatch: true,
+        donorsInPatch: false,
+        membersAuthoritative: false,
+        settlementReset: false,
+        donationInitReset: false,
+      })
+    ).toBe(true);
+  });
+
+  it("is false when donors are in patch", () => {
+    expect(
+      isHighSocietySettingsOnlyPatch({
+        highSocietySettingsInPatch: true,
+        donorsInPatch: true,
+        membersAuthoritative: false,
+        settlementReset: false,
+        donationInitReset: false,
       })
     ).toBe(false);
   });

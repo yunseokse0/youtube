@@ -1788,6 +1788,11 @@ export type SaveStateAsyncOptions = {
   omitHighSocietyFields?: boolean;
   /** 판매완료 도장을 기본 도장으로 되돌릴 때만 true — 빈 URL 우연 덮어쓰기 방지 */
   clearSigSoldOutStamp?: boolean;
+  /**
+   * 상류사회 OFF·일시정지·좌석 등 — API 에 highSocietySettings(+updatedAt) 만 보내
+   * members/donors 가 0원으로 서버 후원·엑셀표를 덮지 않게 함.
+   */
+  highSocietySettingsOnly?: boolean;
 };
 
 export type SaveStateAsyncResult = {
@@ -2249,6 +2254,19 @@ function appStatePayloadForApi(
     ...(options?.membersAuthoritative ? { membersAuthoritative: true as const } : {}),
   };
   let payload = omitPlaceholderMembersFromApiPayload({ ...base, ...flags });
+  /** 상류사회 설정-only — 후원·멤버 금액 필드를 API 에 실지 않음 (OFF·일시정지 회귀 방지) */
+  if (
+    options?.highSocietySettingsOnly &&
+    !options?.settlementReset &&
+    !options?.donorsAuthoritative &&
+    !options?.membersAuthoritative
+  ) {
+    return {
+      updatedAt: next.updatedAt,
+      highSocietySettings: next.highSocietySettings,
+      ...(next.donationSyncMode ? { donationSyncMode: next.donationSyncMode } : {}),
+    };
+  }
   /** 시그/테마/자동 저장 — 후원 금액은 API에서 제거. 실멤버명은 OBS 반영을 위해 유지 */
   if (options?.omitDonationFields && !options?.settlementReset && !options?.donorsAuthoritative) {
     const {

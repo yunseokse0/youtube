@@ -42,7 +42,11 @@ import {
   repairMemberTotalsForDonorRoster,
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
-import { guardMemberTotalsAgainstAccidentalZeroWipe, shouldRefuseMassEmptyAuthoritativeDonorWipe } from "@/lib/donation/zero-wipe-guard";
+import {
+  guardMemberTotalsAgainstAccidentalZeroWipe,
+  isHighSocietySettingsOnlyPatch,
+  shouldRefuseMassEmptyAuthoritativeDonorWipe,
+} from "@/lib/donation/zero-wipe-guard";
 import { isGroupSplitDonorListMutation } from "@/lib/donation/group-split-donation";
 import {
   mergeManualMemberFieldsFromPatch,
@@ -995,20 +999,36 @@ export async function POST(req: Request) {
       userId
     );
     const dedupedDonors = donorsInPatch ? dedupeDonorRows(safeMergedDonors) : normalizeDonorsArray(baseState.donors);
+    const highSocietySettingsOnlyPatch = isHighSocietySettingsOnlyPatch({
+      highSocietySettingsInPatch: Boolean(highSocietySettingsInPatch),
+      donorsInPatch,
+      membersAuthoritative,
+      settlementReset,
+      donationInitReset,
+    });
     /**
      * 글자색·테마 등 시각 PATCH(members/donors 미포함)에서는
      * syncMemberTotalsFromDonors 를 돌리지 않는다.
      * 서버 donors 가 비어 있을 때 members 금액을 0으로 재계산해 버리는 회귀를 막는다.
      * 멤버만 보낸 경우에도 donors 가 있을 때만 sync — 없으면 merge 가 보존한 금액 유지.
+     * 상류사회 영토 일시정지 등 설정-only PATCH 도 동일(0원 members 동봉 시 엑셀 0화 방지).
      */
-    let draft: AppState =
-      donorsInPatch ||
-      ("members" in bodyForMerge && normalizeDonorsArray(dedupedDonors).length > 0)
-        ? guardMemberTotalsAgainstAccidentalZeroWipe(
-            syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors }),
-            baseState
-          )
-        : { ...merged, donors: dedupedDonors };
+    const shouldSyncMembersFromDonors =
+      !highSocietySettingsOnlyPatch &&
+      (donorsInPatch ||
+        ("members" in bodyForMerge && normalizeDonorsArray(dedupedDonors).length > 0));
+    let draft: AppState = shouldSyncMembersFromDonors
+      ? guardMemberTotalsAgainstAccidentalZeroWipe(
+          syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors }),
+          baseState
+        )
+      : { ...merged, donors: dedupedDonors };
+    if (highSocietySettingsOnlyPatch && Array.isArray(merged.members)) {
+      draft = {
+        ...draft,
+        members: mergeMemberRosterPreservingAmounts(baseState.members || [], merged.members),
+      };
+    }
     /**
      * donorsAuthoritative + donors 있음인데 멤버 합계가 donors 와 어긋나면 로스터 재동기화.
      * 멤버 추가·삭제(authoritative / id 집합 변경)는 옛 donors 매칭으로 로스터를 되돌리지 않음.

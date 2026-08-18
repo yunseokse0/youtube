@@ -23,6 +23,8 @@ import {
   markDonorsHsTerritoryExcluded,
   mergeDonorRostersPreferFullest,
   resolveDonorsForHighSocietySettingsPatch,
+  shouldPersistDonorsForHighSocietySettingsPatch,
+  resolveDonationSyncModeForHighSocietySettingsChange,
   isHighSocietyReopen,
   isHighSocietyDonationIngestPaused,
   shouldDonorCountForHighSocietyTerritory,
@@ -933,6 +935,42 @@ describe("high-society territory (aux)", () => {
       isFirstOn: true,
     });
     expect(firstOn[0]!.hsTerritoryExcluded).toBe(true);
+  });
+
+  it("shouldPersistDonorsForHighSocietySettingsPatch is true only for first ON or resetTerritory", () => {
+    expect(
+      shouldPersistDonorsForHighSocietySettingsPatch({ resetTerritory: false, isFirstOn: false })
+    ).toBe(false);
+    expect(
+      shouldPersistDonorsForHighSocietySettingsPatch({ resetTerritory: true, isFirstOn: false })
+    ).toBe(true);
+    expect(
+      shouldPersistDonorsForHighSocietySettingsPatch({ resetTerritory: false, isFirstOn: true })
+    ).toBe(true);
+  });
+
+  it("resolveDonationSyncModeForHighSocietySettingsChange restores mealBattle on OFF", () => {
+    expect(
+      resolveDonationSyncModeForHighSocietySettingsChange({
+        turningOn: false,
+        turningOff: true,
+        prevMode: "highSociety",
+      })
+    ).toBe("mealBattle");
+    expect(
+      resolveDonationSyncModeForHighSocietySettingsChange({
+        turningOn: true,
+        turningOff: false,
+        prevMode: "mealBattle",
+      })
+    ).toBe("highSociety");
+    expect(
+      resolveDonationSyncModeForHighSocietySettingsChange({
+        turningOn: false,
+        turningOff: false,
+        prevMode: "sigMatch",
+      })
+    ).toBe("sigMatch");
   });
 
   it("resetTerritory bumps round and startedAt only (donors unchanged in field when no new donations)", () => {

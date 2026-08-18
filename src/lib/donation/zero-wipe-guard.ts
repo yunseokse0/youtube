@@ -25,6 +25,26 @@ function remainingMemberCombinedTotal(
 }
 
 /**
+ * 상류사회 설정만 PATCH(일시정지·좌석·FX 등) — donors/members 권위 저장이 아님.
+ * 이 경우 서버가 members 금액을 donors 기준으로 재계산하면 안 된다.
+ */
+export function isHighSocietySettingsOnlyPatch(opts: {
+  highSocietySettingsInPatch: boolean;
+  donorsInPatch: boolean;
+  membersAuthoritative: boolean;
+  settlementReset: boolean;
+  donationInitReset: boolean;
+}): boolean {
+  return (
+    opts.highSocietySettingsInPatch &&
+    !opts.donorsInPatch &&
+    !opts.membersAuthoritative &&
+    !opts.settlementReset &&
+    !opts.donationInitReset
+  );
+}
+
+/**
  * 다건 후원을 빈 authoritative 로 덮는 저장 거부 여부.
  * 상류사회 ON/OFF·일시정지 등 설정 patch 포함 시 단건(1→0)도 차단.
  */
