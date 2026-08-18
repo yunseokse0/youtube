@@ -58,6 +58,8 @@ import {
   mergeOverlayPresetsForOverlayView,
   resolveTimerOverlayStyle,
   timerOverlayStyleHasCustomColors,
+  applyTimerBackgroundOpacity,
+  isTimerBackgroundHidden,
   type OverlayPresetLike,
   type ResolvedTimerOverlayStyle,
 } from "@/lib/overlay-params";
@@ -363,6 +365,11 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
       if (Number.isFinite(membersRosterAt) && membersRosterAt > 0) {
         membersRosterSyncUntilRef.current = Date.now() + 45_000;
         void syncOnceRef.current({ forceFull: true, membersRosterSync: true });
+        return;
+      }
+      const timerStylesAt = Number(incoming.timerDisplayStylesUpdatedAt);
+      if (Number.isFinite(timerStylesAt) && timerStylesAt > 0) {
+        void syncOnceRef.current({ forceFull: true });
         return;
       }
       const dr = Number(incoming.donorRankingsUpdatedAt);
@@ -1981,23 +1988,24 @@ function Timer({
   const hasCustomOutlineColor = Boolean(outlineColor && outlineColor.trim());
   const effectiveOutlineColor = hasCustomOutlineColor ? outlineColor : "rgba(6, 12, 24, 0.95)";
   const effectiveOutlineWidth = Number.isFinite(outlineWidth) ? Math.max(0, Math.min(3, outlineWidth as number)) : 0.8;
-  const bgLower = String(bgColor || "").trim().toLowerCase();
-  const borderLower = String(borderColor || "").trim().toLowerCase();
   const opacity = Math.max(0, Math.min(100, bgOpacity ?? 40));
-  const noBackground =
-    opacity <= 0 || bgLower === "transparent" || bgLower === "none" || bgLower === "rgba(0,0,0,0)";
-  const noBorder = noBackground || borderLower === "transparent" || borderLower === "none";
+  const noBackground = isTimerBackgroundHidden(bgColor, opacity);
+  const borderLower = String(borderColor || "").trim().toLowerCase();
+  const noBorder =
+    noBackground || borderLower === "transparent" || borderLower === "none" || borderLower === "rgba(0,0,0,0)";
+  const backgroundColor = noBackground ? "transparent" : applyTimerBackgroundOpacity(bgColor, opacity);
+  const resolvedBorderColor = noBorder
+    ? "transparent"
+    : applyTimerBackgroundOpacity(borderColor || bgColor, opacity);
   const fontFamilyCss = resolveTimerFontFamilyCss(fontFamily);
   return (
     <div
       className={`inline-flex min-w-[4.5ch] items-center justify-center rounded-full px-4 py-1.5 ${noBackground ? "" : "backdrop-blur-md"}`}
       style={{
-        borderColor: noBorder ? "transparent" : borderColor || "rgba(255,255,255,0.2)",
+        borderColor: resolvedBorderColor,
         borderWidth: noBorder ? 0 : 1,
         borderStyle: noBorder ? "none" : "solid",
-        backgroundColor: noBackground
-          ? "transparent"
-          : bgColor || `rgba(255,255,255,${opacity / 100})`,
+        backgroundColor,
       }}
       suppressHydrationWarning
     >
@@ -2849,9 +2857,14 @@ function OverlayInner() {
       : cls;
   /** GIF 모드에서도 관리자 tableBgOpacity(0~100)를 그대로 반영 */
   const tableTintAlpha = Math.max(0, Math.min(1, tableBgOpacity / 100));
-  /** 100% + GIF 없음 → 완전 불투명(rgb). 그 외는 슬라이더 값 그대로(예전 OBS 0.94 바닥값 제거) */
+  /** 100% + GIF 없음 → 완전 불투명(rgb). GIF 있으면 선명도 슬라이더로 시트를 투명하게 해 뒤 애니메이션이 보이게 */
   const tableSheetFullyOpaque = tableBgOpacity >= 100 && !showTableBgGif;
-  const effectiveTableTintAlpha = tableSheetFullyOpaque ? 1 : tableTintAlpha;
+  const tableGifClarity = Math.max(0, Math.min(100, tableBgGifOpacity)) / 100;
+  const effectiveTableTintAlpha = showTableBgGif
+    ? Math.max(0.04, Math.min(tableTintAlpha, 1 - tableGifClarity * 0.95))
+    : tableSheetFullyOpaque
+      ? 1
+      : tableTintAlpha;
   /** 본문 시트 배경 — 100%일 때 rgb()로 OBS/Prism 합성 투명 이슈 완화 */
   const tableBodySheetBgCss = tableSheetFullyOpaque
     ? `rgb(${tableSheetRgb.join(", ")})`

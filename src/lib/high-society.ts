@@ -174,11 +174,11 @@ export function parseHighSocietyTerritoryUpdateMode(
 
 export function defaultHighSocietyFxSettings(): HighSocietyFxSettings {
   return {
-    frontier: true,
-    growFlash: true,
-    contestedEdge: true,
-    arrowBlade: true,
-    strongOutline: true,
+    frontier: false,
+    growFlash: false,
+    contestedEdge: false,
+    arrowBlade: false,
+    strongOutline: false,
   };
 }
 
@@ -187,11 +187,36 @@ export function normalizeHighSocietyFxSettings(input: unknown): HighSocietyFxSet
   if (!input || typeof input !== "object") return base;
   const v = input as Partial<HighSocietyFxSettings>;
   return {
-    frontier: v.frontier !== false,
-    growFlash: v.growFlash !== false,
-    contestedEdge: v.contestedEdge !== false,
-    arrowBlade: v.arrowBlade !== false,
-    strongOutline: v.strongOutline !== false,
+    frontier: v.frontier === true,
+    growFlash: v.growFlash === true,
+    contestedEdge: v.contestedEdge === true,
+    arrowBlade: v.arrowBlade === true,
+    strongOutline: v.strongOutline === true,
+  };
+}
+
+/** 관리자 iframe 미리보기 — 연출 토글을 URL로 즉시 반영 (5자리 0/1) */
+export function highSocietyFxToHsFxParam(fx: HighSocietyFxSettings | null | undefined): string {
+  const n = normalizeHighSocietyFxSettings(fx);
+  return [
+    n.frontier ? "1" : "0",
+    n.growFlash ? "1" : "0",
+    n.contestedEdge ? "1" : "0",
+    n.arrowBlade ? "1" : "0",
+    n.strongOutline ? "1" : "0",
+  ].join("");
+}
+
+export function parseHighSocietyFxFromHsFxParam(raw: string | null | undefined): HighSocietyFxSettings | null {
+  const s = String(raw || "").trim();
+  if (s.length < 5) return null;
+  const bits = s.slice(0, 5).split("");
+  return {
+    frontier: bits[0] === "1",
+    growFlash: bits[1] === "1",
+    contestedEdge: bits[2] === "1",
+    arrowBlade: bits[3] === "1",
+    strongOutline: bits[4] === "1",
   };
 }
 
@@ -246,6 +271,7 @@ export function defaultHighSocietySettings(): HighSocietySettings {
     barStyle: "flat",
     round: 1,
     fieldCm: HIGH_SOCIETY_DEFAULT_FIELD_CM,
+    startCmPerMember: Math.round(HIGH_SOCIETY_DEFAULT_FIELD_CM / 4),
     territoryUpdateMode: "realtime",
     fx: defaultHighSocietyFxSettings(),
   };
@@ -278,7 +304,15 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
   });
   const bar = v.barStyle === "arrow" ? "arrow" : "flat";
   const round = Math.max(1, Math.min(99, Math.floor(Number(v.round) || 1)));
-  const fieldCm = Math.max(100, Math.min(20000, Math.floor(Number(v.fieldCm) || HIGH_SOCIETY_DEFAULT_FIELD_CM)));
+  const fieldCmRaw = Math.max(100, Math.min(20000, Math.floor(Number(v.fieldCm) || HIGH_SOCIETY_DEFAULT_FIELD_CM)));
+  const seatCountForStart = Math.max(2, seatMemberIds.length || 4);
+  const startCmRaw = Number(v.startCmPerMember);
+  const startCmPerMember =
+    Number.isFinite(startCmRaw) && startCmRaw > 0
+      ? Math.max(1, Math.min(5000, Math.floor(startCmRaw)))
+      : Math.max(1, Math.round(fieldCmRaw / seatCountForStart));
+  /** startCmPerMember 정본 — fieldCm 과 어긋나면 맞춤(구 데이터·OFF 후 300cm 회귀 방지) */
+  const fieldCm = Math.max(100, Math.min(20000, fieldCmFromStartPerMember(startCmPerMember, seatCountForStart)));
   const territoryUpdateMode = parseHighSocietyTerritoryUpdateMode(v.territoryUpdateMode);
   const fx = normalizeHighSocietyFxSettings(v.fx);
   const donationLinksRaw = v.donationLinks;
@@ -295,6 +329,7 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     barStyle: bar,
     round,
     fieldCm,
+    startCmPerMember,
     territoryUpdateMode,
     fx,
     donationLinks: donationLinks || {},
@@ -699,14 +734,15 @@ export function buildHighSocietyFieldFromAppState(
   const seatPlayers = resolveHighSocietySeatMembers(state.members || [], settings.seatMemberIds).map(
     (p) => ({ ...p, donationWon: 0 })
   );
+  const effectiveFieldCm = resolveHighSocietyEffectiveFieldCm(settings, seatPlayers.length);
   const players = aggregateSeatPushesFromDonors({
     seatPlayers,
     donors: state.donors || [],
     settings,
   });
   return {
-    ...resolveHighSocietyField({ players, fieldCm: settings.fieldCm }),
-    settings,
+    ...resolveHighSocietyField({ players, fieldCm: effectiveFieldCm }),
+    settings: { ...settings, fieldCm: effectiveFieldCm },
   };
 }
 
@@ -850,6 +886,32 @@ export function startCmFromField(fieldCm: number, seatCount: number): number {
   const n = Math.max(2, Math.min(HIGH_SOCIETY_MAX_SEATS, Math.floor(seatCount) || 4));
   const field = Math.max(100, Math.floor(Number(fieldCm) || HIGH_SOCIETY_DEFAULT_FIELD_CM));
   return Math.max(1, Math.round(field / n));
+}
+
+/** 저장된 1인 시작 cm — startCmPerMember 우선, 없으면 fieldCm/N */
+export function resolveHighSocietyStartCmPerMember(
+  settings: Pick<HighSocietySettings, "fieldCm" | "startCmPerMember" | "seatMemberIds">,
+  seatCount: number
+): number {
+  const saved = Number(settings.startCmPerMember);
+  if (Number.isFinite(saved) && saved > 0) {
+    return Math.max(1, Math.min(5000, Math.floor(saved)));
+  }
+  const n = Math.max(
+    2,
+    seatCount || settings.seatMemberIds?.length || 4
+  );
+  return startCmFromField(settings.fieldCm ?? HIGH_SOCIETY_DEFAULT_FIELD_CM, n);
+}
+
+/** 좌석 수·저장 startCm 기준 전장 총길이 — 미리보기·OFF 상태 일관 */
+export function resolveHighSocietyEffectiveFieldCm(
+  settings: Pick<HighSocietySettings, "fieldCm" | "startCmPerMember" | "seatMemberIds">,
+  seatCount: number
+): number {
+  const n = Math.max(2, seatCount || settings.seatMemberIds?.length || 4);
+  const start = resolveHighSocietyStartCmPerMember(settings, n);
+  return fieldCmFromStartPerMember(start, n);
 }
 
 /** 라운드 번호 (?round=1) — 1..99 */

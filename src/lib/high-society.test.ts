@@ -15,12 +15,18 @@ import {
   parseHighSocietySplit,
   parseHighSocietyTerritoryUpdateMode,
   normalizeHighSocietySettings,
+  normalizeHighSocietyFxSettings,
+  defaultHighSocietyFxSettings,
+  highSocietyFxToHsFxParam,
+  parseHighSocietyFxFromHsFxParam,
   mergeHighSocietyDonationLinksOnSettingsChange,
   markDonorsHsTerritoryExcluded,
   fieldCmFromStartPerMember,
   startCmFromField,
   parseHighSocietyFieldCm,
   resolveHighSocietyField,
+  resolveHighSocietyStartCmPerMember,
+  resolveHighSocietyEffectiveFieldCm,
   buildHighSocietyFieldFromAppState,
 } from "./high-society";
 
@@ -638,5 +644,99 @@ describe("detectHighSocietyGrowFlashSeatIds", () => {
       {}
     );
     expect(grownIds).toEqual([]);
+  });
+});
+
+describe("high-society fx settings", () => {
+  it("defaults all production effects to OFF", () => {
+    const fx = defaultHighSocietyFxSettings();
+    expect(fx).toEqual({
+      frontier: false,
+      growFlash: false,
+      contestedEdge: false,
+      arrowBlade: false,
+      strongOutline: false,
+    });
+    expect(normalizeHighSocietyFxSettings(undefined)).toEqual(fx);
+    expect(normalizeHighSocietyFxSettings({})).toEqual(fx);
+    expect(normalizeHighSocietySettings(null).fx).toEqual(fx);
+  });
+
+  it("only enables effects explicitly set to true", () => {
+    expect(
+      normalizeHighSocietyFxSettings({
+        frontier: true,
+        growFlash: false,
+      })
+    ).toEqual({
+      frontier: true,
+      growFlash: false,
+      contestedEdge: false,
+      arrowBlade: false,
+      strongOutline: false,
+    });
+  });
+
+  it("round-trips hsFx preview param", () => {
+    const param = highSocietyFxToHsFxParam({
+      frontier: true,
+      growFlash: false,
+      contestedEdge: true,
+      arrowBlade: false,
+      strongOutline: true,
+    });
+    expect(param).toBe("10101");
+    expect(parseHighSocietyFxFromHsFxParam(param)).toEqual({
+      frontier: true,
+      growFlash: false,
+      contestedEdge: true,
+      arrowBlade: false,
+      strongOutline: true,
+    });
+  });
+});
+
+describe("high-society startCmPerMember persistence", () => {
+  it("keeps saved startCmPerMember when OFF with no seats", () => {
+    const settings = normalizeHighSocietySettings({
+      enabled: false,
+      seatMemberIds: [],
+      fieldCm: 1200,
+      startCmPerMember: 400,
+    });
+    expect(settings.startCmPerMember).toBe(400);
+    expect(resolveHighSocietyStartCmPerMember(settings, 4)).toBe(400);
+    expect(resolveHighSocietyEffectiveFieldCm(settings, 4)).toBe(1600);
+  });
+
+  it("syncs fieldCm from startCmPerMember on normalize", () => {
+    const settings = normalizeHighSocietySettings({
+      fieldCm: 1200,
+      startCmPerMember: 500,
+      seatMemberIds: ["a", "b", "c"],
+    });
+    expect(settings.startCmPerMember).toBe(500);
+    expect(settings.fieldCm).toBe(1500);
+  });
+
+  it("buildHighSocietyFieldFromAppState preserves effective field when OFF", () => {
+    const settings = normalizeHighSocietySettings({
+      enabled: false,
+      seatMemberIds: [],
+      startCmPerMember: 450,
+      fieldCm: 1200,
+    });
+    const state = {
+      members: [
+        { id: "a", name: "A", account: 0, toon: 0, operating: false },
+        { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      ],
+      donors: [],
+      highSocietySettings: settings,
+    };
+    const field = buildHighSocietyFieldFromAppState(state);
+    expect(field.settings.startCmPerMember).toBe(450);
+    expect(field.settings.fieldCm).toBe(900);
+    expect(field.fieldCm).toBe(900);
   });
 });

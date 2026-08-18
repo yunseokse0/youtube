@@ -48,4 +48,12 @@ describe("normalizeDonationListsOverlayConfig frame fields", () => {
     expect(cfg.frameInset).toBe(24);
     expect(cfg.isFrameEnabled).toBe(true);
   });
+
+  it("enables bg by default when url is saved without isBgEnabled", () => {
+    const cfg = normalizeDonationListsOverlayConfig({
+      bgGifUrl: "https://media2.giphy.com/media/l0MYC0LajbaPoEADu/giphy.gif",
+    });
+    expect(cfg.isBgEnabled).toBe(true);
+    expect(cfg.bgGifUrl).toContain("giphy");
+  });
 });

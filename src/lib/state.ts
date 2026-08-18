@@ -994,7 +994,7 @@ export function normalizeDonationListsOverlayConfig(input: unknown): OverlayConf
   return {
     bgGifUrl,
     bgOpacity: op,
-    isBgEnabled: Boolean(bgGifUrl && v.isBgEnabled),
+    isBgEnabled: bgGifUrl ? v.isBgEnabled !== false : false,
     bodyImageUrl,
     bodyImageOpacity: bodyOp,
     isBodyImageEnabled: Boolean(bodyImageUrl && v.isBodyImageEnabled),
@@ -1152,6 +1152,14 @@ export function defaultState(): AppState {
       barStyle: "flat",
       round: 1,
       fieldCm: 1200,
+      startCmPerMember: 300,
+      fx: {
+        frontier: false,
+        growFlash: false,
+        contestedEdge: false,
+        arrowBlade: false,
+        strongOutline: false,
+      },
     },
     sigRolling: normalizeSigRolling(null),
     sigRollingMeta: {},
@@ -2073,14 +2081,18 @@ async function runServerSaveQueue(): Promise<void> {
             ? revisionForStatePick(pl as AppState, STATE_PICK_OBS_TEXT)
             : 0;
         let membersRosterUpdated = false;
+        let timerDisplayStylesUpdated = false;
         try {
           const body = JSON.parse(job.apiBodyJson) as {
             membersAuthoritative?: boolean;
             members?: unknown;
+            timerDisplayStyles?: unknown;
           };
           membersRosterUpdated =
             body.membersAuthoritative === true ||
             (Array.isArray(body.members) && body.members.length > 0);
+          timerDisplayStylesUpdated =
+            body.timerDisplayStyles != null && typeof body.timerDisplayStyles === "object";
         } catch {
           /* ignore */
         }
@@ -2096,6 +2108,8 @@ async function runServerSaveQueue(): Promise<void> {
           ...(obsTextRevision > 0 ? { obsTextRevision } : {}),
           /** OBS·오버레이가 멤버 추가/삭제를 디바운스 GET이 아니라 즉시 forceFull 하도록 */
           ...(membersRosterUpdated ? { membersRosterUpdatedAt: updatedAt } : {}),
+          /** 타이머 색·투명도 슬라이더 — OBS 즉시 반영 */
+          ...(timerDisplayStylesUpdated ? { timerDisplayStylesUpdatedAt: updatedAt } : {}),
         }).catch(() => {});
       } catch {
         /* ignore */
@@ -3666,7 +3680,7 @@ export function totalCombined(state: AppState): number {
   return totalAccount(state) + totalToon(state);
 }
 
-/** 애교·댄스 등 기본 프리셋(+한방)만 남은 축소 목록인지 */
+/** 기본(한방 시그만) 또는 구 데모 프리셋(+한방)만 남은 축소 목록인지 */
 export function isShrunkToDefaultSigInventory(inv: SigItem[] | null | undefined): boolean {
   if (!Array.isArray(inv) || inv.length === 0) return false;
   if (inv.length > DEFAULT_SIG_INVENTORY.length + 2) return false;

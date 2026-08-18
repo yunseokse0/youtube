@@ -55,6 +55,21 @@ export function mergeGeneralTimerPreferEffective(
   const effA = getEffectiveRemainingTime(a, now);
   const effB = getEffectiveRemainingTime(b, now);
 
+  /** 로컬 일시정지(남은 시간 있음) — stale 원격 0 리셋으로 덮지 않음 */
+  if (effB <= 0 && !b.isActive && effA > 0 && !a.isActive) {
+    return a;
+  }
+
+  /** 명시적 일시정지(patch) — 실행 중이더라도 incoming 정지+남은시간을 우선 */
+  if (
+    !b.isActive &&
+    effB > 0 &&
+    (b.lastUpdated || 0) > 0 &&
+    (b.lastUpdated || 0) >= (a.lastUpdated || 0)
+  ) {
+    return b;
+  }
+
   /** 관리자 정지 — lastUpdated가 실값이고 base보다 엄격히 최신이며, 방금(15s) 이내 */
   if (
     effB <= 0 &&
@@ -69,7 +84,7 @@ export function mergeGeneralTimerPreferEffective(
   }
 
   /** 진행 중인 타이머는 stale 원격 {0,false}·낮은 remaining 으로 덮지 않음 (원본 앵커 유지) */
-  if (effB <= 0 && effA > 0) {
+  if (effB <= 0 && effA > 0 && a.isActive) {
     return a;
   }
 

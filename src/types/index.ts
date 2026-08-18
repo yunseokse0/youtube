@@ -449,13 +449,15 @@ export type HighSocietySettings = {
   round?: number;
   /** 전장 총 가로(cm) — 멤버 수와 무관하게 고정 */
   fieldCm?: number;
+  /** 1인 시작 cm — OFF·재시작 후에도 UI·미리보기에 유지 */
+  startCmPerMember?: number;
   /**
    * 영토 게이지 갱신 시점
    * - realtime: 계좌·투네 합산이 들어올 때마다 즉시 반영
    * - onRoundEnd: matchTimer 라운드가 끝날 때까지 동결, 종료 후 반영
    */
   territoryUpdateMode?: "realtime" | "onRoundEnd";
-  /** 땅따먹기 연출 ON/OFF (기본 전부) */
+  /** 땅따먹기 연출 ON/OFF (기본 OFF — 명시 true 일 때만 켜짐) */
   fx?: HighSocietyFxSettings;
   /** 좌석 멤버별 후원 연동(ON 시 startedAt 이후만 영토 집계) */
   donationLinks?: Record<string, { active: boolean; startedAt?: number }>;

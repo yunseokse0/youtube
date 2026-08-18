@@ -34,7 +34,7 @@ export function isDedicatedOneShotSigImageUrl(url: string | undefined | null): b
   return false;
 }
 
-/** 방송에서 자주 쓰는 시그 기본 목록(애교·댄스·식사권 외 프리셋) */
+/** 방송 기본 시그 프리셋 이름(구 데모 목록 — hasExpandedSigInventory 레거시 판별용) */
 export const BROADCAST_SIG_PRESET_NAMES = [
   "애교",
   "댄스",
@@ -46,16 +46,22 @@ export const BROADCAST_SIG_PRESET_NAMES = [
   "게임",
 ] as const;
 
-export const DEFAULT_SIG_INVENTORY: SigItem[] = [
-  { id: "sig_aegyo", name: "애교", price: 77000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "sig_dance", name: "댄스", price: 100000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "sig_meal", name: "식사권", price: 333000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "sig_voice", name: "보이스", price: 50000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "sig_song", name: "노래", price: 120000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
-  { id: "sig_talk", name: "토크", price: 55000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
-  { id: "sig_heart", name: "하트", price: 30000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
-  { id: "sig_game", name: "게임", price: 88000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
-];
+/** 신규·초기화 시 기본 시그 — 한방 시그 1개만 */
+export function createDefaultOneShotSigItem(): SigItem {
+  return {
+    id: ONE_SHOT_SIG_ID,
+    name: "한방 시그",
+    price: 0,
+    imageUrl: DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
+    memberId: "",
+    maxCount: 1,
+    soldCount: 0,
+    isRolling: false,
+    isActive: true,
+  };
+}
+
+export const DEFAULT_SIG_INVENTORY: SigItem[] = [createDefaultOneShotSigItem()];
 
 function decodePercentEncodedText(raw: unknown): string {
   let out = String(raw ?? "").trim();

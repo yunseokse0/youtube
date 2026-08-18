@@ -151,7 +151,7 @@ function applyDonationGoalPresetNormalization(state: AppState): AppState {
   return { ...state, overlayPresets: presets as AppState["overlayPresets"] };
 }
 
-/** 서버 장애·defaultState 저장 시 애교·댄스 등 8개 프리셋만으로 전체 목록이 지워지는 사고 방지 */
+/** 서버 장애·defaultState 저장 시 기본(한방 시그만) 목록으로 커스텀 시그 전체가 지워지는 사고 방지 */
 function looksLikeAccidentalDefaultSigInventory(
   patch: SigItem[],
   base: SigItem[] | null | undefined
@@ -384,6 +384,14 @@ function mergePartialState(
     next.generalTimer = mergeGeneralTimerPreferEffective(base.generalTimer, patch.generalTimer as AppState["generalTimer"]);
   } else if (!("generalTimer" in patch)) {
     next.generalTimer = base.generalTimer;
+  }
+  if ("matchTimer" in patch && patch.matchTimer != null) {
+    next.matchTimer = mergeGeneralTimerPreferEffective(
+      base.matchTimer ?? base.generalTimer,
+      patch.matchTimer as AppState["matchTimer"]
+    );
+  } else if (!("matchTimer" in patch)) {
+    next.matchTimer = base.matchTimer;
   }
   if (!("donorRankingsOverlayConfig" in patch)) next.donorRankingsOverlayConfig = base.donorRankingsOverlayConfig;
   if (!("donorRankingsFullOverlayConfig" in patch))

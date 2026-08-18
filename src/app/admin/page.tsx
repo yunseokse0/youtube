@@ -226,11 +226,14 @@ import { applyDonationDummySeed } from "@/lib/dev/seed-donation-dummy";
 import {
   formatCm,
   normalizeHighSocietyFxSettings,
+  highSocietyFxToHsFxParam,
   normalizeHighSocietySettings,
   mergeHighSocietyDonationLinksOnSettingsChange,
   markDonorsHsTerritoryExcluded,
   type HighSocietySettingsAdminPatch,
   resolveHighSocietySeatMembers,
+  resolveHighSocietyStartCmPerMember,
+  resolveHighSocietyEffectiveFieldCm,
   resolveSystemMiddlePushDir,
   seatRoleForMemberId,
   fieldCmFromStartPerMember,
@@ -991,6 +994,11 @@ export default function AdminPage() {
   const [pullDistance, setPullDistance] = useState(0);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const touchStartYRef = useRef<number | null>(null);
+  const timerStyleSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingTimerStyleSaveRef = useRef<{
+    generalTimer: AppState["generalTimer"];
+    timerDisplayStyles: AppState["timerDisplayStyles"];
+  } | null>(null);
   const actionConfirmRef = useRef<null | (() => void)>(null);
   const resetInProgressRef = useRef(false);
   /** 정산 리셋 직후 GET/SSE가 구 후원·금액을 되살리지 않게 */
@@ -4761,8 +4769,7 @@ export default function AdminPage() {
 
   const downloadSigExcelTemplate = () => {
     const rows = [
-      { name: "애교", price: 77000, maxCount: 1, memberName: "", imageUrl: SIG_DUMMY_IMAGE, isRolling: "Y" },
-      { name: "댄스", price: 100000, maxCount: 1, memberName: "", imageUrl: SIG_DUMMY_IMAGE, isRolling: "Y" },
+      { name: "시그1", price: 50000, maxCount: 1, memberName: "", imageUrl: SIG_DUMMY_IMAGE, isRolling: "Y" },
     ];
     const sheet = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -4838,7 +4845,7 @@ export default function AdminPage() {
   const resetSigInventoryToDefaults = () => {
     if (
       !confirm(
-        "시그 판매 목록을 기본(애교·댄스·식사권 등 프리셋)으로 되돌리고, 판매 제외·멤버 프리셋·회전판·롤링 전환 설정도 초기화합니다. 계속할까요?"
+        "시그 판매 목록을 기본(한방 시그 1개)으로 되돌리고, 판매 제외·멤버 프리셋·회전판·롤링 전환 설정도 초기화합니다. 계속할까요?"
       )
     ) {
       return;
@@ -6233,18 +6240,34 @@ export default function AdminPage() {
           };
         })
       );
+      const now = Date.now();
       const next: AppState = {
         ...prev,
         timerDisplayStyles,
         overlayPresets: nextPresets,
-        updatedAt: Date.now(),
+        updatedAt: now,
       };
       setPresets(nextPresets);
       try {
         window.localStorage.setItem(presetStorageKey, JSON.stringify(nextPresets));
+        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(next));
         notifyOverlayPresetsLocalUpdated();
+        notifyBroadcastStateLocalUpdated(user?.id, now);
       } catch {}
-      void saveGeneralTimerPatchAsync(prev.generalTimer, user?.id, { timerDisplayStyles });
+      pendingTimerStyleSaveRef.current = {
+        generalTimer: prev.generalTimer,
+        timerDisplayStyles,
+      };
+      if (timerStyleSaveTimerRef.current) clearTimeout(timerStyleSaveTimerRef.current);
+      timerStyleSaveTimerRef.current = setTimeout(() => {
+        timerStyleSaveTimerRef.current = null;
+        const pending = pendingTimerStyleSaveRef.current;
+        pendingTimerStyleSaveRef.current = null;
+        if (!pending) return;
+        void saveGeneralTimerPatchAsync(pending.generalTimer, user?.id, {
+          timerDisplayStyles: pending.timerDisplayStyles,
+        });
+      }, 100);
       persistOverlayPresetsOnly(nextPresets, next);
       return next;
     });
@@ -7680,26 +7703,29 @@ export default function AdminPage() {
     },
     [highSocietySettings.seatMemberIds, hsSeatPlayers, patchHighSocietySettings]
   );
-  const hsStartCm =
-    hsSeatPlayers.length > 0
-      ? startCmFromField(
-          highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM,
-          hsSeatPlayers.length
-        )
-      : 0;
+  const hsSeatCountForStart = Math.max(
+    2,
+    hsSeatPlayers.length || highSocietySettings.seatMemberIds.length || activeMemberCount || 4
+  );
+  const hsStartCm = resolveHighSocietyStartCmPerMember(highSocietySettings, hsSeatCountForStart);
+  const hsEffectiveFieldCm = resolveHighSocietyEffectiveFieldCm(
+    highSocietySettings,
+    hsSeatCountForStart
+  );
   const patchHighSocietyStartCm = useCallback(
     (startCm: number) => {
-      const seats = Math.max(2, hsSeatPlayers.length || 4);
+      const seats = Math.max(2, hsSeatPlayers.length || hsSeatCountForStart || 4);
       const clamped = Math.max(1, Math.min(5000, Math.floor(Number(startCm) || 0)));
       setHsStartCmDraft(null);
       patchHighSocietySettings({
+        startCmPerMember: clamped,
         fieldCm: fieldCmFromStartPerMember(clamped, seats),
       });
     },
-    [hsSeatPlayers.length, patchHighSocietySettings]
+    [hsSeatPlayers.length, hsSeatCountForStart, patchHighSocietySettings]
   );
   const hsStartCmInputValue =
-    hsStartCmDraft !== null ? hsStartCmDraft : String(Math.max(0, Math.round(hsStartCm || 300)));
+    hsStartCmDraft !== null ? hsStartCmDraft : String(Math.max(1, Math.round(hsStartCm)));
   const onHsStartCmDraftChange = useCallback((raw: string) => {
     setHsStartCmDraft(raw.replace(/[^\d]/g, "").slice(0, 5));
   }, []);
@@ -8148,7 +8174,7 @@ export default function AdminPage() {
   const brokenImageUrlCount = sigImageUrlIssues.filter((x) => x.isBroken).length;
   const emptyImageUrlCount = sigImageUrlIssues.filter((x) => x.isEmpty).length;
 
-  const highSocietySeatLayoutPanel = highSocietySettings.enabled ? (
+  const highSocietySeatLayoutPanel = (
     <div className="space-y-3">
       <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
         1인 시작 (cm)
@@ -8168,9 +8194,9 @@ export default function AdminPage() {
         <span className="text-neutral-500">
           → 전장{" "}
           <strong className="text-neutral-200">
-            {(highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM).toLocaleString("ko-KR")}cm
+            {hsEffectiveFieldCm.toLocaleString("ko-KR")}cm
           </strong>
-          ({hsSeatPlayers.length || 0}명)
+          ({hsSeatCountForStart}명 기준 · OFF여도 저장값 유지)
         </span>
       </label>
       <div className="flex flex-wrap gap-1.5">
@@ -8189,6 +8215,13 @@ export default function AdminPage() {
           </button>
         ))}
       </div>
+      {!highSocietySettings.enabled ? (
+        <p className="text-[10px] text-amber-200/80 leading-snug">
+          상류사회 OFF — 1인 시작·전장 설정은 저장됩니다. 좌석 배치·후원 연동은 ON 후 설정하세요.
+        </p>
+      ) : null}
+      {highSocietySettings.enabled ? (
+      <>
       <div className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-[11px] text-neutral-400">
@@ -8321,9 +8354,9 @@ export default function AdminPage() {
         </button>
         에서 설정합니다.
       </p>
+      </>
+      ) : null}
     </div>
-  ) : (
-    <p className="text-[11px] text-neutral-500">상류사회 ON 후 좌석·전장·후원 연동을 설정할 수 있습니다.</p>
   );
 
   return (
@@ -11574,7 +11607,21 @@ export default function AdminPage() {
                           <button
                             className={`px-2 py-1 rounded text-xs ${timer.isActive ? "bg-amber-700 hover:bg-amber-600" : "bg-emerald-700 hover:bg-emerald-600"}`}
                             onClick={() =>
-                              updateMatchTimer(timerDef.key, (t) => (t.isActive ? pauseTimer(t) : resumeTimer(t)))
+                              updateMatchTimer(timerDef.key, (t) => {
+                                if (t.isActive) return pauseTimer(t);
+                                const effective = getEffectiveRemainingTime(t);
+                                if (effective <= 0) {
+                                  const mins = parseInt(timerMinuteInputs[timerDef.key] || "0", 10);
+                                  if (Number.isFinite(mins) && mins > 0) {
+                                    return resumeTimer({
+                                      remainingTime: mins * 60,
+                                      isActive: false,
+                                      lastUpdated: Date.now(),
+                                    });
+                                  }
+                                }
+                                return resumeTimer(t);
+                              })
                             }
                           >
                             {timer.isActive ? "⏸ 일시정지" : "▶ 시작"}
@@ -11862,7 +11909,7 @@ export default function AdminPage() {
                       <strong className="text-neutral-200">{formatCm(hsStartCm)}</strong>
                       · 전장 총길이{" "}
                       <strong className="text-neutral-200">
-                        {(highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM).toLocaleString("ko-KR")}cm
+                        {hsEffectiveFieldCm.toLocaleString("ko-KR")}cm
                       </strong>
                       ({hsSeatPlayers.length || 0}명). 양끝은 단방향, 가운데는{" "}
                       <strong className="text-neutral-300">시스템 한쪽 방향</strong>
@@ -14301,7 +14348,7 @@ export default function AdminPage() {
                     </div>
                   </div>
                   <p className="text-[10px] text-neutral-400 leading-snug">
-                    땅따먹기 잠식·경계·외곽선 연출을 개별로 켜고 끕니다. 저장되면 OBS에 반영됩니다.
+                    땅따먹기 잠식·경계·외곽선 연출을 개별로 켜고 끕니다. 기본은 전부 OFF이며, 저장되면 OBS·아래 미리보기에 반영됩니다.
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                     {(
@@ -14394,23 +14441,21 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="rounded-lg border border-white/10 bg-black/30 overflow-hidden p-2">
+                  {(() => {
+                    const hsFxNow = normalizeHighSocietyFxSettings(highSocietySettings.fx);
+                    const hsFxParam = highSocietyFxToHsFxParam(hsFxNow);
+                    return (
                   <div
                     className="relative w-full bg-black/60 mx-auto overflow-hidden rounded-md"
                     style={{ maxWidth: 720, minHeight: 148, aspectRatio: "18 / 5" }}
                   >
                     {overlayUserId ? (
                       <iframe
-                        key={`hs-preview-${highSocietySettings.barStyle || "flat"}-${highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM}-${[
-                          highSocietySettings.fx?.frontier ? 1 : 0,
-                          highSocietySettings.fx?.growFlash ? 1 : 0,
-                          highSocietySettings.fx?.contestedEdge ? 1 : 0,
-                          highSocietySettings.fx?.arrowBlade ? 1 : 0,
-                          highSocietySettings.fx?.strongOutline ? 1 : 0,
-                        ].join("")}-${(state.members || [])
+                        key={`hs-preview-${highSocietySettings.barStyle || "flat"}-${hsEffectiveFieldCm}-${hsFxParam}-${(state.members || [])
                           .map((m) => `${m.id}:${m.name || ""}`)
                           .join("|")}-d${Number(state.updatedAt || 0)}-r${Number(state.donorRankingsUpdatedAt || 0)}-n${(state.donors || []).length}`}
                         src={appendAdminPreviewEmbedToOverlayUrl(
-                          `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&fieldCm=${encodeURIComponent(String(highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM))}`
+                          `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&fieldCm=${encodeURIComponent(String(hsEffectiveFieldCm))}&hsFx=${encodeURIComponent(hsFxParam)}`
                         )}
                         title="상류사회 세로 오버레이 미리보기"
                         className="absolute inset-0 h-full w-full border-0"
@@ -14422,6 +14467,8 @@ export default function AdminPage() {
                       </div>
                     )}
                   </div>
+                    );
+                  })()}
                   <p className="mt-1.5 text-[10px] text-neutral-500 text-center">
                     게이지 미리보기 · OBS는 1080×1920 세로 소스 사용
                   </p>

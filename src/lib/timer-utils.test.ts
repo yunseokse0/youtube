@@ -105,6 +105,40 @@ describe("mergeGeneralTimerPreferEffective", () => {
     expect(merged.isActive).toBe(true);
     expect(getEffectiveRemainingTime(merged, now)).toBe(110);
   });
+
+  it("keeps local paused timer when remote stale reset is {0,false}", () => {
+    const now = 7_000_000;
+    const paused: TimerState = {
+      remainingTime: 3500,
+      isActive: false,
+      lastUpdated: now - 2_000,
+    };
+    const staleZero: TimerState = {
+      remainingTime: 0,
+      isActive: false,
+      lastUpdated: now - 500,
+    };
+    const merged = mergeGeneralTimerPreferEffective(paused, staleZero, now);
+    expect(merged.isActive).toBe(false);
+    expect(getEffectiveRemainingTime(merged, now)).toBe(3500);
+  });
+
+  it("accepts explicit pause patch over running server timer", () => {
+    const now = 8_000_000;
+    const running: TimerState = {
+      remainingTime: 3600,
+      isActive: true,
+      lastUpdated: now - 10_000,
+    };
+    const pausedPatch: TimerState = {
+      remainingTime: 3590,
+      isActive: false,
+      lastUpdated: now - 100,
+    };
+    const merged = mergeGeneralTimerPreferEffective(running, pausedPatch, now);
+    expect(merged.isActive).toBe(false);
+    expect(getEffectiveRemainingTime(merged, now)).toBe(3590);
+  });
 });
 
 describe("resumeTimer", () => {

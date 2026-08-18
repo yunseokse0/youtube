@@ -13,6 +13,8 @@ import {
   resolveTableVerticalLines,
   resolveTableGridLines,
   resolveTimerOverlayStyle,
+  applyTimerBackgroundOpacity,
+  isTimerBackgroundHidden,
   stripAdminPreviewHotReloadParams,
   type OverlayPresetLike,
 } from "./overlay-params";
@@ -429,5 +431,21 @@ describe("admin preview hot-reload params", () => {
         ready: true,
       })
     ).toBe(false);
+  });
+});
+
+describe("applyTimerBackgroundOpacity", () => {
+  it("returns transparent when opacity is 0", () => {
+    expect(applyTimerBackgroundOpacity("#ffffff", 0)).toBe("transparent");
+    expect(isTimerBackgroundHidden("#ffffff", 0)).toBe(true);
+  });
+
+  it("applies alpha to hex background colors", () => {
+    expect(applyTimerBackgroundOpacity("#ffffff", 68)).toBe("rgba(255,255,255,0.68)");
+    expect(applyTimerBackgroundOpacity("#ff0000", 50)).toBe("rgba(255,0,0,0.5)");
+  });
+
+  it("uses white rgba fallback when bg color is empty", () => {
+    expect(applyTimerBackgroundOpacity("", 40)).toBe("rgba(255,255,255,0.4)");
   });
 });

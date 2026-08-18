@@ -19,6 +19,8 @@ import {
   HIGH_SOCIETY_TEST_MEMBERS,
   normalizeHighSocietyFxSettings,
   normalizeHighSocietySettings,
+  highSocietyFxToHsFxParam,
+  parseHighSocietyFxFromHsFxParam,
   parseHighSocietyBarStyle,
   parseHighSocietyFieldCm,
   parseHighSocietySplit,
@@ -196,6 +198,15 @@ export default function HighSocietyOverlayPage() {
     [state?.highSocietySettings]
   );
 
+  /** 관리자 iframe: URL hsFx 가 서버 동기화보다 먼저 — 연출 토글 실시간 미리보기 */
+  const fx = useMemo(() => {
+    if (adminPreview) {
+      const fromUrl = parseHighSocietyFxFromHsFxParam(sp.get("hsFx"));
+      if (fromUrl) return fromUrl;
+    }
+    return normalizeHighSocietyFxSettings(hsSettings.fx);
+  }, [adminPreview, sp, hsSettings.fx]);
+
   /** 실시간 모드에서는 250ms 틱이 게이지를 불필요하게 재렌더 → 프리뷰 움찔 유발 */
   const needsTimerTick =
     hsSettings.territoryUpdateMode === "onRoundEnd" || useTest;
@@ -297,7 +308,6 @@ export default function HighSocietyOverlayPage() {
   const displaySeats =
     freezeTerritory && frozenSeats && frozenSeats.length > 0 ? frozenSeats : field.seats;
 
-  const fx = normalizeHighSocietyFxSettings(hsSettings.fx);
   const fxClass = [
     fx.frontier ? "hs-fx-frontier" : "",
     fx.growFlash ? "hs-fx-grow" : "",

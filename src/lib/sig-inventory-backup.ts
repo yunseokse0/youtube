@@ -45,8 +45,8 @@ export function shouldRestoreSigInventoryFromBackup(
   const cur = current || [];
   if (isShrunkToDefaultSigInventory(cur)) return true;
   if (cur.length >= backup.length) return false;
-  const curIds = new Set(cur.map((x) => String(x.id)));
-  return backup.every((x) => curIds.has(String(x.id)));
+  const backupIds = new Set(backup.map((x) => String(x.id)));
+  return cur.every((x) => backupIds.has(String(x.id)));
 }
 
 export async function enrichAppStateWithSigInventoryBackup(

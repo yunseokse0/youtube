@@ -31,8 +31,16 @@ describe("sig inventory backup", () => {
   });
 
   it("restores when main state is a strict subset of backup", () => {
-    const current = expanded.slice(0, 6);
-    expect(shouldRestoreSigInventoryFromBackup(current, expanded)).toBe(true);
+    const backup = [
+      ...DEFAULT_SIG_INVENTORY.map((x) => ({ ...x })),
+      customSig("sig_custom_a", "04클럽춤"),
+      customSig("sig_custom_b", "05댄스"),
+    ];
+    const current = [
+      ...DEFAULT_SIG_INVENTORY.map((x) => ({ ...x })),
+      customSig("sig_custom_a", "04클럽춤"),
+    ];
+    expect(shouldRestoreSigInventoryFromBackup(current, backup)).toBe(true);
   });
 
   it("does not restore when main state is current", () => {

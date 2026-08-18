@@ -7,7 +7,7 @@ export function resolveGifUrlForEmbed(raw: string): string {
   if (s.startsWith("//")) s = `https:${s}`;
   if (!s) return s;
   const lower = s.toLowerCase();
-  if (lower.includes("i.giphy.com/") || lower.includes("media.giphy.com/media/")) return s;
+  if (lower.includes("i.giphy.com/") || /media\d*\.giphy\.com\/media\//i.test(lower)) return s;
   if (!lower.includes("giphy.com")) return s;
   try {
     const u = new URL(s);
@@ -49,8 +49,8 @@ function extractGiphyId(raw: string): string | null {
       const m = u.pathname.match(/^\/([a-zA-Z0-9]{6,24})\.gif$/);
       return m?.[1] || null;
     }
-    // media.giphy.com/media/<id>/giphy.gif
-    if (host === "media.giphy.com") {
+    // media.giphy.com/media/<id>/giphy.gif (media1·media2·media3… 동일)
+    if (/^media\d*\.giphy\.com$/i.test(host)) {
       const m = u.pathname.match(/^\/media\/([a-zA-Z0-9]{6,24})\//);
       return m?.[1] || null;
     }

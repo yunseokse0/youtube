@@ -695,6 +695,16 @@ export function useOverlayRemoteState(
       return;
     }
 
+    const timerStylesAt = Number(
+      (o as { timerDisplayStylesUpdatedAt?: unknown }).timerDisplayStylesUpdatedAt
+    );
+    if (Number.isFinite(timerStylesAt) && timerStylesAt > 0) {
+      if (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) {
+        void syncFromApiRef.current({ forceFull: true });
+        return;
+      }
+    }
+
     if (obsTextPick) {
       if (
         shouldSyncObsTextFromStateUpdatedEvent(

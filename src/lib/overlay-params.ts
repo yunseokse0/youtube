@@ -1208,12 +1208,57 @@ export function resolveTimerOverlayStyle(
   };
 }
 
+/** 타이머 pill 배경 — 투명도 0이면 완전 제거, hex/rgb 색에는 alpha 적용 */
+export function applyTimerBackgroundOpacity(
+  bgColor: string | undefined,
+  opacityPercent: number
+): string {
+  const opacity = Math.max(0, Math.min(100, Math.round(Number(opacityPercent) || 0)));
+  if (opacity <= 0) return "transparent";
+  const raw = String(bgColor || "").trim();
+  const lower = raw.toLowerCase();
+  if (!raw || lower === "transparent" || lower === "none" || lower === "rgba(0,0,0,0)") {
+    return `rgba(255,255,255,${opacity / 100})`;
+  }
+  if (lower.startsWith("#")) {
+    let hex = raw.slice(1);
+    if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
+    if (hex.length === 6) {
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      if ([r, g, b].every((n) => Number.isFinite(n))) {
+        return `rgba(${r},${g},${b},${opacity / 100})`;
+      }
+    }
+  }
+  const rgbaMatch = lower.match(/^rgba?\(([^)]+)\)$/);
+  if (rgbaMatch) {
+    const parts = rgbaMatch[1].split(",").map((p) => p.trim());
+    if (parts.length >= 3) {
+      return `rgba(${parts[0]},${parts[1]},${parts[2]},${opacity / 100})`;
+    }
+  }
+  return raw;
+}
+
+export function isTimerBackgroundHidden(
+  bgColor: string | undefined,
+  opacityPercent: number
+): boolean {
+  const opacity = Math.max(0, Math.min(100, Math.round(Number(opacityPercent) || 0)));
+  if (opacity <= 0) return true;
+  const lower = String(bgColor || "").trim().toLowerCase();
+  return lower === "transparent" || lower === "none" || lower === "rgba(0,0,0,0)";
+}
+
 export function timerOverlayStyleHasCustomColors(style: ResolvedTimerOverlayStyle): boolean {
   return Boolean(
     style.fontColor ||
       style.bgColor ||
       style.borderColor ||
-      (style.outlineColor && style.outlineColor.trim())
+      (style.outlineColor && style.outlineColor.trim()) ||
+      (style.bgOpacity !== undefined && style.bgOpacity !== 40)
   );
 }
 
