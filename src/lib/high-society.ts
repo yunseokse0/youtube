@@ -301,6 +301,81 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
   };
 }
 
+/** admin patch — 영토만 새 라운드(집계 시작 시점). donors/members 와 분리 */
+export type HighSocietySettingsAdminPatch = Partial<HighSocietySettings> & {
+  resetTerritory?: boolean;
+};
+
+function seatMemberIdsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((id, i) => String(id) === String(b[i]));
+}
+
+/**
+ * 상류사회 설정 저장·ON/OFF·영토 초기화 시 donationLinks 정합.
+ * - OFF/설정 저장: startedAt·기존 link 유지 (후원 집계 기준 리셋 없음)
+ * - ON/좌석 추가: 신규 좌석만 active (startedAt 없음 = 전체 기간)
+ * - resetTerritory: 영토 집계만 now 기준 새 라운드 (후원 rows 불변)
+ */
+export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
+  prevSettings: HighSocietySettings;
+  nextSettings: HighSocietySettings;
+  members: Array<Pick<Member, "id" | "name" | "account" | "toon" | "operating">>;
+  resetTerritory?: boolean;
+  now?: number;
+}): HighSocietySettings {
+  const { prevSettings, nextSettings, members, resetTerritory = false } = opts;
+  const now = opts.now ?? Date.now();
+  const wasOn = prevSettings.enabled;
+  const turningOn = !wasOn && nextSettings.enabled;
+  const seatsChanged = !seatMemberIdsEqual(
+    prevSettings.seatMemberIds || [],
+    nextSettings.seatMemberIds || []
+  );
+
+  const seatMembers = resolveHighSocietySeatMembers(members, nextSettings.seatMemberIds);
+  const valid = new Set(seatMembers.map((s) => s.id));
+
+  if (!resetTerritory && !turningOn && !(nextSettings.enabled && seatsChanged)) {
+    return {
+      ...nextSettings,
+      donationLinks: normalizeHighSocietyDonationLinks(nextSettings.donationLinks, valid),
+    };
+  }
+
+  const donationLinks: Record<string, { active: boolean; startedAt?: number }> = {
+    ...(nextSettings.donationLinks || {}),
+  };
+
+  for (const id of valid) {
+    const prevLink = donationLinks[id];
+    if (resetTerritory) {
+      donationLinks[id] = { active: true, startedAt: now };
+      continue;
+    }
+    if (turningOn) {
+      if (prevLink?.active && Number(prevLink.startedAt) > 0) {
+        donationLinks[id] = { active: true, startedAt: prevLink.startedAt };
+      } else if (prevLink) {
+        donationLinks[id] = { active: true, ...(prevLink.startedAt !== undefined ? { startedAt: prevLink.startedAt } : {}) };
+      } else {
+        donationLinks[id] = { active: true };
+      }
+      continue;
+    }
+    if (!prevLink) {
+      donationLinks[id] = { active: true };
+    }
+  }
+
+  const prevRound = Math.max(1, Math.floor(Number(prevSettings.round) || 1));
+  return {
+    ...nextSettings,
+    donationLinks: normalizeHighSocietyDonationLinks(donationLinks, valid),
+    ...(resetTerritory ? { round: Math.min(99, prevRound + 1) } : {}),
+  };
+}
+
 /**
  * 인접 경계 순이동 적용.
  * net > 0 → 왼쪽 좌석이 오른쪽에서 뺏음 / net < 0 → 오른쪽이 왼쪽에서 뺏음.

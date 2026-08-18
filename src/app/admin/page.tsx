@@ -225,7 +225,8 @@ import {
   formatCm,
   normalizeHighSocietyFxSettings,
   normalizeHighSocietySettings,
-  normalizeHighSocietyDonationLinks,
+  mergeHighSocietyDonationLinksOnSettingsChange,
+  type HighSocietySettingsAdminPatch,
   resolveHighSocietySeatMembers,
   resolveSystemMiddlePushDir,
   seatRoleForMemberId,
@@ -7478,45 +7479,36 @@ export default function AdminPage() {
     [state.members, hsSeatIdSet]
   );
   const patchHighSocietySettings = useCallback(
-    (patch: Partial<ReturnType<typeof normalizeHighSocietySettings>>) => {
+    (patch: HighSocietySettingsAdminPatch) => {
+      const resetTerritory = Boolean(patch.resetTerritory);
+      const { resetTerritory: _resetTerritory, ...settingsPatch } = patch;
       const wasOn = normalizeHighSocietySettings(stateRef.current.highSocietySettings).enabled;
       const before = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
       let applied: ReturnType<typeof normalizeHighSocietySettings> | null = null;
       setState((prev: AppState) => {
+        const prevSettings = normalizeHighSocietySettings(prev.highSocietySettings);
         let nextSettings = normalizeHighSocietySettings({
-          ...normalizeHighSocietySettings(prev.highSocietySettings),
-          ...patch,
+          ...prevSettings,
+          ...settingsPatch,
         });
         const turningOn = !wasOn && nextSettings.enabled;
-        const turningOff = wasOn && !nextSettings.enabled;
-        if (turningOn) {
-          const now = Date.now();
-          const seatMembers = resolveHighSocietySeatMembers(prev.members || [], nextSettings.seatMemberIds);
-          const valid = new Set(seatMembers.map((s) => s.id));
-          const donationLinks: Record<string, { active: boolean; startedAt?: number }> = {
-            ...(nextSettings.donationLinks || {}),
-          };
-          for (const id of valid) {
-            const prevLink = donationLinks[id];
-            donationLinks[id] =
-              prevLink?.active && Number(prevLink.startedAt) > 0
-                ? { active: true, startedAt: prevLink.startedAt }
-                : { active: true, startedAt: now };
-          }
-          nextSettings = {
-            ...nextSettings,
-            donationLinks: normalizeHighSocietyDonationLinks(donationLinks, valid),
-          };
-        }
+        nextSettings = mergeHighSocietyDonationLinksOnSettingsChange({
+          prevSettings,
+          nextSettings,
+          members: prev.members || [],
+          resetTerritory,
+        });
         applied = nextSettings;
+        if (normalizeDonorsArray(prev.donors).length > 0) {
+          donationAuthoritativeSaveUntilRef.current = Math.max(
+            donationAuthoritativeSaveUntilRef.current,
+            Date.now() + 12_000
+          );
+        }
         let next: AppState = {
           ...prev,
           highSocietySettings: nextSettings,
-          donationSyncMode: turningOn
-            ? "highSociety"
-            : turningOff && (prev.donationSyncMode || "mealBattle") === "highSociety"
-              ? "mealBattle"
-              : prev.donationSyncMode || "mealBattle",
+          donationSyncMode: turningOn ? "highSociety" : prev.donationSyncMode || "mealBattle",
           updatedAt: Date.now(),
         };
         persistState(next, { omitDonationFields: true });
@@ -7535,8 +7527,12 @@ export default function AdminPage() {
       }
 
       /** 수동 설정 반영 요약 토스트 */
-      const after = applied || normalizeHighSocietySettings({ ...before, ...patch });
-      if (typeof patch.enabled === "boolean" && patch.enabled !== wasOn) {
+      const after = applied || normalizeHighSocietySettings({ ...before, ...settingsPatch });
+      if (resetTerritory) {
+        showAppToast(
+          `상류사회 · 영토만 초기화 (${(after.round || 1)}라운드 · 후원·멤버 금액 유지)`
+        );
+      } else if (typeof patch.enabled === "boolean" && patch.enabled !== wasOn) {
         showAppToast(
           patch.enabled
             ? "상류사회 ON — 후원 연동·영토 오버레이가 활성화되었습니다"
@@ -8270,7 +8266,7 @@ export default function AdminPage() {
         </select>
       </label>
       <p className="text-[10px] text-neutral-500 leading-snug">
-        ON 시 좌석 멤버 후원 연동이 켜지고, 모드 시작 이후 후원만 영토에 반영됩니다. 건별 확장 방향은{" "}
+        ON 시 좌석 멤버 후원 연동이 켜집니다. OFF·설정 저장·영토 초기화는 후원 기록·멤버 금액을 건드리지 않습니다. 건별 확장 방향은{" "}
         <button
           type="button"
           className="text-sky-400 underline"
@@ -14080,6 +14076,24 @@ export default function AdminPage() {
                       onClick={() => patchHighSocietySettings({ territoryUpdateMode: "onRoundEnd" })}
                     >
                       라운드 종료 후
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded px-3 py-1.5 text-xs font-semibold border border-white/15 bg-neutral-900 text-neutral-300 hover:border-amber-400/50 disabled:opacity-40"
+                      disabled={!highSocietySettings.enabled}
+                      title="영토 게이지만 새 라운드로 — 후원·멤버 금액은 유지"
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            "영토 게이지만 초기화합니다.\n후원 기록·멤버 계좌/투네 금액은 그대로 유지됩니다.\n계속할까요?"
+                          )
+                        ) {
+                          return;
+                        }
+                        patchHighSocietySettings({ resetTerritory: true });
+                      }}
+                    >
+                      영토만 초기화
                     </button>
                   </div>
                 </div>

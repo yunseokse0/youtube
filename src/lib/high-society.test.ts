@@ -15,6 +15,7 @@ import {
   parseHighSocietySplit,
   parseHighSocietyTerritoryUpdateMode,
   normalizeHighSocietySettings,
+  mergeHighSocietyDonationLinksOnSettingsChange,
   fieldCmFromStartPerMember,
   startCmFromField,
   parseHighSocietyFieldCm,
@@ -356,6 +357,98 @@ describe("high-society territory (aux)", () => {
     });
     expect(offField.seats[1]!.widthCm).toBe(onField.seats[1]!.widthCm);
     expect(offField.seats[1]!.widthCm).toBe(350);
+  });
+
+  it("re-ON preserves donationLinks startedAt (territory baseline not reset)", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    const prev = normalizeHighSocietySettings({
+      enabled: false,
+      seatMemberIds: ["a", "b", "c", "d"],
+      donationLinks: { b: { active: true, startedAt: 5000 } },
+    });
+    const next = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: prev,
+      nextSettings: normalizeHighSocietySettings({ ...prev, enabled: true }),
+      members,
+      now: 99_000,
+    });
+    expect(next.donationLinks?.b?.startedAt).toBe(5000);
+  });
+
+  it("first ON without prior link counts all donations (no startedAt bump)", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+    ];
+    const prev = normalizeHighSocietySettings({
+      enabled: false,
+      seatMemberIds: ["a", "b"],
+      donationLinks: {},
+    });
+    const next = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: prev,
+      nextSettings: normalizeHighSocietySettings({ ...prev, enabled: true }),
+      members,
+      now: 99_000,
+    });
+    expect(next.donationLinks?.a?.active).toBe(true);
+    expect(next.donationLinks?.a?.startedAt).toBeUndefined();
+    expect(next.donationLinks?.b?.startedAt).toBeUndefined();
+  });
+
+  it("resetTerritory bumps round and startedAt only (donors unchanged in field when no new donations)", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    const donors = [
+      {
+        id: "d1",
+        name: "후원",
+        amount: 100_000,
+        memberId: "b",
+        target: "account" as const,
+        at: 6000,
+        hsPushDir: "right" as const,
+      },
+    ];
+    const prev = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b", "c", "d"],
+      round: 2,
+      donationLinks: { b: { active: true, startedAt: 5000 } },
+    });
+    const resetAt = 80_000;
+    const next = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: prev,
+      nextSettings: prev,
+      members,
+      resetTerritory: true,
+      now: resetAt,
+    });
+    expect(next.round).toBe(3);
+    expect(next.donationLinks?.b?.startedAt).toBe(resetAt);
+    const beforeReset = buildHighSocietyFieldFromAppState({
+      members,
+      donors,
+      highSocietySettings: prev,
+    });
+    const afterReset = buildHighSocietyFieldFromAppState({
+      members,
+      donors,
+      highSocietySettings: next,
+    });
+    expect(beforeReset.seats[1]!.widthCm).toBe(350);
+    expect(afterReset.seats[1]!.widthCm).toBe(300);
+    expect(donors).toHaveLength(1);
+    expect(donors[0]!.amount).toBe(100_000);
   });
 
   it("honors explicit single-seat list without falling back to all members", () => {
