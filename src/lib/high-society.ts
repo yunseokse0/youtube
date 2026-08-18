@@ -356,15 +356,14 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
     if (turningOn) {
       if (prevLink?.active && Number(prevLink.startedAt) > 0) {
         donationLinks[id] = { active: true, startedAt: prevLink.startedAt };
-      } else if (prevLink) {
-        donationLinks[id] = { active: true, ...(prevLink.startedAt !== undefined ? { startedAt: prevLink.startedAt } : {}) };
       } else {
-        donationLinks[id] = { active: true };
+        /** ON 시점 이후 후원만 영토 반영 — 기존 donors·멤버 잔액 합계는 제외 */
+        donationLinks[id] = { active: true, startedAt: now };
       }
       continue;
     }
     if (!prevLink) {
-      donationLinks[id] = { active: true };
+      donationLinks[id] = { active: true, startedAt: now };
     }
   }
 
@@ -597,6 +596,27 @@ export function seatRoleForMemberId(
   };
 }
 
+export function isDonorHsTerritoryExcluded(d: Pick<Donor, "hsTerritoryExcluded">): boolean {
+  return d.hsTerritoryExcluded === true;
+}
+
+/** 영토 초기화·상류사회 ON 시 기존 후원 행 — 영토만 OFF (순위·합산 유지) */
+export function markDonorsHsTerritoryExcluded<T extends { hsTerritoryExcluded?: boolean }>(
+  donors: T[],
+  excluded: boolean
+): T[] {
+  if (!donors.length) return donors;
+  return donors.map((d) => {
+    if (excluded) {
+      if (d.hsTerritoryExcluded === true) return d;
+      return { ...d, hsTerritoryExcluded: true as const };
+    }
+    if (!d.hsTerritoryExcluded) return d;
+    const { hsTerritoryExcluded: _drop, ...rest } = d;
+    return rest as T;
+  });
+}
+
 /** @deprecated seatRoleForMemberId 사용 */
 export function seatLetterForMemberId(
   settings: HighSocietySettings,
@@ -624,6 +644,7 @@ export function aggregateSeatPushesFromDonors(opts: {
     const rows = (donors || []).filter((d) => {
       if (String(d.memberId || "") !== player.id) return false;
       if (d.donationExcluded === true) return false;
+      if (d.hsTerritoryExcluded === true) return false;
       if (Math.max(0, Number(d.amount) || 0) <= 0) return false;
       if (!link.active) return false;
       const at = highSocietyDonorAtMs(d);
@@ -633,10 +654,11 @@ export function aggregateSeatPushesFromDonors(opts: {
 
     if (rows.length === 0) {
       const cm = 0;
-      if (dir === "right") return { ...player, expandLeftCm: 0, expandRightCm: cm };
-      if (dir === "left") return { ...player, expandLeftCm: cm, expandRightCm: 0 };
+      const base = { id: player.id, name: player.name, donationWon: 0 };
+      if (dir === "right") return { ...base, expandLeftCm: 0, expandRightCm: cm };
+      if (dir === "left") return { ...base, expandLeftCm: cm, expandRightCm: 0 };
       const lr = pushDirToLeftRight(cm, middleDir);
-      return { ...player, expandLeftCm: lr.left, expandRightCm: lr.right };
+      return { ...base, expandLeftCm: lr.left, expandRightCm: lr.right };
     }
 
     let left = 0;
@@ -662,7 +684,7 @@ export function aggregateSeatPushesFromDonors(opts: {
     return {
       id: player.id,
       name: player.name,
-      donationWon: won || player.donationWon,
+      donationWon: won,
       expandLeftCm: left,
       expandRightCm: right,
     };
@@ -674,7 +696,9 @@ export function buildHighSocietyFieldFromAppState(
   state: Pick<AppState, "members" | "donors" | "highSocietySettings">
 ) {
   const settings = normalizeHighSocietySettings(state.highSocietySettings);
-  const seatPlayers = resolveHighSocietySeatMembers(state.members || [], settings.seatMemberIds);
+  const seatPlayers = resolveHighSocietySeatMembers(state.members || [], settings.seatMemberIds).map(
+    (p) => ({ ...p, donationWon: 0 })
+  );
   const players = aggregateSeatPushesFromDonors({
     seatPlayers,
     donors: state.donors || [],

@@ -1976,7 +1976,8 @@ function Timer({
   bgOpacity?: number;
 }) {
   if (!elapsed) return null;
-  const hasCustomFontColor = Boolean(fontColor && fontColor.trim());
+  /** 관리자 「기본」(빈 값) = 흰 글자·흰 배경(투명도) — color picker placeholder(#ffffff)와 일치 */
+  const effectiveFontColor = (fontColor || "").trim() || "#ffffff";
   const hasCustomOutlineColor = Boolean(outlineColor && outlineColor.trim());
   const effectiveOutlineColor = hasCustomOutlineColor ? outlineColor : "rgba(6, 12, 24, 0.95)";
   const effectiveOutlineWidth = Number.isFinite(outlineWidth) ? Math.max(0, Math.min(3, outlineWidth as number)) : 0.8;
@@ -2001,12 +2002,12 @@ function Timer({
       suppressHydrationWarning
     >
       <span
-        className={`font-bold tabular-nums ${hasCustomFontColor ? "" : "text-pastel-ink"}`}
+        className="font-bold tabular-nums"
         style={{
           fontFamily: fontFamilyCss,
           fontSize,
           lineHeight: 1.1,
-          color: hasCustomFontColor ? fontColor : undefined,
+          color: effectiveFontColor,
           textShadow: `0 0 1px ${effectiveOutlineColor}, 0 1px 0 ${effectiveOutlineColor}, 0 -1px 0 ${effectiveOutlineColor}, 1px 0 0 ${effectiveOutlineColor}, -1px 0 0 ${effectiveOutlineColor}`,
           WebkitTextStroke: `${effectiveOutlineWidth}px ${effectiveOutlineColor}`,
           paintOrder: "stroke fill",
@@ -2475,9 +2476,12 @@ function OverlayInner() {
     return s.matchTimer ?? s.generalTimer;
   }, [s]);
   const timerStyleFromState = useMemo(() => {
-    if (!s || !resolvedTimerType) return null;
-    return s.timerDisplayStyles?.[resolvedTimerType] || null;
-  }, [resolvedTimerType, s]);
+    if (!s) return null;
+    if (resolvedTimerType) return s.timerDisplayStyles?.[resolvedTimerType] || null;
+    /** 통합 오버레이(showTimer)도 「타이머 제어」 general 스타일 적용 */
+    if (showTimer) return s.timerDisplayStyles?.general || null;
+    return null;
+  }, [resolvedTimerType, s, showTimer]);
   const timerStyleResolved = useMemo(() => {
     const next = resolveTimerOverlayStyle(rawSp, effectivePreset, timerStyleFromState, {
       ready,

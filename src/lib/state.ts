@@ -1458,6 +1458,7 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
       if (x.groupSplit === true) row.groupSplit = true;
       if (x.groupSplitSource === true) row.groupSplitSource = true;
       if (x.donationExcluded === true) row.donationExcluded = true;
+      if (x.hsTerritoryExcluded === true) row.hsTerritoryExcluded = true;
       const hsPush =
         x.hsPushDir === "left" || x.hsPushDir === "right" || x.hsPushDir === "split"
           ? x.hsPushDir
@@ -3464,6 +3465,8 @@ export function donorsListContentDiffers(
       Math.round(Number(rd.amount) || 0) !== Math.round(Number(ld.amount) || 0) ||
       String(rd.message || "").trim() !== String(ld.message || "").trim() ||
       Boolean(rd.donationExcluded) !== Boolean(ld.donationExcluded) ||
+      Boolean(rd.hsTerritoryExcluded) !== Boolean(ld.hsTerritoryExcluded) ||
+      String(rd.hsPushDir || "") !== String(ld.hsPushDir || "") ||
       Boolean(rd.groupSplit) !== Boolean(ld.groupSplit) ||
       Boolean(rd.groupSplitSource) !== Boolean(ld.groupSplitSource)
     );

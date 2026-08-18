@@ -16,6 +16,7 @@ import {
   parseHighSocietyTerritoryUpdateMode,
   normalizeHighSocietySettings,
   mergeHighSocietyDonationLinksOnSettingsChange,
+  markDonorsHsTerritoryExcluded,
   fieldCmFromStartPerMember,
   startCmFromField,
   parseHighSocietyFieldCm,
@@ -380,7 +381,7 @@ describe("high-society territory (aux)", () => {
     expect(next.donationLinks?.b?.startedAt).toBe(5000);
   });
 
-  it("first ON without prior link counts all donations (no startedAt bump)", () => {
+  it("first ON without prior link sets startedAt (only post-ON donations count)", () => {
     const members = [
       { id: "a", name: "A", account: 0, toon: 0, operating: false },
       { id: "b", name: "B", account: 0, toon: 0, operating: false },
@@ -397,8 +398,145 @@ describe("high-society territory (aux)", () => {
       now: 99_000,
     });
     expect(next.donationLinks?.a?.active).toBe(true);
-    expect(next.donationLinks?.a?.startedAt).toBeUndefined();
-    expect(next.donationLinks?.b?.startedAt).toBeUndefined();
+    expect(next.donationLinks?.a?.startedAt).toBe(99_000);
+    expect(next.donationLinks?.b?.startedAt).toBe(99_000);
+  });
+
+  it("ignores member account balance — only qualifying donor rows expand territory", () => {
+    const members = [
+      { id: "a", name: "A", account: 600_000, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b", "c", "d"],
+      fieldCm: 400,
+      donationLinks: {
+        a: { active: true, startedAt: 10_000 },
+        b: { active: true, startedAt: 10_000 },
+        c: { active: true, startedAt: 10_000 },
+        d: { active: true, startedAt: 10_000 },
+      },
+    });
+    const noDonors = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [],
+      highSocietySettings: settings,
+    });
+    expect(noDonors.seats.map((s) => s.widthCm)).toEqual([100, 100, 100, 100]);
+
+    const oneSmall = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        {
+          id: "d1",
+          name: "후원",
+          amount: 10_000,
+          memberId: "a",
+          target: "account",
+          at: 11_000,
+          hsPushDir: "right",
+        },
+      ],
+      highSocietySettings: settings,
+    });
+    expect(oneSmall.seats[0]!.widthCm).toBe(105);
+    expect(oneSmall.seats[1]!.widthCm).toBe(95);
+  });
+
+  it("excludes pre-ON donor rows when startedAt is set on first ON", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    const onAt = 50_000;
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b", "c", "d"],
+      donationLinks: {
+        b: { active: true, startedAt: onAt },
+        a: { active: true, startedAt: onAt },
+        c: { active: true, startedAt: onAt },
+        d: { active: true, startedAt: onAt },
+      },
+    });
+    const oldDonor = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        {
+          id: "d-old",
+          name: "과거",
+          amount: 600_000,
+          memberId: "b",
+          target: "account",
+          at: 1000,
+          hsPushDir: "right",
+        },
+      ],
+      highSocietySettings: settings,
+    });
+    expect(oldDonor.seats.map((s) => s.widthCm)).toEqual([300, 300, 300, 300]);
+
+    const newDonor = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        {
+          id: "d-new",
+          name: "신규",
+          amount: 10_000,
+          memberId: "b",
+          target: "account",
+          at: onAt + 1,
+          hsPushDir: "right",
+        },
+      ],
+      highSocietySettings: settings,
+    });
+    expect(newDonor.seats[1]!.widthCm).toBe(305);
+  });
+
+  it("excludes donors with hsTerritoryExcluded from territory", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b", "c", "d"],
+      fieldCm: 400,
+    });
+    const field = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        {
+          id: "d1",
+          name: "후원",
+          amount: 100_000,
+          memberId: "b",
+          target: "account",
+          at: 1,
+          hsPushDir: "right",
+          hsTerritoryExcluded: true,
+        },
+      ],
+      highSocietySettings: settings,
+    });
+    expect(field.seats.map((s) => s.widthCm)).toEqual([100, 100, 100, 100]);
+  });
+
+  it("markDonorsHsTerritoryExcluded flags all rows", () => {
+    const donors = [
+      { id: "d1", name: "A", amount: 1000, memberId: "a", at: 1 },
+      { id: "d2", name: "B", amount: 2000, memberId: "b", at: 2, hsTerritoryExcluded: true },
+    ];
+    const marked = markDonorsHsTerritoryExcluded(donors, true);
+    expect(marked.every((d) => d.hsTerritoryExcluded === true)).toBe(true);
   });
 
   it("resetTerritory bumps round and startedAt only (donors unchanged in field when no new donations)", () => {

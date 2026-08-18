@@ -214,6 +214,7 @@ import {
   reassignDonorMemberInAppState,
   updateDonorMessageInAppState,
   applyManualHsPushDirChange,
+  applyManualHsTerritoryExcludedChange,
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
 import { guardMemberTotalsAgainstAccidentalZeroWipe } from "@/lib/donation/zero-wipe-guard";
@@ -227,6 +228,7 @@ import {
   normalizeHighSocietyFxSettings,
   normalizeHighSocietySettings,
   mergeHighSocietyDonationLinksOnSettingsChange,
+  markDonorsHsTerritoryExcluded,
   type HighSocietySettingsAdminPatch,
   resolveHighSocietySeatMembers,
   resolveSystemMiddlePushDir,
@@ -600,6 +602,7 @@ export default function AdminPage() {
     Record<string, "left" | "right" | "split" | "system">
   >({});
   const [hsPushDirApplyBusyId, setHsPushDirApplyBusyId] = useState<string | null>(null);
+  const [hsTerritoryToggleBusyId, setHsTerritoryToggleBusyId] = useState<string | null>(null);
   const [toonationSocketEnabled, setToonationSocketEnabled] = useState(false);
   const [toonationListenerStatus, setToonationListenerStatus] = useState<ToonationListenerStatus | null>(null);
   const [toonationListenerMeta, setToonationListenerMeta] = useState<{
@@ -6240,6 +6243,8 @@ export default function AdminPage() {
             ...(patch.fontColor !== undefined ? { timerFontColor: String(patch.fontColor || "") } : {}),
             ...(patch.bgColor !== undefined ? { timerBgColor: String(patch.bgColor || "") } : {}),
             ...(patch.borderColor !== undefined ? { timerBorderColor: String(patch.borderColor || "") } : {}),
+            ...(patch.outlineColor !== undefined ? { timerOutlineColor: String(patch.outlineColor || "") } : {}),
+            ...(patch.outlineWidth !== undefined ? { timerOutlineWidth: String(patch.outlineWidth) } : {}),
             ...(patch.bgOpacity !== undefined ? { timerBgOpacity: String(patch.bgOpacity) } : {}),
             ...(patch.scalePercent !== undefined ? { timerScale: String(patch.scalePercent) } : {}),
             ...(patch.showHours !== undefined ? { timerShowHours: Boolean(patch.showHours) } : {}),
@@ -7540,6 +7545,11 @@ export default function AdminPage() {
           resetTerritory,
         });
         applied = nextSettings;
+        const prevDonors = normalizeDonorsArray(prev.donors);
+        const shouldMarkHsTerritoryOff = (resetTerritory || turningOn) && prevDonors.length > 0;
+        const nextDonors = shouldMarkHsTerritoryOff
+          ? markDonorsHsTerritoryExcluded(prevDonors, true)
+          : prevDonors;
         if (normalizeDonorsArray(prev.donors).length > 0) {
           donationAuthoritativeSaveUntilRef.current = Math.max(
             donationAuthoritativeSaveUntilRef.current,
@@ -7548,11 +7558,15 @@ export default function AdminPage() {
         }
         let next: AppState = {
           ...prev,
+          donors: nextDonors,
           highSocietySettings: nextSettings,
           donationSyncMode: turningOn ? "highSociety" : prev.donationSyncMode || "mealBattle",
           updatedAt: Date.now(),
         };
-        persistState(next, { omitDonationFields: true });
+        persistState(
+          next,
+          shouldMarkHsTerritoryOff ? { donorsAuthoritative: true } : { omitDonationFields: true }
+        );
         return next;
       });
       const nextEnabled =
@@ -7571,12 +7585,12 @@ export default function AdminPage() {
       const after = applied || normalizeHighSocietySettings({ ...before, ...settingsPatch });
       if (resetTerritory) {
         showAppToast(
-          `상류사회 · 영토만 초기화 (${(after.round || 1)}라운드 · 후원·멤버 금액 유지)`
+          `상류사회 · 영토만 초기화 (${(after.round || 1)}라운드 · 기존 후원 영토 OFF · 합산·금액 유지)`
         );
       } else if (typeof patch.enabled === "boolean" && patch.enabled !== wasOn) {
         showAppToast(
           patch.enabled
-            ? "상류사회 ON — 후원 연동·영토 오버레이가 활성화되었습니다"
+            ? "상류사회 ON — 기존 후원은 영토 OFF, 이후 후원부터 영토 반영"
             : "상류사회 OFF — 모드만 꺼졌습니다 (후원·영토 데이터는 유지)"
         );
       } else if (patch.defaultMiddlePush && after.defaultMiddlePush !== before.defaultMiddlePush) {
@@ -12795,7 +12809,7 @@ export default function AdminPage() {
                       <th className="text-left font-medium p-1">후원자</th>
                       <th className="text-left font-medium p-1">멤버</th>
                       {highSocietySettings.enabled ? (
-                        <th className="text-left font-medium p-1 min-w-[9.5rem]">확장</th>
+                        <th className="text-left font-medium p-1 min-w-[11rem]">영토·확장</th>
                       ) : null}
                       <th className="text-left font-medium p-1">대상</th>
                       <th className="text-left font-medium p-1 min-w-[120px]">메시지</th>
@@ -12879,8 +12893,74 @@ export default function AdminPage() {
                             </td>
                             {highSocietySettings.enabled ? (
                               <td className="p-1">
-                                {canSetPush ? (
-                                  (() => {
+                                {(() => {
+                                  const hsTerritoryOff = d.hsTerritoryExcluded === true;
+                                  const territoryBusy = hsTerritoryToggleBusyId === d.id;
+                                  const territoryToggle = (
+                                    <button
+                                      type="button"
+                                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${
+                                        hsTerritoryOff
+                                          ? "border-neutral-600 bg-neutral-900 text-neutral-400"
+                                          : "border-emerald-500/50 bg-emerald-950/60 text-emerald-200"
+                                      }`}
+                                      title="상류사회 영토(cm) 반영 ON/OFF — 순위·합산과 별개"
+                                      disabled={territoryBusy || isSplitSource}
+                                      onClick={() => {
+                                        void (async () => {
+                                          const prev = stateRef.current;
+                                          const hsNow = normalizeHighSocietySettings(prev.highSocietySettings);
+                                          if (!hsNow.enabled) {
+                                            showAppToast("상류사회가 OFF입니다. 먼저 모드를 켜 주세요.", {
+                                              variant: "info",
+                                            });
+                                            return;
+                                          }
+                                          const wantOff = !hsTerritoryOff;
+                                          setHsTerritoryToggleBusyId(d.id);
+                                          try {
+                                            const next = applyManualHsTerritoryExcludedChange(
+                                              prev,
+                                              d.id,
+                                              wantOff
+                                            );
+                                            if (!next) {
+                                              showAppToast("이미 같은 영토 적용 상태입니다.", {
+                                                variant: "info",
+                                              });
+                                              return;
+                                            }
+                                            const preserved = markAuthoritativeDonationSave(
+                                              { serverUpdatedAt: next.updatedAt },
+                                              next,
+                                              { replaceDonors: true, awaitingServerSave: true }
+                                            );
+                                            setState(preserved);
+                                            const ok = await commitAuthoritativeDonorPersist(preserved);
+                                            if (!ok) {
+                                              showAppToast(
+                                                "영토 적용 설정 저장에 실패했습니다. 다시 시도해 주세요.",
+                                                { variant: "error" }
+                                              );
+                                            } else {
+                                              showAppToast(
+                                                wantOff
+                                                  ? `상류사회 영토 OFF: 「${d.name}」`
+                                                  : `상류사회 영토 ON: 「${d.name}」`
+                                              );
+                                            }
+                                          } finally {
+                                            setHsTerritoryToggleBusyId((cur) =>
+                                              cur === d.id ? null : cur
+                                            );
+                                          }
+                                        })();
+                                      }}
+                                    >
+                                      {territoryBusy ? "…" : hsTerritoryOff ? "영토 OFF" : "영토 ON"}
+                                    </button>
+                                  );
+                                  if (canSetPush) {
                                     const savedDir: "left" | "right" | "split" | "system" =
                                       d.hsPushDir === "left" ||
                                       d.hsPushDir === "right" ||
@@ -12893,11 +12973,12 @@ export default function AdminPage() {
                                     const applying = hsPushDirApplyBusyId === d.id;
                                     return (
                                       <div className="flex flex-wrap items-center gap-1">
+                                        {territoryToggle}
                                         <select
-                                          className="rounded border border-amber-400/35 bg-amber-950/50 px-1 py-0.5 text-[11px] text-amber-50"
+                                          className="rounded border border-amber-400/35 bg-amber-950/50 px-1 py-0.5 text-[11px] text-amber-50 disabled:opacity-40"
                                           value={draftDir === "split" ? "system" : draftDir}
                                           title="방향을 고른 뒤 적용을 누르세요"
-                                          disabled={applying}
+                                          disabled={applying || hsTerritoryOff}
                                           onChange={(e) => {
                                             const raw = e.target.value;
                                             const nextDir: "left" | "right" | "system" =
@@ -12923,11 +13004,11 @@ export default function AdminPage() {
                                         <button
                                           type="button"
                                           className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                                            dirty && !applying
+                                            dirty && !applying && !hsTerritoryOff
                                               ? "bg-amber-600 hover:bg-amber-500 text-white"
                                               : "bg-neutral-800 text-neutral-500 cursor-not-allowed"
                                           }`}
-                                          disabled={!dirty || applying}
+                                          disabled={!dirty || applying || hsTerritoryOff}
                                           title="선택한 확장 방향을 이 후원에 저장"
                                           onClick={() => {
                                             void (async () => {
@@ -12962,7 +13043,6 @@ export default function AdminPage() {
                                                   return rest;
                                                 });
                                                 if (!next) {
-                                                  // 시스템과 동일한 수동 선택 등 — 저장값과 같아져 dirty 해제만
                                                   setSyncStatus("synced");
                                                   showAppToast(
                                                     `상류사회 · 「${d.name}」→${memberName}: 이미 ${toLabel} 상태입니다`,
@@ -13001,14 +13081,22 @@ export default function AdminPage() {
                                         </button>
                                       </div>
                                     );
-                                  })()
-                                ) : rowSeat ? (
-                                  <span className="text-[10px] text-neutral-400" title="끝자리 좌석은 확장 방향이 고정입니다">
-                                    {rowSeat.expandDir === "right" ? "→고정" : "←고정"}
-                                  </span>
-                                ) : (
-                                  <span className="text-[10px] text-neutral-600">—</span>
-                                )}
+                                  }
+                                  if (rowSeat) {
+                                    return (
+                                      <div className="flex flex-wrap items-center gap-1">
+                                        {territoryToggle}
+                                        <span
+                                          className="text-[10px] text-neutral-400"
+                                          title="끝자리 좌석은 확장 방향이 고정입니다"
+                                        >
+                                          {rowSeat.expandDir === "right" ? "→고정" : "←고정"}
+                                        </span>
+                                      </div>
+                                    );
+                                  }
+                                  return territoryToggle;
+                                })()}
                               </td>
                             ) : null}
                             <td className="p-1">{(d.target || "account") === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>

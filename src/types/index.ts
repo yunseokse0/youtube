@@ -44,6 +44,8 @@ export type Donor = {
   groupSplitSource?: boolean;
   /** 단체짠 원본 등 — 리스트에는 표시하되 멤버·순위 합산에서 제외 */
   donationExcluded?: boolean;
+  /** 상류사회 영토 확장 제외 — 후원·순위 합산은 유지, 영토(cm)만 미반영 */
+  hsTerritoryExcluded?: boolean;
   /**
    * 상류사회 영토 확장 방향 (B·C 좌석용).
    * left=왼쪽만 / right=오른쪽만 / split=양분. A·D는 무시(고정 방향).

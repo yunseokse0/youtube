@@ -189,6 +189,36 @@ describe("admin preview hot-reload params", () => {
     expect(style.showHours).toBe(true);
   });
 
+  it("prefers timerDisplayStyles colors over preset when both set", () => {
+    const preset: OverlayPresetLike = {
+      id: "ov_timer_colors",
+      showTimer: true,
+      timerFontColor: "#ff3366",
+      timerBgColor: "#112233",
+      timerBgOpacity: "80",
+      timerScale: "150",
+    };
+    const style = resolveTimerOverlayStyle(
+      new URLSearchParams(),
+      preset,
+      {
+        fontColor: "#ffffff",
+        bgColor: "#ffffff",
+        borderColor: "",
+        outlineColor: "",
+        outlineWidth: 0.8,
+        bgOpacity: 40,
+        scalePercent: 100,
+        showHours: false,
+      },
+      { ready: true }
+    );
+    expect(style.fontColor).toBe("#ffffff");
+    expect(style.bgColor).toBe("#ffffff");
+    expect(style.bgOpacity).toBe(40);
+    expect(style.scalePercent).toBe(100);
+  });
+
   it("prefers timerDisplayStyles showHours over stale preset timerShowHours", () => {
     const preset: OverlayPresetLike = {
       id: "ov_stale_hours",

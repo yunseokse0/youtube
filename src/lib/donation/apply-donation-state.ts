@@ -73,6 +73,7 @@ export function mergeDonorRowFields<
   T extends {
     message?: string;
     donationExcluded?: boolean;
+    hsTerritoryExcluded?: boolean;
     groupSplit?: boolean;
     groupSplitSource?: boolean;
     hsPushDir?: "left" | "right" | "split";
@@ -89,6 +90,9 @@ export function mergeDonorRowFields<
   return {
     ...withPush,
     ...(preferred.donationExcluded || fallback.donationExcluded ? { donationExcluded: true as const } : {}),
+    ...(preferred.hsTerritoryExcluded || fallback.hsTerritoryExcluded
+      ? { hsTerritoryExcluded: true as const }
+      : {}),
     ...(preferred.groupSplit || fallback.groupSplit ? { groupSplit: true as const } : {}),
     ...(preferred.groupSplitSource || fallback.groupSplitSource ? { groupSplitSource: true as const } : {}),
   };
@@ -692,6 +696,40 @@ export function applyManualHsPushDirChange(
     const { hsPushDir: _drop, ...rest } = d;
     if (!wantOverride) return rest;
     return { ...rest, hsPushDir: wantOverride };
+  });
+
+  return {
+    ...currentState,
+    donors: nextDonors,
+    donorRankingsUpdatedAt: now,
+    updatedAt: now,
+  };
+}
+
+/** 후원 행별 상류사회 영토 반영 ON/OFF (순위·멤버 합산과 별개) */
+export function applyManualHsTerritoryExcludedChange(
+  currentState: AppState,
+  donorId: string,
+  excluded: boolean
+): AppState | null {
+  const settings = normalizeHighSocietySettings(currentState.highSocietySettings);
+  if (!settings.enabled) return null;
+
+  const id = String(donorId || "").trim();
+  if (!id) return null;
+  const donor = (currentState.donors || []).find((d) => d.id === id);
+  if (!donor) return null;
+
+  const wantExcluded = Boolean(excluded);
+  const prevExcluded = donor.hsTerritoryExcluded === true;
+  if (prevExcluded === wantExcluded) return null;
+
+  const now = Date.now();
+  const nextDonors = (currentState.donors || []).map((d): Donor => {
+    if (d.id !== id) return d;
+    if (wantExcluded) return { ...d, hsTerritoryExcluded: true };
+    const { hsTerritoryExcluded: _drop, ...rest } = d;
+    return rest;
   });
 
   return {

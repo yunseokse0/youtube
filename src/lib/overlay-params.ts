@@ -1108,7 +1108,7 @@ function pickTimerPresetOrParam(
   return (merged || "").trim();
 }
 
-/** 타이머 오버레이 색·스타일 — 프리셋 → (ready 전 URL) → `timerDisplayStyles` 순 */
+/** 타이머 오버레이 색·스타일 — `timerDisplayStyles` → 프리셋 → (ready 전 URL) 순 */
 export function resolveTimerOverlayStyle(
   rawSp: SearchParamsLike,
   preset: OverlayPresetLike | null,
@@ -1116,16 +1116,16 @@ export function resolveTimerOverlayStyle(
   opts: { ready: boolean; timerOnlyDefaultShowHours?: boolean }
 ): ResolvedTimerOverlayStyle {
   const fontColor =
-    pickTimerPresetOrParam("timerFontColor", "timerFontColor", rawSp, preset, opts) ||
     (stateStyle?.fontColor || "").trim() ||
+    pickTimerPresetOrParam("timerFontColor", "timerFontColor", rawSp, preset, opts) ||
     undefined;
   const bgColor =
-    pickTimerPresetOrParam("timerBgColor", "timerBgColor", rawSp, preset, opts) ||
     (stateStyle?.bgColor || "").trim() ||
+    pickTimerPresetOrParam("timerBgColor", "timerBgColor", rawSp, preset, opts) ||
     undefined;
   const borderColor =
-    pickTimerPresetOrParam("timerBorderColor", "timerBorderColor", rawSp, preset, opts) ||
     (stateStyle?.borderColor || "").trim() ||
+    pickTimerPresetOrParam("timerBorderColor", "timerBorderColor", rawSp, preset, opts) ||
     undefined;
   const outlineColor =
     (rawSp.get("timerOutlineColor") || "").trim() ||
@@ -1140,21 +1140,29 @@ export function resolveTimerOverlayStyle(
       })()
     : (stateStyle?.outlineWidth ?? 0.8);
 
-  const bgOpacityRaw = pickTimerPresetOrParam("timerBgOpacity", "timerBgOpacity", rawSp, preset, opts);
-  const bgOpacity = bgOpacityRaw
-    ? (() => {
-        const n = parseInt(bgOpacityRaw, 10);
-        return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : (stateStyle?.bgOpacity ?? 40);
-      })()
-    : (stateStyle?.bgOpacity ?? 40);
+  const bgOpacity =
+    stateStyle?.bgOpacity !== undefined && Number.isFinite(stateStyle.bgOpacity)
+      ? Math.max(0, Math.min(100, stateStyle.bgOpacity))
+      : (() => {
+          const bgOpacityRaw = pickTimerPresetOrParam("timerBgOpacity", "timerBgOpacity", rawSp, preset, opts);
+          if (bgOpacityRaw) {
+            const n = parseInt(bgOpacityRaw, 10);
+            if (Number.isFinite(n)) return Math.max(0, Math.min(100, n));
+          }
+          return 40;
+        })();
 
-  const scaleRaw = pickTimerPresetOrParam("timerScale", "timerScale", rawSp, preset, opts);
-  const scalePercent = scaleRaw
-    ? (() => {
-        const n = parseInt(scaleRaw, 10);
-        return Number.isFinite(n) ? Math.max(50, Math.min(250, n)) : (stateStyle?.scalePercent ?? 100);
-      })()
-    : (stateStyle?.scalePercent ?? 100);
+  const scalePercent =
+    stateStyle?.scalePercent !== undefined && Number.isFinite(stateStyle.scalePercent)
+      ? Math.max(50, Math.min(250, stateStyle.scalePercent))
+      : (() => {
+          const scaleRaw = pickTimerPresetOrParam("timerScale", "timerScale", rawSp, preset, opts);
+          if (scaleRaw) {
+            const n = parseInt(scaleRaw, 10);
+            if (Number.isFinite(n)) return Math.max(50, Math.min(250, n));
+          }
+          return 100;
+        })();
 
   const showHoursRaw = pickTimerPresetOrParam("timerShowHours", "timerShowHours", rawSp, preset, opts);
   /**
