@@ -14594,11 +14594,11 @@ export default function AdminPage() {
                   >
                     {overlayUserId ? (
                       <iframe
-                        key={`hs-preview-${highSocietySettings.barStyle || "flat"}-${hsEffectiveFieldCm}-${hsFxParam}-${(state.members || [])
+                        key={`hs-preview-${highSocietySettings.barStyle || "flat"}-${hsStartCm}-${hsEffectiveFieldCm}-${hsFxParam}-${(state.members || [])
                           .map((m) => `${m.id}:${m.name || ""}`)
                           .join("|")}-d${Number(state.updatedAt || 0)}-r${Number(state.donorRankingsUpdatedAt || 0)}-n${(state.donors || []).length}`}
                         src={appendAdminPreviewEmbedToOverlayUrl(
-                          `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&fieldCm=${encodeURIComponent(String(hsEffectiveFieldCm))}&hsFx=${encodeURIComponent(hsFxParam)}`
+                          `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&fieldCm=${encodeURIComponent(String(hsEffectiveFieldCm))}&startCm=${encodeURIComponent(String(Math.round(hsStartCm)))}&hsFx=${encodeURIComponent(hsFxParam)}`
                         )}
                         title="상류사회 세로 오버레이 미리보기"
                         className="absolute inset-0 h-full w-full border-0"

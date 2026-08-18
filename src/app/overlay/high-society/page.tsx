@@ -255,12 +255,8 @@ export default function HighSocietyOverlayPage() {
     if (!state) {
       return buildHighSocietyFieldFromMembers([], fieldOpts);
     }
-    return buildHighSocietyFieldFromAppState({
-      ...state,
-      highSocietySettings: {
-        ...normalizeHighSocietySettings(state.highSocietySettings),
-        fieldCm: effectiveFieldCm,
-      },
+    return buildHighSocietyFieldFromAppState(state, {
+      ...(fieldCmFromUrl != null ? { fieldCmOverride: effectiveFieldCm } : {}),
     });
   }, [useTest, state, hsSettings, hasUrlSplit, split, effectiveFieldCm]);
 

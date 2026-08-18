@@ -921,21 +921,35 @@ export function aggregateSeatPushesFromDonors(opts: {
 
 /** AppState 기준 영토 해상 (좌석·후원 방향 반영) */
 export function buildHighSocietyFieldFromAppState(
-  state: Pick<AppState, "members" | "donors" | "highSocietySettings">
+  state: Pick<AppState, "members" | "donors" | "highSocietySettings">,
+  opts?: { fieldCmOverride?: number }
 ) {
   const settings = normalizeHighSocietySettings(state.highSocietySettings);
   const seatPlayers = resolveHighSocietySeatMembers(state.members || [], settings.seatMemberIds).map(
     (p) => ({ ...p, donationWon: 0 })
   );
-  const effectiveFieldCm = resolveHighSocietyEffectiveFieldCm(settings, seatPlayers.length);
+  const seatCount = Math.max(2, seatPlayers.length || settings.seatMemberIds?.length || 4);
+  const overrideRaw = Number(opts?.fieldCmOverride);
+  const effectiveFieldCm =
+    Number.isFinite(overrideRaw) && overrideRaw > 0
+      ? Math.max(100, Math.min(20000, Math.floor(overrideRaw)))
+      : resolveHighSocietyEffectiveFieldCm(settings, seatCount);
+  const settingsForField =
+    Number.isFinite(overrideRaw) && overrideRaw > 0
+      ? normalizeHighSocietySettings({
+          ...settings,
+          startCmPerMember: startCmFromField(effectiveFieldCm, seatCount),
+          fieldCm: effectiveFieldCm,
+        })
+      : settings;
   const players = aggregateSeatPushesFromDonors({
     seatPlayers,
     donors: state.donors || [],
-    settings,
+    settings: settingsForField,
   });
   return {
     ...resolveHighSocietyField({ players, fieldCm: effectiveFieldCm }),
-    settings: { ...settings, fieldCm: effectiveFieldCm },
+    settings: { ...settingsForField, fieldCm: effectiveFieldCm },
   };
 }
 

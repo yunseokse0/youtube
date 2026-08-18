@@ -1129,6 +1129,30 @@ describe("high-society startCmPerMember persistence", () => {
     expect(field.settings.fieldCm).toBe(900);
     expect(field.fieldCm).toBe(900);
   });
+
+  it("fieldCmOverride wins over stale startCmPerMember on server state", () => {
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: [],
+      startCmPerMember: 300,
+      fieldCm: 1200,
+    });
+    const state = {
+      members: [
+        { id: "a", name: "A", account: 0, toon: 0, operating: false },
+        { id: "b", name: "B", account: 0, toon: 0, operating: false },
+        { id: "c", name: "C", account: 0, toon: 0, operating: false },
+        { id: "d", name: "D", account: 0, toon: 0, operating: false },
+      ],
+      donors: [],
+      highSocietySettings: settings,
+    };
+    const withoutOverride = buildHighSocietyFieldFromAppState(state);
+    expect(withoutOverride.seats[0]!.widthCm).toBe(300);
+    const withOverride = buildHighSocietyFieldFromAppState(state, { fieldCmOverride: 400 });
+    expect(withOverride.seats[0]!.widthCm).toBe(100);
+    expect(withOverride.fieldCm).toBe(400);
+  });
 });
 
 describe("highSociety regression guards", () => {
