@@ -36,6 +36,28 @@ describe("purgeDonorsForMemberRoster", () => {
   });
 });
 
+describe("member delete keeps donor records", () => {
+  it("removes member from roster but keeps orphan donors and remaining totals", () => {
+    const members = [
+      { id: "m1", name: "A", account: 0, toon: 0, contribution: 0 },
+      { id: "m2", name: "B", account: 0, toon: 0, contribution: 0 },
+    ];
+    const donors = [
+      { id: "d1", name: "후원1", amount: 10_000, memberId: "m1", at: 1, target: "toon" as const },
+      { id: "d2", name: "후원2", amount: 20_000, memberId: "m2", at: 2, target: "toon" as const },
+    ];
+    const afterDelete = syncMemberTotalsFromDonors({
+      ...defaultState(),
+      members: members.filter((m) => m.id !== "m2"),
+      donors,
+    });
+    expect(afterDelete.members.map((m) => m.id)).toEqual(["m1"]);
+    expect(afterDelete.donors.map((d) => d.id)).toEqual(["d1", "d2"]);
+    expect(afterDelete.members.find((m) => m.id === "m1")?.toon).toBe(10_000);
+    expect(afterDelete.members.find((m) => m.id === "m2")).toBeUndefined();
+  });
+});
+
 describe("repairMemberTotalsForDonorRoster", () => {
   it("does not restore old roster when members were intentionally replaced", () => {
     const oldRoster = {

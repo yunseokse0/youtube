@@ -39,7 +39,6 @@ import type { SigItem } from "@/types";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
 import {
   dedupeDonorRows,
-  purgeDonorsForMemberRoster,
   repairMemberTotalsForDonorRoster,
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
@@ -821,34 +820,17 @@ export async function POST(req: Request) {
         donorsAuthoritative,
       });
     }
-    /**
-     * 멤버 삭제(membersAuthoritative + 로스터 축소): 클라이언트 donors 가 비거나
-     * 불완전해도 서버 정본에서 삭제된 memberId 후원만 제거하고 나머지는 유지.
-     */
+    /** 멤버 삭제(membersAuthoritative + 로스터 축소): donors 는 그대로 유지(orphan memberId 허용). */
     const patchMembersForRoster = Array.isArray(body.members) ? (body.members as Member[]) : null;
     const memberRosterShrunk =
       membersAuthoritative &&
       patchMembersForRoster != null &&
       patchMembersForRoster.length < (baseState.members?.length ?? 0);
     if (memberRosterShrunk && patchMembersForRoster) {
-      const purgedFromBase = purgeDonorsForMemberRoster(baseState.donors, patchMembersForRoster);
-      if (donorsInPatch) {
-        const purgedIncoming = purgeDonorsForMemberRoster(incomingDonorsFiltered, patchMembersForRoster);
-        incomingDonorsFiltered =
-          purgedIncoming.length >= purgedFromBase.length
-            ? purgedIncoming
-            : mergeDonorsForMultiTabSave(purgedIncoming, purgedFromBase, {
-                incomingUpdatedAt: Number(body.updatedAt || 0),
-                existingUpdatedAt: Number(baseState.updatedAt || 0),
-              });
-      } else {
-        donorsInPatch = true;
-        incomingDonorsFiltered = purgedFromBase;
-      }
-      logger.info("member roster shrink — purged donors for removed members", {
+      logger.info("member roster shrink — donors preserved", {
         userId,
-        baseDonorCount: normalizeDonorsArray(baseState.donors).length,
-        purgedCount: incomingDonorsFiltered.length,
+        memberCount: patchMembersForRoster.length,
+        donorCount: normalizeDonorsArray(baseState.donors).length,
       });
     }
     /**
@@ -909,18 +891,6 @@ export async function POST(req: Request) {
           Number(body.updatedAt || 0),
           Number(baseState.updatedAt || 0)
         ));
-    if (
-      authoritativeReplace &&
-      memberRosterShrunk &&
-      patchMembersForRoster &&
-      incomingDonorsFiltered.length < normalizeDonorsArray(purgeDonorsForMemberRoster(baseState.donors, patchMembersForRoster)).length
-    ) {
-      incomingDonorsFiltered = purgeDonorsForMemberRoster(baseState.donors, patchMembersForRoster);
-      logger.warn("member delete — replaced incomplete incoming donors with purged base", {
-        userId,
-        purgedCount: incomingDonorsFiltered.length,
-      });
-    }
     const mergedDonors = donorsInPatch
       ? donationInitReset
         ? []

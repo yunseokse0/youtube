@@ -3460,7 +3460,7 @@ export default function AdminPage() {
       `멤버를 삭제합니다.\n` +
       `이름: ${target?.name ?? id}\n` +
       `계좌: ${target?.account ?? 0}, 투네: ${target?.toon ?? 0}, 기여도: ${target?.contribution ?? 0}\n` +
-      `연결된 후원 기록: ${donorsCount}건\n\n` +
+      `연결된 후원 기록: ${donorsCount}건 (후원 기록은 유지, 엑셀표에서만 제거)\n\n` +
       `삭제 후에는 되돌릴 수 없습니다. 계속할까요?`;
     requestConfirm("멤버 삭제", warn, () => {
       setState((prev: AppState) => {
@@ -3491,14 +3491,8 @@ export default function AdminPage() {
                     existingUpdatedAt: Number(prev.updatedAt || 0),
                   });
         }
-        const donors = mergedDonors.filter((d) => d.memberId !== id);
-        const remainingBeforeDelete = prev.members
-          .filter((m) => m.id !== id)
-          .reduce((sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)), 0);
-        const donorsAfterDeleteTotal = countableDonorTotal(donors);
-        const donorsCompleteForRemaining =
-          donors.length > 0 &&
-          (remainingBeforeDelete <= 0 || donorsAfterDeleteTotal >= remainingBeforeDelete * 0.99);
+        /** 후원 기록(donors)은 유지 — 로스터에서만 제거, orphan memberId 행은 합산·엑셀표에서 제외 */
+        const donors = mergedDonors;
         const nextSigMatch = { ...(prev.sigMatch || {}) };
         const nextMealMatch = { ...(prev.mealMatch || {}) };
         delete nextSigMatch[id];
@@ -3544,20 +3538,10 @@ export default function AdminPage() {
           },
           updatedAt: Date.now(),
         };
-        if (donorsCompleteForRemaining) {
-          next = guardMemberTotalsAgainstAccidentalZeroWipe(
-            syncMemberTotalsFromDonors(next),
-            prev
-          );
-        } else {
-          next = {
-            ...next,
-            members: mergeMemberRosterPreservingAmounts(
-              prev.members.filter((m) => m.id !== id),
-              members
-            ),
-          };
-        }
+        next = guardMemberTotalsAgainstAccidentalZeroWipe(
+          syncMemberTotalsFromDonors(next),
+          prev
+        );
         const now = Date.now();
         next = { ...next, updatedAt: now };
         stateRef.current = next;
@@ -3570,9 +3554,7 @@ export default function AdminPage() {
         notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
         void saveStateAsync(next, user?.id, {
           membersAuthoritative: true,
-          ...(donorsCompleteForRemaining
-            ? { donorsAuthoritative: true as const, donorsReplace: true as const }
-            : { omitDonationFields: true as const }),
+          omitDonationFields: true,
         }).then((r) => {
           if (r.ok) {
             pendingUnsyncedRef.current = false;

@@ -197,10 +197,34 @@ describe("shouldRejectPoorerDonationRemote", () => {
     expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(false);
   });
 
-  it("allows member delete when removed member donors are purged from remote", async () => {
+  it("allows member delete when removed member donors are preserved on remote", async () => {
     const { shouldRejectPoorerDonationRemote, isIntentionalMemberRosterShrink } = await import(
       "@/lib/overlay-sync-signature"
     );
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      donors: [
+        { id: "d1", name: "a", amount: 10000, memberId: "m1", at: 1, target: "account" as const },
+        { id: "d2", name: "b", amount: 5000, memberId: "m2", at: 2, target: "toon" as const },
+      ],
+      members: [
+        { id: "m1", name: "A", account: 10000, toon: 0, contribution: 10000 },
+        { id: "m2", name: "B", account: 0, toon: 5000, contribution: 5000 },
+      ],
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: 1500,
+      donors: local.donors,
+      members: [{ id: "m1", name: "A", account: 10000, toon: 0, contribution: 10000 }],
+    };
+    expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(false);
+    expect(isIntentionalMemberRosterShrink(local, remote)).toBe(true);
+  });
+
+  it("allows legacy member delete when removed member donors were purged from remote", async () => {
+    const { isIntentionalMemberRosterShrink } = await import("@/lib/overlay-sync-signature");
     const local = {
       ...defaultState(),
       updatedAt: 1000,
@@ -221,7 +245,6 @@ describe("shouldRejectPoorerDonationRemote", () => {
       ],
       members: [{ id: "m1", name: "A", account: 10000, toon: 0, contribution: 10000 }],
     };
-    expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(false);
     expect(isIntentionalMemberRosterShrink(local, remote)).toBe(true);
   });
 

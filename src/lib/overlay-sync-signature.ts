@@ -269,7 +269,8 @@ export function isLocalMemberRosterGrowOverRemote(
 }
 
 /**
- * 멤버 삭제가 의도적(삭제 id 후원 purge·donors shrink)인지 — stale GET 과 구분.
+ * 멤버 삭제가 의도적인지 — stale GET(멤버 추가 직후)과 구분.
+ * 후원 기록은 유지(삭제 memberId orphan donors)하거나, 구버전처럼 purge+shrink 일 수 있음.
  */
 export function isIntentionalMemberRosterShrink(
   local: AppState | null | undefined,
@@ -289,13 +290,17 @@ export function isIntentionalMemberRosterShrink(
   const removedIds = localMembers.filter((m) => !remoteIds.has(m.id)).map((m) => m.id);
   const localDonors = normalizeDonorsArray(local.donors);
   const remoteDonors = normalizeDonorsArray(remote.donors);
+  const hasOrphanDonorsForRemoved =
+    removedIds.length > 0 &&
+    removedIds.some((id) => remoteDonors.some((d) => d.memberId === id));
   const removedDonorsPurged =
     removedIds.length > 0 &&
     !removedIds.some((id) => remoteDonors.some((d) => d.memberId === id));
+  const legacyPurgedShrink =
+    removedDonorsPurged && remoteDonors.length < localDonors.length;
   return (
     hasMeaningfulMemberRoster(remote) &&
-    removedDonorsPurged &&
-    remoteDonors.length < localDonors.length &&
+    (hasOrphanDonorsForRemoved || legacyPurgedShrink) &&
     !wouldAccidentallyZeroRemainingMembers(local, remote)
   );
 }

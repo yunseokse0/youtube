@@ -205,7 +205,7 @@ function memberRosterIdSignature(members: Member[] | null | undefined): string {
     .join("\u001e");
 }
 
-/** 로스터에서 빠진 memberId 의 후원 행 제거 — 멤버 삭제 시 orphan donors 방지 */
+/** 로스터에서 빠진 memberId 의 후원 행 제거 — 합산·zero-wipe 판단용(멤버 삭제 시 donors 유지 정책) */
 export function purgeDonorsForMemberRoster(
   donors: Donor[] | undefined,
   members: Member[] | undefined

@@ -631,7 +631,7 @@ export function seatLetterForMemberId(
 /** 후원 행별 방향을 반영해 좌석 확장 cm 합산 */
 export function aggregateSeatPushesFromDonors(opts: {
   seatPlayers: Array<{ id: string; name: string; donationWon: number }>;
-  donors: Array<Pick<Donor, "memberId" | "amount" | "hsPushDir" | "donationExcluded" | "at">>;
+  donors: Array<Pick<Donor, "memberId" | "amount" | "hsPushDir" | "donationExcluded" | "hsTerritoryExcluded" | "at">>;
   settings: HighSocietySettings;
 }): HighSocietyPlayerInput[] {
   const { seatPlayers, donors, settings } = opts;
@@ -644,7 +644,7 @@ export function aggregateSeatPushesFromDonors(opts: {
     const rows = (donors || []).filter((d) => {
       if (String(d.memberId || "") !== player.id) return false;
       if (d.donationExcluded === true) return false;
-      if (d.hsTerritoryExcluded === true) return false;
+      if (isDonorHsTerritoryExcluded(d)) return false;
       if (Math.max(0, Number(d.amount) || 0) <= 0) return false;
       if (!link.active) return false;
       const at = highSocietyDonorAtMs(d);
