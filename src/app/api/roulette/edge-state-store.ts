@@ -109,6 +109,7 @@ export async function saveAppStateForRoulette(
   let persisted: AppState = {
     ...merged,
     generalTimer: snapshotTimerForPersist(merged.generalTimer),
+    matchTimer: snapshotTimerForPersist(merged.matchTimer ?? merged.generalTimer),
   };
 
   if (

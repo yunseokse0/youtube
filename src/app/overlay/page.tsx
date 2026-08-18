@@ -312,9 +312,18 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
       }
     }
     const prevTimer = lastGoodRef.current?.generalTimer ?? merged.generalTimer;
+    const prevMatchTimer =
+      lastGoodRef.current?.matchTimer ??
+      lastGoodRef.current?.generalTimer ??
+      merged.matchTimer ??
+      merged.generalTimer;
     merged = {
       ...merged,
       generalTimer: mergeGeneralTimerPreferEffective(prevTimer, merged.generalTimer),
+      matchTimer: mergeGeneralTimerPreferEffective(
+        prevMatchTimer,
+        merged.matchTimer ?? merged.generalTimer
+      ),
     };
     return merged;
   }, []);
@@ -2461,6 +2470,10 @@ function OverlayInner() {
     if (!resolvedTimerType) return null;
     return s.generalTimer;
   }, [resolvedTimerType, s]);
+  const matchTimerFromState = useMemo(() => {
+    if (!s) return null;
+    return s.matchTimer ?? s.generalTimer;
+  }, [s]);
   const timerStyleFromState = useMemo(() => {
     if (!s || !resolvedTimerType) return null;
     return s.timerDisplayStyles?.[resolvedTimerType] || null;
@@ -2510,13 +2523,24 @@ function OverlayInner() {
   }, [showTimer, timerFontFamily]);
   const matchTimerAllowed = useMemo(() => {
     if (!s?.matchTimerEnabled) return true;
+    return s.matchTimerEnabled.match !== false;
+  }, [s]);
+  const generalTimerAllowed = useMemo(() => {
+    if (!s?.matchTimerEnabled) return true;
     return s.matchTimerEnabled.general;
   }, [s]);
-  const effectiveTimerAllowed = timerOnlyMode ? true : matchTimerAllowed;
+  const effectiveTimerAllowed = timerOnlyMode ? generalTimerAllowed : matchTimerAllowed;
   const serverTimer = useServerTimer(timerFromState);
+  const matchServerTimer = useServerTimer(matchTimerFromState);
   const elapsed = useElapsed(timerStart);
   const timerBaseText = serverTimer.text || elapsed || (timerOnlyMode ? "00:00:00" : null);
   const timerText = formatTimerText(timerBaseText, serverTimer.remainingSeconds, timerShowHours);
+  const matchTimerBaseText = matchServerTimer.text || null;
+  const matchTimerText = formatTimerText(
+    matchTimerBaseText,
+    matchServerTimer.remainingSeconds,
+    timerShowHours
+  );
 
   const teamBattleBoard = useMemo(() => {
     const mb = s?.mealBattle;
@@ -4892,13 +4916,13 @@ function OverlayInner() {
               rightMemberLabel={teamBattleBoard.bNames}
               gapSuffix={teamBattleBoard.useRaw ? "원" : ""}
               timerSlot={
-                effectiveTimerAllowed && timerText ? (
+                matchTimerAllowed && matchTimerText ? (
                   <div
                     className={`inline-flex items-center justify-center rounded-md px-2.5 py-0.5 font-black tabular-nums text-white ring-1 ring-white/15 ${
-                      serverTimer.paused ? "bg-neutral-700/90" : "bg-neutral-950/85"
+                      matchServerTimer.paused ? "bg-neutral-700/90" : "bg-neutral-950/85"
                     } text-lg sm:text-xl`}
                   >
-                    <span suppressHydrationWarning>{timerText}</span>
+                    <span suppressHydrationWarning>{matchTimerText}</span>
                   </div>
                 ) : null
               }

@@ -163,7 +163,15 @@ export function buildSigMatchDemoSnapshot(
       isActive: true,
       lastUpdated: SIG_MATCH_DEMO_SNAPSHOT_TIME,
     },
-    matchTimerEnabled: { general: true },
+    matchTimer: {
+      remainingTime:
+        opts?.demoTimerSec != null && Number.isFinite(opts.demoTimerSec)
+          ? Math.max(3, Math.min(600, Math.floor(opts.demoTimerSec)))
+          : 95,
+      isActive: true,
+      lastUpdated: SIG_MATCH_DEMO_SNAPSHOT_TIME,
+    },
+    matchTimerEnabled: { general: true, match: true },
     timerDisplayStyles: {
       general: {
         outlineColor: "rgba(6, 12, 24, 0.95)",

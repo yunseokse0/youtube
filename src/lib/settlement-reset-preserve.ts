@@ -30,6 +30,7 @@ export function pickSettingsPreservedAcrossSettlementReset(
     sigMatchSettings: state.sigMatchSettings,
     mealMatchSettings: state.mealMatchSettings,
     generalTimer: state.generalTimer,
+    matchTimer: state.matchTimer,
     matchTimerEnabled: state.matchTimerEnabled,
     timerDisplayStyles: state.timerDisplayStyles,
     forbiddenWords: state.forbiddenWords,

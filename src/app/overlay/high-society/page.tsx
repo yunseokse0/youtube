@@ -253,7 +253,7 @@ export default function HighSocietyOverlayPage() {
     });
   }, [useTest, state, hsSettings, hasUrlSplit, split, effectiveFieldCm]);
 
-  const timerState = state?.generalTimer || null;
+  const timerState = state?.matchTimer ?? state?.generalTimer ?? null;
 
   const remainingSec = useMemo(() => {
     if (timerState) {

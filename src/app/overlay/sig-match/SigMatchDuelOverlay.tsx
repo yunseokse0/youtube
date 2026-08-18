@@ -574,8 +574,8 @@ export default function SigMatchDuelOverlay({
     });
     return { mode: "dual", left: pack(leftList, "A팀"), right: pack(rightList, "B팀") };
   }, [ranking, overlayState?.sigMatchSettings?.sigMatchPools, memberMap, blockedMemberIds]);
-  /** 식사대전(/overlay/meal-match)과 동일하게 generalTimer + 서버 동기화(lastUpdated) 기준 */
-  const timerState = overlayState?.generalTimer || null;
+  /** 식사대전(/overlay/meal-match)과 동일하게 matchTimer + 서버 동기화(lastUpdated) 기준 */
+  const timerState = overlayState?.matchTimer ?? overlayState?.generalTimer ?? null;
   const [, setTimerTick] = useState(0);
   useEffect(() => {
     if (!timerState) return;
@@ -583,7 +583,7 @@ export default function SigMatchDuelOverlay({
     const id = window.setInterval(() => setTimerTick((v) => v + 1), 1000);
     return () => window.clearInterval(id);
   }, [timerState]);
-  const showSigMatchTimer = overlayState?.matchTimerEnabled?.general !== false;
+  const showSigMatchTimer = overlayState?.matchTimerEnabled?.match !== false;
   const remainingSec = timerState ? getEffectiveRemainingTime(timerState) : 0;
   const timerPaused = Boolean(timerState && !timerState.isActive);
   const timerVisible = showSigMatchTimer;

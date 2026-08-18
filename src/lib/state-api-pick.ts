@@ -97,6 +97,7 @@ function overlayCoreFields(
     mealMatch: state.mealMatch,
     mealMatchSettings: state.mealMatchSettings,
     generalTimer: state.generalTimer,
+    matchTimer: state.matchTimer,
     matchTimerEnabled: state.matchTimerEnabled,
     timerDisplayStyles: state.timerDisplayStyles,
     donorRankingsOverlayConfig: state.donorRankingsOverlayConfig,

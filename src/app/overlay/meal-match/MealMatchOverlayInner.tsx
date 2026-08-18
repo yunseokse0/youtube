@@ -111,9 +111,15 @@ function buildMealDemoFrozenState(demoMode: string, demoTimerSec: number): AppSt
       isActive: true,
       lastUpdated: 1,
     },
+    matchTimer: {
+      remainingTime: demoTimerSec,
+      isActive: true,
+      lastUpdated: 1,
+    },
     matchTimerEnabled: {
       ...(base.matchTimerEnabled || {}),
       general: true,
+      match: true,
     },
   };
 }
@@ -166,7 +172,7 @@ export default function MealMatchOverlayInner() {
   const [overlayMounted, setOverlayMounted] = useState(false);
   useEffect(() => setOverlayMounted(true), []);
 
-  const timerState = state?.generalTimer || null;
+  const timerState = state?.matchTimer ?? state?.generalTimer ?? null;
   const usePreviewTimer = gaugePreview;
   const [previewRemaining, setPreviewRemaining] = useState(demoTimerSec);
   const [previewParticipants, setPreviewParticipants] = useState<
@@ -188,7 +194,7 @@ export default function MealMatchOverlayInner() {
       : 0;
   const paused = usePreviewTimer ? false : Boolean(timerState && !timerState.isActive);
   const timerText = `${String(Math.floor(Math.max(0, remaining) / 60)).padStart(2, "0")}:${String(Math.max(0, remaining) % 60).padStart(2, "0")}`;
-  const showMealMatchTimer = state?.matchTimerEnabled?.general !== false;
+  const showMealMatchTimer = state?.matchTimerEnabled?.match !== false;
   const timerSize = Math.max(16, Math.min(120, state?.mealBattle?.timerSize || 36));
   /** 데모·SSR 초기에는 URL만 사용 — localStorage 상태와 SSR searchParams 타이밍 차로 hydration 깨짐 방지 */
   const gaugeFx = useMemo(() => {

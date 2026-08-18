@@ -103,6 +103,13 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
         lastUpdated: state.generalTimer.lastUpdated,
       }
     : null;
+  const matchTimer = state.matchTimer
+    ? {
+        remainingTime: state.matchTimer.remainingTime,
+        isActive: state.matchTimer.isActive,
+        lastUpdated: state.matchTimer.lastUpdated,
+      }
+    : null;
 
   const sigRolling = state.sigRolling
     ? {
@@ -138,6 +145,7 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
     memberPositions: state.memberPositions || {},
     rankPositionLabels: state.rankPositionLabels || [],
     generalTimer,
+    matchTimer,
     matchTimerEnabled: state.matchTimerEnabled || {},
     timerDisplayStyles: state.timerDisplayStyles || {},
     overlaySettings: state.overlaySettings || {},

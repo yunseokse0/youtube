@@ -286,6 +286,10 @@ function applySyncedState(
     refs.lastGoodRef.current?.generalTimer,
     dataForApply.generalTimer
   );
+  const mergedMatchTimer = mergeGeneralTimerPreferEffective(
+    refs.lastGoodRef.current?.matchTimer ?? refs.lastGoodRef.current?.generalTimer,
+    dataForApply.matchTimer ?? dataForApply.generalTimer
+  );
   /** pick 에 timerDisplayStyles 키가 없을 때만 last-good 로 보정.
    * 키가 있어도 기본(빈 색)이면 last-good 커스텀을 유지 — 첫 페인트 기본색→재설정 회귀 방지 */
   const lastTimerStyles = refs.lastGoodRef.current?.timerDisplayStyles;
@@ -297,6 +301,7 @@ function applySyncedState(
   const next = {
     ...dataForApply,
     generalTimer: mergedTimer,
+    matchTimer: mergedMatchTimer,
     ...(preferLastTimer && lastTimerStyles
       ? { timerDisplayStyles: lastTimerStyles }
       : hasIncomingTimerKey

@@ -1134,7 +1134,8 @@ export function defaultState(): AppState {
     },
     mealMatchSettings: defaultMealSettings,
     generalTimer: { ...defaultTimer },
-    matchTimerEnabled: { general: true },
+    matchTimer: { ...defaultTimer },
+    matchTimerEnabled: { general: true, match: true },
     timerDisplayStyles: {
       general: defaultTimerDisplayStyle(),
     },
@@ -1352,8 +1353,10 @@ function normalizeTimerState(input: unknown): TimerState {
 
 function normalizeMatchTimerEnabled(input: unknown): MatchTimerEnabled {
   const v = input && typeof input === "object" ? (input as Partial<MatchTimerEnabled>) : {};
+  const general = typeof v.general === "boolean" ? v.general : true;
   return {
-    general: typeof v.general === "boolean" ? v.general : true,
+    general,
+    match: typeof v.match === "boolean" ? v.match : general,
   };
 }
 
@@ -1661,6 +1664,9 @@ export function loadState(userId?: string | null): AppState {
       };
     }
     data.generalTimer = normalizeTimerState((data as AppState).generalTimer);
+    data.matchTimer = normalizeTimerState(
+      (data as AppState).matchTimer ?? (data as AppState).generalTimer
+    );
     data.matchTimerEnabled = normalizeMatchTimerEnabled((data as AppState).matchTimerEnabled);
     data.timerDisplayStyles = normalizeTimerDisplayStyles((data as AppState).timerDisplayStyles);
     data.donorRankingsOverlayConfig = normalizeDonorRankingsOverlayConfig((data as AppState).donorRankingsOverlayConfig);
@@ -2844,6 +2850,41 @@ export async function saveGeneralTimerPatchAsync(
   }
 }
 
+/** 대전(시그·식사·상류사회) 타이머만 PATCH — generalTimer·후원 필드는 건드리지 않음 */
+export async function saveMatchTimerPatchAsync(
+  matchTimer: TimerState,
+  userId?: string | null,
+  extras?: {
+    matchTimerEnabled?: AppState["matchTimerEnabled"];
+  }
+): Promise<SaveStateAsyncResult> {
+  if (typeof window === "undefined") return { ok: false };
+  const now = Date.now();
+  const timer = snapshotTimerForPersist(matchTimer, now);
+  const local = loadState(userId);
+  const foundation = local ?? defaultState();
+  const mergedLocal: AppState = normalizeStateForPersistence({
+    ...foundation,
+    matchTimer: timer,
+    ...(extras?.matchTimerEnabled ? { matchTimerEnabled: extras.matchTimerEnabled } : {}),
+    updatedAt: now,
+  });
+  try {
+    window.localStorage.setItem(storageKey(userId), JSON.stringify(mergedLocal));
+  } catch {}
+  notifyBroadcastStateLocalUpdated(userId, now);
+  const patch: Record<string, unknown> = {
+    updatedAt: now,
+    matchTimer: timer,
+  };
+  if (extras?.matchTimerEnabled) patch.matchTimerEnabled = extras.matchTimerEnabled;
+  try {
+    return await enqueueServerSave(JSON.stringify(patch), userId, mergedLocal);
+  } catch {
+    return { ok: false };
+  }
+}
+
 /**
  * OBS 텍스트 오버레이만 PATCH — members·sigInventory·overlayPresets 를 건드리지 않음.
  * `userId` 필수(OBS URL `u=` 와 동일 계정).
@@ -3175,6 +3216,10 @@ async function doLoadStateFromApi(
         ...data,
         overlaySettings: { ...baseOs, ...patchOs },
         generalTimer: mergeGeneralTimerPreferEffective(base.generalTimer, (data as AppState).generalTimer),
+        matchTimer: mergeGeneralTimerPreferEffective(
+          base.matchTimer ?? base.generalTimer,
+          (data as AppState).matchTimer ?? (data as AppState).generalTimer
+        ),
         rouletteState: {
           ...base.rouletteState,
           ...(data.rouletteState && typeof data.rouletteState === "object" ? data.rouletteState : {}),
@@ -3355,6 +3400,9 @@ async function doLoadStateFromApi(
       };
     }
       data.generalTimer = normalizeTimerState((data as AppState).generalTimer);
+      data.matchTimer = normalizeTimerState(
+        (data as AppState).matchTimer ?? (data as AppState).generalTimer
+      );
       data.matchTimerEnabled = normalizeMatchTimerEnabled((data as AppState).matchTimerEnabled);
       data.timerDisplayStyles = normalizeTimerDisplayStyles((data as AppState).timerDisplayStyles);
       data.donorRankingsOverlayConfig = normalizeDonorRankingsOverlayConfig((data as AppState).donorRankingsOverlayConfig);

@@ -248,10 +248,12 @@ export type TimerDisplayStyle = {
   scalePercent: number;
 };
 
-/** 일반 타이머 오버레이 사용 여부 */
+/** 타이머 오버레이 사용 여부 */
 export type MatchTimerEnabled = {
-  /** 방송용 자유 타이머(매치와 무관) */
+  /** 방송용 자유 타이머(`/overlay?timerType=general`) */
   general: boolean;
+  /** 시그·식사 대전·상류사회 라운드용 타이머 */
+  match: boolean;
 };
 
 /** 시그 n:n 규칙: 같은 풀에 속한 멤버는 시그 1건을 풀 인원 수로 나눠 동일 반영. 풀에 없는 멤버는 1:1(후원 건의 memberId만). */
@@ -448,7 +450,7 @@ export type HighSocietySettings = {
   /**
    * 영토 게이지 갱신 시점
    * - realtime: 계좌·투네 합산이 들어올 때마다 즉시 반영
-   * - onRoundEnd: generalTimer 라운드가 끝날 때까지 동결, 종료 후 반영
+   * - onRoundEnd: matchTimer 라운드가 끝날 때까지 동결, 종료 후 반영
    */
   territoryUpdateMode?: "realtime" | "onRoundEnd";
   /** 땅따먹기 연출 ON/OFF (기본 전부) */
@@ -528,9 +530,11 @@ export type AppState = {
   mealBattle: MealBattleState;
   mealMatch: MealMatchState;
   mealMatchSettings: MealMatchSettings;
-  /** 방송용 카운트다운 타이머 */
+  /** 방송용 자유 타이머 — `/overlay?timerType=general` 전용 */
   generalTimer: TimerState;
-  /** 대전별 타이머 오버레이 사용 여부 */
+  /** 시그·식사 대전·상류사회 라운드용 타이머 — generalTimer 와 독립 */
+  matchTimer: TimerState;
+  /** 타이머 오버레이 사용 여부 */
   matchTimerEnabled: MatchTimerEnabled;
   /** 일반 타이머 표시 스타일(글자/배경/테두리/형식) */
   timerDisplayStyles: Record<"general", TimerDisplayStyle>;
