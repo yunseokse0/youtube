@@ -17,6 +17,7 @@ import {
   loadState,
   loadStateFromApi,
   mergeLocalMemberIdentityOntoRemote,
+  mergeDonorsForMultiTabSave,
   hasMeaningfulMemberRoster,
   membersDifferByIds,
   normalizeDonorsArray,
@@ -113,7 +114,12 @@ function mergeAdminPreviewLocalHintOntoRemote(
   const hsDiff =
     Boolean(hsLocal) &&
     JSON.stringify(hsLocal ?? {}) !== JSON.stringify(hsRemote ?? {});
-  if (localAt <= remoteAt && !hsDiff) return remote;
+  const localDonors = normalizeDonorsArray(local.donors);
+  const remoteDonors = normalizeDonorsArray(remote.donors);
+  const localDonorsRicher =
+    localDonors.length > remoteDonors.length ||
+    (localDonors.length > 0 && localAt > remoteAt);
+  if (localAt <= remoteAt && !hsDiff && !localDonorsRicher) return remote;
 
   const merged: AppState = {
     ...remote,
@@ -121,8 +127,15 @@ function mergeAdminPreviewLocalHintOntoRemote(
   };
   if (hsLocal) merged.highSocietySettings = hsLocal;
   if (local.donationSyncMode) merged.donationSyncMode = local.donationSyncMode;
-  const localDonors = normalizeDonorsArray(local.donors);
-  if (localDonors.length > 0) merged.donors = local.donors;
+  if (localDonors.length > 0) {
+    merged.donors =
+      remoteDonors.length > 0
+        ? mergeDonorsForMultiTabSave(localDonors, remoteDonors, {
+            incomingUpdatedAt: localAt,
+            existingUpdatedAt: remoteAt,
+          })
+        : local.donors;
+  }
   if (Array.isArray(local.members) && local.members.length > 0) {
     merged.members = mergeMemberRosterPreservingAmounts(
       remote.members || [],

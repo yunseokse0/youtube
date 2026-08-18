@@ -233,7 +233,7 @@ import {
   formatCm,
   normalizeHighSocietyFxSettings,
   highSocietyFxToHsFxParam,
-  highSocietyAdminPreviewSig,
+  highSocietyAdminPreviewIframeKeySig,
   normalizeHighSocietySettings,
   mergeHighSocietyDonationLinksOnSettingsChange,
   isHighSocietyReopen,
@@ -7914,23 +7914,9 @@ export default function AdminPage() {
     highSocietySettings,
     hsSeatCountForStart
   );
-  const hsDonorTerritorySig = useMemo(
-    () =>
-      (state.donors || [])
-        .map(
-          (d) =>
-            `${d.memberId || ""}:${Math.max(0, Number(d.amount) || 0)}:${String(d.hsPushDir || "")}:${d.hsTerritoryExcluded ? "x" : ""}`
-        )
-        .join(";"),
-    [state.donors]
-  );
-  const hsPreviewSig = useMemo(
-    () =>
-      highSocietyAdminPreviewSig(highSocietySettings, {
-        updatedAt: state.updatedAt,
-        donorTerritorySig: hsDonorTerritorySig,
-      }),
-    [highSocietySettings, state.updatedAt, hsDonorTerritorySig]
+  const hsPreviewIframeKeySig = useMemo(
+    () => highSocietyAdminPreviewIframeKeySig(highSocietySettings),
+    [highSocietySettings]
   );
   const patchHighSocietyStartCm = useCallback(
     (startCm: number) => {
@@ -14770,7 +14756,7 @@ export default function AdminPage() {
                   >
                     {overlayUserId ? (
                       <iframe
-                        key={`hs-preview-${hsPreviewSig}-${hsPreviewIframeKey}`}
+                        key={`hs-preview-${hsPreviewIframeKeySig}-${hsPreviewIframeKey}`}
                         src={appendAdminPreviewEmbedToOverlayUrl(
                           `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&fieldCm=${encodeURIComponent(String(hsEffectiveFieldCm))}&startCm=${encodeURIComponent(String(Math.round(hsStartCm)))}&hsFx=${encodeURIComponent(hsFxParam)}`
                         )}

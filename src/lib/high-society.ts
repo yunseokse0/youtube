@@ -1485,6 +1485,28 @@ export function highSocietyAdminPreviewSig(
   ].join("|");
 }
 
+/**
+ * 관리자 iframe React key — 후원·updatedAt·donationLinks 등 volatile 필드 제외.
+ * key 가 바뀔 때마다 iframe 이 리마운트되어 100cm 균등 기본 화면으로 되돌아가는 회귀 방지.
+ * 후원·영토 갱신은 iframe 내부 폴링·localStorage 브로드캐스트로 반영.
+ */
+export function highSocietyAdminPreviewIframeKeySig(
+  settings: HighSocietySettings | null | undefined
+): string {
+  const s = normalizeHighSocietySettings(settings);
+  return [
+    s.enabled ? "1" : "0",
+    s.territoryPaused ? "1" : "0",
+    s.territoryUpdateMode || "realtime",
+    (s.seatMemberIds || []).join(","),
+    s.barStyle || "flat",
+    s.fieldCm ?? "",
+    s.startCmPerMember ?? "",
+    s.round ?? 1,
+    highSocietyFxToHsFxParam(normalizeHighSocietyFxSettings(s.fx)),
+  ].join("|");
+}
+
 export function formatHighSocietyTimer(remainingSec: number): string {
   const s = Math.max(0, Math.floor(remainingSec));
   const h = Math.floor(s / 3600);

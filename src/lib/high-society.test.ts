@@ -51,6 +51,8 @@ import {
   defaultHighSocietySettings,
   isDonationAmountEligibleForHighSocietyTerritory,
   shouldDonorCountForHighSocietyTerritory,
+  highSocietyAdminPreviewSig,
+  highSocietyAdminPreviewIframeKeySig,
 } from "./high-society";
 
 describe("high-society rule field", () => {
@@ -1663,5 +1665,26 @@ describe("highSociety regression guards", () => {
     });
     expect(reAdded.donationLinks?.b?.active).toBe(true);
     expect(reAdded.donationLinks?.b?.startedAt).toBe(startedAt);
+  });
+});
+
+describe("highSocietyAdminPreviewIframeKeySig", () => {
+  it("ignores donationLinks and updatedAt so iframe key stays stable on donations", () => {
+    const base = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b"],
+      donationLinks: { a: { active: true, startedAt: 1000 } },
+    });
+    const afterDonation = normalizeHighSocietySettings({
+      ...base,
+      donationLinks: { a: { active: true, startedAt: 1000 }, b: { active: true, startedAt: 5000 } },
+      memberTerritoryExpand: { a: { expandLeftCm: 1, expandRightCm: 2 } },
+    });
+    const keyA = highSocietyAdminPreviewIframeKeySig(base);
+    const keyB = highSocietyAdminPreviewIframeKeySig(afterDonation);
+    expect(keyA).toBe(keyB);
+    const fullA = highSocietyAdminPreviewSig(base, { updatedAt: 1000, donorTerritorySig: "x" });
+    const fullB = highSocietyAdminPreviewSig(afterDonation, { updatedAt: 9000, donorTerritorySig: "y" });
+    expect(fullA).not.toBe(fullB);
   });
 });
