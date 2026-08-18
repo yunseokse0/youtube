@@ -32,6 +32,7 @@ import {
   isExternalOverlayBroadcastHost,
   isAdminDashboardPreviewEmbed,
   isEmbeddedInSameOriginAdminFrame,
+  isHiddenTimerDisplayStyle,
 } from "@/lib/overlay-params";
 import { startStaggeredOverlayPoll } from "@/lib/overlay-poll-stagger";
 
@@ -332,20 +333,24 @@ function applySyncedState(
   const lastTimerStyles = refs.lastGoodRef.current?.timerDisplayStyles;
   const incomingTimerStyles = dataForApply.timerDisplayStyles;
   const hasIncomingTimerKey = Object.prototype.hasOwnProperty.call(dataForApply, "timerDisplayStyles");
+  const incomingHiddenTimer = isHiddenTimerDisplayStyle(incomingTimerStyles?.general);
   const preferLastTimer =
     hasCustomTimerDisplayStyles(lastTimerStyles) &&
+    !incomingHiddenTimer &&
     (!hasIncomingTimerKey || isDefaultLikeTimerDisplayStyle(incomingTimerStyles?.general));
   const next = {
     ...dataForApply,
     generalTimer: mergedTimer,
     matchTimer: mergedMatchTimer,
-    ...(preferLastTimer && lastTimerStyles
-      ? { timerDisplayStyles: lastTimerStyles }
-      : hasIncomingTimerKey
-        ? {}
-        : lastTimerStyles
-          ? { timerDisplayStyles: lastTimerStyles }
-          : {}),
+    ...(incomingHiddenTimer && incomingTimerStyles
+      ? { timerDisplayStyles: incomingTimerStyles }
+      : preferLastTimer && lastTimerStyles
+        ? { timerDisplayStyles: lastTimerStyles }
+        : hasIncomingTimerKey
+          ? {}
+          : lastTimerStyles && !isHiddenTimerDisplayStyle(lastTimerStyles?.general)
+            ? { timerDisplayStyles: lastTimerStyles }
+            : {}),
   };
 
   refs.setState(next);

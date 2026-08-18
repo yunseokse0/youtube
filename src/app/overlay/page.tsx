@@ -63,6 +63,7 @@ import {
   getTimerPillPaddingPx,
   isTimerBackgroundHidden,
   isTimerBorderVisuallyHidden,
+  isHiddenTimerDisplayStyle,
   TIMER_PILL_BORDER_PX,
   type OverlayPresetLike,
   type ResolvedTimerOverlayStyle,
@@ -335,12 +336,16 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
     const lastTimerStyles = good?.timerDisplayStyles;
     const incomingTimerStyles = merged.timerDisplayStyles;
     const hasIncomingTimerKey = Object.prototype.hasOwnProperty.call(merged, "timerDisplayStyles");
+    const incomingHiddenTimer = isHiddenTimerDisplayStyle(incomingTimerStyles?.general);
     const preferLastTimer =
       hasCustomTimerDisplayStyles(lastTimerStyles) &&
+      !incomingHiddenTimer &&
       (!hasIncomingTimerKey || isDefaultLikeTimerDisplayStyle(incomingTimerStyles?.general));
-    if (preferLastTimer && lastTimerStyles) {
+    if (incomingHiddenTimer && incomingTimerStyles) {
+      merged = { ...merged, timerDisplayStyles: incomingTimerStyles };
+    } else if (preferLastTimer && lastTimerStyles) {
       merged = { ...merged, timerDisplayStyles: lastTimerStyles };
-    } else if (!hasIncomingTimerKey && lastTimerStyles) {
+    } else if (!hasIncomingTimerKey && lastTimerStyles && !isHiddenTimerDisplayStyle(lastTimerStyles?.general)) {
       merged = { ...merged, timerDisplayStyles: lastTimerStyles };
     }
     return merged;
@@ -2531,6 +2536,19 @@ function OverlayInner() {
     return null;
   }, [resolvedTimerType, s, showTimer]);
   const timerStyleResolved = useMemo(() => {
+    /** 배경/테두리 없음 — state 가 정본이면 stale ref·프리셋 fallback 없이 즉시 반영 */
+    if (timerStyleFromState && isHiddenTimerDisplayStyle(timerStyleFromState)) {
+      const hiddenOnly = applyHiddenTimerStyleFromState(
+        resolveTimerOverlayStyle(rawSp, effectivePreset, timerStyleFromState, {
+          ready,
+          timerOnlyDefaultShowHours: timerOnlyMode,
+        }),
+        timerStyleFromState
+      );
+      lastStableTimerStyleRef.current = hiddenOnly;
+      timerStyleEmptySinceRef.current = null;
+      return hiddenOnly;
+    }
     const resolvedBase = resolveTimerOverlayStyle(rawSp, effectivePreset, timerStyleFromState, {
       ready,
       timerOnlyDefaultShowHours: timerOnlyMode,
@@ -5083,7 +5101,10 @@ function OverlayInner() {
         {showPersonalGoal && (ready || isPreviewGuide || externalHost) && (
           renderPersonalGoal()
         )}
-        {showTimer && effectiveTimerAllowed && !(showTeamBattle && teamBattleBoard) && (
+        {showTimer &&
+          effectiveTimerAllowed &&
+          (ready || isPreviewGuide || externalHost) &&
+          !(showTeamBattle && teamBattleBoard) && (
           <div className={`absolute ${posClass(timerAnchor)} z-[10000]`}>
             <Timer
               elapsed={timerText}

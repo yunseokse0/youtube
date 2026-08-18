@@ -2,6 +2,7 @@ import { applyMealBattleDonationToParticipants, mealBattleUsesRawDonationScore }
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import { normalizeAnonymousDonorDisplayName } from "@/lib/donation/anonymous-donor-name";
 import {
+  isDonationAmountEligibleForHighSocietyTerritory,
   normalizeHighSocietySettings,
   resolveSystemMiddlePushDir,
 } from "@/lib/high-society";
@@ -456,6 +457,9 @@ export function applyDonationToAppState(
         ...(newDonor.message ? { message: newDonor.message } : {}),
         ...(newDonor.hsPushDir ? { hsPushDir: newDonor.hsPushDir } : {}),
         ...(processedEvent.memberAutoAssigned ? { memberAutoAssigned: true } : {}),
+        ...(!isDonationAmountEligibleForHighSocietyTerritory(newDonor.amount)
+          ? { hsTerritoryExcluded: true as const }
+          : {}),
       },
     ],
     mealBattle: {
@@ -721,6 +725,12 @@ export function applyManualHsTerritoryExcludedChange(
   if (!donor) return null;
 
   const wantExcluded = Boolean(excluded);
+  if (
+    !wantExcluded &&
+    !isDonationAmountEligibleForHighSocietyTerritory(Math.max(0, Number(donor.amount) || 0))
+  ) {
+    return null;
+  }
   const prevExcluded = donor.hsTerritoryExcluded === true;
   if (prevExcluded === wantExcluded) return null;
 

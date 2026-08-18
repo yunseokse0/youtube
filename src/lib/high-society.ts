@@ -138,6 +138,11 @@ export function donationToExpandCm(won: number): number {
   return units * HIGH_SOCIETY_CM_PER_UNIT;
 }
 
+/** 1만원 정확 배수만 영토 확장·집계 대상 (천원 자리·0원은 false) */
+export function isDonationAmountEligibleForHighSocietyTerritory(amount: number): boolean {
+  return donationToExpandCm(amount) > 0;
+}
+
 export function formatCm(cm: number): string {
   const v = Math.max(0, Math.round(cm * 10) / 10);
   return `${v.toLocaleString("ko-KR")}cm`;
@@ -562,6 +567,7 @@ export function shouldDonorCountForHighSocietyTerritory(
   if (isDonorHsTerritoryExcluded(d)) return false;
   if (d.donationExcluded === true) return false;
   if (Math.max(0, Number(d.amount) || 0) <= 0) return false;
+  if (!isDonationAmountEligibleForHighSocietyTerritory(d.amount)) return false;
 
   const at = highSocietyDonorAtMs(d);
   const startedAt = Number(link.startedAt);
@@ -702,7 +708,13 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
     const memberTerritoryExpand: Record<string, { expandLeftCm: number; expandRightCm: number }> =
       {};
     for (const s of prevField.seats) {
-      memberWidthCm[s.id] = s.widthCm;
+      const expand = (s.expandLeftCm || 0) + (s.expandRightCm || 0);
+      const startCm = prevField.startCm;
+      const widthCm =
+        expand > 0 && s.widthCm < startCm * 0.5
+          ? Math.round((startCm + expand) * 10) / 10
+          : s.widthCm;
+      memberWidthCm[s.id] = widthCm;
       memberWidthDonationSnapshot[s.id] = s.donationWon;
       memberTerritoryExpand[s.id] = {
         expandLeftCm: s.expandLeftCm,
@@ -945,6 +957,45 @@ function shouldUseMemberWidthSnapshot(
     if (snapWon == null || p.donationWon !== snapWon) return false;
   }
   return true;
+}
+
+/** 옛 스냅샷 width=expandCm(5)만 저장된 경우 복구 — fieldCm 합 유지하며 타 좌석에서 균등 차감 */
+function repairMemberWidthSnapshot(
+  widthByMemberId: Record<string, number>,
+  players: HighSocietyPlayerInput[],
+  startCm: number,
+  fieldCm: number
+): Record<string, number> {
+  const out = { ...widthByMemberId };
+  const corruptIds = new Set<string>();
+  let extraNeeded = 0;
+  for (const p of players) {
+    const w = out[p.id];
+    if (w == null) continue;
+    const expand = (p.expandLeftCm || 0) + (p.expandRightCm || 0);
+    if (expand > 0 && w < startCm * 0.5) {
+      const target = Math.round((startCm + expand) * 10) / 10;
+      extraNeeded += target - w;
+      out[p.id] = target;
+      corruptIds.add(p.id);
+    }
+  }
+  if (extraNeeded <= 0) return out;
+  const others = players.filter((p) => out[p.id] != null && !corruptIds.has(p.id));
+  const otherSum = others.reduce((s, p) => s + (out[p.id] || 0), 0);
+  if (otherSum <= extraNeeded) return out;
+  const shrink = (otherSum - extraNeeded) / otherSum;
+  for (const p of others) {
+    out[p.id] = Math.max(0, Math.round(out[p.id]! * shrink * 10) / 10);
+  }
+  const sum = players.reduce((s, p) => s + (out[p.id] || 0), 0);
+  if (Math.abs(sum - fieldCm) > 0.5 && others[0]) {
+    out[others[0].id] = Math.max(
+      0,
+      Math.round(((out[others[0].id] || 0) + (fieldCm - sum)) * 10) / 10
+    );
+  }
+  return out;
 }
 
 /** 좌석 reorder 직후 — 멤버 id별 widthCm 유지(슬롯 index 물리 재계산 생략) */
@@ -1230,8 +1281,11 @@ export function aggregateSeatPushesFromDonors(opts: {
     let won = 0;
     for (const d of rows) {
       const amount = Math.max(0, Math.round(Number(d.amount) || 0));
-      won += amount;
       const cm = donationToExpandCm(amount);
+      /** 스냅샷 비교용 — 1만원 배수만 합산(1만3천 등은 영토·won 변동 없음) */
+      if (isDonationAmountEligibleForHighSocietyTerritory(amount)) {
+        won += amount;
+      }
       if (dir === "right") {
         right += cm;
         continue;
@@ -1283,12 +1337,18 @@ export function buildHighSocietyFieldFromAppState(
     donors: state.donors || [],
     settings: settingsForField,
   });
+  const startCm = seatCount > 0 ? effectiveFieldCm / seatCount : 0;
   const field =
     shouldUseMemberWidthSnapshot(settingsForField, players)
       ? resolveHighSocietyFieldWithMemberWidths({
           players,
           fieldCm: effectiveFieldCm,
-          widthByMemberId: settingsForField.memberWidthCm,
+          widthByMemberId: repairMemberWidthSnapshot(
+            settingsForField.memberWidthCm!,
+            players,
+            startCm,
+            effectiveFieldCm
+          ),
           expandByMemberId: settingsForField.memberTerritoryExpand,
         })
       : resolveHighSocietyField({ players, fieldCm: effectiveFieldCm });

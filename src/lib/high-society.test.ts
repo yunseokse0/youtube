@@ -45,6 +45,8 @@ import {
   isMeaningfulHighSocietySettings,
   shouldBlockHighSocietyRegression,
   defaultHighSocietySettings,
+  isDonationAmountEligibleForHighSocietyTerritory,
+  shouldDonorCountForHighSocietyTerritory,
 } from "./high-society";
 
 describe("high-society rule field", () => {
@@ -57,6 +59,37 @@ describe("high-society rule field", () => {
     expect(donationToExpandCm(20000)).toBe(10);
     expect(donationToExpandCm(26_000)).toBe(0);
     expect(donationToExpandCm(100000)).toBe(50);
+  });
+
+  it("isDonationAmountEligibleForHighSocietyTerritory matches 1만원 배수 rule", () => {
+    expect(isDonationAmountEligibleForHighSocietyTerritory(100)).toBe(false);
+    expect(isDonationAmountEligibleForHighSocietyTerritory(1000)).toBe(false);
+    expect(isDonationAmountEligibleForHighSocietyTerritory(13_000)).toBe(false);
+    expect(isDonationAmountEligibleForHighSocietyTerritory(10_000)).toBe(true);
+    expect(isDonationAmountEligibleForHighSocietyTerritory(20_000)).toBe(true);
+  });
+
+  it("shouldDonorCountForHighSocietyTerritory rejects ineligible amounts", () => {
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a"],
+      donationLinks: { a: { active: true, startedAt: 0 } },
+    });
+    const link = { active: true, startedAt: 0 };
+    expect(
+      shouldDonorCountForHighSocietyTerritory(
+        { amount: 13_000, at: 100, donationExcluded: false },
+        settings,
+        link
+      )
+    ).toBe(false);
+    expect(
+      shouldDonorCountForHighSocietyTerritory(
+        { amount: 10_000, at: 100, donationExcluded: false },
+        settings,
+        link
+      )
+    ).toBe(true);
   });
 
   it("starts equal N-way split of fixed field", () => {
@@ -876,6 +909,76 @@ describe("high-society territory (aux)", () => {
     });
     expect(oneSmall.seats[0]!.widthCm).toBe(105);
     expect(oneSmall.seats[1]!.widthCm).toBe(95);
+  });
+
+  it("ineligible amount (15k) does not change territory won sum or break snapshot", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    const linkAt = 1000;
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b", "c", "d"],
+      fieldCm: 400,
+      donationLinks: {
+        a: { active: true, startedAt: linkAt },
+        b: { active: true, startedAt: linkAt },
+        c: { active: true, startedAt: linkAt },
+        d: { active: true, startedAt: linkAt },
+      },
+      memberWidthCm: { b: 105, a: 95, c: 100, d: 100 },
+      memberWidthDonationSnapshot: { b: 10_000, a: 0, c: 0, d: 0 },
+    });
+    const donors = [
+      { id: "d1", name: "x", amount: 10_000, memberId: "b", at: 2000 },
+      { id: "d2", name: "y", amount: 15_000, memberId: "b", at: 3000 },
+    ];
+    const field = buildHighSocietyFieldFromAppState({
+      members,
+      donors,
+      highSocietySettings: settings,
+    });
+    expect(field.seats.find((s) => s.id === "b")!.widthCm).toBe(105);
+    expect(field.seats.find((s) => s.id === "c")!.eliminated).toBe(false);
+  });
+
+  it("repairs corrupt memberWidthCm (expand-only width) without dropping zero-donation seats", () => {
+    const members = [
+      { id: "yoon", name: "윤시우", account: 0, toon: 25_000, operating: false },
+      { id: "jaki", name: "자키", account: 0, toon: 0, operating: false },
+      { id: "ga", name: "가여니", account: 0, toon: 0, operating: false },
+      { id: "isia", name: "이시아", account: 0, toon: 200_000, operating: false },
+    ];
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["yoon", "jaki", "ga", "isia"],
+      fieldCm: 400,
+      startCmPerMember: 100,
+      donationLinks: {
+        yoon: { active: true, startedAt: 1 },
+        jaki: { active: true, startedAt: 1 },
+        ga: { active: true, startedAt: 1 },
+        isia: { active: true, startedAt: 1 },
+      },
+      memberWidthCm: { jaki: 100, yoon: 5, ga: 100, isia: 195 },
+      memberWidthDonationSnapshot: { jaki: 0, yoon: 10_000, ga: 0, isia: 200_000 },
+    });
+    const donors = [
+      { id: "d1", name: "a", amount: 10_000, memberId: "yoon", at: 2 },
+      { id: "d2", name: "b", amount: 15_000, memberId: "yoon", at: 3, hsTerritoryExcluded: true },
+      { id: "d3", name: "c", amount: 200_000, memberId: "isia", at: 2 },
+    ];
+    const field = buildHighSocietyFieldFromAppState({
+      members,
+      donors,
+      highSocietySettings: settings,
+    });
+    expect(field.seats.find((s) => s.id === "ga")!.eliminated).toBe(false);
+    expect(field.seats.find((s) => s.id === "yoon")!.widthCm).toBeCloseTo(105, 0);
+    expect(field.seats.reduce((s, x) => s + x.widthCm, 0)).toBeCloseTo(400, 0);
   });
 
   it("excludes pre-ON donor rows when startedAt is set on first ON", () => {

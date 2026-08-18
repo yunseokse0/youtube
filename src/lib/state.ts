@@ -32,6 +32,7 @@ import type {
 } from "@/types";
 import { isHiddenTimerDisplayStyle } from "@/lib/overlay-params";
 import {
+  isDonationAmountEligibleForHighSocietyTerritory,
   normalizeHighSocietySettings,
   normalizeHighSocietyDonationLinks,
   resolveHighSocietySeatMembers,
@@ -1481,7 +1482,12 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
       if (x.groupSplit === true) row.groupSplit = true;
       if (x.groupSplitSource === true) row.groupSplitSource = true;
       if (x.donationExcluded === true) row.donationExcluded = true;
-      if (x.hsTerritoryExcluded === true) row.hsTerritoryExcluded = true;
+      if (
+        x.hsTerritoryExcluded === true ||
+        !isDonationAmountEligibleForHighSocietyTerritory(row.amount)
+      ) {
+        row.hsTerritoryExcluded = true;
+      }
       const hsPush =
         x.hsPushDir === "left" || x.hsPushDir === "right" || x.hsPushDir === "split"
           ? x.hsPushDir

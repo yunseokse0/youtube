@@ -254,6 +254,7 @@ import {
   HIGH_SOCIETY_MAX_SEATS,
   shouldBlockHighSocietyRegression,
   isMeaningfulHighSocietySettings,
+  isDonationAmountEligibleForHighSocietyTerritory,
 } from "@/lib/high-society";
 import { formatHsPushDirLabel, showAppToast } from "@/lib/app-toast";
 import {
@@ -13029,6 +13030,8 @@ export default function AdminPage() {
                       모드 ON/OFF는 위 「상류사회 모드」에서만 설정합니다. ON이면 아래 리스트{" "}
                       <strong className="text-neutral-300">확장</strong>에서 이미 들어온 후원 방향을 바꾸고{" "}
                       <strong className="text-amber-200/90">적용</strong>을 누르세요. (가운데 좌석만 · 끝자리는 ←/→ 고정)
+                      {" · "}
+                      <strong className="text-neutral-300">1만원 정확 배수</strong>만 영토 ON (천원 자리·1만3천 등은 자동 OFF)
                     </p>
                   </div>
                   <span
@@ -13178,7 +13181,10 @@ export default function AdminPage() {
                             {highSocietySettings.enabled ? (
                               <td className="p-1">
                                 {(() => {
-                                  const hsTerritoryOff = d.hsTerritoryExcluded === true;
+                                  const hsAmountEligible =
+                                    isDonationAmountEligibleForHighSocietyTerritory(d.amount);
+                                  const hsTerritoryOff =
+                                    d.hsTerritoryExcluded === true || !hsAmountEligible;
                                   const territoryBusy = hsTerritoryToggleBusyId === d.id;
                                   const territoryToggle = (
                                     <button
@@ -13188,8 +13194,12 @@ export default function AdminPage() {
                                           ? "border-neutral-600 bg-neutral-900 text-neutral-400"
                                           : "border-emerald-500/50 bg-emerald-950/60 text-emerald-200"
                                       }`}
-                                      title="상류사회 영토(cm) 반영 ON/OFF — 순위·합산과 별개"
-                                      disabled={territoryBusy || isSplitSource}
+                                      title={
+                                        hsAmountEligible
+                                          ? "상류사회 영토(cm) 반영 ON/OFF — 순위·합산과 별개"
+                                          : "1만원 정확 배수만 영토 적용 — 이 금액은 자동 영토 OFF (합산·순위는 유지)"
+                                      }
+                                      disabled={territoryBusy || isSplitSource || !hsAmountEligible}
                                       onClick={() => {
                                         void (async () => {
                                           const prev = stateRef.current;
@@ -13198,6 +13208,15 @@ export default function AdminPage() {
                                             showAppToast("상류사회가 OFF입니다. 먼저 모드를 켜 주세요.", {
                                               variant: "info",
                                             });
+                                            return;
+                                          }
+                                          if (
+                                            !isDonationAmountEligibleForHighSocietyTerritory(d.amount)
+                                          ) {
+                                            showAppToast(
+                                              "1만원 정확 배수만 영토 ON 할 수 있습니다. (천원 자리·1만3천 등은 자동 OFF)",
+                                              { variant: "info" }
+                                            );
                                             return;
                                           }
                                           const wantOff = !hsTerritoryOff;
