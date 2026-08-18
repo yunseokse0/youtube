@@ -31,6 +31,7 @@ import {
   shouldSuppressOverlaySseConnection,
   shouldSkipOverlaySseForObsBroadcast,
   isExternalOverlayBroadcastHost,
+  isOverlayServerAuthoritativeUrl,
   isAdminDashboardPreviewEmbed,
   isEmbeddedInSameOriginAdminFrame,
   isHiddenTimerDisplayStyle,
@@ -406,7 +407,7 @@ export function useOverlayRemoteState(
   const persistLastGood = options.persistLastGood !== false;
 
   const preferServerOnly =
-    typeof window !== "undefined" && isExternalOverlayBroadcastHost();
+    typeof window !== "undefined" && isOverlayServerAuthoritativeUrl();
 
   const skipLocalSnapshot =
     options.skipLocalSnapshot === true || preferServerOnly;

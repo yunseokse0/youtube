@@ -815,6 +815,7 @@ export function shouldPreferLocalOverlayPresets(searchParams?: SearchParamsLike)
         ? new URLSearchParams(window.location.search)
         : null);
     if (sp && String(sp.get("broadcastMatch") || "").trim() === "1") return false;
+    if (sp && isTimerOnlyOverlayBroadcastUrl(sp)) return false;
   } catch {
     /* ignore */
   }
@@ -2209,6 +2210,52 @@ export function sanitizeBroadcastOverlayUrl(url: string): string {
  */
 export function stripOverlayPollMsFromBrowserLocation(): void {
   /* noop — 레이아웃 OverlayBroadcastHygiene 사용 */
+}
+
+/** URL `timerType` / `timertype` / `timer` (타이머 단독 오버레이) */
+export function getOverlayTimerTypeParam(searchParams: SearchParamsLike): string {
+  return (
+    searchParams.get("timerType") ||
+    searchParams.get("timertype") ||
+    searchParams.get("timer") ||
+    ""
+  ).trim();
+}
+
+/**
+ * `/overlay?timerType=general` 등 타이머 단독 방송 URL.
+ * 관리자 미리보기 iframe은 제외 — LS 핫리로드 유지.
+ */
+export function isTimerOnlyOverlayBroadcastUrl(searchParams?: SearchParamsLike): boolean {
+  if (isAdminDashboardPreviewEmbed()) return false;
+  if (isEmbeddedInSameOriginAdminFrame()) return false;
+  try {
+    const sp =
+      searchParams ??
+      (typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null);
+    if (!sp) return false;
+    if (sp.get("adminPreviewEmbed") === "1" || sp.get("hubPreview") === "1") return false;
+    return Boolean(getOverlayTimerTypeParam(sp));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * OBS `host=obs|prism|external` 또는 타이머 단독 방송 URL.
+ * LS last-good·로컬 overlayPresets 보다 서버 state 가 정본.
+ */
+export function isOverlayServerAuthoritativeUrl(searchParams?: SearchParamsLike): boolean {
+  if (isExternalOverlayBroadcastHost()) return true;
+  try {
+    const sp =
+      searchParams ??
+      (typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null);
+    if (sp && isOverlayBroadcastHost(sp)) return true;
+  } catch {
+    /* ignore */
+  }
+  return isTimerOnlyOverlayBroadcastUrl(searchParams);
 }
 
 /**

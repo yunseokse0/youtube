@@ -524,6 +524,32 @@ describe("admin preview hot-reload params", () => {
     expect(resolveTableBgColor(url, preset, { ready: true })).toBe("");
   });
 
+  it("timer-only broadcast URL prefers remote hidden timer preset over stale local", () => {
+    const remote: OverlayPresetLike[] = [
+      {
+        id: "ov_1",
+        timerBgColor: "transparent",
+        timerBorderColor: "transparent",
+        timerBgOpacity: "0",
+        showMembers: true,
+      },
+    ];
+    const local: OverlayPresetLike[] = [
+      {
+        id: "ov_1",
+        timerBgColor: "#ffffff",
+        timerBorderColor: "#cccccc",
+        timerBgOpacity: "40",
+        showMembers: true,
+      },
+    ];
+    const sp = new URLSearchParams("u=din&timerType=general&p=ov_1");
+    const merged = mergeOverlayPresetsForOverlayView(remote, local, sp);
+    expect(merged[0]?.timerBgColor).toBe("transparent");
+    expect(merged[0]?.timerBorderColor).toBe("transparent");
+    expect(merged[0]?.timerBgOpacity).toBe("0");
+  });
+
   it("prefers remote when broadcastMatch=1 even in admin preview", () => {
     const remote: OverlayPresetLike[] = [
       { id: "ov_1", theme: "excel", accountHeaderLabel: "캐시", showMembers: true },

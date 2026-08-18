@@ -53,6 +53,7 @@ import {
   isAdminDashboardPreviewEmbed,
   isEmbeddedInSameOriginAdminFrame,
   isExternalOverlayBroadcastHost,
+  isOverlayServerAuthoritativeUrl,
   shouldSuppressOverlaySseConnection,
   resolveScopedOverlayUserId,
   mergeOverlayPresetsForOverlayView,
@@ -188,9 +189,9 @@ function migrateLegacyOverlayLastGood(userId?: string): AppState | null {
 }
 
 function useRemoteState(userId?: string, enabled = true): { state: AppState | null; ready: boolean } {
-  /** OBS/Prism — CEF LS·last-good 옛 금액으로 서버와 무관한 값이 나오지 않게 서버 우선 */
+  /** OBS/Prism·타이머 단독 URL — CEF LS·last-good 옛 설정으로 서버와 무관한 값이 나오지 않게 서버 우선 */
   const preferServerOnly =
-    typeof window !== "undefined" && isExternalOverlayBroadcastHost();
+    typeof window !== "undefined" && isOverlayServerAuthoritativeUrl();
   const preferServerOnlyRef = useRef(preferServerOnly);
   preferServerOnlyRef.current = preferServerOnly;
 
