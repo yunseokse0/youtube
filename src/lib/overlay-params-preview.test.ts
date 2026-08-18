@@ -21,6 +21,7 @@ import {
   stripAdminPreviewHotReloadParams,
   type OverlayPresetLike,
 } from "./overlay-params";
+import { hasCustomTimerDisplayStyles, isDefaultLikeTimerDisplayStyle } from "./state";
 
 describe("admin preview hot-reload params", () => {
   it("strips theme keys so preview iframe src stays stable across theme changes", () => {
@@ -443,11 +444,29 @@ describe("timer pill layout", () => {
     expect(isTimerBorderVisuallyHidden("transparent", "transparent", 0)).toBe(true);
     expect(isTimerBorderVisuallyHidden("#ffffff", "#ff0000", 0)).toBe(true);
     expect(isTimerBorderVisuallyHidden("#ffffff", "#ffffff", 40)).toBe(false);
+    expect(isTimerBorderVisuallyHidden("#ffffff", "transparent", 40)).toBe(true);
   });
 
   it("scales pill padding with fontSize", () => {
     expect(getTimerPillPaddingPx(41)).toEqual({ padX: 12, padY: 5 });
     expect(getTimerPillPaddingPx(112)).toEqual({ padX: 32, padY: 12 });
+  });
+
+  it("treats non-default outlineWidth as custom timer style", () => {
+    const base = {
+      showHours: false,
+      fontFamily: "mono",
+      fontColor: "",
+      bgColor: "",
+      borderColor: "",
+      outlineColor: "",
+      outlineWidth: 0.8,
+      bgOpacity: 40,
+      scalePercent: 100,
+    };
+    expect(isDefaultLikeTimerDisplayStyle(base)).toBe(true);
+    expect(isDefaultLikeTimerDisplayStyle({ ...base, outlineWidth: 2 })).toBe(false);
+    expect(hasCustomTimerDisplayStyles({ general: { ...base, outlineWidth: 1.5 } })).toBe(true);
   });
 });
 

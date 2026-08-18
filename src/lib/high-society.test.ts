@@ -29,6 +29,7 @@ import {
   resolveHighSocietyField,
   resolveHighSocietyStartCmPerMember,
   resolveHighSocietyEffectiveFieldCm,
+  resolveHighSocietyDonationLink,
   buildHighSocietyFieldFromAppState,
   isDefaultLikeHighSocietySettings,
   isMeaningfulHighSocietySettings,
@@ -428,6 +429,128 @@ describe("high-society territory (aux)", () => {
     });
     expect(frozen.seats[1]!.widthCm).toBe(350);
     expect(withNew.seats[1]!.widthCm).toBe(350);
+  });
+
+  it("ignores donations when OFF without territoryCutoffAt (legacy/broken state)", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    const settings = normalizeHighSocietySettings({
+      enabled: false,
+      seatMemberIds: ["a", "b", "c", "d"],
+      defaultMiddlePush: "right",
+      donationLinks: { b: { active: true, startedAt: 0 } },
+    });
+    const link = resolveHighSocietyDonationLink(settings, "b");
+    expect(
+      shouldDonorCountForHighSocietyTerritory(
+        {
+          amount: 10_000,
+          at: 9000,
+          target: "account" as const,
+        } as const,
+        settings,
+        link
+      )
+    ).toBe(false);
+    const field = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        {
+          id: "d-new",
+          name: "new",
+          amount: 10_000,
+          memberId: "b",
+          target: "account" as const,
+          at: 9000,
+          hsPushDir: "right" as const,
+        },
+      ],
+      highSocietySettings: settings,
+    });
+    expect(field.seats[1]!.widthCm).toBe(300);
+  });
+
+  it("ignores donations after territory pause while mode stays ON", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b", "c", "d"],
+      defaultMiddlePush: "right",
+      territoryPaused: true,
+      territoryPausedAt: 7000,
+      donationLinks: { b: { active: true, startedAt: 0 } },
+    });
+    const frozen = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        {
+          id: "d-old",
+          name: "old",
+          amount: 100_000,
+          memberId: "b",
+          target: "account" as const,
+          at: 4000,
+          hsPushDir: "right" as const,
+        },
+      ],
+      highSocietySettings: settings,
+    });
+    const withNew = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        {
+          id: "d-old",
+          name: "old",
+          amount: 100_000,
+          memberId: "b",
+          target: "account" as const,
+          at: 4000,
+          hsPushDir: "right" as const,
+        },
+        {
+          id: "d-new",
+          name: "new",
+          amount: 200_000,
+          memberId: "b",
+          target: "account" as const,
+          at: 9000,
+          hsPushDir: "right" as const,
+        },
+      ],
+      highSocietySettings: settings,
+    });
+    expect(frozen.seats[1]!.widthCm).toBe(350);
+    expect(withNew.seats[1]!.widthCm).toBe(350);
+  });
+
+  it("clears territory pause when toggling OFF", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+    ];
+    const prev = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b"],
+      territoryPaused: true,
+      territoryPausedAt: 5000,
+    });
+    const next = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: prev,
+      nextSettings: normalizeHighSocietySettings({ ...prev, enabled: false }),
+      members,
+      now: 12_345,
+    });
+    expect(next.territoryPaused).toBe(false);
+    expect(next.territoryPausedAt).toBeUndefined();
   });
 
   it("sets territoryCutoffAt when toggling OFF", () => {

@@ -286,6 +286,7 @@ export function isDefaultLikeHighSocietySettings(
   if (s.enabled) return false;
   if (Number(s.territoryCutoffAt || 0) > 0) return false;
   if (Number(s.territoryReopenAt || 0) > 0) return false;
+  if (s.territoryPaused) return false;
   if ((s.seatMemberIds || []).length > 0) return false;
   if (Math.max(1, Math.floor(Number(s.round) || 1)) > 1) return false;
   if (Math.floor(Number(s.fieldCm) || 0) !== def.fieldCm) return false;
@@ -303,6 +304,7 @@ export function isMeaningfulHighSocietySettings(
   if (s.enabled) return true;
   if (Number(s.territoryCutoffAt || 0) > 0) return true;
   if (Number(s.territoryReopenAt || 0) > 0) return true;
+  if (s.territoryPaused) return true;
   if ((s.seatMemberIds || []).length > 0) return true;
   if (Math.max(1, Math.floor(Number(s.round) || 1)) > 1) return true;
   const def = defaultHighSocietySettings();
@@ -369,6 +371,10 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
   const reopenRaw = Number(v.territoryReopenAt);
   const territoryReopenAt =
     Number.isFinite(reopenRaw) && reopenRaw > 0 ? Math.floor(reopenRaw) : undefined;
+  const territoryPaused = Boolean(v.territoryPaused);
+  const pausedAtRaw = Number(v.territoryPausedAt);
+  const territoryPausedAt =
+    Number.isFinite(pausedAtRaw) && pausedAtRaw > 0 ? Math.floor(pausedAtRaw) : undefined;
   return {
     enabled: Boolean(v.enabled),
     seatMemberIds,
@@ -384,6 +390,8 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     donationLinks: donationLinks || {},
     ...(territoryCutoffAt !== undefined ? { territoryCutoffAt } : {}),
     ...(territoryReopenAt !== undefined ? { territoryReopenAt } : {}),
+    ...(territoryPaused ? { territoryPaused: true } : {}),
+    ...(territoryPaused && territoryPausedAt !== undefined ? { territoryPausedAt } : {}),
   };
 }
 
@@ -416,9 +424,16 @@ export function shouldDonorCountForHighSocietyTerritory(
   const reopenAtRaw = Number(settings.territoryReopenAt);
   const lastOffAt = Number.isFinite(lastOffAtRaw) && lastOffAtRaw > 0 ? Math.floor(lastOffAtRaw) : null;
   const reopenAt = Number.isFinite(reopenAtRaw) && reopenAtRaw > 0 ? Math.floor(reopenAtRaw) : null;
+  const pausedAtRaw = Number(settings.territoryPausedAt);
+  const pausedAt =
+    settings.territoryPaused && Number.isFinite(pausedAtRaw) && pausedAtRaw > 0
+      ? Math.floor(pausedAtRaw)
+      : null;
+  if (pausedAt && at >= pausedAt) return false;
 
   if (!settings.enabled) {
-    if (!lastOffAt) return true;
+    /** cutoff 없으면 OFF 이후 후원이 영토에 섞이지 않게 집계 제외 */
+    if (!lastOffAt) return false;
     return at < lastOffAt;
   }
 
@@ -468,7 +483,14 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
 
   const territoryTimingPatch = (): Partial<HighSocietySettings> => {
     if (resetTerritory) return { territoryCutoffAt: undefined, territoryReopenAt: undefined };
-    if (turningOff) return { territoryCutoffAt: now, territoryReopenAt: undefined };
+    if (turningOff) {
+      return {
+        territoryCutoffAt: now,
+        territoryReopenAt: undefined,
+        territoryPaused: false,
+        territoryPausedAt: undefined,
+      };
+    }
     if (reOn) return { territoryReopenAt: now };
     if (firstOn) return { territoryCutoffAt: undefined, territoryReopenAt: undefined };
     return {};

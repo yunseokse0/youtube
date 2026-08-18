@@ -1387,7 +1387,7 @@ function defaultTimerDisplayStyle(): TimerDisplayStyle {
   };
 }
 
-/** 타이머 표시 색·글꼴이 전부 비어 기본값인지 */
+/** 타이머 표시 색·글꼴·외곽선이 전부 비어 기본값인지 */
 export function isDefaultLikeTimerDisplayStyle(
   style: TimerDisplayStyle | null | undefined
 ): boolean {
@@ -1398,12 +1398,16 @@ export function isDefaultLikeTimerDisplayStyle(
   const fontIsDefault = !font || font === "mono" || font === "default" || font === "auto";
   const bgOpacity = Number(style.bgOpacity);
   const scalePercent = Number(style.scalePercent);
+  const outlineWidth = Number(style.outlineWidth);
+  const outlineWidthIsDefault =
+    !Number.isFinite(outlineWidth) || Math.abs(outlineWidth - 0.8) < 0.05;
   return (
     fontIsDefault &&
     !String(style.fontColor || "").trim() &&
     !String(style.bgColor || "").trim() &&
     !String(style.borderColor || "").trim() &&
     !String(style.outlineColor || "").trim() &&
+    outlineWidthIsDefault &&
     (!Number.isFinite(bgOpacity) || bgOpacity === 40) &&
     (!Number.isFinite(scalePercent) || scalePercent === 100)
   );
@@ -1984,7 +1988,22 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
       hasCustomTimerDisplayStyles(prevTimerStyles) &&
       (!nextTimerStyles || isDefaultLikeTimerDisplayStyle(nextTimerStyles.general))
     ) {
-      merged.timerDisplayStyles = prevTimerStyles;
+      if (nextTimerStyles?.general && prevTimerStyles?.general) {
+        merged.timerDisplayStyles = {
+          ...prevTimerStyles,
+          general: {
+            ...prevTimerStyles.general,
+            ...(nextTimerStyles.general.outlineWidth !== undefined
+              ? { outlineWidth: nextTimerStyles.general.outlineWidth }
+              : {}),
+            ...(nextTimerStyles.general.outlineColor !== undefined
+              ? { outlineColor: nextTimerStyles.general.outlineColor }
+              : {}),
+          },
+        };
+      } else {
+        merged.timerDisplayStyles = prevTimerStyles;
+      }
     } else if (
       !("timerDisplayStyles" in next) &&
       hasCustomTimerDisplayStyles(prevTimerStyles)

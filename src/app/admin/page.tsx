@@ -2000,8 +2000,11 @@ export default function AdminPage() {
                   fontColor: String(presetWithTimer.timerFontColor || ""),
                   bgColor: String(presetWithTimer.timerBgColor || ""),
                   borderColor: String(presetWithTimer.timerBorderColor || ""),
-                  outlineColor: "",
-                  outlineWidth: 0.8,
+                  outlineColor: String(presetWithTimer.timerOutlineColor || ""),
+                  outlineWidth: (() => {
+                    const n = parseFloat(String(presetWithTimer.timerOutlineWidth ?? "0.8"));
+                    return Number.isFinite(n) ? Math.max(0, Math.min(3, n)) : 0.8;
+                  })(),
                   bgOpacity: Math.max(
                     0,
                     Math.min(100, parseInt(String(presetWithTimer.timerBgOpacity || "40"), 10) || 40)
@@ -2906,6 +2909,8 @@ export default function AdminPage() {
         mergedPatch.timerFontColor !== undefined ||
         mergedPatch.timerBgColor !== undefined ||
         mergedPatch.timerBorderColor !== undefined ||
+        mergedPatch.timerOutlineColor !== undefined ||
+        mergedPatch.timerOutlineWidth !== undefined ||
         mergedPatch.timerBgOpacity !== undefined ||
         mergedPatch.timerScale !== undefined ||
         mergedPatch.timerShowHours !== undefined;
@@ -2933,8 +2938,17 @@ export default function AdminPage() {
                 mergedPatch.timerBorderColor !== undefined
                   ? String(mergedPatch.timerBorderColor || "")
                   : String(prevTimer?.borderColor || ""),
-              outlineColor: String(prevTimer?.outlineColor || ""),
-              outlineWidth: Number(prevTimer?.outlineWidth ?? 0.8),
+              outlineColor:
+                mergedPatch.timerOutlineColor !== undefined
+                  ? String(mergedPatch.timerOutlineColor || "")
+                  : String(prevTimer?.outlineColor || ""),
+              outlineWidth:
+                mergedPatch.timerOutlineWidth !== undefined
+                  ? Math.max(
+                      0,
+                      Math.min(3, parseFloat(String(mergedPatch.timerOutlineWidth || "0.8")) || 0.8)
+                    )
+                  : Number(prevTimer?.outlineWidth ?? 0.8),
               bgOpacity:
                 mergedPatch.timerBgOpacity !== undefined
                   ? Math.max(0, Math.min(100, parseInt(String(mergedPatch.timerBgOpacity || "40"), 10) || 40))
@@ -7554,9 +7568,18 @@ export default function AdminPage() {
   const patchHighSocietySettings = useCallback(
     (patch: HighSocietySettingsAdminPatch) => {
       const resetTerritory = Boolean(patch.resetTerritory);
-      const { resetTerritory: _resetTerritory, ...settingsPatch } = patch;
-      const wasOn = normalizeHighSocietySettings(stateRef.current.highSocietySettings).enabled;
-      const before = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
+      const { resetTerritory: _resetTerritory, ...settingsPatchRaw } = patch;
+      const prevForPause = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
+      let settingsPatch = { ...settingsPatchRaw };
+      if (typeof patch.territoryPaused === "boolean") {
+        if (patch.territoryPaused && !prevForPause.territoryPaused) {
+          settingsPatch = { ...settingsPatch, territoryPausedAt: Date.now() };
+        } else if (!patch.territoryPaused) {
+          settingsPatch = { ...settingsPatch, territoryPausedAt: undefined };
+        }
+      }
+      const wasOn = prevForPause.enabled;
+      const before = prevForPause;
       let applied: ReturnType<typeof normalizeHighSocietySettings> | null = null;
       setState((prev: AppState) => {
         const prevSettings = normalizeHighSocietySettings(prev.highSocietySettings);
@@ -7649,6 +7672,12 @@ export default function AdminPage() {
           patch.territoryUpdateMode === "onRoundEnd"
             ? "상류사회 · 영토 갱신: 라운드 종료 후"
             : "상류사회 · 영토 갱신: 실시간"
+        );
+      } else if (typeof patch.territoryPaused === "boolean" && patch.territoryPaused !== before.territoryPaused) {
+        showAppToast(
+          patch.territoryPaused
+            ? "상류사회 · 영토 일시정지 — 이후 후원은 영토 미반영(합산·금액은 유지)"
+            : "상류사회 · 영토 재개 — 이후 후원부터 영토 반영"
         );
       } else if (patch.fx) {
         const fx = normalizeHighSocietyFxSettings(after.fx);
@@ -11797,6 +11826,13 @@ export default function AdminPage() {
                             onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { borderColor: e.target.value })}
                           />
                           <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updateTimerDisplayStyle(timerDef.flag, { borderColor: "" })}>기본</button>
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                            onClick={() => updateTimerDisplayStyle(timerDef.flag, { borderColor: "transparent" })}
+                          >
+                            테두리 없음
+                          </button>
                         </div>
                         <label className="text-xs text-neutral-400">글자 외곽선 색상</label>
                         <div className="flex items-center gap-2">
@@ -11942,17 +11978,38 @@ export default function AdminPage() {
                       (수동 변경은 모드 ON일 때만 · 원복 후 적용).
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    className={`rounded px-3 py-1.5 text-xs font-semibold ${
-                      highSocietySettings.enabled
-                        ? "bg-amber-600 text-white"
-                        : "bg-neutral-700 text-neutral-200 hover:bg-neutral-600"
-                    }`}
-                    onClick={() => patchHighSocietySettings({ enabled: !highSocietySettings.enabled })}
-                  >
-                    {highSocietySettings.enabled ? "상류사회 ON" : "상류사회 OFF"}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      className={`rounded px-3 py-1.5 text-xs font-semibold ${
+                        highSocietySettings.enabled
+                          ? "bg-amber-600 text-white"
+                          : "bg-neutral-700 text-neutral-200 hover:bg-neutral-600"
+                      }`}
+                      onClick={() => patchHighSocietySettings({ enabled: !highSocietySettings.enabled })}
+                    >
+                      {highSocietySettings.enabled ? "상류사회 ON" : "상류사회 OFF"}
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded px-3 py-1.5 text-xs font-semibold border ${
+                        highSocietySettings.territoryPaused
+                          ? "border-sky-400 bg-sky-700/90 text-white"
+                          : "border-white/15 bg-neutral-800 text-neutral-200 hover:border-sky-400/50"
+                      }`}
+                      disabled={!highSocietySettings.enabled}
+                      title={
+                        highSocietySettings.enabled
+                          ? "영토 게이지만 동결 — 후원 합산·멤버 금액은 계속 반영"
+                          : "모드 ON일 때만 사용"
+                      }
+                      onClick={() =>
+                        patchHighSocietySettings({ territoryPaused: !highSocietySettings.territoryPaused })
+                      }
+                    >
+                      {highSocietySettings.territoryPaused ? "영토 재개" : "영토 일시정지"}
+                    </button>
+                  </div>
                 </div>
                 {highSocietySettings.enabled ? (
                   <div className="rounded border border-white/10 bg-black/20 px-2.5 py-2 text-[11px] text-neutral-400 leading-snug">
@@ -14248,7 +14305,8 @@ export default function AdminPage() {
                   <div className="text-[11px] font-semibold text-amber-100/95">영토 게이지 갱신</div>
                   <p className="text-[10px] text-neutral-400 leading-snug">
                     실시간은 후원이 들어올 때마다 게이지가 움직이고, 라운드 종료 후는 「타이머 제어」 일반
-                    타이머가 0이 될 때까지 게이지를 고정한 뒤 한 번에 반영합니다.
+                    타이머가 0이 될 때까지 게이지를 고정한 뒤 한 번에 반영합니다. 「영토 일시정지」는
+                    모드 ON 중 수동으로 게이지만 동결할 때 사용합니다.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -14272,6 +14330,21 @@ export default function AdminPage() {
                       onClick={() => patchHighSocietySettings({ territoryUpdateMode: "onRoundEnd" })}
                     >
                       라운드 종료 후
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded px-3 py-1.5 text-xs font-semibold border ${
+                        highSocietySettings.territoryPaused
+                          ? "border-sky-400 bg-sky-700/90 text-white"
+                          : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-sky-400/50"
+                      }`}
+                      disabled={!highSocietySettings.enabled}
+                      title="영토 게이지만 동결 — 후원 합산·멤버 금액은 계속 반영"
+                      onClick={() =>
+                        patchHighSocietySettings({ territoryPaused: !highSocietySettings.territoryPaused })
+                      }
+                    >
+                      {highSocietySettings.territoryPaused ? "영토 재개" : "영토 일시정지"}
                     </button>
                     <button
                       type="button"
@@ -16606,6 +16679,13 @@ export default function AdminPage() {
                                         onChange={(e) => updatePreset(p.id, { timerBorderColor: e.target.value })}
                                       />
                                       <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { timerBorderColor: "" })}>기본</button>
+                                      <button
+                                        type="button"
+                                        className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                                        onClick={() => updatePreset(p.id, { timerBorderColor: "transparent" })}
+                                      >
+                                        테두리 없음
+                                      </button>
                                     </div>
                                     <label className="text-xs text-neutral-400">배경 불투명도</label>
                                     <div className="flex items-center gap-2">

@@ -2544,6 +2544,10 @@ function OverlayInner() {
             outlineColor: next.outlineColor,
           };
         }
+        /** 테두리 없음(배경은 유지) — stale 복원으로 pill 테두리가 되살아나지 않게 */
+        if (isTimerBorderVisuallyHidden(next.bgColor, next.borderColor, next.bgOpacity)) {
+          return { ...merged, borderColor: next.borderColor };
+        }
         return merged;
       }
       lastStableTimerStyleRef.current = null;

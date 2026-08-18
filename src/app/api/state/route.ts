@@ -314,7 +314,26 @@ function mergePartialState(
       (patch.timerDisplayStyles as AppState["timerDisplayStyles"] | undefined)?.general
     )
   ) {
-    next.timerDisplayStyles = base.timerDisplayStyles;
+    const patchGeneral = (patch.timerDisplayStyles as AppState["timerDisplayStyles"] | undefined)
+      ?.general;
+    const baseGeneral = base.timerDisplayStyles?.general;
+    if (patchGeneral && baseGeneral) {
+      /** 색상 기본 wipe 는 막되, 외곽선 두께·색은 patch 반영 */
+      next.timerDisplayStyles = {
+        ...base.timerDisplayStyles!,
+        general: {
+          ...baseGeneral,
+          ...(patchGeneral.outlineWidth !== undefined
+            ? { outlineWidth: patchGeneral.outlineWidth }
+            : {}),
+          ...(patchGeneral.outlineColor !== undefined
+            ? { outlineColor: patchGeneral.outlineColor }
+            : {}),
+        },
+      };
+    } else {
+      next.timerDisplayStyles = base.timerDisplayStyles;
+    }
     logger.warn("timerDisplayStyles default wipe blocked", { userId });
   }
   if (!("donorRankingsPresets" in patch)) next.donorRankingsPresets = base.donorRankingsPresets;

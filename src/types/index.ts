@@ -468,6 +468,10 @@ export type HighSocietySettings = {
   territoryCutoffAt?: number;
   /** 재ON 시각(ms) — 재ON 이후 들어온 후원만 영토에 추가 반영 */
   territoryReopenAt?: number;
+  /** ON 유지 중 영토 게이지만 동결(후원 합산·멤버 금액은 계속 반영) */
+  territoryPaused?: boolean;
+  /** territoryPaused=true 전환 시각(ms) — 이후 후원은 영토 미반영 */
+  territoryPausedAt?: number;
 };
 
 /** `/overlay/sig-rolling` — 이미지/GIF 순환 한 장 항목 */
