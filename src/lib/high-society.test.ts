@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import {
   buildHighSocietyFieldFromMembers,
   buildHighSocietyTerritory,
@@ -28,6 +29,7 @@ import {
   mergeDonorRostersPreferFullest,
   resolveDonorsForHighSocietySettingsPatch,
   shouldPersistDonorsForHighSocietySettingsPatch,
+  shouldApplyDonorsForHighSocietySettingsPatch,
   resolveDonationSyncModeForHighSocietySettingsChange,
   isHighSocietyReopen,
   isHighSocietyDonationIngestPaused,
@@ -1084,6 +1086,38 @@ describe("high-society territory (aux)", () => {
     expect(merged.map((d) => d.id).sort()).toEqual(["d1", "d2"]);
   });
 
+  it("mergeDonorRostersPreferFullest keeps rows without id (name|at|amount key)", () => {
+    const react = [{ name: "익명", amount: 20_000, memberId: "m1", at: 500 } as const];
+    const merged = mergeDonorRostersPreferFullest(react);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]!.amount).toBe(20_000);
+  });
+
+  it("resolveDonorsForHighSocietySettingsPatch on resetTerritory marks OFF but keeps amount", () => {
+    const existing = [
+      { id: "d1", name: "후원", amount: 50_000, memberId: "m1", at: 100 },
+    ];
+    const donors = resolveDonorsForHighSocietySettingsPatch({
+      prevDonorsReact: existing,
+      refDonors: [],
+      lsDonors: [],
+      resetTerritory: true,
+      isFirstOn: false,
+    });
+    expect(donors).toHaveLength(1);
+    expect(donors[0]!.amount).toBe(50_000);
+    expect(donors[0]!.hsTerritoryExcluded).toBe(true);
+  });
+
+  it("shouldApplyDonorsForHighSocietySettingsPatch is false for empty list", () => {
+    expect(shouldApplyDonorsForHighSocietySettingsPatch([])).toBe(false);
+    expect(
+      shouldApplyDonorsForHighSocietySettingsPatch([
+        { id: "d1", name: "A", amount: 1000, memberId: "m1", at: 1 },
+      ])
+    ).toBe(true);
+  });
+
   it("resolveDonorsForHighSocietySettingsPatch preserves donors on OFF when React is empty", () => {
     const ls = [{ id: "d1", name: "A", amount: 8000, memberId: "m1", at: 100 }];
     const donors = resolveDonorsForHighSocietySettingsPatch({
@@ -1167,6 +1201,29 @@ describe("high-society territory (aux)", () => {
         prevMode: "sigMatch",
       })
     ).toBe("sigMatch");
+  });
+
+  it("resetTerritory donor patch keeps member totals after sync", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 50_000, toon: 0, operating: false },
+    ];
+    const donors = resolveDonorsForHighSocietySettingsPatch({
+      prevDonorsReact: [
+        { id: "d1", name: "후원", amount: 50_000, memberId: "b", target: "account" as const, at: 100 },
+      ],
+      refDonors: [],
+      lsDonors: [],
+      resetTerritory: true,
+      isFirstOn: false,
+    });
+    expect(shouldApplyDonorsForHighSocietySettingsPatch(donors)).toBe(true);
+    const synced = syncMemberTotalsFromDonors({
+      members,
+      donors,
+      highSocietySettings: normalizeHighSocietySettings({ enabled: true }),
+    } as import("@/types").AppState);
+    expect(synced.members?.find((m) => m.id === "b")?.account).toBe(50_000);
   });
 
   it("resetTerritory bumps round and startedAt only (donors unchanged in field when no new donations)", () => {

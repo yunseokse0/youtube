@@ -1140,18 +1140,26 @@ export function isDonorHsTerritoryExcluded(d: Pick<Donor, "hsTerritoryExcluded">
  * 상류사회 ON/OFF 등 admin patch 직전 — React·LS·ref 중 비어 있는 쪽이
  * 실후원을 지우지 않게 id 기준 union(금액·at 더 풍부한 행 우선).
  */
+function donorRosterMergeKey(d: Donor): string {
+  const id = String(d.id || "").trim();
+  if (id) return `id:${id}`;
+  const name = String(d.name || "").trim();
+  const amount = Math.max(0, Math.round(Number(d.amount) || 0));
+  const at = Number.isFinite(Number(d.at)) ? Math.floor(Number(d.at)) : 0;
+  return `fallback:${name}|${at}|${amount}`;
+}
+
 export function mergeDonorRostersPreferFullest(
   ...sources: Array<Donor[] | null | undefined>
 ): Donor[] {
-  const byId = new Map<string, Donor>();
+  const byKey = new Map<string, Donor>();
   for (const src of sources) {
     for (const d of src || []) {
       if (!d || typeof d !== "object") continue;
-      const id = String(d.id || "").trim();
-      if (!id) continue;
-      const existing = byId.get(id);
+      const key = donorRosterMergeKey(d);
+      const existing = byKey.get(key);
       if (!existing) {
-        byId.set(id, d);
+        byKey.set(key, d);
         continue;
       }
       const existingAmt = Math.max(0, Math.round(Number(existing.amount) || 0));
@@ -1159,11 +1167,11 @@ export function mergeDonorRostersPreferFullest(
       const existingAt = Number(existing.at || 0);
       const nextAt = Number(d.at || 0);
       if (nextAmt > existingAmt || (nextAmt === existingAmt && nextAt >= existingAt)) {
-        byId.set(id, d);
+        byKey.set(key, d);
       }
     }
   }
-  return Array.from(byId.values());
+  return Array.from(byKey.values());
 }
 
 /**
@@ -1214,11 +1222,19 @@ export function resolveDonorsForHighSocietySettingsPatch(opts: {
     opts.refDonors,
     opts.lsDonors
   );
+  /** id 없는 행·일시적 React 비움 — 영토 patch 가 donors/members 를 0으로 덮지 않게 */
   const shouldMarkHsTerritoryOff =
     (opts.resetTerritory || opts.isFirstOn) && prevDonors.length > 0;
   return shouldMarkHsTerritoryOff
     ? markDonorsHsTerritoryExcluded(prevDonors, true)
     : prevDonors;
+}
+
+/** 영토 리셋·최초 ON patch 에서 donors 를 state/LS/API 에 반영할지 */
+export function shouldApplyDonorsForHighSocietySettingsPatch(
+  donors: Donor[] | null | undefined
+): boolean {
+  return mergeDonorRostersPreferFullest(donors).length > 0;
 }
 
 /** 영토 초기화·상류사회 ON 시 기존 후원 행 — 영토만 OFF (순위·합산 유지) */

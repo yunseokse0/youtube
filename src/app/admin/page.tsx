@@ -240,6 +240,7 @@ import {
   buildTerritoryPauseToggleSettingsPatch,
   resolveDonorsForHighSocietySettingsPatch,
   shouldPersistDonorsForHighSocietySettingsPatch,
+  shouldApplyDonorsForHighSocietySettingsPatch,
   resolveDonationSyncModeForHighSocietySettingsChange,
   type HighSocietySettingsAdminPatch,
   resolveHighSocietySeatMembers,
@@ -7705,28 +7706,30 @@ export default function AdminPage() {
           isFirstOn,
         });
         /** 영토 일시정지·OFF·재ON 등 — React donors 를 비우거나 authoritative 저장하지 않음 */
-        let nextDonors = prev.donors;
+        let donorsPatch: Donor[] | null = null;
         if (needsDonorTerritoryMark) {
           let fromLsDonors: Donor[] = [];
           try {
             fromLsDonors = normalizeDonorsArray(loadState(user?.id)?.donors);
           } catch {}
-          nextDonors = resolveDonorsForHighSocietySettingsPatch({
+          const resolvedDonors = resolveDonorsForHighSocietySettingsPatch({
             prevDonorsReact: prev.donors,
             refDonors: stateRef.current?.donors,
             lsDonors: fromLsDonors,
             resetTerritory,
             isFirstOn,
           });
+          if (shouldApplyDonorsForHighSocietySettingsPatch(resolvedDonors)) {
+            donorsPatch = resolvedDonors;
+          }
         }
         let nextDonationSyncMode = resolveDonationSyncModeForHighSocietySettingsChange({
           turningOn,
           turningOff,
           prevMode: prev.donationSyncMode,
         });
-        const hasDonorsToPreserve =
-          needsDonorTerritoryMark && normalizeDonorsArray(nextDonors).length > 0;
-        if (hasDonorsToPreserve) {
+        const hasDonorsToPersist = donorsPatch != null;
+        if (hasDonorsToPersist) {
           donationAuthoritativeSaveUntilRef.current = Math.max(
             donationAuthoritativeSaveUntilRef.current,
             Date.now() + 12_000
@@ -7734,13 +7737,16 @@ export default function AdminPage() {
         }
         let next: AppState = {
           ...prev,
-          ...(needsDonorTerritoryMark ? { donors: nextDonors } : {}),
+          ...(donorsPatch ? { donors: donorsPatch } : {}),
           highSocietySettings: nextSettings,
           donationSyncMode: nextDonationSyncMode,
           updatedAt: Date.now(),
         };
-        if (hasDonorsToPreserve) {
-          next = syncMemberTotalsFromDonors(next);
+        if (hasDonorsToPersist) {
+          next = guardMemberTotalsAgainstAccidentalZeroWipe(
+            syncMemberTotalsFromDonors(next),
+            prev
+          );
         }
         stateRef.current = next;
         try {
@@ -7750,7 +7756,7 @@ export default function AdminPage() {
                 ...lsBase,
                 highSocietySettings: nextSettings,
                 donationSyncMode: nextDonationSyncMode,
-                ...(needsDonorTerritoryMark ? { donors: nextDonors } : {}),
+                ...(donorsPatch ? { donors: donorsPatch } : {}),
                 updatedAt: next.updatedAt,
               }
             : next;
@@ -7759,7 +7765,7 @@ export default function AdminPage() {
         } catch {}
         persistState(
           next,
-          hasDonorsToPreserve
+          hasDonorsToPersist
             ? { donorsAuthoritative: true }
             : { omitDonationFields: true, highSocietySettingsOnly: true }
         );
