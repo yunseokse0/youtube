@@ -1088,6 +1088,67 @@ type TimerStyleFromStateLike = {
   scalePercent?: number;
 };
 
+/** state 색 필드가 비어 기본 — preset hidden 이 덮어써도 됨 */
+export function isDefaultLikeTimerColorFields(
+  style: TimerStyleFromStateLike | null | undefined
+): boolean {
+  if (!style) return true;
+  if (isHiddenTimerDisplayStyle(style)) return false;
+  return (
+    !String(style.bgColor || "").trim() &&
+    !String(style.borderColor || "").trim()
+  );
+}
+
+function parsePresetTimerBgOpacity(
+  preset: OverlayPresetLike | null,
+  rawSp: SearchParamsLike,
+  opts: { ready: boolean }
+): number | undefined {
+  const raw = pickTimerPresetOrParam("timerBgOpacity", "timerBgOpacity", rawSp, preset, opts);
+  if (!raw) return undefined;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : undefined;
+}
+
+/** timerDisplayStyles 가 기본색일 때 overlayPresets hidden(배경·테두리 없음) 반영 */
+export function applyHiddenTimerStyleFromPreset(
+  resolved: ResolvedTimerOverlayStyle,
+  preset: OverlayPresetLike | null,
+  rawSp: SearchParamsLike,
+  opts: { ready: boolean }
+): ResolvedTimerOverlayStyle {
+  if (!opts.ready || !preset) return resolved;
+  const presetBg = String(preset.timerBgColor ?? "").trim();
+  const presetBorder = String(preset.timerBorderColor ?? "").trim();
+  const presetOp = parsePresetTimerBgOpacity(preset, rawSp, opts);
+  const opacityForCheck = presetOp ?? resolved.bgOpacity ?? 40;
+  if (isTimerBackgroundHidden(presetBg, opacityForCheck)) {
+    return {
+      ...resolved,
+      bgColor: presetBg || "transparent",
+      borderColor: presetBorder || "transparent",
+      outlineColor: "",
+      bgOpacity: presetOp ?? 0,
+    };
+  }
+  if (
+    presetBorder === "transparent" ||
+    presetBorder === "none" ||
+    isTimerBorderVisuallyHidden(resolved.bgColor ?? presetBg, presetBorder, opacityForCheck)
+  ) {
+    return {
+      ...resolved,
+      borderColor: presetBorder || "transparent",
+      ...(presetOp !== undefined ? { bgOpacity: presetOp } : {}),
+    };
+  }
+  if (presetOp !== undefined) {
+    return { ...resolved, bgOpacity: presetOp };
+  }
+  return resolved;
+}
+
 function pickTimerPresetOrParam(
   paramKey: string,
   presetKey: keyof OverlayPresetLike,
@@ -1125,6 +1186,9 @@ export function resolveTimerOverlayStyle(
   const stateBgRaw = (stateStyle?.bgColor ?? "").trim();
   const stateBorderRaw = (stateStyle?.borderColor ?? "").trim();
 
+  const stateColorFieldsDefault = isDefaultLikeTimerColorFields(stateStyle);
+  const presetBgOpacity = parsePresetTimerBgOpacity(preset, rawSp, opts);
+
   const fontColor =
     (stateStyle?.fontColor || "").trim() ||
     pickTimerPresetOrParam("timerFontColor", "timerFontColor", rawSp, preset, opts) ||
@@ -1154,16 +1218,26 @@ export function resolveTimerOverlayStyle(
       })()
     : (stateStyle?.outlineWidth ?? 0.8);
 
-  const bgOpacity = stateBgOpacityDefined
-      ? (stateBgOpacity as number)
-      : (() => {
-          const bgOpacityRaw = pickTimerPresetOrParam("timerBgOpacity", "timerBgOpacity", rawSp, preset, opts);
-          if (bgOpacityRaw) {
-            const n = parseInt(bgOpacityRaw, 10);
-            if (Number.isFinite(n)) return Math.max(0, Math.min(100, n));
-          }
-          return 40;
-        })();
+  const bgOpacity = (() => {
+    if (stateStyle && isHiddenTimerDisplayStyle(stateStyle) && stateBgOpacityDefined) {
+      return stateBgOpacity as number;
+    }
+    if (stateColorFieldsDefault && presetBgOpacity !== undefined) {
+      return presetBgOpacity;
+    }
+    if (stateBgOpacityDefined) {
+      return stateBgOpacity as number;
+    }
+    if (presetBgOpacity !== undefined) {
+      return presetBgOpacity;
+    }
+    const bgOpacityRaw = pickTimerPresetOrParam("timerBgOpacity", "timerBgOpacity", rawSp, preset, opts);
+    if (bgOpacityRaw) {
+      const n = parseInt(bgOpacityRaw, 10);
+      if (Number.isFinite(n)) return Math.max(0, Math.min(100, n));
+    }
+    return 40;
+  })();
 
   const scalePercent =
     stateStyle?.scalePercent !== undefined && Number.isFinite(stateStyle.scalePercent)
@@ -1208,7 +1282,7 @@ export function resolveTimerOverlayStyle(
     stateFont ||
     "mono";
 
-  return applyHiddenTimerStyleFromState(
+  const resolved = applyHiddenTimerStyleFromState(
     {
       fontFamily: normalizeTimerFontFamily(fontFamilyRaw),
       fontColor,
@@ -1222,6 +1296,10 @@ export function resolveTimerOverlayStyle(
     },
     stateStyle
   );
+  if (stateColorFieldsDefault) {
+    return applyHiddenTimerStyleFromPreset(resolved, preset, rawSp, opts);
+  }
+  return resolved;
 }
 
 /** 타이머 pill 배경 — 투명도 0이면 완전 제거, hex/rgb 색에는 alpha 적용 */

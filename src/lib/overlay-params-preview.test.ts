@@ -225,6 +225,37 @@ describe("admin preview hot-reload params", () => {
     expect(style.borderColor).toBe("transparent");
   });
 
+  it("uses preset hidden bg when timerDisplayStyles colors are default-like", () => {
+    const preset: OverlayPresetLike = {
+      id: "ov_timer_preset_hidden",
+      showTimer: true,
+      timerBgColor: "transparent",
+      timerBorderColor: "transparent",
+      timerBgOpacity: "0",
+      timerScale: "250",
+    };
+    const style = resolveTimerOverlayStyle(
+      new URLSearchParams(),
+      preset,
+      {
+        showHours: false,
+        fontFamily: "gothic",
+        fontColor: "",
+        bgColor: "",
+        borderColor: "",
+        outlineColor: "",
+        outlineWidth: 0.8,
+        bgOpacity: 40,
+        scalePercent: 100,
+      },
+      { ready: true }
+    );
+    expect(style.bgColor).toBe("transparent");
+    expect(style.bgOpacity).toBe(0);
+    expect(style.borderColor).toBe("transparent");
+    expect(isHiddenTimerDisplayStyle(style)).toBe(true);
+  });
+
   it("applies border-only transparent from timerDisplayStyles over preset border", () => {
     const preset: OverlayPresetLike = {
       id: "ov_timer_border",
