@@ -6321,6 +6321,10 @@ export default function AdminPage() {
     const donorNameClean = (rawName || "무명").replace(/\s+/g, "") || "무명";
     const messageClean = String(rawMessage || "").trim();
     const hsSettingsNow = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
+    if (hsSettingsNow.enabled && hsSettingsNow.territoryPaused) {
+      showAppToast("상류사회 일시정지 중 — 합산·투네 반영이 차단됩니다.");
+      return;
+    }
     const seatRole = hsSettingsNow.enabled
       ? seatRoleForMemberId(hsSettingsNow, stateRef.current.members || [], memberId)
       : null;
@@ -6354,7 +6358,9 @@ export default function AdminPage() {
         );
         pendingUnsyncedRef.current = false;
         window.alert(
-          `합산 추가에 실패했습니다.\n(${result.error})` +
+          result.error === "high_society_paused"
+            ? "상류사회 일시정지 중입니다.\n「영토 재개」 후 다시 합산해 주세요."
+            : `합산 추가에 실패했습니다.\n(${result.error})` +
             (result.error === "persist_failed"
               ? "\n\n서버 저장 검증 오류입니다. 새로고침 후 후원 목록을 확인해 주세요."
               : "")
@@ -7602,6 +7608,26 @@ export default function AdminPage() {
         const nextDonors = shouldMarkHsTerritoryOff
           ? markDonorsHsTerritoryExcluded(prevDonors, true)
           : prevDonors;
+        const turningOff = wasOn && !nextSettings.enabled;
+        const pausing = !prevSettings.territoryPaused && Boolean(nextSettings.territoryPaused);
+        const unpausing = Boolean(prevSettings.territoryPaused) && !nextSettings.territoryPaused;
+        let nextDonationSyncMode = prev.donationSyncMode || "mealBattle";
+        if (turningOn) {
+          nextDonationSyncMode = "highSociety";
+        } else if (pausing && nextDonationSyncMode !== "none") {
+          nextSettings = {
+            ...nextSettings,
+            donationSyncModeBeforePause: nextDonationSyncMode,
+          };
+          nextDonationSyncMode = "none";
+        } else if (unpausing) {
+          nextDonationSyncMode =
+            prevSettings.donationSyncModeBeforePause ||
+            (nextSettings.enabled ? "highSociety" : nextDonationSyncMode);
+          nextSettings = { ...nextSettings, donationSyncModeBeforePause: undefined };
+        } else if (turningOff && prevSettings.territoryPaused && prevSettings.donationSyncModeBeforePause) {
+          nextDonationSyncMode = prevSettings.donationSyncModeBeforePause;
+        }
         if (normalizeDonorsArray(prev.donors).length > 0) {
           donationAuthoritativeSaveUntilRef.current = Math.max(
             donationAuthoritativeSaveUntilRef.current,
@@ -7612,7 +7638,7 @@ export default function AdminPage() {
           ...prev,
           donors: nextDonors,
           highSocietySettings: nextSettings,
-          donationSyncMode: turningOn ? "highSociety" : prev.donationSyncMode || "mealBattle",
+          donationSyncMode: nextDonationSyncMode,
           updatedAt: Date.now(),
         };
         persistState(
@@ -7676,9 +7702,14 @@ export default function AdminPage() {
       } else if (typeof patch.territoryPaused === "boolean" && patch.territoryPaused !== before.territoryPaused) {
         showAppToast(
           patch.territoryPaused
-            ? "상류사회 · 영토 일시정지 — 이후 후원은 영토 미반영(합산·금액은 유지)"
-            : "상류사회 · 영토 재개 — 이후 후원부터 영토 반영"
+            ? "상류사회 · 영토 일시정지 — 후원 합산·투네 반영 차단(영토·금액 동결)"
+            : "상류사회 · 영토 재개 — 후원 반영 재개(큐 대기 건 자동 처리)"
         );
+        if (!patch.territoryPaused) {
+          window.setTimeout(() => {
+            void autoProcessQueueRef.current?.();
+          }, 400);
+        }
       } else if (patch.fx) {
         const fx = normalizeHighSocietyFxSettings(after.fx);
         const labels = [
@@ -12000,7 +12031,7 @@ export default function AdminPage() {
                       disabled={!highSocietySettings.enabled}
                       title={
                         highSocietySettings.enabled
-                          ? "영토 게이지만 동결 — 후원 합산·멤버 금액은 계속 반영"
+                          ? "영토·후원 합산·투네 반영 모두 동결"
                           : "모드 ON일 때만 사용"
                       }
                       onClick={() =>
@@ -14306,7 +14337,7 @@ export default function AdminPage() {
                   <p className="text-[10px] text-neutral-400 leading-snug">
                     실시간은 후원이 들어올 때마다 게이지가 움직이고, 라운드 종료 후는 「타이머 제어」 일반
                     타이머가 0이 될 때까지 게이지를 고정한 뒤 한 번에 반영합니다. 「영토 일시정지」는
-                    모드 ON 중 수동으로 게이지만 동결할 때 사용합니다.
+                    모드 ON 중 영토·후원 합산·투네 반영을 모두 멈출 때 사용합니다(동기화 모드 none).
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -14339,7 +14370,7 @@ export default function AdminPage() {
                           : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-sky-400/50"
                       }`}
                       disabled={!highSocietySettings.enabled}
-                      title="영토 게이지만 동결 — 후원 합산·멤버 금액은 계속 반영"
+                      title="영토·후원 합산·투네 반영 모두 동결"
                       onClick={() =>
                         patchHighSocietySettings({ territoryPaused: !highSocietySettings.territoryPaused })
                       }

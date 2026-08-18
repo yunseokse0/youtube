@@ -22,6 +22,7 @@ import {
   mergeHighSocietyDonationLinksOnSettingsChange,
   markDonorsHsTerritoryExcluded,
   isHighSocietyReopen,
+  isHighSocietyDonationIngestPaused,
   shouldDonorCountForHighSocietyTerritory,
   fieldCmFromStartPerMember,
   startCmFromField,
@@ -551,6 +552,25 @@ describe("high-society territory (aux)", () => {
     });
     expect(next.territoryPaused).toBe(false);
     expect(next.territoryPausedAt).toBeUndefined();
+    expect(next.donationSyncModeBeforePause).toBeUndefined();
+  });
+
+  it("isHighSocietyDonationIngestPaused when enabled and territory paused", () => {
+    expect(
+      isHighSocietyDonationIngestPaused({
+        highSocietySettings: normalizeHighSocietySettings({ enabled: true, territoryPaused: true }),
+      })
+    ).toBe(true);
+    expect(
+      isHighSocietyDonationIngestPaused({
+        highSocietySettings: normalizeHighSocietySettings({ enabled: false, territoryPaused: true }),
+      })
+    ).toBe(false);
+    expect(
+      isHighSocietyDonationIngestPaused({
+        highSocietySettings: normalizeHighSocietySettings({ enabled: true, territoryPaused: false }),
+      })
+    ).toBe(false);
   });
 
   it("sets territoryCutoffAt when toggling OFF", () => {

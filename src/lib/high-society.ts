@@ -375,6 +375,15 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
   const pausedAtRaw = Number(v.territoryPausedAt);
   const territoryPausedAt =
     Number.isFinite(pausedAtRaw) && pausedAtRaw > 0 ? Math.floor(pausedAtRaw) : undefined;
+  const syncBeforePauseRaw = v.donationSyncModeBeforePause;
+  const donationSyncModeBeforePause =
+    syncBeforePauseRaw === "none" ||
+    syncBeforePauseRaw === "mealBattle" ||
+    syncBeforePauseRaw === "sigMatch" ||
+    syncBeforePauseRaw === "sigSales" ||
+    syncBeforePauseRaw === "highSociety"
+      ? syncBeforePauseRaw
+      : undefined;
   return {
     enabled: Boolean(v.enabled),
     seatMemberIds,
@@ -392,6 +401,7 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     ...(territoryReopenAt !== undefined ? { territoryReopenAt } : {}),
     ...(territoryPaused ? { territoryPaused: true } : {}),
     ...(territoryPaused && territoryPausedAt !== undefined ? { territoryPausedAt } : {}),
+    ...(donationSyncModeBeforePause !== undefined ? { donationSyncModeBeforePause } : {}),
   };
 }
 
@@ -399,6 +409,14 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
 export function isHighSocietyReopen(prevSettings: HighSocietySettings): boolean {
   const offAt = Number(prevSettings.territoryCutoffAt);
   return Number.isFinite(offAt) && offAt > 0;
+}
+
+/** 상류사회 ON + 영토 일시정지 — 후원 합산·투네 반영 차단 */
+export function isHighSocietyDonationIngestPaused(
+  state: Pick<AppState, "highSocietySettings"> | null | undefined
+): boolean {
+  const settings = normalizeHighSocietySettings(state?.highSocietySettings);
+  return settings.enabled && Boolean(settings.territoryPaused);
 }
 
 /**
@@ -489,6 +507,7 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
         territoryReopenAt: undefined,
         territoryPaused: false,
         territoryPausedAt: undefined,
+        donationSyncModeBeforePause: undefined,
       };
     }
     if (reOn) return { territoryReopenAt: now };

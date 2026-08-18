@@ -470,8 +470,10 @@ export type HighSocietySettings = {
   territoryReopenAt?: number;
   /** ON 유지 중 영토 게이지만 동결(후원 합산·멤버 금액은 계속 반영) */
   territoryPaused?: boolean;
-  /** territoryPaused=true 전환 시각(ms) — 이후 후원은 영토 미반영 */
+  /** territoryPaused=true 전환 시각(ms) — 이후 후원은 영토·합산 미반영 */
   territoryPausedAt?: number;
+  /** 일시정지 직전 donationSyncMode — 재개 시 복원 */
+  donationSyncModeBeforePause?: "none" | "mealBattle" | "sigMatch" | "sigSales" | "highSociety";
 };
 
 /** `/overlay/sig-rolling` — 이미지/GIF 순환 한 장 항목 */

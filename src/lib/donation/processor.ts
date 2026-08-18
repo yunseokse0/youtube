@@ -125,6 +125,9 @@ export async function processDonationEvent(
         processedEventIds.add(dedupeKey);
         return { ...event, status: "processed" as const };
       }
+      if (applied.reason === "paused") {
+        return { ...event, status: "failed" as const, error: "high_society_paused" };
+      }
       log.warn("unmatched donor", applied.event.donorName);
       if (!unresolvedEventIds.has(dedupeKey)) {
         unresolvedEventIds.add(dedupeKey);

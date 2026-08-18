@@ -113,6 +113,15 @@ export async function POST(req: Request) {
     }
     const result = applyDonationToAppState(state, event, aliases);
     if (!result.ok) {
+      if (result.reason === "paused") {
+        return new Response(
+          JSON.stringify({
+            error: "high_society_paused",
+            applied: appliedEvents.length,
+          }),
+          { status: 423, headers: { "Content-Type": "application/json" } }
+        );
+      }
       return new Response(
         JSON.stringify({
           error: result.reason || "apply_failed",

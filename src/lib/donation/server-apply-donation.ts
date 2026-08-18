@@ -108,6 +108,10 @@ export async function tryAutoApplyToonationDonationOnServer(
     const result = applyDonationToAppState(enrichedState, event, aliases);
     if (!result.ok) {
       if (result.reason === "duplicate") return "applied";
+      if (result.reason === "paused") {
+        await releaseDonationApplyClaim(userId, event);
+        return "not_applied";
+      }
       await releaseDonationApplyClaim(userId, event);
       return "not_applied";
     }
