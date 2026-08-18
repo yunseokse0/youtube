@@ -275,7 +275,11 @@ export default function HighSocietyOverlayPage() {
 
   /** 라운드 종료 후 모드: 타이머 남은 동안 게이지 동결, 종료 시 라이브 반영 (HUD 없음) */
   const roundInProgress = remainingSec > 0;
-  const freezeTerritory = hsSettings.territoryUpdateMode === "onRoundEnd" && roundInProgress;
+  /** 관리자 iframe 미리보기는 항상 현재 영토 반영(라운드 동결·OBS 방송과 분리) */
+  const freezeTerritory =
+    !adminPreview &&
+    hsSettings.territoryUpdateMode === "onRoundEnd" &&
+    roundInProgress;
   const [frozenSeats, setFrozenSeats] = useState<HighSocietySeat[] | null>(null);
   const wasRoundInProgressRef = useRef(false);
 

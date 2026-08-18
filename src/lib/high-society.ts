@@ -73,7 +73,7 @@ const TERRITORY_COLORS = [
   "linear-gradient(90deg, #134e4a 0%, #2dd4bf 100%)",
 ];
 
-/** 룰: 1만원 = 5cm · 만원 미만(천원 단위) 버림 */
+/** 룰: 1만원 정확히 배수만 5cm — 천원 자리가 있으면 영토 미적용 */
 export const HIGH_SOCIETY_WON_PER_UNIT = 10_000;
 export const HIGH_SOCIETY_CM_PER_UNIT = 5;
 /** 기본 전장 가로(cm) — 멤버 수와 무관, N등분 */
@@ -127,12 +127,14 @@ function clamp01(n: number): number {
 
 /**
  * 상류사회 확장 cm.
- * - 1만원 이상만 인정 · 천원 단위(만원 미만 나머지)는 버림
- * - 1만원 = 5cm
- * - 예: 26,000원 → 2만원만 인정 → 10cm / 16,900원 → 5cm / 9,999원 → 0cm
+ * - 1만원 정확히 배수만 인정 (1만원 = 5cm)
+ * - 천원 자리가 있으면 영토 미적용 (예: 1만9천원 → 0cm)
+ * - 예: 10,000원 → 5cm / 20,000원 → 10cm / 10,900원 → 0cm / 26,000원 → 0cm
  */
 export function donationToExpandCm(won: number): number {
-  const units = Math.floor(Math.max(0, won) / HIGH_SOCIETY_WON_PER_UNIT);
+  const v = Math.max(0, Math.floor(Number(won) || 0));
+  if (v === 0 || v % HIGH_SOCIETY_WON_PER_UNIT !== 0) return 0;
+  const units = v / HIGH_SOCIETY_WON_PER_UNIT;
   return units * HIGH_SOCIETY_CM_PER_UNIT;
 }
 
@@ -222,15 +224,16 @@ export function parseHighSocietyFxFromHsFxParam(raw: string | null | undefined):
 
 export function normalizeHighSocietyDonationLinks(
   raw: unknown,
-  validMemberIds: Set<string>
+  validMemberIds?: Set<string>
 ): Record<string, { active: boolean; startedAt?: number }> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const out: Record<string, { active: boolean; startedAt?: number }> = {};
   for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
-    if (!validMemberIds.has(id)) continue;
     if (!v || typeof v !== "object") continue;
     const o = v as Record<string, unknown>;
-    const active = Boolean(o.active);
+    const linkActive = Boolean(o.active);
+    const inSeat = !validMemberIds || validMemberIds.has(id);
+    const active = inSeat && linkActive;
     const startedRaw = Number(o.startedAt);
     const startedAt = Number.isFinite(startedRaw) ? Math.max(0, Math.floor(startedRaw)) : undefined;
     out[id] = active
@@ -238,6 +241,72 @@ export function normalizeHighSocietyDonationLinks(
       : { active: false, ...(startedAt !== undefined ? { startedAt } : {}) };
   }
   return out;
+}
+
+function normalizeMemberWidthRecord(raw: unknown): Record<string, number> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Record<string, number> = {};
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    const key = String(id || "").trim();
+    const n = Number(v);
+    if (key && Number.isFinite(n) && n >= 0) out[key] = Math.round(n * 10) / 10;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function normalizeMemberDonationSnapshotRecord(raw: unknown): Record<string, number> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Record<string, number> = {};
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    const key = String(id || "").trim();
+    const n = Math.max(0, Math.round(Number(v) || 0));
+    if (key) out[key] = n;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function normalizeMemberTerritoryExpandRecord(
+  raw: unknown
+): Record<string, { expandLeftCm: number; expandRightCm: number }> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Record<string, { expandLeftCm: number; expandRightCm: number }> = {};
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    const key = String(id || "").trim();
+    if (!key || !v || typeof v !== "object") continue;
+    const o = v as Record<string, unknown>;
+    out[key] = {
+      expandLeftCm: Math.max(0, Math.round(Number(o.expandLeftCm) || 0)),
+      expandRightCm: Math.max(0, Math.round(Number(o.expandRightCm) || 0)),
+    };
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function normalizeSeatIdList(ids: string[] | null | undefined): string[] {
+  return (ids || []).map((id) => String(id || "").trim()).filter(Boolean);
+}
+
+function seatMemberIdMultisetEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const count = new Map<string, number>();
+  for (const id of a) count.set(id, (count.get(id) || 0) + 1);
+  for (const id of b) {
+    const n = count.get(id);
+    if (!n) return false;
+    if (n === 1) count.delete(id);
+    else count.set(id, n - 1);
+  }
+  return count.size === 0;
+}
+
+/** seatMemberIds 비어 있으면 로스터(전원) 순서로 간주 */
+export function effectiveHighSocietySeatOrder(
+  seatMemberIds: string[] | null | undefined,
+  rosterMemberIds: string[]
+): string[] {
+  const explicit = normalizeSeatIdList(seatMemberIds);
+  if (explicit.length > 0) return explicit;
+  return normalizeSeatIdList(rosterMemberIds);
 }
 
 /** donationLinks 없으면 하위호환 ON(전체 기간) */
@@ -364,7 +433,7 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
   const bar = v.barStyle === "arrow" ? "arrow" : "flat";
   const round = Math.max(1, Math.min(99, Math.floor(Number(v.round) || 1)));
   const fieldCmRaw = Math.max(100, Math.min(20000, Math.floor(Number(v.fieldCm) || HIGH_SOCIETY_DEFAULT_FIELD_CM)));
-  const seatCountForStart = Math.max(2, seatMemberIds.length || 4);
+  const seatCountForStart = resolveHighSocietySeatCountForField({ seatMemberIds });
   const startCmRaw = Number(v.startCmPerMember);
   const startCmPerMember =
     Number.isFinite(startCmRaw) && startCmRaw > 0
@@ -401,6 +470,9 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     syncBeforePauseRaw === "highSociety"
       ? syncBeforePauseRaw
       : undefined;
+  const memberWidthCm = normalizeMemberWidthRecord(v.memberWidthCm);
+  const memberWidthDonationSnapshot = normalizeMemberDonationSnapshotRecord(v.memberWidthDonationSnapshot);
+  const memberTerritoryExpand = normalizeMemberTerritoryExpandRecord(v.memberTerritoryExpand);
   return {
     enabled: Boolean(v.enabled),
     seatMemberIds,
@@ -420,6 +492,9 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     ...(territoryPaused && territoryPausedAt !== undefined ? { territoryPausedAt } : {}),
     ...(territoryPauseExcludeWindows.length > 0 ? { territoryPauseExcludeWindows } : {}),
     ...(donationSyncModeBeforePause !== undefined ? { donationSyncModeBeforePause } : {}),
+    ...(memberWidthCm ? { memberWidthCm } : {}),
+    ...(memberWidthDonationSnapshot ? { memberWidthDonationSnapshot } : {}),
+    ...(memberTerritoryExpand ? { memberTerritoryExpand } : {}),
   };
 }
 
@@ -528,6 +603,21 @@ function seatMemberIdsEqual(a: string[], b: string[]): boolean {
   return a.every((id, i) => String(id) === String(b[i]));
 }
 
+/** 좌석 멤버 집합은 같고 순서만 바뀐 경우 (자동 좌석→첫 이동 포함) */
+export function isSeatMemberIdsReorderOnly(
+  a: string[],
+  b: string[],
+  rosterMemberIds?: string[]
+): boolean {
+  const roster = normalizeSeatIdList(rosterMemberIds);
+  const prev = effectiveHighSocietySeatOrder(a, roster);
+  const next = effectiveHighSocietySeatOrder(b, roster);
+  if (prev.length === 0 || next.length === 0) return false;
+  if (prev.length !== next.length) return false;
+  if (seatMemberIdsEqual(prev, next)) return false;
+  return seatMemberIdMultisetEqual(prev, next);
+}
+
 /**
  * 상류사회 설정 저장·ON/OFF·영토 초기화 시 donationLinks 정합.
  * - OFF/설정 저장: startedAt·기존 link 유지 (후원 집계 기준 리셋 없음)
@@ -539,6 +629,7 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
   nextSettings: HighSocietySettings;
   members: Array<Pick<Member, "id" | "name" | "account" | "toon" | "operating">>;
   resetTerritory?: boolean;
+  donors?: Array<Pick<Donor, "memberId" | "amount" | "hsPushDir" | "donationExcluded" | "hsTerritoryExcluded" | "at">>;
   now?: number;
 }): HighSocietySettings {
   const { prevSettings, nextSettings, members, resetTerritory = false } = opts;
@@ -548,10 +639,14 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
   const turningOff = wasOn && !nextSettings.enabled;
   const reOn = turningOn && isHighSocietyReopen(prevSettings);
   const firstOn = turningOn && !reOn;
-  const seatsChanged = !seatMemberIdsEqual(
-    prevSettings.seatMemberIds || [],
-    nextSettings.seatMemberIds || []
-  );
+  const prevSeatIds = prevSettings.seatMemberIds || [];
+  const nextSeatIds = nextSettings.seatMemberIds || [];
+  const seatsChanged = !seatMemberIdsEqual(prevSeatIds, nextSeatIds);
+  const rosterIds = resolveHighSocietySeatMembers(members, null).map((s) => s.id);
+  const reorderOnly =
+    nextSettings.enabled &&
+    seatsChanged &&
+    isSeatMemberIdsReorderOnly(prevSeatIds, nextSeatIds, rosterIds);
 
   const seatMembers = resolveHighSocietySeatMembers(members, nextSettings.seatMemberIds);
   const valid = new Set(seatMembers.map((s) => s.id));
@@ -564,6 +659,9 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
         territoryPaused: false,
         territoryPausedAt: undefined,
         territoryPauseExcludeWindows: undefined,
+        memberWidthCm: undefined,
+        memberWidthDonationSnapshot: undefined,
+        memberTerritoryExpand: undefined,
       };
     }
     if (turningOff) {
@@ -586,11 +684,47 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
     return {};
   };
 
+  const clearMemberWidthSnapshot = (): Partial<HighSocietySettings> => ({
+    memberWidthCm: undefined,
+    memberWidthDonationSnapshot: undefined,
+    memberTerritoryExpand: undefined,
+  });
+
+  const buildReorderWidthSnapshot = (): Partial<HighSocietySettings> => {
+    /** 화면에 보이는 영토(기존 memberWidthCm 포함)를 기준으로 스냅샷 — index 물리 재계산 금지 */
+    const prevField = buildHighSocietyFieldFromAppState({
+      members,
+      donors: (opts.donors ?? []) as Donor[],
+      highSocietySettings: prevSettings,
+    });
+    const memberWidthCm: Record<string, number> = {};
+    const memberWidthDonationSnapshot: Record<string, number> = {};
+    const memberTerritoryExpand: Record<string, { expandLeftCm: number; expandRightCm: number }> =
+      {};
+    for (const s of prevField.seats) {
+      memberWidthCm[s.id] = s.widthCm;
+      memberWidthDonationSnapshot[s.id] = s.donationWon;
+      memberTerritoryExpand[s.id] = {
+        expandLeftCm: s.expandLeftCm,
+        expandRightCm: s.expandRightCm,
+      };
+    }
+    return { memberWidthCm, memberWidthDonationSnapshot, memberTerritoryExpand };
+  };
+
+  const memberWidthPatch =
+    resetTerritory || firstOn || turningOff || (seatsChanged && !reorderOnly)
+      ? clearMemberWidthSnapshot()
+      : reorderOnly
+        ? buildReorderWidthSnapshot()
+        : {};
+
   if (!resetTerritory && !turningOn && !(nextSettings.enabled && seatsChanged)) {
     return {
       ...nextSettings,
       donationLinks: normalizeHighSocietyDonationLinks(nextSettings.donationLinks, valid),
       ...territoryTimingPatch(),
+      ...memberWidthPatch,
     };
   }
 
@@ -615,7 +749,21 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
       continue;
     }
     if (!prevLink) {
-      donationLinks[id] = { active: true, startedAt: now };
+      const archived = prevSettings.donationLinks?.[id];
+      const archivedStart = Number(archived?.startedAt);
+      if (archived && Number.isFinite(archivedStart) && archivedStart > 0) {
+        donationLinks[id] = { active: true, startedAt: Math.floor(archivedStart) };
+      } else {
+        donationLinks[id] = { active: true, startedAt: now };
+      }
+    } else {
+      donationLinks[id] = { ...prevLink, active: true };
+    }
+  }
+
+  for (const id of Object.keys(donationLinks)) {
+    if (!valid.has(id)) {
+      donationLinks[id] = { ...donationLinks[id]!, active: false };
     }
   }
 
@@ -625,6 +773,7 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
     donationLinks: normalizeHighSocietyDonationLinks(donationLinks, valid),
     ...(resetTerritory ? { round: Math.min(99, prevRound + 1) } : {}),
     ...territoryTimingPatch(),
+    ...memberWidthPatch,
   };
 }
 
@@ -763,6 +912,89 @@ export function resolveHighSocietyField(opts: {
     const widthCm = Math.max(0, Math.round(widths[i]! * 10) / 10);
     return {
       ...f,
+      widthCm,
+      pct: Math.round((widthCm / fieldCm) * 1000) / 10,
+      eliminated: widthCm <= 0,
+    };
+  });
+
+  const alive = seats.filter((s) => !s.eliminated).sort((a, b) => b.widthCm - a.widthCm);
+  return {
+    seats,
+    fieldCm,
+    startCm,
+    playerCount: n,
+    leader: alive[0] ?? null,
+    cushion: seats.filter((s) => s.eliminated),
+  };
+}
+
+function shouldUseMemberWidthSnapshot(
+  settings: HighSocietySettings,
+  players: HighSocietyPlayerInput[]
+): settings is HighSocietySettings & {
+  memberWidthCm: Record<string, number>;
+  memberWidthDonationSnapshot: Record<string, number>;
+} {
+  const widths = settings.memberWidthCm;
+  const snap = settings.memberWidthDonationSnapshot;
+  if (!widths || !snap || Object.keys(widths).length === 0) return false;
+  for (const p of players) {
+    if (widths[p.id] == null) return false;
+    const snapWon = snap[p.id];
+    if (snapWon == null || p.donationWon !== snapWon) return false;
+  }
+  return true;
+}
+
+/** 좌석 reorder 직후 — 멤버 id별 widthCm 유지(슬롯 index 물리 재계산 생략) */
+export function resolveHighSocietyFieldWithMemberWidths(opts: {
+  players: HighSocietyPlayerInput[];
+  fieldCm: number;
+  widthByMemberId: Record<string, number>;
+  expandByMemberId?: Record<string, { expandLeftCm: number; expandRightCm: number }>;
+}): ReturnType<typeof resolveHighSocietyField> {
+  const players = (opts.players || []).slice(0, HIGH_SOCIETY_MAX_SEATS);
+  const n = players.length;
+  const fieldCm = Math.max(n > 0 ? n : 4, opts.fieldCm ?? HIGH_SOCIETY_DEFAULT_FIELD_CM);
+  if (n === 0) {
+    return { seats: [], fieldCm, startCm: 0, playerCount: 0, leader: null, cushion: [] };
+  }
+
+  const startCm = fieldCm / n;
+  const rawWidths = players.map((p) => {
+    const snap = opts.widthByMemberId[p.id];
+    if (snap != null && snap > 0) return snap;
+    return startCm;
+  });
+  let sum = rawWidths.reduce((s, w) => s + w, 0);
+  if (sum <= 0) sum = fieldCm;
+  const scale = fieldCm / sum;
+
+  const seats: HighSocietySeat[] = players.map((p, i) => {
+    const donationWon = Math.max(0, Number(p.donationWon || 0));
+    const expandSnap = opts.expandByMemberId?.[p.id];
+    const expandLeftCm = Math.max(
+      0,
+      expandSnap ? expandSnap.expandLeftCm : Number(p.expandLeftCm) || 0
+    );
+    const expandRightCm = Math.max(
+      0,
+      expandSnap ? expandSnap.expandRightCm : Number(p.expandRightCm) || 0
+    );
+    const widthCm = Math.max(0, Math.round(rawWidths[i]! * scale * 10) / 10);
+    const letter = seatIndexLabel(i);
+    return {
+      letter,
+      seatIndex: i,
+      id: p.id,
+      name: p.name?.trim() || `플레이어 ${letter}`,
+      donationWon,
+      expandCm: expandLeftCm + expandRightCm,
+      expandLeftCm,
+      expandRightCm,
+      expandDir: seatExpandDirForIndex(i, n),
+      color: HIGH_SOCIETY_SEAT_COLORS[i % HIGH_SOCIETY_SEAT_COLORS.length]!,
       widthCm,
       pct: Math.round((widthCm / fieldCm) * 1000) / 10,
       eliminated: widthCm <= 0,
@@ -1032,7 +1264,7 @@ export function buildHighSocietyFieldFromAppState(
   const seatPlayers = resolveHighSocietySeatMembers(state.members || [], settings.seatMemberIds).map(
     (p) => ({ ...p, donationWon: 0 })
   );
-  const seatCount = Math.max(2, seatPlayers.length || settings.seatMemberIds?.length || 4);
+  const seatCount = resolveHighSocietySeatCountForField(settings, seatPlayers.length);
   const overrideRaw = Number(opts?.fieldCmOverride);
   const effectiveFieldCm =
     Number.isFinite(overrideRaw) && overrideRaw > 0
@@ -1051,8 +1283,17 @@ export function buildHighSocietyFieldFromAppState(
     donors: state.donors || [],
     settings: settingsForField,
   });
+  const field =
+    shouldUseMemberWidthSnapshot(settingsForField, players)
+      ? resolveHighSocietyFieldWithMemberWidths({
+          players,
+          fieldCm: effectiveFieldCm,
+          widthByMemberId: settingsForField.memberWidthCm,
+          expandByMemberId: settingsForField.memberTerritoryExpand,
+        })
+      : resolveHighSocietyField({ players, fieldCm: effectiveFieldCm });
   return {
-    ...resolveHighSocietyField({ players, fieldCm: effectiveFieldCm }),
+    ...field,
     settings: { ...settingsForField, fieldCm: effectiveFieldCm },
   };
 }
@@ -1117,6 +1358,29 @@ export function buildHighSocietyZones(
       color: eliminated ? "transparent" : owner.color,
     };
   });
+}
+
+export function highSocietyAdminPreviewSig(
+  settings: HighSocietySettings | null | undefined,
+  opts?: { updatedAt?: number; donorTerritorySig?: string }
+): string {
+  const s = normalizeHighSocietySettings(settings);
+  return [
+    s.enabled ? "1" : "0",
+    s.territoryPaused ? "1" : "0",
+    s.territoryUpdateMode || "realtime",
+    (s.seatMemberIds || []).join(","),
+    s.barStyle || "flat",
+    s.fieldCm ?? "",
+    s.startCmPerMember ?? "",
+    s.round ?? 1,
+    highSocietyFxToHsFxParam(normalizeHighSocietyFxSettings(s.fx)),
+    JSON.stringify(s.memberWidthCm || {}),
+    JSON.stringify(s.memberTerritoryExpand || {}),
+    JSON.stringify(s.donationLinks || {}),
+    opts?.updatedAt ?? 0,
+    opts?.donorTerritorySig ?? "",
+  ].join("|");
 }
 
 export function formatHighSocietyTimer(remainingSec: number): string {
@@ -1187,40 +1451,57 @@ export function parseHighSocietyFieldCm(raw: string | null | undefined): number 
 
 /** 1인 시작 cm → 전장 총길이 (참가 N명) */
 export function fieldCmFromStartPerMember(startCm: number, seatCount: number): number {
-  const n = Math.max(2, Math.min(HIGH_SOCIETY_MAX_SEATS, Math.floor(seatCount) || 4));
+  const n = Math.max(1, Math.min(HIGH_SOCIETY_MAX_SEATS, Math.floor(seatCount) || 4));
   const start = Math.max(1, Math.floor(Number(startCm) || 0));
   return Math.max(100, Math.min(20000, start * n));
 }
 
 /** 전장 총길이 → 1인 시작 cm */
 export function startCmFromField(fieldCm: number, seatCount: number): number {
-  const n = Math.max(2, Math.min(HIGH_SOCIETY_MAX_SEATS, Math.floor(seatCount) || 4));
+  const n = Math.max(1, Math.min(HIGH_SOCIETY_MAX_SEATS, Math.floor(seatCount) || 4));
   const field = Math.max(100, Math.floor(Number(fieldCm) || HIGH_SOCIETY_DEFAULT_FIELD_CM));
   return Math.max(1, Math.round(field / n));
+}
+
+/**
+ * 전장·1인 시작 cm 계산용 좌석 수.
+ * - seatMemberIds 가 있으면 실제 명수(1명 포함) 그대로
+ * - 자동(빈 배열)이면 actualSeatCount 또는 기본 4, 최소 2
+ */
+export function resolveHighSocietySeatCountForField(
+  settings: Pick<HighSocietySettings, "seatMemberIds">,
+  actualSeatCount?: number
+): number {
+  const explicit = settings.seatMemberIds;
+  if (Array.isArray(explicit) && explicit.length > 0) {
+    return Math.max(1, Math.min(HIGH_SOCIETY_MAX_SEATS, explicit.length));
+  }
+  const n = Math.floor(Number(actualSeatCount) || 0);
+  if (n >= 1) {
+    return Math.max(2, Math.min(HIGH_SOCIETY_MAX_SEATS, n));
+  }
+  return 4;
 }
 
 /** 저장된 1인 시작 cm — startCmPerMember 우선, 없으면 fieldCm/N */
 export function resolveHighSocietyStartCmPerMember(
   settings: Pick<HighSocietySettings, "fieldCm" | "startCmPerMember" | "seatMemberIds">,
-  seatCount: number
+  seatCount?: number
 ): number {
   const saved = Number(settings.startCmPerMember);
   if (Number.isFinite(saved) && saved > 0) {
     return Math.max(1, Math.min(5000, Math.floor(saved)));
   }
-  const n = Math.max(
-    2,
-    seatCount || settings.seatMemberIds?.length || 4
-  );
+  const n = resolveHighSocietySeatCountForField(settings, seatCount);
   return startCmFromField(settings.fieldCm ?? HIGH_SOCIETY_DEFAULT_FIELD_CM, n);
 }
 
 /** 좌석 수·저장 startCm 기준 전장 총길이 — 미리보기·OFF 상태 일관 */
 export function resolveHighSocietyEffectiveFieldCm(
   settings: Pick<HighSocietySettings, "fieldCm" | "startCmPerMember" | "seatMemberIds">,
-  seatCount: number
+  seatCount?: number
 ): number {
-  const n = Math.max(2, seatCount || settings.seatMemberIds?.length || 4);
+  const n = resolveHighSocietySeatCountForField(settings, seatCount);
   const start = resolveHighSocietyStartCmPerMember(settings, n);
   return fieldCmFromStartPerMember(start, n);
 }

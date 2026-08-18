@@ -20,6 +20,8 @@ import {
   highSocietyFxToHsFxParam,
   parseHighSocietyFxFromHsFxParam,
   mergeHighSocietyDonationLinksOnSettingsChange,
+  isSeatMemberIdsReorderOnly,
+  effectiveHighSocietySeatOrder,
   buildTerritoryPauseToggleSettingsPatch,
   normalizeTerritoryPauseExcludeWindows,
   markDonorsHsTerritoryExcluded,
@@ -36,6 +38,7 @@ import {
   resolveHighSocietyField,
   resolveHighSocietyStartCmPerMember,
   resolveHighSocietyEffectiveFieldCm,
+  resolveHighSocietySeatCountForField,
   resolveHighSocietyDonationLink,
   buildHighSocietyFieldFromAppState,
   isDefaultLikeHighSocietySettings,
@@ -45,13 +48,14 @@ import {
 } from "./high-society";
 
 describe("high-society rule field", () => {
-  it("converts donation with 1만 floor × 5cm", () => {
+  it("converts donation — only exact 1만원 multiples × 5cm", () => {
     expect(donationToExpandCm(0)).toBe(0);
     expect(donationToExpandCm(9999)).toBe(0);
     expect(donationToExpandCm(10000)).toBe(5);
-    expect(donationToExpandCm(16900)).toBe(5);
-    /** 2만6천원 → 천원(6천) 버림 → 2만원 = 10cm */
-    expect(donationToExpandCm(26_000)).toBe(10);
+    expect(donationToExpandCm(10900)).toBe(0);
+    expect(donationToExpandCm(16900)).toBe(0);
+    expect(donationToExpandCm(20000)).toBe(10);
+    expect(donationToExpandCm(26_000)).toBe(0);
     expect(donationToExpandCm(100000)).toBe(50);
   });
 
@@ -237,6 +241,25 @@ describe("high-society territory (aux)", () => {
     expect(startCmFromField(1600, 4)).toBe(400);
     expect(startCmFromField(1200, 4)).toBe(300);
     expect(parseHighSocietyFieldCm("1600")).toBe(1600);
+  });
+
+  it("1 explicit seat uses 100cm field not 200 (no phantom 2nd player)", () => {
+    const members = [{ id: "a", name: "A", account: 0, toon: 0, operating: false }];
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a"],
+      startCmPerMember: 100,
+    });
+    expect(settings.fieldCm).toBe(100);
+    expect(resolveHighSocietySeatCountForField(settings, 1)).toBe(1);
+    expect(resolveHighSocietyEffectiveFieldCm(settings, 1)).toBe(100);
+    const { seats } = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [],
+      highSocietySettings: settings,
+    });
+    expect(seats).toHaveLength(1);
+    expect(seats[0]!.widthCm).toBe(100);
   });
 
   it("realtime field grows/shrinks neighbors when middle push dir changes", () => {
@@ -1308,5 +1331,146 @@ describe("highSociety regression guards", () => {
         normalizeHighSocietySettings({ enabled: false, territoryCutoffAt: Date.now() })
       )
     ).toBe(false);
+  });
+
+  it("isSeatMemberIdsReorderOnly detects pure reorder", () => {
+    expect(isSeatMemberIdsReorderOnly(["a", "b", "c"], ["b", "a", "c"])).toBe(true);
+    expect(isSeatMemberIdsReorderOnly(["a", "b"], ["a", "b"])).toBe(false);
+    expect(isSeatMemberIdsReorderOnly(["a", "b"], ["a", "b", "c"])).toBe(false);
+    expect(
+      isSeatMemberIdsReorderOnly([], ["b", "a"], ["a", "b"])
+    ).toBe(true);
+    expect(effectiveHighSocietySeatOrder([], ["a", "b", "c"])).toEqual(["a", "b", "c"]);
+    expect(effectiveHighSocietySeatOrder(["b", "a"], ["x", "y"])).toEqual(["b", "a"]);
+  });
+
+  it("seat reorder preserves each member widthCm (not slot inheritance)", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    const linkStarted = 1000;
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b", "c", "d"],
+      startCmPerMember: 300,
+      donationLinks: {
+        a: { active: true, startedAt: linkStarted },
+        b: { active: true, startedAt: linkStarted },
+        c: { active: true, startedAt: linkStarted },
+        d: { active: true, startedAt: linkStarted },
+      },
+    });
+    const donors = [
+      { memberId: "a", amount: 50_000, at: 2000 },
+      { memberId: "c", amount: 20_000, at: 2000 },
+    ];
+    const before = buildHighSocietyFieldFromAppState({ members, donors, highSocietySettings: settings });
+    const widthA = before.seats.find((s) => s.id === "a")!.widthCm;
+    const widthB = before.seats.find((s) => s.id === "b")!.widthCm;
+    expect(widthA).toBeGreaterThan(widthB + 5);
+
+    const reordered = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: settings,
+      nextSettings: normalizeHighSocietySettings({
+        ...settings,
+        seatMemberIds: ["b", "a", "c", "d"],
+      }),
+      members,
+      donors,
+    });
+    expect(reordered.memberWidthCm?.a).toBeCloseTo(widthA, 0);
+    expect(reordered.memberWidthCm?.b).toBeCloseTo(widthB, 0);
+
+    const after = buildHighSocietyFieldFromAppState({
+      members,
+      donors,
+      highSocietySettings: reordered,
+    });
+    expect(after.seats.find((s) => s.id === "a")!.widthCm).toBeCloseTo(widthA, 0);
+    expect(after.seats.find((s) => s.id === "b")!.widthCm).toBeCloseTo(widthB, 0);
+  });
+
+  it("double seat reorder keeps member widths (no slot physics drift)", () => {
+    const members = [
+      { id: "joy", name: "죠이", account: 0, toon: 0, operating: false },
+      { id: "woo", name: "최우주", account: 0, toon: 0, operating: false },
+    ];
+    const linkStarted = 1000;
+    let settings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["joy", "woo"],
+      startCmPerMember: 200,
+      fieldCm: 400,
+      donationLinks: {
+        joy: { active: true, startedAt: linkStarted },
+        woo: { active: true, startedAt: linkStarted },
+      },
+    });
+    const donors = [
+      { memberId: "joy", amount: 50_000, at: 2000 },
+      { memberId: "woo", amount: 10_000, at: 2000 },
+    ];
+    const baseline = buildHighSocietyFieldFromAppState({ members, donors, highSocietySettings: settings });
+    const widthJoy = baseline.seats.find((s) => s.id === "joy")!.widthCm;
+    const widthWoo = baseline.seats.find((s) => s.id === "woo")!.widthCm;
+    expect(widthJoy).toBeGreaterThan(widthWoo);
+
+    settings = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: settings,
+      nextSettings: normalizeHighSocietySettings({ ...settings, seatMemberIds: ["woo", "joy"] }),
+      members,
+      donors,
+    });
+    const swapped = buildHighSocietyFieldFromAppState({ members, donors, highSocietySettings: settings });
+    expect(swapped.seats.find((s) => s.id === "joy")!.widthCm).toBeCloseTo(widthJoy, 0);
+    expect(swapped.seats.find((s) => s.id === "woo")!.widthCm).toBeCloseTo(widthWoo, 0);
+    expect(swapped.seats.filter((s) => !s.eliminated).length).toBe(2);
+
+    settings = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: settings,
+      nextSettings: normalizeHighSocietySettings({ ...settings, seatMemberIds: ["joy", "woo"] }),
+      members,
+      donors,
+    });
+    const back = buildHighSocietyFieldFromAppState({ members, donors, highSocietySettings: settings });
+    expect(back.seats.find((s) => s.id === "joy")!.widthCm).toBeCloseTo(widthJoy, 0);
+    expect(back.seats.find((s) => s.id === "woo")!.widthCm).toBeCloseTo(widthWoo, 0);
+    expect(back.seats.filter((s) => !s.eliminated).length).toBe(2);
+  });
+
+  it("re-added seat keeps donation link startedAt after removal", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+    ];
+    const startedAt = 5000;
+    const prev = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b"],
+      donationLinks: {
+        a: { active: true, startedAt },
+        b: { active: true, startedAt },
+      },
+    });
+    const removed = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: prev,
+      nextSettings: normalizeHighSocietySettings({ ...prev, seatMemberIds: ["a"] }),
+      members,
+      donors: [{ memberId: "b", amount: 10_000, at: 6000 }],
+    });
+    expect(removed.donationLinks?.b?.active).toBe(false);
+    expect(removed.donationLinks?.b?.startedAt).toBe(startedAt);
+
+    const reAdded = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: removed,
+      nextSettings: normalizeHighSocietySettings({ ...prev, seatMemberIds: ["a", "b"] }),
+      members,
+      donors: [{ memberId: "b", amount: 10_000, at: 6000 }],
+    });
+    expect(reAdded.donationLinks?.b?.active).toBe(true);
+    expect(reAdded.donationLinks?.b?.startedAt).toBe(startedAt);
   });
 });

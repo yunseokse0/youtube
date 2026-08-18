@@ -3650,6 +3650,26 @@ export function mergeDonorsForMultiTabSave(
   return unionDonorsById(existing, incoming);
 }
 
+/** React·ref·LS 등 여러 소스 donors 를 id union */
+export function resolveRichestDonorsFromSources(
+  sources: Array<Donor[] | null | undefined>,
+  opts?: { incomingUpdatedAt?: number; existingUpdatedAt?: number }
+): Donor[] {
+  let merged: Donor[] = [];
+  for (const source of sources) {
+    const norm = normalizeDonorsArray(source);
+    if (norm.length === 0) continue;
+    merged =
+      merged.length === 0
+        ? norm
+        : mergeDonorsForMultiTabSave(merged, norm, {
+            incomingUpdatedAt: opts?.incomingUpdatedAt ?? 0,
+            existingUpdatedAt: opts?.existingUpdatedAt ?? 0,
+          });
+  }
+  return merged;
+}
+
 /**
  * 수동 삭제처럼 incoming 이 existing 의 부분집합이고 시각이 앞설 때만 true.
  * 합산 추가(신규 id)·투네와 경합 시에는 false → 서버는 replace 대신 union.

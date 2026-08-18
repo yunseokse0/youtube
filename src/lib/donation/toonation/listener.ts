@@ -122,6 +122,8 @@ export {
   normalizeToonationAlertboxUrl,
   readToonationAlertboxFromLocal,
   readToonationOwnerFromLocal,
+  readToonationSettingsUpdatedAtFromLocal,
   readToonationSocketEnabledFromLocal,
+  shouldPreferLocalToonationSettingsOverServer,
   writeToonationSettingsToLocal,
 } from "./link-key";

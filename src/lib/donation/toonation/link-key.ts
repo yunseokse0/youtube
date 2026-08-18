@@ -54,6 +54,7 @@ export function isExampleToonationLinkKey(input: string): boolean {
 export const TOONATION_LS_ALERTBOX = "donationAutomation.toonation.alertboxUrl";
 export const TOONATION_LS_SOCKET = "donationAutomation.toonation.socketEnabled";
 export const TOONATION_LS_OWNER = "donationAutomation.toonation.ownerName";
+export const TOONATION_LS_UPDATED_AT = "donationAutomation.toonation.settingsUpdatedAt";
 
 export function toonationSettingStorageKey(base: string, userId: string): string {
   const uid = String(userId || "").trim();
@@ -92,17 +93,51 @@ export function readToonationOwnerFromLocal(userId: string): string {
   }
 }
 
+export function readToonationSettingsUpdatedAtFromLocal(userId: string): number {
+  if (typeof window === "undefined" || !userId) return 0;
+  try {
+    const raw = window.localStorage.getItem(toonationSettingStorageKey(TOONATION_LS_UPDATED_AT, userId));
+    const n = Number(raw || 0);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * 연동키 변경 직후 서버(Redis) 동기화가 늦거나 실패해도, 더 최신 로컬 설정을 유지.
+ */
+export function shouldPreferLocalToonationSettingsOverServer(opts: {
+  localKey: string;
+  serverKey: string;
+  localUpdatedAt: number;
+  serverUpdatedAt: number;
+}): boolean {
+  const localKey = String(opts.localKey || "").trim();
+  const serverKey = String(opts.serverKey || "").trim();
+  if (!localKey || isExampleToonationLinkKey(localKey)) return false;
+  if (!serverKey || isExampleToonationLinkKey(serverKey)) return true;
+  if (localKey === serverKey) return false;
+  const localAt = Number(opts.localUpdatedAt || 0);
+  const serverAt = Number(opts.serverUpdatedAt || 0);
+  if (localAt > 0 && serverAt > 0) return localAt > serverAt;
+  /** 키가 다르면 로컬 편집 우선(서버가 옛 연동키를 들고 있는 경우) */
+  return true;
+}
+
 export function writeToonationSettingsToLocal(
   userId: string,
   values: { alertboxUrl?: string; socketEnabled?: boolean; ownerName?: string }
 ): void {
   if (typeof window === "undefined" || !userId) return;
   try {
+    let touched = false;
     if (typeof values.socketEnabled === "boolean") {
       window.localStorage.setItem(
         toonationSettingStorageKey(TOONATION_LS_SOCKET, userId),
         String(values.socketEnabled)
       );
+      touched = true;
     }
     if (typeof values.alertboxUrl === "string") {
       const key = toonationSettingStorageKey(TOONATION_LS_ALERTBOX, userId);
@@ -111,11 +146,19 @@ export function writeToonationSettingsToLocal(
       } else {
         window.localStorage.setItem(key, values.alertboxUrl);
       }
+      touched = true;
     }
     if (typeof values.ownerName === "string") {
       window.localStorage.setItem(
         toonationSettingStorageKey(TOONATION_LS_OWNER, userId),
         values.ownerName
+      );
+      touched = true;
+    }
+    if (touched) {
+      window.localStorage.setItem(
+        toonationSettingStorageKey(TOONATION_LS_UPDATED_AT, userId),
+        String(Date.now())
       );
     }
   } catch {

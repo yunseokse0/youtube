@@ -4,6 +4,7 @@ import {
   extractToonationLinkKey,
   isExampleToonationLinkKey,
   normalizeToonationAlertboxUrl,
+  shouldPreferLocalToonationSettingsOverServer,
   TOONATION_LS_ALERTBOX,
   toonationSettingStorageKey,
 } from "./link-key";
@@ -52,5 +53,43 @@ describe("normalizeToonationAlertboxUrl", () => {
     expect(toonationSettingStorageKey(TOONATION_LS_ALERTBOX, "bob")).not.toBe(
       toonationSettingStorageKey(TOONATION_LS_ALERTBOX, "alice")
     );
+  });
+});
+
+describe("shouldPreferLocalToonationSettingsOverServer", () => {
+  const OLD = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const NEW = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+  it("prefers newer local key when server still has old link key", () => {
+    expect(
+      shouldPreferLocalToonationSettingsOverServer({
+        localKey: NEW,
+        serverKey: OLD,
+        localUpdatedAt: 9000,
+        serverUpdatedAt: 8000,
+      })
+    ).toBe(true);
+  });
+
+  it("keeps server when keys match", () => {
+    expect(
+      shouldPreferLocalToonationSettingsOverServer({
+        localKey: OLD,
+        serverKey: OLD,
+        localUpdatedAt: 9000,
+        serverUpdatedAt: 8000,
+      })
+    ).toBe(false);
+  });
+
+  it("prefers local when keys differ and timestamps are missing", () => {
+    expect(
+      shouldPreferLocalToonationSettingsOverServer({
+        localKey: NEW,
+        serverKey: OLD,
+        localUpdatedAt: 0,
+        serverUpdatedAt: 8000,
+      })
+    ).toBe(true);
   });
 });

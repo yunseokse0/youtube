@@ -43,7 +43,7 @@ export default function HighSocietyDemoPage() {
             <p className="text-xs uppercase tracking-[0.14em] text-amber-400/80">High Society</p>
             <h1 className="mt-1 text-2xl font-bold text-amber-50">상류사회 · 세로 오버레이 데모</h1>
             <p className="mt-2 text-sm leading-relaxed text-neutral-400">
-              게이지 형태 2종(평평 / 화살표). 룰: 1만원=5cm · 천원 버림(2만6천→10cm) · A→D 영토.
+              게이지 형태 2종(평평 / 화살표). 룰: 1만원=5cm · 1만원 배수만(1만9천→0cm) · A→D 영토.
             </p>
           </div>
 

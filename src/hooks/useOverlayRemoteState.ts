@@ -94,6 +94,43 @@ import {
 } from "@/lib/state-api-pick";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 
+/** 관리자 iframe — API 폴링이 서버 구 스냅샷으로 HS·후원 미리보기를 덮지 않게 LS 힌트 병합 */
+function mergeAdminPreviewLocalHintOntoRemote(
+  remote: AppState,
+  userId?: string,
+  graceMs = 45_000
+): AppState {
+  const local = readLocalBroadcastState(userId);
+  if (!local) return remote;
+  const localAt = Number(local.updatedAt || 0);
+  const remoteAt = Number(remote.updatedAt || 0);
+  if (localAt <= 0) return remote;
+  const age = Date.now() - localAt;
+  if (age > graceMs) return remote;
+  const hsLocal = local.highSocietySettings;
+  const hsRemote = remote.highSocietySettings;
+  const hsDiff =
+    Boolean(hsLocal) &&
+    JSON.stringify(hsLocal ?? {}) !== JSON.stringify(hsRemote ?? {});
+  if (localAt <= remoteAt && !hsDiff) return remote;
+
+  const merged: AppState = {
+    ...remote,
+    updatedAt: Math.max(localAt, remoteAt),
+  };
+  if (hsLocal) merged.highSocietySettings = hsLocal;
+  if (local.donationSyncMode) merged.donationSyncMode = local.donationSyncMode;
+  const localDonors = normalizeDonorsArray(local.donors);
+  if (localDonors.length > 0) merged.donors = local.donors;
+  if (Array.isArray(local.members) && local.members.length > 0) {
+    merged.members = mergeMemberRosterPreservingAmounts(
+      remote.members || [],
+      local.members
+    );
+  }
+  return merged;
+}
+
 export type UseOverlayRemoteStateOptions = {
   /** false면 동기화 비활성 */
 
@@ -651,6 +688,12 @@ export function useOverlayRemoteState(
           );
         }
 
+        const adminPreviewEmbed =
+          isAdminDashboardPreviewEmbed() || isEmbeddedInSameOriginAdminFrame();
+        if (adminPreviewEmbed && options.adminPreviewAllowPoll) {
+          remoteForApply = mergeAdminPreviewLocalHintOntoRemote(remoteForApply, userId);
+        }
+
         applySyncedState(remoteForApply, statePick, refs);
       } catch {
         restoreFallback();
@@ -664,7 +707,7 @@ export function useOverlayRemoteState(
       }
     },
 
-    [enabled, userId, statePick, persistLastGoodEffective, restoreFallback, sigSalesPick, preferServerOnly, obsTextPick]
+    [enabled, userId, statePick, persistLastGoodEffective, restoreFallback, sigSalesPick, preferServerOnly, obsTextPick, options.adminPreviewAllowPoll]
   );
 
   const { connected: sseConnected } = useSSEConnection((d: unknown) => {
@@ -910,6 +953,28 @@ export function useOverlayRemoteState(
 
     const applyLocalBroadcastState = () => {
       const localNow = readLocalBroadcastState(userId);
+      const adminPreviewCtx =
+        (isAdminDashboardPreviewEmbed() || isEmbeddedInSameOriginAdminFrame()) &&
+        Boolean(options.adminPreviewAllowPoll);
+
+      if (
+        adminPreviewCtx &&
+        localNow &&
+        isOverlayStateViable(localNow, statePick) &&
+        !shouldKeepLastGoodInsteadOf(localNow, statePick, lastGoodRef.current)
+      ) {
+        applySyncedState(localNow, statePick, {
+          lastVisualSigRef,
+          lastSyncedUpdatedAtRef,
+          lastSyncedDonorRevRef,
+          lastGoodRef,
+          persistLastGood: persistLastGoodEffective,
+          userId,
+          setState,
+        });
+        return;
+      }
+
       if (
         localNow &&
         hasMeaningfulMemberRoster(localNow) &&

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   filterDonorsAfterSettlementReset,
   mergeDonorsForMultiTabSave,
+  resolveRichestDonorsFromSources,
   mergeServerSaveApiBodies,
   rebumpDonorsPastSettlementReset,
 } from "@/lib/state";
@@ -219,5 +220,22 @@ describe("mergeServerSaveApiBodies", () => {
       "src:split:m3",
     ]);
     expect(merged.donors.find((d) => d.id === "src")?.donationExcluded).toBe(true);
+  });
+});
+
+describe("resolveRichestDonorsFromSources", () => {
+  it("unions donors from react, ref, and LS sources", () => {
+    const react: Donor[] = [donor("a", 10000)];
+    const ref: Donor[] = [donor("a", 10000), donor("b", 20000)];
+    const ls: Donor[] = [donor("c", 30000)];
+    const merged = resolveRichestDonorsFromSources([react, ref, ls], {
+      incomingUpdatedAt: 9000,
+      existingUpdatedAt: 5000,
+    });
+    expect(merged.map((d) => d.id).sort()).toEqual(["a", "b", "c"]);
+  });
+
+  it("returns empty when all sources are empty", () => {
+    expect(resolveRichestDonorsFromSources([[], undefined, null])).toEqual([]);
   });
 });

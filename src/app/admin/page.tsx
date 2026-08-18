@@ -47,6 +47,7 @@ import {
   isDefaultLikeTimerDisplayStyle,
   normalizeDonorsArray,
   mergeDonorsForMultiTabSave,
+  resolveRichestDonorsFromSources,
   mergeLocalMemberIdentityOntoRemote,
   donorsListContentDiffers,
   isIntentionalDonorListShrink,
@@ -199,7 +200,9 @@ import {
   normalizeToonationAlertboxUrl,
   readToonationAlertboxFromLocal,
   readToonationOwnerFromLocal,
+  readToonationSettingsUpdatedAtFromLocal,
   readToonationSocketEnabledFromLocal,
+  shouldPreferLocalToonationSettingsOverServer,
   stopToonationListener,
   syncToonationListenerFromBrowser,
   toonationListenerStatusFromServer,
@@ -221,7 +224,7 @@ import {
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
 import { guardMemberTotalsAgainstAccidentalZeroWipe } from "@/lib/donation/zero-wipe-guard";
-import { mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
+import { mergeMemberRosterPreservingAmounts, mergeManualMemberFieldsFromPatch } from "@/lib/member-roster-merge";
 import { mergeDonationApplyBase, enrichStateBeforeAuthoritativeDonationSave } from "@/lib/donation/merge-donation-apply-base";
 import { applyBankDonationsViaApi } from "@/lib/donation/apply-bank-donation-client";
 import { persistDonationStateViaApi } from "@/lib/donation/persist-donation-client";
@@ -230,6 +233,7 @@ import {
   formatCm,
   normalizeHighSocietyFxSettings,
   highSocietyFxToHsFxParam,
+  highSocietyAdminPreviewSig,
   normalizeHighSocietySettings,
   mergeHighSocietyDonationLinksOnSettingsChange,
   isHighSocietyReopen,
@@ -241,6 +245,7 @@ import {
   resolveHighSocietySeatMembers,
   resolveHighSocietyStartCmPerMember,
   resolveHighSocietyEffectiveFieldCm,
+  resolveHighSocietySeatCountForField,
   resolveSystemMiddlePushDir,
   seatRoleForMemberId,
   fieldCmFromStartPerMember,
@@ -628,6 +633,8 @@ export default function AdminPage() {
   const [toonationSettingsHydrated, setToonationSettingsHydrated] = useState(false);
   /** persist/sync는 이 계정에 대해 hydrate가 끝난 뒤에만 수행(계정 전환 시 키 오염 방지) */
   const toonationHydratedUserIdRef = useRef<string | null>(null);
+  /** hydrate fetch 도중 사용자가 연동키·주인명을 수정하면 서버 값으로 덮지 않음 */
+  const toonationLocalEditedAfterRef = useRef(0);
   const toonationResolvedAlertboxUrl = useMemo(
     () => normalizeToonationAlertboxUrl(toonationAlertboxUrl.trim()),
     [toonationAlertboxUrl]
@@ -986,6 +993,7 @@ export default function AdminPage() {
   const [battleContentWidthPct, setBattleContentWidthPct] = useState("100");
   const [sigSalesMenuCount, setSigSalesMenuCount] = useState("10");
   const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
+  const [hsPreviewIframeKey, setHsPreviewIframeKey] = useState(0);
   /** 상류사회 1인 시작 cm — 입력 중 25 클램프에 막히지 않게 초안 문자열 유지 */
   const [hsStartCmDraft, setHsStartCmDraft] = useState<string | null>(null);
   const [obsTextPreviewIframeKey, setObsTextPreviewIframeKey] = useState(0);
@@ -1547,6 +1555,25 @@ export default function AdminPage() {
         }
       : incoming;
     let didPreserve = preferLocalMemberRoster;
+    const nameOnlyLocalNewer =
+      !membersDifferByIds(local.members || [], incoming.members || []) &&
+      inMembersAuthWindow &&
+      (local.members || []).some((lm) => {
+        const im = (incoming.members || []).find((m) => m.id === lm.id);
+        return im && String(lm.name || "").trim() !== String(im.name || "").trim();
+      });
+    if (nameOnlyLocalNewer) {
+      merged = {
+        ...merged,
+        members: mergeManualMemberFieldsFromPatch(merged.members || [], local.members),
+        ...(normalizeDonorsArray(local.donors).length >= normalizeDonorsArray(merged.donors).length
+          ? { donors: normalizeDonorsArray(local.donors) }
+          : {}),
+        highSocietySettings: local.highSocietySettings ?? merged.highSocietySettings,
+        updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
+      };
+      didPreserve = true;
+    }
     if (!incoming.missions?.length && local.missions?.length) {
       merged = { ...merged, missions: local.missions };
       didPreserve = true;
@@ -2462,7 +2489,23 @@ export default function AdminPage() {
         toApply = mergeLocalMemberIdentityOntoRemote(toApply, prev);
         const afterNames = (toApply.members || []).map((m) => `${m.id}:${m.name || ""}`).join("|");
         if (beforeNames !== afterNames && hasMeaningfulMemberRoster(toApply)) {
-          persistState(toApply, { includeDonationFields: true });
+          const richestDonors = resolveRichestDonorsFromSources(
+            [toApply.donors, prev.donors, stateRef.current?.donors, loadState(user?.id)?.donors],
+            {
+              incomingUpdatedAt: Number(toApply.updatedAt || 0),
+              existingUpdatedAt: Number(prev.updatedAt || 0),
+            }
+          );
+          const payload: AppState =
+            richestDonors.length > 0
+              ? syncMemberTotalsFromDonors({ ...toApply, donors: richestDonors })
+              : toApply;
+          persistState(payload, {
+            membersAuthoritative: true,
+            ...(richestDonors.length > 0
+              ? { donorsAuthoritative: true }
+              : { omitDonationFields: true }),
+          });
         }
       }
       /** 후원은 서버(계정) 정본 — 세션 캐시로 원격 축소본을 막지 않음 */
@@ -3433,16 +3476,26 @@ export default function AdminPage() {
         members: prev.members.map((x: Member) => (x.id === id ? { ...x, name: cleaned } : x)),
         updatedAt: Date.now(),
       };
-      if (normalizeDonorsArray(next.donors).length === 0) {
-        try {
-          const fromLs = loadState(user?.id);
-          if (fromLs && normalizeDonorsArray(fromLs.donors).length > 0) {
-            next = { ...next, donors: fromLs.donors };
-          }
-        } catch {}
+      const richestDonors = resolveRichestDonorsFromSources(
+        [prev.donors, stateRef.current?.donors, loadState(user?.id)?.donors],
+        {
+          incomingUpdatedAt: Number(next.updatedAt || 0),
+          existingUpdatedAt: Number(prev.updatedAt || 0),
+        }
+      );
+      if (richestDonors.length > 0) {
+        next = syncMemberTotalsFromDonors({ ...next, donors: richestDonors });
       }
-      if (normalizeDonorsArray(next.donors).length > 0) {
-        next = syncMemberTotalsFromDonors(next);
+      if (next.mealBattle?.participants?.length) {
+        next = {
+          ...next,
+          mealBattle: {
+            ...next.mealBattle,
+            participants: next.mealBattle.participants.map((p) =>
+              p.memberId === id ? { ...p, name: cleaned } : p
+            ),
+          },
+        };
       }
       const now = Date.now();
       next = { ...next, updatedAt: now };
@@ -7235,17 +7288,30 @@ export default function AdminPage() {
     let cancelled = false;
     toonationHydratedUserIdRef.current = null;
     setToonationSettingsHydrated(false);
+    toonationLocalEditedAfterRef.current = 0;
     /** 계정 전환 직후: 이전 계정 값이 화면에 남지 않게 비움 → 이 계정 LS/서버만 로드 */
     setToonationAlertboxUrl(readToonationAlertboxFromLocal(user.id));
     setToonationSocketEnabled(readToonationSocketEnabledFromLocal(user.id));
     setToonationOwnerName(readToonationOwnerFromLocal(user.id));
+    const hydrateStartedAt = Date.now();
     void (async () => {
       try {
         const status = await fetchToonationListenerStatus(user.id);
         if (cancelled) return;
+        if (toonationLocalEditedAfterRef.current > hydrateStartedAt) return;
         const serverUrl = String(status?.alertboxUrl || "").trim();
         const serverKey = extractToonationLinkKey(serverUrl) || serverUrl;
-        if (serverKey && !isExampleToonationLinkKey(serverKey)) {
+        const localRaw = readToonationAlertboxFromLocal(user.id);
+        const localKey = extractToonationLinkKey(localRaw) || localRaw.trim();
+        const localUpdatedAt = readToonationSettingsUpdatedAtFromLocal(user.id);
+        const serverUpdatedAt = Number(status?.updatedAt || 0);
+        const preferLocal = shouldPreferLocalToonationSettingsOverServer({
+          localKey,
+          serverKey,
+          localUpdatedAt,
+          serverUpdatedAt,
+        });
+        if (serverKey && !isExampleToonationLinkKey(serverKey) && !preferLocal) {
           setToonationAlertboxUrl(serverKey);
           setToonationSocketEnabled(status?.enabled !== false);
           const serverOwner = String(status?.ownerName || "").trim();
@@ -7255,6 +7321,9 @@ export default function AdminPage() {
             socketEnabled: status?.enabled !== false,
             ownerName: serverOwner || undefined,
           });
+        } else if (preferLocal && localKey && !isExampleToonationLinkKey(localKey)) {
+          /** 로컬 연동키가 더 최신 — 화면·LS 유지, sync effect 가 서버(Redis)를 갱신 */
+          setToonationAlertboxUrl(localKey);
         }
         /** 서버 키 없음(신규 계정): 이 계정 LS만 유지(보통 ""). 공용/타 계정 키는 읽지 않음 */
       } catch {
@@ -7627,6 +7696,7 @@ export default function AdminPage() {
           nextSettings,
           members: prev.members || [],
           resetTerritory,
+          donors: prev.donors || [],
         });
         applied = nextSettings;
         const needsDonorTerritoryMark = shouldPersistDonorsForHighSocietySettingsPatch({
@@ -7672,6 +7742,20 @@ export default function AdminPage() {
           next = syncMemberTotalsFromDonors(next);
         }
         stateRef.current = next;
+        try {
+          const lsBase = loadState(user?.id);
+          const stamped: AppState = lsBase
+            ? {
+                ...lsBase,
+                highSocietySettings: nextSettings,
+                donationSyncMode: nextDonationSyncMode,
+                ...(needsDonorTerritoryMark ? { donors: nextDonors } : {}),
+                updatedAt: next.updatedAt,
+              }
+            : next;
+          window.localStorage.setItem(storageKey(user?.id), JSON.stringify(stamped));
+          notifyBroadcastStateLocalUpdated(user?.id, stamped.updatedAt);
+        } catch {}
         persistState(
           next,
           hasDonorsToPreserve
@@ -7817,26 +7901,50 @@ export default function AdminPage() {
     },
     [highSocietySettings.seatMemberIds, hsSeatPlayers, patchHighSocietySettings]
   );
-  const hsSeatCountForStart = Math.max(
-    2,
-    hsSeatPlayers.length || highSocietySettings.seatMemberIds.length || activeMemberCount || 4
+  const hsSeatCountForStart = resolveHighSocietySeatCountForField(
+    highSocietySettings,
+    hsSeatPlayers.length
   );
   const hsStartCm = resolveHighSocietyStartCmPerMember(highSocietySettings, hsSeatCountForStart);
   const hsEffectiveFieldCm = resolveHighSocietyEffectiveFieldCm(
     highSocietySettings,
     hsSeatCountForStart
   );
+  const hsDonorTerritorySig = useMemo(
+    () =>
+      (state.donors || [])
+        .map(
+          (d) =>
+            `${d.memberId || ""}:${Math.max(0, Number(d.amount) || 0)}:${String(d.hsPushDir || "")}:${d.hsTerritoryExcluded ? "x" : ""}`
+        )
+        .join(";"),
+    [state.donors]
+  );
+  const hsPreviewSig = useMemo(
+    () =>
+      highSocietyAdminPreviewSig(highSocietySettings, {
+        updatedAt: state.updatedAt,
+        donorTerritorySig: hsDonorTerritorySig,
+      }),
+    [highSocietySettings, state.updatedAt, hsDonorTerritorySig]
+  );
   const patchHighSocietyStartCm = useCallback(
     (startCm: number) => {
-      const seats = Math.max(2, hsSeatPlayers.length || hsSeatCountForStart || 4);
+      const seats = resolveHighSocietySeatCountForField(
+        highSocietySettings,
+        hsSeatPlayers.length || hsSeatCountForStart
+      );
       const clamped = Math.max(1, Math.min(5000, Math.floor(Number(startCm) || 0)));
       setHsStartCmDraft(null);
       patchHighSocietySettings({
         startCmPerMember: clamped,
         fieldCm: fieldCmFromStartPerMember(clamped, seats),
+        memberWidthCm: undefined,
+        memberWidthDonationSnapshot: undefined,
+        memberTerritoryExpand: undefined,
       });
     },
-    [hsSeatPlayers.length, hsSeatCountForStart, patchHighSocietySettings]
+    [highSocietySettings, hsSeatCountForStart, hsSeatPlayers.length, patchHighSocietySettings]
   );
   const hsStartCmInputValue =
     hsStartCmDraft !== null ? hsStartCmDraft : String(Math.max(1, Math.round(hsStartCm)));
@@ -12025,8 +12133,8 @@ export default function AdminPage() {
                     <div className="text-sm font-semibold text-amber-100">상류사회 모드 (땅따먹기)</div>
                     <p className="mt-0.5 text-[11px] text-neutral-400 leading-snug">
                       확장 룰: <strong className="text-neutral-200">1만원 = 5cm</strong>
-                      · 1만원 이상만 인정 · 천원 단위(만원 미만)는 버림
-                      (예: 2만6천원 → 10cm). 1인 시작{" "}
+                      · 1만원 정확히 배수만 영토 반영 · 천원 자리 있으면 미적용
+                      (예: 2만원 → 10cm, 1만9천원 → 0cm). 1인 시작{" "}
                       <strong className="text-neutral-200">{formatCm(hsStartCm)}</strong>
                       · 전장 총길이{" "}
                       <strong className="text-neutral-200">
@@ -12304,13 +12412,19 @@ export default function AdminPage() {
                   className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm font-mono"
                   placeholder="연동키 (예: f28dc2204fbaf86fd9df74c12f435c73) 또는 Alertbox URL"
                   value={toonationAlertboxUrl}
-                  onChange={(e) => setToonationAlertboxUrl(e.target.value.trim())}
+                  onChange={(e) => {
+                    toonationLocalEditedAfterRef.current = Date.now();
+                    setToonationAlertboxUrl(e.target.value.trim());
+                  }}
                 />
                 <input
                   className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
                   placeholder="채널 주인명 (투네 알림 닉과 같으면 계좌, 다르면 투네)"
                   value={toonationOwnerName}
-                  onChange={(e) => setToonationOwnerName(e.target.value)}
+                  onChange={(e) => {
+                    toonationLocalEditedAfterRef.current = Date.now();
+                    setToonationOwnerName(e.target.value);
+                  }}
                 />
                 <div className="text-[11px] text-neutral-500">
                   예: <span className="text-neutral-300">BT태호</span> / 공백·기호 차이는 자동 무시합니다.
@@ -14339,7 +14453,7 @@ export default function AdminPage() {
                       </button>
                       에서만 설정합니다. ON이면 좌석 멤버 후원이 상단 영토 게이지에 반영됩니다.{" "}
                       확장: <strong className="text-neutral-300">1만원=5cm</strong>
-                      · 천원 단위 버림(예: 2만6천→10cm).{" "}
+                      · 1만원 배수만(1만9천→0cm).{" "}
                       <strong className="text-neutral-300">갱신 시점</strong>은 아래 옵션으로 선택합니다.
                       OBS 캔버스·브라우저 소스 <strong className="text-neutral-300">1080×1920</strong>.
                     </p>
@@ -14612,6 +14726,18 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="rounded-lg border border-white/10 bg-black/30 overflow-hidden p-2">
+                  <div className="mb-1.5 flex items-center justify-end">
+                    <button
+                      type="button"
+                      className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-amber-500/60 hover:text-amber-200"
+                      onClick={() => {
+                        notifyBroadcastStateLocalUpdated(user?.id, stateRef.current?.updatedAt);
+                        setHsPreviewIframeKey((k) => k + 1);
+                      }}
+                    >
+                      미리보기 새로고침
+                    </button>
+                  </div>
                   {(() => {
                     const hsFxNow = normalizeHighSocietyFxSettings(highSocietySettings.fx);
                     const hsFxParam = highSocietyFxToHsFxParam(hsFxNow);
@@ -14622,9 +14748,7 @@ export default function AdminPage() {
                   >
                     {overlayUserId ? (
                       <iframe
-                        key={`hs-preview-${highSocietySettings.barStyle || "flat"}-${hsStartCm}-${hsEffectiveFieldCm}-${hsFxParam}-${(state.members || [])
-                          .map((m) => `${m.id}:${m.name || ""}`)
-                          .join("|")}-d${Number(state.updatedAt || 0)}-r${Number(state.donorRankingsUpdatedAt || 0)}-n${(state.donors || []).length}`}
+                        key={`hs-preview-${hsPreviewSig}-${hsPreviewIframeKey}`}
                         src={appendAdminPreviewEmbedToOverlayUrl(
                           `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&fieldCm=${encodeURIComponent(String(hsEffectiveFieldCm))}&startCm=${encodeURIComponent(String(Math.round(hsStartCm)))}&hsFx=${encodeURIComponent(hsFxParam)}`
                         )}
