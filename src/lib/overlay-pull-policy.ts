@@ -8,7 +8,11 @@
  * - 디버그 전역 폴링만 env `NEXT_PUBLIC_OVERLAY_DEBUG_POLL_MS`
  */
 
-import { shouldSuppressOverlaySseConnection, isExternalOverlayBroadcastHost } from "@/lib/overlay-params";
+import {
+  shouldSuppressOverlaySseConnection,
+  isExternalOverlayBroadcastHost,
+  isOverlayServerAuthoritativeUrl,
+} from "@/lib/overlay-params";
 
 /** SSE `state_updated` 연타 시 GET 합치기 — 기본 트레일링 지연(ms) */
 export const DEFAULT_STATE_UPDATED_DEBOUNCE_MS = 100;
@@ -133,6 +137,7 @@ export function resolveOverlayRemotePollMs(explicit?: number): number {
   if (debug > 0) return debug;
   if (shouldSuppressOverlaySseConnection()) return readOverlayLiveSyncPollMs();
   if (isExternalOverlayBroadcastHost()) return readOverlayLiveSyncPollMs();
+  if (isOverlayServerAuthoritativeUrl()) return readOverlayLiveSyncPollMs();
   return 0;
 }
 

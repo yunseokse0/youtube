@@ -17,6 +17,7 @@ import {
   isOverlayBroadcastHost,
 } from "@/lib/overlay-params";
 import { useDonorRankingsRemoteState } from "@/hooks/useDonorRankingsRemoteState";
+import { useAdminPreviewDonorsOverride } from "@/hooks/useAdminPreviewDonorsOverride";
 import {
   buildDonorRankingsFromDonors,
   type DonorRankingRow,
@@ -776,6 +777,8 @@ export default function DonorRankingsOverlayPage() {
   const frameOpacityFrac = Math.max(0, Math.min(100, Number(overlayCfg.frameOpacity) || 100)) / 100;
 
   const donorsOverride = useDonorsOverrideFromUrl(sp);
+  const adminPreviewDonors = useAdminPreviewDonorsOverride(isAdminPreview, userId);
+  const effectiveDonorsOverride = adminPreviewDonors ?? donorsOverride;
 
   const { accountTop, toonTop, unifiedTop } = useMemo(() => {
     if (useTest) {
@@ -787,11 +790,14 @@ export default function DonorRankingsOverlayPage() {
         topN
       );
     }
-    const donors = (donorsOverride !== undefined ? donorsOverride : state?.donors || []) as Array<
-      Record<string, unknown>
-    >;
+    const donors = (() => {
+      /** 부모 관리자 탭 스냅샷 우선 — 없으면 서버 donors(기존 OBS·미리보기와 동일) */
+      if (isAdminPreview && adminPreviewDonors !== undefined) return adminPreviewDonors;
+      if (effectiveDonorsOverride !== undefined) return effectiveDonorsOverride;
+      return (state?.donors || []) as Array<Record<string, unknown>>;
+    })() as Array<Record<string, unknown>>;
     return buildDonorRankingsFromDonors(donors, topN);
-  }, [state?.donors, useTest, donorsOverride, topN]);
+  }, [state?.donors, useTest, effectiveDonorsOverride, adminPreviewDonors, isAdminPreview, topN]);
 
   if (!spReady) {
     return null;

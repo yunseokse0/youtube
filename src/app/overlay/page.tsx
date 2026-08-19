@@ -836,12 +836,12 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         void syncOnceRef.current();
       }
     };
-    const pollMs =
-      shouldSuppressOverlaySseConnection() || isExternalOverlayBroadcastHost()
-        ? readOverlayLiveSyncPollMs()
-        : readDonationListsOverlayPollMs();
-    const obsForceFullPoll =
-      shouldSuppressOverlaySseConnection() || isExternalOverlayBroadcastHost();
+    const liveSyncPoll =
+      shouldSuppressOverlaySseConnection() ||
+      isExternalOverlayBroadcastHost() ||
+      isOverlayServerAuthoritativeUrl();
+    const pollMs = liveSyncPoll ? readOverlayLiveSyncPollMs() : readDonationListsOverlayPollMs();
+    const obsForceFullPoll = liveSyncPoll;
     let pollTimer: number | undefined;
     if (pollMs > 0) {
       pollTimer = window.setInterval(

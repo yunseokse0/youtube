@@ -58,14 +58,14 @@ export function mergeGeneralTimerPreferEffective(
   const bLu = b.lastUpdated || 0;
   const incomingNewer = bLu > 0 && bLu > aLu;
 
+  /** 관리자 최신 PATCH(0분 리셋·일시정지·재개·±분) — lastUpdated 가 더 최신이면 incoming 정본 */
+  if (incomingNewer) {
+    return b;
+  }
+
   /** 로컬 일시정지(남은 시간 있음) — stale 원격 0 리셋으로 덮지 않음 */
   if (effB <= 0 && !b.isActive && effA > 0 && !a.isActive) {
     return a;
-  }
-
-  /** 관리자 최신 PATCH(일시정지·정지·재개·±분) — lastUpdated 가 더 최신이면 incoming 정본 */
-  if (incomingNewer) {
-    return b;
   }
 
   /** 명시적 일시정지(patch) — 실행 중이더라도 incoming 정지+남은시간을 우선 */

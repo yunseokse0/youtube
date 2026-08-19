@@ -116,11 +116,28 @@ describe("mergeGeneralTimerPreferEffective", () => {
     const staleZero: TimerState = {
       remainingTime: 0,
       isActive: false,
-      lastUpdated: now - 500,
+      lastUpdated: now - 5_000,
     };
     const merged = mergeGeneralTimerPreferEffective(paused, staleZero, now);
     expect(merged.isActive).toBe(false);
     expect(getEffectiveRemainingTime(merged, now)).toBe(3500);
+  });
+
+  it("accepts admin 0-minute reset over paused overlay timer when incoming is newer", () => {
+    const now = 7_500_000;
+    const paused: TimerState = {
+      remainingTime: 3538,
+      isActive: false,
+      lastUpdated: now - 120_000,
+    };
+    const adminReset: TimerState = {
+      remainingTime: 0,
+      isActive: false,
+      lastUpdated: now - 100,
+    };
+    const merged = mergeGeneralTimerPreferEffective(paused, adminReset, now);
+    expect(getEffectiveRemainingTime(merged, now)).toBe(0);
+    expect(merged.isActive).toBe(false);
   });
 
   it("accepts explicit pause patch over running server timer", () => {

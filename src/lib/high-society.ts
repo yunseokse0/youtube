@@ -799,10 +799,15 @@ function applyBoundaryNet(widths: number[], leftIdx: number, rightIdx: number, n
     const steal = Math.min(net, widths[rightIdx]!);
     widths[leftIdx]! += steal;
     widths[rightIdx]! -= steal;
+    /** 이웃이 비면 남은 확장은 밀어낸 쪽에 유지 — 양끝 200/200 균등 오류 방지 */
+    const remainder = net - steal;
+    if (remainder > 0) widths[leftIdx]! += remainder;
   } else {
     const steal = Math.min(-net, widths[leftIdx]!);
     widths[rightIdx]! += steal;
     widths[leftIdx]! -= steal;
+    const remainder = -net - steal;
+    if (remainder > 0) widths[rightIdx]! += remainder;
   }
 }
 
@@ -914,10 +919,11 @@ export function resolveHighSocietyField(opts: {
   }
 
   const sum = widths.reduce((s, w) => s + w, 0);
-  if (Math.abs(sum - fieldCm) > 0.01) {
-    const alive = widths.map((w, i) => (w > 0 ? i : -1)).filter((i) => i >= 0);
-    const last = alive[alive.length - 1] ?? 0;
-    widths[last]! += fieldCm - sum;
+  if (Math.abs(sum - fieldCm) > 0.01 && sum > 0) {
+    const scale = fieldCm / sum;
+    for (let i = 0; i < widths.length; i++) {
+      widths[i] = widths[i]! * scale;
+    }
   }
 
   const seats: HighSocietySeat[] = filled.map((f, i) => {

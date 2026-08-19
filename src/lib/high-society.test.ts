@@ -185,6 +185,23 @@ describe("high-society rule field", () => {
     expect(seats[2]!.widthCm).toBe(250);
   });
 
+  it("keeps unequal end widths when middle is depleted (105 vs 220 expand)", () => {
+    const { seats } = resolveHighSocietyField({
+      fieldCm: 400,
+      players: [
+        { id: "jaki", name: "자키", donationWon: 0, expandRightCm: 105, expandLeftCm: 0 },
+        { id: "isia", name: "이시아", donationWon: 0 },
+        { id: "siu", name: "윤시우", donationWon: 0, expandRightCm: 15, expandLeftCm: 0 },
+        { id: "gayeon", name: "가여니", donationWon: 0, expandLeftCm: 220, expandRightCm: 0 },
+      ],
+    });
+    const jaki = seats.find((s) => s.id === "jaki")!;
+    const gayeon = seats.find((s) => s.id === "gayeon")!;
+    expect(gayeon.widthCm).toBeGreaterThan(jaki.widthCm);
+    expect(jaki.widthCm + gayeon.widthCm).toBeCloseTo(400, 0);
+    expect(jaki.widthCm).not.toBe(gayeon.widthCm);
+  });
+
   it("eliminates a seat that loses all width (cushion)", () => {
     const { seats, cushion } = resolveHighSocietyField({
       players: [

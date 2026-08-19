@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
 import DonationTableOptionCheckboxes from "@/components/admin/DonationTableOptionCheckboxes";
-import { notifyBroadcastStateLocalUpdated, notifyOverlayPresetsLocalUpdated } from "@/lib/broadcast-state-local-sync";
+import { notifyBroadcastStateLocalUpdated, notifyOverlayPresetsLocalUpdated, notifyAdminPreviewDonorsUpdated } from "@/lib/broadcast-state-local-sync";
 import { APP_BRAND_NAME, adminHeaderTitle } from "@/lib/app-branding";
 import Toast from "@/components/Toast";
 import {
@@ -134,6 +134,7 @@ import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
 import { formatSigMatchStat, formatSigMatchManualAdjustStepLabel, getSigMatchRankings, isOperatingSettlementMember, resolveSigMatchDonationLink, resolveSigMatchManualAdjustSteps } from "@/lib/settlement-utils";
+import { buildDonorTotalsByNameFromDonors } from "@/lib/donor-rankings-aggregate";
 import { getEffectiveRemainingTime, mergeGeneralTimerPreferEffective, pauseTimer, resumeTimer } from "@/lib/timer-utils";
 import {
   appendAdminPreviewEmbedToOverlayUrl,
@@ -6104,11 +6105,17 @@ export default function AdminPage() {
   const setTimerMinutes = (key: AppTimerKey, minutes: number) => {
     const safeMin = Math.max(0, Math.floor(minutes));
     const sec = safeMin * 60;
-    updateMatchTimer(key, (timer) => ({
-      remainingTime: sec,
-      isActive: timer.isActive,
-      lastUpdated: Date.now(),
-    }));
+    updateMatchTimer(key, (timer) => {
+      const now = Date.now();
+      if (sec <= 0) {
+        return { remainingTime: 0, isActive: false, lastUpdated: now };
+      }
+      return {
+        remainingTime: sec,
+        isActive: timer.isActive,
+        lastUpdated: now,
+      };
+    });
   };
 
   const updateMatchTimerEnabled = (patch: Partial<AppState["matchTimerEnabled"]>) => {
@@ -8037,24 +8044,19 @@ export default function AdminPage() {
     });
     return arr.sort((a,b)=> (a.date === b.date ? (a.entry.at < b.entry.at ? 1 : -1) : (a.date < b.date ? 1 : -1)));
   }, [dailyLog]);
-  const donorTotalsByName = useMemo(() => {
-    const map = new Map<string, { name: string; account: number; toon: number; total: number; count: number }>();
-    for (const d of dedupeDonorRows(state.donors)) {
-      if (isDonorExcludedFromDonationTotals(d)) continue;
-      const key = (d.name || "무명").trim() || "무명";
-      const prev = map.get(key) || { name: key, account: 0, toon: 0, total: 0, count: 0 };
-      const isToon = (d.target || "account") === "toon";
-      const next = {
-        name: key,
-        account: prev.account + (isToon ? 0 : d.amount),
-        toon: prev.toon + (isToon ? d.amount : 0),
-        total: prev.total + d.amount,
-        count: prev.count + 1,
-      };
-      map.set(key, next);
-    }
-    return Array.from(map.values()).sort((a, b) => b.total - a.total);
-  }, [state.donors]);
+  const donorTotalsByName = useMemo(
+    () => buildDonorTotalsByNameFromDonors((state.donors || []) as Array<Record<string, unknown>>),
+    [state.donors]
+  );
+
+  /** 후원 순위 미리보기 iframe — 누적 표와 동일 donors 스냅샷 */
+  useEffect(() => {
+    if (!overlayUserId) return;
+    const t = window.setTimeout(() => {
+      notifyAdminPreviewDonorsUpdated(overlayUserId, state.donors || [], state.updatedAt);
+    }, 50);
+    return () => window.clearTimeout(t);
+  }, [overlayUserId, state.donors, state.updatedAt, donorRankingsPreviewIframeKey]);
 
   const regenerateDraft = () => {
     setChatDraft(formatChatLine(state));
@@ -14803,6 +14805,13 @@ export default function AdminPage() {
                       title="후원 순위 오버레이 미리보기"
                       className="absolute inset-0 h-full w-full border-0"
                       style={{ background: "transparent" }}
+                      onLoad={() => {
+                        notifyAdminPreviewDonorsUpdated(
+                          overlayUserId,
+                          stateRef.current?.donors || [],
+                          stateRef.current?.updatedAt
+                        );
+                      }}
                     />
                   ) : !authReady ? (
                     <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-400">

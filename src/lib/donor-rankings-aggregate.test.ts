@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateDonorRankingRows,
   buildDonorRankingsFromDonors,
+  buildDonorTotalsByNameFromDonors,
   dedupeDonorRowsForRanking,
 } from "./donor-rankings-aggregate";
 
@@ -106,5 +107,36 @@ describe("donor-rankings-aggregate", () => {
       { name: "J p", amount: 100000 },
       { name: "익명", amount: 12500 },
     ]);
+  });
+
+  it("buildDonorTotalsByNameFromDonors 총액은 unifiedTop 과 일치", () => {
+    const donors = [
+      { name: "G-귤귤", amount: 200_000, target: "toon" },
+      { name: "G-귤귤", amount: 100_000, target: "account" },
+      { name: "고신", amount: 50_000, type: "계좌" },
+      { name: "Unknown", amount: 10_000, target: "account" },
+      { name: "익명", amount: 5_000, target: "toon" },
+      { id: "x", name: "제외", amount: 99_000, target: "account", donationExcluded: true },
+    ];
+    const totals = buildDonorTotalsByNameFromDonors(donors);
+    const { unifiedTop } = buildDonorRankingsFromDonors(donors, 50);
+    for (const row of unifiedTop) {
+      expect(totals.find((t) => t.name === row.name)?.total).toBe(row.amount);
+    }
+    expect(totals.find((t) => t.name === "G-귤귤")).toEqual({
+      name: "G-귤귤",
+      account: 100_000,
+      toon: 200_000,
+      total: 300_000,
+      count: 2,
+    });
+    expect(totals.find((t) => t.name === "익명")?.total).toBe(15_000);
+  });
+
+  it("buildDonorTotalsByNameFromDonors는 donors 원본을 변경하지 않음", () => {
+    const donors = [{ name: "A", amount: 1000, target: "account" }];
+    const snapshot = JSON.stringify(donors);
+    buildDonorTotalsByNameFromDonors(donors);
+    expect(JSON.stringify(donors)).toBe(snapshot);
   });
 });
