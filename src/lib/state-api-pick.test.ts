@@ -92,7 +92,7 @@ describe("state-api-pick", () => {
     expect(os?.sigSalesManualDraftV1).toBeTruthy();
   });
 
-  it("donor-rankings pick aggregates from full donors despite wire cap", () => {
+  it("donor-rankings pick returns full donors and wire rankings", () => {
     const base = defaultState();
     const oldAt = 1;
     const newAt = 2;
@@ -116,7 +116,7 @@ describe("state-api-pick", () => {
     ];
     const state = { ...base, donors };
     const out = projectStateForGetPick(state, STATE_PICK_DONOR_RANKINGS) as Record<string, unknown>;
-    expect((out.donors as unknown[]).length).toBe(300);
+    expect((out.donors as unknown[]).length).toBe(302);
     const wire = out.donorRankingsWire as { unifiedTop: Array<{ name: string; amount: number }> };
     expect(wire.unifiedTop.find((r) => r.name === "G-귤귤")?.amount).toBe(500_000);
     expect(wire.unifiedTop.find((r) => r.name === "최근")?.amount).toBe(301_000);

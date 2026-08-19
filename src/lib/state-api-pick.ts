@@ -5,7 +5,7 @@ import {
   OBS_TEXT_OVERLAY_STATE_KEY,
   readObsTextRegistryFromState,
 } from "@/lib/obs-text-overlay";
-import { capDonorsForOverlayWire, slimSigInventoryForWire } from "@/lib/state-wire-slim";
+import { slimSigInventoryForWire } from "@/lib/state-wire-slim";
 
 export const STATE_PICK_SIG_INVENTORY = "sigInventory";
 export const STATE_PICK_OVERLAY = "overlay";
@@ -85,7 +85,7 @@ function overlayCoreFields(
     donorRankingsFullTheme: state.donorRankingsFullTheme,
     donorRankingsPresets: state.donorRankingsPresets,
     donorRankingsPresetId: state.donorRankingsPresetId,
-    ...(includeDonors ? { donors: capDonorsForOverlayWire(state.donors) } : {}),
+    ...(includeDonors ? { donors: state.donors || [] } : {}),
     missions: state.missions,
     sigInventory: slimSigInventoryForWire(state.sigInventory, userId),
     sigSoldOutStampUrl: state.sigSoldOutStampUrl,
@@ -164,7 +164,6 @@ export function projectStateForGetPick(
     };
   }
   if (pick === STATE_PICK_DONOR_RANKINGS) {
-    /** wire donors 는 최신 N행만 — 순위 집계는 전체 donors 로 별도 계산 */
     const rankings = buildDonorRankingsFromDonors(
       (state.donors || []) as Array<Record<string, unknown>>,
       0
@@ -173,7 +172,7 @@ export function projectStateForGetPick(
       updatedAt: state.updatedAt,
       settlementResetAt: state.settlementResetAt,
       donorRankingsUpdatedAt: revisionForStatePick(state, STATE_PICK_DONOR_RANKINGS),
-      donors: capDonorsForOverlayWire(state.donors),
+      donors: state.donors || [],
       donorsFormat: state.donorsFormat,
       donorRankingsWire: {
         unifiedTop: rankings.unifiedTop,
