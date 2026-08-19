@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  ADMIN_PREVIEW_DONORS_REQUEST,
   ADMIN_PREVIEW_DONORS_UPDATED,
   overlayUserIdsMatch,
 } from "@/lib/broadcast-state-local-sync";
@@ -33,6 +34,14 @@ export function useAdminPreviewDonorsOverride(
       );
     };
     window.addEventListener("message", onMessage);
+    try {
+      window.parent.postMessage(
+        { type: ADMIN_PREVIEW_DONORS_REQUEST, userId: userId ?? null },
+        window.location.origin
+      );
+    } catch {
+      /* noop */
+    }
     return () => window.removeEventListener("message", onMessage);
   }, [enabled, userId]);
 

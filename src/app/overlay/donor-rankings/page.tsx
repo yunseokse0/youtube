@@ -20,6 +20,7 @@ import { useDonorRankingsRemoteState } from "@/hooks/useDonorRankingsRemoteState
 import { useAdminPreviewDonorsOverride } from "@/hooks/useAdminPreviewDonorsOverride";
 import {
   buildDonorRankingsFromDonors,
+  sliceDonorRankingTop,
   type DonorRankingRow,
 } from "@/lib/donor-rankings-aggregate";
 import { normalizeAnonymousDonorDisplayName } from "@/lib/donation/anonymous-donor-name";
@@ -779,6 +780,7 @@ export default function DonorRankingsOverlayPage() {
   const donorsOverride = useDonorsOverrideFromUrl(sp);
   const adminPreviewDonors = useAdminPreviewDonorsOverride(isAdminPreview, userId);
   const effectiveDonorsOverride = adminPreviewDonors ?? donorsOverride;
+  const wireRankings = state?.donorRankingsWire;
 
   const { accountTop, toonTop, unifiedTop } = useMemo(() => {
     if (useTest) {
@@ -790,14 +792,31 @@ export default function DonorRankingsOverlayPage() {
         topN
       );
     }
-    const donors = (() => {
-      /** 부모 관리자 탭 스냅샷 우선 — 없으면 서버 donors(기존 OBS·미리보기와 동일) */
-      if (isAdminPreview && adminPreviewDonors !== undefined) return adminPreviewDonors;
-      if (effectiveDonorsOverride !== undefined) return effectiveDonorsOverride;
-      return (state?.donors || []) as Array<Record<string, unknown>>;
-    })() as Array<Record<string, unknown>>;
-    return buildDonorRankingsFromDonors(donors, topN);
-  }, [state?.donors, useTest, effectiveDonorsOverride, adminPreviewDonors, isAdminPreview, topN]);
+    if (isAdminPreview && adminPreviewDonors !== undefined) {
+      return buildDonorRankingsFromDonors(adminPreviewDonors, topN);
+    }
+    if (effectiveDonorsOverride !== undefined) {
+      return buildDonorRankingsFromDonors(effectiveDonorsOverride, topN);
+    }
+    /** 서버: cap 300 행 donors 대신 전체 집계 wire 사용 — 누적 합계와 일치 */
+    if (wireRankings) {
+      const slice = (rows: DonorRankingRow[]) => sliceDonorRankingTop(rows, topN);
+      return {
+        unifiedTop: slice(wireRankings.unifiedTop),
+        accountTop: slice(wireRankings.accountTop),
+        toonTop: slice(wireRankings.toonTop),
+      };
+    }
+    return buildDonorRankingsFromDonors((state?.donors || []) as Array<Record<string, unknown>>, topN);
+  }, [
+    state?.donors,
+    useTest,
+    effectiveDonorsOverride,
+    adminPreviewDonors,
+    isAdminPreview,
+    wireRankings,
+    topN,
+  ]);
 
   if (!spReady) {
     return null;

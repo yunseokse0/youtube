@@ -1,4 +1,5 @@
 import type { AppState, RouletteState } from "@/types";
+import { buildDonorRankingsFromDonors } from "@/lib/donor-rankings-aggregate";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import {
   OBS_TEXT_OVERLAY_STATE_KEY,
@@ -163,12 +164,22 @@ export function projectStateForGetPick(
     };
   }
   if (pick === STATE_PICK_DONOR_RANKINGS) {
+    /** wire donors 는 최신 N행만 — 순위 집계는 전체 donors 로 별도 계산 */
+    const rankings = buildDonorRankingsFromDonors(
+      (state.donors || []) as Array<Record<string, unknown>>,
+      0
+    );
     return {
       updatedAt: state.updatedAt,
       settlementResetAt: state.settlementResetAt,
       donorRankingsUpdatedAt: revisionForStatePick(state, STATE_PICK_DONOR_RANKINGS),
       donors: capDonorsForOverlayWire(state.donors),
       donorsFormat: state.donorsFormat,
+      donorRankingsWire: {
+        unifiedTop: rankings.unifiedTop,
+        accountTop: rankings.accountTop,
+        toonTop: rankings.toonTop,
+      },
       donorRankingsTheme: state.donorRankingsTheme,
       donorRankingsFullTheme: state.donorRankingsFullTheme,
       donorRankingsPresets: state.donorRankingsPresets,
@@ -205,5 +216,6 @@ export function isOverlayPickPartial(data: unknown): boolean {
 
 export function isDonorRankingsPickPartial(data: unknown): boolean {
   if (!isOverlayPickPartial(data)) return false;
-  return "donors" in (data as Record<string, unknown>);
+  const o = data as Record<string, unknown>;
+  return "donors" in o || "donorRankingsWire" in o;
 }

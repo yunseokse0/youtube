@@ -4,6 +4,8 @@ export const BROADCAST_STATE_LOCAL_UPDATED = "broadcast-state-local-updated";
 export const OVERLAY_PRESETS_LOCAL_UPDATED = "overlay-presets-local-updated";
 /** 관리자 탭 → 후원 순위 미리보기 iframe: donors 스냅샷(누적 표와 동일) */
 export const ADMIN_PREVIEW_DONORS_UPDATED = "admin-preview-donors-updated";
+/** iframe → 관리자 탭: donors 스냅샷 요청 */
+export const ADMIN_PREVIEW_DONORS_REQUEST = "admin-preview-donors-request";
 const BROADCAST_CHANNEL_NAME = "excel-broadcast-state-v1";
 
 export type BroadcastStateLocalUpdatedDetail = {

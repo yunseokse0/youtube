@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { defaultState } from "@/lib/state";
 import {
   projectStateForGetPick,
+  STATE_PICK_DONOR_RANKINGS,
   STATE_PICK_OVERLAY,
   STATE_PICK_OVERLAY_DONORS,
   STATE_PICK_SIG_SALES,
@@ -89,5 +90,35 @@ describe("state-api-pick", () => {
     const out = projectStateForGetPick(base, STATE_PICK_SIG_SALES) as Record<string, unknown>;
     const os = out.overlaySettings as Record<string, unknown>;
     expect(os?.sigSalesManualDraftV1).toBeTruthy();
+  });
+
+  it("donor-rankings pick aggregates from full donors despite wire cap", () => {
+    const base = defaultState();
+    const oldAt = 1;
+    const newAt = 2;
+    const donors = [
+      ...Array.from({ length: 301 }, (_, i) => ({
+        id: `recent-${i}`,
+        name: "최근",
+        amount: 1000,
+        memberId: "m1",
+        target: "toon" as const,
+        at: newAt + i,
+      })),
+      {
+        id: "gyul-old",
+        name: "G-귤귤",
+        amount: 500_000,
+        memberId: "m1",
+        target: "toon" as const,
+        at: oldAt,
+      },
+    ];
+    const state = { ...base, donors };
+    const out = projectStateForGetPick(state, STATE_PICK_DONOR_RANKINGS) as Record<string, unknown>;
+    expect((out.donors as unknown[]).length).toBe(300);
+    const wire = out.donorRankingsWire as { unifiedTop: Array<{ name: string; amount: number }> };
+    expect(wire.unifiedTop.find((r) => r.name === "G-귤귤")?.amount).toBe(500_000);
+    expect(wire.unifiedTop.find((r) => r.name === "최근")?.amount).toBe(301_000);
   });
 });

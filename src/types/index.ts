@@ -591,6 +591,15 @@ export type AppState = {
   updatedAt: number;
   /** 후원 순위 오버레이 전용 revision — donors·순위 테마 변경 시만 증가(회전판만 바뀌면 증가 안 함) */
   donorRankingsUpdatedAt?: number;
+  /**
+   * GET pick=donor-rankings 전용 — cap 300 행과 무관하게 전체 donors 로 서버 집계한 순위.
+   * Redis 저장·POST body에는 넣지 않음.
+   */
+  donorRankingsWire?: {
+    unifiedTop: Array<{ name: string; amount: number }>;
+    accountTop: Array<{ name: string; amount: number }>;
+    toonTop: Array<{ name: string; amount: number }>;
+  };
   /** 정산 리셋 시각(epoch ms) — 이후 구 탭·다른 PC 저장으로 후원·금액 되살림 방지 */
   settlementResetAt?: number;
 };

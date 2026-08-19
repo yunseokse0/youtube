@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
 import DonationTableOptionCheckboxes from "@/components/admin/DonationTableOptionCheckboxes";
-import { notifyBroadcastStateLocalUpdated, notifyOverlayPresetsLocalUpdated, notifyAdminPreviewDonorsUpdated } from "@/lib/broadcast-state-local-sync";
+import { notifyBroadcastStateLocalUpdated, notifyOverlayPresetsLocalUpdated, notifyAdminPreviewDonorsUpdated, ADMIN_PREVIEW_DONORS_REQUEST, overlayUserIdsMatch } from "@/lib/broadcast-state-local-sync";
 import { APP_BRAND_NAME, adminHeaderTitle } from "@/lib/app-branding";
 import Toast from "@/components/Toast";
 import {
@@ -8057,6 +8057,23 @@ export default function AdminPage() {
     }, 50);
     return () => window.clearTimeout(t);
   }, [overlayUserId, state.donors, state.updatedAt, donorRankingsPreviewIframeKey]);
+
+  useEffect(() => {
+    if (!overlayUserId) return;
+    const onMessage = (ev: MessageEvent) => {
+      if (ev.origin !== window.location.origin) return;
+      const data = ev.data as { type?: string; userId?: string | null } | null;
+      if (!data || data.type !== ADMIN_PREVIEW_DONORS_REQUEST) return;
+      if (!overlayUserIdsMatch(overlayUserId, data.userId)) return;
+      notifyAdminPreviewDonorsUpdated(
+        overlayUserId,
+        stateRef.current?.donors || [],
+        stateRef.current?.updatedAt
+      );
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [overlayUserId]);
 
   const regenerateDraft = () => {
     setChatDraft(formatChatLine(state));
