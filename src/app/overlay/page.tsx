@@ -1,11 +1,14 @@
 "use client";
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers, mergeLocalMemberIdentityOntoRemote, normalizeDonorsArray, membersDifferByIds, isMemberRosterStrictSuperset, hasCustomTimerDisplayStyles, isDefaultLikeTimerDisplayStyle } from "@/lib/state";
+import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers, mergeLocalMemberIdentityOntoRemote, normalizeDonorsArray, membersDifferByIds, isMemberRosterStrictSuperset, hasCustomTimerDisplayStyles, isDefaultLikeTimerDisplayStyle, isIntentionalDonorListShrink } from "@/lib/state";
 import {
+  countableDonorTotal,
   repairMemberTotalsForDonorRoster,
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
+import { guardMemberTotalsAgainstAccidentalZeroWipe } from "@/lib/donation/zero-wipe-guard";
+import { useAdminPreviewDonorsOverride } from "@/hooks/useAdminPreviewDonorsOverride";
 import { mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
 import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base";
 import { maxOverlayAmountDisplayLength } from "@/lib/overlay-amount-display";
@@ -354,9 +357,37 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
   /** donors → members 재계산 + 로스터 불일치 보정(단체짠 split 후 엑셀 0 방지) */
   const applyOverlayDonationSync = useCallback(
     (incoming: AppState): AppState => {
-      const merged = mergeKeepingStrongRoster(incoming);
-      const synced = syncMemberTotalsFromDonors(merged);
       const good = lastGoodRef.current;
+      let merged = mergeKeepingStrongRoster(incoming);
+      /** wire donors 축소(구 300 cap 등) — last-good 과 union 후 재계산 */
+      if (good?.donors?.length) {
+        const incomingDonors = normalizeDonorsArray(merged.donors);
+        const goodDonors = normalizeDonorsArray(good.donors);
+        const intentionalShrink = isIntentionalDonorListShrink(
+          incomingDonors,
+          goodDonors,
+          Number(merged.updatedAt || 0),
+          Number(good.updatedAt || 0)
+        );
+        if (!intentionalShrink) {
+          const incomingCountable = countableDonorTotal(incomingDonors);
+          const goodCountable = countableDonorTotal(goodDonors);
+          if (
+            goodCountable > 0 &&
+            (incomingDonors.length < goodDonors.length ||
+              incomingCountable < goodCountable * 0.99)
+          ) {
+            merged = {
+              ...merged,
+              donors: mergeDonorsForMultiTabSave(incomingDonors, goodDonors, {
+                incomingUpdatedAt: Number(merged.updatedAt || 0),
+                existingUpdatedAt: Number(good.updatedAt || 0),
+              }),
+            };
+          }
+        }
+      }
+      const synced = syncMemberTotalsFromDonors(merged);
       /**
        * 멤버 추가·삭제(id 집합 변경) 직후는 옛 last-good 로스터로 되돌리지 않되,
        * 공통 멤버 금액이 0으로 오면 last-good 금액을 유지한다.
@@ -367,12 +398,18 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         membersDifferByIds(synced.members, good.members || []) &&
         Number(synced.updatedAt || 0) >= Number(good.updatedAt || 0)
       ) {
-        return {
-          ...synced,
-          members: mergeMemberRosterPreservingAmounts(good.members || [], synced.members),
-        };
+        return guardMemberTotalsAgainstAccidentalZeroWipe(
+          {
+            ...synced,
+            members: mergeMemberRosterPreservingAmounts(good.members || [], synced.members),
+          },
+          good
+        );
       }
-      return repairMemberTotalsForDonorRoster(synced, lastGoodRef.current, merged);
+      return guardMemberTotalsAgainstAccidentalZeroWipe(
+        repairMemberTotalsForDonorRoster(synced, lastGoodRef.current, merged),
+        good ?? lastGoodRef.current
+      );
     },
     [mergeKeepingStrongRoster]
   );
@@ -2078,6 +2115,9 @@ function OverlayInner() {
   const rawUserId = (rawSp.get("u") || "").trim();
   const hostObs = isOverlayBroadcastHost(rawSp);
   const userId = resolveScopedOverlayUserId(rawUserId);
+  const isAdminPreview =
+    rawSp.get("adminPreviewEmbed") === "1" || rawSp.get("hubPreview") === "1";
+  const adminPreviewDonors = useAdminPreviewDonorsOverride(isAdminPreview, userId);
   const snapKey = (rawSp.get("snapKey") || "").trim();
   const snap = tryReadSnapshotFromStorage(snapKey || null) || tryDecodeSnapshot(rawSp.get("snap"));
   const { state: remoteState, ready: remoteReady } = useRemoteState(userId || undefined, !snap && Boolean(userId));
@@ -2130,14 +2170,20 @@ function OverlayInner() {
   const membersRemote = useMemo(() => {
     if (!ready || !s) return ensureMembers([]);
     /** 후원순위(donors)는 되는데 엑셀(members)만 0인 스냅샷 — 표시 직전 재동기화 */
-    const donors = Array.isArray(s.donors) ? s.donors : [];
+    const donors =
+      isAdminPreview && adminPreviewDonors !== undefined
+        ? (adminPreviewDonors as Donor[])
+        : Array.isArray(s.donors)
+          ? s.donors
+          : [];
     if (donors.length > 0) {
+      const base = { ...(s as AppState), donors };
       return ensureMembers(
-        repairMemberTotalsForDonorRoster(syncMemberTotalsFromDonors(s as AppState), s as AppState).members
+        repairMemberTotalsForDonorRoster(syncMemberTotalsFromDonors(base), base).members
       );
     }
     return ensureMembers(s.members);
-  }, [ready, s]);
+  }, [ready, s, isAdminPreview, adminPreviewDonors]);
   const donorsRemote = useMemo(() => (ready && s ? s.donors : []), [ready, s]);
   const missions = useMemo(() => {
     const raw = ready && s ? (s.missions || []) : [];

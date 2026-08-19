@@ -568,6 +568,31 @@ describe("shouldRejectPoorerDonationRemote", () => {
     expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(true);
   });
 
+  it("rejects remote when donor wire is truncated but member totals still look full", async () => {
+    const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      settlementResetAt: 500,
+      donors: [
+        { id: "old", name: "가여니", amount: 1_000_000, memberId: "m1", at: 1, target: "toon" as const },
+        { id: "mid", name: "가여니", amount: 500_000, memberId: "m1", at: 2, target: "toon" as const },
+      ],
+      members: [{ id: "m1", name: "가여니", account: 0, toon: 1_500_000, contribution: 1_500_000 }],
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: 2000,
+      settlementResetAt: 500,
+      donorRankingsUpdatedAt: 2000,
+      donors: [
+        { id: "mid", name: "가여니", amount: 500_000, memberId: "m1", at: 2, target: "toon" as const },
+      ],
+      members: [{ id: "m1", name: "가여니", account: 0, toon: 1_500_000, contribution: 1_500_000 }],
+    };
+    expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(true);
+  });
+
   it("rejects single-donor remote when local has empty donors but higher member totals", async () => {
     const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
     const local = {

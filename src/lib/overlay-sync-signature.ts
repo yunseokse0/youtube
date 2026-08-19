@@ -1,8 +1,10 @@
 import type { AppState } from "@/types";
 import { readManualSigBroadcastFromState } from "@/lib/manual-sig-broadcast-state";
 import { canonicalSigIdFromWheelSliceId } from "@/lib/sig-roulette";
+import { countableDonorTotal } from "@/lib/donation/apply-donation-state";
 import {
   hasMeaningfulMemberRoster,
+  isIntentionalDonorListShrink,
   isMemberRosterStrictSuperset,
   membersDifferByIds,
   normalizeDonorsArray,
@@ -422,6 +424,25 @@ export function shouldRejectPoorerDonationRemote(
   const localDr = Number(local.donorRankingsUpdatedAt || 0);
   if (localMemberTotal === 0 && remoteDonors > 0 && remoteDr > localDr) {
     return false;
+  }
+
+  /**
+   * API wire 가 donors 를 잘라 members(DB 합계)는 그대로인 경우 —
+   * applyOverlayDonationSync 가 donors 기준으로 members 를 깎기 전에 거부.
+   */
+  const localCountable = countableDonorTotal(localDonorList);
+  const remoteCountable = countableDonorTotal(remoteDonorList);
+  if (localCountable > 0 && remoteCountable < localCountable * 0.99) {
+    const wireTruncatedWhileMembersFull = remoteTotal >= localTotal * 0.99;
+    const intentionalShrink = isIntentionalDonorListShrink(
+      remoteDonorList,
+      localDonorList,
+      Number(remote.updatedAt || 0),
+      Number(local.updatedAt || 0)
+    );
+    if (wireTruncatedWhileMembersFull || !intentionalShrink) {
+      return true;
+    }
   }
 
   if (!isRicherDonationSnapshot(local, remote)) return false;
