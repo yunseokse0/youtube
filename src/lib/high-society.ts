@@ -5,7 +5,12 @@ import type {
   HighSocietyPushDir,
   HighSocietySettings,
   Member,
+  TerritoryLog,
 } from "@/types";
+import {
+  aggregateSeatPushesFromTerritoryLogs,
+  mergeHighSocietyPlayerPushInputs,
+} from "@/lib/territory-utils";
 
 /** 상류사회 영토 바·미니맵용 세그먼트 (후원 합계 비율 — 레거시/보조 스타일) */
 export type HighSocietyTerritorySlice = {
@@ -627,7 +632,10 @@ export function shouldDonorCountForHighSocietyTerritory(
   settings: HighSocietySettings,
   link: { active: boolean; startedAt?: number }
 ): boolean {
-  if (!link.active) return false;
+  /** 완전 수동 — ON 상태에서는 후원 리스트「영토 ON」만 집계 (donationLinks·startedAt 무시) */
+  if (!settings.enabled) {
+    if (!link.active) return false;
+  }
   if (!isDonorHsTerritoryIncluded(d)) return false;
   if (d.donationExcluded === true) return false;
   if (Math.max(0, Number(d.amount) || 0) <= 0) return false;
@@ -1498,9 +1506,9 @@ export function aggregateSeatPushesFromDonors(opts: {
   });
 }
 
-/** AppState 기준 영토 해상 (좌석·후원 방향 반영) */
+/** AppState 기준 영토 해상 (좌석·후원 방향·수동 기록부 반영) */
 export function buildHighSocietyFieldFromAppState(
-  state: Pick<AppState, "members" | "donors" | "highSocietySettings">,
+  state: Pick<AppState, "members" | "donors" | "highSocietySettings" | "territoryLogs">,
   opts?: { fieldCmOverride?: number }
 ) {
   const settings = normalizeHighSocietySettings(state.highSocietySettings);
@@ -1521,11 +1529,17 @@ export function buildHighSocietyFieldFromAppState(
           fieldCm: effectiveFieldCm,
         })
       : settings;
-  const players = aggregateSeatPushesFromDonors({
+  const playersFromDonors = aggregateSeatPushesFromDonors({
     seatPlayers,
     donors: state.donors || [],
     settings: settingsForField,
   });
+  const playersFromLogs = aggregateSeatPushesFromTerritoryLogs({
+    seatPlayers,
+    logs: (state.territoryLogs || []) as TerritoryLog[],
+    settings: settingsForField,
+  });
+  const players = mergeHighSocietyPlayerPushInputs(playersFromDonors, playersFromLogs);
   const startCm = seatCount > 0 ? effectiveFieldCm / seatCount : 0;
   const field =
     shouldUseMemberWidthSnapshot(settingsForField, players)

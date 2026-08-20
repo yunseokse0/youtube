@@ -47,21 +47,21 @@ export function buildFlipCountdownSegments(
 
   if (days > 0) {
     return [
-      { value: pad2(days), label: "일" },
-      { value: pad2(hours), label: "시" },
-      { value: pad2(minutes), label: "분" },
-      { value: pad2(seconds), label: "초" },
+      { value: pad2(days), label: "DAYS" },
+      { value: pad2(hours), label: "HOURS" },
+      { value: pad2(minutes), label: "MINUTES" },
+      { value: pad2(seconds), label: "SECONDS" },
     ];
   }
   if (showHours || hours > 0 || safe >= 3600) {
     return [
-      { value: pad2(hours), label: "시" },
-      { value: pad2(minutes), label: "분" },
-      { value: pad2(seconds), label: "초" },
+      { value: pad2(hours), label: "HOURS" },
+      { value: pad2(minutes), label: "MINUTES" },
+      { value: pad2(seconds), label: "SECONDS" },
     ];
   }
   return [
-    { value: pad2(minutes), label: "분" },
-    { value: pad2(seconds), label: "초" },
+    { value: pad2(minutes), label: "MINUTES" },
+    { value: pad2(seconds), label: "SECONDS" },
   ];
 }

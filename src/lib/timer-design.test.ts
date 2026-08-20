@@ -16,25 +16,25 @@ describe("timer-design", () => {
 
   it("buildFlipCountdownSegments uses minutes:seconds by default", () => {
     expect(buildFlipCountdownSegments(125, false)).toEqual([
-      { value: "02", label: "분" },
-      { value: "05", label: "초" },
+      { value: "02", label: "MINUTES" },
+      { value: "05", label: "SECONDS" },
     ]);
   });
 
   it("buildFlipCountdownSegments adds hours when showHours", () => {
     expect(buildFlipCountdownSegments(3723, true)).toEqual([
-      { value: "01", label: "시" },
-      { value: "02", label: "분" },
-      { value: "03", label: "초" },
+      { value: "01", label: "HOURS" },
+      { value: "02", label: "MINUTES" },
+      { value: "03", label: "SECONDS" },
     ]);
   });
 
   it("buildFlipCountdownSegments adds days when >= 24h", () => {
     expect(buildFlipCountdownSegments(90061, false)).toEqual([
-      { value: "01", label: "일" },
-      { value: "01", label: "시" },
-      { value: "01", label: "분" },
-      { value: "01", label: "초" },
+      { value: "01", label: "DAYS" },
+      { value: "01", label: "HOURS" },
+      { value: "01", label: "MINUTES" },
+      { value: "01", label: "SECONDS" },
     ]);
   });
 });

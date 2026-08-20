@@ -1,6 +1,10 @@
 import { formatManThousand } from "@/lib/state";
 import { computeSettlement, isOperatingSettlementMember, isTreasurySettlementMember, type SigMatchRankingItem } from "@/lib/settlement-utils";
 import { computeMemberPaymentStatement } from "@/lib/settlement-payment-statement";
+import {
+  enrichSettlementRecordsDonorsFromDailyLog,
+  recoverSettlementRecordsFromDailyLog,
+} from "@/lib/settlement-recovery";
 import type { Donor, Member, SettlementDeleteLog, SettlementMemberRatioOverrides, SettlementMemberResult, SettlementRecord } from "@/types";
 
 export const SETTLEMENT_RECORDS_KEY = "excel-broadcast-settlement-records-v1";
@@ -110,19 +114,20 @@ function normalizeDeleteLogs(logs: SettlementDeleteLog[]): SettlementDeleteLog[]
     .sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
 }
 
-/** 서버를 source of truth로 병합. remote가 비었으면 로컬 유지(배포·Redis 초기화). remote에 없는 로컬은 30초 이내만 보존. */
-function mergeSettlementRecords(local: SettlementRecord[], remote: SettlementRecord[]): SettlementRecord[] {
-  const localNorm = local || [];
-  const remoteNorm = remote || [];
-  if (remoteNorm.length === 0 && localNorm.length > 0) return normalizeSettlementRecords(localNorm);
-  const remoteIds = new Set(remoteNorm.map((r) => r.id));
+/** 서버·로컬·다중 탭 저장을 id 기준 union — 한쪽에만 있는 기록은 보존 */
+export function mergeSettlementRecords(local: SettlementRecord[], remote: SettlementRecord[]): SettlementRecord[] {
   const byId = new Map<string, SettlementRecord>();
-  for (const r of remoteNorm) byId.set(r.id, r);
-  const now = Date.now();
-  const pendingThreshold = 30_000;
-  for (const r of localNorm) {
-    if (remoteIds.has(r.id)) continue;
-    if ((r.createdAt || 0) > now - pendingThreshold) byId.set(r.id, r);
+  for (const r of [...(remote || []), ...(local || [])]) {
+    const id = String(r?.id || "").trim();
+    if (!id) continue;
+    const prev = byId.get(id);
+    if (!prev) {
+      byId.set(id, r);
+      continue;
+    }
+    const prevAt = Number(prev.createdAt || 0);
+    const nextAt = Number(r.createdAt || 0);
+    if (nextAt >= prevAt) byId.set(id, r);
   }
   return normalizeSettlementRecords(Array.from(byId.values()));
 }
@@ -273,6 +278,7 @@ async function doLoadSettlementRecordsFromApi(userId?: string | null): Promise<S
 type SettlementSaveJob = {
   records: SettlementRecord[];
   userId: string | null | undefined;
+  replace?: boolean;
   resolveAll: Array<(ok: boolean) => void>;
 };
 
@@ -288,6 +294,7 @@ async function runSettlementSaveQueue(): Promise<void> {
     const normalized = normalizeSettlementRecords(job.records);
     const q = new URLSearchParams();
     if (job.userId) q.set("user", job.userId);
+    if (job.replace) q.set("mode", "replace");
     const url = q.toString() ? `/api/settlements?${q.toString()}` : "/api/settlements";
     const res = await fetch(url, {
       method: "POST",
@@ -305,14 +312,22 @@ async function runSettlementSaveQueue(): Promise<void> {
   }
 }
 
-export async function saveSettlementRecordsToApi(records: SettlementRecord[], userId?: string | null): Promise<boolean> {
+export async function saveSettlementRecordsToApi(
+  records: SettlementRecord[],
+  userId?: string | null,
+  opts?: { replace?: boolean }
+): Promise<boolean> {
   if (typeof window === "undefined") return false;
+  const replace = Boolean(opts?.replace);
   return new Promise((resolve) => {
     if (!settlementSavePending) {
-      settlementSavePending = { records, userId, resolveAll: [resolve] };
+      settlementSavePending = { records, userId, replace, resolveAll: [resolve] };
     } else {
-      settlementSavePending.records = records;
-      settlementSavePending.userId = userId;
+      settlementSavePending.records = replace
+        ? records
+        : mergeSettlementRecords(settlementSavePending.records, records);
+      settlementSavePending.userId = userId ?? settlementSavePending.userId;
+      settlementSavePending.replace = settlementSavePending.replace || replace;
       settlementSavePending.resolveAll.push(resolve);
     }
     void runSettlementSaveQueue();
@@ -320,13 +335,14 @@ export async function saveSettlementRecordsToApi(records: SettlementRecord[], us
 }
 
 export async function loadSettlementRecordsPreferApi(userId?: string | null): Promise<SettlementRecord[]> {
-  let local = loadSettlementRecords(userId);
+  const legacyLocal = loadSettlementRecords(null);
+  let local = mergeSettlementRecords(legacyLocal, loadSettlementRecords(userId));
   const fromApi = await loadSettlementRecordsFromApi(userId);
   if (fromApi) {
-    // 서버가 빈 배열을 반환해도 로컬에 기록이 있으면 보존 (서버 재시작 시)
-    const merged = fromApi.length === 0 && local.length > 0
-      ? local
-      : mergeSettlementRecords(local, fromApi);
+    const merged =
+      fromApi.length === 0 && local.length > 0
+        ? local
+        : mergeSettlementRecords(local, fromApi);
     saveSettlementRecords(merged, userId);
     if (merged.length !== fromApi.length || (fromApi.length === 0 && merged.length > 0)) {
       saveSettlementRecordsToApi(merged, userId).catch(() => {});
@@ -334,7 +350,7 @@ export async function loadSettlementRecordsPreferApi(userId?: string | null): Pr
     return merged;
   }
   if (local.length === 0 && userId) {
-    local = loadSettlementRecords(null);
+    local = legacyLocal;
     if (local.length > 0) {
       saveSettlementRecords(local, userId);
       saveSettlementRecordsToApi(local, userId).catch(() => {});
@@ -342,6 +358,105 @@ export async function loadSettlementRecordsPreferApi(userId?: string | null): Pr
     }
   }
   return local;
+}
+
+export type SettlementRecoveryReport = {
+  merged: SettlementRecord[];
+  counts: {
+    legacy: number;
+    userLocal: number;
+    api: number;
+    dailyLog: number;
+    merged: number;
+  };
+  titles: string[];
+  hasKkang?: boolean;
+};
+
+/** 레거시 LS·사용자 LS·서버 API·일일로그 고아 스냅샷을 id union 병합 후 로컬·서버에 반영 */
+export async function recoverSettlementRecordsFromAllSources(
+  userId?: string | null,
+  opts?: { titleHint?: string }
+): Promise<SettlementRecoveryReport> {
+  const legacy = loadSettlementRecords(null);
+  const userLocal = userId ? loadSettlementRecords(userId) : [];
+  let merged = mergeSettlementRecords(legacy, userLocal);
+  let apiCount = 0;
+  let dailyLogAdded = 0;
+
+  try {
+    const q = new URLSearchParams();
+    if (userId) q.set("user", userId);
+    const res = await fetch(`/api/settlements/recover?${q.toString()}`, {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ titleHint: opts?.titleHint || "" }),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as {
+        records?: SettlementRecord[];
+        counts?: { merged?: number; dailyLogOrphans?: number };
+        hasKkang?: boolean;
+        titles?: string[];
+      };
+      if (Array.isArray(data.records)) {
+        merged = mergeSettlementRecords(merged, data.records);
+        apiCount = data.records.length;
+        dailyLogAdded = Number(data.counts?.dailyLogOrphans || 0);
+        saveSettlementRecords(merged, userId);
+        return {
+          merged,
+          counts: {
+            legacy: legacy.length,
+            userLocal: userLocal.length,
+            api: apiCount,
+            dailyLog: dailyLogAdded,
+            merged: merged.length,
+          },
+          titles: merged.map((r) => r.title),
+          hasKkang: Boolean(data.hasKkang) || merged.some((r) => r.title.includes("깡깡")),
+        };
+      }
+    }
+  } catch {
+    /* fallback 아래 로컬 경로 */
+  }
+
+  const fromApi = await loadSettlementRecordsFromApi(userId);
+  apiCount = fromApi?.length ?? 0;
+  if (fromApi) merged = mergeSettlementRecords(merged, fromApi);
+
+  try {
+    const { loadDailyLog, loadDailyLogFromApi } = await import("@/lib/state");
+    const localLog = loadDailyLog(userId);
+    const apiLog = await loadDailyLogFromApi(userId);
+    const dailyLog = { ...localLog, ...apiLog };
+    const before = merged.length;
+    merged = recoverSettlementRecordsFromDailyLog(dailyLog, merged, {
+      titleHint: opts?.titleHint,
+    });
+    merged = enrichSettlementRecordsDonorsFromDailyLog(merged, dailyLog);
+    dailyLogAdded = Math.max(0, merged.length - before);
+  } catch {
+    /* noop */
+  }
+
+  saveSettlementRecords(merged, userId);
+  if (merged.length > 0) await saveSettlementRecordsToApi(merged, userId);
+  return {
+    merged,
+    counts: {
+      legacy: legacy.length,
+      userLocal: userLocal.length,
+      api: apiCount,
+      dailyLog: dailyLogAdded,
+      merged: merged.length,
+    },
+    titles: merged.map((r) => r.title),
+    hasKkang: merged.some((r) => r.title.includes("깡깡")),
+  };
 }
 
 export async function appendSettlementRecordAndSync(
@@ -544,7 +659,7 @@ export async function deleteSettlementRecordAndSync(recordId: string, reason = "
   const next = local.filter((r) => r.id !== recordId);
   saveSettlementRecords(next, userId);
   appendSettlementDeleteLog(target, reason, userId);
-  const ok = await saveSettlementRecordsToApi(next, userId);
+  const ok = await saveSettlementRecordsToApi(next, userId, { replace: true });
   return { ok, deleted: target };
 }
 

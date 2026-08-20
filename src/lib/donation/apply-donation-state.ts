@@ -119,7 +119,7 @@ export function mergeDonorRowFields<
 }
 
 export function dedupeDonorRows<
-  T extends { id?: string; name?: string; amount?: number; at?: number | string; message?: string },
+  T extends { id?: string; name?: string; amount?: number; at?: number | string; message?: string; target?: string },
 >(donors: T[]): T[] {
   const map = new Map<string, T>();
   for (const d of donors) {
@@ -135,7 +135,24 @@ export function dedupeDonorRows<
       map.set(key, mergeDonorRowFields(prev, d));
     }
   }
-  return Array.from(map.values());
+  const pass1 = Array.from(map.values());
+  const byInstant = new Map<string, T>();
+  for (const d of pass1) {
+    const atMs = donorAtEpochMs(d);
+    const instantKey =
+      atMs > 0 ? `${donationContentMatchKey(d)}|${atMs}` : `id:${donorRowDedupeKey(d)}`;
+    const prev = byInstant.get(instantKey);
+    if (!prev) {
+      byInstant.set(instantKey, d);
+      continue;
+    }
+    const aWeak = isWeakToonationDonorId(String(prev.id || ""));
+    const bWeak = isWeakToonationDonorId(String(d.id || ""));
+    const preferred = aWeak && !bWeak ? d : !aWeak && bWeak ? prev : donorAtEpochMs(d) >= donorAtEpochMs(prev) ? d : prev;
+    const other = preferred === d ? prev : d;
+    byInstant.set(instantKey, mergeDonorRowFields(preferred, other));
+  }
+  return Array.from(byInstant.values());
 }
 
 /** 후원 기록 삭제 시 투네 대기 큐에서 함께 제거할 id 후보 */
@@ -331,6 +348,40 @@ export function isOwnerRemapSplitDuplicate(
   return false;
 }
 
+/**
+ * 서버 자동 반영 + 관리자 큐 처리 등 이중 경로 — 동일 내용·동일 초(at)면 1건.
+ * (1초 뒤 연속 동일 후원은 허용 — freeze 정책 유지)
+ */
+export function isSameInstantContentDuplicate(
+  existing: { name?: string; amount?: number; target?: string; message?: string; at?: number | string },
+  incoming: {
+    donorName?: string;
+    name?: string;
+    amount?: number;
+    target?: string;
+    message?: string;
+    at?: string | number;
+  }
+): boolean {
+  const probeExisting = {
+    name: existing.name,
+    amount: existing.amount,
+    target: existing.target,
+    message: existing.message,
+  };
+  const probeIncoming = {
+    donorName: incoming.donorName ?? incoming.name,
+    amount: incoming.amount,
+    target: incoming.target,
+    message: incoming.message,
+  };
+  if (donationContentMatchKey(probeExisting) !== donationContentMatchKey(probeIncoming)) return false;
+  const atA = donorAtEpochMs(existing);
+  const atB = donorAtEpochMs(incoming);
+  if (!atA || !atB) return false;
+  return atA === atB;
+}
+
 /** 동일 투네·계좌 후원 id가 이미 donors에 있으면 중복(건별 unique id 기준) */
 export function isDuplicateDonationEvent(state: AppState, rawEvent: DonationEvent): boolean {
   const donors = state.donors || [];
@@ -343,12 +394,15 @@ export function isDuplicateDonationEvent(state: AppState, rawEvent: DonationEven
     name: rawEvent.donorName,
     amount: rawEvent.amount,
     at: rawEvent.at,
+    target: rawEvent.target,
+    message: rawEvent.message,
   };
   const probeKey = donorRowDedupeKey(probeDonor);
 
   return donors.some((d) => {
     const donorId = String(d.id || "").trim();
     if (!donorId) return false;
+    if (isSameInstantContentDuplicate(d, probeDonor)) return true;
     if (donorRowDedupeKey(d) === probeKey) return true;
     if (donorId === eventId || donorId === baseId) return true;
     if (baseId && normalizeDonationEventId(donorId) === baseId) return true;
@@ -450,7 +504,7 @@ export function applyDonationToAppState(
   const updatedState = syncMemberTotalsFromDonors({
     ...currentState,
     members: updatedMembers,
-    donors: [
+    donors: dedupeDonorRows([
       ...existingDonors,
       {
         id: newDonor.id,
@@ -467,7 +521,7 @@ export function applyDonationToAppState(
           ? { hsTerritoryExcluded: true as const }
           : {}),
       },
-    ],
+    ]),
     mealBattle: {
       ...currentState.mealBattle,
       participants: mealParticipants,

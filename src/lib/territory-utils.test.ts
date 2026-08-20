@@ -1,0 +1,61 @@
+import { describe, expect, it } from "vitest";
+import { defaultState } from "@/lib/state";
+import { buildHighSocietyFieldFromAppState } from "@/lib/high-society";
+import {
+  aggregateSeatPushesFromTerritoryLogs,
+  createTerritoryLog,
+  mergeHighSocietyPlayerPushInputs,
+} from "@/lib/territory-utils";
+
+describe("territory-utils", () => {
+  it("aggregates manual territory logs per seat", () => {
+    const settings = defaultState().highSocietySettings!;
+    const seatPlayers = [
+      { id: "a", name: "A" },
+      { id: "b", name: "B" },
+      { id: "c", name: "C" },
+      { id: "d", name: "D" },
+    ];
+    const logs = [
+      createTerritoryLog("b", 1, 10, { pushDir: "right" }),
+      createTerritoryLog("b", -1, 3, { pushDir: "right" }),
+    ];
+    const pushes = aggregateSeatPushesFromTerritoryLogs({ seatPlayers, logs, settings });
+    const b = pushes.find((p) => p.id === "b");
+    expect(b?.expandRightCm).toBe(7);
+    expect(b?.expandLeftCm).toBe(0);
+  });
+
+  it("merges donor pushes with manual log pushes", () => {
+    const merged = mergeHighSocietyPlayerPushInputs(
+      [{ id: "m1", name: "A", expandLeftCm: 5, expandRightCm: 0, donationWon: 10000 }],
+      [{ id: "m1", name: "A", expandLeftCm: 0, expandRightCm: 3, donationWon: 0 }]
+    );
+    expect(merged[0]?.expandLeftCm).toBe(5);
+    expect(merged[0]?.expandRightCm).toBe(3);
+  });
+
+  it("buildHighSocietyFieldFromAppState includes territory logs", () => {
+    const base = defaultState();
+    const state = {
+      ...base,
+      members: [
+        { id: "m1", name: "A", account: 0, toon: 0, contribution: 0 },
+        { id: "m2", name: "B", account: 0, toon: 0, contribution: 0 },
+        { id: "m3", name: "C", account: 0, toon: 0, contribution: 0 },
+        { id: "m4", name: "D", account: 0, toon: 0, contribution: 0 },
+      ],
+      highSocietySettings: {
+        ...base.highSocietySettings!,
+        enabled: true,
+        seatMemberIds: ["m1", "m2", "m3", "m4"],
+        seatMemberIdsManual: true,
+      },
+      donors: [],
+      territoryLogs: [createTerritoryLog("m2", 1, 15, { pushDir: "right" })],
+    };
+    const field = buildHighSocietyFieldFromAppState(state);
+    const b = field.seats.find((s) => s.id === "m2");
+    expect((b?.expandRightCm || 0) + (b?.expandLeftCm || 0)).toBeGreaterThan(0);
+  });
+});

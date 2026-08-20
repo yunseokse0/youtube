@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { SettlementDeleteLog, SettlementRecord, deleteSettlementRecordAndSync, loadSettlementDeleteLogs, loadSettlementRecords, loadSettlementRecordsPreferApi, normalizeSettlementRecords, saveSettlementRecords, saveSettlementRecordsToApi } from "@/lib/settlement";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { SettlementDeleteLog, SettlementRecord, deleteSettlementRecordAndSync, loadSettlementDeleteLogs, loadSettlementRecords, loadSettlementRecordsPreferApi, mergeSettlementRecords, normalizeSettlementRecords, recoverSettlementRecordsFromAllSources, saveSettlementRecords, saveSettlementRecordsToApi } from "@/lib/settlement";
 import { loadDailyLog, loadDailyLogFromApi, Donor } from "@/lib/state";
 import { downloadBlobFile } from "@/lib/download";
 
@@ -24,6 +24,8 @@ export default function SettlementsPage() {
   const [memberQuery, setMemberQuery] = useState("");
   const [selectedForGraph, setSelectedForGraph] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const autoRecoverAttemptedRef = useRef(false);
   const fileInputId = "settlement-import-json";
 
   useEffect(() => {
@@ -75,6 +77,19 @@ export default function SettlementsPage() {
     };
   }, [user]);
 
+  /** 진입 시 1회 — 레거시·일일로그에서 깡깡대전 등 유실 기록 자동 병합 */
+  useEffect(() => {
+    if (!user) return;
+    if (autoRecoverAttemptedRef.current) return;
+    autoRecoverAttemptedRef.current = true;
+    void recoverSettlementRecordsFromAllSources(user.id, { titleHint: "깡깡대전" }).then((report) => {
+      setRecords((prev) => {
+        if (report.merged.length <= prev.length && !report.hasKkang) return prev;
+        return report.merged;
+      });
+    });
+  }, [user]);
+
   const onExportJson = () => {
     try {
       const payload = JSON.stringify(records, null, 2);
@@ -90,10 +105,11 @@ export default function SettlementsPage() {
       const text = await file.text();
       const parsed = JSON.parse(text);
       const normalized = normalizeSettlementRecords(Array.isArray(parsed) ? (parsed as SettlementRecord[]) : []);
-      saveSettlementRecords(normalized, user.id);
-      setRecords(normalized);
-      await saveSettlementRecordsToApi(normalized, user.id);
-      alert(`JSON 복구 완료: ${normalized.length}개 항목`);
+      const merged = mergeSettlementRecords(records, normalized);
+      saveSettlementRecords(merged, user.id);
+      setRecords(merged);
+      await saveSettlementRecordsToApi(merged, user.id);
+      alert(`JSON 복구 완료: ${merged.length}개 항목 (기존 ${records.length}개와 병합)`);
     } catch {
       alert("JSON 파싱 실패 또는 형식 오류");
     } finally {
@@ -104,6 +120,44 @@ export default function SettlementsPage() {
   const onImportClick = () => {
     const input = document.getElementById(fileInputId) as HTMLInputElement | null;
     input?.click();
+  };
+
+  const onRecoverFromLocal = async () => {
+    if (!user) return;
+    setRecovering(true);
+    try {
+      const before = records.length;
+      const report = await recoverSettlementRecordsFromAllSources(user.id, {
+        titleHint: "깡깡대전",
+      });
+      setRecords(report.merged);
+      const added = report.merged.length - before;
+      const { legacy, userLocal, api, dailyLog } = report.counts;
+      const kkang = report.merged.filter((r) => r.title.includes("깡깡"));
+      if (kkang.length > 0) {
+        alert(
+          `깡깡대전 복구됨: ${kkang.map((r) => r.title).join(", ")}\n` +
+            `총 ${report.merged.length}건 (신규 ${added}건)\n` +
+            `출처 — 레거시 LS ${legacy} · 사용자 LS ${userLocal} · 서버 ${api} · 일일로그 ${dailyLog}`
+        );
+      } else if (added > 0) {
+        alert(
+          `복구됨: ${added}건 추가 (총 ${report.merged.length}건)\n` +
+            `출처 — 레거시 LS ${legacy} · 사용자 LS ${userLocal} · 서버 ${api} · 일일로그 ${dailyLog}\n\n` +
+            `제목에「깡깡」이 없으면 복구된 항목 제목을「깡깡대전」으로 수정해 주세요.`
+        );
+      } else {
+        alert(
+          `추가 기록 없음 (총 ${report.merged.length}건)\n` +
+            `출처 — 레거시 LS ${legacy} · 사용자 LS ${userLocal} · 서버 ${api} · 일일로그 ${dailyLog}\n\n` +
+            `서버·일일로그·이 PC LS 어디에도 깡깡대전 스냅샷이 없습니다.\n` +
+            `JSON 백업 파일이나 다른 PC 브라우저 localStorage에서\n` +
+            `excel-broadcast-settlement-records-v1 키를 JSON 복구로 불러와 주세요.`
+        );
+      }
+    } finally {
+      setRecovering(false);
+    }
   };
 
   const onDeleteRecord = async (recordId: string) => {
@@ -270,6 +324,14 @@ export default function SettlementsPage() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-2xl font-bold">정산 기록</h1>
           <div className="flex items-center gap-2">
+            <button
+              onClick={onRecoverFromLocal}
+              disabled={recovering}
+              className="px-3 py-1.5 rounded border border-amber-500/40 bg-amber-950/40 hover:bg-amber-900/50 text-sm disabled:opacity-60"
+              title="레거시·로컬·서버 정산 기록을 id 기준으로 병합 복구"
+            >
+              {recovering ? "복구 중…" : "로컬·서버 병합 복구"}
+            </button>
             <button
               onClick={onExportJson}
               className="px-3 py-1.5 rounded border border-white/10 bg-neutral-800 hover:bg-neutral-700 text-sm"

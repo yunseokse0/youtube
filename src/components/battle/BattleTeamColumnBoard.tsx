@@ -2,6 +2,7 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import BattleGaugeFitScore from "@/components/battle/BattleGaugeFitScore";
+import { VsCenterBadge } from "@/components/battle/VsCenterBadge";
 
 function scoreTextStyle(): CSSProperties {
   return {
@@ -27,6 +28,7 @@ export default function BattleTeamColumnBoard({
   gapLabel,
   gapSuffix = "",
   timerSlot,
+  vsDesign,
 }: {
   leftScore: number;
   rightScore: number;
@@ -40,6 +42,7 @@ export default function BattleTeamColumnBoard({
   /** 차액 뒤 단위 (예: "원") — gapLabel에 이미 단위가 있으면 비움 */
   gapSuffix?: string;
   timerSlot?: ReactNode;
+  vsDesign?: unknown;
 }) {
   const total = Math.max(0, leftScore) + Math.max(0, rightScore);
   let leftPct = total > 0 ? (Math.max(0, leftScore) / total) * 100 : 50;
@@ -124,17 +127,7 @@ export default function BattleTeamColumnBoard({
           className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center"
           data-battle-vs-center="true"
         >
-          <span
-            className={`flex items-center justify-center rounded-lg font-black tracking-[0.12em] text-white shadow-md ring-1 ring-white/25 ${
-              compact ? "h-8 min-w-[2.25rem] px-1.5 text-sm" : "h-9 min-w-[2.5rem] px-2 text-base sm:text-lg"
-            }`}
-            style={{
-              background:
-                "linear-gradient(135deg, rgba(220,38,38,0.95) 0%, rgba(23,23,23,0.96) 48%, rgba(37,99,235,0.95) 100%)",
-            }}
-          >
-            VS
-          </span>
+          <VsCenterBadge design={vsDesign} compact={compact} />
         </div>
       </div>
 

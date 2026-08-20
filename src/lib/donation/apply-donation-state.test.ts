@@ -518,6 +518,40 @@ describe("applyDonationToAppState", () => {
     expect(result.reason).toBe("duplicate");
   });
 
+  it("rejects same-instant content duplicate from dual apply paths", () => {
+    const at = Date.now();
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "이시아", account: 0, toon: 100, contribution: 100 }],
+      donors: [
+        {
+          id: "toonation:server-id-1",
+          name: "스페이스x",
+          amount: 100,
+          memberId: "m1",
+          at,
+          target: "toon" as const,
+          message: "빡수아님 저 미셨네",
+        },
+      ],
+    };
+    const event: DonationEvent = {
+      id: "toonation:fp-client-id-2",
+      provider: "toonation",
+      externalId: "fp-client-id-2",
+      donorName: "스페이스x",
+      amount: 100,
+      message: "빡수아님 저 미셨네",
+      at: new Date(at).toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const result = applyDonationToAppState(state, event);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("duplicate");
+  });
+
   it("allows near-duplicate weak fp- ids with same content within 3s (연속 동일 후원)", () => {
     const at = Date.now();
     const state = {
@@ -851,6 +885,31 @@ describe("dedupeDonorRows message preservation", () => {
     ]);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.message).toBe("익명 비서");
+  });
+
+  it("collapses dual-apply rows with different weak ids same at ms", () => {
+    const at = 1_725_678_832_000;
+    const rows = dedupeDonorRows([
+      {
+        id: "toonation:fp-a",
+        name: "스페이스x",
+        amount: 100,
+        memberId: "m1",
+        at,
+        target: "toon" as const,
+        message: "테스트",
+      },
+      {
+        id: "toonation:fp-b",
+        name: "스페이스x",
+        amount: 100,
+        memberId: "m1",
+        at,
+        target: "toon" as const,
+        message: "테스트",
+      },
+    ]);
+    expect(rows).toHaveLength(1);
   });
 });
 

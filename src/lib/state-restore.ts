@@ -1,7 +1,10 @@
 import { normalizeSigInventory } from "@/lib/constants";
+import { enrichStateBeforeAuthoritativeDonationSave } from "@/lib/donation/merge-donation-apply-base";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
+import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import {
   defaultState,
+  loadState,
   normalizeDonationListsOverlayConfig,
   normalizeDonorRankingsOverlayConfig,
   normalizeDonorsArray,
@@ -12,10 +15,83 @@ import {
   normalizeSigMatchPools,
   normalizeSigRolling,
   ensureMissionItems,
+  rebumpDonorsPastSettlementReset,
+  totalCombined,
   type AppState,
   type DailyLogEntry,
 } from "@/lib/state";
 import type { Member } from "@/types";
+
+/** donors 는 비었는데 멤버 합계만 남음 — 후원·엑셀 불일치 */
+export function isOrphanedDonationState(
+  state: Pick<AppState, "donors" | "members"> | null | undefined
+): boolean {
+  if (!state) return false;
+  if (normalizeDonorsArray(state.donors).length > 0) return false;
+  return totalCombined(state as AppState) > 0;
+}
+
+/**
+ * 방송 종료(정산 생성) 직전 스냅샷 — React·LS union 후 리셋 필터에 걸리지 않게 rebump.
+ * (비권한 save → 서버 filter → 후원 유실 → 다음 투네 반영 시 엑셀표 초기화 회귀 방지)
+ */
+export function buildSettlementCreationSnapshot(
+  live: AppState,
+  userId?: string | null
+): AppState {
+  const local = typeof window !== "undefined" ? loadState(userId) : null;
+  const enriched = enrichStateBeforeAuthoritativeDonationSave(live, [local]);
+  const resetAt = Number(enriched.settlementResetAt || 0);
+  const donors = rebumpDonorsPastSettlementReset(
+    normalizeDonorsArray(enriched.donors),
+    resetAt
+  );
+  const now = Date.now();
+  return syncMemberTotalsFromDonors({
+    ...enriched,
+    donors,
+    updatedAt: now,
+    donorRankingsUpdatedAt: Math.max(Number(enriched.donorRankingsUpdatedAt || 0), now),
+  });
+}
+
+/** 고아 상태면 일일 로그에서 donors 보강 시도 */
+export function enrichSettlementSnapshotFromDailyLog(
+  snapshot: AppState,
+  log: Record<string, DailyLogEntry[] | unknown[]> | null | undefined,
+  preferDateKey?: string
+): AppState {
+  if (normalizeDonorsArray(snapshot.donors).length > 0) return snapshot;
+  if (totalCombined(snapshot) <= 0) return snapshot;
+  const entry = pickDailyLogEntryForRestore(log, preferDateKey);
+  if (!entry) return snapshot;
+  const restored = buildAppStateFromDailyLogRestore(snapshot, entry);
+  return restored ?? snapshot;
+}
+
+/** 일일 로그 스냅샷 → 후원·멤버 복구 상태 (없으면 null) */
+export function buildAppStateFromDailyLogRestore(
+  base: AppState,
+  entry: DailyLogEntry
+): AppState | null {
+  const donorCount = Array.isArray(entry.donors) ? entry.donors.length : 0;
+  const memberCount = Array.isArray(entry.members) ? entry.members.length : 0;
+  if (donorCount === 0 && memberCount === 0) return null;
+  const resetAt = Number(base.settlementResetAt || 0);
+  const rebumpedDonors = rebumpDonorsPastSettlementReset(
+    donorCount > 0 ? normalizeDonorsArray(entry.donors) : base.donors,
+    resetAt
+  );
+  if (donorCount > 0 && normalizeDonorsArray(rebumpedDonors).length === 0) return null;
+  const now = Date.now();
+  return syncMemberTotalsFromDonors({
+    ...base,
+    ...(memberCount > 0 ? { members: entry.members as Member[] } : {}),
+    donors: rebumpedDonors,
+    donorRankingsUpdatedAt: now,
+    updatedAt: now,
+  });
+}
 
 /** 관리자 「상태보내기(JSON)」 수준의 전체 백업인지 */
 export function isFullBroadcastStateBackup(patch: Record<string, unknown>): boolean {

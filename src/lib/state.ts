@@ -32,6 +32,7 @@ import type {
 } from "@/types";
 import { isHiddenTimerDisplayStyle } from "@/lib/overlay-params";
 import { isDefaultTimerDesign, normalizeTimerDesign } from "@/lib/timer-design";
+import { normalizeVsDesign } from "@/lib/vs-design";
 import {
   isDonationAmountEligibleForHighSocietyTerritory,
   normalizeHighSocietySettings,
@@ -42,6 +43,7 @@ import {
 import { ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
 import { isBundledSigPlaceholderItem } from "@/lib/sig-placeholder";
 import { normalizeRestroomCount } from "@/lib/restroom-utils";
+import { normalizeTerritoryLogs } from "@/lib/territory-utils";
 import { mergeGeneralTimerPreferEffective, snapshotTimerForPersist } from "@/lib/timer-utils";
 import { sanitizeOverlayEmbedMediaUrl } from "@/lib/gif-url";
 import {
@@ -1110,6 +1112,7 @@ export function defaultState(): AppState {
     donorsFormat: "full",
     contributionLogs: [],
     restroomLogs: [],
+    territoryLogs: [],
     forbiddenWords: ["금칙어", "욕설", "비속어"],
     sigInventory: DEFAULT_SIG_INVENTORY.map((x) => ({ ...x })),
     sigSoldOutStampUrl: "",
@@ -1608,6 +1611,7 @@ export function loadState(userId?: string | null): AppState {
             at: Number.isFinite(Number((x as RestroomLog).at)) ? Math.floor(Number((x as RestroomLog).at)) : Date.now(),
           }))
       : [];
+    data.territoryLogs = normalizeTerritoryLogs((data as AppState).territoryLogs);
     data.forbiddenWords = data.forbiddenWords || [];
     data.missions = ensureMissionItems(data.missions);
     data.sigInventory = normalizeSigInventory((data as AppState).sigInventory);
@@ -1704,6 +1708,7 @@ export function loadState(userId?: string | null): AppState {
       donationTableOptions: normalizeDonationTableColumnsOptions(
         (data as AppState).sigMatchSettings?.donationTableOptions
       ),
+      vsDesign: normalizeVsDesign((data as AppState).sigMatchSettings?.vsDesign),
     };
     data.rouletteState = normalizeRouletteState((data as AppState).rouletteState);
     data.mealMatchSettings = normalizeMealMatchSettings((data as AppState).mealMatchSettings);
@@ -3424,6 +3429,7 @@ async function doLoadStateFromApi(
               at: Number.isFinite(Number((x as RestroomLog).at)) ? Math.floor(Number((x as RestroomLog).at)) : Date.now(),
             }))
         : [];
+      data.territoryLogs = normalizeTerritoryLogs((data as AppState).territoryLogs);
       data.forbiddenWords = data.forbiddenWords || [];
       data.missions = ensureMissionItems(data.missions);
       data.sigInventory = normalizeSigInventory((data as AppState).sigInventory);
@@ -3520,6 +3526,7 @@ async function doLoadStateFromApi(
         donationTableOptions: normalizeDonationTableColumnsOptions(
           (data as AppState).sigMatchSettings?.donationTableOptions
         ),
+        vsDesign: normalizeVsDesign((data as AppState).sigMatchSettings?.vsDesign),
       };
       data.rouletteState = normalizeRouletteState((data as AppState).rouletteState);
       data.mealMatchSettings = normalizeMealMatchSettings((data as AppState).mealMatchSettings);

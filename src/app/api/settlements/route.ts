@@ -2,6 +2,8 @@ export const runtime = "edge";
 export const revalidate = 0;
 
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
+import { mergeSettlementRecords, normalizeSettlementRecords } from "@/lib/settlement";
+import type { SettlementRecord } from "@/types";
 import { getUserIdFromRequest } from "../_shared/user-id";
 import {
   upstashGetJson,
@@ -77,13 +79,22 @@ export async function POST(req: Request) {
       });
     }
     const body = await req.json();
-    const payload = Array.isArray(body) ? body : [];
-    let toSave = payload;
+    const payload = Array.isArray(body) ? (body as SettlementRecord[]) : [];
+    const replace = new URL(req.url).searchParams.get("mode") === "replace";
+    const existingRaw = await upstashGet<SettlementRecord[]>(recordsKey(userId));
+    const existing = Array.isArray(existingRaw) ? existingRaw : [];
+    let toSave: SettlementRecord[];
     if (payload.length === 0) {
-      const existing = await upstashGet<unknown[]>(recordsKey(userId));
-      if (Array.isArray(existing) && existing.length > 0) {
-        toSave = existing;
-      }
+      toSave = existing.length > 0 ? existing : [];
+    } else if (replace) {
+      toSave = normalizeSettlementRecords(payload);
+    } else {
+      toSave = mergeSettlementRecords(existing, normalizeSettlementRecords(payload));
+    }
+    if (payload.length === 0 && existing.length === 0) {
+      toSave = Array.isArray(memoryRecords[userId])
+        ? (memoryRecords[userId] as SettlementRecord[])
+        : [];
     }
     let ok = await upstashSet(recordsKey(userId), toSave);
     if (!ok) {

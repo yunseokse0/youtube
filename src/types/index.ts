@@ -330,6 +330,8 @@ export type SigMatchSettings = {
   rulesFontSize?: number;
   /** 하단 후원 표 열·총합 표시 옵션 */
   donationTableOptions?: DonationTableColumnsOptions;
+  /** 게이지 중앙 VS 외형 — gradient | glow-gold | glow-blue | glow-copper */
+  vsDesign?: string;
 };
 
 export type MealMatchSettings = {
@@ -416,6 +418,17 @@ export type GroupSplitDonationSettings = {
 
 /** 상류사회 땅따먹기 — 총 길이 고정, 멤버 N등분 시작, 양끝만 단방향 */
 export type HighSocietyPushDir = "left" | "right" | "split";
+
+/** 상류사회 영토 수동 기록 — amount=cm, 후원·투네 자동 연동 없음 */
+export type TerritoryLog = {
+  id: string;
+  memberId: string;
+  amount: number;
+  delta: 1 | -1;
+  pushDir?: HighSocietyPushDir;
+  note?: string;
+  at: number;
+};
 
 /** 상류사회 오버레이 연출 토글 */
 export type HighSocietyFxSettings = {
@@ -547,6 +560,8 @@ export type AppState = {
   contributionLogs: ContributionLog[];
   /** 화장실 수동 기록 로그 */
   restroomLogs: RestroomLog[];
+  /** 상류사회 영토 수동 기록 로그 (후원 리스트 ON 과 별개) */
+  territoryLogs?: TerritoryLog[];
   forbiddenWords: string[];
   missions?: MissionItem[];
   sigInventory: SigItem[];

@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers, mergeLocalMemberIdentityOntoRemote, normalizeDonorsArray, membersDifferByIds, isMemberRosterStrictSuperset, hasCustomTimerDisplayStyles, isDefaultLikeTimerDisplayStyle, isIntentionalDonorListShrink } from "@/lib/state";
+import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers, mergeLocalMemberIdentityOntoRemote, normalizeDonorsArray, membersDifferByIds, isMemberRosterStrictSuperset, hasCustomTimerDisplayStyles, isDefaultLikeTimerDisplayStyle, isIntentionalDonorListShrink, totalCombined } from "@/lib/state";
 import {
   countableDonorTotal,
   repairMemberTotalsForDonorRoster,
@@ -2171,6 +2171,10 @@ function OverlayInner() {
   }, [userId, readLocalPresets]);
   const membersRemote = useMemo(() => {
     if (!ready || !s) return ensureMembers([]);
+    const localSnap =
+      isAdminPreview && typeof window !== "undefined"
+        ? readLocalBroadcastState(userId)
+        : null;
     /** 후원순위(donors)는 되는데 엑셀(members)만 0인 스냅샷 — 표시 직전 재동기화 */
     const donors =
       isAdminPreview && adminPreviewDonors !== undefined
@@ -2184,8 +2188,25 @@ function OverlayInner() {
         repairMemberTotalsForDonorRoster(syncMemberTotalsFromDonors(base), base).members
       );
     }
+    /** 관리자 미리보기 — 서버 donors 비었을 때 부모 탭 LS 스냅샷 사용 */
+    if (isAdminPreview && localSnap) {
+      const lbDonors = normalizeDonorsArray(localSnap.donors);
+      if (lbDonors.length > 0) {
+        const base = {
+          ...(s as AppState),
+          donors: lbDonors,
+          members: localSnap.members ?? s.members,
+        };
+        return ensureMembers(
+          repairMemberTotalsForDonorRoster(syncMemberTotalsFromDonors(base), base).members
+        );
+      }
+      if (totalCombined(localSnap) > 0) {
+        return ensureMembers(localSnap.members ?? s.members);
+      }
+    }
     return ensureMembers(s.members);
-  }, [ready, s, isAdminPreview, adminPreviewDonors]);
+  }, [ready, s, isAdminPreview, adminPreviewDonors, userId]);
   const donorsRemote = useMemo(() => (ready && s ? s.donors : []), [ready, s]);
   const missions = useMemo(() => {
     const raw = ready && s ? (s.missions || []) : [];

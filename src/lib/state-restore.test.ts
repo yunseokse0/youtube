@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAppStateFromDailyLogRestore,
   buildAppStateFromRestoreJson,
+  buildSettlementCreationSnapshot,
+  enrichSettlementSnapshotFromDailyLog,
   isFullBroadcastStateBackup,
+  isOrphanedDonationState,
   pickDailyLogEntryForRestore,
 } from "@/lib/state-restore";
 import { defaultState } from "@/lib/state";
@@ -27,6 +31,33 @@ describe("state-restore", () => {
     expect(next.members).not.toEqual(defaultState().members);
   });
 
+  it("detects orphaned donation state", () => {
+    expect(
+      isOrphanedDonationState({
+        donors: [],
+        members: [{ id: "m1", name: "A", account: 1000, toon: 0, contribution: 1000 }],
+      })
+    ).toBe(true);
+    expect(
+      isOrphanedDonationState({
+        donors: [{ id: "d1", name: "B", amount: 1000, memberId: "m1", at: 1 }],
+        members: [{ id: "m1", name: "A", account: 1000, toon: 0, contribution: 1000 }],
+      })
+    ).toBe(false);
+  });
+
+  it("builds restore state from daily log entry", () => {
+    const base = defaultState();
+    const restored = buildAppStateFromDailyLogRestore(base, {
+      at: "2026-06-04T09:00:00.000Z",
+      total: 5000,
+      members: [{ id: "m1", name: "자기", account: 5000, toon: 0, contribution: 5000 }],
+      donors: [{ id: "d1", name: "후원", amount: 5000, memberId: "m1", at: 2 }],
+    });
+    expect(restored?.donors).toHaveLength(1);
+    expect(restored?.members[0]?.account).toBe(5000);
+  });
+
   it("prefers today daily log entry", () => {
     const log = {
       "2026-06-03": [{ at: "2026-06-03T08:00:00.000Z", total: 1, members: [], donors: [{ id: "d_old", name: "old", amount: 1, memberId: "m1", at: 1 }] }],
@@ -34,5 +65,39 @@ describe("state-restore", () => {
     };
     const hit = pickDailyLogEntryForRestore(log, "2026-06-04");
     expect(hit?.donors?.[0]?.id).toBe("d_new");
+  });
+
+  it("rebump pre-reset donor at on settlement snapshot", () => {
+    const resetAt = 10_000;
+    const live = {
+      ...defaultState(),
+      settlementResetAt: resetAt,
+      members: [{ id: "m1", name: "A", account: 1000, toon: 0, contribution: 1000 }],
+      donors: [{ id: "d1", name: "B", amount: 1000, memberId: "m1", at: 5000, target: "account" as const }],
+    };
+    const snap = buildSettlementCreationSnapshot(live);
+    expect(Number(snap.donors[0]?.at)).toBeGreaterThanOrEqual(resetAt);
+  });
+
+  it("enriches orphan snapshot from daily log", () => {
+    const resetAt = 10_000;
+    const orphan = {
+      ...defaultState(),
+      settlementResetAt: resetAt,
+      members: [{ id: "m1", name: "A", account: 1000, toon: 0, contribution: 1000 }],
+      donors: [],
+    };
+    const log = {
+      "2026-06-04": [
+        {
+          at: "2026-06-04T09:00:00.000Z",
+          total: 1000,
+          members: orphan.members,
+          donors: [{ id: "d1", name: "B", amount: 1000, memberId: "m1", at: 12_000, target: "account" as const }],
+        },
+      ],
+    };
+    const enriched = enrichSettlementSnapshotFromDailyLog(orphan, log, "2026-06-04");
+    expect(enriched.donors).toHaveLength(1);
   });
 });

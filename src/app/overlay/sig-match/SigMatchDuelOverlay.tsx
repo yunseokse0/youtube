@@ -23,6 +23,7 @@ import {
 import BattleRulesBox from "@/components/battle/BattleRulesBox";
 import BattleTeamColumnBoard from "@/components/battle/BattleTeamColumnBoard";
 import BattleGaugeFitScore from "@/components/battle/BattleGaugeFitScore";
+import { VsCenterBadge } from "@/components/battle/VsCenterBadge";
 
 type SigMatchSide = { ids: string[]; label: string; score: number; teamLabel?: string };
 
@@ -85,11 +86,13 @@ function SigVsBarCenterLabel({
   compact,
   gapLabel,
   variant = "inline",
+  vsDesign,
 }: {
   compact?: boolean;
   gapLabel?: string | null;
   /** inline: 막대 위 VS만 · belowBar: 바 아래 차액 행 */
   variant?: "inline" | "belowBar";
+  vsDesign?: unknown;
 }) {
   const gapSize = compact ? "text-[10px] sm:text-xs" : "text-xs sm:text-sm";
 
@@ -111,17 +114,7 @@ function SigVsBarCenterLabel({
 
   return (
     <div className="flex items-center justify-center" data-sig-vs-center="true">
-      <span
-        className={`flex items-center justify-center rounded-lg font-black tracking-[0.12em] text-white shadow-md ring-1 ring-white/25 ${
-          compact ? "h-8 min-w-[2.25rem] px-1.5 text-sm" : "h-9 min-w-[2.5rem] px-2 text-base sm:text-lg"
-        }`}
-        style={{
-          background:
-            "linear-gradient(135deg, rgba(220,38,38,0.95) 0%, rgba(23,23,23,0.96) 48%, rgba(37,99,235,0.95) 100%)",
-        }}
-      >
-        VS
-      </span>
+      <VsCenterBadge design={vsDesign} compact={compact} />
     </div>
   );
 }
@@ -917,6 +910,7 @@ export default function SigMatchDuelOverlay({
                   rightMemberLabel=""
                   compact={compact}
                   gapLabel={vsCenterGapLabel}
+                  vsDesign={sigSettings.vsDesign}
                   formatScore={(n) => formatSigMatchScoreLabel(n, scoringMode)}
                   timerSlot={
                     timerVisible ? (
@@ -1035,10 +1029,20 @@ export default function SigMatchDuelOverlay({
                     ))}
                   </div>
                   <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
-                    <SigVsBarCenterLabel compact={compact} gapLabel={vsCenterGapLabel} variant="inline" />
+                    <SigVsBarCenterLabel
+                      compact={compact}
+                      gapLabel={vsCenterGapLabel}
+                      variant="inline"
+                      vsDesign={sigSettings.vsDesign}
+                    />
                   </div>
                 </div>
-                <SigVsBarCenterLabel compact={compact} gapLabel={vsCenterGapLabel} variant="belowBar" />
+                <SigVsBarCenterLabel
+                  compact={compact}
+                  gapLabel={vsCenterGapLabel}
+                  variant="belowBar"
+                  vsDesign={sigSettings.vsDesign}
+                />
                 <SigFloatingScores bursts={floatingBursts} />
               </motion.div>
             </div>

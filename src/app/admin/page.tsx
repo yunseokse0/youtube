@@ -86,8 +86,12 @@ import {
   type OverlayConfig,
 } from "@/lib/state";
 import {
+  buildAppStateFromDailyLogRestore,
   buildAppStateFromRestoreJson,
+  buildSettlementCreationSnapshot,
+  enrichSettlementSnapshotFromDailyLog,
   isFullBroadcastStateBackup,
+  isOrphanedDonationState,
   pickDailyLogEntryForRestore,
   summarizeRestoreJson,
 } from "@/lib/state-restore";
@@ -115,6 +119,7 @@ import {
   RESTROOM_UNLIMITED_SYMBOL,
   restroomValueAfterUndoLog,
 } from "@/lib/restroom-utils";
+import { createTerritoryLog } from "@/lib/territory-utils";
 import { useSSEConnection } from "@/lib/sse-client";
 import { createStateUpdatedScheduler, DONOR_STATE_UPDATED_DEBOUNCE_MS, DONOR_STATE_UPDATED_MAX_WAIT_MS } from "@/lib/overlay-pull-policy";
 import {
@@ -161,6 +166,7 @@ import {
   TIMER_DESIGN_OPTIONS,
   normalizeTimerDesign,
 } from "@/lib/timer-design";
+import { normalizeVsDesign, VS_DESIGN_OPTIONS } from "@/lib/vs-design";
 import { FlipCountdownTimer } from "@/components/FlipCountdownTimer";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import { pickSettingsPreservedAcrossSettlementReset } from "@/lib/settlement-reset-preserve";
@@ -591,6 +597,8 @@ export default function AdminPage() {
   const restoreDonorsFromDailyLogSnapshotRef = useRef<(() => Promise<void>) | null>(null);
   /** 테마 자동 복구 안내는 세션당 1회 */
   const themeRestorePromptedRef = useRef(false);
+  /** 후원 0건·멤버 합계 잔존 시 자동 복구는 세션당 1회 */
+  const autoOrphanDonorRestoreAttemptedRef = useRef(false);
   /** 주기 폴링에서 didPreserve로 서버에 다시 올릴 때 최소 간격 — 연속 POST·SSE 대기 완화 */
   const lastPollMergePersistAtRef = useRef<number>(0);
   /** 다른 탭·창 `storage` 반영 시 즉시 POST하면 탭 간 ping-pong으로 /api/state·/api/events 폭주 가능 */
@@ -640,10 +648,14 @@ export default function AdminPage() {
   const [hsTerritoryToggleBusyId, setHsTerritoryToggleBusyId] = useState<string | null>(null);
   const [toonationSocketEnabled, setToonationSocketEnabled] = useState(false);
   const [toonationListenerStatus, setToonationListenerStatus] = useState<ToonationListenerStatus | null>(null);
+  const toonationListenerStatusRef = useRef<ToonationListenerStatus | null>(null);
   const [toonationListenerMeta, setToonationListenerMeta] = useState<{
     lastDonationAt?: number;
     lastEventAt?: number;
   }>({});
+  useEffect(() => {
+    toonationListenerStatusRef.current = toonationListenerStatus;
+  }, [toonationListenerStatus]);
   /** 계정 로드 전·신규 계정은 빈 연동키로 시작(타 계정 LS 상속 금지) */
   const [toonationAlertboxUrl, setToonationAlertboxUrl] = useState("");
   const [toonationOwnerName, setToonationOwnerName] = useState("");
@@ -671,6 +683,11 @@ export default function AdminPage() {
   const [restroomMemberId, setRestroomMemberId] = useState<string | null>(null);
   /** plus | minus | unlimited */
   const [restroomMode, setRestroomMode] = useState<"plus" | "minus" | "unlimited">("minus");
+  const [territoryCm, setTerritoryCm] = useState("");
+  const [territoryMemberId, setTerritoryMemberId] = useState<string | null>(null);
+  const [territoryMode, setTerritoryMode] = useState<"plus" | "minus">("plus");
+  const [territoryNote, setTerritoryNote] = useState("");
+  const [territoryPushDir, setTerritoryPushDir] = useState<"system" | "left" | "right" | "split">("system");
   const [restroomNote, setRestroomNote] = useState("");
   const [copied, setCopied] = useState(false);
   const [newMemberName, setNewMemberName] = useState("");
@@ -808,13 +825,24 @@ export default function AdminPage() {
           if (items.length > 0) break;
           await new Promise((resolve) => setTimeout(resolve, 30 + attempt * 25));
         }
+        const serverConnected = toonationListenerStatusRef.current?.kind === "connected";
+        /**
+         * 서버 WS가 자동 반영 중이면 클라이언트 큐 처리는 레이스로 이중 적재됨 —
+         * 서버 GET 동기화만 한다.
+         */
+        if (serverConnected) {
+          adminDonorForceSyncRef.current?.();
+          return;
+        }
         if (items.length === 0) return;
         toonationQueueBaselineReadyRef.current = true;
         const baseline = toonationQueueBaselineIdsRef.current;
+        const remote = await loadStateFromApi(user?.id, { forceFull: true });
+        const dupBase = remote ?? stateRef.current;
         const pending = items.filter((evt) => {
           if (!baseline.has(evt.id)) baseline.add(evt.id);
           if (evt.alreadyApplied) return false;
-          return !isDuplicateDonationEvent(stateRef.current, evt);
+          return !isDuplicateDonationEvent(dupBase, evt);
         });
         if (pending.length > 0) {
           void autoProcessQueueRef.current?.(pending);
@@ -1039,6 +1067,8 @@ export default function AdminPage() {
   const resetInProgressRef = useRef(false);
   /** 정산 리셋 직후 GET/SSE가 구 후원·금액을 되살리지 않게 */
   const settlementResetUntilRef = useRef(0);
+  /** 방송 종료(정산 생성) 직후 시각 복구·빈 원격 동기화가 후원을 지우지 않게 */
+  const settlementSnapshotUntilRef = useRef(0);
   const [actionSheet, setActionSheet] = useState<{ open: boolean; title: string; desc: string; confirmText: string; danger: boolean }>({
     open: false,
     title: "",
@@ -1824,6 +1854,15 @@ export default function AdminPage() {
      * 동일 id만 있어도 memberId·메시지 등이 다르면 union(재배치·편집 반영).
      */
     if (localOnlyCount > 0 || remoteOnlyCount > 0 || donorsFieldDiff) {
+      const localDeleteShrink =
+        localDonorsNorm.length < incomingDonorsNorm.length &&
+        localDonorsNorm.length >= 0 &&
+        isIntentionalDonorListShrink(
+          localDonorsNorm,
+          incomingDonorsNorm,
+          Number(local.updatedAt || 0),
+          Number(incoming.updatedAt || 0)
+        );
       const intentionalShrink =
         remoteOnlyCount === 0 &&
         isIntentionalDonorListShrink(
@@ -1832,7 +1871,13 @@ export default function AdminPage() {
           Number(incoming.updatedAt || 0),
           Number(local.updatedAt || 0)
         );
-      if (intentionalShrink) {
+      if (localDeleteShrink) {
+        merged = {
+          ...merged,
+          donors: localDonorsNorm,
+        };
+        didPreserve = true;
+      } else if (intentionalShrink) {
         merged = {
           ...merged,
           donors: incomingDonorsNorm,
@@ -2014,9 +2059,10 @@ export default function AdminPage() {
           : rejectPoorer
             ? local.memberPositions ?? merged.memberPositions ?? apiState.memberPositions
             : merged.memberPositions ?? apiState.memberPositions;
-        const toApplyBase = syncMemberTotalsFromDonors({
+        const donorsForApply = normalizeDonorsArray(donationSource.donors);
+        const rosterPayload: AppState = {
           ...merged,
-          donors: normalizeDonorsArray(donationSource.donors),
+          donors: donorsForApply,
           members: rosterMembers,
           memberPositions: normalizeMemberPositions(rosterPositions, rosterMembers),
           contributionLogs: rejectPoorer
@@ -2036,7 +2082,12 @@ export default function AdminPage() {
             String(merged.sigSoldOutStampUrl || "").trim() ||
             String(local.sigSoldOutStampUrl || "").trim() ||
             "",
-        });
+        };
+        /** donors 비었을 때 sync 하면 멤버 합계만 0으로 깎임 — 고아 상태는 baseline 유지 */
+        const toApplyBase =
+          donorsForApply.length > 0
+            ? syncMemberTotalsFromDonors(rosterPayload)
+            : guardMemberTotalsAgainstAccidentalZeroWipe(rosterPayload, local);
         /** 타이머 제어 UI가 비어 보이면 프리셋에 저장된 색으로 채움 */
         let toApply = toApplyBase;
         if (!hasCustomTimerDisplayStyles(toApply.timerDisplayStyles)) {
@@ -2206,6 +2257,9 @@ export default function AdminPage() {
   /** 일괄 반영으로 동일 초에 찍힌 후원 시각 — id·daily log로 복구 후 서버 저장 */
   useEffect(() => {
     if (!user) return;
+    if (Date.now() < settlementSnapshotUntilRef.current) return;
+    /** 삭제·persist 직후 repair→saveStateAsync 가 구 서버와 union 하며 엑셀표를 0으로 만들지 않게 */
+    if (Date.now() < donationAuthoritativeSaveUntilRef.current) return;
     const raw = normalizeDonorsArray(stateRef.current.donors);
     if (raw.length === 0) return;
     const logKey = Object.keys(dailyLog).sort().join("|");
@@ -2214,14 +2268,59 @@ export default function AdminPage() {
     donorTimestampRepairKeyRef.current = repairKey;
     const repaired = repairDonorTimestamps(raw, { dailyLog });
     if (!donorTimestampsChanged(raw, repaired)) return;
+    const resetAt = Number(stateRef.current.settlementResetAt || 0);
+    const rebumped = rebumpDonorsPastSettlementReset(repaired, resetAt);
     const next = syncMemberTotalsFromDonors({
       ...stateRef.current,
-      donors: repaired,
+      donors: rebumped,
       updatedAt: Date.now(),
     });
     setState(next);
     void saveStateAsync(next, user.id, { donorsAuthoritative: true });
   }, [user, dailyLog, state.donors]);
+
+  /** 후원 0건·멤버 금액 잔존 — LS·일일 로그에서 자동 복구 */
+  useEffect(() => {
+    if (!user) return;
+    if (autoOrphanDonorRestoreAttemptedRef.current) return;
+    if (!isOrphanedDonationState(state)) return;
+    autoOrphanDonorRestoreAttemptedRef.current = true;
+
+    const ls = loadState(user.id);
+    const lsDonors = normalizeDonorsArray(ls.donors);
+    if (lsDonors.length > 0) {
+      const resetAt = Number(stateRef.current.settlementResetAt || 0);
+      const next = syncMemberTotalsFromDonors({
+        ...stateRef.current,
+        donors: rebumpDonorsPastSettlementReset(lsDonors, resetAt),
+        updatedAt: Date.now(),
+        donorRankingsUpdatedAt: Date.now(),
+      });
+      setState(next);
+      donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
+      void saveStateAsync(next, user.id, { donorsAuthoritative: true }).then((r) => {
+        if (r.ok) setSyncStatus(r.storageFallback ? "error" : "synced");
+      });
+      setSigExcelResult(
+        `후원 목록이 비어 있어 이 PC 저장본에서 ${lsDonors.length}건을 자동 복구했습니다.`
+      );
+      return;
+    }
+
+    const mergedLog: Record<string, DailyLogEntry[]> = { ...loadDailyLog(user.id), ...dailyLog };
+    const entry = pickDailyLogEntryForRestore(mergedLog, new Date().toISOString().slice(0, 10));
+    if (!entry) return;
+    const restored = buildAppStateFromDailyLogRestore(stateRef.current, entry);
+    if (!restored) return;
+    setState(restored);
+    donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
+    void saveStateAsync(restored, user.id, { donorsAuthoritative: true }).then((r) => {
+      if (r.ok) setSyncStatus(r.storageFallback ? "error" : "synced");
+    });
+    setSigExcelResult(
+      `후원 목록이 비어 있어 일일 로그(${entry.at})에서 ${normalizeDonorsArray(restored.donors).length}건을 자동 복구했습니다.`
+    );
+  }, [user, state, dailyLog]);
 
   useEffect(() => {
     const id = window.setInterval(() => setTimerUiNow(Date.now()), 1000);
@@ -2276,7 +2375,8 @@ export default function AdminPage() {
       if (now - lastEmptyRemoteDonationHealAtRef.current < 500) return;
       const local = stateRef.current;
       const localDonors = normalizeDonorsArray(local.donors);
-      if (localDonors.length === 0 && totalCombined(local) <= 0) return;
+      if (localDonors.length === 0) return;
+      if (totalCombined(local) <= 0) return;
       lastEmptyRemoteDonationHealAtRef.current = now;
       donationAuthoritativeSaveUntilRef.current = now + 20_000;
       membersAuthoritativeSaveUntilRef.current = Math.max(
@@ -2382,10 +2482,17 @@ export default function AdminPage() {
           totalCombined(remoteSansRemoved) > totalCombined(stateRef.current) ||
           remoteOnlyFresh.length > 0;
         const inAuthoritativeWindow = Date.now() < donationAuthoritativeSaveUntilRef.current;
+        const inSettlementSnapshotWindow = Date.now() < settlementSnapshotUntilRef.current;
         const inMembersAuthWindow = Date.now() < membersAuthoritativeSaveUntilRef.current;
         const localRicherThanEmptyRemote =
           localDonors.length > 0 && remoteDonors.length === 0;
-        if (inAuthoritativeWindow && !remoteRicher) return false;
+        /**
+         * 삭제·정본 저장 직후 — 구 SSE/폴링(삭제분·0원 멤버 포함)은 신규 투네만 예외 허용.
+         * remoteRicher 여부와 무관하게 되살림을 막는다.
+         */
+        if ((inAuthoritativeWindow || inSettlementSnapshotWindow) && remoteOnlyFresh.length === 0) {
+          return false;
+        }
         /**
          * 멤버 추가 직후: 로컬이 원격의 상위집합이면 보호창·120초 grace 안에서는 거부 후 재푸시.
          * (테마/시그 PATCH·2초 폴링이 추가 멤버를 지우는 경합)
@@ -2444,7 +2551,8 @@ export default function AdminPage() {
           healLocalDonorsToServerIfRicher();
           return false;
         }
-        remote = remoteForGuards;
+        /** mergeIncoming 에 삭제 id 가 다시 union 되지 않게 */
+        remote = remoteSansRemoved;
       }
       /** 저장 대기 중이어도 원격 신규 후원은 mergeIncoming에서 수용.
        * 다른 브라우저 정산 리셋(remoteSettlementWins)은 빈 후원이어도 반드시 적용. */
@@ -2580,6 +2688,13 @@ export default function AdminPage() {
         lastAppliedRemoteUpdatedAtRef.current,
         remoteUpdatedAt
       );
+      const rawDonors = normalizeDonorsArray(toApply.donors);
+      if (rawDonors.length > 1) {
+        const deduped = dedupeDonorRows(rawDonors);
+        if (deduped.length < rawDonors.length) {
+          toApply = syncMemberTotalsFromDonors({ ...toApply, donors: deduped });
+        }
+      }
       setState(toApply);
       if (Array.isArray(toApply.overlayPresets)) {
         const nextOverlayPresets = toApply.overlayPresets as OverlayPreset[];
@@ -6821,7 +6936,7 @@ export default function AdminPage() {
     if (opts?.replaceDonors) {
       const prevIds = new Set((stateRef.current.donors || []).map((d) => d.id));
       const nextIds = new Set((next.donors || []).map((d) => d.id));
-      const until = Date.now() + 12_000;
+      const until = Date.now() + 45_000;
       for (const id of prevIds) {
         if (!nextIds.has(id)) recentlyRemovedDonorIdsRef.current.set(id, until);
       }
@@ -6862,14 +6977,14 @@ export default function AdminPage() {
       }
       /** replace 저장 후 union(enrich)하면 삭제분이 서버·백업에서 되살아남 */
       const serverAt = result.updatedAt;
-      const bumped: AppState = {
+      const bumped = syncMemberTotalsFromDonors({
         ...result.state,
         updatedAt: Math.max(Number(result.state.updatedAt || 0), serverAt),
         donorRankingsUpdatedAt: Math.max(
           Number(result.state.donorRankingsUpdatedAt || 0),
           result.donorRankingsUpdatedAt ?? serverAt
         ),
-      };
+      });
       stateRef.current = bumped;
       stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, bumped.updatedAt);
       lastAppliedRemoteUpdatedAtRef.current = Math.max(
@@ -7634,6 +7749,43 @@ export default function AdminPage() {
     setRestroomNote("");
   };
 
+  const addTerritoryRecord = () => {
+    const hsSettings = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
+    if (!hsSettings.enabled) {
+      showAppToast("상류사회가 OFF입니다. 먼저 모드를 켜 주세요.", { variant: "info" });
+      return;
+    }
+    if (!territoryMemberId) return;
+    const cm = Math.max(0, Math.floor(parseAmount(territoryCm)));
+    if (cm <= 0) return;
+    const seatRole = seatRoleForMemberId(
+      hsSettings,
+      stateRef.current.members || [],
+      territoryMemberId
+    );
+    const pushForLog =
+      seatRole?.canChoosePush && territoryPushDir !== "system" ? territoryPushDir : undefined;
+    const log = createTerritoryLog(
+      territoryMemberId,
+      territoryMode === "plus" ? 1 : -1,
+      cm,
+      { pushDir: pushForLog, note: territoryNote }
+    );
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        territoryLogs: [...(prev.territoryLogs || []), log],
+        updatedAt: Date.now(),
+      };
+      persistState(next, { omitDonationFields: true });
+      notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
+      return next;
+    });
+    setTerritoryCm("");
+    setTerritoryNote("");
+    showAppToast(`상류사회 영토 ${territoryMode === "plus" ? "추가" : "차감"}: ${cm}cm`);
+  };
+
   useEffect(() => {
     if (!state.members.length) return;
     if (!donorMemberId) setDonorMemberId(state.members[0].id);
@@ -7656,6 +7808,15 @@ export default function AdminPage() {
     const exists = state.members.some((m) => m.id === restroomMemberId);
     if (!exists) setRestroomMemberId(state.members[0].id);
   }, [state.members, restroomMemberId]);
+  useEffect(() => {
+    if (!state.members.length) return;
+    if (!territoryMemberId) setTerritoryMemberId(state.members[0].id);
+  }, [state.members, territoryMemberId]);
+  useEffect(() => {
+    if (!state.members.length) return;
+    const exists = state.members.some((m) => m.id === territoryMemberId);
+    if (!exists) setTerritoryMemberId(state.members[0].id);
+  }, [state.members, territoryMemberId]);
   useEffect(() => {
     if (!state.members.length) return;
     const exists = state.members.some((m) => m.id === sigPresetMemberId);
@@ -8398,18 +8559,46 @@ export default function AdminPage() {
     const title =
       settlementTitle.trim() ||
       `${new Date().toISOString().slice(0, 10)} 정산`;
-    await saveStateAsync(state, user?.id);
-    appendDailyLog(state, user?.id);
+    const mergedLog: Record<string, DailyLogEntry[]> = {
+      ...loadDailyLog(user?.id),
+      ...dailyLog,
+    };
+    let snapshot = buildSettlementCreationSnapshot(stateRef.current, user?.id);
+    snapshot = enrichSettlementSnapshotFromDailyLog(
+      snapshot,
+      mergedLog,
+      new Date().toISOString().slice(0, 10)
+    );
+    const snapshotDonors = normalizeDonorsArray(snapshot.donors);
+    if (snapshotDonors.length === 0 && totalCombined(snapshot) > 0) {
+      window.alert(
+        "후원 목록이 비어 있어 정산을 만들 수 없습니다.\n" +
+          "「일일 로그에서 복구」 또는 서버 동기화 후 다시 시도해 주세요."
+      );
+      return;
+    }
+    settlementSnapshotUntilRef.current = Date.now() + 30_000;
+    donationAuthoritativeSaveUntilRef.current = Date.now() + 30_000;
+    stateRef.current = snapshot;
+    setState(snapshot);
+    try {
+      window.localStorage.setItem(storageKey(user?.id), JSON.stringify(snapshot));
+    } catch {}
+    await saveStateAsync(snapshot, user?.id, {
+      donorsAuthoritative: true,
+      membersAuthoritative: hasMeaningfulMemberRoster(snapshot),
+    });
+    appendDailyLog(snapshot, user?.id);
     const rec = await appendSettlementRecordAndSync(
       title,
-      state.members,
+      snapshot.members,
       accountRatio,
       toonRatio,
       taxRate,
       memberRatioOverrides,
-      state.donors,
+      snapshotDonors,
       user?.id,
-      state.memberPositions || null,
+      snapshot.memberPositions || null,
       {
         vatIncluded,
         omitTreasuryFromSettlement,
@@ -8709,6 +8898,27 @@ export default function AdminPage() {
         </div>
         {isAdminNavSectionVisible("dashboard") && (
         <section id="dashboard-summary" className={`${panelCardClass} p-4 mb-6`}>
+          {isOrphanedDonationState(state) && (
+            <div className="mb-3 rounded-lg border border-amber-400/50 bg-amber-950/40 px-3 py-2 text-sm text-amber-100">
+              후원 건수는 0인데 멤버 합계만 남아 있습니다. 엑셀표·후원순위가 0으로 보일 수 있습니다.
+              {" "}
+              <button
+                type="button"
+                className="underline font-semibold text-amber-200"
+                onClick={() => void restoreDonorsFromDailyLogSnapshot()}
+              >
+                일일 로그에서 복구
+              </button>
+              {" · "}
+              <button
+                type="button"
+                className="underline font-semibold text-amber-200"
+                onClick={onFetchLatestFromServer}
+              >
+                서버에서 가져오기
+              </button>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="rounded-lg bg-[#1e1e1e] border border-white/10 px-3 py-2">
               <div className="text-xs text-neutral-400">오늘 총 후원액</div>
@@ -8962,6 +9172,24 @@ export default function AdminPage() {
                     <option value="amount">점수 방식: 금액</option>
                   </select>
                 </div>
+                <label className="block space-y-1">
+                  <span className="text-xs text-neutral-400">VS 디자인 (게이지 중앙)</span>
+                  <select
+                    className="w-full max-w-md px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                    value={normalizeVsDesign(state.sigMatchSettings?.vsDesign)}
+                    onChange={(e) => updateSigMatchSettings({ vsDesign: e.target.value })}
+                  >
+                    {VS_DESIGN_OPTIONS.map((opt) => (
+                      <option key={opt.id} value={opt.id}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[10px] text-neutral-500">
+                    {VS_DESIGN_OPTIONS.find((o) => o.id === normalizeVsDesign(state.sigMatchSettings?.vsDesign))
+                      ?.description}
+                  </span>
+                </label>
                 <label className="flex items-center gap-2 text-sm text-neutral-200 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -13066,6 +13294,151 @@ export default function AdminPage() {
               </div>
             </section>
 
+            <section id="territory-management" className={`${panelCardClass} p-4 md:p-6`}>
+              <h2 className="text-lg font-semibold mb-3">상류사회 · 영토 기록부</h2>
+              <p className="text-sm text-neutral-400 mb-3">
+                후원·투네와 <strong className="text-neutral-300">자동 연동 없음</strong> — cm을 직접 추가/차감합니다.
+                후원자 리스트의「영토 ON」은 해당 후원 금액(1만=5cm)을 영토에 반영하고, 여기서는 금액과 무관하게
+                수동으로 땅 넓이를 조절합니다.
+              </p>
+              {!highSocietySettings.enabled ? (
+                <p className="text-sm text-amber-200/90">상류사회 모드를 ON 한 뒤 사용하세요.</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr_auto_auto_auto_auto] gap-3">
+                    <select
+                      className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                      value={territoryMode}
+                      onChange={(e) => setTerritoryMode(e.target.value === "minus" ? "minus" : "plus")}
+                    >
+                      <option value="plus">확장(+)</option>
+                      <option value="minus">축소(-)</option>
+                    </select>
+                    <input
+                      className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                      placeholder="cm (예: 5, 10)"
+                      inputMode="numeric"
+                      value={territoryCm}
+                      onChange={(e) => setTerritoryCm(e.target.value)}
+                    />
+                    <select
+                      className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                      value={territoryMemberId || ""}
+                      onChange={(e) => setTerritoryMemberId(e.target.value)}
+                    >
+                      {(hsSeatPlayers.length > 0 ? hsSeatPlayers : state.members).map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                      value={territoryPushDir}
+                      onChange={(e) =>
+                        setTerritoryPushDir(
+                          e.target.value === "left" || e.target.value === "right" || e.target.value === "split"
+                            ? e.target.value
+                            : "system"
+                        )
+                      }
+                      title="가운데 좌석만 방향 적용"
+                    >
+                      <option value="system">방향·시스템</option>
+                      <option value="left">← 왼쪽</option>
+                      <option value="right">→ 오른쪽</option>
+                      <option value="split">↔ 양분</option>
+                    </select>
+                    <input
+                      className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                      placeholder="메모(선택)"
+                      value={territoryNote}
+                      onChange={(e) => setTerritoryNote(e.target.value)}
+                    />
+                    <button
+                      className={`px-4 py-2 rounded font-semibold ${
+                        territoryMode === "plus" ? "bg-amber-600 hover:bg-amber-500" : "bg-rose-600 hover:bg-rose-500"
+                      }`}
+                      onClick={addTerritoryRecord}
+                    >
+                      영토 반영
+                    </button>
+                  </div>
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-neutral-400">
+                          <th className="text-left font-medium p-1">시각</th>
+                          <th className="text-left font-medium p-1">멤버</th>
+                          <th className="text-left font-medium p-1">구분</th>
+                          <th className="text-right font-medium p-1">cm</th>
+                          <th className="text-left font-medium p-1">방향</th>
+                          <th className="text-left font-medium p-1">메모</th>
+                          <th className="text-right font-medium p-1 w-24">작업</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(state.territoryLogs || [])
+                          .slice()
+                          .sort((a, b) => b.at - a.at)
+                          .map((log) => {
+                            const member = state.members.find((m) => m.id === log.memberId);
+                            return (
+                              <tr key={log.id} className="border-t border-white/10">
+                                <td className="p-1 text-neutral-400">
+                                  <ClientTime ts={log.at} />
+                                </td>
+                                <td className="p-1 text-neutral-300">{member?.name || log.memberId}</td>
+                                <td className="p-1">
+                                  {log.delta > 0 ? (
+                                    <span className="text-amber-300">확장</span>
+                                  ) : (
+                                    <span className="text-rose-300">축소</span>
+                                  )}
+                                </td>
+                                <td className="p-1 text-right tabular-nums">{log.amount}</td>
+                                <td className="p-1 text-neutral-400">{log.pushDir || "—"}</td>
+                                <td className="p-1 text-neutral-400">{log.note || "-"}</td>
+                                <td className="p-1 text-right">
+                                  <button
+                                    className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+                                    onClick={() => {
+                                      requestConfirm("영토 로그 삭제", "이 기록을 삭제할까요?", () => {
+                                        setState((prev: AppState) => {
+                                          const next: AppState = {
+                                            ...prev,
+                                            territoryLogs: (prev.territoryLogs || []).filter(
+                                              (x) => x.id !== log.id
+                                            ),
+                                            updatedAt: Date.now(),
+                                          };
+                                          persistState(next, { omitDonationFields: true });
+                                          notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
+                                          return next;
+                                        });
+                                      });
+                                    }}
+                                  >
+                                    삭제
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        {(state.territoryLogs || []).length === 0 && (
+                          <tr>
+                            <td colSpan={7} className="p-3 text-neutral-500 text-center">
+                              기록 없음
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </section>
+
             <section className={`${panelCardClass} p-4 md:p-6 ${simpleMode ? "hidden" : ""}`}>
               <h2 className="text-lg font-semibold mb-3">채팅용 복사 & 보안</h2>
               <textarea
@@ -13110,13 +13483,13 @@ export default function AdminPage() {
               <div className="mb-3 rounded-lg border border-amber-400/40 bg-amber-950/30 p-3 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <div className="text-sm font-semibold text-amber-100">상류사회 · 후원 확장</div>
+                    <div className="text-sm font-semibold text-amber-100">상류사회 · 영토 (완전 수동)</div>
                     <p className="text-[11px] text-neutral-400 mt-0.5">
-                      모드 ON/OFF는 위 「상류사회 모드」에서만 설정합니다. ON이면 아래 리스트{" "}
-                      <strong className="text-neutral-300">확장</strong>에서 이미 들어온 후원 방향을 바꾸고{" "}
-                      <strong className="text-amber-200/90">적용</strong>을 누르세요. (가운데 좌석만 · 끝자리는 ←/→ 고정)
+                      신규 후원은 영토에 <strong className="text-neutral-300">자동 반영되지 않습니다</strong>.
+                      각 행의 <strong className="text-amber-200/90">영토 ON</strong>을 눌러야 해당 후원(1만=5cm)이 게이지에 반영됩니다.
+                      금액과 무관한 cm 조절은 「상류사회 · 영토 기록부」에서 수동 입력하세요.
                       {" · "}
-                      <strong className="text-neutral-300">1만원 정확 배수</strong>만 영토 ON (천원 자리·1만3천 등은 자동 OFF)
+                      <strong className="text-neutral-300">1만원 정확 배수</strong>만 영토 ON 가능
                     </p>
                   </div>
                   <span
