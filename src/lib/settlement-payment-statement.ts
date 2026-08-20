@@ -193,7 +193,7 @@ export type FullSettlementSummary = {
  * 전체 정산서 집계 — 정산서.xlsx「전체 정산서」수식과 동일.
  * - 정산금 총액 J = 계좌정산금 + 투네정산금
  * - 정산금의 70% K = 멤버 배분 합(A+B) (비율 70%면 J×70%와 동일)
- * - 정산금의 30% N = K×30%
+ * - 정산금의 30% N = J×30% (정산금 총액 기준, K×30% 아님)
  * - 소득세 O = ROUNDDOWN(K×3%, -1), 지방소득세 P = ROUNDDOWN(O×10%, -1)
  * - 원천세 L = O+P, 입금액 M = K−L
  * - 제작진 = N합×50%, 국고 50%는 양식상 비움, 부가세 10%·총 송금은 합계 기준
@@ -207,7 +207,7 @@ export function computeFullSettlementSummary(
     const s = computeMemberPaymentStatement(record, m, rates);
     const settlementTotal = s.accountNet + s.toonNet;
     const streamerShare70 = s.pretaxTotal;
-    const studioShare30 = roundWon(streamerShare70 * 0.3);
+    const studioShare30 = roundWon(settlementTotal * 0.3);
     const { incomeTax, localIncomeTax, withholding } = m.operating
       ? { incomeTax: 0, localIncomeTax: 0, withholding: 0 }
       : computeExcelWithholding(streamerShare70);

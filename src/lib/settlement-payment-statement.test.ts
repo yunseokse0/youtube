@@ -114,7 +114,7 @@ describe("computeFullSettlementSummary (정산서.xlsx 전체 정산서)", () =>
     expect(row.toonNet).toBe(800_000);
     expect(row.settlementTotal).toBe(1_700_000);
     expect(row.streamerShare70).toBe(1_190_000);
-    expect(row.studioShare30).toBe(357_000);
+    expect(row.studioShare30).toBe(510_000);
     expect(row.incomeTax).toBe(35_700);
     expect(row.localIncomeTax).toBe(3_570);
     expect(row.withholding).toBe(39_270);
@@ -123,25 +123,25 @@ describe("computeFullSettlementSummary (정산서.xlsx 전체 정산서)", () =>
     expect(summary.sumVatTotal).toBe(200_000);
     expect(summary.sumWithholding).toBe(39_270);
     expect(summary.sumPayout).toBe(1_150_730);
-    expect(summary.sumStudioShare).toBe(357_000);
+    expect(summary.sumStudioShare).toBe(510_000);
     expect(summary.totalGrossDonation).toBe(2_000_000);
     expect(summary.taxGrandTotal).toBe(239_270);
-    expect(summary.productionShare).toBe(178_500);
+    expect(summary.productionShare).toBe(255_000);
     expect(summary.treasuryShare).toBe(0);
-    expect(summary.remittanceSubtotal).toBe(178_500);
-    expect(summary.productionVat).toBe(17_850);
-    expect(summary.productionTransfer).toBe(196_350);
+    expect(summary.remittanceSubtotal).toBe(255_000);
+    expect(summary.productionVat).toBe(25_500);
+    expect(summary.productionTransfer).toBe(280_500);
   });
 
   it("includes treasury 50% when includeTreasuryInFullStatement is set", () => {
     const summary = computeFullSettlementSummary(
       record({ includeTreasuryInFullStatement: true })
     );
-    expect(summary.productionShare).toBe(178_500);
-    expect(summary.treasuryShare).toBe(178_500);
-    expect(summary.remittanceSubtotal).toBe(357_000);
-    expect(summary.productionVat).toBe(35_700);
-    expect(summary.productionTransfer).toBe(392_700);
+    expect(summary.productionShare).toBe(255_000);
+    expect(summary.treasuryShare).toBe(255_000);
+    expect(summary.remittanceSubtotal).toBe(510_000);
+    expect(summary.productionVat).toBe(51_000);
+    expect(summary.productionTransfer).toBe(561_000);
   });
 
   it("omits treasury member rows when omitTreasuryFromSettlement", () => {

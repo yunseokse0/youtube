@@ -96,6 +96,7 @@ import {
   type StateApiPick,
 } from "@/lib/state-api-pick";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
+import { mergeHighSocietySettingsPreferBaseline } from "@/lib/high-society";
 
 /** 관리자 iframe — API 폴링이 서버 구 스냅샷으로 HS·후원 미리보기를 덮지 않게 LS 힌트 병합 */
 function mergeAdminPreviewLocalHintOntoRemote(
@@ -352,8 +353,16 @@ function applySyncedState(
     hasCustomTimerDisplayStyles(lastTimerStyles) &&
     !incomingHiddenTimer &&
     (!hasIncomingTimerKey || isDefaultLikeTimerDisplayStyle(incomingTimerStyles?.general));
+  const mergedHighSocietySettings =
+    pick === STATE_PICK_OVERLAY || pick === STATE_PICK_OVERLAY_DONORS
+      ? mergeHighSocietySettingsPreferBaseline(
+          refs.lastGoodRef.current?.highSocietySettings,
+          dataForApply.highSocietySettings
+        )
+      : dataForApply.highSocietySettings;
   const next = {
     ...dataForApply,
+    highSocietySettings: mergedHighSocietySettings,
     generalTimer: mergedTimer,
     matchTimer: mergedMatchTimer,
     ...(incomingHiddenTimer && incomingTimerStyles

@@ -238,6 +238,8 @@ export type TimerState = {
 
 export type TimerDisplayStyle = {
   showHours: boolean;
+  /** 타이머 외형 — pill(기본) | flip-countdown */
+  design?: string;
   /** 타이머 글꼴 id (`src/lib/timer-font-style.ts`) — 기본 mono */
   fontFamily: string;
   fontColor: string;
@@ -437,6 +439,8 @@ export type HighSocietySettings = {
    * 비우면 운영비 제외 전원(로스터 순)이 참가 → N등분.
    */
   seatMemberIds: string[];
+  /** true: seatMemberIds 그대로(빈 배열=좌석 없음). false/미설정+빈 배열=자동 전원 N등분 */
+  seatMemberIdsManual?: boolean;
   /** 가운데 멤버 기본 확장 방향(후원 행 hsPushDir 없을 때) */
   defaultMiddlePush: HighSocietyPushDir;
   /** @deprecated defaultMiddlePush로 통합 — 하위 호환 */

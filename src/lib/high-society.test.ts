@@ -40,6 +40,8 @@ import {
   startCmFromField,
   parseHighSocietyFieldCm,
   resolveHighSocietyField,
+  resolveHighSocietyFieldWithMemberWidths,
+  resolveHighSocietySeatMembers,
   resolveHighSocietyStartCmPerMember,
   resolveHighSocietyEffectiveFieldCm,
   resolveHighSocietySeatCountForField,
@@ -48,6 +50,11 @@ import {
   isDefaultLikeHighSocietySettings,
   isMeaningfulHighSocietySettings,
   shouldBlockHighSocietyRegression,
+  isHighSocietySeatSelectionManual,
+  resolveHighSocietySeatMembers,
+  resolveHighSocietySeatMemberIdsForEdit,
+  appendHighSocietySeatMemberId,
+  mergeHighSocietySettingsPreferBaseline,
   defaultHighSocietySettings,
   isDonationAmountEligibleForHighSocietyTerritory,
   shouldDonorCountForHighSocietyTerritory,
@@ -239,6 +246,34 @@ describe("high-society rule field", () => {
     expect(parseHighSocietySplit("70", "30")).toEqual({ bLeft: 0.7, cLeft: 0.3 });
     expect(parseHighSocietySplit("0.2", "0.8")).toEqual({ bLeft: 0.2, cLeft: 0.8 });
     expect(formatCm(305)).toBe("305cm");
+    expect(formatCm(230.1)).toBe("230cm");
+  });
+
+  it("seat widthCm stays whole cm after field scale (no 0.1cm artifacts)", () => {
+    const { seats } = resolveHighSocietyFieldWithMemberWidths({
+      fieldCm: 400,
+      players: [
+        { id: "jaki", name: "자키", donationWon: 6_523_300 },
+        { id: "isia", name: "이시아", donationWon: 207_000 },
+        { id: "gayeon", name: "가여니", donationWon: 5_343_400 },
+      ],
+      widthByMemberId: { jaki: 230.1, isia: 20.7, gayeon: 149.2 },
+    });
+    expect(seats.map((s) => s.widthCm)).toEqual([230, 21, 149]);
+    expect(seats.reduce((sum, s) => sum + s.widthCm, 0)).toBe(400);
+  });
+
+  it("3-player equal start uses integer cm widths", () => {
+    const { seats } = resolveHighSocietyField({
+      fieldCm: 400,
+      players: [
+        { id: "a", name: "A", donationWon: 0 },
+        { id: "b", name: "B", donationWon: 0 },
+        { id: "c", name: "C", donationWon: 0 },
+      ],
+    });
+    expect(seats.every((s) => Number.isInteger(s.widthCm))).toBe(true);
+    expect(seats.reduce((sum, s) => sum + s.widthCm, 0)).toBe(400);
   });
 
   it("parses round number", () => {
@@ -1348,6 +1383,64 @@ describe("high-society territory (aux)", () => {
     const { seats } = buildHighSocietyFieldFromMembers(members, { seatMemberIds: [] });
     expect(seats.map((s) => s.name)).toEqual(["A", "B"]);
   });
+
+  it("manual empty seatMemberIds keeps no seats (does not fall back to roster)", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+    ];
+    expect(
+      resolveHighSocietySeatMembers(members, { seatMemberIds: [], seatMemberIdsManual: true })
+    ).toEqual([]);
+    const { seats, playerCount } = buildHighSocietyFieldFromMembers(members, {
+      seatMemberIds: [],
+      seatMemberIdsManual: true,
+    });
+    expect(playerCount).toBe(0);
+    expect(seats).toEqual([]);
+  });
+
+  it("manual subset excludes removed members without roster fallback", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+    ];
+    const { seats } = buildHighSocietyFieldFromMembers(members, { seatMemberIds: ["a", "c"] });
+    expect(seats.map((s) => s.id)).toEqual(["a", "c"]);
+    expect(isHighSocietySeatSelectionManual({ seatMemberIds: ["a", "c"] })).toBe(true);
+  });
+
+  it("appendHighSocietySeatMemberId supports re-add after remove", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+    ];
+    const removed = { seatMemberIds: ["a"], seatMemberIdsManual: true as const };
+    expect(resolveHighSocietySeatMembers(members, removed).map((s) => s.id)).toEqual(["a"]);
+    const reAddedIds = appendHighSocietySeatMemberId(
+      resolveHighSocietySeatMemberIdsForEdit(removed, members),
+      "b"
+    );
+    const reAdded = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: normalizeHighSocietySettings({
+        enabled: true,
+        ...removed,
+        donationLinks: {
+          a: { active: true, startedAt: 1000 },
+          b: { active: false, startedAt: 1000 },
+        },
+      }),
+      nextSettings: normalizeHighSocietySettings({
+        enabled: false,
+        seatMemberIds: reAddedIds,
+        seatMemberIdsManual: true,
+      }),
+      members,
+    });
+    expect(resolveHighSocietySeatMembers(members, reAdded).map((s) => s.id)).toEqual(["a", "b"]);
+    expect(reAdded.donationLinks?.b?.active).toBe(true);
+  });
 });
 
 describe("detectHighSocietyGrowFlashSeatIds", () => {
@@ -1541,6 +1634,36 @@ describe("highSociety regression guards", () => {
         normalizeHighSocietySettings({ enabled: false, territoryCutoffAt: Date.now() })
       )
     ).toBe(false);
+  });
+
+  it("mergeHighSocietySettingsPreferBaseline keeps territory snapshot on stale wire", () => {
+    const baseline = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b"],
+      fieldCm: 400,
+      memberWidthCm: { a: 220, b: 180 },
+      memberWidthDonationSnapshot: { a: 100000, b: 80000 },
+    });
+    const staleWire = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b"],
+      fieldCm: 400,
+    });
+    const merged = mergeHighSocietySettingsPreferBaseline(baseline, staleWire);
+    expect(merged.memberWidthCm).toEqual({ a: 220, b: 180 });
+    expect(merged.memberWidthDonationSnapshot).toEqual({ a: 100000, b: 80000 });
+  });
+
+  it("mergeHighSocietySettingsPreferBaseline blocks full default regression", () => {
+    const baseline = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b", "c", "d"],
+      round: 2,
+      fieldCm: 1600,
+    });
+    expect(mergeHighSocietySettingsPreferBaseline(baseline, defaultHighSocietySettings())).toEqual(
+      baseline
+    );
   });
 
   it("isSeatMemberIdsReorderOnly detects pure reorder", () => {

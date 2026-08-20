@@ -83,6 +83,8 @@ import MissionBoard from "@/components/MissionBoard";
 import MissionBoardSlot from "@/components/MissionBoardSlot";
 import OverlayToonationRelayHost from "@/components/OverlayToonationRelayHost";
 import { GoalBar } from "@/components/GoalBar";
+import { FlipCountdownTimer } from "@/components/FlipCountdownTimer";
+import { normalizeTimerDesign } from "@/lib/timer-design";
 import BattleTeamColumnBoard from "@/components/battle/BattleTeamColumnBoard";
 import { mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
@@ -2628,6 +2630,7 @@ function OverlayInner() {
         const merged = {
           ...lastStableTimerStyleRef.current,
           fontFamily: next.fontFamily,
+          design: next.design,
           showHours: next.showHours,
           scalePercent: next.scalePercent,
           outlineWidth: next.outlineWidth,
@@ -2692,6 +2695,7 @@ function OverlayInner() {
     return applyHiddenTimerStyleFromState(next, timerStyleFromState);
   }, [rawSp, effectivePreset, timerStyleFromState, ready, timerOnlyMode]);
   const timerShowHours = timerStyleResolved.showHours;
+  const timerDesign = normalizeTimerDesign(timerStyleResolved.design);
   const timerFontFamily = timerStyleResolved.fontFamily;
   const timerFontColor = timerStyleResolved.fontColor;
   const timerBgColor = timerStyleResolved.bgColor;
@@ -5153,17 +5157,29 @@ function OverlayInner() {
           (ready || isPreviewGuide || externalHost) &&
           !(showTeamBattle && teamBattleBoard) && (
           <div className={`absolute ${posClass(timerAnchor)} z-[10000]`}>
-            <Timer
-              elapsed={timerText}
-              fontSize={timerFontSize}
-              fontFamily={timerFontFamily}
-              fontColor={timerFontColor}
-              bgColor={timerBgColor}
-              borderColor={timerBorderColor}
-              outlineColor={timerOutlineColor}
-              outlineWidth={timerOutlineWidth}
-              bgOpacity={timerBgOpacity}
-            />
+            {timerDesign === "flip-countdown" ? (
+              <FlipCountdownTimer
+                remainingSeconds={serverTimer.remainingSeconds}
+                showHours={timerShowHours}
+                fontSize={timerFontSize}
+                fontFamily={timerFontFamily}
+                fontColor={timerFontColor}
+                bgColor={timerBgColor}
+                bgOpacity={timerBgOpacity}
+              />
+            ) : (
+              <Timer
+                elapsed={timerText}
+                fontSize={timerFontSize}
+                fontFamily={timerFontFamily}
+                fontColor={timerFontColor}
+                bgColor={timerBgColor}
+                borderColor={timerBorderColor}
+                outlineColor={timerOutlineColor}
+                outlineWidth={timerOutlineWidth}
+                bgOpacity={timerBgOpacity}
+              />
+            )}
           </div>
         )}
         {showMission && (ready || isPreviewGuide) && missions.length > 0 && (

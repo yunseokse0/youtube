@@ -3,6 +3,7 @@ import { appendExcelRankTop3Params } from "@/lib/excel-rank-top3-style";
 import { mergeDonationTablePresetFields } from "@/lib/donation-table-options";
 import { normalizeTableFontFamily, type TableFontFamilyId } from "@/lib/table-font-style";
 import { isDefaultTimerFontFamily, normalizeTimerFontFamily } from "@/lib/timer-font-style";
+import { normalizeTimerDesign } from "@/lib/timer-design";
 import {
   normalizeGoalBarAnimation,
   resolveGoalBarFillColor,
@@ -108,6 +109,7 @@ export type OverlayPresetLike = {
   timerStart?: number | null;
   timerAnchor?: string;
   timerShowHours?: boolean;
+  timerDesign?: string;
   timerFontFamily?: string;
   timerFontColor?: string;
   timerBgColor?: string;
@@ -304,6 +306,9 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
     q.set("timerStart", String(preset.timerStart));
     q.set("timerAnchor", preset.timerAnchor || "tr");
     if (preset.timerShowHours) q.set("timerShowHours", "true");
+    if (preset.timerDesign && preset.timerDesign.trim() && preset.timerDesign !== "pill") {
+      q.set("timerDesign", preset.timerDesign.trim());
+    }
     if (preset.timerFontFamily && preset.timerFontFamily.trim()) q.set("timerFontFamily", preset.timerFontFamily.trim());
     if (preset.timerFontColor && preset.timerFontColor.trim()) q.set("timerFontColor", preset.timerFontColor.trim());
     if (preset.timerBgColor && preset.timerBgColor.trim()) q.set("timerBgColor", preset.timerBgColor.trim());
@@ -712,6 +717,7 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "tickerInPersonalGoal",
   "timerAnchor",
   "timerShowHours",
+  "timerDesign",
   "timerFontFamily",
   "timerFontColor",
   "timerBgColor",
@@ -955,6 +961,7 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "timerBgOpacity",
   "timerScale",
   "timerShowHours",
+  "timerDesign",
   /** 테마도 프리셋 우선 — URL 스테일/미리보기 핫리로드와 맞춤 */
   "theme",
   "membersTheme",
@@ -1031,6 +1038,7 @@ const TIMER_OVERLAY_LIVE_STYLE_KEYS = new Set([
   "timerBgOpacity",
   "timerScale",
   "timerShowHours",
+  "timerDesign",
 ]);
 
 export function resolveLivePresetStyleParam(
@@ -1066,6 +1074,7 @@ export function resolveLivePresetStyleParam(
 }
 
 export type ResolvedTimerOverlayStyle = {
+  design: string;
   fontFamily: string;
   fontColor?: string;
   bgColor?: string;
@@ -1078,6 +1087,7 @@ export type ResolvedTimerOverlayStyle = {
 };
 
 type TimerStyleFromStateLike = {
+  design?: string;
   showHours?: boolean;
   fontFamily?: string;
   fontColor?: string;
@@ -1288,8 +1298,14 @@ export function resolveTimerOverlayStyle(
     stateFont ||
     "mono";
 
+  const designRaw =
+    (stateStyle?.design || "").trim() ||
+    pickTimerPresetOrParam("timerDesign", "timerDesign", rawSp, preset, opts) ||
+    "pill";
+
   const resolved = applyHiddenTimerStyleFromState(
     {
+      design: normalizeTimerDesign(designRaw),
       fontFamily: normalizeTimerFontFamily(fontFamilyRaw),
       fontColor,
       bgColor,

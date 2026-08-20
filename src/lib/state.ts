@@ -31,6 +31,7 @@ import type {
   DonorsAmountFormat,
 } from "@/types";
 import { isHiddenTimerDisplayStyle } from "@/lib/overlay-params";
+import { isDefaultTimerDesign, normalizeTimerDesign } from "@/lib/timer-design";
 import {
   isDonationAmountEligibleForHighSocietyTerritory,
   normalizeHighSocietySettings,
@@ -1378,6 +1379,7 @@ function normalizeMatchTimerEnabled(input: unknown): MatchTimerEnabled {
 function defaultTimerDisplayStyle(): TimerDisplayStyle {
   return {
     showHours: false,
+    design: "pill",
     fontFamily: "mono",
     fontColor: "",
     bgColor: "",
@@ -1406,6 +1408,7 @@ export function isDefaultLikeTimerDisplayStyle(
     !Number.isFinite(outlineWidth) || Math.abs(outlineWidth - 0.8) < 0.05;
   return (
     fontIsDefault &&
+    isDefaultTimerDesign(style.design) &&
     !String(style.fontColor || "").trim() &&
     !String(style.bgColor || "").trim() &&
     !String(style.borderColor || "").trim() &&
@@ -1456,6 +1459,7 @@ function normalizeTimerDisplayStyle(input: unknown): TimerDisplayStyle {
   const fontFamilyRaw = typeof v.fontFamily === "string" ? v.fontFamily.trim() : "";
   return {
     showHours: typeof v.showHours === "boolean" ? v.showHours : false,
+    design: normalizeTimerDesign(v.design),
     fontFamily: normalizeTimerFontFamily(fontFamilyRaw || "mono"),
     fontColor: typeof v.fontColor === "string" ? v.fontColor : "",
     bgColor: typeof v.bgColor === "string" ? v.bgColor : "",
@@ -1708,7 +1712,7 @@ export function loadState(userId?: string | null): AppState {
       const hsValidIds = new Set(
         resolveHighSocietySeatMembers(
           data.members || [],
-          data.highSocietySettings?.seatMemberIds
+          data.highSocietySettings
         ).map((m) => m.id)
       );
       data.highSocietySettings = {
@@ -3524,7 +3528,7 @@ async function doLoadStateFromApi(
       const hsValidIds = new Set(
         resolveHighSocietySeatMembers(
           data.members || [],
-          data.highSocietySettings?.seatMemberIds
+          data.highSocietySettings
         ).map((m) => m.id)
       );
       data.highSocietySettings = {

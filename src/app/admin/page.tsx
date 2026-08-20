@@ -157,6 +157,11 @@ import {
   normalizeTimerFontFamily,
   resolveTimerFontFamilyCss,
 } from "@/lib/timer-font-style";
+import {
+  TIMER_DESIGN_OPTIONS,
+  normalizeTimerDesign,
+} from "@/lib/timer-design";
+import { FlipCountdownTimer } from "@/components/FlipCountdownTimer";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import { pickSettingsPreservedAcrossSettlementReset } from "@/lib/settlement-reset-preserve";
 import { planSigBulkReupload, sigBulkFilesWithoutNameMatch } from "@/lib/sig-image-bulk";
@@ -246,6 +251,9 @@ import {
   resolveDonationSyncModeForHighSocietySettingsChange,
   type HighSocietySettingsAdminPatch,
   resolveHighSocietySeatMembers,
+  isHighSocietySeatSelectionManual,
+  resolveHighSocietySeatMemberIdsForEdit,
+  appendHighSocietySeatMemberId,
   resolveHighSocietyStartCmPerMember,
   resolveHighSocietyEffectiveFieldCm,
   resolveHighSocietySeatCountForField,
@@ -6319,7 +6327,7 @@ export default function AdminPage() {
   const updateTimerDisplayStyle = (key: "general", patch: Partial<AppState["timerDisplayStyles"]["general"]>) => {
     setState((prev: AppState) => {
       const baseStyles = prev.timerDisplayStyles || {
-        general: { showHours: false, fontFamily: "mono", fontColor: "", bgColor: "", borderColor: "", outlineColor: "", outlineWidth: 0.8, bgOpacity: 40, scalePercent: 100 },
+        general: { showHours: false, design: "pill", fontFamily: "mono", fontColor: "", bgColor: "", borderColor: "", outlineColor: "", outlineWidth: 0.8, bgOpacity: 40, scalePercent: 100 },
       };
       const normalizedPatch = { ...patch };
       if (patch.bgOpacity !== undefined) {
@@ -6358,6 +6366,7 @@ export default function AdminPage() {
             ...(normalizedPatch.bgOpacity !== undefined ? { timerBgOpacity: String(normalizedPatch.bgOpacity) } : {}),
             ...(normalizedPatch.scalePercent !== undefined ? { timerScale: String(normalizedPatch.scalePercent) } : {}),
             ...(normalizedPatch.showHours !== undefined ? { timerShowHours: Boolean(normalizedPatch.showHours) } : {}),
+            ...(normalizedPatch.design !== undefined ? { timerDesign: String(normalizedPatch.design || "pill") } : {}),
           };
         })
       );
@@ -7651,23 +7660,21 @@ export default function AdminPage() {
     return seatRoleForMemberId(highSocietySettings, state.members || [], donorMemberId);
   }, [highSocietySettings, donorMemberId, state.members]);
   const hsSeatPlayers = useMemo(
-    () => resolveHighSocietySeatMembers(state.members || [], highSocietySettings.seatMemberIds),
-    [state.members, highSocietySettings.seatMemberIds]
+    () => resolveHighSocietySeatMembers(state.members || [], highSocietySettings),
+    [state.members, highSocietySettings]
   );
-  /** 좌석 ID가 비면 전원 자동 배치 — 추가 후보를 전원으로 다시 보여 주지 않음 */
-  const hsSeatExplicit = highSocietySettings.seatMemberIds.length > 0;
-  const hsSeatIdSet = useMemo(() => {
-    if (hsSeatExplicit) {
-      return new Set(highSocietySettings.seatMemberIds.map((id) => String(id)));
-    }
-    return new Set(hsSeatPlayers.map((p) => String(p.id)));
-  }, [hsSeatExplicit, highSocietySettings.seatMemberIds, hsSeatPlayers]);
+  /** 수동 좌석(명시 목록·빈 좌석 포함) vs 자동 전원 N등분 */
+  const hsSeatExplicit = isHighSocietySeatSelectionManual(highSocietySettings);
+  const hsSeatedIdSet = useMemo(
+    () => new Set(hsSeatPlayers.map((p) => String(p.id))),
+    [hsSeatPlayers]
+  );
   const hsUnseatedMembers = useMemo(
     () =>
       (state.members || []).filter(
-        (m) => !m.operating && !hsSeatIdSet.has(String(m.id))
+        (m) => !m.operating && !hsSeatedIdSet.has(String(m.id))
       ),
-    [state.members, hsSeatIdSet]
+    [state.members, hsSeatedIdSet]
   );
   const patchHighSocietySettings = useCallback(
     (patch: HighSocietySettingsAdminPatch) => {
@@ -7812,7 +7819,7 @@ export default function AdminPage() {
       ) {
         const seats = Math.max(
           2,
-          resolveHighSocietySeatMembers(stateRef.current.members || [], after.seatMemberIds).length || 4
+          resolveHighSocietySeatMembers(stateRef.current.members || [], after).length || 4
         );
         const start = Math.round(startCmFromField(after.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM, seats));
         showAppToast(
@@ -7848,16 +7855,15 @@ export default function AdminPage() {
             : "상류사회 · 연출 효과 전부 OFF"
         );
       } else if (Array.isArray(patch.seatMemberIds)) {
-        const seats = resolveHighSocietySeatMembers(
-          stateRef.current.members || [],
-          after.seatMemberIds
-        );
+        const seats = resolveHighSocietySeatMembers(stateRef.current.members || [], after);
         showAppToast(
-          after.seatMemberIds.length === 0
-            ? "상류사회 · 좌석 지정 해제 — 운영비 제외 전원 N등분"
-            : seats.length >= 1
-              ? `상류사회 · 좌석 배치: ${seats.map((s) => s.name).join(" → ")}`
-              : "상류사회 · 좌석 지정 해제 — 운영비 제외 전원 N등분"
+          isHighSocietySeatSelectionManual(after) && after.seatMemberIds.length === 0
+            ? "상류사회 · 좌석 없음 — 아래에서 멤버를 추가하세요"
+            : !isHighSocietySeatSelectionManual(after) && after.seatMemberIds.length === 0
+              ? "상류사회 · 자동(전원 N등분)"
+              : seats.length >= 1
+                ? `상류사회 · 좌석 배치: ${seats.map((s) => s.name).join(" → ")}`
+                : "상류사회 · 좌석 없음 — 아래에서 멤버를 추가하세요"
         );
       } else if (patch.barStyle && patch.barStyle !== before.barStyle) {
         showAppToast(
@@ -7869,12 +7875,12 @@ export default function AdminPage() {
   );
   const moveHighSocietySeat = useCallback(
     (memberId: string, dir: -1 | 1) => {
-      /** 자동(전원) 모드에서 이동하면 현재 보이는 배치를 고정 목록으로 만든 뒤 순서 변경 */
-      const cur =
-        highSocietySettings.seatMemberIds.length > 0
-          ? highSocietySettings.seatMemberIds.slice()
-          : hsSeatPlayers.map((p) => p.id);
-      const idx = cur.findIndex((id) => id === memberId);
+      const id = String(memberId || "").trim();
+      if (!id) return;
+      const members = stateRef.current.members || [];
+      const settings = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
+      const cur = resolveHighSocietySeatMemberIdsForEdit(settings, members);
+      const idx = cur.findIndex((sid) => String(sid) === id);
       if (idx < 0) return;
       const nextIdx = idx + dir;
       if (nextIdx < 0 || nextIdx >= cur.length) return;
@@ -7882,35 +7888,41 @@ export default function AdminPage() {
       const tmp = swapped[idx]!;
       swapped[idx] = swapped[nextIdx]!;
       swapped[nextIdx] = tmp;
-      patchHighSocietySettings({ seatMemberIds: swapped });
+      patchHighSocietySettings({ seatMemberIds: swapped, seatMemberIdsManual: true });
     },
-    [highSocietySettings.seatMemberIds, hsSeatPlayers, patchHighSocietySettings]
+    [patchHighSocietySettings]
   );
   const addHighSocietySeat = useCallback(
     (memberId: string) => {
       const id = String(memberId || "").trim();
       if (!id) return;
-      const cur = highSocietySettings.seatMemberIds.slice();
-      if (cur.includes(id)) return;
+      const members = stateRef.current.members || [];
+      const settings = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
+      const seated = resolveHighSocietySeatMembers(members, settings);
+      if (seated.some((p) => p.id === id)) return;
+      const cur = resolveHighSocietySeatMemberIdsForEdit(settings, members);
       if (cur.length >= HIGH_SOCIETY_MAX_SEATS) {
         showAppToast(`상류사회 좌석은 최대 ${HIGH_SOCIETY_MAX_SEATS}명입니다`, { variant: "info" });
         return;
       }
-      /** 자동 모드에서 +추가 = 그 멤버만 단독 좌석으로 고정 시작 */
-      patchHighSocietySettings({ seatMemberIds: [...cur, id] });
+      patchHighSocietySettings({
+        seatMemberIds: appendHighSocietySeatMemberId(cur, id),
+        seatMemberIdsManual: true,
+      });
     },
-    [highSocietySettings.seatMemberIds, patchHighSocietySettings]
+    [patchHighSocietySettings]
   );
   const removeHighSocietySeat = useCallback(
     (memberId: string) => {
-      const cur =
-        highSocietySettings.seatMemberIds.length > 0
-          ? highSocietySettings.seatMemberIds.slice()
-          : hsSeatPlayers.map((p) => p.id);
-      const next = cur.filter((id) => id !== memberId);
-      patchHighSocietySettings({ seatMemberIds: next });
+      const id = String(memberId || "").trim();
+      if (!id) return;
+      const members = stateRef.current.members || [];
+      const settings = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
+      const cur = resolveHighSocietySeatMemberIdsForEdit(settings, members);
+      const next = cur.filter((sid) => String(sid) !== id);
+      patchHighSocietySettings({ seatMemberIds: next, seatMemberIdsManual: true });
     },
-    [highSocietySettings.seatMemberIds, hsSeatPlayers, patchHighSocietySettings]
+    [patchHighSocietySettings]
   );
   const hsSeatCountForStart = resolveHighSocietySeatCountForField(
     highSocietySettings,
@@ -8474,7 +8486,7 @@ export default function AdminPage() {
             <button
               type="button"
               className="rounded px-2 py-0.5 text-[10px] font-semibold border border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
-              onClick={() => patchHighSocietySettings({ seatMemberIds: [] })}
+              onClick={() => patchHighSocietySettings({ seatMemberIds: [], seatMemberIdsManual: false })}
             >
               자동(전원)으로
             </button>
@@ -8530,7 +8542,7 @@ export default function AdminPage() {
           </div>
         ) : (
           <div className="rounded border border-dashed border-white/15 bg-black/20 px-2 py-2 text-[11px] text-neutral-500">
-            아래 멤버를 눌러 좌석에 추가하세요. (비우면 전원 N등분)
+            좌석에 멤버가 없습니다. 아래에서 추가하거나 「자동(전원)으로」를 누르세요.
           </div>
         )}
         {hsUnseatedMembers.length > 0 ? (
@@ -11801,6 +11813,7 @@ export default function AdminPage() {
                   const timer = state[timerDef.key];
                   const timerStyle = state.timerDisplayStyles?.[timerDef.flag] || {
                     showHours: false,
+                    design: "pill",
                     fontFamily: "mono",
                     fontColor: "",
                     bgColor: "",
@@ -11812,6 +11825,7 @@ export default function AdminPage() {
                   };
                   const timerFontId = normalizeTimerFontFamily(timerStyle.fontFamily);
                   const timerFontCss = resolveTimerFontFamilyCss(timerFontId);
+                  const timerDesignId = normalizeTimerDesign(timerStyle.design);
                   const effective = getEffectiveRemainingTime(timer, timerUiNow);
                   const mm = Math.floor(effective / 60);
                   const ss = effective % 60;
@@ -11908,6 +11922,25 @@ export default function AdminPage() {
                         </div>
                       )}
                       <div className="mt-3 border-t border-white/10 pt-2 grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-2">
+                        <label className="text-xs text-neutral-400">디자인</label>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <select
+                            className="min-w-[12rem] max-w-full px-2 py-1.5 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                            value={timerDesignId}
+                            onChange={(e) =>
+                              updateTimerDisplayStyle(timerDef.flag, {
+                                design: normalizeTimerDesign(e.target.value),
+                              })
+                            }
+                          >
+                            {TIMER_DESIGN_OPTIONS.map((opt) => (
+                              <option key={opt.id} value={opt.id}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="text-[10px] text-neutral-500">{TIMER_DESIGN_OPTIONS.find((o) => o.id === timerDesignId)?.description}</span>
+                        </div>
                         <label className="text-xs text-neutral-400">표시 형식</label>
                         <button
                           type="button"
@@ -11963,7 +11996,21 @@ export default function AdminPage() {
                             style={{ fontFamily: timerFontCss }}
                             title="미리보기"
                           >
-                            {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
+                            {timerDesignId === "flip-countdown" ? (
+                              <FlipCountdownTimer
+                                remainingSeconds={effective}
+                                showHours={timerStyle.showHours}
+                                fontSize={28}
+                                fontFamily={timerFontId}
+                                fontColor={String(timerStyle.fontColor || "")}
+                                bgColor={String(timerStyle.bgColor || "")}
+                                bgOpacity={timerStyle.bgOpacity}
+                              />
+                            ) : (
+                              <>
+                                {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
+                              </>
+                            )}
                           </span>
                         </div>
                         <label className="text-xs text-neutral-400">글자 색상</label>
