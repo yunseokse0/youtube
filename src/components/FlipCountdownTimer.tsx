@@ -10,6 +10,8 @@ import { resolveTimerFontFamilyCss } from "@/lib/timer-font-style";
 const FLIP_LABEL_COLOR = "#d4a017";
 const FLIP_CARD_BG = "#3a3a3a";
 const FLIP_DIGIT_COLOR = "#ececec";
+/** MINUTES / SECONDS 등 하단 라벨 — digit 대비 크기 */
+const FLIP_LABEL_SIZE_RATIO = 0.22;
 
 function FlipCard({
   segment,
@@ -74,8 +76,13 @@ function FlipCard({
         />
       </div>
       <span
-        className="text-[0.42em] font-bold uppercase tracking-[0.14em]"
-        style={{ color: FLIP_LABEL_COLOR, fontSize: digitSize }}
+        className="max-w-full truncate text-center font-semibold uppercase leading-none"
+        style={{
+          color: FLIP_LABEL_COLOR,
+          fontSize: Math.max(7, Math.round(digitSize * FLIP_LABEL_SIZE_RATIO)),
+          letterSpacing: "0.08em",
+          width: cardW,
+        }}
       >
         {segment.label}
       </span>
