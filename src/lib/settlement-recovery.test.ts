@@ -3,9 +3,11 @@ import type { DailyLogEntry } from "@/lib/state";
 import type { SettlementRecord } from "@/types";
 import {
   findOrphanDailyLogEntries,
+  recoverMissingSettlementByTitleHint,
   recoverSettlementRecordsFromDailyLog,
   reconstructSettlementFromDailyLogEntry,
   settlementRecordMatchesDailyLogEntry,
+  settlementRecordStronglyMatchesDailyLogEntry,
   stableRecoveredSettlementId,
 } from "@/lib/settlement-recovery";
 
@@ -77,5 +79,61 @@ describe("settlement-recovery", () => {
     const merged = recoverSettlementRecordsFromDailyLog({ "2026-08-18": [entry] }, [existing]);
     expect(merged).toHaveLength(1);
     expect(merged[0]?.id).toBe("st_old");
+  });
+
+  it("recovers kkang when daily log was weak-matched to another settlement", () => {
+    const otherDonors = [
+      { id: "x1", name: "다른1", amount: 250_000, memberId: "m1", at: atMs - 1000, target: "account" as const },
+      { id: "x2", name: "다른2", amount: 240_000, memberId: "m2", at: atMs - 500, target: "account" as const },
+    ];
+    const wrongRecord: SettlementRecord = {
+      id: "st_other",
+      title: "상류사회5화",
+      createdAt: atMs + 60_000,
+      accountRatio: 0.7,
+      toonRatio: 0.6,
+      feeRate: 0.033,
+      members: [],
+      totalGross: 490_000,
+      totalFee: 0,
+      totalNet: 390_000,
+      donors: otherDonors,
+    };
+    expect(settlementRecordMatchesDailyLogEntry(wrongRecord, entry)).toBe(true);
+    expect(settlementRecordStronglyMatchesDailyLogEntry(wrongRecord, entry)).toBe(false);
+
+    const orphans = findOrphanDailyLogEntries({ "2026-08-18": [entry] }, [wrongRecord]);
+    expect(orphans).toHaveLength(1);
+
+    const merged = recoverSettlementRecordsFromDailyLog(
+      { "2026-08-18": [entry] },
+      [wrongRecord],
+      { titleHint: "깡깡대전" }
+    );
+    expect(merged.some((r) => r.title.includes("깡깡"))).toBe(true);
+    expect(merged).toHaveLength(2);
+  });
+
+  it("renames strongly matched record when title hint missing", () => {
+    const existing: SettlementRecord = {
+      id: "st_old",
+      title: "2026-08-18 정산",
+      createdAt: atMs,
+      accountRatio: 0.7,
+      toonRatio: 0.6,
+      feeRate: 0.033,
+      members: [],
+      totalGross: 500_000,
+      totalFee: 0,
+      totalNet: 400_000,
+      donors: entry.donors,
+    };
+    const merged = recoverMissingSettlementByTitleHint(
+      { "2026-08-18": [entry] },
+      [existing],
+      "깡깡대전"
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.title).toBe("깡깡대전");
   });
 });

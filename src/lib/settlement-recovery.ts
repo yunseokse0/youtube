@@ -40,11 +40,13 @@ function entryTotal(entry: DailyLogEntry): number {
   );
 }
 
-/** 정산 기록과 일일 로그 스냅샷이 같은 방송 종료 시점인지 */
+/** 정산 기록과 일일 로그가 동일 방송인지 — donors 보강용(느슨) */
 export function settlementRecordMatchesDailyLogEntry(
   record: SettlementRecord,
   entry: DailyLogEntry
 ): boolean {
+  if (settlementRecordStronglyMatchesDailyLogEntry(record, entry)) return true;
+
   const entryAt = dailyLogEntryAtMs(entry);
   if (!entryAt) return false;
   const recordAt = Number(record.createdAt || 0);
@@ -67,6 +69,118 @@ export function settlementRecordMatchesDailyLogEntry(
   }
 
   return false;
+}
+
+/** 고아 판별·복구용 — donor id 집합 일치(우선) 또는 donors 없을 때만 합계·시간 일치 */
+export function settlementRecordStronglyMatchesDailyLogEntry(
+  record: SettlementRecord,
+  entry: DailyLogEntry
+): boolean {
+  const entryAt = dailyLogEntryAtMs(entry);
+  if (!entryAt) return false;
+  const recordAt = Number(record.createdAt || 0);
+  if (Math.abs(recordAt - entryAt) > SETTLEMENT_DAILY_LOG_MATCH_MS) return false;
+
+  const recordDonors = normalizeDonorsArray(record.donors);
+  const entryDonors = normalizeDonorsArray(entry.donors);
+  if (recordDonors.length > 0 && entryDonors.length > 0) {
+    const recSig = donorIdSignature(recordDonors);
+    const entSig = donorIdSignature(entryDonors);
+    return Boolean(recSig && entSig && recSig === entSig);
+  }
+
+  const recTotal = Math.max(0, Math.round(Number(record.totalGross || record.totalNet || 0)));
+  const entTotal = entryTotal(entry);
+  if (recTotal > 0 && entTotal > 0 && recTotal === entTotal) {
+    return Math.abs(recordAt - entryAt) <= 2 * 60 * 1000;
+  }
+
+  return false;
+}
+
+export function collectAllDailyLogEntries(
+  dailyLog: Record<string, DailyLogEntry[] | unknown[]> | null | undefined
+): DailyLogEntry[] {
+  if (!dailyLog || typeof dailyLog !== "object") return [];
+  const out: DailyLogEntry[] = [];
+  for (const entries of Object.values(dailyLog)) {
+    if (!Array.isArray(entries)) continue;
+    for (const raw of entries) {
+      if (!raw || typeof raw !== "object") continue;
+      out.push(raw as DailyLogEntry);
+    }
+  }
+  return out;
+}
+
+function titleIncludesHint(title: string, hint: string): boolean {
+  const h = hint.trim().toLowerCase();
+  if (!h) return false;
+  return title.trim().toLowerCase().includes(h);
+}
+
+function dailyLogEntryScore(entry: DailyLogEntry): number {
+  return donorCount(entry) * 1_000_000 + entryTotal(entry) + dailyLogEntryAtMs(entry) / 1000;
+}
+
+/** 제목 힌트(예: 깡깡)로 일일 로그 고아 후보 중 가장 그럴듯한 1건 선택 */
+export function pickDailyLogOrphanForTitleHint(
+  orphans: DailyLogEntry[],
+  titleHint: string
+): DailyLogEntry | null {
+  const needle = titleHint.trim().toLowerCase();
+  if (!needle || orphans.length === 0) return null;
+  if (orphans.length === 1) return orphans[0]!;
+  /** 후원·합계가 큰 스냅샷 우선(대전 방송) */
+  return [...orphans].sort((a, b) => dailyLogEntryScore(b) - dailyLogEntryScore(a))[0]!;
+}
+
+/** 강매칭으로 어떤 정산에도 묶이지 않은 일일 로그 스냅샷 */
+export function findDailyLogEntriesNotStronglyCovered(
+  dailyLog: Record<string, DailyLogEntry[] | unknown[]> | null | undefined,
+  records: SettlementRecord[]
+): DailyLogEntry[] {
+  return collectAllDailyLogEntries(dailyLog)
+    .filter((entry) => {
+      if (donorCount(entry) === 0 && entryTotal(entry) <= 0) return false;
+      return !records.some((r) => settlementRecordStronglyMatchesDailyLogEntry(r, entry));
+    })
+    .sort((a, b) => dailyLogEntryAtMs(b) - dailyLogEntryAtMs(a));
+}
+
+/** titleHint(깡깡대전 등)가 목록에 없을 때 일일 로그에서 1건 강제 복구·제목 보정 */
+export function recoverMissingSettlementByTitleHint(
+  dailyLog: Record<string, DailyLogEntry[] | unknown[]> | null | undefined,
+  records: SettlementRecord[],
+  titleHint: string
+): SettlementRecord[] {
+  const hint = titleHint.trim();
+  if (!hint || records.some((r) => titleIncludesHint(r.title, hint))) return records;
+
+  const uncovered = findDailyLogEntriesNotStronglyCovered(dailyLog, records);
+  const candidate =
+    pickDailyLogOrphanForTitleHint(uncovered, hint) ??
+    pickDailyLogOrphanForTitleHint(
+      collectAllDailyLogEntries(dailyLog).filter(
+        (e) => donorCount(e) > 0 || entryTotal(e) > 0
+      ),
+      hint
+    );
+  if (!candidate) return records;
+
+  const renameTarget = records.find((r) =>
+    settlementRecordStronglyMatchesDailyLogEntry(r, candidate)
+  );
+  if (renameTarget && !titleIncludesHint(renameTarget.title, hint)) {
+    return records.map((r) =>
+      r.id === renameTarget.id ? { ...r, title: hint } : r
+    );
+  }
+
+  const rec = reconstructSettlementFromDailyLogEntry(candidate, hint);
+  if (!rec) return records;
+  if (records.some((r) => r.id === rec.id)) return records;
+  return mergeSettlementRecords(records, [rec]);
 }
 
 export function stableRecoveredSettlementId(entry: DailyLogEntry): string {
@@ -126,7 +240,7 @@ export function findOrphanDailyLogEntries(
       if (!raw || typeof raw !== "object") continue;
       const entry = raw as DailyLogEntry;
       if (donorCount(entry) === 0 && entryTotal(entry) <= 0) continue;
-      const matched = records.some((r) => settlementRecordMatchesDailyLogEntry(r, entry));
+      const matched = records.some((r) => settlementRecordStronglyMatchesDailyLogEntry(r, entry));
       if (!matched) orphans.push(entry);
     }
   }
@@ -139,9 +253,8 @@ export function recoverSettlementRecordsFromDailyLog(
   existing: SettlementRecord[],
   opts?: { titleHint?: string }
 ): SettlementRecord[] {
-  const orphans = findOrphanDailyLogEntries(dailyLog, existing);
-  if (orphans.length === 0) return existing;
   const hint = String(opts?.titleHint || "").trim();
+  const orphans = findOrphanDailyLogEntries(dailyLog, existing);
   const reconstructed: SettlementRecord[] = [];
   for (const entry of orphans) {
     const title =
@@ -153,7 +266,11 @@ export function recoverSettlementRecordsFromDailyLog(
     const rec = reconstructSettlementFromDailyLogEntry(entry, title);
     if (rec) reconstructed.push(rec);
   }
-  return mergeSettlementRecords(existing, reconstructed);
+  let merged = mergeSettlementRecords(existing, reconstructed);
+  if (hint) {
+    merged = recoverMissingSettlementByTitleHint(dailyLog, merged, hint);
+  }
+  return merged;
 }
 
 export type SettlementServerRecoveryCounts = {
@@ -194,20 +311,4 @@ export function enrichSettlementRecordsDonorsFromDailyLog(
     }
     return record;
   });
-}
-
-/** 제목 힌트(예: 깡깡)로 일일 로그 고아 후보 중 가장 그럴듯한 1건 선택 */
-export function pickDailyLogOrphanForTitleHint(
-  orphans: DailyLogEntry[],
-  titleHint: string
-): DailyLogEntry | null {
-  const needle = titleHint.trim().toLowerCase();
-  if (!needle || orphans.length === 0) return null;
-  if (orphans.length === 1) return orphans[0]!;
-  /** 후원·합계가 큰 스냅샷 우선(대전 방송) */
-  return [...orphans].sort((a, b) => {
-    const score = (e: DailyLogEntry) =>
-      donorCount(e) * 1_000_000 + entryTotal(e) + dailyLogEntryAtMs(e) / 1000;
-    return score(b) - score(a);
-  })[0]!;
 }

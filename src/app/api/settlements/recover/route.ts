@@ -5,7 +5,9 @@ import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
 import { upstashGetJson, upstashSetJsonWithSetPath } from "@/app/api/_shared/upstash";
 import type { DailyLogEntry } from "@/lib/state";
 import {
+  collectAllDailyLogEntries,
   enrichSettlementRecordsDonorsFromDailyLog,
+  findDailyLogEntriesNotStronglyCovered,
   mergeSettlementRecordArrays,
   recoverSettlementRecordsFromDailyLog,
   type SettlementServerRecoveryCounts,
@@ -69,6 +71,10 @@ export async function POST(req: Request) {
   merged = normalizeSettlementRecords(merged);
 
   const dailyLogOrphansAdded = Math.max(0, merged.length - beforeDaily);
+  const allDailyEntries = collectAllDailyLogEntries(dailyLog).filter(
+    (e) => (Array.isArray(e.donors) && e.donors.length > 0) || Number(e.total) > 0
+  );
+  const uncoveredDaily = findDailyLogEntriesNotStronglyCovered(dailyLog, merged);
   const hasKkang = merged.some((r) => r.title.includes("깡깡"));
   const needsTitleHint =
     Boolean(titleHint) &&
@@ -94,6 +100,10 @@ export async function POST(req: Request) {
       titles: merged.map((r) => r.title),
       hasKkang,
       needsTitleHint,
+      dailyLogStats: {
+        totalEntries: allDailyEntries.length,
+        uncoveredEntries: uncoveredDaily.length,
+      },
     }),
     {
       status: 200,

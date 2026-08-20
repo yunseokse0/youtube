@@ -147,10 +147,16 @@ export default function SettlementsPage() {
             `제목에「깡깡」이 없으면 복구된 항목 제목을「깡깡대전」으로 수정해 주세요.`
         );
       } else {
+        const dl = report.dailyLogStats;
+        const dlLine = dl
+          ? `\n일일로그 — 후원 스냅샷 ${dl.totalEntries}건 · 미연결 ${dl.uncoveredEntries}건`
+          : "";
         alert(
           `추가 기록 없음 (총 ${report.merged.length}건)\n` +
-            `출처 — 레거시 LS ${legacy} · 사용자 LS ${userLocal} · 서버 ${api} · 일일로그 ${dailyLog}\n\n` +
-            `서버·일일로그·이 PC LS 어디에도 깡깡대전 스냅샷이 없습니다.\n` +
+            `출처 — 레거시 LS ${legacy} · 사용자 LS ${userLocal} · 서버 ${api} · 일일로그 ${dailyLog}${dlLine}\n\n` +
+            (dl && dl.totalEntries === 0
+              ? `서버·로컬 일일로그에 후원 스냅샷이 없습니다.\n`
+              : `서버·일일로그·이 PC LS 어디에도 깡깡대전 스냅샷이 없습니다.\n`) +
             `JSON 백업 파일이나 다른 PC 브라우저 localStorage에서\n` +
             `excel-broadcast-settlement-records-v1 키를 JSON 복구로 불러와 주세요.`
         );

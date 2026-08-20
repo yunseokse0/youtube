@@ -371,6 +371,7 @@ export type SettlementRecoveryReport = {
   };
   titles: string[];
   hasKkang?: boolean;
+  dailyLogStats?: { totalEntries: number; uncoveredEntries: number };
 };
 
 /** 레거시 LS·사용자 LS·서버 API·일일로그 고아 스냅샷을 id union 병합 후 로컬·서버에 반영 */
@@ -400,6 +401,7 @@ export async function recoverSettlementRecordsFromAllSources(
         counts?: { merged?: number; dailyLogOrphans?: number };
         hasKkang?: boolean;
         titles?: string[];
+        dailyLogStats?: { totalEntries: number; uncoveredEntries: number };
       };
       if (Array.isArray(data.records)) {
         merged = mergeSettlementRecords(merged, data.records);
@@ -417,6 +419,7 @@ export async function recoverSettlementRecordsFromAllSources(
           },
           titles: merged.map((r) => r.title),
           hasKkang: Boolean(data.hasKkang) || merged.some((r) => r.title.includes("깡깡")),
+          dailyLogStats: data.dailyLogStats,
         };
       }
     }
