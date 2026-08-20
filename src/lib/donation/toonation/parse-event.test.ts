@@ -10,6 +10,7 @@ import {
   parseToonationDonationPayload,
   parseToonationMessageBody,
   parseToonationWebSocketMessage,
+  parseDonorAtMsFromDonorId,
   peekToonationWsPayload,
   TOONATION_ALERT_TYPE_YOUTUBE_SUPERCHAT,
   TOONATION_WS_CODE_YOUTUBE_SUPERCHAT,
@@ -206,6 +207,12 @@ describe("toonation parse-event", () => {
       timestamp: ms,
     });
     expect(evt?.at).toBe(new Date(ms).toISOString());
+  });
+
+  it("parseDonorAtMsFromDonorId reads enqueue epoch from toon fallback id", () => {
+    const ms = Date.parse("2026-08-19T10:15:32.000Z");
+    const id = `toonation:toon-abc-${ms}-100-0-xyz`;
+    expect(parseDonorAtMsFromDonorId(id, 100)).toBe(ms);
   });
 
   it("unique fallback id for same payload without donation id (연속 동일 금액 허용)", () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   filterDonorsAfterSettlementReset,
   mergeDonorsForMultiTabSave,
+  normalizeDonorsArray,
   resolveRichestDonorsFromSources,
   mergeServerSaveApiBodies,
   rebumpDonorsPastSettlementReset,
@@ -11,6 +12,38 @@ import type { Donor } from "@/types";
 function donor(id: string, amount: number, at = 1000): Donor {
   return { id, name: "tester", amount, memberId: "m1", at, target: "toon" };
 }
+
+describe("normalizeDonorsArray hsTerritoryExcluded", () => {
+  it("preserves explicit territory ON (hsTerritoryExcluded false) for eligible amounts", () => {
+    const [row] = normalizeDonorsArray([
+      {
+        id: "d1",
+        name: "후원자",
+        amount: 10000,
+        memberId: "m1",
+        at: 1,
+        target: "toon",
+        hsTerritoryExcluded: false,
+      },
+    ]);
+    expect(row?.hsTerritoryExcluded).toBe(false);
+  });
+
+  it("forces territory OFF for ineligible amounts even when input says ON", () => {
+    const [row] = normalizeDonorsArray([
+      {
+        id: "d1",
+        name: "후원자",
+        amount: 14600,
+        memberId: "m1",
+        at: 1,
+        target: "toon",
+        hsTerritoryExcluded: false,
+      },
+    ]);
+    expect(row?.hsTerritoryExcluded).toBe(true);
+  });
+});
 
 describe("isIntentionalDonorListShrink", () => {
   it("detects single-donor delete as intentional shrink", async () => {

@@ -593,7 +593,7 @@ export function reassignDonorMemberInAppState(
   const now = Date.now();
   const nextDonors = (currentState.donors || []).map((d) =>
     d.id === donorId
-      ? { ...d, memberId: targetMemberId, at: now, memberAutoAssigned: false }
+      ? { ...d, memberId: targetMemberId, memberAutoAssigned: false }
       : d
   );
 

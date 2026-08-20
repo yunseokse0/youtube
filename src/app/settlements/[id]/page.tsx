@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
 import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, getTreasuryMembersForExport, isTreasurySettlementMember, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, saveSettlementRecords, saveSettlementRecordsToApi, toPaymentAlignedSettlement, toSettlementFormulaLine, updateSettlementRecordDonors, updateSettlementRecordOptions } from "@/lib/settlement";
 import { aggregateMemberDonors, donorsForSettlementExport, formatExportDateTime, recordToMemberDonorsCsv, recordToMemberDonorsXlsxBlob, resolveSettlementDonors, seedSettlementDonorsForEdit, type DailyLogEntry } from "@/lib/settlement-donor-export";
+import { repairDonorTimestamps } from "@/lib/donation/repair-donor-timestamps";
 import {
   memberToPaymentStatementPdfBlob,
   recordToFullSettlementPdfBlob,
@@ -95,15 +96,33 @@ export default function SettlementDetailPage() {
         loadDailyLogFromApi(u.id).then((serverLog) => {
           if (serverLog) setDailyLog(serverLog as Record<string, DailyLogEntry[]>);
         });
-        setReferenceDonors(normalizeDonorsArray(loadState(u.id)?.donors));
+        setReferenceDonors(
+          repairDonorTimestamps(normalizeDonorsArray(loadState(u.id)?.donors), {
+            dailyLog: loadDailyLog(u.id) as Record<string, DailyLogEntry[]>,
+          })
+        );
         loadStateFromApi(u.id).then((remote) => {
-          if (remote) setReferenceDonors(normalizeDonorsArray(remote.donors));
+          if (remote) {
+            setReferenceDonors(
+              repairDonorTimestamps(normalizeDonorsArray(remote.donors), {
+                dailyLog: loadDailyLog(u.id) as Record<string, DailyLogEntry[]>,
+              })
+            );
+          }
         });
         void fetchSettlementLogoFromApi(u.id).then((logo) => setLogoPreview(logo));
         setStatementText(loadSettlementStatementText(u.id));
         void fetchSettlementStatementTextFromApi(u.id).then(setStatementText);
       });
   }, [router]);
+
+  useEffect(() => {
+    if (!user) return;
+    void loadStateFromApi(user.id).then((remote) => {
+      if (!remote) return;
+      setReferenceDonors(repairDonorTimestamps(normalizeDonorsArray(remote.donors), { dailyLog }));
+    });
+  }, [user, dailyLog]);
 
   // 디바이스 간 동기화 (후원 편집 중에는 덮어쓰지 않음)
   useEffect(() => {

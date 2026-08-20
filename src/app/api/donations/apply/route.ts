@@ -20,6 +20,7 @@ type ApplyBody = {
   target?: "account" | "toon";
   message?: string;
   id?: string;
+  at?: string | number;
   hsPushDir?: "left" | "right" | "split";
   /** 여러 건 일괄 (붙여넣기) */
   items?: Array<{
@@ -29,6 +30,7 @@ type ApplyBody = {
     target?: "account" | "toon";
     message?: string;
     id?: string;
+    at?: string | number;
     hsPushDir?: "left" | "right" | "split";
   }>;
 };
@@ -49,13 +51,20 @@ function buildBankEvent(
     row.hsPushDir === "left" || row.hsPushDir === "right" || row.hsPushDir === "split"
       ? row.hsPushDir
       : undefined;
+  const atRaw = row.at;
+  const at =
+    typeof atRaw === "number" && Number.isFinite(atRaw)
+      ? new Date(atRaw).toISOString()
+      : typeof atRaw === "string" && atRaw.trim()
+        ? new Date(atRaw).toISOString()
+        : new Date().toISOString();
   return {
     id,
     provider: "bank",
     externalId: id,
     donorName,
     amount,
-    at: new Date().toISOString(),
+    at,
     target,
     status: "queued",
     memberId,

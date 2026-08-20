@@ -303,6 +303,17 @@ export function buildToonationDonationFingerprint(data: unknown, amount: number)
   ]);
 }
 
+/** fallback id(toon-/fp-/test-)에 수신 시각으로 박힌 13자리 epoch ms */
+function parseEmbeddedEnqueueEpochMs(ext: string): number | null {
+  for (const m of ext.matchAll(/(?:^|-)(\d{13})-\d+/g)) {
+    const ms = Number(m[1]);
+    if (Number.isFinite(ms) && ms >= 1_000_000_000_000 && ms <= 4_000_000_000_000) {
+      return ms;
+    }
+  }
+  return null;
+}
+
 /** toonation donor.id / externalId 에 embedded된 후원 시각(epoch ms) */
 export function parseDonorAtMsFromDonorId(id: string, amount?: number): number | null {
   const raw = String(id || "").trim();
@@ -317,6 +328,9 @@ export function parseDonorAtMsFromDonorId(id: string, amount?: number): number |
       if (Number.isFinite(ms)) return ms;
     }
   }
+
+  const embedded = parseEmbeddedEnqueueEpochMs(ext);
+  if (embedded != null) return embedded;
 
   return null;
 }

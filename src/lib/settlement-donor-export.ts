@@ -1,7 +1,12 @@
 import * as XLSX from "xlsx";
 import type { Donor, DonorTarget, SettlementRecord } from "@/types";
-import { parseDonorAtMsFromDonorId } from "@/lib/donation/toonation/parse-event";
+import {
+  repairDonorTimestamps,
+  type RepairDonorTimestampsOptions,
+} from "@/lib/donation/repair-donor-timestamps";
 import { getMembersForExport } from "@/lib/settlement";
+
+export { buildDailyLogMinAtByDonorId } from "@/lib/donation/repair-donor-timestamps";
 
 export type DailyLogEntry = {
   at: string;
@@ -64,70 +69,14 @@ function donorAtEpochMs(donor: { at?: number | string }): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-/** daily log 전체에서 donor id별 가장 이른 at — 방송 중 스냅샷에 남은 시각 복구 */
-export function buildDailyLogMinAtByDonorId(
-  dailyLog?: Record<string, DailyLogEntry[]>,
-  beforeMs?: number
-): Map<string, number> {
-  const out = new Map<string, number>();
-  if (!dailyLog) return out;
-  for (const entries of Object.values(dailyLog)) {
-    if (!Array.isArray(entries)) continue;
-    for (const entry of entries) {
-      const entryMs = new Date(entry.at).getTime();
-      if (beforeMs != null && Number.isFinite(beforeMs) && entryMs > beforeMs) continue;
-      for (const d of entry.donors || []) {
-        const id = String(d.id || "").trim();
-        if (!id) continue;
-        const at = donorAtEpochMs(d);
-        if (!Number.isFinite(at) || at <= 0) continue;
-        const prev = out.get(id);
-        if (prev == null || at < prev) out.set(id, at);
-      }
-    }
-  }
-  return out;
-}
+export type RepairSettlementDonorTimestampsOptions = RepairDonorTimestampsOptions;
 
-export type RepairSettlementDonorTimestampsOptions = {
-  dailyLog?: Record<string, DailyLogEntry[]>;
-  referenceDonors?: Donor[];
-  settlementCreatedAt?: number;
-};
-
-/** 정산 스냅샷·일괄 반영으로 틀어진 후원 시각 — 후원자 리스트(reference) 우선, 없으면 id·daily log */
+/** 정산 스냅샷·일괄 반영으로 틀어진 후원 시각 — id·daily log·후원자 리스트 복구 */
 export function repairSettlementDonorTimestamps(
   donors: Donor[],
   opts?: RepairSettlementDonorTimestampsOptions
 ): Donor[] {
-  if (!donors.length) return donors;
-  const logMinById = buildDailyLogMinAtByDonorId(opts?.dailyLog, opts?.settlementCreatedAt);
-  const refById = new Map(
-    (opts?.referenceDonors || [])
-      .map((d) => [String(d.id || "").trim(), d] as const)
-      .filter(([id]) => Boolean(id))
-  );
-
-  return donors.map((donor) => {
-    const stored = donorAtEpochMs(donor);
-    const id = String(donor.id || "").trim();
-    const ref = refById.get(id);
-    if (ref) {
-      const refAt = donorAtEpochMs(ref);
-      if (Number.isFinite(refAt) && refAt > 0) {
-        return refAt === stored ? donor : { ...donor, at: refAt };
-      }
-    }
-    const candidates = [stored];
-    const fromId = parseDonorAtMsFromDonorId(donor.id, donor.amount);
-    if (fromId != null) candidates.push(fromId);
-    const logMin = logMinById.get(id);
-    if (logMin != null) candidates.push(logMin);
-    const valid = candidates.filter((t) => Number.isFinite(t) && t > 0);
-    if (valid.length === 0) return donor;
-    const best = Math.min(...valid);
-    return best === stored ? donor : { ...donor, at: best };
-  });
+  return repairDonorTimestamps(donors, opts);
 }
 
 /** 엑셀/CSV 내보내기 직전 — 최신 daily log·후원 목록으로 시각 재보정 */

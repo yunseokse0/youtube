@@ -1517,6 +1517,8 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
         !isDonationAmountEligibleForHighSocietyTerritory(row.amount)
       ) {
         row.hsTerritoryExcluded = true;
+      } else if (x.hsTerritoryExcluded === false) {
+        row.hsTerritoryExcluded = false;
       }
       const hsPush =
         x.hsPushDir === "left" || x.hsPushDir === "right" || x.hsPushDir === "split"

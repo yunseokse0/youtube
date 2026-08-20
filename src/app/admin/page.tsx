@@ -229,6 +229,10 @@ import {
   applyManualHsTerritoryExcludedChange,
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
+import {
+  donorTimestampsChanged,
+  repairDonorTimestamps,
+} from "@/lib/donation/repair-donor-timestamps";
 import { guardMemberTotalsAgainstAccidentalZeroWipe } from "@/lib/donation/zero-wipe-guard";
 import { mergeMemberRosterPreservingAmounts, mergeManualMemberFieldsFromPatch } from "@/lib/member-roster-merge";
 import { mergeDonationApplyBase, enrichStateBeforeAuthoritativeDonationSave } from "@/lib/donation/merge-donation-apply-base";
@@ -614,6 +618,7 @@ export default function AdminPage() {
   /** 합산 추가 연속 클릭 시 이전 후원을 덮어쓰지 않게 직렬화 */
   const addDonorSaveChainRef = useRef<Promise<void>>(Promise.resolve());
   const [dailyLog, setDailyLog] = useState<Record<string, DailyLogEntry[]>>({});
+  const donorTimestampRepairKeyRef = useRef("");
   const [donorName, setDonorName] = useState("");
   const [donorMessage, setDonorMessage] = useState("");
   const [donorAmount, setDonorAmount] = useState("");
@@ -1343,8 +1348,11 @@ export default function AdminPage() {
         : formatDonorsAmount(amount, donorsAmountFormat),
     [donorsAmountFormat]
   );
-  /** 후원 리스트 — normalize 로 1만원 비배수(14600 등) 영토 OFF 플래그·표시 일치 */
-  const donorListRows = useMemo(() => normalizeDonorsArray(state.donors), [state.donors]);
+  /** 후원 리스트 — normalize + 일괄 반영 시각 복구(id·daily log) */
+  const donorListRows = useMemo(
+    () => repairDonorTimestamps(normalizeDonorsArray(state.donors), { dailyLog }),
+    [state.donors, dailyLog]
+  );
   const applyGlobalDonorsFormat = useCallback(
     (format: "full" | "short") => {
       setState((prev) => {
@@ -2194,6 +2202,26 @@ export default function AdminPage() {
       }
     });
   }, [user, persistState, mergeIncomingStateSafely, presetStorageKey, settlementOptionsKey]);
+
+  /** 일괄 반영으로 동일 초에 찍힌 후원 시각 — id·daily log로 복구 후 서버 저장 */
+  useEffect(() => {
+    if (!user) return;
+    const raw = normalizeDonorsArray(stateRef.current.donors);
+    if (raw.length === 0) return;
+    const logKey = Object.keys(dailyLog).sort().join("|");
+    const repairKey = `${raw.length}:${logKey}`;
+    if (donorTimestampRepairKeyRef.current === repairKey) return;
+    donorTimestampRepairKeyRef.current = repairKey;
+    const repaired = repairDonorTimestamps(raw, { dailyLog });
+    if (!donorTimestampsChanged(raw, repaired)) return;
+    const next = syncMemberTotalsFromDonors({
+      ...stateRef.current,
+      donors: repaired,
+      updatedAt: Date.now(),
+    });
+    setState(next);
+    void saveStateAsync(next, user.id, { donorsAuthoritative: true });
+  }, [user, dailyLog, state.donors]);
 
   useEffect(() => {
     const id = window.setInterval(() => setTimerUiNow(Date.now()), 1000);
