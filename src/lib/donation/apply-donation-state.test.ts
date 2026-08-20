@@ -518,7 +518,7 @@ describe("applyDonationToAppState", () => {
     expect(result.reason).toBe("duplicate");
   });
 
-  it("rejects near-duplicate weak fp- ids with same content within 3s (이중 경로)", () => {
+  it("allows near-duplicate weak fp- ids with same content within 3s (연속 동일 후원)", () => {
     const at = Date.now();
     const state = {
       ...defaultState(),
@@ -547,9 +547,38 @@ describe("applyDonationToAppState", () => {
       target: "account",
     };
     const result = applyDonationToAppState(state, event);
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.reason).toBe("duplicate");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.donors).toHaveLength(2);
+  });
+
+  it("allows five consecutive identical donations one second apart", () => {
+    const baseAt = Date.now() - 10_000;
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 }],
+      donors: [],
+    };
+    let cur = state;
+    for (let i = 0; i < 5; i += 1) {
+      const event: DonationEvent = {
+        id: `toonation:seq-${i}`,
+        provider: "toonation",
+        externalId: `seq-${i}`,
+        donorName: "동일후원",
+        playerName: "피자",
+        amount: 10_000,
+        at: new Date(baseAt + i * 1000).toISOString(),
+        status: "queued",
+        target: "toon",
+      };
+      const result = applyDonationToAppState(cur, event);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      cur = result.state;
+    }
+    expect(cur.donors).toHaveLength(5);
+    expect(cur.members[0]?.toon).toBe(50_000);
   });
 
   it("allows consecutive identical content after near-dup window", () => {
@@ -682,13 +711,13 @@ describe("applyDonationToAppState", () => {
     expect(result.state.donors?.[0]?.target).toBe("account");
   });
 
-  it("allows consecutive account donations with distinct fp- fallback ids", () => {
+  it("allows consecutive fp- fallback ids without artificial time gap", () => {
     const state = {
       ...defaultState(),
       members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 }],
       donors: [],
     };
-    const firstAt = Date.now() - 5_000;
+    const firstAt = Date.now() - 1_000;
     const first: DonationEvent = {
       id: "toonation:fp-10000-aaa-t1",
       provider: "toonation",
@@ -704,19 +733,12 @@ describe("applyDonationToAppState", () => {
       ...first,
       id: "toonation:fp-10000-aaa-t2",
       externalId: "fp-10000-aaa-t2",
-      at: new Date().toISOString(),
+      at: new Date(firstAt + 500).toISOString(),
     };
     const r1 = applyDonationToAppState(state, first);
     expect(r1.ok).toBe(true);
     if (!r1.ok) return;
-    /** 첫 건 at 을 5초 전으로 맞춰 근중복 창을 벗어나게 함 */
-    const afterFirst = {
-      ...r1.state,
-      donors: (r1.state.donors || []).map((d) =>
-        d.id === first.id ? { ...d, at: firstAt } : d
-      ),
-    };
-    const r2 = applyDonationToAppState(afterFirst, second);
+    const r2 = applyDonationToAppState(r1.state, second);
     expect(r2.ok).toBe(true);
     if (!r2.ok) return;
     expect(r2.state.members[0]?.account).toBe(20000);

@@ -1,9 +1,5 @@
 import { kvDel, kvSetNxEx } from "@/app/api/_shared/upstash";
-import {
-  DONATION_CONTENT_DEDUPE_TTL_SEC,
-  donationApplyContentKey,
-  donationApplyPrimaryKey,
-} from "@/lib/donation/donation-dedupe-keys";
+import { donationApplyPrimaryKey } from "@/lib/donation/donation-dedupe-keys";
 import type { DonationEvent } from "@/lib/donation/types";
 
 const APPLIED_TTL_SEC = 86_400;
@@ -37,20 +33,9 @@ function releaseKey(key: string): void {
 /** true = 이번 요청이 선점 성공(반영 진행), false = 이미 반영·처리 중 */
 export async function tryClaimDonationApply(userId: string, event: DonationEvent): Promise<boolean> {
   const primary = donationApplyPrimaryKey(userId, event);
-  if (!(await claimKey(primary, APPLIED_TTL_SEC))) return false;
-
-  const content = donationApplyContentKey(userId, event);
-  if (!content) return true;
-
-  if (!(await claimKey(content, DONATION_CONTENT_DEDUPE_TTL_SEC))) {
-    releaseKey(primary);
-    return false;
-  }
-  return true;
+  return claimKey(primary, APPLIED_TTL_SEC);
 }
 
 export async function releaseDonationApplyClaim(userId: string, event: DonationEvent): Promise<void> {
   releaseKey(donationApplyPrimaryKey(userId, event));
-  const content = donationApplyContentKey(userId, event);
-  if (content) releaseKey(content);
 }

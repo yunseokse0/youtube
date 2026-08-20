@@ -79,6 +79,16 @@ if curl -sf --max-time "$HEALTH_TIMEOUT_SEC" "http://127.0.0.1:${PORT}/api/healt
   HEALTH_OK=1
 fi
 
+NGINX_OK=0
+if curl -sf --max-time 5 -o /dev/null "http://127.0.0.1/" 2>/dev/null; then
+  NGINX_OK=1
+fi
+if [[ "$HEALTH_OK" == "1" ]] && [[ "$NGINX_OK" != "1" ]] && systemctl list-unit-files nginx.service >/dev/null 2>&1; then
+  append_log "nginx :80 unreachable — systemctl start nginx"
+  run systemctl start nginx 2>>"$LOG_FILE" || append_log "nginx start failed"
+  ACTIONS+=("nginx-start")
+fi
+
 if [[ "$HEALTH_OK" != "1" ]]; then
   NOW="$(date +%s)"
   LAST=0

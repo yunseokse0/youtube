@@ -268,7 +268,7 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
   return { ...state, members };
 }
 
-/** 이중 경로로 다른 fp- id 가 들어와도 같은 내용이면 단기로 중복 처리 */
+/** @deprecated 이중 경로는 server-listener RAW dedupe(500ms)·릴레이 차단으로 처리 — 연속 동일 후원 누락 방지 */
 export const DONATION_NEAR_DUP_WINDOW_MS = 3_000;
 
 export function donationContentMatchKey(donor: {
@@ -331,7 +331,7 @@ export function isOwnerRemapSplitDuplicate(
   return false;
 }
 
-/** 동일 투네·계좌 후원 id가 이미 donors에 있으면 중복(연속 동일 금액·닉은 창 밖이면 별도 건으로 허용) */
+/** 동일 투네·계좌 후원 id가 이미 donors에 있으면 중복(건별 unique id 기준) */
 export function isDuplicateDonationEvent(state: AppState, rawEvent: DonationEvent): boolean {
   const donors = state.donors || [];
   const eventId = String(rawEvent.id || "").trim();
@@ -345,13 +345,6 @@ export function isDuplicateDonationEvent(state: AppState, rawEvent: DonationEven
     at: rawEvent.at,
   };
   const probeKey = donorRowDedupeKey(probeDonor);
-  const contentKey = donationContentMatchKey({
-    donorName: rawEvent.donorName,
-    amount: rawEvent.amount,
-    target: rawEvent.target,
-    message: rawEvent.message,
-  });
-  const eventAt = toEpochMs(rawEvent.at);
 
   return donors.some((d) => {
     const donorId = String(d.id || "").trim();
@@ -360,13 +353,6 @@ export function isDuplicateDonationEvent(state: AppState, rawEvent: DonationEven
     if (donorId === eventId || donorId === baseId) return true;
     if (baseId && normalizeDonationEventId(donorId) === baseId) return true;
     if (externalDonorId && (donorId === externalDonorId || normalizeDonationEventId(donorId) === externalDonorId)) {
-      return true;
-    }
-    /** 서버 WS + 브라우저 릴레이 등이 서로 다른 unique id 로 들어올 때 */
-    if (
-      donationContentMatchKey(d) === contentKey &&
-      Math.abs(donorAtEpochMs(d) - eventAt) <= DONATION_NEAR_DUP_WINDOW_MS
-    ) {
       return true;
     }
     /** 주인 리맵 유무가 갈라져 익명(계좌)·원닉(투네)로 동시에 쌓이는 경우 */

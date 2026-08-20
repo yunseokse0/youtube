@@ -49,7 +49,7 @@ describe("donationApplyPrimaryKey", () => {
     expect(donationApplyPrimaryKey("u1", event)).toBe("u1:evt:toonation:fp-10000-abc-t12");
   });
 
-  it("builds short-lived content key for weak ids", () => {
+  it("donationApplyContentKey is disabled (consecutive identical donations use primary id only)", () => {
     const event: DonationEvent = {
       id: "toonation:fp-1",
       provider: "toonation",
@@ -61,9 +61,7 @@ describe("donationApplyPrimaryKey", () => {
       status: "queued",
       target: "account",
     };
-    expect(donationApplyContentKey("u1", event)).toBe(
-      "u1:content:익명5|60000|account|계좌 익명5 피자"
-    );
+    expect(donationApplyContentKey("u1", event)).toBeNull();
     expect(donationContentDedupeFingerprint(event)).toBe("익명5|60000|account|계좌 익명5 피자");
   });
 });

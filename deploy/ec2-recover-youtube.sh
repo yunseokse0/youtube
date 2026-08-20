@@ -66,11 +66,18 @@ if ! verify_static_http "$PORT" "$ROOT"; then
   }
 fi
 
-if systemctl is-active nginx >/dev/null 2>&1; then
+if systemctl list-unit-files nginx.service >/dev/null 2>&1; then
+  if ! systemctl is-active nginx >/dev/null 2>&1; then
+    echo "== nginx 중지됨 — start =="
+    sudo systemctl start nginx 2>/dev/null || true
+  fi
   bash "$ROOT/deploy/ec2-nginx-static-fix.sh" 2>/dev/null || true
   code="$(curl -sf -o /dev/null -w "%{http_code}" "http://127.0.0.1/_next/static/chunks/${W}" || echo "000")"
   echo "webpack(nginx) HTTP ${code}"
+  admin_code="$(curl -sf -o /dev/null -w "%{http_code}" "http://127.0.0.1/admin" || echo "000")"
+  echo "/admin(nginx :80) HTTP ${admin_code}"
   [[ "$code" == "200" ]] || echo "WARN: nginx static ${code} — sudo nginx -t && sudo systemctl reload nginx"
+  [[ "$admin_code" == "200" || "$admin_code" == "307" || "$admin_code" == "302" ]] || echo "WARN: /admin ${admin_code} — sudo systemctl status nginx"
 fi
 
 if ! verify_state_api "$PORT"; then

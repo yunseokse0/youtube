@@ -45,22 +45,8 @@ export function donationApplyPrimaryKey(userId: string, event: DonationEvent): s
 }
 
 /**
- * weak/unique fallback id 경로용 — 동일 내용 단기 선점 키.
- * 서버 WS·브라우저 릴레이가 서로 다른 fp- id 로 들어와도 한 번만 반영.
+ * @deprecated ingest RAW dedupe·primary id 로 이중 경로 처리 — content 키는 연속 동일 후원을 막음
  */
-export function donationApplyContentKey(userId: string, event: DonationEvent): string | null {
-  const ext = String(event.externalId || "").trim();
-  const extDonorId = ext && event.provider ? `${event.provider}:${ext}` : "";
-  if (
-    event.provider === "toonation" &&
-    isReliableToonationExternalId(ext) &&
-    !isWeakToonationDonorId(extDonorId)
-  ) {
-    /** reliable 실 id 는 primary 키로 이미 막힘 */
-    return null;
-  }
-  const name = String(event.donorName || "").trim();
-  const amount = Math.max(0, Math.round(Number(event.amount) || 0));
-  if (!name && amount <= 0) return null;
-  return `${userId}:content:${donationContentDedupeFingerprint(event)}`;
+export function donationApplyContentKey(_userId: string, _event: DonationEvent): string | null {
+  return null;
 }
