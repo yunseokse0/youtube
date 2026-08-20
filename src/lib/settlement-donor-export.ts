@@ -95,7 +95,7 @@ export type RepairSettlementDonorTimestampsOptions = {
   settlementCreatedAt?: number;
 };
 
-/** 정산 스냅샷·일괄 반영으로 틀어진 후원 시각 — id·daily log·현재 후원 목록에서 복구 */
+/** 정산 스냅샷·일괄 반영으로 틀어진 후원 시각 — 후원자 리스트(reference) 우선, 없으면 id·daily log */
 export function repairSettlementDonorTimestamps(
   donors: Donor[],
   opts?: RepairSettlementDonorTimestampsOptions
@@ -110,17 +110,19 @@ export function repairSettlementDonorTimestamps(
 
   return donors.map((donor) => {
     const stored = donorAtEpochMs(donor);
+    const id = String(donor.id || "").trim();
+    const ref = refById.get(id);
+    if (ref) {
+      const refAt = donorAtEpochMs(ref);
+      if (Number.isFinite(refAt) && refAt > 0) {
+        return refAt === stored ? donor : { ...donor, at: refAt };
+      }
+    }
     const candidates = [stored];
     const fromId = parseDonorAtMsFromDonorId(donor.id, donor.amount);
     if (fromId != null) candidates.push(fromId);
-    const logMin = logMinById.get(String(donor.id || "").trim());
+    const logMin = logMinById.get(id);
     if (logMin != null) candidates.push(logMin);
-    const ref = refById.get(String(donor.id || "").trim());
-    if (ref) {
-      candidates.push(donorAtEpochMs(ref));
-      const refFromId = parseDonorAtMsFromDonorId(ref.id, ref.amount);
-      if (refFromId != null) candidates.push(refFromId);
-    }
     const valid = candidates.filter((t) => Number.isFinite(t) && t > 0);
     if (valid.length === 0) return donor;
     const best = Math.min(...valid);

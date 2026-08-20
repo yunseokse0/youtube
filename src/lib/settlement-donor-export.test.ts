@@ -88,6 +88,36 @@ describe("repairSettlementDonorTimestamps", () => {
     expect(repaired[0]?.at).toBe(earlyAt);
   });
 
+  it("prefers live donor list (referenceDonors) at over settlement snapshot and daily log", () => {
+    const batchAt = Date.parse("2026-08-19T22:15:32.000Z");
+    const listAt = Date.parse("2026-08-19T20:30:00.000Z");
+    const logAt = Date.parse("2026-08-19T19:05:00.000Z");
+    const donors: Donor[] = [
+      {
+        id: "d-live-1",
+        name: "후원자A",
+        amount: 5000,
+        memberId: "m1",
+        at: batchAt,
+        target: "toon",
+      },
+    ];
+    const repaired = repairSettlementDonorTimestamps(donors, {
+      referenceDonors: [{ ...donors[0]!, at: listAt }],
+      dailyLog: {
+        "2026-08-19": [
+          {
+            at: "2026-08-19T21:00:00.000Z",
+            total: 5000,
+            members: [],
+            donors: [{ ...donors[0]!, at: logAt }],
+          },
+        ],
+      },
+    });
+    expect(repaired[0]?.at).toBe(listAt);
+  });
+
   it("parses embedded ISO timestamp from toonation fallback id", () => {
     const iso = "2026-06-04T10:00:00.000Z";
     const wrongAt = Date.parse("2026-08-19T22:15:32.000Z");

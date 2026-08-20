@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
 import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, getTreasuryMembersForExport, isTreasurySettlementMember, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, saveSettlementRecords, saveSettlementRecordsToApi, toPaymentAlignedSettlement, toSettlementFormulaLine, updateSettlementRecordDonors, updateSettlementRecordOptions } from "@/lib/settlement";
-import { aggregateMemberDonors, donorsForSettlementExport, recordToMemberDonorsCsv, recordToMemberDonorsXlsxBlob, resolveSettlementDonors, seedSettlementDonorsForEdit, type DailyLogEntry } from "@/lib/settlement-donor-export";
+import { aggregateMemberDonors, donorsForSettlementExport, formatExportDateTime, recordToMemberDonorsCsv, recordToMemberDonorsXlsxBlob, resolveSettlementDonors, seedSettlementDonorsForEdit, type DailyLogEntry } from "@/lib/settlement-donor-export";
 import {
   memberToPaymentStatementPdfBlob,
   recordToFullSettlementPdfBlob,
@@ -164,15 +164,19 @@ export default function SettlementDetailPage() {
   }, [memberDonorSummary]);
 
   const onDownloadMemberDonorsXlsx = async () => {
-    if (!record) return;
-    const exportDonors = donorsForSettlementExport(record, editableDonors, dailyLog, referenceDonors);
+    if (!record || !user) return;
+    const remote = await loadStateFromApi(user.id);
+    const refs = normalizeDonorsArray(remote?.donors ?? loadState(user.id)?.donors);
+    const exportDonors = donorsForSettlementExport(record, editableDonors, dailyLog, refs);
     const blob = recordToMemberDonorsXlsxBlob(record, exportDonors);
     await downloadBlobFile(`${record.title}-멤버별후원자.xlsx`, blob);
   };
 
   const onDownloadMemberDonorsCsv = async () => {
-    if (!record) return;
-    const exportDonors = donorsForSettlementExport(record, editableDonors, dailyLog, referenceDonors);
+    if (!record || !user) return;
+    const remote = await loadStateFromApi(user.id);
+    const refs = normalizeDonorsArray(remote?.donors ?? loadState(user.id)?.donors);
+    const exportDonors = donorsForSettlementExport(record, editableDonors, dailyLog, refs);
     await downloadTextFile(
       `${record.title}-멤버별후원자.csv`,
       recordToMemberDonorsCsv(record, exportDonors),
@@ -909,6 +913,7 @@ export default function SettlementDetailPage() {
                 <table className="w-full text-sm whitespace-nowrap">
                   <thead>
                     <tr className="text-neutral-400 border-b border-white/10">
+                      <th className="p-2 text-left">후원시각</th>
                       <th className="p-2 text-left">후원자</th>
                       <th className="p-2 text-right">금액</th>
                       <th className="p-2 text-left">채널</th>
@@ -917,7 +922,7 @@ export default function SettlementDetailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {[...editableDonors]
+                    {donorsForSettlementExport(record, editableDonors, dailyLog, referenceDonors)
                       .sort((a, b) => {
                         const aT = record.members.find((m) => m.memberId === a.memberId);
                         const bT = record.members.find((m) => m.memberId === b.memberId);
@@ -940,6 +945,9 @@ export default function SettlementDetailPage() {
                             key={d.id}
                             className={`border-b border-white/5 ${treasury ? "bg-amber-950/40" : ""}`}
                           >
+                            <td className="p-2 text-neutral-400 tabular-nums whitespace-nowrap">
+                              {formatExportDateTime(d.at)}
+                            </td>
                             <td className="p-2">
                               <input
                                 className="w-full min-w-[7rem] px-2 py-1 rounded bg-neutral-800 border border-white/10"
