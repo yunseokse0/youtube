@@ -177,6 +177,37 @@ describe("toonation parse-event", () => {
     expect(evt?.target).toBe("toon");
   });
 
+  it("uses payload createdAt as donation time instead of receive time", () => {
+    const evt = parseToonationDonationPayload({
+      nickname: "배지은",
+      amount: 5000,
+      comment: "피자",
+      createdAt: "2026-06-04T10:00:00.000Z",
+    });
+    expect(evt?.at).toBe("2026-06-04T10:00:00.000Z");
+  });
+
+  it("reads donation time from ws envelope when content has no timestamp", () => {
+    const raw = JSON.stringify({
+      code: 101,
+      regDate: "2026-07-15T08:30:00.000Z",
+      content: { nickname: "후원자", amount: 10000, comment: "감사" },
+    });
+    const evt = parseToonationWebSocketMessage(raw);
+    expect(evt?.at).toBe("2026-07-15T08:30:00.000Z");
+  });
+
+  it("parses unix-ms timestamp fields", () => {
+    const ms = new Date("2026-03-01T12:00:00.000Z").getTime();
+    const evt = parseToonationDonationPayload({
+      nickname: "배지은",
+      amount: 3000,
+      comment: "",
+      timestamp: ms,
+    });
+    expect(evt?.at).toBe(new Date(ms).toISOString());
+  });
+
   it("unique fallback id for same payload without donation id (연속 동일 금액 허용)", () => {
     const payload = { nickname: "배지은", amount: 20000, comment: "" };
     const a = parseToonationDonationPayload(payload);

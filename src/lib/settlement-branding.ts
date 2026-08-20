@@ -76,21 +76,30 @@ export async function fetchSettlementStatementTextFromApi(
   userId: string
 ): Promise<SettlementStatementText> {
   const local = loadSettlementStatementText(userId);
+  const defaults = defaultSettlementStatementText();
+  const localCustomized =
+    local.thankYouMessage !== defaults.thankYouMessage ||
+    local.issuerLine !== defaults.issuerLine;
   try {
     const res = await fetch(
       `/api/settlements/statement-text?user=${encodeURIComponent(userId)}&_t=${Date.now()}`,
       { cache: "no-store", credentials: "include" }
     );
     if (!res.ok) return local;
-    const data = (await res.json()) as Partial<SettlementStatementText>;
-    const normalized = normalizeSettlementStatementText({
+    const data = (await res.json()) as Partial<SettlementStatementText> & { saved?: boolean };
+    const fromServer = normalizeSettlementStatementText({
       thankYouMessage:
         typeof data.thankYouMessage === "string" ? data.thankYouMessage : local.thankYouMessage,
       issuerLine: typeof data.issuerLine === "string" ? data.issuerLine : local.issuerLine,
     });
+    const normalized =
+      data.saved === true ? fromServer : localCustomized ? local : fromServer;
     try {
       saveSettlementStatementText(normalized, userId);
     } catch {}
+    if (data.saved !== true && localCustomized) {
+      void saveSettlementStatementTextToApi(local, userId);
+    }
     return normalized;
   } catch {
     return local;
@@ -109,7 +118,9 @@ export async function saveSettlementStatementTextToApi(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(normalized),
     });
-    return { ok: res.ok, text: normalized };
+    const data = (await res.json().catch(() => null)) as { ok?: boolean } | null;
+    const ok = res.ok && data?.ok !== false;
+    return { ok, text: normalized };
   } catch {
     return { ok: false, text: normalized };
   }

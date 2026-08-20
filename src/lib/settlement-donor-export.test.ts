@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { Donor, SettlementRecord } from "@/types";
 import {
   aggregateMemberDonors,
+  buildDailyLogMinAtByDonorId,
   formatExportDateTime,
   recordToMemberDonorsCsv,
+  repairSettlementDonorTimestamps,
   resolveSettlementDonors,
 } from "@/lib/settlement-donor-export";
 
@@ -48,6 +50,83 @@ const baseRecord: SettlementRecord = {
   totalFee: 0,
   totalNet: 0,
 };
+
+describe("repairSettlementDonorTimestamps", () => {
+  it("uses earliest at from daily log snapshots when settlement batch-stamped same time", () => {
+    const batchAt = Date.parse("2026-08-19T22:15:32.000Z");
+    const earlyAt = Date.parse("2026-08-19T19:05:00.000Z");
+    const donors: Donor[] = [
+      {
+        id: "toonation:toon-abc-1",
+        name: "후원자A",
+        amount: 1000,
+        memberId: "m1",
+        at: batchAt,
+        target: "toon",
+      },
+    ];
+    const log = {
+      "2026-08-19": [
+        {
+          at: "2026-08-19T20:00:00.000Z",
+          total: 1000,
+          members: [],
+          donors: [{ ...donors[0]!, at: earlyAt }],
+        },
+        {
+          at: "2026-08-19T22:16:00.000Z",
+          total: 1000,
+          members: [],
+          donors: [{ ...donors[0]!, at: batchAt }],
+        },
+      ],
+    };
+    const repaired = repairSettlementDonorTimestamps(donors, {
+      dailyLog: log,
+      settlementCreatedAt: batchAt + 60_000,
+    });
+    expect(repaired[0]?.at).toBe(earlyAt);
+  });
+
+  it("parses embedded ISO timestamp from toonation fallback id", () => {
+    const iso = "2026-06-04T10:00:00.000Z";
+    const wrongAt = Date.parse("2026-08-19T22:15:32.000Z");
+    const donors: Donor[] = [
+      {
+        id: `toonation:fp-${iso}-5000-abc-xyz`,
+        name: "후원자",
+        amount: 5000,
+        memberId: "m1",
+        at: wrongAt,
+        target: "toon",
+      },
+    ];
+    const repaired = repairSettlementDonorTimestamps(donors, {});
+    expect(repaired[0]?.at).toBe(Date.parse(iso));
+  });
+});
+
+describe("buildDailyLogMinAtByDonorId", () => {
+  it("returns minimum at per donor id across log entries", () => {
+    const map = buildDailyLogMinAtByDonorId({
+      "2026-08-19": [
+        {
+          at: "2026-08-19T21:00:00.000Z",
+          total: 0,
+          members: [],
+          donors: [{ id: "d1", name: "a", amount: 1, memberId: "m1", at: 3000 }],
+        },
+        {
+          at: "2026-08-19T22:00:00.000Z",
+          total: 0,
+          members: [],
+          donors: [{ id: "d1", name: "a", amount: 1, memberId: "m1", at: 1000 }],
+        },
+      ],
+    });
+    expect(map.get("d1")).toBe(1000);
+  });
+});
 
 describe("resolveSettlementDonors", () => {
   it("uses donors snapshot on record when present", () => {

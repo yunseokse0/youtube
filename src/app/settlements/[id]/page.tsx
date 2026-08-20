@@ -5,19 +5,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
 import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, getTreasuryMembersForExport, isTreasurySettlementMember, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, saveSettlementRecords, saveSettlementRecordsToApi, toPaymentAlignedSettlement, toSettlementFormulaLine, updateSettlementRecordDonors, updateSettlementRecordOptions } from "@/lib/settlement";
-import { aggregateMemberDonors, recordToMemberDonorsCsv, recordToMemberDonorsXlsxBlob, resolveSettlementDonors, seedSettlementDonorsForEdit, type DailyLogEntry } from "@/lib/settlement-donor-export";
+import { aggregateMemberDonors, donorsForSettlementExport, recordToMemberDonorsCsv, recordToMemberDonorsXlsxBlob, resolveSettlementDonors, seedSettlementDonorsForEdit, type DailyLogEntry } from "@/lib/settlement-donor-export";
 import {
   memberToPaymentStatementPdfBlob,
   recordToFullSettlementPdfBlob,
 } from "@/lib/settlement-payment-statement";
 import { downloadTextFile, downloadBlobFile } from "@/lib/download";
-import { loadDailyLog, loadDailyLogFromApi } from "@/lib/state";
+import { loadDailyLog, loadDailyLogFromApi, loadState, loadStateFromApi, normalizeDonorsArray } from "@/lib/state";
 import {
   defaultSettlementStatementText,
   deleteSettlementLogoFromApi,
   fetchSettlementLogoFromApi,
   fetchSettlementStatementTextFromApi,
   fileToSettlementLogoDataUrl,
+  loadSettlementStatementText,
   resolveSettlementLogoDataUrl,
   resolveSettlementStatementText,
   saveSettlementLogoToApi,
@@ -60,6 +61,7 @@ export default function SettlementDetailPage() {
   const [user, setUser] = useState<{ id: string } | null>(null);
   const [records, setRecords] = useState<SettlementRecord[] | null>(null);
   const [dailyLog, setDailyLog] = useState<Record<string, DailyLogEntry[]>>({});
+  const [referenceDonors, setReferenceDonors] = useState<Donor[]>([]);
   const [copiedMemberId, setCopiedMemberId] = useState<string | null>(null);
   const [copiedKakao, setCopiedKakao] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
@@ -93,7 +95,12 @@ export default function SettlementDetailPage() {
         loadDailyLogFromApi(u.id).then((serverLog) => {
           if (serverLog) setDailyLog(serverLog as Record<string, DailyLogEntry[]>);
         });
+        setReferenceDonors(normalizeDonorsArray(loadState(u.id)?.donors));
+        loadStateFromApi(u.id).then((remote) => {
+          if (remote) setReferenceDonors(normalizeDonorsArray(remote.donors));
+        });
         void fetchSettlementLogoFromApi(u.id).then((logo) => setLogoPreview(logo));
+        setStatementText(loadSettlementStatementText(u.id));
         void fetchSettlementStatementTextFromApi(u.id).then(setStatementText);
       });
   }, [router]);
@@ -127,8 +134,8 @@ export default function SettlementDetailPage() {
     [viewRecord]
   );
   const settlementDonors = useMemo(
-    () => (record ? resolveSettlementDonors(record, dailyLog) : []),
-    [record, dailyLog]
+    () => (record ? resolveSettlementDonors(record, dailyLog, referenceDonors) : []),
+    [record, dailyLog, referenceDonors]
   );
 
   useEffect(() => {
@@ -138,8 +145,8 @@ export default function SettlementDetailPage() {
       return;
     }
     if (donorEditDirtyRef.current) return;
-    setEditingDonors(seedSettlementDonorsForEdit(record, dailyLog));
-  }, [record, dailyLog]);
+    setEditingDonors(seedSettlementDonorsForEdit(record, dailyLog, referenceDonors));
+  }, [record, dailyLog, referenceDonors]);
 
   const editableDonors = editingDonors ?? settlementDonors;
   const memberDonorSummary = useMemo(
@@ -158,15 +165,17 @@ export default function SettlementDetailPage() {
 
   const onDownloadMemberDonorsXlsx = async () => {
     if (!record) return;
-    const blob = recordToMemberDonorsXlsxBlob(record, editableDonors);
+    const exportDonors = donorsForSettlementExport(record, editableDonors, dailyLog, referenceDonors);
+    const blob = recordToMemberDonorsXlsxBlob(record, exportDonors);
     await downloadBlobFile(`${record.title}-멤버별후원자.xlsx`, blob);
   };
 
   const onDownloadMemberDonorsCsv = async () => {
     if (!record) return;
+    const exportDonors = donorsForSettlementExport(record, editableDonors, dailyLog, referenceDonors);
     await downloadTextFile(
       `${record.title}-멤버별후원자.csv`,
-      recordToMemberDonorsCsv(record, editableDonors),
+      recordToMemberDonorsCsv(record, exportDonors),
       "text/csv;charset=utf-8"
     );
   };
@@ -207,20 +216,20 @@ export default function SettlementDetailPage() {
   };
 
   const patchEditableDonor = (donorId: string, patch: Partial<Donor>) => {
-    const base = editingDonors ?? seedSettlementDonorsForEdit(record!, dailyLog);
+    const base = editingDonors ?? seedSettlementDonorsForEdit(record!, dailyLog, referenceDonors);
     const next = base.map((d) => (d.id === donorId ? { ...d, ...patch } : d));
     setEditingDonors(next);
     donorEditDirtyRef.current = true;
   };
 
   const commitEditableDonor = (donorId: string, patch: Partial<Donor>) => {
-    const base = editingDonors ?? seedSettlementDonorsForEdit(record!, dailyLog);
+    const base = editingDonors ?? seedSettlementDonorsForEdit(record!, dailyLog, referenceDonors);
     const next = base.map((d) => (d.id === donorId ? { ...d, ...patch } : d));
     persistDonorAdjustments(next);
   };
 
   const removeEditableDonor = (donorId: string) => {
-    const base = editingDonors ?? seedSettlementDonorsForEdit(record!, dailyLog);
+    const base = editingDonors ?? seedSettlementDonorsForEdit(record!, dailyLog, referenceDonors);
     if (!window.confirm("이 후원 건을 정산에서 제거할까요? 멤버 정산액이 다시 계산됩니다.")) return;
     persistDonorAdjustments(base.filter((d) => d.id !== donorId));
   };
@@ -233,7 +242,7 @@ export default function SettlementDetailPage() {
     const fallback = record.members[0];
     const memberId = preferTreasury && treasury ? treasury.memberId : fallback?.memberId;
     if (!memberId) return;
-    const base = editingDonors ?? seedSettlementDonorsForEdit(record, dailyLog);
+    const base = editingDonors ?? seedSettlementDonorsForEdit(record, dailyLog, referenceDonors);
     const row: Donor = {
       id: `d_adj_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       name: "무명",
@@ -248,7 +257,7 @@ export default function SettlementDetailPage() {
 
   const reapplyDonorEdits = () => {
     if (!record) return;
-    const base = editingDonors ?? seedSettlementDonorsForEdit(record, dailyLog);
+    const base = editingDonors ?? seedSettlementDonorsForEdit(record, dailyLog, referenceDonors);
     persistDonorAdjustments(base);
   };
 

@@ -1,8 +1,13 @@
-export const runtime = "edge";
+export const runtime = "nodejs";
 export const revalidate = 0;
 
 import { getUserIdFromRequest } from "../../_shared/user-id";
-import { upstashGetJson, upstashSetJsonWithSetPath } from "../../_shared/upstash";
+import {
+  ensureMysqlKvBackend,
+  isPersistentKvConfigured,
+  upstashGetJson,
+  upstashSetJsonWithSetPath,
+} from "../../_shared/upstash";
 
 const STORAGE_KEY_BASE = "excel-broadcast-settlement-logo-v1";
 
@@ -23,6 +28,7 @@ function isValidDataUrl(value: unknown): value is string {
 
 export async function GET(req: Request) {
   try {
+    await ensureMysqlKvBackend();
     const userId = getUserIdFromRequest(req);
     if (!userId) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
@@ -52,6 +58,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    await ensureMysqlKvBackend();
     const userId = getUserIdFromRequest(req);
     if (!userId) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
@@ -68,7 +75,13 @@ export async function POST(req: Request) {
     }
     const payload: LogoPayload = { dataUrl: body.dataUrl, updatedAt: Date.now() };
     memoryLogo[userId] = payload;
-    await upstashSetJsonWithSetPath(logoKey(userId), payload);
+    const persisted = await upstashSetJsonWithSetPath(logoKey(userId), payload);
+    if (!persisted && isPersistentKvConfigured()) {
+      return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     return new Response(JSON.stringify({ ok: true }), {
       headers: { "Content-Type": "application/json" },
     });
@@ -82,6 +95,7 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
+    await ensureMysqlKvBackend();
     const userId = getUserIdFromRequest(req);
     if (!userId) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
@@ -90,7 +104,16 @@ export async function DELETE(req: Request) {
       });
     }
     memoryLogo[userId] = null;
-    await upstashSetJsonWithSetPath(logoKey(userId), { dataUrl: null, updatedAt: Date.now() });
+    const persisted = await upstashSetJsonWithSetPath(logoKey(userId), {
+      dataUrl: null,
+      updatedAt: Date.now(),
+    });
+    if (!persisted && isPersistentKvConfigured()) {
+      return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     return new Response(JSON.stringify({ ok: true }), {
       headers: { "Content-Type": "application/json" },
     });

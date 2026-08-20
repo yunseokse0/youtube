@@ -232,21 +232,53 @@ function hashDonationFingerprint(parts: string[]): string {
 }
 
 export function extractToonationTimestamp(data: unknown): string {
-  const root = unwrapToonationPayload(data);
+  const ms = parseToonationTimestampMs(data);
+  if (ms != null && ms > 0) return new Date(ms).toISOString();
+  return "";
+}
+
+/** 투네 페이로드·envelope에서 후원 시각(epoch ms) 추출 */
+export function parseToonationTimestampMs(data: unknown): number | null {
+  const unwrapped = unwrapToonationPayload(data);
+  return readToonationTimestampFromObject(unwrapped) ?? readToonationTimestampFromObject(data);
+}
+
+function readToonationTimestampFromObject(obj: unknown): number | null {
+  if (!obj || typeof obj !== "object") return null;
+  const root = obj as Record<string, unknown>;
   const candidates = [
-    safeRead(root, "createdAt"),
-    safeRead(root, "donatedAt"),
-    safeRead(root, "timestamp"),
-    safeRead(root, "regDate"),
-    safeRead(root, "date"),
-    safeRead(root, "time"),
-    safeRead(data, "createdAt"),
+    root.createdAt,
+    root.donatedAt,
+    root.timestamp,
+    root.regDate,
+    root.date,
+    root.time,
+    root.donationTime,
+    root.paidAt,
   ];
   for (const c of candidates) {
+    if (typeof c === "number" && Number.isFinite(c) && c > 0) {
+      return c < 1e12 ? Math.floor(c * 1000) : Math.floor(c);
+    }
     const s = String(c ?? "").trim();
-    if (s) return s;
+    if (!s) continue;
+    const parsed = Date.parse(s);
+    if (Number.isFinite(parsed)) return parsed;
+    if (/^\d{10,13}$/.test(s)) {
+      const n = Number(s);
+      if (Number.isFinite(n) && n > 0) return n < 1e12 ? Math.floor(n * 1000) : Math.floor(n);
+    }
   }
-  return "";
+  return null;
+}
+
+/** 후원 시각 — 투네 원문 우선, 없으면 수신 시각 */
+export function resolveToonationDonationAtIso(data: unknown, envelope?: unknown): string {
+  const ms =
+    parseToonationTimestampMs(data) ??
+    (envelope != null ? parseToonationTimestampMs(envelope) : null);
+  if (ms != null && ms > 0) return new Date(ms).toISOString();
+  return new Date().toISOString();
 }
 
 /**
@@ -269,6 +301,24 @@ export function buildToonationDonationFingerprint(data: unknown, amount: number)
     extractToonationExternalId(data),
     extractToonationTimestamp(data),
   ]);
+}
+
+/** toonation donor.id / externalId 에 embedded된 후원 시각(epoch ms) */
+export function parseDonorAtMsFromDonorId(id: string, amount?: number): number | null {
+  const raw = String(id || "").trim();
+  if (!raw) return null;
+  const ext = raw.replace(/^toonation:/i, "");
+
+  const fpIso = /^fp-(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z)-(\d+)-/i.exec(ext);
+  if (fpIso) {
+    const amt = Number(fpIso[2]);
+    if (amount == null || amt === Math.max(0, Math.round(Number(amount) || 0))) {
+      const ms = Date.parse(fpIso[1]!);
+      if (Number.isFinite(ms)) return ms;
+    }
+  }
+
+  return null;
 }
 
 /** id/timestamp 없을 때: 건별 고유 ID — 동일 금액·문구 연속 후원 허용. WS 재전송은 RAW_WS_DEDUPE */
@@ -375,7 +425,7 @@ export function parseToonationWebSocketMessage(raw: string): DonationEvent | nul
   try {
     const data = JSON.parse(raw) as Record<string, unknown>;
     const payload = (data as any).content ?? data;
-    const evt = parseToonationDonationPayload(payload);
+    const evt = parseToonationDonationPayload(payload, data);
     if (!evt) return null;
 
     /** 기존엔 code=101(후원) / 109(유튜브 슈퍼챗)만 후원으로 인정했는데,
@@ -407,7 +457,10 @@ export function parseToonationWebSocketMessage(raw: string): DonationEvent | nul
   }
 }
 
-export function parseToonationDonationPayload(data: unknown): DonationEvent | null {
+export function parseToonationDonationPayload(
+  data: unknown,
+  envelope?: unknown
+): DonationEvent | null {
   const amount = extractToonationAmount(data);
   if (amount <= 0) return null;
 
@@ -432,7 +485,7 @@ export function parseToonationDonationPayload(data: unknown): DonationEvent | nu
     amount,
     /** 통합알림창에 보이는 후원 메시지(comment) 원문 — 멤버 파싱용 토큰과 별개로 그대로 저장 */
     message: rawMessage,
-    at: new Date().toISOString(),
+    at: resolveToonationDonationAtIso(data, envelope),
     target: parsed.target,
     status: "queued",
   };

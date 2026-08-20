@@ -1,8 +1,13 @@
-export const runtime = "edge";
+export const runtime = "nodejs";
 export const revalidate = 0;
 
 import { getUserIdFromRequest } from "../../_shared/user-id";
-import { upstashGetJson, upstashSetJsonWithSetPath } from "../../_shared/upstash";
+import {
+  ensureMysqlKvBackend,
+  isPersistentKvConfigured,
+  upstashGetJson,
+  upstashSetJsonWithSetPath,
+} from "../../_shared/upstash";
 import {
   DEFAULT_SETTLEMENT_ISSUER_LINE,
   DEFAULT_SETTLEMENT_THANK_YOU,
@@ -29,6 +34,7 @@ function clampLine(value: unknown, max = 200): string {
 
 export async function GET(req: Request) {
   try {
+    await ensureMysqlKvBackend();
     const userId = getUserIdFromRequest(req);
     if (!userId) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
@@ -44,12 +50,18 @@ export async function GET(req: Request) {
         issuerLine: DEFAULT_SETTLEMENT_ISSUER_LINE,
       }
     );
-    return new Response(JSON.stringify(normalized), {
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store, max-age=0",
-      },
-    });
+    return new Response(
+      JSON.stringify({
+        ...normalized,
+        saved: Boolean(payload?.updatedAt),
+      }),
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store, max-age=0",
+        },
+      }
+    );
   } catch {
     return new Response(
       JSON.stringify(
@@ -65,6 +77,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    await ensureMysqlKvBackend();
     const userId = getUserIdFromRequest(req);
     if (!userId) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
@@ -79,7 +92,16 @@ export async function POST(req: Request) {
     });
     const payload: TextPayload = { ...normalized, updatedAt: Date.now() };
     memoryText[userId] = payload;
-    await upstashSetJsonWithSetPath(textKey(userId), payload);
+    const persisted = await upstashSetJsonWithSetPath(textKey(userId), payload);
+    if (!persisted && isPersistentKvConfigured()) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "persist_failed", ...normalized }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
     return new Response(JSON.stringify({ ok: true, ...normalized }), {
       headers: { "Content-Type": "application/json" },
     });

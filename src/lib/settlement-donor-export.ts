@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import type { Donor, DonorTarget, SettlementRecord } from "@/types";
+import { parseDonorAtMsFromDonorId } from "@/lib/donation/toonation/parse-event";
 import { getMembersForExport } from "@/lib/settlement";
 
 export type DailyLogEntry = {
@@ -55,23 +56,123 @@ function memberMaps(record: SettlementRecord) {
   return { nameById, realById };
 }
 
+function donorAtEpochMs(donor: { at?: number | string }): number {
+  const raw = donor.at;
+  if (typeof raw === "number" && Number.isFinite(raw)) return Math.floor(raw);
+  if (Number.isFinite(Number(raw))) return Math.floor(Number(raw));
+  const parsed = Date.parse(String(raw || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** daily log 전체에서 donor id별 가장 이른 at — 방송 중 스냅샷에 남은 시각 복구 */
+export function buildDailyLogMinAtByDonorId(
+  dailyLog?: Record<string, DailyLogEntry[]>,
+  beforeMs?: number
+): Map<string, number> {
+  const out = new Map<string, number>();
+  if (!dailyLog) return out;
+  for (const entries of Object.values(dailyLog)) {
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      const entryMs = new Date(entry.at).getTime();
+      if (beforeMs != null && Number.isFinite(beforeMs) && entryMs > beforeMs) continue;
+      for (const d of entry.donors || []) {
+        const id = String(d.id || "").trim();
+        if (!id) continue;
+        const at = donorAtEpochMs(d);
+        if (!Number.isFinite(at) || at <= 0) continue;
+        const prev = out.get(id);
+        if (prev == null || at < prev) out.set(id, at);
+      }
+    }
+  }
+  return out;
+}
+
+export type RepairSettlementDonorTimestampsOptions = {
+  dailyLog?: Record<string, DailyLogEntry[]>;
+  referenceDonors?: Donor[];
+  settlementCreatedAt?: number;
+};
+
+/** 정산 스냅샷·일괄 반영으로 틀어진 후원 시각 — id·daily log·현재 후원 목록에서 복구 */
+export function repairSettlementDonorTimestamps(
+  donors: Donor[],
+  opts?: RepairSettlementDonorTimestampsOptions
+): Donor[] {
+  if (!donors.length) return donors;
+  const logMinById = buildDailyLogMinAtByDonorId(opts?.dailyLog, opts?.settlementCreatedAt);
+  const refById = new Map(
+    (opts?.referenceDonors || [])
+      .map((d) => [String(d.id || "").trim(), d] as const)
+      .filter(([id]) => Boolean(id))
+  );
+
+  return donors.map((donor) => {
+    const stored = donorAtEpochMs(donor);
+    const candidates = [stored];
+    const fromId = parseDonorAtMsFromDonorId(donor.id, donor.amount);
+    if (fromId != null) candidates.push(fromId);
+    const logMin = logMinById.get(String(donor.id || "").trim());
+    if (logMin != null) candidates.push(logMin);
+    const ref = refById.get(String(donor.id || "").trim());
+    if (ref) {
+      candidates.push(donorAtEpochMs(ref));
+      const refFromId = parseDonorAtMsFromDonorId(ref.id, ref.amount);
+      if (refFromId != null) candidates.push(refFromId);
+    }
+    const valid = candidates.filter((t) => Number.isFinite(t) && t > 0);
+    if (valid.length === 0) return donor;
+    const best = Math.min(...valid);
+    return best === stored ? donor : { ...donor, at: best };
+  });
+}
+
+/** 엑셀/CSV 내보내기 직전 — 최신 daily log·후원 목록으로 시각 재보정 */
+export function donorsForSettlementExport(
+  record: SettlementRecord,
+  donors: Donor[],
+  dailyLog?: Record<string, DailyLogEntry[]>,
+  referenceDonors?: Donor[]
+): Donor[] {
+  return repairSettlementDonorTimestamps(donors, {
+    dailyLog,
+    referenceDonors,
+    settlementCreatedAt: record.createdAt,
+  });
+}
+
 /** 정산 시점 후원 스냅샷 기준 · 없으면 해당 날짜 daily log에서 복원 */
 export function resolveSettlementDonors(
   record: SettlementRecord,
-  dailyLog?: Record<string, DailyLogEntry[]>
+  dailyLog?: Record<string, DailyLogEntry[]>,
+  referenceDonors?: Donor[]
 ): Donor[] {
   const fromRecord = record.donors && record.donors.length > 0 ? record.donors : [];
-  if (fromRecord.length > 0) return fromRecord;
-  if (!dailyLog) return [];
-  const ymd = new Date(record.createdAt).toISOString().slice(0, 10);
-  const entries = dailyLog[ymd] || [];
-  if (entries.length === 0) return [];
-  const recAt = record.createdAt;
-  const beforeOrAt = entries
-    .filter((e) => new Date(e.at).getTime() <= recAt)
-    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
-  const best = beforeOrAt[0] ?? entries[entries.length - 1];
-  return best?.donors || [];
+  let donors: Donor[];
+  if (fromRecord.length > 0) {
+    donors = fromRecord;
+  } else if (!dailyLog) {
+    donors = [];
+  } else {
+    const ymd = new Date(record.createdAt).toISOString().slice(0, 10);
+    const entries = dailyLog[ymd] || [];
+    if (entries.length === 0) {
+      donors = [];
+    } else {
+      const recAt = record.createdAt;
+      const beforeOrAt = entries
+        .filter((e) => new Date(e.at).getTime() <= recAt)
+        .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+      const best = beforeOrAt[0] ?? entries[entries.length - 1];
+      donors = best?.donors || [];
+    }
+  }
+  return repairSettlementDonorTimestamps(donors, {
+    dailyLog,
+    referenceDonors,
+    settlementCreatedAt: record.createdAt,
+  });
 }
 
 /**
@@ -80,9 +181,10 @@ export function resolveSettlementDonors(
  */
 export function seedSettlementDonorsForEdit(
   record: SettlementRecord,
-  dailyLog?: Record<string, DailyLogEntry[]>
+  dailyLog?: Record<string, DailyLogEntry[]>,
+  referenceDonors?: Donor[]
 ): Donor[] {
-  const existing = resolveSettlementDonors(record, dailyLog);
+  const existing = resolveSettlementDonors(record, dailyLog, referenceDonors);
   if (existing.length > 0) {
     return existing.map((d) => ({
       ...d,
