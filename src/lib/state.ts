@@ -1,6 +1,11 @@
 import { DEFAULT_MEAL_GAUGE_EFFECTS, normalizeMealGaugeEffects } from "@/lib/meal-gauge-effects";
 import { normalizeDonationTableColumnsOptions } from "@/lib/donation-table-options";
 import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
+import {
+  isServerAuthoritativeBroadcastState,
+  readSessionBroadcastState,
+  writeSessionBroadcastState,
+} from "@/lib/server-authoritative-broadcast-state";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import { normalizeAnonymousDonorDisplayName } from "@/lib/donation/anonymous-donor-name";
 import type {
@@ -806,6 +811,22 @@ export const MISSIONS_BACKUP_KEY = "excel-broadcast-missions-backup-v1";
 export function storageKey(userId?: string | null): string {
   return userId ? `${STORAGE_KEY}:${userId}` : STORAGE_KEY;
 }
+
+/** 세션 캐시(+비권한 모드에서만 LS) — 서버 정본 모드에서는 LS 기록 금지 */
+function writeBroadcastStateSnapshot(state: AppState, userId?: string | null): void {
+  writeSessionBroadcastState(state, userId);
+  if (!isServerAuthoritativeBroadcastState() && typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(storageKey(userId), JSON.stringify(state));
+    } catch {}
+  }
+}
+
+/** admin·투네 등 즉시 iframe 반영 — LS 없이 세션 캐시 + 이벤트만 */
+export function cacheBroadcastStateSnapshot(state: AppState, userId?: string | null): void {
+  writeBroadcastStateSnapshot(state, userId);
+  notifyBroadcastStateLocalUpdated(userId, state.updatedAt);
+}
 export function dailyLogStorageKey(userId?: string | null): string {
   return userId ? `${DAILY_LOG_KEY}:${userId}` : DAILY_LOG_KEY;
 }
@@ -831,6 +852,7 @@ export function migrateLegacyLocalStorageKey(
   scopedKey: string
 ): string | null {
   if (typeof window === "undefined") return null;
+  if (isServerAuthoritativeBroadcastState()) return null;
   try {
     const scoped = window.localStorage.getItem(scopedKey);
     if (scoped) return scoped;
@@ -1569,7 +1591,12 @@ export function roundToThousand(n: number): number {
 export function loadState(userId?: string | null): AppState {
   if (typeof window === "undefined") return defaultState();
   try {
-    const raw = window.localStorage.getItem(storageKey(userId));
+    const raw = isServerAuthoritativeBroadcastState()
+      ? (() => {
+          const cached = readSessionBroadcastState(userId);
+          return cached ? JSON.stringify(cached) : null;
+        })()
+      : window.localStorage.getItem(storageKey(userId));
     if (!raw) return defaultState();
     const data = JSON.parse(raw) as AppState;
     data.members = (() => { const v = ensureMembers(data.members); return v.length > 0 ? v : defaultMembers().map(normalizeMember); })();
@@ -2422,18 +2449,13 @@ export function saveState(state: AppState, userId?: string | null) {
       normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() })),
       userId
     );
-    const json = JSON.stringify(next);
-    /** 오버레이 iframe이 서버 응답 전에 읽도록 로컬은 즉시 기록 */
-    try {
-      window.localStorage.setItem(storageKey(userId), json);
-    } catch {}
+    /** 오버레이 iframe이 서버 응답 전에 읽도록 세션 캐시 즉시 반영(LS 기록 없음) */
+    writeBroadcastStateSnapshot(next, userId);
     notifyBroadcastStateLocalUpdated(userId, next.updatedAt);
     void enqueueServerSave(JSON.stringify(appStatePayloadForApi(next, userId)), userId, next)
       .then((result) => {
         if (result.ok) {
-          try {
-            window.localStorage.setItem(storageKey(userId), json);
-          } catch {}
+          writeBroadcastStateSnapshot(next, userId);
         }
       })
       .catch(() => {});
@@ -2712,11 +2734,7 @@ export async function saveStateAsync(
     ...saveOpts,
     ...(omitDonations ? { omitDonationFields: true } : {}),
   };
-  const json = JSON.stringify(guarded);
-  /** 테마 변경 직후 미리보기가 멤버를 잃지 않게 서버 대기 전에 LS 반영 */
-  try {
-    window.localStorage.setItem(storageKey(userId), json);
-  } catch {}
+  writeBroadcastStateSnapshot(guarded, userId);
   notifyBroadcastStateLocalUpdated(userId, guarded.updatedAt);
   try {
     const result = await enqueueServerSave(
@@ -2725,9 +2743,7 @@ export async function saveStateAsync(
       guarded
     );
     if (result.ok) {
-      try {
-        window.localStorage.setItem(storageKey(userId), json);
-      } catch {}
+      writeBroadcastStateSnapshot(guarded, userId);
     }
     return result;
   } catch {
@@ -2828,9 +2844,9 @@ export async function saveOverlayPresetsPatchAsync(
     )
   );
   try {
-    /** placeholder 멤버로 LS를 덮어 OBS·관리자 탭 동기화를 망가뜨리지 않음 */
+    /** placeholder 멤버로 캐시를 덮어 OBS·관리자 탭 동기화를 망가뜨리지 않음 */
     if (hasMeaningfulMemberRoster(mergedLocal) || !existingMeaningful) {
-      window.localStorage.setItem(storageKey(userId), JSON.stringify(mergedLocal));
+      writeBroadcastStateSnapshot(mergedLocal, userId);
     }
   } catch {}
   notifyBroadcastStateLocalUpdated(userId, mergedLocal.updatedAt);
@@ -2931,9 +2947,7 @@ export async function saveVisualSettingsPatchAsync(
     settlementResetAt: foundation?.settlementResetAt ?? local?.settlementResetAt ?? base.settlementResetAt,
     updatedAt: now,
   });
-  try {
-    window.localStorage.setItem(storageKey(userId), JSON.stringify(mergedLocal));
-  } catch {}
+  writeBroadcastStateSnapshot(mergedLocal, userId);
   notifyBroadcastStateLocalUpdated(userId, now);
   const apiPatch: Record<string, unknown> = { updatedAt: now };
   for (const key of Object.keys(patch) as (keyof VisualSettingsPatch)[]) {
@@ -2974,9 +2988,7 @@ export async function saveGeneralTimerPatchAsync(
     ...(extras?.overlayPresets ? { overlayPresets: extras.overlayPresets } : {}),
     updatedAt: now,
   });
-  try {
-    window.localStorage.setItem(storageKey(userId), JSON.stringify(mergedLocal));
-  } catch {}
+  writeBroadcastStateSnapshot(mergedLocal, userId);
   notifyBroadcastStateLocalUpdated(userId, now);
   const patch: Record<string, unknown> = {
     updatedAt: now,
@@ -3016,9 +3028,7 @@ export async function saveMatchTimerPatchAsync(
     ...(extras?.matchTimerEnabled ? { matchTimerEnabled: extras.matchTimerEnabled } : {}),
     updatedAt: now,
   });
-  try {
-    window.localStorage.setItem(storageKey(userId), JSON.stringify(mergedLocal));
-  } catch {}
+  writeBroadcastStateSnapshot(mergedLocal, userId);
   notifyBroadcastStateLocalUpdated(userId, now);
   const patch: Record<string, unknown> = {
     updatedAt: now,
@@ -3065,9 +3075,7 @@ export async function saveObsTextRegistryAsync(
         updatedAt: now,
       })
     );
-    try {
-      window.localStorage.setItem(storageKey(userId), JSON.stringify(mergedLocal));
-    } catch {}
+    writeBroadcastStateSnapshot(mergedLocal, userId);
   }
   notifyBroadcastStateLocalUpdated(userId, now);
   const patch = {
@@ -3232,9 +3240,7 @@ export async function saveSigSalesManualStateAsync(
   const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
   const baseLocal = loadState(userId);
   const mergedLocal = mergeSigSalesManualIntoLocalState(baseLocal || next, next, options);
-  try {
-    window.localStorage.setItem(storageKey(userId), JSON.stringify(mergedLocal));
-  } catch {}
+  writeBroadcastStateSnapshot(mergedLocal, userId);
   try {
     const patch = buildSigSalesManualApiPatch(next, userId, options);
     return await enqueueServerSave(JSON.stringify(patch), userId, mergedLocal);
@@ -3590,9 +3596,13 @@ async function doLoadStateFromApi(
       }
       if (typeof window !== "undefined") {
         try {
-          const existing = loadState(userId);
-          if (!shouldAvoidOverwritingLocalStateWithRemote(existing, toPersist)) {
-            window.localStorage.setItem(storageKey(userId), JSON.stringify(toPersist));
+          if (isServerAuthoritativeBroadcastState()) {
+            writeBroadcastStateSnapshot(toPersist, userId);
+          } else {
+            const existing = loadState(userId);
+            if (!shouldAvoidOverwritingLocalStateWithRemote(existing, toPersist)) {
+              writeBroadcastStateSnapshot(toPersist, userId);
+            }
           }
         } catch {}
       }

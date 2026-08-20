@@ -2,6 +2,7 @@
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers, mergeLocalMemberIdentityOntoRemote, normalizeDonorsArray, membersDifferByIds, isMemberRosterStrictSuperset, hasCustomTimerDisplayStyles, isDefaultLikeTimerDisplayStyle, isIntentionalDonorListShrink, totalCombined } from "@/lib/state";
+import { isServerAuthoritativeBroadcastState, readSessionBroadcastState } from "@/lib/server-authoritative-broadcast-state";
 import {
   countableDonorTotal,
   repairMemberTotalsForDonorRoster,
@@ -471,6 +472,9 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
   const _sse = useSSEConnection(onSSE);
   const readLocalStateIfExists = useCallback((): AppState | null => {
     if (typeof window === "undefined") return null;
+    if (isServerAuthoritativeBroadcastState()) {
+      return readSessionBroadcastState(userId) ?? loadState(userId ?? undefined);
+    }
     try {
       const key = storageKey(userId);
       const raw = window.localStorage.getItem(key);

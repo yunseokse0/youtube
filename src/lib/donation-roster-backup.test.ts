@@ -3,6 +3,7 @@ import {
   applyDonationRosterBackupToState,
   buildDonationRosterBackupPayload,
   shouldRestoreDonationRosterFromBackup,
+  unionAppStateDonorsFromBackupIfRicher,
   type DonationRosterBackupPayload,
 } from "@/lib/donation-roster-backup";
 import { defaultState, isDefaultPlaceholderMemberList } from "@/lib/state";
@@ -190,6 +191,21 @@ describe("donation-roster-backup", () => {
     const next = applyDonationRosterBackupToState(defaultState(), backup);
     expect(next.donors).toHaveLength(1);
     expect(next.members[0]?.account).toBe(60000);
+  });
+
+  it("unionAppStateDonorsFromBackupIfRicher merges when main empty but backup has donors", () => {
+    const backup = buildDonationRosterBackupPayload(richState())!;
+    const emptyMembers: AppState = {
+      ...defaultState(),
+      members: [
+        { id: "m1", name: "사기", account: 0, toon: 0, contribution: 0 },
+        { id: "m2", name: "박수아", account: 0, toon: 0, contribution: 0 },
+      ],
+      donors: [],
+    };
+    const merged = unionAppStateDonorsFromBackupIfRicher(emptyMembers, backup);
+    expect(merged.donors.length).toBe(1);
+    expect(merged.members.find((m) => m.id === "m1")?.account).toBe(60000);
   });
 
   it("filters pre-reset donors when applying backup onto reset state", () => {

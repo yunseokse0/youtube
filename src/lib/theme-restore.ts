@@ -9,6 +9,10 @@ import {
   totalCombined,
   type AppState,
 } from "@/lib/state";
+import {
+  isServerAuthoritativeBroadcastState,
+  readSessionBroadcastState,
+} from "@/lib/server-authoritative-broadcast-state";
 
 export type ThemeRestoreCandidate = {
   source: string;
@@ -113,7 +117,10 @@ export function collectThemeRestoreCandidates(userId?: string | null): ThemeRest
   if (typeof window === "undefined") return [];
   const out: ThemeRestoreCandidate[] = [];
 
-  const main = candidateFromState(readJsonRecord(window.localStorage.getItem(storageKey(userId))), "브라우저 방송 상태");
+  const mainRaw = isServerAuthoritativeBroadcastState()
+    ? (readSessionBroadcastState(userId) as Record<string, unknown> | null)
+    : readJsonRecord(window.localStorage.getItem(storageKey(userId)));
+  const main = candidateFromState(mainRaw, "브라우저 방송 상태");
   if (main) out.push(main);
 
   try {

@@ -29,11 +29,18 @@ import {
   readLocalBroadcastState,
   subscribeBroadcastStateLocalUpdated,
 } from "@/lib/broadcast-state-local-sync";
+import {
+  isServerAuthoritativeBroadcastState,
+  readSessionBroadcastState,
+} from "@/lib/server-authoritative-broadcast-state";
 
 function readLocalStateIfExists(userId?: string): AppState | null {
   if (typeof window === "undefined") return null;
   /** u= 없이 legacy LS(타계정 잔여)를 읽지 않음 */
   if (!String(userId || "").trim()) return null;
+  if (isServerAuthoritativeBroadcastState()) {
+    return readSessionBroadcastState(userId) ?? loadState(userId ?? undefined);
+  }
   try {
     const raw = window.localStorage.getItem(storageKey(userId));
     if (!raw) return null;

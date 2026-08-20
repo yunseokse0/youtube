@@ -1,4 +1,8 @@
 import { loadState, storageKey, type AppState } from "@/lib/state";
+import {
+  isServerAuthoritativeBroadcastState,
+  readSessionBroadcastState,
+} from "@/lib/server-authoritative-broadcast-state";
 
 export const BROADCAST_STATE_LOCAL_UPDATED = "broadcast-state-local-updated";
 export const OVERLAY_PRESETS_LOCAL_UPDATED = "overlay-presets-local-updated";
@@ -125,6 +129,9 @@ export function notifyAdminPreviewDonorsUpdated(
 export function readLocalBroadcastState(userId?: string): AppState | null {
   if (typeof window === "undefined") return null;
   try {
+    if (isServerAuthoritativeBroadcastState()) {
+      return readSessionBroadcastState(userId) ?? loadState(userId ?? undefined);
+    }
     const raw = window.localStorage.getItem(storageKey(userId));
     if (!raw) return null;
     return loadState(userId ?? undefined);

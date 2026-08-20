@@ -10,6 +10,8 @@ import {
   mergeDonationReplaceForPersist,
   mergeStatePreservingDonorsUntilSettlementReset,
 } from "@/lib/donation/merge-donation-apply-base";
+import { loadDonationRosterBackupFromKv } from "@/lib/donation-roster-backup-redis";
+import { unionAppStateDonorsFromBackupIfRicher } from "@/lib/donation-roster-backup-core";
 import { snapshotTimerForPersist } from "@/lib/timer-utils";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { getUserIdFromRequest } from "../_shared/user-id";
@@ -82,6 +84,14 @@ export async function saveAppStateForRoulette(
   }
 
   let incoming = next;
+  if (kvOk) {
+    try {
+      const backup = await loadDonationRosterBackupFromKv(userId);
+      incoming = unionAppStateDonorsFromBackupIfRicher(incoming, backup);
+    } catch {
+      /* noop */
+    }
+  }
   if (
     !opts?.allowEmptyRosterWipe &&
     existing &&

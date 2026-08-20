@@ -6,6 +6,7 @@ import {
   totalCombined,
 } from "@/lib/state";
 import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
+import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base";
 
 const STORAGE_KEY_BASE = "excel-broadcast-donation-roster-v1";
 
@@ -138,4 +139,33 @@ export function enrichAppStateWithDonationRosterBackupPayload(
     };
   }
   return { state, restoredFromBackup: false };
+}
+
+/**
+ * 투네·apply 저장 직전 — 메인 donors 가 비었거나 백업보다 적을 때 id union.
+ * (UI·메모리만 0인데 백업에 4건 → 1건만 저장되어 서버가 초기화되던 회귀 방지)
+ */
+export function unionAppStateDonorsFromBackupIfRicher(
+  state: AppState,
+  backup: DonationRosterBackupPayload | null | undefined
+): AppState {
+  const normalized = normalizeDonationRosterBackupPayload(backup ?? null);
+  if (!normalized) return state;
+  const curDonors = normalizeDonorsArray(state.donors);
+  if (normalized.donorsCount <= curDonors.length) return state;
+  const curReset = Number(state.settlementResetAt || 0);
+  const backupReset = Number(normalized.settlementResetAt || 0);
+  if (curReset > backupReset) return state;
+  if (
+    curDonors.length > 0 &&
+    hasMeaningfulMemberRoster(state) &&
+    !shouldRestoreDonationRosterFromBackup(state, normalized)
+  ) {
+    return state;
+  }
+  const withBackup = applyDonationRosterBackupToState(
+    { ...state, members: state.members },
+    normalized
+  );
+  return mergeDonationApplyBase(state, withBackup) ?? state;
 }

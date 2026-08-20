@@ -10,7 +10,8 @@ import {
   applyDonationToAppState,
   isDuplicateDonationEvent,
 } from "./apply-donation-state";
-import { enrichAppStateWithDonationRosterBackupFromKv } from "@/lib/donation-roster-backup-redis";
+import { enrichAppStateWithDonationRosterBackupFromKv, loadDonationRosterBackupFromKv } from "@/lib/donation-roster-backup-redis";
+import { unionAppStateDonorsFromBackupIfRicher } from "@/lib/donation-roster-backup-core";
 import { persistDonationApplyLikeToonation } from "@/lib/donation/persist-donation-like-toon";
 import { enqueueDonationEvent, purgeDonationQueueForEvent } from "./toonation/enqueue-donation";
 import { readToonationListenerConfig } from "./toonation/listener-config-store";
@@ -104,8 +105,10 @@ export async function tryAutoApplyToonationDonationOnServer(
       userId,
       freshState
     );
+    const backup = await loadDonationRosterBackupFromKv(userId);
+    const stateForApply = unionAppStateDonorsFromBackupIfRicher(enrichedState, backup);
     const aliases = await readDonationAliases(userId);
-    const result = applyDonationToAppState(enrichedState, event, aliases);
+    const result = applyDonationToAppState(stateForApply, event, aliases);
     if (!result.ok) {
       if (result.reason === "duplicate") return "applied";
       if (result.reason === "paused") {

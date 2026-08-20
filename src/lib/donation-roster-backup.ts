@@ -22,6 +22,7 @@ export {
   buildDonationRosterBackupPayload,
   donationRosterBackupKey,
   shouldRestoreDonationRosterFromBackup,
+  unionAppStateDonorsFromBackupIfRicher,
   type DonationRosterBackupPayload,
 } from "@/lib/donation-roster-backup-core";
 

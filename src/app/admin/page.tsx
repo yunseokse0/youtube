@@ -16,6 +16,7 @@ import {
   loadState,
   saveState,
   saveStateAsync,
+  cacheBroadcastStateSnapshot,
   saveOverlayPresetsPatchAsync,
   saveObsTextRegistryAsync,
   saveGeneralTimerPatchAsync,
@@ -52,6 +53,7 @@ import {
   donorsListContentDiffers,
   isIntentionalDonorListShrink,
   rebumpDonorsPastSettlementReset,
+  filterDonorsAfterSettlementReset,
   ensureMissionItems,
   appendDailyLog,
   loadDailyLogFromApi,
@@ -599,6 +601,8 @@ export default function AdminPage() {
   const themeRestorePromptedRef = useRef(false);
   /** 후원 0건·멤버 합계 잔존 시 자동 복구는 세션당 1회 */
   const autoOrphanDonorRestoreAttemptedRef = useRef(false);
+  /** storage-health: 서버 donors > UI donors 불일치 자동 복구 */
+  const serverDonorMismatchRestoreAttemptedRef = useRef(false);
   /** 주기 폴링에서 didPreserve로 서버에 다시 올릴 때 최소 간격 — 연속 POST·SSE 대기 완화 */
   const lastPollMergePersistAtRef = useRef<number>(0);
   /** 다른 탭·창 `storage` 반영 시 즉시 POST하면 탭 간 ping-pong으로 /api/state·/api/events 폭주 가능 */
@@ -1504,6 +1508,7 @@ export default function AdminPage() {
   useEffect(() => {
     lastPollMergePersistAtRef.current = 0;
     lastStorageMergePersistAtRef.current = 0;
+    serverDonorMismatchRestoreAttemptedRef.current = false;
   }, [user?.id]);
   useEffect(() => {
     syncStatusRef.current = syncStatus;
@@ -1552,19 +1557,42 @@ export default function AdminPage() {
               Math.max(0, Math.floor(Number(m.toon || 0))) === 0
           ));
       if (localCleared && (incomingDonorsNorm.length > 0 || totalCombined(incoming) > 0)) {
+        /** 정산 리셋 직후에만 구 후원(at < reset) 재유입을 막음. 서버에 아직 남은 실후원은 복구 */
+        const preResetDonorsOnly =
+          localResetAt > 0 &&
+          filterDonorsAfterSettlementReset(incomingDonorsNorm, localResetAt).length === 0;
+        if (preResetDonorsOnly) {
+          return {
+            merged: {
+              ...incoming,
+              ...local,
+              members: local.members,
+              memberPositions: normalizeMemberPositions(local.memberPositions, local.members),
+              donors: [],
+              mealBattle: local.mealBattle ?? incoming.mealBattle,
+              overlayPresets: local.overlayPresets ?? incoming.overlayPresets,
+              missions: local.missions ?? incoming.missions,
+              updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
+            },
+            didPreserve: true,
+          };
+        }
+        const rosterMembers = local.members?.length ? local.members : incoming.members;
         return {
-          merged: {
+          merged: syncMemberTotalsFromDonors({
             ...incoming,
-            ...local,
-            members: local.members,
-            memberPositions: normalizeMemberPositions(local.memberPositions, local.members),
-            donors: [],
+            members: rosterMembers,
+            memberPositions: normalizeMemberPositions(
+              local.memberPositions ?? incoming.memberPositions,
+              rosterMembers
+            ),
+            donors: incomingDonorsNorm,
             mealBattle: local.mealBattle ?? incoming.mealBattle,
             overlayPresets: local.overlayPresets ?? incoming.overlayPresets,
             missions: local.missions ?? incoming.missions,
             updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
-          },
-          didPreserve: true,
+          }),
+          didPreserve: false,
         };
       }
     }
@@ -2248,7 +2276,7 @@ export default function AdminPage() {
         }
         setState(toApply);
         try {
-          window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toApply));
+          cacheBroadcastStateSnapshot(toApply, user?.id);
         } catch {}
         if (Array.isArray(toApply.overlayPresets) && toApply.overlayPresets.length > 0) {
           setPresets(toApply.overlayPresets as OverlayPreset[]);
@@ -2404,6 +2432,76 @@ export default function AdminPage() {
     })();
   }, [user, state.donors, dailyLog, mergeIncomingStateSafely]);
 
+  /** 서버 MySQL에 donors 가 있는데 UI·LS만 비었을 때 강제 복구 (storage-health 불일치) */
+  const applyDonorsFromServerMainState = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!user) return false;
+      const remote = await loadStateFromApi(user.id, { forceFull: true });
+      if (!remote) return false;
+      const remoteDonors = normalizeDonorsArray(remote.donors);
+      if (remoteDonors.length === 0) return false;
+      const local = stateRef.current;
+      const localDonors = normalizeDonorsArray(local.donors);
+      if (localDonors.length >= remoteDonors.length && totalCombined(local) >= totalCombined(remote)) {
+        return false;
+      }
+      const resetAt = Number(local.settlementResetAt || remote.settlementResetAt || 0);
+      const rosterMembers = pickMemberRosterPreferNewer(local, remote);
+      const next = syncMemberTotalsFromDonors({
+        ...local,
+        ...remote,
+        members: rosterMembers,
+        memberPositions: normalizeMemberPositions(
+          local.memberPositions ?? remote.memberPositions,
+          rosterMembers
+        ),
+        donors: rebumpDonorsPastSettlementReset(remoteDonors, resetAt),
+        updatedAt: Math.max(Number(remote.updatedAt || 0), Date.now()),
+        donorRankingsUpdatedAt: Math.max(
+          Number(local.donorRankingsUpdatedAt || 0),
+          Number(remote.donorRankingsUpdatedAt || 0),
+          Date.now()
+        ),
+      });
+      setState(next);
+      stateRef.current = next;
+      stateUpdatedAtRef.current = next.updatedAt || 0;
+      lastAppliedRemoteUpdatedAtRef.current = next.updatedAt || 0;
+      pendingUnsyncedRef.current = false;
+      donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
+      try {
+        cacheBroadcastStateSnapshot(next, user.id);
+      } catch {}
+      void saveStateAsync(next, user.id, { donorsAuthoritative: true }).then((r) => {
+        if (r.ok) setSyncStatus(r.storageFallback ? "error" : "synced");
+      });
+      notifyBroadcastStateLocalUpdated(user.id, next.updatedAt);
+      if (!opts?.silent) {
+        setSigExcelResult(
+          `서버 후원 ${remoteDonors.length}건을 화면에 복구했습니다 (합계 ${totalCombined(next).toLocaleString("ko-KR")}원).`
+        );
+      }
+      return true;
+    },
+    [user]
+  );
+
+  useEffect(() => {
+    if (!user) return;
+    const serverCount = Number(storageHealth?.mainState?.donorsCount || 0);
+    const localCount = normalizeDonorsArray(state.donors).length;
+    if (serverCount <= 0 || localCount >= serverCount) return;
+    if (serverDonorMismatchRestoreAttemptedRef.current) return;
+    serverDonorMismatchRestoreAttemptedRef.current = true;
+    void applyDonorsFromServerMainState({ silent: true }).then((ok) => {
+      if (ok) {
+        setSigExcelResult(
+          `화면 후원이 0인데 서버에 ${serverCount}건이 있어 자동 복구했습니다.`
+        );
+      }
+    });
+  }, [user, storageHealth, state.donors, applyDonorsFromServerMainState]);
+
   useEffect(() => {
     const id = window.setInterval(() => setTimerUiNow(Date.now()), 1000);
     return () => window.clearInterval(id);
@@ -2476,7 +2574,7 @@ export default function AdminPage() {
       stateRef.current = healState;
       setState(healState);
       try {
-        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(healState));
+        cacheBroadcastStateSnapshot(healState, user?.id);
       } catch {}
       void saveStateAsync(healState, user?.id, {
         donorsAuthoritative: true,
@@ -2529,7 +2627,12 @@ export default function AdminPage() {
           !opts?.forceDonorMerge &&
           !remoteSettlementWins
         ) {
-          return false;
+          const preResetDonorsOnly =
+            localResetAt > 0 &&
+            filterDonorsAfterSettlementReset(remoteDonors, localResetAt).length === 0;
+          if (preResetDonorsOnly) {
+            return false;
+          }
         }
       }
       /**
@@ -2787,7 +2890,7 @@ export default function AdminPage() {
         } catch {}
       }
       try {
-        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toApply));
+        cacheBroadcastStateSnapshot(toApply, user?.id);
       } catch {}
       /** 계좌 saveStateAsync 와 동일 — 미리보기 iframe·같은 탭 엑셀표가 즉시 멤버 투네/계좌 반영 */
       notifyBroadcastStateLocalUpdated(user?.id, toApply.updatedAt);
@@ -2980,7 +3083,7 @@ export default function AdminPage() {
       /** LS에는 테마만 얹은 실데이터 스냅샷을 기록 — 0원 전체 덮어쓰기 금지 */
       try {
         const lsSafe = applyThemeRestorePatch(lsSnap, candidate);
-        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(lsSafe));
+        cacheBroadcastStateSnapshot(lsSafe, user?.id);
       } catch {}
       setPresetRev((r) => r + 1);
       setSigExcelResult(`테마 복구 완료 (${candidate.source}): ${summary.join(" · ") || "완료"}`);
@@ -2998,7 +3101,7 @@ export default function AdminPage() {
     setState(healed);
     stateRef.current = healed;
     try {
-      window.localStorage.setItem(storageKey(user?.id), JSON.stringify(healed));
+      cacheBroadcastStateSnapshot(healed, user?.id);
     } catch {}
     /** 후원만 되살림 — 서버엔 테마 없는 PATCH로 전체 wipe 하지 않음 */
     persistState(healed, { includeDonationFields: true });
@@ -3736,7 +3839,7 @@ export default function AdminPage() {
       membersAuthoritativeSaveUntilRef.current = Date.now() + 120_000;
       pendingUnsyncedRef.current = true;
       try {
-        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(next));
+        cacheBroadcastStateSnapshot(next, user?.id);
       } catch {}
       notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
       /**
@@ -3889,7 +3992,7 @@ export default function AdminPage() {
         membersAuthoritativeSaveUntilRef.current = Date.now() + 120_000;
         pendingUnsyncedRef.current = true;
         try {
-          window.localStorage.setItem(storageKey(user?.id), JSON.stringify(next));
+          cacheBroadcastStateSnapshot(next, user?.id);
         } catch {}
         notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
         void saveStateAsync(next, user?.id, {
@@ -3973,7 +4076,7 @@ export default function AdminPage() {
           ? { ...next, donors: donorsForSave }
           : next;
       try {
-        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toPersist));
+        cacheBroadcastStateSnapshot(toPersist, user?.id);
       } catch {}
       notifyBroadcastStateLocalUpdated(user?.id, toPersist.updatedAt);
       /** persistState 큐 경합을 피하고 멤버 권위 저장을 즉시 보냄 */
@@ -4013,7 +4116,7 @@ export default function AdminPage() {
             ),
           };
           stateRef.current = stamped;
-          window.localStorage.setItem(storageKey(user?.id), JSON.stringify(stamped));
+          cacheBroadcastStateSnapshot(stamped, user?.id);
           notifyBroadcastStateLocalUpdated(user?.id, stamped.updatedAt);
         } catch {
           notifyBroadcastStateLocalUpdated(user?.id, r.serverUpdatedAt ?? Date.now());
@@ -4726,7 +4829,7 @@ export default function AdminPage() {
             if (remoteAfterReset) {
               setState(remoteAfterReset);
               try {
-                window.localStorage.setItem(storageKey(uid), JSON.stringify(remoteAfterReset));
+                cacheBroadcastStateSnapshot(remoteAfterReset, uid);
               } catch {}
             }
           } catch (e) {
@@ -4831,7 +4934,7 @@ export default function AdminPage() {
       if (remote) {
         setState(remote);
         try {
-          window.localStorage.setItem(storageKey(uid), JSON.stringify(remote));
+          cacheBroadcastStateSnapshot(remote, uid);
         } catch {}
       }
       if (useForcedCinematic) {
@@ -4859,7 +4962,7 @@ export default function AdminPage() {
         if (afterFinish) {
           setState(afterFinish);
           try {
-            window.localStorage.setItem(storageKey(uid), JSON.stringify(afterFinish));
+            cacheBroadcastStateSnapshot(afterFinish, uid);
           } catch {}
         }
         const forcedWinners = Array.isArray(j.selectedSigs) ? j.selectedSigs : [];
@@ -4922,7 +5025,7 @@ export default function AdminPage() {
       if (remote) {
         setState(remote);
         try {
-          window.localStorage.setItem(storageKey(uid), JSON.stringify(remote));
+          cacheBroadcastStateSnapshot(remote, uid);
         } catch {}
       }
       setRouletteActionMessage(
@@ -6607,7 +6710,7 @@ export default function AdminPage() {
       setPresets(nextPresets);
       try {
         window.localStorage.setItem(presetStorageKey, JSON.stringify(nextPresets));
-        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(next));
+        cacheBroadcastStateSnapshot(next, user?.id);
         notifyOverlayPresetsLocalUpdated();
         notifyBroadcastStateLocalUpdated(user?.id, now);
       } catch {}
@@ -6712,7 +6815,7 @@ export default function AdminPage() {
       donationAuthoritativeSaveUntilRef.current = Date.now() + 45_000;
       pendingUnsyncedRef.current = false;
       try {
-        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(bumped));
+        cacheBroadcastStateSnapshot(bumped, user?.id);
       } catch {}
       notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
       setState(bumped);
@@ -6833,7 +6936,7 @@ export default function AdminPage() {
         donationAuthoritativeSaveUntilRef.current = Date.now() + 60_000;
         pendingUnsyncedRef.current = false;
         try {
-          window.localStorage.setItem(storageKey(user?.id), JSON.stringify(bumped));
+          cacheBroadcastStateSnapshot(bumped, user?.id);
         } catch {}
         notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
         setState(bumped);
@@ -7039,7 +7142,7 @@ export default function AdminPage() {
     pendingUnsyncedRef.current = Boolean(opts?.awaitingServerSave);
     stateRef.current = preserved;
     try {
-      window.localStorage.setItem(storageKey(user?.id), JSON.stringify(preserved));
+      cacheBroadcastStateSnapshot(preserved, user?.id);
     } catch {}
     notifyBroadcastStateLocalUpdated(user?.id, preserved.updatedAt);
     return preserved;
@@ -7077,7 +7180,7 @@ export default function AdminPage() {
       donationAuthoritativeSaveUntilRef.current = Date.now() + protectionMs;
       pendingUnsyncedRef.current = false;
       try {
-        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(bumped));
+        cacheBroadcastStateSnapshot(bumped, user?.id);
       } catch {}
       notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
       setState(bumped);
@@ -8055,7 +8158,7 @@ export default function AdminPage() {
                 updatedAt: next.updatedAt,
               }
             : next;
-          window.localStorage.setItem(storageKey(user?.id), JSON.stringify(stamped));
+          cacheBroadcastStateSnapshot(stamped, user?.id);
           notifyBroadcastStateLocalUpdated(user?.id, stamped.updatedAt);
         } catch {}
         persistState(
@@ -8427,7 +8530,7 @@ export default function AdminPage() {
       lastLocalPersistAtRef.current = resetAt;
       pendingUnsyncedRef.current = true;
       try {
-        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(nextWithReset));
+        cacheBroadcastStateSnapshot(nextWithReset, user?.id);
         window.localStorage.setItem(presetStorageKey, JSON.stringify(resetPresets));
       } catch {}
       const r = await saveStateAsync(nextWithReset, user?.id, { settlementReset: true });
@@ -8524,7 +8627,7 @@ export default function AdminPage() {
   };
   const onFetchLatestFromServer = async () => {
     setSyncStatus("loading");
-    const remote = await loadStateFromApi(user?.id);
+    const remote = await loadStateFromApi(user?.id, { forceFull: true });
     if (!remote) {
       setSyncStatus("error");
       if (typeof window !== "undefined") {
@@ -8537,6 +8640,15 @@ export default function AdminPage() {
       return;
     }
     const local = stateRef.current;
+    const localDonors = normalizeDonorsArray(local.donors);
+    const remoteDonors = normalizeDonorsArray(remote.donors);
+    if (localDonors.length === 0 && remoteDonors.length > 0) {
+      const ok = await applyDonorsFromServerMainState();
+      if (ok) {
+        setSyncStatus("synced");
+        return;
+      }
+    }
     const { merged, didPreserve } = mergeIncomingStateSafely(remote, local);
 
     if (
@@ -8575,7 +8687,7 @@ export default function AdminPage() {
       setPresets(toApply.overlayPresets as OverlayPreset[]);
       try { window.localStorage.setItem(presetStorageKey, JSON.stringify(toApply.overlayPresets)); } catch {}
     }
-    try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toApply)); } catch {}
+    cacheBroadcastStateSnapshot(toApply, user?.id);
     setSyncStatus("synced");
   };
   const runPullRefresh = async () => {
@@ -8676,7 +8788,7 @@ export default function AdminPage() {
     stateRef.current = snapshot;
     setState(snapshot);
     try {
-      window.localStorage.setItem(storageKey(user?.id), JSON.stringify(snapshot));
+      cacheBroadcastStateSnapshot(snapshot, user?.id);
     } catch {}
     await saveStateAsync(snapshot, user?.id, {
       donorsAuthoritative: true,
@@ -9011,6 +9123,29 @@ export default function AdminPage() {
         </div>
         {isAdminNavSectionVisible("dashboard") && (
         <section id="dashboard-summary" className={`${panelCardClass} p-4 mb-6`}>
+          {typeof storageHealth?.mainState?.donorsCount === "number" &&
+          storageHealth.mainState.donorsCount > 0 &&
+          normalizeDonorsArray(state.donors).length === 0 ? (
+            <div className="mb-3 rounded-lg border border-rose-400/55 bg-rose-950/35 px-3 py-2 text-sm text-rose-100">
+              서버(MySQL)에는 후원 {storageHealth.mainState.donorsCount}건이 있는데 화면만 0입니다.
+              동기화 병합 오류일 수 있습니다.{" "}
+              <button
+                type="button"
+                className="underline font-semibold text-rose-50"
+                onClick={() => void applyDonorsFromServerMainState()}
+              >
+                서버 후원 복구
+              </button>
+              {" · "}
+              <button
+                type="button"
+                className="underline font-semibold text-rose-50"
+                onClick={onFetchLatestFromServer}
+              >
+                서버에서 가져오기
+              </button>
+            </div>
+          ) : null}
           {isOrphanedDonationState(state) && (
             <div className="mb-3 rounded-lg border border-amber-400/50 bg-amber-950/40 px-3 py-2 text-sm text-amber-100">
               후원 건수는 0인데 멤버 합계만 남아 있습니다. 엑셀표·후원순위가 0으로 보일 수 있습니다.

@@ -28,6 +28,10 @@ import {
   type AppState,
 } from "@/lib/state";
 import { mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
+import {
+  isServerAuthoritativeBroadcastState,
+  readSessionBroadcastState,
+} from "@/lib/server-authoritative-broadcast-state";
 
 import {
   shouldSuppressOverlaySseConnection,
@@ -120,12 +124,13 @@ function mergeTerritoryLogsPreferFresher(
   return [...byId.values()].sort((a, b) => Number(a.at || 0) - Number(b.at || 0));
 }
 
-/** 관리자 iframe — API 폴링이 서버 구 스냅샷으로 HS·후원 미리보기를 덮지 않게 LS 힌트 병합 */
+/** 관리자 iframe — 서버 정본 모드에서는 LS/세션 힌트로 서버 스냅샷을 덮지 않음 */
 function mergeAdminPreviewLocalHintOntoRemote(
   remote: AppState,
   userId?: string,
   graceMs = 45_000
 ): AppState {
+  if (isServerAuthoritativeBroadcastState()) return remote;
   const local = readLocalBroadcastState(userId);
   if (!local) return remote;
   const localAt = Number(local.updatedAt || 0);
@@ -259,7 +264,9 @@ function overlaySyncSignatureForPick(
 
 function readLocalStateIfExists(userId?: string): AppState | null {
   if (typeof window === "undefined") return null;
-
+  if (isServerAuthoritativeBroadcastState()) {
+    return readSessionBroadcastState(userId) ?? loadState(userId ?? undefined);
+  }
   try {
     const raw = window.localStorage.getItem(storageKey(userId));
 
