@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { SettlementDeleteLog, SettlementRecord, deleteSettlementRecordAndSync, loadSettlementDeleteLogs, loadSettlementRecords, loadSettlementRecordsPreferApi, mergeSettlementRecords, normalizeSettlementRecords, recoverSettlementRecordsFromAllSources, saveSettlementRecords, saveSettlementRecordsToApi } from "@/lib/settlement";
 import { loadDailyLog, loadDailyLogFromApi, Donor } from "@/lib/state";
 import { downloadBlobFile } from "@/lib/download";
+import { buildSettlementRecordFromDonorExportFile } from "@/lib/settlement-donor-import";
 
 function formatMan( n: number ): string {
   if (n >= 1_0000_0000) return `${(n / 1_0000_0000).toFixed(1)}억`;
@@ -27,6 +28,7 @@ export default function SettlementsPage() {
   const [recovering, setRecovering] = useState(false);
   const autoRecoverAttemptedRef = useRef(false);
   const fileInputId = "settlement-import-json";
+  const xlsxInputId = "settlement-import-xlsx";
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -119,6 +121,37 @@ export default function SettlementsPage() {
 
   const onImportClick = () => {
     const input = document.getElementById(fileInputId) as HTMLInputElement | null;
+    input?.click();
+  };
+
+  const onImportXlsxFile = async (file: File) => {
+    if (!user) return;
+    setImporting(true);
+    try {
+      const rec = await buildSettlementRecordFromDonorExportFile(file, {
+        recordId: undefined,
+      });
+      if (!rec) {
+        alert("엑셀에서 건별내역을 읽지 못했습니다.\n「멤버별후원자」내보내기 xlsx인지 확인해 주세요.");
+        return;
+      }
+      const merged = mergeSettlementRecords(records, [rec]);
+      saveSettlementRecords(merged, user.id);
+      setRecords(merged);
+      await saveSettlementRecordsToApi(merged, user.id);
+      alert(
+        `엑셀 복구 완료: 「${rec.title}」\n` +
+          `후원 ${rec.donors?.length ?? 0}건 · 멤버 ${rec.members.length}명 · 총 ${merged.length}개 항목`
+      );
+    } catch {
+      alert("엑셀 파싱 실패 또는 형식 오류");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const onImportXlsxClick = () => {
+    const input = document.getElementById(xlsxInputId) as HTMLInputElement | null;
     input?.click();
   };
 
@@ -326,6 +359,17 @@ export default function SettlementsPage() {
           e.currentTarget.value = "";
         }}
       />
+      <input
+        id={xlsxInputId}
+        type="file"
+        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onImportXlsxFile(f);
+          e.currentTarget.value = "";
+        }}
+      />
       <div className="max-w-5xl mx-auto space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-2xl font-bold">정산 기록</h1>
@@ -344,6 +388,14 @@ export default function SettlementsPage() {
               title="모든 정산 기록을 JSON으로 백업"
             >
               JSON 백업
+            </button>
+            <button
+              onClick={onImportXlsxClick}
+              disabled={importing}
+              className="px-3 py-1.5 rounded border border-emerald-500/40 bg-emerald-950/40 hover:bg-emerald-900/50 text-sm disabled:opacity-60"
+              title="멤버별후원자 xlsx(건별내역)로 정산 1건 복구"
+            >
+              {importing ? "복구 중…" : "엑셀 복구"}
             </button>
             <button
               onClick={onImportClick}

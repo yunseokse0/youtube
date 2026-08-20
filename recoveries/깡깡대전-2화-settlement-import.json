@@ -1,0 +1,603 @@
+[
+  {
+    "id": "st_import_20260815_깡깡대전_2화",
+    "title": "깡깡대전 2화",
+    "createdAt": 1786794263000,
+    "accountRatio": 0.7,
+    "toonRatio": 0.6,
+    "feeRate": 0.033,
+    "vatIncluded": false,
+    "members": [
+      {
+        "memberId": "imp_김프디",
+        "name": "김프디",
+        "realName": "",
+        "operating": false,
+        "bankName": "",
+        "bankAccount": "",
+        "accountHolder": "",
+        "account": 30000,
+        "toon": 1180000,
+        "accountRatio": 0.7,
+        "toonRatio": 0.6,
+        "accountApplied": 18900,
+        "toonApplied": 566400,
+        "gross": 585300,
+        "fee": 19300,
+        "net": 566000
+      },
+      {
+        "memberId": "imp_죠이",
+        "name": "죠이",
+        "realName": "",
+        "operating": false,
+        "bankName": "",
+        "bankAccount": "",
+        "accountHolder": "",
+        "account": 135000,
+        "toon": 70000,
+        "accountRatio": 0.7,
+        "toonRatio": 0.6,
+        "accountApplied": 85050,
+        "toonApplied": 33600,
+        "gross": 118650,
+        "fee": 3900,
+        "net": 114750
+      },
+      {
+        "memberId": "imp_채링",
+        "name": "채링",
+        "realName": "",
+        "operating": false,
+        "bankName": "",
+        "bankAccount": "",
+        "accountHolder": "",
+        "account": 510000,
+        "toon": 45000,
+        "accountRatio": 0.7,
+        "toonRatio": 0.6,
+        "accountApplied": 321300,
+        "toonApplied": 21600,
+        "gross": 342900,
+        "fee": 11300,
+        "net": 331600
+      },
+      {
+        "memberId": "imp_최우주",
+        "name": "최우주",
+        "realName": "",
+        "operating": false,
+        "bankName": "",
+        "bankAccount": "",
+        "accountHolder": "",
+        "account": 0,
+        "toon": 250000,
+        "accountRatio": 0.7,
+        "toonRatio": 0.6,
+        "accountApplied": 0,
+        "toonApplied": 120000,
+        "gross": 120000,
+        "fee": 3960,
+        "net": 116040
+      },
+      {
+        "memberId": "imp_현민",
+        "name": "현민",
+        "realName": "",
+        "operating": false,
+        "bankName": "",
+        "bankAccount": "",
+        "accountHolder": "",
+        "account": 50000,
+        "toon": 740000,
+        "accountRatio": 0.7,
+        "toonRatio": 0.6,
+        "accountApplied": 31500,
+        "toonApplied": 355200,
+        "gross": 386700,
+        "fee": 12760,
+        "net": 373940
+      },
+      {
+        "memberId": "imp_힛치",
+        "name": "힛치",
+        "realName": "",
+        "operating": false,
+        "bankName": "",
+        "bankAccount": "",
+        "accountHolder": "",
+        "account": 125000,
+        "toon": 245000,
+        "accountRatio": 0.7,
+        "toonRatio": 0.6,
+        "accountApplied": 78750,
+        "toonApplied": 117600,
+        "gross": 196350,
+        "fee": 6470,
+        "net": 189880
+      }
+    ],
+    "totalGross": 1749900,
+    "totalFee": 57690,
+    "totalNet": 1692210,
+    "memberPositionsAtSettlement": {},
+    "donors": [
+      {
+        "id": "imp_d_1786792582000_0_imp_김프디",
+        "name": "당근",
+        "amount": 300000,
+        "memberId": "imp_김프디",
+        "at": 1786792582000,
+        "target": "toon",
+        "message": "춤도 1등 깡깡도 1등"
+      },
+      {
+        "id": "imp_d_1786787204000_1_imp_김프디",
+        "name": "당근",
+        "amount": 65000,
+        "memberId": "imp_김프디",
+        "at": 1786787204000,
+        "target": "toon",
+        "message": "퓨디뉸나 춤 망광부"
+      },
+      {
+        "id": "imp_d_1786787096000_2_imp_김프디",
+        "name": "당근",
+        "amount": 70000,
+        "memberId": "imp_김프디",
+        "at": 1786787096000,
+        "target": "toon",
+        "message": "춤이나 마음껏추자"
+      },
+      {
+        "id": "imp_d_1786786943000_3_imp_김프디",
+        "name": "당근",
+        "amount": 35000,
+        "memberId": "imp_김프디",
+        "at": 1786786943000,
+        "target": "toon",
+        "message": "가즈앙~"
+      },
+      {
+        "id": "imp_d_1786786400000_4_imp_김프디",
+        "name": "당근",
+        "amount": 45000,
+        "memberId": "imp_김프디",
+        "at": 1786786400000,
+        "target": "toon",
+        "message": "뉸난 춤으로 1등"
+      },
+      {
+        "id": "imp_d_1786785934000_5_imp_김프디",
+        "name": "당근",
+        "amount": 40000,
+        "memberId": "imp_김프디",
+        "at": 1786785934000,
+        "target": "toon",
+        "message": "저요~"
+      },
+      {
+        "id": "imp_d_1786785578000_6_imp_김프디",
+        "name": "당근",
+        "amount": 90000,
+        "memberId": "imp_김프디",
+        "at": 1786785578000,
+        "target": "toon",
+        "message": "춤으로난 1등이다"
+      },
+      {
+        "id": "imp_d_1786785332000_7_imp_김프디",
+        "name": "당근",
+        "amount": 30000,
+        "memberId": "imp_김프디",
+        "at": 1786785332000,
+        "target": "toon",
+        "message": "춤이나추자"
+      },
+      {
+        "id": "imp_d_1786783602000_8_imp_김프디",
+        "name": "쫑",
+        "amount": 50000,
+        "memberId": "imp_김프디",
+        "at": 1786783602000,
+        "target": "toon",
+        "message": "프디야프디야"
+      },
+      {
+        "id": "imp_d_1786782305000_9_imp_김프디",
+        "name": "만월",
+        "amount": 30000,
+        "memberId": "imp_김프디",
+        "at": 1786782305000,
+        "target": "toon",
+        "message": "프디님 깡깡대전 찰떡이네요"
+      },
+      {
+        "id": "imp_d_1786781548000_10_imp_김프디",
+        "name": "당근",
+        "amount": 200000,
+        "memberId": "imp_김프디",
+        "at": 1786781548000,
+        "target": "toon",
+        "message": "1등 못할꺼 같으니 춤이라도"
+      },
+      {
+        "id": "imp_d_1786781491000_11_imp_김프디",
+        "name": "파파",
+        "amount": 30000,
+        "memberId": "imp_김프디",
+        "at": 1786781491000,
+        "target": "account",
+        "message": "파파 프디"
+      },
+      {
+        "id": "imp_d_1786781426000_12_imp_김프디",
+        "name": "만월",
+        "amount": 30000,
+        "memberId": "imp_김프디",
+        "at": 1786781426000,
+        "target": "toon",
+        "message": "프디님 섭외 제가 부탁했어요"
+      },
+      {
+        "id": "imp_d_1786781113000_13_imp_김프디",
+        "name": "당근",
+        "amount": 45000,
+        "memberId": "imp_김프디",
+        "at": 1786781113000,
+        "target": "toon",
+        "message": "비 쫄딱맞은 사막여우 나와랏"
+      },
+      {
+        "id": "imp_d_1786780516000_14_imp_김프디",
+        "name": "당근",
+        "amount": 100000,
+        "memberId": "imp_김프디",
+        "at": 1786780516000,
+        "target": "toon",
+        "message": "프디뉸냐 긴장풀자~~"
+      },
+      {
+        "id": "imp_d_1786779726000_15_imp_김프디",
+        "name": "당근",
+        "amount": 50000,
+        "memberId": "imp_김프디",
+        "at": 1786779726000,
+        "target": "toon",
+        "message": "프디야 나와랏"
+      },
+      {
+        "id": "imp_d_1786788589000_16_imp_죠이",
+        "name": "무료눈깔",
+        "amount": 55000,
+        "memberId": "imp_죠이",
+        "at": 1786788589000,
+        "target": "account",
+        "message": "무료눈깔 죠이"
+      },
+      {
+        "id": "imp_d_1786784161000_17_imp_죠이",
+        "name": "파파",
+        "amount": 50000,
+        "memberId": "imp_죠이",
+        "at": 1786784161000,
+        "target": "account",
+        "message": "파파 죠이"
+      },
+      {
+        "id": "imp_d_1786782402000_18_imp_죠이",
+        "name": "초우",
+        "amount": 30000,
+        "memberId": "imp_죠이",
+        "at": 1786782402000,
+        "target": "account",
+        "message": "초우 죠이 살려"
+      },
+      {
+        "id": "imp_d_1786780036000_19_imp_죠이",
+        "name": "케빈",
+        "amount": 35000,
+        "memberId": "imp_죠이",
+        "at": 1786780036000,
+        "target": "toon",
+        "message": "똑똑한죠이"
+      },
+      {
+        "id": "imp_d_1786779744000_20_imp_죠이",
+        "name": "디치ㅡ",
+        "amount": 35000,
+        "memberId": "imp_죠이",
+        "at": 1786779744000,
+        "target": "toon",
+        "message": "[깡깡대전]무아 - 쬬이고단에서 나왓습니다 죠이"
+      },
+      {
+        "id": "imp_d_1786793377000_21_imp_채링",
+        "name": "Lala",
+        "amount": 45000,
+        "memberId": "imp_채링",
+        "at": 1786793377000,
+        "target": "toon"
+      },
+      {
+        "id": "imp_d_1786790888000_22_imp_채링",
+        "name": "파파",
+        "amount": 100000,
+        "memberId": "imp_채링",
+        "at": 1786790888000,
+        "target": "account",
+        "message": "파파 채링"
+      },
+      {
+        "id": "imp_d_1786790664000_23_imp_채링",
+        "name": "둘기",
+        "amount": 30000,
+        "memberId": "imp_채링",
+        "at": 1786790664000,
+        "target": "account",
+        "message": "둘기 채링"
+      },
+      {
+        "id": "imp_d_1786788730000_24_imp_채링",
+        "name": "치로",
+        "amount": 55000,
+        "memberId": "imp_채링",
+        "at": 1786788730000,
+        "target": "account",
+        "message": "치로 채링"
+      },
+      {
+        "id": "imp_d_1786787531000_25_imp_채링",
+        "name": "파파",
+        "amount": 65000,
+        "memberId": "imp_채링",
+        "at": 1786787531000,
+        "target": "account",
+        "message": "파파 채링"
+      },
+      {
+        "id": "imp_d_1786786839000_26_imp_채링",
+        "name": "익명",
+        "amount": 50000,
+        "memberId": "imp_채링",
+        "at": 1786786839000,
+        "target": "account",
+        "message": "익명 채링 멋지다."
+      },
+      {
+        "id": "imp_d_1786783607000_27_imp_채링",
+        "name": "초우",
+        "amount": 50000,
+        "memberId": "imp_채링",
+        "at": 1786783607000,
+        "target": "account",
+        "message": "초우 채링"
+      },
+      {
+        "id": "imp_d_1786780636000_28_imp_채링",
+        "name": "파파",
+        "amount": 45000,
+        "memberId": "imp_채링",
+        "at": 1786780636000,
+        "target": "account",
+        "message": "파파 채링"
+      },
+      {
+        "id": "imp_d_1786780156000_29_imp_채링",
+        "name": "초우",
+        "amount": 35000,
+        "memberId": "imp_채링",
+        "at": 1786780156000,
+        "target": "account",
+        "message": "초우 채링"
+      },
+      {
+        "id": "imp_d_1786779866000_30_imp_채링",
+        "name": "파파",
+        "amount": 50000,
+        "memberId": "imp_채링",
+        "at": 1786779866000,
+        "target": "account",
+        "message": "파파 채링"
+      },
+      {
+        "id": "imp_d_1786779691000_31_imp_채링",
+        "name": "파파",
+        "amount": 30000,
+        "memberId": "imp_채링",
+        "at": 1786779691000,
+        "target": "account",
+        "message": "파파 채링"
+      },
+      {
+        "id": "imp_d_1786789172000_32_imp_최우주",
+        "name": "만월",
+        "amount": 55000,
+        "memberId": "imp_최우주",
+        "at": 1786789172000,
+        "target": "toon",
+        "message": "채링님 라이벌 우주님 부활"
+      },
+      {
+        "id": "imp_d_1786786945000_33_imp_최우주",
+        "name": "쯔기",
+        "amount": 30000,
+        "memberId": "imp_최우주",
+        "at": 1786786945000,
+        "target": "toon",
+        "message": "힘빠지는 우주 시그"
+      },
+      {
+        "id": "imp_d_1786786146000_34_imp_최우주",
+        "name": "쯔기",
+        "amount": 40000,
+        "memberId": "imp_최우주",
+        "at": 1786786146000,
+        "target": "toon",
+        "message": "우주 한번 더 가자"
+      },
+      {
+        "id": "imp_d_1786785865000_35_imp_최우주",
+        "name": "쯔기",
+        "amount": 30000,
+        "memberId": "imp_최우주",
+        "at": 1786785865000,
+        "target": "toon",
+        "message": "우주 한번 더 가자"
+      },
+      {
+        "id": "imp_d_1786785834000_36_imp_최우주",
+        "name": "세르세이",
+        "amount": 45000,
+        "memberId": "imp_최우주",
+        "at": 1786785834000,
+        "target": "toon",
+        "message": "우주 함 가자"
+      },
+      {
+        "id": "imp_d_1786784004000_37_imp_최우주",
+        "name": "만월",
+        "amount": 50000,
+        "memberId": "imp_최우주",
+        "at": 1786784004000,
+        "target": "toon",
+        "message": "채링님 라이벌 우주님 부활"
+      },
+      {
+        "id": "imp_d_1786792865000_38_imp_현민",
+        "name": "원이",
+        "amount": 100000,
+        "memberId": "imp_현민",
+        "at": 1786792865000,
+        "target": "toon",
+        "message": "현민아 춤이나 추자!"
+      },
+      {
+        "id": "imp_d_1786790110000_39_imp_현민",
+        "name": "원이",
+        "amount": 100000,
+        "memberId": "imp_현민",
+        "at": 1786790110000,
+        "target": "toon",
+        "message": "현민"
+      },
+      {
+        "id": "imp_d_1786789010000_40_imp_현민",
+        "name": "원이",
+        "amount": 55000,
+        "memberId": "imp_현민",
+        "at": 1786789010000,
+        "target": "toon",
+        "message": "현민"
+      },
+      {
+        "id": "imp_d_1786787066000_41_imp_현민",
+        "name": "우디",
+        "amount": 200000,
+        "memberId": "imp_현민",
+        "at": 1786787066000,
+        "target": "toon",
+        "message": "현뚱땡이 잘하고있랏"
+      },
+      {
+        "id": "imp_d_1786786847000_42_imp_현민",
+        "name": "우디",
+        "amount": 35000,
+        "memberId": "imp_현민",
+        "at": 1786786847000,
+        "target": "toon",
+        "message": "현뚱뚱뚱뚱"
+      },
+      {
+        "id": "imp_d_1786786290000_43_imp_현민",
+        "name": "우디",
+        "amount": 45000,
+        "memberId": "imp_현민",
+        "at": 1786786290000,
+        "target": "toon",
+        "message": "현뚱 띱떼끼  잘 안 할래ㅋ"
+      },
+      {
+        "id": "imp_d_1786786123000_44_imp_현민",
+        "name": "우디",
+        "amount": 95000,
+        "memberId": "imp_현민",
+        "at": 1786786123000,
+        "target": "toon",
+        "message": "현뚱땡이 홧팅"
+      },
+      {
+        "id": "imp_d_1786785742000_45_imp_현민",
+        "name": "익명",
+        "amount": 60000,
+        "memberId": "imp_현민",
+        "at": 1786785742000,
+        "target": "toon",
+        "message": "현뚱땡이 이거나 춰"
+      },
+      {
+        "id": "imp_d_1786783943000_46_imp_현민",
+        "name": "익명",
+        "amount": 50000,
+        "memberId": "imp_현민",
+        "at": 1786783943000,
+        "target": "toon",
+        "message": "현뚱뚱뚱 특수반 잘 부탁합니"
+      },
+      {
+        "id": "imp_d_1786780008000_47_imp_현민",
+        "name": "잠돌이",
+        "amount": 50000,
+        "memberId": "imp_현민",
+        "at": 1786780008000,
+        "target": "account",
+        "message": "잠돌이 현민 모쏠현민업"
+      },
+      {
+        "id": "imp_d_1786791120000_48_imp_힛치",
+        "name": "Jp",
+        "amount": 100000,
+        "memberId": "imp_힛치",
+        "at": 1786791120000,
+        "target": "toon",
+        "message": "힛치도 잘하고있제?일좀보고~"
+      },
+      {
+        "id": "imp_d_1786787473000_49_imp_힛치",
+        "name": "파파",
+        "amount": 65000,
+        "memberId": "imp_힛치",
+        "at": 1786787473000,
+        "target": "account",
+        "message": "파파 힛치"
+      },
+      {
+        "id": "imp_d_1786787393000_50_imp_힛치",
+        "name": "파파",
+        "amount": 60000,
+        "memberId": "imp_힛치",
+        "at": 1786787393000,
+        "target": "account",
+        "message": "파파 힛치"
+      },
+      {
+        "id": "imp_d_1786787290000_51_imp_힛치",
+        "name": "우디",
+        "amount": 95000,
+        "memberId": "imp_힛치",
+        "at": 1786787290000,
+        "target": "toon",
+        "message": "현뚱이 첫 춤 스승님 힛치샘"
+      },
+      {
+        "id": "imp_d_1786780683000_52_imp_힛치",
+        "name": "Jp",
+        "amount": 50000,
+        "memberId": "imp_힛치",
+        "at": 1786780683000,
+        "target": "toon",
+        "message": "그래 힛치도 춤으로 소개해바"
+      }
+    ]
+  }
+]
