@@ -69,6 +69,24 @@ describe("state-api-pick", () => {
     expect(out.highSocietySettings).toEqual(state.highSocietySettings);
   });
 
+  it("overlay-donors pick includes manual territory logs for OBS", () => {
+    const base = defaultState();
+    const logs = [
+      {
+        id: "tl1",
+        memberId: "m1",
+        amount: 5,
+        delta: 1 as const,
+        pushDir: "right" as const,
+        note: "",
+        at: 1,
+      },
+    ];
+    const state = { ...base, territoryLogs: logs };
+    const out = projectStateForGetPick(state, STATE_PICK_OVERLAY_DONORS) as Record<string, unknown>;
+    expect(out.territoryLogs).toEqual(logs);
+  });
+
   it("sig-sales pick is minimal", () => {
     const base = defaultState();
     const out = projectStateForGetPick(base, STATE_PICK_SIG_SALES) as Record<string, unknown>;

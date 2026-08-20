@@ -7,6 +7,7 @@ import {
 import {
   computeExcelWithholding,
   computePaymentChannelBreakdown,
+  computeTaxInvoiceFinalAmount,
   PAYMENT_FEE_DEFAULTS,
   roundWon,
   type PaymentFeeRates,
@@ -41,6 +42,10 @@ export type MemberPaymentStatement = {
   withholdingRate: number;
   withholding: number;
   payout: number;
+  /** 세금계산서 발행 시 가산 부가세 */
+  outputVat: number;
+  /** 세금계산서 발행 시 최종 입금(payout+outputVat), 미발행 시 payout */
+  finalPayout: number;
   accountRatio: number;
   toonRatio: number;
 };
@@ -86,6 +91,11 @@ export function computeMemberPaymentStatement(
     skipWithholding: Boolean(member.operating),
     rates,
   });
+  const taxInvoice = computeTaxInvoiceFinalAmount(
+    b.payout,
+    Boolean(record.taxInvoiceIssued),
+    record.taxInvoiceVatRate
+  );
 
   return {
     memberId: member.memberId,
@@ -105,6 +115,8 @@ export function computeMemberPaymentStatement(
     withholdingRate,
     withholding: b.withholding,
     payout: b.payout,
+    outputVat: taxInvoice.outputVat,
+    finalPayout: taxInvoice.finalPayout,
     accountRatio,
     toonRatio,
   };
@@ -974,13 +986,35 @@ export function buildMemberPaymentStatementHtml(
     )}
 
     <table class="total-table">
+      ${
+        record.taxInvoiceIssued
+          ? `<tr>
+        <td class="left" rowspan="4">총 정산 금액</td>
+        <td class="cap">(A+B) − 원천세 ${escapeHtml(withholdPct)}%</td>
+      </tr>
       <tr>
+        <td class="amt">${moneyCell(s.payout)}</td>
+      </tr>
+      <tr>
+        <td class="cap">세금계산서 부가세 ${escapeHtml(
+          ((record.taxInvoiceVatRate ?? 0.1) * 100).toFixed(0)
+        )}%</td>
+      </tr>
+      <tr>
+        <td class="amt">${moneyCell(s.outputVat)}</td>
+      </tr>
+      <tr>
+        <td class="left">최종 입금액</td>
+        <td class="amt">${moneyCell(s.finalPayout)}</td>
+      </tr>`
+          : `<tr>
         <td class="left" rowspan="2">총 정산 금액</td>
         <td class="cap">(A+B)-(원천세 ${escapeHtml(withholdPct)}%)</td>
       </tr>
       <tr>
         <td class="amt">${moneyCell(s.payout)}</td>
-      </tr>
+      </tr>`
+      }
     </table>
 
     <div class="thanks">${escapeHtml(thanks)}</div>

@@ -378,7 +378,7 @@ describe("applyDonationToAppState", () => {
       members: [{ id: "m1", name: "피자", account: 0, toon: 9999, contribution: 9999 }],
       donors: [
         { id: "toonation:1718100000000-1000", name: "이니이니", amount: 1000, memberId: "m1", at, target: "toon" as const },
-        { id: "toonation:1718100000123-1000", name: "이니이니", amount: 1000, memberId: "m1", at: at + 2000, target: "toon" as const },
+        { id: "toonation:1718100000123-1000", name: "이니이니", amount: 1000, memberId: "m1", at: at + 5000, target: "toon" as const },
       ],
     };
     const synced = syncMemberTotalsFromDonors(state);
@@ -552,7 +552,7 @@ describe("applyDonationToAppState", () => {
     expect(result.reason).toBe("duplicate");
   });
 
-  it("allows near-duplicate weak fp- ids with same content within 3s (연속 동일 후원)", () => {
+  it("rejects near-duplicate weak fp- ids with same content within 3s (이중 반영)", () => {
     const at = Date.now();
     const state = {
       ...defaultState(),
@@ -581,9 +581,9 @@ describe("applyDonationToAppState", () => {
       target: "account",
     };
     const result = applyDonationToAppState(state, event);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.state.donors).toHaveLength(2);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("duplicate");
   });
 
   it("allows five consecutive identical donations one second apart", () => {
@@ -745,7 +745,41 @@ describe("applyDonationToAppState", () => {
     expect(result.state.donors?.[0]?.target).toBe("account");
   });
 
-  it("allows consecutive fp- fallback ids without artificial time gap", () => {
+  it("rejects dual-apply with different weak ids and 2s at skew", () => {
+    const at = Date.parse("2026-08-20T11:12:56.000Z");
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "이시아", account: 0, toon: 13300, contribution: 13300 }],
+      donors: [
+        {
+          id: "toonation:toon-real-id-1734567890123-13300-0-abc",
+          name: "자기집안나",
+          amount: 13300,
+          memberId: "m1",
+          at,
+          target: "toon" as const,
+          message: "게롤보 박자기",
+        },
+      ],
+    };
+    const event: DonationEvent = {
+      id: "toonation:fp-client-2",
+      provider: "toonation",
+      externalId: "fp-client-2",
+      donorName: "자기집안나",
+      amount: 13300,
+      message: "게롤보 박자기",
+      at: new Date(at + 2000).toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const result = applyDonationToAppState(state, event);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("duplicate");
+  });
+
+  it("rejects consecutive fp- fallback ids within near-dup window", () => {
     const state = {
       ...defaultState(),
       members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 }],
@@ -773,10 +807,9 @@ describe("applyDonationToAppState", () => {
     expect(r1.ok).toBe(true);
     if (!r1.ok) return;
     const r2 = applyDonationToAppState(r1.state, second);
-    expect(r2.ok).toBe(true);
-    if (!r2.ok) return;
-    expect(r2.state.members[0]?.account).toBe(20000);
-    expect(r2.state.donors).toHaveLength(2);
+    expect(r2.ok).toBe(false);
+    if (r2.ok) return;
+    expect(r2.reason).toBe("duplicate");
   });
 
   it("revertDonationFromAppState rejects donationExcluded source rows", () => {
@@ -885,6 +918,31 @@ describe("dedupeDonorRows message preservation", () => {
     ]);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.message).toBe("익명 비서");
+  });
+
+  it("collapses dual-apply rows with different weak ids within 3s", () => {
+    const at = 1_725_678_832_000;
+    const rows = dedupeDonorRows([
+      {
+        id: "toonation:fp-a",
+        name: "스페이스x",
+        amount: 100,
+        memberId: "m1",
+        at,
+        target: "toon" as const,
+        message: "테스트",
+      },
+      {
+        id: "toonation:fp-b",
+        name: "스페이스x",
+        amount: 100,
+        memberId: "m1",
+        at: at + 1500,
+        target: "toon" as const,
+        message: "테스트",
+      },
+    ]);
+    expect(rows).toHaveLength(1);
   });
 
   it("collapses dual-apply rows with different weak ids same at ms", () => {

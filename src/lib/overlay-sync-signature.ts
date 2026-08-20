@@ -143,6 +143,21 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
     })
     .join("\u001e");
 
+  const territoryLogs = (state.territoryLogs || [])
+    .map((log) =>
+      [
+        String(log.id || ""),
+        String(log.memberId || ""),
+        Math.floor(Number(log.amount) || 0),
+        log.delta === -1 ? -1 : 1,
+        String(log.pushDir || ""),
+        String(log.note || ""),
+        Math.floor(Number(log.at) || 0),
+      ].join("\u001f")
+    )
+    .sort()
+    .join("\u001e");
+
   return JSON.stringify({
     members,
     donors,
@@ -163,6 +178,7 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
     sigMatchSettings: state.sigMatchSettings || {},
     sigMatch: state.sigMatch || {},
     highSocietySettings: state.highSocietySettings || {},
+    territoryLogs,
     /** 시그 롤링 표시 시간·목록 — 서명에 없으면 OBS가 설정 변경을 무시함 */
     sigRolling,
     rollingInv,

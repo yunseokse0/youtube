@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { SettlementDeleteLog, SettlementRecord, deleteSettlementRecordAndSync, loadSettlementDeleteLogs, loadSettlementRecords, loadSettlementRecordsPreferApi, mergeSettlementRecords, normalizeSettlementRecords, recoverSettlementRecordsFromAllSources, saveSettlementRecords, saveSettlementRecordsToApi } from "@/lib/settlement";
+import { SettlementDeleteLog, SettlementRecord, deleteSettlementRecordAndSync, loadSettlementDeleteLogsPreferApi, loadSettlementRecords, loadSettlementRecordsPreferApi, mergeSettlementRecords, normalizeSettlementRecords, recoverSettlementRecordsFromAllSources, saveSettlementRecords, saveSettlementRecordsToApi } from "@/lib/settlement";
 import { loadDailyLog, loadDailyLogFromApi, Donor } from "@/lib/state";
 import { downloadBlobFile } from "@/lib/download";
 import { buildSettlementRecordFromDonorExportFile } from "@/lib/settlement-donor-import";
@@ -44,7 +44,7 @@ export default function SettlementsPage() {
         const hydrated = loadSettlementRecords(u.id);
         if (hydrated.length > 0) setRecords(hydrated);
         loadSettlementRecordsPreferApi(u.id).then(setRecords);
-        setDeleteLogs(loadSettlementDeleteLogs(u.id));
+        loadSettlementDeleteLogsPreferApi(u.id).then(setDeleteLogs);
         loadDailyLogFromApi(u.id)
           .then((apiLog) => {
             const local = loadDailyLog(u.id);
@@ -206,7 +206,13 @@ export default function SettlementsPage() {
     const res = await deleteSettlementRecordAndSync(recordId, "user-delete-from-list", user?.id);
     if (!res.deleted) return;
     setRecords((prev) => prev.filter((r) => r.id !== recordId));
-    setDeleteLogs(loadSettlementDeleteLogs(user?.id));
+    if (user?.id) {
+      const logs = await loadSettlementDeleteLogsPreferApi(user.id);
+      setDeleteLogs(logs);
+    }
+    if (!res.ok) {
+      alert("서버 저장에 실패했을 수 있습니다. 새로고침 후 목록을 확인해 주세요.");
+    }
   };
 
   const filteredRecords = useMemo(() => {
@@ -726,7 +732,7 @@ export default function SettlementsPage() {
                   <td className="p-2 text-right text-cyan-400" title={donors.length > 0 ? `${donors.length}건` : "데이터 없음"}>{donors.length}</td>
                   <td className="p-2 text-right font-semibold">{r.totalNet.toLocaleString()}</td>
                   <td className="p-2 text-right">
-                    <Link className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 whitespace-nowrap inline-block" href={`/settlements/${r.id}`}>상세</Link>
+                    <Link className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 whitespace-nowrap inline-block" href={`/settlements/${encodeURIComponent(r.id)}`}>상세</Link>
                   </td>
                   <td className="p-2 text-right">
                     <button className="px-2 py-1 rounded bg-red-800 hover:bg-red-700 whitespace-nowrap" onClick={() => onDeleteRecord(r.id)}>삭제</button>

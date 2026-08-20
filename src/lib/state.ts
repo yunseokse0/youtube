@@ -3384,6 +3384,21 @@ async function doLoadStateFromApi(
         data.memberPositionMode = base.memberPositionMode;
         data.rankPositionLabels = base.rankPositionLabels;
       }
+      /** pick 응답 donors 가 비었는데 로컬·베이스에 후원이 있으면 유지 (폴링·OBS 깜빡임·0원 초기화 방지) */
+      const patchDonors = normalizeDonorsArray(data.donors);
+      const baseDonors = normalizeDonorsArray(base.donors);
+      if (
+        baseDonors.length > 0 &&
+        (patchDonors.length === 0 || wouldShrinkDonationData(base, data as AppState))
+      ) {
+        data.donors = baseDonors;
+        if (totalCombined(data as AppState) < totalCombined(base)) {
+          data.members = mergeMemberRosterPreservingAmounts(
+            (data as AppState).members || [],
+            base.members || []
+          );
+        }
+      }
     }
     if (data && data.members) {
       data.members = (() => { const v = ensureMembers(data.members); return v.length > 0 ? v : defaultMembers().map(normalizeMember); })();

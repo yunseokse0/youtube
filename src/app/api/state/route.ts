@@ -83,6 +83,9 @@ import {
   markDonorsForHighSocietyTerritoryRoundBump,
   shouldBlockHighSocietyRegression,
 } from "@/lib/high-society";
+import { normalizeTerritoryLogs } from "@/lib/territory-utils";
+import { loadDailyLogForUserId } from "@/lib/daily-log-server-load";
+import { enrichAppStateFromDailyLogWhenDonorsMissing } from "@/lib/state-restore";
 
 const logger = createModuleLogger('API/State');
 
@@ -420,6 +423,26 @@ function mergePartialState(
     next.highSocietySettings = base.highSocietySettings;
     logger.warn("highSocietySettings default wipe blocked", { userId });
   }
+  if (!("territoryLogs" in patch)) {
+    next.territoryLogs = base.territoryLogs;
+  } else if (Array.isArray(patch.territoryLogs)) {
+    const baseLogs = normalizeTerritoryLogs(base.territoryLogs);
+    const patchLogs = normalizeTerritoryLogs(patch.territoryLogs);
+    if (patchLogs.length >= baseLogs.length) {
+      next.territoryLogs = patchLogs;
+    } else {
+      const byId = new Map(baseLogs.map((log) => [String(log.id), log]));
+      for (const log of patchLogs) {
+        byId.set(String(log.id), log);
+      }
+      next.territoryLogs = [...byId.values()].sort(
+        (a, b) => Number(a.at || 0) - Number(b.at || 0)
+      );
+    }
+  }
+  if (!("donors" in patch)) {
+    next.donors = base.donors;
+  }
   if (!("mealBattle" in patch)) next.mealBattle = base.mealBattle;
   if (!("mealMatch" in patch)) next.mealMatch = base.mealMatch;
   if (!("mealMatchSettings" in patch)) next.mealMatchSettings = base.mealMatchSettings;
@@ -754,6 +777,29 @@ export async function GET(req: Request) {
       }
     } catch (err) {
       logger.error("후원 백업 복구 실패", err);
+    }
+
+    /** 메인·백업 모두 donors 비었는데 일일 로그(작업 로그)에 스냅샷이 있으면 GET 시 복구 */
+    if (normalizeDonorsArray(mergedForResponse.donors).length === 0) {
+      try {
+        const dailyLog = await loadDailyLogForUserId(userId);
+        const fromLog = enrichAppStateFromDailyLogWhenDonorsMissing(
+          mergedForResponse,
+          dailyLog
+        );
+        if (normalizeDonorsArray(fromLog.donors).length > 0) {
+          mergedForResponse = syncMemberTotalsFromDonors(fromLog);
+          setServerMemoryAppState(userId, mergedForResponse);
+          logger.warn("후원 donors — 일일 로그 스냅샷에서 복구", {
+            userId,
+            donors: normalizeDonorsArray(mergedForResponse.donors).length,
+            total: totalCombined(mergedForResponse),
+          });
+          void upstashSetAppStateJson(stateKey(userId), mergedForResponse);
+        }
+      } catch (err) {
+        logger.error("일일 로그 후원 복구 실패", err);
+      }
     }
 
     /** donors 있는데 members 합계 0이면 GET 응답·메모리에서 맞춤(Prism 엑셀 미반영 방지) */

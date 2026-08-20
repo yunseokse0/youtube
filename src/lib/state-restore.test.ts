@@ -4,6 +4,7 @@ import {
   buildAppStateFromRestoreJson,
   buildSettlementCreationSnapshot,
   enrichSettlementSnapshotFromDailyLog,
+  enrichAppStateFromDailyLogWhenDonorsMissing,
   isFullBroadcastStateBackup,
   isOrphanedDonationState,
   pickDailyLogEntryForRestore,
@@ -99,5 +100,37 @@ describe("state-restore", () => {
     };
     const enriched = enrichSettlementSnapshotFromDailyLog(orphan, log, "2026-06-04");
     expect(enriched.donors).toHaveLength(1);
+  });
+
+  it("enrichAppStateFromDailyLogWhenDonorsMissing restores when donors and totals are zero", () => {
+    const base = defaultState();
+    const log = {
+      "2026-08-20": [
+        {
+          at: "2026-08-20T12:00:00.000Z",
+          total: 50000,
+          donors: [
+            {
+              id: "d1",
+              name: "후원",
+              amount: 50000,
+              memberId: "m1",
+              at: Date.now(),
+              target: "account" as const,
+            },
+          ],
+          members: [{ id: "m1", name: "멤버", account: 0, toon: 0, contribution: 0 }],
+        },
+      ],
+    };
+    const next = enrichAppStateFromDailyLogWhenDonorsMissing(
+      {
+        ...base,
+        donors: [],
+        members: base.members.map((m) => ({ ...m, account: 0, toon: 0, contribution: 0 })),
+      },
+      log
+    );
+    expect(next.donors).toHaveLength(1);
   });
 });

@@ -12,16 +12,35 @@ import {
   recoverSettlementRecordsFromDailyLog,
   type SettlementServerRecoveryCounts,
 } from "@/lib/settlement-recovery";
-import { normalizeSettlementRecords } from "@/lib/settlement";
-import type { SettlementRecord } from "@/types";
+import { applySettlementDeleteTombstones, normalizeSettlementRecords } from "@/lib/settlement";
+import type { SettlementDeleteLog, SettlementRecord } from "@/types";
 
 const SETTLEMENT_KEY_BASE = "excel-broadcast-settlement-records-v1";
 const SETTLEMENT_KEY_LEGACY = "excel-broadcast-settlement-records-v1";
 const DAILY_LOG_KEY_BASE = "excel-broadcast-daily-log-v1";
 const DAILY_LOG_KEY_LEGACY = "excel-broadcast-daily-log-v1";
+const DELETE_LOGS_KEY_BASE = "excel-broadcast-settlement-delete-logs-v1";
 
 function settlementKey(userId: string): string {
   return `${SETTLEMENT_KEY_BASE}:${userId}`;
+}
+
+function deleteLogsKey(userId: string): string {
+  return `${DELETE_LOGS_KEY_BASE}:${userId}`;
+}
+
+function normalizeDeleteLogs(logs: unknown): SettlementDeleteLog[] {
+  if (!Array.isArray(logs)) return [];
+  const byId = new Map<string, SettlementDeleteLog>();
+  for (const raw of logs) {
+    if (!raw || typeof raw !== "object") continue;
+    const log = raw as SettlementDeleteLog;
+    const recordId = String(log.recordId || "").trim();
+    if (!recordId) continue;
+    const prev = byId.get(recordId);
+    if (!prev || (log.deletedAt || 0) >= (prev.deletedAt || 0)) byId.set(recordId, log);
+  }
+  return Array.from(byId.values());
 }
 
 function dailyLogKey(userId: string): string {
@@ -47,10 +66,19 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as RecoverBody;
   const titleHint = String(body.titleHint || "").trim();
 
+  const deleteLogsRaw = await upstashGetJson<SettlementDeleteLog[]>(deleteLogsKey(userId));
+  const deleteLogs = normalizeDeleteLogs(deleteLogsRaw);
+
   const userRecordsRaw = await upstashGetJson<SettlementRecord[]>(settlementKey(userId));
   const legacyRecordsRaw = await upstashGetJson<SettlementRecord[]>(SETTLEMENT_KEY_LEGACY);
-  const userRecords = Array.isArray(userRecordsRaw) ? userRecordsRaw : [];
-  const legacyRecords = Array.isArray(legacyRecordsRaw) ? legacyRecordsRaw : [];
+  const userRecords = applySettlementDeleteTombstones(
+    Array.isArray(userRecordsRaw) ? userRecordsRaw : [],
+    deleteLogs
+  );
+  const legacyRecords = applySettlementDeleteTombstones(
+    Array.isArray(legacyRecordsRaw) ? legacyRecordsRaw : [],
+    deleteLogs
+  );
 
   let merged = mergeSettlementRecordArrays(userRecords, legacyRecords);
 
@@ -66,9 +94,10 @@ export async function POST(req: Request) {
   const beforeDaily = merged.length;
   merged = recoverSettlementRecordsFromDailyLog(dailyLog, merged, {
     titleHint: titleHint || undefined,
+    deletedLogs: deleteLogs,
   });
   merged = enrichSettlementRecordsDonorsFromDailyLog(merged, dailyLog);
-  merged = normalizeSettlementRecords(merged);
+  merged = applySettlementDeleteTombstones(normalizeSettlementRecords(merged), deleteLogs);
 
   const dailyLogOrphansAdded = Math.max(0, merged.length - beforeDaily);
   const allDailyEntries = collectAllDailyLogEntries(dailyLog).filter(

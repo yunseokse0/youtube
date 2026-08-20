@@ -125,3 +125,20 @@ export function computePaymentChannelBreakdown(input: {
     localIncomeTax,
   };
 }
+
+export const DEFAULT_TAX_INVOICE_VAT_RATE = 0.1;
+
+/** 세금계산서 발행 시 원천세 차감 후 금액에 부가세 가산 */
+export function computeTaxInvoiceFinalAmount(
+  payoutAfterWithholding: number,
+  taxInvoiceIssued: boolean,
+  vatRateRaw?: number
+): { outputVat: number; finalPayout: number } {
+  const payout = Math.max(0, roundWon(payoutAfterWithholding));
+  if (!taxInvoiceIssued) {
+    return { outputVat: 0, finalPayout: payout };
+  }
+  const vatRate = Math.max(0, Number(vatRateRaw ?? DEFAULT_TAX_INVOICE_VAT_RATE) || DEFAULT_TAX_INVOICE_VAT_RATE);
+  const outputVat = roundWon(payout * vatRate);
+  return { outputVat, finalPayout: payout + outputVat };
+}

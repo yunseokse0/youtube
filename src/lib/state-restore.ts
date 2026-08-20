@@ -316,3 +316,20 @@ export function pickDailyLogEntryForRestore(
   }
   return best;
 }
+
+/**
+ * donors 가 비었을 때 일일 로그 최신 스냅샷으로 복구 (멤버 합계 0·고아 상태 포함).
+ * 작업 로그(일일 로그)는 별도 KV 키라 메인 state donors 만 비어도 로그는 남을 수 있음.
+ */
+export function enrichAppStateFromDailyLogWhenDonorsMissing(
+  snapshot: AppState,
+  log: Record<string, DailyLogEntry[] | unknown[]> | null | undefined
+): AppState {
+  if (normalizeDonorsArray(snapshot.donors).length > 0) return snapshot;
+  const entry = pickDailyLogEntryForRestore(log);
+  if (!entry) return snapshot;
+  const donorCount = Array.isArray(entry.donors) ? entry.donors.length : 0;
+  if (donorCount <= 0) return snapshot;
+  const restored = buildAppStateFromDailyLogRestore(snapshot, entry);
+  return restored ?? snapshot;
+}

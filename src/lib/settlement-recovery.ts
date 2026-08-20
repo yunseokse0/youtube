@@ -2,7 +2,12 @@ import { computeSettlement } from "@/lib/settlement-utils";
 import type { DailyLogEntry } from "@/lib/state";
 import { normalizeDonorsArray } from "@/lib/state";
 import type { Donor, Member, SettlementRecord } from "@/types";
+import {
+  isDailyLogEntryBlockedByDeleteLog,
+  isSettlementRecordRevivedFromDeleteLog,
+} from "@/lib/settlement-delete-tombstone";
 import { mergeSettlementRecords, normalizeSettlementRecords } from "@/lib/settlement";
+import type { SettlementDeleteLog } from "@/types";
 
 const DEFAULT_ACCOUNT_RATIO = 0.7;
 const DEFAULT_TOON_RATIO = 0.6;
@@ -251,12 +256,14 @@ export function findOrphanDailyLogEntries(
 export function recoverSettlementRecordsFromDailyLog(
   dailyLog: Record<string, DailyLogEntry[] | unknown[]> | null | undefined,
   existing: SettlementRecord[],
-  opts?: { titleHint?: string }
+  opts?: { titleHint?: string; deletedLogs?: SettlementDeleteLog[] }
 ): SettlementRecord[] {
   const hint = String(opts?.titleHint || "").trim();
+  const deletedLogs = opts?.deletedLogs;
   const orphans = findOrphanDailyLogEntries(dailyLog, existing);
   const reconstructed: SettlementRecord[] = [];
   for (const entry of orphans) {
+    if (isDailyLogEntryBlockedByDeleteLog(entry, deletedLogs)) continue;
     const title =
       hint && orphans.length === 1
         ? hint
@@ -264,11 +271,13 @@ export function recoverSettlementRecordsFromDailyLog(
           ? `${hint} (${formatRecoveryTitleFromEntry(entry)})`
           : formatRecoveryTitleFromEntry(entry);
     const rec = reconstructSettlementFromDailyLogEntry(entry, title);
-    if (rec) reconstructed.push(rec);
+    if (!rec || isSettlementRecordRevivedFromDeleteLog(rec, deletedLogs)) continue;
+    reconstructed.push(rec);
   }
   let merged = mergeSettlementRecords(existing, reconstructed);
   if (hint) {
     merged = recoverMissingSettlementByTitleHint(dailyLog, merged, hint);
+    merged = merged.filter((r) => !isSettlementRecordRevivedFromDeleteLog(r, deletedLogs));
   }
   return merged;
 }

@@ -1,8 +1,9 @@
 import { kvDel, kvSetNxEx } from "@/app/api/_shared/upstash";
-import { donationApplyPrimaryKey } from "@/lib/donation/donation-dedupe-keys";
+import { donationApplyContentKey, donationApplyPrimaryKey } from "@/lib/donation/donation-dedupe-keys";
 import type { DonationEvent } from "@/lib/donation/types";
 
 const APPLIED_TTL_SEC = 86_400;
+const CONTENT_CLAIM_TTL_SEC = 3;
 const memoryApplied = new Map<string, number>();
 
 function pruneMemoryApplied(now: number): void {
@@ -33,9 +34,16 @@ function releaseKey(key: string): void {
 /** true = 이번 요청이 선점 성공(반영 진행), false = 이미 반영·처리 중 */
 export async function tryClaimDonationApply(userId: string, event: DonationEvent): Promise<boolean> {
   const primary = donationApplyPrimaryKey(userId, event);
-  return claimKey(primary, APPLIED_TTL_SEC);
+  if (!(await claimKey(primary, APPLIED_TTL_SEC))) return false;
+  const content = donationApplyContentKey(userId, event);
+  if (!content) return true;
+  if (await claimKey(content, CONTENT_CLAIM_TTL_SEC)) return true;
+  releaseKey(primary);
+  return false;
 }
 
 export async function releaseDonationApplyClaim(userId: string, event: DonationEvent): Promise<void> {
   releaseKey(donationApplyPrimaryKey(userId, event));
+  const content = donationApplyContentKey(userId, event);
+  if (content) releaseKey(content);
 }

@@ -49,7 +49,8 @@ describe("donationApplyPrimaryKey", () => {
     expect(donationApplyPrimaryKey("u1", event)).toBe("u1:evt:toonation:fp-10000-abc-t12");
   });
 
-  it("donationApplyContentKey is disabled (consecutive identical donations use primary id only)", () => {
+  it("donationApplyContentKey blocks weak-id dual apply within 3s bucket", () => {
+    const at = "2026-08-20T11:12:56.000Z";
     const event: DonationEvent = {
       id: "toonation:fp-1",
       provider: "toonation",
@@ -57,11 +58,27 @@ describe("donationApplyPrimaryKey", () => {
       donorName: "익명5",
       amount: 60000,
       message: "계좌 익명5 피자",
-      at: new Date().toISOString(),
+      at,
       status: "queued",
       target: "account",
     };
-    expect(donationApplyContentKey("u1", event)).toBeNull();
+    expect(donationApplyContentKey("u1", event)).toMatch(
+      /^u1:content:익명5\|60000\|account\|계좌 익명5 피자:\d+$/
+    );
     expect(donationContentDedupeFingerprint(event)).toBe("익명5|60000|account|계좌 익명5 피자");
+  });
+
+  it("donationApplyContentKey is null for reliable external id", () => {
+    const event: DonationEvent = {
+      id: "toonation:donation-99",
+      provider: "toonation",
+      externalId: "donation-99",
+      donorName: "익명",
+      amount: 1000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    expect(donationApplyContentKey("u1", event)).toBeNull();
   });
 });

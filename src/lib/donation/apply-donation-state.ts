@@ -8,6 +8,10 @@ import {
   resolveSystemMiddlePushDir,
 } from "@/lib/high-society";
 import type { AppState, Donor, Member } from "@/types";
+import {
+  extractReliableToonationExtFromDonorId,
+  isReliableToonationExternalId,
+} from "./toonation/parse-event";
 import { mapToMember } from "./mapper";
 import type { DonationEvent, DonorAlias } from "./types";
 
@@ -136,23 +140,31 @@ export function dedupeDonorRows<
     }
   }
   const pass1 = Array.from(map.values());
-  const byInstant = new Map<string, T>();
-  for (const d of pass1) {
-    const atMs = donorAtEpochMs(d);
-    const instantKey =
-      atMs > 0 ? `${donationContentMatchKey(d)}|${atMs}` : `id:${donorRowDedupeKey(d)}`;
-    const prev = byInstant.get(instantKey);
-    if (!prev) {
-      byInstant.set(instantKey, d);
+  const merged: T[] = [];
+  for (const d of pass1.sort((a, b) => donorAtEpochMs(b) - donorAtEpochMs(a))) {
+    const dupIdx = merged.findIndex((prev) =>
+      shouldTreatAsDuplicateDonationContent(prev, {
+        id: d.id,
+        donorName: d.name,
+        amount: d.amount,
+        target: d.target,
+        message: d.message,
+        at: d.at,
+      })
+    );
+    if (dupIdx < 0) {
+      merged.push(d);
       continue;
     }
+    const prev = merged[dupIdx]!;
     const aWeak = isWeakToonationDonorId(String(prev.id || ""));
     const bWeak = isWeakToonationDonorId(String(d.id || ""));
-    const preferred = aWeak && !bWeak ? d : !aWeak && bWeak ? prev : donorAtEpochMs(d) >= donorAtEpochMs(prev) ? d : prev;
+    const preferred =
+      aWeak && !bWeak ? d : !aWeak && bWeak ? prev : donorAtEpochMs(d) >= donorAtEpochMs(prev) ? d : prev;
     const other = preferred === d ? prev : d;
-    byInstant.set(instantKey, mergeDonorRowFields(preferred, other));
+    merged[dupIdx] = mergeDonorRowFields(preferred, other);
   }
-  return Array.from(byInstant.values());
+  return merged;
 }
 
 /** 후원 기록 삭제 시 투네 대기 큐에서 함께 제거할 id 후보 */
@@ -285,7 +297,7 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
   return { ...state, members };
 }
 
-/** @deprecated 이중 경로는 server-listener RAW dedupe(500ms)·릴레이 차단으로 처리 — 연속 동일 후원 누락 방지 */
+/** @deprecated 이중 경로는 near-content dedupe(3s)·릴레이 차단으로 처리 */
 export const DONATION_NEAR_DUP_WINDOW_MS = 3_000;
 
 export function donationContentMatchKey(donor: {
@@ -348,10 +360,92 @@ export function isOwnerRemapSplitDuplicate(
   return false;
 }
 
+function donationContentProbe(donor: {
+  name?: string;
+  donorName?: string;
+  amount?: number;
+  target?: string;
+  message?: string;
+}) {
+  return {
+    name: donor.name,
+    donorName: donor.donorName ?? donor.name,
+    amount: donor.amount,
+    target: donor.target,
+    message: donor.message,
+  };
+}
+
+/** 동일 후원자·금액·대상·메시지가 DONATION_NEAR_DUP_WINDOW_MS 이내 */
+export function isNearContentDuplicate(
+  existing: { name?: string; amount?: number; target?: string; message?: string; at?: number | string },
+  incoming: {
+    donorName?: string;
+    name?: string;
+    amount?: number;
+    target?: string;
+    message?: string;
+    at?: string | number;
+    id?: string;
+    externalId?: string;
+  },
+  windowMs = DONATION_NEAR_DUP_WINDOW_MS
+): boolean {
+  if (
+    donationContentMatchKey(donationContentProbe(existing)) !==
+    donationContentMatchKey(donationContentProbe(incoming))
+  ) {
+    return false;
+  }
+  const atA = donorAtEpochMs(existing);
+  const atB = donorAtEpochMs(incoming);
+  if (!atA || !atB) return false;
+  return Math.abs(atA - atB) <= windowMs;
+}
+
+function reliableExtFromIncoming(incoming: {
+  id?: string;
+  externalId?: string;
+}): string | null {
+  const fromId = extractReliableToonationExtFromDonorId(String(incoming.id || ""));
+  if (fromId) return fromId;
+  const ext = String(incoming.externalId || "").trim();
+  if (ext && isReliableToonationExternalId(ext)) return ext.toLowerCase();
+  return null;
+}
+
 /**
- * 서버 자동 반영 + 관리자 큐 처리 등 이중 경로 — 동일 내용·동일 초(at)면 1건.
- * (1초 뒤 연속 동일 후원은 허용 — freeze 정책 유지)
+ * 서버 자동 반영 + 관리자 큐·union 등 이중 경로 — 동일 내용·근접 시각이면 1건.
+ * 투네 실 id 가 서로 다른 연속 후원(1초 간격 등)은 유지.
  */
+export function shouldTreatAsDuplicateDonationContent(
+  existing: {
+    id?: string;
+    name?: string;
+    amount?: number;
+    target?: string;
+    message?: string;
+    at?: number | string;
+  },
+  incoming: {
+    id?: string;
+    externalId?: string;
+    donorName?: string;
+    name?: string;
+    amount?: number;
+    target?: string;
+    message?: string;
+    at?: string | number;
+  }
+): boolean {
+  if (!isNearContentDuplicate(existing, incoming)) return false;
+  const extA = extractReliableToonationExtFromDonorId(String(existing.id || ""));
+  const extB = reliableExtFromIncoming(incoming);
+  if (extA && extB && extA !== extB) return false;
+  return true;
+}
+
+/** @deprecated — shouldTreatAsDuplicateDonationContent 사용 */
 export function isSameInstantContentDuplicate(
   existing: { name?: string; amount?: number; target?: string; message?: string; at?: number | string },
   incoming: {
@@ -361,25 +455,11 @@ export function isSameInstantContentDuplicate(
     target?: string;
     message?: string;
     at?: string | number;
+    id?: string;
+    externalId?: string;
   }
 ): boolean {
-  const probeExisting = {
-    name: existing.name,
-    amount: existing.amount,
-    target: existing.target,
-    message: existing.message,
-  };
-  const probeIncoming = {
-    donorName: incoming.donorName ?? incoming.name,
-    amount: incoming.amount,
-    target: incoming.target,
-    message: incoming.message,
-  };
-  if (donationContentMatchKey(probeExisting) !== donationContentMatchKey(probeIncoming)) return false;
-  const atA = donorAtEpochMs(existing);
-  const atB = donorAtEpochMs(incoming);
-  if (!atA || !atB) return false;
-  return atA === atB;
+  return shouldTreatAsDuplicateDonationContent(existing, incoming);
 }
 
 /** 동일 투네·계좌 후원 id가 이미 donors에 있으면 중복(건별 unique id 기준) */
@@ -402,7 +482,15 @@ export function isDuplicateDonationEvent(state: AppState, rawEvent: DonationEven
   return donors.some((d) => {
     const donorId = String(d.id || "").trim();
     if (!donorId) return false;
-    if (isSameInstantContentDuplicate(d, probeDonor)) return true;
+    if (
+      shouldTreatAsDuplicateDonationContent(d, {
+        ...probeDonor,
+        id: eventId || externalDonorId,
+        externalId,
+      })
+    ) {
+      return true;
+    }
     if (donorRowDedupeKey(d) === probeKey) return true;
     if (donorId === eventId || donorId === baseId) return true;
     if (baseId && normalizeDonationEventId(donorId) === baseId) return true;

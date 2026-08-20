@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
-import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, getTreasuryMembersForExport, isTreasurySettlementMember, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, saveSettlementRecords, saveSettlementRecordsToApi, toPaymentAlignedSettlement, toSettlementFormulaLine, updateSettlementRecordDonors, updateSettlementRecordOptions } from "@/lib/settlement";
+import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, getTreasuryMembersForExport, isTreasurySettlementMember, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, recoverSettlementRecordsFromAllSources, saveSettlementRecords, saveSettlementRecordsToApi, toPaymentAlignedSettlement, toSettlementFormulaLine, updateSettlementRecordAndRecompute, updateSettlementRecordDonors } from "@/lib/settlement";
+import type { SettlementMemberRatioOverrides } from "@/types";
 import { aggregateMemberDonors, donorsForSettlementExport, formatExportDateTime, recordToMemberDonorsCsv, recordToMemberDonorsXlsxBlob, resolveSettlementDonors, seedSettlementDonorsForEdit, type DailyLogEntry } from "@/lib/settlement-donor-export";
 import { repairDonorTimestamps } from "@/lib/donation/repair-donor-timestamps";
 import {
@@ -58,9 +59,18 @@ function memberRoleBadge(
 export default function SettlementDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
-  const id = params?.id || "";
+  const rawId = params?.id || "";
+  const id = useMemo(() => {
+    try {
+      return decodeURIComponent(rawId);
+    } catch {
+      return rawId;
+    }
+  }, [rawId]);
   const [user, setUser] = useState<{ id: string } | null>(null);
   const [records, setRecords] = useState<SettlementRecord[] | null>(null);
+  const [detailMissing, setDetailMissing] = useState(false);
+  const [detailRecovering, setDetailRecovering] = useState(false);
   const [dailyLog, setDailyLog] = useState<Record<string, DailyLogEntry[]>>({});
   const [referenceDonors, setReferenceDonors] = useState<Donor[]>([]);
   const [copiedMemberId, setCopiedMemberId] = useState<string | null>(null);
@@ -76,6 +86,14 @@ export default function SettlementDetailPage() {
   const [editingDonors, setEditingDonors] = useState<Donor[] | null>(null);
   const [donorEditBusy, setDonorEditBusy] = useState(false);
   const [donorEditMsg, setDonorEditMsg] = useState<string | null>(null);
+  const [ratioBusy, setRatioBusy] = useState(false);
+  const [accountRatioInput, setAccountRatioInput] = useState("");
+  const [toonRatioInput, setToonRatioInput] = useState("");
+  const [taxRateInput, setTaxRateInput] = useState("");
+  const [useMemberRatioOverrides, setUseMemberRatioOverrides] = useState(false);
+  const [memberRatioInputs, setMemberRatioInputs] = useState<
+    Record<string, { account: string; toon: string }>
+  >({});
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const donorEditDirtyRef = useRef(false);
@@ -143,6 +161,65 @@ export default function SettlementDetailPage() {
   }, [user]);
 
   const record = useMemo(() => (records || []).find((x) => x.id === id) || null, [records, id]);
+
+  useEffect(() => {
+    if (!user || records === null || record) {
+      setDetailMissing(false);
+      return;
+    }
+    setDetailMissing(true);
+  }, [user, records, record]);
+
+  useEffect(() => {
+    if (!user || !detailMissing || record || detailRecovering) return;
+    let cancelled = false;
+    setDetailRecovering(true);
+    void (async () => {
+      const fresh = await loadSettlementRecordsPreferApi(user.id);
+      if (cancelled) return;
+      const found = fresh.find((r) => r.id === id);
+      if (found) {
+        setRecords(fresh);
+        setDetailMissing(false);
+        setDetailRecovering(false);
+        return;
+      }
+      const hint = id.includes("깡깡") || decodeURIComponent(rawId).includes("깡깡") ? "깡깡대전" : "";
+      if (hint) {
+        const report = await recoverSettlementRecordsFromAllSources(user.id, { titleHint: hint });
+        if (cancelled) return;
+        setRecords(report.merged);
+        if (report.merged.some((r) => r.id === id)) {
+          setDetailMissing(false);
+        }
+      }
+      setDetailRecovering(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, detailMissing, record, detailRecovering, id, rawId]);
+
+  useEffect(() => {
+    if (!record) return;
+    setAccountRatioInput(String(Math.round((record.accountRatio || 0.7) * 1000) / 10));
+    setToonRatioInput(String(Math.round((record.toonRatio || 0.6) * 1000) / 10));
+    setTaxRateInput(String(Math.round((record.feeRate || 0.033) * 1000) / 10));
+    const inputs: Record<string, { account: string; toon: string }> = {};
+    let anyOverride = false;
+    for (const m of record.members || []) {
+      const accDiff = Math.abs((m.accountRatio ?? record.accountRatio) - record.accountRatio) > 1e-9;
+      const toonDiff = Math.abs((m.toonRatio ?? record.toonRatio) - record.toonRatio) > 1e-9;
+      if (accDiff || toonDiff) anyOverride = true;
+      inputs[m.memberId] = {
+        account: accDiff ? String(Math.round((m.accountRatio || 0) * 1000) / 10) : "",
+        toon: toonDiff ? String(Math.round((m.toonRatio || 0) * 1000) / 10) : "",
+      };
+    }
+    setUseMemberRatioOverrides(anyOverride);
+    setMemberRatioInputs(inputs);
+  }, [record]);
+
   const viewRecord = useMemo(() => (record ? toPaymentAlignedSettlement(record) : null), [record]);
   const exportMembers = useMemo(
     () => (viewRecord ? getMembersForExport(viewRecord) : []),
@@ -212,13 +289,63 @@ export default function SettlementDetailPage() {
   };
 
   const persistSettlementOptions = (
-    patch: Pick<SettlementRecord, "omitTreasuryFromSettlement" | "includeTreasuryInFullStatement">
+    patch: Pick<
+      SettlementRecord,
+      "omitTreasuryFromSettlement" | "includeTreasuryInFullStatement" | "taxInvoiceIssued" | "taxInvoiceVatRate"
+    >
   ) => {
     if (!records || !user || !record) return;
-    const next = updateSettlementRecordOptions(records, id, patch);
+    const next = updateSettlementRecordAndRecompute(records, id, patch);
     setRecords(next);
     saveSettlementRecords(next, user.id);
     void saveSettlementRecordsToApi(next, user.id);
+  };
+
+  const parseRatioPercent = (raw: string, fallback: number): number => {
+    const n = Number(String(raw || "").replace(/[^\d.]/g, ""));
+    if (!Number.isFinite(n) || n <= 0) return fallback;
+    return Math.max(0, Math.min(100, n)) / 100;
+  };
+
+  const persistRatioSettings = () => {
+    if (!records || !user || !record) return;
+    setRatioBusy(true);
+    try {
+      const accountRatio = parseRatioPercent(accountRatioInput, record.accountRatio);
+      const toonRatio = parseRatioPercent(toonRatioInput, record.toonRatio);
+      const feeRate = parseRatioPercent(taxRateInput, record.feeRate);
+      let memberRatioOverrides: SettlementMemberRatioOverrides | undefined;
+      if (useMemberRatioOverrides) {
+        memberRatioOverrides = {};
+        for (const m of record.members || []) {
+          const input = memberRatioInputs[m.memberId];
+          if (!input) continue;
+          const account = input.account.trim()
+            ? parseRatioPercent(input.account, accountRatio)
+            : undefined;
+          const toon = input.toon.trim() ? parseRatioPercent(input.toon, toonRatio) : undefined;
+          if (account != null || toon != null) {
+            memberRatioOverrides[m.memberId] = {
+              ...(account != null ? { accountRatio: account } : {}),
+              ...(toon != null ? { toonRatio: toon } : {}),
+            };
+          }
+        }
+      } else {
+        memberRatioOverrides = {};
+      }
+      const next = updateSettlementRecordAndRecompute(records, id, {
+        accountRatio,
+        toonRatio,
+        feeRate,
+        memberRatioOverrides,
+      });
+      setRecords(next);
+      saveSettlementRecords(next, user.id);
+      void saveSettlementRecordsToApi(next, user.id);
+    } finally {
+      setRatioBusy(false);
+    }
   };
 
   const persistDonorAdjustments = (nextDonors: Donor[]) => {
@@ -491,8 +618,16 @@ export default function SettlementDetailPage() {
   if (!record) {
     return (
       <main className="min-h-screen p-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-neutral-300">정산 기록을 찾을 수 없습니다.</div>
+        <div className="max-w-4xl mx-auto space-y-3">
+          <div className="text-neutral-300">
+            {detailRecovering ? "정산 기록을 찾는 중…" : "정산 기록을 찾을 수 없습니다."}
+          </div>
+          {!detailRecovering && id.includes("깡깡") && (
+            <p className="text-sm text-neutral-400">
+              「깡깡대전 2화」가 목록에 없으면 정산 목록에서 「엑셀 복구」 또는 「JSON 복구」로
+              `recoveries/깡깡대전-2화-settlement-import.json` 파일을 불러와 주세요.
+            </p>
+          )}
           <Link className="underline text-neutral-300" href="/settlements">목록으로</Link>
         </div>
       </main>
@@ -652,6 +787,16 @@ export default function SettlementDetailPage() {
               <label className="inline-flex items-center gap-2 px-3 py-2 rounded border border-white/10 bg-black/20 text-sm cursor-pointer">
                 <input
                   type="checkbox"
+                  checked={Boolean(record.taxInvoiceIssued)}
+                  onChange={(e) =>
+                    persistSettlementOptions({ taxInvoiceIssued: e.target.checked })
+                  }
+                />
+                세금계산서 발행
+              </label>
+              <label className="inline-flex items-center gap-2 px-3 py-2 rounded border border-white/10 bg-black/20 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
                   checked={Boolean(record.omitTreasuryFromSettlement)}
                   onChange={(e) =>
                     persistSettlementOptions({ omitTreasuryFromSettlement: e.target.checked })
@@ -672,7 +817,107 @@ export default function SettlementDetailPage() {
             </div>
           </div>
           <div className="text-xs text-neutral-400">
-            운영비 ON 시 아래 멤버별 최종 매출·합계에서 국고가 빠집니다. 전체 정산서 PDF의 국고 50% 행은 별도 체크로 제어합니다.
+            · <span className="text-neutral-300">세금계산서 발행</span>: 원천세 차감 후 최종정산에 부가세 10%를 더해 입금액·PDF에 반영합니다.
+            {" · "}
+            <span className="text-neutral-300">운영비</span>: 국고 멤버 후원을 정산 합계에서 제외합니다.
+            {" · "}
+            <span className="text-neutral-300">전체 정산서 국고</span>: 전체 PDF에 국고 50% 행을 넣습니다.
+          </div>
+        </div>
+
+        <div className="rounded border border-cyan-500/30 bg-neutral-900/60 p-3 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-semibold">비율 조정 (정산 후 수정)</div>
+            <button
+              type="button"
+              className="px-3 py-1.5 rounded bg-cyan-800 hover:bg-cyan-700 text-sm disabled:opacity-60"
+              disabled={ratioBusy}
+              onClick={persistRatioSettings}
+            >
+              {ratioBusy ? "재계산 중…" : "비율 적용 · 재계산"}
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <input
+              className="w-[120px] px-3 py-2 rounded bg-black/30 border border-white/10 text-sm"
+              placeholder="계좌 %"
+              value={accountRatioInput}
+              onChange={(e) => setAccountRatioInput(e.target.value.replace(/[^\d.]/g, ""))}
+            />
+            <input
+              className="w-[120px] px-3 py-2 rounded bg-black/30 border border-white/10 text-sm"
+              placeholder="투네 %"
+              value={toonRatioInput}
+              onChange={(e) => setToonRatioInput(e.target.value.replace(/[^\d.]/g, ""))}
+            />
+            <input
+              className="w-[120px] px-3 py-2 rounded bg-black/30 border border-white/10 text-sm"
+              placeholder="원천세 %"
+              value={taxRateInput}
+              onChange={(e) => setTaxRateInput(e.target.value.replace(/[^\d.]/g, ""))}
+            />
+            <button
+              type="button"
+              className={`px-2 py-1.5 rounded border text-xs ${useMemberRatioOverrides ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`}
+              onClick={() => setUseMemberRatioOverrides((v) => !v)}
+            >
+              멤버별 개별 비율 {useMemberRatioOverrides ? "ON" : "OFF"}
+            </button>
+          </div>
+          {useMemberRatioOverrides && (
+            <div className="overflow-auto rounded border border-white/10">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-neutral-400 border-b border-white/10">
+                    <th className="p-2 text-left">멤버</th>
+                    <th className="p-2 text-left">계좌 %</th>
+                    <th className="p-2 text-left">투네 %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(record.members || []).map((m) => (
+                    <tr key={m.memberId} className="border-b border-white/10">
+                      <td className="p-2">{m.name}</td>
+                      <td className="p-2">
+                        <input
+                          className="w-20 px-2 py-1 rounded bg-black/30 border border-white/10"
+                          placeholder={accountRatioInput || "70"}
+                          value={memberRatioInputs[m.memberId]?.account || ""}
+                          onChange={(e) =>
+                            setMemberRatioInputs((prev) => ({
+                              ...prev,
+                              [m.memberId]: {
+                                account: e.target.value.replace(/[^\d.]/g, ""),
+                                toon: prev[m.memberId]?.toon || "",
+                              },
+                            }))
+                          }
+                        />
+                      </td>
+                      <td className="p-2">
+                        <input
+                          className="w-20 px-2 py-1 rounded bg-black/30 border border-white/10"
+                          placeholder={toonRatioInput || "60"}
+                          value={memberRatioInputs[m.memberId]?.toon || ""}
+                          onChange={(e) =>
+                            setMemberRatioInputs((prev) => ({
+                              ...prev,
+                              [m.memberId]: {
+                                account: prev[m.memberId]?.account || "",
+                                toon: e.target.value.replace(/[^\d.]/g, ""),
+                              },
+                            }))
+                          }
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="text-xs text-neutral-400">
+            후원 스냅샷은 유지하고 배분·원천세만 다시 계산합니다. 변경 후 「비율 적용 · 재계산」을 눌러 저장하세요.
           </div>
         </div>
 
@@ -758,6 +1003,7 @@ export default function SettlementDetailPage() {
         <div className="text-sm text-neutral-300 whitespace-nowrap overflow-x-auto">
           계좌 비율 {(viewRecord!.accountRatio * 100).toFixed(1)}% · 투네 비율 {(viewRecord!.toonRatio * 100).toFixed(1)}% · 세금 {(viewRecord!.feeRate * 100).toFixed(1)}%
           {viewRecord!.vatIncluded ? ` · 부가세 포함(공급가 ÷${(1 + (viewRecord!.vatRate ?? 0.1)).toFixed(1)})` : ""}
+          {viewRecord!.taxInvoiceIssued ? " · 세금계산서 발행(최종+부가세10%)" : " · 세금계산서 미발행(원천세만)"}
           <span className="text-neutral-500"> · 금액은 지급정산서(수수료·부가세 공제 후) 기준</span>
         </div>
 

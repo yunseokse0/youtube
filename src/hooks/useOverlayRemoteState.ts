@@ -23,6 +23,8 @@ import {
   normalizeDonorsArray,
   shouldAvoidOverwritingLocalStateWithRemote,
   storageKey,
+  totalCombined,
+  wouldShrinkDonationData,
   type AppState,
 } from "@/lib/state";
 import { mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
@@ -97,6 +99,26 @@ import {
 } from "@/lib/state-api-pick";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { mergeHighSocietySettingsPreferBaseline } from "@/lib/high-society";
+import { normalizeTerritoryLogs } from "@/lib/territory-utils";
+
+/** 로컬·원격 영토 기록부 — id 기준 union, 동일 id는 더 최신 at 우선 */
+function mergeTerritoryLogsPreferFresher(
+  local: AppState["territoryLogs"],
+  remote: AppState["territoryLogs"]
+): AppState["territoryLogs"] {
+  const byId = new Map<string, NonNullable<AppState["territoryLogs"]>[number]>();
+  for (const log of normalizeTerritoryLogs(remote)) {
+    byId.set(String(log.id), log);
+  }
+  for (const log of normalizeTerritoryLogs(local)) {
+    const id = String(log.id);
+    const prev = byId.get(id);
+    if (!prev || Number(log.at || 0) >= Number(prev.at || 0)) {
+      byId.set(id, log);
+    }
+  }
+  return [...byId.values()].sort((a, b) => Number(a.at || 0) - Number(b.at || 0));
+}
 
 /** 관리자 iframe — API 폴링이 서버 구 스냅샷으로 HS·후원 미리보기를 덮지 않게 LS 힌트 병합 */
 function mergeAdminPreviewLocalHintOntoRemote(
@@ -118,10 +140,22 @@ function mergeAdminPreviewLocalHintOntoRemote(
     JSON.stringify(hsLocal ?? {}) !== JSON.stringify(hsRemote ?? {});
   const localDonors = normalizeDonorsArray(local.donors);
   const remoteDonors = normalizeDonorsArray(remote.donors);
+  const localDonationWouldShrink = wouldShrinkDonationData(local, remote);
   const localDonorsRicher =
+    localDonationWouldShrink ||
+    totalCombined(local) > totalCombined(remote) ||
     localDonors.length > remoteDonors.length ||
     (localDonors.length > 0 && localAt > remoteAt);
-  if (localAt <= remoteAt && !hsDiff && !localDonorsRicher) return remote;
+  const localTerritoryLogs = normalizeTerritoryLogs(local.territoryLogs);
+  const remoteTerritoryLogs = normalizeTerritoryLogs(remote.territoryLogs);
+  const territoryLogsDiff =
+    JSON.stringify(localTerritoryLogs) !== JSON.stringify(remoteTerritoryLogs);
+  const localTerritoryRicher =
+    localTerritoryLogs.length > remoteTerritoryLogs.length ||
+    (localTerritoryLogs.length > 0 && localAt > remoteAt && territoryLogsDiff);
+  if (localAt <= remoteAt && !hsDiff && !localDonorsRicher && !localTerritoryRicher) {
+    return remote;
+  }
 
   const merged: AppState = {
     ...remote,
@@ -129,7 +163,7 @@ function mergeAdminPreviewLocalHintOntoRemote(
   };
   if (hsLocal) merged.highSocietySettings = hsLocal;
   if (local.donationSyncMode) merged.donationSyncMode = local.donationSyncMode;
-  if (localDonors.length > 0) {
+  if (localDonors.length > 0 || localDonationWouldShrink) {
     merged.donors =
       remoteDonors.length > 0
         ? mergeDonorsForMultiTabSave(localDonors, remoteDonors, {
@@ -137,6 +171,18 @@ function mergeAdminPreviewLocalHintOntoRemote(
             existingUpdatedAt: remoteAt,
           })
         : local.donors;
+    if (localDonationWouldShrink && Array.isArray(local.members) && local.members.length > 0) {
+      merged.members = mergeMemberRosterPreservingAmounts(
+        remote.members || [],
+        local.members
+      );
+    }
+  }
+  if (localTerritoryLogs.length > 0 || territoryLogsDiff) {
+    merged.territoryLogs = mergeTerritoryLogsPreferFresher(
+      localTerritoryLogs,
+      remoteTerritoryLogs
+    );
   }
   if (Array.isArray(local.members) && local.members.length > 0) {
     merged.members = mergeMemberRosterPreservingAmounts(

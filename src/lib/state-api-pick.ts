@@ -110,6 +110,8 @@ function overlayCoreFields(
     sigRollingMeta: state.sigRollingMeta,
     /** 상류사회 영토 — 실시간 모드·좌석·후원 방향 반영에 필요 */
     highSocietySettings: state.highSocietySettings,
+    /** 수동 영토 기록부 — OBS(host=obs)는 LS 없이 API만 사용 */
+    territoryLogs: state.territoryLogs || [],
   };
 }
 

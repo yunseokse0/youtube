@@ -5,6 +5,9 @@ import {
   enrichSettlementRecordsDonorsFromDailyLog,
   recoverSettlementRecordsFromDailyLog,
 } from "@/lib/settlement-recovery";
+import {
+  filterSettlementRecordsByDeleteLogs,
+} from "@/lib/settlement-delete-tombstone";
 import type { Donor, Member, SettlementDeleteLog, SettlementMemberRatioOverrides, SettlementMemberResult, SettlementRecord } from "@/types";
 
 export const SETTLEMENT_RECORDS_KEY = "excel-broadcast-settlement-records-v1";
@@ -30,6 +33,8 @@ export type SettlementCreateOptions = {
   vatRate?: number;
   omitTreasuryFromSettlement?: boolean;
   includeTreasuryInFullStatement?: boolean;
+  taxInvoiceIssued?: boolean;
+  taxInvoiceVatRate?: number;
 };
 
 function pruneOlderThan3Years(records: SettlementRecord[]): SettlementRecord[] {
@@ -196,6 +201,78 @@ export function saveSettlementDeleteLogs(logs: SettlementDeleteLog[], userId?: s
   }
 }
 
+function mergeSettlementDeleteLogs(
+  local: SettlementDeleteLog[],
+  remote: SettlementDeleteLog[]
+): SettlementDeleteLog[] {
+  const byId = new Map<string, SettlementDeleteLog>();
+  for (const log of [...remote, ...local]) {
+    const id = String(log.recordId || "").trim();
+    if (!id) continue;
+    const prev = byId.get(id);
+    if (!prev || (log.deletedAt || 0) >= (prev.deletedAt || 0)) byId.set(id, log);
+  }
+  return normalizeDeleteLogs(Array.from(byId.values()));
+}
+
+export async function loadSettlementDeleteLogsFromApi(
+  userId?: string | null
+): Promise<SettlementDeleteLog[] | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    const q = new URLSearchParams({ _t: String(Date.now()) });
+    if (userId) q.set("user", userId);
+    const res = await fetch(`/api/settlements/delete-logs?${q.toString()}`, {
+      cache: "no-store",
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return normalizeDeleteLogs(Array.isArray(data) ? data : []);
+  } catch {
+    return null;
+  }
+}
+
+export async function saveSettlementDeleteLogsToApi(
+  logs: SettlementDeleteLog[],
+  userId?: string | null
+): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  try {
+    const q = new URLSearchParams();
+    if (userId) q.set("user", userId);
+    const url = q.toString() ? `/api/settlements/delete-logs?${q.toString()}` : "/api/settlements/delete-logs";
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(normalizeDeleteLogs(logs)),
+      credentials: "include",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function loadSettlementDeleteLogsPreferApi(
+  userId?: string | null
+): Promise<SettlementDeleteLog[]> {
+  const local = loadSettlementDeleteLogs(userId);
+  const fromApi = await loadSettlementDeleteLogsFromApi(userId);
+  if (!fromApi) return local;
+  const merged = mergeSettlementDeleteLogs(local, fromApi);
+  saveSettlementDeleteLogs(merged, userId);
+  return merged;
+}
+
+export function applySettlementDeleteTombstones(
+  records: SettlementRecord[],
+  deleteLogs: SettlementDeleteLog[] | null | undefined
+): SettlementRecord[] {
+  return filterSettlementRecordsByDeleteLogs(normalizeSettlementRecords(records), deleteLogs);
+}
+
 export function appendSettlementDeleteLog(record: SettlementRecord, reason = "manual", userId?: string | null): SettlementDeleteLog {
   const log: SettlementDeleteLog = {
     recordId: record.id,
@@ -240,6 +317,10 @@ export function appendSettlementRecord(
     ...(donors && donors.length > 0 ? { donors } : {}),
     ...(settlementOptions?.omitTreasuryFromSettlement ? { omitTreasuryFromSettlement: true } : {}),
     ...(settlementOptions?.includeTreasuryInFullStatement ? { includeTreasuryInFullStatement: true } : {}),
+    ...(settlementOptions?.taxInvoiceIssued ? { taxInvoiceIssued: true } : {}),
+    ...(settlementOptions?.taxInvoiceVatRate != null
+      ? { taxInvoiceVatRate: settlementOptions.taxInvoiceVatRate }
+      : {}),
   };
   const prev = loadSettlementRecords(userId);
   saveSettlementRecords([rec, ...prev], userId);
@@ -323,11 +404,13 @@ export async function saveSettlementRecordsToApi(
     if (!settlementSavePending) {
       settlementSavePending = { records, userId, replace, resolveAll: [resolve] };
     } else {
-      settlementSavePending.records = replace
-        ? records
-        : mergeSettlementRecords(settlementSavePending.records, records);
+      if (replace) {
+        settlementSavePending.records = records;
+        settlementSavePending.replace = true;
+      } else if (!settlementSavePending.replace) {
+        settlementSavePending.records = mergeSettlementRecords(settlementSavePending.records, records);
+      }
       settlementSavePending.userId = userId ?? settlementSavePending.userId;
-      settlementSavePending.replace = settlementSavePending.replace || replace;
       settlementSavePending.resolveAll.push(resolve);
     }
     void runSettlementSaveQueue();
@@ -335,22 +418,27 @@ export async function saveSettlementRecordsToApi(
 }
 
 export async function loadSettlementRecordsPreferApi(userId?: string | null): Promise<SettlementRecord[]> {
+  const deleteLogs = await loadSettlementDeleteLogsPreferApi(userId);
   const legacyLocal = loadSettlementRecords(null);
-  let local = mergeSettlementRecords(legacyLocal, loadSettlementRecords(userId));
+  let local = applySettlementDeleteTombstones(
+    mergeSettlementRecords(legacyLocal, loadSettlementRecords(userId)),
+    deleteLogs
+  );
   const fromApi = await loadSettlementRecordsFromApi(userId);
   if (fromApi) {
-    const merged =
+    const mergedRaw =
       fromApi.length === 0 && local.length > 0
         ? local
         : mergeSettlementRecords(local, fromApi);
+    const merged = applySettlementDeleteTombstones(mergedRaw, deleteLogs);
     saveSettlementRecords(merged, userId);
     if (merged.length !== fromApi.length || (fromApi.length === 0 && merged.length > 0)) {
-      saveSettlementRecordsToApi(merged, userId).catch(() => {});
+      saveSettlementRecordsToApi(merged, userId, { replace: true }).catch(() => {});
     }
     return merged;
   }
   if (local.length === 0 && userId) {
-    local = legacyLocal;
+    local = applySettlementDeleteTombstones(legacyLocal, deleteLogs);
     if (local.length > 0) {
       saveSettlementRecords(local, userId);
       saveSettlementRecordsToApi(local, userId).catch(() => {});
@@ -379,8 +467,11 @@ export async function recoverSettlementRecordsFromAllSources(
   userId?: string | null,
   opts?: { titleHint?: string }
 ): Promise<SettlementRecoveryReport> {
-  const legacy = loadSettlementRecords(null);
-  const userLocal = userId ? loadSettlementRecords(userId) : [];
+  const deleteLogs = await loadSettlementDeleteLogsPreferApi(userId);
+  const legacy = applySettlementDeleteTombstones(loadSettlementRecords(null), deleteLogs);
+  const userLocal = userId
+    ? applySettlementDeleteTombstones(loadSettlementRecords(userId), deleteLogs)
+    : [];
   let merged = mergeSettlementRecords(legacy, userLocal);
   let apiCount = 0;
   let dailyLogAdded = 0;
@@ -404,10 +495,14 @@ export async function recoverSettlementRecordsFromAllSources(
         dailyLogStats?: { totalEntries: number; uncoveredEntries: number };
       };
       if (Array.isArray(data.records)) {
-        merged = mergeSettlementRecords(merged, data.records);
+        merged = applySettlementDeleteTombstones(
+          mergeSettlementRecords(merged, data.records),
+          deleteLogs
+        );
         apiCount = data.records.length;
         dailyLogAdded = Number(data.counts?.dailyLogOrphans || 0);
         saveSettlementRecords(merged, userId);
+        await saveSettlementRecordsToApi(merged, userId, { replace: true }).catch(() => {});
         return {
           merged,
           counts: {
@@ -429,7 +524,7 @@ export async function recoverSettlementRecordsFromAllSources(
 
   const fromApi = await loadSettlementRecordsFromApi(userId);
   apiCount = fromApi?.length ?? 0;
-  if (fromApi) merged = mergeSettlementRecords(merged, fromApi);
+  if (fromApi) merged = applySettlementDeleteTombstones(mergeSettlementRecords(merged, fromApi), deleteLogs);
 
   try {
     const { loadDailyLog, loadDailyLogFromApi } = await import("@/lib/state");
@@ -439,15 +534,17 @@ export async function recoverSettlementRecordsFromAllSources(
     const before = merged.length;
     merged = recoverSettlementRecordsFromDailyLog(dailyLog, merged, {
       titleHint: opts?.titleHint,
+      deletedLogs: deleteLogs,
     });
     merged = enrichSettlementRecordsDonorsFromDailyLog(merged, dailyLog);
+    merged = applySettlementDeleteTombstones(merged, deleteLogs);
     dailyLogAdded = Math.max(0, merged.length - before);
   } catch {
     /* noop */
   }
 
   saveSettlementRecords(merged, userId);
-  if (merged.length > 0) await saveSettlementRecordsToApi(merged, userId);
+  if (merged.length > 0) await saveSettlementRecordsToApi(merged, userId, { replace: true });
   return {
     merged,
     counts: {
@@ -634,13 +731,178 @@ export function recomputeSettlementFromDonors(
   };
 }
 
-/** records 배열에서 정산 옵션(국고 등) 패치 */
+/** records 배열에서 정산 옵션(국고·세금계산서 등) 패치 — 금액 재계산 포함 */
+export type SettlementRecomputePatch = Partial<
+  Pick<
+    SettlementRecord,
+    | "accountRatio"
+    | "toonRatio"
+    | "feeRate"
+    | "vatIncluded"
+    | "vatRate"
+    | "taxInvoiceIssued"
+    | "taxInvoiceVatRate"
+    | "omitTreasuryFromSettlement"
+    | "includeTreasuryInFullStatement"
+  >
+> & {
+  memberRatioOverrides?: SettlementMemberRatioOverrides;
+};
+
+function memberRatioOverridesFromRecord(record: SettlementRecord): SettlementMemberRatioOverrides {
+  const overrides: SettlementMemberRatioOverrides = {};
+  for (const m of record.members || []) {
+    const accDiff =
+      typeof m.accountRatio === "number" &&
+      Math.abs(m.accountRatio - record.accountRatio) > 1e-9;
+    const toonDiff =
+      typeof m.toonRatio === "number" && Math.abs(m.toonRatio - record.toonRatio) > 1e-9;
+    if (accDiff || toonDiff || m.operating) {
+      overrides[m.memberId] = {
+        ...(accDiff ? { accountRatio: m.accountRatio } : {}),
+        ...(toonDiff ? { toonRatio: m.toonRatio } : {}),
+      };
+    }
+  }
+  return overrides;
+}
+
+function applyMemberRatioOverridesToRecord(
+  record: SettlementRecord,
+  overrides: SettlementMemberRatioOverrides | undefined,
+  accountRatio: number,
+  toonRatio: number
+): SettlementRecord {
+  if (!overrides || Object.keys(overrides).length === 0) return record;
+  return {
+    ...record,
+    members: (record.members || []).map((m) => {
+      const o = overrides[m.memberId];
+      if (!o) return m;
+      return {
+        ...m,
+        ...(typeof o.accountRatio === "number" ? { accountRatio: o.accountRatio } : {}),
+        ...(typeof o.toonRatio === "number" ? { toonRatio: o.toonRatio } : {}),
+      };
+    }),
+    accountRatio,
+    toonRatio,
+  };
+}
+
+/** 후원 스냅샷 또는 멤버 원금 기준으로 비율·옵션 변경 후 재계산 */
+export function recomputeSettlementRecord(
+  record: SettlementRecord,
+  patch: SettlementRecomputePatch = {}
+): SettlementRecord {
+  const accountRatio = patch.accountRatio ?? record.accountRatio;
+  const toonRatio = patch.toonRatio ?? record.toonRatio;
+  const feeRate = patch.feeRate ?? record.feeRate;
+  const merged: SettlementRecord = {
+    ...record,
+    ...patch,
+    accountRatio,
+    toonRatio,
+    feeRate,
+  };
+  let overrides =
+    patch.memberRatioOverrides !== undefined
+      ? patch.memberRatioOverrides
+      : memberRatioOverridesFromRecord(merged);
+  let withRatios = applyMemberRatioOverridesToRecord(
+    merged,
+    overrides,
+    accountRatio,
+    toonRatio
+  );
+  if (patch.memberRatioOverrides !== undefined && Object.keys(patch.memberRatioOverrides).length === 0) {
+    withRatios = {
+      ...withRatios,
+      members: (withRatios.members || []).map((m) => ({
+        ...m,
+        accountRatio,
+        toonRatio,
+      })),
+    };
+    overrides = {};
+  } else if (
+    patch.memberRatioOverrides === undefined &&
+    (patch.accountRatio != null || patch.toonRatio != null)
+  ) {
+    withRatios = {
+      ...withRatios,
+      members: (withRatios.members || []).map((m) => ({
+        ...m,
+        accountRatio,
+        toonRatio,
+      })),
+    };
+    overrides = {};
+  }
+
+  const donors = withRatios.donors || [];
+  if (donors.length > 0) {
+    return recomputeSettlementFromDonors(withRatios, donors);
+  }
+
+  const positions = withRatios.memberPositionsAtSettlement || {};
+  const membersInput: Member[] = (withRatios.members || []).map((m) => ({
+    id: m.memberId,
+    name: m.name,
+    realName: m.realName || "",
+    operating: m.operating,
+    account: m.account,
+    toon: m.toon,
+    contribution: 0,
+  }));
+  const body = computeSettlement(
+    membersInput,
+    accountRatio,
+    toonRatio,
+    feeRate,
+    Object.keys(overrides).length > 0 ? overrides : undefined,
+    positions,
+    { vatIncluded: withRatios.vatIncluded, vatRate: withRatios.vatRate }
+  );
+  const prevById = new Map((withRatios.members || []).map((m) => [m.memberId, m]));
+  const members = body.members.map((m) => {
+    const prev = prevById.get(m.memberId);
+    if (!prev) return m;
+    return {
+      ...m,
+      bankName: prev.bankName || m.bankName,
+      bankAccount: prev.bankAccount || m.bankAccount,
+      accountHolder: prev.accountHolder || m.accountHolder,
+    };
+  });
+  return {
+    ...withRatios,
+    ...body,
+    members,
+    memberPositionsAtSettlement: positions,
+  };
+}
+
+export function updateSettlementRecordAndRecompute(
+  records: SettlementRecord[],
+  recordId: string,
+  patch: SettlementRecomputePatch
+): SettlementRecord[] {
+  return (records || []).map((r) =>
+    r.id === recordId ? recomputeSettlementRecord(r, patch) : r
+  );
+}
+
+/** @deprecated updateSettlementRecordAndRecompute 사용 */
 export function updateSettlementRecordOptions(
   records: SettlementRecord[],
   recordId: string,
-  patch: Pick<SettlementRecord, "omitTreasuryFromSettlement" | "includeTreasuryInFullStatement">
+  patch: Pick<
+    SettlementRecord,
+    "omitTreasuryFromSettlement" | "includeTreasuryInFullStatement" | "taxInvoiceIssued" | "taxInvoiceVatRate"
+  >
 ): SettlementRecord[] {
-  return (records || []).map((r) => (r.id === recordId ? { ...r, ...patch } : r));
+  return updateSettlementRecordAndRecompute(records, recordId, patch);
 }
 
 /** records 배열에서 해당 정산의 donors 를 교체·재계산 */
@@ -656,12 +918,16 @@ export function updateSettlementRecordDonors(
 }
 
 export async function deleteSettlementRecordAndSync(recordId: string, reason = "manual", userId?: string | null): Promise<{ ok: boolean; deleted?: SettlementRecord }> {
-  const local = loadSettlementRecords(userId);
+  const deleteLogs = await loadSettlementDeleteLogsPreferApi(userId);
+  const local = applySettlementDeleteTombstones(loadSettlementRecords(userId), deleteLogs);
   const target = local.find((r) => r.id === recordId);
   if (!target) return { ok: false };
   const next = local.filter((r) => r.id !== recordId);
   saveSettlementRecords(next, userId);
-  appendSettlementDeleteLog(target, reason, userId);
+  const log = appendSettlementDeleteLog(target, reason, userId);
+  const nextLogs = mergeSettlementDeleteLogs(deleteLogs, [log]);
+  saveSettlementDeleteLogs(nextLogs, userId);
+  await saveSettlementDeleteLogsToApi(nextLogs, userId);
   const ok = await saveSettlementRecordsToApi(next, userId, { replace: true });
   return { ok, deleted: target };
 }
@@ -675,7 +941,11 @@ export function toSettlementFormulaLine(record: SettlementRecord, m: SettlementM
   }
   const accRatio = Number(stmt.accountRatio.toFixed(3));
   const toonRatio = Number(stmt.toonRatio.toFixed(3));
-  return `${m.name} 계좌${accSrc}-공제→${stmt.accountNet.toLocaleString()}x${accRatio}=${stmt.accountStreamerShare.toLocaleString()} 투네${toonSrc}-공제→${stmt.toonNet.toLocaleString()}x${toonRatio}=${stmt.toonStreamerShare.toLocaleString()} A+B=${stmt.pretaxTotal.toLocaleString()}-원천세${stmt.withholding.toLocaleString()}=${stmt.payout.toLocaleString()}`;
+  return `${m.name} 계좌${accSrc}-공제→${stmt.accountNet.toLocaleString()}x${accRatio}=${stmt.accountStreamerShare.toLocaleString()} 투네${toonSrc}-공제→${stmt.toonNet.toLocaleString()}x${toonRatio}=${stmt.toonStreamerShare.toLocaleString()} A+B=${stmt.pretaxTotal.toLocaleString()}-원천세${stmt.withholding.toLocaleString()}=${stmt.payout.toLocaleString()}${
+    record.taxInvoiceIssued && stmt.outputVat > 0
+      ? `+부가세${stmt.outputVat.toLocaleString()}=${stmt.finalPayout.toLocaleString()}`
+      : ""
+  }`;
 }
 
 /** 지급정산서 공식으로 반영·세금·최종액을 맞춘 멤버 행 */
@@ -690,7 +960,7 @@ export function applyPaymentStatementAmounts(
     toonApplied: stmt.toonStreamerShare,
     gross: stmt.pretaxTotal,
     fee: stmt.withholding,
-    net: stmt.payout,
+    net: record.taxInvoiceIssued ? stmt.finalPayout : stmt.payout,
   };
 }
 

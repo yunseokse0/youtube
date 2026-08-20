@@ -119,7 +119,7 @@ import {
   RESTROOM_UNLIMITED_SYMBOL,
   restroomValueAfterUndoLog,
 } from "@/lib/restroom-utils";
-import { createTerritoryLog } from "@/lib/territory-utils";
+import { createTerritoryLog, normalizeTerritoryLogs } from "@/lib/territory-utils";
 import { useSSEConnection } from "@/lib/sse-client";
 import { createStateUpdatedScheduler, DONOR_STATE_UPDATED_DEBOUNCE_MS, DONOR_STATE_UPDATED_MAX_WAIT_MS } from "@/lib/overlay-pull-policy";
 import {
@@ -670,6 +670,13 @@ export default function AdminPage() {
     [toonationAlertboxUrl]
   );
   const [toonationLogs, setToonationLogs] = useState<Array<{ id: string; at: number; message: string }>>([]);
+  const [storageHealth, setStorageHealth] = useState<{
+    storage?: { backendHint?: string; kvError?: string | null; mysql?: boolean };
+    mainState?: { donorsCount?: number; totalCombined?: number };
+    donationBackup?: { donorsCount?: number; total?: number } | null;
+    dailyLogLatest?: { at?: string; donorsCount?: number } | null;
+    hint?: string | null;
+  } | null>(null);
   const [toonationQueue, setToonationQueue] = useState<DonationEvent[]>([]);
   const [unmatchedEvents, setUnmatchedEvents] = useState<DonationEvent[]>([]);
   const [unmatchedAssignMap, setUnmatchedAssignMap] = useState<Record<string, string>>({});
@@ -952,6 +959,7 @@ export default function AdminPage() {
   const [toonRatioInput, setToonRatioInput] = useState("60");
   const [taxRateInput, setTaxRateInput] = useState("3.3");
   const [vatIncluded, setVatIncluded] = useState(false);
+  const [taxInvoiceIssued, setTaxInvoiceIssued] = useState(false);
   const [omitTreasuryFromSettlement, setOmitTreasuryFromSettlement] = useState(false);
   const [includeTreasuryInFullStatement, setIncludeTreasuryInFullStatement] = useState(false);
   const [useMemberRatioOverrides, setUseMemberRatioOverrides] = useState(false);
@@ -1841,6 +1849,16 @@ export default function AdminPage() {
       merged = { ...merged, highSocietySettings: local.highSocietySettings };
       didPreserve = true;
     }
+    const localTerritoryLogs = normalizeTerritoryLogs(local.territoryLogs);
+    const mergedTerritoryLogs = normalizeTerritoryLogs(merged.territoryLogs);
+    if (
+      localTerritoryLogs.length > 0 &&
+      JSON.stringify(localTerritoryLogs) !== JSON.stringify(mergedTerritoryLogs) &&
+      Number(local.updatedAt || 0) >= Number(incoming.updatedAt || 0)
+    ) {
+      merged = { ...merged, territoryLogs: localTerritoryLogs };
+      didPreserve = true;
+    }
     const localDonorsNorm = normalizeDonorsArray(local.donors);
     const incomingDonorsNorm = normalizeDonorsArray(merged.donors);
     const localIdSet = new Set(localDonorsNorm.map((d) => d.id));
@@ -1905,6 +1923,22 @@ export default function AdminPage() {
       ),
     };
     const donorsNorm = normalizeDonorsArray(merged.donors);
+    /** 폴링·테마 PATCH 직후 빈/축소 원격이 union 을 통과한 경우 최종 안전망 */
+    if (
+      localDonorsNorm.length > 0 &&
+      donorsNorm.length === 0 &&
+      remoteResetAt <= localResetAt
+    ) {
+      merged = syncMemberTotalsFromDonors({ ...merged, donors: localDonorsNorm });
+      didPreserve = true;
+    } else if (wouldShrinkDonationData(local, merged) && localDonorsNorm.length > 0) {
+      const union = mergeDonorsForMultiTabSave(donorsNorm, localDonorsNorm, {
+        incomingUpdatedAt: Number(merged.updatedAt ?? incoming.updatedAt ?? 0),
+        existingUpdatedAt: Number(local.updatedAt || 0),
+      });
+      merged = syncMemberTotalsFromDonors({ ...merged, donors: union });
+      didPreserve = true;
+    }
     /** 원격 후원 수용 후 엑셀 금액이 로컬 멤버 합계에 묶이지 않게 donors 기준 재계산.
      * 단, 후원 없이 멤버 금액만 보존한 경우에는 sync가 0으로 되돌리지 않게 한다. */
     const preservedTotalsWithoutDonors =
@@ -1960,6 +1994,15 @@ export default function AdminPage() {
     }).catch(() => {
       setDailyLog(loadDailyLog(user?.id));
     });
+    void fetch(`/api/state/storage-health?user=${encodeURIComponent(user.id)}`, {
+      credentials: "include",
+      cache: "no-store",
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && typeof data === "object") setStorageHealth(data);
+      })
+      .catch(() => {});
     try {
       const raw =
         migrateLegacyLocalStorageKey("excel-broadcast-settlement-options-v1", settlementOptionsKey) ||
@@ -1970,6 +2013,7 @@ export default function AdminPage() {
           toonRatioInput?: string;
           taxRateInput?: string;
           vatIncluded?: boolean;
+          taxInvoiceIssued?: boolean;
           useMemberRatioOverrides?: boolean;
           memberRatioInputs?: Record<string, { account?: string; toon?: string }>;
           omitTreasuryFromSettlement?: boolean;
@@ -1979,6 +2023,7 @@ export default function AdminPage() {
         if (typeof parsed.toonRatioInput === "string") setToonRatioInput(parsed.toonRatioInput);
         if (typeof parsed.taxRateInput === "string") setTaxRateInput(parsed.taxRateInput);
         if (typeof parsed.vatIncluded === "boolean") setVatIncluded(parsed.vatIncluded);
+        if (typeof parsed.taxInvoiceIssued === "boolean") setTaxInvoiceIssued(parsed.taxInvoiceIssued);
         if (typeof parsed.omitTreasuryFromSettlement === "boolean") {
           setOmitTreasuryFromSettlement(parsed.omitTreasuryFromSettlement);
         }
@@ -2279,11 +2324,12 @@ export default function AdminPage() {
     void saveStateAsync(next, user.id, { donorsAuthoritative: true });
   }, [user, dailyLog, state.donors]);
 
-  /** 후원 0건·멤버 금액 잔존 — LS·일일 로그에서 자동 복구 */
+  /** 후원 0건 — LS·일일 로그·서버 백업에서 자동 복구 (한 세션 1회) */
   useEffect(() => {
     if (!user) return;
     if (autoOrphanDonorRestoreAttemptedRef.current) return;
-    if (!isOrphanedDonationState(state)) return;
+    const donorsEmpty = normalizeDonorsArray(state.donors).length === 0;
+    if (!donorsEmpty) return;
     autoOrphanDonorRestoreAttemptedRef.current = true;
 
     const ls = loadState(user.id);
@@ -2307,20 +2353,56 @@ export default function AdminPage() {
       return;
     }
 
-    const mergedLog: Record<string, DailyLogEntry[]> = { ...loadDailyLog(user.id), ...dailyLog };
-    const entry = pickDailyLogEntryForRestore(mergedLog, new Date().toISOString().slice(0, 10));
-    if (!entry) return;
-    const restored = buildAppStateFromDailyLogRestore(stateRef.current, entry);
-    if (!restored) return;
-    setState(restored);
-    donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
-    void saveStateAsync(restored, user.id, { donorsAuthoritative: true }).then((r) => {
-      if (r.ok) setSyncStatus(r.storageFallback ? "error" : "synced");
-    });
-    setSigExcelResult(
-      `후원 목록이 비어 있어 일일 로그(${entry.at})에서 ${normalizeDonorsArray(restored.donors).length}건을 자동 복구했습니다.`
-    );
-  }, [user, state, dailyLog]);
+    const tryDailyLogRestore = async () => {
+      const serverLog = await loadDailyLogFromApi(user?.id);
+      const mergedLog: Record<string, DailyLogEntry[]> = {
+        ...loadDailyLog(user.id),
+        ...serverLog,
+      };
+      const entry = pickDailyLogEntryForRestore(
+        mergedLog,
+        new Date().toISOString().slice(0, 10)
+      );
+      if (!entry || !Array.isArray(entry.donors) || entry.donors.length === 0) {
+        return false;
+      }
+      const restored = buildAppStateFromDailyLogRestore(stateRef.current, entry);
+      if (!restored) return false;
+      setState(restored);
+      donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
+      void saveStateAsync(restored, user.id, { donorsAuthoritative: true }).then((r) => {
+        if (r.ok) setSyncStatus(r.storageFallback ? "error" : "synced");
+      });
+      setSigExcelResult(
+        `후원 목록이 비어 있어 일일 로그(${entry.at})에서 ${normalizeDonorsArray(restored.donors).length}건을 자동 복구했습니다.`
+      );
+      return true;
+    };
+
+    void (async () => {
+      if (await tryDailyLogRestore()) return;
+      try {
+        const res = await fetch("/api/donations/restore-backup", {
+          method: "POST",
+          credentials: "include",
+        });
+        if (res.ok) {
+          const body = (await res.json()) as { donorsCount?: number; total?: number };
+          const remote = await loadStateFromApi(user.id, { forceFull: true });
+          if (remote) {
+            const { merged } = mergeIncomingStateSafely(remote, stateRef.current);
+            setState(merged);
+            stateRef.current = merged;
+          }
+          setSigExcelResult(
+            `서버 후원 백업에서 ${body.donorsCount ?? "?"}건(합계 ${(body.total ?? 0).toLocaleString("ko-KR")}원)을 자동 복구했습니다.`
+          );
+        }
+      } catch {
+        /* noop */
+      }
+    })();
+  }, [user, state.donors, dailyLog, mergeIncomingStateSafely]);
 
   useEffect(() => {
     const id = window.setInterval(() => setTimerUiNow(Date.now()), 1000);
@@ -3590,6 +3672,7 @@ export default function AdminPage() {
           toonRatioInput,
           taxRateInput,
           vatIncluded,
+          taxInvoiceIssued,
           useMemberRatioOverrides,
           memberRatioInputs,
           omitTreasuryFromSettlement,
@@ -3597,7 +3680,7 @@ export default function AdminPage() {
         })
       );
     } catch {}
-  }, [settlementOptionsKey, accountRatioInput, toonRatioInput, taxRateInput, vatIncluded, useMemberRatioOverrides, memberRatioInputs, omitTreasuryFromSettlement, includeTreasuryInFullStatement]);
+  }, [settlementOptionsKey, accountRatioInput, toonRatioInput, taxRateInput, vatIncluded, taxInvoiceIssued, useMemberRatioOverrides, memberRatioInputs, omitTreasuryFromSettlement, includeTreasuryInFullStatement]);
 
   const updateMember = (m: Member) => {
     setState((prev: AppState) => {
@@ -7756,6 +7839,20 @@ export default function AdminPage() {
       return;
     }
     if (!territoryMemberId) return;
+    const seated = resolveHighSocietySeatMembers(
+      stateRef.current.members || [],
+      hsSettings
+    );
+    if (seated.length === 0) {
+      showAppToast("영토 좌석이 없습니다. 오버레이 탭에서 좌석을 먼저 지정해 주세요.", {
+        variant: "info",
+      });
+      return;
+    }
+    if (!seated.some((m) => m.id === territoryMemberId)) {
+      showAppToast("영토 반영은 좌석에 배치된 멤버만 가능합니다.", { variant: "info" });
+      return;
+    }
     const cm = Math.max(0, Math.floor(parseAmount(territoryCm)));
     if (cm <= 0) return;
     const seatRole = seatRoleForMemberId(
@@ -7810,15 +7907,6 @@ export default function AdminPage() {
   }, [state.members, restroomMemberId]);
   useEffect(() => {
     if (!state.members.length) return;
-    if (!territoryMemberId) setTerritoryMemberId(state.members[0].id);
-  }, [state.members, territoryMemberId]);
-  useEffect(() => {
-    if (!state.members.length) return;
-    const exists = state.members.some((m) => m.id === territoryMemberId);
-    if (!exists) setTerritoryMemberId(state.members[0].id);
-  }, [state.members, territoryMemberId]);
-  useEffect(() => {
-    if (!state.members.length) return;
     const exists = state.members.some((m) => m.id === sigPresetMemberId);
     if (!exists) setSigPresetMemberId(state.members[0].id);
   }, [state.members, sigPresetMemberId]);
@@ -7853,6 +7941,12 @@ export default function AdminPage() {
     () => resolveHighSocietySeatMembers(state.members || [], highSocietySettings),
     [state.members, highSocietySettings]
   );
+  useEffect(() => {
+    if (!state.members.length) return;
+    if (hsSeatPlayers.length === 0) return;
+    const exists = hsSeatPlayers.some((m) => m.id === territoryMemberId);
+    if (!territoryMemberId || !exists) setTerritoryMemberId(hsSeatPlayers[0].id);
+  }, [state.members, territoryMemberId, hsSeatPlayers]);
   /** 수동 좌석(명시 목록·빈 좌석 포함) vs 자동 전원 N등분 */
   const hsSeatExplicit = isHighSocietySeatSelectionManual(highSocietySettings);
   const hsSeatedIdSet = useMemo(
@@ -8601,6 +8695,7 @@ export default function AdminPage() {
       snapshot.memberPositions || null,
       {
         vatIncluded,
+        taxInvoiceIssued,
         omitTreasuryFromSettlement,
         includeTreasuryInFullStatement,
       }
@@ -8874,6 +8969,24 @@ export default function AdminPage() {
             >
               {syncStatus === "synced" ? "서버 동기화됨" : syncStatus === "loading" ? "동기화 중..." : syncStatus === "error" ? "연결 재시도 중" : "로컬 모드 (오프라인)"}
             </span>
+            {storageHealth?.storage?.backendHint ? (
+              <span
+                className="px-2 py-0.5 rounded text-xs font-medium bg-neutral-800 text-neutral-300"
+                title={
+                  storageHealth.hint === "main_state_empty_but_daily_log_has_donors"
+                    ? "MySQL 메인 상태 donors 는 비었지만 일일 로그에 후원 스냅샷이 있습니다. 「일일 로그에서 복구」를 사용하세요."
+                    : storageHealth.storage.kvError || undefined
+                }
+              >
+                저장: {storageHealth.storage.backendHint}
+                {typeof storageHealth.mainState?.donorsCount === "number"
+                  ? ` · 서버 후원 ${storageHealth.mainState.donorsCount}건`
+                  : ""}
+                {storageHealth.dailyLogLatest?.donorsCount
+                  ? ` · 로그 ${storageHealth.dailyLogLatest.donorsCount}건`
+                  : ""}
+              </span>
+            ) : null}
             <button
               className="px-2 py-1 rounded bg-[#22c55e] hover:bg-[#16a34a] text-xs font-medium text-white"
               onClick={onFetchLatestFromServer}
@@ -12857,6 +12970,11 @@ export default function AdminPage() {
                     실제 팝업 미리보기
                   </a>
                 </p>
+                <details className="rounded border border-white/10 bg-black/10 p-2 group">
+                  <summary className="cursor-pointer text-xs text-neutral-400 select-none">
+                    레거시 큐·별칭 (미사용) — (0)이어도 후원금과 무관 · 클릭하여 펼치기
+                  </summary>
+                  <div className="mt-2 space-y-2">
                 <div className="rounded border border-white/10 bg-black/20 p-2">
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <div className="text-xs text-neutral-300">투네이션 미반영 대기 ({toonationQueue.length}) · 자동 처리</div>
@@ -13073,6 +13191,8 @@ export default function AdminPage() {
                     ))}
                   </div>
                 </div>
+                  </div>
+                </details>
                 <div className="rounded border border-white/10 bg-black/20 p-2">
                   <div className="text-xs text-neutral-400 mb-2">작업 로그 ({toonationLogs.length})</div>
                   <div className="max-h-[160px] overflow-auto pr-1 space-y-1">
@@ -13325,13 +13445,19 @@ export default function AdminPage() {
                       className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
                       value={territoryMemberId || ""}
                       onChange={(e) => setTerritoryMemberId(e.target.value)}
+                      disabled={hsSeatPlayers.length === 0}
                     >
-                      {(hsSeatPlayers.length > 0 ? hsSeatPlayers : state.members).map((m) => (
+                      {hsSeatPlayers.map((m) => (
                         <option key={m.id} value={m.id}>
                           {m.name}
                         </option>
                       ))}
                     </select>
+                    {hsSeatPlayers.length === 0 && (
+                      <p className="text-xs text-amber-300/90 col-span-full">
+                        좌석 멤버가 없습니다. 오버레이 탭에서 상류사회 좌석을 지정해 주세요.
+                      </p>
+                    )}
                     <select
                       className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
                       value={territoryPushDir}
@@ -17659,6 +17785,14 @@ export default function AdminPage() {
                   onClick={() => setVatIncluded((v) => !v)}
                 >
                   부가세 포함 {vatIncluded ? "ON" : "OFF"}
+                </button>
+                <button
+                  type="button"
+                  className={`px-3 py-2 rounded border text-sm whitespace-nowrap ${taxInvoiceIssued ? "border-violet-500 bg-violet-950/40 text-violet-300" : "border-white/10 bg-neutral-900/80 text-neutral-400"}`}
+                  onClick={() => setTaxInvoiceIssued((v) => !v)}
+                  title="체크 시 최종정산에 부가세 10% 가산(세금계산서). 미체크 시 원천세만"
+                >
+                  세금계산서 {taxInvoiceIssued ? "ON" : "OFF"}
                 </button>
                 <button
                   type="button"

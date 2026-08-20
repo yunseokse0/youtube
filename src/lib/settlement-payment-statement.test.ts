@@ -58,6 +58,15 @@ describe("computeMemberPaymentStatement (정산서.xlsx)", () => {
     expect(stmt.pretaxTotal).toBe(1_190_000);
     expect(stmt.withholding).toBe(39_270);
     expect(stmt.payout).toBe(1_150_730);
+    expect(stmt.outputVat).toBe(0);
+    expect(stmt.finalPayout).toBe(1_150_730);
+  });
+
+  it("adds 10% output vat to final payout when tax invoice issued", () => {
+    const stmt = computeMemberPaymentStatement(record({ taxInvoiceIssued: true }), member());
+    expect(stmt.payout).toBe(1_150_730);
+    expect(stmt.outputVat).toBe(115_073);
+    expect(stmt.finalPayout).toBe(1_265_803);
   });
 
   it("uses accountSource/toonSource as gross when vat-included snapshot exists", () => {

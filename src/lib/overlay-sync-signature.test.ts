@@ -40,6 +40,26 @@ describe("buildOverlaySyncSignature", () => {
     const b = { ...a, members };
     expect(buildOverlaySyncSignature(a)).not.toBe(buildOverlaySyncSignature(b));
   });
+
+  it("changes when manual territory log is added", () => {
+    const a = defaultState();
+    const b = {
+      ...a,
+      territoryLogs: [
+        {
+          id: "tl1",
+          memberId: "m1",
+          amount: 5,
+          delta: 1 as const,
+          pushDir: "right" as const,
+          note: "",
+          at: 1,
+        },
+      ],
+    };
+    expect(buildOverlaySyncSignature(a)).not.toBe(buildOverlaySyncSignature(b));
+  });
+
   it("changes when high-society push direction changes", () => {
     const a = {
       ...defaultState(),

@@ -372,6 +372,21 @@ export function isReliableToonationExternalId(id: string): boolean {
   return true;
 }
 
+/** donor.id / event id 에서 투네 실 id 추출 — toon-{realId}-{unique} 포함 */
+export function extractReliableToonationExtFromDonorId(id: string): string | null {
+  const ext = String(id || "")
+    .trim()
+    .replace(/^toonation:/i, "")
+    .replace(/::review$/i, "");
+  if (!ext) return null;
+  if (isReliableToonationExternalId(ext)) return ext.toLowerCase();
+  const toonMatch = /^toon-(.+)-(\d{13,}-\d+-)/i.exec(ext);
+  if (toonMatch?.[1] && isReliableToonationExternalId(toonMatch[1])) {
+    return toonMatch[1].toLowerCase();
+  }
+  return null;
+}
+
 /** WS 원문(JSON)에서 후원 content 페이로드만 추출 */
 export function peekToonationWsPayload(raw: string): unknown | null {
   try {

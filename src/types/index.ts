@@ -678,6 +678,10 @@ export type SettlementRecord = {
   omitTreasuryFromSettlement?: boolean;
   /** true면 전체 정산서 PDF에 국고 50% 행 반영 */
   includeTreasuryInFullStatement?: boolean;
+  /** true면 원천세 차감 후 최종정산에 부가세(기본 10%)를 가산 — 세금계산서 발행 */
+  taxInvoiceIssued?: boolean;
+  /** 세금계산서 부가세율(기본 10%). taxInvoiceIssued일 때만 사용 */
+  taxInvoiceVatRate?: number;
 };
 
 export type SettlementDeleteLog = {

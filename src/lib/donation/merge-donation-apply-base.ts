@@ -10,6 +10,7 @@ import {
 import type { AppState, Donor, Member } from "@/types";
 import {
   mergeDonorRowFields,
+  dedupeDonorRows,
   repairMemberTotalsForDonorRoster,
   rosterDonorMatchScore,
   syncMemberTotalsFromDonors,
@@ -72,7 +73,7 @@ export function mergeDonationApplyBase(
     donorMap.set(d.id, prev ? mergeDonorRowFields(d, prev) : d);
   }
   unionGroupSplitDonorsIntoMap(donorMap, freshDonors, hintDonors);
-  const mergedDonors = Array.from(donorMap.values()).sort((a, b) => b.at - a.at);
+  const mergedDonors = dedupeDonorRows(Array.from(donorMap.values())).sort((a, b) => b.at - a.at);
 
   const hintStrong = hasMeaningfulMemberRoster(hint);
   const freshStrong = hasMeaningfulMemberRoster(fresh);
