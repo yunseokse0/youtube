@@ -618,8 +618,8 @@ export function buildTerritoryPauseToggleSettingsPatch(
 
 /**
  * 후원 행이 상류사회 영토 집계에 포함되는지.
- * - ON: link.startedAt 이후 + (최초 ON 구간 | OFF 이전 baseline | 재ON 이후)
- * - OFF: OFF 시각 이전만 유지(리셋 전까지 동결)
+ * - 완전 수동: 후원 리스트「영토 ON」(`hsTerritoryExcluded === false`)만 반영
+ * - OFF: OFF 시각 이전·명시 ON 후원만 동결 유지
  * - 일시정지: 진행 중·재개 후 completed windows 구간 후원은 영토 제외(합산은 유지)
  */
 export function shouldDonorCountForHighSocietyTerritory(
@@ -628,14 +628,12 @@ export function shouldDonorCountForHighSocietyTerritory(
   link: { active: boolean; startedAt?: number }
 ): boolean {
   if (!link.active) return false;
-  if (isDonorHsTerritoryExcluded(d)) return false;
+  if (!isDonorHsTerritoryIncluded(d)) return false;
   if (d.donationExcluded === true) return false;
   if (Math.max(0, Number(d.amount) || 0) <= 0) return false;
   if (!isDonationAmountEligibleForHighSocietyTerritory(d.amount)) return false;
 
   const at = highSocietyDonorAtMs(d);
-  const startedAt = Number(link.startedAt);
-  if (Number.isFinite(startedAt) && startedAt > 0 && at < Math.floor(startedAt)) return false;
 
   if (isDonorInTerritoryPauseExcludeWindows(at, settings)) return false;
 
@@ -646,21 +644,15 @@ export function shouldDonorCountForHighSocietyTerritory(
       : null;
   if (pausedAt && at >= pausedAt) return false;
 
-  const lastOffAtRaw = Number(settings.territoryCutoffAt);
-  const reopenAtRaw = Number(settings.territoryReopenAt);
-  const lastOffAt = Number.isFinite(lastOffAtRaw) && lastOffAtRaw > 0 ? Math.floor(lastOffAtRaw) : null;
-  const reopenAt = Number.isFinite(reopenAtRaw) && reopenAtRaw > 0 ? Math.floor(reopenAtRaw) : null;
-
   if (!settings.enabled) {
+    const lastOffAtRaw = Number(settings.territoryCutoffAt);
+    const lastOffAt = Number.isFinite(lastOffAtRaw) && lastOffAtRaw > 0 ? Math.floor(lastOffAtRaw) : null;
     /** cutoff 없으면 OFF 이후 후원이 영토에 섞이지 않게 집계 제외 */
     if (!lastOffAt) return false;
     return at < lastOffAt;
   }
 
-  if (!lastOffAt && !reopenAt) return true;
-  if (reopenAt && at >= reopenAt) return true;
-  if (lastOffAt && at < lastOffAt) return true;
-  return false;
+  return true;
 }
 
 /** admin patch — 영토만 새 라운드(집계 시작 시점). donors/members 와 분리 */
@@ -1282,8 +1274,13 @@ export function seatRoleForMemberId(
   };
 }
 
+/** 후원 리스트에서 영토 ON 으로 명시 반영된 행 */
+export function isDonorHsTerritoryIncluded(d: Pick<Donor, "hsTerritoryExcluded">): boolean {
+  return d.hsTerritoryExcluded === false;
+}
+
 export function isDonorHsTerritoryExcluded(d: Pick<Donor, "hsTerritoryExcluded">): boolean {
-  return d.hsTerritoryExcluded === true;
+  return !isDonorHsTerritoryIncluded(d);
 }
 
 /**

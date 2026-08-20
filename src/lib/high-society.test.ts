@@ -62,6 +62,9 @@ import {
   highSocietyAdminPreviewIframeKeySig,
 } from "./high-society";
 
+/** 후원 리스트「영토 ON」— 수동 반영 테스트용 */
+const hsTerritoryOn = { hsTerritoryExcluded: false as const };
+
 describe("high-society rule field", () => {
   it("converts donation — only exact 1만원 multiples × 5cm", () => {
     expect(donationToExpandCm(0)).toBe(0);
@@ -99,11 +102,18 @@ describe("high-society rule field", () => {
     ).toBe(false);
     expect(
       shouldDonorCountForHighSocietyTerritory(
-        { amount: 10_000, at: 100, donationExcluded: false },
+        { amount: 10_000, at: 100, donationExcluded: false, hsTerritoryExcluded: false },
         settings,
         link
       )
     ).toBe(true);
+    expect(
+      shouldDonorCountForHighSocietyTerritory(
+        { amount: 10_000, at: 100, donationExcluded: false },
+        settings,
+        link
+      )
+    ).toBe(false);
   });
 
   it("starts equal N-way split of fixed field", () => {
@@ -378,6 +388,7 @@ describe("high-society territory (aux)", () => {
           target: "account",
           at: 1,
           hsPushDir: "right",
+          ...hsTerritoryOn,
         },
       ],
       highSocietySettings: baseSettings,
@@ -393,6 +404,7 @@ describe("high-society territory (aux)", () => {
           target: "account",
           at: 1,
           hsPushDir: "left",
+          ...hsTerritoryOn,
         },
       ],
       highSocietySettings: baseSettings,
@@ -404,7 +416,7 @@ describe("high-society territory (aux)", () => {
     expect(leftPush.seats[2]!.widthCm).toBe(300);
   });
 
-  it("filters donors by donationLinks startedAt when enabled", () => {
+  it("manual mode only counts territory ON rows (startedAt ignored)", () => {
     const members = [
       { id: "a", name: "A", account: 0, toon: 0, operating: false },
       { id: "b", name: "B", account: 0, toon: 0, operating: false },
@@ -419,22 +431,7 @@ describe("high-society territory (aux)", () => {
         b: { active: true, startedAt: 5000 },
       },
     });
-    const beforeStart = buildHighSocietyFieldFromAppState({
-      members,
-      donors: [
-        {
-          id: "d-old",
-          name: "후원",
-          amount: 100_000,
-          memberId: "b",
-          target: "account",
-          at: 1000,
-          hsPushDir: "right",
-        },
-      ],
-      highSocietySettings: baseSettings,
-    });
-    const afterStart = buildHighSocietyFieldFromAppState({
+    const withoutToggle = buildHighSocietyFieldFromAppState({
       members,
       donors: [
         {
@@ -449,8 +446,24 @@ describe("high-society territory (aux)", () => {
       ],
       highSocietySettings: baseSettings,
     });
-    expect(beforeStart.seats[1]!.widthCm).toBe(300);
-    expect(afterStart.seats[1]!.widthCm).toBe(350);
+    const withToggle = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        {
+          id: "d-new",
+          name: "후원",
+          amount: 100_000,
+          memberId: "b",
+          target: "account",
+          at: 6000,
+          hsPushDir: "right",
+          ...hsTerritoryOn,
+        },
+      ],
+      highSocietySettings: baseSettings,
+    });
+    expect(withoutToggle.seats[1]!.widthCm).toBe(300);
+    expect(withToggle.seats[1]!.widthCm).toBe(350);
   });
 
   it("keeps territory when mode is toggled off (donors not wiped from aggregation)", () => {
@@ -469,6 +482,7 @@ describe("high-society territory (aux)", () => {
         target: "account" as const,
         at: 6000,
         hsPushDir: "right" as const,
+        ...hsTerritoryOn,
       },
     ];
     const onSettings = normalizeHighSocietySettings({
@@ -521,6 +535,7 @@ describe("high-society territory (aux)", () => {
           target: "account" as const,
           at: 4000,
           hsPushDir: "right" as const,
+          ...hsTerritoryOn,
         },
       ],
       highSocietySettings: settings,
@@ -536,6 +551,7 @@ describe("high-society territory (aux)", () => {
           target: "account" as const,
           at: 4000,
           hsPushDir: "right" as const,
+          ...hsTerritoryOn,
         },
         {
           id: "d-new",
@@ -622,6 +638,7 @@ describe("high-society territory (aux)", () => {
           target: "account" as const,
           at: 4000,
           hsPushDir: "right" as const,
+          ...hsTerritoryOn,
         },
       ],
       highSocietySettings: settings,
@@ -637,6 +654,7 @@ describe("high-society territory (aux)", () => {
           target: "account" as const,
           at: 4000,
           hsPushDir: "right" as const,
+          ...hsTerritoryOn,
         },
         {
           id: "d-new",
@@ -680,6 +698,7 @@ describe("high-society territory (aux)", () => {
           target: "account" as const,
           at: 4000,
           hsPushDir: "right" as const,
+          ...hsTerritoryOn,
         },
         {
           id: "d-pause",
@@ -698,6 +717,7 @@ describe("high-society territory (aux)", () => {
           target: "account" as const,
           at: 12_000,
           hsPushDir: "right" as const,
+          ...hsTerritoryOn,
         },
       ],
       highSocietySettings: resumed,
@@ -806,7 +826,7 @@ describe("high-society territory (aux)", () => {
     expect(next.territoryReopenAt).toBe(99_000);
   });
 
-  it("re-ON keeps baseline territory and applies only post-reopen donations", () => {
+  it("re-ON keeps baseline territory and applies only manual territory ON donations", () => {
     const members = [
       { id: "a", name: "A", account: 0, toon: 0, operating: false },
       { id: "b", name: "B", account: 0, toon: 0, operating: false },
@@ -821,6 +841,7 @@ describe("high-society territory (aux)", () => {
       target: "account" as const,
       at: 6000,
       hsPushDir: "right" as const,
+      ...hsTerritoryOn,
     };
     const onSettings = normalizeHighSocietySettings({
       enabled: true,
@@ -891,6 +912,7 @@ describe("high-society territory (aux)", () => {
           target: "account" as const,
           at: 9500,
           hsPushDir: "right" as const,
+          ...hsTerritoryOn,
         },
       ],
       highSocietySettings: reOnSettings,
@@ -962,6 +984,7 @@ describe("high-society territory (aux)", () => {
           target: "account",
           at: 11_000,
           hsPushDir: "right",
+          ...hsTerritoryOn,
         },
       ],
       highSocietySettings: settings,
@@ -992,8 +1015,8 @@ describe("high-society territory (aux)", () => {
       memberWidthDonationSnapshot: { b: 10_000, a: 0, c: 0, d: 0 },
     });
     const donors = [
-      { id: "d1", name: "x", amount: 10_000, memberId: "b", at: 2000 },
-      { id: "d2", name: "y", amount: 15_000, memberId: "b", at: 3000 },
+      { id: "d1", name: "x", amount: 10_000, memberId: "b", at: 2000, ...hsTerritoryOn },
+      { id: "d2", name: "y", amount: 15_000, memberId: "b", at: 3000, hsTerritoryExcluded: true },
     ];
     const field = buildHighSocietyFieldFromAppState({
       members,
@@ -1026,9 +1049,9 @@ describe("high-society territory (aux)", () => {
       memberWidthDonationSnapshot: { jaki: 0, yoon: 10_000, ga: 0, isia: 200_000 },
     });
     const donors = [
-      { id: "d1", name: "a", amount: 10_000, memberId: "yoon", at: 2 },
+      { id: "d1", name: "a", amount: 10_000, memberId: "yoon", at: 2, ...hsTerritoryOn },
       { id: "d2", name: "b", amount: 15_000, memberId: "yoon", at: 3, hsTerritoryExcluded: true },
-      { id: "d3", name: "c", amount: 200_000, memberId: "isia", at: 2 },
+      { id: "d3", name: "c", amount: 200_000, memberId: "isia", at: 2, ...hsTerritoryOn },
     ];
     const field = buildHighSocietyFieldFromAppState({
       members,
@@ -1040,7 +1063,7 @@ describe("high-society territory (aux)", () => {
     expect(field.seats.reduce((s, x) => s + x.widthCm, 0)).toBeCloseTo(400, 0);
   });
 
-  it("excludes pre-ON donor rows when startedAt is set on first ON", () => {
+  it("manual mode ignores startedAt — only territory ON rows expand", () => {
     const members = [
       { id: "a", name: "A", account: 0, toon: 0, operating: false },
       { id: "b", name: "B", account: 0, toon: 0, operating: false },
@@ -1075,7 +1098,7 @@ describe("high-society territory (aux)", () => {
     });
     expect(oldDonor.seats.map((s) => s.widthCm)).toEqual([300, 300, 300, 300]);
 
-    const newDonor = buildHighSocietyFieldFromAppState({
+    const withoutToggle = buildHighSocietyFieldFromAppState({
       members,
       donors: [
         {
@@ -1090,7 +1113,25 @@ describe("high-society territory (aux)", () => {
       ],
       highSocietySettings: settings,
     });
-    expect(newDonor.seats[1]!.widthCm).toBe(305);
+    expect(withoutToggle.seats[1]!.widthCm).toBe(300);
+
+    const withToggle = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [
+        {
+          id: "d-new",
+          name: "신규",
+          amount: 10_000,
+          memberId: "b",
+          target: "account",
+          at: onAt + 1,
+          hsPushDir: "right",
+          ...hsTerritoryOn,
+        },
+      ],
+      highSocietySettings: settings,
+    });
+    expect(withToggle.seats[1]!.widthCm).toBe(305);
   });
 
   it("excludes donors with hsTerritoryExcluded from territory", () => {
@@ -1327,6 +1368,7 @@ describe("high-society territory (aux)", () => {
         target: "account" as const,
         at: 6000,
         hsPushDir: "right" as const,
+        ...hsTerritoryOn,
       },
     ];
     const prev = normalizeHighSocietySettings({
@@ -1352,7 +1394,7 @@ describe("high-society territory (aux)", () => {
     });
     const afterReset = buildHighSocietyFieldFromAppState({
       members,
-      donors,
+      donors: markDonorsHsTerritoryExcluded(donors, true),
       highSocietySettings: next,
     });
     expect(beforeReset.seats[1]!.widthCm).toBe(350);
@@ -1697,8 +1739,8 @@ describe("highSociety regression guards", () => {
       },
     });
     const donors = [
-      { memberId: "a", amount: 50_000, at: 2000 },
-      { memberId: "c", amount: 20_000, at: 2000 },
+      { memberId: "a", amount: 50_000, at: 2000, ...hsTerritoryOn },
+      { memberId: "c", amount: 20_000, at: 2000, ...hsTerritoryOn },
     ];
     const before = buildHighSocietyFieldFromAppState({ members, donors, highSocietySettings: settings });
     const widthA = before.seats.find((s) => s.id === "a")!.widthCm;
@@ -1743,8 +1785,8 @@ describe("highSociety regression guards", () => {
       },
     });
     const donors = [
-      { memberId: "joy", amount: 50_000, at: 2000 },
-      { memberId: "woo", amount: 10_000, at: 2000 },
+      { memberId: "joy", amount: 50_000, at: 2000, ...hsTerritoryOn },
+      { memberId: "woo", amount: 10_000, at: 2000, ...hsTerritoryOn },
     ];
     const baseline = buildHighSocietyFieldFromAppState({ members, donors, highSocietySettings: settings });
     const widthJoy = baseline.seats.find((s) => s.id === "joy")!.widthCm;

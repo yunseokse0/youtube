@@ -95,7 +95,8 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
       /** 상류사회 확장 방향만 바꿔도 OBS 게이지가 갱신되게 */
       hsPushDir: d.hsPushDir || "",
       donationExcluded: Boolean(d.donationExcluded),
-      hsTerritoryExcluded: Boolean(d.hsTerritoryExcluded),
+      hsTerritoryExcluded:
+        d.hsTerritoryExcluded === false ? "on" : d.hsTerritoryExcluded === true ? "off" : "",
     }))
     .sort((a, b) => String(a.id || "").localeCompare(String(b.id || "")));
 

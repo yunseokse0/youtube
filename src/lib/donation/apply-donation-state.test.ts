@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { normalizeHighSocietySettings } from "@/lib/high-society";
 import { defaultState } from "@/lib/state";
 import {
   applyDonationToAppState,
@@ -179,6 +180,20 @@ describe("applyDonationToAppState", () => {
     expect(good.ok).toBe(true);
     if (!good.ok) return;
     expect(good.state.donors?.[0]?.hsTerritoryExcluded).toBeUndefined();
+
+    const hsOn = {
+      ...state,
+      highSocietySettings: normalizeHighSocietySettings({ enabled: true, seatMemberIds: ["m1"] }),
+      donationSyncMode: "highSociety" as const,
+    };
+    const hsEligible = applyDonationToAppState(hsOn, {
+      ...eligible,
+      id: "bank:hs-1",
+      externalId: "hs-1",
+    });
+    expect(hsEligible.ok).toBe(true);
+    if (!hsEligible.ok) return;
+    expect(hsEligible.state.donors?.[0]?.hsTerritoryExcluded).toBe(true);
   });
 
   it("still applies donation while high society territory is paused", () => {

@@ -3,6 +3,7 @@ import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import { normalizeAnonymousDonorDisplayName } from "@/lib/donation/anonymous-donor-name";
 import {
   isDonationAmountEligibleForHighSocietyTerritory,
+  isDonorHsTerritoryIncluded,
   normalizeHighSocietySettings,
   resolveSystemMiddlePushDir,
 } from "@/lib/high-society";
@@ -93,14 +94,25 @@ export function mergeDonorRowFields<
     0,
     Math.round(Number(preferred.amount ?? fallback.amount) || 0)
   );
-  const territoryExcluded =
-    preferred.hsTerritoryExcluded === true ||
-    fallback.hsTerritoryExcluded === true ||
-    !isDonationAmountEligibleForHighSocietyTerritory(mergedAmount);
+  const ineligible = !isDonationAmountEligibleForHighSocietyTerritory(mergedAmount);
+  const territoryFlag =
+    ineligible || preferred.hsTerritoryExcluded === true
+      ? true
+      : preferred.hsTerritoryExcluded === false
+        ? false
+        : fallback?.hsTerritoryExcluded === false
+          ? false
+          : fallback?.hsTerritoryExcluded === true
+            ? true
+            : undefined;
   return {
     ...withPush,
     ...(preferred.donationExcluded || fallback.donationExcluded ? { donationExcluded: true as const } : {}),
-    ...(territoryExcluded ? { hsTerritoryExcluded: true as const } : {}),
+    ...(territoryFlag === true
+      ? { hsTerritoryExcluded: true as const }
+      : territoryFlag === false
+        ? { hsTerritoryExcluded: false as const }
+        : {}),
     ...(preferred.groupSplit || fallback.groupSplit ? { groupSplit: true as const } : {}),
     ...(preferred.groupSplitSource || fallback.groupSplitSource ? { groupSplitSource: true as const } : {}),
   };
@@ -464,7 +476,8 @@ export function applyDonationToAppState(
         ...(newDonor.message ? { message: newDonor.message } : {}),
         ...(newDonor.hsPushDir ? { hsPushDir: newDonor.hsPushDir } : {}),
         ...(processedEvent.memberAutoAssigned ? { memberAutoAssigned: true } : {}),
-        ...(!isDonationAmountEligibleForHighSocietyTerritory(newDonor.amount)
+        ...(normalizeHighSocietySettings(currentState.highSocietySettings).enabled ||
+        !isDonationAmountEligibleForHighSocietyTerritory(newDonor.amount)
           ? { hsTerritoryExcluded: true as const }
           : {}),
       },
@@ -738,15 +751,14 @@ export function applyManualHsTerritoryExcludedChange(
   ) {
     return null;
   }
-  const prevExcluded = donor.hsTerritoryExcluded === true;
+  const prevExcluded = !isDonorHsTerritoryIncluded(donor);
   if (prevExcluded === wantExcluded) return null;
 
   const now = Date.now();
   const nextDonors = (currentState.donors || []).map((d): Donor => {
     if (d.id !== id) return d;
     if (wantExcluded) return { ...d, hsTerritoryExcluded: true };
-    const { hsTerritoryExcluded: _drop, ...rest } = d;
-    return rest;
+    return { ...d, hsTerritoryExcluded: false };
   });
 
   return {

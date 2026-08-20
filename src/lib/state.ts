@@ -3604,7 +3604,7 @@ export function donorsListContentDiffers(
       Math.round(Number(rd.amount) || 0) !== Math.round(Number(ld.amount) || 0) ||
       String(rd.message || "").trim() !== String(ld.message || "").trim() ||
       Boolean(rd.donationExcluded) !== Boolean(ld.donationExcluded) ||
-      Boolean(rd.hsTerritoryExcluded) !== Boolean(ld.hsTerritoryExcluded) ||
+      rd.hsTerritoryExcluded !== ld.hsTerritoryExcluded ||
       String(rd.hsPushDir || "") !== String(ld.hsPushDir || "") ||
       Boolean(rd.groupSplit) !== Boolean(ld.groupSplit) ||
       Boolean(rd.groupSplitSource) !== Boolean(ld.groupSplitSource)

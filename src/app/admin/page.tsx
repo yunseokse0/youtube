@@ -266,6 +266,7 @@ import {
   shouldBlockHighSocietyRegression,
   isMeaningfulHighSocietySettings,
   isDonationAmountEligibleForHighSocietyTerritory,
+  isDonorHsTerritoryIncluded,
 } from "@/lib/high-society";
 import { formatHsPushDirLabel, showAppToast } from "@/lib/app-toast";
 import {
@@ -7804,8 +7805,8 @@ export default function AdminPage() {
         showAppToast(
           patch.enabled
             ? isHighSocietyReopen(before)
-              ? "상류사회 재ON — 기존 영토 유지, 이후 후원부터 영토 반영"
-              : "상류사회 ON — 기존 후원은 영토 OFF, 이후 후원부터 영토 반영"
+              ? "상류사회 재ON — 기존 영토 유지, 후원 리스트에서 영토 ON 한 건만 반영"
+              : "상류사회 ON — 기존 후원은 영토 OFF, 후원 리스트에서 영토 ON 한 건만 반영"
             : "상류사회 OFF — 영토는 리셋 전까지 유지됩니다(OFF 이후 후원은 영토 미반영)."
         );
       } else if (patch.defaultMiddlePush && after.defaultMiddlePush !== before.defaultMiddlePush) {
@@ -12190,6 +12191,7 @@ export default function AdminPage() {
                     <p className="mt-0.5 text-[11px] text-neutral-400 leading-snug">
                       확장 룰: <strong className="text-neutral-200">1만원 = 5cm</strong>
                       · 1만원 정확히 배수만 영토 반영 · 천원 자리 있으면 미적용
+                      · 영토는 후원 리스트「영토 ON」으로 수동 반영(자동 연동 없음)
                       (예: 2만원 → 10cm, 1만9천원 → 0cm). 1인 시작{" "}
                       <strong className="text-neutral-200">{formatCm(hsStartCm)}</strong>
                       · 전장 총길이{" "}
@@ -13239,7 +13241,7 @@ export default function AdminPage() {
                                   const hsAmountEligible =
                                     isDonationAmountEligibleForHighSocietyTerritory(d.amount);
                                   const hsTerritoryOff =
-                                    d.hsTerritoryExcluded === true || !hsAmountEligible;
+                                    !isDonorHsTerritoryIncluded(d) || !hsAmountEligible;
                                   const territoryBusy = hsTerritoryToggleBusyId === d.id;
                                   const territoryToggle = (
                                     <button
@@ -13251,7 +13253,7 @@ export default function AdminPage() {
                                       }`}
                                       title={
                                         hsAmountEligible
-                                          ? "상류사회 영토(cm) 반영 ON/OFF — 순위·합산과 별개"
+                                          ? "상류사회 영토(cm) 반영 ON/OFF — 후원 리스트에서 수동으로만 반영"
                                           : "1만원 정확 배수만 영토 적용 — 이 금액은 자동 영토 OFF (합산·순위는 유지)"
                                       }
                                       disabled={territoryBusy || isSplitSource || !hsAmountEligible}
