@@ -494,6 +494,12 @@ export type HighSocietySettings = {
   territoryCutoffAt?: number;
   /** 재ON 시각(ms) — 재ON 이후 들어온 후원만 영토에 추가 반영 */
   territoryReopenAt?: number;
+  /**
+   * 0cm 탈락 멤버의 게이지 표시
+   * - hidden: 게이지에서 제외(기본)
+   * - 0cm / 00cm: 좌석 순서 유지한 채 얇은 칸 + 라벨 표시
+   */
+  zeroCmGaugeDisplay?: "hidden" | "0cm" | "00cm";
   /** ON 유지 중 영토·후원 합산 동결 */
   territoryPaused?: boolean;
   /** territoryPaused=true 전환 시각(ms) — 이후 후원은 영토 게이지 미반영(합산·donors는 반영) */

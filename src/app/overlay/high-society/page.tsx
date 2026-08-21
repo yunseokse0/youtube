@@ -15,10 +15,13 @@ import {
   detectHighSocietyGrowFlashSeatIds,
   fieldCmFromStartPerMember,
   formatCm,
+  formatSeatWidthCm,
   HIGH_SOCIETY_ROUND_SEC,
   HIGH_SOCIETY_TEST_MEMBERS,
   normalizeHighSocietyFxSettings,
   normalizeHighSocietySettings,
+  normalizeZeroCmGaugeDisplay,
+  shouldShowZeroCmSeatsOnGauge,
   highSocietyFxToHsFxParam,
   parseHighSocietyFxFromHsFxParam,
   parseHighSocietyBarStyle,
@@ -30,6 +33,7 @@ import {
   type HighSocietyBarStyle,
   type HighSocietyExpandPressure,
   type HighSocietySeat,
+  type HighSocietyZeroCmGaugeDisplay,
 } from "@/lib/high-society";
 import "./high-society.css";
 
@@ -37,12 +41,14 @@ function TerritoryGauge({
   style,
   seats,
   fx,
+  zeroCmGaugeDisplay = "hidden",
   /** 관리자 프리뷰 등 — 입장/성장 모션·flex 트랜지션 유발 움찔 방지 */
   motion = true,
 }: {
   style: HighSocietyBarStyle;
   seats: HighSocietySeat[];
   fx: ReturnType<typeof normalizeHighSocietyFxSettings>;
+  zeroCmGaugeDisplay?: HighSocietyZeroCmGaugeDisplay;
   fieldCm?: number;
   motion?: boolean;
 }) {
@@ -93,8 +99,11 @@ function TerritoryGauge({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seats content via seatsSig
   }, [motion, seatsSig, fx.growFlash]);
 
-  const alive = seats.filter((s) => !s.eliminated);
-  if (alive.length === 0) {
+  const zeroDisplay = normalizeZeroCmGaugeDisplay(zeroCmGaugeDisplay);
+  const showZeroOnGauge = shouldShowZeroCmSeatsOnGauge(zeroDisplay);
+  const gaugeSeats = showZeroOnGauge ? seats : seats.filter((s) => !s.eliminated);
+
+  if (gaugeSeats.length === 0) {
     return (
       <div className="hs-field" aria-label="영토 전장">
         <div className={`hs-field-wall${fx.strongOutline ? " hs-text-outline" : ""}`} title="장벽">
@@ -128,25 +137,26 @@ function TerritoryGauge({
         벽
       </div>
       <div className="hs-field-track">
-        {alive.map((seat, index) => {
+        {gaugeSeats.map((seat, index) => {
           const growing = motion && fx.growFlash && Boolean(flashIds[seat.id]);
           const expand = seat.expandDir === "left" || seat.expandDir === "right" ? seat.expandDir : "both";
+          const isZeroCm = seat.eliminated || seat.widthCm <= 0;
           return (
             <div
               key={seat.id}
               className={`hs-field-seg hs-field-${seat.letter.toLowerCase()} hs-expand-${expand}${
                 growing ? " hs-field-seg-growing" : ""
-              }`}
+              }${isZeroCm && showZeroOnGauge ? " hs-field-zero-cm" : ""}`}
               style={
                 {
-                  flexGrow: showAtFull ? Math.max(seat.widthCm, 0.01) : 0.01,
-                  flexBasis: 0,
-                  background: seat.color,
+                  flexGrow: showAtFull ? Math.max(seat.widthCm, isZeroCm && showZeroOnGauge ? 0.01 : 0.01) : 0.01,
+                  flexBasis: isZeroCm && showZeroOnGauge ? "2.75rem" : 0,
+                  background: isZeroCm && showZeroOnGauge ? "rgba(55, 65, 81, 0.85)" : seat.color,
                   ["--hs-i" as string]: index,
                   ["--hs-seg-color" as string]: seat.color,
                 } as CSSProperties
               }
-              title={`${seat.name} · ${formatCm(seat.widthCm)} · 확장 ${formatCm(seat.expandCm)}`}
+              title={`${seat.name} · ${formatSeatWidthCm(seat.widthCm, zeroDisplay)} · 확장 ${formatCm(seat.expandCm)}`}
             >
               {fx.frontier ? (
                 <span className={`hs-field-front hs-field-front-${expand}`} aria-hidden />
@@ -154,7 +164,7 @@ function TerritoryGauge({
               <span className={`hs-field-label${fx.strongOutline ? " hs-text-outline" : ""}`}>
                 <span className="hs-field-name">{seat.name || seat.letter}</span>
                 <span className="hs-field-meta">
-                  <span className="hs-field-cm">{formatCm(seat.widthCm)}</span>
+                  <span className="hs-field-cm">{formatSeatWidthCm(seat.widthCm, zeroDisplay)}</span>
                 </span>
               </span>
             </div>
@@ -358,6 +368,7 @@ export default function HighSocietyOverlayPage() {
           style={barStyle}
           seats={displaySeats}
           fx={fx}
+          zeroCmGaugeDisplay={hsSettings.zeroCmGaugeDisplay}
           motion={!adminPreview && fx.growFlash}
         />
       </div>

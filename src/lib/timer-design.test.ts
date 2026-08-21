@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildCircularImageTimerDisplay,
   buildFlipCountdownSegments,
   normalizeTimerDesign,
   isDefaultTimerDesign,
+  isImageFrameTimerDesign,
+  resolveTimerFrameAssetUrl,
 } from "./timer-design";
 
 describe("timer-design", () => {
@@ -12,6 +15,17 @@ describe("timer-design", () => {
     expect(normalizeTimerDesign("")).toBe("pill");
     expect(isDefaultTimerDesign("pill")).toBe(true);
     expect(isDefaultTimerDesign("flip-countdown")).toBe(false);
+  });
+
+  it("normalizeTimerDesign maps image frame aliases", () => {
+    expect(normalizeTimerDesign("countdown-ring")).toBe("countdown-ring");
+    expect(normalizeTimerDesign("minute-ring")).toBe("countdown-ring");
+    expect(normalizeTimerDesign("speedometer")).toBe("speedometer");
+    expect(normalizeTimerDesign("infographic")).toBe("speedometer");
+    expect(isImageFrameTimerDesign("countdown-ring")).toBe(true);
+    expect(isImageFrameTimerDesign("pill")).toBe(false);
+    expect(resolveTimerFrameAssetUrl("countdown-ring")).toContain("countdown-ring-frame.png");
+    expect(resolveTimerFrameAssetUrl("speedometer")).toContain("speedometer-frame.png");
   });
 
   it("buildFlipCountdownSegments uses minutes:seconds by default", () => {
@@ -36,5 +50,15 @@ describe("timer-design", () => {
       { value: "01", label: "MINUTES" },
       { value: "01", label: "SECONDS" },
     ]);
+  });
+
+  it("buildCircularImageTimerDisplay formats countdown-ring and speedometer", () => {
+    expect(buildCircularImageTimerDisplay(125, false, "countdown-ring")).toEqual(
+      expect.objectContaining({ primary: "02:05", secondary: "min" })
+    );
+    expect(buildCircularImageTimerDisplay(1800, false, "speedometer")).toEqual(
+      expect.objectContaining({ primary: "30", secondary: "MIN" })
+    );
+    expect(buildCircularImageTimerDisplay(3723, true, "speedometer")?.primary).toBe("01:02");
   });
 });

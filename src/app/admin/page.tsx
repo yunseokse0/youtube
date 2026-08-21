@@ -180,10 +180,16 @@ import {
 import {
   TIMER_DESIGN_OPTIONS,
   normalizeTimerDesign,
+  isImageFrameTimerDesign,
 } from "@/lib/timer-design";
 import { normalizeVsDesign, VS_DESIGN_OPTIONS } from "@/lib/vs-design";
 import { FlipCountdownTimer } from "@/components/FlipCountdownTimer";
+import { CircularImageTimer } from "@/components/CircularImageTimer";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
+import {
+  EXCEL_TABLE_FRAME_PRESETS,
+  findExcelTableFramePresetByUrl,
+} from "@/lib/excel-table-frame-presets";
 import { pickSettingsPreservedAcrossSettlementReset } from "@/lib/settlement-reset-preserve";
 import { planSigBulkReupload, sigBulkFilesWithoutNameMatch } from "@/lib/sig-image-bulk";
 import { parseSigMetaFromFileName } from "@/lib/sig-filename-meta";
@@ -264,6 +270,8 @@ import { persistDonationStateViaApi } from "@/lib/donation/persist-donation-clie
 import { applyDonationDummySeed } from "@/lib/dev/seed-donation-dummy";
 import {
   formatCm,
+  formatSeatWidthCm,
+  normalizeZeroCmGaugeDisplay,
   normalizeHighSocietyFxSettings,
   highSocietyFxToHsFxParam,
   highSocietyAdminPreviewIframeKeySig,
@@ -282,6 +290,8 @@ import {
   isHighSocietySeatSelectionManual,
   resolveHighSocietySeatMemberIdsForEdit,
   appendHighSocietySeatMemberId,
+  insertHighSocietySeatMemberIdAt,
+  buildHighSocietyFieldFromAppState,
   resolveHighSocietyStartCmPerMember,
   resolveHighSocietyEffectiveFieldCm,
   reconcileHighSocietyFieldDimensions,
@@ -8362,6 +8372,20 @@ export default function AdminPage() {
       ),
     [state.members, hsSeatedIdSet]
   );
+  const hsSeatFieldByMemberId = useMemo(() => {
+    const map = new Map<string, { widthCm: number; eliminated: boolean }>();
+    if (!highSocietySettings.enabled) return map;
+    const field = buildHighSocietyFieldFromAppState({
+      members: state.members || [],
+      donors: state.donors || [],
+      highSocietySettings,
+      territoryLogs: state.territoryLogs || [],
+    });
+    for (const seat of field.seats) {
+      map.set(seat.id, { widthCm: seat.widthCm, eliminated: seat.eliminated });
+    }
+    return map;
+  }, [highSocietySettings, state.donors, state.members, state.territoryLogs]);
   const patchHighSocietySettings = useCallback(
     (patch: HighSocietySettingsAdminPatch) => {
       const resetTerritory = Boolean(patch.resetTerritory);
@@ -8521,8 +8545,24 @@ export default function AdminPage() {
     },
     [patchHighSocietySettings]
   );
+  const moveHighSocietySeatToIndex = useCallback(
+    (memberId: string, targetIndex: number) => {
+      const id = String(memberId || "").trim();
+      if (!id) return;
+      const members = stateRef.current.members || [];
+      const settings = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
+      const cur = resolveHighSocietySeatMemberIdsForEdit(settings, members);
+      const idx = cur.findIndex((sid) => String(sid) === id);
+      if (idx < 0) return;
+      const without = cur.filter((sid) => String(sid) !== id);
+      const at = Math.max(0, Math.min(Math.floor(targetIndex), without.length));
+      const next = [...without.slice(0, at), id, ...without.slice(at)];
+      patchHighSocietySettings({ seatMemberIds: next, seatMemberIdsManual: true });
+    },
+    [patchHighSocietySettings]
+  );
   const addHighSocietySeat = useCallback(
-    (memberId: string) => {
+    (memberId: string, atIndex?: number) => {
       const id = String(memberId || "").trim();
       if (!id) return;
       const members = stateRef.current.members || [];
@@ -8534,8 +8574,12 @@ export default function AdminPage() {
         showAppToast(`상류사회 좌석은 최대 ${HIGH_SOCIETY_MAX_SEATS}명입니다`, { variant: "info" });
         return;
       }
+      const insertAt =
+        typeof atIndex === "number" && Number.isFinite(atIndex)
+          ? Math.max(0, Math.min(Math.floor(atIndex), cur.length))
+          : cur.length;
       patchHighSocietySettings({
-        seatMemberIds: appendHighSocietySeatMemberId(cur, id),
+        seatMemberIds: insertHighSocietySeatMemberIdAt(cur, id, insertAt),
         seatMemberIdsManual: true,
       });
     },
@@ -9159,6 +9203,11 @@ export default function AdminPage() {
                 — 삭제/이동 시 그 배치로 고정됩니다.
               </>
             )}
+            <span className="block mt-0.5 text-[10px] text-neutral-500">
+              0cm 탈락 멤버는 기본적으로 게이지에서 빠집니다. 아래 「0cm 게이지 표시」에서 0cm·00cm
+              노출을 켤 수 있습니다. 재진입 위치는 ←→ 또는 0cm 칩의 위치 선택 · 확장 방향은 후원
+              「영토 ON」+ ←/→(0cm은 양끝도 수동 방향 가능).
+            </span>
           </div>
           {hsSeatExplicit ? (
             <button
@@ -9170,23 +9219,75 @@ export default function AdminPage() {
             </button>
           ) : null}
         </div>
+        <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
+          <span className="text-neutral-400">0cm 게이지 표시</span>
+          <select
+            className="rounded border border-white/10 bg-neutral-950 px-2 py-1 text-[11px]"
+            value={normalizeZeroCmGaugeDisplay(highSocietySettings.zeroCmGaugeDisplay)}
+            onChange={(e) =>
+              patchHighSocietySettings({
+                zeroCmGaugeDisplay: normalizeZeroCmGaugeDisplay(e.target.value),
+              })
+            }
+          >
+            <option value="hidden">숨김 (기본)</option>
+            <option value="0cm">게이지에 0cm 표시</option>
+            <option value="00cm">게이지에 00cm 표시</option>
+          </select>
+          <span className="text-[10px] text-neutral-500">
+            0cm·00cm 선택 시 탈락 멤버도 좌석 순서대로 얇은 칸으로 표시됩니다.
+          </span>
+        </label>
         {hsSeatPlayers.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {hsSeatPlayers.map((p, i) => {
               const expandHint = i === 0 ? "→만" : i === hsSeatPlayers.length - 1 ? "←만" : "↔";
+              const fieldSeat = hsSeatFieldByMemberId.get(p.id);
+              const eliminated = fieldSeat?.eliminated === true;
+              const zeroCmDisplay = normalizeZeroCmGaugeDisplay(highSocietySettings.zeroCmGaugeDisplay);
               return (
                 <div
                   key={`hs-overlay-seat-${p.id}`}
-                  className="flex items-center gap-1 rounded border border-amber-400/50 bg-amber-900/50 px-1.5 py-1"
+                  className={`flex items-center gap-1 rounded border px-1.5 py-1 ${
+                    eliminated
+                      ? "border-neutral-500/50 bg-neutral-900/80 opacity-75"
+                      : "border-amber-400/50 bg-amber-900/50"
+                  }`}
                 >
                   <span className="min-w-[1.25rem] text-center text-[10px] font-bold text-amber-200">
                     {i + 1}
                   </span>
                   <div className="leading-tight">
                     <div className="text-[11px] font-semibold text-white">{p.name}</div>
-                    <div className="text-[9px] text-amber-200/70">{expandHint}</div>
+                    <div className="text-[9px] text-amber-200/70">
+                      {eliminated
+                        ? `${formatSeatWidthCm(0, zeroCmDisplay)} 탈락 · ${expandHint}`
+                        : fieldSeat
+                          ? `${formatCm(fieldSeat.widthCm)} · ${expandHint}`
+                          : expandHint}
+                    </div>
                   </div>
                   <div className="ml-1 flex flex-col gap-0.5">
+                    {eliminated ? (
+                      <select
+                        className="max-w-[5.5rem] rounded bg-neutral-950/70 px-1 py-0.5 text-[9px] text-neutral-200"
+                        value={String(i)}
+                        title="0cm 탈락 — 재진입 위치(좌→右)"
+                        aria-label={`${p.name} 재진입 위치`}
+                        onChange={(e) => {
+                          const at = Number(e.target.value);
+                          if (Number.isFinite(at) && at !== i) {
+                            moveHighSocietySeatToIndex(p.id, at);
+                          }
+                        }}
+                      >
+                        {Array.from({ length: hsSeatPlayers.length }, (_, at) => (
+                          <option key={`hs-seat-at-${p.id}-${at}`} value={String(at)}>
+                            {at + 1}번 위치
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
                     <button
                       type="button"
                       className="rounded bg-neutral-950/70 px-1.5 py-0.5 text-[10px] text-neutral-200 hover:bg-neutral-800 disabled:opacity-30"
@@ -9225,17 +9326,42 @@ export default function AdminPage() {
         )}
         {hsUnseatedMembers.length > 0 ? (
           <div className="space-y-1">
-            <div className="text-[10px] text-neutral-500">좌석에 추가</div>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="text-[10px] text-neutral-500">
+              좌석에 추가 — 위치(좌→右)를 고른 뒤 추가
+            </div>
+            <div className="flex flex-col gap-1.5">
               {hsUnseatedMembers.map((m) => (
-                <button
-                  key={`hs-overlay-add-${m.id}`}
-                  type="button"
-                  className="rounded border border-white/15 bg-neutral-900 px-2 py-1 text-[11px] font-semibold text-neutral-300 hover:border-amber-400/50 hover:text-amber-100"
-                  onClick={() => addHighSocietySeat(m.id)}
-                >
-                  + {m.name}
-                </button>
+                <div key={`hs-overlay-add-${m.id}`} className="flex flex-wrap items-center gap-1.5">
+                  <select
+                    className="rounded border border-white/15 bg-neutral-950 px-1.5 py-1 text-[10px] text-neutral-200"
+                    defaultValue={String(hsSeatPlayers.length)}
+                    aria-label={`${m.name} 좌석 삽입 위치`}
+                    id={`hs-add-seat-at-${m.id}`}
+                  >
+                    {Array.from({ length: hsSeatPlayers.length + 1 }, (_, at) => (
+                      <option key={`hs-add-at-${m.id}-${at}`} value={String(at)}>
+                        {at === 0
+                          ? "← 맨 왼쪽"
+                          : at >= hsSeatPlayers.length
+                            ? "맨 오른쪽 →"
+                            : `${at + 1}번과 ${at + 2}번 사이`}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="rounded border border-white/15 bg-neutral-900 px-2 py-1 text-[11px] font-semibold text-neutral-300 hover:border-amber-400/50 hover:text-amber-100"
+                    onClick={() => {
+                      const sel = document.getElementById(
+                        `hs-add-seat-at-${m.id}`
+                      ) as HTMLSelectElement | null;
+                      const at = Number(sel?.value ?? hsSeatPlayers.length);
+                      addHighSocietySeat(m.id, Number.isFinite(at) ? at : hsSeatPlayers.length);
+                    }}
+                  >
+                    + {m.name}
+                  </button>
+                </div>
               ))}
             </div>
           </div>
@@ -12787,6 +12913,15 @@ export default function AdminPage() {
                                 bgColor={String(timerStyle.bgColor || "")}
                                 bgOpacity={timerStyle.bgOpacity}
                               />
+                            ) : isImageFrameTimerDesign(timerDesignId) ? (
+                              <CircularImageTimer
+                                remainingSeconds={effective}
+                                showHours={timerStyle.showHours}
+                                design={timerDesignId}
+                                fontSize={28}
+                                fontFamily={timerFontId}
+                                fontColor={String(timerStyle.fontColor || "")}
+                              />
                             ) : (
                               <>
                                 {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
@@ -14139,7 +14274,10 @@ export default function AdminPage() {
                         const rowSeat = highSocietySettings.enabled
                           ? seatRoleForMemberId(highSocietySettings, state.members || [], d.memberId)
                           : null;
-                        const canSetPush = Boolean(rowSeat?.canChoosePush);
+                        const rowMemberEliminated =
+                          hsSeatFieldByMemberId.get(String(d.memberId || ""))?.eliminated === true;
+                        const canSetPush =
+                          Boolean(rowSeat?.canChoosePush) || rowMemberEliminated;
                         return (
                           <tr key={d.id} className={`border-t border-white/10 ${isSplitPart ? "bg-violet-950/15" : isSplitSource ? "bg-violet-950/10" : ""}`}>
                             <td className="p-1 text-neutral-400"><ClientTime ts={d.at} /></td>
@@ -14402,7 +14540,7 @@ export default function AdminPage() {
                                       </div>
                                     );
                                   }
-                                  if (rowSeat) {
+                                  if (rowSeat && !rowMemberEliminated) {
                                     return (
                                       <div className="flex flex-wrap items-center gap-1">
                                         {territoryToggle}
@@ -16517,12 +16655,53 @@ export default function AdminPage() {
                                           <li>업로드 후 「안쪽 여백」으로 표와 프레임 정렬을 미세 조정</li>
                                         </ul>
                                       </div>
+                                      <div className="space-y-3">
+                                        <div className="flex flex-col gap-2">
+                                          <span className="text-xs font-medium text-indigo-100/90">내장 프레임 프리셋</span>
+                                          <div className="flex flex-wrap gap-2">
+                                            {EXCEL_TABLE_FRAME_PRESETS.map((fp) => {
+                                              const active = (p.tableFrameUrl || "").trim() === fp.url;
+                                              return (
+                                                <button
+                                                  key={fp.id}
+                                                  type="button"
+                                                  className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-1.5 text-[10px] transition-colors ${
+                                                    active
+                                                      ? "border-emerald-400 bg-emerald-950/50 text-emerald-100"
+                                                      : "border-white/15 bg-black/30 text-neutral-300 hover:border-indigo-400/60"
+                                                  }`}
+                                                  title={fp.label}
+                                                  onClick={() =>
+                                                    updatePreset(p.id, {
+                                                      tableFrameUrl: fp.url,
+                                                      tableFrameInset: fp.defaultInset ?? p.tableFrameInset ?? "32",
+                                                      tableFrameOpacity: fp.defaultOpacity ?? p.tableFrameOpacity ?? "100",
+                                                    })
+                                                  }
+                                                >
+                                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                  <img
+                                                    src={fp.url}
+                                                    alt=""
+                                                    className="h-12 w-16 rounded object-contain bg-neutral-950/80"
+                                                  />
+                                                  <span className="max-w-[5.5rem] truncate">{fp.label}</span>
+                                                </button>
+                                              );
+                                            })}
+                                            {(p.tableFrameUrl || "").trim() &&
+                                            !findExcelTableFramePresetByUrl(p.tableFrameUrl || "") ? (
+                                              <span className="self-center text-[10px] text-neutral-500">직접 URL</span>
+                                            ) : null}
+                                          </div>
+                                        </div>
+                                      </div>
                                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                         <label className="flex flex-col gap-1.5 min-w-0">
                                           <span className="text-xs font-medium text-indigo-100/90">PNG 프레임 URL</span>
                                           <input
                                             className="w-full min-w-0 px-2.5 py-2 rounded-lg bg-neutral-900/80 border border-white/15 text-sm"
-                                            placeholder="예: /uploads/.../frame.png"
+                                            placeholder="예: /assets/excel-frames/golden-frame.png"
                                             value={p.tableFrameUrl || ""}
                                             onChange={(e) => updatePreset(p.id, { tableFrameUrl: e.target.value })}
                                           />

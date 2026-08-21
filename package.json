@@ -37,7 +37,9 @@
     "sig:ocr-test": "node scripts/test-sig-ocr-local.mjs",
     "sig:ocr-batch": "node scripts/batch-sig-ocr-apply.mjs",
     "sig:ocr-upload": "node scripts/full-sig-ocr-upload.mjs",
-    "sig:ocr-apply": "node scripts/full-sig-ocr-upload.mjs --apply-json"
+    "sig:ocr-apply": "node scripts/full-sig-ocr-upload.mjs --apply-json",
+    "frames:prepare-excel": "node scripts/prepare-excel-table-frames.mjs",
+    "frames:prepare-timer": "node scripts/prepare-timer-design-assets.mjs"
   },
   "dependencies": {
     "@capacitor-community/file-opener": "^8.0.0",

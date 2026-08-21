@@ -85,7 +85,8 @@ import MissionBoardSlot from "@/components/MissionBoardSlot";
 import OverlayToonationRelayHost from "@/components/OverlayToonationRelayHost";
 import { GoalBar } from "@/components/GoalBar";
 import { FlipCountdownTimer } from "@/components/FlipCountdownTimer";
-import { normalizeTimerDesign } from "@/lib/timer-design";
+import { CircularImageTimer } from "@/components/CircularImageTimer";
+import { isImageFrameTimerDesign, normalizeTimerDesign } from "@/lib/timer-design";
 import BattleTeamColumnBoard from "@/components/battle/BattleTeamColumnBoard";
 import { mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
@@ -5202,6 +5203,15 @@ function OverlayInner() {
                 bgColor={timerBgColor}
                 bgOpacity={timerBgOpacity}
                 sharpRender={overlayTextSharpRender}
+              />
+            ) : isImageFrameTimerDesign(timerDesign) ? (
+              <CircularImageTimer
+                remainingSeconds={serverTimer.remainingSeconds}
+                showHours={timerShowHours}
+                design={timerDesign}
+                fontSize={timerFontSize}
+                fontFamily={timerFontFamily}
+                fontColor={timerFontColor}
               />
             ) : (
               <Timer
