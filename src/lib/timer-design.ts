@@ -20,10 +20,39 @@ export const TIMER_DESIGN_OPTIONS: { id: TimerDesignId; label: string; descripti
   },
 ];
 
+/** @deprecated PNG 프레임 — 템플릿 숫자(60·30 MIN)가 박혀 동적 타이머와 충돌. SVG 렌더 사용 */
 export const TIMER_FRAME_ASSETS: Partial<Record<TimerDesignId, string>> = {
   "countdown-ring": "/assets/timer-designs/countdown-ring-frame.png",
   speedometer: "/assets/timer-designs/speedometer-frame.png",
 };
+
+export const COUNTDOWN_RING_TICK_COUNT = 60;
+export const COUNTDOWN_RING_COLORS = {
+  active: "#e8675a",
+  inactive: "#c8cdd4",
+  text: "#111827",
+  subtext: "#374151",
+} as const;
+export const SPEEDOMETER_COLORS = {
+  track: "#3d4852",
+  fill: "#00c4dc",
+  tick: "#cbd5e1",
+  needle: "#f8fafc",
+  text: "#e2e8f0",
+  subtext: "#94a3b8",
+} as const;
+
+/** 코랄 링 — 남은 분(올림)만큼 눈금 강조, 최대 60 */
+export function computeCountdownRingFilledTicks(remainingSec: number | null | undefined): number {
+  const safe = Math.max(0, Math.floor(Number(remainingSec) || 0));
+  if (safe <= 0) return 0;
+  return Math.min(COUNTDOWN_RING_TICK_COUNT, Math.ceil(safe / 60));
+}
+
+/** 스피드미터 호 — 0~1. 링과 동일하게 남은 분(올림) / 60 */
+export function computeSpeedometerFillRatio(remainingSec: number | null | undefined): number {
+  return computeCountdownRingFilledTicks(remainingSec) / COUNTDOWN_RING_TICK_COUNT;
+}
 
 export function normalizeTimerDesign(raw: unknown): TimerDesignId {
   const v = String(raw || "")
@@ -128,21 +157,19 @@ export function buildCircularImageTimerDisplay(
   if (design === "speedometer") {
     if (showHours || hours > 0) {
       return {
-        primary: `${pad2(hours)}:${pad2(minutes)}`,
-        secondary: `${pad2(seconds)}`,
-        primaryScale: 0.62,
-        secondaryScale: 0.28,
-        defaultPrimaryColor: "#e2e8f0",
-        defaultSecondaryColor: "#94a3b8",
+        primary: `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`,
+        primaryScale: 0.48,
+        secondaryScale: 0,
+        defaultPrimaryColor: SPEEDOMETER_COLORS.text,
+        defaultSecondaryColor: SPEEDOMETER_COLORS.subtext,
       };
     }
     return {
-      primary: String(minutes),
-      secondary: "MIN",
-      primaryScale: 0.78,
-      secondaryScale: 0.26,
-      defaultPrimaryColor: "#334155",
-      defaultSecondaryColor: "#64748b",
+      primary: `${pad2(minutes)}:${pad2(seconds)}`,
+      primaryScale: 0.58,
+      secondaryScale: 0,
+      defaultPrimaryColor: SPEEDOMETER_COLORS.text,
+      defaultSecondaryColor: SPEEDOMETER_COLORS.subtext,
     };
   }
 
@@ -151,8 +178,8 @@ export function buildCircularImageTimerDisplay(
       primary: `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`,
       primaryScale: 0.52,
       secondaryScale: 0,
-      defaultPrimaryColor: "#1f2937",
-      defaultSecondaryColor: "#6b7280",
+      defaultPrimaryColor: COUNTDOWN_RING_COLORS.text,
+      defaultSecondaryColor: COUNTDOWN_RING_COLORS.subtext,
     };
   }
   return {
@@ -160,7 +187,7 @@ export function buildCircularImageTimerDisplay(
     secondary: "min",
     primaryScale: 0.68,
     secondaryScale: 0.22,
-    defaultPrimaryColor: "#111827",
-    defaultSecondaryColor: "#374151",
+    defaultPrimaryColor: COUNTDOWN_RING_COLORS.text,
+    defaultSecondaryColor: COUNTDOWN_RING_COLORS.subtext,
   };
 }

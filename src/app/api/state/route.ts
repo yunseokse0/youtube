@@ -82,6 +82,7 @@ import {
 import {
   markDonorsForHighSocietyTerritoryRoundBump,
   shouldBlockHighSocietyRegression,
+  syncHighSocietyMemberWidthSnapshotInState,
 } from "@/lib/high-society";
 import { normalizeTerritoryLogs } from "@/lib/territory-utils";
 import { loadDailyLogForUserId } from "@/lib/daily-log-server-load";
@@ -1201,6 +1202,11 @@ export async function POST(req: Request) {
           afterTotal: totalCombined(next),
         });
       }
+    }
+
+    /** 상류사회 영토 cm — donors·HS PATCH 시 OBS·관리자 수치 일치 스냅샷 */
+    if (!settlementReset && !donationInitReset) {
+      next = syncHighSocietyMemberWidthSnapshotInState(next);
     }
 
     if (hasExpandedSigInventory(next.sigInventory)) {

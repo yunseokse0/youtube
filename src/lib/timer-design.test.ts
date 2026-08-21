@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildCircularImageTimerDisplay,
   buildFlipCountdownSegments,
+  computeCountdownRingFilledTicks,
+  computeSpeedometerFillRatio,
   normalizeTimerDesign,
   isDefaultTimerDesign,
   isImageFrameTimerDesign,
@@ -56,9 +58,20 @@ describe("timer-design", () => {
     expect(buildCircularImageTimerDisplay(125, false, "countdown-ring")).toEqual(
       expect.objectContaining({ primary: "02:05", secondary: "min" })
     );
-    expect(buildCircularImageTimerDisplay(1800, false, "speedometer")).toEqual(
-      expect.objectContaining({ primary: "30", secondary: "MIN" })
+    expect(buildCircularImageTimerDisplay(244, false, "speedometer")).toEqual(
+      expect.objectContaining({ primary: "04:04" })
     );
-    expect(buildCircularImageTimerDisplay(3723, true, "speedometer")?.primary).toBe("01:02");
+    expect(buildCircularImageTimerDisplay(3723, true, "speedometer")?.primary).toBe("01:02:03");
+  });
+
+  it("computeCountdownRingFilledTicks uses remaining minutes rounded up", () => {
+    expect(computeCountdownRingFilledTicks(233)).toBe(4);
+    expect(computeCountdownRingFilledTicks(3600)).toBe(60);
+    expect(computeCountdownRingFilledTicks(0)).toBe(0);
+  });
+
+  it("computeSpeedometerFillRatio tracks ring tick ratio", () => {
+    expect(computeSpeedometerFillRatio(150)).toBeCloseTo(3 / 60, 4);
+    expect(computeSpeedometerFillRatio(3600)).toBe(1);
   });
 });

@@ -45,6 +45,8 @@ import {
   normalizeHighSocietyDonationLinks,
   resolveHighSocietySeatMembers,
   shouldBlockHighSocietyRegression,
+  shouldSyncHighSocietyMemberWidthSnapshot,
+  syncHighSocietyMemberWidthSnapshotInState,
 } from "@/lib/high-society";
 import { ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
 import { isBundledSigPlaceholderItem } from "@/lib/sig-placeholder";
@@ -2742,6 +2744,9 @@ export async function saveStateAsync(
     ...saveOpts,
     ...(omitDonations ? { omitDonationFields: true } : {}),
   };
+  if (!apiOpts.omitHighSocietyFields && shouldSyncHighSocietyMemberWidthSnapshot(guarded.highSocietySettings)) {
+    guarded = syncHighSocietyMemberWidthSnapshotInState(guarded);
+  }
   writeBroadcastStateSnapshot(guarded, userId);
   notifyBroadcastStateLocalUpdated(userId, guarded.updatedAt);
   try {

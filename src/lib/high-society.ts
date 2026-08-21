@@ -1715,6 +1715,89 @@ export function buildHighSocietyFieldFromAppState(
   };
 }
 
+/** 실시간 영토 모드에서 memberWidthCm 스냅샷을 서버·OBS와 맞출지 */
+export function shouldSyncHighSocietyMemberWidthSnapshot(
+  settings: HighSocietySettings | null | undefined
+): boolean {
+  const s = normalizeHighSocietySettings(settings);
+  if (!s.enabled || s.territoryPaused) return false;
+  if (s.territoryUpdateMode === "onRoundEnd") return false;
+  return true;
+}
+
+/** 스냅샷 없이 해상한 현재 영토 → memberWidthCm·집계 스냅샷 (OBS·관리자 수치 일치) */
+export function buildHighSocietyMemberWidthSnapshotPatch(
+  state: Pick<AppState, "members" | "donors" | "highSocietySettings" | "territoryLogs">
+): Pick<
+  HighSocietySettings,
+  "memberWidthCm" | "memberWidthDonationSnapshot" | "memberTerritoryExpand"
+> | null {
+  if (!shouldSyncHighSocietyMemberWidthSnapshot(state.highSocietySettings)) return null;
+  const settings = normalizeHighSocietySettings(state.highSocietySettings);
+  const seatPlayers = resolveHighSocietySeatMembers(state.members || [], settings);
+  if (seatPlayers.length === 0) return null;
+
+  /** UI·merge 가 보여주는 필드(스냅샷 유지) — 스냅샷 제거 후 live 재계산하면 좌석 이동 시 N등분 회귀 */
+  const field = buildHighSocietyFieldFromAppState(state);
+  if (field.seats.length === 0) return null;
+
+  const playersAgg = aggregateSeatPushesFromDonors({
+    seatPlayers: seatPlayers.map((p) => ({ ...p, donationWon: 0 })),
+    donors: state.donors || [],
+    settings: field.settings,
+  });
+  const aggById = new Map(playersAgg.map((p) => [p.id, p]));
+
+  const memberWidthCm: Record<string, number> = {};
+  const memberWidthDonationSnapshot: Record<string, number> = {};
+  const memberTerritoryExpand: Record<string, { expandLeftCm: number; expandRightCm: number }> = {};
+  for (const seat of field.seats) {
+    const agg = aggById.get(seat.id);
+    memberWidthCm[seat.id] = Math.max(0, Math.round(seat.widthCm));
+    memberWidthDonationSnapshot[seat.id] = Math.max(0, Number(agg?.donationWon) || 0);
+    memberTerritoryExpand[seat.id] = {
+      expandLeftCm: Math.max(0, Number(seat.expandLeftCm ?? agg?.expandLeftCm) || 0),
+      expandRightCm: Math.max(0, Number(seat.expandRightCm ?? agg?.expandRightCm) || 0),
+    };
+  }
+  return { memberWidthCm, memberWidthDonationSnapshot, memberTerritoryExpand };
+}
+
+/** 후원·영토 변경 직후 AppState.highSocietySettings 스냅샷 갱신 */
+export function syncHighSocietyMemberWidthSnapshotInState(state: AppState): AppState {
+  const patch = buildHighSocietyMemberWidthSnapshotPatch(state);
+  if (!patch) return state;
+  return {
+    ...state,
+    highSocietySettings: normalizeHighSocietySettings({
+      ...state.highSocietySettings,
+      ...patch,
+    }),
+  };
+}
+
+/** 서버·OBS에 영토 cm 스냅샷을 올려야 하는지 — 누락·현재 해상과 불일치 */
+export function highSocietyNeedsMemberWidthSnapshotPersist(
+  state: Pick<AppState, "members" | "donors" | "highSocietySettings" | "territoryLogs">
+): boolean {
+  if (!shouldSyncHighSocietyMemberWidthSnapshot(state.highSocietySettings)) return false;
+  const patch = buildHighSocietyMemberWidthSnapshotPatch(state);
+  if (!patch) return false;
+  const cur = normalizeHighSocietySettings(state.highSocietySettings);
+  const curW = cur.memberWidthCm;
+  const curSnap = cur.memberWidthDonationSnapshot;
+  const curExp = cur.memberTerritoryExpand;
+  if (!curW || Object.keys(curW).length === 0) return true;
+  if (
+    JSON.stringify(curW) !== JSON.stringify(patch.memberWidthCm) ||
+    JSON.stringify(curSnap ?? {}) !== JSON.stringify(patch.memberWidthDonationSnapshot ?? {}) ||
+    JSON.stringify(curExp ?? {}) !== JSON.stringify(patch.memberTerritoryExpand ?? {})
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /** 운영비 제외 멤버의 계좌+투네 합으로 영토 점유율 계산 (보조 게이지용) */
 export function buildHighSocietyTerritory(
   members: Array<Pick<Member, "id" | "name" | "account" | "toon" | "operating">>

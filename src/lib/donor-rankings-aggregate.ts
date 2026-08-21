@@ -39,7 +39,7 @@ export function aggregateDonorRankingRows(rows: DonorRankingRow[]): DonorRanking
   }
   return Array.from(byName.entries())
     .map(([name, amount]) => ({ name, amount }))
-    .sort((a, b) => b.amount - a.amount);
+    .sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name, "ko"));
 }
 
 export function sliceDonorRankingTop(rows: DonorRankingRow[], top: number): DonorRankingRow[] {

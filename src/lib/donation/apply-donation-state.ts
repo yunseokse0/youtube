@@ -6,6 +6,7 @@ import {
   isDonorHsTerritoryIncluded,
   normalizeHighSocietySettings,
   resolveSystemMiddlePushDir,
+  syncHighSocietyMemberWidthSnapshotInState,
 } from "@/lib/high-society";
 import type { AppState, Donor, Member } from "@/types";
 import {
@@ -620,7 +621,7 @@ export function applyDonationToAppState(
 
   return {
     ok: true,
-    state: updatedState,
+    state: syncHighSocietyMemberWidthSnapshotInState(updatedState),
     event: { ...processedEvent, memberId: processedEvent.memberId, status: "processed" },
   };
 }
@@ -674,17 +675,19 @@ export function revertDonationFromAppState(currentState: AppState, donorId: stri
     }
     return true;
   });
-  return syncMemberTotalsFromDonors({
-    ...currentState,
-    donors: nextDonors,
-    members,
-    mealBattle: {
-      ...currentState.mealBattle,
-      participants: mealParticipants,
-    },
-    donorRankingsUpdatedAt: now,
-    updatedAt: now,
-  });
+  return syncHighSocietyMemberWidthSnapshotInState(
+    syncMemberTotalsFromDonors({
+      ...currentState,
+      donors: nextDonors,
+      members,
+      mealBattle: {
+        ...currentState.mealBattle,
+        participants: mealParticipants,
+      },
+      donorRankingsUpdatedAt: now,
+      updatedAt: now,
+    })
+  );
 }
 
 /**
@@ -850,12 +853,12 @@ export function applyManualHsPushDirChange(
     return { ...rest, hsPushDir: wantOverride };
   });
 
-  return {
+  return syncHighSocietyMemberWidthSnapshotInState({
     ...currentState,
     donors: nextDonors,
     donorRankingsUpdatedAt: now,
     updatedAt: now,
-  };
+  });
 }
 
 /** 후원 행별 상류사회 영토 반영 ON/OFF (순위·멤버 합산과 별개) */
@@ -889,12 +892,12 @@ export function applyManualHsTerritoryExcludedChange(
     return { ...d, hsTerritoryExcluded: false };
   });
 
-  return {
+  return syncHighSocietyMemberWidthSnapshotInState({
     ...currentState,
     donors: nextDonors,
     donorRankingsUpdatedAt: now,
     updatedAt: now,
-  };
+  });
 }
 
 /** 상류사회 OFF 시 모든 후원 행 수동 방향 원복 */

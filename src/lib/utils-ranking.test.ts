@@ -36,6 +36,27 @@ describe("buildOverlayRankedMembers", () => {
     expect(ranked.map((r) => r.m.id)).toEqual(["z3", "z1", "z2"]);
     expect(ranked.map((r) => r.rank)).toEqual([1, 2, 3]);
   });
+
+  it("keeps tied donation totals in member creation order", () => {
+    const tiedMembers: Member[] = [
+      { id: "m-a", name: "A", account: 5000, toon: 0, contribution: 5000 },
+      { id: "m-b", name: "B", account: 5000, toon: 0, contribution: 5000 },
+    ];
+    const ranked = buildOverlayRankedMembers(tiedMembers, {});
+    expect(ranked.map((r) => r.m.id)).toEqual(["m-a", "m-b"]);
+    expect(ranked.map((r) => r.rank)).toEqual([1, 2]);
+  });
+
+  it("matches sortMembersForRanking when totals tie after 100원 버림", () => {
+    const tiedMembers: Member[] = [
+      { id: "m-a", name: "A", account: 5050, toon: 0, contribution: 5050 },
+      { id: "m-b", name: "B", account: 5099, toon: 0, contribution: 5099 },
+    ];
+    const overlayOrder = buildOverlayRankedMembers(tiedMembers, {}).map((r) => r.m.id);
+    const listOrder = sortMembersForRanking(tiedMembers, {}, { mode: "fixed" }).map((r) => r.id);
+    expect(overlayOrder).toEqual(["m-a", "m-b"]);
+    expect(listOrder).toEqual(["m-a", "m-b"]);
+  });
 });
 
 describe("sortMembersForRanking", () => {

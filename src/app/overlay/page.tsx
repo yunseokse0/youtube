@@ -32,6 +32,7 @@ import {
   resolveGoalBarGifOpacity,
   resolveGoalBarGifBrightness,
   resolveTableFrameUrl,
+  resolveTableFrameEnabled,
   resolveTableFrameOpacity,
   resolveTableFrameInsetPx,
   resolveOverlayTextSharpRender,
@@ -2949,9 +2950,10 @@ function OverlayInner() {
   const showTableBgGif = !stableMode && Boolean(tableBgGifUrl);
   const tableBgAnimated = useMemo(() => resolveAnimatedSourceForEmbed(tableBgGifUrl), [tableBgGifUrl]);
   const tableFrameUrl = resolveTableFrameUrl(rawSp, effectivePreset, { ready });
+  const tableFrameEnabled = resolveTableFrameEnabled(rawSp, effectivePreset, { ready });
   const tableFrameOpacity = resolveTableFrameOpacity(rawSp, effectivePreset, { ready });
   const tableFrameInsetPx = resolveTableFrameInsetPx(rawSp, effectivePreset, { ready });
-  const showTableFrame = !stableMode && Boolean(tableFrameUrl);
+  const showTableFrame = !stableMode && tableFrameEnabled;
   useEffect(() => {
     if (typeof window === "undefined") return;
     (window as any).__overlayTickerConfig = {

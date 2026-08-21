@@ -645,3 +645,26 @@ describe("applyTimerBackgroundOpacity", () => {
     expect(applyTimerBackgroundOpacity("", 40)).toBe("rgba(255,255,255,0.4)");
   });
 });
+
+describe("resolveTableFrameEnabled", () => {
+  it("shows frame when URL exists and enabled is unset", async () => {
+    const { resolveTableFrameEnabled } = await import("./overlay-params");
+    const preset: OverlayPresetLike = {
+      tableFrameUrl: "/assets/excel-frames/golden-frame.png",
+    };
+    expect(
+      resolveTableFrameEnabled(new URLSearchParams(), preset, { ready: true })
+    ).toBe(true);
+  });
+
+  it("hides frame when tableFrameEnabled is false but keeps URL in preset", async () => {
+    const { resolveTableFrameEnabled } = await import("./overlay-params");
+    const preset: OverlayPresetLike = {
+      tableFrameUrl: "/assets/excel-frames/golden-frame.png",
+      tableFrameEnabled: false,
+    };
+    expect(
+      resolveTableFrameEnabled(new URLSearchParams(), preset, { ready: true })
+    ).toBe(false);
+  });
+});

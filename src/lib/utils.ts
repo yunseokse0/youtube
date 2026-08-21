@@ -47,14 +47,19 @@ export function buildMemberCreationOrderIndex(members: Member[]): Map<string, nu
   return map;
 }
 
+function memberDonationRankingTotal(member: Member): number {
+  // 엑셀표·후원순위 표시와 동일 — 100원 단위 버림 후 합산
+  return floorToHundreds(safeAmount(member.account)) + floorToHundreds(safeAmount(member.toon));
+}
+
 /** 후원 총액 내림차순 → 동점(후원 없음 포함) 시 멤버 생성순 */
 export function compareMembersByDonationTotal(
   a: Member,
   b: Member,
   orderIndex?: Map<string, number>
 ): number {
-  const ta = safeAmount(a.account) + safeAmount(a.toon);
-  const tb = safeAmount(b.account) + safeAmount(b.toon);
+  const ta = memberDonationRankingTotal(a);
+  const tb = memberDonationRankingTotal(b);
   if (tb !== ta) return tb - ta;
   if (orderIndex) {
     const ia = orderIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER;

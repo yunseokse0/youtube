@@ -3,6 +3,7 @@ import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import { getServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { publishSseEvent } from "@/lib/sse-clients-hub";
 import { isDuplicateDonationEvent } from "@/lib/donation/apply-donation-state";
+import { syncHighSocietyMemberWidthSnapshotInState } from "@/lib/high-society";
 import type { DonationEvent } from "@/lib/donation/types";
 import type { AppState } from "@/types";
 
@@ -45,7 +46,8 @@ export async function persistDonationStateToServer(
   opts?: PersistDonationStateOptions
 ): Promise<{ ok: true; state: AppState } | { ok: false }> {
   const mode = opts?.mode ?? "add";
-  const persisted = await saveAppStateForRoulette(userId, nextState, { donorsMode: mode });
+  const stateToSave = syncHighSocietyMemberWidthSnapshotInState(nextState);
+  const persisted = await saveAppStateForRoulette(userId, stateToSave, { donorsMode: mode });
 
   if (opts?.verifyEvent && mode === "add") {
     /** reload(coalesce) 레이스로 verify 실패 → persist_failed 는 저장됐는데 UI 미반영 */

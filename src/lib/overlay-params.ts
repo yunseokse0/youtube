@@ -156,11 +156,13 @@ export type OverlayPresetLike = {
   tableBgGifUrl?: string;
   tableBgGifOpacity?: string;
   tableBgGifBrightness?: string;
-  /** 엑셀표 PNG 장식 프레임(투명 중앙). 표 바깥 absolute 오버레이 */
+  /** 엑셀표 PNG 장식 프레임(투명 중앙). 표 바깥 absolute 오вер레이 */
   tableFrameUrl?: string;
   tableFrameOpacity?: string;
   /** 프레임 안쪽 여백(px). 비우면 32 */
   tableFrameInset?: string;
+  /** false면 URL은 유지하되 OBS·미리보기에 프레임 미표시 */
+  tableFrameEnabled?: boolean;
   /** 엑셀표 시트 배경색(#rrggbb). 비우면 테마 기본 */
   tableBgColor?: string;
   /** 엑셀표 헤더(상단) 배경색. 비우면 테마 기본 */
@@ -357,6 +359,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.tableBgGifBrightness && preset.tableBgGifBrightness.trim()) q.set("tableBgGifBrightness", preset.tableBgGifBrightness.trim());
   const tableFrameUrl = sanitizeOverlayEmbedMediaUrl(preset.tableFrameUrl || "");
   if (tableFrameUrl) q.set("tableFrameUrl", tableFrameUrl);
+  if (preset.tableFrameEnabled === false) q.set("tableFrameEnabled", "false");
   if (preset.tableFrameOpacity && preset.tableFrameOpacity.trim()) q.set("tableFrameOpacity", preset.tableFrameOpacity.trim());
   if (preset.tableFrameInset && preset.tableFrameInset.trim()) q.set("tableFrameInset", preset.tableFrameInset.trim());
   const tableBgColor = normalizeGoalHexColor((preset.tableBgColor || "").trim());
@@ -436,6 +439,7 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "tableBgGifOpacity",
   "tableBgGifBrightness",
   "tableFrameUrl",
+  "tableFrameEnabled",
   "tableFrameOpacity",
   "tableFrameInset",
   "tableBgColor",
@@ -585,6 +589,7 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "tableBgGifOpacity",
   "tableBgGifBrightness",
   "tableFrameUrl",
+  "tableFrameEnabled",
   "tableFrameOpacity",
   "tableFrameInset",
   "tableBgColor",
@@ -1663,6 +1668,26 @@ export function resolveTableFrameUrl(
     opts
   );
   return sanitizeOverlayEmbedMediaUrl(merged || "");
+}
+
+/** URL이 있어도 tableFrameEnabled=false 이면 프레임 미표시(설정만 보존) */
+export function resolveTableFrameEnabled(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): boolean {
+  const url = resolveTableFrameUrl(rawSp, preset, opts);
+  if (!url) return false;
+  if (opts.ready && preset?.tableFrameEnabled === false) return false;
+  const merged = resolveLivePresetStyleParam(
+    "tableFrameEnabled",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  const v = String(merged || "").trim().toLowerCase();
+  if (v === "false" || v === "0" || v === "off") return false;
+  return true;
 }
 
 export function resolveTableFrameOpacity(

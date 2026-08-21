@@ -93,6 +93,20 @@ describe("donor-rankings-aggregate", () => {
     ).toEqual([{ name: "x", amount: 3 }]);
   });
 
+  it("aggregateDonorRankingRows는 동일 금액이면 이름순으로 고정", () => {
+    expect(
+      aggregateDonorRankingRows([
+        { name: "Charlie", amount: 5000 },
+        { name: "Alpha", amount: 5000 },
+        { name: "Bravo", amount: 5000 },
+      ])
+    ).toEqual([
+      { name: "Alpha", amount: 5000 },
+      { name: "Bravo", amount: 5000 },
+      { name: "Charlie", amount: 5000 },
+    ]);
+  });
+
   it("Unknown·anonymous·익명을 익명으로 합산한다", () => {
     const { unifiedTop } = buildDonorRankingsFromDonors(
       [

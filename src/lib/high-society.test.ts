@@ -68,6 +68,9 @@ import {
   shouldDonorCountForHighSocietyTerritory,
   highSocietyAdminPreviewSig,
   highSocietyAdminPreviewIframeKeySig,
+  syncHighSocietyMemberWidthSnapshotInState,
+  shouldSyncHighSocietyMemberWidthSnapshot,
+  highSocietyNeedsMemberWidthSnapshotPersist,
 } from "./high-society";
 
 /** 후원 리스트「영토 ON」— 수동 반영 테스트용 */
@@ -2068,6 +2071,63 @@ describe("0cm eliminated member re-entry", () => {
     expect(moved.seats.map((s) => s.id)).toEqual(["jaki", "subin", "jisu"]);
   });
 
+  it("sync after 0cm member moves to end does not equal-split reset survivors", () => {
+    const members = [
+      { id: "jaki", name: "자키", account: 0, toon: 0, operating: false },
+      { id: "jisu", name: "지수", account: 0, toon: 0, operating: false },
+      { id: "subin", name: "수빈", account: 0, toon: 0, operating: false },
+    ];
+    const linkAt = 1000;
+    const donors = [
+      { id: "d1", name: "a", amount: 210_000, memberId: "jaki", at: 2000, ...hsTerritoryOn },
+      { id: "d2", name: "b", amount: 200_000, memberId: "jisu", at: 2000, ...hsTerritoryOn },
+    ];
+    let settings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["jaki", "jisu", "subin"],
+      seatMemberIdsManual: true,
+      startCmPerMember: 100,
+      fieldCm: 300,
+      territoryUpdateMode: "realtime",
+      donationLinks: {
+        jaki: { active: true, startedAt: linkAt },
+        jisu: { active: true, startedAt: linkAt },
+        subin: { active: true, startedAt: linkAt },
+      },
+    });
+    const baseline = buildHighSocietyFieldFromAppState({ members, donors, highSocietySettings: settings });
+    const widthJaki = baseline.seats.find((s) => s.id === "jaki")!.widthCm;
+    const widthJisu = baseline.seats.find((s) => s.id === "jisu")!.widthCm;
+    expect(baseline.seats.find((s) => s.id === "subin")!.widthCm).toBe(0);
+
+    settings = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: settings,
+      nextSettings: normalizeHighSocietySettings({
+        ...settings,
+        seatMemberIds: ["jaki", "subin", "jisu"],
+      }),
+      members,
+      donors,
+    });
+    settings = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: settings,
+      nextSettings: normalizeHighSocietySettings({
+        ...settings,
+        seatMemberIds: ["jaki", "jisu", "subin"],
+      }),
+      members,
+      donors,
+    });
+
+    const state = { members, donors, highSocietySettings: settings, territoryLogs: [] };
+    const synced = syncHighSocietyMemberWidthSnapshotInState(state as never);
+    const field = buildHighSocietyFieldFromAppState(synced as never);
+    expect(field.seats.find((s) => s.id === "jaki")!.widthCm).toBeCloseTo(widthJaki, 0);
+    expect(field.seats.find((s) => s.id === "jisu")!.widthCm).toBeCloseTo(widthJisu, 0);
+    expect(field.seats.find((s) => s.id === "subin")!.widthCm).toBe(0);
+    expect(field.seats.map((s) => s.id)).toEqual(["jaki", "jisu", "subin"]);
+  });
+
   it("removing 0cm member does not reset surviving territories", () => {
     const members = [
       { id: "a", name: "A", account: 0, toon: 0, operating: false },
@@ -2107,6 +2167,84 @@ describe("0cm eliminated member re-entry", () => {
     });
     expect(next.memberWidthCm?.a).toBeCloseTo(120, 0);
     expect(next.memberWidthCm?.c).toBeCloseTo(180, 0);
+  });
+});
+
+describe("syncHighSocietyMemberWidthSnapshot", () => {
+  const members = [
+    { id: "subin", name: "수빈", account: 0, toon: 0, operating: false },
+    { id: "jaki", name: "자키", account: 0, toon: 204_700, operating: false },
+    { id: "jisu", name: "지수", account: 0, toon: 200, operating: false },
+  ];
+  const linkAt = 1000;
+  const baseSettings = normalizeHighSocietySettings({
+    enabled: true,
+    seatMemberIds: ["subin", "jaki", "jisu"],
+    seatMemberIdsManual: true,
+    startCmPerMember: 100,
+    fieldCm: 300,
+    territoryUpdateMode: "realtime",
+    donationLinks: {
+      subin: { active: true, startedAt: linkAt },
+      jaki: { active: true, startedAt: linkAt },
+      jisu: { active: true, startedAt: linkAt },
+    },
+  });
+  const donors = [
+    { id: "d-jaki", name: "a", amount: 210_000, memberId: "jaki", at: 2000, ...hsTerritoryOn },
+    { id: "d-jisu", name: "b", amount: 200_000, memberId: "jisu", at: 2000, ...hsTerritoryOn },
+  ];
+
+  it("sync writes snapshot so OBS field matches live resolution", () => {
+    const state = {
+      members,
+      donors,
+      highSocietySettings: baseSettings,
+      territoryLogs: [],
+    };
+    const live = buildHighSocietyFieldFromAppState({
+      ...state,
+      highSocietySettings: normalizeHighSocietySettings({
+        ...baseSettings,
+        memberWidthCm: undefined,
+        memberWidthDonationSnapshot: undefined,
+        memberTerritoryExpand: undefined,
+      }),
+    });
+    const synced = syncHighSocietyMemberWidthSnapshotInState(state as never);
+    expect(shouldSyncHighSocietyMemberWidthSnapshot(synced.highSocietySettings)).toBe(true);
+    const withSnap = buildHighSocietyFieldFromAppState(synced as never);
+    for (const seat of live.seats) {
+      expect(withSnap.seats.find((s) => s.id === seat.id)!.widthCm).toBeCloseTo(seat.widthCm, 0);
+    }
+    expect(withSnap.seats.reduce((s, x) => s + x.widthCm, 0)).toBeCloseTo(300, 0);
+  });
+
+  it("does not sync when territory paused or onRoundEnd", () => {
+    const state = { members, donors, highSocietySettings: baseSettings, territoryLogs: [] };
+    const paused = syncHighSocietyMemberWidthSnapshotInState({
+      ...(state as never),
+      highSocietySettings: normalizeHighSocietySettings({
+        ...baseSettings,
+        territoryPaused: true,
+      }),
+    });
+    expect(paused.highSocietySettings?.memberWidthCm).toBeUndefined();
+    const roundEnd = syncHighSocietyMemberWidthSnapshotInState({
+      ...(state as never),
+      highSocietySettings: normalizeHighSocietySettings({
+        ...baseSettings,
+        territoryUpdateMode: "onRoundEnd",
+      }),
+    });
+    expect(roundEnd.highSocietySettings?.memberWidthCm).toBeUndefined();
+  });
+
+  it("highSocietyNeedsMemberWidthSnapshotPersist when snapshot missing", () => {
+    const state = { members, donors, highSocietySettings: baseSettings, territoryLogs: [] };
+    expect(highSocietyNeedsMemberWidthSnapshotPersist(state as never)).toBe(true);
+    const synced = syncHighSocietyMemberWidthSnapshotInState(state as never);
+    expect(highSocietyNeedsMemberWidthSnapshotPersist(synced as never)).toBe(false);
   });
 });
 

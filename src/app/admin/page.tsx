@@ -306,6 +306,8 @@ import {
   isMeaningfulHighSocietySettings,
   isDonationAmountEligibleForHighSocietyTerritory,
   isDonorHsTerritoryIncluded,
+  syncHighSocietyMemberWidthSnapshotInState,
+  highSocietyNeedsMemberWidthSnapshotPersist,
 } from "@/lib/high-society";
 import { formatHsPushDirLabel, showAppToast, showServerPersistToast } from "@/lib/app-toast";
 import {
@@ -369,7 +371,7 @@ type OverlayPreset = {
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontFamily?: string; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerOutlineColor?: string; timerOutlineWidth?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; tableGridLines?: boolean; tableVerticalLines?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; totalTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
+  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableFrameEnabled?: boolean; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; tableGridLines?: boolean; tableVerticalLines?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; totalTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
   rankTop3Mode?: string; rankTop3Effect?: string; rankLabelFormat?: string; rank1Bg?: string; rank2Bg?: string; rank3Bg?: string; rank1Mark?: string; rank2Mark?: string; rank3Mark?: string; rank1Effect?: string; rank2Effect?: string; rank3Effect?: string; rank1TextColor?: string; rank2TextColor?: string; rank3TextColor?: string; rank1TextColorAlt?: string; rank2TextColorAlt?: string; rank3TextColorAlt?: string;
 };
 
@@ -1101,6 +1103,8 @@ export default function AdminPage() {
   const [sigSalesMenuCount, setSigSalesMenuCount] = useState("10");
   const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
   const [hsPreviewIframeKey, setHsPreviewIframeKey] = useState(0);
+  const hsSnapshotHealBusyRef = useRef(false);
+  const hsSnapshotHealSigRef = useRef("");
   /** 상류사회 1인 시작 cm — 입력 중 25 클램프에 막히지 않게 초안 문자열 유지 */
   const [hsStartCmDraft, setHsStartCmDraft] = useState<string | null>(null);
   const [obsTextPreviewIframeKey, setObsTextPreviewIframeKey] = useState(0);
@@ -6497,7 +6501,7 @@ export default function AdminPage() {
     void (async () => {
       const { url } = await uploadSigImageFile(file);
       if (!url) return;
-      updatePreset(presetId, { tableFrameUrl: url });
+      updatePreset(presetId, { tableFrameUrl: url, tableFrameEnabled: true });
     })();
   };
 
@@ -8476,13 +8480,16 @@ export default function AdminPage() {
             prev
           );
         }
+        next = syncHighSocietyMemberWidthSnapshotInState(next);
+        const nextSettingsSynced = normalizeHighSocietySettings(next.highSocietySettings);
+        next = { ...next, highSocietySettings: nextSettingsSynced };
         stateRef.current = next;
         try {
           const lsBase = loadState(user?.id);
           const stamped: AppState = lsBase
             ? {
                 ...lsBase,
-                highSocietySettings: nextSettings,
+                highSocietySettings: nextSettingsSynced,
                 donationSyncMode: nextDonationSyncMode,
                 ...(donorsPatch ? { donors: donorsPatch } : {}),
                 updatedAt: next.updatedAt,
@@ -8496,7 +8503,7 @@ export default function AdminPage() {
             patch,
             before: prevSettings,
             wasOn,
-            after: nextSettings,
+            after: nextSettingsSynced,
             resetTerritory,
             members: prev.members || [],
           }) ?? undefined;
@@ -8526,6 +8533,48 @@ export default function AdminPage() {
     },
     [persistState, user?.id]
   );
+  /** 관리자 로컬 영토 cm — 서버·OBS 미동기화 시 자동 HS-only 저장 (실시간 모드) */
+  useEffect(() => {
+    if (syncStatus !== "synced") return;
+    if (!highSocietySettings.enabled || highSocietySettings.territoryPaused) return;
+    if (highSocietySettings.territoryUpdateMode === "onRoundEnd") return;
+    if (hsSeatPlayers.length === 0) return;
+    const cur = stateRef.current;
+    if (!highSocietyNeedsMemberWidthSnapshotPersist(cur)) return;
+    const sig = [
+      ...[...hsSeatFieldByMemberId.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([id, v]) => `${id}:${v.widthCm}:${v.eliminated ? 1 : 0}`),
+      normalizeDonorsArray(cur.donors).length,
+      cur.updatedAt ?? 0,
+    ].join("|");
+    if (hsSnapshotHealBusyRef.current || hsSnapshotHealSigRef.current === sig) return;
+    const timer = window.setTimeout(() => {
+      const latest = stateRef.current;
+      if (!highSocietyNeedsMemberWidthSnapshotPersist(latest)) return;
+      hsSnapshotHealBusyRef.current = true;
+      hsSnapshotHealSigRef.current = sig;
+      const synced = syncHighSocietyMemberWidthSnapshotInState(latest);
+      persistState(synced, {
+        omitDonationFields: true,
+        highSocietySettingsOnly: true,
+      });
+      window.setTimeout(() => {
+        hsSnapshotHealBusyRef.current = false;
+      }, 15_000);
+    }, 2500);
+    return () => window.clearTimeout(timer);
+  }, [
+    syncStatus,
+    highSocietySettings.enabled,
+    highSocietySettings.territoryPaused,
+    highSocietySettings.territoryUpdateMode,
+    hsSeatPlayers.length,
+    hsSeatFieldByMemberId,
+    state.donors,
+    state.updatedAt,
+    persistState,
+  ]);
   const moveHighSocietySeat = useCallback(
     (memberId: string, dir: -1 | 1) => {
       const id = String(memberId || "").trim();
@@ -12848,6 +12897,42 @@ export default function AdminPage() {
                           </select>
                           <span className="text-[10px] text-neutral-500">{TIMER_DESIGN_OPTIONS.find((o) => o.id === timerDesignId)?.description}</span>
                         </div>
+                        <label className="text-xs text-neutral-400 sm:col-span-2">미리보기</label>
+                        <div
+                          className={`sm:col-span-2 flex min-h-[9rem] items-center justify-center rounded-lg border border-white/10 px-4 py-3 ${
+                            isImageFrameTimerDesign(timerDesignId) && timerDesignId === "speedometer"
+                              ? "bg-neutral-900"
+                              : "bg-neutral-950/80"
+                          }`}
+                        >
+                          {timerDesignId === "flip-countdown" ? (
+                            <FlipCountdownTimer
+                              remainingSeconds={effective}
+                              showHours={timerStyle.showHours}
+                              fontSize={28}
+                              fontFamily={timerFontId}
+                              fontColor={String(timerStyle.fontColor || "")}
+                              bgColor={String(timerStyle.bgColor || "")}
+                              bgOpacity={timerStyle.bgOpacity}
+                            />
+                          ) : isImageFrameTimerDesign(timerDesignId) ? (
+                            <CircularImageTimer
+                              remainingSeconds={effective}
+                              showHours={timerStyle.showHours}
+                              design={timerDesignId}
+                              fontSize={28}
+                              fontFamily={timerFontId}
+                              fontColor={String(timerStyle.fontColor || "")}
+                            />
+                          ) : (
+                            <span
+                              className="text-2xl font-bold tabular-nums text-white"
+                              style={{ fontFamily: timerFontCss }}
+                            >
+                              {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
+                            </span>
+                          )}
+                        </div>
                         <label className="text-xs text-neutral-400">표시 형식</label>
                         <button
                           type="button"
@@ -12898,36 +12983,6 @@ export default function AdminPage() {
                               ))}
                             </optgroup>
                           </select>
-                          <span
-                            className="inline-flex items-center rounded border border-white/10 bg-neutral-950/80 px-3 py-1 text-lg font-bold tabular-nums text-white"
-                            style={{ fontFamily: timerFontCss }}
-                            title="미리보기"
-                          >
-                            {timerDesignId === "flip-countdown" ? (
-                              <FlipCountdownTimer
-                                remainingSeconds={effective}
-                                showHours={timerStyle.showHours}
-                                fontSize={28}
-                                fontFamily={timerFontId}
-                                fontColor={String(timerStyle.fontColor || "")}
-                                bgColor={String(timerStyle.bgColor || "")}
-                                bgOpacity={timerStyle.bgOpacity}
-                              />
-                            ) : isImageFrameTimerDesign(timerDesignId) ? (
-                              <CircularImageTimer
-                                remainingSeconds={effective}
-                                showHours={timerStyle.showHours}
-                                design={timerDesignId}
-                                fontSize={28}
-                                fontFamily={timerFontId}
-                                fontColor={String(timerStyle.fontColor || "")}
-                              />
-                            ) : (
-                              <>
-                                {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
-                              </>
-                            )}
-                          </span>
                         </div>
                         <label className="text-xs text-neutral-400">글자 색상</label>
                         <div className="flex items-center gap-2">
@@ -15859,7 +15914,7 @@ export default function AdminPage() {
                 <div className="flex flex-col items-stretch gap-2">
                   <code className="max-w-full break-all text-[11px] text-amber-100/90">
                     /overlay/high-society?u={overlayUserId}&host=obs&bar=
-                    {highSocietySettings.barStyle || "flat"}
+                    {highSocietySettings.barStyle || "flat"}&startCm={Math.round(hsStartCm)}
                   </code>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -15867,7 +15922,7 @@ export default function AdminPage() {
                       className={`rounded px-2 py-1 text-xs ${copiedId === "dash-high-society" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                       onClick={() => {
                         patchHighSocietySettings({ barStyle: "flat" });
-                        const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs&bar=flat`;
+                        const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs&bar=flat&startCm=${Math.round(hsStartCm)}`;
                         void copyUrl(u, "dash-high-society");
                       }}
                     >
@@ -15878,7 +15933,7 @@ export default function AdminPage() {
                       className={`rounded px-2 py-1 text-xs ${copiedId === "dash-high-society-arrow" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                       onClick={() => {
                         patchHighSocietySettings({ barStyle: "arrow" });
-                        const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs&bar=arrow`;
+                        const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs&bar=arrow&startCm=${Math.round(hsStartCm)}`;
                         void copyUrl(u, "dash-high-society-arrow");
                       }}
                     >
@@ -16676,6 +16731,7 @@ export default function AdminPage() {
                                                       tableFrameUrl: fp.url,
                                                       tableFrameInset: fp.defaultInset ?? p.tableFrameInset ?? "32",
                                                       tableFrameOpacity: fp.defaultOpacity ?? p.tableFrameOpacity ?? "100",
+                                                      tableFrameEnabled: true,
                                                     })
                                                   }
                                                 >
@@ -16703,7 +16759,13 @@ export default function AdminPage() {
                                             className="w-full min-w-0 px-2.5 py-2 rounded-lg bg-neutral-900/80 border border-white/15 text-sm"
                                             placeholder="예: /assets/excel-frames/golden-frame.png"
                                             value={p.tableFrameUrl || ""}
-                                            onChange={(e) => updatePreset(p.id, { tableFrameUrl: e.target.value })}
+                                            onChange={(e) => {
+                                              const url = e.target.value;
+                                              updatePreset(p.id, {
+                                                tableFrameUrl: url,
+                                                tableFrameEnabled: Boolean(String(url || "").trim()),
+                                              });
+                                            }}
                                           />
                                         </label>
                                         <label className="flex flex-col gap-1.5">
@@ -16749,6 +16811,51 @@ export default function AdminPage() {
                                             기본 32px. 가이드의 30px 여백과 맞추고 ±4px 조정하세요.
                                           </span>
                                         </label>
+                                      </div>
+                                      {(p.tableFrameUrl || "").trim() ? (
+                                        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-2.5">
+                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                          <img
+                                            src={(p.tableFrameUrl || "").trim()}
+                                            alt=""
+                                            className="max-h-20 max-w-[200px] rounded object-contain bg-neutral-950/80"
+                                          />
+                                          <button
+                                            type="button"
+                                            className="rounded bg-white/15 px-2 py-1 text-xs text-indigo-50 hover:bg-white/25"
+                                            onClick={() =>
+                                              updatePreset(p.id, {
+                                                tableFrameUrl: "",
+                                                tableFrameEnabled: false,
+                                              })
+                                            }
+                                          >
+                                            프레임 지우기
+                                          </button>
+                                        </div>
+                                      ) : null}
+                                      <div className="flex flex-wrap items-center gap-3">
+                                        <label className="text-xs text-neutral-400">프레임 적용</label>
+                                        <button
+                                          type="button"
+                                          className={`px-2 py-0.5 rounded border text-xs ${
+                                            (p.tableFrameUrl || "").trim() && p.tableFrameEnabled !== false
+                                              ? "border-emerald-500 text-emerald-300"
+                                              : "border-white/10 text-neutral-500"
+                                          }`}
+                                          disabled={!(p.tableFrameUrl || "").trim()}
+                                          onClick={() => {
+                                            const hasUrl = Boolean((p.tableFrameUrl || "").trim());
+                                            if (!hasUrl) return;
+                                            const applied = p.tableFrameEnabled !== false;
+                                            updatePreset(p.id, { tableFrameEnabled: !applied });
+                                          }}
+                                        >
+                                          {(p.tableFrameUrl || "").trim() && p.tableFrameEnabled !== false ? "ON" : "OFF"}
+                                        </button>
+                                        <span className="text-[10px] text-neutral-500">
+                                          OFF면 URL은 유지하고 표에만 적용하지 않습니다.
+                                        </span>
                                       </div>
                                     </div>
                                   </div>
