@@ -46,6 +46,7 @@ import {
   resolveHighSocietyStartCmPerMember,
   resolveHighSocietyEffectiveFieldCm,
   reconcileHighSocietyFieldDimensions,
+  pruneHighSocietySeatMemberIds,
   resolveHighSocietySeatCountForField,
   resolveHighSocietyDonationLink,
   buildHighSocietyFieldFromAppState,
@@ -365,6 +366,25 @@ describe("high-society territory (aux)", () => {
     });
     expect(seats).toHaveLength(1);
     expect(seats[0]!.widthCm).toBe(100);
+  });
+
+  it("field seat count follows resolved players not ghost seatMemberIds", () => {
+    const members = [
+      { id: "a", name: "자키", account: 0, toon: 0, operating: false },
+      { id: "b", name: "수빈", account: 0, toon: 0, operating: false },
+      { id: "c", name: "지수", account: 0, toon: 0, operating: false },
+    ];
+    const settings = normalizeHighSocietySettings({
+      seatMemberIds: ["a", "b", "c", "gone1", "gone2", "gone3"],
+      seatMemberIdsManual: true,
+      startCmPerMember: 100,
+      fieldCm: 600,
+    });
+    expect(resolveHighSocietySeatCountForField(settings, 3)).toBe(3);
+    expect(resolveHighSocietyEffectiveFieldCm(settings, 3)).toBe(300);
+    const reconciled = reconcileHighSocietyFieldDimensions(settings, 3, members);
+    expect(reconciled.seatMemberIds).toEqual(["a", "b", "c"]);
+    expect(reconciled.fieldCm).toBe(300);
   });
 
   it("realtime field grows/shrinks neighbors when middle push dir changes", () => {

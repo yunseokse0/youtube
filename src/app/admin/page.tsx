@@ -700,6 +700,21 @@ export default function AdminPage() {
     dailyLogLatest?: { at?: string; donorsCount?: number } | null;
     hint?: string | null;
   } | null>(null);
+  const refreshStorageHealth = useCallback(async () => {
+    const uid = user?.id;
+    if (!uid) return;
+    try {
+      const r = await fetch(`/api/state/storage-health?user=${encodeURIComponent(uid)}`, {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (!r.ok) return;
+      const data = await r.json();
+      if (data && typeof data === "object") setStorageHealth(data);
+    } catch {
+      /* noop */
+    }
+  }, [user?.id]);
   const [toonationQueue, setToonationQueue] = useState<DonationEvent[]>([]);
   const [unmatchedEvents, setUnmatchedEvents] = useState<DonationEvent[]>([]);
   const [unmatchedAssignMap, setUnmatchedAssignMap] = useState<Record<string, string>>({});
@@ -1371,7 +1386,7 @@ export default function AdminPage() {
         if (r.storageFallback) {
           setSyncStatus("error");
           setSigExcelResult(
-            "서버(MySQL) 저장 실패 — 이 브라우저에만 반영됐습니다. 다른 PC·브라우저에는 보이지 않습니다. DATABASE_URL·MySQL 연결을 확인하세요."
+            "서버 저장 실패 — 이 브라우저에만 반영됐습니다. 다른 PC·브라우저에는 보이지 않습니다. 네트워크·서버 연결을 확인하세요."
           );
         } else {
           setSyncStatus("synced");
@@ -2197,15 +2212,7 @@ export default function AdminPage() {
     }).catch(() => {
       setDailyLog(loadDailyLog(user?.id));
     });
-    void fetch(`/api/state/storage-health?user=${encodeURIComponent(user.id)}`, {
-      credentials: "include",
-      cache: "no-store",
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data && typeof data === "object") setStorageHealth(data);
-      })
-      .catch(() => {});
+    void refreshStorageHealth();
     loadStateFromApi(user?.id, { forceFull: true }).then((apiState) => {
       /** 후원·금액·멤버는 계정 서버 정본만. admin React state 는 서버 스냅샷의 편집 뷰. */
       const fromLs = loadState(user.id);
@@ -2452,7 +2459,7 @@ export default function AdminPage() {
         }
       }
     });
-  }, [user, persistState, mergeIncomingStateSafely, presetStorageKey, hydrateSettlementUiFromAppState]);
+  }, [user, persistState, mergeIncomingStateSafely, presetStorageKey, hydrateSettlementUiFromAppState, refreshStorageHealth]);
 
   /** 일괄 반영으로 동일 초에 찍힌 후원 시각 — id·daily log로 복구 후 서버 저장 */
   useEffect(() => {
@@ -2546,7 +2553,7 @@ export default function AdminPage() {
     (opts?: { silent?: boolean }) => Promise<boolean>
   >(async () => false);
 
-  /** 서버 MySQL에 donors 가 있는데 UI·LS만 비었을 때 강제 복구 (storage-health 불일치) */
+  /** 서버에 donors 가 있는데 UI·LS만 비었을 때 강제 복구 (storage-health 불일치) */
   const applyDonorsFromServerMainState = useCallback(
     async (opts?: { silent?: boolean }) => {
       if (!user) return false;
@@ -2566,6 +2573,7 @@ export default function AdminPage() {
         cacheBroadcastStateSnapshot(next, user.id);
       } catch {}
       notifyBroadcastStateLocalUpdated(user.id, next.updatedAt);
+      void refreshStorageHealth();
       if (!opts?.silent) {
         setSigExcelResult(
           `서버 후원 ${remoteDonors.length}건을 화면에 복구했습니다 (합계 ${totalCombined(next).toLocaleString("ko-KR")}원).`
@@ -2573,9 +2581,24 @@ export default function AdminPage() {
       }
       return true;
     },
-    [user]
+    [user, refreshStorageHealth]
   );
   applyDonorsFromServerMainStateRef.current = applyDonorsFromServerMainState;
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const id = window.setInterval(() => void refreshStorageHealth(), 45_000);
+    return () => window.clearInterval(id);
+  }, [user?.id, refreshStorageHealth]);
+
+  useEffect(() => {
+    if (!user) return;
+    const serverCount = Number(storageHealth?.mainState?.donorsCount || 0);
+    const localCount = normalizeDonorsArray(state.donors).length;
+    if (serverCount > 0 && localCount >= serverCount) {
+      serverDonorMismatchRestoreAttemptedRef.current = false;
+    }
+  }, [user, storageHealth, state.donors]);
 
   useEffect(() => {
     if (!user) return;
@@ -8368,11 +8391,16 @@ export default function AdminPage() {
           resetTerritory,
           donors: prev.donors || [],
         });
+        const hsSeatPlayersForPersist = resolveHighSocietySeatMembers(prev.members || [], nextSettings);
         const hsSeatCountForPersist = resolveHighSocietySeatCountForField(
           nextSettings,
-          resolveHighSocietySeatMembers(prev.members || [], nextSettings).length
+          hsSeatPlayersForPersist.length
         );
-        nextSettings = reconcileHighSocietyFieldDimensions(nextSettings, hsSeatCountForPersist);
+        nextSettings = reconcileHighSocietyFieldDimensions(
+          nextSettings,
+          hsSeatCountForPersist,
+          prev.members || []
+        );
         const needsDonorPersist = shouldPersistDonorsForHighSocietySettingsPatch({
           resetTerritory,
           isFirstOn,
@@ -8860,6 +8888,7 @@ export default function AdminPage() {
       const ok = await applyDonorsFromServerMainState();
       if (ok) {
         setSyncStatus("synced");
+        void refreshStorageHealth();
         return;
       }
       const pulled = buildUiStateFromServerDonorPull(local, remote);
@@ -8871,6 +8900,7 @@ export default function AdminPage() {
         stateRef.current = pulled;
         cacheBroadcastStateSnapshot(pulled, user?.id);
         setSyncStatus("synced");
+        void refreshStorageHealth();
         return;
       }
     }
@@ -8914,6 +8944,7 @@ export default function AdminPage() {
     }
     cacheBroadcastStateSnapshot(toApply, user?.id);
     setSyncStatus("synced");
+    void refreshStorageHealth();
   };
   const runPullRefresh = async () => {
     if (pullRefreshing) return;
@@ -9252,6 +9283,8 @@ export default function AdminPage() {
   const serverDonorHealthCount = Number(storageHealth?.mainState?.donorsCount || 0);
   const uiDonorRowCount = normalizeDonorsArray(state.donors).length;
   const donorUiBehindServer = serverDonorHealthCount > uiDonorRowCount;
+  /** 정상 동기화 시 배지 숨김 — 불일치·오프라인·로딩만 표시 */
+  const showSyncStatusBadge = donorUiBehindServer || syncStatus !== "synced";
 
   return (
     <main
@@ -9301,6 +9334,7 @@ export default function AdminPage() {
                 {user?.unlimited ? "무제한" : `남은 일수: ${user?.remainingDays ?? 0}일`}
               </span>
             )}
+            {showSyncStatusBadge ? (
             <span
               className={`px-2 py-0.5 rounded text-xs font-medium ${
                 donorUiBehindServer
@@ -9315,7 +9349,7 @@ export default function AdminPage() {
               }`}
               title={
                 donorUiBehindServer
-                  ? `서버 MySQL 후원 ${serverDonorHealthCount}건 · 화면 ${uiDonorRowCount}건 — 「서버 후원 복구」 또는 새로고침`
+                  ? `서버 후원 ${serverDonorHealthCount}건 · 화면 ${uiDonorRowCount}건 — 「서버 후원 복구」 또는 새로고침`
                   : syncStatus === "error"
                     ? "동기화 실패 시 개발자 도구에 401이 보이면 로그인 세션이 만료된 경우가 많습니다. 페이지를 새로고침한 뒤 다시 로그인해 보세요."
                     : undefined
@@ -9331,23 +9365,6 @@ export default function AdminPage() {
                       ? "연결 재시도 중"
                       : "로컬 모드 (오프라인)"}
             </span>
-            {storageHealth?.storage?.backendHint ? (
-              <span
-                className="px-2 py-0.5 rounded text-xs font-medium bg-neutral-800 text-neutral-300"
-                title={
-                  storageHealth.hint === "main_state_empty_but_daily_log_has_donors"
-                    ? "MySQL 메인 상태 donors 는 비었지만 일일 로그에 후원 스냅샷이 있습니다. 「일일 로그에서 복구」를 사용하세요."
-                    : storageHealth.storage.kvError || undefined
-                }
-              >
-                저장: {storageHealth.storage.backendHint}
-                {typeof storageHealth.mainState?.donorsCount === "number"
-                  ? ` · 서버 후원 ${storageHealth.mainState.donorsCount}건`
-                  : ""}
-                {storageHealth.dailyLogLatest?.donorsCount
-                  ? ` · 로그 ${storageHealth.dailyLogLatest.donorsCount}건`
-                  : ""}
-              </span>
             ) : null}
             <button
               className="px-2 py-1 rounded bg-[#22c55e] hover:bg-[#16a34a] text-xs font-medium text-white"
@@ -9377,7 +9394,7 @@ export default function AdminPage() {
           storageHealth.mainState.donorsCount > 0 &&
           normalizeDonorsArray(state.donors).length < storageHealth.mainState.donorsCount ? (
             <div className="mb-3 rounded-lg border border-rose-400/55 bg-rose-950/35 px-3 py-2 text-sm text-rose-100">
-              서버(MySQL)에는 후원 {storageHealth.mainState.donorsCount}건
+              서버에는 후원 {storageHealth.mainState.donorsCount}건
               {typeof storageHealth.mainState.totalCombined === "number" &&
               storageHealth.mainState.totalCombined > 0
                 ? `(합계 ${Number(storageHealth.mainState.totalCombined).toLocaleString("ko-KR")}원)`
@@ -13268,7 +13285,7 @@ export default function AdminPage() {
                     </span>
                   ) : (
                     <span className="text-[11px] text-neutral-500">
-                      연동키·채널 주인명 입력 후 저장하면 서버(MySQL) 반영 여부를 확인합니다.
+                      연동키·채널 주인명 입력 후 저장하면 서버 반영 여부를 확인합니다.
                     </span>
                   )}
                 </div>

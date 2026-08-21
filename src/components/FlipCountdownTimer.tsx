@@ -13,8 +13,6 @@ const FLIP_CARD_BG = "#3a3a3a";
 const FLIP_DIGIT_COLOR = "#ececec";
 const FLIP_LABEL_SIZE_RATIO = 0.22;
 const FLIP_MS = 480;
-/** OBS 브라우저 소스 업스케일 시 글자·카드 가장자리 선명도 */
-const SHARP_RENDER_SCALE = 2;
 
 function FlipDigit({
   digit,
@@ -221,7 +219,7 @@ export function FlipCountdownTimer({
   fontColor?: string;
   bgColor?: string;
   bgOpacity?: number;
-  /** OBS 업스케일 선명도 — 2× 렌더 후 축소 */
+  /** 글자 안티앨리어싱 — 2× scale+transform 은 OBS 중앙 정렬 transform 과 겹쳐 레이아웃이 깨짐 */
   sharpRender?: boolean;
 }) {
   const styleId = useId().replace(/:/g, "");
@@ -236,33 +234,8 @@ export function FlipCountdownTimer({
     ? FLIP_CARD_BG
     : applyTimerBackgroundOpacity((bgColor || "").trim() || FLIP_CARD_BG, opacity);
   const fontFamilyCss = resolveTimerFontFamilyCss(fontFamily);
-  const hiDpi = sharpRender ? SHARP_RENDER_SCALE : 1;
-  const renderFontSize = Math.round(fontSize * hiDpi);
+  const renderFontSize = Math.max(14, Math.round(fontSize));
   const gap = Math.max(6, Math.round(renderFontSize * 0.22));
-
-  const inner = (
-    <div
-      className="inline-flex items-end justify-center"
-      style={{
-        gap,
-        WebkitFontSmoothing: "antialiased",
-        MozOsxFontSmoothing: "grayscale",
-        textRendering: sharpRender ? "geometricPrecision" : "optimizeLegibility",
-      }}
-      suppressHydrationWarning
-    >
-      {segments.map((segment) => (
-        <FlipCard
-          key={segment.label}
-          segment={segment}
-          digitSize={renderFontSize}
-          fontFamilyCss={fontFamilyCss}
-          digitColor={digitColor}
-          cardBg={cardBg}
-        />
-      ))}
-    </div>
-  );
 
   return (
     <>
@@ -278,19 +251,27 @@ export function FlipCountdownTimer({
         .fct-flip-top { animation: fct-flip-top-${styleId} ${FLIP_MS}ms ease-in forwards; z-index: 3; }
         .fct-flip-bottom { animation: fct-flip-bottom-${styleId} ${FLIP_MS}ms ease-out forwards; z-index: 2; }
       `}</style>
-      {hiDpi > 1 ? (
-        <div
-          className="inline-block"
-          style={{
-            transform: `scale(${1 / hiDpi})`,
-            transformOrigin: "top left",
-          }}
-        >
-          {inner}
-        </div>
-      ) : (
-        inner
-      )}
+      <div
+        className="inline-flex items-end justify-center"
+        style={{
+          gap,
+          WebkitFontSmoothing: "antialiased",
+          MozOsxFontSmoothing: "grayscale",
+          textRendering: sharpRender ? "geometricPrecision" : "optimizeLegibility",
+        }}
+        suppressHydrationWarning
+      >
+        {segments.map((segment) => (
+          <FlipCard
+            key={segment.label}
+            segment={segment}
+            digitSize={renderFontSize}
+            fontFamilyCss={fontFamilyCss}
+            digitColor={digitColor}
+            cardBg={cardBg}
+          />
+        ))}
+      </div>
     </>
   );
 }

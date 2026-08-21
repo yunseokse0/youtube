@@ -1759,6 +1759,7 @@ export function startCmFromField(fieldCm: number, seatCount: number): number {
 /**
  * 전장·1인 시작 cm 계산용 좌석 수.
  * - seatMemberIds 가 있으면 실제 명수(1명 포함) 그대로
+ * - actualSeatCount 가 있으면 해석된 좌석(유령 id 제외) 우선
  * - 자동(빈 배열)이면 actualSeatCount 또는 기본 4, 최소 2
  */
 export function resolveHighSocietySeatCountForField(
@@ -1766,17 +1767,36 @@ export function resolveHighSocietySeatCountForField(
   actualSeatCount?: number
 ): number {
   const explicit = settings.seatMemberIds || [];
+  const actual = Math.max(0, Math.floor(Number(actualSeatCount) || 0));
   if (isHighSocietySeatSelectionManual(settings)) {
     if (explicit.length === 0) {
-      return Math.max(0, Math.floor(Number(actualSeatCount) || 0));
+      return actual;
+    }
+    if (actual >= 1) {
+      return Math.max(1, Math.min(HIGH_SOCIETY_MAX_SEATS, actual));
     }
     return Math.max(1, Math.min(HIGH_SOCIETY_MAX_SEATS, explicit.length));
   }
-  const n = Math.floor(Number(actualSeatCount) || 0);
-  if (n >= 1) {
-    return Math.max(2, Math.min(HIGH_SOCIETY_MAX_SEATS, n));
+  if (actual >= 1) {
+    return Math.max(2, Math.min(HIGH_SOCIETY_MAX_SEATS, actual));
   }
   return 4;
+}
+
+/** 삭제·운영비 멤버 id — seatMemberIds 에 남은 유령 항목 제거 */
+export function pruneHighSocietySeatMemberIds(
+  settings: HighSocietySettings,
+  members: Array<Pick<Member, "id" | "operating">>
+): HighSocietySettings {
+  if (!isHighSocietySeatSelectionManual(settings)) return settings;
+  const playable = new Set(
+    members.filter((m) => !m.operating).map((m) => String(m.id))
+  );
+  const pruned = (settings.seatMemberIds || [])
+    .map((id) => String(id || "").trim())
+    .filter((id) => playable.has(id));
+  if (pruned.length === (settings.seatMemberIds || []).length) return settings;
+  return { ...settings, seatMemberIds: pruned, seatMemberIdsManual: true };
 }
 
 /** 저장된 1인 시작 cm — startCmPerMember 우선, 없으면 fieldCm/N */
@@ -1805,15 +1825,24 @@ export function resolveHighSocietyEffectiveFieldCm(
 /** startCmPerMember 정본 — fieldCm = start × 좌석 수 로 저장값 정렬 */
 export function reconcileHighSocietyFieldDimensions(
   settings: HighSocietySettings,
-  actualSeatCount?: number
+  actualSeatCount?: number,
+  members?: Array<Pick<Member, "id" | "operating">>
 ): HighSocietySettings {
-  const seatCount = resolveHighSocietySeatCountForField(settings, actualSeatCount);
-  const startCmPerMember = resolveHighSocietyStartCmPerMember(settings, seatCount);
-  const fieldCm = fieldCmFromStartPerMember(startCmPerMember, seatCount);
-  if (settings.startCmPerMember === startCmPerMember && settings.fieldCm === fieldCm) {
-    return settings;
+  let base = settings;
+  if (members && members.length >= 0) {
+    base = pruneHighSocietySeatMemberIds(settings, members);
   }
-  return { ...settings, startCmPerMember, fieldCm };
+  const seatCount = resolveHighSocietySeatCountForField(base, actualSeatCount);
+  const startCmPerMember = resolveHighSocietyStartCmPerMember(base, seatCount);
+  const fieldCm = fieldCmFromStartPerMember(startCmPerMember, seatCount);
+  if (
+    base.startCmPerMember === startCmPerMember &&
+    base.fieldCm === fieldCm &&
+    (base.seatMemberIds || []).join(",") === (settings.seatMemberIds || []).join(",")
+  ) {
+    return base;
+  }
+  return { ...base, startCmPerMember, fieldCm };
 }
 
 /** 라운드 번호 (?round=1) — 1..99 */
