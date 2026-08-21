@@ -7,10 +7,6 @@ import type {
   Member,
   TerritoryLog,
 } from "@/types";
-import {
-  aggregateSeatPushesFromTerritoryLogs,
-  mergeHighSocietyPlayerPushInputs,
-} from "@/lib/territory-utils";
 
 /** 상류사회 영토 바·미니맵용 세그먼트 (후원 합계 비율 — 레거시/보조 스타일) */
 export type HighSocietyTerritorySlice = {
@@ -654,44 +650,14 @@ export function buildTerritoryPauseToggleSettingsPatch(
 
 /**
  * 후원 행이 상류사회 영토 집계에 포함되는지.
- * - 완전 수동: 후원 리스트「영토 ON」(`hsTerritoryExcluded === false`)만 반영
- * - OFF: OFF 시각 이전·명시 ON 후원만 동결 유지
- * - 일시정지: 진행 중·재개 후 completed windows 구간 후원은 영토 제외(합산은 유지)
+ * 영토는 「영토 기록부」 수동 cm만 반영 — 후원 리스트(금액·영토 ON)는 집계하지 않음.
  */
 export function shouldDonorCountForHighSocietyTerritory(
-  d: Pick<Donor, "amount" | "donationExcluded" | "hsTerritoryExcluded" | "at">,
-  settings: HighSocietySettings,
-  link: { active: boolean; startedAt?: number }
+  _d: Pick<Donor, "amount" | "donationExcluded" | "hsTerritoryExcluded" | "at">,
+  _settings: HighSocietySettings,
+  _link: { active: boolean; startedAt?: number }
 ): boolean {
-  /** 완전 수동 — ON 상태에서는 후원 리스트「영토 ON」만 집계 (donationLinks·startedAt 무시) */
-  if (!settings.enabled) {
-    if (!link.active) return false;
-  }
-  if (!isDonorHsTerritoryIncluded(d)) return false;
-  if (d.donationExcluded === true) return false;
-  if (Math.max(0, Number(d.amount) || 0) <= 0) return false;
-  if (!isDonationAmountEligibleForHighSocietyTerritory(d.amount)) return false;
-
-  const at = highSocietyDonorAtMs(d);
-
-  if (isDonorInTerritoryPauseExcludeWindows(at, settings)) return false;
-
-  const pausedAtRaw = Number(settings.territoryPausedAt);
-  const pausedAt =
-    settings.territoryPaused && Number.isFinite(pausedAtRaw) && pausedAtRaw > 0
-      ? Math.floor(pausedAtRaw)
-      : null;
-  if (pausedAt && at >= pausedAt) return false;
-
-  if (!settings.enabled) {
-    const lastOffAtRaw = Number(settings.territoryCutoffAt);
-    const lastOffAt = Number.isFinite(lastOffAtRaw) && lastOffAtRaw > 0 ? Math.floor(lastOffAtRaw) : null;
-    /** cutoff 없으면 OFF 이후 후원이 영토에 섞이지 않게 집계 제외 */
-    if (!lastOffAt) return false;
-    return at < lastOffAt;
-  }
-
-  return true;
+  return false;
 }
 
 /** admin patch — 영토만 새 라운드(집계 시작 시점). donors/members 와 분리 */
@@ -1187,8 +1153,10 @@ function shouldUseMemberWidthSnapshot(
   if (!widths || !snap || Object.keys(widths).length === 0) return false;
   for (const p of players) {
     if (widths[p.id] == null) return false;
-    const snapWon = snap[p.id];
-    if (snapWon == null || p.donationWon !== snapWon) return false;
+    const snapWon = Math.max(0, Number(snap[p.id]) || 0);
+    const wonNow = Math.max(0, Number(p.donationWon) || 0);
+    /** 레거시 donation 스냅(>0) + 현재 won=0 — 영토 기록부 전환 후 width 스냅은 유지 */
+    if (wonNow !== snapWon && !(snapWon > 0 && wonNow === 0)) return false;
     const snapWidth = Math.max(0, Number(widths[p.id]) || 0);
     const expandNow = playerTerritoryExpandCm(p);
     /** 0cm 탈락 후 영토 재적용 — 스냅샷 width=0 고정을 풀고 실시간 재계산 */
@@ -1662,6 +1630,105 @@ export function aggregateSeatPushesFromDonors(opts: {
   });
 }
 
+/**
+ * 영토 기록부 — 확장/축소 cm 를 인접 좌석 width 에서 직접 이동(후원 push 카운터와 분리).
+ * 지수 +105cm ← 자키 방향 → 자키 width 에서 최대 105cm 를 지수로 이동.
+ */
+export function applyTerritoryLogDirectTransfers(
+  field: ReturnType<typeof resolveHighSocietyField>,
+  seatMemberIds: string[],
+  logs: TerritoryLog[],
+  settings: HighSocietySettings
+): ReturnType<typeof resolveHighSocietyField> {
+  const order = seatMemberIds.filter(Boolean);
+  const n = order.length;
+  if (n === 0 || !logs?.length) return field;
+
+  const widthById = new Map(field.seats.map((s) => [s.id, s.widthCm]));
+  const seatMeta = new Map(field.seats.map((s) => [s.id, s]));
+  const middleDir = resolveSystemMiddlePushDir(settings);
+
+  const transferAcross = (fromIdx: number, toIdx: number, amount: number) => {
+    if (fromIdx < 0 || toIdx < 0 || fromIdx >= n || toIdx >= n) return;
+    const fromId = order[fromIdx]!;
+    const toId = order[toIdx]!;
+    const fromW = Math.max(0, widthById.get(fromId) ?? 0);
+    const t = Math.min(Math.max(0, Math.floor(amount)), fromW);
+    if (t <= 0) return;
+    widthById.set(fromId, fromW - t);
+    widthById.set(toId, (widthById.get(toId) ?? 0) + t);
+  };
+
+  const neighborIdx = (idx: number, toward: "left" | "right"): number | null => {
+    const j = toward === "left" ? idx - 1 : idx + 1;
+    return j >= 0 && j < n ? j : null;
+  };
+
+  for (const log of logs) {
+    const memberId = String(log.memberId || "").trim();
+    const idx = order.indexOf(memberId);
+    if (idx < 0) continue;
+    const cm = Math.max(0, Math.floor(Number(log.amount) || 0));
+    if (cm <= 0) continue;
+    const sign = log.delta === -1 ? -1 : 1;
+    const seatDir = seatExpandDirForIndex(idx, n);
+
+    const pushFromNeighbor = (toward: "left" | "right", amount: number) => {
+      const neighbor = neighborIdx(idx, toward);
+      if (neighbor == null) return;
+      if (sign > 0) transferAcross(neighbor, idx, amount);
+      else transferAcross(idx, neighbor, amount);
+    };
+
+    if (seatDir === "right") {
+      pushFromNeighbor("right", cm);
+      continue;
+    }
+    if (seatDir === "left") {
+      pushFromNeighbor("left", cm);
+      continue;
+    }
+
+    const push = parseHighSocietyPushDir(log.pushDir) || middleDir;
+    if (push === "split") {
+      const lr = pushDirToLeftRight(cm, push);
+      if (sign > 0) {
+        pushFromNeighbor("left", lr.left);
+        pushFromNeighbor("right", lr.right);
+      } else {
+        const leftN = neighborIdx(idx, "left");
+        const rightN = neighborIdx(idx, "right");
+        if (leftN != null) transferAcross(idx, leftN, lr.left);
+        if (rightN != null) transferAcross(idx, rightN, lr.right);
+      }
+    } else if (push === "left") {
+      pushFromNeighbor("left", cm);
+    } else {
+      pushFromNeighbor("right", cm);
+    }
+  }
+
+  const widthsArr = order.map((id) => Math.max(0, widthById.get(id) ?? 0));
+  const quantized = quantizeSeatWidthsToFieldCm(widthsArr, field.fieldCm);
+  const seats: HighSocietySeat[] = order.map((id, i) => {
+    const prev = seatMeta.get(id)!;
+    const widthCm = Math.max(0, quantized[i]!);
+    return {
+      ...prev,
+      widthCm,
+      pct: Math.round((widthCm / field.fieldCm) * 1000) / 10,
+      eliminated: widthCm <= 0,
+    };
+  });
+  const alive = seats.filter((s) => !s.eliminated).sort((a, b) => b.widthCm - a.widthCm);
+  return {
+    ...field,
+    seats,
+    leader: alive[0] ?? null,
+    cushion: seats.filter((s) => s.eliminated),
+  };
+}
+
 /** AppState 기준 영토 해상 (좌석·후원 방향·수동 기록부 반영) */
 export function buildHighSocietyFieldFromAppState(
   state: Pick<AppState, "members" | "donors" | "highSocietySettings" | "territoryLogs">,
@@ -1683,20 +1750,22 @@ export function buildHighSocietyFieldFromAppState(
     startCmPerMember,
     fieldCm: effectiveFieldCm,
   });
-  const playersFromDonors = aggregateSeatPushesFromDonors({
-    seatPlayers,
-    donors: state.donors || [],
-    settings: settingsForField,
+  const territoryLogs = (state.territoryLogs || []) as TerritoryLog[];
+  const hasTerritoryLogs = territoryLogs.length > 0;
+  /** 영토는 기록부만 — 후원 expand·won 은 field 해상에 쓰지 않음(스냅 expand 는 유지용) */
+  const players: HighSocietyPlayerInput[] = seatPlayers.map((p) => {
+    const exp = settingsForField.memberTerritoryExpand?.[p.id];
+    return {
+      id: p.id,
+      name: p.name,
+      donationWon: 0,
+      expandLeftCm: Math.max(0, Number(exp?.expandLeftCm) || 0),
+      expandRightCm: Math.max(0, Number(exp?.expandRightCm) || 0),
+    };
   });
-  const playersFromLogs = aggregateSeatPushesFromTerritoryLogs({
-    seatPlayers,
-    logs: (state.territoryLogs || []) as TerritoryLog[],
-    settings: settingsForField,
-  });
-  const players = mergeHighSocietyPlayerPushInputs(playersFromDonors, playersFromLogs);
   const startCm = seatCount > 0 ? effectiveFieldCm / seatCount : 0;
-  const field =
-    shouldUseMemberWidthSnapshot(settingsForField, players)
+  const fieldBase =
+    shouldUseMemberWidthSnapshot(settingsForField, players) && !hasTerritoryLogs
       ? resolveHighSocietyFieldWithMemberWidths({
           players,
           fieldCm: effectiveFieldCm,
@@ -1709,8 +1778,16 @@ export function buildHighSocietyFieldFromAppState(
           expandByMemberId: settingsForField.memberTerritoryExpand,
         })
       : resolveHighSocietyField({ players, fieldCm: effectiveFieldCm });
+  const fieldResolved = hasTerritoryLogs
+    ? applyTerritoryLogDirectTransfers(
+        fieldBase,
+        seatPlayers.map((p) => p.id),
+        territoryLogs,
+        settingsForField
+      )
+    : fieldBase;
   return {
-    ...field,
+    ...fieldResolved,
     settings: { ...settingsForField, fieldCm: effectiveFieldCm },
   };
 }
@@ -1741,23 +1818,15 @@ export function buildHighSocietyMemberWidthSnapshotPatch(
   const field = buildHighSocietyFieldFromAppState(state);
   if (field.seats.length === 0) return null;
 
-  const playersAgg = aggregateSeatPushesFromDonors({
-    seatPlayers: seatPlayers.map((p) => ({ ...p, donationWon: 0 })),
-    donors: state.donors || [],
-    settings: field.settings,
-  });
-  const aggById = new Map(playersAgg.map((p) => [p.id, p]));
-
   const memberWidthCm: Record<string, number> = {};
   const memberWidthDonationSnapshot: Record<string, number> = {};
   const memberTerritoryExpand: Record<string, { expandLeftCm: number; expandRightCm: number }> = {};
   for (const seat of field.seats) {
-    const agg = aggById.get(seat.id);
     memberWidthCm[seat.id] = Math.max(0, Math.round(seat.widthCm));
-    memberWidthDonationSnapshot[seat.id] = Math.max(0, Number(agg?.donationWon) || 0);
+    memberWidthDonationSnapshot[seat.id] = 0;
     memberTerritoryExpand[seat.id] = {
-      expandLeftCm: Math.max(0, Number(seat.expandLeftCm ?? agg?.expandLeftCm) || 0),
-      expandRightCm: Math.max(0, Number(seat.expandRightCm ?? agg?.expandRightCm) || 0),
+      expandLeftCm: Math.max(0, Number(seat.expandLeftCm) || 0),
+      expandRightCm: Math.max(0, Number(seat.expandRightCm) || 0),
     };
   }
   return { memberWidthCm, memberWidthDonationSnapshot, memberTerritoryExpand };
@@ -2155,13 +2224,13 @@ export function buildHighSocietySettingsPersistToast(args: {
 }): string | null {
   const { patch, before, wasOn, after, resetTerritory, members } = args;
   if (resetTerritory) {
-    return `상류사회 · 영토만 초기화 (${after.round || 1}라운드 · 기존 후원 영토 OFF · 합산·금액 유지)`;
+    return `상류사회 · 영토만 초기화 (${after.round || 1}라운드 · 영토 기록부·스냅샷 초기화 · 합산·금액 유지)`;
   }
   if (typeof patch.enabled === "boolean" && patch.enabled !== wasOn) {
     return patch.enabled
       ? isHighSocietyReopen(before)
-        ? "상류사회 재ON — 기존 영토 유지, 후원 리스트에서 영토 ON 한 건만 반영"
-        : "상류사회 ON — 기존 후원은 영토 OFF, 후원 리스트에서 영토 ON 한 건만 반영"
+        ? "상류사회 재ON — 기존 영토 유지, cm 조절은 영토 기록부에서만"
+        : "상류사회 ON — 영토는 영토 기록부에서만 수동 반영(후원 리스트와 무관)"
       : "상류사회 OFF — 영토는 리셋 전까지 유지(OFF 이후 후원은 영토 미반영)";
   }
   if (patch.defaultMiddlePush && after.defaultMiddlePush !== before.defaultMiddlePush) {

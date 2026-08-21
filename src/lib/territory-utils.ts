@@ -1,9 +1,10 @@
-import type { HighSocietyPushDir, HighSocietySettings, TerritoryLog } from "@/types";
+import type { HighSocietyPushDir, HighSocietySettings, Member, TerritoryLog } from "@/types";
 import {
   parseHighSocietyPushDir,
   pushDirToLeftRight,
   resolveSystemMiddlePushDir,
   seatExpandDirForIndex,
+  seatRoleForMemberId,
 } from "@/lib/high-society";
 
 export function normalizeTerritoryLog(raw: unknown): TerritoryLog | null {
@@ -49,6 +50,47 @@ export function createTerritoryLog(
     note: String(opts?.note || "").trim(),
     at: now,
   };
+}
+
+/** 영토 기록 저장 시 pushDir — 양끝 좌석은 고정 방향, 가운데는 선택·시스템 기본 */
+export function resolveTerritoryLogPushDirForWrite(args: {
+  seatRole: { canChoosePush: boolean; expandDir: "left" | "right" | "both" } | null;
+  chosen: "system" | HighSocietyPushDir;
+  settings: HighSocietySettings;
+}): HighSocietyPushDir | undefined {
+  const { seatRole, chosen, settings } = args;
+  if (!seatRole) return undefined;
+  if (seatRole.canChoosePush) {
+    if (chosen === "left" || chosen === "right" || chosen === "split") return chosen;
+    return resolveSystemMiddlePushDir(settings);
+  }
+  if (seatRole.expandDir === "left") return "left";
+  if (seatRole.expandDir === "right") return "right";
+  return undefined;
+}
+
+/** 기록부 표 — 저장값 없어도 좌석 규칙·시스템 기본으로 방향 표시 */
+export function formatTerritoryLogPushDirLabel(
+  log: TerritoryLog,
+  settings: HighSocietySettings,
+  members: Array<Pick<Member, "id" | "name" | "account" | "toon" | "operating">>
+): string {
+  const stored = parseHighSocietyPushDir(log.pushDir);
+  const role = seatRoleForMemberId(settings, members, log.memberId);
+  const effective: HighSocietyPushDir | null =
+    stored ||
+    (role && !role.canChoosePush
+      ? role.expandDir === "left"
+        ? "left"
+        : role.expandDir === "right"
+          ? "right"
+          : null
+      : null) ||
+    (role?.canChoosePush ? resolveSystemMiddlePushDir(settings) : null);
+  if (effective === "left") return "← 왼쪽";
+  if (effective === "right") return "→ 오른쪽";
+  if (effective === "split") return "↔ 양분";
+  return "—";
 }
 
 /** 기록부 로그 → 좌석별 expandLeft/Right cm (후원·자동 연동과 분리) */

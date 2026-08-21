@@ -134,7 +134,7 @@ import {
   RESTROOM_UNLIMITED_SYMBOL,
   restroomValueAfterUndoLog,
 } from "@/lib/restroom-utils";
-import { createTerritoryLog, normalizeTerritoryLogs } from "@/lib/territory-utils";
+import { createTerritoryLog, formatTerritoryLogPushDirLabel, normalizeTerritoryLogs, resolveTerritoryLogPushDirForWrite } from "@/lib/territory-utils";
 import { useSSEConnection } from "@/lib/sse-client";
 import { createStateUpdatedScheduler, DONOR_STATE_UPDATED_DEBOUNCE_MS, DONOR_STATE_UPDATED_MAX_WAIT_MS } from "@/lib/overlay-pull-policy";
 import {
@@ -255,8 +255,6 @@ import {
   revertDonationFromAppState,
   reassignDonorMemberInAppState,
   updateDonorMessageInAppState,
-  applyManualHsPushDirChange,
-  applyManualHsTerritoryExcludedChange,
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
 import {
@@ -305,12 +303,10 @@ import {
   HIGH_SOCIETY_MAX_SEATS,
   shouldBlockHighSocietyRegression,
   isMeaningfulHighSocietySettings,
-  isDonationAmountEligibleForHighSocietyTerritory,
-  isDonorHsTerritoryIncluded,
   syncHighSocietyMemberWidthSnapshotInState,
   highSocietyNeedsMemberWidthSnapshotPersist,
 } from "@/lib/high-society";
-import { formatHsPushDirLabel, showAppToast, showServerPersistToast } from "@/lib/app-toast";
+import { showAppToast, showServerPersistToast } from "@/lib/app-toast";
 import {
   parseBulkDonationText,
   resolveBulkDonationRows,
@@ -330,6 +326,7 @@ import ToonationBrowserRelay from "@/components/ToonationBrowserRelay";
 import type { ToonationRelayForwarded } from "@/components/ToonationBrowserRelay";
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
 import { buildPlayerAlertPopupUrl, openPlayerAlertPopup } from "@/lib/donation/player-alert-url";
+import { openAdminHighSocietyPopup, openAdminTimerPopup } from "@/lib/admin-popup-url";
 
 /** 후원 계열 오버레이 배경 GIF 프리셋 — 외부 URL은 방송망에서 차단될 수 있음 */
 const DONATION_LISTS_BG_GIF_PRESETS: { label: string; url: string }[] = [
@@ -673,13 +670,6 @@ export default function AdminPage() {
   const [bulkDonationTarget, setBulkDonationTarget] = useState<DonorTarget>("account");
   const [donorMemberId, setDonorMemberId] = useState<string | null>(null);
   const [donorTarget, setDonorTarget] = useState<DonorTarget>("account");
-  const [donorHsPushDir, setDonorHsPushDir] = useState<"left" | "right" | "system">("system");
-  /** 후원자 리스트 · 기존 후원 확장 방향 초안(적용 버튼으로 커밋) */
-  const [pendingHsPushDirByDonorId, setPendingHsPushDirByDonorId] = useState<
-    Record<string, "left" | "right" | "split" | "system">
-  >({});
-  const [hsPushDirApplyBusyId, setHsPushDirApplyBusyId] = useState<string | null>(null);
-  const [hsTerritoryToggleBusyId, setHsTerritoryToggleBusyId] = useState<string | null>(null);
   const [toonationSocketEnabled, setToonationSocketEnabled] = useState(false);
   const [toonationListenerStatus, setToonationListenerStatus] = useState<ToonationListenerStatus | null>(null);
   const toonationListenerStatusRef = useRef<ToonationListenerStatus | null>(null);
@@ -6951,15 +6941,6 @@ export default function AdminPage() {
     const donorNameClean = (rawName || "무명").replace(/\s+/g, "") || "무명";
     const messageClean = String(rawMessage || "").trim();
     const hsSettingsNow = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
-    const seatRole = hsSettingsNow.enabled
-      ? seatRoleForMemberId(hsSettingsNow, stateRef.current.members || [], memberId)
-      : null;
-    const hsPushForApply =
-      seatRole?.canChoosePush && donorHsPushDir !== "system"
-        ? donorHsPushDir === resolveSystemMiddlePushDir(hsSettingsNow)
-          ? undefined
-          : donorHsPushDir
-        : undefined;
     addDonorSaveChainRef.current = addDonorSaveChainRef.current
       .catch(() => {})
       .then(async () => {
@@ -6974,7 +6955,6 @@ export default function AdminPage() {
           memberId,
           target,
           ...(messageClean ? { message: messageClean } : {}),
-          ...(hsPushForApply ? { hsPushDir: hsPushForApply } : {}),
         }],
         { target }
       );
@@ -7025,17 +7005,11 @@ export default function AdminPage() {
       notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
       setState(bumped);
       setSyncStatus("synced");
-      if (hsSettingsNow.enabled && seatRole) {
+      if (hsSettingsNow.enabled) {
         const memberName =
           (stateRef.current.members || []).find((m) => m.id === memberId)?.name || memberId;
-        const systemDir = resolveSystemMiddlePushDir(hsSettingsNow);
-        const dirLabel = seatRole.canChoosePush
-          ? formatHsPushDirLabel(hsPushForApply || "system", systemDir)
-          : seatRole.expandDir === "right"
-            ? "→고정(끝자리)"
-            : "←고정(끝자리)";
         showAppToast(
-          `상류사회 · 합산 반영: 「${donorNameClean}」→${memberName} ${amount.toLocaleString("ko-KR")}원 · ${dirLabel}`
+          `합산 반영: 「${donorNameClean}」→${memberName} ${amount.toLocaleString("ko-KR")}원`
         );
       }
     });
@@ -8277,8 +8251,11 @@ export default function AdminPage() {
       stateRef.current.members || [],
       territoryMemberId
     );
-    const pushForLog =
-      seatRole?.canChoosePush && territoryPushDir !== "system" ? territoryPushDir : undefined;
+    const pushForLog = resolveTerritoryLogPushDirForWrite({
+      seatRole,
+      chosen: territoryPushDir,
+      settings: hsSettings,
+    });
     const log = createTerritoryLog(
       territoryMemberId,
       territoryMode === "plus" ? 1 : -1,
@@ -8286,11 +8263,12 @@ export default function AdminPage() {
       { pushDir: pushForLog, note: territoryNote }
     );
     setState((prev: AppState) => {
-      const next: AppState = {
+      let next: AppState = {
         ...prev,
         territoryLogs: [...(prev.territoryLogs || []), log],
         updatedAt: Date.now(),
       };
+      next = syncHighSocietyMemberWidthSnapshotInState(next);
       persistState(next, { omitDonationFields: true });
       notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
       return next;
@@ -8350,10 +8328,6 @@ export default function AdminPage() {
     () => normalizeHighSocietySettings(state.highSocietySettings),
     [state.highSocietySettings]
   );
-  const donorSeatRole = useMemo(() => {
-    if (!highSocietySettings.enabled || !donorMemberId) return null;
-    return seatRoleForMemberId(highSocietySettings, state.members || [], donorMemberId);
-  }, [highSocietySettings, donorMemberId, state.members]);
   const hsSeatPlayers = useMemo(
     () => resolveHighSocietySeatMembers(state.members || [], highSocietySettings),
     [state.members, highSocietySettings]
@@ -8520,17 +8494,6 @@ export default function AdminPage() {
         );
         return next;
       });
-      const nextEnabled =
-        typeof patch.enabled === "boolean"
-          ? patch.enabled
-          : normalizeHighSocietySettings({
-              ...normalizeHighSocietySettings(stateRef.current.highSocietySettings),
-              ...patch,
-            }).enabled;
-      if (wasOn && !nextEnabled) {
-        setPendingHsPushDirByDonorId({});
-        setHsPushDirApplyBusyId(null);
-      }
     },
     [persistState, user?.id]
   );
@@ -9255,8 +9218,8 @@ export default function AdminPage() {
             )}
             <span className="block mt-0.5 text-[10px] text-neutral-500">
               0cm 탈락 멤버는 기본적으로 게이지에서 빠집니다. 아래 「0cm 게이지 표시」에서 0cm·00cm
-              노출을 켤 수 있습니다. 재진입 위치는 ←→ 또는 0cm 칩의 위치 선택 · 확장 방향은 후원
-              「영토 ON」+ ←/→(0cm은 양끝도 수동 방향 가능).
+              노출을 켤 수 있습니다. 재진입 위치는 ←→ 또는 0cm 칩의 위치 선택 · 영토 cm 조절은
+              「상류사회 · 영토 기록부」에서만 수동 반영합니다.
             </span>
           </div>
           {hsSeatExplicit ? (
@@ -12760,11 +12723,21 @@ export default function AdminPage() {
                 </div>
               ) : null}
               <div id="timer-control-section" className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
-                <div>
-                  <h3 className="text-base font-semibold">타이머 제어</h3>
-                  <p className="text-xs text-neutral-400 mt-1">
-                    일반 타이머(generalTimer)와 대전 타이머(matchTimer)는 분리되어 있습니다. 여기서는 일반 타이머만 ±분·일시정지·글꼴·오버레이 ON/OFF를 조정합니다. 시그·식사 대전 타이머는 각 대전 패널의 「대전 오버레이 타이머」에서 제어하세요.
-                  </p>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h3 className="text-base font-semibold">타이머 제어</h3>
+                    <p className="text-xs text-neutral-400 mt-1">
+                      일반 타이머(generalTimer)와 대전 타이머(matchTimer)는 분리되어 있습니다. 여기서는 일반 타이머만 ±분·일시정지·글꼴·오버레이 ON/OFF를 조정합니다. 시그·식사 대전 타이머는 각 대전 패널의 「대전 오버레이 타이머」에서 제어하세요.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded border border-violet-500/40 bg-violet-950/50 px-3 py-1.5 text-xs font-semibold text-violet-100 hover:bg-violet-900/60"
+                    title="타이머 전용 팝업 창"
+                    onClick={() => openAdminTimerPopup(user?.id || overlayUserId)}
+                  >
+                    별도 창에서 열기
+                  </button>
                 </div>
                 {([{ key: "generalTimer", flag: "general" as const, label: "일반 타이머" }] as const).map((timerDef) => {
                   const timer = state[timerDef.key];
@@ -13170,8 +13143,8 @@ export default function AdminPage() {
                     <div className="text-sm font-semibold text-amber-100">상류사회 모드 (땅따먹기)</div>
                     <p className="mt-0.5 text-[11px] text-neutral-400 leading-snug">
                       확장 룰: <strong className="text-neutral-200">1만원 = 5cm</strong>
-                      · 1만원 정확히 배수만 영토 반영 · 천원 자리 있으면 미적용
-                      · 영토는 후원 리스트「영토 ON」으로 수동 반영(자동 연동 없음)
+                      · 1만원 정확히 배수만 영토 기록부 입력 시 참고(1만=5cm)
+                      · 영토(cm)는 「상류사회 · 영토 기록부」에서만 수동 반영 — 후원 리스트와 연동 없음
                       (예: 2만원 → 10cm, 1만9천원 → 0cm). 1인 시작{" "}
                       <strong className="text-neutral-200">{formatCm(hsStartCm)}</strong>
                       · 전장 총길이{" "}
@@ -13184,6 +13157,14 @@ export default function AdminPage() {
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      className="rounded border border-violet-500/40 bg-violet-950/50 px-3 py-1.5 text-xs font-semibold text-violet-100 hover:bg-violet-900/60"
+                      title="상류사회·영토 전용 팝업 창"
+                      onClick={() => openAdminHighSocietyPopup(user?.id || overlayUserId)}
+                    >
+                      별도 창에서 열기
+                    </button>
                     <button
                       type="button"
                       className={`rounded px-3 py-1.5 text-xs font-semibold ${
@@ -13281,26 +13262,6 @@ export default function AdminPage() {
                     <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
                 </select>
-                {highSocietySettings.enabled && donorSeatRole?.canChoosePush ? (
-                  <select
-                    className="px-3 py-2 rounded bg-amber-950/80 border border-amber-400/40 text-amber-50"
-                    value={donorHsPushDir}
-                    title="수동 변경 시에만 시스템과 다른 방향 저장(원복 후 적용)"
-                    onChange={(e) =>
-                      setDonorHsPushDir(e.target.value as "left" | "right" | "system")
-                    }
-                  >
-                    <option value="system">
-                      시스템({resolveSystemMiddlePushDir(highSocietySettings) === "left" ? "←" : "→"})
-                    </option>
-                    <option value="left">← 왼쪽(수동)</option>
-                    <option value="right">오른쪽 →(수동)</option>
-                  </select>
-                ) : highSocietySettings.enabled && donorSeatRole ? (
-                  <span className="self-center text-[11px] text-amber-200/80 whitespace-nowrap">
-                    {donorSeatRole.expandDir === "right" ? "→고정" : "←고정"}
-                  </span>
-                ) : null}
                 <button
                   className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-500 font-semibold"
                   onClick={addDonor}
@@ -14051,11 +14012,19 @@ export default function AdminPage() {
             </section>
 
             <section id="territory-management" className={`${panelCardClass} p-4 md:p-6`}>
-              <h2 className="text-lg font-semibold mb-3">상류사회 · 영토 기록부</h2>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold">상류사회 · 영토 기록부</h2>
+                <button
+                  type="button"
+                  className="rounded border border-violet-500/40 bg-violet-950/50 px-3 py-1.5 text-xs font-semibold text-violet-100 hover:bg-violet-900/60"
+                  onClick={() => openAdminHighSocietyPopup(user?.id || overlayUserId)}
+                >
+                  별도 창에서 열기
+                </button>
+              </div>
               <p className="text-sm text-neutral-400 mb-3">
                 후원·투네와 <strong className="text-neutral-300">자동 연동 없음</strong> — cm을 직접 추가/차감합니다.
-                후원자 리스트의「영토 ON」은 해당 후원 금액(1만=5cm)을 영토에 반영하고, 여기서는 금액과 무관하게
-                수동으로 땅 넓이를 조절합니다.
+                영토 게이지 반영은 이 기록부에서만 합니다(후원 리스트 금액·영토 ON과 무관).
               </p>
               {!highSocietySettings.enabled ? (
                 <p className="text-sm text-amber-200/90">상류사회 모드를 ON 한 뒤 사용하세요.</p>
@@ -14159,7 +14128,9 @@ export default function AdminPage() {
                                   )}
                                 </td>
                                 <td className="p-1 text-right tabular-nums">{log.amount}</td>
-                                <td className="p-1 text-neutral-400">{log.pushDir || "—"}</td>
+                                <td className="p-1 text-neutral-400">
+                                  {formatTerritoryLogPushDirLabel(log, highSocietySettings, state.members || [])}
+                                </td>
                                 <td className="p-1 text-neutral-400">{log.note || "-"}</td>
                                 <td className="p-1 text-right">
                                   <button
@@ -14167,13 +14138,14 @@ export default function AdminPage() {
                                     onClick={() => {
                                       requestConfirm("영토 로그 삭제", "이 기록을 삭제할까요?", () => {
                                         setState((prev: AppState) => {
-                                          const next: AppState = {
+                                          let next: AppState = {
                                             ...prev,
                                             territoryLogs: (prev.territoryLogs || []).filter(
                                               (x) => x.id !== log.id
                                             ),
                                             updatedAt: Date.now(),
                                           };
+                                          next = syncHighSocietyMemberWidthSnapshotInState(next);
                                           persistState(next, { omitDonationFields: true });
                                           notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
                                           return next;
@@ -14245,13 +14217,12 @@ export default function AdminPage() {
               <div className="mb-3 rounded-lg border border-amber-400/40 bg-amber-950/30 p-3 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <div className="text-sm font-semibold text-amber-100">상류사회 · 영토 (완전 수동)</div>
+                    <div className="text-sm font-semibold text-amber-100">상류사회 · 영토</div>
                     <p className="text-[11px] text-neutral-400 mt-0.5">
-                      신규 후원은 영토에 <strong className="text-neutral-300">자동 반영되지 않습니다</strong>.
-                      각 행의 <strong className="text-amber-200/90">영토 ON</strong>을 눌러야 해당 후원(1만=5cm)이 게이지에 반영됩니다.
-                      금액과 무관한 cm 조절은 「상류사회 · 영토 기록부」에서 수동 입력하세요.
+                      후원·투네 합산은 영토 게이지와 <strong className="text-neutral-300">연동되지 않습니다</strong>.
+                      cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반영하세요.
                       {" · "}
-                      <strong className="text-neutral-300">1만원 정확 배수</strong>만 영토 ON 가능
+                      참고: <strong className="text-neutral-300">1만원 = 5cm</strong>
                     </p>
                   </div>
                   <span
@@ -14315,9 +14286,6 @@ export default function AdminPage() {
                       <th className="text-left font-medium p-1">시간</th>
                       <th className="text-left font-medium p-1">후원자</th>
                       <th className="text-left font-medium p-1">멤버</th>
-                      {highSocietySettings.enabled ? (
-                        <th className="text-left font-medium p-1 min-w-[11rem]">영토·확장</th>
-                      ) : null}
                       <th className="text-left font-medium p-1">대상</th>
                       <th className="text-left font-medium p-1 min-w-[120px]">메시지</th>
                       <th className="text-right font-medium p-1">금액</th>
@@ -14336,13 +14304,6 @@ export default function AdminPage() {
                         const splitPreview = !isSplitPart && !isSplitSource
                           ? previewGroupSplitDonation(state, d.amount, state.groupSplitDonationSettings)
                           : null;
-                        const rowSeat = highSocietySettings.enabled
-                          ? seatRoleForMemberId(highSocietySettings, state.members || [], d.memberId)
-                          : null;
-                        const rowMemberEliminated =
-                          hsSeatFieldByMemberId.get(String(d.memberId || ""))?.eliminated === true;
-                        const canSetPush =
-                          Boolean(rowSeat?.canChoosePush) || rowMemberEliminated;
                         return (
                           <tr key={d.id} className={`border-t border-white/10 ${isSplitPart ? "bg-violet-950/15" : isSplitSource ? "bg-violet-950/10" : ""}`}>
                             <td className="p-1 text-neutral-400"><ClientTime ts={d.at} /></td>
@@ -14401,227 +14362,6 @@ export default function AdminPage() {
                                 ))}
                               </select>
                             </td>
-                            {highSocietySettings.enabled ? (
-                              <td className="p-1">
-                                {(() => {
-                                  const hsAmountEligible =
-                                    isDonationAmountEligibleForHighSocietyTerritory(d.amount);
-                                  const hsTerritoryOff =
-                                    !isDonorHsTerritoryIncluded(d) || !hsAmountEligible;
-                                  const territoryBusy = hsTerritoryToggleBusyId === d.id;
-                                  const territoryToggle = (
-                                    <button
-                                      type="button"
-                                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${
-                                        hsTerritoryOff
-                                          ? "border-neutral-600 bg-neutral-900 text-neutral-400"
-                                          : "border-emerald-500/50 bg-emerald-950/60 text-emerald-200"
-                                      }`}
-                                      title={
-                                        hsAmountEligible
-                                          ? "상류사회 영토(cm) 반영 ON/OFF — 후원 리스트에서 수동으로만 반영"
-                                          : "1만원 정확 배수만 영토 적용 — 이 금액은 자동 영토 OFF (합산·순위는 유지)"
-                                      }
-                                      disabled={territoryBusy || isSplitSource || !hsAmountEligible}
-                                      onClick={() => {
-                                        void (async () => {
-                                          const prev = stateRef.current;
-                                          const hsNow = normalizeHighSocietySettings(prev.highSocietySettings);
-                                          if (!hsNow.enabled) {
-                                            showAppToast("상류사회가 OFF입니다. 먼저 모드를 켜 주세요.", {
-                                              variant: "info",
-                                            });
-                                            return;
-                                          }
-                                          if (
-                                            !isDonationAmountEligibleForHighSocietyTerritory(d.amount)
-                                          ) {
-                                            showAppToast(
-                                              "1만원 정확 배수만 영토 ON 할 수 있습니다. (천원 자리·1만3천 등은 자동 OFF)",
-                                              { variant: "info" }
-                                            );
-                                            return;
-                                          }
-                                          const wantOff = !hsTerritoryOff;
-                                          setHsTerritoryToggleBusyId(d.id);
-                                          try {
-                                            const next = applyManualHsTerritoryExcludedChange(
-                                              prev,
-                                              d.id,
-                                              wantOff
-                                            );
-                                            if (!next) {
-                                              showAppToast("이미 같은 영토 적용 상태입니다.", {
-                                                variant: "info",
-                                              });
-                                              return;
-                                            }
-                                            const preserved = markAuthoritativeDonationSave(
-                                              { serverUpdatedAt: next.updatedAt },
-                                              next,
-                                              { replaceDonors: true, awaitingServerSave: true }
-                                            );
-                                            setState(preserved);
-                                            const ok = await commitAuthoritativeDonorPersist(preserved, {
-                                              persistToastLabel: wantOff
-                                                ? `상류사회 영토 OFF · 「${d.name}」`
-                                                : `상류사회 영토 ON · 「${d.name}」`,
-                                            });
-                                            if (!ok) {
-                                              showAppToast(
-                                                "영토 적용 설정 저장에 실패했습니다. 다시 시도해 주세요.",
-                                                { variant: "error" }
-                                              );
-                                            }
-                                          } finally {
-                                            setHsTerritoryToggleBusyId((cur) =>
-                                              cur === d.id ? null : cur
-                                            );
-                                          }
-                                        })();
-                                      }}
-                                    >
-                                      {territoryBusy ? "…" : hsTerritoryOff ? "영토 OFF" : "영토 ON"}
-                                    </button>
-                                  );
-                                  if (canSetPush) {
-                                    const savedDir: "left" | "right" | "split" | "system" =
-                                      d.hsPushDir === "left" ||
-                                      d.hsPushDir === "right" ||
-                                      d.hsPushDir === "split"
-                                        ? d.hsPushDir
-                                        : "system";
-                                    const draftDir =
-                                      pendingHsPushDirByDonorId[d.id] ?? savedDir;
-                                    const dirty = draftDir !== savedDir;
-                                    const applying = hsPushDirApplyBusyId === d.id;
-                                    return (
-                                      <div className="flex flex-wrap items-center gap-1">
-                                        {territoryToggle}
-                                        <select
-                                          className="rounded border border-amber-400/35 bg-amber-950/50 px-1 py-0.5 text-[11px] text-amber-50 disabled:opacity-40"
-                                          value={draftDir === "split" ? "system" : draftDir}
-                                          title="방향을 고른 뒤 적용을 누르세요"
-                                          disabled={applying || hsTerritoryOff}
-                                          onChange={(e) => {
-                                            const raw = e.target.value;
-                                            const nextDir: "left" | "right" | "system" =
-                                              raw === "left" || raw === "right" || raw === "system"
-                                                ? raw
-                                                : "system";
-                                            setPendingHsPushDirByDonorId((prev) => ({
-                                              ...prev,
-                                              [d.id]: nextDir,
-                                            }));
-                                          }}
-                                        >
-                                          <option value="system">
-                                            시스템(
-                                            {resolveSystemMiddlePushDir(highSocietySettings) === "left"
-                                              ? "←"
-                                              : "→"}
-                                            )
-                                          </option>
-                                          <option value="left">← 수동</option>
-                                          <option value="right">→ 수동</option>
-                                        </select>
-                                        <button
-                                          type="button"
-                                          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                                            dirty && !applying && !hsTerritoryOff
-                                              ? "bg-amber-600 hover:bg-amber-500 text-white"
-                                              : "bg-neutral-800 text-neutral-500 cursor-not-allowed"
-                                          }`}
-                                          disabled={!dirty || applying || hsTerritoryOff}
-                                          title="선택한 확장 방향을 이 후원에 저장"
-                                          onClick={() => {
-                                            void (async () => {
-                                              const prev = stateRef.current;
-                                              const hsNow = normalizeHighSocietySettings(
-                                                prev.highSocietySettings
-                                              );
-                                              if (!hsNow.enabled) {
-                                                showAppToast(
-                                                  "상류사회가 OFF입니다. 먼저 모드를 켜 주세요.",
-                                                  { variant: "info" }
-                                                );
-                                                return;
-                                              }
-                                              const nextDir = draftDir;
-                                              const systemDir = resolveSystemMiddlePushDir(hsNow);
-                                              const memberName =
-                                                state.members.find((x) => x.id === d.memberId)?.name ||
-                                                d.memberId ||
-                                                "—";
-                                              const fromLabel = formatHsPushDirLabel(savedDir, systemDir);
-                                              const toLabel = formatHsPushDirLabel(nextDir, systemDir);
-                                              setHsPushDirApplyBusyId(d.id);
-                                              try {
-                                                const next = applyManualHsPushDirChange(
-                                                  prev,
-                                                  d.id,
-                                                  nextDir
-                                                );
-                                                setPendingHsPushDirByDonorId((map) => {
-                                                  const { [d.id]: _drop, ...rest } = map;
-                                                  return rest;
-                                                });
-                                                if (!next) {
-                                                  setSyncStatus("synced");
-                                                  showAppToast(
-                                                    `상류사회 · 「${d.name}」→${memberName}: 이미 ${toLabel} 상태입니다`,
-                                                    { variant: "info" }
-                                                  );
-                                                  return;
-                                                }
-                                                const preserved = markAuthoritativeDonationSave(
-                                                  { serverUpdatedAt: next.updatedAt },
-                                                  next,
-                                                  { replaceDonors: true, awaitingServerSave: true }
-                                                );
-                                                setState(preserved);
-                                                const ok = await commitAuthoritativeDonorPersist(
-                                                  preserved,
-                                                  {
-                                                    persistToastLabel: `상류사회 확장 · 「${d.name}」→${memberName} · ${fromLabel} → ${toLabel}`,
-                                                  }
-                                                );
-                                                if (!ok) {
-                                                  showAppToast(
-                                                    "확장 방향 저장에 실패했습니다. 잠시 후 다시 적용해 주세요.",
-                                                    { variant: "error" }
-                                                  );
-                                                }
-                                              } finally {
-                                                setHsPushDirApplyBusyId((cur) =>
-                                                  cur === d.id ? null : cur
-                                                );
-                                              }
-                                            })();
-                                          }}
-                                        >
-                                          {applying ? "…" : "적용"}
-                                        </button>
-                                      </div>
-                                    );
-                                  }
-                                  if (rowSeat && !rowMemberEliminated) {
-                                    return (
-                                      <div className="flex flex-wrap items-center gap-1">
-                                        {territoryToggle}
-                                        <span
-                                          className="text-[10px] text-neutral-400"
-                                          title="끝자리 좌석은 확장 방향이 고정입니다"
-                                        >
-                                          {rowSeat.expandDir === "right" ? "→고정" : "←고정"}
-                                        </span>
-                                      </div>
-                                    );
-                                  }
-                                  return territoryToggle;
-                                })()}
-                              </td>
-                            ) : null}
                             <td className="p-1">{(d.target || "account") === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>
                             <td className="p-1 text-neutral-400 max-w-[220px]">
                               <input
@@ -15697,15 +15437,24 @@ export default function AdminPage() {
                       OBS 캔버스·브라우저 소스 <strong className="text-neutral-300">1080×1920</strong>.
                     </p>
                   </div>
-                  <span
-                    className={`rounded px-2.5 py-1 text-[11px] font-semibold shrink-0 ${
-                      highSocietySettings.enabled
-                        ? "bg-amber-600/90 text-white"
-                        : "bg-neutral-800 text-neutral-400"
-                    }`}
-                  >
-                    {highSocietySettings.enabled ? "모드 ON" : "모드 OFF"}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      className="rounded border border-violet-500/40 bg-violet-950/50 px-2.5 py-1 text-[11px] font-semibold text-violet-100 hover:bg-violet-900/60"
+                      onClick={() => openAdminHighSocietyPopup(user?.id || overlayUserId)}
+                    >
+                      별도 창
+                    </button>
+                    <span
+                      className={`rounded px-2.5 py-1 text-[11px] font-semibold ${
+                        highSocietySettings.enabled
+                          ? "bg-amber-600/90 text-white"
+                          : "bg-neutral-800 text-neutral-400"
+                      }`}
+                    >
+                      {highSocietySettings.enabled ? "모드 ON" : "모드 OFF"}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">

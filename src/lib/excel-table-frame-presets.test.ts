@@ -7,13 +7,22 @@ import {
 
 describe("excel-table-frame-presets", () => {
   it("includes golden and candy-canes built-in frames", () => {
-    expect(EXCEL_TABLE_FRAME_PRESETS.length).toBeGreaterThanOrEqual(3);
+    expect(EXCEL_TABLE_FRAME_PRESETS.length).toBeGreaterThanOrEqual(6);
     expect(findExcelTableFramePreset("golden")?.url).toBe("/assets/excel-frames/golden-frame.png");
     expect(findExcelTableFramePreset("candy-canes")?.url).toBe(
       "/assets/excel-frames/candy-canes-frame.png"
     );
     expect(findExcelTableFramePreset("holographic")?.url).toBe(
       "/assets/excel-frames/holographic-frame.png"
+    );
+    expect(findExcelTableFramePreset("medieval-spiky")?.url).toBe(
+      "/assets/excel-frames/medieval-spiky-frame.png"
+    );
+    expect(findExcelTableFramePreset("medieval-crest")?.url).toBe(
+      "/assets/excel-frames/medieval-crest-frame.png"
+    );
+    expect(findExcelTableFramePreset("medieval-trefoil")?.url).toBe(
+      "/assets/excel-frames/medieval-trefoil-frame.png"
     );
   });
 

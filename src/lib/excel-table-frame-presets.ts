@@ -30,6 +30,27 @@ export const EXCEL_TABLE_FRAME_PRESETS: ExcelTableFramePreset[] = [
     defaultInset: "30",
     defaultOpacity: "100",
   },
+  {
+    id: "medieval-spiky",
+    label: "메디벌 스파이크",
+    url: "/assets/excel-frames/medieval-spiky-frame.png",
+    defaultInset: "48",
+    defaultOpacity: "100",
+  },
+  {
+    id: "medieval-crest",
+    label: "메디벌 크레스트",
+    url: "/assets/excel-frames/medieval-crest-frame.png",
+    defaultInset: "52",
+    defaultOpacity: "100",
+  },
+  {
+    id: "medieval-trefoil",
+    label: "메디벌 트레포일",
+    url: "/assets/excel-frames/medieval-trefoil-frame.png",
+    defaultInset: "48",
+    defaultOpacity: "100",
+  },
 ];
 
 export function findExcelTableFramePreset(id: string): ExcelTableFramePreset | undefined {
