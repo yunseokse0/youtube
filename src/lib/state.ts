@@ -3854,6 +3854,31 @@ export function resolveServerDonorsForEmptyLocal(opts: {
   return restored.length > 0 ? restored : null;
 }
 
+/** 세션·UI 후원이 비었을 때 서버(또는 union) donors 를 정산 리셋 파이프라인으로 반영 */
+export function pickAuthoritativeDonorsForEmptySession(
+  local: AppState,
+  serverDonors: Donor[] | undefined,
+  mergedDonors?: Donor[] | undefined,
+  settlementResetAt?: number
+): Donor[] {
+  const fromServer = normalizeDonorsArray(serverDonors);
+  const fromMerged = normalizeDonorsArray(mergedDonors);
+  const bestIncoming = fromServer.length >= fromMerged.length ? fromServer : fromMerged;
+  if (!isEmptyBroadcastDonationSession(local)) {
+    const localDonors = normalizeDonorsArray(local.donors);
+    return localDonors.length > 0 ? localDonors : bestIncoming;
+  }
+  if (bestIncoming.length === 0) return [];
+  const resetAt = Math.max(
+    Number(settlementResetAt || 0),
+    Number(local.settlementResetAt || 0)
+  );
+  return applySettlementResetDonorPipeline(
+    rebumpDonorsPastSettlementReset(bestIncoming, resetAt),
+    resetAt
+  );
+}
+
 /** 세션 캐시에 후원·합계가 없음 — 서버 스냅샷을 거부하지 않을 때 */
 export function isEmptyBroadcastDonationSession(state: AppState | null | undefined): boolean {
   if (!state) return true;

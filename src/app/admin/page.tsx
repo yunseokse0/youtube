@@ -61,6 +61,7 @@ import {
   rebumpDonorsPastSettlementReset,
   filterDonorsAfterSettlementReset,
   resolveServerDonorsForEmptyLocal,
+  pickAuthoritativeDonorsForEmptySession,
   isEmptyBroadcastDonationSession,
   ensureMissionItems,
   appendDailyLog,
@@ -1635,6 +1636,30 @@ export default function AdminPage() {
               didPreserve: false,
             };
           }
+          const piped = pickAuthoritativeDonorsForEmptySession(
+            local,
+            incomingDonorsNorm,
+            undefined,
+            Math.max(localResetAt, remoteResetAt)
+          );
+          if (piped.length > 0) {
+            const rosterMembers = local.members?.length ? local.members : incoming.members;
+            return {
+              merged: syncMemberTotalsFromDonors({
+                ...incoming,
+                ...local,
+                members: rosterMembers,
+                memberPositions: normalizeMemberPositions(
+                  local.memberPositions ?? incoming.memberPositions,
+                  rosterMembers
+                ),
+                donors: piped,
+                settlementResetAt: Math.max(localResetAt, remoteResetAt) || undefined,
+                updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
+              }),
+              didPreserve: false,
+            };
+          }
           return {
             merged: {
               ...incoming,
@@ -1674,15 +1699,22 @@ export default function AdminPage() {
     const localHasData = hasMeaningfulBroadcastData(local);
     // 서버가 초기 멤버 슬롯(멤버1·2·3 등)만 있으면 로컬 멤버 구성을 유지한다.
     if ((incomingDefaultLike || incomingPlaceholderMembers) && localHasData) {
-      const merged = {
+      const incomingDonorsNorm = normalizeDonorsArray(incoming.donors);
+      const localDonorsNorm = normalizeDonorsArray(local.donors);
+      let merged: AppState = {
         ...incoming,
         ...local,
         members: local.members,
         memberPositions: normalizeMemberPositions(local.memberPositions, local.members),
         updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
       };
+      if (localDonorsNorm.length === 0 && incomingDonorsNorm.length > 0) {
+        merged = syncMemberTotalsFromDonors({ ...merged, donors: incomingDonorsNorm });
+      } else {
+        merged = { ...merged, donors: normalizeDonorsArray(merged.donors) };
+      }
       return {
-        merged: { ...merged, donors: normalizeDonorsArray(merged.donors) },
+        merged,
         didPreserve: true,
       };
     }
@@ -2162,18 +2194,18 @@ export default function AdminPage() {
           : rejectPoorer
             ? local.memberPositions ?? merged.memberPositions ?? apiState.memberPositions
             : merged.memberPositions ?? apiState.memberPositions;
-        const donorsForApplyRaw = normalizeDonorsArray(donationSource.donors);
-        const donorsForApply =
-          donorsForApplyRaw.length > 0
-            ? donorsForApplyRaw
-            : resolveServerDonorsForEmptyLocal({
-                local,
-                incomingDonors: apiState.donors,
-                settlementResetAt: Math.max(
-                  Number(local.settlementResetAt || 0),
-                  Number(apiState.settlementResetAt || 0)
-                ),
-              }) ?? donorsForApplyRaw;
+        const resetAtForDonors = Math.max(
+          Number(local.settlementResetAt || 0),
+          Number(apiState.settlementResetAt || 0)
+        );
+        const donorsForApply = isEmptyBroadcastDonationSession(local)
+          ? pickAuthoritativeDonorsForEmptySession(
+              local,
+              apiState.donors,
+              merged.donors,
+              resetAtForDonors
+            )
+          : normalizeDonorsArray(donationSource.donors);
         const rosterPayload: AppState = {
           ...merged,
           donors: donorsForApply,
@@ -2489,12 +2521,13 @@ export default function AdminPage() {
       }
       const resetAt = Number(local.settlementResetAt || remote.settlementResetAt || 0);
       const rosterMembers = pickMemberRosterPreferNewer(local, remote);
-      const restoredDonors =
-        resolveServerDonorsForEmptyLocal({
-          local,
-          incomingDonors: remoteDonors,
-          settlementResetAt: resetAt,
-        }) ?? rebumpDonorsPastSettlementReset(remoteDonors, resetAt);
+      const restoredDonors = pickAuthoritativeDonorsForEmptySession(
+        local,
+        remoteDonors,
+        remoteDonors,
+        resetAt
+      );
+      if (restoredDonors.length === 0) return false;
       const next = syncMemberTotalsFromDonors({
         ...local,
         ...remote,
@@ -2950,17 +2983,19 @@ export default function AdminPage() {
       );
       const rawDonors = normalizeDonorsArray(toApply.donors);
       if (serverDonorAhead || isEmptyBroadcastDonationSession(prev)) {
-        const restored =
-          resolveServerDonorsForEmptyLocal({
-            local: prev,
-            incomingDonors: remote.donors,
-            settlementResetAt: Math.max(
-              Number(prev.settlementResetAt || 0),
-              Number(remote.settlementResetAt || 0)
-            ),
-          }) ?? rawDonors;
-        if (restored.length > rawDonors.length) {
-          toApply = syncMemberTotalsFromDonors({ ...toApply, donors: restored });
+        const resetAt = Math.max(
+          Number(prev.settlementResetAt || 0),
+          Number(remote.settlementResetAt || 0)
+        );
+        const restored = isEmptyBroadcastDonationSession(prev)
+          ? pickAuthoritativeDonorsForEmptySession(prev, remote.donors, remote.donors, resetAt)
+          : resolveServerDonorsForEmptyLocal({
+              local: prev,
+              incomingDonors: remote.donors,
+              settlementResetAt: resetAt,
+            }) ?? rawDonors;
+        if (normalizeDonorsArray(restored).length > rawDonors.length) {
+          toApply = syncMemberTotalsFromDonors({ ...toApply, donors: normalizeDonorsArray(restored) });
         }
       }
       const rawDonorsFinal = normalizeDonorsArray(toApply.donors);
