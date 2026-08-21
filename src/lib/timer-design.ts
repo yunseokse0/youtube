@@ -42,6 +42,12 @@ export const SPEEDOMETER_COLORS = {
   subtext: "#94a3b8",
 } as const;
 
+/** SVG 게이지 중심·숫자 앵커 — SpeedometerSvg cy 와 동일 */
+export const SPEEDOMETER_LAYOUT = {
+  centerYRatio: 0.54,
+  textMinWidthCh: 4.5,
+} as const;
+
 /** 코랄 링 — 남은 분(올림)만큼 눈금 강조, 최대 60 */
 export function computeCountdownRingFilledTicks(remainingSec: number | null | undefined): number {
   const safe = Math.max(0, Math.floor(Number(remainingSec) || 0));

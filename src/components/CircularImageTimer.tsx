@@ -7,6 +7,7 @@ import {
   COUNTDOWN_RING_COLORS,
   COUNTDOWN_RING_TICK_COUNT,
   SPEEDOMETER_COLORS,
+  SPEEDOMETER_LAYOUT,
   type TimerDesignId,
 } from "@/lib/timer-design";
 import { resolveTimerFontFamilyCss } from "@/lib/timer-font-style";
@@ -69,7 +70,7 @@ function SpeedometerSvg({
   fillRatio: number;
 }) {
   const cx = size / 2;
-  const cy = size * 0.54;
+  const cy = size * SPEEDOMETER_LAYOUT.centerYRatio;
   const r = size * 0.42;
   const startDeg = 135;
   const sweepDeg = 270;
@@ -186,20 +187,16 @@ export function CircularImageTimer({
         <SpeedometerSvg size={size} fillRatio={speedoFill} />
       )}
       <div
-        className={`absolute flex flex-col items-center text-center leading-none ${
-          design === "speedometer"
-            ? "left-1/2 -translate-x-1/2 justify-end"
-            : "inset-0 z-[1] justify-center"
-        }`}
+        className="absolute left-1/2 z-[1] flex flex-col items-center justify-center text-center leading-none -translate-x-1/2 -translate-y-1/2"
         style={
           design === "speedometer"
             ? {
-                bottom: Math.round(size * 0.1),
-                width: "54%",
-                minWidth: "4.5ch",
+                top: `${SPEEDOMETER_LAYOUT.centerYRatio * 100}%`,
+                minWidth: `${SPEEDOMETER_LAYOUT.textMinWidthCh}ch`,
                 zIndex: 2,
               }
             : {
+                top: "50%",
                 width: "38%",
                 minWidth: "3.5ch",
               }
@@ -212,6 +209,7 @@ export function CircularImageTimer({
             fontSize: Math.max(14, Math.round(fontSize * display.primaryScale)),
             color: primaryColor,
             letterSpacing: design === "speedometer" ? "0.04em" : "-0.02em",
+            ...(design === "speedometer" ? { paddingRight: "0.04em" } : {}),
             textShadow:
               design === "speedometer"
                 ? "0 1px 3px rgba(0,0,0,0.65)"

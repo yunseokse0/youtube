@@ -16010,15 +16010,45 @@ export default function AdminPage() {
               </div>
 
               <div className="mb-3 rounded-lg border border-white/10 bg-black/30 overflow-hidden">
-                <div className="flex items-center justify-between border-b border-white/5 px-2 py-1.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 px-2 py-1.5">
                   <span className="text-xs font-medium text-neutral-300">후원 순위 (상위 N) 미리보기</span>
-                  <button
-                    type="button"
-                    className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-emerald-500/60 hover:text-emerald-200"
-                    onClick={() => setDonorRankingsPreviewIframeKey((k) => k + 1)}
-                  >
-                    새로고침
-                  </button>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      className={`rounded px-2 py-0.5 text-[11px] shrink-0 ${
+                        copiedId === "dash-donor-rankings-preview"
+                          ? "bg-emerald-600 text-white"
+                          : "border border-white/15 text-neutral-300 hover:border-emerald-500/60 hover:text-emerald-200"
+                      }`}
+                      onClick={() => {
+                        const u = buildDonorRankingsUrl();
+                        void copyUrl(u, "dash-donor-rankings-preview");
+                      }}
+                    >
+                      {copiedId === "dash-donor-rankings-preview" ? "복사됨!" : "OBS URL 복사"}
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded px-2 py-0.5 text-[11px] shrink-0 ${
+                        copiedId === "dash-donor-rankings-preview-test"
+                          ? "bg-emerald-600 text-white"
+                          : "border border-amber-500/40 text-amber-200/90 hover:border-amber-400/70"
+                      }`}
+                      onClick={() => {
+                        const u = buildDonorRankingsUrl({ test: true });
+                        void copyUrl(u, "dash-donor-rankings-preview-test");
+                      }}
+                    >
+                      {copiedId === "dash-donor-rankings-preview-test" ? "복사됨!" : "테스트 URL"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-emerald-500/60 hover:text-emerald-200"
+                      onClick={() => setDonorRankingsPreviewIframeKey((k) => k + 1)}
+                    >
+                      새로고침
+                    </button>
+                  </div>
                 </div>
                 <div className="relative w-full bg-black/40" style={{ minHeight: "260px", aspectRatio: "16 / 9" }}>
                   {overlayUserId ? (

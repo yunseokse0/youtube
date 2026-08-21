@@ -6,8 +6,18 @@ const useStagingDist =
 const stagingDir = useStagingDist
   ? String(process.env.NEXT_BUILD_DIR || ".next-staging").trim()
   : "";
+const lowMemoryBuild = String(process.env.LOW_MEMORY_BUILD || "").trim() === "1";
+const buildCpusRaw = parseInt(String(process.env.BUILD_CPUS || "1"), 10);
+const buildCpus =
+  Number.isFinite(buildCpusRaw) && buildCpusRaw >= 1
+    ? Math.min(4, buildCpusRaw)
+    : 1;
 const nextConfig = {
   ...(stagingDir ? { distDir: stagingDir } : {}),
+  eslint: {
+    /** EC2 배포: 로컬/CI에서 lint — 빌드 단계 생략으로 1~3분 단축 */
+    ignoreDuringBuilds: lowMemoryBuild,
+  },
   trailingSlash: false,
   async redirects() {
     return [
@@ -101,9 +111,9 @@ const nextConfig = {
   experimental: {
     instrumentationHook: true,
     serverComponentsExternalPackages: ["mysql2"],
-    ...(process.env.LOW_MEMORY_BUILD === "1"
+    ...(lowMemoryBuild
       ? {
-          cpus: 1,
+          cpus: buildCpus,
         }
       : {}),
   },

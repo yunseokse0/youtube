@@ -15,6 +15,7 @@
     "build": "next build",
     "build:prod": "node scripts/build-prod.mjs",
     "deploy:ec2": "bash deploy/deploy-on-ec2.sh",
+    "deploy:ec2:fast": "DEPLOY_FAST=1 bash deploy/deploy-on-ec2.sh",
     "start": "node scripts/start.cjs",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",

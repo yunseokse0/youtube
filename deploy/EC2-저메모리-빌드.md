@@ -124,3 +124,41 @@ EC2 대신 GitHub runner(메모리 충분)에서 `npm run build` 후 `.next`를 
 | 인스턴스 업그레이드 | 빌드 빠름 | 비용 증가 (사용 안 함) |
 
 기존 문서의 `git pull && npm run build` 는 **`bash deploy/deploy-on-ec2.sh`** 또는 **`npm run build:prod`** 로 바꾸는 것을 권장합니다.
+
+---
+
+## 배포 속도 옵션 (2026-08)
+
+스크린샷처럼 **swap 500MB+ 사용** 중이면 RAM+디스크 I/O 때문에 빌드가 매우 느려집니다.
+
+### 빠른 배포 (권장 — 방송 전·자주 배포할 때)
+
+빌드 **2~5분** 줄일 수 있습니다. 빌드 중 **OBS·관리자 502**가 잠깐 납니다(보통 3~8분).
+
+```bash
+cd ~/youtube
+git pull
+DEPLOY_FAST=1 bash deploy/deploy-on-ec2.sh
+# 또는
+npm run deploy:ec2:fast
+```
+
+`DEPLOY_FAST=1` 동작:
+
+- 빌드 전 `pm2 stop` → RAM 확보 → `BUILD_CPUS=2` · `NODE_HEAP_MB=2048`
+- EC2 빌드 시 **eslint 단계 생략** (`LOW_MEMORY_BUILD`)
+- **webpack 캐시 유지** — 두 번째 배포부터 컴파일 대폭 단축
+- 배포 후 cron/워치독 재등록·npm cache clean 생략
+
+### 서비스 유지 배포 (기본)
+
+```bash
+bash deploy/deploy-on-ec2.sh
+```
+
+빌드 중에도 OBS 유지. swap thrashing 으로 **느리지만** 502 없음.
+
+### 가장 빠름 — PC 빌드 후 `.next`만 업로드
+
+로컬에서 `npm run build` (1~2분) → scp `.next` → 서버 `pm2 reload`.  
+방법 B 참고.

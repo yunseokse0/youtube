@@ -4,11 +4,12 @@
  * - NODE_OPTIONS 힙 상향
  * - LOW_MEMORY_BUILD=1 → next.config worker 1개
  * - NEXT_BUILD_DIR=.next-staging → 기존 .next 유지한 채 스테이징 빌드(deploy-on-ec2.sh)
- * - PM2_STOP_BEFORE_BUILD=1 → 빌드 전 pm2 stop (OOM 시에만)
+ * - BUILD_CPUS=2 — pm2 stop 후 RAM 여유 시 webpack 병렬(기본 1)
+ * - BUILD_KEEP_CACHE=1 — 스테이징 webpack 캐시 유지(재빌드 단축, 기본 ON)
  * - PM2_APP + 스테이징 없음 → 구 방식(빌드 전 stop, 빌드 후 restart)
  */
 import { spawnSync } from "node:child_process";
-import { rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 
 const heapMb = String(process.env.NODE_HEAP_MB || "2048").replace(/[^\d]/g, "") || "2048";
@@ -17,6 +18,29 @@ const stagingDir = String(process.env.NEXT_BUILD_DIR || "").trim();
 const stopBeforeBuild =
   process.env.PM2_STOP_BEFORE_BUILD === "1" && Boolean(pm2App);
 const shell = process.platform === "win32";
+const keepCache = process.env.BUILD_KEEP_CACHE !== "0";
+
+function preserveBuildCache(dir) {
+  if (!keepCache || !dir) return null;
+  const target = path.resolve(dir);
+  const cacheDir = path.join(target, "cache");
+  const backup = `${target}.cache.bak`;
+  rmSync(backup, { recursive: true, force: true });
+  if (existsSync(cacheDir)) {
+    renameSync(cacheDir, backup);
+    return backup;
+  }
+  return null;
+}
+
+function restoreBuildCache(dir, backup) {
+  if (!keepCache || !dir || !backup || !existsSync(backup)) return;
+  const target = path.resolve(dir);
+  const cacheDir = path.join(target, "cache");
+  rmSync(cacheDir, { recursive: true, force: true });
+  mkdirSync(target, { recursive: true });
+  renameSync(backup, cacheDir);
+}
 
 function run(cmd, args, opts = {}) {
   const r = spawnSync(cmd, args, {
@@ -33,7 +57,9 @@ function run(cmd, args, opts = {}) {
 
 console.log(
   `[build:prod] NODE heap ${heapMb}MB · LOW_MEMORY_BUILD=1` +
-    (stagingDir ? ` · distDir=${stagingDir}` : "")
+    (stagingDir ? ` · distDir=${stagingDir}` : "") +
+    (process.env.BUILD_CPUS ? ` · cpus=${process.env.BUILD_CPUS}` : "") +
+    (keepCache ? " · cache=keep" : " · cache=off")
 );
 
 const legacyInPlace = Boolean(pm2App) && !stagingDir;
@@ -49,7 +75,22 @@ const cleanDirs = stagingDir
 for (const dir of cleanDirs) {
   const target = path.resolve(dir);
   console.log(`[build:prod] clean ${dir}`);
+  const cacheBackup = preserveBuildCache(dir);
   rmSync(target, { recursive: true, force: true });
+  restoreBuildCache(dir, cacheBackup);
+  /** 이전 성공 빌드 캐시가 있으면 스테이징에 복사(첫 배포·캐시 없으면 skip) */
+  if (stagingDir && dir === stagingDir) {
+    const liveCache = path.resolve(".next", "cache");
+    const stagingCache = path.join(target, "cache");
+    if (
+      keepCache &&
+      !existsSync(stagingCache) &&
+      existsSync(liveCache)
+    ) {
+      cpSync(liveCache, stagingCache, { recursive: true });
+      console.log("[build:prod] seeded cache from .next/cache");
+    }
+  }
 }
 
 const env = {

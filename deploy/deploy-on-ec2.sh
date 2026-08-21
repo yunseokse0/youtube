@@ -9,6 +9,7 @@
 #   SWAP_SIZE=1G              # 빌드용 스왑 (기본 1G — 20GB 디스크용)
 #   KEEP_SWAP=1              # 빌드 후 스왑 유지(기본). 0 이면 빌드 후 제거
 #   PM2_STOP_BEFORE_BUILD=0  # 1 이면 빌드 전 pm2 stop (OOM 시만). 기본 0 = 빌드 중에도 서비스 유지
+#   DEPLOY_FAST=1            # 빌드 전 pm2 stop + cpus=2 + 검증·cron 생략 (2~5분 단축, 빌드 중 502)
 #   STOP_MYSQL_FOR_BUILD=1   # 빌드 중 MySQL 일시 정지(기본 0 — 엑셀/후원 유실 방지. OOM 시에만 1)
 #   SKIP_GIT_PULL=0
 #   DEPLOY_SMOKE_USER=din       # 배포 후 /api/state 스모크 (미설정 시 생략)
@@ -29,6 +30,7 @@ KEEP_SWAP="${KEEP_SWAP:-1}"
 PM2_STOP_BEFORE_BUILD="${PM2_STOP_BEFORE_BUILD:-0}"
 STOP_MYSQL_FOR_BUILD="${STOP_MYSQL_FOR_BUILD:-0}"
 SKIP_GIT_PULL="${SKIP_GIT_PULL:-0}"
+DEPLOY_FAST="${DEPLOY_FAST:-0}"
 MYSQL_WAS_STOPPED=0
 SWAP_CREATED_BY_US=0
 PM2_STOPPED_FOR_BUILD=0
@@ -77,7 +79,13 @@ if [[ "${PCT_USED:-0}" -ge 96 ]]; then
 fi
 
 echo "== 이전 스테이징·백업 제거 (실행 중 .next 는 유지) =="
-rm -rf "$STAGING_DIR" .next.old
+rm -rf .next.old
+if [[ "$DEPLOY_FAST" == "1" ]]; then
+  echo "== DEPLOY_FAST=1 — 빌드 전 pm2 stop · webpack cpus=2 · heap=2048 =="
+  PM2_STOP_BEFORE_BUILD=1
+  NODE_HEAP_MB=2048
+  export BUILD_CPUS=2
+fi
 
 # ----- MySQL binlog 만료 (디스크 재폭발 방지) -----
 BINLOG_CNF="/etc/mysql/mysql.conf.d/zzz-binlog-expire.cnf"
@@ -203,13 +211,13 @@ verify_static_serving() {
   return 0
 }
 
-echo "== 스테이징 빌드 (${STAGING_DIR}) heap=${NODE_HEAP_MB}MB =="
-rm -rf "$STAGING_DIR"
-export NODE_HEAP_MB
-export NEXT_BUILD_DIR="$STAGING_DIR"
+echo "== 스테이징 빌드 (${STAGING_DIR}) heap=${NODE_HEAP_MB}MB cpus=${BUILD_CPUS:-1} =="
+export BUILD_CPUS="${BUILD_CPUS:-1}"
+export BUILD_KEEP_CACHE="${BUILD_KEEP_CACHE:-1}"
+# webpack 캐시는 build-prod.mjs 가 보존 — 여기서 staging 전체 삭제하지 않음
 set +e
 # 빌드 자식에만 NEXT_BUILD_DIR 전달 — PM2_APP 미전달·PM2_STOP_BEFORE_BUILD=0 으로 빌드 중 서비스 유지
-env -u PM2_APP NEXT_BUILD_DIR="$STAGING_DIR" NODE_HEAP_MB="$NODE_HEAP_MB" PM2_STOP_BEFORE_BUILD="${PM2_STOP_BEFORE_BUILD}" npm run build:prod
+env -u PM2_APP NEXT_BUILD_DIR="$STAGING_DIR" NODE_HEAP_MB="$NODE_HEAP_MB" BUILD_CPUS="$BUILD_CPUS" BUILD_KEEP_CACHE="$BUILD_KEEP_CACHE" PM2_STOP_BEFORE_BUILD="${PM2_STOP_BEFORE_BUILD}" npm run build:prod
 BUILD_CODE=$?
 set -e
 unset NEXT_BUILD_DIR NEXT_USE_STAGING_DIST || true
@@ -316,7 +324,9 @@ fi
 pm2 save 2>/dev/null || true
 
 rm -rf .next.old "$STAGING_DIR"
-npm cache clean --force 2>/dev/null || true
+if [[ "$DEPLOY_FAST" != "1" ]]; then
+  npm cache clean --force 2>/dev/null || true
+fi
 
 # ----- 빌드 후 스왑 -----
 if [[ "$KEEP_SWAP" != "1" ]] && [[ "$SWAP_CREATED_BY_US" == "1" || "${FORCE_REMOVE_SWAP:-0}" == "1" ]]; then
@@ -327,7 +337,7 @@ fi
 
 # ----- 헬스 -----
 echo "== health =="
-sleep 2
+sleep $([[ "$DEPLOY_FAST" == "1" ]] && echo 1 || echo 2)
 HEALTH_OK=0
 for i in 1 2 3 4 5; do
   if curl -sf "http://127.0.0.1:${PORT}/api/health" >/dev/null; then
@@ -375,8 +385,12 @@ systemctl is-active mysql 2>/dev/null && echo "mysql: active" || echo "mysql: $(
 
 trap - ERR
 
-echo "== 안정성 (워치독·일일 정리·pm2 startup) =="
-bash "$ROOT/deploy/ec2-setup-stability.sh" 2>/dev/null || echo "WARN: ec2-setup-stability 실패 — 수동: bash deploy/ec2-setup-stability.sh"
+if [[ "$DEPLOY_FAST" == "1" ]]; then
+  echo "== DEPLOY_FAST=1 — 워치독·cron 재등록 생략 =="
+else
+  echo "== 안정성 (워치독·일일 정리·pm2 startup) =="
+  bash "$ROOT/deploy/ec2-setup-stability.sh" 2>/dev/null || echo "WARN: ec2-setup-stability 실패 — 수동: bash deploy/ec2-setup-stability.sh"
+fi
 
 echo "=========================================="
 echo " 배포 완료 — 빌드 중 서비스 유지, 교체 구간만 reload"
