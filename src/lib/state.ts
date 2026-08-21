@@ -3829,6 +3829,30 @@ export function applySettlementResetDonorPipeline(
 }
 
 /**
+ * 서버 정본 모드: UI·세션이 비었는데 서버 스냅샷에 후원이 있으면 rebump 후 반영.
+ * (settlementResetUntil·preResetDonorsOnly 가 MySQL 실후원을 0으로 가리는 회귀 방지)
+ */
+export function resolveServerDonorsForEmptyLocal(opts: {
+  local: AppState;
+  incomingDonors: Donor[] | undefined;
+  settlementResetAt?: number;
+}): Donor[] | null {
+  if (!isServerAuthoritativeBroadcastState()) return null;
+  const localDonors = normalizeDonorsArray(opts.local.donors);
+  const incomingDonors = normalizeDonorsArray(opts.incomingDonors);
+  if (localDonors.length > 0 || incomingDonors.length === 0) return null;
+  const resetAt = Math.max(
+    Number(opts.settlementResetAt || 0),
+    Number(opts.local.settlementResetAt || 0)
+  );
+  const restored = applySettlementResetDonorPipeline(
+    rebumpDonorsPastSettlementReset(incomingDonors, resetAt),
+    resetAt
+  );
+  return restored.length > 0 ? restored : null;
+}
+
+/**
  * 정산 리셋 시각 병합.
  * - `settlementReset: true` 일 때만 새 stamp 허용 (사용자 명시 리셋).
  * - 그 외에는 서버(base) 값만 유지 — 클라이언트가 올린 더 큰 settlementResetAt 로

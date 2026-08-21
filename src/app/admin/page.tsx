@@ -54,6 +54,7 @@ import {
   isIntentionalDonorListShrink,
   rebumpDonorsPastSettlementReset,
   filterDonorsAfterSettlementReset,
+  resolveServerDonorsForEmptyLocal,
   ensureMissionItems,
   appendDailyLog,
   loadDailyLogFromApi,
@@ -1562,6 +1563,29 @@ export default function AdminPage() {
           localResetAt > 0 &&
           filterDonorsAfterSettlementReset(incomingDonorsNorm, localResetAt).length === 0;
         if (preResetDonorsOnly) {
+          const restored = resolveServerDonorsForEmptyLocal({
+            local,
+            incomingDonors: incomingDonorsNorm,
+            settlementResetAt: Math.max(localResetAt, remoteResetAt),
+          });
+          if (restored && restored.length > 0) {
+            const rosterMembers = local.members?.length ? local.members : incoming.members;
+            return {
+              merged: syncMemberTotalsFromDonors({
+                ...incoming,
+                ...local,
+                members: rosterMembers,
+                memberPositions: normalizeMemberPositions(
+                  local.memberPositions ?? incoming.memberPositions,
+                  rosterMembers
+                ),
+                donors: restored,
+                settlementResetAt: Math.max(localResetAt, remoteResetAt) || undefined,
+                updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
+              }),
+              didPreserve: false,
+            };
+          }
           return {
             merged: {
               ...incoming,
@@ -1959,6 +1983,16 @@ export default function AdminPage() {
     ) {
       merged = syncMemberTotalsFromDonors({ ...merged, donors: localDonorsNorm });
       didPreserve = true;
+    } else if (localDonorsNorm.length === 0 && donorsNorm.length === 0 && incomingDonorsNorm.length > 0) {
+      const restored = resolveServerDonorsForEmptyLocal({
+        local,
+        incomingDonors: incomingDonorsNorm,
+        settlementResetAt: Math.max(localResetAt, remoteResetAt),
+      });
+      if (restored && restored.length > 0) {
+        merged = syncMemberTotalsFromDonors({ ...merged, donors: restored });
+        didPreserve = false;
+      }
     } else if (wouldShrinkDonationData(local, merged) && localDonorsNorm.length > 0) {
       const union = mergeDonorsForMultiTabSave(donorsNorm, localDonorsNorm, {
         incomingUpdatedAt: Number(merged.updatedAt ?? incoming.updatedAt ?? 0),
@@ -2132,7 +2166,18 @@ export default function AdminPage() {
           : rejectPoorer
             ? local.memberPositions ?? merged.memberPositions ?? apiState.memberPositions
             : merged.memberPositions ?? apiState.memberPositions;
-        const donorsForApply = normalizeDonorsArray(donationSource.donors);
+        const donorsForApplyRaw = normalizeDonorsArray(donationSource.donors);
+        const donorsForApply =
+          donorsForApplyRaw.length > 0
+            ? donorsForApplyRaw
+            : resolveServerDonorsForEmptyLocal({
+                local,
+                incomingDonors: apiState.donors,
+                settlementResetAt: Math.max(
+                  Number(local.settlementResetAt || 0),
+                  Number(apiState.settlementResetAt || 0)
+                ),
+              }) ?? donorsForApplyRaw;
         const rosterPayload: AppState = {
           ...merged,
           donors: donorsForApply,
@@ -2447,6 +2492,12 @@ export default function AdminPage() {
       }
       const resetAt = Number(local.settlementResetAt || remote.settlementResetAt || 0);
       const rosterMembers = pickMemberRosterPreferNewer(local, remote);
+      const restoredDonors =
+        resolveServerDonorsForEmptyLocal({
+          local,
+          incomingDonors: remoteDonors,
+          settlementResetAt: resetAt,
+        }) ?? rebumpDonorsPastSettlementReset(remoteDonors, resetAt);
       const next = syncMemberTotalsFromDonors({
         ...local,
         ...remote,
@@ -2455,7 +2506,7 @@ export default function AdminPage() {
           local.memberPositions ?? remote.memberPositions,
           rosterMembers
         ),
-        donors: rebumpDonorsPastSettlementReset(remoteDonors, resetAt),
+        donors: restoredDonors,
         updatedAt: Math.max(Number(remote.updatedAt || 0), Date.now()),
         donorRankingsUpdatedAt: Math.max(
           Number(local.donorRankingsUpdatedAt || 0),
@@ -2494,11 +2545,13 @@ export default function AdminPage() {
     if (serverDonorMismatchRestoreAttemptedRef.current) return;
     serverDonorMismatchRestoreAttemptedRef.current = true;
     void applyDonorsFromServerMainState({ silent: true }).then((ok) => {
-      if (ok) {
-        setSigExcelResult(
-          `화면 후원이 0인데 서버에 ${serverCount}건이 있어 자동 복구했습니다.`
-        );
+      if (!ok) {
+        serverDonorMismatchRestoreAttemptedRef.current = false;
+        return;
       }
+      setSigExcelResult(
+        `화면 후원이 0인데 서버에 ${serverCount}건이 있어 자동 복구했습니다.`
+      );
     });
   }, [user, storageHealth, state.donors, applyDonorsFromServerMainState]);
 
@@ -2591,7 +2644,8 @@ export default function AdminPage() {
         }
       });
     };
-    const applyRemoteState = (remote: AppState, opts?: { forceDonorMerge?: boolean }) => {
+    const applyRemoteState = (incomingRemote: AppState, opts?: { forceDonorMerge?: boolean }) => {
+      let remote = incomingRemote;
       const remoteUpdatedAt = remote.updatedAt || 0;
       const shouldApplyRemote =
         remoteUpdatedAt > stateUpdatedAtRef.current || Boolean(opts?.forceDonorMerge);
@@ -2631,7 +2685,16 @@ export default function AdminPage() {
             localResetAt > 0 &&
             filterDonorsAfterSettlementReset(remoteDonors, localResetAt).length === 0;
           if (preResetDonorsOnly) {
-            return false;
+            const restored = resolveServerDonorsForEmptyLocal({
+              local: stateRef.current,
+              incomingDonors: remoteDonors,
+              settlementResetAt: Math.max(localResetAt, remoteResetAt),
+            });
+            if (restored && restored.length > 0) {
+              remote = { ...remote, donors: restored };
+            } else {
+              return false;
+            }
           }
         }
       }
