@@ -186,11 +186,24 @@ export function CircularImageTimer({
         <SpeedometerSvg size={size} fillRatio={speedoFill} />
       )}
       <div
-        className="relative z-[1] flex flex-col items-center justify-center text-center leading-none"
-        style={{
-          width: design === "speedometer" ? "42%" : "38%",
-          minWidth: "3.5ch",
-        }}
+        className={`absolute flex flex-col items-center text-center leading-none ${
+          design === "speedometer"
+            ? "left-1/2 -translate-x-1/2 justify-end"
+            : "inset-0 z-[1] justify-center"
+        }`}
+        style={
+          design === "speedometer"
+            ? {
+                bottom: Math.round(size * 0.1),
+                width: "54%",
+                minWidth: "4.5ch",
+                zIndex: 2,
+              }
+            : {
+                width: "38%",
+                minWidth: "3.5ch",
+              }
+        }
       >
         <span
           className="font-bold tabular-nums"

@@ -87,7 +87,11 @@ import OverlayToonationRelayHost from "@/components/OverlayToonationRelayHost";
 import { GoalBar } from "@/components/GoalBar";
 import { FlipCountdownTimer } from "@/components/FlipCountdownTimer";
 import { CircularImageTimer } from "@/components/CircularImageTimer";
-import { isImageFrameTimerDesign, normalizeTimerDesign } from "@/lib/timer-design";
+import {
+  isImageFrameTimerDesign,
+  normalizeTimerDesign,
+  resolveCircularImageTimerFontSize,
+} from "@/lib/timer-design";
 import BattleTeamColumnBoard from "@/components/battle/BattleTeamColumnBoard";
 import { mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
@@ -2741,8 +2745,11 @@ function OverlayInner() {
   const timerOutlineWidth = timerStyleResolved.outlineWidth;
   const timerBgOpacity = timerStyleResolved.bgOpacity;
   const timerScalePercent = timerStyleResolved.scalePercent;
-  const timerBaseFontSize = timerOnlyMode ? 56 : Math.max(28, Math.round(memberSize * 1.45));
-  const timerFontSize = Math.max(14, Math.round(timerBaseFontSize * (timerScalePercent / 100)));
+  const timerFontSize = resolveCircularImageTimerFontSize({
+    timerOnlyMode,
+    memberSizePx: memberSize,
+    scalePercent: timerScalePercent,
+  });
   useEffect(() => {
     if (showTimer) ensureTimerGoogleFontsLoaded();
   }, [showTimer, timerFontFamily]);

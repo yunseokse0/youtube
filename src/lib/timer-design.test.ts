@@ -4,6 +4,7 @@ import {
   buildFlipCountdownSegments,
   computeCountdownRingFilledTicks,
   computeSpeedometerFillRatio,
+  resolveCircularImageTimerFontSize,
   normalizeTimerDesign,
   isDefaultTimerDesign,
   isImageFrameTimerDesign,
@@ -73,5 +74,17 @@ describe("timer-design", () => {
   it("computeSpeedometerFillRatio tracks ring tick ratio", () => {
     expect(computeSpeedometerFillRatio(150)).toBeCloseTo(3 / 60, 4);
     expect(computeSpeedometerFillRatio(3600)).toBe(1);
+  });
+
+  it("resolveCircularImageTimerFontSize matches overlay timer-only and integrated paths", () => {
+    expect(
+      resolveCircularImageTimerFontSize({ timerOnlyMode: true, scalePercent: 100 })
+    ).toBe(56);
+    expect(
+      resolveCircularImageTimerFontSize({ timerOnlyMode: true, scalePercent: 150 })
+    ).toBe(84);
+    expect(
+      resolveCircularImageTimerFontSize({ timerOnlyMode: false, memberSizePx: 18, scalePercent: 100 })
+    ).toBe(28);
   });
 });

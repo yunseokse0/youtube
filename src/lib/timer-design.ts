@@ -54,6 +54,19 @@ export function computeSpeedometerFillRatio(remainingSec: number | null | undefi
   return computeCountdownRingFilledTicks(remainingSec) / COUNTDOWN_RING_TICK_COUNT;
 }
 
+/** CircularImageTimer px — 관리자 미리보기·오버레이 동일 공식 */
+export function resolveCircularImageTimerFontSize(args: {
+  timerOnlyMode: boolean;
+  memberSizePx?: number;
+  scalePercent?: number;
+}): number {
+  const scale =
+    Math.max(50, Math.min(250, Math.round(Number(args.scalePercent) || 100))) / 100;
+  const memberSize = Math.max(10, Math.round(Number(args.memberSizePx) || 18));
+  const base = args.timerOnlyMode ? 56 : Math.max(28, Math.round(memberSize * 1.45));
+  return Math.max(14, Math.round(base * scale));
+}
+
 export function normalizeTimerDesign(raw: unknown): TimerDesignId {
   const v = String(raw || "")
     .trim()

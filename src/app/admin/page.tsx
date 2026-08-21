@@ -181,6 +181,7 @@ import {
   TIMER_DESIGN_OPTIONS,
   normalizeTimerDesign,
   isImageFrameTimerDesign,
+  resolveCircularImageTimerFontSize,
 } from "@/lib/timer-design";
 import { normalizeVsDesign, VS_DESIGN_OPTIONS } from "@/lib/vs-design";
 import { FlipCountdownTimer } from "@/components/FlipCountdownTimer";
@@ -12783,6 +12784,10 @@ export default function AdminPage() {
                   const timerFontCss = resolveTimerFontFamilyCss(timerFontId);
                   const timerDesignId = normalizeTimerDesign(timerStyle.design);
                   const effective = getEffectiveRemainingTime(timer, timerUiNow);
+                  const circularTimerFontSize = resolveCircularImageTimerFontSize({
+                    timerOnlyMode: true,
+                    scalePercent: timerStyle.scalePercent ?? 100,
+                  });
                   const mm = Math.floor(effective / 60);
                   const ss = effective % 60;
                   const overlayOn = state.matchTimerEnabled?.[timerDef.flag] !== false;
@@ -12904,12 +12909,17 @@ export default function AdminPage() {
                               ? "bg-neutral-900"
                               : "bg-neutral-950/80"
                           }`}
+                          style={
+                            isImageFrameTimerDesign(timerDesignId)
+                              ? { minHeight: Math.max(144, Math.round(circularTimerFontSize * 5.8)) }
+                              : undefined
+                          }
                         >
                           {timerDesignId === "flip-countdown" ? (
                             <FlipCountdownTimer
                               remainingSeconds={effective}
                               showHours={timerStyle.showHours}
-                              fontSize={28}
+                              fontSize={Math.max(20, Math.round(circularTimerFontSize * 0.5))}
                               fontFamily={timerFontId}
                               fontColor={String(timerStyle.fontColor || "")}
                               bgColor={String(timerStyle.bgColor || "")}
@@ -12920,7 +12930,7 @@ export default function AdminPage() {
                               remainingSeconds={effective}
                               showHours={timerStyle.showHours}
                               design={timerDesignId}
-                              fontSize={28}
+                              fontSize={circularTimerFontSize}
                               fontFamily={timerFontId}
                               fontColor={String(timerStyle.fontColor || "")}
                             />
