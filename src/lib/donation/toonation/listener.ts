@@ -1,6 +1,6 @@
 "use client";
 
-import { normalizeToonationAlertboxUrl } from "./link-key";
+import { extractToonationLinkKey, normalizeToonationAlertboxUrl } from "./link-key";
 
 export type ToonationListenerStatus = {
   kind: "connected" | "disconnected" | "reconnect_attempt" | "reconnect_error" | "reconnect_failed" | "connect_error" | "idle" | "syncing" | "error";
@@ -97,6 +97,68 @@ export async function stopToonationListener(userId?: string): Promise<void> {
     method: "DELETE",
     credentials: "include",
   }).catch(() => {});
+}
+
+export type ToonationSettingsSaveExpectation = {
+  linkKey: string;
+  ownerName: string;
+  enabled: boolean;
+};
+
+/** POST 후 GET 으로 연동키·채널 주인명·ON/OFF 가 서버에 반영됐는지 확인 */
+export function verifyToonationSettingsSaved(
+  status: ToonationServerStatus,
+  expected: ToonationSettingsSaveExpectation
+): { ok: true } | { ok: false; message: string } {
+  if (!status) {
+    return { ok: false, message: "서버에 저장된 투네 설정을 찾을 수 없습니다." };
+  }
+  const expectedKey = extractToonationLinkKey(expected.linkKey) || String(expected.linkKey || "").trim();
+  const savedKey =
+    extractToonationLinkKey(status.alertboxUrl) || String(status.alertboxUrl || "").trim();
+
+  if (expected.enabled && !expectedKey) {
+    return { ok: false, message: "실시간 수집 ON 상태에서는 연동키가 필요합니다." };
+  }
+  if (expectedKey && savedKey !== expectedKey) {
+    return {
+      ok: false,
+      message: `연동키가 서버와 일치하지 않습니다 (서버: ${savedKey || "없음"})`,
+    };
+  }
+
+  const normOwner = (s: string) => String(s || "").trim().replace(/\s+/g, "").toLowerCase();
+  const savedOwner = normOwner(status.ownerName || "");
+  const expectedOwner = normOwner(expected.ownerName || "");
+  if (expectedOwner && savedOwner !== expectedOwner) {
+    return {
+      ok: false,
+      message: `채널 주인명이 서버와 일치하지 않습니다 (서버: ${status.ownerName || "없음"})`,
+    };
+  }
+  if (!expectedOwner && savedOwner) {
+    /** 폼은 비었는데 서버에 이전 값 — 저장 요청 ownerName="" 가 반영 안 된 경우 */
+    return {
+      ok: false,
+      message: `채널 주인명이 서버에 남아 있습니다 (서버: ${status.ownerName})`,
+    };
+  }
+
+  if (Boolean(status.enabled) !== Boolean(expected.enabled)) {
+    return {
+      ok: false,
+      message: `실시간 수집 상태 불일치 (서버: ${status.enabled ? "ON" : "OFF"})`,
+    };
+  }
+
+  return { ok: true };
+}
+
+export function maskToonationLinkKeyForDisplay(input: string): string {
+  const key = extractToonationLinkKey(input) || String(input || "").trim();
+  if (!key) return "(미입력)";
+  if (key.length <= 12) return key;
+  return `${key.slice(0, 6)}…${key.slice(-4)}`;
 }
 
 export async function fetchToonationListenerStatus(userId?: string): Promise<ToonationServerStatus> {

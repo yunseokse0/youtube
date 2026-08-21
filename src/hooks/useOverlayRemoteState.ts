@@ -69,6 +69,7 @@ import {
   shouldRejectPoorerDonationRemote,
   shouldKeepStaleOverlayOverRemote,
   isIntentionalMemberRosterShrink,
+  isServerAuthoritativeMemberRosterShrink,
   isLocalMemberRosterGrowOverRemote,
 } from "@/lib/overlay-sync-signature";
 import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
@@ -606,6 +607,12 @@ export function useOverlayRemoteState(
           return;
         }
 
+        const remoteRosterRev = Number(remote.membersRosterUpdatedAt || 0);
+        const lastRosterRev = Number(lastGoodRef.current?.membersRosterUpdatedAt || 0);
+        if (remoteRosterRev > 0 && remoteRosterRev > lastRosterRev) {
+          membersRosterSyncUntilRef.current = Date.now() + 45_000;
+        }
+
         if (
           shouldKeepLastGoodInsteadOf(remote, statePick, lastGoodRef.current)
         ) {
@@ -683,11 +690,11 @@ export function useOverlayRemoteState(
         const remoteRosterShrinkEarly =
           Boolean(remoteForApply) &&
           Boolean(lastGoodRef.current) &&
-          isIntentionalMemberRosterShrink(lastGoodRef.current, remoteForApply!);
+          isServerAuthoritativeMemberRosterShrink(lastGoodRef.current, remoteForApply!);
         if (
           remoteForApply &&
           (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
-          !(trustMemberRosterSync && remoteRosterShrinkEarly)
+          !remoteRosterShrinkEarly
         ) {
           const localHint =
             lastGoodRef.current &&
@@ -724,8 +731,9 @@ export function useOverlayRemoteState(
         const remoteRosterShrink =
           Boolean(remoteForApply) &&
           Boolean(lastGoodRef.current) &&
-          isIntentionalMemberRosterShrink(lastGoodRef.current, remoteForApply!);
+          isServerAuthoritativeMemberRosterShrink(lastGoodRef.current, remoteForApply!);
         const rejectPoorerOverlay =
+          !remoteRosterShrink &&
           (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
           !remoteAddedMembers &&
           !(trustMemberRosterSync && localRosterGrowPending) &&

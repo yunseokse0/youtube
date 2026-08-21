@@ -60,6 +60,20 @@ describe("isIntentionalDonorListShrink", () => {
     expect(isIntentionalDonorListShrink(incoming, existing, 9000, 5000)).toBe(false);
   });
 
+  it("does not treat multi-donor shrink (6→2) as intentional — prevents SQL wipe", async () => {
+    const { isIntentionalDonorListShrink } = await import("@/lib/state");
+    const existing = [
+      donor("a", 10000),
+      donor("b", 20000),
+      donor("c", 30000),
+      donor("d", 40000),
+      donor("e", 50000),
+      donor("f", 60000),
+    ];
+    const incoming = [donor("a", 10000), donor("b", 20000)];
+    expect(isIntentionalDonorListShrink(incoming, existing, 9000, 5000)).toBe(false);
+  });
+
   it("does not treat add+keep as shrink", async () => {
     const { isIntentionalDonorListShrink } = await import("@/lib/state");
     const existing = [donor("toonation:1", 64000)];

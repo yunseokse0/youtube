@@ -630,6 +630,8 @@ export type AppState = {
   updatedAt: number;
   /** 후원 순위 오버레이 전용 revision — donors·순위 테마 변경 시만 증가(회전판만 바뀌면 증가 안 함) */
   donorRankingsUpdatedAt?: number;
+  /** 멤버 추가·삭제(membersAuthoritative) 저장 시각 — OBS 로스터 shrink 신뢰 */
+  membersRosterUpdatedAt?: number;
   /**
    * GET pick=donor-rankings 전용 — cap 300 행과 무관하게 전체 donors 로 서버 집계한 순위.
    * Redis 저장·POST body에는 넣지 않음.

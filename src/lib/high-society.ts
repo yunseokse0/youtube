@@ -1855,3 +1855,77 @@ export function detectHighSocietyGrowFlashSeatIds(
   }
   return { grownIds, nextPrev };
 }
+
+/** admin patchHighSocietySettings — persistState 토스트 라벨(저장 완료 시 서버 확인 문구와 합쳐짐) */
+export function buildHighSocietySettingsPersistToast(args: {
+  patch: HighSocietySettingsAdminPatch;
+  before: HighSocietySettings;
+  wasOn: boolean;
+  after: HighSocietySettings;
+  resetTerritory: boolean;
+  members: Member[];
+}): string | null {
+  const { patch, before, wasOn, after, resetTerritory, members } = args;
+  if (resetTerritory) {
+    return `상류사회 · 영토만 초기화 (${after.round || 1}라운드 · 기존 후원 영토 OFF · 합산·금액 유지)`;
+  }
+  if (typeof patch.enabled === "boolean" && patch.enabled !== wasOn) {
+    return patch.enabled
+      ? isHighSocietyReopen(before)
+        ? "상류사회 재ON — 기존 영토 유지, 후원 리스트에서 영토 ON 한 건만 반영"
+        : "상류사회 ON — 기존 후원은 영토 OFF, 후원 리스트에서 영토 ON 한 건만 반영"
+      : "상류사회 OFF — 영토는 리셋 전까지 유지(OFF 이후 후원은 영토 미반영)";
+  }
+  if (patch.defaultMiddlePush && after.defaultMiddlePush !== before.defaultMiddlePush) {
+    const dir = resolveSystemMiddlePushDir(after);
+    return `상류사회 · 가운데 기본 확장 → ${dir === "left" ? "← 왼쪽" : "→ 오른쪽"} (시스템 추종 후원에 적용)`;
+  }
+  if (typeof patch.fieldCm === "number" && Number(patch.fieldCm) !== Number(before.fieldCm)) {
+    const seats = Math.max(
+      2,
+      resolveHighSocietySeatMembers(members, after).length || 4
+    );
+    const start = Math.round(startCmFromField(after.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM, seats));
+    return `상류사회 · 1인 시작 ${start.toLocaleString("ko-KR")}cm (전장 ${(after.fieldCm || 0).toLocaleString("ko-KR")}cm · ${seats}명)`;
+  }
+  if (patch.territoryUpdateMode && patch.territoryUpdateMode !== before.territoryUpdateMode) {
+    return patch.territoryUpdateMode === "onRoundEnd"
+      ? "상류사회 · 영토 갱신: 라운드 종료 후"
+      : "상류사회 · 영토 갱신: 실시간";
+  }
+  if (typeof patch.territoryPaused === "boolean" && patch.territoryPaused !== before.territoryPaused) {
+    return patch.territoryPaused
+      ? "상류사회 · 영토 일시정지 — 게이지만 동결(후원·투네 합산은 계속 반영)"
+      : "상류사회 · 영토 재개 — 일시정지 중 후원은 합산만 반영(영토 미반영)";
+  }
+  if (patch.fx) {
+    const fx = normalizeHighSocietyFxSettings(after.fx);
+    const labels = [
+      fx.frontier ? "전선" : null,
+      fx.growFlash ? "플래시" : null,
+      fx.contestedEdge ? "분쟁" : null,
+      fx.arrowBlade ? "칼날" : null,
+      fx.strongOutline ? "외곽선" : null,
+    ].filter(Boolean);
+    return labels.length > 0
+      ? `상류사회 · 연출 ON: ${labels.join(" · ")}`
+      : "상류사회 · 연출 효과 전부 OFF";
+  }
+  if (Array.isArray(patch.seatMemberIds)) {
+    const seats = resolveHighSocietySeatMembers(members, after);
+    if (isHighSocietySeatSelectionManual(after) && after.seatMemberIds.length === 0) {
+      return "상류사회 · 좌석 없음 — 아래에서 멤버를 추가하세요";
+    }
+    if (!isHighSocietySeatSelectionManual(after) && after.seatMemberIds.length === 0) {
+      return "상류사회 · 자동(전원 N등분)";
+    }
+    if (seats.length >= 1) {
+      return `상류사회 · 좌석 배치: ${seats.map((s) => s.name).join(" → ")}`;
+    }
+    return "상류사회 · 좌석 없음 — 아래에서 멤버를 추가하세요";
+  }
+  if (patch.barStyle && patch.barStyle !== before.barStyle) {
+    return `상류사회 · 게이지 스타일: ${patch.barStyle === "arrow" ? "화살표" : "평평"}`;
+  }
+  return "상류사회 설정";
+}

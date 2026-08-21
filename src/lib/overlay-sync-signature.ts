@@ -325,6 +325,43 @@ export function isIntentionalMemberRosterShrink(
 }
 
 /**
+ * 서버(MySQL) 로스터가 last-good/로컬보다 짧을 때 — 멤버 삭제·정산 후 0건 포함.
+ * orphan donors 유무와 무관하게 OBS는 서버 members 를 따른다.
+ */
+export function isServerAuthoritativeMemberRosterShrink(
+  local: AppState | null | undefined,
+  remote: AppState | null | undefined
+): boolean {
+  if (!local || !remote) return false;
+  if (isIntentionalMemberRosterShrink(local, remote)) return true;
+  const localMembers = local.members || [];
+  const remoteMembers = remote.members || [];
+  if (remoteMembers.length >= localMembers.length) return false;
+  if (!membersDifferByIds(localMembers, remoteMembers)) return false;
+  if (!isMemberRosterStrictSuperset(localMembers, remoteMembers)) return false;
+  const remoteAt = Number(remote.updatedAt || 0);
+  const localAt = Number(local.updatedAt || 0);
+  if (remoteAt < localAt) return false;
+  if (wouldAccidentallyZeroRemainingMembers(local, remote)) return false;
+
+  const remoteRosterRev = Number(remote.membersRosterUpdatedAt || 0);
+  const localRosterRev = Number(local.membersRosterUpdatedAt || 0);
+  if (remoteRosterRev > 0 && remoteRosterRev >= Math.max(localAt, localRosterRev)) {
+    return remoteMembers.length > 0 && hasMeaningfulMemberRoster(remote);
+  }
+
+  const localDonors = normalizeDonorsArray(local.donors);
+  const remoteDonors = normalizeDonorsArray(remote.donors);
+  if (localDonors.length === 0 && remoteDonors.length === 0) {
+    return remoteMembers.length > 0 && hasMeaningfulMemberRoster(remote);
+  }
+
+  if (isLocalMemberRosterGrowOverRemote(local, remote)) return false;
+
+  return false;
+}
+
+/**
  * 빈/축소 원격으로 로컬·엑셀 후원을 시스템에 의해 지우면 안 된다.
  * - 정산 리셋(remote.settlementResetAt 상승)만 빈 원격 허용 — 단 플레이스홀더 사고성 빈 상태 제외
  * - 의도적 부분 삭제(subset shrink)는 허용
@@ -337,6 +374,7 @@ export function shouldRejectPoorerDonationRemote(
   remote: AppState | null | undefined
 ): boolean {
   if (!local || !remote) return false;
+  if (isServerAuthoritativeMemberRosterShrink(local, remote)) return false;
   const remoteReset = Number(remote.settlementResetAt || 0);
   const localReset = Number(local.settlementResetAt || 0);
   if (remoteReset > localReset) {

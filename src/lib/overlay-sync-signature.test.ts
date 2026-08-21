@@ -268,6 +268,51 @@ describe("shouldRejectPoorerDonationRemote", () => {
     expect(isIntentionalMemberRosterShrink(local, remote)).toBe(true);
   });
 
+  it("detects server roster shrink when donors were cleared (member delete after reset)", async () => {
+    const { isServerAuthoritativeMemberRosterShrink, shouldRejectPoorerDonationRemote } =
+      await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      donors: [],
+      members: [
+        { id: "m1", name: "자키", account: 0, toon: 0, contribution: 0 },
+        { id: "m2", name: "빡수아", account: 0, toon: 0, contribution: 0 },
+      ],
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: 1500,
+      donors: [],
+      members: [{ id: "m1", name: "자기", account: 0, toon: 0, contribution: 0 }],
+    };
+    expect(isServerAuthoritativeMemberRosterShrink(local, remote)).toBe(true);
+    expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(false);
+  });
+
+  it("detects server roster shrink via membersRosterUpdatedAt stamp", async () => {
+    const { isServerAuthoritativeMemberRosterShrink } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      donors: [
+        { id: "d1", name: "a", amount: 10000, memberId: "m1", at: 1, target: "account" as const },
+      ],
+      members: [
+        { id: "m1", name: "A", account: 10000, toon: 0, contribution: 10000 },
+        { id: "m2", name: "B", account: 0, toon: 0, contribution: 0 },
+      ],
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: 2500,
+      membersRosterUpdatedAt: 2500,
+      donors: local.donors,
+      members: [{ id: "m1", name: "A", account: 10000, toon: 0, contribution: 10000 }],
+    };
+    expect(isServerAuthoritativeMemberRosterShrink(local, remote)).toBe(true);
+  });
+
   it("does not treat stale shorter remote as intentional member shrink during add", async () => {
     const { isIntentionalMemberRosterShrink, isLocalMemberRosterGrowOverRemote } = await import(
       "@/lib/overlay-sync-signature"

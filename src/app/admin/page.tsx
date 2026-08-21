@@ -8,7 +8,10 @@ import {
   normalizeSettlementUiOptions,
   readLegacySettlementUiOptionsFromLocalStorage,
 } from "@/lib/admin-client-settings";
-import { isServerAuthoritativeBroadcastState } from "@/lib/server-authoritative-broadcast-state";
+import {
+  clampBrowserPersistOptionsForServerAuthority,
+  isServerAuthoritativeBroadcastState,
+} from "@/lib/server-authoritative-broadcast-state";
 import { notifyBroadcastStateLocalUpdated, notifyOverlayPresetsLocalUpdated, notifyAdminPreviewDonorsUpdated, ADMIN_PREVIEW_DONORS_REQUEST, overlayUserIdsMatch } from "@/lib/broadcast-state-local-sync";
 import { APP_BRAND_NAME, adminHeaderTitle } from "@/lib/app-branding";
 import Toast from "@/components/Toast";
@@ -59,8 +62,10 @@ import {
   donorsListContentDiffers,
   isIntentionalDonorListShrink,
   rebumpDonorsPastSettlementReset,
+  applySettlementResetDonorPipeline,
   filterDonorsAfterSettlementReset,
   resolveServerDonorsForEmptyLocal,
+  buildUiStateFromServerDonorPull,
   pickAuthoritativeDonorsForEmptySession,
   isEmptyBroadcastDonationSession,
   ensureMissionItems,
@@ -228,6 +233,8 @@ import {
   stopToonationListener,
   syncToonationListenerFromBrowser,
   toonationListenerStatusFromServer,
+  verifyToonationSettingsSaved,
+  maskToonationLinkKeyForDisplay,
   writeToonationSettingsToLocal,
   type ToonationListenerStatus,
 } from "@/lib/donation/toonation/listener";
@@ -269,6 +276,7 @@ import {
   shouldPersistDonorsForHighSocietySettingsPatch,
   shouldApplyDonorsForHighSocietySettingsPatch,
   resolveDonationSyncModeForHighSocietySettingsChange,
+  buildHighSocietySettingsPersistToast,
   type HighSocietySettingsAdminPatch,
   resolveHighSocietySeatMembers,
   isHighSocietySeatSelectionManual,
@@ -288,7 +296,7 @@ import {
   isDonationAmountEligibleForHighSocietyTerritory,
   isDonorHsTerritoryIncluded,
 } from "@/lib/high-society";
-import { formatHsPushDirLabel, showAppToast } from "@/lib/app-toast";
+import { formatHsPushDirLabel, showAppToast, showServerPersistToast } from "@/lib/app-toast";
 import {
   parseBulkDonationText,
   resolveBulkDonationRows,
@@ -673,6 +681,8 @@ export default function AdminPage() {
   const [toonationOwnerName, setToonationOwnerName] = useState("");
   /** 서버 리스너 설정을 읽기 전에는 POST로 덮지 않음 */
   const [toonationSettingsHydrated, setToonationSettingsHydrated] = useState(false);
+  const [toonationSavePending, setToonationSavePending] = useState(false);
+  const [toonationLastSavedAt, setToonationLastSavedAt] = useState<number | null>(null);
   /** persist/sync는 이 계정에 대해 hydrate가 끝난 뒤에만 수행(계정 전환 시 키 오염 방지) */
   const toonationHydratedUserIdRef = useRef<string | null>(null);
   /** hydrate fetch 도중 사용자가 연동키·주인명을 수정하면 서버 값으로 덮지 않음 */
@@ -885,6 +895,10 @@ export default function AdminPage() {
      * 실제 후원 반영(donationApplied)일 때만 즉시 풀 동기화.
      */
     if (applied?.donorName && Number(applied.amount) > 0) {
+      void applyDonorsFromServerMainStateRef.current({ silent: true }).then((ok) => {
+        if (!ok) adminDonorForceSyncRef.current?.();
+      });
+    } else {
       adminDonorForceSyncRef.current?.();
     }
     adminStateSseScheduleRef.current?.();
@@ -1245,6 +1259,8 @@ export default function AdminPage() {
       clearSigSoldOutStamp?: boolean;
       /** 상류사회 OFF·일시정지 등 — API 에 HS 설정만 전송 */
       highSocietySettingsOnly?: boolean;
+      /** 저장 완료 시 서버(MySQL) 반영 토스트 */
+      persistToastLabel?: string;
     }
   ) => {
     const includeDonations =
@@ -1252,23 +1268,43 @@ export default function AdminPage() {
       Boolean(opts?.donorsAuthoritative) ||
       Boolean(opts?.settlementReset);
     const omitDonationFields = Boolean(opts?.omitDonationFields) || !includeDonations;
-    /**
-     * 후원이 갱신된 저장은 즉시 서버 정본으로 올린다.
-     * includeDonationFields 만으로는 HARD GUARD·큐 병합에서 빠질 수 있어
-     * donors 가 있으면 donorsAuthoritative 를 강제한다 (정산 리셋·빈 목록 wipe 제외).
-     */
-    const donorCount = normalizeDonorsArray(s.donors).length;
-    const forceAuthoritativeDonors =
-      includeDonations &&
-      !omitDonationFields &&
-      !opts?.settlementReset &&
-      donorCount > 0;
-    const resolvedOpts = {
+    const resolvedOpts = clampBrowserPersistOptionsForServerAuthority({
       ...opts,
-      ...(forceAuthoritativeDonors ? { donorsAuthoritative: true as const } : {}),
       ...(omitDonationFields ? { omitDonationFields: true as const } : {}),
-    };
-    if (resolvedOpts.membersAuthoritative) {
+    }) as typeof opts & { omitDonationFields?: boolean };
+    /** 후원·금액 변경 — 브라우저 스냅샷으로 /api/state POST 금지, 서버 donations 파이프라인만 */
+    if (includeDonations && !opts?.settlementReset) {
+      const now = Date.now();
+      lastLocalPersistAtRef.current = now;
+      pendingUnsyncedRef.current = true;
+      donationAuthoritativeSaveUntilRef.current = now + 20_000;
+      void persistDonationStateViaApi(
+        user?.id,
+        s,
+        opts?.donorsReplace ? "replace" : "add"
+      ).then((r) => {
+        if (opts?.persistToastLabel) {
+          showServerPersistToast(opts.persistToastLabel, { ok: r.ok });
+        }
+        if (!r.ok) {
+          const offline = typeof navigator !== "undefined" && !navigator.onLine;
+          setSyncStatus(offline ? "local" : "error");
+          return;
+        }
+        stateRef.current = r.state;
+        setState(r.state);
+        stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, r.updatedAt || 0);
+        lastAppliedRemoteUpdatedAtRef.current = r.updatedAt || 0;
+        pendingUnsyncedRef.current = false;
+        setSyncStatus("synced");
+        try {
+          cacheBroadcastStateSnapshot(r.state, user?.id);
+        } catch {}
+        notifyBroadcastStateLocalUpdated(user?.id, r.updatedAt);
+      });
+      return;
+    }
+    if (resolvedOpts?.membersAuthoritative) {
       membersAuthoritativeSaveUntilRef.current = Date.now() + 45_000;
     }
     /**
@@ -1299,6 +1335,12 @@ export default function AdminPage() {
             omitDonationFields: true,
             ...(resolvedOpts.membersAuthoritative ? { membersAuthoritative: true as const } : {}),
           }).then((r) => {
+            if (resolvedOpts?.persistToastLabel) {
+              showServerPersistToast(resolvedOpts.persistToastLabel, {
+                ok: r.ok,
+                storageFallback: r.storageFallback,
+              });
+            }
             if (r.ok) {
               pendingUnsyncedRef.current = false;
               setSyncStatus(r.storageFallback ? "error" : "synced");
@@ -1313,6 +1355,12 @@ export default function AdminPage() {
     stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, s.updatedAt || now, now);
     pendingUnsyncedRef.current = true;
     saveStateAsync(s, user?.id, resolvedOpts).then((r) => {
+      if (resolvedOpts?.persistToastLabel) {
+        showServerPersistToast(resolvedOpts.persistToastLabel, {
+          ok: r.ok,
+          storageFallback: r.storageFallback,
+        });
+      }
       if (r.ok) {
         if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
           stateUpdatedAtRef.current = r.serverUpdatedAt;
@@ -1655,6 +1703,29 @@ export default function AdminPage() {
                 ),
                 donors: piped,
                 settlementResetAt: Math.max(localResetAt, remoteResetAt) || undefined,
+                updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
+              }),
+              didPreserve: false,
+            };
+          }
+          const forcedResetAt = Math.max(localResetAt, remoteResetAt);
+          const forcedDonors = applySettlementResetDonorPipeline(
+            rebumpDonorsPastSettlementReset(incomingDonorsNorm, forcedResetAt),
+            forcedResetAt
+          );
+          if (forcedDonors.length > 0) {
+            const rosterMembers = local.members?.length ? local.members : incoming.members;
+            return {
+              merged: syncMemberTotalsFromDonors({
+                ...incoming,
+                ...local,
+                members: rosterMembers,
+                memberPositions: normalizeMemberPositions(
+                  local.memberPositions ?? incoming.memberPositions,
+                  rosterMembers
+                ),
+                donors: forcedDonors,
+                settlementResetAt: forcedResetAt || undefined,
                 updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
               }),
               didPreserve: false,
@@ -2198,7 +2269,11 @@ export default function AdminPage() {
           Number(local.settlementResetAt || 0),
           Number(apiState.settlementResetAt || 0)
         );
-        const donorsForApply = isEmptyBroadcastDonationSession(local)
+        const localDonorCount = normalizeDonorsArray(local.donors).length;
+        const apiDonorCount = normalizeDonorsArray(apiState.donors).length;
+        const preferServerDonors =
+          isEmptyBroadcastDonationSession(local) || localDonorCount < apiDonorCount;
+        const donorsForApply = preferServerDonors
           ? pickAuthoritativeDonorsForEmptySession(
               local,
               apiState.donors,
@@ -2206,9 +2281,15 @@ export default function AdminPage() {
               resetAtForDonors
             )
           : normalizeDonorsArray(donationSource.donors);
+        const donorsResolved =
+          donorsForApply.length === 0 && apiDonorCount > 0
+            ? normalizeDonorsArray(
+                buildUiStateFromServerDonorPull(local, apiState)?.donors ?? apiState.donors
+              )
+            : donorsForApply;
         const rosterPayload: AppState = {
           ...merged,
-          donors: donorsForApply,
+          donors: donorsResolved,
           members: rosterMembers,
           memberPositions: normalizeMemberPositions(rosterPositions, rosterMembers),
           contributionLogs: rejectPoorer
@@ -2231,7 +2312,7 @@ export default function AdminPage() {
         };
         /** donors 비었을 때 sync 하면 멤버 합계만 0으로 깎임 — 고아 상태는 baseline 유지 */
         const toApplyBase =
-          donorsForApply.length > 0
+          donorsResolved.length > 0
             ? syncMemberTotalsFromDonors(rosterPayload)
             : guardMemberTotalsAgainstAccidentalZeroWipe(rosterPayload, local);
         /** 타이머 제어 UI가 비어 보이면 프리셋에 저장된 색으로 채움 */
@@ -2304,38 +2385,9 @@ export default function AdminPage() {
           });
         }
         if (rejectPoorer) {
-          /** 빈 Redis 복구 — LS 후원을 계정 정본으로 한 번 올림(리셋 이전 at 은 rebump) */
+          /** 로컬이 서버 GET보다 풍부해 보여도 브라우저→DB 푸시 금지 — UI만 로컬 병합본 표시 */
           donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
           lastEmptyRemoteDonationHealAtRef.current = Date.now();
-          const healAt = Date.now();
-          const resetAt = Number(toApply.settlementResetAt || 0);
-          const healState: AppState = syncMemberTotalsFromDonors({
-            ...toApply,
-            donors: rebumpDonorsPastSettlementReset(
-              normalizeDonorsArray(toApply.donors),
-              resetAt
-            ),
-            updatedAt: Math.max(Number(toApply.updatedAt || 0), healAt),
-            donorRankingsUpdatedAt: Math.max(
-              Number(toApply.donorRankingsUpdatedAt || 0),
-              healAt
-            ),
-          });
-          stateRef.current = healState;
-          void saveStateAsync(healState, user?.id, {
-            donorsAuthoritative: true,
-            ...(hasMeaningfulMemberRoster(healState) ? { membersAuthoritative: true } : {}),
-          }).then((r) => {
-            if (r.ok) {
-              setSyncStatus(r.storageFallback ? "error" : "synced");
-              if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
-                stateUpdatedAtRef.current = r.serverUpdatedAt;
-                lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
-              }
-              notifyBroadcastStateLocalUpdated(user?.id, healState.updatedAt);
-            }
-          });
-          toApply = healState;
         }
         const serverInv = toApply.sigInventory || [];
         if (
@@ -2423,7 +2475,7 @@ export default function AdminPage() {
       updatedAt: Date.now(),
     });
     setState(next);
-    void saveStateAsync(next, user.id, { donorsAuthoritative: true });
+    void persistDonationStateViaApi(user.id, next, "add");
   }, [user, dailyLog, state.donors]);
 
   /** 후원 0건 — LS·일일 로그·서버 백업에서 자동 복구 (한 세션 1회) */
@@ -2433,27 +2485,6 @@ export default function AdminPage() {
     const donorsEmpty = normalizeDonorsArray(state.donors).length === 0;
     if (!donorsEmpty) return;
     autoOrphanDonorRestoreAttemptedRef.current = true;
-
-    const ls = loadState(user.id);
-    const lsDonors = normalizeDonorsArray(ls.donors);
-    if (lsDonors.length > 0) {
-      const resetAt = Number(stateRef.current.settlementResetAt || 0);
-      const next = syncMemberTotalsFromDonors({
-        ...stateRef.current,
-        donors: rebumpDonorsPastSettlementReset(lsDonors, resetAt),
-        updatedAt: Date.now(),
-        donorRankingsUpdatedAt: Date.now(),
-      });
-      setState(next);
-      donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
-      void saveStateAsync(next, user.id, { donorsAuthoritative: true }).then((r) => {
-        if (r.ok) setSyncStatus(r.storageFallback ? "error" : "synced");
-      });
-      setSigExcelResult(
-        `후원 목록이 비어 있어 이 PC 저장본에서 ${lsDonors.length}건을 자동 복구했습니다.`
-      );
-      return;
-    }
 
     const tryDailyLogRestore = async () => {
       const serverLog = await loadDailyLogFromApi(user?.id);
@@ -2472,8 +2503,12 @@ export default function AdminPage() {
       if (!restored) return false;
       setState(restored);
       donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
-      void saveStateAsync(restored, user.id, { donorsAuthoritative: true }).then((r) => {
-        if (r.ok) setSyncStatus(r.storageFallback ? "error" : "synced");
+      void persistDonationStateViaApi(user.id, restored, "add").then((r) => {
+        if (r.ok) {
+          setState(r.state);
+          stateRef.current = r.state;
+          setSyncStatus("synced");
+        }
       });
       setSigExcelResult(
         `후원 목록이 비어 있어 일일 로그(${entry.at})에서 ${normalizeDonorsArray(restored.donors).length}건을 자동 복구했습니다.`
@@ -2506,6 +2541,10 @@ export default function AdminPage() {
     })();
   }, [user, state.donors, dailyLog, mergeIncomingStateSafely]);
 
+  const applyDonorsFromServerMainStateRef = useRef<
+    (opts?: { silent?: boolean }) => Promise<boolean>
+  >(async () => false);
+
   /** 서버 MySQL에 donors 가 있는데 UI·LS만 비었을 때 강제 복구 (storage-health 불일치) */
   const applyDonorsFromServerMainState = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -2514,36 +2553,8 @@ export default function AdminPage() {
       if (!remote) return false;
       const remoteDonors = normalizeDonorsArray(remote.donors);
       if (remoteDonors.length === 0) return false;
-      const local = stateRef.current;
-      const localDonors = normalizeDonorsArray(local.donors);
-      if (localDonors.length >= remoteDonors.length && totalCombined(local) >= totalCombined(remote)) {
-        return false;
-      }
-      const resetAt = Number(local.settlementResetAt || remote.settlementResetAt || 0);
-      const rosterMembers = pickMemberRosterPreferNewer(local, remote);
-      const restoredDonors = pickAuthoritativeDonorsForEmptySession(
-        local,
-        remoteDonors,
-        remoteDonors,
-        resetAt
-      );
-      if (restoredDonors.length === 0) return false;
-      const next = syncMemberTotalsFromDonors({
-        ...local,
-        ...remote,
-        members: rosterMembers,
-        memberPositions: normalizeMemberPositions(
-          local.memberPositions ?? remote.memberPositions,
-          rosterMembers
-        ),
-        donors: restoredDonors,
-        updatedAt: Math.max(Number(remote.updatedAt || 0), Date.now()),
-        donorRankingsUpdatedAt: Math.max(
-          Number(local.donorRankingsUpdatedAt || 0),
-          Number(remote.donorRankingsUpdatedAt || 0),
-          Date.now()
-        ),
-      });
+      const next = buildUiStateFromServerDonorPull(stateRef.current, remote);
+      if (!next || normalizeDonorsArray(next.donors).length === 0) return false;
       setState(next);
       stateRef.current = next;
       stateUpdatedAtRef.current = next.updatedAt || 0;
@@ -2553,9 +2564,6 @@ export default function AdminPage() {
       try {
         cacheBroadcastStateSnapshot(next, user.id);
       } catch {}
-      void saveStateAsync(next, user.id, { donorsAuthoritative: true }).then((r) => {
-        if (r.ok) setSyncStatus(r.storageFallback ? "error" : "synced");
-      });
       notifyBroadcastStateLocalUpdated(user.id, next.updatedAt);
       if (!opts?.silent) {
         setSigExcelResult(
@@ -2566,22 +2574,31 @@ export default function AdminPage() {
     },
     [user]
   );
+  applyDonorsFromServerMainStateRef.current = applyDonorsFromServerMainState;
 
   useEffect(() => {
     if (!user) return;
     const serverCount = Number(storageHealth?.mainState?.donorsCount || 0);
+    const serverTotal = Number(storageHealth?.mainState?.totalCombined || 0);
     const localCount = normalizeDonorsArray(state.donors).length;
-    if (serverCount <= 0 || localCount >= serverCount) return;
+    const localTotal = totalCombined(state);
+    const countMismatch = serverCount > 0 && localCount !== serverCount;
+    const totalMismatch = serverTotal > 0 && localTotal + 500 < serverTotal;
+    if (!countMismatch && !totalMismatch) return;
     if (serverDonorMismatchRestoreAttemptedRef.current) return;
     serverDonorMismatchRestoreAttemptedRef.current = true;
     void applyDonorsFromServerMainState({ silent: true }).then((ok) => {
-      if (!ok) {
-        serverDonorMismatchRestoreAttemptedRef.current = false;
+      if (ok) {
+        setSigExcelResult(
+          `서버 후원 ${serverCount}건·화면 ${localCount}건 불일치를 자동 복구했습니다.`
+        );
         return;
       }
-      setSigExcelResult(
-        `화면 후원이 0인데 서버에 ${serverCount}건이 있어 자동 복구했습니다.`
-      );
+      serverDonorMismatchRestoreAttemptedRef.current = false;
+      window.setTimeout(() => {
+        if (normalizeDonorsArray(stateRef.current.donors).length >= serverCount) return;
+        void applyDonorsFromServerMainState({ silent: true });
+      }, 1500);
     });
   }, [user, storageHealth, state.donors, applyDonorsFromServerMainState]);
 
@@ -2632,47 +2649,10 @@ export default function AdminPage() {
     let running = true;
     let inFlight = false;
     let pendingForceDonorSync = false;
-    const healLocalDonorsToServerIfRicher = () => {
-      const now = Date.now();
-      /** 후원 갱신 직후 서버 반영 — 짧은 쿨다운만 (연타 POST 방지) */
-      if (now - lastEmptyRemoteDonationHealAtRef.current < 500) return;
-      const local = stateRef.current;
-      const localDonors = normalizeDonorsArray(local.donors);
-      if (localDonors.length === 0) return;
-      if (totalCombined(local) <= 0) return;
-      lastEmptyRemoteDonationHealAtRef.current = now;
-      donationAuthoritativeSaveUntilRef.current = now + 20_000;
-      membersAuthoritativeSaveUntilRef.current = Math.max(
-        membersAuthoritativeSaveUntilRef.current,
-        now + 45_000
-      );
-      pendingUnsyncedRef.current = true;
-      const resetAt = Number(local.settlementResetAt || 0);
-      const healState = syncMemberTotalsFromDonors({
-        ...local,
-        donors: rebumpDonorsPastSettlementReset(localDonors, resetAt),
-        updatedAt: Math.max(Number(local.updatedAt || 0), now),
-        donorRankingsUpdatedAt: Math.max(Number(local.donorRankingsUpdatedAt || 0), now),
-      });
-      stateRef.current = healState;
-      setState(healState);
-      try {
-        cacheBroadcastStateSnapshot(healState, user?.id);
-      } catch {}
-      void saveStateAsync(healState, user?.id, {
-        donorsAuthoritative: true,
-        ...(hasMeaningfulMemberRoster(healState) ? { membersAuthoritative: true as const } : {}),
-      }).then((r) => {
-        if (r.ok) {
-          pendingUnsyncedRef.current = false;
-          setSyncStatus(r.storageFallback ? "error" : "synced");
-          if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
-            stateUpdatedAtRef.current = r.serverUpdatedAt;
-            lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
-          }
-          notifyBroadcastStateLocalUpdated(user?.id, healState.updatedAt);
-        }
-      });
+    const refreshDonorsFromServer = () => {
+      if (Date.now() - lastEmptyRemoteDonationHealAtRef.current < 500) return;
+      lastEmptyRemoteDonationHealAtRef.current = Date.now();
+      void applyDonorsFromServerMainState({ silent: true });
     };
     const applyRemoteState = (incomingRemote: AppState, opts?: { forceDonorMerge?: boolean }) => {
       let remote = incomingRemote;
@@ -2704,8 +2684,49 @@ export default function AdminPage() {
         donationAuthoritativeSaveUntilRef.current = 0;
       }
       if (remoteAccidentalEmpty && remoteResetAt > localResetAt) {
-        healLocalDonorsToServerIfRicher();
+        refreshDonorsFromServer();
         return false;
+      }
+      /** 투네 SSE·서버>UI: 병합 가드 전에 DB donors 를 화면에 직접 반영 */
+      if (
+        !remoteSettlementWins &&
+        remoteDonorCount > 0 &&
+        !amountInputEditingRef.current &&
+        (serverDonorAhead ||
+          Boolean(opts?.forceDonorMerge) ||
+          totalCombined(remote) > totalCombined(stateRef.current))
+      ) {
+        const pulled = buildUiStateFromServerDonorPull(stateRef.current, remote);
+        const pulledDonors = normalizeDonorsArray(pulled?.donors);
+        if (
+          pulled &&
+          (pulledDonors.length > localDonorCount ||
+            (pulledDonors.length >= remoteDonorCount &&
+              totalCombined(pulled) > totalCombined(stateRef.current)))
+        ) {
+          const themeMerged = mergeIncomingStateSafely(remote, stateRef.current);
+          const next = syncMemberTotalsFromDonors({
+            ...themeMerged.merged,
+            donors: pulledDonors,
+            members: pulled.members,
+            memberPositions: pulled.memberPositions,
+            donorRankingsUpdatedAt: pulled.donorRankingsUpdatedAt,
+            updatedAt: Math.max(Number(remote.updatedAt || 0), Number(pulled.updatedAt || 0)),
+          });
+          stateRef.current = next;
+          stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, next.updatedAt || 0);
+          lastAppliedRemoteUpdatedAtRef.current = next.updatedAt || 0;
+          pendingUnsyncedRef.current = false;
+          setState(next);
+          if (next.settlementUiOptions) {
+            syncSettlementUiFormFromOptions(next.settlementUiOptions);
+          }
+          try {
+            cacheBroadcastStateSnapshot(next, user?.id);
+          } catch {}
+          notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
+          return true;
+        }
       }
       if (amountInputEditingRef.current && !remoteSettlementWins) return false;
       if (Date.now() < settlementResetUntilRef.current) {
@@ -2804,7 +2825,7 @@ export default function AdminPage() {
             (stateRef.current.members || []).length >= (remote.members || []).length)
         ) {
           if (localSupersetProtected) {
-            healLocalDonorsToServerIfRicher();
+            refreshDonorsFromServer();
             /** 후원 없어도 멤버 로스터만 서버에 재푸시 (heal 쿨다운 공유) */
             if (
               normalizeDonorsArray(stateRef.current.donors).length === 0 &&
@@ -2822,7 +2843,7 @@ export default function AdminPage() {
         }
         /** forceDonorMerge 여도 빈 원격으로 수동 입력을 초기화하지 않음 — 대신 서버에 복구 푸시 */
         if (opts?.forceDonorMerge && localRicherThanEmptyRemote && !remoteRicher) {
-          healLocalDonorsToServerIfRicher();
+          refreshDonorsFromServer();
           return false;
         }
         /** 보호창 밖에서도 poorer/empty Redis 가 실후원을 시스템 삭제처럼 덮지 않음 */
@@ -2831,7 +2852,7 @@ export default function AdminPage() {
           !isEmptyBroadcastDonationSession(stateRef.current) &&
           shouldRejectPoorerDonationRemote(stateRef.current, remoteForGuards)
         ) {
-          healLocalDonorsToServerIfRicher();
+          refreshDonorsFromServer();
           return false;
         }
         /** 엑셀 실멤버·금액이 빈 원격으로 덮이지 않게 (정산 리셋만 예외) */
@@ -2840,7 +2861,7 @@ export default function AdminPage() {
           !isEmptyBroadcastDonationSession(stateRef.current) &&
           shouldAvoidOverwritingLocalStateWithRemote(stateRef.current, remoteForGuards)
         ) {
-          healLocalDonorsToServerIfRicher();
+          refreshDonorsFromServer();
           return false;
         }
         /** mergeIncoming 에 삭제 id 가 다시 union 되지 않게 */
@@ -2963,7 +2984,7 @@ export default function AdminPage() {
            * 서버에도 올려야 다음 투네 반영이 빈 Redis 기준으로 시작하지 않음.
            */
           stateRef.current = toApply;
-          healLocalDonorsToServerIfRicher();
+          refreshDonorsFromServer();
         } else {
           /** 시각·시그 보존만 서버에 올리고 후원 필드는 건드리지 않음.
            * 멤버 추가·삭제로 로스터만 보존된 경우는 권위적으로 올려 유실을 막음. */
@@ -2982,20 +3003,38 @@ export default function AdminPage() {
         remoteUpdatedAt
       );
       const rawDonors = normalizeDonorsArray(toApply.donors);
-      if (serverDonorAhead || isEmptyBroadcastDonationSession(prev)) {
-        const resetAt = Math.max(
-          Number(prev.settlementResetAt || 0),
-          Number(remote.settlementResetAt || 0)
-        );
-        const restored = isEmptyBroadcastDonationSession(prev)
-          ? pickAuthoritativeDonorsForEmptySession(prev, remote.donors, remote.donors, resetAt)
-          : resolveServerDonorsForEmptyLocal({
-              local: prev,
-              incomingDonors: remote.donors,
-              settlementResetAt: resetAt,
-            }) ?? rawDonors;
-        if (normalizeDonorsArray(restored).length > rawDonors.length) {
-          toApply = syncMemberTotalsFromDonors({ ...toApply, donors: normalizeDonorsArray(restored) });
+      const remoteDonorCountLive = normalizeDonorsArray(remote.donors).length;
+      if (
+        serverDonorAhead ||
+        isEmptyBroadcastDonationSession(prev) ||
+        rawDonors.length < remoteDonorCountLive
+      ) {
+        const pulled = buildUiStateFromServerDonorPull(prev, remote);
+        if (pulled && normalizeDonorsArray(pulled.donors).length > 0) {
+          const restoredDonors = normalizeDonorsArray(pulled.donors);
+          if (restoredDonors.length > rawDonors.length || rawDonors.length === 0) {
+            toApply = syncMemberTotalsFromDonors({
+              ...toApply,
+              donors: restoredDonors,
+              members: pulled.members,
+              memberPositions: pulled.memberPositions,
+            });
+          }
+        } else {
+          const resetAt = Math.max(
+            Number(prev.settlementResetAt || 0),
+            Number(remote.settlementResetAt || 0)
+          );
+          const restored = isEmptyBroadcastDonationSession(prev)
+            ? pickAuthoritativeDonorsForEmptySession(prev, remote.donors, remote.donors, resetAt)
+            : resolveServerDonorsForEmptyLocal({
+                local: prev,
+                incomingDonors: remote.donors,
+                settlementResetAt: resetAt,
+              }) ?? rawDonors;
+          if (normalizeDonorsArray(restored).length > rawDonors.length) {
+            toApply = syncMemberTotalsFromDonors({ ...toApply, donors: normalizeDonorsArray(restored) });
+          }
         }
       }
       const rawDonorsFinal = normalizeDonorsArray(toApply.donors);
@@ -3060,7 +3099,9 @@ export default function AdminPage() {
     }, { debounceMs: DONOR_STATE_UPDATED_DEBOUNCE_MS, maxWaitMs: DONOR_STATE_UPDATED_MAX_WAIT_MS });
     adminStateSseScheduleRef.current = schedule;
     adminDonorForceSyncRef.current = () => {
-      void syncFromApi({ forceFull: true, forceDonorMerge: true });
+      void applyDonorsFromServerMainState({ silent: true }).then((ok) => {
+        if (!ok) void syncFromApi({ forceFull: true, forceDonorMerge: true });
+      });
     };
     const onOnline = () => {
       void syncFromApi({ forceFull: true });
@@ -3074,8 +3115,7 @@ export default function AdminPage() {
     }, ADMIN_STATE_FALLBACK_POLL_MS);
     const donorLiveTimer = window.setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-      /** forceDonorMerge 매 2초는 빈 원격·삭제 직후 레이스를 키움 — full GET + 안전 병합만 */
-      void syncFromApi({ forceFull: true });
+      void syncFromApi({ forceFull: true, forceDonorMerge: true });
     }, ADMIN_DONOR_LIVE_POLL_MS);
     const onVisibility = () => {
       if (typeof document !== "undefined" && document.visibilityState === "visible") {
@@ -3097,7 +3137,7 @@ export default function AdminPage() {
       window.removeEventListener("offline", onOffline);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [user, persistState, mergeIncomingStateSafely, syncSettlementUiFormFromOptions]);
+  }, [user, persistState, mergeIncomingStateSafely, syncSettlementUiFormFromOptions, applyDonorsFromServerMainState]);
 
   const normalizeOverlayPresetLabels = (list: OverlayPreset[]): OverlayPreset[] =>
     list.map((p) => {
@@ -3222,19 +3262,9 @@ export default function AdminPage() {
   );
 
   const healLiveDonationsFromLocal = useCallback(() => {
-    const live = stateRef.current;
-    const lsSnap = loadState(user?.id);
-    const healed = healDonationFieldsFromLocalSnapshot(live, lsSnap);
-    if (!healed) return false;
-    setState(healed);
-    stateRef.current = healed;
-    try {
-      cacheBroadcastStateSnapshot(healed, user?.id);
-    } catch {}
-    /** 후원만 되살림 — 서버엔 테마 없는 PATCH로 전체 wipe 하지 않음 */
-    persistState(healed, { includeDonationFields: true });
-    return true;
-  }, [persistState, user?.id]);
+    void applyDonorsFromServerMainState({ silent: true });
+    return false;
+  }, [applyDonorsFromServerMainState]);
 
   const maybePromptThemeRestore = useCallback(
     (current: AppState) => {
@@ -4144,6 +4174,10 @@ export default function AdminPage() {
           membersAuthoritative: true,
           omitDonationFields: true,
         }).then((r) => {
+          showServerPersistToast(`멤버 삭제 · ${target?.name ?? id}`, {
+            ok: r.ok,
+            storageFallback: r.storageFallback,
+          });
           if (r.ok) {
             pendingUnsyncedRef.current = false;
             setSyncStatus(r.storageFallback ? "error" : "synced");
@@ -4212,25 +4246,21 @@ export default function AdminPage() {
       stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, now);
       membersAuthoritativeSaveUntilRef.current = Date.now() + 120_000;
       pendingUnsyncedRef.current = true;
-      /** React donors 가 비어도 LS에 후원이 있으면 함께 보내 엑셀 금액 sync 가 0으로 덮이지 않게 */
-      const lsDonors = normalizeDonorsArray(loadState(user?.id)?.donors);
-      const reactDonors = normalizeDonorsArray(next.donors);
-      const donorsForSave = reactDonors.length > 0 ? reactDonors : lsDonors;
-      const toPersist: AppState =
-        donorsForSave.length > 0 && reactDonors.length === 0
-          ? { ...next, donors: donorsForSave }
-          : next;
+      /** React donors 가 비어도 서버 donors 는 omitDonationFields 로 건드리지 않음 */
+      const toPersist: AppState = next;
       try {
         cacheBroadcastStateSnapshot(toPersist, user?.id);
       } catch {}
       notifyBroadcastStateLocalUpdated(user?.id, toPersist.updatedAt);
-      /** persistState 큐 경합을 피하고 멤버 권위 저장을 즉시 보냄 */
+      /** persistState 큐 경합을 피하고 멤버 권위 저장을 즉시 보냄 (후원 필드 제외) */
       void saveStateAsync(toPersist, user?.id, {
         membersAuthoritative: true,
-        ...(normalizeDonorsArray(toPersist.donors).length > 0
-          ? { donorsAuthoritative: true as const }
-          : { omitDonationFields: true as const }),
+        omitDonationFields: true,
       }).then(async (r) => {
+        showServerPersistToast(`멤버 추가 · ${base}`, {
+          ok: r.ok,
+          storageFallback: r.storageFallback,
+        });
         if (!r.ok) {
           setSyncStatus(typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error");
           setSigExcelResult("멤버 추가를 서버에 저장하지 못했습니다. 네트워크 후 다시 추가해 주세요.");
@@ -4276,19 +4306,10 @@ export default function AdminPage() {
             isMemberRosterStrictSuperset(localNow.members, remote.members)
           ) {
             membersAuthoritativeSaveUntilRef.current = Date.now() + 120_000;
-            const againDonors =
-              normalizeDonorsArray(localNow.donors).length > 0
-                ? normalizeDonorsArray(localNow.donors)
-                : normalizeDonorsArray(loadState(user?.id)?.donors);
-            const againState =
-              againDonors.length > 0 && normalizeDonorsArray(localNow.donors).length === 0
-                ? { ...localNow, donors: againDonors }
-                : localNow;
+            const againState = localNow;
             const again = await saveStateAsync(againState, user?.id, {
               membersAuthoritative: true,
-              ...(againDonors.length > 0
-                ? { donorsAuthoritative: true as const }
-                : { omitDonationFields: true as const }),
+              omitDonationFields: true,
             });
             if (again.ok && typeof again.serverUpdatedAt === "number") {
               stateUpdatedAtRef.current = again.serverUpdatedAt;
@@ -7295,7 +7316,10 @@ export default function AdminPage() {
 
   /** 삭제·나누기·재배치 — POST /api/state 대신 투네와 동일 persist 파이프라인 */
   const commitAuthoritativeDonorPersist = useCallback(
-    async (preserved: AppState, opts?: { protectionMs?: number }): Promise<boolean> => {
+    async (
+      preserved: AppState,
+      opts?: { protectionMs?: number; persistToastLabel?: string }
+    ): Promise<boolean> => {
       const protectionMs = opts?.protectionMs ?? 45_000;
       donationAuthoritativeSaveUntilRef.current = Date.now() + protectionMs;
       const result = await persistDonationStateViaApi(user?.id, preserved, "replace");
@@ -7304,6 +7328,9 @@ export default function AdminPage() {
         setSyncStatus(
           typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error"
         );
+        if (opts?.persistToastLabel) {
+          showServerPersistToast(opts.persistToastLabel, { ok: false });
+        }
         return false;
       }
       /** replace 저장 후 union(enrich)하면 삭제분이 서버·백업에서 되살아남 */
@@ -7330,6 +7357,9 @@ export default function AdminPage() {
       notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
       setState(bumped);
       setSyncStatus("synced");
+      if (opts?.persistToastLabel) {
+        showServerPersistToast(opts.persistToastLabel, { ok: true });
+      }
       return true;
     },
     [user?.id]
@@ -7407,15 +7437,15 @@ export default function AdminPage() {
     setState(preserved);
     /** 후원 반영 직후 서버 저장 실패·누락 시 즉시 재저장 */
     if (needsResave) {
-      void saveStateAsync(preserved, user?.id, { donorsAuthoritative: true }).then((r) => {
+      void persistDonationStateViaApi(user?.id, preserved, "add").then((r) => {
         if (r.ok) {
+          setState(r.state);
+          stateRef.current = r.state;
           pendingUnsyncedRef.current = false;
-          setSyncStatus(r.storageFallback ? "error" : "synced");
-          if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
-            stateUpdatedAtRef.current = r.serverUpdatedAt;
-            lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
-          }
-          notifyBroadcastStateLocalUpdated(user?.id, preserved.updatedAt);
+          setSyncStatus("synced");
+          stateUpdatedAtRef.current = r.updatedAt;
+          lastAppliedRemoteUpdatedAtRef.current = r.updatedAt;
+          notifyBroadcastStateLocalUpdated(user?.id, r.updatedAt);
         } else {
           setSyncStatus(
             typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error"
@@ -7762,6 +7792,111 @@ export default function AdminPage() {
     user?.id,
   ]);
 
+  const persistToonationSettings = useCallback(
+    async (opts?: { socketEnabled?: boolean; skipToast?: boolean }) => {
+      const uid = user?.id;
+      if (!uid || !toonationSettingsHydrated) {
+        showAppToast("설정을 불러오는 중입니다. 잠시 후 다시 시도해 주세요.", { variant: "info" });
+        return false;
+      }
+      if (toonationHydratedUserIdRef.current !== uid) return false;
+
+      const enabled = opts?.socketEnabled ?? toonationSocketEnabled;
+      const owner = toonationOwnerName.trim();
+      const linkInput = toonationAlertboxUrl.trim();
+      const normalized = toonationResolvedAlertboxUrl;
+      const linkKey = extractToonationLinkKey(linkInput) || normalized || linkInput;
+
+      if (linkInput && !normalized && !isExampleToonationLinkKey(linkInput)) {
+        showAppToast("연동키 형식을 확인해 주세요.", { variant: "error" });
+        return false;
+      }
+      if (enabled && !normalized) {
+        showAppToast("실시간 수집 ON — 연동키를 입력해 주세요.", { variant: "error" });
+        return false;
+      }
+      if (normalized && isExampleToonationLinkKey(normalized)) {
+        showAppToast("예시 연동키는 사용할 수 없습니다.", { variant: "error" });
+        return false;
+      }
+
+      if (opts?.socketEnabled !== undefined) {
+        setToonationSocketEnabled(enabled);
+      }
+
+      setToonationSavePending(true);
+      try {
+        if (!isServerAuthoritativeBroadcastState()) {
+          writeToonationSettingsToLocal(uid, {
+            alertboxUrl: linkInput,
+            socketEnabled: enabled,
+            ownerName: owner,
+          });
+        }
+
+        if (!enabled) {
+          if (normalized) {
+            await syncToonationListenerFromBrowser(normalized, {
+              userId: uid,
+              ownerName: owner,
+              enabled: false,
+              onStatus: setToonationListenerStatus,
+            });
+          } else {
+            await stopToonationListener(uid);
+            setToonationListenerStatus({ kind: "idle", message: "실시간 수집 꺼짐" });
+          }
+        } else {
+          await syncToonationListenerFromBrowser(normalized!, {
+            userId: uid,
+            ownerName: owner,
+            enabled: true,
+            onStatus: setToonationListenerStatus,
+          });
+        }
+
+        const status = await fetchToonationListenerStatus(uid);
+        const verified = verifyToonationSettingsSaved(status, {
+          linkKey,
+          ownerName: owner,
+          enabled,
+        });
+        if (!verified.ok) {
+          showAppToast(verified.message, { variant: "error", durationMs: 4500 });
+          return false;
+        }
+
+        setToonationLastSavedAt(Number(status?.updatedAt || Date.now()));
+        if (!opts?.skipToast) {
+          const keyLabel = maskToonationLinkKeyForDisplay(linkKey);
+          showServerPersistToast(
+            enabled
+              ? `투네 연동 · 연동키 ${keyLabel} · 채널 주인명 ${owner || "(미입력)"} · 실시간 수집 ON`
+              : `투네 연동 · 연동키 ${keyLabel} · 실시간 수집 OFF`,
+            { ok: true }
+          );
+        }
+        return true;
+      } catch (err) {
+        showAppToast(
+          `투네 연동 저장 실패: ${err instanceof Error ? err.message : String(err)}`,
+          { variant: "error", durationMs: 4500 }
+        );
+        return false;
+      } finally {
+        setToonationSavePending(false);
+      }
+    },
+    [
+      toonationAlertboxUrl,
+      toonationOwnerName,
+      toonationResolvedAlertboxUrl,
+      toonationSettingsHydrated,
+      toonationSocketEnabled,
+      user?.id,
+    ]
+  );
+
   useEffect(() => {
     if (!user?.id) {
       toonationHydratedUserIdRef.current = null;
@@ -7787,10 +7922,12 @@ export default function AdminPage() {
     }
     const hydrateStartedAt = Date.now();
     void (async () => {
+      let hydratedStatus: Awaited<ReturnType<typeof fetchToonationListenerStatus>> = null;
       try {
-        const status = await fetchToonationListenerStatus(user.id);
+        hydratedStatus = await fetchToonationListenerStatus(user.id);
         if (cancelled) return;
         if (toonationLocalEditedAfterRef.current > hydrateStartedAt) return;
+        const status = hydratedStatus;
         const serverUrl = String(status?.alertboxUrl || "").trim();
         const serverKey = extractToonationLinkKey(serverUrl) || serverUrl;
         if (isServerAuthoritativeBroadcastState()) {
@@ -7844,6 +7981,9 @@ export default function AdminPage() {
         if (!cancelled) {
           toonationHydratedUserIdRef.current = user.id;
           setToonationSettingsHydrated(true);
+          if (hydratedStatus?.updatedAt) {
+            setToonationLastSavedAt(Number(hydratedStatus.updatedAt));
+          }
         }
       }
     })();
@@ -7893,57 +8033,19 @@ export default function AdminPage() {
 
   useEffect(() => {
     const uid = user?.id || "";
-    const normalized = toonationResolvedAlertboxUrl;
-    /** 로그인 전·서버 설정 로드 전에는 서버 리스너를 덮지 않음 */
     if (!uid || !toonationSettingsHydrated) return;
     if (toonationHydratedUserIdRef.current !== uid) return;
-    if (normalized && isExampleToonationLinkKey(normalized)) {
-      setToonationListenerStatus({ kind: "idle", message: "연동키를 입력하세요" });
-      return;
-    }
-    if (!toonationSocketEnabled) {
-      if (normalized) {
-        void syncToonationListenerFromBrowser(normalized, {
-          userId: uid,
-          ownerName: toonationOwnerName,
-          enabled: false,
-        }).catch(() => {});
-      } else {
-        void stopToonationListener(uid);
-      }
-      setToonationListenerStatus({ kind: "idle", message: "실시간 수집 꺼짐" });
-      return;
-    }
-    if (!normalized) {
-      setToonationListenerStatus({ kind: "idle", message: "연동키를 입력하세요" });
-      return;
-    }
-    let cancelled = false;
-    void syncToonationListenerFromBrowser(normalized, {
-      userId: uid,
-      ownerName: toonationOwnerName,
-      enabled: true,
-      onStatus: (s) => {
-        if (!cancelled) setToonationListenerStatus(s);
-      },
-    }).catch((err) => {
-      if (!cancelled) {
-        setToonationListenerStatus({
-          kind: "error",
-          message: err instanceof Error ? err.message : String(err),
-        });
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    toonationOwnerName,
-    toonationResolvedAlertboxUrl,
-    toonationSettingsHydrated,
-    toonationSocketEnabled,
-    user?.id,
-  ]);
+    void fetchToonationListenerStatus(uid)
+      .then((status) => {
+        if (status?.updatedAt) {
+          setToonationLastSavedAt(Number(status.updatedAt));
+        }
+        setToonationListenerStatus(
+          toonationListenerStatusFromServer(status, { socketEnabled: toonationSocketEnabled })
+        );
+      })
+      .catch(() => {});
+  }, [toonationSettingsHydrated, toonationSocketEnabled, user?.id]);
 
   useEffect(() => {
     const uid = user?.id || "";
@@ -8249,8 +8351,6 @@ export default function AdminPage() {
         };
       }
       const wasOn = prevForPause.enabled;
-      const before = prevForPause;
-      let applied: ReturnType<typeof normalizeHighSocietySettings> | null = null;
       setState((prev: AppState) => {
         const prevSettings = normalizeHighSocietySettings(prev.highSocietySettings);
         let nextSettings = normalizeHighSocietySettings({
@@ -8267,7 +8367,6 @@ export default function AdminPage() {
           resetTerritory,
           donors: prev.donors || [],
         });
-        applied = nextSettings;
         const needsDonorPersist = shouldPersistDonorsForHighSocietySettingsPatch({
           resetTerritory,
           isFirstOn,
@@ -8334,11 +8433,24 @@ export default function AdminPage() {
           cacheBroadcastStateSnapshot(stamped, user?.id);
           notifyBroadcastStateLocalUpdated(user?.id, stamped.updatedAt);
         } catch {}
+        const persistToastLabel =
+          buildHighSocietySettingsPersistToast({
+            patch,
+            before: prevSettings,
+            wasOn,
+            after: nextSettings,
+            resetTerritory,
+            members: prev.members || [],
+          }) ?? undefined;
         persistState(
           next,
           hasDonorsToPersist
-            ? { donorsAuthoritative: true }
-            : { omitDonationFields: true, highSocietySettingsOnly: true }
+            ? { includeDonationFields: true, persistToastLabel }
+            : {
+                omitDonationFields: true,
+                highSocietySettingsOnly: true,
+                persistToastLabel,
+              }
         );
         return next;
       });
@@ -8352,83 +8464,6 @@ export default function AdminPage() {
       if (wasOn && !nextEnabled) {
         setPendingHsPushDirByDonorId({});
         setHsPushDirApplyBusyId(null);
-      }
-
-      /** 수동 설정 반영 요약 토스트 */
-      const after = applied || normalizeHighSocietySettings({ ...before, ...settingsPatch });
-      if (resetTerritory) {
-        showAppToast(
-          `상류사회 · 영토만 초기화 (${(after.round || 1)}라운드 · 기존 후원 영토 OFF · 합산·금액 유지)`
-        );
-      } else if (typeof patch.enabled === "boolean" && patch.enabled !== wasOn) {
-        showAppToast(
-          patch.enabled
-            ? isHighSocietyReopen(before)
-              ? "상류사회 재ON — 기존 영토 유지, 후원 리스트에서 영토 ON 한 건만 반영"
-              : "상류사회 ON — 기존 후원은 영토 OFF, 후원 리스트에서 영토 ON 한 건만 반영"
-            : "상류사회 OFF — 영토는 리셋 전까지 유지됩니다(OFF 이후 후원은 영토 미반영)."
-        );
-      } else if (patch.defaultMiddlePush && after.defaultMiddlePush !== before.defaultMiddlePush) {
-        const dir = resolveSystemMiddlePushDir(after);
-        showAppToast(
-          `상류사회 · 가운데 기본 확장 → ${dir === "left" ? "← 왼쪽" : "→ 오른쪽"} (시스템 추종 후원에 적용)`
-        );
-      } else if (
-        typeof patch.fieldCm === "number" &&
-        Number(patch.fieldCm) !== Number(before.fieldCm)
-      ) {
-        const seats = Math.max(
-          2,
-          resolveHighSocietySeatMembers(stateRef.current.members || [], after).length || 4
-        );
-        const start = Math.round(startCmFromField(after.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM, seats));
-        showAppToast(
-          `상류사회 · 1인 시작 ${start.toLocaleString("ko-KR")}cm (전장 ${(after.fieldCm || 0).toLocaleString("ko-KR")}cm · ${seats}명)`
-        );
-      } else if (
-        patch.territoryUpdateMode &&
-        patch.territoryUpdateMode !== before.territoryUpdateMode
-      ) {
-        showAppToast(
-          patch.territoryUpdateMode === "onRoundEnd"
-            ? "상류사회 · 영토 갱신: 라운드 종료 후"
-            : "상류사회 · 영토 갱신: 실시간"
-        );
-      } else if (typeof patch.territoryPaused === "boolean" && patch.territoryPaused !== before.territoryPaused) {
-        showAppToast(
-          patch.territoryPaused
-            ? "상류사회 · 영토 일시정지 — 게이지만 동결(후원·투네 합산은 계속 반영)"
-            : "상류사회 · 영토 재개 — 일시정지 중 후원은 합산만 반영(영토 미반영)"
-        );
-      } else if (patch.fx) {
-        const fx = normalizeHighSocietyFxSettings(after.fx);
-        const labels = [
-          fx.frontier ? "전선" : null,
-          fx.growFlash ? "플래시" : null,
-          fx.contestedEdge ? "분쟁" : null,
-          fx.arrowBlade ? "칼날" : null,
-          fx.strongOutline ? "외곽선" : null,
-        ].filter(Boolean);
-        showAppToast(
-          labels.length > 0
-            ? `상류사회 · 연출 ON: ${labels.join(" · ")}`
-            : "상류사회 · 연출 효과 전부 OFF"
-        );
-      } else if (Array.isArray(patch.seatMemberIds)) {
-        const seats = resolveHighSocietySeatMembers(stateRef.current.members || [], after);
-        showAppToast(
-          isHighSocietySeatSelectionManual(after) && after.seatMemberIds.length === 0
-            ? "상류사회 · 좌석 없음 — 아래에서 멤버를 추가하세요"
-            : !isHighSocietySeatSelectionManual(after) && after.seatMemberIds.length === 0
-              ? "상류사회 · 자동(전원 N등분)"
-              : seats.length >= 1
-                ? `상류사회 · 좌석 배치: ${seats.map((s) => s.name).join(" → ")}`
-                : "상류사회 · 좌석 없음 — 아래에서 멤버를 추가하세요"
-        );
-      } else if (patch.barStyle && patch.barStyle !== before.barStyle) {
-        showAppToast(
-          `상류사회 · 게이지 스타일: ${patch.barStyle === "arrow" ? "화살표" : "평평"}`
-        );
       }
     },
     [persistState, user?.id]
@@ -8821,6 +8856,17 @@ export default function AdminPage() {
         setSyncStatus("synced");
         return;
       }
+      const pulled = buildUiStateFromServerDonorPull(local, remote);
+      if (pulled && normalizeDonorsArray(pulled.donors).length > 0) {
+        stateUpdatedAtRef.current = pulled.updatedAt || 0;
+        lastAppliedRemoteUpdatedAtRef.current = pulled.updatedAt || 0;
+        pendingUnsyncedRef.current = false;
+        setState(pulled);
+        stateRef.current = pulled;
+        cacheBroadcastStateSnapshot(pulled, user?.id);
+        setSyncStatus("synced");
+        return;
+      }
     }
     const { merged, didPreserve } = mergeIncomingStateSafely(remote, local);
 
@@ -8963,10 +9009,7 @@ export default function AdminPage() {
     try {
       cacheBroadcastStateSnapshot(snapshot, user?.id);
     } catch {}
-    await saveStateAsync(snapshot, user?.id, {
-      donorsAuthoritative: true,
-      membersAuthoritative: hasMeaningfulMemberRoster(snapshot),
-    });
+    await persistDonationStateViaApi(user?.id, snapshot, "add");
     appendDailyLog(snapshot, user?.id);
     const rec = await appendSettlementRecordAndSync(
       title,
@@ -9200,6 +9243,10 @@ export default function AdminPage() {
     </div>
   );
 
+  const serverDonorHealthCount = Number(storageHealth?.mainState?.donorsCount || 0);
+  const uiDonorRowCount = normalizeDonorsArray(state.donors).length;
+  const donorUiBehindServer = serverDonorHealthCount > uiDonorRowCount;
+
   return (
     <main
       className="min-h-screen p-4 md:p-8 pb-24 md:pb-10 text-neutral-100"
@@ -9249,10 +9296,34 @@ export default function AdminPage() {
               </span>
             )}
             <span
-              className={`px-2 py-0.5 rounded text-xs font-medium ${syncStatus === "synced" ? "bg-emerald-900/60 text-emerald-300" : syncStatus === "loading" ? "bg-yellow-900/60 text-yellow-300" : syncStatus === "error" ? "bg-amber-900/60 text-amber-300" : "bg-neutral-800 text-neutral-400"}`}
-              title={syncStatus === "error" ? "동기화 실패 시 개발자 도구에 401이 보이면 로그인 세션이 만료된 경우가 많습니다. 페이지를 새로고침한 뒤 다시 로그인해 보세요." : undefined}
+              className={`px-2 py-0.5 rounded text-xs font-medium ${
+                donorUiBehindServer
+                  ? "bg-rose-900/60 text-rose-300"
+                  : syncStatus === "synced"
+                    ? "bg-emerald-900/60 text-emerald-300"
+                    : syncStatus === "loading"
+                      ? "bg-yellow-900/60 text-yellow-300"
+                      : syncStatus === "error"
+                        ? "bg-amber-900/60 text-amber-300"
+                        : "bg-neutral-800 text-neutral-400"
+              }`}
+              title={
+                donorUiBehindServer
+                  ? `서버 MySQL 후원 ${serverDonorHealthCount}건 · 화면 ${uiDonorRowCount}건 — 「서버 후원 복구」 또는 새로고침`
+                  : syncStatus === "error"
+                    ? "동기화 실패 시 개발자 도구에 401이 보이면 로그인 세션이 만료된 경우가 많습니다. 페이지를 새로고침한 뒤 다시 로그인해 보세요."
+                    : undefined
+              }
             >
-              {syncStatus === "synced" ? "서버 동기화됨" : syncStatus === "loading" ? "동기화 중..." : syncStatus === "error" ? "연결 재시도 중" : "로컬 모드 (오프라인)"}
+              {donorUiBehindServer
+                ? `후원 동기화 필요 (서버 ${serverDonorHealthCount} · 화면 ${uiDonorRowCount})`
+                : syncStatus === "synced"
+                  ? "서버 동기화됨"
+                  : syncStatus === "loading"
+                    ? "동기화 중..."
+                    : syncStatus === "error"
+                      ? "연결 재시도 중"
+                      : "로컬 모드 (오프라인)"}
             </span>
             {storageHealth?.storage?.backendHint ? (
               <span
@@ -9298,9 +9369,15 @@ export default function AdminPage() {
         <section id="dashboard-summary" className={`${panelCardClass} p-4 mb-6`}>
           {typeof storageHealth?.mainState?.donorsCount === "number" &&
           storageHealth.mainState.donorsCount > 0 &&
-          normalizeDonorsArray(state.donors).length === 0 ? (
+          normalizeDonorsArray(state.donors).length < storageHealth.mainState.donorsCount ? (
             <div className="mb-3 rounded-lg border border-rose-400/55 bg-rose-950/35 px-3 py-2 text-sm text-rose-100">
-              서버(MySQL)에는 후원 {storageHealth.mainState.donorsCount}건이 있는데 화면만 0입니다.
+              서버(MySQL)에는 후원 {storageHealth.mainState.donorsCount}건
+              {typeof storageHealth.mainState.totalCombined === "number" &&
+              storageHealth.mainState.totalCombined > 0
+                ? `(합계 ${Number(storageHealth.mainState.totalCombined).toLocaleString("ko-KR")}원)`
+                : ""}
+              이 있는데 화면은 {normalizeDonorsArray(state.donors).length}건
+              {total > 0 ? `(합계 ${total.toLocaleString("ko-KR")}원)` : ""}입니다.
               동기화 병합 오류일 수 있습니다.{" "}
               <button
                 type="button"
@@ -9347,7 +9424,7 @@ export default function AdminPage() {
             </div>
             <div className="rounded-lg bg-[#1e1e1e] border border-white/10 px-3 py-2">
               <div className="text-xs text-neutral-400">후원 건수</div>
-              <div className="text-xl font-bold text-[#6366f1]">{state.donors.length.toLocaleString("ko-KR")}</div>
+              <div className="text-xl font-bold text-[#6366f1]">{normalizeDonorsArray(state.donors).length.toLocaleString("ko-KR")}</div>
             </div>
             <div className="rounded-lg bg-[#1e1e1e] border border-white/10 px-3 py-2">
               <div className="text-xs text-neutral-400">멤버 수</div>
@@ -9519,7 +9596,10 @@ export default function AdminPage() {
                         onClick={() => {
                           setState((prev: AppState) => {
                             const next: AppState = { ...prev, donationSyncMode: mode || "none" };
-                            persistState(next);
+                            persistState(next, {
+                              omitDonationFields: true,
+                              persistToastLabel: `후원 동기화 · ${label}`,
+                            });
                             return next;
                           });
                         }}
@@ -13108,7 +13188,10 @@ export default function AdminPage() {
                   <button
                     type="button"
                     className={`px-3 py-1.5 rounded text-xs font-semibold ${toonationSocketEnabled ? "bg-emerald-600 hover:bg-emerald-500" : "bg-neutral-700 hover:bg-neutral-600"}`}
-                    onClick={() => setToonationSocketEnabled((v) => !v)}
+                    disabled={toonationSavePending}
+                    onClick={() => {
+                      void persistToonationSettings({ socketEnabled: !toonationSocketEnabled });
+                    }}
                   >
                     실시간 수집 {toonationSocketEnabled ? "ON" : "OFF"}
                   </button>
@@ -13161,6 +13244,28 @@ export default function AdminPage() {
                     setToonationOwnerName(e.target.value);
                   }}
                 />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="px-4 py-2 rounded text-sm font-semibold bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={toonationSavePending || !toonationSettingsHydrated}
+                    onClick={() => {
+                      void persistToonationSettings();
+                    }}
+                  >
+                    {toonationSavePending ? "저장·확인 중…" : "연동 설정 저장"}
+                  </button>
+                  {toonationLastSavedAt ? (
+                    <span className="text-[11px] text-emerald-300/90">
+                      서버 저장 확인됨 ·{" "}
+                      {new Date(toonationLastSavedAt).toLocaleString("ko-KR")}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-neutral-500">
+                      연동키·채널 주인명 입력 후 저장하면 서버(MySQL) 반영 여부를 확인합니다.
+                    </span>
+                  )}
+                </div>
                 <div className="text-[11px] text-neutral-500">
                   예: <span className="text-neutral-300">BT태호</span> / 공백·기호 차이는 자동 무시합니다.
                   <br />
@@ -14131,17 +14236,15 @@ export default function AdminPage() {
                                               { replaceDonors: true, awaitingServerSave: true }
                                             );
                                             setState(preserved);
-                                            const ok = await commitAuthoritativeDonorPersist(preserved);
+                                            const ok = await commitAuthoritativeDonorPersist(preserved, {
+                                              persistToastLabel: wantOff
+                                                ? `상류사회 영토 OFF · 「${d.name}」`
+                                                : `상류사회 영토 ON · 「${d.name}」`,
+                                            });
                                             if (!ok) {
                                               showAppToast(
                                                 "영토 적용 설정 저장에 실패했습니다. 다시 시도해 주세요.",
                                                 { variant: "error" }
-                                              );
-                                            } else {
-                                              showAppToast(
-                                                wantOff
-                                                  ? `상류사회 영토 OFF: 「${d.name}」`
-                                                  : `상류사회 영토 ON: 「${d.name}」`
                                               );
                                             }
                                           } finally {
@@ -14252,16 +14355,15 @@ export default function AdminPage() {
                                                 );
                                                 setState(preserved);
                                                 const ok = await commitAuthoritativeDonorPersist(
-                                                  preserved
+                                                  preserved,
+                                                  {
+                                                    persistToastLabel: `상류사회 확장 · 「${d.name}」→${memberName} · ${fromLabel} → ${toLabel}`,
+                                                  }
                                                 );
                                                 if (!ok) {
                                                   showAppToast(
                                                     "확장 방향 저장에 실패했습니다. 잠시 후 다시 적용해 주세요.",
                                                     { variant: "error" }
-                                                  );
-                                                } else {
-                                                  showAppToast(
-                                                    `상류사회 확장 적용: 「${d.name}」→${memberName} · ${fromLabel} → ${toLabel}`
                                                   );
                                                 }
                                               } finally {

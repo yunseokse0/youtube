@@ -104,7 +104,7 @@ import {
   readDonationListsOverlayPollMs,
   readOverlayLiveSyncPollMs,
 } from "@/lib/overlay-pull-policy";
-import { buildOverlaySyncSignature, isRicherDonationSnapshot, isNewerIntentionalDonationShrink, shouldRejectPoorerDonationRemote, shouldKeepStaleOverlayOverRemote, isEmptyDonationRemote, isIntentionalMemberRosterShrink, isLocalMemberRosterGrowOverRemote } from "@/lib/overlay-sync-signature";
+import { buildOverlaySyncSignature, isRicherDonationSnapshot, isNewerIntentionalDonationShrink, shouldRejectPoorerDonationRemote, shouldKeepStaleOverlayOverRemote, isEmptyDonationRemote, isIntentionalMemberRosterShrink, isServerAuthoritativeMemberRosterShrink, isLocalMemberRosterGrowOverRemote } from "@/lib/overlay-sync-signature";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import {
   overlayUserIdsMatch,
@@ -401,6 +401,9 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         membersDifferByIds(synced.members, good.members || []) &&
         Number(synced.updatedAt || 0) >= Number(good.updatedAt || 0)
       ) {
+        if (isServerAuthoritativeMemberRosterShrink(good, synced)) {
+          return guardMemberTotalsAgainstAccidentalZeroWipe(synced, good);
+        }
         return guardMemberTotalsAgainstAccidentalZeroWipe(
           {
             ...synced,
@@ -588,6 +591,11 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
           ifUpdatedSince: forceFull ? 0 : overlaySinceRef.current,
           forceFull,
         });
+        const remoteRosterRev = Number(data?.membersRosterUpdatedAt || 0);
+        const lastRosterRev = Number(lastGoodRef.current?.membersRosterUpdatedAt || 0);
+        if (remoteRosterRev > 0 && remoteRosterRev > lastRosterRev) {
+          membersRosterSyncUntilRef.current = Date.now() + 45_000;
+        }
         const remoteRev = Math.max(data?.updatedAt || 0, readDonorRankingsRevision(data || ({} as AppState)));
         const remoteStrong = hasMeaningfulMemberRoster(data);
         let remoteForApply = data;
@@ -670,11 +678,11 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         const remoteRosterShrinkEarly =
           Boolean(remoteForApply) &&
           Boolean(lastGoodRef.current) &&
-          isIntentionalMemberRosterShrink(lastGoodRef.current, remoteForApply!);
+          isServerAuthoritativeMemberRosterShrink(lastGoodRef.current, remoteForApply!);
         if (
           remoteForApply &&
           preferServerOnlyRef.current &&
-          !(trustMemberRosterSync && remoteRosterShrinkEarly)
+          !remoteRosterShrinkEarly
         ) {
           const localHint =
             lastGoodRef.current &&
@@ -729,8 +737,9 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         const remoteRosterShrink =
           Boolean(remoteForApply) &&
           Boolean(lastGoodRef.current) &&
-          isIntentionalMemberRosterShrink(lastGoodRef.current, remoteForApply!);
+          isServerAuthoritativeMemberRosterShrink(lastGoodRef.current, remoteForApply!);
         const rejectPoorer =
+          !remoteRosterShrink &&
           !remoteAddedMembers &&
           !(trustMemberRosterSync && localRosterGrowPending) &&
           !(trustMemberRosterSync && remoteRosterShrink) &&
@@ -744,6 +753,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
           (Boolean(opts?.forceFull) ||
             preferServerOnlyRef.current ||
             remoteAddedMembers ||
+            remoteRosterShrink ||
             rosterGrowMerged ||
             remoteRev > overlaySinceRef.current ||
             remoteRicher ||

@@ -2,6 +2,7 @@ import { DEFAULT_MEAL_GAUGE_EFFECTS, normalizeMealGaugeEffects } from "@/lib/mea
 import { normalizeDonationTableColumnsOptions } from "@/lib/donation-table-options";
 import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
 import {
+  clampBrowserPersistOptionsForServerAuthority,
   isServerAuthoritativeBroadcastState,
   readSessionBroadcastState,
   writeSessionBroadcastState,
@@ -2470,6 +2471,7 @@ export async function saveStateAsync(
   options?: SaveStateAsyncOptions
 ): Promise<SaveStateAsyncResult> {
   if (typeof window === "undefined") return { ok: false };
+  options = clampBrowserPersistOptionsForServerAuthority(options) as SaveStateAsyncOptions | undefined;
   const normalized = normalizeStateForPersistence(
     syncBattleStateWithMembers({ ...state, updatedAt: Date.now() })
   );
@@ -2724,6 +2726,10 @@ export async function saveStateAsync(
       ...guarded,
       members: mergeMemberRosterPreservingAmounts(local.members, guarded.members),
     };
+  }
+  if (saveOpts?.membersAuthoritative) {
+    const rosterAt = Number(guarded.updatedAt || Date.now());
+    guarded = { ...guarded, membersRosterUpdatedAt: rosterAt };
   }
   /** 후원이 여전히 비거나 줄어든 채 전체 POST 되면 API에서 후원 필드 제외 (서버 기존값 유지) */
   const omitDonations =
@@ -3754,6 +3760,9 @@ export function isIntentionalDonorListShrink(
   const existingNorm = normalizeDonorsArray(existing);
   if (existingNorm.length === 0) return false;
   if (incomingNorm.length >= existingNorm.length) return false;
+  const removedCount = existingNorm.length - incomingNorm.length;
+  /** 2건 이상 한 번에 줄면 UI 불완전·동기화 오류 가능 — union 유지(단건 삭제만 replace) */
+  if (removedCount > 1) return false;
   const existingIds = new Set(existingNorm.map((d) => String(d.id || "")).filter(Boolean));
   const incomingIds = incomingNorm.map((d) => String(d.id || "")).filter(Boolean);
   /** 신규 id 가 있으면 합산·투네 반영 — 삭제가 아님 */
@@ -3864,19 +3873,85 @@ export function pickAuthoritativeDonorsForEmptySession(
   const fromServer = normalizeDonorsArray(serverDonors);
   const fromMerged = normalizeDonorsArray(mergedDonors);
   const bestIncoming = fromServer.length >= fromMerged.length ? fromServer : fromMerged;
-  if (!isEmptyBroadcastDonationSession(local)) {
-    const localDonors = normalizeDonorsArray(local.donors);
-    return localDonors.length > 0 ? localDonors : bestIncoming;
-  }
-  if (bestIncoming.length === 0) return [];
+  const localDonors = normalizeDonorsArray(local.donors);
   const resetAt = Math.max(
     Number(settlementResetAt || 0),
     Number(local.settlementResetAt || 0)
   );
-  return applySettlementResetDonorPipeline(
-    rebumpDonorsPastSettlementReset(bestIncoming, resetAt),
+  const applyPipeline = (donors: Donor[]) =>
+    applySettlementResetDonorPipeline(
+      rebumpDonorsPastSettlementReset(donors, resetAt),
+      resetAt
+    );
+  /** 서버(MySQL)가 UI보다 많으면 — 읽기 경로, 로컬 축소본으로 덮지 않음 */
+  if (bestIncoming.length > localDonors.length) {
+    return applyPipeline(bestIncoming);
+  }
+  if (!isEmptyBroadcastDonationSession(local)) {
+    return localDonors.length > 0 ? localDonors : bestIncoming;
+  }
+  if (bestIncoming.length === 0) return [];
+  return applyPipeline(bestIncoming);
+}
+
+/**
+ * DB→UI 단방향: 서버(MySQL) donors 를 React admin 화면에 반영. POST·브라우저 저장 없음.
+ * UI donor 행이 서버보다 적으면 stale member 합계와 무관하게 서버 donors 를 우선한다.
+ */
+export function buildUiStateFromServerDonorPull(
+  local: AppState,
+  remote: AppState
+): AppState | null {
+  const remoteDonors = normalizeDonorsArray(remote.donors);
+  if (remoteDonors.length === 0) return null;
+  const localDonors = normalizeDonorsArray(local.donors);
+  if (remoteDonors.length === 0) return null;
+  const localIds = new Set(localDonors.map((d) => String(d.id || "")));
+  const remoteMissingInLocal = remoteDonors.filter((d) => !localIds.has(String(d.id || "")));
+  if (
+    localDonors.length >= remoteDonors.length &&
+    localDonors.length > 0 &&
+    totalCombined(local) >= totalCombined(remote) &&
+    remoteMissingInLocal.length === 0
+  ) {
+    return null;
+  }
+  const resetAt = Math.max(
+    Number(local.settlementResetAt || 0),
+    Number(remote.settlementResetAt || 0)
+  );
+  let donors = pickAuthoritativeDonorsForEmptySession(
+    local,
+    remoteDonors,
+    remoteDonors,
     resetAt
   );
+  if (donors.length === 0) {
+    donors = applySettlementResetDonorPipeline(
+      rebumpDonorsPastSettlementReset(remoteDonors, resetAt),
+      resetAt
+    );
+  }
+  if (donors.length === 0) {
+    donors = remoteDonors;
+  }
+  const members = pickMemberRosterPreferNewer(local, remote);
+  return syncMemberTotalsFromDonors({
+    ...local,
+    ...remote,
+    members,
+    memberPositions: normalizeMemberPositions(
+      local.memberPositions ?? remote.memberPositions,
+      members
+    ),
+    donors,
+    updatedAt: Math.max(Number(remote.updatedAt || 0), Date.now()),
+    donorRankingsUpdatedAt: Math.max(
+      Number(local.donorRankingsUpdatedAt || 0),
+      Number(remote.donorRankingsUpdatedAt || 0),
+      Date.now()
+    ),
+  });
 }
 
 /** 세션 캐시에 후원·합계가 없음 — 서버 스냅샷을 거부하지 않을 때 */
