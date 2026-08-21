@@ -71,26 +71,27 @@ export function resolveMealTimerTheme(
 }
 
 export function mealTimerShellClass(theme: MealTimerTheme, paused: boolean): string {
-  const base = "mx-auto mt-2 inline-flex min-w-[5.5ch] items-center justify-center rounded-full px-5 py-2";
+  const base =
+    "mx-auto mt-2 inline-flex min-w-[5.5ch] items-center justify-center rounded-studio px-5 py-2";
   switch (theme) {
     case "neon":
-      return `${base} border-2 border-cyan-400/70 bg-black/55 backdrop-blur-md animate-neonPulse shadow-[0_0_24px_rgba(34,211,238,0.35)]`;
+      return `${base} border border-studio-blue/50 bg-[rgba(15,20,30,0.7)] backdrop-blur-studio shadow-studio-glow`;
     case "minimal":
       return `${base} border-0 bg-transparent backdrop-blur-none px-2 py-0`;
     case "danger":
-      return `${base} border-2 border-red-500/60 bg-red-950/50 backdrop-blur-md${paused ? " opacity-90" : ""}`;
+      return `${base} border border-red-500/50 bg-red-950/45 backdrop-blur-studio${paused ? " opacity-90" : ""}`;
     default:
-      return `${base} border border-white/20 bg-white/40 backdrop-blur-md${paused ? " animate-pulse opacity-90" : ""}`;
+      return `${base} border border-white/12 bg-[rgba(15,20,30,0.7)] backdrop-blur-studio shadow-glass${paused ? " animate-pulse opacity-90" : ""}`;
   }
 }
 
 export function mealTimerShellStyle(theme: MealTimerTheme): CSSProperties | undefined {
   if (theme !== "default") return undefined;
-  return { borderColor: "rgba(251, 207, 232, 0.55)", background: "rgba(251, 207, 232, 0.35)" };
+  return { borderColor: "rgba(255, 255, 255, 0.12)", background: "rgba(15, 20, 30, 0.7)" };
 }
 
 export function mealTimerTextClass(theme: MealTimerTheme, paused: boolean, timerLowTime: boolean): string {
-  const base = "font-extrabold tabular-nums pastel-text-outline";
+  const base = "font-extrabold tabular-nums studio-text-shadow";
   if (paused) {
     switch (theme) {
       case "neon":
@@ -100,29 +101,29 @@ export function mealTimerTextClass(theme: MealTimerTheme, paused: boolean, timer
       case "danger":
         return `${base} text-orange-300`;
       default:
-        return `${base} text-pastel-orange`;
+        return `${base} text-white/70`;
     }
   }
   if (timerLowTime) {
     switch (theme) {
       case "neon":
-        return `${base} text-yellow-300 animate-pulse drop-shadow-[0_0_10px_rgba(250,204,21,0.8)]`;
+        return `${base} text-studio-coral animate-pulse`;
       case "minimal":
-        return `${base} text-red-500 font-black`;
+        return `${base} text-red-400 font-black`;
       case "danger":
         return `${base} text-red-400 animate-pulse`;
       default:
-        return `${base} text-pastel-alert animate-pastel-timer-low`;
+        return `${base} text-studio-coral animate-pastel-timer-low`;
     }
   }
   switch (theme) {
     case "neon":
-      return `${base} text-cyan-100 drop-shadow-[0_0_10px_rgba(34,211,238,0.85)]`;
+      return `${base} text-cyan-100`;
     case "minimal":
       return `${base} text-white`;
     case "danger":
-      return `${base} text-white drop-shadow-[0_0_6px_rgba(239,68,68,0.6)]`;
+      return `${base} text-white`;
     default:
-      return `${base} text-pastel-ink`;
+      return `${base} text-white`;
   }
 }

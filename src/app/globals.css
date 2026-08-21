@@ -6,12 +6,38 @@
   /* 파스텔 카드 공통: 유리 질감 (방송 배경과 섞여도 고급스럽게) */
   /* 모서리는 사용처에서 rounded-2xl 이상으로 지정 */
   .glass-pastel-card {
-    @apply border border-white/20 bg-white/40 backdrop-blur-md;
+    @apply border border-white/20 bg-white/40 backdrop-blur-[14px];
+  }
+
+  /* Modern Glassmorphism & Studio — 방송 오버레이 공통 패널 */
+  .studio-glass-panel {
+    background: rgba(15, 20, 30, 0.7);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    box-shadow: 0 8px 32px rgba(15, 20, 30, 0.35);
+  }
+
+  .studio-glass-accent-border {
+    border-image: linear-gradient(135deg, #7c3aed, #2563eb) 1;
+  }
+
+  .studio-text-shadow {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
   }
 }
 
 :root {
   color-scheme: dark;
+  --studio-glass-bg: rgba(15, 20, 30, 0.7);
+  --studio-glass-border: rgba(255, 255, 255, 0.12);
+  --studio-glass-blur: 14px;
+  --studio-accent-violet: #7c3aed;
+  --studio-accent-blue: #2563eb;
+  --studio-coral-gold: #f59e0b;
+  --studio-mint: #10b981;
+  --studio-text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 html, body, #__next {
@@ -23,12 +49,12 @@ body {
 }
 
 .glass {
-  background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 12px;
+  background: rgba(15, 20, 30, 0.7);
+  box-shadow: 0 8px 32px rgba(15, 20, 30, 0.35);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
 }
 
 .text-outline-strong {
@@ -119,11 +145,22 @@ body {
 }
 
 @keyframes slideInUp {
-  0% { transform: translateY(100%); opacity: 0; }
-  100% { transform: translateY(0); opacity: 1; }
+  0% {
+    transform: translateY(20px);
+    opacity: 0;
+    box-shadow: 0 0 0 rgba(245, 158, 11, 0);
+  }
+  60% {
+    box-shadow: 0 0 28px rgba(245, 158, 11, 0.35);
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+    box-shadow: 0 8px 32px rgba(15, 20, 30, 0.35);
+  }
 }
 .animate-slideInUp {
-  animation: slideInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: slideInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes rowFlash {

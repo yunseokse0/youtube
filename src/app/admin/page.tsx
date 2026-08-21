@@ -186,6 +186,7 @@ import {
 import { normalizeVsDesign, VS_DESIGN_OPTIONS } from "@/lib/vs-design";
 import { FlipCountdownTimer } from "@/components/FlipCountdownTimer";
 import { CircularImageTimer } from "@/components/CircularImageTimer";
+import { LedMatrixTimer } from "@/components/LedMatrixTimer";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import {
   EXCEL_TABLE_FRAME_PRESETS,
@@ -12898,6 +12899,15 @@ export default function AdminPage() {
                               bgColor={String(timerStyle.bgColor || "")}
                               bgOpacity={timerStyle.bgOpacity}
                             />
+                          ) : timerDesignId === "led-matrix" ? (
+                            <LedMatrixTimer
+                              remainingSeconds={effective}
+                              showHours={timerStyle.showHours}
+                              fontSize={Math.max(28, Math.round(circularTimerFontSize * 0.65))}
+                              fontColor={String(timerStyle.fontColor || "")}
+                              bgColor={String(timerStyle.bgColor || "")}
+                              bgOpacity={timerStyle.bgOpacity}
+                            />
                           ) : isImageFrameTimerDesign(timerDesignId) ? (
                             <CircularImageTimer
                               remainingSeconds={effective}
@@ -13454,8 +13464,12 @@ export default function AdminPage() {
                   예: <span className="text-neutral-300">BT태호</span> / 공백·기호 차이는 자동 무시합니다.
                   <br />
                   자동 반영 시 멤버명은 <span className="text-neutral-300">유사 일치</span>(
-                  <span className="text-neutral-300">태호</span>→BT태호, 오타·호칭 포함)로 엑셀표에 배치합니다. 멤버·후원자
-                  힌트가 없거나 매칭 실패 시에는 <span className="text-neutral-300">후원 순위 1위</span>
+                  <span className="text-neutral-300">태호</span>→BT태호, 오타·호칭 포함)로 엑셀표에 배치합니다.
+                  멤버·후원자 힌트가 없거나 매칭 실패 시:{" "}
+                  <span className="text-neutral-300">1천원 이하</span>는{" "}
+                  <span className="text-neutral-300">운영비</span>
+                  (없으면 후원 순위 1위), 그 초과 금액은{" "}
+                  <span className="text-neutral-300">후원 순위 1위</span>
                   (대표·운영비 제외)로 보냅니다. 플레이어 멤버가 없을 때만{" "}
                   <span className="text-neutral-300">운영비 → 대표 → 국고</span> 순으로 대체합니다.
                 </div>

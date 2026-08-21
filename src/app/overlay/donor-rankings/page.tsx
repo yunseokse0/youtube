@@ -549,7 +549,7 @@ function RankingColumn({
           ? "border-b border-solid border-r-0 md:border-b-0 md:border-r md:border-solid"
           : ""
       }`
-    : "relative z-[1] w-full overflow-visible rounded-2xl border shadow-[0_8px_28px_rgba(15,23,42,0.18)]";
+    : "studio-glass-panel relative z-[1] w-full overflow-visible";
   const panelFrac = Math.max(0, Math.min(1, panelOpacityFrac ?? 1));
   const panelBgResolved = backgroundWithOpacityFrac(panelBg, panelFrac);
   const outerStyle: CSSProperties | undefined = { borderColor };
@@ -610,7 +610,7 @@ function RankingColumn({
     <section className={outerClass} style={outerStyle}>
       {!unified ? (
         <div
-          className="pointer-events-none absolute inset-0 z-0 rounded-2xl"
+          className="pointer-events-none absolute inset-0 z-0 rounded-studio"
           aria-hidden
           style={{
             background: panelBgResolved.background,
@@ -718,15 +718,15 @@ export default function DonorRankingsOverlayPage() {
     themeLive && !useTest
       ? (savedTheme.bg || "").trim() || "transparent"
       : readColor(sp, "bg", savedTheme.bg) || "transparent";
-  /** 웹후원 순위 기본 — 반투명 밝은 패널 */
-  const panelBg = resolveThemeColorLive(themeLive, useTest, sp, "panelBg", savedTheme.panelBg, "rgba(232, 232, 236, 0.7)");
+  /** Studio glass 기본 패널 */
+  const panelBg = resolveThemeColorLive(themeLive, useTest, sp, "panelBg", savedTheme.panelBg, "rgba(15, 20, 30, 0.70)");
   const borderColor = resolveThemeColorLive(
     themeLive,
     useTest,
     sp,
     "border",
     savedTheme.borderColor,
-    "transparent"
+    "rgba(255, 255, 255, 0.12)"
   );
   const headerAccountBg = liveThemeColor(
     themeLive,
@@ -734,7 +734,7 @@ export default function DonorRankingsOverlayPage() {
     savedTheme.headerAccountBg,
     sp,
     "headerAccountBg",
-    "rgba(232, 232, 236, 0.55)"
+    "rgba(37, 99, 235, 0.55)"
   );
   const headerToonBg = liveThemeColor(
     themeLive,
@@ -742,7 +742,7 @@ export default function DonorRankingsOverlayPage() {
     savedTheme.headerToonBg,
     sp,
     "headerToonBg",
-    "rgba(232, 232, 236, 0.55)"
+    "rgba(124, 58, 237, 0.55)"
   );
   const headerUnifiedBg = readColor(sp, "headerBg", headerAccountBg) || headerAccountBg;
   const rankingTitle = liveThemeTitle(themeLive, useTest, savedTheme.titleText, sp, "👑 웹후원 순위 👑");
@@ -906,16 +906,16 @@ export default function DonorRankingsOverlayPage() {
                 />
               ) : null}
               <div
-                className={`relative z-[2] grid grid-cols-1 overflow-hidden backdrop-blur-md md:grid-cols-2 md:gap-0 ${
+                className={`relative z-[2] grid grid-cols-1 overflow-hidden backdrop-blur-studio md:grid-cols-2 md:gap-0 ${
                   showFrame
                     ? "rounded-none border-0 shadow-none"
-                    : "rounded-2xl border border-white/30 shadow-[0_8px_28px_rgba(15,23,42,0.2)]"
+                    : "studio-glass-panel rounded-studio border border-white/12 shadow-glass"
                 }`}
                 style={{
                   borderColor: showFrame
                     ? "transparent"
                     : borderColor === "transparent"
-                      ? "rgba(255,255,255,0.3)"
+                      ? "rgba(255,255,255,0.12)"
                       : borderColor,
                   backgroundColor: "transparent",
                 }}
@@ -990,16 +990,16 @@ export default function DonorRankingsOverlayPage() {
               />
             ) : null}
             <div
-              className={`relative z-[2] overflow-hidden backdrop-blur-md ${
+              className={`relative z-[2] overflow-hidden backdrop-blur-studio ${
                 showFrame
                   ? "rounded-none border-0 shadow-none"
-                  : "rounded-2xl border border-white/30 shadow-[0_8px_28px_rgba(15,23,42,0.2)]"
+                  : "studio-glass-panel rounded-studio border border-white/12 shadow-glass"
               }`}
               style={{
                 borderColor: showFrame
                   ? "transparent"
                   : borderColor === "transparent"
-                    ? "rgba(255,255,255,0.3)"
+                    ? "rgba(255,255,255,0.12)"
                     : borderColor,
                 backgroundColor: "transparent",
               }}

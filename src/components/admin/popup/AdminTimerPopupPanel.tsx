@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { FlipCountdownTimer } from "@/components/FlipCountdownTimer";
 import { CircularImageTimer } from "@/components/CircularImageTimer";
+import { LedMatrixTimer } from "@/components/LedMatrixTimer";
 import AdminPopupShell from "@/components/admin/popup/AdminPopupShell";
 import { useAdminPopupBroadcastState } from "@/hooks/useAdminPopupBroadcastState";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
@@ -316,6 +317,15 @@ export default function AdminTimerPopupPanel() {
                     showHours={generalStyle?.showHours}
                     fontSize={24}
                     fontFamily={generalFontId}
+                    fontColor={String(generalStyle?.fontColor || "")}
+                    bgColor={String(generalStyle?.bgColor || "")}
+                    bgOpacity={generalStyle?.bgOpacity}
+                  />
+                ) : generalDesign === "led-matrix" ? (
+                  <LedMatrixTimer
+                    remainingSeconds={generalEffective}
+                    showHours={generalStyle?.showHours}
+                    fontSize={32}
                     fontColor={String(generalStyle?.fontColor || "")}
                     bgColor={String(generalStyle?.bgColor || "")}
                     bgOpacity={generalStyle?.bgOpacity}

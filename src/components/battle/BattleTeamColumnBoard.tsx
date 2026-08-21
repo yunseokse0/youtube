@@ -7,10 +7,7 @@ import { VsCenterBadge } from "@/components/battle/VsCenterBadge";
 function scoreTextStyle(): CSSProperties {
   return {
     color: "#ffffff",
-    WebkitTextStroke: "0.5px rgba(0,0,0,0.92)",
-    paintOrder: "stroke fill",
-    textShadow:
-      "0 0 1px rgba(0,0,0,1), 0 1px 2px rgba(0,0,0,0.9), 1px 0 1px rgba(0,0,0,0.75), -1px 0 1px rgba(0,0,0,0.75)",
+    textShadow: "0 2px 4px rgba(0,0,0,0.5)",
   };
 }
 
@@ -77,7 +74,7 @@ export default function BattleTeamColumnBoard({
 
       <div className="relative">
         <div
-          className={`relative flex w-full overflow-hidden rounded-xl shadow-[0_4px_18px_rgba(0,0,0,0.35)] ring-1 ring-white/15 ${barH}`}
+          className={`relative flex w-full overflow-hidden rounded-studio shadow-glass ring-1 ring-white/12 backdrop-blur-studio ${barH}`}
           data-battle-vs-bar="true"
         >
           <div

@@ -691,7 +691,7 @@ export default function MealMatchOverlayInner() {
           <div className="relative mx-auto w-full">
             {missionBubble ? (
               <div
-                className="pastel-text-outline mx-auto mb-2 w-max max-w-[95%] rounded-2xl border border-white/20 bg-white/35 px-4 py-1.5 text-center text-lg font-black backdrop-blur-md"
+                className="studio-text-shadow mx-auto mb-2 w-max max-w-[95%] rounded-studio border border-white/12 bg-[rgba(15,20,30,0.7)] px-4 py-1.5 text-center text-lg font-black backdrop-blur-studio shadow-glass"
                 style={{ ...outlineStyle(), backgroundColor: missionBubbleBg, color: missionBubbleTextColor }}
               >
                 {missionBubble}

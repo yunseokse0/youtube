@@ -44,9 +44,11 @@ export default function PlayerDonationAlertCard({
 
   return (
     <div
-      className={`relative w-full overflow-hidden rounded-2xl border-2 bg-slate-950 shadow-[0_12px_48px_rgba(0,0,0,0.5)] ${
-        highlighted ? "border-sky-400 ring-2 ring-sky-400/40" : "border-yellow-400/90"
-      } ${stack ? "rounded-xl shadow-lg" : "max-w-2xl"}`}
+      className={`studio-glass-panel relative w-full overflow-hidden border ${
+        highlighted
+          ? "border-studio-blue ring-2 ring-studio-violet/40 shadow-studio-glow"
+          : "border-studio-coral/90 shadow-studio-coral-glow"
+      } ${stack ? "rounded-xl" : "max-w-2xl rounded-studio"}`}
     >
       {onClose ? (
         <button
@@ -61,13 +63,13 @@ export default function PlayerDonationAlertCard({
 
       <div className={`flex flex-row items-stretch ${stack ? "min-h-[6.5rem]" : "min-h-[8.5rem]"}`}>
         <div
-          className={`flex shrink-0 items-center justify-center border-r border-yellow-400/25 bg-black/45 p-2 ${
+          className={`flex shrink-0 items-center justify-center border-r border-white/10 bg-black/35 p-2 ${
             stack ? "w-[4.5rem]" : "w-28 sm:w-32"
           }`}
         >
           {sigImageSrc ? (
             <div
-              className={`relative aspect-[3/4] w-full overflow-hidden rounded-lg border border-yellow-400/40 bg-black/50 ${
+              className={`relative aspect-[3/4] w-full overflow-hidden rounded-lg border border-studio-coral/40 bg-black/40 ${
                 stack ? "max-h-[5.5rem]" : "max-h-[7rem]"
               }`}
             >
@@ -91,9 +93,9 @@ export default function PlayerDonationAlertCard({
 
         <div className={`flex min-w-0 flex-1 flex-row items-center gap-3 ${stack ? "px-2.5 py-2" : "gap-4 px-3 py-2.5"}`}>
           <div className={`shrink-0 ${onClose ? "pr-6" : ""}`}>
-            <p className="text-[9px] font-semibold uppercase tracking-wider text-emerald-300/70">플레이어</p>
+            <p className="text-[9px] font-semibold uppercase tracking-wider text-studio-mint/80">플레이어</p>
             <p
-              className={`max-w-[7.5rem] truncate font-black leading-none text-emerald-50 sm:max-w-[9rem] ${
+              className={`studio-text-shadow max-w-[7.5rem] truncate font-black leading-none text-white sm:max-w-[9rem] ${
                 stack ? "text-2xl" : "text-3xl sm:text-4xl"
               }`}
             >
@@ -101,14 +103,14 @@ export default function PlayerDonationAlertCard({
             </p>
           </div>
 
-          <div className="hidden h-10 w-px shrink-0 bg-yellow-400/20 sm:block" aria-hidden />
+          <div className="hidden h-10 w-px shrink-0 bg-white/15 sm:block" aria-hidden />
 
           <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
-            <p className="text-[9px] font-bold tracking-wide text-yellow-300/80">시그 판매 안내</p>
-            <p className={`truncate font-bold text-yellow-100 ${stack ? "text-xs" : "text-sm"}`}>{sigTitle}</p>
+            <p className="text-[9px] font-bold tracking-wide text-studio-coral/90">시그 판매 안내</p>
+            <p className={`studio-text-shadow truncate font-bold text-white ${stack ? "text-xs" : "text-sm"}`}>{sigTitle}</p>
             <p className={`truncate ${stack ? "text-[11px]" : "text-xs"}`}>
-              <span className="font-semibold text-cyan-100">{alert.donorName}</span>
-              <span className="ml-1.5 tabular-nums font-semibold text-yellow-200">
+              <span className="font-semibold text-white/90">{alert.donorName}</span>
+              <span className="ml-1.5 tabular-nums font-semibold text-studio-coral">
                 {alert.amount.toLocaleString("ko-KR")}원
               </span>
             </p>

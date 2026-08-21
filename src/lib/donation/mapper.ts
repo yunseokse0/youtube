@@ -10,6 +10,17 @@ import {
 } from "./name-similarity";
 import type { DonationEvent, DonorAlias } from "./types";
 
+/**
+ * 소액 후원(1천원 이하) — 멤버 힌트 없이 자동 배치 시 운영비 우선.
+ * (투네 최소 단위 등 999~1000원 팁)
+ */
+export const SMALL_DONATION_TO_OPERATING_MAX_AMOUNT = 1000;
+
+export function isSmallDonationForOperating(amount: unknown): boolean {
+  const n = Math.max(0, Math.round(Number(amount) || 0));
+  return n > 0 && n <= SMALL_DONATION_TO_OPERATING_MAX_AMOUNT;
+}
+
 export function normalizeName(name: string): string {
   return normalizeComparableName(name);
 }
@@ -33,6 +44,20 @@ export function isNationalTreasuryMember(
   );
 }
 
+export function pickOperatingMember(
+  members: Member[],
+  memberPositions?: Record<string, string> | null
+): Member | undefined {
+  if (!Array.isArray(members) || members.length === 0) return undefined;
+  const positions = memberPositions || null;
+  return members.find((m) =>
+    isOperatingSettlementMember(
+      { id: m.id, name: m.name, operating: m.operating, realName: m.realName },
+      positions
+    )
+  );
+}
+
 export function pickDefaultToonationMember(
   members: Member[],
   opts?: PickDefaultToonationMemberOptions
@@ -40,12 +65,7 @@ export function pickDefaultToonationMember(
   if (!Array.isArray(members) || members.length === 0) return undefined;
   const positions = opts?.memberPositions || null;
 
-  const operating = members.find((m) =>
-    isOperatingSettlementMember(
-      { id: m.id, name: m.name, operating: m.operating, realName: m.realName },
-      positions
-    )
-  );
+  const operating = pickOperatingMember(members, positions);
   if (operating) return operating;
 
   const representative = members.find(
@@ -57,6 +77,20 @@ export function pickDefaultToonationMember(
   if (treasury) return treasury;
 
   return undefined;
+}
+
+/**
+ * 소액(≤1천원) 자동 배치: 운영비 → 없으면 후원 순위 1위.
+ * (대표·국고 중간 대체는 쓰지 않음)
+ */
+export function pickSmallDonationAutoAssignMember(
+  members: Member[],
+  memberPositions?: Record<string, string> | null
+): Member | undefined {
+  return (
+    pickOperatingMember(members, memberPositions) ||
+    pickTopRankedDonationMember(members, memberPositions)
+  );
 }
 
 function isRepresentativeMember(
@@ -412,16 +446,17 @@ export function mapToMember(
   }
 
   /**
-   * 유사 일치로도 못 찾으면 엑셀 후원 1위 → 없으면 운영비 → 대표 → 국고.
-   * (멤버·후원자 힌트 없는 1천원 등 — 운영비로만 가지 않고 순위 1위에 반영)
+   * 유사 일치로도 못 찾으면 자동 배치:
+   * - 소액(≤1천원): 운영비 → 없으면 후원 순위 1위
+   * - 그 외: 후원 순위 1위 → 없으면 운영비 → 대표 → 국고
    */
   if (opts?.autoAssignToonPlayer) {
-    const top = pickTopRankedDonationMember(members, opts.memberPositions);
-    const fallback =
-      top ||
-      pickDefaultToonationMember(members, {
-        memberPositions: opts.memberPositions,
-      });
+    const fallback = isSmallDonationForOperating(event.amount)
+      ? pickSmallDonationAutoAssignMember(members, opts.memberPositions)
+      : pickTopRankedDonationMember(members, opts.memberPositions) ||
+        pickDefaultToonationMember(members, {
+          memberPositions: opts.memberPositions,
+        });
     if (fallback) {
       return {
         ...event,
@@ -452,6 +487,9 @@ export function suggestMemberForDonationEvent(
     if (exact) return exact;
     const relaxed = matchMemberByRelaxedFuzzy(lookupName, members, aliases);
     if (relaxed) return relaxed;
+  }
+  if (isSmallDonationForOperating(event.amount)) {
+    return pickSmallDonationAutoAssignMember(members, memberPositions);
   }
   return (
     pickTopRankedDonationMember(members, memberPositions) ||

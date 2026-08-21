@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCircularImageTimerDisplay,
   buildFlipCountdownSegments,
+  buildLedMatrixTimerText,
   computeCountdownRingFilledTicks,
   computeSpeedometerFillRatio,
   resolveCircularImageTimerFontSize,
@@ -29,6 +30,13 @@ describe("timer-design", () => {
     expect(isImageFrameTimerDesign("pill")).toBe(false);
     expect(resolveTimerFrameAssetUrl("countdown-ring")).toContain("countdown-ring-frame.png");
     expect(resolveTimerFrameAssetUrl("speedometer")).toContain("speedometer-frame.png");
+  });
+
+  it("normalizeTimerDesign maps led-matrix aliases", () => {
+    expect(normalizeTimerDesign("led-matrix")).toBe("led-matrix");
+    expect(normalizeTimerDesign("led")).toBe("led-matrix");
+    expect(normalizeTimerDesign("dot-matrix")).toBe("led-matrix");
+    expect(normalizeTimerDesign("digital-led")).toBe("led-matrix");
   });
 
   it("buildFlipCountdownSegments uses minutes:seconds by default", () => {
@@ -63,6 +71,12 @@ describe("timer-design", () => {
       expect.objectContaining({ primary: "04:04" })
     );
     expect(buildCircularImageTimerDisplay(3723, true, "speedometer")?.primary).toBe("01:02:03");
+  });
+
+  it("buildLedMatrixTimerText formats MM:SS and HH:MM:SS", () => {
+    expect(buildLedMatrixTimerText(125, false)).toBe("02:05");
+    expect(buildLedMatrixTimerText(3723, true)).toBe("01:02:03");
+    expect(buildLedMatrixTimerText(null, false)).toBeNull();
   });
 
   it("computeCountdownRingFilledTicks uses remaining minutes rounded up", () => {

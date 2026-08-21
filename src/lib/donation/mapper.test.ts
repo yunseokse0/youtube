@@ -474,11 +474,38 @@ describe("mapToMember", () => {
     expect(mapped.memberId).toBe("m-yeon");
     expect(mapped.status).toBe("processed");
   });
-  it("auto-assigns rank-1 for 1000won when donor/member names are empty-ish", () => {
+  it("auto-assigns operating for 1000won when donor/member names are empty-ish", () => {
     const event: DonationEvent = {
       id: "t-empty-1k",
       provider: "toonation",
       externalId: "e-empty-1k",
+      donorName: "Unknown",
+      amount: 1000,
+      message: "후원 테스트 입니다.",
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const mapped = mapToMember(
+      event,
+      [
+        { id: "op", name: "운영비", account: 0, toon: 0, contribution: 0, operating: true },
+        { id: "m1", name: "지키", account: 200000, toon: 0, contribution: 200000 },
+        { id: "m2", name: "333", account: 0, toon: 0, contribution: 0 },
+        { id: "m3", name: "444", account: 150000, toon: 0, contribution: 150000 },
+      ],
+      [],
+      { autoAssignToonPlayer: true }
+    );
+    expect(mapped.memberId).toBe("op");
+    expect(mapped.memberAutoAssigned).toBe(true);
+  });
+
+  it("auto-assigns rank-1 for 1000won when no operating member", () => {
+    const event: DonationEvent = {
+      id: "t-empty-1k-no-op",
+      provider: "toonation",
+      externalId: "e-empty-1k-no-op",
       donorName: "Unknown",
       amount: 1000,
       message: "후원 테스트 입니다.",

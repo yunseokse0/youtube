@@ -1,5 +1,5 @@
-/** 오버레이 타이머 외형 — 기본 알약(pill) · 플립 · 원형 이미지 프레임 */
-export type TimerDesignId = "pill" | "flip-countdown" | "countdown-ring" | "speedometer";
+/** 오버레이 타이머 외형 — 기본 알약(pill) · 플립 · 원형 이미지 프레임 · LED 매트릭스 */
+export type TimerDesignId = "pill" | "flip-countdown" | "countdown-ring" | "speedometer" | "led-matrix";
 
 export const TIMER_DESIGN_OPTIONS: { id: TimerDesignId; label: string; description: string }[] = [
   { id: "pill", label: "기본 · 알약", description: "둥근 배경 + 숫자" },
@@ -17,6 +17,11 @@ export const TIMER_DESIGN_OPTIONS: { id: TimerDesignId; label: string; descripti
     id: "speedometer",
     label: "스피드미터 · 인포그래픽",
     description: "게이지형 원형 타이머 (인포그래픽 템플릿)",
+  },
+  {
+    id: "led-matrix",
+    label: "LED · 도트매트릭스",
+    description: "시안 LED 디지털 패널 + 코너 레드 램프",
   },
 ];
 
@@ -98,6 +103,16 @@ export function normalizeTimerDesign(raw: unknown): TimerDesignId {
   }
   if (v === "speedometer" || v === "gauge" || v === "infographic" || v === "speedo") {
     return "speedometer";
+  }
+  if (
+    v === "led-matrix" ||
+    v === "led" ||
+    v === "digital-led" ||
+    v === "dot-matrix" ||
+    v === "dotmatrix" ||
+    v === "ledmatrix"
+  ) {
+    return "led-matrix";
   }
   return "pill";
 }
@@ -209,4 +224,29 @@ export function buildCircularImageTimerDisplay(
     defaultPrimaryColor: COUNTDOWN_RING_COLORS.text,
     defaultSecondaryColor: COUNTDOWN_RING_COLORS.subtext,
   };
+}
+
+export const LED_MATRIX_COLORS = {
+  digit: "#a0e0ff",
+  digitHot: "#e8f9ff",
+  corner: "#ff1a1a",
+  border: "#c0c0c0",
+  panel: "#000000",
+} as const;
+
+/** LED 패널에 표시할 MM:SS 또는 HH:MM:SS */
+export function buildLedMatrixTimerText(
+  totalSec: number | null | undefined,
+  showHours: boolean
+): string | null {
+  if (totalSec == null || !Number.isFinite(totalSec)) return null;
+  const safe = Math.max(0, Math.floor(Number(totalSec) || 0));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const seconds = safe % 60;
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  if (showHours || hours > 0) {
+    return `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`;
+  }
+  return `${pad2(minutes)}:${pad2(seconds)}`;
 }
