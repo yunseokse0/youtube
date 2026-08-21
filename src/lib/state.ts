@@ -2583,9 +2583,11 @@ export async function saveStateAsync(
      */
     const guardedResetAt = Number(guarded.settlementResetAt || 0);
     const localResetAt = Number(local?.settlementResetAt || 0);
+    const sessionDonationEmpty = isEmptyBroadcastDonationSession(local);
     if (
       local &&
       !saveOpts?.membersAuthoritative &&
+      !sessionDonationEmpty &&
       guardedResetAt <= localResetAt &&
       (shouldAvoidOverwritingLocalStateWithRemote(local, guarded) || wouldShrinkDonationData(local, guarded))
     ) {
@@ -3850,6 +3852,14 @@ export function resolveServerDonorsForEmptyLocal(opts: {
     resetAt
   );
   return restored.length > 0 ? restored : null;
+}
+
+/** 세션 캐시에 후원·합계가 없음 — 서버 스냅샷을 거부하지 않을 때 */
+export function isEmptyBroadcastDonationSession(state: AppState | null | undefined): boolean {
+  if (!state) return true;
+  return (
+    normalizeDonorsArray(state.donors).length === 0 && totalCombined(state) === 0
+  );
 }
 
 /**

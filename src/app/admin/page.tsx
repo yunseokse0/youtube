@@ -55,6 +55,7 @@ import {
   rebumpDonorsPastSettlementReset,
   filterDonorsAfterSettlementReset,
   resolveServerDonorsForEmptyLocal,
+  isEmptyBroadcastDonationSession,
   ensureMissionItems,
   appendDailyLog,
   loadDailyLogFromApi,
@@ -2132,8 +2133,10 @@ export default function AdminPage() {
          * 아래 heal 로 서버에도 다시 올려 다음 hydrate 에서 유실되지 않게 한다.
          */
         const blockedAccidentalEmpty = shouldBlockAccidentalEmptyOverwrite(local, apiState);
+        const sessionDonationEmpty = isEmptyBroadcastDonationSession(local);
         const rejectPoorer =
-          blockedAccidentalEmpty || shouldRejectPoorerDonationRemote(local, apiState);
+          !sessionDonationEmpty &&
+          (blockedAccidentalEmpty || shouldRejectPoorerDonationRemote(local, apiState));
         stateUpdatedAtRef.current = rejectPoorer
           ? Math.max(Number(local.updatedAt || 0), Number(apiState.updatedAt || 0))
           : apiState.updatedAt || 0;
@@ -2647,8 +2650,14 @@ export default function AdminPage() {
     const applyRemoteState = (incomingRemote: AppState, opts?: { forceDonorMerge?: boolean }) => {
       let remote = incomingRemote;
       const remoteUpdatedAt = remote.updatedAt || 0;
+      const localDonorCount = normalizeDonorsArray(stateRef.current.donors).length;
+      const remoteDonorCount = normalizeDonorsArray(remote.donors).length;
+      /** 서버(MySQL) donors > UI — updatedAt 같아도 실시간 반영 */
+      const serverDonorAhead = remoteDonorCount > localDonorCount && remoteDonorCount > 0;
       const shouldApplyRemote =
-        remoteUpdatedAt > stateUpdatedAtRef.current || Boolean(opts?.forceDonorMerge);
+        remoteUpdatedAt > stateUpdatedAtRef.current ||
+        Boolean(opts?.forceDonorMerge) ||
+        serverDonorAhead;
       if (!shouldApplyRemote) return false;
       const remoteResetAt = Number(remote.settlementResetAt || 0);
       const localResetAt = Number(stateRef.current.settlementResetAt || 0);
@@ -2790,12 +2799,20 @@ export default function AdminPage() {
           return false;
         }
         /** 보호창 밖에서도 poorer/empty Redis 가 실후원을 시스템 삭제처럼 덮지 않음 */
-        if (shouldRejectPoorerDonationRemote(stateRef.current, remoteForGuards)) {
+        if (
+          !serverDonorAhead &&
+          !isEmptyBroadcastDonationSession(stateRef.current) &&
+          shouldRejectPoorerDonationRemote(stateRef.current, remoteForGuards)
+        ) {
           healLocalDonorsToServerIfRicher();
           return false;
         }
         /** 엑셀 실멤버·금액이 빈 원격으로 덮이지 않게 (정산 리셋만 예외) */
-        if (shouldAvoidOverwritingLocalStateWithRemote(stateRef.current, remoteForGuards)) {
+        if (
+          !serverDonorAhead &&
+          !isEmptyBroadcastDonationSession(stateRef.current) &&
+          shouldAvoidOverwritingLocalStateWithRemote(stateRef.current, remoteForGuards)
+        ) {
           healLocalDonorsToServerIfRicher();
           return false;
         }
@@ -2804,7 +2821,7 @@ export default function AdminPage() {
       }
       /** 저장 대기 중이어도 원격 신규 후원은 mergeIncoming에서 수용.
        * 다른 브라우저 정산 리셋(remoteSettlementWins)은 빈 후원이어도 반드시 적용. */
-      if (!remoteSettlementWins && pendingUnsyncedRef.current && !opts?.forceDonorMerge) {
+      if (!remoteSettlementWins && pendingUnsyncedRef.current && !opts?.forceDonorMerge && !serverDonorAhead) {
         const localIds = new Set((stateRef.current.donors || []).map((d) => d.id));
         const hasRemoteOnly = (remote.donors || []).some((d) => !localIds.has(d.id));
         if (!hasRemoteOnly) {
@@ -2846,7 +2863,8 @@ export default function AdminPage() {
       if (
         !remoteSettlementWins &&
         remoteUpdatedAt <= lastAppliedRemoteUpdatedAtRef.current &&
-        !opts?.forceDonorMerge
+        !opts?.forceDonorMerge &&
+        !serverDonorAhead
       ) {
         return false;
       }
@@ -2937,9 +2955,24 @@ export default function AdminPage() {
         remoteUpdatedAt
       );
       const rawDonors = normalizeDonorsArray(toApply.donors);
-      if (rawDonors.length > 1) {
-        const deduped = dedupeDonorRows(rawDonors);
-        if (deduped.length < rawDonors.length) {
+      if (serverDonorAhead || isEmptyBroadcastDonationSession(prev)) {
+        const restored =
+          resolveServerDonorsForEmptyLocal({
+            local: prev,
+            incomingDonors: remote.donors,
+            settlementResetAt: Math.max(
+              Number(prev.settlementResetAt || 0),
+              Number(remote.settlementResetAt || 0)
+            ),
+          }) ?? rawDonors;
+        if (restored.length > rawDonors.length) {
+          toApply = syncMemberTotalsFromDonors({ ...toApply, donors: restored });
+        }
+      }
+      const rawDonorsFinal = normalizeDonorsArray(toApply.donors);
+      if (rawDonorsFinal.length > 1) {
+        const deduped = dedupeDonorRows(rawDonorsFinal);
+        if (deduped.length < rawDonorsFinal.length) {
           toApply = syncMemberTotalsFromDonors({ ...toApply, donors: deduped });
         }
       }
