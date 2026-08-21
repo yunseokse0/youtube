@@ -16,6 +16,10 @@ import {
   getCacheStats,
 } from "@/lib/youtube";
 import {
+  hydrateYoutubeClientSettingsFromServer,
+  persistYoutubeClientSettingsToServer,
+} from "@/lib/youtube-client-settings";
+import {
   requestNotificationPermission,
   getNotificationPermission,
   showForbidWordAlert,
@@ -54,12 +58,31 @@ export default function YoutubePage() {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(DEFAULT_NOTIFICATION_SETTINGS);
   const [lastViewerCount, setLastViewerCount] = useState<number | null>(null);
+  const [youtubeUserId, setYoutubeUserId] = useState<string | null>(null);
   const chatBoxRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    setUrl(getSavedVideoUrl() || "");
-    setApiKey(getPreferredApiKey() || "");
-    setLiveChatId(getPreferredLiveChatId());
+    void fetch("/api/auth/me", { credentials: "include", cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(async (data) => {
+        const uid = typeof data?.user?.id === "string" ? data.user.id : null;
+        setYoutubeUserId(uid);
+        if (!uid) {
+          setUrl(getSavedVideoUrl() || "");
+          setApiKey(getPreferredApiKey() || "");
+          setLiveChatId(getPreferredLiveChatId());
+          return;
+        }
+        const settings = await hydrateYoutubeClientSettingsFromServer(uid);
+        setUrl(settings.videoUrl || getSavedVideoUrl() || "");
+        setApiKey(settings.apiKey || getPreferredApiKey() || "");
+        setLiveChatId(settings.liveChatId || getPreferredLiveChatId());
+      })
+      .catch(() => {
+        setUrl(getSavedVideoUrl() || "");
+        setApiKey(getPreferredApiKey() || "");
+        setLiveChatId(getPreferredLiveChatId());
+      });
     setEvents(loadForbidEvents());
     
     // 푸시 알림 설정 초기화
@@ -204,14 +227,28 @@ export default function YoutubePage() {
     const { liveChatId: id, videoId } = await setYoutubeVideoUrl(url.trim());
     console.log(`[YouTube Connect] 연결 결과 - LiveChatId: ${id}, VideoId: ${videoId}`);
     setLiveChatId(id);
+    if (youtubeUserId) {
+      await persistYoutubeClientSettingsToServer(youtubeUserId, {
+        videoUrl: url.trim() || undefined,
+        liveChatId: id || undefined,
+      });
+    }
   };
-  const saveKey = () => {
+  const saveKey = async () => {
     setPreferredApiKey(apiKey.trim());
     setApiKey(getPreferredApiKey() || "");
+    if (youtubeUserId) {
+      await persistYoutubeClientSettingsToServer(youtubeUserId, {
+        apiKey: apiKey.trim() || undefined,
+      });
+    }
   };
-  const clearKey = () => {
+  const clearKey = async () => {
     clearPreferredApiKey();
     setApiKey(getPreferredApiKey() || "");
+    if (youtubeUserId) {
+      await persistYoutubeClientSettingsToServer(youtubeUserId, { apiKey: undefined });
+    }
   };
 
   const current = points.length ? points[points.length - 1].v : null;

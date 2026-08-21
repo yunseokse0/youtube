@@ -1,3 +1,9 @@
+import {
+  applyYoutubeClientSettingsCache,
+  getCachedYoutubeClientSettings,
+} from "./youtube-client-settings";
+import { isServerAuthoritativeBroadcastState } from "./server-authoritative-broadcast-state";
+
 export type OnForbidden = (matched: { word: string; author: string; message: string }) => void;
 
 const ENV_API_KEY = process.env.NEXT_PUBLIC_YT_API_KEY || process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;
@@ -10,11 +16,19 @@ let aborter: AbortController | null = null;
 
 export function getPreferredLiveChatId(): string | null {
   if (typeof window === "undefined") return ENV_LIVE_CHAT_ID || null;
+  if (isServerAuthoritativeBroadcastState()) {
+    const cached = getCachedYoutubeClientSettings().liveChatId;
+    if (cached) return cached;
+  }
   return window.localStorage.getItem(LIVE_CHAT_ID_KEY) || ENV_LIVE_CHAT_ID || null;
 }
 
 export function getSavedVideoUrl(): string | null {
   if (typeof window === "undefined") return null;
+  if (isServerAuthoritativeBroadcastState()) {
+    const cached = getCachedYoutubeClientSettings().videoUrl;
+    if (cached) return cached;
+  }
   return window.localStorage.getItem(VIDEO_URL_KEY);
 }
 
@@ -25,7 +39,12 @@ export function clearPreferredLiveChatId() {
 
 export function getPreferredApiKey(): string | null {
   if (typeof window === "undefined") return ENV_API_KEY || null;
-  return window.localStorage.getItem(API_KEY_KEY) || ENV_API_KEY || null;
+  if (ENV_API_KEY) return ENV_API_KEY;
+  if (isServerAuthoritativeBroadcastState()) {
+    const cached = getCachedYoutubeClientSettings().apiKey;
+    if (cached) return cached;
+  }
+  return window.localStorage.getItem(API_KEY_KEY) || null;
 }
 
 export const HAS_ENV_API_KEY: boolean = !!ENV_API_KEY;
@@ -33,6 +52,14 @@ export const HAS_ENV_API_KEY: boolean = !!ENV_API_KEY;
 export function setPreferredApiKey(key: string) {
   if (typeof window === "undefined") return;
   if (ENV_API_KEY) return; // immutable when provided via env (e.g., Vercel)
+  const trimmed = key.trim();
+  if (isServerAuthoritativeBroadcastState()) {
+    applyYoutubeClientSettingsCache({
+      ...getCachedYoutubeClientSettings(),
+      apiKey: trimmed || undefined,
+    });
+    return;
+  }
   window.localStorage.setItem(API_KEY_KEY, key);
 }
 
@@ -172,12 +199,26 @@ export async function setYoutubeVideoUrl(url: string): Promise<{ liveChatId: str
   if (typeof window === "undefined") return { liveChatId: null, videoId: null };
   const videoId = parseVideoIdFromUrl(url);
   if (!videoId) {
-    window.localStorage.removeItem(VIDEO_URL_KEY);
+    if (!isServerAuthoritativeBroadcastState()) {
+      window.localStorage.removeItem(VIDEO_URL_KEY);
+    }
+    applyYoutubeClientSettingsCache({
+      ...getCachedYoutubeClientSettings(),
+      videoUrl: undefined,
+    });
     return { liveChatId: null, videoId: null };
   }
-  window.localStorage.setItem(VIDEO_URL_KEY, url);
+  if (!isServerAuthoritativeBroadcastState()) {
+    window.localStorage.setItem(VIDEO_URL_KEY, url);
+  }
   const liveChatId = await fetchLiveChatIdByVideoId(videoId);
-  if (liveChatId) {
+  if (isServerAuthoritativeBroadcastState()) {
+    applyYoutubeClientSettingsCache({
+      ...getCachedYoutubeClientSettings(),
+      videoUrl: url,
+      liveChatId: liveChatId || undefined,
+    });
+  } else if (liveChatId) {
     window.localStorage.setItem(LIVE_CHAT_ID_KEY, liveChatId);
   }
   return { liveChatId: liveChatId || null, videoId };

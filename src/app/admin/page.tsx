@@ -3,6 +3,12 @@ import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
 import DonationTableOptionCheckboxes from "@/components/admin/DonationTableOptionCheckboxes";
+import {
+  buildSettlementUiOptionsFromForm,
+  normalizeSettlementUiOptions,
+  readLegacySettlementUiOptionsFromLocalStorage,
+} from "@/lib/admin-client-settings";
+import { isServerAuthoritativeBroadcastState } from "@/lib/server-authoritative-broadcast-state";
 import { notifyBroadcastStateLocalUpdated, notifyOverlayPresetsLocalUpdated, notifyAdminPreviewDonorsUpdated, ADMIN_PREVIEW_DONORS_REQUEST, overlayUserIdsMatch } from "@/lib/broadcast-state-local-sync";
 import { APP_BRAND_NAME, adminHeaderTitle } from "@/lib/app-branding";
 import Toast from "@/components/Toast";
@@ -65,7 +71,6 @@ import {
   dailyLogStorageKey,
   DAILY_LOG_KEY,
   overlayPresetsStorageKey,
-  settlementOptionsStorageKey,
   migrateLegacyLocalStorageKey,
   loadDailyLog,
   DailyLogEntry,
@@ -970,8 +975,9 @@ export default function AdminPage() {
   const [includeTreasuryInFullStatement, setIncludeTreasuryInFullStatement] = useState(false);
   const [useMemberRatioOverrides, setUseMemberRatioOverrides] = useState(false);
   const [memberRatioInputs, setMemberRatioInputs] = useState<Record<string, { account: string; toon: string }>>({});
+  const settlementUiHydratingRef = useRef(true);
+  const lastPersistedSettlementUiRef = useRef("");
   const presetStorageKey = useMemo(() => overlayPresetsStorageKey(user?.id), [user?.id]);
-  const settlementOptionsKey = useMemo(() => settlementOptionsStorageKey(user?.id), [user?.id]);
   const displayMissions = useMemo(() => {
     const v = ensureMissionItems(state.missions);
     return v.length > 0 ? v : PLACEHOLDER_MISSIONS;
@@ -1315,7 +1321,7 @@ export default function AdminPage() {
         if (r.storageFallback) {
           setSyncStatus("error");
           setSigExcelResult(
-            "서버 Redis 저장에 실패해 이 PC에만 반영됐습니다. 다른 PC·브라우저에서는 시그 목록이 보이지 않을 수 있습니다. UPSTASH 설정·Render 인스턴스 수를 확인하세요."
+            "서버(MySQL) 저장 실패 — 이 브라우저에만 반영됐습니다. 다른 PC·브라우저에는 보이지 않습니다. DATABASE_URL·MySQL 연결을 확인하세요."
           );
         } else {
           setSyncStatus("synced");
@@ -1326,6 +1332,48 @@ export default function AdminPage() {
       }
     });
   }, [user?.id]);
+
+  const syncSettlementUiFormFromOptions = useCallback(
+    (opts?: import("@/types").SettlementUiOptions) => {
+      settlementUiHydratingRef.current = true;
+      const normalized = normalizeSettlementUiOptions(opts);
+      setAccountRatioInput(normalized.accountRatioInput);
+      setToonRatioInput(normalized.toonRatioInput);
+      setTaxRateInput(normalized.taxRateInput);
+      setVatIncluded(normalized.vatIncluded);
+      setTaxInvoiceIssued(normalized.taxInvoiceIssued);
+      setUseMemberRatioOverrides(normalized.useMemberRatioOverrides);
+      setMemberRatioInputs(normalized.memberRatioInputs);
+      setOmitTreasuryFromSettlement(normalized.omitTreasuryFromSettlement);
+      setIncludeTreasuryInFullStatement(normalized.includeTreasuryInFullStatement);
+      lastPersistedSettlementUiRef.current = JSON.stringify(normalized);
+      settlementUiHydratingRef.current = false;
+    },
+    []
+  );
+
+  const hydrateSettlementUiFromAppState = useCallback(
+    (appState: AppState, userId: string) => {
+      if (appState.settlementUiOptions) {
+        syncSettlementUiFormFromOptions(appState.settlementUiOptions);
+        return;
+      }
+      const legacy = readLegacySettlementUiOptionsFromLocalStorage(userId);
+      if (!legacy) {
+        settlementUiHydratingRef.current = false;
+        return;
+      }
+      syncSettlementUiFormFromOptions(legacy);
+      const next = {
+        ...stateRef.current,
+        settlementUiOptions: legacy,
+        updatedAt: Date.now(),
+      };
+      stateRef.current = next;
+      void saveStateAsync(next, userId, { omitDonationFields: true });
+    },
+    [syncSettlementUiFormFromOptions]
+  );
 
   const persistObsTextRegistry = useCallback(
     (registry: ReturnType<typeof readObsTextRegistryFromState>) => {
@@ -2019,7 +2067,6 @@ export default function AdminPage() {
     if (!user) return;
     setSyncStatus("loading");
     const offline = typeof navigator !== "undefined" && !navigator.onLine;
-    const localFallback = loadState(user.id);
     let localPresets: OverlayPreset[] = [];
     try {
       const raw =
@@ -2028,28 +2075,17 @@ export default function AdminPage() {
       if (raw) localPresets = JSON.parse(raw) as OverlayPreset[];
     } catch {}
     if (offline) {
-      setState(localFallback);
-      if (Array.isArray(localFallback.overlayPresets) && localFallback.overlayPresets.length > 0) {
-        setPresets(localFallback.overlayPresets as OverlayPreset[]);
+      /** 오프라인: 같은 탭 세션 캐시만 조회용. 정본은 서버 — 편집은 온라인 복구 후 persistState 로 저장 */
+      const sessionSnap = loadState(user.id);
+      setState(sessionSnap);
+      if (Array.isArray(sessionSnap.overlayPresets) && sessionSnap.overlayPresets.length > 0) {
+        setPresets(sessionSnap.overlayPresets as OverlayPreset[]);
       } else if (localPresets.length > 0) {
         setPresets(localPresets);
       }
       setSyncStatus("local");
-    } else if (hasMeaningfulMemberRoster(localFallback)) {
-      /**
-       * hydrate는 비우지 않음. API 대기 중 LS 실멤버만 미리 보여 멤버1 플래시를 피함.
-       * (금액은 이후 서버 정본으로 맞춤)
-       */
-      setState((prev) => ({
-        ...prev,
-        ...localFallback,
-        members: localFallback.members,
-        memberPositions: normalizeMemberPositions(
-          localFallback.memberPositions,
-          localFallback.members
-        ),
-      }));
     }
+    /** 서버 정본 모드: API 응답 전 로컬/세션 스냅샷으로 멤버·후원을 채우지 않음 (admin 은 보기·편집 도구) */
     // 우선 서버의 일일 로그를 소스로 사용(장치 간 일관성)
     loadDailyLogFromApi(user?.id).then((serverLog) => {
       setDailyLog(serverLog);
@@ -2066,51 +2102,8 @@ export default function AdminPage() {
         if (data && typeof data === "object") setStorageHealth(data);
       })
       .catch(() => {});
-    try {
-      const raw =
-        migrateLegacyLocalStorageKey("excel-broadcast-settlement-options-v1", settlementOptionsKey) ||
-        window.localStorage.getItem(settlementOptionsKey);
-      if (raw) {
-        const parsed = JSON.parse(raw) as {
-          accountRatioInput?: string;
-          toonRatioInput?: string;
-          taxRateInput?: string;
-          vatIncluded?: boolean;
-          taxInvoiceIssued?: boolean;
-          useMemberRatioOverrides?: boolean;
-          memberRatioInputs?: Record<string, { account?: string; toon?: string }>;
-          omitTreasuryFromSettlement?: boolean;
-          includeTreasuryInFullStatement?: boolean;
-        };
-        if (typeof parsed.accountRatioInput === "string") setAccountRatioInput(parsed.accountRatioInput);
-        if (typeof parsed.toonRatioInput === "string") setToonRatioInput(parsed.toonRatioInput);
-        if (typeof parsed.taxRateInput === "string") setTaxRateInput(parsed.taxRateInput);
-        if (typeof parsed.vatIncluded === "boolean") setVatIncluded(parsed.vatIncluded);
-        if (typeof parsed.taxInvoiceIssued === "boolean") setTaxInvoiceIssued(parsed.taxInvoiceIssued);
-        if (typeof parsed.omitTreasuryFromSettlement === "boolean") {
-          setOmitTreasuryFromSettlement(parsed.omitTreasuryFromSettlement);
-        }
-        if (typeof parsed.includeTreasuryInFullStatement === "boolean") {
-          setIncludeTreasuryInFullStatement(parsed.includeTreasuryInFullStatement);
-        }
-        if (typeof parsed.useMemberRatioOverrides === "boolean") setUseMemberRatioOverrides(parsed.useMemberRatioOverrides);
-        if (parsed.memberRatioInputs && typeof parsed.memberRatioInputs === "object") {
-          const normalized: Record<string, { account: string; toon: string }> = {};
-          Object.entries(parsed.memberRatioInputs).forEach(([memberId, value]) => {
-            normalized[memberId] = {
-              account: typeof value?.account === "string" ? value.account : "",
-              toon: typeof value?.toon === "string" ? value.toon : "",
-            };
-          });
-          setMemberRatioInputs(normalized);
-        }
-      }
-    } catch {}
     loadStateFromApi(user?.id, { forceFull: true }).then((apiState) => {
-      /** 후원·금액은 계정 서버 정본. LS는 테마·시그 등 보조 캐시만.
-       * 단, 빈/축소 Redis 가 LS 실후원을 덮어 시스템 삭제처럼 보이면 안 됨.
-       * 로드 중 멤버 추가가 있으면 effect 시작 시점 localFallback 이 아니라
-       * 최신 LS·stateRef 를 쓴다(stale fallback 이 추가분을 지우지 않게). */
+      /** 후원·금액·멤버는 계정 서버 정본만. admin React state 는 서버 스냅샷의 편집 뷰. */
       const fromLs = loadState(user.id);
       const fromRef = stateRef.current;
       const localMembers = pickMemberRosterPreferNewer(fromRef, fromLs);
@@ -2323,6 +2316,7 @@ export default function AdminPage() {
           );
         }
         setState(toApply);
+        if (user?.id) hydrateSettlementUiFromAppState(toApply, user.id);
         try {
           cacheBroadcastStateSnapshot(toApply, user?.id);
         } catch {}
@@ -2373,7 +2367,7 @@ export default function AdminPage() {
         }
       }
     });
-  }, [user, persistState, mergeIncomingStateSafely, presetStorageKey, settlementOptionsKey]);
+  }, [user, persistState, mergeIncomingStateSafely, presetStorageKey, hydrateSettlementUiFromAppState]);
 
   /** 일괄 반영으로 동일 초에 찍힌 후원 시각 — id·daily log로 복구 후 서버 저장 */
   useEffect(() => {
@@ -2977,6 +2971,9 @@ export default function AdminPage() {
         }
       }
       setState(toApply);
+      if (toApply.settlementUiOptions) {
+        syncSettlementUiFormFromOptions(toApply.settlementUiOptions);
+      }
       if (Array.isArray(toApply.overlayPresets)) {
         const nextOverlayPresets = toApply.overlayPresets as OverlayPreset[];
         setPresets(nextOverlayPresets);
@@ -3065,7 +3062,7 @@ export default function AdminPage() {
       window.removeEventListener("offline", onOffline);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [user, persistState, mergeIncomingStateSafely]);
+  }, [user, persistState, mergeIncomingStateSafely, syncSettlementUiFormFromOptions]);
 
   const normalizeOverlayPresetLabels = (list: OverlayPreset[]): OverlayPreset[] =>
     list.map((p) => {
@@ -3862,24 +3859,41 @@ export default function AdminPage() {
   }, [state.members]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(
-        settlementOptionsKey,
-        JSON.stringify({
-          accountRatioInput,
-          toonRatioInput,
-          taxRateInput,
-          vatIncluded,
-          taxInvoiceIssued,
-          useMemberRatioOverrides,
-          memberRatioInputs,
-          omitTreasuryFromSettlement,
-          includeTreasuryInFullStatement,
-        })
-      );
-    } catch {}
-  }, [settlementOptionsKey, accountRatioInput, toonRatioInput, taxRateInput, vatIncluded, taxInvoiceIssued, useMemberRatioOverrides, memberRatioInputs, omitTreasuryFromSettlement, includeTreasuryInFullStatement]);
+    if (settlementUiHydratingRef.current || !user?.id) return;
+    const settlementUiOptions = buildSettlementUiOptionsFromForm({
+      accountRatioInput,
+      toonRatioInput,
+      taxRateInput,
+      vatIncluded,
+      taxInvoiceIssued,
+      useMemberRatioOverrides,
+      memberRatioInputs,
+      omitTreasuryFromSettlement,
+      includeTreasuryInFullStatement,
+    });
+    const serialized = JSON.stringify(settlementUiOptions);
+    if (serialized === lastPersistedSettlementUiRef.current) return;
+    lastPersistedSettlementUiRef.current = serialized;
+    const next: AppState = {
+      ...stateRef.current,
+      settlementUiOptions,
+      updatedAt: Date.now(),
+    };
+    stateRef.current = next;
+    persistState(next, { omitDonationFields: true });
+  }, [
+    user?.id,
+    persistState,
+    accountRatioInput,
+    toonRatioInput,
+    taxRateInput,
+    vatIncluded,
+    taxInvoiceIssued,
+    useMemberRatioOverrides,
+    memberRatioInputs,
+    omitTreasuryFromSettlement,
+    includeTreasuryInFullStatement,
+  ]);
 
   const updateMember = (m: Member) => {
     setState((prev: AppState) => {
@@ -7726,10 +7740,16 @@ export default function AdminPage() {
     toonationHydratedUserIdRef.current = null;
     setToonationSettingsHydrated(false);
     toonationLocalEditedAfterRef.current = 0;
-    /** 계정 전환 직후: 이전 계정 값이 화면에 남지 않게 비움 → 이 계정 LS/서버만 로드 */
-    setToonationAlertboxUrl(readToonationAlertboxFromLocal(user.id));
-    setToonationSocketEnabled(readToonationSocketEnabledFromLocal(user.id));
-    setToonationOwnerName(readToonationOwnerFromLocal(user.id));
+    /** 계정 전환 직후: 이전 계정 값이 화면에 남지 않게 비움 → 서버 정본만 로드 */
+    if (!isServerAuthoritativeBroadcastState()) {
+      setToonationAlertboxUrl(readToonationAlertboxFromLocal(user.id));
+      setToonationSocketEnabled(readToonationSocketEnabledFromLocal(user.id));
+      setToonationOwnerName(readToonationOwnerFromLocal(user.id));
+    } else {
+      setToonationAlertboxUrl("");
+      setToonationSocketEnabled(false);
+      setToonationOwnerName("");
+    }
     const hydrateStartedAt = Date.now();
     void (async () => {
       try {
@@ -7738,6 +7758,24 @@ export default function AdminPage() {
         if (toonationLocalEditedAfterRef.current > hydrateStartedAt) return;
         const serverUrl = String(status?.alertboxUrl || "").trim();
         const serverKey = extractToonationLinkKey(serverUrl) || serverUrl;
+        if (isServerAuthoritativeBroadcastState()) {
+          if (serverKey && !isExampleToonationLinkKey(serverKey)) {
+            setToonationAlertboxUrl(serverKey);
+            setToonationSocketEnabled(status?.enabled !== false);
+            const serverOwner = String(status?.ownerName || "").trim();
+            if (serverOwner) setToonationOwnerName(serverOwner);
+          } else {
+            const localRaw = readToonationAlertboxFromLocal(user.id);
+            const localKey = extractToonationLinkKey(localRaw) || localRaw.trim();
+            if (localKey && !isExampleToonationLinkKey(localKey)) {
+              setToonationAlertboxUrl(localKey);
+              setToonationSocketEnabled(readToonationSocketEnabledFromLocal(user.id));
+              const localOwner = readToonationOwnerFromLocal(user.id);
+              if (localOwner) setToonationOwnerName(localOwner);
+            }
+          }
+          return;
+        }
         const localRaw = readToonationAlertboxFromLocal(user.id);
         const localKey = extractToonationLinkKey(localRaw) || localRaw.trim();
         const localUpdatedAt = readToonationSettingsUpdatedAtFromLocal(user.id);
@@ -7753,11 +7791,13 @@ export default function AdminPage() {
           setToonationSocketEnabled(status?.enabled !== false);
           const serverOwner = String(status?.ownerName || "").trim();
           if (serverOwner) setToonationOwnerName(serverOwner);
-          writeToonationSettingsToLocal(user.id, {
-            alertboxUrl: serverKey,
-            socketEnabled: status?.enabled !== false,
-            ownerName: serverOwner || undefined,
-          });
+          if (!isServerAuthoritativeBroadcastState()) {
+            writeToonationSettingsToLocal(user.id, {
+              alertboxUrl: serverKey,
+              socketEnabled: status?.enabled !== false,
+              ownerName: serverOwner || undefined,
+            });
+          }
         } else if (preferLocal && localKey && !isExampleToonationLinkKey(localKey)) {
           /** 로컬 연동키가 더 최신 — 화면·LS 유지, sync effect 가 서버(Redis)를 갱신 */
           setToonationAlertboxUrl(localKey);
@@ -7802,11 +7842,13 @@ export default function AdminPage() {
     if (typeof window === "undefined") return;
     if (!user?.id || !toonationSettingsHydrated) return;
     if (toonationHydratedUserIdRef.current !== user.id) return;
-    writeToonationSettingsToLocal(user.id, {
-      alertboxUrl: toonationAlertboxUrl,
-      socketEnabled: toonationSocketEnabled,
-      ownerName: toonationOwnerName,
-    });
+    if (!isServerAuthoritativeBroadcastState()) {
+      writeToonationSettingsToLocal(user.id, {
+        alertboxUrl: toonationAlertboxUrl,
+        socketEnabled: toonationSocketEnabled,
+        ownerName: toonationOwnerName,
+      });
+    }
     try {
       window.localStorage.removeItem("donationAutomation.toonation.autoProcess");
     } catch {

@@ -840,7 +840,7 @@ export function overlayPresetsStorageKey(userId?: string | null): string {
   return `excel-broadcast-overlay-presets:${uid}`;
 }
 
-/** 계정별 정산 UI 옵션 localStorage 캐시 키 */
+/** @deprecated 구버전 localStorage 캐시 — settlementUiOptions(AppState)가 정본 */
 export function settlementOptionsStorageKey(userId?: string | null): string {
   const uid = String(userId || "finalent").trim() || "finalent";
   return `excel-broadcast-settlement-options-v1:${uid}`;

@@ -535,6 +535,26 @@ export type SigRollingMetaEntry = {
 /** 후원·오버레이 금액 표시: full=천원 반올림+구분 / short=만원 축약 */
 export type DonorsAmountFormat = "full" | "short";
 
+/** 관리자 정산 탭 UI 옵션 — 서버 AppState 정본 */
+export type SettlementUiOptions = {
+  accountRatioInput: string;
+  toonRatioInput: string;
+  taxRateInput: string;
+  vatIncluded: boolean;
+  taxInvoiceIssued: boolean;
+  useMemberRatioOverrides: boolean;
+  memberRatioInputs: Record<string, { account: string; toon: string }>;
+  omitTreasuryFromSettlement: boolean;
+  includeTreasuryInFullStatement: boolean;
+};
+
+/** YouTube 채팅·시청자 도구 클라이언트 설정 — 서버 AppState 정본 */
+export type YoutubeClientSettings = {
+  apiKey?: string;
+  liveChatId?: string;
+  videoUrl?: string;
+};
+
 export type AppState = {
   /** 멤버 목록 */
   members: Member[];
@@ -621,6 +641,10 @@ export type AppState = {
   };
   /** 정산 리셋 시각(epoch ms) — 이후 구 탭·다른 PC 저장으로 후원·금액 되살림 방지 */
   settlementResetAt?: number;
+  /** 관리자 정산 탭 비율·세금 UI — 계정별 서버 저장 */
+  settlementUiOptions?: SettlementUiOptions;
+  /** YouTube API·라이브챗·영상 URL — 계정별 서버 저장 */
+  youtubeClientSettings?: YoutubeClientSettings;
 };
 
 export type SettlementMemberRatioOverrides = Record<
