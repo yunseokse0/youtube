@@ -5201,6 +5201,7 @@ function OverlayInner() {
                 fontColor={timerFontColor}
                 bgColor={timerBgColor}
                 bgOpacity={timerBgOpacity}
+                sharpRender={overlayTextSharpRender}
               />
             ) : (
               <Timer

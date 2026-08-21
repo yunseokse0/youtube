@@ -81,7 +81,7 @@ const TERRITORY_COLORS = [
 /** 룰: 1만원 정확히 배수만 5cm — 천원 자리가 있으면 영토 미적용 */
 export const HIGH_SOCIETY_WON_PER_UNIT = 10_000;
 export const HIGH_SOCIETY_CM_PER_UNIT = 5;
-/** 기본 전장 가로(cm) — 멤버 수와 무관, N등분 */
+/** 기본 1인 시작 cm (4명 가정 시 전장 1200cm) */
 export const HIGH_SOCIETY_DEFAULT_FIELD_CM = 1200;
 /** 참가 인원 상한 */
 export const HIGH_SOCIETY_MAX_SEATS = 8;
@@ -1509,26 +1509,24 @@ export function aggregateSeatPushesFromDonors(opts: {
 /** AppState 기준 영토 해상 (좌석·후원 방향·수동 기록부 반영) */
 export function buildHighSocietyFieldFromAppState(
   state: Pick<AppState, "members" | "donors" | "highSocietySettings" | "territoryLogs">,
-  opts?: { fieldCmOverride?: number }
+  opts?: { startCmPerMemberOverride?: number }
 ) {
   const settings = normalizeHighSocietySettings(state.highSocietySettings);
   const seatPlayers = resolveHighSocietySeatMembers(state.members || [], settings).map(
     (p) => ({ ...p, donationWon: 0 })
   );
   const seatCount = resolveHighSocietySeatCountForField(settings, seatPlayers.length);
-  const overrideRaw = Number(opts?.fieldCmOverride);
-  const effectiveFieldCm =
-    Number.isFinite(overrideRaw) && overrideRaw > 0
-      ? Math.max(100, Math.min(20000, Math.floor(overrideRaw)))
-      : resolveHighSocietyEffectiveFieldCm(settings, seatCount);
-  const settingsForField =
-    Number.isFinite(overrideRaw) && overrideRaw > 0
-      ? normalizeHighSocietySettings({
-          ...settings,
-          startCmPerMember: startCmFromField(effectiveFieldCm, seatCount),
-          fieldCm: effectiveFieldCm,
-        })
-      : settings;
+  const startOverrideRaw = Number(opts?.startCmPerMemberOverride);
+  const startCmPerMember =
+    Number.isFinite(startOverrideRaw) && startOverrideRaw > 0
+      ? Math.max(1, Math.min(5000, Math.floor(startOverrideRaw)))
+      : resolveHighSocietyStartCmPerMember(settings, seatCount);
+  const effectiveFieldCm = fieldCmFromStartPerMember(startCmPerMember, seatCount);
+  const settingsForField = normalizeHighSocietySettings({
+    ...settings,
+    startCmPerMember,
+    fieldCm: effectiveFieldCm,
+  });
   const playersFromDonors = aggregateSeatPushesFromDonors({
     seatPlayers,
     donors: state.donors || [],
@@ -1728,12 +1726,20 @@ export function parseHighSocietySplit(
   return { bLeft: parse(bLeftRaw, 0.5), cLeft: parse(cLeftRaw, 0.5) };
 }
 
-/** 전장 총길이 (?fieldCm=1600) — 100..20000 */
+/** @deprecated 전장 총길이 URL — startCm 정본으로 대체. 하위호환 파싱만 유지 */
 export function parseHighSocietyFieldCm(raw: string | null | undefined): number | null {
   if (raw == null || String(raw).trim() === "") return null;
   const n = Math.floor(Number(String(raw).replace(/[^\d]/g, "")));
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.max(100, Math.min(20000, n));
+}
+
+/** 1인 시작 cm (?startCm=400) — 1..5000 */
+export function parseHighSocietyStartCmPerMember(raw: string | null | undefined): number | null {
+  if (raw == null || String(raw).trim() === "") return null;
+  const n = Math.floor(Number(String(raw).replace(/[^\d]/g, "")));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.max(1, Math.min(5000, n));
 }
 
 /** 1인 시작 cm → 전장 총길이 (참가 N명) */
@@ -1794,6 +1800,20 @@ export function resolveHighSocietyEffectiveFieldCm(
   const n = resolveHighSocietySeatCountForField(settings, seatCount);
   const start = resolveHighSocietyStartCmPerMember(settings, n);
   return fieldCmFromStartPerMember(start, n);
+}
+
+/** startCmPerMember 정본 — fieldCm = start × 좌석 수 로 저장값 정렬 */
+export function reconcileHighSocietyFieldDimensions(
+  settings: HighSocietySettings,
+  actualSeatCount?: number
+): HighSocietySettings {
+  const seatCount = resolveHighSocietySeatCountForField(settings, actualSeatCount);
+  const startCmPerMember = resolveHighSocietyStartCmPerMember(settings, seatCount);
+  const fieldCm = fieldCmFromStartPerMember(startCmPerMember, seatCount);
+  if (settings.startCmPerMember === startCmPerMember && settings.fieldCm === fieldCm) {
+    return settings;
+  }
+  return { ...settings, startCmPerMember, fieldCm };
 }
 
 /** 라운드 번호 (?round=1) — 1..99 */

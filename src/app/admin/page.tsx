@@ -284,6 +284,7 @@ import {
   appendHighSocietySeatMemberId,
   resolveHighSocietyStartCmPerMember,
   resolveHighSocietyEffectiveFieldCm,
+  reconcileHighSocietyFieldDimensions,
   resolveHighSocietySeatCountForField,
   resolveSystemMiddlePushDir,
   seatRoleForMemberId,
@@ -8367,6 +8368,11 @@ export default function AdminPage() {
           resetTerritory,
           donors: prev.donors || [],
         });
+        const hsSeatCountForPersist = resolveHighSocietySeatCountForField(
+          nextSettings,
+          resolveHighSocietySeatMembers(prev.members || [], nextSettings).length
+        );
+        nextSettings = reconcileHighSocietyFieldDimensions(nextSettings, hsSeatCountForPersist);
         const needsDonorPersist = shouldPersistDonorsForHighSocietySettingsPatch({
           resetTerritory,
           isFirstOn,
@@ -15763,7 +15769,7 @@ export default function AdminPage() {
                       <iframe
                         key={`hs-preview-${hsPreviewIframeKeySig}-${hsPreviewIframeKey}`}
                         src={appendAdminPreviewEmbedToOverlayUrl(
-                          `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&fieldCm=${encodeURIComponent(String(hsEffectiveFieldCm))}&startCm=${encodeURIComponent(String(Math.round(hsStartCm)))}&hsFx=${encodeURIComponent(hsFxParam)}`
+                          `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&startCm=${encodeURIComponent(String(Math.round(hsStartCm)))}&hsFx=${encodeURIComponent(hsFxParam)}`
                         )}
                         title="상류사회 세로 오버레이 미리보기"
                         className="absolute inset-0 h-full w-full border-0"

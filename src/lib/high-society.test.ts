@@ -39,11 +39,13 @@ import {
   fieldCmFromStartPerMember,
   startCmFromField,
   parseHighSocietyFieldCm,
+  parseHighSocietyStartCmPerMember,
   resolveHighSocietyField,
   resolveHighSocietyFieldWithMemberWidths,
   resolveHighSocietySeatMembers,
   resolveHighSocietyStartCmPerMember,
   resolveHighSocietyEffectiveFieldCm,
+  reconcileHighSocietyFieldDimensions,
   resolveHighSocietySeatCountForField,
   resolveHighSocietyDonationLink,
   buildHighSocietyFieldFromAppState,
@@ -343,6 +345,7 @@ describe("high-society territory (aux)", () => {
     expect(startCmFromField(1600, 4)).toBe(400);
     expect(startCmFromField(1200, 4)).toBe(300);
     expect(parseHighSocietyFieldCm("1600")).toBe(1600);
+    expect(parseHighSocietyStartCmPerMember("400")).toBe(400);
   });
 
   it("1 explicit seat uses 100cm field not 200 (no phantom 2nd player)", () => {
@@ -1606,7 +1609,18 @@ describe("high-society startCmPerMember persistence", () => {
     expect(field.fieldCm).toBe(900);
   });
 
-  it("fieldCmOverride wins over stale startCmPerMember on server state", () => {
+  it("reconcileHighSocietyFieldDimensions grows field when seat count increases", () => {
+    const base = normalizeHighSocietySettings({
+      startCmPerMember: 400,
+      seatMemberIds: [],
+    });
+    expect(base.fieldCm).toBe(1600);
+    const reconciled = reconcileHighSocietyFieldDimensions(base, 2);
+    expect(reconciled.startCmPerMember).toBe(400);
+    expect(reconciled.fieldCm).toBe(800);
+  });
+
+  it("startCmPerMemberOverride scales field with seat count", () => {
     const settings = normalizeHighSocietySettings({
       enabled: true,
       seatMemberIds: [],
@@ -1625,9 +1639,9 @@ describe("high-society startCmPerMember persistence", () => {
     };
     const withoutOverride = buildHighSocietyFieldFromAppState(state);
     expect(withoutOverride.seats[0]!.widthCm).toBe(300);
-    const withOverride = buildHighSocietyFieldFromAppState(state, { fieldCmOverride: 400 });
-    expect(withOverride.seats[0]!.widthCm).toBe(100);
-    expect(withOverride.fieldCm).toBe(400);
+    const withOverride = buildHighSocietyFieldFromAppState(state, { startCmPerMemberOverride: 400 });
+    expect(withOverride.seats[0]!.widthCm).toBe(400);
+    expect(withOverride.fieldCm).toBe(1600);
   });
 });
 

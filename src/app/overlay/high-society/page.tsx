@@ -13,8 +13,8 @@ import {
   buildHighSocietyFieldFromAppState,
   buildHighSocietyFieldFromMembers,
   detectHighSocietyGrowFlashSeatIds,
+  fieldCmFromStartPerMember,
   formatCm,
-  HIGH_SOCIETY_DEFAULT_FIELD_CM,
   HIGH_SOCIETY_ROUND_SEC,
   HIGH_SOCIETY_TEST_MEMBERS,
   normalizeHighSocietyFxSettings,
@@ -22,8 +22,11 @@ import {
   highSocietyFxToHsFxParam,
   parseHighSocietyFxFromHsFxParam,
   parseHighSocietyBarStyle,
-  parseHighSocietyFieldCm,
   parseHighSocietySplit,
+  parseHighSocietyStartCmPerMember,
+  resolveHighSocietySeatCountForField,
+  resolveHighSocietySeatMembers,
+  resolveHighSocietyStartCmPerMember,
   type HighSocietyBarStyle,
   type HighSocietyExpandPressure,
   type HighSocietySeat,
@@ -221,8 +224,19 @@ export default function HighSocietyOverlayPage() {
     ? parseHighSocietyBarStyle(barFromUrl)
     : hsSettings.barStyle || "flat";
 
-  const fieldCmFromUrl = parseHighSocietyFieldCm(sp.get("fieldCm") || sp.get("field"));
-  const effectiveFieldCm = fieldCmFromUrl ?? hsSettings.fieldCm ?? HIGH_SOCIETY_DEFAULT_FIELD_CM;
+  const startCmFromUrl = parseHighSocietyStartCmPerMember(sp.get("startCm"));
+  const seatCountForField = useMemo(() => {
+    if (useTest) return HIGH_SOCIETY_TEST_MEMBERS.length;
+    if (!state) return resolveHighSocietySeatCountForField(hsSettings);
+    const seatPlayers = resolveHighSocietySeatMembers(state.members || [], hsSettings);
+    return resolveHighSocietySeatCountForField(hsSettings, seatPlayers.length);
+  }, [useTest, state, hsSettings]);
+  const startCmPerMember = useMemo(() => {
+    if (startCmFromUrl != null) return startCmFromUrl;
+    return resolveHighSocietyStartCmPerMember(hsSettings, seatCountForField);
+  }, [startCmFromUrl, hsSettings, seatCountForField]);
+  /** 전장 = 1인 시작 cm × 좌석 멤버 수 (fieldCm 고정값·URL fieldCm 미사용) */
+  const effectiveFieldCm = fieldCmFromStartPerMember(startCmPerMember, seatCountForField);
 
   const demoTimerSec = useMemo(() => {
     const raw = Number(sp.get("timerSec") || sp.get("timer"));
@@ -256,9 +270,9 @@ export default function HighSocietyOverlayPage() {
       return buildHighSocietyFieldFromMembers([], fieldOpts);
     }
     return buildHighSocietyFieldFromAppState(state, {
-      ...(fieldCmFromUrl != null ? { fieldCmOverride: effectiveFieldCm } : {}),
+      ...(startCmFromUrl != null ? { startCmPerMemberOverride: startCmFromUrl } : {}),
     });
-  }, [useTest, state, hsSettings, hasUrlSplit, split, effectiveFieldCm]);
+  }, [useTest, state, hsSettings, hasUrlSplit, split, effectiveFieldCm, startCmFromUrl]);
 
   const timerState = state?.matchTimer ?? state?.generalTimer ?? null;
 
