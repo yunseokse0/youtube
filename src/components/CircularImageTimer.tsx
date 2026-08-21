@@ -17,12 +17,82 @@ function polar(cx: number, cy: number, r: number, deg: number): { x: number; y: 
   return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
 }
 
+type TimerLabelProps = {
+  cx: number;
+  cy: number;
+  primary: string;
+  secondary?: string;
+  primaryPx: number;
+  secondaryPx: number;
+  fontFamilyCss: string;
+  primaryColor: string;
+  secondaryColor: string;
+  letterSpacing?: string;
+  shadow: string;
+};
+
+/** 게이지와 동일 SVG 좌표계 — CSS transform 중첩(OBS 스케일)과 무관하게 중앙 고정 */
+function TimerCenterLabels({
+  cx,
+  cy,
+  primary,
+  secondary,
+  primaryPx,
+  secondaryPx,
+  fontFamilyCss,
+  primaryColor,
+  secondaryColor,
+  letterSpacing = "-0.02em",
+  shadow,
+}: TimerLabelProps) {
+  const secondaryGap = secondary ? primaryPx * 0.22 + secondaryPx * 0.55 : 0;
+  const primaryY = secondary ? cy - secondaryGap * 0.35 : cy;
+  const secondaryY = cy + secondaryGap * 0.75;
+
+  return (
+    <g style={{ pointerEvents: "none" }}>
+      <text
+        x={cx}
+        y={primaryY}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill={primaryColor}
+        fontFamily={fontFamilyCss}
+        fontSize={primaryPx}
+        fontWeight={700}
+        letterSpacing={letterSpacing}
+        style={{ fontVariantNumeric: "tabular-nums", textShadow: shadow }}
+      >
+        {primary}
+      </text>
+      {secondary ? (
+        <text
+          x={cx}
+          y={secondaryY}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fill={secondaryColor}
+          fontFamily={fontFamilyCss}
+          fontSize={secondaryPx}
+          fontWeight={600}
+          letterSpacing="0.08em"
+          style={{ textTransform: "lowercase", textShadow: "0 1px 1px rgba(255,255,255,0.25)" }}
+        >
+          {secondary}
+        </text>
+      ) : null}
+    </g>
+  );
+}
+
 function CountdownRingSvg({
   size,
   filledTicks,
+  label,
 }: {
   size: number;
   filledTicks: number;
+  label: TimerLabelProps;
 }) {
   const cx = size / 2;
   const cy = size / 2;
@@ -54,10 +124,12 @@ function CountdownRingSvg({
       viewBox={`0 0 ${size} ${size}`}
       width={size}
       height={size}
-      className="pointer-events-none absolute inset-0"
-      aria-hidden
+      className="block"
+      role="img"
+      aria-label={label.primary}
     >
       {ticks}
+      <TimerCenterLabels {...label} cx={cx} cy={cy} />
     </svg>
   );
 }
@@ -65,9 +137,11 @@ function CountdownRingSvg({
 function SpeedometerSvg({
   size,
   fillRatio,
+  label,
 }: {
   size: number;
   fillRatio: number;
+  label: TimerLabelProps;
 }) {
   const cx = size / 2;
   const cy = size * SPEEDOMETER_LAYOUT.centerYRatio;
@@ -113,8 +187,9 @@ function SpeedometerSvg({
       viewBox={`0 0 ${size} ${size}`}
       width={size}
       height={size}
-      className="pointer-events-none absolute inset-0"
-      aria-hidden
+      className="block"
+      role="img"
+      aria-label={label.primary}
     >
       <path
         d={describeArc(startDeg, startDeg + sweepDeg, r)}
@@ -141,6 +216,13 @@ function SpeedometerSvg({
         />
       ) : null}
       <circle cx={cx} cy={cy} r={size * 0.045} fill={SPEEDOMETER_COLORS.needle} />
+      <TimerCenterLabels
+        {...label}
+        cx={cx}
+        cy={cy}
+        letterSpacing="0.04em"
+        shadow="0 1px 3px rgba(0,0,0,0.65)"
+      />
     </svg>
   );
 }
@@ -169,6 +251,24 @@ export function CircularImageTimer({
   const fontFamilyCss = resolveTimerFontFamilyCss(fontFamily);
   const primaryColor = (fontColor || "").trim() || display.defaultPrimaryColor;
   const secondaryColor = (fontColor || "").trim() || display.defaultSecondaryColor;
+  const primaryPx = Math.max(14, Math.round(fontSize * display.primaryScale));
+  const secondaryPx = Math.max(8, Math.round(fontSize * display.secondaryScale));
+
+  const label: TimerLabelProps = {
+    cx: size / 2,
+    cy: size / 2,
+    primary: display.primary,
+    secondary: display.secondary,
+    primaryPx,
+    secondaryPx,
+    fontFamilyCss,
+    primaryColor,
+    secondaryColor,
+    shadow:
+      design === "speedometer"
+        ? "0 1px 3px rgba(0,0,0,0.65)"
+        : "0 1px 2px rgba(255,255,255,0.35)",
+  };
 
   const filledTicks =
     design === "countdown-ring" ? computeCountdownRingFilledTicks(remainingSeconds) : 0;
@@ -177,62 +277,15 @@ export function CircularImageTimer({
 
   return (
     <div
-      className="relative inline-flex items-center justify-center select-none"
+      className="relative inline-flex select-none"
       style={{ width: size, height: size }}
       suppressHydrationWarning
     >
       {design === "countdown-ring" ? (
-        <CountdownRingSvg size={size} filledTicks={filledTicks} />
+        <CountdownRingSvg size={size} filledTicks={filledTicks} label={label} />
       ) : (
-        <SpeedometerSvg size={size} fillRatio={speedoFill} />
+        <SpeedometerSvg size={size} fillRatio={speedoFill} label={label} />
       )}
-      <div
-        className="absolute left-1/2 z-[1] flex flex-col items-center justify-center text-center leading-none -translate-x-1/2 -translate-y-1/2"
-        style={
-          design === "speedometer"
-            ? {
-                top: `${SPEEDOMETER_LAYOUT.centerYRatio * 100}%`,
-                minWidth: `${SPEEDOMETER_LAYOUT.textMinWidthCh}ch`,
-                zIndex: 2,
-              }
-            : {
-                top: "50%",
-                width: "38%",
-                minWidth: "3.5ch",
-              }
-        }
-      >
-        <span
-          className="font-bold tabular-nums"
-          style={{
-            fontFamily: fontFamilyCss,
-            fontSize: Math.max(14, Math.round(fontSize * display.primaryScale)),
-            color: primaryColor,
-            letterSpacing: design === "speedometer" ? "0.04em" : "-0.02em",
-            ...(design === "speedometer" ? { paddingRight: "0.04em" } : {}),
-            textShadow:
-              design === "speedometer"
-                ? "0 1px 3px rgba(0,0,0,0.65)"
-                : "0 1px 2px rgba(255,255,255,0.35)",
-          }}
-        >
-          {display.primary}
-        </span>
-        {display.secondary ? (
-          <span
-            className="mt-0.5 font-semibold lowercase"
-            style={{
-              fontFamily: fontFamilyCss,
-              fontSize: Math.max(8, Math.round(fontSize * display.secondaryScale)),
-              color: secondaryColor,
-              letterSpacing: "0.08em",
-              textShadow: "0 1px 1px rgba(255,255,255,0.25)",
-            }}
-          >
-            {display.secondary}
-          </span>
-        ) : null}
-      </div>
     </div>
   );
 }
