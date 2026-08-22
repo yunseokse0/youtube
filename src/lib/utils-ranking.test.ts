@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Member } from "@/types";
-import { buildOverlayRankedMembers, sortMembersForRanking } from "./utils";
+import { buildOverlayRankedMembers, sortMembersForRanking, splitOverlayListAtHalf } from "./utils";
 
 const members: Member[] = [
   { id: "m1", name: "멤버A", account: 1000, toon: 0, contribution: 1000 },
@@ -56,6 +56,32 @@ describe("buildOverlayRankedMembers", () => {
     const listOrder = sortMembersForRanking(tiedMembers, {}, { mode: "fixed" }).map((r) => r.id);
     expect(overlayOrder).toEqual(["m-a", "m-b"]);
     expect(listOrder).toEqual(["m-a", "m-b"]);
+  });
+});
+
+describe("splitOverlayListAtHalf", () => {
+  it("does not split below 5 items", () => {
+    expect(splitOverlayListAtHalf([1, 2, 3, 4])).toEqual({
+      left: [1, 2, 3, 4],
+      right: [],
+      split: false,
+    });
+  });
+
+  it("splits 5 items into 3 + 2", () => {
+    expect(splitOverlayListAtHalf([1, 2, 3, 4, 5])).toEqual({
+      left: [1, 2, 3],
+      right: [4, 5],
+      split: true,
+    });
+  });
+
+  it("splits 10 items into 5 + 5", () => {
+    expect(splitOverlayListAtHalf([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])).toEqual({
+      left: [1, 2, 3, 4, 5],
+      right: [6, 7, 8, 9, 10],
+      split: true,
+    });
   });
 });
 

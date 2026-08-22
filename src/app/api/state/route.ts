@@ -64,7 +64,7 @@ import { saveAppStateForRoulette } from "../roulette/edge-state-store";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { isRouletteLocked } from "../roulette/roulette-lock";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
-import { getUserIdFromRequest } from "../_shared/user-id";
+import { getUserIdFromRequest, resolveWriteUserId, writeUserIdErrorResponse } from "../_shared/user-id";
 import { getPersistentKvLastError, isPersistentKvConfigured, ensureMysqlKvBackend } from "../_shared/upstash";
 import {
   upstashGetAppStateJson,
@@ -846,13 +846,9 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   let userId: string | null = null;
   try {
-    userId = getUserId(req);
-    if (!userId) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    const writeUid = resolveWriteUserId(req);
+    if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
+    userId = writeUid.userId;
     await ensureMysqlKvBackend();
     const body = (await req.json()) as Partial<AppState> & {
       donorsAuthoritative?: boolean;
@@ -1223,10 +1219,11 @@ export async function POST(req: Request) {
     if (!isPersistentKvConfigured()) {
       let memNext = next;
       if (donorsInPatch) {
-        memNext = await saveAppStateForRoulette(userId, next, {
+        const memSaved = await saveAppStateForRoulette(userId, next, {
           donorsMode: authoritativeReplace ? "replace" : "add",
           allowEmptyRosterWipe: settlementReset || donationInitReset,
         });
+        memNext = memSaved.state;
       } else {
         const memExisting = getServerMemoryAppState(userId);
         if (
@@ -1266,10 +1263,17 @@ export async function POST(req: Request) {
     let persistedNext = next;
     let redisFallback: "memory" | undefined;
     if (donorsInPatch) {
-      persistedNext = await saveAppStateForRoulette(userId, next, {
+      const saved = await saveAppStateForRoulette(userId, next, {
         donorsMode: authoritativeReplace ? "replace" : "add",
         allowEmptyRosterWipe: settlementReset || donationInitReset,
       });
+      if (!saved.ok) {
+        return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
+          status: 503,
+          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+        });
+      }
+      persistedNext = saved.state;
       logger.info('Redis 상태 업데이트 (roulette pipeline)', {
         updatedAt: persistedNext.updatedAt,
         donorsMode: authoritativeReplace ? "replace" : "add",

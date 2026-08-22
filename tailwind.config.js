@@ -11,7 +11,7 @@ module.exports = {
         glass: {
           light: "rgba(255,255,255,0.08)",
           dark: "rgba(0,0,0,0.35)",
-          studio: "rgba(15,20,30,0.70)",
+          studio: "rgba(15,23,42,0.80)",
         },
         "pink-light": "#FFF1F2",
         "pink-pastel": "#FCE4EC",
@@ -37,16 +37,16 @@ module.exports = {
       borderRadius: {
         /** 엑셀형 표·카드 공통 */
         excel: "12px",
-        studio: "14px",
+        studio: "12px",
       },
       boxShadow: {
-        glass: "0 8px 32px rgba(15, 20, 30, 0.35)",
+        glass: "0 8px 32px rgba(15, 23, 42, 0.4)",
         "studio-glow": "0 0 28px rgba(124, 58, 237, 0.25)",
         "studio-coral-glow": "0 0 28px rgba(245, 158, 11, 0.35)",
       },
       backdropBlur: {
         xs: "2px",
-        studio: "14px",
+        studio: "12px",
       },
       keyframes: {
         flashGold: {

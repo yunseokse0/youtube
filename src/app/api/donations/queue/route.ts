@@ -1,7 +1,11 @@
-export const runtime = "edge";
+export const runtime = "nodejs";
 export const revalidate = 0;
 
-import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
+import {
+  getUserIdFromRequest,
+  resolveWriteUserId,
+  writeUserIdErrorResponse,
+} from "@/app/api/_shared/user-id";
 import { isDuplicateDonationEvent } from "@/lib/donation/apply-donation-state";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import type { DonationEvent, QueueSigItem } from "@/lib/donation/types";
@@ -23,7 +27,7 @@ function sanitizeEvent(raw: unknown): DonationEvent | null {
       const t = v as Record<string, unknown>;
       return {
         id: String(t.id || "").trim(),
-        name: String(t.name || "").trim() || "이름없음",
+        name: String(t.name || "").trim() || "????",
         price: Math.max(0, Math.round(Number(t.price || 0))),
         isActive: Boolean(t.isActive),
         soldCount: Number.isFinite(Number(t.soldCount)) ? Math.max(0, Math.floor(Number(t.soldCount))) : undefined,
@@ -66,7 +70,7 @@ export async function GET(req: Request) {
   }
   const list = await readDonationQueue(userId);
   const state = await loadAppStateForUserId(userId);
-  /** 응답만 필터 — 저장소는 건드리지 않음(배포·조회만으로 레거시 큐 항목 삭제 방지) */
+  /** ?? ??? ??? ??? ???? ????. */
   const withoutLegacyApplied = list.filter(
     (x) => !x.alreadyApplied && !(state && isDuplicateDonationEvent(state, x))
   );
@@ -76,13 +80,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const userId = getUserIdFromRequest(req);
-  if (!userId) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  const writeUid = resolveWriteUserId(req);
+  if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
+  const userId = writeUid.userId;
   const body = await req.json().catch(() => null);
   const event = sanitizeEvent(body);
   if (!event) {
@@ -100,13 +100,9 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const userId = getUserIdFromRequest(req);
-  if (!userId) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  const writeUid = resolveWriteUserId(req);
+  if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
+  const userId = writeUid.userId;
   const body = (await req.json().catch(() => null)) as { id?: string; clearAll?: boolean } | null;
   const id = String(body?.id || "").trim();
   const clearAll = Boolean(body?.clearAll);

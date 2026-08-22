@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { createClient } from "@supabase/supabase-js";
-import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
+import { resolveWriteUserId } from "@/app/api/_shared/user-id";
 import { shouldServeSigImagesFromDisk } from "@/lib/sig-image-mode";
 import {
   getSigUploadPersistentDataDir,
@@ -23,21 +23,9 @@ export const revalidate = 0;
 
 const MAX_BYTES = 30 * 1024 * 1024;
 
-function isValidUserId(value: string): boolean {
-  return /^[a-zA-Z0-9_-]{1,64}$/.test(value);
-}
-
 function resolveUploadUserId(req: Request): string | null {
-  try {
-    const url = new URL(req.url);
-    const fromQuery = (url.searchParams.get("user") || url.searchParams.get("u") || "").trim();
-    if (fromQuery && isValidUserId(fromQuery)) return fromQuery;
-  } catch {}
-  const fromHeader = (req.headers.get("x-user-id") || "").trim();
-  if (fromHeader && isValidUserId(fromHeader)) return fromHeader;
-  const parsed = getUserIdFromRequest(req);
-  if (parsed && isValidUserId(parsed)) return parsed;
-  return null;
+  const writeUid = resolveWriteUserId(req);
+  return writeUid.ok ? writeUid.userId : null;
 }
 
 function isEphemeralCloudUpload(): boolean {

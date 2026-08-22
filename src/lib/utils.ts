@@ -83,6 +83,22 @@ function compareRankingRowsByTotalDesc(
 
 export type OverlayRankedMember = { m: Member; rank: number | null };
 
+/** 엑셀표·후원순위: 이 인원 이상이면 좌우 반으로 스플릿 */
+export const OVERLAY_HALF_SPLIT_MIN_COUNT = 5;
+
+/** 5인 이상이면 앞쪽 절반(올림)은 왼쪽, 나머지는 오른쪽 */
+export function splitOverlayListAtHalf<T>(
+  items: readonly T[],
+  minCount = OVERLAY_HALF_SPLIT_MIN_COUNT
+): { left: T[]; right: T[]; split: boolean } {
+  const list = Array.from(items);
+  if (list.length < minCount) {
+    return { left: list, right: [], split: false };
+  }
+  const mid = Math.ceil(list.length / 2);
+  return { left: list.slice(0, mid), right: list.slice(mid), split: true };
+}
+
 /** 엑셀표 오버레이: 대표 최상단 고정 → 운영비 제외 멤버 순위 → 운영비(핀)는 호출측에서 하단 */
 export function buildOverlayRankedMembers(
   unpinnedMembers: Member[],

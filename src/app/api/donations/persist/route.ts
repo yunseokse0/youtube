@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 export const revalidate = 0;
 
-import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
+import { resolveWriteUserId, writeUserIdErrorResponse } from "@/app/api/_shared/user-id";
 import type { DonorsPersistMode } from "@/app/api/roulette/edge-state-store";
 import { persistDonationStateToServer } from "@/lib/donation/persist-donation-like-toon";
 import { repairMemberTotalsForDonorRoster } from "@/lib/donation/apply-donation-state";
@@ -22,13 +22,9 @@ type PersistBody = {
  * 삭제·단체짠·재배치 등 donorsReplace 저장 — 투네 apply 와 동일 Redis 파이프라인.
  */
 export async function POST(req: Request) {
-  const userId = getUserIdFromRequest(req);
-  if (!userId) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  const writeUid = resolveWriteUserId(req);
+  if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
+  const userId = writeUid.userId;
 
   const body = (await req.json().catch(() => null)) as PersistBody | null;
   if (!body?.state || typeof body.state !== "object") {

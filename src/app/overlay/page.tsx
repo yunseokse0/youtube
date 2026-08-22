@@ -119,7 +119,7 @@ import {
   subscribeBroadcastStateLocalUpdated,
   subscribeOverlayPresetsLocalUpdated,
 } from "@/lib/broadcast-state-local-sync";
-import { buildOverlayRankedMembers, buildMemberCreationOrderIndex, compareMembersByDonationTotal } from "@/lib/utils";
+import { buildOverlayRankedMembers, buildMemberCreationOrderIndex, compareMembersByDonationTotal, splitOverlayListAtHalf } from "@/lib/utils";
 import {
   isDonationTableBoolKey,
   mergeDonationTablePresetFields,
@@ -128,6 +128,9 @@ import {
 import {
   isExcelMemberTableTheme,
   resolveExcelMemberTableAccent,
+  resolveTableThemeHeaderBgCss,
+  resolveTableThemePanelBorderCss,
+  resolveTableThemeTotalBorderCss,
 } from "@/lib/excel-member-table-theme";
 import {
   overlayTableCellGridCss,
@@ -1242,12 +1245,10 @@ const TABLE_NUMERIC_OUTLINE_DARK_ON_LIGHT =
   "0 1px 2px rgba(255,255,255,0.88), 0 0 1px rgba(15,23,42,0.38), 0 1px 3px rgba(0,0,0,0.14)";
 /** Studio Glass — 방송 표 크롬 (다크 글래스 + violet/blue 액센트) */
 const TABLE_BROADCAST_PANEL_BORDER = "rgba(255, 255, 255, 0.12)";
-const TABLE_BROADCAST_TOTAL_BORDER = "rgba(124, 58, 237, 0.45)";
-const TABLE_BROADCAST_PANEL_BG = "rgba(15, 20, 30, 0.70)";
+const TABLE_BROADCAST_PANEL_BG = "rgba(15, 23, 42, 0.80)";
 /** 테마 자동(본문·헤더) — OBS 기본 흰색(+어두운 외곽선). 검은 글자는 본문 글자색에서 지정 */
 const TABLE_BROADCAST_TEXT_AUTO = "#ffffff";
-const TABLE_BROADCAST_HEADER_RGB = "rgb(37, 99, 235)";
-const TABLE_BROADCAST_PANEL_SHADOW = "0 8px 32px rgba(15, 20, 30, 0.35)";
+const TABLE_BROADCAST_PANEL_SHADOW = "0 8px 32px rgba(15, 23, 42, 0.4)";
 /** 엑셀 계열 본문(이름·금액) — OBS 기본은 흰색 */
 const EXCEL_BODY_TEXT_DEFAULT = "#ffffff";
 const EXCEL_BODY_TEXT_ON_LIGHT = EXCEL_BODY_TEXT_DEFAULT;
@@ -3587,6 +3588,17 @@ function OverlayInner() {
     () => buildOverlayRankedMembers(unpinned, memberPositionsMap, getMemberRole, members),
     [unpinned, memberPositionsMap, getMemberRole, members]
   );
+  const rankedHalfSplit = useMemo(() => splitOverlayListAtHalf(ranked), [ranked]);
+  const memberTablePanels = useMemo(
+    () =>
+      rankedHalfSplit.split
+        ? [
+            { key: "left", ranked: rankedHalfSplit.left, includePinned: false, includeTotal: false },
+            { key: "right", ranked: rankedHalfSplit.right, includePinned: true, includeTotal: true },
+          ]
+        : [{ key: "single", ranked, includePinned: true, includeTotal: true }],
+    [ranked, rankedHalfSplit]
+  );
 
   const memberTableFitSig = useMemo(() => {
     /** 직급 열 너비(`roleColEm`)와 동일 — CJK는 `ch`보다 `em`이 안전 */
@@ -3960,11 +3972,12 @@ function OverlayInner() {
     const tableHeaderLineColor =
       tableLineColorRaw ||
       excelMemberAccent?.headerBorder ||
+      resolveTableThemePanelBorderCss(membersThemeId) ||
       TABLE_BROADCAST_PANEL_BORDER;
     const tableTotalLineColor =
       tableLineColorRaw ||
       excelMemberAccent?.totalRowBorder ||
-      TABLE_BROADCAST_TOTAL_BORDER;
+      resolveTableThemeTotalBorderCss(membersThemeId);
     const tableGridLineWidthPx = overlayTableGridLineWidthPx(Boolean(externalHost));
     const tableGridLineColor = tableLineColorRaw || tableHeaderLineColor;
     const tablePanelShadow = tableGridLines
@@ -3973,11 +3986,10 @@ function OverlayInner() {
     const excelMemberTableClass = excelMemberAccent
       ? `${isExcelLiveTheme ? " excel-live-table" : " excel-member-table"}`
       : "";
+    const themeAutoHeaderBgCss = resolveTableThemeHeaderBgCss(membersThemeId);
     const excelHeaderBgCss = hasTableHeaderBgColorOverride
       ? applyAlphaToCssColor(tableHeaderBgColorRaw, effectiveTableTintAlpha)
-      : excelMemberAccent
-        ? applyAlphaToCssColor(excelMemberAccent.headerBg, effectiveTableTintAlpha)
-        : applyAlphaToCssColor(TABLE_BROADCAST_HEADER_RGB, effectiveTableTintAlpha);
+      : applyAlphaToCssColor(themeAutoHeaderBgCss, effectiveTableTintAlpha);
     const excelHeaderTextCss =
       tableHeaderTextColorRaw ||
       excelMemberAccent?.headerText ||
@@ -3998,7 +4010,7 @@ function OverlayInner() {
       : applyAlphaToCssColor("rgb(15, 20, 30)", effectiveTableTintAlpha);
     const broadcastTheadBg = hasTableHeaderBgColorOverride
       ? applyAlphaToCssColor(tableHeaderBgColorRaw, effectiveTableTintAlpha)
-      : applyAlphaToCssColor(TABLE_BROADCAST_HEADER_RGB, effectiveTableTintAlpha);
+      : applyAlphaToCssColor(themeAutoHeaderBgCss, effectiveTableTintAlpha);
     const broadcastTheadTextCss = tableHeaderTextColorRaw || TABLE_BROADCAST_TEXT_AUTO;
     let effectiveScale = centerFixed || hasTableFreePos
       ? (scale * (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale)))
@@ -4835,12 +4847,14 @@ function OverlayInner() {
                   className="relative overflow-visible"
                   style={{
                     zIndex: 2,
-                    borderRadius: showTableFrame ? 0 : 10,
-                    border: "none",
+                    borderRadius: showTableFrame ? 0 : 12,
+                    border: showTableFrame ? "none" : "1px solid rgba(255, 255, 255, 0.12)",
                     /** 외곽 선은 셀 그리드가 담당 — 여기선 그림자만 (이중 테두리 방지) */
                     boxShadow: showTableFrame ? "none" : tablePanelShadow || "none",
                     padding: 0,
-                    backgroundColor: tableBodySheetBgCss,
+                    backgroundColor: tableBodySheetBgCss || TABLE_BROADCAST_PANEL_BG,
+                    backdropFilter: showTableFrame ? undefined : "blur(12px)",
+                    WebkitBackdropFilter: showTableFrame ? undefined : "blur(12px)",
                     /** translateZ(0) 는 OBS CEF에서 서브픽셀 블러를 유발 → 외부 호스트에서는 생략 */
                     ...(externalHost
                       ? {}
@@ -4851,8 +4865,14 @@ function OverlayInner() {
                         }),
                   }}
                 >
-                    <table
+                    <div
                       ref={tableBoxRef as any}
+                      className="flex flex-row items-stretch"
+                      style={{ width: "fit-content" }}
+                    >
+                    {memberTablePanels.map((panel, panelIdx) => (
+                    <table
+                      key={panel.key}
                       className={`${effectiveTableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}${excelMemberTableClass}`}
                       style={{
                         fontSize: memberFontPx,
@@ -4860,6 +4880,9 @@ function OverlayInner() {
                         borderCollapse: "separate",
                         tableLayout: "fixed",
                         width: `calc(${excelTableWidthCalc})`,
+                        ...(rankedHalfSplit.split && panelIdx === 0
+                          ? { borderRight: `1px solid ${tableGridLineColor}` }
+                          : {}),
                         ...excelMemberTableStyle,
                       }}
                     >
@@ -4891,7 +4914,7 @@ function OverlayInner() {
                     </tr>
                   </thead>
                   <tbody>
-                    {ranked.map(({m, rank}) => {
+                    {panel.ranked.map(({m, rank}) => {
                       const donationTotal = Math.max(0, Math.round(Number(m.account) || 0) + Math.round(Number(m.toon) || 0));
                       const top3Row = resolveExcelRankTop3RowStyle(rank, excelRankTop3Style, { donationTotal });
                       return (
@@ -5006,7 +5029,7 @@ function OverlayInner() {
                       </tr>
                       );
                     })}
-                    {visiblePinned.map((m) => (
+                    {panel.includePinned ? visiblePinned.map((m) => (
                       <tr
                         key={m.id + "-p"}
                         ref={rowMotionEnabled ? setRowRef(m.id + "-p") : undefined}
@@ -5083,8 +5106,8 @@ function OverlayInner() {
                           </td>
                         )}
                       </tr>
-                    ))}
-                    {showTableSumRow && ready && (
+                    )) : null}
+                    {panel.includeTotal && showTableSumRow && ready && (
                       <tr className="overlay-total-row">
                         <td className={`${overlayTotalRowCls} overlay-col-rank`} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
                         <td className={`${overlayTotalRowCls} overlay-col-name`} />
@@ -5138,6 +5161,8 @@ function OverlayInner() {
                     )}
                   </tbody>
                 </table>
+                    ))}
+                    </div>
                   </div>
                 </div>
                 </div>

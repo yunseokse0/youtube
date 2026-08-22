@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 export const revalidate = 0;
 
-import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
+import { resolveWriteUserId, writeUserIdErrorResponse } from "@/app/api/_shared/user-id";
 import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
 import {
   applyDonationRosterBackupToState,
@@ -24,13 +24,9 @@ import type { AppState } from "@/types";
  * 플레이스홀더(멤버1·2…) 초기화·빈 후원일 때 사용.
  */
 export async function POST(req: Request) {
-  const userId = getUserIdFromRequest(req);
-  if (!userId) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  const writeUid = resolveWriteUserId(req);
+  if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
+  const userId = writeUid.userId;
 
   const backup = await loadDonationRosterBackup(userId);
   if (!backup || (backup.donorsCount <= 0 && backup.total <= 0)) {
@@ -69,7 +65,14 @@ export async function POST(req: Request) {
     );
   }
 
-  const saved = await saveAppStateForRoulette(userId, restored, { donorsMode: "replace" });
+  const savedResult = await saveAppStateForRoulette(userId, restored, { donorsMode: "replace" });
+  if (!savedResult.ok) {
+    return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  const saved = savedResult.state;
   void saveDonationRosterBackup(userId, saved);
   await publishSseEvent({
     type: "state_updated",

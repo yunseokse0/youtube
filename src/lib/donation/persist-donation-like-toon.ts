@@ -47,7 +47,9 @@ export async function persistDonationStateToServer(
 ): Promise<{ ok: true; state: AppState } | { ok: false }> {
   const mode = opts?.mode ?? "add";
   const stateToSave = syncHighSocietyMemberWidthSnapshotInState(nextState);
-  const persisted = await saveAppStateForRoulette(userId, stateToSave, { donorsMode: mode });
+  const saved = await saveAppStateForRoulette(userId, stateToSave, { donorsMode: mode });
+  if (!saved.ok) return { ok: false };
+  const persisted = saved.state;
 
   if (opts?.verifyEvent && mode === "add") {
     /** reload(coalesce) 레이스로 verify 실패 → persist_failed 는 저장됐는데 UI 미반영 */

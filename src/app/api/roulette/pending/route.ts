@@ -75,7 +75,13 @@ export async function POST(req: Request) {
       rouletteState: nextRs,
       updatedAt: Date.now(),
     };
-    await saveAppStateForRoulette(userId, next);
+    const saved = await saveAppStateForRoulette(userId, next);
+    if (!saved.ok) {
+      return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     await publishRouletteStateAfterSave(req, userId, {
       rouletteState: next.rouletteState,
       updatedAt: next.updatedAt,

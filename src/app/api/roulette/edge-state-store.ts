@@ -14,7 +14,7 @@ import { loadDonationRosterBackupFromKv } from "@/lib/donation-roster-backup-red
 import { unionAppStateDonorsFromBackupIfRicher } from "@/lib/donation-roster-backup-core";
 import { snapshotTimerForPersist } from "@/lib/timer-utils";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
-import { getUserIdFromRequest } from "../_shared/user-id";
+import { resolveWriteUserId } from "../_shared/user-id";
 import { isPersistentKvConfigured } from "../_shared/upstash";
 import {
   upstashGetAppStateJson,
@@ -25,7 +25,9 @@ const STORAGE_KEY_BASE = "excel-broadcast-state-v1";
 const STORAGE_KEY_LEGACY = "excel-broadcast-state-v1";
 
 export function getRouletteUserId(req: Request): string | null {
-  return getUserIdFromRequest(req);
+  /** OBS 시그 오버레이 spin/land — `?u=` 허용, 쿠키와 불일치 시 거부 */
+  const writeUid = resolveWriteUserId(req, { allowAnonymousUrlUser: true });
+  return writeUid.ok ? writeUid.userId : null;
 }
 
 function stateKey(userId: string | null): string {
@@ -69,7 +71,7 @@ export async function saveAppStateForRoulette(
   userId: string,
   next: AppState,
   opts?: SaveAppStateForRouletteOptions
-): Promise<AppState> {
+): Promise<{ ok: boolean; state: AppState }> {
   /**
    * 투네 반영이 구 스냅샷 위에 저장되면 직전 수동 계좌 donors 가 사라짐.
    * 정산 리셋이 아닌 한 Redis·메모리 기존 donors 와 union 후 기록.
@@ -151,8 +153,9 @@ export async function saveAppStateForRoulette(
   }
 
   setServerMemoryAppState(userId, persisted);
-  if (kvOk) {
-    await upstashSet(stateKey(userId), persisted);
+  if (!kvOk) {
+    return { ok: true, state: persisted };
   }
-  return persisted;
+  const wrote = await upstashSet(stateKey(userId), persisted);
+  return { ok: wrote, state: persisted };
 }

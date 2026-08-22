@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 export const revalidate = 0;
 
-import { getUserIdFromRequest } from "../../_shared/user-id";
+import { getUserIdFromRequest, resolveWriteUserId, writeUserIdErrorResponse } from "../../_shared/user-id";
 import {
   ensureMysqlKvBackend,
   isPersistentKvConfigured,
@@ -59,13 +59,9 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     await ensureMysqlKvBackend();
-    const userId = getUserIdFromRequest(req);
-    if (!userId) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    const writeUid = resolveWriteUserId(req);
+    if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
+    const userId = writeUid.userId;
     const body = (await req.json()) as { dataUrl?: unknown };
     if (!isValidDataUrl(body?.dataUrl)) {
       return new Response(JSON.stringify({ error: "invalid_logo" }), {
@@ -96,13 +92,9 @@ export async function POST(req: Request) {
 export async function DELETE(req: Request) {
   try {
     await ensureMysqlKvBackend();
-    const userId = getUserIdFromRequest(req);
-    if (!userId) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    const writeUid = resolveWriteUserId(req);
+    if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
+    const userId = writeUid.userId;
     memoryLogo[userId] = null;
     const persisted = await upstashSetJsonWithSetPath(logoKey(userId), {
       dataUrl: null,

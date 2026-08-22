@@ -1,18 +1,15 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
+import { resolveWriteUserId, writeUserIdErrorResponse } from "@/app/api/_shared/user-id";
 import { readToonationListenerConfig } from "@/lib/donation/toonation/listener-config-store";
 import { ingestToonationWebSocketMessage } from "@/lib/donation/toonation/server-listener";
 
 export async function POST(req: Request) {
-  const userId = getUserIdFromRequest(req);
-  if (!userId) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  /** OBS 브라우저 릴레이 — 로그인 쿠키 없이 `?u=` 허용 (기존 동작 유지) */
+  const writeUid = resolveWriteUserId(req, { allowAnonymousUrlUser: true });
+  if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
+  const userId = writeUid.userId;
 
   const body = (await req.json().catch(() => null)) as {
     raw?: string;

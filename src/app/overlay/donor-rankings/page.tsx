@@ -32,7 +32,10 @@ import {
 import { resolveBroadcastZoomScale } from "@/lib/overlay-mobile-fit";
 import { useOverlayViewportSize } from "@/hooks/useOverlayViewportSize";
 import { backgroundWithOpacityFrac, solidBackgroundWithOpacityFrac } from "@/lib/donor-rankings-opacity";
+import { splitOverlayListAtHalf } from "@/lib/utils";
 
+/** 스크린샷 기준: 순위 숫자 기본 핑크 (관리자 rankColor가 있으면 우선) */
+const RANK_NUMBER_FALLBACK = "#F472B6";
 function readOutlineWidth(sp: URLSearchParams, key: string, fallback: number): number {
   const raw = sp.get(key);
   if (!raw) return fallback;
@@ -369,14 +372,16 @@ function RankingRow({
   disableMotion?: boolean;
 }) {
   const resolvedOutlineColor = outlineColor.trim() || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
+  const rankPx = Math.round(rankSize * 1.1);
+  const rowPx = Math.round(rowSize * 1.1);
   const rankOutlineRaw = buildOverlayCellOutlineStyle({
-    fontSizePx: rankSize,
+    fontSizePx: rankPx,
     outlineColor: resolvedOutlineColor,
     outlineWidthPx,
     sharp: true,
   });
   const rowOutlineRaw = buildOverlayCellOutlineStyle({
-    fontSizePx: rowSize,
+    fontSizePx: rowPx,
     outlineColor: resolvedOutlineColor,
     outlineWidthPx,
     sharp: true,
@@ -385,34 +390,57 @@ function RankingRow({
   const rankOutline = { ...rankOutlineRaw, WebkitTextStroke: "0" as const };
   const rowOutline = { ...rowOutlineRaw, WebkitTextStroke: "0" as const };
   const isTrophy = idx <= 2;
+  const effectiveRankColor = String(rankColor || "").trim() || RANK_NUMBER_FALLBACK;
   const rowBgRaw = idx % 2 === 0 ? rowEvenBg || "transparent" : rowOddBg || "transparent";
   const rowStyle: CSSProperties = {
-    fontSize: `${rowSize}px`,
+    fontSize: `${rowPx}px`,
+    minHeight: 40,
+    padding: "6px 12px",
     background: solidBackgroundWithOpacityFrac(rowBgRaw, rowOpacityFrac),
   };
+  const nameDisplay = normalizeAnonymousDonorDisplayName(item.name);
+  /**
+   * 스크린샷(후원 랭킹) 레이아웃:
+   * [순위] [닉네임 …ellipsis…] ………… [금액 tabular]
+   * — 닉네임은 좌측, 금액만 우측 (둘 다 우측 정렬 X)
+   */
   const inner = (
     <>
-      <span className="flex items-center justify-center leading-none">
+      <span className="flex w-[2.5em] shrink-0 items-center justify-start leading-none">
         {isTrophy ? (
-          <RankTrophyIcon place={(idx + 1) as 1 | 2 | 3} sizePx={rankSize} />
+          <RankTrophyIcon place={(idx + 1) as 1 | 2 | 3} sizePx={rankPx} />
         ) : (
           <span
-            className="overlay-cell-text-inner font-black text-center leading-none"
-            style={{ color: rankColor, fontSize: `${rankSize}px`, ...rankOutline }}
+            className="overlay-cell-text-inner text-left font-bold leading-none"
+            style={{
+              color: effectiveRankColor,
+              fontSize: `${rankPx}px`,
+              fontWeight: 700,
+              ...rankOutline,
+            }}
           >
-            {`${idx + 1}등`}
+            {`${idx + 1}`}
           </span>
         )}
       </span>
       <span
-        className="overlay-cell-text-inner break-words font-bold leading-tight"
-        style={{ color: nameColor, ...rowOutline }}
+        className="overlay-cell-text-inner min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left font-bold leading-tight"
+        style={{
+          color: nameColor,
+          ...rowOutline,
+        }}
+        title={nameDisplay}
       >
-        {normalizeAnonymousDonorDisplayName(item.name)}
+        {nameDisplay}
       </span>
       <span
-        className="overlay-cell-text-inner font-black tabular-nums text-right whitespace-nowrap"
-        style={{ color: amountColor, ...rowOutline }}
+        className="overlay-cell-text-inner shrink-0 pl-3 text-right font-bold whitespace-nowrap tabular-nums"
+        style={{
+          color: amountColor,
+          fontWeight: 700,
+          fontVariantNumeric: "tabular-nums",
+          ...rowOutline,
+        }}
       >
         {amountFormat === "short"
           ? `${formatDonorsAmount(item.amount, "short")}만`
@@ -421,7 +449,7 @@ function RankingRow({
     </>
   );
   const rowClass =
-    "grid grid-cols-[2.75em_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-0 px-2.5 py-1.5 border-b border-white/40 last:border-b-0";
+    "flex items-center gap-x-2 border-b border-white/[0.08] last:border-b-0";
   if (disableMotion) {
     return (
       <div className={rowClass} style={rowStyle}>
@@ -505,6 +533,8 @@ function RankingColumn({
   disableMotion,
   bodyImageBelowTitle,
   bodyImageBelowList,
+  hideTitle,
+  rankOffset = 0,
 }: {
   title: string;
   items: DonorRow[];
@@ -535,6 +565,8 @@ function RankingColumn({
   disableMotion?: boolean;
   bodyImageBelowTitle?: ReactNode;
   bodyImageBelowList?: ReactNode;
+  hideTitle?: boolean;
+  rankOffset?: number;
 }) {
   const titleOutlineRaw = buildOverlayCellOutlineStyle({
     fontSizePx: titleSize,
@@ -546,7 +578,7 @@ function RankingColumn({
   const outerClass = unified
     ? `relative z-[1] flex min-w-0 flex-1 flex-col overflow-visible ${
         showColumnDivider
-          ? "border-b border-solid border-r-0 md:border-b-0 md:border-r md:border-solid"
+          ? "border-b border-solid border-r-0 md:border-b-0 md:border-r md:border-solid border-white/20"
           : ""
       }`
     : "studio-glass-panel relative z-[1] w-full overflow-visible";
@@ -559,51 +591,53 @@ function RankingColumn({
     : Math.max(0, Math.min(100, headerOpacity)) / 100;
   const headerBgResolved = backgroundWithOpacityFrac(headerBg, headerOpacityFrac);
 
-  const rowList = disableMotion ? (
-    <div className="space-y-0">
-      {items.map((item, idx) => (
-        <RankingRow
-          key={item.name}
-          item={item}
-          idx={idx}
-          rowSize={rowSize}
-          rankSize={rankSize}
-          rankColor={rankColor}
-          nameColor={nameColor}
-          amountColor={amountColor}
-          outlineColor={outlineColor}
-          outlineWidthPx={outlineWidthPx}
-          rowEvenBg={rowEvenBg}
-          rowOddBg={rowOddBg}
-          rowOpacityFrac={Math.max(0, Math.min(1, panelOpacityFrac ?? 1))}
-          amountFormat={amountFormat}
-          suffix={suffix}
-          disableMotion
-        />
-      ))}
+  const rowList = (
+    <div className="flex flex-col">
+      {disableMotion ? (
+        items.map((item, idx) => (
+          <RankingRow
+            key={item.name}
+            item={item}
+            idx={idx + rankOffset}
+            rowSize={rowSize}
+            rankSize={rankSize}
+            rankColor={rankColor}
+            nameColor={nameColor}
+            amountColor={amountColor}
+            outlineColor={outlineColor}
+            outlineWidthPx={outlineWidthPx}
+            rowEvenBg={rowEvenBg}
+            rowOddBg={rowOddBg}
+            rowOpacityFrac={Math.max(0, Math.min(1, panelOpacityFrac ?? 1))}
+            amountFormat={amountFormat}
+            suffix={suffix}
+            disableMotion
+          />
+        ))
+      ) : (
+        <AnimatePresence initial={false}>
+          {items.map((item, idx) => (
+            <RankingRow
+              key={item.name}
+              item={item}
+              idx={idx + rankOffset}
+              rowSize={rowSize}
+              rankSize={rankSize}
+              rankColor={rankColor}
+              nameColor={nameColor}
+              amountColor={amountColor}
+              outlineColor={outlineColor}
+              outlineWidthPx={outlineWidthPx}
+              rowEvenBg={rowEvenBg}
+              rowOddBg={rowOddBg}
+              rowOpacityFrac={Math.max(0, Math.min(1, panelOpacityFrac ?? 1))}
+              amountFormat={amountFormat}
+              suffix={suffix}
+            />
+          ))}
+        </AnimatePresence>
+      )}
     </div>
-  ) : (
-    <AnimatePresence initial={false}>
-      {items.map((item, idx) => (
-        <RankingRow
-          key={item.name}
-          item={item}
-          idx={idx}
-          rowSize={rowSize}
-          rankSize={rankSize}
-          rankColor={rankColor}
-          nameColor={nameColor}
-          amountColor={amountColor}
-          outlineColor={outlineColor}
-          outlineWidthPx={outlineWidthPx}
-          rowEvenBg={rowEvenBg}
-          rowOddBg={rowOddBg}
-          rowOpacityFrac={Math.max(0, Math.min(1, panelOpacityFrac ?? 1))}
-          amountFormat={amountFormat}
-          suffix={suffix}
-        />
-      ))}
-    </AnimatePresence>
   );
 
   return (
@@ -618,13 +652,15 @@ function RankingColumn({
           }}
         />
       ) : null}
+      {hideTitle ? null : (
       <div
-        className={`relative overflow-hidden px-4 py-2.5 font-black text-center ${
-          unified ? "border-b border-white/40" : "border-b border-white/28"
+        className={`relative overflow-hidden px-4 py-2.5 text-center font-bold tracking-tight ${
+          unified ? "border-b border-white/20" : "border-b border-white/20"
         }`}
         style={{
           color: titleColor,
-          fontSize: `${titleSize}px`,
+          fontSize: `${Math.round(titleSize * 1.1)}px`,
+          fontWeight: 700,
           ...titleOutline,
         }}
       >
@@ -637,8 +673,9 @@ function RankingColumn({
         />
         <span className="overlay-cell-text-inner relative z-10 tracking-tight">{title}</span>
       </div>
+      )}
       {bodyImageBelowTitle}
-      {unified ? (
+      {items.length === 0 ? null : unified ? (
         <div className="relative min-h-0 flex-1">
           <div
             className="pointer-events-none absolute inset-0 z-0 rounded-none"
@@ -748,9 +785,9 @@ export default function DonorRankingsOverlayPage() {
   const rankingTitle = liveThemeTitle(themeLive, useTest, savedTheme.titleText, sp, "👑 웹후원 순위 👑");
   const rowEvenBg = liveThemeColor(themeLive, useTest, savedTheme.rowEvenBg, sp, "rowEvenBg", "transparent");
   const rowOddBg = liveThemeColor(themeLive, useTest, savedTheme.rowOddBg, sp, "rowOddBg", "rgba(255, 255, 255, 0.14)");
-  const rankColor = liveThemeColor(themeLive, useTest, savedTheme.rankColor, sp, "rankColor", "#ffffff");
-  const nameColor = liveThemeColor(themeLive, useTest, savedTheme.nameColor, sp, "nameColor", "#ffc107");
-  const amountColor = liveThemeColor(themeLive, useTest, savedTheme.amountColor, sp, "amountColor", "#ffc107");
+  const rankColor = liveThemeColor(themeLive, useTest, savedTheme.rankColor, sp, "rankColor", "#F472B6");
+  const nameColor = liveThemeColor(themeLive, useTest, savedTheme.nameColor, sp, "nameColor", "#ffffff");
+  const amountColor = liveThemeColor(themeLive, useTest, savedTheme.amountColor, sp, "amountColor", "#ffffff");
   const titleColor = liveThemeColor(themeLive, useTest, savedTheme.titleColor, sp, "titleColor", "#ffffff");
   const outlineColor = liveThemeColor(
     themeLive,
@@ -817,6 +854,7 @@ export default function DonorRankingsOverlayPage() {
     wireRankings,
     topN,
   ]);
+  const unifiedHalf = useMemo(() => splitOverlayListAtHalf(unifiedTop), [unifiedTop]);
 
   if (!spReady) {
     return null;
@@ -909,15 +947,18 @@ export default function DonorRankingsOverlayPage() {
                 className={`relative z-[2] grid grid-cols-1 overflow-hidden backdrop-blur-studio md:grid-cols-2 md:gap-0 ${
                   showFrame
                     ? "rounded-none border-0 shadow-none"
-                    : "studio-glass-panel rounded-studio border border-white/12 shadow-glass"
+                    : "studio-glass-panel rounded-studio border border-fuchsia-400/40 shadow-glass"
                 }`}
                 style={{
                   borderColor: showFrame
                     ? "transparent"
                     : borderColor === "transparent"
-                      ? "rgba(255,255,255,0.12)"
+                      ? "rgba(232, 121, 249, 0.45)"
                       : borderColor,
                   backgroundColor: "transparent",
+                  boxShadow: showFrame
+                    ? "none"
+                    : "0 8px 32px rgba(15, 23, 42, 0.4), inset 0 1px 0 0 rgba(255,255,255,0.1)",
                 }}
               >
               <RankingColumn
@@ -974,7 +1015,7 @@ export default function DonorRankingsOverlayPage() {
           </>
         ) : (
           <div
-            className="relative mx-auto max-w-[720px]"
+            className={`relative mx-auto ${unifiedHalf.split ? "max-w-[1500px]" : "max-w-[720px]"}`}
             style={showFrame ? { padding: frameInsetPx } : undefined}
             data-donor-rankings-frame-wrap={showFrame ? "true" : undefined}
           >
@@ -993,17 +1034,101 @@ export default function DonorRankingsOverlayPage() {
               className={`relative z-[2] overflow-hidden backdrop-blur-studio ${
                 showFrame
                   ? "rounded-none border-0 shadow-none"
-                  : "studio-glass-panel rounded-studio border border-white/12 shadow-glass"
+                  : "studio-glass-panel rounded-studio border border-fuchsia-400/40 shadow-glass"
               }`}
               style={{
                 borderColor: showFrame
                   ? "transparent"
                   : borderColor === "transparent"
-                    ? "rgba(255,255,255,0.12)"
+                    ? "rgba(232, 121, 249, 0.45)"
                     : borderColor,
                 backgroundColor: "transparent",
+                boxShadow: showFrame
+                  ? "none"
+                  : "0 8px 32px rgba(15, 23, 42, 0.4), inset 0 1px 0 0 rgba(255,255,255,0.1)",
               }}
             >
+            {unifiedHalf.split ? (
+              <>
+                <RankingColumn
+                  title={rankingTitle}
+                  items={[]}
+                  amountFormat={amountFormat}
+                  headerBg={headerUnifiedBg}
+                  panelBg={panelBg}
+                  borderColor={borderColor}
+                  titleSize={titleSize}
+                  rowSize={rowSize}
+                  rankSize={rankSize}
+                  rankColor={rankColor}
+                  nameColor={nameColor}
+                  amountColor={amountColor}
+                  titleColor={titleColor}
+                  outlineColor={outlineColor}
+                  outlineWidthPx={outlineWidthPx}
+                  headerOpacity={overlayOpacity}
+                  unified
+                  panelOpacityFrac={overlayOpacityFrac}
+                  rowEvenBg={rowEvenBg}
+                  rowOddBg={rowOddBg}
+                  disableMotion={hostObs}
+                  bodyImageBelowTitle={bodyPos === "belowTitle" ? bodyImageEl : null}
+                />
+                <div className="grid grid-cols-2">
+                  <RankingColumn
+                    title=""
+                    items={unifiedHalf.left}
+                    amountFormat={amountFormat}
+                    headerBg={headerUnifiedBg}
+                    panelBg={panelBg}
+                    borderColor={borderColor}
+                    titleSize={titleSize}
+                    rowSize={rowSize}
+                    rankSize={rankSize}
+                    rankColor={rankColor}
+                    nameColor={nameColor}
+                    amountColor={amountColor}
+                    titleColor={titleColor}
+                    outlineColor={outlineColor}
+                    outlineWidthPx={outlineWidthPx}
+                    headerOpacity={overlayOpacity}
+                    unified
+                    hideTitle
+                    showColumnDivider
+                    panelOpacityFrac={overlayOpacityFrac}
+                    rowEvenBg={rowEvenBg}
+                    rowOddBg={rowOddBg}
+                    disableMotion={hostObs}
+                  />
+                  <RankingColumn
+                    title=""
+                    items={unifiedHalf.right}
+                    amountFormat={amountFormat}
+                    headerBg={headerUnifiedBg}
+                    panelBg={panelBg}
+                    borderColor={borderColor}
+                    titleSize={titleSize}
+                    rowSize={rowSize}
+                    rankSize={rankSize}
+                    rankColor={rankColor}
+                    nameColor={nameColor}
+                    amountColor={amountColor}
+                    titleColor={titleColor}
+                    outlineColor={outlineColor}
+                    outlineWidthPx={outlineWidthPx}
+                    headerOpacity={overlayOpacity}
+                    unified
+                    hideTitle
+                    rankOffset={unifiedHalf.left.length}
+                    panelOpacityFrac={overlayOpacityFrac}
+                    rowEvenBg={rowEvenBg}
+                    rowOddBg={rowOddBg}
+                    disableMotion={hostObs}
+                    bodyImageBelowList={bodyPos === "belowList" ? bodyImageEl : null}
+                  />
+                </div>
+              </>
+            ) : (
             <RankingColumn
               title={rankingTitle}
               items={unifiedTop}
@@ -1029,6 +1154,7 @@ export default function DonorRankingsOverlayPage() {
               bodyImageBelowTitle={bodyPos === "belowTitle" ? bodyImageEl : null}
               bodyImageBelowList={bodyPos === "belowList" ? bodyImageEl : null}
             />
+            )}
             </div>
           </div>
         )}

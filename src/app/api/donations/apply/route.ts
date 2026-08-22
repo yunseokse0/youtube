@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 export const revalidate = 0;
 
-import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
+import { resolveWriteUserId, writeUserIdErrorResponse } from "@/app/api/_shared/user-id";
 import { readDonationAliases } from "@/app/api/donations/_shared/alias-store";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import {
@@ -79,13 +79,9 @@ function buildBankEvent(
  * (applyDonationToAppState → union → saveAppStateForRoulette → SSE)
  */
 export async function POST(req: Request) {
-  const userId = getUserIdFromRequest(req);
-  if (!userId) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  const writeUid = resolveWriteUserId(req);
+  if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
+  const userId = writeUid.userId;
 
   const body = (await req.json().catch(() => null)) as ApplyBody | null;
   if (!body || typeof body !== "object") {

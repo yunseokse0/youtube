@@ -3,7 +3,7 @@ export const revalidate = 0;
 import type { AppState } from "@/lib/state";
 import { defaultState } from "@/lib/state";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
-import { getUserIdFromRequest } from "../../_shared/user-id";
+import { resolveWriteUserId } from "../../_shared/user-id";
 import { isPersistentKvConfigured } from "../../_shared/upstash";
 import { upstashGetAppStateJson, upstashSetAppStateJson } from "../../_shared/upstash-app-state";
 import {
@@ -28,11 +28,10 @@ async function loadState(userId: string): Promise<AppState> {
   return defaultState();
 }
 
-async function saveState(userId: string, next: AppState): Promise<void> {
+async function saveState(userId: string, next: AppState): Promise<boolean> {
   setServerMemoryAppState(userId, next);
-  if (isPersistentKvConfigured()) {
-    await upstashSetAppStateJson(stateKey(userId), next);
-  }
+  if (!isPersistentKvConfigured()) return true;
+  return upstashSetAppStateJson(stateKey(userId), next);
 }
 
 export async function POST(req: Request) {
@@ -40,10 +39,14 @@ export async function POST(req: Request) {
     if (!isDonationGoalAutoEscalateEnabled()) {
       return Response.json({ ok: true, skipped: true }, { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    const userId = getUserIdFromRequest(req);
-    if (!userId) {
-      return Response.json({ error: "unauthorized" }, { status: 401, headers: { "Content-Type": "application/json" } });
+    const writeUid = resolveWriteUserId(req, { allowAnonymousUrlUser: true });
+    if (!writeUid.ok) {
+      return Response.json(
+        { ok: false, error: writeUid.error },
+        { status: writeUid.status, headers: { "Content-Type": "application/json" } }
+      );
     }
+    const userId = writeUid.userId;
     let body: { presetId?: string; liveTotal?: number } = {};
     try {
       body = (await req.json()) as typeof body;
@@ -78,7 +81,13 @@ export async function POST(req: Request) {
       );
     }
 
-    await saveState(userId, next);
+    const wrote = await saveState(userId, next);
+    if (!wrote) {
+      return Response.json(
+        { ok: false, error: "persist_failed" },
+        { status: 503, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
     return Response.json(
       {

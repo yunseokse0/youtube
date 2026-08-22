@@ -211,7 +211,13 @@ export async function POST(req: Request) {
       updatedAt: Date.now(),
     };
     try {
-      await saveAppStateForRoulette(userId, next);
+      const savedFinish = await saveAppStateForRoulette(userId, next);
+      if (!savedFinish.ok) {
+        return Response.json(
+          { ok: false, error: "persist_failed" },
+          { status: 503, headers: { "Content-Type": "application/json" } }
+        );
+      }
     } catch (saveErr) {
       return Response.json(
         { ok: false, error: "state_save_failed", detail: String(saveErr) },

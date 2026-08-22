@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 export const revalidate = 0;
 
-import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
+import { resolveWriteUserId, writeUserIdErrorResponse } from "@/app/api/_shared/user-id";
 import { upstashGetJson, upstashSetJsonWithSetPath } from "@/app/api/_shared/upstash";
 import type { DailyLogEntry } from "@/lib/state";
 import {
@@ -55,13 +55,9 @@ type RecoverBody = {
  * 레거시·사용자 Redis 키 + 일일 로그 고아 스냅샷에서 정산 기록 union 복구.
  */
 export async function POST(req: Request) {
-  const userId = getUserIdFromRequest(req);
-  if (!userId) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  const writeUid = resolveWriteUserId(req);
+  if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
+  const userId = writeUid.userId;
 
   const body = (await req.json().catch(() => ({}))) as RecoverBody;
   const titleHint = String(body.titleHint || "").trim();

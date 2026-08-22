@@ -1,7 +1,11 @@
-export const runtime = "edge";
+export const runtime = "nodejs";
 export const revalidate = 0;
 
-import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
+import {
+  getUserIdFromRequest,
+  resolveWriteUserId,
+  writeUserIdErrorResponse,
+} from "@/app/api/_shared/user-id";
 import { readUnmatchedDonations, writeUnmatchedDonations } from "../_shared/unmatched-store";
 import type { DonationEvent } from "@/lib/donation/types";
 
@@ -44,13 +48,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const userId = getUserIdFromRequest(req);
-  if (!userId) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  const writeUid = resolveWriteUserId(req);
+  if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
+  const userId = writeUid.userId;
   const body = await req.json().catch(() => null);
   const event = sanitizeEvent(body);
   if (!event) {

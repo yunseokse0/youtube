@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   EXCEL_MEMBER_THEME_IDS,
+  emptyTableThemeAutoColorPatch,
   isExcelMemberTableTheme,
   resolveExcelMemberTableAccent,
+  resolveTableThemeHeaderBgCss,
+  resolveTableThemeHeaderPreviewHex,
 } from "./excel-member-table-theme";
 
 describe("excel-member-table-theme", () => {
@@ -18,5 +21,16 @@ describe("excel-member-table-theme", () => {
       expect(accent?.headerText).toMatch(/^#/);
     }
     expect(resolveExcelMemberTableAccent("excelBlue")?.headerBg).toContain("37, 99, 235");
+  });
+
+  it("uses distinct theme-auto header accents (not one blue for all)", () => {
+    const purple = resolveTableThemeHeaderBgCss("excelPurple");
+    const green = resolveTableThemeHeaderBgCss("excel");
+    const glass = resolveTableThemeHeaderBgCss("default");
+    const neon = resolveTableThemeHeaderBgCss("neon");
+    expect(purple).not.toBe(green);
+    expect(glass).not.toBe(neon);
+    expect(resolveTableThemeHeaderPreviewHex("excelPurple")).toBe("#7c3aed");
+    expect(emptyTableThemeAutoColorPatch().tableHeaderBgColor).toBe("");
   });
 });

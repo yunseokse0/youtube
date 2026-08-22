@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { applyDonationDummySeed, buildDummyDonationRows } from "@/lib/dev/seed-donation-dummy";
+import {
+  applyDonationDummySeed,
+  applyOverlaySplitPreviewSeed,
+  buildDummyDonationRows,
+} from "@/lib/dev/seed-donation-dummy";
 import { defaultState } from "@/lib/state";
 
 describe("seed-donation-dummy", () => {
@@ -29,5 +33,16 @@ describe("seed-donation-dummy", () => {
     expect(state.donors.length).toBe(added.length);
     const total = state.members.reduce((s, m) => s + (m.account || 0) + (m.toon || 0), 0);
     expect(total).toBeGreaterThan(0);
+  });
+
+  it("overlay split preview seeds 10 members and 10 ranking donors", () => {
+    const { state, added, memberCount } = applyOverlaySplitPreviewSeed(defaultState(), { now: 2000 });
+    expect(memberCount).toBe(10);
+    expect(state.members).toHaveLength(10);
+    expect(added).toHaveLength(10);
+    expect(state.donors).toHaveLength(10);
+    expect(state.members.every((m) => !m.operating)).toBe(true);
+    expect(new Set(state.donors.map((d) => d.name)).size).toBe(10);
+    expect(state.donorRankingsTheme.top).toBeGreaterThanOrEqual(10);
   });
 });

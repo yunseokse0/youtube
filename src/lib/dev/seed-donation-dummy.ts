@@ -102,6 +102,57 @@ export function buildDummyDonationRows(
   return rows;
 }
 
+export const OVERLAY_SPLIT_PREVIEW_COUNT = 10;
+
+/** 엑셀표·후원순위 좌우스플릿 확인용: 멤버 10명 + 후원자 10명 */
+export function applyOverlaySplitPreviewSeed(
+  state: AppState,
+  opts?: { now?: number; count?: number }
+): { state: AppState; added: Donor[]; memberCount: number } {
+  const count = Math.max(5, Math.min(30, Math.floor(Number(opts?.count) || OVERLAY_SPLIT_PREVIEW_COUNT)));
+  const now = Number(opts?.now) || Date.now();
+  const members: Member[] = Array.from({ length: count }, (_, i) => {
+    const idx = i + 1;
+    return {
+      id: `m${idx}`,
+      name: `멤버${idx}`,
+      realName: "",
+      account: 0,
+      toon: 0,
+      contribution: 0,
+      restroom: 0,
+      operating: false,
+    };
+  });
+  const added: Donor[] = members.map((m, i) => {
+    const idx = i + 1;
+    const amount = (count - i) * 100_000;
+    const target: Donor["target"] = i % 2 === 0 ? "account" : "toon";
+    return {
+      id: `dummy_split_${now}_${idx}`,
+      name: `후원자${idx}`,
+      amount,
+      memberId: m.id,
+      at: now - idx * 1000,
+      target,
+      message: "스플릿 미리보기",
+    };
+  });
+  const next = syncMemberTotalsFromDonors({
+    ...state,
+    members,
+    memberPositions: {},
+    donors: added,
+    donorRankingsUpdatedAt: now,
+    updatedAt: now,
+    donorRankingsTheme: {
+      ...(state.donorRankingsTheme || {}),
+      top: Math.max(Number(state.donorRankingsTheme?.top) || 0, count),
+    },
+  });
+  return { state: next, added, memberCount: members.length };
+}
+
 export function applyDonationDummySeed(
   state: AppState,
   opts?: SeedDonationDummyOptions

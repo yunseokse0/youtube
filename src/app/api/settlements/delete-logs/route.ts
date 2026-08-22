@@ -1,8 +1,12 @@
-export const runtime = "edge";
+export const runtime = "nodejs";
 export const revalidate = 0;
 
-import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
-import { upstashGetJson, upstashSetJsonWithSetPath } from "@/app/api/_shared/upstash";
+import {
+  getUserIdFromRequest,
+  resolveWriteUserId,
+  writeUserIdErrorResponse,
+} from "@/app/api/_shared/user-id";
+import { isPersistentKvConfigured, upstashGetJson, upstashSetJsonWithSetPath } from "@/app/api/_shared/upstash";
 import type { SettlementDeleteLog } from "@/types";
 
 const DELETE_LOGS_KEY_BASE = "excel-broadcast-settlement-delete-logs-v1";
@@ -51,17 +55,21 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const userId = getUserIdFromRequest(req);
-  if (!userId) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  const writeUid = resolveWriteUserId(req);
+  if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
+  const userId = writeUid.userId;
   const body = await req.json().catch(() => []);
   const next = normalizeDeleteLogs(body);
   const ok = await upstashSetJsonWithSetPath(deleteLogsKey(userId), next);
-  if (!ok) memoryDeleteLogs[userId] = next;
+  if (!ok) {
+    if (isPersistentKvConfigured()) {
+      return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    }
+    memoryDeleteLogs[userId] = next;
+  }
   return new Response(JSON.stringify({ ok: true, count: next.length }), {
     status: 200,
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },

@@ -1001,6 +1001,7 @@ const PRESET_EMPTY_USES_THEME_DEFAULT_KEYS = new Set([
   "tableHeaderTextColor",
   "tableLineColor",
   "tableTextColor",
+  "totalTextColor",
   "tableTextOutlineColor",
   "tableTextOutlineWidth",
   "tableHeaderTextOutlineColor",

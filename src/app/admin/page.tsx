@@ -192,6 +192,11 @@ import {
   EXCEL_TABLE_FRAME_PRESETS,
   findExcelTableFramePresetByUrl,
 } from "@/lib/excel-table-frame-presets";
+import {
+  emptyTableThemeAutoColorPatch,
+  resolveTableThemeHeaderPreviewHex,
+  resolveTableThemeLinePreviewHex,
+} from "@/lib/excel-member-table-theme";
 import { pickSettingsPreservedAcrossSettlementReset } from "@/lib/settlement-reset-preserve";
 import { planSigBulkReupload, sigBulkFilesWithoutNameMatch } from "@/lib/sig-image-bulk";
 import { parseSigMetaFromFileName } from "@/lib/sig-filename-meta";
@@ -3366,6 +3371,11 @@ export default function AdminPage() {
       const nextTheme = String(patch.theme || "default");
       if (patch.membersTheme === undefined) mergedPatch.membersTheme = nextTheme;
       if (patch.totalTheme === undefined) mergedPatch.totalTheme = nextTheme;
+      /**
+       * 수동 헤더/본문/선 색이 남아 있으면 테마(글래스·엑셀 액센트)가 안 바뀐 것처럼 보임.
+       * 테마 전환 시 「테마 자동」으로 되돌려 새 테마 크롬이 즉시 프리뷰에 반영되게 함.
+       */
+      Object.assign(mergedPatch, emptyTableThemeAutoColorPatch());
     }
     if (mergedPatch.accountHeaderLabel !== undefined) {
       const label = String(mergedPatch.accountHeaderLabel || "").trim();
@@ -10892,7 +10902,7 @@ export default function AdminPage() {
                   <div>
                     <h4 className="text-sm font-semibold">후원 순위 오버레이</h4>
                     <p className="text-xs text-neutral-400 mt-1">
-                      계좌·투네 후원을 합쳐 「후원 순위」 한 목록으로 표시합니다. 화면 밖 순위는 OBS 브라우저 소스 크기·위치로 맞추면 됩니다. 전원 표시는 URL에{" "}
+                      계좌·투네 후원을 합쳐 「후원 순위」 한 목록으로 표시합니다. 인원이 5명 이상이면 좌우로 반 나눕니다. 화면 밖 순위는 OBS 브라우저 소스 크기·위치로 맞추면 됩니다. 전원 표시는 URL에{" "}
                       <code className="text-neutral-300">all=1</code> 또는{" "}
                       <code className="text-neutral-300">top=0</code>. 예전처럼 두 칸으로 나누려면{" "}
                       <code className="text-neutral-300">layout=dual</code> 을 붙이세요.
@@ -16238,15 +16248,51 @@ export default function AdminPage() {
                                     <span className="text-xs text-neutral-500">% (100=불투명)</span>
                                   </div>
                                   <div className="col-span-full space-y-2.5 rounded-lg border border-white/10 bg-neutral-950/50 p-2.5">
-                                    <div className="text-xs font-semibold text-emerald-300/90">헤더(상단)</div>
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <div className="text-xs font-semibold text-emerald-300/90">헤더(상단)</div>
+                                      <button
+                                        type="button"
+                                        className="shrink-0 px-2 py-1 rounded bg-emerald-900/50 hover:bg-emerald-800/60 border border-emerald-500/30 text-xs text-emerald-100"
+                                        onClick={() => updatePreset(p.id, emptyTableThemeAutoColorPatch())}
+                                        title="수동 지정한 표 색을 모두 지우고 선택한 테마 기본 디자인으로 되돌립니다"
+                                      >
+                                        표 색 전부 테마 자동
+                                      </button>
+                                    </div>
+                                    <p className="text-[10px] text-neutral-500 leading-snug">
+                                      색이 「테마 자동」이어도 미리보기 칸에 테마 색이 보입니다. 테마가 안 바뀌면 위 버튼으로 수동 색을 한 번에 지우세요.
+                                    </p>
                                     <div className="grid grid-cols-1 sm:grid-cols-[7.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5">
                                       <label className="text-xs text-neutral-400">헤더 배경색</label>
                                       <div className="flex min-w-0 flex-wrap items-center gap-2">
                                         <input
                                           type="color"
                                           className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                                          value={toColorPickerValue(p.tableHeaderBgColor, "#217346")}
-                                          onChange={(e) => updatePreset(p.id, { tableHeaderBgColor: e.target.value })}
+                                          value={toColorPickerValue(
+                                            p.tableHeaderBgColor,
+                                            resolveTableThemeHeaderPreviewHex(
+                                              String(
+                                                p.membersTheme && p.membersTheme !== "auto"
+                                                  ? p.membersTheme
+                                                  : p.theme || "default"
+                                              )
+                                            )
+                                          )}
+                                          onChange={(e) => {
+                                            const next = e.target.value;
+                                            const preview = resolveTableThemeHeaderPreviewHex(
+                                              String(
+                                                p.membersTheme && p.membersTheme !== "auto"
+                                                  ? p.membersTheme
+                                                  : p.theme || "default"
+                                              )
+                                            );
+                                            /** 테마 자동 상태에서 피커만 열었다 닫으면 미리보기 색이 수동값으로 고정되지 않게 */
+                                            if (!String(p.tableHeaderBgColor || "").trim() && next.toLowerCase() === preview.toLowerCase()) {
+                                              return;
+                                            }
+                                            updatePreset(p.id, { tableHeaderBgColor: next });
+                                          }}
                                         />
                                         <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.tableHeaderBgColor || "테마 자동"}</span>
                                         <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableHeaderBgColor: "" })}>테마 자동</button>
@@ -16356,8 +16402,30 @@ export default function AdminPage() {
                                         <input
                                           type="color"
                                           className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                                          value={toColorPickerValue(p.tableLineColor, "#f5b8d4")}
-                                          onChange={(e) => updatePreset(p.id, { tableLineColor: e.target.value })}
+                                          value={toColorPickerValue(
+                                            p.tableLineColor,
+                                            resolveTableThemeLinePreviewHex(
+                                              String(
+                                                p.membersTheme && p.membersTheme !== "auto"
+                                                  ? p.membersTheme
+                                                  : p.theme || "default"
+                                              )
+                                            )
+                                          )}
+                                          onChange={(e) => {
+                                            const next = e.target.value;
+                                            const preview = resolveTableThemeLinePreviewHex(
+                                              String(
+                                                p.membersTheme && p.membersTheme !== "auto"
+                                                  ? p.membersTheme
+                                                  : p.theme || "default"
+                                              )
+                                            );
+                                            if (!String(p.tableLineColor || "").trim() && next.toLowerCase() === preview.toLowerCase()) {
+                                              return;
+                                            }
+                                            updatePreset(p.id, { tableLineColor: next });
+                                          }}
                                         />
                                         <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.tableLineColor || "테마 자동"}</span>
                                         <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableLineColor: "" })}>테마 자동</button>

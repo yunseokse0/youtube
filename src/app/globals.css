@@ -11,12 +11,12 @@
 
   /* Modern Glassmorphism & Studio — 방송 오버레이 공통 패널 */
   .studio-glass-panel {
-    background: rgba(15, 20, 30, 0.7);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    background: rgba(15, 23, 42, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 14px;
-    box-shadow: 0 8px 32px rgba(15, 20, 30, 0.35);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(15, 23, 42, 0.4);
   }
 
   .studio-glass-accent-border {
@@ -24,20 +24,43 @@
   }
 
   .studio-text-shadow {
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  }
+
+  /**
+   * 엑셀 멤버 표 — Studio Glass 셸 + 테마 헤더 CSS 변수
+   * (로직/데이터 무관, 크롬만)
+   */
+  .excel-member-table,
+  .excel-live-table {
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .excel-member-table thead td,
+  .excel-live-table thead td {
+    background: var(--excel-header-bg, rgba(124, 58, 237, 0.8)) !important;
+    color: var(--excel-header-text, #ffffff) !important;
+    font-weight: 700 !important;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  }
+
+  /** 후원순위 — 행 텍스트 방송용 대비 (외곽선 shadow는 outlineCss가 담당) */
+  .donor-rankings-overlay-root .overlay-cell-text-inner {
+    font-weight: 700;
   }
 }
 
 :root {
   color-scheme: dark;
-  --studio-glass-bg: rgba(15, 20, 30, 0.7);
+  --studio-glass-bg: rgba(15, 23, 42, 0.8);
   --studio-glass-border: rgba(255, 255, 255, 0.12);
-  --studio-glass-blur: 14px;
+  --studio-glass-blur: 12px;
   --studio-accent-violet: #7c3aed;
   --studio-accent-blue: #2563eb;
   --studio-coral-gold: #f59e0b;
   --studio-mint: #10b981;
-  --studio-text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  --studio-text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
 }
 
 html, body, #__next {
@@ -49,12 +72,12 @@ body {
 }
 
 .glass {
-  background: rgba(15, 20, 30, 0.7);
-  box-shadow: 0 8px 32px rgba(15, 20, 30, 0.35);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(15, 23, 42, 0.8);
+  box-shadow: 0 8px 32px rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 14px;
+  border-radius: 12px;
 }
 
 .text-outline-strong {

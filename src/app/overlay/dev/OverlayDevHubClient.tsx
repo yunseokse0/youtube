@@ -93,8 +93,38 @@ function OverlayDevCard({
 export default function OverlayDevHubClient() {
   const [userId, setUserId] = useState("finalent");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [seedMsg, setSeedMsg] = useState<string | null>(null);
+  const [seeding, setSeeding] = useState(false);
 
-  const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+  const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3001";
+
+  const seedSplit10 = useCallback(async () => {
+    setSeeding(true);
+    setSeedMsg(null);
+    try {
+      const res = await fetch("/api/dev/seed-donations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preview: "split10" }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        membersCount?: number;
+        donorsCount?: number;
+        error?: string;
+        hint?: string;
+      };
+      if (!res.ok || !json.ok) {
+        setSeedMsg(`시드 실패: ${json.error || res.status}`);
+        return;
+      }
+      setSeedMsg(`시드 완료 — 멤버 ${json.membersCount}명, 후원 ${json.donorsCount}건. 아래 엑셀표·후원순위를 새로고침하세요.`);
+    } catch {
+      setSeedMsg("시드 요청 실패");
+    } finally {
+      setSeeding(false);
+    }
+  }, []);
 
   const links: OverlayLink[] = useMemo(
     () => [
@@ -103,6 +133,18 @@ export default function OverlayDevHubClient() {
         title: "통합 오버레이",
         desc: "미션·후원·목표 등 메인 방송 화면. host=obs 권장.",
         obsPath: `/overlay?u={u}&host=obs`,
+      },
+      {
+        id: "excel-split10",
+        title: "엑셀표 (10인 스플릿)",
+        desc: "멤버 10명이면 좌 5 + 우 5. 시드 버튼으로 데이터를 넣은 뒤 확인.",
+        obsPath: `/overlay?u={u}&host=obs&tableOnly=true&theme=excel&showMembers=true&showTotal=true`,
+      },
+      {
+        id: "donor-rankings-split10",
+        title: "후원 순위 (10인 스플릿)",
+        desc: "후원자 10명이면 좌 5 + 우 5. all=1 로 전원 표시.",
+        obsPath: `/overlay/donor-rankings?u={u}&host=obs&all=1`,
       },
       {
         id: "donor-rankings",
@@ -215,6 +257,15 @@ export default function OverlayDevHubClient() {
             onChange={(e) => setUserId(e.target.value.trim() || "finalent")}
           />
         </label>
+        {seedMsg ? <p className="w-full text-xs text-emerald-200">{seedMsg}</p> : null}
+        <button
+          type="button"
+          disabled={seeding}
+          className="rounded bg-emerald-700 px-4 py-2 text-sm font-semibold hover:bg-emerald-600 disabled:opacity-50"
+          onClick={() => void seedSplit10()}
+        >
+          {seeding ? "시드 중…" : "10인 스플릿 시드"}
+        </button>
         <a
           href="/admin"
           className="rounded bg-violet-700 px-4 py-2 text-sm font-semibold hover:bg-violet-600"

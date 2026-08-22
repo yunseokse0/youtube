@@ -1,12 +1,13 @@
-export const runtime = "edge";
+export const runtime = "nodejs";
 export const revalidate = 0;
 
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 import type { DailyLogEntry } from "@/lib/state";
-import { getUserIdFromRequest } from "../_shared/user-id";
+import { getUserIdFromRequest, resolveWriteUserId, writeUserIdErrorResponse } from "../_shared/user-id";
 import {
   upstashGetJson,
   upstashSetJsonWithPipeline,
+  isPersistentKvConfigured,
 } from "../_shared/upstash";
 
 const STORAGE_KEY_BASE = "excel-broadcast-daily-log-v1";
@@ -76,13 +77,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const userId = getUserId(req);
-    if (!userId) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    const writeUid = resolveWriteUserId(req);
+    if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
+    const userId = writeUid.userId;
     const body = (await req.json()) as DailyLogData;
     if (!body || typeof body !== "object") {
       return new Response(JSON.stringify({ ok: false }), {
@@ -92,6 +89,12 @@ export async function POST(req: Request) {
     }
     let ok = await upstashSet(logKey(userId), body);
     if (!ok) {
+      if (isPersistentKvConfigured()) {
+        return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
+          status: 503,
+          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+        });
+      }
       memoryDailyLog[userId] = body;
       ok = true;
     }

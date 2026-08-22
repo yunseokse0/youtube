@@ -1,7 +1,11 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
+import {
+  getUserIdFromRequest,
+  resolveWriteUserId,
+  writeUserIdErrorResponse,
+} from "@/app/api/_shared/user-id";
 import {
   getToonationListenerStatusForUser,
   syncToonationServerListener,
@@ -23,13 +27,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const userId = getUserIdFromRequest(req);
-  if (!userId) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  const writeUid = resolveWriteUserId(req);
+  if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
+  const userId = writeUid.userId;
   const body = (await req.json().catch(() => null)) as {
     alertboxUrl?: string;
     linkKey?: string;
@@ -61,13 +61,9 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const userId = getUserIdFromRequest(req);
-  if (!userId) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  const writeUid = resolveWriteUserId(req);
+  if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
+  const userId = writeUid.userId;
   await syncToonationServerListener(userId, "", false, "");
   return new Response(JSON.stringify({ ok: true }), {
     headers: { "Content-Type": "application/json" },

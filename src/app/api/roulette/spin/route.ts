@@ -277,7 +277,13 @@ export async function POST(req: Request) {
         },
         updatedAt: Date.now(),
       };
-      await saveAppStateForRoulette(userId, next);
+      const savedCinematic = await saveAppStateForRoulette(userId, next);
+      if (!savedCinematic.ok) {
+        return Response.json(
+          { ok: false, error: "persist_failed" },
+          { status: 503, headers: { "Content-Type": "application/json" } }
+        );
+      }
       await publishRouletteStateAfterSave(req, userId, {
         rouletteState: next.rouletteState,
         updatedAt: next.updatedAt,
@@ -391,7 +397,13 @@ export async function POST(req: Request) {
       },
       updatedAt: Date.now(),
     };
-    await saveAppStateForRoulette(userId, next);
+    const savedSpin = await saveAppStateForRoulette(userId, next);
+    if (!savedSpin.ok) {
+      return Response.json(
+        { ok: false, error: "persist_failed" },
+        { status: 503, headers: { "Content-Type": "application/json" } }
+      );
+    }
     await publishRouletteStateAfterSave(req, userId, {
       rouletteState: next.rouletteState,
       updatedAt: next.updatedAt,
