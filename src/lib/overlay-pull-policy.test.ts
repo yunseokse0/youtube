@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_ADMIN_PREVIEW_POLL_MS,
+  DEFAULT_DONATION_LISTS_OVERLAY_POLL_MS,
+  DEFAULT_OVERLAY_LIVE_SYNC_POLL_MS,
   DEFAULT_SIG_SALES_OVERLAY_POLL_MS,
   obsTextStateUpdatedRevision,
   shouldSyncObsTextFromStateUpdatedEvent,
@@ -91,5 +94,14 @@ describe("DEFAULT_SIG_SALES_OVERLAY_POLL_MS", () => {
   it("is a short interval for OBS", () => {
     expect(DEFAULT_SIG_SALES_OVERLAY_POLL_MS).toBeGreaterThanOrEqual(800);
     expect(DEFAULT_SIG_SALES_OVERLAY_POLL_MS).toBeLessThanOrEqual(5000);
+  });
+});
+
+describe("overlay poll defaults", () => {
+  it("keeps live/admin/donation intervals in a server-friendly range", () => {
+    expect(DEFAULT_OVERLAY_LIVE_SYNC_POLL_MS).toBeGreaterThanOrEqual(1500);
+    expect(DEFAULT_OVERLAY_LIVE_SYNC_POLL_MS).toBeLessThanOrEqual(4000);
+    expect(DEFAULT_ADMIN_PREVIEW_POLL_MS).toBeGreaterThanOrEqual(DEFAULT_OVERLAY_LIVE_SYNC_POLL_MS);
+    expect(DEFAULT_DONATION_LISTS_OVERLAY_POLL_MS).toBeGreaterThanOrEqual(2500);
   });
 });

@@ -35,8 +35,6 @@ import {
 
 import {
   shouldSuppressOverlaySseConnection,
-  shouldSkipOverlaySseForObsBroadcast,
-  isExternalOverlayBroadcastHost,
   isOverlayServerAuthoritativeUrl,
   isAdminDashboardPreviewEmbed,
   isEmbeddedInSameOriginAdminFrame,
@@ -46,6 +44,7 @@ import { startStaggeredOverlayPoll } from "@/lib/overlay-poll-stagger";
 
 import {
   createStateUpdatedScheduler,
+  DEFAULT_ADMIN_PREVIEW_POLL_MS,
   DONOR_STATE_UPDATED_DEBOUNCE_MS,
   DONOR_STATE_UPDATED_MAX_WAIT_MS,
   readOverlaySseFallbackPollMs,
@@ -999,19 +998,13 @@ export function useOverlayRemoteState(
 
     if (pollMs > 0 && (!adminPreviewEmbed || allowAdminPreviewPoll)) {
       const pollSourceKey = `${statePick}:${userId || "default"}:${typeof window !== "undefined" ? window.location.pathname : ""}:${typeof window !== "undefined" ? window.location.search : ""}`;
-      const obsForceFullPoll =
-        !adminPreviewEmbed &&
-        (isExternalOverlayBroadcastHost() || shouldSkipOverlaySseForObsBroadcast());
-      const previewPollMs = adminPreviewEmbed ? Math.max(pollMs, 1500) : pollMs;
+      const previewPollMs = adminPreviewEmbed
+        ? Math.max(pollMs, DEFAULT_ADMIN_PREVIEW_POLL_MS)
+        : pollMs;
       stopPoll = startStaggeredOverlayPoll(
         () => {
           const pollOpts =
-            sigSalesPick && !sigSalesIncrementalPoll
-              ? { forceFull: true as const }
-              : obsForceFullPoll &&
-                  (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS)
-                ? { forceFull: true as const }
-                : undefined;
+            sigSalesPick && !sigSalesIncrementalPoll ? { forceFull: true as const } : undefined;
           void syncFromApiRef.current(pollOpts);
         },
         previewPollMs,

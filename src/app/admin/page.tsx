@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
 import DonationTableOptionCheckboxes from "@/components/admin/DonationTableOptionCheckboxes";
+import AdminLazyPreviewIframe from "@/components/admin/AdminLazyPreviewIframe";
 import {
   buildSettlementUiOptionsFromForm,
   normalizeSettlementUiOptions,
@@ -561,8 +562,10 @@ function ClientTime({ ts }: { ts: number | string }) {
 
 /** 평시 동기화는 SSE `state_updated` + 디바운스. 주기 폴링은 연결 끊김 대비용만 */
 const ADMIN_STATE_FALLBACK_POLL_MS = 120_000;
-/** 후원자 리스트 실시간 반영 — SSE 누락 대비 가시 탭에서 짧게 폴링 */
-const ADMIN_DONOR_LIVE_POLL_MS = 2_000;
+/** 후원자 리스트 — SSE가 있으면 드물게, 끊기면 조금 더 자주 (since/304) */
+const ADMIN_DONOR_LIVE_POLL_TICK_MS = 2_000;
+const ADMIN_DONOR_LIVE_POLL_MS_SSE = 10_000;
+const ADMIN_DONOR_LIVE_POLL_MS_NO_SSE = 4_000;
 
 /** SSE·폴링 시 불필요한 setState 연쇄(버튼·effect 재실행) 방지용 */
 function adminSyncFingerprint(s: AppState): string {
@@ -3218,11 +3221,18 @@ export default function AdminPage() {
       if (adminSseConnectedRef.current) return;
       void syncFromApi();
     }, ADMIN_STATE_FALLBACK_POLL_MS);
+    let lastDonorLiveAt = 0;
     const donorLiveTimer = window.setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-      /** since/304 — 2초마다 forceFull 하면 /api/state 가 막혀 관리자가「동기화 중」에 고착 */
+      const minMs = adminSseConnectedRef.current
+        ? ADMIN_DONOR_LIVE_POLL_MS_SSE
+        : ADMIN_DONOR_LIVE_POLL_MS_NO_SSE;
+      const now = Date.now();
+      if (now - lastDonorLiveAt < minMs) return;
+      lastDonorLiveAt = now;
+      /** since/304 — forceFull 반복이면 /api/state 가 막힘 */
       void syncFromApi({ forceDonorMerge: true });
-    }, ADMIN_DONOR_LIVE_POLL_MS);
+    }, ADMIN_DONOR_LIVE_POLL_TICK_MS);
     const onVisibility = () => {
       if (typeof document !== "undefined" && document.visibilityState === "visible") {
         void syncFromApi({ forceFull: true, forceDonorMerge: true });
@@ -10402,7 +10412,7 @@ export default function AdminPage() {
                     }}
                   >
                     {sigMatchPreviewIframeSrc ? (
-                      <iframe
+                      <AdminLazyPreviewIframe
                         key={`sig-match-preview-${sigMatchPreviewIframeKey}`}
                         src={sigMatchPreviewIframeSrc}
                         title="시그 대전 오버레이 미리보기"
@@ -10464,7 +10474,7 @@ export default function AdminPage() {
                     }}
                   >
                     {mealMatchPreviewIframeSrc ? (
-                      <iframe
+                      <AdminLazyPreviewIframe
                         key={`meal-match-preview-${mealMatchPreviewIframeKey}`}
                         src={mealMatchPreviewIframeSrc}
                         title="식사 대전 오버레이 미리보기"
@@ -15922,7 +15932,7 @@ export default function AdminPage() {
                     style={{ maxWidth: 720, minHeight: 148, aspectRatio: "18 / 5" }}
                   >
                     {overlayUserId ? (
-                      <iframe
+                      <AdminLazyPreviewIframe
                         key={`hs-preview-${hsPreviewIframeKeySig}-${hsPreviewIframeKey}`}
                         src={appendAdminPreviewEmbedToOverlayUrl(
                           `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&startCm=${encodeURIComponent(String(Math.round(hsStartCm)))}&hsFx=${encodeURIComponent(hsFxParam)}`
@@ -15988,7 +15998,7 @@ export default function AdminPage() {
                 </div>
                 <div className="relative w-full bg-black/40" style={{ minHeight: "260px", aspectRatio: "16 / 9" }}>
                   {overlayUserId ? (
-                    <iframe
+                    <AdminLazyPreviewIframe
                       key={`donor-rankings-${donorRankingsPreviewIframeKey}-${overlayUserId}`}
                       src={appendAdminPreviewEmbedToOverlayUrl(
                         (() => {
@@ -16086,7 +16096,7 @@ export default function AdminPage() {
                 </div>
                 <div className="relative w-full max-w-[420px] mx-auto bg-black/40" style={{ minHeight: "420px", aspectRatio: "9 / 16" }}>
                   {overlayUserId ? (
-                    <iframe
+                    <AdminLazyPreviewIframe
                       key={`donor-rankings-full-${donorRankingsPreviewIframeKey}-${overlayUserId}`}
                       src={appendAdminPreviewEmbedToOverlayUrl(
                         (() => {
@@ -16313,7 +16323,7 @@ export default function AdminPage() {
                   className="relative w-full bg-gradient-to-b from-slate-800 to-slate-900"
                   style={{ minHeight: "200px", aspectRatio: "16 / 9" }}
                 >
-                  <iframe
+                  <AdminLazyPreviewIframe
                     key={`obs-text-${obsTextPreviewIframeKey}-${obsTextPreviewId}-${overlayUserId}`}
                     src={appendAdminPreviewEmbedToOverlayUrl(
                       obsTextOverlayPath(overlayUserId, obsTextPreviewId)

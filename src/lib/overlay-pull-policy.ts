@@ -2,9 +2,10 @@
  * 오버레이 기본: GET /api/state **주기 폴링 없음**.
  * - 관리자 「현재 설정 저장」·회전판 spin/finish 등 → SSE `state_updated`(updatedAt만) → 디바운스 후 GET 1회
  * - `?since=` + 304: 서버 상태가 이미 최신이면 본문 생략
- * - SSE 끊김·OBS `host=obs`·관리자 iframe → `readOverlayLiveSyncPollMs()` (기본 1s)
+ * - SSE 끊김·OBS `host=obs`·관리자 iframe → `readOverlayLiveSyncPollMs()` (기본 2s, since/304)
  * - 시그 판매 OBS(`/overlay/sig-sales`): `readSigSalesOverlayPollMs()` 기본 2s (OBS CEF·SSE 불안정 대비)
- * - 후원·기여도(`/overlay/donation-lists`, `/overlay/donor-rankings`, 메인 `/overlay`): 기본 2.5s 폴링
+ * - 후원·기여도(`/overlay/donation-lists`, `/overlay/donor-rankings`, 메인 `/overlay`): 기본 4s 폴링
+ * - 관리자 iframe 미리보기: 최소 4s, 뷰포트 진입 후에만 로드
  * - 디버그 전역 폴링만 env `NEXT_PUBLIC_OVERLAY_DEBUG_POLL_MS`
  */
 
@@ -19,7 +20,9 @@ export const DEFAULT_STATE_UPDATED_DEBOUNCE_MS = 100;
 /** 연속 이벤트가 끊이지 않아도 이 간격(ms)마다 최소 1회는 동기화 */
 export const DEFAULT_STATE_UPDATED_MAX_WAIT_MS = 900;
 /** SSE 없음(OBS host=obs·관리자 iframe 등) — 설정·대전 UI 즉시 반영 폴링 */
-export const DEFAULT_OVERLAY_LIVE_SYNC_POLL_MS = 1000;
+export const DEFAULT_OVERLAY_LIVE_SYNC_POLL_MS = 2000;
+/** 관리자 미리보기 iframe — 본문 탭·OBS보다 GET를 덜 보냄 */
+export const DEFAULT_ADMIN_PREVIEW_POLL_MS = 4000;
 /** 후원·순위 반영 — 짧은 디바운스(느리게 느껴지지 않게) */
 export const DONOR_STATE_UPDATED_DEBOUNCE_MS = 60;
 export const DONOR_STATE_UPDATED_MAX_WAIT_MS = 350;
@@ -92,7 +95,7 @@ export const DEFAULT_SIG_SALES_OVERLAY_POLL_MS = 2000;
 /** 수동 시그 OBS — 회전판보다 변경이 적어 폴링·GET 부하를 낮춤 */
 export const DEFAULT_SIG_SALES_MANUAL_OVERLAY_POLL_MS = 4500;
 /** 후원·기여도 목록(`/overlay/donation-lists`) — SSE 불안정 시 짧은 폴링. `=0` 으로 끔 */
-export const DEFAULT_DONATION_LISTS_OVERLAY_POLL_MS = 2500;
+export const DEFAULT_DONATION_LISTS_OVERLAY_POLL_MS = 4000;
 
 /** OBS 텍스트 오버레이 — 실시간 반영(연출 remount 최소화). `=0` 으로 끔 */
 export const DEFAULT_OBS_TEXT_OVERLAY_POLL_MS = 1500;

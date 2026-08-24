@@ -41,11 +41,12 @@ function mysqlPoolOptionsFromUrl(raw: string): mysql.PoolOptions | null {
       password: decodeURIComponent(u.password || ""),
       database,
       waitForConnections: true,
-      connectionLimit: 8,
-      /** 대기열이 무한히 늘면 /api/state GET 이 안 끝나고 관리자가「동기화 중」에 고착 */
-      queueLimit: 32,
+      /** 관리자+OBS+미리보기 동시 GET — 8이면 대기열에 쌓이며 전체가 느려짐 */
+      connectionLimit: 16,
+      queueLimit: 48,
       connectTimeout: 8_000,
       enableKeepAlive: true,
+      idleTimeout: 60_000,
     };
   } catch {
     return null;

@@ -111,11 +111,13 @@ import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
 import {
   createStateUpdatedScheduler,
+  DEFAULT_ADMIN_PREVIEW_POLL_MS,
   DONOR_STATE_UPDATED_DEBOUNCE_MS,
   DONOR_STATE_UPDATED_MAX_WAIT_MS,
   readDonationListsOverlayPollMs,
   readOverlayLiveSyncPollMs,
 } from "@/lib/overlay-pull-policy";
+import { startStaggeredOverlayPoll } from "@/lib/overlay-poll-stagger";
 import { buildOverlaySyncSignature, isRicherDonationSnapshot, isNewerIntentionalDonationShrink, shouldRejectPoorerDonationRemote, shouldKeepStaleOverlayOverRemote, isEmptyDonationRemote, isIntentionalMemberRosterShrink, isServerAuthoritativeMemberRosterShrink, isLocalMemberRosterGrowOverRemote } from "@/lib/overlay-sync-signature";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import {
@@ -922,17 +924,23 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         void syncOnceRef.current();
       }
     };
+    const adminPreview =
+      isAdminDashboardPreviewEmbed() || isEmbeddedInSameOriginAdminFrame();
     const liveSyncPoll =
       shouldSuppressOverlaySseConnection() ||
       isExternalOverlayBroadcastHost() ||
       isOverlayServerAuthoritativeUrl();
-    const pollMs = liveSyncPoll ? readOverlayLiveSyncPollMs() : readDonationListsOverlayPollMs();
-    const obsForceFullPoll = liveSyncPoll;
-    let pollTimer: number | undefined;
+    const pollMs = adminPreview
+      ? DEFAULT_ADMIN_PREVIEW_POLL_MS
+      : liveSyncPoll
+        ? readOverlayLiveSyncPollMs()
+        : readDonationListsOverlayPollMs();
+    let stopPoll: (() => void) | undefined;
     if (pollMs > 0) {
-      pollTimer = window.setInterval(
-        () => void syncOnceRef.current(obsForceFullPoll ? { forceFull: true } : undefined),
-        pollMs
+      stopPoll = startStaggeredOverlayPoll(
+        () => void syncOnceRef.current(),
+        pollMs,
+        `overlay-excel:${userId || "default"}`
       );
     }
     window.addEventListener("storage", onStorage);
@@ -1004,7 +1012,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
     return () => {
       cancelStateUpdatedSchedule();
       scheduleStateUpdatedRef.current = null;
-      if (pollTimer) window.clearInterval(pollTimer);
+      stopPoll?.();
       window.removeEventListener("storage", onStorage);
       unsubscribeLocal();
     };

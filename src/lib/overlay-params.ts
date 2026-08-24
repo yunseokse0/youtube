@@ -2421,7 +2421,7 @@ export function isExternalOverlayBroadcastHost(): boolean {
 
 /**
  * OBS 방송 소스(`host=obs`)는 브라우저 소스마다 SSE를 열면 `/api/events`·GET이 겹쳐 3번째 소스부터
- * 타임아웃·빈 화면이 나기 쉽다. 폴링만으로 동기화(각 오버레이 기본 1.5~2.5s).
+ * 타임아웃·빈 화면이 나기 쉽다. 폴링만으로 동기화(각 오버레이 기본 2~4s, since/304).
  * 디버그: `?overlayAllowSse=1`
  */
 export function shouldSkipOverlaySseForObsBroadcast(): boolean {
@@ -2431,7 +2431,7 @@ export function shouldSkipOverlaySseForObsBroadcast(): boolean {
     if (sp.get("overlayAllowSse") === "1") return false;
     /** 관리자 미리보기는 LS 핫리로드 — OBS SSE 스킵 정책에서 제외 */
     if (sp.get("adminPreviewEmbed") === "1" || sp.get("hubPreview") === "1") return false;
-    /** prism 도 SSE 중복·레이스로 엑셀표만 갱신 누락되기 쉬움 — 폴링(forceFull)만 사용 */
+    /** prism 도 SSE 중복·레이스로 엑셀표만 갱신 누락되기 쉬움 — 폴링만 사용 */
     const host = sp.get("host")?.trim().toLowerCase();
     return host === "obs" || host === "prism" || host === "external";
   } catch {

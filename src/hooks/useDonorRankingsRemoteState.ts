@@ -18,6 +18,7 @@ import {
   createStateUpdatedScheduler,
   DONOR_STATE_UPDATED_DEBOUNCE_MS,
   DONOR_STATE_UPDATED_MAX_WAIT_MS,
+  DEFAULT_ADMIN_PREVIEW_POLL_MS,
   readDonationListsOverlayPollMs,
   readOverlaySseFallbackPollMs,
   shouldSyncDonorRankingsFromStateUpdatedEvent,
@@ -29,6 +30,10 @@ import {
   readLocalBroadcastState,
   subscribeBroadcastStateLocalUpdated,
 } from "@/lib/broadcast-state-local-sync";
+import {
+  isAdminDashboardPreviewEmbed,
+  isEmbeddedInSameOriginAdminFrame,
+} from "@/lib/overlay-params";
 import {
   isServerAuthoritativeBroadcastState,
   readSessionBroadcastState,
@@ -229,11 +234,15 @@ export function useDonorRankingsRemoteState(
 
     void syncFromApi({ forceFull: true });
 
-    const pollMs = readDonationListsOverlayPollMs();
+    const adminPreview =
+      isAdminDashboardPreviewEmbed() || isEmbeddedInSameOriginAdminFrame();
+    const pollMs = adminPreview
+      ? DEFAULT_ADMIN_PREVIEW_POLL_MS
+      : readDonationListsOverlayPollMs();
     let stopPoll: (() => void) | undefined;
     if (pollMs > 0) {
       stopPoll = startStaggeredOverlayPoll(
-        () => void syncFromApiRef.current({ forceFull: true }),
+        () => void syncFromApiRef.current(),
         pollMs,
         donorRankingsPollSourceKey(userId)
       );
