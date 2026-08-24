@@ -234,7 +234,8 @@ export function buildCircularImageTimerDisplay(
 export const LED_MATRIX_COLORS = {
   digit: "#f8fafc",
   digitHot: "#ffffff",
-  ghost: "rgba(127, 29, 29, 0.38)",
+  /** 비점등 세그먼트 — 실제 LED처럼 아주 옅게만 */
+  ghost: "rgba(255, 255, 255, 0.1)",
   corner: "#ef4444",
   border: "#ef4444",
   panel: "#000000",
@@ -242,6 +243,27 @@ export const LED_MATRIX_COLORS = {
 
 export const LED_SEGMENT_FONT_FAMILY =
   '"DSEG7 Classic", "Share Tech Mono", "DS-Digital", ui-monospace, monospace';
+
+/** a=상단 … g=중앙. SVG 7-seg 점등 마스크 */
+export const LED_SEVEN_SEGMENT_MASK: Record<string, string> = {
+  "0": "abcdef",
+  "1": "bc",
+  "2": "abged",
+  "3": "abcdg",
+  "4": "bcfg",
+  "5": "acdfg",
+  "6": "acdefg",
+  "7": "abc",
+  "8": "abcdefg",
+  "9": "abcdfg",
+};
+
+export function ledSevenSegmentIsOn(
+  digit: string,
+  segment: "a" | "b" | "c" | "d" | "e" | "f" | "g"
+): boolean {
+  return (LED_SEVEN_SEGMENT_MASK[digit] || "").includes(segment);
+}
 
 /** LED 패널에 표시할 MM:SS 또는 HH:MM:SS */
 export function buildLedMatrixTimerText(

@@ -78,9 +78,20 @@ function donorRankingsOutlineCssBlock(
       text-shadow: ${shadow} !important;
       -webkit-text-stroke: 0 !important;
     }
-    /* 트로피·이모지 순위 아이콘에는 외곽선 링을 먹지 않게 (깨져 보이는 원인) */
+    /* 트로피·숫자 순위가 같은 칸 중심에 오도록 */
+    .donor-rankings-overlay-root .donor-rank-slot {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      line-height: 1;
+      text-align: center;
+    }
+    .donor-rankings-overlay-root .donor-rank-slot .overlay-rank-icon,
     .donor-rankings-overlay-root .overlay-rank-icon,
     .donor-rankings-overlay-root .overlay-rank-icon .overlay-cell-text-inner {
+      margin-left: 0 !important;
+      margin-right: 0 !important;
       text-shadow: none !important;
       -webkit-text-stroke: 0 !important;
       paint-order: normal !important;
@@ -90,7 +101,7 @@ function donorRankingsOutlineCssBlock(
 
 /** 웹후원 스타일 1~3위 트로피 (금/은/동 + 별) */
 function RankTrophyIcon({ place, sizePx }: { place: 1 | 2 | 3; sizePx: number }) {
-  const size = Math.max(18, Math.round(sizePx * 1.15));
+  const size = Math.max(16, Math.round(sizePx));
   const cup =
     place === 1 ? { fill: "#ffc107", stroke: "#b45309" } : place === 2 ? { fill: "#e8eef5", stroke: "#64748b" } : { fill: "#d97706", stroke: "#7c2d12" };
   const base =
@@ -101,7 +112,7 @@ function RankTrophyIcon({ place, sizePx }: { place: 1 | 2 | 3; sizePx: number })
       width={size}
       height={size}
       viewBox="0 0 32 32"
-      className="overlay-rank-icon mx-auto block shrink-0"
+      className="overlay-rank-icon block shrink-0"
       aria-hidden
     >
       <path
@@ -391,6 +402,7 @@ function RankingRow({
   const rowOutline = { ...rowOutlineRaw, WebkitTextStroke: "0" as const };
   const isTrophy = idx <= 2;
   const effectiveRankColor = String(rankColor || "").trim() || RANK_NUMBER_FALLBACK;
+  const rankSlotPx = Math.max(rankPx, Math.round(rankPx * 1.35));
   const rowBgRaw = idx % 2 === 0 ? rowEvenBg || "transparent" : rowOddBg || "transparent";
   const rowStyle: CSSProperties = {
     fontSize: `${rowPx}px`,
@@ -403,19 +415,24 @@ function RankingRow({
    * 스크린샷(후원 랭킹) 레이아웃:
    * [순위] [닉네임 …ellipsis…] ………… [금액 tabular]
    * — 닉네임은 좌측, 금액만 우측 (둘 다 우측 정렬 X)
+   * — 1~3등 트로피와 4등+ 숫자는 동일 너비 칸의 정중앙
    */
   const inner = (
     <>
-      <span className="flex w-[2.5em] shrink-0 items-center justify-start leading-none">
+      <span
+        className="donor-rank-slot"
+        style={{ width: rankSlotPx, minWidth: rankSlotPx, height: rankSlotPx }}
+      >
         {isTrophy ? (
           <RankTrophyIcon place={(idx + 1) as 1 | 2 | 3} sizePx={rankPx} />
         ) : (
           <span
-            className="overlay-cell-text-inner text-left font-bold leading-none"
+            className="overlay-cell-text-inner text-center font-bold leading-none tabular-nums"
             style={{
               color: effectiveRankColor,
               fontSize: `${rankPx}px`,
               fontWeight: 700,
+              fontVariantNumeric: "tabular-nums",
               ...rankOutline,
             }}
           >

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  EXCEL_GOLD_RANK_TEXT_COLORS,
   EXCEL_MEMBER_THEME_IDS,
+  contributionColumnBgFromColor,
   emptyTableThemeAutoColorPatch,
   isExcelGoldTableTheme,
   isExcelMemberTableTheme,
@@ -51,6 +53,8 @@ describe("excel-member-table-theme", () => {
     expect(gold?.headerText).toBe("#1a1408");
     expect(gold?.panelBorder).toBe("#ffc107");
     expect(gold?.rowEvenBg).toContain("rgba(");
+    expect(gold?.contributionColumnBg).toContain("rgba(");
+    expect(gold?.contributionPillBg).toContain("rgba(");
     expect(isExcelGoldTableTheme("excelGold")).toBe(true);
     expect(isExcelGoldTableTheme("excel")).toBe(false);
     expect(resolveTableThemePanelBorderPreviewHex("excelGold")).toBe("#ffc107");
@@ -58,5 +62,7 @@ describe("excel-member-table-theme", () => {
     expect(resolveTableThemeRowStripePreviewHex("excelGold", "even")).toBe("#ffffff");
     expect(tableRowStripeBgFromPickerHex("#ffffff", 0.06)).toBe("rgba(255, 255, 255, 0.06)");
     expect(emptyTableThemeAutoColorPatch().contributionColor).toBe("");
+    expect(contributionColumnBgFromColor("#ffc107", 0.22)).toBe("rgba(255, 193, 7, 0.22)");
+    expect(EXCEL_GOLD_RANK_TEXT_COLORS).toEqual(["#ff5eb8", "#6ecbff", "#ffc107"]);
   });
 });

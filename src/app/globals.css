@@ -2,15 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-@font-face {
-  font-family: "DSEG7 Classic";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("https://cdn.jsdelivr.net/gh/keshikan/DSEG@v0.46/fonts/DSEG7-Classic/DSEG7Classic-Regular.woff2")
-    format("woff2");
-}
-
 @layer utilities {
   /* Studio Glass Base Panel */
   .studio-glass-panel {
@@ -97,6 +88,11 @@
     color: var(--excel-header-text, #ffffff) !important;
     font-weight: 700 !important;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  }
+
+  .excel-member-table.excel-gold-table {
+    overflow: visible;
+    border-radius: 0;
   }
 
   .excel-member-table.excel-gold-table thead td {

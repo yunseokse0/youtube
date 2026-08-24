@@ -29,7 +29,14 @@ export type ExcelMemberTableAccent = {
   rowOddBg?: string;
   /** 기여도 열 강조색 */
   contributionColor?: string;
+  /** 기여도 열 셀 배경(줄무늬 위에 겹침) */
+  contributionColumnBg?: string;
+  /** 기여도 숫자 캡슐 배경 */
+  contributionPillBg?: string;
 };
+
+/** 웹후원 골드 — 1~3위 순위·이름 색 (랭킹 TOP3 효과가 꺼져 있을 때) */
+export const EXCEL_GOLD_RANK_TEXT_COLORS = ["#ff5eb8", "#6ecbff", "#ffc107"] as const;
 
 const STUDIO_PANEL_SHADOW = "0 8px 32px 0 rgba(0, 0, 0, 0.37)";
 const STUDIO_EDGE = "rgba(255, 255, 255, 0.12)";
@@ -83,9 +90,11 @@ export const EXCEL_MEMBER_TABLE_ACCENT: Record<ExcelMemberThemeId, ExcelMemberTa
     totalRowBorder: "rgba(255, 193, 7, 0.45)",
     panelBorder: "#ffc107",
     panelShadow: "none",
-    rowEvenBg: "rgba(255, 255, 255, 0.05)",
-    rowOddBg: "rgba(255, 255, 255, 0.14)",
+    rowEvenBg: "rgba(255, 255, 255, 0.08)",
+    rowOddBg: "rgba(255, 255, 255, 0.16)",
     contributionColor: "#ffc107",
+    contributionColumnBg: "rgba(0, 0, 0, 0.28)",
+    contributionPillBg: "rgba(0, 0, 0, 0.38)",
   },
   excelRose: {
     headerBg: "rgba(225, 29, 72, 0.72)",
@@ -237,6 +246,25 @@ export function resolveTableThemeRowStripeCss(
 export function resolveTableThemeContributionColorCss(themeId: string): string {
   const excel = resolveExcelMemberTableAccent(themeId);
   return excel?.contributionColor || "";
+}
+
+/** 기여도 글자색 → 열 배경(알파 겹침) */
+export function contributionColumnBgFromColor(css: string, alpha = 0.22): string {
+  const hex = cssColorToPreviewHex((css || "").trim());
+  if (/^#[0-9a-fA-F]{6}$/.test(hex)) return tableRowStripeBgFromPickerHex(hex, alpha);
+  return "rgba(255, 193, 7, 0.22)";
+}
+
+export function resolveTableThemeContributionColumnBgCss(themeId: string): string {
+  const excel = resolveExcelMemberTableAccent(themeId);
+  if (excel?.contributionColumnBg) return excel.contributionColumnBg;
+  const color = excel?.contributionColor;
+  return color ? contributionColumnBgFromColor(color) : "";
+}
+
+export function resolveTableThemeContributionPillBgCss(themeId: string): string {
+  const excel = resolveExcelMemberTableAccent(themeId);
+  return excel?.contributionPillBg || "";
 }
 
 function cssColorToPreviewHex(css: string): string {

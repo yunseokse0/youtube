@@ -5,6 +5,7 @@ import {
   buildFlipCountdownSegments,
   buildLedMatrixGhostText,
   buildLedMatrixTimerText,
+  ledSevenSegmentIsOn,
   computeCountdownRingFilledTicks,
   computeSpeedometerFillRatio,
   resolveCircularImageTimerFontSize,
@@ -90,6 +91,14 @@ describe("timer-design", () => {
   it("buildLedMatrixGhostText fills all segments with 8", () => {
     expect(buildLedMatrixGhostText(false)).toBe("88:88");
     expect(buildLedMatrixGhostText(true)).toBe("88:88:88");
+  });
+
+  it("ledSevenSegmentIsOn lights classic 7-seg patterns", () => {
+    expect(ledSevenSegmentIsOn("8", "a")).toBe(true);
+    expect(ledSevenSegmentIsOn("8", "g")).toBe(true);
+    expect(ledSevenSegmentIsOn("1", "a")).toBe(false);
+    expect(ledSevenSegmentIsOn("1", "b")).toBe(true);
+    expect(ledSevenSegmentIsOn("1", "c")).toBe(true);
   });
 
   it("computeCountdownRingFilledTicks uses remaining minutes rounded up", () => {
