@@ -17,7 +17,11 @@ export const STATE_PICK_DONOR_RANKINGS = "donor-rankings";
 export const STATE_PICK_OBS_TEXT = "obs-text";
 
 function overlayPickRevision(state: AppState): number {
-  return Math.max(Number(state.updatedAt || 0), readDonorRankingsRevision(state));
+  return Math.max(
+    Number(state.updatedAt || 0),
+    Number(state.membersRosterUpdatedAt || 0),
+    readDonorRankingsRevision(state)
+  );
 }
 
 export type StateApiPick =
@@ -76,6 +80,7 @@ function overlayCoreFields(
   return {
     updatedAt: state.updatedAt,
     settlementResetAt: state.settlementResetAt,
+    membersRosterUpdatedAt: state.membersRosterUpdatedAt,
     members: state.members,
     memberPositions: state.memberPositions,
     memberPositionMode: state.memberPositionMode,

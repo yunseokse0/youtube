@@ -451,8 +451,11 @@ export function buildRouletteIdlePreserveSettings(
   };
 }
 
+/** 기본 후원순위 오버레이 표시 상한 — 그 이상은 `/overlay/donor-rankings/full` */
+export const DONOR_RANKINGS_COMPACT_TOP_MAX = 10;
+
 export const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
-  top: 20,
+  top: DONOR_RANKINGS_COMPACT_TOP_MAX,
   titleText: "👑 웹후원 순위 👑",
   titleSize: 34,
   rowSize: 28,
@@ -487,7 +490,7 @@ export const BUILT_IN_DONOR_RANKINGS_PRESETS: DonorRankingsPreset[] = [
     id: "dr_builtin_neon_cyber",
     name: "네온 사이버",
     theme: {
-      top: 20,
+      top: DONOR_RANKINGS_COMPACT_TOP_MAX,
       titleText: "⚡ 웹후원 순위 ⚡",
       titleSize: 32,
       rowSize: 26,
@@ -513,7 +516,7 @@ export const BUILT_IN_DONOR_RANKINGS_PRESETS: DonorRankingsPreset[] = [
     id: "dr_builtin_classic_pink",
     name: "클래식 핑크",
     theme: {
-      top: 20,
+      top: DONOR_RANKINGS_COMPACT_TOP_MAX,
       titleText: "💖 후원 순위 💖",
       titleSize: 30,
       rowSize: 22,
@@ -539,7 +542,7 @@ export const BUILT_IN_DONOR_RANKINGS_PRESETS: DonorRankingsPreset[] = [
     id: "dr_builtin_midnight",
     name: "미드나잇",
     theme: {
-      top: 20,
+      top: DONOR_RANKINGS_COMPACT_TOP_MAX,
       titleText: "🌙 웹후원 순위 🌙",
       titleSize: 32,
       rowSize: 26,
@@ -565,7 +568,7 @@ export const BUILT_IN_DONOR_RANKINGS_PRESETS: DonorRankingsPreset[] = [
     id: "dr_builtin_emerald",
     name: "에메랄드",
     theme: {
-      top: 20,
+      top: DONOR_RANKINGS_COMPACT_TOP_MAX,
       titleText: "✨ 웹후원 순위 ✨",
       titleSize: 32,
       rowSize: 26,
@@ -661,11 +664,13 @@ function normalizeDonorRankingsTheme(
     if (!raw) return defaults.titleText;
     return raw.slice(0, 60);
   })();
-  const topMin = defaults === DEFAULT_DONOR_RANKINGS_FULL_THEME ? 0 : 1;
-  const topParsed = n(v.top, topMin, 50, defaults.top);
-  /** 구버전 기본 7명 → 20명 (OBS에서 잘라 쓰면 됨) */
+  const compactTheme = defaults !== DEFAULT_DONOR_RANKINGS_FULL_THEME;
+  const topMin = compactTheme ? 1 : 0;
+  const topMax = compactTheme ? DONOR_RANKINGS_COMPACT_TOP_MAX : 50;
+  const topParsed = n(v.top, topMin, topMax, defaults.top);
+  /** 구버전 기본 7명 → 10명 */
   const top =
-    defaults === DEFAULT_DONOR_RANKINGS_THEME && topParsed === 7 ? defaults.top : topParsed;
+    compactTheme && topParsed === 7 ? defaults.top : topParsed;
   return {
     top,
     titleText,
@@ -2053,6 +2058,7 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
     /**
      * 멤버 추가·삭제(membersAuthoritative)가 큐에서 테마 PATCH와 합쳐질 때
      * 뒤쪽 저장이 옛 로스터·플래그 없이 덮지 않게 한다.
+     * 슬림 로스터 POST 가 대형 테마 body 와 합쳐져도 membersAuthoritative 는 유지.
      */
     {
       const prevMembersAuth = prev.membersAuthoritative === true;
@@ -2065,13 +2071,28 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
           merged.members = prevMembers;
           if (prev.memberPositions !== undefined) merged.memberPositions = prev.memberPositions;
           if (prev.rankPositionLabels !== undefined) merged.rankPositionLabels = prev.rankPositionLabels;
+          if (prev.membersRosterUpdatedAt !== undefined) {
+            merged.membersRosterUpdatedAt = prev.membersRosterUpdatedAt;
+          }
         } else if (nextMembersAuth && !prevMembersAuth && nextMembers) {
           merged.members = nextMembers;
+          if (next.memberPositions !== undefined) merged.memberPositions = next.memberPositions;
+          if (next.rankPositionLabels !== undefined) merged.rankPositionLabels = next.rankPositionLabels;
+          if (next.membersRosterUpdatedAt !== undefined) {
+            merged.membersRosterUpdatedAt = next.membersRosterUpdatedAt;
+          }
         } else if (prevMembers && nextMembers) {
           merged.members = pickMemberRosterPreferNewer(
             { members: nextMembers, updatedAt: Number(next.updatedAt || 0) },
             { members: prevMembers, updatedAt: Number(prev.updatedAt || 0) }
           );
+          const preferNext = Number(next.updatedAt || 0) >= Number(prev.updatedAt || 0);
+          const src = preferNext ? next : prev;
+          if (src.memberPositions !== undefined) merged.memberPositions = src.memberPositions;
+          if (src.rankPositionLabels !== undefined) merged.rankPositionLabels = src.rankPositionLabels;
+          if (src.membersRosterUpdatedAt !== undefined) {
+            merged.membersRosterUpdatedAt = src.membersRosterUpdatedAt;
+          }
         }
       }
     }
@@ -2184,6 +2205,11 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
   }
 }
 
+/** 저장 큐가 바쁠 때 멤버 heal 재푸시 등을 건너뛰기 위함 */
+export function isServerSaveBusy(): boolean {
+  return serverSaveInFlight || serverSavePending != null;
+}
+
 function enqueueServerSave(
   apiBodyJson: string,
   userId: string | null | undefined,
@@ -2283,9 +2309,8 @@ async function runServerSaveQueue(): Promise<void> {
             generalTimer?: unknown;
             matchTimer?: unknown;
           };
-          membersRosterUpdated =
-            body.membersAuthoritative === true ||
-            (Array.isArray(body.members) && body.members.length > 0);
+          /** 테마·시그 PATCH 에 members 가 실려도 OBS forceFull 폭주 방지 — 추가·삭제 권위만 */
+          membersRosterUpdated = body.membersAuthoritative === true;
           timerDisplayStylesUpdated =
             body.timerDisplayStyles != null && typeof body.timerDisplayStyles === "object";
           generalTimerUpdated =
@@ -2356,7 +2381,7 @@ function omitPlaceholderMembersFromApiPayload(
 }
 
 /** 관리자 /api/state 저장 시 — 스핀 결과·historyLogs는 서버 전용(POST 생략으로 대역폭 절감) */
-function appStatePayloadForApi(
+export function appStatePayloadForApi(
   next: AppState,
   userId?: string | null,
   options?: SaveStateAsyncOptions
@@ -2364,6 +2389,7 @@ function appStatePayloadForApi(
   donorsAuthoritative?: boolean;
   donorsReplace?: boolean;
   settlementReset?: boolean;
+  membersAuthoritative?: boolean;
 } {
   const normalizedSigInventory = slimSigInventoryForWire(
     normalizeSigInventory(next.sigInventory),
@@ -2407,6 +2433,35 @@ function appStatePayloadForApi(
       updatedAt: next.updatedAt,
       highSocietySettings: next.highSocietySettings,
       ...(next.donationSyncMode ? { donationSyncMode: next.donationSyncMode } : {}),
+    };
+  }
+  /**
+   * 멤버 추가·삭제 권위: 시그 인벤·프리셋 등 대형 필드를 빼고 로스터(+참가 슬롯)만 전송.
+   * 전체 POST 가 저장 큐·서버 연결을 막던 회귀 방지.
+   */
+  if (
+    options?.membersAuthoritative &&
+    options?.omitDonationFields &&
+    !options?.settlementReset &&
+    !options?.donorsAuthoritative
+  ) {
+    const rosterAt =
+      typeof next.membersRosterUpdatedAt === "number" && Number.isFinite(next.membersRosterUpdatedAt)
+        ? next.membersRosterUpdatedAt
+        : next.updatedAt;
+    return {
+      updatedAt: next.updatedAt,
+      members: next.members,
+      memberPositions: next.memberPositions,
+      memberPositionMode: next.memberPositionMode,
+      rankPositionLabels: next.rankPositionLabels,
+      membersRosterUpdatedAt: rosterAt,
+      membersAuthoritative: true as const,
+      sigMatch: next.sigMatch,
+      mealMatch: next.mealMatch,
+      mealBattle: next.mealBattle,
+      mealMatchSettings: next.mealMatchSettings,
+      sigMatchSettings: next.sigMatchSettings,
     };
   }
   /** 시그/테마/자동 저장 — 후원 금액은 API에서 제거. 실멤버명은 OBS 반영을 위해 유지 */
@@ -2582,6 +2637,10 @@ export async function saveStateAsync(
             if (normalizeDonorsArray(withDonors.donors).length > 0) {
               const synced = syncMemberTotalsFromDonors(withDonors);
               const guardedSync = guardMemberTotalsAgainstAccidentalZeroWipe(synced, local ?? withDonors);
+              /**
+               * 로스터 id·순서는 이번 저장(guarded)이 정본 — LS/세션은 겹치는 멤버 금액만 보강.
+               * (삭제 후 stale 긴 로스터를 base 로 쓰면 안 되고, merge 는 patch 쪽 id 집합을 따름)
+               */
               if (local?.members?.length) {
                 return {
                   ...guardedSync,
@@ -3473,9 +3532,10 @@ async function doLoadStateFromApi(
       ) {
         data.donors = baseDonors;
         if (totalCombined(data as AppState) < totalCombined(base)) {
+          /** 서버(짧은) 로스터가 정본 — last-good 로 삭제 멤버를 되살리지 않고 금액만 보강 */
           data.members = mergeMemberRosterPreservingAmounts(
-            (data as AppState).members || [],
-            base.members || []
+            base.members || [],
+            (data as AppState).members || []
           );
         }
       }

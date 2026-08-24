@@ -15,6 +15,7 @@ import {
   isMemberRosterStrictSuperset,
   pickMemberRosterPreferNewer,
   mergeServerSaveApiBodies,
+  appStatePayloadForApi,
   shouldAvoidOverwritingLocalStateWithRemote,
   shouldPreferLocalSigInventoryOverIncoming,
   wouldShrinkDonationData,
@@ -340,6 +341,7 @@ describe("member sync helpers", () => {
     const prev = JSON.stringify({
       updatedAt: 200,
       membersAuthoritative: true,
+      membersRosterUpdatedAt: 200,
       members: [
         { id: "m1", name: "쟈키", account: 0, toon: 0, contribution: 0 },
         { id: "m2", name: "사기", account: 0, toon: 0, contribution: 0 },
@@ -353,12 +355,51 @@ describe("member sync helpers", () => {
     });
     const merged = JSON.parse(mergeServerSaveApiBodies(prev, next)) as {
       membersAuthoritative?: boolean;
+      membersRosterUpdatedAt?: number;
       members: Member[];
       overlaySettings: { a: number };
     };
     expect(merged.membersAuthoritative).toBe(true);
     expect(merged.members.map((m) => m.id)).toEqual(["m1", "m2"]);
+    expect(merged.membersRosterUpdatedAt).toBe(200);
     expect(merged.overlaySettings.a).toBe(2);
+  });
+
+  it("appStatePayloadForApi slims membersAuthoritative+omitDonationFields body", () => {
+    const state = {
+      ...defaultState(),
+      updatedAt: 1000,
+      membersRosterUpdatedAt: 1000,
+      members: [
+        { id: "m1", name: "쟈키", account: 100, toon: 0, contribution: 0 },
+        { id: "m2", name: "신규", account: 0, toon: 0, contribution: 0 },
+      ],
+      sigInventory: Array.from({ length: 40 }, (_, i) => ({
+        id: `sig_${i}`,
+        name: `s${i}`,
+        price: 1000,
+        imageUrl: `/uploads/sigs/x/${i}.gif`,
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      })),
+      overlayPresets: [{ id: "p1", name: "프리셋", settings: {} }],
+    } as AppState;
+    const payload = appStatePayloadForApi(state, "finalent", {
+      membersAuthoritative: true,
+      omitDonationFields: true,
+    }) as Record<string, unknown>;
+    expect(payload.membersAuthoritative).toBe(true);
+    expect(Array.isArray(payload.members) && (payload.members as Member[]).map((m) => m.id)).toEqual([
+      "m1",
+      "m2",
+    ]);
+    expect(payload.sigInventory).toBeUndefined();
+    expect(payload.overlayPresets).toBeUndefined();
+    expect(payload.donors).toBeUndefined();
+    expect(payload.membersRosterUpdatedAt).toBe(1000);
   });
 
   it("mergeServerSaveApiBodies does not drop zero-amount real members behind theme patch", () => {

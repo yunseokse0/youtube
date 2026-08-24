@@ -18,6 +18,7 @@ import {
   isTimerBackgroundHidden,
   isTimerBorderVisuallyHidden,
   isHiddenTimerDisplayStyle,
+  restoreTimerBackgroundOpacity,
   TIMER_PILL_BORDER_PX,
   stripAdminPreviewHotReloadParams,
   type OverlayPresetLike,
@@ -668,6 +669,12 @@ describe("applyTimerBackgroundOpacity", () => {
 
   it("uses white rgba fallback when bg color is empty", () => {
     expect(applyTimerBackgroundOpacity("", 40)).toBe("rgba(255,255,255,0.4)");
+  });
+
+  it("restoreTimerBackgroundOpacity keeps visible opacity and fills LED default", () => {
+    expect(restoreTimerBackgroundOpacity("led-matrix", 0)).toBe(100);
+    expect(restoreTimerBackgroundOpacity("pill", 0)).toBe(40);
+    expect(restoreTimerBackgroundOpacity("led-matrix", 72)).toBe(72);
   });
 });
 

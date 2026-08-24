@@ -1056,13 +1056,29 @@ export function useOverlayRemoteState(
         localNow.members.length > 0
       ) {
         const good = lastGoodRef.current;
+        const localStamp = Math.max(
+          Number(localNow.membersRosterUpdatedAt || 0),
+          Number(localNow.updatedAt || 0)
+        );
+        const goodStamp = Math.max(
+          Number(good?.membersRosterUpdatedAt || 0),
+          Number(good?.updatedAt || 0)
+        );
         const rosterGrew =
           !good ||
           (isMemberRosterStrictSuperset(localNow.members, good.members || []) &&
-            Number(localNow.updatedAt || 0) >= Number(good.updatedAt || 0));
-        if (rosterGrew && !shouldKeepLastGoodInsteadOf(localNow, statePick, good)) {
+            localStamp >= goodStamp);
+        const rosterShrunk =
+          Boolean(good) &&
+          isMemberRosterStrictSuperset(good!.members || [], localNow.members) &&
+          membersDifferByIds(good!.members || [], localNow.members) &&
+          localStamp >= goodStamp;
+        if (
+          (rosterGrew || rosterShrunk) &&
+          !shouldKeepLastGoodInsteadOf(localNow, statePick, good)
+        ) {
           const withRoster =
-            good && isMemberRosterStrictSuperset(localNow.members, good.members || [])
+            good && membersDifferByIds(good.members || [], localNow.members)
               ? {
                   ...localNow,
                   members: mergeMemberRosterPreservingAmounts(
@@ -1084,7 +1100,10 @@ export function useOverlayRemoteState(
             userId,
             setState,
           });
-          void syncFromApiRef.current({ forceFull: true });
+          /** 삭제는 stale GET 이 멤버를 되살리지 않게 즉시 forceFull 하지 않음 */
+          if (rosterGrew) {
+            void syncFromApiRef.current({ forceFull: true, membersRosterSync: true });
+          }
           return;
         }
       }

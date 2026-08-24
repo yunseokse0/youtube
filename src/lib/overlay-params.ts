@@ -1311,6 +1311,7 @@ export function resolveTimerOverlayStyle(
   const showHoursRaw = pickTimerPresetOrParam("timerShowHours", "timerShowHours", rawSp, preset, opts);
   /**
    * 표시 형식(시:분:초): 타이머 제어(`timerDisplayStyles`)가 정본.
+   * OFF(자동)일 때 60분까지는 분:초, 61분부터 시:분:초.
    * 프리셋/URL에 남은 timerShowHours 가 관리자 실시간 토글을 덮지 않게 함.
    */
   const showHours =
@@ -1487,6 +1488,16 @@ export function isTimerBorderVisuallyHidden(
   if (isTimerBackgroundHidden(bgColor, opacityPercent)) return true;
   const lower = String(borderColor || "").trim().toLowerCase();
   return lower === "transparent" || lower === "none" || lower === "rgba(0,0,0,0)";
+}
+
+/** 배경 없음 상태에서 색을 다시 고르면 불투명도를 복원 */
+export function restoreTimerBackgroundOpacity(
+  design: string | undefined,
+  currentOpacity: number | undefined
+): number {
+  const n = Math.max(0, Math.min(100, Math.round(Number(currentOpacity) || 0)));
+  if (n > 0) return n;
+  return String(design || "") === "led-matrix" ? 100 : 40;
 }
 
 export function timerOverlayStyleHasCustomColors(style: ResolvedTimerOverlayStyle): boolean {

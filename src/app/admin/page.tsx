@@ -25,6 +25,7 @@ import {
   loadState,
   saveState,
   saveStateAsync,
+  isServerSaveBusy,
   cacheBroadcastStateSnapshot,
   saveOverlayPresetsPatchAsync,
   saveObsTextRegistryAsync,
@@ -98,6 +99,7 @@ import {
   normalizeRouletteState,
   normalizeMemberPositions,
   fitRankPositionLabelsToMemberCount,
+  DONOR_RANKINGS_COMPACT_TOP_MAX,
   type OverlayConfig,
 } from "@/lib/state";
 import {
@@ -168,6 +170,7 @@ import {
   isTimerBackgroundHidden,
   isTimerBorderVisuallyHidden,
   isHiddenTimerDisplayStyle,
+  restoreTimerBackgroundOpacity,
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
 import { TABLE_FONT_FAMILY_OPTIONS, clampTableMemberSizePx, normalizeTableFontFamily } from "@/lib/table-font-style";
@@ -377,7 +380,7 @@ type OverlayPreset = {
   showTeamBattle?: boolean; teamBattleAnchor?: string;
   showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
   tickerInMembers?: boolean; tickerInGoal?: boolean; tickerInPersonalGoal?: boolean;
-  showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontFamily?: string; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerOutlineColor?: string; timerOutlineWidth?: string; timerBgOpacity?: string; timerScale?: string;
+  showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerDesign?: string; timerFontFamily?: string; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerOutlineColor?: string; timerOutlineWidth?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
   confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableFrameEnabled?: boolean; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; tableGridLines?: boolean; tableVerticalLines?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; contributionColor?: string; tableRowEvenBg?: string; tableRowOddBg?: string; tablePanelBorderColor?: string; tableTextColor?: string; totalTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
@@ -2893,11 +2896,16 @@ export default function AdminPage() {
         ) {
           if (localSupersetProtected) {
             refreshDonorsFromServer();
-            /** 후원 없어도 멤버 로스터만 서버에 재푸시 (heal 쿨다운 공유) */
+            /**
+             * 후원 없어도 멤버 로스터만 서버에 재푸시.
+             * 저장 큐가 바쁠 때·짧은 쿨다운 재푸시는 연결 지연·실시간 반영 저하를 만듦.
+             */
             if (
               normalizeDonorsArray(stateRef.current.donors).length === 0 &&
               (stateRef.current.members || []).length > 0 &&
-              Date.now() - lastEmptyRemoteDonationHealAtRef.current >= 500
+              !isServerSaveBusy() &&
+              !pendingUnsyncedRef.current &&
+              Date.now() - lastEmptyRemoteDonationHealAtRef.current >= 8_000
             ) {
               lastEmptyRemoteDonationHealAtRef.current = Date.now();
               persistState(stateRef.current, {
@@ -3870,14 +3878,15 @@ export default function AdminPage() {
     if (!Number.isFinite(raw)) return 100;
     return Math.max(30, Math.min(300, Math.floor(raw)));
   };
-  const buildDonorRankingsUrl = (opts?: { test?: boolean }): string => {
+  const buildDonorRankingsUrl = (opts?: { test?: boolean; full?: boolean }): string => {
     if (typeof window === "undefined") return "";
     /** OBS URL은 짧게 — 테마·줌·색은 관리자 저장값(서버)에서 로드 */
     const q = new URLSearchParams();
     q.set("u", overlayUserId);
     q.set("host", "obs");
     if (opts?.test) q.set("test", "true");
-    return `${window.location.origin}/overlay/donor-rankings?${q.toString()}`;
+    const path = opts?.full ? "/overlay/donor-rankings/full" : "/overlay/donor-rankings";
+    return `${window.location.origin}${path}?${q.toString()}`;
   };
   const buildEmergencySnapshotUrl = (p: OverlayPreset): string => {
     if (typeof window === "undefined") return "";
@@ -4259,7 +4268,7 @@ export default function AdminPage() {
           prev
         );
         const now = Date.now();
-        next = { ...next, updatedAt: now };
+        next = { ...next, updatedAt: now, membersRosterUpdatedAt: now };
         stateRef.current = next;
         stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, now);
         membersAuthoritativeSaveUntilRef.current = Date.now() + 120_000;
@@ -4338,6 +4347,7 @@ export default function AdminPage() {
           participants: nextParticipants,
         },
         updatedAt: now,
+        membersRosterUpdatedAt: now,
       };
       /** 폴링·다른 탭보다 먼저 LS·ref·stamp에 올려 경합으로 멤버가 사라지지 않게 */
       stateRef.current = next;
@@ -4354,7 +4364,7 @@ export default function AdminPage() {
       void saveStateAsync(toPersist, user?.id, {
         membersAuthoritative: true,
         omitDonationFields: true,
-      }).then(async (r) => {
+      }).then((r) => {
         showServerPersistToast(`멤버 추가 · ${base}`, {
           ok: r.ok,
           storageFallback: r.storageFallback,
@@ -4370,7 +4380,7 @@ export default function AdminPage() {
           stateUpdatedAtRef.current = r.serverUpdatedAt;
           lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
         }
-        /** 저장 성공 후 미리보기 iframe·OBS 폴링이 새 로스터를 다시 끌어가게 */
+        /** 저장 성공 후 미리보기 iframe·OBS가 SSE membersRosterUpdatedAt 으로 즉시 동기화 */
         try {
           const stamped: AppState = {
             ...toPersist,
@@ -4378,6 +4388,11 @@ export default function AdminPage() {
             members: stateRef.current.members,
             memberPositions: stateRef.current.memberPositions,
             rankPositionLabels: stateRef.current.rankPositionLabels,
+            membersRosterUpdatedAt: Math.max(
+              Number(stateRef.current.membersRosterUpdatedAt || 0),
+              typeof r.serverUpdatedAt === "number" ? r.serverUpdatedAt : 0,
+              Number(toPersist.updatedAt || 0)
+            ),
             donors:
               normalizeDonorsArray(stateRef.current.donors).length > 0
                 ? stateRef.current.donors
@@ -4393,29 +4408,6 @@ export default function AdminPage() {
           notifyBroadcastStateLocalUpdated(user?.id, stamped.updatedAt);
         } catch {
           notifyBroadcastStateLocalUpdated(user?.id, r.serverUpdatedAt ?? Date.now());
-        }
-        /** 서버에 추가분이 안 붙었으면 한 번 더 권위 저장(OBS·새로고침 유실 방지) */
-        try {
-          const remote = await loadStateFromApi(user?.id, { forceFull: true });
-          const localNow = stateRef.current;
-          if (
-            remote &&
-            localNow &&
-            isMemberRosterStrictSuperset(localNow.members, remote.members)
-          ) {
-            membersAuthoritativeSaveUntilRef.current = Date.now() + 120_000;
-            const againState = localNow;
-            const again = await saveStateAsync(againState, user?.id, {
-              membersAuthoritative: true,
-              omitDonationFields: true,
-            });
-            if (again.ok && typeof again.serverUpdatedAt === "number") {
-              stateUpdatedAtRef.current = again.serverUpdatedAt;
-              lastAppliedRemoteUpdatedAtRef.current = again.serverUpdatedAt;
-            }
-          }
-        } catch {
-          /* ignore verify errors */
         }
       });
       return next;
@@ -10960,10 +10952,12 @@ export default function AdminPage() {
                   <div>
                     <h4 className="text-sm font-semibold">후원 순위 오버레이</h4>
                     <p className="text-xs text-neutral-400 mt-1">
-                      계좌·투네 후원을 합쳐 「후원 순위」 한 목록으로 표시합니다. 인원이 5명 이상이면 좌우로 반 나눕니다. 화면 밖 순위는 OBS 브라우저 소스 크기·위치로 맞추면 됩니다. 전원 표시는 URL에{" "}
-                      <code className="text-neutral-300">all=1</code> 또는{" "}
-                      <code className="text-neutral-300">top=0</code>. 예전처럼 두 칸으로 나누려면{" "}
-                      <code className="text-neutral-300">layout=dual</code> 을 붙이세요.
+                      계좌·투네 후원을 합쳐 「후원 순위」 한 목록으로 표시합니다. 기본 오버레이는{" "}
+                      <strong className="text-neutral-300">10위까지</strong>입니다(5명 이상이면 좌우 반 나눔).
+                      11위 이후 전원은 같은 테마의{" "}
+                      <strong className="text-neutral-300">세로형 전체 순위</strong> 오버레이를 OBS에 따로 추가하세요.
+                      예전처럼 계좌/투네 두 칸이면{" "}
+                      <code className="text-neutral-300">layout=dual</code>.
                     </p>
                   </div>
                   <label className="text-[11px] text-neutral-400 flex flex-col gap-1 rounded border border-white/10 bg-black/20 px-2 py-2">
@@ -10980,12 +10974,15 @@ export default function AdminPage() {
                   <div className="rounded border border-white/10 bg-neutral-900/40 p-2 space-y-2">
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
                       <label className="text-[11px] text-neutral-400">
-                        표시 개수
+                        표시 개수 (최대 {DONOR_RANKINGS_COMPACT_TOP_MAX}위)
                         <input
                           type="range"
                           min={1}
-                          max={50}
-                          value={state.donorRankingsTheme.top}
+                          max={DONOR_RANKINGS_COMPACT_TOP_MAX}
+                          value={Math.min(
+                            DONOR_RANKINGS_COMPACT_TOP_MAX,
+                            Math.max(1, Number(state.donorRankingsTheme.top) || DONOR_RANKINGS_COMPACT_TOP_MAX)
+                          )}
                           onChange={(e) => updateDonorRankingsTheme({ top: Number(e.target.value) })}
                           className="w-full"
                         />
@@ -11210,6 +11207,22 @@ export default function AdminPage() {
                       }}
                     >
                       {copiedId === "dash-donor-rankings" ? "복사됨!" : "URL 복사"}
+                    </button>
+                  </div>
+                  <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+                    <span>전체 순위 (세로):</span>
+                    <code className="text-neutral-300 break-all">
+                      /overlay/donor-rankings/full?u={overlayUserId}&host=obs
+                    </code>
+                    <button
+                      type="button"
+                      className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donor-rankings-full" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                      onClick={() => {
+                        const u = buildDonorRankingsUrl({ full: true });
+                        void copyUrl(u, "dash-donor-rankings-full");
+                      }}
+                    >
+                      {copiedId === "dash-donor-rankings-full" ? "복사됨!" : "URL 복사"}
                     </button>
                   </div>
                   <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
@@ -13001,7 +13014,7 @@ export default function AdminPage() {
                           className={`w-fit px-2 py-1 rounded border text-xs ${timerStyle.showHours ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`}
                           onClick={() => updateTimerDisplayStyle(timerDef.flag, { showHours: !timerStyle.showHours })}
                         >
-                          시:분:초 {timerStyle.showHours ? "ON" : "OFF"} (OFF=분:초)
+                          시:분:초 {timerStyle.showHours ? "항상 ON" : "자동"} (60분까지 분:초 · 61분부터 시:분:초)
                         </button>
                         <label className="text-xs text-neutral-400">글꼴</label>
                         <div className="flex flex-wrap items-center gap-2">
@@ -13065,15 +13078,43 @@ export default function AdminPage() {
                               String(timerStyle.bgColor ?? ""),
                               timerDesignId === "led-matrix" ? "#000000" : "#ffffff"
                             )}
-                            onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { bgColor: e.target.value })}
+                            onChange={(e) =>
+                              updateTimerDisplayStyle(timerDef.flag, {
+                                bgColor: e.target.value,
+                                bgOpacity: restoreTimerBackgroundOpacity(timerDesignId, timerStyle.bgOpacity),
+                              })
+                            }
                           />
-                          <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updateTimerDisplayStyle(timerDef.flag, { bgColor: "" })}>기본</button>
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                            onClick={() =>
+                              updateTimerDisplayStyle(timerDef.flag, {
+                                bgColor: timerDesignId === "led-matrix" ? "#000000" : "",
+                                bgOpacity: restoreTimerBackgroundOpacity(timerDesignId, timerStyle.bgOpacity),
+                              })
+                            }
+                          >
+                            기본
+                          </button>
                           <button
                             type="button"
                             className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
                             onClick={() => updateTimerDisplayStyle(timerDef.flag, { bgColor: "transparent", borderColor: "transparent", outlineColor: "", bgOpacity: 0 })}
                           >
                             배경 없음
+                          </button>
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                            onClick={() =>
+                              updateTimerDisplayStyle(timerDef.flag, {
+                                bgColor: timerDesignId === "led-matrix" ? "#000000" : "",
+                                bgOpacity: timerDesignId === "led-matrix" ? 100 : 40,
+                              })
+                            }
+                          >
+                            배경 넣기
                           </button>
                         </div>
                         <label className="text-xs text-neutral-400">테두리 색상</label>
@@ -14853,7 +14894,7 @@ export default function AdminPage() {
                 위치/크기는 Prism에서 조정하세요. 세로 방송이면 브라우저 소스를 1080×1920에 맞추면 됩니다.
               </p>
               <div className="mb-3 rounded border border-white/10 bg-black/20 p-2 text-xs text-neutral-400 flex flex-wrap items-center gap-2">
-                <span>후원 리스트 오버레이:</span>
+                <span>후원 순위 (10위):</span>
                 <code className="text-neutral-300 break-all">/overlay/donor-rankings?u={overlayUserId}&host=obs</code>
                 <button
                   type="button"
@@ -14869,6 +14910,27 @@ export default function AdminPage() {
                   type="button"
                   className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white"
                   onClick={() => window.open(buildDonorRankingsUrl(), "_blank", "noopener,noreferrer")}
+                >
+                  오버레이 열기
+                </button>
+              </div>
+              <div className="mb-3 rounded border border-white/10 bg-black/20 p-2 text-xs text-neutral-400 flex flex-wrap items-center gap-2">
+                <span>전체 순위 (세로):</span>
+                <code className="text-neutral-300 break-all">/overlay/donor-rankings/full?u={overlayUserId}&host=obs</code>
+                <button
+                  type="button"
+                  className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donor-rankings-full-inline" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                  onClick={() => {
+                    const u = buildDonorRankingsUrl({ full: true });
+                    void copyUrl(u, "dash-donor-rankings-full-inline");
+                  }}
+                >
+                  {copiedId === "dash-donor-rankings-full-inline" ? "복사됨!" : "URL 복사"}
+                </button>
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white"
+                  onClick={() => window.open(buildDonorRankingsUrl({ full: true }), "_blank", "noopener,noreferrer")}
                 >
                   오버레이 열기
                 </button>
@@ -15849,7 +15911,7 @@ export default function AdminPage() {
 
               <div className="mb-3 rounded-lg border border-white/10 bg-black/30 overflow-hidden">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 px-2 py-1.5">
-                  <span className="text-xs font-medium text-neutral-300">후원 순위 (상위 N) 미리보기</span>
+                  <span className="text-xs font-medium text-neutral-300">후원 순위 (10위) 미리보기</span>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <button
                       type="button"
@@ -15944,6 +16006,80 @@ export default function AdminPage() {
                   )}
                 </div>
               </div>
+
+              <div className="mb-3 rounded-lg border border-white/10 bg-black/30 overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 px-2 py-1.5">
+                  <span className="text-xs font-medium text-neutral-300">전체 후원 순위 (세로) 미리보기</span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      className={`rounded px-2 py-0.5 text-[11px] shrink-0 ${
+                        copiedId === "dash-donor-rankings-full-preview"
+                          ? "bg-emerald-600 text-white"
+                          : "border border-white/15 text-neutral-300 hover:border-emerald-500/60 hover:text-emerald-200"
+                      }`}
+                      onClick={() => {
+                        const u = buildDonorRankingsUrl({ full: true });
+                        void copyUrl(u, "dash-donor-rankings-full-preview");
+                      }}
+                    >
+                      {copiedId === "dash-donor-rankings-full-preview" ? "복사됨!" : "OBS URL 복사"}
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded px-2 py-0.5 text-[11px] shrink-0 ${
+                        copiedId === "dash-donor-rankings-full-preview-test"
+                          ? "bg-emerald-600 text-white"
+                          : "border border-amber-500/40 text-amber-200/90 hover:border-amber-400/70"
+                      }`}
+                      onClick={() => {
+                        const u = buildDonorRankingsUrl({ test: true, full: true });
+                        void copyUrl(u, "dash-donor-rankings-full-preview-test");
+                      }}
+                    >
+                      {copiedId === "dash-donor-rankings-full-preview-test" ? "복사됨!" : "테스트 URL"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-emerald-500/60 hover:text-emerald-200"
+                      onClick={() => setDonorRankingsPreviewIframeKey((k) => k + 1)}
+                    >
+                      새로고침
+                    </button>
+                  </div>
+                </div>
+                <div className="relative w-full max-w-[420px] mx-auto bg-black/40" style={{ minHeight: "420px", aspectRatio: "9 / 16" }}>
+                  {overlayUserId ? (
+                    <iframe
+                      key={`donor-rankings-full-${donorRankingsPreviewIframeKey}-${overlayUserId}`}
+                      src={appendAdminPreviewEmbedToOverlayUrl(
+                        (() => {
+                          const q = new URLSearchParams({ u: overlayUserId });
+                          return `/overlay/donor-rankings/full?${q.toString()}`;
+                        })()
+                      )}
+                      title="전체 후원 순위 세로 오버레이 미리보기"
+                      className="absolute inset-0 h-full w-full border-0"
+                      style={{ background: "transparent" }}
+                      onLoad={() => {
+                        notifyAdminPreviewDonorsUpdated(
+                          overlayUserId,
+                          stateRef.current?.donors || [],
+                          stateRef.current?.updatedAt
+                        );
+                      }}
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-400">
+                      {authReady ? "계정 ID 대기 중" : "계정 불러오는 중…"}
+                    </div>
+                  )}
+                </div>
+                <p className="px-2 py-1.5 text-[10px] text-neutral-500 text-center">
+                  10위 이후 전원 · 한 줄 세로 목록 · 테마는 위 후원순위와 동일
+                </p>
+              </div>
+
               <div className="mb-3 rounded border border-sky-500/30 bg-sky-950/25 p-3 space-y-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
@@ -18211,15 +18347,53 @@ export default function AdminPage() {
                                         type="color"
                                         className="w-16 h-10 rounded bg-neutral-900/80 border border-white/10"
                                         value={toColorPickerValue(String(p.timerBgColor ?? ""), "#ffffff")}
-                                        onChange={(e) => updatePreset(p.id, { timerBgColor: e.target.value })}
+                                        onChange={(e) =>
+                                          updatePreset(p.id, {
+                                            timerBgColor: e.target.value,
+                                            timerBgOpacity: String(
+                                              restoreTimerBackgroundOpacity(
+                                                String(p.timerDesign || ""),
+                                                parseInt(String(p.timerBgOpacity || "0"), 10)
+                                              )
+                                            ),
+                                          })
+                                        }
                                       />
-                                      <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { timerBgColor: "" })}>기본</button>
+                                      <button
+                                        type="button"
+                                        className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                                        onClick={() =>
+                                          updatePreset(p.id, {
+                                            timerBgColor: String(p.timerDesign || "") === "led-matrix" ? "#000000" : "",
+                                            timerBgOpacity: String(
+                                              restoreTimerBackgroundOpacity(
+                                                String(p.timerDesign || ""),
+                                                parseInt(String(p.timerBgOpacity || "0"), 10)
+                                              )
+                                            ),
+                                          })
+                                        }
+                                      >
+                                        기본
+                                      </button>
                                       <button
                                         type="button"
                                         className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
                                         onClick={() => updatePreset(p.id, { timerBgColor: "transparent", timerBorderColor: "transparent", timerOutlineColor: "", timerBgOpacity: "0" })}
                                       >
                                         배경 없음
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                                        onClick={() =>
+                                          updatePreset(p.id, {
+                                            timerBgColor: String(p.timerDesign || "") === "led-matrix" ? "#000000" : "",
+                                            timerBgOpacity: String(p.timerDesign || "") === "led-matrix" ? "100" : "40",
+                                          })
+                                        }
+                                      >
+                                        배경 넣기
                                       </button>
                                     </div>
                                     <label className="text-xs text-neutral-400">테두리 색상</label>

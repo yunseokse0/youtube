@@ -6,7 +6,11 @@ import {
   LED_MATRIX_COLORS,
   ledSevenSegmentIsOn,
 } from "@/lib/timer-design";
-import { applyTimerBackgroundOpacity, isTimerBackgroundHidden } from "@/lib/overlay-params";
+import {
+  applyTimerBackgroundOpacity,
+  isTimerBackgroundHidden,
+  isTimerBorderVisuallyHidden,
+} from "@/lib/overlay-params";
 
 type SegId = "a" | "b" | "c" | "d" | "e" | "f" | "g";
 
@@ -127,13 +131,17 @@ export function LedMatrixTimer({
   const customColor = (fontColor || "").trim();
   const digitColor = customColor || LED_MATRIX_COLORS.digit;
   const ghostColor = customColor ? ghostColorFromDigit(digitColor) : LED_MATRIX_COLORS.ghost;
-  const frameColor = (borderColor || "").trim() || LED_MATRIX_COLORS.border;
-  const cornerColor = frameColor;
   const opacity = Math.max(0, Math.min(100, bgOpacity ?? 100));
   const noBackground = isTimerBackgroundHidden(bgColor, opacity);
+  const hideBorder = noBackground || isTimerBorderVisuallyHidden(bgColor, borderColor, opacity);
   const panelBg = noBackground
-    ? LED_MATRIX_COLORS.panel
+    ? "transparent"
     : applyTimerBackgroundOpacity((bgColor || "").trim() || LED_MATRIX_COLORS.panel, opacity);
+  const frameColor = hideBorder
+    ? "transparent"
+    : (borderColor || "").trim() || LED_MATRIX_COLORS.border;
+  const cornerColor = frameColor;
+  const showChrome = !noBackground;
 
   const cornerStyle = (extra: CSSProperties): CSSProperties => ({
     width: cornerSize,
@@ -148,18 +156,25 @@ export function LedMatrixTimer({
       className={`relative inline-flex items-center justify-center ${className}`}
       style={{
         backgroundColor: panelBg,
-        border: `2px solid ${frameColor}`,
-        boxShadow: `inset 0 0 24px rgba(0,0,0,0.65), 0 0 12px rgba(239,68,68,0.12)`,
+        border: hideBorder ? "none" : `2px solid ${frameColor}`,
+        boxShadow: showChrome
+          ? `inset 0 0 24px rgba(0,0,0,0.65), 0 0 12px ${frameColor}`
+          : "none",
         padding: `${padY}px ${padX}px`,
         isolation: "isolate",
       }}
       data-timer-design="led-matrix"
+      data-timer-bg={noBackground ? "off" : "on"}
       suppressHydrationWarning
     >
-      <span className="pointer-events-none absolute left-0 top-0" style={cornerStyle({})} aria-hidden />
-      <span className="pointer-events-none absolute right-0 top-0" style={cornerStyle({})} aria-hidden />
-      <span className="pointer-events-none absolute bottom-0 left-0" style={cornerStyle({})} aria-hidden />
-      <span className="pointer-events-none absolute bottom-0 right-0" style={cornerStyle({})} aria-hidden />
+      {hideBorder ? null : (
+        <>
+          <span className="pointer-events-none absolute left-0 top-0" style={cornerStyle({})} aria-hidden />
+          <span className="pointer-events-none absolute right-0 top-0" style={cornerStyle({})} aria-hidden />
+          <span className="pointer-events-none absolute bottom-0 left-0" style={cornerStyle({})} aria-hidden />
+          <span className="pointer-events-none absolute bottom-0 right-0" style={cornerStyle({})} aria-hidden />
+        </>
+      )}
 
       <div className="relative z-[1] flex items-center gap-[0.08em] leading-none" style={{ fontSize: digitSize }}>
         {text.split("").map((ch, idx) =>

@@ -35,4 +35,13 @@ describe("isDefaultLikeDonorRankingsTheme", () => {
       )
     ).toBe(false);
   });
+
+  it("clamps compact theme top above 10 down to 10", () => {
+    expect(
+      isDefaultLikeDonorRankingsTheme({
+        ...DEFAULT_DONOR_RANKINGS_THEME,
+        top: 20,
+      })
+    ).toBe(true);
+  });
 });

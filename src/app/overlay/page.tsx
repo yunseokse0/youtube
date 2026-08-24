@@ -96,6 +96,7 @@ import {
   isImageFrameTimerDesign,
   normalizeTimerDesign,
   resolveCircularImageTimerFontSize,
+  formatTimerClockText,
 } from "@/lib/timer-design";
 import BattleTeamColumnBoard from "@/components/battle/BattleTeamColumnBoard";
 import { mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
@@ -826,7 +827,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
     );
     scheduleStateUpdatedRef.current = schedule;
     syncOnceRef.current = syncOnce;
-    const applyLocalMemberRosterIfNewer = (localNow: AppState | null): boolean => {
+    const applyLocalMemberRosterIfNewer = (localNow: AppState | null): "grew" | "shrunk" | false => {
       if (!localNow || !Array.isArray(localNow.members) || localNow.members.length === 0) {
         return false;
       }
@@ -834,18 +835,32 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         return false;
       }
       const good = lastGoodRef.current;
+      const localStamp = Math.max(
+        Number(localNow.membersRosterUpdatedAt || 0),
+        Number(localNow.updatedAt || 0)
+      );
+      const goodStamp = Math.max(
+        Number(good?.membersRosterUpdatedAt || 0),
+        Number(good?.updatedAt || 0)
+      );
       const rosterGrew =
         !good ||
         (isMemberRosterStrictSuperset(localNow.members, good.members || []) &&
-          Number(localNow.updatedAt || 0) >= Number(good.updatedAt || 0));
-      if (!rosterGrew) return false;
+          localStamp >= goodStamp);
+      const rosterShrunk =
+        Boolean(good) &&
+        hasMeaningfulMemberRoster(localNow) &&
+        isMemberRosterStrictSuperset(good!.members || [], localNow.members) &&
+        membersDifferByIds(good!.members || [], localNow.members) &&
+        localStamp >= goodStamp;
+      if (!rosterGrew && !rosterShrunk) return false;
       if (!hasMeaningfulMemberRoster(localNow)) return false;
       /**
-       * LS 가 멤버만 늘리고 금액/후원이 비면 last-good 금액을 유지한 채 로스터만 확장.
-       * (저장 직후 stamp·omitDonation 경합으로 미리보기가 옛 4명으로 남는 회귀 방지)
+       * 추가: last-good 금액 유지하며 로스터 확장.
+       * 삭제: localNow id 집합을 따르고 남은 멤버 금액만 last-good 에서 보강.
        */
       const withRoster =
-        good && isMemberRosterStrictSuperset(localNow.members, good.members || [])
+        good && membersDifferByIds(good.members || [], localNow.members)
           ? {
               ...localNow,
               members: mergeMemberRosterPreservingAmounts(good.members || [], localNow.members),
@@ -871,13 +886,17 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         lastGoodRef.current = syncedLocal;
         saveLastGood(syncedLocal);
       }
-      return true;
+      return rosterShrunk ? "shrunk" : "grew";
     };
     const onStorage = (e: StorageEvent) => {
       if (e.key !== storageKey(userId ?? undefined)) return;
       const localNow = readLocalStateIfExists();
-      if (applyLocalMemberRosterIfNewer(localNow)) {
-        void syncOnceRef.current({ forceFull: true });
+      const rosterApply = applyLocalMemberRosterIfNewer(localNow);
+      if (rosterApply === "grew") {
+        void syncOnceRef.current({ forceFull: true, membersRosterSync: true });
+        return;
+      }
+      if (rosterApply === "shrunk") {
         return;
       }
       if (preferServerOnlyRef.current) {
@@ -923,9 +942,13 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
     const unsubscribeLocal = subscribeBroadcastStateLocalUpdated((detail) => {
       if (!overlayUserIdsMatch(userId, detail.userId)) return;
       const localNow = readLocalBroadcastState(userId) || readLocalStateIfExists();
-      /** 멤버 추가: richer 가드·preferServerOnly 보다 먼저 로스터 확장 반영 */
-      if (applyLocalMemberRosterIfNewer(localNow)) {
-        void syncOnceRef.current({ forceFull: true });
+      /** 멤버 추가·삭제: richer 가드·preferServerOnly 보다 먼저 로스터 반영 */
+      const rosterApply = applyLocalMemberRosterIfNewer(localNow);
+      if (rosterApply === "grew") {
+        void syncOnceRef.current({ forceFull: true, membersRosterSync: true });
+        return;
+      }
+      if (rosterApply === "shrunk") {
         return;
       }
       if (preferServerOnlyRef.current) {
@@ -1135,16 +1158,7 @@ function useServerTimer(timer: AppState["generalTimer"] | null): { text: string 
 
 function formatTimerText(elapsed: string | null, remainingSeconds?: number | null, showHours = false): string | null {
   if (remainingSeconds != null && Number.isFinite(remainingSeconds)) {
-    const safe = Math.max(0, Math.floor(remainingSeconds));
-    if (showHours) {
-      const h = Math.floor(safe / 3600);
-      const m = Math.floor((safe % 3600) / 60);
-      const sec = safe % 60;
-      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-    }
-    const mm = Math.floor(safe / 60);
-    const sec = safe % 60;
-    return `${String(mm).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+    return formatTimerClockText(remainingSeconds, showHours);
   }
   if (!elapsed) return null;
   const parts = elapsed.split(":").map((x) => parseInt(x, 10));
@@ -1152,11 +1166,8 @@ function formatTimerText(elapsed: string | null, remainingSeconds?: number | nul
   const h = parts.length === 3 ? parts[0] : 0;
   const m = parts.length >= 2 ? parts[parts.length - 2] : 0;
   const sec = parts[parts.length - 1] ?? 0;
-  if (showHours) {
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-  }
-  const totalMin = h * 60 + m;
-  return `${String(totalMin).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  const totalSec = h * 3600 + m * 60 + sec;
+  return formatTimerClockText(totalSec, showHours);
 }
 
 type ThemeId = "default" | "excel" | "excelLive" | "excelBlue" | "excelSlate" | "excelAmber" | "excelGold" | "excelRose" | "excelNavy" | "excelTeal" | "excelPurple" | "excelEmerald" | "excelOrange" | "excelIndigo" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel" | "rainbow" | "sunset" | "ocean" | "forest" | "aurora" | "violet" | "coral" | "mint" | "lava" | "ice";
@@ -4903,11 +4914,29 @@ function OverlayInner() {
           border: none !important;
           box-shadow: none !important;
         }
-        .overlay-root .overlay-elegant-table.excel-gold-table thead td:first-child {
-          border-top-left-radius: 12px !important;
+        .overlay-root .overlay-elegant-table.excel-gold-table thead td,
+        .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table thead td {
+          background: var(--excel-header-bg, #ffc107) !important;
+          background-clip: padding-box !important;
+          border-top: 4px solid transparent !important;
+          border-bottom: 4px solid transparent !important;
+          box-shadow: none !important;
         }
-        .overlay-root .overlay-elegant-table.excel-gold-table thead td:last-child {
-          border-top-right-radius: 12px !important;
+        .overlay-root .overlay-elegant-table.excel-gold-table thead td:first-child,
+        .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table thead td:first-child {
+          border-left: 10px solid transparent !important;
+          border-top-left-radius: 999px !important;
+          border-bottom-left-radius: 999px !important;
+          border-top-right-radius: 0 !important;
+          border-bottom-right-radius: 0 !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-gold-table thead td:last-child,
+        .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table thead td:last-child {
+          border-right: 10px solid transparent !important;
+          border-top-right-radius: 999px !important;
+          border-bottom-right-radius: 999px !important;
+          border-top-left-radius: 0 !important;
+          border-bottom-left-radius: 0 !important;
         }
         .overlay-root .overlay-elegant-table.excel-gold-table tbody td span:not(.overlay-rank-fx-colorShift):not(.overlay-rank-fx-rainbow):not(.overlay-rank-fx-glow):not(.overlay-rank-fx-sparkle),
         .overlay-root .overlay-elegant-table.excel-gold-table tbody td strong,
@@ -5126,7 +5155,7 @@ function OverlayInner() {
                     />
                   ) : null}
                 <div
-                  className={`relative ${showTableFrame ? "" : isExcelGoldChrome ? "overflow-hidden" : "overflow-visible studio-glass-panel"}`}
+                  className={`relative ${showTableFrame ? "" : isExcelGoldChrome ? "overflow-visible" : "overflow-visible studio-glass-panel"}`}
                   style={{
                     zIndex: 2,
                     borderRadius: showTableFrame ? 0 : isExcelGoldChrome ? 12 : 14,
@@ -5137,11 +5166,13 @@ function OverlayInner() {
                           ? "1px solid #ffc107"
                           : "none",
                     boxShadow: showTableFrame ? "none" : tablePanelShadow || "none",
-                    padding: isExcelGoldChrome && !showTableFrame ? "0 0 8px" : 0,
-                    backgroundColor: tableBodySheetBgCss || TABLE_BROADCAST_PANEL_BG,
+                    padding: isExcelGoldChrome && !showTableFrame ? "6px 0 8px" : 0,
+                    backgroundColor: isExcelGoldChrome
+                      ? "transparent"
+                      : tableBodySheetBgCss || TABLE_BROADCAST_PANEL_BG,
                     backdropFilter: showTableFrame || isExcelGoldChrome ? undefined : "blur(14px)",
                     WebkitBackdropFilter: showTableFrame || isExcelGoldChrome ? undefined : "blur(14px)",
-                    overflow: isExcelGoldChrome && !showTableFrame ? "hidden" : "visible",
+                    overflow: "visible",
                     /** translateZ(0) 는 OBS CEF에서 서브픽셀 블러를 유발 → 외부 호스트에서는 생략 */
                     ...(externalHost
                       ? {}

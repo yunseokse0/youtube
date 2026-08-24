@@ -43,6 +43,17 @@ describe("state-api-pick", () => {
     expect(out.highSocietySettings).toEqual(state.highSocietySettings);
   });
 
+  it("overlay pick includes membersRosterUpdatedAt for live roster sync", () => {
+    const state = { ...defaultState(), membersRosterUpdatedAt: 4242, updatedAt: 4000 };
+    const out = projectStateForGetPick(state, STATE_PICK_OVERLAY) as Record<string, unknown>;
+    expect(out.membersRosterUpdatedAt).toBe(4242);
+    const donorsOut = projectStateForGetPick(state, STATE_PICK_OVERLAY_DONORS) as Record<
+      string,
+      unknown
+    >;
+    expect(donorsOut.membersRosterUpdatedAt).toBe(4242);
+  });
+
   it("overlay-donors pick includes donors for high-society territory", () => {
     const base = defaultState();
     const state = {

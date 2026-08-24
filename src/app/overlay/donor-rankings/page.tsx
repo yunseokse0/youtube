@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { usePathname } from "next/navigation";
 import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
 import {
   defaultState,
   formatDonorsAmount,
   normalizeDonorRankingsOverlayConfig,
   normalizeDonorsFormat,
+  DONOR_RANKINGS_COMPACT_TOP_MAX,
   type AppState,
 } from "@/lib/state";
 import type { DonorsAmountFormat } from "@/types";
@@ -156,6 +158,17 @@ const TEST_TOON_ROWS: DonorRow[] = [
   { name: "테스트투네5", amount: 70000 },
   { name: "테스트투네6", amount: 50000 },
   { name: "테스트투네7", amount: 10000 },
+];
+
+const TEST_FULL_EXTRA_ROWS: DonorRow[] = [
+  { name: "샘플후원H", amount: 280000 },
+  { name: "샘플후원I", amount: 210000 },
+  { name: "샘플후원J", amount: 165000 },
+  { name: "샘플후원K", amount: 128000 },
+  { name: "샘플후원L", amount: 99000 },
+  { name: "샘플후원M", amount: 72000 },
+  { name: "샘플후원N", amount: 51000 },
+  { name: "샘플후원O", amount: 33000 },
 ];
 
 function readNumber(sp: URLSearchParams, key: string, fallback: number, min: number, max: number): number {
@@ -669,11 +682,33 @@ function RankingColumn({
           }}
         />
       ) : null}
-      {hideTitle ? null : (
+      {hideTitle ? null : unified ? (
+      <div className="relative flex justify-center px-4 py-2">
+        <span className="relative inline-flex max-w-full items-center justify-center">
+          <span
+            className="pointer-events-none absolute inset-0 rounded-full"
+            aria-hidden
+            style={{
+              background: headerBgResolved.background,
+              ...(headerBgResolved.opacity !== undefined ? { opacity: headerBgResolved.opacity } : {}),
+            }}
+          />
+          <span
+            className="overlay-cell-text-inner relative z-10 px-5 py-1.5 text-center font-bold tracking-tight"
+            style={{
+              color: titleColor,
+              fontSize: `${Math.round(titleSize * 1.1)}px`,
+              fontWeight: 700,
+              ...titleOutline,
+            }}
+          >
+            {title}
+          </span>
+        </span>
+      </div>
+      ) : (
       <div
-        className={`relative overflow-hidden px-4 py-2.5 text-center font-bold tracking-tight ${
-          unified ? "border-b border-white/20" : "border-b border-white/20"
-        }`}
+        className="relative overflow-hidden border-b border-white/20 px-4 py-2.5 text-center font-bold tracking-tight"
         style={{
           color: titleColor,
           fontSize: `${Math.round(titleSize * 1.1)}px`,
@@ -694,14 +729,6 @@ function RankingColumn({
       {bodyImageBelowTitle}
       {items.length === 0 ? null : unified ? (
         <div className="relative min-h-0 flex-1">
-          <div
-            className="pointer-events-none absolute inset-0 z-0 rounded-none"
-            aria-hidden
-            style={{
-              background: panelBgResolved.background,
-              ...(panelBgResolved.opacity !== undefined ? { opacity: panelBgResolved.opacity } : {}),
-            }}
-          />
           <div className="relative z-[1] px-2 py-1.5">{rowList}</div>
         </div>
       ) : (
@@ -714,9 +741,13 @@ function RankingColumn({
 
 export default function DonorRankingsOverlayPage() {
   const { params: sp, ready: spReady } = useClientOnlySearchParams();
+  const pathname = usePathname();
   const userId = getOverlayUserIdFromSearchParams(sp);
   const hostObs = isOverlayBroadcastHost(sp);
   const { state, ready, resync } = useDonorRankingsRemoteState(userId);
+  const isFullVertical =
+    (pathname || "").includes("/donor-rankings/full") ||
+    (sp.get("mode") || "").toLowerCase() === "full";
 
   useEffect(() => {
     if (!hostObs) return;
@@ -743,13 +774,20 @@ export default function DonorRankingsOverlayPage() {
     sp.get("adminPreviewEmbed") === "1" || sp.get("hubPreview") === "1";
   /** 관리자 미리보기는 API 완료 전에도 저장·기본 테마를 즉시 적용 */
   const themeLive = ready || isAdminPreview;
-  const layoutDual = (sp.get("layout") || "").toLowerCase() === "dual";
+  const layoutDual = !isFullVertical && (sp.get("layout") || "").toLowerCase() === "dual";
   const savedTheme = state?.donorRankingsTheme || defaultState().donorRankingsTheme;
 
-  const showAllDonors = (sp.get("all") || "").trim() === "1" || (sp.get("top") || "").trim() === "0";
-  const topN = showAllDonors
+  const topN = isFullVertical
     ? 0
-    : liveThemeNumber(themeLive, useTest, savedTheme.top, sp, "top", 1, 50);
+    : liveThemeNumber(
+        themeLive,
+        useTest,
+        savedTheme.top,
+        sp,
+        "top",
+        1,
+        DONOR_RANKINGS_COMPACT_TOP_MAX
+      );
   const titleSize = liveThemeNumber(themeLive, useTest, savedTheme.titleSize, sp, "titleSize", 14, 80);
   const rowSize = liveThemeNumber(themeLive, useTest, savedTheme.rowSize, sp, "rowSize", 12, 64);
   const rankSize = liveThemeNumber(themeLive, useTest, savedTheme.rankSize, sp, "rankSize", 12, 72);
@@ -838,10 +876,18 @@ export default function DonorRankingsOverlayPage() {
 
   const { accountTop, toonTop, unifiedTop } = useMemo(() => {
     if (useTest) {
+      const extra = isFullVertical
+        ? TEST_FULL_EXTRA_ROWS.map((row) => ({
+            name: row.name,
+            amount: row.amount,
+            target: "account" as const,
+          }))
+        : [];
       return buildDonorRankingsFromDonors(
         [
           ...TEST_ACCOUNT_ROWS.map((row) => ({ name: row.name, amount: row.amount, target: "account" })),
           ...TEST_TOON_ROWS.map((row) => ({ name: row.name, amount: row.amount, target: "toon" })),
+          ...extra,
         ],
         topN
       );
@@ -870,8 +916,15 @@ export default function DonorRankingsOverlayPage() {
     isAdminPreview,
     wireRankings,
     topN,
+    isFullVertical,
   ]);
-  const unifiedHalf = useMemo(() => splitOverlayListAtHalf(unifiedTop), [unifiedTop]);
+  const unifiedHalf = useMemo(
+    () =>
+      isFullVertical
+        ? { left: unifiedTop, right: [] as DonorRankingRow[], split: false }
+        : splitOverlayListAtHalf(unifiedTop),
+    [unifiedTop, isFullVertical]
+  );
 
   if (!spReady) {
     return null;
@@ -1048,21 +1101,13 @@ export default function DonorRankingsOverlayPage() {
               />
             ) : null}
             <div
-              className={`relative z-[2] overflow-hidden backdrop-blur-studio ${
-                showFrame
-                  ? "rounded-none border-0 shadow-none"
-                  : "studio-glass-panel rounded-studio border border-fuchsia-400/40 shadow-glass"
+              className={`relative z-[2] overflow-visible ${
+                showFrame ? "rounded-none border-0 shadow-none" : "rounded-studio"
               }`}
               style={{
-                borderColor: showFrame
-                  ? "transparent"
-                  : borderColor === "transparent"
-                    ? "rgba(232, 121, 249, 0.45)"
-                    : borderColor,
+                borderColor: showFrame ? "transparent" : "transparent",
                 backgroundColor: "transparent",
-                boxShadow: showFrame
-                  ? "none"
-                  : "0 8px 32px 0 rgba(0, 0, 0, 0.37), inset 0 1px 0 0 rgba(255,255,255,0.1)",
+                boxShadow: "none",
               }}
             >
             {unifiedHalf.split ? (

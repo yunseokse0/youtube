@@ -80,12 +80,28 @@ describe("timer-design", () => {
       expect.objectContaining({ primary: "04:04" })
     );
     expect(buildCircularImageTimerDisplay(3723, true, "speedometer")?.primary).toBe("01:02:03");
+    expect(buildCircularImageTimerDisplay(3600, false, "countdown-ring")?.primary).toBe("60:00");
+    expect(buildCircularImageTimerDisplay(3660, false, "speedometer")?.primary).toBe("01:01:00");
   });
 
-  it("buildLedMatrixTimerText formats MM:SS and HH:MM:SS", () => {
+  it("buildLedMatrixTimerText keeps MM:SS through 60:00 and hours from 61 min", () => {
     expect(buildLedMatrixTimerText(125, false)).toBe("02:05");
+    expect(buildLedMatrixTimerText(3600, false)).toBe("60:00");
+    expect(buildLedMatrixTimerText(3660, false)).toBe("01:01:00");
     expect(buildLedMatrixTimerText(3723, true)).toBe("01:02:03");
     expect(buildLedMatrixTimerText(null, false)).toBeNull();
+  });
+
+  it("buildFlipCountdownSegments stays minutes through 60:00", () => {
+    expect(buildFlipCountdownSegments(3600, false)).toEqual([
+      { value: "60", label: "MINUTES" },
+      { value: "00", label: "SECONDS" },
+    ]);
+    expect(buildFlipCountdownSegments(3661, false)).toEqual([
+      { value: "01", label: "HOURS" },
+      { value: "01", label: "MINUTES" },
+      { value: "01", label: "SECONDS" },
+    ]);
   });
 
   it("buildLedMatrixGhostText fills all segments with 8", () => {

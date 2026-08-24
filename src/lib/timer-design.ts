@@ -136,6 +136,36 @@ export function resolveTimerFrameAssetUrl(design: TimerDesignId): string | null 
   return TIMER_FRAME_ASSETS[design] ?? null;
 }
 
+/** 60분(3600초)까지는 분:초, 61분부터 시:분:초 */
+export const TIMER_MINUTE_DISPLAY_MAX_SEC = 3600;
+
+/** showHours 강제 또는 남은 시간이 60분을 넘으면 시 단위 */
+export function shouldDisplayTimerHours(
+  totalSec: number | null | undefined,
+  showHours: boolean
+): boolean {
+  if (showHours) return true;
+  const safe = Math.max(0, Math.floor(Number(totalSec) || 0));
+  return safe > TIMER_MINUTE_DISPLAY_MAX_SEC;
+}
+
+export function formatTimerClockText(
+  totalSec: number,
+  showHours: boolean
+): string {
+  const safe = Math.max(0, Math.floor(Number(totalSec) || 0));
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  if (shouldDisplayTimerHours(safe, showHours)) {
+    const h = Math.floor(safe / 3600);
+    const m = Math.floor((safe % 3600) / 60);
+    const sec = safe % 60;
+    return `${pad2(h)}:${pad2(m)}:${pad2(sec)}`;
+  }
+  const mm = Math.floor(safe / 60);
+  const sec = safe % 60;
+  return `${pad2(mm)}:${pad2(sec)}`;
+}
+
 export type FlipCountdownSegment = { value: string; label: string };
 
 export type CircularImageTimerDisplay = {
@@ -156,26 +186,27 @@ export function buildFlipCountdownSegments(
   const pad2 = (n: number) => String(Math.min(99, n)).padStart(2, "0");
   const days = Math.floor(safe / 86400);
   const hours = Math.floor((safe % 86400) / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
+  const hourMinutes = Math.floor((safe % 3600) / 60);
+  const totalMinutes = Math.floor(safe / 60);
   const seconds = safe % 60;
 
   if (days > 0) {
     return [
       { value: pad2(days), label: "DAYS" },
       { value: pad2(hours), label: "HOURS" },
-      { value: pad2(minutes), label: "MINUTES" },
+      { value: pad2(hourMinutes), label: "MINUTES" },
       { value: pad2(seconds), label: "SECONDS" },
     ];
   }
-  if (showHours || hours > 0 || safe >= 3600) {
+  if (shouldDisplayTimerHours(safe, showHours)) {
     return [
       { value: pad2(hours), label: "HOURS" },
-      { value: pad2(minutes), label: "MINUTES" },
+      { value: pad2(hourMinutes), label: "MINUTES" },
       { value: pad2(seconds), label: "SECONDS" },
     ];
   }
   return [
-    { value: pad2(minutes), label: "MINUTES" },
+    { value: pad2(totalMinutes), label: "MINUTES" },
     { value: pad2(seconds), label: "SECONDS" },
   ];
 }
@@ -188,33 +219,22 @@ export function buildCircularImageTimerDisplay(
 ): CircularImageTimerDisplay | null {
   if (totalSec == null || !Number.isFinite(totalSec)) return null;
   const safe = Math.max(0, Math.floor(Number(totalSec) || 0));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const seconds = safe % 60;
-  const pad2 = (n: number) => String(n).padStart(2, "0");
+  const clock = formatTimerClockText(safe, showHours);
+  const hourDisplay = shouldDisplayTimerHours(safe, showHours);
 
   if (design === "speedometer") {
-    if (showHours || hours > 0) {
-      return {
-        primary: `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`,
-        primaryScale: 0.48,
-        secondaryScale: 0,
-        defaultPrimaryColor: SPEEDOMETER_COLORS.text,
-        defaultSecondaryColor: SPEEDOMETER_COLORS.subtext,
-      };
-    }
     return {
-      primary: `${pad2(minutes)}:${pad2(seconds)}`,
-      primaryScale: 0.58,
+      primary: clock,
+      primaryScale: hourDisplay ? 0.48 : 0.58,
       secondaryScale: 0,
       defaultPrimaryColor: SPEEDOMETER_COLORS.text,
       defaultSecondaryColor: SPEEDOMETER_COLORS.subtext,
     };
   }
 
-  if (showHours || hours > 0) {
+  if (hourDisplay) {
     return {
-      primary: `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`,
+      primary: clock,
       primaryScale: 0.52,
       secondaryScale: 0,
       defaultPrimaryColor: COUNTDOWN_RING_COLORS.text,
@@ -222,7 +242,7 @@ export function buildCircularImageTimerDisplay(
     };
   }
   return {
-    primary: `${pad2(minutes)}:${pad2(seconds)}`,
+    primary: clock,
     secondary: "min",
     primaryScale: 0.68,
     secondaryScale: 0.22,
@@ -271,15 +291,7 @@ export function buildLedMatrixTimerText(
   showHours: boolean
 ): string | null {
   if (totalSec == null || !Number.isFinite(totalSec)) return null;
-  const safe = Math.max(0, Math.floor(Number(totalSec) || 0));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const seconds = safe % 60;
-  const pad2 = (n: number) => String(n).padStart(2, "0");
-  if (showHours || hours > 0) {
-    return `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`;
-  }
-  return `${pad2(minutes)}:${pad2(seconds)}`;
+  return formatTimerClockText(totalSec, showHours);
 }
 
 /** 고스트(비점등) 세그먼트 — DSEG7에서 8은 전 세그먼트 ON */

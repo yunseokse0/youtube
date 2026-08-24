@@ -31,6 +31,7 @@ import {
   type AppState,
 } from "@/lib/state";
 import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
+import { restoreTimerBackgroundOpacity } from "@/lib/overlay-params";
 
 type AppTimerKey = "generalTimer" | "matchTimer";
 
@@ -396,19 +397,55 @@ export default function AdminTimerPopupPanel() {
                 </label>
                 <label className="text-[11px] text-neutral-400">
                   패널 배경
-                  <div className="mt-1 flex items-center gap-1">
+                  <div className="mt-1 flex flex-wrap items-center gap-1">
                     <input
                       type="color"
                       className="h-8 w-12 rounded border border-white/10 bg-neutral-900"
                       value={toColorPickerValue(String(generalStyle?.bgColor ?? ""), "#000000")}
-                      onChange={(e) => updateDisplayStyle({ bgColor: e.target.value })}
+                      onChange={(e) =>
+                        updateDisplayStyle({
+                          bgColor: e.target.value,
+                          bgOpacity: restoreTimerBackgroundOpacity(generalDesign, generalStyle?.bgOpacity),
+                        })
+                      }
                     />
                     <button
                       type="button"
                       className="rounded bg-neutral-800 px-1.5 py-1 text-[10px] hover:bg-neutral-700"
-                      onClick={() => updateDisplayStyle({ bgColor: "" })}
+                      onClick={() =>
+                        updateDisplayStyle({
+                          bgColor: generalDesign === "led-matrix" ? "#000000" : "",
+                          bgOpacity: restoreTimerBackgroundOpacity(generalDesign, generalStyle?.bgOpacity),
+                        })
+                      }
                     >
                       기본
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded bg-neutral-800 px-1.5 py-1 text-[10px] hover:bg-neutral-700"
+                      onClick={() =>
+                        updateDisplayStyle({
+                          bgColor: "transparent",
+                          borderColor: "transparent",
+                          outlineColor: "",
+                          bgOpacity: 0,
+                        })
+                      }
+                    >
+                      없음
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded bg-neutral-800 px-1.5 py-1 text-[10px] hover:bg-neutral-700"
+                      onClick={() =>
+                        updateDisplayStyle({
+                          bgColor: generalDesign === "led-matrix" ? "#000000" : "",
+                          bgOpacity: generalDesign === "led-matrix" ? 100 : 40,
+                        })
+                      }
+                    >
+                      넣기
                     </button>
                   </div>
                 </label>
