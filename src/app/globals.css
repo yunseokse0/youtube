@@ -99,6 +99,21 @@
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
   }
 
+  .excel-member-table.excel-gold-table thead td {
+    text-shadow: none;
+    -webkit-text-stroke: 0;
+  }
+
+  /* 엑셀표 헤더 배경(테마 td)의 둥근 코너 */
+  .excel-member-table thead td:first-child,
+  .excel-live-table thead td:first-child {
+    border-top-left-radius: 14px !important;
+  }
+  .excel-member-table thead td:last-child,
+  .excel-live-table thead td:last-child {
+    border-top-right-radius: 14px !important;
+  }
+
   /** 후원순위 — 행 텍스트 방송용 대비 (외곽선 shadow는 outlineCss가 담당) */
   .donor-rankings-overlay-root .overlay-cell-text-inner {
     font-weight: 700;

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   EXCEL_MEMBER_THEME_IDS,
   emptyTableThemeAutoColorPatch,
+  isExcelGoldTableTheme,
   isExcelMemberTableTheme,
   resolveExcelMemberTableAccent,
   resolveTableThemeContributionPreviewHex,
@@ -21,7 +22,7 @@ describe("excel-member-table-theme", () => {
   it("returns accent colors per excel theme", () => {
     for (const id of EXCEL_MEMBER_THEME_IDS) {
       const accent = resolveExcelMemberTableAccent(id);
-      expect(accent?.headerBg).toMatch(/^rgba?\(/);
+      expect(accent?.headerBg).toMatch(/^(#|rgba?\()/);
       expect(accent?.headerText).toMatch(/^#/);
     }
     expect(resolveExcelMemberTableAccent("excelBlue")?.headerBg).toContain("37, 99, 235");
@@ -46,9 +47,12 @@ describe("excel-member-table-theme", () => {
 
   it("excelGold uses gold panel border, zebra stripes, and contribution accent", () => {
     const gold = resolveExcelMemberTableAccent("excelGold");
+    expect(gold?.headerBg).toBe("#ffc107");
+    expect(gold?.headerText).toBe("#1a1408");
     expect(gold?.panelBorder).toBe("#ffc107");
     expect(gold?.rowEvenBg).toContain("rgba(");
-    expect(gold?.contributionColor).toBe("#ffc107");
+    expect(isExcelGoldTableTheme("excelGold")).toBe(true);
+    expect(isExcelGoldTableTheme("excel")).toBe(false);
     expect(resolveTableThemePanelBorderPreviewHex("excelGold")).toBe("#ffc107");
     expect(resolveTableThemeContributionPreviewHex("excelGold")).toBe("#ffc107");
     expect(resolveTableThemeRowStripePreviewHex("excelGold", "even")).toBe("#ffffff");

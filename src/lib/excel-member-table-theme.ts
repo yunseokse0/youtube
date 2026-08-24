@@ -77,13 +77,13 @@ export const EXCEL_MEMBER_TABLE_ACCENT: Record<ExcelMemberThemeId, ExcelMemberTa
   },
   /** 웹후원 골드 — 골드 헤더·테두리·줄무늬·기여도 강조 (후원순위 골드와 동일 계열) */
   excelGold: {
-    headerBg: "rgba(255, 193, 7, 0.94)",
+    headerBg: "#ffc107",
     headerText: "#1a1408",
-    headerBorder: "rgba(255, 193, 7, 0.55)",
+    headerBorder: "#ffc107",
     totalRowBorder: "rgba(255, 193, 7, 0.45)",
     panelBorder: "#ffc107",
-    panelShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.45)",
-    rowEvenBg: "rgba(255, 255, 255, 0.06)",
+    panelShadow: "none",
+    rowEvenBg: "rgba(255, 255, 255, 0.05)",
     rowOddBg: "rgba(255, 255, 255, 0.14)",
     contributionColor: "#ffc107",
   },
@@ -147,6 +147,10 @@ export const EXCEL_MEMBER_TABLE_ACCENT: Record<ExcelMemberThemeId, ExcelMemberTa
 
 export function isExcelMemberTableTheme(themeId: string): themeId is ExcelMemberThemeId {
   return (EXCEL_MEMBER_THEME_IDS as readonly string[]).includes(themeId);
+}
+
+export function isExcelGoldTableTheme(themeId: string): boolean {
+  return themeId === "excelGold";
 }
 
 export function resolveExcelMemberTableAccent(themeId: string): ExcelMemberTableAccent | null {
@@ -257,6 +261,12 @@ function cssColorToPreviewHex(css: string): string {
 /** 관리자 color input 미리보기용 — 테마 자동일 때 표시할 헤더 색 */
 export function resolveTableThemeHeaderPreviewHex(themeId: string): string {
   return cssColorToPreviewHex(resolveTableThemeHeaderBgCss(themeId));
+}
+
+export function resolveTableThemeHeaderTextPreviewHex(themeId: string): string {
+  const excel = resolveExcelMemberTableAccent(themeId);
+  if (excel?.headerText) return cssColorToPreviewHex(excel.headerText);
+  return "#ffffff";
 }
 
 export function resolveTableThemeLinePreviewHex(themeId: string): string {

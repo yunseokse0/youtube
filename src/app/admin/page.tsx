@@ -196,6 +196,7 @@ import {
   emptyTableThemeAutoColorPatch,
   resolveTableThemeContributionPreviewHex,
   resolveTableThemeHeaderPreviewHex,
+  resolveTableThemeHeaderTextPreviewHex,
   resolveTableThemeLinePreviewHex,
   resolveTableThemePanelBorderPreviewHex,
   resolveTableThemeRowStripePreviewHex,
@@ -1029,7 +1030,7 @@ export default function AdminPage() {
   const PRESET_TEMPLATES: { name: string; preset: Partial<OverlayPreset> }[] = [
     { name: "엑셀표만", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true, showRestroomColumn: true } },
     { name: "방송 엑셀(계좌·투네)", preset: { theme: "excelLive", membersTheme: "excelLive", totalTheme: "excelLive", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: false, showContributionColumn: false, showRestroomColumn: true, accountHeaderLabel: "계좌", toonHeaderLabel: "투네이션", restroomHeaderLabel: "화장실", tableBgOpacity: "85", donorsFormat: "full", tableFree: true, tableX: "3", tableY: "88", anchor: "bl" } },
-    { name: "웹후원 골드 엑셀", preset: { theme: "excelGold", membersTheme: "excelGold", totalTheme: "excelGold", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: true, showContributionColumn: true, showRestroomColumn: false, tableBgOpacity: "82", tableGridLines: false, tableVerticalLines: false, accountHeaderLabel: "계좌", toonHeaderLabel: "투네", tableFree: true, tableX: "50", tableY: "50", anchor: "cc" } },
+    { name: "웹후원 골드 엑셀", preset: { theme: "excelGold", membersTheme: "excelGold", totalTheme: "excelGold", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: true, showContributionColumn: true, showRestroomColumn: false, tableBgOpacity: "82", tableGridLines: false, tableVerticalLines: false, tableHeaderTextColor: "", tableTextColor: "", contributionColor: "", tablePanelBorderColor: "", tableRowEvenBg: "", tableRowOddBg: "", accountHeaderLabel: "계좌", toonHeaderLabel: "투네", tableFree: true, tableX: "50", tableY: "50", anchor: "cc" } },
     { name: "전체 통합", preset: { showMembers: true, showTotal: true } },
     { name: "표만 (엑셀)", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true, showRestroomColumn: true } },
     { name: "멤버 목록만", preset: { showMembers: true, showTotal: false, showBottomDonors: false, tickerInMembers: false } },
@@ -16366,8 +16367,18 @@ export default function AdminPage() {
                                         <input
                                           type="color"
                                           className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                                          value={toColorPickerValue(p.tableHeaderTextColor, "#ffffff")}
-                                          onChange={(e) => updatePreset(p.id, { tableHeaderTextColor: e.target.value })}
+                                          value={toColorPickerValue(
+                                            p.tableHeaderTextColor,
+                                            resolveTableThemeHeaderTextPreviewHex(activeTableThemeId(p))
+                                          )}
+                                          onChange={(e) => {
+                                            const next = e.target.value;
+                                            const preview = resolveTableThemeHeaderTextPreviewHex(activeTableThemeId(p));
+                                            if (!String(p.tableHeaderTextColor || "").trim() && next.toLowerCase() === preview.toLowerCase()) {
+                                              return;
+                                            }
+                                            updatePreset(p.id, { tableHeaderTextColor: next });
+                                          }}
                                         />
                                         <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.tableHeaderTextColor || "테마 자동"}</span>
                                         <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableHeaderTextColor: "" })}>테마 자동</button>

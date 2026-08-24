@@ -123,13 +123,14 @@ import {
   subscribeBroadcastStateLocalUpdated,
   subscribeOverlayPresetsLocalUpdated,
 } from "@/lib/broadcast-state-local-sync";
-import { buildOverlayRankedMembers, buildMemberCreationOrderIndex, compareMembersByDonationTotal, splitOverlayListAtHalf } from "@/lib/utils";
+import { buildOverlayRankedMembers, buildMemberCreationOrderIndex, compareMembersByDonationTotal, OVERLAY_HALF_SPLIT_MIN_COUNT } from "@/lib/utils";
 import {
   isDonationTableBoolKey,
   mergeDonationTablePresetFields,
   resolveDonationTableColumnsOptions,
 } from "@/lib/donation-table-options";
 import {
+  isExcelGoldTableTheme,
   isExcelMemberTableTheme,
   resolveExcelMemberTableAccent,
   resolveTableThemeHeaderBgCss,
@@ -1400,10 +1401,10 @@ const THEMES: Record<ThemeId, {
     accountCls: EXCEL_LIGHT_ACCOUNT_CLS,
     toonCls: EXCEL_LIGHT_TOON_CLS,
     totalCls: "font-bold text-white",
-    totalWrapCls: "bg-[rgba(255,193,7,0.94)] border border-[#ffc107] px-2 py-1 rounded-studio",
-    rowCls: "border border-[#ffc107]/30 px-2 py-1 align-middle",
-    tableCls: "bg-[rgba(8,8,12,0.82)] border-collapse shadow-glass rounded-studio overflow-hidden border-2 border-[#ffc107]",
-    headerCls: "bg-[rgba(255,193,7,0.94)] text-[#1a1408] font-bold px-2 py-1 text-sm",
+    totalWrapCls: "bg-[#ffc107] border border-[#ffc107] px-2 py-1",
+    rowCls: "px-2 py-1 align-middle",
+    tableCls: "bg-[rgba(8,8,12,0.82)] border-collapse overflow-hidden",
+    headerCls: "bg-[#ffc107] text-[#1a1408] font-bold px-2 py-1 text-sm",
     goalBarBg: "bg-amber-900/40",
     goalBarFill: "bg-[#ffc107]",
     goalText: "text-[#ffc107] font-mono font-bold",
@@ -3619,17 +3620,54 @@ function OverlayInner() {
     () => buildOverlayRankedMembers(unpinned, memberPositionsMap, getMemberRole, members),
     [unpinned, memberPositionsMap, getMemberRole, members]
   );
-  const rankedHalfSplit = useMemo(() => splitOverlayListAtHalf(ranked), [ranked]);
-  const memberTablePanels = useMemo(
-    () =>
-      rankedHalfSplit.split
-        ? [
-            { key: "left", ranked: rankedHalfSplit.left, includePinned: false, includeTotal: false },
-            { key: "right", ranked: rankedHalfSplit.right, includePinned: true, includeTotal: true },
-          ]
-        : [{ key: "single", ranked, includePinned: true, includeTotal: true }],
-    [ranked, rankedHalfSplit]
-  );
+  /**
+   * 엑셀표 인원 변동 대응:
+   * - 5명 이하: 우측 스플릿 제거(단일 패널)
+   * - 6명 이상: "원래(처음 스플릿 시점) 좌측 슬롯 수"를 유지하고,
+   *   우측부터 멤버가 빠지는 것처럼 보이도록 부족한 칸은 placeholder 행으로 채움.
+   */
+  const excelSplitKeepLeftCountRef = useRef<number | null>(null);
+  const excelSplitEnabled = ranked.length > OVERLAY_HALF_SPLIT_MIN_COUNT;
+  const excelDesiredLeftCount = Math.ceil(ranked.length / 2);
+  if (!excelSplitEnabled) {
+    excelSplitKeepLeftCountRef.current = null;
+  } else {
+    const prev = excelSplitKeepLeftCountRef.current;
+    excelSplitKeepLeftCountRef.current = prev == null ? excelDesiredLeftCount : Math.max(prev, excelDesiredLeftCount);
+  }
+  const excelLeftCount = excelSplitKeepLeftCountRef.current ?? excelDesiredLeftCount;
+  const excelRightTargetCount = excelLeftCount;
+
+  const excelPlaceholderMember: Member = { id: "__excel_placeholder__", name: "", account: 0, toon: 0, operating: false };
+  const excelMakePlaceholderRows = (n: number) =>
+    Array.from({ length: Math.max(0, n) }).map((_, idx) => ({
+      m: { ...excelPlaceholderMember, id: `${excelPlaceholderMember.id}_${idx}` },
+      rank: null as number | null,
+      __excelPlaceholder: true,
+    }));
+
+  const memberTablePanels = !excelSplitEnabled
+    ? [{ key: "single", ranked, includePinned: true, includeTotal: true }]
+    : [
+        {
+          key: "left",
+          ranked: [
+            ...ranked.slice(0, excelLeftCount),
+            ...excelMakePlaceholderRows(Math.max(0, excelLeftCount - ranked.slice(0, excelLeftCount).length)),
+          ] as any,
+          includePinned: false,
+          includeTotal: false,
+        },
+        {
+          key: "right",
+          ranked: [
+            ...ranked.slice(excelLeftCount),
+            ...excelMakePlaceholderRows(Math.max(0, excelRightTargetCount - ranked.slice(excelLeftCount).length)),
+          ] as any,
+          includePinned: true,
+          includeTotal: true,
+        },
+      ];
 
   const memberTableFitSig = useMemo(() => {
     /** 직급 열 너비(`roleColEm`)와 동일 — CJK는 `ch`보다 `em`이 안전 */
@@ -4000,6 +4038,7 @@ function OverlayInner() {
     /** 숫자 자리 증가로 표 전체가 밀려 나가지 않도록 너비 상한 고정 */
     const excelTableWidthCalc = excelGridCols.join(" + ");
     const isExcelLiveTheme = membersThemeId === "excelLive";
+    const isExcelGoldChrome = isExcelGoldTableTheme(membersThemeId);
     const tableHeaderLineColor =
       tableLineColorRaw ||
       excelMemberAccent?.headerBorder ||
@@ -4011,9 +4050,11 @@ function OverlayInner() {
       resolveTableThemeTotalBorderCss(membersThemeId);
     const tableGridLineWidthPx = overlayTableGridLineWidthPx(Boolean(externalHost));
     const tableGridLineColor = tableLineColorRaw || tableHeaderLineColor;
-    const tablePanelShadow = tableGridLines
-      ? excelMemberAccent?.panelShadow ?? TABLE_BROADCAST_PANEL_SHADOW
-      : "none";
+    const tablePanelShadow = isExcelGoldChrome
+      ? "none"
+      : tableGridLines
+        ? excelMemberAccent?.panelShadow ?? TABLE_BROADCAST_PANEL_SHADOW
+        : "none";
     const tableRowEvenBgCss =
       tableRowEvenBgRaw || resolveTableThemeRowStripeCss(membersThemeId, "even");
     const tableRowOddBgCss =
@@ -4028,15 +4069,18 @@ function OverlayInner() {
       tableLineColorRaw ||
       "";
     const excelZebraEnabled =
-      Boolean(excelMemberAccent) &&
-      Boolean(tableRowOddBgCss && tableRowOddBgCss !== "transparent");
+      isExcelGoldChrome ||
+      (Boolean(excelMemberAccent) &&
+        Boolean(tableRowOddBgCss && tableRowOddBgCss !== "transparent"));
     const excelMemberTableClass = excelMemberAccent
-      ? `${isExcelLiveTheme ? " excel-live-table" : " excel-member-table"}${excelZebraEnabled ? " excel-zebra-table" : ""}`
+      ? `${isExcelLiveTheme ? " excel-live-table" : " excel-member-table"}${isExcelGoldChrome ? " excel-gold-table" : ""}${excelZebraEnabled ? " excel-zebra-table" : ""}`
       : "";
     const themeAutoHeaderBgCss = resolveTableThemeHeaderBgCss(membersThemeId);
     const excelHeaderBgCss = hasTableHeaderBgColorOverride
       ? applyAlphaToCssColor(tableHeaderBgColorRaw, effectiveTableTintAlpha)
-      : applyAlphaToCssColor(themeAutoHeaderBgCss, effectiveTableTintAlpha);
+      : isExcelGoldChrome
+        ? themeAutoHeaderBgCss
+        : applyAlphaToCssColor(themeAutoHeaderBgCss, effectiveTableTintAlpha);
     const excelHeaderTextCss =
       tableHeaderTextColorRaw ||
       excelMemberAccent?.headerText ||
@@ -4318,7 +4362,7 @@ function OverlayInner() {
       ` }} />
     ) : null;
     const colorOverrideStyle =
-      !hasTableTextColorOverride && (accountColor || toonColor || contributionColorCss) ? (
+      !hasTableTextColorOverride && (accountColor || toonColor) ? (
         <style
           dangerouslySetInnerHTML={{
             __html: [
@@ -4326,14 +4370,27 @@ function OverlayInner() {
                 `.overlay-root tr:not(.overlay-total-row) .overlay-account-cell { color: ${accountColor} !important; }`,
               toonColor &&
                 `.overlay-root tr:not(.overlay-total-row) .overlay-toon-cell { color: ${toonColor} !important; }`,
-              contributionColorCss &&
-                `.overlay-root tr:not(.overlay-total-row) td.overlay-col-contribution { color: ${contributionColorCss} !important; font-weight: 700 !important; }`,
             ]
               .filter(Boolean)
               .join("\n"),
           }}
         />
       ) : null;
+    const contributionColorStyle = contributionColorCss ? (
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td.overlay-col-contribution,
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td.overlay-col-contribution span,
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td.overlay-col-contribution strong,
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td.overlay-col-contribution .overlay-cell-text-inner,
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td.overlay-col-contribution .overlay-num-cell-inner {
+          color: ${contributionColorCss} !important;
+          font-weight: 700 !important;
+        }`,
+        }}
+      />
+    ) : null;
     /** OBS/Prism: stroke 대신 다층 shadow만 씀(숫자 열에도 동일 적용) */
     const overlayNumericOutlineShadow = tableNumericOutlineShadowCss;
     const numericNoWrapStyle = (
@@ -4435,16 +4492,21 @@ function OverlayInner() {
           -webkit-text-stroke: ${tableStrokeCss} !important;
           paint-order: stroke fill;
         }
-        .overlay-root .overlay-elegant-table tbody tr.overlay-row td {
+        .overlay-root .overlay-elegant-table:not(.excel-zebra-table) tbody tr.overlay-row td {
           background: transparent !important;
           background-image: none !important;
           /* 셀 그리드 선은 overlayTableCellGridCss(box-shadow)로 그림 — 여기서 지우지 않음 */
           text-shadow: none !important;
           -webkit-text-stroke: 0 !important;
         }
-        .overlay-root .overlay-elegant-table td {
+        .overlay-root .overlay-elegant-table:not(.excel-zebra-table) td {
           transition: ${externalHost || stableMode ? "none" : "filter 180ms ease, transform 180ms ease, background-size 220ms ease"};
           background: transparent !important;
+          -webkit-font-smoothing: antialiased;
+          text-rendering: ${tableTextRenderingCss};
+        }
+        .overlay-root .overlay-elegant-table.excel-zebra-table td {
+          transition: ${externalHost || stableMode ? "none" : "filter 180ms ease, transform 180ms ease, background-size 220ms ease"};
           -webkit-font-smoothing: antialiased;
           text-rendering: ${tableTextRenderingCss};
         }
@@ -4469,13 +4531,13 @@ function OverlayInner() {
           paint-order: stroke fill;
           font-weight: ${tableFontWeight} !important;
         }
-        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td {
+        .overlay-root .overlay-elegant-table:not(.excel-zebra-table) tbody tr:not(.overlay-total-row) td {
           background: transparent !important;
         }
         /* 세로 OBS(mobile-broadcast)에서도 시트 배경만 보이게 — 셸 줄무늬보다 우선 */
-        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table tbody tr.overlay-row td,
-        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table tbody tr.overlay-row:nth-child(odd) td,
-        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table tbody tr.overlay-row:nth-child(even) td {
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table:not(.excel-zebra-table) tbody tr.overlay-row td,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table:not(.excel-zebra-table) tbody tr.overlay-row:nth-child(odd) td,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table:not(.excel-zebra-table) tbody tr.overlay-row:nth-child(even) td {
           background: transparent !important;
           background-color: transparent !important;
           background-image: none !important;
@@ -4484,7 +4546,7 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table.pastel-member-table tbody tr.overlay-row:nth-child(even) td {
           background: transparent !important;
         }
-        .overlay-root .overlay-elegant-table:not(.excel-live-table):not(.pastel-member-table) tbody tr.overlay-row td {
+        .overlay-root .overlay-elegant-table:not(.excel-live-table):not(.pastel-member-table):not(.excel-zebra-table) tbody tr.overlay-row td {
           background: transparent !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table thead td {
@@ -4795,16 +4857,68 @@ function OverlayInner() {
             : ""
         }
         /* 헤더·본문·총합 셀 그리드(가로·세로). OBS 스케일에서도 선이 남도록 마지막에 적용 */
-        ${overlayTableCellGridCss({
-          lineColor: tableGridLineColor,
-          widthPx: tableGridLineWidthPx,
-          headerBottomExtraPx: tableGridLineWidthPx + 1,
-          /** 총합 행이 헤더와 같은 분홍 계열일 때 분홍 선이 묻히지 않게 */
-          totalRowLineColor: tableLineColorRaw || "rgba(255, 255, 255, 0.72)",
-          emphasizeTotalColumn: totalLineVisible,
-          gridLines: tableGridLines,
-          verticalLines: tableVerticalLines,
-        })}
+        ${
+          isExcelGoldChrome
+            ? ""
+            : overlayTableCellGridCss({
+                lineColor: tableGridLineColor,
+                widthPx: tableGridLineWidthPx,
+                headerBottomExtraPx: tableGridLineWidthPx + 1,
+                /** 총합 행이 헤더와 같은 분홍 계열일 때 분홍 선이 묻히지 않게 */
+                totalRowLineColor: tableLineColorRaw || "rgba(255, 255, 255, 0.72)",
+                emphasizeTotalColumn: totalLineVisible,
+                gridLines: tableGridLines,
+                verticalLines: tableVerticalLines,
+              })
+        }
+        ${
+          isExcelGoldChrome
+            ? `
+        .overlay-root .overlay-elegant-table.excel-gold-table {
+          border-radius: 14px !important;
+          overflow: hidden !important;
+          border: none !important;
+          box-shadow: none !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-gold-table thead td:first-child {
+          border-top-left-radius: 14px !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-gold-table thead td:last-child {
+          border-top-right-radius: 14px !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody td span:not(.overlay-rank-fx-colorShift):not(.overlay-rank-fx-rainbow):not(.overlay-rank-fx-glow):not(.overlay-rank-fx-sparkle),
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody td strong,
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody td .overlay-cell-text-inner,
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody td .overlay-num-cell-inner {
+          text-shadow: none !important;
+          -webkit-text-stroke: 0 !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row td,
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row:nth-child(odd) td,
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row:nth-child(even) td,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row td,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row:nth-child(odd) td,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row:nth-child(even) td {
+          border: none !important;
+          box-shadow: none !important;
+          outline: none !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(odd) td,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(odd) td {
+          background: var(--excel-row-odd, rgba(255, 255, 255, 0.14)) !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(even) td,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(even) td {
+          background: var(--excel-row-even, rgba(255, 255, 255, 0.05)) !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-gold-table .overlay-total-row td {
+          background: rgba(255, 193, 7, 0.18) !important;
+          box-shadow: none !important;
+          border: none !important;
+        }
+        `
+            : ""
+        }
         .overlay-root .overlay-elegant-table {
           border-collapse: separate !important;
           border-spacing: 0 !important;
@@ -4841,6 +4955,7 @@ function OverlayInner() {
         {colorOverrideStyle}
         {numericNoWrapStyle}
         {tableVisualStyle}
+        {contributionColorStyle}
         {goalTextColorStyle}
         {showGuide && (
           <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 9998 }}>
@@ -4911,19 +5026,22 @@ function OverlayInner() {
                     />
                   ) : null}
                 <div
-                  className={`relative overflow-visible ${showTableFrame ? "" : "studio-glass-panel"}`}
+                  className={`relative ${showTableFrame ? "" : isExcelGoldChrome ? "overflow-hidden" : "overflow-visible studio-glass-panel"}`}
                   style={{
                     zIndex: 2,
-                    borderRadius: showTableFrame ? 0 : 14,
+                    borderRadius: showTableFrame ? 0 : isExcelGoldChrome ? 12 : 14,
                     border:
                       !showTableFrame && tablePanelBorderCss
-                        ? `2px solid ${tablePanelBorderCss}`
-                        : "none",
+                        ? `${isExcelGoldChrome ? 1 : 2}px solid ${tablePanelBorderCss}`
+                        : !showTableFrame && isExcelGoldChrome
+                          ? "1px solid #ffc107"
+                          : "none",
                     boxShadow: showTableFrame ? "none" : tablePanelShadow || "none",
                     padding: 0,
                     backgroundColor: tableBodySheetBgCss || TABLE_BROADCAST_PANEL_BG,
-                    backdropFilter: showTableFrame ? undefined : "blur(14px)",
-                    WebkitBackdropFilter: showTableFrame ? undefined : "blur(14px)",
+                    backdropFilter: showTableFrame || isExcelGoldChrome ? undefined : "blur(14px)",
+                    WebkitBackdropFilter: showTableFrame || isExcelGoldChrome ? undefined : "blur(14px)",
+                    overflow: isExcelGoldChrome && !showTableFrame ? "hidden" : "visible",
                     /** translateZ(0) 는 OBS CEF에서 서브픽셀 블러를 유발 → 외부 호스트에서는 생략 */
                     ...(externalHost
                       ? {}
@@ -4949,8 +5067,14 @@ function OverlayInner() {
                         borderCollapse: "separate",
                         tableLayout: "fixed",
                         width: `calc(${excelTableWidthCalc})`,
-                        ...(rankedHalfSplit.split && panelIdx === 0
-                          ? { borderRight: `1px solid ${tableGridLineColor}` }
+                        ...(excelSplitEnabled && panelIdx === 0
+                          ? {
+                              borderRight: `1px solid ${
+                                tablePanelBorderCss ||
+                                excelMemberAccent?.panelBorder ||
+                                tableGridLineColor
+                              }`,
+                            }
                           : {}),
                         ...excelMemberTableStyle,
                       }}
@@ -4983,119 +5107,181 @@ function OverlayInner() {
                     </tr>
                   </thead>
                   <tbody>
-                    {panel.ranked.map(({m, rank}) => {
-                      const donationTotal = Math.max(0, Math.round(Number(m.account) || 0) + Math.round(Number(m.toon) || 0));
+                    {panel.ranked.map((row: any) => {
+                      const isPlaceholder = Boolean(row.__excelPlaceholder);
+                      const m: Member = row.m;
+                      const rank: number | null = row.rank;
+                      if (isPlaceholder) {
+                        return (
+                          <tr
+                            key={m.id}
+                            className={`overlay-row ${rowMotionEnabled ? "transition-transform will-change-transform" : ""}`}
+                          >
+                            <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
+                              <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                —
+                              </span>
+                            </td>
+                            {hasRoleColumn && (
+                              <td className={`${effectiveRowCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>
+                                <span className="overlay-rank-mark">-</span>
+                              </td>
+                            )}
+                            <td className={`${effectiveRowCls} overlay-col-name text-center ${effectiveNameCls} ${nameWrapCls}`}>
+                              <span className={`overlay-cell-text-inner ${nameWrapCls}`} style={overlayCellOutlineStyle}>
+                                {" "}
+                              </span>
+                            </td>
+                            <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-center`}>
+                              <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                —
+                              </span>
+                            </td>
+                            <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-center`}>
+                              <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                —
+                              </span>
+                            </td>
+                            {showCombinedColumn && (
+                              <td className={`${effectiveRowCls} overlay-col-total text-center font-bold`}>
+                                <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                  —
+                                </span>
+                              </td>
+                            )}
+                            {showContributionColumn && (
+                              <td className={`${effectiveRowCls} overlay-col-contribution text-center font-semibold`}>
+                                <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                  —
+                                </span>
+                              </td>
+                            )}
+                            {showRestroomColumn && (
+                              <td className={`${effectiveRowCls} overlay-col-restroom text-center font-semibold`}>
+                                <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                  —
+                                </span>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      }
+
+                      const donationTotal = Math.max(
+                        0,
+                        Math.round(Number(m.account) || 0) + Math.round(Number(m.toon) || 0)
+                      );
                       const top3Row = resolveExcelRankTop3RowStyle(rank, excelRankTop3Style, { donationTotal });
                       return (
-                      <tr
-                        key={m.id}
-                        ref={rowMotionEnabled ? setRowRef(m.id) : undefined}
-                        className={`overlay-row ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
-                      >
-                        <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
-                          {rank == null ? (
-                            <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                              —
-                            </span>
-                          ) : (
+                        <tr
+                          key={m.id}
+                          ref={rowMotionEnabled ? setRowRef(m.id) : undefined}
+                          className={`overlay-row ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
+                        >
+                          <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
+                            {rank == null ? (
+                              <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                —
+                              </span>
+                            ) : (
+                              <span
+                                className={`overlay-cell-text-inner ${top3Row.rankCellClass || ""}`}
+                                style={mergeRankTop3TextStyle(
+                                  overlayCellOutlineStyle,
+                                  top3Row.gradientText,
+                                  top3Row.rankCellStyle
+                                )}
+                              >
+                                {top3Row.rankLabel}
+                              </span>
+                            )}
+                          </td>
+                          {hasRoleColumn && (
+                            <td
+                              className={`${effectiveRowCls} overlay-col-role`}
+                              style={{
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {getMemberRole(m) ? (
+                                <span className="overlay-role-label" style={overlayCellOutlineStyle}>
+                                  {getMemberRole(m)}
+                                </span>
+                              ) : (
+                                <span className="overlay-rank-mark">-</span>
+                              )}
+                            </td>
+                          )}
+                          <td className={`${effectiveRowCls} overlay-col-name text-center ${effectiveNameCls} ${nameWrapCls}`}>
                             <span
-                              className={`overlay-cell-text-inner ${top3Row.rankCellClass || ""}`}
+                              className={`overlay-cell-text-inner ${nameWrapCls} ${top3Row.nameCellClass || ""}`}
                               style={mergeRankTop3TextStyle(
                                 overlayCellOutlineStyle,
                                 top3Row.gradientText,
-                                top3Row.rankCellStyle
+                                top3Row.nameCellStyle
                               )}
                             >
-                              {top3Row.rankLabel}
+                              {m.name}
                             </span>
-                          )}
-                        </td>
-                        {hasRoleColumn && (
-                          <td
-                            className={`${effectiveRowCls} overlay-col-role`}
-                            style={{
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {getMemberRole(m) ? (
-                              <span className="overlay-role-label" style={overlayCellOutlineStyle}>
-                                {getMemberRole(m)}
-                              </span>
-                            ) : (
-                              <span className="overlay-rank-mark">-</span>
-                            )}
                           </td>
-                        )}
-                        <td className={`${effectiveRowCls} overlay-col-name text-center ${effectiveNameCls} ${nameWrapCls}`}>
-                          <span
-                            className={`overlay-cell-text-inner ${nameWrapCls} ${top3Row.nameCellClass || ""}`}
-                            style={mergeRankTop3TextStyle(
-                              overlayCellOutlineStyle,
-                              top3Row.gradientText,
-                              top3Row.nameCellStyle
-                            )}
-                          >
-                            {m.name}
-                          </span>
-                        </td>
-                        <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-center`}>
-                          <OverlayTableNumCell
-                            value={m.account}
-                            format={fmt}
-                            animate={rowMotionEnabled}
-                            className="overlay-num-cell-inner overlay-cell-text-inner"
-                            style={overlayCellOutlineStyle}
-                          />
-                        </td>
-                        <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-center`}>
-                          <OverlayTableNumCell
-                            value={m.toon}
-                            format={fmt}
-                            animate={rowMotionEnabled}
-                            className="overlay-num-cell-inner overlay-cell-text-inner"
-                            style={overlayCellOutlineStyle}
-                          />
-                        </td>
-                        {showCombinedColumn && (
-                          <td className={`${effectiveRowCls} overlay-col-total text-center font-bold`}>
+                          <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-center`}>
                             <OverlayTableNumCell
-                              value={m.account + m.toon}
-                              format={fmtTotalCell}
-                              animate={rowMotionEnabled}
-                              className="overlay-num-cell-inner overlay-cell-text-inner"
-                              style={overlayCellOutlineStyle}
-                            />
-                          </td>
-                        )}
-                        {showContributionColumn && (
-                          <td className={`${effectiveRowCls} overlay-col-contribution text-center font-semibold`}>
-                            <OverlayTableNumCell
-                              value={getContributionValueForMember(m)}
+                              value={m.account}
                               format={fmt}
                               animate={rowMotionEnabled}
                               className="overlay-num-cell-inner overlay-cell-text-inner"
                               style={overlayCellOutlineStyle}
                             />
                           </td>
-                        )}
-                        {showRestroomColumn && (
-                          <td className={`${effectiveRowCls} overlay-col-restroom text-center font-semibold`}>
-                            {isRestroomUnlimited(getRestroomValueForMember(m)) ? (
-                              <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                {fmtRestroom(RESTROOM_UNLIMITED)}
-                              </span>
-                            ) : (
+                          <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-center`}>
+                            <OverlayTableNumCell
+                              value={m.toon}
+                              format={fmt}
+                              animate={rowMotionEnabled}
+                              className="overlay-num-cell-inner overlay-cell-text-inner"
+                              style={overlayCellOutlineStyle}
+                            />
+                          </td>
+                          {showCombinedColumn && (
+                            <td className={`${effectiveRowCls} overlay-col-total text-center font-bold`}>
                               <OverlayTableNumCell
-                                value={getRestroomValueForMember(m)}
-                                format={fmtRestroom}
+                                value={m.account + m.toon}
+                                format={fmtTotalCell}
                                 animate={rowMotionEnabled}
                                 className="overlay-num-cell-inner overlay-cell-text-inner"
                                 style={overlayCellOutlineStyle}
                               />
-                            )}
-                          </td>
-                        )}
-                      </tr>
+                            </td>
+                          )}
+                          {showContributionColumn && (
+                            <td className={`${effectiveRowCls} overlay-col-contribution text-center font-semibold`}>
+                              <OverlayTableNumCell
+                                value={getContributionValueForMember(m)}
+                                format={fmt}
+                                animate={rowMotionEnabled}
+                                className="overlay-num-cell-inner overlay-cell-text-inner"
+                                style={overlayCellOutlineStyle}
+                              />
+                            </td>
+                          )}
+                          {showRestroomColumn && (
+                            <td className={`${effectiveRowCls} overlay-col-restroom text-center font-semibold`}>
+                              {isRestroomUnlimited(getRestroomValueForMember(m)) ? (
+                                <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                  {fmtRestroom(RESTROOM_UNLIMITED)}
+                                </span>
+                              ) : (
+                                <OverlayTableNumCell
+                                  value={getRestroomValueForMember(m)}
+                                  format={fmtRestroom}
+                                  animate={rowMotionEnabled}
+                                  className="overlay-num-cell-inner overlay-cell-text-inner"
+                                  style={overlayCellOutlineStyle}
+                                />
+                              )}
+                            </td>
+                          )}
+                        </tr>
                       );
                     })}
                     {panel.includePinned ? visiblePinned.map((m) => (
