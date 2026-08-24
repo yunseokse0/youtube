@@ -77,11 +77,18 @@ export default function OverlayLayoutShell({ children }: { children: React.React
     setScrollable(shouldUseOverlayScrollableShell(pathname));
   }, [pathname]);
 
+  const shellBody = (
+    <>
+      <style dangerouslySetInnerHTML={{ __html: overlayRouteCss }} />
+      <OverlayBroadcastHygiene />
+      {children}
+    </>
+  );
+
   if (scrollable) {
     return (
       <div className="min-h-[100dvh] w-full bg-neutral-950 text-white" suppressHydrationWarning>
-        <OverlayBroadcastHygiene />
-        {children}
+        {shellBody}
       </div>
     );
   }
@@ -99,9 +106,7 @@ export default function OverlayLayoutShell({ children }: { children: React.React
         background: "transparent",
       }}
     >
-      <style dangerouslySetInnerHTML={{ __html: overlayRouteCss }} />
-      <OverlayBroadcastHygiene />
-      {children}
+      {shellBody}
     </div>
   );
 }

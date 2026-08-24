@@ -3,9 +3,13 @@
 export const OVERLAY_TOOLS_HUB_PATH_RE =
   /\/(?:dev|demo|gauge-demo|battle-effects-demo|wheel-demo|playthrough|wheel-render-probe)(?:\/|$)/;
 
-/** SSR·hydration: pathname만으로 판별 (window 미사용) */
+/**
+ * SSR·hydration: pathname만으로 판별 (window 미사용).
+ * pathname이 아직 없으면 허브로 보지 않는다.
+ * (null을 허브로 치면 /overlay/donor-rankings SSR은 스크롤 셸, 클라 첫 페인트는 fixed 셸이 되어 React #423)
+ */
 export function isOverlayToolsHubPath(pathname: string | null): boolean {
-  if (!pathname) return true;
+  if (!pathname) return false;
   return OVERLAY_TOOLS_HUB_PATH_RE.test(pathname);
 }
 

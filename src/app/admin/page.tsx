@@ -1123,7 +1123,8 @@ export default function AdminPage() {
   const obsTextRegistry = useMemo(() => readObsTextRegistryFromState(state), [state]);
   const obsTextPreviewId =
     obsTextPreviewInstanceId ?? obsTextRegistry.instances[0]?.id ?? "default";
-  const [timerUiNow, setTimerUiNow] = useState(Date.now());
+  /** SSR·클라 첫 페인트 시각이 다르면 타이머 문구가 갈라져 React #423 */
+  const [timerUiNow, setTimerUiNow] = useState(0);
   const [timerMinuteInputs, setTimerMinuteInputs] = useState<
     Record<"generalTimer" | "matchTimer", string>
   >({
@@ -2598,6 +2599,8 @@ export default function AdminPage() {
 
     void (async () => {
       if (await tryDailyLogRestore()) return;
+      /** 서버 메인에 후원이 있으면 restore-backup 409 대신 그대로 당김 */
+      if (await applyDonorsFromServerMainStateRef.current({ silent: true })) return;
       try {
         const res = await fetch("/api/donations/restore-backup", {
           method: "POST",
@@ -2699,6 +2702,7 @@ export default function AdminPage() {
   }, [user, storageHealth, state.donors, applyDonorsFromServerMainState]);
 
   useEffect(() => {
+    setTimerUiNow(Date.now());
     const id = window.setInterval(() => setTimerUiNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
