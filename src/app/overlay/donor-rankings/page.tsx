@@ -10,6 +10,7 @@ import {
   normalizeDonorRankingsOverlayConfig,
   normalizeDonorsFormat,
   DONOR_RANKINGS_COMPACT_TOP_MAX,
+  DONOR_RANKINGS_OUTLINE_MAX_PX,
   type AppState,
 } from "@/lib/state";
 import type { DonorsAmountFormat } from "@/types";
@@ -36,14 +37,14 @@ import { useOverlayViewportSize } from "@/hooks/useOverlayViewportSize";
 import { backgroundWithOpacityFrac, solidBackgroundWithOpacityFrac } from "@/lib/donor-rankings-opacity";
 import { splitOverlayListAtHalf } from "@/lib/utils";
 
-/** 스크린샷 기준: 순위 숫자 기본 핑크 (관리자 rankColor가 있으면 우선) */
-const RANK_NUMBER_FALLBACK = "#F472B6";
+/** 스크린샷 기준: 순위 숫자도 골드 + 검정 외곽선 (관리자 rankColor가 있으면 우선) */
+const RANK_NUMBER_FALLBACK = "#ffc107";
 function readOutlineWidth(sp: URLSearchParams, key: string, fallback: number): number {
   const raw = sp.get(key);
   if (!raw) return fallback;
   const n = parseFloat(raw);
   if (!Number.isFinite(n)) return fallback;
-  return Math.max(0, Math.min(3, n));
+  return Math.max(0, Math.min(DONOR_RANKINGS_OUTLINE_MAX_PX, n));
 }
 
 function liveThemeOutlineWidth(
@@ -52,8 +53,12 @@ function liveThemeOutlineWidth(
   saved: number,
   sp: URLSearchParams
 ): number {
-  if (ready && !useTest) return Math.max(0, Math.min(3, saved));
-  return readOutlineWidth(sp, "outlineWidth", saved);
+  const n = ready && !useTest
+    ? Math.max(0, Math.min(DONOR_RANKINGS_OUTLINE_MAX_PX, saved))
+    : readOutlineWidth(sp, "outlineWidth", saved);
+  /** 후원순위는 시인성 때문에 외곽선이 기본. 0은 관리자 ‘없음’이 아니라 기본 두께로 표시 */
+  if (n <= 0) return 4;
+  return n;
 }
 
 function donorRankingsOutlineCssBlock(
@@ -61,15 +66,21 @@ function donorRankingsOutlineCssBlock(
   outlineWidthPx?: number,
   sharp = true
 ): string {
+  if (outlineWidthPx === 0) return "";
   const resolved = outlineColor.trim() || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
+  const w =
+    outlineWidthPx != null && Number.isFinite(outlineWidthPx) && outlineWidthPx > 0
+      ? Math.max(0.5, Math.min(DONOR_RANKINGS_OUTLINE_MAX_PX, outlineWidthPx))
+      : 4;
   const shadow = buildBroadcastTextOutlineShadowCss({
     outlineColor: resolved,
-    outlineWidthPx,
+    outlineWidthPx: w,
     sharp,
   });
   if (!shadow) return "";
   return `
-    .donor-rankings-overlay-root .overlay-cell-text-inner {
+    .donor-rankings-overlay-root .overlay-cell-text-inner,
+    .donor-rankings-overlay-root .donor-rank-slot span:not(.overlay-rank-icon) {
       display: inline-block;
       overflow: visible;
       white-space: inherit;
@@ -77,8 +88,8 @@ function donorRankingsOutlineCssBlock(
       -webkit-font-smoothing: antialiased;
       text-rendering: geometricPrecision;
       paint-order: stroke fill !important;
+      -webkit-text-stroke: ${w}px ${resolved} !important;
       text-shadow: ${shadow} !important;
-      -webkit-text-stroke: 0 !important;
     }
     /* 트로피·숫자 순위가 같은 칸 중심에 오도록 */
     .donor-rankings-overlay-root .donor-rank-slot {
@@ -410,9 +421,9 @@ function RankingRow({
     outlineWidthPx,
     sharp: true,
   });
-  // OBS CEF: stroke 는 뭉개짐 → shadow 링만
-  const rankOutline = { ...rankOutlineRaw, WebkitTextStroke: "0" as const };
-  const rowOutline = { ...rowOutlineRaw, WebkitTextStroke: "0" as const };
+  // OBS CEF: stroke + 조밀 shadow 링을 함께 씀 (참고샷의 두꺼운 검정 외곽선)
+  const rankOutline = rankOutlineRaw;
+  const rowOutline = rowOutlineRaw;
   const isTrophy = idx <= 2;
   const effectiveRankColor = String(rankColor || "").trim() || RANK_NUMBER_FALLBACK;
   const rankSlotPx = Math.max(rankPx, Math.round(rankPx * 1.35));
@@ -454,7 +465,7 @@ function RankingRow({
         )}
       </span>
       <span
-        className="overlay-cell-text-inner min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left font-bold leading-tight"
+        className="overlay-cell-text-inner min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap px-[0.2em] py-[0.12em] text-left font-bold leading-snug"
         style={{
           color: nameColor,
           ...rowOutline,
@@ -604,7 +615,7 @@ function RankingColumn({
     outlineWidthPx,
     sharp: true,
   });
-  const titleOutline = { ...titleOutlineRaw, WebkitTextStroke: "0" as const };
+  const titleOutline = titleOutlineRaw;
   const outerClass = unified
     ? `relative z-[1] flex min-w-0 flex-1 flex-col overflow-visible ${
         showColumnDivider
@@ -818,7 +829,7 @@ export default function DonorRankingsOverlayPage() {
     sp,
     "border",
     savedTheme.borderColor,
-    "rgba(255, 255, 255, 0.12)"
+    "#ffc107"
   );
   const headerAccountBg = liveThemeColor(
     themeLive,
@@ -840,17 +851,17 @@ export default function DonorRankingsOverlayPage() {
   const rankingTitle = liveThemeTitle(themeLive, useTest, savedTheme.titleText, sp, "👑 웹후원 순위 👑");
   const rowEvenBg = liveThemeColor(themeLive, useTest, savedTheme.rowEvenBg, sp, "rowEvenBg", "transparent");
   const rowOddBg = liveThemeColor(themeLive, useTest, savedTheme.rowOddBg, sp, "rowOddBg", "rgba(255, 255, 255, 0.14)");
-  const rankColor = liveThemeColor(themeLive, useTest, savedTheme.rankColor, sp, "rankColor", "#F472B6");
-  const nameColor = liveThemeColor(themeLive, useTest, savedTheme.nameColor, sp, "nameColor", "#ffffff");
-  const amountColor = liveThemeColor(themeLive, useTest, savedTheme.amountColor, sp, "amountColor", "#ffffff");
-  const titleColor = liveThemeColor(themeLive, useTest, savedTheme.titleColor, sp, "titleColor", "#ffffff");
+  const rankColor = liveThemeColor(themeLive, useTest, savedTheme.rankColor, sp, "rankColor", "#ffc107");
+  const nameColor = liveThemeColor(themeLive, useTest, savedTheme.nameColor, sp, "nameColor", "#ffc107");
+  const amountColor = liveThemeColor(themeLive, useTest, savedTheme.amountColor, sp, "amountColor", "#ffc107");
+  const titleColor = liveThemeColor(themeLive, useTest, savedTheme.titleColor, sp, "titleColor", "#ffc107");
   const outlineColor = liveThemeColor(
     themeLive,
     useTest,
     savedTheme.outlineColor,
     sp,
     "outline",
-    "rgba(20, 12, 6, 0.96)"
+    "#000000"
   );
   const outlineWidthPx = liveThemeOutlineWidth(themeLive, useTest, savedTheme.outlineWidth, sp);
   const showBgLayer = overlayCfg.isBgEnabled && Boolean(overlayCfg.bgGifUrl.trim());
@@ -1017,18 +1028,14 @@ export default function DonorRankingsOverlayPage() {
                 className={`relative z-[2] grid grid-cols-1 overflow-hidden backdrop-blur-studio md:grid-cols-2 md:gap-0 ${
                   showFrame
                     ? "rounded-none border-0 shadow-none"
-                    : "studio-glass-panel rounded-studio border border-fuchsia-400/40 shadow-glass"
+                    : "studio-glass-panel rounded-studio border-[3px] border-solid"
                 }`}
                 style={{
-                  borderColor: showFrame
-                    ? "transparent"
-                    : borderColor === "transparent"
-                      ? "rgba(232, 121, 249, 0.45)"
-                      : borderColor,
+                  borderColor: showFrame ? "transparent" : borderColor,
                   backgroundColor: "transparent",
                   boxShadow: showFrame
                     ? "none"
-                    : "0 8px 32px 0 rgba(0, 0, 0, 0.37), inset 0 1px 0 0 rgba(255,255,255,0.1)",
+                    : "0 0 0 2px #000000, 0 8px 32px 0 rgba(0, 0, 0, 0.37)",
                 }}
               >
               <RankingColumn
@@ -1102,12 +1109,14 @@ export default function DonorRankingsOverlayPage() {
             ) : null}
             <div
               className={`relative z-[2] overflow-visible ${
-                showFrame ? "rounded-none border-0 shadow-none" : "rounded-studio"
+                showFrame
+                  ? "rounded-none border-0 shadow-none"
+                  : "rounded-studio border-[3px] border-solid"
               }`}
               style={{
-                borderColor: showFrame ? "transparent" : "transparent",
+                borderColor: showFrame ? "transparent" : borderColor,
                 backgroundColor: "transparent",
-                boxShadow: "none",
+                boxShadow: showFrame ? "none" : "0 0 0 2px #000000",
               }}
             >
             {unifiedHalf.split ? (

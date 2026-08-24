@@ -132,7 +132,6 @@ import {
 } from "@/lib/donation-table-options";
 import {
   EXCEL_GOLD_RANK_TEXT_COLORS,
-  contributionColumnBgFromColor,
   isExcelGoldTableTheme,
   isExcelMemberTableTheme,
   resolveExcelMemberTableAccent,
@@ -141,8 +140,6 @@ import {
   resolveTableThemeTotalBorderCss,
   resolveTableThemeRowStripeCss,
   resolveTableThemeContributionColorCss,
-  resolveTableThemeContributionColumnBgCss,
-  resolveTableThemeContributionPillBgCss,
 } from "@/lib/excel-member-table-theme";
 import {
   overlayTableCellGridCss,
@@ -4078,17 +4075,6 @@ function OverlayInner() {
       contributionColorRaw ||
       excelMemberAccent?.contributionColor ||
       resolveTableThemeContributionColorCss(membersThemeId);
-    const contributionColumnBgCss = isExcelGoldChrome
-      ? contributionColorRaw
-        ? contributionColumnBgFromColor(contributionColorRaw)
-        : resolveTableThemeContributionColumnBgCss(membersThemeId) ||
-          (contributionColorCss ? contributionColumnBgFromColor(contributionColorCss) : "")
-      : "";
-    const contributionPillBgCss = isExcelGoldChrome
-      ? excelMemberAccent?.contributionPillBg ||
-        resolveTableThemeContributionPillBgCss(membersThemeId) ||
-        "rgba(0, 0, 0, 0.42)"
-      : "";
     const excelGoldRankChrome =
       isExcelGoldChrome && !isExcelRankTop3TextMode(excelRankTop3Style.mode);
     const tablePanelBorderCss =
@@ -4124,12 +4110,6 @@ function OverlayInner() {
                 ["--excel-row-even" as string]: tableRowEvenBgCss,
                 ["--excel-row-odd" as string]: tableRowOddBgCss,
               }
-            : {}),
-          ...(contributionColumnBgCss
-            ? { ["--excel-contrib-col" as string]: contributionColumnBgCss }
-            : {}),
-          ...(contributionPillBgCss
-            ? { ["--excel-contrib-pill" as string]: contributionPillBgCss }
             : {}),
         }
       : undefined;
@@ -4942,8 +4922,9 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table.excel-gold-table tbody td strong,
         .overlay-root .overlay-elegant-table.excel-gold-table tbody td .overlay-cell-text-inner,
         .overlay-root .overlay-elegant-table.excel-gold-table tbody td .overlay-num-cell-inner {
-          text-shadow: none !important;
-          -webkit-text-stroke: 0 !important;
+          text-shadow: ${tableOutlineShadowCss} !important;
+          -webkit-text-stroke: ${tableOutlineDisabled || obsStrokeDisabled ? "0" : tableStrokeCss} !important;
+          paint-order: stroke fill !important;
         }
         /* 행마다 떨어진 둥근 pill: 투명 테두리로 홈을 내고 background-clip으로 채움만 둥글게 */
         .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row td,
@@ -4994,29 +4975,6 @@ function OverlayInner() {
           border-top: 3px solid transparent !important;
           border-bottom: 3px solid transparent !important;
         }
-        .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row td.overlay-col-contribution,
-        .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(odd) td.overlay-col-contribution,
-        .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(even) td.overlay-col-contribution,
-        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row td.overlay-col-contribution {
-          background:
-            linear-gradient(var(--excel-contrib-col, rgba(0, 0, 0, 0.28)), var(--excel-contrib-col, rgba(0, 0, 0, 0.28))),
-            var(--excel-row-odd, rgba(255, 255, 255, 0.16)) !important;
-          background-clip: padding-box !important;
-        }
-        .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(even) td.overlay-col-contribution,
-        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(even) td.overlay-col-contribution {
-          background:
-            linear-gradient(var(--excel-contrib-col, rgba(0, 0, 0, 0.28)), var(--excel-contrib-col, rgba(0, 0, 0, 0.28))),
-            var(--excel-row-even, rgba(255, 255, 255, 0.08)) !important;
-          background-clip: padding-box !important;
-        }
-        .overlay-root .overlay-elegant-table.excel-gold-table tbody tr:not(.overlay-total-row) td.overlay-col-contribution .overlay-num-cell-inner {
-          background: var(--excel-contrib-pill, rgba(0, 0, 0, 0.38)) !important;
-          border-radius: 999px !important;
-          padding: 0.08em 0.62em !important;
-          min-width: 4.2em;
-          box-sizing: border-box;
-        }
         .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-excel-placeholder td .overlay-cell-text-inner,
         .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-excel-placeholder td .overlay-num-cell-inner {
           color: transparent !important;
@@ -5026,13 +4984,14 @@ function OverlayInner() {
           excelGoldRankChrome
             ? EXCEL_GOLD_RANK_TEXT_COLORS.map((color, idx) => {
                 const n = idx + 1;
-                const glow = contributionColumnBgFromColor(color, 0.72);
                 return `
         .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-excel-rank-${n}:not(.overlay-excel-placeholder) td.overlay-col-rank .overlay-cell-text-inner,
         .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-excel-rank-${n}:not(.overlay-excel-placeholder) td.overlay-col-name .overlay-cell-text-inner {
           color: ${color} !important;
           -webkit-text-fill-color: ${color} !important;
-          text-shadow: 0 0 6px ${glow}, 0 0 14px ${glow} !important;
+          text-shadow: ${tableOutlineShadowCss} !important;
+          -webkit-text-stroke: ${tableOutlineDisabled || obsStrokeDisabled ? "0" : tableStrokeCss} !important;
+          paint-order: stroke fill !important;
         }`;
               }).join("")
             : ""

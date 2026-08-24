@@ -12,6 +12,7 @@ import {
   type GoalBarAnimationMode,
 } from "@/lib/goal-bar-style";
 import { sanitizeOverlayEmbedMediaUrl } from "@/lib/gif-url";
+import { MAX_OVERLAY_TEXT_OUTLINE_WIDTH_PX } from "@/lib/text-outline-style";
 
 /** 프리셋 → URL 쿼리 변환. OBS 등 별도 컨텍스트에서 API 없이 동작하도록 URL에 설정 포함 */
 export type OverlayPresetLike = {
@@ -2156,7 +2157,7 @@ export function donorRankingsThemeToSearchParams(theme: DonorRankingsTheme): URL
   if (theme.titleColor.trim()) q.set("titleColor", theme.titleColor.trim());
   if (theme.outlineColor.trim()) q.set("outline", theme.outlineColor.trim());
   if (theme.outlineWidth != null && Number.isFinite(theme.outlineWidth)) {
-    q.set("outlineWidth", String(Math.max(0, Math.min(3, theme.outlineWidth))));
+    q.set("outlineWidth", String(Math.max(0, Math.min(MAX_OVERLAY_TEXT_OUTLINE_WIDTH_PX, theme.outlineWidth))));
   }
   if (theme.zoomPct != null && Number.isFinite(theme.zoomPct)) {
     q.set("zoomPct", String(Math.max(30, Math.min(300, Math.floor(theme.zoomPct)))));

@@ -42,6 +42,9 @@ function mysqlPoolOptionsFromUrl(raw: string): mysql.PoolOptions | null {
       database,
       waitForConnections: true,
       connectionLimit: 8,
+      /** 대기열이 무한히 늘면 /api/state GET 이 안 끝나고 관리자가「동기화 중」에 고착 */
+      queueLimit: 32,
+      connectTimeout: 8_000,
       enableKeepAlive: true,
     };
   } catch {

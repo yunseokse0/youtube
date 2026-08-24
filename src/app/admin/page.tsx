@@ -100,6 +100,7 @@ import {
   normalizeMemberPositions,
   fitRankPositionLabelsToMemberCount,
   DONOR_RANKINGS_COMPACT_TOP_MAX,
+  DONOR_RANKINGS_OUTLINE_MAX_PX,
   type OverlayConfig,
 } from "@/lib/state";
 import {
@@ -2229,8 +2230,15 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id) return;
+    let cancelled = false;
     setSyncStatus("loading");
+    const hydrateWatchdog = window.setTimeout(() => {
+      if (!cancelled && syncStatusRef.current === "loading") {
+        const offlineNow = typeof navigator !== "undefined" && !navigator.onLine;
+        setSyncStatus(offlineNow ? "local" : "error");
+      }
+    }, 28_000);
     const offline = typeof navigator !== "undefined" && !navigator.onLine;
     let localPresets: OverlayPreset[] = [];
     try {
@@ -2259,7 +2267,10 @@ export default function AdminPage() {
       setDailyLog(loadDailyLog(user?.id));
     });
     void refreshStorageHealth();
-    loadStateFromApi(user?.id, { forceFull: true }).then((apiState) => {
+    void loadStateFromApi(user.id, { forceFull: true })
+      .then((apiState) => {
+      if (cancelled) return;
+      try {
       /** 후원·금액·멤버는 계정 서버 정본만. admin React state 는 서버 스냅샷의 편집 뷰. */
       const fromLs = loadState(user.id);
       const fromRef = stateRef.current;
@@ -2504,8 +2515,23 @@ export default function AdminPage() {
           });
         }
       }
+      } catch {
+        if (!cancelled) {
+          const offlineNow = typeof navigator !== "undefined" && !navigator.onLine;
+          setSyncStatus(offlineNow ? "local" : "error");
+        }
+      }
+    })
+    .catch(() => {
+      if (cancelled) return;
+      const offlineNow = typeof navigator !== "undefined" && !navigator.onLine;
+      setSyncStatus(offlineNow ? "local" : "error");
     });
-  }, [user, persistState, mergeIncomingStateSafely, presetStorageKey, hydrateSettlementUiFromAppState, refreshStorageHealth]);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(hydrateWatchdog);
+    };
+  }, [user?.id, persistState, mergeIncomingStateSafely, presetStorageKey, hydrateSettlementUiFromAppState, refreshStorageHealth]);
 
   /** 일괄 반영으로 동일 초에 찍힌 후원 시각 — id·daily log로 복구 후 서버 저장 */
   useEffect(() => {
@@ -3190,7 +3216,8 @@ export default function AdminPage() {
     }, ADMIN_STATE_FALLBACK_POLL_MS);
     const donorLiveTimer = window.setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-      void syncFromApi({ forceFull: true, forceDonorMerge: true });
+      /** since/304 — 2초마다 forceFull 하면 /api/state 가 막혀 관리자가「동기화 중」에 고착 */
+      void syncFromApi({ forceDonorMerge: true });
     }, ADMIN_DONOR_LIVE_POLL_MS);
     const onVisibility = () => {
       if (typeof document !== "undefined" && document.visibilityState === "visible") {
@@ -3200,7 +3227,6 @@ export default function AdminPage() {
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
     document.addEventListener("visibilitychange", onVisibility);
-    void syncFromApi({ forceFull: true });
     return () => {
       running = false;
       cancel();
@@ -3212,7 +3238,7 @@ export default function AdminPage() {
       window.removeEventListener("offline", onOffline);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [user, persistState, mergeIncomingStateSafely, syncSettlementUiFormFromOptions, applyDonorsFromServerMainState]);
+  }, [user?.id, persistState, mergeIncomingStateSafely, syncSettlementUiFormFromOptions, applyDonorsFromServerMainState]);
 
   const normalizeOverlayPresetLabels = (list: OverlayPreset[]): OverlayPreset[] =>
     list.map((p) => {
@@ -11097,7 +11123,7 @@ export default function AdminPage() {
                         <input
                           type="range"
                           min={0}
-                          max={3}
+                          max={DONOR_RANKINGS_OUTLINE_MAX_PX}
                           step={0.25}
                           value={state.donorRankingsTheme.outlineWidth}
                           onChange={(e) => updateDonorRankingsTheme({ outlineWidth: Number(e.target.value) })}
@@ -11106,18 +11132,21 @@ export default function AdminPage() {
                         <input
                           type="number"
                           min={0}
-                          max={3}
+                          max={DONOR_RANKINGS_OUTLINE_MAX_PX}
                           step={0.25}
                           value={state.donorRankingsTheme.outlineWidth}
                           onChange={(e) =>
                             updateDonorRankingsTheme({
-                              outlineWidth: Math.max(0, Math.min(3, parseFloat(e.target.value || "0") || 0)),
+                              outlineWidth: Math.max(
+                                0,
+                                Math.min(DONOR_RANKINGS_OUTLINE_MAX_PX, parseFloat(e.target.value || "0") || 0)
+                              ),
                             })
                           }
                           className="w-16 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs text-right"
                         />
                       </div>
-                      <span className="text-[10px] text-neutral-500">0 = 없음 · 기본 1.25</span>
+                      <span className="text-[10px] text-neutral-500">0 = 없음 · 기본 4 (두꺼운 검정 외곽선)</span>
                     </label>
                     <div className="text-[11px] text-neutral-500">
                       반투명/rgba 값이 필요하면 아래 URL 파라미터로 덮어쓸 수 있습니다. 기본은 관리자 저장값이 사용됩니다.
@@ -15085,7 +15114,7 @@ export default function AdminPage() {
                       <input
                         type="range"
                         min={0}
-                        max={3}
+                        max={DONOR_RANKINGS_OUTLINE_MAX_PX}
                         step={0.25}
                         value={state.donorRankingsTheme.outlineWidth}
                         onChange={(e) => updateDonorRankingsTheme({ outlineWidth: Number(e.target.value) })}
@@ -15094,12 +15123,15 @@ export default function AdminPage() {
                       <input
                         type="number"
                         min={0}
-                        max={3}
+                        max={DONOR_RANKINGS_OUTLINE_MAX_PX}
                         step={0.25}
                         value={state.donorRankingsTheme.outlineWidth}
                         onChange={(e) =>
                           updateDonorRankingsTheme({
-                            outlineWidth: Math.max(0, Math.min(3, parseFloat(e.target.value || "0") || 0)),
+                            outlineWidth: Math.max(
+                              0,
+                              Math.min(DONOR_RANKINGS_OUTLINE_MAX_PX, parseFloat(e.target.value || "0") || 0)
+                            ),
                           })
                         }
                         className="w-16 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs text-right"

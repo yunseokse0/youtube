@@ -44,4 +44,28 @@ describe("isDefaultLikeDonorRankingsTheme", () => {
       })
     ).toBe(true);
   });
+
+  it("promotes legacy 2.25px outline to the thick default", () => {
+    expect(
+      isDefaultLikeDonorRankingsTheme({
+        ...DEFAULT_DONOR_RANKINGS_THEME,
+        outlineWidth: 2.25,
+        titleColor: "#ffffff",
+        rankColor: "#ffffff",
+        outlineColor: "rgba(20, 12, 6, 0.96)",
+      })
+    ).toBe(true);
+    expect(DEFAULT_DONOR_RANKINGS_THEME.outlineWidth).toBe(4);
+    expect(DEFAULT_DONOR_RANKINGS_THEME.titleColor).toBe("#ffc107");
+    expect(DEFAULT_DONOR_RANKINGS_THEME.borderColor).toBe("#ffc107");
+  });
+
+  it("promotes legacy transparent panel border to gold", () => {
+    expect(
+      isDefaultLikeDonorRankingsTheme({
+        ...DEFAULT_DONOR_RANKINGS_THEME,
+        borderColor: "transparent",
+      })
+    ).toBe(true);
+  });
 });

@@ -453,6 +453,10 @@ export function buildRouletteIdlePreserveSettings(
 
 /** 기본 후원순위 오버레이 표시 상한 — 그 이상은 `/overlay/donor-rankings/full` */
 export const DONOR_RANKINGS_COMPACT_TOP_MAX = 10;
+/** 후원순위 글자 외곽선 두께 상한(px) — 참고샷의 두꺼운 검정 스트로크 */
+export const DONOR_RANKINGS_OUTLINE_MAX_PX = 6;
+/** 구버전 컴팩트 테마 기본 외곽선 — 새 기본값으로 승격 */
+const DONOR_RANKINGS_LEGACY_OUTLINE_WIDTH = 2.25;
 
 export const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
   top: DONOR_RANKINGS_COMPACT_TOP_MAX,
@@ -464,18 +468,18 @@ export const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
   bg: "transparent",
   /** 반투명 밝은 패널 — 방송 배경이 비치는 유리 느낌 */
   panelBg: "rgba(232, 232, 236, 0.7)",
-  borderColor: "transparent",
+  borderColor: "#ffc107",
   headerAccountBg: "rgba(232, 232, 236, 0.55)",
   headerToonBg: "rgba(232, 232, 236, 0.55)",
   rowEvenBg: "transparent",
   rowOddBg: "rgba(255, 255, 255, 0.14)",
-  /** 4등 이후 — 흰 글자 + 짙은 외곽선 / 제목도 흰 글자 */
-  rankColor: "#ffffff",
+  /** 4등 이후·제목·닉·금액 — 골드 글자 + 두꺼운 검정 외곽선 */
+  rankColor: "#ffc107",
   nameColor: "#ffc107",
   amountColor: "#ffc107",
-  titleColor: "#ffffff",
-  outlineColor: "rgba(20, 12, 6, 0.96)",
-  outlineWidth: 2.25,
+  titleColor: "#ffc107",
+  outlineColor: "#000000",
+  outlineWidth: 4,
   zoomPct: 100,
 };
 
@@ -680,22 +684,46 @@ function normalizeDonorRankingsTheme(
     overlayOpacity: n(v.overlayOpacity, 0, 100, defaults.overlayOpacity),
     bg: s(v.bg, defaults.bg),
     panelBg: s(v.panelBg, defaults.panelBg),
-    borderColor: s(v.borderColor, defaults.borderColor),
+    borderColor: (() => {
+      const c = s(v.borderColor, defaults.borderColor);
+      if (compactTheme && (!c || c.toLowerCase() === "transparent")) return defaults.borderColor;
+      return c;
+    })(),
     headerAccountBg: s(v.headerAccountBg, defaults.headerAccountBg),
     headerToonBg: s(v.headerToonBg, defaults.headerToonBg),
     rowEvenBg: s(v.rowEvenBg, defaults.rowEvenBg),
     rowOddBg: s(v.rowOddBg, defaults.rowOddBg),
-    rankColor: s(v.rankColor, defaults.rankColor),
+    rankColor: (() => {
+      const c = s(v.rankColor, defaults.rankColor);
+      if (compactTheme && /^#fff(?:fff)?$/i.test(c)) return defaults.rankColor;
+      return c;
+    })(),
     nameColor: s(v.nameColor, defaults.nameColor),
     amountColor: s(v.amountColor, defaults.amountColor),
-    titleColor: s(v.titleColor, defaults.titleColor),
-    outlineColor: s(v.outlineColor, defaults.outlineColor),
+    titleColor: (() => {
+      const c = s(v.titleColor, defaults.titleColor);
+      if (compactTheme && /^#fff(?:fff)?$/i.test(c)) return defaults.titleColor;
+      return c;
+    })(),
+    outlineColor: (() => {
+      const c = s(v.outlineColor, defaults.outlineColor);
+      if (compactTheme && /^rgba\(\s*20\s*,\s*12\s*,\s*6\s*,\s*0\.96\s*\)$/i.test(c)) {
+        return defaults.outlineColor;
+      }
+      return c;
+    })(),
     outlineWidth: (() => {
       const raw = v.outlineWidth;
       if (raw === undefined || raw === null) return defaults.outlineWidth;
-      const n = typeof raw === "number" ? raw : parseFloat(String(raw));
-      if (!Number.isFinite(n)) return defaults.outlineWidth;
-      return Math.max(0, Math.min(3, Math.round(n * 100) / 100));
+      const parsed = typeof raw === "number" ? raw : parseFloat(String(raw));
+      if (!Number.isFinite(parsed)) return defaults.outlineWidth;
+      if (
+        compactTheme &&
+        Math.abs(parsed - DONOR_RANKINGS_LEGACY_OUTLINE_WIDTH) < 0.01
+      ) {
+        return defaults.outlineWidth;
+      }
+      return Math.max(0, Math.min(DONOR_RANKINGS_OUTLINE_MAX_PX, Math.round(parsed * 100) / 100));
     })(),
     zoomPct: n(v.zoomPct, 30, 300, defaults.zoomPct ?? 100),
   };

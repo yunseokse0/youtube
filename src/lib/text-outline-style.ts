@@ -6,11 +6,14 @@ const DEFAULT_OUTLINE_COLOR = "rgba(6, 12, 24, 0.95)";
 export const DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR = DEFAULT_OUTLINE_COLOR;
 export const DEFAULT_OVERLAY_TEXT_OUTLINE_WIDTH_PX = 1.25;
 
+/** 방송 글자 외곽선 두께 상한(px). 후원순위 참고샷의 두꺼운 스트로크를 허용 */
+export const MAX_OVERLAY_TEXT_OUTLINE_WIDTH_PX = 6;
+
 /** 글자 크기에 맞춰 외곽선 두께(px). 0이면 외곽선 없음 */
 export function resolveTextOutlineWidthPx(fontSizePx: number, rawWidth?: number): number {
   if (rawWidth != null && Number.isFinite(rawWidth)) {
     if (rawWidth <= 0) return 0;
-    return Math.max(0.5, Math.min(3, rawWidth));
+    return Math.max(0.5, Math.min(MAX_OVERLAY_TEXT_OUTLINE_WIDTH_PX, rawWidth));
   }
   return Math.max(0.8, Math.min(2.5, fontSizePx * 0.06));
 }
@@ -84,7 +87,7 @@ export function buildBroadcastTextOutlineShadowCss(opts: {
   const color = (opts.outlineColor || "").trim() || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
   const w =
     opts.outlineWidthPx != null && Number.isFinite(opts.outlineWidthPx) && opts.outlineWidthPx > 0
-      ? Math.max(0.5, Math.min(3, opts.outlineWidthPx))
+      ? Math.max(0.5, Math.min(MAX_OVERLAY_TEXT_OUTLINE_WIDTH_PX, opts.outlineWidthPx))
       : DEFAULT_OVERLAY_TEXT_OUTLINE_WIDTH_PX;
   const ringW = Math.max(1, Math.round(w));
   const parts: string[] = [];
