@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers, mergeLocalMemberIdentityOntoRemote, normalizeDonorsArray, membersDifferByIds, isMemberRosterStrictSuperset, hasCustomTimerDisplayStyles, isDefaultLikeTimerDisplayStyle, isIntentionalDonorListShrink, totalCombined } from "@/lib/state";
+import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers, mergeLocalMemberIdentityOntoRemote, normalizeDonorsArray, membersDifferByIds, isMemberRosterStrictSuperset, mergeRemoteTimerDisplayStyles, isIntentionalDonorListShrink, totalCombined } from "@/lib/state";
 import { isServerAuthoritativeBroadcastState, readSessionBroadcastState } from "@/lib/server-authoritative-broadcast-state";
 import {
   countableDonorTotal,
@@ -44,6 +44,10 @@ import {
   resolveTableHeaderBgColor,
   resolveTableHeaderTextColor,
   resolveTableLineColor,
+  resolveContributionColor,
+  resolveTableRowEvenBg,
+  resolveTableRowOddBg,
+  resolveTablePanelBorderColor,
   resolveTableVerticalLines,
   resolveTableGridLines,
   resolveTableTextOutlineColor,
@@ -131,6 +135,8 @@ import {
   resolveTableThemeHeaderBgCss,
   resolveTableThemePanelBorderCss,
   resolveTableThemeTotalBorderCss,
+  resolveTableThemeRowStripeCss,
+  resolveTableThemeContributionColorCss,
 } from "@/lib/excel-member-table-theme";
 import {
   overlayTableCellGridCss,
@@ -349,21 +355,17 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         merged.matchTimer ?? merged.generalTimer
       ),
     };
-    /** 타이머 제어 색·투명도 — 원격이 기본색·키 생략이면 last-good 커스텀 유지 */
+    /** 타이머 제어 색·투명도 — 원격이 기본색·키 생략이면 last-good 커스텀 유지 (디자인은 서버) */
     const lastTimerStyles = good?.timerDisplayStyles;
     const incomingTimerStyles = merged.timerDisplayStyles;
     const hasIncomingTimerKey = Object.prototype.hasOwnProperty.call(merged, "timerDisplayStyles");
-    const incomingHiddenTimer = isHiddenTimerDisplayStyle(incomingTimerStyles?.general);
-    const preferLastTimer =
-      hasCustomTimerDisplayStyles(lastTimerStyles) &&
-      !incomingHiddenTimer &&
-      (!hasIncomingTimerKey || isDefaultLikeTimerDisplayStyle(incomingTimerStyles?.general));
-    if (incomingHiddenTimer && incomingTimerStyles) {
-      merged = { ...merged, timerDisplayStyles: incomingTimerStyles };
-    } else if (preferLastTimer && lastTimerStyles) {
-      merged = { ...merged, timerDisplayStyles: lastTimerStyles };
-    } else if (!hasIncomingTimerKey && lastTimerStyles && !isHiddenTimerDisplayStyle(lastTimerStyles?.general)) {
-      merged = { ...merged, timerDisplayStyles: lastTimerStyles };
+    const mergedTimerStyles = mergeRemoteTimerDisplayStyles({
+      last: lastTimerStyles,
+      incoming: incomingTimerStyles,
+      hasIncomingKey: hasIncomingTimerKey,
+    });
+    if (mergedTimerStyles) {
+      merged = { ...merged, timerDisplayStyles: mergedTimerStyles };
     }
     return merged;
   }, []);
@@ -1152,7 +1154,7 @@ function formatTimerText(elapsed: string | null, remainingSeconds?: number | nul
   return `${String(totalMin).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
-type ThemeId = "default" | "excel" | "excelLive" | "excelBlue" | "excelSlate" | "excelAmber" | "excelRose" | "excelNavy" | "excelTeal" | "excelPurple" | "excelEmerald" | "excelOrange" | "excelIndigo" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel" | "rainbow" | "sunset" | "ocean" | "forest" | "aurora" | "violet" | "coral" | "mint" | "lava" | "ice";
+type ThemeId = "default" | "excel" | "excelLive" | "excelBlue" | "excelSlate" | "excelAmber" | "excelGold" | "excelRose" | "excelNavy" | "excelTeal" | "excelPurple" | "excelEmerald" | "excelOrange" | "excelIndigo" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel" | "rainbow" | "sunset" | "ocean" | "forest" | "aurora" | "violet" | "coral" | "mint" | "lava" | "ice";
 
 const TABLE_BG_RGB: Record<string, [number, number, number]> = {
   default: [15, 20, 30],
@@ -1160,6 +1162,7 @@ const TABLE_BG_RGB: Record<string, [number, number, number]> = {
   excelLive: [15, 20, 30],
   excelBlue: [15, 20, 30],
   excelAmber: [15, 20, 30],
+  excelGold: [8, 8, 12],
   excelRose: [15, 20, 30],
   excelTeal: [15, 20, 30],
   excelPurple: [15, 20, 30],
@@ -1245,10 +1248,10 @@ const TABLE_NUMERIC_OUTLINE_DARK_ON_LIGHT =
   "0 1px 2px rgba(255,255,255,0.88), 0 0 1px rgba(15,23,42,0.38), 0 1px 3px rgba(0,0,0,0.14)";
 /** Studio Glass — 방송 표 크롬 (다크 글래스 + violet/blue 액센트) */
 const TABLE_BROADCAST_PANEL_BORDER = "rgba(255, 255, 255, 0.12)";
-const TABLE_BROADCAST_PANEL_BG = "rgba(15, 23, 42, 0.80)";
+const TABLE_BROADCAST_PANEL_BG = "rgba(15, 20, 30, 0.70)";
 /** 테마 자동(본문·헤더) — OBS 기본 흰색(+어두운 외곽선). 검은 글자는 본문 글자색에서 지정 */
 const TABLE_BROADCAST_TEXT_AUTO = "#ffffff";
-const TABLE_BROADCAST_PANEL_SHADOW = "0 8px 32px rgba(15, 23, 42, 0.4)";
+const TABLE_BROADCAST_PANEL_SHADOW = "0 8px 32px 0 rgba(0, 0, 0, 0.37)";
 /** 엑셀 계열 본문(이름·금액) — OBS 기본은 흰색 */
 const EXCEL_BODY_TEXT_DEFAULT = "#ffffff";
 const EXCEL_BODY_TEXT_ON_LIGHT = EXCEL_BODY_TEXT_DEFAULT;
@@ -1389,6 +1392,24 @@ const THEMES: Record<ThemeId, {
     goalWrap: "border border-white/12 bg-[rgba(15,20,30,0.55)] p-1 rounded-studio backdrop-blur-studio",
     tickerCls: "text-[#d97706] font-mono font-bold",
     timerCls: "font-mono text-white/80 bg-white/10 px-2 rounded-studio",
+  },
+  excelGold: {
+    label: "엑셀(웹후원 골드)",
+    memberCls: "font-mono",
+    nameCls: EXCEL_LIGHT_NAME_CLS,
+    accountCls: EXCEL_LIGHT_ACCOUNT_CLS,
+    toonCls: EXCEL_LIGHT_TOON_CLS,
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-[rgba(255,193,7,0.94)] border border-[#ffc107] px-2 py-1 rounded-studio",
+    rowCls: "border border-[#ffc107]/30 px-2 py-1 align-middle",
+    tableCls: "bg-[rgba(8,8,12,0.82)] border-collapse shadow-glass rounded-studio overflow-hidden border-2 border-[#ffc107]",
+    headerCls: "bg-[rgba(255,193,7,0.94)] text-[#1a1408] font-bold px-2 py-1 text-sm",
+    goalBarBg: "bg-amber-900/40",
+    goalBarFill: "bg-[#ffc107]",
+    goalText: "text-[#ffc107] font-mono font-bold",
+    goalWrap: "border border-[#ffc107]/50 bg-[rgba(8,8,12,0.75)] p-1 rounded-studio backdrop-blur-studio",
+    tickerCls: "text-[#ffc107] font-mono font-bold",
+    timerCls: "font-mono text-white bg-black/80 px-2 rounded-lg border border-[#ffc107]",
   },
   excelRose: {
     label: "엑셀(로즈)",
@@ -2449,7 +2470,7 @@ function OverlayInner() {
   const tickerBaseTheme = THEMES[tickerBaseThemeId];
   const missionTheme = THEMES[missionThemeId];
   const missionThemeVariant = (() => {
-    const excelThemes = ["excel", "excelLive", "excelBlue", "excelSlate", "excelAmber", "excelRose", "excelNavy", "excelTeal", "excelPurple", "excelEmerald", "excelOrange", "excelIndigo"];
+    const excelThemes = ["excel", "excelLive", "excelBlue", "excelSlate", "excelAmber", "excelGold", "excelRose", "excelNavy", "excelTeal", "excelPurple", "excelEmerald", "excelOrange", "excelIndigo"];
     return excelThemes.includes(missionThemeId) ? "excel" : (["rainbow", "sunset", "ocean", "forest", "aurora", "violet", "coral", "mint", "lava", "ice"].includes(missionThemeId) ? "neon" : missionThemeId);
   })() as "default" | "excel" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel";
 
@@ -2536,7 +2557,13 @@ function OverlayInner() {
   const tickerInGoal = false;
   const hasContextTicker = false;
   const showTimerRaw = (sp.get("showTimer") || "").toLowerCase();
-  const showTimer = effectiveTableOnly ? false : (timerOnlyMode ? showTimerRaw !== "false" : showTimerRaw === "true");
+  const showTimer = (() => {
+    if (effectiveTableOnly) return false;
+    if (timerOnlyMode) return showTimerRaw !== "false";
+    if (showTimerRaw === "true") return true;
+    if (showTimerRaw === "false") return false;
+    return Boolean(activePreset?.showTimer);
+  })();
   const goal = useMemo(() => {
     const fromPreset = Number((activePreset as any)?.goal || 0);
     const presetGoalOk = Number.isFinite(fromPreset) && fromPreset > 0;
@@ -2624,11 +2651,11 @@ function OverlayInner() {
   }, [s]);
   const timerStyleFromState = useMemo(() => {
     if (!s) return null;
-    if (resolvedTimerType) return s.timerDisplayStyles?.[resolvedTimerType] || null;
-    /** 통합 오버레이(showTimer)도 「타이머 제어」 general 스타일 적용 */
-    if (showTimer) return s.timerDisplayStyles?.general || null;
-    return null;
-  }, [resolvedTimerType, s, showTimer]);
+    if (resolvedTimerType) {
+      return s.timerDisplayStyles?.[resolvedTimerType] || s.timerDisplayStyles?.general || null;
+    }
+    return s.timerDisplayStyles?.general || null;
+  }, [resolvedTimerType, s]);
   const timerStyleResolved = useMemo(() => {
     /** 배경/테두리 없음 — state 가 정본이면 stale ref·프리셋 fallback 없이 즉시 반영 */
     if (timerStyleFromState && isHiddenTimerDisplayStyle(timerStyleFromState)) {
@@ -2853,6 +2880,10 @@ function OverlayInner() {
   const donorsBgColor = sp.get("donorsBgColor") || undefined;
   const accountColor = sp.get("accountColor") || undefined;
   const toonColor = sp.get("toonColor") || undefined;
+  const contributionColorRaw = resolveContributionColor(rawSp, effectivePreset, { ready });
+  const tableRowEvenBgRaw = resolveTableRowEvenBg(rawSp, effectivePreset, { ready });
+  const tableRowOddBgRaw = resolveTableRowOddBg(rawSp, effectivePreset, { ready });
+  const tablePanelBorderColorRaw = resolveTablePanelBorderColor(rawSp, effectivePreset, { ready });
   const tableTextColorRaw = resolveTableTextColor(rawSp, effectivePreset, { ready });
   const totalTextColorRaw = resolveTotalTextColor(rawSp, effectivePreset, { ready });
   const tableBgColorRaw = resolveTableBgColor(rawSp, effectivePreset, { ready });
@@ -3983,8 +4014,24 @@ function OverlayInner() {
     const tablePanelShadow = tableGridLines
       ? excelMemberAccent?.panelShadow ?? TABLE_BROADCAST_PANEL_SHADOW
       : "none";
+    const tableRowEvenBgCss =
+      tableRowEvenBgRaw || resolveTableThemeRowStripeCss(membersThemeId, "even");
+    const tableRowOddBgCss =
+      tableRowOddBgRaw || resolveTableThemeRowStripeCss(membersThemeId, "odd");
+    const contributionColorCss =
+      contributionColorRaw ||
+      excelMemberAccent?.contributionColor ||
+      resolveTableThemeContributionColorCss(membersThemeId);
+    const tablePanelBorderCss =
+      tablePanelBorderColorRaw ||
+      excelMemberAccent?.panelBorder ||
+      tableLineColorRaw ||
+      "";
+    const excelZebraEnabled =
+      Boolean(excelMemberAccent) &&
+      Boolean(tableRowOddBgCss && tableRowOddBgCss !== "transparent");
     const excelMemberTableClass = excelMemberAccent
-      ? `${isExcelLiveTheme ? " excel-live-table" : " excel-member-table"}`
+      ? `${isExcelLiveTheme ? " excel-live-table" : " excel-member-table"}${excelZebraEnabled ? " excel-zebra-table" : ""}`
       : "";
     const themeAutoHeaderBgCss = resolveTableThemeHeaderBgCss(membersThemeId);
     const excelHeaderBgCss = hasTableHeaderBgColorOverride
@@ -4000,6 +4047,12 @@ function OverlayInner() {
           ["--excel-header-text" as string]: excelHeaderTextCss,
           ["--excel-header-border" as string]: tableHeaderLineColor,
           ["--excel-total-border" as string]: tableTotalLineColor,
+          ...(excelZebraEnabled
+            ? {
+                ["--excel-row-even" as string]: tableRowEvenBgCss,
+                ["--excel-row-odd" as string]: tableRowOddBgCss,
+              }
+            : {}),
         }
       : undefined;
     const excelLiveTotalRowBg = tableBgColorRaw
@@ -4265,7 +4318,7 @@ function OverlayInner() {
       ` }} />
     ) : null;
     const colorOverrideStyle =
-      !hasTableTextColorOverride && (accountColor || toonColor) ? (
+      !hasTableTextColorOverride && (accountColor || toonColor || contributionColorCss) ? (
         <style
           dangerouslySetInnerHTML={{
             __html: [
@@ -4273,6 +4326,8 @@ function OverlayInner() {
                 `.overlay-root tr:not(.overlay-total-row) .overlay-account-cell { color: ${accountColor} !important; }`,
               toonColor &&
                 `.overlay-root tr:not(.overlay-total-row) .overlay-toon-cell { color: ${toonColor} !important; }`,
+              contributionColorCss &&
+                `.overlay-root tr:not(.overlay-total-row) td.overlay-col-contribution { color: ${contributionColorCss} !important; font-weight: 700 !important; }`,
             ]
               .filter(Boolean)
               .join("\n"),
@@ -4453,9 +4508,21 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(odd) td,
         .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(even) td,
-        .overlay-root .overlay-elegant-table.excel-member-table tbody tr.overlay-row td {
+        .overlay-root .overlay-elegant-table.excel-member-table:not(.excel-zebra-table) tbody tr.overlay-row td {
           background: transparent !important;
           border: none !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-member-table.excel-zebra-table tbody tr.overlay-row:nth-child(odd) td {
+          background: var(--excel-row-odd, rgba(255, 255, 255, 0.14)) !important;
+          border: none !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-member-table.excel-zebra-table tbody tr.overlay-row:nth-child(even) td {
+          background: var(--excel-row-even, rgba(255, 255, 255, 0.06)) !important;
+          border: none !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-member-table.excel-zebra-table thead td {
+          background: var(--excel-header-bg) !important;
+          color: var(--excel-header-text) !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
           border: none !important;
@@ -4844,17 +4911,19 @@ function OverlayInner() {
                     />
                   ) : null}
                 <div
-                  className="relative overflow-visible"
+                  className={`relative overflow-visible ${showTableFrame ? "" : "studio-glass-panel"}`}
                   style={{
                     zIndex: 2,
-                    borderRadius: showTableFrame ? 0 : 12,
-                    border: showTableFrame ? "none" : "1px solid rgba(255, 255, 255, 0.12)",
-                    /** 외곽 선은 셀 그리드가 담당 — 여기선 그림자만 (이중 테두리 방지) */
+                    borderRadius: showTableFrame ? 0 : 14,
+                    border:
+                      !showTableFrame && tablePanelBorderCss
+                        ? `2px solid ${tablePanelBorderCss}`
+                        : "none",
                     boxShadow: showTableFrame ? "none" : tablePanelShadow || "none",
                     padding: 0,
                     backgroundColor: tableBodySheetBgCss || TABLE_BROADCAST_PANEL_BG,
-                    backdropFilter: showTableFrame ? undefined : "blur(12px)",
-                    WebkitBackdropFilter: showTableFrame ? undefined : "blur(12px)",
+                    backdropFilter: showTableFrame ? undefined : "blur(14px)",
+                    WebkitBackdropFilter: showTableFrame ? undefined : "blur(14px)",
                     /** translateZ(0) 는 OBS CEF에서 서브픽셀 블러를 유발 → 외부 호스트에서는 생략 */
                     ...(externalHost
                       ? {}
@@ -5248,6 +5317,7 @@ function OverlayInner() {
                 fontSize={timerFontSize}
                 fontColor={timerFontColor}
                 bgColor={timerBgColor}
+                borderColor={timerBorderColor}
                 bgOpacity={timerBgOpacity}
               />
             ) : isImageFrameTimerDesign(timerDesign) ? (

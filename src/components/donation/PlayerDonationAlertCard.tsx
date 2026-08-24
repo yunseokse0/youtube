@@ -44,10 +44,10 @@ export default function PlayerDonationAlertCard({
 
   return (
     <div
-      className={`studio-glass-panel relative w-full overflow-hidden border ${
+      className={`studio-glass-panel animate-slide-in-up-studio relative w-full overflow-hidden ${
         highlighted
-          ? "border-studio-blue ring-2 ring-studio-violet/40 shadow-studio-glow"
-          : "border-studio-coral/90 shadow-studio-coral-glow"
+          ? "!border-studio-blue ring-2 ring-studio-violet/40 shadow-studio-glow"
+          : "!border-[#F59E0B] shadow-studio-coral-glow"
       } ${stack ? "rounded-xl" : "max-w-2xl rounded-studio"}`}
     >
       {onClose ? (

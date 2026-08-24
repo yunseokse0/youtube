@@ -95,7 +95,8 @@ export function shouldRestoreDonationRosterFromBackup(
 
 export function applyDonationRosterBackupToState(
   state: AppState,
-  backup: DonationRosterBackupPayload
+  backup: DonationRosterBackupPayload,
+  opts?: { ignoreSettlementResetFilter?: boolean }
 ): AppState {
   const curDonors = normalizeDonorsArray(state.donors);
   const curTotal = totalCombined(state);
@@ -110,7 +111,9 @@ export function applyDonationRosterBackupToState(
     : Number(state.settlementResetAt || backup.settlementResetAt || 0);
   const rawDonors = normalizeDonorsArray(backup.donors);
   const donors =
-    resetAt > 0 ? rawDonors.filter((d) => (d.at || 0) >= resetAt - 3000) : rawDonors;
+    !opts?.ignoreSettlementResetFilter && resetAt > 0
+      ? rawDonors.filter((d) => (d.at || 0) >= resetAt - 3000)
+      : rawDonors;
   const merged: AppState = {
     ...state,
     members:

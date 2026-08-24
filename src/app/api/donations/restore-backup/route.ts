@@ -54,7 +54,12 @@ export async function POST(req: Request) {
     );
   }
 
-  const restored: AppState = applyDonationRosterBackupToState(current, backup);
+  let restored: AppState = applyDonationRosterBackupToState(current, backup);
+  if (normalizeDonorsArray(restored.donors).length === 0 && backup.donorsCount > 0) {
+    restored = applyDonationRosterBackupToState(current, backup, {
+      ignoreSettlementResetFilter: true,
+    });
+  }
   if (normalizeDonorsArray(restored.donors).length === 0 && totalCombined(restored) === 0) {
     return new Response(
       JSON.stringify({

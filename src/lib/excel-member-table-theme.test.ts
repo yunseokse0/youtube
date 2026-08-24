@@ -4,8 +4,12 @@ import {
   emptyTableThemeAutoColorPatch,
   isExcelMemberTableTheme,
   resolveExcelMemberTableAccent,
+  resolveTableThemeContributionPreviewHex,
   resolveTableThemeHeaderBgCss,
   resolveTableThemeHeaderPreviewHex,
+  resolveTableThemePanelBorderPreviewHex,
+  resolveTableThemeRowStripePreviewHex,
+  tableRowStripeBgFromPickerHex,
 } from "./excel-member-table-theme";
 
 describe("excel-member-table-theme", () => {
@@ -32,5 +36,23 @@ describe("excel-member-table-theme", () => {
     expect(glass).not.toBe(neon);
     expect(resolveTableThemeHeaderPreviewHex("excelPurple")).toBe("#7c3aed");
     expect(emptyTableThemeAutoColorPatch().tableHeaderBgColor).toBe("");
+  });
+
+  it("uses 0.72 header accent opacity for excel and broadcast glass themes", () => {
+    expect(resolveExcelMemberTableAccent("excelPurple")?.headerBg).toContain("0.72");
+    expect(resolveTableThemeHeaderBgCss("default")).toContain("0.72");
+    expect(resolveTableThemeHeaderBgCss("neon")).toContain("0.72");
+  });
+
+  it("excelGold uses gold panel border, zebra stripes, and contribution accent", () => {
+    const gold = resolveExcelMemberTableAccent("excelGold");
+    expect(gold?.panelBorder).toBe("#ffc107");
+    expect(gold?.rowEvenBg).toContain("rgba(");
+    expect(gold?.contributionColor).toBe("#ffc107");
+    expect(resolveTableThemePanelBorderPreviewHex("excelGold")).toBe("#ffc107");
+    expect(resolveTableThemeContributionPreviewHex("excelGold")).toBe("#ffc107");
+    expect(resolveTableThemeRowStripePreviewHex("excelGold", "even")).toBe("#ffffff");
+    expect(tableRowStripeBgFromPickerHex("#ffffff", 0.06)).toBe("rgba(255, 255, 255, 0.06)");
+    expect(emptyTableThemeAutoColorPatch().contributionColor).toBe("");
   });
 });

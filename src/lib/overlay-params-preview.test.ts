@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildCompactBroadcastOverlayParams,
   mergeOverlayPresetsPreferLocal,
@@ -22,7 +22,11 @@ import {
   stripAdminPreviewHotReloadParams,
   type OverlayPresetLike,
 } from "./overlay-params";
-import { hasCustomTimerDisplayStyles, isDefaultLikeTimerDisplayStyle } from "./state";
+import {
+  hasCustomTimerDisplayStyles,
+  isDefaultLikeTimerDisplayStyle,
+  mergeRemoteTimerDisplayStyles,
+} from "./state";
 
 describe("admin preview hot-reload params", () => {
   it("strips theme keys so preview iframe src stays stable across theme changes", () => {
@@ -403,6 +407,27 @@ describe("admin preview hot-reload params", () => {
     expect(style.fontFamily).toBe("gaegu");
   });
 
+  it("prefers timerDisplayStyles design over stale URL timerDesign=pill", () => {
+    const style = resolveTimerOverlayStyle(
+      new URLSearchParams("timerDesign=pill"),
+      { id: "ov_stale_design", showTimer: true, timerDesign: "pill" },
+      {
+        design: "led-matrix",
+        fontFamily: "mono",
+        fontColor: "",
+        bgColor: "",
+        borderColor: "",
+        outlineColor: "",
+        outlineWidth: 0.8,
+        bgOpacity: 40,
+        scalePercent: 100,
+        showHours: false,
+      },
+      { ready: true }
+    );
+    expect(style.design).toBe("led-matrix");
+  });
+
   it("keeps structural params needed for member table when stripping hot-reload keys", () => {
     const preset: OverlayPresetLike = {
       id: "ov_1",
@@ -666,5 +691,65 @@ describe("resolveTableFrameEnabled", () => {
     expect(
       resolveTableFrameEnabled(new URLSearchParams(), preset, { ready: true })
     ).toBe(false);
+  });
+});
+
+describe("mergeRemoteTimerDisplayStyles", () => {
+  it("keeps last-good custom colors but applies incoming led-matrix design", () => {
+    const merged = mergeRemoteTimerDisplayStyles({
+      last: {
+        general: {
+          showHours: false,
+          design: "pill",
+          fontFamily: "mono",
+          fontColor: "#ff00aa",
+          bgColor: "#111111",
+          borderColor: "",
+          outlineColor: "",
+          outlineWidth: 0.8,
+          bgOpacity: 40,
+          scalePercent: 100,
+        },
+      },
+      incoming: {
+        general: {
+          showHours: false,
+          design: "led-matrix",
+          fontFamily: "mono",
+          fontColor: "",
+          bgColor: "",
+          borderColor: "",
+          outlineColor: "",
+          outlineWidth: 0.8,
+          bgOpacity: 40,
+          scalePercent: 100,
+        },
+      },
+      hasIncomingKey: true,
+    });
+    expect(merged?.general.design).toBe("led-matrix");
+    expect(merged?.general.fontColor).toBe("#ff00aa");
+  });
+});
+
+describe("isOverlayServerAuthoritativeUrl", () => {
+  it("does not treat main /overlay without host=obs as server-authoritative", async () => {
+    const { isOverlayServerAuthoritativeUrl } = await import("./overlay-params");
+    vi.stubGlobal("window", {
+      location: { pathname: "/overlay", search: "?u=din&showTimer=true" },
+      parent: null,
+    });
+    expect(isOverlayServerAuthoritativeUrl()).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  it("treats host=obs overlay as server-authoritative", async () => {
+    const { isOverlayServerAuthoritativeUrl } = await import("./overlay-params");
+    vi.stubGlobal("window", {
+      location: { pathname: "/overlay", search: "?u=din&host=obs" },
+      parent: null,
+    });
+    expect(isOverlayServerAuthoritativeUrl()).toBe(true);
+    vi.unstubAllGlobals();
   });
 });

@@ -5,6 +5,7 @@ export const EXCEL_MEMBER_THEME_IDS = [
   "excelBlue",
   "excelSlate",
   "excelAmber",
+  "excelGold",
   "excelRose",
   "excelNavy",
   "excelTeal",
@@ -23,9 +24,14 @@ export type ExcelMemberTableAccent = {
   totalRowBorder: string;
   panelBorder: string;
   panelShadow: string;
+  /** 멤버 행 줄무늬 — 비우면 transparent(줄무늬 OFF) */
+  rowEvenBg?: string;
+  rowOddBg?: string;
+  /** 기여도 열 강조색 */
+  contributionColor?: string;
 };
 
-const STUDIO_PANEL_SHADOW = "0 8px 32px rgba(15, 23, 42, 0.4)";
+const STUDIO_PANEL_SHADOW = "0 8px 32px 0 rgba(0, 0, 0, 0.37)";
 const STUDIO_EDGE = "rgba(255, 255, 255, 0.12)";
 
 export const EXCEL_MEMBER_TABLE_ACCENT: Record<ExcelMemberThemeId, ExcelMemberTableAccent> = {
@@ -68,6 +74,18 @@ export const EXCEL_MEMBER_TABLE_ACCENT: Record<ExcelMemberThemeId, ExcelMemberTa
     totalRowBorder: "rgba(217, 119, 6, 0.45)",
     panelBorder: STUDIO_EDGE,
     panelShadow: STUDIO_PANEL_SHADOW,
+  },
+  /** 웹후원 골드 — 골드 헤더·테두리·줄무늬·기여도 강조 (후원순위 골드와 동일 계열) */
+  excelGold: {
+    headerBg: "rgba(255, 193, 7, 0.94)",
+    headerText: "#1a1408",
+    headerBorder: "rgba(255, 193, 7, 0.55)",
+    totalRowBorder: "rgba(255, 193, 7, 0.45)",
+    panelBorder: "#ffc107",
+    panelShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.45)",
+    rowEvenBg: "rgba(255, 255, 255, 0.06)",
+    rowOddBg: "rgba(255, 255, 255, 0.14)",
+    contributionColor: "#ffc107",
   },
   excelRose: {
     headerBg: "rgba(225, 29, 72, 0.72)",
@@ -138,23 +156,23 @@ export function resolveExcelMemberTableAccent(themeId: string): ExcelMemberTable
 
 /** 비엑셀(방송 글래스) 테마 — 테마 자동 시 헤더·총합 액센트 (전부 동일 파란 고정 금지) */
 const BROADCAST_THEME_HEADER_BG: Record<string, string> = {
-  default: "rgba(124, 58, 237, 0.80)",
-  neonExcel: "rgba(217, 70, 239, 0.80)",
-  retro: "rgba(22, 101, 52, 0.90)",
+  default: "rgba(124, 58, 237, 0.72)",
+  neonExcel: "rgba(217, 70, 239, 0.72)",
+  retro: "rgba(22, 101, 52, 0.72)",
   minimal: "rgba(255, 255, 255, 0.12)",
-  rpg: "rgba(180, 83, 9, 0.90)",
-  pastel: "rgba(124, 58, 237, 0.70)",
-  neon: "rgba(8, 145, 178, 0.85)",
-  rainbow: "rgba(236, 72, 153, 0.80)",
-  sunset: "rgba(249, 115, 22, 0.85)",
-  ocean: "rgba(14, 165, 233, 0.85)",
-  forest: "rgba(22, 163, 74, 0.85)",
-  aurora: "rgba(52, 211, 153, 0.80)",
-  violet: "rgba(139, 92, 246, 0.85)",
-  coral: "rgba(251, 113, 133, 0.85)",
-  mint: "rgba(52, 211, 153, 0.85)",
-  lava: "rgba(239, 68, 68, 0.85)",
-  ice: "rgba(125, 211, 252, 0.80)",
+  rpg: "rgba(180, 83, 9, 0.72)",
+  pastel: "rgba(124, 58, 237, 0.72)",
+  neon: "rgba(8, 145, 178, 0.72)",
+  rainbow: "rgba(236, 72, 153, 0.72)",
+  sunset: "rgba(249, 115, 22, 0.72)",
+  ocean: "rgba(14, 165, 233, 0.72)",
+  forest: "rgba(22, 163, 74, 0.72)",
+  aurora: "rgba(52, 211, 153, 0.72)",
+  violet: "rgba(139, 92, 246, 0.72)",
+  coral: "rgba(251, 113, 133, 0.72)",
+  mint: "rgba(52, 211, 153, 0.72)",
+  lava: "rgba(239, 68, 68, 0.72)",
+  ice: "rgba(125, 211, 252, 0.72)",
 };
 
 const BROADCAST_THEME_TOTAL_BORDER: Record<string, string> = {
@@ -177,7 +195,7 @@ const BROADCAST_THEME_TOTAL_BORDER: Record<string, string> = {
   ice: "rgba(125, 211, 252, 0.45)",
 };
 
-const FALLBACK_HEADER_BG = "rgba(124, 58, 237, 0.80)";
+const FALLBACK_HEADER_BG = "rgba(124, 58, 237, 0.72)";
 const FALLBACK_TOTAL_BORDER = "rgba(124, 58, 237, 0.45)";
 
 /** 테마 자동 — 헤더 배경 CSS (엑셀 액센트 또는 방송 테마별 색) */
@@ -194,11 +212,27 @@ export function resolveTableThemeTotalBorderCss(themeId: string): string {
   return BROADCAST_THEME_TOTAL_BORDER[themeId] || FALLBACK_TOTAL_BORDER;
 }
 
-/** 테마 자동 — 패널/헤더 외곽선 */
+/** 테마 자동 — 패널 외곽 테두리 */
 export function resolveTableThemePanelBorderCss(themeId: string): string {
   const excel = resolveExcelMemberTableAccent(themeId);
-  if (excel) return excel.headerBorder;
+  if (excel) return excel.panelBorder;
   return STUDIO_EDGE;
+}
+
+/** 테마 자동 — 멤버 행 줄무늬 */
+export function resolveTableThemeRowStripeCss(
+  themeId: string,
+  which: "even" | "odd"
+): string {
+  const excel = resolveExcelMemberTableAccent(themeId);
+  if (!excel) return "transparent";
+  return which === "even" ? excel.rowEvenBg || "transparent" : excel.rowOddBg || "transparent";
+}
+
+/** 테마 자동 — 기여도 열 강조색 */
+export function resolveTableThemeContributionColorCss(themeId: string): string {
+  const excel = resolveExcelMemberTableAccent(themeId);
+  return excel?.contributionColor || "";
 }
 
 function cssColorToPreviewHex(css: string): string {
@@ -229,6 +263,34 @@ export function resolveTableThemeLinePreviewHex(themeId: string): string {
   return cssColorToPreviewHex(resolveTableThemePanelBorderCss(themeId));
 }
 
+export function resolveTableThemePanelBorderPreviewHex(themeId: string): string {
+  return resolveTableThemeLinePreviewHex(themeId);
+}
+
+export function resolveTableThemeRowStripePreviewHex(
+  themeId: string,
+  which: "even" | "odd"
+): string {
+  return cssColorToPreviewHex(resolveTableThemeRowStripeCss(themeId, which));
+}
+
+export function resolveTableThemeContributionPreviewHex(themeId: string): string {
+  const css = resolveTableThemeContributionColorCss(themeId);
+  return css ? cssColorToPreviewHex(css) : "#ffc107";
+}
+
+/** color input(#rrggbb) → 줄무늬용 rgba */
+export function tableRowStripeBgFromPickerHex(hex: string, alpha: number): string {
+  const m = hex.match(/^#([0-9a-fA-F]{6})$/i);
+  if (!m) return hex;
+  const h = m[1];
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  const a = Math.max(0, Math.min(1, alpha));
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
 /** 표 수동 색 필드 — 테마 전환·「전체 테마 자동」에서 비움 */
 export const TABLE_THEME_AUTO_COLOR_FIELDS = [
   "tableHeaderBgColor",
@@ -239,6 +301,10 @@ export const TABLE_THEME_AUTO_COLOR_FIELDS = [
   "totalTextColor",
   "accountColor",
   "toonColor",
+  "contributionColor",
+  "tableRowEvenBg",
+  "tableRowOddBg",
+  "tablePanelBorderColor",
 ] as const;
 
 export type TableThemeAutoColorField = (typeof TABLE_THEME_AUTO_COLOR_FIELDS)[number];
@@ -253,5 +319,9 @@ export function emptyTableThemeAutoColorPatch(): Record<TableThemeAutoColorField
     totalTextColor: "",
     accountColor: "",
     toonColor: "",
+    contributionColor: "",
+    tableRowEvenBg: "",
+    tableRowOddBg: "",
+    tablePanelBorderColor: "",
   };
 }

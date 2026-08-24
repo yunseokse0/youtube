@@ -716,6 +716,10 @@ export function isDefaultLikeOverlayPresets(presets: unknown): boolean {
     "tableLineColor",
     "accountColor",
     "toonColor",
+    "contributionColor",
+    "tableRowEvenBg",
+    "tableRowOddBg",
+    "tablePanelBorderColor",
     "tableBgGifUrl",
   ];
   return !colorKeys.some((k) => typeof p[k] === "string" && String(p[k]).trim());
@@ -1453,6 +1457,60 @@ export function hasCustomTimerDisplayStyles(
   return !isDefaultLikeTimerDisplayStyle(styles?.general);
 }
 
+/**
+ * 오버레이 last-good 과 서버 스냅샷 병합.
+ * 색이 기본값으로 비어도 last-good 커스텀 색은 지키되, **디자인(led-matrix 등)은 서버를 따른다.**
+ */
+export function mergeRemoteTimerDisplayStyles(opts: {
+  last?: AppState["timerDisplayStyles"] | null;
+  incoming?: AppState["timerDisplayStyles"] | null;
+  hasIncomingKey: boolean;
+}): AppState["timerDisplayStyles"] | undefined {
+  const last = opts.last ?? undefined;
+  const incoming = opts.incoming ?? undefined;
+  const incomingHidden = isHiddenTimerDisplayStyle(incoming?.general);
+  if (incomingHidden && incoming) return incoming;
+  const preferLastColors =
+    hasCustomTimerDisplayStyles(last) &&
+    !incomingHidden &&
+    (!opts.hasIncomingKey || isDefaultLikeTimerDisplayStyle(incoming?.general));
+  const withIncomingDesign = (
+    base: NonNullable<AppState["timerDisplayStyles"]>
+  ): AppState["timerDisplayStyles"] => {
+    const incomingDesign = incoming?.general?.design;
+    if (!incomingDesign) return base;
+    if (normalizeTimerDesign(incomingDesign) === normalizeTimerDesign(base.general?.design)) {
+      return base;
+    }
+    return {
+      general: {
+        ...base.general,
+        design: normalizeTimerDesign(incomingDesign),
+        fontFamily: incoming?.general?.fontFamily || base.general.fontFamily,
+        showHours: incoming?.general?.showHours ?? base.general.showHours,
+        scalePercent: incoming?.general?.scalePercent ?? base.general.scalePercent,
+      },
+    };
+  };
+  if (preferLastColors && last) {
+    return withIncomingDesign(last);
+  }
+  if (!opts.hasIncomingKey && last && !isHiddenTimerDisplayStyle(last.general)) return last;
+  if (incoming && last && hasCustomTimerDisplayStyles(last)) {
+    return withIncomingDesign({
+      general: {
+        ...last.general,
+        ...incoming.general,
+        fontColor: incoming.general.fontColor || last.general.fontColor,
+        bgColor: incoming.general.bgColor || last.general.bgColor,
+        borderColor: incoming.general.borderColor || last.general.borderColor,
+        outlineColor: incoming.general.outlineColor || last.general.outlineColor,
+      },
+    });
+  }
+  return incoming ?? last;
+}
+
 /** 테마·타이머 PATCH — foundation(방금 UI 반영) vs LS 중 최신 timerDisplayStyles 선택 */
 export function resolveTimerDisplayStylesForVisualSave(
   foundation: AppState | null | undefined,
@@ -2073,6 +2131,9 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
           ...prevTimerStyles,
           general: {
             ...prevTimerStyles.general,
+            ...(nextTimerStyles.general.design !== undefined
+              ? { design: normalizeTimerDesign(nextTimerStyles.general.design) }
+              : {}),
             ...(nextTimerStyles.general.outlineWidth !== undefined
               ? { outlineWidth: nextTimerStyles.general.outlineWidth }
               : {}),

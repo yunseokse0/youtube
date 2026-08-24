@@ -958,7 +958,7 @@ export default function DonorRankingsOverlayPage() {
                   backgroundColor: "transparent",
                   boxShadow: showFrame
                     ? "none"
-                    : "0 8px 32px rgba(15, 23, 42, 0.4), inset 0 1px 0 0 rgba(255,255,255,0.1)",
+                    : "0 8px 32px 0 rgba(0, 0, 0, 0.37), inset 0 1px 0 0 rgba(255,255,255,0.1)",
                 }}
               >
               <RankingColumn
@@ -1045,7 +1045,7 @@ export default function DonorRankingsOverlayPage() {
                 backgroundColor: "transparent",
                 boxShadow: showFrame
                   ? "none"
-                  : "0 8px 32px rgba(15, 23, 42, 0.4), inset 0 1px 0 0 rgba(255,255,255,0.1)",
+                  : "0 8px 32px 0 rgba(0, 0, 0, 0.37), inset 0 1px 0 0 rgba(255,255,255,0.1)",
               }}
             >
             {unifiedHalf.split ? (

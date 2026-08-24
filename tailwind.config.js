@@ -11,7 +11,7 @@ module.exports = {
         glass: {
           light: "rgba(255,255,255,0.08)",
           dark: "rgba(0,0,0,0.35)",
-          studio: "rgba(15,23,42,0.80)",
+          studio: "rgba(15,20,30,0.70)",
         },
         "pink-light": "#FFF1F2",
         "pink-pastel": "#FCE4EC",
@@ -37,16 +37,16 @@ module.exports = {
       borderRadius: {
         /** 엑셀형 표·카드 공통 */
         excel: "12px",
-        studio: "12px",
+        studio: "14px",
       },
       boxShadow: {
-        glass: "0 8px 32px rgba(15, 23, 42, 0.4)",
+        glass: "0 8px 32px 0 rgba(0, 0, 0, 0.37)",
         "studio-glow": "0 0 28px rgba(124, 58, 237, 0.25)",
         "studio-coral-glow": "0 0 28px rgba(245, 158, 11, 0.35)",
       },
       backdropBlur: {
         xs: "2px",
-        studio: "12px",
+        studio: "14px",
       },
       keyframes: {
         flashGold: {
@@ -61,11 +61,24 @@ module.exports = {
           "0%": { transform: "translateX(-120%)" },
           "100%": { transform: "translateX(320%)" },
         },
+        slideInUpStudio: {
+          "0%": {
+            opacity: "0",
+            transform: "translateY(20px)",
+            boxShadow: "0 0 0 rgba(124, 58, 237, 0)",
+          },
+          "100%": {
+            opacity: "1",
+            transform: "translateY(0)",
+            boxShadow: "0 0 20px rgba(124, 58, 237, 0.35)",
+          },
+        },
       },
       animation: {
         flashGold: "flashGold 0.8s ease-out",
         "pastel-timer-low": "pastelTimerLow 1.1s ease-in-out infinite",
         sigUploadIndeterminate: "sigUploadIndeterminate 1.1s ease-in-out infinite",
+        "slide-in-up-studio": "slideInUpStudio 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards",
       },
     },
   },

@@ -194,8 +194,12 @@ import {
 } from "@/lib/excel-table-frame-presets";
 import {
   emptyTableThemeAutoColorPatch,
+  resolveTableThemeContributionPreviewHex,
   resolveTableThemeHeaderPreviewHex,
   resolveTableThemeLinePreviewHex,
+  resolveTableThemePanelBorderPreviewHex,
+  resolveTableThemeRowStripePreviewHex,
+  tableRowStripeBgFromPickerHex,
 } from "@/lib/excel-member-table-theme";
 import { pickSettingsPreservedAcrossSettlementReset } from "@/lib/settlement-reset-preserve";
 import { planSigBulkReupload, sigBulkFilesWithoutNameMatch } from "@/lib/sig-image-bulk";
@@ -375,7 +379,7 @@ type OverlayPreset = {
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontFamily?: string; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerOutlineColor?: string; timerOutlineWidth?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableFrameEnabled?: boolean; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; tableGridLines?: boolean; tableVerticalLines?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; totalTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
+  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableFrameEnabled?: boolean; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; tableGridLines?: boolean; tableVerticalLines?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; contributionColor?: string; tableRowEvenBg?: string; tableRowOddBg?: string; tablePanelBorderColor?: string; tableTextColor?: string; totalTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
   rankTop3Mode?: string; rankTop3Effect?: string; rankLabelFormat?: string; rank1Bg?: string; rank2Bg?: string; rank3Bg?: string; rank1Mark?: string; rank2Mark?: string; rank3Mark?: string; rank1Effect?: string; rank2Effect?: string; rank3Effect?: string; rank1TextColor?: string; rank2TextColor?: string; rank3TextColor?: string; rank1TextColorAlt?: string; rank2TextColorAlt?: string; rank3TextColorAlt?: string;
 };
 
@@ -1025,6 +1029,7 @@ export default function AdminPage() {
   const PRESET_TEMPLATES: { name: string; preset: Partial<OverlayPreset> }[] = [
     { name: "엑셀표만", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true, showRestroomColumn: true } },
     { name: "방송 엑셀(계좌·투네)", preset: { theme: "excelLive", membersTheme: "excelLive", totalTheme: "excelLive", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: false, showContributionColumn: false, showRestroomColumn: true, accountHeaderLabel: "계좌", toonHeaderLabel: "투네이션", restroomHeaderLabel: "화장실", tableBgOpacity: "85", donorsFormat: "full", tableFree: true, tableX: "3", tableY: "88", anchor: "bl" } },
+    { name: "웹후원 골드 엑셀", preset: { theme: "excelGold", membersTheme: "excelGold", totalTheme: "excelGold", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: true, showContributionColumn: true, showRestroomColumn: false, tableBgOpacity: "82", tableGridLines: false, tableVerticalLines: false, accountHeaderLabel: "계좌", toonHeaderLabel: "투네", tableFree: true, tableX: "50", tableY: "50", anchor: "cc" } },
     { name: "전체 통합", preset: { showMembers: true, showTotal: true } },
     { name: "표만 (엑셀)", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true, showRestroomColumn: true } },
     { name: "멤버 목록만", preset: { showMembers: true, showTotal: false, showBottomDonors: false, tickerInMembers: false } },
@@ -1068,6 +1073,10 @@ export default function AdminPage() {
     tableFontFamily: "",
     accountColor: "",
     toonColor: "",
+    contributionColor: "",
+    tableRowEvenBg: "",
+    tableRowOddBg: "",
+    tablePanelBorderColor: "",
     rankTop3Mode: "off",
     rankTop3Effect: "none",
     rankLabelFormat: "hash",
@@ -1200,7 +1209,7 @@ export default function AdminPage() {
     if (keys.length === 0) return;
     setActiveNav((prev) => (keys.includes(prev) ? prev : keys[0]!));
   }, [navItems]);
-  const baseThemeChoices = ["default","excel","excelLive","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","neon","neonExcel","retro","minimal","rpg","pastel","rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"];
+  const baseThemeChoices = ["default","excel","excelLive","excelBlue","excelSlate","excelAmber","excelGold","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","neon","neonExcel","retro","minimal","rpg","pastel","rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"];
   const overlayThemeLabel = (id: string): string => {
     const map: Record<string, string> = {
       auto: "자동(프리셋 테마)",
@@ -1210,6 +1219,7 @@ export default function AdminPage() {
       excelBlue: "엑셀(파랑)",
       excelSlate: "엑셀(슬레이트)",
       excelAmber: "엑셀(앰버)",
+      excelGold: "엑셀(웹후원 골드)",
       excelRose: "엑셀(로즈)",
       excelNavy: "엑셀(네이비)",
       excelTeal: "엑셀(틸)",
@@ -1249,6 +1259,7 @@ export default function AdminPage() {
       excelBlue: { background: "linear-gradient(135deg,#1e3a8a,#60a5fa)" },
       excelSlate: { background: "linear-gradient(135deg,#0f172a,#334155)" },
       excelAmber: { background: "linear-gradient(135deg,#92400e,#f59e0b)" },
+      excelGold: { background: "linear-gradient(135deg,#1a1408,#ffc107,#1a1408)" },
       excelRose: { background: "linear-gradient(135deg,#9f1239,#fb7185)" },
       excelNavy: { background: "linear-gradient(135deg,#0b132b,#1c2541)" },
       excelTeal: { background: "linear-gradient(135deg,#0f766e,#5eead4)" },
@@ -1570,8 +1581,23 @@ export default function AdminPage() {
     const lower = v.toLowerCase();
     if (!v || lower === "transparent" || lower === "none") return fallback;
     const m = v.match(/^#([0-9a-fA-F]{6})$/);
-    return m ? `#${m[1].toLowerCase()}` : fallback;
+    if (m) return `#${m[1].toLowerCase()}`;
+    const rgba = v.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+    if (rgba) {
+      const toHex = (n: string) =>
+        Math.max(0, Math.min(255, parseInt(n, 10)))
+          .toString(16)
+          .padStart(2, "0");
+      return `#${toHex(rgba[1])}${toHex(rgba[2])}${toHex(rgba[3])}`;
+    }
+    return fallback;
   };
+  const activeTableThemeId = (preset: OverlayPreset) =>
+    String(
+      preset.membersTheme && preset.membersTheme !== "auto"
+        ? preset.membersTheme
+        : preset.theme || "default"
+    );
   const requestConfirm = (title: string, desc: string, onConfirm: () => void, options?: { confirmText?: string; danger?: boolean }) => {
     if (typeof window === "undefined") return;
     const isMobile = window.matchMedia("(max-width: 1023px)").matches;
@@ -2082,10 +2108,15 @@ export default function AdminPage() {
     }
     const localTerritoryLogs = normalizeTerritoryLogs(local.territoryLogs);
     const mergedTerritoryLogs = normalizeTerritoryLogs(merged.territoryLogs);
+    const territoryLogsDiff =
+      JSON.stringify(localTerritoryLogs) !== JSON.stringify(mergedTerritoryLogs);
+    const localTerritoryNewer =
+      Number(local.updatedAt || 0) >= Number(incoming.updatedAt || 0);
     if (
-      localTerritoryLogs.length > 0 &&
-      JSON.stringify(localTerritoryLogs) !== JSON.stringify(mergedTerritoryLogs) &&
-      Number(local.updatedAt || 0) >= Number(incoming.updatedAt || 0)
+      territoryLogsDiff &&
+      localTerritoryNewer &&
+      (localTerritoryLogs.length > 0 ||
+        localTerritoryLogs.length < mergedTerritoryLogs.length)
     ) {
       merged = { ...merged, territoryLogs: localTerritoryLogs };
       didPreserve = true;
@@ -3445,6 +3476,32 @@ export default function AdminPage() {
     if (patch.tableLineColor !== undefined) {
       const normalized = normalizeGoalHexColor(String(patch.tableLineColor || ""));
       mergedPatch.tableLineColor = normalized || "";
+    }
+    if (patch.contributionColor !== undefined) {
+      const normalized = normalizeGoalHexColor(String(patch.contributionColor || ""));
+      mergedPatch.contributionColor = normalized || "";
+    }
+    if (patch.tablePanelBorderColor !== undefined) {
+      const normalized = normalizeGoalHexColor(String(patch.tablePanelBorderColor || ""));
+      mergedPatch.tablePanelBorderColor = normalized || "";
+    }
+    if (patch.tableRowEvenBg !== undefined) {
+      const raw = String(patch.tableRowEvenBg || "").trim();
+      mergedPatch.tableRowEvenBg =
+        !raw
+          ? ""
+          : /^rgba?\(/i.test(raw)
+            ? raw
+            : tableRowStripeBgFromPickerHex(normalizeGoalHexColor(raw) || raw, 0.06);
+    }
+    if (patch.tableRowOddBg !== undefined) {
+      const raw = String(patch.tableRowOddBg || "").trim();
+      mergedPatch.tableRowOddBg =
+        !raw
+          ? ""
+          : /^rgba?\(/i.test(raw)
+            ? raw
+            : tableRowStripeBgFromPickerHex(normalizeGoalHexColor(raw) || raw, 0.14);
     }
     if (patch.tableTextColor !== undefined) {
       const normalized = normalizeGoalHexColor(String(patch.tableTextColor || ""));
@@ -12775,7 +12832,7 @@ export default function AdminPage() {
                   const mm = Math.floor(effective / 60);
                   const ss = effective % 60;
                   const overlayOn = state.matchTimerEnabled?.[timerDef.flag] !== false;
-                  const timerOnlyUrl = `/overlay?u=${overlayUserId}&timerType=${timerDef.flag}`;
+                  const timerOnlyUrl = `/overlay?u=${overlayUserId}&timerType=${timerDef.flag}&host=obs`;
                   return (
                     <div key={timerDef.key} className="rounded border border-white/10 bg-[#1f1f1f] px-3 py-2">
                       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -12916,6 +12973,7 @@ export default function AdminPage() {
                               fontSize={Math.max(28, Math.round(circularTimerFontSize * 0.65))}
                               fontColor={String(timerStyle.fontColor || "")}
                               bgColor={String(timerStyle.bgColor || "")}
+                              borderColor={String(timerStyle.borderColor || "")}
                               bgOpacity={timerStyle.bgOpacity}
                             />
                           ) : isImageFrameTimerDesign(timerDesignId) ? (
@@ -13002,7 +13060,10 @@ export default function AdminPage() {
                           <input
                             type="color"
                             className="w-14 h-9 rounded bg-neutral-900/80 border border-white/10"
-                            value={toColorPickerValue(String(timerStyle.bgColor ?? ""), "#ffffff")}
+                            value={toColorPickerValue(
+                              String(timerStyle.bgColor ?? ""),
+                              timerDesignId === "led-matrix" ? "#000000" : "#ffffff"
+                            )}
                             onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { bgColor: e.target.value })}
                           />
                           <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updateTimerDisplayStyle(timerDef.flag, { bgColor: "" })}>기본</button>
@@ -13019,7 +13080,10 @@ export default function AdminPage() {
                           <input
                             type="color"
                             className="w-14 h-9 rounded bg-neutral-900/80 border border-white/10"
-                            value={toColorPickerValue(String(timerStyle.borderColor ?? ""), "#ffffff")}
+                            value={toColorPickerValue(
+                              String(timerStyle.borderColor ?? ""),
+                              timerDesignId === "led-matrix" ? "#ef4444" : "#ffffff"
+                            )}
                             onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { borderColor: e.target.value })}
                           />
                           <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updateTimerDisplayStyle(timerDef.flag, { borderColor: "" })}>기본</button>
@@ -16394,6 +16458,79 @@ export default function AdminPage() {
                                         <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.totalTextColor || "테마 자동"}</span>
                                         <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { totalTextColor: "" })}>테마 자동</button>
                                       </div>
+                                      <label className="text-xs text-neutral-400">기여도 글자색</label>
+                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                        <input
+                                          type="color"
+                                          className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                          value={toColorPickerValue(
+                                            p.contributionColor,
+                                            resolveTableThemeContributionPreviewHex(activeTableThemeId(p))
+                                          )}
+                                          onChange={(e) => {
+                                            const next = e.target.value;
+                                            const preview = resolveTableThemeContributionPreviewHex(activeTableThemeId(p));
+                                            if (!String(p.contributionColor || "").trim() && next.toLowerCase() === preview.toLowerCase()) {
+                                              return;
+                                            }
+                                            updatePreset(p.id, { contributionColor: next });
+                                          }}
+                                        />
+                                        <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.contributionColor || "테마 자동"}</span>
+                                        <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { contributionColor: "" })}>테마 자동</button>
+                                      </div>
+                                      <label className="text-xs text-neutral-400">줄무늬(짝 행)</label>
+                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                        <input
+                                          type="color"
+                                          className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                          value={toColorPickerValue(
+                                            p.tableRowEvenBg,
+                                            resolveTableThemeRowStripePreviewHex(activeTableThemeId(p), "even")
+                                          )}
+                                          onChange={(e) => {
+                                            const next = tableRowStripeBgFromPickerHex(e.target.value, 0.06);
+                                            const preview = resolveTableThemeRowStripePreviewHex(activeTableThemeId(p), "even");
+                                            if (!String(p.tableRowEvenBg || "").trim() && toColorPickerValue(next, preview).toLowerCase() === preview.toLowerCase()) {
+                                              return;
+                                            }
+                                            updatePreset(p.id, { tableRowEvenBg: next });
+                                          }}
+                                        />
+                                        <input
+                                          className="flex-1 min-w-0 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs font-mono"
+                                          value={p.tableRowEvenBg || ""}
+                                          onChange={(e) => updatePreset(p.id, { tableRowEvenBg: e.target.value })}
+                                          placeholder="rgba(255,255,255,0.06) 또는 비우면 테마 자동"
+                                        />
+                                        <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableRowEvenBg: "" })}>테마 자동</button>
+                                      </div>
+                                      <label className="text-xs text-neutral-400">줄무늬(홀 행)</label>
+                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                        <input
+                                          type="color"
+                                          className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                          value={toColorPickerValue(
+                                            p.tableRowOddBg,
+                                            resolveTableThemeRowStripePreviewHex(activeTableThemeId(p), "odd")
+                                          )}
+                                          onChange={(e) => {
+                                            const next = tableRowStripeBgFromPickerHex(e.target.value, 0.14);
+                                            const preview = resolveTableThemeRowStripePreviewHex(activeTableThemeId(p), "odd");
+                                            if (!String(p.tableRowOddBg || "").trim() && toColorPickerValue(next, preview).toLowerCase() === preview.toLowerCase()) {
+                                              return;
+                                            }
+                                            updatePreset(p.id, { tableRowOddBg: next });
+                                          }}
+                                        />
+                                        <input
+                                          className="flex-1 min-w-0 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs font-mono"
+                                          value={p.tableRowOddBg || ""}
+                                          onChange={(e) => updatePreset(p.id, { tableRowOddBg: e.target.value })}
+                                          placeholder="rgba(255,255,255,0.14) 또는 비우면 테마 자동"
+                                        />
+                                        <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableRowOddBg: "" })}>테마 자동</button>
+                                      </div>
                                     </div>
                                     <div className="text-xs font-semibold text-neutral-300 pt-0.5">공통</div>
                                     <div className="grid grid-cols-1 sm:grid-cols-[7.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5">
@@ -16429,6 +16566,27 @@ export default function AdminPage() {
                                         />
                                         <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.tableLineColor || "테마 자동"}</span>
                                         <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableLineColor: "" })}>테마 자동</button>
+                                      </div>
+                                      <label className="text-xs text-neutral-400">패널 외곽 테두리</label>
+                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                        <input
+                                          type="color"
+                                          className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                          value={toColorPickerValue(
+                                            p.tablePanelBorderColor,
+                                            resolveTableThemePanelBorderPreviewHex(activeTableThemeId(p))
+                                          )}
+                                          onChange={(e) => {
+                                            const next = e.target.value;
+                                            const preview = resolveTableThemePanelBorderPreviewHex(activeTableThemeId(p));
+                                            if (!String(p.tablePanelBorderColor || "").trim() && next.toLowerCase() === preview.toLowerCase()) {
+                                              return;
+                                            }
+                                            updatePreset(p.id, { tablePanelBorderColor: next });
+                                          }}
+                                        />
+                                        <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.tablePanelBorderColor || "테마 자동"}</span>
+                                        <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tablePanelBorderColor: "" })}>테마 자동</button>
                                       </div>
                                       <label className="text-xs text-neutral-400">표 선</label>
                                       <div className="flex min-w-0 flex-wrap items-center gap-2">

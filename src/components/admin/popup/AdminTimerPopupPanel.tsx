@@ -40,6 +40,14 @@ function formatClock(seconds: number): string {
   return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
 }
 
+function toColorPickerValue(raw?: string, fallback = "#ffffff"): string {
+  const v = (raw || "").trim();
+  const lower = v.toLowerCase();
+  if (!v || lower === "transparent" || lower === "none") return fallback;
+  const m = v.match(/^#([0-9a-fA-F]{6})$/);
+  return m ? `#${m[1].toLowerCase()}` : fallback;
+}
+
 export default function AdminTimerPopupPanel() {
   const { user, scopedUserId, urlUserId, authReady, state, setState, accountMismatch, persistAppState } =
     useAdminPopupBroadcastState();
@@ -182,7 +190,7 @@ export default function AdminTimerPopupPanel() {
     await persistAppState(next, { omitDonationFields: true });
   };
 
-  const timerOnlyUrl = `/overlay?u=${scopedUserId}&timerType=general`;
+  const timerOnlyUrl = `/overlay?u=${scopedUserId}&timerType=general&host=obs`;
 
   const copyUrl = async (url: string, id: string) => {
     const abs = `${window.location.origin}${url}`;
@@ -328,6 +336,7 @@ export default function AdminTimerPopupPanel() {
                     fontSize={32}
                     fontColor={String(generalStyle?.fontColor || "")}
                     bgColor={String(generalStyle?.bgColor || "")}
+                    borderColor={String(generalStyle?.borderColor || "")}
                     bgOpacity={generalStyle?.bgOpacity}
                   />
                 ) : isImageFrameTimerDesign(generalDesign) ? (
@@ -363,6 +372,82 @@ export default function AdminTimerPopupPanel() {
                   </option>
                 ))}
               </select>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <label className="text-[11px] text-neutral-400">
+                  글자 색
+                  <div className="mt-1 flex items-center gap-1">
+                    <input
+                      type="color"
+                      className="h-8 w-12 rounded border border-white/10 bg-neutral-900"
+                      value={toColorPickerValue(
+                        String(generalStyle?.fontColor ?? ""),
+                        "#ffffff"
+                      )}
+                      onChange={(e) => updateDisplayStyle({ fontColor: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      className="rounded bg-neutral-800 px-1.5 py-1 text-[10px] hover:bg-neutral-700"
+                      onClick={() => updateDisplayStyle({ fontColor: "" })}
+                    >
+                      기본
+                    </button>
+                  </div>
+                </label>
+                <label className="text-[11px] text-neutral-400">
+                  패널 배경
+                  <div className="mt-1 flex items-center gap-1">
+                    <input
+                      type="color"
+                      className="h-8 w-12 rounded border border-white/10 bg-neutral-900"
+                      value={toColorPickerValue(String(generalStyle?.bgColor ?? ""), "#000000")}
+                      onChange={(e) => updateDisplayStyle({ bgColor: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      className="rounded bg-neutral-800 px-1.5 py-1 text-[10px] hover:bg-neutral-700"
+                      onClick={() => updateDisplayStyle({ bgColor: "" })}
+                    >
+                      기본
+                    </button>
+                  </div>
+                </label>
+                <label className="text-[11px] text-neutral-400">
+                  테두리 색
+                  <div className="mt-1 flex items-center gap-1">
+                    <input
+                      type="color"
+                      className="h-8 w-12 rounded border border-white/10 bg-neutral-900"
+                      value={toColorPickerValue(
+                        String(generalStyle?.borderColor ?? ""),
+                        generalDesign === "led-matrix" ? "#ef4444" : "#c0c0c0"
+                      )}
+                      onChange={(e) => updateDisplayStyle({ borderColor: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      className="rounded bg-neutral-800 px-1.5 py-1 text-[10px] hover:bg-neutral-700"
+                      onClick={() => updateDisplayStyle({ borderColor: "" })}
+                    >
+                      기본
+                    </button>
+                  </div>
+                </label>
+                <label className="text-[11px] text-neutral-400">
+                  배경 투명도 {generalStyle?.bgOpacity ?? 40}%
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    className="mt-1 w-full"
+                    value={generalStyle?.bgOpacity ?? 40}
+                    onChange={(e) => updateDisplayStyle({ bgOpacity: Number(e.target.value) })}
+                  />
+                </label>
+              </div>
+              <p className="text-[10px] leading-snug text-neutral-500">
+                OBS는 <code className="text-neutral-400">host=obs</code> URL을 쓰세요. 예전 주소면 브라우저 소스를 다시 복사해 넣어야 LED·색이 반영됩니다.
+              </p>
             </div>
           </section>
 

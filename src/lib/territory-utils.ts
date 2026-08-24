@@ -33,6 +33,62 @@ export function normalizeTerritoryLogs(input: unknown): TerritoryLog[] {
   return input.map(normalizeTerritoryLog).filter((x): x is TerritoryLog => Boolean(x));
 }
 
+/**
+ * PATCH territoryLogs 병합 — id 부분집합(삭제)이면 patch 를 정본으로 쓴다.
+ * 그 외(동시 추가)는 id union.
+ */
+export function mergeTerritoryLogsFromPatch(
+  baseLogs: TerritoryLog[] | undefined,
+  patchLogs: TerritoryLog[] | undefined
+): TerritoryLog[] {
+  const base = normalizeTerritoryLogs(baseLogs);
+  const patch = normalizeTerritoryLogs(patchLogs);
+  if (patch.length >= base.length) return patch;
+  const baseIds = new Set(base.map((l) => String(l.id)));
+  const patchIds = new Set(patch.map((l) => String(l.id)));
+  const isSubsetDeletion =
+    patch.length < base.length && [...patchIds].every((id) => baseIds.has(id));
+  if (isSubsetDeletion) return patch;
+  const byId = new Map<string, TerritoryLog>();
+  for (const log of base) byId.set(String(log.id), log);
+  for (const log of patch) {
+    const id = String(log.id);
+    const prev = byId.get(id);
+    if (!prev || Number(log.at || 0) >= Number(prev.at || 0)) byId.set(id, log);
+  }
+  return [...byId.values()].sort((a, b) => Number(a.at || 0) - Number(b.at || 0));
+}
+
+/** 로컬·원격 영토 기록부 — 삭제(부분집합)는 더 최신 쪽 정본, 아니면 id union */
+export function mergeTerritoryLogsPreferFresher(
+  local: TerritoryLog[] | undefined,
+  remote: TerritoryLog[] | undefined,
+  opts?: { localUpdatedAt?: number; remoteUpdatedAt?: number }
+): TerritoryLog[] {
+  const loc = normalizeTerritoryLogs(local);
+  const rem = normalizeTerritoryLogs(remote);
+  const localAt = Number(opts?.localUpdatedAt || 0);
+  const remoteAt = Number(opts?.remoteUpdatedAt || 0);
+  if (loc.length < rem.length && localAt >= remoteAt) {
+    const remIds = new Set(rem.map((l) => String(l.id)));
+    const locIds = new Set(loc.map((l) => String(l.id)));
+    if ([...locIds].every((id) => remIds.has(id))) return loc;
+  }
+  if (rem.length < loc.length && remoteAt > localAt) {
+    const locIds = new Set(loc.map((l) => String(l.id)));
+    const remIds = new Set(rem.map((l) => String(l.id)));
+    if ([...remIds].every((id) => locIds.has(id))) return rem;
+  }
+  const byId = new Map<string, TerritoryLog>();
+  for (const log of rem) byId.set(String(log.id), log);
+  for (const log of loc) {
+    const id = String(log.id);
+    const prev = byId.get(id);
+    if (!prev || Number(log.at || 0) >= Number(prev.at || 0)) byId.set(id, log);
+  }
+  return [...byId.values()].sort((a, b) => Number(a.at || 0) - Number(b.at || 0));
+}
+
 export function createTerritoryLog(
   memberId: string,
   delta: 1 | -1,

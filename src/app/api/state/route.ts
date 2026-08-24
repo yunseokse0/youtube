@@ -84,7 +84,7 @@ import {
   shouldBlockHighSocietyRegression,
   syncHighSocietyMemberWidthSnapshotInState,
 } from "@/lib/high-society";
-import { normalizeTerritoryLogs } from "@/lib/territory-utils";
+import { normalizeTerritoryLogs, mergeTerritoryLogsFromPatch } from "@/lib/territory-utils";
 import { loadDailyLogForUserId } from "@/lib/daily-log-server-load";
 import { enrichAppStateFromDailyLogWhenDonorsMissing } from "@/lib/state-restore";
 
@@ -347,6 +347,17 @@ function mergePartialState(
           ...(patchGeneral.scalePercent !== undefined
             ? { scalePercent: patchGeneral.scalePercent }
             : {}),
+          ...(patchGeneral.design !== undefined
+            ? { design: patchGeneral.design }
+            : {}),
+          ...(patchGeneral.fontColor !== undefined
+            ? { fontColor: patchGeneral.fontColor }
+            : {}),
+          ...(patchGeneral.bgColor !== undefined ? { bgColor: patchGeneral.bgColor } : {}),
+          ...(patchGeneral.borderColor !== undefined
+            ? { borderColor: patchGeneral.borderColor }
+            : {}),
+          ...(patchGeneral.bgOpacity !== undefined ? { bgOpacity: patchGeneral.bgOpacity } : {}),
         },
       };
     } else {
@@ -427,19 +438,7 @@ function mergePartialState(
   if (!("territoryLogs" in patch)) {
     next.territoryLogs = base.territoryLogs;
   } else if (Array.isArray(patch.territoryLogs)) {
-    const baseLogs = normalizeTerritoryLogs(base.territoryLogs);
-    const patchLogs = normalizeTerritoryLogs(patch.territoryLogs);
-    if (patchLogs.length >= baseLogs.length) {
-      next.territoryLogs = patchLogs;
-    } else {
-      const byId = new Map(baseLogs.map((log) => [String(log.id), log]));
-      for (const log of patchLogs) {
-        byId.set(String(log.id), log);
-      }
-      next.territoryLogs = [...byId.values()].sort(
-        (a, b) => Number(a.at || 0) - Number(b.at || 0)
-      );
-    }
+    next.territoryLogs = mergeTerritoryLogsFromPatch(base.territoryLogs, patch.territoryLogs);
   }
   if (!("donors" in patch)) {
     next.donors = base.donors;

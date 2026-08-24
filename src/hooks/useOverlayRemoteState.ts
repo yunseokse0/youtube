@@ -104,26 +104,7 @@ import {
 } from "@/lib/state-api-pick";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { mergeHighSocietySettingsPreferBaseline } from "@/lib/high-society";
-import { normalizeTerritoryLogs } from "@/lib/territory-utils";
-
-/** 로컬·원격 영토 기록부 — id 기준 union, 동일 id는 더 최신 at 우선 */
-function mergeTerritoryLogsPreferFresher(
-  local: AppState["territoryLogs"],
-  remote: AppState["territoryLogs"]
-): AppState["territoryLogs"] {
-  const byId = new Map<string, NonNullable<AppState["territoryLogs"]>[number]>();
-  for (const log of normalizeTerritoryLogs(remote)) {
-    byId.set(String(log.id), log);
-  }
-  for (const log of normalizeTerritoryLogs(local)) {
-    const id = String(log.id);
-    const prev = byId.get(id);
-    if (!prev || Number(log.at || 0) >= Number(prev.at || 0)) {
-      byId.set(id, log);
-    }
-  }
-  return [...byId.values()].sort((a, b) => Number(a.at || 0) - Number(b.at || 0));
-}
+import { normalizeTerritoryLogs, mergeTerritoryLogsPreferFresher } from "@/lib/territory-utils";
 
 /** 관리자 iframe — 서버 정본 모드에서는 LS/세션 힌트로 서버 스냅샷을 덮지 않음 */
 function mergeAdminPreviewLocalHintOntoRemote(
@@ -158,7 +139,10 @@ function mergeAdminPreviewLocalHintOntoRemote(
     JSON.stringify(localTerritoryLogs) !== JSON.stringify(remoteTerritoryLogs);
   const localTerritoryRicher =
     localTerritoryLogs.length > remoteTerritoryLogs.length ||
-    (localTerritoryLogs.length > 0 && localAt > remoteAt && territoryLogsDiff);
+    (localTerritoryLogs.length > 0 && localAt > remoteAt && territoryLogsDiff) ||
+    (localTerritoryLogs.length < remoteTerritoryLogs.length &&
+      localAt >= remoteAt &&
+      territoryLogsDiff);
   if (localAt <= remoteAt && !hsDiff && !localDonorsRicher && !localTerritoryRicher) {
     return remote;
   }
@@ -187,7 +171,8 @@ function mergeAdminPreviewLocalHintOntoRemote(
   if (localTerritoryLogs.length > 0 || territoryLogsDiff) {
     merged.territoryLogs = mergeTerritoryLogsPreferFresher(
       localTerritoryLogs,
-      remoteTerritoryLogs
+      remoteTerritoryLogs,
+      { localUpdatedAt: localAt, remoteUpdatedAt: remoteAt }
     );
   }
   if (Array.isArray(local.members) && local.members.length > 0) {

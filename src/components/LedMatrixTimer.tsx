@@ -1,93 +1,175 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import {
+  buildLedMatrixGhostText,
   buildLedMatrixTimerText,
   LED_MATRIX_COLORS,
+  LED_SEGMENT_FONT_FAMILY,
 } from "@/lib/timer-design";
 import { applyTimerBackgroundOpacity, isTimerBackgroundHidden } from "@/lib/overlay-params";
 
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const m = hex.match(/^#([0-9a-fA-F]{6})$/);
+  if (!m) return null;
+  const h = m[1];
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  };
+}
+
+function ghostColorFromDigit(digitColor: string): string {
+  const rgb = hexToRgb(digitColor);
+  if (!rgb) return LED_MATRIX_COLORS.ghost;
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.22)`;
+}
+
+function activeGlowStyle(digitColor: string): CSSProperties {
+  const rgb = hexToRgb(digitColor);
+  if (!rgb) {
+    return {
+      color: digitColor,
+      textShadow: `0 0 4px ${digitColor}, 0 0 10px ${digitColor}, 0 0 20px rgba(255,255,255,0.35)`,
+    };
+  }
+  return {
+    color: digitColor,
+    textShadow: [
+      `0 0 4px rgba(${rgb.r},${rgb.g},${rgb.b},0.95)`,
+      `0 0 10px rgba(${rgb.r},${rgb.g},${rgb.b},0.75)`,
+      `0 0 20px rgba(${rgb.r},${rgb.g},${rgb.b},0.45)`,
+      `0 0 32px rgba(255,255,255,0.18)`,
+    ].join(", "),
+  };
+}
+
 /**
- * LED 도트매트릭스 타이머 — 블랙 패널 · 실버 프레임 · 시안 숫자 · 코너 레드 LED.
- * 도트 텍스처는 radial-gradient mask로 표현 (PNG 프레임 없음).
+ * LED 7-segment 타이머 — 검은 패널 · 흰 발광 숫자 · 고스트 88:88 · 레드 테두리·코너.
  */
 export function LedMatrixTimer({
   remainingSeconds,
+  remainingSec,
   showHours = false,
   fontSize = 48,
   fontColor,
   bgColor,
+  borderColor,
   bgOpacity = 100,
+  className = "",
 }: {
-  remainingSeconds: number | null | undefined;
+  remainingSeconds?: number | null;
+  remainingSec?: number | null;
   showHours?: boolean;
   fontSize?: number;
   fontColor?: string;
   bgColor?: string;
+  borderColor?: string;
   bgOpacity?: number;
+  className?: string;
 }) {
-  const text = buildLedMatrixTimerText(remainingSeconds, showHours);
+  const seconds = remainingSeconds ?? remainingSec;
+  const text = buildLedMatrixTimerText(seconds, showHours);
   if (!text) return null;
 
-  const digitSize = Math.max(18, Math.round(fontSize));
-  const padX = Math.max(14, Math.round(digitSize * 0.45));
-  const padY = Math.max(10, Math.round(digitSize * 0.28));
-  const corner = Math.max(4, Math.round(digitSize * 0.12));
-  const digitColor = (fontColor || "").trim() || LED_MATRIX_COLORS.digit;
+  const ghostText = buildLedMatrixGhostText(showHours || text.length > 5);
+  const digitSize = Math.max(22, Math.round(fontSize));
+  const padX = Math.max(16, Math.round(digitSize * 0.42));
+  const padY = Math.max(12, Math.round(digitSize * 0.24));
+  const cornerSize = Math.max(4, Math.round(digitSize * 0.09));
+  const customColor = (fontColor || "").trim();
+  const useTokenGlow = !customColor;
+  const digitColor = customColor || LED_MATRIX_COLORS.digit;
+  const ghostColor = customColor ? ghostColorFromDigit(digitColor) : LED_MATRIX_COLORS.ghost;
+  const frameColor = (borderColor || "").trim() || LED_MATRIX_COLORS.border;
+  const cornerColor = frameColor;
   const opacity = Math.max(0, Math.min(100, bgOpacity ?? 100));
   const noBackground = isTimerBackgroundHidden(bgColor, opacity);
   const panelBg = noBackground
     ? LED_MATRIX_COLORS.panel
     : applyTimerBackgroundOpacity((bgColor || "").trim() || LED_MATRIX_COLORS.panel, opacity);
 
+  const digitStyle: CSSProperties = {
+    fontFamily: LED_SEGMENT_FONT_FAMILY,
+    fontSize: digitSize,
+    lineHeight: 1,
+    letterSpacing: "0.06em",
+    fontVariantNumeric: "tabular-nums",
+    fontWeight: 400,
+  };
+
   return (
     <div
-      className="relative inline-flex items-center justify-center"
+      className={`relative inline-flex items-center justify-center ${className}`}
       style={{
-        background: panelBg,
-        border: `2px solid ${LED_MATRIX_COLORS.border}`,
-        borderRadius: 4,
-        boxShadow: `0 0 10px rgba(192,192,192,0.35), inset 0 0 18px rgba(0,0,0,0.85)`,
+        backgroundColor: panelBg,
+        border: `2px solid ${frameColor}`,
+        boxShadow: `inset 0 0 24px rgba(0,0,0,0.65), 0 0 12px rgba(239,68,68,0.12)`,
         padding: `${padY}px ${padX}px`,
       }}
       data-timer-design="led-matrix"
       suppressHydrationWarning
     >
-      {(["tl", "tr", "bl", "br"] as const).map((pos) => (
-        <span
-          key={pos}
-          aria-hidden
-          className="pointer-events-none absolute rounded-full"
-          style={{
-            width: corner,
-            height: corner,
-            background: LED_MATRIX_COLORS.corner,
-            boxShadow: `0 0 ${corner * 2}px ${LED_MATRIX_COLORS.corner}, 0 0 ${corner * 4}px rgba(255,0,0,0.55)`,
-            top: pos.startsWith("t") ? 5 : undefined,
-            bottom: pos.startsWith("b") ? 5 : undefined,
-            left: pos.endsWith("l") ? 5 : undefined,
-            right: pos.endsWith("r") ? 5 : undefined,
-          }}
-        />
-      ))}
-
       <span
-        className="relative font-black tabular-nums tracking-[0.08em]"
+        className="pointer-events-none absolute left-0 top-0"
         style={{
-          fontFamily: '"Share Tech Mono", "DS-Digital", "Courier New", monospace',
-          fontSize: digitSize,
-          lineHeight: 1,
-          color: digitColor,
-          textShadow: `
-            0 0 2px ${LED_MATRIX_COLORS.digitHot},
-            0 0 8px ${digitColor},
-            0 0 16px rgba(125, 211, 252, 0.75),
-            0 0 28px rgba(56, 189, 248, 0.45)
-          `,
-          WebkitFontSmoothing: "antialiased",
+          width: cornerSize,
+          height: cornerSize,
+          backgroundColor: cornerColor,
+          boxShadow: `0 0 6px ${cornerColor}`,
         }}
-      >
-        {text}
-      </span>
+        aria-hidden
+      />
+      <span
+        className="pointer-events-none absolute right-0 top-0"
+        style={{
+          width: cornerSize,
+          height: cornerSize,
+          backgroundColor: cornerColor,
+          boxShadow: `0 0 6px ${cornerColor}`,
+        }}
+        aria-hidden
+      />
+      <span
+        className="pointer-events-none absolute bottom-0 left-0"
+        style={{
+          width: cornerSize,
+          height: cornerSize,
+          backgroundColor: cornerColor,
+          boxShadow: `0 0 6px ${cornerColor}`,
+        }}
+        aria-hidden
+      />
+      <span
+        className="pointer-events-none absolute bottom-0 right-0"
+        style={{
+          width: cornerSize,
+          height: cornerSize,
+          backgroundColor: cornerColor,
+          boxShadow: `0 0 6px ${cornerColor}`,
+        }}
+        aria-hidden
+      />
+
+      <div className="relative inline-grid leading-none" style={digitStyle}>
+        <span className="invisible col-start-1 row-start-1 select-none" aria-hidden>
+          {ghostText}
+        </span>
+        <span
+          className="col-start-1 row-start-1 select-none"
+          style={{ color: ghostColor }}
+          aria-hidden
+        >
+          {ghostText}
+        </span>
+        <span
+          className={`col-start-1 row-start-1 select-none ${useTokenGlow ? "led-segment-glow" : ""}`}
+          style={useTokenGlow ? undefined : activeGlowStyle(digitColor)}
+        >
+          {text}
+        </span>
+      </div>
     </div>
   );
 }

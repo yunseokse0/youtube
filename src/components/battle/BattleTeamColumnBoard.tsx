@@ -69,7 +69,7 @@ export default function BattleTeamColumnBoard({
   const rightLabel = formatScore(rightScore);
 
   return (
-    <div className="w-full" data-battle-team-column-board="true" data-battle-vs-style="attached">
+    <div className="studio-glass-panel w-full overflow-hidden p-1.5" data-battle-team-column-board="true" data-battle-vs-style="attached">
       {timerSlot ? <div className="mb-1 flex justify-center">{timerSlot}</div> : null}
 
       <div className="relative">

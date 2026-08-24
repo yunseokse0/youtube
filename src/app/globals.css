@@ -2,29 +2,83 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: "DSEG7 Classic";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("https://cdn.jsdelivr.net/gh/keshikan/DSEG@v0.46/fonts/DSEG7-Classic/DSEG7Classic-Regular.woff2")
+    format("woff2");
+}
+
+@layer utilities {
+  /* Studio Glass Base Panel */
+  .studio-glass-panel {
+    background-color: rgba(15, 20, 30, 0.70);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  }
+
+  /* Accent Gradient Border */
+  .studio-glass-accent-border {
+    border: 1px solid transparent;
+    background-image: linear-gradient(rgba(15, 20, 30, 0.70), rgba(15, 20, 30, 0.70)),
+      linear-gradient(135deg, #7c3aed, #2563eb);
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+  }
+
+  /* Typography Shadow (Clean High-Contrast) */
+  .studio-text-shadow {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  }
+
+  /* LED 7-segment active digit bloom */
+  .led-segment-glow {
+    color: #f8fafc;
+    text-shadow:
+      0 0 4px rgba(255, 255, 255, 0.95),
+      0 0 10px rgba(255, 255, 255, 0.85),
+      0 0 20px rgba(255, 255, 255, 0.5),
+      0 0 36px rgba(255, 255, 255, 0.22);
+  }
+
+  /** @deprecated led-matrix 구 시안 글로우 — led-segment-glow 로 대체 */
+  .led-cyan-glow {
+    color: #f8fafc;
+    text-shadow:
+      0 0 4px rgba(255, 255, 255, 0.95),
+      0 0 10px rgba(255, 255, 255, 0.85),
+      0 0 20px rgba(255, 255, 255, 0.5),
+      0 0 36px rgba(255, 255, 255, 0.22);
+  }
+}
+
+@keyframes slideInUpStudio {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+    box-shadow: 0 0 0 rgba(124, 58, 237, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    box-shadow: 0 0 20px rgba(124, 58, 237, 0.35);
+  }
+}
+
+.animate-slide-in-up-studio {
+  animation: slideInUpStudio 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 @layer components {
   /* 파스텔 카드 공통: 유리 질감 (방송 배경과 섞여도 고급스럽게) */
   /* 모서리는 사용처에서 rounded-2xl 이상으로 지정 */
   .glass-pastel-card {
     @apply border border-white/20 bg-white/40 backdrop-blur-[14px];
-  }
-
-  /* Modern Glassmorphism & Studio — 방송 오버레이 공통 패널 */
-  .studio-glass-panel {
-    background: rgba(15, 23, 42, 0.8);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 12px;
-    box-shadow: 0 8px 32px rgba(15, 23, 42, 0.4);
-  }
-
-  .studio-glass-accent-border {
-    border-image: linear-gradient(135deg, #7c3aed, #2563eb) 1;
-  }
-
-  .studio-text-shadow {
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
   }
 
   /**
@@ -33,16 +87,16 @@
    */
   .excel-member-table,
   .excel-live-table {
-    border-radius: 12px;
+    border-radius: 14px;
     overflow: hidden;
   }
 
   .excel-member-table thead td,
   .excel-live-table thead td {
-    background: var(--excel-header-bg, rgba(124, 58, 237, 0.8)) !important;
+    background: var(--excel-header-bg, rgba(124, 58, 237, 0.72)) !important;
     color: var(--excel-header-text, #ffffff) !important;
     font-weight: 700 !important;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
   }
 
   /** 후원순위 — 행 텍스트 방송용 대비 (외곽선 shadow는 outlineCss가 담당) */
@@ -53,14 +107,14 @@
 
 :root {
   color-scheme: dark;
-  --studio-glass-bg: rgba(15, 23, 42, 0.8);
+  --studio-glass-bg: rgba(15, 20, 30, 0.70);
   --studio-glass-border: rgba(255, 255, 255, 0.12);
-  --studio-glass-blur: 12px;
+  --studio-glass-blur: 14px;
   --studio-accent-violet: #7c3aed;
   --studio-accent-blue: #2563eb;
   --studio-coral-gold: #f59e0b;
   --studio-mint: #10b981;
-  --studio-text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  --studio-text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 html, body, #__next {
@@ -72,12 +126,12 @@ body {
 }
 
 .glass {
-  background: rgba(15, 23, 42, 0.8);
-  box-shadow: 0 8px 32px rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(15, 20, 30, 0.70);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
+  border-radius: 14px;
 }
 
 .text-outline-strong {

@@ -6,6 +6,7 @@ import {
   createTerritoryLog,
   formatTerritoryLogPushDirLabel,
   mergeHighSocietyPlayerPushInputs,
+  mergeTerritoryLogsFromPatch,
   resolveTerritoryLogPushDirForWrite,
 } from "@/lib/territory-utils";
 
@@ -99,5 +100,13 @@ describe("territory-utils", () => {
     const field = buildHighSocietyFieldFromAppState(state);
     const b = field.seats.find((s) => s.id === "m2");
     expect(b?.widthCm).toBeGreaterThan(100);
+  });
+
+  it("mergeTerritoryLogsFromPatch applies subset deletion", () => {
+    const a = createTerritoryLog("a", 1, 10);
+    const b = createTerritoryLog("b", 1, 20);
+    const merged = mergeTerritoryLogsFromPatch([a, b], [a]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.id).toBe(a.id);
   });
 });

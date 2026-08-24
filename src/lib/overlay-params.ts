@@ -179,6 +179,13 @@ export type OverlayPresetLike = {
   vertical?: boolean;
   accountColor?: string;
   toonColor?: string;
+  /** 기여도 열 글자색. 비우면 테마 기본 */
+  contributionColor?: string;
+  /** 멤버 행 줄무늬(짝/홀). 비우면 테마 기본 */
+  tableRowEvenBg?: string;
+  tableRowOddBg?: string;
+  /** 표 패널 외곽 테두리. 비우면 테마 panelBorder */
+  tablePanelBorderColor?: string;
   tableTextColor?: string;
   /** 엑셀표 맨 아래「총합」행 글자색. 비우면 테마 자동(본문색과 별도) */
   totalTextColor?: string;
@@ -375,6 +382,14 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.tableVerticalLines === false) q.set("tableVerticalLines", "false");
   if (preset.accountColor && preset.accountColor.trim()) q.set("accountColor", preset.accountColor.trim());
   if (preset.toonColor && preset.toonColor.trim()) q.set("toonColor", preset.toonColor.trim());
+  const contributionColor = normalizeGoalHexColor((preset.contributionColor || "").trim());
+  if (contributionColor) q.set("contributionColor", contributionColor);
+  const tableRowEvenBg = (preset.tableRowEvenBg || "").trim();
+  if (tableRowEvenBg) q.set("tableRowEvenBg", tableRowEvenBg);
+  const tableRowOddBg = (preset.tableRowOddBg || "").trim();
+  if (tableRowOddBg) q.set("tableRowOddBg", tableRowOddBg);
+  const tablePanelBorderColor = normalizeGoalHexColor((preset.tablePanelBorderColor || "").trim());
+  if (tablePanelBorderColor) q.set("tablePanelBorderColor", tablePanelBorderColor);
   if (preset.tableTextColor && preset.tableTextColor.trim()) q.set("tableTextColor", preset.tableTextColor.trim());
   const totalTextColor = normalizeGoalHexColor((preset.totalTextColor || "").trim());
   if (totalTextColor) q.set("totalTextColor", totalTextColor);
@@ -455,6 +470,10 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "restroomHeaderLabel",
   "accountColor",
   "toonColor",
+  "contributionColor",
+  "tableRowEvenBg",
+  "tableRowOddBg",
+  "tablePanelBorderColor",
   "tableTextColor",
   "totalTextColor",
   "tableTextOutlineColor",
@@ -605,6 +624,10 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "restroomHeaderLabel",
   "accountColor",
   "toonColor",
+  "contributionColor",
+  "tableRowEvenBg",
+  "tableRowOddBg",
+  "tablePanelBorderColor",
   "tableTextColor",
   "totalTextColor",
   "tableTextOutlineColor",
@@ -850,6 +873,10 @@ export function isDefaultLikeOverlayThemeFields(preset: unknown): boolean {
     "tableLineColor",
     "accountColor",
     "toonColor",
+    "contributionColor",
+    "tableRowEvenBg",
+    "tableRowOddBg",
+    "tablePanelBorderColor",
     "tableBgGifUrl",
     "tableTextColor",
     "tableTextOutlineColor",
@@ -871,6 +898,10 @@ const OVERLAY_THEME_FALLBACK_KEYS = [
   "tableLineColor",
   "accountColor",
   "toonColor",
+  "contributionColor",
+  "tableRowEvenBg",
+  "tableRowOddBg",
+  "tablePanelBorderColor",
   "tableBgGifUrl",
   "tableTextColor",
   "tableBgOpacity",
@@ -1009,6 +1040,10 @@ const PRESET_EMPTY_USES_THEME_DEFAULT_KEYS = new Set([
   "tableFontWeight",
   "accountColor",
   "toonColor",
+  "contributionColor",
+  "tableRowEvenBg",
+  "tableRowOddBg",
+  "tablePanelBorderColor",
   "membersTheme",
   "totalTheme",
   "goalTextColor",
@@ -1304,8 +1339,9 @@ export function resolveTimerOverlayStyle(
     stateFont ||
     "mono";
 
+  const stateDesign = (stateStyle?.design || "").trim();
   const designRaw =
-    (stateStyle?.design || "").trim() ||
+    stateDesign ||
     pickTimerPresetOrParam("timerDesign", "timerDesign", rawSp, preset, opts) ||
     "pill";
 
@@ -1865,6 +1901,55 @@ export function resolveTableLineColor(
   return normalizeGoalHexColor(merged || "") || "";
 }
 
+function resolveTableCssColorParam(
+  paramKey: string,
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  const merged = resolveLivePresetStyleParam(paramKey, rawSp, presetToParams(preset), opts);
+  const raw = (merged || "").trim();
+  if (!raw) return "";
+  if (/^rgba?\(/i.test(raw)) return raw;
+  return normalizeGoalHexColor(raw) || "";
+}
+
+/** 기여도 열 글자색 */
+export function resolveContributionColor(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  return resolveTableCssColorParam("contributionColor", rawSp, preset, opts);
+}
+
+/** 멤버 행 줄무늬(짝) */
+export function resolveTableRowEvenBg(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  return resolveTableCssColorParam("tableRowEvenBg", rawSp, preset, opts);
+}
+
+/** 멤버 행 줄무늬(홀) */
+export function resolveTableRowOddBg(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  return resolveTableCssColorParam("tableRowOddBg", rawSp, preset, opts);
+}
+
+/** 표 패널 외곽 테두리 */
+export function resolveTablePanelBorderColor(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  return resolveTableCssColorParam("tablePanelBorderColor", rawSp, preset, opts);
+}
+
 /** 엑셀표 선 전체(가로·세로·외곽) — 기본 ON. false/0/off 이면 전부 숨김 */
 export function resolveTableGridLines(
   rawSp: SearchParamsLike,
@@ -2286,13 +2371,18 @@ export function isTimerOnlyOverlayBroadcastUrl(searchParams?: SearchParamsLike):
 /**
  * OBS `host=obs|prism|external` 또는 타이머 단독 방송 URL.
  * LS last-good·로컬 overlayPresets 보다 서버 state 가 정본.
+ * 통합 `/overlay`(표+타이머)는 host=obs 없을 때 last-good 후원 병합을 유지한다.
  */
 export function isOverlayServerAuthoritativeUrl(searchParams?: SearchParamsLike): boolean {
+  if (isAdminDashboardPreviewEmbed()) return false;
   if (isExternalOverlayBroadcastHost()) return true;
   try {
     const sp =
       searchParams ??
       (typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null);
+    if (sp?.get("adminPreviewEmbed") === "1" || sp?.get("hubPreview") === "1") {
+      return false;
+    }
     if (sp && isOverlayBroadcastHost(sp)) return true;
   } catch {
     /* ignore */

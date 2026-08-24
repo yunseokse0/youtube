@@ -245,4 +245,35 @@ describe("donation-roster-backup", () => {
     expect(next.donors.map((d) => d.id)).toEqual(["new"]);
     expect(next.members[0]?.account).toBe(100000);
   });
+
+  it("ignoreSettlementResetFilter restores all backup donors on force restore", () => {
+    const backup = buildDonationRosterBackupPayload(richState()) as DonationRosterBackupPayload;
+    const resetAt = Date.now();
+    const next = applyDonationRosterBackupToState(
+      {
+        ...defaultState(),
+        settlementResetAt: resetAt,
+        donors: [],
+        members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 }],
+      },
+      {
+        ...backup,
+        donors: [
+          {
+            id: "old",
+            name: "익명",
+            amount: 60000,
+            memberId: "m1",
+            at: resetAt - 60_000,
+            target: "account",
+          },
+        ],
+        donorsCount: 1,
+        total: 60000,
+      },
+      { ignoreSettlementResetFilter: true }
+    );
+    expect(next.donors.map((d) => d.id)).toEqual(["old"]);
+    expect(next.members[0]?.account).toBe(60000);
+  });
 });

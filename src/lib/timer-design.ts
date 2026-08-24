@@ -20,8 +20,8 @@ export const TIMER_DESIGN_OPTIONS: { id: TimerDesignId; label: string; descripti
   },
   {
     id: "led-matrix",
-    label: "LED · 도트매트릭스",
-    description: "시안 LED 디지털 패널 + 코너 레드 램프",
+    label: "LED · 7-segment",
+    description: "흰 7-seg 숫자 · 검은 패널 · 고스트 88 · 레드 코너",
   },
 ];
 
@@ -110,7 +110,12 @@ export function normalizeTimerDesign(raw: unknown): TimerDesignId {
     v === "digital-led" ||
     v === "dot-matrix" ||
     v === "dotmatrix" ||
-    v === "ledmatrix"
+    v === "ledmatrix" ||
+    v === "7segment" ||
+    v === "7-segment" ||
+    v === "led-7segment" ||
+    v === "led7segment" ||
+    v === "dseg"
   ) {
     return "led-matrix";
   }
@@ -227,12 +232,16 @@ export function buildCircularImageTimerDisplay(
 }
 
 export const LED_MATRIX_COLORS = {
-  digit: "#a0e0ff",
-  digitHot: "#e8f9ff",
-  corner: "#ff1a1a",
-  border: "#c0c0c0",
+  digit: "#f8fafc",
+  digitHot: "#ffffff",
+  ghost: "rgba(127, 29, 29, 0.38)",
+  corner: "#ef4444",
+  border: "#ef4444",
   panel: "#000000",
 } as const;
+
+export const LED_SEGMENT_FONT_FAMILY =
+  '"DSEG7 Classic", "Share Tech Mono", "DS-Digital", ui-monospace, monospace';
 
 /** LED 패널에 표시할 MM:SS 또는 HH:MM:SS */
 export function buildLedMatrixTimerText(
@@ -249,4 +258,9 @@ export function buildLedMatrixTimerText(
     return `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`;
   }
   return `${pad2(minutes)}:${pad2(seconds)}`;
+}
+
+/** 고스트(비점등) 세그먼트 — DSEG7에서 8은 전 세그먼트 ON */
+export function buildLedMatrixGhostText(showHours: boolean): string {
+  return showHours ? "88:88:88" : "88:88";
 }
