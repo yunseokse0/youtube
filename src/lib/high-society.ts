@@ -797,13 +797,8 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
   });
 
   const buildSeatLayoutPreservingWidthSnapshot = (): Partial<HighSocietySettings> => {
-    /** 멤버 id별 widthCm 유지 — expand·donation 스냅은 새 좌석 순서 기준으로 갱신 */
-    const prevField = buildHighSocietyFieldFromAppState({
-      members,
-      donors: (opts.donors ?? []) as Donor[],
-      highSocietySettings: prevSettings,
-    });
-    const prevById = new Map(prevField.seats.map((s) => [s.id, s]));
+    /** 멤버 id별 widthCm 유지(스냅샷 정본). startCm+expand 「복구」는 소량 재진입을 부풀림 */
+    const prevWidths = prevSettings.memberWidthCm || {};
     const nextPlayers = resolveHighSocietySeatMembers(members, nextSettings);
     const playersAgg = aggregateSeatPushesFromDonors({
       seatPlayers: nextPlayers.map((p) => ({ ...p, donationWon: 0 })),
@@ -816,22 +811,15 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
     const memberTerritoryExpand: Record<string, { expandLeftCm: number; expandRightCm: number }> =
       {};
     for (const p of nextPlayers) {
-      const prev = prevById.get(p.id);
+      const snapW = prevWidths[p.id];
+      memberWidthCm[p.id] =
+        snapW != null ? Math.max(0, Math.round(Number(snapW) || 0)) : 0;
       const agg = aggById.get(p.id);
-      if (prev) {
-        const expand = (prev.expandLeftCm || 0) + (prev.expandRightCm || 0);
-        const startCm = prevField.startCm;
-        memberWidthCm[p.id] =
-          expand > 0 && prev.widthCm < startCm * 0.5
-            ? Math.round(startCm + expand)
-            : prev.widthCm;
-      } else {
-        memberWidthCm[p.id] = 0;
-      }
       memberWidthDonationSnapshot[p.id] = Math.max(0, Number(agg?.donationWon) || 0);
+      const prevExp = prevSettings.memberTerritoryExpand?.[p.id];
       memberTerritoryExpand[p.id] = {
-        expandLeftCm: Math.max(0, Number(agg?.expandLeftCm) || 0),
-        expandRightCm: Math.max(0, Number(agg?.expandRightCm) || 0),
+        expandLeftCm: Math.max(0, Number(prevExp?.expandLeftCm ?? agg?.expandLeftCm) || 0),
+        expandRightCm: Math.max(0, Number(prevExp?.expandRightCm ?? agg?.expandRightCm) || 0),
       };
     }
     return { memberWidthCm, memberWidthDonationSnapshot, memberTerritoryExpand };
@@ -1765,32 +1753,115 @@ export function buildHighSocietyFieldFromAppState(
     };
   });
   const startCm = seatCount > 0 ? effectiveFieldCm / seatCount : 0;
-  const fieldBase =
-    shouldUseMemberWidthSnapshot(settingsForField, players) && !hasTerritoryLogs
-      ? resolveHighSocietyFieldWithMemberWidths({
-          players,
-          fieldCm: effectiveFieldCm,
-          widthByMemberId: repairMemberWidthSnapshot(
-            settingsForField.memberWidthCm!,
-            players,
-            startCm,
-            effectiveFieldCm
-          ),
-          expandByMemberId: settingsForField.memberTerritoryExpand,
-        })
-      : resolveHighSocietyField({ players, fieldCm: effectiveFieldCm });
-  const fieldResolved = hasTerritoryLogs
-    ? applyTerritoryLogDirectTransfers(
-        fieldBase,
-        seatPlayers.map((p) => p.id),
-        territoryLogs,
-        settingsForField
-      )
-    : fieldBase;
+  const useSnap = shouldUseMemberWidthSnapshot(settingsForField, players);
+  /**
+   * memberWidthCm 스냅샷이 있으면 멤버 id 기준 폭이 정본.
+   * 영토 로그가 있어도 스냅을 무시하고 전 로그를「현재 좌석 이웃」기준으로 재적용하면
+   * 좌석 ←→ 이동 시 이웃이 바뀌어 15cm→115cm·인접 0cm 같은 붕괴가 난다.
+   * 스냅이 없을 때만 equal start + 로그 재적용(콜드 복구).
+   */
+  const fieldBase = useSnap
+    ? resolveHighSocietyFieldWithMemberWidths({
+        players,
+        fieldCm: effectiveFieldCm,
+        widthByMemberId: hasTerritoryLogs
+          ? settingsForField.memberWidthCm!
+          : repairMemberWidthSnapshot(
+              settingsForField.memberWidthCm!,
+              players,
+              startCm,
+              effectiveFieldCm
+            ),
+        expandByMemberId: settingsForField.memberTerritoryExpand,
+      })
+    : resolveHighSocietyField({ players, fieldCm: effectiveFieldCm });
+  const fieldResolved =
+    hasTerritoryLogs && !useSnap
+      ? applyTerritoryLogDirectTransfers(
+          fieldBase,
+          seatPlayers.map((p) => p.id),
+          territoryLogs,
+          settingsForField
+        )
+      : fieldBase;
   return {
     ...fieldResolved,
     settings: { ...settingsForField, fieldCm: effectiveFieldCm },
   };
+}
+
+/** 스냅샷에서 멤버별 width 패치 생성 */
+function memberWidthPatchFromFieldSeats(
+  seats: Array<{
+    id: string;
+    widthCm: number;
+    expandLeftCm?: number;
+    expandRightCm?: number;
+  }>
+): Pick<
+  HighSocietySettings,
+  "memberWidthCm" | "memberWidthDonationSnapshot" | "memberTerritoryExpand"
+> {
+  const memberWidthCm: Record<string, number> = {};
+  const memberWidthDonationSnapshot: Record<string, number> = {};
+  const memberTerritoryExpand: Record<string, { expandLeftCm: number; expandRightCm: number }> =
+    {};
+  for (const seat of seats) {
+    memberWidthCm[seat.id] = Math.max(0, Math.round(seat.widthCm));
+    memberWidthDonationSnapshot[seat.id] = 0;
+    memberTerritoryExpand[seat.id] = {
+      expandLeftCm: Math.max(0, Number(seat.expandLeftCm) || 0),
+      expandRightCm: Math.max(0, Number(seat.expandRightCm) || 0),
+    };
+  }
+  return { memberWidthCm, memberWidthDonationSnapshot, memberTerritoryExpand };
+}
+
+/**
+ * 영토 기록 1건을 현재 필드에 증분 반영 후 스냅샷·로그에 저장.
+ * (전체 로그 재적용 금지 — 좌석 순서 변경과 충돌)
+ */
+export function appendTerritoryLogToAppState(state: AppState, log: TerritoryLog): AppState {
+  const settings = normalizeHighSocietySettings(state.highSocietySettings);
+  const seatIds = resolveHighSocietySeatMembers(state.members || [], settings).map((s) => s.id);
+  if (seatIds.length === 0) {
+    return {
+      ...state,
+      territoryLogs: [...(state.territoryLogs || []), log],
+      updatedAt: Date.now(),
+    };
+  }
+  const fieldBefore = buildHighSocietyFieldFromAppState(state);
+  const fieldAfter = applyTerritoryLogDirectTransfers(fieldBefore, seatIds, [log], settings);
+  const widthPatch = memberWidthPatchFromFieldSeats(fieldAfter.seats);
+  return {
+    ...state,
+    territoryLogs: [...(state.territoryLogs || []), log],
+    highSocietySettings: normalizeHighSocietySettings({
+      ...settings,
+      ...widthPatch,
+    }),
+    updatedAt: Date.now(),
+  };
+}
+
+/**
+ * 영토 기록 삭제 — 스냅을 비운 뒤 남은 로그만으로 콜드 재계산.
+ */
+export function removeTerritoryLogFromAppState(state: AppState, logId: string): AppState {
+  const settings = normalizeHighSocietySettings(state.highSocietySettings);
+  const cleared: AppState = {
+    ...state,
+    territoryLogs: (state.territoryLogs || []).filter((x) => String(x.id) !== String(logId)),
+    highSocietySettings: normalizeHighSocietySettings({
+      ...settings,
+      memberWidthCm: undefined,
+      memberWidthDonationSnapshot: undefined,
+      memberTerritoryExpand: undefined,
+    }),
+    updatedAt: Date.now(),
+  };
+  return syncHighSocietyMemberWidthSnapshotInState(cleared);
 }
 
 /** 실시간 영토 모드에서 memberWidthCm 스냅샷을 서버·OBS와 맞출지 */

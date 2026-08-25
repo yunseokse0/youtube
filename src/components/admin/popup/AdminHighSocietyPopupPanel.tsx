@@ -15,7 +15,8 @@ import {
   resolveHighSocietyStartCmPerMember,
   resolveSystemMiddlePushDir,
   seatRoleForMemberId,
-  syncHighSocietyMemberWidthSnapshotInState,
+  appendTerritoryLogToAppState,
+  removeTerritoryLogFromAppState,
   type HighSocietySettingsAdminPatch,
 } from "@/lib/high-society";
 import {
@@ -116,12 +117,7 @@ export default function AdminHighSocietyPopupPanel() {
       cm,
       { pushDir: pushForLog, note: territoryNote }
     );
-    let next: AppState = {
-      ...cur,
-      territoryLogs: [...(cur.territoryLogs || []), log],
-      updatedAt: Date.now(),
-    };
-    next = syncHighSocietyMemberWidthSnapshotInState(next);
+    const next = appendTerritoryLogToAppState(cur, log);
     const ok = await persistAppState(next, {
       omitDonationFields: true,
       highSocietySettingsOnly: true,
@@ -136,12 +132,7 @@ export default function AdminHighSocietyPopupPanel() {
   const deleteTerritoryLog = async (logId: string) => {
     if (!state) return;
     if (!window.confirm("이 영토 기록을 삭제할까요?")) return;
-    let next: AppState = {
-      ...state,
-      territoryLogs: (state.territoryLogs || []).filter((x) => x.id !== logId),
-      updatedAt: Date.now(),
-    };
-    next = syncHighSocietyMemberWidthSnapshotInState(next);
+    const next = removeTerritoryLogFromAppState(state, logId);
     await persistAppState(next, {
       omitDonationFields: true,
       highSocietySettingsOnly: true,

@@ -71,6 +71,8 @@ import {
   syncHighSocietyMemberWidthSnapshotInState,
   shouldSyncHighSocietyMemberWidthSnapshot,
   highSocietyNeedsMemberWidthSnapshotPersist,
+  appendTerritoryLogToAppState,
+  removeTerritoryLogFromAppState,
 } from "./high-society";
 import { createTerritoryLog } from "./territory-utils";
 
@@ -2261,51 +2263,36 @@ describe("manual territory log vs neighbor width", () => {
     { id: "jisu", name: "지수", account: 200, toon: 0, operating: false },
   ];
 
-  it("recomputes when memberTerritoryExpand snapshot is missing but territory log adds push", () => {
+  it("appendTerritoryLog transfers from current snapshot (not full history replay)", () => {
     const settings = normalizeHighSocietySettings({
       enabled: true,
       seatMemberIds: ["subin", "jaki", "jisu"],
       startCmPerMember: 100,
       fieldCm: 300,
       memberWidthCm: { subin: 49, jaki: 105, jisu: 146 },
-      memberWidthDonationSnapshot: { subin: 0, jaki: 210_000, jisu: 0 },
-    });
-    const withLog = {
-      members: threeMembers,
-      donors: [],
-      highSocietySettings: settings,
-      territoryLogs: [createTerritoryLog("jisu", 1, 105, { pushDir: "left" })],
-    };
-    const field = buildHighSocietyFieldFromAppState(withLog);
-    const jaki = field.seats.find((s) => s.id === "jaki")!;
-    expect(jaki.widthCm).toBeLessThan(105);
-  });
-
-  it("recomputes when territory log changes expand but memberTerritoryExpand snapshot is stale", () => {
-    const settings = normalizeHighSocietySettings({
-      enabled: true,
-      seatMemberIds: ["subin", "jaki", "jisu"],
-      startCmPerMember: 100,
-      fieldCm: 300,
-      memberWidthCm: { subin: 49, jaki: 105, jisu: 146 },
-      memberWidthDonationSnapshot: { subin: 0, jaki: 210_000, jisu: 0 },
+      memberWidthDonationSnapshot: { subin: 0, jaki: 0, jisu: 0 },
       memberTerritoryExpand: {
-        jaki: { expandLeftCm: 0, expandRightCm: 105 },
-        jisu: { expandLeftCm: 41, expandRightCm: 0 },
         subin: { expandLeftCm: 0, expandRightCm: 0 },
+        jaki: { expandLeftCm: 0, expandRightCm: 0 },
+        jisu: { expandLeftCm: 0, expandRightCm: 0 },
       },
     });
-    const withLog = {
+    const before = {
       members: threeMembers,
-      donors: [],
+      donors: [] as never[],
       highSocietySettings: settings,
-      territoryLogs: [createTerritoryLog("jisu", 1, 105, { pushDir: "left" })],
-    };
-    const field = buildHighSocietyFieldFromAppState(withLog);
+      territoryLogs: [] as ReturnType<typeof createTerritoryLog>[],
+      updatedAt: 1,
+    } as never;
+    const next = appendTerritoryLogToAppState(
+      before,
+      createTerritoryLog("jisu", 1, 105, { pushDir: "left" })
+    );
+    const field = buildHighSocietyFieldFromAppState(next);
     const jaki = field.seats.find((s) => s.id === "jaki")!;
     const jisu = field.seats.find((s) => s.id === "jisu")!;
     expect(jaki.widthCm).toBeLessThan(105);
-    expect(jisu.widthCm).toBeGreaterThan(100);
+    expect(jisu.widthCm).toBeGreaterThan(146);
   });
 
   it("eliminates neighbor when manual log transfers full width (지수 +105 ← 자키)", () => {
@@ -2315,20 +2302,87 @@ describe("manual territory log vs neighbor width", () => {
       startCmPerMember: 100,
       fieldCm: 300,
       memberWidthCm: { subin: 49, jaki: 105, jisu: 146 },
-      memberWidthDonationSnapshot: { subin: 0, jaki: 210_000, jisu: 0 },
+      memberWidthDonationSnapshot: { subin: 0, jaki: 0, jisu: 0 },
+      memberTerritoryExpand: {
+        subin: { expandLeftCm: 0, expandRightCm: 0 },
+        jaki: { expandLeftCm: 0, expandRightCm: 0 },
+        jisu: { expandLeftCm: 0, expandRightCm: 0 },
+      },
     });
-    const state = {
+    const before = {
       members: threeMembers,
-      donors: [],
+      donors: [] as never[],
       highSocietySettings: settings,
-      territoryLogs: [createTerritoryLog("jisu", 1, 105, { pushDir: "left" })],
-    };
-    const field = buildHighSocietyFieldFromAppState(state);
+      territoryLogs: [] as ReturnType<typeof createTerritoryLog>[],
+      updatedAt: 1,
+    } as never;
+    const next = appendTerritoryLogToAppState(
+      before,
+      createTerritoryLog("jisu", 1, 105, { pushDir: "left" })
+    );
+    const field = buildHighSocietyFieldFromAppState(next);
     const jaki = field.seats.find((s) => s.id === "jaki")!;
     const jisu = field.seats.find((s) => s.id === "jisu")!;
     expect(jaki.eliminated).toBe(true);
     expect(jaki.widthCm).toBe(0);
     expect(jisu.widthCm).toBeGreaterThan(146);
     expect(field.seats.reduce((s, x) => s + x.widthCm, 0)).toBeCloseTo(300, 0);
+  });
+
+  it("seat move left after small reclaim keeps 15cm (no 115cm inflate / neighbor wipe)", () => {
+    const members = [
+      { id: "subin", name: "수빈", account: 0, toon: 0, operating: false },
+      { id: "saa", name: "사아", account: 0, toon: 0, operating: false },
+      { id: "gana", name: "가나", account: 0, toon: 0, operating: false },
+      { id: "jaki", name: "자키", account: 0, toon: 0, operating: false },
+    ];
+    let settings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["subin", "saa", "gana", "jaki"],
+      startCmPerMember: 100,
+      fieldCm: 400,
+      memberWidthCm: { subin: 100, saa: 100, gana: 185, jaki: 15 },
+      memberWidthDonationSnapshot: { subin: 0, saa: 0, gana: 0, jaki: 0 },
+      memberTerritoryExpand: {
+        subin: { expandLeftCm: 0, expandRightCm: 0 },
+        saa: { expandLeftCm: 0, expandRightCm: 0 },
+        gana: { expandLeftCm: 0, expandRightCm: 0 },
+        jaki: { expandLeftCm: 0, expandRightCm: 15 },
+      },
+      donationLinks: {
+        subin: { active: true, startedAt: 1 },
+        saa: { active: true, startedAt: 1 },
+        gana: { active: true, startedAt: 1 },
+        jaki: { active: true, startedAt: 1 },
+      },
+    });
+    const donors: Array<{ memberId: string; amount: number; at: number }> = [];
+    const before = buildHighSocietyFieldFromAppState({
+      members,
+      donors,
+      highSocietySettings: settings,
+      territoryLogs: [createTerritoryLog("jaki", 1, 15, { pushDir: "right" })],
+    });
+    expect(before.seats.find((s) => s.id === "jaki")!.widthCm).toBe(15);
+    expect(before.seats.find((s) => s.id === "saa")!.widthCm).toBe(100);
+
+    settings = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: settings,
+      nextSettings: normalizeHighSocietySettings({
+        ...settings,
+        seatMemberIds: ["subin", "saa", "jaki", "gana"],
+      }),
+      members,
+      donors,
+    });
+    const after = buildHighSocietyFieldFromAppState({
+      members,
+      donors,
+      highSocietySettings: settings,
+      territoryLogs: [createTerritoryLog("jaki", 1, 15, { pushDir: "right" })],
+    });
+    expect(after.seats.find((s) => s.id === "jaki")!.widthCm).toBe(15);
+    expect(after.seats.find((s) => s.id === "saa")!.widthCm).toBe(100);
+    expect(after.seats.find((s) => s.id === "jaki")!.widthCm).not.toBe(115);
   });
 });

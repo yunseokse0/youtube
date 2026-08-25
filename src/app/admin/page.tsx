@@ -4,6 +4,15 @@ import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
 import DonationTableOptionCheckboxes from "@/components/admin/DonationTableOptionCheckboxes";
 import AdminLazyPreviewIframe from "@/components/admin/AdminLazyPreviewIframe";
+import MemberPositionInput from "@/components/admin/MemberPositionInput";
+import {
+  AdminCollapseToolbar,
+  AdminCollapsibleBlock,
+  AdminCollapsibleSection,
+  AdminSectionCollapseProvider,
+  ADMIN_SECTION_EXPAND_PARENTS,
+  useAdminSectionCollapse,
+} from "@/components/admin/AdminSectionCollapse";
 import {
   buildSettlementUiOptionsFromForm,
   normalizeSettlementUiOptions,
@@ -307,6 +316,8 @@ import {
   appendHighSocietySeatMemberId,
   insertHighSocietySeatMemberIdAt,
   buildHighSocietyFieldFromAppState,
+  appendTerritoryLogToAppState,
+  removeTerritoryLogFromAppState,
   resolveHighSocietyStartCmPerMember,
   resolveHighSocietyEffectiveFieldCm,
   reconcileHighSocietyFieldDimensions,
@@ -616,6 +627,14 @@ function adminSyncFingerprint(s: AppState): string {
 }
 
 export default function AdminPage() {
+  return (
+    <AdminSectionCollapseProvider>
+      <AdminPageInner />
+    </AdminSectionCollapseProvider>
+  );
+}
+
+function AdminPageInner() {
   const router = useRouter();
   const [user, setUser] = useState<{ id: string; companyName: string; name?: string; remainingDays?: number | null; unlimited?: boolean } | null>(null);
   /** /api/auth/me 완료 전 — 미리보기에 가짜 '재로그인' 문구를 띄우지 않기 위함 */
@@ -1583,11 +1602,23 @@ export default function AdminPage() {
     </div>
   );
   
+  const { expand: expandAdminSection } = useAdminSectionCollapse();
   const moveToSection = (key: AdminNavKey, targetId: string) => {
     setActiveNav(key);
     if (typeof window === "undefined") return;
-    const el = document.getElementById(targetId);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    expandAdminSection(targetId);
+    let parent = ADMIN_SECTION_EXPAND_PARENTS[targetId];
+    const seen = new Set<string>();
+    while (parent && !seen.has(parent)) {
+      seen.add(parent);
+      expandAdminSection(parent);
+      parent = ADMIN_SECTION_EXPAND_PARENTS[parent];
+    }
+    window.requestAnimationFrame(() => {
+      window.setTimeout(() => {
+        document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 40);
+    });
   };
   /** `<input type="color">`는 #rrggbb만 허용 — transparent 등은 fallback으로 표시 */
   const toColorPickerValue = (raw?: string, fallback = "#ffffff") => {
@@ -4497,9 +4528,12 @@ export default function AdminPage() {
     setNewMemberName("");
   };
 
+  /** blur 커밋 전용 — 타이핑 중 setState/trim/persist 금지(한글 IME·원격 덮어쓰기) */
   const updateMemberPosition = (memberId: string, position: string) => {
     setState((prev: AppState) => {
       const cleaned = (position || "").trim();
+      const prevVal = String(prev.memberPositions?.[memberId] || "").trim();
+      if (cleaned === prevVal) return prev;
       const nextMap = { ...(prev.memberPositions || {}) };
       if (cleaned) nextMap[memberId] = cleaned;
       else delete nextMap[memberId];
@@ -8414,12 +8448,7 @@ export default function AdminPage() {
       { pushDir: pushForLog, note: territoryNote }
     );
     setState((prev: AppState) => {
-      let next: AppState = {
-        ...prev,
-        territoryLogs: [...(prev.territoryLogs || []), log],
-        updatedAt: Date.now(),
-      };
-      next = syncHighSocietyMemberWidthSnapshotInState(next);
+      const next = appendTerritoryLogToAppState(prev, log);
       /** 영토 cm 만 저장 — donors/members 금액 POST 금지(후원순위·기록 초기화 회귀 방지) */
       persistState(next, { omitDonationFields: true, highSocietySettingsOnly: true });
       notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
@@ -9613,6 +9642,7 @@ export default function AdminPage() {
         <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 mb-6">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <h1 className="text-2xl font-bold">{adminHeaderTitle(user)}</h1>
+            <AdminCollapseToolbar />
             {(user?.remainingDays != null || user?.unlimited) && (
               <span className={`px-2 py-0.5 rounded text-xs font-medium ${user?.unlimited ? "bg-blue-900/60 text-blue-300" : (user?.remainingDays ?? 0) <= 7 ? "bg-amber-900/60 text-amber-300" : "bg-neutral-800 text-neutral-400"}`}>
                 {user?.unlimited ? "무제한" : `남은 일수: ${user?.remainingDays ?? 0}일`}
@@ -9673,7 +9703,12 @@ export default function AdminPage() {
           </div>
         </div>
         {isAdminNavSectionVisible("dashboard") && (
-        <section id="dashboard-summary" className={`${panelCardClass} p-4 mb-6`}>
+        <AdminCollapsibleSection
+          id="dashboard-summary"
+          title="대시보드"
+          className={`${panelCardClass} mb-6`}
+          bodyClassName="px-4 pb-4"
+        >
           {typeof storageHealth?.mainState?.donorsCount === "number" &&
           storageHealth.mainState.donorsCount > 0 &&
           normalizeDonorsArray(state.donors).length < storageHealth.mainState.donorsCount ? (
@@ -9738,27 +9773,30 @@ export default function AdminPage() {
               <div className="text-xl font-bold text-[#22c55e]">{activeMemberCount.toLocaleString("ko-KR")}</div>
             </div>
           </div>
-        </section>
+        </AdminCollapsibleSection>
         )}
         <div className="grid grid-cols-1 gap-6">
           <div className="space-y-6">
             {isAdminNavSectionVisible("settlement") && (
-            <section id="settlement-member-board" className={`${panelCardClass} p-4 md:p-6`}>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">멤버 정산 보드</h2>
-            <div className="text-right">
-              <div className="text-xs text-neutral-400">계좌 · 투네 · 기여도 · 전체</div>
-              <div className="text-2xl font-bold">
-                {formatManThousand(state.members.reduce((s,m)=>s+(m.account||0),0))}
-                <span className="text-neutral-500 mx-1">·</span>
-                {formatManThousand(state.members.reduce((s,m)=>s+(m.toon||0),0))}
-                <span className="text-neutral-500 mx-1">·</span>
-                {formatManThousand(state.members.reduce((s,m)=>s+((m.account||0)+(m.toon||0)),0))}
-                <span className="text-neutral-500 mx-1">·</span>
-                {formatManThousand(state.members.reduce((s,m)=>s+(m.account||0)+(m.toon||0),0))}
-              </div>
-            </div>
-          </div>
+            <AdminCollapsibleSection
+              id="settlement-member-board"
+              title="멤버 정산 보드"
+              className={panelCardClass}
+              headerAside={
+                <div className="text-right">
+                  <div className="text-xs text-neutral-400">계좌 · 투네 · 기여도 · 전체</div>
+                  <div className="text-2xl font-bold">
+                    {formatManThousand(state.members.reduce((s,m)=>s+(m.account||0),0))}
+                    <span className="text-neutral-500 mx-1">·</span>
+                    {formatManThousand(state.members.reduce((s,m)=>s+(m.toon||0),0))}
+                    <span className="text-neutral-500 mx-1">·</span>
+                    {formatManThousand(state.members.reduce((s,m)=>s+((m.account||0)+(m.toon||0)),0))}
+                    <span className="text-neutral-500 mx-1">·</span>
+                    {formatManThousand(state.members.reduce((s,m)=>s+(m.account||0)+(m.toon||0),0))}
+                  </div>
+                </div>
+              }
+            >
               <div className="flex flex-wrap gap-2 mb-4">
                 <input
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
@@ -9797,13 +9835,14 @@ export default function AdminPage() {
                   ))
                 )}
               </div>
-              <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-2">
-                <div>
-                  <h3 className="text-base font-semibold">직급 관리 (별도)</h3>
-                  <p className="text-xs text-neutral-400 mt-1">
+              <AdminCollapsibleBlock
+                id="block-member-positions"
+                title="직급 관리 (별도)"
+                className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-2"
+              >
+                  <p className="text-xs text-neutral-400">
                     직급은 멤버 정보와 분리 저장됩니다. 정렬/오버레이 표시는 아래 직급 맵을 기준으로 동작합니다.
                   </p>
-                </div>
                 <div className="rounded border border-white/10 bg-black/20 p-2">
                   <div className="text-xs text-neutral-400 mb-1">직급 모드</div>
                   <div className="flex flex-wrap gap-2">
@@ -9828,16 +9867,19 @@ export default function AdminPage() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {state.members.map((m) => (
-                    <label key={`pos-${m.id}`} className="grid grid-cols-[120px_1fr] items-center gap-2 rounded border border-white/10 bg-black/20 px-2 py-1.5">
-                      <span className="truncate text-sm text-neutral-300">{m.name}</span>
-                      <input
-                        className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
-                        placeholder={state.memberPositionMode === "rankLinked" ? "순위 연동 모드에서는 아래 대표 멤버만 지정" : "직급 (예: 대표, 이사, 부장)"}
-                        value={state.memberPositions?.[m.id] || ""}
-                        onChange={(e) => updateMemberPosition(m.id, e.target.value)}
-                        disabled={state.memberPositionMode === "rankLinked"}
-                      />
-                    </label>
+                    <MemberPositionInput
+                      key={`pos-${m.id}`}
+                      memberId={m.id}
+                      memberName={m.name}
+                      savedValue={state.memberPositions?.[m.id] || ""}
+                      disabled={state.memberPositionMode === "rankLinked"}
+                      placeholder={
+                        state.memberPositionMode === "rankLinked"
+                          ? "순위 연동 모드에서는 아래 대표 멤버만 지정"
+                          : "직급 (예: 대표, 이사, 부장)"
+                      }
+                      onCommit={updateMemberPosition}
+                    />
                   ))}
                 </div>
                 {state.memberPositionMode === "rankLinked" && (
@@ -9876,8 +9918,13 @@ export default function AdminPage() {
                     </div>
                   </div>
                 )}
-              </div>
-              <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
+              </AdminCollapsibleBlock>
+              <AdminCollapsibleBlock
+                id="block-donation-sync-sig-match"
+                title="후원 동기화 · 시그 대전"
+                className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3"
+                defaultOpen={false}
+              >
                 <div className="rounded-lg border border-amber-300/30 bg-amber-500/10 p-3 space-y-2">
                   <div className="text-sm font-semibold text-amber-200">후원 동기화 일괄 관리 (중복 방지)</div>
                     <p className="text-xs text-neutral-300">
@@ -10468,942 +10515,1881 @@ export default function AdminPage() {
                     )}
                   </div>
                 </div>
-              </div>
-              <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
+              </AdminCollapsibleBlock>
+              <AdminCollapsibleBlock
+                id="block-meal-match"
+                title="식사 대전 관리"
+                className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3"
+                defaultOpen={false}
+              >
+
                 <div className="flex flex-wrap items-center justify-between gap-2">
+
                   <div>
+
                     <h3 className="text-base font-semibold">식사 대전 관리</h3>
+
                     <p className="text-xs text-neutral-400">
+
                       참여 멤버별 게이지 색·점수·개인 목표, 상단 제목·미션 말풍선, 오버레이 색상을 실시간 제어합니다. &quot;팀대전&quot;을 켜고 멤버를 A/B에 넣으면 팀 합산 막대로 표시됩니다(팀 모드: 2분할, 개인 모드: 채움 안 색 분할). 식사 매치「개인」이면 (총점 ÷ 참가자 목표 합) 채움 막대입니다. 멤버 행에서 색을 먼저 고른 뒤 참가 체크하면 그 색이 적용됩니다.
+
                       &quot;후원 연동 ON&quot;인 멤버에게만 후원 입력 시 식대전 점수가 오르고(만 원 단위 환산), 다른 멤버 후원은 멤버 금액·엑셀에만 반영됩니다.
+
                     </p>
+
                   </div>
+
                   <button
+
                     className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs"
+
                     onClick={() => window.open(buildMealMatchLiveUrl(), "_blank", "noopener,noreferrer")}
+
                   >
+
                     식사대전 오버레이 열기
+
                   </button>
+
                 </div>
+
                 {renderBattleOverlayTimerControls({ id: "meal-battle-overlay-timer" })}
+
                 <p className="text-[11px] text-neutral-500">
+
                   위 &quot;대전 배율(%)&quot;·&quot;가로 폭(%)&quot;는 시그 대전과 공유됩니다. 아래 미리보기는 스냅샷이 아닌{" "}
+
                   <code className="text-neutral-400">/overlay/meal-match</code> 실시간 URL이며, 식사 대전 설정·점수 변경이 곧바로
+
                   반영됩니다.
+
                 </p>
+
                 <div className="mt-3 rounded-lg border border-white/10 bg-black/50 overflow-hidden">
+
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 px-2 py-1.5">
+
                     <div className="flex flex-col gap-0.5">
+
                       <span className="text-xs font-medium text-neutral-300">식사 대전 오버레이 미리보기</span>
+
                       <span className="text-[10px] text-neutral-500">
+
                         scalePct={getBattleScalePct()} · contentWidthPct={getBattleContentWidthPct()} 반영 · 변경 시 자동 갱신
+
                       </span>
+
                     </div>
+
                     <button
+
                       type="button"
+
                       className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-emerald-500/60 hover:text-emerald-200"
+
                       onClick={() => {
+
                         mealMatchPreviewUrlRef.current = `${buildMealMatchLiveUrl()}&_t=${Date.now()}`;
+
                         setMealMatchPreviewIframeSrc(appendAdminPreviewEmbedToOverlayUrl(mealMatchPreviewUrlRef.current));
+
                         setMealMatchPreviewIframeKey((k) => k + 1);
+
                       }}
+
                     >
+
                       새로고침
+
                     </button>
+
                   </div>
+
                   <div
+
                     className="relative w-full overflow-hidden bg-black/40"
+
                     style={{
+
                       height: `${Math.min(720, Math.max(280, Math.round(280 * (getBattleScalePct() / 100))))}px`,
+
                     }}
+
                   >
+
                     {mealMatchPreviewIframeSrc ? (
+
                       <AdminLazyPreviewIframe
+
                         key={`meal-match-preview-${mealMatchPreviewIframeKey}`}
+
                         src={mealMatchPreviewIframeSrc}
+
                         title="식사 대전 오버레이 미리보기"
+
                         className="absolute inset-0 h-full w-full border-0"
+
                         style={{ background: "transparent" }}
+
                       />
+
                     ) : (
+
                       <div className="flex h-[280px] items-center justify-center text-xs text-neutral-500">미리보기 URL 생성 중…</div>
+
                     )}
+
                   </div>
+
                 </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+
                   <label className="block space-y-1">
+
                     <span className="text-xs text-neutral-400">상단 큰 제목</span>
+
                     <input
+
                       className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+
                       placeholder="예: 식사 대전"
+
                       value={state.mealBattle?.overlayTitle || ""}
+
                       onChange={(e) => updateMealBattle({ overlayTitle: e.target.value })}
+
                     />
+
                   </label>
+
                   <label className="block space-y-1">
+
                     <span className="text-xs text-neutral-400">미션 말풍선 (비우면 숨김)</span>
+
                     <input
+
                       className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+
                       placeholder="예: 개똥이 사료값"
+
                       value={state.mealBattle?.currentMission || ""}
+
                       onChange={(e) => updateMealBattle({ currentMission: e.target.value })}
+
                     />
+
                   </label>
+
                 </div>
+
                 <label className="block space-y-1">
+
                   <span className="text-xs text-neutral-400">벌칙/규칙 설명 (오버레이 우상단, 비우면 숨김)</span>
+
                   <textarea
+
                     className="w-full min-h-[4rem] px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
+
                     placeholder="예: 벌칙대전 규칙 — 10만원 이상 차이로 승리해야 면제"
+
                     value={state.mealBattle?.overlayRulesText || ""}
+
                     onChange={(e) => updateMealBattle({ overlayRulesText: e.target.value })}
+
                   />
+
                   <div className="flex items-center gap-2 pt-1">
+
                     <span className="text-[11px] text-neutral-500 shrink-0">글자 크기</span>
+
                     <input
+
                       type="range"
+
                       min={10}
+
                       max={36}
+
                       value={state.mealBattle?.overlayRulesFontSize ?? 16}
+
                       onChange={(e) => updateMealBattle({ overlayRulesFontSize: Number(e.target.value) })}
+
                       className="flex-1 accent-emerald-500"
+
                     />
+
                     <span className="w-10 text-right text-xs text-neutral-300">
+
                       {state.mealBattle?.overlayRulesFontSize ?? 16}px
+
                     </span>
+
                   </div>
+
                 </label>
+
                 <div className="rounded-lg border border-white/10 bg-black/20 p-3 space-y-2">
+
                   <span className="text-xs font-medium text-neutral-300">하단 후원 표 옵션</span>
+
                   <DonationTableOptionCheckboxes
+
                     compact
+
                     value={state.mealBattle?.donationTableOptions}
+
                     onChange={(patch) =>
+
                       updateMealBattle({
+
                         donationTableOptions: {
+
                           ...state.mealBattle?.donationTableOptions,
+
                           ...patch,
+
                         },
+
                       })
+
                     }
+
                   />
+
                 </div>
+
                 <label className="block space-y-1 max-w-xl">
+
                   <span className="text-xs text-neutral-400">식사 매치 모드 → 오버레이 게이지 형태</span>
+
                   <select
+
                     className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+
                     value={state.mealMatchSettings?.mode || "team"}
+
                     onChange={(e) => updateMealMatchSettings({ mode: e.target.value as "team" | "individual" })}
+
                   >
+
                     <option value="team">팀 — 분할/채움 형태(아래 팀대전·개인 설정과 조합)</option>
+
                     <option value="individual">개인(1인) — 총점÷목표합 채움 막대</option>
+
                   </select>
+
                 </label>
+
                 <div className="rounded-lg border border-white/10 bg-black/20 p-3 space-y-3">
+
                   <label className="flex items-center gap-2 text-sm text-neutral-200 cursor-pointer">
+
                     <input
+
                       type="checkbox"
+
                       checked={Boolean(state.mealBattle?.teamBattleEnabled)}
+
                       onChange={(e) => updateMealBattle({ teamBattleEnabled: e.target.checked })}
+
                     />
+
                     팀대전 (A/B에 멤버를 넣으면 막대가 팀 합산 기준으로 표시)
+
                   </label>
+
                   {state.mealBattle?.teamBattleEnabled ? (
+
                     <>
+
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+
                         <label className="block space-y-1">
+
                           <span className="text-xs text-neutral-400">A팀 이름</span>
+
                           <input
+
                             className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+
                             value={state.mealBattle?.teamAName || "A팀"}
+
                             onChange={(e) => updateMealBattle({ teamAName: e.target.value })}
+
                           />
+
                         </label>
+
                         <label className="block space-y-1">
+
                           <span className="text-xs text-neutral-400">B팀 이름</span>
+
                           <input
+
                             className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+
                             value={state.mealBattle?.teamBName || "B팀"}
+
                             onChange={(e) => updateMealBattle({ teamBName: e.target.value })}
+
                           />
+
                         </label>
+
                         <label className="block space-y-1">
+
                           <span className="text-xs text-neutral-400">A팀 목표 (0=자동)</span>
+
                           <input
+
                             className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+
                             type="number"
+
                             min={0}
+
                             value={state.mealBattle?.teamAGoal ?? 0}
+
                             onChange={(e) => updateMealBattle({ teamAGoal: Math.max(0, Number.parseInt(e.target.value || "0", 10) || 0) })}
+
                           />
+
                         </label>
+
                         <label className="block space-y-1">
+
                           <span className="text-xs text-neutral-400">B팀 목표 (0=자동)</span>
+
                           <input
+
                             className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+
                             type="number"
+
                             min={0}
+
                             value={state.mealBattle?.teamBGoal ?? 0}
+
                             onChange={(e) => updateMealBattle({ teamBGoal: Math.max(0, Number.parseInt(e.target.value || "0", 10) || 0) })}
+
                           />
+
                         </label>
+
                       </div>
+
                       <div className="text-xs text-neutral-400">전체 멤버를 A팀·B팀·미배정 중 하나로 지정합니다. 식대전 참가자만 점수가 합산됩니다. 운영비는 대전 참가 대상이 아닙니다.</div>
+
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[220px] overflow-y-auto pr-1">
+
                         {state.members
+
                           .filter((m) => !isOperatingSettlementMember(m, state.memberPositions))
+
                           .map((m) => {
+
                           const inA = (state.mealBattle?.teamAMemberIds || []).includes(m.id);
+
                           const inB = (state.mealBattle?.teamBMemberIds || []).includes(m.id);
+
                           const val = inA ? "A" : inB ? "B" : "";
+
                           return (
+
                             <div key={m.id} className="flex items-center justify-between gap-2 rounded border border-white/10 bg-[#1f1f1f] px-2 py-1.5">
+
                               <span className="text-sm truncate">{m.name}</span>
+
                               <select
+
                                 className="text-xs px-2 py-1 rounded bg-neutral-900 border border-white/10 shrink-0"
+
                                 value={val}
+
                                 onChange={(e) => setMealBattleMemberTeam(m.id, e.target.value as "" | "A" | "B")}
+
                               >
+
                                 <option value="">미배정</option>
+
                                 <option value="A">{state.mealBattle?.teamAName || "A팀"}</option>
+
                                 <option value="B">{state.mealBattle?.teamBName || "B팀"}</option>
+
                               </select>
+
                             </div>
+
                           );
+
                         })}
+
                       </div>
+
                     </>
+
                   ) : null}
+
                 </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-[1fr_140px] gap-2 items-end">
+
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+
                     <label className="flex flex-col gap-1">
+
                       <span className="text-neutral-400">말풍선 배경</span>
+
                       <input
+
                         type="color"
+
                         value={toColorPickerValue(state.mealBattle?.missionBubbleBg, "#9333ea")}
+
                         onChange={(e) => updateMealBattle({ missionBubbleBg: e.target.value })}
+
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
+
                       />
+
                     </label>
+
                     <label className="flex flex-col gap-1">
+
                       <span className="text-neutral-400">말풍선 글자</span>
+
                       <input
+
                         type="color"
+
                         value={toColorPickerValue(state.mealBattle?.missionBubbleTextColor, "#ffffff")}
+
                         onChange={(e) => updateMealBattle({ missionBubbleTextColor: e.target.value })}
+
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
+
                       />
+
                     </label>
+
                     <label className="flex flex-col gap-1">
+
                       <span className="text-neutral-400">게이지 트랙</span>
+
                       <input
+
                         type="color"
+
                         value={toColorPickerValue(state.mealBattle?.gaugeTrackBg, "#171717")}
+
                         title="단색만 피커로 고를 수 있습니다. 알파는 아래 입력란에 hex/rgba로 입력하세요."
+
                         onChange={(e) => updateMealBattle({ gaugeTrackBg: e.target.value })}
+
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
+
                       />
+
                     </label>
+
                     <label className="flex flex-col gap-1">
+
                       <span className="text-neutral-400">채움 막대(개인)</span>
+
                       <input
+
                         type="color"
+
                         value={toColorPickerValue(state.mealBattle?.gaugeFillColor, "#22c55e")}
+
                         onChange={(e) => updateMealBattle({ gaugeFillColor: e.target.value })}
+
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
+
                       />
+
                     </label>
+
                     <label className="flex flex-col gap-1">
+
                       <span className="text-neutral-400">A팀 막대</span>
+
                       <input
+
                         type="color"
+
                         value={toColorPickerValue(state.mealBattle?.teamAColor, "#2563eb")}
+
                         onChange={(e) => updateMealBattle({ teamAColor: e.target.value })}
+
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
+
                       />
+
                     </label>
+
                     <label className="flex flex-col gap-1">
+
                       <span className="text-neutral-400">B팀 막대</span>
+
                       <input
+
                         type="color"
+
                         value={toColorPickerValue(state.mealBattle?.teamBColor, "#dc2626")}
+
                         onChange={(e) => updateMealBattle({ teamBColor: e.target.value })}
+
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
+
                       />
+
                     </label>
+
                     <label className="flex flex-col gap-1">
+
                       <span className="text-neutral-400">점수·요약 글자</span>
+
                       <input
+
                         type="color"
+
                         value={toColorPickerValue(state.mealBattle?.scoreTextColor, "#ffffff")}
+
                         onChange={(e) => updateMealBattle({ scoreTextColor: e.target.value })}
+
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
+
                       />
+
                     </label>
+
                     <label className="flex flex-col gap-1">
+
                       <span className="text-neutral-400">이름 태그 배경</span>
+
                       <input
+
                         type="color"
+
                         value={toColorPickerValue(state.mealBattle?.nameTagBg, "#facc15")}
+
                         onChange={(e) => updateMealBattle({ nameTagBg: e.target.value })}
+
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
+
                       />
+
                     </label>
+
                     <label className="flex flex-col gap-1">
+
                       <span className="text-neutral-400">이름 태그 글자</span>
+
                       <input
+
                         type="color"
+
                         value={toColorPickerValue(state.mealBattle?.nameTagTextColor, "#000000")}
+
                         onChange={(e) => updateMealBattle({ nameTagTextColor: e.target.value })}
+
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
+
                       />
+
                     </label>
+
                   </div>
+
                   <div className="flex flex-col gap-2">
+
                     <label className="block space-y-1">
+
                       <span className="text-xs text-neutral-400">신규 참가 기본 목표</span>
+
                       <input
+
                         className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+
                         type="number"
+
                         min={1}
+
                         value={state.mealBattle?.totalGoal || 100}
+
                         onChange={(e) => updateMealBattle({ totalGoal: Math.max(1, Number.parseInt(e.target.value || "100", 10) || 100) })}
+
                       />
+
                     </label>
+
                     <div className="space-y-2 rounded border border-white/10 bg-black/20 p-2">
+
                       <div className="text-[11px] text-neutral-500">오버레이 테두리 (기본 끔)</div>
+
                       <label className="flex items-center gap-2 text-xs text-neutral-200 cursor-pointer">
+
                         <input
+
                           type="checkbox"
+
                           checked={Boolean(state.mealBattle?.showPanelBorder)}
+
                           onChange={(e) => updateMealBattle({ showPanelBorder: e.target.checked })}
+
                         />
+
                         메인 패널 테두리
+
                       </label>
+
                       <label className="flex items-center gap-2 text-xs text-neutral-200 cursor-pointer">
+
                         <input
+
                           type="checkbox"
+
                           checked={Boolean(state.mealBattle?.showGaugeTrackBorder)}
+
                           onChange={(e) => updateMealBattle({ showGaugeTrackBorder: e.target.checked })}
+
                         />
+
                         게이지 트랙 테두리
+
                       </label>
+
                     </div>
+
                   </div>
+
                 </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+
                   <input
+
                     className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-xs"
+
                     placeholder="게이지 트랙 배경 (rgba/hex, 예: rgba(23,23,23,0.85))"
+
                     value={state.mealBattle?.gaugeTrackBg || ""}
+
                     onChange={(e) => updateMealBattle({ gaugeTrackBg: e.target.value })}
+
                   />
+
                   <input
+
                     className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-xs"
+
                     placeholder="채움 막대 색 (개인 모드, rgba/hex)"
+
                     value={state.mealBattle?.gaugeFillColor || ""}
+
                     onChange={(e) => updateMealBattle({ gaugeFillColor: e.target.value })}
+
                   />
+
                   <input
+
                     className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-xs"
+
                     placeholder="패널 테두리 색 (rgba/hex)"
+
                     value={state.mealBattle?.panelBorderColor || ""}
+
                     onChange={(e) => updateMealBattle({ panelBorderColor: e.target.value })}
+
                   />
+
                   <input
+
                     className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-xs"
+
                     placeholder="게이지 트랙 테두리 색 (rgba/hex)"
+
                     value={state.mealBattle?.gaugeTrackBorderColor || ""}
+
                     onChange={(e) => updateMealBattle({ gaugeTrackBorderColor: e.target.value })}
+
                   />
+
                 </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-[180px_120px_1fr] gap-2 items-center">
+
                   <select
+
                     className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+
                     value={state.mealBattle?.timerTheme || "default"}
+
                     onChange={(e) => updateMealBattle({ timerTheme: e.target.value as "default" | "neon" | "minimal" | "danger" })}
+
                   >
+
                     <option value="default">타이머 테마: 기본</option>
+
                     <option value="neon">타이머 테마: 네온</option>
+
                     <option value="minimal">타이머 테마: 미니멀</option>
+
                     <option value="danger">타이머 테마: 경고</option>
+
                   </select>
+
                   <input
+
                     className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+
                     type="number"
+
                     min={16}
+
                     max={120}
+
                     value={state.mealBattle?.timerSize || 36}
+
                     onChange={(e) =>
+
                       updateMealBattle({
+
                         timerSize: Math.max(16, Math.min(120, Number.parseInt(e.target.value || "36", 10) || 36)),
+
                       })
+
                     }
+
                   />
+
                   <div className="text-xs text-neutral-400">
+
                     타이머 크기·테마는 meal-match 오버레이에 실시간 반영됩니다. URL 테스트:{" "}
+
                     <code className="text-neutral-500">?timerTheme=neon</code>
+
                   </div>
+
                 </div>
+
                 <div className="rounded border border-white/10 bg-neutral-900/50 p-3 space-y-2">
+
                   <div className="text-xs font-semibold text-neutral-200">게이지 연출</div>
+
                   <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+
                     {(
+
                       [
+
                         ["critical", "크리티컬 (90%·타이머 임박)"],
+
                         ["floatingScore", "플로팅 +점수"],
+
                         ["rankUp", "1등 왕관 (이름 옆)"],
+
                         ["timerTension", "타이머 긴장"],
+
                         ["gaugeMotion", "게이지 막대 연출"],
+
                       ] as const
+
                     ).map(([key, label]) => {
+
                       const ge = normalizeMealGaugeEffects(state.mealBattle?.gaugeEffects);
+
                       return (
+
                         <label key={key} className="flex items-center gap-2 cursor-pointer">
+
                           <input
+
                             type="checkbox"
+
                             checked={ge[key]}
+
                             onChange={(e) =>
+
                               updateMealBattle({
+
                                 gaugeEffects: { ...ge, [key]: e.target.checked },
+
                               })
+
                             }
+
                           />
+
                           <span className="text-neutral-300">{label}</span>
+
                         </label>
+
                       );
+
                     })}
+
                   </div>
+
                   <p className="text-[11px] text-neutral-500">
+
                     오버레이 URL 테스트: <code className="text-neutral-400">?fx=none</code>,{" "}
+
                     <code className="text-neutral-400">?fx=critical,rank</code> (상태 설정보다 URL이 우선)
+
                   </p>
+
                   <a
+
                     href="/overlay/battle-effects-demo"
+
                     target="_blank"
+
                     rel="noopener noreferrer"
+
                     className="mr-3 inline-block text-[11px] font-medium text-violet-400 hover:text-violet-300"
+
                   >
+
                     대전 연출 통합 허브 ↗
+
                   </a>
+
                   <a
+
                     href="/overlay/meal-match/gauge-demo"
+
                     target="_blank"
+
                     rel="noopener noreferrer"
+
                     className="inline-block text-[11px] font-medium text-emerald-400 hover:text-emerald-300"
+
                   >
+
                     식사 게이지 데모 ↗
+
                   </a>
+
                 </div>
+
                 <div className="flex flex-wrap items-center gap-2">
+
                   <button className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 text-sm" onClick={resetMealMatchScores}>
+
                     점수 초기화
+
                   </button>
+
                   <span className="text-xs text-neutral-400">패널·게이지 테두리는 위 옵션을 켠 경우에만 오버레이에 표시됩니다.</span>
+
                 </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+
                   {state.members
+
                     .filter((m) => !isOperatingSettlementMember(m, state.memberPositions))
+
                     .map((m, idx) => {
+
                     const p = mealParticipants.find((x) => x.memberId === m.id);
+
                     const draft =
+
                       state.mealBattle?.memberGaugeColors?.[m.id] ||
+
                       MEAL_PARTICIPANT_COLORS[idx % MEAL_PARTICIPANT_COLORS.length];
+
                     const swatch = p?.color || draft;
+
                     const pickerVal = toColorPickerValue(typeof swatch === "string" ? swatch : "", "#60a5fa");
+
                     return (
+
                       <div
+
                         key={m.id}
+
                         className="rounded border border-white/10 bg-[#1f1f1f] px-3 py-2 flex items-center justify-between gap-2"
+
                       >
+
                         <span className="text-sm truncate min-w-0">{m.name}</span>
+
                         <div className="flex items-center gap-2 shrink-0">
+
                           <input
+
                             type="color"
+
                             value={pickerVal}
+
                             title="게이지 색"
+
                             onChange={(e) => {
+
                               const c = e.target.value;
+
                               if (p) patchMealParticipantColor(m.id, c);
+
                               else mergeMealMemberGaugeColor(m.id, c);
+
                             }}
+
                             className="h-8 w-10 rounded border border-white/20 bg-transparent cursor-pointer"
+
                           />
+
                           <label className="flex items-center gap-1 text-xs text-neutral-300 cursor-pointer">
+
                             <input
+
                               type="checkbox"
+
                               checked={Boolean(p)}
+
                               onChange={(e) => toggleMealParticipant(m.id, e.target.checked)}
+
                             />
+
                             참가
+
                           </label>
+
                         </div>
+
                       </div>
+
                     );
+
                   })}
+
                 </div>
+
                 <p className="text-[11px] text-amber-200/90">
+
                   후원 연동: 「식사대전 동기화」모드 + 참가자 「후원 연동 ON」이어야 게이지 점수에 반영됩니다. 연동 ON 시 참가 체크가 없으면 자동으로 참가 처리됩니다. 운영비 멤버는 참가할 수 없습니다.
+
                 </p>
+
                 <div className="space-y-2">
+
                   {mealParticipants.map((row) => (
+
                     <div key={row.memberId} className="rounded border border-white/10 bg-[#1f1f1f] px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+
                       <div className="min-w-0">
+
                         <div className="font-semibold text-sm">{row.name}</div>
+
                         <div className="text-xs text-neutral-400">
+
                           점수 {(Number(row.score) || 0).toLocaleString("ko-KR")} / 목표 {(Number(row.goal ?? state.mealBattle?.totalGoal ?? 100) || 100).toLocaleString("ko-KR")}
+
                         </div>
+
                       </div>
+
                       <div className="flex flex-wrap items-center gap-2 justify-end">
+
                         <label className="flex items-center gap-1 text-xs text-neutral-400">
+
                           표시 이름
+
                           <input
+
                             className="w-28 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-neutral-100"
+
                             value={row.name || ""}
+
                             onChange={(e) =>
+
                               updateMealParticipant(row.memberId, (p) => ({
+
                                 ...p,
+
                                 name: e.target.value,
+
                               }))
+
                             }
+
                           />
+
                         </label>
+
                         <label className="flex items-center gap-1 text-xs text-neutral-400">
+
                           개인 목표
+
                           <input
+
                             className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-right text-neutral-100"
+
                             type="number"
+
                             min={1}
+
                             value={row.goal ?? state.mealBattle?.totalGoal ?? 100}
+
                             onChange={(e) =>
+
                               updateMealParticipant(row.memberId, (p) => ({
+
                                 ...p,
+
                                 goal: Math.max(1, Number.parseInt(e.target.value || "1", 10) || 1),
+
                               }))
+
                             }
+
                           />
+
                         </label>
+
                         <button
+
                           type="button"
+
                           className={`px-2 py-1 rounded text-xs font-medium ${
+
                             row.donationLinkActive ? "bg-amber-700 hover:bg-amber-600 text-white" : "bg-neutral-700 hover:bg-neutral-600 text-neutral-200"
+
                           }`}
+
                           onClick={() => toggleMealDonationLink(row.memberId)}
+
                         >
+
                           후원 연동 {row.donationLinkActive ? "ON" : "OFF"}
+
                         </button>
+
                         <input
+
                           type="color"
+
                           value={toColorPickerValue(row.color, "#60a5fa")}
+
                           onChange={(e) => patchMealParticipantColor(row.memberId, e.target.value)}
+
                           className="h-8 w-10 rounded border border-white/20 bg-transparent"
+
                         />
+
                         <button
+
                           className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-xs"
+
                           onClick={() => updateMealParticipant(row.memberId, (p) => ({ ...p, score: Math.max(0, p.score + 1) }))}
+
                         >
+
                           +1
+
                         </button>
+
                         <button
+
                           className="px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-xs"
+
                           onClick={() => updateMealParticipant(row.memberId, (p) => ({ ...p, score: Math.max(0, p.score + 10) }))}
+
                         >
+
                           +10
+
                         </button>
+
                       </div>
+
                     </div>
+
                   ))}
+
                 </div>
+
                 <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+
                   <span>오버레이 URL:</span>
+
                   <code className="text-neutral-300 break-all">
+
                     /overlay/meal-match?u={overlayUserId}&scalePct={getBattleScalePct()}&contentWidthPct=
+
                     {getBattleContentWidthPct()}
+
                   </code>
+
                   <button
+
                     type="button"
+
                     className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-meal-match" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+
                     onClick={() => {
+
                       const u = buildMealMatchLiveUrl();
+
                       void copyUrl(u, "dash-meal-match");
+
                     }}
+
                   >
+
                     {copiedId === "dash-meal-match" ? "복사됨!" : "URL 복사"}
+
                   </button>
+
                 </div>
+
                 <div className="rounded border border-white/10 bg-black/20 p-3 space-y-2">
+
                   <div>
+
                     <h4 className="text-sm font-semibold">후원 순위 오버레이</h4>
+
                     <p className="text-xs text-neutral-400 mt-1">
+
                       계좌·투네 후원을 합쳐 「후원 순위」 한 목록으로 표시합니다. 기본 오버레이는{" "}
+
                       <strong className="text-neutral-300">10위까지</strong>입니다(5명 이상이면 좌우 반 나눔).
+
                       11위 이후 전원은 같은 테마의{" "}
+
                       <strong className="text-neutral-300">세로형 전체 순위</strong> 오버레이를 OBS에 따로 추가하세요.
+
                       예전처럼 계좌/투네 두 칸이면{" "}
+
                       <code className="text-neutral-300">layout=dual</code>.
+
                     </p>
+
                   </div>
+
                   <label className="text-[11px] text-neutral-400 flex flex-col gap-1 rounded border border-white/10 bg-black/20 px-2 py-2">
+
                     <span>제목 문구</span>
+
                     <input
+
                       type="text"
+
                       value={state.donorRankingsTheme.titleText || ""}
+
                       onChange={(e) => updateDonorRankingsTheme({ titleText: e.target.value })}
+
                       className="h-8 w-full rounded border border-white/10 bg-neutral-900/80 px-2 text-sm"
+
                       placeholder="👑 웹후원 순위 👑"
+
                       maxLength={60}
+
                     />
+
                   </label>
+
                   <div className="rounded border border-white/10 bg-neutral-900/40 p-2 space-y-2">
+
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+
                       <label className="text-[11px] text-neutral-400">
+
                         표시 개수 (최대 {DONOR_RANKINGS_COMPACT_TOP_MAX}위)
+
                         <input
+
                           type="range"
+
                           min={1}
+
                           max={DONOR_RANKINGS_COMPACT_TOP_MAX}
+
                           value={Math.min(
+
                             DONOR_RANKINGS_COMPACT_TOP_MAX,
+
                             Math.max(1, Number(state.donorRankingsTheme.top) || DONOR_RANKINGS_COMPACT_TOP_MAX)
+
                           )}
+
                           onChange={(e) => updateDonorRankingsTheme({ top: Number(e.target.value) })}
+
                           className="w-full"
+
                         />
+
                         <div className="text-xs text-neutral-300">{state.donorRankingsTheme.top}명</div>
+
                       </label>
+
                       <label className="text-[11px] text-neutral-400">
+
                         제목 폰트
+
                         <input
+
                           type="range"
+
                           min={14}
+
                           max={80}
+
                           value={state.donorRankingsTheme.titleSize}
+
                           onChange={(e) => updateDonorRankingsTheme({ titleSize: Number(e.target.value) })}
+
                           className="w-full"
+
                         />
+
                         <div className="text-xs text-neutral-300">{state.donorRankingsTheme.titleSize}px</div>
+
                       </label>
+
                       <label className="text-[11px] text-neutral-400">
+
                         행 폰트
+
                         <input
+
                           type="range"
+
                           min={12}
+
                           max={64}
+
                           value={state.donorRankingsTheme.rowSize}
+
                           onChange={(e) => updateDonorRankingsTheme({ rowSize: Number(e.target.value) })}
+
                           className="w-full"
+
                         />
+
                         <div className="text-xs text-neutral-300">{state.donorRankingsTheme.rowSize}px</div>
+
                       </label>
+
                       <label className="text-[11px] text-neutral-400">
+
                         순위 폰트
+
                         <input
+
                           type="range"
+
                           min={12}
+
                           max={72}
+
                           value={state.donorRankingsTheme.rankSize}
+
                           onChange={(e) => updateDonorRankingsTheme({ rankSize: Number(e.target.value) })}
+
                           className="w-full"
+
                         />
+
                         <div className="text-xs text-neutral-300">{state.donorRankingsTheme.rankSize}px</div>
+
                       </label>
+
                       <label className="text-[11px] text-neutral-400">
+
                         오버레이 투명도(헤더·목록·행 배경 공통 · 중간 구간은 덜 어둡게)
+
                         <input
+
                           type="range"
+
                           min={0}
+
                           max={100}
+
                           value={state.donorRankingsTheme.overlayOpacity}
+
                           onChange={(e) => updateDonorRankingsTheme({ overlayOpacity: Number(e.target.value) })}
+
                           className="w-full"
+
                         />
+
                         <div className="text-xs text-neutral-300">{state.donorRankingsTheme.overlayOpacity}%</div>
+
                       </label>
+
                     </div>
+
                     <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+
                       {[
+
                         ["headerAccountBg", "순위 헤더(통합)"],
+
                         ["headerToonBg", "투네 헤더(dual만)"],
+
                         ["titleColor", "제목 색"],
+
                         ["rankColor", "순위 색"],
+
                         ["nameColor", "닉네임 색"],
+
                         ["amountColor", "금액 색"],
+
                       ].map(([key, label]) => (
+
                         <label key={key} className="text-[11px] text-neutral-400 flex items-center justify-between gap-2 rounded border border-white/10 bg-black/20 px-2 py-1">
+
                           <span>{label}</span>
+
                           <input
+
                             type="color"
+
                             value={toColorPickerValue(String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] ?? ""), "#ffffff")}
+
                             onChange={(e) => updateDonorRankingsTheme({ [key]: e.target.value } as Partial<AppState["donorRankingsTheme"]>)}
+
                             className="h-7 w-9 rounded border border-white/20 bg-transparent p-0.5"
+
                           />
+
                         </label>
+
                       ))}
+
                     </div>
+
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+
                       {(
+
                         [
+
                           ["bg", "전체 배경", "#ffffff"],
+
                           ["panelBg", "패널 배경", "#fff8fc"],
+
                           ["borderColor", "테두리", "#ffd2e8"],
+
                           ["rowEvenBg", "짝수 행", "#ffffff"],
+
                           ["rowOddBg", "홀수 행", "#ffffff"],
+
                           ["outlineColor", "텍스트 외곽선", "#000000"],
+
                         ] as const
+
                       ).map(([key, label, fallback]) => (
+
                         <label key={key} className="text-[11px] text-neutral-400 flex items-center gap-2 rounded border border-white/10 bg-black/20 px-2 py-1">
+
                           <span className="w-24 shrink-0">{label}</span>
+
                           <input
+
                             type="color"
+
                             value={toColorPickerValue(
+
                               String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] ?? ""),
+
                               fallback
+
                             )}
+
                             onChange={(e) =>
+
                               updateDonorRankingsTheme({ [key]: e.target.value } as Partial<AppState["donorRankingsTheme"]>)
+
                             }
+
                             className="h-7 w-9 shrink-0 rounded border border-white/20 bg-transparent p-0.5"
+
                           />
+
                           <input
+
                             type="text"
+
                             value={String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] || "")}
+
                             onChange={(e) => updateDonorRankingsTheme({ [key]: e.target.value } as Partial<AppState["donorRankingsTheme"]>)}
+
                             className="h-7 min-w-0 flex-1 rounded border border-white/10 bg-neutral-900/80 px-2 text-xs"
+
                             placeholder="transparent / #fff / rgba(...)"
+
                           />
+
                         </label>
+
                       ))}
+
                     </div>
+
                     <label className="text-[11px] text-neutral-400 flex flex-col gap-1 rounded border border-white/10 bg-black/20 px-2 py-2">
+
                       <span>텍스트 외곽선 두께(px)</span>
+
                       <div className="flex items-center gap-2">
+
                         <input
+
                           type="range"
+
                           min={0}
+
                           max={DONOR_RANKINGS_OUTLINE_MAX_PX}
+
                           step={0.25}
+
                           value={state.donorRankingsTheme.outlineWidth}
+
                           onChange={(e) => updateDonorRankingsTheme({ outlineWidth: Number(e.target.value) })}
+
                           className="flex-1"
+
                         />
+
                         <input
+
                           type="number"
+
                           min={0}
+
                           max={DONOR_RANKINGS_OUTLINE_MAX_PX}
+
                           step={0.25}
+
                           value={state.donorRankingsTheme.outlineWidth}
+
                           onChange={(e) =>
+
                             updateDonorRankingsTheme({
+
                               outlineWidth: Math.max(
+
                                 0,
+
                                 Math.min(DONOR_RANKINGS_OUTLINE_MAX_PX, parseFloat(e.target.value || "0") || 0)
+
                               ),
+
                             })
+
                           }
+
                           className="w-16 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs text-right"
+
                         />
+
                       </div>
+
                       <span className="text-[10px] text-neutral-500">0 = 없음 · 기본 4 (두꺼운 검정 외곽선)</span>
+
                     </label>
+
                     <div className="text-[11px] text-neutral-500">
+
                       반투명/rgba 값이 필요하면 아래 URL 파라미터로 덮어쓸 수 있습니다. 기본은 관리자 저장값이 사용됩니다.
+
                     </div>
+
                     <div className="rounded border border-white/10 bg-black/25 px-2 py-2 space-y-2">
+
                       <div className="text-[11px] text-neutral-400">기본 테마 5종 (원클릭 적용)</div>
+
                       <div className="flex flex-wrap gap-1.5">
+
                         {BUILT_IN_DONOR_RANKINGS_PRESETS.map((preset) => {
+
                           const active = state.donorRankingsPresetId === preset.id;
+
                           return (
+
                             <button
+
                               key={preset.id}
+
                               type="button"
+
                               title={preset.name}
+
                               className={`px-2.5 py-1 rounded text-xs border transition-colors ${
+
                                 active
+
                                   ? "bg-emerald-700 border-emerald-500 text-white"
+
                                   : "bg-neutral-800/90 border-white/10 text-neutral-200 hover:bg-neutral-700"
+
                               }`}
+
                               onClick={() => applyDonorRankingsPreset(preset.id)}
+
                             >
+
                               {preset.name}
+
                             </button>
+
                           );
+
                         })}
+
                       </div>
+
                     </div>
+
                     <div className="flex flex-wrap items-center gap-2">
+
                       <input
+
                         type="text"
+
                         className="h-8 w-56 rounded border border-white/10 bg-neutral-900/80 px-2 text-xs"
+
                         value={donorRankingPresetName}
+
                         onChange={(e) => setDonorRankingPresetName(e.target.value)}
+
                         placeholder="프리셋 이름 (예: 방송 기본)"
+
                       />
+
                       <button type="button" className="px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-xs" onClick={saveDonorRankingsPreset}>
+
                         현재값 프리셋 저장
+
                       </button>
+
                     </div>
+
                     <div className="space-y-1">
+
                       {(state.donorRankingsPresets || []).length === 0 ? (
+
                         <p className="text-[11px] text-neutral-500">저장된 프리셋이 없습니다.</p>
+
                       ) : (
+
                         (state.donorRankingsPresets || []).map((preset) => {
+
                           const builtIn = isBuiltInDonorRankingsPresetId(preset.id);
+
                           return (
+
                             <div key={preset.id} className="flex items-center justify-between gap-2 rounded border border-white/10 bg-black/20 px-2 py-1">
+
                               <span className="text-xs text-neutral-200 truncate">
+
                                 {preset.name}
+
                                 {builtIn ? <span className="ml-1 text-[10px] text-neutral-500">(기본)</span> : null}
+
                               </span>
+
                               <div className="flex items-center gap-1">
+
                                 <button
+
                                   type="button"
+
                                   className={`px-2 py-0.5 rounded text-xs ${state.donorRankingsPresetId === preset.id ? "bg-emerald-700" : "bg-neutral-700 hover:bg-neutral-600"}`}
+
                                   onClick={() => applyDonorRankingsPreset(preset.id)}
+
                                 >
+
                                   {state.donorRankingsPresetId === preset.id ? "적용중" : "적용"}
+
                                 </button>
+
                                 {!builtIn ? (
+
                                   <button
+
                                     type="button"
+
                                     className="px-2 py-0.5 rounded text-xs bg-red-900/80 hover:bg-red-800"
+
                                     onClick={() => deleteDonorRankingsPreset(preset.id)}
+
                                   >
+
                                     삭제
+
                                   </button>
+
                                 ) : null}
+
                               </div>
+
                             </div>
+
                           );
+
                         })
+
                       )}
+
                     </div>
+
                   </div>
+
                   <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+
                     <span>후원 출력 알림:</span>
+
                     <code className="text-neutral-300 break-all">
+
                       /overlay/donation-alert?u={overlayUserId}&host=obs&overlayAllowSse=1
+
                     </code>
+
                     <button
+
                       type="button"
+
                       className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donation-alert" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+
                       onClick={() => {
+
                         const u = buildDonationAlertUrl(overlayUserId);
+
                         void copyUrl(u, "dash-donation-alert");
+
                       }}
+
                     >
+
                       {copiedId === "dash-donation-alert" ? "복사됨!" : "URL 복사"}
+
                     </button>
+
                     <button
+
                       type="button"
+
                       className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donation-alert-test" ? "bg-emerald-600" : "bg-amber-800/90 hover:bg-amber-700"}`}
+
                       onClick={() => {
+
                         const u = buildDonationAlertUrl(overlayUserId, { test: true });
+
                         void copyUrl(u, "dash-donation-alert-test");
+
                       }}
+
                     >
+
                       {copiedId === "dash-donation-alert-test" ? "복사됨!" : "테스트 URL"}
+
                     </button>
+
                     <span className="text-[10px] text-neutral-600 w-full">
+
                       계좌·투네이션 후원 시 후원자→멤버 / 금액 / 기여도(원=점) 카드를 OBS에 표시합니다. 별도 브라우저 소스로 추가하세요.
+
                     </span>
+
                   </div>
+
                   <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+
                     <span>OBS URL (짧게):</span>
+
                     <code className="text-neutral-300 break-all">
+
                       /overlay/donor-rankings?u={overlayUserId}&host=obs
+
                     </code>
+
                     <button
+
                       type="button"
+
                       className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donor-rankings" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+
                       onClick={() => {
+
                         const u = buildDonorRankingsUrl();
+
                         void copyUrl(u, "dash-donor-rankings");
+
                       }}
+
                     >
+
                       {copiedId === "dash-donor-rankings" ? "복사됨!" : "URL 복사"}
+
                     </button>
+
                   </div>
+
                   <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+
                     <span>전체 순위 (세로):</span>
+
                     <code className="text-neutral-300 break-all">
+
                       /overlay/donor-rankings/full?u={overlayUserId}&host=obs
+
                     </code>
+
                     <button
+
                       type="button"
+
                       className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donor-rankings-full" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+
                       onClick={() => {
+
                         const u = buildDonorRankingsUrl({ full: true });
+
                         void copyUrl(u, "dash-donor-rankings-full");
+
                       }}
+
                     >
+
                       {copiedId === "dash-donor-rankings-full" ? "복사됨!" : "URL 복사"}
+
                     </button>
+
                   </div>
+
                   <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+
                     <span>테스트 URL:</span>
+
                     <code className="text-neutral-300 break-all">
+
                       /overlay/donor-rankings?u={overlayUserId}&host=obs&test=true
+
                     </code>
+
                     <button
+
                       type="button"
+
                       className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donor-rankings-test" ? "bg-emerald-600" : "bg-amber-800/90 hover:bg-amber-700"}`}
+
                       onClick={() => {
+
                         const u = buildDonorRankingsUrl({ test: true });
+
                         void copyUrl(u, "dash-donor-rankings-test");
+
                       }}
+
                     >
+
                       {copiedId === "dash-donor-rankings-test" ? "복사됨!" : "테스트 URL 복사"}
+
                     </button>
+
                   </div>
+
                   <div className="rounded border border-white/10 bg-black/20 px-3 py-2">
+
                     <div className="text-xs text-neutral-300 mb-1">
+
                       후원 리스트 패널 투명도(헤더·목록·행 공통 · 중간 구간은 덜 어둡게)
+
                     </div>
+
                     <div className="flex items-center gap-2">
+
                       <input
+
                         type="range"
+
                         min={0}
+
                         max={100}
+
                         value={state.donorRankingsTheme.overlayOpacity}
+
                         onChange={(e) => updateDonorRankingsTheme({ overlayOpacity: Number(e.target.value) })}
+
                         className="flex-1"
+
                       />
+
                       <div className="w-14 text-right text-xs text-neutral-200">{state.donorRankingsTheme.overlayOpacity}%</div>
+
                     </div>
+
                   </div>
+
                   <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+
                     <span>OBS 크기(%)</span>
+
                     <input
+
                       className="w-20 rounded bg-neutral-900/80 border border-white/10 px-2 py-1 text-sm text-right"
+
                       value={String(getDonorRankingsZoomPct())}
+
                       onChange={(e) => {
+
                         const n = parseInt(e.target.value.replace(/[^\d]/g, "") || "100", 10);
+
                         updateDonorRankingsTheme({
+
                           zoomPct: Math.max(30, Math.min(300, Number.isFinite(n) ? n : 100)),
+
                         });
+
                       }}
+
                     />
+
                     <span className="text-neutral-500">30~300 (서버 저장 · URL에 넣지 않음)</span>
+
                   </div>
+
                   <div className="text-[11px] text-emerald-200/90 rounded border border-emerald-500/25 bg-emerald-950/30 px-3 py-2 leading-relaxed">
+
                     OBS 브라우저 소스는 <code className="text-emerald-100">?u=계정&amp;host=obs</code>만 쓰면 됩니다.
+
                     제목·색·크기·투명도·줌 등 모든 옵션은 이 페이지에서 저장되며 오버레이가 서버에서 불러옵니다.
+
                   </div>
+
                   <p className="text-[11px] text-neutral-500">
+
                     배경 GIF·본문 이미지는{" "}
+
                     <button
+
                       type="button"
+
                       className="text-sky-400 underline"
+
                       onClick={() => moveToSection("overlay", "overlay-settings")}
+
                     >
+
                       오버레이 설정
+
                     </button>
+
                     {" "}탭 「오버레이 배경 · 본문 이미지」에서 설정합니다.
+
                   </p>
+
                 </div>
-              </div>
+
+              </AdminCollapsibleBlock>
               {!sigSalesModalOpen ? (
                 <SigSalesCompactCard
                   sigCount={sigInventoryCount}
@@ -12920,14 +13906,12 @@ export default function AdminPage() {
                   </div>
                 </div>
               ) : null}
-              <div id="timer-control-section" className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <h3 className="text-base font-semibold">타이머 제어</h3>
-                    <p className="text-xs text-neutral-400 mt-1">
-                      일반 타이머(generalTimer)와 대전 타이머(matchTimer)는 분리되어 있습니다. 여기서는 일반 타이머만 ±분·일시정지·글꼴·오버레이 ON/OFF를 조정합니다. 시그·식사 대전 타이머는 각 대전 패널의 「대전 오버레이 타이머」에서 제어하세요.
-                    </p>
-                  </div>
+              <AdminCollapsibleBlock
+                id="timer-control-section"
+                title="타이머 제어"
+                className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3"
+                defaultOpen={false}
+                headerAside={
                   <button
                     type="button"
                     className="shrink-0 rounded border border-violet-500/40 bg-violet-950/50 px-3 py-1.5 text-xs font-semibold text-violet-100 hover:bg-violet-900/60"
@@ -12936,7 +13920,11 @@ export default function AdminPage() {
                   >
                     별도 창에서 열기
                   </button>
-                </div>
+                }
+              >
+                    <p className="text-xs text-neutral-400">
+                      일반 타이머(generalTimer)와 대전 타이머(matchTimer)는 분리되어 있습니다. 여기서는 일반 타이머만 ±분·일시정지·글꼴·오버레이 ON/OFF를 조정합니다. 시그·식사 대전 타이머는 각 대전 패널의 「대전 오버레이 타이머」에서 제어하세요.
+                    </p>
                 {([{ key: "generalTimer", flag: "general" as const, label: "일반 타이머" }] as const).map((timerDef) => {
                   const timer = state[timerDef.key];
                   const timerStyle = state.timerDisplayStyles?.[timerDef.flag] || {
@@ -13342,14 +14330,17 @@ export default function AdminPage() {
                     </div>
                   );
                 })}
-              </div>
-            </section>
+              </AdminCollapsibleBlock>
+            </AdminCollapsibleSection>
             )}
 
             {isAdminNavSectionVisible("donor") && (
             <>
-            <section id="donor-management" className={`${panelCardClass} p-4 md:p-6`}>
-              <h2 className="text-lg font-semibold mb-3">후원자 기록부</h2>
+            <AdminCollapsibleSection
+              id="donor-management"
+              title="후원자 기록부"
+              className={panelCardClass}
+            >
               <div className="flex flex-wrap items-center gap-2 mb-3">
                 <span className="text-xs text-neutral-400">금액 표시</span>
                 <button
@@ -14064,10 +15055,13 @@ export default function AdminPage() {
                   />
                 ) : null}
               </div>
-            </section>
+            </AdminCollapsibleSection>
 
-            <section id="contribution-management" className={`${panelCardClass} p-4 md:p-6`}>
-              <h2 className="text-lg font-semibold mb-3">기여도 기록부</h2>
+            <AdminCollapsibleSection
+              id="contribution-management"
+              title="기여도 기록부"
+              className={panelCardClass}
+            >
               <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr_auto_auto_auto] gap-3">
                 <select
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
@@ -14107,10 +15101,13 @@ export default function AdminPage() {
                 </button>
               </div>
               <div className="text-sm text-neutral-400 mt-2">후원 입력과 동일하게 건별 로그를 남기며, 로그에서 되돌리기/삭제할 수 있습니다.</div>
-            </section>
+            </AdminCollapsibleSection>
 
-            <section id="restroom-management" className={`${panelCardClass} p-4 md:p-6`}>
-              <h2 className="text-lg font-semibold mb-3">화장실 기록부</h2>
+            <AdminCollapsibleSection
+              id="restroom-management"
+              title="화장실 기록부"
+              className={panelCardClass}
+            >
               <p className="text-sm text-neutral-400 mb-3">
                 엑셀표「화장실」열에만 반영됩니다. 후원·투네 자동 연동 없음 — 수동 차감/추가/무제한만 가능합니다.
                 차감 모드에서 횟수를 비우거나 0이면 해당 멤버 화장실을 0으로 초기화합니다. 무제한은 표에{" "}
@@ -14255,11 +15252,13 @@ export default function AdminPage() {
                   </tbody>
                 </table>
               </div>
-            </section>
+            </AdminCollapsibleSection>
 
-            <section id="territory-management" className={`${panelCardClass} p-4 md:p-6`}>
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-lg font-semibold">상류사회 · 영토 기록부</h2>
+            <AdminCollapsibleSection
+              id="territory-management"
+              title="상류사회 · 영토 기록부"
+              className={panelCardClass}
+              headerAside={
                 <button
                   type="button"
                   className="rounded border border-violet-500/40 bg-violet-950/50 px-3 py-1.5 text-xs font-semibold text-violet-100 hover:bg-violet-900/60"
@@ -14267,7 +15266,8 @@ export default function AdminPage() {
                 >
                   별도 창에서 열기
                 </button>
-              </div>
+              }
+            >
               <p className="text-sm text-neutral-400 mb-3">
                 후원·투네와 <strong className="text-neutral-300">자동 연동 없음</strong> — cm을 직접 추가/차감합니다.
                 영토 게이지 반영은 이 기록부에서만 합니다(후원 리스트 금액·영토 ON과 무관).
@@ -14384,14 +15384,7 @@ export default function AdminPage() {
                                     onClick={() => {
                                       requestConfirm("영토 로그 삭제", "이 기록을 삭제할까요?", () => {
                                         setState((prev: AppState) => {
-                                          let next: AppState = {
-                                            ...prev,
-                                            territoryLogs: (prev.territoryLogs || []).filter(
-                                              (x) => x.id !== log.id
-                                            ),
-                                            updatedAt: Date.now(),
-                                          };
-                                          next = syncHighSocietyMemberWidthSnapshotInState(next);
+                                          const next = removeTerritoryLogFromAppState(prev, log.id);
                                           persistState(next, {
                                             omitDonationFields: true,
                                             highSocietySettingsOnly: true,
@@ -14420,10 +15413,14 @@ export default function AdminPage() {
                   </div>
                 </>
               )}
-            </section>
+            </AdminCollapsibleSection>
 
-            <section className={`${panelCardClass} p-4 md:p-6 ${simpleMode ? "hidden" : ""}`}>
-              <h2 className="text-lg font-semibold mb-3">채팅용 복사 & 보안</h2>
+            <AdminCollapsibleSection
+              id="chat-copy-security"
+              title="채팅용 복사 & 보안"
+              className={`${panelCardClass} ${simpleMode ? "hidden" : ""}`}
+              defaultOpen={false}
+            >
               <textarea
                 className="w-full min-h-[100px] px-3 py-2 rounded bg-neutral-900/80 border border-white/10 font-mono"
                 value={chatDraft}
@@ -14448,11 +15445,14 @@ export default function AdminPage() {
               <div className="text-sm text-neutral-400 mt-2">
                 HTTPS 환경에서 클립보드 API 사용. 실패 시 폴백 사용.
               </div>
-            </section>
+            </AdminCollapsibleSection>
 
-            <section id="donor-list" className={`${panelCardClass} p-4 md:p-6 ${simpleMode ? "hidden" : ""}`}>
+            <AdminCollapsibleSection
+              id="donor-list"
+              title="후원자 리스트"
+              className={`${panelCardClass} ${simpleMode ? "hidden" : ""}`}
+            >
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-lg font-semibold">후원자 리스트</h2>
                 <button
                   type="button"
                   className="px-3 py-1.5 rounded bg-violet-800 hover:bg-violet-700 text-sm"
@@ -14727,10 +15727,14 @@ export default function AdminPage() {
                 {" "}
                 단체 후원은 리스트 <strong className="text-violet-300">나누기</strong>로 균등 분배하거나, 멤버·금액을 나눠 <strong className="text-neutral-300">합산 추가</strong>로 수동 입력하세요.
               </div>
-            </section>
+            </AdminCollapsibleSection>
 
-            <section className={`${panelCardClass} p-4 md:p-6 ${simpleMode ? "hidden" : ""}`}>
-              <h2 className="text-lg font-semibold mb-3">기여도 로그</h2>
+            <AdminCollapsibleSection
+              id="contribution-logs"
+              title="기여도 로그"
+              className={`${panelCardClass} ${simpleMode ? "hidden" : ""}`}
+              defaultOpen={false}
+            >
               <div className="max-h-[260px] overflow-auto pr-1">
                 <table className="w-full text-sm">
                   <thead>
@@ -14814,10 +15818,14 @@ export default function AdminPage() {
                   </tbody>
                 </table>
               </div>
-            </section>
+            </AdminCollapsibleSection>
 
-            <section className={`${panelCardClass} p-4 md:p-6 ${simpleMode ? "hidden" : ""}`}>
-              <h2 className="text-lg font-semibold mb-3">후원자별 누적 합계</h2>
+            <AdminCollapsibleSection
+              id="donor-cumulative-totals"
+              title="후원자별 누적 합계"
+              className={`${panelCardClass} ${simpleMode ? "hidden" : ""}`}
+              defaultOpen={false}
+            >
               <div className="max-h-[240px] overflow-auto pr-1">
                 <table className="w-full text-sm">
                   <thead>
@@ -14851,11 +15859,15 @@ export default function AdminPage() {
                   </tbody>
                 </table>
               </div>
-            </section>
+            </AdminCollapsibleSection>
 
-            <section className={`${panelCardClass} p-4 md:p-6`}>
+            <AdminCollapsibleSection
+              id="mission-board"
+              title="미션 전광판"
+              className={panelCardClass}
+              defaultOpen={false}
+            >
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold">미션 전광판</h2>
                 <div className="flex items-center gap-2">
                   <button
                     className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-xs disabled:opacity-50"
@@ -14993,20 +16005,23 @@ export default function AdminPage() {
                 </div>
               )}
               <div className="text-xs text-neutral-400 mt-2">오버레이 프리셋에서 &quot;미션 전광판&quot;을 ON하면 우측→좌측 흐름으로 방송 화면에 표시됩니다.</div>
-            </section>
+            </AdminCollapsibleSection>
             </>
             )}
 
             {isAdminNavSectionVisible("overlay") && (
-            <section id="overlay-settings" className={`${panelCardClass} p-4 md:p-6`}>
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold">오버레이 관리 (다중)</h2>
+            <AdminCollapsibleSection
+              id="overlay-settings"
+              title="오버레이 관리 (다중)"
+              className={panelCardClass}
+              headerAside={
                 <div className="flex gap-1 flex-wrap">
                   {PRESET_TEMPLATES.map((t) => (
                     <button key={t.name} className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white" onClick={() => addPreset(t.name, t.preset)}>+ {t.name}</button>
                   ))}
                 </div>
-              </div>
+              }
+            >
               <p className="text-xs text-neutral-400 mb-3">각 오버레이는 독립 URL을 가집니다. OBS/Prism에 브라우저 소스로 각각 추가하세요.</p>
               <p className="text-xs text-neutral-500 mb-3">
                 복사되는 URL은 <span className="text-neutral-300">서버(Redis)에 저장된 최신 상태</span>를 실시간으로 불러옵니다. 아래 프레임 미리보기만 편집 시점 스냅샷을 쓸 수 있습니다.
@@ -18803,15 +19818,18 @@ export default function AdminPage() {
                   );
                 })}
               </div>
-            </section>
+            </AdminCollapsibleSection>
             )}
 
             {isAdminNavSectionVisible("settlement") && (
-            <section className={`${panelCardClass} p-4 md:p-6`}>
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                <h2 className="text-lg font-semibold">방송 종료 정산</h2>
+            <AdminCollapsibleSection
+              id="settlement-finalize"
+              title="방송 종료 정산"
+              className={panelCardClass}
+              headerAside={
                 <Link className="text-sm text-neutral-300 underline" href="/settlements">정산 기록 보기</Link>
-              </div>
+              }
+            >
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   className="flex-1 min-w-[220px] px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
@@ -18991,13 +20009,15 @@ export default function AdminPage() {
                   </span>
                 ) : null}
               </div>
-            </section>
+            </AdminCollapsibleSection>
             )}
 
             {isAdminNavSectionVisible("logs") && (
-            <section id="logs-data" className={`${panelCardClass} p-4 md:p-6`}>
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">데이터</h2>
+            <AdminCollapsibleSection
+              id="logs-data"
+              title="데이터"
+              className={panelCardClass}
+              headerAside={
                 <div className="flex gap-2">
                   <button
                     className="px-3 py-2 rounded bg-[#ef4444] hover:bg-[#dc2626] text-white"
@@ -19006,7 +20026,8 @@ export default function AdminPage() {
                     정산 리셋(로그 기록)
                   </button>
                 </div>
-              </div>
+              }
+            >
               <div className="text-sm text-neutral-400 mt-2">
                 3분마다 상태를 자동 저장합니다. 다른 탭과 실시간 동기화됩니다. 마지막 저장{" "}
                 <span className="text-neutral-200"><ClientTime ts={state.updatedAt} /></span>
@@ -19071,7 +20092,7 @@ export default function AdminPage() {
                   </div>
                 ))}
               </div>
-            </section>
+            </AdminCollapsibleSection>
             )}
           </div>
         </div>
