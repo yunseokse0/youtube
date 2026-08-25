@@ -549,7 +549,7 @@ export type SettlementUiOptions = {
   vatIncluded: boolean;
   taxInvoiceIssued: boolean;
   useMemberRatioOverrides: boolean;
-  memberRatioInputs: Record<string, { account: string; toon: string }>;
+  memberRatioInputs: Record<string, { account: string; toon: string; taxInvoice?: boolean }>;
   omitTreasuryFromSettlement: boolean;
   includeTreasuryInFullStatement: boolean;
 };
@@ -660,6 +660,8 @@ export type SettlementMemberRatioOverrides = Record<
   {
     accountRatio?: number;
     toonRatio?: number;
+    /** 멤버별 세금계산서 발행. 미지정이면 정산 공통 taxInvoiceIssued */
+    taxInvoiceIssued?: boolean;
   }
 >;
 
@@ -684,6 +686,8 @@ export type SettlementMemberResult = {
   gross: number;
   fee: number;
   net: number;
+  /** 멤버별 세금계산서. 있으면 공통 설정보다 우선 */
+  taxInvoiceIssued?: boolean;
 };
 
 export type SettlementRecord = {

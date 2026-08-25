@@ -19,12 +19,13 @@ export function normalizeSettlementUiOptions(
   input: Partial<SettlementUiOptions> | null | undefined
 ): SettlementUiOptions {
   const defaults = defaultSettlementUiOptions();
-  const memberRatioInputs: Record<string, { account: string; toon: string }> = {};
+  const memberRatioInputs: Record<string, { account: string; toon: string; taxInvoice?: boolean }> = {};
   if (input?.memberRatioInputs && typeof input.memberRatioInputs === "object") {
     Object.entries(input.memberRatioInputs).forEach(([memberId, value]) => {
       memberRatioInputs[memberId] = {
         account: typeof value?.account === "string" ? value.account : "",
         toon: typeof value?.toon === "string" ? value.toon : "",
+        ...(typeof value?.taxInvoice === "boolean" ? { taxInvoice: value.taxInvoice } : {}),
       };
     });
   }

@@ -12,6 +12,16 @@ function scoreTextStyle(): CSSProperties {
   };
 }
 
+function memberNameTextStyle(): CSSProperties {
+  return {
+    color: "#ffffff",
+    WebkitTextStroke: "0.65px rgba(0,0,0,0.95)",
+    paintOrder: "stroke fill",
+    textShadow:
+      "0 0 1px rgba(0,0,0,1), 0 1px 3px rgba(0,0,0,0.95), 1px 0 1px rgba(0,0,0,0.8), -1px 0 1px rgba(0,0,0,0.8)",
+  };
+}
+
 export default function BattleTeamScoreHeader({
   leftName,
   leftScore,
@@ -68,7 +78,7 @@ export default function BattleTeamScoreHeader({
       ? gapLabel.trim()
       : formatScore(scoreGap);
   const barH = compact ? "h-12 sm:h-14" : "h-14 sm:h-16";
-  const nameSize = compact ? "text-xs sm:text-sm" : "text-sm sm:text-base";
+  const nameSize = compact ? "text-sm sm:text-base" : "text-base sm:text-lg";
   const gapSize = compact ? "text-[10px] sm:text-xs" : "text-xs sm:text-sm";
   const leftLabel = formatScore(leftScore);
   const rightLabel = formatScore(rightScore);
@@ -159,18 +169,20 @@ export default function BattleTeamScoreHeader({
       <div className={`grid grid-cols-2 gap-2 px-0.5 ${gapRow ? "mt-1" : "mt-1.5"}`}>
         <div className="flex justify-start">
           <span
-            className={`inline-flex max-w-full truncate rounded-md px-2.5 py-0.5 font-bold text-white shadow-sm ${nameSize} ${
-              leftLeading ? "bg-emerald-600/95 ring-1 ring-white/20" : "bg-neutral-800/90 ring-1 ring-white/10"
+            className={`inline-flex max-w-full truncate px-0.5 py-0.5 font-black tracking-tight ${nameSize} ${
+              leftLeading ? "text-emerald-100" : "text-white"
             }`}
+            style={memberNameTextStyle()}
           >
             {leftName}
           </span>
         </div>
         <div className="flex justify-end">
           <span
-            className={`inline-flex max-w-full truncate rounded-md px-2.5 py-0.5 font-bold text-white shadow-sm ${nameSize} ${
-              rightLeading ? "bg-emerald-600/95 ring-1 ring-white/20" : "bg-neutral-800/90 ring-1 ring-white/10"
+            className={`inline-flex max-w-full truncate px-0.5 py-0.5 font-black tracking-tight ${nameSize} ${
+              rightLeading ? "text-emerald-100" : "text-white"
             }`}
+            style={memberNameTextStyle()}
           >
             {rightName}
           </span>

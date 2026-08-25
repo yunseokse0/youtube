@@ -8,6 +8,7 @@ import {
   computeExcelWithholding,
   computePaymentChannelBreakdown,
   computeTaxInvoiceFinalAmount,
+  resolveMemberTaxInvoiceIssued,
   PAYMENT_FEE_DEFAULTS,
   roundWon,
   type PaymentFeeRates,
@@ -93,7 +94,7 @@ export function computeMemberPaymentStatement(
   });
   const taxInvoice = computeTaxInvoiceFinalAmount(
     b.payout,
-    Boolean(record.taxInvoiceIssued),
+    resolveMemberTaxInvoiceIssued(record, member),
     record.taxInvoiceVatRate
   );
 
@@ -687,6 +688,7 @@ export function buildMemberPaymentStatementHtml(
   options?: PaymentStatementPdfOptions
 ): string {
   const s = computeMemberPaymentStatement(record, member);
+  const taxInvoiceIssued = resolveMemberTaxInvoiceIssued(record, member);
   const issuer = options?.issuerLine ?? PAYMENT_STATEMENT_DEFAULTS.issuerLine;
   const thanks = options?.thankYouMessage ?? PAYMENT_STATEMENT_DEFAULTS.thankYouMessage;
   const withholdPct = (s.withholdingRate * 100).toFixed(1).replace(/\.0$/, "");
@@ -987,7 +989,7 @@ export function buildMemberPaymentStatementHtml(
 
     <table class="total-table">
       ${
-        record.taxInvoiceIssued
+        taxInvoiceIssued
           ? `<tr>
         <td class="left" rowspan="4">총 정산 금액</td>
         <td class="cap">(A+B) − 원천세 ${escapeHtml(withholdPct)}%</td>

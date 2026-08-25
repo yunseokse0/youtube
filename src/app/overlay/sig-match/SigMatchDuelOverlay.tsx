@@ -36,6 +36,15 @@ const sigOutlinedWhiteTextStyle: CSSProperties = {
     "0 0 1px rgba(0,0,0,1), 0 1px 2px rgba(0,0,0,0.9), 1px 0 1px rgba(0,0,0,0.75), -1px 0 1px rgba(0,0,0,0.75)",
 };
 
+/** 멤버명 — 엑셀표 수준으로 더 굵은 외곽선 */
+const sigMemberNameOutlineStyle: CSSProperties = {
+  color: "#ffffff",
+  WebkitTextStroke: "0.75px rgba(0,0,0,0.95)",
+  paintOrder: "stroke fill",
+  textShadow:
+    "0 0 1px rgba(0,0,0,1), 0 1px 3px rgba(0,0,0,0.95), 1px 0 1px rgba(0,0,0,0.85), -1px 0 1px rgba(0,0,0,0.85), 0 -1px 1px rgba(0,0,0,0.85)",
+};
+
 function sigGaugeInBarScoreStyle(leading: boolean): CSSProperties {
   return {
     ...sigOutlinedWhiteTextStyle,
@@ -120,12 +129,13 @@ function SigVsBarCenterLabel({
 }
 
 function sigTeamBoxLeadingClasses(_tint: "pink" | "sky" | "amber", leading: boolean): string {
+  /** 회색 패널 없음 — 선두만 얇은 링 */
   return leading
-    ? "border-white/30 bg-neutral-950/92 ring-1 ring-emerald-400/50 shadow-[0_2px_10px_rgba(0,0,0,0.45)]"
-    : "border-white/20 bg-neutral-950/88 ring-1 ring-white/15 shadow-[0_2px_8px_rgba(0,0,0,0.35)]";
+    ? "border-transparent bg-transparent ring-1 ring-emerald-400/55"
+    : "border-transparent bg-transparent ring-0";
 }
 
-const sigMemberNameStyle = sigOutlinedWhiteTextStyle;
+const sigMemberNameStyle = sigMemberNameOutlineStyle;
 const sigMemberAmountStyle = sigOutlinedWhiteTextStyle;
 
 function SigCleanTimerPill({
@@ -205,7 +215,7 @@ function SigTeamMemberBox({
   align,
   nameClass,
   scoreClass = "text-white/95",
-  borderClass = "border-white/15",
+  borderClass = "",
   teamLeading = false,
   teamTint = "pink",
 }: {
@@ -229,26 +239,26 @@ function SigTeamMemberBox({
       data-sig-team-box="true"
       data-sig-team-leading={teamLeading ? "true" : "false"}
       aria-label={teamLeading ? "선두 팀" : undefined}
-      className={`w-full min-w-[9rem] max-w-[13rem] rounded-lg border px-2.5 py-2 backdrop-blur-md transition-colors sm:min-w-[10rem] sm:max-w-[14rem] sm:px-3 ${borderClass} ${sigTeamBoxLeadingClasses(teamTint, teamLeading)} ${boxPos}`}
+      className={`w-full min-w-[9rem] max-w-[14rem] bg-transparent px-1 py-0.5 transition-colors sm:min-w-[10rem] sm:max-w-[15rem] sm:px-1.5 ${borderClass} ${sigTeamBoxLeadingClasses(teamTint, teamLeading)} ${boxPos}`}
     >
-      <ul className="flex flex-col gap-1">
+      <ul className="flex flex-col gap-1.5">
         {members.map((m, idx) => {
           const amountLabel = formatSigMatchScoreLabel(m.score, scoringMode);
           return (
             <li
               key={m.memberId}
-              className={`flex min-w-0 ${rowDir} items-center gap-2 ${rowJustify} ${
-                idx > 0 ? "border-t border-white/12 pt-1" : ""
+              className={`flex min-w-0 ${rowDir} items-center gap-2.5 ${rowJustify} ${
+                idx > 0 ? "border-t border-white/20 pt-1.5" : ""
               }`}
             >
               <span
-                className={`min-w-0 flex-1 truncate text-sm font-bold leading-snug sm:text-[15px] ${nameClass}`}
+                className={`min-w-0 flex-1 truncate text-base font-black leading-snug tracking-tight sm:text-lg ${nameClass}`}
                 style={sigMemberNameStyle}
               >
                 {m.name}
               </span>
               <span
-                className="max-w-[6rem] shrink-0 truncate whitespace-nowrap text-xs font-bold tabular-nums sm:max-w-[6.5rem] sm:text-sm"
+                className="max-w-[7rem] shrink-0 truncate whitespace-nowrap text-sm font-black tabular-nums sm:max-w-[7.5rem] sm:text-base"
                 style={sigMemberAmountStyle}
               >
                 {amountLabel}
@@ -931,7 +941,6 @@ export default function SigMatchDuelOverlay({
                   scoringMode={scoringMode}
                   align="left"
                   nameClass=""
-                  borderClass="border-rose-400/35"
                   teamLeading={Boolean(dualBar?.leftLeading)}
                   teamTint="pink"
                 />
@@ -940,7 +949,6 @@ export default function SigMatchDuelOverlay({
                   scoringMode={scoringMode}
                   align="right"
                   nameClass=""
-                  borderClass="border-sky-400/35"
                   teamLeading={Boolean(dualBar?.rightLeading)}
                   teamTint="sky"
                 />
@@ -980,13 +988,6 @@ export default function SigMatchDuelOverlay({
                         i === 0 ? "text-rose-100" : i === 1 ? "text-amber-100" : "text-sky-100"
                       }
                       scoreClass="text-white/85"
-                      borderClass={
-                        i === 0
-                          ? "border-rose-300/25"
-                          : i === 1
-                            ? "border-amber-300/25"
-                            : "border-sky-300/25"
-                      }
                       teamLeading={Boolean(tripleBar.leading[i])}
                       teamTint={i === 0 ? "pink" : i === 1 ? "amber" : "sky"}
                     />

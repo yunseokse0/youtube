@@ -11,6 +11,17 @@ function scoreTextStyle(): CSSProperties {
   };
 }
 
+/** 엑셀 멤버명 수준 — 굵기 + 외곽선으로 OBS 가독성 */
+function memberNameTextStyle(): CSSProperties {
+  return {
+    color: "#ffffff",
+    WebkitTextStroke: "0.65px rgba(0,0,0,0.95)",
+    paintOrder: "stroke fill",
+    textShadow:
+      "0 0 1px rgba(0,0,0,1), 0 1px 3px rgba(0,0,0,0.95), 1px 0 1px rgba(0,0,0,0.8), -1px 0 1px rgba(0,0,0,0.8)",
+  };
+}
+
 /**
  * 대전 합산 게이지 — 빨강|파랑 한 줄로 붙이고 중앙 VS.
  * 타이머는 바 위, 선두 차액은 바 아래(0이어도 표시), 멤버명은 좌·우 하단.
@@ -62,14 +73,14 @@ export default function BattleTeamColumnBoard({
   const rightLeading = rightScore > leftScore;
 
   const barH = compact ? "h-12 sm:h-14" : "h-14 sm:h-16";
-  const nameSize = compact ? "text-xs sm:text-sm" : "text-sm sm:text-base";
+  const nameSize = compact ? "text-sm sm:text-base" : "text-base sm:text-lg";
   const gapSize = compact ? "text-[10px] sm:text-xs" : "text-xs sm:text-sm";
   const gaugeMaxFontPx = compact ? 16 : 20;
   const leftLabel = formatScore(leftScore);
   const rightLabel = formatScore(rightScore);
 
   return (
-    <div className="studio-glass-panel w-full overflow-hidden p-1.5" data-battle-team-column-board="true" data-battle-vs-style="attached">
+    <div className="w-full overflow-visible bg-transparent p-0" data-battle-team-column-board="true" data-battle-vs-style="attached">
       {timerSlot ? <div className="mb-1 flex justify-center">{timerSlot}</div> : null}
 
       <div className="relative">
@@ -143,9 +154,10 @@ export default function BattleTeamColumnBoard({
         <div className="flex justify-start">
           {leftMemberLabel ? (
             <span
-              className={`inline-flex max-w-full truncate rounded-md px-2.5 py-0.5 font-bold text-white shadow-sm ${nameSize} ${
-                leftLeading ? "bg-emerald-600/95 ring-1 ring-white/20" : "bg-neutral-800/90 ring-1 ring-white/10"
+              className={`inline-flex max-w-full truncate px-0.5 py-0.5 font-black tracking-tight ${nameSize} ${
+                leftLeading ? "text-emerald-100" : "text-white"
               }`}
+              style={memberNameTextStyle()}
               data-battle-team-names="left"
             >
               {leftMemberLabel}
@@ -155,9 +167,10 @@ export default function BattleTeamColumnBoard({
         <div className="flex justify-end">
           {rightMemberLabel ? (
             <span
-              className={`inline-flex max-w-full truncate rounded-md px-2.5 py-0.5 font-bold text-white shadow-sm ${nameSize} ${
-                rightLeading ? "bg-emerald-600/95 ring-1 ring-white/20" : "bg-neutral-800/90 ring-1 ring-white/10"
+              className={`inline-flex max-w-full truncate px-0.5 py-0.5 font-black tracking-tight ${nameSize} ${
+                rightLeading ? "text-emerald-100" : "text-white"
               }`}
+              style={memberNameTextStyle()}
               data-battle-team-names="right"
             >
               {rightMemberLabel}

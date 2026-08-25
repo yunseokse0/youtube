@@ -1026,7 +1026,9 @@ export default function AdminPage() {
   const [omitTreasuryFromSettlement, setOmitTreasuryFromSettlement] = useState(false);
   const [includeTreasuryInFullStatement, setIncludeTreasuryInFullStatement] = useState(false);
   const [useMemberRatioOverrides, setUseMemberRatioOverrides] = useState(false);
-  const [memberRatioInputs, setMemberRatioInputs] = useState<Record<string, { account: string; toon: string }>>({});
+  const [memberRatioInputs, setMemberRatioInputs] = useState<
+    Record<string, { account: string; toon: string; taxInvoice?: boolean }>
+  >({});
   const settlementUiHydratingRef = useRef(true);
   const lastPersistedSettlementUiRef = useRef("");
   const presetStorageKey = useMemo(() => overlayPresetsStorageKey(user?.id), [user?.id]);
@@ -9196,12 +9198,13 @@ export default function AdminPage() {
           const input = memberRatioInputs[m.id];
           const account = parseOptionalPct(input?.account || "");
           const toon = parseOptionalPct(input?.toon || "");
-          if (account !== null || toon !== null) {
-            acc[m.id] = {
-              ...(account !== null ? { accountRatio: account } : {}),
-              ...(toon !== null ? { toonRatio: toon } : {}),
-            };
-          }
+          const taxInvoice =
+            typeof input?.taxInvoice === "boolean" ? input.taxInvoice : taxInvoiceIssued;
+          acc[m.id] = {
+            ...(account !== null ? { accountRatio: account } : {}),
+            ...(toon !== null ? { toonRatio: toon } : {}),
+            taxInvoiceIssued: taxInvoice,
+          };
           return acc;
         }, {})
       : undefined;
@@ -18851,6 +18854,7 @@ export default function AdminPage() {
                           <th className="p-2 text-left">멤버</th>
                           <th className="p-2 text-left">계좌 비율 %</th>
                           <th className="p-2 text-left">투네 비율 %</th>
+                          <th className="p-2 text-left">세금계산서</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -18869,6 +18873,7 @@ export default function AdminPage() {
                                     [m.id]: {
                                       account: nextValue,
                                       toon: prev[m.id]?.toon ?? "",
+                                      taxInvoice: prev[m.id]?.taxInvoice ?? taxInvoiceIssued,
                                     },
                                   }));
                                 }}
@@ -18886,10 +18891,43 @@ export default function AdminPage() {
                                     [m.id]: {
                                       account: prev[m.id]?.account ?? "",
                                       toon: nextValue,
+                                      taxInvoice: prev[m.id]?.taxInvoice ?? taxInvoiceIssued,
                                     },
                                   }));
                                 }}
                               />
+                            </td>
+                            <td className="p-2">
+                              <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  className="rounded border-white/20"
+                                  checked={Boolean(
+                                    memberRatioInputs[m.id]?.taxInvoice ?? taxInvoiceIssued
+                                  )}
+                                  onChange={(e) => {
+                                    setMemberRatioInputs((prev) => ({
+                                      ...prev,
+                                      [m.id]: {
+                                        account: prev[m.id]?.account ?? "",
+                                        toon: prev[m.id]?.toon ?? "",
+                                        taxInvoice: e.target.checked,
+                                      },
+                                    }));
+                                  }}
+                                />
+                                <span
+                                  className={
+                                    (memberRatioInputs[m.id]?.taxInvoice ?? taxInvoiceIssued)
+                                      ? "text-violet-300"
+                                      : "text-neutral-500"
+                                  }
+                                >
+                                  {(memberRatioInputs[m.id]?.taxInvoice ?? taxInvoiceIssued)
+                                    ? "발행"
+                                    : "미발행"}
+                                </span>
+                              </label>
                             </td>
                           </tr>
                         ))}

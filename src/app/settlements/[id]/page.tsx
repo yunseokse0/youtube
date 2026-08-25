@@ -92,11 +92,13 @@ export default function SettlementDetailPage() {
   const [taxRateInput, setTaxRateInput] = useState("");
   const [useMemberRatioOverrides, setUseMemberRatioOverrides] = useState(false);
   const [memberRatioInputs, setMemberRatioInputs] = useState<
-    Record<string, { account: string; toon: string }>
+    Record<string, { account: string; toon: string; taxInvoice: boolean }>
   >({});
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const donorEditDirtyRef = useRef(false);
+  /** 비율 UI 편집 중 — 폴링 setRecords 가 개별 비율 ON 토글을 다시 OFF로 덮지 않게 */
+  const ratioUiDirtyRef = useRef(false);
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
       .then((r) => r.json())
@@ -201,19 +203,27 @@ export default function SettlementDetailPage() {
   }, [user, detailMissing, record, detailRecovering, id, rawId]);
 
   useEffect(() => {
+    ratioUiDirtyRef.current = false;
+  }, [record?.id]);
+
+  useEffect(() => {
     if (!record) return;
+    if (ratioUiDirtyRef.current) return;
     setAccountRatioInput(String(Math.round((record.accountRatio || 0.7) * 1000) / 10));
     setToonRatioInput(String(Math.round((record.toonRatio || 0.6) * 1000) / 10));
     setTaxRateInput(String(Math.round((record.feeRate || 0.033) * 1000) / 10));
-    const inputs: Record<string, { account: string; toon: string }> = {};
+    const inputs: Record<string, { account: string; toon: string; taxInvoice: boolean }> = {};
     let anyOverride = false;
+    const defaultTax = Boolean(record.taxInvoiceIssued);
     for (const m of record.members || []) {
       const accDiff = Math.abs((m.accountRatio ?? record.accountRatio) - record.accountRatio) > 1e-9;
       const toonDiff = Math.abs((m.toonRatio ?? record.toonRatio) - record.toonRatio) > 1e-9;
-      if (accDiff || toonDiff) anyOverride = true;
+      const taxOverride = typeof m.taxInvoiceIssued === "boolean";
+      if (accDiff || toonDiff || taxOverride) anyOverride = true;
       inputs[m.memberId] = {
         account: accDiff ? String(Math.round((m.accountRatio || 0) * 1000) / 10) : "",
         toon: toonDiff ? String(Math.round((m.toonRatio || 0) * 1000) / 10) : "",
+        taxInvoice: taxOverride ? Boolean(m.taxInvoiceIssued) : defaultTax,
       };
     }
     setUseMemberRatioOverrides(anyOverride);
@@ -319,17 +329,19 @@ export default function SettlementDetailPage() {
         memberRatioOverrides = {};
         for (const m of record.members || []) {
           const input = memberRatioInputs[m.memberId];
-          if (!input) continue;
-          const account = input.account.trim()
+          const account = input?.account.trim()
             ? parseRatioPercent(input.account, accountRatio)
             : undefined;
-          const toon = input.toon.trim() ? parseRatioPercent(input.toon, toonRatio) : undefined;
-          if (account != null || toon != null) {
-            memberRatioOverrides[m.memberId] = {
-              ...(account != null ? { accountRatio: account } : {}),
-              ...(toon != null ? { toonRatio: toon } : {}),
-            };
-          }
+          const toon = input?.toon.trim() ? parseRatioPercent(input.toon, toonRatio) : undefined;
+          const taxInvoice =
+            typeof input?.taxInvoice === "boolean"
+              ? input.taxInvoice
+              : Boolean(record.taxInvoiceIssued);
+          memberRatioOverrides[m.memberId] = {
+            ...(account != null ? { accountRatio: account } : {}),
+            ...(toon != null ? { toonRatio: toon } : {}),
+            taxInvoiceIssued: taxInvoice,
+          };
         }
       } else {
         memberRatioOverrides = {};
@@ -343,6 +355,7 @@ export default function SettlementDetailPage() {
       setRecords(next);
       saveSettlementRecords(next, user.id);
       void saveSettlementRecordsToApi(next, user.id);
+      ratioUiDirtyRef.current = false;
     } finally {
       setRatioBusy(false);
     }
@@ -818,6 +831,7 @@ export default function SettlementDetailPage() {
           </div>
           <div className="text-xs text-neutral-400">
             · <span className="text-neutral-300">세금계산서 발행</span>: 원천세 차감 후 최종정산에 부가세 10%를 더해 입금액·PDF에 반영합니다.
+            멤버별 지정은 아래 「멤버별 개별 비율」ON 후 체크하세요(공통 체크는 기본값).
             {" · "}
             <span className="text-neutral-300">운영비</span>: 국고 멤버 후원을 정산 합계에서 제외합니다.
             {" · "}
@@ -842,24 +856,59 @@ export default function SettlementDetailPage() {
               className="w-[120px] px-3 py-2 rounded bg-black/30 border border-white/10 text-sm"
               placeholder="계좌 %"
               value={accountRatioInput}
-              onChange={(e) => setAccountRatioInput(e.target.value.replace(/[^\d.]/g, ""))}
+              onChange={(e) => {
+                ratioUiDirtyRef.current = true;
+                setAccountRatioInput(e.target.value.replace(/[^\d.]/g, ""));
+              }}
             />
             <input
               className="w-[120px] px-3 py-2 rounded bg-black/30 border border-white/10 text-sm"
               placeholder="투네 %"
               value={toonRatioInput}
-              onChange={(e) => setToonRatioInput(e.target.value.replace(/[^\d.]/g, ""))}
+              onChange={(e) => {
+                ratioUiDirtyRef.current = true;
+                setToonRatioInput(e.target.value.replace(/[^\d.]/g, ""));
+              }}
             />
             <input
               className="w-[120px] px-3 py-2 rounded bg-black/30 border border-white/10 text-sm"
               placeholder="원천세 %"
               value={taxRateInput}
-              onChange={(e) => setTaxRateInput(e.target.value.replace(/[^\d.]/g, ""))}
+              onChange={(e) => {
+                ratioUiDirtyRef.current = true;
+                setTaxRateInput(e.target.value.replace(/[^\d.]/g, ""));
+              }}
             />
             <button
               type="button"
               className={`px-2 py-1.5 rounded border text-xs ${useMemberRatioOverrides ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`}
-              onClick={() => setUseMemberRatioOverrides((v) => !v)}
+              onClick={() => {
+                ratioUiDirtyRef.current = true;
+                setUseMemberRatioOverrides((v) => {
+                  const next = !v;
+                  if (next && record) {
+                    const defaultTax = Boolean(record.taxInvoiceIssued);
+                    setMemberRatioInputs((prev) => {
+                      const merged = { ...prev };
+                      for (const m of record.members || []) {
+                        const cur = merged[m.memberId];
+                        merged[m.memberId] = {
+                          account: cur?.account || "",
+                          toon: cur?.toon || "",
+                          taxInvoice:
+                            typeof cur?.taxInvoice === "boolean"
+                              ? cur.taxInvoice
+                              : typeof m.taxInvoiceIssued === "boolean"
+                                ? m.taxInvoiceIssued
+                                : defaultTax,
+                        };
+                      }
+                      return merged;
+                    });
+                  }
+                  return next;
+                });
+              }}
             >
               멤버별 개별 비율 {useMemberRatioOverrides ? "ON" : "OFF"}
             </button>
@@ -872,6 +921,7 @@ export default function SettlementDetailPage() {
                     <th className="p-2 text-left">멤버</th>
                     <th className="p-2 text-left">계좌 %</th>
                     <th className="p-2 text-left">투네 %</th>
+                    <th className="p-2 text-left">세금계산서</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -883,15 +933,18 @@ export default function SettlementDetailPage() {
                           className="w-20 px-2 py-1 rounded bg-black/30 border border-white/10"
                           placeholder={accountRatioInput || "70"}
                           value={memberRatioInputs[m.memberId]?.account || ""}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            ratioUiDirtyRef.current = true;
                             setMemberRatioInputs((prev) => ({
                               ...prev,
                               [m.memberId]: {
                                 account: e.target.value.replace(/[^\d.]/g, ""),
                                 toon: prev[m.memberId]?.toon || "",
+                                taxInvoice:
+                                  prev[m.memberId]?.taxInvoice ?? Boolean(record.taxInvoiceIssued),
                               },
-                            }))
-                          }
+                            }));
+                          }}
                         />
                       </td>
                       <td className="p-2">
@@ -899,16 +952,50 @@ export default function SettlementDetailPage() {
                           className="w-20 px-2 py-1 rounded bg-black/30 border border-white/10"
                           placeholder={toonRatioInput || "60"}
                           value={memberRatioInputs[m.memberId]?.toon || ""}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            ratioUiDirtyRef.current = true;
                             setMemberRatioInputs((prev) => ({
                               ...prev,
                               [m.memberId]: {
                                 account: prev[m.memberId]?.account || "",
                                 toon: e.target.value.replace(/[^\d.]/g, ""),
+                                taxInvoice:
+                                  prev[m.memberId]?.taxInvoice ?? Boolean(record.taxInvoiceIssued),
                               },
-                            }))
-                          }
+                            }));
+                          }}
                         />
+                      </td>
+                      <td className="p-2">
+                        <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            className="rounded border-white/20"
+                            checked={Boolean(
+                              memberRatioInputs[m.memberId]?.taxInvoice ?? record.taxInvoiceIssued
+                            )}
+                            onChange={(e) => {
+                              ratioUiDirtyRef.current = true;
+                              setMemberRatioInputs((prev) => ({
+                                ...prev,
+                                [m.memberId]: {
+                                  account: prev[m.memberId]?.account || "",
+                                  toon: prev[m.memberId]?.toon || "",
+                                  taxInvoice: e.target.checked,
+                                },
+                              }));
+                            }}
+                          />
+                          <span
+                            className={
+                              memberRatioInputs[m.memberId]?.taxInvoice
+                                ? "text-violet-300"
+                                : "text-neutral-500"
+                            }
+                          >
+                            {memberRatioInputs[m.memberId]?.taxInvoice ? "발행" : "미발행"}
+                          </span>
+                        </label>
                       </td>
                     </tr>
                   ))}
@@ -917,7 +1004,7 @@ export default function SettlementDetailPage() {
             </div>
           )}
           <div className="text-xs text-neutral-400">
-            후원 스냅샷은 유지하고 배분·원천세만 다시 계산합니다. 변경 후 「비율 적용 · 재계산」을 눌러 저장하세요.
+            후원 스냅샷은 유지하고 배분·원천세만 다시 계산합니다. 멤버별 세금계산서는 「멤버별 개별 비율」ON 후 체크하고 「비율 적용 · 재계산」으로 저장하세요.
           </div>
         </div>
 
@@ -1003,7 +1090,15 @@ export default function SettlementDetailPage() {
         <div className="text-sm text-neutral-300 whitespace-nowrap overflow-x-auto">
           계좌 비율 {(viewRecord!.accountRatio * 100).toFixed(1)}% · 투네 비율 {(viewRecord!.toonRatio * 100).toFixed(1)}% · 세금 {(viewRecord!.feeRate * 100).toFixed(1)}%
           {viewRecord!.vatIncluded ? ` · 부가세 포함(공급가 ÷${(1 + (viewRecord!.vatRate ?? 0.1)).toFixed(1)})` : ""}
-          {viewRecord!.taxInvoiceIssued ? " · 세금계산서 발행(최종+부가세10%)" : " · 세금계산서 미발행(원천세만)"}
+          {(() => {
+            const members = viewRecord!.members || [];
+            const issued = members.filter((m) =>
+              typeof m.taxInvoiceIssued === "boolean" ? m.taxInvoiceIssued : Boolean(viewRecord!.taxInvoiceIssued)
+            ).length;
+            if (issued === 0) return " · 세금계산서 미발행(원천세만)";
+            if (issued === members.length) return " · 세금계산서 발행(최종+부가세10%)";
+            return ` · 세금계산서 멤버별(${issued}/${members.length}명 발행)`;
+          })()}
           <span className="text-neutral-500"> · 금액은 지급정산서(수수료·부가세 공제 후) 기준</span>
         </div>
 

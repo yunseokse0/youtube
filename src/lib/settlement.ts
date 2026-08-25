@@ -1,6 +1,7 @@
 import { formatManThousand } from "@/lib/state";
 import { computeSettlement, isOperatingSettlementMember, isTreasurySettlementMember, type SigMatchRankingItem } from "@/lib/settlement-utils";
 import { computeMemberPaymentStatement } from "@/lib/settlement-payment-statement";
+import { resolveMemberTaxInvoiceIssued } from "@/lib/settlement-payment-math";
 import {
   enrichSettlementRecordsDonorsFromDailyLog,
   recoverSettlementRecordsFromDailyLog,
@@ -308,11 +309,17 @@ export function appendSettlementRecord(
     memberPositions,
     settlementOptions
   );
+  const membersWithTax = body.members.map((m) => {
+    const tax = memberRatioOverrides?.[m.memberId]?.taxInvoiceIssued;
+    if (typeof tax !== "boolean") return m;
+    return { ...m, taxInvoiceIssued: tax };
+  });
   const rec: SettlementRecord = {
     id: `st_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     title: title.trim() || "정산",
     createdAt: Date.now(),
     ...body,
+    members: membersWithTax,
     memberPositionsAtSettlement: memberPositions && typeof memberPositions === "object" ? { ...memberPositions } : {},
     ...(donors && donors.length > 0 ? { donors } : {}),
     ...(settlementOptions?.omitTreasuryFromSettlement ? { omitTreasuryFromSettlement: true } : {}),
@@ -684,10 +691,12 @@ export function recomputeSettlementFromDonors(
       Math.abs(m.accountRatio - record.accountRatio) > 1e-9;
     const toonDiff =
       typeof m.toonRatio === "number" && Math.abs(m.toonRatio - record.toonRatio) > 1e-9;
-    if (accDiff || toonDiff || m.operating) {
+    const taxDiff = typeof m.taxInvoiceIssued === "boolean";
+    if (accDiff || toonDiff || taxDiff || m.operating) {
       overrides[m.memberId] = {
         ...(accDiff ? { accountRatio: m.accountRatio } : {}),
         ...(toonDiff ? { toonRatio: m.toonRatio } : {}),
+        ...(taxDiff ? { taxInvoiceIssued: m.taxInvoiceIssued } : {}),
       };
     }
   }
@@ -711,6 +720,9 @@ export function recomputeSettlementFromDonors(
       bankName: prev.bankName || m.bankName,
       bankAccount: prev.bankAccount || m.bankAccount,
       accountHolder: prev.accountHolder || m.accountHolder,
+      ...(typeof prev.taxInvoiceIssued === "boolean"
+        ? { taxInvoiceIssued: prev.taxInvoiceIssued }
+        : {}),
     };
   });
 
@@ -757,10 +769,12 @@ function memberRatioOverridesFromRecord(record: SettlementRecord): SettlementMem
       Math.abs(m.accountRatio - record.accountRatio) > 1e-9;
     const toonDiff =
       typeof m.toonRatio === "number" && Math.abs(m.toonRatio - record.toonRatio) > 1e-9;
-    if (accDiff || toonDiff || m.operating) {
+    const taxDiff = typeof m.taxInvoiceIssued === "boolean";
+    if (accDiff || toonDiff || taxDiff || m.operating) {
       overrides[m.memberId] = {
         ...(accDiff ? { accountRatio: m.accountRatio } : {}),
         ...(toonDiff ? { toonRatio: m.toonRatio } : {}),
+        ...(taxDiff ? { taxInvoiceIssued: m.taxInvoiceIssued } : {}),
       };
     }
   }
@@ -783,11 +797,22 @@ function applyMemberRatioOverridesToRecord(
         ...m,
         ...(typeof o.accountRatio === "number" ? { accountRatio: o.accountRatio } : {}),
         ...(typeof o.toonRatio === "number" ? { toonRatio: o.toonRatio } : {}),
+        ...(typeof o.taxInvoiceIssued === "boolean"
+          ? { taxInvoiceIssued: o.taxInvoiceIssued }
+          : {}),
       };
     }),
     accountRatio,
     toonRatio,
   };
+}
+
+function clearMemberTaxInvoiceFlags(members: SettlementMemberResult[]): SettlementMemberResult[] {
+  return (members || []).map((m) => {
+    if (typeof m.taxInvoiceIssued !== "boolean") return m;
+    const { taxInvoiceIssued: _omit, ...rest } = m;
+    return rest;
+  });
 }
 
 /** 후원 스냅샷 또는 멤버 원금 기준으로 비율·옵션 변경 후 재계산 */
@@ -818,11 +843,13 @@ export function recomputeSettlementRecord(
   if (patch.memberRatioOverrides !== undefined && Object.keys(patch.memberRatioOverrides).length === 0) {
     withRatios = {
       ...withRatios,
-      members: (withRatios.members || []).map((m) => ({
-        ...m,
-        accountRatio,
-        toonRatio,
-      })),
+      members: clearMemberTaxInvoiceFlags(
+        (withRatios.members || []).map((m) => ({
+          ...m,
+          accountRatio,
+          toonRatio,
+        }))
+      ),
     };
     overrides = {};
   } else if (
@@ -873,6 +900,9 @@ export function recomputeSettlementRecord(
       bankName: prev.bankName || m.bankName,
       bankAccount: prev.bankAccount || m.bankAccount,
       accountHolder: prev.accountHolder || m.accountHolder,
+      ...(typeof prev.taxInvoiceIssued === "boolean"
+        ? { taxInvoiceIssued: prev.taxInvoiceIssued }
+        : {}),
     };
   });
   return {
@@ -934,6 +964,7 @@ export async function deleteSettlementRecordAndSync(recordId: string, reason = "
 
 export function toSettlementFormulaLine(record: SettlementRecord, m: SettlementMemberResult): string {
   const stmt = computeMemberPaymentStatement(record, m);
+  const taxInvoiceIssued = resolveMemberTaxInvoiceIssued(record, m);
   const accSrc = formatManThousand(stmt.accountGross);
   const toonSrc = formatManThousand(stmt.toonGross);
   if (settlementRowIsOperating(m, record.memberPositionsAtSettlement)) {
@@ -942,7 +973,7 @@ export function toSettlementFormulaLine(record: SettlementRecord, m: SettlementM
   const accRatio = Number(stmt.accountRatio.toFixed(3));
   const toonRatio = Number(stmt.toonRatio.toFixed(3));
   return `${m.name} 계좌${accSrc}-공제→${stmt.accountNet.toLocaleString()}x${accRatio}=${stmt.accountStreamerShare.toLocaleString()} 투네${toonSrc}-공제→${stmt.toonNet.toLocaleString()}x${toonRatio}=${stmt.toonStreamerShare.toLocaleString()} A+B=${stmt.pretaxTotal.toLocaleString()}-원천세${stmt.withholding.toLocaleString()}=${stmt.payout.toLocaleString()}${
-    record.taxInvoiceIssued && stmt.outputVat > 0
+    taxInvoiceIssued && stmt.outputVat > 0
       ? `+부가세${stmt.outputVat.toLocaleString()}=${stmt.finalPayout.toLocaleString()}`
       : ""
   }`;
@@ -954,13 +985,14 @@ export function applyPaymentStatementAmounts(
   m: SettlementMemberResult
 ): SettlementMemberResult {
   const stmt = computeMemberPaymentStatement(record, m);
+  const taxInvoiceIssued = resolveMemberTaxInvoiceIssued(record, m);
   return {
     ...m,
     accountApplied: stmt.accountStreamerShare,
     toonApplied: stmt.toonStreamerShare,
     gross: stmt.pretaxTotal,
     fee: stmt.withholding,
-    net: record.taxInvoiceIssued ? stmt.finalPayout : stmt.payout,
+    net: taxInvoiceIssued ? stmt.finalPayout : stmt.payout,
   };
 }
 

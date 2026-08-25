@@ -128,6 +128,15 @@ export function computePaymentChannelBreakdown(input: {
 
 export const DEFAULT_TAX_INVOICE_VAT_RATE = 0.1;
 
+/** 멤버 개별 설정이 있으면 우선, 없으면 정산 공통 세금계산서 여부 */
+export function resolveMemberTaxInvoiceIssued(
+  record: { taxInvoiceIssued?: boolean },
+  member: { taxInvoiceIssued?: boolean }
+): boolean {
+  if (typeof member.taxInvoiceIssued === "boolean") return member.taxInvoiceIssued;
+  return Boolean(record.taxInvoiceIssued);
+}
+
 /** 세금계산서 발행 시 원천세 차감 후 금액에 부가세 가산 */
 export function computeTaxInvoiceFinalAmount(
   payoutAfterWithholding: number,

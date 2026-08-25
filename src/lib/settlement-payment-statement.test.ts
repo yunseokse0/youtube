@@ -69,6 +69,22 @@ describe("computeMemberPaymentStatement (정산서.xlsx)", () => {
     expect(stmt.finalPayout).toBe(1_265_803);
   });
 
+  it("prefers per-member taxInvoiceIssued over record default", () => {
+    const withMemberOn = computeMemberPaymentStatement(
+      record({ taxInvoiceIssued: false }),
+      member({ taxInvoiceIssued: true })
+    );
+    expect(withMemberOn.outputVat).toBe(115_073);
+    expect(withMemberOn.finalPayout).toBe(1_265_803);
+
+    const withMemberOff = computeMemberPaymentStatement(
+      record({ taxInvoiceIssued: true }),
+      member({ taxInvoiceIssued: false })
+    );
+    expect(withMemberOff.outputVat).toBe(0);
+    expect(withMemberOff.finalPayout).toBe(1_150_730);
+  });
+
   it("uses accountSource/toonSource as gross when vat-included snapshot exists", () => {
     const stmt = computeMemberPaymentStatement(
       record(),

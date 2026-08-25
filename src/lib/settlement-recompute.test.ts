@@ -64,4 +64,23 @@ describe("recomputeSettlementRecord", () => {
     const next = updateSettlementRecordAndRecompute(list, "st_1", { taxInvoiceIssued: true });
     expect(next[0]!.taxInvoiceIssued).toBe(true);
   });
+
+  it("stores per-member taxInvoiceIssued via ratio overrides", () => {
+    const base = record();
+    const next = recomputeSettlementRecord(base, {
+      taxInvoiceIssued: false,
+      memberRatioOverrides: { m1: { taxInvoiceIssued: true } },
+    });
+    expect(next.taxInvoiceIssued).toBe(false);
+    expect(next.members[0]!.taxInvoiceIssued).toBe(true);
+  });
+
+  it("clears per-member taxInvoiceIssued when overrides emptied", () => {
+    const base = recomputeSettlementRecord(record(), {
+      memberRatioOverrides: { m1: { taxInvoiceIssued: true } },
+    });
+    expect(base.members[0]!.taxInvoiceIssued).toBe(true);
+    const cleared = recomputeSettlementRecord(base, { memberRatioOverrides: {} });
+    expect(cleared.members[0]!.taxInvoiceIssued).toBeUndefined();
+  });
 });
