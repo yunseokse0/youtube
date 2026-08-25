@@ -4408,11 +4408,45 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row):not(.overlay-excel-placeholder) td.overlay-col-contribution .overlay-cell-text-inner,
         .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row):not(.overlay-excel-placeholder) td.overlay-col-contribution .overlay-num-cell-inner {
           color: ${contributionColorCss} !important;
+          -webkit-text-fill-color: ${contributionColorCss} !important;
           font-weight: 700 !important;
+        }
+        /* td 배경은 건드리지 않음(줄무늬 유지). 숫자 안쪽만 알약 제거 */
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution .overlay-num-cell-inner,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution .overlay-cell-text-inner,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution span,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution strong {
+          background: transparent !important;
+          background-color: transparent !important;
+          background-image: none !important;
+          border-radius: 0 !important;
+          border: none !important;
+          outline: none !important;
+          padding-left: 0 !important;
+          padding-right: 0 !important;
+          min-width: 0 !important;
+          box-shadow: none !important;
         }`,
         }}
       />
-    ) : null;
+    ) : (
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution .overlay-num-cell-inner,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution .overlay-cell-text-inner {
+          background: transparent !important;
+          background-color: transparent !important;
+          border-radius: 0 !important;
+          border: none !important;
+          padding-left: 0 !important;
+          padding-right: 0 !important;
+          min-width: 0 !important;
+          box-shadow: none !important;
+        }`,
+        }}
+      />
+    );
     /** OBS/Prism: stroke 대신 다층 shadow만 씀(숫자 열에도 동일 적용) */
     const overlayNumericOutlineShadow = tableNumericOutlineShadowCss;
     const numericNoWrapStyle = (
@@ -4984,12 +5018,13 @@ function OverlayInner() {
           border-top: 3px solid transparent !important;
           border-bottom: 3px solid transparent !important;
         }
-        /* 기여도 열: 다른 열과 동일 행 배경 — 알약/어두운 칸 배경 금지 */
+        /* 기여도: 칸·숫자 알약 배경 제거 — 글자색만 구분 (위 contributionColorStyle) */
         .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row td.overlay-col-contribution,
         .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(odd) td.overlay-col-contribution,
         .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(even) td.overlay-col-contribution,
-        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row td.overlay-col-contribution {
-          background: inherit !important;
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row td.overlay-col-contribution,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(odd) td.overlay-col-contribution,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(even) td.overlay-col-contribution {
           background-image: none !important;
         }
         .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(odd) td.overlay-col-contribution,
@@ -5002,11 +5037,19 @@ function OverlayInner() {
           background: var(--excel-row-even, rgba(255, 255, 255, 0.08)) !important;
           background-clip: padding-box !important;
         }
-        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution .overlay-num-cell-inner {
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution .overlay-num-cell-inner,
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody td.overlay-col-contribution .overlay-num-cell-inner,
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody tr:not(.overlay-total-row) td.overlay-col-contribution .overlay-num-cell-inner {
           background: transparent !important;
+          background-color: transparent !important;
+          background-image: none !important;
           border-radius: 0 !important;
-          padding-inline: 0 !important;
+          border: none !important;
+          outline: none !important;
+          padding-left: 0 !important;
+          padding-right: 0 !important;
           min-width: 0 !important;
+          box-shadow: none !important;
         }
         .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-excel-placeholder td .overlay-cell-text-inner,
         .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-excel-placeholder td .overlay-num-cell-inner {

@@ -51,15 +51,34 @@ export function shouldRestoreSigInventoryFromBackup(
 
 export async function enrichAppStateWithSigInventoryBackup(
   userId: string,
-  state: { sigInventory?: SigItem[] | null }
+  state: { sigInventory?: SigItem[] | null },
+  opts?: { persistBackup?: boolean }
 ): Promise<{ sigInventory: SigItem[]; restoredFromBackup: boolean }> {
   const current = normalizeSigInventory(state.sigInventory);
+  /** 이미 확장된 인벤토리면 GET마다 백업 키를 치지 않음 */
+  if (hasExpandedSigInventory(current) && !isShrunkToDefaultSigInventory(current)) {
+    if (opts?.persistBackup !== false) {
+      maybePersistSigInventoryBackup(userId, current);
+    }
+    return { sigInventory: current, restoredFromBackup: false };
+  }
   const backup = await loadSigInventoryBackup(userId);
   if (backup && shouldRestoreSigInventoryFromBackup(current, backup)) {
     return { sigInventory: backup, restoredFromBackup: true };
   }
-  if (hasExpandedSigInventory(current)) {
-    void saveSigInventoryBackup(userId, current);
+  if (opts?.persistBackup !== false && hasExpandedSigInventory(current)) {
+    maybePersistSigInventoryBackup(userId, current);
   }
   return { sigInventory: current, restoredFromBackup: false };
+}
+
+const lastSigInventoryBackupPersistAt = new Map<string, number>();
+const SIG_INVENTORY_BACKUP_PERSIST_MIN_MS = 60_000;
+
+function maybePersistSigInventoryBackup(userId: string, items: SigItem[]): void {
+  const now = Date.now();
+  const prev = lastSigInventoryBackupPersistAt.get(userId) || 0;
+  if (now - prev < SIG_INVENTORY_BACKUP_PERSIST_MIN_MS) return;
+  lastSigInventoryBackupPersistAt.set(userId, now);
+  void saveSigInventoryBackup(userId, items);
 }

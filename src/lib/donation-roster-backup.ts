@@ -111,13 +111,34 @@ export async function clearDonationRosterBackup(
 
 export async function enrichAppStateWithDonationRosterBackup(
   userId: string,
-  state: AppState
+  state: AppState,
+  opts?: { persistBackup?: boolean }
 ): Promise<{ state: AppState; restoredFromBackup: boolean }> {
+  const donors = normalizeDonorsArray(state.donors);
+  const total = totalCombined(state);
+  /** 메인 상태에 후원이 있으면 GET마다 Redis+디스크 백업을 읽지 않음 (연결 지연 완화) */
+  if (donors.length > 0 && total > 0) {
+    if (opts?.persistBackup !== false && buildDonationRosterBackupPayload(state)) {
+      maybePersistDonationRosterBackup(userId, state);
+    }
+    return { state, restoredFromBackup: false };
+  }
   const backup = await loadDonationRosterBackup(userId);
   const enriched = enrichAppStateWithDonationRosterBackupPayload(state, backup);
   if (enriched.restoredFromBackup) return enriched;
-  if (buildDonationRosterBackupPayload(state)) {
-    void saveDonationRosterBackup(userId, state);
+  if (opts?.persistBackup !== false && buildDonationRosterBackupPayload(state)) {
+    maybePersistDonationRosterBackup(userId, state);
   }
   return enriched;
+}
+
+const lastDonationBackupPersistAt = new Map<string, number>();
+const DONATION_BACKUP_PERSIST_MIN_MS = 60_000;
+
+function maybePersistDonationRosterBackup(userId: string, state: AppState): void {
+  const now = Date.now();
+  const prev = lastDonationBackupPersistAt.get(userId) || 0;
+  if (now - prev < DONATION_BACKUP_PERSIST_MIN_MS) return;
+  lastDonationBackupPersistAt.set(userId, now);
+  void saveDonationRosterBackup(userId, state);
 }

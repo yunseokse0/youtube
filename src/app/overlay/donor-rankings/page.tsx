@@ -1028,14 +1028,12 @@ export default function DonorRankingsOverlayPage() {
                 className={`relative z-[2] grid grid-cols-1 overflow-hidden backdrop-blur-studio md:grid-cols-2 md:gap-0 ${
                   showFrame
                     ? "rounded-none border-0 shadow-none"
-                    : "studio-glass-panel rounded-studio border-[3px] border-solid"
+                    : "studio-glass-panel rounded-studio border border-solid"
                 }`}
                 style={{
                   borderColor: showFrame ? "transparent" : borderColor,
                   backgroundColor: "transparent",
-                  boxShadow: showFrame
-                    ? "none"
-                    : "0 0 0 2px #000000, 0 8px 32px 0 rgba(0, 0, 0, 0.37)",
+                  boxShadow: showFrame ? "none" : "0 8px 32px 0 rgba(0, 0, 0, 0.37)",
                 }}
               >
               <RankingColumn
@@ -1111,12 +1109,12 @@ export default function DonorRankingsOverlayPage() {
               className={`relative z-[2] overflow-visible ${
                 showFrame
                   ? "rounded-none border-0 shadow-none"
-                  : "rounded-studio border-[3px] border-solid"
+                  : "rounded-studio border border-solid"
               }`}
               style={{
                 borderColor: showFrame ? "transparent" : borderColor,
                 backgroundColor: "transparent",
-                boxShadow: showFrame ? "none" : "0 0 0 2px #000000",
+                boxShadow: "none",
               }}
             >
             {unifiedHalf.split ? (

@@ -3479,7 +3479,7 @@ async function doLoadStateFromApi(
     const signal =
       typeof AbortSignal !== "undefined" &&
       typeof (AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal }).timeout === "function"
-        ? (AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }).timeout(25000)
+        ? (AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }).timeout(12_000)
         : undefined;
     const res = await fetch(`/api/state?${q.toString()}`, { cache: "no-store", credentials, signal });
     if (res.status === 401) {

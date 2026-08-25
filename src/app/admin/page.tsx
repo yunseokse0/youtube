@@ -2242,7 +2242,7 @@ export default function AdminPage() {
         const offlineNow = typeof navigator !== "undefined" && !navigator.onLine;
         setSyncStatus(offlineNow ? "local" : "error");
       }
-    }, 28_000);
+    }, 15_000);
     const offline = typeof navigator !== "undefined" && !navigator.onLine;
     let localPresets: OverlayPreset[] = [];
     try {
@@ -2263,15 +2263,13 @@ export default function AdminPage() {
       setSyncStatus("local");
     }
     /** 서버 정본 모드: API 응답 전 로컬/세션 스냅샷으로 멤버·후원을 채우지 않음 (admin 은 보기·편집 도구) */
-    // 우선 서버의 일일 로그를 소스로 사용(장치 간 일관성)
-    loadDailyLogFromApi(user?.id).then((serverLog) => {
-      setDailyLog(serverLog);
-      try { window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog)); } catch {}
-    }).catch(() => {
-      setDailyLog(loadDailyLog(user?.id));
-    });
-    void refreshStorageHealth();
-    void loadStateFromApi(user.id, { forceFull: true })
+    /**
+     * hydrate 직후 storage-health·daily-log 를 같이 치면 /api/state 와 MySQL이 경합해
+     * 「동기화 중」에 고착되기 쉽다 — 본문 GET 완료 후에만 진단·로그를 당긴다.
+     */
+    const loadMain = () => loadStateFromApi(user.id, { forceFull: true });
+    void loadMain()
+      .then((first) => (first ? first : loadMain()))
       .then((apiState) => {
       if (cancelled) return;
       try {
@@ -2530,6 +2528,20 @@ export default function AdminPage() {
       if (cancelled) return;
       const offlineNow = typeof navigator !== "undefined" && !navigator.onLine;
       setSyncStatus(offlineNow ? "local" : "error");
+    })
+    .finally(() => {
+      if (cancelled) return;
+      void refreshStorageHealth();
+      loadDailyLogFromApi(user?.id)
+        .then((serverLog) => {
+          setDailyLog(serverLog);
+          try {
+            window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog));
+          } catch {}
+        })
+        .catch(() => {
+          setDailyLog(loadDailyLog(user?.id));
+        });
     });
     return () => {
       cancelled = true;

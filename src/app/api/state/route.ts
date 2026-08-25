@@ -651,7 +651,9 @@ export async function GET(req: Request) {
         );
       }
       try {
-        const donationEnriched = await enrichAppStateWithDonationRosterBackup(userId, state);
+        const donationEnriched = await enrichAppStateWithDonationRosterBackup(userId, state, {
+          persistBackup: false,
+        });
         if (donationEnriched.restoredFromBackup) {
           state = applyDonationGoalPresetNormalization(donationEnriched.state);
           setServerMemoryAppState(userId, state);
@@ -747,33 +749,45 @@ export async function GET(req: Request) {
     mergedForResponse = applyDonationGoalPresetNormalization(mergedForResponse);
 
     try {
-      const sigEnriched = await enrichAppStateWithSigInventoryBackup(userId, mergedForResponse);
-      if (sigEnriched.restoredFromBackup) {
-        mergedForResponse = { ...mergedForResponse, sigInventory: sigEnriched.sigInventory };
-        logger.warn("sigInventory Redis 백업에서 복구", {
-          userId,
-          count: sigEnriched.sigInventory.length,
+      const needSigBackup =
+        isShrunkToDefaultSigInventory(mergedForResponse.sigInventory) ||
+        !hasExpandedSigInventory(mergedForResponse.sigInventory);
+      if (needSigBackup) {
+        const sigEnriched = await enrichAppStateWithSigInventoryBackup(userId, mergedForResponse, {
+          persistBackup: false,
         });
-        void upstashSetAppStateJson(stateKey(userId), mergedForResponse);
+        if (sigEnriched.restoredFromBackup) {
+          mergedForResponse = { ...mergedForResponse, sigInventory: sigEnriched.sigInventory };
+          logger.warn("sigInventory Redis 백업에서 복구", {
+            userId,
+            count: sigEnriched.sigInventory.length,
+          });
+          void upstashSetAppStateJson(stateKey(userId), mergedForResponse);
+        }
       }
     } catch (err) {
       logger.error("sigInventory 백업 복구 실패", err);
     }
 
     try {
-      const donationEnriched = await enrichAppStateWithDonationRosterBackup(
-        userId,
-        mergedForResponse
-      );
-      if (donationEnriched.restoredFromBackup) {
-        mergedForResponse = applyDonationGoalPresetNormalization(donationEnriched.state);
-        setServerMemoryAppState(userId, mergedForResponse);
-        logger.warn("후원 금액 백업에서 복구", {
+      const donorsNow = normalizeDonorsArray(mergedForResponse.donors);
+      const needDonationBackup = donorsNow.length === 0 || totalCombined(mergedForResponse) <= 0;
+      if (needDonationBackup) {
+        const donationEnriched = await enrichAppStateWithDonationRosterBackup(
           userId,
-          donors: normalizeDonorsArray(mergedForResponse.donors).length,
-          total: totalCombined(mergedForResponse),
-        });
-        void upstashSetAppStateJson(stateKey(userId), mergedForResponse);
+          mergedForResponse,
+          { persistBackup: false }
+        );
+        if (donationEnriched.restoredFromBackup) {
+          mergedForResponse = applyDonationGoalPresetNormalization(donationEnriched.state);
+          setServerMemoryAppState(userId, mergedForResponse);
+          logger.warn("후원 금액 백업에서 복구", {
+            userId,
+            donors: normalizeDonorsArray(mergedForResponse.donors).length,
+            total: totalCombined(mergedForResponse),
+          });
+          void upstashSetAppStateJson(stateKey(userId), mergedForResponse);
+        }
       }
     } catch (err) {
       logger.error("후원 백업 복구 실패", err);
