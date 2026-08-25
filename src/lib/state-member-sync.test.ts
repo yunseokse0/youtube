@@ -397,6 +397,24 @@ describe("member sync helpers", () => {
     expect(payload.donationSyncMode).toBe("highSociety");
   });
 
+  it("omitDonationFields payload keeps highSocietySettings so server can treat as HS-only", () => {
+    const state = {
+      ...defaultState(),
+      updatedAt: 2000,
+      donors: [
+        { id: "d1", name: "후원", amount: 10000, memberId: "m1", at: 1, target: "account" as const },
+      ],
+      members: [{ id: "m1", name: "멤버", account: 0, toon: 0, contribution: 0 }],
+      highSocietySettings: { enabled: true, fieldCm: 400, startCmPerMember: 100 },
+      territoryLogs: [],
+    } as AppState;
+    const payload = appStatePayloadForApi(state, "finalent", {
+      omitDonationFields: true,
+    }) as Record<string, unknown>;
+    expect(payload.donors).toBeUndefined();
+    expect(payload.highSocietySettings).toBeTruthy();
+  });
+
   it("appStatePayloadForApi slims membersAuthoritative+omitDonationFields body", () => {
     const state = {
       ...defaultState(),

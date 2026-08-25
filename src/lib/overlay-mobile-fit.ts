@@ -77,3 +77,12 @@ export function resolveBroadcastZoomScale(
   if (!isNarrowBroadcastViewport(viewportW, viewportW)) return base;
   return Math.min(base, Math.max(0.22, fit));
 }
+
+/**
+ * transform scale(top center) + width=100/s% 일 때
+ * 레이아웃 박스가 왼쪽으로 삐져나와 가로 스크롤이 생기지 않게 margin-left(%) 보정.
+ */
+export function broadcastZoomCenterMarginLeftPct(zoomScale: number): number {
+  const s = Math.max(0.01, Number(zoomScale) || 1);
+  return (100 - 100 / s) / 2;
+}

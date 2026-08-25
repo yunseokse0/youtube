@@ -16170,7 +16170,10 @@ export default function AdminPage() {
                     </button>
                   </div>
                 </div>
-                <div className="relative w-full max-w-[420px] mx-auto bg-black/40" style={{ minHeight: "420px", aspectRatio: "9 / 16" }}>
+                <div
+                  className="relative mx-auto w-full max-w-[420px] overflow-x-hidden bg-black/40"
+                  style={{ minHeight: "420px", aspectRatio: "9 / 16" }}
+                >
                   {overlayUserId ? (
                     <AdminLazyPreviewIframe
                       key={`donor-rankings-full-${donorRankingsPreviewIframeKey}-${overlayUserId}`}

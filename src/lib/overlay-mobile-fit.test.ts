@@ -6,6 +6,7 @@ import {
   ensureCanvasFontPx,
   isNarrowBroadcastViewport,
   resolveBroadcastZoomScale,
+  broadcastZoomCenterMarginLeftPct,
 } from "./overlay-mobile-fit";
 
 describe("overlay-mobile-fit", () => {
@@ -37,5 +38,12 @@ describe("overlay-mobile-fit", () => {
   it("reduces zoom on narrow viewport", () => {
     const z = resolveBroadcastZoomScale(100, 390, 1500);
     expect(z).toBeLessThan(0.3);
+  });
+
+  it("centers scaled layout without positive left overflow (full vertical preview)", () => {
+    const z = resolveBroadcastZoomScale(100, 420, 720);
+    const margin = broadcastZoomCenterMarginLeftPct(z);
+    expect(margin).toBeLessThanOrEqual(0);
+    expect(100 / z + margin).toBeCloseTo(100 - margin, 5);
   });
 });

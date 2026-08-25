@@ -2619,7 +2619,14 @@ export function saveState(state: AppState, userId?: string | null) {
     /** 오버레이 iframe이 서버 응답 전에 읽도록 세션 캐시 즉시 반영(LS 기록 없음) */
     writeBroadcastStateSnapshot(next, userId);
     notifyBroadcastStateLocalUpdated(userId, next.updatedAt);
-    void enqueueServerSave(JSON.stringify(appStatePayloadForApi(next, userId)), userId, next)
+    /**
+     * 서버 정본 모드: 옵션 없는 전체 POST 금지 — donors/금액을 브라우저 스냅샷으로 덮지 않음.
+     * (상류사회 팝업 영토 반영 등에서 엑셀·후원순위 초기화 회귀 방지)
+     */
+    const apiOpts = clampBrowserPersistOptionsForServerAuthority({
+      omitDonationFields: true,
+    });
+    void enqueueServerSave(JSON.stringify(appStatePayloadForApi(next, userId, apiOpts)), userId, next)
       .then((result) => {
         if (result.ok) {
           writeBroadcastStateSnapshot(next, userId);

@@ -32,7 +32,7 @@ import {
   buildOverlayCellOutlineStyle,
   DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR,
 } from "@/lib/text-outline-style";
-import { resolveBroadcastZoomScale } from "@/lib/overlay-mobile-fit";
+import { broadcastZoomCenterMarginLeftPct, resolveBroadcastZoomScale } from "@/lib/overlay-mobile-fit";
 import { useOverlayViewportSize } from "@/hooks/useOverlayViewportSize";
 import { backgroundWithOpacityFrac, solidBackgroundWithOpacityFrac } from "@/lib/donor-rankings-opacity";
 import { splitOverlayListAtHalf } from "@/lib/utils";
@@ -813,9 +813,15 @@ export default function DonorRankingsOverlayPage() {
     300
   );
   const viewportSize = useOverlayViewportSize();
+  /** 전체(세로)는 단일 컬럼 max-w 720 — 1500 기준이면 좁은 미리보기에서 가로 스크롤이 생김 */
+  const zoomDesignWidth = isFullVertical ? 720 : 1500;
   const zoomScale = useMemo(
-    () => resolveBroadcastZoomScale(zoomPct, viewportSize.w, 1500),
-    [zoomPct, viewportSize.w]
+    () => resolveBroadcastZoomScale(zoomPct, viewportSize.w, zoomDesignWidth),
+    [zoomPct, viewportSize.w, zoomDesignWidth]
+  );
+  const zoomMarginLeftPct = useMemo(
+    () => broadcastZoomCenterMarginLeftPct(zoomScale),
+    [zoomScale]
   );
   const bg =
     themeLive && !useTest
@@ -950,8 +956,8 @@ export default function DonorRankingsOverlayPage() {
   }
 
   const mainClass = hostObs
-    ? "donor-rankings-overlay-root pointer-events-none fixed inset-0 z-[120] w-full max-w-[100vw] overflow-visible bg-transparent p-2 sm:p-5 md:[background:var(--ov-donor-bg)]"
-    : "donor-rankings-overlay-root relative min-h-screen w-full max-w-[100vw] overflow-visible bg-transparent p-2 sm:p-5 md:[background:var(--ov-donor-bg)]";
+    ? "donor-rankings-overlay-root pointer-events-none fixed inset-0 z-[120] w-full max-w-[100vw] overflow-x-hidden overflow-y-visible bg-transparent p-2 sm:p-5 md:[background:var(--ov-donor-bg)]"
+    : "donor-rankings-overlay-root relative min-h-screen w-full max-w-[100vw] overflow-x-hidden overflow-y-visible bg-transparent p-2 sm:p-5 md:[background:var(--ov-donor-bg)]";
   const outlineCss = donorRankingsOutlineCssBlock(outlineColor, outlineWidthPx, true);
 
   return (
@@ -992,11 +998,12 @@ export default function DonorRankingsOverlayPage() {
         </div>
       ) : null}
       <div
-        className="relative z-10 mx-auto max-w-[1500px]"
+        className={`relative z-10 mx-auto ${isFullVertical ? "max-w-[720px]" : "max-w-[1500px]"}`}
         style={{
           transform: `scale(${zoomScale})`,
           transformOrigin: "top center",
           width: `${100 / zoomScale}%`,
+          marginLeft: `${zoomMarginLeftPct}%`,
         }}
       >
         {useTest && !hostObs ? (

@@ -3,8 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { AppState } from "@/lib/state";
-import { defaultState, loadState, loadStateFromApi, saveState, saveStateAsync } from "@/lib/state";
-import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
+import {
+  cacheBroadcastStateSnapshot,
+  defaultState,
+  loadState,
+  loadStateFromApi,
+  saveStateAsync,
+} from "@/lib/state";
 import { useSSEConnection } from "@/lib/sse-client";
 import { resolveScopedOverlayUserId } from "@/lib/overlay-params";
 
@@ -70,12 +75,20 @@ export function useAdminPopupBroadcastState() {
       const stamped = { ...next, updatedAt: Date.now() };
       setState(stamped);
       stateRef.current = stamped;
-      saveState(stamped, scopedUserId);
-      notifyBroadcastStateLocalUpdated(scopedUserId, stamped.updatedAt);
+      /**
+       * 세션 캐시만 갱신 — saveState() 는 옵션 없이 전체 POST 하여
+       * 팝업의 불완전 donors/0원 members 로 엑셀·후원순위를 지우는 회귀가 있음.
+       * 서버 반영은 반드시 saveStateAsync(+ highSocietySettingsOnly 등)만.
+       */
+      cacheBroadcastStateSnapshot(stamped, scopedUserId);
       const result = await saveStateAsync(stamped, scopedUserId, opts);
+      /** HS/영토 저장 후 서버 정본(후원·금액)으로 다시 맞춤 — 로컬 0원 스냅샷 잔류 방지 */
+      if (result.ok && (opts?.highSocietySettingsOnly || opts?.omitDonationFields)) {
+        void reload();
+      }
       return result.ok;
     },
-    [scopedUserId]
+    [scopedUserId, reload]
   );
 
   const accountMismatch =
