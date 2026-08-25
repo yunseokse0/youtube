@@ -342,6 +342,7 @@ import ToonationBrowserRelay from "@/components/ToonationBrowserRelay";
 import type { ToonationRelayForwarded } from "@/components/ToonationBrowserRelay";
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
 import { buildPlayerAlertPopupUrl, openPlayerAlertPopup } from "@/lib/donation/player-alert-url";
+import { buildDonationAlertUrl } from "@/lib/donation/donation-alert-overlay";
 import { openAdminHighSocietyPopup, openAdminTimerPopup } from "@/lib/admin-popup-url";
 
 /** 후원 계열 오버레이 배경 GIF 프리셋 — 외부 URL은 방송망에서 차단될 수 있음 */
@@ -1306,6 +1307,8 @@ export default function AdminPage() {
       includeDonationFields?: boolean;
       /** 판매완료 도장을 기본(빈 URL)으로 되돌릴 때만 */
       clearSigSoldOutStamp?: boolean;
+      /** 시그 목록 전체 삭제·기본 초기화 */
+      clearSigInventory?: boolean;
       /** 상류사회 OFF·일시정지 등 — API 에 HS 설정만 전송 */
       highSocietySettingsOnly?: boolean;
       /** 저장 완료 시 서버(MySQL) 반영 토스트 */
@@ -5607,9 +5610,13 @@ export default function AdminPage() {
   const clearAllSigItems = () => {
     if (!confirm("시그 목록 전체를 삭제할까요?")) return;
     setState((prev: AppState) => {
-      const draft: AppState = { ...prev, sigInventory: [] };
+      const draft: AppState = { ...prev, sigInventory: [], updatedAt: Date.now() };
       const next = syncOneShotSigItem(draft);
-      persistState(next);
+      persistState(next, {
+        omitDonationFields: true,
+        clearSigInventory: true,
+        persistToastLabel: "시그 전체 삭제",
+      });
       return next;
     });
     setSigExcelResult("시그 목록을 전체 삭제했습니다.");
@@ -5636,7 +5643,11 @@ export default function AdminPage() {
         updatedAt: Date.now(),
       };
       const next = syncOneShotSigItem(draft);
-      persistState(next);
+      persistState(next, {
+        omitDonationFields: true,
+        clearSigInventory: true,
+        persistToastLabel: "시그 기본 목록 초기화",
+      });
       return next;
     });
     setSigExcelResult("시그 목록·관련 설정을 기본값으로 초기화했습니다.");
@@ -8409,7 +8420,8 @@ export default function AdminPage() {
         updatedAt: Date.now(),
       };
       next = syncHighSocietyMemberWidthSnapshotInState(next);
-      persistState(next, { omitDonationFields: true });
+      /** 영토 cm 만 저장 — donors/members 금액 POST 금지(후원순위·기록 초기화 회귀 방지) */
+      persistState(next, { omitDonationFields: true, highSocietySettingsOnly: true });
       notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
       return next;
     });
@@ -11267,6 +11279,35 @@ export default function AdminPage() {
                         })
                       )}
                     </div>
+                  </div>
+                  <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+                    <span>후원 출력 알림:</span>
+                    <code className="text-neutral-300 break-all">
+                      /overlay/donation-alert?u={overlayUserId}&host=obs&overlayAllowSse=1
+                    </code>
+                    <button
+                      type="button"
+                      className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donation-alert" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                      onClick={() => {
+                        const u = buildDonationAlertUrl(overlayUserId);
+                        void copyUrl(u, "dash-donation-alert");
+                      }}
+                    >
+                      {copiedId === "dash-donation-alert" ? "복사됨!" : "URL 복사"}
+                    </button>
+                    <button
+                      type="button"
+                      className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donation-alert-test" ? "bg-emerald-600" : "bg-amber-800/90 hover:bg-amber-700"}`}
+                      onClick={() => {
+                        const u = buildDonationAlertUrl(overlayUserId, { test: true });
+                        void copyUrl(u, "dash-donation-alert-test");
+                      }}
+                    >
+                      {copiedId === "dash-donation-alert-test" ? "복사됨!" : "테스트 URL"}
+                    </button>
+                    <span className="text-[10px] text-neutral-600 w-full">
+                      계좌·투네이션 후원 시 후원자→멤버 / 금액 / 기여도(원=점) 카드를 OBS에 표시합니다. 별도 브라우저 소스로 추가하세요.
+                    </span>
                   </div>
                   <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                     <span>OBS URL (짧게):</span>
@@ -14351,7 +14392,10 @@ export default function AdminPage() {
                                             updatedAt: Date.now(),
                                           };
                                           next = syncHighSocietyMemberWidthSnapshotInState(next);
-                                          persistState(next, { omitDonationFields: true });
+                                          persistState(next, {
+                                            omitDonationFields: true,
+                                            highSocietySettingsOnly: true,
+                                          });
                                           notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
                                           return next;
                                         });

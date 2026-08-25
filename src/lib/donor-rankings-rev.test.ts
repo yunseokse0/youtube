@@ -27,6 +27,18 @@ describe("donor-rankings-rev", () => {
     expect(rev).toBeGreaterThan(prev);
   });
 
+  it("does not bump revision when members key is present but totals unchanged (territory-style)", () => {
+    const members = [{ id: "m1", name: "a", account: 5000, toon: 0, contribution: 5000 }];
+    const base = {
+      ...defaultState(),
+      donorRankingsUpdatedAt: 1000,
+      members,
+    };
+    const next = { ...base, updatedAt: Date.now() + 5000, members: [...members] };
+    const rev = computeDonorRankingsUpdatedAt(base, next, { members: next.members }, false);
+    expect(rev).toBe(1000);
+  });
+
   it("bumps revision when donors change", () => {
     const base = { ...defaultState(), donorRankingsUpdatedAt: 1000 };
     const next = {
@@ -54,9 +66,12 @@ describe("shouldSyncDonorRankingsFromStateUpdatedEvent", () => {
     expect(shouldSyncDonorRankingsFromStateUpdatedEvent({ updatedAt: 999 }, 0)).toBe(false);
   });
 
-  it("syncs when donorRankingsUpdatedAt advances", () => {
+  it("syncs when donationApplied hint is present", () => {
     expect(
-      shouldSyncDonorRankingsFromStateUpdatedEvent({ updatedAt: 100, donorRankingsUpdatedAt: 200 }, 150)
+      shouldSyncDonorRankingsFromStateUpdatedEvent(
+        { updatedAt: 100, donationApplied: { donorName: "a", amount: 1, target: "toon" } },
+        9999
+      )
     ).toBe(true);
   });
 });

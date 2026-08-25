@@ -47,9 +47,20 @@ export function parseStateApiPick(raw: string): StateApiPick | null {
   return null;
 }
 
+/**
+ * 후원순위 GET 304 — 엑셀표(overlay)와 같이 updatedAt 도 본다.
+ * donorRankingsUpdatedAt 만 쓰면 후원·멤버 합계는 올랐는데 순위 폴링이 304에 고착된다(OBS는 SSE 없음).
+ */
+export function donorRankingsPickRevision(state: AppState): number {
+  return Math.max(
+    Number(state.updatedAt || 0),
+    Number(state.donorRankingsUpdatedAt || 0)
+  );
+}
+
 /** pick별 304·since 비교에 쓸 revision */
 export function revisionForStatePick(state: AppState, pick: StateApiPick): number {
-  if (pick === STATE_PICK_DONOR_RANKINGS) return readDonorRankingsRevision(state);
+  if (pick === STATE_PICK_DONOR_RANKINGS) return donorRankingsPickRevision(state);
   if (pick === STATE_PICK_OBS_TEXT) {
     /** 텍스트 내용 revision 만 — updatedAt 을 섞으면 후원·타이머 저장마다 OBS가 다시 받아 깜빡임 */
     const reg = readObsTextRegistryFromState(state);

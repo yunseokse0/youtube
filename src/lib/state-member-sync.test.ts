@@ -365,6 +365,38 @@ describe("member sync helpers", () => {
     expect(merged.overlaySettings.a).toBe(2);
   });
 
+  it("appStatePayloadForApi highSocietySettingsOnly sends territoryLogs without donors/members", () => {
+    const state = {
+      ...defaultState(),
+      updatedAt: 2000,
+      donors: [
+        { id: "d1", name: "후원", amount: 10000, memberId: "m1", at: 1, target: "account" as const },
+      ],
+      members: [{ id: "m1", name: "멤버", account: 10000, toon: 0, contribution: 10000 }],
+      highSocietySettings: { enabled: true, fieldCm: 400, startCmPerMember: 100 },
+      territoryLogs: [
+        {
+          id: "tl1",
+          memberId: "m1",
+          delta: 1 as const,
+          amount: 50,
+          at: 100,
+          pushDir: "right" as const,
+        },
+      ],
+      donationSyncMode: "highSociety" as const,
+    } as AppState;
+    const payload = appStatePayloadForApi(state, "finalent", {
+      omitDonationFields: true,
+      highSocietySettingsOnly: true,
+    }) as Record<string, unknown>;
+    expect(payload.donors).toBeUndefined();
+    expect(payload.members).toBeUndefined();
+    expect(payload.highSocietySettings).toBeTruthy();
+    expect(payload.territoryLogs).toEqual(state.territoryLogs);
+    expect(payload.donationSyncMode).toBe("highSociety");
+  });
+
   it("appStatePayloadForApi slims membersAuthoritative+omitDonationFields body", () => {
     const state = {
       ...defaultState(),

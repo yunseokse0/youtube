@@ -151,6 +151,19 @@ describe("isHighSocietySettingsOnlyPatch", () => {
     ).toBe(true);
   });
 
+  it("detects territory logs-only patch without highSocietySettings key", () => {
+    expect(
+      isHighSocietySettingsOnlyPatch({
+        highSocietySettingsInPatch: false,
+        territoryLogsInPatch: true,
+        donorsInPatch: false,
+        membersAuthoritative: false,
+        settlementReset: false,
+        donationInitReset: false,
+      })
+    ).toBe(true);
+  });
+
   it("is false when donors are in patch", () => {
     expect(
       isHighSocietySettingsOnlyPatch({

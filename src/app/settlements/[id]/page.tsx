@@ -13,6 +13,8 @@ import {
   recordToFullSettlementPdfBlob,
 } from "@/lib/settlement-payment-statement";
 import { downloadTextFile, downloadBlobFile } from "@/lib/download";
+import { showAppToast } from "@/lib/app-toast";
+import Toast from "@/components/Toast";
 import { loadDailyLog, loadDailyLogFromApi, loadState, loadStateFromApi, normalizeDonorsArray } from "@/lib/state";
 import {
   defaultSettlementStatementText,
@@ -42,6 +44,50 @@ function updateMemberBankInfo(
       members: r.members.map((m) => (m.memberId === memberId ? { ...m, ...patch } : m)),
     };
   });
+}
+
+/** 비율·멤버별 세금계산서가 재계산 결과에 실제로 반영됐는지 확인 */
+function verifyRatioSettingsApplied(
+  updated: SettlementRecord,
+  expected: {
+    accountRatio: number;
+    toonRatio: number;
+    feeRate: number;
+    useMemberOverrides: boolean;
+    overrides: SettlementMemberRatioOverrides;
+  }
+): boolean {
+  if (Math.abs((updated.accountRatio || 0) - expected.accountRatio) > 1e-9) return false;
+  if (Math.abs((updated.toonRatio || 0) - expected.toonRatio) > 1e-9) return false;
+  if (Math.abs((updated.feeRate || 0) - expected.feeRate) > 1e-9) return false;
+  if (!Number.isFinite(updated.totalNet)) return false;
+
+  if (!expected.useMemberOverrides) {
+    for (const m of updated.members || []) {
+      if (typeof m.taxInvoiceIssued === "boolean") return false;
+      if (Math.abs((m.accountRatio ?? expected.accountRatio) - expected.accountRatio) > 1e-9) return false;
+      if (Math.abs((m.toonRatio ?? expected.toonRatio) - expected.toonRatio) > 1e-9) return false;
+    }
+    return true;
+  }
+
+  for (const m of updated.members || []) {
+    const o = expected.overrides[m.memberId];
+    if (!o) continue;
+    if (
+      typeof o.accountRatio === "number" &&
+      Math.abs((m.accountRatio ?? 0) - o.accountRatio) > 1e-9
+    ) {
+      return false;
+    }
+    if (typeof o.toonRatio === "number" && Math.abs((m.toonRatio ?? 0) - o.toonRatio) > 1e-9) {
+      return false;
+    }
+    if (typeof o.taxInvoiceIssued === "boolean" && m.taxInvoiceIssued !== o.taxInvoiceIssued) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function memberRoleBadge(
@@ -317,16 +363,15 @@ export default function SettlementDetailPage() {
     return Math.max(0, Math.min(100, n)) / 100;
   };
 
-  const persistRatioSettings = () => {
+  const persistRatioSettings = async () => {
     if (!records || !user || !record) return;
     setRatioBusy(true);
     try {
       const accountRatio = parseRatioPercent(accountRatioInput, record.accountRatio);
       const toonRatio = parseRatioPercent(toonRatioInput, record.toonRatio);
       const feeRate = parseRatioPercent(taxRateInput, record.feeRate);
-      let memberRatioOverrides: SettlementMemberRatioOverrides | undefined;
+      let memberRatioOverrides: SettlementMemberRatioOverrides = {};
       if (useMemberRatioOverrides) {
-        memberRatioOverrides = {};
         for (const m of record.members || []) {
           const input = memberRatioInputs[m.memberId];
           const account = input?.account.trim()
@@ -343,8 +388,6 @@ export default function SettlementDetailPage() {
             taxInvoiceIssued: taxInvoice,
           };
         }
-      } else {
-        memberRatioOverrides = {};
       }
       const next = updateSettlementRecordAndRecompute(records, id, {
         accountRatio,
@@ -352,10 +395,42 @@ export default function SettlementDetailPage() {
         feeRate,
         memberRatioOverrides,
       });
+      const updated = next.find((r) => r.id === id);
+      const applied = Boolean(
+        updated &&
+          verifyRatioSettingsApplied(updated, {
+            accountRatio,
+            toonRatio,
+            feeRate,
+            useMemberOverrides: useMemberRatioOverrides,
+            overrides: memberRatioOverrides,
+          })
+      );
       setRecords(next);
       saveSettlementRecords(next, user.id);
-      void saveSettlementRecordsToApi(next, user.id);
+      const serverOk = await saveSettlementRecordsToApi(next, user.id);
       ratioUiDirtyRef.current = false;
+
+      if (!applied) {
+        showAppToast("재계산 결과가 입력값과 일치하지 않습니다. 다시 적용해 주세요.", {
+          variant: "error",
+          durationMs: 4200,
+        });
+        return;
+      }
+      if (serverOk) {
+        showAppToast("비율 적용 · 재계산 완료 · 서버에 저장됨", {
+          variant: "success",
+          durationMs: 3200,
+        });
+      } else {
+        showAppToast("비율 재계산 완료 · 로컬만 저장됨(서버 동기화 실패)", {
+          variant: "error",
+          durationMs: 4500,
+        });
+      }
+    } catch {
+      showAppToast("비율 적용 · 재계산에 실패했습니다.", { variant: "error", durationMs: 4200 });
     } finally {
       setRatioBusy(false);
     }
@@ -649,6 +724,7 @@ export default function SettlementDetailPage() {
 
   return (
     <main className="min-h-screen p-4 md:p-8">
+      <Toast />
       <div ref={contentRef} className="max-w-6xl mx-auto space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -846,7 +922,7 @@ export default function SettlementDetailPage() {
               type="button"
               className="px-3 py-1.5 rounded bg-cyan-800 hover:bg-cyan-700 text-sm disabled:opacity-60"
               disabled={ratioBusy}
-              onClick={persistRatioSettings}
+              onClick={() => void persistRatioSettings()}
             >
               {ratioBusy ? "재계산 중…" : "비율 적용 · 재계산"}
             </button>

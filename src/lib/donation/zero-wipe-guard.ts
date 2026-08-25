@@ -25,18 +25,20 @@ function remainingMemberCombinedTotal(
 }
 
 /**
- * 상류사회 설정만 PATCH(일시정지·좌석·FX 등) — donors/members 권위 저장이 아님.
+ * 상류사회 설정·영토 기록부만 PATCH(일시정지·좌석·cm 반영 등) — donors/members 권위 저장이 아님.
  * 이 경우 서버가 members 금액을 donors 기준으로 재계산하면 안 된다.
  */
 export function isHighSocietySettingsOnlyPatch(opts: {
   highSocietySettingsInPatch: boolean;
+  /** 영토 기록부만 추가·삭제 시 highSocietySettings 없이 올 수 있음 */
+  territoryLogsInPatch?: boolean;
   donorsInPatch: boolean;
   membersAuthoritative: boolean;
   settlementReset: boolean;
   donationInitReset: boolean;
 }): boolean {
   return (
-    opts.highSocietySettingsInPatch &&
+    (opts.highSocietySettingsInPatch || Boolean(opts.territoryLogsInPatch)) &&
     !opts.donorsInPatch &&
     !opts.membersAuthoritative &&
     !opts.settlementReset &&

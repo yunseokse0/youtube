@@ -24,6 +24,8 @@ export type BrowserPersistOptionsInput = {
   membersAuthoritative?: boolean;
   omitHighSocietyFields?: boolean;
   clearSigSoldOutStamp?: boolean;
+  /** 시그 목록 「전체 지우기」·기본 초기화 — 서버 축소 차단·백업 복구를 건너뜀 */
+  clearSigInventory?: boolean;
   highSocietySettingsOnly?: boolean;
 };
 

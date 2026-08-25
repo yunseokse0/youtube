@@ -256,13 +256,18 @@ export function sigSalesRouletteSyncCursorFromState(rs: {
 }
 
 /**
- * 후원 순위 오버레이: `donorRankingsUpdatedAt` 가 올라갔을 때만 GET.
+ * 후원 순위 오버레이: 후원 반영 SSE 또는 `donorRankingsUpdatedAt` 상승 시 GET.
  * 회전판 등만 바뀐 이벤트(updatedAt만)는 무시.
  */
 export function shouldSyncDonorRankingsFromStateUpdatedEvent(
-  event: { updatedAt?: unknown; donorRankingsUpdatedAt?: unknown },
+  event: {
+    updatedAt?: unknown;
+    donorRankingsUpdatedAt?: unknown;
+    donationApplied?: unknown;
+  },
   lastSyncedDonorRankingsAt: number
 ): boolean {
+  if (event.donationApplied) return true;
   const dr = Number(event.donorRankingsUpdatedAt);
   if (Number.isFinite(dr) && dr > 0) return dr > lastSyncedDonorRankingsAt;
   return false;

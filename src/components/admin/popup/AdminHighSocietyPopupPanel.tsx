@@ -122,7 +122,10 @@ export default function AdminHighSocietyPopupPanel() {
       updatedAt: Date.now(),
     };
     next = syncHighSocietyMemberWidthSnapshotInState(next);
-    const ok = await persistAppState(next, { omitDonationFields: true });
+    const ok = await persistAppState(next, {
+      omitDonationFields: true,
+      highSocietySettingsOnly: true,
+    });
     if (ok) {
       setTerritoryCm("");
       setTerritoryNote("");
@@ -139,7 +142,10 @@ export default function AdminHighSocietyPopupPanel() {
       updatedAt: Date.now(),
     };
     next = syncHighSocietyMemberWidthSnapshotInState(next);
-    await persistAppState(next, { omitDonationFields: true });
+    await persistAppState(next, {
+      omitDonationFields: true,
+      highSocietySettingsOnly: true,
+    });
   };
 
   const previewUrl = `/overlay/high-society?u=${scopedUserId}`;

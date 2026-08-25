@@ -11,7 +11,7 @@ import {
   DEFAULT_DONOR_RANKINGS_FULL_THEME,
   type AppState,
 } from "@/lib/state";
-import { STATE_PICK_DONOR_RANKINGS } from "@/lib/state-api-pick";
+import { donorRankingsPickRevision, STATE_PICK_DONOR_RANKINGS } from "@/lib/state-api-pick";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import { startStaggeredOverlayPoll } from "@/lib/overlay-poll-stagger";
 import {
@@ -84,10 +84,8 @@ export function shouldKeepLocalDonorsOverRemote(local: AppState, remote: AppStat
   if (remoteDonors.length > 0) return false;
   const remoteReset = Number(remote.settlementResetAt || 0);
   const localReset = Number(local.settlementResetAt || 0);
+  /** 정산 리셋 stamp 상승 없이 빈 원격이 revision만 높아져 후원순위·기록을 지우지 않음(영토 PATCH 경합) */
   if (remoteReset > localReset) return false;
-  const remoteRev = readDonorRankingsRevision(remote);
-  const localRev = readDonorRankingsRevision(local);
-  if (remoteRev > localRev) return false;
   return true;
 }
 
@@ -109,6 +107,9 @@ function mergeDonorRankingsApiState(prev: AppState | null, remote: Partial<AppSt
     } else {
       next.donors = remoteDonors;
     }
+  }
+  if ("donorRankingsWire" in remote) {
+    next.donorRankingsWire = (remote as AppState).donorRankingsWire;
   }
   if (typeof remote.settlementResetAt === "number" && Number.isFinite(remote.settlementResetAt)) {
     next.settlementResetAt = Math.max(
@@ -146,6 +147,7 @@ export function useDonorRankingsRemoteState(
   const lastSyncedRevRef = useRef(0);
   const stateRef = useRef<AppState | null>(null);
   const syncingRef = useRef(false);
+  const pendingSyncRef = useRef<"full" | "since" | null>(null);
   const syncFromApiRef = useRef<(opts?: { forceFull?: boolean }) => Promise<void>>(async () => {});
   const scheduleSseSyncRef = useRef<(() => void) | null>(null);
   const skipLocalDonorsRef = useRef(shouldSkipLocalDonorBootstrap());
@@ -158,7 +160,7 @@ export function useDonorRankingsRemoteState(
     setState((prev) => mergeDonorRankingsApiState(prev, local));
     lastSyncedRevRef.current = Math.max(
       lastSyncedRevRef.current,
-      readDonorRankingsRevision(local)
+      donorRankingsPickRevision(local)
     );
   }, []);
 
@@ -168,6 +170,7 @@ export function useDonorRankingsRemoteState(
       return;
     }
     if (syncingRef.current) {
+      pendingSyncRef.current = opts?.forceFull || pendingSyncRef.current === "full" ? "full" : "since";
       return;
     }
     syncingRef.current = true;
@@ -192,19 +195,34 @@ export function useDonorRankingsRemoteState(
             ),
           })
         );
+        lastSyncedRevRef.current = Math.max(
+          lastSyncedRevRef.current,
+          donorRankingsPickRevision(remote),
+          donorRankingsPickRevision(localNow)
+        );
         return;
       }
-      const rev = readDonorRankingsRevision(remote);
+      const rev = donorRankingsPickRevision(remote);
       if (rev > 0) lastSyncedRevRef.current = Math.max(lastSyncedRevRef.current, rev);
       setState((prev) => mergeDonorRankingsApiState(prev, remote));
     } finally {
       syncingRef.current = false;
       setSyncedOnce(true);
+      const pending = pendingSyncRef.current;
+      pendingSyncRef.current = null;
+      if (pending) {
+        void syncFromApiRef.current({ forceFull: pending === "full" });
+      }
     }
   }, [userId]);
 
   useSSEConnection((d: unknown) => {
-    const o = d as { type?: string; updatedAt?: number; donorRankingsUpdatedAt?: number };
+    const o = d as {
+      type?: string;
+      updatedAt?: number;
+      donorRankingsUpdatedAt?: number;
+      donationApplied?: unknown;
+    };
     if (o?.type !== "state_updated") return;
     if (!shouldSyncDonorRankingsFromStateUpdatedEvent(o, lastSyncedRevRef.current)) return;
     /** 수동 후원 직후 부분 GET(304) 레이스 방지 — 전체 수신 */

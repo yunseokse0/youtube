@@ -65,9 +65,10 @@ export function computeDonorRankingsUpdatedAt(
   if (!changed && membersFinancialFingerprint(base.members) !== membersFinancialFingerprint(next.members)) {
     changed = true;
   }
-  if (!changed && "members" in patch) {
-    changed = true;
-  }
+  /**
+   * members 키만 있다고 올리지 않음 — 영토 cm·테마 PATCH 가 members 를 실어도
+   * 금액·후원이 같으면 후원순위 revision 을 올리지 않아 빈 스냅샷 경합을 줄인다.
+   */
   return changed ? Date.now() : prev;
 }
 

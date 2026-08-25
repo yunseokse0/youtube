@@ -111,4 +111,52 @@ describe("sigSoldOutStampUrl persistence", () => {
     const merged = JSON.parse(mergeServerSaveApiBodies(prev, next)) as Record<string, unknown>;
     expect(merged.sigSoldOutStampUrl).toBe("/uploads/sigs/din/stamp.png");
   });
+
+  it("sends clearSigInventory when intentional wipe is requested", async () => {
+    const userId = "sig-clear-all";
+    const rich = {
+      ...defaultState(),
+      sigInventory: [
+        {
+          id: "sig_custom",
+          name: "애교",
+          price: 77000,
+          imageUrl: "",
+          memberId: "",
+          maxCount: 1,
+          soldCount: 0,
+          isRolling: true,
+          isActive: true,
+        },
+      ],
+      updatedAt: Date.now(),
+    };
+    window.localStorage.setItem(storageKey(userId), JSON.stringify(rich));
+    const cleared = { ...rich, sigInventory: [], updatedAt: Date.now() };
+    await saveStateAsync(cleared, userId, {
+      omitDonationFields: true,
+      clearSigInventory: true,
+    });
+    const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    const body = JSON.parse(String(calls[0][1]?.body || "{}")) as Record<string, unknown>;
+    expect(body.clearSigInventory).toBe(true);
+    expect(Array.isArray(body.sigInventory)).toBe(true);
+    const inv = body.sigInventory as Array<{ id?: string; name?: string }>;
+    expect(inv.some((x) => x.id === "sig_custom" || x.name === "애교")).toBe(false);
+  });
+
+  it("mergeServerSaveApiBodies keeps clearSigInventory across queued patches", () => {
+    const prev = JSON.stringify({
+      updatedAt: 100,
+      clearSigInventory: true,
+      sigInventory: [],
+    });
+    const next = JSON.stringify({
+      updatedAt: 200,
+      omitDonationFields: true,
+      overlaySettings: { foo: 1 },
+    });
+    const merged = JSON.parse(mergeServerSaveApiBodies(prev, next)) as Record<string, unknown>;
+    expect(merged.clearSigInventory).toBe(true);
+  });
 });

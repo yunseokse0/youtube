@@ -1958,6 +1958,8 @@ export type SaveStateAsyncOptions = {
   omitHighSocietyFields?: boolean;
   /** 판매완료 도장을 기본 도장으로 되돌릴 때만 true — 빈 URL 우연 덮어쓰기 방지 */
   clearSigSoldOutStamp?: boolean;
+  /** 시그 목록 전체 삭제·기본 초기화 — 서버 사고방지 축소 차단을 우회 */
+  clearSigInventory?: boolean;
   /**
    * 상류사회 OFF·일시정지·좌석 등 — API 에 highSocietySettings(+updatedAt) 만 보내
    * members/donors 가 0원으로 서버 후원·엑셀표를 덮지 않게 함.
@@ -2232,6 +2234,10 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
       if (prevStamp && !clearing && !nextStamp) {
         merged.sigSoldOutStampUrl = prev.sigSoldOutStampUrl;
       }
+    }
+    /** 시그 전체 삭제 플래그 — 큐 병합 시 유실되지 않게 */
+    if (prev.clearSigInventory === true || next.clearSigInventory === true) {
+      merged.clearSigInventory = true;
     }
     return JSON.stringify(merged);
   } catch {
@@ -2546,6 +2552,12 @@ export function appStatePayloadForApi(
       sigSoldOutStampUrl: "",
       clearSigSoldOutStamp: true,
     } as typeof payload & { clearSigSoldOutStamp: boolean };
+  }
+  if (options?.clearSigInventory) {
+    payload = {
+      ...payload,
+      clearSigInventory: true,
+    } as typeof payload & { clearSigInventory: boolean };
   }
   if (!rouletteState) {
     return payload;

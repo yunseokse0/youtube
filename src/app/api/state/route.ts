@@ -72,6 +72,7 @@ import {
 } from "../_shared/upstash-app-state";
 import {
   enrichAppStateWithSigInventoryBackup,
+  markSigInventoryBackupCleared,
   saveSigInventoryBackup,
 } from "@/lib/sig-inventory-backup";
 import {
@@ -185,6 +186,7 @@ function mergePartialState(
   patch: Partial<AppState> & {
     settlementReset?: boolean;
     clearSigSoldOutStamp?: boolean;
+    clearSigInventory?: boolean;
     membersAuthoritative?: boolean;
   },
   userId: string
@@ -373,6 +375,7 @@ function mergePartialState(
     next.sigInventory = base.sigInventory;
   } else if (
     Array.isArray(patch.sigInventory) &&
+    patch.clearSigInventory !== true &&
     (looksLikeAccidentalDefaultSigInventory(patch.sigInventory, base.sigInventory) ||
       (isShrunkToDefaultSigInventory(patch.sigInventory) &&
         hasExpandedSigInventory(base.sigInventory)))
@@ -894,11 +897,14 @@ export async function POST(req: Request) {
       donorsReplace?: boolean;
       settlementReset?: boolean;
       membersAuthoritative?: boolean;
+      clearSigInventory?: boolean;
+      clearSigSoldOutStamp?: boolean;
     };
     const donorsAuthoritative = body.donorsAuthoritative === true;
     const donorsReplace = body.donorsReplace === true;
     const settlementReset = body.settlementReset === true;
     const membersAuthoritative = body.membersAuthoritative === true;
+    const clearSigInventory = body.clearSigInventory === true;
     const kvOk = isPersistentKvConfigured();
     const memExisting = getServerMemoryAppState(userId);
     let existing: AppState | null = null;
@@ -1019,6 +1025,7 @@ export async function POST(req: Request) {
     const highSocietySettingsInPatch =
       body.highSocietySettings &&
       typeof body.highSocietySettings === "object";
+    const territoryLogsInPatch = Array.isArray(body.territoryLogs);
     const massEmptyAuthoritativeWipe = shouldRefuseMassEmptyAuthoritativeDonorWipe({
       donorsAuthoritative,
       settlementReset,
@@ -1089,30 +1096,53 @@ export async function POST(req: Request) {
       }
     }
     /** donors 필드를 무시하기로 했으면 body에서도 제거해 mergePartialState 가 건드리지 않게 함 */
-    const bodyForMerge =
+    let bodyForMerge: Partial<AppState> & {
+      donorsAuthoritative?: boolean;
+      donorsReplace?: boolean;
+      settlementReset?: boolean;
+      membersAuthoritative?: boolean;
+      clearSigInventory?: boolean;
+      clearSigSoldOutStamp?: boolean;
+    } =
       !donorsInPatch && Array.isArray(body.donors)
         ? (() => {
             const { donors: _drop, ...rest } = body;
             return rest;
           })()
         : body;
+    const highSocietySettingsOnlyPatch = isHighSocietySettingsOnlyPatch({
+      highSocietySettingsInPatch: Boolean(highSocietySettingsInPatch),
+      territoryLogsInPatch,
+      donorsInPatch,
+      membersAuthoritative,
+      settlementReset,
+      donationInitReset,
+    });
+    /**
+     * 영토·상류사회 설정-only — members 동봉(구 클라이언트 omitDonationFields)이
+     * 엑셀 금액을 0으로 덮지 않게 merge 전에 제거한다.
+     */
+    if (highSocietySettingsOnlyPatch && "members" in bodyForMerge && !membersAuthoritative) {
+      const {
+        members: _m,
+        memberPositions: _mp,
+        memberPositionMode: _mpm,
+        rankPositionLabels: _rpl,
+        ...hsOnlyRest
+      } = bodyForMerge;
+      bodyForMerge = hsOnlyRest;
+    }
     const merged = mergePartialState(
       baseState,
       {
         ...bodyForMerge,
         ...(membersAuthoritative ? { membersAuthoritative: true as const } : {}),
         ...(settlementReset ? { settlementReset: true as const } : {}),
+        ...(clearSigInventory ? { clearSigInventory: true as const } : {}),
       },
       userId
     );
     const dedupedDonors = donorsInPatch ? dedupeDonorRows(safeMergedDonors) : normalizeDonorsArray(baseState.donors);
-    const highSocietySettingsOnlyPatch = isHighSocietySettingsOnlyPatch({
-      highSocietySettingsInPatch: Boolean(highSocietySettingsInPatch),
-      donorsInPatch,
-      membersAuthoritative,
-      settlementReset,
-      donationInitReset,
-    });
     const memberIdentityOnlyPatch =
       membersAuthoritative &&
       !donorsInPatch &&
@@ -1240,7 +1270,9 @@ export async function POST(req: Request) {
       next = syncHighSocietyMemberWidthSnapshotInState(next);
     }
 
-    if (hasExpandedSigInventory(next.sigInventory)) {
+    if (clearSigInventory) {
+      await markSigInventoryBackupCleared(userId);
+    } else if (hasExpandedSigInventory(next.sigInventory)) {
       void saveSigInventoryBackup(userId, next.sigInventory);
     }
 

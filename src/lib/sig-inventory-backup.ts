@@ -16,11 +16,15 @@ export type SigInventoryBackupPayload = {
   items: SigItem[];
   savedAt: number;
   count: number;
+  /** 사용자가 「전체 지우기」로 비운 뒤 — GET 이 옛 백업을 되살리지 않음 */
+  intentionallyClearedAt?: number;
 };
 
 export async function loadSigInventoryBackup(userId: string): Promise<SigItem[] | null> {
   const data = await upstashGetAppStateJson<SigInventoryBackupPayload>(sigInventoryBackupKey(userId));
-  if (!data || !Array.isArray(data.items) || data.items.length === 0) return null;
+  if (!data) return null;
+  if (Number(data.intentionallyClearedAt || 0) > 0) return null;
+  if (!Array.isArray(data.items) || data.items.length === 0) return null;
   return normalizeSigInventory(data.items);
 }
 
@@ -31,6 +35,17 @@ export async function saveSigInventoryBackup(userId: string, items: SigItem[]): 
     items: normalized,
     savedAt: Date.now(),
     count: normalized.length,
+  };
+  return upstashSetAppStateJson(sigInventoryBackupKey(userId), payload);
+}
+
+/** 시그 목록 의도적 전체 삭제 — 백업 복구를 막음 */
+export async function markSigInventoryBackupCleared(userId: string): Promise<boolean> {
+  const payload: SigInventoryBackupPayload = {
+    items: [],
+    savedAt: Date.now(),
+    count: 0,
+    intentionallyClearedAt: Date.now(),
   };
   return upstashSetAppStateJson(sigInventoryBackupKey(userId), payload);
 }

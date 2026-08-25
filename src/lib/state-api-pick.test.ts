@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { defaultState } from "@/lib/state";
 import {
   projectStateForGetPick,
+  revisionForStatePick,
   STATE_PICK_DONOR_RANKINGS,
   STATE_PICK_OVERLAY,
   STATE_PICK_OVERLAY_DONORS,
@@ -149,5 +150,15 @@ describe("state-api-pick", () => {
     const wire = out.donorRankingsWire as { unifiedTop: Array<{ name: string; amount: number }> };
     expect(wire.unifiedTop.find((r) => r.name === "G-귤귤")?.amount).toBe(500_000);
     expect(wire.unifiedTop.find((r) => r.name === "최근")?.amount).toBe(301_000);
+  });
+
+  it("donor-rankings pick revision follows updatedAt so overlay poll is not stuck on 304", () => {
+    const state = {
+      ...defaultState(),
+      updatedAt: 9_000,
+      donorRankingsUpdatedAt: 1_000,
+    };
+    expect(revisionForStatePick(state, STATE_PICK_DONOR_RANKINGS)).toBe(9_000);
+    expect(revisionForStatePick(state, STATE_PICK_OVERLAY)).toBe(9_000);
   });
 });
