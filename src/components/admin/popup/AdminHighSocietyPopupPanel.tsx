@@ -19,6 +19,7 @@ import {
   removeTerritoryLogFromAppState,
   type HighSocietySettingsAdminPatch,
 } from "@/lib/high-society";
+import HighSocietySeatLayoutEditor from "@/components/admin/HighSocietySeatLayoutEditor";
 import {
   createTerritoryLog,
   formatTerritoryLogPushDirLabel,
@@ -160,10 +161,7 @@ export default function AdminHighSocietyPopupPanel() {
                 <h2 className="text-sm font-semibold text-amber-100">상류사회 모드</h2>
                 <p className="mt-1 text-[11px] text-neutral-400">
                   1인 시작 {formatCm(hsStartCm)} · 전장 {hsEffectiveFieldCm.toLocaleString("ko-KR")}cm ({hsSeatCount}명)
-                  · 좌석·전장 상세는{" "}
-                  <a href="/admin#high-society-overlay" target="_blank" rel="noreferrer" className="text-sky-400 underline">
-                    메인 관리자
-                  </a>
+                  · 좌석·전장·배치도는 이 창에서 편집
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -260,6 +258,21 @@ export default function AdminHighSocietyPopupPanel() {
                 오른쪽 →
               </button>
             </div>
+          </section>
+
+          <section className="rounded-lg border border-amber-400/35 bg-amber-950/20 p-3 space-y-2">
+            <h2 className="text-sm font-semibold text-amber-100">영토 배치도</h2>
+            <p className="text-[11px] text-neutral-400 leading-snug">
+              좌석 추가·순서·삭제·1인 시작 cm는 이 팝업에서만 변경합니다.
+            </p>
+            <HighSocietySeatLayoutEditor
+              members={state.members || []}
+              donors={state.donors || []}
+              territoryLogs={state.territoryLogs || []}
+              settings={highSocietySettings}
+              onPatch={(patch) => void patchHighSociety(patch)}
+              showMiddlePushSelect={false}
+            />
           </section>
 
           <section className="rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">

@@ -27,6 +27,6 @@ export function openAdminHighSocietyPopup(userId?: string | null): Window | null
   return window.open(
     buildAdminHighSocietyPopupUrl(userId),
     "admin-high-society-popup",
-    `width=760,height=920,${POPUP_FEATURES}`
+    `width=900,height=980,${POPUP_FEATURES}`
   );
 }

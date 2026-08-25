@@ -5,6 +5,7 @@ import MemberRow from "@/components/MemberRow";
 import DonationTableOptionCheckboxes from "@/components/admin/DonationTableOptionCheckboxes";
 import AdminLazyPreviewIframe from "@/components/admin/AdminLazyPreviewIframe";
 import MemberPositionInput from "@/components/admin/MemberPositionInput";
+import { HighSocietySeatLayoutSummary } from "@/components/admin/HighSocietySeatLayoutEditor";
 import {
   AdminCollapseToolbar,
   AdminCollapsibleBlock,
@@ -294,8 +295,6 @@ import { persistDonationStateViaApi } from "@/lib/donation/persist-donation-clie
 import { applyDonationDummySeed } from "@/lib/dev/seed-donation-dummy";
 import {
   formatCm,
-  formatSeatWidthCm,
-  normalizeZeroCmGaugeDisplay,
   normalizeHighSocietyFxSettings,
   highSocietyFxToHsFxParam,
   highSocietyAdminPreviewIframeKeySig,
@@ -311,10 +310,6 @@ import {
   buildHighSocietySettingsPersistToast,
   type HighSocietySettingsAdminPatch,
   resolveHighSocietySeatMembers,
-  isHighSocietySeatSelectionManual,
-  resolveHighSocietySeatMemberIdsForEdit,
-  appendHighSocietySeatMemberId,
-  insertHighSocietySeatMemberIdAt,
   buildHighSocietyFieldFromAppState,
   appendTerritoryLogToAppState,
   removeTerritoryLogFromAppState,
@@ -327,7 +322,6 @@ import {
   fieldCmFromStartPerMember,
   startCmFromField,
   HIGH_SOCIETY_DEFAULT_FIELD_CM,
-  HIGH_SOCIETY_MAX_SEATS,
   shouldBlockHighSocietyRegression,
   isMeaningfulHighSocietySettings,
   syncHighSocietyMemberWidthSnapshotInState,
@@ -1142,7 +1136,6 @@ function AdminPageInner() {
   const hsSnapshotHealBusyRef = useRef(false);
   const hsSnapshotHealSigRef = useRef("");
   /** 상류사회 1인 시작 cm — 입력 중 25 클램프에 막히지 않게 초안 문자열 유지 */
-  const [hsStartCmDraft, setHsStartCmDraft] = useState<string | null>(null);
   const [obsTextPreviewIframeKey, setObsTextPreviewIframeKey] = useState(0);
   const [obsTextPreviewInstanceId, setObsTextPreviewInstanceId] = useState<string | null>(null);
   const obsTextRegistry = useMemo(() => readObsTextRegistryFromState(state), [state]);
@@ -8519,19 +8512,6 @@ function AdminPageInner() {
     const exists = hsSeatPlayers.some((m) => m.id === territoryMemberId);
     if (!territoryMemberId || !exists) setTerritoryMemberId(hsSeatPlayers[0].id);
   }, [state.members, territoryMemberId, hsSeatPlayers]);
-  /** 수동 좌석(명시 목록·빈 좌석 포함) vs 자동 전원 N등분 */
-  const hsSeatExplicit = isHighSocietySeatSelectionManual(highSocietySettings);
-  const hsSeatedIdSet = useMemo(
-    () => new Set(hsSeatPlayers.map((p) => String(p.id))),
-    [hsSeatPlayers]
-  );
-  const hsUnseatedMembers = useMemo(
-    () =>
-      (state.members || []).filter(
-        (m) => !m.operating && !hsSeatedIdSet.has(String(m.id))
-      ),
-    [state.members, hsSeatedIdSet]
-  );
   const hsSeatFieldByMemberId = useMemo(() => {
     const map = new Map<string, { widthCm: number; eliminated: boolean }>();
     if (!highSocietySettings.enabled) return map;
@@ -8712,77 +8692,6 @@ function AdminPageInner() {
     state.updatedAt,
     persistState,
   ]);
-  const moveHighSocietySeat = useCallback(
-    (memberId: string, dir: -1 | 1) => {
-      const id = String(memberId || "").trim();
-      if (!id) return;
-      const members = stateRef.current.members || [];
-      const settings = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
-      const cur = resolveHighSocietySeatMemberIdsForEdit(settings, members);
-      const idx = cur.findIndex((sid) => String(sid) === id);
-      if (idx < 0) return;
-      const nextIdx = idx + dir;
-      if (nextIdx < 0 || nextIdx >= cur.length) return;
-      const swapped = cur.slice();
-      const tmp = swapped[idx]!;
-      swapped[idx] = swapped[nextIdx]!;
-      swapped[nextIdx] = tmp;
-      patchHighSocietySettings({ seatMemberIds: swapped, seatMemberIdsManual: true });
-    },
-    [patchHighSocietySettings]
-  );
-  const moveHighSocietySeatToIndex = useCallback(
-    (memberId: string, targetIndex: number) => {
-      const id = String(memberId || "").trim();
-      if (!id) return;
-      const members = stateRef.current.members || [];
-      const settings = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
-      const cur = resolveHighSocietySeatMemberIdsForEdit(settings, members);
-      const idx = cur.findIndex((sid) => String(sid) === id);
-      if (idx < 0) return;
-      const without = cur.filter((sid) => String(sid) !== id);
-      const at = Math.max(0, Math.min(Math.floor(targetIndex), without.length));
-      const next = [...without.slice(0, at), id, ...without.slice(at)];
-      patchHighSocietySettings({ seatMemberIds: next, seatMemberIdsManual: true });
-    },
-    [patchHighSocietySettings]
-  );
-  const addHighSocietySeat = useCallback(
-    (memberId: string, atIndex?: number) => {
-      const id = String(memberId || "").trim();
-      if (!id) return;
-      const members = stateRef.current.members || [];
-      const settings = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
-      const seated = resolveHighSocietySeatMembers(members, settings);
-      if (seated.some((p) => p.id === id)) return;
-      const cur = resolveHighSocietySeatMemberIdsForEdit(settings, members);
-      if (cur.length >= HIGH_SOCIETY_MAX_SEATS) {
-        showAppToast(`상류사회 좌석은 최대 ${HIGH_SOCIETY_MAX_SEATS}명입니다`, { variant: "info" });
-        return;
-      }
-      const insertAt =
-        typeof atIndex === "number" && Number.isFinite(atIndex)
-          ? Math.max(0, Math.min(Math.floor(atIndex), cur.length))
-          : cur.length;
-      patchHighSocietySettings({
-        seatMemberIds: insertHighSocietySeatMemberIdAt(cur, id, insertAt),
-        seatMemberIdsManual: true,
-      });
-    },
-    [patchHighSocietySettings]
-  );
-  const removeHighSocietySeat = useCallback(
-    (memberId: string) => {
-      const id = String(memberId || "").trim();
-      if (!id) return;
-      const members = stateRef.current.members || [];
-      const settings = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
-      const cur = resolveHighSocietySeatMemberIdsForEdit(settings, members);
-      const next = cur.filter((sid) => String(sid) !== id);
-      patchHighSocietySettings({ seatMemberIds: next, seatMemberIdsManual: true });
-    },
-    [patchHighSocietySettings]
-  );
   const hsSeatCountForStart = resolveHighSocietySeatCountForField(
     highSocietySettings,
     hsSeatPlayers.length
@@ -8796,39 +8705,6 @@ function AdminPageInner() {
     () => highSocietyAdminPreviewIframeKeySig(highSocietySettings),
     [highSocietySettings]
   );
-  const patchHighSocietyStartCm = useCallback(
-    (startCm: number) => {
-      const seats = resolveHighSocietySeatCountForField(
-        highSocietySettings,
-        hsSeatPlayers.length || hsSeatCountForStart
-      );
-      const clamped = Math.max(1, Math.min(5000, Math.floor(Number(startCm) || 0)));
-      setHsStartCmDraft(null);
-      patchHighSocietySettings({
-        startCmPerMember: clamped,
-        fieldCm: fieldCmFromStartPerMember(clamped, seats),
-        memberWidthCm: undefined,
-        memberWidthDonationSnapshot: undefined,
-        memberTerritoryExpand: undefined,
-      });
-    },
-    [highSocietySettings, hsSeatCountForStart, hsSeatPlayers.length, patchHighSocietySettings]
-  );
-  const hsStartCmInputValue =
-    hsStartCmDraft !== null ? hsStartCmDraft : String(Math.max(1, Math.round(hsStartCm)));
-  const onHsStartCmDraftChange = useCallback((raw: string) => {
-    setHsStartCmDraft(raw.replace(/[^\d]/g, "").slice(0, 5));
-  }, []);
-  const commitHsStartCmDraft = useCallback(() => {
-    const raw = hsStartCmDraft;
-    if (raw === null) return;
-    const n = parseInt(raw || "0", 10);
-    if (!Number.isFinite(n) || n <= 0) {
-      setHsStartCmDraft(null);
-      return;
-    }
-    patchHighSocietyStartCm(n);
-  }, [hsStartCmDraft, patchHighSocietyStartCm]);
   const sigMatchDonors = state.donors || [];
   const sigMatchRanking = useMemo(
     () => getSigMatchRankings(
@@ -9327,270 +9203,11 @@ function AdminPageInner() {
   const emptyImageUrlCount = sigImageUrlIssues.filter((x) => x.isEmpty).length;
 
   const highSocietySeatLayoutPanel = (
-    <div className="space-y-3">
-      <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
-        1인 시작 (cm)
-        <input
-          type="text"
-          inputMode="numeric"
-          className="w-28 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm text-amber-50"
-          value={hsStartCmInputValue}
-          onChange={(e) => onHsStartCmDraftChange(e.target.value)}
-          onBlur={() => commitHsStartCmDraft()}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.currentTarget.blur();
-            }
-          }}
-        />
-        <span className="text-neutral-500">
-          → 전장{" "}
-          <strong className="text-neutral-200">
-            {hsEffectiveFieldCm.toLocaleString("ko-KR")}cm
-          </strong>
-          ({hsSeatCountForStart}명 기준 · OFF여도 저장값 유지)
-        </span>
-      </label>
-      <div className="flex flex-wrap gap-1.5">
-        {[100, 200, 300, 400, 500, 600].map((cm) => (
-          <button
-            key={`hs-overlay-start-${cm}`}
-            type="button"
-            className={`rounded px-2 py-0.5 text-[10px] font-semibold border ${
-              Math.round(hsStartCm) === cm
-                ? "border-amber-400 bg-amber-700/80 text-white"
-                : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
-            }`}
-            onClick={() => patchHighSocietyStartCm(cm)}
-          >
-            1인 {cm}cm
-          </button>
-        ))}
-      </div>
-      {!highSocietySettings.enabled ? (
-        <p className="text-[10px] text-amber-200/80 leading-snug">
-          상류사회 OFF — 1인 시작·전장 설정은 저장됩니다. 좌석 배치·후원 연동은 ON 후 설정하세요.
-        </p>
-      ) : null}
-      {highSocietySettings.enabled ? (
-      <>
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-[11px] text-neutral-400">
-            좌석 배치(좌→右). ←→로 순서 변경 · 최대 {HIGH_SOCIETY_MAX_SEATS}명.
-            {hsSeatExplicit ? (
-              <>
-                {" "}
-                <strong className="text-amber-200/90">수동 고정</strong>
-              </>
-            ) : (
-              <>
-                {" "}
-                지금은 <strong className="text-neutral-300">자동(전원 N등분)</strong>
-                — 삭제/이동 시 그 배치로 고정됩니다.
-              </>
-            )}
-            <span className="block mt-0.5 text-[10px] text-neutral-500">
-              0cm 탈락 멤버는 기본적으로 게이지에서 빠집니다. 아래 「0cm 게이지 표시」에서 0cm·00cm
-              노출을 켤 수 있습니다. 재진입 위치는 ←→ 또는 0cm 칩의 위치 선택 · 영토 cm 조절은
-              「상류사회 · 영토 기록부」에서만 수동 반영합니다.
-            </span>
-          </div>
-          {hsSeatExplicit ? (
-            <button
-              type="button"
-              className="rounded px-2 py-0.5 text-[10px] font-semibold border border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
-              onClick={() => patchHighSocietySettings({ seatMemberIds: [], seatMemberIdsManual: false })}
-            >
-              자동(전원)으로
-            </button>
-          ) : null}
-        </div>
-        <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
-          <span className="text-neutral-400">0cm 게이지 표시</span>
-          <select
-            className="rounded border border-white/10 bg-neutral-950 px-2 py-1 text-[11px]"
-            value={normalizeZeroCmGaugeDisplay(highSocietySettings.zeroCmGaugeDisplay)}
-            onChange={(e) =>
-              patchHighSocietySettings({
-                zeroCmGaugeDisplay: normalizeZeroCmGaugeDisplay(e.target.value),
-              })
-            }
-          >
-            <option value="hidden">숨김 (기본)</option>
-            <option value="0cm">게이지에 0cm 표시</option>
-            <option value="00cm">게이지에 00cm 표시</option>
-          </select>
-          <span className="text-[10px] text-neutral-500">
-            0cm·00cm 선택 시 탈락 멤버도 좌석 순서대로 얇은 칸으로 표시됩니다.
-          </span>
-        </label>
-        {hsSeatPlayers.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {hsSeatPlayers.map((p, i) => {
-              const expandHint = i === 0 ? "→만" : i === hsSeatPlayers.length - 1 ? "←만" : "↔";
-              const fieldSeat = hsSeatFieldByMemberId.get(p.id);
-              const eliminated = fieldSeat?.eliminated === true;
-              const zeroCmDisplay = normalizeZeroCmGaugeDisplay(highSocietySettings.zeroCmGaugeDisplay);
-              return (
-                <div
-                  key={`hs-overlay-seat-${p.id}`}
-                  className={`flex items-center gap-1 rounded border px-1.5 py-1 ${
-                    eliminated
-                      ? "border-neutral-500/50 bg-neutral-900/80 opacity-75"
-                      : "border-amber-400/50 bg-amber-900/50"
-                  }`}
-                >
-                  <span className="min-w-[1.25rem] text-center text-[10px] font-bold text-amber-200">
-                    {i + 1}
-                  </span>
-                  <div className="leading-tight">
-                    <div className="text-[11px] font-semibold text-white">{p.name}</div>
-                    <div className="text-[9px] text-amber-200/70">
-                      {eliminated
-                        ? `${formatSeatWidthCm(0, zeroCmDisplay)} 탈락 · ${expandHint}`
-                        : fieldSeat
-                          ? `${formatCm(fieldSeat.widthCm)} · ${expandHint}`
-                          : expandHint}
-                    </div>
-                  </div>
-                  <div className="ml-1 flex flex-col gap-0.5">
-                    {eliminated ? (
-                      <select
-                        className="max-w-[5.5rem] rounded bg-neutral-950/70 px-1 py-0.5 text-[9px] text-neutral-200"
-                        value={String(i)}
-                        title="0cm 탈락 — 재진입 위치(좌→右)"
-                        aria-label={`${p.name} 재진입 위치`}
-                        onChange={(e) => {
-                          const at = Number(e.target.value);
-                          if (Number.isFinite(at) && at !== i) {
-                            moveHighSocietySeatToIndex(p.id, at);
-                          }
-                        }}
-                      >
-                        {Array.from({ length: hsSeatPlayers.length }, (_, at) => (
-                          <option key={`hs-seat-at-${p.id}-${at}`} value={String(at)}>
-                            {at + 1}번 위치
-                          </option>
-                        ))}
-                      </select>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="rounded bg-neutral-950/70 px-1.5 py-0.5 text-[10px] text-neutral-200 hover:bg-neutral-800 disabled:opacity-30"
-                      disabled={i === 0}
-                      title="왼쪽으로"
-                      onClick={() => moveHighSocietySeat(p.id, -1)}
-                    >
-                      ←
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded bg-neutral-950/70 px-1.5 py-0.5 text-[10px] text-neutral-200 hover:bg-neutral-800 disabled:opacity-30"
-                      disabled={i >= hsSeatPlayers.length - 1}
-                      title="오른쪽으로"
-                      onClick={() => moveHighSocietySeat(p.id, 1)}
-                    >
-                      →
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    className="rounded px-1.5 py-0.5 text-[10px] text-red-300 hover:bg-red-950/50"
-                    title="좌석에서 제거"
-                    onClick={() => removeHighSocietySeat(p.id)}
-                  >
-                    ✕
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="rounded border border-dashed border-white/15 bg-black/20 px-2 py-2 text-[11px] text-neutral-500">
-            좌석에 멤버가 없습니다. 아래에서 추가하거나 「자동(전원)으로」를 누르세요.
-          </div>
-        )}
-        {hsUnseatedMembers.length > 0 ? (
-          <div className="space-y-1">
-            <div className="text-[10px] text-neutral-500">
-              좌석에 추가 — 위치(좌→右)를 고른 뒤 추가
-            </div>
-            <div className="flex flex-col gap-1.5">
-              {hsUnseatedMembers.map((m) => (
-                <div key={`hs-overlay-add-${m.id}`} className="flex flex-wrap items-center gap-1.5">
-                  <select
-                    className="rounded border border-white/15 bg-neutral-950 px-1.5 py-1 text-[10px] text-neutral-200"
-                    defaultValue={String(hsSeatPlayers.length)}
-                    aria-label={`${m.name} 좌석 삽입 위치`}
-                    id={`hs-add-seat-at-${m.id}`}
-                  >
-                    {Array.from({ length: hsSeatPlayers.length + 1 }, (_, at) => (
-                      <option key={`hs-add-at-${m.id}-${at}`} value={String(at)}>
-                        {at === 0
-                          ? "← 맨 왼쪽"
-                          : at >= hsSeatPlayers.length
-                            ? "맨 오른쪽 →"
-                            : `${at + 1}번과 ${at + 2}번 사이`}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="rounded border border-white/15 bg-neutral-900 px-2 py-1 text-[11px] font-semibold text-neutral-300 hover:border-amber-400/50 hover:text-amber-100"
-                    onClick={() => {
-                      const sel = document.getElementById(
-                        `hs-add-seat-at-${m.id}`
-                      ) as HTMLSelectElement | null;
-                      const at = Number(sel?.value ?? hsSeatPlayers.length);
-                      addHighSocietySeat(m.id, Number.isFinite(at) ? at : hsSeatPlayers.length);
-                    }}
-                  >
-                    + {m.name}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-      </div>
-      <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
-        가운데 시스템 기본 방향
-        <select
-          className="rounded border border-white/10 bg-neutral-950 px-2 py-1"
-          value={resolveSystemMiddlePushDir(highSocietySettings)}
-          onChange={(e) =>
-            patchHighSocietySettings({
-              defaultMiddlePush: e.target.value === "left" ? "left" : "right",
-            })
-          }
-        >
-          <option value="right">오른쪽 → (기본)</option>
-          <option value="left">← 왼쪽</option>
-        </select>
-      </label>
-      <p className="text-[10px] text-neutral-500 leading-snug">
-        ON 시 좌석 멤버 후원 연동이 켜집니다. OFF·설정 저장·영토 초기화는 후원 기록·멤버 금액을 건드리지 않습니다. 건별 확장 방향은{" "}
-        <button
-          type="button"
-          className="text-sky-400 underline"
-          onClick={() => {
-            moveToSection("donor", "donor-management");
-            window.setTimeout(() => {
-              document.getElementById("high-society-mode")?.scrollIntoView({
-                behavior: "smooth",
-                block: "start",
-              });
-            }, 80);
-          }}
-        >
-          후원자 기록부
-        </button>
-        에서 설정합니다.
-      </p>
-      </>
-      ) : null}
-    </div>
+    <HighSocietySeatLayoutSummary
+      members={state.members || []}
+      settings={highSocietySettings}
+      onOpenPopup={() => openAdminHighSocietyPopup(user?.id || overlayUserId)}
+    />
   );
 
   const serverDonorHealthCount = Number(storageHealth?.mainState?.donorsCount || 0);
@@ -14436,19 +14053,11 @@ function AdminPageInner() {
                     <button
                       type="button"
                       className="text-sky-400 underline"
-                      onClick={() => {
-                        moveToSection("overlay", "overlay-settings");
-                        window.setTimeout(() => {
-                          document.getElementById("high-society-overlay")?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start",
-                          });
-                        }, 80);
-                      }}
+                      onClick={() => openAdminHighSocietyPopup(user?.id || overlayUserId)}
                     >
-                      오버레이 관리 → 상류사회
+                      상류사회 팝업 · 영토 배치도
                     </button>
-                    에서 설정하세요. 아래 합산·리스트에서는 가운데 좌석 후원의 확장 방향만 바꿉니다.
+                    에서만 편집합니다. 아래 합산·리스트에서는 가운데 좌석 후원의 확장 방향만 바꿉니다.
                   </div>
                 ) : null}
               </div>
@@ -15512,17 +15121,9 @@ function AdminPageInner() {
                     <button
                       type="button"
                       className="text-sky-400 underline ml-1"
-                      onClick={() => {
-                        moveToSection("overlay", "overlay-settings");
-                        window.setTimeout(() => {
-                          document.getElementById("high-society-overlay")?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start",
-                          });
-                        }, 80);
-                      }}
+                      onClick={() => openAdminHighSocietyPopup(user?.id || overlayUserId)}
                     >
-                      좌석·전장 설정
+                      영토 배치도 (팝업)
                     </button>
                   </div>
                 ) : null}
@@ -16747,6 +16348,9 @@ function AdminPageInner() {
 
                 <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
                   <div className="text-[11px] font-semibold text-amber-100/95">좌석 · 전장 · 후원 연동</div>
+                  <p className="text-[10px] text-neutral-400 leading-snug">
+                    좌석 배치(추가·순서·삭제)·1인 시작 cm는 상류사회 팝업의 「영토 배치도」에서만 편집합니다.
+                  </p>
                   {highSocietySeatLayoutPanel}
                 </div>
 
