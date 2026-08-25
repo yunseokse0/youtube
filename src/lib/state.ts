@@ -468,13 +468,14 @@ export const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
   bg: "transparent",
   /** 반투명 밝은 패널 — 방송 배경이 비치는 유리 느낌 */
   panelBg: "rgba(232, 232, 236, 0.7)",
-  borderColor: "#ffc107",
+  /** 패널 외곽 — 검정만 (골드 테두리 제외) */
+  borderColor: "#000000",
   headerAccountBg: "rgba(232, 232, 236, 0.55)",
   headerToonBg: "rgba(232, 232, 236, 0.55)",
   rowEvenBg: "transparent",
   rowOddBg: "rgba(255, 255, 255, 0.14)",
-  /** 4등 이후·제목·닉·금액 — 골드 글자 + 두꺼운 검정 외곽선 */
-  rankColor: "#ffc107",
+  /** 4등 이후 순위 숫자: 흰색 / 제목·닉·금액: 골드 + 검정 외곽선 */
+  rankColor: "#ffffff",
   nameColor: "#ffc107",
   amountColor: "#ffc107",
   titleColor: "#ffc107",
@@ -686,7 +687,11 @@ function normalizeDonorRankingsTheme(
     panelBg: s(v.panelBg, defaults.panelBg),
     borderColor: (() => {
       const c = s(v.borderColor, defaults.borderColor);
-      if (compactTheme && (!c || c.toLowerCase() === "transparent")) return defaults.borderColor;
+      if (!compactTheme) return c;
+      /** 구버전 transparent·골드 패널 테두리 → 검정 기본 */
+      if (!c || c.toLowerCase() === "transparent" || /^#ffc107$/i.test(c)) {
+        return defaults.borderColor;
+      }
       return c;
     })(),
     headerAccountBg: s(v.headerAccountBg, defaults.headerAccountBg),
@@ -695,7 +700,8 @@ function normalizeDonorRankingsTheme(
     rowOddBg: s(v.rowOddBg, defaults.rowOddBg),
     rankColor: (() => {
       const c = s(v.rankColor, defaults.rankColor);
-      if (compactTheme && /^#fff(?:fff)?$/i.test(c)) return defaults.rankColor;
+      /** 구버전 골드 순위 숫자 → 흰색 */
+      if (compactTheme && /^#ffc107$/i.test(c)) return defaults.rankColor;
       return c;
     })(),
     nameColor: s(v.nameColor, defaults.nameColor),

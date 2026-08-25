@@ -37,8 +37,8 @@ import { useOverlayViewportSize } from "@/hooks/useOverlayViewportSize";
 import { backgroundWithOpacityFrac, solidBackgroundWithOpacityFrac } from "@/lib/donor-rankings-opacity";
 import { splitOverlayListAtHalf } from "@/lib/utils";
 
-/** 스크린샷 기준: 순위 숫자도 골드 + 검정 외곽선 (관리자 rankColor가 있으면 우선) */
-const RANK_NUMBER_FALLBACK = "#ffc107";
+/** 4등+ 순위 숫자 기본: 흰색 + 검정 외곽선 (관리자 rankColor가 있으면 우선) */
+const RANK_NUMBER_FALLBACK = "#ffffff";
 function readOutlineWidth(sp: URLSearchParams, key: string, fallback: number): number {
   const raw = sp.get(key);
   if (!raw) return fallback;
@@ -829,7 +829,7 @@ export default function DonorRankingsOverlayPage() {
     sp,
     "border",
     savedTheme.borderColor,
-    "#ffc107"
+    "#000000"
   );
   const headerAccountBg = liveThemeColor(
     themeLive,
@@ -851,7 +851,7 @@ export default function DonorRankingsOverlayPage() {
   const rankingTitle = liveThemeTitle(themeLive, useTest, savedTheme.titleText, sp, "👑 웹후원 순위 👑");
   const rowEvenBg = liveThemeColor(themeLive, useTest, savedTheme.rowEvenBg, sp, "rowEvenBg", "transparent");
   const rowOddBg = liveThemeColor(themeLive, useTest, savedTheme.rowOddBg, sp, "rowOddBg", "rgba(255, 255, 255, 0.14)");
-  const rankColor = liveThemeColor(themeLive, useTest, savedTheme.rankColor, sp, "rankColor", "#ffc107");
+  const rankColor = liveThemeColor(themeLive, useTest, savedTheme.rankColor, sp, "rankColor", "#ffffff");
   const nameColor = liveThemeColor(themeLive, useTest, savedTheme.nameColor, sp, "nameColor", "#ffc107");
   const amountColor = liveThemeColor(themeLive, useTest, savedTheme.amountColor, sp, "amountColor", "#ffc107");
   const titleColor = liveThemeColor(themeLive, useTest, savedTheme.titleColor, sp, "titleColor", "#ffc107");

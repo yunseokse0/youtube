@@ -4518,8 +4518,9 @@ function OverlayInner() {
           background: transparent !important;
           background-image: none !important;
           /* 셀 그리드 선은 overlayTableCellGridCss(box-shadow)로 그림 — 여기서 지우지 않음 */
-          text-shadow: none !important;
-          -webkit-text-stroke: 0 !important;
+          text-shadow: ${tableOutlineShadowCss} !important;
+          -webkit-text-stroke: ${tableOutlineDisabled || obsStrokeDisabled ? "0" : tableStrokeCss} !important;
+          paint-order: stroke fill !important;
         }
         .overlay-root .overlay-elegant-table:not(.excel-zebra-table) td {
           transition: ${externalHost || stableMode ? "none" : "filter 180ms ease, transform 180ms ease, background-size 220ms ease"};
@@ -4982,6 +4983,30 @@ function OverlayInner() {
           background-clip: padding-box !important;
           border-top: 3px solid transparent !important;
           border-bottom: 3px solid transparent !important;
+        }
+        /* 기여도 열: 다른 열과 동일 행 배경 — 알약/어두운 칸 배경 금지 */
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row td.overlay-col-contribution,
+        .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(odd) td.overlay-col-contribution,
+        .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(even) td.overlay-col-contribution,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row td.overlay-col-contribution {
+          background: inherit !important;
+          background-image: none !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(odd) td.overlay-col-contribution,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(odd) td.overlay-col-contribution {
+          background: var(--excel-row-odd, rgba(255, 255, 255, 0.16)) !important;
+          background-clip: padding-box !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(even) td.overlay-col-contribution,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(even) td.overlay-col-contribution {
+          background: var(--excel-row-even, rgba(255, 255, 255, 0.08)) !important;
+          background-clip: padding-box !important;
+        }
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution .overlay-num-cell-inner {
+          background: transparent !important;
+          border-radius: 0 !important;
+          padding-inline: 0 !important;
+          min-width: 0 !important;
         }
         .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-excel-placeholder td .overlay-cell-text-inner,
         .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-excel-placeholder td .overlay-num-cell-inner {

@@ -47,14 +47,14 @@ describe("excel-member-table-theme", () => {
     expect(resolveTableThemeHeaderBgCss("neon")).toContain("0.72");
   });
 
-  it("excelGold uses gold panel border, zebra stripes, and contribution accent", () => {
+  it("excelGold uses gold panel border and zebra stripes without contrib pills", () => {
     const gold = resolveExcelMemberTableAccent("excelGold");
     expect(gold?.headerBg).toBe("#ffc107");
     expect(gold?.headerText).toBe("#1a1408");
     expect(gold?.panelBorder).toBe("#ffc107");
     expect(gold?.rowEvenBg).toContain("rgba(");
-    expect(gold?.contributionColumnBg).toContain("rgba(");
-    expect(gold?.contributionPillBg).toContain("rgba(");
+    expect(gold?.contributionColumnBg).toBeUndefined();
+    expect(gold?.contributionPillBg).toBeUndefined();
     expect(isExcelGoldTableTheme("excelGold")).toBe(true);
     expect(isExcelGoldTableTheme("excel")).toBe(false);
     expect(resolveTableThemePanelBorderPreviewHex("excelGold")).toBe("#ffc107");

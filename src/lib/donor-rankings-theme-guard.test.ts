@@ -51,20 +51,28 @@ describe("isDefaultLikeDonorRankingsTheme", () => {
         ...DEFAULT_DONOR_RANKINGS_THEME,
         outlineWidth: 2.25,
         titleColor: "#ffffff",
-        rankColor: "#ffffff",
+        rankColor: "#ffc107",
+        borderColor: "#ffc107",
         outlineColor: "rgba(20, 12, 6, 0.96)",
       })
     ).toBe(true);
     expect(DEFAULT_DONOR_RANKINGS_THEME.outlineWidth).toBe(4);
     expect(DEFAULT_DONOR_RANKINGS_THEME.titleColor).toBe("#ffc107");
-    expect(DEFAULT_DONOR_RANKINGS_THEME.borderColor).toBe("#ffc107");
+    expect(DEFAULT_DONOR_RANKINGS_THEME.rankColor).toBe("#ffffff");
+    expect(DEFAULT_DONOR_RANKINGS_THEME.borderColor).toBe("#000000");
   });
 
-  it("promotes legacy transparent panel border to gold", () => {
+  it("promotes legacy transparent/gold panel border to black", () => {
     expect(
       isDefaultLikeDonorRankingsTheme({
         ...DEFAULT_DONOR_RANKINGS_THEME,
         borderColor: "transparent",
+      })
+    ).toBe(true);
+    expect(
+      isDefaultLikeDonorRankingsTheme({
+        ...DEFAULT_DONOR_RANKINGS_THEME,
+        borderColor: "#ffc107",
       })
     ).toBe(true);
   });

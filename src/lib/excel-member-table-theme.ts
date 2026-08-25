@@ -82,7 +82,7 @@ export const EXCEL_MEMBER_TABLE_ACCENT: Record<ExcelMemberThemeId, ExcelMemberTa
     panelBorder: STUDIO_EDGE,
     panelShadow: STUDIO_PANEL_SHADOW,
   },
-  /** 웹후원 골드 — 골드 헤더·테두리·줄무늬·기여도 강조 (후원순위 골드와 동일 계열) */
+  /** 웹후원 골드 — 골드 헤더·테두리·줄무늬 (기여도 열은 다른 열과 동일 배경) */
   excelGold: {
     headerBg: "#ffc107",
     headerText: "#1a1408",
@@ -93,8 +93,6 @@ export const EXCEL_MEMBER_TABLE_ACCENT: Record<ExcelMemberThemeId, ExcelMemberTa
     rowEvenBg: "rgba(255, 255, 255, 0.08)",
     rowOddBg: "rgba(255, 255, 255, 0.16)",
     contributionColor: "#ffc107",
-    contributionColumnBg: "rgba(0, 0, 0, 0.28)",
-    contributionPillBg: "rgba(0, 0, 0, 0.38)",
   },
   excelRose: {
     headerBg: "rgba(225, 29, 72, 0.72)",
