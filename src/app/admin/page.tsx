@@ -2531,17 +2531,23 @@ export default function AdminPage() {
     })
     .finally(() => {
       if (cancelled) return;
-      void refreshStorageHealth();
-      loadDailyLogFromApi(user?.id)
-        .then((serverLog) => {
-          setDailyLog(serverLog);
-          try {
-            window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog));
-          } catch {}
-        })
-        .catch(() => {
-          setDailyLog(loadDailyLog(user?.id));
-        });
+      /** hydrate GET 직후 storage-health·daily-log 가 풀을 다시 잡지 않게 살짝 미룸 */
+      window.setTimeout(() => {
+        if (cancelled) return;
+        void refreshStorageHealth();
+        loadDailyLogFromApi(user?.id)
+          .then((serverLog) => {
+            if (cancelled) return;
+            setDailyLog(serverLog);
+            try {
+              window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog));
+            } catch {}
+          })
+          .catch(() => {
+            if (cancelled) return;
+            setDailyLog(loadDailyLog(user?.id));
+          });
+      }, 2_500);
     });
     return () => {
       cancelled = true;

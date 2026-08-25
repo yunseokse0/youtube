@@ -555,6 +555,10 @@ import {
   parseStateApiPick,
   projectStateForGetPick,
   revisionForStatePick,
+  STATE_PICK_OVERLAY,
+  STATE_PICK_OVERLAY_DONORS,
+  STATE_PICK_DONOR_RANKINGS,
+  STATE_PICK_OBS_TEXT,
   STATE_PICK_SIG_INVENTORY,
 } from "@/lib/state-api-pick";
 
@@ -748,10 +752,33 @@ export async function GET(req: Request) {
 
     mergedForResponse = applyDonationGoalPresetNormalization(mergedForResponse);
 
+    /**
+     * 후원·시그가 이미 건전하면 enrich/daily-log 전에 304 — OBS since 폴링이 LONGTEXT 파싱 후
+     * 백업·일일로그까지 타지 않게 한다.
+     */
+    const donorsHealthyEarly =
+      normalizeDonorsArray(mergedForResponse.donors).length > 0 &&
+      totalCombined(mergedForResponse) > 0;
+    const skipSigEnrichForPick =
+      pickMode === STATE_PICK_OVERLAY ||
+      pickMode === STATE_PICK_OVERLAY_DONORS ||
+      pickMode === STATE_PICK_DONOR_RANKINGS ||
+      pickMode === STATE_PICK_OBS_TEXT;
+    if (since > 0 && donorsHealthyEarly && isNotModified(mergedForResponse)) {
+      if (
+        skipSigEnrichForPick ||
+        (hasExpandedSigInventory(mergedForResponse.sigInventory) &&
+          !isShrunkToDefaultSigInventory(mergedForResponse.sigInventory))
+      ) {
+        return stateNotModifiedResponse("redis");
+      }
+    }
+
     try {
       const needSigBackup =
-        isShrunkToDefaultSigInventory(mergedForResponse.sigInventory) ||
-        !hasExpandedSigInventory(mergedForResponse.sigInventory);
+        !skipSigEnrichForPick &&
+        (isShrunkToDefaultSigInventory(mergedForResponse.sigInventory) ||
+          !hasExpandedSigInventory(mergedForResponse.sigInventory));
       if (needSigBackup) {
         const sigEnriched = await enrichAppStateWithSigInventoryBackup(userId, mergedForResponse, {
           persistBackup: false,

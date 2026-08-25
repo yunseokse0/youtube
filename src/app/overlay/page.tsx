@@ -601,13 +601,22 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
           }
         }
         const needRosterHydration = !hasStrongRosterRef.current;
-        const forceFull =
-          Boolean(opts?.forceFull) || needRosterHydration || preferServerOnlyRef.current;
+        /**
+         * OBS(preferServerOnly)도 매 tick forceFull 금지 — since/304로 본문·서버 부하를 줄인다.
+         * 최초 로스터 미확보·명시 forceFull(SSE/visibility)만 전체 수신.
+         */
+        const forceFull = Boolean(opts?.forceFull) || needRosterHydration;
         const data = await loadStateFromApi(userId, {
           pick: "overlay-donors",
           ifUpdatedSince: forceFull ? 0 : overlaySinceRef.current,
           forceFull,
         });
+        /** 304·일시 실패: 이미 동기화된 화면을 restoreLastGood 으로 깜빡이지 않음 */
+        if (!data) {
+          if (overlaySinceRef.current > 0 || lastGoodRef.current) return;
+          restoreLastGood();
+          return;
+        }
         const remoteRosterRev = Number(data?.membersRosterUpdatedAt || 0);
         const lastRosterRev = Number(lastGoodRef.current?.membersRosterUpdatedAt || 0);
         if (remoteRosterRev > 0 && remoteRosterRev > lastRosterRev) {
@@ -4859,7 +4868,7 @@ function OverlayInner() {
           vertical-align: middle;
           letter-spacing: 0.04em;
         }
-        /* 순위 없음(—)·직급 없음(-) 표기를 어떤 행에서도 동일한 모양으로: 폭 고정 + 가운데 정렬 + 동일 굵기.
+        /* 순위·직급 공란: 폭 고정 + 가운데 정렬(하이픈 미표시).
            inline-flex 로 span 안의 글자 자체를 가운데 배치해, 셀 내 text-align 과 무관하게 행마다 같은 X 위치에 떨어지게 한다. */
         .overlay-root .overlay-elegant-table tbody td .overlay-rank-mark {
           display: inline-flex;
@@ -5286,12 +5295,12 @@ function OverlayInner() {
                           >
                             <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
                               <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                —
+                                {" "}
                               </span>
                             </td>
                             {hasRoleColumn && (
                               <td className={`${effectiveRowCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>
-                                <span className="overlay-rank-mark">-</span>
+                                <span className="overlay-rank-mark">{" "}</span>
                               </td>
                             )}
                             <td className={`${effectiveRowCls} overlay-col-name text-center ${effectiveNameCls} ${nameWrapCls}`}>
@@ -5301,32 +5310,32 @@ function OverlayInner() {
                             </td>
                             <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-center`}>
                               <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                —
+                                {" "}
                               </span>
                             </td>
                             <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-center`}>
                               <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                —
+                                {" "}
                               </span>
                             </td>
                             {showCombinedColumn && (
                               <td className={`${effectiveRowCls} overlay-col-total text-center font-bold`}>
                                 <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                  —
+                                  {" "}
                                 </span>
                               </td>
                             )}
                             {showContributionColumn && (
                               <td className={`${effectiveRowCls} overlay-col-contribution text-center font-semibold`}>
                                 <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                  —
+                                  {" "}
                                 </span>
                               </td>
                             )}
                             {showRestroomColumn && (
                               <td className={`${effectiveRowCls} overlay-col-restroom text-center font-semibold`}>
                                 <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                  —
+                                  {" "}
                                 </span>
                               </td>
                             )}
@@ -5352,7 +5361,7 @@ function OverlayInner() {
                           <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
                             {rank == null ? (
                               <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                —
+                                {" "}
                               </span>
                             ) : (
                               <span
@@ -5379,7 +5388,7 @@ function OverlayInner() {
                                   {getMemberRole(m)}
                                 </span>
                               ) : (
-                                <span className="overlay-rank-mark">-</span>
+                                <span className="overlay-rank-mark">{" "}</span>
                               )}
                             </td>
                           )}
@@ -5463,13 +5472,13 @@ function OverlayInner() {
                       >
                         <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
                           <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                            —
+                            {" "}
                           </span>
                         </td>
                         {hasRoleColumn && (
                           <td className={`${effectiveRowCls} overlay-col-role`}>
                             <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                              -
+                              {" "}
                             </span>
                           </td>
                         )}
@@ -5510,7 +5519,7 @@ function OverlayInner() {
                         {showContributionColumn && (
                           <td className={`${effectiveRowCls} overlay-col-contribution text-center font-semibold`}>
                             <span className="overlay-num-cell-inner overlay-cell-text-inner overlay-rank-mark" style={overlayCellOutlineStyle}>
-                              —
+                              {" "}
                             </span>
                           </td>
                         )}
