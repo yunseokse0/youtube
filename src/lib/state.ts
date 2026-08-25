@@ -2922,16 +2922,25 @@ export async function saveStateAsync(
   if (!apiOpts.omitHighSocietyFields && shouldSyncHighSocietyMemberWidthSnapshot(guarded.highSocietySettings)) {
     guarded = syncHighSocietyMemberWidthSnapshotInState(guarded);
   }
-  writeBroadcastStateSnapshot(guarded, userId);
-  notifyBroadcastStateLocalUpdated(userId, guarded.updatedAt);
+  /**
+   * 영토·HS·omitDonation 저장: API 본문은 후원을 안 보내도
+   * 세션 스냅샷에 0원 React state 를 쓰면 엑셀·후원순위 미리보기가 즉시 초기화됨.
+   * 기존 세션 후원·금액을 유지한 뒤 알림한다.
+   */
+  const sessionSnap =
+    apiOpts?.highSocietySettingsOnly || apiOpts?.omitDonationFields
+      ? mergeBroadcastSessionPreservingDonations(local, guarded)
+      : guarded;
+  writeBroadcastStateSnapshot(sessionSnap, userId);
+  notifyBroadcastStateLocalUpdated(userId, sessionSnap.updatedAt);
   try {
     const result = await enqueueServerSave(
       JSON.stringify(appStatePayloadForApi(guarded, userId, apiOpts)),
       userId,
-      guarded
+      sessionSnap
     );
     if (result.ok) {
-      writeBroadcastStateSnapshot(guarded, userId);
+      writeBroadcastStateSnapshot(sessionSnap, userId);
     }
     return result;
   } catch {
@@ -4140,6 +4149,27 @@ export function isEmptyBroadcastDonationSession(state: AppState | null | undefin
   return (
     normalizeDonorsArray(state.donors).length === 0 && totalCombined(state) === 0
   );
+}
+
+/**
+ * 영토·HS·테마 등 비후원 저장이 세션/미리보기에 0원·빈 donors 를 뿌리지 않게
+ * 기존 세션의 후원·멤버 금액을 유지한 채 패치 필드를 얹는다.
+ */
+export function mergeBroadcastSessionPreservingDonations(
+  existing: AppState | null | undefined,
+  patch: AppState
+): AppState {
+  if (!existing || isEmptyBroadcastDonationSession(existing)) return patch;
+  if (!wouldShrinkDonationData(existing, patch) && !isEmptyBroadcastDonationSession(patch)) {
+    return patch;
+  }
+  return {
+    ...patch,
+    donors: normalizeDonorsArray(existing.donors),
+    members: mergeMemberRosterPreservingAmounts(existing.members || [], patch.members || []),
+    memberPositions: existing.memberPositions ?? patch.memberPositions,
+    settlementResetAt: existing.settlementResetAt ?? patch.settlementResetAt,
+  };
 }
 
 /**

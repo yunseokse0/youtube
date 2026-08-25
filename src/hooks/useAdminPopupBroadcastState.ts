@@ -4,12 +4,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { AppState } from "@/lib/state";
 import {
-  cacheBroadcastStateSnapshot,
   defaultState,
   loadState,
   loadStateFromApi,
+  mergeBroadcastSessionPreservingDonations,
   saveStateAsync,
 } from "@/lib/state";
+import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
+import {
+  readSessionBroadcastState,
+  writeSessionBroadcastState,
+} from "@/lib/server-authoritative-broadcast-state";
 import { useSSEConnection } from "@/lib/sse-client";
 import { resolveScopedOverlayUserId } from "@/lib/overlay-params";
 
@@ -48,6 +53,7 @@ export function useAdminPopupBroadcastState() {
       const remote = await loadStateFromApi(scopedUserId, { forceFull: true });
       if (remote) {
         setState(remote);
+        writeSessionBroadcastState(remote, scopedUserId);
         return;
       }
       const local = loadState(scopedUserId);
@@ -72,18 +78,26 @@ export function useAdminPopupBroadcastState() {
       next: AppState,
       opts?: Parameters<typeof saveStateAsync>[2]
     ): Promise<boolean> => {
-      const stamped = { ...next, updatedAt: Date.now() };
+      const hsOnly = Boolean(opts?.highSocietySettingsOnly || opts?.omitDonationFields);
+      /**
+       * 영토·HS 저장 전에 팝업 React state(후원 비어 있을 수 있음)로 세션을 덮지 않음.
+       * 기존 세션 후원·금액을 유지한 채 HS/영토 필드만 얹어 미리보기 0화 방지.
+       */
+      const existingSession = readSessionBroadcastState(scopedUserId) ?? loadState(scopedUserId);
+      const stamped = {
+        ...mergeBroadcastSessionPreservingDonations(existingSession, {
+          ...next,
+          updatedAt: Date.now(),
+        }),
+      };
       setState(stamped);
       stateRef.current = stamped;
-      /**
-       * 세션 캐시만 갱신 — saveState() 는 옵션 없이 전체 POST 하여
-       * 팝업의 불완전 donors/0원 members 로 엑셀·후원순위를 지우는 회귀가 있음.
-       * 서버 반영은 반드시 saveStateAsync(+ highSocietySettingsOnly 등)만.
-       */
-      cacheBroadcastStateSnapshot(stamped, scopedUserId);
+      if (hsOnly) {
+        writeSessionBroadcastState(stamped, scopedUserId);
+        notifyBroadcastStateLocalUpdated(scopedUserId, stamped.updatedAt);
+      }
       const result = await saveStateAsync(stamped, scopedUserId, opts);
-      /** HS/영토 저장 후 서버 정본(후원·금액)으로 다시 맞춤 — 로컬 0원 스냅샷 잔류 방지 */
-      if (result.ok && (opts?.highSocietySettingsOnly || opts?.omitDonationFields)) {
+      if (result.ok && hsOnly) {
         void reload();
       }
       return result.ok;

@@ -16,6 +16,7 @@ import {
   pickMemberRosterPreferNewer,
   mergeServerSaveApiBodies,
   appStatePayloadForApi,
+  mergeBroadcastSessionPreservingDonations,
   shouldAvoidOverwritingLocalStateWithRemote,
   shouldPreferLocalSigInventoryOverIncoming,
   wouldShrinkDonationData,
@@ -413,6 +414,27 @@ describe("member sync helpers", () => {
     }) as Record<string, unknown>;
     expect(payload.donors).toBeUndefined();
     expect(payload.highSocietySettings).toBeTruthy();
+  });
+
+  it("mergeBroadcastSessionPreservingDonations keeps session donors when patch is empty", () => {
+    const existing = {
+      ...defaultState(),
+      donors: [
+        { id: "d1", name: "익명", amount: 50000, memberId: "m1", at: 1, target: "account" as const },
+      ],
+      members: [{ id: "m1", name: "자기", account: 50000, toon: 0, contribution: 50000 }],
+    } as AppState;
+    const patch = {
+      ...existing,
+      donors: [],
+      members: [{ id: "m1", name: "자기", account: 0, toon: 0, contribution: 0 }],
+      territoryLogs: [{ id: "tl1", memberId: "m1", delta: 1 as const, amount: 10, at: 2 }],
+      updatedAt: Date.now(),
+    } as AppState;
+    const merged = mergeBroadcastSessionPreservingDonations(existing, patch);
+    expect(merged.donors).toHaveLength(1);
+    expect(merged.members[0]?.account).toBe(50000);
+    expect(merged.territoryLogs).toEqual(patch.territoryLogs);
   });
 
   it("appStatePayloadForApi slims membersAuthoritative+omitDonationFields body", () => {
