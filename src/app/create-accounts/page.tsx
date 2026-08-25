@@ -6,6 +6,7 @@ type Account = {
   id: string;
   name: string;
   companyName: string;
+  toonaEmail?: string;
   startDate: number | null;
   endDate: number | null;
   createdAt: number;
@@ -66,6 +67,7 @@ export default function CreateAccountsPage() {
     name: "",
     companyName: "",
     password: "",
+    toonaEmail: "",
     startDate: "",
     endDate: "",
     unlimited: true,
@@ -76,6 +78,7 @@ export default function CreateAccountsPage() {
     endDate: "",
     unlimited: true,
     password: "",
+    toonaEmail: "",
   });
 
   const fetchAccounts = async () => {
@@ -161,6 +164,7 @@ export default function CreateAccountsPage() {
           name: form.name.trim(),
           companyName: form.companyName.trim(),
           password: form.password,
+          toonaEmail: form.toonaEmail.trim() || null,
           startDate: form.unlimited ? null : form.startDate || null,
           endDate: form.unlimited ? null : form.endDate || null,
           unlimited: form.unlimited,
@@ -172,7 +176,7 @@ export default function CreateAccountsPage() {
         setError((data.error || "생성 실패") + detail);
         return;
       }
-      setForm({ name: "", companyName: "", password: "", startDate: "", endDate: "", unlimited: true });
+      setForm({ name: "", companyName: "", password: "", toonaEmail: "", startDate: "", endDate: "", unlimited: true });
       fetchAccounts();
     } catch {
       setError("생성 중 오류가 발생했습니다.");
@@ -206,6 +210,7 @@ export default function CreateAccountsPage() {
           startDate: editForm.unlimited ? null : editForm.startDate || null,
           endDate: editForm.unlimited ? null : editForm.endDate || null,
           unlimited: editForm.unlimited,
+          toonaEmail: editForm.toonaEmail.trim() || null,
           ...(nextPassword ? { password: nextPassword } : {}),
         }),
       });
@@ -229,6 +234,7 @@ export default function CreateAccountsPage() {
       endDate: a.endDate ? new Date(a.endDate).toISOString().slice(0, 10) : "",
       unlimited: a.startDate == null && a.endDate == null,
       password: "",
+      toonaEmail: a.toonaEmail || "",
     });
   };
 
@@ -306,6 +312,17 @@ export default function CreateAccountsPage() {
                 required
               />
             </div>
+            <div>
+              <label className="block text-xs text-neutral-400 mb-1">DIN(toona) 이메일 (자동 연동)</label>
+              <input
+                className="w-full px-3 py-2 rounded bg-neutral-800 border border-white/10"
+                value={form.toonaEmail}
+                onChange={(e) => setForm((f) => ({ ...f, toonaEmail: e.target.value }))}
+                placeholder="sssss@gmail.com"
+                type="email"
+                autoComplete="off"
+              />
+            </div>
             <div className="flex items-end gap-2">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -360,6 +377,7 @@ export default function CreateAccountsPage() {
                   <th className="p-2 text-left">ID</th>
                   <th className="p-2 text-left">이름</th>
                   <th className="p-2 text-left">회사명</th>
+                  <th className="p-2 text-left">DIN 이메일</th>
                   <th className="p-2 text-left">시작일</th>
                   <th className="p-2 text-left">종료일</th>
                   <th className="p-2 text-right">관리</th>
@@ -371,6 +389,7 @@ export default function CreateAccountsPage() {
                     <td className="p-2 font-mono">{a.id}</td>
                     <td className="p-2">{a.name}</td>
                     <td className="p-2">{a.companyName}</td>
+                    <td className="p-2 text-xs text-neutral-300">{a.toonaEmail || "—"}</td>
                     <td className="p-2">
                       {editing === a.id ? (
                         <input
@@ -404,6 +423,19 @@ export default function CreateAccountsPage() {
                     <td className="p-2 text-right">
                       {editing === a.id ? (
                         <div className="flex flex-col items-end gap-2 min-w-[220px]">
+                          <div className="w-full text-left">
+                            <label className="block text-[11px] text-neutral-400 mb-1">
+                              DIN(toona) 이메일
+                            </label>
+                            <input
+                              type="email"
+                              className="w-full px-2 py-1.5 rounded bg-neutral-800 border border-white/10 text-xs"
+                              value={editForm.toonaEmail}
+                              onChange={(e) => setEditForm((f) => ({ ...f, toonaEmail: e.target.value }))}
+                              placeholder="sssss@gmail.com"
+                              autoComplete="off"
+                            />
+                          </div>
                           <div className="w-full text-left">
                             <label className="block text-[11px] text-neutral-400 mb-1">
                               새 비밀번호 (비우면 유지)

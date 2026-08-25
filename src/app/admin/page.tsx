@@ -360,6 +360,7 @@ import MissionBoard from "@/components/MissionBoard";
 import MissionBoardSlot from "@/components/MissionBoardSlot";
 import SigSalesHybridModal, { type SigSalesHybridTab } from "@/components/admin/SigSalesHybridModal";
 import SigSalesCompactCard from "@/components/admin/SigSalesCompactCard";
+import ToonaSigImportPanel from "@/components/admin/ToonaSigImportPanel";
 
 type OverlayPreset = {
   id: string; name: string; scale: string; memberSize: string; totalSize: string;
@@ -12983,6 +12984,22 @@ function AdminPageInner() {
                     「<strong className="text-lime-200/90">엑셀에서 시그 목록 복구</strong>」에 sig-prices 다운로드 파일을 넣으세요.
                   </span>
                 </div>
+                <ToonaSigImportPanel
+                  inventory={state.sigInventory || []}
+                  onApply={(next, summary) => {
+                    setState((prev: AppState) => {
+                      const draft: AppState = {
+                        ...prev,
+                        sigInventory: next,
+                        updatedAt: Date.now(),
+                      };
+                      const synced = syncOneShotSigItem(draft);
+                      persistState(synced);
+                      return synced;
+                    });
+                    setSigExcelResult(summary);
+                  }}
+                />
                 {sigUploadProgress ? (
                   <SigUploadProgressPanel progress={sigUploadProgress} busy={sigBulkReuploadBusy} />
                 ) : null}

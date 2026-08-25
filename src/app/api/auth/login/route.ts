@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { authCookieSecure, validateUser } from "@/lib/auth";
-import { loadAccounts } from "@/lib/accounts-storage";
+import { loadAccounts, type StoredAccount } from "@/lib/accounts-storage";
+import { scheduleToonaLinkOnLogin } from "@/lib/toona-link";
 
 const COOKIE_NAME = "sb_user";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
@@ -17,6 +18,7 @@ export async function POST(req: Request) {
     const rawId = (id || "").trim().toLowerCase();
     const localAdminLogin = isLocalRequest(req) && rawId === "admin" && (password || "") === "admin";
     let user = validateUser(id || "", password || "");
+    let matchedAccount: StoredAccount | undefined;
     if (!user && localAdminLogin) {
       user = { id: "admin", companyName: "Local Admin" };
     }
@@ -33,6 +35,7 @@ export async function POST(req: Request) {
       if (acc.endDate != null && now > acc.endDate) {
         return NextResponse.json({ ok: false, error: "사용 기간이 만료되었습니다." }, { status: 403 });
       }
+      matchedAccount = acc;
       user = { id: acc.id, companyName: acc.companyName };
     }
     const cookieValue = encodeURIComponent(JSON.stringify(user));
@@ -44,6 +47,9 @@ export async function POST(req: Request) {
       maxAge: COOKIE_MAX_AGE,
       path: "/",
     });
+    if (user.id !== "admin") {
+      scheduleToonaLinkOnLogin(req, matchedAccount, user.id, password || "");
+    }
     return res;
   } catch {
     return NextResponse.json({ ok: false, error: "로그인 처리 중 오류가 발생했습니다." }, { status: 500 });

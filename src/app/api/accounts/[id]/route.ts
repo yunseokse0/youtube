@@ -55,6 +55,7 @@ export async function PATCH(
       endDate?: string | null;
       unlimited?: boolean;
       password?: string | null;
+      toonaEmail?: string | null;
     };
     const list = await loadAccounts();
     const idx = list.findIndex((a) => a.id === id);
@@ -84,6 +85,17 @@ export async function PATCH(
         });
       }
       list[idx] = { ...list[idx], password: nextPassword };
+    }
+    if (body.toonaEmail !== undefined) {
+      const nextEmail = String(body.toonaEmail || "").trim();
+      list[idx] = {
+        ...list[idx],
+        ...(nextEmail ? { toonaEmail: nextEmail } : {}),
+      };
+      if (!nextEmail) {
+        const { toonaEmail: _, ...rest } = list[idx];
+        list[idx] = rest as typeof list[number];
+      }
     }
     const saved = await saveAccounts(list);
     if (!saved.ok) {

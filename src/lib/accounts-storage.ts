@@ -17,6 +17,10 @@ export type StoredAccount = {
   name: string;
   companyName: string;
   password: string;
+  /** DIN(toona) 로그인 이메일 — youtube 로그인 시 youtubegit 자동 연동 */
+  toonaEmail?: string;
+  /** DIN(toona) 비밀번호 — 없으면 youtube 비밀번호 또는 TOONA_AUTO_LINK_PASSWORD 사용 */
+  toonaPassword?: string;
   startDate: number | null;
   endDate: number | null;
   createdAt: number;

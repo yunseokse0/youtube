@@ -121,6 +121,7 @@ export async function POST(req: Request) {
       name?: string;
       companyName?: string;
       password?: string;
+      toonaEmail?: string | null;
       startDate?: string | null;
       endDate?: string | null;
       unlimited?: boolean;
@@ -150,6 +151,7 @@ export async function POST(req: Request) {
       name,
       companyName,
       password,
+      ...(body.toonaEmail?.trim() ? { toonaEmail: body.toonaEmail.trim() } : {}),
       startDate,
       endDate,
       createdAt: Date.now(),
