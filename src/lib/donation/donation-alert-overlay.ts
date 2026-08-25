@@ -68,6 +68,31 @@ export function donationAlertFromAppliedHint(
   };
 }
 
+/** 단일 donor 레코드 → 알림 (금액 없으면 null) */
+export function donationAlertFromDonorRecord(
+  donor: Record<string, unknown>,
+  members: Array<{ id?: string; name?: string }>
+): DonationAlertShowItem | null {
+  const amount = Math.max(0, Math.round(Number(donor.amount) || 0));
+  if (amount <= 0) return null;
+  const atRaw = Number(donor.at);
+  const at = Number.isFinite(atRaw) && atRaw > 0 ? atRaw : Date.now();
+  const memberId = String(donor.memberId || "").trim();
+  const memberName =
+    members.find((m) => String(m.id || "").trim() === memberId)?.name?.trim() || "—";
+  const target = normalizeDonationAlertTarget(donor.target ?? donor.type);
+  const id = String(donor.id || "").trim() || `d_${at}_${amount}`;
+  return {
+    id,
+    donorName: String(donor.name || "무명").replace(/\s+/g, "") || "무명",
+    memberName,
+    amount,
+    target,
+    contributionPoints: donationContributionPoints(amount),
+    at,
+  };
+}
+
 /** 서버 donors 스냅샷에서 최신 1건 → 알림 후보 */
 export function donationAlertFromLatestDonor(
   donors: Array<Record<string, unknown>>,
@@ -85,22 +110,25 @@ export function donationAlertFromLatestDonor(
     }
   }
   if (!best) return null;
-  const amount = Math.max(0, Math.round(Number(best.amount) || 0));
-  if (amount <= 0) return null;
-  const memberId = String(best.memberId || "").trim();
-  const memberName =
-    members.find((m) => String(m.id || "").trim() === memberId)?.name?.trim() || "—";
-  const target = normalizeDonationAlertTarget(best.target ?? best.type);
-  const id = String(best.id || "").trim() || `d_${bestAt}_${amount}`;
-  return {
-    id,
-    donorName: String(best.name || "무명").replace(/\s+/g, "") || "무명",
-    memberName,
-    amount,
-    target,
-    contributionPoints: donationContributionPoints(amount),
-    at: bestAt > 0 ? bestAt : Date.now(),
-  };
+  return donationAlertFromDonorRecord(best, members);
+}
+
+/** 아직 보지 않은 후원을 at 오름차순으로 (폴링 신규 감지) */
+export function donationAlertsFromUnseenDonors(
+  donors: Array<Record<string, unknown>>,
+  members: Array<{ id?: string; name?: string }>,
+  seenIds: ReadonlySet<string>
+): DonationAlertShowItem[] {
+  if (!Array.isArray(donors) || donors.length === 0) return [];
+  const out: DonationAlertShowItem[] = [];
+  for (const d of donors) {
+    const id = String(d.id || "").trim();
+    if (!id || seenIds.has(id)) continue;
+    const item = donationAlertFromDonorRecord(d, members);
+    if (item) out.push(item);
+  }
+  out.sort((a, b) => a.at - b.at || a.id.localeCompare(b.id));
+  return out;
 }
 
 export const DONATION_ALERT_TEST_ITEM: DonationAlertShowItem = {

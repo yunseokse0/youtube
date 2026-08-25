@@ -3,6 +3,7 @@ import {
   buildDonationAlertUrl,
   donationAlertFromAppliedHint,
   donationAlertFromLatestDonor,
+  donationAlertsFromUnseenDonors,
   donationContributionPoints,
   donationAlertTargetLabel,
 } from "@/lib/donation/donation-alert-overlay";
@@ -50,5 +51,22 @@ describe("donation-alert-overlay", () => {
     expect(item?.id).toBe("d2");
     expect(item?.memberName).toBe("B");
     expect(item?.contributionPoints).toBe(20_000);
+  });
+
+  it("lists unseen donors oldest-first", () => {
+    const seen = new Set(["d1"]);
+    const items = donationAlertsFromUnseenDonors(
+      [
+        { id: "d1", name: "옛", amount: 1000, memberId: "m1", at: 100, target: "account" },
+        { id: "d3", name: "최신", amount: 3000, memberId: "m1", at: 300, target: "toon" },
+        { id: "d2", name: "중간", amount: 2000, memberId: "m2", at: 200, target: "toon" },
+      ],
+      [
+        { id: "m1", name: "A" },
+        { id: "m2", name: "B" },
+      ],
+      seen
+    );
+    expect(items.map((i) => i.id)).toEqual(["d2", "d3"]);
   });
 });

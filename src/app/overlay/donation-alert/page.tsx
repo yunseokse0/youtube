@@ -9,7 +9,7 @@ import {
   DONATION_ALERT_POLL_MS,
   DONATION_ALERT_TEST_ITEM,
   donationAlertFromAppliedHint,
-  donationAlertFromLatestDonor,
+  donationAlertsFromUnseenDonors,
   type DonationAlertShowItem,
 } from "@/lib/donation/donation-alert-overlay";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
@@ -22,14 +22,18 @@ export default function DonationAlertOverlayPage() {
   const { params: sp, ready: spReady } = useClientOnlySearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
   const testMode = (sp.get("test") || "").toLowerCase() === "true";
-  const [current, setCurrent] = useState<DonationAlertShowItem | null>(
-    testMode ? DONATION_ALERT_TEST_ITEM : null
-  );
+  /** searchParams는 마운트 후에만 채워짐 — useState(testMode)는 항상 null로 시작함 */
+  const [current, setCurrent] = useState<DonationAlertShowItem | null>(null);
   const queueRef = useRef<DonationAlertShowItem[]>([]);
   const showingRef = useRef(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenIdsRef = useRef<Set<string>>(new Set());
   const bootstrappedRef = useRef(false);
+
+  useEffect(() => {
+    if (!spReady || !testMode) return;
+    setCurrent(DONATION_ALERT_TEST_ITEM);
+  }, [spReady, testMode]);
 
   const drainQueue = useCallback(() => {
     if (showingRef.current) return;
@@ -69,18 +73,18 @@ export default function DonationAlertOverlayPage() {
     });
     if (!remote) return;
     const donors = normalizeDonorsArray(remote.donors) as Array<Record<string, unknown>>;
-    const alert = donationAlertFromLatestDonor(donors, remote.members || []);
+    const members = remote.members || [];
     if (!bootstrappedRef.current) {
       bootstrappedRef.current = true;
-      if (alert) seenIdsRef.current.add(alert.id);
-      /** 기존 후원은 시드로만 표시하지 않음 — 이후 신규만 알림 */
-      for (const d of donors.slice(-40)) {
+      /** 기존 후원은 전부 시드만 — 표시하지 않음 (이후 신규만) */
+      for (const d of donors) {
         const id = String(d.id || "").trim();
         if (id) seenIdsRef.current.add(id);
       }
       return;
     }
-    enqueueAlert(alert);
+    const fresh = donationAlertsFromUnseenDonors(donors, members, seenIdsRef.current);
+    for (const item of fresh) enqueueAlert(item);
   }, [enqueueAlert, testMode, userId]);
 
   useSSEConnection((data: unknown) => {
