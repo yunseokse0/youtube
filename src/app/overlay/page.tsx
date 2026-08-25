@@ -378,9 +378,13 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
   const applyOverlayDonationSync = useCallback(
     (incoming: AppState): AppState => {
       const good = lastGoodRef.current;
+      const serverAuthoritative = preferServerOnlyRef.current;
       let merged = mergeKeepingStrongRoster(incoming);
-      /** wire donors 축소(구 300 cap 등) — last-good 과 union 후 재계산 */
-      if (good?.donors?.length) {
+      /**
+       * wire donors 축소(구 300 cap 등) — last-good 과 union 후 재계산.
+       * OBS(host=obs)는 서버가 정본: last-good union 하면 관리자/서버보다 금액이 높게 고착됨.
+       */
+      if (good?.donors?.length && !serverAuthoritative) {
         const incomingDonors = normalizeDonorsArray(merged.donors);
         const goodDonors = normalizeDonorsArray(good.donors);
         const intentionalShrink = isIntentionalDonorListShrink(
@@ -408,6 +412,10 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         }
       }
       const synced = syncMemberTotalsFromDonors(merged);
+      /** OBS: donors→members 재계산 결과만 사용 (last-good 금액 재주입 금지) */
+      if (serverAuthoritative && !isEmptyDonationRemote(synced)) {
+        return synced;
+      }
       /**
        * 멤버 추가·삭제(id 집합 변경) 직후는 옛 last-good 로스터로 되돌리지 않되,
        * 공통 멤버 금액이 0으로 오면 last-good 금액을 유지한다.

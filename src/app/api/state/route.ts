@@ -80,7 +80,6 @@ import {
   saveDonationRosterBackup,
 } from "@/lib/donation-roster-backup";
 import {
-  markDonorsForHighSocietyTerritoryRoundBump,
   shouldBlockHighSocietyRegression,
   syncHighSocietyMemberWidthSnapshotInState,
 } from "@/lib/high-society";
@@ -1144,14 +1143,10 @@ export async function POST(req: Request) {
           members: mergeMemberRosterPreservingAmounts(baseState.members || [], merged.members),
         };
       }
-      const markedDonors = markDonorsForHighSocietyTerritoryRoundBump({
-        prevRound: Math.max(1, Math.floor(Number(baseState.highSocietySettings?.round) || 1)),
-        nextRound: Math.max(1, Math.floor(Number(draft.highSocietySettings?.round) || 1)),
-        donors: draft.donors,
-      });
-      if (markedDonors) {
-        draft = { ...draft, donors: markedDonors };
-      }
+      /**
+       * 영토는 territoryLogs·width 스냅샷 정본 — round bump 시 donors 에 hsTerritoryExcluded
+       * 를 찍지 않음(후원순위·미리보기 오염 방지).
+       */
     }
     /**
      * donorsAuthoritative + donors 있음인데 멤버 합계가 donors 와 어긋나면 로스터 재동기화.

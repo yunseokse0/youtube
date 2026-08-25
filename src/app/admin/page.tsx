@@ -2651,13 +2651,21 @@ export default function AdminPage() {
 
   /** 서버에 donors 가 있는데 UI·LS만 비었을 때 강제 복구 (storage-health 불일치) */
   const applyDonorsFromServerMainState = useCallback(
-    async (opts?: { silent?: boolean }) => {
+    async (opts?: { silent?: boolean; forceReplace?: boolean }) => {
       if (!user) return false;
       const remote = await loadStateFromApi(user.id, { forceFull: true });
       if (!remote) return false;
       const remoteDonors = normalizeDonorsArray(remote.donors);
       if (remoteDonors.length === 0) return false;
-      const next = buildUiStateFromServerDonorPull(stateRef.current, remote);
+      const localTotal = totalCombined(stateRef.current);
+      const remoteTotal = totalCombined(remote);
+      /** 서버에 후원이 있을 때만 맞춤 — 빈 원격으로 실후원을 지우지 않음 */
+      const forceReplace =
+        Boolean(opts?.forceReplace) ||
+        (remoteTotal > 0 &&
+          remoteDonors.length > 0 &&
+          Math.abs(localTotal - remoteTotal) > 500);
+      const next = buildUiStateFromServerDonorPull(stateRef.current, remote, { forceReplace });
       if (!next || normalizeDonorsArray(next.donors).length === 0) return false;
       setState(next);
       stateRef.current = next;
@@ -2691,7 +2699,12 @@ export default function AdminPage() {
     if (!user) return;
     const serverCount = Number(storageHealth?.mainState?.donorsCount || 0);
     const localCount = normalizeDonorsArray(state.donors).length;
-    if (serverCount > 0 && localCount >= serverCount) {
+    const serverTotal = Number(storageHealth?.mainState?.totalCombined || 0);
+    const localTotal = totalCombined(state);
+    const aligned =
+      (serverCount <= 0 || localCount === serverCount) &&
+      (serverTotal <= 0 || Math.abs(localTotal - serverTotal) <= 500);
+    if (aligned) {
       serverDonorMismatchRestoreAttemptedRef.current = false;
     }
   }, [user, storageHealth, state.donors]);
@@ -2703,7 +2716,10 @@ export default function AdminPage() {
     const localCount = normalizeDonorsArray(state.donors).length;
     const localTotal = totalCombined(state);
     const countMismatch = serverCount > 0 && localCount !== serverCount;
-    const totalMismatch = serverTotal > 0 && localTotal + 500 < serverTotal;
+    /** 화면이 서버보다 낮거나(누락) 크게 높으면(고착) 서버 정본으로 맞춤 */
+    const totalMismatch =
+      serverTotal > 0 &&
+      (localTotal + 500 < serverTotal || localTotal > serverTotal + 500);
     if (!countMismatch && !totalMismatch) return;
     if (serverDonorMismatchRestoreAttemptedRef.current) return;
     serverDonorMismatchRestoreAttemptedRef.current = true;
@@ -2716,7 +2732,10 @@ export default function AdminPage() {
       }
       serverDonorMismatchRestoreAttemptedRef.current = false;
       window.setTimeout(() => {
-        if (normalizeDonorsArray(stateRef.current.donors).length >= serverCount) return;
+        const still =
+          normalizeDonorsArray(stateRef.current.donors).length !== serverCount ||
+          Math.abs(totalCombined(stateRef.current) - serverTotal) > 500;
+        if (!still) return;
         void applyDonorsFromServerMainState({ silent: true });
       }, 1500);
     });
@@ -8567,6 +8586,7 @@ export default function AdminPage() {
           highSocietySettings: nextSettings,
           donationSyncMode: nextDonationSyncMode,
           updatedAt: Date.now(),
+          ...(resetTerritory ? { territoryLogs: [] } : {}),
         };
         if (hasDonorsToPersist) {
           next = guardMemberTotalsAgainstAccidentalZeroWipe(
@@ -8579,18 +8599,9 @@ export default function AdminPage() {
         next = { ...next, highSocietySettings: nextSettingsSynced };
         stateRef.current = next;
         try {
-          const lsBase = loadState(user?.id);
-          const stamped: AppState = lsBase
-            ? {
-                ...lsBase,
-                highSocietySettings: nextSettingsSynced,
-                donationSyncMode: nextDonationSyncMode,
-                ...(donorsPatch ? { donors: donorsPatch } : {}),
-                updatedAt: next.updatedAt,
-              }
-            : next;
-          cacheBroadcastStateSnapshot(stamped, user?.id);
-          notifyBroadcastStateLocalUpdated(user?.id, stamped.updatedAt);
+          /** defaultState() 폴백으로 빈 donors 스냅샷을 쓰지 않음 — React next 전체를 세션에 반영 */
+          cacheBroadcastStateSnapshot(next, user?.id);
+          notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
         } catch {}
         const persistToastLabel =
           buildHighSocietySettingsPersistToast({

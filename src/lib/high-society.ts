@@ -1462,12 +1462,13 @@ export function shouldPersistDonorsForHighSocietySettingsPatch(opts: {
   return Boolean(opts.isFirstOn);
 }
 
-/** 영토 리셋·최초 ON — 로컬 UI/LS 에 hsTerritoryExcluded 반영 (서버 authoritative 와 분리) */
+/** 최초 ON 만 로컬 donors 에 hsTerritoryExcluded 표시 — 영토만 초기화는 donors 를 건드리지 않음(후원순위 브로드캐스트 오염 방지) */
 export function shouldMarkDonorsLocallyForHighSocietySettingsPatch(opts: {
   resetTerritory: boolean;
   isFirstOn: boolean;
 }): boolean {
-  return Boolean(opts.resetTerritory || opts.isFirstOn);
+  void opts.resetTerritory;
+  return Boolean(opts.isFirstOn);
 }
 
 /**
@@ -1510,7 +1511,7 @@ export function resolveDonationSyncModeForHighSocietySettingsChange(opts: {
 
 /**
  * 상류사회 설정 patch(OFF·일시정지·ON·영토 리셋) 직전 donors 확정.
- * React·ref·LS union 후, 최초 ON·영토 리셋 때만 hsTerritoryExcluded 표시.
+ * React·ref·LS union 후, 최초 ON 때만 hsTerritoryExcluded 표시(영토 리셋은 donors 불변).
  */
 export function resolveDonorsForHighSocietySettingsPatch(opts: {
   prevDonorsReact: Donor[] | null | undefined;
@@ -1524,9 +1525,9 @@ export function resolveDonorsForHighSocietySettingsPatch(opts: {
     opts.refDonors,
     opts.lsDonors
   );
+  void opts.resetTerritory;
   /** id 없는 행·일시적 React 비움 — 영토 patch 가 donors/members 를 0으로 덮지 않게 */
-  const shouldMarkHsTerritoryOff =
-    (opts.resetTerritory || opts.isFirstOn) && prevDonors.length > 0;
+  const shouldMarkHsTerritoryOff = opts.isFirstOn && prevDonors.length > 0;
   return shouldMarkHsTerritoryOff
     ? markDonorsHsTerritoryExcluded(prevDonors, true)
     : prevDonors;

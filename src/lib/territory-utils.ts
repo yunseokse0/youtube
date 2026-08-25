@@ -35,6 +35,7 @@ export function normalizeTerritoryLogs(input: unknown): TerritoryLog[] {
 
 /**
  * PATCH territoryLogs 병합 — id 부분집합(삭제)이면 patch 를 정본으로 쓴다.
+ * 빈 배열([])은 전체 삭제(영토만 초기화)로 취급한다.
  * 그 외(동시 추가)는 id union.
  */
 export function mergeTerritoryLogsFromPatch(
@@ -43,6 +44,8 @@ export function mergeTerritoryLogsFromPatch(
 ): TerritoryLog[] {
   const base = normalizeTerritoryLogs(baseLogs);
   const patch = normalizeTerritoryLogs(patchLogs);
+  /** 영토만 초기화 — 명시적 빈 목록 */
+  if (Array.isArray(patchLogs) && patch.length === 0) return [];
   if (patch.length >= base.length) return patch;
   const baseIds = new Set(base.map((l) => String(l.id)));
   const patchIds = new Set(patch.map((l) => String(l.id)));

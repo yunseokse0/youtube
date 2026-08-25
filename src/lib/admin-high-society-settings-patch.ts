@@ -94,6 +94,8 @@ export function applyHighSocietyAdminPatchToState(
     highSocietySettings: nextSettings,
     donationSyncMode: nextDonationSyncMode,
     updatedAt: Date.now(),
+    /** 영토만 초기화 — 기록부 비워야 cm 이 균등 스냅샷으로 돌아감 */
+    ...(resetTerritory ? { territoryLogs: [] } : {}),
   };
   if (needsDonorPersist && donorsPatch != null) {
     next = guardMemberTotalsAgainstAccidentalZeroWipe(syncMemberTotalsFromDonors(next), prev);

@@ -2467,6 +2467,8 @@ export function appStatePayloadForApi(
       updatedAt: next.updatedAt,
       highSocietySettings: next.highSocietySettings,
       ...(next.donationSyncMode ? { donationSyncMode: next.donationSyncMode } : {}),
+      /** 영토만 초기화 시 [] 전달 — 키 없으면 서버가 기존 기록부 유지 */
+      ...(Array.isArray(next.territoryLogs) ? { territoryLogs: next.territoryLogs } : {}),
     };
   }
   /**
@@ -4057,18 +4059,20 @@ export function pickAuthoritativeDonorsForEmptySession(
 /**
  * DB→UI 단방향: 서버(MySQL) donors 를 React admin 화면에 반영. POST·브라우저 저장 없음.
  * UI donor 행이 서버보다 적으면 stale member 합계와 무관하게 서버 donors 를 우선한다.
+ * `forceReplace`: 화면이 서버보다 많아도(고착) 서버 donors·합계로 맞춤.
  */
 export function buildUiStateFromServerDonorPull(
   local: AppState,
-  remote: AppState
+  remote: AppState,
+  opts?: { forceReplace?: boolean }
 ): AppState | null {
   const remoteDonors = normalizeDonorsArray(remote.donors);
   if (remoteDonors.length === 0) return null;
   const localDonors = normalizeDonorsArray(local.donors);
-  if (remoteDonors.length === 0) return null;
   const localIds = new Set(localDonors.map((d) => String(d.id || "")));
   const remoteMissingInLocal = remoteDonors.filter((d) => !localIds.has(String(d.id || "")));
   if (
+    !opts?.forceReplace &&
     localDonors.length >= remoteDonors.length &&
     localDonors.length > 0 &&
     totalCombined(local) >= totalCombined(remote) &&
@@ -4080,12 +4084,9 @@ export function buildUiStateFromServerDonorPull(
     Number(local.settlementResetAt || 0),
     Number(remote.settlementResetAt || 0)
   );
-  let donors = pickAuthoritativeDonorsForEmptySession(
-    local,
-    remoteDonors,
-    remoteDonors,
-    resetAt
-  );
+  let donors = opts?.forceReplace
+    ? remoteDonors
+    : pickAuthoritativeDonorsForEmptySession(local, remoteDonors, remoteDonors, resetAt);
   if (donors.length === 0) {
     donors = applySettlementResetDonorPipeline(
       rebumpDonorsPastSettlementReset(remoteDonors, resetAt),

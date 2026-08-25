@@ -1190,7 +1190,7 @@ describe("high-society territory (aux)", () => {
     expect(merged[0]!.amount).toBe(20_000);
   });
 
-  it("resolveDonorsForHighSocietySettingsPatch on resetTerritory marks OFF but keeps amount", () => {
+  it("resolveDonorsForHighSocietySettingsPatch on resetTerritory keeps donors unmarked", () => {
     const existing = [
       { id: "d1", name: "후원", amount: 50_000, memberId: "m1", at: 100 },
     ];
@@ -1203,7 +1203,7 @@ describe("high-society territory (aux)", () => {
     });
     expect(donors).toHaveLength(1);
     expect(donors[0]!.amount).toBe(50_000);
-    expect(donors[0]!.hsTerritoryExcluded).toBe(true);
+    expect(donors[0]!.hsTerritoryExcluded).toBeUndefined();
   });
 
   it("shouldApplyDonorsForHighSocietySettingsPatch is false for empty list", () => {
@@ -1276,13 +1276,13 @@ describe("high-society territory (aux)", () => {
     ).toBe(true);
   });
 
-  it("shouldMarkDonorsLocallyForHighSocietySettingsPatch covers resetTerritory and first ON", () => {
+  it("shouldMarkDonorsLocallyForHighSocietySettingsPatch is true only for first ON", () => {
     expect(
       shouldMarkDonorsLocallyForHighSocietySettingsPatch({ resetTerritory: false, isFirstOn: false })
     ).toBe(false);
     expect(
       shouldMarkDonorsLocallyForHighSocietySettingsPatch({ resetTerritory: true, isFirstOn: false })
-    ).toBe(true);
+    ).toBe(false);
     expect(
       shouldMarkDonorsLocallyForHighSocietySettingsPatch({ resetTerritory: false, isFirstOn: true })
     ).toBe(true);
@@ -1342,6 +1342,7 @@ describe("high-society territory (aux)", () => {
       resetTerritory: true,
       isFirstOn: false,
     });
+    expect(donors[0]?.hsTerritoryExcluded).toBeUndefined();
     expect(shouldApplyDonorsForHighSocietySettingsPatch(donors)).toBe(true);
     const synced = syncMemberTotalsFromDonors({
       members,
@@ -1402,6 +1403,37 @@ describe("high-society territory (aux)", () => {
     expect(afterReset.seats[1]!.widthCm).toBe(300);
     expect(donors).toHaveLength(1);
     expect(donors[0]!.amount).toBe(100_000);
+  });
+
+  it("applyHighSocietyAdminPatchToState resetTerritory clears territoryLogs and equalizes widths", async () => {
+    const { applyHighSocietyAdminPatchToState } = await import("@/lib/admin-high-society-settings-patch");
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    const donors = [
+      { id: "d1", name: "후원", amount: 50_000, memberId: "b", target: "account" as const, at: 100 },
+    ];
+    const prev = {
+      members,
+      donors,
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: ["a", "b", "c", "d"],
+        round: 1,
+        memberWidthCm: { a: 200, b: 400, c: 300, d: 300 },
+      }),
+      territoryLogs: [createTerritoryLog("b", 1, 100, { pushDir: "right" })],
+      updatedAt: 1,
+    } as import("@/types").AppState;
+    const next = applyHighSocietyAdminPatchToState(prev, { resetTerritory: true });
+    expect(next.territoryLogs).toEqual([]);
+    expect(next.donors?.[0]?.hsTerritoryExcluded).toBeUndefined();
+    expect(next.donors?.[0]?.amount).toBe(50_000);
+    const field = buildHighSocietyFieldFromAppState(next);
+    expect(field.seats.every((s) => s.widthCm === 300)).toBe(true);
   });
 
   it("honors explicit single-seat list without falling back to all members", () => {
