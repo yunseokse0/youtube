@@ -11,6 +11,7 @@ import {
 import { writeToonationListenerConfig } from "@/lib/donation/toonation/listener-config-store";
 import { registerMysqlKvBackend } from "../_shared/upstash";
 import { upstashSetAppStateJson } from "../_shared/upstash-app-state";
+import { initSettlementStatementForNewAccount } from "@/lib/settlement-statement-store";
 
 /** instrumentation 전에 라우트가 먼저 불릴 때를 대비한 MySQL 백엔드 보장 */
 async function ensureMysqlKvBackend(): Promise<void> {
@@ -165,6 +166,9 @@ export async function POST(req: Request) {
       });
     }
     await initAccountAppState(id);
+    await initSettlementStatementForNewAccount(id, companyName).catch((err) => {
+      console.error("[api/accounts] settlement statement init failed", err);
+    });
     const { password: _, ...publicAccount } = account;
     return new Response(JSON.stringify({ ok: true, account: publicAccount }), {
       headers: { "Content-Type": "application/json" },

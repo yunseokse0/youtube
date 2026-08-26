@@ -3,38 +3,17 @@ export const revalidate = 0;
 
 import { getUserIdFromRequest, resolveWriteUserId, writeUserIdErrorResponse } from "../../_shared/user-id";
 import {
-  ensureMysqlKvBackend,
-  isPersistentKvConfigured,
-  upstashGetJson,
-  upstashSetJsonWithSetPath,
-} from "../../_shared/upstash";
+  getSettlementStatementTextPayload,
+  saveSettlementStatementTextPayload,
+} from "@/lib/settlement-statement-store";
 import {
-  DEFAULT_SETTLEMENT_ISSUER_LINE,
-  DEFAULT_SETTLEMENT_THANK_YOU,
-  normalizeSettlementStatementText,
-  type SettlementStatementText,
-} from "@/lib/settlement-branding";
-
-const STORAGE_KEY_BASE = "excel-broadcast-settlement-statement-text-v1";
-
-type TextPayload = SettlementStatementText & { updatedAt: number };
-
-const memoryText: Record<string, TextPayload | null> = {};
-
-function textKey(userId: string): string {
-  return `${STORAGE_KEY_BASE}:${userId}`;
-}
-
-function clampLine(value: unknown, max = 200): string {
-  return String(value ?? "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, max);
-}
+  resolveSettlementAccountCompanyName,
+  statementDefaultsForAccount,
+} from "@/lib/settlement-statement-account";
+import type { SettlementStatementText } from "@/lib/settlement-branding";
 
 export async function GET(req: Request) {
   try {
-    await ensureMysqlKvBackend();
     const userId = getUserIdFromRequest(req);
     if (!userId) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
@@ -42,18 +21,20 @@ export async function GET(req: Request) {
         headers: { "Content-Type": "application/json" },
       });
     }
-    const remote = await upstashGetJson<TextPayload>(textKey(userId));
-    const payload = remote || memoryText[userId] || null;
-    const normalized = normalizeSettlementStatementText(
-      payload || {
-        thankYouMessage: DEFAULT_SETTLEMENT_THANK_YOU,
-        issuerLine: DEFAULT_SETTLEMENT_ISSUER_LINE,
-      }
-    );
+    const companyName = await resolveSettlementAccountCompanyName(userId);
+    const payload = await getSettlementStatementTextPayload(userId);
+    const defaults = statementDefaultsForAccount(companyName);
+    const normalized = payload
+      ? {
+          thankYouMessage: payload.thankYouMessage,
+          issuerLine: payload.issuerLine,
+        }
+      : defaults;
     return new Response(
       JSON.stringify({
         ...normalized,
         saved: Boolean(payload?.updatedAt),
+        companyName,
       }),
       {
         headers: {
@@ -63,45 +44,32 @@ export async function GET(req: Request) {
       }
     );
   } catch {
-    return new Response(
-      JSON.stringify(
-        normalizeSettlementStatementText({
-          thankYouMessage: DEFAULT_SETTLEMENT_THANK_YOU,
-          issuerLine: DEFAULT_SETTLEMENT_ISSUER_LINE,
-        })
-      ),
-      { headers: { "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: "load_failed" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }
 
 export async function POST(req: Request) {
   try {
-    await ensureMysqlKvBackend();
     const writeUid = resolveWriteUserId(req);
     if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
     const userId = writeUid.userId;
+    const companyName = await resolveSettlementAccountCompanyName(userId);
     const body = (await req.json()) as Partial<SettlementStatementText>;
-    const normalized = normalizeSettlementStatementText({
-      thankYouMessage: clampLine(body?.thankYouMessage, 160),
-      issuerLine: clampLine(body?.issuerLine, 120),
-    });
-    const payload: TextPayload = { ...normalized, updatedAt: Date.now() };
-    memoryText[userId] = payload;
-    const persisted = await upstashSetJsonWithSetPath(textKey(userId), payload);
-    if (!persisted && isPersistentKvConfigured()) {
-      return new Response(
-        JSON.stringify({ ok: false, error: "persist_failed", ...normalized }),
-        {
-          status: 503,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
+    const normalized = await saveSettlementStatementTextPayload(userId, body, companyName);
     return new Response(JSON.stringify({ ok: true, ...normalized }), {
       headers: { "Content-Type": "application/json" },
     });
-  } catch {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "save_failed";
+    if (message === "persist_failed") {
+      return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     return new Response(JSON.stringify({ error: "save_failed" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },

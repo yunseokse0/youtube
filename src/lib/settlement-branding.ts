@@ -5,12 +5,29 @@ export const SETTLEMENT_STATEMENT_TEXT_KEY = "excel-broadcast-settlement-stateme
 
 /** 지급정산서 하단 기본 문구 */
 export const DEFAULT_SETTLEMENT_THANK_YOU = "파이팅 넘치는 스트리머의 노고에 감사드립니다";
+/** 회사명을 알 수 없을 때만 쓰는 구형 기본값(신규 계정은 회사명 사용) */
 export const DEFAULT_SETTLEMENT_ISSUER_LINE = "BT STUDIO 대장 BT태호 이동환";
 
 export type SettlementStatementText = {
   thankYouMessage: string;
   issuerLine: string;
 };
+
+/** 회원가입(계정) 회사명 → 지급정산서 발행자 줄 */
+export function buildSettlementIssuerLineFromCompanyName(companyName: string): string {
+  return String(companyName || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
+export function defaultSettlementStatementText(companyName?: string | null): SettlementStatementText {
+  const issuerFromCompany = buildSettlementIssuerLineFromCompanyName(companyName || "");
+  return {
+    thankYouMessage: DEFAULT_SETTLEMENT_THANK_YOU,
+    issuerLine: issuerFromCompany || DEFAULT_SETTLEMENT_ISSUER_LINE,
+  };
+}
 
 export function settlementLogoStorageKey(userId?: string | null): string {
   if (!userId) throw new Error("정산서 로고는 계정별로 저장됩니다. 로그인이 필요합니다.");
@@ -22,33 +39,32 @@ export function settlementStatementTextStorageKey(userId?: string | null): strin
   return `${SETTLEMENT_STATEMENT_TEXT_KEY}:${userId}`;
 }
 
-export function defaultSettlementStatementText(): SettlementStatementText {
-  return {
-    thankYouMessage: DEFAULT_SETTLEMENT_THANK_YOU,
-    issuerLine: DEFAULT_SETTLEMENT_ISSUER_LINE,
-  };
-}
-
 export function normalizeSettlementStatementText(
-  input: Partial<SettlementStatementText> | null | undefined
+  input: Partial<SettlementStatementText> | null | undefined,
+  companyName?: string | null
 ): SettlementStatementText {
-  const defaults = defaultSettlementStatementText();
-  const thankYou = String(input?.thankYouMessage ?? "").trim();
-  const issuer = String(input?.issuerLine ?? "").trim();
+  const defaults = defaultSettlementStatementText(companyName);
+  const thankYouRaw = String(input?.thankYouMessage ?? "").trim();
+  const issuerRaw = String(input?.issuerLine ?? "").trim();
+  const thankYouIsLegacy = !thankYouRaw || thankYouRaw === DEFAULT_SETTLEMENT_THANK_YOU;
+  const issuerIsLegacy = !issuerRaw || issuerRaw === DEFAULT_SETTLEMENT_ISSUER_LINE;
   return {
-    thankYouMessage: thankYou || defaults.thankYouMessage,
-    issuerLine: issuer || defaults.issuerLine,
+    thankYouMessage: thankYouIsLegacy ? defaults.thankYouMessage : thankYouRaw,
+    issuerLine: issuerIsLegacy ? defaults.issuerLine : issuerRaw,
   };
 }
 
-export function loadSettlementStatementText(userId?: string | null): SettlementStatementText {
-  const defaults = defaultSettlementStatementText();
+export function loadSettlementStatementText(
+  userId?: string | null,
+  companyName?: string | null
+): SettlementStatementText {
+  const defaults = defaultSettlementStatementText(companyName);
   if (typeof window === "undefined" || !userId) return defaults;
   try {
     const raw = window.localStorage.getItem(settlementStatementTextStorageKey(userId));
     if (!raw) return defaults;
     const parsed = JSON.parse(raw) as Partial<SettlementStatementText>;
-    return normalizeSettlementStatementText(parsed);
+    return normalizeSettlementStatementText(parsed, companyName);
   } catch {
     return defaults;
   }
@@ -56,11 +72,12 @@ export function loadSettlementStatementText(userId?: string | null): SettlementS
 
 export function saveSettlementStatementText(
   text: Partial<SettlementStatementText>,
-  userId?: string | null
+  userId?: string | null,
+  companyName?: string | null
 ): SettlementStatementText {
-  if (typeof window === "undefined") return normalizeSettlementStatementText(text);
+  if (typeof window === "undefined") return normalizeSettlementStatementText(text, companyName);
   if (!userId) throw new Error("정산서 문구는 계정별로 저장됩니다. 로그인이 필요합니다.");
-  const normalized = normalizeSettlementStatementText(text);
+  const normalized = normalizeSettlementStatementText(text, companyName);
   try {
     window.localStorage.setItem(
       settlementStatementTextStorageKey(userId),
@@ -73,10 +90,11 @@ export function saveSettlementStatementText(
 }
 
 export async function fetchSettlementStatementTextFromApi(
-  userId: string
+  userId: string,
+  companyName?: string | null
 ): Promise<SettlementStatementText> {
-  const local = loadSettlementStatementText(userId);
-  const defaults = defaultSettlementStatementText();
+  const local = loadSettlementStatementText(userId, companyName);
+  const defaults = defaultSettlementStatementText(companyName);
   const localCustomized =
     local.thankYouMessage !== defaults.thankYouMessage ||
     local.issuerLine !== defaults.issuerLine;
@@ -87,18 +105,21 @@ export async function fetchSettlementStatementTextFromApi(
     );
     if (!res.ok) return local;
     const data = (await res.json()) as Partial<SettlementStatementText> & { saved?: boolean };
-    const fromServer = normalizeSettlementStatementText({
-      thankYouMessage:
-        typeof data.thankYouMessage === "string" ? data.thankYouMessage : local.thankYouMessage,
-      issuerLine: typeof data.issuerLine === "string" ? data.issuerLine : local.issuerLine,
-    });
+    const fromServer = normalizeSettlementStatementText(
+      {
+        thankYouMessage:
+          typeof data.thankYouMessage === "string" ? data.thankYouMessage : local.thankYouMessage,
+        issuerLine: typeof data.issuerLine === "string" ? data.issuerLine : local.issuerLine,
+      },
+      companyName
+    );
     const normalized =
       data.saved === true ? fromServer : localCustomized ? local : fromServer;
     try {
-      saveSettlementStatementText(normalized, userId);
+      saveSettlementStatementText(normalized, userId, companyName);
     } catch {}
     if (data.saved !== true && localCustomized) {
-      void saveSettlementStatementTextToApi(local, userId);
+      void saveSettlementStatementTextToApi(local, userId, companyName);
     }
     return normalized;
   } catch {
@@ -108,9 +129,10 @@ export async function fetchSettlementStatementTextFromApi(
 
 export async function saveSettlementStatementTextToApi(
   text: Partial<SettlementStatementText>,
-  userId: string
+  userId: string,
+  companyName?: string | null
 ): Promise<{ ok: boolean; text: SettlementStatementText }> {
-  const normalized = saveSettlementStatementText(text, userId);
+  const normalized = saveSettlementStatementText(text, userId, companyName);
   try {
     const res = await fetch(`/api/settlements/statement-text?user=${encodeURIComponent(userId)}`, {
       method: "POST",
@@ -127,10 +149,11 @@ export async function saveSettlementStatementTextToApi(
 }
 
 export async function resolveSettlementStatementText(
-  userId?: string | null
+  userId?: string | null,
+  companyName?: string | null
 ): Promise<SettlementStatementText> {
-  if (!userId) return defaultSettlementStatementText();
-  return fetchSettlementStatementTextFromApi(userId);
+  if (!userId) return defaultSettlementStatementText(companyName);
+  return fetchSettlementStatementTextFromApi(userId, companyName);
 }
 
 export function loadSettlementLogoDataUrl(userId?: string | null): string | null {

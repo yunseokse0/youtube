@@ -14,6 +14,7 @@ import {
   ADMIN_SECTION_EXPAND_PARENTS,
   useAdminSectionCollapse,
 } from "@/components/admin/AdminSectionCollapse";
+import { AdminPasswordChangePanel } from "@/components/admin/AdminPasswordChangePanel";
 import {
   buildSettlementUiOptionsFromForm,
   normalizeSettlementUiOptions,
@@ -9393,6 +9394,26 @@ function AdminPageInner() {
           </div>
         </AdminCollapsibleSection>
         )}
+        {user?.id ? (
+        <AdminCollapsibleSection
+          id="account-settings"
+          title="계정 설정"
+          className={`${panelCardClass} mb-6`}
+          bodyClassName="px-4 pb-4"
+        >
+          <AdminPasswordChangePanel
+            userId={user.id}
+            disabled={user.id === "admin" || user.id === "finalent"}
+            disabledReason={
+              user.id === "admin"
+                ? "로컬 개발용 admin 계정은 비밀번호 변경을 지원하지 않습니다."
+                : user.id === "finalent"
+                  ? "내장 개발 계정(finalent)은 비밀번호 변경을 지원하지 않습니다."
+                  : undefined
+            }
+          />
+        </AdminCollapsibleSection>
+        ) : null}
         <div className="grid grid-cols-1 gap-6">
           <div className="space-y-6">
             {isAdminNavSectionVisible("settlement") && (

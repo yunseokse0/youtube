@@ -11,6 +11,7 @@ import { repairDonorTimestamps } from "@/lib/donation/repair-donor-timestamps";
 import {
   memberToPaymentStatementPdfBlob,
   recordToFullSettlementPdfBlob,
+  settlementGrossAmount,
 } from "@/lib/settlement-payment-statement";
 import { downloadTextFile, downloadBlobFile } from "@/lib/download";
 import { showAppToast } from "@/lib/app-toast";
@@ -113,7 +114,7 @@ export default function SettlementDetailPage() {
       return rawId;
     }
   }, [rawId]);
-  const [user, setUser] = useState<{ id: string } | null>(null);
+  const [user, setUser] = useState<{ id: string; companyName?: string } | null>(null);
   const [records, setRecords] = useState<SettlementRecord[] | null>(null);
   const [detailMissing, setDetailMissing] = useState(false);
   const [detailRecovering, setDetailRecovering] = useState(false);
@@ -153,8 +154,9 @@ export default function SettlementDetailPage() {
           router.replace("/login");
           return;
         }
-        const u = data.user as { id: string };
+        const u = data.user as { id: string; companyName?: string };
         setUser(u);
+        const companyName = u.companyName || "";
         const local = loadSettlementRecords(u.id);
         setRecords(local);
         loadSettlementRecordsPreferApi(u.id).then(setRecords);
@@ -177,8 +179,8 @@ export default function SettlementDetailPage() {
           }
         });
         void fetchSettlementLogoFromApi(u.id).then((logo) => setLogoPreview(logo));
-        setStatementText(loadSettlementStatementText(u.id));
-        void fetchSettlementStatementTextFromApi(u.id).then(setStatementText);
+        setStatementText(loadSettlementStatementText(u.id, companyName));
+        void fetchSettlementStatementTextFromApi(u.id, companyName).then(setStatementText);
       });
   }, [router]);
 
@@ -615,7 +617,7 @@ export default function SettlementDetailPage() {
     setMemberPdfId(m.memberId);
     try {
       const logoDataUrl = await resolveSettlementLogoDataUrl(user?.id);
-      const copy = await resolveSettlementStatementText(user?.id);
+      const copy = await resolveSettlementStatementText(user?.id, user?.companyName);
       const blob = await memberToPaymentStatementPdfBlob(record, m, {
         logoDataUrl,
         thankYouMessage: copy.thankYouMessage,
@@ -663,7 +665,11 @@ export default function SettlementDetailPage() {
     if (!user || statementTextBusy) return;
     setStatementTextBusy(true);
     try {
-      const { ok, text } = await saveSettlementStatementTextToApi(statementText, user.id);
+      const { ok, text } = await saveSettlementStatementTextToApi(
+        statementText,
+        user.id,
+        user.companyName
+      );
       setStatementText(text);
       if (!ok) {
         window.alert("문구를 이 기기에 저장했습니다. 서버 동기화는 실패했을 수 있습니다.");
@@ -678,11 +684,15 @@ export default function SettlementDetailPage() {
 
   const onResetStatementText = async () => {
     if (!user || statementTextBusy) return;
-    const defaults = defaultSettlementStatementText();
+    const defaults = defaultSettlementStatementText(user.companyName);
     setStatementText(defaults);
     setStatementTextBusy(true);
     try {
-      const { ok, text } = await saveSettlementStatementTextToApi(defaults, user.id);
+      const { ok, text } = await saveSettlementStatementTextToApi(
+        defaults,
+        user.id,
+        user.companyName
+      );
       setStatementText(text);
       if (!ok) {
         window.alert("기본 문구를 이 기기에 복구했습니다. 서버 동기화는 실패했을 수 있습니다.");
@@ -1087,12 +1097,14 @@ export default function SettlementDetailPage() {
         <div className="rounded border border-white/10 bg-neutral-900/60 p-3 overflow-auto">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <div className="text-sm font-semibold">멤버별 최종 매출</div>
-            <div className="text-xs text-neutral-400">지급정산서 기준 · 세후 입금액(net)</div>
+            <div className="text-xs text-neutral-400">후원 유입(계좌·투네) + 배분 반영 · 세후 입금액(net)</div>
           </div>
           <table className="w-full text-sm whitespace-nowrap">
             <thead>
               <tr className="text-neutral-400 border-b border-white/10">
                 <th className="p-2 text-left">멤버</th>
+                <th className="p-2 text-right">계좌 후원</th>
+                <th className="p-2 text-right">투네 후원</th>
                 <th className="p-2 text-right">계좌 반영</th>
                 <th className="p-2 text-right">투네 반영</th>
                 <th className="p-2 text-right">세금</th>
@@ -1102,6 +1114,8 @@ export default function SettlementDetailPage() {
             <tbody>
               {exportMembers.map((m) => {
                 const badge = memberRoleBadge(m, record);
+                const accountInflow = settlementGrossAmount(m, "account");
+                const toonInflow = settlementGrossAmount(m, "toon");
                 return (
                   <tr key={`sum-${m.memberId}`} className="border-b border-white/10">
                     <td className="p-2">
@@ -1115,6 +1129,8 @@ export default function SettlementDetailPage() {
                         ) : null}
                       </div>
                     </td>
+                    <td className="p-2 text-right tabular-nums text-sky-300">{accountInflow.toLocaleString()}</td>
+                    <td className="p-2 text-right tabular-nums text-violet-300">{toonInflow.toLocaleString()}</td>
                     <td className="p-2 text-right tabular-nums">{m.accountApplied.toLocaleString()}</td>
                     <td className="p-2 text-right tabular-nums">{m.toonApplied.toLocaleString()}</td>
                     <td className="p-2 text-right tabular-nums text-rose-300">{m.fee.toLocaleString()}</td>
@@ -1128,6 +1144,12 @@ export default function SettlementDetailPage() {
             <tfoot>
               <tr className="font-semibold border-t border-white/10">
                 <td className="p-2">지급 합계</td>
+                <td className="p-2 text-right tabular-nums text-sky-300">
+                  {exportMembers.reduce((s, m) => s + settlementGrossAmount(m, "account"), 0).toLocaleString()}
+                </td>
+                <td className="p-2 text-right tabular-nums text-violet-300">
+                  {exportMembers.reduce((s, m) => s + settlementGrossAmount(m, "toon"), 0).toLocaleString()}
+                </td>
                 <td className="p-2 text-right tabular-nums">
                   {exportMembers.reduce((s, m) => s + m.accountApplied, 0).toLocaleString()}
                 </td>
@@ -1147,10 +1169,23 @@ export default function SettlementDetailPage() {
             <div className="mt-3 pt-3 border-t border-amber-500/20">
               <div className="text-xs font-medium text-amber-300 mb-2">운영비 (정산 제외 · 참고)</div>
               <table className="w-full text-sm whitespace-nowrap">
+                <thead>
+                  <tr className="text-neutral-500 border-b border-white/5 text-xs">
+                    <th className="p-2 text-left">멤버</th>
+                    <th className="p-2 text-right">계좌 후원</th>
+                    <th className="p-2 text-right">투네 후원</th>
+                    <th className="p-2 text-right">계좌 반영</th>
+                    <th className="p-2 text-right">투네 반영</th>
+                    <th className="p-2 text-right">세금</th>
+                    <th className="p-2 text-right">최종</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {treasuryExcludedMembers.map((m) => (
                     <tr key={`treasury-${m.memberId}`} className="border-b border-white/5 text-neutral-400">
                       <td className="p-2">{m.name}</td>
+                      <td className="p-2 text-right tabular-nums">{settlementGrossAmount(m, "account").toLocaleString()}</td>
+                      <td className="p-2 text-right tabular-nums">{settlementGrossAmount(m, "toon").toLocaleString()}</td>
                       <td className="p-2 text-right tabular-nums">{m.accountApplied.toLocaleString()}</td>
                       <td className="p-2 text-right tabular-nums">{m.toonApplied.toLocaleString()}</td>
                       <td className="p-2 text-right tabular-nums">{m.fee.toLocaleString()}</td>

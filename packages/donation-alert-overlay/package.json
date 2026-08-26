@@ -1,0 +1,24 @@
+{
+  "name": "@finalent/donation-alert-overlay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OBS용 후원 출력(도네이션 얼럿) 오버레이 — React 컴포넌트·큐·순수 로직",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./core": "./src/core.ts",
+    "./react": "./src/react/index.ts"
+  },
+  "peerDependencies": {
+    "framer-motion": ">=10",
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "framer-motion": {
+      "optional": true
+    }
+  }
+}

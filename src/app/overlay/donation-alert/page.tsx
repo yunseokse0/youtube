@@ -1,91 +1,34 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import BroadcastDonationAlertCard from "@/components/donation/BroadcastDonationAlertCard";
-import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
+import { useMemo } from "react";
 import {
-  DONATION_ALERT_DISPLAY_MS,
-  DONATION_ALERT_POLL_MS,
+  AnimatedDonationAlertOverlay,
+  useDonationAlertQueue,
+} from "@donation-alert-overlay/react";
+import {
   DONATION_ALERT_TEST_ITEM,
   donationAlertFromAppliedHint,
-  donationAlertsFromUnseenDonors,
-  type DonationAlertShowItem,
-} from "@/lib/donation/donation-alert-overlay";
+} from "@donation-alert-overlay/core";
+import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
-import { startStaggeredOverlayPoll } from "@/lib/overlay-poll-stagger";
-import { STATE_PICK_OVERLAY_DONORS } from "@/lib/state-api-pick";
-import { loadStateFromApi, normalizeDonorsArray } from "@/lib/state";
+import { createYoutubeBroadcastDonationAlertSource } from "@/lib/donation-alert/youtube-broadcast-source";
 import { useSSEConnection } from "@/lib/sse-client";
 
 export default function DonationAlertOverlayPage() {
   const { params: sp, ready: spReady } = useClientOnlySearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
   const testMode = (sp.get("test") || "").toLowerCase() === "true";
-  /** searchParams는 마운트 후에만 채워짐 — useState(testMode)는 항상 null로 시작함 */
-  const [current, setCurrent] = useState<DonationAlertShowItem | null>(null);
-  const queueRef = useRef<DonationAlertShowItem[]>([]);
-  const showingRef = useRef(false);
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const seenIdsRef = useRef<Set<string>>(new Set());
-  const bootstrappedRef = useRef(false);
 
-  useEffect(() => {
-    if (!spReady || !testMode) return;
-    setCurrent(DONATION_ALERT_TEST_ITEM);
-  }, [spReady, testMode]);
+  const source = useMemo(() => {
+    if (testMode || !userId) return null;
+    return createYoutubeBroadcastDonationAlertSource({ userId });
+  }, [testMode, userId]);
 
-  const drainQueue = useCallback(() => {
-    if (showingRef.current) return;
-    const next = queueRef.current.shift();
-    if (!next) return;
-    showingRef.current = true;
-    setCurrent(next);
-    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-    hideTimerRef.current = setTimeout(() => {
-      hideTimerRef.current = null;
-      setCurrent(null);
-      showingRef.current = false;
-      window.setTimeout(() => drainQueue(), 280);
-    }, DONATION_ALERT_DISPLAY_MS);
-  }, []);
-
-  const enqueueAlert = useCallback(
-    (item: DonationAlertShowItem | null) => {
-      if (!item || testMode) return;
-      if (seenIdsRef.current.has(item.id)) return;
-      seenIdsRef.current.add(item.id);
-      if (seenIdsRef.current.size > 200) {
-        const keep = Array.from(seenIdsRef.current).slice(-120);
-        seenIdsRef.current = new Set(keep);
-      }
-      queueRef.current.push(item);
-      drainQueue();
-    },
-    [drainQueue, testMode]
-  );
-
-  const pollLatestDonor = useCallback(async () => {
-    if (testMode || !String(userId || "").trim()) return;
-    const remote = await loadStateFromApi(userId, {
-      pick: STATE_PICK_OVERLAY_DONORS,
-      forceFull: true,
-    });
-    if (!remote) return;
-    const donors = normalizeDonorsArray(remote.donors) as Array<Record<string, unknown>>;
-    const members = remote.members || [];
-    if (!bootstrappedRef.current) {
-      bootstrappedRef.current = true;
-      /** 기존 후원은 전부 시드만 — 표시하지 않음 (이후 신규만) */
-      for (const d of donors) {
-        const id = String(d.id || "").trim();
-        if (id) seenIdsRef.current.add(id);
-      }
-      return;
-    }
-    const fresh = donationAlertsFromUnseenDonors(donors, members, seenIdsRef.current);
-    for (const item of fresh) enqueueAlert(item);
-  }, [enqueueAlert, testMode, userId]);
+  const { current, enqueueAlert } = useDonationAlertQueue({
+    enabled: spReady,
+    testItem: testMode ? DONATION_ALERT_TEST_ITEM : null,
+    source,
+  });
 
   useSSEConnection((data: unknown) => {
     if (testMode) return;
@@ -100,47 +43,15 @@ export default function DonationAlertOverlayPage() {
       updatedAt?: number;
     };
     if (o?.type !== "state_updated" || !o.donationApplied) return;
-    const item = donationAlertFromAppliedHint(
-      o.donationApplied,
-      `sse_${o.updatedAt || Date.now()}_${o.donationApplied.amount || 0}_${o.donationApplied.donorName || ""}`
+    enqueueAlert(
+      donationAlertFromAppliedHint(
+        o.donationApplied,
+        `sse_${o.updatedAt || Date.now()}_${o.donationApplied.amount || 0}_${o.donationApplied.donorName || ""}`
+      )
     );
-    enqueueAlert(item);
   });
-
-  useEffect(() => {
-    if (!spReady || testMode) return;
-    void pollLatestDonor();
-    const stop = startStaggeredOverlayPoll(
-      () => void pollLatestDonor(),
-      DONATION_ALERT_POLL_MS,
-      `donation-alert:${userId || "default"}`,
-      600
-    );
-    return () => {
-      stop();
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-    };
-  }, [pollLatestDonor, spReady, testMode, userId]);
 
   if (!spReady) return null;
 
-  return (
-    <main className="min-h-[100dvh] w-full bg-transparent p-3 text-white" data-overlay="donation-alert">
-      <div className="flex min-h-[min(100dvh,28rem)] w-full items-center justify-center">
-        <AnimatePresence mode="wait">
-          {current ? (
-            <motion.div
-              key={current.id}
-              initial={{ opacity: 0, y: 18, scale: 0.94 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -10, scale: 0.96 }}
-              transition={{ duration: 0.28, ease: "easeOut" }}
-            >
-              <BroadcastDonationAlertCard alert={current} />
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-      </div>
-    </main>
-  );
+  return <AnimatedDonationAlertOverlay current={current} />;
 }

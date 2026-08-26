@@ -22,6 +22,12 @@
     "paths": {
       "@/*": [
         "src/*"
+      ],
+      "@donation-alert-overlay": [
+        "packages/donation-alert-overlay/src/index.ts"
+      ],
+      "@donation-alert-overlay/*": [
+        "packages/donation-alert-overlay/src/*"
       ]
     },
     "esModuleInterop": true,

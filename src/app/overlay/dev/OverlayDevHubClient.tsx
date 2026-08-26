@@ -187,6 +187,13 @@ export default function OverlayDevHubClient() {
         obsPath: `/overlay/obs-text?u={u}&host=obs&textId=default`,
       },
       {
+        id: "donation-alert",
+        title: "후원 출력 알림",
+        desc: "계좌·투네 후원 시 후원자→멤버 / 금액 / 기여도 카드. packages/donation-alert-overlay 모듈.",
+        obsPath: `/overlay/donation-alert?u={u}&host=obs&overlayAllowSse=1`,
+        testPath: `/overlay/donation-alert?u={u}&host=obs&overlayAllowSse=1&test=true`,
+      },
+      {
         id: "sig-sales",
         title: "시그 회전판",
         desc: "회전판 + 결과. 멤버 필터는 관리자에서 선택 후 spin.",
