@@ -626,9 +626,12 @@ function RankingColumn({
           ? "border-b border-solid border-r-0 md:border-b-0 md:border-r md:border-solid border-white/20"
           : ""
       }`
-    : "studio-glass-panel relative z-[1] w-full overflow-visible";
+    : "relative z-[1] w-full overflow-visible";
   const panelFrac = Math.max(0, Math.min(1, panelOpacityFrac ?? 1));
   const panelBgResolved = backgroundWithOpacityFrac(panelBg, panelFrac);
+  const panelIsVisible =
+    Boolean(panelBgResolved.background) &&
+    panelBgResolved.background !== "transparent";
   const outerStyle: CSSProperties | undefined = { borderColor };
 
   const headerOpacityFrac = unified
@@ -687,7 +690,7 @@ function RankingColumn({
 
   return (
     <section className={outerClass} style={outerStyle}>
-      {!unified ? (
+      {panelIsVisible ? (
         <div
           className="pointer-events-none absolute inset-0 z-0 rounded-studio"
           aria-hidden
@@ -1099,15 +1102,15 @@ export default function DonorRankingsOverlayPage() {
                 />
               ) : null}
               <div
-                className={`relative z-[2] grid grid-cols-1 overflow-hidden backdrop-blur-studio md:grid-cols-2 md:gap-0 ${
+                className={`relative z-[2] grid grid-cols-1 overflow-hidden md:grid-cols-2 md:gap-0 ${
                   showFrame
                     ? "rounded-none border-0 shadow-none"
-                    : "studio-glass-panel rounded-studio border border-solid"
+                    : "rounded-studio border border-solid"
                 }`}
                 style={{
                   borderColor: showFrame ? "transparent" : borderColor,
                   backgroundColor: "transparent",
-                  boxShadow: showFrame ? "none" : "0 8px 32px 0 rgba(0, 0, 0, 0.37)",
+                  boxShadow: "none",
                 }}
               >
               <RankingColumn

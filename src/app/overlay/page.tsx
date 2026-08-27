@@ -1441,12 +1441,12 @@ const THEMES: Record<ThemeId, {
     totalCls: "font-bold text-white",
     totalWrapCls: "bg-[#ffc107] border border-[#ffc107] px-2 py-1",
     rowCls: "px-2 py-1 align-middle",
-    tableCls: "bg-[rgba(8,8,12,0.82)] border-collapse overflow-hidden",
+    tableCls: "bg-transparent border-collapse overflow-visible",
     headerCls: "bg-[#ffc107] text-[#1a1408] font-bold px-2 py-1 text-sm",
     goalBarBg: "bg-amber-900/40",
     goalBarFill: "bg-[#ffc107]",
     goalText: "text-[#ffc107] font-mono font-bold",
-    goalWrap: "border border-[#ffc107]/50 bg-[rgba(8,8,12,0.75)] p-1 rounded-studio backdrop-blur-studio",
+    goalWrap: "border border-[#ffc107]/50 bg-transparent p-1 rounded-studio",
     tickerCls: "text-[#ffc107] font-mono font-bold",
     timerCls: "font-mono text-white bg-black/80 px-2 rounded-lg border border-[#ffc107]",
   },
@@ -4111,9 +4111,8 @@ function OverlayInner() {
       tableLineColorRaw ||
       "";
     const excelZebraEnabled =
-      isExcelGoldChrome ||
-      (Boolean(excelMemberAccent) &&
-        Boolean(tableRowOddBgCss && tableRowOddBgCss !== "transparent"));
+      Boolean(excelMemberAccent) &&
+      Boolean(tableRowOddBgCss && tableRowOddBgCss !== "transparent");
     const excelMemberTableClass = excelMemberAccent
       ? `${isExcelLiveTheme ? " excel-live-table" : " excel-member-table"}${isExcelGoldChrome ? " excel-gold-table" : ""}${excelZebraEnabled ? " excel-zebra-table" : ""}`
       : "";
@@ -5210,7 +5209,7 @@ function OverlayInner() {
                     />
                   ) : null}
                 <div
-                  className={`relative ${showTableFrame ? "" : isExcelGoldChrome ? "overflow-visible" : "overflow-visible studio-glass-panel"}`}
+                  className={`relative ${showTableFrame ? "" : isExcelGoldChrome ? "overflow-visible" : "overflow-visible"}`}
                   style={{
                     zIndex: 2,
                     borderRadius: showTableFrame ? 0 : isExcelGoldChrome ? 12 : 14,
@@ -5220,8 +5219,9 @@ function OverlayInner() {
                         : !showTableFrame && isExcelGoldChrome
                           ? "1px solid #ffc107"
                           : "none",
-                    boxShadow: showTableFrame ? "none" : tablePanelShadow || "none",
+                    boxShadow: showTableFrame || isExcelGoldChrome ? "none" : tablePanelShadow || "none",
                     padding: isExcelGoldChrome && !showTableFrame ? "6px 0 8px" : 0,
+                    /** 웹후원 골드: 표 뒤 큰 패널 없음. 그 외 테마는 기존 시트/글래스 */
                     backgroundColor: isExcelGoldChrome
                       ? "transparent"
                       : tableBodySheetBgCss || TABLE_BROADCAST_PANEL_BG,

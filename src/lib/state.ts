@@ -470,14 +470,14 @@ export const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
   rankSize: 30,
   overlayOpacity: 88,
   bg: "transparent",
-  /** 반투명 밝은 패널 — 방송 배경이 비치는 유리 느낌 */
-  panelBg: "rgba(232, 232, 236, 0.7)",
+  /** 표·제목 뒤 패널 없음 — 방송 배경이 그대로 비침 */
+  panelBg: "transparent",
   /** 패널 외곽 — 검정만 (골드 테두리 제외) */
   borderColor: "#000000",
-  headerAccountBg: "rgba(232, 232, 236, 0.55)",
-  headerToonBg: "rgba(232, 232, 236, 0.55)",
+  headerAccountBg: "transparent",
+  headerToonBg: "transparent",
   rowEvenBg: "transparent",
-  rowOddBg: "rgba(255, 255, 255, 0.14)",
+  rowOddBg: "transparent",
   /** 4등 이후 순위 숫자: 흰색 / 제목·닉·금액: 골드 + 검정 외곽선 */
   rankColor: "#ffffff",
   nameColor: "#ffc107",
@@ -688,7 +688,17 @@ function normalizeDonorRankingsTheme(
     rankSize: n(v.rankSize, 12, 72, defaults.rankSize),
     overlayOpacity: n(v.overlayOpacity, 0, 100, defaults.overlayOpacity),
     bg: s(v.bg, defaults.bg),
-    panelBg: s(v.panelBg, defaults.panelBg),
+    panelBg: (() => {
+      const c = s(v.panelBg, defaults.panelBg);
+      /** 구버전 밝은 회색 패널 → 투명(방송 배경 노출) */
+      if (
+        /^rgba\(\s*232\s*,\s*232\s*,\s*236\s*,\s*0\.7\s*\)$/i.test(c) ||
+        /^rgba\(\s*232\s*,\s*232\s*,\s*236\s*,\s*0\.70\s*\)$/i.test(c)
+      ) {
+        return defaults.panelBg;
+      }
+      return c;
+    })(),
     borderColor: (() => {
       const c = s(v.borderColor, defaults.borderColor);
       if (!compactTheme) return c;
@@ -698,10 +708,29 @@ function normalizeDonorRankingsTheme(
       }
       return c;
     })(),
-    headerAccountBg: s(v.headerAccountBg, defaults.headerAccountBg),
-    headerToonBg: s(v.headerToonBg, defaults.headerToonBg),
+    headerAccountBg: (() => {
+      const c = s(v.headerAccountBg, defaults.headerAccountBg);
+      if (/^rgba\(\s*232\s*,\s*232\s*,\s*236\s*,\s*0\.55\s*\)$/i.test(c)) {
+        return defaults.headerAccountBg;
+      }
+      return c;
+    })(),
+    headerToonBg: (() => {
+      const c = s(v.headerToonBg, defaults.headerToonBg);
+      if (/^rgba\(\s*232\s*,\s*232\s*,\s*236\s*,\s*0\.55\s*\)$/i.test(c)) {
+        return defaults.headerToonBg;
+      }
+      return c;
+    })(),
     rowEvenBg: s(v.rowEvenBg, defaults.rowEvenBg),
-    rowOddBg: s(v.rowOddBg, defaults.rowOddBg),
+    rowOddBg: (() => {
+      const c = s(v.rowOddBg, defaults.rowOddBg);
+      /** 구버전 기본 줄무늬 → 투명 */
+      if (/^rgba\(\s*255\s*,\s*255\s*,\s*255\s*,\s*0\.14\s*\)$/i.test(c)) {
+        return defaults.rowOddBg;
+      }
+      return c;
+    })(),
     rankColor: (() => {
       const c = s(v.rankColor, defaults.rankColor);
       /** 구버전 골드 순위 숫자 → 흰색 */
