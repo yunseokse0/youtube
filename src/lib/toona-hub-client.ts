@@ -66,11 +66,12 @@ export async function loginAndLinkToonaHub(input: ToonaHubLoginInput): Promise<
   if (!streamKey) return { ok: false, error: "no_stream_key" };
 
   const ingestSecret = String(process.env.TOONA_INGEST_SECRET || "").trim();
+  /** 허브 모드 = toona만 수집 → youtube는 엑셀·후원자 리스트 반영 필요 (scenario B / applyExcel=true) */
   const patchBody = {
     enabled: true,
     baseUrl: input.youtubePublicBaseUrl.replace(/\/$/, ""),
     userId: youtubeUserId,
-    scenario: "A",
+    scenario: "B",
     allowEventsFallback: true,
     ...(ingestSecret ? { ingestSecret } : {}),
   };
@@ -288,6 +289,7 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
     const json = (await res.json().catch(() => ({}))) as {
       error?: string;
       enabled?: boolean;
+      scenario?: string;
       lastIngestAt?: string | null;
       lastIngestOk?: boolean | null;
       lastIngestError?: string | null;
@@ -307,6 +309,33 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
       session.lastIngestOk = json.lastIngestOk ?? null;
       session.lastIngestError = json.lastIngestError ?? null;
       if (json.userId) session.youtubeUserId = String(json.userId);
+
+      /** 기존 허브 연동이 A(알림만)면 B로 승격 — 후원자 리스트 미반영 방지 */
+      if (String(json.scenario || "").toUpperCase() !== "B") {
+        try {
+          const patchRes = await fetch(
+            `${session.baseUrl}/api/youtubegit/${encodeURIComponent(session.streamKey)}`,
+            {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+                Authorization: `Bearer ${session.token}`,
+              },
+              body: JSON.stringify({ scenario: "B" }),
+              signal: AbortSignal.timeout(15_000),
+            }
+          );
+          if (!patchRes.ok) {
+            const patchJson = (await patchRes.json().catch(() => ({}))) as { error?: string };
+            session.lastStatusError =
+              patchJson.error || `scenario_B_patch_failed HTTP ${patchRes.status}`;
+          }
+        } catch (err) {
+          session.lastStatusError =
+            err instanceof Error ? err.message : "scenario_B_patch_failed";
+        }
+      }
     }
     await writeToonaHubSession(session);
   } catch (err) {

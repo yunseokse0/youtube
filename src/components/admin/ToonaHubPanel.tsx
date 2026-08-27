@@ -228,8 +228,8 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
       {!session ? (
         <div className="space-y-2">
           <p className="text-[11px] text-neutral-300 leading-relaxed">
-            toona 계정으로 로그인하면 youtube-git 연동·시그 목록 가져오기가 함께 됩니다. 비밀번호는
-            서버에서만 사용하며 저장하지 않습니다.
+            toona 계정으로 로그인하면 youtube-git 연동(시나리오 B·후원자 리스트 반영)·시그 가져오기가
+            함께 됩니다. 비밀번호는 서버에서만 사용하며 저장하지 않습니다.
           </p>
           <label className="block text-[11px] text-neutral-400">
             toona API Base URL
@@ -355,7 +355,15 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
                   <span className="text-cyan-200">{log.amount.toLocaleString("ko-KR")}</span>
                   <span className="text-neutral-500">
                     {log.target === "account" ? "계좌" : "투네"} · {log.source}
-                    {log.mode ? ` · ${log.mode}` : ""}
+                    {log.mode === "alert_only"
+                      ? " · 알림만(리스트 미반영)"
+                      : log.mode === "excel"
+                        ? log.applied
+                          ? " · 리스트 반영"
+                          : " · 대기열"
+                        : log.mode
+                          ? ` · ${log.mode}`
+                          : ""}
                   </span>
                 </div>
               ))
