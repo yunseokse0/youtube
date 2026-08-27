@@ -140,12 +140,52 @@ export async function syncContributionFormulaToToonaHub(
   formula: { accountWeightPct: number; toonWeightPct: number }
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = await readToonaHubSession(youtubeUserId);
+  const baseUrl =
+    normalizeToonaApiBaseUrl(String(session?.baseUrl || "").trim()) || getToonaApiBaseUrl();
+  if (!baseUrl) return { ok: false, error: "toona_base_url_required" };
+
+  const ingestSecret = String(process.env.TOONA_INGEST_SECRET || "").trim();
+  const payload = {
+    userId: youtubeUserId,
+    streamKey: session?.streamKey,
+    accountWeightPct: formula.accountWeightPct,
+    toonWeightPct: formula.toonWeightPct,
+  };
+
+  if (ingestSecret) {
+    try {
+      const s2s = await fetch(`${baseUrl}/api/youtubegit/sync/contribution-formula`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Authorization: `Bearer ${ingestSecret}`,
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (s2s.ok) return { ok: true };
+      if (s2s.status !== 404 && s2s.status !== 401) {
+        const json = (await s2s.json().catch(() => ({}))) as { error?: string };
+        return { ok: false, error: json.error || `s2s_sync_failed HTTP ${s2s.status}` };
+      }
+    } catch (err) {
+      /* JWT 폴백 시도 */
+      if (!session?.token || !session.streamKey) {
+        return {
+          ok: false,
+          error: `toona_unreachable: ${err instanceof Error ? err.message : "fetch_failed"}`,
+        };
+      }
+    }
+  }
+
   if (!session?.token || !session.streamKey) {
     return { ok: false, error: "hub_not_linked" };
   }
   try {
     const res = await fetch(
-      `${session.baseUrl}/api/youtubegit/${encodeURIComponent(session.streamKey)}`,
+      `${baseUrl}/api/youtubegit/${encodeURIComponent(session.streamKey)}`,
       {
         method: "PATCH",
         headers: {
