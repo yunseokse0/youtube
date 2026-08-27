@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { usePathname } from "next/navigation";
 import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
@@ -32,7 +32,11 @@ import {
   buildOverlayCellOutlineStyle,
   DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR,
 } from "@/lib/text-outline-style";
-import { broadcastZoomCenterMarginLeftPct, resolveBroadcastZoomScale } from "@/lib/overlay-mobile-fit";
+import {
+  broadcastZoomCenterMarginLeftPct,
+  resolveBroadcastContainZoomScale,
+  resolveBroadcastZoomScale,
+} from "@/lib/overlay-mobile-fit";
 import { useOverlayViewportSize } from "@/hooks/useOverlayViewportSize";
 import { backgroundWithOpacityFrac, solidBackgroundWithOpacityFrac } from "@/lib/donor-rankings-opacity";
 import { splitOverlayListAtHalf } from "@/lib/utils";
@@ -815,10 +819,30 @@ export default function DonorRankingsOverlayPage() {
   const viewportSize = useOverlayViewportSize();
   /** 전체(세로)는 단일 컬럼 max-w 720 — 1500 기준이면 좁은 미리보기에서 가로 스크롤이 생김 */
   const zoomDesignWidth = isFullVertical ? 720 : 1500;
-  const zoomScale = useMemo(
-    () => resolveBroadcastZoomScale(zoomPct, viewportSize.w, zoomDesignWidth),
-    [zoomPct, viewportSize.w, zoomDesignWidth]
-  );
+  const zoomContentRef = useRef<HTMLDivElement>(null);
+  const [fullContentHeight, setFullContentHeight] = useState(0);
+  const zoomPad = hostObs ? 16 : 40;
+  const zoomScale = useMemo(() => {
+    if (isFullVertical) {
+      return resolveBroadcastContainZoomScale(
+        zoomPct,
+        viewportSize.w,
+        viewportSize.h,
+        zoomDesignWidth,
+        fullContentHeight,
+        zoomPad
+      );
+    }
+    return resolveBroadcastZoomScale(zoomPct, viewportSize.w, zoomDesignWidth);
+  }, [
+    isFullVertical,
+    zoomPct,
+    viewportSize.w,
+    viewportSize.h,
+    zoomDesignWidth,
+    fullContentHeight,
+    zoomPad,
+  ]);
   const zoomMarginLeftPct = useMemo(
     () => broadcastZoomCenterMarginLeftPct(zoomScale),
     [zoomScale]
@@ -943,6 +967,36 @@ export default function DonorRankingsOverlayPage() {
     [unifiedTop, isFullVertical]
   );
 
+  useLayoutEffect(() => {
+    if (!isFullVertical) {
+      setFullContentHeight(0);
+      return;
+    }
+    const el = zoomContentRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const h = Math.max(el.scrollHeight, el.offsetHeight);
+      setFullContentHeight((prev) => (prev === h ? prev : h));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [
+    isFullVertical,
+    unifiedTop.length,
+    titleSize,
+    rowSize,
+    rankSize,
+    showBodyImage,
+    showFrame,
+    frameInsetPx,
+    ready,
+    spReady,
+    useTest,
+    isAdminPreview,
+  ]);
+
   if (!spReady) {
     return null;
   }
@@ -956,8 +1010,12 @@ export default function DonorRankingsOverlayPage() {
   }
 
   const mainClass = hostObs
-    ? "donor-rankings-overlay-root pointer-events-none fixed inset-0 z-[120] w-full max-w-[100vw] overflow-x-hidden overflow-y-visible bg-transparent p-2 sm:p-5 md:[background:var(--ov-donor-bg)]"
-    : "donor-rankings-overlay-root relative min-h-screen w-full max-w-[100vw] overflow-x-hidden overflow-y-visible bg-transparent p-2 sm:p-5 md:[background:var(--ov-donor-bg)]";
+    ? `donor-rankings-overlay-root pointer-events-none fixed inset-0 z-[120] w-full max-w-[100vw] overflow-x-hidden ${
+        isFullVertical ? "overflow-y-hidden" : "overflow-y-visible"
+      } bg-transparent p-2 sm:p-5 md:[background:var(--ov-donor-bg)]`
+    : `donor-rankings-overlay-root relative ${
+        isFullVertical ? "h-[100dvh] max-h-[100dvh] overflow-y-hidden" : "min-h-screen overflow-y-visible"
+      } w-full max-w-[100vw] overflow-x-hidden bg-transparent p-2 sm:p-5 md:[background:var(--ov-donor-bg)]`;
   const outlineCss = donorRankingsOutlineCssBlock(outlineColor, outlineWidthPx, true);
 
   return (
@@ -998,6 +1056,19 @@ export default function DonorRankingsOverlayPage() {
         </div>
       ) : null}
       <div
+        className={
+          isFullVertical
+            ? "relative z-10 mx-auto w-full max-w-full overflow-hidden"
+            : "contents"
+        }
+        style={
+          isFullVertical && fullContentHeight > 0
+            ? { height: Math.ceil(fullContentHeight * zoomScale) }
+            : undefined
+        }
+      >
+      <div
+        ref={zoomContentRef}
         className={`relative z-10 mx-auto ${isFullVertical ? "max-w-[720px]" : "max-w-[1500px]"}`}
         style={{
           transform: `scale(${zoomScale})`,
@@ -1234,6 +1305,7 @@ export default function DonorRankingsOverlayPage() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </main>
   );

@@ -65,13 +65,20 @@ function isDonorRankingsOverlayPath(pathname: string | null): boolean {
   return /\/overlay\/donor-rankings(?:-full)?(?:\/|$)/.test(pathname);
 }
 
+function isDonorRankingsFullOverlayPath(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return /\/overlay\/donor-rankings\/full(?:\/|$)/.test(pathname);
+}
+
 export default function OverlayLayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   /** SSR·첫 hydration: pathname 기준(데모 URL과 동일) */
   const [scrollable, setScrollable] = useState(() => isOverlayToolsHubPath(pathname));
   const sigSalesBroadcast = isSigSalesBroadcastOverlayPath(pathname);
   const donorRankingsBroadcast = isDonorRankingsOverlayPath(pathname);
-  const overflowVisible = sigSalesBroadcast || donorRankingsBroadcast;
+  const donorRankingsFull = isDonorRankingsFullOverlayPath(pathname);
+  /** 전체 후원순위는 화면 맞춤 스케일 — 셸 스크롤 금지 */
+  const overflowVisible = sigSalesBroadcast || (donorRankingsBroadcast && !donorRankingsFull);
 
   useEffect(() => {
     setScrollable(shouldUseOverlayScrollableShell(pathname));

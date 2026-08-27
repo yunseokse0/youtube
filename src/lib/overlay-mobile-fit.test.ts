@@ -6,6 +6,7 @@ import {
   ensureCanvasFontPx,
   isNarrowBroadcastViewport,
   resolveBroadcastZoomScale,
+  resolveBroadcastContainZoomScale,
   broadcastZoomCenterMarginLeftPct,
 } from "./overlay-mobile-fit";
 
@@ -45,5 +46,11 @@ describe("overlay-mobile-fit", () => {
     const margin = broadcastZoomCenterMarginLeftPct(z);
     expect(margin).toBeLessThanOrEqual(0);
     expect(100 / z + margin).toBeCloseTo(100 - margin, 5);
+  });
+
+  it("full rankings shrink to viewport height so no vertical scroll", () => {
+    const z = resolveBroadcastContainZoomScale(100, 1920, 1080, 720, 2400, 24);
+    expect(z).toBeLessThan(0.5);
+    expect(2400 * z).toBeLessThanOrEqual(1080 - 24 + 0.5);
   });
 });

@@ -79,6 +79,27 @@ export function resolveBroadcastZoomScale(
 }
 
 /**
+ * 전체 후원순위처럼 행이 늘어나는 오버레이 — 폭·높이 모두 뷰포트 안에 들어가게 축소.
+ * (가로만 맞추면 긴 목록에서 세로 스크롤이 생김)
+ */
+export function resolveBroadcastContainZoomScale(
+  zoomPct: number,
+  viewportW: number,
+  viewportH: number,
+  contentWidth: number,
+  contentHeight: number,
+  padding = 24
+): number {
+  const widthScale = resolveBroadcastZoomScale(zoomPct, viewportW, contentWidth, padding);
+  if (!Number.isFinite(contentHeight) || contentHeight <= 0) return widthScale;
+  if (!Number.isFinite(viewportH) || viewportH <= 0) return widthScale;
+  const availH = Math.max(1, viewportH - padding);
+  const fitH = availH / contentHeight;
+  /** 매우 긴 목록도 OBS에서 스크롤 없이 한 화면에 맞춤 */
+  return Math.min(widthScale, Math.max(0.12, fitH));
+}
+
+/**
  * transform scale(top center) + width=100/s% 일 때
  * 레이아웃 박스가 왼쪽으로 삐져나와 가로 스크롤이 생기지 않게 margin-left(%) 보정.
  */
