@@ -14819,9 +14819,10 @@ function AdminPageInner() {
             </AdminCollapsibleSection>
 
             <AdminCollapsibleSection
-              id="contribution-management"
-              title="기여도 기록부"
+              id="contribution-formula"
+              title="기여도 계산식"
               className={panelCardClass}
+              defaultOpen
             >
               <ContributionFormulaPanel
                 value={state.contributionFormula}
@@ -14839,6 +14840,7 @@ function AdminPageInner() {
                   if (user?.id) {
                     void fetch("/api/toona/hub", {
                       method: "POST",
+                      credentials: "include",
                       headers: {
                         "Content-Type": "application/json",
                         "x-user-id": user.id,
@@ -14851,6 +14853,13 @@ function AdminPageInner() {
                   }
                 }}
               />
+            </AdminCollapsibleSection>
+
+            <AdminCollapsibleSection
+              id="contribution-management"
+              title="기여도 기록부"
+              className={panelCardClass}
+            >
               <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr_auto_auto_auto] gap-3">
                 <select
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
