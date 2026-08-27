@@ -738,7 +738,12 @@ function AdminPageInner() {
   const [toonationLogs, setToonationLogs] = useState<Array<{ id: string; at: number; message: string }>>([]);
   const [storageHealth, setStorageHealth] = useState<{
     storage?: { backendHint?: string; kvError?: string | null; mysql?: boolean };
-    mainState?: { donorsCount?: number; totalCombined?: number };
+    mainState?: {
+      donorsCount?: number;
+      totalCombined?: number;
+      updatedAt?: number;
+      settlementResetAt?: number;
+    };
     donationBackup?: { donorsCount?: number; total?: number } | null;
     dailyLogLatest?: { at?: string; donorsCount?: number } | null;
     hint?: string | null;
@@ -753,7 +758,30 @@ function AdminPageInner() {
       });
       if (!r.ok) return;
       const data = await r.json();
-      if (data && typeof data === "object") setStorageHealth(data);
+      if (!(data && typeof data === "object")) return;
+      /**
+       * 의도적 리셋 세션: health에 구 후원 건수가 남아 있어도 복구 배너용으로 노출하지 않음.
+       * (리셋 API 직후 stale 응답·다른 탭 잔여와 UI 0건 불일치 오보 방지)
+       */
+      if (
+        shouldSuppressAutoRosterRestore(stateRef.current) ||
+        Date.now() < settlementResetUntilRef.current
+      ) {
+        setStorageHealth({
+          ...data,
+          mainState: {
+            ...(data.mainState || {}),
+            donorsCount: 0,
+            totalCombined: 0,
+            settlementResetAt: Number(
+              stateRef.current.settlementResetAt || data.mainState?.settlementResetAt || 0
+            ),
+          },
+          hint: null,
+        });
+        return;
+      }
+      setStorageHealth(data);
     } catch {
       /* noop */
     }
@@ -2681,8 +2709,20 @@ function AdminPageInner() {
 
   /** 서버에 donors 가 있는데 UI·LS만 비었을 때 강제 복구 (storage-health 불일치) */
   const applyDonorsFromServerMainState = useCallback(
-    async (opts?: { silent?: boolean; forceReplace?: boolean }) => {
+    async (opts?: {
+      silent?: boolean;
+      forceReplace?: boolean;
+      allowDuringIntentionalClear?: boolean;
+    }) => {
       if (!user) return false;
+      /** 의도적 정산 리셋 세션 — 구 서버 후원으로 화면을 되돌리지 않음 */
+      if (
+        !opts?.allowDuringIntentionalClear &&
+        (shouldSuppressAutoRosterRestore(stateRef.current) ||
+          Date.now() < settlementResetUntilRef.current)
+      ) {
+        return false;
+      }
       const remote = await loadStateFromApi(user.id, { forceFull: true });
       if (!remote) return false;
       const remoteDonors = normalizeDonorsArray(remote.donors);
@@ -2741,6 +2781,12 @@ function AdminPageInner() {
 
   useEffect(() => {
     if (!user) return;
+    if (
+      shouldSuppressAutoRosterRestore(stateRef.current) ||
+      Date.now() < settlementResetUntilRef.current
+    ) {
+      return;
+    }
     const serverCount = Number(storageHealth?.mainState?.donorsCount || 0);
     const serverTotal = Number(storageHealth?.mainState?.totalCombined || 0);
     const localCount = normalizeDonorsArray(state.donors).length;
@@ -2762,6 +2808,12 @@ function AdminPageInner() {
       }
       serverDonorMismatchRestoreAttemptedRef.current = false;
       window.setTimeout(() => {
+        if (
+          shouldSuppressAutoRosterRestore(stateRef.current) ||
+          Date.now() < settlementResetUntilRef.current
+        ) {
+          return;
+        }
         const still =
           normalizeDonorsArray(stateRef.current.donors).length !== serverCount ||
           Math.abs(totalCombined(stateRef.current) - serverTotal) > 500;
@@ -8970,6 +9022,25 @@ function AdminPageInner() {
           window.localStorage.setItem(presetStorageKey, JSON.stringify(clearedPresets));
         } catch {}
         notifyBroadcastStateLocalUpdated(user?.id, serverAt);
+        /** 리셋 직후 구 storage-health(203건 등)로 「서버 후원 복구」 배너가 뜨지 않게 */
+        setStorageHealth((prev) =>
+          prev
+            ? {
+                ...prev,
+                mainState: {
+                  ...prev.mainState,
+                  donorsCount: 0,
+                  totalCombined: 0,
+                  updatedAt: serverAt,
+                  settlementResetAt: Number(
+                    cleared.settlementResetAt || data.settlementResetAt || serverAt
+                  ),
+                },
+                hint: null,
+              }
+            : prev
+        );
+        void refreshStorageHealth();
       } catch {
         setSyncStatus(typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error");
         setSigExcelResult("정산 리셋 요청이 실패했습니다. 네트워크를 확인한 뒤 다시 시도하세요.");
@@ -8977,7 +9048,7 @@ function AdminPageInner() {
       }
       resetInProgressRef.current = false;
     },
-    [presetStorageKey, state, user?.id]
+    [presetStorageKey, refreshStorageHealth, state, user?.id]
   );
 
   const onResetKeepMembers = () => {
@@ -9234,7 +9305,9 @@ function AdminPageInner() {
 
   const serverDonorHealthCount = Number(storageHealth?.mainState?.donorsCount || 0);
   const uiDonorRowCount = normalizeDonorsArray(state.donors).length;
-  const donorUiBehindServer = serverDonorHealthCount > uiDonorRowCount;
+  const intentionalClearActive =
+    shouldSuppressAutoRosterRestore(state) || Date.now() < settlementResetUntilRef.current;
+  const donorUiBehindServer = !intentionalClearActive && serverDonorHealthCount > uiDonorRowCount;
   /** 정상 동기화 시 배지 숨김 — 불일치·오프라인·로딩만 표시 */
   const showSyncStatusBadge = donorUiBehindServer || syncStatus !== "synced";
 
@@ -9355,7 +9428,10 @@ function AdminPageInner() {
           className={`${panelCardClass} mb-6`}
           bodyClassName="px-4 pb-4"
         >
-          {typeof storageHealth?.mainState?.donorsCount === "number" &&
+          {!(
+            intentionalClearActive
+          ) &&
+          typeof storageHealth?.mainState?.donorsCount === "number" &&
           storageHealth.mainState.donorsCount > 0 &&
           normalizeDonorsArray(state.donors).length < storageHealth.mainState.donorsCount ? (
             <div className="mb-3 rounded-lg border border-rose-400/55 bg-rose-950/35 px-3 py-2 text-sm text-rose-100">

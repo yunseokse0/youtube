@@ -4120,6 +4120,16 @@ export function buildUiStateFromServerDonorPull(
   const remoteDonors = normalizeDonorsArray(remote.donors);
   if (remoteDonors.length === 0) return null;
   const localDonors = normalizeDonorsArray(local.donors);
+  const localReset = Number(local.settlementResetAt || 0);
+  /** 의도적 정산 리셋으로 비운 UI — forceReplace 로도 구 후원을 되살리지 않음 */
+  if (
+    localDonors.length === 0 &&
+    isEmptyBroadcastDonationSession(local) &&
+    (Number(local.intentionalDonationClearAt || 0) > 0 || localReset > 0)
+  ) {
+    const surviving = filterDonorsAfterSettlementReset(remoteDonors, localReset);
+    if (surviving.length === 0) return null;
+  }
   const localIds = new Set(localDonors.map((d) => String(d.id || "")));
   const remoteMissingInLocal = remoteDonors.filter((d) => !localIds.has(String(d.id || "")));
   if (
@@ -4136,7 +4146,9 @@ export function buildUiStateFromServerDonorPull(
     Number(remote.settlementResetAt || 0)
   );
   let donors = opts?.forceReplace
-    ? remoteDonors
+    ? Number(local.intentionalDonationClearAt || 0) > 0 && isEmptyBroadcastDonationSession(local)
+      ? filterDonorsAfterSettlementReset(remoteDonors, localReset)
+      : remoteDonors
     : pickAuthoritativeDonorsForEmptySession(local, remoteDonors, remoteDonors, resetAt);
   if (donors.length === 0) {
     const localReset = Number(local.settlementResetAt || 0);
