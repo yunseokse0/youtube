@@ -4234,6 +4234,31 @@ export function hasExpandedSigInventory(inv: SigItem[] | null | undefined): bool
   return nonOneShot.some((x) => !presetNames.has(String(x.name || "").trim()));
 }
 
+function sigInventoryNonOneShotCount(inv: SigItem[] | null | undefined): number {
+  return (inv || []).filter((x) => x.id !== ONE_SHOT_SIG_ID).length;
+}
+
+/**
+ * toona 가져오기·서버 동기화 등 — incoming 이 로컬보다 풍부하면 로컬 보호를 깨고 수용.
+ * (보호창이 빈/구 목록을 유지해 가져오기가 UI에 안 보이던 회귀 방지)
+ */
+export function isRicherSigInventory(
+  candidate: SigItem[] | null | undefined,
+  baseline: SigItem[] | null | undefined
+): boolean {
+  const a = candidate || [];
+  const b = baseline || [];
+  const aN = sigInventoryNonOneShotCount(a);
+  const bN = sigInventoryNonOneShotCount(b);
+  if (aN > bN) return true;
+  if (aN < bN) return false;
+  if (aN === 0) return false;
+  if (hasExpandedSigInventory(a) && !hasExpandedSigInventory(b)) return true;
+  const aToona = a.filter((x) => String(x.id || "").startsWith("toona_")).length;
+  const bToona = b.filter((x) => String(x.id || "").startsWith("toona_")).length;
+  return aToona > bToona;
+}
+
 /** 멤버별 시그 판매 프리셋이 하나라도 저장돼 있는지 */
 export function hasSigSalesMemberPresets(
   presets: AppState["sigSalesMemberPresets"] | null | undefined
@@ -4254,6 +4279,8 @@ export function shouldPreferLocalSigInventoryOverIncoming(
   const local = localInv || [];
   const incoming = incomingInv || [];
   if (local.length === 0) return false;
+  /** toona 가져오기·서버가 더 긴 목록이면 로컬 보호하지 않음 */
+  if (isRicherSigInventory(incoming, local)) return false;
   if (hasExpandedSigInventory(local) && isShrunkToDefaultSigInventory(incoming)) {
     return true;
   }

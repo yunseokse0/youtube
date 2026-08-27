@@ -8,6 +8,7 @@ import {
   loadState,
   loadStateFromApi,
   saveSigSalesManualStateAsync,
+  saveState,
   shouldPreferLocalSigInventoryOverIncoming,
 } from "@/lib/state";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
@@ -40,6 +41,8 @@ import {
   resizeManualDrafts,
   resizeManualSoldFlags,
 } from "@/lib/manual-sig-workbench";
+
+const SIG_INVENTORY_IMPORTED_EVENT = "youtube-sig-inventory-imported";
 
 export default function ManualSigSalesSimple() {
   const router = useRouter();
@@ -76,6 +79,11 @@ export default function ManualSigSalesSimple() {
         return;
       }
       setState(remote);
+      try {
+        saveState(remote, userId);
+      } catch {
+        /* ignore */
+      }
       return;
     }
     const local = loadState(userId);
@@ -85,6 +93,18 @@ export default function ManualSigSalesSimple() {
   useEffect(() => {
     if (!authReady) return;
     void loadRemote();
+  }, [authReady, loadRemote]);
+
+  useEffect(() => {
+    if (!authReady) return;
+    const onFocus = () => void loadRemote();
+    const onImported = () => void loadRemote();
+    window.addEventListener("focus", onFocus);
+    window.addEventListener(SIG_INVENTORY_IMPORTED_EVENT, onImported);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener(SIG_INVENTORY_IMPORTED_EVENT, onImported);
+    };
   }, [authReady, loadRemote]);
 
   useEffect(() => {

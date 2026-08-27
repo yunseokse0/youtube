@@ -66,6 +66,7 @@ import {
   hasMeaningfulMemberRoster,
   hasExpandedSigInventory,
   hasSigSalesMemberPresets,
+  isRicherSigInventory,
   isShrunkToDefaultSigInventory,
   isDefaultLikeDonorRankingsTheme,
   isDefaultLikeOverlayPresets,
@@ -1984,7 +1985,9 @@ function AdminPageInner() {
       Date.now() - lastLocalPersistAtRef.current < SIG_INVENTORY_LOCAL_PROTECT_MS;
     const localInv = local.sigInventory || [];
     const incomingInv = merged.sigInventory || [];
-    if (pendingUnsyncedRef.current || recentlyEditedSig) {
+    if (isRicherSigInventory(incomingInv, localInv)) {
+      /** toona 가져오기·서버 쪽이 더 풍부하면 보호창이어도 수용 */
+    } else if (pendingUnsyncedRef.current || recentlyEditedSig) {
       const incomingIdSet = new Set(incomingInv.map((x) => x.id));
       const hasLocalOnlyRows = localInv.some((x) => !incomingIdSet.has(x.id));
       const localSigIds = localInv.map((x) => x.id).join(",");

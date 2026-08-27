@@ -95,6 +95,11 @@ export default function ToonaSigImportPanel({ inventory, onApply }: Props) {
           : `toona 병합·저장 (추가 ${added} · 갱신 ${updated} · 수신 ${count})`;
       onApply(nextInventory, summary);
       setMessage(summary);
+      try {
+        window.dispatchEvent(new CustomEvent("youtube-sig-inventory-imported"));
+      } catch {
+        /* ignore */
+      }
     },
     [inventory, mode, onApply]
   );

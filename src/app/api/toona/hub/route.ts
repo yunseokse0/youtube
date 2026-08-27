@@ -15,6 +15,7 @@ import {
   readToonaHubDonationLogs,
   readToonaHubSession,
 } from "@/lib/toona-hub-session";
+import { defaultState } from "@/lib/state";
 import { normalizeContributionFormula } from "@/lib/contribution-formula";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import { applyToonaSigItemsToInventory } from "@/lib/toona-sig-import";
@@ -39,13 +40,11 @@ async function importSigsAfterHubLogin(userId: string): Promise<{
   updated?: number;
   error?: string;
   items?: SigItem[];
+  saved?: boolean;
 }> {
   const fetched = await fetchToonaSignaturesViaHubSession(userId);
   if (!fetched.ok) return { ok: false, count: 0, error: fetched.error };
-  const state = await loadAppStateForUserId(userId);
-  if (!state) {
-    return { ok: true, count: fetched.count, items: fetched.items, added: fetched.count, updated: 0 };
-  }
+  const state = (await loadAppStateForUserId(userId)) ?? defaultState();
   const { nextInventory, added, updated } = applyToonaSigItemsToInventory(
     state.sigInventory || [],
     fetched.items,
@@ -53,15 +52,25 @@ async function importSigsAfterHubLogin(userId: string): Promise<{
   );
   const next = { ...state, sigInventory: nextInventory, updatedAt: Date.now() };
   const saved = await saveAppStateForRoulette(userId, next, { donorsMode: "add" });
-  if (saved.ok) {
-    await publishSseEvent({ type: "state_updated", updatedAt: next.updatedAt });
+  if (!saved.ok) {
+    return {
+      ok: false,
+      count: fetched.count,
+      added,
+      updated,
+      error: "sig_inventory_save_failed",
+      items: fetched.items,
+      saved: false,
+    };
   }
+  await publishSseEvent({ type: "state_updated", updatedAt: next.updatedAt });
   return {
     ok: true,
     count: fetched.count,
     added,
     updated,
     items: fetched.items,
+    saved: true,
   };
 }
 

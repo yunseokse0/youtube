@@ -240,6 +240,39 @@ describe("member sync helpers", () => {
     ).toBe(true);
   });
 
+  it("does not prefer local when remote toona import is richer", () => {
+    const local = [
+      {
+        id: "oneshot",
+        name: "한방",
+        price: 0,
+        imageUrl: "",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+    ];
+    const remote = Array.from({ length: 20 }, (_, i) => ({
+      id: `toona_${i}`,
+      name: `시그${i}`,
+      price: 1000 * (i + 1),
+      imageUrl: "http://toona/x.gif",
+      memberId: "",
+      maxCount: 1,
+      soldCount: 0,
+      isRolling: true,
+      isActive: true,
+    }));
+    expect(
+      shouldPreferLocalSigInventoryOverIncoming(local, remote, {
+        localUpdatedAt: Date.now(),
+        incomingUpdatedAt: Date.now() - 10_000,
+      })
+    ).toBe(false);
+  });
+
   it("does not prefer local when remote is newer after intentional bulk delete", () => {
     const makeSig = (id: string) => ({
       id,

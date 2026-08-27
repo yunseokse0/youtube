@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getToonaDashboardUrl } from "@/lib/donation-ingest-mode";
+import { loadStateFromApi, saveState } from "@/lib/state";
+
+const SIG_INVENTORY_IMPORTED_EVENT = "youtube-sig-inventory-imported";
 
 type HubSession = {
   email: string;
@@ -96,6 +99,22 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
     return () => window.clearInterval(t);
   }, [session, load]);
 
+  const syncLocalSigInventory = useCallback(async () => {
+    try {
+      const remote = await loadStateFromApi(youtubeUserId, { forceFull: true });
+      if (remote) {
+        saveState(remote, youtubeUserId);
+        window.dispatchEvent(
+          new CustomEvent(SIG_INVENTORY_IMPORTED_EVENT, {
+            detail: { userId: youtubeUserId },
+          })
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [youtubeUserId]);
+
   const onLogin = async () => {
     setBusy(true);
     setMessage("");
@@ -119,6 +138,9 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
       }
       setPassword("");
       applyPayload(data);
+      if (data.sigImport?.ok) {
+        await syncLocalSigInventory();
+      }
       const sigMsg = formatSigImport(data.sigImport);
       setMessage(
         sigMsg
@@ -192,6 +214,7 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
         setMessage(data.error || "시그 가져오기 실패");
         return;
       }
+      await syncLocalSigInventory();
       setMessage(formatSigImport(data));
     } finally {
       setBusy(false);
