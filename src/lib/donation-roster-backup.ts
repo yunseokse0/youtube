@@ -71,10 +71,11 @@ export async function loadDonationRosterBackup(
   if (!fromDisk) return redisOk;
   const redisReset = Number(redisOk.settlementResetAt || 0);
   const diskReset = Number(fromDisk.settlementResetAt || 0);
-  if (redisReset > diskReset && redisOk.donorsCount === 0 && redisOk.total <= 0) {
+  /** 정산 리셋으로 비운 백업이 있으면 구 디스크 실후원보다 우선 */
+  if (redisOk.donorsCount === 0 && redisOk.total <= 0 && redisReset >= diskReset) {
     return redisOk;
   }
-  if (diskReset > redisReset && fromDisk.donorsCount === 0 && fromDisk.total <= 0) {
+  if (fromDisk.donorsCount === 0 && fromDisk.total <= 0 && diskReset >= redisReset) {
     return fromDisk;
   }
   if (fromDisk.donorsCount > redisOk.donorsCount || fromDisk.total > redisOk.total) {

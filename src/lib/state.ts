@@ -4357,6 +4357,13 @@ export function shouldBlockAccidentalEmptyOverwrite(
   if (!existing || !incoming) return false;
   if (!isAccidentalEmptyRosterState(incoming)) return false;
   if (isAccidentalEmptyRosterState(existing)) return false;
+  /**
+   * settlementResetAt 상승은 서버가 settlementReset 플래그로만 허용.
+   * 「멤버 초기화」는 의도적으로 플레이스홀더+빈 후원이므로 stamp가 앞서면 허용.
+   */
+  if (Number(incoming.settlementResetAt || 0) > Number(existing.settlementResetAt || 0)) {
+    return false;
+  }
   return (
     hasMeaningfulMemberRoster(existing) ||
     normalizeDonorsArray(existing.donors).length > 0 ||
@@ -4524,7 +4531,11 @@ export function shouldAvoidOverwritingLocalStateWithRemote(
   incoming: AppState | null | undefined
 ): boolean {
   if (!existing || !incoming) return false;
-  /** 사고성 멤버1…/빈 후원은 stamp·풍부도와 무관하게 실로스터를 덮지 않음 */
+  const existingReset = Number(existing.settlementResetAt || 0);
+  const incomingReset = Number(incoming.settlementResetAt || 0);
+  /** 의도적 정산 리셋(멤버 유지·초기화) — stamp 상승은 덮어쓰기 허용 */
+  if (incomingReset > existingReset) return false;
+  /** 사고성 멤버1…/빈 후원(stamp 동일·미상승)은 실로스터를 덮지 않음 */
   if (shouldBlockAccidentalEmptyOverwrite(existing, incoming)) {
     return true;
   }
@@ -4539,9 +4550,6 @@ export function shouldAvoidOverwritingLocalStateWithRemote(
       normalizeDonorsArray(incoming.donors).length > normalizeDonorsArray(existing.donors).length;
     if (!incomingRicher) return true;
   }
-  const existingReset = Number(existing.settlementResetAt || 0);
-  const incomingReset = Number(incoming.settlementResetAt || 0);
-  if (incomingReset > existingReset) return false;
 
   return wouldShrinkDonationData(existing, incoming);
 }

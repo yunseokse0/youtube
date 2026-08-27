@@ -41,7 +41,6 @@ import {
   Donor,
   DonorTarget,
   defaultState,
-  buildDefaultMembersCount,
   loadState,
   saveState,
   saveStateAsync,
@@ -56,7 +55,6 @@ import {
   saveMissionsBackup,
   loadMissionsBackup,
   isDefaultLikeState,
-  isAccidentalEmptyRosterState,
   shouldBlockAccidentalEmptyOverwrite,
   isDefaultPlaceholderMemberList,
   membersDifferByIds,
@@ -211,7 +209,6 @@ import { normalizeVsDesign, VS_DESIGN_OPTIONS } from "@/lib/vs-design";
 import { FlipCountdownTimer } from "@/components/FlipCountdownTimer";
 import { CircularImageTimer } from "@/components/CircularImageTimer";
 import { LedMatrixTimer } from "@/components/LedMatrixTimer";
-import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import {
   EXCEL_TABLE_FRAME_PRESETS,
   findExcelTableFramePresetByUrl,
@@ -226,7 +223,7 @@ import {
   resolveTableThemeRowStripePreviewHex,
   tableRowStripeBgFromPickerHex,
 } from "@/lib/excel-member-table-theme";
-import { pickSettingsPreservedAcrossSettlementReset } from "@/lib/settlement-reset-preserve";
+import { applySettlementResetToState } from "@/lib/settlement-reset-apply";
 import { planSigBulkReupload, sigBulkFilesWithoutNameMatch } from "@/lib/sig-image-bulk";
 import { parseSigMetaFromFileName } from "@/lib/sig-filename-meta";
 import { createSafeFilePreviewUrl, revokeSafeFilePreviewUrl } from "@/lib/safe-file-preview";
@@ -1731,9 +1728,8 @@ function AdminPageInner() {
     const localResetAt = Number(local.settlementResetAt || 0);
     if (remoteResetAt > localResetAt) {
       /**
-       * 정산 리셋 stamp 상승이어도, 원격이 멤버1… 플레이스홀더+빈 후원이면 사고성 유실.
-       * (정산 생성 → /settlements 이동 → 관리자 remount hydrate 에서 실멤버가 초기화되던 회귀)
-       * 라이브 폴링 applyRemoteState 와 동일 가드.
+       * stamp 상승은 서버 settlementReset 전용 — 멤버 초기화(플레이스홀더) 포함 허용.
+       * stamp 없는 사고성 빈 원격만 shouldBlockAccidentalEmptyOverwrite 로 차단.
        */
       if (shouldBlockAccidentalEmptyOverwrite(local, incoming)) {
         return {
@@ -2306,10 +2302,11 @@ function AdminPageInner() {
         let rosterMembers = rejectPoorer
           ? pickMemberRosterPreferNewer(local, apiState)
           : pickMemberRosterPreferNewer(merged, apiState);
-        /** API가 멤버1 플레이스홀더인데 LS에 실멤버가 있으면 LS 로스터 유지 */
+        /** API가 멤버1 플레이스홀더인데 LS에 실멤버가 있으면 LS 유지 — 단 서버 정산 초기화(stamp↑)는 허용 */
         if (
           isDefaultPlaceholderMemberList(rosterMembers) &&
-          hasMeaningfulMemberRoster(local)
+          hasMeaningfulMemberRoster(local) &&
+          Number(apiState.settlementResetAt || 0) <= Number(local.settlementResetAt || 0)
         ) {
           rosterMembers = local.members;
         }
@@ -2805,23 +2802,14 @@ function AdminPageInner() {
       const remoteResetAt = Number(remote.settlementResetAt || 0);
       const localResetAt = Number(stateRef.current.settlementResetAt || 0);
       /**
-       * 다른 브라우저에서 사용자가 정산 리셋함(settlementResetAt 상승).
-       * 단, 원격이 멤버1·2… 플레이스홀더+빈 후원이면 사고성 유실 — stamp만으로 덮지 않음.
+       * 다른 브라우저에서 정산 리셋(멤버 유지·초기화) — stamp 상승은 서버가 플래그로만 허용.
+       * 멤버 초기화는 플레이스홀더+빈 후원이므로 사고성 가드로 막지 않음.
        */
-      const remoteAccidentalEmpty =
-        isAccidentalEmptyRosterState(remote) &&
-        (hasMeaningfulMemberRoster(stateRef.current) ||
-          normalizeDonorsArray(stateRef.current.donors).length > 0 ||
-          totalCombined(stateRef.current) > 0);
-      const remoteSettlementWins = remoteResetAt > localResetAt && !remoteAccidentalEmpty;
+      const remoteSettlementWins = remoteResetAt > localResetAt;
       if (remoteSettlementWins) {
         settlementResetUntilRef.current = Date.now() + 30_000;
         pendingUnsyncedRef.current = false;
         donationAuthoritativeSaveUntilRef.current = 0;
-      }
-      if (remoteAccidentalEmpty && remoteResetAt > localResetAt) {
-        refreshDonorsFromServer();
-        return false;
       }
       /** 투네 SSE·서버>UI: 병합 가드 전에 DB donors 를 화면에 직접 반영 */
       if (
@@ -8855,11 +8843,10 @@ function AdminPageInner() {
   };
 
   const commitSettlementReset = useCallback(
-    async (next: AppState, resetPresets: OverlayPreset[]) => {
+    async (mode: "keep" | "init", memberSlotCount?: number) => {
       if (resetInProgressRef.current) return;
       resetInProgressRef.current = true;
-      settlementResetUntilRef.current = Date.now() + 15_000;
-      const resetAt = Date.now();
+      settlementResetUntilRef.current = Date.now() + 30_000;
       setResetSheetOpen(false);
       appendDailyLog(state, user?.id);
       loadDailyLogFromApi(user?.id)
@@ -8870,39 +8857,81 @@ function AdminPageInner() {
           } catch {}
         })
         .catch(() => setDailyLog(loadDailyLog(user?.id)));
-      const nextWithReset: AppState = {
-        ...next,
-        settlementResetAt: resetAt,
-        updatedAt: resetAt,
-      };
+
+      const optimistic = applySettlementResetToState(state, {
+        mode,
+        memberSlotCount,
+        resetAt: Date.now(),
+      });
+      const resetPresets = (Array.isArray(optimistic.overlayPresets)
+        ? optimistic.overlayPresets
+        : []) as OverlayPreset[];
       setPresets(resetPresets);
-      setState(nextWithReset);
-      stateRef.current = nextWithReset;
-      stateUpdatedAtRef.current = resetAt;
-      lastLocalPersistAtRef.current = resetAt;
+      setState(optimistic);
+      stateRef.current = optimistic;
+      stateUpdatedAtRef.current = Number(optimistic.updatedAt || Date.now());
+      lastLocalPersistAtRef.current = stateUpdatedAtRef.current;
       pendingUnsyncedRef.current = true;
       try {
-        cacheBroadcastStateSnapshot(nextWithReset, user?.id);
+        cacheBroadcastStateSnapshot(optimistic, user?.id);
         window.localStorage.setItem(presetStorageKey, JSON.stringify(resetPresets));
       } catch {}
-      const r = await saveStateAsync(nextWithReset, user?.id, { settlementReset: true });
-      pendingUnsyncedRef.current = false;
-      if (r.ok) {
-        if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
-          stateUpdatedAtRef.current = r.serverUpdatedAt;
-          lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
+
+      try {
+        const q = new URLSearchParams();
+        if (user?.id) {
+          q.set("user", user.id);
+          q.set("u", user.id);
         }
-        if (r.storageFallback) {
+        const res = await fetch(`/api/settlement/reset?${q.toString()}`, {
+          method: "POST",
+          credentials: "include",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode,
+            ...(mode === "init" ? { memberSlotCount } : {}),
+          }),
+        });
+        const data = (await res.json().catch(() => null)) as {
+          ok?: boolean;
+          error?: string;
+          state?: AppState;
+          updatedAt?: number;
+          settlementResetAt?: number;
+        } | null;
+        if (!res.ok || !data?.ok || !data.state) {
           setSyncStatus("error");
           setSigExcelResult(
-            "정산 리셋이 이 PC에만 반영됐습니다. Redis·서버 설정을 확인한 뒤 다시 시도하세요."
+            `정산 리셋 실패: ${data?.error || `http_${res.status}`}. 다시 시도하세요.`
           );
-        } else {
-          setSyncStatus("synced");
+          pendingUnsyncedRef.current = false;
+          resetInProgressRef.current = false;
+          return;
         }
-      } else {
-        const offline = typeof navigator !== "undefined" && !navigator.onLine;
-        setSyncStatus(offline ? "local" : "error");
+        const cleared = data.state;
+        const clearedPresets = (Array.isArray(cleared.overlayPresets)
+          ? cleared.overlayPresets
+          : resetPresets) as OverlayPreset[];
+        setPresets(clearedPresets);
+        setState(cleared);
+        stateRef.current = cleared;
+        const serverAt = Number(data.updatedAt || cleared.updatedAt || Date.now());
+        stateUpdatedAtRef.current = serverAt;
+        lastAppliedRemoteUpdatedAtRef.current = serverAt;
+        lastLocalPersistAtRef.current = serverAt;
+        settlementResetUntilRef.current = Date.now() + 30_000;
+        pendingUnsyncedRef.current = false;
+        setSyncStatus("synced");
+        try {
+          cacheBroadcastStateSnapshot(cleared, user?.id);
+          window.localStorage.setItem(presetStorageKey, JSON.stringify(clearedPresets));
+        } catch {}
+        notifyBroadcastStateLocalUpdated(user?.id, serverAt);
+      } catch {
+        setSyncStatus(typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error");
+        setSigExcelResult("정산 리셋 요청이 실패했습니다. 네트워크를 확인한 뒤 다시 시도하세요.");
+        pendingUnsyncedRef.current = false;
       }
       resetInProgressRef.current = false;
     },
@@ -8910,64 +8939,11 @@ function AdminPageInner() {
   );
 
   const onResetKeepMembers = () => {
-    const resetPresets = resetOverlayPresetsGoalForDonationInit(state.overlayPresets) as OverlayPreset[];
-    const preserved = pickSettingsPreservedAcrossSettlementReset(state);
-    const next: AppState = {
-      ...state,
-      ...preserved,
-      members: state.members.map((m) => ({ ...m, account: 0, toon: 0, contribution: 0, restroom: 0 })),
-      donors: [],
-      mealBattle: {
-        ...state.mealBattle,
-        participants: (state.mealBattle?.participants || []).map((p) => ({ ...p, score: 0 })),
-      },
-      overlayPresets: resetPresets,
-      missions: preserved.missions || state.missions || [],
-      updatedAt: Date.now(),
-    };
-    void commitSettlementReset(next, resetPresets);
+    void commitSettlementReset("keep");
   };
   const onResetInitMembers = () => {
-    const resetPresets = resetOverlayPresetsGoalForDonationInit(state.overlayPresets) as OverlayPreset[];
     const slotN = Math.max(1, Math.min(30, Math.floor(Number(resetMemberSlotCount) || 3)));
-    const ds = defaultState();
-    const nextMembers = buildDefaultMembersCount(slotN);
-    const nextMemberIds = new Set(nextMembers.map((m) => m.id));
-    const filteredMealParticipants = (state.mealBattle?.participants || [])
-      .filter((p) => nextMemberIds.has(p.memberId))
-      .map((p) => ({ ...p, score: 0 }));
-    const preserved = pickSettingsPreservedAcrossSettlementReset(state);
-    const next: AppState = {
-      ...ds,
-      ...preserved,
-      members: nextMembers,
-      memberPositions: {},
-      donors: [],
-      overlayPresets: resetPresets,
-      sigMatch: Object.fromEntries(
-        Object.entries(state.sigMatch || {}).filter(([memberId]) => nextMemberIds.has(memberId))
-      ),
-      mealBattle: {
-        ...state.mealBattle,
-        participants: filteredMealParticipants,
-        memberGaugeColors: Object.fromEntries(
-          Object.entries(state.mealBattle?.memberGaugeColors || {}).filter(([memberId]) =>
-            nextMemberIds.has(memberId)
-          )
-        ),
-        teamAMemberIds: (state.mealBattle?.teamAMemberIds || []).filter((memberId) =>
-          nextMemberIds.has(memberId)
-        ),
-        teamBMemberIds: (state.mealBattle?.teamBMemberIds || []).filter((memberId) =>
-          nextMemberIds.has(memberId)
-        ),
-      },
-      mealMatch: Object.fromEntries(
-        Object.entries(state.mealMatch || {}).filter(([memberId]) => nextMemberIds.has(memberId))
-      ),
-      updatedAt: Date.now(),
-    };
-    void commitSettlementReset(next, resetPresets);
+    void commitSettlementReset("init", slotN);
   };
 
   const onSnapshotNow = () => {

@@ -67,15 +67,16 @@ export function shouldRestoreDonationRosterFromBackup(
   const curTotal = current ? totalCombined(current as AppState) : 0;
   const curReset = Number(current?.settlementResetAt || 0);
   const backupReset = Number(backup.settlementResetAt || 0);
+  /** 정산 리셋(멤버 유지·초기화) 이후 메인 stamp가 앞서면 구 백업 되살림 금지 */
+  if (curReset > backupReset) {
+    return false;
+  }
   const placeholderMembers = isDefaultPlaceholderMemberList(current?.members);
   if (placeholderMembers && curDonors.length === 0 && backup.donorsCount > 0) {
     return true;
   }
   if (placeholderMembers && curTotal === 0 && backup.total > 0) {
     return true;
-  }
-  if (curReset > backupReset) {
-    return false;
   }
   if (curDonors.length === 0 && backup.donorsCount > 0) {
     if (curTotal > 0) return true;

@@ -1,7 +1,6 @@
 import type { AppState } from "@/types";
 import {
   hasMeaningfulMemberRoster,
-  isAccidentalEmptyRosterState,
   isIntentionalDonorListShrink,
   normalizeDonorsArray,
 } from "@/lib/state";
@@ -43,18 +42,12 @@ export function pickFresherAppState(
   const stateB = b as AppState;
   const resetA = Number(stateA.settlementResetAt || 0);
   const resetB = Number(stateB.settlementResetAt || 0);
-  if (resetB > resetA) {
-    if (isAccidentalEmptyRosterState(stateB) && !isAccidentalEmptyRosterState(stateA)) {
-      return stateA;
-    }
-    return stateB;
-  }
-  if (resetA > resetB) {
-    if (isAccidentalEmptyRosterState(stateA) && !isAccidentalEmptyRosterState(stateB)) {
-      return stateB;
-    }
-    return stateA;
-  }
+  /**
+   * settlementResetAt 상승은 서버가 settlementReset 플래그로만 허용.
+   * 「멤버 초기화」플레이스홀더도 의도적 리셋이므로 더 높은 stamp 가 정본.
+   */
+  if (resetB > resetA) return stateB;
+  if (resetA > resetB) return stateA;
 
   const donorsA = normalizeDonorsArray(stateA.donors);
   const donorsB = normalizeDonorsArray(stateB.donors);

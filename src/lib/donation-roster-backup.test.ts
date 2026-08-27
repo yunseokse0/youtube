@@ -51,11 +51,22 @@ describe("donation-roster-backup", () => {
     expect(shouldRestoreDonationRosterFromBackup(cleared, backup)).toBe(false);
   });
 
-  it("restores accidental placeholder wipe even when settlementResetAt is newer", () => {
+  it("does not restore after intentional member-init (newer settlementResetAt)", () => {
     const backup = buildDonationRosterBackupPayload(richState())!;
     const wiped = {
       ...defaultState(),
       settlementResetAt: (backup.settlementResetAt || 0) + 99_000,
+      donors: [],
+    };
+    expect(isDefaultPlaceholderMemberList(wiped.members)).toBe(true);
+    expect(shouldRestoreDonationRosterFromBackup(wiped, backup)).toBe(false);
+  });
+
+  it("restores accidental placeholder wipe when settlementResetAt did not advance", () => {
+    const backup = buildDonationRosterBackupPayload(richState())!;
+    const wiped = {
+      ...defaultState(),
+      settlementResetAt: backup.settlementResetAt || 0,
       donors: [],
     };
     expect(isDefaultPlaceholderMemberList(wiped.members)).toBe(true);

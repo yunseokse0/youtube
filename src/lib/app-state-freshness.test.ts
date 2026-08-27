@@ -57,20 +57,22 @@ describe("pickFresherAppState", () => {
     expect(pickFresherAppState(redis, memory)?.donors).toHaveLength(0);
   });
 
-  it("does not prefer higher reset when winner is accidental placeholder wipe", () => {
+  it("prefers intentional member-init reset over richer roster", () => {
     const wiped = {
       ...snap({ updatedAt: 9000, donorsLen: 0, settlementResetAt: 900 }),
       members: [
         { id: "m1", name: "멤버1", account: 0, toon: 0, contribution: 0 },
         { id: "m2", name: "멤버2", account: 0, toon: 0, contribution: 0 },
+        { id: "m3", name: "멤버3", account: 0, toon: 0, contribution: 0 },
       ],
     } as AppState;
     const rich = {
       ...snap({ updatedAt: 1000, donorsLen: 5, settlementResetAt: 100 }),
       members: [{ id: "m1", name: "홍쓰", account: 50000, toon: 0, contribution: 50000 }],
     } as AppState;
-    expect(pickFresherAppState(wiped, rich)?.donors).toHaveLength(5);
-    expect(pickFresherAppState(wiped, rich)?.members[0]?.name).toBe("홍쓰");
+    expect(pickFresherAppState(wiped, rich)?.settlementResetAt).toBe(900);
+    expect(pickFresherAppState(wiped, rich)?.donors).toHaveLength(0);
+    expect(pickFresherAppState(wiped, rich)?.members[0]?.name).toBe("멤버1");
   });
 
   it("prefers meaningful member roster over newer placeholder", () => {

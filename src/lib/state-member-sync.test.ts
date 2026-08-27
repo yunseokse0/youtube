@@ -68,7 +68,7 @@ describe("member sync helpers", () => {
     expect(hasMeaningfulMemberRoster(withMoney)).toBe(false);
   });
 
-  it("blocks accidental placeholder wipe even when remote settlementResetAt is newer", () => {
+  it("allows intentional member-init when remote settlementResetAt is newer", () => {
     const local: AppState = {
       ...defaultState(),
       settlementResetAt: 100,
@@ -89,8 +89,31 @@ describe("member sync helpers", () => {
       donors: [],
     };
     expect(isAccidentalEmptyRosterState(remotePlaceholder)).toBe(true);
+    expect(shouldBlockAccidentalEmptyOverwrite(local, remotePlaceholder)).toBe(false);
+    expect(shouldAvoidOverwritingLocalStateWithRemote(local, remotePlaceholder)).toBe(false);
+  });
+
+  it("blocks accidental placeholder wipe when settlementResetAt did not advance", () => {
+    const local: AppState = {
+      ...defaultState(),
+      settlementResetAt: 100,
+      updatedAt: 1000,
+      members: [
+        { id: "m1", name: "헛치", account: 10000, toon: 0, contribution: 10000 },
+      ],
+      donors: [
+        { id: "d1", name: "a", amount: 10000, memberId: "m1", at: 1, target: "account" },
+      ],
+    };
+    const remotePlaceholder: AppState = {
+      ...defaultState(),
+      settlementResetAt: 100,
+      updatedAt: 2000,
+      members: buildDefaultMembersCount(3),
+      donors: [],
+    };
+    expect(isAccidentalEmptyRosterState(remotePlaceholder)).toBe(true);
     expect(shouldBlockAccidentalEmptyOverwrite(local, remotePlaceholder)).toBe(true);
-    expect(shouldAvoidOverwritingLocalStateWithRemote(local, remotePlaceholder)).toBe(true);
   });
 
   it("allows keep-members settlement reset (real names, zero amounts) to overwrite", () => {
