@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { resolveWriteUserId, writeUserIdErrorResponse } from "@/app/api/_shared/user-id";
 import {
   fetchToonaDonationsSinceLink,
+  fetchToonaSignaturesViaHubSession,
   getYoutubePublicBaseUrl,
   loginAndLinkToonaHub,
   refreshToonaHubStatus,
@@ -16,6 +17,10 @@ import {
 } from "@/lib/toona-hub-session";
 import { normalizeContributionFormula } from "@/lib/contribution-formula";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
+import { applyToonaSigItemsToInventory } from "@/lib/toona-sig-import";
+import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
+import { publishSseEvent } from "@/lib/sse-clients-hub";
+import type { SigItem } from "@/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +30,39 @@ function json(data: unknown, status = 200) {
     status,
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store, max-age=0" },
   });
+}
+
+async function importSigsAfterHubLogin(userId: string): Promise<{
+  ok: boolean;
+  count: number;
+  added?: number;
+  updated?: number;
+  error?: string;
+  items?: SigItem[];
+}> {
+  const fetched = await fetchToonaSignaturesViaHubSession(userId);
+  if (!fetched.ok) return { ok: false, count: 0, error: fetched.error };
+  const state = await loadAppStateForUserId(userId);
+  if (!state) {
+    return { ok: true, count: fetched.count, items: fetched.items, added: fetched.count, updated: 0 };
+  }
+  const { nextInventory, added, updated } = applyToonaSigItemsToInventory(
+    state.sigInventory || [],
+    fetched.items,
+    "merge"
+  );
+  const next = { ...state, sigInventory: nextInventory, updatedAt: Date.now() };
+  const saved = await saveAppStateForRoulette(userId, next, { donorsMode: "add" });
+  if (saved.ok) {
+    await publishSseEvent({ type: "state_updated", updatedAt: next.updatedAt });
+  }
+  return {
+    ok: true,
+    count: fetched.count,
+    added,
+    updated,
+    items: fetched.items,
+  };
 }
 
 /** GET — 허브 세션 상태 + 로그인 이후 후원 로그 */
@@ -81,6 +119,21 @@ export async function POST(req: NextRequest) {
     return json({ ok: true, formula });
   }
 
+  if (body.action === "import-signatures") {
+    const imported = await importSigsAfterHubLogin(auth.userId);
+    if (!imported.ok) {
+      const status = imported.error === "hub_not_linked" ? 409 : 502;
+      return json({ ok: false, error: imported.error }, status);
+    }
+    return json({
+      ok: true,
+      count: imported.count,
+      added: imported.added,
+      updated: imported.updated,
+      items: imported.items,
+    });
+  }
+
   const result = await loginAndLinkToonaHub({
     youtubeUserId: auth.userId,
     email: String(body.email || ""),
@@ -104,7 +157,21 @@ export async function POST(req: NextRequest) {
   );
   await syncContributionFormulaToToonaHub(auth.userId, formula);
 
-  return json({ ok: true, session: result.session, logs: [] });
+  /** 로그인만으로 toona 시그 목록 병합 */
+  const sigImport = await importSigsAfterHubLogin(auth.userId);
+
+  return json({
+    ok: true,
+    session: result.session,
+    logs: [],
+    sigImport: {
+      ok: sigImport.ok,
+      count: sigImport.count,
+      added: sigImport.added ?? 0,
+      updated: sigImport.updated ?? 0,
+      error: sigImport.error,
+    },
+  });
 }
 
 /** DELETE — 허브 로그아웃(세션·로그 삭제, toona 측 설정은 유지) */

@@ -32,9 +32,23 @@ type HubLog = {
   message?: string;
 };
 
+type SigImportResult = {
+  ok?: boolean;
+  count?: number;
+  added?: number;
+  updated?: number;
+  error?: string;
+};
+
 type Props = {
   youtubeUserId: string;
 };
+
+function formatSigImport(sig: SigImportResult | undefined): string {
+  if (!sig) return "";
+  if (sig.ok === false) return `시그 가져오기 실패: ${sig.error || "unknown"}`;
+  return `시그 ${sig.count ?? 0}개 병합 (추가 ${sig.added ?? 0} · 갱신 ${sig.updated ?? 0})`;
+}
 
 export default function ToonaHubPanel({ youtubeUserId }: Props) {
   const [email, setEmail] = useState("");
@@ -97,6 +111,7 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
         error?: string;
         session?: HubSession | null;
         logs?: HubLog[];
+        sigImport?: SigImportResult;
       };
       if (!res.ok || !data.ok) {
         setMessage(data.error || "로그인 실패");
@@ -104,7 +119,12 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
       }
       setPassword("");
       applyPayload(data);
-      setMessage("toona 로그인·youtubegit 연동 완료");
+      const sigMsg = formatSigImport(data.sigImport);
+      setMessage(
+        sigMsg
+          ? `toona 로그인·연동 완료 · ${sigMsg}`
+          : "toona 로그인·youtubegit 연동 완료"
+      );
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "로그인 실패");
     } finally {
@@ -154,6 +174,30 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
     }
   };
 
+  const onImportSigs = async () => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/toona/hub", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "import-signatures" }),
+      });
+      const data = (await res.json().catch(() => ({}))) as SigImportResult & {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!res.ok || !data.ok) {
+        setMessage(data.error || "시그 가져오기 실패");
+        return;
+      }
+      setMessage(formatSigImport(data));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const statusLabel = !session
     ? "미연결"
     : session.lastStatusOk === false
@@ -184,8 +228,8 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
       {!session ? (
         <div className="space-y-2">
           <p className="text-[11px] text-neutral-300 leading-relaxed">
-            toona 계정으로 로그인하면 youtube-git 연동이 자동 설정되고, 이후 들어온 후원이 아래에
-            기록됩니다. 비밀번호는 서버에서만 사용하며 저장하지 않습니다.
+            toona 계정으로 로그인하면 youtube-git 연동·시그 목록 가져오기가 함께 됩니다. 비밀번호는
+            서버에서만 사용하며 저장하지 않습니다.
           </p>
           <label className="block text-[11px] text-neutral-400">
             toona API Base URL
@@ -255,6 +299,14 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
               onClick={() => void load(true)}
             >
               상태 새로고침
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              className="px-3 py-1.5 rounded bg-violet-800/80 hover:bg-violet-700 text-xs font-semibold disabled:opacity-50"
+              onClick={() => void onImportSigs()}
+            >
+              시그 다시 가져오기
             </button>
             <button
               type="button"

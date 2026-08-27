@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { resolveWriteUserId, writeUserIdErrorResponse } from "@/app/api/_shared/user-id";
+import { fetchToonaSignaturesViaHubSession } from "@/lib/toona-hub-client";
 import {
   mapToonaSignaturesToSigItems,
   normalizeToonaApiBaseUrl,
@@ -13,6 +14,8 @@ type Body = {
   baseUrl?: string;
   email?: string;
   password?: string;
+  /** true면 허브 세션으로 조회 (비밀번호 불필요) */
+  useHubSession?: boolean;
 };
 
 async function readJsonBody(req: NextRequest): Promise<Body> {
@@ -34,14 +37,32 @@ function json(data: unknown, status = 200) {
 }
 
 /**
- * toona 로그인 후 시그 목록을 youtube SigItem[] 로 매핑해 반환.
- * 비밀번호는 서버에서만 사용하며 저장하지 않음.
+ * toona 시그 목록 → youtube SigItem[]
+ * - useHubSession: 허브 로그인 세션 사용
+ * - 아니면 email/password로 로그인 후 조회
  */
 export async function POST(req: NextRequest) {
   const auth = resolveWriteUserId(req);
   if (!auth.ok) return writeUserIdErrorResponse(auth);
 
   const body = await readJsonBody(req);
+
+  if (body.useHubSession) {
+    const result = await fetchToonaSignaturesViaHubSession(auth.userId);
+    if (!result.ok) {
+      const status = result.error === "hub_not_linked" ? 409 : 502;
+      return json({ ok: false, error: result.error }, status);
+    }
+    return json({
+      ok: true,
+      streamKey: result.streamKey,
+      baseUrl: result.baseUrl,
+      count: result.count,
+      items: result.items,
+      via: "hub_session",
+    });
+  }
+
   const baseUrl = normalizeToonaApiBaseUrl(String(body.baseUrl || ""));
   const email = String(body.email || "").trim();
   const password = String(body.password || "");
@@ -127,5 +148,6 @@ export async function POST(req: NextRequest) {
     baseUrl,
     count: items.length,
     items,
+    via: "login",
   });
 }

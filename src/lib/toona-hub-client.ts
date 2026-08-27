@@ -1,4 +1,4 @@
-import { normalizeToonaApiBaseUrl } from "@/lib/toona-sig-import";
+import { mapToonaSignaturesToSigItems, normalizeToonaApiBaseUrl, type ToonaSignatureRow } from "@/lib/toona-sig-import";
 import { getToonaApiBaseUrl, getYoutubePublicBaseUrl } from "@/lib/toona-link";
 import {
   appendToonaHubDonationLog,
@@ -9,6 +9,7 @@ import {
   writeToonaHubSession,
   type ToonaHubSession,
 } from "@/lib/toona-hub-session";
+import type { SigItem } from "@/types";
 
 export type ToonaHubLoginInput = {
   youtubeUserId: string;
@@ -209,6 +210,56 @@ export async function syncContributionFormulaToToonaHub(
     return {
       ok: false,
       error: `toona_unreachable: ${err instanceof Error ? err.message : "fetch_failed"}`,
+    };
+  }
+}
+
+/** 허브 세션(JWT)으로 toona 시그 목록 조회 — 비밀번호 재입력 없음 */
+export async function fetchToonaSignaturesViaHubSession(
+  youtubeUserId: string
+): Promise<
+  | { ok: true; items: SigItem[]; streamKey: string; baseUrl: string; count: number }
+  | { ok: false; error: string }
+> {
+  const session = await readToonaHubSession(youtubeUserId);
+  if (!session?.token || !session.streamKey || !session.baseUrl) {
+    return { ok: false, error: "hub_not_linked" };
+  }
+  const baseUrl = normalizeToonaApiBaseUrl(session.baseUrl) || session.baseUrl;
+  try {
+    const sigRes = await fetch(
+      `${baseUrl}/api/signatures/${encodeURIComponent(session.streamKey)}`,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${session.token}`,
+        },
+        signal: AbortSignal.timeout(20_000),
+      }
+    );
+    const sigJson = (await sigRes.json().catch(() => ({}))) as {
+      signatures?: ToonaSignatureRow[];
+      error?: string;
+    };
+    if (!sigRes.ok) {
+      return {
+        ok: false,
+        error: sigJson.error || `signatures_failed HTTP ${sigRes.status}`,
+      };
+    }
+    const items = mapToonaSignaturesToSigItems(sigJson.signatures || [], baseUrl);
+    return {
+      ok: true,
+      items,
+      streamKey: session.streamKey,
+      baseUrl,
+      count: items.length,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: `signatures_unreachable: ${err instanceof Error ? err.message : "fetch_failed"}`,
     };
   }
 }
