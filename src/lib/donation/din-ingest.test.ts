@@ -19,6 +19,11 @@ vi.mock("./server-apply-donation", () => ({
   enqueueUnmatchedToonationDonation: vi.fn(async () => true),
 }));
 
+vi.mock("@/lib/toona-hub-session", () => ({
+  readToonaHubSession: vi.fn(async () => null),
+  appendToonaHubDonationLog: vi.fn(async () => undefined),
+}));
+
 import {
   broadcastPlayerDonationAlert,
   enrichDonationEventWithSigMatch,

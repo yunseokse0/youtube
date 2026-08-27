@@ -17,11 +17,11 @@ import {
 import { AdminAccountSettingsModal } from "@/components/admin/AdminPasswordChangePanel";
 import {
   DEFAULT_DONATION_INGEST_MODE,
-  getToonaDashboardUrl,
   readDonationIngestMode,
   writeDonationIngestMode,
   type DonationIngestMode,
 } from "@/lib/donation-ingest-mode";
+import ToonaHubPanel from "@/components/admin/ToonaHubPanel";
 import {
   buildSettlementUiOptionsFromForm,
   normalizeSettlementUiOptions,
@@ -14332,44 +14332,7 @@ function AdminPageInner() {
                 </div>
 
                 {donationIngestMode === "toona" ? (
-                  <div className="rounded border border-violet-500/30 bg-violet-950/25 px-3 py-3 space-y-2">
-                    <div className="text-xs font-semibold text-violet-200">toona 허브 모드</div>
-                    <p className="text-[11px] text-neutral-300 leading-relaxed">
-                      투네 연동·통합 알림창은 <strong className="text-violet-100">toona 대시보드</strong>에서
-                      설정하세요. youtube 쪽 실시간 수집은 꺼 둡니다. toona YouTube-Git 연동에 이 서버
-                      Base URL과 계정 ID(<code className="text-violet-100">u={overlayUserId}</code>)를
-                      넣으면 시그/후원 카드로 전달됩니다.
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      <a
-                        href={getToonaDashboardUrl()}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-3 py-1.5 rounded bg-violet-700 hover:bg-violet-600 text-xs font-semibold"
-                      >
-                        toona 열기
-                      </a>
-                      <a
-                        href={`${getToonaDashboardUrl().replace(/\/$/, "")}/dashboard/youtubegit`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
-                      >
-                        YouTube-Git 설정
-                      </a>
-                      <a
-                        href={`${getToonaDashboardUrl().replace(/\/$/, "")}/dashboard/alert`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
-                      >
-                        투네·알림창 설정
-                      </a>
-                    </div>
-                    <p className="text-[10px] text-neutral-500">
-                      toona API: {getToonaDashboardUrl()} · youtube 계정: {overlayUserId}
-                    </p>
-                  </div>
+                  <ToonaHubPanel youtubeUserId={overlayUserId} />
                 ) : (
                   <>
                 <div className="rounded border border-white/10 bg-black/25 px-3 py-2">

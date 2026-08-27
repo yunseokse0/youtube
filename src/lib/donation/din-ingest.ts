@@ -7,6 +7,7 @@ import {
   tryAutoApplyToonationDonationOnServer,
 } from "@/lib/donation/server-apply-donation";
 import type { DonationEvent } from "@/lib/donation/types";
+import { appendToonaHubDonationLog, readToonaHubSession } from "@/lib/toona-hub-session";
 
 export function parseApplyExcelFromRequest(req: Request): boolean {
   try {
@@ -73,23 +74,50 @@ export type DinIngestResult =
   | { ok: true; applied: true; outcome: "applied" | "applied_needs_review"; mode: "excel" }
   | { ok: true; applied: false; queued: true; mode: "excel" };
 
+async function logHubIngestIfLinked(
+  userId: string,
+  event: DonationEvent,
+  result: DinIngestResult
+): Promise<void> {
+  const session = await readToonaHubSession(userId);
+  if (!session) return;
+  const at = event.at ? new Date(event.at).getTime() : Date.now();
+  if (Number.isFinite(at) && at < session.linkedAt - 5_000) return;
+  await appendToonaHubDonationLog(userId, {
+    id: `ingest:${event.id}`,
+    at: Number.isFinite(at) ? at : Date.now(),
+    donorName: event.donorName,
+    amount: event.amount,
+    playerName: event.playerName,
+    target: event.target,
+    mode: result.mode,
+    applied: result.applied,
+    source: "ingest",
+    message: event.message?.slice(0, 120),
+  });
+}
+
 /** DIN ingest — applyExcel=false면 시그·player-alert만, true면 엑셀표 반영 */
 export async function handleDinDonationIngest(
   userId: string,
   event: DonationEvent,
   applyExcel: boolean
 ): Promise<DinIngestResult> {
+  let result: DinIngestResult;
   if (!applyExcel) {
     const enriched = await enrichDonationEventWithSigMatch(userId, event);
     await broadcastPlayerDonationAlert(userId, enriched);
-    return { ok: true, applied: false, alert: true, mode: "alert_only" };
+    result = { ok: true, applied: false, alert: true, mode: "alert_only" };
+  } else {
+    const outcome = await tryAutoApplyToonationDonationOnServer(userId, event);
+    if (outcome === "applied" || outcome === "applied_needs_review") {
+      result = { ok: true, applied: true, outcome, mode: "excel" };
+    } else {
+      await enqueueUnmatchedToonationDonation(userId, event);
+      result = { ok: true, applied: false, queued: true, mode: "excel" };
+    }
   }
 
-  const outcome = await tryAutoApplyToonationDonationOnServer(userId, event);
-  if (outcome === "applied" || outcome === "applied_needs_review") {
-    return { ok: true, applied: true, outcome, mode: "excel" };
-  }
-
-  await enqueueUnmatchedToonationDonation(userId, event);
-  return { ok: true, applied: false, queued: true, mode: "excel" };
+  await logHubIngestIfLinked(userId, event, result).catch(() => {});
+  return result;
 }
