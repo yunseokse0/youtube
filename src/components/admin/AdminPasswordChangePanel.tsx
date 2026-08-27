@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 function PasswordInput({
   value,
@@ -102,7 +103,7 @@ export function AdminPasswordChangePanel({
   if (!userId) return null;
 
   return (
-    <form onSubmit={(e) => void onSubmit(e)} className="max-w-md space-y-3">
+    <form onSubmit={(e) => void onSubmit(e)} className="space-y-3">
       <p className="text-sm text-neutral-400">
         현재 비밀번호를 확인한 뒤 새 비밀번호로 변경합니다. 변경 후에도 로그인 상태는 유지됩니다.
       </p>
@@ -173,5 +174,79 @@ export function AdminPasswordChangePanel({
         </p>
       ) : null}
     </form>
+  );
+}
+
+type AdminAccountSettingsModalProps = AdminPasswordChangePanelProps & {
+  open: boolean;
+  onClose: () => void;
+};
+
+/** 관리자 「계정 설정」팝업 — 비밀번호 변경 */
+export function AdminAccountSettingsModal({
+  open,
+  onClose,
+  userId,
+  disabled,
+  disabledReason,
+}: AdminAccountSettingsModalProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [open, onClose]);
+
+  if (!mounted || !open) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[520] flex items-center justify-center bg-black/75 px-4 py-6"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="w-full max-w-md rounded-xl border border-white/15 bg-[#1a1a1a] p-4 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="admin-account-settings-title"
+      >
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <h2 id="admin-account-settings-title" className="text-lg font-bold text-white">
+              계정 설정
+            </h2>
+            {userId ? (
+              <p className="mt-0.5 text-xs text-neutral-400">로그인 계정: {userId}</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="rounded bg-neutral-700 px-2.5 py-1 text-xs text-white hover:bg-neutral-600"
+            onClick={onClose}
+          >
+            닫기
+          </button>
+        </div>
+        <AdminPasswordChangePanel
+          userId={userId}
+          disabled={disabled}
+          disabledReason={disabledReason}
+        />
+      </div>
+    </div>,
+    document.body
   );
 }

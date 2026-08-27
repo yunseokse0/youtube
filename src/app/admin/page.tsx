@@ -14,7 +14,7 @@ import {
   ADMIN_SECTION_EXPAND_PARENTS,
   useAdminSectionCollapse,
 } from "@/components/admin/AdminSectionCollapse";
-import { AdminPasswordChangePanel } from "@/components/admin/AdminPasswordChangePanel";
+import { AdminAccountSettingsModal } from "@/components/admin/AdminPasswordChangePanel";
 import {
   buildSettlementUiOptionsFromForm,
   normalizeSettlementUiOptions,
@@ -806,6 +806,7 @@ function AdminPageInner() {
   const [sigUploadProgress, setSigUploadProgress] = useState<SigUploadProgress | null>(null);
   const [sigSalesModalOpen, setSigSalesModalOpen] = useState(false);
   const [sigSalesModalTab, setSigSalesModalTab] = useState<SigSalesHybridTab>("inventory");
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   const sigBulkReuploadInputRef = useRef<HTMLInputElement | null>(null);
   const sigRestoreJsonInputRef = useRef<HTMLInputElement | null>(null);
   const sigRestoreExcelInputRef = useRef<HTMLInputElement | null>(null);
@@ -9308,6 +9309,13 @@ function AdminPageInner() {
             </button>
             <button
               className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+              onClick={() => setAccountSettingsOpen(true)}
+              title="비밀번호 변경"
+            >
+              계정 설정
+            </button>
+            <button
+              className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
               onClick={async () => {
                 await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
                 router.push("/login");
@@ -9394,26 +9402,19 @@ function AdminPageInner() {
           </div>
         </AdminCollapsibleSection>
         )}
-        {user?.id ? (
-        <AdminCollapsibleSection
-          id="account-settings"
-          title="계정 설정"
-          className={`${panelCardClass} mb-6`}
-          bodyClassName="px-4 pb-4"
-        >
-          <AdminPasswordChangePanel
-            userId={user.id}
-            disabled={user.id === "admin" || user.id === "finalent"}
-            disabledReason={
-              user.id === "admin"
-                ? "로컬 개발용 admin 계정은 비밀번호 변경을 지원하지 않습니다."
-                : user.id === "finalent"
-                  ? "내장 개발 계정(finalent)은 비밀번호 변경을 지원하지 않습니다."
-                  : undefined
-            }
-          />
-        </AdminCollapsibleSection>
-        ) : null}
+        <AdminAccountSettingsModal
+          open={accountSettingsOpen}
+          onClose={() => setAccountSettingsOpen(false)}
+          userId={user?.id}
+          disabled={user?.id === "admin" || user?.id === "finalent"}
+          disabledReason={
+            user?.id === "admin"
+              ? "로컬 개발용 admin 계정은 비밀번호 변경을 지원하지 않습니다."
+              : user?.id === "finalent"
+                ? "내장 개발 계정(finalent)은 비밀번호 변경을 지원하지 않습니다."
+                : undefined
+          }
+        />
         <div className="grid grid-cols-1 gap-6">
           <div className="space-y-6">
             {isAdminNavSectionVisible("settlement") && (
