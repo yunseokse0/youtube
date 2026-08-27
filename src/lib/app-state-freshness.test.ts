@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { pickFresherAppState } from "./app-state-freshness";
 import { coalesceAppStateRedisAndMemory } from "./app-state-server-load";
+import { defaultState, totalCombined } from "@/lib/state";
 import type { AppState } from "@/types";
 
 function snap(
@@ -101,6 +102,37 @@ describe("pickFresherAppState", () => {
 });
 
 describe("coalesceAppStateRedisAndMemory", () => {
+  it("does not re-union old donors after settlement reset wins", () => {
+    const resetAt = 9_000;
+    const cleared: AppState = {
+      ...defaultState(),
+      settlementResetAt: resetAt,
+      updatedAt: resetAt,
+      members: [{ id: "m1", name: "자키", account: 0, toon: 0, contribution: 0 }],
+      donors: [],
+    };
+    const stale: AppState = {
+      ...defaultState(),
+      settlementResetAt: 100,
+      updatedAt: 1_000,
+      members: [{ id: "m1", name: "자키", account: 50000, toon: 0, contribution: 50000 }],
+      donors: [
+        {
+          id: "d1",
+          name: "후원",
+          amount: 50000,
+          memberId: "m1",
+          at: 500,
+          target: "account",
+        },
+      ],
+    };
+    const merged = coalesceAppStateRedisAndMemory(cleared, stale);
+    expect(merged?.settlementResetAt).toBe(resetAt);
+    expect(merged?.donors).toHaveLength(0);
+    expect(totalCombined(merged!)).toBe(0);
+  });
+
   it("unions redis group-split donors when memory wins freshness", () => {
     const redis: AppState = {
       members: [

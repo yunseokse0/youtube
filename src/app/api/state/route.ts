@@ -1161,10 +1161,12 @@ export async function POST(req: Request) {
       (donorsInPatch ||
         ("members" in bodyForMerge && normalizeDonorsArray(dedupedDonors).length > 0));
     let draft: AppState = shouldSyncMembersFromDonors
-      ? guardMemberTotalsAgainstAccidentalZeroWipe(
-          syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors }),
-          baseState
-        )
+      ? settlementReset || donationInitReset
+        ? syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors })
+        : guardMemberTotalsAgainstAccidentalZeroWipe(
+            syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors }),
+            baseState
+          )
       : { ...merged, donors: dedupedDonors };
     if (highSocietySettingsOnlyPatch) {
       if (Array.isArray(merged.members)) {

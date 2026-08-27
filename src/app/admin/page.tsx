@@ -4214,26 +4214,32 @@ function AdminPageInner() {
 
   const resetMemberAmounts = (id: string) => {
     setState((prev: AppState) => {
-      const next: AppState = {
+      const remainingDonors = normalizeDonorsArray(prev.donors).filter(
+        (d) => String(d.memberId || "") !== id
+      );
+      const next = syncMemberTotalsFromDonors({
         ...prev,
-        members: prev.members.map((x: Member) => (x.id === id ? { ...x, account: 0, toon: 0, contribution: 0, restroom: 0 } : x)),
-      };
-      persistState(next, { includeDonationFields: true });
+        members: prev.members.map((x: Member) =>
+          x.id === id ? { ...x, account: 0, toon: 0, contribution: 0, restroom: 0 } : x
+        ),
+        donors: remainingDonors,
+        updatedAt: Date.now(),
+      });
+      /** donors 를 줄인 채 sync — replace 로 서버에 반영 (add 면 구 후원이 되살아남) */
+      persistState(next, { includeDonationFields: true, donorsReplace: true });
       return next;
     });
   };
 
   const resetAllMembersAmounts = () => {
-    requestConfirm("모든 멤버 금액 리셋", "모든 멤버의 계좌/투네/기여도/화장실을 0으로 리셋할까요?", () => {
-      setState((prev: AppState) => {
-        const next: AppState = {
-          ...prev,
-          members: prev.members.map((x: Member) => ({ ...x, account: 0, toon: 0, contribution: 0, restroom: 0 })),
-        };
-        persistState(next, { includeDonationFields: true });
-        return next;
-      });
-    }, { confirmText: "리셋", danger: true });
+    requestConfirm(
+      "모든 멤버 금액 리셋",
+      "계좌·투네·기여도·화장실과 후원 기록을 모두 비웁니다(멤버 이름은 유지). 정산 리셋과 동일하게 로그에 남습니다. 계속할까요?",
+      () => {
+        onResetKeepMembers();
+      },
+      { confirmText: "리셋", danger: true }
+    );
   };
 
   const deleteMember = (id: string) => {

@@ -33,6 +33,20 @@ export function coalesceAppStateRedisAndMemory(
     return pickFresherAppState(redis, mem);
   }
   const picked = pickFresherAppState(redis, mem) || redis;
+  const pickedReset = Number(picked.settlementResetAt || 0);
+  const other = picked === redis ? mem : redis;
+  const otherReset = Number(other?.settlementResetAt || 0);
+  /**
+   * 정산 리셋(더 높은 settlementResetAt + 빈 후원)이 이긴 경우
+   * 구 스냅샷 donors 를 union 하면 리셋이 즉시 되살아남.
+   */
+  if (
+    pickedReset > otherReset &&
+    normalizeDonorsArray(picked.donors).length === 0 &&
+    totalCombined(picked) === 0
+  ) {
+    return picked;
+  }
   let merged = mergeStatePreservingDonorsUntilSettlementReset(picked, mem) ?? picked;
   merged = mergeStatePreservingDonorsUntilSettlementReset(merged, redis) ?? merged;
   return merged;
