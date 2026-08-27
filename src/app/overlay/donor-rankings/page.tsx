@@ -699,26 +699,16 @@ function RankingColumn({
       ) : null}
       {hideTitle ? null : unified ? (
       <div className="relative flex justify-center px-4 py-2">
-        <span className="relative inline-flex max-w-full items-center justify-center">
-          <span
-            className="pointer-events-none absolute inset-0 rounded-full"
-            aria-hidden
-            style={{
-              background: headerBgResolved.background,
-              ...(headerBgResolved.opacity !== undefined ? { opacity: headerBgResolved.opacity } : {}),
-            }}
-          />
-          <span
-            className="overlay-cell-text-inner relative z-10 px-5 py-1.5 text-center font-bold tracking-tight"
-            style={{
-              color: titleColor,
-              fontSize: `${Math.round(titleSize * 1.1)}px`,
-              fontWeight: 700,
-              ...titleOutline,
-            }}
-          >
-            {title}
-          </span>
+        <span
+          className="overlay-cell-text-inner relative z-10 max-w-full px-1 text-center font-bold tracking-tight"
+          style={{
+            color: titleColor,
+            fontSize: `${Math.round(titleSize * 1.1)}px`,
+            fontWeight: 700,
+            ...titleOutline,
+          }}
+        >
+          {title}
         </span>
       </div>
       ) : (
