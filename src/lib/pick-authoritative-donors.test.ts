@@ -9,7 +9,7 @@ import {
 } from "@/lib/state";
 
 describe("pickAuthoritativeDonorsForEmptySession", () => {
-  it("rebumps pre-reset server donors when local session is empty", () => {
+  it("does not rebump pre-reset server donors after intentional settlement reset", () => {
     const resetAt = 1_700_000_000_000;
     const local: AppState = {
       ...defaultState(),
@@ -19,6 +19,57 @@ describe("pickAuthoritativeDonorsForEmptySession", () => {
       ],
       donors: [],
       settlementResetAt: resetAt,
+    };
+    const serverDonors = [
+      {
+        id: "d1",
+        name: "후원자",
+        amount: 10_000,
+        memberId: "m1",
+        at: resetAt - 86_400_000,
+      },
+    ];
+    const picked = pickAuthoritativeDonorsForEmptySession(local, serverDonors, [], resetAt);
+    expect(picked).toHaveLength(0);
+  });
+
+  it("keeps post-reset server donors after settlement reset", () => {
+    const resetAt = 1_700_000_000_000;
+    const local: AppState = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "자키", account: 0, toon: 0 }],
+      donors: [],
+      settlementResetAt: resetAt,
+    };
+    const serverDonors = [
+      {
+        id: "old",
+        name: "구후원",
+        amount: 10_000,
+        memberId: "m1",
+        at: resetAt - 86_400_000,
+      },
+      {
+        id: "new",
+        name: "신규",
+        amount: 5_000,
+        memberId: "m1",
+        at: resetAt + 1_000,
+      },
+    ];
+    const picked = pickAuthoritativeDonorsForEmptySession(local, serverDonors, [], resetAt);
+    expect(picked.map((d) => d.id)).toEqual(["new"]);
+  });
+
+  it("rebumps pre-reset server donors when local has no settlement reset stamp", () => {
+    const resetAt = 1_700_000_000_000;
+    const local: AppState = {
+      ...defaultState(),
+      members: [
+        { id: "m1", name: "자키", account: 0, toon: 0 },
+        { id: "m2", name: "빡수아", account: 0, toon: 0 },
+      ],
+      donors: [],
     };
     const serverDonors = [
       {

@@ -764,6 +764,7 @@ export function isDefaultLikeOverlayPresets(presets: unknown): boolean {
     "tableRowOddBg",
     "tablePanelBorderColor",
     "tableBgGifUrl",
+    "tableFrameUrl",
   ];
   return !colorKeys.some((k) => typeof p[k] === "string" && String(p[k]).trim());
 }
@@ -4042,8 +4043,9 @@ export function applySettlementResetDonorPipeline(
 }
 
 /**
- * 서버 정본 모드: UI·세션이 비었는데 서버 스냅샷에 후원이 있으면 rebump 후 반영.
- * (settlementResetUntil·preResetDonorsOnly 가 MySQL 실후원을 0으로 가리는 회귀 방지)
+ * 서버 정본 모드: UI·세션이 비었는데 서버 스냅샷에 후원이 있으면 반영.
+ * 단, 로컬에 settlementResetAt 이 있고 서버 후원이 전부 리셋 이전이면
+ * rebump 로 되돌리지 않음(정산 리셋 직후·새로고침 회귀 방지).
  */
 export function resolveServerDonorsForEmptyLocal(opts: {
   local: AppState;
@@ -4054,10 +4056,13 @@ export function resolveServerDonorsForEmptyLocal(opts: {
   const localDonors = normalizeDonorsArray(opts.local.donors);
   const incomingDonors = normalizeDonorsArray(opts.incomingDonors);
   if (localDonors.length > 0 || incomingDonors.length === 0) return null;
-  const resetAt = Math.max(
-    Number(opts.settlementResetAt || 0),
-    Number(opts.local.settlementResetAt || 0)
-  );
+  const localReset = Number(opts.local.settlementResetAt || 0);
+  const resetAt = Math.max(Number(opts.settlementResetAt || 0), localReset);
+  /** 의도적 정산 리셋(로컬 비움+stamp): 구 후원 rebump 금지 — 리셋 이후 건만 수용 */
+  if (localReset > 0 && isEmptyBroadcastDonationSession(opts.local)) {
+    const surviving = filterDonorsAfterSettlementReset(incomingDonors, localReset);
+    return surviving.length > 0 ? surviving : null;
+  }
   const restored = applySettlementResetDonorPipeline(
     rebumpDonorsPastSettlementReset(incomingDonors, resetAt),
     resetAt
@@ -4076,15 +4081,21 @@ export function pickAuthoritativeDonorsForEmptySession(
   const fromMerged = normalizeDonorsArray(mergedDonors);
   const bestIncoming = fromServer.length >= fromMerged.length ? fromServer : fromMerged;
   const localDonors = normalizeDonorsArray(local.donors);
-  const resetAt = Math.max(
-    Number(settlementResetAt || 0),
-    Number(local.settlementResetAt || 0)
-  );
+  const localReset = Number(local.settlementResetAt || 0);
+  const resetAt = Math.max(Number(settlementResetAt || 0), localReset);
   const applyPipeline = (donors: Donor[]) =>
     applySettlementResetDonorPipeline(
       rebumpDonorsPastSettlementReset(donors, resetAt),
       resetAt
     );
+  /** 의도적 정산 리셋 직후 — 구 후원(at < reset) 을 rebump 해 되살리지 않음 */
+  const respectLocalSettlementReset =
+    localDonors.length === 0 &&
+    localReset > 0 &&
+    isEmptyBroadcastDonationSession(local);
+  if (respectLocalSettlementReset) {
+    return filterDonorsAfterSettlementReset(bestIncoming, localReset);
+  }
   /** 서버(MySQL)가 UI보다 많으면 — 읽기 경로, 로컬 축소본으로 덮지 않음 */
   if (bestIncoming.length > localDonors.length) {
     return applyPipeline(bestIncoming);
@@ -4128,6 +4139,15 @@ export function buildUiStateFromServerDonorPull(
     ? remoteDonors
     : pickAuthoritativeDonorsForEmptySession(local, remoteDonors, remoteDonors, resetAt);
   if (donors.length === 0) {
+    const localReset = Number(local.settlementResetAt || 0);
+    /** 정산 리셋으로 비운 UI — 구 후원 rebump·강제 복구 금지 */
+    if (
+      localDonors.length === 0 &&
+      localReset > 0 &&
+      isEmptyBroadcastDonationSession(local)
+    ) {
+      return null;
+    }
     donors = applySettlementResetDonorPipeline(
       rebumpDonorsPastSettlementReset(remoteDonors, resetAt),
       resetAt

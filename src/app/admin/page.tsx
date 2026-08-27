@@ -1787,7 +1787,10 @@ function AdminPageInner() {
               donors: [],
               settlementResetAt: Math.max(localResetAt, remoteResetAt) || local.settlementResetAt,
               mealBattle: local.mealBattle ?? incoming.mealBattle,
-              overlayPresets: local.overlayPresets ?? incoming.overlayPresets,
+              overlayPresets:
+                Array.isArray(local.overlayPresets) && local.overlayPresets.length > 0
+                  ? local.overlayPresets
+                  : incoming.overlayPresets,
               missions: local.missions ?? incoming.missions,
               updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
             },
@@ -19930,12 +19933,11 @@ function AdminPageInner() {
 }
 
 function ClientPreviewWrapper({ preset, buildUrl }: { preset: OverlayPreset; buildUrl: (p: OverlayPreset) => string }) {
-  const computed =
-    typeof window !== "undefined" ? buildUrl(preset) || "" : "";
-  const [url, setUrl] = useState(computed);
+  /** SSR·클라 첫 페인트는 빈 URL — window origin 차이로 React #418/#422 방지 */
+  const [url, setUrl] = useState("");
   useEffect(() => {
-    if (computed !== url) setUrl(computed);
-  }, [computed, url]);
+    setUrl(buildUrl(preset) || "");
+  }, [preset, buildUrl]);
   return <VerticalPreview url={url} presetName={preset.name || preset.id} />;
 }
 
