@@ -99,6 +99,7 @@ import {
   formatTimerClockText,
 } from "@/lib/timer-design";
 import BattleTeamColumnBoard from "@/components/battle/BattleTeamColumnBoard";
+import { isDefaultContributionFormula } from "@/lib/contribution-formula";
 import { mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import {
@@ -3542,18 +3543,20 @@ function OverlayInner() {
     [getMemberRole]
   );
   /**
-   * 기여도 숫자: 저장 필드가 0인데 계좌+투네 합은 있는 경우(멤버 재추가·자동 후원만 반영 등) 합계로 표시.
-   * 운영비 행은 책정 대상이 아니므로 합계·표시는 별도 처리(pinnedFilter).
+   * 기여도 숫자: 저장된 contribution 우선.
+   * 기본 공식(100/100)이고 값이 0인데 계좌+투네 합이 있으면 레거시 폴백.
+   * 가중치 공식이면 account+toon 폴백 금지.
    */
+  const allowContributionTotalFallback = isDefaultContributionFormula(s?.contributionFormula);
   const getContributionValueForMember = useCallback((m: Member) => {
     const raw = (m as Member & { contribution?: unknown }).contribution;
     let parsed = typeof raw === "number" ? raw : Number(typeof raw === "string" ? String(raw).replace(/,/g, "").trim() : raw);
     const total = Math.max(0, Number(m.account || 0) + Number(m.toon || 0));
-    if (!Number.isFinite(parsed)) return total;
+    if (!Number.isFinite(parsed)) return allowContributionTotalFallback ? total : 0;
     const c = Math.max(0, Math.floor(parsed));
-    if (c === 0 && total > 0) return total;
+    if (allowContributionTotalFallback && c === 0 && total > 0) return total;
     return c;
-  }, []);
+  }, [allowContributionTotalFallback]);
   const getRestroomValueForMember = useCallback((m: Member) => {
     return normalizeRestroomCount((m as Member & { restroom?: unknown }).restroom);
   }, []);

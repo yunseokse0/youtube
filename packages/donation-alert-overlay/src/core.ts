@@ -22,9 +22,20 @@ export const DONATION_ALERT_TEST_ITEM: DonationAlertShowItem = {
   at: Date.now(),
 };
 
-/** 기여도 점수: 후원 금액과 1:1 (4,000원 → 4,000점) */
-export function donationContributionPoints(amount: number): number {
-  return Math.max(0, Math.round(Number(amount) || 0));
+/** 기여도 점수: 후원 금액과 1:1 (4,000원 → 4,000점). target·weights 있으면 가중치 적용 */
+export function donationContributionPoints(
+  amount: number,
+  target?: DonationAlertTarget | string | null,
+  weights?: { accountWeightPct?: number; toonWeightPct?: number } | null
+): number {
+  const amt = Math.max(0, Math.round(Number(amount) || 0));
+  if (amt <= 0) return 0;
+  if (!weights) return amt;
+  const accountW = Math.max(0, Math.min(200, Math.round(Number(weights.accountWeightPct) || 100)));
+  const toonW = Math.max(0, Math.min(200, Math.round(Number(weights.toonWeightPct) || 100)));
+  const t = String(target || "").trim().toLowerCase();
+  const weight = t === "toon" || t === "투네" ? toonW : accountW;
+  return Math.max(0, Math.round((amt * weight) / 100));
 }
 
 export function normalizeDonationAlertTarget(raw: unknown): DonationAlertTarget {
@@ -94,13 +105,18 @@ export function donationAlertFromDonorRecord(
     members.find((m) => String(m.id || "").trim() === memberId)?.name?.trim() || "—";
   const target = normalizeDonationAlertTarget(donor.target ?? donor.type);
   const id = String(donor.id || "").trim() || `d_${at}_${amount}`;
+  const storedPoints = Number(donor.contributionPoints);
+  const contributionPoints =
+    Number.isFinite(storedPoints) && storedPoints >= 0
+      ? Math.round(storedPoints)
+      : donationContributionPoints(amount, target);
   return {
     id,
     donorName: String(donor.name || "무명").replace(/\s+/g, "") || "무명",
     memberName,
     amount,
     target,
-    contributionPoints: donationContributionPoints(amount),
+    contributionPoints,
     at,
   };
 }

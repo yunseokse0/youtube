@@ -134,6 +134,45 @@ export async function loginAndLinkToonaHub(input: ToonaHubLoginInput): Promise<
   return { ok: true, session: publicToonaHubSession(session) };
 }
 
+/** 기여도 계산식만 toona youtubegit에 동기화 — 도네 얼럿 점수용 (계좌/투네 합산과 무관) */
+export async function syncContributionFormulaToToonaHub(
+  youtubeUserId: string,
+  formula: { accountWeightPct: number; toonWeightPct: number }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = await readToonaHubSession(youtubeUserId);
+  if (!session?.token || !session.streamKey) {
+    return { ok: false, error: "hub_not_linked" };
+  }
+  try {
+    const res = await fetch(
+      `${session.baseUrl}/api/youtubegit/${encodeURIComponent(session.streamKey)}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Authorization: `Bearer ${session.token}`,
+        },
+        body: JSON.stringify({
+          accountWeightPct: formula.accountWeightPct,
+          toonWeightPct: formula.toonWeightPct,
+        }),
+        signal: AbortSignal.timeout(15_000),
+      }
+    );
+    if (!res.ok) {
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      return { ok: false, error: json.error || `youtubegit_patch_failed HTTP ${res.status}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: `toona_unreachable: ${err instanceof Error ? err.message : "fetch_failed"}`,
+    };
+  }
+}
+
 export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
   session: ReturnType<typeof publicToonaHubSession>;
   logs: Awaited<ReturnType<typeof readToonaHubDonationLogs>>;

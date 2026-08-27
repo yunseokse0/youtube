@@ -267,7 +267,7 @@ describe("applyDonationToAppState", () => {
       provider: "toonation",
       externalId: "2",
       donorName: "배지은",
-      amount: 3000,
+      amount: 1000,
       at: new Date().toISOString(),
       status: "queued",
       target: "toon",
@@ -275,7 +275,7 @@ describe("applyDonationToAppState", () => {
     const result = applyDonationToAppState(state, event);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.members.find((m) => m.id === "op")?.toon).toBe(3000);
+    expect(result.state.members.find((m) => m.id === "op")?.toon).toBe(1000);
     expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(0);
     expect(result.event.memberAutoAssigned).toBe(true);
   });
@@ -294,7 +294,7 @@ describe("applyDonationToAppState", () => {
       provider: "toonation",
       externalId: "4",
       donorName: "햇님",
-      amount: 2000,
+      amount: 1000,
       at: new Date().toISOString(),
       status: "queued",
       target: "account",
@@ -302,7 +302,7 @@ describe("applyDonationToAppState", () => {
     const result = applyDonationToAppState(state, event);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.members.find((m) => m.id === "op")?.account).toBe(2000);
+    expect(result.state.members.find((m) => m.id === "op")?.account).toBe(1000);
     expect(result.state.members.find((m) => m.id === "m1")?.account).toBe(0);
     expect(result.event.memberAutoAssigned).toBe(true);
   });
@@ -990,5 +990,74 @@ describe("updateDonorMessageInAppState", () => {
     const next = updateDonorMessageInAppState(state, "d1", "익원 감사");
     expect(next?.donors?.[0]?.message).toBe("익원 감사");
     expect(next?.members[0]?.toon).toBe(5000);
+  });
+});
+
+describe("contribution formula (apply-from-now)", () => {
+  it("sync does not overwrite contribution with account+toon", () => {
+    const synced = syncMemberTotalsFromDonors({
+      ...defaultState(),
+      contributionFormula: { accountWeightPct: 100, toonWeightPct: 50 },
+      members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 12_345 }],
+      donors: [
+        {
+          id: "d1",
+          name: "익명",
+          amount: 10_000,
+          memberId: "m1",
+          at: 1,
+          target: "toon" as const,
+        },
+      ],
+    });
+    expect(synced.members[0]?.toon).toBe(10_000);
+    expect(synced.members[0]?.contribution).toBe(12_345);
+  });
+
+  it("new donation uses formula and stores contributionPoints", () => {
+    const base = {
+      ...defaultState(),
+      contributionFormula: { accountWeightPct: 100, toonWeightPct: 50 },
+      members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 1_000 }],
+      donors: [] as ReturnType<typeof defaultState>["donors"],
+    };
+    const event: DonationEvent = {
+      id: "e1",
+      donorName: "테스터",
+      amount: 10_000,
+      at: new Date().toISOString(),
+      target: "toon",
+      playerName: "피자",
+      status: "pending",
+    };
+    const result = applyDonationToAppState(base, event);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.members[0]?.toon).toBe(10_000);
+    expect(result.state.members[0]?.contribution).toBe(1_000 + 5_000);
+    expect(result.state.donors[0]?.contributionPoints).toBe(5_000);
+  });
+
+  it("revert subtracts stored contributionPoints after formula change", () => {
+    const withDonation = {
+      ...defaultState(),
+      contributionFormula: { accountWeightPct: 0, toonWeightPct: 100 },
+      members: [{ id: "m1", name: "피자", account: 0, toon: 10_000, contribution: 6_000 }],
+      donors: [
+        {
+          id: "d1",
+          name: "테스터",
+          amount: 10_000,
+          memberId: "m1",
+          at: Date.now(),
+          target: "toon" as const,
+          contributionPoints: 5_000,
+        },
+      ],
+    };
+    const next = revertDonationFromAppState(withDonation, "d1");
+    expect(next?.members[0]?.toon).toBe(0);
+    expect(next?.members[0]?.contribution).toBe(1_000);
+    expect(next?.donors).toHaveLength(0);
   });
 });

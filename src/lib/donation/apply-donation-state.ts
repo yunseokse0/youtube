@@ -9,6 +9,7 @@ import {
   syncHighSocietyMemberWidthSnapshotInState,
 } from "@/lib/high-society";
 import type { AppState, Donor, Member } from "@/types";
+import { computeContributionPoints, normalizeContributionFormula } from "@/lib/contribution-formula";
 import {
   extractReliableToonationExtFromDonorId,
   isReliableToonationExternalId,
@@ -284,15 +285,12 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
   }
   const members = (state.members || []).map((member) => {
     const bucket = totals.get(member.id) || { account: 0, toon: 0 };
-    const isOperating = isOperatingSettlementMember(
-      { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
-      state.memberPositions || null
-    );
     return {
       ...member,
       account: bucket.account,
       toon: bucket.toon,
-      contribution: isOperating ? Math.max(0, Number(member.contribution) || 0) : bucket.account + bucket.toon,
+      /** 기여도는 후원 적용 시점 공식으로 누적 — sync로 account+toon에 덮지 않음 */
+      contribution: Math.max(0, Number(member.contribution) || 0),
     };
   });
   return { ...state, members };
@@ -554,20 +552,21 @@ export function applyDonationToAppState(
       : {}),
   };
   const atMs = toEpochMs(processedEvent.at);
+  const formula = normalizeContributionFormula(currentState.contributionFormula);
+  const contributionPoints = computeContributionPoints(newDonor.amount, newDonor.target, formula);
 
   const updatedMembers = currentState.members.map((member) => {
     if (member.id !== newDonor.memberId) return member;
     const field = newDonor.target === "toon" ? "toon" : "account";
-    const nextAccount = field === "account" ? (member.account || 0) + newDonor.amount : (member.account || 0);
-    const nextToon = field === "toon" ? (member.toon || 0) + newDonor.amount : (member.toon || 0);
     const isOperating = isOperatingSettlementMember(
       { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
       currentState.memberPositions || null
     );
+    const prevContribution = Math.max(0, Number(member.contribution) || 0);
     return {
       ...member,
       [field]: (member[field] || 0) + newDonor.amount,
-      contribution: isOperating ? Math.max(0, Number(member.contribution) || 0) : nextAccount + nextToon,
+      contribution: isOperating ? prevContribution : prevContribution + contributionPoints,
     };
   });
 
@@ -602,6 +601,7 @@ export function applyDonationToAppState(
         memberId: newDonor.memberId,
         at: atMs,
         target: newDonor.target,
+        contributionPoints,
         ...(newDonor.message ? { message: newDonor.message } : {}),
         ...(newDonor.hsPushDir ? { hsPushDir: newDonor.hsPushDir } : {}),
         ...(processedEvent.memberAutoAssigned ? { memberAutoAssigned: true } : {}),
@@ -635,20 +635,26 @@ export function revertDonationFromAppState(currentState: AppState, donorId: stri
   const field = (donor.target || "account") === "toon" ? "toon" : "account";
   const amount = Math.max(0, Math.round(Number(donor.amount) || 0));
   const atMs = Number.isFinite(Number(donor.at)) ? Math.max(0, Math.floor(Number(donor.at))) : Date.now();
+  const formula = normalizeContributionFormula(currentState.contributionFormula);
+  const storedPoints = Number(donor.contributionPoints);
+  const contributionPoints =
+    Number.isFinite(storedPoints) && storedPoints >= 0
+      ? Math.round(storedPoints)
+      : computeContributionPoints(amount, donor.target || field, formula);
 
   const members = currentState.members.map((member) => {
     if (member.id !== donor.memberId) return member;
-    const nextAccount =
-      field === "account" ? Math.max(0, (member.account || 0) - amount) : member.account || 0;
-    const nextToon = field === "toon" ? Math.max(0, (member.toon || 0) - amount) : member.toon || 0;
     const isOperating = isOperatingSettlementMember(
       { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
       currentState.memberPositions || null
     );
+    const prevContribution = Math.max(0, Number(member.contribution) || 0);
     return {
       ...member,
       [field]: Math.max(0, (member[field] || 0) - amount),
-      contribution: isOperating ? Math.max(0, Number(member.contribution) || 0) : nextAccount + nextToon,
+      contribution: isOperating
+        ? prevContribution
+        : Math.max(0, prevContribution - contributionPoints),
     };
   });
 
@@ -735,6 +741,33 @@ export function reassignDonorMemberInAppState(
     );
   }
 
+  const formula = normalizeContributionFormula(currentState.contributionFormula);
+  const storedPoints = Number(donor.contributionPoints);
+  const contributionPoints =
+    Number.isFinite(storedPoints) && storedPoints >= 0
+      ? Math.round(storedPoints)
+      : computeContributionPoints(amount, donor.target || "account", formula);
+
+  const positions = currentState.memberPositions || null;
+  let members = currentState.members || [];
+  if (contributionPoints > 0 && !isDonorExcludedFromDonationTotals(donor)) {
+    members = members.map((member) => {
+      const isOperating = isOperatingSettlementMember(
+        { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
+        positions
+      );
+      if (isOperating) return member;
+      const prev = Math.max(0, Number(member.contribution) || 0);
+      if (prevMemberId && member.id === prevMemberId) {
+        return { ...member, contribution: Math.max(0, prev - contributionPoints) };
+      }
+      if (member.id === targetMemberId) {
+        return { ...member, contribution: prev + contributionPoints };
+      }
+      return member;
+    });
+  }
+
   const now = Date.now();
   const nextDonors = (currentState.donors || []).map((d) =>
     d.id === donorId
@@ -744,6 +777,7 @@ export function reassignDonorMemberInAppState(
 
   return syncMemberTotalsFromDonors({
     ...currentState,
+    members,
     donors: nextDonors,
     mealBattle: {
       ...currentState.mealBattle,

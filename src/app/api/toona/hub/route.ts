@@ -5,6 +5,7 @@ import {
   getYoutubePublicBaseUrl,
   loginAndLinkToonaHub,
   refreshToonaHubStatus,
+  syncContributionFormulaToToonaHub,
 } from "@/lib/toona-hub-client";
 import {
   clearToonaHubDonationLogs,
@@ -13,6 +14,8 @@ import {
   readToonaHubDonationLogs,
   readToonaHubSession,
 } from "@/lib/toona-hub-session";
+import { normalizeContributionFormula } from "@/lib/contribution-formula";
+import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,6 +55,7 @@ export async function POST(req: NextRequest) {
     password?: string;
     baseUrl?: string;
     action?: string;
+    contributionFormula?: unknown;
   };
 
   if (body.action === "sync-donations") {
@@ -65,6 +69,16 @@ export async function POST(req: NextRequest) {
       session: publicToonaHubSession(session),
       logs,
     });
+  }
+
+  if (body.action === "sync-contribution-formula") {
+    const formula = normalizeContributionFormula(body.contributionFormula);
+    const result = await syncContributionFormulaToToonaHub(auth.userId, formula);
+    if (!result.ok) {
+      const status = result.error === "hub_not_linked" ? 409 : 502;
+      return json({ ok: false, error: result.error }, status);
+    }
+    return json({ ok: true, formula });
   }
 
   const result = await loginAndLinkToonaHub({
@@ -82,6 +96,13 @@ export async function POST(req: NextRequest) {
         : 502;
     return json({ ok: false, error: result.error }, status);
   }
+
+  /** 연동 직후 현재 기여도 공식도 toona에 맞춤 (도네 얼럿용) */
+  const state = await loadAppStateForUserId(auth.userId);
+  const formula = normalizeContributionFormula(
+    body.contributionFormula ?? state?.contributionFormula
+  );
+  await syncContributionFormulaToToonaHub(auth.userId, formula);
 
   return json({ ok: true, session: result.session, logs: [] });
 }

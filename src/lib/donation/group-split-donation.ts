@@ -1,7 +1,8 @@
 import { applyMealBattleDonationToParticipants, mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
+import { computeContributionPoints, normalizeContributionFormula } from "@/lib/contribution-formula";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import { buildMemberCreationOrderIndex, compareMembersByDonationTotal } from "@/lib/utils";
-import type { AppState, Donor, GroupSplitDonationSettings, Member } from "@/types";
+import type { AppState, ContributionFormula, Donor, GroupSplitDonationSettings, Member } from "@/types";
 import { normalizeDonationEventId, syncMemberTotalsFromDonors } from "./apply-donation-state";
 import type { DonationEvent } from "./types";
 
@@ -266,18 +267,56 @@ function buildGroupSplitDonorRows(
   amounts: number[],
   atMs: number,
   target: Donor["target"],
-  message?: string
+  message?: string,
+  formula?: ContributionFormula | null
 ): Donor[] {
-  return eligibleMembers.map((member, idx) => ({
-    id: groupSplitDonorId(sourceId, member.id),
-    name: donorName,
-    amount: amounts[idx]!,
-    memberId: member.id,
-    at: atMs,
-    target: target || "toon",
-    groupSplit: true,
-    ...(message ? { message } : {}),
-  }));
+  const f = normalizeContributionFormula(formula);
+  const resolvedTarget = target || "toon";
+  return eligibleMembers.map((member, idx) => {
+    const amount = amounts[idx]!;
+    return {
+      id: groupSplitDonorId(sourceId, member.id),
+      name: donorName,
+      amount,
+      memberId: member.id,
+      at: atMs,
+      target: resolvedTarget,
+      groupSplit: true,
+      contributionPoints: computeContributionPoints(amount, resolvedTarget, f),
+      ...(message ? { message } : {}),
+    };
+  });
+}
+
+function applyMemberContributionDeltas(
+  members: Member[],
+  deltas: Array<{ memberId: string; points: number }>,
+  positions: AppState["memberPositions"] | null | undefined
+): Member[] {
+  if (deltas.length === 0) return members;
+  const byId = new Map<string, number>();
+  for (const d of deltas) {
+    const id = String(d.memberId || "").trim();
+    if (!id || !d.points) continue;
+    byId.set(id, (byId.get(id) || 0) + d.points);
+  }
+  if (byId.size === 0) return members;
+  return members.map((member) => {
+    const delta = byId.get(member.id) || 0;
+    if (!delta) return member;
+    if (
+      isOperatingSettlementMember(
+        { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
+        positions || null
+      )
+    ) {
+      return member;
+    }
+    return {
+      ...member,
+      contribution: Math.max(0, Math.max(0, Number(member.contribution) || 0) + delta),
+    };
+  });
 }
 
 function applyMealBattleForGroupSplit(
@@ -354,7 +393,8 @@ export function splitExistingDonorInAppState(
     amounts,
     atMs,
     donor.target,
-    donor.message
+    donor.message,
+    currentState.contributionFormula
   );
 
   const mealBattle = applyMealBattleForGroupSplit(
@@ -363,9 +403,31 @@ export function splitExistingDonorInAppState(
     splitDonors.map((d) => ({ memberId: d.memberId, amount: d.amount, atMs }))
   );
 
+  const formula = normalizeContributionFormula(currentState.contributionFormula);
+  const storedSourcePoints = Number(donor.contributionPoints);
+  const sourcePoints =
+    Number.isFinite(storedSourcePoints) && storedSourcePoints >= 0
+      ? Math.round(storedSourcePoints)
+      : computeContributionPoints(donor.amount, donor.target || "account", formula);
+  const contributionDeltas: Array<{ memberId: string; points: number }> = [
+    ...(sourcePoints > 0 && donor.memberId
+      ? [{ memberId: donor.memberId, points: -sourcePoints }]
+      : []),
+    ...splitDonors.map((d) => ({
+      memberId: d.memberId,
+      points: Math.max(0, Number(d.contributionPoints) || 0),
+    })),
+  ];
+  const members = applyMemberContributionDeltas(
+    currentState.members || [],
+    contributionDeltas,
+    currentState.memberPositions
+  );
+
   const now = Date.now();
   const updatedState = syncMemberTotalsFromDonors({
     ...currentState,
+    members,
     donors: [
       ...(currentState.donors || []).map((d) =>
         d.id === rawId
@@ -435,7 +497,8 @@ export function applyGroupSplitDonationToAppState(
     amounts,
     atMs,
     rawEvent.target,
-    message || undefined
+    message || undefined,
+    currentState.contributionFormula
   );
 
   let mealBattle = currentState.mealBattle;
@@ -455,9 +518,19 @@ export function applyGroupSplitDonationToAppState(
     mealBattle = { ...currentState.mealBattle, participants };
   }
 
+  const members = applyMemberContributionDeltas(
+    currentState.members || [],
+    splitDonors.map((d) => ({
+      memberId: d.memberId,
+      points: Math.max(0, Number(d.contributionPoints) || 0),
+    })),
+    currentState.memberPositions
+  );
+
   const now = Date.now();
   const updatedState = syncMemberTotalsFromDonors({
     ...currentState,
+    members,
     donors: [...(currentState.donors || []), sourceDonor, ...splitDonors],
     mealBattle,
     donorRankingsUpdatedAt: now,

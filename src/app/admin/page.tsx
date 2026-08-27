@@ -22,6 +22,7 @@ import {
   type DonationIngestMode,
 } from "@/lib/donation-ingest-mode";
 import ToonaHubPanel from "@/components/admin/ToonaHubPanel";
+import ContributionFormulaPanel from "@/components/admin/ContributionFormulaPanel";
 import {
   buildSettlementUiOptionsFromForm,
   normalizeSettlementUiOptions,
@@ -14819,6 +14820,34 @@ function AdminPageInner() {
               title="기여도 기록부"
               className={panelCardClass}
             >
+              <ContributionFormulaPanel
+                value={state.contributionFormula}
+                onSave={(next) => {
+                  setState((prev) => {
+                    const updated = {
+                      ...prev,
+                      contributionFormula: next,
+                      updatedAt: Date.now(),
+                    };
+                    void saveStateAsync(updated, user?.id, { omitDonationFields: true });
+                    return updated;
+                  });
+                  /** toona 도네 얼럿 기여도 점수 동기화 (허브 연동 시에만) */
+                  if (user?.id) {
+                    void fetch("/api/toona/hub", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        "x-user-id": user.id,
+                      },
+                      body: JSON.stringify({
+                        action: "sync-contribution-formula",
+                        contributionFormula: next,
+                      }),
+                    }).catch(() => {});
+                  }
+                }}
+              />
               <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr_auto_auto_auto] gap-3">
                 <select
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"

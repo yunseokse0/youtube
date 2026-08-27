@@ -36,6 +36,10 @@ import type {
   SigRollingSettings,
   DonorsAmountFormat,
 } from "@/types";
+import {
+  DEFAULT_CONTRIBUTION_FORMULA,
+  normalizeContributionFormula,
+} from "@/lib/contribution-formula";
 import { isHiddenTimerDisplayStyle } from "@/lib/overlay-params";
 import { isDefaultTimerDesign, normalizeTimerDesign } from "@/lib/timer-design";
 import { normalizeVsDesign } from "@/lib/vs-design";
@@ -1178,6 +1182,7 @@ export function defaultState(): AppState {
     donorRankingsPresetId: "dr_builtin_web_gold",
     donors: [],
     donorsFormat: "full",
+    contributionFormula: { ...DEFAULT_CONTRIBUTION_FORMULA },
     contributionLogs: [],
     restroomLogs: [],
     territoryLogs: [],
@@ -1650,6 +1655,10 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
           ? x.hsPushDir
           : null;
       if (hsPush) row.hsPushDir = hsPush;
+      const contributionPoints = Math.round(Number(x.contributionPoints));
+      if (Number.isFinite(contributionPoints) && contributionPoints >= 0) {
+        row.contributionPoints = contributionPoints;
+      }
       return row;
     });
 }
@@ -1714,6 +1723,7 @@ export function loadState(userId?: string | null): AppState {
       : undefined;
     data.donors = normalizeDonorsArray(data.donors);
     data.donorsFormat = normalizeDonorsFormat((data as AppState).donorsFormat);
+    data.contributionFormula = normalizeContributionFormula((data as AppState).contributionFormula);
     data.contributionLogs = Array.isArray((data as AppState).contributionLogs)
       ? ((data as AppState).contributionLogs as ContributionLog[])
           .filter((x) => x && typeof x === "object")
@@ -2599,6 +2609,7 @@ function normalizeStateForPersistence(state: AppState): AppState {
   return {
     ...stripped,
     donorsFormat: normalizeDonorsFormat(stripped.donorsFormat),
+    contributionFormula: normalizeContributionFormula(stripped.contributionFormula),
     sigInventory: normalizeSigInventory(stripped.sigInventory),
     sigRolling: normalizeSigRolling(stripped.sigRolling),
     sigSoldOutStampUrl: normalizeSigImageUrlStored(stripped.sigSoldOutStampUrl),
@@ -3620,6 +3631,7 @@ async function doLoadStateFromApi(
         : undefined;
       data.donors = normalizeDonorsArray(data.donors);
       data.donorsFormat = normalizeDonorsFormat((data as AppState).donorsFormat);
+      data.contributionFormula = normalizeContributionFormula((data as AppState).contributionFormula);
       /** pick/병합 후 donors 대비 members 합계가 비면 엑셀표만 0 — 여기서 맞춤 */
       if (data.donors.length > 0) {
         data = syncMemberTotalsFromDonors(data);

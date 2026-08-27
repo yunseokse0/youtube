@@ -147,9 +147,9 @@ export default function MemberRow({
           </div>
         </div>
         <div className="flex items-center justify-between">
-          <label className="text-xs text-neutral-400">기여도(자동)</label>
+          <label className="text-xs text-neutral-400">기여도</label>
           <div className="w-32 px-2 py-1 rounded bg-neutral-800/80 border border-white/10 text-right text-sm text-neutral-200">
-            {formatManThousand((member.account || 0) + (member.toon || 0))}
+            {formatManThousand(Math.max(0, Number(member.contribution) || 0))}
           </div>
         </div>
         <p className="text-[10px] text-neutral-500">계좌·투네·기여도는 후원 동기화로만 반영됩니다.</p>

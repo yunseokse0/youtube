@@ -51,6 +51,16 @@ export type Donor = {
    * left=왼쪽만 / right=오른쪽만 / split=양분. A·D는 무시(고정 방향).
    */
   hsPushDir?: "left" | "right" | "split";
+  /** 적용 시점 기여도 점수(공식 변경 후에도 되돌리기용) */
+  contributionPoints?: number;
+};
+
+/** 기여도 계산식 — 저장 이후 후원부터 적용 (소급 없음) */
+export type ContributionFormula = {
+  /** 계좌 후원 가중치(%) 0~200, 기본 100 */
+  accountWeightPct: number;
+  /** 투네 후원 가중치(%) 0~200, 기본 100 */
+  toonWeightPct: number;
 };
 
 export type ContributionLog = {
@@ -582,6 +592,8 @@ export type AppState = {
   donors: Donor[];
   /** 관리자 후원 입력·리스트·오버레이 기본 금액 표기 */
   donorsFormat?: DonorsAmountFormat;
+  /** 기여도 계산식(계좌/투네 가중치) — 저장 이후 후원부터 적용 */
+  contributionFormula?: ContributionFormula;
   /** 기여도 수동 조정 로그 */
   contributionLogs: ContributionLog[];
   /** 화장실 수동 기록 로그 */
