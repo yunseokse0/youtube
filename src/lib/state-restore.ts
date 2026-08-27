@@ -78,6 +78,20 @@ export function buildAppStateFromDailyLogRestore(
   const memberCount = Array.isArray(entry.members) ? entry.members.length : 0;
   if (donorCount === 0 && memberCount === 0) return null;
   const resetAt = Number(base.settlementResetAt || 0);
+  const entryTs = Date.parse(String(entry.at || ""));
+  /**
+   * 정산 리셋으로 비운 세션에, 리셋 직전·직후 찍힌 일일 로그를 rebump 해
+   * 되살리면 「멤버 유지/초기화」가 즉시 무력화됨.
+   */
+  if (
+    resetAt > 0 &&
+    normalizeDonorsArray(base.donors).length === 0 &&
+    totalCombined(base) === 0 &&
+    Number.isFinite(entryTs) &&
+    entryTs <= resetAt + 5_000
+  ) {
+    return null;
+  }
   const rebumpedDonors = rebumpDonorsPastSettlementReset(
     donorCount > 0 ? normalizeDonorsArray(entry.donors) : base.donors,
     resetAt

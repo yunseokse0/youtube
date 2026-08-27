@@ -2579,6 +2579,23 @@ function AdminPageInner() {
     if (autoOrphanDonorRestoreAttemptedRef.current) return;
     const donorsEmpty = normalizeDonorsArray(state.donors).length === 0;
     if (!donorsEmpty) return;
+    /**
+     * 정산 리셋(멤버 유지·초기화)이 의도적으로 비운 직후 —
+     * appendDailyLog 스냅샷·백업으로 즉시 되살리면 리셋이 무력화됨.
+     */
+    if (Date.now() < settlementResetUntilRef.current) {
+      autoOrphanDonorRestoreAttemptedRef.current = true;
+      return;
+    }
+    const resetAt = Number(state.settlementResetAt || stateRef.current.settlementResetAt || 0);
+    if (
+      resetAt > 0 &&
+      Date.now() - resetAt < 120_000 &&
+      isEmptyBroadcastDonationSession(stateRef.current)
+    ) {
+      autoOrphanDonorRestoreAttemptedRef.current = true;
+      return;
+    }
     autoOrphanDonorRestoreAttemptedRef.current = true;
 
     const tryDailyLogRestore = async () => {
@@ -2592,6 +2609,16 @@ function AdminPageInner() {
         new Date().toISOString().slice(0, 10)
       );
       if (!entry || !Array.isArray(entry.donors) || entry.donors.length === 0) {
+        return false;
+      }
+      const liveReset = Number(stateRef.current.settlementResetAt || 0);
+      const entryTs = Date.parse(String(entry.at || ""));
+      if (
+        liveReset > 0 &&
+        isEmptyBroadcastDonationSession(stateRef.current) &&
+        Number.isFinite(entryTs) &&
+        entryTs <= liveReset + 5_000
+      ) {
         return false;
       }
       const restored = buildAppStateFromDailyLogRestore(stateRef.current, entry);
@@ -2615,6 +2642,11 @@ function AdminPageInner() {
       if (await tryDailyLogRestore()) return;
       /** 서버 메인에 후원이 있으면 restore-backup 409 대신 그대로 당김 */
       if (await applyDonorsFromServerMainStateRef.current({ silent: true })) return;
+      if (Date.now() < settlementResetUntilRef.current) return;
+      if (isEmptyBroadcastDonationSession(stateRef.current)) {
+        const liveReset = Number(stateRef.current.settlementResetAt || 0);
+        if (liveReset > 0 && Date.now() - liveReset < 120_000) return;
+      }
       try {
         const res = await fetch("/api/donations/restore-backup", {
           method: "POST",
@@ -8847,6 +8879,10 @@ function AdminPageInner() {
       if (resetInProgressRef.current) return;
       resetInProgressRef.current = true;
       settlementResetUntilRef.current = Date.now() + 30_000;
+      settlementSnapshotUntilRef.current = Date.now() + 30_000;
+      /** 리셋으로 비운 뒤 일일 로그·백업 자동 복구가 돌지 않게 */
+      autoOrphanDonorRestoreAttemptedRef.current = true;
+      serverDonorMismatchRestoreAttemptedRef.current = true;
       setResetSheetOpen(false);
       appendDailyLog(state, user?.id);
       loadDailyLogFromApi(user?.id)

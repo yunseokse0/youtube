@@ -59,6 +59,33 @@ describe("state-restore", () => {
     expect(restored?.members[0]?.account).toBe(5000);
   });
 
+  it("does not restore daily log taken at/before intentional settlement reset", () => {
+    const resetAt = Date.parse("2026-08-27T12:00:00.000Z");
+    const cleared = {
+      ...defaultState(),
+      settlementResetAt: resetAt,
+      donors: [],
+      members: [{ id: "m1", name: "헛치", account: 0, toon: 0, contribution: 0 }],
+      updatedAt: resetAt,
+    };
+    const restored = buildAppStateFromDailyLogRestore(cleared, {
+      at: "2026-08-27T11:59:59.000Z",
+      total: 50000,
+      members: [{ id: "m1", name: "헛치", account: 50000, toon: 0, contribution: 50000 }],
+      donors: [
+        {
+          id: "d1",
+          name: "후원",
+          amount: 50000,
+          memberId: "m1",
+          at: resetAt - 10_000,
+          target: "account",
+        },
+      ],
+    });
+    expect(restored).toBeNull();
+  });
+
   it("prefers today daily log entry", () => {
     const log = {
       "2026-06-03": [{ at: "2026-06-03T08:00:00.000Z", total: 1, members: [], donors: [{ id: "d_old", name: "old", amount: 1, memberId: "m1", at: 1 }] }],

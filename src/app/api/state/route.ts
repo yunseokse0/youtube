@@ -12,8 +12,7 @@ import { DEFAULT_SIG_INVENTORY } from "@/lib/constants";
 import {
   defaultState,
   DEFAULT_DONOR_RANKINGS_FULL_THEME,
-  applySettlementResetDonorPipeline,
-  rebumpDonorsPastSettlementReset,
+  filterDonorsAfterSettlementReset,
   coalesceSettlementResetAt,
   hasExpandedSigInventory,
   hasMeaningfulMemberRoster,
@@ -925,7 +924,7 @@ export async function POST(req: Request) {
      */
     let incomingDonorsFiltered =
       resetAt > 0 && !settlementReset && donorsInPatch
-        ? applySettlementResetDonorPipeline(incomingDonorsRaw, resetAt)
+        ? filterDonorsAfterSettlementReset(incomingDonorsRaw, resetAt)
         : incomingDonorsRaw;
     /**
      * MySQL/Redis 일시 장애로 existing 을 못 읽은 채 빈 후원·플레이스홀더 멤버를
@@ -1240,17 +1239,14 @@ export async function POST(req: Request) {
     }
     if (!settlementReset && effectiveResetAt > 0) {
       const before = normalizeDonorsArray(next.donors);
-      const after = applySettlementResetDonorPipeline(before, effectiveResetAt);
-      const rebumped = rebumpDonorsPastSettlementReset(before, effectiveResetAt);
-      const atChanged = rebumped.some((d, i) => Number(d.at) !== Number(before[i]?.at));
-      if (after.length !== before.length || atChanged) {
+      /** 구 탭 stale 저장 — rebump 없이 리셋 이전 at 만 제거 (리셋 무력화 방지) */
+      const after = filterDonorsAfterSettlementReset(before, effectiveResetAt);
+      if (after.length !== before.length) {
         next = syncMemberTotalsFromDonors({ ...next, donors: after });
-        if (after.length !== before.length) {
-          logger.warn("pre-reset donors stripped before persist", {
-            userId,
-            dropped: before.length - after.length,
-          });
-        }
+        logger.warn("pre-reset donors stripped before persist", {
+          userId,
+          dropped: before.length - after.length,
+        });
       }
     }
 
