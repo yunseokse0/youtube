@@ -29,7 +29,8 @@ export type DonationAlertUrlOptions = {
   test?: boolean;
   /** 기본 `/overlay/donation-alert` — 다른 앱 경로에 맞게 변경 */
   basePath?: string;
-  host?: string;
+  /** OBS host 쿼리 — `false`면 생략 */
+  host?: string | false;
   allowSse?: boolean;
   extraParams?: Record<string, string>;
 };

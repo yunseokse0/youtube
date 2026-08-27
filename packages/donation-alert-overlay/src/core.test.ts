@@ -24,6 +24,7 @@ describe("donation-alert-overlay (package)", () => {
     expect(buildDonationAlertUrl("din")).toContain("/overlay/donation-alert?");
     expect(buildDonationAlertUrl("din", { basePath: "/alerts" })).toContain("/alerts?");
     expect(buildDonationAlertUrl("din")).toContain("overlayAllowSse=1");
+    expect(buildDonationAlertUrl("din", { host: false })).not.toContain("host=");
   });
 
   it("builds alert from donationApplied hint", () => {

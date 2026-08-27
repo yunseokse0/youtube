@@ -6,9 +6,9 @@ import {
   donationAlertsFromUnseenDonors,
   DONATION_ALERT_POLL_MS,
   seedSeenDonorIds,
-  type DonationAlertSource,
-  type DonationRecordRef,
-} from "@donation-alert-overlay/source";
+} from "@donation-alert-overlay/core";
+import type { DonationAlertSource } from "@donation-alert-overlay/source";
+import type { DonationRecordRef } from "@donation-alert-overlay";
 import { startStaggeredOverlayPoll } from "@/lib/overlay-poll-stagger";
 import { STATE_PICK_OVERLAY_DONORS } from "@/lib/state-api-pick";
 import { loadStateFromApi, normalizeDonorsArray } from "@/lib/state";
