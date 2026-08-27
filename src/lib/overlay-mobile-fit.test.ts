@@ -48,6 +48,15 @@ describe("overlay-mobile-fit", () => {
     expect(100 / z + margin).toBeCloseTo(100 - margin, 5);
   });
 
+  it("extreme contain scale still centers when width is not max-capped", () => {
+    const z = resolveBroadcastContainZoomScale(100, 420, 746, 720, 5000, 40);
+    const margin = broadcastZoomCenterMarginLeftPct(z);
+    const layoutWidthPct = 100 / z;
+    /** layout box left + half width = 50% (center) — max-w로 폭을 자르면 이 등식이 깨져 왼쪽으로 사라짐 */
+    expect(margin + layoutWidthPct / 2).toBeCloseTo(50, 5);
+    expect(z).toBeLessThan(0.3);
+  });
+
   it("full rankings shrink to viewport height so no vertical scroll", () => {
     const z = resolveBroadcastContainZoomScale(100, 1920, 1080, 720, 2400, 24);
     expect(z).toBeLessThan(0.5);

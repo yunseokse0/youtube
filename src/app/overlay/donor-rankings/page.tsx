@@ -1067,16 +1067,22 @@ export default function DonorRankingsOverlayPage() {
             : undefined
         }
       >
+      {/**
+       * zoom 래퍼: width=100/s% + marginLeft 보정으로 중앙 정렬.
+       * max-w / mx-auto 를 여기에 두면 s가 작을 때 폭만 잘리고 margin만 음수가 되어 왼쪽으로 사라짐.
+       */}
       <div
         ref={zoomContentRef}
-        className={`relative z-10 mx-auto ${isFullVertical ? "max-w-[720px]" : "max-w-[1500px]"}`}
+        className="relative z-10"
         style={{
           transform: `scale(${zoomScale})`,
           transformOrigin: "top center",
           width: `${100 / zoomScale}%`,
           marginLeft: `${zoomMarginLeftPct}%`,
+          marginRight: 0,
         }}
       >
+        <div className={`mx-auto w-full ${isFullVertical ? "max-w-[720px]" : "max-w-[1500px]"}`}>
         {useTest && !hostObs ? (
           <div className="mb-2 inline-block rounded bg-amber-600/85 px-2 py-1 text-xs font-bold text-black">
             TEST MODE
@@ -1305,6 +1311,7 @@ export default function DonorRankingsOverlayPage() {
             </div>
           </div>
         )}
+        </div>
       </div>
       </div>
     </main>
