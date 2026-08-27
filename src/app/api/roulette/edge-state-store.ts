@@ -12,6 +12,7 @@ import {
 } from "@/lib/donation/merge-donation-apply-base";
 import { loadDonationRosterBackupFromKv } from "@/lib/donation-roster-backup-redis";
 import { unionAppStateDonorsFromBackupIfRicher } from "@/lib/donation-roster-backup-core";
+import { clearIntentionalDonationClearIfHasDonations } from "@/lib/intentional-donation-clear";
 import { snapshotTimerForPersist } from "@/lib/timer-utils";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { resolveWriteUserId } from "../_shared/user-id";
@@ -125,6 +126,7 @@ export async function saveAppStateForRoulette(
     generalTimer: snapshotTimerForPersist(merged.generalTimer),
     matchTimer: snapshotTimerForPersist(merged.matchTimer ?? merged.generalTimer),
   };
+  persisted = clearIntentionalDonationClearIfHasDonations(persisted);
 
   if (
     !opts?.allowEmptyRosterWipe &&

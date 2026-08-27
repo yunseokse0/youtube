@@ -1,4 +1,5 @@
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
+import { withIntentionalDonationClear } from "@/lib/intentional-donation-clear";
 import { pickSettingsPreservedAcrossSettlementReset } from "@/lib/settlement-reset-preserve";
 import { buildDefaultMembersCount, defaultState } from "@/lib/state";
 import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
@@ -15,7 +16,7 @@ export type ApplySettlementResetOptions = {
 
 /**
  * 정산 리셋 스냅샷 생성 — 서버·클라이언트 공통.
- * donors 비움 + settlementResetAt 상승 + 금액 0.
+ * donors 비움 + settlementResetAt 상승 + intentionalDonationClearAt 설정.
  */
 export function applySettlementResetToState(
   state: AppState,
@@ -44,10 +45,11 @@ export function applySettlementResetToState(
       overlayPresets: resetPresets as AppState["overlayPresets"],
       missions: preserved.missions || state.missions || [],
       settlementResetAt: resetAt,
+      intentionalDonationClearAt: resetAt,
       updatedAt: resetAt,
       donorRankingsUpdatedAt: resetAt,
     };
-    return syncMemberTotalsFromDonors(next);
+    return syncMemberTotalsFromDonors(withIntentionalDonationClear(next, resetAt));
   }
 
   const slotN = Math.max(1, Math.min(30, Math.floor(Number(opts.memberSlotCount) || 3)));
@@ -87,8 +89,9 @@ export function applySettlementResetToState(
       Object.entries(state.mealMatch || {}).filter(([memberId]) => nextMemberIds.has(memberId))
     ),
     settlementResetAt: resetAt,
+    intentionalDonationClearAt: resetAt,
     updatedAt: resetAt,
     donorRankingsUpdatedAt: resetAt,
   };
-  return syncMemberTotalsFromDonors(next);
+  return syncMemberTotalsFromDonors(withIntentionalDonationClear(next, resetAt));
 }

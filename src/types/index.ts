@@ -661,6 +661,12 @@ export type AppState = {
   };
   /** 정산 리셋 시각(epoch ms) — 이후 구 탭·다른 PC 저장으로 후원·금액 되살림 방지 */
   settlementResetAt?: number;
+  /**
+   * 의도적 정산 리셋(멤버 유지·초기화)으로 후원을 비운 epoch.
+   * 세션이 비어 있는 동안만 유효 — 백업/일일로그 자동 복구 억제.
+   * 첫 실후원 반영 시 제거. 사고성 빈 상태에는 설정되지 않음.
+   */
+  intentionalDonationClearAt?: number;
   /** 관리자 정산 탭 비율·세금 UI — 계정별 서버 저장 */
   settlementUiOptions?: SettlementUiOptions;
   /** YouTube API·라이브챗·영상 URL — 계정별 서버 저장 */

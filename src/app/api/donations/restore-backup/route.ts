@@ -10,6 +10,7 @@ import {
   shouldRestoreDonationRosterFromBackup,
 } from "@/lib/donation-roster-backup";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
+import { shouldSuppressAutoRosterRestore } from "@/lib/intentional-donation-clear";
 import { publishSseEvent } from "@/lib/sse-clients-hub";
 import {
   defaultState,
@@ -22,6 +23,7 @@ import type { AppState } from "@/types";
 /**
  * 서버 후원 백업(MySQL/디스크)에서 강제 복구.
  * 플레이스홀더(멤버1·2…) 초기화·빈 후원일 때 사용.
+ * 의도적 정산 리셋(intentionalDonationClearAt) 세션은 거부.
  */
 export async function POST(req: Request) {
   const writeUid = resolveWriteUserId(req);
@@ -37,6 +39,18 @@ export async function POST(req: Request) {
   }
 
   const current = (await loadAppStateForUserId(userId)) || defaultState();
+  if (shouldSuppressAutoRosterRestore(current)) {
+    return new Response(
+      JSON.stringify({
+        error: "intentional_clear",
+        message:
+          "의도적 정산 리셋(멤버 유지·초기화) 세션입니다. 자동 백업 복구를 하지 않습니다. 일일 로그에서 수동 복구하세요.",
+        intentionalDonationClearAt: current.intentionalDonationClearAt,
+      }),
+      { status: 409, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
   const force =
     isDefaultPlaceholderMemberList(current.members) ||
     (normalizeDonorsArray(current.donors).length === 0 && totalCombined(current) === 0) ||

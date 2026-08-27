@@ -12,8 +12,8 @@ import { DEFAULT_SIG_INVENTORY } from "@/lib/constants";
 import {
   defaultState,
   DEFAULT_DONOR_RANKINGS_FULL_THEME,
-  filterDonorsAfterSettlementReset,
   coalesceSettlementResetAt,
+  filterDonorsAfterSettlementReset,
   hasExpandedSigInventory,
   hasMeaningfulMemberRoster,
   hasCustomTimerDisplayStyles,
@@ -34,6 +34,7 @@ import {
   shouldBlockAccidentalEmptyOverwrite,
   totalCombined,
 } from "@/lib/state";
+import { coalesceIntentionalDonationClearAt } from "@/lib/intentional-donation-clear";
 import type { SigItem } from "@/types";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
 import {
@@ -1224,6 +1225,11 @@ export async function POST(req: Request) {
               settlementReset: true,
               resetStamp,
             }),
+            intentionalDonationClearAt: coalesceIntentionalDonationClearAt({
+              settlementReset: true,
+              resetStamp,
+              hasDonations: false,
+            }),
           }
         : {}),
     });
@@ -1236,6 +1242,21 @@ export async function POST(req: Request) {
     });
     if (effectiveResetAt > 0 && Number(next.settlementResetAt || 0) !== effectiveResetAt) {
       next = { ...next, settlementResetAt: effectiveResetAt };
+    }
+    const effectiveClearAt = coalesceIntentionalDonationClearAt({
+      baseClearAt: Number(baseState.intentionalDonationClearAt || 0),
+      patchClearAt: Number(next.intentionalDonationClearAt || 0),
+      settlementReset,
+      resetStamp,
+      hasDonations:
+        normalizeDonorsArray(next.donors).length > 0 || totalCombined(next) > 0,
+    });
+    if (effectiveClearAt) {
+      next = { ...next, intentionalDonationClearAt: effectiveClearAt };
+    } else if (next.intentionalDonationClearAt) {
+      const cleared = { ...next };
+      delete cleared.intentionalDonationClearAt;
+      next = cleared;
     }
     if (!settlementReset && effectiveResetAt > 0) {
       const before = normalizeDonorsArray(next.donors);

@@ -44,6 +44,7 @@ describe("applySettlementResetToState", () => {
     expect(next.members.map((m) => m.name)).toEqual(["헛치", "현민"]);
     expect(next.members.every((m) => m.account === 0 && m.toon === 0)).toBe(true);
     expect(next.settlementResetAt).toBe(9000);
+    expect(next.intentionalDonationClearAt).toBe(9000);
   });
 
   it("init: replaces roster with placeholders and clears donations", () => {
@@ -57,5 +58,6 @@ describe("applySettlementResetToState", () => {
     expect(next.members).toHaveLength(3);
     expect(next.members[0]?.name).toBe("멤버1");
     expect(next.settlementResetAt).toBe(9000);
+    expect(next.intentionalDonationClearAt).toBe(9000);
   });
 });

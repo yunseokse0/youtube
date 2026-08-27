@@ -7,6 +7,7 @@ import {
 } from "@/lib/state";
 import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base";
+import { shouldSuppressAutoRosterRestore } from "@/lib/intentional-donation-clear";
 
 const STORAGE_KEY_BASE = "excel-broadcast-donation-roster-v1";
 
@@ -58,11 +59,16 @@ export function buildDonationRosterBackupPayload(state: AppState): DonationRoste
 
 /** 메인 상태가 비거나 줄었을 때 백업에서 후원·금액을 되살릴지 */
 export function shouldRestoreDonationRosterFromBackup(
-  current: Pick<AppState, "members" | "donors" | "settlementResetAt"> | null | undefined,
+  current: Pick<
+    AppState,
+    "members" | "donors" | "settlementResetAt" | "intentionalDonationClearAt"
+  > | null | undefined,
   backup: DonationRosterBackupPayload | null | undefined
 ): boolean {
   if (!backup) return false;
   if (backup.donorsCount <= 0 && backup.total <= 0) return false;
+  /** 의도적 정산 리셋으로 비운 세션 — 사고성 heal 과 구분 */
+  if (shouldSuppressAutoRosterRestore(current)) return false;
   const curDonors = normalizeDonorsArray(current?.donors);
   const curTotal = current ? totalCombined(current as AppState) : 0;
   const curReset = Number(current?.settlementResetAt || 0);

@@ -224,6 +224,7 @@ import {
   tableRowStripeBgFromPickerHex,
 } from "@/lib/excel-member-table-theme";
 import { applySettlementResetToState } from "@/lib/settlement-reset-apply";
+import { shouldSuppressAutoRosterRestore } from "@/lib/intentional-donation-clear";
 import { planSigBulkReupload, sigBulkFilesWithoutNameMatch } from "@/lib/sig-image-bulk";
 import { parseSigMetaFromFileName } from "@/lib/sig-filename-meta";
 import { createSafeFilePreviewUrl, revokeSafeFilePreviewUrl } from "@/lib/safe-file-preview";
@@ -2584,6 +2585,10 @@ function AdminPageInner() {
      * appendDailyLog 스냅샷·백업으로 즉시 되살리면 리셋이 무력화됨.
      */
     if (Date.now() < settlementResetUntilRef.current) {
+      autoOrphanDonorRestoreAttemptedRef.current = true;
+      return;
+    }
+    if (shouldSuppressAutoRosterRestore(stateRef.current) || shouldSuppressAutoRosterRestore(state)) {
       autoOrphanDonorRestoreAttemptedRef.current = true;
       return;
     }
@@ -7580,6 +7585,7 @@ function AdminPageInner() {
       donorRankingsUpdatedAt: now,
       updatedAt: now,
     });
+    delete next.intentionalDonationClearAt;
     const preserved = markAuthoritativeDonationSave(
       { serverUpdatedAt: next.updatedAt },
       next,

@@ -2,6 +2,7 @@ import { normalizeSigInventory } from "@/lib/constants";
 import { enrichStateBeforeAuthoritativeDonationSave } from "@/lib/donation/merge-donation-apply-base";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
+import { shouldSuppressAutoRosterRestore } from "@/lib/intentional-donation-clear";
 import {
   defaultState,
   loadState,
@@ -77,6 +78,8 @@ export function buildAppStateFromDailyLogRestore(
   const donorCount = Array.isArray(entry.donors) ? entry.donors.length : 0;
   const memberCount = Array.isArray(entry.members) ? entry.members.length : 0;
   if (donorCount === 0 && memberCount === 0) return null;
+  /** 의도적 정산 리셋 세션 — 자동/헬퍼 복구 거부 (수동 UI는 별도 경로) */
+  if (shouldSuppressAutoRosterRestore(base)) return null;
   const resetAt = Number(base.settlementResetAt || 0);
   const entryTs = Date.parse(String(entry.at || ""));
   /**
@@ -98,13 +101,15 @@ export function buildAppStateFromDailyLogRestore(
   );
   if (donorCount > 0 && normalizeDonorsArray(rebumpedDonors).length === 0) return null;
   const now = Date.now();
-  return syncMemberTotalsFromDonors({
+  const next = syncMemberTotalsFromDonors({
     ...base,
     ...(memberCount > 0 ? { members: entry.members as Member[] } : {}),
     donors: rebumpedDonors,
     donorRankingsUpdatedAt: now,
     updatedAt: now,
   });
+  delete next.intentionalDonationClearAt;
+  return next;
 }
 
 /** 관리자 「상태보내기(JSON)」 수준의 전체 백업인지 */

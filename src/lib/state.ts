@@ -4358,9 +4358,12 @@ export function shouldBlockAccidentalEmptyOverwrite(
   if (!isAccidentalEmptyRosterState(incoming)) return false;
   if (isAccidentalEmptyRosterState(existing)) return false;
   /**
+   * 의도적 정산 리셋 마커 — 「멤버 초기화」플레이스홀더도 사고성으로 취급하지 않음.
    * settlementResetAt 상승은 서버가 settlementReset 플래그로만 허용.
-   * 「멤버 초기화」는 의도적으로 플레이스홀더+빈 후원이므로 stamp가 앞서면 허용.
    */
+  if (Number(incoming.intentionalDonationClearAt || 0) > 0) {
+    return false;
+  }
   if (Number(incoming.settlementResetAt || 0) > Number(existing.settlementResetAt || 0)) {
     return false;
   }
@@ -4533,8 +4536,11 @@ export function shouldAvoidOverwritingLocalStateWithRemote(
   if (!existing || !incoming) return false;
   const existingReset = Number(existing.settlementResetAt || 0);
   const incomingReset = Number(incoming.settlementResetAt || 0);
-  /** 의도적 정산 리셋(멤버 유지·초기화) — stamp 상승은 덮어쓰기 허용 */
+  /** 의도적 정산 리셋(멤버 유지·초기화) — stamp 또는 clear 마커 */
   if (incomingReset > existingReset) return false;
+  if (Number(incoming.intentionalDonationClearAt || 0) > 0 && isEmptyBroadcastDonationSession(incoming)) {
+    return false;
+  }
   /** 사고성 멤버1…/빈 후원(stamp 동일·미상승)은 실로스터를 덮지 않음 */
   if (shouldBlockAccidentalEmptyOverwrite(existing, incoming)) {
     return true;
