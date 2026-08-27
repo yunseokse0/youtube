@@ -84,7 +84,6 @@ import {
   donorsListContentDiffers,
   isIntentionalDonorListShrink,
   rebumpDonorsPastSettlementReset,
-  applySettlementResetDonorPipeline,
   filterDonorsAfterSettlementReset,
   resolveServerDonorsForEmptyLocal,
   buildUiStateFromServerDonorPull,
@@ -1770,81 +1769,15 @@ function AdminPageInner() {
               Math.max(0, Math.floor(Number(m.toon || 0))) === 0
           ));
       if (localCleared && (incomingDonorsNorm.length > 0 || totalCombined(incoming) > 0)) {
-        /** 정산 리셋 직후에만 구 후원(at < reset) 재유입을 막음. 서버에 아직 남은 실후원은 복구 */
+        /**
+         * 정산 리셋 직후: 서버 POST 완료 전 SSE/폴링은 구 후원(at < reset)을 실어 온다.
+         * rebump·복구하면 「멤버 유지」리셋이 즉시 되살아나므로, 구 후원만 있으면 빈 상태 유지.
+         * (리셋 이후 신규 후원만 원격에 있으면 아래 일반 경로로 수용)
+         */
         const preResetDonorsOnly =
           localResetAt > 0 &&
           filterDonorsAfterSettlementReset(incomingDonorsNorm, localResetAt).length === 0;
         if (preResetDonorsOnly) {
-          const restored = resolveServerDonorsForEmptyLocal({
-            local,
-            incomingDonors: incomingDonorsNorm,
-            settlementResetAt: Math.max(localResetAt, remoteResetAt),
-          });
-          if (restored && restored.length > 0) {
-            const rosterMembers = local.members?.length ? local.members : incoming.members;
-            return {
-              merged: syncMemberTotalsFromDonors({
-                ...incoming,
-                ...local,
-                members: rosterMembers,
-                memberPositions: normalizeMemberPositions(
-                  local.memberPositions ?? incoming.memberPositions,
-                  rosterMembers
-                ),
-                donors: restored,
-                settlementResetAt: Math.max(localResetAt, remoteResetAt) || undefined,
-                updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
-              }),
-              didPreserve: false,
-            };
-          }
-          const piped = pickAuthoritativeDonorsForEmptySession(
-            local,
-            incomingDonorsNorm,
-            undefined,
-            Math.max(localResetAt, remoteResetAt)
-          );
-          if (piped.length > 0) {
-            const rosterMembers = local.members?.length ? local.members : incoming.members;
-            return {
-              merged: syncMemberTotalsFromDonors({
-                ...incoming,
-                ...local,
-                members: rosterMembers,
-                memberPositions: normalizeMemberPositions(
-                  local.memberPositions ?? incoming.memberPositions,
-                  rosterMembers
-                ),
-                donors: piped,
-                settlementResetAt: Math.max(localResetAt, remoteResetAt) || undefined,
-                updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
-              }),
-              didPreserve: false,
-            };
-          }
-          const forcedResetAt = Math.max(localResetAt, remoteResetAt);
-          const forcedDonors = applySettlementResetDonorPipeline(
-            rebumpDonorsPastSettlementReset(incomingDonorsNorm, forcedResetAt),
-            forcedResetAt
-          );
-          if (forcedDonors.length > 0) {
-            const rosterMembers = local.members?.length ? local.members : incoming.members;
-            return {
-              merged: syncMemberTotalsFromDonors({
-                ...incoming,
-                ...local,
-                members: rosterMembers,
-                memberPositions: normalizeMemberPositions(
-                  local.memberPositions ?? incoming.memberPositions,
-                  rosterMembers
-                ),
-                donors: forcedDonors,
-                settlementResetAt: forcedResetAt || undefined,
-                updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
-              }),
-              didPreserve: false,
-            };
-          }
           return {
             merged: {
               ...incoming,
@@ -1852,6 +1785,7 @@ function AdminPageInner() {
               members: local.members,
               memberPositions: normalizeMemberPositions(local.memberPositions, local.members),
               donors: [],
+              settlementResetAt: Math.max(localResetAt, remoteResetAt) || local.settlementResetAt,
               mealBattle: local.mealBattle ?? incoming.mealBattle,
               overlayPresets: local.overlayPresets ?? incoming.overlayPresets,
               missions: local.missions ?? incoming.missions,
@@ -2256,7 +2190,12 @@ function AdminPageInner() {
     ) {
       merged = syncMemberTotalsFromDonors({ ...merged, donors: localDonorsNorm });
       didPreserve = true;
-    } else if (localDonorsNorm.length === 0 && donorsNorm.length === 0 && incomingDonorsNorm.length > 0) {
+    } else if (
+      localDonorsNorm.length === 0 &&
+      donorsNorm.length === 0 &&
+      incomingDonorsNorm.length > 0 &&
+      !(localResetAt > remoteResetAt && localResetAt > 0)
+    ) {
       const restored = resolveServerDonorsForEmptyLocal({
         local,
         incomingDonors: incomingDonorsNorm,
@@ -2936,16 +2875,8 @@ function AdminPageInner() {
             localResetAt > 0 &&
             filterDonorsAfterSettlementReset(remoteDonors, localResetAt).length === 0;
           if (preResetDonorsOnly) {
-            const restored = resolveServerDonorsForEmptyLocal({
-              local: stateRef.current,
-              incomingDonors: remoteDonors,
-              settlementResetAt: Math.max(localResetAt, remoteResetAt),
-            });
-            if (restored && restored.length > 0) {
-              remote = { ...remote, donors: restored };
-            } else {
-              return false;
-            }
+            /** 로컬 정산 리셋 직후 — 구 후원 rebump 복구로 리셋을 되돌리지 않음 */
+            return false;
           }
         }
       }

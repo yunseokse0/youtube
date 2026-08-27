@@ -178,14 +178,18 @@ export function enrichStateBeforeAuthoritativeDonationSave(
  */
 export function mergeStatePreservingDonorsUntilSettlementReset(
   incoming: AppState,
-  existing: AppState | null | undefined
+  existing: AppState | null | undefined,
+  opts?: { allowEmptyRosterWipe?: boolean }
 ): AppState {
   if (!existing) return incoming;
   const incomingReset = Number(incoming.settlementResetAt || 0);
   const existingReset = Number(existing.settlementResetAt || 0);
   if (incomingReset > existingReset) {
     /** stamp만 앞서고 멤버1·2…/빈 후원이면 강제 리셋으로 취급하지 않음 */
-    if (shouldBlockAccidentalEmptyOverwrite(existing, incoming)) {
+    if (
+      !opts?.allowEmptyRosterWipe &&
+      shouldBlockAccidentalEmptyOverwrite(existing, incoming)
+    ) {
       return {
         ...incoming,
         members: existing.members,
@@ -231,7 +235,8 @@ export function mergeStatePreservingDonorsUntilSettlementReset(
  */
 export function mergeDonationReplaceForPersist(
   incoming: AppState,
-  existing: AppState | null | undefined
+  existing: AppState | null | undefined,
+  opts?: { allowEmptyRosterWipe?: boolean }
 ): AppState {
   const incomingDonors = normalizeDonorsArray(incoming.donors);
   if (!existing) {
@@ -241,7 +246,10 @@ export function mergeDonationReplaceForPersist(
   const incomingReset = Number(incoming.settlementResetAt || 0);
   const existingReset = Number(existing.settlementResetAt || 0);
   if (incomingReset > existingReset) {
-    if (shouldBlockAccidentalEmptyOverwrite(existing, incoming)) {
+    if (
+      !opts?.allowEmptyRosterWipe &&
+      shouldBlockAccidentalEmptyOverwrite(existing, incoming)
+    ) {
       return repairMemberTotalsForDonorRoster(
         syncMemberTotalsFromDonors({
           ...incoming,

@@ -86,7 +86,8 @@ export async function saveAppStateForRoulette(
   }
 
   let incoming = next;
-  if (kvOk) {
+  /** 정산 리셋 등 의도적 비우기 — 백업 union 이 구 후원을 다시 넣지 않게 */
+  if (kvOk && !opts?.allowEmptyRosterWipe) {
     try {
       const backup = await loadDonationRosterBackupFromKv(userId);
       incoming = unionAppStateDonorsFromBackupIfRicher(incoming, backup);
@@ -113,10 +114,11 @@ export async function saveAppStateForRoulette(
     };
   }
 
+  const wipeOpts = opts?.allowEmptyRosterWipe ? { allowEmptyRosterWipe: true } : undefined;
   const merged =
     opts?.donorsMode === "replace"
-      ? mergeDonationReplaceForPersist(incoming, existing)
-      : mergeStatePreservingDonorsUntilSettlementReset(incoming, existing);
+      ? mergeDonationReplaceForPersist(incoming, existing, wipeOpts)
+      : mergeStatePreservingDonorsUntilSettlementReset(incoming, existing, wipeOpts);
 
   let persisted: AppState = {
     ...merged,
