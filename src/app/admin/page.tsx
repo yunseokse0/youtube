@@ -16,6 +16,13 @@ import {
 } from "@/components/admin/AdminSectionCollapse";
 import { AdminAccountSettingsModal } from "@/components/admin/AdminPasswordChangePanel";
 import {
+  DEFAULT_DONATION_INGEST_MODE,
+  getToonaDashboardUrl,
+  readDonationIngestMode,
+  writeDonationIngestMode,
+  type DonationIngestMode,
+} from "@/lib/donation-ingest-mode";
+import {
   buildSettlementUiOptionsFromForm,
   normalizeSettlementUiOptions,
   readLegacySettlementUiOptionsFromLocalStorage,
@@ -807,6 +814,17 @@ function AdminPageInner() {
   const [sigSalesModalOpen, setSigSalesModalOpen] = useState(false);
   const [sigSalesModalTab, setSigSalesModalTab] = useState<SigSalesHybridTab>("inventory");
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
+  const [donationIngestMode, setDonationIngestMode] = useState<DonationIngestMode>(
+    DEFAULT_DONATION_INGEST_MODE
+  );
+
+  useEffect(() => {
+    if (!user?.id) {
+      setDonationIngestMode(DEFAULT_DONATION_INGEST_MODE);
+      return;
+    }
+    setDonationIngestMode(readDonationIngestMode(user.id));
+  }, [user?.id]);
   const sigBulkReuploadInputRef = useRef<HTMLInputElement | null>(null);
   const sigRestoreJsonInputRef = useRef<HTMLInputElement | null>(null);
   const sigRestoreExcelInputRef = useRef<HTMLInputElement | null>(null);
@@ -8091,6 +8109,45 @@ function AdminPageInner() {
     ]
   );
 
+  const selectDonationIngestMode = useCallback(
+    async (mode: DonationIngestMode) => {
+      if (!user?.id) return;
+      if (mode === donationIngestMode) return;
+      writeDonationIngestMode(user.id, mode);
+      setDonationIngestMode(mode);
+      if (mode === "toona") {
+        /** 이중 수집 방지 — toona 허브일 때 youtube 직접 WS 끔 */
+        if (toonationSocketEnabled) {
+          await persistToonationSettings({ socketEnabled: false });
+        }
+        showAppToast("toona 허브 모드 — 투네 직접 수집을 껐습니다.", {
+          variant: "info",
+          durationMs: 3500,
+        });
+      } else {
+        showAppToast("투네 직접 연동 모드 — 연동키·실시간 수집을 설정하세요.", {
+          variant: "info",
+          durationMs: 3500,
+        });
+      }
+    },
+    [donationIngestMode, persistToonationSettings, toonationSocketEnabled, user?.id]
+  );
+
+  /** toona 허브 모드에서는 youtube 직접 WS를 유지하지 않음 */
+  useEffect(() => {
+    if (!user?.id || !toonationSettingsHydrated) return;
+    if (donationIngestMode !== "toona") return;
+    if (!toonationSocketEnabled) return;
+    void persistToonationSettings({ socketEnabled: false });
+  }, [
+    donationIngestMode,
+    persistToonationSettings,
+    toonationSettingsHydrated,
+    toonationSocketEnabled,
+    user?.id,
+  ]);
+
   useEffect(() => {
     if (!user?.id) {
       toonationHydratedUserIdRef.current = null;
@@ -14230,6 +14287,91 @@ function AdminPageInner() {
               </div>
               <div className="text-sm text-neutral-400 mt-2">입력값에 콤마/문자 포함되어도 숫자만 인식</div>
               <div className="mt-4 rounded border border-cyan-500/20 bg-cyan-500/5 p-3 space-y-3">
+                <div className="rounded border border-white/10 bg-black/25 px-3 py-2 space-y-2">
+                  <div className="text-xs font-semibold text-cyan-200">후원 수신 경로 (하나만 선택)</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <label
+                      className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-xs ${
+                        donationIngestMode === "toonation"
+                          ? "border-cyan-400/60 bg-cyan-500/15 text-cyan-50"
+                          : "border-white/10 bg-black/20 text-neutral-300"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="donation-ingest-mode"
+                        className="mt-0.5"
+                        checked={donationIngestMode === "toonation"}
+                        onChange={() => void selectDonationIngestMode("toonation")}
+                      />
+                      <span>
+                        <strong className="block text-sm text-white">A · 투네 직접 연동</strong>
+                        youtube에 연동키 입력 → 실시간 수집 (엑셀·정산 메인)
+                      </span>
+                    </label>
+                    <label
+                      className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-xs ${
+                        donationIngestMode === "toona"
+                          ? "border-violet-400/60 bg-violet-500/15 text-violet-50"
+                          : "border-white/10 bg-black/20 text-neutral-300"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="donation-ingest-mode"
+                        className="mt-0.5"
+                        checked={donationIngestMode === "toona"}
+                        onChange={() => void selectDonationIngestMode("toona")}
+                      />
+                      <span>
+                        <strong className="block text-sm text-white">B · toona 허브</strong>
+                        toona에 로그인·투네 연동 → youtube는 youtubegit만 (이중 수집 방지)
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                {donationIngestMode === "toona" ? (
+                  <div className="rounded border border-violet-500/30 bg-violet-950/25 px-3 py-3 space-y-2">
+                    <div className="text-xs font-semibold text-violet-200">toona 허브 모드</div>
+                    <p className="text-[11px] text-neutral-300 leading-relaxed">
+                      투네 연동·통합 알림창은 <strong className="text-violet-100">toona 대시보드</strong>에서
+                      설정하세요. youtube 쪽 실시간 수집은 꺼 둡니다. toona YouTube-Git 연동에 이 서버
+                      Base URL과 계정 ID(<code className="text-violet-100">u={overlayUserId}</code>)를
+                      넣으면 시그/후원 카드로 전달됩니다.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        href={getToonaDashboardUrl()}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 rounded bg-violet-700 hover:bg-violet-600 text-xs font-semibold"
+                      >
+                        toona 열기
+                      </a>
+                      <a
+                        href={`${getToonaDashboardUrl().replace(/\/$/, "")}/dashboard/youtubegit`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+                      >
+                        YouTube-Git 설정
+                      </a>
+                      <a
+                        href={`${getToonaDashboardUrl().replace(/\/$/, "")}/dashboard/alert`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+                      >
+                        투네·알림창 설정
+                      </a>
+                    </div>
+                    <p className="text-[10px] text-neutral-500">
+                      toona API: {getToonaDashboardUrl()} · youtube 계정: {overlayUserId}
+                    </p>
+                  </div>
+                ) : (
+                  <>
                 <div className="rounded border border-white/10 bg-black/25 px-3 py-2">
                   <div className="text-xs font-semibold text-cyan-200">투네 연동키 (자동 연동)</div>
                   <div className="text-[11px] text-neutral-400 mt-1">
@@ -14689,6 +14831,8 @@ function AdminPageInner() {
                   </div>
                 </div>
                 {user?.id &&
+                donationIngestMode === "toonation" &&
+                toonationSocketEnabled &&
                 toonationSettingsHydrated &&
                 toonationResolvedAlertboxUrl &&
                 !isExampleToonationLinkKey(toonationResolvedAlertboxUrl) ? (
@@ -14702,6 +14846,8 @@ function AdminPageInner() {
                     onForwarded={onBrowserRelayForwarded}
                   />
                 ) : null}
+                  </>
+                )}
               </div>
             </AdminCollapsibleSection>
 
