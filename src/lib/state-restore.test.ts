@@ -189,4 +189,39 @@ describe("state-restore", () => {
     );
     expect(next.donors).toHaveLength(1);
   });
+
+  it("does not restore from daily log after intentional settlement reset", () => {
+    const resetAt = 1_700_000_000_000;
+    const base = defaultState();
+    const log = {
+      [broadcastDateKey()]: [
+        {
+          at: new Date(resetAt - 60_000).toISOString(),
+          total: 50000,
+          donors: [
+            {
+              id: "d1",
+              name: "후원",
+              amount: 50000,
+              memberId: "m1",
+              at: resetAt - 60_000,
+              target: "account" as const,
+            },
+          ],
+          members: [{ id: "m1", name: "멤버", account: 0, toon: 0, contribution: 0 }],
+        },
+      ],
+    };
+    const next = enrichAppStateFromDailyLogWhenDonorsMissing(
+      {
+        ...base,
+        donors: [],
+        settlementResetAt: resetAt,
+        intentionalDonationClearAt: resetAt,
+        members: base.members.map((m) => ({ ...m, account: 0, toon: 0, contribution: 0 })),
+      },
+      log
+    );
+    expect(next.donors).toHaveLength(0);
+  });
 });

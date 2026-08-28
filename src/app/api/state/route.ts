@@ -34,7 +34,7 @@ import {
   shouldBlockAccidentalEmptyOverwrite,
   totalCombined,
 } from "@/lib/state";
-import { coalesceIntentionalDonationClearAt } from "@/lib/intentional-donation-clear";
+import { coalesceIntentionalDonationClearAt, shouldSuppressAutoRosterRestore } from "@/lib/intentional-donation-clear";
 import type { SigItem } from "@/types";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
 import {
@@ -658,17 +658,19 @@ export async function GET(req: Request) {
         );
       }
       try {
-        const donationEnriched = await enrichAppStateWithDonationRosterBackup(userId, state, {
-          persistBackup: false,
-        });
-        if (donationEnriched.restoredFromBackup) {
-          state = applyDonationGoalPresetNormalization(donationEnriched.state);
-          setServerMemoryAppState(userId, state);
-          logger.warn("후원 금액 디스크/백업에서 복구 (메모리 모드)", {
-            userId,
-            donors: normalizeDonorsArray(state.donors).length,
-            total: totalCombined(state),
+        if (!shouldSuppressAutoRosterRestore(state)) {
+          const donationEnriched = await enrichAppStateWithDonationRosterBackup(userId, state, {
+            persistBackup: false,
           });
+          if (donationEnriched.restoredFromBackup) {
+            state = applyDonationGoalPresetNormalization(donationEnriched.state);
+            setServerMemoryAppState(userId, state);
+            logger.warn("후원 금액 디스크/백업에서 복구 (메모리 모드)", {
+              userId,
+              donors: normalizeDonorsArray(state.donors).length,
+              total: totalCombined(state),
+            });
+          }
         }
       } catch (err) {
         logger.error("후원 백업 복구 실패 (메모리 모드)", err);
@@ -802,7 +804,7 @@ export async function GET(req: Request) {
     try {
       const donorsNow = normalizeDonorsArray(mergedForResponse.donors);
       const needDonationBackup = donorsNow.length === 0 || totalCombined(mergedForResponse) <= 0;
-      if (needDonationBackup) {
+      if (needDonationBackup && !shouldSuppressAutoRosterRestore(mergedForResponse)) {
         const donationEnriched = await enrichAppStateWithDonationRosterBackup(
           userId,
           mergedForResponse,
@@ -824,7 +826,10 @@ export async function GET(req: Request) {
     }
 
     /** 메인·백업 모두 donors 비었는데 일일 로그(작업 로그)에 스냅샷이 있으면 GET 시 복구 */
-    if (normalizeDonorsArray(mergedForResponse.donors).length === 0) {
+    if (
+      normalizeDonorsArray(mergedForResponse.donors).length === 0 &&
+      !shouldSuppressAutoRosterRestore(mergedForResponse)
+    ) {
       try {
         const dailyLog = await loadDailyLogForUserId(userId);
         const fromLog = enrichAppStateFromDailyLogWhenDonorsMissing(

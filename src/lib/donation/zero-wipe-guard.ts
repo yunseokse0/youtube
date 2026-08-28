@@ -1,4 +1,5 @@
 import type { AppState, Member } from "@/types";
+import { shouldSuppressAutoRosterRestore } from "@/lib/intentional-donation-clear";
 import { isMemberRosterIdentityOnlyChange, mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
 import {
   countableDonorTotal,
@@ -123,6 +124,7 @@ export function guardMemberTotalsAgainstAccidentalZeroWipe(
   state: AppState,
   baseline: AppState | null | undefined
 ): AppState {
+  if (shouldSuppressAutoRosterRestore(state)) return state;
   if (!baseline?.members?.length) return state;
 
   const ids = remainingMemberIds(state);

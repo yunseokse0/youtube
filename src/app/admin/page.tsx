@@ -2388,12 +2388,15 @@ function AdminPageInner() {
               resetAtForDonors
             )
           : normalizeDonorsArray(donationSource.donors);
-        const donorsResolved =
+        const pulledForOrphanHeal =
           donorsForApply.length === 0 && apiDonorCount > 0
-            ? normalizeDonorsArray(
-                buildUiStateFromServerDonorPull(local, apiState)?.donors ?? apiState.donors
-              )
-            : donorsForApply;
+            ? buildUiStateFromServerDonorPull(local, apiState)
+            : null;
+        /** 정산 리셋 직후 pull 이 null 이면 구 server donors 로 되살리지 않음 */
+        const donorsResolved =
+          donorsForApply.length > 0
+            ? donorsForApply
+            : normalizeDonorsArray(pulledForOrphanHeal?.donors ?? []);
         const rosterPayload: AppState = {
           ...merged,
           donors: donorsResolved,

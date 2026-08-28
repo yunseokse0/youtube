@@ -155,4 +155,31 @@ describe("buildUiStateFromServerDonorPull", () => {
     const pulled = buildUiStateFromServerDonorPull(local, remote);
     expect(normalizeDonorsArray(pulled?.donors).length).toBe(2);
   });
+
+  it("returns null after settlement reset when server still has pre-reset donors", () => {
+    const resetAt = 1_700_000_000_000;
+    const remote: AppState = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "자키", account: 500_000, toon: 0 }],
+      donors: [
+        {
+          id: "d1",
+          name: "구후원",
+          amount: 500_000,
+          memberId: "m1",
+          at: resetAt - 86_400_000,
+        },
+      ],
+      updatedAt: resetAt + 1_000,
+    };
+    const local: AppState = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "자키", account: 0, toon: 0 }],
+      donors: [],
+      settlementResetAt: resetAt,
+      intentionalDonationClearAt: resetAt,
+      updatedAt: resetAt,
+    };
+    expect(buildUiStateFromServerDonorPull(local, remote)).toBeNull();
+  });
 });

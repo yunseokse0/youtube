@@ -4195,6 +4195,15 @@ export function buildUiStateFromServerDonorPull(
     );
   }
   if (donors.length === 0) {
+    /** 정산 리셋·의도적 비움 — rebump 후에도 없으면 구 후원 raw 복구 금지 */
+    if (
+      localDonors.length === 0 &&
+      isEmptyBroadcastDonationSession(local) &&
+      (Number(local.intentionalDonationClearAt || 0) > 0 ||
+        Number(local.settlementResetAt || 0) > 0)
+    ) {
+      return null;
+    }
     donors = remoteDonors;
   }
   const members = pickMemberRosterPreferNewer(local, remote);

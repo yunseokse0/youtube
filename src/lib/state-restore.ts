@@ -420,6 +420,7 @@ export function enrichAppStateFromDailyLogWhenDonorsMissing(
   log: Record<string, DailyLogEntry[] | unknown[]> | null | undefined
 ): AppState {
   if (normalizeDonorsArray(snapshot.donors).length > 0) return snapshot;
+  if (shouldSuppressAutoRosterRestore(snapshot)) return snapshot;
   const entry = pickDailyLogEntryForAutoRestore(log, broadcastDateKey());
   if (!entry) return snapshot;
   const donorCount = Array.isArray(entry.donors) ? entry.donors.length : 0;
