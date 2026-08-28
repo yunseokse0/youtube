@@ -98,6 +98,15 @@ export function isExcelRankTop3TextMode(mode: ExcelRankTop3Mode): boolean {
   return mode === "text";
 }
 
+/** 1~3위 강조(골드 텍스트·gradient 등) — 해당 행 후원(account+toon) 합이 0이면 미적용 */
+export function shouldApplyExcelRankTop3Highlight(
+  rank: number | null | undefined,
+  donationTotal: number | undefined
+): boolean {
+  if (rank == null || rank < 1 || rank > 3) return false;
+  return Math.max(0, Math.round(Number(donationTotal) || 0)) > 0;
+}
+
 export function normalizeExcelRankTop3RowEffect(raw: unknown): ExcelRankTop3RowEffect {
   const v = String(raw || "")
     .trim()
@@ -333,8 +342,7 @@ export function resolveExcelRankTop3RowStyle(
     return { rankLabel: numericLabel };
   }
 
-  const donationTotal = Math.max(0, Math.round(Number(opts?.donationTotal) || 0));
-  if (donationTotal <= 0) {
+  if (!shouldApplyExcelRankTop3Highlight(rank, opts?.donationTotal)) {
     return { rankLabel: plainRankLabel };
   }
 

@@ -157,6 +157,7 @@ import {
   isExcelRankTop3TextMode,
   resolveExcelRankTop3RowStyle,
   resolveExcelRankTop3Style,
+  shouldApplyExcelRankTop3Highlight,
 } from "@/lib/excel-rank-top3-style";
 import { useMemberRankChangeFx } from "@/hooks/useMemberRankChangeFx";
 import {
@@ -5376,7 +5377,8 @@ function OverlayInner() {
                       );
                       const top3Row = resolveExcelRankTop3RowStyle(rank, excelRankTop3Style, { donationTotal });
                       const excelGoldRankCls =
-                        isExcelGoldChrome && typeof rank === "number" && rank >= 1 && rank <= 3
+                        isExcelGoldChrome &&
+                        shouldApplyExcelRankTop3Highlight(rank, donationTotal)
                           ? ` overlay-excel-rank-${rank}`
                           : "";
                       return (

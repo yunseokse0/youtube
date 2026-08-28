@@ -5,6 +5,7 @@ import {
   formatExcelRankLabel,
   resolveExcelRankTop3RowStyle,
   resolveExcelRankTop3Style,
+  shouldApplyExcelRankTop3Highlight,
 } from "./excel-rank-top3-style";
 
 describe("excel-rank-top3-style", () => {
@@ -21,6 +22,9 @@ describe("excel-rank-top3-style", () => {
   });
 
   it("hides top3 effects when donation total is zero but keeps plain rank number", () => {
+    expect(shouldApplyExcelRankTop3Highlight(1, 0)).toBe(false);
+    expect(shouldApplyExcelRankTop3Highlight(2, 5000)).toBe(true);
+    expect(shouldApplyExcelRankTop3Highlight(4, 5000)).toBe(false);
     const row = resolveExcelRankTop3RowStyle(
       1,
       {

@@ -43,7 +43,7 @@ export function MemberRankChangeFxPresetPanel({ preset, onChange, compact = fals
   const labelClass = compact ? "text-[10px] text-neutral-400" : "text-xs text-neutral-400";
 
   return (
-    <div className={`space-y-3 ${className}`}>
+    <div className={`min-w-0 w-full space-y-3 ${className}`}>
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
         <label className={labelClass}>
           연출

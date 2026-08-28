@@ -16172,7 +16172,7 @@ function AdminPageInner() {
                   </label>
                 </div>
               </div>
-              <div id="member-rank-change-fx" className="mb-3 rounded border border-amber-500/25 bg-amber-950/20 p-3 space-y-3">
+              <div id="member-rank-change-fx" className="mb-3 min-w-0 w-full rounded border border-amber-500/25 bg-amber-950/20 p-3 space-y-3">
                 <MemberRankChangeFxPresetPanelHeader />
                 <div className="rounded border border-amber-500/30 bg-black/25 p-2 text-xs text-neutral-400 flex flex-wrap items-center gap-2">
                   <span className="text-amber-100/90 shrink-0">OBS URL:</span>
@@ -18646,7 +18646,7 @@ function AdminPageInner() {
                                   </p>
                                 )}
                               </div>
-                              <div className="rounded border border-amber-400/20 bg-amber-950/20 p-3 space-y-2">
+                              <div className="col-span-full min-w-0 w-full rounded border border-amber-400/20 bg-amber-950/20 p-3 space-y-2">
                                 <MemberRankChangeFxPresetPanelHeader compact />
                                 <p className="text-[10px] text-neutral-500">
                                   상단 「엑셀표 · 순위 변동 연출」에서도 동일하게 수정할 수 있습니다.
