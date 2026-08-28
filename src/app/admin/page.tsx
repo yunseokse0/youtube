@@ -16171,6 +16171,38 @@ function AdminPageInner() {
               </div>
               <div id="member-rank-change-fx" className="mb-3 rounded border border-amber-500/25 bg-amber-950/20 p-3 space-y-3">
                 <MemberRankChangeFxPresetPanelHeader />
+                <div className="rounded border border-amber-500/30 bg-black/25 p-2 text-xs text-neutral-400 flex flex-wrap items-center gap-2">
+                  <span className="text-amber-100/90 shrink-0">OBS URL:</span>
+                  <code className="text-neutral-300 break-all flex-1 min-w-[200px]">
+                    /overlay/rank-change?u={overlayUserId}&host=obs
+                    {memberRankChangeFxEditPreset?.id ? `&p=${memberRankChangeFxEditPreset.id}` : ""}
+                  </code>
+                  <button
+                    type="button"
+                    className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "member-rank-change-panel" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                    onClick={() => {
+                      void copyUrl(
+                        buildRankChangeOverlayUrl(memberRankChangeFxEditPreset?.id),
+                        "member-rank-change-panel"
+                      );
+                    }}
+                  >
+                    {copiedId === "member-rank-change-panel" ? "복사됨!" : "URL 복사"}
+                  </button>
+                  <button
+                    type="button"
+                    className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white shrink-0"
+                    onClick={() =>
+                      window.open(
+                        buildRankChangeOverlayUrl(memberRankChangeFxEditPreset?.id),
+                        "_blank",
+                        "noopener,noreferrer"
+                      )
+                    }
+                  >
+                    오버레이 열기
+                  </button>
+                </div>
                 {presets.length === 0 ? (
                   <p className="text-[11px] text-neutral-500">
                     오버레이 프리셋을 먼저 추가하세요. (+ 엑셀표만 · 방송 엑셀 등)
