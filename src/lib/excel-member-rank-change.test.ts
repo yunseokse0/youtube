@@ -2,15 +2,18 @@ import { describe, expect, it } from "vitest";
 import type { Member } from "@/types";
 import {
   buildMemberRankSnapshot,
+  buildRankChangeSessionSnapshot,
   detectRankImprovement,
+  detectRankImprovementForFx,
   isMemberRankChangeFxEnabled,
+  isRankImprovementFromDonationDeletion,
 } from "@/lib/excel-member-rank-change";
 
-const m = (id: string, name: string): Member => ({
+const m = (id: string, name: string, account = 0, toon = 0): Member => ({
   id,
   name,
-  account: 0,
-  toon: 0,
+  account,
+  toon,
   contribution: 0,
 });
 
@@ -85,5 +88,57 @@ describe("excel-member-rank-change", () => {
   it("isMemberRankChangeFxEnabled defaults on", () => {
     expect(isMemberRankChangeFxEnabled(undefined)).toBe(true);
     expect(isMemberRankChangeFxEnabled("off")).toBe(false);
+  });
+
+  it("detectRankImprovementForFx ignores rank up from donation deletion shuffle", () => {
+    const prevRank = buildMemberRankSnapshot([
+      { m: m("a", "A", 5000), rank: 1 },
+      { m: m("b", "B", 3000), rank: 2 },
+      { m: m("c", "C", 1000), rank: 3 },
+    ]);
+    const nextRank = buildMemberRankSnapshot([
+      { m: m("a", "A", 5000), rank: 1 },
+      { m: m("c", "C", 1000), rank: 2 },
+      { m: m("b", "B", 0), rank: 3 },
+    ]);
+    const prevMembers = [m("a", "A", 5000), m("b", "B", 3000), m("c", "C", 1000)];
+    const nextMembers = [m("a", "A", 5000), m("b", "B", 0), m("c", "C", 1000)];
+    const prevSession = buildRankChangeSessionSnapshot(prevMembers, [{ id: "d1" }, { id: "d2" }, { id: "d3" }]);
+    const nextSession = buildRankChangeSessionSnapshot(nextMembers, [{ id: "d1" }, { id: "d3" }]);
+    const members = new Map([
+      ["a", nextMembers[0]!],
+      ["b", nextMembers[1]!],
+      ["c", nextMembers[2]!],
+    ]);
+    const raw = detectRankImprovement(prevRank, nextRank, members);
+    expect(raw?.memberId).toBe("c");
+    expect(
+      detectRankImprovementForFx(prevRank, nextRank, members, prevSession, nextSession)
+    ).toBeNull();
+    expect(
+      isRankImprovementFromDonationDeletion(prevSession, nextSession, raw!)
+    ).toBe(true);
+  });
+
+  it("detectRankImprovementForFx allows rank up when member gained donation", () => {
+    const prevRank = buildMemberRankSnapshot([
+      { m: m("a", "A", 5000), rank: 1 },
+      { m: m("b", "B", 3000), rank: 2 },
+    ]);
+    const nextRank = buildMemberRankSnapshot([
+      { m: m("b", "B", 6000), rank: 1 },
+      { m: m("a", "A", 5000), rank: 2 },
+    ]);
+    const prevMembers = [m("a", "A", 5000), m("b", "B", 3000)];
+    const nextMembers = [m("a", "A", 5000), m("b", "B", 6000)];
+    const prevSession = buildRankChangeSessionSnapshot(prevMembers, [{ id: "d1" }, { id: "d2" }]);
+    const nextSession = buildRankChangeSessionSnapshot(nextMembers, [{ id: "d1" }, { id: "d2" }, { id: "d3" }]);
+    const members = new Map([
+      ["a", nextMembers[0]!],
+      ["b", nextMembers[1]!],
+    ]);
+    const hit = detectRankImprovementForFx(prevRank, nextRank, members, prevSession, nextSession);
+    expect(hit?.memberId).toBe("b");
+    expect(hit?.newRank).toBe(1);
   });
 });

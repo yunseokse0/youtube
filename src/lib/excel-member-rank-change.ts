@@ -1,8 +1,16 @@
 import type { Member } from "@/types";
+import { normalizeDonorsArray } from "@/lib/state";
+import { memberDonationRankingTotal } from "@/lib/utils";
 
 export type OverlayRankRow = { m: Member; rank: number | null };
 
 export type MemberRankSnapshot = Map<string, number | null>;
+
+export type RankChangeSessionSnapshot = {
+  donorCount: number;
+  totalCombined: number;
+  memberTotals: Map<string, number>;
+};
 
 export type RankImprovementEvent = {
   memberId: string;
@@ -57,6 +65,49 @@ export function detectRankImprovement(
     }
   }
   return best;
+}
+
+export function buildRankChangeSessionSnapshot(members: Member[], donors: unknown): RankChangeSessionSnapshot {
+  const memberTotals = new Map<string, number>();
+  let totalCombined = 0;
+  for (const m of members) {
+    if (!m?.id) continue;
+    const t = memberDonationRankingTotal(m);
+    memberTotals.set(m.id, t);
+    totalCombined += t;
+  }
+  return {
+    donorCount: normalizeDonorsArray(donors).length,
+    totalCombined,
+    memberTotals,
+  };
+}
+
+/** 후원 삭제·합계 감소·본인 금액 미증가로 인한 순위 상승 */
+export function isRankImprovementFromDonationDeletion(
+  prev: RankChangeSessionSnapshot,
+  next: RankChangeSessionSnapshot,
+  hit: RankImprovementEvent
+): boolean {
+  if (next.donorCount < prev.donorCount) return true;
+  if (next.totalCombined < prev.totalCombined) return true;
+  const prevMember = prev.memberTotals.get(hit.memberId) ?? 0;
+  const nextMember = next.memberTotals.get(hit.memberId) ?? 0;
+  return nextMember <= prevMember;
+}
+
+/** 연출용 — detectRankImprovement + 후원 삭제 셔플 제외 */
+export function detectRankImprovementForFx(
+  prevRank: MemberRankSnapshot | null | undefined,
+  nextRank: MemberRankSnapshot,
+  membersById: ReadonlyMap<string, Member> | Map<string, Member>,
+  prevSession: RankChangeSessionSnapshot,
+  nextSession: RankChangeSessionSnapshot
+): RankImprovementEvent | null {
+  const hit = detectRankImprovement(prevRank, nextRank, membersById);
+  if (!hit) return null;
+  if (isRankImprovementFromDonationDeletion(prevSession, nextSession, hit)) return null;
+  return hit;
 }
 
 export function isMemberRankChangeFxEnabled(raw: unknown): boolean {

@@ -13,7 +13,7 @@ import {
   mergeOverlayPresetsForOverlayView,
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
-import { overlayPresetsStorageKey } from "@/lib/state";
+import { overlayPresetsStorageKey, normalizeDonorsArray } from "@/lib/state";
 import { buildOverlayRankedMembers } from "@/lib/utils";
 import type { Member } from "@/types";
 
@@ -104,6 +104,11 @@ function RankChangeOverlayInner() {
     [ready, state?.members]
   );
 
+  const donorsForRankFx = useMemo(
+    () => normalizeDonorsArray(state?.donors),
+    [state?.donors]
+  );
+
   const memberPositionsMap = useMemo(
     () => (ready && state?.memberPositions ? state.memberPositions : {}) as Record<string, string>,
     [ready, state?.memberPositions]
@@ -131,6 +136,7 @@ function RankChangeOverlayInner() {
     ready,
     ranked,
     members,
+    donors: donorsForRankFx,
   });
 
   return (

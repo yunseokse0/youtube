@@ -47,8 +47,8 @@ export function buildMemberCreationOrderIndex(members: Member[]): Map<string, nu
   return map;
 }
 
-function memberDonationRankingTotal(member: Member): number {
-  // 엑셀표·후원순위 표시와 동일 — 100원 단위 버림 후 합산
+/** 엑셀표·후원순위·순위 변동 연출 — 100원 단위 버림 후 account+toon 합 */
+export function memberDonationRankingTotal(member: Member): number {
   return floorToHundreds(safeAmount(member.account)) + floorToHundreds(safeAmount(member.toon));
 }
 

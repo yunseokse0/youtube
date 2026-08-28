@@ -158,11 +158,9 @@ import {
   resolveExcelRankTop3RowStyle,
   resolveExcelRankTop3Style,
 } from "@/lib/excel-rank-top3-style";
+import { useMemberRankChangeFx } from "@/hooks/useMemberRankChangeFx";
 import {
-  buildMemberRankSnapshot,
-  detectRankImprovement,
   isMemberRankChangeFxEnabled,
-  type RankImprovementEvent,
 } from "@/lib/excel-member-rank-change";
 import { resolveExcelMemberRankChangeStyle } from "@/lib/excel-member-rank-change-style";
 import { ExcelMemberRankChangeOverlay } from "@/components/overlay/ExcelMemberRankChangeOverlay";
@@ -3650,6 +3648,12 @@ function OverlayInner() {
     () => buildOverlayRankedMembers(unpinned, memberPositionsMap, getMemberRole, members),
     [unpinned, memberPositionsMap, getMemberRole, members]
   );
+  const donorsForRankFx = useMemo(() => {
+    if (isAdminPreview && adminPreviewDonors !== undefined) {
+      return normalizeDonorsArray(adminPreviewDonors as Donor[]);
+    }
+    return normalizeDonorsArray(s?.donors);
+  }, [isAdminPreview, adminPreviewDonors, s?.donors]);
   const memberRankChangeFxEnabled = useMemo(() => {
     const raw =
       sp.get("memberRankChangeFx") ||
@@ -3657,28 +3661,13 @@ function OverlayInner() {
       "";
     return showMembers && !demoMode && isMemberRankChangeFxEnabled(raw);
   }, [sp, activePreset, showMembers, demoMode]);
-  const [rankChangeFxEvent, setRankChangeFxEvent] = useState<RankImprovementEvent | null>(null);
-  const prevMemberRankSnapshotRef = useRef<ReturnType<typeof buildMemberRankSnapshot> | null>(null);
-  const rankChangeFxCooldownRef = useRef(0);
-  const rankChangeFxBootstrappedRef = useRef(false);
-  useEffect(() => {
-    if (!memberRankChangeFxEnabled || !ready) return;
-    const snapshot = buildMemberRankSnapshot(ranked);
-    if (!rankChangeFxBootstrappedRef.current) {
-      rankChangeFxBootstrappedRef.current = true;
-      prevMemberRankSnapshotRef.current = snapshot;
-      return;
-    }
-    const membersById = new Map(members.map((m) => [m.id, m]));
-    const hit = detectRankImprovement(prevMemberRankSnapshotRef.current, snapshot, membersById);
-    prevMemberRankSnapshotRef.current = snapshot;
-    if (!hit) return;
-    const now = Date.now();
-    if (now - rankChangeFxCooldownRef.current < 2500) return;
-    rankChangeFxCooldownRef.current = now;
-    setRankChangeFxEvent(hit);
-  }, [ranked, members, memberRankChangeFxEnabled, ready]);
-  const clearRankChangeFxEvent = useCallback(() => setRankChangeFxEvent(null), []);
+  const { event: rankChangeFxEvent, clearEvent: clearRankChangeFxEvent } = useMemberRankChangeFx({
+    enabled: memberRankChangeFxEnabled,
+    ready,
+    ranked,
+    members,
+    donors: donorsForRankFx,
+  });
   /**
    * 엑셀표 인원 변동 대응:
    * - 5명 이하: 우측 스플릿 제거(단일 패널)

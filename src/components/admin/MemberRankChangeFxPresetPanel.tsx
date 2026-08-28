@@ -57,7 +57,7 @@ export function MemberRankChangeFxPresetPanel({ preset, onChange, compact = fals
           </select>
         </label>
         <p className={`text-neutral-500 self-end pb-1 ${compact ? "text-[10px]" : "text-[10px]"}`}>
-          후원 반영으로 순위가 올라간 멤버 1명에게만 표시됩니다. 하락·동률은 무시.
+          후원 반영으로 순위·금액이 올라간 멤버 1명에게만 표시. 후원 삭제·하락·동률은 무시.
         </p>
       </div>
       {!fxOff ? (
