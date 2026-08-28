@@ -21,6 +21,7 @@ import {
 } from "@/lib/overlay-params";
 import { useDonorRankingsRemoteState } from "@/hooks/useDonorRankingsRemoteState";
 import { useAdminPreviewDonorsOverride } from "@/hooks/useAdminPreviewDonorsOverride";
+import { useAdminPreviewDonorRankingsThemeOverride } from "@/hooks/useAdminPreviewDonorRankingsThemeOverride";
 import {
   buildDonorRankingsFromDonors,
   sliceDonorRankingTop,
@@ -39,6 +40,10 @@ import {
 } from "@/lib/overlay-mobile-fit";
 import { useOverlayViewportSize } from "@/hooks/useOverlayViewportSize";
 import { backgroundWithOpacityFrac, solidBackgroundWithOpacityFrac } from "@/lib/donor-rankings-opacity";
+import {
+  resolveDonorRankingsThemeColor,
+  resolveDonorRankingsThemeNumber,
+} from "@/lib/donor-rankings-theme-resolve";
 import { splitOverlayListAtHalf } from "@/lib/utils";
 
 /** 4등+ 순위 숫자 기본: 흰색 + 검정 외곽선 (관리자 rankColor가 있으면 우선) */
@@ -209,8 +214,15 @@ function liveThemeNumber(
   min: number,
   max: number
 ): number {
-  if (ready && !useTest) return Math.max(min, Math.min(max, saved));
-  return readNumber(sp, key, saved, min, max);
+  return resolveDonorRankingsThemeNumber(
+    ready,
+    useTest,
+    sp.get(key),
+    saved,
+    min,
+    max,
+    saved
+  );
 }
 
 function liveThemeColor(
@@ -221,13 +233,7 @@ function liveThemeColor(
   key: string,
   fallback: string
 ): string {
-  if (ready && !useTest) {
-    const s = (saved || "").trim();
-    if (s && s.toLowerCase() !== "transparent") return s;
-    return fallback;
-  }
-  const mergedFallback = (saved || "").trim() || fallback;
-  return readColor(sp, key, mergedFallback);
+  return resolveDonorRankingsThemeColor(ready, useTest, sp.get(key), saved, fallback);
 }
 
 function liveThemeTitle(
@@ -342,24 +348,7 @@ function useDonorsOverrideFromUrl(sp: URLSearchParams): Array<Record<string, unk
   return undefined;
 }
 
-/**
- * 패널 등: 저장값이 `transparent`일 때 방송 기본 채색(URL 덮어쓰기 가능).
- * 구버전은 여기서 알파가 큰 그라데이션을 넣어 슬라이더와 무관하게 항상 어둡게 보였음 → 기본은 불투명 단색으로 두고,
- * 헤더(`headerBg`)·목록(`panelBg`)·행(짝/홀수) 배경에 동일하게 `overlayOpacity`를 곱한다.
- */
-function resolveThemeColor(
-  sp: URLSearchParams,
-  key: string,
-  saved: string | undefined,
-  broadcastDefault: string
-): string {
-  const fromUrl = (sp.get(key) || "").trim();
-  if (fromUrl) return fromUrl;
-  const s = (saved || "").trim();
-  if (s && s.toLowerCase() !== "transparent") return s;
-  return broadcastDefault;
-}
-
+/** 패널·테두리 — 저장 `transparent`는 그대로 두고, `overlayOpacity`로만 알파 조절 */
 function resolveThemeColorLive(
   ready: boolean,
   useTest: boolean,
@@ -368,12 +357,13 @@ function resolveThemeColorLive(
   saved: string | undefined,
   broadcastDefault: string
 ): string {
-  if (ready && !useTest) {
-    const s = (saved || "").trim();
-    if (s && s.toLowerCase() !== "transparent") return s;
-    return broadcastDefault;
-  }
-  return resolveThemeColor(sp, key, saved, broadcastDefault);
+  return resolveDonorRankingsThemeColor(
+    ready,
+    useTest,
+    sp.get(key),
+    saved,
+    broadcastDefault
+  );
 }
 
 function RankingRow({
@@ -783,7 +773,11 @@ export default function DonorRankingsOverlayPage() {
   /** 관리자 미리보기는 API 완료 전에도 저장·기본 테마를 즉시 적용 */
   const themeLive = ready || isAdminPreview;
   const layoutDual = !isFullVertical && (sp.get("layout") || "").toLowerCase() === "dual";
-  const savedTheme = state?.donorRankingsTheme || defaultState().donorRankingsTheme;
+  const adminPreviewTheme = useAdminPreviewDonorRankingsThemeOverride(isAdminPreview, userId);
+  const savedTheme = {
+    ...(state?.donorRankingsTheme || defaultState().donorRankingsTheme),
+    ...(adminPreviewTheme || {}),
+  };
 
   const topN = isFullVertical
     ? 0
@@ -873,7 +867,7 @@ export default function DonorRankingsOverlayPage() {
   const headerUnifiedBg = readColor(sp, "headerBg", headerAccountBg) || headerAccountBg;
   const rankingTitle = liveThemeTitle(themeLive, useTest, savedTheme.titleText, sp, "👑 웹후원 순위 👑");
   const rowEvenBg = liveThemeColor(themeLive, useTest, savedTheme.rowEvenBg, sp, "rowEvenBg", "transparent");
-  const rowOddBg = liveThemeColor(themeLive, useTest, savedTheme.rowOddBg, sp, "rowOddBg", "rgba(255, 255, 255, 0.14)");
+  const rowOddBg = liveThemeColor(themeLive, useTest, savedTheme.rowOddBg, sp, "rowOddBg", "transparent");
   const rankColor = liveThemeColor(themeLive, useTest, savedTheme.rankColor, sp, "rankColor", "#ffffff");
   const nameColor = liveThemeColor(themeLive, useTest, savedTheme.nameColor, sp, "nameColor", "#ffc107");
   const amountColor = liveThemeColor(themeLive, useTest, savedTheme.amountColor, sp, "amountColor", "#ffc107");

@@ -144,6 +144,7 @@ import {
   resolveTableThemeRowStripeCss,
   resolveTableThemeContributionColorCss,
 } from "@/lib/excel-member-table-theme";
+import { applyTableTintToCssColor } from "@/lib/table-tint-opacity";
 import {
   overlayTableCellGridCss,
   overlayTableGridLineWidthPx,
@@ -1244,30 +1245,6 @@ function parseHexRgb(hex: string): [number, number, number] | null {
     ];
   }
   return null;
-}
-
-function clampCssAlpha(alpha: number): number {
-  return Math.max(0, Math.min(1, alpha));
-}
-
-/** rgba/rgb/hex → rgba(..., alpha). 표 불투명도와 행·헤더 배경을 일치시킬 때 사용 */
-function applyAlphaToCssColor(input: string, alpha: number): string {
-  const a = clampCssAlpha(alpha);
-  const trimmed = String(input || "").trim();
-  const rgbaMatch = trimmed.match(
-    /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*[\d.]+)?\s*\)$/i
-  );
-  if (rgbaMatch) {
-    return a >= 1
-      ? `rgb(${rgbaMatch[1]}, ${rgbaMatch[2]}, ${rgbaMatch[3]})`
-      : `rgba(${rgbaMatch[1]}, ${rgbaMatch[2]}, ${rgbaMatch[3]}, ${a})`;
-  }
-  const hex = trimmed.startsWith("#") ? trimmed : trimmed ? `#${trimmed}` : "";
-  const hexRgb = hex ? parseHexRgb(hex) : null;
-  if (hexRgb) {
-    return a >= 1 ? `rgb(${hexRgb.join(", ")})` : `rgba(${hexRgb.join(", ")}, ${a})`;
-  }
-  return trimmed;
 }
 
 function isLightTextHex(hex: string): boolean {
@@ -4095,10 +4072,14 @@ function OverlayInner() {
       : tableGridLines
         ? excelMemberAccent?.panelShadow ?? TABLE_BROADCAST_PANEL_SHADOW
         : "none";
-    const tableRowEvenBgCss =
-      tableRowEvenBgRaw || resolveTableThemeRowStripeCss(membersThemeId, "even");
-    const tableRowOddBgCss =
-      tableRowOddBgRaw || resolveTableThemeRowStripeCss(membersThemeId, "odd");
+    const tableRowEvenBgCss = applyTableTintToCssColor(
+      tableRowEvenBgRaw || resolveTableThemeRowStripeCss(membersThemeId, "even"),
+      effectiveTableTintAlpha
+    );
+    const tableRowOddBgCss = applyTableTintToCssColor(
+      tableRowOddBgRaw || resolveTableThemeRowStripeCss(membersThemeId, "odd"),
+      effectiveTableTintAlpha
+    );
     const contributionColorCss =
       contributionColorRaw ||
       excelMemberAccent?.contributionColor ||
@@ -4118,10 +4099,8 @@ function OverlayInner() {
       : "";
     const themeAutoHeaderBgCss = resolveTableThemeHeaderBgCss(membersThemeId);
     const excelHeaderBgCss = hasTableHeaderBgColorOverride
-      ? applyAlphaToCssColor(tableHeaderBgColorRaw, effectiveTableTintAlpha)
-      : isExcelGoldChrome
-        ? themeAutoHeaderBgCss
-        : applyAlphaToCssColor(themeAutoHeaderBgCss, effectiveTableTintAlpha);
+      ? applyTableTintToCssColor(tableHeaderBgColorRaw, effectiveTableTintAlpha)
+      : applyTableTintToCssColor(themeAutoHeaderBgCss, effectiveTableTintAlpha);
     const excelHeaderTextCss =
       tableHeaderTextColorRaw ||
       excelMemberAccent?.headerText ||
@@ -4141,14 +4120,18 @@ function OverlayInner() {
         }
       : undefined;
     const excelLiveTotalRowBg = tableBgColorRaw
-      ? applyAlphaToCssColor(
+      ? applyTableTintToCssColor(
           `rgb(${tableSheetRgb.map((c) => Math.max(0, Math.min(255, Math.round(c * 0.97)))).join(", ")})`,
           effectiveTableTintAlpha
         )
-      : applyAlphaToCssColor("rgb(15, 20, 30)", effectiveTableTintAlpha);
+      : applyTableTintToCssColor("rgb(15, 20, 30)", effectiveTableTintAlpha);
+    const excelGoldTotalRowBg = applyTableTintToCssColor(
+      "rgba(255, 193, 7, 0.18)",
+      effectiveTableTintAlpha
+    );
     const broadcastTheadBg = hasTableHeaderBgColorOverride
-      ? applyAlphaToCssColor(tableHeaderBgColorRaw, effectiveTableTintAlpha)
-      : applyAlphaToCssColor(themeAutoHeaderBgCss, effectiveTableTintAlpha);
+      ? applyTableTintToCssColor(tableHeaderBgColorRaw, effectiveTableTintAlpha)
+      : applyTableTintToCssColor(themeAutoHeaderBgCss, effectiveTableTintAlpha);
     const broadcastTheadTextCss = tableHeaderTextColorRaw || TABLE_BROADCAST_TEXT_AUTO;
     let effectiveScale = centerFixed || hasTableFreePos
       ? (scale * (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale)))
@@ -5092,7 +5075,7 @@ function OverlayInner() {
             : ""
         }
         .overlay-root .overlay-elegant-table.excel-gold-table .overlay-total-row td {
-          background: rgba(255, 193, 7, 0.18) !important;
+          background: ${excelGoldTotalRowBg} !important;
           box-shadow: none !important;
           border: none !important;
         }
@@ -5221,10 +5204,12 @@ function OverlayInner() {
                           : "none",
                     boxShadow: showTableFrame || isExcelGoldChrome ? "none" : tablePanelShadow || "none",
                     padding: isExcelGoldChrome && !showTableFrame ? "6px 0 8px" : 0,
-                    /** 웹후원 골드: 표 뒤 큰 패널 없음. 그 외 테마는 기존 시트/글래스 */
+                    /** 웹후원 골드: 큰 패널 없음. 그 외 테마는 시트/글래스 배경에 불투명도 적용 */
                     backgroundColor: isExcelGoldChrome
                       ? "transparent"
-                      : tableBodySheetBgCss || TABLE_BROADCAST_PANEL_BG,
+                      : effectiveTableTintAlpha <= 0
+                        ? "transparent"
+                        : tableBodySheetBgCss || TABLE_BROADCAST_PANEL_BG,
                     backdropFilter: showTableFrame || isExcelGoldChrome ? undefined : "blur(14px)",
                     WebkitBackdropFilter: showTableFrame || isExcelGoldChrome ? undefined : "blur(14px)",
                     overflow: "visible",

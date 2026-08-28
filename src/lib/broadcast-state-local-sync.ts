@@ -8,6 +8,9 @@ export const BROADCAST_STATE_LOCAL_UPDATED = "broadcast-state-local-updated";
 export const OVERLAY_PRESETS_LOCAL_UPDATED = "overlay-presets-local-updated";
 /** 관리자 탭 → 후원 순위 미리보기 iframe: donors 스냅샷(누적 표와 동일) */
 export const ADMIN_PREVIEW_DONORS_UPDATED = "admin-preview-donors-updated";
+/** 관리자 탭 → 후원 순위 미리보기 iframe: 테마(불투명도 등) 즉시 반영 */
+export const ADMIN_PREVIEW_DONOR_RANKINGS_THEME_UPDATED =
+  "admin-preview-donor-rankings-theme-updated";
 /** iframe → 관리자 탭: donors 스냅샷 요청 */
 export const ADMIN_PREVIEW_DONORS_REQUEST = "admin-preview-donors-request";
 const BROADCAST_CHANNEL_NAME = "excel-broadcast-state-v1";
@@ -110,6 +113,33 @@ export function notifyAdminPreviewDonorsUpdated(
     type: ADMIN_PREVIEW_DONORS_UPDATED,
     userId: userId ?? null,
     donors,
+    updatedAt: updatedAt ?? Date.now(),
+  };
+  try {
+    const origin = window.location.origin;
+    document.querySelectorAll("iframe").forEach((frame) => {
+      try {
+        frame.contentWindow?.postMessage(payload, origin);
+      } catch {
+        /* noop */
+      }
+    });
+  } catch {
+    /* noop */
+  }
+}
+
+/** 관리자 후원순위 미리보기 iframe에 테마 변경을 즉시 반영 (서버 폴링 대기 없음) */
+export function notifyAdminPreviewDonorRankingsThemeUpdated(
+  userId: string | null | undefined,
+  theme: unknown,
+  updatedAt?: number
+): void {
+  if (typeof window === "undefined") return;
+  const payload = {
+    type: ADMIN_PREVIEW_DONOR_RANKINGS_THEME_UPDATED,
+    userId: userId ?? null,
+    donorRankingsTheme: theme,
     updatedAt: updatedAt ?? Date.now(),
   };
   try {

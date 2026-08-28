@@ -32,7 +32,7 @@ import {
   clampBrowserPersistOptionsForServerAuthority,
   isServerAuthoritativeBroadcastState,
 } from "@/lib/server-authoritative-broadcast-state";
-import { notifyBroadcastStateLocalUpdated, notifyOverlayPresetsLocalUpdated, notifyAdminPreviewDonorsUpdated, ADMIN_PREVIEW_DONORS_REQUEST, overlayUserIdsMatch } from "@/lib/broadcast-state-local-sync";
+import { notifyBroadcastStateLocalUpdated, notifyOverlayPresetsLocalUpdated, notifyAdminPreviewDonorsUpdated, notifyAdminPreviewDonorRankingsThemeUpdated, ADMIN_PREVIEW_DONORS_REQUEST, overlayUserIdsMatch } from "@/lib/broadcast-state-local-sync";
 import { APP_BRAND_NAME, adminHeaderTitle } from "@/lib/app-branding";
 import Toast from "@/components/Toast";
 import {
@@ -4837,6 +4837,11 @@ function AdminPageInner() {
         updatedAt: Date.now(),
       };
       persistVisualSettings(next, { donorRankingsTheme: next.donorRankingsTheme });
+      notifyAdminPreviewDonorRankingsThemeUpdated(
+        overlayUserId,
+        next.donorRankingsTheme,
+        next.updatedAt
+      );
       return next;
     });
   };
