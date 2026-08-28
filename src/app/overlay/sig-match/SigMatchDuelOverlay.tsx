@@ -30,19 +30,19 @@ type SigMatchSide = { ids: string[]; label: string; score: number; teamLabel?: s
 /** 흰 글씨 + 검은 외곽선 — OBS·밝은 배경 위 가독성 */
 const sigOutlinedWhiteTextStyle: CSSProperties = {
   color: "#ffffff",
-  WebkitTextStroke: "0.5px rgba(0,0,0,0.92)",
+  WebkitTextStroke: "0.65px rgba(0,0,0,0.95)",
   paintOrder: "stroke fill",
   textShadow:
-    "0 0 1px rgba(0,0,0,1), 0 1px 2px rgba(0,0,0,0.9), 1px 0 1px rgba(0,0,0,0.75), -1px 0 1px rgba(0,0,0,0.75)",
+    "0 0 2px rgba(0,0,0,1), 0 1px 4px rgba(0,0,0,0.95), 1px 0 2px rgba(0,0,0,0.85), -1px 0 2px rgba(0,0,0,0.85)",
 };
 
 /** 멤버명 — 엑셀표 수준으로 더 굵은 외곽선 */
 const sigMemberNameOutlineStyle: CSSProperties = {
   color: "#ffffff",
-  WebkitTextStroke: "0.75px rgba(0,0,0,0.95)",
+  WebkitTextStroke: "0.85px rgba(0,0,0,0.98)",
   paintOrder: "stroke fill",
   textShadow:
-    "0 0 1px rgba(0,0,0,1), 0 1px 3px rgba(0,0,0,0.95), 1px 0 1px rgba(0,0,0,0.85), -1px 0 1px rgba(0,0,0,0.85), 0 -1px 1px rgba(0,0,0,0.85)",
+    "0 0 2px rgba(0,0,0,1), 0 2px 4px rgba(0,0,0,0.95), 1px 0 2px rgba(0,0,0,0.9), -1px 0 2px rgba(0,0,0,0.9), 0 -1px 2px rgba(0,0,0,0.9)",
 };
 
 function sigGaugeInBarScoreStyle(leading: boolean): CSSProperties {
@@ -57,24 +57,29 @@ function SigVsBarSegmentLabel({
   scoringMode,
   leading = false,
   compact = false,
+  align = "center",
 }: {
   score: number;
   scoringMode: "count" | "amount";
   narrow?: boolean;
   leading?: boolean;
   compact?: boolean;
+  align?: "start" | "center" | "end";
 }) {
   const label = formatSigMatchScoreLabel(score, scoringMode);
+  const justify =
+    align === "start" ? "justify-start pl-2.5 sm:pl-3" : align === "end" ? "justify-end pr-2.5 sm:pr-3" : "justify-center px-2";
+  const textAlign = align === "end" ? "text-right" : align === "start" ? "text-left" : "text-center";
   return (
     <div
-      className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center px-2 text-center"
+      className={`pointer-events-none absolute inset-0 z-[5] flex items-center ${justify} text-center`}
       data-sig-vs-segment-label="true"
       data-sig-leading={leading ? "true" : "false"}
     >
       <BattleGaugeFitScore
         label={label}
         maxFontPx={compact ? 16 : 20}
-        className="block max-w-full font-black tabular-nums"
+        className={`block max-w-[calc(100%-0.5rem)] font-black tabular-nums ${textAlign}`}
         style={sigGaugeInBarScoreStyle(leading)}
       />
     </div>
@@ -239,26 +244,26 @@ function SigTeamMemberBox({
       data-sig-team-box="true"
       data-sig-team-leading={teamLeading ? "true" : "false"}
       aria-label={teamLeading ? "선두 팀" : undefined}
-      className={`w-full min-w-[9rem] max-w-[14rem] bg-transparent px-1 py-0.5 transition-colors sm:min-w-[10rem] sm:max-w-[15rem] sm:px-1.5 ${borderClass} ${sigTeamBoxLeadingClasses(teamTint, teamLeading)} ${boxPos}`}
+      className={`w-full min-w-[9.5rem] max-w-[15rem] rounded-lg bg-neutral-950/80 px-2 py-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.45)] ring-1 ring-white/20 backdrop-blur-sm sm:min-w-[10.5rem] sm:max-w-[16rem] sm:px-2.5 sm:py-2 ${borderClass} ${sigTeamBoxLeadingClasses(teamTint, teamLeading)} ${boxPos}`}
     >
-      <ul className="flex flex-col gap-1.5">
+      <ul className="flex flex-col gap-1.5 sm:gap-2">
         {members.map((m, idx) => {
           const amountLabel = formatSigMatchScoreLabel(m.score, scoringMode);
           return (
             <li
               key={m.memberId}
               className={`flex min-w-0 ${rowDir} items-center gap-2.5 ${rowJustify} ${
-                idx > 0 ? "border-t border-white/20 pt-1.5" : ""
+                idx > 0 ? "border-t border-white/25 pt-1.5 sm:pt-2" : ""
               }`}
             >
               <span
-                className={`min-w-0 flex-1 truncate text-base font-black leading-snug tracking-tight sm:text-lg ${nameClass}`}
+                className={`min-w-0 flex-1 truncate text-lg font-black leading-snug tracking-tight sm:text-xl ${nameClass}`}
                 style={sigMemberNameStyle}
               >
                 {m.name}
               </span>
               <span
-                className="max-w-[7rem] shrink-0 truncate whitespace-nowrap text-sm font-black tabular-nums sm:max-w-[7.5rem] sm:text-base"
+                className={`max-w-[8rem] shrink-0 truncate whitespace-nowrap rounded-md bg-black/45 px-1.5 py-0.5 text-base font-black tabular-nums ring-1 ring-white/15 sm:max-w-[8.5rem] sm:text-lg ${scoreClass}`}
                 style={sigMemberAmountStyle}
               >
                 {amountLabel}
@@ -935,12 +940,13 @@ export default function SigMatchDuelOverlay({
                 />
                 <SigFloatingScores bursts={floatingBursts} />
               </motion.div>
-              <div className={`mt-1 grid grid-cols-2 gap-2 px-0.5 ${compact ? "gap-1.5" : ""}`}>
+              <div className={`mt-1 grid grid-cols-2 gap-2 px-0.5 sm:gap-3 ${compact ? "gap-1.5" : ""}`}>
                 <SigTeamMemberBox
                   members={leftMemberLines}
                   scoringMode={scoringMode}
                   align="left"
-                  nameClass=""
+                  nameClass={dualBar?.leftLeading ? "text-emerald-100" : "text-rose-100"}
+                  scoreClass="text-amber-50"
                   teamLeading={Boolean(dualBar?.leftLeading)}
                   teamTint="pink"
                 />
@@ -948,7 +954,8 @@ export default function SigMatchDuelOverlay({
                   members={rightMemberLines}
                   scoringMode={scoringMode}
                   align="right"
-                  nameClass=""
+                  nameClass={dualBar?.rightLeading ? "text-emerald-100" : "text-sky-100"}
+                  scoreClass="text-amber-50"
                   teamLeading={Boolean(dualBar?.rightLeading)}
                   teamTint="sky"
                 />
@@ -1025,6 +1032,7 @@ export default function SigMatchDuelOverlay({
                           narrow={(tripleBar.pcts[i] ?? 0) < 24}
                           leading={Boolean(tripleBar.leading[i])}
                           compact={compact}
+                          align={i === 0 ? "start" : i === 2 ? "end" : "center"}
                         />
                       </motion.div>
                     ))}

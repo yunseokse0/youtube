@@ -1,4 +1,5 @@
 import type { DonorRankingsTheme, SigItem } from "@/types";
+import { appendExcelMemberRankChangeStyleParams } from "@/lib/excel-member-rank-change-style";
 import { appendExcelRankTop3Params } from "@/lib/excel-rank-top3-style";
 import { mergeDonationTablePresetFields } from "@/lib/donation-table-options";
 import { normalizeTableFontFamily, type TableFontFamilyId } from "@/lib/table-font-style";
@@ -226,6 +227,17 @@ export type OverlayPresetLike = {
   rank1TextColorAlt?: string;
   rank2TextColorAlt?: string;
   rank3TextColorAlt?: string;
+  /** 엑셀표 멤버 순위 상승 연출: off 로 끔. 비우면 on */
+  memberRankChangeFx?: string;
+  memberRankChangeNameSize?: string;
+  memberRankChangeRankSize?: string;
+  memberRankChangeIconSize?: string;
+  memberRankChangeNameColor?: string;
+  memberRankChangeRankColor?: string;
+  memberRankChangeAccentColor?: string;
+  memberRankChangeCardBg?: string;
+  memberRankChangeCardBorder?: string;
+  memberRankChangeConfettiColors?: string;
 };
 
 export function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
@@ -361,6 +373,9 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   q.set("currencyLocale", (preset.currencyLocale && preset.currencyLocale.trim()) ? preset.currencyLocale.trim() : "ko-KR");
   if (preset.tableOnly) q.set("tableOnly", "true");
   if (preset.confettiMilestone && preset.confettiMilestone.trim()) q.set("confettiMilestone", preset.confettiMilestone.trim());
+  if (preset.memberRankChangeFx && preset.memberRankChangeFx.trim().toLowerCase() === "off") {
+    q.set("memberRankChangeFx", "off");
+  }
   q.set("tableBgOpacity", (preset.tableBgOpacity && preset.tableBgOpacity.trim()) ? preset.tableBgOpacity.trim() : "100");
   if (preset.tableBgGifUrl && preset.tableBgGifUrl.trim()) q.set("tableBgGifUrl", preset.tableBgGifUrl.trim());
   if (preset.tableBgGifOpacity && preset.tableBgGifOpacity.trim()) q.set("tableBgGifOpacity", preset.tableBgGifOpacity.trim());
@@ -425,6 +440,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.toonHeaderLabel && preset.toonHeaderLabel.trim()) q.set("toonHeaderLabel", preset.toonHeaderLabel.trim());
   if (preset.restroomHeaderLabel && preset.restroomHeaderLabel.trim()) q.set("restroomHeaderLabel", preset.restroomHeaderLabel.trim());
   appendExcelRankTop3Params(q, preset);
+  appendExcelMemberRankChangeStyleParams(q, preset);
   if (preset.vertical) q.set("vertical", "true");
   if (preset.host && preset.host.trim()) q.set("host", preset.host.trim());
   /** showGoal 여부와 무관 — live 프리셋·URL에 목표 글자색 항상 포함 */
@@ -506,6 +522,16 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "rank1Mark",
   "rank2Mark",
   "rank3Mark",
+  "memberRankChangeFx",
+  "memberRankChangeNameSize",
+  "memberRankChangeRankSize",
+  "memberRankChangeIconSize",
+  "memberRankChangeNameColor",
+  "memberRankChangeRankColor",
+  "memberRankChangeAccentColor",
+  "memberRankChangeCardBg",
+  "memberRankChangeCardBorder",
+  "memberRankChangeConfettiColors",
   "goalTextColor",
   "goalFontSize",
   "goalTextOutlineColor",
@@ -660,6 +686,16 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "rank1Mark",
   "rank2Mark",
   "rank3Mark",
+  "memberRankChangeFx",
+  "memberRankChangeNameSize",
+  "memberRankChangeRankSize",
+  "memberRankChangeIconSize",
+  "memberRankChangeNameColor",
+  "memberRankChangeRankColor",
+  "memberRankChangeAccentColor",
+  "memberRankChangeCardBg",
+  "memberRankChangeCardBorder",
+  "memberRankChangeConfettiColors",
   "goalTextColor",
   "goalFontSize",
   "goalTextOutlineColor",
@@ -1023,6 +1059,16 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "rank1Mark",
   "rank2Mark",
   "rank3Mark",
+  "memberRankChangeFx",
+  "memberRankChangeNameSize",
+  "memberRankChangeRankSize",
+  "memberRankChangeIconSize",
+  "memberRankChangeNameColor",
+  "memberRankChangeRankColor",
+  "memberRankChangeAccentColor",
+  "memberRankChangeCardBg",
+  "memberRankChangeCardBorder",
+  "memberRankChangeConfettiColors",
 ]);
 
 /** presetToParams에 비어 있으면 URL에 넣지 않는 키 — ready 후 URL 스테일 무시(테마·글꼴 자동) */

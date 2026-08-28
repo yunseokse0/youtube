@@ -125,7 +125,7 @@ export default function BattleTeamScoreHeader({
           className={`relative flex w-full overflow-hidden rounded-xl shadow-[0_4px_18px_rgba(0,0,0,0.35)] ring-1 ring-white/15 ${barH}`}
         >
           <div
-            className={`relative flex h-full min-w-0 items-center justify-center overflow-hidden transition-[width] duration-500 ease-out ${
+            className={`relative h-full min-w-0 overflow-hidden transition-[width] duration-500 ease-out ${
               leftLeading ? "brightness-110" : "brightness-95"
             }`}
             style={{
@@ -134,15 +134,17 @@ export default function BattleTeamScoreHeader({
             }}
           >
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
-            <BattleGaugeFitScore
-              label={leftLabel}
-              className="relative z-[1] px-1.5 font-black tabular-nums tracking-tight"
-              style={scoreTextStyle()}
-            />
+            <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-start pl-2.5 sm:pl-3">
+              <BattleGaugeFitScore
+                label={leftLabel}
+                className="relative z-[1] max-w-[calc(100%-0.5rem)] px-1.5 font-black tabular-nums tracking-tight"
+                style={scoreTextStyle()}
+              />
+            </div>
           </div>
 
           <div
-            className={`relative flex h-full min-w-0 items-center justify-center overflow-hidden transition-[width] duration-500 ease-out ${
+            className={`relative h-full min-w-0 overflow-hidden transition-[width] duration-500 ease-out ${
               rightLeading ? "brightness-110" : "brightness-95"
             }`}
             style={{
@@ -151,11 +153,13 @@ export default function BattleTeamScoreHeader({
             }}
           >
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
-            <BattleGaugeFitScore
-              label={rightLabel}
-              className="relative z-[1] px-1.5 font-black tabular-nums tracking-tight"
-              style={scoreTextStyle()}
-            />
+            <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-end pr-2.5 sm:pr-3">
+              <BattleGaugeFitScore
+                label={rightLabel}
+                className="relative z-[1] max-w-[calc(100%-0.5rem)] px-1.5 text-right font-black tabular-nums tracking-tight"
+                style={scoreTextStyle()}
+              />
+            </div>
           </div>
         </div>
 

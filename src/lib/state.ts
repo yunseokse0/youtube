@@ -4667,8 +4667,14 @@ export function formatChatLine(state: AppState): string {
     .trim();
 }
 
+/** 방송 일자(한국 시간) — 일일 로그·정산 날짜 버킷 */
+export function broadcastDateKey(d = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(d);
+}
+
+/** @deprecated broadcastDateKey 사용 */
 export function todaysDateKey(d = new Date()): string {
-  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+  return broadcastDateKey(d);
 }
 
 export function appendDailyLog(snapshot: AppState, userId?: string | null) {

@@ -3,6 +3,14 @@ import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
 import DonationTableOptionCheckboxes from "@/components/admin/DonationTableOptionCheckboxes";
+import {
+  MemberRankChangeFxPresetPanel,
+  MemberRankChangeFxPresetPanelHeader,
+} from "@/components/admin/MemberRankChangeFxPresetPanel";
+import {
+  ExcelMemberPillBgPresetPanel,
+  ExcelMemberPillBgPresetPanelHeader,
+} from "@/components/admin/ExcelMemberPillBgPresetPanel";
 import AdminLazyPreviewIframe from "@/components/admin/AdminLazyPreviewIframe";
 import MemberPositionInput from "@/components/admin/MemberPositionInput";
 import { HighSocietySeatLayoutSummary } from "@/components/admin/HighSocietySeatLayoutEditor";
@@ -89,6 +97,7 @@ import {
   isEmptyBroadcastDonationSession,
   ensureMissionItems,
   appendDailyLog,
+  broadcastDateKey,
   loadDailyLogFromApi,
   parseAmount,
   formatChatLine,
@@ -128,7 +137,7 @@ import {
   enrichSettlementSnapshotFromDailyLog,
   isFullBroadcastStateBackup,
   isOrphanedDonationState,
-  pickDailyLogEntryForRestore,
+  pickDailyLogEntryForAutoRestore,
   pickDailyLogEntryForManualRestore,
   summarizeRestoreJson,
 } from "@/lib/state-restore";
@@ -406,6 +415,7 @@ type OverlayPreset = {
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
   confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableFrameEnabled?: boolean; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; tableGridLines?: boolean; tableVerticalLines?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; contributionColor?: string; tableRowEvenBg?: string; tableRowOddBg?: string; tablePanelBorderColor?: string; tableTextColor?: string; totalTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
   rankTop3Mode?: string; rankTop3Effect?: string; rankLabelFormat?: string; rank1Bg?: string; rank2Bg?: string; rank3Bg?: string; rank1Mark?: string; rank2Mark?: string; rank3Mark?: string; rank1Effect?: string; rank2Effect?: string; rank3Effect?: string; rank1TextColor?: string; rank2TextColor?: string; rank3TextColor?: string; rank1TextColorAlt?: string; rank2TextColorAlt?: string; rank3TextColorAlt?: string;
+  memberRankChangeFx?: string; memberRankChangeNameSize?: string; memberRankChangeRankSize?: string; memberRankChangeIconSize?: string; memberRankChangeNameColor?: string; memberRankChangeRankColor?: string; memberRankChangeAccentColor?: string; memberRankChangeCardBg?: string; memberRankChangeCardBorder?: string; memberRankChangeConfettiColors?: string;
 };
 
 /** 미션 목록이 비었을 때 미션 전광판 UI 확인용 placeholder */
@@ -1106,7 +1116,7 @@ function AdminPageInner() {
   const PRESET_TEMPLATES: { name: string; preset: Partial<OverlayPreset> }[] = [
     { name: "엑셀표만", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true, showRestroomColumn: true } },
     { name: "방송 엑셀(계좌·투네)", preset: { theme: "excelLive", membersTheme: "excelLive", totalTheme: "excelLive", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: false, showContributionColumn: false, showRestroomColumn: true, accountHeaderLabel: "계좌", toonHeaderLabel: "투네이션", restroomHeaderLabel: "화장실", tableBgOpacity: "85", donorsFormat: "full", tableFree: true, tableX: "3", tableY: "88", anchor: "bl" } },
-    { name: "웹후원 골드 엑셀", preset: { theme: "excelGold", membersTheme: "excelGold", totalTheme: "excelGold", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: true, showContributionColumn: true, showRestroomColumn: false, tableBgOpacity: "0", tableGridLines: false, tableVerticalLines: false, tableHeaderTextColor: "", tableTextColor: "", contributionColor: "", tablePanelBorderColor: "", tableRowEvenBg: "transparent", tableRowOddBg: "transparent", accountHeaderLabel: "계좌", toonHeaderLabel: "투네", tableFree: true, tableX: "50", tableY: "50", anchor: "cc" } },
+    { name: "웹후원 골드 엑셀", preset: { theme: "excelGold", membersTheme: "excelGold", totalTheme: "excelGold", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: true, showContributionColumn: true, showRestroomColumn: false, tableBgOpacity: "0", tableGridLines: false, tableVerticalLines: false, tableHeaderTextColor: "", tableTextColor: "", contributionColor: "", tablePanelBorderColor: "", accountHeaderLabel: "계좌", toonHeaderLabel: "투네", tableFree: true, tableX: "50", tableY: "50", anchor: "cc" } },
     { name: "전체 통합", preset: { showMembers: true, showTotal: true } },
     { name: "표만 (엑셀)", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true, showRestroomColumn: true } },
     { name: "멤버 목록만", preset: { showMembers: true, showTotal: false, showBottomDonors: false, tickerInMembers: false } },
@@ -1191,6 +1201,7 @@ function AdminPageInner() {
   /** 상류사회 1인 시작 cm — 입력 중 25 클램프에 막히지 않게 초안 문자열 유지 */
   const [obsTextPreviewIframeKey, setObsTextPreviewIframeKey] = useState(0);
   const [obsTextPreviewInstanceId, setObsTextPreviewInstanceId] = useState<string | null>(null);
+  const [memberRankChangeFxEditPresetId, setMemberRankChangeFxEditPresetId] = useState<string | null>(null);
   const obsTextRegistry = useMemo(() => readObsTextRegistryFromState(state), [state]);
   const obsTextPreviewId =
     obsTextPreviewInstanceId ?? obsTextRegistry.instances[0]?.id ?? "default";
@@ -2644,10 +2655,7 @@ function AdminPageInner() {
         ...loadDailyLog(user.id),
         ...serverLog,
       };
-      const entry = pickDailyLogEntryForRestore(
-        mergedLog,
-        new Date().toISOString().slice(0, 10)
-      );
+      const entry = pickDailyLogEntryForAutoRestore(mergedLog, broadcastDateKey());
       if (!entry || !Array.isArray(entry.donors) || entry.donors.length === 0) {
         return false;
       }
@@ -3786,6 +3794,14 @@ function AdminPageInner() {
       if (editingId === id) setEditingId(null);
     }, { confirmText: "삭제", danger: true });
   };
+  const memberRankChangeFxEditPreset = useMemo(() => {
+    if (!presets.length) return null;
+    if (memberRankChangeFxEditPresetId) {
+      const picked = presets.find((p) => p.id === memberRankChangeFxEditPresetId);
+      if (picked) return picked;
+    }
+    return presets.find((p) => p.showMembers !== false) ?? presets[0];
+  }, [presets, memberRankChangeFxEditPresetId]);
   const buildOverlayUrl = (p: OverlayPreset): string => {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
@@ -7616,7 +7632,7 @@ function AdminPageInner() {
     const serverLog = await loadDailyLogFromApi(user?.id);
     const localLog = loadDailyLog(user?.id);
     const merged: Record<string, DailyLogEntry[]> = { ...localLog, ...serverLog };
-    const todayKey = new Date().toISOString().slice(0, 10);
+    const todayKey = broadcastDateKey();
     const currentDonorCount = normalizeDonorsArray(stateRef.current.donors).length;
     const latest = pickDailyLogEntryForManualRestore(merged, currentDonorCount);
     if (!latest) {
@@ -9262,7 +9278,7 @@ function AdminPageInner() {
       : undefined;
     const title =
       settlementTitle.trim() ||
-      `${new Date().toISOString().slice(0, 10)} 정산`;
+      `${broadcastDateKey()} 정산`;
     const mergedLog: Record<string, DailyLogEntry[]> = {
       ...loadDailyLog(user?.id),
       ...dailyLog,
@@ -9271,7 +9287,7 @@ function AdminPageInner() {
     snapshot = enrichSettlementSnapshotFromDailyLog(
       snapshot,
       mergedLog,
-      new Date().toISOString().slice(0, 10)
+      broadcastDateKey()
     );
     const snapshotDonors = normalizeDonorsArray(snapshot.donors);
     if (snapshotDonors.length === 0 && totalCombined(snapshot) > 0) {
@@ -16111,6 +16127,69 @@ function AdminPageInner() {
                   </label>
                 </div>
               </div>
+              <div className="mb-3 rounded border border-amber-500/25 bg-amber-950/20 p-3 space-y-3">
+                <MemberRankChangeFxPresetPanelHeader />
+                {presets.length === 0 ? (
+                  <p className="text-[11px] text-neutral-500">
+                    오버레이 프리셋을 먼저 추가하세요. (+ 엑셀표만 · 방송 엑셀 등)
+                  </p>
+                ) : (
+                  <>
+                    <label className="flex max-w-md flex-col gap-1 text-[11px] text-neutral-400">
+                      적용 프리셋
+                      <select
+                        className="rounded border border-white/10 bg-neutral-900/80 px-2 py-1.5 text-sm"
+                        value={memberRankChangeFxEditPreset?.id ?? ""}
+                        onChange={(e) => setMemberRankChangeFxEditPresetId(e.target.value || null)}
+                      >
+                        {presets.map((presetOption) => (
+                          <option key={presetOption.id} value={presetOption.id}>
+                            {presetOption.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {memberRankChangeFxEditPreset ? (
+                      <MemberRankChangeFxPresetPanel
+                        preset={memberRankChangeFxEditPreset}
+                        onChange={(patch) => updatePreset(memberRankChangeFxEditPreset.id, patch as Partial<OverlayPreset>)}
+                      />
+                    ) : null}
+                  </>
+                )}
+              </div>
+              <div className="mb-3 rounded border border-emerald-500/25 bg-emerald-950/20 p-3 space-y-3">
+                <ExcelMemberPillBgPresetPanelHeader />
+                {presets.length === 0 ? (
+                  <p className="text-[11px] text-neutral-500">오버레이 프리셋을 먼저 추가하세요.</p>
+                ) : (
+                  <>
+                    <label className="flex max-w-md flex-col gap-1 text-[11px] text-neutral-400">
+                      적용 프리셋
+                      <select
+                        className="rounded border border-white/10 bg-neutral-900/80 px-2 py-1.5 text-sm"
+                        value={memberRankChangeFxEditPreset?.id ?? ""}
+                        onChange={(e) => setMemberRankChangeFxEditPresetId(e.target.value || null)}
+                      >
+                        {presets.map((presetOption) => (
+                          <option key={presetOption.id} value={presetOption.id}>
+                            {presetOption.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {memberRankChangeFxEditPreset ? (
+                      <ExcelMemberPillBgPresetPanel
+                        preset={memberRankChangeFxEditPreset}
+                        themeId={activeTableThemeId(memberRankChangeFxEditPreset)}
+                        onChange={(patch) =>
+                          updatePreset(memberRankChangeFxEditPreset.id, patch as Partial<OverlayPreset>)
+                        }
+                      />
+                    ) : null}
+                  </>
+                )}
+              </div>
               <div id="overlay-bg-media" className="mb-4 space-y-1">
                 <h3 className="text-sm font-semibold text-fuchsia-100">오버레이 배경 · 본문 이미지</h3>
                 <p className="text-[11px] text-neutral-400 leading-snug">
@@ -17635,7 +17714,7 @@ function AdminPageInner() {
                                         <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.contributionColor || "테마 자동"}</span>
                                         <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { contributionColor: "" })}>테마 자동</button>
                                       </div>
-                                      <label className="text-xs text-neutral-400">줄무늬(짝 행)</label>
+                                      <label className="text-xs text-neutral-400">행 알약(짝 행)</label>
                                       <div className="flex min-w-0 flex-wrap items-center gap-2">
                                         <input
                                           type="color"
@@ -17661,7 +17740,7 @@ function AdminPageInner() {
                                         />
                                         <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableRowEvenBg: "" })}>테마 자동</button>
                                       </div>
-                                      <label className="text-xs text-neutral-400">줄무늬(홀 행)</label>
+                                      <label className="text-xs text-neutral-400">행 알약(홀 행)</label>
                                       <div className="flex min-w-0 flex-wrap items-center gap-2">
                                         <input
                                           type="color"
@@ -18489,6 +18568,17 @@ function AdminPageInner() {
                                     </a>
                                   </p>
                                 )}
+                              </div>
+                              <div className="rounded border border-amber-400/20 bg-amber-950/20 p-3 space-y-2">
+                                <MemberRankChangeFxPresetPanelHeader compact />
+                                <p className="text-[10px] text-neutral-500">
+                                  상단 「엑셀표 · 순위 변동 연출」에서도 동일하게 수정할 수 있습니다.
+                                </p>
+                                <MemberRankChangeFxPresetPanel
+                                  preset={p}
+                                  onChange={(patch) => updatePreset(p.id, patch as Partial<OverlayPreset>)}
+                                  compact
+                                />
                               </div>
                               <label className="text-xs text-neutral-400">표 글자 굵기</label>
                               <div className="flex items-center gap-2">

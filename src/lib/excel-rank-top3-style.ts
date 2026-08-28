@@ -274,6 +274,10 @@ export function isExcelRankGradientTextEffect(effect: ExcelRankTop3RowEffect): b
   return effect === "colorShift" || effect === "rainbow";
 }
 
+/** 본문 글자색·stroke 강제 CSS에서 제외 — background-clip gradient 텍스트 */
+export const EXCEL_RANK_FX_CSS_NOT =
+  ":not(.overlay-rank-fx-colorShift):not(.overlay-rank-fx-rainbow):not(.overlay-rank-fx-glow):not(.overlay-rank-fx-sparkle)";
+
 function resolveRankEffect(style: ExcelRankTop3Style, rank: 1 | 2 | 3): ExcelRankTop3RowEffect {
   if (!isExcelRankTop3TextMode(style.mode)) return "none";
   const perRank = [style.rank1Effect, style.rank2Effect, style.rank3Effect][rank - 1];
@@ -459,6 +463,21 @@ export const EXCEL_RANK_TOP3_EFFECTS_CSS = `
 }
 .overlay-root .overlay-rank-fx-sparkle {
   animation: overlay-rank-sparkle 1.6s ease-in-out infinite !important;
+}
+.overlay-root .overlay-elegant-table tbody td .overlay-cell-text-inner.overlay-rank-fx-colorShift,
+.overlay-root .overlay-elegant-table tbody td .overlay-cell-text-inner.overlay-rank-fx-rainbow,
+.overlay-root .overlay-elegant-table tbody td .overlay-cell-text-inner.overlay-rank-fx-glow,
+.overlay-root .overlay-elegant-table tbody td .overlay-cell-text-inner.overlay-rank-fx-sparkle {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  text-shadow: none !important;
+  -webkit-text-stroke: 0 !important;
+  paint-order: normal !important;
+}
+.overlay-root .overlay-elegant-table tbody td .overlay-cell-text-inner.overlay-rank-fx-glow,
+.overlay-root .overlay-elegant-table tbody td .overlay-cell-text-inner.overlay-rank-fx-sparkle {
+  color: var(--excel-rank-c1, #ca8a04) !important;
+  -webkit-text-fill-color: currentColor !important;
 }
 `;
 

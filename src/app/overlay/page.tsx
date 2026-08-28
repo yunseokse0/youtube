@@ -152,11 +152,20 @@ import {
   snapOverlayScaleForCrispLines,
 } from "@/lib/overlay-table-crisp-lines";
 import {
+  EXCEL_RANK_FX_CSS_NOT,
   EXCEL_RANK_TOP3_EFFECTS_CSS,
   isExcelRankTop3TextMode,
   resolveExcelRankTop3RowStyle,
   resolveExcelRankTop3Style,
 } from "@/lib/excel-rank-top3-style";
+import {
+  buildMemberRankSnapshot,
+  detectRankImprovement,
+  isMemberRankChangeFxEnabled,
+  type RankImprovementEvent,
+} from "@/lib/excel-member-rank-change";
+import { resolveExcelMemberRankChangeStyle } from "@/lib/excel-member-rank-change-style";
+import { ExcelMemberRankChangeOverlay } from "@/components/overlay/ExcelMemberRankChangeOverlay";
 import { clampWidthToViewport, computeReadableCanvasScale, ensureCanvasFontPx, isNarrowBroadcastViewport } from "@/lib/overlay-mobile-fit";
 import { useOverlayViewportSize } from "@/hooks/useOverlayViewportSize";
 import {
@@ -2912,6 +2921,10 @@ function OverlayInner() {
     () => resolveExcelRankTop3Style(rawSp, effectivePreset, { ready }),
     [rawSp, effectivePreset, ready]
   );
+  const memberRankChangeStyle = useMemo(
+    () => resolveExcelMemberRankChangeStyle(rawSp, effectivePreset, { ready }),
+    [rawSp, effectivePreset, ready]
+  );
   const tableSheetRgb = resolveTableSheetRgb(membersThemeId, tableBgColorRaw || undefined);
   const donorsBgOpacity = Math.max(0, Math.min(100, parseInt(sp.get("donorsBgOpacity") || "0", 10)));
   const showBottomDonors = false;
@@ -3059,9 +3072,9 @@ function OverlayInner() {
   const tableBodyForcedTextColorCss = hasTableTextColorOverride
     ? `
         .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td,
-        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td span,
-        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td strong,
-        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td .overlay-cell-text-inner {
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td span${EXCEL_RANK_FX_CSS_NOT},
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td strong${EXCEL_RANK_FX_CSS_NOT},
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td .overlay-cell-text-inner${EXCEL_RANK_FX_CSS_NOT} {
           color: ${tableTextColorRaw} !important;
         }`
     : "";
@@ -3093,9 +3106,9 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td,
         .overlay-root .overlay-elegant-table thead td span,
         .overlay-root .overlay-elegant-table thead td strong,
-        .overlay-root .overlay-elegant-table tbody td span,
-        .overlay-root .overlay-elegant-table tbody td strong,
-        .overlay-root .overlay-elegant-table tbody td .overlay-cell-text-inner {
+        .overlay-root .overlay-elegant-table tbody td span${EXCEL_RANK_FX_CSS_NOT},
+        .overlay-root .overlay-elegant-table tbody td strong${EXCEL_RANK_FX_CSS_NOT},
+        .overlay-root .overlay-elegant-table tbody td .overlay-cell-text-inner${EXCEL_RANK_FX_CSS_NOT} {
           color: ${tableThemeAutoTextColor} !important;
         }`
       : useBroadcastTableChrome && !hasTableHeaderTextColorOverride && hasTableTextColorOverride
@@ -3113,9 +3126,9 @@ function OverlayInner() {
     !useBroadcastTableChrome && !hasTableTextColorOverride
       ? `
         .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td,
-        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td span,
-        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td strong,
-        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td .overlay-cell-text-inner {
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td span${EXCEL_RANK_FX_CSS_NOT},
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td strong${EXCEL_RANK_FX_CSS_NOT},
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td .overlay-cell-text-inner${EXCEL_RANK_FX_CSS_NOT} {
           color: ${excelReadableBodyText} !important;
         }`
       : "";
@@ -3637,6 +3650,35 @@ function OverlayInner() {
     () => buildOverlayRankedMembers(unpinned, memberPositionsMap, getMemberRole, members),
     [unpinned, memberPositionsMap, getMemberRole, members]
   );
+  const memberRankChangeFxEnabled = useMemo(() => {
+    const raw =
+      sp.get("memberRankChangeFx") ||
+      (activePreset as OverlayPresetLike | null)?.memberRankChangeFx ||
+      "";
+    return showMembers && !demoMode && isMemberRankChangeFxEnabled(raw);
+  }, [sp, activePreset, showMembers, demoMode]);
+  const [rankChangeFxEvent, setRankChangeFxEvent] = useState<RankImprovementEvent | null>(null);
+  const prevMemberRankSnapshotRef = useRef<ReturnType<typeof buildMemberRankSnapshot> | null>(null);
+  const rankChangeFxCooldownRef = useRef(0);
+  const rankChangeFxBootstrappedRef = useRef(false);
+  useEffect(() => {
+    if (!memberRankChangeFxEnabled || !ready) return;
+    const snapshot = buildMemberRankSnapshot(ranked);
+    if (!rankChangeFxBootstrappedRef.current) {
+      rankChangeFxBootstrappedRef.current = true;
+      prevMemberRankSnapshotRef.current = snapshot;
+      return;
+    }
+    const membersById = new Map(members.map((m) => [m.id, m]));
+    const hit = detectRankImprovement(prevMemberRankSnapshotRef.current, snapshot, membersById);
+    prevMemberRankSnapshotRef.current = snapshot;
+    if (!hit) return;
+    const now = Date.now();
+    if (now - rankChangeFxCooldownRef.current < 2500) return;
+    rankChangeFxCooldownRef.current = now;
+    setRankChangeFxEvent(hit);
+  }, [ranked, members, memberRankChangeFxEnabled, ready]);
+  const clearRankChangeFxEvent = useCallback(() => setRankChangeFxEvent(null), []);
   /**
    * 엑셀표 인원 변동 대응:
    * - 5명 이하: 우측 스플릿 제거(단일 패널)
@@ -4453,8 +4495,8 @@ function OverlayInner() {
     const overlayNumericOutlineShadow = tableNumericOutlineShadowCss;
     const numericNoWrapStyle = (
       <style dangerouslySetInnerHTML={{ __html: `
-        .overlay-root .overlay-elegant-table .overlay-num-cell-inner,
-        .overlay-root .overlay-elegant-table .overlay-cell-text-inner {
+        .overlay-root .overlay-elegant-table .overlay-num-cell-inner${EXCEL_RANK_FX_CSS_NOT},
+        .overlay-root .overlay-elegant-table .overlay-cell-text-inner${EXCEL_RANK_FX_CSS_NOT} {
           display: inline-block;
           min-width: max-content;
           max-width: 100%;
@@ -4965,7 +5007,7 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table.excel-gold-table tbody td span:not(.overlay-rank-fx-colorShift):not(.overlay-rank-fx-rainbow):not(.overlay-rank-fx-glow):not(.overlay-rank-fx-sparkle),
         .overlay-root .overlay-elegant-table.excel-gold-table tbody td strong,
-        .overlay-root .overlay-elegant-table.excel-gold-table tbody td .overlay-cell-text-inner,
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody td .overlay-cell-text-inner${EXCEL_RANK_FX_CSS_NOT},
         .overlay-root .overlay-elegant-table.excel-gold-table tbody td .overlay-num-cell-inner {
           text-shadow: ${tableOutlineShadowCss} !important;
           -webkit-text-stroke: ${tableOutlineDisabled || obsStrokeDisabled ? "0" : tableStrokeCss} !important;
@@ -5747,6 +5789,13 @@ function OverlayInner() {
           <div className="fixed top-2 left-2 z-[9999] px-2 py-0.5 rounded bg-amber-600/90 text-white text-[11px] font-semibold shadow">
             인증 누락: 기본 계정 사용 중
           </div>
+        ) : null}
+        {memberRankChangeFxEnabled ? (
+          <ExcelMemberRankChangeOverlay
+            event={rankChangeFxEvent}
+            onDone={clearRankChangeFxEvent}
+            style={memberRankChangeStyle}
+          />
         ) : null}
           </main>
         </div>

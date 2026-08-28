@@ -1,5 +1,6 @@
 import { saveAppStateForRoulette, type DonorsPersistMode } from "@/app/api/roulette/edge-state-store";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
+import { maybeAppendDailyLogFromState } from "@/lib/daily-log-server-append";
 import { getServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { publishSseEvent } from "@/lib/sse-clients-hub";
 import { isDuplicateDonationEvent } from "@/lib/donation/apply-donation-state";
@@ -68,6 +69,7 @@ export async function persistDonationStateToServer(
     persisted.donorRankingsUpdatedAt,
     opts?.donationApplied
   );
+  void maybeAppendDailyLogFromState(userId, persisted);
   return { ok: true, state: persisted };
 }
 

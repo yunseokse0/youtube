@@ -7,7 +7,9 @@ import { VsCenterBadge } from "@/components/battle/VsCenterBadge";
 function scoreTextStyle(): CSSProperties {
   return {
     color: "#ffffff",
-    textShadow: "0 2px 4px rgba(0,0,0,0.5)",
+    textShadow: "0 1px 3px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.95)",
+    WebkitTextStroke: "0.5px rgba(0,0,0,0.65)",
+    paintOrder: "stroke fill",
   };
 }
 
@@ -75,7 +77,7 @@ export default function BattleTeamColumnBoard({
   const barH = compact ? "h-12 sm:h-14" : "h-14 sm:h-16";
   const nameSize = compact ? "text-sm sm:text-base" : "text-base sm:text-lg";
   const gapSize = compact ? "text-[10px] sm:text-xs" : "text-xs sm:text-sm";
-  const gaugeMaxFontPx = compact ? 16 : 20;
+  const gaugeMaxFontPx = compact ? 18 : 22;
   const leftLabel = formatScore(leftScore);
   const rightLabel = formatScore(rightScore);
 
@@ -99,11 +101,11 @@ export default function BattleTeamColumnBoard({
             data-battle-team-box="left"
           >
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
-            <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center px-2">
+            <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-start pl-2.5 sm:pl-3">
               <BattleGaugeFitScore
                 label={leftLabel}
                 maxFontPx={gaugeMaxFontPx}
-                className="block max-w-full font-black tabular-nums tracking-tight"
+                className="block max-w-[calc(100%-0.5rem)] font-black tabular-nums tracking-tight"
                 style={scoreTextStyle()}
               />
             </div>
@@ -120,11 +122,11 @@ export default function BattleTeamColumnBoard({
             data-battle-team-box="right"
           >
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
-            <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center px-2">
+            <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-end pr-2.5 sm:pr-3">
               <BattleGaugeFitScore
                 label={rightLabel}
                 maxFontPx={gaugeMaxFontPx}
-                className="block max-w-full font-black tabular-nums tracking-tight"
+                className="block max-w-[calc(100%-0.5rem)] text-right font-black tabular-nums tracking-tight"
                 style={scoreTextStyle()}
               />
             </div>

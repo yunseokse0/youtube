@@ -18,6 +18,7 @@ import {
   ensureMissionItems,
   rebumpDonorsPastSettlementReset,
   totalCombined,
+  broadcastDateKey,
   type AppState,
   type DailyLogEntry,
 } from "@/lib/state";
@@ -292,31 +293,37 @@ export function buildAppStateFromRestoreJson(
   return next;
 }
 
-/** 오늘(또는 지정일) 일일 로그 → 없으면 전체 최신 */
+function pickLatestDailyLogEntryFromDate(
+  log: Record<string, DailyLogEntry[] | unknown[]>,
+  dateKey: string
+): DailyLogEntry | null {
+  const entries = log[dateKey];
+  if (!Array.isArray(entries) || entries.length === 0) return null;
+  let best: DailyLogEntry | null = null;
+  let bestTs = 0;
+  for (const raw of entries) {
+    if (!raw || typeof raw !== "object") continue;
+    const e = raw as DailyLogEntry;
+    const ts = Date.parse(String(e.at || ""));
+    if (!Number.isFinite(ts) || ts <= bestTs) continue;
+    bestTs = ts;
+    best = e;
+  }
+  return best;
+}
+
+/** 자동 복구 허용: 오늘(KST) 또는 최근 N ms 이내 스냅샷만 (어제 전체 fallback 금지) */
+export const DAILY_LOG_AUTO_RESTORE_MAX_AGE_MS = 36 * 60 * 60 * 1000;
+
+/** 오늘(또는 지정일) 일일 로그 → 없으면 전체 최신 (수동·정산 보조용) */
 export function pickDailyLogEntryForRestore(
   log: Record<string, DailyLogEntry[] | unknown[]> | null | undefined,
   preferDateKey?: string
 ): DailyLogEntry | null {
   if (!log || typeof log !== "object") return null;
 
-  const tryDate = (dateKey: string): DailyLogEntry | null => {
-    const entries = log[dateKey];
-    if (!Array.isArray(entries) || entries.length === 0) return null;
-    let best: DailyLogEntry | null = null;
-    let bestTs = 0;
-    for (const raw of entries) {
-      if (!raw || typeof raw !== "object") continue;
-      const e = raw as DailyLogEntry;
-      const ts = Date.parse(String(e.at || ""));
-      if (!Number.isFinite(ts) || ts <= bestTs) continue;
-      bestTs = ts;
-      best = e;
-    }
-    return best;
-  };
-
-  const today = preferDateKey || new Date().toISOString().slice(0, 10);
-  const todayEntry = tryDate(today);
+  const today = preferDateKey || broadcastDateKey();
+  const todayEntry = pickLatestDailyLogEntryFromDate(log, today);
   if (todayEntry) return todayEntry;
 
   let best: DailyLogEntry | null = null;
@@ -328,6 +335,39 @@ export function pickDailyLogEntryForRestore(
       const e = raw as DailyLogEntry;
       const ts = Date.parse(String(e.at || ""));
       if (!Number.isFinite(ts) || ts <= bestTs) continue;
+      if (!Array.isArray(e.donors) && !Array.isArray(e.members)) continue;
+      bestTs = ts;
+      best = e;
+    }
+  }
+  return best;
+}
+
+/**
+ * GET·orphan 자동 복구 — 오늘(KST) 우선, 없으면 최근 36시간 이내만.
+ * (수동 복구는 pickDailyLogEntryForManualRestore)
+ */
+export function pickDailyLogEntryForAutoRestore(
+  log: Record<string, DailyLogEntry[] | unknown[]> | null | undefined,
+  preferDateKey?: string,
+  nowMs = Date.now()
+): DailyLogEntry | null {
+  if (!log || typeof log !== "object") return null;
+
+  const today = preferDateKey || broadcastDateKey(new Date(nowMs));
+  const todayEntry = pickLatestDailyLogEntryFromDate(log, today);
+  if (todayEntry) return todayEntry;
+
+  const cutoff = nowMs - DAILY_LOG_AUTO_RESTORE_MAX_AGE_MS;
+  let best: DailyLogEntry | null = null;
+  let bestTs = 0;
+  for (const entries of Object.values(log)) {
+    if (!Array.isArray(entries)) continue;
+    for (const raw of entries) {
+      if (!raw || typeof raw !== "object") continue;
+      const e = raw as DailyLogEntry;
+      const ts = Date.parse(String(e.at || ""));
+      if (!Number.isFinite(ts) || ts < cutoff || ts <= bestTs) continue;
       if (!Array.isArray(e.donors) && !Array.isArray(e.members)) continue;
       bestTs = ts;
       best = e;
@@ -380,7 +420,7 @@ export function enrichAppStateFromDailyLogWhenDonorsMissing(
   log: Record<string, DailyLogEntry[] | unknown[]> | null | undefined
 ): AppState {
   if (normalizeDonorsArray(snapshot.donors).length > 0) return snapshot;
-  const entry = pickDailyLogEntryForRestore(log);
+  const entry = pickDailyLogEntryForAutoRestore(log, broadcastDateKey());
   if (!entry) return snapshot;
   const donorCount = Array.isArray(entry.donors) ? entry.donors.length : 0;
   if (donorCount <= 0) return snapshot;

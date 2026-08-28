@@ -10,7 +10,7 @@ import {
   pickDailyLogEntryForRestore,
   pickDailyLogEntryForManualRestore,
 } from "@/lib/state-restore";
-import { defaultState } from "@/lib/state";
+import { defaultState, broadcastDateKey } from "@/lib/state";
 
 describe("state-restore", () => {
   it("detects full broadcast backup", () => {
@@ -159,10 +159,11 @@ describe("state-restore", () => {
 
   it("enrichAppStateFromDailyLogWhenDonorsMissing restores when donors and totals are zero", () => {
     const base = defaultState();
+    const at = new Date().toISOString();
     const log = {
-      "2026-08-20": [
+      [broadcastDateKey()]: [
         {
-          at: "2026-08-20T12:00:00.000Z",
+          at,
           total: 50000,
           donors: [
             {
