@@ -129,6 +129,7 @@ import {
   isFullBroadcastStateBackup,
   isOrphanedDonationState,
   pickDailyLogEntryForRestore,
+  pickDailyLogEntryForManualRestore,
   summarizeRestoreJson,
 } from "@/lib/state-restore";
 import {
@@ -224,6 +225,10 @@ import {
   tableRowStripeBgFromPickerHex,
 } from "@/lib/excel-member-table-theme";
 import { applySettlementResetToState } from "@/lib/settlement-reset-apply";
+import {
+  SETTLEMENT_RESET_CONFIRM_PHRASE,
+  normalizeSettlementResetConfirmPhrase,
+} from "@/lib/settlement-reset-confirm";
 import { shouldSuppressAutoRosterRestore } from "@/lib/intentional-donation-clear";
 import { planSigBulkReupload, sigBulkFilesWithoutNameMatch } from "@/lib/sig-image-bulk";
 import { parseSigMetaFromFileName } from "@/lib/sig-filename-meta";
@@ -1220,6 +1225,8 @@ function AdminPageInner() {
     danger: true,
   });
   const [resetSheetOpen, setResetSheetOpen] = useState(false);
+  /** 정산 리셋 실행 전 사용자가 직접 입력해야 하는 확인 문구 */
+  const [resetConfirmPhrase, setResetConfirmPhrase] = useState("");
   /** 정산「멤버 초기화」 시 생성할 멤버 슬롯 수(1~30) */
   const [resetMemberSlotCount, setResetMemberSlotCount] = useState(3);
   const [activeNav, setActiveNav] = useState<AdminNavKey>("dashboard");
@@ -4311,11 +4318,13 @@ function AdminPageInner() {
   const resetAllMembersAmounts = () => {
     requestConfirm(
       "모든 멤버 금액 리셋",
-      "계좌·투네·기여도·화장실과 후원 기록을 모두 비웁니다(멤버 이름은 유지). 정산 리셋과 동일하게 로그에 남습니다. 계속할까요?",
+      "계좌·투네·기여도·화장실과 후원 기록을 모두 비웁니다(멤버 이름은 유지).\n" +
+        "정산 리셋 화면에서 「정산리셋」을 입력한 뒤 「멤버 유지」를 눌러야 실행됩니다. 계속할까요?",
       () => {
-        onResetKeepMembers();
+        setResetConfirmPhrase("");
+        setResetSheetOpen(true);
       },
-      { confirmText: "리셋", danger: true }
+      { confirmText: "리셋 화면 열기", danger: true }
     );
   };
 
@@ -7608,7 +7617,8 @@ function AdminPageInner() {
     const localLog = loadDailyLog(user?.id);
     const merged: Record<string, DailyLogEntry[]> = { ...localLog, ...serverLog };
     const todayKey = new Date().toISOString().slice(0, 10);
-    const latest = pickDailyLogEntryForRestore(merged, todayKey);
+    const currentDonorCount = normalizeDonorsArray(stateRef.current.donors).length;
+    const latest = pickDailyLogEntryForManualRestore(merged, currentDonorCount);
     if (!latest) {
       window.alert("일일 로그에 복구할 후원 스냅샷이 없습니다.");
       return;
@@ -8938,7 +8948,7 @@ function AdminPageInner() {
   };
 
   const commitSettlementReset = useCallback(
-    async (mode: "keep" | "init", memberSlotCount?: number) => {
+    async (mode: "keep" | "init", memberSlotCount?: number, confirmPhrase?: string) => {
       if (resetInProgressRef.current) return;
       resetInProgressRef.current = true;
       settlementResetUntilRef.current = Date.now() + 30_000;
@@ -8947,6 +8957,7 @@ function AdminPageInner() {
       autoOrphanDonorRestoreAttemptedRef.current = true;
       serverDonorMismatchRestoreAttemptedRef.current = true;
       setResetSheetOpen(false);
+      setResetConfirmPhrase("");
       appendDailyLog(state, user?.id);
       loadDailyLogFromApi(user?.id)
         .then((serverLog) => {
@@ -8989,6 +9000,8 @@ function AdminPageInner() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             mode,
+            userConfirmed: true,
+            confirmPhrase: confirmPhrase ?? SETTLEMENT_RESET_CONFIRM_PHRASE,
             ...(mode === "init" ? { memberSlotCount } : {}),
           }),
         });
@@ -9056,12 +9069,36 @@ function AdminPageInner() {
     [presetStorageKey, refreshStorageHealth, state, user?.id]
   );
 
+  const resetPhraseReady =
+    normalizeSettlementResetConfirmPhrase(resetConfirmPhrase) === SETTLEMENT_RESET_CONFIRM_PHRASE;
+
+  const requestSettlementResetExecution = (mode: "keep" | "init", memberSlotCount?: number) => {
+    if (!resetPhraseReady) {
+      window.alert(`아래 입력란에 「${SETTLEMENT_RESET_CONFIRM_PHRASE}」을(를) 정확히 입력한 뒤 실행하세요.`);
+      return;
+    }
+    const live = stateRef.current;
+    const donorCount = normalizeDonorsArray(live.donors).length;
+    const combined = totalCombined(live);
+    const modeLabel = mode === "keep" ? "멤버 유지 · 후원·금액만 초기화" : "멤버 초기화 · 후원·금액 비움";
+    if (
+      !window.confirm(
+        `[${modeLabel}]\n\n` +
+          `후원 ${donorCount.toLocaleString("ko-KR")}건 · 합계 ${combined.toLocaleString("ko-KR")}원을 서버에서 비웁니다.\n` +
+          `되돌릴 수 없습니다. 정말 실행할까요?`
+      )
+    ) {
+      return;
+    }
+    void commitSettlementReset(mode, memberSlotCount, resetConfirmPhrase);
+  };
+
   const onResetKeepMembers = () => {
-    void commitSettlementReset("keep");
+    requestSettlementResetExecution("keep");
   };
   const onResetInitMembers = () => {
     const slotN = Math.max(1, Math.min(30, Math.floor(Number(resetMemberSlotCount) || 3)));
-    void commitSettlementReset("init", slotN);
+    requestSettlementResetExecution("init", slotN);
   };
 
   const onSnapshotNow = () => {
@@ -19853,7 +19890,10 @@ function AdminPageInner() {
                 <div className="flex gap-2">
                   <button
                     className="px-3 py-2 rounded bg-[#ef4444] hover:bg-[#dc2626] text-white"
-                    onClick={() => setResetSheetOpen(true)}
+                    onClick={() => {
+                      setResetConfirmPhrase("");
+                      setResetSheetOpen(true);
+                    }}
                   >
                     정산 리셋(로그 기록)
                   </button>
@@ -19954,12 +19994,36 @@ function AdminPageInner() {
       )}
       {resetSheetOpen && (
         <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center">
-          <button className="absolute inset-0 bg-black/55" onClick={() => setResetSheetOpen(false)} aria-label="닫기" />
+          <button
+            className="absolute inset-0 bg-black/55"
+            onClick={() => {
+              setResetSheetOpen(false);
+              setResetConfirmPhrase("");
+            }}
+            aria-label="닫기"
+          />
           <div className="relative w-full max-w-md lg:rounded-2xl rounded-t-2xl border-t lg:border border-white/10 bg-[#202020] p-4 lg:mx-4">
             <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-3 lg:hidden" />
             <div className="text-sm font-semibold text-white">정산 리셋 (로그 기록)</div>
             <div className="text-xs text-neutral-400 mt-1">
               멤버 초기화 여부를 선택하세요. 시그 재고·회전판·식대전·미션 등 방송 설정은 멤버 초기화에서도 유지됩니다.
+            </div>
+            <div className="mt-3 rounded-lg border border-amber-400/40 bg-amber-950/30 px-3 py-2 space-y-2">
+              <label className="block text-[11px] font-medium text-amber-100">
+                실행 확인 — 아래에 <strong>{SETTLEMENT_RESET_CONFIRM_PHRASE}</strong> 입력 (필수)
+              </label>
+              <input
+                type="text"
+                value={resetConfirmPhrase}
+                onChange={(e) => setResetConfirmPhrase(e.target.value)}
+                className="w-full rounded-md border border-amber-400/30 bg-neutral-900 px-2 py-1.5 text-sm text-white"
+                placeholder={SETTLEMENT_RESET_CONFIRM_PHRASE}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <p className="text-[10px] text-amber-200/80 leading-snug">
+                입력 + 실행 버튼 + 최종 확인창까지 모두 통과해야 서버 리셋 API가 호출됩니다.
+              </p>
             </div>
             <div className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2">
               <label className="block text-[11px] font-medium text-neutral-300">멤버 초기화 시 멤버 수 (1~30)</label>
@@ -19984,14 +20048,24 @@ function AdminPageInner() {
             </div>
             <div className="space-y-2 mt-4">
               <button
-                className="w-full px-3 py-2.5 rounded-lg bg-neutral-700 hover:bg-neutral-600 text-sm text-left"
+                className={`w-full px-3 py-2.5 rounded-lg text-sm text-left ${
+                  resetPhraseReady
+                    ? "bg-neutral-700 hover:bg-neutral-600"
+                    : "bg-neutral-800/60 text-neutral-500 cursor-not-allowed"
+                }`}
+                disabled={!resetPhraseReady}
                 onClick={onResetKeepMembers}
               >
                 <span className="font-medium text-white">멤버 유지</span>
                 <span className="block text-xs text-neutral-400 mt-0.5">이전 멤버·운영비 그대로 유지. 후원 내역·금액만 초기화</span>
               </button>
               <button
-                className="w-full px-3 py-2.5 rounded-lg bg-[#ef4444] hover:bg-[#dc2626] text-sm text-left"
+                className={`w-full px-3 py-2.5 rounded-lg text-sm text-left ${
+                  resetPhraseReady
+                    ? "bg-[#ef4444] hover:bg-[#dc2626]"
+                    : "bg-[#ef4444]/30 text-white/50 cursor-not-allowed"
+                }`}
+                disabled={!resetPhraseReady}
                 onClick={onResetInitMembers}
               >
                 <span className="font-medium text-white">멤버 초기화</span>
@@ -20001,7 +20075,10 @@ function AdminPageInner() {
               </button>
               <button
                 className="w-full px-3 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-sm"
-                onClick={() => setResetSheetOpen(false)}
+                onClick={() => {
+                  setResetSheetOpen(false);
+                  setResetConfirmPhrase("");
+                }}
               >
                 취소
               </button>

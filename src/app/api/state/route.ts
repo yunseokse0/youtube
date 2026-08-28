@@ -87,6 +87,7 @@ import {
 import { normalizeTerritoryLogs, mergeTerritoryLogsFromPatch } from "@/lib/territory-utils";
 import { loadDailyLogForUserId } from "@/lib/daily-log-server-load";
 import { enrichAppStateFromDailyLogWhenDonorsMissing } from "@/lib/state-restore";
+import { isSettlementResetExplicitlyConfirmed } from "@/lib/settlement-reset-confirm";
 
 const logger = createModuleLogger('API/State');
 
@@ -899,10 +900,24 @@ export async function POST(req: Request) {
       membersAuthoritative?: boolean;
       clearSigInventory?: boolean;
       clearSigSoldOutStamp?: boolean;
+      userConfirmed?: boolean;
+      confirmPhrase?: string;
     };
     const donorsAuthoritative = body.donorsAuthoritative === true;
     const donorsReplace = body.donorsReplace === true;
     const settlementReset = body.settlementReset === true;
+    if (settlementReset && !isSettlementResetExplicitlyConfirmed(body)) {
+      logger.warn("settlementReset POST rejected — missing explicit user confirmation", {
+        userId,
+      });
+      return new Response(
+        JSON.stringify({ error: "confirm_required", reason: "settlement_reset_confirm" }),
+        {
+          status: 403,
+          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+        }
+      );
+    }
     const membersAuthoritative = body.membersAuthoritative === true;
     const clearSigInventory = body.clearSigInventory === true;
     const kvOk = isPersistentKvConfigured();

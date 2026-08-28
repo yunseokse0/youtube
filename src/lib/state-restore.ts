@@ -337,6 +337,41 @@ export function pickDailyLogEntryForRestore(
 }
 
 /**
+ * 관리자 「일일 로그에서 후원 복구」 — 최신 1건 스냅샷만 고르면
+ * 직전 대량 후원(203건) 대신 리셋 직후 1건 테스트만 복구되는 사고 방지.
+ */
+export function pickDailyLogEntryForManualRestore(
+  log: Record<string, DailyLogEntry[] | unknown[]> | null | undefined,
+  currentDonorCount = 0
+): DailyLogEntry | null {
+  const latest = pickDailyLogEntryForRestore(log);
+  if (!log || typeof log !== "object") return latest;
+
+  let best: DailyLogEntry | null = null;
+  let bestDonors = 0;
+  let bestTs = 0;
+  for (const entries of Object.values(log)) {
+    if (!Array.isArray(entries)) continue;
+    for (const raw of entries) {
+      if (!raw || typeof raw !== "object") continue;
+      const e = raw as DailyLogEntry;
+      const dc = normalizeDonorsArray(e.donors).length;
+      const ts = Date.parse(String(e.at || ""));
+      if (!Number.isFinite(ts)) continue;
+      if (dc > bestDonors || (dc === bestDonors && ts > bestTs)) {
+        bestDonors = dc;
+        bestTs = ts;
+        best = e;
+      }
+    }
+  }
+  if (!best || bestDonors === 0) return latest;
+  const latestDonors = latest ? normalizeDonorsArray(latest.donors).length : 0;
+  if (bestDonors > Math.max(currentDonorCount, latestDonors)) return best;
+  return latest;
+}
+
+/**
  * donors 가 비었을 때 일일 로그 최신 스냅샷으로 복구 (멤버 합계 0·고아 상태 포함).
  * 작업 로그(일일 로그)는 별도 KV 키라 메인 state donors 만 비어도 로그는 남을 수 있음.
  */

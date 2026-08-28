@@ -8,6 +8,7 @@ import {
   isFullBroadcastStateBackup,
   isOrphanedDonationState,
   pickDailyLogEntryForRestore,
+  pickDailyLogEntryForManualRestore,
 } from "@/lib/state-restore";
 import { defaultState } from "@/lib/state";
 
@@ -84,6 +85,33 @@ describe("state-restore", () => {
       ],
     });
     expect(restored).toBeNull();
+  });
+
+  it("manual restore prefers richest snapshot over latest 1-donor wipe", () => {
+    const log = {
+      "2026-08-27": [
+        {
+          at: "2026-08-27T12:44:17.651Z",
+          total: 945007,
+          members: [],
+          donors: Array.from({ length: 203 }, (_, i) => ({
+            id: `d_${i}`,
+            name: `donor_${i}`,
+            amount: 1,
+            memberId: "m1",
+            at: i + 1,
+          })),
+        },
+        {
+          at: "2026-08-27T12:50:14.264Z",
+          total: 1,
+          members: [],
+          donors: [{ id: "d_test", name: "테스트", amount: 1, memberId: "m1", at: 99 }],
+        },
+      ],
+    };
+    const hit = pickDailyLogEntryForManualRestore(log, 1);
+    expect(hit?.donors).toHaveLength(203);
   });
 
   it("prefers today daily log entry", () => {

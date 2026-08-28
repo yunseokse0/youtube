@@ -10,6 +10,7 @@ import {
   applySettlementResetToState,
   type SettlementResetMode,
 } from "@/lib/settlement-reset-apply";
+import { isSettlementResetExplicitlyConfirmed } from "@/lib/settlement-reset-confirm";
 import { normalizeDonorsArray, totalCombined } from "@/lib/state";
 import { createModuleLogger } from "@/lib/logger";
 
@@ -18,6 +19,8 @@ const logger = createModuleLogger("api.settlement.reset");
 type ResetBody = {
   mode?: SettlementResetMode;
   memberSlotCount?: number;
+  userConfirmed?: boolean;
+  confirmPhrase?: string;
 };
 
 /**
@@ -31,6 +34,18 @@ export async function POST(req: Request) {
   const userId = writeUid.userId;
 
   const body = (await req.json().catch(() => null)) as ResetBody | null;
+  if (!isSettlementResetExplicitlyConfirmed(body)) {
+    logger.warn("settlement reset rejected — missing explicit user confirmation", {
+      userId,
+    });
+    return new Response(
+      JSON.stringify({ ok: false, error: "confirm_required" }),
+      {
+        status: 403,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      }
+    );
+  }
   const mode: SettlementResetMode = body?.mode === "init" ? "init" : "keep";
   const memberSlotCount = body?.memberSlotCount;
 
