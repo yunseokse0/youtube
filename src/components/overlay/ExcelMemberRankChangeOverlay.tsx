@@ -89,7 +89,7 @@ const FX_CSS = `
   color: var(--excel-rank-fx-rank-color, #ffd700);
   opacity: 0;
   transform: translateY(10px);
-  transition: all 0.3s ease-out 0.2s;
+  transition: all 0.25s ease-out 0.08s;
   margin-top: 4px;
 }
 .excel-rank-change-container.rank-up .excel-rank-change-icon {
@@ -97,6 +97,14 @@ const FX_CSS = `
   transform: translateY(0);
 }
 `;
+
+/** 카드 등장 → 순위 롤 → confetti·축하 유지 → 종료 (ms) */
+const RANK_FX_TIMING = {
+  cardIn: 60,
+  rankRoll: 280,
+  celebrateConfetti: 320,
+  dismiss: 4800,
+} as const;
 
 type Phase = "idle" | "in" | "rank" | "celebrate";
 
@@ -124,6 +132,38 @@ export function ExcelMemberRankChangeOverlay({
     timersRef.current = [];
   }, []);
 
+  const fireConfetti = useCallback(() => {
+    void import("canvas-confetti").then(({ default: confetti }) => {
+      const colors = styleRef.current.confettiColors;
+      confetti({
+        particleCount: 120,
+        spread: 75,
+        startVelocity: 38,
+        origin: { y: 0.58 },
+        zIndex: 9999,
+        colors,
+      });
+      window.setTimeout(() => {
+        confetti({
+          particleCount: 60,
+          spread: 100,
+          startVelocity: 28,
+          origin: { y: 0.65, x: 0.35 },
+          zIndex: 9999,
+          colors,
+        });
+        confetti({
+          particleCount: 60,
+          spread: 100,
+          startVelocity: 28,
+          origin: { y: 0.65, x: 0.65 },
+          zIndex: 9999,
+          colors,
+        });
+      }, 180);
+    });
+  }, []);
+
   useEffect(() => {
     if (!event) return;
     clearTimers();
@@ -134,28 +174,20 @@ export function ExcelMemberRankChangeOverlay({
       timersRef.current.push(window.setTimeout(fn, ms));
     };
 
-    schedule(() => setPhase("in"), 100);
-    schedule(() => setPhase("rank"), 500);
+    schedule(() => setPhase("in"), RANK_FX_TIMING.cardIn);
+    schedule(() => setPhase("rank"), RANK_FX_TIMING.rankRoll);
     schedule(() => {
       setPhase("celebrate");
-      void import("canvas-confetti").then(({ default: confetti }) => {
-        confetti({
-          particleCount: 100,
-          spread: 70,
-          origin: { y: 0.6 },
-          zIndex: 9999,
-          colors: styleRef.current.confettiColors,
-        });
-      });
-    }, 900);
+      fireConfetti();
+    }, RANK_FX_TIMING.celebrateConfetti);
     schedule(() => {
       setPhase("idle");
       setActive(null);
       onDoneRef.current();
-    }, 1600);
+    }, RANK_FX_TIMING.dismiss);
 
     return clearTimers;
-  }, [event, clearTimers]);
+  }, [event, clearTimers, fireConfetti]);
 
   if (!active) return null;
 

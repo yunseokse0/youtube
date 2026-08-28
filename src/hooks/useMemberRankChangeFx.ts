@@ -50,7 +50,7 @@ export function useMemberRankChangeFx(opts: {
     prevSessionRef.current = session;
     if (!hit) return;
     const now = Date.now();
-    if (now - cooldownRef.current < 2500) return;
+    if (now - cooldownRef.current < 5200) return;
     cooldownRef.current = now;
     setEvent(hit);
   }, [enabled, ready, ranked, members, donors]);
