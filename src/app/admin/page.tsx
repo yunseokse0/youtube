@@ -4053,6 +4053,14 @@ function AdminPageInner() {
     const path = opts?.full ? "/overlay/donor-rankings/full" : "/overlay/donor-rankings";
     return `${window.location.origin}${path}?${q.toString()}`;
   };
+  const buildRankChangeOverlayUrl = (presetId?: string): string => {
+    if (typeof window === "undefined") return "";
+    const q = new URLSearchParams();
+    q.set("u", overlayUserId);
+    q.set("host", "obs");
+    if (presetId) q.set("p", presetId);
+    return `${window.location.origin}/overlay/rank-change?${q.toString()}`;
+  };
   const buildEmergencySnapshotUrl = (p: OverlayPreset): string => {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
@@ -15951,6 +15959,40 @@ function AdminPageInner() {
                   오버레이 열기
                 </button>
               </div>
+              <div className="mb-3 rounded border border-amber-500/30 bg-amber-950/25 p-2 text-xs text-neutral-400 flex flex-wrap items-center gap-2">
+                <span>순위 변동 연출 (엑셀표):</span>
+                <code className="text-neutral-300 break-all">
+                  /overlay/rank-change?u={overlayUserId}&host=obs
+                  {memberRankChangeFxEditPreset?.id ? `&p=${memberRankChangeFxEditPreset.id}` : ""}
+                </code>
+                <button
+                  type="button"
+                  className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-rank-change-inline" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                  onClick={() => {
+                    void copyUrl(buildRankChangeOverlayUrl(memberRankChangeFxEditPreset?.id), "dash-rank-change-inline");
+                  }}
+                >
+                  {copiedId === "dash-rank-change-inline" ? "복사됨!" : "URL 복사"}
+                </button>
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white"
+                  onClick={() =>
+                    window.open(
+                      buildRankChangeOverlayUrl(memberRankChangeFxEditPreset?.id),
+                      "_blank",
+                      "noopener,noreferrer"
+                    )
+                  }
+                >
+                  오버레이 열기
+                </button>
+              </div>
+              <p className="mb-3 text-[11px] text-amber-200/80 leading-snug">
+                멤버 순위가 올라갈 때 카드·confetti만 표시합니다(배경 투명). 엑셀표 통합 URL(
+                <code className="text-neutral-300">/overlay</code>)에도 동일 연출이 포함됩니다. 아래 「엑셀표 · 순위
+                변동 연출」에서 색·크기를 설정하세요.
+              </p>
               <div className="mb-3 rounded border border-fuchsia-500/25 bg-fuchsia-950/20 p-3 space-y-3">
                 <div>
                   <h4 className="text-sm font-semibold text-fuchsia-100">후원 순위 · 글자·색상</h4>
@@ -16127,7 +16169,7 @@ function AdminPageInner() {
                   </label>
                 </div>
               </div>
-              <div className="mb-3 rounded border border-amber-500/25 bg-amber-950/20 p-3 space-y-3">
+              <div id="member-rank-change-fx" className="mb-3 rounded border border-amber-500/25 bg-amber-950/20 p-3 space-y-3">
                 <MemberRankChangeFxPresetPanelHeader />
                 {presets.length === 0 ? (
                   <p className="text-[11px] text-neutral-500">

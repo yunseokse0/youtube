@@ -159,8 +159,9 @@ export function MemberRankChangeFxPresetPanelHeader({ compact = false }: { compa
         엑셀표 · 순위 변동 연출 (멤버 순위 상승 시)
       </h4>
       <p className={`mt-1 text-neutral-400 leading-snug ${compact ? "text-[10px]" : "text-[11px]"}`}>
-        Prism/OBS 엑셀표 오버레이(<code className="text-neutral-300">/overlay</code>)에서 멤버 순위가 올라갈 때 카드·confetti 연출.
-        저장 즉시 반영(URL 재복사 불필요).
+        엑셀표 멤버 순위가 올라갈 때 카드·confetti 연출. OBS 전용 URL{" "}
+        <code className="text-neutral-300">/overlay/rank-change</code> 또는 통합{" "}
+        <code className="text-neutral-300">/overlay</code>. 저장 즉시 반영(URL 재복사 불필요).
       </p>
     </div>
   );
