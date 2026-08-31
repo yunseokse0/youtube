@@ -30,6 +30,16 @@ function richState(): AppState {
         target: "toon",
       },
     ],
+    sigMatch: { m1: 5000, m2: -2000 },
+    mealMatch: { m1: 12000, m2: 8000 },
+    sigMatchSettings: {
+      ...defaultState().sigMatchSettings,
+      donationLinks: {
+        m1: { active: true, startedAt: 1000 },
+        m2: { active: true, startedAt: 1000 },
+      },
+      overlayTimerEndAt: Date.now() + 60_000,
+    },
   };
 }
 
@@ -43,6 +53,10 @@ describe("applySettlementResetToState", () => {
     expect(totalCombined(next)).toBe(0);
     expect(next.members.map((m) => m.name)).toEqual(["헛치", "현민"]);
     expect(next.members.every((m) => m.account === 0 && m.toon === 0)).toBe(true);
+    expect(next.sigMatch).toEqual({});
+    expect(next.mealMatch).toEqual({});
+    expect(next.sigMatchSettings?.overlayTimerEndAt).toBeNull();
+    expect(next.sigMatchSettings?.donationLinks?.m1?.startedAt).toBe(9000);
     expect(next.settlementResetAt).toBe(9000);
     expect(next.intentionalDonationClearAt).toBe(9000);
   });
@@ -57,6 +71,8 @@ describe("applySettlementResetToState", () => {
     expect(totalCombined(next)).toBe(0);
     expect(next.members).toHaveLength(3);
     expect(next.members[0]?.name).toBe("멤버1");
+    expect(next.sigMatch).toEqual({});
+    expect(next.mealMatch).toEqual({});
     expect(next.settlementResetAt).toBe(9000);
     expect(next.intentionalDonationClearAt).toBe(9000);
   });

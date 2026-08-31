@@ -5,6 +5,31 @@ import { buildDefaultMembersCount, defaultState } from "@/lib/state";
 import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import type { AppState, Member } from "@/types";
 
+/** 정산 리셋 시 시그·식사 대전 런타임 점수·타이머 초기화 (풀·참가자 설정은 유지) */
+function buildSettlementResetBattleRuntime(
+  state: AppState,
+  resetAt: number
+): Pick<AppState, "sigMatch" | "mealMatch" | "sigMatchSettings"> {
+  const resetAtMs = Math.floor(resetAt);
+  const sigSettings = state.sigMatchSettings;
+  const nextSigDonationLinks: Record<string, { active: boolean; startedAt?: number }> = {};
+  for (const [memberId, link] of Object.entries(sigSettings?.donationLinks || {})) {
+    if (!link || typeof link !== "object") continue;
+    nextSigDonationLinks[memberId] = link.active
+      ? { active: true, startedAt: resetAtMs }
+      : { active: false, ...(link.startedAt != null ? { startedAt: link.startedAt } : {}) };
+  }
+  return {
+    sigMatch: {},
+    mealMatch: {},
+    sigMatchSettings: {
+      ...sigSettings,
+      donationLinks: nextSigDonationLinks,
+      overlayTimerEndAt: null,
+    },
+  };
+}
+
 export type SettlementResetMode = "keep" | "init";
 
 export type ApplySettlementResetOptions = {
@@ -25,11 +50,13 @@ export function applySettlementResetToState(
   const resetAt = Number(opts.resetAt || 0) || Date.now();
   const resetPresets = resetOverlayPresetsGoalForDonationInit(state.overlayPresets);
   const preserved = pickSettingsPreservedAcrossSettlementReset(state);
+  const battleRuntime = buildSettlementResetBattleRuntime(state, resetAt);
 
   if (opts.mode === "keep") {
     const next: AppState = {
       ...state,
       ...preserved,
+      ...battleRuntime,
       members: (state.members || []).map((m: Member) => ({
         ...m,
         account: 0,
@@ -63,13 +90,11 @@ export function applySettlementResetToState(
   const next: AppState = {
     ...ds,
     ...preserved,
+    ...battleRuntime,
     members: nextMembers,
     memberPositions: {},
     donors: [],
     overlayPresets: resetPresets as AppState["overlayPresets"],
-    sigMatch: Object.fromEntries(
-      Object.entries(state.sigMatch || {}).filter(([memberId]) => nextMemberIds.has(memberId))
-    ),
     mealBattle: {
       ...state.mealBattle,
       participants: filteredMealParticipants,
@@ -85,9 +110,6 @@ export function applySettlementResetToState(
         nextMemberIds.has(memberId)
       ),
     },
-    mealMatch: Object.fromEntries(
-      Object.entries(state.mealMatch || {}).filter(([memberId]) => nextMemberIds.has(memberId))
-    ),
     settlementResetAt: resetAt,
     intentionalDonationClearAt: resetAt,
     updatedAt: resetAt,

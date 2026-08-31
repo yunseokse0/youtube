@@ -9013,6 +9013,8 @@ function AdminPageInner() {
         cacheBroadcastStateSnapshot(optimistic, user?.id);
         window.localStorage.setItem(presetStorageKey, JSON.stringify(resetPresets));
         notifyAdminPreviewDonorsUpdated(overlayUserId, optimistic.donors || [], optimistic.updatedAt);
+        setSigMatchPreviewIframeKey((k) => k + 1);
+        setMealMatchPreviewIframeKey((k) => k + 1);
       } catch {}
 
       try {
@@ -9069,6 +9071,8 @@ function AdminPageInner() {
         } catch {}
         notifyBroadcastStateLocalUpdated(user?.id, serverAt);
         notifyAdminPreviewDonorsUpdated(overlayUserId, cleared.donors || [], serverAt);
+        setSigMatchPreviewIframeKey((k) => k + 1);
+        setMealMatchPreviewIframeKey((k) => k + 1);
         /** 리셋 직후 구 storage-health(203건 등)로 「서버 후원 복구」 배너가 뜨지 않게 */
         setStorageHealth((prev) =>
           prev
@@ -20175,7 +20179,7 @@ function AdminPageInner() {
             <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-3 lg:hidden" />
             <div className="text-sm font-semibold text-white">정산 리셋 (로그 기록)</div>
             <div className="text-xs text-neutral-400 mt-1">
-              멤버 초기화 여부를 선택하세요. 시그 재고·회전판·식대전·미션 등 방송 설정은 멤버 초기화에서도 유지됩니다.
+              멤버 초기화 여부를 선택하세요. 시그 재고·회전판·대전 풀·미션 등 방송 설정은 유지되며, 시그·식사 대전 점수는 함께 0으로 초기화됩니다.
             </div>
             <div className="mt-3 rounded-lg border border-amber-400/40 bg-amber-950/30 px-3 py-2 space-y-2">
               <label className="block text-[11px] font-medium text-amber-100">
