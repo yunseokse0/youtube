@@ -10,6 +10,7 @@ import {
   pickDailyLogEntryForRestore,
   pickDailyLogEntryForManualRestore,
 } from "@/lib/state-restore";
+import { markIntentionalDonationEmptySession } from "@/lib/intentional-donation-clear";
 import { defaultState, broadcastDateKey } from "@/lib/state";
 
 describe("state-restore", () => {
@@ -188,6 +189,35 @@ describe("state-restore", () => {
       log
     );
     expect(next.donors).toHaveLength(1);
+  });
+
+  it("does not restore from daily log after intentional donor delete empty session", () => {
+    const base = markIntentionalDonationEmptySession({
+      ...defaultState(),
+      donors: [],
+      members: [{ id: "m1", name: "자키", account: 0, toon: 0, contribution: 0 }],
+    });
+    const log = {
+      [broadcastDateKey()]: [
+        {
+          at: new Date().toISOString(),
+          total: 3000,
+          donors: [
+            {
+              id: "d1",
+              name: "이민수",
+              amount: 3000,
+              memberId: "m1",
+              at: Date.now(),
+              target: "account" as const,
+            },
+          ],
+          members: [{ id: "m1", name: "자키", account: 3000, toon: 0, contribution: 3000 }],
+        },
+      ],
+    };
+    const next = enrichAppStateFromDailyLogWhenDonorsMissing(base, log);
+    expect(next.donors).toHaveLength(0);
   });
 
   it("does not restore from daily log after intentional settlement reset", () => {

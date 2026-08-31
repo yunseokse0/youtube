@@ -5,6 +5,7 @@ import { resolveWriteUserId, writeUserIdErrorResponse } from "@/app/api/_shared/
 import type { DonorsPersistMode } from "@/app/api/roulette/edge-state-store";
 import { persistDonationStateToServer } from "@/lib/donation/persist-donation-like-toon";
 import { repairMemberTotalsForDonorRoster } from "@/lib/donation/apply-donation-state";
+import { markIntentionalDonationEmptySession } from "@/lib/intentional-donation-clear";
 import {
   buildDonationRosterBackupPayload,
   clearDonationRosterBackup,
@@ -43,10 +44,12 @@ export async function POST(req: Request) {
     });
   }
 
-  const repaired = repairMemberTotalsForDonorRoster(persisted.state, body.state);
+  let repaired = repairMemberTotalsForDonorRoster(persisted.state, body.state);
   const donorsEmpty =
     normalizeDonorsArray(repaired.donors).length === 0 && totalCombined(repaired) <= 0;
   if (mode === "replace" && donorsEmpty) {
+    /** 일일 로그·백업 자동 heal 이 의도적 삭제를 되돌리지 않게 */
+    repaired = markIntentionalDonationEmptySession(repaired);
     /** 마지막 후원 삭제 후 구 백업이 GET에서 되살리지 않게 */
     void clearDonationRosterBackup(userId, repaired.settlementResetAt);
   } else if (buildDonationRosterBackupPayload(repaired)) {

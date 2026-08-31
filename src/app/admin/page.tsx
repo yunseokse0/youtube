@@ -238,7 +238,10 @@ import {
   SETTLEMENT_RESET_CONFIRM_PHRASE,
   normalizeSettlementResetConfirmPhrase,
 } from "@/lib/settlement-reset-confirm";
-import { shouldSuppressAutoRosterRestore } from "@/lib/intentional-donation-clear";
+import {
+  markIntentionalDonationEmptySession,
+  shouldSuppressAutoRosterRestore,
+} from "@/lib/intentional-donation-clear";
 import { planSigBulkReupload, sigBulkFilesWithoutNameMatch } from "@/lib/sig-image-bulk";
 import { parseSigMetaFromFileName } from "@/lib/sig-filename-meta";
 import { createSafeFilePreviewUrl, revokeSafeFilePreviewUrl } from "@/lib/safe-file-preview";
@@ -2629,11 +2632,23 @@ function AdminPageInner() {
     if (autoOrphanDonorRestoreAttemptedRef.current) return;
     const donorsEmpty = normalizeDonorsArray(state.donors).length === 0;
     if (!donorsEmpty) return;
+    const nowTs = Date.now();
+    for (const [id, exp] of recentlyRemovedDonorIdsRef.current) {
+      if (exp < nowTs) recentlyRemovedDonorIdsRef.current.delete(id);
+    }
+    /** 삭제·replace 저장 직후 — 일일 로그·백업 orphan heal 금지 */
+    if (
+      recentlyRemovedDonorIdsRef.current.size > 0 ||
+      nowTs < donationAuthoritativeSaveUntilRef.current ||
+      pendingUnsyncedRef.current
+    ) {
+      return;
+    }
     /**
      * 정산 리셋(멤버 유지·초기화)이 의도적으로 비운 직후 —
      * appendDailyLog 스냅샷·백업으로 즉시 되살리면 리셋이 무력화됨.
      */
-    if (Date.now() < settlementResetUntilRef.current) {
+    if (nowTs < settlementResetUntilRef.current) {
       autoOrphanDonorRestoreAttemptedRef.current = true;
       return;
     }
@@ -7567,9 +7582,12 @@ function AdminPageInner() {
         if (!nextIds.has(id)) recentlyRemovedDonorIdsRef.current.set(id, until);
       }
     }
-    const preserved = opts?.replaceDonors
+    let preserved = opts?.replaceDonors
       ? next
       : mergeDonationApplyBase(next, stateRef.current) ?? next;
+    if (opts?.replaceDonors) {
+      preserved = markIntentionalDonationEmptySession(preserved);
+    }
     const ts = saved.serverUpdatedAt ?? preserved.updatedAt ?? Date.now();
     donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
     stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, ts);

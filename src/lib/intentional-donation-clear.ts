@@ -37,6 +37,16 @@ export function withIntentionalDonationClear(state: AppState, clearAt: number): 
   };
 }
 
+/**
+ * 단건·전체 삭제 등 의도적 비움 — settlementResetAt 은 건드리지 않음.
+ * (정산 리셋용 withIntentionalDonationClear 와 구분)
+ */
+export function markIntentionalDonationEmptySession(state: AppState): AppState {
+  if (!isEmptyBroadcastDonationSession(state)) return state;
+  if (Number(state.intentionalDonationClearAt || 0) > 0) return state;
+  return { ...state, intentionalDonationClearAt: Date.now() };
+}
+
 /** 실후원이 들어오면 의도적 비움 마커 해제 (리셋 stamp 자체는 유지) */
 export function clearIntentionalDonationClearIfHasDonations(state: AppState): AppState {
   if (!Number(state.intentionalDonationClearAt || 0)) return state;

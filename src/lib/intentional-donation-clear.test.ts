@@ -3,6 +3,7 @@ import {
   clearIntentionalDonationClearIfHasDonations,
   coalesceIntentionalDonationClearAt,
   isIntentionalDonationClearActive,
+  markIntentionalDonationEmptySession,
   shouldSuppressAutoRosterRestore,
   withIntentionalDonationClear,
 } from "@/lib/intentional-donation-clear";
@@ -141,5 +142,17 @@ describe("intentionalDonationClearAt", () => {
         hasDonations: true,
       })
     ).toBeUndefined();
+  });
+
+  it("markIntentionalDonationEmptySession suppresses auto restore without bumping settlementResetAt", () => {
+    const cleared = markIntentionalDonationEmptySession({
+      ...defaultState(),
+      settlementResetAt: 100,
+      members: [{ id: "m1", name: "자키", account: 0, toon: 0, contribution: 0 }],
+      donors: [],
+    });
+    expect(cleared.intentionalDonationClearAt).toBeGreaterThan(0);
+    expect(cleared.settlementResetAt).toBe(100);
+    expect(shouldSuppressAutoRosterRestore(cleared)).toBe(true);
   });
 });
