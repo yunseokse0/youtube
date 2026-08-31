@@ -9012,6 +9012,7 @@ function AdminPageInner() {
       try {
         cacheBroadcastStateSnapshot(optimistic, user?.id);
         window.localStorage.setItem(presetStorageKey, JSON.stringify(resetPresets));
+        notifyAdminPreviewDonorsUpdated(overlayUserId, optimistic.donors || [], optimistic.updatedAt);
       } catch {}
 
       try {
@@ -9067,6 +9068,7 @@ function AdminPageInner() {
           window.localStorage.setItem(presetStorageKey, JSON.stringify(clearedPresets));
         } catch {}
         notifyBroadcastStateLocalUpdated(user?.id, serverAt);
+        notifyAdminPreviewDonorsUpdated(overlayUserId, cleared.donors || [], serverAt);
         /** 리셋 직후 구 storage-health(203건 등)로 「서버 후원 복구」 배너가 뜨지 않게 */
         setStorageHealth((prev) =>
           prev
@@ -9093,7 +9095,7 @@ function AdminPageInner() {
       }
       resetInProgressRef.current = false;
     },
-    [presetStorageKey, refreshStorageHealth, state, user?.id]
+    [overlayUserId, presetStorageKey, refreshStorageHealth, state, user?.id]
   );
 
   const resetPhraseReady =

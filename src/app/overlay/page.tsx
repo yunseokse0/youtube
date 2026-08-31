@@ -127,6 +127,7 @@ import {
   subscribeBroadcastStateLocalUpdated,
   subscribeOverlayPresetsLocalUpdated,
 } from "@/lib/broadcast-state-local-sync";
+import { shouldSuppressAutoRosterRestore } from "@/lib/intentional-donation-clear";
 import { buildOverlayRankedMembers, buildMemberCreationOrderIndex, compareMembersByDonationTotal, OVERLAY_HALF_SPLIT_MIN_COUNT } from "@/lib/utils";
 import {
   isDonationTableBoolKey,
@@ -2240,38 +2241,46 @@ function OverlayInner() {
   }, [userId, readLocalPresets]);
   const membersRemote = useMemo(() => {
     if (!ready || !s) return ensureMembers([]);
-    const localSnap =
-      isAdminPreview && typeof window !== "undefined"
-        ? readLocalBroadcastState(userId)
-        : null;
-    /** 후원순위(donors)는 되는데 엑셀(members)만 0인 스냅샷 — 표시 직전 재동기화 */
-    const donors =
-      isAdminPreview && adminPreviewDonors !== undefined
-        ? (adminPreviewDonors as Donor[])
-        : Array.isArray(s.donors)
-          ? s.donors
-          : [];
-    if (donors.length > 0) {
+    const syncMembersFromDonors = (donors: Donor[]) => {
       const base = { ...(s as AppState), donors };
       return ensureMembers(
         repairMemberTotalsForDonorRoster(syncMemberTotalsFromDonors(base), base).members
       );
+    };
+    /** 부모 탭 donors 스냅샷(빈 배열 포함) — 정산 리셋 직후 iframe 세션 구 금액으로 되돌아가지 않게 */
+    if (isAdminPreview && adminPreviewDonors !== undefined) {
+      return syncMembersFromDonors(adminPreviewDonors as Donor[]);
     }
-    /** 관리자 미리보기 — 서버 donors 비었을 때 부모 탭 LS 스냅샷 사용 */
-    if (isAdminPreview && localSnap) {
-      const lbDonors = normalizeDonorsArray(localSnap.donors);
-      if (lbDonors.length > 0) {
-        const base = {
-          ...(s as AppState),
-          donors: lbDonors,
-          members: localSnap.members ?? s.members,
-        };
-        return ensureMembers(
-          repairMemberTotalsForDonorRoster(syncMemberTotalsFromDonors(base), base).members
-        );
-      }
-      if (totalCombined(localSnap) > 0) {
-        return ensureMembers(localSnap.members ?? s.members);
+    const donors = Array.isArray(s.donors) ? (s.donors as Donor[]) : [];
+    if (donors.length > 0) {
+      return syncMembersFromDonors(donors);
+    }
+    if (shouldSuppressAutoRosterRestore(s as AppState)) {
+      return syncMembersFromDonors([]);
+    }
+    const localSnap =
+      isAdminPreview && typeof window !== "undefined"
+        ? readLocalBroadcastState(userId)
+        : null;
+    /** 관리자 미리보기 — 부모 donors 요청 전, 서버 donors 비었을 때만 세션 스냅샷 */
+    if (isAdminPreview && localSnap && !shouldSuppressAutoRosterRestore(localSnap)) {
+      const serverResetAt = Number((s as AppState).settlementResetAt || 0);
+      const snapResetAt = Number(localSnap.settlementResetAt || 0);
+      if (serverResetAt <= snapResetAt) {
+        const lbDonors = normalizeDonorsArray(localSnap.donors);
+        if (lbDonors.length > 0) {
+          const base = {
+            ...(s as AppState),
+            donors: lbDonors,
+            members: localSnap.members ?? s.members,
+          };
+          return ensureMembers(
+            repairMemberTotalsForDonorRoster(syncMemberTotalsFromDonors(base), base).members
+          );
+        }
+        if (totalCombined(localSnap) > 0) {
+          return ensureMembers(localSnap.members ?? s.members);
+        }
       }
     }
     return ensureMembers(s.members);
