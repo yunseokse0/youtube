@@ -204,6 +204,60 @@ describe("donation-roster-backup", () => {
     expect(next.members[0]?.account).toBe(60000);
   });
 
+  it("unionAppStateDonorsFromBackupIfRicher does not revive deleted donor when main still has other rows", () => {
+    const backup = buildDonationRosterBackupPayload({
+      ...richState(),
+      donors: [
+        {
+          id: "d1",
+          name: "A",
+          amount: 10_000,
+          memberId: "m1",
+          at: Date.now(),
+          target: "account",
+        },
+        {
+          id: "d2",
+          name: "B",
+          amount: 20_000,
+          memberId: "m1",
+          at: Date.now() + 1,
+          target: "account",
+        },
+      ],
+      members: [{ id: "m1", name: "피자", account: 30_000, toon: 0, contribution: 30_000 }],
+    })!;
+    const afterDelete: AppState = {
+      ...richState(),
+      donors: [
+        {
+          id: "d1",
+          name: "A",
+          amount: 10_000,
+          memberId: "m1",
+          at: Date.now(),
+          target: "account",
+        },
+      ],
+      members: [{ id: "m1", name: "피자", account: 10_000, toon: 0, contribution: 10_000 }],
+      updatedAt: Date.now() + 9999,
+    };
+    const merged = unionAppStateDonorsFromBackupIfRicher(afterDelete, backup);
+    expect(merged.donors.map((d) => d.id)).toEqual(["d1"]);
+  });
+
+  it("unionAppStateDonorsFromBackupIfRicher revives last deleted donor when main is empty (replace save must skip union)", () => {
+    const backup = buildDonationRosterBackupPayload(richState())!;
+    const afterLastDelete: AppState = {
+      ...richState(),
+      donors: [],
+      members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 }],
+      updatedAt: Date.now() + 9999,
+    };
+    const merged = unionAppStateDonorsFromBackupIfRicher(afterLastDelete, backup);
+    expect(merged.donors.length).toBe(1);
+  });
+
   it("unionAppStateDonorsFromBackupIfRicher merges when main empty but backup has donors", () => {
     const backup = buildDonationRosterBackupPayload(richState())!;
     const emptyMembers: AppState = {

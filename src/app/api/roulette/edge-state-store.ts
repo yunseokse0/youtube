@@ -87,8 +87,11 @@ export async function saveAppStateForRoulette(
   }
 
   let incoming = next;
-  /** 정산 리셋 등 의도적 비우기 — 백업 union 이 구 후원을 다시 넣지 않게 */
-  if (kvOk && !opts?.allowEmptyRosterWipe) {
+  /**
+   * 정산 리셋 등 의도적 비우기 — 백업 union 이 구 후원을 다시 넣지 않게.
+   * replace(삭제·나누기)는 intentional shrink — 백업이 더 많으면 삭제분이 되살아남.
+   */
+  if (kvOk && !opts?.allowEmptyRosterWipe && opts?.donorsMode !== "replace") {
     try {
       const backup = await loadDonationRosterBackupFromKv(userId);
       incoming = unionAppStateDonorsFromBackupIfRicher(incoming, backup);

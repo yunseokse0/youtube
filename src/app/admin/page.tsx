@@ -15582,8 +15582,8 @@ function AdminPageInner() {
                                     requestConfirm("후원 기록 삭제", "해당 후원 기록을 삭제할까요?", () => {
                                       void (async () => {
                                         void removeQueueEventsMatchingDonor(d);
-                                        const prev = stateRef.current;
-                                        const next = revertDonationFromAppState(prev, d.id);
+                                        const beforeDelete = stateRef.current;
+                                        const next = revertDonationFromAppState(beforeDelete, d.id);
                                         if (!next) return;
                                         const preserved = markAuthoritativeDonationSave(
                                           { serverUpdatedAt: next.updatedAt },
@@ -15591,9 +15591,12 @@ function AdminPageInner() {
                                           { replaceDonors: true, awaitingServerSave: true }
                                         );
                                         setState(preserved);
-                                        const ok = await commitAuthoritativeDonorPersist(preserved);
+                                        const ok = await commitAuthoritativeDonorPersist(preserved, {
+                                          persistToastLabel: "후원 삭제",
+                                        });
                                         if (!ok) {
-                                          return;
+                                          stateRef.current = beforeDelete;
+                                          setState(beforeDelete);
                                         }
                                       })();
                                     }, { confirmText: "삭제", danger: true });
