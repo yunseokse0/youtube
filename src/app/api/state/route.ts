@@ -1309,6 +1309,13 @@ export async function POST(req: Request) {
       next = syncHighSocietyMemberWidthSnapshotInState(next);
     }
 
+    if (membersAuthoritative) {
+      const rosterAt = Math.max(Number(next.membersRosterUpdatedAt || 0), Number(next.updatedAt || 0));
+      if (rosterAt > 0) {
+        next = { ...next, membersRosterUpdatedAt: rosterAt };
+      }
+    }
+
     if (clearSigInventory) {
       await markSigInventoryBackupCleared(userId);
     } else if (hasExpandedSigInventory(next.sigInventory)) {

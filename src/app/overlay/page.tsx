@@ -590,14 +590,32 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
             saveLastGood(mergedLocal);
           }
         }
-        /** 관리자 iframe 미리보기 — LS donors 기준으로 엑셀 금액을 매 sync 마다 재계산 */
+        /** 관리자 iframe 미리보기 — 세션 캐시(즉시) 우선, LS donors 기준으로 엑셀 금액 재계산 */
         if (
           !opts?.forceFull &&
           !preferServerOnlyRef.current &&
           (isAdminDashboardPreviewEmbed() || isEmbeddedInSameOriginAdminFrame())
         ) {
-          const peek = readLocalStateIfExists();
+          const peek = readLocalBroadcastState(userId) || readLocalStateIfExists();
           if (peek && (peek.updatedAt || 0) > 0 && hasMeaningfulMemberRoster(peek)) {
+            const peekStamp = Math.max(
+              Number(peek.membersRosterUpdatedAt || 0),
+              Number(peek.updatedAt || 0)
+            );
+            const goodStamp = Math.max(
+              Number(lastGoodRef.current?.membersRosterUpdatedAt || 0),
+              Number(lastGoodRef.current?.updatedAt || 0)
+            );
+            /** 멤버 삭제 직후 stale LS 폴링이 구 로스터로 되돌리지 않게 */
+            if (
+              lastGoodRef.current &&
+              peekStamp < goodStamp &&
+              isMemberRosterStrictSuperset(lastGoodRef.current.members, peek.members || [])
+            ) {
+              return;
+            }
+            const rosterApply = applyLocalMemberRosterIfNewer(peek);
+            if (rosterApply) return;
             const syncedPeek = applyOverlayDonationSync(peek);
             const peekSig = buildOverlaySyncSignature(syncedPeek);
             lastUpdatedRef.current = Math.max(
@@ -924,6 +942,9 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         return;
       }
       if (rosterApply === "shrunk") {
+        if (preferServerOnlyRef.current) {
+          void syncOnceRef.current({ forceFull: true, membersRosterSync: true });
+        }
         return;
       }
       if (preferServerOnlyRef.current) {
@@ -982,6 +1003,9 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         return;
       }
       if (rosterApply === "shrunk") {
+        if (preferServerOnlyRef.current) {
+          void syncOnceRef.current({ forceFull: true, membersRosterSync: true });
+        }
         return;
       }
       if (preferServerOnlyRef.current) {
@@ -3689,10 +3713,10 @@ function OverlayInner() {
   const excelRightTargetCount = OVERLAY_EXCEL_COLUMN_SLOTS;
 
   const excelPlaceholderMember: Member = { id: "__excel_placeholder__", name: "", account: 0, toon: 0, operating: false };
-  const excelMakePlaceholderRows = (n: number, startRank?: number) =>
+  const excelMakePlaceholderRows = (n: number) =>
     Array.from({ length: Math.max(0, n) }).map((_, idx) => ({
-      m: { ...excelPlaceholderMember, id: `${excelPlaceholderMember.id}_${startRank ?? "x"}_${idx}` },
-      rank: startRank != null ? startRank + idx : null,
+      m: { ...excelPlaceholderMember, id: `${excelPlaceholderMember.id}_${idx}` },
+      rank: null as number | null,
       __excelPlaceholder: true,
     }));
 
@@ -3703,7 +3727,7 @@ function OverlayInner() {
           key: "left",
           ranked: [
             ...excelSplit.left,
-            ...excelMakePlaceholderRows(Math.max(0, excelLeftCount - excelSplit.left.length), 1 + excelSplit.left.length),
+            ...excelMakePlaceholderRows(Math.max(0, excelLeftCount - excelSplit.left.length)),
           ] as any,
           includePinned: false,
           includeTotal: false,
@@ -3712,10 +3736,7 @@ function OverlayInner() {
           key: "right",
           ranked: [
             ...excelSplit.right,
-            ...excelMakePlaceholderRows(
-              Math.max(0, excelRightTargetCount - excelSplit.right.length),
-              excelLeftCount + excelSplit.right.length + 1
-            ),
+            ...excelMakePlaceholderRows(Math.max(0, excelRightTargetCount - excelSplit.right.length)),
           ] as any,
           includePinned: true,
           includeTotal: true,
@@ -5327,7 +5348,7 @@ function OverlayInner() {
                           >
                             <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
                               <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                {rank != null ? rank : " "}
+                                {" "}
                               </span>
                             </td>
                             {hasRoleColumn && (
