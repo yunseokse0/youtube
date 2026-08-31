@@ -8180,11 +8180,11 @@ function AdminPageInner() {
       writeDonationIngestMode(user.id, mode);
       setDonationIngestMode(mode);
       if (mode === "toona") {
-        /** 이중 수집 방지 — toona 허브일 때 youtube 직접 WS 끔 */
+        /** 이중 수집 방지 — DIN 허브일 때 youtube 직접 WS 끔 */
         if (toonationSocketEnabled) {
           await persistToonationSettings({ socketEnabled: false });
         }
-        showAppToast("toona 허브 모드 — 투네 직접 수집을 껐습니다.", {
+        showAppToast("DIN 허브 모드 — 투네 직접 수집을 껐습니다.", {
           variant: "info",
           durationMs: 3500,
         });
@@ -8198,7 +8198,7 @@ function AdminPageInner() {
     [donationIngestMode, persistToonationSettings, toonationSocketEnabled, user?.id]
   );
 
-  /** toona 허브 모드에서는 youtube 직접 WS를 유지하지 않음 */
+  /** DIN 허브 모드에서는 youtube 직접 WS를 유지하지 않음 */
   useEffect(() => {
     if (!user?.id || !toonationSettingsHydrated) return;
     if (donationIngestMode !== "toona") return;
@@ -14433,7 +14433,7 @@ function AdminPageInner() {
                         onChange={() => void selectDonationIngestMode("toona")}
                       />
                       <span>
-                        <strong className="block text-sm text-white">B · toona 허브</strong>
+                        <strong className="block text-sm text-white">B · DIN 허브</strong>
                         toona에 로그인·투네 연동 → youtube는 youtubegit만 (이중 수집 방지)
                       </span>
                     </label>

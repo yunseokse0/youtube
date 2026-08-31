@@ -53,7 +53,7 @@ export default function ContributionFormulaPanel({ value, onSave }: Props) {
       </div>
       <p className="text-[11px] text-neutral-300 leading-relaxed">
         저장 후 들어오는 후원부터 적용됩니다. 기존 기여도는 유지됩니다. 계좌·투네 금액은 변하지 않습니다.
-        toona 허브 연동 시 도네 얼럿의 기여도 점수도 같은 계산식을 따릅니다.
+        DIN 허브 연동 시 도네 얼럿의 기여도 점수도 같은 계산식을 따릅니다.
       </p>
       <div className="flex flex-wrap gap-2">
         {(

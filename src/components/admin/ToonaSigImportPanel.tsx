@@ -127,7 +127,7 @@ export default function ToonaSigImportPanel({ inventory, onApply }: Props) {
         setMessage(
           data.message ||
             (data.error === "hub_not_linked"
-              ? "허브 미연결 — 먼저 toona 허브에 로그인하세요"
+              ? "허브 미연결 — 먼저 DIN 허브에 로그인하세요"
               : `가져오기 실패 (${data.error || res.status})`)
         );
         return;
@@ -245,7 +245,7 @@ export default function ToonaSigImportPanel({ inventory, onApply }: Props) {
       ) : (
         <>
           <p className="text-[11px] text-amber-200/80 leading-relaxed">
-            허브 미연결 — 아래에서 로그인하거나, 후원 수집 탭에서 toona 허브 로그인을 먼저 하세요.
+            허브 미연결 — 아래에서 로그인하거나, 후원 수집 탭에서 DIN 허브 로그인을 먼저 하세요.
             (허브 로그인 시 시그가 자동으로 병합됩니다.)
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">

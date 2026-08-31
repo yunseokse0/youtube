@@ -238,7 +238,7 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
   return (
     <div className="rounded border border-violet-500/30 bg-violet-950/25 px-3 py-3 space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="text-xs font-semibold text-violet-200">toona 허브 모드</div>
+        <div className="text-xs font-semibold text-violet-200">DIN 허브 모드</div>
         <span className={`text-[11px] px-2 py-0.5 rounded border ${statusClass}`}>{statusLabel}</span>
         {session?.lastIngestAt ? (
           <span className="text-[11px] text-neutral-400">
