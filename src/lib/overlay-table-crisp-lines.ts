@@ -191,6 +191,48 @@ export function overlayTableCellGridCss(opts: {
 `.trim();
 }
 
+/**
+ * excel-live / excel-member thead·총합 규칙이 bottom/top 만 남기며 좌·우 외곽선이 사라지는 회귀 복구.
+ * overlayTableCellGridCss 보다 뒤·동일·더 높은 특이도로 붙인다.
+ */
+export function overlayTableExcelOuterEdgeRestoreCss(opts: {
+  lineColor: string;
+  widthPx: number;
+  headerBottomExtraPx?: number;
+  totalRowLineColor?: string;
+  gridLines?: boolean;
+}): string {
+  if (opts.gridLines === false) return "";
+  const w = Math.max(1, Math.round(opts.widthPx) || 1);
+  const headerBottom = Math.max(w, Math.round(opts.headerBottomExtraPx ?? w + (w > 1 ? 0 : 1)));
+  const c = opts.lineColor;
+  const totalC = opts.totalRowLineColor || c;
+  const cell = (color: string, sides: OverlayTableHairlineSides) =>
+    overlayTableHairlineShadow(color, sides, w);
+  const excel =
+    ".overlay-root .overlay-elegant-table.excel-live-table, .overlay-root .overlay-elegant-table.excel-member-table";
+  return `
+${excel} thead td {
+  box-shadow: ${cell(c, { top: w, left: w, bottom: headerBottom })} !important;
+}
+${excel} thead td:last-child {
+  box-shadow: ${cell(c, { top: w, left: w, right: w, bottom: headerBottom })} !important;
+}
+${excel} tbody tr.overlay-row td:first-child {
+  box-shadow: ${cell(c, { top: w, left: w })} !important;
+}
+${excel} tbody tr.overlay-row td:last-child {
+  box-shadow: ${cell(c, { top: w, left: w, right: w })} !important;
+}
+${excel} .overlay-total-row td {
+  box-shadow: ${cell(totalC, { top: w, left: w, bottom: w })} !important;
+}
+${excel} .overlay-total-row td:last-child {
+  box-shadow: ${cell(totalC, { top: w, left: w, right: w, bottom: w })} !important;
+}
+`.trim();
+}
+
 /** OBS scale 이 소수일 때 선이 깨지지 않게 DPR 기준으로 가볍게 스냅 */
 export function snapOverlayScaleForCrispLines(
   scale: number,

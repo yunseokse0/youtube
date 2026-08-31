@@ -149,6 +149,7 @@ import {
 import { applyTableTintToCssColor } from "@/lib/table-tint-opacity";
 import {
   overlayTableCellGridCss,
+  overlayTableExcelOuterEdgeRestoreCss,
   overlayTableGridLineWidthPx,
   overlayTableHairlineShadow,
   snapOverlayScaleForCrispLines,
@@ -3524,20 +3525,37 @@ function OverlayInner() {
   const sumCombined = useMemo(() => sumAccount + sumToon, [sumAccount, sumToon]);
   const rounded = useMemo(() => roundToThousand(sumCombined), [sumCombined]);
   /** 한글 이름: `ch`는 글자 폭과 어긋나 2자만 보이고 말줄임됨 → nameGrow 시 `em`으로 실제 이름 길이 반영 */
-  const nameColGridWidth = useMemo(() => {
-    if (!effectiveNameGrow) return `${nameCh}ch`;
-    const emFit = Math.max(
+  const memberIdsSig = useMemo(() => members.map((m) => m.id).join("\u001f"), [members]);
+  const prevMemberIdsSigRef = useRef(memberIdsSig);
+  const computedNameColEm = useMemo(() => {
+    if (!effectiveNameGrow) return nameCh;
+    return Math.max(
       nameCh,
       Math.min(
         nameMaxCh,
         members.reduce((max, m) => {
           const len = String(m.name || "").trim().length;
-          return Math.max(max, len > 0 ? len * 1.25 + 2.6 : nameCh);
+          /** stroke·패딩 여유 — 짧을 때도 최소 nameCh em */
+          return Math.max(max, len > 0 ? len * 1.45 + 3 : nameCh);
         }, nameCh)
       )
     );
-    return `${emFit}em`;
   }, [effectiveNameGrow, nameCh, nameMaxCh, members]);
+  /** 이름 열은 단조 증가만 — fit 재측정과 너비 왕복(떨림) 방지 */
+  const [stableNameColEm, setStableNameColEm] = useState(computedNameColEm);
+  useLayoutEffect(() => {
+    if (!effectiveNameGrow) {
+      setStableNameColEm(nameCh);
+      return;
+    }
+    if (prevMemberIdsSigRef.current !== memberIdsSig) {
+      prevMemberIdsSigRef.current = memberIdsSig;
+      setStableNameColEm(computedNameColEm);
+      return;
+    }
+    setStableNameColEm((prev) => (computedNameColEm > prev ? computedNameColEm : prev));
+  }, [memberIdsSig, computedNameColEm, effectiveNameGrow, nameCh]);
+  const nameColGridWidth = effectiveNameGrow ? `${stableNameColEm}em` : `${nameCh}ch`;
   const donors = useMemo(() => {
     if (demoMode) {
       return [
@@ -3867,16 +3885,34 @@ function OverlayInner() {
       }
       return;
     }
+    const clampEl = memberTableClampRef.current;
+    const table = tableBoxRef.current as HTMLTableElement | null;
+    if (!clampEl || !table) return;
+
+    let rafId = 0;
+    /** nameGrow 시 clamp는 콘텐츠 폭 — 뷰포트 상한(container)만 fit 기준 */
+    const measureAvail = () => {
+      const padStyle = getComputedStyle(clampEl);
+      const padX =
+        (parseFloat(padStyle.paddingLeft) || 0) + (parseFloat(padStyle.paddingRight) || 0);
+      if (effectiveNameGrow) {
+        const container = containerRef.current;
+        if (container) return Math.max(0, container.clientWidth - padX);
+      }
+      return Math.max(0, clampEl.clientWidth - padX);
+    };
+    const scheduleRun = (fn: () => void) => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        fn();
+      });
+    };
+
     if (externalSafeMode) {
       // OBS/Prism 하드 고정 모드: 프레임 범위 내에 표 전체가 들어오도록 1회(및 리사이즈 시) 고정 비율만 계산
-      const clampEl = memberTableClampRef.current;
-      const table = tableBoxRef.current as HTMLTableElement | null;
-      if (!clampEl || !table) return;
       const updateSafeFit = () => {
-        const padStyle = getComputedStyle(clampEl);
-        const padX =
-          (parseFloat(padStyle.paddingLeft) || 0) + (parseFloat(padStyle.paddingRight) || 0);
-        const avail = Math.max(0, clampEl.clientWidth - padX);
+        const avail = measureAvail();
         if (avail < 8) return;
         const prevMax = table.style.maxWidth;
         const prevInlineFont = table.style.fontSize;
@@ -3890,7 +3926,7 @@ function OverlayInner() {
           const raw = (avail - 10) / measured;
           const safeFitMin = mobileBroadcast ? 0.58 : 0.75;
           const next = Math.max(safeFitMin, Math.min(1, Math.floor(raw * 100) / 100));
-          if (Math.abs(next - memberTableFitPrevRef.current) < 0.005) return;
+          if (Math.abs(next - memberTableFitPrevRef.current) < 0.012) return;
           memberTableFitPrevRef.current = next;
           setMemberTableFitFactor(next);
         } finally {
@@ -3900,19 +3936,17 @@ function OverlayInner() {
         }
       };
       updateSafeFit();
-      const ro = new ResizeObserver(() => updateSafeFit());
+      const ro = new ResizeObserver(() => scheduleRun(updateSafeFit));
       ro.observe(clampEl);
-      return () => ro.disconnect();
+      if (effectiveNameGrow && containerRef.current) ro.observe(containerRef.current);
+      return () => {
+        ro.disconnect();
+        if (rafId) cancelAnimationFrame(rafId);
+      };
     }
-    const clampEl = memberTableClampRef.current;
-    const table = tableBoxRef.current as HTMLTableElement | null;
-    if (!clampEl || !table) return;
 
     const run = () => {
-      const padStyle = getComputedStyle(clampEl);
-      const padX =
-        (parseFloat(padStyle.paddingLeft) || 0) + (parseFloat(padStyle.paddingRight) || 0);
-      const avail = Math.max(0, clampEl.clientWidth - padX);
+      const avail = measureAvail();
       if (avail < 8) return;
       /** `maxWidth:100%`로 테이블이 눌리면 scrollWidth≈clientWidth가 되어 축소 탐색이 무력화됨 → 측정 중만 해제 */
       const prevMax = table.style.maxWidth;
@@ -3959,23 +3993,25 @@ function OverlayInner() {
         table.style.removeProperty("font-size");
       }
       const prevFit = memberTableFitPrevRef.current;
-      if (Math.abs(best - prevFit) < 0.008) return;
+      if (Math.abs(best - prevFit) < 0.015) return;
       memberTableFitPrevRef.current = best;
       setMemberTableFitFactor(best);
     };
 
     run();
-    const ro = new ResizeObserver(() => run());
+    const ro = new ResizeObserver(() => scheduleRun(run));
     ro.observe(clampEl);
+    if (effectiveNameGrow && containerRef.current) ro.observe(containerRef.current);
     return () => {
       ro.disconnect();
+      if (rafId) cancelAnimationFrame(rafId);
       try {
         table.style.removeProperty("font-size");
       } catch {
         /* noop */
       }
     };
-  }, [showMembers, mSize, memberTableFitSig, externalSafeMode, lockMemberTableFontSize, mobileBroadcast]);
+  }, [showMembers, mSize, memberTableFitSig, externalSafeMode, lockMemberTableFontSize, mobileBroadcast, effectiveNameGrow]);
 
   const allOrderKeys = [...ranked.map(({ m }) => m.id), ...visiblePinned.map((m) => `${m.id}-p`)];
   const setRowRef = useFlip(allOrderKeys, 500, rowMotionEnabled);
@@ -4162,6 +4198,7 @@ function OverlayInner() {
     ];
     /** 숫자 자리 증가로 표 전체가 밀려 나가지 않도록 너비 상한 고정 */
     const excelTableWidthCalc = excelGridCols.join(" + ");
+    const nameColIndex = hasRoleColumn ? 2 : 1;
     const isExcelLiveTheme = membersThemeId === "excelLive";
     const isExcelGoldChrome = isExcelGoldTableTheme(membersThemeId);
     const tableHeaderLineColor =
@@ -5005,6 +5042,9 @@ function OverlayInner() {
         ${
           effectiveNameGrow
             ? `
+        .overlay-root .overlay-elegant-table col.overlay-col-name-width {
+          transition: width 0.22s ease-out;
+        }
         .overlay-root .overlay-elegant-table td.overlay-col-name {
           max-width: none;
           overflow: visible !important;
@@ -5050,6 +5090,17 @@ function OverlayInner() {
                 emphasizeTotalColumn: totalLineVisible,
                 gridLines: tableGridLines,
                 verticalLines: tableVerticalLines,
+              })
+        }
+        ${
+          isExcelGoldChrome || !tableGridLines
+            ? ""
+            : overlayTableExcelOuterEdgeRestoreCss({
+                lineColor: tableGridLineColor,
+                widthPx: tableGridLineWidthPx,
+                headerBottomExtraPx: tableGridLineWidthPx + 1,
+                totalRowLineColor: tableLineColorRaw || "rgba(255, 255, 255, 0.72)",
+                gridLines: tableGridLines,
               })
         }
         ${
@@ -5270,7 +5321,7 @@ function OverlayInner() {
               )}
               <div
                 ref={memberTableClampRef}
-                className="relative min-w-0 flex-1 overflow-visible"
+                className={`relative overflow-visible ${effectiveNameGrow ? "shrink-0" : "min-w-0 flex-1"}`}
                 style={{ borderRadius: 0 }}
               >
                 {showTableBgGif ? (
@@ -5348,7 +5399,16 @@ function OverlayInner() {
                     <div
                       ref={tableBoxRef as any}
                       className="flex flex-row items-stretch"
-                      style={{ width: "fit-content" }}
+                      style={{
+                        width: "fit-content",
+                        /** inset box-shadow 외곽선이 overflow 클립·스케일 경계에서 잘리지 않게 */
+                        ...(tableGridLines && !isExcelGoldChrome
+                          ? {
+                              paddingLeft: tableGridLineWidthPx,
+                              paddingRight: tableGridLineWidthPx,
+                            }
+                          : {}),
+                      }}
                     >
                     {memberTablePanels.map((panel, panelIdx) => (
                     <table
@@ -5375,7 +5435,11 @@ function OverlayInner() {
                     >
                   <colgroup>
                     {excelGridCols.map((w, idx) => (
-                      <col key={`excel-col-${idx}`} style={{ width: w }} />
+                      <col
+                        key={`excel-col-${idx}`}
+                        className={idx === nameColIndex && effectiveNameGrow ? "overlay-col-name-width" : undefined}
+                        style={{ width: w }}
+                      />
                     ))}
                   </colgroup>
                   <thead>

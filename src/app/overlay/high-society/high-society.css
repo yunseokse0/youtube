@@ -206,7 +206,8 @@
   align-items: center;
   justify-content: center;
   gap: 3px;
-  max-width: calc(100% - 4px);
+  max-width: max-content;
+  width: max-content;
   min-width: 0;
   padding: 6px 8px;
   font-size: clamp(14px, 2.1vw, 22px);
@@ -227,10 +228,10 @@
 
 .hs-field-name {
   display: block;
-  max-width: 100%;
+  max-width: none;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: clip;
   white-space: nowrap;
   font-size: 1.12em;
   letter-spacing: -0.01em;

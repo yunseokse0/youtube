@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   overlayTableCellGridCss,
+  overlayTableExcelOuterEdgeRestoreCss,
   overlayTableGridLineWidthPx,
   overlayTableHairlineShadow,
   overlayTableOuterFrameShadow,
@@ -85,5 +86,14 @@ describe("overlay table crisp lines", () => {
     expect(css).toMatch(
       /tbody tr\.overlay-row td \{\s*border: none !important;\s*box-shadow: inset 0 2px 0 0 #abc, inset 2px 0 0 0 #abc !important;/
     );
+  });
+
+  it("restores excel thead and body outer left/right after theme overrides", () => {
+    const css = overlayTableExcelOuterEdgeRestoreCss({ lineColor: "#abc", widthPx: 2 });
+    expect(css).toContain("excel-live-table");
+    expect(css).toContain("thead td:last-child");
+    expect(css).toContain("tbody tr.overlay-row td:first-child");
+    expect(css).toContain("inset 2px 0 0 0 #abc");
+    expect(css).toContain("inset -2px 0 0 0 #abc");
   });
 });
