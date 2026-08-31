@@ -268,6 +268,56 @@ export function purgeDonorsForMemberRoster(
   return (donors || []).filter((d) => keep.has(String(d.memberId || "").trim()));
 }
 
+/** donors contributionPoints + 기여도 기록부 수동분 → 멤버 기여도 합 */
+export function resolveMemberContributionTotal(
+  memberId: string,
+  state: Pick<AppState, "donors" | "contributionLogs" | "contributionFormula">
+): number {
+  const id = String(memberId || "").trim();
+  if (!id) return 0;
+  const formula = normalizeContributionFormula(state.contributionFormula);
+  let fromDonors = 0;
+  for (const donor of dedupeDonorRows(state.donors || [])) {
+    if (isDonorExcludedFromDonationTotals(donor)) continue;
+    if (String(donor.memberId || "").trim() !== id) continue;
+    const stored = Number(donor.contributionPoints);
+    if (Number.isFinite(stored) && stored >= 0) {
+      fromDonors += Math.round(stored);
+    } else {
+      fromDonors += computeContributionPoints(
+        donor.amount,
+        donor.target || "account",
+        formula
+      );
+    }
+  }
+  let fromLogs = 0;
+  for (const log of state.contributionLogs || []) {
+    if (String(log.memberId || "").trim() !== id) continue;
+    const amt = Math.max(0, Math.floor(Number(log.amount) || 0));
+    if (amt <= 0) continue;
+    fromLogs += log.delta === -1 ? -amt : amt;
+  }
+  return Math.max(0, fromDonors + fromLogs);
+}
+
+function memberHasContributionSources(
+  memberId: string,
+  state: Pick<AppState, "donors" | "contributionLogs">
+): boolean {
+  const id = String(memberId || "").trim();
+  if (!id) return false;
+  const hasDonor = (state.donors || []).some(
+    (d) =>
+      !isDonorExcludedFromDonationTotals(d) &&
+      String(d.memberId || "").trim() === id
+  );
+  if (hasDonor) return true;
+  return (state.contributionLogs || []).some(
+    (log) => String(log.memberId || "").trim() === id
+  );
+}
+
 /** 후원자 리스트(donors) 기준으로 멤버 계좌·투네 합계 재계산 — 순위·엑셀표 금액 불일치 방지 */
 export function syncMemberTotalsFromDonors(state: AppState): AppState {
   const totals = new Map<string, { account: number; toon: number }>();
@@ -283,14 +333,22 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
     if ((donor.target || "account") === "toon") bucket.toon += amount;
     else bucket.account += amount;
   }
+  const positions = state.memberPositions || null;
   const members = (state.members || []).map((member) => {
     const bucket = totals.get(member.id) || { account: 0, toon: 0 };
+    const isOperating = isOperatingSettlementMember(
+      { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
+      positions
+    );
+    const contribution =
+      isOperating || !memberHasContributionSources(member.id, state)
+        ? Math.max(0, Number(member.contribution) || 0)
+        : resolveMemberContributionTotal(member.id, state);
     return {
       ...member,
       account: bucket.account,
       toon: bucket.toon,
-      /** 기여도는 후원 적용 시점 공식으로 누적 — sync로 account+toon에 덮지 않음 */
-      contribution: Math.max(0, Number(member.contribution) || 0),
+      contribution,
     };
   });
   return { ...state, members };

@@ -994,7 +994,28 @@ describe("updateDonorMessageInAppState", () => {
 });
 
 describe("contribution formula (apply-from-now)", () => {
-  it("sync does not overwrite contribution with account+toon", () => {
+  it("sync rebuilds contribution from donor contributionPoints (not account+toon)", () => {
+    const synced = syncMemberTotalsFromDonors({
+      ...defaultState(),
+      contributionFormula: { accountWeightPct: 10, toonWeightPct: 10 },
+      members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 18_000 }],
+      donors: [
+        {
+          id: "d1",
+          name: "익명",
+          amount: 18_000,
+          memberId: "m1",
+          at: 1,
+          target: "toon" as const,
+          contributionPoints: 1_800,
+        },
+      ],
+    });
+    expect(synced.members[0]?.toon).toBe(18_000);
+    expect(synced.members[0]?.contribution).toBe(1_800);
+  });
+
+  it("sync uses formula for legacy donors without contributionPoints", () => {
     const synced = syncMemberTotalsFromDonors({
       ...defaultState(),
       contributionFormula: { accountWeightPct: 100, toonWeightPct: 50 },
@@ -1011,7 +1032,7 @@ describe("contribution formula (apply-from-now)", () => {
       ],
     });
     expect(synced.members[0]?.toon).toBe(10_000);
-    expect(synced.members[0]?.contribution).toBe(12_345);
+    expect(synced.members[0]?.contribution).toBe(5_000);
   });
 
   it("new donation uses formula and stores contributionPoints", () => {
@@ -1019,6 +1040,16 @@ describe("contribution formula (apply-from-now)", () => {
       ...defaultState(),
       contributionFormula: { accountWeightPct: 100, toonWeightPct: 50 },
       members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 1_000 }],
+      contributionLogs: [
+        {
+          id: "cl1",
+          memberId: "m1",
+          amount: 1_000,
+          delta: 1 as const,
+          at: 1,
+          note: "",
+        },
+      ],
       donors: [] as ReturnType<typeof defaultState>["donors"],
     };
     const event: DonationEvent = {

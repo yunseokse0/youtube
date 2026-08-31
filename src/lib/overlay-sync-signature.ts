@@ -301,9 +301,13 @@ export function isIntentionalMemberRosterShrink(
   const remoteMembers = remote.members || [];
   if (remoteMembers.length >= localMembers.length) return false;
   if (!membersDifferByIds(localMembers, remoteMembers)) return false;
+  const remoteRosterRev = Number(remote.membersRosterUpdatedAt || 0);
+  const localRosterRev = Number(local.membersRosterUpdatedAt || 0);
+  const rosterRevAdvanced = remoteRosterRev > 0 && remoteRosterRev > localRosterRev;
   const remoteAt = Number(remote.updatedAt || 0);
   const localAt = Number(local.updatedAt || 0);
-  if (remoteAt < localAt) return false;
+  /** 후원 등으로 last-good updatedAt 만 앞서도 membersRosterUpdatedAt 상승이면 삭제로 본다 */
+  if (!rosterRevAdvanced && remoteAt < localAt) return false;
 
   const remoteIds = new Set(remoteMembers.map((m) => m.id));
   const removedIds = localMembers.filter((m) => !remoteIds.has(m.id)).map((m) => m.id);
@@ -339,16 +343,17 @@ export function isServerAuthoritativeMemberRosterShrink(
   if (remoteMembers.length >= localMembers.length) return false;
   if (!membersDifferByIds(localMembers, remoteMembers)) return false;
   if (!isMemberRosterStrictSuperset(localMembers, remoteMembers)) return false;
-  const remoteAt = Number(remote.updatedAt || 0);
-  const localAt = Number(local.updatedAt || 0);
-  if (remoteAt < localAt) return false;
   if (wouldAccidentallyZeroRemainingMembers(local, remote)) return false;
 
   const remoteRosterRev = Number(remote.membersRosterUpdatedAt || 0);
   const localRosterRev = Number(local.membersRosterUpdatedAt || 0);
-  if (remoteRosterRev > 0 && remoteRosterRev >= Math.max(localAt, localRosterRev)) {
+  if (remoteRosterRev > 0 && remoteRosterRev > localRosterRev) {
     return remoteMembers.length > 0 && hasMeaningfulMemberRoster(remote);
   }
+
+  const remoteAt = Number(remote.updatedAt || 0);
+  const localAt = Number(local.updatedAt || 0);
+  if (remoteAt < localAt) return false;
 
   const localDonors = normalizeDonorsArray(local.donors);
   const remoteDonors = normalizeDonorsArray(remote.donors);

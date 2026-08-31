@@ -122,6 +122,7 @@ function overlayCoreFields(
     donationListsOverlayConfig: state.donationListsOverlayConfig,
     sigSalesExcludedIds: state.sigSalesExcludedIds,
     donationSyncMode: state.donationSyncMode,
+    contributionFormula: state.contributionFormula,
     sigRolling: state.sigRolling,
     sigRollingMeta: state.sigRollingMeta,
     /** 상류사회 영토 — 실시간 모드·좌석·후원 방향 반영에 필요 */

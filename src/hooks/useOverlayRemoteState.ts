@@ -808,6 +808,14 @@ export function useOverlayRemoteState(
     if (Number.isFinite(membersRosterAt) && membersRosterAt > 0) {
       membersRosterSyncUntilRef.current = Date.now() + 45_000;
       void syncFromApiRef.current({ forceFull: true, membersRosterSync: true });
+      window.setTimeout(
+        () => void syncFromApiRef.current({ forceFull: true, membersRosterSync: true }),
+        450
+      );
+      window.setTimeout(
+        () => void syncFromApiRef.current({ forceFull: true, membersRosterSync: true }),
+        1400
+      );
       return;
     }
 

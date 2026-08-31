@@ -313,6 +313,33 @@ describe("shouldRejectPoorerDonationRemote", () => {
     expect(isServerAuthoritativeMemberRosterShrink(local, remote)).toBe(true);
   });
 
+  it("detects roster shrink when last-good updatedAt is ahead but membersRosterUpdatedAt advanced", async () => {
+    const { isServerAuthoritativeMemberRosterShrink, isIntentionalMemberRosterShrink } = await import(
+      "@/lib/overlay-sync-signature"
+    );
+    const local = {
+      ...defaultState(),
+      updatedAt: 9000,
+      membersRosterUpdatedAt: 1000,
+      donors: [
+        { id: "d1", name: "a", amount: 18000, memberId: "m2", at: 1, target: "toon" as const },
+      ],
+      members: [
+        { id: "m1", name: "A", account: 0, toon: 0, contribution: 0 },
+        { id: "m2", name: "B", account: 0, toon: 18000, contribution: 1800 },
+      ],
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: 3000,
+      membersRosterUpdatedAt: 3000,
+      donors: local.donors,
+      members: [{ id: "m1", name: "A", account: 0, toon: 0, contribution: 0 }],
+    };
+    expect(isIntentionalMemberRosterShrink(local, remote)).toBe(true);
+    expect(isServerAuthoritativeMemberRosterShrink(local, remote)).toBe(true);
+  });
+
   it("does not treat stale shorter remote as intentional member shrink during add", async () => {
     const { isIntentionalMemberRosterShrink, isLocalMemberRosterGrowOverRemote } = await import(
       "@/lib/overlay-sync-signature"

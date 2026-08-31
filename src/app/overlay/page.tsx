@@ -100,6 +100,7 @@ import {
 } from "@/lib/timer-design";
 import BattleTeamColumnBoard from "@/components/battle/BattleTeamColumnBoard";
 import { isDefaultContributionFormula } from "@/lib/contribution-formula";
+import { resolveMemberContributionTotal } from "@/lib/donation/apply-donation-state";
 import { mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import {
@@ -466,6 +467,15 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
       if (Number.isFinite(membersRosterAt) && membersRosterAt > 0) {
         membersRosterSyncUntilRef.current = Date.now() + 45_000;
         void syncOnceRef.current({ forceFull: true, membersRosterSync: true });
+        /** 저장·GET 경합 — 서버 로스터 반영 전 stale GET 재시도 */
+        window.setTimeout(
+          () => void syncOnceRef.current({ forceFull: true, membersRosterSync: true }),
+          450
+        );
+        window.setTimeout(
+          () => void syncOnceRef.current({ forceFull: true, membersRosterSync: true }),
+          1400
+        );
         return;
       }
       const timerStylesAt = Number(incoming.timerDisplayStylesUpdatedAt);
@@ -3565,12 +3575,26 @@ function OverlayInner() {
     [getMemberRole]
   );
   /**
-   * 기여도 숫자: 저장된 contribution 우선.
-   * 기본 공식(100/100)이고 값이 0인데 계좌+투네 합이 있으면 레거시 폴백.
-   * 가중치 공식이면 account+toon 폴백 금지.
+   * 기여도 숫자: donors contributionPoints + 기록부와 동일하게 계산.
+   * donors가 있으면 저장값·계좌+투네 폴백 대신 공식 기반 합산을 우선(OBS pick에 기록부 없음).
+   * 기본 공식(100/100)이고 후원·기록부가 없을 때만 계좌+투네 합 레거시 폴백.
    */
   const allowContributionTotalFallback = isDefaultContributionFormula(s?.contributionFormula);
   const getContributionValueForMember = useCallback((m: Member) => {
+    const memberId = String(m.id || "").trim();
+    const donors = s?.donors || [];
+    const hasDonorRows =
+      memberId &&
+      donors.some(
+        (d) => String(d.memberId || "").trim() === memberId && (Number(d.amount) || 0) > 0
+      );
+    if (hasDonorRows && s) {
+      return resolveMemberContributionTotal(memberId, {
+        donors: s.donors,
+        contributionLogs: s.contributionLogs,
+        contributionFormula: s.contributionFormula,
+      });
+    }
     const raw = (m as Member & { contribution?: unknown }).contribution;
     let parsed = typeof raw === "number" ? raw : Number(typeof raw === "string" ? String(raw).replace(/,/g, "").trim() : raw);
     const total = Math.max(0, Number(m.account || 0) + Number(m.toon || 0));
@@ -3578,7 +3602,7 @@ function OverlayInner() {
     const c = Math.max(0, Math.floor(parsed));
     if (allowContributionTotalFallback && c === 0 && total > 0) return total;
     return c;
-  }, [allowContributionTotalFallback]);
+  }, [allowContributionTotalFallback, s?.donors, s?.contributionLogs, s?.contributionFormula]);
   const getRestroomValueForMember = useCallback((m: Member) => {
     return normalizeRestroomCount((m as Member & { restroom?: unknown }).restroom);
   }, []);
@@ -5324,7 +5348,7 @@ function OverlayInner() {
                         <td className={`${effectiveHeaderCls} overlay-col-total text-center`}>{totalHeaderLabel}</td>
                       )}
                       {showContributionColumn && (
-                        <td className={`${effectiveHeaderCls} overlay-col-contribution text-center`} title="관리자「기여도 기록부」값. 후원만 반영된 경우 계좌+투네 합으로 표시. 운영비 행은 기여도 미표시(—), 총합은 운영비 제외 합산.">
+                        <td className={`${effectiveHeaderCls} overlay-col-contribution text-center`} title="후원 contributionPoints·기여도 기록부·계산식 기준. 기본 공식(100/100) 레거시만 계좌+투네 합 폴백. 운영비 행은 —, 총합은 운영비 제외.">
                           기여도
                         </td>
                       )}

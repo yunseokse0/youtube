@@ -41,6 +41,7 @@ describe("state-api-pick", () => {
     expect(rs.historyLogs).toBeUndefined();
     expect(out.members).toEqual(state.members);
     expect(out.donors).toBeUndefined();
+    expect(out.contributionFormula).toEqual(state.contributionFormula);
     expect(out.highSocietySettings).toEqual(state.highSocietySettings);
   });
 

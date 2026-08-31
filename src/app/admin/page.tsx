@@ -4490,6 +4490,34 @@ function AdminPageInner() {
               stateUpdatedAtRef.current = r.serverUpdatedAt;
               lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
             }
+            try {
+              const stamped: AppState = {
+                ...next,
+                ...stateRef.current,
+                members: stateRef.current.members,
+                memberPositions: stateRef.current.memberPositions,
+                rankPositionLabels: stateRef.current.rankPositionLabels,
+                membersRosterUpdatedAt: Math.max(
+                  Number(stateRef.current.membersRosterUpdatedAt || 0),
+                  typeof r.serverUpdatedAt === "number" ? r.serverUpdatedAt : 0,
+                  Number(next.updatedAt || 0)
+                ),
+                donors:
+                  normalizeDonorsArray(stateRef.current.donors).length > 0
+                    ? stateRef.current.donors
+                    : next.donors,
+                updatedAt: Math.max(
+                  Number(stateRef.current.updatedAt || 0),
+                  Number(next.updatedAt || 0),
+                  typeof r.serverUpdatedAt === "number" ? r.serverUpdatedAt : Date.now()
+                ),
+              };
+              stateRef.current = stamped;
+              cacheBroadcastStateSnapshot(stamped, user?.id);
+              notifyBroadcastStateLocalUpdated(user?.id, stamped.updatedAt);
+            } catch {
+              notifyBroadcastStateLocalUpdated(user?.id, r.serverUpdatedAt ?? Date.now());
+            }
           } else {
             setSyncStatus(typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error");
           }
