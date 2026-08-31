@@ -3523,6 +3523,21 @@ function OverlayInner() {
   );
   const sumCombined = useMemo(() => sumAccount + sumToon, [sumAccount, sumToon]);
   const rounded = useMemo(() => roundToThousand(sumCombined), [sumCombined]);
+  /** 한글 이름: `ch`는 글자 폭과 어긋나 2자만 보이고 말줄임됨 → nameGrow 시 `em`으로 실제 이름 길이 반영 */
+  const nameColGridWidth = useMemo(() => {
+    if (!effectiveNameGrow) return `${nameCh}ch`;
+    const emFit = Math.max(
+      nameCh,
+      Math.min(
+        nameMaxCh,
+        members.reduce((max, m) => {
+          const len = String(m.name || "").trim().length;
+          return Math.max(max, len > 0 ? len * 1.25 + 2.6 : nameCh);
+        }, nameCh)
+      )
+    );
+    return `${emFit}em`;
+  }, [effectiveNameGrow, nameCh, nameMaxCh, members]);
   const donors = useMemo(() => {
     if (demoMode) {
       return [
@@ -3685,7 +3700,7 @@ function OverlayInner() {
     const ro = new (window as any).ResizeObserver(update);
     ro.observe(el);
     return () => { try { ro.disconnect(); } catch {} };
-  }, [showMembers, themeId, mSize, nameCh, bankCh, toonCh, totalCh, lockWidth, effectiveNameGrow, externalHost]);
+  }, [showMembers, themeId, mSize, nameColGridWidth, bankCh, toonCh, totalCh, lockWidth, effectiveNameGrow, externalHost]);
   const showPersonalGoal = useMemo(() => {
     const raw = sp.get("showPersonalGoal");
     if (raw === "true") return true;
@@ -3792,8 +3807,8 @@ function OverlayInner() {
       )
     );
     const cols = hasRoleColumn
-      ? `${rankColCh}|${roleColFit}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}${showRestroomColumn ? `|${restroomCh}` : ""}`
-      : `${rankColCh}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}${showRestroomColumn ? `|${restroomCh}` : ""}`;
+      ? `${rankColCh}|${roleColFit}|${nameColGridWidth}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}${showRestroomColumn ? `|${restroomCh}` : ""}`
+      : `${rankColCh}|${nameColGridWidth}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}${showRestroomColumn ? `|${restroomCh}` : ""}`;
     const rows = ranked
       .map(({ m }) =>
         `${m.account}|${m.toon}|${getContributionValueForMember(m)}${showRestroomColumn ? `|${getRestroomValueForMember(m)}` : ""}`
@@ -3805,7 +3820,7 @@ function OverlayInner() {
     ranked,
     visiblePinned,
     hasRoleColumn,
-    nameCh,
+    nameColGridWidth,
     bankCh,
     toonCh,
     totalCh,
@@ -4138,7 +4153,7 @@ function OverlayInner() {
     const excelGridCols = [
       `${rankColCh}ch`,
       ...(hasRoleColumn ? [`${roleColEm}em`] : []),
-      `${nameCh}ch`,
+      `${nameColGridWidth}`,
       `${bankCh}ch`,
       `${toonCh}ch`,
       ...(showCombinedColumn ? [`${totalCh}ch`] : []),
@@ -4299,7 +4314,7 @@ function OverlayInner() {
           }
         ` }} />
       );
-    const nameWrapCls = "truncate";
+    const nameWrapCls = effectiveNameGrow ? "" : "truncate";
     const tfTable = memberTableFitFactor;
     const mobileMinFontPx = mobileBroadcast ? 17 : externalHost ? 15 : 8;
     let memberFontPx = Math.max(mobileMinFontPx, Math.round(mSize * tfTable));
@@ -4986,9 +5001,23 @@ function OverlayInner() {
         }
         `
         }
-        /* table-layout:fixed + col 너비 안에서 이름 열만 말줄임이 안정적으로 적용되도록 */
+        /* table-layout:fixed + col 너비 — nameGrow OFF 일 때만 말줄임 */
+        ${
+          effectiveNameGrow
+            ? `
+        .overlay-root .overlay-elegant-table td.overlay-col-name {
+          max-width: none;
+          overflow: visible !important;
+          text-overflow: clip !important;
+        }
+        .overlay-root .overlay-elegant-table td.overlay-col-name .overlay-cell-text-inner {
+          max-width: none;
+          overflow: visible;
+        }`
+            : `
         .overlay-root .overlay-elegant-table td.overlay-col-name {
           max-width: 0;
+        }`
         }
         ${
           externalHost
