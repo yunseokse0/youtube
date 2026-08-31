@@ -83,20 +83,27 @@ function compareRankingRowsByTotalDesc(
 
 export type OverlayRankedMember = { m: Member; rank: number | null };
 
-/** 엑셀표·후원순위: 이 인원 이상이면 좌우 반으로 스플릿 */
+/** 엑셀표·후원순위: 이 인원 초과(6명~)부터 좌우 스플릿 */
 export const OVERLAY_HALF_SPLIT_MIN_COUNT = 5;
 
-/** 5인 이상이면 앞쪽 절반(올림)은 왼쪽, 나머지는 오른쪽 */
+/** 스플릿 시 좌·우 각 열 고정 슬롯(1–5 / 6–10) */
+export const OVERLAY_EXCEL_COLUMN_SLOTS = 5;
+
+/** 5명 이하: 단일 열. 6명 이상: 왼쪽 5칸 + 오른쪽 5칸(최대 10명) */
 export function splitOverlayListAtHalf<T>(
   items: readonly T[],
   minCount = OVERLAY_HALF_SPLIT_MIN_COUNT
 ): { left: T[]; right: T[]; split: boolean } {
   const list = Array.from(items);
-  if (list.length < minCount) {
+  if (list.length <= minCount) {
     return { left: list, right: [], split: false };
   }
-  const mid = Math.ceil(list.length / 2);
-  return { left: list.slice(0, mid), right: list.slice(mid), split: true };
+  const slots = OVERLAY_EXCEL_COLUMN_SLOTS;
+  return {
+    left: list.slice(0, slots),
+    right: list.slice(slots, slots * 2),
+    split: true,
+  };
 }
 
 /** 엑셀표 오버레이: 대표 최상단 고정 → 운영비 제외 멤버 순위 → 운영비(핀)는 호출측에서 하단 */

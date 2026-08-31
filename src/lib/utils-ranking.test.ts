@@ -60,18 +60,28 @@ describe("buildOverlayRankedMembers", () => {
 });
 
 describe("splitOverlayListAtHalf", () => {
-  it("does not split below 5 items", () => {
+  it("does not split at 5 items or fewer", () => {
     expect(splitOverlayListAtHalf([1, 2, 3, 4])).toEqual({
       left: [1, 2, 3, 4],
       right: [],
       split: false,
     });
+    expect(splitOverlayListAtHalf([1, 2, 3, 4, 5])).toEqual({
+      left: [1, 2, 3, 4, 5],
+      right: [],
+      split: false,
+    });
   });
 
-  it("splits 5 items into 3 + 2", () => {
-    expect(splitOverlayListAtHalf([1, 2, 3, 4, 5])).toEqual({
-      left: [1, 2, 3],
-      right: [4, 5],
+  it("splits 6+ items into fixed 5 + remainder (max 5 on right)", () => {
+    expect(splitOverlayListAtHalf([1, 2, 3, 4, 5, 6])).toEqual({
+      left: [1, 2, 3, 4, 5],
+      right: [6],
+      split: true,
+    });
+    expect(splitOverlayListAtHalf([1, 2, 3, 4, 5, 6, 7, 8])).toEqual({
+      left: [1, 2, 3, 4, 5],
+      right: [6, 7, 8],
       split: true,
     });
   });

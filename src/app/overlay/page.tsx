@@ -128,7 +128,7 @@ import {
   subscribeOverlayPresetsLocalUpdated,
 } from "@/lib/broadcast-state-local-sync";
 import { shouldSuppressAutoRosterRestore } from "@/lib/intentional-donation-clear";
-import { buildOverlayRankedMembers, buildMemberCreationOrderIndex, compareMembersByDonationTotal, OVERLAY_HALF_SPLIT_MIN_COUNT } from "@/lib/utils";
+import { buildOverlayRankedMembers, buildMemberCreationOrderIndex, compareMembersByDonationTotal, OVERLAY_EXCEL_COLUMN_SLOTS, splitOverlayListAtHalf } from "@/lib/utils";
 import {
   isDonationTableBoolKey,
   mergeDonationTablePresetFields,
@@ -3679,28 +3679,20 @@ function OverlayInner() {
     donors: donorsForRankFx,
   });
   /**
-   * 엑셀표 인원 변동 대응:
-   * - 5명 이하: 우측 스플릿 제거(단일 패널)
-   * - 6명 이상: "원래(처음 스플릿 시점) 좌측 슬롯 수"를 유지하고,
-   *   우측부터 멤버가 빠지는 것처럼 보이도록 부족한 칸은 placeholder 행으로 채움.
+   * 엑셀표 인원 변동:
+   * - 5명 이하: 왼쪽 단일 열만
+   * - 6명 이상: 왼쪽 1–5 / 오른쪽 6–10 고정 슬롯(빈 칸은 placeholder)
    */
-  const excelSplitKeepLeftCountRef = useRef<number | null>(null);
-  const excelSplitEnabled = ranked.length > OVERLAY_HALF_SPLIT_MIN_COUNT;
-  const excelDesiredLeftCount = Math.ceil(ranked.length / 2);
-  if (!excelSplitEnabled) {
-    excelSplitKeepLeftCountRef.current = null;
-  } else {
-    const prev = excelSplitKeepLeftCountRef.current;
-    excelSplitKeepLeftCountRef.current = prev == null ? excelDesiredLeftCount : Math.max(prev, excelDesiredLeftCount);
-  }
-  const excelLeftCount = excelSplitKeepLeftCountRef.current ?? excelDesiredLeftCount;
-  const excelRightTargetCount = excelLeftCount;
+  const excelSplit = splitOverlayListAtHalf(ranked);
+  const excelSplitEnabled = excelSplit.split;
+  const excelLeftCount = OVERLAY_EXCEL_COLUMN_SLOTS;
+  const excelRightTargetCount = OVERLAY_EXCEL_COLUMN_SLOTS;
 
   const excelPlaceholderMember: Member = { id: "__excel_placeholder__", name: "", account: 0, toon: 0, operating: false };
-  const excelMakePlaceholderRows = (n: number) =>
+  const excelMakePlaceholderRows = (n: number, startRank?: number) =>
     Array.from({ length: Math.max(0, n) }).map((_, idx) => ({
-      m: { ...excelPlaceholderMember, id: `${excelPlaceholderMember.id}_${idx}` },
-      rank: null as number | null,
+      m: { ...excelPlaceholderMember, id: `${excelPlaceholderMember.id}_${startRank ?? "x"}_${idx}` },
+      rank: startRank != null ? startRank + idx : null,
       __excelPlaceholder: true,
     }));
 
@@ -3710,8 +3702,8 @@ function OverlayInner() {
         {
           key: "left",
           ranked: [
-            ...ranked.slice(0, excelLeftCount),
-            ...excelMakePlaceholderRows(Math.max(0, excelLeftCount - ranked.slice(0, excelLeftCount).length)),
+            ...excelSplit.left,
+            ...excelMakePlaceholderRows(Math.max(0, excelLeftCount - excelSplit.left.length), 1 + excelSplit.left.length),
           ] as any,
           includePinned: false,
           includeTotal: false,
@@ -3719,8 +3711,11 @@ function OverlayInner() {
         {
           key: "right",
           ranked: [
-            ...ranked.slice(excelLeftCount),
-            ...excelMakePlaceholderRows(Math.max(0, excelRightTargetCount - ranked.slice(excelLeftCount).length)),
+            ...excelSplit.right,
+            ...excelMakePlaceholderRows(
+              Math.max(0, excelRightTargetCount - excelSplit.right.length),
+              excelLeftCount + excelSplit.right.length + 1
+            ),
           ] as any,
           includePinned: true,
           includeTotal: true,
@@ -5332,7 +5327,7 @@ function OverlayInner() {
                           >
                             <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
                               <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                {" "}
+                                {rank != null ? rank : " "}
                               </span>
                             </td>
                             {hasRoleColumn && (
