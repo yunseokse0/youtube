@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { resolveWriteUserId, writeUserIdErrorResponse } from "@/app/api/_shared/user-id";
 import {
   fetchToonaDonationsSinceLink,
+  fetchToonaHubContributionFormula,
   fetchToonaSignaturesViaHubSession,
   getYoutubePublicBaseUrl,
   loginAndLinkToonaHub,
@@ -17,6 +18,7 @@ import {
 } from "@/lib/toona-hub-session";
 import { defaultState } from "@/lib/state";
 import { normalizeContributionFormula } from "@/lib/contribution-formula";
+import { persistContributionFormulaForUser } from "@/lib/contribution-formula-persist";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import { applyToonaSigItemsToInventory } from "@/lib/toona-sig-import";
 import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
@@ -159,11 +161,20 @@ export async function POST(req: NextRequest) {
     return json({ ok: false, error: result.error }, status);
   }
 
-  /** 연동 직후 현재 기여도 공식도 toona에 맞춤 (도네 얼럿용) */
+  /** 연동 직후 기여도 공식 — toona→youtube 저장 후 toona youtubegit에도 맞춤 */
   const state = await loadAppStateForUserId(auth.userId);
-  const formula = normalizeContributionFormula(
+  let formula = normalizeContributionFormula(
     body.contributionFormula ?? state?.contributionFormula
   );
+  if (body.contributionFormula) {
+    await persistContributionFormulaForUser(auth.userId, formula);
+  } else {
+    const fromToona = await fetchToonaHubContributionFormula(auth.userId);
+    if (fromToona) {
+      formula = fromToona;
+      await persistContributionFormulaForUser(auth.userId, fromToona);
+    }
+  }
   await syncContributionFormulaToToonaHub(auth.userId, formula);
 
   /** 로그인만으로 toona 시그 목록 병합 */

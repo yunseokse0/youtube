@@ -7,6 +7,7 @@ import {
   tryAutoApplyToonationDonationOnServer,
 } from "@/lib/donation/server-apply-donation";
 import type { DonationEvent } from "@/lib/donation/types";
+import { normalizeContributionFormula } from "@/lib/contribution-formula";
 import { appendToonaHubDonationLog, readToonaHubSession } from "@/lib/toona-hub-session";
 
 export function parseApplyExcelFromRequest(req: Request): boolean {
@@ -53,6 +54,27 @@ export function sanitizeDonationEventFromIngestBody(raw: unknown): DonationEvent
   const memberId = String(body.memberId || "").trim();
   const manualAssignMemberId = String(body.manualAssignMemberId || "").trim();
 
+  const contributionPointsRaw = Math.round(Number(body.contributionPoints));
+  const contributionPoints =
+    Number.isFinite(contributionPointsRaw) && contributionPointsRaw >= 0
+      ? contributionPointsRaw
+      : undefined;
+
+  const hasWeightFields =
+    body.accountWeightPct !== undefined ||
+    body.toonWeightPct !== undefined ||
+    body.accountWeight !== undefined ||
+    body.toonWeight !== undefined ||
+    body.contributionFormula !== undefined;
+  const contributionFormula = hasWeightFields
+    ? normalizeContributionFormula(
+        body.contributionFormula ?? {
+          accountWeightPct: body.accountWeightPct ?? body.accountWeight,
+          toonWeightPct: body.toonWeightPct ?? body.toonWeight,
+        }
+      )
+    : undefined;
+
   return {
     id,
     provider,
@@ -66,6 +88,8 @@ export function sanitizeDonationEventFromIngestBody(raw: unknown): DonationEvent
     ...(target ? { target } : {}),
     ...(memberId ? { memberId } : {}),
     ...(manualAssignMemberId ? { manualAssignMemberId } : {}),
+    ...(contributionPoints !== undefined ? { contributionPoints } : {}),
+    ...(contributionFormula ? { contributionFormula } : {}),
   };
 }
 

@@ -1,5 +1,7 @@
 import { mapToonaSignaturesToSigItems, normalizeToonaApiBaseUrl, type ToonaSignatureRow } from "@/lib/toona-sig-import";
 import { getToonaApiBaseUrl, getYoutubePublicBaseUrl } from "@/lib/toona-link";
+import { normalizeContributionFormula } from "@/lib/contribution-formula";
+import { persistContributionFormulaForUser } from "@/lib/contribution-formula-persist";
 import {
   appendToonaHubDonationLog,
   clearToonaHubDonationLogs,
@@ -9,7 +11,7 @@ import {
   writeToonaHubSession,
   type ToonaHubSession,
 } from "@/lib/toona-hub-session";
-import type { SigItem } from "@/types";
+import type { ContributionFormula, SigItem } from "@/types";
 
 export type ToonaHubLoginInput = {
   youtubeUserId: string;
@@ -134,6 +136,47 @@ export async function loginAndLinkToonaHub(input: ToonaHubLoginInput): Promise<
   await clearToonaHubDonationLogs(youtubeUserId);
 
   return { ok: true, session: publicToonaHubSession(session) };
+}
+
+function contributionFormulaFromYoutubegitJson(json: Record<string, unknown>): ContributionFormula | null {
+  if (
+    json.accountWeightPct === undefined &&
+    json.toonWeightPct === undefined &&
+    json.accountWeight === undefined &&
+    json.toonWeight === undefined
+  ) {
+    return null;
+  }
+  return normalizeContributionFormula({
+    accountWeightPct: json.accountWeightPct ?? json.accountWeight,
+    toonWeightPct: json.toonWeightPct ?? json.toonWeight,
+  });
+}
+
+/** 허브 연동 시 toona youtubegit에 저장된 기여도 가중치 조회 — 엑셀 apply 동기화용 */
+export async function fetchToonaHubContributionFormula(
+  youtubeUserId: string
+): Promise<ContributionFormula | null> {
+  const session = await readToonaHubSession(youtubeUserId);
+  if (!session?.token || !session.streamKey || !session.baseUrl) return null;
+  try {
+    const res = await fetch(
+      `${session.baseUrl}/api/youtubegit/${encodeURIComponent(session.streamKey)}`,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${session.token}`,
+        },
+        signal: AbortSignal.timeout(8_000),
+      }
+    );
+    if (!res.ok) return null;
+    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    return contributionFormulaFromYoutubegitJson(json);
+  } catch {
+    return null;
+  }
 }
 
 /** 기여도 계산식만 toona youtubegit에 동기화 — 도네 얼럿 점수용 (계좌/투네 합산과 무관) */
@@ -294,6 +337,10 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
       lastIngestOk?: boolean | null;
       lastIngestError?: string | null;
       userId?: string;
+      accountWeightPct?: number;
+      toonWeightPct?: number;
+      accountWeight?: number;
+      toonWeight?: number;
     };
 
     if (!res.ok) {
@@ -309,6 +356,11 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
       session.lastIngestOk = json.lastIngestOk ?? null;
       session.lastIngestError = json.lastIngestError ?? null;
       if (json.userId) session.youtubeUserId = String(json.userId);
+
+      const hubFormula = contributionFormulaFromYoutubegitJson(json as Record<string, unknown>);
+      if (hubFormula) {
+        void persistContributionFormulaForUser(youtubeUserId, hubFormula);
+      }
 
       /** 기존 허브 연동이 A(알림만)면 B로 승격 — 후원자 리스트 미반영 방지 */
       if (String(json.scenario || "").toUpperCase() !== "B") {

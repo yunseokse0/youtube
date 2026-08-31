@@ -9,10 +9,12 @@ import { broadcastPlayerDonationAlert, enrichDonationEventWithSigMatch } from ".
 import {
   applyDonationToAppState,
   isDuplicateDonationEvent,
+  mergeContributionFormulaIntoState,
 } from "./apply-donation-state";
 import { enrichAppStateWithDonationRosterBackupFromKv, loadDonationRosterBackupFromKv } from "@/lib/donation-roster-backup-redis";
 import { unionAppStateDonorsFromBackupIfRicher } from "@/lib/donation-roster-backup-core";
 import { persistDonationApplyLikeToonation } from "@/lib/donation/persist-donation-like-toon";
+import { fetchToonaHubContributionFormula } from "@/lib/toona-hub-client";
 import { enqueueDonationEvent, purgeDonationQueueForEvent } from "./toonation/enqueue-donation";
 import { readToonationListenerConfig } from "./toonation/listener-config-store";
 import { resolveToonationDonationWithOwnerRemap } from "./toonation/owner-donation-remap";
@@ -106,7 +108,9 @@ export async function tryAutoApplyToonationDonationOnServer(
       freshState
     );
     const backup = await loadDonationRosterBackupFromKv(userId);
-    const stateForApply = unionAppStateDonorsFromBackupIfRicher(enrichedState, backup);
+    const unionState = unionAppStateDonorsFromBackupIfRicher(enrichedState, backup);
+    const hubFormula = await fetchToonaHubContributionFormula(userId);
+    const stateForApply = mergeContributionFormulaIntoState(unionState, event, hubFormula);
     const aliases = await readDonationAliases(userId);
     const result = applyDonationToAppState(stateForApply, event, aliases);
     if (!result.ok) {

@@ -44,4 +44,5 @@ export type DonationAppliedHint = {
   amount?: number;
   target?: string;
   memberName?: string;
+  contributionPoints?: number;
 };

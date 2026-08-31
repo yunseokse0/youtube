@@ -1069,6 +1069,32 @@ describe("contribution formula (apply-from-now)", () => {
     expect(result.state.donors[0]?.contributionPoints).toBe(5_000);
   });
 
+  it("ingest contributionPoints override and event formula persist to state", () => {
+    const base = {
+      ...defaultState(),
+      contributionFormula: { accountWeightPct: 100, toonWeightPct: 100 },
+      members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 }],
+      donors: [] as ReturnType<typeof defaultState>["donors"],
+    };
+    const event: DonationEvent = {
+      id: "e1",
+      donorName: "테스터",
+      amount: 10_000,
+      at: new Date().toISOString(),
+      target: "toon",
+      playerName: "피자",
+      status: "pending",
+      contributionPoints: 1_000,
+      contributionFormula: { accountWeightPct: 10, toonWeightPct: 10 },
+    };
+    const result = applyDonationToAppState(base, event);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.members[0]?.contribution).toBe(1_000);
+    expect(result.state.donors[0]?.contributionPoints).toBe(1_000);
+    expect(result.state.contributionFormula).toEqual({ accountWeightPct: 10, toonWeightPct: 10 });
+  });
+
   it("revert subtracts stored contributionPoints after formula change", () => {
     const withDonation = {
       ...defaultState(),

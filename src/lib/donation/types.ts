@@ -1,3 +1,5 @@
+import type { ContributionFormula } from "@/types";
+
 export type DonationProvider = "toonation" | "bank";
 
 export interface DonationEvent {
@@ -33,6 +35,10 @@ export interface DonationEvent {
   matchedSigImageUrl?: string;
   /** 금액·메시지로 단일 시그에 확정 매칭됨 */
   isAutoMatched?: boolean;
+  /** toona ingest — 이미 계산된 기여도 점수(엑셀표·donors 저장용) */
+  contributionPoints?: number;
+  /** toona ingest — 기여도 가중치(상태 formula 갱신·apply 계산용) */
+  contributionFormula?: ContributionFormula;
 }
 
 export interface Donor {

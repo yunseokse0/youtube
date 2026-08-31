@@ -13,6 +13,7 @@ export type DonationAppliedSseHint = {
   amount: number;
   target: "account" | "toon";
   memberName?: string;
+  contributionPoints?: number;
 };
 
 async function broadcastDonationStateUpdated(
@@ -82,6 +83,12 @@ export async function persistDonationApplyLikeToonation(
   event: DonationEvent
 ): Promise<{ ok: true; state: AppState } | { ok: false }> {
   const member = (appliedState.members || []).find((m) => m.id === event.memberId);
+  const donorRow = (appliedState.donors || []).find(
+    (d) => String(d.id || "").trim() === String(event.id || "").trim()
+  );
+  const storedPoints = Number(donorRow?.contributionPoints);
+  const contributionPoints =
+    Number.isFinite(storedPoints) && storedPoints >= 0 ? Math.round(storedPoints) : undefined;
   return persistDonationStateToServer(userId, appliedState, {
     mode: "add",
     verifyEvent: event,
@@ -90,6 +97,7 @@ export async function persistDonationApplyLikeToonation(
       amount: event.amount,
       target: event.target === "account" ? "account" : "toon",
       memberName: member?.name || undefined,
+      ...(contributionPoints !== undefined ? { contributionPoints } : {}),
     },
   });
 }

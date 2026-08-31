@@ -57,6 +57,25 @@ describe("sanitizeDonationEventFromIngestBody", () => {
     });
   });
 
+  it("parses contributionPoints and formula weights from DIN ingest", () => {
+    const event = sanitizeDonationEventFromIngestBody({
+      externalId: "ext:1",
+      donorName: "박자기",
+      amount: 10_000,
+      target: "toon",
+      contributionPoints: 1_000,
+      accountWeightPct: 10,
+      toonWeightPct: 10,
+    });
+    expect(event).toMatchObject({
+      donorName: "박자기",
+      amount: 10_000,
+      target: "toon",
+      contributionPoints: 1_000,
+      contributionFormula: { accountWeightPct: 10, toonWeightPct: 10 },
+    });
+  });
+
   it("rejects missing required fields", () => {
     expect(sanitizeDonationEventFromIngestBody({ donorName: "a" })).toBeNull();
     expect(sanitizeDonationEventFromIngestBody({ donorName: "a", externalId: "x", amount: 0 })).toBeNull();

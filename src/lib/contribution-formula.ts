@@ -34,6 +34,12 @@ export function isDefaultContributionFormula(formula: ContributionFormula | null
   return f.accountWeightPct === 100 && f.toonWeightPct === 100;
 }
 
+export function contributionFormulasEqual(a: unknown, b: unknown): boolean {
+  const fa = normalizeContributionFormula(a);
+  const fb = normalizeContributionFormula(b);
+  return fa.accountWeightPct === fb.accountWeightPct && fa.toonWeightPct === fb.toonWeightPct;
+}
+
 /** 단건 후원 → 기여도 점수 (저장 이후 후원부터 적용) */
 export function computeContributionPoints(
   amount: number,

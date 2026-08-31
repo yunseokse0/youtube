@@ -8,8 +8,11 @@ import {
   resolveSystemMiddlePushDir,
   syncHighSocietyMemberWidthSnapshotInState,
 } from "@/lib/high-society";
-import type { AppState, Donor, Member } from "@/types";
-import { computeContributionPoints, normalizeContributionFormula } from "@/lib/contribution-formula";
+import type { AppState, Donor, Member, ContributionFormula } from "@/types";
+import {
+  computeContributionPoints,
+  normalizeContributionFormula,
+} from "@/lib/contribution-formula";
 import {
   extractReliableToonationExtFromDonorId,
   isReliableToonationExternalId,
@@ -299,6 +302,39 @@ export function resolveMemberContributionTotal(
     fromLogs += log.delta === -1 ? -amt : amt;
   }
   return Math.max(0, fromDonors + fromLogs);
+}
+
+/** ingest·toona 허브 계산식을 state에 병합하고 단건 기여도 점수를 결정 */
+export function resolveApplyContributionContext(
+  state: Pick<AppState, "contributionFormula">,
+  event: Pick<DonationEvent, "contributionFormula" | "contributionPoints">,
+  amount: number,
+  target: "account" | "toon"
+): { formula: ContributionFormula; contributionPoints: number } {
+  const formula = normalizeContributionFormula(
+    event.contributionFormula ?? state.contributionFormula
+  );
+  const override = Math.round(Number(event.contributionPoints));
+  const contributionPoints =
+    Number.isFinite(override) && override >= 0
+      ? override
+      : computeContributionPoints(amount, target, formula);
+  return { formula, contributionPoints };
+}
+
+/** apply 직전 — 이벤트·toona 허브 계산식을 state에 반영 */
+export function mergeContributionFormulaIntoState(
+  state: AppState,
+  event?: Pick<DonationEvent, "contributionFormula"> | null,
+  hubFormula?: ContributionFormula | null
+): AppState {
+  const fromEvent = event?.contributionFormula
+    ? normalizeContributionFormula(event.contributionFormula)
+    : null;
+  const fromHub = hubFormula ? normalizeContributionFormula(hubFormula) : null;
+  const nextFormula = fromEvent ?? fromHub;
+  if (!nextFormula) return state;
+  return { ...state, contributionFormula: nextFormula };
 }
 
 function memberHasContributionSources(
@@ -610,8 +646,13 @@ export function applyDonationToAppState(
       : {}),
   };
   const atMs = toEpochMs(processedEvent.at);
-  const formula = normalizeContributionFormula(currentState.contributionFormula);
-  const contributionPoints = computeContributionPoints(newDonor.amount, newDonor.target, formula);
+  const formulaState = mergeContributionFormulaIntoState(currentState, processedEvent);
+  const { formula, contributionPoints } = resolveApplyContributionContext(
+    formulaState,
+    processedEvent,
+    newDonor.amount,
+    newDonor.target
+  );
 
   const updatedMembers = currentState.members.map((member) => {
     if (member.id !== newDonor.memberId) return member;
@@ -649,6 +690,7 @@ export function applyDonationToAppState(
   }
   const updatedState = syncMemberTotalsFromDonors({
     ...currentState,
+    contributionFormula: formula,
     members: updatedMembers,
     donors: dedupeDonorRows([
       ...existingDonors,

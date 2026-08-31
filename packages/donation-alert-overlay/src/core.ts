@@ -81,13 +81,18 @@ export function donationAlertFromAppliedHint(
   const memberName = String(hint.memberName || "").trim() || "—";
   const target = normalizeDonationAlertTarget(hint.target);
   const at = Date.now();
+  const storedPoints = Number(hint.contributionPoints);
+  const contributionPoints =
+    Number.isFinite(storedPoints) && storedPoints >= 0
+      ? Math.round(storedPoints)
+      : donationContributionPoints(amount, target);
   return {
     id: String(idSeed || "").trim() || `alert_${at}_${amount}`,
     donorName,
     memberName,
     amount,
     target,
-    contributionPoints: donationContributionPoints(amount),
+    contributionPoints,
     at,
   };
 }
