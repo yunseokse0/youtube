@@ -236,7 +236,8 @@ export default function HighSocietySeatLayoutEditor({
             )}
             <span className="block mt-0.5 text-[10px] text-neutral-500">
               0cm 탈락 멤버는 기본적으로 게이지에서 빠집니다. 영토 cm 조절은 「영토 기록부」에서만
-              수동 반영합니다.
+              수동 반영합니다. 영토 반영 후에도 「N번 위치」로 원하는 자리로 옮길 수 있으며 cm는
+              멤버에 유지됩니다.
             </span>
           </div>
           {hsSeatExplicit ? (
@@ -297,24 +298,26 @@ export default function HighSocietySeatLayoutEditor({
                     </div>
                   </div>
                   <div className="ml-1 flex flex-col gap-0.5">
-                    {eliminated ? (
-                      <select
-                        className="max-w-[5.5rem] rounded bg-neutral-950/70 px-1 py-0.5 text-[9px] text-neutral-200"
-                        value={String(i)}
-                        title="0cm 탈락 — 재진입 위치(좌→右)"
-                        aria-label={`${p.name} 재진입 위치`}
-                        onChange={(e) => {
-                          const at = Number(e.target.value);
-                          if (Number.isFinite(at) && at !== i) moveSeatToIndex(p.id, at);
-                        }}
-                      >
-                        {Array.from({ length: hsSeatPlayers.length }, (_, at) => (
-                          <option key={`hs-seat-at-${p.id}-${at}`} value={String(at)}>
-                            {at + 1}번 위치
-                          </option>
-                        ))}
-                      </select>
-                    ) : null}
+                    <select
+                      className="max-w-[5.5rem] rounded bg-neutral-950/70 px-1 py-0.5 text-[9px] text-neutral-200"
+                      value={String(i)}
+                      title={
+                        eliminated
+                          ? "0cm 탈락 — 재진입 위치(좌→右)"
+                          : "좌석 위치(좌→右) — 영토 cm는 멤버에 유지"
+                      }
+                      aria-label={`${p.name} 좌석 위치`}
+                      onChange={(e) => {
+                        const at = Number(e.target.value);
+                        if (Number.isFinite(at) && at !== i) moveSeatToIndex(p.id, at);
+                      }}
+                    >
+                      {Array.from({ length: hsSeatPlayers.length }, (_, at) => (
+                        <option key={`hs-seat-at-${p.id}-${at}`} value={String(at)}>
+                          {at + 1}번 위치
+                        </option>
+                      ))}
+                    </select>
                     <button
                       type="button"
                       className="rounded bg-neutral-950/70 px-1.5 py-0.5 text-[10px] text-neutral-200 hover:bg-neutral-800 disabled:opacity-30"
