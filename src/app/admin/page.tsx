@@ -4475,6 +4475,7 @@ function AdminPageInner() {
         try {
           cacheBroadcastStateSnapshot(next, user?.id);
         } catch {}
+        notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
         void saveStateAsync(next, user?.id, {
           membersAuthoritative: true,
           omitDonationFields: true,

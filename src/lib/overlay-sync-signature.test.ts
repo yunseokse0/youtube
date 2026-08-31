@@ -365,6 +365,46 @@ describe("shouldRejectPoorerDonationRemote", () => {
     expect(isIntentionalMemberRosterShrink(local, remote)).toBe(false);
   });
 
+  it("detects revision-confirmed roster shrink (delete vs add stale GET)", async () => {
+    const {
+      isMemberRosterRevisionShrinkFromLocal,
+      isLocalMemberRosterGrowOverRemote,
+    } = await import("@/lib/overlay-sync-signature");
+    const localAddPending = {
+      ...defaultState(),
+      updatedAt: 2000,
+      membersRosterUpdatedAt: 1000,
+      members: [
+        { id: "m1", name: "A", account: 0, toon: 0, contribution: 0 },
+        { id: "m2", name: "B", account: 0, toon: 0, contribution: 0 },
+      ],
+    };
+    const remoteAddStale = {
+      ...defaultState(),
+      updatedAt: 2500,
+      members: [{ id: "m1", name: "A", account: 0, toon: 0, contribution: 0 }],
+    };
+    expect(isLocalMemberRosterGrowOverRemote(localAddPending, remoteAddStale)).toBe(true);
+    expect(isMemberRosterRevisionShrinkFromLocal(localAddPending, remoteAddStale)).toBe(false);
+
+    const localBeforeDelete = {
+      ...defaultState(),
+      updatedAt: 5000,
+      membersRosterUpdatedAt: 4000,
+      members: [
+        { id: "m1", name: "A", account: 0, toon: 0, contribution: 0 },
+        { id: "m2", name: "B", account: 0, toon: 0, contribution: 0 },
+      ],
+    };
+    const remoteAfterDelete = {
+      ...defaultState(),
+      updatedAt: 6000,
+      membersRosterUpdatedAt: 6000,
+      members: [{ id: "m1", name: "A", account: 0, toon: 0, contribution: 0 }],
+    };
+    expect(isMemberRosterRevisionShrinkFromLocal(localBeforeDelete, remoteAfterDelete)).toBe(true);
+  });
+
   it("rejects member delete remote that zeroes remaining member totals while donors remain", async () => {
     const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
     const local = {

@@ -287,6 +287,33 @@ export function isLocalMemberRosterGrowOverRemote(
   return membersDifferByIds(local.members || [], remote.members || []);
 }
 
+/** local이 remote보다 멤버 수가 적고 id 상위집합 — 삭제·추가 stale GET 공통 형태 */
+export function isMemberRosterCountShrinkFromLocalToRemote(
+  local: AppState | null | undefined,
+  remote: AppState | null | undefined
+): boolean {
+  if (!local || !remote) return false;
+  const localMembers = local.members || [];
+  const remoteMembers = remote.members || [];
+  if (remoteMembers.length >= localMembers.length) return false;
+  if (!isMemberRosterStrictSuperset(localMembers, remoteMembers)) return false;
+  return membersDifferByIds(localMembers, remoteMembers);
+}
+
+/**
+ * membersRosterUpdatedAt 상승 + 짧아진 로스터 — 서버 멤버 삭제 확정.
+ * (추가 stale GET 은 rev 가 아직 안 올라가 merge 허용)
+ */
+export function isMemberRosterRevisionShrinkFromLocal(
+  local: AppState | null | undefined,
+  remote: AppState | null | undefined
+): boolean {
+  if (!isMemberRosterCountShrinkFromLocalToRemote(local, remote)) return false;
+  const remoteRosterRev = Number(remote!.membersRosterUpdatedAt || 0);
+  const localRosterRev = Number(local!.membersRosterUpdatedAt || 0);
+  return remoteRosterRev > 0 && remoteRosterRev > localRosterRev;
+}
+
 /**
  * 멤버 삭제가 의도적인지 — stale GET(멤버 추가 직후)과 구분.
  * 후원 기록은 유지(삭제 memberId orphan donors)하거나, 구버전처럼 purge+shrink 일 수 있음.

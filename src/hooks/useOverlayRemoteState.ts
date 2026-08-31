@@ -70,6 +70,7 @@ import {
   isIntentionalMemberRosterShrink,
   isServerAuthoritativeMemberRosterShrink,
   isLocalMemberRosterGrowOverRemote,
+  isMemberRosterRevisionShrinkFromLocal,
 } from "@/lib/overlay-sync-signature";
 import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base";
@@ -644,8 +645,18 @@ export function useOverlayRemoteState(
           Boolean(remoteForApply) &&
           Boolean(lastGoodRef.current) &&
           isLocalMemberRosterGrowOverRemote(lastGoodRef.current, remoteForApply!);
+        const rosterRevisionShrink =
+          Boolean(remoteForApply) &&
+          Boolean(lastGoodRef.current) &&
+          isMemberRosterRevisionShrinkFromLocal(lastGoodRef.current, remoteForApply!);
         let rosterGrowMerged = false;
-        if (trustMemberRosterSync && localRosterGrowPending && remoteForApply && lastGoodRef.current) {
+        if (
+          trustMemberRosterSync &&
+          localRosterGrowPending &&
+          !rosterRevisionShrink &&
+          remoteForApply &&
+          lastGoodRef.current
+        ) {
           remoteForApply = {
             ...remoteForApply,
             members: mergeMemberRosterPreservingAmounts(
@@ -678,7 +689,8 @@ export function useOverlayRemoteState(
         if (
           remoteForApply &&
           (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
-          !remoteRosterShrinkEarly
+          !remoteRosterShrinkEarly &&
+          !rosterRevisionShrink
         ) {
           const localHint =
             lastGoodRef.current &&
@@ -713,9 +725,10 @@ export function useOverlayRemoteState(
         }
 
         const remoteRosterShrink =
-          Boolean(remoteForApply) &&
-          Boolean(lastGoodRef.current) &&
-          isServerAuthoritativeMemberRosterShrink(lastGoodRef.current, remoteForApply!);
+          rosterRevisionShrink ||
+          (Boolean(remoteForApply) &&
+            Boolean(lastGoodRef.current) &&
+            isServerAuthoritativeMemberRosterShrink(lastGoodRef.current, remoteForApply!));
         const rejectPoorerOverlay =
           !remoteRosterShrink &&
           (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
