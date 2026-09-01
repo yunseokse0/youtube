@@ -14,18 +14,8 @@ echo "=========================================="
 echo " EC2 youtube 긴급 복구"
 echo "=========================================="
 
-run() {
-  if [[ "$(id -u)" == "0" ]]; then "$@"; else sudo "$@"; fi
-}
-
 echo "== 0) MySQL 재시작 =="
-if systemctl list-unit-files mysql.service >/dev/null 2>&1; then
-  run systemctl restart mysql 2>/dev/null || run systemctl start mysql 2>/dev/null || true
-  for i in 1 2 3 4 5 6 7 8 9 10; do
-    systemctl is-active mysql >/dev/null 2>&1 && break
-    sleep 1
-  done
-fi
+ensure_mysql_running || exit 1
 
 if [[ ! -f .next/BUILD_ID ]]; then
   echo "ERROR: .next/BUILD_ID 없음 — bash deploy/deploy-on-ec2.sh"

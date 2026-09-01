@@ -76,6 +76,54 @@ wait_for_health() {
   return 1
 }
 
+mysql_port_listening() {
+  if command -v ss >/dev/null 2>&1; then
+    ss -lntp 2>/dev/null | grep -q ':3306'
+    return $?
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -i :3306 -sTCP:LISTEN >/dev/null 2>&1
+    return $?
+  fi
+  return 1
+}
+
+# recover·배포: systemctl active 만으로는 부족 — ECONNREFUSED 127.0.0.1:3306 방지
+wait_for_mysql_port() {
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    if mysql_port_listening; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+ensure_mysql_running() {
+  if ! systemctl list-unit-files mysql.service >/dev/null 2>&1; then
+    echo "WARN: mysql.service 없음 — DATABASE_URL 확인"
+    return 0
+  fi
+  local run_cmd
+  run_cmd() {
+    if [[ "$(id -u)" == "0" ]]; then "$@"; else sudo "$@"; fi
+  }
+  if ! systemctl is-active mysql >/dev/null 2>&1 || ! mysql_port_listening; then
+    echo "== MySQL 기동 (inactive 또는 :3306 미수신) =="
+    run_cmd systemctl restart mysql 2>/dev/null || run_cmd systemctl start mysql 2>/dev/null || true
+  fi
+  if wait_for_mysql_port; then
+    echo "MySQL :3306 LISTEN OK"
+    return 0
+  fi
+  echo "ERROR: MySQL :3306 미수신 — ECONNREFUSED 원인"
+  echo "  sudo journalctl -u mysql -n 40 --no-pager"
+  echo "  df -h /  &&  bash deploy/ec2-free-disk.sh"
+  run_cmd journalctl -u mysql -n 15 --no-pager 2>/dev/null || true
+  return 1
+}
+
 verify_static_http() {
   local port="${1:-3000}"
   local root="${2:-.}"

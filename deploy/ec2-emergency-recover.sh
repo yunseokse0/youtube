@@ -48,20 +48,7 @@ echo "/api/health :$(curl_code "http://127.0.0.1:${PORT}/api/health" 5)"
 echo "nginx /admin :$(curl_code "http://127.0.0.1/admin" 5)"
 
 echo "== 1) MySQL 재시작 =="
-if systemctl list-unit-files mysql.service >/dev/null 2>&1; then
-  run systemctl restart mysql || run systemctl start mysql || true
-  for i in 1 2 3 4 5 6 7 8 9 10; do
-    if systemctl is-active mysql >/dev/null 2>&1; then
-      echo "MySQL active"
-      break
-    fi
-    sleep 1
-  done
-  if ! systemctl is-active mysql >/dev/null 2>&1; then
-    echo "ERROR: MySQL 기동 실패 — journalctl -u mysql -n 40"
-    run journalctl -u mysql -n 20 --no-pager 2>/dev/null || true
-  fi
-fi
+ensure_mysql_running || exit 1
 
 echo "== 2) Node·pm2·포트 정리 =="
 pm2 kill 2>/dev/null || true
