@@ -137,11 +137,9 @@ fi
 STATE_CODE="$(curl_code "http://127.0.0.1:${PORT}/api/state?u=${SMOKE_USER}&pick=donor-rankings" 20)"
 echo "/api/state?pick=donor-rankings&u=${SMOKE_USER} HTTP ${STATE_CODE}"
 
-NGINX_ADMIN="$(curl_code "http://127.0.0.1/admin" 8)"
-echo "nginx /admin HTTP ${NGINX_ADMIN}"
-
-if systemctl list-unit-files nginx.service >/dev/null 2>&1; then
-  run systemctl reload nginx 2>/dev/null || true
+NGINX_OK=0
+if ensure_nginx_proxy "$ROOT"; then
+  NGINX_OK=1
 fi
 
 echo "== 7) 상태 =="
@@ -149,9 +147,11 @@ pm2 status "$PM2_APP" || true
 show_port_holders "$PORT" || true
 
 echo "=========================================="
-if [[ "$NGINX_ADMIN" == "200" || "$NGINX_ADMIN" == "302" || "$NGINX_ADMIN" == "307" ]]; then
+if [[ "$NGINX_OK" == "1" ]]; then
   echo " 복구 완료 — 브라우저·OBS 새로고침"
 else
-  echo " Node는 기동됐으나 nginx 경유 실패 — bash deploy/ec2-nginx-reset-youtube.sh"
+  echo " Node(:3000)는 OK — nginx(:80)만 실패"
+  echo " 수동: bash deploy/ec2-nginx-reset-youtube.sh"
+  echo " 확인: sudo systemctl status nginx && ss -lntp | grep ':80 '"
 fi
 echo "=========================================="

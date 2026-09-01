@@ -124,6 +124,25 @@ ensure_mysql_running() {
   return 1
 }
 
+ensure_nginx_proxy() {
+  local root="${1:-.}"
+  local code
+  code="$(curl -sf --max-time 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1/admin" 2>/dev/null || echo "000")"
+  if [[ "$code" == "200" || "$code" == "302" || "$code" == "307" ]]; then
+    echo "nginx /admin HTTP ${code} OK"
+    return 0
+  fi
+  if ! systemctl list-unit-files nginx.service >/dev/null 2>&1; then
+    echo "WARN: nginx.service 없음 — :3000 직접 접속만 가능"
+    return 1
+  fi
+  echo "== nginx :80 실패 (HTTP ${code}) — reset =="
+  bash "${root}/deploy/ec2-nginx-reset-youtube.sh" || return 1
+  code="$(curl -sf --max-time 8 -o /dev/null -w "%{http_code}" "http://127.0.0.1/admin" 2>/dev/null || echo "000")"
+  echo "nginx /admin HTTP ${code} (after reset)"
+  [[ "$code" == "200" || "$code" == "302" || "$code" == "307" ]]
+}
+
 verify_static_http() {
   local port="${1:-3000}"
   local root="${2:-.}"
