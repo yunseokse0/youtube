@@ -9,13 +9,11 @@ server {
 
     client_max_body_size 35M;
 
+    # Node(:3000) 과부하·hang 시에도 JS/CSS 청크 504 방지 — 디스크 직접 서빙
+    # ec2-nginx-reset-youtube.sh 가 __NEXT_STATIC_DIR__ 를 레포 .next/static 절대경로로 치환
     location /_next/static/ {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        alias __NEXT_STATIC_DIR__/;
+        access_log off;
         add_header Cache-Control "public, max-age=31536000, immutable";
     }
 

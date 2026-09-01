@@ -20,7 +20,17 @@ if [[ -f "$DEST" ]]; then
   run cp -a "$DEST" "${DEST}.bak.$(date +%Y%m%d%H%M%S)"
 fi
 
-run cp "$SRC" "$DEST"
+STATIC_DIR="${ROOT}/.next/static"
+if [[ ! -d "$STATIC_DIR" ]]; then
+  echo "WARN: ${STATIC_DIR} 없음 — proxy 폴백용 example 그대로 복사"
+  run cp "$SRC" "$DEST"
+else
+  echo "== static 디스크 서빙: ${STATIC_DIR} =="
+  TMP="$(mktemp)"
+  sed "s|__NEXT_STATIC_DIR__|${STATIC_DIR}|g" "$SRC" > "$TMP"
+  run cp "$TMP" "$DEST"
+  rm -f "$TMP"
+fi
 run ln -sfn "$DEST" /etc/nginx/sites-enabled/youtube
 if [[ -f /etc/nginx/sites-enabled/default ]]; then
   run rm -f /etc/nginx/sites-enabled/default
@@ -45,4 +55,11 @@ echo "nginx :80 LISTEN OK"
 
 code="$(curl -sf --max-time 8 -o /dev/null -w "%{http_code}" "http://127.0.0.1/admin" || echo "000")"
 echo "nginx reset OK — /admin HTTP ${code}"
+if [[ -d "$STATIC_DIR" ]]; then
+  W="$(grep -oE 'webpack-[a-f0-9]+\.js' "${ROOT}/.next/build-manifest.json" 2>/dev/null | head -1 || true)"
+  if [[ -n "$W" ]]; then
+    scode="$(curl -sf --max-time 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1/_next/static/chunks/${W}" || echo "000")"
+    echo "_next/static/chunks/${W} (nginx disk) HTTP ${scode}"
+  fi
+fi
 echo "브라우저: http://$(curl -sf http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo 'YOUR_IP')/admin"
