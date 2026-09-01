@@ -42,9 +42,7 @@ function mysqlPoolOptionsFromUrl(raw: string): mysql.PoolOptions | null {
       database,
       waitForConnections: true,
       connectionLimit: 16,
-      /** 풀 대기가 무한히 길어지면 /api/state·auth 가 타임아웃 — 빠르게 실패 */
-      acquireTimeout: 8_000,
-      /** 대기열이 무한히 늘면 /api/state GET 이 안 끝나고 관리자가「동기화 중」에 고착 */
+      /** 대기열이 꽉 차면 즉시 오류 — /api/state GET 무한 대기 방지 */
       queueLimit: 48,
       connectTimeout: 5_000,
       enableKeepAlive: true,
