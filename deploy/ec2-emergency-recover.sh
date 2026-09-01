@@ -64,6 +64,7 @@ if systemctl list-unit-files mysql.service >/dev/null 2>&1; then
 fi
 
 echo "== 2) Node·pm2·포트 정리 =="
+pm2 kill 2>/dev/null || true
 pm2 stop all 2>/dev/null || true
 pm2 delete "$PM2_APP" 2>/dev/null || true
 pm2 unset "$PM2_APP" NEXT_BUILD_DIR 2>/dev/null || true

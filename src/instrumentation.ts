@@ -9,5 +9,8 @@ export async function register() {
   }
 
   const { restoreToonationListenersFromStore } = await import("@/lib/donation/toonation/server-listener");
-  await restoreToonationListenersFromStore();
+  /** MySQL 지연·hang 시 register 가 끝나지 않아 /api/health 포함 전 HTTP가 무응답 — 비동기 복구 */
+  void restoreToonationListenersFromStore().catch((err) => {
+    console.error("[instrumentation] restoreToonationListenersFromStore failed", err);
+  });
 }

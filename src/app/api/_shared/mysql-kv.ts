@@ -10,6 +10,36 @@ let pool: Pool | null = null;
 let tableReady: Promise<void> | null = null;
 let lastMysqlError: string | null = null;
 
+/** hang 시 Node 전체 HTTP 무응답 방지 — 초과 시 connection destroy */
+const MYSQL_QUERY_TIMEOUT_MS = 10_000;
+
+async function poolExecuteWithTimeout(
+  p: Pool,
+  sql: string,
+  params?: unknown[]
+): Promise<RowDataPacket[]> {
+  const conn = await p.getConnection();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    conn.destroy();
+  }, MYSQL_QUERY_TIMEOUT_MS);
+  try {
+    const [rows] = await conn.execute(sql, (params ?? []) as (string | number | null)[]);
+    return rows as RowDataPacket[];
+  } catch (err) {
+    if (timedOut) {
+      throw new Error(`MySQL query timeout after ${MYSQL_QUERY_TIMEOUT_MS}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    if (!timedOut) {
+      conn.release();
+    }
+  }
+}
+
 export function getLastMysqlKvError(): string | null {
   return lastMysqlError;
 }
@@ -92,7 +122,8 @@ export async function mysqlKvGet(key: string): Promise<string | null> {
   try {
     await ensureTable(p);
     const now = Date.now();
-    const [rows] = await p.execute<RowDataPacket[]>(
+    const rows = await poolExecuteWithTimeout(
+      p,
       `SELECT \`v\`, \`expires_at\` FROM app_kv WHERE \`k\` = ? LIMIT 1`,
       [key]
     );
@@ -123,7 +154,8 @@ export async function mysqlKvSet(key: string, value: string, ttlSec?: number): P
     const now = Date.now();
     const expires =
       typeof ttlSec === "number" && ttlSec > 0 ? now + Math.floor(ttlSec) * 1000 : null;
-    await p.execute(
+    await poolExecuteWithTimeout(
+      p,
       `INSERT INTO app_kv (\`k\`, \`v\`, \`expires_at\`, \`updated_at\`)
        VALUES (?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE \`v\` = VALUES(\`v\`), \`expires_at\` = VALUES(\`expires_at\`), \`updated_at\` = VALUES(\`updated_at\`)`,
