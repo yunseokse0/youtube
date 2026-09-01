@@ -3476,6 +3476,19 @@ function OverlayInner() {
   const memberTableClampRef = useRef<HTMLDivElement | null>(null);
   const [memberTableFitFactor, setMemberTableFitFactor] = useState(1);
   const memberTableFitPrevRef = useRef(1);
+  /** OBS 새로고침: fit 측정 전 빈 로스터·폰트 스케일 왕복이 보이지 않게 */
+  const memberTableLayoutStableRef = useRef(!externalHost);
+  const [memberTableLayoutStable, setMemberTableLayoutStable] = useState(() => !externalHost);
+  const markMemberTableLayoutStable = useCallback(() => {
+    if (!externalHost || memberTableLayoutStableRef.current) return;
+    memberTableLayoutStableRef.current = true;
+    setMemberTableLayoutStable(true);
+  }, [externalHost]);
+  useEffect(() => {
+    if (!externalHost || !showMembers || ready) return;
+    memberTableLayoutStableRef.current = false;
+    setMemberTableLayoutStable(false);
+  }, [externalHost, showMembers, ready]);
   const [donorBoxWidth, setDonorBoxWidth] = useState<number | null>(null);
   const lastDonorBoxWRef = useRef<number | null>(null);
   const contextualTickerWidth = donorBoxWidth ? Math.max(donorBoxWidth, tickerWidth) : tickerWidth;
@@ -3883,6 +3896,7 @@ function OverlayInner() {
         memberTableFitPrevRef.current = 1;
         setMemberTableFitFactor(1);
       }
+      markMemberTableLayoutStable();
       return;
     }
     const clampEl = memberTableClampRef.current;
@@ -3890,6 +3904,15 @@ function OverlayInner() {
     if (!clampEl || !table) return;
 
     let rafId = 0;
+    /** ResizeObserver 초기 발화로 fit 이 두 번 바뀌며 떨리는 것 방지 (OBS 새로고침) */
+    let resizeObsActive = !externalHost;
+    if (externalHost) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          resizeObsActive = true;
+        });
+      });
+    }
     /** nameGrow 시 clamp는 콘텐츠 폭 — 뷰포트 상한(container)만 fit 기준 */
     const measureAvail = () => {
       const padStyle = getComputedStyle(clampEl);
@@ -3913,7 +3936,10 @@ function OverlayInner() {
       // OBS/Prism 하드 고정 모드: 프레임 범위 내에 표 전체가 들어오도록 1회(및 리사이즈 시) 고정 비율만 계산
       const updateSafeFit = () => {
         const avail = measureAvail();
-        if (avail < 8) return;
+        if (avail < 8) {
+          markMemberTableLayoutStable();
+          return;
+        }
         const prevMax = table.style.maxWidth;
         const prevInlineFont = table.style.fontSize;
         try {
@@ -3921,14 +3947,21 @@ function OverlayInner() {
           table.style.fontSize = `${mSize}px`;
           void table.offsetWidth;
           const measured = Math.max(table.scrollWidth, table.getBoundingClientRect().width);
-          if (!Number.isFinite(measured) || measured <= 0) return;
+          if (!Number.isFinite(measured) || measured <= 0) {
+            markMemberTableLayoutStable();
+            return;
+          }
           // 마지막 열 클리핑 방지를 위해 10px 안전 여유를 둔다.
           const raw = (avail - 10) / measured;
           const safeFitMin = mobileBroadcast ? 0.58 : 0.75;
           const next = Math.max(safeFitMin, Math.min(1, Math.floor(raw * 100) / 100));
-          if (Math.abs(next - memberTableFitPrevRef.current) < 0.012) return;
+          if (Math.abs(next - memberTableFitPrevRef.current) < 0.012) {
+            markMemberTableLayoutStable();
+            return;
+          }
           memberTableFitPrevRef.current = next;
           setMemberTableFitFactor(next);
+          markMemberTableLayoutStable();
         } finally {
           table.style.maxWidth = prevMax;
           if (prevInlineFont) table.style.fontSize = prevInlineFont;
@@ -3936,7 +3969,10 @@ function OverlayInner() {
         }
       };
       updateSafeFit();
-      const ro = new ResizeObserver(() => scheduleRun(updateSafeFit));
+      const ro = new ResizeObserver(() => {
+        if (!resizeObsActive) return;
+        scheduleRun(updateSafeFit);
+      });
       ro.observe(clampEl);
       if (effectiveNameGrow && containerRef.current) ro.observe(containerRef.current);
       return () => {
@@ -3947,7 +3983,10 @@ function OverlayInner() {
 
     const run = () => {
       const avail = measureAvail();
-      if (avail < 8) return;
+      if (avail < 8) {
+        markMemberTableLayoutStable();
+        return;
+      }
       /** `maxWidth:100%`로 테이블이 눌리면 scrollWidth≈clientWidth가 되어 축소 탐색이 무력화됨 → 측정 중만 해제 */
       const prevMax = table.style.maxWidth;
       table.style.maxWidth = "none";
@@ -3993,13 +4032,20 @@ function OverlayInner() {
         table.style.removeProperty("font-size");
       }
       const prevFit = memberTableFitPrevRef.current;
-      if (Math.abs(best - prevFit) < 0.015) return;
+      if (Math.abs(best - prevFit) < 0.015) {
+        markMemberTableLayoutStable();
+        return;
+      }
       memberTableFitPrevRef.current = best;
       setMemberTableFitFactor(best);
+      markMemberTableLayoutStable();
     };
 
     run();
-    const ro = new ResizeObserver(() => scheduleRun(run));
+    const ro = new ResizeObserver(() => {
+      if (!resizeObsActive) return;
+      scheduleRun(run);
+    });
     ro.observe(clampEl);
     if (effectiveNameGrow && containerRef.current) ro.observe(containerRef.current);
     return () => {
@@ -4011,7 +4057,7 @@ function OverlayInner() {
         /* noop */
       }
     };
-  }, [showMembers, mSize, memberTableFitSig, externalSafeMode, lockMemberTableFontSize, mobileBroadcast, effectiveNameGrow]);
+  }, [showMembers, mSize, memberTableFitSig, externalSafeMode, lockMemberTableFontSize, mobileBroadcast, effectiveNameGrow, externalHost, markMemberTableLayoutStable]);
 
   const allOrderKeys = [...ranked.map(({ m }) => m.id), ...visiblePinned.map((m) => `${m.id}-p`)];
   const setRowRef = useFlip(allOrderKeys, 500, rowMotionEnabled);
@@ -5043,7 +5089,7 @@ function OverlayInner() {
           effectiveNameGrow
             ? `
         .overlay-root .overlay-elegant-table col.overlay-col-name-width {
-          transition: width 0.22s ease-out;
+          transition: ${externalHost ? "none" : "width 0.22s ease-out"};
         }
         .overlay-root .overlay-elegant-table td.overlay-col-name {
           max-width: none;
@@ -5311,7 +5357,7 @@ function OverlayInner() {
         )}
         <div style={viewportInnerStyle} className="overlay-scale-target">
           <main className="transparent-bg no-select" style={{ ...scaledMainStyle, minHeight: FIT_H, width: FIT_W, background: "transparent" }}>
-        {showMembers && (ready || isPreviewGuide || externalHost) && (
+        {showMembers && (ready || isPreviewGuide) && (
           <div className={`absolute ${listPosClass}`} style={{ maxWidth: FIT_W, maxHeight: FIT_H, minWidth: 0, ...listPosStyle }}>
             <div ref={containerRef} className="flex min-w-0 items-start gap-3" style={{ width: "fit-content", maxWidth: FIT_W }}>
               {showSideDonors && donorsSide === "left" && (
@@ -5322,7 +5368,10 @@ function OverlayInner() {
               <div
                 ref={memberTableClampRef}
                 className={`relative overflow-visible ${effectiveNameGrow ? "shrink-0" : "min-w-0 flex-1"}`}
-                style={{ borderRadius: 0 }}
+                style={{
+                  borderRadius: 0,
+                  opacity: memberTableLayoutStable ? 1 : 0,
+                }}
               >
                 {showTableBgGif ? (
                   tableBgAnimated.kind === "video" ? (

@@ -1516,7 +1516,7 @@ function AdminPageInner() {
         }
       } else {
         lastSaveHttpStatusRef.current = r.httpStatus ?? null;
-        setSyncAuthBlocked(r.httpStatus === 401 || r.httpStatus === 403);
+        setSyncAuthBlocked(r.httpStatus === 401);
         const offline = typeof navigator !== "undefined" && !navigator.onLine;
         setSyncStatus(offline ? "local" : "error");
       }

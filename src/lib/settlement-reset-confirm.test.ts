@@ -3,6 +3,7 @@ import {
   SETTLEMENT_RESET_CONFIRM_PHRASE,
   isSettlementResetExplicitlyConfirmed,
   normalizeSettlementResetConfirmPhrase,
+  stripUnconfirmedSettlementResetFromApiPayload,
 } from "@/lib/settlement-reset-confirm";
 
 describe("settlement-reset-confirm", () => {
@@ -47,5 +48,25 @@ describe("settlement-reset-confirm", () => {
 
   it("normalizes phrase", () => {
     expect(normalizeSettlementResetConfirmPhrase(" 정산\n리셋 ")).toBe("정산리셋");
+  });
+
+  it("stripUnconfirmedSettlementResetFromApiPayload removes bare settlementReset", () => {
+    const out = stripUnconfirmedSettlementResetFromApiPayload({
+      updatedAt: 1,
+      settlementReset: true,
+      donors: [],
+    });
+    expect(out).toEqual({ updatedAt: 1, donors: [] });
+  });
+
+  it("stripUnconfirmedSettlementResetFromApiPayload keeps confirmed reset", () => {
+    const out = stripUnconfirmedSettlementResetFromApiPayload({
+      settlementReset: true,
+      userConfirmed: true,
+      confirmPhrase: SETTLEMENT_RESET_CONFIRM_PHRASE,
+      donors: [],
+    });
+    expect(out.settlementReset).toBe(true);
+    expect(out.userConfirmed).toBe(true);
   });
 });

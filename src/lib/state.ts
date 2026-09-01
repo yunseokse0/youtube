@@ -8,6 +8,10 @@ import {
   writeSessionBroadcastState,
 } from "@/lib/server-authoritative-broadcast-state";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
+import {
+  isSettlementResetExplicitlyConfirmed,
+  stripUnconfirmedSettlementResetFromApiPayload,
+} from "@/lib/settlement-reset-confirm";
 import { normalizeAnonymousDonorDisplayName } from "@/lib/donation/anonymous-donor-name";
 import type {
   AppState,
@@ -1954,7 +1958,7 @@ async function postAppStateWithAuthRecovery(json: string): Promise<Response> {
         notifyAdminSessionExpired();
       }
     } catch {
-      notifyAdminSessionExpired();
+      /* confirm_required 등 본문 없는 403 — 세션 만료로 취급하지 않음 */
     }
   }
   return res;
@@ -1975,6 +1979,9 @@ export type SaveStateAsyncOptions = {
   donorsReplace?: boolean;
   /** 정산 리셋 — placeholder member LS 복원·후원 merge 되살림 방지 */
   settlementReset?: boolean;
+  /** `/api/state` 정산 리셋 시에만 — 관리자 UI는 `/api/settlement/reset` 사용 */
+  userConfirmed?: boolean;
+  confirmPhrase?: string;
   /**
    * 멤버 추가·삭제·로스터 교체 — placeholder(멤버1)여도 API에 members 를 보내고
    * 서버·LS 가드가 옛 실멤버를 되살리지 않게 함.
@@ -2026,9 +2033,12 @@ let serverSavePending: ServerSaveJob | null = null;
 export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): string {
   try {
     const prev = JSON.parse(prevJson) as Record<string, unknown>;
-    const next = JSON.parse(nextJson) as Record<string, unknown>;
+    let next = JSON.parse(nextJson) as Record<string, unknown>;
     if (!prev || typeof prev !== "object" || !next || typeof next !== "object") return nextJson;
-    if (next.settlementReset === true) return nextJson;
+    if (next.settlementReset === true) {
+      if (isSettlementResetExplicitlyConfirmed(next)) return nextJson;
+      next = stripUnconfirmedSettlementResetFromApiPayload(next);
+    }
     /**
      * 정산 리셋 POST가 큐에 있는 동안 이어진 저장이 settlementReset 플래그·빈 후원을
      * 덮어 구 후원을 되살리지 않게 함. 리셋 이후 신규 후원만 남긴다.
@@ -2275,7 +2285,7 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
     if (prev.clearSigInventory === true || next.clearSigInventory === true) {
       merged.clearSigInventory = true;
     }
-    return JSON.stringify(merged);
+    return JSON.stringify(stripUnconfirmedSettlementResetFromApiPayload(merged));
   } catch {
     return nextJson;
   }
@@ -2336,7 +2346,14 @@ async function runServerSaveQueue(): Promise<void> {
   const job = serverSavePending;
   serverSavePending = null;
   try {
-    const res = await postAppStateWithAuthRecovery(job.apiBodyJson);
+    let postBodyJson = job.apiBodyJson;
+    try {
+      const parsed = JSON.parse(postBodyJson) as Record<string, unknown>;
+      postBodyJson = JSON.stringify(stripUnconfirmedSettlementResetFromApiPayload(parsed));
+    } catch {
+      /* use original */
+    }
+    const res = await postAppStateWithAuthRecovery(postBodyJson);
     const ok = res.ok;
     const httpStatus = res.status;
     let serverUpdatedAt: number | undefined;
@@ -2458,6 +2475,27 @@ function omitPlaceholderMembersFromApiPayload(
   return rest;
 }
 
+/** API POST 본문 마무리 — 승인 없는 settlementReset·donationInit 제거 */
+function finalizeAppStateApiPayload<T extends Record<string, unknown>>(
+  payload: T,
+  options?: SaveStateAsyncOptions
+): T {
+  const withReset =
+    options?.settlementReset &&
+    isSettlementResetExplicitlyConfirmed({
+      userConfirmed: options.userConfirmed,
+      confirmPhrase: options.confirmPhrase,
+    })
+      ? {
+          ...payload,
+          settlementReset: true as const,
+          userConfirmed: true as const,
+          confirmPhrase: options.confirmPhrase,
+        }
+      : payload;
+  return stripUnconfirmedSettlementResetFromApiPayload(withReset) as T;
+}
+
 /** 관리자 /api/state 저장 시 — 스핀 결과·historyLogs는 서버 전용(POST 생략으로 대역폭 절감) */
 export function appStatePayloadForApi(
   next: AppState,
@@ -2474,11 +2512,34 @@ export function appStatePayloadForApi(
     userId ?? undefined
   );
   const normalizedSigRolling = normalizeSigRolling(next.sigRolling);
-  const { rouletteState, ...rest } = {
+  const spreadSource = {
     ...next,
     sigInventory: normalizedSigInventory,
     sigRolling: normalizedSigRolling,
+  } as AppState & {
+    settlementReset?: boolean;
+    userConfirmed?: boolean;
+    confirmPhrase?: string;
+    donationInit?: boolean;
+    donorsAuthoritative?: boolean;
+    donorsReplace?: boolean;
+    membersAuthoritative?: boolean;
+    clearSigInventory?: boolean;
+    clearSigSoldOutStamp?: boolean;
   };
+  const {
+    rouletteState,
+    settlementReset: _sr,
+    userConfirmed: _uc,
+    confirmPhrase: _cp,
+    donationInit: _di,
+    donorsAuthoritative: _da,
+    donorsReplace: _dr,
+    membersAuthoritative: _ma,
+    clearSigInventory: _ci,
+    clearSigSoldOutStamp: _cs,
+    ...rest
+  } = spreadSource;
   const donors = Array.isArray(next.donors) ? next.donors : rest.donors;
   const donorRankingsUpdatedAt = next.donorRankingsUpdatedAt;
   const base: Partial<AppState> & {
@@ -2496,7 +2557,6 @@ export function appStatePayloadForApi(
   const flags = {
     ...(options?.donorsAuthoritative ? { donorsAuthoritative: true as const } : {}),
     ...(options?.donorsReplace ? { donorsReplace: true as const } : {}),
-    ...(options?.settlementReset ? { settlementReset: true as const } : {}),
     ...(options?.membersAuthoritative ? { membersAuthoritative: true as const } : {}),
   };
   let payload = omitPlaceholderMembersFromApiPayload({ ...base, ...flags });
@@ -2507,13 +2567,16 @@ export function appStatePayloadForApi(
     !options?.donorsAuthoritative &&
     !options?.membersAuthoritative
   ) {
-    return {
-      updatedAt: next.updatedAt,
-      highSocietySettings: next.highSocietySettings,
-      ...(next.donationSyncMode ? { donationSyncMode: next.donationSyncMode } : {}),
-      /** 영토만 초기화 시 [] 전달 — 키 없으면 서버가 기존 기록부 유지 */
-      ...(Array.isArray(next.territoryLogs) ? { territoryLogs: next.territoryLogs } : {}),
-    };
+    return finalizeAppStateApiPayload(
+      {
+        updatedAt: next.updatedAt,
+        highSocietySettings: next.highSocietySettings,
+        ...(next.donationSyncMode ? { donationSyncMode: next.donationSyncMode } : {}),
+        /** 영토만 초기화 시 [] 전달 — 키 없으면 서버가 기존 기록부 유지 */
+        ...(Array.isArray(next.territoryLogs) ? { territoryLogs: next.territoryLogs } : {}),
+      },
+      options
+    );
   }
   /**
    * 멤버 추가·삭제 권위: 시그 인벤·프리셋 등 대형 필드를 빼고 로스터(+참가 슬롯)만 전송.
@@ -2529,20 +2592,23 @@ export function appStatePayloadForApi(
       typeof next.membersRosterUpdatedAt === "number" && Number.isFinite(next.membersRosterUpdatedAt)
         ? next.membersRosterUpdatedAt
         : next.updatedAt;
-    return {
-      updatedAt: next.updatedAt,
-      members: next.members,
-      memberPositions: next.memberPositions,
-      memberPositionMode: next.memberPositionMode,
-      rankPositionLabels: next.rankPositionLabels,
-      membersRosterUpdatedAt: rosterAt,
-      membersAuthoritative: true as const,
-      sigMatch: next.sigMatch,
-      mealMatch: next.mealMatch,
-      mealBattle: next.mealBattle,
-      mealMatchSettings: next.mealMatchSettings,
-      sigMatchSettings: next.sigMatchSettings,
-    };
+    return finalizeAppStateApiPayload(
+      {
+        updatedAt: next.updatedAt,
+        members: next.members,
+        memberPositions: next.memberPositions,
+        memberPositionMode: next.memberPositionMode,
+        rankPositionLabels: next.rankPositionLabels,
+        membersRosterUpdatedAt: rosterAt,
+        membersAuthoritative: true as const,
+        sigMatch: next.sigMatch,
+        mealMatch: next.mealMatch,
+        mealBattle: next.mealBattle,
+        mealMatchSettings: next.mealMatchSettings,
+        sigMatchSettings: next.sigMatchSettings,
+      },
+      options
+    );
   }
   /** 시그/테마/자동 저장 — 후원 금액은 API에서 제거. 실멤버명은 OBS 반영을 위해 유지 */
   if (options?.omitDonationFields && !options?.settlementReset && !options?.donorsAuthoritative) {
@@ -2598,18 +2664,21 @@ export function appStatePayloadForApi(
     } as typeof payload & { clearSigInventory: boolean };
   }
   if (!rouletteState) {
-    return payload;
+    return finalizeAppStateApiPayload(payload, options);
   }
-  return {
-    ...payload,
-    rouletteState: {
-      menuCount: rouletteState.menuCount,
-      menuFillFromAllActive: rouletteState.menuFillFromAllActive,
-      overlayOpacity: rouletteState.overlayOpacity,
-      sigResultScalePct: rouletteState.sigResultScalePct,
-      overlayReloadNonce: rouletteState.overlayReloadNonce,
+  return finalizeAppStateApiPayload(
+    {
+      ...payload,
+      rouletteState: {
+        menuCount: rouletteState.menuCount,
+        menuFillFromAllActive: rouletteState.menuFillFromAllActive,
+        overlayOpacity: rouletteState.overlayOpacity,
+        sigResultScalePct: rouletteState.sigResultScalePct,
+        overlayReloadNonce: rouletteState.overlayReloadNonce,
+      },
     },
-  } as Partial<AppState> & { donorsAuthoritative?: boolean; settlementReset?: boolean };
+    options
+  ) as Partial<AppState> & { donorsAuthoritative?: boolean; settlementReset?: boolean };
 }
 
 /** LS에 실멤버가 있을 때 placeholder 로 덮지 않음 (의도적 로스터 교체 제외) */
@@ -2633,7 +2702,11 @@ function preserveLocalMeaningfulRoster(
 }
 
 function normalizeStateForPersistence(state: AppState): AppState {
-  const stripped = sanitizeAppStateWheelDemo(state);
+  const stripped = sanitizeAppStateWheelDemo(state) as AppState & Record<string, unknown>;
+  delete stripped.settlementReset;
+  delete stripped.userConfirmed;
+  delete stripped.confirmPhrase;
+  delete stripped.donationInit;
   return {
     ...stripped,
     donorsFormat: normalizeDonorsFormat(stripped.donorsFormat),

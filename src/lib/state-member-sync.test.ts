@@ -530,6 +530,19 @@ describe("member sync helpers", () => {
     expect(payload.membersRosterUpdatedAt).toBe(1000);
   });
 
+  it("appStatePayloadForApi strips stray settlementReset from state spread", () => {
+    const state = {
+      ...defaultState(),
+      updatedAt: 100,
+      settlementReset: true,
+    } as AppState & { settlementReset: boolean };
+    const payload = appStatePayloadForApi(state, "u1", { omitDonationFields: true }) as Record<
+      string,
+      unknown
+    >;
+    expect(payload.settlementReset).toBeUndefined();
+  });
+
   it("mergeServerSaveApiBodies does not drop zero-amount real members behind theme patch", () => {
     const prev = JSON.stringify({
       updatedAt: 100,

@@ -268,6 +268,19 @@ describe("mergeServerSaveApiBodies", () => {
     ]);
     expect(merged.donors.find((d) => d.id === "src")?.donationExcluded).toBe(true);
   });
+
+  it("strips unconfirmed settlementReset from next before merge", () => {
+    const prev = JSON.stringify({ updatedAt: 100, overlaySettings: { foo: 1 } });
+    const next = JSON.stringify({
+      settlementReset: true,
+      updatedAt: 200,
+      overlaySettings: { bar: 2 },
+    });
+    const merged = JSON.parse(mergeServerSaveApiBodies(prev, next)) as Record<string, unknown>;
+    expect(merged.settlementReset).toBeUndefined();
+    expect(merged.updatedAt).toBe(200);
+    expect(merged.overlaySettings).toEqual({ foo: 1, bar: 2 });
+  });
 });
 
 describe("resolveRichestDonorsFromSources", () => {
