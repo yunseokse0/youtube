@@ -41,9 +41,11 @@ function mysqlPoolOptionsFromUrl(raw: string): mysql.PoolOptions | null {
       password: decodeURIComponent(u.password || ""),
       database,
       waitForConnections: true,
-      connectionLimit: 24,
+      connectionLimit: 16,
+      /** 풀 대기가 무한히 길어지면 /api/state·auth 가 타임아웃 — 빠르게 실패 */
+      acquireTimeout: 8_000,
       /** 대기열이 무한히 늘면 /api/state GET 이 안 끝나고 관리자가「동기화 중」에 고착 */
-      queueLimit: 96,
+      queueLimit: 48,
       connectTimeout: 5_000,
       enableKeepAlive: true,
       idleTimeout: 60_000,

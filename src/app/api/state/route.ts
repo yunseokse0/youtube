@@ -794,7 +794,7 @@ export async function GET(req: Request) {
             userId,
             count: sigEnriched.sigInventory.length,
           });
-          void upstashSetAppStateJson(stateKey(userId), mergedForResponse);
+          setServerMemoryAppState(userId, mergedForResponse);
         }
       }
     } catch (err) {
@@ -818,15 +818,15 @@ export async function GET(req: Request) {
             donors: normalizeDonorsArray(mergedForResponse.donors).length,
             total: totalCombined(mergedForResponse),
           });
-          void upstashSetAppStateJson(stateKey(userId), mergedForResponse);
         }
       }
     } catch (err) {
       logger.error("후원 백업 복구 실패", err);
     }
 
-    /** 메인·백업 모두 donors 비었는데 일일 로그(작업 로그)에 스냅샷이 있으면 GET 시 복구 */
+    /** 메인·백업 모두 donors 비었을 때만 일일 로그 조회(2×MySQL) — since 폴링·정상 세션은 생략 */
     if (
+      since === 0 &&
       normalizeDonorsArray(mergedForResponse.donors).length === 0 &&
       !shouldSuppressAutoRosterRestore(mergedForResponse)
     ) {
@@ -844,23 +844,16 @@ export async function GET(req: Request) {
             donors: normalizeDonorsArray(mergedForResponse.donors).length,
             total: totalCombined(mergedForResponse),
           });
-          void upstashSetAppStateJson(stateKey(userId), mergedForResponse);
         }
       } catch (err) {
         logger.error("일일 로그 후원 복구 실패", err);
       }
     }
 
-    /** donors 있는데 members 합계 0이면 GET 응답·메모리에서 맞춤(Prism 엑셀 미반영 방지) */
+    /** donors 있는데 members 합계 0이면 GET 응답·메모리에서만 맞춤 — GET마다 MySQL 쓰기는 지연·풀 고갈 유발 */
     if (normalizeDonorsArray(mergedForResponse.donors).length > 0) {
-      const synced = syncMemberTotalsFromDonors(mergedForResponse);
-      if (totalCombined(synced) !== totalCombined(mergedForResponse)) {
-        mergedForResponse = synced;
-        setServerMemoryAppState(userId, synced);
-        void upstashSetAppStateJson(stateKey(userId), synced);
-      } else {
-        mergedForResponse = synced;
-      }
+      mergedForResponse = syncMemberTotalsFromDonors(mergedForResponse);
+      setServerMemoryAppState(userId, mergedForResponse);
     }
 
     if (isNotModified(mergedForResponse)) {

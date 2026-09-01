@@ -658,7 +658,7 @@ function buildPrismOverlayRelativePath(p: OverlayPreset, vertical: boolean, user
 const ADMIN_STATE_FALLBACK_POLL_MS = 120_000;
 /** 후원자 리스트 — SSE가 있으면 드물게, 끊기면 조금 더 자주 (since/304) */
 const ADMIN_DONOR_LIVE_POLL_TICK_MS = 2_000;
-const ADMIN_DONOR_LIVE_POLL_MS_SSE = 10_000;
+const ADMIN_DONOR_LIVE_POLL_MS_SSE = 6_000;
 const ADMIN_DONOR_LIVE_POLL_MS_NO_SSE = 4_000;
 
 /** SSE·폴링 시 불필요한 setState 연쇄(버튼·effect 재실행) 방지용 */
@@ -760,8 +760,10 @@ function AdminPageInner() {
   const lastStorageMergePersistAtRef = useRef<number>(0);
   /** `createStateUpdatedScheduler` — 다른 기기·탭에서 저장 시에만 GET 묶음 */
   const adminStateSseScheduleRef = useRef<(() => void) | null>(null);
-  /** 후원 SSE·라이브 폴링용 강제 동기화 */
+  /** 후원 SSE·라이브 폴링용 강제 동기화(재시도 포함) */
   const adminDonorForceSyncRef = useRef<(() => void) | null>(null);
+  const adminDonorLivePullRef = useRef<(() => void) | null>(null);
+  const adminDonorLivePullSeqRef = useRef(0);
   const fetchToonationQueueRef = useRef<(() => Promise<DonationEvent[]>) | null>(null);
   const autoProcessQueueRef = useRef<((events?: DonationEvent[]) => Promise<void>) | null>(null);
   const pushToonationLogRef = useRef<(message: string) => void>(() => {});
@@ -1043,7 +1045,7 @@ function AdminPageInner() {
          * 서버 GET 동기화만 한다.
          */
         if (serverConnected) {
-          adminDonorForceSyncRef.current?.();
+          adminDonorLivePullRef.current?.();
           return;
         }
         if (items.length === 0) return;
@@ -1078,9 +1080,7 @@ function AdminPageInner() {
      * 실제 후원 반영(donationApplied)일 때만 즉시 풀 동기화.
      */
     if (applied?.donorName && Number(applied.amount) > 0) {
-      void applyDonorsFromServerMainStateRef.current({ silent: true }).then((ok) => {
-        if (!ok) adminDonorForceSyncRef.current?.();
-      });
+      adminDonorLivePullRef.current?.();
     } else {
       adminDonorForceSyncRef.current?.();
     }
@@ -1692,12 +1692,10 @@ function AdminPageInner() {
         : formatDonorsAmount(amount, donorsAmountFormat),
     [donorsAmountFormat]
   );
-  /** 후원 리스트 — normalize + 일괄 반영 시각 복구(id·daily log) */
+  /** 후원 리스트 — normalize + 일괄 반영 시각 복구(id·daily log). 표시는 raw 행(삭제 1건=1클릭) */
   const donorListRows = useMemo(
     () =>
-      dedupeDonorRows(
-        repairDonorTimestamps(normalizeDonorsArray(state.donors), { dailyLog })
-      ),
+      repairDonorTimestamps(normalizeDonorsArray(state.donors), { dailyLog }),
     [state.donors, dailyLog]
   );
   const applyGlobalDonorsFormat = useCallback(
@@ -2357,9 +2355,20 @@ function AdminPageInner() {
     const hydrateWatchdog = window.setTimeout(() => {
       if (!cancelled && syncStatusRef.current === "loading") {
         const offlineNow = typeof navigator !== "undefined" && !navigator.onLine;
+        const fromLs = loadState(user.id);
+        if (!offlineNow && hasMeaningfulMemberRoster(fromLs)) {
+          setState((prev) => ({
+            ...fromLs,
+            updatedAt: Math.max(Number(fromLs.updatedAt || 0), Number(prev.updatedAt || 0)),
+          }));
+          stateRef.current = {
+            ...fromLs,
+            updatedAt: Math.max(Number(fromLs.updatedAt || 0), Number(stateRef.current.updatedAt || 0)),
+          };
+        }
         setSyncStatus(offlineNow ? "local" : "error");
       }
-    }, 15_000);
+    }, 8_000);
     const offline = typeof navigator !== "undefined" && !navigator.onLine;
     let localPresets: OverlayPreset[] = [];
     try {
@@ -2385,9 +2394,7 @@ function AdminPageInner() {
      * 「동기화 중」에 고착되기 쉽다 — 본문 GET 완료 후에만 진단·로그를 당긴다.
      */
     const loadMain = () => loadStateFromApi(user.id, { forceFull: true });
-    void loadMain()
-      .then((first) => (first ? first : loadMain()))
-      .then((apiState) => {
+    void loadMain().then((apiState) => {
       if (cancelled) return;
       try {
       /** 후원·금액·멤버는 계정 서버 정본만. admin React state 는 서버 스냅샷의 편집 뷰. */
@@ -2835,11 +2842,15 @@ function AdminPageInner() {
       if (!remote) return false;
       const remoteDonors = normalizeDonorsArray(remote.donors);
       if (remoteDonors.length === 0) return false;
+      const localDonors = normalizeDonorsArray(stateRef.current.donors);
+      const localIds = new Set(localDonors.map((d) => String(d.id || "")));
+      const hasNewRemoteDonors = remoteDonors.some((d) => !localIds.has(String(d.id || "")));
       const localTotal = totalCombined(stateRef.current);
       const remoteTotal = totalCombined(remote);
       /** 서버에 후원이 있을 때만 맞춤 — 빈 원격으로 실후원을 지우지 않음 */
       const forceReplace =
         Boolean(opts?.forceReplace) ||
+        hasNewRemoteDonors ||
         (remoteTotal > 0 &&
           remoteDonors.length > 0 &&
           Math.abs(localTotal - remoteTotal) > 500);
@@ -2850,7 +2861,6 @@ function AdminPageInner() {
       stateUpdatedAtRef.current = next.updatedAt || 0;
       lastAppliedRemoteUpdatedAtRef.current = next.updatedAt || 0;
       pendingUnsyncedRef.current = false;
-      donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
       try {
         cacheBroadcastStateSnapshot(next, user.id);
       } catch {}
@@ -3416,11 +3426,23 @@ function AdminPageInner() {
       void syncFromApi();
     }, { debounceMs: DONOR_STATE_UPDATED_DEBOUNCE_MS, maxWaitMs: DONOR_STATE_UPDATED_MAX_WAIT_MS });
     adminStateSseScheduleRef.current = schedule;
-    adminDonorForceSyncRef.current = () => {
-      void applyDonorsFromServerMainState({ silent: true }).then((ok) => {
-        if (!ok) void syncFromApi({ forceFull: true, forceDonorMerge: true });
-      });
+    /** 투네 SSE 직후 Redis 저장 레이스 — 짧은 간격으로 donors GET 재시도(과다 호출 방지) */
+    const ADMIN_DONOR_LIVE_PULL_RETRY_MS = [0, 350, 1200] as const;
+    const scheduleAdminDonorLivePull = () => {
+      const seq = ++adminDonorLivePullSeqRef.current;
+      for (const ms of ADMIN_DONOR_LIVE_PULL_RETRY_MS) {
+        window.setTimeout(() => {
+          if (!running || seq !== adminDonorLivePullSeqRef.current) return;
+          void applyDonorsFromServerMainState({ silent: true }).then((ok) => {
+            if (!ok && running && seq === adminDonorLivePullSeqRef.current) {
+              void syncFromApi({ forceFull: true, forceDonorMerge: true });
+            }
+          });
+        }, ms);
+      }
     };
+    adminDonorLivePullRef.current = scheduleAdminDonorLivePull;
+    adminDonorForceSyncRef.current = scheduleAdminDonorLivePull;
     const onOnline = () => {
       void syncFromApi({ forceFull: true });
     };
@@ -3454,8 +3476,10 @@ function AdminPageInner() {
     return () => {
       running = false;
       cancel();
+      adminDonorLivePullSeqRef.current += 1;
       adminStateSseScheduleRef.current = null;
       adminDonorForceSyncRef.current = null;
+      adminDonorLivePullRef.current = null;
       window.clearInterval(fallbackTimer);
       window.clearInterval(donorLiveTimer);
       window.removeEventListener("online", onOnline);
@@ -15545,7 +15569,7 @@ function AdminPageInner() {
                     {donorListRows
                       .slice()
                       .sort((a,b)=>b.at-a.at)
-                      .map((d) => {
+                      .map((d, rowIdx) => {
                         const isSplitPart = isGroupSplitPartDonor(d);
                         const isSplitSource = isGroupSplitSourceDonor(state, d);
                         const splitPartCount = isSplitSource ? countGroupSplitParts(state, d.id) : 0;
@@ -15553,7 +15577,7 @@ function AdminPageInner() {
                           ? previewGroupSplitDonation(state, d.amount, state.groupSplitDonationSettings)
                           : null;
                         return (
-                          <tr key={d.id} className={`border-t border-white/10 ${isSplitPart ? "bg-violet-950/15" : isSplitSource ? "bg-violet-950/10" : ""}`}>
+                          <tr key={`${d.id}-${d.at}-${rowIdx}`} className={`border-t border-white/10 ${isSplitPart ? "bg-violet-950/15" : isSplitSource ? "bg-violet-950/10" : ""}`}>
                             <td className="p-1 text-neutral-400"><ClientTime ts={d.at} /></td>
                             <td className="p-1">
                               {d.name}

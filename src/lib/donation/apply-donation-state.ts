@@ -784,7 +784,7 @@ export function applyDonationToAppState(
   };
 }
 
-/** 후원 기록 삭제 시 멤버·식대전·후원 순위 revision 되돌림 */
+/** 후원 기록 삭제 — 리스트에서 선택한 1건만 수동 제거 */
 export function revertDonationFromAppState(currentState: AppState, donorId: string): AppState | null {
   const donor = (currentState.donors || []).find((d) => d.id === donorId);
   if (!donor) return null;
@@ -792,7 +792,7 @@ export function revertDonationFromAppState(currentState: AppState, donorId: stri
 
   const field = (donor.target || "account") === "toon" ? "toon" : "account";
   const amount = Math.max(0, Math.round(Number(donor.amount) || 0));
-  const atMs = Number.isFinite(Number(donor.at)) ? Math.max(0, Math.floor(Number(donor.at))) : Date.now();
+  const atMs = donorAtEpochMs(donor);
   const formula = normalizeContributionFormula(currentState.contributionFormula);
   const storedPoints = Number(donor.contributionPoints);
   const contributionPoints =
@@ -809,7 +809,6 @@ export function revertDonationFromAppState(currentState: AppState, donorId: stri
     const prevContribution = Math.max(0, Number(member.contribution) || 0);
     return {
       ...member,
-      [field]: Math.max(0, (member[field] || 0) - amount),
       contribution: isOperating
         ? prevContribution
         : Math.max(0, prevContribution - contributionPoints),
