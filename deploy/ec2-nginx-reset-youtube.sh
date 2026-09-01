@@ -75,8 +75,14 @@ if [[ -d "$STATIC_DIR" ]]; then
   if [[ -n "$W" ]]; then
     scode="$(curl -sf --max-time 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1/_next/static/chunks/${W}" || echo "000")"
     echo "_next/static/chunks/${W} (nginx disk) HTTP ${scode}"
-    if [[ "$scode" == "403" ]]; then
-      echo "WARN: 403 — fix_nginx_static_permissions 재실행 또는 sudo chmod o+x /home/ubuntu"
+    if [[ "$scode" != "200" ]]; then
+      echo "ERROR: static HTTP ${scode} — 권한·빌드·alias 경로 확인"
+      if [[ "$scode" == "403" ]]; then
+        fix_nginx_static_permissions "$ROOT"
+        scode="$(curl -sf --max-time 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1/_next/static/chunks/${W}" || echo "000")"
+        echo "재시도 HTTP ${scode}"
+      fi
+      [[ "$scode" == "200" ]] || exit 1
     fi
   fi
 fi
