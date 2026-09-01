@@ -152,6 +152,7 @@ import {
   overlayTableExcelOuterEdgeRestoreCss,
   overlayTableGridLineWidthPx,
   overlayTableHairlineShadow,
+  overlayTableOuterFrameShadow,
   snapOverlayScaleForCrispLines,
 } from "@/lib/overlay-table-crisp-lines";
 import {
@@ -4282,9 +4283,19 @@ function OverlayInner() {
       excelMemberAccent?.panelBorder ||
       tableGridLineColor ||
       "";
-    /** 셀 그리드(box-shadow)가 외곽선을 그릴 때 패널 border·좌우 padding 을 겹치지 않게 */
-    const tableOuterFrameFromCellGrid =
-      tableGridLines && !isExcelGoldChrome && !showTableFrame;
+    /** 셀 그리드·패널 inset shadow 로 외곽선을 그릴 때 CSS border 를 겹치지 않게 */
+    const tableOuterFrameFromCellGrid = tableGridLines && !showTableFrame;
+    const tablePanelFrameWidthPx = isExcelGoldChrome ? 1 : tableGridLineWidthPx;
+    const tablePanelFrameColor = tableOuterFrameFromCellGrid
+      ? tableGridLineColor
+      : tablePanelBorderCss || (isExcelGoldChrome ? "#ffc107" : "");
+    const tablePanelOuterFrameShadowCss =
+      !showTableFrame && tablePanelFrameColor
+        ? overlayTableOuterFrameShadow(
+            tablePanelFrameColor,
+            tableOuterFrameFromCellGrid ? tableGridLineWidthPx : tablePanelFrameWidthPx
+          )
+        : undefined;
     const excelZebraEnabled =
       Boolean(excelMemberAccent) &&
       Boolean(tableRowOddBgCss && tableRowOddBgCss !== "transparent");
@@ -4474,8 +4485,8 @@ function OverlayInner() {
           background: ${broadcastTheadBg} !important;
           color: ${broadcastTheadTextCss} !important;
           font-weight: ${tableHeaderFontWeight} !important;
-          text-shadow: ${tableOutlineShadowCss} !important;
-          -webkit-text-stroke: ${tableStrokeCss} !important;
+          text-shadow: ${tableHeaderOutlineShadowCss} !important;
+          -webkit-text-stroke: ${tableHeaderOutlineDisabled || obsStrokeDisabled ? "0" : tableHeaderStrokeCss} !important;
           paint-order: stroke fill;
           border: none !important;
           box-shadow: ${
@@ -4738,15 +4749,15 @@ function OverlayInner() {
           font-weight: ${tableFontWeight} !important;
           letter-spacing: -0.01em;
         }
-        .overlay-root .overlay-elegant-table thead td,
+        .overlay-root .overlay-elegant-table thead td {
+          text-shadow: ${tableHeaderOutlineShadowCss} !important;
+          -webkit-text-stroke: ${tableHeaderOutlineDisabled || obsStrokeDisabled ? "0" : tableHeaderStrokeCss} !important;
+          paint-order: stroke fill;
+        }
         .overlay-root .overlay-elegant-table .overlay-total-row td {
           text-shadow: ${tableOutlineShadowCss} !important;
           -webkit-text-stroke: ${tableStrokeCss} !important;
           paint-order: stroke fill;
-        }
-        .overlay-root .overlay-elegant-table.excel-gold-table thead td {
-          text-shadow: none !important;
-          -webkit-text-stroke: 0 !important;
         }
         .overlay-root .overlay-elegant-table:not(.excel-zebra-table) tbody tr.overlay-row td {
           background: transparent !important;
@@ -4776,10 +4787,17 @@ function OverlayInner() {
             ? `
         .overlay-root .overlay-elegant-table thead td span,
         .overlay-root .overlay-elegant-table thead td strong {
-          text-shadow: ${tableOutlineShadowCss} !important;
-          -webkit-text-stroke: ${tableStrokeCss} !important;
+          text-shadow: ${tableHeaderOutlineShadowCss} !important;
+          -webkit-text-stroke: ${tableHeaderOutlineDisabled || obsStrokeDisabled ? "0" : tableHeaderStrokeCss} !important;
         }`
-            : ""
+            : `
+        .overlay-root .overlay-elegant-table thead td span,
+        .overlay-root .overlay-elegant-table thead td strong,
+        .overlay-root .overlay-elegant-table thead td .overlay-cell-text-inner {
+          text-shadow: ${excelTheadTextShadow} !important;
+          -webkit-text-stroke: ${excelTheadStroke} !important;
+          paint-order: stroke fill;
+        }`
         }
         .overlay-root .overlay-elegant-table tbody td span:not(.overlay-rank-fx-colorShift):not(.overlay-rank-fx-rainbow):not(.overlay-rank-fx-glow):not(.overlay-rank-fx-sparkle),
         .overlay-root .overlay-elegant-table tbody td strong {
@@ -4902,8 +4920,8 @@ function OverlayInner() {
           font-size: ${memberFontPx}px !important;
           line-height: 1.35 !important;
           -webkit-text-stroke: 0 !important;
-          /* OBS CEF: stroke 대신 blur 없는 shadow 링(프리뷰와 동일 선명도) */
-          text-shadow: ${tableOutlineShadowCss} !important;
+          /* OBS CEF: stroke 대신 blur 없는 shadow 링(프리뷰·OBS 동일 선명도) */
+          text-shadow: ${tableHeaderOutlineShadowCss} !important;
           text-rendering: geometricPrecision !important;
         }
         .overlay-root .overlay-elegant-table tbody tr.overlay-row td {
@@ -4922,6 +4940,10 @@ function OverlayInner() {
           text-shadow: ${tableOutlineShadowCss} !important;
           text-rendering: geometricPrecision !important;
           -webkit-font-smoothing: antialiased;
+        }
+        .overlay-root .overlay-elegant-table thead td span,
+        .overlay-root .overlay-elegant-table thead td strong {
+          text-shadow: ${tableHeaderOutlineShadowCss} !important;
         }
         .overlay-root .overlay-elegant-table .overlay-total-row td {
           font-size: ${memberFontPx}px !important;
@@ -5143,10 +5165,11 @@ function OverlayInner() {
                 emphasizeTotalColumn: totalLineVisible,
                 gridLines: tableGridLines,
                 verticalLines: tableVerticalLines,
+                includeOuterFrame: !tableOuterFrameFromCellGrid,
               })
         }
         ${
-          isExcelGoldChrome || !tableGridLines
+          !tableGridLines || tableOuterFrameFromCellGrid
             ? ""
             : overlayTableExcelOuterEdgeRestoreCss({
                 lineColor: tableGridLineColor,
@@ -5172,9 +5195,10 @@ function OverlayInner() {
           background-clip: border-box !important;
           border-top: 3px solid transparent !important;
           border-bottom: 3px solid transparent !important;
-          box-shadow: none !important;
-          text-shadow: none !important;
-          -webkit-text-stroke: 0 !important;
+          ${tableGridLines ? "" : "box-shadow: none !important;"}
+          text-shadow: ${excelTheadTextShadow} !important;
+          -webkit-text-stroke: ${excelTheadStroke} !important;
+          paint-order: stroke fill;
         }
         .overlay-root .overlay-elegant-table.excel-gold-table thead td:first-child,
         .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table thead td:first-child {
@@ -5428,14 +5452,11 @@ function OverlayInner() {
                   style={{
                     zIndex: 2,
                     borderRadius: showTableFrame ? 0 : isExcelGoldChrome ? 12 : 14,
-                    border: tableOuterFrameFromCellGrid
-                      ? "none"
-                      : !showTableFrame && tablePanelBorderCss
-                        ? `${isExcelGoldChrome ? 1 : 2}px solid ${tablePanelBorderCss}`
-                        : !showTableFrame && isExcelGoldChrome
-                          ? "1px solid #ffc107"
-                          : "none",
-                    boxShadow: showTableFrame || isExcelGoldChrome ? "none" : tablePanelShadow || "none",
+                    border: "none",
+                    boxShadow:
+                      showTableFrame
+                        ? "none"
+                        : tablePanelOuterFrameShadowCss || (isExcelGoldChrome ? "none" : tablePanelShadow || "none"),
                     padding: isExcelGoldChrome && !showTableFrame ? "6px 0 8px" : 0,
                     /** 웹후원 골드: 큰 패널 없음. 그 외 테마는 시트/글래스 배경에 불투명도 적용 */
                     backgroundColor: isExcelGoldChrome

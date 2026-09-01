@@ -64,6 +64,8 @@ export function overlayTableCellGridCss(opts: {
   gridLines?: boolean;
   /** 열 구분 세로선 (기본 true). false면 가로선·표 외곽만. gridLines=false 이면 무시 */
   verticalLines?: boolean;
+  /** false면 패널 외곽선이 담당 — 셀에는 내부 가로·세로선만 (기본 true) */
+  includeOuterFrame?: boolean;
 }): string {
   if (opts.gridLines === false) {
     return `
@@ -99,6 +101,56 @@ export function overlayTableCellGridCss(opts: {
   const totalC = opts.totalRowLineColor || opts.lineColor;
   const cell = (color: string, sides: OverlayTableHairlineSides) =>
     overlayTableHairlineShadow(color, sides, w);
+  const includeOuterFrame = opts.includeOuterFrame !== false;
+
+  if (!includeOuterFrame && vertical) {
+    return `
+.overlay-root .overlay-elegant-table thead td:not(:last-child) {
+  border: none !important;
+  box-shadow: ${cell(c, { bottom: headerBottom, right: w })} !important;
+}
+.overlay-root .overlay-elegant-table thead td:last-child {
+  border: none !important;
+  box-shadow: ${cell(c, { bottom: headerBottom })} !important;
+}
+.overlay-root .overlay-elegant-table tbody tr.overlay-row td:not(:last-child) {
+  border: none !important;
+  box-shadow: ${cell(c, { top: w, right: w })} !important;
+}
+.overlay-root .overlay-elegant-table tbody tr.overlay-row td:last-child {
+  border: none !important;
+  box-shadow: ${cell(c, { top: w })} !important;
+}
+.overlay-root .overlay-elegant-table tbody tr.overlay-total-row td:not(:last-child),
+.overlay-root .overlay-elegant-table .overlay-total-row td:not(:last-child) {
+  border: none !important;
+  box-shadow: ${cell(totalC, { top: w, right: w })} !important;
+}
+.overlay-root .overlay-elegant-table tbody tr.overlay-total-row td:last-child,
+.overlay-root .overlay-elegant-table .overlay-total-row td:last-child {
+  border: none !important;
+  box-shadow: ${cell(totalC, { top: w })} !important;
+}
+`.trim();
+  }
+
+  if (!includeOuterFrame && !vertical) {
+    return `
+.overlay-root .overlay-elegant-table thead td {
+  border: none !important;
+  box-shadow: ${cell(c, { bottom: headerBottom })} !important;
+}
+.overlay-root .overlay-elegant-table tbody tr.overlay-row td {
+  border: none !important;
+  box-shadow: ${cell(c, { top: w })} !important;
+}
+.overlay-root .overlay-elegant-table tbody tr.overlay-total-row td,
+.overlay-root .overlay-elegant-table .overlay-total-row td {
+  border: none !important;
+  box-shadow: ${cell(totalC, { top: w })} !important;
+}
+`.trim();
+  }
 
   if (!vertical) {
     return `

@@ -96,4 +96,18 @@ describe("overlay table crisp lines", () => {
     expect(css).toContain("inset 2px 0 0 0 #abc");
     expect(css).toContain("inset -2px 0 0 0 #abc");
   });
+
+  it("draws internal grid only when includeOuterFrame is false", () => {
+    const css = overlayTableCellGridCss({
+      lineColor: "#abc",
+      widthPx: 2,
+      includeOuterFrame: false,
+    });
+    expect(css).toContain("thead td:not(:last-child)");
+    expect(css).toContain("tbody tr.overlay-row td:last-child");
+    expect(css).toContain("inset 0 -2px 0 0 #abc");
+    expect(css).toContain("inset 0 2px 0 0 #abc");
+    expect(css).not.toContain("thead td:first-child");
+    expect(css).not.toContain("inset 2px 0 0 0 #abc");
+  });
 });
