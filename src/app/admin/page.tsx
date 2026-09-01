@@ -667,10 +667,14 @@ function AdminPageInner() {
     members: [],
   }));
   const [syncStatus, setSyncStatus] = useState<"loading" | "synced" | "local" | "error">("loading");
+  /** 401·403 — 배지 문구·재시도 중단 */
+  const [syncAuthBlocked, setSyncAuthBlocked] = useState(false);
   const stateUpdatedAtRef = useRef<number>(0);
   const stateRef = useRef<AppState>(state);
   const lastLocalPersistAtRef = useRef<number>(0);
   const syncStatusRef = useRef<"loading" | "synced" | "local" | "error">("loading");
+  /** 401·403 — 5초 재시도 루프 중단(403 user_mismatch 폭주 방지) */
+  const lastSaveHttpStatusRef = useRef<number | null>(null);
   const pendingUnsyncedRef = useRef<boolean>(false);
   /** donorsAuthoritative 저장 직후 SSE·폴링이 빈 서버 스냅샷으로 덮어쓰지 않게 */
   const donationAuthoritativeSaveUntilRef = useRef<number>(0);
@@ -1500,6 +1504,8 @@ function AdminPageInner() {
           lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
         }
         pendingUnsyncedRef.current = false;
+        lastSaveHttpStatusRef.current = null;
+        setSyncAuthBlocked(false);
         if (r.storageFallback) {
           setSyncStatus("error");
           setSigExcelResult(
@@ -1509,6 +1515,8 @@ function AdminPageInner() {
           setSyncStatus("synced");
         }
       } else {
+        lastSaveHttpStatusRef.current = r.httpStatus ?? null;
+        setSyncAuthBlocked(r.httpStatus === 401 || r.httpStatus === 403);
         const offline = typeof navigator !== "undefined" && !navigator.onLine;
         setSyncStatus(offline ? "local" : "error");
       }
@@ -1768,6 +1776,8 @@ function AdminPageInner() {
     lastPollMergePersistAtRef.current = 0;
     lastStorageMergePersistAtRef.current = 0;
     serverDonorMismatchRestoreAttemptedRef.current = false;
+    lastSaveHttpStatusRef.current = null;
+    setSyncAuthBlocked(false);
   }, [user?.id]);
   useEffect(() => {
     syncStatusRef.current = syncStatus;
@@ -4171,9 +4181,11 @@ function AdminPageInner() {
   }, [state.sigInventory, persistState, syncOneShotSigItem, user?.id]);
 
   useEffect(() => {
-    /** 저장 실패 재시도 — 후원 필드 제외(금액 초기화 방지) */
+    /** 저장 실패 재시도 — 후원 필드 제외(금액 초기화 방지). 401·403 은 세션 문제라 재시도하지 않음 */
     const id = setInterval(() => {
       if (syncStatusRef.current !== "error") return;
+      const st = lastSaveHttpStatusRef.current;
+      if (st === 401 || st === 403) return;
       persistState(stateRef.current, { omitDonationFields: true });
     }, 5000);
     return () => clearInterval(id);
@@ -9497,6 +9509,8 @@ function AdminPageInner() {
               title={
                 donorUiBehindServer
                   ? `서버 후원 ${serverDonorHealthCount}건 · 화면 ${uiDonorRowCount}건 — 「서버 후원 복구」 또는 새로고침`
+                  : syncStatus === "error" && syncAuthBlocked
+                    ? "로그인 세션이 만료되었거나 계정이 일치하지 않습니다. 페이지를 새로고침한 뒤 다시 로그인해 보세요."
                   : syncStatus === "error"
                     ? "동기화 실패 시 개발자 도구에 401이 보이면 로그인 세션이 만료된 경우가 많습니다. 페이지를 새로고침한 뒤 다시 로그인해 보세요."
                     : undefined
@@ -9508,6 +9522,8 @@ function AdminPageInner() {
                   ? "서버 동기화됨"
                   : syncStatus === "loading"
                     ? "동기화 중..."
+                    : syncStatus === "error" && syncAuthBlocked
+                      ? "세션 확인 필요"
                     : syncStatus === "error"
                       ? "연결 재시도 중"
                       : "로컬 모드 (오프라인)"}

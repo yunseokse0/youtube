@@ -3,6 +3,7 @@ import { AUTH_COOKIE, isDevAuthBypassRequest } from "@/lib/auth";
 import { getUserById } from "@/lib/auth";
 import { APP_BRAND_NAME } from "@/lib/app-branding";
 import { loadAccounts, getRemainingDays } from "@/lib/accounts-storage";
+import { getCookieUserIdFromRequest } from "@/app/api/_shared/user-id";
 import { cookies } from "next/headers";
 
 export async function GET(req: Request) {
@@ -10,16 +11,20 @@ export async function GET(req: Request) {
     if (isDevAuthBypassRequest(req)) {
       return NextResponse.json({ user: { id: "finalent", companyName: APP_BRAND_NAME } });
     }
+    const uidFromCookie = getCookieUserIdFromRequest(req);
     const cookieStore = await cookies();
     const raw = cookieStore.get(AUTH_COOKIE)?.value;
-    if (!raw) return NextResponse.json({ user: null }, { status: 200 });
+    if (!uidFromCookie && !raw) return NextResponse.json({ user: null }, { status: 200 });
     let parsed: { id: string; companyName: string };
     try {
-      parsed = JSON.parse(decodeURIComponent(raw)) as { id: string; companyName: string };
+      parsed = raw
+        ? (JSON.parse(decodeURIComponent(raw)) as { id: string; companyName: string })
+        : { id: uidFromCookie || "", companyName: uidFromCookie || "" };
     } catch {
-      return NextResponse.json({ user: null }, { status: 200 });
+      if (!uidFromCookie) return NextResponse.json({ user: null }, { status: 200 });
+      parsed = { id: uidFromCookie, companyName: uidFromCookie };
     }
-    const uid = String(parsed?.id || "").trim();
+    const uid = String(uidFromCookie || parsed?.id || "").trim();
     if (!uid) return NextResponse.json({ user: null }, { status: 200 });
     if (uid === "finalent" && isDevAuthBypassRequest(req)) {
       return NextResponse.json({ user: { id: "finalent", companyName: APP_BRAND_NAME } });

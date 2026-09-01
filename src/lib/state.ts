@@ -1931,15 +1931,9 @@ function notifyAdminSessionExpired() {
   window.dispatchEvent(new CustomEvent("broadcast-session-expired"));
 }
 
-async function postAppStateJson(json: string, effectiveUserId?: string | null): Promise<Response> {
-  const q = new URLSearchParams();
-  if (effectiveUserId) {
-    q.set("user", effectiveUserId);
-    /** GET과 동일하게 `u` 도 붙여 프록시·게이트웨이 호환 */
-    q.set("u", effectiveUserId);
-  }
-  const url = q.toString() ? `/api/state?${q.toString()}` : "/api/state";
-  return fetch(url, {
+/** 관리자 POST — 세션 쿠키만 사용. `?user=` 를 같이 보내면 쿠키 id 와 어긋날 때 403(user_mismatch) */
+async function postAppStateJson(json: string): Promise<Response> {
+  return fetch("/api/state", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: json,
@@ -1947,21 +1941,21 @@ async function postAppStateJson(json: string, effectiveUserId?: string | null): 
   });
 }
 
-/** 401 시 쿠키만으로는 user 쿼리가 없을 때 실패하는 경우를 줄이기 위해 /api/auth/me로 id 보강 후 1회 재시도 */
-async function postAppStateWithAuthRecovery(json: string, userId?: string | null): Promise<Response> {
-  let res = await postAppStateJson(json, userId);
-  if (res.status !== 401) return res;
-  try {
-    const me = await fetch("/api/auth/me", { credentials: "include" }).then((r) => r.json()) as { user?: { id?: string } };
-    const uid = typeof me?.user?.id === "string" && me.user.id ? me.user.id : null;
-    if (uid) {
-      res = await postAppStateJson(json, uid);
-    }
-  } catch {
-    /* ignore */
-  }
+async function postAppStateWithAuthRecovery(json: string): Promise<Response> {
+  let res = await postAppStateJson(json);
   if (res.status === 401) {
     notifyAdminSessionExpired();
+    return res;
+  }
+  if (res.status === 403) {
+    try {
+      const body = (await res.clone().json()) as { error?: string };
+      if (body.error === "user_mismatch" || body.error === "login_required") {
+        notifyAdminSessionExpired();
+      }
+    } catch {
+      notifyAdminSessionExpired();
+    }
   }
   return res;
 }
@@ -2013,6 +2007,8 @@ export type SaveStateAsyncResult = {
   donorRankingsUpdatedAt?: number;
   /** Redis 저장 실패 후 서버 메모리만 기록된 경우 — 다른 PC·인스턴스에서는 보이지 않음 */
   storageFallback?: boolean;
+  /** POST /api/state HTTP 상태 — 401·403 이면 재시도 루프 중단용 */
+  httpStatus?: number;
 };
 
 type ServerSaveJob = {
@@ -2340,8 +2336,9 @@ async function runServerSaveQueue(): Promise<void> {
   const job = serverSavePending;
   serverSavePending = null;
   try {
-    const res = await postAppStateWithAuthRecovery(job.apiBodyJson, job.userId);
+    const res = await postAppStateWithAuthRecovery(job.apiBodyJson);
     const ok = res.ok;
+    const httpStatus = res.status;
     let serverUpdatedAt: number | undefined;
     let serverDonorRankingsUpdatedAt: number | undefined;
     let storageFallback = false;
@@ -2420,7 +2417,8 @@ async function runServerSaveQueue(): Promise<void> {
         /* ignore */
       }
     }
-    for (const fn of job.resolveAll) fn({ ok, serverUpdatedAt, donorRankingsUpdatedAt: serverDonorRankingsUpdatedAt, storageFallback });
+    for (const fn of job.resolveAll)
+      fn({ ok, serverUpdatedAt, donorRankingsUpdatedAt: serverDonorRankingsUpdatedAt, storageFallback, httpStatus });
   } catch {
     for (const fn of job.resolveAll) fn({ ok: false });
   } finally {
