@@ -72,15 +72,7 @@ free_listen_port "$PORT" || {
 }
 
 echo "== 3) nginx 재기동 =="
-if systemctl list-unit-files nginx.service >/dev/null 2>&1; then
-  if ! run nginx -t >/dev/null 2>&1; then
-    echo "nginx 설정 오류 — reset"
-    bash "$ROOT/deploy/ec2-nginx-reset-youtube.sh" || true
-  else
-    run systemctl start nginx 2>/dev/null || true
-    run systemctl reload nginx 2>/dev/null || true
-  fi
-fi
+restart_nginx_service "$ROOT" || bash "$ROOT/deploy/ec2-nginx-reset-youtube.sh" || true
 
 echo "== 4) .next 확인 =="
 if [[ ! -f .next/BUILD_ID ]]; then

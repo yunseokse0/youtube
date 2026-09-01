@@ -28,9 +28,21 @@ fi
 
 run nginx -t
 run systemctl enable nginx 2>/dev/null || true
+run systemctl stop nginx 2>/dev/null || true
+sleep 1
+if command -v fuser >/dev/null 2>&1; then
+  run fuser -k 80/tcp 2>/dev/null || true
+  sleep 1
+fi
 run systemctl start nginx
-run systemctl reload nginx
 
-code="$(curl -sf -o /dev/null -w "%{http_code}" "http://127.0.0.1/admin" || echo "000")"
+if ! ss -lntp 2>/dev/null | grep -q ':80 '; then
+  echo "ERROR: nginx :80 미수신"
+  run journalctl -u nginx -n 20 --no-pager 2>/dev/null || true
+  exit 1
+fi
+echo "nginx :80 LISTEN OK"
+
+code="$(curl -sf --max-time 8 -o /dev/null -w "%{http_code}" "http://127.0.0.1/admin" || echo "000")"
 echo "nginx reset OK — /admin HTTP ${code}"
 echo "브라우저: http://$(curl -sf http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo 'YOUR_IP')/admin"

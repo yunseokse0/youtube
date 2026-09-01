@@ -127,20 +127,72 @@ ensure_mysql_running() {
 ensure_nginx_proxy() {
   local root="${1:-.}"
   local code
-  code="$(curl -sf --max-time 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1/admin" 2>/dev/null || echo "000")"
-  if [[ "$code" == "200" || "$code" == "302" || "$code" == "307" ]]; then
-    echo "nginx /admin HTTP ${code} OK"
-    return 0
-  fi
-  if ! systemctl list-unit-files nginx.service >/dev/null 2>&1; then
-    echo "WARN: nginx.service 없음 — :3000 직접 접속만 가능"
+  if ! restart_nginx_service "${root}"; then
     return 1
   fi
-  echo "== nginx :80 실패 (HTTP ${code}) — reset =="
-  bash "${root}/deploy/ec2-nginx-reset-youtube.sh" || return 1
   code="$(curl -sf --max-time 8 -o /dev/null -w "%{http_code}" "http://127.0.0.1/admin" 2>/dev/null || echo "000")"
-  echo "nginx /admin HTTP ${code} (after reset)"
+  echo "nginx /admin HTTP ${code}"
   [[ "$code" == "200" || "$code" == "302" || "$code" == "307" ]]
+}
+
+nginx_port_listening() {
+  if command -v ss >/dev/null 2>&1; then
+    ss -lntp 2>/dev/null | grep -q ':80 '
+    return $?
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -i :80 -sTCP:LISTEN >/dev/null 2>&1
+    return $?
+  fi
+  return 1
+}
+
+wait_for_nginx_port() {
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    if nginx_port_listening; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+restart_nginx_service() {
+  local root="${1:-.}"
+  local run_cmd
+  run_cmd() {
+    if [[ "$(id -u)" == "0" ]]; then "$@"; else sudo "$@"; fi
+  }
+  if ! systemctl list-unit-files nginx.service >/dev/null 2>&1; then
+    echo "WARN: nginx.service 없음"
+    return 1
+  fi
+  echo "== nginx stop · :80 정리 · start =="
+  run_cmd systemctl stop nginx 2>/dev/null || true
+  sleep 1
+  if command -v fuser >/dev/null 2>&1; then
+    run_cmd fuser -k 80/tcp 2>/dev/null || true
+    sleep 1
+  fi
+  if ! run_cmd nginx -t; then
+    echo "nginx -t 실패 — reset"
+    bash "${root}/deploy/ec2-nginx-reset-youtube.sh" || return 1
+    return 0
+  fi
+  if ! run_cmd systemctl start nginx; then
+    echo "ERROR: systemctl start nginx 실패"
+    run_cmd journalctl -u nginx -n 25 --no-pager 2>/dev/null || true
+    return 1
+  fi
+  if wait_for_nginx_port; then
+    echo "nginx :80 LISTEN OK"
+    return 0
+  fi
+  echo "ERROR: nginx :80 미수신 — journal 확인"
+  run_cmd journalctl -u nginx -n 25 --no-pager 2>/dev/null || true
+  run_cmd ss -lntp 2>/dev/null | grep -E ':80 |nginx' || true
+  return 1
 }
 
 verify_static_http() {
