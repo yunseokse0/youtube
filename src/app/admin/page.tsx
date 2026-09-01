@@ -1694,7 +1694,10 @@ function AdminPageInner() {
   );
   /** 후원 리스트 — normalize + 일괄 반영 시각 복구(id·daily log) */
   const donorListRows = useMemo(
-    () => repairDonorTimestamps(normalizeDonorsArray(state.donors), { dailyLog }),
+    () =>
+      dedupeDonorRows(
+        repairDonorTimestamps(normalizeDonorsArray(state.donors), { dailyLog })
+      ),
     [state.donors, dailyLog]
   );
   const applyGlobalDonorsFormat = useCallback(

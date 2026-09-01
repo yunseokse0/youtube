@@ -615,8 +615,8 @@ describe("applyDonationToAppState", () => {
     expect(cur.members[0]?.toon).toBe(50_000);
   });
 
-  it("allows consecutive identical content after near-dup window", () => {
-    const at = Date.now() - 5_000;
+  it("allows consecutive identical content after identical-message dedupe window", () => {
+    const at = Date.now() - 16_000;
     const state = {
       ...defaultState(),
       members: [{ id: "m1", name: "피자", account: 60000, toon: 0, contribution: 60000 }],
@@ -777,6 +777,123 @@ describe("applyDonationToAppState", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toBe("duplicate");
+  });
+
+  it("rejects dual-apply with same toonation real id and 3s skew (toon-{real}-{unique})", () => {
+    const at = Date.parse("2026-09-01T22:19:32.000+09:00");
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "쟈키", account: 0, toon: 19200, contribution: 19200 }],
+      donors: [
+        {
+          id: "toonation:toon-donation-8821-1735680000000-19200-0-aaa",
+          name: "소밍",
+          amount: 19200,
+          memberId: "m1",
+          at,
+          target: "toon" as const,
+          message: "응원하겠습니다 쟈키업 쟈키만업",
+        },
+      ],
+    };
+    const event: DonationEvent = {
+      id: "toonation:toon-donation-8821-1735680000456-19200-0-bbb",
+      provider: "toonation",
+      externalId: "toon-donation-8821-1735680000456-19200-0-bbb",
+      donorName: "소밍",
+      amount: 19200,
+      message: "응원하겠습니다 쟈키업 쟈키만업",
+      at: new Date(at + 3000).toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const result = applyDonationToAppState(state, event);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("duplicate");
+  });
+
+  it("rejects dual-apply with same toonation real id, 4s skew, and remapped message (메리)", () => {
+    const at = Date.parse("2026-09-01T22:09:57.000+09:00");
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "쟈키", account: 0, toon: 10000, contribution: 10000 }],
+      donors: [
+        {
+          id: "toonation:toon-donation-7711-1735680597000-10000-0-aaa",
+          name: "메리",
+          amount: 10000,
+          memberId: "m1",
+          at,
+          target: "toon" as const,
+          message: "시그니처 랜덤시그 - 쟈키님♡♡",
+        },
+      ],
+    };
+    const event: DonationEvent = {
+      id: "toonation:toon-donation-7711-1735680601000-10000-0-bbb",
+      provider: "toonation",
+      externalId: "toon-donation-7711-1735680601000-10000-0-bbb",
+      donorName: "메리",
+      amount: 10000,
+      message: "쟈키양♡♡",
+      at: new Date(at + 4000).toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const result = applyDonationToAppState(state, event);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("duplicate");
+    expect(
+      dedupeDonorRows([
+        ...state.donors,
+        {
+          id: event.id,
+          name: "메리",
+          amount: 10000,
+          memberId: "m1",
+          at: at + 4000,
+          target: "toon" as const,
+          message: "쟈키양♡♡",
+        },
+      ])
+    ).toHaveLength(1);
+  });
+
+  it("rejects burst of identical-message toonation alerts within 15s (구름하정)", () => {
+    const baseAt = Date.parse("2026-09-01T22:35:11.000+09:00");
+    const msg = "시그니처 팬덤시그 - 언니 생일인데 재롱부려야징. ^^";
+    let state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "쟈키", account: 0, toon: 0, contribution: 0 }],
+      donors: [] as NonNullable<ReturnType<typeof defaultState>["donors"]>,
+    };
+    for (let i = 0; i < 6; i += 1) {
+      const event: DonationEvent = {
+        id: `toonation:donation-burst-${i}`,
+        provider: "toonation",
+        externalId: `donation-burst-${i}`,
+        donorName: "구름하정",
+        amount: 10000,
+        message: msg,
+        at: new Date(baseAt + i * 1500).toISOString(),
+        status: "queued",
+        target: "toon",
+      };
+      const result = applyDonationToAppState(state, event);
+      if (i === 0) {
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        state = result.state;
+      } else {
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.reason).toBe("duplicate");
+      }
+    }
+    expect(state.donors).toHaveLength(1);
+    expect(state.members[0]?.toon).toBe(10000);
   });
 
   it("rejects consecutive fp- fallback ids within near-dup window", () => {

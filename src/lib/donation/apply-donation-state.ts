@@ -17,6 +17,7 @@ import {
   extractReliableToonationExtFromDonorId,
   isReliableToonationExternalId,
 } from "./toonation/parse-event";
+import { SAME_TOONATION_EVENT_NEAR_DUP_MS, DONATION_IDENTICAL_MESSAGE_NEAR_DUP_MS } from "./donation-dedupe-keys";
 import { mapToMember } from "./mapper";
 import type { DonationEvent, DonorAlias } from "./types";
 
@@ -503,8 +504,62 @@ function reliableExtFromIncoming(incoming: {
   const fromId = extractReliableToonationExtFromDonorId(String(incoming.id || ""));
   if (fromId) return fromId;
   const ext = String(incoming.externalId || "").trim();
-  if (ext && isReliableToonationExternalId(ext)) return ext.toLowerCase();
+  if (ext) {
+    const fromExt = extractReliableToonationExtFromDonorId(`toonation:${ext}`);
+    if (fromExt) return fromExt;
+    if (isReliableToonationExternalId(ext)) return ext.toLowerCase();
+  }
   return null;
+}
+
+/** 동일 투네 실 id + 금액 — ingest 경로·시각 skew 로 3초 밖에도 이중 반영될 수 있음 */
+function isSameToonationEventNearDuplicate(
+  existing: { id?: string; amount?: number; at?: number | string },
+  incoming: {
+    id?: string;
+    externalId?: string;
+    amount?: number;
+    at?: string | number;
+  }
+): boolean {
+  const extA = extractReliableToonationExtFromDonorId(String(existing.id || ""));
+  const extB = reliableExtFromIncoming(incoming);
+  if (!extA || !extB || extA !== extB) return false;
+  const amountA = Math.max(0, Math.round(Number(existing.amount) || 0));
+  const amountB = Math.max(0, Math.round(Number(incoming.amount) || 0));
+  if (amountA <= 0 || amountA !== amountB) return false;
+  const atA = donorAtEpochMs(existing);
+  const atB = donorAtEpochMs(incoming);
+  if (!atA || !atB) return false;
+  return Math.abs(atA - atB) <= SAME_TOONATION_EVENT_NEAR_DUP_MS;
+}
+
+function identicalMessageNearDupWindowMs(
+  existing: { message?: string },
+  incoming: { message?: string }
+): number | null {
+  const msgA = String(existing.message || "").trim().toLowerCase();
+  const msgB = String(incoming.message ?? "").trim().toLowerCase();
+  if (!msgA || !msgB || msgA !== msgB) return null;
+  return DONATION_IDENTICAL_MESSAGE_NEAR_DUP_MS;
+}
+
+function resolveNearDupWindowMs(
+  existing: { message?: string; id?: string; amount?: number; at?: number | string },
+  incoming: {
+    message?: string;
+    id?: string;
+    externalId?: string;
+    amount?: number;
+    at?: string | number;
+  }
+): number {
+  const msgWindow = identicalMessageNearDupWindowMs(existing, incoming);
+  if (msgWindow != null) return msgWindow;
+  const extA = extractReliableToonationExtFromDonorId(String(existing.id || ""));
+  const extB = reliableExtFromIncoming(incoming);
+  if (extA && extB && extA === extB) return SAME_TOONATION_EVENT_NEAR_DUP_MS;
+  return DONATION_NEAR_DUP_WINDOW_MS;
 }
 
 /**
@@ -531,7 +586,10 @@ export function shouldTreatAsDuplicateDonationContent(
     at?: string | number;
   }
 ): boolean {
-  if (!isNearContentDuplicate(existing, incoming)) return false;
+  if (isSameToonationEventNearDuplicate(existing, incoming)) return true;
+  const windowMs = resolveNearDupWindowMs(existing, incoming);
+  if (!isNearContentDuplicate(existing, incoming, windowMs)) return false;
+  if (identicalMessageNearDupWindowMs(existing, incoming) != null) return true;
   const extA = extractReliableToonationExtFromDonorId(String(existing.id || ""));
   const extB = reliableExtFromIncoming(incoming);
   if (extA && extB && extA !== extB) return false;

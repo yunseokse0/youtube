@@ -15,6 +15,7 @@ import { enrichAppStateWithDonationRosterBackupFromKv, loadDonationRosterBackupF
 import { unionAppStateDonorsFromBackupIfRicher } from "@/lib/donation-roster-backup-core";
 import { persistDonationApplyLikeToonation } from "@/lib/donation/persist-donation-like-toon";
 import { fetchToonaHubContributionFormula } from "@/lib/toona-hub-client";
+import { donationApplyInFlightKey } from "./donation-dedupe-keys";
 import { enqueueDonationEvent, purgeDonationQueueForEvent } from "./toonation/enqueue-donation";
 import { readToonationListenerConfig } from "./toonation/listener-config-store";
 import { resolveToonationDonationWithOwnerRemap } from "./toonation/owner-donation-remap";
@@ -25,9 +26,7 @@ export type ToonationAutoApplyOutcome = "applied" | "applied_needs_review" | "no
 const inFlightApplyKeys = new Set<string>();
 
 function inFlightKey(userId: string, event: DonationEvent): string {
-  const eventId = String(event.id || "").trim();
-  const ext = String(event.externalId || "").trim();
-  return `${userId}:${eventId || ext}`;
+  return donationApplyInFlightKey(userId, event);
 }
 
 function sleep(ms: number): Promise<void> {
