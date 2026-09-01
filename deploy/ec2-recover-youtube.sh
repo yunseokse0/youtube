@@ -14,6 +14,19 @@ echo "=========================================="
 echo " EC2 youtube 긴급 복구"
 echo "=========================================="
 
+run() {
+  if [[ "$(id -u)" == "0" ]]; then "$@"; else sudo "$@"; fi
+}
+
+echo "== 0) MySQL 재시작 =="
+if systemctl list-unit-files mysql.service >/dev/null 2>&1; then
+  run systemctl restart mysql 2>/dev/null || run systemctl start mysql 2>/dev/null || true
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    systemctl is-active mysql >/dev/null 2>&1 && break
+    sleep 1
+  done
+fi
+
 if [[ ! -f .next/BUILD_ID ]]; then
   echo "ERROR: .next/BUILD_ID 없음 — bash deploy/deploy-on-ec2.sh"
   exit 1
@@ -45,7 +58,7 @@ if ! wait_for_health "$PORT"; then
   NEXT_BUILD_DIR= NEXT_USE_STAGING_DIST= pm2 start npm --name "$PM2_APP" -- start
   pm2 save 2>/dev/null || true
   wait_for_health "$PORT" || {
-    echo "ERROR: health 계속 실패"
+    echo "ERROR: health 계속 실패 — bash deploy/ec2-emergency-recover.sh 시도"
     pm2 logs "$PM2_APP" --lines 30 --nostream 2>/dev/null || true
     exit 1
   }
@@ -93,4 +106,5 @@ show_port_holders "$PORT"
 pm2 env "$PM2_APP" 2>/dev/null | grep -E 'NEXT_BUILD_DIR|NEXT_USE_STAGING_DIST' || echo "(pm2 env clean)"
 echo "=========================================="
 echo " 복구 완료 — 브라우저 Ctrl+Shift+R"
+echo " 여전히 무응답이면: bash deploy/ec2-emergency-recover.sh"
 echo "=========================================="

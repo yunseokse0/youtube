@@ -219,6 +219,7 @@ curl -s "http://127.0.0.1:3000/api/health?deep=1"
 | `ec2-watchdog.sh` | 5분 cron 본체 (디스크·health·recover) |
 | `ec2-free-disk.sh` | 디스크 정리 (manual/daily) |
 | `ec2-recover-youtube.sh` | 502·EADDRINUSE 긴급 복구 |
+| `ec2-emergency-recover.sh` | recover 실패·HTTP 무응답 — MySQL·Node·nginx 전면 재기동 |
 
 ---
 

@@ -68,7 +68,7 @@ wait_for_health() {
   local port="${1:-3000}"
   local i
   for i in 1 2 3 4 5 6 7 8 9 10; do
-    if curl -sf "http://127.0.0.1:${port}/api/health" >/dev/null 2>&1; then
+    if curl -sf --max-time 3 "http://127.0.0.1:${port}/api/health" >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
