@@ -61,7 +61,7 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^DATABASE_URL=' "$ENV_FILE"; then
     if mysql -u "$DB_USER" -p"$DB_PASS" -h 127.0.0.1 "$DB_NAME" -e "SELECT 1 AS ok;" >/dev/null 2>&1; then
       echo "mysql SELECT 1 OK (${DB_NAME})"
     else
-      echo "WARN: DATABASE_URL 로 SELECT 1 실패 — 비밀번호·유저 확인"
+      echo "WARN: DATABASE_URL 로 SELECT 1 실패 — bash deploy/ec2-mysql-sync-password-from-env.sh"
     fi
   fi
 else

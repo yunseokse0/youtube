@@ -221,6 +221,7 @@ curl -s "http://127.0.0.1:3000/api/health?deep=1"
 | `ec2-recover-youtube.sh` | 502·EADDRINUSE 긴급 복구 |
 | `ec2-emergency-recover.sh` | recover 실패·HTTP 무응답 — MySQL·Node·nginx 전면 재기동 |
 | `ec2-mysql-stabilize.sh` | 저메모리 MySQL 튜닝 + 재시작 |
+| `ec2-mysql-sync-password-from-env.sh` | `.env` `DATABASE_URL` ↔ MySQL `youtube_app` 비밀번호 동기화 (1045) |
 | `ec2-stabilize-mysql-and-static.sh` | **MySQL 안정화 + static HTTP 200 + pm2** 한 번에 |
 
 ---
