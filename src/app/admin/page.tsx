@@ -580,16 +580,78 @@ function handleSigPreviewImgError(
 }
 
 function ClientTime({ ts }: { ts: number | string }) {
-  const [text, setText] = useState<string>("");
+  return <ClientLocaleTime ts={ts} mode="time" />;
+}
+
+/** SSR·클라 locale/타임존 차이로 hydration #418 방지 — 표시용 날짜·시각만 클라이언트에서 포맷 */
+function ClientLocaleTime({
+  ts,
+  mode = "time",
+}: {
+  ts: number | string;
+  mode?: "time" | "time24" | "datetime" | "datetimeFull";
+}) {
+  const [text, setText] = useState("");
   useEffect(() => {
     try {
       const n = typeof ts === "string" ? Date.parse(ts) : ts;
-      setText(new Date(n).toLocaleTimeString());
+      if (!Number.isFinite(n) || n <= 0) {
+        setText("");
+        return;
+      }
+      const d = new Date(n);
+      if (mode === "time24") {
+        setText(d.toLocaleTimeString("ko-KR", { hour12: false }));
+      } else if (mode === "datetime") {
+        setText(
+          d.toLocaleString("ko-KR", {
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+          })
+        );
+      } else if (mode === "datetimeFull") {
+        setText(d.toLocaleString("ko-KR"));
+      } else {
+        setText(d.toLocaleTimeString("ko-KR"));
+      }
     } catch {
       setText("");
     }
-  }, [ts]);
+  }, [ts, mode]);
   return <span suppressHydrationWarning>{text}</span>;
+}
+
+function isGoalOnlyOverlayPreset(p: OverlayPreset): boolean {
+  return (
+    Boolean(p.showGoal) &&
+    !Boolean(p.showMembers) &&
+    !Boolean(p.showTotal) &&
+    !Boolean(p.showTimer) &&
+    !Boolean(p.showMission) &&
+    !Boolean(p.showPersonalGoal)
+  );
+}
+
+/** OBS URL 미리보기 — origin 없이 상대 경로만 (SSR·클라 동일) */
+function buildPrismOverlayRelativePath(p: OverlayPreset, vertical: boolean, userId: string): string {
+  if (isGoalOnlyOverlayPreset(p)) {
+    const q = new URLSearchParams();
+    q.set("p", p.id);
+    q.set("u", userId);
+    q.set("host", "prism");
+    return `/overlay/goal?${q.toString()}`;
+  }
+  const q = buildCompactBroadcastOverlayParams({
+    presetId: p.id,
+    userId,
+    host: "prism",
+    vertical: !!vertical,
+  });
+  return `/overlay?${q.toString()}`;
 }
 
 /** 평시 동기화는 SSE `state_updated` + 디바운스. 주기 폴링은 연결 끊김 대비용만 */
@@ -3841,36 +3903,15 @@ function AdminPageInner() {
   };
   /** 방송/OBS용: snap 없음 → 오버레이는 항상 `/api/state` 기준 실시간 반영 (스냅샷은 아래 프리뷰 iframe 전용) */
   const buildPrismOverlayUrl = (p: OverlayPreset, vertical: boolean): string => {
-    if (typeof window === "undefined") return "";
-    const isGoalOnlyPreset =
-      Boolean(p.showGoal) &&
-      !Boolean(p.showMembers) &&
-      !Boolean(p.showTotal) &&
-      !Boolean(p.showTimer) &&
-      !Boolean(p.showMission) &&
-      !Boolean(p.showPersonalGoal);
-    if (isGoalOnlyPreset) {
-      const goalOnly = new URL(`${window.location.origin}/overlay/goal`);
-      goalOnly.searchParams.set("p", p.id);
-      goalOnly.searchParams.set("u", overlayUserId);
-      goalOnly.searchParams.set("host", "prism");
-      return goalOnly.toString();
-    }
-    const base = `${window.location.origin}/overlay`;
-    const q = buildCompactBroadcastOverlayParams({
-      presetId: p.id,
-      userId: overlayUserId,
-      host: "prism",
-      vertical: !!vertical,
-    });
-    return `${base}?${q.toString()}`;
+    const path = buildPrismOverlayRelativePath(p, vertical, overlayUserId);
+    if (typeof window === "undefined") return path;
+    return `${window.location.origin}${path}`;
   };
   const buildPrismDemoOverlayUrl = (p: OverlayPreset, vertical: boolean): string => {
-    const baseUrl = buildPrismOverlayUrl(p, vertical);
-    if (!baseUrl) return "";
-    const u = new URL(baseUrl);
-    u.searchParams.set("demo", "true");
-    return u.toString();
+    const path = buildPrismOverlayRelativePath(p, vertical, overlayUserId);
+    const rel = `${path}${path.includes("?") ? "&" : "?"}demo=true`;
+    if (typeof window === "undefined") return rel;
+    return `${window.location.origin}${rel}`;
   };
   const buildPreviewOverlayUrl = (p: OverlayPreset): string => {
     const url = buildOverlayUrl(p);
@@ -4038,30 +4079,19 @@ function AdminPageInner() {
         phase: "IDLE",
         isRolling: false,
         sessionShort: "—",
-        startedLabel: "—",
+        startedAt: 0,
         nWin: 0,
         hasOneShot: false,
       };
     }
     const sid = (rs.sessionId || "").trim();
     const sessionShort = sid.length > 24 ? `${sid.slice(0, 22)}…` : sid || "—";
-    const st = Number(rs.startedAt || 0);
-    const startedLabel =
-      st > 0
-        ? new Date(st).toLocaleString("ko-KR", {
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-            hour12: false,
-          })
-        : "—";
+    const startedAt = Number(rs.startedAt || 0);
     return {
       phase: rs.phase || "IDLE",
       isRolling: Boolean(rs.isRolling),
       sessionShort,
-      startedLabel,
+      startedAt,
       nWin: (rs.selectedSigs || []).length,
       hasOneShot: Boolean(rs.oneShotResult),
     };
@@ -12521,7 +12551,12 @@ function AdminPageInner() {
                       session: {rouletteServerStatus.sessionShort}
                     </span>
                     <span className="rounded bg-black/25 px-2 py-1">
-                      시작 시각: {rouletteServerStatus.startedLabel}
+                      시작 시각:{" "}
+                      {rouletteServerStatus.startedAt > 0 ? (
+                        <ClientLocaleTime ts={rouletteServerStatus.startedAt} mode="datetime" />
+                      ) : (
+                        "—"
+                      )}
                     </span>
                   </div>
                   <p className="text-[11px] leading-snug text-sky-100/90">
@@ -14557,13 +14592,13 @@ function AdminPageInner() {
                   {toonationListenerMeta.lastDonationAt ? (
                     <span className="text-[11px] text-neutral-500">
                       마지막 후원 수신:{" "}
-                      {new Date(toonationListenerMeta.lastDonationAt).toLocaleTimeString("ko-KR")}
+                      <ClientLocaleTime ts={toonationListenerMeta.lastDonationAt} />
                     </span>
                   ) : toonationListenerMeta.lastEventAt ? (
                     <span className="text-[11px] text-amber-400/90">
                       WS 연결됐으나 후원 0건 — <strong className="text-amber-200">통합알림창·Alertbox</strong>을
                       닫고 실시간 수집을 다시 켜세요 (
-                      {new Date(toonationListenerMeta.lastEventAt).toLocaleTimeString("ko-KR")})
+                      <ClientLocaleTime ts={toonationListenerMeta.lastEventAt} />)
                     </span>
                   ) : toonationSocketEnabled && toonationListenerStatus?.kind === "connected" ? (
                     <span className="text-[11px] text-neutral-500">
@@ -14603,7 +14638,7 @@ function AdminPageInner() {
                   {toonationLastSavedAt ? (
                     <span className="text-[11px] text-emerald-300/90">
                       서버 저장 확인됨 ·{" "}
-                      {new Date(toonationLastSavedAt).toLocaleString("ko-KR")}
+                      <ClientLocaleTime ts={toonationLastSavedAt} mode="datetimeFull" />
                     </span>
                   ) : (
                     <span className="text-[11px] text-neutral-500">
@@ -14789,7 +14824,7 @@ function AdminPageInner() {
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 space-y-0.5">
                               <div className="text-[10px] text-neutral-500">
-                                [{new Date(evt.at).toLocaleTimeString("ko-KR", { hour12: false })}]
+                                [<ClientLocaleTime ts={evt.at} mode="time24" />]
                                 {evt.target === "account" ? " · 계좌" : " · 투네"}
                               </div>
                               {evt.matchedSigName ? (
@@ -14963,7 +14998,7 @@ function AdminPageInner() {
                     )}
                     {toonationLogs.map((log) => (
                       <div key={log.id} className="text-xs text-neutral-300">
-                        [{new Date(log.at).toLocaleTimeString("ko-KR", { hour12: false })}] {log.message}
+                        [<ClientLocaleTime ts={log.at} mode="time24" />] {log.message}
                       </div>
                     ))}
                   </div>
@@ -17529,6 +17564,7 @@ function AdminPageInner() {
               )}
               <div className="space-y-3">
                 {presets.map((p) => {
+                  const urlPath = buildPrismOverlayRelativePath(p, !!p.vertical, overlayUserId);
                   const url = buildPrismOverlayUrl(p, !!p.vertical);
                   const demoUrl = buildPrismDemoOverlayUrl(p, !!p.vertical);
                   const previewUrl = buildStablePreviewUrl(p);
@@ -17545,7 +17581,9 @@ function AdminPageInner() {
                           onClick={(e) => e.stopPropagation()}
                           onChange={(e) => updatePreset(p.id, { name: e.target.value })}
                         />
-                        <span className="text-xs text-neutral-500 truncate basis-full sm:basis-auto sm:flex-1 font-mono">{url.slice(0, 80)}...</span>
+                        <span className="text-xs text-neutral-500 truncate basis-full sm:basis-auto sm:flex-1 font-mono">
+                          {urlPath.length > 80 ? `${urlPath.slice(0, 80)}…` : urlPath}
+                        </span>
                         <button className={`px-2 py-1 rounded text-xs ${copiedId === p.id ? "bg-[#22c55e]" : "bg-neutral-700 hover:bg-neutral-600"}`} onClick={(e) => { e.stopPropagation(); copyUrl(url, p.id); }}>{copiedId === p.id ? "복사됨!" : "URL 복사"}</button>
                         <button className={`px-2 py-1 rounded text-xs ${copiedId === `${p.id}-demo` ? "bg-emerald-600" : "bg-fuchsia-700 hover:bg-fuchsia-600"}`} onClick={(e) => { e.stopPropagation(); copyUrl(demoUrl, `${p.id}-demo`); }}>{copiedId === `${p.id}-demo` ? "복사됨!" : "데모 URL"}</button>
                         <button className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={(e) => { e.stopPropagation(); window.open(demoUrl, "_blank", "noopener,noreferrer"); }}>데모 열기</button>

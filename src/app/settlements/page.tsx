@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SettlementDeleteLog, SettlementRecord, deleteSettlementRecordAndSync, loadSettlementDeleteLogsPreferApi, loadSettlementRecords, loadSettlementRecordsPreferApi, mergeSettlementRecords, normalizeSettlementRecords, recoverSettlementRecordsFromAllSources, saveSettlementRecords, saveSettlementRecordsToApi } from "@/lib/settlement";
 import { loadDailyLog, loadDailyLogFromApi, Donor } from "@/lib/state";
 import { downloadBlobFile } from "@/lib/download";
@@ -26,7 +26,6 @@ export default function SettlementsPage() {
   const [selectedForGraph, setSelectedForGraph] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [recovering, setRecovering] = useState(false);
-  const autoRecoverAttemptedRef = useRef(false);
   const fileInputId = "settlement-import-json";
   const xlsxInputId = "settlement-import-xlsx";
 
@@ -77,19 +76,6 @@ export default function SettlementsPage() {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [user]);
-
-  /** 진입 시 1회 — 레거시·일일로그에서 깡깡대전 등 유실 기록 자동 병합 */
-  useEffect(() => {
-    if (!user) return;
-    if (autoRecoverAttemptedRef.current) return;
-    autoRecoverAttemptedRef.current = true;
-    void recoverSettlementRecordsFromAllSources(user.id, { titleHint: "깡깡대전" }).then((report) => {
-      setRecords((prev) => {
-        if (report.merged.length <= prev.length && !report.hasKkang) return prev;
-        return report.merged;
-      });
-    });
   }, [user]);
 
   const onExportJson = () => {

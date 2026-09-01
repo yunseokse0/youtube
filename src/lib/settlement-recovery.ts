@@ -260,26 +260,22 @@ export function recoverSettlementRecordsFromDailyLog(
 ): SettlementRecord[] {
   const hint = String(opts?.titleHint || "").trim();
   const deletedLogs = opts?.deletedLogs;
+
+  /** titleHint(깡깡대전 등) — 누락 1건만 보정. 고아 전체를 일괄 생성하면 복구 항목이 폭증함 */
+  if (hint) {
+    const merged = recoverMissingSettlementByTitleHint(dailyLog, existing, hint);
+    return merged.filter((r) => !isSettlementRecordRevivedFromDeleteLog(r, deletedLogs));
+  }
+
   const orphans = findOrphanDailyLogEntries(dailyLog, existing);
   const reconstructed: SettlementRecord[] = [];
   for (const entry of orphans) {
     if (isDailyLogEntryBlockedByDeleteLog(entry, deletedLogs)) continue;
-    const title =
-      hint && orphans.length === 1
-        ? hint
-        : hint
-          ? `${hint} (${formatRecoveryTitleFromEntry(entry)})`
-          : formatRecoveryTitleFromEntry(entry);
-    const rec = reconstructSettlementFromDailyLogEntry(entry, title);
+    const rec = reconstructSettlementFromDailyLogEntry(entry, formatRecoveryTitleFromEntry(entry));
     if (!rec || isSettlementRecordRevivedFromDeleteLog(rec, deletedLogs)) continue;
     reconstructed.push(rec);
   }
-  let merged = mergeSettlementRecords(existing, reconstructed);
-  if (hint) {
-    merged = recoverMissingSettlementByTitleHint(dailyLog, merged, hint);
-    merged = merged.filter((r) => !isSettlementRecordRevivedFromDeleteLog(r, deletedLogs));
-  }
-  return merged;
+  return mergeSettlementRecords(existing, reconstructed);
 }
 
 export type SettlementServerRecoveryCounts = {

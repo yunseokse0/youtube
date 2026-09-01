@@ -114,6 +114,36 @@ describe("settlement-recovery", () => {
     expect(merged).toHaveLength(2);
   });
 
+  it("with titleHint, recovers at most one orphan even when many daily log snapshots exist", () => {
+    const entry2: DailyLogEntry = {
+      at: "2026-08-19T10:00:00.000Z",
+      total: 100_000,
+      members: [{ id: "m3", name: "C", account: 100_000, toon: 0, contribution: 100_000 }],
+      donors: [
+        { id: "d3", name: "후원3", amount: 100_000, memberId: "m3", at: Date.parse("2026-08-19T10:00:00.000Z"), target: "account" },
+      ],
+    };
+    const dailyLog = { "2026-08-18": [entry], "2026-08-19": [entry2] };
+    const merged = recoverSettlementRecordsFromDailyLog(dailyLog, [], { titleHint: "깡깡대전" });
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.title).toBe("깡깡대전");
+  });
+
+  it("without titleHint, reconstructs each orphan daily log entry", () => {
+    const entry2: DailyLogEntry = {
+      at: "2026-08-19T10:00:00.000Z",
+      total: 100_000,
+      members: [{ id: "m3", name: "C", account: 100_000, toon: 0, contribution: 100_000 }],
+      donors: [
+        { id: "d3", name: "후원3", amount: 100_000, memberId: "m3", at: Date.parse("2026-08-19T10:00:00.000Z"), target: "account" },
+      ],
+    };
+    const dailyLog = { "2026-08-18": [entry], "2026-08-19": [entry2] };
+    const merged = recoverSettlementRecordsFromDailyLog(dailyLog, []);
+    expect(merged).toHaveLength(2);
+    expect(merged.every((r) => r.title.includes("복구"))).toBe(true);
+  });
+
   it("renames strongly matched record when title hint missing", () => {
     const existing: SettlementRecord = {
       id: "st_old",

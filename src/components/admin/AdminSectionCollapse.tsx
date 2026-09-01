@@ -23,6 +23,8 @@ type AdminSectionCollapseContextValue = {
   expandAll: () => void;
   collapseAll: () => void;
   register: (id: string) => void;
+  /** localStorage 접기 상태 반영 전 — SSR·첫 hydration 과 defaultOpen 을 맞춤 */
+  storageHydrated: boolean;
 };
 
 const AdminSectionCollapseContext = createContext<AdminSectionCollapseContextValue | null>(null);
@@ -118,8 +120,17 @@ export function AdminSectionCollapseProvider({ children }: { children: ReactNode
   }, []);
 
   const value = useMemo(
-    () => ({ isOpen, setOpen, toggle, expand, expandAll, collapseAll, register }),
-    [isOpen, setOpen, toggle, expand, expandAll, collapseAll, register]
+    () => ({
+      isOpen,
+      setOpen,
+      toggle,
+      expand,
+      expandAll,
+      collapseAll,
+      register,
+      storageHydrated: hydrated,
+    }),
+    [isOpen, setOpen, toggle, expand, expandAll, collapseAll, register, hydrated]
   );
 
   return (
@@ -138,6 +149,7 @@ export function useAdminSectionCollapse(): AdminSectionCollapseContextValue {
       expandAll: () => {},
       collapseAll: () => {},
       register: () => {},
+      storageHydrated: true,
     };
   }
   return ctx;
@@ -178,8 +190,8 @@ export function AdminCollapsibleSection({
   headerAside,
   children,
 }: SectionProps) {
-  const { isOpen, toggle, register } = useAdminSectionCollapse();
-  const open = isOpen(id, defaultOpen);
+  const { isOpen, toggle, register, storageHydrated } = useAdminSectionCollapse();
+  const open = storageHydrated ? isOpen(id, defaultOpen) : defaultOpen;
 
   useEffect(() => {
     register(id);
@@ -229,8 +241,8 @@ export function AdminCollapsibleBlock({
   headerAside,
   children,
 }: BlockProps) {
-  const { isOpen, toggle, register } = useAdminSectionCollapse();
-  const open = isOpen(id, defaultOpen);
+  const { isOpen, toggle, register, storageHydrated } = useAdminSectionCollapse();
+  const open = storageHydrated ? isOpen(id, defaultOpen) : defaultOpen;
 
   useEffect(() => {
     register(id);

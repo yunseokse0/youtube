@@ -426,31 +426,28 @@ export async function saveSettlementRecordsToApi(
 
 export async function loadSettlementRecordsPreferApi(userId?: string | null): Promise<SettlementRecord[]> {
   const deleteLogs = await loadSettlementDeleteLogsPreferApi(userId);
-  const legacyLocal = loadSettlementRecords(null);
-  let local = applySettlementDeleteTombstones(
-    mergeSettlementRecords(legacyLocal, loadSettlementRecords(userId)),
-    deleteLogs
-  );
+  const userLocal = applySettlementDeleteTombstones(loadSettlementRecords(userId), deleteLogs);
+  const legacyLocal = applySettlementDeleteTombstones(loadSettlementRecords(null), deleteLogs);
+  /** 동기화마다 레거시 LS를 union 하면 삭제·서버 정리 후에도 예전 기록이 다시 합쳐짐 */
+  let local = userLocal.length > 0 ? userLocal : legacyLocal;
   const fromApi = await loadSettlementRecordsFromApi(userId);
   if (fromApi) {
+    const apiFiltered = applySettlementDeleteTombstones(fromApi, deleteLogs);
     const mergedRaw =
-      fromApi.length === 0 && local.length > 0
+      apiFiltered.length === 0 && local.length > 0
         ? local
-        : mergeSettlementRecords(local, fromApi);
+        : mergeSettlementRecords(local, apiFiltered);
     const merged = applySettlementDeleteTombstones(mergedRaw, deleteLogs);
     saveSettlementRecords(merged, userId);
-    if (merged.length !== fromApi.length || (fromApi.length === 0 && merged.length > 0)) {
+    if (merged.length !== apiFiltered.length || (apiFiltered.length === 0 && merged.length > 0)) {
       saveSettlementRecordsToApi(merged, userId, { replace: true }).catch(() => {});
     }
     return merged;
   }
-  if (local.length === 0 && userId) {
-    local = applySettlementDeleteTombstones(legacyLocal, deleteLogs);
-    if (local.length > 0) {
-      saveSettlementRecords(local, userId);
-      saveSettlementRecordsToApi(local, userId).catch(() => {});
-      return local;
-    }
+  if (local.length === 0 && userId && legacyLocal.length > 0) {
+    saveSettlementRecords(legacyLocal, userId);
+    saveSettlementRecordsToApi(legacyLocal, userId).catch(() => {});
+    return legacyLocal;
   }
   return local;
 }

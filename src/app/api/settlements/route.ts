@@ -2,8 +2,8 @@ export const runtime = "nodejs";
 export const revalidate = 0;
 
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
-import { mergeSettlementRecords, normalizeSettlementRecords } from "@/lib/settlement";
-import type { SettlementRecord } from "@/types";
+import { applySettlementDeleteTombstones, mergeSettlementRecords, normalizeSettlementRecords } from "@/lib/settlement";
+import type { SettlementDeleteLog, SettlementRecord } from "@/types";
 import { getUserIdFromRequest, resolveWriteUserId, writeUserIdErrorResponse } from "../_shared/user-id";
 import {
   upstashGetJson,
@@ -13,6 +13,7 @@ import {
 
 const STORAGE_KEY_BASE = "excel-broadcast-settlement-records-v1";
 const STORAGE_KEY_LEGACY = "excel-broadcast-settlement-records-v1";
+const DELETE_LOGS_KEY_BASE = "excel-broadcast-settlement-delete-logs-v1";
 
 // In-memory fallback for environments without Upstash (per-instance)
 const memoryRecords: Record<string, unknown[]> = {};
@@ -23,6 +24,24 @@ function getUserId(req: Request): string | null {
 
 function recordsKey(userId: string | null): string {
   return userId ? `${STORAGE_KEY_BASE}:${userId}` : STORAGE_KEY_LEGACY;
+}
+
+function deleteLogsKey(userId: string): string {
+  return `${DELETE_LOGS_KEY_BASE}:${userId}`;
+}
+
+function normalizeDeleteLogs(logs: unknown): SettlementDeleteLog[] {
+  if (!Array.isArray(logs)) return [];
+  const byId = new Map<string, SettlementDeleteLog>();
+  for (const raw of logs) {
+    if (!raw || typeof raw !== "object") continue;
+    const log = raw as SettlementDeleteLog;
+    const recordId = String(log.recordId || "").trim();
+    if (!recordId) continue;
+    const prev = byId.get(recordId);
+    if (!prev || (log.deletedAt || 0) >= (prev.deletedAt || 0)) byId.set(recordId, log);
+  }
+  return Array.from(byId.values());
 }
 
 async function upstashGet<T = unknown>(key: string): Promise<T | null> {
@@ -56,7 +75,12 @@ export async function GET(req: Request) {
         records = Array.isArray(memoryRecords[userId]) ? memoryRecords[userId] : [];
       }
     }
-    return new Response(JSON.stringify(Array.isArray(records) ? records : []), {
+    const deleteLogsRaw = await upstashGet<SettlementDeleteLog[]>(deleteLogsKey(userId));
+    const filtered = applySettlementDeleteTombstones(
+      Array.isArray(records) ? (records as SettlementRecord[]) : [],
+      normalizeDeleteLogs(deleteLogsRaw)
+    );
+    return new Response(JSON.stringify(filtered), {
       headers: {
         "Content-Type": "application/json",
         "Cache-Control": "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",

@@ -52,12 +52,13 @@ function toColorPickerValue(raw?: string, fallback = "#ffffff"): string {
 export default function AdminTimerPopupPanel() {
   const { user, scopedUserId, urlUserId, authReady, state, setState, accountMismatch, persistAppState } =
     useAdminPopupBroadcastState();
-  const [timerUiNow, setTimerUiNow] = useState(Date.now());
+  const [timerUiNow, setTimerUiNow] = useState(0);
   const [minuteInput, setMinuteInput] = useState({ generalTimer: "0", matchTimer: "0" });
   const [matchDurationSec, setMatchDurationSec] = useState("180");
   const [copied, setCopied] = useState<string | null>(null);
 
   useEffect(() => {
+    setTimerUiNow(Date.now());
     const id = window.setInterval(() => setTimerUiNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);

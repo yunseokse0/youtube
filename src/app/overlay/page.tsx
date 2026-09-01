@@ -4280,8 +4280,11 @@ function OverlayInner() {
     const tablePanelBorderCss =
       tablePanelBorderColorRaw ||
       excelMemberAccent?.panelBorder ||
-      tableLineColorRaw ||
+      tableGridLineColor ||
       "";
+    /** 셀 그리드(box-shadow)가 외곽선을 그릴 때 패널 border·좌우 padding 을 겹치지 않게 */
+    const tableOuterFrameFromCellGrid =
+      tableGridLines && !isExcelGoldChrome && !showTableFrame;
     const excelZebraEnabled =
       Boolean(excelMemberAccent) &&
       Boolean(tableRowOddBgCss && tableRowOddBgCss !== "transparent");
@@ -4300,8 +4303,8 @@ function OverlayInner() {
       ? {
           ["--excel-header-bg" as string]: excelHeaderBgCss,
           ["--excel-header-text" as string]: excelHeaderTextCss,
-          ["--excel-header-border" as string]: tableHeaderLineColor,
-          ["--excel-total-border" as string]: tableTotalLineColor,
+          ["--excel-header-border" as string]: tableGridLineColor,
+          ["--excel-total-border" as string]: tableLineColorRaw || tableTotalLineColor,
           ...(excelZebraEnabled
             ? {
                 ["--excel-row-even" as string]: tableRowEvenBgCss,
@@ -4741,6 +4744,10 @@ function OverlayInner() {
           -webkit-text-stroke: ${tableStrokeCss} !important;
           paint-order: stroke fill;
         }
+        .overlay-root .overlay-elegant-table.excel-gold-table thead td {
+          text-shadow: none !important;
+          -webkit-text-stroke: 0 !important;
+        }
         .overlay-root .overlay-elegant-table:not(.excel-zebra-table) tbody tr.overlay-row td {
           background: transparent !important;
           background-image: none !important;
@@ -5161,10 +5168,13 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table.excel-gold-table thead td,
         .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table thead td {
           background: var(--excel-header-bg, #ffc107) !important;
-          background-clip: padding-box !important;
-          border-top: 4px solid transparent !important;
-          border-bottom: 4px solid transparent !important;
+          /* padding-box 는 좌측 transparent border(10px)에 배경이 안 들어가 순위 헤더만 색이 달라 보임 */
+          background-clip: border-box !important;
+          border-top: 3px solid transparent !important;
+          border-bottom: 3px solid transparent !important;
           box-shadow: none !important;
+          text-shadow: none !important;
+          -webkit-text-stroke: 0 !important;
         }
         .overlay-root .overlay-elegant-table.excel-gold-table thead td:first-child,
         .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table thead td:first-child {
@@ -5418,8 +5428,9 @@ function OverlayInner() {
                   style={{
                     zIndex: 2,
                     borderRadius: showTableFrame ? 0 : isExcelGoldChrome ? 12 : 14,
-                    border:
-                      !showTableFrame && tablePanelBorderCss
+                    border: tableOuterFrameFromCellGrid
+                      ? "none"
+                      : !showTableFrame && tablePanelBorderCss
                         ? `${isExcelGoldChrome ? 1 : 2}px solid ${tablePanelBorderCss}`
                         : !showTableFrame && isExcelGoldChrome
                           ? "1px solid #ffc107"
@@ -5450,13 +5461,6 @@ function OverlayInner() {
                       className="flex flex-row items-stretch"
                       style={{
                         width: "fit-content",
-                        /** inset box-shadow 외곽선이 overflow 클립·스케일 경계에서 잘리지 않게 */
-                        ...(tableGridLines && !isExcelGoldChrome
-                          ? {
-                              paddingLeft: tableGridLineWidthPx,
-                              paddingRight: tableGridLineWidthPx,
-                            }
-                          : {}),
                       }}
                     >
                     {memberTablePanels.map((panel, panelIdx) => (
