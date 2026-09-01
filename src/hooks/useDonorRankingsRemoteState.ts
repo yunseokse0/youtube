@@ -38,6 +38,17 @@ import {
   isServerAuthoritativeBroadcastState,
   readSessionBroadcastState,
 } from "@/lib/server-authoritative-broadcast-state";
+import {
+  donorRankingsObsCacheHasRankings,
+  readDonorRankingsObsCache,
+  writeDonorRankingsObsCache,
+} from "@/lib/donor-rankings-obs-cache";
+
+const DONOR_RANKINGS_API_RETRY_DELAYS_MS = [0, 400, 1200] as const;
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function readLocalStateIfExists(userId?: string): AppState | null {
   if (typeof window === "undefined") return null;
@@ -135,6 +146,23 @@ function mergeDonorRankingsApiState(prev: AppState | null, remote: Partial<AppSt
   return next;
 }
 
+async function loadDonorRankingsFromApi(
+  userId: string,
+  options: { forceFull?: boolean; ifUpdatedSince: number }
+): Promise<AppState | null> {
+  const attempts = options.forceFull ? DONOR_RANKINGS_API_RETRY_DELAYS_MS.length : 1;
+  for (let i = 0; i < attempts; i++) {
+    if (i > 0) await sleepMs(DONOR_RANKINGS_API_RETRY_DELAYS_MS[i] ?? 0);
+    const remote = await loadStateFromApi(userId, {
+      pick: STATE_PICK_DONOR_RANKINGS,
+      ifUpdatedSince: options.forceFull ? 0 : options.ifUpdatedSince,
+      forceFull: options.forceFull,
+    });
+    if (remote) return remote;
+  }
+  return null;
+}
+
 /**
  * 후원 순위 오버레이: donors·순위 UI 가 바뀔 때만 GET (`pick=donor-rankings` + SSE `donorRankingsUpdatedAt`).
  * 수동 합산 추가 시 같은 탭 Broadcast·LS 후원을 즉시 반영하고, 빈 Redis 로 덮지 않는다.
@@ -169,6 +197,7 @@ export function useDonorRankingsRemoteState(
       setSyncedOnce(true);
       return;
     }
+    const scopedUserId = String(userId).trim();
     if (syncingRef.current) {
       pendingSyncRef.current = opts?.forceFull || pendingSyncRef.current === "full" ? "full" : "since";
       return;
@@ -176,25 +205,28 @@ export function useDonorRankingsRemoteState(
     syncingRef.current = true;
     try {
       const forceFull = Boolean(opts?.forceFull);
-      const remote = await loadStateFromApi(userId, {
-        pick: STATE_PICK_DONOR_RANKINGS,
-        ifUpdatedSince: forceFull ? 0 : lastSyncedRevRef.current,
+      const remote = await loadDonorRankingsFromApi(scopedUserId, {
         forceFull,
+        ifUpdatedSince: lastSyncedRevRef.current,
       });
       if (!remote) return;
-      const localNow = stateRef.current || readLocalStateIfExists(userId);
+      const localNow = stateRef.current || readLocalStateIfExists(scopedUserId);
       if (localNow && shouldKeepLocalDonorsOverRemote(localNow, remote)) {
         /** 빈 Redis 로 수동 합산·순위를 지우지 않음 — 테마만 원격 수용 */
-        setState((prev) =>
-          mergeDonorRankingsApiState(prev, {
+        setState((prev) => {
+          const next = mergeDonorRankingsApiState(prev, {
             ...remote,
             donors: normalizeDonorsArray(localNow.donors),
             donorRankingsUpdatedAt: Math.max(
               readDonorRankingsRevision(localNow),
               readDonorRankingsRevision(remote)
             ),
-          })
-        );
+          });
+          if (skipLocalDonorsRef.current && donorRankingsObsCacheHasRankings(next)) {
+            writeDonorRankingsObsCache(scopedUserId, next);
+          }
+          return next;
+        });
         lastSyncedRevRef.current = Math.max(
           lastSyncedRevRef.current,
           donorRankingsPickRevision(remote),
@@ -204,7 +236,13 @@ export function useDonorRankingsRemoteState(
       }
       const rev = donorRankingsPickRevision(remote);
       if (rev > 0) lastSyncedRevRef.current = Math.max(lastSyncedRevRef.current, rev);
-      setState((prev) => mergeDonorRankingsApiState(prev, remote));
+      setState((prev) => {
+        const next = mergeDonorRankingsApiState(prev, remote);
+        if (skipLocalDonorsRef.current && donorRankingsObsCacheHasRankings(next)) {
+          writeDonorRankingsObsCache(scopedUserId, next);
+        }
+        return next;
+      });
     } finally {
       syncingRef.current = false;
       setSyncedOnce(true);
@@ -232,8 +270,11 @@ export function useDonorRankingsRemoteState(
   useEffect(() => {
     skipLocalDonorsRef.current = shouldSkipLocalDonorBootstrap();
     const skipLocalDonors = skipLocalDonorsRef.current;
+    const obsCache = skipLocalDonors ? readDonorRankingsObsCache(userId) : null;
     const local = skipLocalDonors ? null : readLocalStateIfExists(userId);
-    if (local) {
+    if (obsCache) {
+      setState(mergeDonorRankingsApiState(null, obsCache));
+    } else if (local) {
       setState(mergeDonorRankingsApiState(null, local));
     } else {
       setState(defaultState());
