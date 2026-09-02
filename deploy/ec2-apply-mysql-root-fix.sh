@@ -37,10 +37,8 @@ const pass=cnf.match(/password=(.+)/)[1].trim();
 })();
 " 2>/dev/null || echo "WARN: socket Node 테스트 스킵"
 
-echo "== Node 중지 =="
-pm2 stop "$PM2_APP" 2>/dev/null || true
-pkill -f next-server 2>/dev/null || true
-sleep 3
+echo "== Node — 빌드 중 서비스 유지 (스테이징 빌드, pm2 stop 금지 — 502 방지) =="
+export PM2_STOP_BEFORE_BUILD=0
 
 git pull --ff-only
 
@@ -59,11 +57,15 @@ echo "== 빌드·배포 =="
 SKIP_GIT_PULL=1 bash "$ROOT/deploy/deploy-on-ec2.sh"
 
 echo "== 검증 =="
-sleep 12
-pm2 restart "$PM2_APP" --update-env 2>/dev/null || true
 sleep 8
 HEALTH="$(curl -sf --max-time 12 "http://127.0.0.1:3000/api/health?deep=1" 2>/dev/null || echo '{}')"
 echo "$HEALTH"
+H3000="$(curl -sf --max-time 8 -o /dev/null -w "%{http_code}" "http://127.0.0.1:3000/api/health" 2>/dev/null || echo "000")"
+echo "health :3000 HTTP ${H3000}"
+if [[ "$H3000" != "200" ]]; then
+  echo "WARN: :3000 무응답 — ec2-recover-youtube"
+  bash "$ROOT/deploy/ec2-recover-youtube.sh" || bash "$ROOT/deploy/ec2-emergency-recover.sh" || true
+fi
 echo "$HEALTH" | grep -q '"redisConfigured":true' && echo "Redis: configured (선택)" || echo "storage: MySQL-only (DATABASE_URL) — 정상"
 echo "$HEALTH" | grep -o '"mysqlConnMode":"[^"]*"' || echo "WARN: mysqlConnMode missing — 구버전 빌드?"
 grep -q "pool open (socket" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev/null && echo "log: mysql pool socket OK" || \
@@ -78,10 +80,11 @@ echo "== nginx /admin =="
 ADMIN_CODE="$(curl -sf --max-time 12 -o /dev/null -w "%{http_code}" "http://127.0.0.1/admin" 2>/dev/null || echo "000")"
 echo "/admin (nginx :80) HTTP ${ADMIN_CODE}"
 if [[ "$ADMIN_CODE" != "200" && "$ADMIN_CODE" != "302" && "$ADMIN_CODE" != "307" ]]; then
-  echo "WARN: /admin ${ADMIN_CODE} — pm2 restart + nginx reset"
-  pm2 restart "$PM2_APP" --update-env 2>/dev/null || true
-  sleep 10
-  curl -sf --max-time 12 "http://127.0.0.1:3000/api/health" >/dev/null && echo "health :3000 OK" || echo "WARN: health :3000 fail"
+  echo "WARN: /admin ${ADMIN_CODE} — pm2·nginx 긴급 복구"
+  bash "$ROOT/deploy/ec2-recover-youtube.sh" 2>/dev/null || {
+    pm2 restart "$PM2_APP" --update-env 2>/dev/null || true
+    sleep 10
+  }
   if [[ -f "$ROOT/deploy/ec2-nginx-reset-youtube.sh" ]]; then
     bash "$ROOT/deploy/ec2-nginx-reset-youtube.sh" || true
   fi
