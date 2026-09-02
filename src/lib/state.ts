@@ -3558,7 +3558,7 @@ export async function saveSigSalesManualStateAsync(
   }
 }
 
-const loadStateInflight = new Map<string, Promise<AppState | null>>();
+const loadStateInflight = new Map<string, Promise<LoadStateFromApiResult>>();
 
 let warnedMemoryStateBackend = false;
 
@@ -3596,6 +3596,16 @@ export function isStateServerSyncVerified(
   return hasBody || meta.notModified;
 }
 
+export type LoadStateFromApiResult = {
+  state: AppState | null;
+  meta: StateApiFetchMeta;
+};
+
+function stateFetchResult(state: AppState | null, meta: StateApiFetchMeta): LoadStateFromApiResult {
+  recordStateApiFetchMeta(meta);
+  return { state, meta };
+}
+
 function maybeWarnMemoryStateBackend(res: Response): void {
   if (typeof window === "undefined" || warnedMemoryStateBackend) return;
   if (res.headers.get("x-broadcast-state-storage") !== "memory") return;
@@ -3616,10 +3626,10 @@ export type LoadStateFromApiOptions = {
   pick?: StateApiPick;
 };
 
-export async function loadStateFromApi(
+export async function loadStateFromApiWithMeta(
   userId?: string,
   options?: LoadStateFromApiOptions
-): Promise<AppState | null> {
+): Promise<LoadStateFromApiResult> {
   /** forceFull(리롤·OBS 새로고침)은 dedupe 제외 — 동시 요청이 구 스냅샷을 공유하는 회귀 방지 */
   if (!options?.forceFull) {
     const dedupeKey = `${userId ?? "__cookie__"}:${options?.ifUpdatedSince ?? 0}:${options?.pick ?? "full"}`;
@@ -3635,10 +3645,18 @@ export async function loadStateFromApi(
   return doLoadStateFromApi(userId, options);
 }
 
-async function doLoadStateFromApi(
+export async function loadStateFromApi(
   userId?: string,
   options?: LoadStateFromApiOptions
 ): Promise<AppState | null> {
+  const r = await loadStateFromApiWithMeta(userId, options);
+  return r.state;
+}
+
+async function doLoadStateFromApi(
+  userId?: string,
+  options?: LoadStateFromApiOptions
+): Promise<LoadStateFromApiResult> {
   try {
     const since = options?.forceFull ? 0 : Number(options?.ifUpdatedSince || 0);
     const q = new URLSearchParams();
@@ -3661,30 +3679,25 @@ async function doLoadStateFromApi(
     const res = await fetch(`/api/state?${q.toString()}`, { cache: "no-store", credentials, signal });
     const storageHdr = res.headers.get("x-broadcast-state-storage");
     if (res.status === 401) {
-      recordStateApiFetchMeta({ ok: false, httpStatus: 401, storage: storageHdr, notModified: false });
       notifyAdminSessionExpired();
-      return null;
+      return stateFetchResult(null, { ok: false, httpStatus: 401, storage: storageHdr, notModified: false });
     }
     if (res.status === 304) {
-      recordStateApiFetchMeta({ ok: true, httpStatus: 304, storage: storageHdr, notModified: true });
-      return null;
+      return stateFetchResult(null, { ok: true, httpStatus: 304, storage: storageHdr, notModified: true });
     }
     if (!res.ok) {
-      recordStateApiFetchMeta({ ok: false, httpStatus: res.status, storage: storageHdr, notModified: false });
-      return null;
+      return stateFetchResult(null, { ok: false, httpStatus: res.status, storage: storageHdr, notModified: false });
     }
     maybeWarnMemoryStateBackend(res);
     const text = await res.text();
     if (!text.trim()) {
-      recordStateApiFetchMeta({ ok: false, httpStatus: res.status, storage: storageHdr, notModified: false });
-      return null;
+      return stateFetchResult(null, { ok: false, httpStatus: res.status, storage: storageHdr, notModified: false });
     }
     let data: AppState;
     try {
       data = JSON.parse(text) as AppState;
     } catch {
-      recordStateApiFetchMeta({ ok: false, httpStatus: res.status, storage: storageHdr, notModified: false });
-      return null;
+      return stateFetchResult(null, { ok: false, httpStatus: res.status, storage: storageHdr, notModified: false });
     }
     if (isDonorRankingsPickPartial(data)) {
       const base = defaultState();
@@ -3950,8 +3963,12 @@ async function doLoadStateFromApi(
       const synced = syncBattleStateWithMembers(data as AppState);
       const toPersist = preserveLocalMeaningfulRoster(synced, userId);
       if (options?.pick === STATE_PICK_OBS_TEXT) {
-        recordStateApiFetchMeta({ ok: true, httpStatus: res.status, storage: storageHdr, notModified: false });
-        return toPersist;
+        return stateFetchResult(toPersist, {
+          ok: true,
+          httpStatus: res.status,
+          storage: storageHdr,
+          notModified: false,
+        });
       }
       if (typeof window !== "undefined") {
         try {
@@ -3965,14 +3982,21 @@ async function doLoadStateFromApi(
           }
         } catch {}
       }
-      recordStateApiFetchMeta({ ok: true, httpStatus: res.status, storage: storageHdr, notModified: false });
-      return toPersist;
+      return stateFetchResult(toPersist, {
+        ok: true,
+        httpStatus: res.status,
+        storage: storageHdr,
+        notModified: false,
+      });
     }
-    recordStateApiFetchMeta({ ok: false, httpStatus: res.status, storage: storageHdr, notModified: false });
-    return null;
+    return stateFetchResult(null, {
+      ok: false,
+      httpStatus: res.status,
+      storage: storageHdr,
+      notModified: false,
+    });
   } catch {
-    recordStateApiFetchMeta({ ok: false, httpStatus: 0, storage: null, notModified: false });
-    return null;
+    return stateFetchResult(null, { ok: false, httpStatus: 0, storage: null, notModified: false });
   }
 }
 

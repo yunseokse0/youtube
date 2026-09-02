@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MySQL-only EC2 — socket + 단일 Connection 직렬 큐 패치 배포
+# MySQL-only EC2 — socket + Pool(3) 패치 배포
 #
 #   cd ~/youtube && git pull && bash deploy/ec2-apply-mysql-root-fix.sh
 #
@@ -59,8 +59,9 @@ sleep 12
 HEALTH="$(curl -sf --max-time 12 "http://127.0.0.1:3000/api/health?deep=1" 2>/dev/null || echo '{}')"
 echo "$HEALTH"
 echo "$HEALTH" | grep -q '"redisConfigured":true' && echo "Redis: configured (선택)" || echo "storage: MySQL-only (DATABASE_URL) — 정상"
-grep -q "connection open (socket)" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev/null && echo "log: mysql socket OK" || \
-  grep -q "pool created (socket)" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev/null && echo "log: mysql socket OK (legacy log)" || true
+grep -q "pool open (socket" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev/null && echo "log: mysql pool socket OK" || \
+  grep -q "connection open (socket)" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev/null && echo "log: mysql socket OK (legacy)" || \
+  grep -q "warm ping OK" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev/null && echo "log: mysql warm ping OK" || true
 ERRS="$(tail -30 /home/ubuntu/.pm2/logs/youtube-error.log 2>/dev/null | grep -c ETIMEDOUT || echo 0)"
 echo "error log ETIMEDOUT (last 30 lines): $ERRS"
 ERR4031_CNT="$(tail -30 /home/ubuntu/.pm2/logs/youtube-error.log 2>/dev/null | grep -c 4031 || echo 0)"

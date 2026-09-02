@@ -65,6 +65,8 @@ import {
   saveMatchTimerPatchAsync,
   saveVisualSettingsPatchAsync,
   loadStateFromApi,
+  loadStateFromApiWithMeta,
+  type StateApiFetchMeta,
   getLastStateApiFetchMeta,
   isStateServerSyncVerified,
   saveMissionsBackup,
@@ -743,17 +745,20 @@ function AdminPageInner() {
   const lastLocalPersistAtRef = useRef<number>(0);
   const syncStatusRef = useRef<"loading" | "synced" | "local" | "error">("loading");
   /** GET/304 응답 메타 — 영속 KV(`redis`/`mysql`) 확인 후에만 synced */
-  const applySyncStatusAfterStateFetch = useCallback((apiState: AppState | null) => {
-    const meta = getLastStateApiFetchMeta();
-    const offline = typeof navigator !== "undefined" && !navigator.onLine;
-    if (isStateServerSyncVerified(meta, apiState !== null)) {
-      setSyncStatus("synced");
-    } else if (offline) {
-      setSyncStatus("local");
-    } else {
-      setSyncStatus("error");
-    }
-  }, []);
+  const applySyncStatusAfterStateFetch = useCallback(
+    (apiState: AppState | null, meta?: StateApiFetchMeta | null) => {
+      const m = meta ?? getLastStateApiFetchMeta();
+      const offline = typeof navigator !== "undefined" && !navigator.onLine;
+      if (isStateServerSyncVerified(m, apiState !== null)) {
+        setSyncStatus("synced");
+      } else if (offline) {
+        setSyncStatus("local");
+      } else {
+        setSyncStatus("error");
+      }
+    },
+    []
+  );
   /** 401·403 — 5초 재시도 루프 중단(403 user_mismatch 폭주 방지) */
   const lastSaveHttpStatusRef = useRef<number | null>(null);
   const pendingUnsyncedRef = useRef<boolean>(false);
@@ -2415,8 +2420,8 @@ function AdminPageInner() {
      * hydrate 직후 storage-health·daily-log 를 같이 치면 /api/state 와 MySQL이 경합해
      * 「동기화 중」에 고착되기 쉽다 — 본문 GET 완료 후에만 진단·로그를 당긴다.
      */
-    const loadMain = () => loadStateFromApi(user.id, { forceFull: true });
-    void loadMain().then((apiState) => {
+    const loadMain = () => loadStateFromApiWithMeta(user.id, { forceFull: true });
+    void loadMain().then(({ state: apiState, meta }) => {
       if (cancelled) return;
       try {
       /** 후원·금액·멤버는 계정 서버 정본만. admin React state 는 서버 스냅샷의 편집 뷰. */
@@ -2642,7 +2647,7 @@ function AdminPageInner() {
           /** 기본 프리셋은 UI·캐시에만 두고, 사용자 요청 없이 서버 전체 저장하지 않음 */
           try { window.localStorage.setItem(presetStorageKey, JSON.stringify([first])); } catch {}
         }
-        applySyncStatusAfterStateFetch(apiState);
+        applySyncStatusAfterStateFetch(apiState, meta);
       } else if (!offline) {
         if (Array.isArray(local.overlayPresets) && local.overlayPresets.length > 0) {
           setPresets(local.overlayPresets as OverlayPreset[]);
@@ -2656,7 +2661,7 @@ function AdminPageInner() {
           try { window.localStorage.setItem(presetStorageKey, JSON.stringify([first])); } catch {}
         }
         setState(local);
-        applySyncStatusAfterStateFetch(null);
+        applySyncStatusAfterStateFetch(null, meta);
         /** 서버 로드 실패 시 LS 후원을 계정에 밀어 올리지 않음 */
         const hasMeaningfulData = hasMeaningfulBroadcastData(local);
         const hasDonationData =
@@ -3444,17 +3449,17 @@ function AdminPageInner() {
         const since = opts?.forceFull
           ? 0
           : Math.max(stateUpdatedAtRef.current, lastAppliedRemoteUpdatedAtRef.current);
-        const remote = await loadStateFromApi(user?.id, {
+        const remote = await loadStateFromApiWithMeta(user?.id, {
           ifUpdatedSince: since,
           forceFull: Boolean(opts?.forceFull),
         });
-        if (!remote) {
+        if (!remote.state) {
           if (typeof navigator !== "undefined" && !navigator.onLine) setSyncStatus("local");
-          else applySyncStatusAfterStateFetch(null);
+          else applySyncStatusAfterStateFetch(null, remote.meta);
           return;
         }
-        applySyncStatusAfterStateFetch(remote);
-        applyRemoteState(remote, { forceDonorMerge: opts?.forceDonorMerge });
+        applySyncStatusAfterStateFetch(remote.state, remote.meta);
+        applyRemoteState(remote.state, { forceDonorMerge: opts?.forceDonorMerge });
       } finally {
         inFlight = false;
         if (pendingForceDonorSync) {
@@ -9299,10 +9304,10 @@ function AdminPageInner() {
   };
   const onFetchLatestFromServer = async () => {
     setSyncStatus("loading");
-    const remote = await loadStateFromApi(user?.id, { forceFull: true });
+    const { state: remote, meta } = await loadStateFromApiWithMeta(user?.id, { forceFull: true });
     if (!remote) {
-      setSyncStatus("error");
-      if (typeof window !== "undefined") {
+      applySyncStatusAfterStateFetch(null, meta);
+      if (typeof window !== "undefined" && !isStateServerSyncVerified(meta, false)) {
         window.alert(
           "서버에서 상태를 가져오지 못했습니다.\n" +
             "로그인·네트워크·Render 한도(402 등)를 확인한 뒤 다시 시도하세요.\n" +
@@ -9317,7 +9322,7 @@ function AdminPageInner() {
     if (localDonors.length === 0 && remoteDonors.length > 0) {
       const ok = await applyDonorsFromServerMainState();
       if (ok) {
-        setSyncStatus("synced");
+        applySyncStatusAfterStateFetch(remote, meta);
         void refreshStorageHealth();
         return;
       }
@@ -9329,7 +9334,7 @@ function AdminPageInner() {
         setState(pulled);
         stateRef.current = pulled;
         cacheBroadcastStateSnapshot(pulled, user?.id);
-        setSyncStatus("synced");
+        applySyncStatusAfterStateFetch(pulled, meta);
         void refreshStorageHealth();
         return;
       }
@@ -9350,7 +9355,7 @@ function AdminPageInner() {
           `로컬만 바꾼 내용은 사라질 수 있습니다. 계속할까요?`
       );
       if (!ok) {
-        setSyncStatus("synced");
+        applySyncStatusAfterStateFetch(remote, meta);
         return;
       }
     }
@@ -9373,7 +9378,7 @@ function AdminPageInner() {
       try { window.localStorage.setItem(presetStorageKey, JSON.stringify(toApply.overlayPresets)); } catch {}
     }
     cacheBroadcastStateSnapshot(toApply, user?.id);
-    setSyncStatus("synced");
+    applySyncStatusAfterStateFetch(toApply, meta);
     void refreshStorageHealth();
   };
   const runPullRefresh = async () => {
