@@ -574,6 +574,20 @@ function overlayPickEnabled(): boolean {
 /** 클라이언트가 라이브 동기화 이슈(멀티 인스턴스·메모리 폴백)를 구분할 수 있도록 */
 const HDR_STATE_STORAGE = "X-Broadcast-State-Storage";
 
+function persistentStateStorageHeader(): string {
+  if (isMysqlKvConfigured() && !isRedisConfigured()) return "mysql";
+  if (isRedisConfigured()) return "redis";
+  return "memory";
+}
+
+function parseFastHydrateParam(req: Request): boolean {
+  try {
+    return new URL(req.url).searchParams.get("fast") === "1";
+  } catch {
+    return false;
+  }
+}
+
 function parseSinceParam(req: Request): number {
   try {
     const n = Number(new URL(req.url).searchParams.get("since") || 0);
@@ -629,6 +643,7 @@ export async function GET(req: Request) {
   }
   const since = parseSinceParam(req);
   const userId = getUserId(req);
+  const fastHydrate = parseFastHydrateParam(req);
   if (!userId) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
@@ -787,10 +802,13 @@ export async function GET(req: Request) {
         (hasExpandedSigInventory(mergedForResponse.sigInventory) &&
           !isShrunkToDefaultSigInventory(mergedForResponse.sigInventory))
       ) {
-        return stateNotModifiedResponse("redis");
+        return stateNotModifiedResponse(persistentStateStorageHeader());
       }
     }
 
+    const storageHdr = persistentStateStorageHeader();
+
+    if (!fastHydrate) {
     try {
       const needSigBackup =
         !skipSigEnrichForPick &&
@@ -861,6 +879,7 @@ export async function GET(req: Request) {
         logger.error("일일 로그 후원 복구 실패", err);
       }
     }
+    }
 
     /** donors 있는데 members 합계 0이면 GET 응답·메모리에서만 맞춤 — GET마다 MySQL 쓰기는 지연·풀 고갈 유발 */
     if (normalizeDonorsArray(mergedForResponse.donors).length > 0) {
@@ -869,7 +888,7 @@ export async function GET(req: Request) {
     }
 
     if (isNotModified(mergedForResponse)) {
-      return stateNotModifiedResponse("redis");
+      return stateNotModifiedResponse(storageHdr);
     }
 
     logger.debug('Redis 상태 반환', { hasState: !!state, usedMemory: !!getServerMemoryAppState(userId), userId });
@@ -878,7 +897,7 @@ export async function GET(req: Request) {
         "Content-Type": "application/json",
         "Cache-Control":
           "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
-        [HDR_STATE_STORAGE]: "redis",
+        [HDR_STATE_STORAGE]: storageHdr,
       },
     });
   } catch (error) {

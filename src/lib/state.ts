@@ -3622,6 +3622,8 @@ export type LoadStateFromApiOptions = {
   ifUpdatedSince?: number;
   /** true면 since 무시·캐시 버스터로 전체 본문 수신(OBS 새로고침·pageshow) */
   forceFull?: boolean;
+  /** admin 초기 hydrate — 백업·23MB daily-log enrich 생략(서버 fast=1) */
+  fast?: boolean;
   /** OBS·오버레이: 서버가 축소 JSON 반환 (`overlay` | `overlay-donors` | `sig-sales`) */
   pick?: StateApiPick;
 };
@@ -3668,9 +3670,10 @@ async function doLoadStateFromApi(
       q.set("u", userId);
     }
     if (options?.pick) q.set("pick", options.pick);
+    if (options?.fast) q.set("fast", "1");
     /** `userId` 있으면 URL로 사용자 특정 → 쿠키 불필요(OBS·브라우저 소스는 쿠키 없음). 없으면 관리자 세션 쿠키로 조회 */
     const credentials = userId ? "omit" : "include";
-    const timeoutMs = options?.forceFull ? 45_000 : 12_000;
+    const timeoutMs = options?.fast ? 18_000 : options?.forceFull ? 45_000 : 12_000;
     const signal =
       typeof AbortSignal !== "undefined" &&
       typeof (AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal }).timeout === "function"

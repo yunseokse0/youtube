@@ -39,6 +39,7 @@ import {
 import {
   clampBrowserPersistOptionsForServerAuthority,
   isServerAuthoritativeBroadcastState,
+  readSessionBroadcastState,
 } from "@/lib/server-authoritative-broadcast-state";
 import { notifyBroadcastStateLocalUpdated, notifyOverlayPresetsLocalUpdated, notifyAdminPreviewDonorsUpdated, notifyAdminPreviewDonorRankingsThemeUpdated, ADMIN_PREVIEW_DONORS_REQUEST, overlayUserIdsMatch } from "@/lib/broadcast-state-local-sync";
 import {
@@ -893,10 +894,13 @@ function AdminPageInner() {
     const uid = user?.id;
     if (!uid) return;
     try {
-      const r = await fetch(`/api/state/storage-health?user=${encodeURIComponent(uid)}`, {
-        credentials: "include",
-        cache: "no-store",
-      });
+      const r = await fetch(
+        `/api/state/storage-health?user=${encodeURIComponent(uid)}&lite=1`,
+        {
+          credentials: "include",
+          cache: "no-store",
+        }
+      );
       if (!r.ok) return;
       const data = await r.json();
       applyStorageHealthPayload(data);
@@ -2385,9 +2389,10 @@ function AdminPageInner() {
     if (!user?.id) return;
     let cancelled = false;
     setSyncStatus("loading");
-    /** API 대기 중에도 LS 스냅샷을 즉시 표시 — 0:0:0:0·「멤버 불러오는 중」 고착 방지 */
+    /** API 대기 중에도 세션·LS 스냅샷 즉시 표시 — 0:0:0·「멤버 불러오는 중」 고착 방지 */
     try {
-      const lsEarly = loadState(user.id);
+      const sessionEarly = readSessionBroadcastState(user.id);
+      const lsEarly = sessionEarly || loadState(user.id);
       if (
         hasMeaningfulMemberRoster(lsEarly) ||
         normalizeDonorsArray(lsEarly.donors).length > 0 ||
@@ -2417,9 +2422,9 @@ function AdminPageInner() {
             updatedAt: Math.max(Number(fromLs.updatedAt || 0), Number(stateRef.current.updatedAt || 0)),
           };
         }
-        setSyncStatus(offlineNow ? "local" : "error");
+        applySyncStatusAfterStateFetch(null, null);
       }
-    }, 55_000);
+    }, 12_000);
     const offline = typeof navigator !== "undefined" && !navigator.onLine;
     let localPresets: OverlayPreset[] = [];
     try {
@@ -2444,7 +2449,7 @@ function AdminPageInner() {
      * hydrate 직후 storage-health·daily-log 를 같이 치면 /api/state 와 MySQL이 경합해
      * 「동기화 중」에 고착되기 쉽다 — 본문 GET 완료 후에만 진단·로그를 당긴다.
      */
-    const loadMain = () => loadStateFromApiWithMeta(user.id, { forceFull: true });
+    const loadMain = () => loadStateFromApiWithMeta(user.id, { forceFull: true, fast: true });
     void loadMain().then(({ state: apiState, meta }) => {
       if (cancelled) return;
       try {
@@ -2672,6 +2677,28 @@ function AdminPageInner() {
           try { window.localStorage.setItem(presetStorageKey, JSON.stringify([first])); } catch {}
         }
         applySyncStatusAfterStateFetch(apiState, meta);
+        /** fast hydrate 후 donors 비었으면 백그라운드 full enrich (23MB daily-log는 유저 idle 후) */
+        if (
+          apiState &&
+          normalizeDonorsArray(apiState.donors).length === 0 &&
+          totalCombined(apiState) === 0
+        ) {
+          window.setTimeout(() => {
+            if (cancelled) return;
+            void loadStateFromApiWithMeta(user.id, { forceFull: true }).then(({ state: full, meta: fullMeta }) => {
+              if (cancelled || !full) return;
+              if (normalizeDonorsArray(full.donors).length === 0) return;
+              const local = stateRef.current;
+              const pulled = buildUiStateFromServerDonorPull(local, full);
+              if (pulled && normalizeDonorsArray(pulled.donors).length > 0) {
+                setState(pulled);
+                stateRef.current = pulled;
+                cacheBroadcastStateSnapshot(pulled, user?.id);
+                applySyncStatusAfterStateFetch(pulled, fullMeta);
+              }
+            });
+          }, 8_000);
+        }
       } else if (!offline) {
         if (Array.isArray(local.overlayPresets) && local.overlayPresets.length > 0) {
           setPresets(local.overlayPresets as OverlayPreset[]);
@@ -2726,7 +2753,7 @@ function AdminPageInner() {
             if (cancelled) return;
             setDailyLog(loadDailyLog(user?.id));
           });
-      }, 12_000);
+      }, 30_000);
     });
     return () => {
       cancelled = true;

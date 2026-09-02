@@ -27,12 +27,20 @@ export async function GET(req: Request) {
   const kvConfigured = isPersistentKvConfigured();
   const mysqlConfigured = isMysqlKvConfigured();
   const kvError = kvConfigured ? await getPersistentKvLastError() : null;
+  const lite =
+    (() => {
+      try {
+        return new URL(req.url).searchParams.get("lite") === "1";
+      } catch {
+        return false;
+      }
+    })();
 
   const main = (await loadAppStateForUserId(userId)) || defaultState();
   const mem = getServerMemoryAppState(userId);
-  const backup = await loadDonationRosterBackup(userId);
-  const dailyLog = await loadDailyLogForUserId(userId);
-  const latestLog = pickDailyLogEntryForRestore(dailyLog);
+  const backup = lite ? null : await loadDonationRosterBackup(userId);
+  const dailyLog = lite ? null : await loadDailyLogForUserId(userId);
+  const latestLog = dailyLog ? pickDailyLogEntryForRestore(dailyLog) : null;
 
   const mainDonors = normalizeDonorsArray(main.donors);
   const memDonors = mem ? normalizeDonorsArray(mem.donors) : [];
