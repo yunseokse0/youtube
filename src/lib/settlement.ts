@@ -336,12 +336,15 @@ export function appendSettlementRecord(
 
 const settlementLoadInflight = new Map<string, Promise<SettlementRecord[] | null>>();
 
-export async function loadSettlementRecordsFromApi(userId?: string | null): Promise<SettlementRecord[] | null> {
+export async function loadSettlementRecordsFromApi(
+  userId?: string | null,
+  opts?: { full?: boolean }
+): Promise<SettlementRecord[] | null> {
   if (typeof window === "undefined") return null;
-  const dedupeKey = userId ?? "__cookie__";
+  const dedupeKey = `${userId ?? "__cookie__"}:${opts?.full ? "full" : "recent"}`;
   const existing = settlementLoadInflight.get(dedupeKey);
   if (existing) return existing;
-  const created = doLoadSettlementRecordsFromApi(userId);
+  const created = doLoadSettlementRecordsFromApi(userId, opts);
   settlementLoadInflight.set(dedupeKey, created);
   created.finally(() => {
     if (settlementLoadInflight.get(dedupeKey) === created) settlementLoadInflight.delete(dedupeKey);
@@ -349,11 +352,26 @@ export async function loadSettlementRecordsFromApi(userId?: string | null): Prom
   return created;
 }
 
-async function doLoadSettlementRecordsFromApi(userId?: string | null): Promise<SettlementRecord[] | null> {
+async function doLoadSettlementRecordsFromApi(
+  userId?: string | null,
+  opts?: { full?: boolean }
+): Promise<SettlementRecord[] | null> {
   try {
     const q = new URLSearchParams({ _t: String(Date.now()) });
     if (userId) q.set("user", userId);
-    const res = await fetch(`/api/settlements?${q.toString()}`, { cache: "no-store", credentials: "include" });
+    if (opts?.full) q.set("full", "1");
+    else q.set("recent", "50");
+    const signal =
+      typeof AbortSignal !== "undefined" &&
+      typeof (AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal }).timeout ===
+        "function"
+        ? (AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }).timeout(20_000)
+        : undefined;
+    const res = await fetch(`/api/settlements?${q.toString()}`, {
+      cache: "no-store",
+      credentials: "include",
+      signal,
+    });
     if (!res.ok) return null;
     const data = await res.json();
     if (!Array.isArray(data)) return [];
@@ -424,13 +442,16 @@ export async function saveSettlementRecordsToApi(
   });
 }
 
-export async function loadSettlementRecordsPreferApi(userId?: string | null): Promise<SettlementRecord[]> {
+export async function loadSettlementRecordsPreferApi(
+  userId?: string | null,
+  opts?: { full?: boolean }
+): Promise<SettlementRecord[]> {
   const deleteLogs = await loadSettlementDeleteLogsPreferApi(userId);
   const userLocal = applySettlementDeleteTombstones(loadSettlementRecords(userId), deleteLogs);
   const legacyLocal = applySettlementDeleteTombstones(loadSettlementRecords(null), deleteLogs);
   /** 동기화마다 레거시 LS를 union 하면 삭제·서버 정리 후에도 예전 기록이 다시 합쳐짐 */
   let local = userLocal.length > 0 ? userLocal : legacyLocal;
-  const fromApi = await loadSettlementRecordsFromApi(userId);
+  const fromApi = await loadSettlementRecordsFromApi(userId, { full: opts?.full });
   if (fromApi) {
     const apiFiltered = applySettlementDeleteTombstones(fromApi, deleteLogs);
     const mergedRaw =
@@ -526,7 +547,7 @@ export async function recoverSettlementRecordsFromAllSources(
     /* fallback 아래 로컬 경로 */
   }
 
-  const fromApi = await loadSettlementRecordsFromApi(userId);
+  const fromApi = await loadSettlementRecordsFromApi(userId, { full: true });
   apiCount = fromApi?.length ?? 0;
   if (fromApi) merged = applySettlementDeleteTombstones(mergeSettlementRecords(merged, fromApi), deleteLogs);
 

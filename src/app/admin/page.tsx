@@ -2737,23 +2737,11 @@ function AdminPageInner() {
     })
     .finally(() => {
       if (cancelled) return;
-      /** hydrate GET 직후 storage-health·daily-log 가 풀을 다시 잡지 않게 살짝 미룸 */
+      /** hydrate 직후 daily-log API는 MySQL bulk와 경합 — LS만 즉시 표시, 서버 fetch는 사용자 요청 시 */
       window.setTimeout(() => {
         if (cancelled) return;
         void refreshStorageHealth();
-        loadDailyLogFromApi(user?.id)
-          .then((serverLog) => {
-            if (cancelled) return;
-            setDailyLog(serverLog);
-            try {
-              window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog));
-            } catch {}
-          })
-          .catch(() => {
-            if (cancelled) return;
-            setDailyLog(loadDailyLog(user?.id));
-          });
-      }, 30_000);
+      }, 8_000);
     });
     return () => {
       cancelled = true;
@@ -9726,7 +9714,7 @@ function AdminPageInner() {
             </button>
           </div>
           <div className="flex items-center gap-2">
-            <Link className="text-sm text-neutral-300 underline" href="/settlements">정산 기록 보기</Link>
+            <Link className="text-sm text-neutral-300 underline" href="/settlements" prefetch={false}>정산 기록 보기</Link>
           </div>
         </div>
         {isAdminNavSectionVisible("dashboard") && (
@@ -20115,7 +20103,7 @@ function AdminPageInner() {
               title="방송 종료 정산"
               className={panelCardClass}
               headerAside={
-                <Link className="text-sm text-neutral-300 underline" href="/settlements">정산 기록 보기</Link>
+                <Link className="text-sm text-neutral-300 underline" href="/settlements" prefetch={false}>정산 기록 보기</Link>
               }
             >
               <div className="flex flex-wrap items-center gap-2">

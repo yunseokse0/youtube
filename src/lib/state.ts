@@ -4942,7 +4942,7 @@ export async function loadDailyLogFromApi(
       typeof AbortSignal !== "undefined" &&
       typeof (AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal }).timeout ===
         "function"
-        ? (AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }).timeout(90_000)
+        ? (AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }).timeout(15_000)
         : undefined;
     const res = await fetch(`/api/daily-log?${q.toString()}`, {
       cache: "no-store",

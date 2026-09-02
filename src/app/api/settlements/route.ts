@@ -2,20 +2,23 @@ export const runtime = "nodejs";
 export const revalidate = 0;
 
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
-import { applySettlementDeleteTombstones, mergeSettlementRecords, normalizeSettlementRecords } from "@/lib/settlement";
-import type { SettlementDeleteLog, SettlementRecord } from "@/types";
+import { mergeSettlementRecords, normalizeSettlementRecords } from "@/lib/settlement";
+import type { SettlementRecord } from "@/types";
 import { getUserIdFromRequest, resolveWriteUserId, writeUserIdErrorResponse } from "../_shared/user-id";
 import {
   upstashGetJson,
   upstashSetJsonWithSetPath,
   isPersistentKvConfigured,
 } from "../_shared/upstash";
+import {
+  invalidateSettlementRecordsCache,
+  loadSettlementRecordsForUserId,
+  SETTLEMENT_RECENT_DEFAULT,
+} from "@/lib/settlement-server-load";
 
 const STORAGE_KEY_BASE = "excel-broadcast-settlement-records-v1";
 const STORAGE_KEY_LEGACY = "excel-broadcast-settlement-records-v1";
-const DELETE_LOGS_KEY_BASE = "excel-broadcast-settlement-delete-logs-v1";
 
-// In-memory fallback for environments without Upstash (per-instance)
 const memoryRecords: Record<string, unknown[]> = {};
 
 function getUserId(req: Request): string | null {
@@ -24,24 +27,6 @@ function getUserId(req: Request): string | null {
 
 function recordsKey(userId: string | null): string {
   return userId ? `${STORAGE_KEY_BASE}:${userId}` : STORAGE_KEY_LEGACY;
-}
-
-function deleteLogsKey(userId: string): string {
-  return `${DELETE_LOGS_KEY_BASE}:${userId}`;
-}
-
-function normalizeDeleteLogs(logs: unknown): SettlementDeleteLog[] {
-  if (!Array.isArray(logs)) return [];
-  const byId = new Map<string, SettlementDeleteLog>();
-  for (const raw of logs) {
-    if (!raw || typeof raw !== "object") continue;
-    const log = raw as SettlementDeleteLog;
-    const recordId = String(log.recordId || "").trim();
-    if (!recordId) continue;
-    const prev = byId.get(recordId);
-    if (!prev || (log.deletedAt || 0) >= (prev.deletedAt || 0)) byId.set(recordId, log);
-  }
-  return Array.from(byId.values());
 }
 
 async function upstashGet<T = unknown>(key: string): Promise<T | null> {
@@ -61,29 +46,32 @@ export async function GET(req: Request) {
         headers: { "Content-Type": "application/json" },
       });
     }
-    let records = await upstashGet(recordsKey(userId));
-    if (!Array.isArray(records) || records.length === 0) {
-      if (isLegacyMigrationTargetUserId(userId)) {
-        const legacy = await upstashGet(STORAGE_KEY_LEGACY);
-        if (Array.isArray(legacy) && legacy.length > 0) {
-          await upstashSet(recordsKey(userId), legacy);
-          records = legacy;
-        } else {
-          records = Array.isArray(memoryRecords[userId]) ? memoryRecords[userId] : [];
-        }
-      } else {
-        records = Array.isArray(memoryRecords[userId]) ? memoryRecords[userId] : [];
-      }
+    const url = new URL(req.url);
+    const full = url.searchParams.get("full") === "1";
+    const recentParam = url.searchParams.get("recent");
+    const recent = recentParam ? Math.max(1, parseInt(recentParam, 10) || SETTLEMENT_RECENT_DEFAULT) : SETTLEMENT_RECENT_DEFAULT;
+
+    let filtered: SettlementRecord[] = [];
+    if (isPersistentKvConfigured()) {
+      filtered = await loadSettlementRecordsForUserId(userId, {
+        full,
+        recent,
+        bypassCache: url.searchParams.has("_t"),
+      });
+    } else if (isLegacyMigrationTargetUserId(userId)) {
+      const legacy = await upstashGet<SettlementRecord[]>(STORAGE_KEY_LEGACY);
+      filtered = Array.isArray(legacy) ? legacy : [];
+    } else {
+      filtered = Array.isArray(memoryRecords[userId])
+        ? (memoryRecords[userId] as SettlementRecord[])
+        : [];
     }
-    const deleteLogsRaw = await upstashGet<SettlementDeleteLog[]>(deleteLogsKey(userId));
-    const filtered = applySettlementDeleteTombstones(
-      Array.isArray(records) ? (records as SettlementRecord[]) : [],
-      normalizeDeleteLogs(deleteLogsRaw)
-    );
+
     return new Response(JSON.stringify(filtered), {
       headers: {
         "Content-Type": "application/json",
         "Cache-Control": "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
+        "X-Settlement-Mode": full ? "full" : `recent-${recent}`,
       },
     });
   } catch {
@@ -128,6 +116,7 @@ export async function POST(req: Request) {
       memoryRecords[userId] = toSave;
       ok = true;
     }
+    if (ok) invalidateSettlementRecordsCache(userId);
     return new Response(JSON.stringify({ ok }), {
       headers: {
         "Content-Type": "application/json",
@@ -142,4 +131,3 @@ export async function POST(req: Request) {
     });
   }
 }
-

@@ -43,6 +43,9 @@ export default function SettlementsPage() {
         const hydrated = loadSettlementRecords(u.id);
         if (hydrated.length > 0) setRecords(hydrated);
         loadSettlementRecordsPreferApi(u.id).then(setRecords);
+        window.setTimeout(() => {
+          void loadSettlementRecordsPreferApi(u.id, { full: true }).then(setRecords);
+        }, 15_000);
         loadSettlementDeleteLogsPreferApi(u.id).then(setDeleteLogs);
         loadDailyLogFromApi(u.id, { full: true })
           .then((apiLog) => {
