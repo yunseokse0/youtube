@@ -1,10 +1,15 @@
-import { upstashSetAppStateJson } from "@/app/api/_shared/upstash-app-state";
+import { upstashGetAppStateJson, upstashSetAppStateJson } from "@/app/api/_shared/upstash-app-state";
 import {
   dailyLogCachedRawLen,
-  dailyLogStorageKey,
-  loadDailyLogForUserId,
+  invalidateDailyLogCache,
+  migrateDailyLogMonolithToShards,
   primeDailyLogCache,
 } from "@/lib/daily-log-server-load";
+import {
+  dailyLogEntriesFromShardPayload,
+  dailyLogMonolithKvKey,
+  dailyLogShardKvKey,
+} from "@/lib/daily-log-shard";
 import {
   broadcastDateKey,
   normalizeDonorsArray,
@@ -15,17 +20,18 @@ import type { AppState } from "@/types";
 
 const lastAppendAt = new Map<string, number>();
 const lastSnapshotSig = new Map<string, string>();
+const migrateOnce = new Set<string>();
 
 /** 후원 persist 시 서버 일일 로그 자동 적재 최소 간격 */
 export const DAILY_LOG_AUTO_APPEND_MIN_MS = 3 * 60 * 1000;
 
-/** 23MB+ daily-log — auto append 시 MySQL read/write 가 라이브 state·후원을 막음 */
+/** monolith 잔존 시 auto append 완화 */
 export const DAILY_LOG_LARGE_AUTO_APPEND_MIN_MS = 15 * 60 * 1000;
-export const DAILY_LOG_LARGE_BYTES = 5_000_000;
+export const DAILY_LOG_LARGE_BYTES = 500_000;
 
 const MAX_ENTRIES_PER_DAY = 200;
 
-/** userId별 append 직렬 — 동시 23MB write 2건 방지 */
+/** userId별 append 직렬 */
 const appendChains = new Map<string, Promise<boolean>>();
 
 function snapshotSignature(state: AppState): string {
@@ -37,6 +43,27 @@ function autoAppendMinMs(userId: string): number {
   return dailyLogCachedRawLen(userId) > DAILY_LOG_LARGE_BYTES
     ? DAILY_LOG_LARGE_AUTO_APPEND_MIN_MS
     : DAILY_LOG_AUTO_APPEND_MIN_MS;
+}
+
+async function ensureMonolithMigrated(userId: string): Promise<void> {
+  if (migrateOnce.has(userId)) return;
+  const stub = await upstashGetAppStateJson<{ __migrated?: boolean }>(dailyLogMonolithKvKey(userId));
+  if (stub && stub.__migrated === true) {
+    migrateOnce.add(userId);
+    return;
+  }
+  const raw = await upstashGetAppStateJson<unknown>(dailyLogMonolithKvKey(userId));
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+  const o = raw as Record<string, unknown>;
+  if (o.__migrated === true) {
+    migrateOnce.add(userId);
+    return;
+  }
+  const hasDates = Object.keys(o).some((k) => /^\d{4}-\d{2}-\d{2}$/.test(k));
+  if (!hasDates) return;
+  void migrateDailyLogMonolithToShards(userId).then((r) => {
+    if (r.ok) migrateOnce.add(userId);
+  });
 }
 
 async function appendDailyLogEntry(
@@ -59,6 +86,8 @@ async function appendDailyLogEntry(
     if (withinWindow && sig === prevSig) return false;
   }
 
+  void ensureMonolithMigrated(userId);
+
   const dateKey = broadcastDateKey(new Date(now));
   const entry: DailyLogEntry = {
     at: new Date(now).toISOString(),
@@ -67,18 +96,18 @@ async function appendDailyLogEntry(
     donors: state.donors,
   };
 
-  const log = await loadDailyLogForUserId(userId);
-  const nextLog: Record<string, DailyLogEntry[]> = { ...(log as Record<string, DailyLogEntry[]>) };
-  const dayEntries = Array.isArray(nextLog[dateKey]) ? [...nextLog[dateKey]!] : [];
-  dayEntries.push(entry);
-  nextLog[dateKey] =
+  const shardKey = dailyLogShardKvKey(userId, dateKey);
+  const existingRaw = await upstashGetAppStateJson<unknown>(shardKey);
+  const dayEntries = [...(dailyLogEntriesFromShardPayload(existingRaw) ?? []), entry];
+  const trimmed =
     dayEntries.length > MAX_ENTRIES_PER_DAY
       ? dayEntries.slice(-MAX_ENTRIES_PER_DAY)
       : dayEntries;
 
-  const ok = await upstashSetAppStateJson(dailyLogStorageKey(userId), nextLog);
+  const ok = await upstashSetAppStateJson(shardKey, trimmed);
   if (ok) {
-    primeDailyLogCache(userId, nextLog);
+    invalidateDailyLogCache(userId);
+    primeDailyLogCache(userId, { [dateKey]: trimmed });
     lastAppendAt.set(userId, now);
     lastSnapshotSig.set(userId, sig);
   }
@@ -86,8 +115,7 @@ async function appendDailyLogEntry(
 }
 
 /**
- * 후원 저장 파이프라인에서 일일 로그(KV)에 스냅샷 적재.
- * 수동 「스냅샷 지금」과 달리 3분·변경 감지로 throttle (대용량 log 는 15분).
+ * 후원 저장 파이프라인 — 오늘 shard 에만 append (monolith 23MB R+W 제거)
  */
 export async function maybeAppendDailyLogFromState(
   userId: string,

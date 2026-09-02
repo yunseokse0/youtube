@@ -37,10 +37,10 @@ wait_timeout = 600
 interactive_timeout = 600
 table_open_cache = 256
 performance_schema = OFF
-max_allowed_packet = 64M
+max_allowed_packet = 128M
 connect_timeout = 10
-net_read_timeout = 60
-net_write_timeout = 60
+net_read_timeout = 120
+net_write_timeout = 120
 max_connect_errors = 100
 skip_name_resolve = ON
 # binlog 디스크 폭주 방지 (deploy-on-ec2.sh 와 동일)

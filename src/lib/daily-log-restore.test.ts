@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
 import { maybeAppendDailyLogFromState, DAILY_LOG_AUTO_APPEND_MIN_MS, DAILY_LOG_LARGE_AUTO_APPEND_MIN_MS } from "@/lib/daily-log-server-append";
 import { broadcastDateKey } from "@/lib/state";
 import {

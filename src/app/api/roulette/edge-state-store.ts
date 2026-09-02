@@ -5,7 +5,7 @@ import {
   isAccidentalEmptyRosterState,
   shouldBlockAccidentalEmptyOverwrite,
 } from "@/lib/state";
-import { coalesceAppStateRedisAndMemory, loadAppStateForUserId } from "@/lib/app-state-server-load";
+import { coalesceAppStateRedisAndMemory, invalidateAppStateKvCache, loadAppStateForUserId } from "@/lib/app-state-server-load";
 import {
   mergeDonationReplaceForPersist,
   mergeStatePreservingDonorsUntilSettlementReset,
@@ -160,6 +160,7 @@ export async function saveAppStateForRoulette(
   }
 
   setServerMemoryAppState(userId, persisted);
+  invalidateAppStateKvCache(userId);
   if (!kvOk) {
     return { ok: true, state: persisted };
   }

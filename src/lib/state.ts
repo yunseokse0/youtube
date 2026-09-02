@@ -4929,11 +4929,15 @@ export function loadDailyLog(userId?: string | null): Record<string, DailyLogEnt
   }
 }
 
-export async function loadDailyLogFromApi(userId?: string | null): Promise<Record<string, DailyLogEntry[]>> {
+export async function loadDailyLogFromApi(
+  userId?: string | null,
+  opts?: { full?: boolean }
+): Promise<Record<string, DailyLogEntry[]>> {
   if (typeof window === "undefined") return {};
   try {
     const q = new URLSearchParams({ _t: String(Date.now()) });
     if (userId) q.set("user", userId);
+    if (opts?.full) q.set("full", "1");
     const signal =
       typeof AbortSignal !== "undefined" &&
       typeof (AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal }).timeout ===

@@ -6,11 +6,20 @@ import type { DailyLogEntry } from "@/lib/state";
 import { getUserIdFromRequest, resolveWriteUserId, writeUserIdErrorResponse } from "../_shared/user-id";
 import {
   upstashGetJson,
-  upstashSetJsonWithPipeline,
   isPersistentKvConfigured,
 } from "../_shared/upstash";
+import { upstashSetAppStateJson } from "../_shared/upstash-app-state";
+import {
+  DAILY_LOG_SHARD_DAYS_ADMIN,
+  dailyLogFromMonolith,
+  dailyLogMonolithKvKey,
+  dailyLogShardKvKey,
+} from "@/lib/daily-log-shard";
+import {
+  invalidateDailyLogCache,
+  loadDailyLogForUserId,
+} from "@/lib/daily-log-server-load";
 
-const STORAGE_KEY_BASE = "excel-broadcast-daily-log-v1";
 const STORAGE_KEY_LEGACY = "excel-broadcast-daily-log-v1";
 
 // In-memory fallback when Upstash is unavailable (per-instance)
@@ -18,18 +27,6 @@ const memoryDailyLog: Record<string, Record<string, DailyLogEntry[]>> = {};
 
 function getUserId(req: Request): string | null {
   return getUserIdFromRequest(req);
-}
-
-function logKey(userId: string | null): string {
-  return userId ? `${STORAGE_KEY_BASE}:${userId}` : STORAGE_KEY_LEGACY;
-}
-
-async function upstashGet<T = unknown>(key: string): Promise<T | null> {
-  return upstashGetJson<T>(key);
-}
-
-async function upstashSet(key: string, value: unknown) {
-  return upstashSetJsonWithPipeline(key, value);
 }
 
 export type DailyLogData = Record<string, DailyLogEntry[]>;
@@ -43,12 +40,24 @@ export async function GET(req: Request) {
         headers: { "Content-Type": "application/json" },
       });
     }
-    let data: DailyLogData | null = await upstashGet<DailyLogData>(logKey(userId));
+    const url = new URL(req.url);
+    const full = url.searchParams.get("full") === "1";
+    let data: DailyLogData | null = null;
+
+    if (isPersistentKvConfigured()) {
+      data = await loadDailyLogForUserId(userId, {
+        full,
+        recentDays: full ? undefined : DAILY_LOG_SHARD_DAYS_ADMIN,
+        bypassCache: url.searchParams.has("_t"),
+      });
+    } else {
+      data = memoryDailyLog[userId] || {};
+    }
+
     if (!data || typeof data !== "object" || Object.keys(data).length === 0) {
       if (isLegacyMigrationTargetUserId(userId)) {
-        const legacy = await upstashGet<DailyLogData>(STORAGE_KEY_LEGACY);
+        const legacy = await upstashGetJson<DailyLogData>(STORAGE_KEY_LEGACY);
         if (legacy && typeof legacy === "object" && Object.keys(legacy).length > 0) {
-          await upstashSet(logKey(userId), legacy);
           data = legacy;
         } else {
           data = memoryDailyLog[userId] || {};
@@ -87,17 +96,39 @@ export async function POST(req: Request) {
         status: 400,
       });
     }
-    let ok = await upstashSet(logKey(userId), body);
-    if (!ok) {
-      if (isPersistentKvConfigured()) {
+
+    let ok = true;
+    if (isPersistentKvConfigured()) {
+      const monolith = dailyLogFromMonolith(body);
+      const payload = monolith ?? body;
+      for (const [dateKey, entries] of Object.entries(payload)) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey) || !Array.isArray(entries)) continue;
+        const shardOk = await upstashSetAppStateJson(
+          dailyLogShardKvKey(userId, dateKey),
+          entries
+        );
+        if (!shardOk) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) {
+        invalidateDailyLogCache(userId);
+        await upstashSetAppStateJson(dailyLogMonolithKvKey(userId), {
+          __migrated: true,
+          at: Date.now(),
+          via: "api-post",
+        });
+      } else if (isPersistentKvConfigured()) {
         return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
           status: 503,
           headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
         });
       }
+    } else {
       memoryDailyLog[userId] = body;
-      ok = true;
     }
+
     return new Response(JSON.stringify({ ok }), {
       headers: {
         "Content-Type": "application/json",

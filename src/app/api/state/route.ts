@@ -861,7 +861,7 @@ export async function GET(req: Request) {
       !shouldSuppressAutoRosterRestore(mergedForResponse)
     ) {
       try {
-        const dailyLog = await loadDailyLogForUserId(userId);
+        const dailyLog = await loadDailyLogForUserId(userId, { recentDays: 7 });
         const fromLog = enrichAppStateFromDailyLogWhenDonorsMissing(
           mergedForResponse,
           dailyLog

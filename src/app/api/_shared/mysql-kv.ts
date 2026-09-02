@@ -9,7 +9,9 @@ import "server-only";
 import mysql, { type Pool, type PoolConnection, type RowDataPacket } from "mysql2/promise";
 
 let pool: Pool | null = null;
+let bulkPool: Pool | null = null;
 let poolInitPromise: Promise<Pool | null> | null = null;
+let bulkPoolInitPromise: Promise<Pool | null> | null = null;
 let tableReady: Promise<void> | null = null;
 let lastMysqlError: string | null = null;
 let poolResetPromise: Promise<void> | null = null;
@@ -28,8 +30,10 @@ const CIRCUIT_COOLDOWN_MS = 30_000;
 let consecutiveFailures = 0;
 let circuitOpenUntil = 0;
 
-/** EC2 co-located MySQL — socket 시 connect 폭주 없음, 라이브 read 병렬 여유 */
-const POOL_CONNECTION_LIMIT = 3;
+/** EC2 co-located MySQL — state/OBS/투네 ingest 전용 */
+const POOL_CONNECTION_LIMIT = 6;
+/** daily-log·settlement-records·storage-health bulk I/O 전용 */
+const BULK_POOL_CONNECTION_LIMIT = 2;
 /** Pool idle 재연결 빈도 ↓ — 4031·connect timeout 완화 */
 const POOL_IDLE_TIMEOUT_MS = 300_000;
 
@@ -92,6 +96,15 @@ function isTransientMysqlError(err: unknown): boolean {
   );
 }
 
+function isBulkMysqlKvKey(key: string): boolean {
+  const k = key.toLowerCase();
+  return (
+    k.includes("excel-broadcast-daily-log-v1:") ||
+    k.includes("excel-broadcast-settlement-records-v1:") ||
+    k.includes("excel-broadcast-donation-roster-backup-v1:")
+  );
+}
+
 async function resetMysqlPool(): Promise<void> {
   if (poolResetPromise) {
     await poolResetPromise;
@@ -99,11 +112,17 @@ async function resetMysqlPool(): Promise<void> {
   }
   poolResetPromise = (async () => {
     const old = pool;
+    const oldBulk = bulkPool;
     pool = null;
+    bulkPool = null;
     poolInitPromise = null;
+    bulkPoolInitPromise = null;
     tableReady = null;
     if (old) {
       await old.end().catch(() => {});
+    }
+    if (oldBulk) {
+      await oldBulk.end().catch(() => {});
     }
   })().finally(() => {
     poolResetPromise = null;
@@ -125,10 +144,33 @@ async function ensureConnAlive(c: PoolConnection): Promise<void> {
 }
 
 async function withMysqlConn<T>(fn: (c: PoolConnection) => Promise<T>, attempt = 0): Promise<T> {
+  return withPoolConn(getPool(), fn, attempt);
+}
+
+async function withBulkMysqlConn<T>(fn: (c: PoolConnection) => Promise<T>, attempt = 0): Promise<T> {
+  return withPoolConn(getBulkPool(), fn, attempt);
+}
+
+async function withMysqlConnForKey<T>(
+  key: string,
+  fn: (c: PoolConnection) => Promise<T>,
+  attempt = 0
+): Promise<T> {
+  if (isBulkMysqlKvKey(key)) {
+    return withBulkMysqlConn(fn, attempt);
+  }
+  return withMysqlConn(fn, attempt);
+}
+
+async function withPoolConn<T>(
+  poolPromise: Promise<Pool | null>,
+  fn: (c: PoolConnection) => Promise<T>,
+  attempt = 0
+): Promise<T> {
   if (isMysqlCircuitOpen()) {
     throw new Error("MySQL circuit open (cooldown)");
   }
-  const p = await getPool();
+  const p = await poolPromise;
   if (!p) throw new Error("MySQL pool unavailable");
   const c = await p.getConnection();
   try {
@@ -141,7 +183,7 @@ async function withMysqlConn<T>(fn: (c: PoolConnection) => Promise<T>, attempt =
     noteMysqlFailure(err);
     if (isTransientMysqlError(err) && attempt < 1) {
       c.destroy();
-      return withMysqlConn(fn, attempt + 1);
+      return withPoolConn(poolPromise, fn, attempt + 1);
     }
     throw err;
   } finally {
@@ -219,8 +261,7 @@ function resolveSocketPath(): string {
   return MYSQL_SOCKET_CANDIDATES[0]!;
 }
 
-/** mysql://user:pass@host:port/db — 비밀번호 특수문자 안전하게 파싱 */
-function mysqlConnOptionsFromUrl(raw: string): mysql.PoolOptions | null {
+function buildPoolOptions(raw: string, connectionLimit: number, queueLimit: number): mysql.PoolOptions | null {
   try {
     const u = new URL(raw);
     if (!/^mysql:$/i.test(u.protocol)) return null;
@@ -231,14 +272,14 @@ function mysqlConnOptionsFromUrl(raw: string): mysql.PoolOptions | null {
       user: decodeURIComponent(u.username || ""),
       password: decodeURIComponent(u.password || ""),
       database,
-      connectTimeout: 3_000,
+      connectTimeout: 10_000,
       enableKeepAlive: true,
-      keepAliveInitialDelay: 10_000,
-      connectionLimit: POOL_CONNECTION_LIMIT,
+      keepAliveInitialDelay: 0,
+      connectionLimit,
       waitForConnections: true,
-      maxIdle: POOL_CONNECTION_LIMIT,
+      maxIdle: connectionLimit,
       idleTimeout: POOL_IDLE_TIMEOUT_MS,
-      queueLimit: 0,
+      queueLimit,
     };
     if (shouldUseMysqlSocket(hostname)) {
       return { ...shared, socketPath: resolveSocketPath() };
@@ -253,11 +294,41 @@ function mysqlConnOptionsFromUrl(raw: string): mysql.PoolOptions | null {
   }
 }
 
+/** mysql://user:pass@host:port/db — 비밀번호 특수문자 안전하게 파싱 */
+function mysqlConnOptionsFromUrl(raw: string): mysql.PoolOptions | null {
+  return buildPoolOptions(raw, POOL_CONNECTION_LIMIT, 100);
+}
+
+function mysqlBulkConnOptionsFromUrl(raw: string): mysql.PoolOptions | null {
+  return buildPoolOptions(raw, BULK_POOL_CONNECTION_LIMIT, 50);
+}
+
 /** 진단·테스트 — DATABASE_URL 기준 socket/TCP (side-effect 없음) */
 export function mysqlKvConnModeFromDatabaseUrl(raw?: string): "socket" | "tcp" | null {
   const opts = mysqlConnOptionsFromUrl(String(raw ?? getMysqlDatabaseUrl()).trim());
   if (!opts) return null;
   return poolTransportFromOptions(opts);
+}
+
+async function getBulkPool(): Promise<Pool | null> {
+  if (!isMysqlKvConfigured()) return null;
+  if (bulkPool) return bulkPool;
+  if (bulkPoolInitPromise) return bulkPoolInitPromise;
+  bulkPoolInitPromise = (async () => {
+    await getPool();
+    const opts = mysqlBulkConnOptionsFromUrl(getMysqlDatabaseUrl());
+    if (!opts) throw new Error("MySQL bulk config parse failed");
+    const p = mysql.createPool(opts);
+    bulkPool = p;
+    console.info(
+      `[mysql-kv] bulk pool open (${connTransport ?? "?"}, limit=${BULK_POOL_CONNECTION_LIMIT})`
+    );
+    return p;
+  })().catch((err) => {
+    bulkPoolInitPromise = null;
+    throw err;
+  });
+  return bulkPoolInitPromise;
 }
 
 async function getPool(): Promise<Pool | null> {
@@ -323,7 +394,7 @@ async function mysqlKvGetOnce(key: string): Promise<string | null> {
     return null;
   }
   try {
-    return await withMysqlConn(async (c) => {
+    return await withMysqlConnForKey(key, async (c) => {
       await ensureTable(c);
       const now = Date.now();
       const rows = await connExecuteWithTimeout(
@@ -407,7 +478,7 @@ export async function mysqlKvSet(
   }
   try {
     await runSerializedMysqlWrite(async () =>
-      withMysqlConn(async (c) => {
+      withMysqlConnForKey(key, async (c) => {
         await ensureTable(c);
         const writeAt =
           typeof revisionMs === "number" && revisionMs > 0 ? Math.floor(revisionMs) : Date.now();
@@ -464,13 +535,34 @@ export async function mysqlKvSetNxEx(key: string, ttlSec: number): Promise<boole
 export async function mysqlKvDel(key: string): Promise<void> {
   try {
     await runSerializedMysqlWrite(async () =>
-      withMysqlConn(async (c) => {
+      withMysqlConnForKey(key, async (c) => {
         await ensureTable(c);
         await c.execute(`DELETE FROM app_kv WHERE \`k\` = ?`, [key]);
       })
     );
   } catch {
     /* ignore */
+  }
+}
+
+/** daily-log shard 목록 — prefix LIKE (bulk pool) */
+export async function mysqlKvListKeys(prefix: string, limit = 500): Promise<string[]> {
+  if (isMysqlCircuitOpen() || !isMysqlKvConfigured()) return [];
+  const safeLimit = Math.max(1, Math.min(1000, Math.floor(limit)));
+  try {
+    return await withBulkMysqlConn(async (c) => {
+      await ensureTable(c);
+      const rows = await connExecuteWithTimeout(
+        c,
+        `SELECT \`k\` FROM app_kv WHERE \`k\` LIKE ? ORDER BY \`k\` ASC LIMIT ${safeLimit}`,
+        [`${prefix}%`]
+      );
+      return rows.map((row) => String(row.k ?? ""));
+    });
+  } catch (err) {
+    setLastMysqlError(err);
+    console.error("[mysql-kv] list keys failed", err);
+    return [];
   }
 }
 

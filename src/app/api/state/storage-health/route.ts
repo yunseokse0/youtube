@@ -6,8 +6,8 @@ import {
   getPersistentKvLastError,
   isPersistentKvConfigured,
 } from "@/app/api/_shared/upstash";
-import { isMysqlKvConfigured } from "@/app/api/_shared/mysql-kv";
-import { loadAppStateForUserId } from "@/lib/app-state-server-load";
+import { isMysqlKvConfigured, mysqlKvPeekRevision } from "@/app/api/_shared/mysql-kv";
+import { appStateStorageKey, loadAppStateForUserId } from "@/lib/app-state-server-load";
 import { loadDailyLogForUserId } from "@/lib/daily-log-server-load";
 import { loadDonationRosterBackup } from "@/lib/donation-roster-backup";
 import { pickDailyLogEntryForRestore } from "@/lib/state-restore";
@@ -27,19 +27,28 @@ export async function GET(req: Request) {
   const kvConfigured = isPersistentKvConfigured();
   const mysqlConfigured = isMysqlKvConfigured();
   const kvError = kvConfigured ? await getPersistentKvLastError() : null;
+  const url = new URL(req.url);
+  /** 기본 lite — 23MB monolith·백업 read 차단. ?full=1 만 헤비 진단 */
+  const full = url.searchParams.get("full") === "1";
   const lite =
-    (() => {
-      try {
-        return new URL(req.url).searchParams.get("lite") === "1";
-      } catch {
-        return false;
-      }
-    })();
+    !full ||
+    url.searchParams.get("lite") === "1" ||
+    process.env.STORAGE_HEALTH_FORCE_LITE === "1";
 
-  const main = (await loadAppStateForUserId(userId)) || defaultState();
   const mem = getServerMemoryAppState(userId);
+  let main = mem;
+  if (!lite || !mem) {
+    main = (await loadAppStateForUserId(userId)) || defaultState();
+  } else {
+    main = mem || defaultState();
+    const rev = await mysqlKvPeekRevision(appStateStorageKey(userId));
+    if (rev && rev > (main.updatedAt || 0)) {
+      main = { ...main, updatedAt: rev };
+    }
+  }
+
   const backup = lite ? null : await loadDonationRosterBackup(userId);
-  const dailyLog = lite ? null : await loadDailyLogForUserId(userId);
+  const dailyLog = lite ? null : await loadDailyLogForUserId(userId, { recentDays: 2 });
   const latestLog = dailyLog ? pickDailyLogEntryForRestore(dailyLog) : null;
 
   const mainDonors = normalizeDonorsArray(main.donors);
@@ -48,6 +57,7 @@ export async function GET(req: Request) {
   return new Response(
     JSON.stringify({
       userId,
+      lite,
       storage: {
         persistentKv: kvConfigured,
         mysql: mysqlConfigured,

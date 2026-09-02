@@ -161,7 +161,7 @@ export default function SettlementDetailPage() {
         setRecords(local);
         loadSettlementRecordsPreferApi(u.id).then(setRecords);
         setDailyLog(loadDailyLog(u.id) as Record<string, DailyLogEntry[]>);
-        loadDailyLogFromApi(u.id).then((serverLog) => {
+        loadDailyLogFromApi(u.id, { full: true }).then((serverLog) => {
           if (serverLog) setDailyLog(serverLog as Record<string, DailyLogEntry[]>);
         });
         setReferenceDonors(

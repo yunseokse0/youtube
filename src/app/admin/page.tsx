@@ -2981,7 +2981,7 @@ function AdminPageInner() {
     }, 4_000);
     startTabLeaderInterval(
       `youtube-storage-health:${uid}`,
-      45_000,
+      90_000,
       () => refreshStorageHealth(),
       ac.signal
     );

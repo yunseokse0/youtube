@@ -533,7 +533,7 @@ export async function recoverSettlementRecordsFromAllSources(
   try {
     const { loadDailyLog, loadDailyLogFromApi } = await import("@/lib/state");
     const localLog = loadDailyLog(userId);
-    const apiLog = await loadDailyLogFromApi(userId);
+    const apiLog = await loadDailyLogFromApi(userId, { full: true });
     const dailyLog = { ...localLog, ...apiLog };
     const before = merged.length;
     merged = recoverSettlementRecordsFromDailyLog(dailyLog, merged, {

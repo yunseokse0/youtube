@@ -44,7 +44,7 @@ export default function SettlementsPage() {
         if (hydrated.length > 0) setRecords(hydrated);
         loadSettlementRecordsPreferApi(u.id).then(setRecords);
         loadSettlementDeleteLogsPreferApi(u.id).then(setDeleteLogs);
-        loadDailyLogFromApi(u.id)
+        loadDailyLogFromApi(u.id, { full: true })
           .then((apiLog) => {
             const local = loadDailyLog(u.id);
             const allDates = new Set([...Object.keys(local || {}), ...Object.keys(apiLog || {})]);

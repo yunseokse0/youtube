@@ -62,11 +62,34 @@ export function coalesceAppStateRedisAndMemory(
  */
 /** 멀티탭·멀티PC 동시 GET — userId 당 1회 KV 읽기 */
 const loadInflight = new Map<string, Promise<AppState | null>>();
+const kvReadCache = new Map<string, { state: AppState; loadedAt: number }>();
+const KV_READ_CACHE_TTL_MS = 20_000;
 
-async function loadAppStateForUserIdOnce(userId: string): Promise<AppState | null> {
+export function invalidateAppStateKvCache(userId?: string): void {
+  if (userId) kvReadCache.delete(userId);
+  else kvReadCache.clear();
+}
+
+async function loadAppStateForUserIdOnce(
+  userId: string,
+  opts?: { bypassCache?: boolean }
+): Promise<AppState | null> {
   const mem = getServerMemoryAppState(userId);
   if (isPersistentKvConfigured()) {
+    if (!opts?.bypassCache) {
+      const hit = kvReadCache.get(userId);
+      if (hit && Date.now() - hit.loadedAt < KV_READ_CACHE_TTL_MS) {
+        const picked = coalesceAppStateRedisAndMemory(hit.state, mem);
+        if (picked) {
+          if (mem !== picked) setServerMemoryAppState(userId, picked);
+          return picked;
+        }
+      }
+    }
     const saved = await upstashGetAppStateJson<AppState>(appStateStorageKey(userId));
+    if (saved) {
+      kvReadCache.set(userId, { state: saved, loadedAt: Date.now() });
+    }
     const picked = coalesceAppStateRedisAndMemory(saved, mem);
     if (picked) {
       /** 메모리보다 Redis가 앞서면 메모리도 맞춤(반대는 덮어쓰지 않음) */
@@ -89,10 +112,13 @@ async function loadAppStateForUserIdOnce(userId: string): Promise<AppState | nul
   return mem || defaultState();
 }
 
-export async function loadAppStateForUserId(userId: string): Promise<AppState | null> {
+export async function loadAppStateForUserId(
+  userId: string,
+  opts?: { bypassCache?: boolean }
+): Promise<AppState | null> {
   const existing = loadInflight.get(userId);
   if (existing) return existing;
-  const p = loadAppStateForUserIdOnce(userId).finally(() => {
+  const p = loadAppStateForUserIdOnce(userId, opts).finally(() => {
     if (loadInflight.get(userId) === p) loadInflight.delete(userId);
   });
   loadInflight.set(userId, p);
