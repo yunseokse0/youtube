@@ -8,10 +8,12 @@ export async function register() {
     registerMysqlKvBackend(mysqlKv);
   }
 
-  const { restoreToonationListenersFromStore } = await import("@/lib/donation/toonation/server-listener");
-  /** MySQL 지연·hang 시 register 가 끝나지 않아 /api/health 포함 전 HTTP가 무응답 — 비동기·지연 복구 */
+  /** server-listener import·투네 복구는 HTTP 기동 후 지연 — register 블로킹 방지 */
   void (async () => {
     await new Promise((r) => setTimeout(r, 12_000));
+    const { restoreToonationListenersFromStore } = await import(
+      "@/lib/donation/toonation/server-listener"
+    );
     await restoreToonationListenersFromStore().catch((err) => {
       console.error("[instrumentation] restoreToonationListenersFromStore failed", err);
     });

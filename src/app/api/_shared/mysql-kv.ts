@@ -117,6 +117,9 @@ export function isMysqlKvConfigured(): boolean {
   return Boolean(url && /^mysql:\/\//i.test(url));
 }
 
+/** EC2 localhost — TCP(127.0.0.1) ETIMEDOUT 회피, mysql CLI 소켓과 동일 경로 */
+const MYSQL_SOCKET_PATH = "/var/run/mysqld/mysqld.sock";
+
 /** mysql://user:pass@host:port/db — 비밀번호 특수문자 안전하게 파싱 */
 function mysqlPoolOptionsFromUrl(raw: string): mysql.PoolOptions | null {
   try {
@@ -124,9 +127,8 @@ function mysqlPoolOptionsFromUrl(raw: string): mysql.PoolOptions | null {
     if (!/^mysql:$/i.test(u.protocol)) return null;
     const database = decodeURIComponent(u.pathname.replace(/^\//, "").split("/")[0] || "");
     if (!database) return null;
-    return {
-      host: u.hostname || "127.0.0.1",
-      port: u.port ? Number(u.port) : 3306,
+    const hostname = (u.hostname || "127.0.0.1").toLowerCase();
+    const shared: mysql.PoolOptions = {
       user: decodeURIComponent(u.username || ""),
       password: decodeURIComponent(u.password || ""),
       database,
@@ -138,6 +140,14 @@ function mysqlPoolOptionsFromUrl(raw: string): mysql.PoolOptions | null {
       enableKeepAlive: true,
       keepAliveInitialDelay: 10_000,
       idleTimeout: 20_000,
+    };
+    if (hostname === "127.0.0.1" || hostname === "localhost") {
+      return { ...shared, socketPath: MYSQL_SOCKET_PATH };
+    }
+    return {
+      ...shared,
+      host: u.hostname || "127.0.0.1",
+      port: u.port ? Number(u.port) : 3306,
     };
   } catch {
     return null;
