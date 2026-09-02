@@ -39,6 +39,10 @@ table_open_cache = 256
 performance_schema = OFF
 max_allowed_packet = 64M
 connect_timeout = 10
+net_read_timeout = 60
+net_write_timeout = 60
+max_connect_errors = 100
+skip_name_resolve = ON
 # binlog 디스크 폭주 방지 (deploy-on-ec2.sh 와 동일)
 binlog_expire_logs_seconds = 86400
 EOF
@@ -69,3 +73,4 @@ else
 fi
 
 echo "== 완료 — pm2 restart 권장 =="
+echo "  pm2 restart youtube"

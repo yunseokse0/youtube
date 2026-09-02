@@ -13,6 +13,57 @@ let lastMysqlError: string | null = null;
 /** hang 시 Node 전체 HTTP 무응답 방지 — 초과 시 connection destroy */
 const MYSQL_QUERY_TIMEOUT_MS = 10_000;
 
+function isTransientMysqlError(err: unknown): boolean {
+  const e = err as { code?: string; errno?: number; message?: string };
+  const code = String(e?.code ?? "");
+  const msg = String(e?.message ?? "");
+  return (
+    code === "PROTOCOL_CONNECTION_LOST" ||
+    code === "ER_NET_READ_INTERRUPTED" ||
+    code === "ECONNRESET" ||
+    code === "ETIMEDOUT" ||
+    code === "ECONNREFUSED" ||
+    e?.errno === 1159 ||
+    msg.includes("packets out of order") ||
+    msg.includes("reading communication packets")
+  );
+}
+
+async function resetMysqlKvPool(): Promise<void> {
+  const old = pool;
+  pool = null;
+  tableReady = null;
+  if (old) {
+    await old.end().catch(() => {});
+  }
+}
+
+function attachPoolGuards(p: Pool): void {
+  p.on("connection", (conn) => {
+    conn.on("error", (err: NodeJS.ErrnoException) => {
+      if (isTransientMysqlError(err)) {
+        console.warn("[mysql-kv] connection dropped — pool reset", err.code ?? err.message);
+        void resetMysqlKvPool();
+      }
+    });
+  });
+}
+
+async function withMysqlPool<T>(fn: (p: Pool) => Promise<T>): Promise<T> {
+  let p = getPool();
+  if (!p) throw new Error("MySQL pool unavailable");
+  try {
+    return await fn(p);
+  } catch (err) {
+    if (!isTransientMysqlError(err)) throw err;
+    console.warn("[mysql-kv] transient error — retry after pool reset", err);
+    await resetMysqlKvPool();
+    p = getPool();
+    if (!p) throw err;
+    return await fn(p);
+  }
+}
+
 async function poolExecuteWithTimeout(
   p: Pool,
   sql: string,
@@ -71,12 +122,13 @@ function mysqlPoolOptionsFromUrl(raw: string): mysql.PoolOptions | null {
       password: decodeURIComponent(u.password || ""),
       database,
       waitForConnections: true,
-      connectionLimit: 16,
+      connectionLimit: 10,
       /** 대기열이 꽉 차면 즉시 오류 — /api/state GET 무한 대기 방지 */
-      queueLimit: 48,
+      queueLimit: 32,
       connectTimeout: 5_000,
       enableKeepAlive: true,
-      idleTimeout: 60_000,
+      keepAliveInitialDelay: 10_000,
+      idleTimeout: 30_000,
     };
   } catch {
     return null;
@@ -90,6 +142,7 @@ function getPool(): Pool | null {
     const opts = mysqlPoolOptionsFromUrl(getMysqlDatabaseUrl());
     if (!opts) return null;
     pool = mysql.createPool(opts);
+    attachPoolGuards(pool);
   } catch {
     return null;
   }
@@ -117,25 +170,26 @@ async function ensureTable(p: Pool): Promise<void> {
 }
 
 export async function mysqlKvGet(key: string): Promise<string | null> {
-  const p = getPool();
-  if (!p) return null;
+  if (!getPool()) return null;
   try {
-    await ensureTable(p);
-    const now = Date.now();
-    const rows = await poolExecuteWithTimeout(
-      p,
-      `SELECT \`v\`, \`expires_at\` FROM app_kv WHERE \`k\` = ? LIMIT 1`,
-      [key]
-    );
-    const row = rows[0];
-    lastMysqlError = null;
-    if (!row) return null;
-    const exp = row.expires_at == null ? null : Number(row.expires_at);
-    if (exp != null && Number.isFinite(exp) && exp > 0 && exp < now) {
-      await p.execute(`DELETE FROM app_kv WHERE \`k\` = ?`, [key]).catch(() => {});
-      return null;
-    }
-    return typeof row.v === "string" ? row.v : String(row.v ?? "");
+    return await withMysqlPool(async (p) => {
+      await ensureTable(p);
+      const now = Date.now();
+      const rows = await poolExecuteWithTimeout(
+        p,
+        `SELECT \`v\`, \`expires_at\` FROM app_kv WHERE \`k\` = ? LIMIT 1`,
+        [key]
+      );
+      const row = rows[0];
+      lastMysqlError = null;
+      if (!row) return null;
+      const exp = row.expires_at == null ? null : Number(row.expires_at);
+      if (exp != null && Number.isFinite(exp) && exp > 0 && exp < now) {
+        await p.execute(`DELETE FROM app_kv WHERE \`k\` = ?`, [key]).catch(() => {});
+        return null;
+      }
+      return typeof row.v === "string" ? row.v : String(row.v ?? "");
+    });
   } catch (err) {
     setLastMysqlError(err);
     console.error("[mysql-kv] get failed", err);
@@ -144,23 +198,24 @@ export async function mysqlKvGet(key: string): Promise<string | null> {
 }
 
 export async function mysqlKvSet(key: string, value: string, ttlSec?: number): Promise<boolean> {
-  const p = getPool();
-  if (!p) {
+  if (!getPool()) {
     lastMysqlError = "MySQL pool unavailable (DATABASE_URL parse/config)";
     return false;
   }
   try {
-    await ensureTable(p);
-    const now = Date.now();
-    const expires =
-      typeof ttlSec === "number" && ttlSec > 0 ? now + Math.floor(ttlSec) * 1000 : null;
-    await poolExecuteWithTimeout(
-      p,
-      `INSERT INTO app_kv (\`k\`, \`v\`, \`expires_at\`, \`updated_at\`)
+    await withMysqlPool(async (p) => {
+      await ensureTable(p);
+      const now = Date.now();
+      const expires =
+        typeof ttlSec === "number" && ttlSec > 0 ? now + Math.floor(ttlSec) * 1000 : null;
+      await poolExecuteWithTimeout(
+        p,
+        `INSERT INTO app_kv (\`k\`, \`v\`, \`expires_at\`, \`updated_at\`)
        VALUES (?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE \`v\` = VALUES(\`v\`), \`expires_at\` = VALUES(\`expires_at\`), \`updated_at\` = VALUES(\`updated_at\`)`,
-      [key, value, expires, now]
-    );
+        [key, value, expires, now]
+      );
+    });
     lastMysqlError = null;
     return true;
   } catch (err) {
@@ -172,38 +227,40 @@ export async function mysqlKvSet(key: string, value: string, ttlSec?: number): P
 
 /** Redis SET NX EX 대응 — true=선점, false=이미 있음, null=스토어 불가 */
 export async function mysqlKvSetNxEx(key: string, ttlSec: number): Promise<boolean | null> {
-  const p = getPool();
-  if (!p) return null;
+  if (!getPool()) return null;
   try {
-    await ensureTable(p);
-    const now = Date.now();
-    await p.execute(
-      `DELETE FROM app_kv WHERE \`k\` = ? AND \`expires_at\` IS NOT NULL AND \`expires_at\` < ?`,
-      [key, now]
-    );
-    const expires = now + Math.max(1, Math.floor(ttlSec)) * 1000;
-    try {
+    return await withMysqlPool(async (p) => {
+      await ensureTable(p);
+      const now = Date.now();
       await p.execute(
-        `INSERT INTO app_kv (\`k\`, \`v\`, \`expires_at\`, \`updated_at\`) VALUES (?, '1', ?, ?)`,
-        [key, expires, now]
+        `DELETE FROM app_kv WHERE \`k\` = ? AND \`expires_at\` IS NOT NULL AND \`expires_at\` < ?`,
+        [key, now]
       );
-      return true;
-    } catch (err: unknown) {
-      const code = (err as { code?: string })?.code;
-      if (code === "ER_DUP_ENTRY") return false;
-      return null;
-    }
+      const expires = now + Math.max(1, Math.floor(ttlSec)) * 1000;
+      try {
+        await p.execute(
+          `INSERT INTO app_kv (\`k\`, \`v\`, \`expires_at\`, \`updated_at\`) VALUES (?, '1', ?, ?)`,
+          [key, expires, now]
+        );
+        return true;
+      } catch (err: unknown) {
+        const code = (err as { code?: string })?.code;
+        if (code === "ER_DUP_ENTRY") return false;
+        throw err;
+      }
+    });
   } catch {
     return null;
   }
 }
 
 export async function mysqlKvDel(key: string): Promise<void> {
-  const p = getPool();
-  if (!p) return;
+  if (!getPool()) return;
   try {
-    await ensureTable(p);
-    await p.execute(`DELETE FROM app_kv WHERE \`k\` = ?`, [key]);
+    await withMysqlPool(async (p) => {
+      await ensureTable(p);
+      await p.execute(`DELETE FROM app_kv WHERE \`k\` = ?`, [key]);
+    });
   } catch {
     /* ignore */
   }
@@ -229,9 +286,5 @@ export async function mysqlKvSetJson(key: string, value: unknown): Promise<boole
 
 /** 테스트·프로세스 종료용 */
 export async function mysqlKvClosePool(): Promise<void> {
-  if (pool) {
-    await pool.end().catch(() => {});
-    pool = null;
-    tableReady = null;
-  }
+  await resetMysqlKvPool();
 }
