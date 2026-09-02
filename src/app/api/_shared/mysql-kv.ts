@@ -4,7 +4,6 @@
  * 서버 전용 — 클라이언트 번들 금지
  */
 import "server-only";
-import fs from "node:fs";
 import mysql, { type Pool, type RowDataPacket } from "mysql2/promise";
 
 let pool: Pool | null = null;
@@ -149,22 +148,13 @@ export function isMysqlKvConfigured(): boolean {
 /** EC2 localhost — TCP(127.0.0.1) ETIMEDOUT 회피, mysql CLI 소켓과 동일 경로 */
 const MYSQL_SOCKET_PATH = "/var/run/mysqld/mysqld.sock";
 
-function localMysqlSocketAvailable(): boolean {
-  try {
-    return fs.existsSync(MYSQL_SOCKET_PATH);
-  } catch {
-    return false;
-  }
-}
-
-/** Linux EC2 localhost — existsSync 없이 socket 우선 (TCP ETIMEDOUT 회피) */
+/** Linux EC2 localhost — socket 우선 (TCP ETIMEDOUT 회피). Windows/mac 로컬 dev는 TCP */
 function shouldUseMysqlSocket(hostname: string): boolean {
   if (process.env.MYSQL_USE_SOCKET === "0") return false;
   if (process.env.MYSQL_USE_SOCKET === "1") return true;
   const h = (hostname || "127.0.0.1").toLowerCase();
   if (h !== "127.0.0.1" && h !== "localhost") return false;
-  if (process.platform === "linux") return true;
-  return localMysqlSocketAvailable();
+  return process.platform === "linux";
 }
 
 /** mysql://user:pass@host:port/db — 비밀번호 특수문자 안전하게 파싱 */
