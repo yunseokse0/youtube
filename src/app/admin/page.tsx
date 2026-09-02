@@ -206,6 +206,8 @@ import {
   normalizeGoalHexColor,
   sanitizeBroadcastOverlayUrl,
   resolveScopedOverlayUserId,
+  buildDonorRankingsObsPath,
+  buildDonorRankingsObsSearchParams,
   isTimerBackgroundHidden,
   isTimerBorderVisuallyHidden,
   isHiddenTimerDisplayStyle,
@@ -4240,12 +4242,12 @@ function AdminPageInner() {
   };
   const buildDonorRankingsUrl = (opts?: { test?: boolean; full?: boolean }): string => {
     if (typeof window === "undefined") return "";
-    /** OBS URL은 짧게 — 테마·줌·색은 관리자 저장값(서버)에서 로드 */
-    const q = new URLSearchParams();
-    q.set("u", overlayUserId);
-    q.set("host", "obs");
-    if (opts?.test) q.set("test", "true");
-    const path = opts?.full ? "/overlay/donor-rankings/full" : "/overlay/donor-rankings";
+    /** OBS URL은 짧게 `/dr?u=` — 테마·줌·색은 관리자 저장값(서버)에서 로드 */
+    const path = buildDonorRankingsObsPath({ full: opts?.full });
+    const q = buildDonorRankingsObsSearchParams({
+      userId: overlayUserId,
+      test: opts?.test,
+    });
     return `${window.location.origin}${path}?${q.toString()}`;
   };
   const buildRankChangeOverlayUrl = (presetId?: string): string => {
@@ -12271,7 +12273,7 @@ function AdminPageInner() {
 
                     <code className="text-neutral-300 break-all">
 
-                      /overlay/donor-rankings?u={overlayUserId}&host=obs
+                      /dr?u={overlayUserId}
 
                     </code>
 
@@ -12303,7 +12305,7 @@ function AdminPageInner() {
 
                     <code className="text-neutral-300 break-all">
 
-                      /overlay/donor-rankings/full?u={overlayUserId}&host=obs
+                      /dr/full?u={overlayUserId}
 
                     </code>
 
@@ -12335,7 +12337,7 @@ function AdminPageInner() {
 
                     <code className="text-neutral-300 break-all">
 
-                      /overlay/donor-rankings?u={overlayUserId}&host=obs&test=true
+                      /dr?u={overlayUserId}&test=1
 
                     </code>
 
@@ -16204,7 +16206,7 @@ function AdminPageInner() {
               </p>
               <div className="mb-3 rounded border border-white/10 bg-black/20 p-2 text-xs text-neutral-400 flex flex-wrap items-center gap-2">
                 <span>후원 순위 (10위):</span>
-                <code className="text-neutral-300 break-all">/overlay/donor-rankings?u={overlayUserId}&host=obs</code>
+                <code className="text-neutral-300 break-all">/dr?u={overlayUserId}</code>
                 <button
                   type="button"
                   className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donor-rankings-inline" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
@@ -16225,7 +16227,7 @@ function AdminPageInner() {
               </div>
               <div className="mb-3 rounded border border-white/10 bg-black/20 p-2 text-xs text-neutral-400 flex flex-wrap items-center gap-2">
                 <span>전체 순위 (세로):</span>
-                <code className="text-neutral-300 break-all">/overlay/donor-rankings/full?u={overlayUserId}&host=obs</code>
+                <code className="text-neutral-300 break-all">/dr/full?u={overlayUserId}</code>
                 <button
                   type="button"
                   className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donor-rankings-full-inline" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
@@ -16560,12 +16562,12 @@ function AdminPageInner() {
                   <div className="min-w-0">
                     <h4 className="text-sm font-semibold text-pink-100">후원 랭킹 · 배경 GIF</h4>
                     <p className="mt-1 max-w-xl text-xs text-pink-100/75">
-                      후원 랭킹(<code className="text-pink-50/90">/overlay/donor-rankings</code>) 전용 배경입니다. 엑셀표 배경과 분리되어 독립 저장됩니다.
+                      후원 랭킹(<code className="text-pink-50/90">/dr</code>) 전용 배경입니다. 엑셀표 배경과 분리되어 독립 저장됩니다.
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-2 shrink-0">
                     <code className="max-w-[min(100%,420px)] break-all text-[11px] text-fuchsia-100/90">
-                      /overlay/donor-rankings?u={overlayUserId}&host=obs
+                      /dr?u={overlayUserId}
                     </code>
                     <div className="flex flex-wrap justify-end gap-2">
                       <button
@@ -17402,7 +17404,7 @@ function AdminPageInner() {
                         (() => {
                           /** OBS용 host=obs 는 미리보기에 넣지 않음 — fixed 레이아웃·빈 화면 유발 */
                           const q = new URLSearchParams({ u: overlayUserId });
-                          return `/overlay/donor-rankings?${q.toString()}`;
+                          return `/dr?${q.toString()}`;
                         })()
                       )}
                       title="후원 순위 오버레이 미리보기"
@@ -17502,7 +17504,7 @@ function AdminPageInner() {
                       src={appendAdminPreviewEmbedToOverlayUrl(
                         (() => {
                           const q = new URLSearchParams({ u: overlayUserId });
-                          return `/overlay/donor-rankings/full?${q.toString()}`;
+                          return `/dr/full?${q.toString()}`;
                         })()
                       )}
                       title="전체 후원 순위 세로 오버레이 미리보기"

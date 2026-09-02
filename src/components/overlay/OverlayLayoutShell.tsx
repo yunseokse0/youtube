@@ -62,12 +62,18 @@ function isSigSalesBroadcastOverlayPath(pathname: string | null): boolean {
 
 function isDonorRankingsOverlayPath(pathname: string | null): boolean {
   if (!pathname) return false;
-  return /\/overlay\/donor-rankings(?:-full)?(?:\/|$)/.test(pathname);
+  return (
+    /\/overlay\/donor-rankings(?:-full)?(?:\/|$)/.test(pathname) ||
+    /^\/dr(?:\/|$)/.test(pathname)
+  );
 }
 
 function isDonorRankingsFullOverlayPath(pathname: string | null): boolean {
   if (!pathname) return false;
-  return /\/overlay\/donor-rankings\/full(?:\/|$)/.test(pathname);
+  return (
+    /\/overlay\/donor-rankings\/full(?:\/|$)/.test(pathname) ||
+    /^\/dr\/full(?:\/|$)/.test(pathname)
+  );
 }
 
 export default function OverlayLayoutShell({ children }: { children: React.ReactNode }) {

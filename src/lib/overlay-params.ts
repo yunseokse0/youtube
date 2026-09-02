@@ -2211,16 +2211,34 @@ export function donorRankingsThemeToSearchParams(theme: DonorRankingsTheme): URL
   return q;
 }
 
-/** OBS용 짧은 후원순위 URL (?u=&host=obs[,&test=true]) */
+/** 짧은 후원순위 경로 `/dr`, `/dr/full` (테마는 서버 저장값) */
+export function isDonorRankingsShortPath(pathname: string | null | undefined): boolean {
+  if (!pathname) return false;
+  const p = pathname.replace(/\/+$/, "") || "/";
+  return p === "/dr" || p.startsWith("/dr/");
+}
+
+export function isDonorRankingsFullOverlayPathname(pathname: string | null | undefined): boolean {
+  if (!pathname) return false;
+  const p = pathname.replace(/\/+$/, "") || "/";
+  return p === "/dr/full" || p.includes("/donor-rankings/full");
+}
+
+/** OBS용 짧은 후원순위 쿼리 (?u=[,&test=1]) — host 생략, `/dr` 경로가 방송용 */
 export function buildDonorRankingsObsSearchParams(opts: {
   userId: string;
   test?: boolean;
 }): URLSearchParams {
   const q = new URLSearchParams();
   q.set("u", opts.userId);
-  q.set("host", "obs");
-  if (opts.test) q.set("test", "true");
+  if (opts.test) q.set("test", "1");
   return q;
+}
+
+/** `https://host/dr?u=계정` / `/dr/full?u=계정` */
+export function buildDonorRankingsObsPath(opts?: { full?: boolean; test?: boolean }): string {
+  const path = opts?.full ? "/dr/full" : "/dr";
+  return path;
 }
 
 export function mergePresetBroadcastVisualParams(
@@ -2376,6 +2394,32 @@ export function sanitizeBroadcastOverlayUrl(url: string): string {
     const parsed = raw.startsWith("http://") || raw.startsWith("https://") ? new URL(raw) : new URL(raw, base);
     parsed.searchParams.delete(OVERLAY_POLL_MS_QUERY);
     stripPreviewOnlyOverlaySearchParams(parsed.searchParams);
+    /** 긴 `/overlay/donor-rankings…` + 테마 쿼리 → 짧은 `/dr` */
+    const path = parsed.pathname.replace(/\/+$/, "") || "/";
+    const isFull =
+      path === "/dr/full" ||
+      path.endsWith("/donor-rankings/full") ||
+      (path.endsWith("/donor-rankings") &&
+        String(parsed.searchParams.get("mode") || "").toLowerCase() === "full");
+    const isDonorRankings =
+      isFull ||
+      path === "/dr" ||
+      path.endsWith("/donor-rankings") ||
+      path.endsWith("/donor-rankings-full");
+    if (isDonorRankings) {
+      const uid =
+        parsed.searchParams.get("u") ||
+        parsed.searchParams.get("user") ||
+        parsed.searchParams.get("n") ||
+        "";
+      const testRaw = (parsed.searchParams.get("test") || "").toLowerCase();
+      const test = testRaw === "1" || testRaw === "true" || testRaw === "yes";
+      parsed.pathname = isFull ? "/dr/full" : "/dr";
+      const keep = new URLSearchParams();
+      if (uid.trim()) keep.set("u", uid.trim());
+      if (test) keep.set("test", "1");
+      parsed.search = keep.toString();
+    }
     if (raw.startsWith("http://") || raw.startsWith("https://")) return parsed.toString();
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch {
@@ -2477,6 +2521,8 @@ export function shouldSkipOverlaySseForObsBroadcast(): boolean {
     if (sp.get("overlayAllowSse") === "1") return false;
     /** 관리자 미리보기는 LS 핫리로드 — OBS SSE 스킵 정책에서 제외 */
     if (sp.get("adminPreviewEmbed") === "1" || sp.get("hubPreview") === "1") return false;
+    /** 짧은 후원순위 `/dr` — host 없이도 OBS 소스로 취급(폴링) */
+    if (isDonorRankingsShortPath(window.location.pathname)) return true;
     /** prism 도 SSE 중복·레이스로 엑셀표만 갱신 누락되기 쉬움 — 폴링만 사용 */
     const host = sp.get("host")?.trim().toLowerCase();
     return host === "obs" || host === "prism" || host === "external";

@@ -17,6 +17,8 @@ import type { DonorsAmountFormat } from "@/types";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
 import {
   getOverlayUserIdFromSearchParams,
+  isDonorRankingsFullOverlayPathname,
+  isDonorRankingsShortPath,
   isOverlayBroadcastHost,
 } from "@/lib/overlay-params";
 import { useDonorRankingsRemoteState } from "@/hooks/useDonorRankingsRemoteState";
@@ -741,10 +743,10 @@ export default function DonorRankingsOverlayPage() {
   const { params: sp, ready: spReady } = useClientOnlySearchParams();
   const pathname = usePathname();
   const userId = getOverlayUserIdFromSearchParams(sp);
-  const hostObs = isOverlayBroadcastHost(sp);
+  const hostObs = isOverlayBroadcastHost(sp) || isDonorRankingsShortPath(pathname);
   const { state, ready, resync } = useDonorRankingsRemoteState(userId);
   const isFullVertical =
-    (pathname || "").includes("/donor-rankings/full") ||
+    isDonorRankingsFullOverlayPathname(pathname) ||
     (sp.get("mode") || "").toLowerCase() === "full";
 
   useEffect(() => {
@@ -767,7 +769,8 @@ export default function DonorRankingsOverlayPage() {
     [state?.donorRankingsOverlayConfig]
   );
 
-  const useTest = (sp.get("test") || "false").toLowerCase() === "true";
+  const testRaw = (sp.get("test") || "").toLowerCase();
+  const useTest = testRaw === "true" || testRaw === "1" || testRaw === "yes";
   const isAdminPreview =
     sp.get("adminPreviewEmbed") === "1" || sp.get("hubPreview") === "1";
   /** 관리자 미리보기는 API 완료 전에도 저장·기본 테마를 즉시 적용 */

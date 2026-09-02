@@ -9,9 +9,14 @@ describe("sanitizeBroadcastOverlayUrl", () => {
     const raw =
       "https://example.com/overlay/donor-rankings?u=finalent&hubPreview=1&adminPreviewEmbed=1&zoomPct=100";
     const clean = sanitizeBroadcastOverlayUrl(raw);
-    expect(clean).toContain("u=finalent");
-    expect(clean).not.toContain("hubPreview");
-    expect(clean).not.toContain("adminPreviewEmbed");
+    expect(clean).toBe("https://example.com/dr?u=finalent");
+  });
+
+  it("shortens full donor rankings path", () => {
+    const raw =
+      "https://example.com/overlay/donor-rankings/full?u=din&host=obs&titleColor=%23ff0&test=true";
+    const clean = sanitizeBroadcastOverlayUrl(raw);
+    expect(clean).toBe("https://example.com/dr/full?u=din&test=1");
   });
 });
 
