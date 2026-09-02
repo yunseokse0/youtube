@@ -101,6 +101,7 @@ function isBulkMysqlKvKey(key: string): boolean {
   return (
     k.includes("excel-broadcast-daily-log-v1:") ||
     k.includes("excel-broadcast-settlement-records-v1:") ||
+    k.includes("excel-broadcast-settlement-records-index-v1:") ||
     k.includes("excel-broadcast-donation-roster-backup-v1:")
   );
 }

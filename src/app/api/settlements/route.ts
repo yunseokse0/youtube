@@ -7,7 +7,6 @@ import type { SettlementRecord } from "@/types";
 import { getUserIdFromRequest, resolveWriteUserId, writeUserIdErrorResponse } from "../_shared/user-id";
 import {
   upstashGetJson,
-  upstashSetJsonWithSetPath,
   isPersistentKvConfigured,
 } from "../_shared/upstash";
 import {
@@ -31,10 +30,6 @@ function recordsKey(userId: string | null): string {
 
 async function upstashGet<T = unknown>(key: string): Promise<T | null> {
   return upstashGetJson<T>(key);
-}
-
-async function upstashSet(key: string, value: unknown) {
-  return upstashSetJsonWithSetPath(key, value);
 }
 
 export async function GET(req: Request) {
@@ -90,39 +85,69 @@ export async function POST(req: Request) {
     const body = await req.json();
     const payload = Array.isArray(body) ? (body as SettlementRecord[]) : [];
     const replace = new URL(req.url).searchParams.get("mode") === "replace";
-    const existingRaw = await upstashGet<SettlementRecord[]>(recordsKey(userId));
-    const existing = Array.isArray(existingRaw) ? existingRaw : [];
-    let toSave: SettlementRecord[];
-    if (payload.length === 0) {
-      toSave = existing.length > 0 ? existing : [];
-    } else if (replace) {
-      toSave = normalizeSettlementRecords(payload);
-    } else {
-      toSave = mergeSettlementRecords(existing, normalizeSettlementRecords(payload));
-    }
-    if (payload.length === 0 && existing.length === 0) {
-      toSave = Array.isArray(memoryRecords[userId])
+
+    if (!isPersistentKvConfigured()) {
+      const existing = Array.isArray(memoryRecords[userId])
         ? (memoryRecords[userId] as SettlementRecord[])
         : [];
-    }
-    let ok = await upstashSet(recordsKey(userId), toSave);
-    if (!ok) {
-      if (isPersistentKvConfigured()) {
-        return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
-          status: 503,
-          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-        });
-      }
+      const toSave =
+        payload.length === 0
+          ? existing
+          : replace
+            ? normalizeSettlementRecords(payload)
+            : mergeSettlementRecords(existing, normalizeSettlementRecords(payload));
       memoryRecords[userId] = toSave;
-      ok = true;
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
+        },
+      });
     }
-    if (ok) invalidateSettlementRecordsCache(userId);
-    return new Response(JSON.stringify({ ok }), {
+
+    const {
+      saveSettlementRecordsMonolith,
+      saveSettlementRecordsSharded,
+    } = await import("@/lib/settlement-server-save");
+
+    if (payload.length === 0 && !replace) {
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    }
+
+    const sharded = await saveSettlementRecordsSharded(userId, payload, { replace });
+    if (sharded.ok) {
+      return new Response(JSON.stringify({ ok: true, sharded: true, days: sharded.dateKeys.length }), {
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
+        },
+      });
+    }
+
+    /** monolith fallback — 마이그레이션 전 */
+    const existingRaw = await upstashGet<SettlementRecord[]>(recordsKey(userId));
+    const existing = Array.isArray(existingRaw) ? existingRaw : [];
+    const toSave =
+      payload.length === 0
+        ? existing
+        : replace
+          ? normalizeSettlementRecords(payload)
+          : mergeSettlementRecords(existing, normalizeSettlementRecords(payload));
+    const ok = await saveSettlementRecordsMonolith(userId, toSave);
+    if (!ok) {
+      return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    }
+    invalidateSettlementRecordsCache(userId);
+    return new Response(JSON.stringify({ ok: true, sharded: false }), {
       headers: {
         "Content-Type": "application/json",
         "Cache-Control": "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
       },
-      status: ok ? 200 : 500,
     });
   } catch {
     return new Response(JSON.stringify({ ok: false }), {
