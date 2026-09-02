@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MySQL ETIMEDOUT 근본 패치 적용 — Unix socket + circuit breaker 빌드
+# MySQL-only EC2 — socket + 단일 Connection 직렬 큐 패치 배포
 #
 #   cd ~/youtube && git pull && bash deploy/ec2-apply-mysql-root-fix.sh
 #
@@ -44,7 +44,7 @@ sleep 3
 
 git pull --ff-only
 
-# Upstash + MySQL 동시 설정 시 MySQL socket·Redis 우선 강제
+# MySQL-only — socket 경로·DATABASE_URL 사용
 ENV_FILE="$ROOT/.env"
 if [[ -f "$ENV_FILE" ]]; then
   grep -q '^MYSQL_USE_SOCKET=' "$ENV_FILE" || echo 'MYSQL_USE_SOCKET=1' >> "$ENV_FILE"
@@ -58,7 +58,7 @@ echo "== 검증 =="
 sleep 12
 HEALTH="$(curl -sf --max-time 12 "http://127.0.0.1:3000/api/health?deep=1" 2>/dev/null || echo '{}')"
 echo "$HEALTH"
-echo "$HEALTH" | grep -q '"redisConfigured":true' && echo "Redis: configured" || echo "WARN: Redis 미설정 — MySQL-only (직렬 connection 모드)"
+echo "$HEALTH" | grep -q '"redisConfigured":true' && echo "Redis: configured (선택)" || echo "storage: MySQL-only (DATABASE_URL) — 정상"
 grep -q "connection open (socket)" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev/null && echo "log: mysql socket OK" || \
   grep -q "pool created (socket)" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev/null && echo "log: mysql socket OK (legacy log)" || true
 ERRS="$(grep -c ETIMEDOUT /home/ubuntu/.pm2/logs/youtube-error.log 2>/dev/null || echo 0)"
@@ -66,5 +66,5 @@ echo "error log ETIMEDOUT count: $ERRS"
 pm2 logs "$PM2_APP" --lines 8 --nostream 2>/dev/null || true
 
 echo "=========================================="
-echo " 완료 — /admin 탭 1개만 · Ctrl+Shift+R"
+echo " 완료 — Ctrl+Shift+R 로 admin 새로고침"
 echo "=========================================="
