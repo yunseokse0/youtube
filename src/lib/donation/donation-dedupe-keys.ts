@@ -15,6 +15,15 @@ export const DONATION_IDENTICAL_MESSAGE_NEAR_DUP_MS = 15_000;
 /** toon-{realId}-{unique} · reliable ext — ingest 경로마다 at 이 어긋날 수 있음 */
 export const SAME_TOONATION_EVENT_NEAR_DUP_MS = 15_000;
 
+/**
+ * toona(DIN) bank:sms ingest ↔ youtube 투네 WS 이중 반영 창.
+ * 경로 지연이 수십 초~2분인 경우가 많아 3초 창으로는 막히지 않음.
+ */
+export const CROSS_SOURCE_NEAR_DUP_MS = 180_000;
+
+/** 동일 bank:sms 재전송(푸시 연타) — id만 다른 동일 후원 */
+export const BANK_RESEND_NEAR_DUP_MS = 60_000;
+
 /** 후원자·금액·대상·메시지 기준 내용 키 (건별 unique id 와 무관) */
 export function donationContentDedupeFingerprint(event: {
   donorName?: string;

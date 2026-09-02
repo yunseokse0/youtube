@@ -17,7 +17,7 @@ import {
   extractReliableToonationExtFromDonorId,
   isReliableToonationExternalId,
 } from "./toonation/parse-event";
-import { SAME_TOONATION_EVENT_NEAR_DUP_MS, DONATION_IDENTICAL_MESSAGE_NEAR_DUP_MS } from "./donation-dedupe-keys";
+import { SAME_TOONATION_EVENT_NEAR_DUP_MS, DONATION_IDENTICAL_MESSAGE_NEAR_DUP_MS, CROSS_SOURCE_NEAR_DUP_MS, BANK_RESEND_NEAR_DUP_MS } from "./donation-dedupe-keys";
 import { mapToMember } from "./mapper";
 import type { DonationEvent, DonorAlias } from "./types";
 
@@ -562,6 +562,70 @@ function resolveNearDupWindowMs(
   return DONATION_NEAR_DUP_WINDOW_MS;
 }
 
+function donorIdSourceKind(id: string): "bank" | "toonation" | "other" {
+  const s = String(id || "").trim().toLowerCase();
+  if (s.startsWith("bank:")) return "bank";
+  if (s.startsWith("toonation:") || s.startsWith("toona:")) return "toonation";
+  return "other";
+}
+
+/** DIN bank ingest ↔ 투네 WS (또는 bank 재전송) */
+export function isCrossDonationSourcePair(idA?: string, idB?: string): boolean {
+  const a = donorIdSourceKind(String(idA || ""));
+  const b = donorIdSourceKind(String(idB || ""));
+  if (a === "bank" && b === "toonation") return true;
+  if (a === "toonation" && b === "bank") return true;
+  return false;
+}
+
+function normalizeDonorNameKey(raw?: string): string {
+  return String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
+}
+
+/**
+ * 서로 다른 수집 경로·재전송으로 같은 후원이 두 번 들어오는 경우.
+ * 이름+금액(+근접 시각). 메시지는 경로마다 다를 수 있어 필수로 두지 않음.
+ */
+export function shouldTreatAsCrossSourceDuplicate(
+  existing: {
+    id?: string;
+    name?: string;
+    amount?: number;
+    at?: number | string;
+  },
+  incoming: {
+    id?: string;
+    donorName?: string;
+    name?: string;
+    amount?: number;
+    at?: string | number;
+  }
+): boolean {
+  const existingId = String(existing.id || "");
+  const incomingId = String(incoming.id || "");
+  const cross = isCrossDonationSourcePair(existingId, incomingId);
+  const bothBank =
+    donorIdSourceKind(existingId) === "bank" && donorIdSourceKind(incomingId) === "bank";
+  if (!cross && !bothBank) return false;
+
+  const amountA = Math.max(0, Math.round(Number(existing.amount) || 0));
+  const amountB = Math.max(0, Math.round(Number(incoming.amount) || 0));
+  if (amountA <= 0 || amountA !== amountB) return false;
+
+  const nameA = normalizeDonorNameKey(existing.name);
+  const nameB = normalizeDonorNameKey(incoming.donorName ?? incoming.name);
+  if (!nameA || !nameB || nameA !== nameB) return false;
+
+  const atA = donorAtEpochMs(existing);
+  const atB = donorAtEpochMs(incoming);
+  if (!atA || !atB) return false;
+  const windowMs = cross ? CROSS_SOURCE_NEAR_DUP_MS : BANK_RESEND_NEAR_DUP_MS;
+  return Math.abs(atA - atB) <= windowMs;
+}
+
 /**
  * 서버 자동 반영 + 관리자 큐·union 등 이중 경로 — 동일 내용·근접 시각이면 1건.
  * 투네 실 id 가 서로 다른 연속 후원(1초 간격 등)은 유지.
@@ -586,6 +650,7 @@ export function shouldTreatAsDuplicateDonationContent(
     at?: string | number;
   }
 ): boolean {
+  if (shouldTreatAsCrossSourceDuplicate(existing, incoming)) return true;
   if (isSameToonationEventNearDuplicate(existing, incoming)) return true;
   const windowMs = resolveNearDupWindowMs(existing, incoming);
   if (!isNearContentDuplicate(existing, incoming, windowMs)) return false;
