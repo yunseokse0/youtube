@@ -4,15 +4,43 @@
  * 서버 전용 — 클라이언트 번들 금지
  */
 import "server-only";
+import fs from "node:fs";
 import mysql, { type Pool, type RowDataPacket } from "mysql2/promise";
 
 let pool: Pool | null = null;
 let tableReady: Promise<void> | null = null;
 let lastMysqlError: string | null = null;
 let poolResetPromise: Promise<void> | null = null;
+let poolTransport: "socket" | "tcp" | null = null;
 
 /** hang 시 Node 전체 HTTP 무응답 방지 — 초과 시 connection destroy */
 const MYSQL_QUERY_TIMEOUT_MS = 10_000;
+/** 연속 실패 시 MySQL 접속 중단 — ETIMEDOUT 폭주·event loop hang 방지 */
+const CIRCUIT_FAIL_THRESHOLD = 3;
+const CIRCUIT_COOLDOWN_MS = 30_000;
+let consecutiveFailures = 0;
+let circuitOpenUntil = 0;
+
+function isMysqlCircuitOpen(): boolean {
+  return Date.now() < circuitOpenUntil;
+}
+
+function noteMysqlSuccess(): void {
+  consecutiveFailures = 0;
+  circuitOpenUntil = 0;
+}
+
+function noteMysqlFailure(err: unknown): void {
+  if (!isTransientMysqlError(err)) return;
+  consecutiveFailures += 1;
+  if (consecutiveFailures >= CIRCUIT_FAIL_THRESHOLD) {
+    circuitOpenUntil = Date.now() + CIRCUIT_COOLDOWN_MS;
+    console.warn(
+      `[mysql-kv] circuit open ${CIRCUIT_COOLDOWN_MS}ms (${consecutiveFailures} failures, transport=${poolTransport ?? "?"})`
+    );
+    void resetMysqlKvPool();
+  }
+}
 
 function isTransientMysqlError(err: unknown): boolean {
   const e = err as { code?: string; errno?: number; message?: string };
@@ -56,21 +84,19 @@ function attachPoolGuards(_p: Pool): void {
 }
 
 async function withMysqlPool<T>(fn: (p: Pool) => Promise<T>): Promise<T> {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const p = getPool();
-    if (!p) throw new Error("MySQL pool unavailable");
-    try {
-      return await fn(p);
-    } catch (err) {
-      if (attempt === 0 && isTransientMysqlError(err)) {
-        console.warn("[mysql-kv] transient error — retry after pool reset", err);
-        await resetMysqlKvPool();
-        continue;
-      }
-      throw err;
-    }
+  if (isMysqlCircuitOpen()) {
+    throw new Error("MySQL circuit open (cooldown)");
   }
-  throw new Error("MySQL pool unavailable after retry");
+  const p = getPool();
+  if (!p) throw new Error("MySQL pool unavailable");
+  try {
+    const out = await fn(p);
+    noteMysqlSuccess();
+    return out;
+  } catch (err) {
+    noteMysqlFailure(err);
+    throw err;
+  }
 }
 
 async function poolExecuteWithTimeout(
@@ -120,6 +146,14 @@ export function isMysqlKvConfigured(): boolean {
 /** EC2 localhost — TCP(127.0.0.1) ETIMEDOUT 회피, mysql CLI 소켓과 동일 경로 */
 const MYSQL_SOCKET_PATH = "/var/run/mysqld/mysqld.sock";
 
+function localMysqlSocketAvailable(): boolean {
+  try {
+    return fs.existsSync(MYSQL_SOCKET_PATH);
+  } catch {
+    return false;
+  }
+}
+
 /** mysql://user:pass@host:port/db — 비밀번호 특수문자 안전하게 파싱 */
 function mysqlPoolOptionsFromUrl(raw: string): mysql.PoolOptions | null {
   try {
@@ -133,17 +167,22 @@ function mysqlPoolOptionsFromUrl(raw: string): mysql.PoolOptions | null {
       password: decodeURIComponent(u.password || ""),
       database,
       waitForConnections: true,
-      connectionLimit: 5,
+      connectionLimit: 4,
       /** 대기열이 꽉 차면 즉시 오류 — /api/state GET 무한 대기 방지 */
-      queueLimit: 8,
-      connectTimeout: 3_000,
+      queueLimit: 4,
+      connectTimeout: 2_000,
       enableKeepAlive: true,
       keepAliveInitialDelay: 10_000,
-      idleTimeout: 20_000,
+      idleTimeout: 15_000,
     };
-    if (hostname === "127.0.0.1" || hostname === "localhost") {
+    const useSocket =
+      localMysqlSocketAvailable() &&
+      (hostname === "127.0.0.1" || hostname === "localhost" || process.env.MYSQL_USE_SOCKET === "1");
+    if (useSocket) {
+      poolTransport = "socket";
       return { ...shared, socketPath: MYSQL_SOCKET_PATH };
     }
+    poolTransport = "tcp";
     return {
       ...shared,
       host: u.hostname || "127.0.0.1",
@@ -162,6 +201,9 @@ function getPool(): Pool | null {
     if (!opts) return null;
     pool = mysql.createPool(opts);
     attachPoolGuards(pool);
+    if (poolTransport) {
+      console.info(`[mysql-kv] pool created (${poolTransport})`);
+    }
   } catch {
     return null;
   }
@@ -190,6 +232,10 @@ async function ensureTable(p: Pool): Promise<void> {
 }
 
 export async function mysqlKvGet(key: string): Promise<string | null> {
+  if (isMysqlCircuitOpen()) {
+    lastMysqlError = "MySQL circuit open (cooldown)";
+    return null;
+  }
   if (!getPool()) return null;
   try {
     return await withMysqlPool(async (p) => {
@@ -218,6 +264,10 @@ export async function mysqlKvGet(key: string): Promise<string | null> {
 }
 
 export async function mysqlKvSet(key: string, value: string, ttlSec?: number): Promise<boolean> {
+  if (isMysqlCircuitOpen()) {
+    lastMysqlError = "MySQL circuit open (cooldown)";
+    return false;
+  }
   if (!getPool()) {
     lastMysqlError = "MySQL pool unavailable (DATABASE_URL parse/config)";
     return false;
