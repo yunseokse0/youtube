@@ -2,15 +2,18 @@
  * DATABASE_URL(mysql://…) 기반 키-값 JSON 저장 — Upstash Redis 대체
  * 테이블: app_kv (k PK, v LONGTEXT, expires_at ms, updated_at ms)
  * 서버 전용 — 클라이언트 번들 금지
+ *
+ * EC2 MySQL-only: Pool(동시 N연결) 대신 단일 Connection + 직렬 큐 — ETIMEDOUT·연결 폭주 방지
  */
 import "server-only";
-import mysql, { type Pool, type RowDataPacket } from "mysql2/promise";
+import mysql, { type Connection, type RowDataPacket } from "mysql2/promise";
 
-let pool: Pool | null = null;
+let conn: Connection | null = null;
+let connOpenPromise: Promise<Connection> | null = null;
 let tableReady: Promise<void> | null = null;
 let lastMysqlError: string | null = null;
-let poolResetPromise: Promise<void> | null = null;
-let poolTransport: "socket" | "tcp" | null = null;
+let connResetPromise: Promise<void> | null = null;
+let connTransport: "socket" | "tcp" | null = null;
 
 /** hang 시 Node 전체 HTTP 무응답 방지 — 초과 시 connection destroy */
 const MYSQL_QUERY_TIMEOUT_MS = 10_000;
@@ -22,6 +25,18 @@ let circuitOpenUntil = 0;
 
 /** 동시 GET(멀티탭·멀티PC) — 동일 키 1회 MySQL 쿼리로 합침 */
 const getInflight = new Map<string, Promise<string | null>>();
+
+/** 프로세스당 MySQL 작업 1개씩 — Pool connectionLimit 폭주 제거 */
+let mysqlOpChain: Promise<unknown> = Promise.resolve();
+
+function runSerializedMysql<T>(fn: () => Promise<T>): Promise<T> {
+  const next = mysqlOpChain.then(() => fn());
+  mysqlOpChain = next.then(
+    () => undefined,
+    () => undefined
+  );
+  return next;
+}
 
 function isMysqlCircuitOpen(): boolean {
   return Date.now() < circuitOpenUntil;
@@ -38,9 +53,9 @@ function noteMysqlFailure(err: unknown): void {
   if (consecutiveFailures >= CIRCUIT_FAIL_THRESHOLD) {
     circuitOpenUntil = Date.now() + CIRCUIT_COOLDOWN_MS;
     console.warn(
-      `[mysql-kv] circuit open ${CIRCUIT_COOLDOWN_MS}ms (${consecutiveFailures} failures, transport=${poolTransport ?? "?"})`
+      `[mysql-kv] circuit open ${CIRCUIT_COOLDOWN_MS}ms (${consecutiveFailures} failures, transport=${connTransport ?? "?"})`
     );
-    void resetMysqlKvPool();
+    void resetMysqlConnection();
   }
 }
 
@@ -63,57 +78,58 @@ function isTransientMysqlError(err: unknown): boolean {
   );
 }
 
-async function resetMysqlKvPool(): Promise<void> {
-  if (poolResetPromise) {
-    await poolResetPromise;
+async function resetMysqlConnection(): Promise<void> {
+  if (connResetPromise) {
+    await connResetPromise;
     return;
   }
-  poolResetPromise = (async () => {
-    const old = pool;
-    pool = null;
+  connResetPromise = (async () => {
+    const old = conn;
+    conn = null;
+    connOpenPromise = null;
     tableReady = null;
     if (old) {
       await old.end().catch(() => {});
     }
   })().finally(() => {
-    poolResetPromise = null;
+    connResetPromise = null;
   });
-  await poolResetPromise;
+  await connResetPromise;
 }
 
-function attachPoolGuards(_p: Pool): void {
-  /* connection error 시 즉시 pool.end() 하면 진행 중 쿼리가 "Pool is closed" 로 연쇄 실패 — withMysqlPool 재시도만 사용 */
-}
-
-async function withMysqlPool<T>(fn: (p: Pool) => Promise<T>): Promise<T> {
+async function withMysqlConn<T>(fn: (c: Connection) => Promise<T>): Promise<T> {
   if (isMysqlCircuitOpen()) {
     throw new Error("MySQL circuit open (cooldown)");
   }
-  const p = getPool();
-  if (!p) throw new Error("MySQL pool unavailable");
+  const c = await openConnection();
+  if (!c) throw new Error("MySQL connection unavailable");
   try {
-    const out = await fn(p);
+    const out = await fn(c);
     noteMysqlSuccess();
     return out;
   } catch (err) {
     noteMysqlFailure(err);
+    if (isTransientMysqlError(err)) {
+      await resetMysqlConnection();
+    }
     throw err;
   }
 }
 
-async function poolExecuteWithTimeout(
-  p: Pool,
+async function connExecuteWithTimeout(
+  c: Connection,
   sql: string,
   params?: unknown[]
 ): Promise<RowDataPacket[]> {
-  const conn = await p.getConnection();
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
-    conn.destroy();
+    c.destroy();
+    conn = null;
+    connOpenPromise = null;
   }, MYSQL_QUERY_TIMEOUT_MS);
   try {
-    const [rows] = await conn.execute(sql, (params ?? []) as (string | number | null)[]);
+    const [rows] = await c.execute(sql, (params ?? []) as (string | number | null)[]);
     return rows as RowDataPacket[];
   } catch (err) {
     if (timedOut) {
@@ -122,9 +138,6 @@ async function poolExecuteWithTimeout(
     throw err;
   } finally {
     clearTimeout(timer);
-    if (!timedOut) {
-      conn.release();
-    }
   }
 }
 
@@ -146,7 +159,10 @@ export function isMysqlKvConfigured(): boolean {
 }
 
 /** EC2 localhost — TCP(127.0.0.1) ETIMEDOUT 회피, mysql CLI 소켓과 동일 경로 */
-const MYSQL_SOCKET_PATH = "/var/run/mysqld/mysqld.sock";
+const MYSQL_SOCKET_CANDIDATES = [
+  "/var/run/mysqld/mysqld.sock",
+  "/run/mysqld/mysqld.sock",
+] as const;
 
 /** Linux EC2 localhost — socket 우선 (TCP ETIMEDOUT 회피). Windows/mac 로컬 dev는 TCP */
 function shouldUseMysqlSocket(hostname: string): boolean {
@@ -157,34 +173,32 @@ function shouldUseMysqlSocket(hostname: string): boolean {
   return process.platform === "linux";
 }
 
+function resolveSocketPath(): string {
+  const fromEnv = String(process.env.MYSQL_SOCKET_PATH || "").trim();
+  if (fromEnv) return fromEnv;
+  return MYSQL_SOCKET_CANDIDATES[0]!;
+}
+
 /** mysql://user:pass@host:port/db — 비밀번호 특수문자 안전하게 파싱 */
-function mysqlPoolOptionsFromUrl(raw: string): mysql.PoolOptions | null {
+function mysqlConnOptionsFromUrl(raw: string): mysql.ConnectionOptions | null {
   try {
     const u = new URL(raw);
     if (!/^mysql:$/i.test(u.protocol)) return null;
     const database = decodeURIComponent(u.pathname.replace(/^\//, "").split("/")[0] || "");
     if (!database) return null;
     const hostname = (u.hostname || "127.0.0.1").toLowerCase();
-    const shared: mysql.PoolOptions = {
+    const shared: mysql.ConnectionOptions = {
       user: decodeURIComponent(u.username || ""),
       password: decodeURIComponent(u.password || ""),
       database,
-      waitForConnections: true,
-      /** 멀티탭·멀티PC — EC2 단일 Node 기준 (max_connections 40 내) */
-      connectionLimit: 10,
-      /** 무한 대기 금지 — queueLimit 0 은 hang 유발 */
-      queueLimit: 24,
-      connectTimeout: 2_000,
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 10_000,
-      idleTimeout: 15_000,
+      connectTimeout: 5_000,
     };
     const useSocket = shouldUseMysqlSocket(hostname);
     if (useSocket) {
-      poolTransport = "socket";
-      return { ...shared, socketPath: MYSQL_SOCKET_PATH };
+      connTransport = "socket";
+      return { ...shared, socketPath: resolveSocketPath() };
     }
-    poolTransport = "tcp";
+    connTransport = "tcp";
     return {
       ...shared,
       host: u.hostname || "127.0.0.1",
@@ -195,41 +209,53 @@ function mysqlPoolOptionsFromUrl(raw: string): mysql.PoolOptions | null {
   }
 }
 
-function getPool(): Pool | null {
+async function openConnection(): Promise<Connection | null> {
   if (!isMysqlKvConfigured()) return null;
-  if (pool) return pool;
-  try {
-    const opts = mysqlPoolOptionsFromUrl(getMysqlDatabaseUrl());
-    if (!opts) return null;
-    pool = mysql.createPool(opts);
-    attachPoolGuards(pool);
-    if (poolTransport) {
-      console.info(`[mysql-kv] pool created (${poolTransport})`);
+  if (conn) return conn;
+  if (connOpenPromise) return connOpenPromise;
+  connOpenPromise = (async () => {
+    const opts = mysqlConnOptionsFromUrl(getMysqlDatabaseUrl());
+    if (!opts) throw new Error("MySQL config parse failed");
+    const c = await mysql.createConnection(opts);
+    c.on("error", (err) => {
+      console.warn("[mysql-kv] connection error", err);
+      conn = null;
+      connOpenPromise = null;
+      tableReady = null;
+    });
+    conn = c;
+    if (connTransport) {
+      console.info(`[mysql-kv] connection open (${connTransport})`);
     }
-  } catch {
-    return null;
-  }
-  return pool;
+    return c;
+  })().catch((err) => {
+    connOpenPromise = null;
+    throw err;
+  });
+  return connOpenPromise;
 }
 
-async function ensureTable(p: Pool): Promise<void> {
-  if (!tableReady) {
-    tableReady = (async () => {
-      await poolExecuteWithTimeout(
-        p,
-        `CREATE TABLE IF NOT EXISTS app_kv (
+async function ensureTable(c: Connection): Promise<void> {
+  if (tableReady) {
+    await tableReady;
+    return;
+  }
+  const init = connExecuteWithTimeout(
+    c,
+    `CREATE TABLE IF NOT EXISTS app_kv (
           \`k\` VARCHAR(512) NOT NULL,
           \`v\` LONGTEXT NOT NULL,
           \`expires_at\` BIGINT NULL,
           \`updated_at\` BIGINT NOT NULL,
           PRIMARY KEY (\`k\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
-      );
-    })().catch((err) => {
+  )
+    .then(() => undefined)
+    .catch((err) => {
       tableReady = null;
       throw err;
     });
-  }
+  tableReady = init;
   await tableReady;
 }
 
@@ -238,26 +264,27 @@ async function mysqlKvGetOnce(key: string): Promise<string | null> {
     lastMysqlError = "MySQL circuit open (cooldown)";
     return null;
   }
-  if (!getPool()) return null;
   try {
-    return await withMysqlPool(async (p) => {
-      await ensureTable(p);
-      const now = Date.now();
-      const rows = await poolExecuteWithTimeout(
-        p,
-        `SELECT \`v\`, \`expires_at\` FROM app_kv WHERE \`k\` = ? LIMIT 1`,
-        [key]
-      );
-      const row = rows[0];
-      lastMysqlError = null;
-      if (!row) return null;
-      const exp = row.expires_at == null ? null : Number(row.expires_at);
-      if (exp != null && Number.isFinite(exp) && exp > 0 && exp < now) {
-        await p.execute(`DELETE FROM app_kv WHERE \`k\` = ?`, [key]).catch(() => {});
-        return null;
-      }
-      return typeof row.v === "string" ? row.v : String(row.v ?? "");
-    });
+    return await runSerializedMysql(async () =>
+      withMysqlConn(async (c) => {
+        await ensureTable(c);
+        const now = Date.now();
+        const rows = await connExecuteWithTimeout(
+          c,
+          `SELECT \`v\`, \`expires_at\` FROM app_kv WHERE \`k\` = ? LIMIT 1`,
+          [key]
+        );
+        const row = rows[0];
+        lastMysqlError = null;
+        if (!row) return null;
+        const exp = row.expires_at == null ? null : Number(row.expires_at);
+        if (exp != null && Number.isFinite(exp) && exp > 0 && exp < now) {
+          await c.execute(`DELETE FROM app_kv WHERE \`k\` = ?`, [key]).catch(() => {});
+          return null;
+        }
+        return typeof row.v === "string" ? row.v : String(row.v ?? "");
+      })
+    );
   } catch (err) {
     setLastMysqlError(err);
     console.error("[mysql-kv] get failed", err);
@@ -280,24 +307,22 @@ export async function mysqlKvSet(key: string, value: string, ttlSec?: number): P
     lastMysqlError = "MySQL circuit open (cooldown)";
     return false;
   }
-  if (!getPool()) {
-    lastMysqlError = "MySQL pool unavailable (DATABASE_URL parse/config)";
-    return false;
-  }
   try {
-    await withMysqlPool(async (p) => {
-      await ensureTable(p);
-      const now = Date.now();
-      const expires =
-        typeof ttlSec === "number" && ttlSec > 0 ? now + Math.floor(ttlSec) * 1000 : null;
-      await poolExecuteWithTimeout(
-        p,
-        `INSERT INTO app_kv (\`k\`, \`v\`, \`expires_at\`, \`updated_at\`)
+    await runSerializedMysql(async () =>
+      withMysqlConn(async (c) => {
+        await ensureTable(c);
+        const now = Date.now();
+        const expires =
+          typeof ttlSec === "number" && ttlSec > 0 ? now + Math.floor(ttlSec) * 1000 : null;
+        await connExecuteWithTimeout(
+          c,
+          `INSERT INTO app_kv (\`k\`, \`v\`, \`expires_at\`, \`updated_at\`)
        VALUES (?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE \`v\` = VALUES(\`v\`), \`expires_at\` = VALUES(\`expires_at\`), \`updated_at\` = VALUES(\`updated_at\`)`,
-        [key, value, expires, now]
-      );
-    });
+          [key, value, expires, now]
+        );
+      })
+    );
     lastMysqlError = null;
     return true;
   } catch (err) {
@@ -309,40 +334,42 @@ export async function mysqlKvSet(key: string, value: string, ttlSec?: number): P
 
 /** Redis SET NX EX 대응 — true=선점, false=이미 있음, null=스토어 불가 */
 export async function mysqlKvSetNxEx(key: string, ttlSec: number): Promise<boolean | null> {
-  if (!getPool()) return null;
   try {
-    return await withMysqlPool(async (p) => {
-      await ensureTable(p);
-      const now = Date.now();
-      await p.execute(
-        `DELETE FROM app_kv WHERE \`k\` = ? AND \`expires_at\` IS NOT NULL AND \`expires_at\` < ?`,
-        [key, now]
-      );
-      const expires = now + Math.max(1, Math.floor(ttlSec)) * 1000;
-      try {
-        await p.execute(
-          `INSERT INTO app_kv (\`k\`, \`v\`, \`expires_at\`, \`updated_at\`) VALUES (?, '1', ?, ?)`,
-          [key, expires, now]
+    return await runSerializedMysql(async () =>
+      withMysqlConn(async (c) => {
+        await ensureTable(c);
+        const now = Date.now();
+        await c.execute(
+          `DELETE FROM app_kv WHERE \`k\` = ? AND \`expires_at\` IS NOT NULL AND \`expires_at\` < ?`,
+          [key, now]
         );
-        return true;
-      } catch (err: unknown) {
-        const code = (err as { code?: string })?.code;
-        if (code === "ER_DUP_ENTRY") return false;
-        throw err;
-      }
-    });
+        const expires = now + Math.max(1, Math.floor(ttlSec)) * 1000;
+        try {
+          await c.execute(
+            `INSERT INTO app_kv (\`k\`, \`v\`, \`expires_at\`, \`updated_at\`) VALUES (?, '1', ?, ?)`,
+            [key, expires, now]
+          );
+          return true;
+        } catch (err: unknown) {
+          const code = (err as { code?: string })?.code;
+          if (code === "ER_DUP_ENTRY") return false;
+          throw err;
+        }
+      })
+    );
   } catch {
     return null;
   }
 }
 
 export async function mysqlKvDel(key: string): Promise<void> {
-  if (!getPool()) return;
   try {
-    await withMysqlPool(async (p) => {
-      await ensureTable(p);
-      await p.execute(`DELETE FROM app_kv WHERE \`k\` = ?`, [key]);
-    });
+    await runSerializedMysql(async () =>
+      withMysqlConn(async (c) => {
+        await ensureTable(c);
+        await c.execute(`DELETE FROM app_kv WHERE \`k\` = ?`, [key]);
+      })
+    );
   } catch {
     /* ignore */
   }
@@ -368,18 +395,19 @@ export async function mysqlKvSetJson(key: string, value: unknown): Promise<boole
 
 /** 테스트·프로세스 종료용 */
 export async function mysqlKvClosePool(): Promise<void> {
-  await resetMysqlKvPool();
+  await resetMysqlConnection();
 }
 
-/** health?deep=1 — 실제 SELECT 1 (pool 등록만으로 mysqlOk true 금지) */
+/** health?deep=1 — 실제 SELECT 1 */
 export async function mysqlKvPing(): Promise<boolean> {
   if (!isMysqlKvConfigured() || isMysqlCircuitOpen()) return false;
-  if (!getPool()) return false;
   try {
-    await withMysqlPool(async (p) => {
-      await ensureTable(p);
-      await poolExecuteWithTimeout(p, "SELECT 1 AS ok");
-    });
+    await runSerializedMysql(async () =>
+      withMysqlConn(async (c) => {
+        await ensureTable(c);
+        await connExecuteWithTimeout(c, "SELECT 1 AS ok");
+      })
+    );
     lastMysqlError = null;
     return true;
   } catch (err) {

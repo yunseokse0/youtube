@@ -56,9 +56,13 @@ SKIP_GIT_PULL=1 bash "$ROOT/deploy/deploy-on-ec2.sh"
 
 echo "== 검증 =="
 sleep 12
-curl -sf --max-time 8 "http://127.0.0.1:3000/api/health" && echo ""
-curl -sf --max-time 15 "http://127.0.0.1:3000/api/health?deep=1" && echo ""
-grep -q "pool created (socket)" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev/null && echo "log: pool socket OK" || true
+HEALTH="$(curl -sf --max-time 12 "http://127.0.0.1:3000/api/health?deep=1" 2>/dev/null || echo '{}')"
+echo "$HEALTH"
+echo "$HEALTH" | grep -q '"redisConfigured":true' && echo "Redis: configured" || echo "WARN: Redis 미설정 — MySQL-only (직렬 connection 모드)"
+grep -q "connection open (socket)" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev/null && echo "log: mysql socket OK" || \
+  grep -q "pool created (socket)" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev/null && echo "log: mysql socket OK (legacy log)" || true
+ERRS="$(grep -c ETIMEDOUT /home/ubuntu/.pm2/logs/youtube-error.log 2>/dev/null || echo 0)"
+echo "error log ETIMEDOUT count: $ERRS"
 pm2 logs "$PM2_APP" --lines 8 --nostream 2>/dev/null || true
 
 echo "=========================================="
