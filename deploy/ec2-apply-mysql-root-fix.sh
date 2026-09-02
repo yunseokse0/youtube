@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MySQL-only EC2 — socket + Pool(3) 패치 배포
+# MySQL-only EC2 — socket + Pool(2) 패치 배포
 #
 #   cd ~/youtube && git pull && bash deploy/ec2-apply-mysql-root-fix.sh
 #
@@ -44,10 +44,14 @@ sleep 3
 
 git pull --ff-only
 
-# MySQL-only — socket 경로·DATABASE_URL 사용
+# MySQL-only — socket 강제 (TCP 127.0.0.1 ETIMEDOUT 방지)
 ENV_FILE="$ROOT/.env"
 if [[ -f "$ENV_FILE" ]]; then
-  grep -q '^MYSQL_USE_SOCKET=' "$ENV_FILE" || echo 'MYSQL_USE_SOCKET=1' >> "$ENV_FILE"
+  if grep -qE '^MYSQL_USE_SOCKET=' "$ENV_FILE"; then
+    sed -i 's/^MYSQL_USE_SOCKET=.*/MYSQL_USE_SOCKET=1/' "$ENV_FILE"
+  else
+    echo 'MYSQL_USE_SOCKET=1' >> "$ENV_FILE"
+  fi
   echo "env: MYSQL_USE_SOCKET=1"
 fi
 
@@ -56,9 +60,12 @@ SKIP_GIT_PULL=1 bash "$ROOT/deploy/deploy-on-ec2.sh"
 
 echo "== 검증 =="
 sleep 12
+pm2 restart "$PM2_APP" --update-env 2>/dev/null || true
+sleep 8
 HEALTH="$(curl -sf --max-time 12 "http://127.0.0.1:3000/api/health?deep=1" 2>/dev/null || echo '{}')"
 echo "$HEALTH"
 echo "$HEALTH" | grep -q '"redisConfigured":true' && echo "Redis: configured (선택)" || echo "storage: MySQL-only (DATABASE_URL) — 정상"
+echo "$HEALTH" | grep -o '"mysqlConnMode":"[^"]*"' || echo "WARN: mysqlConnMode missing — 구버전 빌드?"
 grep -q "pool open (socket" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev/null && echo "log: mysql pool socket OK" || \
   grep -q "connection open (socket)" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev/null && echo "log: mysql socket OK (legacy)" || \
   grep -q "warm ping OK" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev/null && echo "log: mysql warm ping OK" || true

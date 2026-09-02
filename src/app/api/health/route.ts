@@ -36,9 +36,10 @@ export async function GET(req: Request) {
         .match(/^mysql:\/\//i)
     );
     if (hasMysql) {
-      const { mysqlKvPing } = await import("@/app/api/_shared/mysql-kv");
+      const { mysqlKvPing, mysqlKvConnModeFromDatabaseUrl } = await import("@/app/api/_shared/mysql-kv");
       mysqlOk = await mysqlKvPing();
       payload.mysqlOk = mysqlOk;
+      payload.mysqlConnMode = mysqlKvConnModeFromDatabaseUrl();
     }
 
     const kvError = await getPersistentKvLastError();

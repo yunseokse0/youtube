@@ -28,8 +28,10 @@ const CIRCUIT_COOLDOWN_MS = 30_000;
 let consecutiveFailures = 0;
 let circuitOpenUntil = 0;
 
-/** Linux EC2 socket — TCP ETIMEDOUT 회피, 동시 peek·GET 허용 */
-const POOL_CONNECTION_LIMIT = 3;
+/** EC2 co-located MySQL — 동시 connect 폭주·TCP ETIMEDOUT 방지 (peek·GET inflight coalescing 유지) */
+const POOL_CONNECTION_LIMIT = 2;
+/** Pool idle 재연결 빈도 ↓ — 4031·connect timeout 완화 */
+const POOL_IDLE_TIMEOUT_MS = 300_000;
 
 /** 동시 GET(멀티탭·멀티PC) — 동일 키 1회 MySQL 쿼리로 합침 */
 const getInflight = new Map<string, Promise<string | null>>();
@@ -193,13 +195,22 @@ const MYSQL_SOCKET_CANDIDATES = [
   "/run/mysqld/mysqld.sock",
 ] as const;
 
-/** Linux EC2 localhost — socket 우선 (TCP ETIMEDOUT 회피). Windows/mac 로컬 dev는 TCP */
+/** Linux EC2 localhost / private IP — socket 우선 (TCP 127.0.0.1 ETIMEDOUT 회피) */
 function shouldUseMysqlSocket(hostname: string): boolean {
   if (process.env.MYSQL_USE_SOCKET === "0") return false;
   if (process.env.MYSQL_USE_SOCKET === "1") return true;
+  if (process.platform !== "linux") return false;
   const h = (hostname || "127.0.0.1").toLowerCase();
-  if (h !== "127.0.0.1" && h !== "localhost") return false;
-  return process.platform === "linux";
+  if (h === "127.0.0.1" || h === "localhost" || h === "::1") return true;
+  /** .env 가 EC2 private IP(172.31.x.x 등)를 host 로 둬도 동일 서버 MySQL → socket */
+  if (/^172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  return false;
+}
+
+function poolTransportFromOptions(opts: mysql.PoolOptions): "socket" | "tcp" {
+  return opts.socketPath ? "socket" : "tcp";
 }
 
 function resolveSocketPath(): string {
@@ -220,21 +231,18 @@ function mysqlConnOptionsFromUrl(raw: string): mysql.PoolOptions | null {
       user: decodeURIComponent(u.username || ""),
       password: decodeURIComponent(u.password || ""),
       database,
-      connectTimeout: 5_000,
+      connectTimeout: 3_000,
       enableKeepAlive: true,
       keepAliveInitialDelay: 10_000,
       connectionLimit: POOL_CONNECTION_LIMIT,
       waitForConnections: true,
       maxIdle: POOL_CONNECTION_LIMIT,
-      idleTimeout: 60_000,
+      idleTimeout: POOL_IDLE_TIMEOUT_MS,
       queueLimit: 0,
     };
-    const useSocket = shouldUseMysqlSocket(hostname);
-    if (useSocket) {
-      connTransport = "socket";
+    if (shouldUseMysqlSocket(hostname)) {
       return { ...shared, socketPath: resolveSocketPath() };
     }
-    connTransport = "tcp";
     return {
       ...shared,
       host: u.hostname || "127.0.0.1",
@@ -245,6 +253,13 @@ function mysqlConnOptionsFromUrl(raw: string): mysql.PoolOptions | null {
   }
 }
 
+/** 진단·테스트 — DATABASE_URL 기준 socket/TCP (side-effect 없음) */
+export function mysqlKvConnModeFromDatabaseUrl(raw?: string): "socket" | "tcp" | null {
+  const opts = mysqlConnOptionsFromUrl(String(raw ?? getMysqlDatabaseUrl()).trim());
+  if (!opts) return null;
+  return poolTransportFromOptions(opts);
+}
+
 async function getPool(): Promise<Pool | null> {
   if (!isMysqlKvConfigured()) return null;
   if (pool) return pool;
@@ -252,16 +267,27 @@ async function getPool(): Promise<Pool | null> {
   poolInitPromise = (async () => {
     const opts = mysqlConnOptionsFromUrl(getMysqlDatabaseUrl());
     if (!opts) throw new Error("MySQL config parse failed");
+    connTransport = poolTransportFromOptions(opts);
     const p = mysql.createPool(opts);
     pool = p;
     const now = Date.now();
-    if (connTransport && now - connLastOpenLogAt > 60_000) {
+    if (now - connLastOpenLogAt > 60_000) {
       connLastOpenLogAt = now;
-      console.info(`[mysql-kv] pool open (${connTransport}, limit=${POOL_CONNECTION_LIMIT})`);
+      const detail =
+        connTransport === "socket"
+          ? `socketPath=${String(opts.socketPath || resolveSocketPath())}`
+          : `host=${String(opts.host || "?")}:${String(opts.port ?? 3306)}`;
+      console.info(`[mysql-kv] pool open (${connTransport}, limit=${POOL_CONNECTION_LIMIT}, ${detail})`);
     }
     return p;
   })().catch((err) => {
     poolInitPromise = null;
+    const code = (err as { code?: string })?.code;
+    if (code === "ETIMEDOUT") {
+      console.error(
+        `[mysql-kv] pool connect ETIMEDOUT (transport=${connTransport ?? "?"} — EC2에서는 MYSQL_USE_SOCKET=1·socketPath 확인)`
+      );
+    }
     throw err;
   });
   return poolInitPromise;
