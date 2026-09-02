@@ -135,7 +135,6 @@ function mysqlPoolOptionsFromUrl(raw: string): mysql.PoolOptions | null {
       /** 대기열이 꽉 차면 즉시 오류 — /api/state GET 무한 대기 방지 */
       queueLimit: 8,
       connectTimeout: 3_000,
-      acquireTimeout: 3_000,
       enableKeepAlive: true,
       keepAliveInitialDelay: 10_000,
       idleTimeout: 20_000,
