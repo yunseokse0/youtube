@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { maybeAppendDailyLogFromState, DAILY_LOG_AUTO_APPEND_MIN_MS } from "@/lib/daily-log-server-append";
+import { maybeAppendDailyLogFromState, DAILY_LOG_AUTO_APPEND_MIN_MS, DAILY_LOG_LARGE_AUTO_APPEND_MIN_MS } from "@/lib/daily-log-server-append";
 import { broadcastDateKey } from "@/lib/state";
 import {
   pickDailyLogEntryForAutoRestore,
@@ -65,5 +65,6 @@ describe("maybeAppendDailyLogFromState", () => {
 
   it("exports throttle constant", () => {
     expect(DAILY_LOG_AUTO_APPEND_MIN_MS).toBeGreaterThanOrEqual(60_000);
+    expect(DAILY_LOG_LARGE_AUTO_APPEND_MIN_MS).toBeGreaterThan(DAILY_LOG_AUTO_APPEND_MIN_MS);
   });
 });

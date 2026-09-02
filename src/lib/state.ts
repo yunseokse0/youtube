@@ -4931,9 +4931,16 @@ export async function loadDailyLogFromApi(userId?: string | null): Promise<Recor
   try {
     const q = new URLSearchParams({ _t: String(Date.now()) });
     if (userId) q.set("user", userId);
+    const signal =
+      typeof AbortSignal !== "undefined" &&
+      typeof (AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal }).timeout ===
+        "function"
+        ? (AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }).timeout(90_000)
+        : undefined;
     const res = await fetch(`/api/daily-log?${q.toString()}`, {
       cache: "no-store",
       credentials: "include",
+      signal,
     });
     if (!res.ok) return {};
     const data = await res.json();

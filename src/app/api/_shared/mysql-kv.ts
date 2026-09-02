@@ -28,8 +28,8 @@ const CIRCUIT_COOLDOWN_MS = 30_000;
 let consecutiveFailures = 0;
 let circuitOpenUntil = 0;
 
-/** EC2 co-located MySQL — 동시 connect 폭주·TCP ETIMEDOUT 방지 (peek·GET inflight coalescing 유지) */
-const POOL_CONNECTION_LIMIT = 2;
+/** EC2 co-located MySQL — socket 시 connect 폭주 없음, 라이브 read 병렬 여유 */
+const POOL_CONNECTION_LIMIT = 3;
 /** Pool idle 재연결 빈도 ↓ — 4031·connect timeout 완화 */
 const POOL_IDLE_TIMEOUT_MS = 300_000;
 

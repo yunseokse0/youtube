@@ -667,8 +667,8 @@ function buildPrismOverlayRelativePath(p: OverlayPreset, vertical: boolean, user
 const ADMIN_STATE_FALLBACK_POLL_MS = 120_000;
 /** 후원자 리스트 — SSE가 있으면 드물게, 끊기면 조금 더 자주 (since/304) */
 const ADMIN_DONOR_LIVE_POLL_TICK_MS = 2_000;
-const ADMIN_DONOR_LIVE_POLL_MS_SSE = 10_000;
-const ADMIN_DONOR_LIVE_POLL_MS_NO_SSE = 4_000;
+const ADMIN_DONOR_LIVE_POLL_MS_SSE = 12_000;
+const ADMIN_DONOR_LIVE_POLL_MS_NO_SSE = 8_000;
 
 /** SSE·폴링 시 불필요한 setState 연쇄(버튼·effect 재실행) 방지용 */
 function adminSyncFingerprint(s: AppState): string {
@@ -754,7 +754,13 @@ function AdminPageInner() {
       } else if (offline) {
         setSyncStatus("local");
       } else {
-        setSyncStatus("error");
+        const live = stateRef.current;
+        const hasLocal =
+          hasMeaningfulBroadcastData(live) ||
+          normalizeDonorsArray(live.donors).length > 0 ||
+          totalCombined(live) > 0;
+        /** 서버 미검증이어도 LS·세션 데이터로 편집 가능 — error 고착·0원 UI 방지 (synced 는 검증 시에만) */
+        setSyncStatus(hasLocal ? "local" : "error");
       }
     },
     []
@@ -2379,6 +2385,24 @@ function AdminPageInner() {
     if (!user?.id) return;
     let cancelled = false;
     setSyncStatus("loading");
+    /** API 대기 중에도 LS 스냅샷을 즉시 표시 — 0:0:0:0·「멤버 불러오는 중」 고착 방지 */
+    try {
+      const lsEarly = loadState(user.id);
+      if (
+        hasMeaningfulMemberRoster(lsEarly) ||
+        normalizeDonorsArray(lsEarly.donors).length > 0 ||
+        totalCombined(lsEarly) > 0
+      ) {
+        setState(lsEarly);
+        stateRef.current = lsEarly;
+        stateUpdatedAtRef.current = Math.max(
+          stateUpdatedAtRef.current,
+          Number(lsEarly.updatedAt || 0)
+        );
+      }
+    } catch {
+      /* noop */
+    }
     const hydrateWatchdog = window.setTimeout(() => {
       if (!cancelled && syncStatusRef.current === "loading") {
         const offlineNow = typeof navigator !== "undefined" && !navigator.onLine;
@@ -2702,7 +2726,7 @@ function AdminPageInner() {
             if (cancelled) return;
             setDailyLog(loadDailyLog(user?.id));
           });
-      }, 2_500);
+      }, 12_000);
     });
     return () => {
       cancelled = true;
@@ -2865,7 +2889,18 @@ function AdminPageInner() {
       ) {
         return false;
       }
-      const remote = await loadStateFromApi(user.id, { forceFull: true });
+      const remoteResult = await loadStateFromApiWithMeta(user.id, {
+        ...(opts?.forceReplace
+          ? { forceFull: true }
+          : {
+              ifUpdatedSince: Math.max(
+                stateUpdatedAtRef.current,
+                lastAppliedRemoteUpdatedAtRef.current
+              ),
+            }),
+      });
+      if (remoteResult.meta.notModified) return false;
+      const remote = remoteResult.state;
       if (!remote) return false;
       const remoteDonors = normalizeDonorsArray(remote.donors);
       if (remoteDonors.length === 0) return false;
@@ -3481,7 +3516,7 @@ function AdminPageInner() {
           if (!running || seq !== adminDonorLivePullSeqRef.current) return;
           void applyDonorsFromServerMainState({ silent: true }).then((ok) => {
             if (!ok && running && seq === adminDonorLivePullSeqRef.current) {
-              void syncFromApi({ forceFull: true, forceDonorMerge: true });
+              void syncFromApi({ forceDonorMerge: true });
             }
           });
         }, ms);
@@ -9360,7 +9395,8 @@ function AdminPageInner() {
       }
     }
 
-    const toApply = didPreserve ? merged : remote;
+    const toApply =
+      didPreserve || shouldAvoidOverwritingLocalStateWithRemote(local, remote) ? merged : remote;
     stateUpdatedAtRef.current = toApply.updatedAt || 0;
     pendingUnsyncedRef.current = false;
     setState(toApply);
@@ -9384,18 +9420,21 @@ function AdminPageInner() {
   const runPullRefresh = async () => {
     if (pullRefreshing) return;
     setPullRefreshing(true);
-    await onFetchLatestFromServer();
     try {
-      const serverLog = await loadDailyLogFromApi(user?.id);
-      setDailyLog(serverLog);
-      try { window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog)); } catch {}
-    } catch {
-      setDailyLog(loadDailyLog(user?.id));
-    }
-    window.setTimeout(() => {
+      await onFetchLatestFromServer();
+    } finally {
       setPullRefreshing(false);
       setPullDistance(0);
-    }, 240);
+    }
+    /** 23MB daily-log 는 state GET 과 MySQL pool 경합 — 당겨 동기화는 state 만 기다림 */
+    void loadDailyLogFromApi(user?.id)
+      .then((serverLog) => {
+        setDailyLog(serverLog);
+        try {
+          window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog));
+        } catch {}
+      })
+      .catch(() => setDailyLog(loadDailyLog(user?.id)));
   };
   const handleTouchStart = (e: any) => {
     if (typeof window === "undefined") return;
@@ -9629,7 +9668,9 @@ function AdminPageInner() {
                       ? "세션 확인 필요"
                     : syncStatus === "error"
                       ? "연결 재시도 중"
-                      : "로컬 모드 (오프라인)"}
+                      : typeof navigator !== "undefined" && navigator.onLine
+                        ? "서버 연결 중 (로컬 표시)"
+                        : "로컬 모드 (오프라인)"}
             </span>
             ) : null}
             <button
@@ -9787,7 +9828,9 @@ function AdminPageInner() {
                 </button>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                {syncStatus === "loading" && isDefaultPlaceholderMemberList(state.members) ? (
+                {syncStatus === "loading" &&
+                !hasMeaningfulMemberRoster(state) &&
+                isDefaultPlaceholderMemberList(state.members) ? (
                   <div className="lg:col-span-3 rounded-lg border border-white/10 bg-neutral-900/50 px-4 py-8 text-center text-sm text-neutral-400">
                     서버에서 멤버를 불러오는 중…
                   </div>

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MySQL-only EC2 — socket + Pool(2) 패치 배포
+# MySQL-only EC2 — socket + Pool(3) 패치 배포
 #
 #   cd ~/youtube && git pull && bash deploy/ec2-apply-mysql-root-fix.sh
 #
