@@ -17,6 +17,8 @@ import type { AppState } from "@/types";
 type PersistBody = {
   state?: AppState;
   mode?: DonorsPersistMode;
+  /** false 면 응답에 state 생략 — 삭제 UX 가속 */
+  returnState?: boolean;
 };
 
 /**
@@ -36,6 +38,7 @@ export async function POST(req: Request) {
   }
 
   const mode: DonorsPersistMode = body.mode === "add" ? "add" : "replace";
+  const returnState = body.returnState !== false;
   const persisted = await persistDonationStateToServer(userId, body.state, { mode });
   if (!persisted.ok) {
     return new Response(JSON.stringify({ error: "persist_failed" }), {
@@ -62,7 +65,7 @@ export async function POST(req: Request) {
       updatedAt: repaired.updatedAt,
       donorRankingsUpdatedAt: repaired.donorRankingsUpdatedAt,
       donorsCount: normalizeDonorsArray(repaired.donors).length,
-      state: repaired,
+      ...(returnState ? { state: repaired } : {}),
     }),
     {
       status: 200,

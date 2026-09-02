@@ -81,7 +81,14 @@ export async function saveAppStateForRoulette(
   const mem = getServerMemoryAppState(userId);
   let existing: AppState | null = mem && Array.isArray(mem.members) ? mem : null;
   const kvOk = isPersistentKvConfigured();
-  if (kvOk) {
+  /**
+   * replace(삭제·나누기) + 서버 메모리 warm — MySQL LONGTEXT GET 생략.
+   * mem은 직전 저장에서 갱신되므로 단건 삭제 연속 UX가 GET+SET 이중 I/O에 막히지 않게 한다.
+   * add(투네)는 멀티탭 union 안전을 위해 KV 조회 유지.
+   */
+  const skipKvReadForReplace =
+    opts?.donorsMode === "replace" && Boolean(existing) && !opts?.allowEmptyRosterWipe;
+  if (kvOk && !skipKvReadForReplace) {
     const raw = await upstashGet(stateKey(userId));
     existing = coalesceAppStateRedisAndMemory(raw as AppState | null, mem);
   }

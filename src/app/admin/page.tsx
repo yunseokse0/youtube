@@ -1735,6 +1735,10 @@ function AdminPageInner() {
       repairDonorTimestamps(normalizeDonorsArray(state.donors), { dailyLog }),
     [state.donors, dailyLog]
   );
+  const donorListRowsSorted = useMemo(
+    () => donorListRows.slice().sort((a, b) => b.at - a.at),
+    [donorListRows]
+  );
   const applyGlobalDonorsFormat = useCallback(
     (format: "full" | "short") => {
       setState((prev) => {
@@ -7803,11 +7807,21 @@ function AdminPageInner() {
   const commitAuthoritativeDonorPersist = useCallback(
     async (
       preserved: AppState,
-      opts?: { protectionMs?: number; persistToastLabel?: string }
+      opts?: {
+        protectionMs?: number;
+        persistToastLabel?: string;
+        /** 이미 setState 한 삭제 등 — 서버 응답으로 전체 리렌더 금지 */
+        skipSetState?: boolean;
+        /** 응답 state 생략 (기본: skipSetState 이면 true) */
+        slimResponse?: boolean;
+      }
     ): Promise<boolean> => {
       const protectionMs = opts?.protectionMs ?? 45_000;
+      const slimResponse = opts?.slimResponse ?? Boolean(opts?.skipSetState);
       donationAuthoritativeSaveUntilRef.current = Date.now() + protectionMs;
-      const result = await persistDonationStateViaApi(user?.id, preserved, "replace");
+      const result = await persistDonationStateViaApi(user?.id, preserved, "replace", {
+        returnState: !slimResponse,
+      });
       if (!result.ok) {
         pendingUnsyncedRef.current = false;
         setSyncStatus(
@@ -7821,10 +7835,15 @@ function AdminPageInner() {
       /** replace 저장 후 union(enrich)하면 삭제분이 서버·백업에서 되살아남 */
       const serverAt = result.updatedAt;
       const bumped = syncMemberTotalsFromDonors({
-        ...result.state,
-        updatedAt: Math.max(Number(result.state.updatedAt || 0), serverAt),
+        ...(opts?.skipSetState ? preserved : result.state),
+        updatedAt: Math.max(
+          Number((opts?.skipSetState ? preserved : result.state).updatedAt || 0),
+          serverAt
+        ),
         donorRankingsUpdatedAt: Math.max(
-          Number(result.state.donorRankingsUpdatedAt || 0),
+          Number(
+            (opts?.skipSetState ? preserved : result.state).donorRankingsUpdatedAt || 0
+          ),
           result.donorRankingsUpdatedAt ?? serverAt
         ),
       });
@@ -7840,7 +7859,9 @@ function AdminPageInner() {
         cacheBroadcastStateSnapshot(bumped, user?.id);
       } catch {}
       notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
-      setState(bumped);
+      if (!opts?.skipSetState) {
+        setState(bumped);
+      }
       setSyncStatus("synced");
       if (opts?.persistToastLabel) {
         showServerPersistToast(opts.persistToastLabel, { ok: true });
@@ -15670,9 +15691,7 @@ function AdminPageInner() {
                     </tr>
                   </thead>
                   <tbody>
-                    {donorListRows
-                      .slice()
-                      .sort((a,b)=>b.at-a.at)
+                    {donorListRowsSorted
                       .map((d, rowIdx) => {
                         const isSplitPart = isGroupSplitPartDonor(d);
                         const isSplitSource = isGroupSplitSourceDonor(state, d);
@@ -15821,6 +15840,8 @@ function AdminPageInner() {
                                         setState(preserved);
                                         const ok = await commitAuthoritativeDonorPersist(preserved, {
                                           persistToastLabel: "후원 삭제",
+                                          skipSetState: true,
+                                          slimResponse: true,
                                         });
                                         if (!ok) {
                                           stateRef.current = beforeDelete;
@@ -15837,7 +15858,7 @@ function AdminPageInner() {
                           </tr>
                         );
                       })}
-                    {donorListRows.length === 0 && (
+                    {donorListRowsSorted.length === 0 && (
                       <tr><td className="p-2 text-neutral-400" colSpan={8}>기록이 없습니다.</td></tr>
                     )}
                   </tbody>
