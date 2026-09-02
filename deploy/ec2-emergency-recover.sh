@@ -60,7 +60,7 @@ echo "== MySQL SELECT 1 (Node 기동 전) =="
 MYSQL_SMOKE=0
 for i in 1 2 3 4 5 6 7 8; do
   if [[ -f /etc/mysql/youtube-app.cnf ]]; then
-    if mysql --defaults-extra-file=/etc/mysql/youtube-app.cnf -e "SELECT 1 AS ok;" >/dev/null 2>&1; then
+    if run mysql --defaults-extra-file=/etc/mysql/youtube-app.cnf -e "SELECT 1 AS ok;" >/dev/null 2>&1; then
       MYSQL_SMOKE=1
       echo "SELECT 1 OK (youtube-app.cnf)"
       break

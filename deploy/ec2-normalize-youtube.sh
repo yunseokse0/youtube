@@ -48,9 +48,10 @@ echo "== 3) MySQL 튜닝·비밀번호 =="
 bash "$ROOT/deploy/ec2-mysql-stabilize.sh"
 bash "$ROOT/deploy/ec2-mysql-sync-password-from-env.sh"
 
-echo "== 4) MySQL SELECT 1 =="
+echo "== 4) MySQL SELECT 1 (확인) =="
+# youtube-app.cnf 는 root 600 — ubuntu 에서는 sudo 필요 (3단계 sync 가 이미 SELECT 1 함)
 if [[ -f /etc/mysql/youtube-app.cnf ]]; then
-  mysql --defaults-extra-file=/etc/mysql/youtube-app.cnf -e "SELECT 1 AS ok;"
+  run mysql --defaults-extra-file=/etc/mysql/youtube-app.cnf -e "SELECT 1 AS ok;"
 else
   run mysql --protocol=socket -e "SELECT 1 AS ok;"
 fi
