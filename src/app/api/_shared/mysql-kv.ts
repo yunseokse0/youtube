@@ -3,21 +3,22 @@
  * 테이블: app_kv (k PK, v LONGTEXT, expires_at ms, updated_at ms)
  * 서버 전용 — 클라이언트 번들 금지
  *
- * EC2 MySQL-only: Pool(동시 N연결) 대신 단일 Connection + 직렬 큐 — ETIMEDOUT·연결 폭주 방지
+ * EC2 MySQL-only: 소규모 Pool(읽기 병렬) + SET 직렬 — 단일 Connection 큐 적체 방지
  */
 import "server-only";
-import mysql, { type Connection, type RowDataPacket } from "mysql2/promise";
+import mysql, { type Pool, type PoolConnection, type RowDataPacket } from "mysql2/promise";
 
-let conn: Connection | null = null;
-let connOpenPromise: Promise<Connection> | null = null;
+let pool: Pool | null = null;
+let poolInitPromise: Promise<Pool | null> | null = null;
 let tableReady: Promise<void> | null = null;
 let lastMysqlError: string | null = null;
-let connResetPromise: Promise<void> | null = null;
+let poolResetPromise: Promise<void> | null = null;
 let connTransport: "socket" | "tcp" | null = null;
-let connLastUsedAt = 0;
+let connLastOpenLogAt = 0;
 
 /** MySQL wait_timeout(600s) 전에 ping — ER_CLIENT_INTERACTION(4031) 방지 */
 const CONN_PING_IF_IDLE_MS = 45_000;
+const connIdleAt = new WeakMap<PoolConnection, number>();
 
 /** hang 시 Node 전체 HTTP 무응답 방지 — LONGTEXT 전체 읽기 여유 */
 const MYSQL_QUERY_TIMEOUT_MS = 25_000;
@@ -27,15 +28,18 @@ const CIRCUIT_COOLDOWN_MS = 30_000;
 let consecutiveFailures = 0;
 let circuitOpenUntil = 0;
 
+/** Linux EC2 socket — TCP ETIMEDOUT 회피, 동시 peek·GET 허용 */
+const POOL_CONNECTION_LIMIT = 3;
+
 /** 동시 GET(멀티탭·멀티PC) — 동일 키 1회 MySQL 쿼리로 합침 */
 const getInflight = new Map<string, Promise<string | null>>();
 
-/** 프로세스당 MySQL 작업 1개씩 — Pool connectionLimit 폭주 제거 */
-let mysqlOpChain: Promise<unknown> = Promise.resolve();
+/** SET/PATCH 직렬 — 동시 쓰기 lost update 방지 */
+let mysqlWriteChain: Promise<unknown> = Promise.resolve();
 
-function runSerializedMysql<T>(fn: () => Promise<T>): Promise<T> {
-  const next = mysqlOpChain.then(() => fn());
-  mysqlOpChain = next.then(
+function runSerializedMysqlWrite<T>(fn: () => Promise<T>): Promise<T> {
+  const next = mysqlWriteChain.then(() => fn());
+  mysqlWriteChain = next.then(
     () => undefined,
     () => undefined
   );
@@ -59,7 +63,7 @@ function noteMysqlFailure(err: unknown): void {
     console.warn(
       `[mysql-kv] circuit open ${CIRCUIT_COOLDOWN_MS}ms (${consecutiveFailures} failures, transport=${connTransport ?? "?"})`
     );
-    void resetMysqlConnection();
+    void resetMysqlPool();
   }
 }
 
@@ -86,65 +90,65 @@ function isTransientMysqlError(err: unknown): boolean {
   );
 }
 
-async function resetMysqlConnection(): Promise<void> {
-  if (connResetPromise) {
-    await connResetPromise;
+async function resetMysqlPool(): Promise<void> {
+  if (poolResetPromise) {
+    await poolResetPromise;
     return;
   }
-  connResetPromise = (async () => {
-    const old = conn;
-    conn = null;
-    connOpenPromise = null;
+  poolResetPromise = (async () => {
+    const old = pool;
+    pool = null;
+    poolInitPromise = null;
     tableReady = null;
-    connLastUsedAt = 0;
     if (old) {
       await old.end().catch(() => {});
     }
   })().finally(() => {
-    connResetPromise = null;
+    poolResetPromise = null;
   });
-  await connResetPromise;
+  await poolResetPromise;
 }
 
-async function ensureConnAlive(c: Connection): Promise<void> {
-  const idleMs = Date.now() - connLastUsedAt;
-  if (connLastUsedAt > 0 && idleMs < CONN_PING_IF_IDLE_MS) return;
+async function ensureConnAlive(c: PoolConnection): Promise<void> {
+  const last = connIdleAt.get(c) ?? 0;
+  const idleMs = Date.now() - last;
+  if (last > 0 && idleMs < CONN_PING_IF_IDLE_MS) return;
   try {
     await c.ping();
-    connLastUsedAt = Date.now();
+    connIdleAt.set(c, Date.now());
   } catch (err) {
-    await resetMysqlConnection();
+    c.destroy();
     throw err;
   }
 }
 
-async function withMysqlConn<T>(fn: (c: Connection) => Promise<T>, attempt = 0): Promise<T> {
+async function withMysqlConn<T>(fn: (c: PoolConnection) => Promise<T>, attempt = 0): Promise<T> {
   if (isMysqlCircuitOpen()) {
     throw new Error("MySQL circuit open (cooldown)");
   }
-  const c = await openConnection();
-  if (!c) throw new Error("MySQL connection unavailable");
+  const p = await getPool();
+  if (!p) throw new Error("MySQL pool unavailable");
+  const c = await p.getConnection();
   try {
     await ensureConnAlive(c);
     const out = await fn(c);
-    connLastUsedAt = Date.now();
+    connIdleAt.set(c, Date.now());
     noteMysqlSuccess();
     return out;
   } catch (err) {
     noteMysqlFailure(err);
     if (isTransientMysqlError(err) && attempt < 1) {
-      await resetMysqlConnection();
+      c.destroy();
       return withMysqlConn(fn, attempt + 1);
     }
-    if (isTransientMysqlError(err)) {
-      await resetMysqlConnection();
-    }
     throw err;
+  } finally {
+    c.release();
   }
 }
 
 async function connExecuteWithTimeout(
-  c: Connection,
+  c: PoolConnection,
   sql: string,
   params?: unknown[]
 ): Promise<RowDataPacket[]> {
@@ -152,8 +156,6 @@ async function connExecuteWithTimeout(
   const timer = setTimeout(() => {
     timedOut = true;
     c.destroy();
-    conn = null;
-    connOpenPromise = null;
   }, MYSQL_QUERY_TIMEOUT_MS);
   try {
     const [rows] = await c.execute(sql, (params ?? []) as (string | number | null)[]);
@@ -207,20 +209,25 @@ function resolveSocketPath(): string {
 }
 
 /** mysql://user:pass@host:port/db — 비밀번호 특수문자 안전하게 파싱 */
-function mysqlConnOptionsFromUrl(raw: string): mysql.ConnectionOptions | null {
+function mysqlConnOptionsFromUrl(raw: string): mysql.PoolOptions | null {
   try {
     const u = new URL(raw);
     if (!/^mysql:$/i.test(u.protocol)) return null;
     const database = decodeURIComponent(u.pathname.replace(/^\//, "").split("/")[0] || "");
     if (!database) return null;
     const hostname = (u.hostname || "127.0.0.1").toLowerCase();
-    const shared: mysql.ConnectionOptions = {
+    const shared: mysql.PoolOptions = {
       user: decodeURIComponent(u.username || ""),
       password: decodeURIComponent(u.password || ""),
       database,
       connectTimeout: 5_000,
       enableKeepAlive: true,
       keepAliveInitialDelay: 10_000,
+      connectionLimit: POOL_CONNECTION_LIMIT,
+      waitForConnections: true,
+      maxIdle: POOL_CONNECTION_LIMIT,
+      idleTimeout: 60_000,
+      queueLimit: 0,
     };
     const useSocket = shouldUseMysqlSocket(hostname);
     if (useSocket) {
@@ -238,34 +245,29 @@ function mysqlConnOptionsFromUrl(raw: string): mysql.ConnectionOptions | null {
   }
 }
 
-async function openConnection(): Promise<Connection | null> {
+async function getPool(): Promise<Pool | null> {
   if (!isMysqlKvConfigured()) return null;
-  if (conn) return conn;
-  if (connOpenPromise) return connOpenPromise;
-  connOpenPromise = (async () => {
+  if (pool) return pool;
+  if (poolInitPromise) return poolInitPromise;
+  poolInitPromise = (async () => {
     const opts = mysqlConnOptionsFromUrl(getMysqlDatabaseUrl());
     if (!opts) throw new Error("MySQL config parse failed");
-    const c = await mysql.createConnection(opts);
-    c.on("error", (err) => {
-      console.warn("[mysql-kv] connection error", err);
-      conn = null;
-      connOpenPromise = null;
-      tableReady = null;
-    });
-    conn = c;
-    connLastUsedAt = Date.now();
-    if (connTransport) {
-      console.info(`[mysql-kv] connection open (${connTransport})`);
+    const p = mysql.createPool(opts);
+    pool = p;
+    const now = Date.now();
+    if (connTransport && now - connLastOpenLogAt > 60_000) {
+      connLastOpenLogAt = now;
+      console.info(`[mysql-kv] pool open (${connTransport}, limit=${POOL_CONNECTION_LIMIT})`);
     }
-    return c;
+    return p;
   })().catch((err) => {
-    connOpenPromise = null;
+    poolInitPromise = null;
     throw err;
   });
-  return connOpenPromise;
+  return poolInitPromise;
 }
 
-async function ensureTable(c: Connection): Promise<void> {
+async function ensureTable(c: PoolConnection): Promise<void> {
   if (tableReady) {
     await tableReady;
     return;
@@ -295,26 +297,24 @@ async function mysqlKvGetOnce(key: string): Promise<string | null> {
     return null;
   }
   try {
-    return await runSerializedMysql(async () =>
-      withMysqlConn(async (c) => {
-        await ensureTable(c);
-        const now = Date.now();
-        const rows = await connExecuteWithTimeout(
-          c,
-          `SELECT \`v\`, \`expires_at\` FROM app_kv WHERE \`k\` = ? LIMIT 1`,
-          [key]
-        );
-        const row = rows[0];
-        lastMysqlError = null;
-        if (!row) return null;
-        const exp = row.expires_at == null ? null : Number(row.expires_at);
-        if (exp != null && Number.isFinite(exp) && exp > 0 && exp < now) {
-          await c.execute(`DELETE FROM app_kv WHERE \`k\` = ?`, [key]).catch(() => {});
-          return null;
-        }
-        return typeof row.v === "string" ? row.v : String(row.v ?? "");
-      })
-    );
+    return await withMysqlConn(async (c) => {
+      await ensureTable(c);
+      const now = Date.now();
+      const rows = await connExecuteWithTimeout(
+        c,
+        `SELECT \`v\`, \`expires_at\` FROM app_kv WHERE \`k\` = ? LIMIT 1`,
+        [key]
+      );
+      const row = rows[0];
+      lastMysqlError = null;
+      if (!row) return null;
+      const exp = row.expires_at == null ? null : Number(row.expires_at);
+      if (exp != null && Number.isFinite(exp) && exp > 0 && exp < now) {
+        await c.execute(`DELETE FROM app_kv WHERE \`k\` = ?`, [key]).catch(() => {});
+        return null;
+      }
+      return typeof row.v === "string" ? row.v : String(row.v ?? "");
+    });
   } catch (err) {
     setLastMysqlError(err);
     console.error("[mysql-kv] get failed", err);
@@ -349,20 +349,18 @@ export async function mysqlKvPeekRevision(key: string): Promise<number | null> {
   if (isMysqlCircuitOpen() || !isMysqlKvConfigured()) return null;
   const existing = peekInflight.get(key);
   if (existing) return existing;
-  const p = runSerializedMysql(async () =>
-    withMysqlConn(async (c) => {
-      await ensureTable(c);
-      const rows = await connExecuteWithTimeout(
-        c,
-        `SELECT \`updated_at\` FROM app_kv WHERE \`k\` = ? LIMIT 1`,
-        [key]
-      );
-      const row = rows[0];
-      if (!row) return null;
-      const n = Number(row.updated_at);
-      return Number.isFinite(n) && n > 0 ? n : null;
-    })
-  )
+  const p = withMysqlConn(async (c) => {
+    await ensureTable(c);
+    const rows = await connExecuteWithTimeout(
+      c,
+      `SELECT \`updated_at\` FROM app_kv WHERE \`k\` = ? LIMIT 1`,
+      [key]
+    );
+    const row = rows[0];
+    if (!row) return null;
+    const n = Number(row.updated_at);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  })
     .catch(() => null)
     .finally(() => {
       if (peekInflight.get(key) === p) peekInflight.delete(key);
@@ -382,7 +380,7 @@ export async function mysqlKvSet(
     return false;
   }
   try {
-    await runSerializedMysql(async () =>
+    await runSerializedMysqlWrite(async () =>
       withMysqlConn(async (c) => {
         await ensureTable(c);
         const writeAt =
@@ -410,7 +408,7 @@ export async function mysqlKvSet(
 /** Redis SET NX EX 대응 — true=선점, false=이미 있음, null=스토어 불가 */
 export async function mysqlKvSetNxEx(key: string, ttlSec: number): Promise<boolean | null> {
   try {
-    return await runSerializedMysql(async () =>
+    return await runSerializedMysqlWrite(async () =>
       withMysqlConn(async (c) => {
         await ensureTable(c);
         const now = Date.now();
@@ -439,7 +437,7 @@ export async function mysqlKvSetNxEx(key: string, ttlSec: number): Promise<boole
 
 export async function mysqlKvDel(key: string): Promise<void> {
   try {
-    await runSerializedMysql(async () =>
+    await runSerializedMysqlWrite(async () =>
       withMysqlConn(async (c) => {
         await ensureTable(c);
         await c.execute(`DELETE FROM app_kv WHERE \`k\` = ?`, [key]);
@@ -470,19 +468,17 @@ export async function mysqlKvSetJson(key: string, value: unknown): Promise<boole
 
 /** 테스트·프로세스 종료용 */
 export async function mysqlKvClosePool(): Promise<void> {
-  await resetMysqlConnection();
+  await resetMysqlPool();
 }
 
 /** health?deep=1 — 실제 SELECT 1 */
 export async function mysqlKvPing(): Promise<boolean> {
   if (!isMysqlKvConfigured() || isMysqlCircuitOpen()) return false;
   try {
-    await runSerializedMysql(async () =>
-      withMysqlConn(async (c) => {
-        await ensureTable(c);
-        await connExecuteWithTimeout(c, "SELECT 1 AS ok");
-      })
-    );
+    await withMysqlConn(async (c) => {
+      await ensureTable(c);
+      await connExecuteWithTimeout(c, "SELECT 1 AS ok");
+    });
     lastMysqlError = null;
     return true;
   } catch (err) {

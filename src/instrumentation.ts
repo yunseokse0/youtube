@@ -8,6 +8,9 @@ export async function register() {
     const { registerMysqlKvBackend } = await import("@/app/api/_shared/upstash");
     const mysqlKv = await import("@/app/api/_shared/mysql-kv");
     registerMysqlKvBackend(mysqlKv);
+    void mysqlKv.mysqlKvPing().then((ok) => {
+      if (ok) console.info("[mysql-kv] warm ping OK");
+    });
   }
 
   /** server-listener import·투네 복구는 HTTP 기동 후 지연 — register 블로킹 방지 */

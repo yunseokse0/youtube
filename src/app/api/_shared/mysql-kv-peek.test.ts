@@ -2,20 +2,25 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-const { execute, createConnection } = vi.hoisted(() => {
+const { execute, createPool } = vi.hoisted(() => {
   const execute = vi.fn();
-  const createConnection = vi.fn(async () => ({
+  const mockConn = {
     execute,
     ping: vi.fn().mockResolvedValue(undefined),
     on: vi.fn(),
     end: vi.fn().mockResolvedValue(undefined),
     destroy: vi.fn(),
+    release: vi.fn(),
+  };
+  const createPool = vi.fn(() => ({
+    getConnection: vi.fn(async () => mockConn),
+    end: vi.fn().mockResolvedValue(undefined),
   }));
-  return { execute, createConnection };
+  return { execute, createPool };
 });
 
 vi.mock("mysql2/promise", () => ({
-  default: { createConnection },
+  default: { createPool },
 }));
 
 import { mysqlKvPeekRevision, mysqlKvSetJson, mysqlKvClosePool } from "./mysql-kv";

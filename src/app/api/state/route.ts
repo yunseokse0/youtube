@@ -1419,6 +1419,12 @@ export async function POST(req: Request) {
       const ok = await upstashSet(stateKey(userId), toPersist);
       logger.info('Redis 상태 업데이트', { updatedAt: toPersist.updatedAt, success: ok, userId });
       if (!ok) {
+        if (!isRedisConfigured()) {
+          return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
+            status: 503,
+            headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+          });
+        }
         setServerMemoryAppState(userId, toPersist);
         redisFallback = "memory";
         logger.warn('Redis 업데이트 실패로 메모리에 기록', { updatedAt: toPersist.updatedAt, userId });

@@ -3562,6 +3562,40 @@ const loadStateInflight = new Map<string, Promise<AppState | null>>();
 
 let warnedMemoryStateBackend = false;
 
+/** 직전 `/api/state` GET 메타 — admin 동기화 배지가 실제 영속 저장소 응답인지 판별 */
+export type StateApiFetchMeta = {
+  ok: boolean;
+  httpStatus: number;
+  storage: string | null;
+  notModified: boolean;
+};
+
+let lastStateApiFetchMeta: StateApiFetchMeta | null = null;
+
+function recordStateApiFetchMeta(meta: StateApiFetchMeta): void {
+  lastStateApiFetchMeta = meta;
+}
+
+export function getLastStateApiFetchMeta(): StateApiFetchMeta | null {
+  return lastStateApiFetchMeta;
+}
+
+/** MySQL-only EC2도 헤더값 `redis`(영속 KV 경로) · mysql-rev 를 정상으로 본다 */
+export function isPersistentStateStorageHeader(storage: string | null | undefined): boolean {
+  if (!storage) return false;
+  const s = storage.toLowerCase();
+  return s === "redis" || s === "mysql" || s === "mysql-rev";
+}
+
+export function isStateServerSyncVerified(
+  meta: StateApiFetchMeta | null | undefined,
+  hasBody: boolean
+): boolean {
+  if (!meta?.ok) return false;
+  if (!isPersistentStateStorageHeader(meta.storage)) return false;
+  return hasBody || meta.notModified;
+}
+
 function maybeWarnMemoryStateBackend(res: Response): void {
   if (typeof window === "undefined" || warnedMemoryStateBackend) return;
   if (res.headers.get("x-broadcast-state-storage") !== "memory") return;
@@ -3618,25 +3652,38 @@ async function doLoadStateFromApi(
     if (options?.pick) q.set("pick", options.pick);
     /** `userId` 있으면 URL로 사용자 특정 → 쿠키 불필요(OBS·브라우저 소스는 쿠키 없음). 없으면 관리자 세션 쿠키로 조회 */
     const credentials = userId ? "omit" : "include";
+    const timeoutMs = options?.forceFull ? 45_000 : 12_000;
     const signal =
       typeof AbortSignal !== "undefined" &&
       typeof (AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal }).timeout === "function"
-        ? (AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }).timeout(12_000)
+        ? (AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }).timeout(timeoutMs)
         : undefined;
     const res = await fetch(`/api/state?${q.toString()}`, { cache: "no-store", credentials, signal });
+    const storageHdr = res.headers.get("x-broadcast-state-storage");
     if (res.status === 401) {
+      recordStateApiFetchMeta({ ok: false, httpStatus: 401, storage: storageHdr, notModified: false });
       notifyAdminSessionExpired();
       return null;
     }
-    if (res.status === 304) return null;
-    if (!res.ok) return null;
+    if (res.status === 304) {
+      recordStateApiFetchMeta({ ok: true, httpStatus: 304, storage: storageHdr, notModified: true });
+      return null;
+    }
+    if (!res.ok) {
+      recordStateApiFetchMeta({ ok: false, httpStatus: res.status, storage: storageHdr, notModified: false });
+      return null;
+    }
     maybeWarnMemoryStateBackend(res);
     const text = await res.text();
-    if (!text.trim()) return null;
+    if (!text.trim()) {
+      recordStateApiFetchMeta({ ok: false, httpStatus: res.status, storage: storageHdr, notModified: false });
+      return null;
+    }
     let data: AppState;
     try {
       data = JSON.parse(text) as AppState;
     } catch {
+      recordStateApiFetchMeta({ ok: false, httpStatus: res.status, storage: storageHdr, notModified: false });
       return null;
     }
     if (isDonorRankingsPickPartial(data)) {
@@ -3903,6 +3950,7 @@ async function doLoadStateFromApi(
       const synced = syncBattleStateWithMembers(data as AppState);
       const toPersist = preserveLocalMeaningfulRoster(synced, userId);
       if (options?.pick === STATE_PICK_OBS_TEXT) {
+        recordStateApiFetchMeta({ ok: true, httpStatus: res.status, storage: storageHdr, notModified: false });
         return toPersist;
       }
       if (typeof window !== "undefined") {
@@ -3917,10 +3965,13 @@ async function doLoadStateFromApi(
           }
         } catch {}
       }
+      recordStateApiFetchMeta({ ok: true, httpStatus: res.status, storage: storageHdr, notModified: false });
       return toPersist;
     }
+    recordStateApiFetchMeta({ ok: false, httpStatus: res.status, storage: storageHdr, notModified: false });
     return null;
   } catch {
+    recordStateApiFetchMeta({ ok: false, httpStatus: 0, storage: null, notModified: false });
     return null;
   }
 }

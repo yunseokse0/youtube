@@ -65,6 +65,8 @@ import {
   saveMatchTimerPatchAsync,
   saveVisualSettingsPatchAsync,
   loadStateFromApi,
+  getLastStateApiFetchMeta,
+  isStateServerSyncVerified,
   saveMissionsBackup,
   loadMissionsBackup,
   isDefaultLikeState,
@@ -740,6 +742,18 @@ function AdminPageInner() {
   const stateRef = useRef<AppState>(state);
   const lastLocalPersistAtRef = useRef<number>(0);
   const syncStatusRef = useRef<"loading" | "synced" | "local" | "error">("loading");
+  /** GET/304 응답 메타 — 영속 KV(`redis`/`mysql`) 확인 후에만 synced */
+  const applySyncStatusAfterStateFetch = useCallback((apiState: AppState | null) => {
+    const meta = getLastStateApiFetchMeta();
+    const offline = typeof navigator !== "undefined" && !navigator.onLine;
+    if (isStateServerSyncVerified(meta, apiState !== null)) {
+      setSyncStatus("synced");
+    } else if (offline) {
+      setSyncStatus("local");
+    } else {
+      setSyncStatus("error");
+    }
+  }, []);
   /** 401·403 — 5초 재시도 루프 중단(403 user_mismatch 폭주 방지) */
   const lastSaveHttpStatusRef = useRef<number | null>(null);
   const pendingUnsyncedRef = useRef<boolean>(false);
@@ -2376,7 +2390,7 @@ function AdminPageInner() {
         }
         setSyncStatus(offlineNow ? "local" : "error");
       }
-    }, 8_000);
+    }, 55_000);
     const offline = typeof navigator !== "undefined" && !navigator.onLine;
     let localPresets: OverlayPreset[] = [];
     try {
@@ -2628,7 +2642,7 @@ function AdminPageInner() {
           /** 기본 프리셋은 UI·캐시에만 두고, 사용자 요청 없이 서버 전체 저장하지 않음 */
           try { window.localStorage.setItem(presetStorageKey, JSON.stringify([first])); } catch {}
         }
-        setSyncStatus("synced");
+        applySyncStatusAfterStateFetch(apiState);
       } else if (!offline) {
         if (Array.isArray(local.overlayPresets) && local.overlayPresets.length > 0) {
           setPresets(local.overlayPresets as OverlayPreset[]);
@@ -2642,14 +2656,14 @@ function AdminPageInner() {
           try { window.localStorage.setItem(presetStorageKey, JSON.stringify([first])); } catch {}
         }
         setState(local);
-        setSyncStatus("error");
+        applySyncStatusAfterStateFetch(null);
         /** 서버 로드 실패 시 LS 후원을 계정에 밀어 올리지 않음 */
         const hasMeaningfulData = hasMeaningfulBroadcastData(local);
         const hasDonationData =
           normalizeDonorsArray(local.donors).length > 0 || totalCombined(local) > 0;
         if (hasMeaningfulData && !hasDonationData) {
           saveStateAsync(local, user?.id, { omitDonationFields: true }).then((r) => {
-            if (r.ok) setSyncStatus("synced");
+            if (r.ok && !r.storageFallback) setSyncStatus("synced");
           });
         }
       }
@@ -2689,7 +2703,7 @@ function AdminPageInner() {
       cancelled = true;
       window.clearTimeout(hydrateWatchdog);
     };
-  }, [user?.id, persistState, mergeIncomingStateSafely, presetStorageKey, hydrateSettlementUiFromAppState, refreshStorageHealth]);
+  }, [user?.id, persistState, mergeIncomingStateSafely, presetStorageKey, hydrateSettlementUiFromAppState, refreshStorageHealth, applySyncStatusAfterStateFetch]);
 
   /** 일괄 반영으로 동일 초에 찍힌 후원 시각 — id·daily log로 복구 후 서버 저장 */
   useEffect(() => {
@@ -3436,11 +3450,10 @@ function AdminPageInner() {
         });
         if (!remote) {
           if (typeof navigator !== "undefined" && !navigator.onLine) setSyncStatus("local");
-          else if (since > 0) setSyncStatus("synced");
-          else setSyncStatus("error");
+          else applySyncStatusAfterStateFetch(null);
           return;
         }
-        setSyncStatus("synced");
+        applySyncStatusAfterStateFetch(remote);
         applyRemoteState(remote, { forceDonorMerge: opts?.forceDonorMerge });
       } finally {
         inFlight = false;
@@ -3514,7 +3527,7 @@ function AdminPageInner() {
       window.removeEventListener("offline", onOffline);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [user?.id, persistState, mergeIncomingStateSafely, syncSettlementUiFormFromOptions, applyDonorsFromServerMainState]);
+  }, [user?.id, persistState, mergeIncomingStateSafely, syncSettlementUiFormFromOptions, applyDonorsFromServerMainState, applySyncStatusAfterStateFetch]);
 
   const normalizeOverlayPresetLabels = (list: OverlayPreset[]): OverlayPreset[] =>
     list.map((p) => {
