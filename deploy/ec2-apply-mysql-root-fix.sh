@@ -63,8 +63,23 @@ grep -q "connection open (socket)" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev
   grep -q "pool created (socket)" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev/null && echo "log: mysql socket OK (legacy log)" || true
 ERRS="$(tail -30 /home/ubuntu/.pm2/logs/youtube-error.log 2>/dev/null | grep -c ETIMEDOUT || echo 0)"
 echo "error log ETIMEDOUT (last 30 lines): $ERRS"
-4031_CNT="$(tail -30 /home/ubuntu/.pm2/logs/youtube-error.log 2>/dev/null | grep -c 4031 || echo 0)"
-echo "error log 4031 idle disconnect (last 30 lines): $4031_CNT"
+ERR4031_CNT="$(tail -30 /home/ubuntu/.pm2/logs/youtube-error.log 2>/dev/null | grep -c 4031 || echo 0)"
+echo "error log 4031 idle disconnect (last 30 lines): $ERR4031_CNT"
+
+echo "== nginx /admin =="
+ADMIN_CODE="$(curl -sf --max-time 12 -o /dev/null -w "%{http_code}" "http://127.0.0.1/admin" 2>/dev/null || echo "000")"
+echo "/admin (nginx :80) HTTP ${ADMIN_CODE}"
+if [[ "$ADMIN_CODE" != "200" && "$ADMIN_CODE" != "302" && "$ADMIN_CODE" != "307" ]]; then
+  echo "WARN: /admin ${ADMIN_CODE} — pm2 restart + nginx reset"
+  pm2 restart "$PM2_APP" --update-env 2>/dev/null || true
+  sleep 10
+  curl -sf --max-time 12 "http://127.0.0.1:3000/api/health" >/dev/null && echo "health :3000 OK" || echo "WARN: health :3000 fail"
+  if [[ -f "$ROOT/deploy/ec2-nginx-reset-youtube.sh" ]]; then
+    bash "$ROOT/deploy/ec2-nginx-reset-youtube.sh" || true
+  fi
+  ADMIN_CODE="$(curl -sf --max-time 12 -o /dev/null -w "%{http_code}" "http://127.0.0.1/admin" 2>/dev/null || echo "000")"
+  echo "/admin after recover HTTP ${ADMIN_CODE}"
+fi
 pm2 logs "$PM2_APP" --lines 8 --nostream 2>/dev/null || true
 
 echo "=========================================="
