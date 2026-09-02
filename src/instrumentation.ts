@@ -2,7 +2,9 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
   const dbUrl = String(process.env.DATABASE_URL || "").trim();
-  if (dbUrl && /^mysql:\/\//i.test(dbUrl)) {
+  const { isRedisConfigured } = await import("@/app/api/_shared/upstash");
+  /** Upstash 설정 시 MySQL pool 선기동 금지 — GET miss마다 TCP ETIMEDOUT 유발 */
+  if (dbUrl && /^mysql:\/\//i.test(dbUrl) && !isRedisConfigured()) {
     const { registerMysqlKvBackend } = await import("@/app/api/_shared/upstash");
     const mysqlKv = await import("@/app/api/_shared/mysql-kv");
     registerMysqlKvBackend(mysqlKv);

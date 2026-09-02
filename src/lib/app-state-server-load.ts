@@ -60,7 +60,10 @@ export function coalesceAppStateRedisAndMemory(
  * KV 장애로 본문을 못 읽었을 때 빈 defaultState 를 반환하지 않는다 —
  * 호출측이 null 을 받으면 저장·반영을 건너뛴다 (엑셀/후원 자동 초기화 방지).
  */
-export async function loadAppStateForUserId(userId: string): Promise<AppState | null> {
+/** 멀티탭·멀티PC 동시 GET — userId 당 1회 KV 읽기 */
+const loadInflight = new Map<string, Promise<AppState | null>>();
+
+async function loadAppStateForUserIdOnce(userId: string): Promise<AppState | null> {
   const mem = getServerMemoryAppState(userId);
   if (isPersistentKvConfigured()) {
     const saved = await upstashGetAppStateJson<AppState>(appStateStorageKey(userId));
@@ -84,4 +87,14 @@ export async function loadAppStateForUserId(userId: string): Promise<AppState | 
     }
   }
   return mem || defaultState();
+}
+
+export async function loadAppStateForUserId(userId: string): Promise<AppState | null> {
+  const existing = loadInflight.get(userId);
+  if (existing) return existing;
+  const p = loadAppStateForUserIdOnce(userId).finally(() => {
+    if (loadInflight.get(userId) === p) loadInflight.delete(userId);
+  });
+  loadInflight.set(userId, p);
+  return p;
 }

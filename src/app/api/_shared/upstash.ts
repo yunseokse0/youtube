@@ -82,21 +82,62 @@ export function isPersistentKvConfigured(): boolean {
   return isRedisConfigured() || hasMysqlDatabaseUrl();
 }
 
-async function redisGetJson<T = unknown>(key: string): Promise<T | null> {
+/** Redis 200 + key 없음 → MySQL fallback 금지 (ETIMEDOUT 폭주 원인). 마이그레이션만 1 */
+export function isMysqlKvFallbackOnRedisMissEnabled(): boolean {
+  const v = String(process.env.MYSQL_KV_FALLBACK_ON_REDIS_MISS ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "on";
+}
+
+type RedisGetOutcome<T> =
+  | { kind: "hit"; value: T }
+  | { kind: "miss" }
+  | { kind: "error" };
+
+async function redisGetJsonDetailed<T = unknown>(key: string): Promise<RedisGetOutcome<T>> {
   const { base, token } = getRedisEnv();
-  if (!base || !token) return null;
+  if (!base || !token) return { kind: "error" };
   const url = `${base.replace(/\/$/, "")}/get/${encodeURIComponent(key)}`;
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-  if (!response.ok) return null;
-  const data = (await response.json()) as { result?: string | null };
-  if (!data || data.result == null) return null;
+  let response: Response;
   try {
-    return JSON.parse(data.result as string) as T;
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(8_000),
+    });
   } catch {
-    return null;
+    return { kind: "error" };
+  }
+  if (!response.ok) return { kind: "error" };
+  const data = (await response.json().catch(() => null)) as { result?: string | null } | null;
+  if (!data || data.result == null) return { kind: "miss" };
+  try {
+    return { kind: "hit", value: JSON.parse(data.result as string) as T };
+  } catch {
+    return { kind: "error" };
+  }
+}
+
+async function redisGetJson<T = unknown>(key: string): Promise<T | null> {
+  const out = await redisGetJsonDetailed<T>(key);
+  return out.kind === "hit" ? out.value : null;
+}
+
+/** Upstash REST ping — deep health·워치독용 */
+export async function redisKvPing(): Promise<boolean> {
+  if (!isRedisConfigured()) return false;
+  const { base, token } = getRedisEnv();
+  const url = `${base.replace(/\/$/, "")}/ping`;
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) return false;
+    const data = (await response.json().catch(() => null)) as { result?: string } | null;
+    return data?.result === "PONG";
+  } catch {
+    return false;
   }
 }
 
@@ -127,8 +168,17 @@ async function redisSetJson(key: string, value: unknown, usePipeline: boolean): 
 /** Redis 우선, 없으면 MySQL DATABASE_URL (nodejs만) */
 export async function upstashGetJson<T = unknown>(key: string): Promise<T | null> {
   if (isRedisConfigured()) {
-    const fromRedis = await redisGetJson<T>(key);
-    if (fromRedis != null) return fromRedis;
+    const out = await redisGetJsonDetailed<T>(key);
+    if (out.kind === "hit") return out.value;
+    if (out.kind === "miss" && !isMysqlKvFallbackOnRedisMissEnabled()) {
+      return null;
+    }
+    if (out.kind === "miss" && isMysqlKvFallbackOnRedisMissEnabled()) {
+      const mysql = await loadMysqlKv();
+      if (mysql) return mysql.mysqlKvGetJson<T>(key);
+      return null;
+    }
+    /* Redis HTTP/네트워크 오류 — MySQL fallback */
   }
   const mysql = await loadMysqlKv();
   if (mysql) return mysql.mysqlKvGetJson<T>(key);
@@ -205,6 +255,7 @@ export async function kvDel(key: string): Promise<void> {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     }).catch(() => {});
+    return;
   }
   const mysql = await loadMysqlKv();
   if (mysql) await mysql.mysqlKvDel(key);

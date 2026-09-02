@@ -44,6 +44,13 @@ sleep 3
 
 git pull --ff-only
 
+# Upstash + MySQL 동시 설정 시 MySQL socket·Redis 우선 강제
+ENV_FILE="$ROOT/.env"
+if [[ -f "$ENV_FILE" ]]; then
+  grep -q '^MYSQL_USE_SOCKET=' "$ENV_FILE" || echo 'MYSQL_USE_SOCKET=1' >> "$ENV_FILE"
+  echo "env: MYSQL_USE_SOCKET=1"
+fi
+
 echo "== 빌드·배포 =="
 SKIP_GIT_PULL=1 bash "$ROOT/deploy/deploy-on-ec2.sh"
 

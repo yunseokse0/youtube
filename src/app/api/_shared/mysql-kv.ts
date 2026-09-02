@@ -21,6 +21,9 @@ const CIRCUIT_COOLDOWN_MS = 30_000;
 let consecutiveFailures = 0;
 let circuitOpenUntil = 0;
 
+/** 동시 GET(멀티탭·멀티PC) — 동일 키 1회 MySQL 쿼리로 합침 */
+const getInflight = new Map<string, Promise<string | null>>();
+
 function isMysqlCircuitOpen(): boolean {
   return Date.now() < circuitOpenUntil;
 }
@@ -154,6 +157,16 @@ function localMysqlSocketAvailable(): boolean {
   }
 }
 
+/** Linux EC2 localhost — existsSync 없이 socket 우선 (TCP ETIMEDOUT 회피) */
+function shouldUseMysqlSocket(hostname: string): boolean {
+  if (process.env.MYSQL_USE_SOCKET === "0") return false;
+  if (process.env.MYSQL_USE_SOCKET === "1") return true;
+  const h = (hostname || "127.0.0.1").toLowerCase();
+  if (h !== "127.0.0.1" && h !== "localhost") return false;
+  if (process.platform === "linux") return true;
+  return localMysqlSocketAvailable();
+}
+
 /** mysql://user:pass@host:port/db — 비밀번호 특수문자 안전하게 파싱 */
 function mysqlPoolOptionsFromUrl(raw: string): mysql.PoolOptions | null {
   try {
@@ -167,17 +180,16 @@ function mysqlPoolOptionsFromUrl(raw: string): mysql.PoolOptions | null {
       password: decodeURIComponent(u.password || ""),
       database,
       waitForConnections: true,
-      connectionLimit: 4,
-      /** 대기열이 꽉 차면 즉시 오류 — /api/state GET 무한 대기 방지 */
-      queueLimit: 4,
+      /** 멀티탭·멀티PC — EC2 단일 Node 기준 (max_connections 40 내) */
+      connectionLimit: 10,
+      /** 무한 대기 금지 — queueLimit 0 은 hang 유발 */
+      queueLimit: 24,
       connectTimeout: 2_000,
       enableKeepAlive: true,
       keepAliveInitialDelay: 10_000,
       idleTimeout: 15_000,
     };
-    const useSocket =
-      localMysqlSocketAvailable() &&
-      (hostname === "127.0.0.1" || hostname === "localhost" || process.env.MYSQL_USE_SOCKET === "1");
+    const useSocket = shouldUseMysqlSocket(hostname);
     if (useSocket) {
       poolTransport = "socket";
       return { ...shared, socketPath: MYSQL_SOCKET_PATH };
@@ -231,7 +243,7 @@ async function ensureTable(p: Pool): Promise<void> {
   await tableReady;
 }
 
-export async function mysqlKvGet(key: string): Promise<string | null> {
+async function mysqlKvGetOnce(key: string): Promise<string | null> {
   if (isMysqlCircuitOpen()) {
     lastMysqlError = "MySQL circuit open (cooldown)";
     return null;
@@ -261,6 +273,16 @@ export async function mysqlKvGet(key: string): Promise<string | null> {
     console.error("[mysql-kv] get failed", err);
     return null;
   }
+}
+
+export async function mysqlKvGet(key: string): Promise<string | null> {
+  const existing = getInflight.get(key);
+  if (existing) return existing;
+  const p = mysqlKvGetOnce(key).finally(() => {
+    if (getInflight.get(key) === p) getInflight.delete(key);
+  });
+  getInflight.set(key, p);
+  return p;
 }
 
 export async function mysqlKvSet(key: string, value: string, ttlSec?: number): Promise<boolean> {
@@ -357,4 +379,21 @@ export async function mysqlKvSetJson(key: string, value: unknown): Promise<boole
 /** 테스트·프로세스 종료용 */
 export async function mysqlKvClosePool(): Promise<void> {
   await resetMysqlKvPool();
+}
+
+/** health?deep=1 — 실제 SELECT 1 (pool 등록만으로 mysqlOk true 금지) */
+export async function mysqlKvPing(): Promise<boolean> {
+  if (!isMysqlKvConfigured() || isMysqlCircuitOpen()) return false;
+  if (!getPool()) return false;
+  try {
+    await withMysqlPool(async (p) => {
+      await ensureTable(p);
+      await poolExecuteWithTimeout(p, "SELECT 1 AS ok");
+    });
+    lastMysqlError = null;
+    return true;
+  } catch (err) {
+    setLastMysqlError(err);
+    return false;
+  }
 }

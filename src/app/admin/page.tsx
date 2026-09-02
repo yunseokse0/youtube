@@ -41,6 +41,11 @@ import {
   isServerAuthoritativeBroadcastState,
 } from "@/lib/server-authoritative-broadcast-state";
 import { notifyBroadcastStateLocalUpdated, notifyOverlayPresetsLocalUpdated, notifyAdminPreviewDonorsUpdated, notifyAdminPreviewDonorRankingsThemeUpdated, ADMIN_PREVIEW_DONORS_REQUEST, overlayUserIdsMatch } from "@/lib/broadcast-state-local-sync";
+import {
+  broadcastStorageHealthUpdated,
+  startTabLeaderInterval,
+  subscribeStorageHealthUpdated,
+} from "@/lib/tab-leader-poll";
 import { APP_BRAND_NAME, adminHeaderTitle } from "@/lib/app-branding";
 import Toast from "@/components/Toast";
 import {
@@ -658,7 +663,7 @@ function buildPrismOverlayRelativePath(p: OverlayPreset, vertical: boolean, user
 const ADMIN_STATE_FALLBACK_POLL_MS = 120_000;
 /** 후원자 리스트 — SSE가 있으면 드물게, 끊기면 조금 더 자주 (since/304) */
 const ADMIN_DONOR_LIVE_POLL_TICK_MS = 2_000;
-const ADMIN_DONOR_LIVE_POLL_MS_SSE = 6_000;
+const ADMIN_DONOR_LIVE_POLL_MS_SSE = 10_000;
 const ADMIN_DONOR_LIVE_POLL_MS_NO_SSE = 4_000;
 
 /** SSE·폴링 시 불필요한 setState 연쇄(버튼·effect 재실행) 방지용 */
@@ -834,21 +839,9 @@ function AdminPageInner() {
     dailyLogLatest?: { at?: string; donorsCount?: number } | null;
     hint?: string | null;
   } | null>(null);
-  const refreshStorageHealth = useCallback(async () => {
-    const uid = user?.id;
-    if (!uid) return;
-    try {
-      const r = await fetch(`/api/state/storage-health?user=${encodeURIComponent(uid)}`, {
-        credentials: "include",
-        cache: "no-store",
-      });
-      if (!r.ok) return;
-      const data = await r.json();
+  const applyStorageHealthPayload = useCallback(
+    (data: NonNullable<typeof storageHealth>) => {
       if (!(data && typeof data === "object")) return;
-      /**
-       * 의도적 리셋 세션: health에 구 후원 건수가 남아 있어도 복구 배너용으로 노출하지 않음.
-       * (리셋 API 직후 stale 응답·다른 탭 잔여와 UI 0건 불일치 오보 방지)
-       */
       if (
         shouldSuppressAutoRosterRestore(stateRef.current) ||
         Date.now() < settlementResetUntilRef.current
@@ -868,10 +861,25 @@ function AdminPageInner() {
         return;
       }
       setStorageHealth(data);
+    },
+    []
+  );
+  const refreshStorageHealth = useCallback(async () => {
+    const uid = user?.id;
+    if (!uid) return;
+    try {
+      const r = await fetch(`/api/state/storage-health?user=${encodeURIComponent(uid)}`, {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (!r.ok) return;
+      const data = await r.json();
+      applyStorageHealthPayload(data);
+      broadcastStorageHealthUpdated(uid, data);
     } catch {
       /* noop */
     }
-  }, [user?.id]);
+  }, [user?.id, applyStorageHealthPayload]);
   const [toonationQueue, setToonationQueue] = useState<DonationEvent[]>([]);
   const [unmatchedEvents, setUnmatchedEvents] = useState<DonationEvent[]>([]);
   const [unmatchedAssignMap, setUnmatchedAssignMap] = useState<Record<string, string>>({});
@@ -2879,9 +2887,29 @@ function AdminPageInner() {
 
   useEffect(() => {
     if (!user?.id) return;
-    const id = window.setInterval(() => void refreshStorageHealth(), 45_000);
-    return () => window.clearInterval(id);
-  }, [user?.id, refreshStorageHealth]);
+    const uid = user.id;
+    const ac = new AbortController();
+    let gotBroadcast = false;
+    const unsub = subscribeStorageHealthUpdated(uid, (data) => {
+      gotBroadcast = true;
+      applyStorageHealthPayload(data as NonNullable<typeof storageHealth>);
+    });
+    /** 리더 탭이 없을 때(단독 탭·Web Locks 대기)만 지연 1회 fetch */
+    const fallback = window.setTimeout(() => {
+      if (!gotBroadcast && !ac.signal.aborted) void refreshStorageHealth();
+    }, 4_000);
+    startTabLeaderInterval(
+      `youtube-storage-health:${uid}`,
+      45_000,
+      () => refreshStorageHealth(),
+      ac.signal
+    );
+    return () => {
+      ac.abort();
+      window.clearTimeout(fallback);
+      unsub();
+    };
+  }, [user?.id, refreshStorageHealth, applyStorageHealthPayload]);
 
   useEffect(() => {
     if (!user) return;
