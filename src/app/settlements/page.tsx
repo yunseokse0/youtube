@@ -43,11 +43,9 @@ export default function SettlementsPage() {
         const hydrated = loadSettlementRecords(u.id);
         if (hydrated.length > 0) setRecords(hydrated);
         loadSettlementRecordsPreferApi(u.id).then(setRecords);
-        window.setTimeout(() => {
-          void loadSettlementRecordsPreferApi(u.id, { full: true }).then(setRecords);
-        }, 15_000);
         loadSettlementDeleteLogsPreferApi(u.id).then(setDeleteLogs);
-        loadDailyLogFromApi(u.id, { full: true })
+        /** full daily-log 는 복구 시에만 — 목록 hydrate 는 recent shard */
+        loadDailyLogFromApi(u.id)
           .then((apiLog) => {
             const local = loadDailyLog(u.id);
             const allDates = new Set([...Object.keys(local || {}), ...Object.keys(apiLog || {})]);
@@ -65,11 +63,11 @@ export default function SettlementsPage() {
       });
   }, [router]);
 
-  // 디바이스 간 동기화: 주기적 및 탭 포커스 시 API에서 최신 정산 기록 가져오기
+  // 디바이스 간 동기화: 포커스·가시성 우선, 백그라운드 폴링은  sparingly
   useEffect(() => {
     if (!user) return;
     const syncRecords = () => loadSettlementRecordsPreferApi(user.id).then(setRecords);
-    const timer = window.setInterval(syncRecords, 3000);
+    const timer = window.setInterval(syncRecords, 30_000);
     const onFocus = () => void syncRecords();
     const onVisibility = () => { if (document.visibilityState === "visible") void syncRecords(); };
     window.addEventListener("focus", onFocus);

@@ -90,6 +90,7 @@ import {
 } from "@/lib/high-society";
 import { normalizeTerritoryLogs, mergeTerritoryLogsFromPatch } from "@/lib/territory-utils";
 import { loadDailyLogForUserId } from "@/lib/daily-log-server-load";
+import { DAILY_LOG_SHARD_DAYS_DEFAULT } from "@/lib/daily-log-shard";
 import { enrichAppStateFromDailyLogWhenDonorsMissing } from "@/lib/state-restore";
 import { isSettlementResetExplicitlyConfirmed } from "@/lib/settlement-reset-confirm";
 
@@ -896,7 +897,9 @@ export async function GET(req: Request) {
       !shouldSuppressAutoRosterRestore(mergedForResponse)
     ) {
       try {
-        const dailyLog = await loadDailyLogForUserId(userId, { recentDays: 7 });
+        const dailyLog = await loadDailyLogForUserId(userId, {
+          recentDays: DAILY_LOG_SHARD_DAYS_DEFAULT,
+        });
         const fromLog = enrichAppStateFromDailyLogWhenDonorsMissing(
           mergedForResponse,
           dailyLog

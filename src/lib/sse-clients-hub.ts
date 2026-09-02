@@ -37,11 +37,14 @@ export function broadcastSseEvent(data: unknown): void {
 }
 
 /**
- * SSE 1회만 전달. 과거에는 in-memory broadcast + POST /api/events 를 동시에 호출해
- * 같은 프로세스에서 이벤트가 2번 나가 작업 로그·큐 알림이 쌍으로 쌓였다.
- * POST 성공 시 route 가 broadcast 하므로 추가 호출하지 않고, 실패 시에만 로컬 fallback.
+ * 같은 Node 프로세스에 SSE 구독자가 있으면 루프백 HTTP 없이 직접 broadcast.
+ * EC2 pm2 단일 인스턴스에서 매 후원 저장마다 /api/events POST 왕복을 제거한다.
  */
 export async function publishSseEvent(data: unknown): Promise<void> {
+  if (clients.length > 0) {
+    broadcastSseEvent(data);
+    return;
+  }
   const origin = process.env.INTERNAL_ORIGIN || `http://127.0.0.1:${process.env.PORT || 3000}`;
   try {
     const res = await fetch(`${origin}/api/events`, {

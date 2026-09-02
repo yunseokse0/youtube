@@ -199,7 +199,7 @@ export default function SettlementDetailPage() {
       if (donorEditDirtyRef.current) return;
       void loadSettlementRecordsPreferApi(user.id).then(setRecords);
     };
-    const timer = window.setInterval(syncRecords, 3000);
+    const timer = window.setInterval(syncRecords, 30_000);
     const onVisibility = () => {
       if (document.visibilityState === "visible") syncRecords();
     };

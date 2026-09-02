@@ -667,9 +667,9 @@ function buildPrismOverlayRelativePath(p: OverlayPreset, vertical: boolean, user
 /** 평시 동기화는 SSE `state_updated` + 디바운스. 주기 폴링은 연결 끊김 대비용만 */
 const ADMIN_STATE_FALLBACK_POLL_MS = 120_000;
 /** 후원자 리스트 — SSE가 있으면 드물게, 끊기면 조금 더 자주 (since/304) */
-const ADMIN_DONOR_LIVE_POLL_TICK_MS = 2_000;
-const ADMIN_DONOR_LIVE_POLL_MS_SSE = 12_000;
-const ADMIN_DONOR_LIVE_POLL_MS_NO_SSE = 8_000;
+const ADMIN_DONOR_LIVE_POLL_TICK_MS = 3_000;
+const ADMIN_DONOR_LIVE_POLL_MS_SSE = 20_000;
+const ADMIN_DONOR_LIVE_POLL_MS_NO_SSE = 12_000;
 
 /** SSE·폴링 시 불필요한 setState 연쇄(버튼·effect 재실행) 방지용 */
 function adminSyncFingerprint(s: AppState): string {
@@ -739,6 +739,8 @@ function AdminPageInner() {
     members: [],
   }));
   const [syncStatus, setSyncStatus] = useState<"loading" | "synced" | "local" | "error">("loading");
+  /** 후원 리스트 DOM — 기본 최근 N건만 (전체 렌더는 버튼) */
+  const [donorListShowAll, setDonorListShowAll] = useState(false);
   /** 401·403 — 배지 문구·재시도 중단 */
   const [syncAuthBlocked, setSyncAuthBlocked] = useState(false);
   const stateUpdatedAtRef = useRef<number>(0);
@@ -1738,6 +1740,14 @@ function AdminPageInner() {
   const donorListRowsSorted = useMemo(
     () => donorListRows.slice().sort((a, b) => b.at - a.at),
     [donorListRows]
+  );
+  const DONOR_LIST_WINDOW = 120;
+  const donorListRowsVisible = useMemo(
+    () =>
+      donorListShowAll
+        ? donorListRowsSorted
+        : donorListRowsSorted.slice(0, DONOR_LIST_WINDOW),
+    [donorListRowsSorted, donorListShowAll]
   );
   const applyGlobalDonorsFormat = useCallback(
     (format: "full" | "short") => {
@@ -15691,7 +15701,7 @@ function AdminPageInner() {
                     </tr>
                   </thead>
                   <tbody>
-                    {donorListRowsSorted
+                    {donorListRowsVisible
                       .map((d, rowIdx) => {
                         const isSplitPart = isGroupSplitPartDonor(d);
                         const isSplitSource = isGroupSplitSourceDonor(state, d);
@@ -15864,6 +15874,20 @@ function AdminPageInner() {
                   </tbody>
                 </table>
               </div>
+              {donorListRowsSorted.length > DONOR_LIST_WINDOW ? (
+                <div className="mt-2 flex items-center gap-2 text-xs text-neutral-400">
+                  <span>
+                    표시 {donorListRowsVisible.length} / 전체 {donorListRowsSorted.length}건
+                  </span>
+                  <button
+                    type="button"
+                    className="rounded bg-neutral-800 px-2 py-1 text-neutral-200 hover:bg-neutral-700"
+                    onClick={() => setDonorListShowAll((v) => !v)}
+                  >
+                    {donorListShowAll ? "최근 120건만" : "전체 표시"}
+                  </button>
+                </div>
+              ) : null}
               <div className="text-xs text-neutral-400 mt-2">
                 후원자 리스트는 건별 기록입니다. (동일 후원자여도 건별로 별도 행 표시)
                 {" "}
