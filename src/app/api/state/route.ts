@@ -59,7 +59,10 @@ import { isManualOverlaySessionId } from "@/lib/sig-sales-manual-round";
 import { createModuleLogger } from "@/lib/logger";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 import { pickFresherAppState } from "@/lib/app-state-freshness";
-import { coalesceAppStateRedisAndMemory } from "@/lib/app-state-server-load";
+import {
+  coalesceAppStateRedisAndMemory,
+  peekAppStateKvCache,
+} from "@/lib/app-state-server-load";
 import { saveAppStateForRoulette } from "../roulette/edge-state-store";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { isRouletteLocked } from "../roulette/roulette-lock";
@@ -588,6 +591,15 @@ function parseFastHydrateParam(req: Request): boolean {
   }
 }
 
+function hasWarmServerState(state: AppState | null | undefined): state is AppState {
+  if (!state) return false;
+  return (
+    normalizeDonorsArray(state.donors).length > 0 ||
+    totalCombined(state) > 0 ||
+    hasMeaningfulMemberRoster(state)
+  );
+}
+
 function parseSinceParam(req: Request): number {
   try {
     const n = Number(new URL(req.url).searchParams.get("since") || 0);
@@ -714,6 +726,29 @@ export async function GET(req: Request) {
           [HDR_STATE_STORAGE]: "memory",
         },
       });
+    }
+
+    /** fast=1 admin hydrate — warm memory·KV cache 있으면 MySQL LONGTEXT read·enrich 생략 */
+    if (fastHydrate && since === 0 && !pickMode) {
+      const memFast = getServerMemoryAppState(userId);
+      const cached = peekAppStateKvCache(userId);
+      const warm =
+        coalesceAppStateRedisAndMemory(cached, memFast) ||
+        pickFresherAppState(cached, memFast) ||
+        memFast ||
+        cached;
+      if (hasWarmServerState(warm)) {
+        let merged = applyDonationGoalPresetNormalization(syncMemberTotalsFromDonors(warm));
+        if (memFast !== warm) setServerMemoryAppState(userId, merged);
+        return new Response(JSON.stringify(bodyForPick(merged)), {
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control":
+              "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
+            [HDR_STATE_STORAGE]: persistentStateStorageHeader(),
+          },
+        });
+      }
     }
 
     let state = await upstashGet<AppState>(stateKey(userId));

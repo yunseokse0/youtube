@@ -24,12 +24,15 @@ echo "== 3. nginx timeout 120s 적용 =="
 bash "$ROOT/deploy/ec2-nginx-reset-youtube.sh" || true
 
 echo "== 4. 검증 =="
-sleep 5
-curl -sf --max-time 10 "http://127.0.0.1:3000/api/health?deep=1" | head -c 200 || echo "health FAIL"
+sleep 8
+echo "state warm (cold start → memory·KV cache)..."
+curl -sf --max-time 90 \
+  "http://127.0.0.1:3000/api/state?u=din&user=din" -o /dev/null || echo "state warm WARN"
+curl -sf --max-time 30 -w "state fast HTTP:%{http_code} time:%{time_total}s\n" \
+  "http://127.0.0.1:3000/api/state?u=din&user=din&fast=1" -o /dev/null || echo "state FAIL"
+curl -sf --max-time 15 "http://127.0.0.1:3000/api/health?deep=1" | head -c 200 || echo "health FAIL"
 echo ""
-curl -sf --max-time 30 -w "admin localhost HTTP:%{http_code} time:%{time_total}s\n" \
+curl -sf --max-time 60 -w "admin localhost HTTP:%{http_code} time:%{time_total}s\n" \
   "http://127.0.0.1:3000/admin" -o /dev/null || echo "admin localhost FAIL"
-curl -sf --max-time 15 -w "state fast HTTP:%{http_code} time:%{time_total}s\n" \
-  "http://127.0.0.1:3000/api/state?user=din&fast=1" -o /dev/null || echo "state FAIL"
 
 echo "브라우저: Ctrl+Shift+R 로 http://$(curl -sf http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo 'YOUR_IP')/admin"

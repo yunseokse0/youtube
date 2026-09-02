@@ -8,7 +8,7 @@
 ## 0. 접속 (1분)
 
 1. [AWS 콘솔](https://ap-northeast-2.console.aws.amazon.com/ec2/) → **EC2** → **인스턴스**
-2. IP `13.125.178.141` 인스턴스 선택
+2. IP `3.37.127.90` 인스턴스 선택 (`DIN Studio Overlay`)
 3. **연결** → **EC2 Instance Connect** → **연결**
 4. 검은 터미널이 뜨면 아래 **한 블록씩** 붙여넣기
 
@@ -83,7 +83,7 @@ bash deploy/ec2-apply-mysql-root-fix.sh
 
 ## 3. 브라우저 확인
 
-- `http://13.125.178.141/admin` — 새로고침 (Ctrl+Shift+R)
+- `http://3.37.127.90/admin` — 새로고침 (Ctrl+Shift+R)
 - DevTools Network: `/api/state?fast=1` **200**, 2초 이내
 
 ---

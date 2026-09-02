@@ -70,6 +70,13 @@ export function invalidateAppStateKvCache(userId?: string): void {
   else kvReadCache.clear();
 }
 
+/** admin fast hydrate — 20s KV read cache hit (MySQL LONGTEXT read 생략) */
+export function peekAppStateKvCache(userId: string): AppState | null {
+  const hit = kvReadCache.get(userId);
+  if (hit && Date.now() - hit.loadedAt < KV_READ_CACHE_TTL_MS) return hit.state;
+  return null;
+}
+
 async function loadAppStateForUserIdOnce(
   userId: string,
   opts?: { bypassCache?: boolean }
