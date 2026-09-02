@@ -47,8 +47,43 @@ echo "-- curl (타임아웃 5s) --"
 echo "/api/health :$(curl_code "http://127.0.0.1:${PORT}/api/health" 5)"
 echo "nginx /admin :$(curl_code "http://127.0.0.1/admin" 5)"
 
-echo "== 1) MySQL 재시작 =="
+echo "== 1) MySQL 재시작·튜닝·비밀번호 =="
+if [[ -f "$ROOT/deploy/ec2-mysql-stabilize.sh" ]]; then
+  bash "$ROOT/deploy/ec2-mysql-stabilize.sh" || true
+fi
+if [[ -f "$ROOT/deploy/ec2-mysql-sync-password-from-env.sh" ]]; then
+  bash "$ROOT/deploy/ec2-mysql-sync-password-from-env.sh" || true
+fi
 ensure_mysql_running || exit 1
+
+echo "== MySQL SELECT 1 (Node 기동 전) =="
+MYSQL_SMOKE=0
+for i in 1 2 3 4 5 6 7 8; do
+  if [[ -f /etc/mysql/youtube-app.cnf ]]; then
+    if mysql --defaults-extra-file=/etc/mysql/youtube-app.cnf -e "SELECT 1 AS ok;" >/dev/null 2>&1; then
+      MYSQL_SMOKE=1
+      echo "SELECT 1 OK (youtube-app.cnf)"
+      break
+    fi
+  fi
+  if run mysql --protocol=socket -e "SELECT 1 AS ok;" >/dev/null 2>&1; then
+    MYSQL_SMOKE=1
+    echo "SELECT 1 OK (socket)"
+    break
+  fi
+  echo "  mysql smoke try ${i}…"
+  run systemctl restart mysql 2>/dev/null || true
+  sleep 2
+  ensure_mysql_running || true
+done
+if [[ "$MYSQL_SMOKE" != "1" ]]; then
+  echo "ERROR: MySQL SELECT 1 실패 — Node 기동 중단 (OOM·디스크 확인)"
+  run journalctl -u mysql -n 20 --no-pager 2>/dev/null || true
+  df -h / || true
+  free -h || true
+  exit 1
+fi
+sleep 2
 
 echo "== 2) Node·pm2·포트 정리 =="
 pm2 kill 2>/dev/null || true

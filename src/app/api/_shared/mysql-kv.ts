@@ -9,6 +9,7 @@ import mysql, { type Pool, type RowDataPacket } from "mysql2/promise";
 let pool: Pool | null = null;
 let tableReady: Promise<void> | null = null;
 let lastMysqlError: string | null = null;
+let poolResetPromise: Promise<void> | null = null;
 
 /** hang 시 Node 전체 HTTP 무응답 방지 — 초과 시 connection destroy */
 const MYSQL_QUERY_TIMEOUT_MS = 10_000;
@@ -23,45 +24,53 @@ function isTransientMysqlError(err: unknown): boolean {
     code === "ECONNRESET" ||
     code === "ETIMEDOUT" ||
     code === "ECONNREFUSED" ||
+    code === "POOL_CLOSED" ||
     e?.errno === 1159 ||
+    msg.includes("Pool is closed") ||
+    msg.includes("pool is closed") ||
     msg.includes("packets out of order") ||
     msg.includes("reading communication packets")
   );
 }
 
 async function resetMysqlKvPool(): Promise<void> {
-  const old = pool;
-  pool = null;
-  tableReady = null;
-  if (old) {
-    await old.end().catch(() => {});
+  if (poolResetPromise) {
+    await poolResetPromise;
+    return;
   }
+  poolResetPromise = (async () => {
+    const old = pool;
+    pool = null;
+    tableReady = null;
+    if (old) {
+      await old.end().catch(() => {});
+    }
+  })().finally(() => {
+    poolResetPromise = null;
+  });
+  await poolResetPromise;
 }
 
-function attachPoolGuards(p: Pool): void {
-  p.on("connection", (conn) => {
-    conn.on("error", (err: NodeJS.ErrnoException) => {
-      if (isTransientMysqlError(err)) {
-        console.warn("[mysql-kv] connection dropped — pool reset", err.code ?? err.message);
-        void resetMysqlKvPool();
-      }
-    });
-  });
+function attachPoolGuards(_p: Pool): void {
+  /* connection error 시 즉시 pool.end() 하면 진행 중 쿼리가 "Pool is closed" 로 연쇄 실패 — withMysqlPool 재시도만 사용 */
 }
 
 async function withMysqlPool<T>(fn: (p: Pool) => Promise<T>): Promise<T> {
-  let p = getPool();
-  if (!p) throw new Error("MySQL pool unavailable");
-  try {
-    return await fn(p);
-  } catch (err) {
-    if (!isTransientMysqlError(err)) throw err;
-    console.warn("[mysql-kv] transient error — retry after pool reset", err);
-    await resetMysqlKvPool();
-    p = getPool();
-    if (!p) throw err;
-    return await fn(p);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const p = getPool();
+    if (!p) throw new Error("MySQL pool unavailable");
+    try {
+      return await fn(p);
+    } catch (err) {
+      if (attempt === 0 && isTransientMysqlError(err)) {
+        console.warn("[mysql-kv] transient error — retry after pool reset", err);
+        await resetMysqlKvPool();
+        continue;
+      }
+      throw err;
+    }
   }
+  throw new Error("MySQL pool unavailable after retry");
 }
 
 async function poolExecuteWithTimeout(
@@ -122,13 +131,14 @@ function mysqlPoolOptionsFromUrl(raw: string): mysql.PoolOptions | null {
       password: decodeURIComponent(u.password || ""),
       database,
       waitForConnections: true,
-      connectionLimit: 10,
+      connectionLimit: 5,
       /** 대기열이 꽉 차면 즉시 오류 — /api/state GET 무한 대기 방지 */
-      queueLimit: 32,
-      connectTimeout: 5_000,
+      queueLimit: 8,
+      connectTimeout: 3_000,
+      acquireTimeout: 3_000,
       enableKeepAlive: true,
       keepAliveInitialDelay: 10_000,
-      idleTimeout: 30_000,
+      idleTimeout: 20_000,
     };
   } catch {
     return null;
@@ -152,15 +162,16 @@ function getPool(): Pool | null {
 async function ensureTable(p: Pool): Promise<void> {
   if (!tableReady) {
     tableReady = (async () => {
-      await p.execute(`
-        CREATE TABLE IF NOT EXISTS app_kv (
+      await poolExecuteWithTimeout(
+        p,
+        `CREATE TABLE IF NOT EXISTS app_kv (
           \`k\` VARCHAR(512) NOT NULL,
           \`v\` LONGTEXT NOT NULL,
           \`expires_at\` BIGINT NULL,
           \`updated_at\` BIGINT NOT NULL,
           PRIMARY KEY (\`k\`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+      );
     })().catch((err) => {
       tableReady = null;
       throw err;

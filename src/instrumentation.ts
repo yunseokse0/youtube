@@ -9,8 +9,11 @@ export async function register() {
   }
 
   const { restoreToonationListenersFromStore } = await import("@/lib/donation/toonation/server-listener");
-  /** MySQL 지연·hang 시 register 가 끝나지 않아 /api/health 포함 전 HTTP가 무응답 — 비동기 복구 */
-  void restoreToonationListenersFromStore().catch((err) => {
-    console.error("[instrumentation] restoreToonationListenersFromStore failed", err);
-  });
+  /** MySQL 지연·hang 시 register 가 끝나지 않아 /api/health 포함 전 HTTP가 무응답 — 비동기·지연 복구 */
+  void (async () => {
+    await new Promise((r) => setTimeout(r, 12_000));
+    await restoreToonationListenersFromStore().catch((err) => {
+      console.error("[instrumentation] restoreToonationListenersFromStore failed", err);
+    });
+  })();
 }
