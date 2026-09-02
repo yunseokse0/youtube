@@ -14,8 +14,23 @@ echo "=========================================="
 echo " EC2 youtube 긴급 복구"
 echo "=========================================="
 
-echo "== 0) MySQL 재시작 =="
-ensure_mysql_running || exit 1
+echo "== 0) pm2·포트 정리 (MySQL restart 전 Node 중지) =="
+pm2 stop "$PM2_APP" 2>/dev/null || true
+pm2 delete "$PM2_APP" 2>/dev/null || true
+pm2 unset "$PM2_APP" NEXT_BUILD_DIR 2>/dev/null || true
+pm2 unset "$PM2_APP" NEXT_USE_STAGING_DIST 2>/dev/null || true
+unset NEXT_BUILD_DIR NEXT_USE_STAGING_DIST || true
+free_listen_port "$PORT"
+
+echo "== 1) MySQL (inactive일 때만 start — active면 restart 금지) =="
+if systemctl list-unit-files mysql.service >/dev/null 2>&1; then
+  if systemctl is-active mysql >/dev/null 2>&1; then
+    echo "MySQL already active — skip restart"
+    wait_for_mysql_port || echo "WARN: :3306 미수신 — journalctl -u mysql"
+  else
+    ensure_mysql_running || exit 1
+  fi
+fi
 
 if [[ ! -f .next/BUILD_ID ]]; then
   echo "ERROR: .next/BUILD_ID 없음 — bash deploy/deploy-on-ec2.sh"
@@ -27,14 +42,6 @@ W=$(grep -oE 'webpack-[a-f0-9]+\.js' .next/build-manifest.json | head -1)
 echo "BUILD_ID=$BID webpack=$W"
 ls -la ".next/static/${BID}/_buildManifest.js"
 ls -la ".next/static/chunks/${W}"
-
-echo "== 1) pm2·포트 정리 =="
-pm2 stop "$PM2_APP" 2>/dev/null || true
-pm2 delete "$PM2_APP" 2>/dev/null || true
-pm2 unset "$PM2_APP" NEXT_BUILD_DIR 2>/dev/null || true
-pm2 unset "$PM2_APP" NEXT_USE_STAGING_DIST 2>/dev/null || true
-unset NEXT_BUILD_DIR NEXT_USE_STAGING_DIST || true
-free_listen_port "$PORT"
 
 echo "== 2) pm2 기동 =="
 cd "$ROOT"

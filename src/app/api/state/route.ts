@@ -66,6 +66,7 @@ import { isRouletteLocked } from "../roulette/roulette-lock";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { getUserIdFromRequest, resolveWriteUserId, writeUserIdErrorResponse } from "../_shared/user-id";
 import { getPersistentKvLastError, isPersistentKvConfigured, ensureMysqlKvBackend, isRedisConfigured } from "../_shared/upstash";
+import { isMysqlKvConfigured, mysqlKvPeekRevision } from "../_shared/mysql-kv";
 import {
   upstashGetAppStateJson,
   upstashSetAppStateJson,
@@ -650,6 +651,15 @@ export async function GET(req: Request) {
   const isNotModified = (state: AppState) => since > 0 && revisionAt(state) <= since;
   try {
     const kvOk = isPersistentKvConfigured();
+    /** MySQL-only: since 폴링 시 LONGTEXT 전체 read 생략 — updated_at·메모리만 비교 */
+    if (since > 0 && kvOk && !isRedisConfigured() && isMysqlKvConfigured()) {
+      const memEarly = getServerMemoryAppState(userId);
+      const memRev = memEarly ? revisionAt(memEarly) : 0;
+      const dbRev = await mysqlKvPeekRevision(stateKey(userId));
+      if (dbRev !== null && dbRev <= since && memRev <= since) {
+        return stateNotModifiedResponse("mysql-rev");
+      }
+    }
     if (!kvOk) {
       let state = applyDonationGoalPresetNormalization(
         getServerMemoryAppState(userId) || defaultState()

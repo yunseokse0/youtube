@@ -15,8 +15,8 @@ let lastMysqlError: string | null = null;
 let connResetPromise: Promise<void> | null = null;
 let connTransport: "socket" | "tcp" | null = null;
 
-/** hang 시 Node 전체 HTTP 무응답 방지 — 초과 시 connection destroy */
-const MYSQL_QUERY_TIMEOUT_MS = 10_000;
+/** hang 시 Node 전체 HTTP 무응답 방지 — LONGTEXT 전체 읽기 여유 */
+const MYSQL_QUERY_TIMEOUT_MS = 25_000;
 /** 연속 실패 시 MySQL 접속 중단 — ETIMEDOUT 폭주·event loop hang 방지 */
 const CIRCUIT_FAIL_THRESHOLD = 3;
 const CIRCUIT_COOLDOWN_MS = 30_000;
@@ -302,7 +302,51 @@ export async function mysqlKvGet(key: string): Promise<string | null> {
   return p;
 }
 
-export async function mysqlKvSet(key: string, value: string, ttlSec?: number): Promise<boolean> {
+/** 저장 시 app_kv.updated_at — GET since/304 경량 비교용 */
+function storedRevisionMsFromValue(value: unknown): number {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return Date.now();
+  const o = value as Record<string, unknown>;
+  let rev = Number(o.updatedAt || 0);
+  rev = Math.max(rev, Number(o.membersRosterUpdatedAt || 0));
+  rev = Math.max(rev, Number(o.donorRankingsUpdatedAt || 0));
+  return rev > 0 ? rev : Date.now();
+}
+
+const peekInflight = new Map<string, Promise<number | null>>();
+
+/** LONGTEXT 없이 revision만 — OBS since 폴링 MySQL 부하 절감 */
+export async function mysqlKvPeekRevision(key: string): Promise<number | null> {
+  if (isMysqlCircuitOpen() || !isMysqlKvConfigured()) return null;
+  const existing = peekInflight.get(key);
+  if (existing) return existing;
+  const p = runSerializedMysql(async () =>
+    withMysqlConn(async (c) => {
+      await ensureTable(c);
+      const rows = await connExecuteWithTimeout(
+        c,
+        `SELECT \`updated_at\` FROM app_kv WHERE \`k\` = ? LIMIT 1`,
+        [key]
+      );
+      const row = rows[0];
+      if (!row) return null;
+      const n = Number(row.updated_at);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    })
+  )
+    .catch(() => null)
+    .finally(() => {
+      if (peekInflight.get(key) === p) peekInflight.delete(key);
+    });
+  peekInflight.set(key, p);
+  return p;
+}
+
+export async function mysqlKvSet(
+  key: string,
+  value: string,
+  ttlSec?: number,
+  revisionMs?: number
+): Promise<boolean> {
   if (isMysqlCircuitOpen()) {
     lastMysqlError = "MySQL circuit open (cooldown)";
     return false;
@@ -311,15 +355,16 @@ export async function mysqlKvSet(key: string, value: string, ttlSec?: number): P
     await runSerializedMysql(async () =>
       withMysqlConn(async (c) => {
         await ensureTable(c);
-        const now = Date.now();
+        const writeAt =
+          typeof revisionMs === "number" && revisionMs > 0 ? Math.floor(revisionMs) : Date.now();
         const expires =
-          typeof ttlSec === "number" && ttlSec > 0 ? now + Math.floor(ttlSec) * 1000 : null;
+          typeof ttlSec === "number" && ttlSec > 0 ? writeAt + Math.floor(ttlSec) * 1000 : null;
         await connExecuteWithTimeout(
           c,
           `INSERT INTO app_kv (\`k\`, \`v\`, \`expires_at\`, \`updated_at\`)
        VALUES (?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE \`v\` = VALUES(\`v\`), \`expires_at\` = VALUES(\`expires_at\`), \`updated_at\` = VALUES(\`updated_at\`)`,
-          [key, value, expires, now]
+          [key, value, expires, writeAt]
         );
       })
     );
@@ -387,7 +432,7 @@ export async function mysqlKvGetJson<T = unknown>(key: string): Promise<T | null
 
 export async function mysqlKvSetJson(key: string, value: unknown): Promise<boolean> {
   try {
-    return mysqlKvSet(key, JSON.stringify(value));
+    return mysqlKvSet(key, JSON.stringify(value), undefined, storedRevisionMsFromValue(value));
   } catch {
     return false;
   }
