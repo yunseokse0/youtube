@@ -6,6 +6,7 @@ const { execute, createConnection } = vi.hoisted(() => {
   const execute = vi.fn();
   const createConnection = vi.fn(async () => ({
     execute,
+    ping: vi.fn().mockResolvedValue(undefined),
     on: vi.fn(),
     end: vi.fn().mockResolvedValue(undefined),
     destroy: vi.fn(),

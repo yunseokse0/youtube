@@ -61,8 +61,10 @@ echo "$HEALTH"
 echo "$HEALTH" | grep -q '"redisConfigured":true' && echo "Redis: configured (선택)" || echo "storage: MySQL-only (DATABASE_URL) — 정상"
 grep -q "connection open (socket)" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev/null && echo "log: mysql socket OK" || \
   grep -q "pool created (socket)" /home/ubuntu/.pm2/logs/youtube-out.log 2>/dev/null && echo "log: mysql socket OK (legacy log)" || true
-ERRS="$(grep -c ETIMEDOUT /home/ubuntu/.pm2/logs/youtube-error.log 2>/dev/null || echo 0)"
-echo "error log ETIMEDOUT count: $ERRS"
+ERRS="$(tail -30 /home/ubuntu/.pm2/logs/youtube-error.log 2>/dev/null | grep -c ETIMEDOUT || echo 0)"
+echo "error log ETIMEDOUT (last 30 lines): $ERRS"
+4031_CNT="$(tail -30 /home/ubuntu/.pm2/logs/youtube-error.log 2>/dev/null | grep -c 4031 || echo 0)"
+echo "error log 4031 idle disconnect (last 30 lines): $4031_CNT"
 pm2 logs "$PM2_APP" --lines 8 --nostream 2>/dev/null || true
 
 echo "=========================================="

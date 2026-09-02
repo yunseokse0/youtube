@@ -14,6 +14,10 @@ let tableReady: Promise<void> | null = null;
 let lastMysqlError: string | null = null;
 let connResetPromise: Promise<void> | null = null;
 let connTransport: "socket" | "tcp" | null = null;
+let connLastUsedAt = 0;
+
+/** MySQL wait_timeout(600s) 전에 ping — ER_CLIENT_INTERACTION(4031) 방지 */
+const CONN_PING_IF_IDLE_MS = 45_000;
 
 /** hang 시 Node 전체 HTTP 무응답 방지 — LONGTEXT 전체 읽기 여유 */
 const MYSQL_QUERY_TIMEOUT_MS = 25_000;
@@ -70,7 +74,11 @@ function isTransientMysqlError(err: unknown): boolean {
     code === "ETIMEDOUT" ||
     code === "ECONNREFUSED" ||
     code === "POOL_CLOSED" ||
+    code === "ER_CLIENT_INTERACTION_TIMEOUT" ||
+    e?.errno === 4031 ||
     e?.errno === 1159 ||
+    msg.includes("disconnected by the server because of inactivity") ||
+    msg.includes("Client interaction timeout") ||
     msg.includes("Pool is closed") ||
     msg.includes("pool is closed") ||
     msg.includes("packets out of order") ||
@@ -88,6 +96,7 @@ async function resetMysqlConnection(): Promise<void> {
     conn = null;
     connOpenPromise = null;
     tableReady = null;
+    connLastUsedAt = 0;
     if (old) {
       await old.end().catch(() => {});
     }
@@ -97,18 +106,36 @@ async function resetMysqlConnection(): Promise<void> {
   await connResetPromise;
 }
 
-async function withMysqlConn<T>(fn: (c: Connection) => Promise<T>): Promise<T> {
+async function ensureConnAlive(c: Connection): Promise<void> {
+  const idleMs = Date.now() - connLastUsedAt;
+  if (connLastUsedAt > 0 && idleMs < CONN_PING_IF_IDLE_MS) return;
+  try {
+    await c.ping();
+    connLastUsedAt = Date.now();
+  } catch (err) {
+    await resetMysqlConnection();
+    throw err;
+  }
+}
+
+async function withMysqlConn<T>(fn: (c: Connection) => Promise<T>, attempt = 0): Promise<T> {
   if (isMysqlCircuitOpen()) {
     throw new Error("MySQL circuit open (cooldown)");
   }
   const c = await openConnection();
   if (!c) throw new Error("MySQL connection unavailable");
   try {
+    await ensureConnAlive(c);
     const out = await fn(c);
+    connLastUsedAt = Date.now();
     noteMysqlSuccess();
     return out;
   } catch (err) {
     noteMysqlFailure(err);
+    if (isTransientMysqlError(err) && attempt < 1) {
+      await resetMysqlConnection();
+      return withMysqlConn(fn, attempt + 1);
+    }
     if (isTransientMysqlError(err)) {
       await resetMysqlConnection();
     }
@@ -192,6 +219,8 @@ function mysqlConnOptionsFromUrl(raw: string): mysql.ConnectionOptions | null {
       password: decodeURIComponent(u.password || ""),
       database,
       connectTimeout: 5_000,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 10_000,
     };
     const useSocket = shouldUseMysqlSocket(hostname);
     if (useSocket) {
@@ -224,6 +253,7 @@ async function openConnection(): Promise<Connection | null> {
       tableReady = null;
     });
     conn = c;
+    connLastUsedAt = Date.now();
     if (connTransport) {
       console.info(`[mysql-kv] connection open (${connTransport})`);
     }
