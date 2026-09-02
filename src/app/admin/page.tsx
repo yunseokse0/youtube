@@ -759,13 +759,8 @@ function AdminPageInner() {
       } else if (offline) {
         setSyncStatus("local");
       } else {
-        const live = stateRef.current;
-        const hasLocal =
-          hasMeaningfulBroadcastData(live) ||
-          normalizeDonorsArray(live.donors).length > 0 ||
-          totalCombined(live) > 0;
-        /** 서버 미검증이어도 LS·세션 데이터로 편집 가능 — error 고착·0원 UI 방지 (synced 는 검증 시에만) */
-        setSyncStatus(hasLocal ? "local" : "error");
+        /** 서버 정본 모드 — 미검증이면 error (로컬 표시로 위장하지 않음) */
+        setSyncStatus("error");
       }
     },
     []
@@ -2405,365 +2400,147 @@ function AdminPageInner() {
     if (!user?.id) return;
     let cancelled = false;
     setSyncStatus("loading");
-    /** API 대기 중에도 세션·LS 스냅샷 즉시 표시 — 0:0:0·「멤버 불러오는 중」 고착 방지 */
-    try {
-      const sessionEarly = readSessionBroadcastState(user.id);
-      const lsEarly = sessionEarly || loadState(user.id);
-      if (
-        hasMeaningfulMemberRoster(lsEarly) ||
-        normalizeDonorsArray(lsEarly.donors).length > 0 ||
-        totalCombined(lsEarly) > 0
-      ) {
-        setState(lsEarly);
-        stateRef.current = lsEarly;
-        stateUpdatedAtRef.current = Math.max(
-          stateUpdatedAtRef.current,
-          Number(lsEarly.updatedAt || 0)
-        );
-      }
-    } catch {
-      /* noop */
-    }
+    /**
+     * 서버 정본만 사용 — LS/세션 조기 표시·병합·heal 푸시 없음.
+     * 새로고침 시 「동기화 중」은 API 대기이며, 응답 후 서버 스냅샷을 그대로 적용한다.
+     */
     const hydrateWatchdog = window.setTimeout(() => {
       if (!cancelled && syncStatusRef.current === "loading") {
         const offlineNow = typeof navigator !== "undefined" && !navigator.onLine;
-        const fromLs = loadState(user.id);
-        if (!offlineNow && hasMeaningfulMemberRoster(fromLs)) {
-          setState((prev) => ({
-            ...fromLs,
-            updatedAt: Math.max(Number(fromLs.updatedAt || 0), Number(prev.updatedAt || 0)),
-          }));
-          stateRef.current = {
-            ...fromLs,
-            updatedAt: Math.max(Number(fromLs.updatedAt || 0), Number(stateRef.current.updatedAt || 0)),
-          };
-        }
         applySyncStatusAfterStateFetch(null, null);
+        if (offlineNow) setSyncStatus("local");
+        else setSyncStatus("error");
       }
-    }, 12_000);
+    }, 20_000);
     const offline = typeof navigator !== "undefined" && !navigator.onLine;
-    let localPresets: OverlayPreset[] = [];
-    try {
-      const raw =
-        migrateLegacyLocalStorageKey("excel-broadcast-overlay-presets", presetStorageKey) ||
-        window.localStorage.getItem(presetStorageKey);
-      if (raw) localPresets = JSON.parse(raw) as OverlayPreset[];
-    } catch {}
     if (offline) {
-      /** 오프라인: 같은 탭 세션 캐시만 조회용. 정본은 서버 — 편집은 온라인 복구 후 persistState 로 저장 */
-      const sessionSnap = loadState(user.id);
-      setState(sessionSnap);
-      if (Array.isArray(sessionSnap.overlayPresets) && sessionSnap.overlayPresets.length > 0) {
-        setPresets(sessionSnap.overlayPresets as OverlayPreset[]);
-      } else if (localPresets.length > 0) {
-        setPresets(localPresets);
-      }
       setSyncStatus("local");
     }
-    /** 서버 정본 모드: API 응답 전 로컬/세션 스냅샷으로 멤버·후원을 채우지 않음 (admin 은 보기·편집 도구) */
-    /**
-     * hydrate 직후 storage-health·daily-log 를 같이 치면 /api/state 와 MySQL이 경합해
-     * 「동기화 중」에 고착되기 쉽다 — 본문 GET 완료 후에만 진단·로그를 당긴다.
-     */
     const loadMain = () => loadStateFromApiWithMeta(user.id, { forceFull: true, fast: true });
-    void loadMain().then(({ state: apiState, meta }) => {
-      if (cancelled) return;
-      try {
-      /** 후원·금액·멤버는 계정 서버 정본만. admin React state 는 서버 스냅샷의 편집 뷰. */
-      const fromLs = loadState(user.id);
-      const fromRef = stateRef.current;
-      const localMembers = pickMemberRosterPreferNewer(fromRef, fromLs);
-      const localBase =
-        Number(fromRef.updatedAt || 0) >= Number(fromLs.updatedAt || 0) ? fromRef : fromLs;
-      const local: AppState = {
-        ...localBase,
-        members: localMembers,
-        memberPositions: normalizeMemberPositions(
-          isMemberRosterStrictSuperset(localMembers, fromLs.members)
-            ? fromRef.memberPositions ?? fromLs.memberPositions
-            : localBase.memberPositions,
-          localMembers
-        ),
-        updatedAt: Math.max(Number(fromRef.updatedAt || 0), Number(fromLs.updatedAt || 0)),
-      };
-      if (apiState) {
-        /**
-         * 서버가 멤버1…/빈 후원으로 앞서 있어도 LS 실데이터를 유지하고,
-         * 아래 heal 로 서버에도 다시 올려 다음 hydrate 에서 유실되지 않게 한다.
-         */
-        const blockedAccidentalEmpty = shouldBlockAccidentalEmptyOverwrite(local, apiState);
-        const sessionDonationEmpty = isEmptyBroadcastDonationSession(local);
-        const rejectPoorer =
-          !sessionDonationEmpty &&
-          (blockedAccidentalEmpty || shouldRejectPoorerDonationRemote(local, apiState));
-        stateUpdatedAtRef.current = rejectPoorer
-          ? Math.max(Number(local.updatedAt || 0), Number(apiState.updatedAt || 0))
-          : apiState.updatedAt || 0;
-        lastAppliedRemoteUpdatedAtRef.current = stateUpdatedAtRef.current;
-        const { merged, didPreserve } = mergeIncomingStateSafely(apiState, local);
-        const donationSource = rejectPoorer ? local : apiState;
-        /** 후원 금액은 donationSource, 멤버 로스터는 merge(로컬 최신 추가 보존) 우선 */
-        let rosterMembers = rejectPoorer
-          ? pickMemberRosterPreferNewer(local, apiState)
-          : pickMemberRosterPreferNewer(merged, apiState);
-        /** API가 멤버1 플레이스홀더인데 LS에 실멤버가 있으면 LS 유지 — 단 서버 정산 초기화(stamp↑)는 허용 */
-        if (
-          isDefaultPlaceholderMemberList(rosterMembers) &&
-          hasMeaningfulMemberRoster(local) &&
-          Number(apiState.settlementResetAt || 0) <= Number(local.settlementResetAt || 0)
-        ) {
-          rosterMembers = local.members;
-        }
-        /**
-         * 새로고침 복구: LS가 서버보다 멤버가 많은 상위집합이면 stamp와 무관하게 LS 유지.
-         * (추가 직후 비권한 PATCH 로 서버만 짧아진 뒤 새로고침해도 추가분 복구)
-         */
-        if (isMemberRosterStrictSuperset(local.members, apiState.members)) {
-          rosterMembers = local.members;
-        }
-        const rosterFromLocal =
-          hasMeaningfulMemberRoster(local) &&
-          !membersDifferByIds(rosterMembers, local.members || []);
-        const rosterPositions = rosterFromLocal
-          ? local.memberPositions ?? merged.memberPositions ?? apiState.memberPositions
-          : rejectPoorer
-            ? local.memberPositions ?? merged.memberPositions ?? apiState.memberPositions
-            : merged.memberPositions ?? apiState.memberPositions;
-        const resetAtForDonors = Math.max(
-          Number(local.settlementResetAt || 0),
-          Number(apiState.settlementResetAt || 0)
-        );
-        const localDonorCount = normalizeDonorsArray(local.donors).length;
-        const apiDonorCount = normalizeDonorsArray(apiState.donors).length;
-        const preferServerDonors =
-          isEmptyBroadcastDonationSession(local) || localDonorCount < apiDonorCount;
-        const donorsForApply = preferServerDonors
-          ? pickAuthoritativeDonorsForEmptySession(
-              local,
-              apiState.donors,
-              merged.donors,
-              resetAtForDonors
-            )
-          : normalizeDonorsArray(donationSource.donors);
-        const pulledForOrphanHeal =
-          donorsForApply.length === 0 && apiDonorCount > 0
-            ? buildUiStateFromServerDonorPull(local, apiState)
-            : null;
-        /** 정산 리셋 직후 pull 이 null 이면 구 server donors 로 되살리지 않음 */
-        const donorsResolved =
-          donorsForApply.length > 0
-            ? donorsForApply
-            : normalizeDonorsArray(pulledForOrphanHeal?.donors ?? []);
-        const rosterPayload: AppState = {
-          ...merged,
-          donors: donorsResolved,
-          members: rosterMembers,
-          memberPositions: normalizeMemberPositions(rosterPositions, rosterMembers),
-          contributionLogs: rejectPoorer
-            ? local.contributionLogs ?? apiState.contributionLogs
-            : apiState.contributionLogs,
-          restroomLogs: rejectPoorer
-            ? local.restroomLogs ?? apiState.restroomLogs
-            : apiState.restroomLogs,
-          settlementResetAt: blockedAccidentalEmpty
-            ? local.settlementResetAt
-            : Math.max(
-                Number(local.settlementResetAt || 0),
-                Number(apiState.settlementResetAt || 0)
-              ),
-          sigSoldOutStampUrl:
-            String(apiState.sigSoldOutStampUrl || "").trim() ||
-            String(merged.sigSoldOutStampUrl || "").trim() ||
-            String(local.sigSoldOutStampUrl || "").trim() ||
-            "",
-        };
-        /** donors 비었을 때 sync 하면 멤버 합계만 0으로 깎임 — 고아 상태는 baseline 유지 */
-        const toApplyBase =
-          donorsResolved.length > 0
-            ? syncMemberTotalsFromDonors(rosterPayload)
-            : guardMemberTotalsAgainstAccidentalZeroWipe(rosterPayload, local);
-        /** 타이머 제어 UI가 비어 보이면 프리셋에 저장된 색으로 채움 */
-        let toApply = toApplyBase;
-        if (!hasCustomTimerDisplayStyles(toApply.timerDisplayStyles)) {
-          const presetWithTimer = (
-            Array.isArray(toApply.overlayPresets) ? (toApply.overlayPresets as OverlayPreset[]) : []
-          ).find(
-            (p) =>
-              p?.showTimer &&
-              (String(p.timerFontColor || "").trim() ||
-                String(p.timerBgColor || "").trim() ||
-                String(p.timerBorderColor || "").trim() ||
-                String(p.timerBgOpacity || "").trim() === "0" ||
-                isHiddenTimerDisplayStyle({
-                  bgColor: String(p.timerBgColor || ""),
-                  borderColor: String(p.timerBorderColor || ""),
-                  bgOpacity: Math.max(
-                    0,
-                    Math.min(100, parseInt(String(p.timerBgOpacity || "40"), 10) || 40)
-                  ),
-                }))
-          );
-          if (presetWithTimer) {
-            toApply = {
-              ...toApply,
-              timerDisplayStyles: {
-                general: {
-                  showHours: Boolean(presetWithTimer.timerShowHours),
-                  fontFamily: normalizeTimerFontFamily(presetWithTimer.timerFontFamily || "mono"),
-                  fontColor: String(presetWithTimer.timerFontColor || ""),
-                  bgColor: String(presetWithTimer.timerBgColor || ""),
-                  borderColor: String(presetWithTimer.timerBorderColor || ""),
-                  outlineColor: String(presetWithTimer.timerOutlineColor || ""),
-                  outlineWidth: (() => {
-                    const n = parseFloat(String(presetWithTimer.timerOutlineWidth ?? "0.8"));
-                    return Number.isFinite(n) ? Math.max(0, Math.min(3, n)) : 0.8;
-                  })(),
-                  bgOpacity: Math.max(
-                    0,
-                    Math.min(100, parseInt(String(presetWithTimer.timerBgOpacity || "40"), 10) || 40)
-                  ),
-                  scalePercent: Math.max(
-                    50,
-                    Math.min(250, parseInt(String(presetWithTimer.timerScale || "100"), 10) || 100)
-                  ),
+    void loadMain()
+      .then(({ state: apiState, meta }) => {
+        if (cancelled) return;
+        try {
+          if (!apiState) {
+            if (!offline) applySyncStatusAfterStateFetch(null, meta);
+            return;
+          }
+          stateUpdatedAtRef.current = apiState.updatedAt || Date.now();
+          lastAppliedRemoteUpdatedAtRef.current = stateUpdatedAtRef.current;
+          let toApply: AppState = apiState;
+          if (!hasCustomTimerDisplayStyles(toApply.timerDisplayStyles)) {
+            const presetWithTimer = (
+              Array.isArray(toApply.overlayPresets) ? (toApply.overlayPresets as OverlayPreset[]) : []
+            ).find(
+              (p) =>
+                p?.showTimer &&
+                (String(p.timerFontColor || "").trim() ||
+                  String(p.timerBgColor || "").trim() ||
+                  String(p.timerBorderColor || "").trim() ||
+                  String(p.timerBgOpacity || "").trim() === "0" ||
+                  isHiddenTimerDisplayStyle({
+                    bgColor: String(p.timerBgColor || ""),
+                    borderColor: String(p.timerBorderColor || ""),
+                    bgOpacity: Math.max(
+                      0,
+                      Math.min(100, parseInt(String(p.timerBgOpacity || "40"), 10) || 40)
+                    ),
+                  }))
+            );
+            if (presetWithTimer) {
+              toApply = {
+                ...toApply,
+                timerDisplayStyles: {
+                  general: {
+                    showHours: Boolean(presetWithTimer.timerShowHours),
+                    fontFamily: normalizeTimerFontFamily(presetWithTimer.timerFontFamily || "mono"),
+                    fontColor: String(presetWithTimer.timerFontColor || ""),
+                    bgColor: String(presetWithTimer.timerBgColor || ""),
+                    borderColor: String(presetWithTimer.timerBorderColor || ""),
+                    outlineColor: String(presetWithTimer.timerOutlineColor || ""),
+                    outlineWidth: (() => {
+                      const n = parseFloat(String(presetWithTimer.timerOutlineWidth ?? "0.8"));
+                      return Number.isFinite(n) ? Math.max(0, Math.min(3, n)) : 0.8;
+                    })(),
+                    bgOpacity: Math.max(
+                      0,
+                      Math.min(100, parseInt(String(presetWithTimer.timerBgOpacity || "40"), 10) || 40)
+                    ),
+                    scalePercent: Math.max(
+                      50,
+                      Math.min(250, parseInt(String(presetWithTimer.timerScale || "100"), 10) || 100)
+                    ),
+                  },
                 },
-              },
-            };
+              };
+            }
+          }
+          const serverInv = toApply.sigInventory || [];
+          if (isShrunkToDefaultSigInventory(serverInv)) {
+            setSigExcelResult(
+              "서버에 커스텀 시그 목록이 없습니다(기본 8개만). JSON·엑셀 백업으로 복구하세요."
+            );
+          }
+          setState(toApply);
+          stateRef.current = toApply;
+          if (user?.id) hydrateSettlementUiFromAppState(toApply, user.id);
+          if (Array.isArray(toApply.overlayPresets) && toApply.overlayPresets.length > 0) {
+            setPresets(toApply.overlayPresets as OverlayPreset[]);
+          } else {
+            const first = defaultPreset("전체 통합", { showMembers: true, showTotal: true });
+            const withPreset = { ...toApply, overlayPresets: [first] };
+            setPresets([first]);
+            setState(withPreset);
+            stateRef.current = withPreset;
+          }
+          applySyncStatusAfterStateFetch(apiState, meta);
+          /** fast hydrate 후 donors 비었으면 백그라운드 full enrich */
+          if (
+            normalizeDonorsArray(apiState.donors).length === 0 &&
+            totalCombined(apiState) === 0
+          ) {
+            window.setTimeout(() => {
+              if (cancelled) return;
+              void loadStateFromApiWithMeta(user.id, { forceFull: true }).then(
+                ({ state: full, meta: fullMeta }) => {
+                  if (cancelled || !full) return;
+                  if (normalizeDonorsArray(full.donors).length === 0) return;
+                  setState(full);
+                  stateRef.current = full;
+                  applySyncStatusAfterStateFetch(full, fullMeta);
+                }
+              );
+            }, 8_000);
+          }
+        } catch {
+          if (!cancelled) {
+            const offlineNow = typeof navigator !== "undefined" && !navigator.onLine;
+            setSyncStatus(offlineNow ? "local" : "error");
           }
         }
-        /** 같은 id(m1)에서 원격 멤버1이 로컬 실명을 덮지 않게 */
-        toApply = mergeLocalMemberIdentityOntoRemote(toApply, local);
-        const rosterNeedsServerPush =
-          hasMeaningfulMemberRoster(toApply) &&
-          (membersDifferByIds(toApply.members || [], apiState.members || []) ||
-            isDefaultPlaceholderMemberList(apiState.members));
-        if (didPreserve && !rejectPoorer) {
-          /** 테마·시그 등만 보존 — 후원 필드는 서버 값 유지(LS로 서버에 밀어 올리지 않음).
-           * 멤버 추가·삭제로 로스터만 보존된 경우는 서버에도 권위적으로 올려 새로고침 유실을 막음. */
-          persistState(toApply, {
-            omitDonationFields: true,
-            ...(rosterNeedsServerPush ? { membersAuthoritative: true } : {}),
-          });
-        } else if (rosterNeedsServerPush && !rejectPoorer) {
-          /** API 플레이스홀더·옛 로스터를 LS 실멤버로 고친 경우 서버에 재푸시 */
-          persistState(toApply, {
-            omitDonationFields: true,
-            membersAuthoritative: true,
-          });
-        }
-        if (rejectPoorer) {
-          /** 로컬이 서버 GET보다 풍부해 보여도 브라우저→DB 푸시 금지 — UI만 로컬 병합본 표시 */
-          donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
-          lastEmptyRemoteDonationHealAtRef.current = Date.now();
-        }
-        const serverInv = toApply.sigInventory || [];
-        if (
-          !didPreserve &&
-          !hasExpandedSigInventory(local.sigInventory) &&
-          isShrunkToDefaultSigInventory(serverInv)
-        ) {
-          setSigExcelResult(
-            "서버에 커스텀 시그 목록이 없습니다(기본 8개만). 기존 PC에서 관리자를 열어 동기화하거나, JSON·엑셀 백업으로 복구하세요."
-          );
-        }
-        setState(toApply);
-        if (user?.id) hydrateSettlementUiFromAppState(toApply, user.id);
-        try {
-          cacheBroadcastStateSnapshot(toApply, user?.id);
-        } catch {}
-        if (Array.isArray(toApply.overlayPresets) && toApply.overlayPresets.length > 0) {
-          setPresets(toApply.overlayPresets as OverlayPreset[]);
-          /** 커스텀 테마 캐시가 있어도 자동 적용하지 않음 — maybePromptThemeRestore가 사용자 확인 후 복구 */
-        } else if (localPresets.length > 0) {
-          const next = { ...toApply, overlayPresets: localPresets, updatedAt: Date.now() };
-          setState(next);
-          setPresets(localPresets);
-          stateRef.current = next;
-          /** 전체 persist 금지 — 테마/프리셋만 PATCH (후원·금액 유지) */
-          saveOverlayPresetsPatchAsync(localPresets, user?.id, { foundation: next }).then((r) => {
-            if (r.ok) setSyncStatus(r.storageFallback ? "error" : "synced");
-          });
-        } else {
-          const first = defaultPreset("전체 통합", { showMembers: true, showTotal: true });
-          const mergedPresets = { ...toApply, overlayPresets: [first] };
-          setPresets([first]);
-          setState(mergedPresets);
-          stateRef.current = mergedPresets;
-          /** 기본 프리셋은 UI·캐시에만 두고, 사용자 요청 없이 서버 전체 저장하지 않음 */
-          try { window.localStorage.setItem(presetStorageKey, JSON.stringify([first])); } catch {}
-        }
-        applySyncStatusAfterStateFetch(apiState, meta);
-        /** fast hydrate 후 donors 비었으면 백그라운드 full enrich (23MB daily-log는 유저 idle 후) */
-        if (
-          apiState &&
-          normalizeDonorsArray(apiState.donors).length === 0 &&
-          totalCombined(apiState) === 0
-        ) {
-          window.setTimeout(() => {
-            if (cancelled) return;
-            void loadStateFromApiWithMeta(user.id, { forceFull: true }).then(({ state: full, meta: fullMeta }) => {
-              if (cancelled || !full) return;
-              if (normalizeDonorsArray(full.donors).length === 0) return;
-              const local = stateRef.current;
-              const pulled = buildUiStateFromServerDonorPull(local, full);
-              if (pulled && normalizeDonorsArray(pulled.donors).length > 0) {
-                setState(pulled);
-                stateRef.current = pulled;
-                cacheBroadcastStateSnapshot(pulled, user?.id);
-                applySyncStatusAfterStateFetch(pulled, fullMeta);
-              }
-            });
-          }, 8_000);
-        }
-      } else if (!offline) {
-        if (Array.isArray(local.overlayPresets) && local.overlayPresets.length > 0) {
-          setPresets(local.overlayPresets as OverlayPreset[]);
-        } else if (localPresets.length > 0) {
-          local.overlayPresets = localPresets;
-          setPresets(localPresets);
-        } else {
-          const first = defaultPreset("전체 통합", { showMembers: true, showTotal: true });
-          local.overlayPresets = [first];
-          setPresets([first]);
-          try { window.localStorage.setItem(presetStorageKey, JSON.stringify([first])); } catch {}
-        }
-        setState(local);
-        applySyncStatusAfterStateFetch(null, meta);
-        /** 서버 로드 실패 시 LS 후원을 계정에 밀어 올리지 않음 */
-        const hasMeaningfulData = hasMeaningfulBroadcastData(local);
-        const hasDonationData =
-          normalizeDonorsArray(local.donors).length > 0 || totalCombined(local) > 0;
-        if (hasMeaningfulData && !hasDonationData) {
-          saveStateAsync(local, user?.id, { omitDonationFields: true }).then((r) => {
-            if (r.ok && !r.storageFallback) setSyncStatus("synced");
-          });
-        }
-      }
-      } catch {
-        if (!cancelled) {
-          const offlineNow = typeof navigator !== "undefined" && !navigator.onLine;
-          setSyncStatus(offlineNow ? "local" : "error");
-        }
-      }
-    })
-    .catch(() => {
-      if (cancelled) return;
-      const offlineNow = typeof navigator !== "undefined" && !navigator.onLine;
-      setSyncStatus(offlineNow ? "local" : "error");
-    })
-    .finally(() => {
-      if (cancelled) return;
-      /** hydrate 직후 daily-log API는 MySQL bulk와 경합 — LS만 즉시 표시, 서버 fetch는 사용자 요청 시 */
-      window.setTimeout(() => {
+      })
+      .catch(() => {
         if (cancelled) return;
-        void refreshStorageHealth();
-      }, 8_000);
-    });
+        const offlineNow = typeof navigator !== "undefined" && !navigator.onLine;
+        setSyncStatus(offlineNow ? "local" : "error");
+      })
+      .finally(() => {
+        if (cancelled) return;
+        window.setTimeout(() => {
+          if (cancelled) return;
+          void refreshStorageHealth();
+        }, 8_000);
+      });
     return () => {
       cancelled = true;
       window.clearTimeout(hydrateWatchdog);
     };
-  }, [user?.id, persistState, mergeIncomingStateSafely, presetStorageKey, hydrateSettlementUiFromAppState, refreshStorageHealth, applySyncStatusAfterStateFetch]);
+  }, [
+    user?.id,
+    hydrateSettlementUiFromAppState,
+    refreshStorageHealth,
+    applySyncStatusAfterStateFetch,
+  ]);
 
   /** 일괄 반영으로 동일 초에 찍힌 후원 시각 — id·daily log로 복구 후 서버 저장 */
   useEffect(() => {
@@ -9711,14 +9488,14 @@ function AdminPageInner() {
                 : syncStatus === "synced"
                   ? "서버 동기화됨"
                   : syncStatus === "loading"
-                    ? "동기화 중..."
+                    ? "서버에서 불러오는 중..."
                     : syncStatus === "error" && syncAuthBlocked
                       ? "세션 확인 필요"
                     : syncStatus === "error"
                       ? "연결 재시도 중"
                       : typeof navigator !== "undefined" && navigator.onLine
-                        ? "서버 연결 중 (로컬 표시)"
-                        : "로컬 모드 (오프라인)"}
+                        ? "서버 미확인"
+                        : "오프라인"}
             </span>
             ) : null}
             <button
@@ -9876,14 +9653,11 @@ function AdminPageInner() {
                 </button>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                {syncStatus === "loading" &&
-                !hasMeaningfulMemberRoster(state) &&
-                isDefaultPlaceholderMemberList(state.members) ? (
+                {syncStatus === "loading" ? (
                   <div className="lg:col-span-3 rounded-lg border border-white/10 bg-neutral-900/50 px-4 py-8 text-center text-sm text-neutral-400">
                     서버에서 멤버를 불러오는 중…
                   </div>
-                ) : (
-                  state.members.map((m: Member) => (
+                ) : (                  state.members.map((m: Member) => (
                   <MemberRow
                     key={m.id}
                     member={m}
