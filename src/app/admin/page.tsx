@@ -2809,6 +2809,8 @@ function AdminPageInner() {
 
   useEffect(() => {
     if (!user) return;
+    /** hydrate 중 storage-health 선도착으로 0건 오탐 복구·메시지 금지 */
+    if (syncStatusRef.current === "loading") return;
     if (
       shouldSuppressAutoRosterRestore(stateRef.current) ||
       Date.now() < settlementResetUntilRef.current
@@ -2828,14 +2830,10 @@ function AdminPageInner() {
     if (serverDonorMismatchRestoreAttemptedRef.current) return;
     serverDonorMismatchRestoreAttemptedRef.current = true;
     void applyDonorsFromServerMainState({ silent: true }).then((ok) => {
-      if (ok) {
-        setSigExcelResult(
-          `서버 후원 ${serverCount}건·화면 ${localCount}건 불일치를 자동 복구했습니다.`
-        );
-        return;
-      }
+      if (ok) return;
       serverDonorMismatchRestoreAttemptedRef.current = false;
       window.setTimeout(() => {
+        if (syncStatusRef.current === "loading") return;
         if (
           shouldSuppressAutoRosterRestore(stateRef.current) ||
           Date.now() < settlementResetUntilRef.current
@@ -9423,13 +9421,8 @@ function AdminPageInner() {
     />
   );
 
-  const serverDonorHealthCount = Number(storageHealth?.mainState?.donorsCount || 0);
-  const uiDonorRowCount = normalizeDonorsArray(state.donors).length;
-  const intentionalClearActive =
-    shouldSuppressAutoRosterRestore(state) || Date.now() < settlementResetUntilRef.current;
-  const donorUiBehindServer = !intentionalClearActive && serverDonorHealthCount > uiDonorRowCount;
-  /** 정상 동기화 시 배지 숨김 — 불일치·오프라인·로딩만 표시 */
-  const showSyncStatusBadge = donorUiBehindServer || syncStatus !== "synced";
+  /** 세션 오류만 배지 — 후원 건수 불일치·동기화 중 문구는 표시하지 않음 */
+  const showSyncStatusBadge = syncStatus === "error" && syncAuthBlocked;
 
   return (
     <main
@@ -9482,42 +9475,10 @@ function AdminPageInner() {
             )}
             {showSyncStatusBadge ? (
             <span
-              className={`px-2 py-0.5 rounded text-xs font-medium ${
-                donorUiBehindServer
-                  ? "bg-rose-900/60 text-rose-300"
-                  : syncStatus === "synced"
-                    ? "bg-emerald-900/60 text-emerald-300"
-                    : syncStatus === "loading"
-                      ? "bg-yellow-900/60 text-yellow-300"
-                      : syncStatus === "error"
-                        ? "bg-amber-900/60 text-amber-300"
-                        : "bg-neutral-800 text-neutral-400"
-              }`}
-              title={
-                donorUiBehindServer
-                  ? `서버 후원 ${serverDonorHealthCount}건 · 화면 ${uiDonorRowCount}건 — 「서버 후원 복구」 또는 새로고침`
-                  : syncStatus === "error" && syncAuthBlocked
-                    ? "로그인 세션이 만료되었거나 계정이 일치하지 않습니다. 페이지를 새로고침한 뒤 다시 로그인해 보세요."
-                  : syncStatus === "error"
-                    ? "동기화 실패 시 개발자 도구에 401이 보이면 로그인 세션이 만료된 경우가 많습니다. 페이지를 새로고침한 뒤 다시 로그인해 보세요."
-                    : undefined
-              }
+              className="px-2 py-0.5 rounded text-xs font-medium bg-amber-900/60 text-amber-300"
+              title="로그인 세션이 만료되었거나 계정이 일치하지 않습니다. 페이지를 새로고침한 뒤 다시 로그인해 보세요."
             >
-              {donorUiBehindServer
-                ? `후원 동기화 필요 (서버 ${serverDonorHealthCount} · 화면 ${uiDonorRowCount})`
-                : syncStatus === "synced"
-                  ? "서버 동기화됨"
-                  : syncStatus === "loading"
-                    ? state.members.length > 0
-                      ? "서버 확인 중..."
-                      : "서버에서 불러오는 중..."
-                    : syncStatus === "error" && syncAuthBlocked
-                      ? "세션 확인 필요"
-                    : syncStatus === "error"
-                      ? "연결 재시도 중"
-                      : typeof navigator !== "undefined" && navigator.onLine
-                        ? "서버 미확인"
-                        : "오프라인"}
+              세션 확인 필요
             </span>
             ) : null}
             <button
@@ -9556,38 +9517,6 @@ function AdminPageInner() {
           className={`${panelCardClass} mb-6`}
           bodyClassName="px-4 pb-4"
         >
-          {!(
-            intentionalClearActive
-          ) &&
-          typeof storageHealth?.mainState?.donorsCount === "number" &&
-          storageHealth.mainState.donorsCount > 0 &&
-          normalizeDonorsArray(state.donors).length < storageHealth.mainState.donorsCount ? (
-            <div className="mb-3 rounded-lg border border-rose-400/55 bg-rose-950/35 px-3 py-2 text-sm text-rose-100">
-              서버에는 후원 {storageHealth.mainState.donorsCount}건
-              {typeof storageHealth.mainState.totalCombined === "number" &&
-              storageHealth.mainState.totalCombined > 0
-                ? `(합계 ${Number(storageHealth.mainState.totalCombined).toLocaleString("ko-KR")}원)`
-                : ""}
-              이 있는데 화면은 {normalizeDonorsArray(state.donors).length}건
-              {total > 0 ? `(합계 ${total.toLocaleString("ko-KR")}원)` : ""}입니다.
-              동기화 병합 오류일 수 있습니다.{" "}
-              <button
-                type="button"
-                className="underline font-semibold text-rose-50"
-                onClick={() => void applyDonorsFromServerMainState()}
-              >
-                서버 후원 복구
-              </button>
-              {" · "}
-              <button
-                type="button"
-                className="underline font-semibold text-rose-50"
-                onClick={onFetchLatestFromServer}
-              >
-                서버에서 가져오기
-              </button>
-            </div>
-          ) : null}
           {isOrphanedDonationState(state) && (
             <div className="mb-3 rounded-lg border border-amber-400/50 bg-amber-950/40 px-3 py-2 text-sm text-amber-100">
               후원 건수는 0인데 멤버 합계만 남아 있습니다. 엑셀표·후원순위가 0으로 보일 수 있습니다.
