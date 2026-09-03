@@ -160,36 +160,77 @@ export async function POST(req: NextRequest) {
     return json({ ok: false, error: result.error }, status);
   }
 
-  /** 연동 직후 기여도 공식 — toona→youtube 저장 후 toona youtubegit에도 맞춤 */
-  const state = await loadAppStateForUserId(auth.userId);
-  let formula = normalizeContributionFormula(
-    body.contributionFormula ?? state?.contributionFormula
-  );
-  if (body.contributionFormula) {
-    await persistContributionFormulaForUser(auth.userId, formula);
-  } else {
-    const fromToona = await fetchToonaHubContributionFormula(auth.userId);
-    if (fromToona) {
-      formula = fromToona;
-      await persistContributionFormulaForUser(auth.userId, fromToona);
+  /**
+   * 연동 성공 응답은 빠르게 반환한다.
+   * 기여도 동기화·시그 병합은 AppState 저장(대용량 donors)에 막혀
+   * 「연결 중…」이 무한히 유지되는 원인이었음 → 짧은 예산 후 deferred.
+   */
+  type SigImportPayload = {
+    ok: boolean;
+    count: number;
+    added: number;
+    updated: number;
+    error?: string;
+  };
+  const deferredSig: SigImportPayload = {
+    ok: false,
+    count: 0,
+    added: 0,
+    updated: 0,
+    error: "deferred",
+  };
+
+  const postLinkWork = (async (): Promise<SigImportPayload> => {
+    const state = await loadAppStateForUserId(auth.userId);
+    let formula = normalizeContributionFormula(
+      body.contributionFormula ?? state?.contributionFormula
+    );
+    if (body.contributionFormula) {
+      await persistContributionFormulaForUser(auth.userId, formula);
+    } else {
+      const fromToona = await fetchToonaHubContributionFormula(auth.userId);
+      if (fromToona) {
+        formula = fromToona;
+        await persistContributionFormulaForUser(auth.userId, fromToona);
+      }
     }
-  }
-  await syncContributionFormulaToToonaHub(auth.userId, formula);
-
-  /** 로그인만으로 toona 시그 목록 병합 */
-  const sigImport = await importSigsAfterHubLogin(auth.userId);
-
-  return json({
-    ok: true,
-    session: result.session,
-    logs: [],
-    sigImport: {
+    await syncContributionFormulaToToonaHub(auth.userId, formula);
+    const sigImport = await importSigsAfterHubLogin(auth.userId);
+    return {
       ok: sigImport.ok,
       count: sigImport.count,
       added: sigImport.added ?? 0,
       updated: sigImport.updated ?? 0,
       error: sigImport.error,
-    },
+    };
+  })();
+
+  const POST_LINK_BUDGET_MS = 10_000;
+  let sigImport: SigImportPayload = deferredSig;
+  try {
+    sigImport = await Promise.race([
+      postLinkWork,
+      new Promise<SigImportPayload>((resolve) =>
+        setTimeout(() => resolve(deferredSig), POST_LINK_BUDGET_MS)
+      ),
+    ]);
+  } catch (err) {
+    sigImport = {
+      ok: false,
+      count: 0,
+      added: 0,
+      updated: 0,
+      error: err instanceof Error ? err.message : "post_link_failed",
+    };
+  }
+  /** race로 먼저 빠져도 백그라운드 작업은 계속 */
+  void postLinkWork.catch(() => {});
+
+  return json({
+    ok: true,
+    session: result.session,
+    logs: [],
+    sigImport,
   });
 }
 

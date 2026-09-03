@@ -49,6 +49,7 @@ type Props = {
 
 function formatSigImport(sig: SigImportResult | undefined): string {
   if (!sig) return "";
+  if (sig.error === "deferred") return "";
   if (sig.ok === false) return `시그 가져오기 실패: ${sig.error || "unknown"}`;
   return `시그 ${sig.count ?? 0}개 병합 (추가 ${sig.added ?? 0} · 갱신 ${sig.updated ?? 0})`;
 }
@@ -134,6 +135,8 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, baseUrl }),
+        /** 서버 무응답·후처리 지연 시 「연결 중…」고착 방지 */
+        signal: AbortSignal.timeout(45_000),
       });
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -155,10 +158,21 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
       setMessage(
         sigMsg
           ? `toona 로그인·연동 완료 · ${sigMsg}`
-          : "toona 로그인·youtubegit 연동 완료"
+          : data.sigImport?.error === "deferred"
+            ? "toona 로그인·연동 완료 · 시그 가져오기는 백그라운드에서 진행 중"
+            : "toona 로그인·youtubegit 연동 완료"
       );
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "로그인 실패");
+      const timedOut =
+        err instanceof Error &&
+        (err.name === "TimeoutError" || err.name === "AbortError");
+      setMessage(
+        timedOut
+          ? "연결 시간 초과 — youtube 서버(/api/toona/hub) 응답이 없습니다. EC2 상태를 확인하세요."
+          : err instanceof Error
+            ? err.message
+            : "로그인 실패"
+      );
     } finally {
       setBusy(false);
     }
