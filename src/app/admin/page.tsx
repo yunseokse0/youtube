@@ -2414,8 +2414,7 @@ function AdminPageInner() {
       ) {
         setState(paint);
         stateRef.current = paint;
-        /** 로컬 스냅샷으로 즉시 사용 가능 — 서버 응답은 아래에서 replace */
-        setSyncStatus("synced");
+        /** 세션 미리보기만 — synced 로 올리지 않음(서버 응답이 정본) */
       }
     } catch {
       /* noop */
@@ -2928,6 +2927,45 @@ function AdminPageInner() {
         pendingUnsyncedRef.current = false;
         donationAuthoritativeSaveUntilRef.current = 0;
       }
+      /**
+       * 서버 정본: DB updatedAt 이 앞선 스냅샷은 세션/React 캐시보다 우선.
+       * poorer-guard·union 보존 없이 donors/members 금액을 서버로 교체(이름만 로컬 유지).
+       */
+      if (
+        isServerAuthoritativeBroadcastState() &&
+        !amountInputEditingRef.current &&
+        remoteUpdatedAt > Number(stateRef.current.updatedAt || 0) &&
+        !shouldBlockAccidentalEmptyOverwrite(stateRef.current, remote)
+      ) {
+        const themeMerged = mergeIncomingStateSafely(remote, stateRef.current);
+        let next = syncMemberTotalsFromDonors({
+          ...themeMerged.merged,
+          donors: normalizeDonorsArray(remote.donors),
+          members: Array.isArray(remote.members) && remote.members.length > 0
+            ? remote.members
+            : themeMerged.merged.members,
+          memberPositions: remote.memberPositions ?? themeMerged.merged.memberPositions,
+          settlementResetAt:
+            remote.settlementResetAt ?? themeMerged.merged.settlementResetAt,
+          updatedAt: remoteUpdatedAt,
+          donorRankingsUpdatedAt:
+            remote.donorRankingsUpdatedAt ?? themeMerged.merged.donorRankingsUpdatedAt,
+        });
+        next = mergeLocalMemberIdentityOntoRemote(next, stateRef.current);
+        stateRef.current = next;
+        stateUpdatedAtRef.current = remoteUpdatedAt;
+        lastAppliedRemoteUpdatedAtRef.current = remoteUpdatedAt;
+        pendingUnsyncedRef.current = false;
+        setState(next);
+        if (next.settlementUiOptions) {
+          syncSettlementUiFormFromOptions(next.settlementUiOptions);
+        }
+        try {
+          cacheBroadcastStateSnapshot(next, user?.id);
+        } catch {}
+        notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
+        return true;
+      }
       /** 투네 SSE·서버>UI: 병합 가드 전에 DB donors 를 화면에 직접 반영 */
       if (
         !remoteSettlementWins &&
@@ -3217,12 +3255,26 @@ function AdminPageInner() {
           (d) => !remoteIds.has(d.id)
         );
         if (preservedLocalDonors) {
-          /**
-           * 투네 원격에 없는 수동 계좌를 union 했으면 omitDonation 이 아니라
-           * 서버에도 올려야 다음 투네 반영이 빈 Redis 기준으로 시작하지 않음.
-           */
-          stateRef.current = toApply;
-          refreshDonorsFromServer();
+          if (isServerAuthoritativeBroadcastState()) {
+            /** 세션에만 있는 후원으로 서버 축소본을 되살리지 않음 */
+            toApply = syncMemberTotalsFromDonors({
+              ...toApply,
+              donors: normalizeDonorsArray(remote.donors),
+              members:
+                Array.isArray(remote.members) && remote.members.length > 0
+                  ? remote.members
+                  : toApply.members,
+              memberPositions: remote.memberPositions ?? toApply.memberPositions,
+              updatedAt: Math.max(Number(toApply.updatedAt || 0), remoteUpdatedAt),
+            });
+          } else {
+            /**
+             * 투네 원격에 없는 수동 계좌를 union 했으면 omitDonation 이 아니라
+             * 서버에도 올려야 다음 투네 반영이 빈 Redis 기준으로 시작하지 않음.
+             */
+            stateRef.current = toApply;
+            refreshDonorsFromServer();
+          }
         } else {
           /** 시각·시그 보존만 서버에 올리고 후원 필드는 건드리지 않음.
            * 멤버 추가·삭제로 로스터만 보존된 경우는 권위적으로 올려 유실을 막음. */
@@ -3482,7 +3534,9 @@ function AdminPageInner() {
           ? normalizeDonorsArray(lsSnap.donors).filter((d) => (d.at || 0) >= liveResetAt - 3000)
           : normalizeDonorsArray(lsSnap.donors);
       const lsDonors = lsDonorsFiltered.length;
+      /** 서버 정본 모드: 테마 복구 베이스에 세션/LS 후원을 얹지 않음 */
       const preferLsDonations =
+        !isServerAuthoritativeBroadcastState() &&
         liveResetAt <= lsResetAt &&
         (lsDonors > liveDonors || totalCombined(lsSnap) > totalCombined(live));
       const base =
