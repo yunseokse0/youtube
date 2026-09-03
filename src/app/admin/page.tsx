@@ -2720,7 +2720,11 @@ function AdminPageInner() {
   }, [user, state.donors, dailyLog, mergeIncomingStateSafely, storageHealth?.mainState?.donorsCount]);
 
   const applyDonorsFromServerMainStateRef = useRef<
-    (opts?: { silent?: boolean }) => Promise<boolean>
+    (opts?: {
+      silent?: boolean;
+      forceReplace?: boolean;
+      allowDuringIntentionalClear?: boolean;
+    }) => Promise<boolean>
   >(async () => false);
 
   /** 서버에 donors 가 있는데 UI·LS만 비었을 때 강제 복구 (storage-health 불일치) */
