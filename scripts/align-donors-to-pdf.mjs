@@ -162,7 +162,40 @@ function syncMemberTotalsFromDonors(state) {
   return { ...state, members };
 }
 
+function buildReplaceDonorsFromList(state, pdfRows) {
+  const donorsBefore = Array.isArray(state.donors) ? state.donors : [];
+  const defaultMemberId = pickDefaultMemberId(state);
+  const created = pdfRows.map((row) => ({
+    id: `xlsx:${row.src || "row"}:${row.at}:${row.amount}:${row.nickKey || "x"}`,
+    name: row.nick || "무명",
+    amount: Number(row.amount),
+    at: row.at,
+    target: row.target || "toon",
+    memberId: pickMemberIdForRow(state, row, defaultMemberId),
+    contributionPoints: Math.floor(Number(row.amount) / 10),
+    message: row.snip || "",
+  }));
+  return {
+    donors: created,
+    stats: {
+      pdfRows: pdfRows.length,
+      keptMatched: 0,
+      createdFromPdf: created.length,
+      droppedTotal: donorsBefore.length,
+      droppedAfterCutoff: 0,
+      droppedDupOrExtra: donorsBefore.length,
+      beforeSum: donorsBefore.reduce((a, d) => a + (Number(d.amount) || 0), 0),
+      afterSum: created.reduce((a, d) => a + (Number(d.amount) || 0), 0),
+      pdfSum: pdfRows.reduce((a, r) => a + (Number(r.amount) || 0), 0),
+    },
+    report: { unmatchedPdf: [], droppedSample: [], droppedAfterSample: [] },
+  };
+}
+
 function buildAlignedDonors(state, pdfRows, opts = {}) {
+  if (opts.replaceList === true) {
+    return buildReplaceDonorsFromList(state, pdfRows);
+  }
   const keepOnly = opts.keepOnly === true;
   const donors = Array.isArray(state.donors) ? [...state.donors] : [];
   const used = new Set();
@@ -279,6 +312,8 @@ async function main() {
   const dryRun = args.includes("--dry-run") || !args.includes("--apply");
   const apply = args.includes("--apply");
   const keepOnly = args.includes("--keep-only");
+  const replaceList = args.includes("--replace-list");
+  const settlementReset = args.includes("--settlement-reset");
   const userId = argVal(args, "--user", "din");
   const pdfJsonPath = argVal(args, "--pdf-json", "tmp-pdf-until-2am.json");
   const statePath = argVal(args, "--state", "");
@@ -312,12 +347,25 @@ async function main() {
   }
 
   const beforeDonors = Array.isArray(state.donors) ? state.donors.length : 0;
-  const aligned = buildAlignedDonors(state, pdfRows, { keepOnly });
+  const aligned = buildAlignedDonors(state, pdfRows, { keepOnly, replaceList });
+  const now = Date.now();
   let next = {
     ...state,
     donors: aligned.donors,
-    updatedAt: Date.now(),
+    updatedAt: now,
   };
+  if (settlementReset) {
+    next.settlementResetAt = now;
+  }
+  const resetAt = Number(next.settlementResetAt || 0);
+  if (resetAt > 0) {
+    /** 관리자 정산 리셋 stamp가 생일 목록 시각보다 뒤면, at을 올려야 후원이 필터로 안 지워짐 */
+    next.donors = (next.donors || []).map((d, i) => {
+      const at = Number(d.at) || 0;
+      if (at >= resetAt - 3000) return d;
+      return { ...d, at: resetAt + i };
+    });
+  }
   next = syncMemberTotalsFromDonors(next);
 
   const memberSummary = (next.members || []).map((m) => ({
@@ -332,6 +380,8 @@ async function main() {
   const summary = {
     dryRun: dryRun && !apply,
     keepOnly,
+    replaceList,
+    settlementReset,
     matchWindowMin: matchWindowMs() / 60000,
     userId,
     cutoff: CUTOFF_ISO,
