@@ -19,6 +19,10 @@ const STATE_KEY_BASE = "excel-broadcast-state-v1";
 const CUTOFF_ISO = "2026-09-02T02:00:00+09:00";
 const CUTOFF = Date.parse(CUTOFF_ISO);
 const MATCH_WINDOW_MS = 10 * 60 * 1000;
+function matchWindowMs() {
+  const g = globalThis.__ALIGN_MATCH_WINDOW_MS;
+  return Number.isFinite(g) && g > 0 ? g : MATCH_WINDOW_MS;
+}
 
 function argVal(args, name, fallback = "") {
   const hit = args.find((a) => a.startsWith(`${name}=`));
@@ -85,8 +89,27 @@ function scoreMatch(pdfRow, donor) {
   if (!dn || !pn) return -1;
   if (dn !== pn && !dn.includes(pn) && !pn.includes(dn)) return -1;
   const dt = Math.abs(donorAtMs(donor) - pdfRow.at);
-  if (dt > MATCH_WINDOW_MS) return -1;
-  let score = 1000 - Math.floor(dt / 1000);
+  const window = matchWindowMs();
+  let score = 1000;
+  if (dt <= window) {
+    score -= Math.floor(dt / 1000);
+  } else {
+    /** 시간창 밖이어도 메모가 강하게 같으면 허용 (임시 정산용) */
+    const dm = String(donor.message || "")
+      .replace(/\s+/g, "")
+      .slice(0, 40);
+    const pm = String(pdfRow.snip || "")
+      .replace(/\s+/g, "")
+      .slice(0, 40);
+    const msgHit =
+      dm &&
+      pm &&
+      (pm.includes(dm) ||
+        dm.includes(pm) ||
+        (dm.length >= 6 && pm.includes(dm.slice(0, Math.min(12, dm.length)))));
+    if (!msgHit || dt > window * 6) return -1;
+    score -= 400 + Math.floor(dt / 60000);
+  }
   const id = String(donor.id || "");
   if (id.startsWith("toonation:")) score += 500;
   else if (id.startsWith("bank:")) score += 100;
@@ -139,7 +162,8 @@ function syncMemberTotalsFromDonors(state) {
   return { ...state, members };
 }
 
-function buildAlignedDonors(state, pdfRows) {
+function buildAlignedDonors(state, pdfRows, opts = {}) {
+  const keepOnly = opts.keepOnly === true;
   const donors = Array.isArray(state.donors) ? [...state.donors] : [];
   const used = new Set();
   const kept = [];
@@ -168,6 +192,9 @@ function buildAlignedDonors(state, pdfRows) {
         d.memberId = pickMemberIdForRow(state, row, defaultMemberId);
       }
       kept.push(d);
+    } else if (keepOnly) {
+      /** 목록에만 있고 state에 없으면 생성하지 않음 — 항목 외 삭제만 */
+      unmatchedPdf.push(row);
     } else {
       const id = `pdf:${row.src || "row"}:${row.at}:${row.amount}:${row.nickKey || "x"}`;
       const neo = {
@@ -251,10 +278,19 @@ async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run") || !args.includes("--apply");
   const apply = args.includes("--apply");
+  const keepOnly = args.includes("--keep-only");
   const userId = argVal(args, "--user", "din");
   const pdfJsonPath = argVal(args, "--pdf-json", "tmp-pdf-until-2am.json");
   const statePath = argVal(args, "--state", "");
   const reportPath = argVal(args, "--report", "tmp-align-donors-report.json");
+  const matchWindowArg = argVal(args, "--match-window-min", "");
+  if (matchWindowArg) {
+    const mins = Number(matchWindowArg);
+    if (Number.isFinite(mins) && mins > 0) {
+      // scoreMatch closes over MATCH_WINDOW_MS — override via global for this run
+      globalThis.__ALIGN_MATCH_WINDOW_MS = mins * 60 * 1000;
+    }
+  }
 
   if (!fs.existsSync(pdfJsonPath)) {
     throw new Error(`PDF JSON 없음: ${pdfJsonPath}`);
@@ -276,7 +312,7 @@ async function main() {
   }
 
   const beforeDonors = Array.isArray(state.donors) ? state.donors.length : 0;
-  const aligned = buildAlignedDonors(state, pdfRows);
+  const aligned = buildAlignedDonors(state, pdfRows, { keepOnly });
   let next = {
     ...state,
     donors: aligned.donors,
@@ -295,6 +331,8 @@ async function main() {
 
   const summary = {
     dryRun: dryRun && !apply,
+    keepOnly,
+    matchWindowMin: matchWindowMs() / 60000,
     userId,
     cutoff: CUTOFF_ISO,
     beforeDonors,
