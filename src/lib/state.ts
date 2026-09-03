@@ -4127,6 +4127,19 @@ export function resolveRichestDonorsFromSources(
   return merged;
 }
 
+/** 단순 n건 삭제 fast-path — incoming id 가 100% existing id 부분집합이고 1~10건 사이 소규모 삭제면 무조건 shrink 로 간주 */
+function isSimpleSmallDonorShrink(incomingNorm: Donor[], existingNorm: Donor[]): boolean {
+  const removedCount = existingNorm.length - incomingNorm.length;
+  if (removedCount <= 0 || removedCount > 10) return false;
+  if (incomingNorm.length === 0) return removedCount <= 10;
+  const existingIds = new Set(existingNorm.map((d) => String(d.id || "")).filter(Boolean));
+  if (existingIds.size === 0) return false;
+  return incomingNorm.every((d) => {
+    const id = String(d.id || "").trim();
+    return Boolean(id) && existingIds.has(id);
+  });
+}
+
 /**
  * 수동 삭제처럼 incoming 이 existing 의 부분집합이고 시각이 앞설 때만 true.
  * 합산 추가(신규 id)·투네와 경합 시에는 false → 서버는 replace 대신 union.
@@ -4141,12 +4154,18 @@ export function isIntentionalDonorListShrink(
   const existingNorm = normalizeDonorsArray(existing);
   if (existingNorm.length === 0) return false;
   if (incomingNorm.length >= existingNorm.length) return false;
+
+  if (isSimpleSmallDonorShrink(incomingNorm, existingNorm)) {
+    const inAt = Number(incomingUpdatedAt || 0);
+    const exAt = Number(existingUpdatedAt || 0);
+    if (inAt > 0 && exAt > 0 && inAt < exAt - 60_000) return false;
+    return true;
+  }
+
   const removedCount = existingNorm.length - incomingNorm.length;
-  /** 2건 이상 한 번에 줄면 UI 불완전·동기화 오류 가능 — union 유지(단건 삭제만 replace) */
   if (removedCount > 1) return false;
   const existingIds = new Set(existingNorm.map((d) => String(d.id || "")).filter(Boolean));
   const incomingIds = incomingNorm.map((d) => String(d.id || "")).filter(Boolean);
-  /** 신규 id 가 있으면 합산·투네 반영 — 삭제가 아님 */
   if (incomingIds.some((id) => !existingIds.has(id))) return false;
   if (incomingIds.some((id) => !id)) return false;
   const inAt = Number(incomingUpdatedAt || 0);

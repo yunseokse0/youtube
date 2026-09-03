@@ -25,6 +25,51 @@ import {
 const STORAGE_KEY_BASE = "excel-broadcast-state-v1";
 const STORAGE_KEY_LEGACY = "excel-broadcast-state-v1";
 
+const BROADCAST_WRITE_THROTTLE_MS = 3_000;
+const BROADCAST_WRITE_DEBOUNCE_MS = 2_000;
+const broadcastLastRunAt = new Map<string, number>();
+const broadcastPending = new Map<
+  string,
+  {
+    timer: ReturnType<typeof setTimeout> | null;
+    payload: { persisted: AppState; opts?: SaveAppStateForRouletteOptions; scheduledAt: number } | null;
+  }
+>();
+
+function scheduleBroadcastWrite(
+  userId: string,
+  persisted: AppState,
+  opts: SaveAppStateForRouletteOptions | undefined
+): void {
+  if (typeof setTimeout === "undefined") {
+    void dualWriteBroadcastDonations(userId, persisted, opts).catch(() => {});
+    return;
+  }
+  const now = Date.now();
+  const lastRun = broadcastLastRunAt.get(userId) || 0;
+  const entry = broadcastPending.get(userId) ?? { timer: null, payload: null };
+
+  if (entry.timer) clearTimeout(entry.timer);
+  entry.payload = { persisted, opts, scheduledAt: now };
+
+  const gap = now - lastRun;
+  const waitMs =
+    gap >= BROADCAST_WRITE_THROTTLE_MS ? BROADCAST_WRITE_DEBOUNCE_MS : BROADCAST_WRITE_THROTTLE_MS - gap + BROADCAST_WRITE_DEBOUNCE_MS;
+
+  entry.timer = setTimeout(() => {
+    const live = broadcastPending.get(userId);
+    const payload = live?.payload;
+    if (live) {
+      live.timer = null;
+      live.payload = null;
+    }
+    broadcastLastRunAt.set(userId, Date.now());
+    if (payload) void dualWriteBroadcastDonations(userId, payload.persisted, payload.opts).catch(() => {});
+  }, Math.max(0, Math.min(waitMs, 5_000)));
+
+  broadcastPending.set(userId, entry);
+}
+
 export function getRouletteUserId(req: Request): string | null {
   /** OBS 시그 오버레이 spin/land — `?u=` 허용, 쿠키와 불일치 시 거부 */
   const writeUid = resolveWriteUserId(req, { allowAnonymousUrlUser: true });
@@ -174,8 +219,8 @@ export async function saveAppStateForRoulette(
   }
   const wrote = await upstashSet(stateKey(userId), persisted);
   if (wrote) {
-    /** Phase 1 dual-write — 실패해도 KV 정본은 유지 (읽기는 AppState) */
-    void dualWriteBroadcastDonations(userId, persisted, opts);
+    /** Phase 1 dual-write — 3초 throttle + 2초 debounce 로 반복저장 집계해 최종 1회만 MySQL 반영 */
+    scheduleBroadcastWrite(userId, persisted, opts);
   }
   return { ok: wrote, state: persisted };
 }

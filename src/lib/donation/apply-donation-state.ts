@@ -145,19 +145,86 @@ export function dedupeDonorRows<
       map.set(key, mergeDonorRowFields(prev, d));
     }
   }
-  const pass1 = Array.from(map.values());
+  const pass1 = Array.from(map.values()).sort((a, b) => donorAtEpochMs(b) - donorAtEpochMs(a));
+
+  const MAX_BUCKET_SCAN = 200;
+  if (pass1.length <= MAX_BUCKET_SCAN) {
+    const merged: T[] = [];
+    for (const d of pass1) {
+      const dupIdx = merged.findIndex((prev) =>
+        shouldTreatAsDuplicateDonationContent(prev, {
+          id: d.id,
+          donorName: d.name,
+          amount: d.amount,
+          target: d.target,
+          message: d.message,
+          at: d.at,
+        })
+      );
+      if (dupIdx < 0) {
+        merged.push(d);
+        continue;
+      }
+      const prev = merged[dupIdx]!;
+      const aWeak = isWeakToonationDonorId(String(prev.id || ""));
+      const bWeak = isWeakToonationDonorId(String(d.id || ""));
+      const preferred =
+        aWeak && !bWeak ? d : !aWeak && bWeak ? prev : donorAtEpochMs(d) >= donorAtEpochMs(prev) ? d : prev;
+      const other = preferred === d ? prev : d;
+      merged[dupIdx] = mergeDonorRowFields(preferred, other);
+    }
+    return merged;
+  }
+
+  const bucket = new Map<string, T[]>();
+  for (const d of pass1) {
+    const name = normalizeDonorNameKey(d.name);
+    const amt = Math.max(0, Math.round(Number(d.amount) || 0));
+    const key = `${name ?? ""}\u0001${amt}`;
+    const arr = bucket.get(key);
+    if (arr) arr.push(d);
+    else bucket.set(key, [d]);
+  }
+
   const merged: T[] = [];
-  for (const d of pass1.sort((a, b) => donorAtEpochMs(b) - donorAtEpochMs(a))) {
-    const dupIdx = merged.findIndex((prev) =>
-      shouldTreatAsDuplicateDonationContent(prev, {
-        id: d.id,
-        donorName: d.name,
-        amount: d.amount,
-        target: d.target,
-        message: d.message,
-        at: d.at,
-      })
-    );
+  for (const d of pass1) {
+    const name = normalizeDonorNameKey(d.name);
+    const amt = Math.max(0, Math.round(Number(d.amount) || 0));
+    const key = `${name ?? ""}\u0001${amt}`;
+    const pool = bucket.get(key);
+    let dupIdx = -1;
+    if (pool && pool.length <= MAX_BUCKET_SCAN) {
+      for (let i = 0; i < merged.length; i += 1) {
+        const prev = merged[i]!;
+        const pName = normalizeDonorNameKey(prev.name);
+        const pAmt = Math.max(0, Math.round(Number(prev.amount) || 0));
+        if (pName !== name || pAmt !== amt) continue;
+        if (
+          shouldTreatAsDuplicateDonationContent(prev, {
+            id: d.id,
+            donorName: d.name,
+            amount: d.amount,
+            target: d.target,
+            message: d.message,
+            at: d.at,
+          })
+        ) {
+          dupIdx = i;
+          break;
+        }
+      }
+    } else {
+      dupIdx = merged.findIndex((prev) =>
+        shouldTreatAsDuplicateDonationContent(prev, {
+          id: d.id,
+          donorName: d.name,
+          amount: d.amount,
+          target: d.target,
+          message: d.message,
+          at: d.at,
+        })
+      );
+    }
     if (dupIdx < 0) {
       merged.push(d);
       continue;
