@@ -36,6 +36,33 @@ const broadcastPending = new Map<
   }
 >();
 
+const saveMutexMap = new Map<string, Promise<{ ok: boolean; state: AppState }>>();
+
+function serializedSaveAppStateForRoulette(
+  userId: string,
+  next: AppState,
+  opts: SaveAppStateForRouletteOptions | undefined,
+  exec: () => Promise<{ ok: boolean; state: AppState }>
+): Promise<{ ok: boolean; state: AppState }> {
+  const prev = saveMutexMap.get(userId) ?? Promise.resolve({ ok: true, state: next });
+  const nextPromise = prev.then(
+    () => exec(),
+    () => exec()
+  );
+  saveMutexMap.set(userId, nextPromise);
+  void nextPromise.then(
+    () => {
+      const cur = saveMutexMap.get(userId);
+      if (cur === nextPromise) saveMutexMap.delete(userId);
+    },
+    () => {
+      const cur = saveMutexMap.get(userId);
+      if (cur === nextPromise) saveMutexMap.delete(userId);
+    }
+  );
+  return nextPromise;
+}
+
 function scheduleBroadcastWrite(
   userId: string,
   persisted: AppState,
@@ -114,6 +141,16 @@ export type SaveAppStateForRouletteOptions = {
 };
 
 export async function saveAppStateForRoulette(
+  userId: string,
+  next: AppState,
+  opts?: SaveAppStateForRouletteOptions
+): Promise<{ ok: boolean; state: AppState }> {
+  return serializedSaveAppStateForRoulette(userId, next, opts, () =>
+    saveAppStateForRouletteDirect(userId, next, opts)
+  );
+}
+
+async function saveAppStateForRouletteDirect(
   userId: string,
   next: AppState,
   opts?: SaveAppStateForRouletteOptions
