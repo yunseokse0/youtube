@@ -152,6 +152,11 @@ async function withBulkMysqlConn<T>(fn: (c: PoolConnection) => Promise<T>, attem
   return withPoolConn(getBulkPool(), fn, attempt);
 }
 
+/** daily-log·settlement·broadcast_donations 등 대용량 I/O */
+export async function withMysqlBulkConn<T>(fn: (c: PoolConnection) => Promise<T>): Promise<T> {
+  return withBulkMysqlConn(fn);
+}
+
 async function withMysqlConnForKey<T>(
   key: string,
   fn: (c: PoolConnection) => Promise<T>,

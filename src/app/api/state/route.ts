@@ -570,6 +570,7 @@ import {
   STATE_PICK_DONOR_RANKINGS,
   STATE_PICK_OBS_TEXT,
   STATE_PICK_SIG_INVENTORY,
+  STATE_PICK_SIG_SALES,
 } from "@/lib/state-api-pick";
 
 function overlayPickEnabled(): boolean {
@@ -685,9 +686,26 @@ export async function GET(req: Request) {
     if (since > 0 && kvOk && !isRedisConfigured() && isMysqlKvConfigured()) {
       const memEarly = getServerMemoryAppState(userId);
       const memRev = memEarly ? revisionAt(memEarly) : 0;
-      const dbRev = await mysqlKvPeekRevision(stateKey(userId));
-      if (dbRev !== null && dbRev <= since && memRev <= since) {
+      /**
+       * pick 전용 revision(obs-text·donor-rankings 등): 워밍 메모리가 since 이하면
+       * 전역 updated_at peek 없이 304 — 무관 필드 변경으로 LONGTEXT 로드 방지.
+       * (단일 pm2 프로세스: 쓰기가 setServerMemoryAppState 로 메모리를 갱신)
+       */
+      const pickUsesDedicatedRevision =
+        pickMode === STATE_PICK_OBS_TEXT ||
+        pickMode === STATE_PICK_DONOR_RANKINGS ||
+        pickMode === STATE_PICK_OVERLAY_DONORS ||
+        pickMode === STATE_PICK_OVERLAY ||
+        pickMode === STATE_PICK_SIG_SALES;
+      if (pickUsesDedicatedRevision && memEarly && memRev > 0 && memRev <= since) {
         return stateNotModifiedResponse("mysql-rev");
+      }
+      /** 메모리가 이미 since보다 신규면 peek 생략 후 본문 경로 */
+      if (!(memRev > since)) {
+        const dbRev = await mysqlKvPeekRevision(stateKey(userId));
+        if (dbRev !== null && dbRev <= since && memRev <= since) {
+          return stateNotModifiedResponse("mysql-rev");
+        }
       }
     }
     if (!kvOk) {

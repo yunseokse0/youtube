@@ -78,6 +78,19 @@ export async function POST(req: Request) {
     });
   }
 
+  /** dual-write 미러 강제 비움 (void 레이스 대비) */
+  try {
+    const { clearBroadcastDonationsForUser } = await import(
+      "@/lib/donation/broadcast-donations-mysql"
+    );
+    await clearBroadcastDonationsForUser(userId);
+  } catch (err) {
+    logger.warn("broadcast_donations clear after reset failed", {
+      userId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   const persisted = saved.state;
   const donorsCount = normalizeDonorsArray(persisted.donors).length;
   const total = totalCombined(persisted);

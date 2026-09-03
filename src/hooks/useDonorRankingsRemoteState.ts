@@ -310,7 +310,8 @@ export function useDonorRankingsRemoteState(
     const sseFallbackMs = pollMs > 0 ? 0 : readOverlaySseFallbackPollMs();
     let sseFallbackId: number | undefined;
     if (sseFallbackMs > 0) {
-      sseFallbackId = window.setInterval(() => void syncFromApiRef.current({ forceFull: true }), sseFallbackMs);
+      /** 주기 fallback 은 since/304 — forceFull 은 초기·visibility·donation SSE 만 */
+      sseFallbackId = window.setInterval(() => void syncFromApiRef.current(), sseFallbackMs);
     }
 
     const onStorage = (e: StorageEvent) => {

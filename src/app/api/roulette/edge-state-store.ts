@@ -173,5 +173,30 @@ export async function saveAppStateForRoulette(
     return { ok: true, state: persisted };
   }
   const wrote = await upstashSet(stateKey(userId), persisted);
+  if (wrote) {
+    /** Phase 1 dual-write — 실패해도 KV 정본은 유지 (읽기는 AppState) */
+    void dualWriteBroadcastDonations(userId, persisted, opts);
+  }
   return { ok: wrote, state: persisted };
+}
+
+async function dualWriteBroadcastDonations(
+  userId: string,
+  persisted: AppState,
+  opts?: SaveAppStateForRouletteOptions
+): Promise<void> {
+  if (process.env.NEXT_RUNTIME === "edge") return;
+  try {
+    const { syncBroadcastDonationsFromAppState } = await import(
+      "@/lib/donation/broadcast-donations-mysql"
+    );
+    const { normalizeDonorsArray } = await import("@/lib/state");
+    await syncBroadcastDonationsFromAppState(userId, normalizeDonorsArray(persisted.donors), {
+      mode: opts?.donorsMode === "replace" ? "replace" : "add",
+      allowEmptyRosterWipe: Boolean(opts?.allowEmptyRosterWipe),
+      updatedAtMs: Number(persisted.updatedAt || Date.now()),
+    });
+  } catch {
+    /* mysql 미등록·edge — no-op; 모듈 내부에서 이미 로그 */
+  }
 }

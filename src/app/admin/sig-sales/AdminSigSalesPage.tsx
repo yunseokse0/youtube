@@ -435,7 +435,11 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
   const loadRemote = useCallback(async (opts?: { force?: boolean }) => {
     if (!authReady) return;
     if (!opts?.force && pendingLocalSaveRef.current) return;
-    const remote = await loadStateFromApi(userId, opts?.force ? { forceFull: true } : undefined);
+    const forceFull = Boolean(opts?.force);
+    const remote = await loadStateFromApi(userId, {
+      ifUpdatedSince: forceFull ? 0 : lastSyncedUpdatedAtRef.current,
+      forceFull,
+    });
     if (!remote) return;
     const ts = remote.updatedAt || 0;
     if (!opts?.force && ts > 0 && ts <= lastAppliedRemoteUpdatedAtRef.current) return;

@@ -25,17 +25,26 @@ export function createYoutubeBroadcastDonationAlertSource(
   const pollMs = opts.pollMs ?? DONATION_ALERT_POLL_MS;
   const seenIds = new Set<string>();
   let bootstrapped = false;
+  let lastSyncedUpdatedAt = 0;
 
   return {
     subscribe(onAlert) {
       if (!userId) return () => {};
 
-      const poll = async () => {
+      const poll = async (opts?: { forceFull?: boolean }) => {
+        const forceFull = Boolean(opts?.forceFull) || lastSyncedUpdatedAt <= 0;
         const remote = await loadStateFromApi(userId, {
           pick: STATE_PICK_OVERLAY_DONORS,
-          forceFull: true,
+          ifUpdatedSince: forceFull ? 0 : lastSyncedUpdatedAt,
+          forceFull,
         });
+        /** 304 — 신규 후원 없음 */
         if (!remote) return;
+        const rev = Math.max(
+          Number(remote.updatedAt || 0),
+          Number(remote.donorRankingsUpdatedAt || 0)
+        );
+        if (rev > 0) lastSyncedUpdatedAt = Math.max(lastSyncedUpdatedAt, rev);
         const donors = normalizeDonorsArray(remote.donors) as DonationRecordRef[];
         const members = remote.members || [];
         if (!bootstrapped) {
@@ -47,7 +56,7 @@ export function createYoutubeBroadcastDonationAlertSource(
         for (const item of fresh) onAlert(item);
       };
 
-      void poll();
+      void poll({ forceFull: true });
       const stopPoll = startStaggeredOverlayPoll(
         () => void poll(),
         pollMs,
