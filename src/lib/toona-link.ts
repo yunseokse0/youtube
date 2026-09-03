@@ -6,14 +6,40 @@ export type ToonaLinkResult =
   | { ok: false; error: string; skipped?: false }
   | { ok: true; skipped: true; reason: string };
 
+function stripWrappingQuotes(raw: string): string {
+  const s = String(raw || "").trim();
+  if (s.length < 2) return s;
+  const first = s.charCodeAt(0);
+  const last = s.charCodeAt(s.length - 1);
+  if (
+    (first === 0x60 && last === 0x60) ||
+    (first === 0x22 && last === 0x22) ||
+    (first === 0x27 && last === 0x27)
+  ) {
+    return s.slice(1, -1).trim();
+  }
+  return s;
+}
+
+export function normalizePublicBaseUrl(raw: string): string | null {
+  const stripped = stripWrappingQuotes(String(raw || "")).replace(/\/$/, "");
+  if (!stripped) return null;
+  try {
+    const u = new URL(stripped);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return `${u.origin}${u.pathname.replace(/\/$/, "")}`;
+  } catch {
+    return null;
+  }
+}
+
 export function getToonaApiBaseUrl(): string | null {
-  return normalizeToonaApiBaseUrl(
-    String(process.env.NEXT_PUBLIC_TOONA_API_BASE_URL || "").trim()
-  );
+  const raw = stripWrappingQuotes(String(process.env.NEXT_PUBLIC_TOONA_API_BASE_URL || ""));
+  return normalizeToonaApiBaseUrl(raw);
 }
 
 export function getYoutubePublicBaseUrl(req: Request): string {
-  const fromEnv = String(process.env.YOUTUBE_PUBLIC_BASE_URL || "").trim().replace(/\/$/, "");
+  const fromEnv = normalizePublicBaseUrl(String(process.env.YOUTUBE_PUBLIC_BASE_URL || ""));
   if (fromEnv) return fromEnv;
   const proto = req.headers.get("x-forwarded-proto") || "http";
   const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "";

@@ -1,5 +1,5 @@
 import { mapToonaSignaturesToSigItems, normalizeToonaApiBaseUrl, type ToonaSignatureRow } from "@/lib/toona-sig-import";
-import { getToonaApiBaseUrl, getYoutubePublicBaseUrl } from "@/lib/toona-link";
+import { getToonaApiBaseUrl, getYoutubePublicBaseUrl, normalizePublicBaseUrl } from "@/lib/toona-link";
 import { normalizeContributionFormula } from "@/lib/contribution-formula";
 import { persistContributionFormulaForUser } from "@/lib/contribution-formula-persist";
 import {
@@ -24,9 +24,11 @@ export { toonaHubDonationToEvent, type ToonaHubDonationApiRow } from "@/lib/toon
 /** hub?refresh=1 동시 폭주 방지 (유저당 1개) */
 const hubPollInflight = new Map<string, Promise<unknown>>();
 const lastDonationPullAt = new Map<string, number>();
+const lastBaseUrlRepairAt = new Map<string, number>();
 const DONATION_PULL_MIN_INTERVAL_MS = 60_000;
 const STATUS_FETCH_MS = 5_000;
 const DONATION_FETCH_MS = 8_000;
+const BASEURL_REPAIR_COOLDOWN_MS = 5 * 60_000;
 
 export type ToonaHubLoginInput = {
   youtubeUserId: string;
@@ -45,6 +47,9 @@ export async function loginAndLinkToonaHub(input: ToonaHubLoginInput): Promise<
   const password = String(input.password || "");
   const baseUrl =
     normalizeToonaApiBaseUrl(String(input.baseUrl || "").trim()) || getToonaApiBaseUrl();
+  const youtubePublicBaseUrl =
+    normalizePublicBaseUrl(String(input.youtubePublicBaseUrl || "").trim()) ||
+    String(input.youtubePublicBaseUrl || "").trim().replace(/\/$/, "");
 
   if (!youtubeUserId) return { ok: false, error: "youtube_user_required" };
   if (!baseUrl) return { ok: false, error: "toona_base_url_required" };
@@ -86,7 +91,7 @@ export async function loginAndLinkToonaHub(input: ToonaHubLoginInput): Promise<
   /** 허브 모드 = toona만 수집 → youtube는 엑셀·후원자 리스트 반영 필요 (scenario B / applyExcel=true) */
   const patchBody = {
     enabled: true,
-    baseUrl: input.youtubePublicBaseUrl.replace(/\/$/, ""),
+    baseUrl: youtubePublicBaseUrl,
     userId: youtubeUserId,
     scenario: "B",
     allowEventsFallback: true,
@@ -356,6 +361,7 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
       toonWeightPct?: number;
       accountWeight?: number;
       toonWeight?: number;
+      baseUrl?: string | null;
     };
 
     if (!res.ok) {
@@ -405,6 +411,49 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
         } catch (err) {
           session.lastStatusError =
             err instanceof Error ? err.message : "scenario_B_patch_failed";
+        }
+      }
+
+      /** toona에 저장된 youtube baseUrl 이 현재 env 값과 다르면 자가수복 (백틱/따옴포 오염 복구 등) */
+      const desiredBaseUrl = normalizePublicBaseUrl(
+        String(process.env.YOUTUBE_PUBLIC_BASE_URL || "")
+      );
+      if (desiredBaseUrl) {
+        const storedRaw = String(json.baseUrl || "").trim().replace(/\/$/, "");
+        const storedNormalized = normalizePublicBaseUrl(storedRaw);
+        const mismatch =
+          storedRaw !== desiredBaseUrl &&
+          (!storedNormalized || storedNormalized !== desiredBaseUrl);
+        const lastRepair = lastBaseUrlRepairAt.get(youtubeUserId) || 0;
+        if (mismatch && Date.now() - lastRepair > BASEURL_REPAIR_COOLDOWN_MS) {
+          lastBaseUrlRepairAt.set(youtubeUserId, Date.now());
+          try {
+            const ingestSecret = String(process.env.TOONA_INGEST_SECRET || "").trim();
+            const repairRes = await fetch(
+              `${session.baseUrl}/api/youtubegit/${encodeURIComponent(session.streamKey)}`,
+              {
+                method: "PATCH",
+                headers: {
+                  "Content-Type": "application/json",
+                  Accept: "application/json",
+                  Authorization: `Bearer ${session.token}`,
+                },
+                body: JSON.stringify({
+                  baseUrl: desiredBaseUrl,
+                  ...(ingestSecret ? { ingestSecret } : {}),
+                }),
+                signal: AbortSignal.timeout(STATUS_FETCH_MS),
+              }
+            );
+            if (!repairRes.ok) {
+              const repairJson = (await repairRes.json().catch(() => ({}))) as { error?: string };
+              session.lastStatusError =
+                repairJson.error || `baseurl_repair_failed HTTP ${repairRes.status}`;
+            }
+          } catch (err) {
+            session.lastStatusError =
+              err instanceof Error ? err.message : "baseurl_repair_failed";
+          }
         }
       }
     }
