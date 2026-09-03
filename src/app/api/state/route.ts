@@ -1395,7 +1395,11 @@ export async function POST(req: Request) {
     /** 후원 금액 — 재시작·메인 상태 유실 대비 별도 백업. 명시 정산·donationInit 리셋 때만 백업 비움 */
     if (settlementReset || donationInitReset) {
       await clearDonationRosterBackup(userId, next.settlementResetAt);
-    } else if (normalizeDonorsArray(next.donors).length > 0 || totalCombined(next) > 0) {
+    } else if (
+      donorsInPatch &&
+      (normalizeDonorsArray(next.donors).length > 0 || totalCombined(next) > 0)
+    ) {
+      /** 멤버 삭제 등 donors 미포함 PATCH 에서는 백업 재기록 생략 — 거대 JSON 이중 저장·502 완화 */
       void saveDonationRosterBackup(userId, next);
     }
 

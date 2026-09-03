@@ -4529,6 +4529,7 @@ function AdminPageInner() {
         next = { ...next, updatedAt: now, membersRosterUpdatedAt: now };
         stateRef.current = next;
         stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, now);
+        lastLocalPersistAtRef.current = now;
         membersAuthoritativeSaveUntilRef.current = Date.now() + 120_000;
         pendingUnsyncedRef.current = true;
         try {
