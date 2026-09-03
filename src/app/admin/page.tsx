@@ -2401,9 +2401,23 @@ function AdminPageInner() {
     let cancelled = false;
     setSyncStatus("loading");
     /**
-     * 서버 정본만 사용 — LS/세션 조기 표시·병합·heal 푸시 없음.
-     * 새로고침 시 「동기화 중」은 API 대기이며, 응답 후 서버 스냅샷을 그대로 적용한다.
+     * 서버 정본: 응답은 교체만(병합·heal 없음).
+     * 체감용으로 세션/LS는 표시만 하고, syncStatus 는 loading 유지 → 서버 오면 replace.
      */
+    try {
+      const sessionEarly = readSessionBroadcastState(user.id);
+      const paint = sessionEarly || loadState(user.id);
+      if (
+        hasMeaningfulMemberRoster(paint) ||
+        normalizeDonorsArray(paint.donors).length > 0 ||
+        totalCombined(paint) > 0
+      ) {
+        setState(paint);
+        stateRef.current = paint;
+      }
+    } catch {
+      /* noop */
+    }
     const hydrateWatchdog = window.setTimeout(() => {
       if (!cancelled && syncStatusRef.current === "loading") {
         const offlineNow = typeof navigator !== "undefined" && !navigator.onLine;
@@ -2416,7 +2430,8 @@ function AdminPageInner() {
     if (offline) {
       setSyncStatus("local");
     }
-    const loadMain = () => loadStateFromApiWithMeta(user.id, { forceFull: true, fast: true });
+    /** fast=1 — enrich 생략·KV 캐시 활용. forceFull 생략으로 동시 GET dedupe 허용 */
+    const loadMain = () => loadStateFromApiWithMeta(user.id, { fast: true });
     void loadMain()
       .then(({ state: apiState, meta }) => {
         if (cancelled) return;
@@ -2484,6 +2499,11 @@ function AdminPageInner() {
           setState(toApply);
           stateRef.current = toApply;
           if (user?.id) hydrateSettlementUiFromAppState(toApply, user.id);
+          try {
+            cacheBroadcastStateSnapshot(toApply, user?.id);
+          } catch {
+            /* noop */
+          }
           if (Array.isArray(toApply.overlayPresets) && toApply.overlayPresets.length > 0) {
             setPresets(toApply.overlayPresets as OverlayPreset[]);
           } else {
@@ -9488,7 +9508,9 @@ function AdminPageInner() {
                 : syncStatus === "synced"
                   ? "서버 동기화됨"
                   : syncStatus === "loading"
-                    ? "서버에서 불러오는 중..."
+                    ? state.members.length > 0
+                      ? "서버 확인 중..."
+                      : "서버에서 불러오는 중..."
                     : syncStatus === "error" && syncAuthBlocked
                       ? "세션 확인 필요"
                     : syncStatus === "error"
@@ -9653,7 +9675,7 @@ function AdminPageInner() {
                 </button>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                {syncStatus === "loading" ? (
+                {syncStatus === "loading" && state.members.length === 0 ? (
                   <div className="lg:col-span-3 rounded-lg border border-white/10 bg-neutral-900/50 px-4 py-8 text-center text-sm text-neutral-400">
                     서버에서 멤버를 불러오는 중…
                   </div>

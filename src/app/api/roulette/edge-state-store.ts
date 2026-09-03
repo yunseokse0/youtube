@@ -5,7 +5,7 @@ import {
   isAccidentalEmptyRosterState,
   shouldBlockAccidentalEmptyOverwrite,
 } from "@/lib/state";
-import { coalesceAppStateRedisAndMemory, invalidateAppStateKvCache, loadAppStateForUserId } from "@/lib/app-state-server-load";
+import { coalesceAppStateRedisAndMemory, loadAppStateForUserId, seedAppStateKvCache } from "@/lib/app-state-server-load";
 import {
   mergeDonationReplaceForPersist,
   mergeStatePreservingDonorsUntilSettlementReset,
@@ -167,7 +167,8 @@ export async function saveAppStateForRoulette(
   }
 
   setServerMemoryAppState(userId, persisted);
-  invalidateAppStateKvCache(userId);
+  /** 무효화 대신 최신 스냅샷으로 워밍 — 다음 admin fast=1 / OBS GET 이 MySQL 을 건너뜀 */
+  seedAppStateKvCache(userId, persisted);
   if (!kvOk) {
     return { ok: true, state: persisted };
   }

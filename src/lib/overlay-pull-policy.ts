@@ -91,14 +91,14 @@ export function readOverlayPollIntervalMs(): number {
 }
 
 /** OBS 시그 판매 회전판 — CEF에서 SSE가 끊겨도 SPINNING을 잡기 위한 기본 주기(ms). `NEXT_PUBLIC_SIG_SALES_OVERLAY_POLL_MS=0` 으로 끔 */
-export const DEFAULT_SIG_SALES_OVERLAY_POLL_MS = 3000;
+export const DEFAULT_SIG_SALES_OVERLAY_POLL_MS = 4000;
 /** 수동 시그 OBS — 회전판보다 변경이 적어 폴링·GET 부하를 낮춤 */
-export const DEFAULT_SIG_SALES_MANUAL_OVERLAY_POLL_MS = 5000;
+export const DEFAULT_SIG_SALES_MANUAL_OVERLAY_POLL_MS = 6000;
 /** 후원·기여도 목록(`/overlay/donation-lists`) — SSE 불안정 시 짧은 폴링. `=0` 으로 끔 */
-export const DEFAULT_DONATION_LISTS_OVERLAY_POLL_MS = 5000;
+export const DEFAULT_DONATION_LISTS_OVERLAY_POLL_MS = 6000;
 
 /** OBS 텍스트 오버레이 — 실시간 반영(연출 remount 최소화). `=0` 으로 끔 */
-export const DEFAULT_OBS_TEXT_OVERLAY_POLL_MS = 3000;
+export const DEFAULT_OBS_TEXT_OVERLAY_POLL_MS = 4000;
 
 export function readObsTextOverlayPollMs(): number {
   if (typeof window === "undefined") return DEFAULT_OBS_TEXT_OVERLAY_POLL_MS;

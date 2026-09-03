@@ -61,7 +61,9 @@ import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 import { pickFresherAppState } from "@/lib/app-state-freshness";
 import {
   coalesceAppStateRedisAndMemory,
+  loadAppStateForUserId,
   peekAppStateKvCache,
+  seedAppStateKvCache,
 } from "@/lib/app-state-server-load";
 import { saveAppStateForRoulette } from "../roulette/edge-state-store";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
@@ -741,6 +743,7 @@ export async function GET(req: Request) {
       if (hasWarmServerState(warm)) {
         let merged = applyDonationGoalPresetNormalization(syncMemberTotalsFromDonors(warm));
         if (memFast !== warm) setServerMemoryAppState(userId, merged);
+        seedAppStateKvCache(userId, merged);
         return new Response(JSON.stringify(bodyForPick(merged)), {
           headers: {
             "Content-Type": "application/json",
@@ -752,13 +755,15 @@ export async function GET(req: Request) {
       }
     }
 
-    let state = await upstashGet<AppState>(stateKey(userId));
+    /** coalesced KV read + 20s cache + in-flight merge (동시 OBS/admin GET) */
+    let state = await loadAppStateForUserId(userId);
     if (!state || !Array.isArray(state.members)) {
       if (isLegacyMigrationTargetUserId(userId)) {
         const legacy = await upstashGet<AppState>(STORAGE_KEY_LEGACY);
         if (legacy && (Array.isArray(legacy.members) || Array.isArray(legacy.overlayPresets))) {
           await upstashSet(stateKey(userId), legacy);
           state = legacy;
+          seedAppStateKvCache(userId, legacy);
           logger.info('기존 데이터 계정으로 마이그레이션', { userId });
         }
       }
@@ -845,78 +850,79 @@ export async function GET(req: Request) {
     const storageHdr = persistentStateStorageHeader();
 
     if (!fastHydrate) {
-    try {
       const needSigBackup =
         !skipSigEnrichForPick &&
         (isShrunkToDefaultSigInventory(mergedForResponse.sigInventory) ||
           !hasExpandedSigInventory(mergedForResponse.sigInventory));
-      if (needSigBackup) {
-        const sigEnriched = await enrichAppStateWithSigInventoryBackup(userId, mergedForResponse, {
-          persistBackup: false,
-        });
-        if (sigEnriched.restoredFromBackup) {
-          mergedForResponse = { ...mergedForResponse, sigInventory: sigEnriched.sigInventory };
-          logger.warn("sigInventory Redis 백업에서 복구", {
-            userId,
-            count: sigEnriched.sigInventory.length,
-          });
-          setServerMemoryAppState(userId, mergedForResponse);
-        }
-      }
-    } catch (err) {
-      logger.error("sigInventory 백업 복구 실패", err);
-    }
-
-    try {
       const donorsNow = normalizeDonorsArray(mergedForResponse.donors);
-      const needDonationBackup = donorsNow.length === 0 || totalCombined(mergedForResponse) <= 0;
-      if (needDonationBackup && !shouldSuppressAutoRosterRestore(mergedForResponse)) {
-        const donationEnriched = await enrichAppStateWithDonationRosterBackup(
-          userId,
-          mergedForResponse,
-          { persistBackup: false }
-        );
-        if (donationEnriched.restoredFromBackup) {
-          mergedForResponse = applyDonationGoalPresetNormalization(donationEnriched.state);
-          setServerMemoryAppState(userId, mergedForResponse);
-          logger.warn("후원 금액 백업에서 복구", {
-            userId,
-            donors: normalizeDonorsArray(mergedForResponse.donors).length,
-            total: totalCombined(mergedForResponse),
-          });
-        }
-      }
-    } catch (err) {
-      logger.error("후원 백업 복구 실패", err);
-    }
+      const needDonationBackup =
+        (donorsNow.length === 0 || totalCombined(mergedForResponse) <= 0) &&
+        !shouldSuppressAutoRosterRestore(mergedForResponse);
 
-    /** 메인·백업 모두 donors 비었을 때만 일일 로그 조회(2×MySQL) — since 폴링·정상 세션은 생략 */
-    if (
-      since === 0 &&
-      normalizeDonorsArray(mergedForResponse.donors).length === 0 &&
-      !shouldSuppressAutoRosterRestore(mergedForResponse)
-    ) {
-      try {
-        const dailyLog = await loadDailyLogForUserId(userId, {
-          recentDays: DAILY_LOG_SHARD_DAYS_DEFAULT,
+      const [sigEnriched, donationEnriched] = await Promise.all([
+        needSigBackup
+          ? enrichAppStateWithSigInventoryBackup(userId, mergedForResponse, {
+              persistBackup: false,
+            }).catch((err) => {
+              logger.error("sigInventory 백업 복구 실패", err);
+              return null;
+            })
+          : Promise.resolve(null),
+        needDonationBackup
+          ? enrichAppStateWithDonationRosterBackup(userId, mergedForResponse, {
+              persistBackup: false,
+            }).catch((err) => {
+              logger.error("후원 백업 복구 실패", err);
+              return null;
+            })
+          : Promise.resolve(null),
+      ]);
+
+      if (sigEnriched?.restoredFromBackup) {
+        mergedForResponse = { ...mergedForResponse, sigInventory: sigEnriched.sigInventory };
+        logger.warn("sigInventory Redis 백업에서 복구", {
+          userId,
+          count: sigEnriched.sigInventory.length,
         });
-        const fromLog = enrichAppStateFromDailyLogWhenDonorsMissing(
-          mergedForResponse,
-          dailyLog
-        );
-        if (normalizeDonorsArray(fromLog.donors).length > 0) {
-          mergedForResponse = syncMemberTotalsFromDonors(fromLog);
-          setServerMemoryAppState(userId, mergedForResponse);
-          logger.warn("후원 donors — 일일 로그 스냅샷에서 복구", {
-            userId,
-            donors: normalizeDonorsArray(mergedForResponse.donors).length,
-            total: totalCombined(mergedForResponse),
-          });
-        }
-      } catch (err) {
-        logger.error("일일 로그 후원 복구 실패", err);
+        setServerMemoryAppState(userId, mergedForResponse);
       }
-    }
+      if (donationEnriched?.restoredFromBackup) {
+        mergedForResponse = applyDonationGoalPresetNormalization(donationEnriched.state);
+        setServerMemoryAppState(userId, mergedForResponse);
+        logger.warn("후원 금액 백업에서 복구", {
+          userId,
+          donors: normalizeDonorsArray(mergedForResponse.donors).length,
+          total: totalCombined(mergedForResponse),
+        });
+      }
+
+      /** 메인·백업 모두 donors 비었을 때만 일일 로그 조회(2×MySQL) — since 폴링·정상 세션은 생략 */
+      if (
+        since === 0 &&
+        normalizeDonorsArray(mergedForResponse.donors).length === 0 &&
+        !shouldSuppressAutoRosterRestore(mergedForResponse)
+      ) {
+        try {
+          const dailyLog = await loadDailyLogForUserId(userId, {
+            recentDays: DAILY_LOG_SHARD_DAYS_DEFAULT,
+          });
+          const fromLog = enrichAppStateFromDailyLogWhenDonorsMissing(
+            mergedForResponse,
+            dailyLog
+          );
+          if (normalizeDonorsArray(fromLog.donors).length > 0) {
+            mergedForResponse = syncMemberTotalsFromDonors(fromLog);
+            setServerMemoryAppState(userId, mergedForResponse);
+            logger.warn("후원 donors — 일일 로그 스냅샷에서 복구", {
+              userId,
+              donors: normalizeDonorsArray(mergedForResponse.donors).length,
+              total: totalCombined(mergedForResponse),
+            });
+          }
+        } catch (err) {
+          logger.error("일일 로그 후원 복구 실패", err);
+        }
+      }
     }
 
     /** donors 있는데 members 합계 0이면 GET 응답·메모리에서만 맞춤 — GET마다 MySQL 쓰기는 지연·풀 고갈 유발 */
@@ -924,6 +930,8 @@ export async function GET(req: Request) {
       mergedForResponse = syncMemberTotalsFromDonors(mergedForResponse);
       setServerMemoryAppState(userId, mergedForResponse);
     }
+
+    seedAppStateKvCache(userId, mergedForResponse);
 
     if (isNotModified(mergedForResponse)) {
       return stateNotModifiedResponse(storageHdr);

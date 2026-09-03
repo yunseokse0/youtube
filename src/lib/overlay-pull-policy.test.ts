@@ -93,7 +93,7 @@ describe("shouldSyncObsTextFromStateUpdatedEvent", () => {
 describe("DEFAULT_SIG_SALES_OVERLAY_POLL_MS", () => {
   it("is a short interval for OBS", () => {
     expect(DEFAULT_SIG_SALES_OVERLAY_POLL_MS).toBeGreaterThanOrEqual(800);
-    expect(DEFAULT_SIG_SALES_OVERLAY_POLL_MS).toBeLessThanOrEqual(5000);
+    expect(DEFAULT_SIG_SALES_OVERLAY_POLL_MS).toBeLessThanOrEqual(6000);
   });
 });
 

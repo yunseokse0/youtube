@@ -77,6 +77,12 @@ export function peekAppStateKvCache(userId: string): AppState | null {
   return null;
 }
 
+/** GET 응답·저장 직후 워밍 — 다음 fast=1 이 MySQL 을 건너뛰게 함 */
+export function seedAppStateKvCache(userId: string, state: AppState | null | undefined): void {
+  if (!userId || !state || !Array.isArray(state.members)) return;
+  kvReadCache.set(userId, { state, loadedAt: Date.now() });
+}
+
 async function loadAppStateForUserIdOnce(
   userId: string,
   opts?: { bypassCache?: boolean }
