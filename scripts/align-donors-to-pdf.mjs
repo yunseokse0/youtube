@@ -407,7 +407,19 @@ async function main() {
     }
     await saveStateToMysql(pool, key, next);
     console.log(`APPLIED key=${key} donors=${next.donors.length} updatedAt=${next.updatedAt}`);
-    console.log("다음: pm2 restart youtube --update-env");
+    /** Node 메모리·SSE — 관리자가 「서버에서 가져오기」 없이 자동 반영 */
+    const port = process.env.PORT || "3000";
+    const reloadUrl = `http://127.0.0.1:${port}/api/ops/reload-state-from-kv?user=${encodeURIComponent(userId)}`;
+    try {
+      const res = await fetch(reloadUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const body = await res.text();
+      console.log(`reload-state-from-kv HTTP ${res.status} ${body.slice(0, 240)}`);
+    } catch (e) {
+      console.warn(
+        `reload-state-from-kv 실패 — pm2 restart 후 관리자 새로고침: ${e && e.message ? e.message : e}`
+      );
+      console.log("다음: pm2 restart youtube --update-env");
+    }
   } else {
     console.log("dry-run — 적용하려면 --apply 추가");
   }
