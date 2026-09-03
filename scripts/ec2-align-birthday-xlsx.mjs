@@ -19,6 +19,7 @@ const args = [
   `--pdf-json=${jsonPath}`,
   "--user=din",
   "--match-window-min=30",
+  "--settlement-reset",
   ...extra,
 ];
 const r = spawnSync(process.execPath, args, { stdio: "inherit", cwd: root });

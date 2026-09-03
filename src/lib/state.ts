@@ -4727,6 +4727,7 @@ export function hasMeaningfulBroadcastData(state: AppState): boolean {
  * 원격 GET 스냅샷으로 localStorage를 덮으면 안 되는지.
  * 서버(메모리/빈 Redis) 0원·빈 후원·후원 축소가 로컬 실데이터를 지우는 것을 막는다.
  * 의도적 정산 리셋(`settlementResetAt` 원격이 더 최신)은 덮어쓰기를 허용한다.
+ * 서버 `updatedAt`이 더 최신이면(EC2 정렬·다른 기기 저장) 축소도 서버 정본으로 허용한다.
  */
 export function shouldAvoidOverwritingLocalStateWithRemote(
   existing: AppState | null | undefined,
@@ -4743,6 +4744,12 @@ export function shouldAvoidOverwritingLocalStateWithRemote(
   /** 사고성 멤버1…/빈 후원(stamp 동일·미상승)은 실로스터를 덮지 않음 */
   if (shouldBlockAccidentalEmptyOverwrite(existing, incoming)) {
     return true;
+  }
+  const existingAt = Number(existing.updatedAt || 0);
+  const incomingAt = Number(incoming.updatedAt || 0);
+  /** 서버 리비전이 더 새면 후원 축소·목록 정리도 정본으로 받아들임 */
+  if (incomingAt > 0 && existingAt > 0 && incomingAt > existingAt) {
+    return false;
   }
   if (hasMeaningfulMemberRoster(existing) && !hasMeaningfulMemberRoster(incoming)) {
     /**

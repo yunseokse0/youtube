@@ -9240,12 +9240,20 @@ function AdminPageInner() {
       }
     }
 
-    const toApply =
-      didPreserve || shouldAvoidOverwritingLocalStateWithRemote(local, remote) ? merged : remote;
+    /**
+     * 명시 「서버에서 가져오기」— 사고성 빈 원격만 거부하고, 후원 축소 포함 서버 정본을 적용.
+     * (브라우저 LS가 더 많은 후원을 들고 있어도 서버가 정본)
+     */
+    const remoteEmptyAccident = shouldBlockAccidentalEmptyOverwrite(local, remote);
+    const toApply = remoteEmptyAccident
+      ? didPreserve || shouldAvoidOverwritingLocalStateWithRemote(local, remote)
+        ? merged
+        : remote
+      : remote;
     stateUpdatedAtRef.current = toApply.updatedAt || 0;
     pendingUnsyncedRef.current = false;
     setState(toApply);
-    if (didPreserve) {
+    if (remoteEmptyAccident && didPreserve) {
       persistState(toApply, { includeDonationFields: true });
       if (typeof window !== "undefined") {
         window.alert(
@@ -9486,7 +9494,7 @@ function AdminPageInner() {
             <button
               className="px-2 py-1 rounded bg-[#22c55e] hover:bg-[#16a34a] text-xs font-medium text-white"
               onClick={onFetchLatestFromServer}
-              title="로컬이 리셋되었을 때 서버 최신 상태를 다시 가져옵니다"
+              title="서버에 저장된 상태를 정본으로 가져옵니다(후원이 줄어도 서버 기준)"
             >
               서버에서 가져오기
             </button>

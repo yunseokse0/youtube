@@ -170,6 +170,59 @@ describe("member sync helpers", () => {
     expect(shouldAvoidOverwritingLocalStateWithRemote(local, remoteReset)).toBe(false);
   });
 
+  it("allows donation shrink when remote updatedAt is newer (server authoritative)", () => {
+    const local: AppState = {
+      ...defaultState(),
+      updatedAt: 100,
+      settlementResetAt: 50,
+      members: [
+        { id: "m1", name: "자키", account: 500000, toon: 0, contribution: 50000 },
+        { id: "m2", name: "요하정", account: 100000, toon: 0, contribution: 10000 },
+      ],
+      donors: [
+        { id: "d1", name: "a", amount: 500000, memberId: "m1", at: 1, target: "account" },
+        { id: "d2", name: "b", amount: 100000, memberId: "m2", at: 2, target: "account" },
+        { id: "extra", name: "extra", amount: 200000, memberId: "m1", at: 3, target: "account" },
+      ],
+    };
+    const remoteShrunk: AppState = {
+      ...local,
+      updatedAt: 200,
+      members: [
+        { id: "m1", name: "자키", account: 500000, toon: 0, contribution: 50000 },
+        { id: "m2", name: "요하정", account: 100000, toon: 0, contribution: 10000 },
+      ],
+      donors: [
+        { id: "d1", name: "a", amount: 500000, memberId: "m1", at: 1, target: "account" },
+        { id: "d2", name: "b", amount: 100000, memberId: "m2", at: 2, target: "account" },
+      ],
+    };
+    expect(wouldShrinkDonationData(local, remoteShrunk)).toBe(true);
+    expect(shouldAvoidOverwritingLocalStateWithRemote(local, remoteShrunk)).toBe(false);
+  });
+
+  it("still blocks empty remote shrink when updatedAt is newer but no reset stamp", () => {
+    const local: AppState = {
+      ...defaultState(),
+      updatedAt: 100,
+      settlementResetAt: 50,
+      members: [{ id: "m1", name: "자키", account: 500000, toon: 0, contribution: 50000 }],
+      donors: [{ id: "d1", name: "a", amount: 500000, memberId: "m1", at: 1, target: "account" }],
+    };
+    const remoteEmpty: AppState = {
+      ...defaultState(),
+      updatedAt: 200,
+      settlementResetAt: 50,
+      members: [
+        { id: "m1", name: "멤버1", account: 0, toon: 0, contribution: 0 },
+        { id: "m2", name: "멤버2", account: 0, toon: 0, contribution: 0 },
+        { id: "m3", name: "멤버3", account: 0, toon: 0, contribution: 0 },
+      ],
+      donors: [],
+    };
+    expect(shouldAvoidOverwritingLocalStateWithRemote(local, remoteEmpty)).toBe(true);
+  });
+
   it("detects donation shrinkage not only empty wipe", () => {
     const local: AppState = {
       ...defaultState(),
