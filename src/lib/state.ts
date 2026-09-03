@@ -4857,9 +4857,34 @@ export function appendDailyLog(snapshot: AppState, userId?: string | null) {
     };
     if (!logs[dateKey]) logs[dateKey] = [];
     (logs[dateKey] as unknown[]).push(entry);
-    /** LS 는 날짜당 최근 48개만 — quota·파싱 폭주 방지 */
-    const dayArr = logs[dateKey] as unknown[];
-    if (dayArr.length > 48) logs[dateKey] = dayArr.slice(-48);
+    /** LS: 최신 3개만 full donors, 최대 24 스냅샷 — 1만 건×다수 스냅샷 quota 폭주 방지 */
+    const dayArr = logs[dateKey] as Array<{
+      at: string;
+      total: number;
+      members: unknown[];
+      donors: unknown[];
+      donorCount?: number;
+      summaryOnly?: boolean;
+    }>;
+    const maxLs = 24;
+    const fullKeep = 3;
+    let nextDay = dayArr.length > maxLs ? dayArr.slice(-maxLs) : dayArr;
+    if (nextDay.length > fullKeep) {
+      const cut = nextDay.length - fullKeep;
+      nextDay = nextDay.map((e, i) => {
+        if (i >= cut) return e;
+        const dc = Array.isArray(e.donors) ? e.donors.length : Number(e.donorCount) || 0;
+        return {
+          at: e.at,
+          total: e.total,
+          members: e.members,
+          donors: [],
+          donorCount: dc,
+          summaryOnly: true,
+        };
+      });
+    }
+    logs[dateKey] = nextDay;
     const merged = JSON.stringify(logs);
     window.localStorage.setItem(storageKeyForLog, merged);
     /** 서버: 오늘 1 entry만 append (거대 GET→merge→POST 제거) */
@@ -4882,6 +4907,9 @@ export type DailyLogEntry = {
   total: number;
   members: Member[];
   donors: Donor[];
+  /** summaryOnly 스냅샷 — 전체 donors 대신 건수만 (1만 건/일 규모 대응) */
+  donorCount?: number;
+  summaryOnly?: boolean;
 };
 
 /** 일일 로그에서 가장 최근 스냅샷(후원·멤버 복구용) */

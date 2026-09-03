@@ -3,6 +3,7 @@ import {
   dailyLogFromMonolith,
   dailyLogMonolithKvKey,
   dailyLogShardKvKey,
+  compactDailyLogDayEntries,
   isDailyLogShardKvKey,
   mergeDailyLogShardMaps,
   parseDailyLogShardDateFromKey,
@@ -115,5 +116,30 @@ describe("daily-log shard keys", () => {
       target: "toon",
       message: "hi",
     });
+    expect(slim.donorCount).toBe(1);
+  });
+
+  it("compactDailyLogDayEntries keeps full donors only on latest snapshots", () => {
+    const entries = Array.from({ length: 6 }, (_, i) => ({
+      at: `2026-09-01T0${i}:00:00.000Z`,
+      total: (i + 1) * 1000,
+      members: [{ id: "m1", name: "자키", account: 0, toon: 0 }],
+      donors: Array.from({ length: 3 }, (_, j) => ({
+        id: `d${i}-${j}`,
+        name: "A",
+        amount: 1000,
+        memberId: "m1",
+        at: i,
+        target: "toon" as const,
+      })),
+    }));
+    const out = compactDailyLogDayEntries(entries, { maxEntries: 6, fullSnapshots: 2 });
+    expect(out).toHaveLength(6);
+    expect(out[0]!.summaryOnly).toBe(true);
+    expect(out[0]!.donors).toHaveLength(0);
+    expect(out[0]!.donorCount).toBe(3);
+    expect(out[4]!.donors).toHaveLength(3);
+    expect(out[5]!.donors).toHaveLength(3);
+    expect(out[5]!.summaryOnly).toBeUndefined();
   });
 });

@@ -6,8 +6,16 @@ export const DAILY_LOG_SHARD_DAYS_DEFAULT = 2;
 export const DAILY_LOG_SHARD_DAYS_ADMIN = 2;
 /** 관리자 hydrate 기본 — 날짜당 최근 N개만 (복구·표시용) */
 export const DAILY_LOG_ADMIN_MAX_ENTRIES_PER_DAY = 5;
-/** 서버 auto-append 일일 상한 */
-export const DAILY_LOG_MAX_ENTRIES_PER_DAY_STORE = 48;
+/**
+ * 하루 스냅샷 상한(후원 건수 아님).
+ * 후원 1만 건/일이어도 donors 본문은 state 에 두고, 로그는 스냅샷만 쌓는다.
+ */
+export const DAILY_LOG_MAX_ENTRIES_PER_DAY_STORE = 96;
+/** 날짜당 전체 donors 를 남기는 최신 스냅샷 수 — 나머지는 summaryOnly */
+export const DAILY_LOG_FULL_SNAPSHOTS_PER_DAY = 3;
+/** 이 건수 이상이면 auto-append 간격을 늘림 */
+export const DAILY_LOG_LARGE_DONOR_COUNT = 2_000;
+export const DAILY_LOG_HUGE_DONOR_COUNT = 8_000;
 
 export function dailyLogMonolithKvKey(userId: string): string {
   return `${DAILY_LOG_KEY}:${userId}`;
@@ -142,14 +150,50 @@ export function slimDailyLogMember(m: Member): Member {
 }
 
 export function slimDailyLogEntry(entry: DailyLogEntry): DailyLogEntry {
+  const donors = Array.isArray(entry.donors)
+    ? entry.donors.map((d) => slimDailyLogDonor(d as Donor))
+    : [];
+  const donorCount =
+    typeof entry.donorCount === "number" && entry.donorCount >= 0
+      ? entry.donorCount
+      : donors.length;
   return {
     at: String(entry.at || new Date().toISOString()),
     total: Math.max(0, Math.round(Number(entry.total) || 0)),
     members: Array.isArray(entry.members)
       ? entry.members.map((m) => slimDailyLogMember(m as Member))
       : [],
-    donors: Array.isArray(entry.donors)
-      ? entry.donors.map((d) => slimDailyLogDonor(d as Donor))
-      : [],
+    donors,
+    ...(donorCount > 0 ? { donorCount } : {}),
+    ...(entry.summaryOnly === true ? { summaryOnly: true } : {}),
   };
+}
+
+/** 최신 N개만 전체 donors, 이전 스냅샷은 summaryOnly(복구는 최신 full 사용) */
+export function compactDailyLogDayEntries(
+  entries: DailyLogEntry[],
+  opts?: { maxEntries?: number; fullSnapshots?: number }
+): DailyLogEntry[] {
+  const maxEntries = Math.max(1, opts?.maxEntries ?? DAILY_LOG_MAX_ENTRIES_PER_DAY_STORE);
+  const fullKeep = Math.max(1, opts?.fullSnapshots ?? DAILY_LOG_FULL_SNAPSHOTS_PER_DAY);
+  const trimmed = trimDailyLogEntries(entries, maxEntries).map((e) => slimDailyLogEntry(e));
+  if (trimmed.length <= fullKeep) return trimmed;
+  const cutoff = trimmed.length - fullKeep;
+  return trimmed.map((e, i) => {
+    if (i >= cutoff) return { ...e, summaryOnly: undefined };
+    const donorCount =
+      typeof e.donorCount === "number" && e.donorCount > 0
+        ? e.donorCount
+        : Array.isArray(e.donors)
+          ? e.donors.length
+          : 0;
+    return {
+      at: e.at,
+      total: e.total,
+      members: e.members,
+      donors: [],
+      donorCount,
+      summaryOnly: true,
+    };
+  });
 }

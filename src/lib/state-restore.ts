@@ -299,17 +299,26 @@ function pickLatestDailyLogEntryFromDate(
 ): DailyLogEntry | null {
   const entries = log[dateKey];
   if (!Array.isArray(entries) || entries.length === 0) return null;
-  let best: DailyLogEntry | null = null;
-  let bestTs = 0;
+  let bestFull: DailyLogEntry | null = null;
+  let bestFullTs = 0;
+  let bestAny: DailyLogEntry | null = null;
+  let bestAnyTs = 0;
   for (const raw of entries) {
     if (!raw || typeof raw !== "object") continue;
     const e = raw as DailyLogEntry;
     const ts = Date.parse(String(e.at || ""));
-    if (!Number.isFinite(ts) || ts <= bestTs) continue;
-    bestTs = ts;
-    best = e;
+    if (!Number.isFinite(ts)) continue;
+    if (ts >= bestAnyTs) {
+      bestAnyTs = ts;
+      bestAny = e;
+    }
+    const donorN = Array.isArray(e.donors) ? e.donors.length : 0;
+    if (donorN > 0 && e.summaryOnly !== true && ts >= bestFullTs) {
+      bestFullTs = ts;
+      bestFull = e;
+    }
   }
-  return best;
+  return bestFull || bestAny;
 }
 
 /** 자동 복구 허용: 오늘(KST) 또는 최근 N ms 이내 스냅샷만 (어제 전체 fallback 금지) */

@@ -13,12 +13,12 @@ import {
   DAILY_LOG_ADMIN_MAX_ENTRIES_PER_DAY,
   DAILY_LOG_MAX_ENTRIES_PER_DAY_STORE,
   DAILY_LOG_SHARD_DAYS_ADMIN,
+  compactDailyLogDayEntries,
   dailyLogEntriesFromShardPayload,
   dailyLogFromMonolith,
   dailyLogMonolithKvKey,
   dailyLogShardKvKey,
   slimDailyLogEntry,
-  trimDailyLogEntries,
 } from "@/lib/daily-log-shard";
 import {
   invalidateDailyLogCache,
@@ -134,9 +134,9 @@ export async function POST(req: Request) {
         const shardKey = dailyLogShardKvKey(userId, dateKey);
         const existingRaw = await upstashGetAppStateJson<unknown>(shardKey);
         const prev = dailyLogEntriesFromShardPayload(existingRaw) ?? [];
-        const next = trimDailyLogEntries(
+        const next = compactDailyLogDayEntries(
           [...prev, slimDailyLogEntry(body.entry as DailyLogEntry)],
-          DAILY_LOG_MAX_ENTRIES_PER_DAY_STORE
+          { maxEntries: DAILY_LOG_MAX_ENTRIES_PER_DAY_STORE }
         );
         ok = await upstashSetAppStateJson(shardKey, next);
         if (ok) {
@@ -152,9 +152,9 @@ export async function POST(req: Request) {
         const payload = monolith ?? body;
         for (const [dateKey, entries] of Object.entries(payload)) {
           if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey) || !Array.isArray(entries)) continue;
-          const slimmed = trimDailyLogEntries(
+          const slimmed = compactDailyLogDayEntries(
             (entries as DailyLogEntry[]).map((e) => slimDailyLogEntry(e)),
-            DAILY_LOG_MAX_ENTRIES_PER_DAY_STORE
+            { maxEntries: DAILY_LOG_MAX_ENTRIES_PER_DAY_STORE }
           );
           const shardOk = await upstashSetAppStateJson(
             dailyLogShardKvKey(userId, dateKey),
