@@ -628,7 +628,7 @@ export function shouldTreatAsCrossSourceDuplicate(
 
 /**
  * 서버 자동 반영 + 관리자 큐·union 등 이중 경로 — 동일 내용·근접 시각이면 1건.
- * 투네 실 id 가 서로 다른 연속 후원(1초 간격 등)은 유지.
+ * 투네 실 id 가 서로 다른 연속 후원(동일 메시지·1초 간격 등)은 유지.
  */
 export function shouldTreatAsDuplicateDonationContent(
   existing: {
@@ -654,10 +654,11 @@ export function shouldTreatAsDuplicateDonationContent(
   if (isSameToonationEventNearDuplicate(existing, incoming)) return true;
   const windowMs = resolveNearDupWindowMs(existing, incoming);
   if (!isNearContentDuplicate(existing, incoming, windowMs)) return false;
-  if (identicalMessageNearDupWindowMs(existing, incoming) != null) return true;
   const extA = extractReliableToonationExtFromDonorId(String(existing.id || ""));
   const extB = reliableExtFromIncoming(incoming);
+  /** 서로 다른 투네 실 id = 별도 후원 (동일 문구 여러 번 후원 허용) */
   if (extA && extB && extA !== extB) return false;
+  if (identicalMessageNearDupWindowMs(existing, incoming) != null) return true;
   return true;
 }
 
@@ -712,6 +713,19 @@ export function isDuplicateDonationEvent(state: AppState, rawEvent: DonationEven
     if (baseId && normalizeDonationEventId(donorId) === baseId) return true;
     if (externalDonorId && (donorId === externalDonorId || normalizeDonationEventId(donorId) === externalDonorId)) {
       return true;
+    }
+    /** toona pull(`bank:din:{id}`) ↔ 실시간 ingest(`bank:sms:…` / `toonation:…`) — 동일 externalId */
+    if (externalId) {
+      const normDonor = normalizeDonationEventId(donorId);
+      if (
+        normDonor.endsWith(`:${externalId}`) ||
+        normDonor === `toona:${externalId}` ||
+        normDonor === `toonation:${externalId}` ||
+        normDonor === `bank:din:${externalId}` ||
+        normDonor === `toonation:din:${externalId}`
+      ) {
+        return true;
+      }
     }
     /** 주인 리맵 유무가 갈라져 익명(계좌)·원닉(투네)로 동시에 쌓이는 경우 */
     if (isOwnerRemapSplitDuplicate(d, rawEvent)) return true;

@@ -63,7 +63,7 @@ export function coalesceAppStateRedisAndMemory(
 /** 멀티탭·멀티PC 동시 GET — userId 당 1회 KV 읽기 */
 const loadInflight = new Map<string, Promise<AppState | null>>();
 const kvReadCache = new Map<string, { state: AppState; loadedAt: number }>();
-const KV_READ_CACHE_TTL_MS = 20_000;
+const KV_READ_CACHE_TTL_MS = 120_000;
 
 export function invalidateAppStateKvCache(userId?: string): void {
   if (userId) kvReadCache.delete(userId);

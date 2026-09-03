@@ -113,6 +113,7 @@ export async function POST(req: NextRequest) {
     return json({
       ok: true,
       imported: result.imported,
+      applied: result.applied,
       session: publicToonaHubSession(session),
       logs,
     });

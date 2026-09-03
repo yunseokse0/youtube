@@ -3634,7 +3634,7 @@ export async function loadStateFromApiWithMeta(
 ): Promise<LoadStateFromApiResult> {
   /** forceFull(리롤·OBS 새로고침)은 dedupe 제외 — 동시 요청이 구 스냅샷을 공유하는 회귀 방지 */
   if (!options?.forceFull) {
-    const dedupeKey = `${userId ?? "__cookie__"}:${options?.ifUpdatedSince ?? 0}:${options?.pick ?? "full"}`;
+    const dedupeKey = `${userId ?? "__cookie__"}:${options?.ifUpdatedSince ?? 0}:${options?.pick ?? "full"}:${options?.fast ? "fast" : "std"}`;
     const existing = loadStateInflight.get(dedupeKey);
     if (existing) return existing;
     const created = doLoadStateFromApi(userId, options);
@@ -3673,7 +3673,7 @@ async function doLoadStateFromApi(
     if (options?.fast) q.set("fast", "1");
     /** `userId` 있으면 URL로 사용자 특정 → 쿠키 불필요(OBS·브라우저 소스는 쿠키 없음). 없으면 관리자 세션 쿠키로 조회 */
     const credentials = userId ? "omit" : "include";
-    const timeoutMs = options?.fast ? 18_000 : options?.forceFull ? 45_000 : 12_000;
+    const timeoutMs = options?.fast ? 35_000 : options?.forceFull ? 45_000 : 12_000;
     const signal =
       typeof AbortSignal !== "undefined" &&
       typeof (AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal }).timeout === "function"

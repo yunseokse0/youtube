@@ -192,6 +192,7 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
         ok?: boolean;
         error?: string;
         imported?: number;
+        applied?: number;
         session?: HubSession | null;
         logs?: HubLog[];
       };
@@ -200,7 +201,9 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
         return;
       }
       applyPayload(data);
-      setMessage(`로그인 이후 후원 ${data.imported ?? 0}건 동기화`);
+      setMessage(
+        `toona 후원 ${data.imported ?? 0}건 확인 · 엑셀 신규 반영 ${data.applied ?? 0}건 (시나리오 B·1:1)`
+      );
     } finally {
       setBusy(false);
     }
@@ -261,7 +264,7 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
       {!session ? (
         <div className="space-y-2">
           <p className="text-[11px] text-neutral-300 leading-relaxed">
-            toona 계정으로 로그인하면 youtube-git 연동(시나리오 B·후원자 리스트 반영)·시그 가져오기가
+            toona 계정으로 로그인하면 youtube-git 연동(시나리오 B·후원 1:1 엑셀 반영)·시그 가져오기가
             함께 됩니다. 비밀번호는 서버에서만 사용하며 저장하지 않습니다.
           </p>
           <label className="block text-[11px] text-neutral-400">

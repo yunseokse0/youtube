@@ -60,9 +60,13 @@ export function donationContentClaimTtlSec(event: DonationEvent): number {
     : DONATION_CONTENT_DEDUPE_TTL_SEC;
 }
 
-/** in-flight 직렬화 — 동일 내용 동시 apply 방지 */
+/** in-flight 직렬화 — 동일 내용 동시 apply 방지 (투네 실 id 있으면 id 단위) */
 export function donationApplyInFlightKey(userId: string, event: DonationEvent): string {
-  if (event.provider === "toonation" && hasIdenticalMessageDedupeFingerprint(event)) {
+  if (
+    event.provider === "toonation" &&
+    hasIdenticalMessageDedupeFingerprint(event) &&
+    !resolveToonationPrimaryExt(event)
+  ) {
     return `${userId}:inflight:${donationContentDedupeFingerprint(event)}`;
   }
   return donationApplyPrimaryKey(userId, event);
@@ -93,11 +97,12 @@ const NEAR_CONTENT_BUCKET_MS = 3_000;
 /** Redis·인메모리 — weak id·이중 경로 동일 내용 선점 (투네 실 id 는 primary key) */
 export function donationApplyContentKey(userId: string, event: DonationEvent): string | null {
   if (event.provider !== "toonation") return null;
+  /** 투네 실 id 가 있으면 내용 키 생략 — 동일 메시지 연속 후원 허용 */
+  if (resolveToonationPrimaryExt(event)) return null;
   const fp = donationContentDedupeFingerprint(event);
   if (hasIdenticalMessageDedupeFingerprint(event)) {
     return `${userId}:content:${fp}`;
   }
-  if (resolveToonationPrimaryExt(event)) return null;
   const ext = String(event.externalId || "").trim();
   if (isReliableToonationExternalId(ext) && !isWeakToonationDonorId(`toonation:${ext}`)) {
     return null;

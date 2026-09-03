@@ -2414,6 +2414,8 @@ function AdminPageInner() {
       ) {
         setState(paint);
         stateRef.current = paint;
+        /** 로컬 스냅샷으로 즉시 사용 가능 — 서버 응답은 아래에서 replace */
+        setSyncStatus("synced");
       }
     } catch {
       /* noop */
@@ -2425,7 +2427,7 @@ function AdminPageInner() {
         if (offlineNow) setSyncStatus("local");
         else setSyncStatus("error");
       }
-    }, 20_000);
+    }, 40_000);
     const offline = typeof navigator !== "undefined" && !navigator.onLine;
     if (offline) {
       setSyncStatus("local");

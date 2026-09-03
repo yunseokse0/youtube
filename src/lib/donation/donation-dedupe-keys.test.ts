@@ -70,11 +70,11 @@ describe("donationApplyPrimaryKey", () => {
     expect(donationContentDedupeFingerprint(event)).toBe("익명5|60000|account|계좌 익명5 피자");
   });
 
-  it("donationApplyContentKey uses sliding fingerprint for non-empty message", () => {
+  it("donationApplyContentKey uses sliding fingerprint for weak id + non-empty message", () => {
     const event: DonationEvent = {
-      id: "toonation:toon-donation-99-1735680000000-10000-0-abc",
+      id: "toonation:fp-10000-msg-aaa",
       provider: "toonation",
-      externalId: "toon-donation-99-1735680000000-10000-0-abc",
+      externalId: "fp-10000-msg-aaa",
       donorName: "구름하정",
       amount: 10000,
       message: "시그니처 팬덤시그 - 언니 생일",
@@ -88,13 +88,14 @@ describe("donationApplyPrimaryKey", () => {
     expect(donationContentClaimTtlSec(event)).toBe(15);
   });
 
-  it("donationApplyContentKey is null for reliable external id", () => {
+  it("donationApplyContentKey is null for reliable external id even with identical message", () => {
     const event: DonationEvent = {
       id: "toonation:donation-99",
       provider: "toonation",
       externalId: "donation-99",
-      donorName: "익명",
-      amount: 1000,
+      donorName: "구름하정",
+      amount: 10000,
+      message: "시그니처 팬덤시그 - 언니 생일",
       at: new Date().toISOString(),
       status: "queued",
       target: "toon",

@@ -13,6 +13,13 @@ import {
   type ToonaHubSession,
 } from "@/lib/toona-hub-session";
 import type { ContributionFormula, SigItem } from "@/types";
+import { handleDinDonationIngest } from "@/lib/donation/din-ingest";
+import {
+  toonaHubDonationToEvent,
+  type ToonaHubDonationApiRow,
+} from "@/lib/toona-hub-donation-map";
+
+export { toonaHubDonationToEvent, type ToonaHubDonationApiRow } from "@/lib/toona-hub-donation-map";
 
 /** hub?refresh=1 동시 폭주 방지 (유저당 1개) */
 const hubPollInflight = new Map<string, Promise<unknown>>();
@@ -414,7 +421,7 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
 }
 
 export async function fetchToonaDonationsSinceLink(youtubeUserId: string): Promise<
-  | { ok: true; imported: number }
+  | { ok: true; imported: number; applied: number }
   | { ok: false; error: string }
 > {
   const session = await readToonaHubSession(youtubeUserId);
@@ -441,48 +448,40 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string): Promi
 
   const json = (await res.json().catch(() => ({}))) as {
     error?: string;
-    donations?: Array<{
-      id?: string;
-      nickname?: string;
-      displayNickname?: string;
-      amount?: number;
-      playerName?: string;
-      channel?: string;
-      source?: string;
-      message?: string;
-      createdAt?: string;
-    }>;
+    donations?: ToonaHubDonationApiRow[];
   };
 
   if (!res.ok) {
     return { ok: false, error: json.error || `HTTP ${res.status}` };
   }
 
+  /**
+   * 시나리오 B: toona 후원 ↔ youtube 엑셀 1:1.
+   * 실시간 ingest 누락분을 pull 로 보정. 이미 반영된 건은 apply 경로에서 중복 스킵.
+   */
   const batch: ToonaHubDonationLog[] = [];
-  for (const d of json.donations || []) {
-    const at = d.createdAt ? new Date(d.createdAt).getTime() : Date.now();
-    if (!Number.isFinite(at) || at < session.linkedAt - 5_000) continue;
-    const id = String(d.id || "").trim();
-    if (!id) continue;
-    const donorName =
-      String(d.displayNickname || d.nickname || "무명").replace(/\s+/g, "") || "무명";
-    const amount = Math.max(0, Math.round(Number(d.amount) || 0));
-    if (amount <= 0) continue;
-    const isAccount = d.channel === "account" || ["sms", "push", "webhook"].includes(String(d.source || ""));
+  let applied = 0;
+  for (const row of json.donations || []) {
+    const event = toonaHubDonationToEvent(row, session.linkedAt);
+    if (!event) continue;
+    const result = await handleDinDonationIngest(youtubeUserId, event, true);
+    if (result.applied) applied += 1;
     batch.push({
-      id: `toona:${id}`,
-      at,
-      donorName,
-      amount,
-      playerName: d.playerName ? String(d.playerName) : undefined,
-      target: isAccount ? "account" : "toon",
+      id: `toona:${event.externalId}`,
+      at: event.at ? new Date(event.at).getTime() : Date.now(),
+      donorName: event.donorName,
+      amount: event.amount,
+      playerName: event.playerName,
+      target: event.target,
+      mode: result.mode,
+      applied: result.applied,
       source: "toona",
-      message: d.message ? String(d.message).slice(0, 120) : undefined,
+      message: event.message?.slice(0, 120),
     });
   }
 
-  const imported = await appendToonaHubDonationLogs(youtubeUserId, batch);
-  return { ok: true, imported };
+  await appendToonaHubDonationLogs(youtubeUserId, batch);
+  return { ok: true, imported: batch.length, applied };
 }
 
 /**

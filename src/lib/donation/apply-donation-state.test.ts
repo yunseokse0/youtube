@@ -861,7 +861,7 @@ describe("applyDonationToAppState", () => {
     ).toHaveLength(1);
   });
 
-  it("rejects burst of identical-message toonation alerts within 15s (구름하정)", () => {
+  it("rejects burst of identical-message weak fp ids within 15s (WS 연사)", () => {
     const baseAt = Date.parse("2026-09-01T22:35:11.000+09:00");
     const msg = "시그니처 팬덤시그 - 언니 생일인데 재롱부려야징. ^^";
     let state = {
@@ -871,9 +871,9 @@ describe("applyDonationToAppState", () => {
     };
     for (let i = 0; i < 6; i += 1) {
       const event: DonationEvent = {
-        id: `toonation:donation-burst-${i}`,
+        id: `toonation:fp-10000-burst-${i}`,
         provider: "toonation",
-        externalId: `donation-burst-${i}`,
+        externalId: `fp-10000-burst-${i}`,
         donorName: "구름하정",
         amount: 10000,
         message: msg,
@@ -894,6 +894,35 @@ describe("applyDonationToAppState", () => {
     }
     expect(state.donors).toHaveLength(1);
     expect(state.members[0]?.toon).toBe(10000);
+  });
+
+  it("allows consecutive identical-message donations with distinct toona ids", () => {
+    const baseAt = Date.now() - 10_000;
+    const msg = "자키 화이팅";
+    let cur = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "자키", account: 0, toon: 0, contribution: 0 }],
+      donors: [] as NonNullable<ReturnType<typeof defaultState>["donors"]>,
+    };
+    for (let i = 0; i < 3; i += 1) {
+      const event: DonationEvent = {
+        id: `toonation:don-real-${i}`,
+        provider: "toonation",
+        externalId: `don-real-${i}`,
+        donorName: "후원자",
+        amount: 10000,
+        message: msg,
+        at: new Date(baseAt + i * 1000).toISOString(),
+        status: "queued",
+        target: "toon",
+      };
+      const result = applyDonationToAppState(cur, event);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      cur = result.state;
+    }
+    expect(cur.donors).toHaveLength(3);
+    expect(cur.members[0]?.toon).toBe(30000);
   });
 
   it("rejects consecutive fp- fallback ids within near-dup window", () => {
