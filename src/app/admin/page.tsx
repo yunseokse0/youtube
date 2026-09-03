@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
@@ -2947,6 +2947,25 @@ function AdminPageInner() {
       const remoteUpdatedAt = remote.updatedAt || 0;
       const localDonorCount = normalizeDonorsArray(stateRef.current.donors).length;
       const remoteDonorCount = normalizeDonorsArray(remote.donors).length;
+      const remoteResetAt = Number(remote.settlementResetAt || 0);
+      const localResetAt = Number(stateRef.current.settlementResetAt || 0);
+      const remoteSettlementWins = remoteResetAt > localResetAt;
+      const inAuthoritativeWindow = Date.now() < donationAuthoritativeSaveUntilRef.current;
+      if (inAuthoritativeWindow && !remoteSettlementWins && !opts?.forceDonorMerge) {
+        if (remoteDonorCount > localDonorCount) {
+          return false;
+        }
+        const nowTs = Date.now();
+        for (const [id, exp] of recentlyRemovedDonorIdsRef.current) {
+          if (exp < nowTs) continue;
+          const remoteHasRemovedId = normalizeDonorsArray(remote.donors).some(
+            (d) => String(d.id) === String(id)
+          );
+          if (remoteHasRemovedId) {
+            return false;
+          }
+        }
+      }
       /** 서버(MySQL) donors > UI — updatedAt 같아도 실시간 반영 */
       const serverDonorAhead = remoteDonorCount > localDonorCount && remoteDonorCount > 0;
       const shouldApplyRemote =
@@ -2954,13 +2973,10 @@ function AdminPageInner() {
         Boolean(opts?.forceDonorMerge) ||
         serverDonorAhead;
       if (!shouldApplyRemote) return false;
-      const remoteResetAt = Number(remote.settlementResetAt || 0);
-      const localResetAt = Number(stateRef.current.settlementResetAt || 0);
       /**
        * 다른 브라우저에서 정산 리셋(멤버 유지·초기화) — stamp 상승은 서버가 플래그로만 허용.
        * 멤버 초기화는 플레이스홀더+빈 후원이므로 사고성 가드로 막지 않음.
        */
-      const remoteSettlementWins = remoteResetAt > localResetAt;
       if (remoteSettlementWins) {
         settlementResetUntilRef.current = Date.now() + SETTLEMENT_RESET_PROTECT_MS;
         pendingUnsyncedRef.current = false;
@@ -7741,16 +7757,17 @@ function AdminPageInner() {
       }
       /** replace 저장 후 union(enrich)하면 삭제분이 서버·백업에서 되살아남 */
       const serverAt = result.updatedAt;
+      const clientUpdatedAt = Number(preserved.updatedAt || 0);
+      const serverUpdatedAt = result.state ? Number(result.state.updatedAt || 0) : 0;
+      const serverStateIsNewerThanClient = serverUpdatedAt >= clientUpdatedAt - 1_000;
+      const shouldUseClientPreserved =
+        Boolean(opts?.skipSetState) || !result.state || !serverStateIsNewerThanClient;
+      const baseState = shouldUseClientPreserved ? preserved : (result.state as AppState);
       const bumped = syncMemberTotalsFromDonors({
-        ...(opts?.skipSetState ? preserved : result.state),
-        updatedAt: Math.max(
-          Number((opts?.skipSetState ? preserved : result.state).updatedAt || 0),
-          serverAt
-        ),
+        ...baseState,
+        updatedAt: Math.max(Number(baseState.updatedAt || 0), serverAt, clientUpdatedAt),
         donorRankingsUpdatedAt: Math.max(
-          Number(
-            (opts?.skipSetState ? preserved : result.state).donorRankingsUpdatedAt || 0
-          ),
+          Number(baseState.donorRankingsUpdatedAt || 0),
           result.donorRankingsUpdatedAt ?? serverAt
         ),
       });
