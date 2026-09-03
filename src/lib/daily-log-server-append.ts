@@ -6,9 +6,12 @@ import {
   primeDailyLogCache,
 } from "@/lib/daily-log-server-load";
 import {
+  DAILY_LOG_MAX_ENTRIES_PER_DAY_STORE,
   dailyLogEntriesFromShardPayload,
   dailyLogMonolithKvKey,
   dailyLogShardKvKey,
+  slimDailyLogEntry,
+  trimDailyLogEntries,
 } from "@/lib/daily-log-shard";
 import {
   broadcastDateKey,
@@ -28,8 +31,6 @@ export const DAILY_LOG_AUTO_APPEND_MIN_MS = 3 * 60 * 1000;
 /** monolith 잔존 시 auto append 완화 */
 export const DAILY_LOG_LARGE_AUTO_APPEND_MIN_MS = 15 * 60 * 1000;
 export const DAILY_LOG_LARGE_BYTES = 500_000;
-
-const MAX_ENTRIES_PER_DAY = 200;
 
 /** userId별 append 직렬 */
 const appendChains = new Map<string, Promise<boolean>>();
@@ -89,20 +90,17 @@ async function appendDailyLogEntry(
   void ensureMonolithMigrated(userId);
 
   const dateKey = broadcastDateKey(new Date(now));
-  const entry: DailyLogEntry = {
+  const entry = slimDailyLogEntry({
     at: new Date(now).toISOString(),
     total,
     members: state.members,
     donors: state.donors,
-  };
+  });
 
   const shardKey = dailyLogShardKvKey(userId, dateKey);
   const existingRaw = await upstashGetAppStateJson<unknown>(shardKey);
   const dayEntries = [...(dailyLogEntriesFromShardPayload(existingRaw) ?? []), entry];
-  const trimmed =
-    dayEntries.length > MAX_ENTRIES_PER_DAY
-      ? dayEntries.slice(-MAX_ENTRIES_PER_DAY)
-      : dayEntries;
+  const trimmed = trimDailyLogEntries(dayEntries, DAILY_LOG_MAX_ENTRIES_PER_DAY_STORE);
 
   const ok = await upstashSetAppStateJson(shardKey, trimmed);
   if (ok) {

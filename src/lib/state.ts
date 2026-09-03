@@ -4857,31 +4857,21 @@ export function appendDailyLog(snapshot: AppState, userId?: string | null) {
     };
     if (!logs[dateKey]) logs[dateKey] = [];
     (logs[dateKey] as unknown[]).push(entry);
+    /** LS 는 날짜당 최근 48개만 — quota·파싱 폭주 방지 */
+    const dayArr = logs[dateKey] as unknown[];
+    if (dayArr.length > 48) logs[dateKey] = dayArr.slice(-48);
     const merged = JSON.stringify(logs);
     window.localStorage.setItem(storageKeyForLog, merged);
-    // 서버에 동기화: 기존 서버 데이터와 병합 후 저장 (실패 시 로컬만 유지)
+    /** 서버: 오늘 1 entry만 append (거대 GET→merge→POST 제거) */
     const q = new URLSearchParams();
     if (userId) q.set("user", userId);
     const baseUrl = q.toString() ? `/api/daily-log?${q.toString()}` : "/api/daily-log";
-    fetch(baseUrl, { cache: "no-store", credentials: "include" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((serverLog: Record<string, unknown[]> | null) => {
-        let toSave: Record<string, unknown[]>;
-        if (serverLog && typeof serverLog === "object") {
-          toSave = { ...serverLog };
-          if (!toSave[dateKey]) toSave[dateKey] = [];
-          (toSave[dateKey] as unknown[]).push(entry);
-        } else {
-          toSave = JSON.parse(merged) as Record<string, unknown[]>;
-        }
-        return fetch(baseUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify(toSave),
-        });
-      })
-      .catch(() => {});
+    void fetch(baseUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ append: true, dateKey, entry }),
+    }).catch(() => {});
   } catch {
     // ignore
   }
@@ -4938,18 +4928,24 @@ export function loadDailyLog(userId?: string | null): Record<string, DailyLogEnt
 
 export async function loadDailyLogFromApi(
   userId?: string | null,
-  opts?: { full?: boolean }
+  opts?: { full?: boolean; days?: number; maxEntries?: number; bust?: boolean }
 ): Promise<Record<string, DailyLogEntry[]>> {
   if (typeof window === "undefined") return {};
   try {
-    const q = new URLSearchParams({ _t: String(Date.now()) });
+    const q = new URLSearchParams();
     if (userId) q.set("user", userId);
     if (opts?.full) q.set("full", "1");
+    if (typeof opts?.days === "number" && opts.days > 0) q.set("days", String(opts.days));
+    if (typeof opts?.maxEntries === "number" && opts.maxEntries > 0) {
+      q.set("maxEntries", String(opts.maxEntries));
+    }
+    if (opts?.bust) q.set("bust", "1");
+    const timeoutMs = opts?.full ? 60_000 : 20_000;
     const signal =
       typeof AbortSignal !== "undefined" &&
       typeof (AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal }).timeout ===
         "function"
-        ? (AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }).timeout(15_000)
+        ? (AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }).timeout(timeoutMs)
         : undefined;
     const res = await fetch(`/api/daily-log?${q.toString()}`, {
       cache: "no-store",

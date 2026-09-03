@@ -106,22 +106,39 @@ describe("recomputeSettlementFromDonors", () => {
     expect(next.totalNet).toBeGreaterThan(0);
   });
 
-  it("allows adding a new 국고 donor row", () => {
+  it("reassigns donor to another member and keeps message", () => {
+    const record = baseRecord();
+    const donors: Donor[] = (record.donors || []).map((d) =>
+      d.id === "d2"
+        ? { ...d, memberId: "m_treasury", message: "생일축하", target: "toon" as const }
+        : d
+    );
+    const next = recomputeSettlementFromDonors(record, donors);
+    const player = next.members.find((m) => m.memberId === "m_player")!;
+    const treasury = next.members.find((m) => m.memberId === "m_treasury")!;
+    expect(player.toon).toBe(0);
+    expect(treasury.toon).toBe(50_000);
+    expect(next.donors?.find((d) => d.id === "d2")?.message).toBe("생일축하");
+    expect(next.donors?.find((d) => d.id === "d2")?.memberId).toBe("m_treasury");
+  });
+
+  it("skips donationExcluded rows when summing member amounts", () => {
     const record = baseRecord();
     const donors: Donor[] = [
       ...(record.donors || []),
       {
-        id: "d_new",
-        name: "추가후원",
-        amount: 10_000,
-        memberId: "m_treasury",
+        id: "d_src",
+        name: "단체원본",
+        amount: 90_000,
+        memberId: "m_player",
         at: record.createdAt,
         target: "toon",
+        donationExcluded: true,
+        groupSplitSource: true,
       },
     ];
     const next = recomputeSettlementFromDonors(record, donors);
-    const treasury = next.members.find((m) => m.memberId === "m_treasury")!;
-    expect(treasury.account).toBe(200_000);
-    expect(treasury.toon).toBe(10_000);
+    const player = next.members.find((m) => m.memberId === "m_player")!;
+    expect(player.toon).toBe(50_000);
   });
 });

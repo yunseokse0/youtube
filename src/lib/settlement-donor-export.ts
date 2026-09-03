@@ -136,19 +136,42 @@ export function seedSettlementDonorsForEdit(
   referenceDonors?: Donor[]
 ): Donor[] {
   const existing = resolveSettlementDonors(record, dailyLog, referenceDonors);
+  const messageById = new Map<string, string>();
+  for (const d of referenceDonors || []) {
+    const id = String(d.id || "").trim();
+    const msg = String(d.message || "").trim();
+    if (id && msg) messageById.set(id, msg);
+  }
+  if (dailyLog) {
+    for (const entries of Object.values(dailyLog)) {
+      if (!Array.isArray(entries)) continue;
+      for (const entry of entries) {
+        for (const d of entry.donors || []) {
+          const id = String(d.id || "").trim();
+          const msg = String(d.message || "").trim();
+          if (id && msg && !messageById.has(id)) messageById.set(id, msg);
+        }
+      }
+    }
+  }
   if (existing.length > 0) {
-    return existing.map((d) => ({
-      ...d,
-      id: String(d.id || "").trim() || `d_seed_${d.memberId}_${d.at}`,
-      name: String(d.name || "무명").replace(/\s+/g, "") || "무명",
-      amount: Math.max(0, Math.round(Number(d.amount) || 0)),
-      memberId: String(d.memberId || "").trim(),
-      at:
-        typeof d.at === "number" && Number.isFinite(d.at)
-          ? d.at
-          : record.createdAt,
-      target: d.target === "toon" ? "toon" : "account",
-    }));
+    return existing.map((d) => {
+      const id = String(d.id || "").trim() || `d_seed_${d.memberId}_${d.at}`;
+      const message = String(d.message || "").trim() || messageById.get(id) || "";
+      return {
+        ...d,
+        id,
+        name: String(d.name || "무명").replace(/\s+/g, "") || "무명",
+        amount: Math.max(0, Math.round(Number(d.amount) || 0)),
+        memberId: String(d.memberId || "").trim(),
+        at:
+          typeof d.at === "number" && Number.isFinite(d.at)
+            ? d.at
+            : record.createdAt,
+        target: d.target === "toon" ? "toon" : "account",
+        ...(message ? { message } : {}),
+      };
+    });
   }
   const out: Donor[] = [];
   for (const m of record.members || []) {

@@ -13,11 +13,12 @@ import {
   type SettlementServerRecoveryCounts,
 } from "@/lib/settlement-recovery";
 import { applySettlementDeleteTombstones, normalizeSettlementRecords } from "@/lib/settlement";
+import { loadDailyLogForUserId } from "@/lib/daily-log-server-load";
+import { dailyLogFromMonolith } from "@/lib/daily-log-shard";
 import type { SettlementDeleteLog, SettlementRecord } from "@/types";
 
 const SETTLEMENT_KEY_BASE = "excel-broadcast-settlement-records-v1";
 const SETTLEMENT_KEY_LEGACY = "excel-broadcast-settlement-records-v1";
-const DAILY_LOG_KEY_BASE = "excel-broadcast-daily-log-v1";
 const DAILY_LOG_KEY_LEGACY = "excel-broadcast-daily-log-v1";
 const DELETE_LOGS_KEY_BASE = "excel-broadcast-settlement-delete-logs-v1";
 
@@ -41,10 +42,6 @@ function normalizeDeleteLogs(logs: unknown): SettlementDeleteLog[] {
     if (!prev || (log.deletedAt || 0) >= (prev.deletedAt || 0)) byId.set(recordId, log);
   }
   return Array.from(byId.values());
-}
-
-function dailyLogKey(userId: string): string {
-  return `${DAILY_LOG_KEY_BASE}:${userId}`;
 }
 
 type RecoverBody = {
@@ -78,13 +75,13 @@ export async function POST(req: Request) {
 
   let merged = mergeSettlementRecordArrays(userRecords, legacyRecords);
 
-  const dailyLogUser = await upstashGetJson<Record<string, DailyLogEntry[]>>(dailyLogKey(userId));
-  const dailyLogLegacy = await upstashGetJson<Record<string, DailyLogEntry[]>>(
-    DAILY_LOG_KEY_LEGACY
-  );
+  /** shard-aware full load — monolith stub 만 읽던 경로 수정 */
+  const dailyLogUser = await loadDailyLogForUserId(userId, { full: true });
+  const dailyLogLegacyRaw = await upstashGetJson<unknown>(DAILY_LOG_KEY_LEGACY);
+  const dailyLogLegacy = dailyLogFromMonolith(dailyLogLegacyRaw) || {};
   const dailyLog: Record<string, DailyLogEntry[]> = {
-    ...(dailyLogLegacy && typeof dailyLogLegacy === "object" ? dailyLogLegacy : {}),
-    ...(dailyLogUser && typeof dailyLogUser === "object" ? dailyLogUser : {}),
+    ...dailyLogLegacy,
+    ...dailyLogUser,
   };
 
   const beforeDaily = merged.length;

@@ -161,7 +161,8 @@ export default function SettlementDetailPage() {
         setRecords(local);
         loadSettlementRecordsPreferApi(u.id).then(setRecords);
         setDailyLog(loadDailyLog(u.id) as Record<string, DailyLogEntry[]>);
-        loadDailyLogFromApi(u.id, { full: true }).then((serverLog) => {
+        /** 정산 상세는 최근 스냅샷만 — full(수 MB) 로드로 502 유발 금지 */
+        loadDailyLogFromApi(u.id, { days: 2, maxEntries: 10 }).then((serverLog) => {
           if (serverLog) setDailyLog(serverLog as Record<string, DailyLogEntry[]>);
         });
         setReferenceDonors(
@@ -446,7 +447,8 @@ export default function SettlementDetailPage() {
     const next = updateSettlementRecordDonors(records, id, nextDonors);
     setRecords(next);
     saveSettlementRecords(next, user.id);
-    void saveSettlementRecordsToApi(next, user.id)
+    /** replace — createdAt 동일 merge 시 멤버 재배정이 덮이지 않게 */
+    void saveSettlementRecordsToApi(next, user.id, { replace: true })
       .then((ok) => {
         setDonorEditMsg(ok ? "후원 조정 저장됨 · 정산 금액 재계산" : "로컬만 저장됨(서버 동기화 실패)");
         window.setTimeout(() => setDonorEditMsg(null), 2500);
@@ -464,7 +466,15 @@ export default function SettlementDetailPage() {
 
   const commitEditableDonor = (donorId: string, patch: Partial<Donor>) => {
     const base = editingDonors ?? seedSettlementDonorsForEdit(record!, dailyLog, referenceDonors);
-    const next = base.map((d) => (d.id === donorId ? { ...d, ...patch } : d));
+    const next = base.map((d) => {
+      if (d.id !== donorId) return d;
+      const merged = { ...d, ...patch };
+      if (typeof patch.memberId === "string" && patch.memberId.trim()) {
+        merged.memberId = patch.memberId.trim();
+        merged.memberAutoAssigned = false;
+      }
+      return merged;
+    });
     persistDonorAdjustments(next);
   };
 
@@ -1319,7 +1329,7 @@ export default function SettlementDetailPage() {
             <div>
               <div className="text-sm font-semibold">멤버별 후원자 내역 · 조정</div>
               <div className="text-xs text-neutral-400 mt-1">
-                정산 생성 후에도 후원 목록을 수정할 수 있습니다. 국고 포함 멤버 배정·금액·채널을 바꾸면 정산액이 다시 계산됩니다.
+                정산 생성 후에도 후원 목록을 수정할 수 있습니다. 멤버·금액·채널·메시지를 바꾸면 해당 멤버 정산액이 다시 계산됩니다.
                 {" · "}
                 {editableDonors.length}건
                 {donorEditMsg ? <span className="text-emerald-400 ml-2">{donorEditMsg}</span> : null}
@@ -1386,6 +1396,7 @@ export default function SettlementDetailPage() {
                     <tr className="text-neutral-400 border-b border-white/10">
                       <th className="p-2 text-left">후원시각</th>
                       <th className="p-2 text-left">후원자</th>
+                      <th className="p-2 text-left min-w-[12rem]">후원 메시지</th>
                       <th className="p-2 text-right">금액</th>
                       <th className="p-2 text-left">채널</th>
                       <th className="p-2 text-left">멤버(국고 포함)</th>
@@ -1407,7 +1418,8 @@ export default function SettlementDetailPage() {
                         return Number(b.at || 0) - Number(a.at || 0);
                       })
                       .map((d) => {
-                        const member = record.members.find((m) => m.memberId === d.memberId);
+                        const live = (editingDonors ?? editableDonors).find((x) => x.id === d.id) || d;
+                        const member = record.members.find((m) => m.memberId === live.memberId);
                         const treasury = member
                           ? isTreasurySettlementMember(member, record.memberPositionsAtSettlement)
                           : false;
@@ -1417,12 +1429,12 @@ export default function SettlementDetailPage() {
                             className={`border-b border-white/5 ${treasury ? "bg-amber-950/40" : ""}`}
                           >
                             <td className="p-2 text-neutral-400 tabular-nums whitespace-nowrap">
-                              {formatExportDateTime(d.at)}
+                              {formatExportDateTime(live.at)}
                             </td>
                             <td className="p-2">
                               <input
                                 className="w-full min-w-[7rem] px-2 py-1 rounded bg-neutral-800 border border-white/10"
-                                value={d.name}
+                                value={live.name}
                                 disabled={donorEditBusy}
                                 onChange={(e) =>
                                   patchEditableDonor(d.id, {
@@ -1432,9 +1444,32 @@ export default function SettlementDetailPage() {
                                 onBlur={() =>
                                   commitEditableDonor(d.id, {
                                     name: String(
-                                      (editingDonors ?? []).find((x) => x.id === d.id)?.name ?? d.name
+                                      (editingDonors ?? []).find((x) => x.id === d.id)?.name ?? live.name
                                     )
                                       .replace(/\s+/g, "") || "무명",
+                                  })
+                                }
+                              />
+                            </td>
+                            <td className="p-2">
+                              <input
+                                className="w-full min-w-[12rem] max-w-[28rem] px-2 py-1 rounded bg-neutral-800 border border-white/10 text-neutral-200"
+                                value={String(live.message || "")}
+                                placeholder="(메시지 없음)"
+                                disabled={donorEditBusy}
+                                title={String(live.message || "")}
+                                onChange={(e) =>
+                                  patchEditableDonor(d.id, {
+                                    message: e.target.value,
+                                  })
+                                }
+                                onBlur={() =>
+                                  commitEditableDonor(d.id, {
+                                    message: String(
+                                      (editingDonors ?? []).find((x) => x.id === d.id)?.message ??
+                                        live.message ??
+                                        ""
+                                    ).trim(),
                                   })
                                 }
                               />
@@ -1445,7 +1480,7 @@ export default function SettlementDetailPage() {
                                 min={0}
                                 step={1000}
                                 className="w-28 px-2 py-1 rounded bg-neutral-800 border border-white/10 text-right tabular-nums"
-                                value={d.amount}
+                                value={live.amount}
                                 disabled={donorEditBusy}
                                 onChange={(e) =>
                                   patchEditableDonor(d.id, {
@@ -1454,7 +1489,15 @@ export default function SettlementDetailPage() {
                                 }
                                 onBlur={() =>
                                   commitEditableDonor(d.id, {
-                                    amount: Math.max(0, Math.round(Number(d.amount) || 0)),
+                                    amount: Math.max(
+                                      0,
+                                      Math.round(
+                                        Number(
+                                          (editingDonors ?? []).find((x) => x.id === d.id)?.amount ??
+                                            live.amount
+                                        ) || 0
+                                      )
+                                    ),
                                   })
                                 }
                               />
@@ -1462,7 +1505,7 @@ export default function SettlementDetailPage() {
                             <td className="p-2">
                               <select
                                 className="px-2 py-1 rounded bg-neutral-800 border border-white/10"
-                                value={d.target === "toon" ? "toon" : "account"}
+                                value={live.target === "toon" ? "toon" : "account"}
                                 disabled={donorEditBusy}
                                 onChange={(e) =>
                                   commitEditableDonor(d.id, {
@@ -1479,11 +1522,17 @@ export default function SettlementDetailPage() {
                                 className={`min-w-[8rem] px-2 py-1 rounded bg-neutral-800 border ${
                                   treasury ? "border-amber-500/50 text-amber-100" : "border-white/10"
                                 }`}
-                                value={d.memberId}
-                                disabled={donorEditBusy}
-                                onChange={(e) =>
-                                  commitEditableDonor(d.id, { memberId: e.target.value })
+                                value={
+                                  record.members.some((m) => m.memberId === live.memberId)
+                                    ? live.memberId
+                                    : record.members[0]?.memberId || ""
                                 }
+                                disabled={donorEditBusy}
+                                onChange={(e) => {
+                                  const memberId = e.target.value.trim();
+                                  if (!memberId || memberId === live.memberId) return;
+                                  commitEditableDonor(d.id, { memberId });
+                                }}
                               >
                                 {record.members.map((m) => (
                                   <option key={m.memberId} value={m.memberId}>

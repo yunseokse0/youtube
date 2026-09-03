@@ -2,6 +2,7 @@ import { upstashGetAppStateJson, upstashSetAppStateJson } from "@/app/api/_share
 import { mysqlKvDel, mysqlKvListKeys } from "@/app/api/_shared/mysql-kv";
 import type { DailyLogEntry } from "@/lib/state";
 import {
+  DAILY_LOG_ADMIN_MAX_ENTRIES_PER_DAY,
   dailyLogEntriesFromShardPayload,
   dailyLogFromMonolith,
   dailyLogMonolithKvKey,
@@ -10,6 +11,7 @@ import {
   mergeDailyLogShardMaps,
   parseDailyLogShardDateFromKey,
   recentDailyLogDateKeys,
+  trimDailyLogMap,
 } from "@/lib/daily-log-shard";
 
 const DAILY_LOG_CACHE_TTL_MS = 120_000;
@@ -21,26 +23,57 @@ type DailyLogCacheEntry = {
 };
 const dailyLogCache = new Map<string, DailyLogCacheEntry>();
 
+function cacheKeyFor(userId: string, full: boolean, recentDays: number, maxEntries: number): string {
+  if (full) return `${userId}:full`;
+  return `${userId}:recent:${recentDays}:me${maxEntries}`;
+}
+
 export function invalidateDailyLogCache(userId?: string): void {
-  if (userId) dailyLogCache.delete(userId);
-  else dailyLogCache.clear();
+  if (!userId) {
+    dailyLogCache.clear();
+    return;
+  }
+  const prefix = `${userId}:`;
+  for (const key of [...dailyLogCache.keys()]) {
+    if (key === userId || key.startsWith(prefix)) dailyLogCache.delete(key);
+  }
 }
 
 export function dailyLogCachedRawLen(userId: string): number {
-  return dailyLogCache.get(userId)?.rawLen ?? 0;
+  let max = 0;
+  for (const [key, hit] of dailyLogCache) {
+    if (key === userId || key.startsWith(`${userId}:`)) {
+      if (hit.rawLen > max) max = hit.rawLen;
+    }
+  }
+  return max;
 }
 
-export function primeDailyLogCache(userId: string, data: Record<string, DailyLogEntry[]>): void {
-  const rawLen = JSON.stringify(data).length;
-  dailyLogCache.set(userId, { data, rawLen, loadedAt: Date.now(), mode: "recent" });
+export function primeDailyLogCache(
+  userId: string,
+  data: Record<string, DailyLogEntry[]>,
+  opts?: { recentDays?: number; maxEntriesPerDay?: number }
+): void {
+  const recentDays = opts?.recentDays ?? DAILY_LOG_SHARD_DAYS_DEFAULT;
+  const maxEntries = opts?.maxEntriesPerDay ?? DAILY_LOG_ADMIN_MAX_ENTRIES_PER_DAY;
+  const trimmed = trimDailyLogMap(data, maxEntries);
+  const rawLen = JSON.stringify(trimmed).length;
+  dailyLogCache.set(cacheKeyFor(userId, false, recentDays, maxEntries), {
+    data: trimmed,
+    rawLen,
+    loadedAt: Date.now(),
+    mode: "recent",
+  });
 }
 
 export type LoadDailyLogOptions = {
   bypassCache?: boolean;
-  /** 최근 N일 shard만 (기본 3) — state enrich·storage-health lite */
+  /** 최근 N일 shard만 (기본 2) — state enrich·storage-health lite */
   recentDays?: number;
   /** true: monolith + 등록된 모든 shard (admin 다운로드·복구) */
   full?: boolean;
+  /** 날짜당 최근 N개만 반환 (기본 admin 5). full이면 무시 */
+  maxEntriesPerDay?: number;
 };
 
 async function loadDailyLogShardDay(
@@ -66,6 +99,20 @@ async function loadDailyLogRecentShards(
   return mergeDailyLogShardMaps(...parts);
 }
 
+async function mapPool<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.max(1, concurrency) }, async () => {
+    while (next < items.length) {
+      const i = next;
+      next += 1;
+      out[i] = await fn(items[i]!);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
 async function loadDailyLogAllShards(userId: string): Promise<Record<string, DailyLogEntry[]>> {
   const prefix = `${dailyLogMonolithKvKey(userId)}:`;
   const keys = await mysqlKvListKeys(prefix, 400);
@@ -73,12 +120,11 @@ async function loadDailyLogAllShards(userId: string): Promise<Record<string, Dai
     .map((k) => parseDailyLogShardDateFromKey(k, userId))
     .filter((d): d is string => Boolean(d));
   const uniqueDates = [...new Set(shardKeys)].sort();
-  const parts = await Promise.all(
-    uniqueDates.map(async (dateKey) => {
-      const entries = await loadDailyLogShardDay(userId, dateKey);
-      return entries ? { [dateKey]: entries } : {};
-    })
-  );
+  /** 동시 전량 로드는 MySQL·메모리 폭주 → 청크 */
+  const parts = await mapPool(uniqueDates, 4, async (dateKey) => {
+    const entries = await loadDailyLogShardDay(userId, dateKey);
+    return entries ? { [dateKey]: entries } : {};
+  });
   return mergeDailyLogShardMaps(...parts);
 }
 
@@ -89,7 +135,7 @@ async function loadDailyLogMonolith(userId: string): Promise<Record<string, Dail
 }
 
 /**
- * 서버 daily-log — 기본은 최근 N일 shard만 (23MB monolith read 회피)
+ * 서버 daily-log — 기본은 최근 N일 shard + 날짜당 최근 엔트리만 (거대 JSON 회피)
  */
 export async function loadDailyLogForUserId(
   userId: string,
@@ -97,7 +143,15 @@ export async function loadDailyLogForUserId(
 ): Promise<Record<string, DailyLogEntry[]>> {
   const full = opts?.full === true;
   const recentDays = full ? 0 : Math.max(1, opts?.recentDays ?? DAILY_LOG_SHARD_DAYS_DEFAULT);
-  const cacheKey = full ? `${userId}:full` : `${userId}:recent:${recentDays}`;
+  const maxEntriesPerDay = full
+    ? Number.POSITIVE_INFINITY
+    : Math.max(1, opts?.maxEntriesPerDay ?? DAILY_LOG_ADMIN_MAX_ENTRIES_PER_DAY);
+  const cacheKey = cacheKeyFor(
+    userId,
+    full,
+    recentDays,
+    Number.isFinite(maxEntriesPerDay) ? maxEntriesPerDay : 0
+  );
 
   if (!opts?.bypassCache) {
     const hit = dailyLogCache.get(cacheKey);
@@ -114,6 +168,7 @@ export async function loadDailyLogForUserId(
     if (monolith) merged = mergeDailyLogShardMaps(monolith, merged);
   } else {
     merged = await loadDailyLogRecentShards(userId, recentDays);
+    merged = trimDailyLogMap(merged, maxEntriesPerDay);
   }
 
   const rawLen = JSON.stringify(merged).length;

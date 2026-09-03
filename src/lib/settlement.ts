@@ -667,6 +667,7 @@ export async function appendSigMatchIncentiveSettlementAndSync(
 function donorAmountSums(donors: Donor[]): Map<string, { account: number; toon: number }> {
   const map = new Map<string, { account: number; toon: number }>();
   for (const d of donors || []) {
+    if (d.donationExcluded === true) continue;
     const memberId = String(d.memberId || "").trim();
     if (!memberId) continue;
     const amount = Math.max(0, Math.round(Number(d.amount) || 0));
@@ -749,15 +750,19 @@ export function recomputeSettlementFromDonors(
     ...body,
     members,
     memberPositionsAtSettlement: positions,
-    donors: (donors || []).map((d) => ({
-      ...d,
-      id: String(d.id || "").trim() || `d_adj_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      name: String(d.name || "무명").replace(/\s+/g, "") || "무명",
-      amount: Math.max(0, Math.round(Number(d.amount) || 0)),
-      memberId: String(d.memberId || "").trim(),
-      at: typeof d.at === "number" && Number.isFinite(d.at) ? d.at : record.createdAt,
-      target: d.target === "toon" ? "toon" : "account",
-    })),
+    donors: (donors || []).map((d) => {
+      const message = String(d.message || "").trim();
+      return {
+        ...d,
+        id: String(d.id || "").trim() || `d_adj_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        name: String(d.name || "무명").replace(/\s+/g, "") || "무명",
+        amount: Math.max(0, Math.round(Number(d.amount) || 0)),
+        memberId: String(d.memberId || "").trim(),
+        at: typeof d.at === "number" && Number.isFinite(d.at) ? d.at : record.createdAt,
+        target: d.target === "toon" ? "toon" : "account",
+        ...(message ? { message } : { message: undefined }),
+      };
+    }),
   };
 }
 

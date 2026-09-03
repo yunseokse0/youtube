@@ -7,6 +7,9 @@ import {
   mergeDailyLogShardMaps,
   parseDailyLogShardDateFromKey,
   recentDailyLogDateKeys,
+  slimDailyLogEntry,
+  trimDailyLogEntries,
+  trimDailyLogMap,
 } from "@/lib/daily-log-shard";
 
 describe("daily-log shard keys", () => {
@@ -45,5 +48,72 @@ describe("daily-log shard keys", () => {
       "2026-09-01": [{ at: "1", total: 1, members: [], donors: [] }],
     });
     expect(log?.["2026-09-01"]).toHaveLength(1);
+  });
+
+  it("trimDailyLogEntries keeps latest N by at", () => {
+    const trimmed = trimDailyLogEntries(
+      [
+        { at: "2026-09-01T01:00:00.000Z", total: 1, members: [], donors: [] },
+        { at: "2026-09-01T03:00:00.000Z", total: 3, members: [], donors: [] },
+        { at: "2026-09-01T02:00:00.000Z", total: 2, members: [], donors: [] },
+      ],
+      2
+    );
+    expect(trimmed.map((e) => e.total)).toEqual([2, 3]);
+  });
+
+  it("trimDailyLogMap applies per day", () => {
+    const out = trimDailyLogMap(
+      {
+        "2026-09-01": [
+          { at: "a", total: 1, members: [], donors: [] },
+          { at: "b", total: 2, members: [], donors: [] },
+          { at: "c", total: 3, members: [], donors: [] },
+        ],
+      },
+      1
+    );
+    expect(out["2026-09-01"]).toHaveLength(1);
+    expect(out["2026-09-01"]![0]!.total).toBe(3);
+  });
+
+  it("slimDailyLogEntry drops heavy optional fields", () => {
+    const slim = slimDailyLogEntry({
+      at: "t",
+      total: 1000,
+      members: [
+        {
+          id: "m1",
+          name: "자키",
+          account: 1,
+          toon: 2,
+          goal: 999,
+          restroom: 1,
+        },
+      ],
+      donors: [
+        {
+          id: "d1",
+          name: "A",
+          amount: 1000,
+          memberId: "m1",
+          at: 1,
+          target: "toon",
+          message: "hi",
+          contributionPoints: 100,
+          hsPushDir: "left",
+        },
+      ],
+    });
+    expect(slim.members[0]).toEqual({ id: "m1", name: "자키", account: 1, toon: 2 });
+    expect(slim.donors[0]).toEqual({
+      id: "d1",
+      name: "A",
+      amount: 1000,
+      memberId: "m1",
+      at: 1,
+      target: "toon",
+      message: "hi",
+    });
   });
 });
