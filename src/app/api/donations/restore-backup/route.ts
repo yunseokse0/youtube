@@ -23,7 +23,7 @@ import type { AppState } from "@/types";
 /**
  * 서버 후원 백업(MySQL/디스크)에서 강제 복구.
  * 플레이스홀더(멤버1·2…) 초기화·빈 후원일 때 사용.
- * 의도적 정산 리셋(intentionalDonationClearAt) 세션은 거부.
+ * 의도적 정산 리셋·이미 후원이 있는 경우는 409 없이 200 skipped.
  */
 export async function POST(req: Request) {
   const writeUid = resolveWriteUserId(req);
@@ -39,15 +39,20 @@ export async function POST(req: Request) {
   }
 
   const current = (await loadAppStateForUserId(userId)) || defaultState();
+  /** 예상 스킵은 409 대신 200 — 브라우저 콘솔 Conflict 노이즈·자동 복구 race 방지 */
   if (shouldSuppressAutoRosterRestore(current)) {
     return new Response(
       JSON.stringify({
-        error: "intentional_clear",
+        ok: false,
+        skipped: "intentional_clear",
         message:
           "의도적 정산 리셋(멤버 유지·초기화) 세션입니다. 자동 백업 복구를 하지 않습니다. 일일 로그에서 수동 복구하세요.",
         intentionalDonationClearAt: current.intentionalDonationClearAt,
       }),
-      { status: 409, headers: { "Content-Type": "application/json" } }
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      }
     );
   }
 
@@ -59,12 +64,16 @@ export async function POST(req: Request) {
   if (!force) {
     return new Response(
       JSON.stringify({
-        error: "not_empty",
+        ok: false,
+        skipped: "not_empty",
         message: "현재 상태가 비어 있지 않습니다. 정산 리셋 후가 아니면 강제 복구하지 않습니다.",
         donorsCount: normalizeDonorsArray(current.donors).length,
         total: totalCombined(current),
       }),
-      { status: 409, headers: { "Content-Type": "application/json" } }
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      }
     );
   }
 

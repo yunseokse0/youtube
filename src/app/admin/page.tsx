@@ -2668,35 +2668,56 @@ function AdminPageInner() {
 
     void (async () => {
       if (await tryDailyLogRestore()) return;
-      /** 서버 메인에 후원이 있으면 restore-backup 409 대신 그대로 당김 */
-      if (await applyDonorsFromServerMainStateRef.current({ silent: true })) return;
+      /** 서버 메인에 후원이 있으면 백업 복구 호출 없이 그대로 당김 (304/스킵 race 방지: forceFull) */
+      if (
+        await applyDonorsFromServerMainStateRef.current({
+          silent: true,
+          forceReplace: true,
+        })
+      ) {
+        return;
+      }
       if (Date.now() < settlementResetUntilRef.current) return;
+      if (
+        shouldSuppressAutoRosterRestore(stateRef.current) ||
+        shouldSuppressAutoRosterRestore(state)
+      ) {
+        return;
+      }
       if (isEmptyBroadcastDonationSession(stateRef.current)) {
         const liveReset = Number(stateRef.current.settlementResetAt || 0);
         if (liveReset > 0 && Date.now() - liveReset < 120_000) return;
       }
+      /** 로컬만 비고 서버 메인에 후원이 있으면 restore-backup 불필요 */
+      const serverMainCount = Number(storageHealth?.mainState?.donorsCount || 0);
+      if (serverMainCount > 0) return;
       try {
         const res = await fetch("/api/donations/restore-backup", {
           method: "POST",
           credentials: "include",
         });
-        if (res.ok) {
-          const body = (await res.json()) as { donorsCount?: number; total?: number };
-          const remote = await loadStateFromApi(user.id, { forceFull: true });
-          if (remote) {
-            const { merged } = mergeIncomingStateSafely(remote, stateRef.current);
-            setState(merged);
-            stateRef.current = merged;
-          }
-          setSigExcelResult(
-            `서버 후원 백업에서 ${body.donorsCount ?? "?"}건(합계 ${(body.total ?? 0).toLocaleString("ko-KR")}원)을 자동 복구했습니다.`
-          );
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          ok?: boolean;
+          skipped?: string;
+          donorsCount?: number;
+          total?: number;
+        };
+        if (body.ok === false || body.skipped) return;
+        const remote = await loadStateFromApi(user.id, { forceFull: true });
+        if (remote) {
+          const { merged } = mergeIncomingStateSafely(remote, stateRef.current);
+          setState(merged);
+          stateRef.current = merged;
         }
+        setSigExcelResult(
+          `서버 후원 백업에서 ${body.donorsCount ?? "?"}건(합계 ${(body.total ?? 0).toLocaleString("ko-KR")}원)을 자동 복구했습니다.`
+        );
       } catch {
         /* noop */
       }
     })();
-  }, [user, state.donors, dailyLog, mergeIncomingStateSafely]);
+  }, [user, state.donors, dailyLog, mergeIncomingStateSafely, storageHealth?.mainState?.donorsCount]);
 
   const applyDonorsFromServerMainStateRef = useRef<
     (opts?: { silent?: boolean }) => Promise<boolean>
@@ -2718,8 +2739,9 @@ function AdminPageInner() {
       ) {
         return false;
       }
+      const localDonorsBefore = normalizeDonorsArray(stateRef.current.donors);
       const remoteResult = await loadStateFromApiWithMeta(user.id, {
-        ...(opts?.forceReplace
+        ...(opts?.forceReplace || localDonorsBefore.length === 0
           ? { forceFull: true }
           : {
               ifUpdatedSince: Math.max(
@@ -2741,6 +2763,7 @@ function AdminPageInner() {
       /** 서버에 후원이 있을 때만 맞춤 — 빈 원격으로 실후원을 지우지 않음 */
       const forceReplace =
         Boolean(opts?.forceReplace) ||
+        localDonors.length === 0 ||
         hasNewRemoteDonors ||
         (remoteTotal > 0 &&
           remoteDonors.length > 0 &&
