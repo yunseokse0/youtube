@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
- * 생일 xlsx 대비 빠진 「에겐」1만×2 건만 din donors 에 추가
+ * 생일 xlsx 중복 행(동일 at·금액·닉)이 서버에 1건만 있는 「에겐」1만×2 추가
+ *   - pdf:toonation:1788261859000:10000:에겐  (xlsx 2행 / live 1)
+ *   - pdf:toonation:1788267250000:10000:에겐  (xlsx 2행 / live 1)
  *
  *   cd ~/youtube && node scripts/add-missing-egen-2.mjs
  *   cd ~/youtube && node scripts/add-missing-egen-2.mjs --apply
@@ -14,10 +16,25 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const STATE_KEY = "excel-broadcast-state-v1:din";
 const JAKI_NAME = "자키";
 
-/** xlsx 기준 누락 2건 (2026-09-01 20:24:16 / 20:24:18) */
-const MISSING = [
-  { at: 1788261856000, amount: 10000, nick: "에겐", atKst: "2026-09-01 20:24:16" },
-  { at: 1788261858000, amount: 10000, nick: "에겐", atKst: "2026-09-01 20:24:18" },
+/**
+ * xlsx 에 동일 id 가 2번 나오는데 live 는 1번만 있는 건.
+ * 두 번째 복사본은 id 접미사 #2 로 추가 (동일 id 충돌 방지).
+ */
+const MISSING_DUP_COPIES = [
+  {
+    baseId: "pdf:toonation:1788261859000:10000:에겐",
+    at: 1788261859000,
+    amount: 10000,
+    nick: "에겐",
+    atKst: "2026-09-01 20:24:19",
+  },
+  {
+    baseId: "pdf:toonation:1788267250000:10000:에겐",
+    at: 1788267250000,
+    amount: 10000,
+    nick: "에겐",
+    atKst: "2026-09-01 21:54:10",
+  },
 ];
 
 function loadEnvDatabaseUrl() {
@@ -58,16 +75,6 @@ function poolOptionsFromUrl(raw) {
   };
 }
 
-function nickKey(n) {
-  return String(n || "")
-    .replace(/\s+/g, "")
-    .toLowerCase();
-}
-
-function donorId(row) {
-  return `pdf:toonation:${row.at}:${row.amount}:${row.nick}`;
-}
-
 function syncMemberTotals(state) {
   const members = Array.isArray(state.members) ? state.members : [];
   const totals = new Map(members.map((m) => [String(m.id), { account: 0, toon: 0, contribution: 0 }]));
@@ -90,6 +97,14 @@ function syncMemberTotals(state) {
   };
 }
 
+function countIdFamily(donors, baseId) {
+  const b = String(baseId);
+  return donors.filter((d) => {
+    const id = String(d.id || "");
+    return id === b || id === `${b}#2` || id.startsWith(`${b}#`);
+  }).length;
+}
+
 async function main() {
   const apply = process.argv.includes("--apply");
   const pool = mysql.createPool(poolOptionsFromUrl(loadEnvDatabaseUrl()));
@@ -104,21 +119,15 @@ async function main() {
       (state.members || [])[0];
     if (!jaki?.id) throw new Error("자키 멤버 없음");
 
-    const ids = new Set(donors.map((d) => String(d.id || "")));
-    const hasNear = (row) =>
-      donors.some(
-        (d) =>
-          nickKey(d.name) === nickKey(row.nick) &&
-          Number(d.amount) === row.amount &&
-          Math.abs(Number(d.at) - row.at) < 5_000
-      );
-
     const toAdd = [];
-    for (const row of MISSING) {
-      const id = donorId(row);
-      if (ids.has(id) || hasNear(row)) {
-        console.log(`skip already present: ${row.nick} ${row.amount} ${row.atKst}`);
+    for (const row of MISSING_DUP_COPIES) {
+      const n = countIdFamily(donors, row.baseId);
+      if (n >= 2) {
+        console.log(`skip already have ${n}: ${row.baseId}`);
         continue;
+      }
+      if (n < 1) {
+        console.warn(`WARN base missing, will still add #2: ${row.baseId}`);
       }
       toAdd.push(row);
     }
@@ -138,17 +147,14 @@ async function main() {
     const resetAt = Number(state.settlementResetAt || 0);
     const baseAt = Math.max(Date.now(), resetAt + 1);
     const created = toAdd.map((row, i) => ({
-      id: donorId(row),
+      id: `${row.baseId}#2`,
       name: row.nick,
       amount: row.amount,
-      /** 정산 리셋 stamp 뒤로 — 필터에 안 걸림 */
       at: resetAt > 0 ? baseAt + i : row.at,
       target: "toon",
       memberId: jaki.id,
       contributionPoints: Math.floor(row.amount / 10),
-      message: "",
-      _xlsxAt: row.at,
-      _xlsxAtKst: row.atKst,
+      message: `xlsx duplicate copy (${row.atKst})`,
     }));
 
     const nextDonors = [...donors, ...created];
@@ -165,20 +171,10 @@ async function main() {
       JSON.stringify(
         {
           dryRun: !apply,
-          added: created.map((d) => ({
-            id: d.id,
-            name: d.name,
-            amount: d.amount,
-            at: d.at,
-            xlsxAtKst: d._xlsxAtKst,
-          })),
+          note: "xlsx had duplicate identical rows; adding #2 copies",
+          added: created.map((d) => ({ id: d.id, name: d.name, amount: d.amount, at: d.at })),
           before: { donors: donors.length, sum: beforeSum, man: +(beforeSum / 10000).toFixed(2) },
-          after: {
-            donors: nextDonors.length,
-            sum: afterSum,
-            man: +(afterSum / 10000).toFixed(2),
-          },
-          jakiMemberId: jaki.id,
+          after: { donors: nextDonors.length, sum: afterSum, man: +(afterSum / 10000).toFixed(2) },
         },
         null,
         2
@@ -190,11 +186,7 @@ async function main() {
       return;
     }
 
-    /** persist 전 내부 메타 제거 */
-    next = {
-      ...next,
-      donors: nextDonors.map(({ _xlsxAt, _xlsxAtKst, ...d }) => d),
-    };
+    next = { ...next, donors: nextDonors };
     const json = JSON.stringify(next);
     const rev = Number(next.updatedAt) || Date.now();
     await pool.query(
