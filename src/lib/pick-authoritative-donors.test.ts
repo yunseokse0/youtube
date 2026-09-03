@@ -182,4 +182,61 @@ describe("buildUiStateFromServerDonorPull", () => {
     };
     expect(buildUiStateFromServerDonorPull(local, remote)).toBeNull();
   });
+
+  it("forceReplace also refuses pre-reset donors after settlement reset", () => {
+    const resetAt = 1_700_000_000_000;
+    const remote: AppState = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "자키", account: 500_000, toon: 0 }],
+      donors: [
+        {
+          id: "d1",
+          name: "구후원",
+          amount: 500_000,
+          memberId: "m1",
+          at: resetAt - 10_000,
+        },
+      ],
+      updatedAt: resetAt + 5_000,
+    };
+    const local: AppState = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "자키", account: 0, toon: 0 }],
+      donors: [],
+      settlementResetAt: resetAt,
+      intentionalDonationClearAt: resetAt,
+      updatedAt: resetAt,
+    };
+    expect(buildUiStateFromServerDonorPull(local, remote, { forceReplace: true })).toBeNull();
+  });
+
+  it("allows post-reset donations after settlement reset", () => {
+    const resetAt = 1_700_000_000_000;
+    const remote: AppState = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "자키", account: 0, toon: 0 }],
+      donors: [
+        {
+          id: "d-new",
+          name: "신규",
+          amount: 3_000,
+          memberId: "m1",
+          at: resetAt + 60_000,
+        },
+      ],
+      settlementResetAt: resetAt,
+      updatedAt: resetAt + 60_000,
+    };
+    const local: AppState = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "자키", account: 0, toon: 0 }],
+      donors: [],
+      settlementResetAt: resetAt,
+      intentionalDonationClearAt: resetAt,
+      updatedAt: resetAt,
+    };
+    const pulled = buildUiStateFromServerDonorPull(local, remote);
+    expect(pulled).not.toBeNull();
+    expect(normalizeDonorsArray(pulled?.donors).map((d) => d.id)).toEqual(["d-new"]);
+  });
 });

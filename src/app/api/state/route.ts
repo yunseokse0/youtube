@@ -949,6 +949,22 @@ export async function GET(req: Request) {
       setServerMemoryAppState(userId, mergedForResponse);
     }
 
+    /** settlementResetAt 이전 donors 가 KV에 남아 있어도 GET 응답에는 노출하지 않음 */
+    {
+      const resetAt = Number(mergedForResponse.settlementResetAt || 0);
+      if (resetAt > 0) {
+        const before = normalizeDonorsArray(mergedForResponse.donors);
+        const after = filterDonorsAfterSettlementReset(before, resetAt);
+        if (after.length !== before.length) {
+          mergedForResponse = syncMemberTotalsFromDonors({
+            ...mergedForResponse,
+            donors: after,
+          });
+          setServerMemoryAppState(userId, mergedForResponse);
+        }
+      }
+    }
+
     seedAppStateKvCache(userId, mergedForResponse);
 
     if (isNotModified(mergedForResponse)) {

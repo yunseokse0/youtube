@@ -1329,7 +1329,8 @@ function AdminPageInner() {
   } | null>(null);
   const actionConfirmRef = useRef<null | (() => void)>(null);
   const resetInProgressRef = useRef(false);
-  /** 정산 리셋 직후 GET/SSE가 구 후원·금액을 되살리지 않게 */
+  /** 정산 리셋 직후 GET/SSE·서버가져오기가 구 후원을 되살리지 않게 (성공 시 90초) */
+  const SETTLEMENT_RESET_PROTECT_MS = 90_000;
   const settlementResetUntilRef = useRef(0);
   /** 방송 종료(정산 생성) 직후 시각 복구·빈 원격 동기화가 후원을 지우지 않게 */
   const settlementSnapshotUntilRef = useRef(0);
@@ -2845,6 +2846,17 @@ function AdminPageInner() {
     ) {
       return;
     }
+    /** 로컬 정산 리셋으로 비운 뒤 — 서버 count 불일치만으로 구 후원 자동 복구 금지 */
+    const localReset = Number(stateRef.current.settlementResetAt || 0);
+    const serverReset = Number(storageHealth?.mainState?.settlementResetAt || 0);
+    if (
+      localReset > 0 &&
+      normalizeDonorsArray(state.donors).length === 0 &&
+      isEmptyBroadcastDonationSession(stateRef.current) &&
+      serverReset < localReset
+    ) {
+      return;
+    }
     const serverCount = Number(storageHealth?.mainState?.donorsCount || 0);
     const serverTotal = Number(storageHealth?.mainState?.totalCombined || 0);
     const localCount = normalizeDonorsArray(state.donors).length;
@@ -2950,7 +2962,7 @@ function AdminPageInner() {
        */
       const remoteSettlementWins = remoteResetAt > localResetAt;
       if (remoteSettlementWins) {
-        settlementResetUntilRef.current = Date.now() + 30_000;
+        settlementResetUntilRef.current = Date.now() + SETTLEMENT_RESET_PROTECT_MS;
         pendingUnsyncedRef.current = false;
         donationAuthoritativeSaveUntilRef.current = 0;
       }
@@ -4439,12 +4451,16 @@ function AdminPageInner() {
     const donorsForWarn = reactDonorsForWarn.length > 0 ? reactDonorsForWarn : lsDonorsForWarn;
     const target = state.members.find((m) => m.id === id);
     const donorsCount = donorsForWarn.filter((d) => d.memberId === id).length;
+    const totalKeep = donorsForWarn.length;
     const warn =
       `멤버를 삭제합니다.\n` +
       `이름: ${target?.name ?? id}\n` +
       `계좌: ${target?.account ?? 0}, 투네: ${target?.toon ?? 0}, 기여도: ${target?.contribution ?? 0}\n` +
-      `연결된 후원 기록: ${donorsCount}건 (후원 기록은 유지, 엑셀표에서만 제거)\n\n` +
-      `삭제 후에는 되돌릴 수 없습니다. 계속할까요?`;
+      `이 멤버에 연결된 후원: ${donorsCount}건\n\n` +
+      `※ 후원 기록·합계는 삭제되지 않습니다 (전체 ${totalKeep}건 유지).\n` +
+      `※ 엑셀표·멤버 보드에서만 이 멤버가 빠집니다.\n` +
+      `※ 후원·금액을 비우려면 「정산 리셋」(정산리셋 입력)을 사용하세요.\n\n` +
+      `삭제 후에는 멤버를 되돌릴 수 없습니다. 계속할까요?`;
     requestConfirm("멤버 삭제", warn, () => {
       setState((prev: AppState) => {
         const members = prev.members.filter((m) => m.id !== id);
@@ -7763,6 +7779,19 @@ function AdminPageInner() {
   );
 
   restoreDonorsFromDailyLogSnapshotRef.current = async () => {
+    if (
+      shouldSuppressAutoRosterRestore(stateRef.current) ||
+      (Number(stateRef.current.settlementResetAt || 0) > 0 &&
+        normalizeDonorsArray(stateRef.current.donors).length === 0 &&
+        isEmptyBroadcastDonationSession(stateRef.current))
+    ) {
+      window.alert(
+        "정산 리셋으로 후원을 비운 상태입니다.\n" +
+          "일일 로그 복구는 리셋을 되돌리므로 사용할 수 없습니다.\n" +
+          "새 후원만 다시 쌓이거나, 리셋 전에 만든 정산 기록에서 확인하세요."
+      );
+      return;
+    }
     const serverLog = await loadDailyLogFromApi(user?.id);
     const localLog = loadDailyLog(user?.id);
     const merged: Record<string, DailyLogEntry[]> = { ...localLog, ...serverLog };
@@ -9101,14 +9130,18 @@ function AdminPageInner() {
     async (mode: "keep" | "init", memberSlotCount?: number, confirmPhrase?: string) => {
       if (resetInProgressRef.current) return;
       resetInProgressRef.current = true;
-      settlementResetUntilRef.current = Date.now() + 30_000;
-      settlementSnapshotUntilRef.current = Date.now() + 30_000;
+      const previousState = stateRef.current;
+      const previousPresets = (Array.isArray(previousState.overlayPresets)
+        ? previousState.overlayPresets
+        : presets) as OverlayPreset[];
+      settlementResetUntilRef.current = Date.now() + SETTLEMENT_RESET_PROTECT_MS;
+      settlementSnapshotUntilRef.current = Date.now() + SETTLEMENT_RESET_PROTECT_MS;
       /** 리셋으로 비운 뒤 일일 로그·백업 자동 복구가 돌지 않게 */
       autoOrphanDonorRestoreAttemptedRef.current = true;
       serverDonorMismatchRestoreAttemptedRef.current = true;
       setResetSheetOpen(false);
       setResetConfirmPhrase("");
-      appendDailyLog(state, user?.id);
+      appendDailyLog(previousState, user?.id);
       loadDailyLogFromApi(user?.id)
         .then((serverLog) => {
           setDailyLog(serverLog);
@@ -9118,7 +9151,7 @@ function AdminPageInner() {
         })
         .catch(() => setDailyLog(loadDailyLog(user?.id)));
 
-      const optimistic = applySettlementResetToState(state, {
+      const optimistic = applySettlementResetToState(previousState, {
         mode,
         memberSlotCount,
         resetAt: Date.now(),
@@ -9139,6 +9172,41 @@ function AdminPageInner() {
         setSigMatchPreviewIframeKey((k) => k + 1);
         setMealMatchPreviewIframeKey((k) => k + 1);
       } catch {}
+
+      const rollbackOptimisticReset = (reason: string) => {
+        setPresets(previousPresets);
+        setState(previousState);
+        stateRef.current = previousState;
+        stateUpdatedAtRef.current = Number(previousState.updatedAt || 0);
+        lastLocalPersistAtRef.current = Date.now();
+        pendingUnsyncedRef.current = false;
+        settlementResetUntilRef.current = 0;
+        settlementSnapshotUntilRef.current = 0;
+        autoOrphanDonorRestoreAttemptedRef.current = false;
+        serverDonorMismatchRestoreAttemptedRef.current = false;
+        try {
+          cacheBroadcastStateSnapshot(previousState, user?.id);
+          window.localStorage.setItem(presetStorageKey, JSON.stringify(previousPresets));
+          notifyAdminPreviewDonorsUpdated(
+            overlayUserId,
+            previousState.donors || [],
+            previousState.updatedAt
+          );
+          setSigMatchPreviewIframeKey((k) => k + 1);
+          setMealMatchPreviewIframeKey((k) => k + 1);
+        } catch {}
+        setSyncStatus("error");
+        setSigExcelResult(reason);
+        showAppToast(reason, { variant: "error", durationMs: 6500 });
+        if (typeof window !== "undefined") {
+          window.alert(
+            `${reason}\n\n` +
+              "화면은 리셋 전 상태로 되돌렸습니다.\n" +
+              "서버가 살아 있는지 확인한 뒤 다시 「정산리셋」을 실행하세요.\n" +
+              "지금은 「서버에서 가져오기」로 구 후원이 다시 보일 수 있습니다."
+          );
+        }
+      };
 
       try {
         const q = new URLSearchParams();
@@ -9166,11 +9234,9 @@ function AdminPageInner() {
           settlementResetAt?: number;
         } | null;
         if (!res.ok || !data?.ok || !data.state) {
-          setSyncStatus("error");
-          setSigExcelResult(
-            `정산 리셋 실패: ${data?.error || `http_${res.status}`}. 다시 시도하세요.`
+          rollbackOptimisticReset(
+            `정산 리셋 실패: ${data?.error || `http_${res.status}`}. 서버에 반영되지 않았습니다.`
           );
-          pendingUnsyncedRef.current = false;
           resetInProgressRef.current = false;
           return;
         }
@@ -9185,7 +9251,8 @@ function AdminPageInner() {
         stateUpdatedAtRef.current = serverAt;
         lastAppliedRemoteUpdatedAtRef.current = serverAt;
         lastLocalPersistAtRef.current = serverAt;
-        settlementResetUntilRef.current = Date.now() + 30_000;
+        settlementResetUntilRef.current = Date.now() + SETTLEMENT_RESET_PROTECT_MS;
+        settlementSnapshotUntilRef.current = Date.now() + SETTLEMENT_RESET_PROTECT_MS;
         pendingUnsyncedRef.current = false;
         setSyncStatus("synced");
         try {
@@ -9215,14 +9282,19 @@ function AdminPageInner() {
             : prev
         );
         void refreshStorageHealth();
+        showAppToast("정산 리셋 완료 · 서버 후원·금액이 비워졌습니다", {
+          variant: "success",
+          durationMs: 4200,
+        });
+        setSigExcelResult("정산 리셋 완료 — 잠시(약 90초) 서버 후원 자동 복구를 막습니다.");
       } catch {
-        setSyncStatus(typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error");
-        setSigExcelResult("정산 리셋 요청이 실패했습니다. 네트워크를 확인한 뒤 다시 시도하세요.");
-        pendingUnsyncedRef.current = false;
+        rollbackOptimisticReset(
+          "정산 리셋 요청이 실패했습니다. 네트워크·서버(502)를 확인한 뒤 다시 시도하세요."
+        );
       }
       resetInProgressRef.current = false;
     },
-    [overlayUserId, presetStorageKey, refreshStorageHealth, state, user?.id]
+    [overlayUserId, presetStorageKey, presets, refreshStorageHealth, user?.id]
   );
 
   const resetPhraseReady =
@@ -9281,7 +9353,53 @@ function AdminPageInner() {
     const local = stateRef.current;
     const localDonors = normalizeDonorsArray(local.donors);
     const remoteDonors = normalizeDonorsArray(remote.donors);
+    const localReset = Number(local.settlementResetAt || 0);
+    const postResetEmpty =
+      localDonors.length === 0 &&
+      (localReset > 0 ||
+        shouldSuppressAutoRosterRestore(local) ||
+        Date.now() < settlementResetUntilRef.current);
+
     if (localDonors.length === 0 && remoteDonors.length > 0) {
+      /** 정산 리셋 이후 — 리셋 이전 서버 후원은 가져오지 않음 (확인창 없이 차단) */
+      if (postResetEmpty) {
+        const surviving = filterDonorsAfterSettlementReset(remoteDonors, localReset);
+        const resetStamp = Math.max(localReset, Number(remote.settlementResetAt || 0));
+        const stripped = syncMemberTotalsFromDonors({
+          ...remote,
+          members:
+            Array.isArray(remote.members) && remote.members.length > 0
+              ? remote.members
+              : local.members,
+          donors: surviving,
+          settlementResetAt: resetStamp || local.settlementResetAt,
+          intentionalDonationClearAt:
+            surviving.length === 0
+              ? Math.max(Number(local.intentionalDonationClearAt || 0), localReset, resetStamp)
+              : 0,
+          updatedAt: Math.max(Number(remote.updatedAt || 0), Number(local.updatedAt || 0)),
+        });
+        stateUpdatedAtRef.current = stripped.updatedAt || 0;
+        lastAppliedRemoteUpdatedAtRef.current = stripped.updatedAt || 0;
+        pendingUnsyncedRef.current = false;
+        setState(stripped);
+        stateRef.current = stripped;
+        if (Array.isArray(stripped.overlayPresets)) {
+          setPresets(stripped.overlayPresets as OverlayPreset[]);
+          try {
+            window.localStorage.setItem(presetStorageKey, JSON.stringify(stripped.overlayPresets));
+          } catch {}
+        }
+        cacheBroadcastStateSnapshot(stripped, user?.id);
+        applySyncStatusAfterStateFetch(stripped, meta);
+        void refreshStorageHealth();
+        if (surviving.length === 0) {
+          setSigExcelResult(
+            "정산 리셋 유지: 서버의 리셋 이전 후원은 가져오지 않았습니다."
+          );
+        }
+        return;
+      }
       const ok = await applyDonorsFromServerMainState();
       if (ok) {
         applySyncStatusAfterStateFetch(remote, meta);
@@ -9324,14 +9442,33 @@ function AdminPageInner() {
 
     /**
      * 명시 「서버에서 가져오기」— 사고성 빈 원격만 거부하고, 후원 축소 포함 서버 정본을 적용.
-     * (브라우저 LS가 더 많은 후원을 들고 있어도 서버가 정본)
+     * 단 로컬 정산 리셋 이후면 리셋 이전 donors 는 제거한 채 적용.
      */
     const remoteEmptyAccident = shouldBlockAccidentalEmptyOverwrite(local, remote);
-    const toApply = remoteEmptyAccident
+    let toApply = remoteEmptyAccident
       ? didPreserve || shouldAvoidOverwritingLocalStateWithRemote(local, remote)
         ? merged
         : remote
       : remote;
+    const applyReset = Math.max(
+      Number(local.settlementResetAt || 0),
+      Number(toApply.settlementResetAt || 0)
+    );
+    if (
+      applyReset > 0 &&
+      (Number(local.settlementResetAt || 0) > 0 || shouldSuppressAutoRosterRestore(local))
+    ) {
+      const surviving = filterDonorsAfterSettlementReset(toApply.donors, applyReset);
+      toApply = syncMemberTotalsFromDonors({
+        ...toApply,
+        donors: surviving,
+        settlementResetAt: applyReset,
+        intentionalDonationClearAt:
+          surviving.length === 0
+            ? Math.max(Number(local.intentionalDonationClearAt || 0), applyReset)
+            : Number(toApply.intentionalDonationClearAt || 0),
+      });
+    }
     stateUpdatedAtRef.current = toApply.updatedAt || 0;
     pendingUnsyncedRef.current = false;
     setState(toApply);

@@ -4299,15 +4299,41 @@ export function buildUiStateFromServerDonorPull(
   if (remoteDonors.length === 0) return null;
   const localDonors = normalizeDonorsArray(local.donors);
   const localReset = Number(local.settlementResetAt || 0);
-  /** 의도적 정산 리셋으로 비운 UI — forceReplace 로도 구 후원을 되살리지 않음 */
-  if (
+  const remoteReset = Number(remote.settlementResetAt || 0);
+  const resetAt = Math.max(localReset, remoteReset);
+  const localIntentionalEmpty =
     localDonors.length === 0 &&
     isEmptyBroadcastDonationSession(local) &&
-    (Number(local.intentionalDonationClearAt || 0) > 0 || localReset > 0)
-  ) {
-    const surviving = filterDonorsAfterSettlementReset(remoteDonors, localReset);
+    (Number(local.intentionalDonationClearAt || 0) > 0 || localReset > 0);
+
+  /** 정산 리셋으로 비운 UI — 리셋 이전 후원은 어떤 forceReplace 로도 되살리지 않음 */
+  if (localIntentionalEmpty) {
+    const surviving = filterDonorsAfterSettlementReset(remoteDonors, localReset || resetAt);
     if (surviving.length === 0) return null;
+    const members = pickMemberRosterPreferNewer(local, remote);
+    return syncMemberTotalsFromDonors({
+      ...local,
+      ...remote,
+      members,
+      memberPositions: normalizeMemberPositions(
+        local.memberPositions ?? remote.memberPositions,
+        members
+      ),
+      donors: surviving,
+      settlementResetAt: Math.max(localReset, remoteReset) || local.settlementResetAt,
+      intentionalDonationClearAt:
+        surviving.length === 0
+          ? Math.max(Number(local.intentionalDonationClearAt || 0), localReset)
+          : undefined,
+      updatedAt: Math.max(Number(remote.updatedAt || 0), Date.now()),
+      donorRankingsUpdatedAt: Math.max(
+        Number(local.donorRankingsUpdatedAt || 0),
+        Number(remote.donorRankingsUpdatedAt || 0),
+        Date.now()
+      ),
+    });
   }
+
   const localIds = new Set(localDonors.map((d) => String(d.id || "")));
   const remoteMissingInLocal = remoteDonors.filter((d) => !localIds.has(String(d.id || "")));
   if (
@@ -4319,42 +4345,16 @@ export function buildUiStateFromServerDonorPull(
   ) {
     return null;
   }
-  const resetAt = Math.max(
-    Number(local.settlementResetAt || 0),
-    Number(remote.settlementResetAt || 0)
-  );
+
   let donors = opts?.forceReplace
-    ? Number(local.intentionalDonationClearAt || 0) > 0 && isEmptyBroadcastDonationSession(local)
-      ? filterDonorsAfterSettlementReset(remoteDonors, localReset)
-      : remoteDonors
+    ? filterDonorsAfterSettlementReset(remoteDonors, resetAt || localReset)
     : pickAuthoritativeDonorsForEmptySession(local, remoteDonors, remoteDonors, resetAt);
+
   if (donors.length === 0) {
-    const localReset = Number(local.settlementResetAt || 0);
-    /** 정산 리셋으로 비운 UI — 구 후원 rebump·강제 복구 금지 */
-    if (
-      localDonors.length === 0 &&
-      localReset > 0 &&
-      isEmptyBroadcastDonationSession(local)
-    ) {
-      return null;
-    }
-    donors = applySettlementResetDonorPipeline(
-      rebumpDonorsPastSettlementReset(remoteDonors, resetAt),
-      resetAt
-    );
+    /** 구 후원 rebump로 리셋을 무력화하지 않음 — 생존분 없으면 복구 포기 */
+    return null;
   }
-  if (donors.length === 0) {
-    /** 정산 리셋·의도적 비움 — rebump 후에도 없으면 구 후원 raw 복구 금지 */
-    if (
-      localDonors.length === 0 &&
-      isEmptyBroadcastDonationSession(local) &&
-      (Number(local.intentionalDonationClearAt || 0) > 0 ||
-        Number(local.settlementResetAt || 0) > 0)
-    ) {
-      return null;
-    }
-    donors = remoteDonors;
-  }
+
   const members = pickMemberRosterPreferNewer(local, remote);
   return syncMemberTotalsFromDonors({
     ...local,
@@ -4365,6 +4365,7 @@ export function buildUiStateFromServerDonorPull(
       members
     ),
     donors,
+    settlementResetAt: resetAt || local.settlementResetAt || remote.settlementResetAt,
     updatedAt: Math.max(Number(remote.updatedAt || 0), Date.now()),
     donorRankingsUpdatedAt: Math.max(
       Number(local.donorRankingsUpdatedAt || 0),
