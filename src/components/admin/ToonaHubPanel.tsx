@@ -95,7 +95,17 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
 
   useEffect(() => {
     if (!session) return;
-    const t = window.setInterval(() => void load(true), 15_000);
+    /** refresh=1 은 toona 외부 API+후원 sync — 겹치면 Node/MySQL 풀이 막혀 504→502 연쇄 */
+    let inFlight = false;
+    const tick = () => {
+      if (inFlight) return;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      inFlight = true;
+      void load(true).finally(() => {
+        inFlight = false;
+      });
+    };
+    const t = window.setInterval(tick, 30_000);
     return () => window.clearInterval(t);
   }, [session, load]);
 

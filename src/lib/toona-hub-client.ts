@@ -3,15 +3,23 @@ import { getToonaApiBaseUrl, getYoutubePublicBaseUrl } from "@/lib/toona-link";
 import { normalizeContributionFormula } from "@/lib/contribution-formula";
 import { persistContributionFormulaForUser } from "@/lib/contribution-formula-persist";
 import {
-  appendToonaHubDonationLog,
+  appendToonaHubDonationLogs,
   clearToonaHubDonationLogs,
   publicToonaHubSession,
   readToonaHubDonationLogs,
   readToonaHubSession,
   writeToonaHubSession,
+  type ToonaHubDonationLog,
   type ToonaHubSession,
 } from "@/lib/toona-hub-session";
 import type { ContributionFormula, SigItem } from "@/types";
+
+/** hub?refresh=1 동시 폭주 방지 (유저당 1개) */
+const hubPollInflight = new Map<string, Promise<unknown>>();
+const lastDonationPullAt = new Map<string, number>();
+const DONATION_PULL_MIN_INTERVAL_MS = 60_000;
+const STATUS_FETCH_MS = 5_000;
+const DONATION_FETCH_MS = 8_000;
 
 export type ToonaHubLoginInput = {
   youtubeUserId: string;
@@ -326,7 +334,7 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
           Accept: "application/json",
           Authorization: `Bearer ${session.token}`,
         },
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(STATUS_FETCH_MS),
       }
     );
     const json = (await res.json().catch(() => ({}))) as {
@@ -362,8 +370,12 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
         void persistContributionFormulaForUser(youtubeUserId, hubFormula);
       }
 
-      /** 기존 허브 연동이 A(알림만)면 B로 승격 — 후원자 리스트 미반영 방지 */
-      if (String(json.scenario || "").toUpperCase() !== "B") {
+      /** 기존 허브 연동이 A(알림만)면 B로 승격 — 폴링마다 PATCH 하지 않음 */
+      const scenario = String(json.scenario || "").toUpperCase();
+      const promoteCooldownMs = 10 * 60_000;
+      const lastPromote = session.scenarioBPromoteAt || 0;
+      if (scenario !== "B" && Date.now() - lastPromote > promoteCooldownMs) {
+        session.scenarioBPromoteAt = Date.now();
         try {
           const patchRes = await fetch(
             `${session.baseUrl}/api/youtubegit/${encodeURIComponent(session.streamKey)}`,
@@ -375,7 +387,7 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
                 Authorization: `Bearer ${session.token}`,
               },
               body: JSON.stringify({ scenario: "B" }),
-              signal: AbortSignal.timeout(15_000),
+              signal: AbortSignal.timeout(STATUS_FETCH_MS),
             }
           );
           if (!patchRes.ok) {
@@ -417,7 +429,7 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string): Promi
           Accept: "application/json",
           Authorization: `Bearer ${session.token}`,
         },
-        signal: AbortSignal.timeout(20_000),
+        signal: AbortSignal.timeout(DONATION_FETCH_MS),
       }
     );
   } catch (err) {
@@ -446,7 +458,7 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string): Promi
     return { ok: false, error: json.error || `HTTP ${res.status}` };
   }
 
-  let imported = 0;
+  const batch: ToonaHubDonationLog[] = [];
   for (const d of json.donations || []) {
     const at = d.createdAt ? new Date(d.createdAt).getTime() : Date.now();
     if (!Number.isFinite(at) || at < session.linkedAt - 5_000) continue;
@@ -457,7 +469,7 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string): Promi
     const amount = Math.max(0, Math.round(Number(d.amount) || 0));
     if (amount <= 0) continue;
     const isAccount = d.channel === "account" || ["sms", "push", "webhook"].includes(String(d.source || ""));
-    await appendToonaHubDonationLog(youtubeUserId, {
+    batch.push({
       id: `toona:${id}`,
       at,
       donorName,
@@ -467,10 +479,44 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string): Promi
       source: "toona",
       message: d.message ? String(d.message).slice(0, 120) : undefined,
     });
-    imported += 1;
   }
 
+  const imported = await appendToonaHubDonationLogs(youtubeUserId, batch);
   return { ok: true, imported };
+}
+
+/**
+ * 관리자 hub 폴링용 — 상태 갱신 + (쓰로틀된) 후원 pull.
+ * 동시 요청은 같은 Promise를 공유해 Node/MySQL을 막지 않음.
+ */
+export async function pollToonaHubForAdmin(youtubeUserId: string): Promise<{
+  session: ReturnType<typeof publicToonaHubSession>;
+  logs: Awaited<ReturnType<typeof readToonaHubDonationLogs>>;
+}> {
+  const uid = String(youtubeUserId || "").trim();
+  const existing = hubPollInflight.get(uid);
+  if (existing) {
+    return existing as Promise<{
+      session: ReturnType<typeof publicToonaHubSession>;
+      logs: Awaited<ReturnType<typeof readToonaHubDonationLogs>>;
+    }>;
+  }
+
+  const run = (async () => {
+    const synced = await refreshToonaHubStatus(uid);
+    const last = lastDonationPullAt.get(uid) || 0;
+    if (Date.now() - last >= DONATION_PULL_MIN_INTERVAL_MS) {
+      lastDonationPullAt.set(uid, Date.now());
+      await fetchToonaDonationsSinceLink(uid);
+    }
+    const logs = await readToonaHubDonationLogs(uid);
+    return { session: synced.session, logs };
+  })().finally(() => {
+    hubPollInflight.delete(uid);
+  });
+
+  hubPollInflight.set(uid, run);
+  return run;
 }
 
 export { getYoutubePublicBaseUrl };

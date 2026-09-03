@@ -17,6 +17,8 @@ export type ToonaHubSession = {
   lastIngestError?: string | null;
   youtubegitEnabled?: boolean;
   youtubeUserId?: string;
+  /** scenario A→B 승격 시도 시각 — 폴링마다 PATCH 반복 방지 */
+  scenarioBPromoteAt?: number;
 };
 
 export type ToonaHubDonationLog = {
@@ -89,18 +91,34 @@ export async function appendToonaHubDonationLog(
   userId: string,
   entry: ToonaHubDonationLog
 ): Promise<void> {
+  await appendToonaHubDonationLogs(userId, [entry]);
+}
+
+/** 후원 로그 일괄 추가 — hub poll 시 건당 KV RMW 폭주 방지 */
+export async function appendToonaHubDonationLogs(
+  userId: string,
+  entries: ToonaHubDonationLog[]
+): Promise<number> {
   const uid = String(userId || "").trim();
-  if (!uid || !entry?.id) return;
+  if (!uid || !entries?.length) return 0;
   const prev = await readToonaHubDonationLogs(uid);
-  if (prev.some((x) => x.id === entry.id)) return;
-  const next = [entry, ...prev].slice(0, MAX_LOGS);
+  const seen = new Set(prev.map((x) => x.id));
+  const added: ToonaHubDonationLog[] = [];
+  for (const entry of entries) {
+    if (!entry?.id || seen.has(entry.id)) continue;
+    seen.add(entry.id);
+    added.push(entry);
+  }
+  if (!added.length) return 0;
+  const next = [...added, ...prev].slice(0, MAX_LOGS);
   if (isPersistentKvConfigured()) {
     const all = (await upstashGetJson<Record<string, ToonaHubDonationLog[]>>(LOG_KEY)) || {};
     all[uid] = next;
     await upstashSetJsonWithPipeline(LOG_KEY, all);
-    return;
+    return added.length;
   }
   logMemory.set(uid, next);
+  return added.length;
 }
 
 export async function clearToonaHubDonationLogs(userId: string): Promise<void> {

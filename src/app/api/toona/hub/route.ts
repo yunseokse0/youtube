@@ -6,7 +6,7 @@ import {
   fetchToonaSignaturesViaHubSession,
   getYoutubePublicBaseUrl,
   loginAndLinkToonaHub,
-  refreshToonaHubStatus,
+  pollToonaHubForAdmin,
   syncContributionFormulaToToonaHub,
 } from "@/lib/toona-hub-client";
 import {
@@ -83,10 +83,8 @@ export async function GET(req: NextRequest) {
 
   const refresh = new URL(req.url).searchParams.get("refresh") === "1";
   if (refresh) {
-    const synced = await refreshToonaHubStatus(auth.userId);
-    await fetchToonaDonationsSinceLink(auth.userId);
-    const logs = await readToonaHubDonationLogs(auth.userId);
-    return json({ ok: true, session: synced.session, logs });
+    const polled = await pollToonaHubForAdmin(auth.userId);
+    return json({ ok: true, session: polled.session, logs: polled.logs });
   }
 
   const session = await readToonaHubSession(auth.userId);
