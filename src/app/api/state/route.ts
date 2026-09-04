@@ -95,8 +95,50 @@ import { loadDailyLogForUserId } from "@/lib/daily-log-server-load";
 import { DAILY_LOG_SHARD_DAYS_DEFAULT } from "@/lib/daily-log-shard";
 import { enrichAppStateFromDailyLogWhenDonorsMissing } from "@/lib/state-restore";
 import { isSettlementResetExplicitlyConfirmed } from "@/lib/settlement-reset-confirm";
+import { publishSseEvent } from "@/lib/sse-clients-hub";
 
 const logger = createModuleLogger('API/State');
+
+/** 서버 state 저장 직후 publishSseEvent로 OBS·다중 탭에 즉시 반영할 payload 빌드 */
+function buildStateUpdatedSsePayload(
+  body: Partial<AppState> & {
+    donorsAuthoritative?: boolean;
+    donorsReplace?: boolean;
+    settlementReset?: boolean;
+    membersAuthoritative?: boolean;
+    clearSigInventory?: boolean;
+    clearSigSoldOutStamp?: boolean;
+  },
+  persisted: AppState,
+  updatedAt: number,
+  membersAuthoritative: boolean
+): Record<string, unknown> {
+  const pl: Record<string, unknown> = {
+    type: "state_updated",
+    updatedAt,
+  };
+  const donorRankingsUpdatedAt = Number(persisted.donorRankingsUpdatedAt || 0);
+  if (donorRankingsUpdatedAt > 0) pl.donorRankingsUpdatedAt = donorRankingsUpdatedAt;
+  const settlementResetAt = Number(persisted.settlementResetAt || 0);
+  if (settlementResetAt > 0) pl.settlementResetAt = settlementResetAt;
+  if (membersAuthoritative) pl.membersRosterUpdatedAt = updatedAt;
+
+  let timerDisplayStylesUpdated = false;
+  let generalTimerUpdated = false;
+  try {
+    timerDisplayStylesUpdated =
+      body.timerDisplayStyles != null && typeof body.timerDisplayStyles === "object";
+    generalTimerUpdated =
+      (body.generalTimer != null && typeof body.generalTimer === "object") ||
+      (body.matchTimer != null && typeof body.matchTimer === "object");
+  } catch {
+    /* noop */
+  }
+  if (timerDisplayStylesUpdated) pl.timerDisplayStylesUpdatedAt = updatedAt;
+  if (generalTimerUpdated) pl.generalTimerUpdatedAt = updatedAt;
+
+  return pl;
+}
 
 const STORAGE_KEY_BASE = "excel-broadcast-state-v1";
 const STORAGE_KEY_LEGACY = "excel-broadcast-state-v1";
@@ -1464,6 +1506,8 @@ export async function POST(req: Request) {
         }
         setServerMemoryAppState(userId, memNext);
       }
+      const memUpdatedAt = Number(memNext.updatedAt || 0) || Date.now();
+      void publishSseEvent(buildStateUpdatedSsePayload(body, memNext, memUpdatedAt, membersAuthoritative)).catch(() => {});
       logger.info('메모리 상태 업데이트', { updatedAt: memNext.updatedAt });
       return new Response(
         JSON.stringify({
@@ -1536,6 +1580,8 @@ export async function POST(req: Request) {
       }
       persistedNext = toPersist;
     }
+    const finalUpdatedAt = Number(persistedNext.updatedAt || 0) || Date.now();
+    void publishSseEvent(buildStateUpdatedSsePayload(body, persistedNext, finalUpdatedAt, membersAuthoritative)).catch(() => {});
     return new Response(
       JSON.stringify({
         ok: true,
