@@ -2418,7 +2418,11 @@ function AdminPageInner() {
         normalizeDonorsArray(paint.donors).length > 0 ||
         totalCombined(paint) > 0
       ) {
-        setState(paint);
+        /**
+         * Ctrl+Shift+R hard refresh 시 3단계 리렌더로 인한 UI 떨림 원천 봉쇄:
+         * localStorage 복원은 stateRef.current 에만 선 반영 (donorTotalsByName·오버레이 프리뷰 숨김 등 syncStatus=loading 가드가 이미 있음)
+         * → setState(paint) 절대 호출 X → 1차 리렌더 자체를 없애서 서버 응답 도착시 한번만 렌더.
+         */
         stateRef.current = paint;
         /** 세션 미리보기만 — synced 로 올리지 않음(서버 응답이 정본) */
       }
@@ -2517,8 +2521,8 @@ function AdminPageInner() {
             const first = defaultPreset("전체 통합", { showMembers: true, showTotal: true });
             const withPreset = { ...toApply, overlayPresets: [first] };
             setPresets([first]);
-            setState(withPreset);
             stateRef.current = withPreset;
+            setState(withPreset);
           }
           applySyncStatusAfterStateFetch(apiState, meta);
           /** fast hydrate 후 donors 비었으면 백그라운드 full enrich */
