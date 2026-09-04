@@ -85,7 +85,11 @@ export async function POST(req: Request) {
   });
   if (!saved.ok) {
     logger.error("settlement reset persist failed", { userId, mode });
-    return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
+    return new Response(JSON.stringify({
+      ok: false,
+      error: "persist_failed",
+      detail: saved.error ?? "saveAppStateForRoulette refused empty roster wipe or mysql write failed",
+    }), {
       status: 503,
       headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
     });
@@ -105,6 +109,7 @@ export async function POST(req: Request) {
       JSON.stringify({
         ok: false,
         error: "reset_not_cleared",
+        detail: `save 후 donors=${donorsCount}건 total=${total}원. mergeStatePreservingDonorsUntilSettlementReset 에서 과거 후원이 다시 복구됐을 확률 높음. (f6bb3c6 패치 배포 확인 필요)`,
         donorsCount,
         total,
       }),

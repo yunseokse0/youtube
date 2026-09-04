@@ -12,6 +12,7 @@ function accountsApiUrl(): string {
 }
 
 async function loadAccountForUserId(userId: string): Promise<OwnerAccountRow | null> {
+  if (typeof window !== "undefined") return null;
   try {
     const res = await fetch(accountsApiUrl(), { cache: "no-store" });
     if (!res.ok) return null;
