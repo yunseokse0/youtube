@@ -14396,7 +14396,7 @@ function AdminPageInner() {
             <>
             <AdminCollapsibleSection
               id="donor-management"
-              title="후원자 기록부"
+              title="계정 연동 및 후원 수동입력"
               className={panelCardClass}
             >
               <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -14426,81 +14426,6 @@ function AdminPageInner() {
                 <span className="text-[11px] text-neutral-500">
                   풀=입력한 원 그대로 ·                   만원=축약 표기 · 오버레이·목표 막대에도 동일(막대 총액만 천원 반올림)
                 </span>
-              </div>
-
-              <div id="high-society-mode" className="mb-4 rounded-lg border border-amber-400/35 bg-amber-950/25 p-3 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <div className="text-sm font-semibold text-amber-100">상류사회 모드 (땅따먹기)</div>
-                    <p className="mt-0.5 text-[11px] text-neutral-400 leading-snug">
-                      확장 룰: <strong className="text-neutral-200">1만원 = 5cm</strong>
-                      · 1만원 정확히 배수만 영토 기록부 입력 시 참고(1만=5cm)
-                      · 영토(cm)는 「상류사회 · 영토 기록부」에서만 수동 반영 — 후원 리스트와 연동 없음
-                      (예: 2만원 → 10cm, 1만9천원 → 0cm). 1인 시작{" "}
-                      <strong className="text-neutral-200">{formatCm(hsStartCm)}</strong>
-                      · 전장 총길이{" "}
-                      <strong className="text-neutral-200">
-                        {hsEffectiveFieldCm.toLocaleString("ko-KR")}cm
-                      </strong>
-                      ({hsSeatPlayers.length || 0}명). 양끝은 단방향, 가운데는{" "}
-                      <strong className="text-neutral-300">시스템 한쪽 방향</strong>
-                      (수동 변경은 모드 ON일 때만 · 원복 후 적용).
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      className="rounded border border-violet-500/40 bg-violet-950/50 px-3 py-1.5 text-xs font-semibold text-violet-100 hover:bg-violet-900/60"
-                      title="상류사회·영토 전용 팝업 창"
-                      onClick={() => openAdminHighSocietyPopup(user?.id || overlayUserId)}
-                    >
-                      별도 창에서 열기
-                    </button>
-                    <button
-                      type="button"
-                      className={`rounded px-3 py-1.5 text-xs font-semibold ${
-                        highSocietySettings.enabled
-                          ? "bg-amber-600 text-white"
-                          : "bg-neutral-700 text-neutral-200 hover:bg-neutral-600"
-                      }`}
-                      onClick={() => patchHighSocietySettings({ enabled: !highSocietySettings.enabled })}
-                    >
-                      {highSocietySettings.enabled ? "상류사회 ON" : "상류사회 OFF"}
-                    </button>
-                    <button
-                      type="button"
-                      className={`rounded px-3 py-1.5 text-xs font-semibold border ${
-                        highSocietySettings.territoryPaused
-                          ? "border-sky-400 bg-sky-700/90 text-white"
-                          : "border-white/15 bg-neutral-800 text-neutral-200 hover:border-sky-400/50"
-                      }`}
-                      disabled={!highSocietySettings.enabled}
-                      title={
-                        highSocietySettings.enabled
-                          ? "영토·후원 합산·투네 반영 모두 동결"
-                          : "모드 ON일 때만 사용"
-                      }
-                      onClick={() =>
-                        patchHighSocietySettings({ territoryPaused: !highSocietySettings.territoryPaused })
-                      }
-                    >
-                      {highSocietySettings.territoryPaused ? "영토 재개" : "영토 일시정지"}
-                    </button>
-                  </div>
-                </div>
-                {highSocietySettings.enabled ? (
-                  <div className="rounded border border-white/10 bg-black/20 px-2.5 py-2 text-[11px] text-neutral-400 leading-snug">
-                    좌석 배치·1인 시작 cm·전장 설정은{" "}
-                    <button
-                      type="button"
-                      className="text-sky-400 underline"
-                      onClick={() => openAdminHighSocietyPopup(user?.id || overlayUserId)}
-                    >
-                      상류사회 팝업 · 영토 배치도
-                    </button>
-                    에서만 편집합니다. 아래 합산·리스트에서는 가운데 좌석 후원의 확장 방향만 바꿉니다.
-                  </div>
-                ) : null}
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_auto_auto_auto_auto] gap-3 mt-4">
@@ -16979,23 +16904,7 @@ function AdminPageInner() {
                   <div>
                     <h4 className="text-sm font-semibold text-amber-100">상류사회 · 세로(9:16) 오버레이</h4>
                     <p className="mt-1 text-[11px] text-neutral-400 leading-snug max-w-xl">
-                      모드 ON/OFF는{" "}
-                      <button
-                        type="button"
-                        className="text-sky-400 underline"
-                        onClick={() => {
-                          moveToSection("donor", "donor-management");
-                          window.setTimeout(() => {
-                            document.getElementById("high-society-mode")?.scrollIntoView({
-                              behavior: "smooth",
-                              block: "start",
-                            });
-                          }, 80);
-                        }}
-                      >
-                        후원자 기록부 → 상류사회 모드
-                      </button>
-                      에서만 설정합니다. ON이면 좌석 멤버 후원이 상단 영토 게이지에 반영됩니다.{" "}
+                      좌석 멤버 후원이 상단 영토 게이지에 반영됩니다.{" "}
                       확장: <strong className="text-neutral-300">1만원=5cm</strong>
                       · 1만원 배수만(1만9천→0cm).{" "}
                       <strong className="text-neutral-300">갱신 시점</strong>은 아래 옵션으로 선택합니다.
@@ -17103,19 +17012,11 @@ function AdminPageInner() {
                     <button
                       type="button"
                       className="text-sky-400 underline"
-                      onClick={() => {
-                        moveToSection("donor", "donor-management");
-                        window.setTimeout(() => {
-                          document.getElementById("high-society-mode")?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start",
-                          });
-                        }, 80);
-                      }}
+                      onClick={() => moveToSection("donor", "donor-management")}
                     >
-                      후원자 기록부
+                      계정 연동 및 후원 수동입력
                     </button>
-                    에서 설정합니다.
+                    의 상류사회 팝업에서 설정합니다.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <button
