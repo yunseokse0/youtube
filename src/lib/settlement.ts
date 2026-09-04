@@ -1,4 +1,4 @@
-import { formatManThousand } from "@/lib/state";
+import { donorAtEpochMs, formatManThousand } from "@/lib/state";
 import { computeSettlement, isOperatingSettlementMember, isTreasurySettlementMember, type SigMatchRankingItem } from "@/lib/settlement-utils";
 import { computeMemberPaymentStatement } from "@/lib/settlement-payment-statement";
 import { resolveMemberTaxInvoiceIssued } from "@/lib/settlement-payment-math";
@@ -752,13 +752,14 @@ export function recomputeSettlementFromDonors(
     memberPositionsAtSettlement: positions,
     donors: (donors || []).map((d) => {
       const message = String(d.message || "").trim();
+      const ms = donorAtEpochMs(d);
       return {
         ...d,
         id: String(d.id || "").trim() || `d_adj_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         name: String(d.name || "무명").replace(/\s+/g, "") || "무명",
         amount: Math.max(0, Math.round(Number(d.amount) || 0)),
         memberId: String(d.memberId || "").trim(),
-        at: typeof d.at === "number" && Number.isFinite(d.at) ? d.at : record.createdAt,
+        at: ms > 0 ? ms : record.createdAt,
         target: d.target === "toon" ? "toon" : "account",
         ...(message ? { message } : { message: undefined }),
       };

@@ -5,7 +5,7 @@ import {
   type RepairDonorTimestampsOptions,
 } from "@/lib/donation/repair-donor-timestamps";
 import { getMembersForExport } from "@/lib/settlement";
-import { formatKstDateTime, parseKstLocalTimestampToMs } from "@/lib/state";
+import { donorAtEpochMs, formatKstDateTime } from "@/lib/state";
 
 export { buildDailyLogMinAtByDonorId } from "@/lib/donation/repair-donor-timestamps";
 
@@ -75,16 +75,6 @@ function memberMaps(record: SettlementRecord) {
     realById.set(m.memberId, m.realName || "");
   }
   return { nameById, realById };
-}
-
-function donorAtEpochMs(donor: { at?: number | string }): number {
-  const raw = donor.at;
-  if (typeof raw === "number" && Number.isFinite(raw)) return Math.floor(raw);
-  if (Number.isFinite(Number(raw)) && Number(raw) > 1_000_000_000_000) return Math.floor(Number(raw));
-  const parsedIso = Date.parse(String(raw || ""));
-  if (Number.isFinite(parsedIso) && parsedIso > 1_000_000_000_000) return parsedIso;
-  const parsedKst = parseKstLocalTimestampToMs(raw);
-  return Number.isFinite(parsedKst) && parsedKst > 1_000_000_000_000 ? parsedKst : 0;
 }
 
 export type RepairSettlementDonorTimestampsOptions = RepairDonorTimestampsOptions;
@@ -180,16 +170,14 @@ export function seedSettlementDonorsForEdit(
     return existing.map((d) => {
       const id = String(d.id || "").trim() || `d_seed_${d.memberId}_${d.at}`;
       const message = String(d.message || "").trim() || messageById.get(id) || "";
+      const ms = donorAtEpochMs(d);
       return {
         ...d,
         id,
         name: String(d.name || "무명").replace(/\s+/g, "") || "무명",
         amount: Math.max(0, Math.round(Number(d.amount) || 0)),
         memberId: String(d.memberId || "").trim(),
-        at:
-          typeof d.at === "number" && Number.isFinite(d.at)
-            ? d.at
-            : record.createdAt,
+        at: ms > 0 ? ms : record.createdAt,
         target: d.target === "toon" ? "toon" : "account",
         ...(message ? { message } : {}),
       };

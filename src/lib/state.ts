@@ -1684,7 +1684,7 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
         ),
         amount: Math.max(0, Math.floor(Number(x.amount) || 0)),
         memberId: String(x.memberId ?? ""),
-        at: Number.isFinite(Number(x.at)) ? Math.floor(Number(x.at)) : Date.now(),
+        at: donorAtEpochMs(x as Donor) || Date.now(),
       };
       if (target) row.target = target;
       const message = typeof x.message === "string" ? x.message.trim() : "";
@@ -4194,12 +4194,36 @@ export function isIntentionalDonorListShrink(
 /** filterDonorsAfterSettlementReset / rebump 와 동일 grace */
 const SETTLEMENT_RESET_DONOR_GRACE_MS = 3000;
 
-function donorAtEpochMs(donor: { at?: number | string }): number {
+/**
+ * Donor.at 필드 (number | string | undefined) 를 항상 유효한 epoch ms 로 정규화.
+ *
+ * 우선순위:
+ *   1. raw number (epoch ms) — Number.isFinite + min threshold 통과 시 그대로
+ *   2. numeric string ("1788...") — Number() 캐스팅 후 통과 시
+ *   3. ISO 8601 / 타임존 포함 문자열 ("2026-09-02T14:21:06.000Z") — Date.parse
+ *   4. KST 로컬 문자열 ("2026. 09. 02. 24:59:34") — parseKstLocalTimestampToMs
+ *   5. 전부 실패 → 0 반환 (caller 에서 fallback 처리 책임)
+ *
+ * 최소 threshold 1_000_000_000_000 (2001-09-09) 이하 값은 유효하지 않은 것으로 간주.
+ */
+export function donorAtEpochMs(donor: { at?: number | string }): number {
   const raw = donor.at;
-  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
-  if (Number.isFinite(Number(raw))) return Math.floor(Number(raw));
-  const parsed = Date.parse(String(raw || ""));
-  return Number.isFinite(parsed) ? parsed : 0;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw > 1_000_000_000_000 ? Math.floor(raw) : 0;
+  }
+  if (raw === undefined || raw === null) return 0;
+  const asNum = Number(raw);
+  if (Number.isFinite(asNum) && asNum > 1_000_000_000_000) {
+    return Math.floor(asNum);
+  }
+  const str = String(raw).trim();
+  if (!str) return 0;
+  const parsedIso = Date.parse(str);
+  if (Number.isFinite(parsedIso) && parsedIso > 1_000_000_000_000) {
+    return parsedIso;
+  }
+  const parsedKst = parseKstLocalTimestampToMs(str);
+  return Number.isFinite(parsedKst) && parsedKst > 1_000_000_000_000 ? parsedKst : 0;
 }
 
 /** 정산 리셋 이후 구 탭·다른 PC가 실어낸 후원(at < reset) 제거 */
