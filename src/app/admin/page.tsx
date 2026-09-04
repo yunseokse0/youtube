@@ -1303,6 +1303,8 @@ function AdminPageInner() {
   const [sigSalesMenuCount, setSigSalesMenuCount] = useState("10");
   const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
   const [hsPreviewIframeKey, setHsPreviewIframeKey] = useState(0);
+  /** 정산 리셋·멤버 대규모 변경 시 모든 preset 미리보기 iframe 을 한번에 remount — stale 캐시 방지 */
+  const [globalPreviewBump, setGlobalPreviewBump] = useState(0);
   const hsSnapshotHealBusyRef = useRef(false);
   const hsSnapshotHealSigRef = useRef("");
   /** 상류사회 1인 시작 cm — 입력 중 25 클램프에 막히지 않게 초안 문자열 유지 */
@@ -1331,6 +1333,7 @@ function AdminPageInner() {
   } | null>(null);
   const actionConfirmRef = useRef<null | (() => void)>(null);
   const resetInProgressRef = useRef(false);
+  const onFetchLatestFromServerRef = useRef<() => Promise<void>>(async () => {});
   /** 정산 리셋 직후 GET/SSE·서버가져오기가 구 후원을 되살리지 않게 (성공 시 90초) */
   const SETTLEMENT_RESET_PROTECT_MS = 90_000;
   const settlementResetUntilRef = useRef(0);
@@ -9151,7 +9154,11 @@ function AdminPageInner() {
   };
 
   const commitSettlementReset = useCallback(
-    async (mode: "keep" | "init", memberSlotCount?: number, confirmPhrase?: string) => {
+    async (
+      mode: "keep" | "init",
+      memberSlotCount?: number,
+      confirmPhrase?: string
+    ) => {
       if (resetInProgressRef.current) return;
       resetInProgressRef.current = true;
       const previousState = stateRef.current;
@@ -9306,6 +9313,16 @@ function AdminPageInner() {
             : prev
         );
         void refreshStorageHealth();
+        /** 정산 리셋 직후 즉시 적용 3중 트리거: (1) 서버 state 강제 re-fetch로 서버 저장본이 진짜 비워졌는지 확인 (2) 모든 preset 미리보기 iframe remount (3) 상류사회·후원순위 상세 preview도 remount */
+        try {
+          await onFetchLatestFromServerRef.current();
+        } catch {}
+        setGlobalPreviewBump((k) => k + 1);
+        setDonorRankingsPreviewIframeKey((k) => k + 1);
+        setHsPreviewIframeKey((k) => k + 1);
+        setSigMatchPreviewIframeKey((k) => k + 1);
+        setMealMatchPreviewIframeKey((k) => k + 1);
+        setObsTextPreviewIframeKey((k) => k + 1);
         showAppToast("정산 리셋 완료 · 서버 후원·금액이 비워졌습니다", {
           variant: "success",
           durationMs: 4200,
@@ -9513,6 +9530,7 @@ function AdminPageInner() {
     applySyncStatusAfterStateFetch(toApply, meta);
     void refreshStorageHealth();
   };
+  onFetchLatestFromServerRef.current = onFetchLatestFromServer;
   const runPullRefresh = async () => {
     if (pullRefreshing) return;
     setPullRefreshing(true);
@@ -20044,7 +20062,7 @@ function AdminPageInner() {
                                 )}
                               </div>
                             ) : (
-                              <ClientPreviewWrapper preset={p} buildUrl={buildStablePreviewUrl} />
+                              <ClientPreviewWrapper preset={p} buildUrl={buildStablePreviewUrl} previewBump={globalPreviewBump} />
                             )}
                           </div>
                         </div>
@@ -20504,16 +20522,16 @@ function AdminPageInner() {
   );
 }
 
-function ClientPreviewWrapper({ preset, buildUrl }: { preset: OverlayPreset; buildUrl: (p: OverlayPreset) => string }) {
+function ClientPreviewWrapper({ preset, buildUrl, previewBump }: { preset: OverlayPreset; buildUrl: (p: OverlayPreset) => string; previewBump?: number }) {
   /** SSR·클라 첫 페인트는 빈 URL — window origin 차이로 React #418/#422 방지 */
   const [url, setUrl] = useState("");
   useEffect(() => {
     setUrl(buildUrl(preset) || "");
   }, [preset, buildUrl]);
-  return <VerticalPreview url={url} presetName={preset.name || preset.id} />;
+  return <VerticalPreview url={url} presetName={preset.name || preset.id} previewBump={previewBump ?? 0} />;
 }
 
-function VerticalPreview({ url, presetName }: { url: string; presetName?: string }) {
+function VerticalPreview({ url, presetName, previewBump = 0 }: { url: string; presetName?: string; previewBump?: number }) {
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
   const [showFrame, setShowFrame] = useState(true);
   const [showGuides, setShowGuides] = useState(true);
@@ -20688,7 +20706,7 @@ function VerticalPreview({ url, presetName }: { url: string; presetName?: string
             <div className="text-sm text-neutral-400">프리뷰 로딩 중...</div>
           </div>
         )}
-        <iframe key={`${previewUrl}-${iframeKey}`} src={previewUrl} title="vertical-preview" className="absolute inset-0 w-full h-full" style={{ background: "transparent" }} scrolling="no" onLoad={onLoad} onError={onError} />
+        <iframe key={`${previewUrl}-${iframeKey}-${previewBump}`} src={previewUrl} title="vertical-preview" className="absolute inset-0 w-full h-full" style={{ background: "transparent" }} scrolling="no" onLoad={onLoad} onError={onError} />
         {err && (
           <div className="absolute top-2 right-2 z-[10000] px-2 py-1 rounded bg-rose-700 text-white text-xs">
             {err}
