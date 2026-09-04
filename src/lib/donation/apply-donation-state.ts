@@ -58,6 +58,7 @@ export function donorRowDedupeKey(donor: {
   name?: string;
   amount?: number;
   at?: number | string;
+  message?: string;
   externalId?: string;
   rawHash?: string | number;
   groupSplit?: boolean;
@@ -114,11 +115,17 @@ export function donorRowDedupeKey(donor: {
    * ★ 3연속 후원 weak fallback path 최후 보루:
    *  externalId·rawHash 둘 다 비어있고 donor.name·amount·at 이 3건 모두 동일해도,
    *  원본 rawId 문자열 자체가 다르면 (서로 다른 후원이므로) 반드시 다른 key를 반환해야 pass1 에서 1건으로 병합되는 사태 방지.
-   *  rawId 마저 비었다면 raw event 전체를 JSON.stringify → hash 6자 suffix 삽입으로 "절대 동일 key 안나오게" 강제.
+   *  🔴 절대 Math.random() 사용 금지: 동일 donor 객체를 재호출 할 때 마다 key가 바뀌어서 동일 후원 1건이 N건으로 쌓여 총합 부풀려지는 "증가 버그" 유발.
+   *  rawId 있으면 rawId hash 6자 고정 → rawId 없을 때만 name|at|amount 전체를 hash seed로 써서 항상 결정적 key 유지
    */
-  const lastResortSeed =
-    rawId ||
-    `${name}|${donorAtEpochMs(donor)}|${amount}|${Math.random().toString(36).slice(2, 9)}`;
+  const seedParts: string[] = [name, String(donorAtEpochMs(donor)), String(amount)];
+  if (rawId) {
+    seedParts.push(rawId);
+  } else {
+    const wholeObj = `${name}|${donorAtEpochMs(donor)}|${amount}|${String(donor.message || "")}`;
+    seedParts.push(wholeObj);
+  }
+  const lastResortSeed = seedParts.join("||");
   const lastResortHash = Math.abs(
     Array.from(lastResortSeed).reduce(
       (acc, ch) => (acc * 257 + ch.charCodeAt(0)) | 0,
