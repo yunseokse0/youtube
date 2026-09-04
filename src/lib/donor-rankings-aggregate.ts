@@ -59,8 +59,10 @@ export function buildDonorTotalsByNameFromDonors(
   const map = new Map<string, DonorTotalsByNameRow>();
   for (const d of dedupeDonorRows(donors)) {
     if (isDonorExcludedFromDonationTotals(d as { donationExcluded?: boolean })) continue;
-    const name = normalizeAnonymousDonorDisplayName(String(d.name || ""));
     const amount = Math.max(0, Math.round(Number(d.amount) || 0));
+    /** 금액 0원 이하 — 실제 후원이 아닌 더미·잔여 쓰레기 row 이므로 집계에서 아예 제외 (count도 증가 X) */
+    if (amount <= 0) continue;
+    const name = normalizeAnonymousDonorDisplayName(String(d.name || ""));
     const prev = map.get(name) || { name, account: 0, toon: 0, total: 0, count: 0 };
     const isToon = normalizeDonorTarget(d) === "toon";
     map.set(name, {

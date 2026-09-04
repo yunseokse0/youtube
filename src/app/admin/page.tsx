@@ -9087,8 +9087,13 @@ function AdminPageInner() {
     return arr.sort((a,b)=> (a.date === b.date ? (a.entry.at < b.entry.at ? 1 : -1) : (a.date < b.date ? 1 : -1)));
   }, [dailyLog]);
   const donorTotalsByName = useMemo(
-    () => buildDonorTotalsByNameFromDonors((state.donors || []) as Array<Record<string, unknown>>),
-    [state.donors]
+    () =>
+      syncStatus === "loading"
+        ? []
+        : buildDonorTotalsByNameFromDonors(
+            (state.donors || []) as Array<Record<string, unknown>>
+          ),
+    [state.donors, syncStatus]
   );
 
   /** 후원 순위 미리보기 iframe — 누적 표와 동일 donors 스냅샷 */
