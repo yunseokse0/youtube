@@ -6,6 +6,7 @@ import {
 } from "@/lib/donation/repair-donor-timestamps";
 import { getMembersForExport } from "@/lib/settlement";
 import { donorAtEpochMs, formatKstDateTime } from "@/lib/state";
+import type { DonorTotalsByNameRow } from "@/lib/donor-rankings-aggregate";
 
 export { buildDailyLogMinAtByDonorId } from "@/lib/donation/repair-donor-timestamps";
 
@@ -510,6 +511,62 @@ export function recordToDonorRankingsXlsxBlob(record: SettlementRecord, donors: 
     const sheetName = sanitizeSheetName(`${m.name} 후원순위`, usedSheetNames);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheetAoA), sheetName);
   }
+
+  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  return new Blob([buf], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+}
+
+/**
+ * Admin 메인 「후원자별 누적 합계」= 전체 후원 순위 CSV/XLSX 내보내기
+ * buildDonorTotalsByNameFromDonors 결과를 그대로 사용 · 순위(rank) 열 포함 + 계좌/투네/총계/건수 컬럼
+ */
+export function globalDonorTotalsByNameToCsv(rows: DonorTotalsByNameRow[]): string {
+  const header = ["순위", "후원자", "계좌 누적", "투네 누적", "총 누적", "건수"].join(",");
+  const body = rows
+    .filter((r) => r.total > 0 || r.count > 0)
+    .map((r, i) =>
+      [i + 1, r.name, r.account, r.toon, r.total, r.count]
+        .map((v) => csvEscape(String(v)))
+        .join(",")
+    );
+  return `\uFEFF${[header, ...body].join("\r\n")}`;
+}
+
+export function globalDonorTotalsByNameToXlsxBlob(rows: DonorTotalsByNameRow[]): Blob {
+  const valid = rows.filter((r) => r.total > 0 || r.count > 0);
+  const wb = XLSX.utils.book_new();
+
+  const unifiedAoA: (string | number)[][] = [
+    ["순위", "후원자", "계좌 누적", "투네 누적", "총 누적", "건수"],
+    ...valid.map((r, i) => [i + 1, r.name, r.account, r.toon, r.total, r.count]),
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(unifiedAoA), "전체후원순위");
+
+  const accountSorted = [...valid].sort((a, b) => b.account - a.account || a.name.localeCompare(b.name, "ko"));
+  const accountAoA: (string | number)[][] = [
+    ["순위", "후원자", "계좌 누적", "투네 누적", "총 누적", "건수"],
+    ...accountSorted.map((r, i) => [i + 1, r.name, r.account, r.toon, r.total, r.count]),
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(accountAoA), "계좌후원순위");
+
+  const toonSorted = [...valid].sort((a, b) => b.toon - a.toon || a.name.localeCompare(b.name, "ko"));
+  const toonAoA: (string | number)[][] = [
+    ["순위", "후원자", "계좌 누적", "투네 누적", "총 누적", "건수"],
+    ...toonSorted.map((r, i) => [i + 1, r.name, r.account, r.toon, r.total, r.count]),
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(toonAoA), "투네후원순위");
+
+  const summaryAoA: (string | number)[][] = [
+    ["통계", "값"],
+    ["총 후원자 수", valid.length],
+    ["총 계좌 후원 합계", valid.reduce((s, r) => s + r.account, 0)],
+    ["총 투네 후원 합계", valid.reduce((s, r) => s + r.toon, 0)],
+    ["총 누적 합계", valid.reduce((s, r) => s + r.total, 0)],
+    ["총 후원 건수", valid.reduce((s, r) => s + r.count, 0)],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryAoA), "집계요약");
 
   const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   return new Blob([buf], {

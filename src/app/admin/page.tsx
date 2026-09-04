@@ -197,6 +197,7 @@ import * as XLSX from "xlsx";
 import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
 import { formatSigMatchStat, formatSigMatchManualAdjustStepLabel, getSigMatchRankings, isOperatingSettlementMember, resolveSigMatchDonationLink, resolveSigMatchManualAdjustSteps } from "@/lib/settlement-utils";
 import { buildDonorTotalsByNameFromDonors } from "@/lib/donor-rankings-aggregate";
+import { globalDonorTotalsByNameToCsv, globalDonorTotalsByNameToXlsxBlob } from "@/lib/settlement-donor-export";
 import { getEffectiveRemainingTime, mergeGeneralTimerPreferEffective, pauseTimer, resumeTimer } from "@/lib/timer-utils";
 import {
   appendAdminPreviewEmbedToOverlayUrl,
@@ -15900,6 +15901,40 @@ function AdminPageInner() {
               className={`${panelCardClass} ${simpleMode ? "hidden" : ""}`}
               defaultOpen={false}
             >
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <div className="text-xs text-neutral-400">
+                  전체 기간 누적 후원 순위 · 제외·익명 통일·중복 제거 적용
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="px-3 py-1.5 rounded bg-violet-800 hover:bg-violet-700 text-xs disabled:opacity-50 whitespace-nowrap"
+                    disabled={donorTotalsByName.length === 0}
+                    onClick={() => {
+                      const blob = globalDonorTotalsByNameToXlsxBlob(donorTotalsByName);
+                      const a = document.createElement("a");
+                      a.href = URL.createObjectURL(blob);
+                      a.download = `전체후원순위-${new Date().toISOString().slice(0, 10)}.xlsx`;
+                      a.click();
+                    }}
+                  >
+                    전체 후원순위(엑셀)
+                  </button>
+                  <button
+                    className="px-3 py-1.5 rounded bg-indigo-900 hover:bg-indigo-800 text-xs disabled:opacity-50 whitespace-nowrap"
+                    disabled={donorTotalsByName.length === 0}
+                    onClick={() => {
+                      const csv = globalDonorTotalsByNameToCsv(donorTotalsByName);
+                      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+                      const a = document.createElement("a");
+                      a.href = URL.createObjectURL(blob);
+                      a.download = `전체후원순위-${new Date().toISOString().slice(0, 10)}.csv`;
+                      a.click();
+                    }}
+                  >
+                    전체 후원순위(CSV)
+                  </button>
+                </div>
+              </div>
               <div className="max-h-[240px] overflow-auto pr-1">
                 <table className="w-full text-sm">
                   <thead>
@@ -20281,6 +20316,29 @@ function AdminPageInner() {
                     a.click();
                   }}
                 >후원자 내보내기(CSV)</button>
+                <button
+                  className="px-3 py-2 rounded bg-violet-800 hover:bg-violet-700 disabled:opacity-50 whitespace-nowrap"
+                  disabled={donorTotalsByName.length === 0}
+                  onClick={() => {
+                    const blob = globalDonorTotalsByNameToXlsxBlob(donorTotalsByName);
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `전체후원순위-${new Date().toISOString().slice(0, 10)}.xlsx`;
+                    a.click();
+                  }}
+                >전체 후원순위(엑셀)</button>
+                <button
+                  className="px-3 py-2 rounded bg-indigo-900 hover:bg-indigo-800 disabled:opacity-50 whitespace-nowrap"
+                  disabled={donorTotalsByName.length === 0}
+                  onClick={() => {
+                    const csv = globalDonorTotalsByNameToCsv(donorTotalsByName);
+                    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `전체후원순위-${new Date().toISOString().slice(0, 10)}.csv`;
+                    a.click();
+                  }}
+                >전체 후원순위(CSV)</button>
               </div>
               <div className="rounded border border-white/10 bg-neutral-900/60 mt-3 max-h-[220px] overflow-auto">
                 {flatLogs.length === 0 && <div className="p-3 text-sm text-neutral-400">히스토리가 없습니다. 리셋 시 자동 기록되며, [지금 스냅샷 기록]으로 즉시 저장할 수 있습니다.</div>}
