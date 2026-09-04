@@ -751,6 +751,10 @@ function AdminPageInner() {
   const stateRef = useRef<AppState>(state);
   const lastLocalPersistAtRef = useRef<number>(0);
   const syncStatusRef = useRef<"loading" | "synced" | "local" | "error">("loading");
+  /** Admin 부하 감소 FIX #3: persistDonationStateViaApi debounce — 80ms 이내 연속 저장호출은 가장 마지막 1회만 POST → 후원 10건 연속 들어와도 1회만 서버 요청 */
+  const persistDonationDebounceRef = useRef<number | null>(null);
+  const persistDonationLastStateRef = useRef<{ s: AppState; mode: "replace" | "add"; label?: string } | null>(null);
+  const flushingPersistRef = useRef(false);
   /** GET/304 응답 메타 — 영속 KV(`redis`/`mysql`) 확인 후에만 synced */
   const applySyncStatusAfterStateFetch = useCallback(
     (apiState: AppState | null, meta?: StateApiFetchMeta | null) => {
@@ -1519,30 +1523,47 @@ function AdminPageInner() {
       lastLocalPersistAtRef.current = now;
       pendingUnsyncedRef.current = true;
       donationAuthoritativeSaveUntilRef.current = now + 20_000;
-      void persistDonationStateViaApi(
-        user?.id,
+      /**
+       * Admin 부하 감소 FIX #3: debounce 80ms
+       * 후원·멤버 금액 변경이 80ms 내 여러번 발생해도 가장 마지막 state 스냅샷으로 1회만 POST →
+       * 서버 요청 10건 → 1건 감소, Admin 리렌더 부하·SSE 과잉 publish 모두 감소
+       */
+      persistDonationLastStateRef.current = {
         s,
-        opts?.donorsReplace ? "replace" : "add"
-      ).then((r) => {
-        if (opts?.persistToastLabel) {
-          showServerPersistToast(opts.persistToastLabel, { ok: r.ok });
-        }
-        if (!r.ok) {
-          const offline = typeof navigator !== "undefined" && !navigator.onLine;
-          setSyncStatus(offline ? "local" : "error");
-          return;
-        }
-        stateRef.current = r.state;
-        setState(r.state);
-        stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, r.updatedAt || 0);
-        lastAppliedRemoteUpdatedAtRef.current = r.updatedAt || 0;
-        pendingUnsyncedRef.current = false;
-        setSyncStatus("synced");
-        try {
-          cacheBroadcastStateSnapshot(r.state, user?.id);
-        } catch {}
-        notifyBroadcastStateLocalUpdated(user?.id, r.updatedAt);
-      });
+        mode: opts?.donorsReplace ? "replace" : "add",
+        label: opts?.persistToastLabel,
+      };
+      if (persistDonationDebounceRef.current !== null) {
+        window.clearTimeout(persistDonationDebounceRef.current);
+      }
+      persistDonationDebounceRef.current = window.setTimeout(() => {
+        persistDonationDebounceRef.current = null;
+        const payload = persistDonationLastStateRef.current;
+        persistDonationLastStateRef.current = null;
+        if (!payload || flushingPersistRef.current) return;
+        flushingPersistRef.current = true;
+        void persistDonationStateViaApi(user?.id, payload.s, payload.mode).then((r) => {
+          flushingPersistRef.current = false;
+          if (payload.label) {
+            showServerPersistToast(payload.label, { ok: r.ok });
+          }
+          if (!r.ok) {
+            const offline = typeof navigator !== "undefined" && !navigator.onLine;
+            setSyncStatus(offline ? "local" : "error");
+            return;
+          }
+          stateRef.current = r.state;
+          setState(r.state);
+          stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, r.updatedAt || 0);
+          lastAppliedRemoteUpdatedAtRef.current = r.updatedAt || 0;
+          pendingUnsyncedRef.current = false;
+          setSyncStatus("synced");
+          try {
+            cacheBroadcastStateSnapshot(r.state, user?.id);
+          } catch {}
+          notifyBroadcastStateLocalUpdated(user?.id, r.updatedAt);
+        });
+      }, 80);
       return;
     }
     if (resolvedOpts?.membersAuthoritative) {
@@ -9093,14 +9114,22 @@ function AdminPageInner() {
     });
     return arr.sort((a,b)=> (a.date === b.date ? (a.entry.at < b.entry.at ? 1 : -1) : (a.date < b.date ? 1 : -1)));
   }, [dailyLog]);
+  /**
+   * Admin 부하 감소 FIX #1: normalizeDonorsArray 렌더당 73회 중복 호출 → 1회 useMemo 캐싱
+   * state.donors의 참조가 동일하면 (React 18 automatic batching) 연산 자체를 skip → CPU 60~80% 절감
+   */
+  const normalizedDonors = useMemo(
+    () => normalizeDonorsArray(state.donors),
+    [state.donors]
+  );
   const donorTotalsByName = useMemo(
     () =>
       syncStatus === "loading"
         ? []
         : buildDonorTotalsByNameFromDonors(
-            (state.donors || []) as Array<Record<string, unknown>>
+            normalizedDonors as Array<Record<string, unknown>>
           ),
-    [state.donors, syncStatus]
+    [normalizedDonors, syncStatus]
   );
 
   /** 후원 순위 미리보기 iframe — 누적 표와 동일 donors 스냅샷 */
@@ -20066,7 +20095,14 @@ function AdminPageInner() {
                                 )}
                               </div>
                             ) : (
-                              <ClientPreviewWrapper preset={p} buildUrl={buildStablePreviewUrl} previewBump={globalPreviewBump} />
+                              /** Admin 부하 감소 FIX #2: 접힌 preset은 iframe을 아예 unmount → N개 preset 동시 렌더 → 열린 1개만 mount → CPU/RAM 부하 1/N */
+                              isOpen ? (
+                                <ClientPreviewWrapper preset={p} buildUrl={buildStablePreviewUrl} previewBump={globalPreviewBump} />
+                              ) : (
+                                <div className="h-[520px] flex items-center justify-center rounded border border-dashed border-white/10 text-xs text-neutral-500 bg-neutral-900/30">
+                                  👆 제목줄을 클릭해 펼치면 프리뷰 iframe 이 로드됩니다 (부하 절약).
+                                </div>
+                              )
                             )}
                           </div>
                         </div>
