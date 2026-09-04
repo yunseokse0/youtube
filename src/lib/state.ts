@@ -4881,6 +4881,102 @@ export function todaysDateKey(d = new Date()): string {
   return broadcastDateKey(d);
 }
 
+const KST_TZ = "Asia/Seoul";
+
+/**
+ * 한국 현지 시각 문자열 (DIN/투네 허브 로그 용) 을 절대적 epoch ms 로 파싱.
+ *
+ * 지원 포맷 (시간대 정보 없는 로컬 KST 문자열 전부):
+ *   "2026. 09. 02. 24:59:34" — 점 구분 + 공백 + 24시 표기 (자정 넘김)
+ *   "2026-09-02 01:21:06" — 하이픈 구분
+ *   "2026/09/02T01:21:06" — ISO-ish 구분자
+ *   "2026년 09월 02일 01시 21분 06초" — 한글 구분자
+ *
+ * 24시 이상 시간 처리: "24:59" → 다음날 "00:59", "25:30" → 2일 후 "01:30"
+ *
+ * 이미 타임존 오프셋이 포함된 ISO 문자열 ("...Z" / "...+09:00") 은 그대로 Date.parse 로 위임.
+ * 파싱 실패시 NaN 반환 → caller 에서 Date.now() 등 fallback 처리.
+ */
+export function parseKstLocalTimestampToMs(input: unknown): number {
+  if (input instanceof Date) {
+    const t = input.getTime();
+    return Number.isFinite(t) ? t : NaN;
+  }
+  if (typeof input === "number") {
+    return Number.isFinite(input) && input > 1_000_000_000_000 ? input : NaN;
+  }
+  const raw = String(input || "").trim();
+  if (!raw) return NaN;
+  if (/[Zz]$|[+\-]\d{2}:?\d{2}$/.test(raw)) {
+    const t = Date.parse(raw);
+    return Number.isFinite(t) ? t : NaN;
+  }
+  const m = raw.match(
+    /(\d{4})\D+(\d{1,2})\D+(\d{1,2})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2}))?/
+  );
+  if (!m) {
+    const t = Date.parse(raw);
+    return Number.isFinite(t) ? t : NaN;
+  }
+  let year = Number(m[1]);
+  let month = Number(m[2]) - 1;
+  let day = Number(m[3]);
+  let hours = Number(m[4]);
+  const minutes = Number(m[5]);
+  const seconds = m[6] !== undefined ? Number(m[6]) : 0;
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hours) ||
+    !Number.isFinite(minutes) ||
+    !Number.isFinite(seconds)
+  ) {
+    return NaN;
+  }
+  if (hours >= 24) {
+    const extraDays = Math.floor(hours / 24);
+    hours = hours % 24;
+    day += extraDays;
+  }
+  const utcYear = year;
+  const utcMonth = month;
+  const utcDay = day;
+  const utcHour = hours - 9;
+  const t = Date.UTC(utcYear, utcMonth, utcDay, utcHour, minutes, seconds, 0);
+  return Number.isFinite(t) ? t : NaN;
+}
+
+/**
+ * epoch ms / Date / ISO string → "YYYY-MM-DD HH:mm:ss" **한국 시각(KST) 고정** 출력.
+ * EC2 서버 process TZ 가 UTC 여도 항상 KST 기준 동일 출력 보장 (formatExportDateTime 용)
+ */
+export function formatKstDateTime(at: number | string | Date): string {
+  const d = at instanceof Date ? at : new Date(at);
+  const t = d.getTime();
+  if (!Number.isFinite(t)) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: KST_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const pick = (t: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === t)?.value ?? "";
+  const y = pick("year");
+  const mo = pick("month");
+  const da = pick("day");
+  const hh = pick("hour");
+  const mi = pick("minute");
+  const se = pick("second");
+  if (!y || !mo || !da || !hh || !mi || !se) return "";
+  return `${y}-${mo}-${da} ${hh}:${mi}:${se}`;
+}
+
 export function appendDailyLog(snapshot: AppState, userId?: string | null) {
   if (typeof window === "undefined") return;
   try {

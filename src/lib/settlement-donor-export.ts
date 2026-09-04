@@ -5,6 +5,7 @@ import {
   type RepairDonorTimestampsOptions,
 } from "@/lib/donation/repair-donor-timestamps";
 import { getMembersForExport } from "@/lib/settlement";
+import { formatKstDateTime, parseKstLocalTimestampToMs } from "@/lib/state";
 
 export { buildDailyLogMinAtByDonorId } from "@/lib/donation/repair-donor-timestamps";
 
@@ -61,17 +62,9 @@ function csvEscape(v: string | number): string {
   return `"${String(v).replace(/"/g, '""')}"`;
 }
 
-/** 엑셀/CSV용 시각 — 로컬 시각, Z(UTC 표시) 없음 */
+/** 엑셀/CSV용 시각 — **한국 시각(KST) 고정**, Z(UTC 표시) 없음, EC2 TZ=UTC 에서도 KST 출력 보장 */
 export function formatExportDateTime(at: number | string | Date): string {
-  const d = at instanceof Date ? at : new Date(at);
-  if (!Number.isFinite(d.getTime())) return "";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  const ss = String(d.getSeconds()).padStart(2, "0");
-  return `${y}-${m}-${day} ${hh}:${mm}:${ss}`;
+  return formatKstDateTime(at);
 }
 
 function memberMaps(record: SettlementRecord) {
@@ -87,9 +80,11 @@ function memberMaps(record: SettlementRecord) {
 function donorAtEpochMs(donor: { at?: number | string }): number {
   const raw = donor.at;
   if (typeof raw === "number" && Number.isFinite(raw)) return Math.floor(raw);
-  if (Number.isFinite(Number(raw))) return Math.floor(Number(raw));
-  const parsed = Date.parse(String(raw || ""));
-  return Number.isFinite(parsed) ? parsed : 0;
+  if (Number.isFinite(Number(raw)) && Number(raw) > 1_000_000_000_000) return Math.floor(Number(raw));
+  const parsedIso = Date.parse(String(raw || ""));
+  if (Number.isFinite(parsedIso) && parsedIso > 1_000_000_000_000) return parsedIso;
+  const parsedKst = parseKstLocalTimestampToMs(raw);
+  return Number.isFinite(parsedKst) && parsedKst > 1_000_000_000_000 ? parsedKst : 0;
 }
 
 export type RepairSettlementDonorTimestampsOptions = RepairDonorTimestampsOptions;

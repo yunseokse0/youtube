@@ -1,4 +1,5 @@
 import { normalizeContributionFormula } from "@/lib/contribution-formula";
+import { parseKstLocalTimestampToMs } from "@/lib/state";
 import type { DonationEvent } from "@/lib/donation/types";
 
 export type ToonaHubDonationApiRow = {
@@ -21,8 +22,9 @@ export function toonaHubDonationToEvent(
   row: ToonaHubDonationApiRow,
   linkedAt: number
 ): DonationEvent | null {
-  const atMs = row.createdAt ? new Date(row.createdAt).getTime() : Date.now();
-  if (!Number.isFinite(atMs) || atMs < linkedAt - 5_000) return null;
+  let atMs = parseKstLocalTimestampToMs(row.createdAt);
+  if (!Number.isFinite(atMs) || atMs <= 0) atMs = Date.now();
+  if (atMs < linkedAt - 5_000) return null;
   const externalId = String(row.id || "").trim();
   if (!externalId) return null;
   const donorName =
