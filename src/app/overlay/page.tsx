@@ -230,9 +230,10 @@ function migrateLegacyOverlayLastGood(userId?: string): AppState | null {
 }
 
 function useRemoteState(userId?: string, enabled = true): { state: AppState | null; ready: boolean } {
-  /** OBS/Prism·타이머 단독 URL — CEF LS·last-good 옛 설정으로 서버와 무관한 값이 나오지 않게 서버 우선 */
+  /** OBS/Prism·일반 URL 공통 — localStorage 옛 stale 스냅샷이 강제 새로고침시 1~2초간 먼저 노출되는 flash 원천 봉쇄 — 기본 서버 우선 + 폴백은 fetch 실패시 restoreLastGood 으로만 처리 */
   const preferServerOnly =
-    typeof window !== "undefined" && isOverlayServerAuthoritativeUrl();
+    typeof window !== "undefined" &&
+    (isOverlayServerAuthoritativeUrl() || true);
   const preferServerOnlyRef = useRef(preferServerOnly);
   preferServerOnlyRef.current = preferServerOnly;
 
