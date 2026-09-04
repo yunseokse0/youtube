@@ -2853,8 +2853,12 @@ export async function saveStateAsync(
     const nextDonors = normalizeDonorsArray(guarded.donors);
     const skipShrinkUnion =
       Boolean(saveOpts?.donorsReplace) || isGroupSplitDonorListMutation(nextDonors);
+    const incomingResetAt = Number((guarded as { settlementResetAt?: number }).settlementResetAt || 0);
+    const existingResetAt = Number((local as { settlementResetAt?: number }).settlementResetAt || 0);
+    const isIntentionalResetShrink = incomingResetAt > existingResetAt;
     if (
       !skipShrinkUnion &&
+      !isIntentionalResetShrink &&
       localDonors.length > 0 &&
       (nextDonors.length < localDonors.length || wouldShrinkDonationData(local, guarded))
     ) {
@@ -3038,13 +3042,18 @@ export async function saveStateAsync(
     const rosterAt = Number(guarded.updatedAt || Date.now());
     guarded = { ...guarded, membersRosterUpdatedAt: rosterAt };
   }
-  /** 후원이 여전히 비거나 줄어든 채 전체 POST 되면 API에서 후원 필드 제외 (서버 기존값 유지) */
+  /** 후원이 여전히 비거나 줄어든 채 전체 POST 되면 API에서 후원 필드 제외 (서버 기존값 유지)
+   *  단, incoming 의 settlementResetAt 이 로컬보다 최신이면 정산 리셋 의도 → omit 하지 않고 0원 그대로 서버에 저장 */
+  const incomingResetAt = Number((guarded as { settlementResetAt?: number }).settlementResetAt || 0);
+  const localResetAtSave = Number((local as { settlementResetAt?: number } | null)?.settlementResetAt || 0);
+  const isIntentionalResetShrink = incomingResetAt > localResetAtSave;
   const omitDonations =
-    Boolean(saveOpts?.omitDonationFields) ||
-    (!saveOpts?.settlementReset &&
-      !saveOpts?.donorsAuthoritative &&
-      local != null &&
-      wouldShrinkDonationData(local, guarded));
+    !isIntentionalResetShrink &&
+    (Boolean(saveOpts?.omitDonationFields) ||
+      (!saveOpts?.settlementReset &&
+        !saveOpts?.donorsAuthoritative &&
+        local != null &&
+        wouldShrinkDonationData(local, guarded)));
   const apiOpts: SaveStateAsyncOptions = {
     ...saveOpts,
     ...(omitDonations ? { omitDonationFields: true } : {}),
@@ -3230,8 +3239,13 @@ export async function saveVisualSettingsPatchAsync(
         : foundation || local || defaultState();
   const localDonors = normalizeDonorsArray(local?.donors);
   const foundationDonors = normalizeDonorsArray(foundation?.donors);
+  const incomingResetAtPreset = Number((foundation as { settlementResetAt?: number } | null)?.settlementResetAt || 0);
+  const existingResetAtPreset = Number((local as { settlementResetAt?: number } | null)?.settlementResetAt || 0);
+  const resetIntentionalShrink = incomingResetAtPreset > existingResetAtPreset;
   const preservedDonors =
-    localDonors.length === 0
+    resetIntentionalShrink
+      ? foundationDonors
+      : localDonors.length === 0
       ? foundationDonors
       : foundationDonors.length === 0
         ? localDonors
@@ -3780,10 +3794,15 @@ async function doLoadStateFromApi(
         data.memberPositionMode = base.memberPositionMode;
         data.rankPositionLabels = base.rankPositionLabels;
       }
-      /** pick 응답 donors 가 비었는데 로컬·베이스에 후원이 있으면 유지 (폴링·OBS 깜빡임·0원 초기화 방지) */
+      /** pick 응답 donors 가 비었는데 로컬·베이스에 후원이 있으면 유지 (폴링·OBS 깜빡임·0원 초기화 방지)
+       *  단, incoming 의 settlementResetAt 이 베이스보다 최신일 경우: 정산 리셋 의도이므로 베이스 과거 후원 되살리지 않음 */
       const patchDonors = normalizeDonorsArray(data.donors);
       const baseDonors = normalizeDonorsArray(base.donors);
+      const incomingResetAt = Number((data as { settlementResetAt?: number }).settlementResetAt || 0);
+      const baseResetAt = Number((base as { settlementResetAt?: number }).settlementResetAt || 0);
+      const skipResetHeal = incomingResetAt > baseResetAt;
       if (
+        !skipResetHeal &&
         baseDonors.length > 0 &&
         (patchDonors.length === 0 || wouldShrinkDonationData(base, data as AppState))
       ) {
@@ -4830,12 +4849,17 @@ export function shouldAvoidOverwritingLocalStateWithRemote(
   return wouldShrinkDonationData(existing, incoming);
 }
 
-/** 후원 건수·합계가 줄어드는지 (명시적 리셋 없이 덮어쓰면 안 되는 경우) */
+/** 후원 건수·합계가 줄어드는지 (명시적 리셋 없이 덮어쓰면 안 되는 경우)
+ *  settlementResetAt 이 incoming 이 더 최신일 경우: 정산 리셋으로 의도적인 축소이므로 shrink=false (과거 후원 되살리지 않음) */
 export function wouldShrinkDonationData(
   existing: AppState | null | undefined,
   incoming: AppState | null | undefined
 ): boolean {
   if (!existing || !incoming) return false;
+  const incomingResetAt = Number((incoming as { settlementResetAt?: number }).settlementResetAt || 0);
+  const existingResetAt = Number((existing as { settlementResetAt?: number }).settlementResetAt || 0);
+  if (incomingResetAt > existingResetAt) return false;
+
   const existingDonors = normalizeDonorsArray(existing.donors);
   const incomingDonors = normalizeDonorsArray(incoming.donors);
   const existingTotal = totalCombined(existing);
