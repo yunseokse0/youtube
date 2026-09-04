@@ -110,7 +110,25 @@ export function donorRowDedupeKey(donor: {
     const fallbackHash = Math.abs(Array.from(rawFallbackExt).reduce((acc, ch) => (acc * 131 + ch.charCodeAt(0)) | 0, 0xdeadbeef)).toString(36).padStart(6, "0").slice(-5);
     return `fallback:${name}|${donorAtEpochMs(donor)}|${amount}|${fallbackHash}`;
   }
-  return `fallback:${name}|${donorAtEpochMs(donor)}|${amount}`;
+  /**
+   * ★ 3연속 후원 weak fallback path 최후 보루:
+   *  externalId·rawHash 둘 다 비어있고 donor.name·amount·at 이 3건 모두 동일해도,
+   *  원본 rawId 문자열 자체가 다르면 (서로 다른 후원이므로) 반드시 다른 key를 반환해야 pass1 에서 1건으로 병합되는 사태 방지.
+   *  rawId 마저 비었다면 raw event 전체를 JSON.stringify → hash 6자 suffix 삽입으로 "절대 동일 key 안나오게" 강제.
+   */
+  const lastResortSeed =
+    rawId ||
+    `${name}|${donorAtEpochMs(donor)}|${amount}|${Math.random().toString(36).slice(2, 9)}`;
+  const lastResortHash = Math.abs(
+    Array.from(lastResortSeed).reduce(
+      (acc, ch) => (acc * 257 + ch.charCodeAt(0)) | 0,
+      0x9e3779b9
+    )
+  )
+    .toString(36)
+    .padStart(6, "0")
+    .slice(-6);
+  return `fallback:${name}|${donorAtEpochMs(donor)}|${amount}|${lastResortHash}`;
 }
 
 /** 후원 합산(멤버·순위·식대전)에서 제외할 행 */
@@ -169,7 +187,20 @@ export function mergeDonorRowFields<
 }
 
 export function dedupeDonorRows<
-  T extends { id?: string; name?: string; amount?: number; at?: number | string; message?: string; target?: string },
+  T extends {
+    id?: string;
+    name?: string;
+    amount?: number;
+    at?: number | string;
+    message?: string;
+    target?: string;
+    externalId?: string;
+    rawHash?: string | number;
+    groupSplit?: boolean;
+    groupSplitSource?: boolean;
+    memberId?: string;
+    donationExcluded?: boolean;
+  },
 >(donors: T[]): T[] {
   const map = new Map<string, T>();
   for (const d of donors) {
@@ -193,12 +224,14 @@ export function dedupeDonorRows<
     for (const d of pass1) {
       const dupIdx = merged.findIndex((prev) =>
         shouldTreatAsDuplicateDonationContent(prev, {
-          id: d.id,
+          ...d,
           donorName: d.name,
-          amount: d.amount,
-          target: d.target,
-          message: d.message,
-          at: d.at,
+          externalId: d.externalId,
+          rawHash: d.rawHash,
+          groupSplit: d.groupSplit,
+          groupSplitSource: d.groupSplitSource,
+          memberId: d.memberId,
+          donationExcluded: d.donationExcluded,
         })
       );
       if (dupIdx < 0) {
@@ -621,14 +654,40 @@ function reliableExtFromIncoming(incoming: {
 
 /** 동일 투네 실 id + 금액 — ingest 경로·시각 skew 로 3초 밖에도 이중 반영될 수 있음 */
 function isSameToonationEventNearDuplicate(
-  existing: { id?: string; amount?: number; at?: number | string },
+  existing: {
+    id?: string;
+    amount?: number;
+    at?: number | string;
+    externalId?: string;
+    rawHash?: string | number;
+    groupSplit?: boolean;
+    groupSplitSource?: boolean;
+    memberId?: string;
+    donationExcluded?: boolean;
+  },
   incoming: {
     id?: string;
     externalId?: string;
     amount?: number;
     at?: string | number;
+    rawHash?: string | number;
+    groupSplit?: boolean;
+    groupSplitSource?: boolean;
+    memberId?: string;
+    donationExcluded?: boolean;
   }
 ): boolean {
+  /**
+   * ★ 3연속 동일금액 weak fallback id 오판 봉쇄:
+   *  양쪽 donor.id 또는 externalId 중 하나라도 weak id (`fp-{ts}-{amount}`, `{ts}-{amount}` 등) 이면,
+   *  "실제 같은 이벤트" 인지 여부를 reliable ext(UUID) 없이 판단하기 불가능하므로 →
+   *  양쪽 id 문자열이 **완전 100% 일치** 할 때만 dedup 허용. (3연속 후원 = 3개의 id 문자열 각기 다름 → dedup 안됨 → 3건 유지)
+   */
+  const existingRaw = String(existing.id || "").trim();
+  const incomingRaw = String(incoming.id || "").trim();
+  if (existingRaw && incomingRaw && (isWeakToonationDonorId(existingRaw) || isWeakToonationDonorId(incomingRaw))) {
+    return existingRaw === incomingRaw;
+  }
   const extA = extractReliableToonationExtFromDonorId(String(existing.id || ""));
   const extB = reliableExtFromIncoming(incoming);
   if (!extA || !extB || extA !== extB) return false;
@@ -745,6 +804,12 @@ export function shouldTreatAsDuplicateDonationContent(
     target?: string;
     message?: string;
     at?: number | string;
+    externalId?: string;
+    rawHash?: string | number;
+    groupSplit?: boolean;
+    groupSplitSource?: boolean;
+    memberId?: string;
+    donationExcluded?: boolean;
   },
   incoming: {
     id?: string;
@@ -755,6 +820,11 @@ export function shouldTreatAsDuplicateDonationContent(
     target?: string;
     message?: string;
     at?: string | number;
+    rawHash?: string | number;
+    groupSplit?: boolean;
+    groupSplitSource?: boolean;
+    memberId?: string;
+    donationExcluded?: boolean;
   }
 ): boolean {
   /**
@@ -763,26 +833,35 @@ export function shouldTreatAsDuplicateDonationContent(
    *  memberId가 서로 다른 파트 donor → 서로 다른 후원 → dedup bypass return false 강제.
    */
   const existingSplit =
-    Boolean((existing as { groupSplit?: boolean }).groupSplit) ||
+    Boolean(existing.groupSplit) ||
     String(existing.id || "").includes(":split:") ||
-    Boolean((existing as { groupSplitSource?: boolean }).groupSplitSource);
+    Boolean(existing.groupSplitSource);
   const incomingSplit =
-    Boolean((incoming as { groupSplit?: boolean }).groupSplit) ||
+    Boolean(incoming.groupSplit) ||
     String(incoming.id || "").includes(":split:") ||
-    Boolean((incoming as { groupSplitSource?: boolean }).groupSplitSource);
+    Boolean(incoming.groupSplitSource);
   if (existingSplit || incomingSplit) {
-    const existingMemId = String((existing as { memberId?: string })?.memberId || "").trim();
-    const incomingMemId = String((incoming as { memberId?: string })?.memberId || "").trim();
+    const existingMemId = String(existing.memberId || "").trim();
+    const incomingMemId = String(incoming.memberId || "").trim();
     if (existingSplit !== incomingSplit) return false;
     if (existingMemId && incomingMemId && existingMemId !== incomingMemId) return false;
     if (
-      Boolean((existing as { groupSplit?: boolean }).groupSplit) !==
-        Boolean((incoming as { groupSplit?: boolean }).groupSplit) ||
-      Boolean((existing as { groupSplitSource?: boolean }).groupSplitSource) !==
-        Boolean((incoming as { groupSplitSource?: boolean }).groupSplitSource)
+      Boolean(existing.groupSplit) !== Boolean(incoming.groupSplit) ||
+      Boolean(existing.groupSplitSource) !== Boolean(incoming.groupSplitSource)
     ) {
       return false;
     }
+  }
+  /**
+   * ★ 3연속 후원 identical-message window 오판 2차 봉쇄:
+   *  양쪽 donor의 id가 weak fallback 인 경우 identical message 120초 윈도우에 갇혀서 3건 drop 되는 것 방지.
+   *  3연속 = donor.name 동일 · message 동일 · at 120초 이내 → weak id 이지만 실제로는 서로 다른 후원 → id 문자열 직접 비교 100% 일치 때만 dedup 허용.
+   */
+  const existingRawId = String(existing.id || "").trim();
+  const incomingRawId = String(incoming.id || "").trim();
+  if (existingRawId && incomingRawId && (isWeakToonationDonorId(existingRawId) || isWeakToonationDonorId(incomingRawId))) {
+    if (existingRawId === incomingRawId) return true;
+    return false;
   }
   if (shouldTreatAsCrossSourceDuplicate(existing, incoming)) return true;
   if (isSameToonationEventNearDuplicate(existing, incoming)) return true;
