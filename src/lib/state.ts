@@ -1653,11 +1653,30 @@ export function parseAmount(input: string | number): number {
 /** donor.id 접두사 (toonation:/bank:) 또는 target 필드 기반으로 최종 target 추론 — target 누락 시 투네가 계좌로 둔갑하는 버그 방지 */
 export function resolveEffectiveDonorTarget(donor: Donor | Record<string, unknown> | null | undefined): "toon" | "account" {
   if (!donor) return "account";
-  const tRaw = (donor as { target?: unknown }).target;
+  const d = donor as {
+    target?: unknown;
+    id?: unknown;
+    provider?: unknown;
+    externalId?: unknown;
+    rawHash?: unknown;
+    donorName?: unknown;
+    name?: unknown;
+  };
+  const tRaw = String(d.target ?? "").trim().toLowerCase();
+  /** ★ raw target 직접 우선순위: toon 관련 문자열 6종을 "toon" 계열로 분류 */
+  if (["toon", "toonation", "tunat", "tuna", "투네", "튜나"].includes(tRaw)) return "toon";
   if (tRaw === "toon") return "toon";
+  if (["account", "bank", "계좌", "은행"].includes(tRaw)) return "account";
   if (tRaw === "account") return "account";
-  const id = String((donor as { id?: unknown }).id ?? "").trim();
+  /** provider 필드 명시적 = toonation 이면 100% 투네 (B·DIN 허브 풀링 donor 제공 provider 필드) */
+  const provider = String(d.provider ?? "").trim().toLowerCase();
+  if (["toonation", "toona", "tuna", "tunat"].includes(provider)) return "toon";
+  /** externalId reliable UUID 존재 = 투네 실제 후원 (DIN 허브 9.4 body.id UUID) */
+  const ext = String(d.externalId ?? d.rawHash ?? "").trim();
+  if (ext && /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(ext)) return "toon";
+  const id = String(d.id ?? "").trim();
   if (id.startsWith("toonation:")) return "toon";
+  /** 🔴 bank:din: 접두사 라도 위에서 투네 증거 3가지 중 하나라도 맞으면 투네로 분류. 접두사만 보고 무조건 계좌 둔갑 버그 방지 (B·DIN 허브 풀링 경로 전용 FIX) */
   if (id.startsWith("bank:") || id.startsWith("account:")) return "account";
   return "account";
 }
@@ -1669,12 +1688,25 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
     .filter((x): x is Record<string, unknown> => Boolean(x && typeof x === "object"))
     .map((x) => {
       const idRaw = String(x.id ?? "").trim();
-      const targetRaw = x.target;
+      const targetRaw = String(x.target ?? "").trim().toLowerCase();
+      const providerRaw = String((x as { provider?: unknown }).provider ?? "").trim().toLowerCase();
+      const extRaw = String((x as { externalId?: unknown; rawHash?: unknown }).externalId ?? (x as { rawHash?: unknown }).rawHash ?? "").trim();
+      const hasUuidExt = extRaw && /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(extRaw);
       let target: DonorTarget | undefined =
         targetRaw === "toon" ? "toon" : targetRaw === "account" ? "account" : undefined;
       if (!target) {
-        if (idRaw.startsWith("toonation:")) target = "toon";
-        else if (idRaw.startsWith("bank:") || idRaw.startsWith("account:")) target = "account";
+        /** normalize raw: raw target/proveider/externalId 3가지 증거로 toon 여부 우선 판단 (35780e4 + d2a6cf2 후속 보강) */
+        if (
+          ["toon", "toonation", "tunat", "tuna", "투네", "튜나"].includes(targetRaw) ||
+          ["toonation", "toona", "tuna", "tunat"].includes(providerRaw) ||
+          hasUuidExt
+        ) {
+          target = "toon";
+        } else if (idRaw.startsWith("toonation:")) {
+          target = "toon";
+        } else if (idRaw.startsWith("bank:") || idRaw.startsWith("account:")) {
+          target = "account";
+        }
       }
       const row: Donor = {
         id: idRaw || `d_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,

@@ -17,12 +17,13 @@ export const SAME_TOONATION_EVENT_NEAR_DUP_MS = 15_000;
 
 /**
  * toona(DIN) bank:sms ingest ↔ youtube 투네 WS 이중 반영 창.
- * 경로 지연이 수십 초~2분인 경우가 많아 3초 창으로는 막히지 않음.
+ * 🔴 원래 180초(3분) 였으나 B·DIN 허브 풀링 4건×1만원 4초 간격 연속후원이 2건 씩 짝지어 merge 되는 drop 버그 유발 → 30초로 축소.
+ * 실제 경로 지연은 보통 2~15초 내외 이므로 30초로도 진짜 중복 반영은 충분히 잡음.
  */
-export const CROSS_SOURCE_NEAR_DUP_MS = 180_000;
+export const CROSS_SOURCE_NEAR_DUP_MS = 30_000;
 
 /** 동일 bank:sms 재전송(푸시 연타) — id만 다른 동일 후원 */
-export const BANK_RESEND_NEAR_DUP_MS = 60_000;
+export const BANK_RESEND_NEAR_DUP_MS = 30_000;
 
 /** 후원자·금액·대상·메시지 기준 내용 키 (건별 unique id 와 무관) */
 export function donationContentDedupeFingerprint(event: {
