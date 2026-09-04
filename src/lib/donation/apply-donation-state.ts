@@ -68,7 +68,7 @@ export function donorRowDedupeKey(donor: {
   const rawId = String(donor.id || "").trim();
   const baseId = normalizeDonationEventId(rawId);
   const isSplitPart = Boolean(donor.groupSplit) || baseId.includes(":split:");
-  const isSplitSource = Boolean(donor.groupSplitSource) || donor.donationExcluded === true;
+  const isSplitSource = Boolean(donor.groupSplitSource);
   /**
    * ★ 단체짠 나누기 스플릿 파트 donor·소스 donor dedup bypass guard:
    *  groupSplit 파트 donor 는 `{sourceId}:split:{memberId}`를 키 맨 앞에 강제 삽입 →
@@ -765,7 +765,6 @@ export function shouldTreatAsDuplicateDonationContent(
   const existingSplit =
     Boolean((existing as { groupSplit?: boolean }).groupSplit) ||
     String(existing.id || "").includes(":split:") ||
-    Boolean((existing as { donationExcluded?: boolean }).donationExcluded) ||
     Boolean((existing as { groupSplitSource?: boolean }).groupSplitSource);
   const incomingSplit =
     Boolean((incoming as { groupSplit?: boolean }).groupSplit) ||
