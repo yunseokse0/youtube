@@ -2140,7 +2140,7 @@ export function startCmFromField(fieldCm: number, seatCount: number): number {
  * 전장·1인 시작 cm 계산용 좌석 수.
  * - seatMemberIds 가 있으면 실제 명수(1명 포함) 그대로
  * - actualSeatCount 가 있으면 해석된 좌석(유령 id 제외) 우선
- * - 자동(빈 배열)이면 actualSeatCount 또는 기본 4, 최소 2
+ * - 자동(빈 배열)이면 actualSeatCount 또는 기본 4, 1명 이상이면 실제 명수 존중
  */
 export function resolveHighSocietySeatCountForField(
   settings: Pick<HighSocietySettings, "seatMemberIds" | "seatMemberIdsManual">,
@@ -2158,7 +2158,7 @@ export function resolveHighSocietySeatCountForField(
     return Math.max(1, Math.min(HIGH_SOCIETY_MAX_SEATS, explicit.length));
   }
   if (actual >= 1) {
-    return Math.max(2, Math.min(HIGH_SOCIETY_MAX_SEATS, actual));
+    return Math.max(1, Math.min(HIGH_SOCIETY_MAX_SEATS, actual));
   }
   return 4;
 }
