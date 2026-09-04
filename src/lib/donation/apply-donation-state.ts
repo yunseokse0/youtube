@@ -156,6 +156,7 @@ export function mergeDonorRowFields<
     externalId?: string;
     rawHash?: string | number;
     id?: string;
+    provider?: string;
     donationExcluded?: boolean;
     hsTerritoryExcluded?: boolean;
     groupSplit?: boolean;
@@ -165,74 +166,35 @@ export function mergeDonorRowFields<
 >(preferred: T, fallback?: T | null): T {
   if (!fallback) return preferred;
   /**
-   * ★ donor `name` intelligent merge:
-   *  - 길이가 더 길고 실제 이름처럼 보이는 donor name을 우선 유지.
-   *  - 빈 문자열 · 일반 단어 "후원" · "익명" 등은 낮은 점수 → 실제 닉네임 "박자키" 에게 밀림.
-   *  - bank 측 fallback donor 기본 이름 "후원" 으로 실제 투네 donor name=박자키 를 덮어쓰는 버그 방지.
+   * ★ 근본 뿌리 FIX: donor 병합 시 어느 쪽 name/target을 쓸지 결정 → donorInferSourceKind 신뢰도 순위로 결정.
+   *   - toonation 경로 donor = 실제 투네 후원 = 정확한 donorName (박자키) + target=투네 를 가지고 있을 확률 100%
+   *   - bank 경로 donor = id 접두사 기반 오판 = 기본 이름 "후원" / target "계좌" 로 퉁쳐져 나올 확률 높음
+   *   => 신뢰도 `toonation > other > bank` 순으로 높은 쪽 donor의 name/target 필드를 그대로 사용.
+   *   두 경로 신뢰도가 같을 때 (둘 다 toonation 또는 둘 다 bank) 만 이름 길이 긴 쪽을 우선 사용.
    */
-  const GENERIC_NAME_TOKENS = new Set(["후원", "익명", "후원자", "기부", "방문자", "guest", "anonymous", ""]);
-  const nameScore = (raw: string | undefined): number => {
-    const n = String(raw || "").trim();
-    if (!n) return -1000;
-    const lower = n.toLowerCase();
-    if (GENERIC_NAME_TOKENS.has(n) || GENERIC_NAME_TOKENS.has(lower)) return -100;
-    if (/^[가-힣]{2,8}$/.test(n)) return 100 + n.length; // 한글 닉네임 고점수
-    if (/^[a-zA-Z0-9가-힣]{2,20}$/.test(n)) return 50 + n.length;
-    return Math.max(-10, n.length - 20);
-  };
-  const prefName = String(preferred.name || preferred.donorName || "").trim();
-  const fallName = String(fallback.name || fallback.donorName || "").trim();
-  let mergedName: string | undefined = prefName || fallName || undefined;
-  const scorePref = nameScore(prefName);
-  const scoreFall = nameScore(fallName);
-  if (scoreFall > scorePref) {
-    mergedName = fallName;
-  } else if (prefName) {
-    mergedName = prefName;
-  } else if (fallName) {
-    mergedName = fallName;
-  }
-  /**
-   * ★ donor `target` intelligent merge:
-   *  - 명시적 target 우선순위: toon / toonation / tunat  >>>  account / bank / 기타 빈 문자열
-   *  - B·DIN 허브 bank:din: id 라고 무조건 target=account 로 덮어쓰는 버그 방지. 실 donor 에게 붙어있는 target=toon 정보 우선 유지.
-   */
-  const TARGET_PRIORITY: Record<string, number> = {
-    toon: 1000,
-    toonation: 950,
-    tunat: 900,
-    tuna: 850,
-    "투네": 800,
-    "튜나": 790,
-    account: 300,
-    bank: 250,
-    "계좌": 200,
-    "은행": 190,
-  };
-  const targetScore = (raw: string | undefined, refId?: string, refExt?: string): number => {
-    const t = String(raw || "").trim().toLowerCase();
-    if (t && TARGET_PRIORITY[t] != null) return TARGET_PRIORITY[t];
-    const id = String(refId || "").toLowerCase();
-    const ext = String(refExt || "").toLowerCase();
-    /** target 누락되어도 id가 toonation:xxx 형식이면 850점 부여 */
-    if (id.startsWith("toonation") || id.startsWith("toona:") || id.startsWith("tuna:")) return 850;
-    if (ext && isReliableToonationExternalId(ext)) return 800;
-    if (id.startsWith("bank:")) return 200;
-    return t ? 50 : 0;
-  };
-  const prefExt = String(preferred.externalId || preferred.rawHash || "");
-  const fallExt = String(fallback.externalId || fallback.rawHash || "");
-  const scorePT = targetScore(preferred.target, preferred.id, prefExt);
-  const scoreFT = targetScore(fallback.target, fallback.id, fallExt);
-  let mergedTarget: string | undefined = preferred.target || fallback.target || undefined;
-  if (scoreFT > scorePT) mergedTarget = fallback.target;
-  else if (scorePT >= 0 && preferred.target) mergedTarget = preferred.target;
+  const KIND_RELIABILITY: Record<string, number> = { toonation: 10, other: 5, bank: 1 };
+  const kindPref = donorInferSourceKind(preferred);
+  const kindFall = donorInferSourceKind(fallback);
+  const relPref = KIND_RELIABILITY[kindPref] || 0;
+  const relFall = KIND_RELIABILITY[kindFall] || 0;
+  const usePrefForMeta =
+    relPref > relFall
+      ? true
+      : relFall > relPref
+        ? false
+        : (String(preferred.name || preferred.donorName || "").length >= String(fallback.name || fallback.donorName || "").length);
+  const bestNameSrc: T = usePrefForMeta ? preferred : fallback;
+  const bestTargetSrc: T = usePrefForMeta ? preferred : fallback;
+  const mergedName = String(bestNameSrc.name || bestNameSrc.donorName || preferred.name || preferred.donorName || fallback.name || fallback.donorName || "").trim() || undefined;
+  const rawPrefTarget = String(preferred.target || "").trim();
+  const rawFallTarget = String(fallback.target || "").trim();
+  const targetPref = rawPrefTarget || bestTargetSrc.target;
+  const mergedTarget = targetPref ? String(targetPref).trim() : (rawFallTarget || undefined);
 
   const msg = String(preferred.message || "").trim();
   const fallbackMsg = String(fallback.message || "").trim();
-  const withMessage =
-    msg || !fallbackMsg ? { ...preferred, name: mergedName ?? preferred.name, target: mergedTarget ?? preferred.target } :
-    { ...preferred, name: mergedName ?? preferred.name, target: mergedTarget ?? preferred.target, message: fallbackMsg };
+  const baseMerge = { ...preferred, name: mergedName ?? preferred.name, target: mergedTarget ?? preferred.target };
+  const withMessage: T = msg || !fallbackMsg ? baseMerge : { ...baseMerge, message: fallbackMsg };
   const withPush =
     withMessage.hsPushDir || !fallback.hsPushDir
       ? withMessage
@@ -807,19 +769,75 @@ function resolveNearDupWindowMs(
   return DONATION_NEAR_DUP_WINDOW_MS;
 }
 
-function donorIdSourceKind(id: string): "bank" | "toonation" | "other" {
-  const s = String(id || "").trim().toLowerCase();
-  if (s.startsWith("bank:")) return "bank";
-  if (s.startsWith("toonation:") || s.startsWith("toona:")) return "toonation";
+/**
+ * ★ 근본 뿌리 FIX: donor가 어느 경로(tuna/bank/기타)에서 왔는지 추론 함수.
+ *   기존 donorIdSourceKind(id) 처럼 id 접두사만 보고 판단하면 → B·DIN 허브 풀링 경로에서
+ *   실제로는 provider=toonation / externalId=UUID 인 donor가 id=bank:din:xxx 접두사 때문에
+ *   무조건 "bank" 로 오분류 → shouldTreatAsCrossSourceDuplicate에서 투네 실시간 ingest와
+ *   bank↔toonation CROSS PAIR로 오판 → 4건 2건씩 merge drop + 계좌 둔갑 + 가짜이름 "후원" 덮어씌기 버그 전부 유발.
+ *
+ *   판단 우선순위 (확실한 증거부터 위에 둠):
+ *   1. target: toon/toonation/tunat/tuna/투네/튜나  → toonation (1순위: 유저가 명시적으로 붙인 target)
+ *   2. provider: toonation/toona/tuna/tunat → toonation (DIN 허브 풀링이 붙여주는 필드)
+ *   3. externalId/rawHash: UUID 형식이면 100% toonation (DIN 허브 9.4 body.id UUID)
+ *   4. id 접두사 toonation:/toona:/tuna: → toonation
+ *   5. id 접두사 bank:/account: → bank
+ *   6. 그 외: other
+ */
+function donorInferSourceKind(
+  d:
+    | {
+        id?: unknown;
+        target?: unknown;
+        provider?: unknown;
+        externalId?: unknown;
+        rawHash?: unknown;
+      }
+    | string
+    | null
+    | undefined
+): "bank" | "toonation" | "other" {
+  if (!d) return "other";
+  let id = "";
+  let target = "";
+  let provider = "";
+  let ext = "";
+  if (typeof d === "string") {
+    id = d.trim().toLowerCase();
+  } else {
+    id = String(d.id ?? "").trim().toLowerCase();
+    target = String(d.target ?? "").trim().toLowerCase();
+    provider = String(d.provider ?? "").trim().toLowerCase();
+    ext = String(d.externalId ?? d.rawHash ?? "").trim();
+  }
+  /** 1순위: raw target 이 투네 계열 명시 → toonation */
+  if (["toon", "toonation", "tunat", "tuna", "투네", "튜나"].includes(target)) return "toonation";
+  if (["account", "bank", "계좌", "은행"].includes(target)) return "bank";
+  /** 2순위: provider 필드가 투네 계열 명시 → toonation (B·DIN 풀링 경로에서 100% 붙어서 내려옴) */
+  if (["toonation", "toona", "tuna", "tunat"].includes(provider)) return "toonation";
+  /** 3순위: externalId가 UUID 형식 = 투네 실제 후원 외에는 발생하지 않는 값 → toonation */
+  if (ext && /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(ext)) return "toonation";
+  /** 4순위: id 접두사 toonation: → toonation */
+  if (id.startsWith("toonation:") || id.startsWith("toona:") || id.startsWith("tuna:")) return "toonation";
+  /** 5순위: id 접두사 bank: → bank (위 1~3순위에서 toonation 증거가 하나도 없을 때만 bank로 분류) */
+  if (id.startsWith("bank:") || id.startsWith("account:")) return "bank";
   return "other";
 }
 
+/** @deprecated — donorInferSourceKind 로 대체. id 접두사만 보는 오판 가능성 있음 */
+function donorIdSourceKind(id: string): "bank" | "toonation" | "other" {
+  return donorInferSourceKind(id);
+}
+
 /** DIN bank ingest ↔ 투네 WS (또는 bank 재전송) */
-export function isCrossDonationSourcePair(idA?: string, idB?: string): boolean {
-  const a = donorIdSourceKind(String(idA || ""));
-  const b = donorIdSourceKind(String(idB || ""));
-  if (a === "bank" && b === "toonation") return true;
-  if (a === "toonation" && b === "bank") return true;
+export function isCrossDonationSourcePair(
+  a?: { id?: unknown; target?: unknown; provider?: unknown; externalId?: unknown; rawHash?: unknown } | string | null,
+  b?: { id?: unknown; target?: unknown; provider?: unknown; externalId?: unknown; rawHash?: unknown } | string | null
+): boolean {
+  const kindA = donorInferSourceKind(a as never);
+  const kindB = donorInferSourceKind(b as never);
+  if (kindA === "bank" && kindB === "toonation") return true;
+  if (kindA === "toonation" && kindB === "bank") return true;
   return false;
 }
 
@@ -843,6 +861,8 @@ export function shouldTreatAsCrossSourceDuplicate(
     externalId?: string;
     rawHash?: string | number;
     donorName?: string;
+    target?: string;
+    provider?: string;
   },
   incoming: {
     id?: string;
@@ -852,28 +872,26 @@ export function shouldTreatAsCrossSourceDuplicate(
     at?: string | number;
     externalId?: string;
     rawHash?: string | number;
+    target?: string;
+    provider?: string;
   }
 ): boolean {
-  const existingId = String(existing.id || "");
-  const incomingId = String(incoming.id || "");
-  const cross = isCrossDonationSourcePair(existingId, incomingId);
+  /** ★ 근본 FIX: donor 전체 객체를 donorInferSourceKind 에 넣어 실 경로 추론
+   *  (id 접두사만 보고 bank로 오판하는 경우 원천 봉쇄 — provider=toonation / UUID externalId 면 1~3순위에서 무조건 toonation 으로 분류)
+   */
+  const cross = isCrossDonationSourcePair(existing, incoming);
   const bothBank =
-    donorIdSourceKind(existingId) === "bank" && donorIdSourceKind(incomingId) === "bank";
+    donorInferSourceKind(existing) === "bank" && donorInferSourceKind(incoming) === "bank";
   if (!cross && !bothBank) return false;
 
-  /**
-   * ★ reliable externalId UUID가 양쪽 모두 존재하면 서로 달라 = 다른 후원 → 무조건 merge 불가.
-   *  이름·금액·시각만 같아서 생기는 4건→2건 오판 drop 버그 원천 봉쇄.
-   *  (DIN 허브 9.4 이후 보내주는 UUID 4개 = 4건 모두 서로 다름 → cross merge 절대 발동 안함)
-   */
+  /** reliable externalId UUID가 양쪽 모두 존재하면 서로 달라 = 다른 후원 → merge 불가 */
   const extA = String(existing.externalId || existing.rawHash || "").trim();
   const extB = String(incoming.externalId || incoming.rawHash || "").trim();
   if (extA && extB && isReliableToonationExternalId(extA) && isReliableToonationExternalId(extB)) {
     if (extA.toLowerCase() !== extB.toLowerCase()) return false;
   }
-  /** donor.id에서 추출 가능한 reliable toonation ext 도 비교 (toonation:xxx 접두사 포함 케이스) */
-  const idExtA = extractReliableToonationExtFromDonorId(existingId);
-  const idExtB = extractReliableToonationExtFromDonorId(incomingId);
+  const idExtA = extractReliableToonationExtFromDonorId(String(existing.id || ""));
+  const idExtB = extractReliableToonationExtFromDonorId(String(incoming.id || ""));
   if (idExtA && idExtB && idExtA !== idExtB) return false;
 
   const amountA = Math.max(0, Math.round(Number(existing.amount) || 0));

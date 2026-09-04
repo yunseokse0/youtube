@@ -1653,32 +1653,34 @@ export function parseAmount(input: string | number): number {
 /** donor.id 접두사 (toonation:/bank:) 또는 target 필드 기반으로 최종 target 추론 — target 누락 시 투네가 계좌로 둔갑하는 버그 방지 */
 export function resolveEffectiveDonorTarget(donor: Donor | Record<string, unknown> | null | undefined): "toon" | "account" {
   if (!donor) return "account";
-  const d = donor as {
-    target?: unknown;
-    id?: unknown;
-    provider?: unknown;
-    externalId?: unknown;
-    rawHash?: unknown;
-    donorName?: unknown;
-    name?: unknown;
-  };
+  const d = donor as Record<string, unknown>;
   const tRaw = String(d.target ?? "").trim().toLowerCase();
-  /** ★ raw target 직접 우선순위: toon 관련 문자열 6종을 "toon" 계열로 분류 */
+  /** 1순위: 명시적 raw target (유저가 직접 설정한 값 최우선) */
   if (["toon", "toonation", "tunat", "tuna", "투네", "튜나"].includes(tRaw)) return "toon";
-  if (tRaw === "toon") return "toon";
   if (["account", "bank", "계좌", "은행"].includes(tRaw)) return "account";
-  if (tRaw === "account") return "account";
-  /** provider 필드 명시적 = toonation 이면 100% 투네 (B·DIN 허브 풀링 donor 제공 provider 필드) */
-  const provider = String(d.provider ?? "").trim().toLowerCase();
-  if (["toonation", "toona", "tuna", "tunat"].includes(provider)) return "toon";
-  /** externalId reliable UUID 존재 = 투네 실제 후원 (DIN 허브 9.4 body.id UUID) */
-  const ext = String(d.externalId ?? d.rawHash ?? "").trim();
-  if (ext && /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(ext)) return "toon";
-  const id = String(d.id ?? "").trim();
-  if (id.startsWith("toonation:")) return "toon";
-  /** 🔴 bank:din: 접두사 라도 위에서 투네 증거 3가지 중 하나라도 맞으면 투네로 분류. 접두사만 보고 무조건 계좌 둔갑 버그 방지 (B·DIN 허브 풀링 경로 전용 FIX) */
-  if (id.startsWith("bank:") || id.startsWith("account:")) return "account";
+  /** 2순위: 근본 뿌리 donorInferSourceKind 에게 전체 위임. provider=toonation / UUID externalId / bank:din: id 가리지 않고 정확히 판단 */
+  const kind = donorInferSourceKindWrapper(d);
+  if (kind === "toonation") return "toon";
+  if (kind === "bank") return "account";
+  /** 그 외 안전하게 account fallback */
   return "account";
+}
+/** state.ts 에서 import 없이 쓰기 위해 동일 함수 래핑 — donorInferSourceKind 선언과 같은 인수 구조 보장 */
+function donorInferSourceKindWrapper(
+  d: Record<string, unknown> | null | undefined
+): "bank" | "toonation" | "other" {
+  if (!d) return "other";
+  const id = String(d.id ?? "").trim().toLowerCase();
+  const target = String(d.target ?? "").trim().toLowerCase();
+  const provider = String(d.provider ?? "").trim().toLowerCase();
+  const ext = String(d.externalId ?? d.rawHash ?? "").trim();
+  if (["toon", "toonation", "tunat", "tuna", "투네", "튜나"].includes(target)) return "toonation";
+  if (["account", "bank", "계좌", "은행"].includes(target)) return "bank";
+  if (["toonation", "toona", "tuna", "tunat"].includes(provider)) return "toonation";
+  if (ext && /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(ext)) return "toonation";
+  if (id.startsWith("toonation:") || id.startsWith("toona:") || id.startsWith("tuna:")) return "toonation";
+  if (id.startsWith("bank:") || id.startsWith("account:")) return "bank";
+  return "other";
 }
 
 /** 서버/로컬 JSON 손상 시 `donors`가 객체·숫자 등으로 오면 관리자 표 렌더가 전부 중단됨 → 항상 배열로 복구 */
@@ -1689,24 +1691,13 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
     .map((x) => {
       const idRaw = String(x.id ?? "").trim();
       const targetRaw = String(x.target ?? "").trim().toLowerCase();
-      const providerRaw = String((x as { provider?: unknown }).provider ?? "").trim().toLowerCase();
-      const extRaw = String((x as { externalId?: unknown; rawHash?: unknown }).externalId ?? (x as { rawHash?: unknown }).rawHash ?? "").trim();
-      const hasUuidExt = extRaw && /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(extRaw);
       let target: DonorTarget | undefined =
         targetRaw === "toon" ? "toon" : targetRaw === "account" ? "account" : undefined;
       if (!target) {
-        /** normalize raw: raw target/proveider/externalId 3가지 증거로 toon 여부 우선 판단 (35780e4 + d2a6cf2 후속 보강) */
-        if (
-          ["toon", "toonation", "tunat", "tuna", "투네", "튜나"].includes(targetRaw) ||
-          ["toonation", "toona", "tuna", "tunat"].includes(providerRaw) ||
-          hasUuidExt
-        ) {
-          target = "toon";
-        } else if (idRaw.startsWith("toonation:")) {
-          target = "toon";
-        } else if (idRaw.startsWith("bank:") || idRaw.startsWith("account:")) {
-          target = "account";
-        }
+        /** 근본 뿌리 donorInferSourceKind 판단 결과에 target 위임: provider=toonation / UUID externalId 면 bank:din: id 라도 toon 반환 */
+        const kind = donorInferSourceKindWrapper(x);
+        if (kind === "toonation") target = "toon";
+        else if (kind === "bank") target = "account";
       }
       const row: Donor = {
         id: idRaw || `d_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
