@@ -9,6 +9,7 @@ import {
 import type { DonationEvent } from "@/lib/donation/types";
 import { normalizeContributionFormula } from "@/lib/contribution-formula";
 import { appendToonaHubDonationLog, readToonaHubSession } from "@/lib/toona-hub-session";
+import { parseKstLocalTimestampToMs } from "@/lib/state";
 
 export function parseApplyExcelFromRequest(req: Request): boolean {
   try {
@@ -32,10 +33,21 @@ export function sanitizeDonationEventFromIngestBody(raw: unknown): DonationEvent
   const provider = body.provider === "toonation" ? "toonation" : "bank";
   const id = String(body.id || "").trim() || `${provider}:din:${externalId}`;
   const atRaw = body.at;
-  const at =
-    typeof atRaw === "string" && atRaw.trim()
-      ? new Date(atRaw).toISOString()
-      : new Date().toISOString();
+  /**
+   * KST local 점 구분 + 24시 표기(ex: "2026. 09. 02. 24:59:34") 를 안전하게 ISO Z 문자열로 변환.
+   * 구버전 naive new Date(atRaw).toISOString() 은 Invalid Date 시 RangeError Throw
+   * → 바로 /api/donations/ingest HTTP 500 을 뱉던 직접 원인 봉쇄.
+   * 항상 절대 throw 하지 않고 파싱 불가시 현재 시각 폴백.
+   */
+  let atIso = "";
+  try {
+    const ms = parseKstLocalTimestampToMs(atRaw);
+    const finalMs = Number.isFinite(ms) && ms > 0 ? ms : Date.now();
+    atIso = new Date(finalMs).toISOString();
+  } catch {
+    atIso = new Date().toISOString();
+  }
+  const at = atIso;
 
   const target =
     body.target === "account" ? "account" : body.target === "toon" ? "toon" : provider === "toonation" ? "toon" : "account";
