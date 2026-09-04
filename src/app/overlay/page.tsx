@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers, mergeLocalMemberIdentityOntoRemote, normalizeDonorsArray, membersDifferByIds, isMemberRosterStrictSuperset, mergeRemoteTimerDisplayStyles, isIntentionalDonorListShrink, totalCombined } from "@/lib/state";
+import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers, mergeLocalMemberIdentityOntoRemote, normalizeDonorsArray, membersDifferByIds, isMemberRosterStrictSuperset, mergeRemoteTimerDisplayStyles, isIntentionalDonorListShrink, totalCombined, resolveEffectiveDonorTarget } from "@/lib/state";
 import { isServerAuthoritativeBroadcastState, readSessionBroadcastState } from "@/lib/server-authoritative-broadcast-state";
 import {
   countableDonorTotal,
@@ -1972,7 +1972,7 @@ function DonorTicker({ donors, theme, fontSize, color, bgColor, bgOpacity, full,
     const sorted = donors.slice().sort((a, b) => b.at - a.at);
     const byName = new Map<string, { name: string; at: number; account: number; toon: number }>();
     for (const d of sorted) {
-      if ((d.target || "account") === "toon") continue;
+      if (resolveEffectiveDonorTarget(d) === "toon") continue;
       const key = (d.name || "무명").trim() || "무명";
       const prev = byName.get(key);
       if (!prev) {

@@ -3,6 +3,7 @@ import {
   isDonorExcludedFromDonationTotals,
 } from "@/lib/donation/apply-donation-state";
 import { normalizeAnonymousDonorDisplayName } from "@/lib/donation/anonymous-donor-name";
+import { resolveEffectiveDonorTarget } from "@/lib/state";
 
 export type DonorRankingRow = {
   name: string;
@@ -22,12 +23,15 @@ export function dedupeDonorRowsForRanking(donors: Array<Record<string, unknown>>
   return dedupeDonorRows(donors) as Array<Record<string, unknown>>;
 }
 
+/**
+ * donor.target → 투네/계좌 분류 (절대 틀리지 않는 3계층 추론)
+ *   1. donor.target === "toon" → toon
+ *   2. donor.id 접두사 "toonation:" → toon, "bank:"/"account:" → account
+ *   3. fallback → account
+ * → target 필드 누락(undefined) 되어도 id만 보고 정확히 분류 (과거 적재 데이터·경합 상태에서 안전)
+ */
 export function normalizeDonorTarget(donor: Record<string, unknown>): "account" | "toon" {
-  const rawType = String(donor.type || "").trim();
-  if (rawType === "계좌") return "account";
-  if (rawType === "투네이션") return "toon";
-  const rawTarget = String(donor.target || "").trim().toLowerCase();
-  return rawTarget === "toon" ? "toon" : "account";
+  return resolveEffectiveDonorTarget(donor);
 }
 
 /** 동일 닉네임 금액 합산 후 내림차순 (Unknown·anonymous → 익명으로 합침) */

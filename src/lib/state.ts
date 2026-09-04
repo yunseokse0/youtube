@@ -1686,7 +1686,8 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
         memberId: String(x.memberId ?? ""),
         at: donorAtEpochMs(x as Donor) || Date.now(),
       };
-      if (target) row.target = target;
+      const finalTarget = target || resolveEffectiveDonorTarget(row);
+      if (finalTarget) row.target = finalTarget;
       const message = typeof x.message === "string" ? x.message.trim() : "";
       if (message) row.message = message;
       if (x.memberAutoAssigned === true) row.memberAutoAssigned = true;
