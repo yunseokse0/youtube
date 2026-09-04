@@ -3087,11 +3087,24 @@ export async function saveStateAsync(
    * 영토·HS·omitDonation 저장: API 본문은 후원을 안 보내도
    * 세션 스냅샷에 0원 React state 를 쓰면 엑셀·후원순위 미리보기가 즉시 초기화됨.
    * 기존 세션 후원·금액을 유지한 뒤 알림한다.
+   *
+   * ★ 최후방 8중 Heal 봉쇄: 정산 리셋 의도(saveOpts.settlementReset=true 또는
+   *   incoming settlementResetAt > local settlementResetAt 또는 intentionalDonationClearAt 활성)
+   *   일 경우 기존 세션 donors / 멤버 금액을 절대 합치지 않고 0원 그대로 유지 강제.
    */
-  const sessionSnap =
-    apiOpts?.highSocietySettingsOnly || apiOpts?.omitDonationFields
-      ? mergeBroadcastSessionPreservingDonations(local, guarded)
-      : guarded;
+  const snapIncomingResetAt = Number(guarded.settlementResetAt || 0);
+  const snapLocalResetAt = Number(local?.settlementResetAt || 0);
+  const snapClearAt = Number((guarded as { intentionalDonationClearAt?: number }).intentionalDonationClearAt || 0);
+  const isIntentionalSnapshotReset =
+    Boolean(saveOpts?.settlementReset) ||
+    (snapIncomingResetAt > 0 && snapIncomingResetAt >= snapLocalResetAt) ||
+    snapClearAt > 0;
+  const shouldPreserveSnapshotDonors =
+    !isIntentionalSnapshotReset &&
+    (apiOpts?.highSocietySettingsOnly || apiOpts?.omitDonationFields);
+  const sessionSnap = shouldPreserveSnapshotDonors
+    ? mergeBroadcastSessionPreservingDonations(local, guarded)
+    : guarded;
   writeBroadcastStateSnapshot(sessionSnap, userId);
   notifyBroadcastStateLocalUpdated(userId, sessionSnap.updatedAt);
   try {
@@ -4496,6 +4509,21 @@ export function mergeBroadcastSessionPreservingDonations(
   if (!existing || isEmptyBroadcastDonationSession(existing)) return patch;
   if (!wouldShrinkDonationData(existing, patch) && !isEmptyBroadcastDonationSession(patch)) {
     return patch;
+  }
+  const patchResetAt = Number(patch.settlementResetAt || 0);
+  const existingResetAt = Number(existing.settlementResetAt || 0);
+  const patchClearAt = Number((patch as { intentionalDonationClearAt?: number }).intentionalDonationClearAt || 0);
+  const isIntentionalZeroPatch =
+    patchResetAt > 0 && patchResetAt >= existingResetAt ? true : patchClearAt > 0;
+  if (isIntentionalZeroPatch) {
+    return {
+      ...patch,
+      donors: normalizeDonorsArray(patch.donors),
+      memberPositions: patch.memberPositions ?? existing.memberPositions,
+      settlementResetAt: Math.max(patchResetAt, existingResetAt),
+      highSocietySettings: patch.highSocietySettings ?? existing.highSocietySettings,
+      territoryLogs: Array.isArray(patch.territoryLogs) ? patch.territoryLogs : existing.territoryLogs,
+    };
   }
   return {
     ...patch,
