@@ -85,10 +85,11 @@ export async function POST(req: Request) {
   });
   if (!saved.ok) {
     logger.error("settlement reset persist failed", { userId, mode });
+    const rawSaved = saved as unknown as { error?: string };
     return new Response(JSON.stringify({
       ok: false,
       error: "persist_failed",
-      detail: saved.error ?? "saveAppStateForRoulette refused empty roster wipe or mysql write failed",
+      detail: rawSaved.error ?? "saveAppStateForRoulette refused empty roster wipe or mysql/redis write failed — kv backend unavailable",
     }), {
       status: 503,
       headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
