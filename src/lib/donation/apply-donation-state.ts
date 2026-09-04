@@ -60,9 +60,29 @@ export function donorRowDedupeKey(donor: {
   at?: number | string;
   externalId?: string;
   rawHash?: string | number;
+  groupSplit?: boolean;
+  groupSplitSource?: boolean;
+  memberId?: string;
+  donationExcluded?: boolean;
 }): string {
   const rawId = String(donor.id || "").trim();
   const baseId = normalizeDonationEventId(rawId);
+  const isSplitPart = Boolean(donor.groupSplit) || baseId.includes(":split:");
+  const isSplitSource = Boolean(donor.groupSplitSource) || donor.donationExcluded === true;
+  /**
+   * ★ 단체짠 나누기 스플릿 파트 donor·소스 donor dedup bypass guard:
+   *  groupSplit 파트 donor 는 `{sourceId}:split:{memberId}`를 키 맨 앞에 강제 삽입 →
+   *  donorName·메시지·금액·at 이 모두 같아도 memberId가 다르면 각기 다른 key → 5행 2000원 씩 전부 유지.
+   *  groupSplitSource donor(원본 1만원 제외라벨)는 ::src 접미사로 파트 donor 들과 절대 병합 안됨.
+   */
+  if (isSplitPart) {
+    const memberId = String(donor.memberId || "").trim() || "z";
+    const amt = Math.max(0, Math.floor(Number(donor.amount || 0)));
+    return `split:${baseId}|${memberId}|${amt}`;
+  }
+  if (isSplitSource) {
+    return `src:${baseId}`;
+  }
   const toonationMatch = /^toonation:(.+)$/i.exec(baseId);
   if (toonationMatch) {
     const ext = toonationMatch[1].toLowerCase();
@@ -737,6 +757,34 @@ export function shouldTreatAsDuplicateDonationContent(
     at?: string | number;
   }
 ): boolean {
+  /**
+   * ★ 단체짠 나누기 스플릿 파트 donor 끼리 절대 dedup 금지:
+   *  동일 donorName·동일메시지·동일 at·동일금액 2000원 5행 일괄 생성 → 기존 identical-message window dedup 이 5행을 전부 중복 오판.
+   *  memberId가 서로 다른 파트 donor → 서로 다른 후원 → dedup bypass return false 강제.
+   */
+  const existingSplit =
+    Boolean((existing as { groupSplit?: boolean }).groupSplit) ||
+    String(existing.id || "").includes(":split:") ||
+    Boolean((existing as { donationExcluded?: boolean }).donationExcluded) ||
+    Boolean((existing as { groupSplitSource?: boolean }).groupSplitSource);
+  const incomingSplit =
+    Boolean((incoming as { groupSplit?: boolean }).groupSplit) ||
+    String(incoming.id || "").includes(":split:") ||
+    Boolean((incoming as { groupSplitSource?: boolean }).groupSplitSource);
+  if (existingSplit || incomingSplit) {
+    const existingMemId = String((existing as { memberId?: string })?.memberId || "").trim();
+    const incomingMemId = String((incoming as { memberId?: string })?.memberId || "").trim();
+    if (existingSplit !== incomingSplit) return false;
+    if (existingMemId && incomingMemId && existingMemId !== incomingMemId) return false;
+    if (
+      Boolean((existing as { groupSplit?: boolean }).groupSplit) !==
+        Boolean((incoming as { groupSplit?: boolean }).groupSplit) ||
+      Boolean((existing as { groupSplitSource?: boolean }).groupSplitSource) !==
+        Boolean((incoming as { groupSplitSource?: boolean }).groupSplitSource)
+    ) {
+      return false;
+    }
+  }
   if (shouldTreatAsCrossSourceDuplicate(existing, incoming)) return true;
   if (isSameToonationEventNearDuplicate(existing, incoming)) return true;
   const windowMs = resolveNearDupWindowMs(existing, incoming);
@@ -785,6 +833,9 @@ export function isDuplicateDonationEvent(state: AppState, rawEvent: DonationEven
     message: rawEvent.message,
     externalId: externalId,
     rawHash: rawEvent.id,
+    groupSplit: Boolean((rawEvent as { groupSplit?: boolean }).groupSplit),
+    groupSplitSource: Boolean((rawEvent as { groupSplitSource?: boolean }).groupSplitSource),
+    memberId: String((rawEvent as { memberId?: string })?.memberId || "").trim() || undefined,
   };
   const probeKey = donorRowDedupeKey(probeDonor);
 
