@@ -2812,11 +2812,16 @@ export async function saveStateAsync(
             /**
              * 멤버 추가·삭제 권위 저장: donors 가 React에 비어 있어도 LS donors 로 합산을 맞춘다.
              * donors 가 통째로 없으면 sync 로 금액을 0 초기화하지 않고 base 금액을 유지한다.
+             * — 단, settlementReset:true 이거나 incoming 의 settlementResetAt 이 LS 보다 최신이면
+             *   정산 리셋 의도로 donors=[] 이므로 LS 과거 후원을 되살리지 않고 0 그대로 유지 (과거 후원 heal 역류 원천 봉쇄)
              */
             const localDonors = normalizeDonorsArray(local?.donors);
             const nextDonors = normalizeDonorsArray(guarded.donors);
+            const incomingResetAt = Number((guarded as { settlementResetAt?: number }).settlementResetAt || 0);
+            const localResetAt = Number((local as { settlementResetAt?: number } | null)?.settlementResetAt || 0);
+            const isResetIntent = Boolean(saveOpts?.settlementReset) || incomingResetAt > localResetAt;
             let withDonors = guarded;
-            if (nextDonors.length === 0 && localDonors.length > 0) {
+            if (!isResetIntent && nextDonors.length === 0 && localDonors.length > 0) {
               withDonors = { ...guarded, donors: localDonors };
             }
             if (normalizeDonorsArray(withDonors.donors).length > 0) {
@@ -3015,12 +3020,23 @@ export async function saveStateAsync(
       guarded = { ...guarded, timerDisplayStyles: local.timerDisplayStyles };
     }
   }
-  /** 명시 리셋 없이 LS 대비 남은 멤버 금액만 0으로 sync 되면 복구 */
+  /** 명시 리셋 없이 LS 대비 남은 멤버 금액만 0으로 sync 되면 복구
+   *  — 단, 정산 리셋(settlementReset:true 또는 incoming settlementResetAt 이 LS 보다 최신)일 경우
+   *    리셋 의도이므로 멤버 금액 0원을 그대로 허용 (과거 금액 heal 역류 방지) */
   if (local && !saveOpts?.settlementReset) {
-    guarded = guardMemberTotalsAgainstAccidentalZeroWipe(guarded, local);
+    const incomingResetAtGuard = Number((guarded as { settlementResetAt?: number }).settlementResetAt || 0);
+    const localResetAtGuard = Number((local as { settlementResetAt?: number }).settlementResetAt || 0);
+    if (!(incomingResetAtGuard > 0 && incomingResetAtGuard >= localResetAtGuard)) {
+      guarded = guardMemberTotalsAgainstAccidentalZeroWipe(guarded, local);
+    }
   }
-  /** 멤버 삭제 — donorsReplace 가 불완전하면 서버 roster-shrink 에 맡기고 금액만 LS 유지 */
+  /** 멤버 삭제 — donorsReplace 가 불완전하면 서버 roster-shrink 에 맡기고 금액만 LS 유지
+   *  — 단, 정산 리셋으로 incoming settlementResetAt 이 LS 보다 최신일 경우 금액 되살리지 않음 */
+  const resetAtIncomingDel = Number((guarded as { settlementResetAt?: number }).settlementResetAt || 0);
+  const resetAtLocalDel = Number((local as { settlementResetAt?: number } | null)?.settlementResetAt || 0);
+  const isResetIntentDel = Boolean(saveOpts?.settlementReset) || resetAtIncomingDel > resetAtLocalDel;
   if (
+    !isResetIntentDel &&
     local &&
     saveOpts?.membersAuthoritative &&
     saveOpts?.donorsReplace &&

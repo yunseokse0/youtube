@@ -1,5 +1,5 @@
 import type { AppState, Member } from "@/types";
-import { shouldSuppressAutoRosterRestore } from "@/lib/intentional-donation-clear";
+import { shouldSuppressAutoRosterRestore, isIntentionalDonationClearActive } from "@/lib/intentional-donation-clear";
 import { isMemberRosterIdentityOnlyChange, mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
 import {
   countableDonorTotal,
@@ -119,12 +119,18 @@ export function wouldAccidentallyZeroRemainingMembers(
 /**
  * donors 에 금액이 남아 있는데 남은 멤버 합계만 0(또는 급감)으로 sync 된 경우 baseline 금액을 복원.
  * 멤버 삭제·불완전 PATCH·React donors 비어 있음 등으로 엑셀표가 통째로 0 되는 회귀 방지.
+ * — 정산 리셋 intentionalDonationClearAt 활성화 혹은 baseline 보다 state 의 settlementResetAt 이 최신일 경우
+ *   무조건 heal 을 100% skip. 리셋 의도로 0을 넣은것을 실수로 오인하여 과거 금액·후원을 되살리는 현상 원천 봉쇄.
  */
 export function guardMemberTotalsAgainstAccidentalZeroWipe(
   state: AppState,
   baseline: AppState | null | undefined
 ): AppState {
   if (shouldSuppressAutoRosterRestore(state)) return state;
+  if (isIntentionalDonationClearActive(baseline)) return state;
+  const resetAtState = Number((state as { settlementResetAt?: number }).settlementResetAt || 0);
+  const resetAtBaseline = Number((baseline as { settlementResetAt?: number } | null)?.settlementResetAt || 0);
+  if (resetAtState > 0 && resetAtState >= resetAtBaseline) return state;
   if (!baseline?.members?.length) return state;
 
   const ids = remainingMemberIds(state);
