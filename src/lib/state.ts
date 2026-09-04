@@ -2804,7 +2804,7 @@ export async function saveStateAsync(
   );
   const isPreflightResetIntent =
     Boolean(saveOpts?.settlementReset) ||
-    (preflightIncomingResetAt > 0 && preflightIncomingResetAt >= preflightLocalResetAt) ||
+    (preflightIncomingResetAt > 0 && preflightIncomingResetAt > preflightLocalResetAt) ||
     preflightClearAt > 0;
   const local: AppState | null = isPreflightResetIntent ? null : preflightLocalRaw;
   if (
@@ -3117,7 +3117,7 @@ export async function saveStateAsync(
   const snapClearAt = Number((guarded as { intentionalDonationClearAt?: number }).intentionalDonationClearAt || 0);
   const isIntentionalSnapshotReset =
     Boolean(saveOpts?.settlementReset) ||
-    (snapIncomingResetAt > 0 && snapIncomingResetAt >= snapLocalResetAt) ||
+    (snapIncomingResetAt > 0 && snapIncomingResetAt > snapLocalResetAt) ||
     snapClearAt > 0;
   const shouldPreserveSnapshotDonors =
     !isIntentionalSnapshotReset &&
@@ -4534,7 +4534,7 @@ export function mergeBroadcastSessionPreservingDonations(
   const existingResetAt = Number(existing.settlementResetAt || 0);
   const patchClearAt = Number((patch as { intentionalDonationClearAt?: number }).intentionalDonationClearAt || 0);
   const isIntentionalZeroPatch =
-    patchResetAt > 0 && patchResetAt >= existingResetAt ? true : patchClearAt > 0;
+    patchResetAt > 0 && patchResetAt > existingResetAt ? true : patchClearAt > 0;
   if (isIntentionalZeroPatch) {
     return {
       ...patch,

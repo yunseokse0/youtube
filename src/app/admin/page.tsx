@@ -9558,12 +9558,8 @@ function AdminPageInner() {
     const clientResetNewer = localResetFinal > remoteResetFinal || localClearFinal > 0;
     if (clientResetNewer) {
       const strippedDonors = filterDonorsAfterSettlementReset(toApply.donors, Math.max(localResetFinal, remoteResetFinal));
-      const strippedMembers = Array.isArray(toApply.members)
-        ? toApply.members.map((m) => ({ ...m, account: 0, toon: 0 }))
-        : toApply.members;
       toApply = syncMemberTotalsFromDonors({
         ...toApply,
-        members: strippedMembers,
         donors: strippedDonors,
         settlementResetAt: Math.max(localResetFinal, remoteResetFinal, applyReset),
         intentionalDonationClearAt:
