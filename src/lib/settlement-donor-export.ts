@@ -395,3 +395,124 @@ export function recordToMemberDonorsXlsxBlob(record: SettlementRecord, donors: D
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
 }
+
+/**
+ * 후원 순위(랭킹) — 후원자별 합계 금액 높은 순 내림차순
+ * 스크린샷 UI 기준: 자키 1,333,900원 > 1,106,600원 순 정렬 · 1위부터 순위 부여
+ */
+
+function buildPerMemberRanking(record: SettlementRecord, donors: Donor[]) {
+  const members = getMembersForExport(record);
+  const byMember = aggregateMemberDonors(record, donors);
+  const perMember = new Map<string, Array<MemberDonorAggregateRow & { rank: number }>>();
+  const memberTotals = new Map<string, number>();
+  for (const m of members) {
+    const rows = byMember
+      .filter((r) => r.memberId === m.memberId)
+      .sort((a, b) => b.totalAmount - a.totalAmount || b.count - a.count);
+    const ranked = rows.map((r, i) => ({ ...r, rank: i + 1 }));
+    perMember.set(m.memberId, ranked);
+    memberTotals.set(m.memberId, rows.reduce((s, r) => s + r.totalAmount, 0));
+  }
+  return { members, perMember, memberTotals };
+}
+
+function donorRankingsGlobalSorted(record: SettlementRecord, donors: Donor[]): MemberDonorAggregateRow[] {
+  return aggregateMemberDonors(record, donors).sort(
+    (a, b) => b.totalAmount - a.totalAmount || b.count - a.count
+  );
+}
+
+/** 스크린샷 UI 기준: [자키] 후원자 46명 · 총 6,963,404원 형식 CSV */
+export function recordToDonorRankingsCsv(record: SettlementRecord, donors: Donor[]): string {
+  const { members, perMember, memberTotals } = buildPerMemberRanking(record, donors);
+  const lines: string[] = ["\uFEFF=== 후원 순위 (멤버별) ==="];
+  for (const m of members) {
+    const rows = perMember.get(m.memberId) || [];
+    if (rows.length === 0) continue;
+    const total = memberTotals.get(m.memberId) || 0;
+    lines.push("");
+    lines.push(`== [${m.name}] 후원자 ${rows.length}명 · 총 ${total.toLocaleString()}원 ==`);
+    lines.push(["순위", "후원자", "합계금액", "후원횟수", "계좌합", "투네합"].join(","));
+    for (const row of rows) {
+      lines.push(
+        [row.rank, row.donorName, row.totalAmount, row.count, row.accountAmount, row.toonAmount]
+          .map(csvEscape)
+          .join(",")
+      );
+    }
+  }
+  lines.push("");
+  lines.push("=== 전체 후원 순위 (멤버 통합 · 금액 높은 순) ===");
+  const globalList = donorRankingsGlobalSorted(record, donors);
+  lines.push(["순위", "멤버", "후원자", "합계금액", "후원횟수", "계좌합", "투네합"].join(","));
+  for (let i = 0; i < globalList.length; i++) {
+    const row = globalList[i];
+    lines.push(
+      [i + 1, row.memberName, row.donorName, row.totalAmount, row.count, row.accountAmount, row.toonAmount]
+        .map(csvEscape)
+        .join(",")
+    );
+  }
+  return lines.join("\r\n");
+}
+
+/** 스크린샷 UI 기준 후원 순위 엑셀 — (1) 전체후원순위 (2) 멤버별후원순위 (3~N) 멤버별 개별 시트 */
+export function recordToDonorRankingsXlsxBlob(record: SettlementRecord, donors: Donor[]): Blob {
+  const { members, perMember, memberTotals } = buildPerMemberRanking(record, donors);
+  const wb = XLSX.utils.book_new();
+  const usedSheetNames = new Set<string>();
+
+  const globalRows = donorRankingsGlobalSorted(record, donors);
+  const globalAoA: (string | number)[][] = [
+    ["순위", "멤버", "후원자", "합계금액", "후원횟수", "계좌합", "투네합"],
+    ...globalRows.map((r, i) => [i + 1, r.memberName, r.donorName, r.totalAmount, r.count, r.accountAmount, r.toonAmount]),
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(globalAoA), "전체후원순위");
+  usedSheetNames.add("전체후원순위");
+
+  const perSheetAoA: (string | number)[][] = [
+    ["멤버", "멤버실명", "후원자수", "멤버총합", "순위", "후원자", "합계금액", "후원횟수", "계좌합", "투네합"],
+  ];
+  for (const m of members) {
+    const rows = perMember.get(m.memberId) || [];
+    if (rows.length === 0) continue;
+    const memberTotal = memberTotals.get(m.memberId) || 0;
+    for (const r of rows) {
+      perSheetAoA.push([
+        m.name,
+        m.realName || "",
+        rows.length,
+        memberTotal,
+        r.rank,
+        r.donorName,
+        r.totalAmount,
+        r.count,
+        r.accountAmount,
+        r.toonAmount,
+      ]);
+    }
+  }
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(perSheetAoA), "멤버별후원순위");
+  usedSheetNames.add("멤버별후원순위");
+
+  for (const m of members) {
+    const rows = perMember.get(m.memberId) || [];
+    if (rows.length === 0) continue;
+    const memberTotal = memberTotals.get(m.memberId) || 0;
+    const sheetAoA: (string | number)[][] = [
+      [`${m.name} 후원자 ${rows.length}명 · 총 ${memberTotal.toLocaleString()}원`],
+      ["순위", "후원자", "합계금액", "후원횟수", "계좌합", "투네합"],
+      ...rows.map((r) => [r.rank, r.donorName, r.totalAmount, r.count, r.accountAmount, r.toonAmount]),
+      [],
+      ["멤버 실명", m.realName || ""],
+    ];
+    const sheetName = sanitizeSheetName(`${m.name} 후원순위`, usedSheetNames);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheetAoA), sheetName);
+  }
+
+  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  return new Blob([buf], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+}

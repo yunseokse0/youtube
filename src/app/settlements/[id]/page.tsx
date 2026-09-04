@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
 import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, getTreasuryMembersForExport, isTreasurySettlementMember, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, recoverSettlementRecordsFromAllSources, saveSettlementRecords, saveSettlementRecordsToApi, toPaymentAlignedSettlement, toSettlementFormulaLine, updateSettlementRecordAndRecompute, updateSettlementRecordDonors } from "@/lib/settlement";
 import type { SettlementMemberRatioOverrides } from "@/types";
-import { aggregateMemberDonors, donorsForSettlementExport, formatExportDateTime, recordToMemberDonorsCsv, recordToMemberDonorsXlsxBlob, resolveSettlementDonors, seedSettlementDonorsForEdit, type DailyLogEntry } from "@/lib/settlement-donor-export";
+import { aggregateMemberDonors, donorsForSettlementExport, formatExportDateTime, recordToDonorRankingsCsv, recordToDonorRankingsXlsxBlob, recordToMemberDonorsCsv, recordToMemberDonorsXlsxBlob, resolveSettlementDonors, seedSettlementDonorsForEdit, type DailyLogEntry } from "@/lib/settlement-donor-export";
 import { repairDonorTimestamps } from "@/lib/donation/repair-donor-timestamps";
 import {
   memberToPaymentStatementPdfBlob,
@@ -335,6 +335,27 @@ export default function SettlementDetailPage() {
     await downloadTextFile(
       `${record.title}-멤버별후원자.csv`,
       recordToMemberDonorsCsv(record, exportDonors),
+      "text/csv;charset=utf-8"
+    );
+  };
+
+  const onDownloadDonorRankingsXlsx = async () => {
+    if (!record || !user) return;
+    const remote = await loadStateFromApi(user.id);
+    const refs = normalizeDonorsArray(remote?.donors ?? loadState(user.id)?.donors);
+    const exportDonors = donorsForSettlementExport(record, editableDonors, dailyLog, refs);
+    const blob = recordToDonorRankingsXlsxBlob(record, exportDonors);
+    await downloadBlobFile(`${record.title}-후원순위.xlsx`, blob);
+  };
+
+  const onDownloadDonorRankingsCsv = async () => {
+    if (!record || !user) return;
+    const remote = await loadStateFromApi(user.id);
+    const refs = normalizeDonorsArray(remote?.donors ?? loadState(user.id)?.donors);
+    const exportDonors = donorsForSettlementExport(record, editableDonors, dailyLog, refs);
+    await downloadTextFile(
+      `${record.title}-후원순위.csv`,
+      recordToDonorRankingsCsv(record, exportDonors),
       "text/csv;charset=utf-8"
     );
   };
@@ -773,6 +794,22 @@ export default function SettlementDetailPage() {
               disabled={settlementDonors.length === 0}
             >
               멤버별 후원자(CSV)
+            </button>
+            <button
+              className="px-3 py-2 rounded bg-violet-800 hover:bg-violet-700 whitespace-nowrap disabled:opacity-50"
+              onClick={onDownloadDonorRankingsXlsx}
+              disabled={settlementDonors.length === 0}
+              title="후원자별 합계금액 높은 순 (순위 포함)"
+            >
+              후원 순위(엑셀)
+            </button>
+            <button
+              className="px-3 py-2 rounded bg-indigo-900 hover:bg-indigo-800 whitespace-nowrap disabled:opacity-50"
+              onClick={onDownloadDonorRankingsCsv}
+              disabled={settlementDonors.length === 0}
+              title="후원자별 합계금액 높은 순 (순위 포함)"
+            >
+              후원 순위(CSV)
             </button>
             <button
               className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 whitespace-nowrap"
@@ -1380,6 +1417,24 @@ export default function SettlementDetailPage() {
                 disabled={editableDonors.length === 0}
               >
                 CSV 다운로드
+              </button>
+              <button
+                type="button"
+                className="px-3 py-1.5 rounded bg-violet-800 hover:bg-violet-700 text-sm disabled:opacity-50"
+                onClick={onDownloadDonorRankingsXlsx}
+                disabled={editableDonors.length === 0}
+                title="후원자별 합계금액 높은 순 (순위 포함)"
+              >
+                후원 순위 엑셀
+              </button>
+              <button
+                type="button"
+                className="px-3 py-1.5 rounded bg-indigo-900 hover:bg-indigo-800 text-sm disabled:opacity-50"
+                onClick={onDownloadDonorRankingsCsv}
+                disabled={editableDonors.length === 0}
+                title="후원자별 합계금액 높은 순 (순위 포함)"
+              >
+                후원 순위 CSV
               </button>
             </div>
           </div>
