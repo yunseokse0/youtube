@@ -2786,7 +2786,27 @@ export async function saveStateAsync(
     ? { ...options, donorsAuthoritative: true, settlementReset: true }
     : options;
   let guarded = next;
-  const local = loadState(userId);
+  /**
+   * ★ 9중 Heal 원천 봉쇄: reset 의도(settlementReset:true 또는 incoming settlementResetAt > 로컬 또는 intentionalDonationClearAt 활성)
+   *   일 경우 아래 모든 Heal 로직이 참조하는 local 변수를 null로 강제 설정.
+   *   → 72번 DIN 허브 동기화로 saveStateAsync가 72번 불려도 local==null → baseline 과거 후원 참조 자체가 불가 → 병합 0건.
+   *   이전 1~8중 guard가 일일이 if 체크하던 것을 변수 레벨에서 원천 봉쇄 (결정적).
+   */
+  const preflightIncomingResetAt = Number(
+    (normalized as { settlementResetAt?: number }).settlementResetAt || 0
+  );
+  const preflightLocalRaw = loadState(userId);
+  const preflightLocalResetAt = Number(
+    (preflightLocalRaw as { settlementResetAt?: number } | null)?.settlementResetAt || 0
+  );
+  const preflightClearAt = Number(
+    (normalized as { intentionalDonationClearAt?: number }).intentionalDonationClearAt || 0
+  );
+  const isPreflightResetIntent =
+    Boolean(saveOpts?.settlementReset) ||
+    (preflightIncomingResetAt > 0 && preflightIncomingResetAt >= preflightLocalResetAt) ||
+    preflightClearAt > 0;
+  const local: AppState | null = isPreflightResetIntent ? null : preflightLocalRaw;
   if (
     saveOpts?.donorsAuthoritative &&
     !saveOpts?.settlementReset &&

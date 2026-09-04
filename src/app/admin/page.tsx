@@ -9543,6 +9543,35 @@ function AdminPageInner() {
             : Number(toApply.intentionalDonationClearAt || 0),
       });
     }
+    /**
+     * ★ 10중 최종 봉쇄 (서버 stale 응답 strip):
+     *   클라이언트 resetAt(localReset)이 서버 resetAt(remoteReset) 보다 최신이거나
+     *   intentionalDonationClearAt 활성 중인데 서버 응답에 과거 멤버 금액이나
+     *   리셋 이전 at의 donors가 들어있으면 → 멤버의 account/toon 금액을 전부 0으로
+     *   강제 초기화 + donors 리셋 이전 데이터를 전부 버림.
+     *   서버 MySQL app_kv / broadcast_donations 에 과거 데이터가 오염되어 있어도
+     *   클라이언트 렌더링 엑셀·후원순위·UI 전부 0원으로 고정.
+     */
+    const localResetFinal = Number(local.settlementResetAt || 0);
+    const remoteResetFinal = Number(remote.settlementResetAt || 0);
+    const localClearFinal = Number(local.intentionalDonationClearAt || 0);
+    const clientResetNewer = localResetFinal > remoteResetFinal || localClearFinal > 0;
+    if (clientResetNewer) {
+      const strippedDonors = filterDonorsAfterSettlementReset(toApply.donors, Math.max(localResetFinal, remoteResetFinal));
+      const strippedMembers = Array.isArray(toApply.members)
+        ? toApply.members.map((m) => ({ ...m, account: 0, toon: 0 }))
+        : toApply.members;
+      toApply = syncMemberTotalsFromDonors({
+        ...toApply,
+        members: strippedMembers,
+        donors: strippedDonors,
+        settlementResetAt: Math.max(localResetFinal, remoteResetFinal, applyReset),
+        intentionalDonationClearAt:
+          strippedDonors.length === 0
+            ? Math.max(localClearFinal, localResetFinal, remoteResetFinal)
+            : Number(toApply.intentionalDonationClearAt || 0),
+      });
+    }
     stateUpdatedAtRef.current = toApply.updatedAt || 0;
     pendingUnsyncedRef.current = false;
     setState(toApply);
