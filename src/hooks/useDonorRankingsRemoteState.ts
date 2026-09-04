@@ -112,8 +112,10 @@ function mergeDonorRankingsApiState(prev: AppState | null, remote: Partial<AppSt
     const prevDonors = normalizeDonorsArray(prev?.donors);
     const remoteReset = Number(remote.settlementResetAt || 0);
     const prevReset = Number(prev?.settlementResetAt || 0);
-    /** 정산 리셋 stamp 상승 없이 빈 원격으로 명단을 지우지 않음(새로고침·부분 GET 경합) */
-    if (remoteDonors.length === 0 && prevDonors.length > 0 && remoteReset <= prevReset) {
+    /** 정산 리셋 stamp 상승 없이 빈 원격으로 명단을 지우지 않음(새로고침·부분 GET 경합)
+     *  — remoteReset > prevReset 이면(의도적 정산 리셋) 반드시 빈 donors 적용 */
+    const intentionalResetWipe = remoteDonors.length === 0 && remoteReset > prevReset;
+    if (!intentionalResetWipe && remoteDonors.length === 0 && prevDonors.length > 0 && remoteReset <= prevReset) {
       next.donors = prevDonors;
     } else {
       next.donors = remoteDonors;

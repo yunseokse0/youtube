@@ -1650,6 +1650,18 @@ export function parseAmount(input: string | number): number {
   return isNaN(n) ? 0 : n;
 }
 
+/** donor.id 접두사 (toonation:/bank:) 또는 target 필드 기반으로 최종 target 추론 — target 누락 시 투네가 계좌로 둔갑하는 버그 방지 */
+export function resolveEffectiveDonorTarget(donor: Donor | Record<string, unknown> | null | undefined): "toon" | "account" {
+  if (!donor) return "account";
+  const tRaw = (donor as { target?: unknown }).target;
+  if (tRaw === "toon") return "toon";
+  if (tRaw === "account") return "account";
+  const id = String((donor as { id?: unknown }).id ?? "").trim();
+  if (id.startsWith("toonation:")) return "toon";
+  if (id.startsWith("bank:") || id.startsWith("account:")) return "account";
+  return "account";
+}
+
 /** 서버/로컬 JSON 손상 시 `donors`가 객체·숫자 등으로 오면 관리자 표 렌더가 전부 중단됨 → 항상 배열로 복구 */
 export function normalizeDonorsArray(input: unknown): Donor[] {
   if (!Array.isArray(input)) return [];
@@ -1658,8 +1670,13 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
     .map((x) => {
       const idRaw = String(x.id ?? "").trim();
       const targetRaw = x.target;
-      const target: DonorTarget | undefined =
+      let target: DonorTarget | undefined =
         targetRaw === "toon" ? "toon" : targetRaw === "account" ? "account" : undefined;
+      /** target 누락 시 id 접두사로 추론해서 채워주기 — 오래 적재된 데이터 대상 */
+      if (!target) {
+        if (idRaw.startsWith("toonation:")) target = "toon";
+        else if (idRaw.startsWith("bank:") || idRaw.startsWith("account:")) target = "account";
+      }
       const row: Donor = {
         id: idRaw || `d_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         name: normalizeAnonymousDonorDisplayName(
@@ -4420,6 +4437,8 @@ export function mergeBroadcastSessionPreservingDonations(
     members: mergeMemberRosterPreservingAmounts(existing.members || [], patch.members || []),
     memberPositions: existing.memberPositions ?? patch.memberPositions,
     settlementResetAt: existing.settlementResetAt ?? patch.settlementResetAt,
+    highSocietySettings: patch.highSocietySettings ?? existing.highSocietySettings,
+    territoryLogs: Array.isArray(patch.territoryLogs) ? patch.territoryLogs : existing.territoryLogs,
   };
 }
 

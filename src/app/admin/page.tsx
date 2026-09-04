@@ -139,6 +139,7 @@ import {
   DONOR_RANKINGS_COMPACT_TOP_MAX,
   DONOR_RANKINGS_OUTLINE_MAX_PX,
   type OverlayConfig,
+  resolveEffectiveDonorTarget,
 } from "@/lib/state";
 import {
   buildAppStateFromDailyLogRestore,
@@ -15665,7 +15666,7 @@ function AdminPageInner() {
                                 ))}
                               </select>
                             </td>
-                            <td className="p-1">{(d.target || "account") === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>
+                            <td className="p-1">{resolveEffectiveDonorTarget(d) === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>
                             <td className="p-1 text-neutral-400 max-w-[220px]">
                               <input
                                 type="text"

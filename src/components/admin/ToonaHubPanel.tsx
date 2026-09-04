@@ -70,22 +70,40 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
 
   const load = useCallback(
     async (refresh = false) => {
-      const res = await fetch(`/api/toona/hub${refresh ? "?refresh=1" : ""}`, {
-        credentials: "include",
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        session?: HubSession | null;
-        logs?: HubLog[];
-        error?: string;
-      };
-      if (!res.ok || data.ok === false) {
-        setMessage(data.error || "상태 조회 실패");
-        return;
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 15_000);
+      try {
+        const res = await fetch(`/api/toona/hub${refresh ? "?refresh=1" : ""}`, {
+          credentials: "include",
+          signal: controller.signal,
+        });
+        window.clearTimeout(timeout);
+        const data = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          session?: HubSession | null;
+          logs?: HubLog[];
+          error?: string;
+          slow?: boolean;
+        };
+        if (!res.ok || data.ok === false) {
+          setMessage(data.error || `상태 조회 실패 (HTTP ${res.status})`);
+          return { ok: false, slow: data.slow === true, status: res.status } as const;
+        }
+        applyPayload(data);
+        if (data.session?.email) setEmail(data.session.email);
+        if (data.session?.baseUrl) setBaseUrl(data.session.baseUrl);
+        if (data.error) setMessage(data.error);
+        else if (!refresh) setMessage("");
+        return { ok: true, slow: data.slow === true, status: res.status } as const;
+      } catch (err) {
+        window.clearTimeout(timeout);
+        const msg =
+          err instanceof DOMException && err.name === "AbortError"
+            ? "허브 폴링 타임아웃 (15초 초과)"
+            : "네트워크 오류 — 잠시 후 재시도";
+        setMessage(msg);
+        return { ok: false, slow: true, status: 0 } as const;
       }
-      applyPayload(data);
-      if (data.session?.email) setEmail(data.session.email);
-      if (data.session?.baseUrl) setBaseUrl(data.session.baseUrl);
     },
     [applyPayload]
   );
@@ -98,16 +116,43 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
     if (!session) return;
     /** refresh=1 은 toona 외부 API+후원 sync — 겹치면 Node/MySQL 풀이 막혀 504→502 연쇄 */
     let inFlight = false;
-    const tick = () => {
-      if (inFlight) return;
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-      inFlight = true;
-      void load(true).finally(() => {
-        inFlight = false;
-      });
+    let stopped = false;
+    let backoffMs = 30_000;
+    let handle: number | undefined;
+    const scheduleNext = (nextMs: number) => {
+      if (stopped) return;
+      handle = window.setTimeout(tick, nextMs);
     };
-    const t = window.setInterval(tick, 30_000);
-    return () => window.clearInterval(t);
+    const tick = async () => {
+      if (stopped) return;
+      if (inFlight) {
+        scheduleNext(backoffMs);
+        return;
+      }
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        scheduleNext(60_000);
+        return;
+      }
+      inFlight = true;
+      try {
+        const result = await load(true);
+        if (result?.ok && !result?.slow) {
+          backoffMs = 30_000;
+        } else {
+          backoffMs = Math.min(120_000, Math.floor(backoffMs * 1.6) + 10_000);
+        }
+      } catch {
+        backoffMs = Math.min(180_000, Math.floor(backoffMs * 2) + 15_000);
+      } finally {
+        inFlight = false;
+        scheduleNext(backoffMs);
+      }
+    };
+    scheduleNext(30_000);
+    return () => {
+      stopped = true;
+      if (handle) window.clearTimeout(handle);
+    };
   }, [session, load]);
 
   const syncLocalSigInventory = useCallback(async () => {

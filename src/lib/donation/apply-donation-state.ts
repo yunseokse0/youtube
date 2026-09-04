@@ -1,6 +1,7 @@
 import { applyMealBattleDonationToParticipants, mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import { normalizeAnonymousDonorDisplayName } from "@/lib/donation/anonymous-donor-name";
+import { resolveEffectiveDonorTarget } from "@/lib/state";
 import {
   isDonationAmountEligibleForHighSocietyTerritory,
   isDonorHsTerritoryIncluded,
@@ -472,7 +473,7 @@ export function donationContentMatchKey(donor: {
     .trim()
     .toLowerCase();
   const amount = Math.max(0, Math.round(Number(donor.amount) || 0));
-  const target = donor.target === "toon" ? "toon" : "account";
+  const target = resolveEffectiveDonorTarget(donor);
   const msg = String(donor.message || "")
     .trim()
     .toLowerCase();
@@ -860,7 +861,7 @@ export function applyDonationToAppState(
 
   const updatedMembers = currentState.members.map((member) => {
     if (member.id !== newDonor.memberId) return member;
-    const field = newDonor.target === "toon" ? "toon" : "account";
+    const field = resolveEffectiveDonorTarget(newDonor);
     const isOperating = isOperatingSettlementMember(
       { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
       currentState.memberPositions || null
@@ -936,7 +937,7 @@ export function revertDonationFromAppState(currentState: AppState, donorId: stri
   if (!donor) return null;
   if (isDonorExcludedFromDonationTotals(donor)) return null;
 
-  const field = (donor.target || "account") === "toon" ? "toon" : "account";
+  const field = resolveEffectiveDonorTarget(donor);
   const amount = Math.max(0, Math.round(Number(donor.amount) || 0));
   const atMs = donorAtEpochMs(donor);
   const formula = normalizeContributionFormula(currentState.contributionFormula);
@@ -944,7 +945,7 @@ export function revertDonationFromAppState(currentState: AppState, donorId: stri
   const contributionPoints =
     Number.isFinite(storedPoints) && storedPoints >= 0
       ? Math.round(storedPoints)
-      : computeContributionPoints(amount, donor.target || field, formula);
+      : computeContributionPoints(amount, field, formula);
 
   const members = currentState.members.map((member) => {
     if (member.id !== donor.memberId) return member;

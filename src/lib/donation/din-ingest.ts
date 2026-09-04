@@ -38,7 +38,7 @@ export function sanitizeDonationEventFromIngestBody(raw: unknown): DonationEvent
       : new Date().toISOString();
 
   const target =
-    body.target === "account" ? "account" : body.target === "toon" ? "toon" : undefined;
+    body.target === "account" ? "account" : body.target === "toon" ? "toon" : provider === "toonation" ? "toon" : "account";
 
   const statusRaw = String(body.status || "queued");
   const status =

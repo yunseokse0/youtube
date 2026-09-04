@@ -27,6 +27,7 @@ import type { SigItem } from "@/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 15;
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -83,8 +84,37 @@ export async function GET(req: NextRequest) {
 
   const refresh = new URL(req.url).searchParams.get("refresh") === "1";
   if (refresh) {
-    const polled = await pollToonaHubForAdmin(auth.userId);
-    return json({ ok: true, session: polled.session, logs: polled.logs });
+    try {
+      const timeoutMs = 12_000;
+      const abortRef = { aborted: false };
+      const pollPromise = (async () => {
+        const polled = await pollToonaHubForAdmin(auth.userId);
+        if (abortRef.aborted) return null;
+        return polled;
+      })();
+      const timeoutPromise = new Promise<null>((res) =>
+        setTimeout(() => {
+          abortRef.aborted = true;
+          res(null);
+        }, timeoutMs)
+      );
+      const result = await Promise.race([pollPromise, timeoutPromise]);
+      if (result) {
+        return json({ ok: true, session: result.session, logs: result.logs });
+      }
+      const session = await readToonaHubSession(auth.userId);
+      const logs = await readToonaHubDonationLogs(auth.userId);
+      return json({ ok: true, session: publicToonaHubSession(session), logs, slow: true });
+    } catch (err) {
+      const session = await readToonaHubSession(auth.userId).catch(() => null);
+      const logs = await readToonaHubDonationLogs(auth.userId).catch(() => []);
+      return json({
+        ok: true,
+        session: publicToonaHubSession(session),
+        logs,
+        error: err instanceof Error ? String(err.message || err).slice(0, 120) : "poll_failed",
+      });
+    }
   }
 
   const session = await readToonaHubSession(auth.userId);

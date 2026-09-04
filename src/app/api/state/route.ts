@@ -64,6 +64,7 @@ import {
   loadAppStateForUserId,
   peekAppStateKvCache,
   seedAppStateKvCache,
+  invalidateAppStateKvCache,
 } from "@/lib/app-state-server-load";
 import { saveAppStateForRoulette } from "../roulette/edge-state-store";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
@@ -1507,6 +1508,8 @@ export async function POST(req: Request) {
         setServerMemoryAppState(userId, memNext);
       }
       const memUpdatedAt = Number(memNext.updatedAt || 0) || Date.now();
+      invalidateAppStateKvCache(userId);
+      seedAppStateKvCache(userId, memNext);
       void publishSseEvent(buildStateUpdatedSsePayload(body, memNext, memUpdatedAt, membersAuthoritative)).catch(() => {});
       logger.info('메모리 상태 업데이트', { updatedAt: memNext.updatedAt });
       return new Response(
@@ -1581,6 +1584,8 @@ export async function POST(req: Request) {
       persistedNext = toPersist;
     }
     const finalUpdatedAt = Number(persistedNext.updatedAt || 0) || Date.now();
+    invalidateAppStateKvCache(userId);
+    seedAppStateKvCache(userId, persistedNext);
     void publishSseEvent(buildStateUpdatedSsePayload(body, persistedNext, finalUpdatedAt, membersAuthoritative)).catch(() => {});
     return new Response(
       JSON.stringify({

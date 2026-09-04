@@ -34,6 +34,29 @@ function donorTargetField(target?: DonorTarget): "account" | "toon" {
   return target === "toon" ? "toon" : "account";
 }
 
+function normalizeSettlementDonorName(raw: string): string {
+  return (raw || "무명").trim() || "무명";
+}
+
+/**
+ * 이번 정산(자키 생일 정산 등 특정 건)에만 임시 적용하는 후원자명 alias.
+ * 전체 정산에 영구 적용하지 않고 특정 제목 키워드가 감지될 때만 치환.
+ * 추후 다른 정산에 적용하려면 아래 조건(title 키워드)만 수정하면 됨.
+ */
+function applyTemporarySettlementDonorAlias(
+  record: SettlementRecord | null | undefined,
+  donorName: string
+): string {
+  const name = normalizeSettlementDonorName(donorName);
+  if (!record) return name;
+  const title = String(record.title || "").toLowerCase();
+  /** 임시 적용 대상: 정산 제목에 "자키" 또는 "생일" 키워드 포함 시 */
+  const isThisSettlement = title.includes("자키") || title.includes("생일");
+  if (!isThisSettlement) return name;
+  if (name === "옆에분" || name === "하정") return "요하정";
+  return name;
+}
+
 function csvEscape(v: string | number): string {
   return `"${String(v).replace(/"/g, '""')}"`;
 }
@@ -86,11 +109,15 @@ export function donorsForSettlementExport(
   dailyLog?: Record<string, DailyLogEntry[]>,
   referenceDonors?: Donor[]
 ): Donor[] {
-  return repairSettlementDonorTimestamps(donors, {
+  const repaired = repairSettlementDonorTimestamps(donors, {
     dailyLog,
     referenceDonors,
     settlementCreatedAt: record.createdAt,
   });
+  return repaired.map((d) => ({
+    ...d,
+    name: applyTemporarySettlementDonorAlias(record, d.name || "무명"),
+  }));
 }
 
 /** 정산 시점 후원 스냅샷 기준 · 없으면 해당 날짜 daily log에서 복원 */
@@ -214,7 +241,7 @@ export function aggregateMemberDonors(
   const { nameById, realById } = memberMaps(record);
   const agg = new Map<string, MemberDonorAggregateRow>();
   for (const d of donors) {
-    const donorName = (d.name || "무명").trim() || "무명";
+    const donorName = applyTemporarySettlementDonorAlias(record, d.name || "무명");
     const key = `${d.memberId}\0${donorName}`;
     const prev =
       agg.get(key) ||
