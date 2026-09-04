@@ -1425,15 +1425,30 @@ export async function POST(req: Request) {
       delete cleared.intentionalDonationClearAt;
       next = cleared;
     }
-    if (!settlementReset && effectiveResetAt > 0) {
+    /**
+     * 정산 리셋·donationInit 리셋 직후에는 무조건 donors→멤버 금액 재동기화를 강제한다.
+     * (이전 !settlementReset 조건 때문에 리셋시 m.account/m.toon/m.contribution 이
+     *  구 쓰레기값(기여도 소수 1.3 등)을 그대로 잔존시켜 Admin 화면에 "쓰레기값"이 보이던 버그 fix)
+     * — 리셋이 아닌 평상시(stale strip)에는 effectiveResetAt 상승시에만 선택적으로 동기화(기존 로직 유지)
+     */
+    const forceSyncMembersNow = settlementReset || donationInitReset;
+    if (forceSyncMembersNow || (!settlementReset && effectiveResetAt > 0)) {
       const before = normalizeDonorsArray(next.donors);
-      /** 구 탭 stale 저장 — rebump 없이 리셋 이전 at 만 제거 (리셋 무력화 방지) */
-      const after = filterDonorsAfterSettlementReset(before, effectiveResetAt);
-      if (after.length !== before.length) {
-        next = syncMemberTotalsFromDonors({ ...next, donors: after });
+      let donorsToUse = before;
+      let stripped = false;
+      if (!settlementReset && effectiveResetAt > 0) {
+        /** 구 탭 stale 저장 — rebump 없이 리셋 이전 at 만 제거 (리셋 무력화 방지) */
+        donorsToUse = filterDonorsAfterSettlementReset(before, effectiveResetAt);
+        stripped = donorsToUse.length !== before.length;
+      } else {
+        /** 강제 sync 경로: donors 가 비어있으면(정산 리셋) 모든 멤버 금액 0 으로 리셋 */
+        donorsToUse = before;
+      }
+      next = syncMemberTotalsFromDonors({ ...next, donors: donorsToUse });
+      if (stripped) {
         logger.warn("pre-reset donors stripped before persist", {
           userId,
-          dropped: before.length - after.length,
+          dropped: before.length - donorsToUse.length,
         });
       }
     }

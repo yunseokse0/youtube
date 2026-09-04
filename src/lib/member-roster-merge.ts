@@ -43,10 +43,13 @@ export function mergeManualMemberFieldsFromPatch(
             : undefined,
       operating: Boolean(patchM.operating),
       restroom: normalizeRestroomCount(patchM.restroom),
+      /** account/toon/contribution 은 항상 정수 원 단위로 강제 — parseOptionalPct 등 소수값이 금액 필드로 유입되는 오염 차단 */
+      account: Math.max(0, Math.floor(Number(baseM.account) || 0)),
+      toon: Math.max(0, Math.floor(Number(baseM.toon) || 0)),
       contribution:
         typeof patchM.contribution === "number" && Number.isFinite(patchM.contribution)
           ? Math.max(0, Math.floor(patchM.contribution))
-          : baseM.contribution,
+          : Math.max(0, Math.floor(Number(baseM.contribution) || 0)),
     };
   });
   if (!isDefaultPlaceholderMemberList(patchMembers)) {
@@ -83,15 +86,16 @@ export function mergeMemberRosterPreservingAmounts(
       ...baseM,
       ...patchM,
       name: nextName || baseM.name,
-      account: patchEmpty && baseHasAmt ? baseAccount : patchAccount,
-      toon: patchEmpty && baseHasAmt ? baseToon : patchToon,
+      /** account/toon/contribution 은 항상 정수 원 단위로 강제 — parseOptionalPct 등 소수 오염 봉쇄 */
+      account: Math.max(0, Math.floor(patchEmpty && baseHasAmt ? baseAccount : patchAccount)),
+      toon: Math.max(0, Math.floor(patchEmpty && baseHasAmt ? baseToon : patchToon)),
       restroom: normalizeRestroomCount(
         patchM.restroom !== undefined ? patchM.restroom : baseM.restroom
       ),
       contribution:
         typeof patchM.contribution === "number" && Number.isFinite(patchM.contribution)
           ? Math.max(0, Math.floor(patchM.contribution))
-          : baseM.contribution,
+          : Math.max(0, Math.floor(Number(baseM.contribution) || 0)),
       operating: Boolean(patchM.operating),
     };
   });
