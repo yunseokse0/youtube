@@ -58,19 +58,38 @@ export function donorRowDedupeKey(donor: {
   name?: string;
   amount?: number;
   at?: number | string;
+  externalId?: string;
+  rawHash?: string | number;
 }): string {
   const rawId = String(donor.id || "").trim();
   const baseId = normalizeDonationEventId(rawId);
   const toonationMatch = /^toonation:(.+)$/i.exec(baseId);
   if (toonationMatch) {
     const ext = toonationMatch[1].toLowerCase();
-    /** weak fallback id(`{ts}-{amount}`)도 건별 고유 — 짧은 시간 동일 금액 연속 후원 누락 방지 */
     if (!isWeakToonationDonorId(rawId)) return `toonation:${ext}`;
+    /**
+     * ★ 3연속 후원 dedup aggressive 버그 FIX:
+     *  weak fallback id(`fp-{ts}-{amount}` 또는 `{ts}-{amount}`)는
+     *  1초 내 동일 금액 3건 발송시 ts·amount가 같아 3건 = 동일 key → 1건 병합 drop 됨.
+     *  externalId(허브에서 준 UUID) 또는 임의 hash suffix(`rawHash`)를 붙여서
+     *  "같은 금액 3연속 = 각기 다른 key" 로 보장 → pass1 1단계 dedup에서 3건 전부 유지.
+     */
+    const rawExt = String(donor.externalId || "").trim();
+    const seed = rawExt || String(donor.rawHash || "").trim();
+    if (seed) {
+      const seedHash = Math.abs(Array.from(seed).reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) | 0, 0x9e3779b9)).toString(36).padStart(7, "0").slice(-7);
+      return `id:${baseId}#${seedHash}`;
+    }
     return `id:${baseId}`;
   }
   if (baseId) return `id:${baseId}`;
   const name = String(donor.name || "").trim();
   const amount = Math.floor(Number(donor.amount || 0));
+  const rawFallbackExt = String(donor.externalId || donor.rawHash || "").trim();
+  if (rawFallbackExt) {
+    const fallbackHash = Math.abs(Array.from(rawFallbackExt).reduce((acc, ch) => (acc * 131 + ch.charCodeAt(0)) | 0, 0xdeadbeef)).toString(36).padStart(6, "0").slice(-5);
+    return `fallback:${name}|${donorAtEpochMs(donor)}|${amount}|${fallbackHash}`;
+  }
   return `fallback:${name}|${donorAtEpochMs(donor)}|${amount}`;
 }
 
@@ -724,7 +743,10 @@ export function shouldTreatAsDuplicateDonationContent(
   if (!isNearContentDuplicate(existing, incoming, windowMs)) return false;
   const extA = extractReliableToonationExtFromDonorId(String(existing.id || ""));
   const extB = reliableExtFromIncoming(incoming);
-  /** 서로 다른 투네 실 id = 별도 후원 (동일 문구 여러 번 후원 허용) */
+  /** ★ 서로 다른 투네 실 id = 별도 후원 (동일 문구·동일 금액·윈도우 내 3연속 후원 허용)
+   *  - 박자키 1만원 × 3 연속 발송 시 extA·extB = UUID 3개가 서로 다르므로 이 조건에서 return false 탈출
+   *  - 아래 identicalMessageNearDupWindowMs 까지 가지 않아서 dedup 되지 않음 → 3건 전부 정상 반영
+   */
   if (extA && extB && extA !== extB) return false;
   if (identicalMessageNearDupWindowMs(existing, incoming) != null) return true;
   return true;
@@ -761,6 +783,8 @@ export function isDuplicateDonationEvent(state: AppState, rawEvent: DonationEven
     at: rawEvent.at,
     target: rawEvent.target,
     message: rawEvent.message,
+    externalId: externalId,
+    rawHash: rawEvent.id,
   };
   const probeKey = donorRowDedupeKey(probeDonor);
 
