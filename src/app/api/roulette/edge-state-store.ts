@@ -68,15 +68,33 @@ function scheduleBroadcastWrite(
   persisted: AppState,
   opts: SaveAppStateForRouletteOptions | undefined
 ): void {
+  const isResetWipe =
+    opts?.allowEmptyRosterWipe === true &&
+    Array.isArray(persisted.donors) &&
+    persisted.donors.length === 0;
+
   if (typeof setTimeout === "undefined") {
     void dualWriteBroadcastDonations(userId, persisted, opts).catch(() => {});
     return;
   }
+
   const now = Date.now();
-  const lastRun = broadcastLastRunAt.get(userId) || 0;
   const entry = broadcastPending.get(userId) ?? { timer: null, payload: null };
 
-  if (entry.timer) clearTimeout(entry.timer);
+  if (entry.timer) {
+    clearTimeout(entry.timer);
+    entry.timer = null;
+    entry.payload = null;
+  }
+
+  if (isResetWipe) {
+    broadcastPending.set(userId, entry);
+    broadcastLastRunAt.set(userId, Date.now());
+    void dualWriteBroadcastDonations(userId, persisted, opts).catch(() => {});
+    return;
+  }
+
+  const lastRun = broadcastLastRunAt.get(userId) || 0;
   entry.payload = { persisted, opts, scheduledAt: now };
 
   const gap = now - lastRun;

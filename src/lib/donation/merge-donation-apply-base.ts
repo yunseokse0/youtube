@@ -1,5 +1,6 @@
 import {
   DEFAULT_DONOR_RANKINGS_FULL_THEME,
+  filterDonorsAfterSettlementReset,
   hasMeaningfulMemberRoster,
   isDefaultLikeDonorRankingsTheme,
   isIntentionalDonorListShrink,
@@ -134,10 +135,11 @@ export function mergeDonationApplyBase(
       : fresh.donorRankingsPresets,
     donorRankingsPresetId: hint.donorRankingsPresetId ?? fresh.donorRankingsPresetId,
     /** hint 가 구 리셋 스탬프면 서버 최신 리셋을 덮어 분배 at 가 필터에 걸림 → max 유지 */
-    settlementResetAt: Math.max(
-      Number(fresh.settlementResetAt || 0),
-      Number(hint.settlementResetAt || 0)
-    ) || fresh.settlementResetAt || hint.settlementResetAt,
+    settlementResetAt:
+      Math.max(
+        Number(fresh.settlementResetAt || 0),
+        Number(hint.settlementResetAt || 0)
+      ) || fresh.settlementResetAt || hint.settlementResetAt,
     overlaySettings: {
       ...((fresh.overlaySettings && typeof fresh.overlaySettings === "object"
         ? fresh.overlaySettings
@@ -190,19 +192,29 @@ export function mergeStatePreservingDonorsUntilSettlementReset(
       !opts?.allowEmptyRosterWipe &&
       shouldBlockAccidentalEmptyOverwrite(existing, incoming)
     ) {
+      const effReset = Number(existing.settlementResetAt || 0);
+      const baseDonors = normalizeDonorsArray(existing.donors);
+      const filteredDonors = effReset > 0
+        ? filterDonorsAfterSettlementReset(baseDonors, effReset)
+        : baseDonors;
       return {
         ...incoming,
         members: existing.members,
         memberPositions: existing.memberPositions ?? incoming.memberPositions,
-        donors: normalizeDonorsArray(existing.donors),
+        donors: filteredDonors,
         settlementResetAt: existing.settlementResetAt,
         updatedAt: Math.max(Number(incoming.updatedAt || 0), Number(existing.updatedAt || 0)) || Date.now(),
       };
     }
+    const effReset = incomingReset;
+    const baseDonors = normalizeDonorsArray(incoming.donors);
+    const filteredDonors = effReset > 0
+      ? filterDonorsAfterSettlementReset(baseDonors, effReset)
+      : baseDonors;
     return syncMemberTotalsFromDonors({
       ...incoming,
-      settlementResetAt: incomingReset,
-      donors: normalizeDonorsArray(incoming.donors),
+      settlementResetAt: effReset,
+      donors: filteredDonors,
     });
   }
   const incomingDonors = normalizeDonorsArray(incoming.donors);
@@ -218,10 +230,14 @@ export function mergeStatePreservingDonorsUntilSettlementReset(
       Number(existing.updatedAt || 0)
     )
   ) {
+    const effReset = Math.max(incomingReset, existingReset) || 0;
+    const filteredDonors = effReset > 0
+      ? filterDonorsAfterSettlementReset(incomingDonors, effReset)
+      : incomingDonors;
     const shrunk = syncMemberTotalsFromDonors({
       ...incoming,
-      donors: incomingDonors,
-      settlementResetAt: Math.max(incomingReset, existingReset) || incoming.settlementResetAt || existing.settlementResetAt,
+      donors: filteredDonors,
+      settlementResetAt: effReset || (incoming.settlementResetAt ?? existing.settlementResetAt),
       updatedAt: Math.max(Number(incoming.updatedAt || 0), Number(existing.updatedAt || 0)) || Date.now(),
     });
     return repairMemberTotalsForDonorRoster(shrunk, existing, incoming);
@@ -240,7 +256,11 @@ export function mergeDonationReplaceForPersist(
 ): AppState {
   const incomingDonors = normalizeDonorsArray(incoming.donors);
   if (!existing) {
-    const synced = syncMemberTotalsFromDonors({ ...incoming, donors: incomingDonors });
+    const effReset = Number(incoming.settlementResetAt || 0);
+    const filteredDonors = effReset > 0
+      ? filterDonorsAfterSettlementReset(incomingDonors, effReset)
+      : incomingDonors;
+    const synced = syncMemberTotalsFromDonors({ ...incoming, donors: filteredDonors });
     return repairMemberTotalsForDonorRoster(synced, incoming);
   }
   const incomingReset = Number(incoming.settlementResetAt || 0);
@@ -250,23 +270,32 @@ export function mergeDonationReplaceForPersist(
       !opts?.allowEmptyRosterWipe &&
       shouldBlockAccidentalEmptyOverwrite(existing, incoming)
     ) {
+      const effReset = existingReset;
+      const baseDonors = normalizeDonorsArray(existing.donors);
+      const filteredDonors = effReset > 0
+        ? filterDonorsAfterSettlementReset(baseDonors, effReset)
+        : baseDonors;
       return repairMemberTotalsForDonorRoster(
         syncMemberTotalsFromDonors({
           ...incoming,
           members: hasMeaningfulMemberRoster(existing) ? existing.members : incoming.members,
           memberPositions: existing.memberPositions ?? incoming.memberPositions,
-          donors: normalizeDonorsArray(existing.donors),
+          donors: filteredDonors,
           settlementResetAt: existing.settlementResetAt,
         }),
         existing,
         incoming
       );
     }
+    const effReset = incomingReset;
+    const filteredDonors = effReset > 0
+      ? filterDonorsAfterSettlementReset(incomingDonors, effReset)
+      : incomingDonors;
     return repairMemberTotalsForDonorRoster(
       syncMemberTotalsFromDonors({
         ...incoming,
-        settlementResetAt: incomingReset,
-        donors: incomingDonors,
+        settlementResetAt: effReset,
+        donors: filteredDonors,
       }),
       existing,
       incoming
@@ -274,15 +303,18 @@ export function mergeDonationReplaceForPersist(
   }
   const shell = mergeDonationApplyBase(incoming, existing) ?? incoming;
   const useIncomingRoster = hasMeaningfulMemberRoster(incoming);
+  const effReset = Math.max(incomingReset, existingReset) || Number(shell.settlementResetAt || 0);
+  const filteredDonors = effReset > 0
+    ? filterDonorsAfterSettlementReset(incomingDonors, effReset)
+    : incomingDonors;
   const replaced = syncMemberTotalsFromDonors({
     ...shell,
-    donors: incomingDonors,
+    donors: filteredDonors,
     members: useIncomingRoster ? incoming.members : shell.members,
     memberPositions: useIncomingRoster
       ? incoming.memberPositions ?? shell.memberPositions
       : shell.memberPositions,
-    settlementResetAt:
-      Math.max(incomingReset, existingReset) || shell.settlementResetAt,
+    settlementResetAt: effReset || shell.settlementResetAt,
     updatedAt:
       Math.max(Number(incoming.updatedAt || 0), Number(existing.updatedAt || 0)) ||
       Date.now(),

@@ -65,6 +65,9 @@ export function applySettlementResetToState(
         restroom: 0,
       })),
       donors: [],
+      contributionLogs: [],
+      restroomLogs: [],
+      territoryLogs: [],
       mealBattle: {
         ...state.mealBattle,
         participants: (state.mealBattle?.participants || []).map((p) => ({ ...p, score: 0 })),

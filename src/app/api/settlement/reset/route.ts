@@ -66,6 +66,19 @@ export async function POST(req: Request) {
 
   await clearDonationRosterBackup(userId, resetAt);
 
+  /** dual-write 미러 강제 비움: save 호출 전 선행 DELETE 하여 save 내 bypass flush 가 가장 늦게 적히도록 순서 고정 */
+  try {
+    const { clearBroadcastDonationsForUser } = await import(
+      "@/lib/donation/broadcast-donations-mysql"
+    );
+    await clearBroadcastDonationsForUser(userId);
+  } catch (err) {
+    logger.warn("broadcast_donations clear before reset persist failed", {
+      userId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   const saved = await saveAppStateForRoulette(userId, next, {
     donorsMode: "replace",
     allowEmptyRosterWipe: true,
@@ -75,19 +88,6 @@ export async function POST(req: Request) {
     return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
       status: 503,
       headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-    });
-  }
-
-  /** dual-write 미러 강제 비움 (void 레이스 대비) */
-  try {
-    const { clearBroadcastDonationsForUser } = await import(
-      "@/lib/donation/broadcast-donations-mysql"
-    );
-    await clearBroadcastDonationsForUser(userId);
-  } catch (err) {
-    logger.warn("broadcast_donations clear after reset failed", {
-      userId,
-      err: err instanceof Error ? err.message : String(err),
     });
   }
 
