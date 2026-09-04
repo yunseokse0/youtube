@@ -31,7 +31,16 @@ export function sanitizeDonationEventFromIngestBody(raw: unknown): DonationEvent
   if (!donorName || !externalId || amount <= 0) return null;
 
   const provider = body.provider === "toonation" ? "toonation" : "bank";
-  const id = String(body.id || "").trim() || `${provider}:din:${externalId}`;
+  const bodyIdRaw = String(body.id || "").trim();
+  const id =
+    bodyIdRaw &&
+    (bodyIdRaw.startsWith("toonation:") ||
+      bodyIdRaw.startsWith("bank:") ||
+      bodyIdRaw.startsWith("account:"))
+      ? bodyIdRaw
+      : bodyIdRaw
+        ? `${provider}:${bodyIdRaw}`
+        : `${provider}:din:${externalId}`;
   const atRaw = body.at;
   /**
    * KST local 점 구분 + 24시 표기(ex: "2026. 09. 02. 24:59:34") 를 안전하게 ISO Z 문자열로 변환.

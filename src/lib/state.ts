@@ -1672,7 +1672,6 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
       const targetRaw = x.target;
       let target: DonorTarget | undefined =
         targetRaw === "toon" ? "toon" : targetRaw === "account" ? "account" : undefined;
-      /** target 누락 시 id 접두사로 추론해서 채워주기 — 오래 적재된 데이터 대상 */
       if (!target) {
         if (idRaw.startsWith("toonation:")) target = "toon";
         else if (idRaw.startsWith("bank:") || idRaw.startsWith("account:")) target = "account";
@@ -1686,7 +1685,8 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
         memberId: String(x.memberId ?? ""),
         at: donorAtEpochMs(x as Donor) || Date.now(),
       };
-      const finalTarget = target || resolveEffectiveDonorTarget(row);
+      const finalTarget =
+        resolveEffectiveDonorTarget(x) || target || resolveEffectiveDonorTarget(row);
       if (finalTarget) row.target = finalTarget;
       const message = typeof x.message === "string" ? x.message.trim() : "";
       if (message) row.message = message;
