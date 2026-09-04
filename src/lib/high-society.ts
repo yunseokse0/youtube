@@ -408,7 +408,9 @@ export function defaultHighSocietySettings(): HighSocietySettings {
   };
 }
 
-/** 초기값과 동일(영토·좌석·라운드 이력 없음) */
+/** 초기값과 동일(영토·좌석·라운드 이력 없음)
+ *  — 소린 10cm 확장 / memberTerritoryExpand / memberWidthCm / territoryLogs 1건 이상이면
+ *    기본값이 아님(false)으로 판정해야 regression heal 로 기존 10cm → 0cm revert 되는 현상 차단 */
 export function isDefaultLikeHighSocietySettings(
   settings: HighSocietySettings | null | undefined
 ): boolean {
@@ -420,6 +422,10 @@ export function isDefaultLikeHighSocietySettings(
   if (s.territoryPaused) return false;
   if ((s.seatMemberIds || []).length > 0) return false;
   if (s.seatMemberIdsManual === true) return false;
+  if (Object.keys(s.memberTerritoryExpand || {}).length > 0) return false;
+  if (Object.keys(s.memberWidthCm || {}).length > 0) return false;
+  if (Object.keys(s.memberWidthDonationSnapshot || {}).length > 0) return false;
+  if (Array.isArray((s as { territoryLogs?: unknown[] }).territoryLogs) && (s as { territoryLogs?: unknown[] }).territoryLogs!.length > 0) return false;
   if (Math.max(1, Math.floor(Number(s.round) || 1)) > 1) return false;
   if (Math.floor(Number(s.fieldCm) || 0) !== def.fieldCm) return false;
   if (Math.floor(Number(s.startCmPerMember) || 0) !== def.startCmPerMember) return false;
@@ -439,6 +445,10 @@ export function isMeaningfulHighSocietySettings(
   if (s.territoryPaused) return true;
   if ((s.seatMemberIds || []).length > 0) return true;
   if (s.seatMemberIdsManual === true) return true;
+  if (Object.keys(s.memberTerritoryExpand || {}).length > 0) return true;
+  if (Object.keys(s.memberWidthCm || {}).length > 0) return true;
+  if (Object.keys(s.memberWidthDonationSnapshot || {}).length > 0) return true;
+  if (Array.isArray((s as { territoryLogs?: unknown[] }).territoryLogs) && (s as { territoryLogs?: unknown[] }).territoryLogs!.length > 0) return true;
   if (Math.max(1, Math.floor(Number(s.round) || 1)) > 1) return true;
   const def = defaultHighSocietySettings();
   if (Math.floor(Number(s.fieldCm) || 0) !== def.fieldCm) return true;
@@ -462,9 +472,24 @@ function hasMemberWidthSnapshot(
   return Boolean(widths && Object.keys(widths).length > 0);
 }
 
+function hasMemberTerritoryExpand(
+  settings: HighSocietySettings | null | undefined
+): boolean {
+  const expand = settings?.memberTerritoryExpand;
+  return Boolean(expand && Object.keys(expand).length > 0);
+}
+
+function hasTerritoryLogs(
+  settings: HighSocietySettings | null | undefined
+): boolean {
+  return Array.isArray((settings as { territoryLogs?: unknown[] } | null)?.territoryLogs) && 
+    ((settings as { territoryLogs?: unknown[] }).territoryLogs?.length ?? 0) > 0;
+}
+
 /**
  * OBS·오버레이 sync — 후원 GET/SSE 직후 HS 가 기본값·스냅샷 누락으로 덮이지 않게.
  * donors/members 는 건드리지 않고 highSocietySettings 만 병합한다.
+ * — 상호 Complement: base에만 있고 inc에 없는 스냅샷은 base 살리고, inc에만 있고 base에 없는 expand/logs는 inc 살림 (어느 한쪽만 누락 시 양쪽 merge 해서 영구 소실 방지)
  */
 export function mergeHighSocietySettingsPreferBaseline(
   baseline: HighSocietySettings | null | undefined,
@@ -474,16 +499,25 @@ export function mergeHighSocietySettingsPreferBaseline(
   const inc = normalizeHighSocietySettings(incoming);
   if (!base || !isMeaningfulHighSocietySettings(base)) return inc;
   if (shouldBlockHighSocietyRegression(base, inc)) return base;
+
+  const patch: Partial<HighSocietySettings> = { ...inc };
+  let hasPatch = false;
+
   if (hasMemberWidthSnapshot(base) && !hasMemberWidthSnapshot(inc)) {
-    return normalizeHighSocietySettings({
-      ...inc,
-      memberWidthCm: base.memberWidthCm,
-      memberWidthDonationSnapshot:
-        base.memberWidthDonationSnapshot ?? inc.memberWidthDonationSnapshot,
-      memberTerritoryExpand: base.memberTerritoryExpand ?? inc.memberTerritoryExpand,
-    });
+    patch.memberWidthCm = base.memberWidthCm;
+    patch.memberWidthDonationSnapshot = base.memberWidthDonationSnapshot ?? inc.memberWidthDonationSnapshot;
+    hasPatch = true;
   }
-  return inc;
+  if (hasMemberTerritoryExpand(base) && !hasMemberTerritoryExpand(inc)) {
+    patch.memberTerritoryExpand = base.memberTerritoryExpand;
+    hasPatch = true;
+  }
+  if (hasTerritoryLogs(base) && !hasTerritoryLogs(inc)) {
+    (patch as { territoryLogs?: unknown[] }).territoryLogs = (base as { territoryLogs?: unknown[] }).territoryLogs;
+    hasPatch = true;
+  }
+  // 반대 방향: inc 에만 스냅샷 있고 base 에 없을 때는 inc 유지 (return inc)
+  return hasPatch ? normalizeHighSocietySettings({ ...inc, ...patch }) : inc;
 }
 
 /** 시스템 기본 방향 — split 불가, left|right 만 */

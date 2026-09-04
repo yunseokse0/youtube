@@ -2943,8 +2943,14 @@ export async function saveStateAsync(
           guarded.settlementResetAt,
       };
     }
-    /** 시그 후원 연동 등 — LS 상류사회 설정이 구/React 기본값으로 줄지 않게 */
+    /** 시그 후원 연동 등 — LS 상류사회 설정이 구/React 기본값으로 줄지 않게
+     *  — 2중 safety net: incoming (guarded) 의 updatedAt 이 local 보다 최신일 경우
+     *    regression 판정이 잘못 나와도 무조건 incoming 우선. 최신 수정(소린 10cm expand) 이 구 baseline 0cm 로 revert heal 되는 현상 원천 봉쇄 */
+    const guardedUpdatedAtHs = Number(guarded.updatedAt || 0);
+    const localUpdatedAtHs = Number(local?.updatedAt || 0);
+    const incomingHsMoreRecent = guardedUpdatedAtHs > 0 && guardedUpdatedAtHs >= localUpdatedAtHs;
     if (
+      !incomingHsMoreRecent &&
       local?.highSocietySettings &&
       (saveOpts?.omitHighSocietyFields || saveOpts?.omitDonationFields) &&
       shouldBlockHighSocietyRegression(local.highSocietySettings, guarded.highSocietySettings)
