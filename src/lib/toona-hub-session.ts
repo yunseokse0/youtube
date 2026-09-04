@@ -94,7 +94,9 @@ export async function appendToonaHubDonationLog(
   await appendToonaHubDonationLogs(userId, [entry]);
 }
 
-/** 후원 로그 일괄 추가 — hub poll 시 건당 KV RMW 폭주 방지 */
+/** 후원 로그 일괄 추가 — hub poll 시 건당 KV RMW 폭주 방지
+ *  같은 id 재입력시 기존 applied=false → 신규 applied=true 만 업그레이드 (절대 true→false 다운그레이드 금지)
+ *  → 최초 false로 stuck되어 영구 "대기열" 표시되는 버그 방지 */
 export async function appendToonaHubDonationLogs(
   userId: string,
   entries: ToonaHubDonationLog[]
@@ -102,23 +104,55 @@ export async function appendToonaHubDonationLogs(
   const uid = String(userId || "").trim();
   if (!uid || !entries?.length) return 0;
   const prev = await readToonaHubDonationLogs(uid);
-  const seen = new Set(prev.map((x) => x.id));
-  const added: ToonaHubDonationLog[] = [];
+  const byId = new Map<string, ToonaHubDonationLog>();
+  for (const row of prev) if (row?.id) byId.set(row.id, row);
+  const freshIds = new Set<string>();
+  let newAddCount = 0;
+  let mergeAppliedUpgrade = 0;
   for (const entry of entries) {
-    if (!entry?.id || seen.has(entry.id)) continue;
-    seen.add(entry.id);
-    added.push(entry);
+    if (!entry?.id || freshIds.has(entry.id)) continue;
+    freshIds.add(entry.id);
+    const existing = byId.get(entry.id);
+    if (!existing) {
+      byId.set(entry.id, entry);
+      newAddCount += 1;
+      continue;
+    }
+    let changed = false;
+    const next: ToonaHubDonationLog = { ...existing };
+    if (!existing.applied && entry.applied) {
+      next.applied = true;
+      changed = true;
+      mergeAppliedUpgrade += 1;
+    }
+    if (entry.mode && existing.mode !== entry.mode) {
+      next.mode = entry.mode;
+      changed = true;
+    }
+    if (entry.playerName && !existing.playerName) {
+      next.playerName = entry.playerName;
+      changed = true;
+    }
+    if (entry.message && !existing.message) {
+      next.message = entry.message;
+      changed = true;
+    }
+    if (entry.amount && !existing.amount) {
+      next.amount = entry.amount;
+      changed = true;
+    }
+    if (changed) byId.set(entry.id, next);
   }
-  if (!added.length) return 0;
-  const next = [...added, ...prev].slice(0, MAX_LOGS);
+  const updatedRows = Array.from(byId.values()).sort((a, b) => b.at - a.at).slice(0, MAX_LOGS);
+  if (newAddCount === 0 && mergeAppliedUpgrade === 0) return 0;
   if (isPersistentKvConfigured()) {
     const all = (await upstashGetJson<Record<string, ToonaHubDonationLog[]>>(LOG_KEY)) || {};
-    all[uid] = next;
+    all[uid] = updatedRows;
     await upstashSetJsonWithPipeline(LOG_KEY, all);
-    return added.length;
+    return newAddCount + mergeAppliedUpgrade;
   }
-  logMemory.set(uid, next);
-  return added.length;
+  logMemory.set(uid, updatedRows);
+  return newAddCount + mergeAppliedUpgrade;
 }
 
 export async function clearToonaHubDonationLogs(userId: string): Promise<void> {
