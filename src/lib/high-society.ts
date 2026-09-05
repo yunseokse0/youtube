@@ -1752,6 +1752,143 @@ export function applyTerritoryLogDirectTransfers(
   };
 }
 
+/**
+ * 영토 기록부를 Source of Truth로 균등 startCm + 시간순 replay → 최종 멤버별 widthCm map 도출.
+ * @param seatIds 좌석 순서 배열 (idx 기준 이웃 판단)
+ * @param logs 기록부 전체 (at 오름차순 정렬해 사용)
+ * @param startCmPerMember 1인 시작 cm (균등 초기값)
+ * @param fieldCm 전체 영토 cm (양자화 기준)
+ * @param settings 방향 설정
+ */
+function deriveSeatsWidthMapFromTerritoryLogs(
+  seatIds: string[],
+  logs: TerritoryLog[],
+  startCmPerMember: number,
+  fieldCm: number,
+  settings: HighSocietySettings
+): Record<string, number> {
+  const n = seatIds.filter(Boolean).length;
+  if (n === 0) return {};
+  const startWidth = n > 0 ? fieldCm / n : 0;
+  const players: HighSocietyPlayerInput[] = seatIds
+    .filter(Boolean)
+    .map((id) => ({
+      id,
+      name: id,
+      donationWon: 0,
+      expandLeftCm: 0,
+      expandRightCm: 0,
+    }));
+  const fieldEqual = resolveHighSocietyField({ players, fieldCm });
+  const sortedLogs = [...(logs || [])].sort(
+    (a, b) => Number(a.at || 0) - Number(b.at || 0)
+  );
+  const resolved = applyTerritoryLogDirectTransfers(
+    fieldEqual,
+    seatIds.filter(Boolean),
+    sortedLogs,
+    settings
+  );
+  const out: Record<string, number> = {};
+  for (const seat of resolved.seats) {
+    out[seat.id] = Math.max(0, Math.round(seat.widthCm));
+  }
+  return out;
+}
+
+/**
+ * 스냅샷(memberWidthCm)과 기록부 replay 결과를 비교해 1cm 이상 불합치가 있으면
+ * 스냅샷 3종(memberWidthCm/memberWidthDonationSnapshot/memberTerritoryExpand)을
+ * 기록부 기준으로 덮어쓴 settings를 반환. 불합치 없으면 원본 그대로 반환.
+ */
+function healSettingsFromTerritoryLogs(
+  settings: HighSocietySettings,
+  seatIds: string[],
+  logs: TerritoryLog[],
+  startCmPerMember: number,
+  fieldCm: number
+): HighSocietySettings {
+  if (!logs?.length) return settings;
+  const validSeatIds = seatIds.filter(Boolean);
+  const n = validSeatIds.length;
+  if (n === 0) return settings;
+  const equalWidth = n > 0 ? fieldCm / n : 0;
+  const derived = deriveSeatsWidthMapFromTerritoryLogs(
+    validSeatIds,
+    logs,
+    startCmPerMember,
+    fieldCm,
+    settings
+  );
+  if (Object.keys(derived).length === 0) return settings;
+
+  const snapW = settings.memberWidthCm || {};
+  const hasSnapshot = snapW && Object.keys(snapW).length > 0;
+
+  let mismatch = false;
+  for (const id of validSeatIds) {
+    const expected = Math.max(0, Number(derived[id]) || 0);
+    const actual = Math.max(0, Number(snapW[id]) || 0);
+    if (Math.abs(expected - actual) >= 1) {
+      mismatch = true;
+      break;
+    }
+  }
+  if (!mismatch) return settings;
+
+  /**
+   * Seat order change guard — replay net direction vs snapshot direction.
+   * 좌석 순서 변경 후 old log replay 시 equal start 대비 + / - 방향이
+   * 1cm 이상 양쪽에서 반전되는 멤버가 존재하면 좌석이동으로 판단해 heal 중단.
+   * (useSnap=true 방어막 로직 재현: seat move → snapshot 우선)
+   */
+  if (hasSnapshot) {
+    let seatOrderSuspicious = false;
+    for (const id of validSeatIds) {
+      const rw = Math.max(0, Number(derived[id]) || 0);
+      const sw = Math.max(0, Number(snapW[id]) ?? equalWidth);
+      const rDiff = rw - equalWidth;
+      const sDiff = sw - equalWidth;
+      if (Math.abs(rDiff) >= 1 && Math.abs(sDiff) >= 1) {
+        const rPos = rDiff > 0;
+        const sPos = sDiff > 0;
+        if (rPos !== sPos) {
+          seatOrderSuspicious = true;
+          break;
+        }
+      }
+    }
+    if (seatOrderSuspicious) {
+      return settings;
+    }
+  }
+
+  const memberWidthCm: Record<string, number> = { ...snapW };
+  const memberWidthDonationSnapshot: Record<string, number> = {
+    ...(settings.memberWidthDonationSnapshot || {}),
+  };
+  const memberTerritoryExpand: Record<
+    string,
+    { expandLeftCm: number; expandRightCm: number }
+  > = { ...(settings.memberTerritoryExpand || {}) };
+  for (const id of validSeatIds) {
+    const w = Math.max(0, Number(derived[id]) || 0);
+    memberWidthCm[id] = w;
+    if (memberWidthDonationSnapshot[id] == null) {
+      memberWidthDonationSnapshot[id] = 0;
+    }
+    if (!memberTerritoryExpand[id]) {
+      memberTerritoryExpand[id] = { expandLeftCm: 0, expandRightCm: 0 };
+    }
+  }
+  return normalizeHighSocietySettings({
+    ...settings,
+    memberWidthCm,
+    memberWidthDonationSnapshot,
+    memberTerritoryExpand,
+  });
+}
+
 /** AppState 기준 영토 해상 (좌석·후원 방향·수동 기록부 반영) */
 export function buildHighSocietyFieldFromAppState(
   state: Pick<AppState, "members" | "donors" | "highSocietySettings" | "territoryLogs">,
@@ -1768,13 +1905,26 @@ export function buildHighSocietyFieldFromAppState(
       ? Math.max(1, Math.min(5000, Math.floor(startOverrideRaw)))
       : resolveHighSocietyStartCmPerMember(settings, seatCount);
   const effectiveFieldCm = fieldCmFromStartPerMember(startCmPerMember, seatCount);
-  const settingsForField = normalizeHighSocietySettings({
+  const territoryLogs = (state.territoryLogs || []) as TerritoryLog[];
+  const hasTerritoryLogs = territoryLogs.length > 0;
+  let settingsForField = normalizeHighSocietySettings({
     ...settings,
     startCmPerMember,
     fieldCm: effectiveFieldCm,
   });
-  const territoryLogs = (state.territoryLogs || []) as TerritoryLog[];
-  const hasTerritoryLogs = territoryLogs.length > 0;
+  /**
+   * 영토 기록부가 있으면 언제나 기록부 replay 결과를 기준으로 스냅샷을 auto-heal.
+   * useSnap=true 이던 false 이던 기록부가 Source of Truth.
+   */
+  if (hasTerritoryLogs) {
+    settingsForField = healSettingsFromTerritoryLogs(
+      settingsForField,
+      seatPlayers.map((p) => p.id),
+      territoryLogs,
+      startCmPerMember,
+      effectiveFieldCm
+    );
+  }
   /** 영토는 기록부만 — 후원 expand·won 은 field 해상에 쓰지 않음(스냅 expand 는 유지용) */
   const players: HighSocietyPlayerInput[] = seatPlayers.map((p) => {
     const exp = settingsForField.memberTerritoryExpand?.[p.id];
@@ -1788,12 +1938,6 @@ export function buildHighSocietyFieldFromAppState(
   });
   const startCm = seatCount > 0 ? effectiveFieldCm / seatCount : 0;
   const useSnap = shouldUseMemberWidthSnapshot(settingsForField, players);
-  /**
-   * memberWidthCm 스냅샷이 있으면 멤버 id 기준 폭이 정본.
-   * 영토 로그가 있어도 스냅을 무시하고 전 로그를「현재 좌석 이웃」기준으로 재적용하면
-   * 좌석 ←→ 이동 시 이웃이 바뀌어 15cm→115cm·인접 0cm 같은 붕괴가 난다.
-   * 스냅이 없을 때만 equal start + 로그 재적용(콜드 복구).
-   */
   const fieldBase = useSnap
     ? resolveHighSocietyFieldWithMemberWidths({
         players,
@@ -1872,7 +2016,7 @@ export function appendTerritoryLogToAppState(state: AppState, log: TerritoryLog)
     ...state,
     territoryLogs: [...(state.territoryLogs || []), log],
     highSocietySettings: normalizeHighSocietySettings({
-      ...settings,
+      ...fieldBefore.settings,
       ...widthPatch,
     }),
     updatedAt: Date.now(),
