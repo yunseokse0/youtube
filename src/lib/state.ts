@@ -78,7 +78,7 @@ import {
   type StateApiPick,
 } from "@/lib/state-api-pick";
 import { MANUAL_SIG_BROADCAST_STATE_KEY } from "@/lib/manual-sig-broadcast-state";
-import { mergeDonorRowFields, syncMemberTotalsFromDonors, repairMemberTotalsForDonorRoster } from "@/lib/donation/apply-donation-state";
+import { mergeDonorRowFields, syncMemberTotalsFromDonors, syncAndRepairMemberTotals } from "@/lib/donation/apply-donation-state";
 import { guardMemberTotalsAgainstAccidentalZeroWipe, wouldAccidentallyZeroRemainingMembers } from "@/lib/donation/zero-wipe-guard";
 import { mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
 import { isGroupSplitDonorListMutation } from "@/lib/donation/group-split-donation";
@@ -2892,7 +2892,7 @@ export async function saveStateAsync(
             }
             return withDonors;
           })()
-        : repairMemberTotalsForDonorRoster(guarded, local);
+        : syncAndRepairMemberTotals(guarded, local);
   /**
    * donorsAuthoritative 라도 정산 리셋이 아니면, LS보다 후원이 줄어든 채 올리면
    * 미매칭 반영 등으로 엑셀표가 초기화된다.

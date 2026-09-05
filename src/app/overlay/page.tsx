@@ -5,7 +5,7 @@ import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousan
 import { isServerAuthoritativeBroadcastState, readSessionBroadcastState } from "@/lib/server-authoritative-broadcast-state";
 import {
   countableDonorTotal,
-  repairMemberTotalsForDonorRoster,
+  syncAndRepairMemberTotals,
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
 import { guardMemberTotalsAgainstAccidentalZeroWipe } from "@/lib/donation/zero-wipe-guard";
@@ -453,7 +453,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         );
       }
       return guardMemberTotalsAgainstAccidentalZeroWipe(
-        repairMemberTotalsForDonorRoster(synced, lastGoodRef.current, merged),
+        syncAndRepairMemberTotals(synced, lastGoodRef.current, merged),
         good ?? lastGoodRef.current
       );
     },
@@ -2293,7 +2293,7 @@ function OverlayInner() {
     const syncMembersFromDonors = (donors: Donor[]) => {
       const base = { ...(s as AppState), donors };
       return ensureMembers(
-        repairMemberTotalsForDonorRoster(syncMemberTotalsFromDonors(base), base).members
+        syncAndRepairMemberTotals(base).members
       );
     };
     /** 부모 탭 donors 스냅샷(빈 배열 포함) — 정산 리셋 직후 iframe 세션 구 금액으로 되돌아가지 않게 */
@@ -2324,7 +2324,7 @@ function OverlayInner() {
             members: localSnap.members ?? s.members,
           };
           return ensureMembers(
-            repairMemberTotalsForDonorRoster(syncMemberTotalsFromDonors(base), base).members
+            syncAndRepairMemberTotals(base).members
           );
         }
         if (totalCombined(localSnap) > 0) {

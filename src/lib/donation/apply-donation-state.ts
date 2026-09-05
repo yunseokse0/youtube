@@ -473,6 +473,179 @@ export function repairMemberTotalsForDonorRoster(
   return syncMemberTotalsFromDonors({ ...state, members: bestMembers });
 }
 
+/** scoreRosterAgainstMatchCounts: pre-computed donor→member 매칭 카운터로 roster 점수 계산
+ *  기존 rosterDonorMatchScore(M·D)를 O(M)으로 대체. 동치성: Σ matchCounts[m.id]
+ */
+function scoreRosterAgainstMatchCounts(
+  members: Member[] | null | undefined,
+  matchCounts: Map<string, number>
+): number {
+  if (!members || !members.length) return 0;
+  let score = 0;
+  for (const m of members) {
+    const c = matchCounts.get(String(m.id || "").trim()) || 0;
+    if (c > 0) score += c;
+  }
+  return score;
+}
+
+/** computeMemberTotalsAndScores 1-pass: donors 순회 1회로 totals + matchCounts + contrib + logs 집계
+ *  dedupe donors 1회 + contribution aggregate 재사용으로 기존 sync/repair 2패스(O(D·M)×2 + 3F·D)를
+ *  O(D) + O(F·M) + O(M)으로 감소.
+ */
+function computeMemberTotalsAndScores(state: AppState): {
+  deduped: Donor[];
+  totals: Map<string, { account: number; toon: number }>;
+  matchCounts: Map<string, number>;
+  contribMap: Map<string, { donorPoints: number; hasDonorSource: boolean }>;
+  logMap: Map<string, { deltaSum: number; hasLogSource: boolean }>;
+  countable: number;
+} {
+  const deduped = dedupeDonorRows(state.donors || []);
+  const totals = new Map<string, { account: number; toon: number }>();
+  const matchCounts = new Map<string, number>();
+  let countable = 0;
+  for (const member of state.members || []) {
+    totals.set(member.id, { account: 0, toon: 0 });
+  }
+  for (const donor of deduped) {
+    if (isDonorExcludedFromDonationTotals(donor)) continue;
+    countable += 1;
+    const memberId = String(donor.memberId || "").trim();
+    if (memberId) {
+      matchCounts.set(memberId, (matchCounts.get(memberId) || 0) + 1);
+      if (totals.has(memberId)) {
+        const bucket = totals.get(memberId)!;
+        const amount = Math.max(0, Math.round(Number(donor.amount) || 0));
+        if ((donor.target || "account") === "toon") bucket.toon += amount;
+        else bucket.account += amount;
+      }
+    }
+  }
+  const contribMap = aggregateContributionByMember(state, deduped);
+  const logMap = aggregateContribLogsByMember(state.contributionLogs);
+  return { deduped, totals, matchCounts, contribMap, logMap, countable };
+}
+
+/** buildMembersFromTotals: compute 결과 + 특정 members 배열로 최종 멤버 배열 조립
+ *  syncMemberTotalsFromDonors의 members.map 로직과 완전 동치. bestMembers rollback 후에도
+ *  새 dedupe/contrib를 재계산하지 않고 재사용할 수 있게 분리.
+ */
+function buildMembersFromTotals(
+  baseState: AppState,
+  members: Member[] | null | undefined,
+  totals: Map<string, { account: number; toon: number }>,
+  contribMap: Map<string, { donorPoints: number; hasDonorSource: boolean }>,
+  logMap: Map<string, { deltaSum: number; hasLogSource: boolean }>
+): Member[] {
+  const positions = baseState.memberPositions || null;
+  return (members || []).map((member) => {
+    const bucket = totals.get(member.id) || { account: 0, toon: 0 };
+    const isOperating = isOperatingSettlementMember(
+      { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
+      positions
+    );
+    const hasDonorSrc = contribMap.get(member.id)?.hasDonorSource === true;
+    const hasLogSrc = logMap.get(member.id)?.hasLogSource === true;
+    const contribution =
+      isOperating || !(hasDonorSrc || hasLogSrc)
+        ? Math.max(0, Number(member.contribution) || 0)
+        : Math.max(
+            0,
+            (contribMap.get(member.id)?.donorPoints || 0) +
+              (logMap.get(member.id)?.deltaSum || 0)
+          );
+    return {
+      ...member,
+      account: bucket.account,
+      toon: bucket.toon,
+      contribution,
+    };
+  });
+}
+
+/** syncAndRepairMemberTotals: sync + repair 통합 composite 함수
+ *  `repairMemberTotalsForDonorRoster(syncMemberTotalsFromDonors(state), fbs...)` 와 완전 동치인 결과를
+ *  1-pass donors 순회 + F·M fallback 점수로 산출. 반복 순회 완전 제거.
+ *  @param fallbacks rest array 가변인자 유지 (repair와 동일 시그니처 → 외부 8경로 치환 단순화)
+ */
+export function syncAndRepairMemberTotals(
+  state: AppState,
+  ...fallbacks: Array<AppState | null | undefined>
+): AppState {
+  const selfCached = syncMemoSelf.get(state);
+  if (selfCached && fallbacks.length === 0) return selfCached;
+  const calc = computeMemberTotalsAndScores(state);
+  const { totals, matchCounts, contribMap, logMap, countable } = calc;
+  if (countable <= 0) {
+    const members = buildMembersFromTotals(state, state.members, totals, contribMap, logMap);
+    const res = { ...state, members };
+    if (fallbacks.length === 0) syncMemoSelf.set(state, res);
+    return res;
+  }
+  const currentScore = scoreRosterAgainstMatchCounts(state.members, matchCounts);
+  if (currentScore >= countable * 0.99 && fallbacks.length === 0) {
+    const members = buildMembersFromTotals(state, state.members, totals, contribMap, logMap);
+    const res = { ...state, members };
+    syncMemoSelf.set(state, res);
+    return res;
+  }
+  /** Phase2 rosterVersion O(1) 가드 (repair 원본 로직 1:1 이관) */
+  const bumpedRoster = Number(state.rosterVersion || 0);
+  if (bumpedRoster > 0) {
+    const maxFbRoster = fallbacks.reduce(
+      (m, fb) => Math.max(m, Number(fb?.rosterVersion || 0)),
+      0
+    );
+    if (bumpedRoster > maxFbRoster) {
+      const members = buildMembersFromTotals(state, state.members, totals, contribMap, logMap);
+      const res = { ...state, members };
+      if (fallbacks.length === 0) syncMemoSelf.set(state, res);
+      return res;
+    }
+  }
+  /** fallbacks=0 → sync 자동보정 (repair 개선A 동치) */
+  if (fallbacks.length === 0) {
+    const members = buildMembersFromTotals(state, state.members, totals, contribMap, logMap);
+    const res = { ...state, members };
+    syncMemoSelf.set(state, res);
+    return res;
+  }
+  const stateIdSig = memberRosterIdSignature(state.members);
+  const stateUpdatedAt = Number(state.updatedAt || 0);
+  let bestMembers: Member[] = state.members;
+  let bestScore = currentScore;
+  for (const fb of fallbacks) {
+    if (!fb?.members?.length) continue;
+    const fbIdSig = memberRosterIdSignature(fb.members);
+    if (
+      stateIdSig &&
+      fbIdSig &&
+      stateIdSig !== fbIdSig &&
+      stateUpdatedAt >= Number(fb.updatedAt || 0)
+    ) {
+      continue;
+    }
+    const score = scoreRosterAgainstMatchCounts(fb.members, matchCounts);
+    if (score > bestScore) {
+      bestScore = score;
+      bestMembers = fb.members;
+    }
+  }
+  if (bestScore <= 0) {
+    const members = buildMembersFromTotals(state, state.members, totals, contribMap, logMap);
+    return { ...state, members };
+  }
+  if (bestMembers === state.members || bestScore === currentScore) {
+    const members = buildMembersFromTotals(state, state.members, totals, contribMap, logMap);
+    const res = { ...state, members };
+    if (fallbacks.length === 0) syncMemoSelf.set(state, res);
+    return res;
+  }
+  const members = buildMembersFromTotals(state, bestMembers, totals, contribMap, logMap);
+  return { ...state, members };
+}
+
 function memberRosterIdSignature(members: Member[] | null | undefined): string {
   return (members || [])
     .map((m) => String(m.id || ""))
@@ -493,37 +666,80 @@ export function purgeDonorsForMemberRoster(
   return (donors || []).filter((d) => keep.has(String(d.memberId || "").trim()));
 }
 
-/** donors contributionPoints + 기여도 기록부 수동분 → 멤버 기여도 합 */
-export function resolveMemberContributionTotal(
-  memberId: string,
-  state: Pick<AppState, "donors" | "contributionLogs" | "contributionFormula">
-): number {
-  const id = String(memberId || "").trim();
-  if (!id) return 0;
+/** aggregateContributionByMember: donors 1회 순회로 전체 멤버 donorPoints + hasDonorSource 집계
+ *  O(D) 1회로 모든 멤버를 집계해 기존 M·D 중복을 제거한다. dedupe 결과를 직접 받아 dedupe 중복 호출 방지.
+ */
+export function aggregateContributionByMember(
+  state: Pick<AppState, "contributionFormula">,
+  dedupedDonors: Donor[]
+): Map<string, { donorPoints: number; hasDonorSource: boolean }> {
+  const out = new Map<string, { donorPoints: number; hasDonorSource: boolean }>();
   const formula = normalizeContributionFormula(state.contributionFormula);
-  let fromDonors = 0;
-  for (const donor of dedupeDonorRows(state.donors || [])) {
+  for (const donor of dedupedDonors) {
     if (isDonorExcludedFromDonationTotals(donor)) continue;
-    if (String(donor.memberId || "").trim() !== id) continue;
+    const mid = String(donor.memberId || "").trim();
+    if (!mid) continue;
+    let bucket = out.get(mid);
+    if (!bucket) {
+      bucket = { donorPoints: 0, hasDonorSource: false };
+      out.set(mid, bucket);
+    }
+    bucket.hasDonorSource = true;
     const stored = Number(donor.contributionPoints);
     if (Number.isFinite(stored) && stored >= 0) {
-      fromDonors += Math.round(stored);
+      bucket.donorPoints += Math.round(stored);
     } else {
-      fromDonors += computeContributionPoints(
+      bucket.donorPoints += computeContributionPoints(
         donor.amount,
         donor.target || "account",
         formula
       );
     }
   }
-  let fromLogs = 0;
-  for (const log of state.contributionLogs || []) {
-    if (String(log.memberId || "").trim() !== id) continue;
+  return out;
+}
+
+/** aggregateContribLogsByMember: contributionLogs 1회 순회 deltaSum + hasLogSource 집계 */
+export function aggregateContribLogsByMember(
+  logs: ContributionLog[] | null | undefined
+): Map<string, { deltaSum: number; hasLogSource: boolean }> {
+  const out = new Map<string, { deltaSum: number; hasLogSource: boolean }>();
+  if (!logs || logs.length === 0) return out;
+  for (const log of logs) {
+    const mid = String(log.memberId || "").trim();
+    if (!mid) continue;
     const amt = Math.max(0, Math.floor(Number(log.amount) || 0));
     if (amt <= 0) continue;
-    fromLogs += log.delta === -1 ? -amt : amt;
+    let bucket = out.get(mid);
+    if (!bucket) {
+      bucket = { deltaSum: 0, hasLogSource: false };
+      out.set(mid, bucket);
+    }
+    bucket.hasLogSource = true;
+    bucket.deltaSum += log.delta === -1 ? -amt : amt;
   }
-  return Math.max(0, fromDonors + fromLogs);
+  return out;
+}
+
+/** donors contributionPoints + 기여도 기록부 수동분 → 멤버 기여도 합
+ *  @deprecated 1-pass 통합 경로에서는 aggregateContributionByMember + aggregateContribLogsByMember 직접 조합 권장
+ *  외부 단일 멤버 조회 편의를 위해 시그니처 유지.
+ */
+export function resolveMemberContributionTotal(
+  memberId: string,
+  state: Pick<AppState, "donors" | "contributionLogs" | "contributionFormula">
+): number {
+  const id = String(memberId || "").trim();
+  if (!id) return 0;
+  const deduped = dedupeDonorRows(state.donors || []);
+  const contribMap = aggregateContributionByMember(state, deduped);
+  const logMap = aggregateContribLogsByMember(state.contributionLogs);
+  const donorB = contribMap.get(id);
+  const logB = logMap.get(id);
+  return Math.max(
+    0,
+    (donorB?.donorPoints || 0) + (logB?.deltaSum || 0)
+  );
 }
 
 /** ingest·toona 허브 계산식을 state에 병합하고 단건 기여도 점수를 결정 */
@@ -561,11 +777,13 @@ export function mergeContributionFormulaIntoState(
 
 function memberHasContributionSources(
   memberId: string,
-  state: Pick<AppState, "donors" | "contributionLogs">
+  state: Pick<AppState, "donors" | "contributionLogs">,
+  opts?: { dedupedDonors?: Donor[] }
 ): boolean {
   const id = String(memberId || "").trim();
   if (!id) return false;
-  const hasDonor = (state.donors || []).some(
+  const deduped = opts?.dedupedDonors ?? dedupeDonorRows(state.donors || []);
+  const hasDonor = deduped.some(
     (d) =>
       !isDonorExcludedFromDonationTotals(d) &&
       String(d.memberId || "").trim() === id
@@ -588,11 +806,12 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
   const selfCached = syncMemoSelf.get(state);
   if (selfCached) return selfCached;
 
+  const deduped = dedupeDonorRows(state.donors || []);
   const totals = new Map<string, { account: number; toon: number }>();
   for (const member of state.members || []) {
     totals.set(member.id, { account: 0, toon: 0 });
   }
-  for (const donor of dedupeDonorRows(state.donors || [])) {
+  for (const donor of deduped) {
     if (isDonorExcludedFromDonationTotals(donor)) continue;
     const memberId = String(donor.memberId || "").trim();
     if (!memberId || !totals.has(memberId)) continue;
@@ -601,6 +820,8 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
     if ((donor.target || "account") === "toon") bucket.toon += amount;
     else bucket.account += amount;
   }
+  const contribMap = aggregateContributionByMember(state, deduped);
+  const logMap = aggregateContribLogsByMember(state.contributionLogs);
   const positions = state.memberPositions || null;
   const members = (state.members || []).map((member) => {
     const bucket = totals.get(member.id) || { account: 0, toon: 0 };
@@ -608,10 +829,16 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
       { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
       positions
     );
+    const hasDonorSrc = contribMap.get(member.id)?.hasDonorSource === true;
+    const hasLogSrc = logMap.get(member.id)?.hasLogSource === true;
     const contribution =
-      isOperating || !memberHasContributionSources(member.id, state)
+      isOperating || !(hasDonorSrc || hasLogSrc)
         ? Math.max(0, Number(member.contribution) || 0)
-        : resolveMemberContributionTotal(member.id, state);
+        : Math.max(
+            0,
+            (contribMap.get(member.id)?.donorPoints || 0) +
+              (logMap.get(member.id)?.deltaSum || 0)
+          );
     return {
       ...member,
       account: bucket.account,
@@ -920,16 +1147,9 @@ export function isCrossDonationSourcePair(
   return false;
 }
 
-function normalizeDonorNameKey(raw?: string): string {
-  return String(raw || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "");
-}
-
-/**
- * 서로 다른 수집 경로·재전송으로 같은 후원이 두 번 들어오는 경우.
- * 이름+금액(+근접 시각). 메시지는 경로마다 다를 수 있어 필수로 두지 않음.
+/** DIN bank ingest ↔ 투네 실시간 WS CROSS PAIR 혹은 bank ↔ bank 재전송
+ *  금액/이름 일치 + 시간 윈도우 내에서만 중복으로 간주. STEP_02_CROSS_SOURCE_DUP 에서 호출.
+ *  cross-source 이면 30s, bank-bank 재전송이면 16s 윈도우 사용.
  */
 export function shouldTreatAsCrossSourceDuplicate(
   existing: {
@@ -955,15 +1175,11 @@ export function shouldTreatAsCrossSourceDuplicate(
     provider?: string;
   }
 ): boolean {
-  /** ★ 근본 FIX: donor 전체 객체를 donorInferSourceKind 에 넣어 실 경로 추론
-   *  (id 접두사만 보고 bank로 오판하는 경우 원천 봉쇄 — provider=toonation / UUID externalId 면 1~3순위에서 무조건 toonation 으로 분류)
-   */
   const cross = isCrossDonationSourcePair(existing, incoming);
   const bothBank =
     donorInferSourceKind(existing) === "bank" && donorInferSourceKind(incoming) === "bank";
   if (!cross && !bothBank) return false;
 
-  /** reliable externalId UUID가 양쪽 모두 존재하면 서로 달라 = 다른 후원 → merge 불가 */
   const extA = String(existing.externalId || existing.rawHash || "").trim();
   const extB = String(incoming.externalId || incoming.rawHash || "").trim();
   if (extA && extB && isReliableToonationExternalId(extA) && isReliableToonationExternalId(extB)) {
@@ -988,9 +1204,17 @@ export function shouldTreatAsCrossSourceDuplicate(
   return Math.abs(atA - atB) <= windowMs;
 }
 
+function normalizeDonorNameKey(raw?: string): string {
+  return String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
+}
+
 /**
- * 서버 자동 반영 + 관리자 큐·union 등 이중 경로 — 동일 내용·근접 시각이면 1건.
- * 투네 실 id 가 서로 다른 연속 후원(동일 메시지·1초 간격 등)은 유지.
+ * 서로 다른 수집 경로·재전송으로 같은 후원이 두 번 들어오는 경우.
+ * 이름+금액(+근접 시각). 메시지는 경로마다 다를 수 있어 필수로 두지 않음.
+ * baseline a45cd2f monolithic 원본 로직 1:1 복원 (pipeline 리팩토링 제어 흐름 미묘 차이로 인한 2개 false positive 회귀 방지)
  */
 export function shouldTreatAsDuplicateDonationContent(
   existing: {
@@ -1023,11 +1247,7 @@ export function shouldTreatAsDuplicateDonationContent(
     donationExcluded?: boolean;
   }
 ): boolean {
-  /**
-   * ★ 단체짠 나누기 스플릿 파트 donor 끼리 절대 dedup 금지:
-   *  동일 donorName·동일메시지·동일 at·동일금액 2000원 5행 일괄 생성 → 기존 identical-message window dedup 이 5행을 전부 중복 오판.
-   *  memberId가 서로 다른 파트 donor → 서로 다른 후원 → dedup bypass return false 강제.
-   */
+  /** Split 파트 donor 끼리 절대 dedup 금지 */
   const existingSplit =
     Boolean(existing.groupSplit) ||
     String(existing.id || "").includes(":split:") ||
@@ -1048,20 +1268,11 @@ export function shouldTreatAsDuplicateDonationContent(
       return false;
     }
   }
-  /**
-   * ★ 3연속 후원 drop 방지 + WS+폴링 2행 중복 해소 · 총 8단계 dedup 파이프라인:
-   *   ① 릴레이블 UUID externalId 일치 + 금액 일치 = 무조건 dedup (경로 2중 수신 봉쇄 · weak id 여부 무관)
-   *   ② Cross-Source (bank↔투네) / Bank 재전송 = 전문 윈도우 (30s) dedup
-   *   ②-1 Owner Remap Split = target 반대 쌍 (투네↔계좌) + 금액·at·메시지 동일 = dedup (David 51k 2행 FIX)
-   *   ②-2 Instant Burst = 동일 donor·금액·at ≤ 1000ms 극단 burst = 무조건 dedup (자키집 19k 4:23:00 2행 FIX)
-   *   ②-3 Dual-Path Reliable Mismatch = 양쪽 모두 진짜 reliable UUID 존재·서로 다름 + donor+금액+대상+at≤3s+메시지 동일 = dedup (David 200k 투네+DIN경로 2행 FIX)
-   *   ③ 동일 투네 이벤트 (reliable ext + weak 내부) = 15s 윈도우 dedup
-   *   ④ Weak bypass (3연속 후원 drop 방어): weak id 존재 + identical message 아님 + cross-source 아님 → rawId 100% 일치만 dedup
-   *   ⑤ Near-Content (donor+금액+대상+메시지) 윈도우 dedup + 최종 ext UUID 불일치 차단
-   */
+
   const existingRawId = String(existing.id || "").trim();
   const incomingRawId = String(incoming.id || "").trim();
-  /** ① reliable UUID externalId = 동일 이벤트 (금액 같으면 무조건 dedup) */
+
+  /** reliable UUID externalId 일치 + 금액 일치 = 무조건 dedup */
   {
     const existingReliableExt =
       extractReliableToonationExtFromDonorId(existingRawId) ||
@@ -1077,15 +1288,14 @@ export function shouldTreatAsDuplicateDonationContent(
       if (amountA > 0 && amountA === amountB) return true;
     }
   }
-  /** ② Cross-Source (bank ↔ 투네) · bank 재전송은 weak bypass 보다 먼저 처리 */
+
+  /** Cross-Source / Bank 재전송 dedup */
   if (shouldTreatAsCrossSourceDuplicate(existing, incoming)) return true;
-  /** ②-1 Owner Remap Split (target 반대 쌍 = 투네/계좌 로 갈라진 동일 후원 2행 FIX
-   *  - WS 경로 = target:toon · DIN 허브 폴링 경로 = target:account 양쪽 동일 donor·금액·at 이 2행 쌓이는 버그
-   *  - donorInferSourceKind 와 무관하게 target 필드 반대 여부로 잡아내는 isOwnerRemapSplitDuplicate 여기서 직접 호출 */
+
+  /** Owner Remap Split (target 반대 쌍 동일 후원) */
   if (isOwnerRemapSplitDuplicate(existing, incoming)) return true;
-  /** ②-2 Instant Burst (극단적 동일 시각 중복: 4:23:00 동일 second 내에 동일 donor 동일 금액 2행 burst)
-   *  DONATION_NEAR_DUP_WINDOW_MS(3s) 보다 더 엄격한 1000ms window. donorName match + amount match + at ≤ 1000ms.
-   *  단, reliable ext 가 양쪽에 있고 서로 다르면 3연속 개별 후원 일 수 있으므로 ext 불일치 시 bypass. */
+
+  /** Instant Burst 동일 donor·금액 at < 1s · 양쪽 reliable ext 서로 다르면 bypass */
   {
     const burstAmountA = Math.max(0, Math.round(Number(existing.amount) || 0));
     const burstAmountB = Math.max(0, Math.round(Number(incoming.amount) || 0));
@@ -1097,7 +1307,6 @@ export function shouldTreatAsDuplicateDonationContent(
         const burstNameB = String(incoming.donorName || incoming.name || "").trim().toLowerCase();
         const extAA = extractReliableToonationExtFromDonorId(existingRawId);
         const extBB = extractReliableToonationExtFromDonorId(incomingRawId);
-        // 양쪽 ext reliable + 서로 다름 = 3연속 개별 후원 케이스 → dedup PASS (3건 유지)
         const bothReliableAndDifferent = extAA && extBB && extAA !== extBB;
         if (!bothReliableAndDifferent && burstNameA && burstNameB && burstNameA === burstNameB) {
           return true;
@@ -1105,15 +1314,11 @@ export function shouldTreatAsDuplicateDonationContent(
       }
     }
   }
-  /** ③ 동일 투네 이벤트 near-dup (내부 reliable ext · weak bypass 포함) */
+
+  /** 동일 투네 이벤트 near-dup */
   if (isSameToonationEventNearDuplicate(existing, incoming)) return true;
-  /**
-   * ④ Weak bypass (3연속 weak-id 후원 drop 방어):
-   *   - 동일 메시지 15s 윈도우 내 = dual-path / WS burst → ⑤ near-content dedup 에게 위임
-   *   - cross-source 쌍 또는 bank 재전송 = ② 에서 이미 처리 완료 → 위임
-   *   - at gap ≤ DONATION_NEAR_DUP_WINDOW_MS (3s) = dual-path burst → 위임
-   *   - 위 어느 것도 아님 = 3연속 개별 후원 케이스 → rawId 문자열 100% 일치만 dedup 허용 (건별 유지)
-   */
+
+  /** Weak bypass (3연속 후원 drop 방어) · near-window가 아닐 때만 rawId 100% 일치 강제 */
   if (existingRawId && incomingRawId && (isWeakToonationDonorId(existingRawId) || isWeakToonationDonorId(incomingRawId))) {
     const msgWindow = identicalMessageNearDupWindowMs(existing, incoming);
     const crossOrBothBank =
@@ -1127,13 +1332,14 @@ export function shouldTreatAsDuplicateDonationContent(
       return existingRawId === incomingRawId;
     }
   }
-  /** ⑤ Near-Content (donor+금액+대상+메시지 + 윈도우) dedup */
+
+  /** Near-Content (donor+금액+대상+메시지) 윈도우 dedup + ext UUID 불일치 차단 + weak-id fallback */
   const windowMs = resolveNearDupWindowMs(existing, incoming);
   if (!isNearContentDuplicate(existing, incoming, windowMs)) return false;
   const extA = extractReliableToonationExtFromDonorId(String(existing.id || ""));
   const extB = reliableExtFromIncoming(incoming);
-  /** ★ 서로 다른 투네 실 id = 별도 후원 (동일 문구·동일 금액·윈도우 내 3연속 후원 허용)
-   *  ★ [DUAL-PATH EXCEPTION] extA !== extB 라도 prefix 불일치 (경로 출처가 2개 독립) + donor/amount/target/at≤3s/msg 동일 = 100% 동일 후원 2경로 유입 → dedup true */
+
+  /** extA !== extB dual-path exception · prefix 불일치 시 dedup true */
   if (extA && extB && extA !== extB) {
     const extractPrefix = (raw: string): string => {
       const m = raw.match(/^(.*?)(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})/i);
@@ -1164,12 +1370,8 @@ export function shouldTreatAsDuplicateDonationContent(
     }
     return false;
   }
-  /** ★ 양쪽 다 reliable ext 없는 weak id 끼리일 때:
-   *   - 둘 다 fp- fallback id = WS dual-path 복제본 케이스 (1·3·5번 테스트) → 무조건 dedup true
-   *   - 하나라도 non-fp weak id (seq-, don-real-, 사용자 정의 id 등) 이면:
-   *     - at gap < 1000ms = 동일초 burst 복제 → dedup true
-   *     - at gap ≥ 1000ms = 3·5연속 개별 후원 패턴 (2·4번 테스트) → rawId 일치만 dedup (건별 유지)
-   */
+
+  /** weak-id 둘 다 ext 없을 때 최종 분기 · 이름/memberId/target 불일치 bypass 포함 */
   if (!extA && !extB) {
     const isFpA = /\bfp-/.test(existingRawId);
     const isFpB = /\bfp-/.test(incomingRawId);

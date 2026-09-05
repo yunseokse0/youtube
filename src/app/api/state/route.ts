@@ -39,8 +39,8 @@ import type { SigItem } from "@/types";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
 import {
   dedupeDonorRows,
-  repairMemberTotalsForDonorRoster,
   syncMemberTotalsFromDonors,
+  syncAndRepairMemberTotals,
 } from "@/lib/donation/apply-donation-state";
 import {
   guardMemberTotalsAgainstAccidentalZeroWipe,
@@ -1428,7 +1428,7 @@ export async function POST(req: Request) {
             baseState
           )
         : guardMemberTotalsAgainstAccidentalZeroWipe(
-            repairMemberTotalsForDonorRoster(draft, baseState, bodyMembers),
+            syncAndRepairMemberTotals(draft, baseState, bodyMembers),
             baseState
           );
     }

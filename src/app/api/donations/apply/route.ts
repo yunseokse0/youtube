@@ -7,7 +7,7 @@ import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import {
   applyDonationToAppState,
   isDuplicateDonationEvent,
-  repairMemberTotalsForDonorRoster,
+  syncAndRepairMemberTotals,
 } from "@/lib/donation/apply-donation-state";
 import { persistDonationApplyLikeToonation } from "@/lib/donation/persist-donation-like-toon";
 import type { DonationEvent } from "@/lib/donation/types";
@@ -175,7 +175,7 @@ async function handleApplyPostInner(req: Request): Promise<Response> {
     });
   }
 
-  const repaired = repairMemberTotalsForDonorRoster(persisted.state, state);
+  const repaired = syncAndRepairMemberTotals(persisted.state, state);
 
   return new Response(
     JSON.stringify({

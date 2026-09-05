@@ -4,7 +4,7 @@ export const revalidate = 0;
 import { resolveWriteUserId, writeUserIdErrorResponse } from "@/app/api/_shared/user-id";
 import type { DonorsPersistMode } from "@/app/api/roulette/edge-state-store";
 import { persistDonationStateToServer } from "@/lib/donation/persist-donation-like-toon";
-import { repairMemberTotalsForDonorRoster } from "@/lib/donation/apply-donation-state";
+import { syncAndRepairMemberTotals } from "@/lib/donation/apply-donation-state";
 import { markIntentionalDonationEmptySession } from "@/lib/intentional-donation-clear";
 import {
   buildDonationRosterBackupPayload,
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
     });
   }
 
-  let repaired = repairMemberTotalsForDonorRoster(persisted.state, body.state);
+  let repaired = syncAndRepairMemberTotals(persisted.state, body.state);
   const donorsEmpty =
     normalizeDonorsArray(repaired.donors).length === 0 && totalCombined(repaired) <= 0;
   if (mode === "replace" && donorsEmpty) {

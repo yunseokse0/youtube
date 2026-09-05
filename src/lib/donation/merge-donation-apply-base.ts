@@ -15,6 +15,7 @@ import {
   repairMemberTotalsForDonorRoster,
   rosterDonorMatchScore,
   syncMemberTotalsFromDonors,
+  syncAndRepairMemberTotals,
 } from "./apply-donation-state";
 import { isGroupSplitPartDonor } from "./group-split-donation";
 
@@ -152,8 +153,7 @@ export function mergeDonationApplyBase(
     rosterVersion: Math.max(Number(fresh.rosterVersion || 0), Number(hint.rosterVersion || 0)) || undefined,
     donorListVersion: Math.max(Number(fresh.donorListVersion || 0), Number(hint.donorListVersion || 0)) || undefined,
   };
-  const synced = syncMemberTotalsFromDonors(merged);
-  return repairMemberTotalsForDonorRoster(synced, fresh, hint);
+  return syncAndRepairMemberTotals(merged, fresh, hint);
 }
 
 /**
@@ -213,7 +213,7 @@ export function mergeStatePreservingDonorsUntilSettlementReset(
     const filteredDonors = effReset > 0
       ? filterDonorsAfterSettlementReset(baseDonors, effReset)
       : baseDonors;
-    return syncMemberTotalsFromDonors({
+    return syncAndRepairMemberTotals({
       ...incoming,
       settlementResetAt: effReset,
       donors: filteredDonors,
@@ -238,13 +238,13 @@ export function mergeStatePreservingDonorsUntilSettlementReset(
     const filteredDonors = effReset > 0
       ? filterDonorsAfterSettlementReset(incomingDonors, effReset)
       : incomingDonors;
-    const shrunk = syncMemberTotalsFromDonors({
+    const shrunk = {
       ...incoming,
       donors: filteredDonors,
       settlementResetAt: effReset || (incoming.settlementResetAt ?? existing.settlementResetAt),
       updatedAt: Math.max(Number(incoming.updatedAt || 0), Number(existing.updatedAt || 0)) || Date.now(),
-    });
-    return repairMemberTotalsForDonorRoster(shrunk, existing, incoming);
+    };
+    return syncAndRepairMemberTotals(shrunk, existing, incoming);
   }
   return mergeDonationApplyBase(incoming, existing) ?? incoming;
 }
@@ -264,8 +264,7 @@ export function mergeDonationReplaceForPersist(
     const filteredDonors = effReset > 0
       ? filterDonorsAfterSettlementReset(incomingDonors, effReset)
       : incomingDonors;
-    const synced = syncMemberTotalsFromDonors({ ...incoming, donors: filteredDonors });
-    return repairMemberTotalsForDonorRoster(synced, incoming);
+    return syncAndRepairMemberTotals({ ...incoming, donors: filteredDonors }, incoming);
   }
   const incomingReset = Number(incoming.settlementResetAt || 0);
   const existingReset = Number(existing.settlementResetAt || 0);
@@ -279,14 +278,14 @@ export function mergeDonationReplaceForPersist(
       const filteredDonors = effReset > 0
         ? filterDonorsAfterSettlementReset(baseDonors, effReset)
         : baseDonors;
-      return repairMemberTotalsForDonorRoster(
-        syncMemberTotalsFromDonors({
+      return syncAndRepairMemberTotals(
+        {
           ...incoming,
           members: hasMeaningfulMemberRoster(existing) ? existing.members : incoming.members,
           memberPositions: existing.memberPositions ?? incoming.memberPositions,
           donors: filteredDonors,
           settlementResetAt: existing.settlementResetAt,
-        }),
+        },
         existing,
         incoming
       );
@@ -295,12 +294,12 @@ export function mergeDonationReplaceForPersist(
     const filteredDonors = effReset > 0
       ? filterDonorsAfterSettlementReset(incomingDonors, effReset)
       : incomingDonors;
-    return repairMemberTotalsForDonorRoster(
-      syncMemberTotalsFromDonors({
+    return syncAndRepairMemberTotals(
+      {
         ...incoming,
         settlementResetAt: effReset,
         donors: filteredDonors,
-      }),
+      },
       existing,
       incoming
     );
@@ -311,7 +310,7 @@ export function mergeDonationReplaceForPersist(
   const filteredDonors = effReset > 0
     ? filterDonorsAfterSettlementReset(incomingDonors, effReset)
     : incomingDonors;
-  const replaced = syncMemberTotalsFromDonors({
+  const replaced = {
     ...shell,
     donors: filteredDonors,
     members: useIncomingRoster ? incoming.members : shell.members,
@@ -327,6 +326,6 @@ export function mergeDonationReplaceForPersist(
         Number(incoming.donorRankingsUpdatedAt || 0),
         Number(existing.donorRankingsUpdatedAt || 0)
       ) || incoming.donorRankingsUpdatedAt,
-  });
-  return repairMemberTotalsForDonorRoster(replaced, existing, incoming);
+  };
+  return syncAndRepairMemberTotals(replaced, existing, incoming);
 }
