@@ -22,10 +22,15 @@ let connLastOpenLogAt = 0;
 const CONN_PING_IF_IDLE_MS = 45_000;
 const connIdleAt = new WeakMap<PoolConnection, number>();
 
-/** hang 시 Node 전체 HTTP 무응답 방지 — LONGTEXT 전체 읽기 여유 */
-const MYSQL_QUERY_TIMEOUT_MS = 12_000;
+/** hang 시 Node 전체 HTTP 무응답 방지 — LONGTEXT 전체 읽기 여유
+ *  🔥 P0-1 timeout 레이어 재정렬 (L4 최내곽 가장 짧게: L4=10s → L3=14s → L2=16s → L1=25s)
+ *  기존 12s/15s 역전 → 8s/10s로 단축 + retry 1회 삭제
+ */
+const MYSQL_QUERY_TIMEOUT_MS = 8_000;
 /** 🔥 CRITICAL: withPoolConn 전체에 getConnection + query 합쳐서 제한시간 초과 시 풀 리셋 + 익셉션 → 0바이트 hang 방지 */
-const POOL_ACQUIRE_AND_QUERY_TOTAL_TIMEOUT_MS = 15_000;
+const POOL_ACQUIRE_AND_QUERY_TOTAL_TIMEOUT_MS = 10_000;
+/** resetMysqlPool 내부 pool.end() 가 hang 시 3초 강제 타임아웃 — 회로차단기 자체 데드락 방지 (P0-1) */
+const RESET_POOL_HARD_TIMEOUT_MS = 3_000;
 /** 연속 실패 시 MySQL 접속 중단 — ETIMEDOUT 폭주·event loop hang 방지 */
 const CIRCUIT_FAIL_THRESHOLD = 3;
 const CIRCUIT_COOLDOWN_MS = 30_000;
@@ -152,12 +157,17 @@ async function resetMysqlPool(): Promise<void> {
     poolInitPromise = null;
     bulkPoolInitPromise = null;
     tableReady = null;
+    /** 🔥 P0-1 hard timeout 3s: pool.end()가 TCP half-close hang 시 회로차단기 자체 데드락 방지 */
+    const endP: Promise<void>[] = [];
     if (old) {
-      await old.end().catch(() => {});
+      const p = old.end().catch(() => {});
+      endP.push(Promise.race([p, new Promise<void>((r) => setTimeout(r, RESET_POOL_HARD_TIMEOUT_MS))]));
     }
     if (oldBulk) {
-      await oldBulk.end().catch(() => {});
+      const p = oldBulk.end().catch(() => {});
+      endP.push(Promise.race([p, new Promise<void>((r) => setTimeout(r, RESET_POOL_HARD_TIMEOUT_MS))]));
     }
+    if (endP.length > 0) await Promise.all(endP);
   })().finally(() => {
     poolResetPromise = null;
   });
@@ -235,11 +245,9 @@ async function withPoolConn<T>(
         return out;
       } catch (err) {
         noteMysqlFailure(err);
-        if (isTransientMysqlError(err) && attempt < 1) {
-          destroyedByFn = true;
-          try { c.destroy(); } catch {}
-          return withPoolConn(poolPromise, fn, attempt + 1);
-        }
+        /** 🔥 P0-1: retry 1회 완전 제거 → 10s 1번만 시도 후 즉시 풀 리셋.
+         *  기존 attempt < 1 재시도는 10s+10s=20s 걸려서 L3 14s 부모 timeout을 먼저 터뜨리는 좀비 Promise 유발.
+         */
         throw err;
       } finally {
         if (!destroyedByFn) { try { c.release(); } catch {} }

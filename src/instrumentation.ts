@@ -82,39 +82,42 @@ export async function register() {
         })();
 
         /**
-         * ① 매 30초: 큐 드레인
-         *    MySQL hang으로 loadAppStateForUserId 실패 → enqueueUnmatchedToonationDonation 에 쌓인 후원들 재시도
-         *    (내부 syncMemberTotalsFromDonors 153 donors 1회 실행 → 간격 15s→30s 2배 완화)
+         * 🔥 B-MODE POLLER · SINGLE STAGGERED JOB (P0-3 패치)
+         *  · 통합 전: 3종 독립 setInterval → 동시 fire → saveMutex 3중첩 블록 → 이벤트루프 3~8초 블록
+         *  · 통합 후: 1개 setInterval(30s) + phase counter(0~5) + reentry lock
+         *    주기 유지 RELAXED: drain(30s 항상) / refresh(90s = phase%3===0) / fetch(180s = phase%6===0)
+         *    실행 순서 직렬 강제: drain → refresh → fetch → 다음 사이클
+         *    reentry lock: pollerLock[uid] = true 동안 다음 사이클 SKIP (saveMutex 대기로 30초 이상 걸려도 중첩 0)
          */
+        /** @type {Record<string, boolean>} */
+        const pollerLock: Record<string, boolean> = {};
+        let pollerPhase = 0; // 0 ~ 5 (6 phases = 180s full cycle)
         setInterval(() => {
-          hubUserIds.forEach((uid) => {
-            void drainDonationQueueOnServer(uid).catch(() => {});
-          });
+          for (const uid of hubUserIds) {
+            if (pollerLock[uid]) {
+              console.warn(`[b-mode] poller reentry SKIP user=${uid} (prev job still running >30s, saveMutex 밀로 예상)`);
+              continue;
+            }
+            pollerLock[uid] = true;
+            void (async () => {
+              try {
+                // Step 1. Queue Drain (매 30s 마다)
+                await drainDonationQueueOnServer(uid).catch((e) => console.warn(`[b-mode] drain fail uid=${uid}`, e?.message || e));
+                // Step 2. Hub Status Refresh (매 90s 마다 = phase 0, 3)
+                if (pollerPhase % 3 === 0) {
+                  await refreshToonaHubStatus(uid).catch((e) => console.warn(`[b-mode] refresh fail uid=${uid}`, e?.message || e));
+                }
+                // Step 3. Donation Pull 보정 (매 180s 마다 = phase 0)
+                if (pollerPhase % 6 === 0) {
+                  await fetchToonaDonationsSinceLink(uid).catch((e) => console.warn(`[b-mode] fetch fail uid=${uid}`, e?.message || e));
+                }
+              } finally {
+                pollerLock[uid] = false;
+              }
+            })();
+          }
+          pollerPhase = (pollerPhase + 1) % 6;
         }, 30_000);
-
-        /**
-         * ② 매 90초: 허브 상태 갱신
-         *    refreshToonaHubStatus 내부에 scenario A→B 자동 승격 + baseUrl 자가수복 로직 있음
-         *    (admin 페이지 안열어도 scenario=B / PUSH URL 설정 자동 복구)
-         *    (내부 contribution formula persist → 60s→90s 1.5배 완화)
-         */
-        setInterval(() => {
-          hubUserIds.forEach((uid) => {
-            void refreshToonaHubStatus(uid).catch(() => {});
-          });
-        }, 90_000);
-
-        /**
-         * ③ 매 180초: 후원 PULL 보정
-         *    DIN Hub → /api/donations/ingest PUSH가 네트워크/timeout으로 실패시 180초마다 역방향 PULL로 보정
-         *    (dual-path 중복은 dedup 로직에서 ON DUPLICATE KEY로 무시되므로 안전)
-         *    (내부 handleDinDonationIngest → syncMemberTotalsFromDonors 153 donors 1회 → 90s→180s 2배 완화)
-         */
-        setInterval(() => {
-          hubUserIds.forEach((uid) => {
-            void fetchToonaDonationsSinceLink(uid).catch(() => {});
-          });
-        }, 180_000);
       }
       return;
     }

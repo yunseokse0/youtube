@@ -206,24 +206,6 @@ async function saveAppStateForRouletteDirect(
       /* noop */
     }
   }
-  if (
-    !opts?.allowEmptyRosterWipe &&
-    existing &&
-    shouldBlockAccidentalEmptyOverwrite(existing, next)
-  ) {
-    /** 사고성 멤버1·2…/빈 후원으로 실데이터 덮지 않음 */
-    incoming = {
-      ...next,
-      members: existing.members,
-      memberPositions: existing.memberPositions ?? next.memberPositions,
-      donors: existing.donors,
-      settlementResetAt: existing.settlementResetAt,
-      donorRankingsUpdatedAt: Math.max(
-        Number(existing.donorRankingsUpdatedAt || 0),
-        Number(next.donorRankingsUpdatedAt || 0)
-      ),
-    };
-  }
 
   const wipeOpts = opts?.allowEmptyRosterWipe ? { allowEmptyRosterWipe: true } : undefined;
   const merged =
@@ -231,40 +213,19 @@ async function saveAppStateForRouletteDirect(
       ? mergeDonationReplaceForPersist(incoming, existing, wipeOpts)
       : mergeStatePreservingDonorsUntilSettlementReset(incoming, existing, wipeOpts);
 
-  let persisted: AppState = {
+  const persistedBeforeFinalize: AppState = clearIntentionalDonationClearIfHasDonations({
     ...merged,
     generalTimer: snapshotTimerForPersist(merged.generalTimer),
     matchTimer: snapshotTimerForPersist(merged.matchTimer ?? merged.generalTimer),
-  };
-  persisted = clearIntentionalDonationClearIfHasDonations(persisted);
+  });
 
-  if (
-    !opts?.allowEmptyRosterWipe &&
-    existing &&
-    shouldBlockAccidentalEmptyOverwrite(existing, persisted)
-  ) {
-    persisted = {
-      ...persisted,
-      members: existing.members,
-      memberPositions: existing.memberPositions ?? persisted.memberPositions,
-      donors: existing.donors,
-      settlementResetAt: existing.settlementResetAt,
-    };
-  }
-
-  /** 실멤버가 플레이스홀더로 바뀌지 않게 */
-  if (
-    !opts?.allowEmptyRosterWipe &&
-    existing &&
-    hasMeaningfulMemberRoster(existing) &&
-    !hasMeaningfulMemberRoster(persisted)
-  ) {
-    persisted = {
-      ...persisted,
-      members: existing.members,
-      memberPositions: existing.memberPositions ?? persisted.memberPositions,
-    };
-  }
+  /**
+   * 🔥 단순화 (P1): 사고성 덮어쓰기 방어 3분산 → 1 finalizePersisted 로 통합
+   *  기존: ① blockEmpty(incoming 단계) → ② blockEmpty(persisted 단계) → ③ rosterGuard
+   *  변경: merge 최종후 persisted에 1회만 적용 (조건 평가 중복 제거 · 코드 18줄 → 9줄)
+   *  동시에 shouldBlock + hasMeaningfulRoster 의 donor/member iteration 2회 → 1회로
+   */
+  const persisted = finalizePersisted(existing, persistedBeforeFinalize, opts);
 
   setServerMemoryAppState(userId, persisted);
   /** 무효화 대신 최신 스냅샷으로 워밍 — 다음 admin fast=1 / OBS GET 이 MySQL 을 건너뜀 */
@@ -278,6 +239,41 @@ async function saveAppStateForRouletteDirect(
     scheduleBroadcastWrite(userId, persisted, opts);
   }
   return { ok: wrote, state: persisted };
+}
+
+/** 사고성 멤버/후원 덮어쓰기 방어 최종 1단계 (3분산 로직 통합 단순화) */
+function finalizePersisted(
+  existing: AppState | null,
+  persisted: AppState,
+  opts?: SaveAppStateForRouletteOptions
+): AppState {
+  if (opts?.allowEmptyRosterWipe || !existing) return persisted;
+
+  /** 1. 빈 로스터로 실 donors 덮지 않음 (기존 L209/L241 2중 → 1회) */
+  if (shouldBlockAccidentalEmptyOverwrite(existing, persisted)) {
+    return {
+      ...persisted,
+      members: existing.members,
+      memberPositions: existing.memberPositions ?? persisted.memberPositions,
+      donors: existing.donors,
+      settlementResetAt: existing.settlementResetAt,
+      donorRankingsUpdatedAt: Math.max(
+        Number(existing.donorRankingsUpdatedAt || 0),
+        Number(persisted.donorRankingsUpdatedAt || 0)
+      ),
+    };
+  }
+
+  /** 2. 실 멤버 로스터가 플레이스홀더로 바뀌지 않게 (기존 L255-L267 · 1번 조건과 상호 배타적) */
+  if (hasMeaningfulMemberRoster(existing) && !hasMeaningfulMemberRoster(persisted)) {
+    return {
+      ...persisted,
+      members: existing.members,
+      memberPositions: existing.memberPositions ?? persisted.memberPositions,
+    };
+  }
+
+  return persisted;
 }
 
 async function dualWriteBroadcastDonations(

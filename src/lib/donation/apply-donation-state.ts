@@ -234,6 +234,14 @@ export function mergeDonorRowFields<
   };
 }
 
+/** 🔥 dedupeDonorRows identity memo (동일 배열 ref 반복시 즉시 반환)
+ *  merge·repair·sync 7~11회 중복 호출시 O(N²) 23,409회 비교 전면 스킵
+ *  WeakMap 기반: GC 자동 추적 · 메모리 누수 0
+ *  ✅ length safety: in-place push로 길이 변하면 storedInputLen 비교 → 자동 무효화
+ */
+type DedupeCacheEntry<T> = { storedInputLen: number; result: T[] };
+const dedupeIdentityCache = new WeakMap<object[], DedupeCacheEntry<unknown>>();
+
 export function dedupeDonorRows<
   T extends {
     id?: string;
@@ -250,6 +258,11 @@ export function dedupeDonorRows<
     donationExcluded?: boolean;
   },
 >(donors: T[]): T[] {
+  if (donors.length === 0) return donors;
+  const entry = dedupeIdentityCache.get(donors as unknown as object[]) as DedupeCacheEntry<T> | undefined;
+  if (entry && entry.storedInputLen === donors.length) {
+    return entry.result;
+  }
   const map = new Map<string, T>();
   for (const d of donors) {
     const key = donorRowDedupeKey(d);
@@ -294,6 +307,7 @@ export function dedupeDonorRows<
       const other = preferred === d ? prev : d;
       merged[dupIdx] = mergeDonorRowFields(preferred, other);
     }
+    dedupeIdentityCache.set(donors as unknown as object[], { storedInputLen: donors.length, result: merged as unknown[] });
     return merged;
   }
 
@@ -358,6 +372,7 @@ export function dedupeDonorRows<
     const other = preferred === d ? prev : d;
     merged[dupIdx] = mergeDonorRowFields(preferred, other);
   }
+  dedupeIdentityCache.set(donors as unknown as object[], { storedInputLen: donors.length, result: merged as unknown[] });
   return merged;
 }
 
@@ -413,6 +428,8 @@ export function repairMemberTotalsForDonorRoster(
   const currentScore = rosterDonorMatchScore(state.members, donors);
   if (currentScore >= countable * 0.99) return state;
 
+  if (fallbacks.length === 0) return state;
+
   const stateIdSig = memberRosterIdSignature(state.members);
   const stateUpdatedAt = Number(state.updatedAt || 0);
 
@@ -427,7 +444,6 @@ export function repairMemberTotalsForDonorRoster(
       stateIdSig !== fbIdSig &&
       stateUpdatedAt >= Number(fb.updatedAt || 0)
     ) {
-      /** 최신 로스터 교체(멤버 추가/삭제) — 옛 donors 매칭용 로스터로 되돌리지 않음 */
       continue;
     }
     const score = rosterDonorMatchScore(fb.members, donors);
@@ -437,6 +453,7 @@ export function repairMemberTotalsForDonorRoster(
     }
   }
   if (bestScore <= 0) return state;
+  if (bestMembers === state.members || bestScore === currentScore) return state;
   return syncMemberTotalsFromDonors({ ...state, members: bestMembers });
 }
 
@@ -543,8 +560,18 @@ function memberHasContributionSources(
   );
 }
 
+/** 🔥 syncMemberTotalsFromDonors identity memo
+ *  ✅ self identity only (동일 객체 재호출시 즉시 반환)
+ *  merge·repair·coalesce 체인 내 새 shell 생성 후 같은 state 객체에 대해 반복 호출 3~4회를 캐치
+ *  ⚠️ 5중 WeakMap composite cache는 의도치 않은 stale hit를 유발하므로 제거 (정확성 > 성능)
+ */
+const syncMemoSelf = new WeakMap<object, AppState>();
+
 /** 후원자 리스트(donors) 기준으로 멤버 계좌·투네 합계 재계산 — 순위·엑셀표 금액 불일치 방지 */
 export function syncMemberTotalsFromDonors(state: AppState): AppState {
+  const selfCached = syncMemoSelf.get(state);
+  if (selfCached) return selfCached;
+
   const totals = new Map<string, { account: number; toon: number }>();
   for (const member of state.members || []) {
     totals.set(member.id, { account: 0, toon: 0 });
@@ -576,7 +603,9 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
       contribution,
     };
   });
-  return { ...state, members };
+  const result = { ...state, members };
+  syncMemoSelf.set(state, result);
+  return result;
 }
 
 /** @deprecated 이중 경로는 near-content dedupe(3s)·릴레이 차단으로 처리 */

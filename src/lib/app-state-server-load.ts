@@ -19,8 +19,11 @@ export function appStateStorageKey(userId: string): string {
 }
 
 /**
- * Redis·메모리 donors 를 리셋 가드 하에 모두 union.
- * pickFresherAppState 승자만 merge 하면 다른 쪽(예: Redis 단체짠 split) donors 가 유실될 수 있다.
+ * Redis·메모리 donors 를 리셋 가드 하에 union.
+ * 🔥 단순화 (P0): mergePreserving 2회 → 1회로 통합 (멱등성 성립 · sync×2~3회 × dedupe×2회 중복 제거)
+ *  · picked = fresher one (mem or redis)
+ *  · other = 반대쪽 (fresher 하지 않은 쪽)
+ *  · merge(picked, other) 1회만으로도 양쪽 donors 유실 없이 정확히 union 완료
  */
 export function coalesceAppStateRedisAndMemory(
   redis: AppState | null | undefined,
@@ -47,8 +50,8 @@ export function coalesceAppStateRedisAndMemory(
   ) {
     return picked;
   }
-  let merged = mergeStatePreservingDonorsUntilSettlementReset(picked, mem) ?? picked;
-  merged = mergeStatePreservingDonorsUntilSettlementReset(merged, redis) ?? merged;
+  // 🔥 단순화: 2회 중첩 mergePreserving → picked + other 1회만 실행 (멱등성 보장)
+  const merged = mergeStatePreservingDonorsUntilSettlementReset(picked, other) ?? picked;
   return merged;
 }
 
@@ -64,8 +67,10 @@ export function coalesceAppStateRedisAndMemory(
 const loadInflight = new Map<string, Promise<AppState | null>>();
 const kvReadCache = new Map<string, { state: AppState; loadedAt: number }>();
 const KV_READ_CACHE_TTL_MS = Number(process.env.KV_READ_CACHE_TTL_MS || 30_000);
-/** 🔥 CRITICAL: loadAppStateForUserIdOnce 전체에 총 제한시간 20초 → 영구 hang시 에러 throw → 0바이트 데드락 방지 */
-const LOAD_APP_STATE_TOTAL_TIMEOUT_MS = 20_000;
+/** 🔥 P0-1 timeout 레이어 재정렬: L3 loadAppState = 14s (L4=10s → L3=14s → L2=16s → L1=25s 안밖 정렬)
+ *  기존 20s (L2 18s 보다 큼 → 역전 현상으로 부모 timeout 먼저 터지는 좀비 Promise 유발)
+ */
+const LOAD_APP_STATE_TOTAL_TIMEOUT_MS = 14_000;
 
 export function invalidateAppStateKvCache(userId?: string): void {
   if (userId) kvReadCache.delete(userId);

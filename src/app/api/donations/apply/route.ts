@@ -79,8 +79,10 @@ function buildBankEvent(
  * (applyDonationToAppState → union → saveAppStateForRoulette → SSE)
  */
 export async function POST(req: Request) {
-  /** 🔥 CRITICAL: apply POST 30초 총 제한 → 모든 데드락 걸려도 0바이트 Hang 절대 안됨 */
-  const HANDLER_TIMEOUT_MS = 30_000;
+  /** 🔥 P0-1 timeout 레이어 재정렬: L1 apply POST = 25s (L4=10s → L3=14s → L2=16s → L1=25s 가장 바깥 가장 김)
+   *  기존 30s → 5s 단축
+   */
+  const HANDLER_TIMEOUT_MS = 25_000;
   let applyTimer: ReturnType<typeof setTimeout> | null = null;
   const timeoutResponse = new Promise<Response>((resolve) => {
     applyTimer = setTimeout(() => {

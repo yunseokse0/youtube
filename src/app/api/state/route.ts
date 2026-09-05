@@ -697,8 +697,10 @@ function looksLikeEmptyRosterPersist(
 }
 
 export async function GET(req: Request) {
-  /** 🔥 CRITICAL: state GET 전체에 총 18초 핸들러 타임아웃 → 모든 내부 데드락에 걸려도 0바이트 Hang 절대 안됨. 초과시 memState 즉시 fallback 반환 */
-  const HANDLER_TOTAL_TIMEOUT_MS = 18_000;
+  /** 🔥 P0-1 timeout 레이어 재정렬: L2 state GET = 16s (L4=10s → L3=14s → L2=16s → L1=25s)
+   *  기존 18s (L3 20s 보다 작음 → 부모 먼저 timeout 터지는 역전 현상)
+   */
+  const HANDLER_TOTAL_TIMEOUT_MS = 16_000;
   let abortTimer: ReturnType<typeof setTimeout> | null = null;
   const fallbackOnTimeout = async (): Promise<Response> => {
     const userId = getUserId(req);
