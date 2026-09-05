@@ -63,7 +63,9 @@ export function coalesceAppStateRedisAndMemory(
 /** 멀티탭·멀티PC 동시 GET — userId 당 1회 KV 읽기 */
 const loadInflight = new Map<string, Promise<AppState | null>>();
 const kvReadCache = new Map<string, { state: AppState; loadedAt: number }>();
-const KV_READ_CACHE_TTL_MS = 20_000;
+const KV_READ_CACHE_TTL_MS = Number(process.env.KV_READ_CACHE_TTL_MS || 30_000);
+/** 🔥 CRITICAL: loadAppStateForUserIdOnce 전체에 총 제한시간 20초 → 영구 hang시 에러 throw → 0바이트 데드락 방지 */
+const LOAD_APP_STATE_TOTAL_TIMEOUT_MS = 20_000;
 
 export function invalidateAppStateKvCache(userId?: string): void {
   if (userId) kvReadCache.delete(userId);
@@ -87,42 +89,56 @@ async function loadAppStateForUserIdOnce(
   userId: string,
   opts?: { bypassCache?: boolean }
 ): Promise<AppState | null> {
-  const mem = getServerMemoryAppState(userId);
-  if (isPersistentKvConfigured()) {
-    if (!opts?.bypassCache) {
-      const hit = kvReadCache.get(userId);
-      if (hit && Date.now() - hit.loadedAt < KV_READ_CACHE_TTL_MS) {
-        const picked = coalesceAppStateRedisAndMemory(hit.state, mem);
+  /** 🔥 CRITICAL: 총 실행시간 20초 제한. MySQL pool deadlock / 무한 재귀 등으로 Promise 영구 미해결 → 0바이트 Hang 방지 */
+  let timerRef: ReturnType<typeof setTimeout> | null = null;
+  const timeoutP = new Promise<never>((_, reject) => {
+    timerRef = setTimeout(() => {
+      reject(new Error(`loadAppStateForUserIdOnce timeout userId=${userId} after ${LOAD_APP_STATE_TOTAL_TIMEOUT_MS}ms — forcing fail (zero-event-block guarantee)`));
+    }, LOAD_APP_STATE_TOTAL_TIMEOUT_MS);
+  });
+  const workP = (async () => {
+    try {
+      const mem = getServerMemoryAppState(userId);
+      if (isPersistentKvConfigured()) {
+        if (!opts?.bypassCache) {
+          const hit = kvReadCache.get(userId);
+          if (hit && Date.now() - hit.loadedAt < KV_READ_CACHE_TTL_MS) {
+            const picked = coalesceAppStateRedisAndMemory(hit.state, mem);
+            if (picked) {
+              if (mem !== picked) setServerMemoryAppState(userId, picked);
+              return picked;
+            }
+          }
+        }
+        const saved = await upstashGetAppStateJson<AppState>(appStateStorageKey(userId));
+        if (saved) {
+          kvReadCache.set(userId, { state: saved, loadedAt: Date.now() });
+        }
+        const picked = coalesceAppStateRedisAndMemory(saved, mem);
         if (picked) {
+          /** 메모리보다 Redis가 앞서면 메모리도 맞춤(반대는 덮어쓰지 않음) */
           if (mem !== picked) setServerMemoryAppState(userId, picked);
           return picked;
         }
+        const kvErr = await getPersistentKvLastError();
+        if (kvErr) {
+          if (
+            mem &&
+            (normalizeDonorsArray(mem.donors).length > 0 ||
+              totalCombined(mem) > 0 ||
+              hasMeaningfulMemberRoster(mem))
+          ) {
+            return mem;
+          }
+          return null;
+        }
       }
+      return mem || defaultState();
+    } finally {
+      if (timerRef) { clearTimeout(timerRef); timerRef = null; }
     }
-    const saved = await upstashGetAppStateJson<AppState>(appStateStorageKey(userId));
-    if (saved) {
-      kvReadCache.set(userId, { state: saved, loadedAt: Date.now() });
-    }
-    const picked = coalesceAppStateRedisAndMemory(saved, mem);
-    if (picked) {
-      /** 메모리보다 Redis가 앞서면 메모리도 맞춤(반대는 덮어쓰지 않음) */
-      if (mem !== picked) setServerMemoryAppState(userId, picked);
-      return picked;
-    }
-    const kvErr = await getPersistentKvLastError();
-    if (kvErr) {
-      if (
-        mem &&
-        (normalizeDonorsArray(mem.donors).length > 0 ||
-          totalCombined(mem) > 0 ||
-          hasMeaningfulMemberRoster(mem))
-      ) {
-        return mem;
-      }
-      return null;
-    }
-  }
-  return mem || defaultState();
+  })();
+  return Promise.race([workP, timeoutP]);
 }
 
 export async function loadAppStateForUserId(

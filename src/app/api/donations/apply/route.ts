@@ -79,6 +79,23 @@ function buildBankEvent(
  * (applyDonationToAppState → union → saveAppStateForRoulette → SSE)
  */
 export async function POST(req: Request) {
+  /** 🔥 CRITICAL: apply POST 30초 총 제한 → 모든 데드락 걸려도 0바이트 Hang 절대 안됨 */
+  const HANDLER_TIMEOUT_MS = 30_000;
+  let applyTimer: ReturnType<typeof setTimeout> | null = null;
+  const timeoutResponse = new Promise<Response>((resolve) => {
+    applyTimer = setTimeout(() => {
+      console.error(`[donations/apply] POST total timeout after ${HANDLER_TIMEOUT_MS}ms — fail-fast 503 (zero-event-block guarantee)`);
+      resolve(new Response(JSON.stringify({ error: "apply_timeout", applied: 0, retry: true }), { status: 503, headers: { "Content-Type": "application/json" } }));
+    }, HANDLER_TIMEOUT_MS);
+  });
+  const workP = (async () => {
+    try { return await handleApplyPostInner(req); }
+    finally { if (applyTimer) { clearTimeout(applyTimer); applyTimer = null; } }
+  })();
+  return Promise.race([workP, timeoutResponse]);
+}
+
+async function handleApplyPostInner(req: Request): Promise<Response> {
   const writeUid = resolveWriteUserId(req);
   if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
   const userId = writeUid.userId;

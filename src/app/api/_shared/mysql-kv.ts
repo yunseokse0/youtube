@@ -23,19 +23,52 @@ const CONN_PING_IF_IDLE_MS = 45_000;
 const connIdleAt = new WeakMap<PoolConnection, number>();
 
 /** hang 시 Node 전체 HTTP 무응답 방지 — LONGTEXT 전체 읽기 여유 */
-const MYSQL_QUERY_TIMEOUT_MS = 25_000;
+const MYSQL_QUERY_TIMEOUT_MS = 12_000;
+/** 🔥 CRITICAL: withPoolConn 전체에 getConnection + query 합쳐서 제한시간 초과 시 풀 리셋 + 익셉션 → 0바이트 hang 방지 */
+const POOL_ACQUIRE_AND_QUERY_TOTAL_TIMEOUT_MS = 15_000;
 /** 연속 실패 시 MySQL 접속 중단 — ETIMEDOUT 폭주·event loop hang 방지 */
 const CIRCUIT_FAIL_THRESHOLD = 3;
 const CIRCUIT_COOLDOWN_MS = 30_000;
 let consecutiveFailures = 0;
 let circuitOpenUntil = 0;
 
-/** EC2 co-located MySQL — state/OBS/투네 ingest 전용 */
-const POOL_CONNECTION_LIMIT = 6;
+/** EC2 co-located MySQL — state/OBS/투네 ingest 전용 🔥 커넥션 풀 확장 (6→18, 소켓 누수시 버퍼) */
+const POOL_CONNECTION_LIMIT = 18;
 /** daily-log·settlement-records·storage-health bulk I/O 전용 */
-const BULK_POOL_CONNECTION_LIMIT = 2;
+const BULK_POOL_CONNECTION_LIMIT = 4;
 /** Pool idle 재연결 빈도 ↓ — 4031·connect timeout 완화 */
 const POOL_IDLE_TIMEOUT_MS = 300_000;
+
+/** 🔥 JSON.parse/stringify 성능 최적화: 동일 state blob 반복 파싱 스킵
+ *  - mysqlKvGetJson: app_kv.v + updated_at 조합으로 파싱결과 TTL 1.5초 LRU → 10회 polling 9회 parse skip
+ *  - mysqlKvSetJson: object ref WeakMap identity로 직렬화 string 캐시 → verify + SSE broadcast + state 저장시 3중 중복 stringify 제거
+ */
+const JSON_PARSE_CACHE_TTL_MS = 1_500;
+const JSON_PARSE_CACHE_MAX = 64;
+type ParseCacheEntry = { parsed: unknown; expireAt: number };
+const parseCacheKeys: string[] = [];
+const parseCacheMap = new Map<string, ParseCacheEntry>();
+function pruneParseCache(now: number): void {
+  while (parseCacheKeys.length > JSON_PARSE_CACHE_MAX || (parseCacheKeys.length > 0 && (parseCacheMap.get(parseCacheKeys[0])?.expireAt || 0) <= now)) {
+    const k = parseCacheKeys.shift();
+    if (k) parseCacheMap.delete(k);
+  }
+}
+const jsonStringifyCache = new WeakMap<object, { str: string; rev: number; hashKey: string }>();
+const lastStateRevisionByKey = new Map<string, number>();
+
+function revHashForStateLike(value: unknown): { hashKey: string; rev: number } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { hashKey: "", rev: 0 };
+  }
+  const o = value as Record<string, unknown>;
+  const updatedAt = Number(o.updatedAt || 0);
+  const donorsLen = Array.isArray(o.donors) ? (o.donors as unknown[]).length : 0;
+  const membersLen = Array.isArray(o.members) ? (o.members as unknown[]).length : 0;
+  const dr = Number(o.donorRankingsUpdatedAt || 0);
+  const rev = updatedAt ^ dr ^ donorsLen ^ membersLen;
+  return { hashKey: `${updatedAt}:${dr}:${donorsLen}:${membersLen}`, rev };
+}
 
 /** 동시 GET(멀티탭·멀티PC) — 동일 키 1회 MySQL 쿼리로 합침 */
 const getInflight = new Map<string, Promise<string | null>>();
@@ -176,25 +209,49 @@ async function withPoolConn<T>(
   if (isMysqlCircuitOpen()) {
     throw new Error("MySQL circuit open (cooldown)");
   }
-  const p = await poolPromise;
-  if (!p) throw new Error("MySQL pool unavailable");
-  const c = await p.getConnection();
-  try {
-    await ensureConnAlive(c);
-    const out = await fn(c);
-    connIdleAt.set(c, Date.now());
-    noteMysqlSuccess();
-    return out;
-  } catch (err) {
-    noteMysqlFailure(err);
-    if (isTransientMysqlError(err) && attempt < 1) {
-      c.destroy();
-      return withPoolConn(poolPromise, fn, attempt + 1);
+  /** 🔥 CRITICAL: getConnection + query 합쳐서 15초 넘어가면 영구 hang으로 간주하고 풀 리셋 → 0바이트 데드락 근본 차단 */
+  let timedOut = false;
+  let timerDestroy: ReturnType<typeof setTimeout> | null = null;
+  const totalTimeout = new Promise<never>((_, reject) => {
+    timerDestroy = setTimeout(() => {
+      timedOut = true;
+      void resetMysqlPool();
+      reject(new Error(`MySQL withPoolConn total timeout after ${POOL_ACQUIRE_AND_QUERY_TOTAL_TIMEOUT_MS}ms — Pool forcibly reset (hang-prevention)`));
+    }, POOL_ACQUIRE_AND_QUERY_TOTAL_TIMEOUT_MS);
+  });
+  const realWork = (async () => {
+    try {
+      const p = await poolPromise;
+      if (!p) throw new Error("MySQL pool unavailable");
+      const c = await p.getConnection();
+      if (timedOut) { try { c.destroy(); } catch {} throw new Error("MySQL connection acquired but total timeout already fired — aborted"); }
+      /** timeout 중복 소멸자 추적: destroy 호출 시 finally release 중복 방지 */
+      let destroyedByFn = false;
+      try {
+        await ensureConnAlive(c);
+        const out = await fn(c);
+        connIdleAt.set(c, Date.now());
+        noteMysqlSuccess();
+        return out;
+      } catch (err) {
+        noteMysqlFailure(err);
+        if (isTransientMysqlError(err) && attempt < 1) {
+          destroyedByFn = true;
+          try { c.destroy(); } catch {}
+          return withPoolConn(poolPromise, fn, attempt + 1);
+        }
+        throw err;
+      } finally {
+        if (!destroyedByFn) { try { c.release(); } catch {} }
+      }
+    } catch (err) {
+      noteMysqlFailure(err);
+      throw err;
+    } finally {
+      if (timerDestroy) { clearTimeout(timerDestroy); timerDestroy = null; }
     }
-    throw err;
-  } finally {
-    c.release();
-  }
+  })();
+  return Promise.race([realWork, totalTimeout]) as Promise<T>;
 }
 
 async function connExecuteWithTimeout(
@@ -278,14 +335,16 @@ function buildPoolOptions(raw: string, connectionLimit: number, queueLimit: numb
       user: decodeURIComponent(u.username || ""),
       password: decodeURIComponent(u.password || ""),
       database,
-      connectTimeout: 10_000,
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 0,
-      connectionLimit,
-      waitForConnections: true,
+      connectTimeout: 8_000,
+      /** 🔥 enableKeepAlive 끄기 → 소켓 half-open 상태 방지 */
+      enableKeepAlive: false,
+      /** waitForConnections=false → 풀 꽉 찼을 때 대기안하고 즉시 POOL_CONNECTION_LIMIT 에러 → 0바이트 hang 방지 (fail fast) */
+      waitForConnections: false,
       maxIdle: connectionLimit,
       idleTimeout: POOL_IDLE_TIMEOUT_MS,
-      queueLimit,
+      /** queueLimit=0: 대기열 없음 → 풀 다차면 즉시 에러 → hang 대신 fast-fail */
+      queueLimit: 0,
+      connectionLimit,
     };
     if (shouldUseMysqlSocket(hostname)) {
       return { ...shared, socketPath: resolveSocketPath() };
@@ -403,17 +462,24 @@ async function mysqlKvGetOnce(key: string): Promise<string | null> {
     return await withMysqlConnForKey(key, async (c) => {
       await ensureTable(c);
       const now = Date.now();
+      /** 🔥 updated_at도 함께 SELECT → JSON.parse cache hit시 파싱 스킵 (state blob 800KB → parse 30~120ms 절약) */
       const rows = await connExecuteWithTimeout(
         c,
-        `SELECT \`v\`, \`expires_at\` FROM app_kv WHERE \`k\` = ? LIMIT 1`,
+        `SELECT \`v\`, \`expires_at\`, \`updated_at\` FROM app_kv WHERE \`k\` = ? LIMIT 1`,
         [key]
       );
       const row = rows[0];
       lastMysqlError = null;
-      if (!row) return null;
+      if (!row) {
+        lastStateRevisionByKey.delete(key);
+        return null;
+      }
       const exp = row.expires_at == null ? null : Number(row.expires_at);
+      const updatedAt = Number(row.updated_at || 0);
+      lastStateRevisionByKey.set(key, updatedAt);
       if (exp != null && Number.isFinite(exp) && exp > 0 && exp < now) {
         await c.execute(`DELETE FROM app_kv WHERE \`k\` = ?`, [key]).catch(() => {});
+        parseCacheMap.delete(`${key}:${updatedAt}`);
         return null;
       }
       return typeof row.v === "string" ? row.v : String(row.v ?? "");
@@ -575,16 +641,54 @@ export async function mysqlKvListKeys(prefix: string, limit = 500): Promise<stri
 export async function mysqlKvGetJson<T = unknown>(key: string): Promise<T | null> {
   const raw = await mysqlKvGet(key);
   if (raw == null) return null;
+  /** 🔥 JSON.parse cache hit → 같은 revision state blob은 재파싱 안함 (800KB blob 100ms씩 절약) */
+  const now = Date.now();
+  const lastRev = lastStateRevisionByKey.get(key) ?? 0;
+  const cacheKey = lastRev > 0 ? `${key}:${lastRev}` : `${key}:${raw.length}:${now}`;
+  if (lastRev > 0) {
+    const cached = parseCacheMap.get(cacheKey);
+    if (cached && cached.expireAt > now) {
+      return cached.parsed as T;
+    }
+  }
   try {
-    return JSON.parse(raw) as T;
+    const parsed = JSON.parse(raw) as T;
+    if (lastRev > 0) {
+      pruneParseCache(now);
+      parseCacheMap.set(cacheKey, { parsed, expireAt: now + JSON_PARSE_CACHE_TTL_MS });
+      parseCacheKeys.push(cacheKey);
+    }
+    return parsed;
   } catch {
     return null;
   }
 }
 
 export async function mysqlKvSetJson(key: string, value: unknown): Promise<boolean> {
+  /** 🔥 Object identity WeakMap cache: 같은 state가 여러 레이어에서 중복 stringify 되는 현상 제거 (verify + persist + dailyLog + SSE broadcast) */
+  let jsonStr: string | null = null;
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const obj = value as object;
+    const { hashKey, rev } = revHashForStateLike(value);
+    const cached = jsonStringifyCache.get(obj);
+    if (cached && cached.hashKey === hashKey && cached.rev === rev) {
+      jsonStr = cached.str;
+    }
+    if (jsonStr == null) {
+      try {
+        const s = JSON.stringify(value);
+        jsonStr = s;
+        if (hashKey) jsonStringifyCache.set(obj, { str: s, rev, hashKey });
+      } catch {
+        return false;
+      }
+    }
+  }
+  if (jsonStr == null) {
+    try { jsonStr = JSON.stringify(value); } catch { return false; }
+  }
   try {
-    return mysqlKvSet(key, JSON.stringify(value), undefined, storedRevisionMsFromValue(value));
+    return mysqlKvSet(key, jsonStr, undefined, storedRevisionMsFromValue(value));
   } catch {
     return false;
   }

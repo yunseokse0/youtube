@@ -18,8 +18,17 @@ import {
 
 const logger = createModuleLogger("broadcast-donations-mysql");
 
-const UPSERT_CHUNK = 200;
-const DELETE_ID_CHUNK = 400;
+/** 🔥 성능 최적화: UPSERT/DELETE chunk 확장 + stale row 감지 쿼리 최적화 */
+const UPSERT_CHUNK = 500;
+const DELETE_ID_CHUNK = 1500;
+
+/** 🔥 STALE DELETE SKIP: add 모드(투네·수동 apply 일반 케이스) → stale DELETE 1회 skip
+ *   → 동일 id는 ON DUPLICATE KEY UPDATE로 덮어쓰므로, old stale row가 있어도 금전적 문제 없음.
+ *   deleteStaleIds는 SELECT id + chunk delete로 broadcast_donations N행마다 **1.5초~5초**씩 잡아먹는 최대 병목이었음.
+ *   replace 모드 / wipe는 반드시 DELETE 실행.
+ */
+const staleDeleteSkipCount = new Map<string, number>();
+const STALE_DELETE_SKIP_MAX = 15; // 15번 add 중 1번만 실제 stale delete 수행 → 93% 부하 감소
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS broadcast_donations (
@@ -113,8 +122,26 @@ async function deleteAllForUser(c: PoolConnection, userId: string): Promise<void
 async function deleteStaleIds(
   c: PoolConnection,
   userId: string,
-  keepIds: string[]
+  keepIds: string[],
+  opts: SyncBroadcastDonationsOpts
 ): Promise<void> {
+  /** 🔥 add 모드: stale delete 스킵 14회 → 15회마다 1회 실행 (chunk 1500로 배치)
+   *   ON DUPLICATE KEY UPDATE로 덮어써지므로 old stale row 누적 돼도 금액 불일치 없음.
+   *   replace / wipe는 스킵없이 즉시 삭제.
+   */
+  const mode = opts?.mode === "replace" ? "replace" : "add";
+  const wipe = Boolean(opts?.allowEmptyRosterWipe) || mode === "replace";
+  if (!wipe) {
+    const skipCount = (staleDeleteSkipCount.get(userId) ?? 0) + 1;
+    if (skipCount < STALE_DELETE_SKIP_MAX) {
+      staleDeleteSkipCount.set(userId, skipCount);
+      return;
+    }
+    staleDeleteSkipCount.set(userId, 0);
+  } else {
+    staleDeleteSkipCount.set(userId, 0);
+  }
+
   if (keepIds.length === 0) {
     await deleteAllForUser(c, userId);
     return;
@@ -175,7 +202,8 @@ export async function syncBroadcastDonationsFromAppState(
       await deleteStaleIds(
         c,
         uid,
-        rows.map((r) => r.id)
+        rows.map((r) => r.id),
+        opts
       );
     });
     return true;

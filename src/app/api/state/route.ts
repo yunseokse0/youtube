@@ -697,6 +697,45 @@ function looksLikeEmptyRosterPersist(
 }
 
 export async function GET(req: Request) {
+  /** 🔥 CRITICAL: state GET 전체에 총 18초 핸들러 타임아웃 → 모든 내부 데드락에 걸려도 0바이트 Hang 절대 안됨. 초과시 memState 즉시 fallback 반환 */
+  const HANDLER_TOTAL_TIMEOUT_MS = 18_000;
+  let abortTimer: ReturnType<typeof setTimeout> | null = null;
+  const fallbackOnTimeout = async (): Promise<Response> => {
+    const userId = getUserId(req);
+    const memFallback = getServerMemoryAppState(userId);
+    if (memFallback && Array.isArray(memFallback.members)) {
+      const body = applyDonationGoalPresetNormalization(memFallback);
+      let pickMode: ReturnType<typeof parseStateApiPick> = null;
+      try {
+        pickMode = parseStateApiPick(new URL(req.url).searchParams.get("pick") || "");
+        if (pickMode && pickMode !== STATE_PICK_SIG_INVENTORY && !overlayPickEnabled()) pickMode = null;
+      } catch { pickMode = null; }
+      const cleaned = sanitizeAppStateWheelDemo(body);
+      return new Response(JSON.stringify(pickMode ? projectStateForGetPick(cleaned, pickMode, userId ?? "") : cleaned), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          [HDR_STATE_STORAGE]: "memory-fallback-timeout",
+          "Cache-Control": "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
+        },
+      });
+    }
+    return stateUnavailableResponse("handler_timeout_fallback");
+  };
+  const timeoutPromise = new Promise<Response>((resolve) => {
+    abortTimer = setTimeout(() => {
+      console.error(`[state/route] GET total timeout after ${HANDLER_TOTAL_TIMEOUT_MS}ms — returning memory fallback immediately (zero-hang guarantee)`);
+      void fallbackOnTimeout().then(resolve).catch(() => resolve(stateUnavailableResponse("handler_timeout_fallback")));
+    }, HANDLER_TOTAL_TIMEOUT_MS);
+  });
+  const workPromise = (async () => {
+    try { return await handleStateGetInner(req); }
+    finally { if (abortTimer) { clearTimeout(abortTimer); abortTimer = null; } }
+  })();
+  return Promise.race([workPromise, timeoutPromise]);
+}
+
+async function handleStateGetInner(req: Request): Promise<Response> {
   if (!isRedisConfigured()) {
     await ensureMysqlKvBackend();
   }
@@ -840,6 +879,26 @@ export async function GET(req: Request) {
     if (!effective) {
       const kvErr = await getPersistentKvLastError();
       if (kvErr) {
+        if (
+          memState &&
+          (normalizeDonorsArray(memState.donors).length > 0 ||
+            totalCombined(memState) > 0 ||
+            hasMeaningfulMemberRoster(memState))
+        ) {
+          logger.warn(
+            "KV 조회 실패 — 서버 메모리 warm state fallback (엑셀/후원 자동 초기화 방지)",
+            { userId, kvErr }
+          );
+          const fallback = applyDonationGoalPresetNormalization(memState);
+          return new Response(JSON.stringify(bodyForPick(fallback)), {
+            headers: {
+              "Content-Type": "application/json",
+              [HDR_STATE_STORAGE]: "memory-fallback",
+              "Cache-Control":
+                "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
+            },
+          });
+        }
         logger.error("KV 조회 실패 — 빈 defaultState 반환 금지 (엑셀/후원 자동 초기화 방지)", {
           userId,
           kvErr,
