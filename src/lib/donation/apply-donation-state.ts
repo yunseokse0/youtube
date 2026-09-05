@@ -1298,21 +1298,6 @@ export function applyDonationToAppState(
     newDonor.target
   );
 
-  const updatedMembers = currentState.members.map((member) => {
-    if (member.id !== newDonor.memberId) return member;
-    const field = resolveEffectiveDonorTarget(newDonor);
-    const isOperating = isOperatingSettlementMember(
-      { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
-      currentState.memberPositions || null
-    );
-    const prevContribution = Math.max(0, Number(member.contribution) || 0);
-    return {
-      ...member,
-      [field]: (member[field] || 0) + newDonor.amount,
-      contribution: isOperating ? prevContribution : prevContribution + contributionPoints,
-    };
-  });
-
   const syncMode = currentState.donationSyncMode || "mealBattle";
   const mealRaw = mealBattleUsesRawDonationScore(currentState.mealBattle);
   const mealParticipants =
@@ -1335,7 +1320,6 @@ export function applyDonationToAppState(
   const updatedState = syncMemberTotalsFromDonors({
     ...currentState,
     contributionFormula: formula,
-    members: updatedMembers,
     donors: dedupeDonorRows([
       ...existingDonors,
       {
