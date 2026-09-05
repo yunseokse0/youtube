@@ -43,6 +43,22 @@ export async function register() {
   /** server-listener import·투네 복구는 HTTP 기동 후 지연 — register 블로킹 방지 */
   void (async () => {
     await new Promise((r) => setTimeout(r, 12_000));
+
+    /**
+     * B·DIN 허브 모드 (din_only) 일땐 ↓ 투네 직접 WS 리스너를 아예 시작하지 않음.
+     * (1. Dual-Path 2행 중복 원천 봉쇄 + 2. 무한 reconnect loop CPU 97% 방지)
+     * — 오직 DIN 허브(13.125.221.195:4000) → /api/donations/ingest (TOONA_INGEST_SECRET) 1경로만 유일 유입
+     */
+    const intakeMode = String(process.env.TOONA_INTAKE_MODE || "").trim().toLowerCase();
+    const wsDisableRaw = String(process.env.TOONATION_WS_DISABLE || process.env.DISABLE_TOONATION_LISTENER || "").trim().toLowerCase();
+    const wsDisabledByEnv = wsDisableRaw === "1" || wsDisableRaw === "true" || wsDisableRaw === "yes";
+    if (intakeMode === "din_only" || wsDisabledByEnv) {
+      console.info(
+        `[instrumentation] Skip toonation server listeners (mode=${intakeMode || "default"}, wsDisabled=${wsDisabledByEnv})`
+      );
+      return;
+    }
+
     const { restoreToonationListenersFromStore } = await import(
       "@/lib/donation/toonation/server-listener"
     );
