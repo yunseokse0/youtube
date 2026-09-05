@@ -82,6 +82,11 @@ export function isPersistentKvConfigured(): boolean {
   return isRedisConfigured() || hasMysqlDatabaseUrl();
 }
 
+/** MySQL only (Upstash Redis 세팅 전혀 없음) 이면 Redis GET 단계 전체 skip — 150s 블랙홀 timeout 방지 */
+export function isMysqlOnlyPersistentKvConfigured(): boolean {
+  return hasMysqlDatabaseUrl() && !isRedisConfigured();
+}
+
 /** Redis 200 + key 없음 → MySQL fallback 금지 (ETIMEDOUT 폭주 원인). 마이그레이션만 1 */
 export function isMysqlKvFallbackOnRedisMissEnabled(): boolean {
   const v = String(process.env.MYSQL_KV_FALLBACK_ON_REDIS_MISS ?? "").trim().toLowerCase();
@@ -99,11 +104,15 @@ async function redisGetJsonDetailed<T = unknown>(key: string): Promise<RedisGetO
   const url = `${base.replace(/\/$/, "")}/get/${encodeURIComponent(key)}`;
   let response: Response;
   try {
-    response = await fetch(url, {
+    const fetchPromise = fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(3_500),
     });
+    const hardTimeout = new Promise<Response>((_, rej) =>
+      setTimeout(() => rej(new Error("redis_hard_timeout")), 4_000)
+    );
+    response = await (Promise.race([fetchPromise, hardTimeout]) as Promise<Response>);
   } catch {
     return { kind: "error" };
   }
@@ -165,7 +174,9 @@ async function redisSetJson(key: string, value: unknown, usePipeline: boolean): 
   return response.ok;
 }
 
-/** Redis 우선, 없으면 MySQL DATABASE_URL (nodejs만) */
+/** Redis 우선, 없으면 MySQL DATABASE_URL (nodejs만)
+ *  Upstash Redis 미설정 MySQL ONLY 환경일 땐 Redis GET 단계 전체 SKIP → 150s 블랙홀 timeout 방지
+ */
 export async function upstashGetJson<T = unknown>(key: string): Promise<T | null> {
   if (isRedisConfigured()) {
     const out = await redisGetJsonDetailed<T>(key);
@@ -179,6 +190,10 @@ export async function upstashGetJson<T = unknown>(key: string): Promise<T | null
       return null;
     }
     /* Redis HTTP/네트워크 오류 — MySQL fallback */
+  } else if (isMysqlOnlyPersistentKvConfigured()) {
+    const mysql = await loadMysqlKv();
+    if (mysql) return mysql.mysqlKvGetJson<T>(key);
+    return null;
   }
   const mysql = await loadMysqlKv();
   if (mysql) return mysql.mysqlKvGetJson<T>(key);

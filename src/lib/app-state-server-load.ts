@@ -1,4 +1,4 @@
-import { isPersistentKvConfigured } from "@/app/api/_shared/upstash";
+import { isPersistentKvConfigured, isMysqlOnlyPersistentKvConfigured } from "@/app/api/_shared/upstash";
 import { getPersistentKvLastError } from "@/app/api/_shared/upstash";
 import { upstashGetAppStateJson } from "@/app/api/_shared/upstash-app-state";
 import { pickFresherAppState } from "@/lib/app-state-freshness";
