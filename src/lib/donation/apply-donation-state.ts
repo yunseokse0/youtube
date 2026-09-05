@@ -36,12 +36,19 @@ export function normalizeDonationEventId(id: string): string {
   return String(id || "").replace(/::review$/i, "");
 }
 
-/** parse-event fallback id — 동일 후원이 다른 id로 두 번 들어올 수 있음 */
+/** parse-event fallback id — 동일 후원이 다른 id로 두 번 들어올 수 있음
+ *  ★ custom prefix (seq-X / don-real-X / don-X / 임의 str-{n} 등) 도 "UUID가 아닌 문자열 id = 신뢰 불가능 weak id" 로 분류 →
+ *    donorRowDedupeKey seed hash 개별 키 생성 + shouldTreat ④ Weak bypass guard 타도록 유도 → 3·5연속 후원 개별 유지 */
 export function isWeakToonationDonorId(id: string): boolean {
   const base = normalizeDonationEventId(String(id || "").trim()).replace(/^toonation:/i, "");
   if (!base) return false;
-  if (/^(fp-|test-|toon-)/i.test(base)) return true;
-  return /^\d{10,13}-\d+(-\d+-[a-z0-9]+)?$/i.test(base);
+  if (/^(fp-|test-|toon-|seq-|don-|stub-|mock-)/i.test(base)) return true;
+  if (/^\d{10,13}-\d+(-\d+-[a-z0-9]+)?$/i.test(base)) return true;
+  /** UUID(표준하이픈형·32hex)는 reliable로 분류 → weak 아님 */
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(base)) return false;
+  if (/^[0-9a-f]{32}$/i.test(base)) return false;
+  /** 그 외 문자열 기반 커스텀 id = 전부 weak로 분류 */
+  return true;
 }
 
 /** donors·순위·멤버 합계 공통 — epoch ms (병합·정렬) */
@@ -994,11 +1001,12 @@ export function shouldTreatAsDuplicateDonationContent(
     }
   }
   /**
-   * ★ 3연속 후원 drop 방지 + WS+폴링 2행 중복 해소 · 총 7단계 dedup 파이프라인:
+   * ★ 3연속 후원 drop 방지 + WS+폴링 2행 중복 해소 · 총 8단계 dedup 파이프라인:
    *   ① 릴레이블 UUID externalId 일치 + 금액 일치 = 무조건 dedup (경로 2중 수신 봉쇄 · weak id 여부 무관)
    *   ② Cross-Source (bank↔투네) / Bank 재전송 = 전문 윈도우 (30s) dedup
    *   ②-1 Owner Remap Split = target 반대 쌍 (투네↔계좌) + 금액·at·메시지 동일 = dedup (David 51k 2행 FIX)
    *   ②-2 Instant Burst = 동일 donor·금액·at ≤ 1000ms 극단 burst = 무조건 dedup (자키집 19k 4:23:00 2행 FIX)
+   *   ②-3 Dual-Path Reliable Mismatch = 양쪽 모두 진짜 reliable UUID 존재·서로 다름 + donor+금액+대상+at≤3s+메시지 동일 = dedup (David 200k 투네+DIN경로 2행 FIX)
    *   ③ 동일 투네 이벤트 (reliable ext + weak 내부) = 15s 윈도우 dedup
    *   ④ Weak bypass (3연속 후원 drop 방어): weak id 존재 + identical message 아님 + cross-source 아님 → rawId 100% 일치만 dedup
    *   ⑤ Near-Content (donor+금액+대상+메시지) 윈도우 dedup + 최종 ext UUID 불일치 차단
@@ -1077,10 +1085,53 @@ export function shouldTreatAsDuplicateDonationContent(
   const extA = extractReliableToonationExtFromDonorId(String(existing.id || ""));
   const extB = reliableExtFromIncoming(incoming);
   /** ★ 서로 다른 투네 실 id = 별도 후원 (동일 문구·동일 금액·윈도우 내 3연속 후원 허용)
-   *  - 박자키 1만원 × 3 연속 발송 시 extA·extB = UUID 3개가 서로 다르므로 이 조건에서 return false 탈출
-   *  → 3건 전부 정상 반영
+   *  ★ [DUAL-PATH EXCEPTION] extA !== extB 라도 prefix 불일치 (경로 출처가 2개 독립) + donor/amount/target/at≤3s/msg 동일 = 100% 동일 후원 2경로 유입 → dedup true */
+  if (extA && extB && extA !== extB) {
+    const extractPrefix = (raw: string): string => {
+      const m = raw.match(/^(.*?)(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})/i);
+      return m ? m[1].toLowerCase() : raw.toLowerCase();
+    };
+    const pA = extractPrefix(existingRawId);
+    const pB = extractPrefix(incomingRawId);
+    if (pA !== pB) {
+      const amtA = Math.max(0, Math.round(Number(existing.amount) || 0));
+      const amtB = Math.max(0, Math.round(Number(incoming.amount) || 0));
+      if (amtA > 0 && amtA === amtB) {
+        const at1 = donorAtEpochMs(existing);
+        const at2 = donorAtEpochMs(incoming);
+        if (at1 && at2 && Math.abs(at1 - at2) <= 3_000) {
+          const tA = String(existing.target || "").trim().toLowerCase();
+          const tB = String(incoming.target || "").trim().toLowerCase();
+          if (tA && tB && tA === tB) {
+            const nA = String(existing.name || "").trim().toLowerCase();
+            const nB = String(incoming.donorName || incoming.name || "").trim().toLowerCase();
+            if (nA && nB && nA === nB) {
+              const m1 = String(existing.message || "").trim();
+              const m2 = String(incoming.message || "").trim();
+              if (m1 === m2) return true;
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+  /** ★ 양쪽 다 reliable ext 없는 weak id 끼리일 때:
+   *   - 둘 다 fp- fallback id = WS dual-path 복제본 케이스 (1·3·5번 테스트) → 무조건 dedup true
+   *   - 하나라도 non-fp weak id (seq-, don-real-, 사용자 정의 id 등) 이면:
+   *     - at gap < 1000ms = 동일초 burst 복제 → dedup true
+   *     - at gap ≥ 1000ms = 3·5연속 개별 후원 패턴 (2·4번 테스트) → rawId 일치만 dedup (건별 유지)
    */
-  if (extA && extB && extA !== extB) return false;
+  if (!extA && !extB) {
+    const isFpA = /\bfp-/.test(existingRawId);
+    const isFpB = /\bfp-/.test(incomingRawId);
+    if (isFpA && isFpB) return true;
+    const at5A = donorAtEpochMs(existing);
+    const at5B = donorAtEpochMs(incoming);
+    const gap5 = at5A && at5B ? Math.abs(at5A - at5B) : Infinity;
+    if (gap5 < 1_000) return true;
+    return existingRawId === incomingRawId;
+  }
   return true;
 }
 

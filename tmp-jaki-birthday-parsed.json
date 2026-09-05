@@ -1,0 +1,4337 @@
+{
+  "cutoff": "2026-09-02T02:00:00+09:00",
+  "sourcePdf": "C:\\Users\\DIN-STUDIO\\Projects\\youtube\\tmp-jaki-birthday.pdf",
+  "parsedAt": "2026-09-03T06:13:30.415Z",
+  "stats": {
+    "all": 440,
+    "until2am": 432,
+    "untilSum": 7358980,
+    "untilMan": 735.9,
+    "after2am": 8,
+    "afterSum": 99300,
+    "afterMan": 9.93,
+    "zeroAmount": 0
+  },
+  "rows": [
+    {
+      "at": 1788281567000,
+      "atKst": "2026-09-02 01:52:47",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100한번씩 더 안되나요? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788281520000,
+      "atKst": "2026-09-02 01:52:00",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100농담 다음에 또 올게요 ᄏᄏ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788281495000,
+      "atKst": "2026-09-02 01:51:35",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100ᄏᄏᄏᄏᄏ그럼 안와요 ᅲ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788281459000,
+      "atKst": "2026-09-02 01:50:59",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100그래도 덕분에 재미있었습니다 자키님 화이팅!! 투네이션일반 toonation"
+    },
+    {
+      "at": 1788281406000,
+      "atKst": "2026-09-02 01:50:06",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100오늘 자키님 생일이 아니라 에겐님 생일 맞죠 투네이션일반 toonation"
+    },
+    {
+      "at": 1788281321000,
+      "atKst": "2026-09-02 01:48:41",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100ᅲᅲ나 내일부터 레쓰비 먹는다 투네이션일반 toonation"
+    },
+    {
+      "at": 1788281149000,
+      "atKst": "2026-09-02 01:45:49",
+      "nick": "자키집쩌엉",
+      "nickKey": "자키집쩌엉",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쩌엉 100편지는 이미 썻다 나중애 줄겡 투네이션일반 toonation"
+    },
+    {
+      "at": 1788281128000,
+      "atKst": "2026-09-02 01:45:28",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100쩌엉이가 원래 편지 주고싶었다고 그러더라 투네이션일반 toonation"
+    },
+    {
+      "at": 1788281079000,
+      "atKst": "2026-09-02 01:44:39",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100나중에 자키집 생일턱 내라 투네이션일반 toonation"
+    },
+    {
+      "at": 1788281011000,
+      "atKst": "2026-09-02 01:43:31",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100빡통아 오늘 춤 원없이 췄어? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788280867000,
+      "atKst": "2026-09-02 01:41:07",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100우리 머루 어서와 투네이션일반 toonation"
+    },
+    {
+      "at": 1788280660000,
+      "atKst": "2026-09-02 01:37:40",
+      "nick": "머루",
+      "nickKey": "머루",
+      "amount": 92000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "머루 92000세이프....생일 축하해 투네이션 [생일] 자키 생일빵toonation"
+    },
+    {
+      "at": 1788280451000,
+      "atKst": "2026-09-02 01:34:11",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100아 맞다 마지막 룰렛 안하나요? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788280426000,
+      "atKst": "2026-09-02 01:33:46",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 100생일축하한다 자러갈게 투네이션일반 toonation"
+    },
+    {
+      "at": 1788280408000,
+      "atKst": "2026-09-02 01:33:28",
+      "nick": "자키집쩌엉",
+      "nickKey": "자키집쩌엉",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쩌엉 100서운할뻔 햇자나아아아 투네이션일반 toonation"
+    },
+    {
+      "at": 1788280391000,
+      "atKst": "2026-09-02 01:33:11",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100너 솔직히 말해 투네이션일반 toonation"
+    },
+    {
+      "at": 1788280383000,
+      "atKst": "2026-09-02 01:33:03",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100돈미새새꺄 너 우리 안등장할까봐 긴장했자나 투네이션일반 toonation"
+    },
+    {
+      "at": 1788280365000,
+      "atKst": "2026-09-02 01:32:45",
+      "nick": "자키집쩌엉",
+      "nickKey": "자키집쩌엉",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쩌엉 100 짜아아안투네이션일반 toonation"
+    },
+    {
+      "at": 1788280342000,
+      "atKst": "2026-09-02 01:32:22",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100 치얼스투네이션일반 toonation"
+    },
+    {
+      "at": 1788280318000,
+      "atKst": "2026-09-02 01:31:58",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100아무튼 귀빠진날 축하하고 자키집 축배들자 투네이션일반 toonation"
+    },
+    {
+      "at": 1788280248000,
+      "atKst": "2026-09-02 01:30:48",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100양이형이 아까 그자사랑해요 쳇 칠때 빵터짐 투네이션일반 toonation"
+    },
+    {
+      "at": 1788280199000,
+      "atKst": "2026-09-02 01:29:59",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100사랑해요 양이형 투네이션일반 toonation"
+    },
+    {
+      "at": 1788280184000,
+      "atKst": "2026-09-02 01:29:44",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100양이형 다급해서 저나 마니해서 죄송해요 투네이션일반 toonation"
+    },
+    {
+      "at": 1788280119000,
+      "atKst": "2026-09-02 01:28:39",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100자키님 생일 축하해요 그럼 저도 이만 !! 투네이션일반 toonation"
+    },
+    {
+      "at": 1788280059000,
+      "atKst": "2026-09-02 01:27:39",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100절친 하정이 잘가 갠방 놀러갈게 투네이션일반 toonation"
+    },
+    {
+      "at": 1788280059000,
+      "atKst": "2026-09-02 01:27:39",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100 대답투네이션일반 toonation"
+    },
+    {
+      "at": 1788279988000,
+      "atKst": "2026-09-02 01:26:28",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100저년 독한년이라 눈물 절대 안흘림 우린 다알아 투네이션일반 toonation"
+    },
+    {
+      "at": 1788279936000,
+      "atKst": "2026-09-02 01:25:36",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100우리 자키집 어셈블 성공 ! 투네이션일반 toonation"
+    },
+    {
+      "at": 1788279864000,
+      "atKst": "2026-09-02 01:24:24",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100양이형 중간에 잠들어서 저나 존나 해따 투네이션일반 toonation"
+    },
+    {
+      "at": 1788279841000,
+      "atKst": "2026-09-02 01:24:01",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100서프라이즈 성공 ᄏᄏ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788279810000,
+      "atKst": "2026-09-02 01:23:30",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 10012,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱6910012시10분 어셈블 시간이었다 투네이션일반 toonation"
+    },
+    {
+      "at": 1788279771000,
+      "atKst": "2026-09-02 01:22:51",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100나름 생각해서 한건데 멋있었냐 투네이션일반 toonation"
+    },
+    {
+      "at": 1788279748000,
+      "atKst": "2026-09-02 01:22:28",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69100우리어셈블 할라고 기다리느라 손가락 근지러웠다 투네이션일반 toonation"
+    },
+    {
+      "at": 1788279680000,
+      "atKst": "2026-09-02 01:21:20",
+      "nick": "핑크자키",
+      "nickKey": "핑크자키",
+      "amount": 20000,
+      "target": "account",
+      "src": "push",
+      "snip": "핑크자키 20000DIN · 푸시캐치 캐치push"
+    },
+    {
+      "at": 1788279617000,
+      "atKst": "2026-09-02 01:20:17",
+      "nick": "핑크자키",
+      "nickKey": "핑크자키",
+      "amount": 10000,
+      "target": "account",
+      "src": "push",
+      "snip": "핑크자키 10000DIN · 푸시Alone remixpush"
+    },
+    {
+      "at": 1788279600000,
+      "atKst": "2026-09-02 01:20:00",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100퇴근 안되지 ᄏ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788279405000,
+      "atKst": "2026-09-02 01:16:45",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100하정 다 외웠으니깐 이제 시작해볼까? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788279399000,
+      "atKst": "2026-09-02 01:16:39",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 옆에분투네이션 인 더 클럽toonation"
+    },
+    {
+      "at": 1788279397000,
+      "atKst": "2026-09-02 01:16:37",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 옆에분투네이션터미널 toonation"
+    },
+    {
+      "at": 1788279396000,
+      "atKst": "2026-09-02 01:16:36",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 옆에분투네이션핑크레이디 toonation"
+    },
+    {
+      "at": 1788279392000,
+      "atKst": "2026-09-02 01:16:32",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 옆에분투네이션자키신호탄 toonation"
+    },
+    {
+      "at": 1788279362000,
+      "atKst": "2026-09-02 01:16:02",
+      "nick": "자키집쩌엉",
+      "nickKey": "자키집쩌엉",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쩌엉 100하정님 자키집 시그 다 외웠져?ᄏᄏᄏᄏᄏ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788279338000,
+      "atKst": "2026-09-02 01:15:38",
+      "nick": "자키집쩌엉",
+      "nickKey": "자키집쩌엉",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쩌엉 100언니 고생해따아아아아 투네이션일반 toonation"
+    },
+    {
+      "at": 1788279237000,
+      "atKst": "2026-09-02 01:13:57",
+      "nick": "이지희",
+      "nickKey": "이지희",
+      "amount": 12200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "이지희 12200 자키님 생일축하드려용 헤헤 투네이션 VIP안나toonation"
+    },
+    {
+      "at": 1788279101000,
+      "atKst": "2026-09-02 01:11:41",
+      "nick": "이지희",
+      "nickKey": "이지희",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "이지희 14600자키님 생일축하드려용 헤헤 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788279054000,
+      "atKst": "2026-09-02 01:10:54",
+      "nick": "이지희",
+      "nickKey": "이지희",
+      "amount": 16900,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "이지희 16900자키님 생일축하드려용 헤헤 투네이션 VIP쓰볼탱toonation"
+    },
+    {
+      "at": 1788279013000,
+      "atKst": "2026-09-02 01:10:13",
+      "nick": "이지희",
+      "nickKey": "이지희",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "이지희 14600자키님 생일축하드려용 헤헤 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788278993000,
+      "atKst": "2026-09-02 01:09:53",
+      "nick": "이지희",
+      "nickKey": "이지희",
+      "amount": 16900,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "이지희 16900자키님 생일축하드려용 헤헤 투네이션 VIP쓰볼탱toonation"
+    },
+    {
+      "at": 1788278986000,
+      "atKst": "2026-09-02 01:09:46",
+      "nick": "이지희",
+      "nickKey": "이지희",
+      "amount": 17700,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "이지희 17700자키님 생일축하드려용 헤헤 투네이션 VIP서그자toonation"
+    },
+    {
+      "at": 1788278978000,
+      "atKst": "2026-09-02 01:09:38",
+      "nick": "이지희",
+      "nickKey": "이지희",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "이지희 14600자키님 생일축하드려용 헤헤 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788278782000,
+      "atKst": "2026-09-02 01:06:22",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 16200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 16200 투네이션 VIP꼬마형toonation"
+    },
+    {
+      "at": 1788278744000,
+      "atKst": "2026-09-02 01:05:44",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 17000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 17000 투네이션역도 toonation"
+    },
+    {
+      "at": 1788278730000,
+      "atKst": "2026-09-02 01:05:30",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 13200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 13200 투네이션 VIP가자toonation"
+    },
+    {
+      "at": 1788278374000,
+      "atKst": "2026-09-02 00:59:34",
+      "nick": "이지희",
+      "nickKey": "이지희",
+      "amount": 15700,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "이지희 15700자키님 생일축하드려용 쩌엉업 투네이션 VIP쩌엉toonation"
+    },
+    {
+      "at": 1788278318000,
+      "atKst": "2026-09-02 00:58:38",
+      "nick": "이지희",
+      "nickKey": "이지희",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "이지희 14600자키님 생일축하드려용 양이업업업 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788278316000,
+      "atKst": "2026-09-02 00:58:36",
+      "nick": "이지희",
+      "nickKey": "이지희",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "이지희 14600자키님 생일축하드려용 양이업업업 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788278303000,
+      "atKst": "2026-09-02 00:58:23",
+      "nick": "이지희",
+      "nickKey": "이지희",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "이지희 14600자키님 생일축하드려용 양이업업업 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788278190000,
+      "atKst": "2026-09-02 00:56:30",
+      "nick": "이지희",
+      "nickKey": "이지희",
+      "amount": 92000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "이지희 92000자키님 생일축하드려용 자플단업 투네이션 [생일] 자키 생일빵toonation"
+    },
+    {
+      "at": 1788278139000,
+      "atKst": "2026-09-02 00:55:39",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 19200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 19200 투네이션자플단 toonation"
+    },
+    {
+      "at": 1788278130000,
+      "atKst": "2026-09-02 00:55:30",
+      "nick": "이지희",
+      "nickKey": "이지희",
+      "amount": 19200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "이지희 19200자키님 생일축하드려용 자플단업 투네이션자플단 toonation"
+    },
+    {
+      "at": 1788278097000,
+      "atKst": "2026-09-02 00:54:57",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 12200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 12200 투네이션 VIP안나toonation"
+    },
+    {
+      "at": 1788278088000,
+      "atKst": "2026-09-02 00:54:48",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 16900,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 16900 투네이션 VIP쓰볼탱toonation"
+    },
+    {
+      "at": 1788278085000,
+      "atKst": "2026-09-02 00:54:45",
+      "nick": "이지희",
+      "nickKey": "이지희",
+      "amount": 11400,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "이지희 11400자키님 생일축하드려용 때지업 투네이션 VIP배때지toonation"
+    },
+    {
+      "at": 1788278081000,
+      "atKst": "2026-09-02 00:54:41",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 11400,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 11400 투네이션 VIP배때지toonation"
+    },
+    {
+      "at": 1788278070000,
+      "atKst": "2026-09-02 00:54:30",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 15700,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 15700 투네이션 VIP쩌엉toonation"
+    },
+    {
+      "at": 1788278066000,
+      "atKst": "2026-09-02 00:54:26",
+      "nick": "이지희",
+      "nickKey": "이지희",
+      "amount": 17700,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "이지희 17700자키님 생일축하드려용 그자업 투네이션 VIP서그자toonation"
+    },
+    {
+      "at": 1788278058000,
+      "atKst": "2026-09-02 00:54:18",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 14600 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788278044000,
+      "atKst": "2026-09-02 00:54:04",
+      "nick": "이지희",
+      "nickKey": "이지희",
+      "amount": 16900,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "이지희 16900자키님 생일축하드려용 쓰불업 투네이션 VIP쓰볼탱toonation"
+    },
+    {
+      "at": 1788278034000,
+      "atKst": "2026-09-02 00:53:54",
+      "nick": "이지희",
+      "nickKey": "이지희",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "이지희 14600자키님 생일축하드려용 양이업 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788278031000,
+      "atKst": "2026-09-02 00:53:51",
+      "nick": "자키집쩌엉",
+      "nickKey": "자키집쩌엉",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쩌엉 100언니 안울어? 이쯤되면 울어야하는데에 투네이션일반 toonation"
+    },
+    {
+      "at": 1788277772000,
+      "atKst": "2026-09-02 00:49:32",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 19200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱6919200자플단 어디든 함께 갑시다 포레버! 사랑해요 투네이션자플단 toonation"
+    },
+    {
+      "at": 1788277404000,
+      "atKst": "2026-09-02 00:43:24",
+      "nick": "자키집안나",
+      "nickKey": "자키집안나",
+      "amount": 50000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집안나 50000환갑때 시그90퍼할인 알지? 사랑한다ᄏ 투네이션 Rumbletoonation"
+    },
+    {
+      "at": 1788277395000,
+      "atKst": "2026-09-02 00:43:15",
+      "nick": "서그자",
+      "nickKey": "서그자",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "서그자 10000 하정님업이요투네이션살아있네 toonation"
+    },
+    {
+      "at": 1788277381000,
+      "atKst": "2026-09-02 00:43:01",
+      "nick": "서그자",
+      "nickKey": "서그자",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "서그자 10000 투네이션라부부 toonation"
+    },
+    {
+      "at": 1788277315000,
+      "atKst": "2026-09-02 00:41:55",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 19200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱6919200자플단 업 투네이션자플단 toonation"
+    },
+    {
+      "at": 1788277312000,
+      "atKst": "2026-09-02 00:41:52",
+      "nick": "자키집-서그자",
+      "nickKey": "자키집서그자",
+      "amount": 19200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집-서그자19200 자풀단모두업이요투네이션자플단 toonation"
+    },
+    {
+      "at": 1788277298000,
+      "atKst": "2026-09-02 00:41:38",
+      "nick": "자키집-서그자",
+      "nickKey": "자키집서그자",
+      "amount": 11400,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집-서그자11400 떼지업투네이션 VIP배때지toonation"
+    },
+    {
+      "at": 1788277297000,
+      "atKst": "2026-09-02 00:41:37",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 11400,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱6911400내친구 때지 알러븅 투네이션 VIP배때지toonation"
+    },
+    {
+      "at": 1788277278000,
+      "atKst": "2026-09-02 00:41:18",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 16200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱6916200우리마형이 어팽 투네이션 VIP꼬마형toonation"
+    },
+    {
+      "at": 1788277277000,
+      "atKst": "2026-09-02 00:41:17",
+      "nick": "자키집-서그자",
+      "nickKey": "자키집서그자",
+      "amount": 16200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집-서그자16200 꼬마업투네이션 VIP꼬마형toonation"
+    },
+    {
+      "at": 1788277261000,
+      "atKst": "2026-09-02 00:41:01",
+      "nick": "자키집-서그자",
+      "nickKey": "자키집서그자",
+      "amount": 15700,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집-서그자15700 쩌엉업투네이션 VIP쩌엉toonation"
+    },
+    {
+      "at": 1788277251000,
+      "atKst": "2026-09-02 00:40:51",
+      "nick": "자키집-서그자",
+      "nickKey": "자키집서그자",
+      "amount": 12200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집-서그자12200 안나업투네이션 VIP안나toonation"
+    },
+    {
+      "at": 1788277250000,
+      "atKst": "2026-09-02 00:40:50",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000나는이만 낼출근이라간다 축하하고 좋은시간보내라 투네이션 Gravitytoonation"
+    },
+    {
+      "at": 1788277238000,
+      "atKst": "2026-09-02 00:40:38",
+      "nick": "자키집-서그자",
+      "nickKey": "자키집서그자",
+      "amount": 16900,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집-서그자16900 쓰볼업투네이션 VIP쓰볼탱toonation"
+    },
+    {
+      "at": 1788277228000,
+      "atKst": "2026-09-02 00:40:28",
+      "nick": "자키집-서그자",
+      "nickKey": "자키집서그자",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집-서그자14600 양이형님업투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788277200000,
+      "atKst": "2026-09-02 00:40:00",
+      "nick": "은하수",
+      "nickKey": "은하수",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "은하수 100난 이만 간다 생일 정말 추카한다 !~ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788277152000,
+      "atKst": "2026-09-02 00:39:12",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 12200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱6912200우리 안나누나 업팽 투네이션 VIP안나toonation"
+    },
+    {
+      "at": 1788277131000,
+      "atKst": "2026-09-02 00:38:51",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 15700,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱6915700내덩생 쩌엉이업 투네이션 VIP쩌엉toonation"
+    },
+    {
+      "at": 1788277111000,
+      "atKst": "2026-09-02 00:38:31",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱6914600고양이형 업 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788277091000,
+      "atKst": "2026-09-02 00:38:11",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 17700,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱6917700 갓그자업투네이션 VIP서그자toonation"
+    },
+    {
+      "at": 1788276956000,
+      "atKst": "2026-09-02 00:35:56",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 16900,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱6916900하정이도 고마워 나와줘서 둘이 친하게 잘지내 투네이션 VIP쓰볼탱toonation"
+    },
+    {
+      "at": 1788276954000,
+      "atKst": "2026-09-02 00:35:54",
+      "nick": "자키집-서그자",
+      "nickKey": "자키집서그자",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집-서그자10000 하정업투네이션 VIP꼬마형toonation"
+    },
+    {
+      "at": 1788276932000,
+      "atKst": "2026-09-02 00:35:32",
+      "nick": "지훈",
+      "nickKey": "지훈",
+      "amount": 19200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "지훈 19200쏴리 잠듬... 투네이션자플단 toonation"
+    },
+    {
+      "at": 1788276872000,
+      "atKst": "2026-09-02 00:34:32",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000배꼽미인 하정업 와주셔서 감사해여 투네이션 VIP가자toonation"
+    },
+    {
+      "at": 1788276828000,
+      "atKst": "2026-09-02 00:33:48",
+      "nick": "자키집쩌엉",
+      "nickKey": "자키집쩌엉",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쩌엉 10000럼블 나와라 제발 투네이션 HOTEL PARTYtoonation"
+    },
+    {
+      "at": 1788276724000,
+      "atKst": "2026-09-02 00:32:04",
+      "nick": "자키집쩌엉",
+      "nickKey": "자키집쩌엉",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쩌엉 10000 하정님 생일파티 와주셔서 감사해요❤ 투네이션배드빌런 toonation"
+    },
+    {
+      "at": 1788276696000,
+      "atKst": "2026-09-02 00:31:36",
+      "nick": "자키집쩌엉",
+      "nickKey": "자키집쩌엉",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쩌엉 10000 하정님 생일파티 와주셔서 감사해요❤ 투네이션 반포대교 EDM Mixtoonation"
+    },
+    {
+      "at": 1788276584000,
+      "atKst": "2026-09-02 00:29:44",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000나는인제진짜 앵꼬 ᄏᄏ생일축하혀 투네이션 역도라부부(DIN)toonation"
+    },
+    {
+      "at": 1788276397000,
+      "atKst": "2026-09-02 00:26:37",
+      "nick": "지훈",
+      "nickKey": "지훈",
+      "amount": 11400,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "지훈 11400ᄉᄇ사랑해♡♥ 투네이션 VIP배때지toonation"
+    },
+    {
+      "at": 1788276382000,
+      "atKst": "2026-09-02 00:26:22",
+      "nick": "자키집-서그자",
+      "nickKey": "자키집서그자",
+      "amount": 147000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집-서그자147000이렇게 좋은곳에 초대해주셔서 감사해요 생일축하 투네이션자키신호탄 toonation"
+    },
+    {
+      "at": 1788276363000,
+      "atKst": "2026-09-02 00:26:03",
+      "nick": "깨비",
+      "nickKey": "깨비",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "깨비 14600 내칭구 축하행﫡﫡 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788276351000,
+      "atKst": "2026-09-02 00:25:51",
+      "nick": "자키집-서그자",
+      "nickKey": "자키집서그자",
+      "amount": 147000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집-서그자147000 생일축하해요투네이션자키신호탄 toonation"
+    },
+    {
+      "at": 1788276332000,
+      "atKst": "2026-09-02 00:25:32",
+      "nick": "자키집-서그자",
+      "nickKey": "자키집서그자",
+      "amount": 147000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집-서그자147000 투네이션자키신호탄 toonation"
+    },
+    {
+      "at": 1788276186000,
+      "atKst": "2026-09-02 00:23:06",
+      "nick": "자키집쩌엉",
+      "nickKey": "자키집쩌엉",
+      "amount": 11400,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쩌엉 11400때지오빠도 생일 축하한대ᄏᄏᄏᄏ 잠들엇나봨ᄏᄏ 투네이션 VIP배때지toonation"
+    },
+    {
+      "at": 1788276131000,
+      "atKst": "2026-09-02 00:22:11",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100내 팬시그가없어서 나는틀지도못하잖아 캥거루색히 투네이션일반 toonation"
+    },
+    {
+      "at": 1788276015000,
+      "atKst": "2026-09-02 00:20:15",
+      "nick": "자키집쩌엉",
+      "nickKey": "자키집쩌엉",
+      "amount": 19200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쩌엉 19200박자키 생일 축하해!! 앞으로도 승승장구하자❤ 투네이션자플단 toonation"
+    },
+    {
+      "at": 1788275972000,
+      "atKst": "2026-09-02 00:19:32",
+      "nick": "자키집안나",
+      "nickKey": "자키집안나",
+      "amount": 12200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집안나 12200좋은날슬픈날 함께하자 평생ᄏ내 환갑잔치와야지 투네이션 VIP안나toonation"
+    },
+    {
+      "at": 1788275964000,
+      "atKst": "2026-09-02 00:19:24",
+      "nick": "자키집쩌엉",
+      "nickKey": "자키집쩌엉",
+      "amount": 19200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쩌엉 19200자플단업이야!!! 투네이션자플단 toonation"
+    },
+    {
+      "at": 1788275936000,
+      "atKst": "2026-09-02 00:18:56",
+      "nick": "은하수",
+      "nickKey": "은하수",
+      "amount": 34000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "은하수 34000생일축카한다~ 투네이션 인 더 클럽toonation"
+    },
+    {
+      "at": 1788275925000,
+      "atKst": "2026-09-02 00:18:45",
+      "nick": "자키집 -서그자",
+      "nickKey": "자키집서그자",
+      "amount": 17700,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집 -서그자17700 생일축하해요자키투네이션 VIP서그자toonation"
+    },
+    {
+      "at": 1788275914000,
+      "atKst": "2026-09-02 00:18:34",
+      "nick": "자키집꼬마형",
+      "nickKey": "자키집꼬마형",
+      "amount": 16200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집꼬마형 16200누나랑 안지 오래됬는데 앞으로도 잘 되길 바래 투네이션 VIP꼬마형toonation"
+    },
+    {
+      "at": 1788275905000,
+      "atKst": "2026-09-02 00:18:25",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 16900,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱6916900생일축하해 항상 웃음줘서 고맙다 건강해라 투네이션 VIP쓰볼탱toonation"
+    },
+    {
+      "at": 1788275885000,
+      "atKst": "2026-09-02 00:18:05",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 9000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 9000맘껏즐기고 재미나줘라 투네이션솜사탕 toonation"
+    },
+    {
+      "at": 1788275772000,
+      "atKst": "2026-09-02 00:16:12",
+      "nick": "자키집고양이",
+      "nickKey": "자키집고양이",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집고양이 14600자키의 생일날 나업나업 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788275723000,
+      "atKst": "2026-09-02 00:15:23",
+      "nick": "자키집쩌엉",
+      "nickKey": "자키집쩌엉",
+      "amount": 15700,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쩌엉 15700옆집언니 박자키 생일 축하해!!! 투네이션 VIP쩌엉toonation"
+    },
+    {
+      "at": 1788275654000,
+      "atKst": "2026-09-02 00:14:14",
+      "nick": "자키집안나",
+      "nickKey": "자키집안나",
+      "amount": 92000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집안나 92000항상 네편이야 우리는 사랑해 투네이션 [생일] 자키 생일빵toonation"
+    },
+    {
+      "at": 1788275631000,
+      "atKst": "2026-09-02 00:13:51",
+      "nick": "자키집안나",
+      "nickKey": "자키집안나",
+      "amount": 92000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집안나 92000태어나줘서 고맙다 투네이션 [생일] 자키 생일빵toonation"
+    },
+    {
+      "at": 1788275607000,
+      "atKst": "2026-09-02 00:13:27",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 92000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱6992000자키집 포레버 빡통생축 투네이션 [생일] 자키 생일빵toonation"
+    },
+    {
+      "at": 1788275601000,
+      "atKst": "2026-09-02 00:13:21",
+      "nick": "자키집고양이",
+      "nickKey": "자키집고양이",
+      "amount": 92000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집고양이 92000자키의 생일을 즐겨주신 모든 분들 감사드려요 투네이션 [생일] 자키 생일빵toonation"
+    },
+    {
+      "at": 1788275558000,
+      "atKst": "2026-09-02 00:12:38",
+      "nick": "자키집안나",
+      "nickKey": "자키집안나",
+      "amount": 92000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집안나 92000생일축하해 내비제이♡ 투네이션 [생일] 자키 생일빵toonation"
+    },
+    {
+      "at": 1788275556000,
+      "atKst": "2026-09-02 00:12:36",
+      "nick": "자키집쩌엉",
+      "nickKey": "자키집쩌엉",
+      "amount": 92000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쩌엉 92000언니 울어? 생일 축하해!!! 투네이션 [생일] 자키 생일빵toonation"
+    },
+    {
+      "at": 1788275552000,
+      "atKst": "2026-09-02 00:12:32",
+      "nick": "자키집꼬마형",
+      "nickKey": "자키집꼬마형",
+      "amount": 92000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집꼬마형 92000자키누나 생일 추카드립니다!! 투네이션 [생일] 자키 생일빵toonation"
+    },
+    {
+      "at": 1788275493000,
+      "atKst": "2026-09-02 00:11:33",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 14600양이회장형 쓰볼형한테 잘해라 축하한다 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788275442000,
+      "atKst": "2026-09-02 00:10:42",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 500000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69500000올해는 대박나서 자키집더 늘려보자 생축 투네이션 Young And Beautifultoonation"
+    },
+    {
+      "at": 1788275343000,
+      "atKst": "2026-09-02 00:09:03",
+      "nick": "자키집고양이",
+      "nickKey": "자키집고양이",
+      "amount": 500000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집고양이 500000자키야 다음 생일에는 꿈을 이루길 바래 투네이션 Young And Beautifultoonation"
+    },
+    {
+      "at": 1788275332000,
+      "atKst": "2026-09-02 00:08:52",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 19200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 19200자플단흥하자 박자키 생축이다 캥거루색히야 투네이션자플단 toonation"
+    },
+    {
+      "at": 1788275269000,
+      "atKst": "2026-09-02 00:07:49",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 500000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱69500000생일축하해 빡통아 투네이션 Young And Beautifultoonation"
+    },
+    {
+      "at": 1788275215000,
+      "atKst": "2026-09-02 00:06:55",
+      "nick": "자키집고양이",
+      "nickKey": "자키집고양이",
+      "amount": 500000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집고양이 500000자키야 생일 축하해 투네이션 Young And Beautifultoonation"
+    },
+    {
+      "at": 1788275202000,
+      "atKst": "2026-09-02 00:06:42",
+      "nick": "자키집쓰볼탱69",
+      "nickKey": "자키집쓰볼탱69",
+      "amount": 16900,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집쓰볼탱6916900자키집 시간됬다 돌격하자 오차없이 어셈블가자 투네이션 VIP쓰볼탱toonation"
+    },
+    {
+      "at": 1788275191000,
+      "atKst": "2026-09-02 00:06:31",
+      "nick": "은하수",
+      "nickKey": "은하수",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "은하수 100처음 사용해본다~ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788275188000,
+      "atKst": "2026-09-02 00:06:28",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100니땜시 내투네 앵꼬실화냐 투네이션일반 toonation"
+    },
+    {
+      "at": 1788275184000,
+      "atKst": "2026-09-02 00:06:24",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100이렇게 채팅한느것도 괜춘한데 투네이션일반 toonation"
+    },
+    {
+      "at": 1788275156000,
+      "atKst": "2026-09-02 00:05:56",
+      "nick": "은하수",
+      "nickKey": "은하수",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "은하수 100자키야 겁나 축카한다~ ᄏ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788275152000,
+      "atKst": "2026-09-02 00:05:52",
+      "nick": "자키집안나",
+      "nickKey": "자키집안나",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집안나 100채팅 왜이래증말 투네이션일반 toonation"
+    },
+    {
+      "at": 1788275134000,
+      "atKst": "2026-09-02 00:05:34",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100전체 먹통 투네이션일반 toonation"
+    },
+    {
+      "at": 1788275111000,
+      "atKst": "2026-09-02 00:05:11",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100이색히 생일날은왜이러노 투네이션일반 toonation"
+    },
+    {
+      "at": 1788275081000,
+      "atKst": "2026-09-02 00:04:41",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100유튜브가 자키님 선물주네. 투네이션일반 toonation"
+    },
+    {
+      "at": 1788275058000,
+      "atKst": "2026-09-02 00:04:18",
+      "nick": "은하수",
+      "nickKey": "은하수",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "은하수 100유튜브 $3 투네 둘다 채팅 안됨.ᄃ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788274977000,
+      "atKst": "2026-09-02 00:02:57",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 10000생일 축하드려요!!! 자키님 투네이션 Apollotoonation"
+    },
+    {
+      "at": 1788274844000,
+      "atKst": "2026-09-02 00:00:44",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000 생일축하한다투네이션 띠띠빵빵 1(TTPP)toonation"
+    },
+    {
+      "at": 1788274828000,
+      "atKst": "2026-09-02 00:00:28",
+      "nick": "은하수",
+      "nickKey": "은하수",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "은하수 100 ᄎᄎᄎᄎᄎᄎᄎ투네이션일반 toonation"
+    },
+    {
+      "at": 1788274806000,
+      "atKst": "2026-09-02 00:00:06",
+      "nick": "은하수",
+      "nickKey": "은하수",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "은하수 100다음 생일 양초 큰걸로 하자 ᄋᄎᄎᄎ ᄏᄏ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788274804000,
+      "atKst": "2026-09-02 00:00:04",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10012,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10012시인데 돈이없다 저땠다 자키야 투네이션일반 toonation"
+    },
+    {
+      "at": 1788274781000,
+      "atKst": "2026-09-01 23:59:41",
+      "nick": "울프독",
+      "nickKey": "울프독",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "울프독 100채팅 또안된다이 전체문제인데 지금 투네이션일반 toonation"
+    },
+    {
+      "at": 1788274761000,
+      "atKst": "2026-09-01 23:59:21",
+      "nick": "엔젤",
+      "nickKey": "엔젤",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "엔젤 100생일 축하해요^^ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788274689000,
+      "atKst": "2026-09-01 23:58:09",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100이것도 서프라이즈인가요? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788274632000,
+      "atKst": "2026-09-01 23:57:12",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100또 안된다 투네이션일반 toonation"
+    },
+    {
+      "at": 1788274626000,
+      "atKst": "2026-09-01 23:57:06",
+      "nick": "신기한녀석",
+      "nickKey": "신기한녀석",
+      "amount": 200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "신기한녀석 200 오늘 마형이 덕분에 잘 보고 갑니다 꾸벅 투네이션일반 toonation"
+    },
+    {
+      "at": 1788274600000,
+      "atKst": "2026-09-01 23:56:40",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100채팅 된다. 투네이션일반 toonation"
+    },
+    {
+      "at": 1788274529000,
+      "atKst": "2026-09-01 23:55:29",
+      "nick": "신기한녀석",
+      "nickKey": "신기한녀석",
+      "amount": 200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "신기한녀석 200저는 이만 본방이 있어서 가보겠습니다~! 꾸벅 투네이션일반 toonation"
+    },
+    {
+      "at": 1788274505000,
+      "atKst": "2026-09-01 23:55:05",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 10000채팅안될때 춤이지 투네이션 Hit Me!toonation"
+    },
+    {
+      "at": 1788274481000,
+      "atKst": "2026-09-01 23:54:41",
+      "nick": "울프돜",
+      "nickKey": "울프돜",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "울프돜 100꽃보다 아립다운 여성동무래들 짠이라우 투네이션일반 toonation"
+    },
+    {
+      "at": 1788274478000,
+      "atKst": "2026-09-01 23:54:38",
+      "nick": "신기한녀석",
+      "nickKey": "신기한녀석",
+      "amount": 9902,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "신기한녀석 9902한번더 생일 추카드립니다^^ 자키님 투네이션솜사탕 toonation"
+    },
+    {
+      "at": 1788274475000,
+      "atKst": "2026-09-01 23:54:35",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100유투브가 문제네 투네이션일반 toonation"
+    },
+    {
+      "at": 1788274458000,
+      "atKst": "2026-09-01 23:54:18",
+      "nick": "엔젤",
+      "nickKey": "엔젤",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "엔젤 100렉 인가요? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788274381000,
+      "atKst": "2026-09-01 23:53:01",
+      "nick": "자키집안나",
+      "nickKey": "자키집안나",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집안나 100쳇창 이상해 투네이션일반 toonation"
+    },
+    {
+      "at": 1788274380000,
+      "atKst": "2026-09-01 23:53:00",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100채팅이 안된다. 투네이션일반 toonation"
+    },
+    {
+      "at": 1788274351000,
+      "atKst": "2026-09-01 23:52:31",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100 짠투네이션일반 toonation"
+    },
+    {
+      "at": 1788274185000,
+      "atKst": "2026-09-01 23:49:45",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 10000일어나라~~ 하정 춤이나츄자 투네이션 One More Time 2toonation"
+    },
+    {
+      "at": 1788274149000,
+      "atKst": "2026-09-01 23:49:09",
+      "nick": "신기한녀석",
+      "nickKey": "신기한녀석",
+      "amount": 10902,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "신기한녀석 10902마형이가 불러서 왔어요. 자키님 생일추카합니다 투네이션솜사탕 toonation"
+    },
+    {
+      "at": 1788274133000,
+      "atKst": "2026-09-01 23:48:53",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000흐름이나 타라 캥거루색히야 투네이션 Final Love Songtoonation"
+    },
+    {
+      "at": 1788274025000,
+      "atKst": "2026-09-01 23:47:05",
+      "nick": "은하수",
+      "nickKey": "은하수",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "은하수 10000좀있음 생일이군 추카한다~ᄏᄏ 투네이션 Atmospheretoonation"
+    },
+    {
+      "at": 1788274023000,
+      "atKst": "2026-09-01 23:47:03",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100꼬순이 알고타고왔는데 투네이션일반 toonation"
+    },
+    {
+      "at": 1788274011000,
+      "atKst": "2026-09-01 23:46:51",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100아닌데? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788273967000,
+      "atKst": "2026-09-01 23:46:07",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100언제감? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788273957000,
+      "atKst": "2026-09-01 23:45:57",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100안감? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788273886000,
+      "atKst": "2026-09-01 23:44:46",
+      "nick": "한채율",
+      "nickKey": "한채율",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "한채율 10000자기야 사랑해 앞으로 나이먹지마 투네이션 갸루 파라파라(Change My World)toonation"
+    },
+    {
+      "at": 1788273869000,
+      "atKst": "2026-09-01 23:44:29",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 10000힘들때 텐션업 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788273857000,
+      "atKst": "2026-09-01 23:44:17",
+      "nick": "꽉꽉TV_원이",
+      "nickKey": "꽉꽉tv원이",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "꽉꽉TV_원이100택시불러 채율이모 투네이션일반 toonation"
+    },
+    {
+      "at": 1788273851000,
+      "atKst": "2026-09-01 23:44:11",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키야 슬슬가라 투네이션일반 toonation"
+    },
+    {
+      "at": 1788273832000,
+      "atKst": "2026-09-01 23:43:52",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100아닌가? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788273811000,
+      "atKst": "2026-09-01 23:43:31",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100자키님 20살 생파 맞죠? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788273767000,
+      "atKst": "2026-09-01 23:42:47",
+      "nick": "한채율",
+      "nickKey": "한채율",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "한채율 10000자기야 사랑해 앞으로 나이먹지마 투네이션 Se Acabo DIN Remixtoonation"
+    },
+    {
+      "at": 1788273706000,
+      "atKst": "2026-09-01 23:41:46",
+      "nick": "한채율",
+      "nickKey": "한채율",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "한채율 10000자기야 사랑해 앞으로 나이먹지마 투네이션 1995 - ARKINStoonation"
+    },
+    {
+      "at": 1788273689000,
+      "atKst": "2026-09-01 23:41:29",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100응 단거하자ᄏᄏ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788273653000,
+      "atKst": "2026-09-01 23:40:53",
+      "nick": "한채율",
+      "nickKey": "한채율",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "한채율 10000자기야 사랑해 앞으로 나이먹지마 투네이션헤비머신건 toonation"
+    },
+    {
+      "at": 1788273611000,
+      "atKst": "2026-09-01 23:40:11",
+      "nick": "킹짱",
+      "nickKey": "킹짱",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "킹짱 10000생일이야? 생일 추카해용 누나 투네이션썸머타임 toonation"
+    },
+    {
+      "at": 1788273569000,
+      "atKst": "2026-09-01 23:39:29",
+      "nick": "한채율",
+      "nickKey": "한채율",
+      "amount": 92000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "한채율 92000자기야 사랑해 앞으로 나이먹지마 투네이션 [생일] 자키 생일빵toonation"
+    },
+    {
+      "at": 1788273510000,
+      "atKst": "2026-09-01 23:38:30",
+      "nick": "킹짱",
+      "nickKey": "킹짱",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "킹짱 10000누나 안냥 투네이션 VIP서그자toonation"
+    },
+    {
+      "at": 1788273430000,
+      "atKst": "2026-09-01 23:37:10",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100하 진짜 돈미새색히 투네이션일반 toonation"
+    },
+    {
+      "at": 1788273410000,
+      "atKst": "2026-09-01 23:36:50",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100아 이색히가 안가는거였구나 투네이션일반 toonation"
+    },
+    {
+      "at": 1788273390000,
+      "atKst": "2026-09-01 23:36:30",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100안오는사람은 구별해서 놔누쟈 투네이션일반 toonation"
+    },
+    {
+      "at": 1788273356000,
+      "atKst": "2026-09-01 23:35:56",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 적어라투네이션일반 toonation"
+    },
+    {
+      "at": 1788273346000,
+      "atKst": "2026-09-01 23:35:46",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키야 데스노트적고있지 비제이들? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788273290000,
+      "atKst": "2026-09-01 23:34:50",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10012,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10012시부터 알아서 흐름잡힐거같으니 난그만ᄏᄏ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788273285000,
+      "atKst": "2026-09-01 23:34:45",
+      "nick": "윤시우",
+      "nickKey": "윤시우",
+      "amount": 100000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "윤시우 100000생일 축하드려용 쟈키업 투네이션 Boom Shakalaka(붐 사카라카)toonation"
+    },
+    {
+      "at": 1788273145000,
+      "atKst": "2026-09-01 23:32:25",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키야 꼬랑내보니 좀굶어도되겠더라ᄏᄏ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788273015000,
+      "atKst": "2026-09-01 23:30:15",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 10000하정아 영어말고 춤이나추자~~ 투네이션 VIP쓰볼탱toonation"
+    },
+    {
+      "at": 1788272983000,
+      "atKst": "2026-09-01 23:29:43",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 없어색히야투네이션일반 toonation"
+    },
+    {
+      "at": 1788272948000,
+      "atKst": "2026-09-01 23:29:08",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100없는돈쓰게하지마라 자키야 생일이니봐준다 투네이션일반 toonation"
+    },
+    {
+      "at": 1788272846000,
+      "atKst": "2026-09-01 23:27:26",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000배민도 못뽑아주는 캥거루색히 투네이션 Se Acabo DIN Remixtoonation"
+    },
+    {
+      "at": 1788272701000,
+      "atKst": "2026-09-01 23:25:01",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100지금부터 선좀긋자 우리 투네이션일반 toonation"
+    },
+    {
+      "at": 1788272691000,
+      "atKst": "2026-09-01 23:24:51",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100내 커피쿠폰은 쩌엉형드리고 투네이션일반 toonation"
+    },
+    {
+      "at": 1788272651000,
+      "atKst": "2026-09-01 23:24:11",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100야 가라 자키야 투네이션일반 toonation"
+    },
+    {
+      "at": 1788272633000,
+      "atKst": "2026-09-01 23:23:53",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100대기업은 힘들다.... 투네이션일반 toonation"
+    },
+    {
+      "at": 1788272539000,
+      "atKst": "2026-09-01 23:22:19",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100이제 안할래ᅲᅲ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788272489000,
+      "atKst": "2026-09-01 23:21:29",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 이색히양아치였네투네이션일반 toonation"
+    },
+    {
+      "at": 1788272470000,
+      "atKst": "2026-09-01 23:21:10",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 100생일에도 자키한테 치킨한마리 안받았는데 투네이션일반 toonation"
+    },
+    {
+      "at": 1788272467000,
+      "atKst": "2026-09-01 23:21:07",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 까불지말고투네이션일반 toonation"
+    },
+    {
+      "at": 1788272457000,
+      "atKst": "2026-09-01 23:20:57",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 돌려라투네이션일반 toonation"
+    },
+    {
+      "at": 1788272447000,
+      "atKst": "2026-09-01 23:20:47",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 자키야투네이션일반 toonation"
+    },
+    {
+      "at": 1788272398000,
+      "atKst": "2026-09-01 23:19:58",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100세번 가즈아~~~ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788272380000,
+      "atKst": "2026-09-01 23:19:40",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 쪼잔하게 두번돌리게써? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788272375000,
+      "atKst": "2026-09-01 23:19:35",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100세번은 어떤가요? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788272367000,
+      "atKst": "2026-09-01 23:19:27",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100번게얼만데 3번? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788272345000,
+      "atKst": "2026-09-01 23:19:05",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100한번은 안돌리겠지? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788272333000,
+      "atKst": "2026-09-01 23:18:53",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키야 이번상품권 내가타면 배민내놔라 투네이션일반 toonation"
+    },
+    {
+      "at": 1788272301000,
+      "atKst": "2026-09-01 23:18:21",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100예술이야 듣고싶었는데 투네이션일반 toonation"
+    },
+    {
+      "at": 1788272292000,
+      "atKst": "2026-09-01 23:18:12",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100캥거루색히야 내팬시그좀만들라니 이것땜시말한건데 투네이션일반 toonation"
+    },
+    {
+      "at": 1788272227000,
+      "atKst": "2026-09-01 23:17:07",
+      "nick": "자키업",
+      "nickKey": "자키업",
+      "amount": 10000,
+      "target": "account",
+      "src": "push",
+      "snip": "자키업 10000DIN · 푸시 스티키 push"
+    },
+    {
+      "at": 1788272204000,
+      "atKst": "2026-09-01 23:16:44",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 라고할뻔투네이션일반 toonation"
+    },
+    {
+      "at": 1788272197000,
+      "atKst": "2026-09-01 23:16:37",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100하정님 아직안갔냐 투네이션일반 toonation"
+    },
+    {
+      "at": 1788272134000,
+      "atKst": "2026-09-01 23:15:34",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000오늘투네가 마지막이자 앞으로없다ᄏᄏ 투네이션 Hit Me!toonation"
+    },
+    {
+      "at": 1788272091000,
+      "atKst": "2026-09-01 23:14:51",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100오늘은 착한말 조금은할게..생일인데 우대하야지 투네이션일반 toonation"
+    },
+    {
+      "at": 1788272041000,
+      "atKst": "2026-09-01 23:14:01",
+      "nick": "허니",
+      "nickKey": "허니",
+      "amount": 100000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "허니 100000자키 생일 축하 투네이션 Boom Shakalaka(붐 사카라카)toonation"
+    },
+    {
+      "at": 1788271672000,
+      "atKst": "2026-09-01 23:07:52",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100부담가져라 제발 투네이션일반 toonation"
+    },
+    {
+      "at": 1788271669000,
+      "atKst": "2026-09-01 23:07:49",
+      "nick": "아들생파겸",
+      "nickKey": "아들생파겸",
+      "amount": 10000,
+      "target": "account",
+      "src": "push",
+      "snip": "아들생파겸 10000DIN · 푸시Twerking Duckpush"
+    },
+    {
+      "at": 1788271665000,
+      "atKst": "2026-09-01 23:07:45",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 1009,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 1009월18일이라고 3번말했다 투네이션일반 toonation"
+    },
+    {
+      "at": 1788271588000,
+      "atKst": "2026-09-01 23:06:28",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000내생일날 기대할게자키야 투네이션 Final Love Songtoonation"
+    },
+    {
+      "at": 1788271500000,
+      "atKst": "2026-09-01 23:05:00",
+      "nick": "자키생축",
+      "nickKey": "자키생축",
+      "amount": 10000,
+      "target": "account",
+      "src": "push",
+      "snip": "자키생축 10000DIN · 푸시 살아있네 push"
+    },
+    {
+      "at": 1788271487000,
+      "atKst": "2026-09-01 23:04:47",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키야 투네 1등안될거같은데 2등이라도해? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788271472000,
+      "atKst": "2026-09-01 23:04:32",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 10000한번더~~~~ 투네이션 ABStoonation"
+    },
+    {
+      "at": 1788271436000,
+      "atKst": "2026-09-01 23:03:56",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 10000하정이도 가즈아~~~~ 투네이션 Waittoonation"
+    },
+    {
+      "at": 1788271344000,
+      "atKst": "2026-09-01 23:02:24",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 10000가즈아~~~~ 투네이션 VIP꼬마형toonation"
+    },
+    {
+      "at": 1788271333000,
+      "atKst": "2026-09-01 23:02:13",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 10000텐션업~~~ 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788271302000,
+      "atKst": "2026-09-01 23:01:42",
+      "nick": "생축이양",
+      "nickKey": "생축이양",
+      "amount": 10000,
+      "target": "account",
+      "src": "push",
+      "snip": "생축이양 10000DIN · 푸시HOTEL PARTYpush"
+    },
+    {
+      "at": 1788271173000,
+      "atKst": "2026-09-01 22:59:33",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100너가 12시넘고켰음 20만5천원아꼈다 까비 투네이션일반 toonation"
+    },
+    {
+      "at": 1788271047000,
+      "atKst": "2026-09-01 22:57:27",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000흐름이어가라 박자키 업 투네이션 Alive2toonation"
+    },
+    {
+      "at": 1788270985000,
+      "atKst": "2026-09-01 22:56:25",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 10000하정 출근풍이면 되나.. 투네이션썸머타임 toonation"
+    },
+    {
+      "at": 1788270877000,
+      "atKst": "2026-09-01 22:54:37",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 10000미안 하정... 투네이션 Apollotoonation"
+    },
+    {
+      "at": 1788270868000,
+      "atKst": "2026-09-01 22:54:28",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 옆에분투네이션바우치 toonation"
+    },
+    {
+      "at": 1788270863000,
+      "atKst": "2026-09-01 22:54:23",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 자키투네이션 상사화(에반게리온 리믹스)toonation"
+    },
+    {
+      "at": 1788270857000,
+      "atKst": "2026-09-01 22:54:17",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 옆에분투네이션 Hit Me!toonation"
+    },
+    {
+      "at": 1788270848000,
+      "atKst": "2026-09-01 22:54:08",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 자키투네이션활어 toonation"
+    },
+    {
+      "at": 1788270790000,
+      "atKst": "2026-09-01 22:53:10",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100하정님 역시 센스가 자키 미드보다풍성하네 투네이션일반 toonation"
+    },
+    {
+      "at": 1788270746000,
+      "atKst": "2026-09-01 22:52:26",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키야 배고프다 지금 택배좀먼저못보내냐 투네이션일반 toonation"
+    },
+    {
+      "at": 1788270239000,
+      "atKst": "2026-09-01 22:43:59",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000캥거루색히야 애들패지말라했지 아무도안오잖아 투네이션 [생일] 자키 생일빵toonation"
+    },
+    {
+      "at": 1788269723000,
+      "atKst": "2026-09-01 22:35:23",
+      "nick": "구름하정",
+      "nickKey": "구름하정",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "구름하정 10000언니 생일인데 재롱부려야징. ᄉᄉ 투네이션 상사화(에반게리온 리믹스)toonation"
+    },
+    {
+      "at": 1788269721000,
+      "atKst": "2026-09-01 22:35:21",
+      "nick": "구름하정",
+      "nickKey": "구름하정",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "구름하정 10000언니 생일인데 재롱부려야징. ᄉᄉ 투네이션 나 오늘 네가 킹받으면 좋겠어toonation"
+    },
+    {
+      "at": 1788269720000,
+      "atKst": "2026-09-01 22:35:20",
+      "nick": "구름하정",
+      "nickKey": "구름하정",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "구름하정 10000언니 생일인데 재롱부려야징. ᄉᄉ 투네이션활어 toonation"
+    },
+    {
+      "at": 1788269719000,
+      "atKst": "2026-09-01 22:35:19",
+      "nick": "구름하정",
+      "nickKey": "구름하정",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "구름하정 10000언니 생일인데 재롱부려야징. ᄉᄉ 투네이션 BADtoonation"
+    },
+    {
+      "at": 1788269718000,
+      "atKst": "2026-09-01 22:35:18",
+      "nick": "구름하정",
+      "nickKey": "구름하정",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "구름하정 10000언니 생일인데 재롱부려야징. ᄉᄉ 투네이션 One More Time 2toonation"
+    },
+    {
+      "at": 1788269716000,
+      "atKst": "2026-09-01 22:35:16",
+      "nick": "구름하정",
+      "nickKey": "구름하정",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "구름하정 10000언니 생일인데 재롱부려야징. ᄉᄉ 투네이션 반포대교 EDM Mixtoonation"
+    },
+    {
+      "at": 1788269715000,
+      "atKst": "2026-09-01 22:35:15",
+      "nick": "구름하정",
+      "nickKey": "구름하정",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "구름하정 10000언니 생일인데 재롱부려야징. ᄉᄉ 투네이션 Waittoonation"
+    },
+    {
+      "at": 1788269714000,
+      "atKst": "2026-09-01 22:35:14",
+      "nick": "구름하정",
+      "nickKey": "구름하정",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "구름하정 10000언니 생일인데 재롱부려야징. ᄉᄉ 투네이션 갸루 파라파라(Change My World)toonation"
+    },
+    {
+      "at": 1788269713000,
+      "atKst": "2026-09-01 22:35:13",
+      "nick": "구름하정",
+      "nickKey": "구름하정",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "구름하정 10000언니 생일인데 재롱부려야징. ᄉᄉ 투네이션헤비머신건 toonation"
+    },
+    {
+      "at": 1788269711000,
+      "atKst": "2026-09-01 22:35:11",
+      "nick": "구름하정",
+      "nickKey": "구름하정",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "구름하정 10000언니 생일인데 재롱부려야징. ᄉᄉ 투네이션 할 것toonation"
+    },
+    {
+      "at": 1788269707000,
+      "atKst": "2026-09-01 22:35:07",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키야 말더듬지마 투네이션일반 toonation"
+    },
+    {
+      "at": 1788269568000,
+      "atKst": "2026-09-01 22:32:48",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000니 흐름잡아주기 개빡세다ᄏᄏ 투네이션 [생일] 자키야 사랑해toonation"
+    },
+    {
+      "at": 1788269524000,
+      "atKst": "2026-09-01 22:32:04",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키야 오디오겹친다 하정님 이야기할땐 빠져 투네이션일반 toonation"
+    },
+    {
+      "at": 1788269376000,
+      "atKst": "2026-09-01 22:29:36",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 던없다투네이션일반 toonation"
+    },
+    {
+      "at": 1788269368000,
+      "atKst": "2026-09-01 22:29:28",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100어 그래라ᄏᄏ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788269351000,
+      "atKst": "2026-09-01 22:29:11",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100두마리하게? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788269263000,
+      "atKst": "2026-09-01 22:27:43",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 양심챙겨라투네이션일반 toonation"
+    },
+    {
+      "at": 1788269252000,
+      "atKst": "2026-09-01 22:27:32",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100한마리만하게? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788269166000,
+      "atKst": "2026-09-01 22:26:06",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 너는 안나와도뒤지고 나오면 니미드 씨컵 투네이션일반 toonation"
+    },
+    {
+      "at": 1788269133000,
+      "atKst": "2026-09-01 22:25:33",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 뭐돌릴건더투네이션일반 toonation"
+    },
+    {
+      "at": 1788269055000,
+      "atKst": "2026-09-01 22:24:15",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 경고다투네이션일반 toonation"
+    },
+    {
+      "at": 1788269026000,
+      "atKst": "2026-09-01 22:23:46",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100부르고 이따가도 부르고 내일도불러라 투네이션일반 toonation"
+    },
+    {
+      "at": 1788269008000,
+      "atKst": "2026-09-01 22:23:28",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키야 생일날안했다고 내이름 석자까먹지말고 투네이션일반 toonation"
+    },
+    {
+      "at": 1788268958000,
+      "atKst": "2026-09-01 22:22:38",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100미드수술비에 보탤게요 투네이션일반 toonation"
+    },
+    {
+      "at": 1788268946000,
+      "atKst": "2026-09-01 22:22:26",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100돈미새 박자키라서 죄송합니다 요정님 투네이션일반 toonation"
+    },
+    {
+      "at": 1788268893000,
+      "atKst": "2026-09-01 22:21:33",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키야 쏜거 15%환불좀 밥좀시키게ᄏᄏ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788268773000,
+      "atKst": "2026-09-01 22:19:33",
+      "nick": "소밍",
+      "nickKey": "소밍",
+      "amount": 19200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "소밍 19200응원하겠습니다 자키업 자키단업! 투네이션자플단 toonation"
+    },
+    {
+      "at": 1788268760000,
+      "atKst": "2026-09-01 22:19:20",
+      "nick": "김정현",
+      "nickKey": "김정현",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "김정현 10000하정 가즈아 한번더~~ 투네이션 ABStoonation"
+    },
+    {
+      "at": 1788268752000,
+      "atKst": "2026-09-01 22:19:12",
+      "nick": "김정현",
+      "nickKey": "김정현",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "김정현 10000하정 가즈아~~ 투네이션 Rumbletoonation"
+    },
+    {
+      "at": 1788268736000,
+      "atKst": "2026-09-01 22:18:56",
+      "nick": "벤토리",
+      "nickKey": "벤토리",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "벤토리 10000자키형들 어패잇 투네이션배드빌런 toonation"
+    },
+    {
+      "at": 1788268618000,
+      "atKst": "2026-09-01 22:16:58",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키야 니지분은없다 꼬순 꼬랑이 사료값에보태라 투네이션일반 toonation"
+    },
+    {
+      "at": 1788268609000,
+      "atKst": "2026-09-01 22:16:49",
+      "nick": "채율이네_수장",
+      "nickKey": "채율이네수장",
+      "amount": 92000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "채율이네_수장92000자키업생신축하드리고 항상채율이 챙겨주셔감사해요 투네이션 [생일] 자키 생일빵toonation"
+    },
+    {
+      "at": 1788268574000,
+      "atKst": "2026-09-01 22:16:14",
+      "nick": "벤토리",
+      "nickKey": "벤토리",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "벤토리 10000 투네이션야호 toonation"
+    },
+    {
+      "at": 1788268568000,
+      "atKst": "2026-09-01 22:16:08",
+      "nick": "메리",
+      "nickKey": "메리",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "메리 10000쟈키집분들 즐거운 시간되셔용♡ 투네이션호랑수월가 toonation"
+    },
+    {
+      "at": 1788268553000,
+      "atKst": "2026-09-01 22:15:53",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 옆에분투네이션디스코테카 toonation"
+    },
+    {
+      "at": 1788268551000,
+      "atKst": "2026-09-01 22:15:51",
+      "nick": "채율이네_수장",
+      "nickKey": "채율이네수장",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "채율이네_수장10000자키업생신축하드리고 항상채율이 챙겨주셔감사해요 투네이션역도 toonation"
+    },
+    {
+      "at": 1788268488000,
+      "atKst": "2026-09-01 22:14:48",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000자키야 니신호탄은 비싸서몬쏜다ᄏᄏ이걸로퉁치자 투네이션 인 더 클럽toonation"
+    },
+    {
+      "at": 1788268380000,
+      "atKst": "2026-09-01 22:13:00",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 10000한번더~~~~ 투네이션루니솔라 toonation"
+    },
+    {
+      "at": 1788268365000,
+      "atKst": "2026-09-01 22:12:45",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 10000자키님도 한번~~~~ 투네이션 Alive2toonation"
+    },
+    {
+      "at": 1788268345000,
+      "atKst": "2026-09-01 22:12:25",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 14600자키야 앵꼬다..자키업 양이회장님 업히야 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788268319000,
+      "atKst": "2026-09-01 22:11:59",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 16900,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 16900자키야 앵꼬다..자키업 쓰볼업 투네이션 VIP쓰볼탱toonation"
+    },
+    {
+      "at": 1788268198000,
+      "atKst": "2026-09-01 22:09:58",
+      "nick": "메리",
+      "nickKey": "메리",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "메리 10000 쟈키님♡♡투네이션솜사탕 toonation"
+    },
+    {
+      "at": 1788268184000,
+      "atKst": "2026-09-01 22:09:44",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 10000한번더.. 투네이션 [생일] 자키 생일빵toonation"
+    },
+    {
+      "at": 1788268174000,
+      "atKst": "2026-09-01 22:09:34",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 옆에분투네이션 인 더 클럽toonation"
+    },
+    {
+      "at": 1788268156000,
+      "atKst": "2026-09-01 22:09:16",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 100 자키투네이션일반 toonation"
+    },
+    {
+      "at": 1788268146000,
+      "atKst": "2026-09-01 22:09:06",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 10000하정..일단 랜덤 하시죠 ᄒ 투네이션 Rumbletoonation"
+    },
+    {
+      "at": 1788267972000,
+      "atKst": "2026-09-01 22:06:12",
+      "nick": "섭",
+      "nickKey": "섭",
+      "amount": 5000,
+      "target": "account",
+      "src": "push",
+      "snip": "섭 5000 솜사탕 DIN · 푸시 일반 push"
+    },
+    {
+      "at": 1788267962000,
+      "atKst": "2026-09-01 22:06:02",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 옆에분투네이션 Alive2toonation"
+    },
+    {
+      "at": 1788267961000,
+      "atKst": "2026-09-01 22:06:01",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 옆에분투네이션역도 toonation"
+    },
+    {
+      "at": 1788267960000,
+      "atKst": "2026-09-01 22:06:00",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 옆에분투네이션 Hit Me!toonation"
+    },
+    {
+      "at": 1788267555000,
+      "atKst": "2026-09-01 21:59:15",
+      "nick": "메리",
+      "nickKey": "메리",
+      "amount": 19200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "메리 19200 쟈키님♡♡투네이션자플단 toonation"
+    },
+    {
+      "at": 1788267450000,
+      "atKst": "2026-09-01 21:57:30",
+      "nick": "섭",
+      "nickKey": "섭",
+      "amount": 4000,
+      "target": "account",
+      "src": "push",
+      "snip": "섭 4000 옆에분역도 DIN · 푸시 일반 push"
+    },
+    {
+      "at": 1788267250000,
+      "atKst": "2026-09-01 21:54:10",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000옆에분 심심해보이네 투네이션자키신호탄 toonation"
+    },
+    {
+      "at": 1788267250000,
+      "atKst": "2026-09-01 21:54:10",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000옆에분 심심해보이네 투네이션스티키 toonation"
+    },
+    {
+      "at": 1788267248000,
+      "atKst": "2026-09-01 21:54:08",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000옆에분 심심해보이네 투네이션 Sky Hightoonation"
+    },
+    {
+      "at": 1788267247000,
+      "atKst": "2026-09-01 21:54:07",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000옆에분 심심해보이네 투네이션 Sky Hightoonation"
+    },
+    {
+      "at": 1788267245000,
+      "atKst": "2026-09-01 21:54:05",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000옆에분 심심해보이네 투네이션 역도라부부(DIN)toonation"
+    },
+    {
+      "at": 1788267241000,
+      "atKst": "2026-09-01 21:54:01",
+      "nick": "밍꾸",
+      "nickKey": "밍꾸",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "밍꾸 10000조막손이라 미아네여...ᅮ 생일축하드려요 투네이션핑크레이디 toonation"
+    },
+    {
+      "at": 1788267192000,
+      "atKst": "2026-09-01 21:53:12",
+      "nick": "소밍",
+      "nickKey": "소밍",
+      "amount": 92000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "소밍 92000생일축하드려요! 밍꾸업 메리업 투네이션 [생일] 자키 생일빵toonation"
+    },
+    {
+      "at": 1788267166000,
+      "atKst": "2026-09-01 21:52:46",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 12200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 12200진짜돈없다.. 자키업 안나업 투네이션 VIP안나toonation"
+    },
+    {
+      "at": 1788267129000,
+      "atKst": "2026-09-01 21:52:09",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 15700,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 15700진짜돈없다.. 자키업 쩌엉업 투네이션 VIP쩌엉toonation"
+    },
+    {
+      "at": 1788266982000,
+      "atKst": "2026-09-01 21:49:42",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 14600생일 축하드려요!! 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788266913000,
+      "atKst": "2026-09-01 21:48:33",
+      "nick": "메리",
+      "nickKey": "메리",
+      "amount": 17700,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "메리 17700 생일추카드려요♡투네이션 VIP서그자toonation"
+    },
+    {
+      "at": 1788266908000,
+      "atKst": "2026-09-01 21:48:28",
+      "nick": "메리",
+      "nickKey": "메리",
+      "amount": 16900,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "메리 16900 생일추카드려요♡투네이션 VIP쓰볼탱toonation"
+    },
+    {
+      "at": 1788266867000,
+      "atKst": "2026-09-01 21:47:47",
+      "nick": "밍꾸",
+      "nickKey": "밍꾸",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "밍꾸 10000한칸의기적 개같이 기대중 자키집어비야 투네이션 Young And Beautifultoonation"
+    },
+    {
+      "at": 1788266856000,
+      "atKst": "2026-09-01 21:47:36",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000편의점커피보내 뒤진다 투네이션야호 toonation"
+    },
+    {
+      "at": 1788266781000,
+      "atKst": "2026-09-01 21:46:21",
+      "nick": "메리",
+      "nickKey": "메리",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "메리 14600 생일추카드려요♡투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788266701000,
+      "atKst": "2026-09-01 21:45:01",
+      "nick": "펭슈슉",
+      "nickKey": "펭슈슉",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "펭슈슉 14600 자키님 생일 축하드려요 잠깐 들렸습니다 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788266492000,
+      "atKst": "2026-09-01 21:41:32",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100하암~~~~~~~~ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788266277000,
+      "atKst": "2026-09-01 21:37:57",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키가 전체적으로 없어요 죄송합니다 투네이션일반 toonation"
+    },
+    {
+      "at": 1788266240000,
+      "atKst": "2026-09-01 21:37:20",
+      "nick": "음기",
+      "nickKey": "음기",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "음기 100다음 게스트 납작이면 이만갑니다 투네이션일반 toonation"
+    },
+    {
+      "at": 1788266227000,
+      "atKst": "2026-09-01 21:37:07",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100핑크색옷 게스트인데 오래앉아있네 투네이션일반 toonation"
+    },
+    {
+      "at": 1788266194000,
+      "atKst": "2026-09-01 21:36:34",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100주인공빼고 눈치껏빠져라 미드작은애 투네이션일반 toonation"
+    },
+    {
+      "at": 1788266188000,
+      "atKst": "2026-09-01 21:36:28",
+      "nick": "음기",
+      "nickKey": "음기",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "음기 100요거트아이스크림인가요? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788266154000,
+      "atKst": "2026-09-01 21:35:54",
+      "nick": "지훈",
+      "nickKey": "지훈",
+      "amount": 1100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "지훈 1100 없다ᅮᅮ투네이션일반 toonation"
+    },
+    {
+      "at": 1788266134000,
+      "atKst": "2026-09-01 21:35:34",
+      "nick": "음기",
+      "nickKey": "음기",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "음기 100 미드차이투네이션일반 toonation"
+    },
+    {
+      "at": 1788266132000,
+      "atKst": "2026-09-01 21:35:32",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100납작도납작인데 그냥없어요 투네이션일반 toonation"
+    },
+    {
+      "at": 1788266110000,
+      "atKst": "2026-09-01 21:35:10",
+      "nick": "음기",
+      "nickKey": "음기",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "음기 100아 맞다 자키님 납작이지 투네이션일반 toonation"
+    },
+    {
+      "at": 1788266092000,
+      "atKst": "2026-09-01 21:34:52",
+      "nick": "음기",
+      "nickKey": "음기",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "음기 100첫펜션에서 마시는걸..? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788266085000,
+      "atKst": "2026-09-01 21:34:45",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키야 첫날밤도 만질게없음 의미없다 투네이션일반 toonation"
+    },
+    {
+      "at": 1788266056000,
+      "atKst": "2026-09-01 21:34:16",
+      "nick": "음기",
+      "nickKey": "음기",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "음기 100디저트와인을 여자끼리..? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788265926000,
+      "atKst": "2026-09-01 21:32:06",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 18000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 18000 옆에분투네이션활어 toonation"
+    },
+    {
+      "at": 1788265868000,
+      "atKst": "2026-09-01 21:31:08",
+      "nick": "음기",
+      "nickKey": "음기",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "음기 100여기도 미드차이가..큿흠 투네이션일반 toonation"
+    },
+    {
+      "at": 1788265868000,
+      "atKst": "2026-09-01 21:31:08",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 19200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 19200앵꼬다 자키야 가난이밉다..자플단업 생축이다 투네이션자플단 toonation"
+    },
+    {
+      "at": 1788265862000,
+      "atKst": "2026-09-01 21:31:02",
+      "nick": "음기",
+      "nickKey": "음기",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "음기 100와..롤에만 미드차이가 있는게 아니였네... 투네이션일반 toonation"
+    },
+    {
+      "at": 1788265784000,
+      "atKst": "2026-09-01 21:29:44",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 13000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 13000 옆에분투네이션사마귀 toonation"
+    },
+    {
+      "at": 1788265767000,
+      "atKst": "2026-09-01 21:29:27",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 19000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 19000 옆에분투네이션 드라군 댄스toonation"
+    },
+    {
+      "at": 1788265760000,
+      "atKst": "2026-09-01 21:29:20",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100저밖에없는게아니라 친구가없어요 그냥 투네이션일반 toonation"
+    },
+    {
+      "at": 1788265756000,
+      "atKst": "2026-09-01 21:29:16",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 17000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 17000 옆에분투네이션역도 toonation"
+    },
+    {
+      "at": 1788265745000,
+      "atKst": "2026-09-01 21:29:05",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 18000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 18000 옆에분투네이션활어 toonation"
+    },
+    {
+      "at": 1788265687000,
+      "atKst": "2026-09-01 21:28:07",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100보내는김에 술조금만남겨서같이보내주라 투네이션일반 toonation"
+    },
+    {
+      "at": 1788265634000,
+      "atKst": "2026-09-01 21:27:14",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키야 오늘 얼마예상이야 귓뜸좀 투네이션일반 toonation"
+    },
+    {
+      "at": 1788265536000,
+      "atKst": "2026-09-01 21:25:36",
+      "nick": "핑팡",
+      "nickKey": "핑팡",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "핑팡 10000생신 축하요 ᄒᄒ 투네이션사마귀 toonation"
+    },
+    {
+      "at": 1788265506000,
+      "atKst": "2026-09-01 21:25:06",
+      "nick": "밍꾸",
+      "nickKey": "밍꾸",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "밍꾸 10000자키님 생일 미리축하드려옹 자키집가족 어비야 투네이션 Boom Shakalaka(붐 사카라카)toonation"
+    },
+    {
+      "at": 1788265441000,
+      "atKst": "2026-09-01 21:24:01",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100아 비밀이지 미안하다 투네이션일반 toonation"
+    },
+    {
+      "at": 1788265429000,
+      "atKst": "2026-09-01 21:23:49",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 1001,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 1001시간했는데 하꼬라 사람이안왔어요 투네이션일반 toonation"
+    },
+    {
+      "at": 1788265381000,
+      "atKst": "2026-09-01 21:23:01",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 캥거루색히야투네이션일반 toonation"
+    },
+    {
+      "at": 1788265357000,
+      "atKst": "2026-09-01 21:22:37",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키야 은근슬쩍 꿀빨지말고 인나라 투네이션일반 toonation"
+    },
+    {
+      "at": 1788265260000,
+      "atKst": "2026-09-01 21:21:00",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 알면좀해라투네이션일반 toonation"
+    },
+    {
+      "at": 1788265253000,
+      "atKst": "2026-09-01 21:20:53",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100그거해줌 바랄게없다 투네이션일반 toonation"
+    },
+    {
+      "at": 1788265187000,
+      "atKst": "2026-09-01 21:19:47",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000자키야 벌써부터 하품나온다 재미는 투네이션 Waittoonation"
+    },
+    {
+      "at": 1788265112000,
+      "atKst": "2026-09-01 21:18:32",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100 장난투네이션일반 toonation"
+    },
+    {
+      "at": 1788265108000,
+      "atKst": "2026-09-01 21:18:28",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100돈이없어요 돈미새 박자키업 투네이션일반 toonation"
+    },
+    {
+      "at": 1788265085000,
+      "atKst": "2026-09-01 21:18:05",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100한번더...ᄏᄏᄏ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788265027000,
+      "atKst": "2026-09-01 21:17:07",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 19000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 19000하정.. 투네이션 드라군 댄스toonation"
+    },
+    {
+      "at": 1788265011000,
+      "atKst": "2026-09-01 21:16:51",
+      "nick": "짱구",
+      "nickKey": "짱구",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "짱구 100드라군 가즈아~~ 투네이션일반 toonation"
+    },
+    {
+      "at": 1788264922000,
+      "atKst": "2026-09-01 21:15:22",
+      "nick": "김정현",
+      "nickKey": "김정현",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "김정현 100하정님 드라군 준비됬나요? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788264908000,
+      "atKst": "2026-09-01 21:15:08",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100골반이 자키뱃살위치랑 비슷하네 투네이션일반 toonation"
+    },
+    {
+      "at": 1788264853000,
+      "atKst": "2026-09-01 21:14:13",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100너는조금 뒤로물러나있어라 더작아보인다 투네이션일반 toonation"
+    },
+    {
+      "at": 1788264823000,
+      "atKst": "2026-09-01 21:13:43",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키야 미드차이가심하다 투네이션일반 toonation"
+    },
+    {
+      "at": 1788264766000,
+      "atKst": "2026-09-01 21:12:46",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100가시는김에 주인공병 재도 같이대꼬가줄수있나요 투네이션일반 toonation"
+    },
+    {
+      "at": 1788264666000,
+      "atKst": "2026-09-01 21:11:06",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100납작이 눈치껏빠져라 오디오겹친다 투네이션일반 toonation"
+    },
+    {
+      "at": 1788264635000,
+      "atKst": "2026-09-01 21:10:35",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100이쁘시네요 배꼽미인은 첨봅니다 투네이션일반 toonation"
+    },
+    {
+      "at": 1788264621000,
+      "atKst": "2026-09-01 21:10:21",
+      "nick": "택이",
+      "nickKey": "택이",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "택이 100청바지라서 드라군 더 맛돌이일거같은데.. 투네이션일반 toonation"
+    },
+    {
+      "at": 1788264594000,
+      "atKst": "2026-09-01 21:09:54",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키야 요하정님 마이크 니꺼주고 쇼파에가싰어 투네이션일반 toonation"
+    },
+    {
+      "at": 1788264591000,
+      "atKst": "2026-09-01 21:09:51",
+      "nick": "택이",
+      "nickKey": "택이",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "택이 100드라군 솔깃한데요? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788264526000,
+      "atKst": "2026-09-01 21:08:46",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100어디 구독하면되나요 투네이션일반 toonation"
+    },
+    {
+      "at": 1788264517000,
+      "atKst": "2026-09-01 21:08:37",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100배꼽이 예쁘시네요 투네이션일반 toonation"
+    },
+    {
+      "at": 1788264487000,
+      "atKst": "2026-09-01 21:08:07",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 자키야 잠시 앵글에서 꺼져줄수있어? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788264460000,
+      "atKst": "2026-09-01 21:07:40",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 이쁘다투네이션일반 toonation"
+    },
+    {
+      "at": 1788264429000,
+      "atKst": "2026-09-01 21:07:09",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 궁금해서그래투네이션일반 toonation"
+    },
+    {
+      "at": 1788264372000,
+      "atKst": "2026-09-01 21:06:12",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100오늘 예상수익이얼마야 투네이션일반 toonation"
+    },
+    {
+      "at": 1788264362000,
+      "atKst": "2026-09-01 21:06:02",
+      "nick": "s",
+      "nickKey": "s",
+      "amount": 55000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "s55000자키업~~양이업~ 투네이션 BADtoonation"
+    },
+    {
+      "at": 1788264287000,
+      "atKst": "2026-09-01 21:04:47",
+      "nick": "현민TV",
+      "nickKey": "현민tv",
+      "amount": 200000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "현민TV200000누나 생일 축하드려요 미리 인사드립니다 투네이션 Sky Hightoonation"
+    },
+    {
+      "at": 1788264202000,
+      "atKst": "2026-09-01 21:03:22",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000니가 너무작아서 끌렸다 생축 투네이션뾱뾱이 toonation"
+    },
+    {
+      "at": 1788264096000,
+      "atKst": "2026-09-01 21:01:36",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100나한테 보내주라니 뭔 서리고 투네이션일반 toonation"
+    },
+    {
+      "at": 1788264027000,
+      "atKst": "2026-09-01 21:00:27",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100음식좀만 가지가지싸서 보내줄의향있니? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788264022000,
+      "atKst": "2026-09-01 21:00:22",
+      "nick": "s",
+      "nickKey": "s",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "s14600생일 축하드려요~~ 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788264011000,
+      "atKst": "2026-09-01 21:00:11",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100택배는안됨? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788263899000,
+      "atKst": "2026-09-01 20:58:19",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000 언제가냐ᄏᄏ슬슬가라투네이션 할 것toonation"
+    },
+    {
+      "at": 1788263832000,
+      "atKst": "2026-09-01 20:57:12",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100근육빼고 눈착하게떠라 투네이션일반 toonation"
+    },
+    {
+      "at": 1788263755000,
+      "atKst": "2026-09-01 20:55:55",
+      "nick": "루아",
+      "nickKey": "루아",
+      "amount": 92000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "루아 92000 자키공주 미리 생일축하해요❤ 투네이션 [생일] 자키 생일빵toonation"
+    },
+    {
+      "at": 1788263591000,
+      "atKst": "2026-09-01 20:53:11",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100더이상 쏠던이없다 건빵이미래다 투네이션일반 toonation"
+    },
+    {
+      "at": 1788263506000,
+      "atKst": "2026-09-01 20:51:46",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100너도가 끝났어 생일파티 투네이션일반 toonation"
+    },
+    {
+      "at": 1788263494000,
+      "atKst": "2026-09-01 20:51:34",
+      "nick": "자키집빡쿠",
+      "nickKey": "자키집빡쿠",
+      "amount": 19200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집빡쿠 19200약속있어서 좀만 있다가 다시 옴 자플단 사랑해 투네이션자플단 toonation"
+    },
+    {
+      "at": 1788263482000,
+      "atKst": "2026-09-01 20:51:22",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100꼬순이 꼬랑내가 게스트야? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788263420000,
+      "atKst": "2026-09-01 20:50:20",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10050,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10050% 해라 시그 투네이션일반 toonation"
+    },
+    {
+      "at": 1788263412000,
+      "atKst": "2026-09-01 20:50:12",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100자키야 양심있으면 투네이션일반 toonation"
+    },
+    {
+      "at": 1788263391000,
+      "atKst": "2026-09-01 20:49:51",
+      "nick": "음기",
+      "nickKey": "음기",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "음기 100원래 알던 자키님으로 돌아오니 너무반갑네요 투네이션일반 toonation"
+    },
+    {
+      "at": 1788263388000,
+      "atKst": "2026-09-01 20:49:48",
+      "nick": "꽉꽉TV_원이",
+      "nickKey": "꽉꽉tv원이",
+      "amount": 10050,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "꽉꽉TV_원이10050퍼 맛만 보는것도 좋네요 투네이션일반 toonation"
+    },
+    {
+      "at": 1788263365000,
+      "atKst": "2026-09-01 20:49:25",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10030,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10030%? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788263356000,
+      "atKst": "2026-09-01 20:49:16",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100알면 50%만 환불해줄수있니? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788263286000,
+      "atKst": "2026-09-01 20:48:06",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100오늘은 이해할게 투네이션일반 toonation"
+    },
+    {
+      "at": 1788263278000,
+      "atKst": "2026-09-01 20:47:58",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 뽕많이넣었냐투네이션일반 toonation"
+    },
+    {
+      "at": 1788263227000,
+      "atKst": "2026-09-01 20:47:07",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100 부담스럽다투네이션일반 toonation"
+    },
+    {
+      "at": 1788263221000,
+      "atKst": "2026-09-01 20:47:01",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100메이크업 얼마들었냐 투네이션일반 toonation"
+    },
+    {
+      "at": 1788263196000,
+      "atKst": "2026-09-01 20:46:36",
+      "nick": "음기",
+      "nickKey": "음기",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "음기 100운동시그 시작도 안했다고요? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788263175000,
+      "atKst": "2026-09-01 20:46:15",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100생파끝났다 인제집가 투네이션일반 toonation"
+    },
+    {
+      "at": 1788263170000,
+      "atKst": "2026-09-01 20:46:10",
+      "nick": "음기",
+      "nickKey": "음기",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "음기 100사장님 괜찮아요? 투네이션일반 toonation"
+    },
+    {
+      "at": 1788263062000,
+      "atKst": "2026-09-01 20:44:22",
+      "nick": "꽉꽉TV_원이",
+      "nickKey": "꽉꽉tv원이",
+      "amount": 17000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "꽉꽉TV_원이17000자키님 처음본게 이거라 투네이션역도 toonation"
+    },
+    {
+      "at": 1788263044000,
+      "atKst": "2026-09-01 20:44:04",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 19000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 19000 투네이션 드라군 댄스toonation"
+    },
+    {
+      "at": 1788263038000,
+      "atKst": "2026-09-01 20:43:58",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 100,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 100적당히쉬고 인나라 투네이션일반 toonation"
+    },
+    {
+      "at": 1788263036000,
+      "atKst": "2026-09-01 20:43:56",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 17000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 17000 투네이션역도 toonation"
+    },
+    {
+      "at": 1788263030000,
+      "atKst": "2026-09-01 20:43:50",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 18000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 18000 투네이션활어 toonation"
+    },
+    {
+      "at": 1788262866000,
+      "atKst": "2026-09-01 20:41:06",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 19000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 19000 투네이션 드라군 댄스toonation"
+    },
+    {
+      "at": 1788262850000,
+      "atKst": "2026-09-01 20:40:50",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 17000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 17000 투네이션역도 toonation"
+    },
+    {
+      "at": 1788262837000,
+      "atKst": "2026-09-01 20:40:37",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 18000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 18000 투네이션활어 toonation"
+    },
+    {
+      "at": 1788262694000,
+      "atKst": "2026-09-01 20:38:14",
+      "nick": "음기",
+      "nickKey": "음기",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "음기 10000생일 진짜 왕왕 축하해요! 자키집형누나들화이팅 투네이션 상사화(에반게리온 리믹스)toonation"
+    },
+    {
+      "at": 1788262622000,
+      "atKst": "2026-09-01 20:37:02",
+      "nick": "꽉꽉TV_원이",
+      "nickKey": "꽉꽉tv원이",
+      "amount": 15700,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "꽉꽉TV_원이15700쩌엉님것두 궁금 투네이션 VIP쩌엉toonation"
+    },
+    {
+      "at": 1788262621000,
+      "atKst": "2026-09-01 20:37:01",
+      "nick": "자키집빡쿠",
+      "nickKey": "자키집빡쿠",
+      "amount": 12200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집빡쿠 12200 안나업투네이션 VIP안나toonation"
+    },
+    {
+      "at": 1788262603000,
+      "atKst": "2026-09-01 20:36:43",
+      "nick": "자키집빡쿠",
+      "nickKey": "자키집빡쿠",
+      "amount": 15700,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집빡쿠 15700 쩌엉업이야투네이션 VIP쩌엉toonation"
+    },
+    {
+      "at": 1788262453000,
+      "atKst": "2026-09-01 20:34:13",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788262449000,
+      "atKst": "2026-09-01 20:34:09",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 투네이션 Alone remixtoonation"
+    },
+    {
+      "at": 1788262448000,
+      "atKst": "2026-09-01 20:34:08",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 투네이션 띠띠빵빵 1(TTPP)toonation"
+    },
+    {
+      "at": 1788262447000,
+      "atKst": "2026-09-01 20:34:07",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 투네이션 BADtoonation"
+    },
+    {
+      "at": 1788262445000,
+      "atKst": "2026-09-01 20:34:05",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 투네이션 ABStoonation"
+    },
+    {
+      "at": 1788262417000,
+      "atKst": "2026-09-01 20:33:37",
+      "nick": "자키집빡쿠",
+      "nickKey": "자키집빡쿠",
+      "amount": 17700,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집빡쿠 17700 그자업투네이션 VIP서그자toonation"
+    },
+    {
+      "at": 1788262334000,
+      "atKst": "2026-09-01 20:32:14",
+      "nick": "자키집빡쿠",
+      "nickKey": "자키집빡쿠",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집빡쿠 10000생일 축하해 투네이션 띠띠빵빵 1(TTPP)toonation"
+    },
+    {
+      "at": 1788262051000,
+      "atKst": "2026-09-01 20:27:31",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000축하한다 한달에 2번만보자 투네이션 VIP서그자toonation"
+    },
+    {
+      "at": 1788262015000,
+      "atKst": "2026-09-01 20:26:55",
+      "nick": "음기",
+      "nickKey": "음기",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "음기 10000생일축하드립니다~자키단 다들 화이팅 투네이션 VIP가자toonation"
+    },
+    {
+      "at": 1788261970000,
+      "atKst": "2026-09-01 20:26:10",
+      "nick": "꽉꽉TV_원이",
+      "nickKey": "꽉꽉tv원이",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "꽉꽉TV_원이10000 투네이션 [생일] 자키 생일빵toonation"
+    },
+    {
+      "at": 1788261965000,
+      "atKst": "2026-09-01 20:26:05",
+      "nick": "꽉꽉TV_원이",
+      "nickKey": "꽉꽉tv원이",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "꽉꽉TV_원이10000 자플단업투네이션썸머타임 toonation"
+    },
+    {
+      "at": 1788261899000,
+      "atKst": "2026-09-01 20:24:59",
+      "nick": "자키집빡쿠",
+      "nickKey": "자키집빡쿠",
+      "amount": 16900,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집빡쿠 16900 쓰볼업투네이션 VIP쓰볼탱toonation"
+    },
+    {
+      "at": 1788261882000,
+      "atKst": "2026-09-01 20:24:42",
+      "nick": "자키집빡쿠",
+      "nickKey": "자키집빡쿠",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집빡쿠 14600 양이업투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788261860000,
+      "atKst": "2026-09-01 20:24:20",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 투네이션 Rock Your Bodytoonation"
+    },
+    {
+      "at": 1788261859000,
+      "atKst": "2026-09-01 20:24:19",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 투네이션자플단 toonation"
+    },
+    {
+      "at": 1788261859000,
+      "atKst": "2026-09-01 20:24:19",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 투네이션 VIP쩌엉toonation"
+    },
+    {
+      "at": 1788261858000,
+      "atKst": "2026-09-01 20:24:18",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 투네이션 모시모시2toonation"
+    },
+    {
+      "at": 1788261856000,
+      "atKst": "2026-09-01 20:24:16",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 10000 투네이션 상사화(에반게리온 리믹스)toonation"
+    },
+    {
+      "at": 1788261844000,
+      "atKst": "2026-09-01 20:24:04",
+      "nick": "에겐",
+      "nickKey": "에겐",
+      "amount": 92000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "에겐 92000 투네이션 [생일] 자키 생일빵toonation"
+    },
+    {
+      "at": 1788261834000,
+      "atKst": "2026-09-01 20:23:54",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 10000단가 빡시네 하 재미나주라 오늘은 투네이션디스코테카 toonation"
+    },
+    {
+      "at": 1788261783000,
+      "atKst": "2026-09-01 20:23:03",
+      "nick": "가여니",
+      "nickKey": "가여니",
+      "amount": 147000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "가여니 147000 생일축하하모니카 懶懶 투네이션자키신호탄 toonation"
+    },
+    {
+      "at": 1788261728000,
+      "atKst": "2026-09-01 20:22:08",
+      "nick": "자키집빡쿠",
+      "nickKey": "자키집빡쿠",
+      "amount": 19200,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집빡쿠 19200자플단 흥하자 투네이션자플단 toonation"
+    },
+    {
+      "at": 1788261685000,
+      "atKst": "2026-09-01 20:21:25",
+      "nick": "음기",
+      "nickKey": "음기",
+      "amount": 35000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "음기 35000생일축하드립니다~자키단 다들 화이팅 투네이션 Let's gotoonation"
+    },
+    {
+      "at": 1788261662000,
+      "atKst": "2026-09-01 20:21:02",
+      "nick": "자키집빡쿠",
+      "nickKey": "자키집빡쿠",
+      "amount": 147000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "자키집빡쿠 147000자키 생일축하해 투네이션자키신호탄 toonation"
+    },
+    {
+      "at": 1788261629000,
+      "atKst": "2026-09-01 20:20:29",
+      "nick": "와우",
+      "nickKey": "와우",
+      "amount": 34000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "와우 34000ᄏᄏᄏ생일축하해~~~자키업 양이업~ 투네이션 인 더 클럽toonation"
+    },
+    {
+      "at": 1788261557000,
+      "atKst": "2026-09-01 20:19:17",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 14600돈미새 박자키 내년에는 미드좀커지자 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788261547000,
+      "atKst": "2026-09-01 20:19:07",
+      "nick": "꽉꽉TV_원이",
+      "nickKey": "꽉꽉tv원이",
+      "amount": 14600,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "꽉꽉TV_원이14600양이업~ 투네이션 VIP고양이toonation"
+    },
+    {
+      "at": 1788261444000,
+      "atKst": "2026-09-01 20:17:24",
+      "nick": "지훈",
+      "nickKey": "지훈",
+      "amount": 10000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "지훈 10000 투네이션 1995 - ARKINStoonation"
+    },
+    {
+      "at": 1788261437000,
+      "atKst": "2026-09-01 20:17:17",
+      "nick": "꽉꽉TV_원이",
+      "nickKey": "꽉꽉tv원이",
+      "amount": 50000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "꽉꽉TV_원이50000생일 축하합니다~ 좋은하루 보내세요 자플단업 투네이션 Rumbletoonation"
+    },
+    {
+      "at": 1788261426000,
+      "atKst": "2026-09-01 20:17:06",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 1000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 1000video://www.youtube.com/watch?v=FyCrxauIQLg 투네이션일반 toonation"
+    },
+    {
+      "at": 1788261421000,
+      "atKst": "2026-09-01 20:17:01",
+      "nick": "음기",
+      "nickKey": "음기",
+      "amount": 300,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "음기 300츄파춥스 저도 투척 투네이션일반 toonation"
+    },
+    {
+      "at": 1788261411000,
+      "atKst": "2026-09-01 20:16:51",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 1000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 1000video://www.youtube.com/watch?v=FyCrxauIQLg 투네이션일반 toonation"
+    },
+    {
+      "at": 1788261370000,
+      "atKst": "2026-09-01 20:16:10",
+      "nick": "지훈",
+      "nickKey": "지훈",
+      "amount": 300,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "지훈 300옛따 춥파츄스사먹어라 투네이션일반 toonation"
+    },
+    {
+      "at": 1788261327000,
+      "atKst": "2026-09-01 20:15:27",
+      "nick": "딱기둘",
+      "nickKey": "딱기둘",
+      "amount": 4000,
+      "target": "toon",
+      "src": "toonation",
+      "snip": "딱기둘 4000자키야 생일축하한다 까까사먹어라 투네이션일반 toonation"
+    }
+  ]
+}
