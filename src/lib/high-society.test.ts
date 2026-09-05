@@ -2361,7 +2361,7 @@ describe("manual territory log vs neighbor width", () => {
       members,
       donors,
       highSocietySettings: settings,
-      territoryLogs: [createTerritoryLog("jaki", 1, 15, { pushDir: "right" })],
+      territoryLogs: [createTerritoryLog("jaki", 1, 15, { pushDir: "left" })],
     });
     expect(before.seats.find((s) => s.id === "jaki")!.widthCm).toBe(15);
     expect(before.seats.find((s) => s.id === "saa")!.widthCm).toBe(100);
@@ -2379,7 +2379,7 @@ describe("manual territory log vs neighbor width", () => {
       members,
       donors,
       highSocietySettings: settings,
-      territoryLogs: [createTerritoryLog("jaki", 1, 15, { pushDir: "right" })],
+      territoryLogs: [createTerritoryLog("jaki", 1, 15, { pushDir: "left" })],
     });
     expect(after.seats.find((s) => s.id === "jaki")!.widthCm).toBe(15);
     expect(after.seats.find((s) => s.id === "saa")!.widthCm).toBe(100);

@@ -1694,7 +1694,6 @@ export function applyTerritoryLogDirectTransfers(
     const cm = Math.max(0, Math.floor(Number(log.amount) || 0));
     if (cm <= 0) continue;
     const sign = log.delta === -1 ? -1 : 1;
-    const seatDir = seatExpandDirForIndex(idx, n);
 
     const pushFromNeighbor = (toward: "left" | "right", amount: number) => {
       const neighbor = neighborIdx(idx, toward);
@@ -1703,6 +1702,28 @@ export function applyTerritoryLogDirectTransfers(
       else transferAcross(idx, neighbor, amount);
     };
 
+    const explicitPush = parseHighSocietyPushDir(log.pushDir);
+    if (explicitPush) {
+      if (explicitPush === "split") {
+        const lr = pushDirToLeftRight(cm, explicitPush);
+        if (sign > 0) {
+          pushFromNeighbor("left", lr.left);
+          pushFromNeighbor("right", lr.right);
+        } else {
+          const leftN = neighborIdx(idx, "left");
+          const rightN = neighborIdx(idx, "right");
+          if (leftN != null) transferAcross(idx, leftN, lr.left);
+          if (rightN != null) transferAcross(idx, rightN, lr.right);
+        }
+      } else if (explicitPush === "left") {
+        pushFromNeighbor("left", cm);
+      } else {
+        pushFromNeighbor("right", cm);
+      }
+      continue;
+    }
+
+    const seatDir = seatExpandDirForIndex(idx, n);
     if (seatDir === "right") {
       pushFromNeighbor("right", cm);
       continue;
@@ -1712,19 +1733,8 @@ export function applyTerritoryLogDirectTransfers(
       continue;
     }
 
-    const push = parseHighSocietyPushDir(log.pushDir) || middleDir;
-    if (push === "split") {
-      const lr = pushDirToLeftRight(cm, push);
-      if (sign > 0) {
-        pushFromNeighbor("left", lr.left);
-        pushFromNeighbor("right", lr.right);
-      } else {
-        const leftN = neighborIdx(idx, "left");
-        const rightN = neighborIdx(idx, "right");
-        if (leftN != null) transferAcross(idx, leftN, lr.left);
-        if (rightN != null) transferAcross(idx, rightN, lr.right);
-      }
-    } else if (push === "left") {
+    const push = middleDir;
+    if (push === "left") {
       pushFromNeighbor("left", cm);
     } else {
       pushFromNeighbor("right", cm);
