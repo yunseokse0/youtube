@@ -11,7 +11,7 @@ describe("cross-source donation dedupe", () => {
     expect(isCrossDonationSourcePair("toonation:a", "toonation:b")).toBe(false);
   });
 
-  it("flags bank+toonation same name/amount within 3m", () => {
+  it("flags bank+toonation same name/amount within 30s", () => {
     const at = Date.parse("2026-09-02T01:00:00+09:00");
     expect(
       shouldTreatAsCrossSourceDuplicate(
@@ -20,7 +20,7 @@ describe("cross-source donation dedupe", () => {
           id: "bank:sms:xyz",
           donorName: "자키집쓰볼탱69",
           amount: 100,
-          at: new Date(at + 50_000).toISOString(),
+          at: new Date(at + 20_000).toISOString(),
         }
       )
     ).toBe(true);
@@ -30,8 +30,8 @@ describe("cross-source donation dedupe", () => {
     const at = 1_700_000_000_000;
     expect(
       shouldTreatAsCrossSourceDuplicate(
-        { id: "bank:sms:a", name: "에겐", amount: 10000, at },
-        { id: "bank:sms:b", donorName: "에겐", amount: 10000, at: at + 5_000 }
+        { id: "bank:sms:a", name: "에겐", donorName: "에겐", amount: 10000, at },
+        { id: "bank:sms:b", name: "에겐", donorName: "에겐", amount: 10000, at: at + 5_000 }
       )
     ).toBe(true);
   });

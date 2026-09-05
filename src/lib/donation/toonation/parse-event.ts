@@ -372,17 +372,76 @@ export function isReliableToonationExternalId(id: string): boolean {
   return true;
 }
 
-/** donor.id / event id 에서 투네 실 id 추출 — toon-{realId}-{unique} 포함 */
+/** donor.id / event id 에서 투네 실 id 추출 — toon-{realId}-{unique} 포함
+ *
+ *  ★ 사용자 2행 중복 FIX: 어떤 래핑 형식으로 들어오든 동일 UUID = 동일한 normalized ext 로 추출해 dedup ① 단계가 정확히 동작하게 함
+ *  지원 형식:
+ *   - toonation:{uuid}             → pure uuid 반환
+ *   - toonation:din:{uuid}         → din: prefix strip → pure uuid 반환
+ *   - toona:{uuid}                 → toona: prefix 통과 → pure uuid 반환
+ *   - toonation:toon-{uuid}-{ts}-n → toon- 패턴에서 uuid 추출
+ *   - raw pure UUID (32hex / 하이픈 있는 표준형) → normalize 후 반환
+ *  절대 통과 불가: bank:* / fp-* / test-* / ts-amount-n 형식 weak id
+ */
 export function extractReliableToonationExtFromDonorId(id: string): string | null {
-  const ext = String(id || "")
-    .trim()
-    .replace(/^toonation:/i, "")
+  const raw = String(id || "").trim();
+  if (!raw) return null;
+  /** FIRST GATE (완화됨 v2):
+   *  - toonation: / toona: prefix 둘 다 허용 (DIN 허브가 toona: 로 내려주는 경우도 존재)
+   *  - raw pure UUID = 32hex no-hyphen OR 표준 UUID hyphen 8-4-4-4-12 둘 다 허용
+   *  → bank:* / fp-* / 기타 임의 문자열은 여기서 즉시 return null (blacklist false negative 방어) */
+  const toonationPrefixed = /^(toonation|toona):/i.test(raw);
+  const STANDARD_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const isRawPureUuid32 = /^[0-9a-f]{32}$/i.test(raw);
+  const isRawStandardUuid = STANDARD_UUID_RE.test(raw);
+  if (!toonationPrefixed && !isRawPureUuid32 && !isRawStandardUuid) return null;
+
+  /** toonation / toona prefix / ::review suffix 제거한 ext 추출 */
+  let ext = raw
+    .replace(/^(toonation|toona):/i, "")
     .replace(/::review$/i, "");
   if (!ext) return null;
-  if (isReliableToonationExternalId(ext)) return ext.toLowerCase();
-  const toonMatch = /^toon-(.+)-(\d{13,}-\d+-)/i.exec(ext);
-  if (toonMatch?.[1] && isReliableToonationExternalId(toonMatch[1])) {
-    return toonMatch[1].toLowerCase();
+
+  /** ★ NAMESPACE PREFIX STRIP: din: / bank: / sms: 등 namespace prefix 한번 이상 제거 (UUID 앞에 래핑된 경우)
+   *  예: "din:abc123def456..." → "abc123def456..."
+   *  여러 번 중첩된 경우도 반복 제거 */
+  while (/^[a-z][a-z0-9_-]*:/i.test(ext)) {
+    ext = ext.replace(/^[a-z][a-z0-9_-]*:/i, "");
+  }
+  if (!ext) return null;
+
+  /** 헬퍼: 문자열을 UUID 32hex 로 normalize (하이픈 제거 + lowercase) + 32hex 유효성 확인 */
+  const normalizeAsUuid32 = (s: string): string | null => {
+    if (!s) return null;
+    const lower = s.toLowerCase();
+    const hyphenStripped = lower.replace(/-/g, "");
+    if (/^[0-9a-f]{32}$/.test(hyphenStripped)) return hyphenStripped;
+    return null;
+  };
+
+  /** CASE 1: ext 자체가 pure UUID (32hex / 표준형 하이픈) → normalize 후 return
+   *  toonationPrefixed 이거나 raw UUID 케이스 둘 다 여기서 처리 */
+  const extUuid32 = normalizeAsUuid32(ext);
+  if (extUuid32) {
+    if (toonationPrefixed || isRawPureUuid32 || isRawStandardUuid) return extUuid32;
+  }
+
+  /** CASE 2: blacklist-based reliable check (toonation prefix 케이스에서만 semantics 유지)
+   *  기존 의존성: "donation-abc-99" 같은 non-UUID custom reliable id도 통과해야 함 (parse-event.test.ts)
+   *  단, raw UUID 케이스는 여기에 들어오지 않고 CASE 1에서 이미 return 됨 */
+  if (toonationPrefixed && isReliableToonationExternalId(ext)) {
+    const maybeUuid = normalizeAsUuid32(ext);
+    return maybeUuid ? maybeUuid : ext.toLowerCase();
+  }
+
+  /** CASE 3: toon-{realId}-{ts}[...] 패턴에서 realId 추출 (suffix 엄격하지 않게 유연화)
+   *  기존 regex: ^toon-(.+)-(\d{13,}-\d+-)$ (끝이 정확히 숫자- 로 끝나야 함 → 너무 엄격)
+   *  완화 regex: ^toon-(.+?)-(\d{10,})   → realId 를 non-greedy 캡처, ts=10자리 이상 숫자만 있으면 매치 */
+  const toonMatch = /^toon-(.+?)-(\d{10,})/i.exec(ext);
+  if (toonMatch?.[1] && isReliableToonationExternalId(toonMatch[1]) && toonationPrefixed) {
+    const realIdRaw = toonMatch[1];
+    const realUuid = normalizeAsUuid32(realIdRaw);
+    return realUuid ? realUuid : realIdRaw.toLowerCase();
   }
   return null;
 }

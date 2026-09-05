@@ -719,13 +719,34 @@ function isSameToonationEventNearDuplicate(
   }
 ): boolean {
   /**
-   * ★ 3연속 동일금액 weak fallback id 오판 봉쇄:
-   *  양쪽 donor.id 또는 externalId 중 하나라도 weak id (`fp-{ts}-{amount}`, `{ts}-{amount}` 등) 이면,
-   *  "실제 같은 이벤트" 인지 여부를 reliable ext(UUID) 없이 판단하기 불가능하므로 →
-   *  양쪽 id 문자열이 **완전 100% 일치** 할 때만 dedup 허용. (3연속 후원 = 3개의 id 문자열 각기 다름 → dedup 안됨 → 3건 유지)
+   * ★ 3연속 동일금액 weak fallback id 오판 봉쇄 + WS+폴링 중복수신 dedup gap 동시 수리:
+   *  - 양쪽 reliable UUID externalId 존재 & 일치 & 금액 같음 → 같은 이벤트로 취급 (weak id 여도 무관)
+   *  - 양쪽 donor.id 또는 externalId 중 하나라도 weak id (`fp-{ts}-{amount}`, `{ts}-{amount}` 등) 이면,
+   *    "실제 같은 이벤트" 인지 여부를 reliable ext(UUID) 없이 판단하기 불가능하므로 →
+   *    양쪽 id 문자열이 **완전 100% 일치** 할 때만 dedup 허용. (3연속 후원 = 3개의 id 문자열 각기 다름 → dedup 안됨 → 3건 유지)
    */
   const existingRaw = String(existing.id || "").trim();
   const incomingRaw = String(incoming.id || "").trim();
+  {
+    const existingReliableExt =
+      extractReliableToonationExtFromDonorId(existingRaw) ||
+      (() => {
+        const e = String(existing.externalId || existing.rawHash || "").trim();
+        return e && isReliableToonationExternalId(e) ? e.toLowerCase() : null;
+      })();
+    const incomingReliableExt =
+      extractReliableToonationExtFromDonorId(incomingRaw) || reliableExtFromIncoming(incoming);
+    if (existingReliableExt && incomingReliableExt && existingReliableExt === incomingReliableExt) {
+      const amountA = Math.max(0, Math.round(Number(existing.amount) || 0));
+      const amountB = Math.max(0, Math.round(Number(incoming.amount) || 0));
+      if (amountA > 0 && amountA === amountB) {
+        const atA = donorAtEpochMs(existing);
+        const atB = donorAtEpochMs(incoming);
+        if (!atA || !atB) return true;
+        return Math.abs(atA - atB) <= SAME_TOONATION_EVENT_NEAR_DUP_MS;
+      }
+    }
+  }
   if (existingRaw && incomingRaw && (isWeakToonationDonorId(existingRaw) || isWeakToonationDonorId(incomingRaw))) {
     return existingRaw === incomingRaw;
   }
@@ -776,13 +797,16 @@ function resolveNearDupWindowMs(
  *   무조건 "bank" 로 오분류 → shouldTreatAsCrossSourceDuplicate에서 투네 실시간 ingest와
  *   bank↔toonation CROSS PAIR로 오판 → 4건 2건씩 merge drop + 계좌 둔갑 + 가짜이름 "후원" 덮어씌기 버그 전부 유발.
  *
- *   판단 우선순위 (확실한 증거부터 위에 둠):
- *   1. target: toon/toonation/tunat/tuna/투네/튜나  → toonation (1순위: 유저가 명시적으로 붙인 target)
- *   2. provider: toonation/toona/tuna/tunat → toonation (DIN 허브 풀링이 붙여주는 필드)
- *   3. externalId/rawHash: UUID 형식이면 100% toonation (DIN 허브 9.4 body.id UUID)
- *   4. id 접두사 toonation:/toona:/tuna: → toonation
- *   5. id 접두사 bank:/account: → bank
- *   6. 그 외: other
+ *   ★ target=account 는 "멤버의 계좌 컬럼에 적립" 의미일 뿐, 후원 소스가 bank 라는 뜻이 절대 아님!
+ *     L618 fixture: id=toonation:fp-* (투네) · target=account 인 경우 target 1순위 때문에 bank 오분류 → cross=true → 16s 갭 후원 drop 되는 버그
+ *     → 해결: provider·UUID·id-prefix 를 target 보다 절대 먼저 평가, target은 최후 보조 수단으로 격하
+ *
+ *   판단 우선순위 (확실한 증거부터 위에 둠 · 상단이 절대 우선):
+ *   1. provider 명시 → toonation (toonation/toona/tuna/tunat) OR bank (bank/sms/account/din_bank)
+ *   2. externalId/rawHash: UUID 형식이면 100% toonation (DIN 허브 9.4 body.id UUID)
+ *   3. id 접두사 toonation:/toona:/tuna: → toonation / bank:/account: → bank
+ *   4. target: (명시적 증거가 전혀 없을 때만 최후 보조) toon/투네 등 → toonation / account/계좌 등 → bank
+ *   5. 그 외: other
  */
 function donorInferSourceKind(
   d:
@@ -810,17 +834,17 @@ function donorInferSourceKind(
     provider = String(d.provider ?? "").trim().toLowerCase();
     ext = String(d.externalId ?? d.rawHash ?? "").trim();
   }
-  /** 1순위: raw target 이 투네 계열 명시 → toonation */
+  /** 1순위: provider 필드가 명시적으로 붙어있는 경우 (투네 허브 풀링 경로에서 100% 채워줌) */
+  if (["toonation", "toona", "tuna", "tunat"].includes(provider)) return "toonation";
+  if (["bank", "sms", "account", "din_bank"].includes(provider)) return "bank";
+  /** 2순위: externalId/rawHash 가 정식 UUID = 투네 실제 후원 외에는 발생하지 않는 값 */
+  if (ext && /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(ext)) return "toonation";
+  /** 3순위: id 접두사 (raw id 가 이미 출처를 나타내는 prefix 를 달고 나오는 경우가 대부분) */
+  if (id.startsWith("toonation:") || id.startsWith("toona:") || id.startsWith("tuna:")) return "toonation";
+  if (id.startsWith("bank:") || id.startsWith("account:")) return "bank";
+  /** 4순위: target — 위 1~3순위에서 명시적 증거가 하나도 없을 때만 보조적으로 사용 (오판 방지) */
   if (["toon", "toonation", "tunat", "tuna", "투네", "튜나"].includes(target)) return "toonation";
   if (["account", "bank", "계좌", "은행"].includes(target)) return "bank";
-  /** 2순위: provider 필드가 투네 계열 명시 → toonation (B·DIN 풀링 경로에서 100% 붙어서 내려옴) */
-  if (["toonation", "toona", "tuna", "tunat"].includes(provider)) return "toonation";
-  /** 3순위: externalId가 UUID 형식 = 투네 실제 후원 외에는 발생하지 않는 값 → toonation */
-  if (ext && /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(ext)) return "toonation";
-  /** 4순위: id 접두사 toonation: → toonation */
-  if (id.startsWith("toonation:") || id.startsWith("toona:") || id.startsWith("tuna:")) return "toonation";
-  /** 5순위: id 접두사 bank: → bank (위 1~3순위에서 toonation 증거가 하나도 없을 때만 bank로 분류) */
-  if (id.startsWith("bank:") || id.startsWith("account:")) return "bank";
   return "other";
 }
 
@@ -970,28 +994,65 @@ export function shouldTreatAsDuplicateDonationContent(
     }
   }
   /**
-   * ★ 3연속 후원 identical-message window 오판 2차 봉쇄:
-   *  양쪽 donor의 id가 weak fallback 인 경우 identical message 120초 윈도우에 갇혀서 3건 drop 되는 것 방지.
-   *  3연속 = donor.name 동일 · message 동일 · at 120초 이내 → weak id 이지만 실제로는 서로 다른 후원 → id 문자열 직접 비교 100% 일치 때만 dedup 허용.
+   * ★ 3연속 후원 drop 방지 + WS+폴링 2행 중복 해소 · 총 4단계 dedup 파이프라인:
+   *   ① 릴레이블 UUID externalId 일치 + 금액 일치 = 무조건 dedup (경로 2중 수신 봉쇄 · weak id 여부 무관)
+   *   ② Cross-Source (bank↔투네) / Bank 재전송 = 전문 윈도우 (30s) dedup
+   *   ③ 동일 투네 이벤트 (reliable ext + weak 내부) = 15s 윈도우 dedup
+   *   ④ Weak bypass (3연속 후원 drop 방어): weak id 존재 + identical message 아님 + cross-source 아님 → rawId 100% 일치만 dedup
+   *   ⑤ Near-Content (donor+금액+대상+메시지) 윈도우 dedup + 최종 ext UUID 불일치 차단
    */
   const existingRawId = String(existing.id || "").trim();
   const incomingRawId = String(incoming.id || "").trim();
-  if (existingRawId && incomingRawId && (isWeakToonationDonorId(existingRawId) || isWeakToonationDonorId(incomingRawId))) {
-    if (existingRawId === incomingRawId) return true;
-    return false;
+  /** ① reliable UUID externalId = 동일 이벤트 (금액 같으면 무조건 dedup) */
+  {
+    const existingReliableExt =
+      extractReliableToonationExtFromDonorId(existingRawId) ||
+      (() => {
+        const e = String(existing.externalId || existing.rawHash || "").trim();
+        return e && isReliableToonationExternalId(e) ? e.toLowerCase() : null;
+      })();
+    const incomingReliableExt =
+      extractReliableToonationExtFromDonorId(incomingRawId) || reliableExtFromIncoming(incoming);
+    if (existingReliableExt && incomingReliableExt && existingReliableExt === incomingReliableExt) {
+      const amountA = Math.max(0, Math.round(Number(existing.amount) || 0));
+      const amountB = Math.max(0, Math.round(Number(incoming.amount) || 0));
+      if (amountA > 0 && amountA === amountB) return true;
+    }
   }
+  /** ② Cross-Source (bank ↔ 투네) · bank 재전송은 weak bypass 보다 먼저 처리 */
   if (shouldTreatAsCrossSourceDuplicate(existing, incoming)) return true;
+  /** ③ 동일 투네 이벤트 near-dup (내부 reliable ext · weak bypass 포함) */
   if (isSameToonationEventNearDuplicate(existing, incoming)) return true;
+  /**
+   * ④ Weak bypass (3연속 weak-id 후원 drop 방어):
+   *   - 동일 메시지 15s 윈도우 내 = dual-path / WS burst → ⑤ near-content dedup 에게 위임
+   *   - cross-source 쌍 또는 bank 재전송 = ② 에서 이미 처리 완료 → 위임
+   *   - at gap ≤ DONATION_NEAR_DUP_WINDOW_MS (3s) = dual-path burst → 위임
+   *   - 위 어느 것도 아님 = 3연속 개별 후원 케이스 → rawId 문자열 100% 일치만 dedup 허용 (건별 유지)
+   */
+  if (existingRawId && incomingRawId && (isWeakToonationDonorId(existingRawId) || isWeakToonationDonorId(incomingRawId))) {
+    const msgWindow = identicalMessageNearDupWindowMs(existing, incoming);
+    const crossOrBothBank =
+      isCrossDonationSourcePair(existing, incoming) ||
+      (donorInferSourceKind(existing) === "bank" && donorInferSourceKind(incoming) === "bank");
+    const atA = donorAtEpochMs(existing);
+    const atB = donorAtEpochMs(incoming);
+    const atGap = atA && atB ? Math.abs(atA - atB) : Infinity;
+    const withinAnyNearWindow = msgWindow != null || crossOrBothBank || atGap <= DONATION_NEAR_DUP_WINDOW_MS;
+    if (!withinAnyNearWindow) {
+      return existingRawId === incomingRawId;
+    }
+  }
+  /** ⑤ Near-Content (donor+금액+대상+메시지 + 윈도우) dedup */
   const windowMs = resolveNearDupWindowMs(existing, incoming);
   if (!isNearContentDuplicate(existing, incoming, windowMs)) return false;
   const extA = extractReliableToonationExtFromDonorId(String(existing.id || ""));
   const extB = reliableExtFromIncoming(incoming);
   /** ★ 서로 다른 투네 실 id = 별도 후원 (동일 문구·동일 금액·윈도우 내 3연속 후원 허용)
    *  - 박자키 1만원 × 3 연속 발송 시 extA·extB = UUID 3개가 서로 다르므로 이 조건에서 return false 탈출
-   *  - 아래 identicalMessageNearDupWindowMs 까지 가지 않아서 dedup 되지 않음 → 3건 전부 정상 반영
+   *  → 3건 전부 정상 반영
    */
   if (extA && extB && extA !== extB) return false;
-  if (identicalMessageNearDupWindowMs(existing, incoming) != null) return true;
   return true;
 }
 
