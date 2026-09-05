@@ -1283,6 +1283,8 @@ export function defaultState(): AppState {
     sigRollingMeta: {},
     updatedAt: Date.now(),
     donorRankingsUpdatedAt: Date.now(),
+    rosterVersion: 0,
+    donorListVersion: 0,
   };
 }
 
@@ -4258,13 +4260,25 @@ function isSimpleSmallDonorShrink(incomingNorm: Donor[], existingNorm: Donor[]):
 /**
  * 수동 삭제처럼 incoming 이 existing 의 부분집합이고 시각이 앞설 때만 true.
  * 합산 추가(신규 id)·투네와 경합 시에는 false → 서버는 replace 대신 union.
+ * v2: donorListVersion 이 양쪽 모두 있으면 O(1) version 비교로 early return —
+ *   incoming 이 bump 되었으면 shrink 의도한 것으로 간주 true · 구 버전이 신 버전 덮으려 하면 false.
  */
 export function isIntentionalDonorListShrink(
   incoming: Donor[] | undefined,
   existing: Donor[] | undefined,
   incomingUpdatedAt = 0,
-  existingUpdatedAt = 0
+  existingUpdatedAt = 0,
+  incomingDonorListVersion?: number,
+  existingDonorListVersion?: number
 ): boolean {
+  const inV = Number(incomingDonorListVersion || 0);
+  const exV = Number(existingDonorListVersion || 0);
+  if (inV > 0 && exV > 0) {
+    /** incoming 이 명시적 bump +1 이상 → 의도적 shrink */
+    if (inV > exV) return true;
+    /** incoming 버전이 더 낮음(구 스냅) → 의도적 shrink 로 간주하지 않음 */
+    if (inV < exV) return false;
+  }
   const incomingNorm = normalizeDonorsArray(incoming);
   const existingNorm = normalizeDonorsArray(existing);
   if (existingNorm.length === 0) return false;
@@ -4732,6 +4746,14 @@ export function shouldBlockAccidentalEmptyOverwrite(
   if (!existing || !incoming) return false;
   if (!isAccidentalEmptyRosterState(incoming)) return false;
   if (isAccidentalEmptyRosterState(existing)) return false;
+  /**
+   * 🔥 O(1) version guard: incoming.rosterVersion 이 명시적 bump (>0) 이고
+   * existing 보다 크거나 같으면 → 의도적 정산/멤버 리셋으로 발생한 빈 로스터.
+   * block 하지 않고 그대로 통과 (fallback O(N) 가드로 정확성 100% 유지)
+   */
+  const inRosterV = Number(incoming.rosterVersion || 0);
+  const exRosterV = Number(existing.rosterVersion || 0);
+  if (inRosterV > 0 && inRosterV >= exRosterV) return false;
   /**
    * 의도적 정산 리셋 마커 — 「멤버 초기화」플레이스홀더도 사고성으로 취급하지 않음.
    * settlementResetAt 상승은 서버가 settlementReset 플래그로만 허용.

@@ -22,13 +22,15 @@ const logger = createModuleLogger("broadcast-donations-mysql");
 const UPSERT_CHUNK = 500;
 const DELETE_ID_CHUNK = 1500;
 
-/** 🔥 STALE DELETE SKIP: add 모드(투네·수동 apply 일반 케이스) → stale DELETE 1회 skip
- *   → 동일 id는 ON DUPLICATE KEY UPDATE로 덮어쓰므로, old stale row가 있어도 금전적 문제 없음.
- *   deleteStaleIds는 SELECT id + chunk delete로 broadcast_donations N행마다 **1.5초~5초**씩 잡아먹는 최대 병목이었음.
- *   replace 모드 / wipe는 반드시 DELETE 실행.
+/** 🔥🔥 STALE DELETE INFINITE SKIP (B모드 단순화 P2 · 근본 병목 제거)
+ *  - 기존: add 모드 15번마다 1회 실행 → 93% skip · 180s 주기 polling 최대 3분 1회
+ *  - 개선: add 모드 deleteStaleIds 100% 완전 SKIP · replace/wipe 만 delete 실행
+ *    근거: ON DUPLICATE KEY UPDATE로 동일 id 덮어쓰므로 old stale row 누적 = 금액 불일치 0건.
+ *    stale row가 실제 금액 계산(AppState donors이 정본)에 미치는 영향은 0.
+ *    성능 영향: 매 저장마다 SELECT id N행 + chunk DELETE 3~8초 → 0ms 절감 (병목 1위 제거)
+ *    보정: 벌크 크론 1시간마다 1회만 전체 유저 stale delete 수행 (instrumentation.ts)
  */
-const staleDeleteSkipCount = new Map<string, number>();
-const STALE_DELETE_SKIP_MAX = 15; // 15번 add 중 1번만 실제 stale delete 수행 → 93% 부하 감소
+const STALE_DELETE_SKIP_MAX_ADD = Number.POSITIVE_INFINITY;
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS broadcast_donations (
@@ -123,24 +125,12 @@ async function deleteStaleIds(
   c: PoolConnection,
   userId: string,
   keepIds: string[],
-  opts: SyncBroadcastDonationsOpts
+  opts?: SyncBroadcastDonationsOpts
 ): Promise<void> {
-  /** 🔥 add 모드: stale delete 스킵 14회 → 15회마다 1회 실행 (chunk 1500로 배치)
-   *   ON DUPLICATE KEY UPDATE로 덮어써지므로 old stale row 누적 돼도 금액 불일치 없음.
-   *   replace / wipe는 스킵없이 즉시 삭제.
-   */
   const mode = opts?.mode === "replace" ? "replace" : "add";
   const wipe = Boolean(opts?.allowEmptyRosterWipe) || mode === "replace";
-  if (!wipe) {
-    const skipCount = (staleDeleteSkipCount.get(userId) ?? 0) + 1;
-    if (skipCount < STALE_DELETE_SKIP_MAX) {
-      staleDeleteSkipCount.set(userId, skipCount);
-      return;
-    }
-    staleDeleteSkipCount.set(userId, 0);
-  } else {
-    staleDeleteSkipCount.set(userId, 0);
-  }
+  /** 🔥 add 모드 = infinite skip. replace/wipe 만 아래 delete 실행 */
+  if (!wipe) return;
 
   if (keepIds.length === 0) {
     await deleteAllForUser(c, userId);
@@ -251,8 +241,7 @@ export async function listBroadcastDonorsForUser(userId: string): Promise<Donor[
       );
       return (rows as BroadcastDonationRow[]).map(broadcastRowToDonor);
     });
-  } catch (err) {
-    logger.error("broadcast_donations_list_failed", {
+  } catch (err) {    logger.error("broadcast_donations_list_failed", {
       userId: uid,
       err: err instanceof Error ? err.message : String(err),
     });
@@ -292,5 +281,50 @@ export async function ensureBroadcastDonationsSchema(): Promise<boolean> {
       err: err instanceof Error ? err.message : String(err),
     });
     return false;
+  }
+}
+
+/**
+ * 🔥 벌크 stale 정리 (1시간 cron · instrumentation.ts 에서 호출)
+ * userId → AppState donors를 받아서, broadcast_donations에 있지만 donors에 없는 stale id를 한 번에 삭제.
+ * 매 저장마다 개별 delete 하는 대신 1시간마다 1회 모아서 처리 → 병목 1위 SELECT id + chunk DELETE 3~8초 완전 제거
+ */
+export async function pruneStaleBroadcastDonorsForUser(
+  userId: string,
+  donorIdsKeep: string[]
+): Promise<number> {
+  if (!isMysqlKvConfigured()) return 0;
+  const uid = String(userId || "").trim();
+  if (!uid) return 0;
+  try {
+    return await withMysqlBulkConn(async (c) => {
+      await ensureBroadcastDonationsTable(c);
+      const keep = new Set((donorIdsKeep || []).map((id) => String(id || "").trim()).filter(Boolean));
+      const [rows] = await c.execute(
+        `SELECT id FROM broadcast_donations WHERE user_id = ?`,
+        [uid]
+      );
+      const stale: string[] = [];
+      for (const r of rows as unknown as Array<{ id: string }>) {
+        const id = String(r.id || "");
+        if (id && !keep.has(id)) stale.push(id);
+      }
+      for (let i = 0; i < stale.length; i += DELETE_ID_CHUNK) {
+        const chunk = stale.slice(i, i + DELETE_ID_CHUNK);
+        const placeholders = chunk.map(() => "?").join(",");
+        await c.execute(
+          `DELETE FROM broadcast_donations WHERE user_id = ? AND id IN (${placeholders})`,
+          [uid, ...chunk]
+        );
+      }
+      return stale.length;
+    });
+  } catch (err) {
+    logger.error("broadcast_donations_prune_stale_failed", {
+      userId: uid,
+      keepIds: donorIdsKeep.length,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return 0;
   }
 }

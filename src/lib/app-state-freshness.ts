@@ -74,7 +74,9 @@ export function pickFresherAppState(
       normalizeDonorsArray(poorer.donors),
       normalizeDonorsArray(richer.donors),
       Number(poorer.updatedAt || 0),
-      Number(richer.updatedAt || 0)
+      Number(richer.updatedAt || 0),
+      poorer.donorListVersion,
+      richer.donorListVersion
     );
     if (!poorerIsIntentionalShrink) {
       /** 투네 1건(신규 id)만 있는 축소본이 수동 다건을 이기지 않게 풍부한 쪽 유지 */

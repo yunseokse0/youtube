@@ -149,6 +149,8 @@ export function mergeDonationApplyBase(
         : {}) as Record<string, unknown>),
     } as AppState["overlaySettings"],
     updatedAt: Math.max(Number(hint.updatedAt || 0), Number(fresh.updatedAt || 0)) || Date.now(),
+    rosterVersion: Math.max(Number(fresh.rosterVersion || 0), Number(hint.rosterVersion || 0)) || undefined,
+    donorListVersion: Math.max(Number(fresh.donorListVersion || 0), Number(hint.donorListVersion || 0)) || undefined,
   };
   const synced = syncMemberTotalsFromDonors(merged);
   return repairMemberTotalsForDonorRoster(synced, fresh, hint);
@@ -227,7 +229,9 @@ export function mergeStatePreservingDonorsUntilSettlementReset(
       incomingDonors,
       existingDonors,
       Number(incoming.updatedAt || 0),
-      Number(existing.updatedAt || 0)
+      Number(existing.updatedAt || 0),
+      incoming.donorListVersion,
+      existing.donorListVersion
     )
   ) {
     const effReset = Math.max(incomingReset, existingReset) || 0;

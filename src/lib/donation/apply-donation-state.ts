@@ -9,7 +9,7 @@ import {
   resolveSystemMiddlePushDir,
   syncHighSocietyMemberWidthSnapshotInState,
 } from "@/lib/high-society";
-import type { AppState, Donor, Member, ContributionFormula } from "@/types";
+import type { AppState, Donor, Member, ContributionFormula, ContributionLog } from "@/types";
 import {
   computeContributionPoints,
   normalizeContributionFormula,
@@ -428,7 +428,23 @@ export function repairMemberTotalsForDonorRoster(
   const currentScore = rosterDonorMatchScore(state.members, donors);
   if (currentScore >= countable * 0.99) return state;
 
-  if (fallbacks.length === 0) return state;
+  /** 🔥 Phase2 rosterVersion O(1) 가드: 의도적 멤버 개편(bump됨) → repair 전체 skip
+   *  state.rosterVersion 이 모든 폴백보다 크면 → 의도적 roster 변경의 과도 상태로 donor가 옛 id를 가리키는 것일 뿐.
+   *  폴백 기준으로 member rollback 하지 않고 그대로 유지 (reassign이 뒤따라 올 예정)
+   */
+  const bumpedRoster = Number(state.rosterVersion || 0);
+  if (bumpedRoster > 0) {
+    const maxFbRoster = fallbacks.reduce((m, fb) => Math.max(m, Number(fb?.rosterVersion || 0)), 0);
+    if (bumpedRoster > maxFbRoster) return state;
+  }
+
+  /** 🔥 개선A: fallbacks 없으면 폴백 후보가 0개 → 굳이 O(D·M) 매칭 없이 syncMemberTotals(state) 1회로 donors기반 재계산
+   *  수학적 동치성: 함수 맨 아래 return sync( {..., members: bestMembers} ) 이므로
+   *  bestMembers === state.members 일 때 결과는 완전히 sync(state) 와 동일.
+   */
+  if (fallbacks.length === 0) {
+    return syncMemberTotalsFromDonors(state);
+  }
 
   const stateIdSig = memberRosterIdSignature(state.members);
   const stateUpdatedAt = Number(state.updatedAt || 0);
@@ -638,8 +654,8 @@ function donorTargetField(target?: string): "account" | "toon" {
  * `익명(계좌)` + `철수(투네)` 로 갈라져 들어온다 — 금액·메시지·시각으로 묶는다.
  */
 export function isOwnerRemapSplitDuplicate(
-  existing: { name?: string; amount?: number; target?: string; message?: string; at?: number | string },
-  incoming: { donorName?: string; amount?: number; target?: string; message?: string; at?: string | number }
+  existing: { name?: string; amount?: number; target?: string; message?: string; at?: number | string; memberId?: string },
+  incoming: { donorName?: string; amount?: number; target?: string; message?: string; at?: string | number; memberId?: string }
 ): boolean {
   const amountA = Math.max(0, Math.round(Number(existing.amount) || 0));
   const amountB = Math.max(0, Math.round(Number(incoming.amount) || 0));
@@ -653,6 +669,9 @@ export function isOwnerRemapSplitDuplicate(
   const targetA = donorTargetField(existing.target);
   const targetB = donorTargetField(incoming.target);
   if (targetA === targetB) return false;
+  const memA = String(existing.memberId || "").trim();
+  const memB = String(incoming.memberId || "").trim();
+  if (memA && memB && memA !== memB) return false;
   const msgA = String(existing.message || "").trim().toLowerCase();
   const msgB = String(incoming.message || "").trim().toLowerCase();
   if (msgA && msgB && msgA === msgB) return true;
@@ -1158,7 +1177,18 @@ export function shouldTreatAsDuplicateDonationContent(
     const at5A = donorAtEpochMs(existing);
     const at5B = donorAtEpochMs(incoming);
     const gap5 = at5A && at5B ? Math.abs(at5A - at5B) : Infinity;
-    if (gap5 < 1_000) return true;
+    if (gap5 < 1_000) {
+      const name5A = normalizeDonorNameKey(existing.name);
+      const name5B = normalizeDonorNameKey(incoming.donorName ?? incoming.name);
+      if (name5A && name5B && name5A !== name5B) return existingRawId === incomingRawId;
+      const mem5A = String(existing.memberId || "").trim();
+      const mem5B = String(incoming.memberId || "").trim();
+      if (mem5A && mem5B && mem5A !== mem5B) return existingRawId === incomingRawId;
+      const tgt5A = String(existing.target || "").trim().toLowerCase();
+      const tgt5B = String(incoming.target || "").trim().toLowerCase();
+      if (tgt5A && tgt5B && tgt5A !== tgt5B) return existingRawId === incomingRawId;
+      return true;
+    }
     return existingRawId === incomingRawId;
   }
   return true;
@@ -1370,21 +1400,6 @@ export function revertDonationFromAppState(currentState: AppState, donorId: stri
       ? Math.round(storedPoints)
       : computeContributionPoints(amount, field, formula);
 
-  const members = currentState.members.map((member) => {
-    if (member.id !== donor.memberId) return member;
-    const isOperating = isOperatingSettlementMember(
-      { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
-      currentState.memberPositions || null
-    );
-    const prevContribution = Math.max(0, Number(member.contribution) || 0);
-    return {
-      ...member,
-      contribution: isOperating
-        ? prevContribution
-        : Math.max(0, prevContribution - contributionPoints),
-    };
-  });
-
   const syncMode = currentState.donationSyncMode || "mealBattle";
   const mealRaw = mealBattleUsesRawDonationScore(currentState.mealBattle);
   const mealParticipants =
@@ -1399,7 +1414,27 @@ export function revertDonationFromAppState(currentState: AppState, donorId: stri
         )
       : currentState.mealBattle?.participants || [];
 
+  /** 🔥 Phase3 contribution SoT 단일화: member.contribution 직접 delta 차감 대신 contributionLogs에 마이너스 delta 기록
+   *  resolveMemberContributionTotal (L481-L511) = donors 합계 + logs 합계 이므로 자동으로 차감됨.
+   *  2중 SoT(직접 member값 + 합계) 완전 제거 → revert 테스트 L1263 PASS 확보.
+   */
   const now = Date.now();
+  const nextContributionLogs: ContributionLog[] = [
+    ...(currentState.contributionLogs || []),
+    ...(contributionPoints > 0
+      ? [
+          {
+            id: `revert:${donorId}:${now}`,
+            memberId: String(donor.memberId || "").trim(),
+            amount: contributionPoints,
+            delta: -1 as const,
+            note: `revert donor ${donor.name || donorId}`,
+            at: now,
+          },
+        ]
+      : []),
+  ];
+
   let removed = false;
   const nextDonors = (currentState.donors || []).filter((d) => {
     if (!removed && d.id === donorId) {
@@ -1412,7 +1447,7 @@ export function revertDonationFromAppState(currentState: AppState, donorId: stri
     syncMemberTotalsFromDonors({
       ...currentState,
       donors: nextDonors,
-      members,
+      contributionLogs: nextContributionLogs,
       mealBattle: {
         ...currentState.mealBattle,
         participants: mealParticipants,
@@ -1475,27 +1510,42 @@ export function reassignDonorMemberInAppState(
       ? Math.round(storedPoints)
       : computeContributionPoints(amount, donor.target || "account", formula);
 
-  const positions = currentState.memberPositions || null;
-  let members = currentState.members || [];
+  /** 🔥 Phase3 contribution SoT 단일화: member.contribution 직접 차감/가산 대신 contributionLogs에 delta 2행 기록
+   *  prev 멤버: delta=-1 차감 / target 멤버: delta=1 가산 → resolveMemberContributionTotal 이 자동 합산
+   *  2중 SoT 완전 제거 → 기여도 정합성 donors+logs 단일 SoT로 통합
+   */
+  const now = Date.now();
+  const logs: ContributionLog[] = [];
   if (contributionPoints > 0 && !isDonorExcludedFromDonationTotals(donor)) {
-    members = members.map((member) => {
-      const isOperating = isOperatingSettlementMember(
-        { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
+    const positions = currentState.memberPositions || null;
+    const isOperating = (mid: string) =>
+      isOperatingSettlementMember(
+        (currentState.members || []).find((m) => m.id === mid) || { id: mid, name: "", operating: false },
         positions
       );
-      if (isOperating) return member;
-      const prev = Math.max(0, Number(member.contribution) || 0);
-      if (prevMemberId && member.id === prevMemberId) {
-        return { ...member, contribution: Math.max(0, prev - contributionPoints) };
-      }
-      if (member.id === targetMemberId) {
-        return { ...member, contribution: prev + contributionPoints };
-      }
-      return member;
-    });
+    if (prevMemberId && !isOperating(prevMemberId)) {
+      logs.push({
+        id: `reassign:${donorId}:prev:${now}`,
+        memberId: prevMemberId,
+        amount: contributionPoints,
+        delta: -1 as const,
+        note: `reassign to ${targetMemberId}`,
+        at: now,
+      });
+    }
+    if (!isOperating(targetMemberId)) {
+      logs.push({
+        id: `reassign:${donorId}:next:${now}`,
+        memberId: targetMemberId,
+        amount: contributionPoints,
+        delta: 1 as const,
+        note: `reassign from ${prevMemberId || "none"}`,
+        at: now,
+      });
+    }
   }
+  const nextContributionLogs = [...(currentState.contributionLogs || []), ...logs];
 
-  const now = Date.now();
   const nextDonors = (currentState.donors || []).map((d) =>
     d.id === donorId
       ? { ...d, memberId: targetMemberId, memberAutoAssigned: false }
@@ -1504,7 +1554,7 @@ export function reassignDonorMemberInAppState(
 
   return syncMemberTotalsFromDonors({
     ...currentState,
-    members,
+    contributionLogs: nextContributionLogs,
     donors: nextDonors,
     mealBattle: {
       ...currentState.mealBattle,

@@ -93,7 +93,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const savedResult = await saveAppStateForRoulette(userId, restored, { donorsMode: "replace" });
+  const savedResult = await saveAppStateForRoulette(userId, restored, { donorsMode: "replace", bumpDonorListVersion: true });
   if (!savedResult.ok) {
     return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
       status: 503,

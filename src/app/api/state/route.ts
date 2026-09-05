@@ -1283,7 +1283,9 @@ export async function POST(req: Request) {
           incomingDonorsFiltered,
           baseDonorsNorm,
           Number(body.updatedAt || 0),
-          Number(baseState.updatedAt || 0)
+          Number(baseState.updatedAt || 0),
+          body.donorListVersion,
+          baseState.donorListVersion
         ));
     const mergedDonors = donorsInPatch
       ? donationInitReset
@@ -1562,6 +1564,8 @@ export async function POST(req: Request) {
         const memSaved = await saveAppStateForRoulette(userId, next, {
           donorsMode: authoritativeReplace ? "replace" : "add",
           allowEmptyRosterWipe: settlementReset || donationInitReset,
+          bumpRosterVersion: membersAuthoritative || settlementReset,
+          bumpDonorListVersion: authoritativeReplace || settlementReset,
         });
         memNext = memSaved.state;
       } else {
@@ -1610,6 +1614,8 @@ export async function POST(req: Request) {
       const saved = await saveAppStateForRoulette(userId, next, {
         donorsMode: authoritativeReplace ? "replace" : "add",
         allowEmptyRosterWipe: settlementReset || donationInitReset,
+        bumpRosterVersion: membersAuthoritative || settlementReset,
+        bumpDonorListVersion: authoritativeReplace || settlementReset,
       });
       if (!saved.ok) {
         return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {

@@ -74,20 +74,26 @@ export async function register() {
 
         void (async () => {
           for (const uid of hubUserIds) {
-            await refreshToonaHubStatus(uid).catch(() => {});
-            await fetchToonaDonationsSinceLink(uid).catch(() => {});
-            await drainDonationQueueOnServer(uid).catch(() => {});
+            let drained = 0, refreshed = false, pulled = 0;
+            try { drained = await drainDonationQueueOnServer(uid); } catch (e) {}
+            try { await refreshToonaHubStatus(uid); refreshed = true; } catch (e) {}
+            try {
+              const r = await fetchToonaDonationsSinceLink(uid);
+              if (r && typeof r === "object" && "imported" in r) pulled = Number((r as any).imported) || 0;
+            } catch (e) {}
+            console.info(`[b-mode] init OK user=${uid} drained=${drained} refreshed=${refreshed} pulled=${pulled}`);
           }
           console.info(`[b-mode] Initial one-shot hub sync + queue drain OK users=[${hubUserIds.join(",")}]`);
         })();
 
         /**
-         * 🔥 B-MODE POLLER · SINGLE STAGGERED JOB (P0-3 패치)
-         *  · 통합 전: 3종 독립 setInterval → 동시 fire → saveMutex 3중첩 블록 → 이벤트루프 3~8초 블록
+         * 🔥 B-MODE POLLER · SINGLE STAGGERED JOB + FETCH COALESCE (B모드 단순화 P1)
+         *  · 통합 전: 3종 독립 setInterval → 동시 fire → saveMutex 3중첩 블록
          *  · 통합 후: 1개 setInterval(30s) + phase counter(0~5) + reentry lock
-         *    주기 유지 RELAXED: drain(30s 항상) / refresh(90s = phase%3===0) / fetch(180s = phase%6===0)
-         *    실행 순서 직렬 강제: drain → refresh → fetch → 다음 사이클
-         *    reentry lock: pollerLock[uid] = true 동안 다음 사이클 SKIP (saveMutex 대기로 30초 이상 걸려도 중첩 0)
+         *    주기 RELAXED: drain(30s 항상) / refresh+fetch(180s = phase%6===0 동봉)
+         *      ↳ refresh 90s 2회 → fetch 직전 1회 180s 단축 (HTTP 66% 감소)
+         *      ↳ fetch 전역 DONATION_PULL_MIN_INTERVAL_MS 재진입 가드로 admin 중복 클릭 시 50건 풀스캔 2회 → 1회
+         *    실행 순서 직렬: drain → (phase0 일때 refresh→fetch)
          */
         /** @type {Record<string, boolean>} */
         const pollerLock: Record<string, boolean> = {};
@@ -101,15 +107,16 @@ export async function register() {
             pollerLock[uid] = true;
             void (async () => {
               try {
-                // Step 1. Queue Drain (매 30s 마다)
-                await drainDonationQueueOnServer(uid).catch((e) => console.warn(`[b-mode] drain fail uid=${uid}`, e?.message || e));
-                // Step 2. Hub Status Refresh (매 90s 마다 = phase 0, 3)
-                if (pollerPhase % 3 === 0) {
-                  await refreshToonaHubStatus(uid).catch((e) => console.warn(`[b-mode] refresh fail uid=${uid}`, e?.message || e));
-                }
-                // Step 3. Donation Pull 보정 (매 180s 마다 = phase 0)
+                await drainDonationQueueOnServer(uid).catch((e) =>
+                  console.warn(`[b-mode] drain fail uid=${uid}`, e?.message || e)
+                );
                 if (pollerPhase % 6 === 0) {
-                  await fetchToonaDonationsSinceLink(uid).catch((e) => console.warn(`[b-mode] fetch fail uid=${uid}`, e?.message || e));
+                  await refreshToonaHubStatus(uid).catch((e) =>
+                    console.warn(`[b-mode] refresh fail uid=${uid}`, e?.message || e)
+                  );
+                  await fetchToonaDonationsSinceLink(uid).catch((e) =>
+                    console.warn(`[b-mode] fetch fail uid=${uid}`, e?.message || e)
+                  );
                 }
               } finally {
                 pollerLock[uid] = false;
@@ -118,6 +125,33 @@ export async function register() {
           }
           pollerPhase = (pollerPhase + 1) % 6;
         }, 30_000);
+
+        /**
+         * 🔥 broadcast_donations 벌크 stale 정리 cron (1시간마다 1회)
+         *  · 기존: 매 저장마다 개별 SELECT id + chunk DELETE 3~8초 병목 → add 모드 infinite skip 으로 100% 제거
+         *  · 개선: 1시간마다 현재 AppState donors 목록 → pruneStaleBroadcastDonorsForUser 1회
+         *    누적 stale row 1시간치를 모아서 한 번에 정리 → DB 쓰기 부하 99% 절감
+         */
+        setInterval(() => {
+          void (async () => {
+            const { loadAppStateForUserId } = await import("@/lib/app-state-server-load");
+            const { pruneStaleBroadcastDonorsForUser } = await import(
+              "@/lib/donation/broadcast-donations-mysql"
+            );
+            for (const uid of hubUserIds) {
+              try {
+                const st = await loadAppStateForUserId(uid).catch(() => null);
+                const ids = (st?.donors || []).map((d) => String(d.id || "").trim()).filter(Boolean);
+                const removed = await pruneStaleBroadcastDonorsForUser(uid, ids);
+                if (removed > 0) {
+                  console.info(`[b-mode] prune stale broadcast OK user=${uid} removed=${removed}`);
+                }
+              } catch (e) {
+                console.warn(`[b-mode] prune stale fail uid=${uid}`, e instanceof Error ? e.message : e);
+              }
+            }
+          })();
+        }, 60 * 60 * 1000); // 1시간
       }
       return;
     }

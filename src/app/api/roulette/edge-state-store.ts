@@ -156,6 +156,10 @@ export type SaveAppStateForRouletteOptions = {
   donorsMode?: DonorsPersistMode;
   /** true 일 때만 사고성 빈 로스터로 기존 실데이터를 덮을 수 있음(정산 리셋) */
   allowEmptyRosterWipe?: boolean;
+  /** 멤버 목록 의도적 변경(추가·삭제·개명·정산 리셋)시 true → rosterVersion monotonic bump */
+  bumpRosterVersion?: boolean;
+  /** 후원 원장 의도적 변경(삭제·재배치·replace 저장·정산 리셋)시 true → donorListVersion monotonic bump */
+  bumpDonorListVersion?: boolean;
 };
 
 export async function saveAppStateForRoulette(
@@ -241,17 +245,36 @@ async function saveAppStateForRouletteDirect(
   return { ok: wrote, state: persisted };
 }
 
-/** 사고성 멤버/후원 덮어쓰기 방어 최종 1단계 (3분산 로직 통합 단순화) */
+/** 사고성 멤버/후원 덮어쓰기 방어 최종 1단계 + version counter propagation + 의도적 변경 bump
+ *  1. blockEmpty fallback 브랜치에서도 기존 member/donors 필드를 재사용 → Math.max version 동시 전파
+ *  2. 의도적 변경(opts bump): Math.max(existing, persisted) + 1 단조 증가
+ */
 function finalizePersisted(
   existing: AppState | null,
   persisted: AppState,
   opts?: SaveAppStateForRouletteOptions
 ): AppState {
-  if (opts?.allowEmptyRosterWipe || !existing) return persisted;
+  const baseRosterV = Math.max(
+    Number(existing?.rosterVersion || 0),
+    Number(persisted.rosterVersion || 0)
+  );
+  const baseDonorV = Math.max(
+    Number(existing?.donorListVersion || 0),
+    Number(persisted.donorListVersion || 0)
+  );
+  const nextRosterV = opts?.bumpRosterVersion ? baseRosterV + 1 : baseRosterV;
+  const nextDonorV = opts?.bumpDonorListVersion ? baseDonorV + 1 : baseDonorV;
+  const withVersions = (s: AppState): AppState => ({
+    ...s,
+    rosterVersion: nextRosterV > 0 ? nextRosterV : undefined,
+    donorListVersion: nextDonorV > 0 ? nextDonorV : undefined,
+  });
+
+  if (opts?.allowEmptyRosterWipe || !existing) return withVersions(persisted);
 
   /** 1. 빈 로스터로 실 donors 덮지 않음 (기존 L209/L241 2중 → 1회) */
   if (shouldBlockAccidentalEmptyOverwrite(existing, persisted)) {
-    return {
+    return withVersions({
       ...persisted,
       members: existing.members,
       memberPositions: existing.memberPositions ?? persisted.memberPositions,
@@ -261,19 +284,19 @@ function finalizePersisted(
         Number(existing.donorRankingsUpdatedAt || 0),
         Number(persisted.donorRankingsUpdatedAt || 0)
       ),
-    };
+    });
   }
 
   /** 2. 실 멤버 로스터가 플레이스홀더로 바뀌지 않게 (기존 L255-L267 · 1번 조건과 상호 배타적) */
   if (hasMeaningfulMemberRoster(existing) && !hasMeaningfulMemberRoster(persisted)) {
-    return {
+    return withVersions({
       ...persisted,
       members: existing.members,
       memberPositions: existing.memberPositions ?? persisted.memberPositions,
-    };
+    });
   }
 
-  return persisted;
+  return withVersions(persisted);
 }
 
 async function dualWriteBroadcastDonations(

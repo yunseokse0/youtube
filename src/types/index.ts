@@ -667,6 +667,18 @@ export type AppState = {
    * 첫 실후원 반영 시 제거. 사고성 빈 상태에는 설정되지 않음.
    */
   intentionalDonationClearAt?: number;
+  /**
+   * 멤버 목록(로스터) 의도적 변경 버전 — monotonic counter.
+   * UI에서 멤버 추가/삭제/개명/정산 리셋시 +1. 자동 폴링/병합/복구는 bump 안함.
+   * 빈 placeholder 로스터가 실 로스터를 덮는지 O(1) 판별 가드용 (기존 O(N) shouldBlockAccidentalEmptyOverwrite 경량화)
+   */
+  rosterVersion?: number;
+  /**
+   * 후원 원장 의도적 변경 버전 — monotonic counter.
+   * UI에서 후원 삭제/재배치/단체짠/replace 저장/정산 리셋시 +1. 자동 폴링/병합/복구는 bump 안함.
+   * isIntentionalDonorListShrink O(N²) 부분집합 검사 → O(1) 버전 비교 경량화용
+   */
+  donorListVersion?: number;
   /** 관리자 정산 탭 비율·세금 UI — 계정별 서버 저장 */
   settlementUiOptions?: SettlementUiOptions;
   /** YouTube API·라이브챗·영상 URL — 계정별 서버 저장 */
