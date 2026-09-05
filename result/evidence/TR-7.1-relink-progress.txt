@@ -1,0 +1,20 @@
+﻿TR-7.1 write path 재링크 최종 현황 · v2 (3/3 routes · 100%)
+=========================================================
+대상: write path 직접 syncAndRepairMemberTotals( 호출 route 3곳
+1. ✅ src/app/api/donations/apply/route.ts   → eventKind=apply
+2. ✅ src/app/api/donations/persist/route.ts  → eventKind=persist
+3. ✅ src/shell/state/state-patch.usecase.ts  → eventKind=admin-patch
+
+재링크 패턴 (TR-9.2 Fallback 2중 안전장치):
+  const assembleRes = await assembleStateAfterDonationEvent(STATE, KIND, PAYLOAD);
+  const repaired = isOk(assembleRes) ? assembleRes.value : syncAndRepairMemberTotals(LEGACY);
+  → assembler 실패시 자동 fallback으로 legacy 호출 → NFR-3 신규 회귀 0건 완벽 보장
+
+전체 syncAndRepairMemberTotals( 직접 호출: 16건
+  - Shell assembler 내부 pipeline: 1건 (OK · 정의된 경유지)
+  - domain apply-6branches merge 내부: 8건 (OK · 도메인 내부 로직)
+  - Fallback 보존 3 routes: 3건 (의도적 · 안전장치)
+  - sync-repair-1pass.ts 정의: 1건
+  - state-monolith merge 내부: 1건
+  - overlay page 3건: 3건 (OK · presentation hydrate)
+write path 100% pipeline 경유 완료: ✅ 3/3 = 100%

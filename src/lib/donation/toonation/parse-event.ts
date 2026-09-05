@@ -1,5 +1,7 @@
 import type { DonationEvent, QueueSigItem } from "../types";
 import {
+  DIN_SHELL_104, ErrorEnvelope } from "@/domain/types/error-envelope";
+import {
   isAnonymousDonorPlaceholderName,
   normalizeAnonymousDonorDisplayName,
 } from "../anonymous-donor-name";
@@ -581,7 +583,13 @@ export function parseToonationDonationPayload(
 
 export function extractAlertboxKeyFromUrl(alertboxUrl: string): string {
   const key = new URL(alertboxUrl).pathname.split("/").filter(Boolean).pop();
-  if (!key) throw new Error("invalid_toonation_alertbox_url");
+  if (!key) {
+    throw new ErrorEnvelope({
+      code: DIN_SHELL_104,
+      message: "invalid_toonation_alertbox_url",
+      layer: "shell",
+    });
+  }
   return key;
 }
 

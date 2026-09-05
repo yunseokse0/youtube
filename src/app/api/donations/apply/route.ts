@@ -9,6 +9,8 @@ import {
   isDuplicateDonationEvent,
   syncAndRepairMemberTotals,
 } from "@/lib/donation/apply-donation-state";
+import { assembleStateAfterDonationEvent } from "@/shell/state-assembler";
+import { isOk } from "@/domain/types/result";
 import { persistDonationApplyLikeToonation } from "@/lib/donation/persist-donation-like-toon";
 import type { DonationEvent } from "@/lib/donation/types";
 import { normalizeDonorsArray } from "@/lib/state";
@@ -175,7 +177,14 @@ async function handleApplyPostInner(req: Request): Promise<Response> {
     });
   }
 
-  const repaired = syncAndRepairMemberTotals(persisted.state, state);
+  /** TR-7.1: 4단계 pipeline 경유 재링크 (실패시 fallback으로 legacy 호출 회귀0 방지 */
+  const assembleRes = await assembleStateAfterDonationEvent(persisted.state!, "apply", {
+    kind: "apply",
+    previousState: state,
+  });
+  const repaired = isOk(assembleRes)
+    ? assembleRes.value
+    : syncAndRepairMemberTotals(persisted.state!, state);
 
   return new Response(
     JSON.stringify({

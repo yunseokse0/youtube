@@ -9,6 +9,10 @@ import {
   parseApplyExcelFromRequest,
   sanitizeDonationEventFromIngestBody,
 } from "@/lib/donation/din-ingest";
+import {
+  describeDonationIntakeMode,
+  isDonationIntakeModeB,
+} from "@/policies/donation-intake-mode";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -18,11 +22,29 @@ function json(data: unknown, status = 200): Response {
 }
 
 /**
- * DIN(toona) 후원 ingest — DonationEvent JSON 수신
+ * ✅ B모드 (= DIN허브 연결 모드) 에서만 처리:
+ *   .env TOONA_INTAKE_MODE=B 일때만 DIN 허브 TOONA_INGEST_SECRET 인증 경로로 후원 유입.
+ *   후원 출처는 오직 DIN 허브에 연동된 투나(Toona) 프로젝트 후원만 받음.
+ *   A모드 (투네 직접)일땐 경로 자체를 거절 → 출처 1개로 단일화.
+ *
  * POST /api/donations/ingest?u={userId}&applyExcel=false|true
  * Authorization: Bearer {TOONA_INGEST_SECRET}
  */
 export async function POST(req: Request) {
+  if (!isDonationIntakeModeB()) {
+    return json(
+      {
+        skipped: true,
+        mode: describeDonationIntakeMode(),
+        error: "invalid_mode",
+        message:
+          "현재 " +
+          describeDonationIntakeMode() +
+          " 이므로 DIN 허브 경로 후원은 수신하지 않고 오직 투네 직접 WS 경로로만 후원을 받습니다. DIN 허브를 사용하려면 TOONA_INTAKE_MODE=B 로 설정하세요.",
+      },
+      410
+    );
+  }
   const auth = verifyToonaIngestAuth(req);
   if (!auth.ok) return json({ error: auth.error }, auth.status);
 

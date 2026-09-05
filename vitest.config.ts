@@ -9,6 +9,11 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@domain": path.resolve(__dirname, "./src/domain"),
+      "@infra": path.resolve(__dirname, "./src/infra"),
+      "@policies": path.resolve(__dirname, "./src/policies"),
+      "@shell": path.resolve(__dirname, "./src/shell"),
+      "@presentation": path.resolve(__dirname, "./src/presentation"),
       "@donation-alert-overlay": path.resolve(__dirname, "./packages/donation-alert-overlay/src/index.ts"),
       "@donation-alert-overlay/core": path.resolve(__dirname, "./packages/donation-alert-overlay/src/core.ts"),
       "@donation-alert-overlay/source": path.resolve(__dirname, "./packages/donation-alert-overlay/src/source.ts"),

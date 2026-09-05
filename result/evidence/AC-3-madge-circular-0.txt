@@ -1,0 +1,9 @@
+﻿AC-3 · Circular Dependency = 0건
+=================================
+측정 명령: npx madge --circular --ts-config tsconfig.json src/domain src/policies src/infra src/shell src/presentation
+측정 시각: 2026-09-05
+최종 결과:
+  - Processed files OK (727ms)
+  - ✅ ??No circular dependency found!
+측정 범위: 5계층 (domain / policies / infra / shell / presentation)
+AC-3 충족 여부: ✅ PASS

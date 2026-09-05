@@ -45,23 +45,32 @@ export async function register() {
     await new Promise((r) => setTimeout(r, 12_000));
 
     /**
-     * B·DIN 허브 모드 (din_only) 일땐 ↓ 투네 직접 WS 리스너를 아예 시작하지 않음.
-     * (1. Dual-Path 2행 중복 원천 봉쇄 + 2. 무한 reconnect loop CPU 97% 방지)
-     * — 오직 DIN 허브(13.125.221.195:4000) → /api/donations/ingest (TOONA_INGEST_SECRET) 1경로만 유일 유입
-     * 🔥 FIX: 로직 단순화로 인해 B모드 자동 폴링/큐드레인이 통째로 빠져서 후원 진행 안되던 버그 → 아래 setInterval 3종 추가
+     * ✅ 사용자 요약 정책 (2026-09-06 VERBATIM):
+     *   A 모드 (투네 직접): Toonation WS 직접 후원만 받음 → 투네 브라우저/OBS WS 리스너 시작
+     *   B 모드 (DIN 허브 연결):  DIN 허브 + 투나(Toona) 프로젝트 후원만 받음 → WS 리스너 시작 안함
+     *           오직 DIN 허브(13.125.221.195:4000) → /api/donations/ingest (TOONA_INGEST_SECRET) 1경로 유일 유입
+     *  · Dual-Path 2행 중복 원천 봉쇄
+     *  · 무한 reconnect loop CPU 97% 원천 차단 (B모드에서 WS start 하지 않음)
      */
-    const intakeMode = String(process.env.TOONA_INTAKE_MODE || "").trim().toLowerCase();
     const wsDisableRaw = String(process.env.TOONATION_WS_DISABLE || process.env.DISABLE_TOONATION_LISTENER || "").trim().toLowerCase();
     const wsDisabledByEnv = wsDisableRaw === "1" || wsDisableRaw === "true" || wsDisableRaw === "yes";
+    const {
+      isDonationIntakeModeA,
+      isDonationIntakeModeB,
+      describeDonationIntakeMode,
+    } = await import("@/policies/donation-intake-mode");
+    const modeA = isDonationIntakeModeA();
+    const modeB = isDonationIntakeModeB();
+    const modeDesc = describeDonationIntakeMode();
 
     const hubUserIds = String(process.env.STATE_WARM_USER_IDS || process.env.HUB_POLL_USER_IDS || "din")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
 
-    if (intakeMode === "din_only" || wsDisabledByEnv) {
+    if (modeB || wsDisabledByEnv) {
       console.info(
-        `[instrumentation] B-MODE (din_only) = Skip WS listeners + START hub auto-poller RELAXED for users=[${hubUserIds.join(",")}]`
+        `[instrumentation] ${modeDesc} = Skip Toonation WS listeners + START hub auto-poller RELAXED for users=[${hubUserIds.join(",")}]`
       );
       /** 🔥🔥🔥 B-MODE AUTO POLLER · RELAXED INTERVALS (부하 50% 감소)
        *    이전 15s/60s/90s → 30s/90s/180s 로 완화
@@ -156,6 +165,10 @@ export async function register() {
       return;
     }
 
+    /** ✅ A 모드 (투네 직접 연결): Toonation 브라우저 릴레이 / OBS WS 리스너 시작 */
+    console.info(
+      `[instrumentation] ${modeDesc} = START Toonation WS listeners (hub poller disabled)`
+    );
     const { restoreToonationListenersFromStore } = await import(
       "@/lib/donation/toonation/server-listener"
     );

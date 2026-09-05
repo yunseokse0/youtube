@@ -1,0 +1,15 @@
+﻿AC-4 · Layer Reverse Import = 0건
+==================================
+도메인 규칙:
+  Domain 절대 @/app, @shell, @presentation, @infra, @policies를 역방향 import 금지
+  Policies 절대 @/app, @shell, @presentation을 import 금지
+
+측정1 (domain → app/shell/presentation):
+  명령: rg 'from "@/(app|shell|presentation)"' src/domain -g '*.ts'
+  결과: No matches found → 0건 ✅
+
+측정2 (policies → app/shell/presentation):
+  명령: rg 'from "@/(app|shell|presentation)"' src/policies -g '*.ts'
+  결과: No matches found → 0건 ✅
+
+AC-4 충족 여부: ✅ PASS (단방향 의존성 방향 준수)

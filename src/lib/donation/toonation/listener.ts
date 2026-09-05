@@ -1,5 +1,6 @@
 "use client";
 
+import { DIN_INFRA_207, ErrorEnvelope } from "@/domain/types/error-envelope";
 import { extractToonationLinkKey, normalizeToonationAlertboxUrl } from "./link-key";
 
 export type ToonationListenerStatus = {
@@ -84,7 +85,11 @@ export async function syncToonationListenerFromBrowser(
   if (!res.ok) {
     const msg = String(data?.error || res.statusText || "listener_sync_failed");
     options?.onStatus?.({ kind: "error", message: msg });
-    throw new Error(msg);
+    throw new ErrorEnvelope({
+      code: DIN_INFRA_207,
+      message: msg,
+      layer: "infra",
+    });
   }
   const status = data?.status ?? null;
   options?.onStatus?.(toonationListenerStatusFromServer(status, { socketEnabled: enabled }));

@@ -1,3 +1,4 @@
+import { DIN_INFRA_207, ErrorEnvelope } from "@/domain/types/error-envelope";
 import {
   applyYoutubeClientSettingsCache,
   getCachedYoutubeClientSettings,
@@ -374,7 +375,13 @@ export function startYoutubePolling(forbiddenWords: string[], onForbidden: OnFor
       if (nextPageToken) url.searchParams.set("pageToken", nextPageToken);
       url.searchParams.set("key", API_KEY!);
       const resp = await fetch(url.toString(), { signal: aborter!.signal });
-      if (!resp.ok) throw new Error(`YT ${resp.status}`);
+      if (!resp.ok) {
+        throw new ErrorEnvelope({
+          code: DIN_INFRA_207,
+          message: `YT ${resp.status}`,
+          layer: "infra",
+        });
+      }
       const data = await resp.json();
       const items: any[] = data.items || [];
       nextPageToken = data.nextPageToken;
@@ -478,7 +485,11 @@ export function startChatPolling(
           console.log(`[YouTube Chat] 할당량 초과 감지: ${resp.status}`);
         }
         console.log(`[YouTube Chat] 채팅 요청 실패: ${resp.status} ${resp.statusText}`);
-        throw new Error(`YT ${resp.status}`);
+        throw new ErrorEnvelope({
+          code: DIN_INFRA_207,
+          message: `YT ${resp.status}`,
+          layer: "infra",
+        });
       }
       
       const data = await resp.json();

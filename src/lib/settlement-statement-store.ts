@@ -1,3 +1,4 @@
+import { DIN_INFRA_201, ErrorEnvelope } from "@/domain/types/error-envelope";
 import {
   ensureMysqlKvBackend,
   isPersistentKvConfigured,
@@ -54,7 +55,11 @@ export async function saveSettlementStatementTextPayload(
   memoryText[userId] = payload;
   const persisted = await upstashSetJsonWithSetPath(textKey(userId), payload);
   if (!persisted && isPersistentKvConfigured()) {
-    throw new Error("persist_failed");
+    throw new ErrorEnvelope({
+      code: DIN_INFRA_201,
+      message: "persist_failed",
+      layer: "infra",
+    });
   }
   return normalized;
 }

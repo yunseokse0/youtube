@@ -24,14 +24,20 @@ import { applyToonaSigItemsToInventory } from "@/lib/toona-sig-import";
 import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
 import { publishSseEvent } from "@/lib/sse-clients-hub";
 import type { SigItem } from "@/types";
+import {
+  describeDonationIntakeMode,
+  isDonationIntakeModeB,
+} from "@/policies/donation-intake-mode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 15;
 
-function isToonaHubPollDisabledEnv(): boolean {
-  const raw = String(process.env.TOONA_HUB_POLL_DISABLE || "").trim().toLowerCase();
-  return raw === "1" || raw === "true" || raw === "yes" || raw === "y";
+/** ✅ B모드 (= DIN 허브 연결 모드) 일때만 /toona/hub endpoint (세션·폴링·연동)을 활성화함.
+ *  · A모드 (투네 직접) 시 DIN 허브 연동 자체가 필요 없으므로 전부 disabled 처리 → 후원 출처 2중 입력 방지
+ *  · 과거 TOONA_HUB_POLL_DISABLE env 로직을 donation-intake-mode 정책으로 통일. */
+function isToonaHubDisabledForMode(): boolean {
+  return !isDonationIntakeModeB();
 }
 
 function json(data: unknown, status = 200) {
@@ -87,13 +93,17 @@ export async function GET(req: NextRequest) {
   const auth = resolveWriteUserId(req);
   if (!auth.ok) return writeUserIdErrorResponse(auth);
 
-  if (isToonaHubPollDisabledEnv()) {
+  if (isToonaHubDisabledForMode()) {
     const session = await readToonaHubSession(auth.userId).catch(() => null);
     const logs = await readToonaHubDonationLogs(auth.userId).catch(() => []);
     return json({
       ok: true,
       disabled: true,
-      reason: "TOONA_HUB_POLL_DISABLE env",
+      mode: describeDonationIntakeMode(),
+      reason:
+        "현재 " +
+        describeDonationIntakeMode() +
+        " 이므로 DIN 허브 API를 사용하지 않고 투네 직접 WS 경로만 활성화됩니다. DIN 허브를 사용하려면 TOONA_INTAKE_MODE=B 로 설정하세요.",
       session: publicToonaHubSession(session),
       logs,
     });
@@ -144,14 +154,21 @@ export async function POST(req: NextRequest) {
   const auth = resolveWriteUserId(req);
   if (!auth.ok) return writeUserIdErrorResponse(auth);
 
-  if (isToonaHubPollDisabledEnv()) {
+  if (isToonaHubDisabledForMode()) {
     const session = await readToonaHubSession(auth.userId).catch(() => null);
-    return json({
-      ok: false,
-      disabled: true,
-      reason: "TOONA_HUB_POLL_DISABLE env — B모드 연결/폴링 일시 중단됨. 후원순위 정상화 후 env 제거하고 재시도하세요.",
-      session: publicToonaHubSession(session),
-    }, 503);
+    return json(
+      {
+        ok: false,
+        disabled: true,
+        mode: describeDonationIntakeMode(),
+        reason:
+          "현재 " +
+          describeDonationIntakeMode() +
+          " 이므로 DIN 허브 연동·폴링 기능을 사용하지 않고 투네 직접 WS 경로만 활성화됩니다. DIN 허브를 사용하려면 TOONA_INTAKE_MODE=B 로 설정하세요.",
+        session: publicToonaHubSession(session),
+      },
+      503
+    );
   }
 
   const body = (await req.json().catch(() => ({}))) as {

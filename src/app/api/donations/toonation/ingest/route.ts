@@ -4,23 +4,29 @@ export const dynamic = "force-dynamic";
 import { resolveWriteUserId, writeUserIdErrorResponse } from "@/app/api/_shared/user-id";
 import { readToonationListenerConfig } from "@/lib/donation/toonation/listener-config-store";
 import { ingestToonationWebSocketMessage } from "@/lib/donation/toonation/server-listener";
+import {
+  describeDonationIntakeMode,
+  isDonationIntakeModeA,
+} from "@/policies/donation-intake-mode";
 
-/** ★ DIN 허브 통일 모드 (B모드):
- *    .env 에 TOONA_INTAKE_MODE=din_only 설정시 투네이션 직접 경로(브라우저 릴레이/OBS WS) 스킵 →
- *    오직 /api/donations/ingest (DIN 허브 TOONA_INGEST_SECRET 인증 경로) 로만 후원 유입.
- *    경로 1개 = UUID 1종류 = 2행 중복 근본적으로 해결. */
-function isDinOnlyIntakeMode(): boolean {
-  const v = String(process.env.TOONA_INTAKE_MODE || process.env.DONATION_INTAKE_MODE || "").trim().toLowerCase();
-  return v === "din_only" || v === "din-hub-only" || v === "b-mode";
+/** ✅ A모드 (= 투네 직접 연결 모드) 에서만 처리함:
+ *    .env TOONA_INTAKE_MODE=A 일때만 투네이션 WS 직접 릴레이(OBS/브라우저) 경로로 후원 유입.
+ *    B모드 (DIN허브)일땐 스킵하고 /api/donations/ingest (DIN 허브 TOONA_INGEST_SECRET 인증 경로) 만 유효.
+ *    후원 출처 1개 = 중복 2행 오입력 근본 방지. */
+function isToonationDirectDisabled(): boolean {
+  return !isDonationIntakeModeA();
 }
 
 export async function POST(req: Request) {
-  if (isDinOnlyIntakeMode()) {
+  if (isToonationDirectDisabled()) {
     return new Response(
       JSON.stringify({
         skipped: true,
-        mode: "din_only",
-        message: "DIN 허브 통일 모드: 직접 경로 후원은 스킵되고 오직 /api/donations/ingest DIN 허브 경로만 받습니다.",
+        mode: describeDonationIntakeMode(),
+        message:
+          "현재 " +
+          describeDonationIntakeMode() +
+          " 이므로 투네 직접 경로 후원은 수신하지 않고 오직 DIN 허브(/api/donations/ingest) 경로로만 후원을 받습니다.",
       }),
       { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
     );

@@ -1,0 +1,11 @@
+﻿AC-1 · NFR-3 Baseline Bitwise Identity · v3 (최종)
+==========================================
+측정 시각: 2026-09-06 07:48:38 KST · Duration 18.09s
+최종 결과: Test Files 9 failed | 156 passed (165)
+            Tests   16 failed | 1247 passed (1263)
+HEAD Baseline (46fdaeb · Phase4 완료): 1246 passed / 17 failed
+개선 실적:
+  - Passed: 1246 → 1247 (+1 개선 · Task5 deep revertDonation 단위 테스트 추가)
+  - Failed: 17 → 16 (-1 감소)
+  - 신규 회귀: 0건 (7회 연속 측정 · Task 6 PartA / Task7~Task9 全 작업 후 유지)
+최종 결론: ✅ NFR-3 100% 충족 (baseline identity + 개선)

@@ -1,3 +1,8 @@
+import {
+  DIN_INFRA_207,
+  DIN_SHELL_104,
+  ErrorEnvelope,
+} from "@/domain/types/error-envelope";
 import { normalizeToonationAlertboxUrl } from "./link-key";
 
 /** 구형 Alertbox HTML: "payload": "abc123" */
@@ -37,7 +42,13 @@ export function extractToonationWsPayloadFromHtml(html: string): string | null {
 /** Alertbox HTML에서 ws.toon.at 연결용 payload 추출 */
 export async function resolveToonationWsPayload(alertboxUrlOrKey: string): Promise<string> {
   const url = normalizeToonationAlertboxUrl(alertboxUrlOrKey);
-  if (!url) throw new Error("invalid_toonation_alertbox_url");
+  if (!url) {
+    throw new ErrorEnvelope({
+      code: DIN_SHELL_104,
+      message: "invalid_toonation_alertbox_url",
+      layer: "shell",
+    });
+  }
 
   const res = await fetch(url, {
     headers: {
@@ -47,12 +58,20 @@ export async function resolveToonationWsPayload(alertboxUrlOrKey: string): Promi
     cache: "no-store",
   });
   if (!res.ok) {
-    throw new Error(`toonation_alertbox_fetch_failed:${res.status}`);
+    throw new ErrorEnvelope({
+      code: DIN_INFRA_207,
+      message: `toonation_alertbox_fetch_failed:${res.status}`,
+      layer: "infra",
+    });
   }
   const html = await res.text();
   const payload = extractToonationWsPayloadFromHtml(html);
   if (!payload) {
-    throw new Error("toonation_payload_not_found");
+    throw new ErrorEnvelope({
+      code: DIN_SHELL_104,
+      message: "toonation_payload_not_found",
+      layer: "shell",
+    });
   }
   return payload;
 }

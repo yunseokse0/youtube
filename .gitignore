@@ -24,3 +24,8 @@ Thumbs.db
 
 .vercel
 .env*.local
+
+# Workspace artifacts
+build-output.log
+vitest-output*.txt
+0

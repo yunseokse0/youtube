@@ -1,0 +1,10 @@
+﻿AC-2 · God File LOC 분해 실적 · v3 (최종)
+======================================
+대상 God File 2종:
+  1. src/lib/state.ts              원본 5118L → **1L (re-export shim)**  99.98% ↓
+  2. src/shell/state/state-route-monolith.all.ts  원본 1699L → **8L (aggregate shim)** 99.53% ↓
+총 감소: 6817L → 5127L = -1690L (24.8% 총 감소)
+  - 도메인 로직 src/domain/state-monolith.all.ts: 5313L 유지 (Hexagonal 원칙상 domain은 자율 영역으로 유지가 정책)
+  - Task 6 PartB body 삭제 시도 (2026-09-06): vitest 1226P/37F 신규 회귀 21F 발견 → 안전성 우선 Git 롤백 (NFR-3 보호가 LOC보다 상위 우선순위)
+  - 2차 이터 보류: state-monolith 400L 이하 shim delegation 재설계
+최종 결론: ⚠️ PARTIAL (LOC 400L 목표 미달성 · Shim Chain 하위호환은 100% 달성)

@@ -23,6 +23,21 @@
       "@/*": [
         "src/*"
       ],
+      "@domain/*": [
+        "src/domain/*"
+      ],
+      "@infra/*": [
+        "src/infra/*"
+      ],
+      "@policies/*": [
+        "src/policies/*"
+      ],
+      "@shell/*": [
+        "src/shell/*"
+      ],
+      "@presentation/*": [
+        "src/presentation/*"
+      ],
       "@donation-alert-overlay": [
         "packages/donation-alert-overlay/src/index.ts"
       ],

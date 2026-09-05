@@ -5,6 +5,8 @@ import { resolveWriteUserId, writeUserIdErrorResponse } from "@/app/api/_shared/
 import type { DonorsPersistMode } from "@/app/api/roulette/edge-state-store";
 import { persistDonationStateToServer } from "@/lib/donation/persist-donation-like-toon";
 import { syncAndRepairMemberTotals } from "@/lib/donation/apply-donation-state";
+import { assembleStateAfterDonationEvent } from "@/shell/state-assembler";
+import { isOk } from "@/domain/types/result";
 import { markIntentionalDonationEmptySession } from "@/lib/intentional-donation-clear";
 import {
   buildDonationRosterBackupPayload,
@@ -47,7 +49,15 @@ export async function POST(req: Request) {
     });
   }
 
-  let repaired = syncAndRepairMemberTotals(persisted.state, body.state);
+  /** TR-7.1: 4단계 pipeline 경유 재링크 (실패시 fallback으로 legacy 호출 회귀0 방지 */
+  const assembleRes = await assembleStateAfterDonationEvent(persisted.state!, "persist", {
+    kind: "persist",
+    previousState: body.state,
+    mode,
+  });
+  let repaired = isOk(assembleRes)
+    ? assembleRes.value
+    : syncAndRepairMemberTotals(persisted.state!, body.state);
   const donorsEmpty =
     normalizeDonorsArray(repaired.donors).length === 0 && totalCombined(repaired) <= 0;
   if (mode === "replace" && donorsEmpty) {
