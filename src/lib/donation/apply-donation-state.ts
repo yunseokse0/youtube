@@ -994,9 +994,11 @@ export function shouldTreatAsDuplicateDonationContent(
     }
   }
   /**
-   * ★ 3연속 후원 drop 방지 + WS+폴링 2행 중복 해소 · 총 4단계 dedup 파이프라인:
+   * ★ 3연속 후원 drop 방지 + WS+폴링 2행 중복 해소 · 총 7단계 dedup 파이프라인:
    *   ① 릴레이블 UUID externalId 일치 + 금액 일치 = 무조건 dedup (경로 2중 수신 봉쇄 · weak id 여부 무관)
    *   ② Cross-Source (bank↔투네) / Bank 재전송 = 전문 윈도우 (30s) dedup
+   *   ②-1 Owner Remap Split = target 반대 쌍 (투네↔계좌) + 금액·at·메시지 동일 = dedup (David 51k 2행 FIX)
+   *   ②-2 Instant Burst = 동일 donor·금액·at ≤ 1000ms 극단 burst = 무조건 dedup (자키집 19k 4:23:00 2행 FIX)
    *   ③ 동일 투네 이벤트 (reliable ext + weak 내부) = 15s 윈도우 dedup
    *   ④ Weak bypass (3연속 후원 drop 방어): weak id 존재 + identical message 아님 + cross-source 아님 → rawId 100% 일치만 dedup
    *   ⑤ Near-Content (donor+금액+대상+메시지) 윈도우 dedup + 최종 ext UUID 불일치 차단
@@ -1021,6 +1023,32 @@ export function shouldTreatAsDuplicateDonationContent(
   }
   /** ② Cross-Source (bank ↔ 투네) · bank 재전송은 weak bypass 보다 먼저 처리 */
   if (shouldTreatAsCrossSourceDuplicate(existing, incoming)) return true;
+  /** ②-1 Owner Remap Split (target 반대 쌍 = 투네/계좌 로 갈라진 동일 후원 2행 FIX
+   *  - WS 경로 = target:toon · DIN 허브 폴링 경로 = target:account 양쪽 동일 donor·금액·at 이 2행 쌓이는 버그
+   *  - donorInferSourceKind 와 무관하게 target 필드 반대 여부로 잡아내는 isOwnerRemapSplitDuplicate 여기서 직접 호출 */
+  if (isOwnerRemapSplitDuplicate(existing, incoming)) return true;
+  /** ②-2 Instant Burst (극단적 동일 시각 중복: 4:23:00 동일 second 내에 동일 donor 동일 금액 2행 burst)
+   *  DONATION_NEAR_DUP_WINDOW_MS(3s) 보다 더 엄격한 1000ms window. donorName match + amount match + at ≤ 1000ms.
+   *  단, reliable ext 가 양쪽에 있고 서로 다르면 3연속 개별 후원 일 수 있으므로 ext 불일치 시 bypass. */
+  {
+    const burstAmountA = Math.max(0, Math.round(Number(existing.amount) || 0));
+    const burstAmountB = Math.max(0, Math.round(Number(incoming.amount) || 0));
+    if (burstAmountA > 0 && burstAmountA === burstAmountB) {
+      const burstAt1 = donorAtEpochMs(existing);
+      const burstAt2 = donorAtEpochMs(incoming);
+      if (burstAt1 && burstAt2 && Math.abs(burstAt1 - burstAt2) < 1_000) {
+        const burstNameA = String(existing.name || "").trim().toLowerCase();
+        const burstNameB = String(incoming.donorName || incoming.name || "").trim().toLowerCase();
+        const extAA = extractReliableToonationExtFromDonorId(existingRawId);
+        const extBB = extractReliableToonationExtFromDonorId(incomingRawId);
+        // 양쪽 ext reliable + 서로 다름 = 3연속 개별 후원 케이스 → dedup PASS (3건 유지)
+        const bothReliableAndDifferent = extAA && extBB && extAA !== extBB;
+        if (!bothReliableAndDifferent && burstNameA && burstNameB && burstNameA === burstNameB) {
+          return true;
+        }
+      }
+    }
+  }
   /** ③ 동일 투네 이벤트 near-dup (내부 reliable ext · weak bypass 포함) */
   if (isSameToonationEventNearDuplicate(existing, incoming)) return true;
   /**
