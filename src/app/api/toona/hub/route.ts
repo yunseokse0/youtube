@@ -29,6 +29,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 15;
 
+function isToonaHubPollDisabledEnv(): boolean {
+  const raw = String(process.env.TOONA_HUB_POLL_DISABLE || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "y";
+}
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -82,6 +87,18 @@ export async function GET(req: NextRequest) {
   const auth = resolveWriteUserId(req);
   if (!auth.ok) return writeUserIdErrorResponse(auth);
 
+  if (isToonaHubPollDisabledEnv()) {
+    const session = await readToonaHubSession(auth.userId).catch(() => null);
+    const logs = await readToonaHubDonationLogs(auth.userId).catch(() => []);
+    return json({
+      ok: true,
+      disabled: true,
+      reason: "TOONA_HUB_POLL_DISABLE env",
+      session: publicToonaHubSession(session),
+      logs,
+    });
+  }
+
   const refresh = new URL(req.url).searchParams.get("refresh") === "1";
   if (refresh) {
     try {
@@ -126,6 +143,16 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = resolveWriteUserId(req);
   if (!auth.ok) return writeUserIdErrorResponse(auth);
+
+  if (isToonaHubPollDisabledEnv()) {
+    const session = await readToonaHubSession(auth.userId).catch(() => null);
+    return json({
+      ok: false,
+      disabled: true,
+      reason: "TOONA_HUB_POLL_DISABLE env — B모드 연결/폴링 일시 중단됨. 후원순위 정상화 후 env 제거하고 재시도하세요.",
+      session: publicToonaHubSession(session),
+    }, 503);
+  }
 
   const body = (await req.json().catch(() => ({}))) as {
     email?: string;

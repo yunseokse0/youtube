@@ -336,10 +336,18 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
   if (!session) {
     return { session: null, logs: [] };
   }
+  /** BUG FIX: DB에 / 끝나는 baseUrl 저장된 경우 // 중복 URL → 301/timeout 방지 */
+  const normalizedBaseUrl =
+    normalizeToonaApiBaseUrl(String(session.baseUrl || "").trim()) || session.baseUrl;
+  if (normalizedBaseUrl && normalizedBaseUrl !== session.baseUrl) {
+    session.baseUrl = normalizedBaseUrl;
+    void writeToonaHubSession(session).catch(() => {});
+  }
+  const safeBase = normalizedBaseUrl || session.baseUrl;
 
   try {
     const res = await fetch(
-      `${session.baseUrl}/api/youtubegit/${encodeURIComponent(session.streamKey)}`,
+      `${safeBase}/api/youtubegit/${encodeURIComponent(session.streamKey)}`,
       {
         method: "GET",
         headers: {
@@ -388,21 +396,21 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
       const promoteCooldownMs = 10 * 60_000;
       const lastPromote = session.scenarioBPromoteAt || 0;
       if (scenario !== "B" && Date.now() - lastPromote > promoteCooldownMs) {
-        session.scenarioBPromoteAt = Date.now();
-        try {
-          const patchRes = await fetch(
-            `${session.baseUrl}/api/youtubegit/${encodeURIComponent(session.streamKey)}`,
-            {
-              method: "PATCH",
-              headers: {
-                "Content-Type": "application/json",
-                Accept: "application/json",
-                Authorization: `Bearer ${session.token}`,
-              },
-              body: JSON.stringify({ scenario: "B" }),
-              signal: AbortSignal.timeout(STATUS_FETCH_MS),
-            }
-          );
+          session.scenarioBPromoteAt = Date.now();
+          try {
+            const patchRes = await fetch(
+              `${safeBase}/api/youtubegit/${encodeURIComponent(session.streamKey)}`,
+              {
+                method: "PATCH",
+                headers: {
+                  "Content-Type": "application/json",
+                  Accept: "application/json",
+                  Authorization: `Bearer ${session.token}`,
+                },
+                body: JSON.stringify({ scenario: "B" }),
+                signal: AbortSignal.timeout(STATUS_FETCH_MS),
+              }
+            );
           if (!patchRes.ok) {
             const patchJson = (await patchRes.json().catch(() => ({}))) as { error?: string };
             session.lastStatusError =
@@ -430,7 +438,7 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
           try {
             const ingestSecret = String(process.env.TOONA_INGEST_SECRET || "").trim();
             const repairRes = await fetch(
-              `${session.baseUrl}/api/youtubegit/${encodeURIComponent(session.streamKey)}`,
+              `${safeBase}/api/youtubegit/${encodeURIComponent(session.streamKey)}`,
               {
                 method: "PATCH",
                 headers: {
@@ -476,10 +484,18 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string): Promi
   const session = await readToonaHubSession(youtubeUserId);
   if (!session) return { ok: false, error: "not_linked" };
 
+  /** BUG FIX: DB 오염된 trailing slash → // 중복 URL 301/timeout 방지 */
+  const safeSessionBase =
+    normalizeToonaApiBaseUrl(String(session.baseUrl || "").trim()) || session.baseUrl;
+  if (safeSessionBase && safeSessionBase !== session.baseUrl) {
+    session.baseUrl = safeSessionBase;
+    void writeToonaHubSession(session).catch(() => {});
+  }
+
   let res: Response;
   try {
     res = await fetch(
-      `${session.baseUrl}/api/donations/${encodeURIComponent(session.streamKey)}?page=1&limit=50`,
+      `${safeSessionBase}/api/donations/${encodeURIComponent(session.streamKey)}?page=1&limit=50`,
       {
         headers: {
           Accept: "application/json",
