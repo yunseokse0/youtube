@@ -87,6 +87,28 @@ export function isMysqlOnlyPersistentKvConfigured(): boolean {
   return hasMysqlDatabaseUrl() && !isRedisConfigured();
 }
 
+/** ★★★ UPSTASH / REDIS KILL SWITCH (강제 OFF, 최우선)
+ *   .env 에 아래 중 1줄만 적으면 모든 Upstash/Redis 경로를 즉시 skip → MySQL-only 로 강제 전환 (관리자 페이지 느림/502 즉시 해결)
+ *   DISABLE_UPSTASH=true | DISABLE_KV_REDIS=1 | DISABLE_REDIS=true | REDIS_ENABLED=false | KV_MODE=mysql_only
+ */
+export function isKillSwitchForceMysqlOnly(): boolean {
+  const flags: string[] = [
+    "DISABLE_UPSTASH",
+    "DISABLE_KV_REDIS",
+    "DISABLE_REDIS",
+    "DISABLE_KV_UPSTASH",
+  ];
+  for (const k of flags) {
+    const v = String(process.env[k] || "").trim().toLowerCase();
+    if (v === "true" || v === "1" || v === "on" || v === "yes") return true;
+  }
+  const kvMode = String(process.env.KV_MODE || "").trim().toLowerCase();
+  if (kvMode === "mysql_only" || kvMode === "mysql-only") return true;
+  const redisEnabled = String(process.env.REDIS_ENABLED || "").trim().toLowerCase();
+  if (redisEnabled === "false" || redisEnabled === "0" || redisEnabled === "off" || redisEnabled === "no") return true;
+  return false;
+}
+
 /** Redis 200 + key 없음 → MySQL fallback 금지 (ETIMEDOUT 폭주 원인). 마이그레이션만 1 */
 export function isMysqlKvFallbackOnRedisMissEnabled(): boolean {
   const v = String(process.env.MYSQL_KV_FALLBACK_ON_REDIS_MISS ?? "").trim().toLowerCase();
@@ -176,8 +198,21 @@ async function redisSetJson(key: string, value: unknown, usePipeline: boolean): 
 
 /** Redis 우선, 없으면 MySQL DATABASE_URL (nodejs만)
  *  Upstash Redis 미설정 MySQL ONLY 환경일 땐 Redis GET 단계 전체 SKIP → 150s 블랙홀 timeout 방지
+ *  ★ KILL SWITCH 최우선: DISABLE_UPSTASH=true / KV_MODE=mysql_only 등 → Upstash 시도 조차 안함 (0ms)
  */
 export async function upstashGetJson<T = unknown>(key: string): Promise<T | null> {
+  /** [1순위 KILL SWITCH] 환경변수로 Redis/Upstash 강제 OFF — 네트워크 블랙홀 원천 봉쇄 */
+  if (isKillSwitchForceMysqlOnly() && hasMysqlDatabaseUrl()) {
+    const mysql = await loadMysqlKv();
+    if (mysql) return mysql.mysqlKvGetJson<T>(key);
+    return null;
+  }
+  /** [2순위 MySQL-only 자동 감지] DATABASE_URL=mysql:// 만 있고 Upstash env 없음 → 자동 MySQL direct */
+  if (isMysqlOnlyPersistentKvConfigured()) {
+    const mysql = await loadMysqlKv();
+    if (mysql) return mysql.mysqlKvGetJson<T>(key);
+    return null;
+  }
   if (isRedisConfigured()) {
     const out = await redisGetJsonDetailed<T>(key);
     if (out.kind === "hit") return out.value;
@@ -204,6 +239,11 @@ export async function upstashSetJsonWithSetPath(
   key: string,
   value: unknown
 ): Promise<boolean> {
+  if (isKillSwitchForceMysqlOnly() && hasMysqlDatabaseUrl()) {
+    const mysql = await loadMysqlKv();
+    if (mysql) return mysql.mysqlKvSetJson(key, value);
+    return false;
+  }
   if (isRedisConfigured()) {
     const ok = await redisSetJson(key, value, false);
     if (ok) return true;
@@ -233,6 +273,11 @@ export async function upstashSetJsonWithPipeline(
   key: string,
   value: unknown
 ): Promise<boolean> {
+  if (isKillSwitchForceMysqlOnly() && hasMysqlDatabaseUrl()) {
+    const mysql = await loadMysqlKv();
+    if (mysql) return mysql.mysqlKvSetJson(key, value);
+    return false;
+  }
   if (isRedisConfigured()) {
     const ok = await redisSetJson(key, value, true);
     if (ok) return true;
@@ -244,6 +289,11 @@ export async function upstashSetJsonWithPipeline(
 
 /** Redis SET NX EX / MySQL INSERT NX — true 선점, false 충돌, null 스토어 없음 */
 export async function kvSetNxEx(key: string, ttlSec: number): Promise<boolean | null> {
+  if (isKillSwitchForceMysqlOnly() && hasMysqlDatabaseUrl()) {
+    const mysql = await loadMysqlKv();
+    if (mysql) return mysql.mysqlKvSetNxEx(key, ttlSec);
+    return null;
+  }
   if (isRedisConfigured()) {
     const { base, token } = getRedisEnv();
     const url = `${base.replace(/\/$/, "")}/set/${encodeURIComponent(key)}/${encodeURIComponent("1")}?NX=true&EX=${ttlSec}`;
@@ -262,6 +312,11 @@ export async function kvSetNxEx(key: string, ttlSec: number): Promise<boolean | 
 }
 
 export async function kvDel(key: string): Promise<void> {
+  if (isKillSwitchForceMysqlOnly() && hasMysqlDatabaseUrl()) {
+    const mysql = await loadMysqlKv();
+    if (mysql) await mysql.mysqlKvDel(key);
+    return;
+  }
   if (isRedisConfigured()) {
     const { base, token } = getRedisEnv();
     const url = `${base.replace(/\/$/, "")}/del/${encodeURIComponent(key)}`;
