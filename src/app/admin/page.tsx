@@ -9365,7 +9365,7 @@ function AdminPageInner() {
    */
   const normalizedDonors = useMemo(
     () => normalizeDonorsArray(state.donors),
-    [state.donors]
+    [state.donors, state.updatedAt]
   );
   const donorTotalsByName = useMemo(
     () =>
@@ -9374,7 +9374,7 @@ function AdminPageInner() {
         : buildDonorTotalsByNameFromDonors(
             normalizedDonors as Array<Record<string, unknown>>
           ),
-    [normalizedDonors, syncStatus]
+    [normalizedDonors, syncStatus, state.updatedAt, state.donors.length]
   );
 
   /** 후원 순위 미리보기 iframe — 누적 표와 동일 donors 스냅샷 */
@@ -15963,24 +15963,24 @@ function AdminPageInner() {
                   donorListLastScrollTopRef.current = (e.target as HTMLDivElement).scrollTop;
                   donorListLastScrollHeightRef.current = (e.target as HTMLDivElement).scrollHeight;
                 }}
-                style={{ maxHeight: "75vh" }}
+                style={{ minHeight: "75vh", maxHeight: "75vh", contain: "layout style" }}
                 className="overflow-auto pr-1 border border-white/10 rounded"
               >
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-neutral-400">
-                      <th className="text-left font-medium p-1 w-12">선택</th>
-                      <th className="text-left font-medium p-1">시간</th>
-                      <th className="text-left font-medium p-1">후원자</th>
-                      <th className="text-left font-medium p-1">멤버</th>
-                      <th className="text-left font-medium p-1">대상</th>
+                <table className="w-full text-sm" style={{ tableLayout: "fixed", borderCollapse: "separate" }}>
+                  <thead className="sticky top-0 z-10 bg-neutral-950/95 backdrop-blur-sm shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
+                    <tr className="text-neutral-400" style={{ lineHeight: "1.25rem", height: "2rem" }}>
+                      <th className="text-left font-medium p-1 w-10 shrink-0">선택</th>
+                      <th className="text-left font-medium p-1 w-20 shrink-0">시간</th>
+                      <th className="text-left font-medium p-1 w-[8rem] shrink-0">후원자</th>
+                      <th className="text-left font-medium p-1 w-[5.5rem] shrink-0">멤버</th>
+                      <th className="text-left font-medium p-1 w-[4rem] shrink-0">대상</th>
                       <th className="text-left font-medium p-1 min-w-[120px]">메시지</th>
-                      <th className="text-right font-medium p-1">금액</th>
-                      <th className="text-right font-medium p-1 w-28">나누기</th>
-                      <th className="text-right font-medium p-1 w-16">삭제</th>
+                      <th className="text-right font-medium p-1 w-[6rem] shrink-0">금액</th>
+                      <th className="text-right font-medium p-1 w-28 shrink-0">나누기</th>
+                      <th className="text-right font-medium p-1 w-16 shrink-0">삭제</th>
                     </tr>
-                    <tr className="text-neutral-400 border-b border-white/5">
-                      <th className="text-left font-medium p-1 w-12">
+                    <tr className="text-neutral-400 border-b border-white/5" style={{ lineHeight: "1.25rem", height: "2rem" }}>
+                      <th className="text-left font-medium p-1 w-10 shrink-0">
                         <DonorCheckboxCell
                           isAll
                           selected={donorListRowsVisible.length > 0 && donorListRowsVisible.every((d) => selectedDonorIds.has(String(d.id)))}
@@ -16002,16 +16002,16 @@ function AdminPageInner() {
                           ? previewGroupSplitDonation(state, d.amount, state.groupSplitDonationSettings)
                           : null;
                         return (
-                          <tr key={`${d.id}-${d.at}-${rowIdx}`} className={`border-t border-white/10 ${isExcluded ? "line-through decoration-rose-400/70 decoration-2 text-neutral-500 bg-rose-950/15 opacity-70" : isSplitPart ? "bg-violet-950/15" : isSplitSource ? "bg-violet-950/10" : ""}`}>
-                            <td className="p-1 w-12">
+                          <tr key={`${d.id}-${d.at}-${rowIdx}`} style={{ lineHeight: "1.25rem", minHeight: "2.25rem" }} className={`border-t border-white/10 ${isExcluded ? "line-through decoration-rose-400/70 decoration-2 text-neutral-500 bg-rose-950/15 opacity-70" : isSplitPart ? "bg-violet-950/15" : isSplitSource ? "bg-violet-950/10" : ""}`}>
+                            <td className="p-1 w-12 align-top">
                               <DonorCheckboxCell
                                 donorId={String(d.id)}
                                 selected={selectedDonorIds.has(String(d.id))}
                                 onToggle={toggleDonorSelect}
                               />
                             </td>
-                            <td className="p-1 text-neutral-400"><ClientTime ts={d.at} /></td>
-                            <td className="p-1">
+                            <td className="p-1 text-neutral-400 align-top"><ClientTime ts={d.at} /></td>
+                            <td className="p-1 align-top">
                               <div className="flex flex-wrap items-center gap-1">
                                 <input
                                   type="text"
@@ -16109,7 +16109,7 @@ function AdminPageInner() {
                                 ) : null}
                               </div>
                             </td>
-                            <td className="p-1 text-neutral-300">
+                            <td className="p-1 text-neutral-300 align-top">
                               <select
                                 className="max-w-[9rem] rounded border border-white/10 bg-neutral-900/80 px-1 py-0.5 text-xs text-neutral-100"
                                 value={d.memberId || ""}
@@ -16147,8 +16147,8 @@ function AdminPageInner() {
                                 ))}
                               </select>
                             </td>
-                            <td className="p-1">{resolveEffectiveDonorTarget(d) === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>
-                            <td className="p-1 text-neutral-400 max-w-[220px]">
+                            <td className="p-1 align-top">{resolveEffectiveDonorTarget(d) === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>
+                            <td className="p-1 text-neutral-400 max-w-[220px] align-top">
                               <input
                                 type="text"
                                 id={`donor-msg-${String(d.id)}`}
@@ -16211,12 +16211,12 @@ function AdminPageInner() {
                                 }}
                               />
                             </td>
-                            <td className="p-1 text-right whitespace-nowrap" title={`저장값 ${d.amount.toLocaleString("ko-KR")}원${isSplitSource ? " (합산 제외)" : ""}`}>
+                            <td className="p-1 text-right whitespace-nowrap align-top" title={`저장값 ${d.amount.toLocaleString("ko-KR")}원${isSplitSource ? " (합산 제외)" : ""}`}>
                               <span className={isSplitSource ? "text-neutral-500 line-through decoration-neutral-600" : ""}>
                                 {formatDonorAmountDisplay(d.amount)}
                               </span>
                             </td>
-                            <td className="p-1 text-right">
+                            <td className="p-1 text-right align-top">
                               {isSplitPart ? (
                                 <span className="text-[10px] text-violet-300/90 whitespace-nowrap">↳ 스플릿</span>
                               ) : isSplitSource ? (
@@ -16246,7 +16246,7 @@ function AdminPageInner() {
                                 <span className="text-neutral-600">—</span>
                               )}
                             </td>
-                            <td className="p-1 text-right">
+                            <td className="p-1 text-right align-top">
                               {isSplitSource ? (
                                 <span className="text-[10px] text-neutral-500">삭제 불가</span>
                               ) : isExcluded ? (

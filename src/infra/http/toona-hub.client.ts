@@ -3,13 +3,11 @@ import { getToonaApiBaseUrl, getYoutubePublicBaseUrl, normalizePublicBaseUrl } f
 import { normalizeContributionFormula } from "@/lib/contribution-formula";
 import { persistContributionFormulaForUser } from "@/lib/contribution-formula-persist";
 import {
-  appendToonaHubDonationLogs,
   clearToonaHubDonationLogs,
   publicToonaHubSession,
   readToonaHubDonationLogs,
   readToonaHubSession,
   writeToonaHubSession,
-  type ToonaHubDonationLog,
   type ToonaHubSession,
 } from "@/lib/toona-hub-session";
 import type { ContributionFormula, SigItem } from "@/types";
@@ -534,30 +532,20 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
   /**
    * 시나리오 B: toona 후원 ↔ youtube 엑셀 1:1.
    * 실시간 ingest 누락분을 pull 로 보정. 이미 반영된 건은 apply 경로에서 중복 스킵.
+   * 🔴 FIX: 기존 handleDinDonationIngest 내부 로그 1행 + batch.push 1행 → 총 2행 중복 저장되던 버그.
+   *         logSource="toona" + skipBatchLog 단일화하여 1건당 1행만 저장.
    */
-  const batch: ToonaHubDonationLog[] = [];
+  let imported = 0;
   let applied = 0;
   for (const row of json.donations || []) {
     const event = toonaHubDonationToEvent(row, session.linkedAt);
     if (!event) continue;
-    const result = await handleDinDonationIngest(youtubeUserId, event, true);
+    const result = await handleDinDonationIngest(youtubeUserId, event, true, { logSource: "toona" });
     if (result.applied) applied += 1;
-    batch.push({
-      id: `toona:${event.externalId}`,
-      at: event.at ? new Date(event.at).getTime() : Date.now(),
-      donorName: event.donorName,
-      amount: event.amount,
-      playerName: event.playerName,
-      target: event.target,
-      mode: result.mode,
-      applied: result.applied,
-      source: "toona",
-      message: event.message?.slice(0, 120),
-    });
+    imported += 1;
   }
 
-  await appendToonaHubDonationLogs(youtubeUserId, batch);
-  return { ok: true, imported: batch.length, applied };
+  return { ok: true, imported, applied };
 }
 
 /**

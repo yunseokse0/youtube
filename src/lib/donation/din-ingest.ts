@@ -122,14 +122,18 @@ export type DinIngestResult =
 async function logHubIngestIfLinked(
   userId: string,
   event: DonationEvent,
-  result: DinIngestResult
+  result: DinIngestResult,
+  opts?: { forceSource?: "ingest" | "toona"; idPrefix?: "ingest" | "toona" }
 ): Promise<void> {
   const session = await readToonaHubSession(userId);
   if (!session) return;
   const at = event.at ? new Date(event.at).getTime() : Date.now();
   if (Number.isFinite(at) && at < session.linkedAt - 5_000) return;
+  const source: "ingest" | "toona" = opts?.forceSource || "ingest";
+  const prefix = opts?.idPrefix || source;
+  const idBase = source === "toona" && event.externalId ? event.externalId : event.id;
   await appendToonaHubDonationLog(userId, {
-    id: `ingest:${event.id}`,
+    id: `${prefix}:${idBase}`,
     at: Number.isFinite(at) ? at : Date.now(),
     donorName: event.donorName,
     amount: event.amount,
@@ -137,7 +141,7 @@ async function logHubIngestIfLinked(
     target: event.target,
     mode: result.mode,
     applied: result.applied,
-    source: "ingest",
+    source,
     message: event.message?.slice(0, 120),
   });
 }
@@ -146,7 +150,8 @@ async function logHubIngestIfLinked(
 export async function handleDinDonationIngest(
   userId: string,
   event: DonationEvent,
-  applyExcel: boolean
+  applyExcel: boolean,
+  opts?: { logSource?: "ingest" | "toona"; skipHubLog?: boolean }
 ): Promise<DinIngestResult> {
   let result: DinIngestResult;
   if (!applyExcel) {
@@ -163,6 +168,8 @@ export async function handleDinDonationIngest(
     }
   }
 
-  await logHubIngestIfLinked(userId, event, result).catch(() => {});
+  if (!opts?.skipHubLog) {
+    await logHubIngestIfLinked(userId, event, result, { forceSource: opts?.logSource }).catch(() => {});
+  }
   return result;
 }
