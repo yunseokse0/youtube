@@ -462,6 +462,14 @@ export function shouldBlockHighSocietyRegression(
   patch: HighSocietySettings | null | undefined
 ): boolean {
   if (!isMeaningfulHighSocietySettings(base)) return false;
+  const raw = patch && typeof patch === "object" ? (patch as Record<string, unknown>) : null;
+  if (
+    raw &&
+    ("startCmPerMember" in raw || "fieldCm" in raw) &&
+    ("memberWidthCm" in raw || "memberWidthDonationSnapshot" in raw || "memberTerritoryExpand" in raw)
+  ) {
+    return false;
+  }
   return isDefaultLikeHighSocietySettings(patch);
 }
 
