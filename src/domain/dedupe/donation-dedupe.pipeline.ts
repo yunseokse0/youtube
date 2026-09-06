@@ -292,21 +292,21 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
 
   type MergeableDonorEx = MergeableDonor & { donationExcluded?: boolean };
   /**
-   * ✅ 2026-09-06 Hotfix Helper: 서로 다른 strong id를 가진 donor row는 content 유사도와 무관하게 별개 후원으로 간주.
-   * dedupeDonorRows / isDuplicateDonationEvent 양쪽 경로 오탐 방지.
-   * return true = 중복으로 간주하고 skip/merge 허용, false = id가 다르면 별개 row 유지 */
-  function allowMergeByContent(prev: MergeableDonor, incoming: MergeableDonor): boolean {
+   * ✅ 2026-09-07 Hotfix ⑥-6 최종: "있는 그대로의 데이터를 보여주는게 맞아" 사용자 요청 반영.
+   *  기존: allowMergeByContent + shouldTreatAsDuplicateDonationContent (15초 identical 메시지 · 3초 near-content window 등)
+   *       로 "우리가 알아서 중복이다 판단하면" 메시지·시간 같으면 1건으로 합쳐서 갯수를 줄였음 → 사용자 불만 직접 원인.
+   *  최종 RULE: 오직 donor ID 정규화 값이 100% 완전히 동일할때만 merge 허용.
+   *     - ID가 1글자라도 다르면 → 절대 merge 하지 않음 · 무조건 별개 row 로 "있는 그대로" 보존.
+   *     - weak id (fp-) / strong id (din:) / 내용 완전 일치 / 시간 1초 차이 — 전부 상관없이 ID 다르면 개별 row 유지.
+   *     - 중복 반영은 상류의 primary key SETNX + inflight lock + donorRowDedupeKey pass1 이 100% 막아줌.
+   */
+  function allowMergeByIdOnly(prev: MergeableDonor, incoming: MergeableDonor): boolean {
     const idA = String(prev.id || "").trim();
     const idB = String(incoming.id || "").trim();
-    const strongA = Boolean(idA) && !isWeakToonationDonorId(idA);
-    const strongB = Boolean(idB) && !isWeakToonationDonorId(idB);
-    if (strongA && strongB) {
-      if (idA === idB || normalizeDonationEventId(idA) === normalizeDonationEventId(idB)) {
-        return true;
-      }
-      return false;
-    }
-    return true;
+    if (!idA || !idB) return false; // 둘중 한쪽이라도 ID 누락 → 절대 merge 하지 않고 개별 유지
+    const normA = normalizeDonationEventId(idA) || idA;
+    const normB = normalizeDonationEventId(idB) || idB;
+    return normA === normB;
   }
 
   const MAX_BUCKET_SCAN = 200;
@@ -314,17 +314,7 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
     const merged: T[] = [];
     for (const d of pass1) {
       const dupIdx = merged.findIndex((prev) =>
-        allowMergeByContent(prev, d as MergeableDonorEx) &&
-        shouldTreatAsDuplicateDonationContent(prev, {
-          ...d,
-          donorName: d.name,
-          externalId: d.externalId,
-          rawHash: d.rawHash,
-          groupSplit: d.groupSplit,
-          groupSplitSource: d.groupSplitSource,
-          memberId: d.memberId,
-          donationExcluded: d.donationExcluded,
-        })
+        allowMergeByIdOnly(prev, d as MergeableDonor)
       );
       if (dupIdx < 0) {
         merged.push(d);
@@ -369,44 +359,14 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
 
   const merged: T[] = [];
   for (const d of pass1) {
-    const name = normalizeDonorNameKey(d.name);
-    const amt = Math.max(0, Math.round(Number(d.amount) || 0));
-    const key = `${name ?? ""}\u0001${amt}`;
-    const pool = bucket.get(key);
     let dupIdx = -1;
-    if (pool && pool.length <= MAX_BUCKET_SCAN) {
-      for (let i = 0; i < merged.length; i += 1) {
-        const prev = merged[i]!;
-        const pName = normalizeDonorNameKey(prev.name);
-        const pAmt = Math.max(0, Math.round(Number(prev.amount) || 0));
-        if (pName !== name || pAmt !== amt) continue;
-        if (
-          allowMergeByContent(prev, d as MergeableDonorEx) &&
-          shouldTreatAsDuplicateDonationContent(prev, {
-            id: d.id,
-            donorName: d.name,
-            amount: d.amount,
-            target: d.target,
-            message: d.message,
-            at: d.at,
-          })
-        ) {
-          dupIdx = i;
-          break;
-        }
+    // ✅ 2026-09-07 Hotfix ⑥-6: bucket 스캔에서도 오직 ID 100% 일치만 merge 허용
+    for (let i = 0; i < merged.length; i += 1) {
+      const prev = merged[i]!;
+      if (allowMergeByIdOnly(prev, d as MergeableDonor)) {
+        dupIdx = i;
+        break;
       }
-    } else {
-      dupIdx = merged.findIndex((prev) =>
-        allowMergeByContent(prev, d as MergeableDonorEx) &&
-        shouldTreatAsDuplicateDonationContent(prev, {
-          id: d.id,
-          donorName: d.name,
-          amount: d.amount,
-          target: d.target,
-          message: d.message,
-          at: d.at,
-        })
-      );
     }
     if (dupIdx < 0) {
       merged.push(d);
@@ -571,25 +531,17 @@ export function isDuplicateDonationEvent(
      * 서로 다른 id는 DIN 허브/투네이션에서 엄연히 발급된 별개 후원 ID 이므로,
      * 과거 near-content dedup의 보험 로직(content 유사도 기반 병합)이 정상 후원을 지우는 오탐을 방지.
      * fallback 레거시 donor (id가 없는 행)에 대해서만 기존 content dedup 보험 로직을 그대로 유지. */
-    const incomingHasStrongId = Boolean(eventId) && !isWeakToonationDonorId(eventId);
-    const existingHasStrongId = !isWeakToonationDonorId(donorId);
-    /** ✅ 2026-09-07 Hotfix ⑤+⑥ Bypass: 한쪽이라도 strong id 이면 서로 ID가 다를때 무조건 별개 후원.
-     *  과거 구버전 state weak id(fp-) donor vs 신규 strong id(din:) 이벤트가 섞인 경우에도
-     *  shouldTreatAsDuplicateDonationContent (15초 메시지 윈도우) 로 fallthrough 하지 않고
-     *  정상 개별 row 로 유지. (양쪽 모두 weak id 일때만 기존 dedup 보험 로직 유지) */
+    /** ✅ 2026-09-07 Hotfix ⑥-6 최종: 있는 그대로 ID ONLY 중복 체크.
+     *  기존: isOwnerRemapSplitDuplicate (시간·메시지·금액·이름 유사도 기반 near-dup 검사) +
+     *        shouldTreatAsDuplicateDonationContent (15초 identical 메시지 윈도우) 등으로
+     *        우리가 알아서 "비슷해 보이면 중복" 이라고 판단해서 row 를 날리는 로직 존재 →
+     *        사용자 요청 "있는 그대로의 데이터 보여줘야지" 와 상반되어 전부 제거.
+     *  최종 RULE: ID 100% 일치 (아래 5가지 ID 매칭 중 1개라도 true) → 중복 return true
+     *             ID가 한글자라도 다르면 → 무조건 false (별개 후원으로 있는 그대로 처리)
+     *             시간·메시지·금액·이름이 100% 같아도 ID 다르면 중복 아님! */
     const donorIdNorm = normalizeDonationEventId(donorId);
     const eventIdNorm = normalizeDonationEventId(eventId);
     if (donorIdNorm && eventIdNorm && donorIdNorm === eventIdNorm) return true;
-    if ((incomingHasStrongId || existingHasStrongId) && donorIdNorm !== eventIdNorm) return false;
-    if (
-      shouldTreatAsDuplicateDonationContent(d, {
-        ...probeDonor,
-        id: eventId || externalDonorId,
-        externalId,
-      })
-    ) {
-      return true;
-    }
     if (donorRowDedupeKey(d) === probeKey) return true;
     if (donorId === eventId || donorId === baseId) return true;
     if (baseId && normalizeDonationEventId(donorId) === baseId) return true;
@@ -611,7 +563,7 @@ export function isDuplicateDonationEvent(
         return true;
       }
     }
-    if (isOwnerRemapSplitDuplicate(d, rawEvent)) return true;
+    // ✅ ⑥-6: 위 5가지 ID 매칭에 전부 해당 안되면 → ID가 다르다는 뜻 = 절대 중복 아님. (메시지·시간·금액 같아도!)
     return false;
   });
 }
