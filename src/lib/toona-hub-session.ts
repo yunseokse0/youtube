@@ -97,8 +97,9 @@ export async function appendToonaHubDonationLog(
 /** 후원 로그 일괄 추가 — hub poll 시 건당 KV RMW 폭주 방지
  *  같은 id 재입력시 기존 applied=false → 신규 applied=true 만 업그레이드 (절대 true→false 다운그레이드 금지)
  *  → 최초 false로 stuck되어 영구 "대기열" 표시되는 버그 방지
- *  🔴 FIX v2: (donorName+amount+at±3초) near-content dedup으로 source ingest/toona 이중 저장 및
- *           playerName有/無 variation을 1행으로 병합. playerName/message/mode는 richer한 쪽을 유지. */
+ *  🔴 FIX v3: 서로 다른 id의 5건 후원이 3초내에 들어와도 1건으로 병합되는 버그 해소.
+ *             id가 다르면 진짜 별개 후원으로 간주 → 무조건 byId에 개별 추가.
+ *             byNearContent bucket은 byId 내 같은 (name+amount+target) 그룹 중 richer 필드를 병합할 때만 참조. */
 const NEAR_CONTENT_AT_WINDOW_MS = 3_000;
 
 export async function appendToonaHubDonationLogs(
@@ -119,20 +120,23 @@ export async function appendToonaHubDonationLogs(
     const target = entry.target === "account" ? "account" : "toon";
     return `${name}|${amt}|${target}|${bucket}`;
   }
-  const byNearContent = new Map<string, ToonaHubDonationLog>();
-  for (const row of byId.values()) {
-    const k = nearContentKey(row);
-    const cur = byNearContent.get(k);
-    if (!cur) {
-      byNearContent.set(k, row);
-      continue;
+  function rebuildNearContent(): Map<string, ToonaHubDonationLog> {
+    const byNearContent = new Map<string, ToonaHubDonationLog>();
+    for (const row of byId.values()) {
+      const k = nearContentKey(row);
+      const cur = byNearContent.get(k);
+      if (!cur) {
+        byNearContent.set(k, row);
+        continue;
+      }
+      const rowRicher =
+        (row.playerName && !cur.playerName) ||
+        (row.message && !cur.message) ||
+        (row.applied && !cur.applied) ||
+        (row.mode && !cur.mode);
+      if (rowRicher) byNearContent.set(k, row);
     }
-    const rowRicher =
-      (row.playerName && !cur.playerName) ||
-      (row.message && !cur.message) ||
-      (row.applied && !cur.applied) ||
-      (row.mode && !cur.mode);
-    if (rowRicher) byNearContent.set(k, row);
+    return byNearContent;
   }
 
   const freshIds = new Set<string>();
@@ -167,54 +171,44 @@ export async function appendToonaHubDonationLogs(
         next.amount = entry.amount;
         changed = true;
       }
-      if (changed) {
-        byId.set(entry.id, next);
-        const ncKey = nearContentKey(next);
-        const ncCur = byNearContent.get(ncKey);
-        if (!ncCur || next.id === ncCur.id) byNearContent.set(ncKey, next);
-      }
-      continue;
-    }
-
-    const ncKey = nearContentKey(entry);
-    const nearMatch = byNearContent.get(ncKey);
-    if (nearMatch) {
-      let changed = false;
-      const next: ToonaHubDonationLog = { ...nearMatch };
-      if (!nearMatch.applied && entry.applied) {
-        next.applied = true;
-        changed = true;
-        mergeAppliedUpgrade += 1;
-      }
-      if (entry.mode && nearMatch.mode !== entry.mode) {
-        next.mode = entry.mode;
-        changed = true;
-      }
-      if (entry.playerName && !nearMatch.playerName) {
-        next.playerName = entry.playerName;
-        changed = true;
-      }
-      if (entry.message && !nearMatch.message) {
-        next.message = entry.message;
-        changed = true;
-      }
-      if (entry.amount && !nearMatch.amount) {
-        next.amount = entry.amount;
-        changed = true;
-      }
-      if (changed) {
-        byId.set(nearMatch.id, next);
-        byNearContent.set(ncKey, next);
-        nearMergedCount += 1;
-      } else {
-        nearMergedCount += 1;
-      }
+      if (changed) byId.set(entry.id, next);
       continue;
     }
 
     byId.set(entry.id, entry);
-    byNearContent.set(ncKey, entry);
     newAddCount += 1;
+  }
+
+  const byNearContent = rebuildNearContent();
+  for (const [k, richer] of byNearContent) {
+    let mergedAny = false;
+    for (const [rowId, row] of byId) {
+      if (rowId === richer.id) continue;
+      if (nearContentKey(row) !== k) continue;
+      let changed = false;
+      const next: ToonaHubDonationLog = { ...row };
+      if (richer.playerName && !row.playerName) {
+        next.playerName = richer.playerName;
+        changed = true;
+      }
+      if (richer.message && !row.message) {
+        next.message = richer.message;
+        changed = true;
+      }
+      if (richer.mode && !row.mode) {
+        next.mode = richer.mode;
+        changed = true;
+      }
+      if (richer.applied && !row.applied) {
+        next.applied = true;
+        changed = true;
+      }
+      if (changed) {
+        byId.set(rowId, next);
+        mergedAny = true;
+      }
+    }
+    if (mergedAny) nearMergedCount += 1;
   }
   const updatedRows = Array.from(byId.values()).sort((a, b) => b.at - a.at).slice(0, MAX_LOGS);
   if (newAddCount === 0 && mergeAppliedUpgrade === 0 && nearMergedCount === 0) return 0;

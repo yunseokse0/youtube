@@ -27,24 +27,41 @@ export function toonaHubDonationToEvent(
   if (atMs < linkedAt - 5_000) return null;
   const externalId = String(row.id || "").trim();
   if (!externalId) return null;
-  const donorName =
-    String(row.displayNickname || row.nickname || "무명").replace(/\s+/g, "") || "무명";
+  const rawDisplayName = String(row.displayNickname || row.nickname || "무명");
+  const donorName = rawDisplayName.replace(/\s+/g, "") || "무명";
   const amount = Math.max(0, Math.round(Number(row.amount) || 0));
   if (amount <= 0) return null;
   const channel = String(row.channel || "").trim();
   const source = String(row.source || "").trim().toLowerCase();
   const chLower = channel.toLowerCase();
+  const nickLower = rawDisplayName.toLowerCase();
+  const playerLower = String(row.playerName || "").toLowerCase();
+  const isVoiceDonation =
+    nickLower.includes("boomsakalaka") ||
+    nickLower.includes("boom shakalaka") ||
+    nickLower.includes("붐사카라카") ||
+    nickLower.includes("붐 사카라카") ||
+    nickLower.includes("보이스") ||
+    playerLower.includes("boomsakalaka") ||
+    playerLower.includes("boom shakalaka") ||
+    playerLower.includes("붐사카라카") ||
+    playerLower.includes("붐 사카라카") ||
+    playerLower.includes("보이스");
   const isToonationChannel =
+    isVoiceDonation ||
     chLower === "toonation" ||
     chLower === "toon" ||
     channel === "투네이션" ||
-    channel.includes("투네");
+    channel.includes("투네") ||
+    source.includes("toonation") ||
+    source.includes("toon") ||
+    source.includes("투네");
   const isAccountChannel =
     chLower === "account" ||
     chLower === "bank" ||
     channel === "계좌" ||
     channel.includes("계좌") ||
-    ["sms", "push", "webhook"].includes(source);
+    (source === "sms" || source === "push");
   const isAccount = !isToonationChannel && isAccountChannel;
   const provider = isAccount ? "bank" : "toonation";
   const contributionPointsRaw = Math.round(Number(row.contributionPoints));
