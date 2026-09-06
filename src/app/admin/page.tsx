@@ -323,6 +323,7 @@ import {
   revertDonationFromAppState,
   reassignDonorMemberInAppState,
   updateDonorMessageInAppState,
+  updateDonorNameInAppState,
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
 import {
@@ -761,10 +762,13 @@ function AdminPageInner() {
   const [donorEditLock, setDonorEditLock] = useState(false);
   const donorEditLockRef = useRef(false);
   useEffect(() => { donorEditLockRef.current = donorEditLock; }, [donorEditLock]);
-  /** ✅ UI 흔들림 방지 #2: 메시지 입력 draft Map + focus donorId · state 갱신시 DOM 재생성 NO */
+  /** ✅ UI 흔들림 방지 #2: 메시지/후원자명 입력 draft Map + focus donorId · state 갱신시 DOM 재생성 NO */
   const [draftMessages, setDraftMessages] = useState<Record<string, string>>({});
   const draftMessagesRef = useRef<Record<string, string>>({});
   useEffect(() => { draftMessagesRef.current = draftMessages; }, [draftMessages]);
+  const [draftDonorNames, setDraftDonorNames] = useState<Record<string, string>>({});
+  const draftDonorNamesRef = useRef<Record<string, string>>({});
+  useEffect(() => { draftDonorNamesRef.current = draftDonorNames; }, [draftDonorNames]);
   const focusDonorIdRef = useRef<string | null>(null);
   /** ✅ UI 흔들림 방지 #3: 후원 리스트 스크롤 자동 보존 (상단에 후원 추가시 scrollTop delta 유지) */
   const donorListScrollRef = useRef<HTMLDivElement | null>(null);
@@ -3029,19 +3033,35 @@ function AdminPageInner() {
    *  applyRemoteState / markAuthoritativeDonationSave / commitAuthoritativeDonorPersist 서버응답 처리부 3곳에서 호출되어
    *  어떤 donor[] 교체 경로도 사용자가 집계 제외한 기록은 절대 되살아나지 않도록 함.
    */
-  const reapplyExcludedDonorFlagsFromPrev = (prevDonors: Donor[] | undefined | null, nextDonors: Donor[] | undefined | null): Donor[] => {
+  const reapplyUserEditedDonorFieldsFromPrev = (prevDonors: Donor[] | undefined | null, nextDonors: Donor[] | undefined | null): Donor[] => {
     const normPrev = Array.isArray(prevDonors) ? prevDonors : [];
     const normNext = Array.isArray(nextDonors) ? nextDonors : [];
-    const excludedIds = new Set<string>();
+    if (normPrev.length === 0) return normNext;
+    const prevById = new Map<string, Donor>();
     for (const d of normPrev) {
-      if (d && isDonorExcludedFromDonationTotals(d as any)) {
-        excludedIds.add(String(d.id));
-      }
+      if (d?.id != null) prevById.set(String(d.id), d);
     }
-    if (excludedIds.size === 0) return normNext;
+    if (prevById.size === 0) return normNext;
     return normNext.map((d) => {
-      if (!d || !excludedIds.has(String(d.id)) || isDonorExcludedFromDonationTotals(d as any)) return d;
-      return { ...(d as Donor), donationExcluded: true };
+      if (!d || d.id == null) return d as Donor;
+      const prev = prevById.get(String(d.id));
+      if (!prev) return d as Donor;
+      const nextD = d as Donor;
+      const patch: Partial<Donor> = {};
+      let dirty = false;
+      const prevExcluded = isDonorExcludedFromDonationTotals(prev as any);
+      const nextExcluded = isDonorExcludedFromDonationTotals(nextD as any);
+      if (prevExcluded && !nextExcluded) {
+        patch.donationExcluded = true;
+        dirty = true;
+      }
+      const prevName = String(prev.name || "").trim() || "무명";
+      const nextName = String(nextD.name || "").trim() || "무명";
+      if (prevName !== nextName && prevName !== "무명") {
+        patch.name = prev.name;
+        dirty = true;
+      }
+      return dirty ? { ...nextD, ...patch } : nextD;
     });
   };
 
@@ -3177,7 +3197,7 @@ function AdminPageInner() {
           const prevLogsSnapshot = stateRef.current.contributionLogs;
           next = {
             ...next,
-            donors: reapplyExcludedDonorFlagsFromPrev(prevDonorsSnapshot, next.donors),
+            donors: reapplyUserEditedDonorFieldsFromPrev(prevDonorsSnapshot, next.donors),
             contributionLogs: mergeContributionLogsPreferLocal(prevLogsSnapshot, next.contributionLogs),
           };
         }
@@ -3228,7 +3248,7 @@ function AdminPageInner() {
             const prevLogsSnapshot = stateRef.current.contributionLogs;
             next = {
               ...next,
-              donors: reapplyExcludedDonorFlagsFromPrev(prevDonorsSnapshot, next.donors),
+              donors: reapplyUserEditedDonorFieldsFromPrev(prevDonorsSnapshot, next.donors),
               contributionLogs: mergeContributionLogsPreferLocal(prevLogsSnapshot, next.contributionLogs),
             };
           }
@@ -3581,7 +3601,7 @@ function AdminPageInner() {
         const prevLogsSnapshot = stateRef.current.contributionLogs;
         toApply = {
           ...toApply,
-          donors: reapplyExcludedDonorFlagsFromPrev(prevDonorsSnapshot, toApply.donors),
+          donors: reapplyUserEditedDonorFieldsFromPrev(prevDonorsSnapshot, toApply.donors),
           contributionLogs: mergeContributionLogsPreferLocal(prevLogsSnapshot, toApply.contributionLogs),
         };
       }
@@ -7908,7 +7928,7 @@ function AdminPageInner() {
     }
     /** ✅ 1중 방어: merge/replace 어느쪽이든 preserved.donors 에 이전 상태의 제외 플래그를 무조건 재적용 */
     if (Array.isArray(preserved.donors) || Array.isArray(stateRef.current.donors)) {
-      const mergedDonors = reapplyExcludedDonorFlagsFromPrev(stateRef.current.donors, preserved.donors);
+      const mergedDonors = reapplyUserEditedDonorFieldsFromPrev(stateRef.current.donors, preserved.donors);
       preserved = { ...preserved, donors: mergedDonors };
     }
     /** ✅ contributionLogs 도 preserve: 유저가 로컬에서 삭제한 로그가 markAuthoritativeSave 를 통해서도 복구되지 않도록 */
@@ -7978,7 +7998,7 @@ function AdminPageInner() {
       if (!shouldUseClientPreserved) {
         baseState = {
           ...baseState,
-          donors: reapplyExcludedDonorFlagsFromPrev(preserved.donors, baseState.donors),
+          donors: reapplyUserEditedDonorFieldsFromPrev(preserved.donors, baseState.donors),
           contributionLogs: mergeContributionLogsPreferLocal(preserved.contributionLogs, baseState.contributionLogs),
         };
       }
@@ -15986,21 +16006,102 @@ function AdminPageInner() {
                             </td>
                             <td className="p-1 text-neutral-400"><ClientTime ts={d.at} /></td>
                             <td className="p-1">
-                              {d.name}
-                              {isSplitPart ? (
-                                <span className="ml-1 rounded bg-violet-800/60 px-1 py-0.5 text-[10px] text-violet-200">
-                                  스플릿
-                                </span>
-                              ) : isSplitSource ? (
-                                <>
-                                  <span className="ml-1 rounded bg-violet-800/60 px-1 py-0.5 text-[10px] text-violet-200">
-                                    스플릿됨
+                              <div className="flex flex-wrap items-center gap-1">
+                                <input
+                                  type="text"
+                                  id={`donor-name-${String(d.id)}`}
+                                  className="w-full max-w-[10rem] rounded border border-white/10 bg-neutral-950/80 px-1.5 py-0.5 text-xs text-neutral-100 placeholder:text-neutral-600 focus:outline-none focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400/40 disabled:text-neutral-500"
+                                  disabled={isSplitPart || isSplitSource}
+                                  value={
+                                    typeof draftDonorNames[String(d.id)] === "string"
+                                      ? draftDonorNames[String(d.id)]
+                                      : (d.name || "")
+                                  }
+                                  placeholder="후원자명"
+                                  title="후원자명 수정 — 클릭 후 입력하고 포커스를 벗어나면 저장 · 입력 중에는 자동 갱신을 1.5초간 억제합니다"
+                                  onFocus={() => {
+                                    const idStr = String(d.id);
+                                    focusDonorIdRef.current = idStr;
+                                    donorSuppressAutoUntilRef.current = Date.now() + 1500;
+                                    if (!(idStr in draftDonorNamesRef.current)) {
+                                      setDraftDonorNames((prev) => ({ ...prev, [idStr]: d.name || "" }));
+                                    }
+                                  }}
+                                  onInput={(e) => {
+                                    const idStr = String(d.id);
+                                    donorSuppressAutoUntilRef.current = Date.now() + 1500;
+                                    const v = (e.target as HTMLInputElement).value;
+                                    setDraftDonorNames((prev) => {
+                                      if (prev[idStr] === v) return prev;
+                                      return { ...prev, [idStr]: v };
+                                    });
+                                  }}
+                                  onBlur={(e) => {
+                                    const idStr = String(d.id);
+                                    if (focusDonorIdRef.current === idStr) focusDonorIdRef.current = null;
+                                    donorSuppressAutoUntilRef.current = Date.now() + 800;
+                                    const rawNext = e.target.value;
+                                    const nextName = String(rawNext || "").trim() || "무명";
+                                    const prevName = String(d.name || "").trim() || "무명";
+                                    if (nextName === prevName) {
+                                      setDraftDonorNames((prev) => {
+                                        if (!(idStr in prev)) return prev;
+                                        const next = { ...prev };
+                                        delete next[idStr];
+                                        return next;
+                                      });
+                                      return;
+                                    }
+                                    setDraftDonorNames((prev) => {
+                                      const next = { ...prev };
+                                      delete next[idStr];
+                                      return next;
+                                    });
+                                    void (async () => {
+                                      const prev = stateRef.current;
+                                      const next = updateDonorNameInAppState(prev, d.id, nextName);
+                                      if (!next) return;
+                                      const preserved = markAuthoritativeDonationSave(
+                                        { serverUpdatedAt: next.updatedAt },
+                                        next,
+                                        { replaceDonors: true, awaitingServerSave: true }
+                                      );
+                                      setState(preserved);
+                                      await commitAuthoritativeDonorPersist(preserved);
+                                    })();
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      (e.target as HTMLInputElement).blur();
+                                    }
+                                    if (e.key === "Escape") {
+                                      e.preventDefault();
+                                      const idStr = String(d.id);
+                                      setDraftDonorNames((prev) => {
+                                        const next = { ...prev };
+                                        delete next[idStr];
+                                        return next;
+                                      });
+                                      (e.target as HTMLInputElement).blur();
+                                    }
+                                  }}
+                                />
+                                {isSplitPart ? (
+                                  <span className="rounded bg-violet-800/60 px-1 py-0.5 text-[10px] text-violet-200 whitespace-nowrap">
+                                    스플릿
                                   </span>
-                                  <span className="ml-1 rounded bg-neutral-700/80 px-1 py-0.5 text-[10px] text-neutral-300">
-                                    후원 제외
-                                  </span>
-                                </>
-                              ) : null}
+                                ) : isSplitSource ? (
+                                  <>
+                                    <span className="rounded bg-violet-800/60 px-1 py-0.5 text-[10px] text-violet-200 whitespace-nowrap">
+                                      스플릿됨
+                                    </span>
+                                    <span className="rounded bg-neutral-700/80 px-1 py-0.5 text-[10px] text-neutral-300 whitespace-nowrap">
+                                      후원 제외
+                                    </span>
+                                  </>
+                                ) : null}
+                              </div>
                             </td>
                             <td className="p-1 text-neutral-300">
                               <select

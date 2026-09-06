@@ -437,6 +437,32 @@ export function updateDonorMessageInAppState(
   };
 }
 
+export function updateDonorNameInAppState(
+  currentState: AppState,
+  donorId: string,
+  name: string
+): AppState | null {
+  const id = String(donorId || "").trim();
+  if (!id) return null;
+  const donor = (currentState.donors || []).find((d) => d.id === id);
+  if (!donor) return null;
+  const raw = String(name || "").trim();
+  const nextName = raw || "무명";
+  const prev = String(donor.name || "").trim() || "무명";
+  if (nextName === prev) return null;
+  const now = Date.now();
+  const nextDonors = (currentState.donors || []).map((d): Donor => {
+    if (d.id !== id) return d;
+    return { ...d, name: nextName };
+  });
+  return {
+    ...currentState,
+    donors: nextDonors,
+    donorRankingsUpdatedAt: now,
+    updatedAt: now,
+  };
+}
+
 export function updateDonorHsPushDirInAppState(
   currentState: AppState,
   donorId: string,
