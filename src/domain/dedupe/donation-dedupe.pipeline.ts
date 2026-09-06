@@ -220,11 +220,31 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
     (a, b) => donorAtEpochMs(b) - donorAtEpochMs(a)
   );
 
+  type MergeableDonorEx = MergeableDonor & { donationExcluded?: boolean };
+  /**
+   * ✅ 2026-09-06 Hotfix Helper: 서로 다른 strong id를 가진 donor row는 content 유사도와 무관하게 별개 후원으로 간주.
+   * dedupeDonorRows / isDuplicateDonationEvent 양쪽 경로 오탐 방지.
+   * return true = 중복으로 간주하고 skip/merge 허용, false = id가 다르면 별개 row 유지 */
+  function allowMergeByContent(prev: MergeableDonor, incoming: MergeableDonor): boolean {
+    const idA = String(prev.id || "").trim();
+    const idB = String(incoming.id || "").trim();
+    const strongA = Boolean(idA) && !isWeakToonationDonorId(idA);
+    const strongB = Boolean(idB) && !isWeakToonationDonorId(idB);
+    if (strongA && strongB) {
+      if (idA === idB || normalizeDonationEventId(idA) === normalizeDonationEventId(idB)) {
+        return true;
+      }
+      return false;
+    }
+    return true;
+  }
+
   const MAX_BUCKET_SCAN = 200;
   if (pass1.length <= MAX_BUCKET_SCAN) {
     const merged: T[] = [];
     for (const d of pass1) {
       const dupIdx = merged.findIndex((prev) =>
+        allowMergeByContent(prev, d as MergeableDonorEx) &&
         shouldTreatAsDuplicateDonationContent(prev, {
           ...d,
           donorName: d.name,
@@ -285,6 +305,7 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
         const pAmt = Math.max(0, Math.round(Number(prev.amount) || 0));
         if (pName !== name || pAmt !== amt) continue;
         if (
+          allowMergeByContent(prev, d as MergeableDonorEx) &&
           shouldTreatAsDuplicateDonationContent(prev, {
             id: d.id,
             donorName: d.name,
@@ -300,6 +321,7 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
       }
     } else {
       dupIdx = merged.findIndex((prev) =>
+        allowMergeByContent(prev, d as MergeableDonorEx) &&
         shouldTreatAsDuplicateDonationContent(prev, {
           id: d.id,
           donorName: d.name,
@@ -460,14 +482,29 @@ export function isDuplicateDonationEvent(
   return donors.some((d) => {
     const donorId = String(d.id || "").trim();
     if (!donorId) return false;
-    if (
-      shouldTreatAsDuplicateDonationContent(d, {
-        ...probeDonor,
-        id: eventId || externalDonorId,
-        externalId,
-      })
-    ) {
+    /**
+     * ✅ 2026-09-06 Hotfix: 4연속 후원 1건만 남는 오탐 Fix
+     * 두 행(donor.d vs incoming event) 모두 명시적인 id가 존재하고 **id가 다르면** →
+     * content(name+amount+target+3s window)가 일치하더라도 절대 중복으로 보지 않고 정상 연타 후원으로 간주.
+     * 서로 다른 id는 DIN 허브/투네이션에서 엄연히 발급된 별개 후원 ID 이므로,
+     * 과거 near-content dedup의 보험 로직(content 유사도 기반 병합)이 정상 후원을 지우는 오탐을 방지.
+     * fallback 레거시 donor (id가 없는 행)에 대해서만 기존 content dedup 보험 로직을 그대로 유지. */
+    const incomingHasStrongId = Boolean(eventId) && !isWeakToonationDonorId(eventId);
+    const existingHasStrongId = !isWeakToonationDonorId(donorId);
+    if (incomingHasStrongId && existingHasStrongId && donorId !== eventId) {
+      // proceed to id exact match checks 아래에서만 중복 판정, content match는 무시
+    } else if (incomingHasStrongId && existingHasStrongId && normalizeDonationEventId(donorId) === normalizeDonationEventId(eventId)) {
       return true;
+    } else {
+      if (
+        shouldTreatAsDuplicateDonationContent(d, {
+          ...probeDonor,
+          id: eventId || externalDonorId,
+          externalId,
+        })
+      ) {
+        return true;
+      }
     }
     if (donorRowDedupeKey(d) === probeKey) return true;
     if (donorId === eventId || donorId === baseId) return true;
