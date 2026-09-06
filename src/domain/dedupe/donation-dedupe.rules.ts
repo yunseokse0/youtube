@@ -418,20 +418,19 @@ export function shouldTreatAsDuplicateDonationContent(
     donationExcluded?: boolean;
   }
 ): boolean {
-  /** ✅ 2026-09-07 Hotfix ④ Bypass: DIN 허브 strong id (toonation:din:DBID) 끼리는
-   *  15초 identical-message window / 3초 near-content window 등 시간 제약과 전혀 무관하게
-   *  ID가 서로 다르면 무조건 별개 후원으로 간주 → 5건/10건 연타 후원 개별 저장
-   *  (resolveNearDupWindowMs 가 strong id 여도 15초 msg window 리턴하는 오탐을 함수 진입 전 원천 차단) */
+  /** ✅ 2026-09-07 Hotfix ④+⑥ Bypass: DIN 허브 strong id (toonation:din:DBID) 기반 후원은
+   *  시간/내용 제약과 전혀 무관하게 ID가 다르면 무조건 별개 후원으로 간주.
+   *  🔴 확장 RULE: 기존 "양쪽 모두 strong" 에서 "한쪽이라도 strong 이면" 으로 확장 —
+   *     과거 구버전으로 weak id(fp-)로 저장된 donor state vs 신규 strong id(din:) incoming 이
+   *     섞여있는 경우에도 동일메시지 15초 윈도우에 오판 merge 되는것을 원천 차단. */
   const existingRawId = String(existing.id || "").trim();
   const incomingRawId = String(incoming.id || "").trim();
   const exStrong = Boolean(existingRawId) && !isWeakToonationDonorId(existingRawId);
   const inStrong = Boolean(incomingRawId) && !isWeakToonationDonorId(incomingRawId);
-  if (exStrong && inStrong) {
-    const exNorm = normalizeDonationEventId(existingRawId);
-    const inNorm = normalizeDonationEventId(incomingRawId);
-    if (exNorm === inNorm) return true;
-    return false;
-  }
+  const exNorm = existingRawId ? normalizeDonationEventId(existingRawId) : "";
+  const inNorm = incomingRawId ? normalizeDonationEventId(incomingRawId) : "";
+  if (exNorm && inNorm && exNorm === inNorm) return true;
+  if ((exStrong || inStrong) && exNorm !== inNorm) return false;
   const existingSplit =
     Boolean(existing.groupSplit) ||
     String(existing.id || "").includes(":split:") ||

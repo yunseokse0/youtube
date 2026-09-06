@@ -491,12 +491,14 @@ export function isDuplicateDonationEvent(
      * fallback 레거시 donor (id가 없는 행)에 대해서만 기존 content dedup 보험 로직을 그대로 유지. */
     const incomingHasStrongId = Boolean(eventId) && !isWeakToonationDonorId(eventId);
     const existingHasStrongId = !isWeakToonationDonorId(donorId);
-    /** ✅ 2026-09-07 Hotfix ⑤ Bypass: strong id 끼리 서로 다르면 시간/내용 제약 전혀 무시하고 별개 후원
-     *  fallthrough 로 shouldTreatAsDuplicateDonationContent 호출되는것을 원천 차단
-     *  → 5건/10건/4건 연타 strong id 전부 개별 row 유지 */
-    if (incomingHasStrongId && existingHasStrongId) {
-      return normalizeDonationEventId(donorId) === normalizeDonationEventId(eventId);
-    }
+    /** ✅ 2026-09-07 Hotfix ⑤+⑥ Bypass: 한쪽이라도 strong id 이면 서로 ID가 다를때 무조건 별개 후원.
+     *  과거 구버전 state weak id(fp-) donor vs 신규 strong id(din:) 이벤트가 섞인 경우에도
+     *  shouldTreatAsDuplicateDonationContent (15초 메시지 윈도우) 로 fallthrough 하지 않고
+     *  정상 개별 row 로 유지. (양쪽 모두 weak id 일때만 기존 dedup 보험 로직 유지) */
+    const donorIdNorm = normalizeDonationEventId(donorId);
+    const eventIdNorm = normalizeDonationEventId(eventId);
+    if (donorIdNorm && eventIdNorm && donorIdNorm === eventIdNorm) return true;
+    if ((incomingHasStrongId || existingHasStrongId) && donorIdNorm !== eventIdNorm) return false;
     if (
       shouldTreatAsDuplicateDonationContent(d, {
         ...probeDonor,
