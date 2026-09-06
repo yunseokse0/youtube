@@ -63,6 +63,13 @@ export function donationContentClaimTtlSec(event: DonationEvent): number {
 
 /** in-flight 직렬화 — 동일 내용 동시 apply 방지 (투네 실 id 있으면 id 단위) */
 export function donationApplyInFlightKey(userId: string, event: DonationEvent): string {
+  /** ✅ 2026-09-07 Hotfix ② Bypass: DIN 허브 strong id (toonation:din:DBID) 면
+   *  resolveToonationPrimaryExt 의 Fallback 도달 여부와 무관하게 직접 strong 체크 후
+   *  content 기반 inflight 잠금 진입 자체를 차단 → 10건 연타 전부 개별 primaryKey 획득 */
+  const eventIdDirect = normalizeDonationEventId(String(event.id || "").trim());
+  if (event.provider === "toonation" && eventIdDirect && !isWeakToonationDonorId(eventIdDirect)) {
+    return donationApplyPrimaryKey(userId, event);
+  }
   if (
     event.provider === "toonation" &&
     hasIdenticalMessageDedupeFingerprint(event) &&
@@ -90,6 +97,15 @@ export function resolveToonationPrimaryExt(event: DonationEvent): string | null 
   ) {
     return ext.toLowerCase();
   }
+  /** ✅ 2026-09-07 Hotfix ③ Fallback: DIN 허브 event.id (toonation:din:DBID) 가 strong 이면
+   *  extractReliableToonationExtFromDonorId 가 놓친 경우에도 ext를 직접 추출.
+   *  toonation:din:12345 형식에서 "din:12345" 전체를 strong ext로 간주 → 10건 연타 후원 전부 unique primary key 획득 */
+  if (eventId && !isWeakToonationDonorId(eventId)) {
+    const tail = eventId.replace(/^(toonation|toona):/i, "");
+    if (tail && isReliableToonationExternalId(tail.replace(/^din:/i, ""))) {
+      return tail.toLowerCase();
+    }
+  }
   return null;
 }
 
@@ -98,6 +114,13 @@ const NEAR_CONTENT_BUCKET_MS = 3_000;
 /** Redis·인메모리 — weak id·이중 경로 동일 내용 선점 (투네 실 id 는 primary key) */
 export function donationApplyContentKey(userId: string, event: DonationEvent): string | null {
   if (event.provider !== "toonation") return null;
+  /** ✅ 2026-09-07 Hotfix ① Bypass: DIN 허브 strong id (toonation:din:DBID) 면
+   *  resolveToonationPrimaryExt 도달 여부와 무관하게 직접 strong 체크 후
+   *  tryClaim 2차 content 잠금 자체를 차단 → strong id 끼리는 절대 내용 dedup 되지 않음 */
+  const eventIdDirect = normalizeDonationEventId(String(event.id || "").trim());
+  if (event.provider === "toonation" && eventIdDirect && !isWeakToonationDonorId(eventIdDirect)) {
+    return null;
+  }
   /** 투네 실 id 가 있으면 내용 키 생략 — 동일 메시지 연속 후원 허용 */
   if (resolveToonationPrimaryExt(event)) return null;
   const fp = donationContentDedupeFingerprint(event);
