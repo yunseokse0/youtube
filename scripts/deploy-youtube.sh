@@ -98,11 +98,24 @@ if [ "$BUILD_EXIT" -ne 0 ]; then
   exit 10
 fi
 
-# ---- 5. pm2 reload (무중단)  OR  systemctl restart youtube fallback -------------
+# ---- 5. pm2 reload (무중단)  →  No process 일 경우 신규 등록 fallback + systemd ------
 echo ""
 if [ "$HAS_PM2" -eq 1 ]; then
   echo "[5/6] 🔄 pm2 reload all  (무중단 rolling restart)"
-  pm2 reload all --update-env 2>&1 | tail -n 5 || pm2 restart all 2>&1 | tail -n 5
+  PM2_COUNT=$(pm2 jlist 2>/dev/null | grep -c '"name":' || true)
+  if [ "$PM2_COUNT" -eq 0 ]; then
+    echo "       ⚠️  PM2에 등록된 프로세스가 0개 (재부팅/초기화 상태) → 신규 youtube-overlay 앱 등록"
+    pm2 start npm --name "youtube-overlay" --cwd "$DEPLOY_DIR" -- run start 2>&1 | tail -n 5
+    echo "       🔒 pm2 save (부팅시 자동 시작 목록 저장)"
+    pm2 save 2>&1 | tail -n 2
+    # startup systemd 등록 (이미 되어 있으면 메시지 출력하고 skip, 안되어 있으면 안내)
+    set +e
+    PM2_STARTUP_OUT=$(pm2 startup systemd -u "$USER" --hp "$HOME" 2>&1)
+    echo "$PM2_STARTUP_OUT" | grep -vE "^$|^   sudo|^To setup the|^_+" | tail -n 3 || true
+    set -e
+  else
+    pm2 reload all --update-env 2>&1 | tail -n 5 || pm2 restart all 2>&1 | tail -n 5
+  fi
   pm2 list 2>&1 | tail -n 8 || true
 else
   # systemd fallback (pm2가 설치 안된 환경용)
