@@ -5104,6 +5104,15 @@ function OverlayInner() {
             ? EXCEL_RANK_TOP3_EFFECTS_CSS
             : ""
         }
+        /* 1~3등 커스텀 배경 — 기존 transparent !important 보다 구체적 선택자로 우선순위 확보 */
+        .overlay-root .overlay-elegant-table tbody tr.overlay-row.overlay-rank-rowbg td {
+          background: var(--excel-rank-row-bg, transparent) !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row.overlay-rank-rowbg td,
+        .overlay-root .overlay-elegant-table.excel-zebra-table tbody tr.overlay-row.overlay-rank-rowbg td {
+          background: var(--excel-rank-row-bg, transparent) !important;
+          background-clip: padding-box !important;
+        }
         ${
           stableMode || externalHost
             ? ""
@@ -5614,7 +5623,8 @@ function OverlayInner() {
                         <tr
                           key={m.id}
                           ref={rowMotionEnabled ? setRowRef(m.id) : undefined}
-                          className={`overlay-row${excelGoldRankCls} ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
+                          className={`overlay-row${excelGoldRankCls}${top3Row.rowBg ? " overlay-rank-rowbg" : ""} ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
+                          style={top3Row.rowBg ? { ["--excel-rank-row-bg" as any]: top3Row.rowBg } as React.CSSProperties : undefined}
                         >
                           <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
                             {rank == null ? (

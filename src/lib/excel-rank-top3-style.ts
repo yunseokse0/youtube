@@ -90,12 +90,18 @@ function normalizeMode(raw: unknown): ExcelRankTop3Mode {
     .trim()
     .toLowerCase();
   if (v === "off") return "off";
-  if (v === "text" || v === "emoji" || v === "bg" || v === "both") return "text";
+  if (v === "bg") return "bg";
+  if (v === "both") return "both";
+  if (v === "text" || v === "emoji") return "text";
   return "off";
 }
 
 export function isExcelRankTop3TextMode(mode: ExcelRankTop3Mode): boolean {
-  return mode === "text";
+  return mode === "text" || mode === "both";
+}
+
+export function isExcelRankTop3BgMode(mode: ExcelRankTop3Mode): boolean {
+  return mode === "bg" || mode === "both";
 }
 
 /** 1~3위 강조(골드 텍스트·gradient 등) — 해당 행 후원(account+toon) 합이 0이면 미적용 */
@@ -326,6 +332,16 @@ function buildRankEffectClasses(effect: ExcelRankTop3RowEffect, rank: number): {
   };
 }
 
+function resolveRankBg(style: ExcelRankTop3Style, rank: 1 | 2 | 3): string | undefined {
+  const bgs = [style.rank1Bg, style.rank2Bg, style.rank3Bg];
+  const defaults = DEFAULT_EXCEL_RANK_TOP3_BGS;
+  const idx = rank - 1;
+  const custom = (bgs[idx] || "").trim();
+  if (custom) return custom;
+  const fallback = defaults[idx];
+  return fallback ? String(fallback) : undefined;
+}
+
 export function resolveExcelRankTop3RowStyle(
   rank: number | null,
   style: ExcelRankTop3Style,
@@ -338,12 +354,25 @@ export function resolveExcelRankTop3RowStyle(
   const numericLabel = formatExcelRankLabel(rank, style.rankLabelFormat);
   const plainRankLabel = String(rank);
 
-  if (!isExcelRankTop3TextMode(style.mode) || rank > 3) {
+  if (rank > 3) {
     return { rankLabel: numericLabel };
   }
 
-  if (!shouldApplyExcelRankTop3Highlight(rank, opts?.donationTotal)) {
-    return { rankLabel: plainRankLabel };
+  const textMode = isExcelRankTop3TextMode(style.mode);
+  const bgMode = isExcelRankTop3BgMode(style.mode);
+
+  if (!textMode && !bgMode) {
+    return { rankLabel: numericLabel };
+  }
+
+  const highlightOk = shouldApplyExcelRankTop3Highlight(rank, opts?.donationTotal);
+  const rowBg: string | undefined = bgMode && highlightOk ? resolveRankBg(style, rank as 1 | 2 | 3) : undefined;
+
+  if (!textMode || !highlightOk) {
+    return {
+      rankLabel: highlightOk ? plainRankLabel : numericLabel,
+      rowBg,
+    };
   }
 
   const effect = resolveRankEffect(style, rank as 1 | 2 | 3);
@@ -374,6 +403,7 @@ export function resolveExcelRankTop3RowStyle(
 
   return {
     rankLabel: plainRankLabel,
+    rowBg,
     rankCellClass: fx.rankCellClass,
     rankCellStyle: hasTextFx ? textCellStyle : undefined,
     nameCellClass: fx.nameCellClass,
@@ -491,7 +521,7 @@ export const EXCEL_RANK_TOP3_EFFECTS_CSS = `
 
 export function appendExcelRankTop3Params(target: URLSearchParams, preset: OverlayPresetLike): void {
   const style = excelRankTop3StyleFromPreset(preset);
-  if (isExcelRankTop3TextMode(style.mode)) target.set("rankTop3Mode", "text");
+  if (style.mode !== "off") target.set("rankTop3Mode", style.mode);
   if (style.rankLabelFormat !== "hash") target.set("rankLabelFormat", style.rankLabelFormat);
   if (style.rank1Bg.trim()) target.set("rank1Bg", style.rank1Bg.trim());
   if (style.rank2Bg.trim()) target.set("rank2Bg", style.rank2Bg.trim());
