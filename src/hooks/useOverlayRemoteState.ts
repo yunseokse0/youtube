@@ -103,7 +103,7 @@ import {
   type StateApiPick,
 } from "@/lib/state-api-pick";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
-import { mergeHighSocietySettingsPreferBaseline } from "@/lib/high-society";
+import { mergeHighSocietySettingsPreferBaseline, isMeaningfulHighSocietySettings } from "@/lib/high-society";
 import { normalizeTerritoryLogs, mergeTerritoryLogsPreferFresher } from "@/lib/territory-utils";
 
 /** 관리자 iframe — 서버 정본 모드에서는 LS/세션 힌트로 서버 스냅샷을 덮지 않음 */
@@ -392,16 +392,36 @@ function applySyncedState(
     hasCustomTimerDisplayStyles(lastTimerStyles) &&
     !incomingHiddenTimer &&
     (!hasIncomingTimerKey || isDefaultLikeTimerDisplayStyle(incomingTimerStyles?.general));
+  const hsBaseline = refs.lastGoodRef.current?.highSocietySettings;
+  const hsIncoming = dataForApply.highSocietySettings;
+  const hsIncomingIsMeaningful = isMeaningfulHighSocietySettings(hsIncoming);
+  const hsIncomingUpdatedAt = Number(dataForApply.updatedAt || 0);
+  const hsBaselineUpdatedAt = Number(refs.lastGoodRef.current?.updatedAt || 0);
+  const hsIncomingIsNewerOrEq = hsIncomingUpdatedAt >= hsBaselineUpdatedAt - 1_000;
   const mergedHighSocietySettings =
     pick === STATE_PICK_OVERLAY || pick === STATE_PICK_OVERLAY_DONORS
-      ? mergeHighSocietySettingsPreferBaseline(
-          refs.lastGoodRef.current?.highSocietySettings,
-          dataForApply.highSocietySettings
+      ? hsIncomingIsMeaningful && hsIncomingIsNewerOrEq
+        ? hsIncoming
+        : mergeHighSocietySettingsPreferBaseline(
+            hsBaseline,
+            hsIncoming
+          )
+      : hsIncoming;
+  const mergedTerritoryLogs =
+    pick === STATE_PICK_OVERLAY || pick === STATE_PICK_OVERLAY_DONORS
+      ? mergeTerritoryLogsPreferFresher(
+          normalizeTerritoryLogs(refs.lastGoodRef.current?.territoryLogs),
+          normalizeTerritoryLogs(dataForApply.territoryLogs),
+          {
+            localUpdatedAt: hsBaselineUpdatedAt,
+            remoteUpdatedAt: hsIncomingUpdatedAt,
+          }
         )
-      : dataForApply.highSocietySettings;
+      : dataForApply.territoryLogs;
   const next = {
     ...dataForApply,
     highSocietySettings: mergedHighSocietySettings,
+    territoryLogs: mergedTerritoryLogs,
     generalTimer: mergedTimer,
     matchTimer: mergedMatchTimer,
     ...(incomingHiddenTimer && incomingTimerStyles
