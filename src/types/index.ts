@@ -53,6 +53,10 @@ export type Donor = {
   hsPushDir?: "left" | "right" | "split";
   /** 적용 시점 기여도 점수(공식 변경 후에도 되돌리기용) */
   contributionPoints?: number;
+  /** 후원자명을 유저가 직접 수정한 타임스탬프(ms). SSE/폴링 동기화시 신규 판별 기준값 */
+  donorNameEditAt?: number;
+  /** 후원자명 수정 주체 = "user" (관리자 직접 수정) 또는 미지정(자동 유입) */
+  donorNameLastEditedBy?: "user";
 };
 
 /** 기여도 계산식 — 저장 이후 후원부터 적용 (소급 없음) */

@@ -453,7 +453,12 @@ export function updateDonorNameInAppState(
   const now = Date.now();
   const nextDonors = (currentState.donors || []).map((d): Donor => {
     if (d.id !== id) return d;
-    return { ...d, name: nextName };
+    return {
+      ...d,
+      name: nextName,
+      donorNameEditAt: now,
+      donorNameLastEditedBy: "user",
+    };
   });
   return {
     ...currentState,

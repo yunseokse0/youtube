@@ -3044,7 +3044,8 @@ function AdminPageInner() {
     if (prevById.size === 0) return normNext;
     return normNext.map((d) => {
       if (!d || d.id == null) return d as Donor;
-      const prev = prevById.get(String(d.id));
+      const idStr = String(d.id);
+      const prev = prevById.get(idStr);
       if (!prev) return d as Donor;
       const nextD = d as Donor;
       const patch: Partial<Donor> = {};
@@ -3055,11 +3056,31 @@ function AdminPageInner() {
         patch.donationExcluded = true;
         dirty = true;
       }
-      const prevName = String(prev.name || "").trim() || "무명";
-      const nextName = String(nextD.name || "").trim() || "무명";
-      if (prevName !== nextName && prevName !== "무명") {
-        patch.name = prev.name;
-        dirty = true;
+      const prevNameEdited = prev.donorNameEditAt && prev.donorNameLastEditedBy === "user";
+      const nextNameEdited = nextD.donorNameEditAt && nextD.donorNameLastEditedBy === "user";
+      if (prevNameEdited || nextNameEdited) {
+        const prevAt = Number(prev.donorNameEditAt || 0);
+        const nextAt = Number(nextD.donorNameEditAt || 0);
+        const chosen = prevAt >= nextAt ? prev : nextD;
+        const chosenName = String(chosen.name || "").trim() || "무명";
+        const nextBaseName = String(nextD.name || "").trim() || "무명";
+        if (chosenName !== nextBaseName) {
+          patch.name = chosen.name;
+          patch.donorNameEditAt = chosen.donorNameEditAt;
+          patch.donorNameLastEditedBy = chosen.donorNameLastEditedBy;
+          dirty = true;
+        } else if (chosen.donorNameEditAt && !(nextD.donorNameEditAt)) {
+          patch.donorNameEditAt = chosen.donorNameEditAt;
+          patch.donorNameLastEditedBy = chosen.donorNameLastEditedBy;
+          dirty = true;
+        }
+      } else {
+        const prevName = String(prev.name || "").trim() || "무명";
+        const nextName = String(nextD.name || "").trim() || "무명";
+        if (prevName !== nextName && prevName !== "무명" && nextName === "무명") {
+          patch.name = prev.name;
+          dirty = true;
+        }
       }
       return dirty ? { ...nextD, ...patch } : nextD;
     });
