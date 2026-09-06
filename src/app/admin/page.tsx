@@ -141,6 +141,7 @@ import {
   type OverlayConfig,
   resolveEffectiveDonorTarget,
 } from "@/lib/state";
+import type { ContributionLog } from "@/types";
 import {
   buildAppStateFromDailyLogRestore,
   buildAppStateFromRestoreJson,
@@ -3044,6 +3045,26 @@ function AdminPageInner() {
     });
   };
 
+  /** ✅ contributionLogs 유저 편집(되돌리기·삭제) 영구 보존용 merge 유틸.
+   *  - prevLogs: 유저가 로컬에서 편집한 기여도 로그 (되돌리기·삭제로 로그 일부 제거된 상태)
+   *  - nextLogs: 서버·SSE·polling에서 새로 들어온 원본 contributionLogs
+   *  전략: prev를 그대로 유지 + next에만 있고 prev에는 없는 (신규 추가 로그 id) 만 뒤에 append.
+   *  이렇게 하면:
+   *   ① 유저가 prev에서 삭제한 로그 id → 결과에 포함 안됨 (삭제 상태 영구 보존 ✅)
+   *   ② next에만 있는 완전 신규 로그 → 뒤에 붙어서 반영 (정상 후원 반영 ✅)
+   *   ③ 양쪽 다 있는 로그 → prev 버전 그대로 유지 (유저 편집값 우선 ✅)
+   */
+  const mergeContributionLogsPreferLocal = (prevLogs: ContributionLog[] | undefined | null, nextLogs: ContributionLog[] | undefined | null): ContributionLog[] => {
+    const prev = Array.isArray(prevLogs) ? prevLogs : [];
+    const next = Array.isArray(nextLogs) ? nextLogs : [];
+    const prevIds = new Set<string>();
+    for (const l of prev) {
+      if (l?.id != null) prevIds.add(String(l.id));
+    }
+    const freshOnlyFromNext = next.filter((l) => l?.id == null ? false : !prevIds.has(String(l.id)));
+    return freshOnlyFromNext.length === 0 ? prev : [...prev, ...freshOnlyFromNext];
+  };
+
   // 다른 기기·OBS 저장 반영: SSE `state_updated` → 디바운스 GET, 저주기 폴링은 폴백만.
   useEffect(() => {
     if (!user) return;
@@ -3153,7 +3174,12 @@ function AdminPageInner() {
         /** ✅ applyRemoteState 3중 방어 1/3: 서버 정본 donors 교체 직전 이전 state의 donationExcluded 재적용 */
         {
           const prevDonorsSnapshot = stateRef.current.donors;
-          next = { ...next, donors: reapplyExcludedDonorFlagsFromPrev(prevDonorsSnapshot, next.donors) };
+          const prevLogsSnapshot = stateRef.current.contributionLogs;
+          next = {
+            ...next,
+            donors: reapplyExcludedDonorFlagsFromPrev(prevDonorsSnapshot, next.donors),
+            contributionLogs: mergeContributionLogsPreferLocal(prevLogsSnapshot, next.contributionLogs),
+          };
         }
         stateRef.current = next;
         stateUpdatedAtRef.current = remoteUpdatedAt;
@@ -3199,7 +3225,12 @@ function AdminPageInner() {
           /** ✅ applyRemoteState 3중 방어 2/3: 투네 SSE pulled donors 교체 직전 donationExcluded 재적용 */
           {
             const prevDonorsSnapshot = stateRef.current.donors;
-            next = { ...next, donors: reapplyExcludedDonorFlagsFromPrev(prevDonorsSnapshot, next.donors) };
+            const prevLogsSnapshot = stateRef.current.contributionLogs;
+            next = {
+              ...next,
+              donors: reapplyExcludedDonorFlagsFromPrev(prevDonorsSnapshot, next.donors),
+              contributionLogs: mergeContributionLogsPreferLocal(prevLogsSnapshot, next.contributionLogs),
+            };
           }
           stateRef.current = next;
           stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, next.updatedAt || 0);
@@ -3547,9 +3578,11 @@ function AdminPageInner() {
       /** ✅ applyRemoteState 3중 방어 3/3: 최종 toApply.setState 직전 이전 state의 donationExcluded 무조건 재적용 */
       {
         const prevDonorsSnapshot = stateRef.current.donors;
+        const prevLogsSnapshot = stateRef.current.contributionLogs;
         toApply = {
           ...toApply,
           donors: reapplyExcludedDonorFlagsFromPrev(prevDonorsSnapshot, toApply.donors),
+          contributionLogs: mergeContributionLogsPreferLocal(prevLogsSnapshot, toApply.contributionLogs),
         };
       }
       stateRef.current = toApply;
@@ -7878,6 +7911,11 @@ function AdminPageInner() {
       const mergedDonors = reapplyExcludedDonorFlagsFromPrev(stateRef.current.donors, preserved.donors);
       preserved = { ...preserved, donors: mergedDonors };
     }
+    /** ✅ contributionLogs 도 preserve: 유저가 로컬에서 삭제한 로그가 markAuthoritativeSave 를 통해서도 복구되지 않도록 */
+    preserved = {
+      ...preserved,
+      contributionLogs: mergeContributionLogsPreferLocal(stateRef.current.contributionLogs, preserved.contributionLogs),
+    };
     const ts = saved.serverUpdatedAt ?? preserved.updatedAt ?? Date.now();
     donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
     stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, ts);
@@ -7941,6 +7979,7 @@ function AdminPageInner() {
         baseState = {
           ...baseState,
           donors: reapplyExcludedDonorFlagsFromPrev(preserved.donors, baseState.donors),
+          contributionLogs: mergeContributionLogsPreferLocal(preserved.contributionLogs, baseState.contributionLogs),
         };
       }
       const bumped = syncMemberTotalsFromDonors({
