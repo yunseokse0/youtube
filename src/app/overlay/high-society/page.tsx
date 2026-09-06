@@ -44,6 +44,11 @@ function TerritoryGauge({
   zeroCmGaugeDisplay = "hidden",
   /** 관리자 프리뷰 등 — 입장/성장 모션·flex 트랜지션 유발 움찔 방지 */
   motion = true,
+  /** ✅ 2026-09-07 Fix: 관리자 미리보기(iframe) 모드일 때는 양쪽 장벽(벽 사선 패턴) 렌더링 안함 —
+   *  admin iframe preview 는 18:5 aspect ratio 박스 안에 OBS 세로 1080x1920 오버레이가 통째로 들어가면서
+   *  overflow 양쪽으로 벽 패턴이 튀어나와 사용자가 "왜 이런 현상이 생기지?" 라고 질문하는 원인을 원천 봉쇄.
+   *  실제 OBS host=obs 방송 오버레이에서는 여전히 벽이 정상적으로 렌더링되어 영역 구분 용도로 사용됨. */
+  hideFieldWalls = false,
 }: {
   style: HighSocietyBarStyle;
   seats: HighSocietySeat[];
@@ -51,6 +56,7 @@ function TerritoryGauge({
   zeroCmGaugeDisplay?: HighSocietyZeroCmGaugeDisplay;
   fieldCm?: number;
   motion?: boolean;
+  hideFieldWalls?: boolean;
 }) {
   const [ready, setReady] = useState(!motion);
   const [flashIds, setFlashIds] = useState<Record<string, number>>({});
@@ -106,17 +112,21 @@ function TerritoryGauge({
   if (gaugeSeats.length === 0) {
     return (
       <div className="hs-field" aria-label="영토 전장">
-        <div className={`hs-field-wall${fx.strongOutline ? " hs-text-outline" : ""}`} title="장벽">
-          벽
-        </div>
+        {hideFieldWalls ? null : (
+          <div className={`hs-field-wall${fx.strongOutline ? " hs-text-outline" : ""}`} title="장벽">
+            벽
+          </div>
+        )}
         <div className="hs-field-track">
           <div className={`hs-territory-empty${fx.strongOutline ? " hs-text-outline" : ""}`}>
             후원 대기 중 · 상류사회
           </div>
         </div>
-        <div className={`hs-field-wall${fx.strongOutline ? " hs-text-outline" : ""}`} title="장벽">
-          벽
-        </div>
+        {hideFieldWalls ? null : (
+          <div className={`hs-field-wall${fx.strongOutline ? " hs-text-outline" : ""}`} title="장벽">
+            벽
+          </div>
+        )}
       </div>
     );
   }
@@ -130,12 +140,14 @@ function TerritoryGauge({
       }`}
       aria-label={`영토 전장 (${style === "arrow" ? "화살표" : "평평"})`}
     >
-      <div
-        className={`hs-field-wall${fx.strongOutline ? " hs-text-outline" : ""}`}
-        title="장벽(이동 불가)"
-      >
-        벽
-      </div>
+      {hideFieldWalls ? null : (
+        <div
+          className={`hs-field-wall${fx.strongOutline ? " hs-text-outline" : ""}`}
+          title="장벽(이동 불가)"
+        >
+          벽
+        </div>
+      )}
       <div className="hs-field-track">
         {gaugeSeats.map((seat, index) => {
           const growing = motion && fx.growFlash && Boolean(flashIds[seat.id]);
@@ -171,12 +183,14 @@ function TerritoryGauge({
           );
         })}
       </div>
-      <div
-        className={`hs-field-wall${fx.strongOutline ? " hs-text-outline" : ""}`}
-        title="장벽(이동 불가)"
-      >
-        벽
-      </div>
+      {hideFieldWalls ? null : (
+        <div
+          className={`hs-field-wall${fx.strongOutline ? " hs-text-outline" : ""}`}
+          title="장벽(이동 불가)"
+        >
+          벽
+        </div>
+      )}
     </div>
   );
 }
@@ -380,6 +394,7 @@ export default function HighSocietyOverlayPage() {
           fx={fx}
           zeroCmGaugeDisplay={hsSettings.zeroCmGaugeDisplay}
           motion={!adminPreview && fx.growFlash}
+          hideFieldWalls={adminPreview}
         />
       </div>
     </main>

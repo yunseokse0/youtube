@@ -350,9 +350,17 @@
   padding: 12px 10px;
 }
 
+/** ✅ 2026-09-07 Fix: 관리자 미리보기(iframe) 에서 양쪽 노란 사선 "벽" 패턴이 overflow 튀어나와 보이는 현상 원천 차단
+ *  page.tsx hideFieldWalls props 와 이중 방어. 실제 OBS host=obs 방송 오버레이는 .hs-preview-embed 클래스가 붙지 않아 벽 정상 유지. */
 .hs-preview-embed .hs-field-wall {
-  flex-basis: 38px;
-  font-size: 13px;
+  display: none !important;
+  visibility: hidden !important;
+  flex-basis: 0 !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none;
 }
 
 .hs-preview-embed .hs-field-label {
