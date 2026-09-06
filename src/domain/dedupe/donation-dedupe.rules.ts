@@ -30,6 +30,11 @@ export function normalizeDonationEventId(id: string): string {
 export function isWeakToonationDonorId(id: string): boolean {
   const base = normalizeDonationEventId(String(id || "").trim()).replace(/^toonation:/i, "");
   if (!base) return false;
+  /** ✅ 2026-09-06 Hotfix: toonation:din:<DB id> 형식 = DIN 허브 정식 발급 row ID.
+   *  기존 default fallback return true (weak) 로 인해 DIN 허브 후원이 전부 weak ID로 오인되어,
+   *  allowMergeByContent → shouldTreatAsDuplicateDonationContent (3초 윈도우 content dedup) 에 걸려
+   *  6연속 후원이 1건으로 merge 되는 오탐 방지. DIN 허브 ID는 strong으로 간주. */
+  if (/^din:/i.test(base)) return false;
   if (/^(fp-|test-|toon-|seq-|don-|stub-|mock-)/i.test(base)) return true;
   if (/^\d{10,13}-\d+(-\d+-[a-z0-9]+)?$/i.test(base)) return true;
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(base)) return false;
