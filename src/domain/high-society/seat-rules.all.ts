@@ -1255,7 +1255,24 @@ export function resolveHighSocietyFieldWithMemberWidths(opts: {
   const rawWidths = players.map((p) => {
     const snap = opts.widthByMemberId[p.id];
     if (snap != null && snap > 0) return snap;
-    if (snap === 0) return 0;
+    /**
+     * ✅ 2026-09-06 Fix: 탈락(0cm) 멤버에게 영토 추가시 "3번 입력 후 영토 생김" 버그 해소.
+     *  기존: snap === 0 이면 무조건 width=0 고정 → live transfer replay에서 fromW=0 이면 transfer 0 →
+     *       이웃 영토가 충분히 쌓인 3번째 입력 부터 width 양수화 → 사용자는 "3번 눌러야 생김"으로 느낌.
+     *  변경: 0cm 스냅 이더라도 expandCm>0 이 있거나 (territory expand 적용 기대) 일반 케이스면
+     *       startCm 기반 equal width으로 fallback → 1회차 부터 이웃 간 transfer 정상 동작. */
+    if (snap === 0) {
+      const expand = (p.expandLeftCm || 0) + (p.expandRightCm || 0);
+      if (expand > 0) return startCm;
+      const expandSnap = opts.expandByMemberId?.[p.id];
+      if (
+        expandSnap &&
+        (expandSnap.expandLeftCm || 0) + (expandSnap.expandRightCm || 0) > 0
+      ) {
+        return startCm;
+      }
+      return 0;
+    }
     return startCm;
   });
   const sum = rawWidths.reduce((s, w) => s + w, 0);
@@ -1684,10 +1701,37 @@ export function applyTerritoryLogDirectTransfers(
     const fromId = order[fromIdx]!;
     const toId = order[toIdx]!;
     const fromW = Math.max(0, widthById.get(fromId) ?? 0);
-    const t = Math.min(Math.max(0, Math.floor(amount)), fromW);
+    const toW = Math.max(0, widthById.get(toId) ?? 0);
+    const t = Math.min(Math.max(0, Math.floor(amount)), Math.max(fromW, 1));
     if (t <= 0) return;
-    widthById.set(fromId, fromW - t);
-    widthById.set(toId, (widthById.get(toId) ?? 0) + t);
+    /**
+     * ✅ 2026-09-06 Fix: 탈락(0cm) 멤버 영토 추가 복귀시 "3번 입력 후 영토 생김" 버그 해소.
+     *  - fromIdx (이웃) width=0 일 때 기존 로직은 t = min(amount, 0) = 0 → transfer 자체가 발생 안됨.
+     *  - 변경: fromW=0 일 때 t=1 이상 남도록 floor+max(...,1) 보장 후 deficit을 fieldCm 총합이 유지되도록
+     *    toIdx 쪽에 추가하는 대신 fieldCm 전체에서 deficit 만큼 균등 분배 차감 (벽으로 부터 끌어옴 효과).
+     */
+    const borrowFromWhole = t > fromW ? t - fromW : 0;
+    if (borrowFromWhole > 0) {
+      const payFromAll = (id: string) => {
+        const cur = Math.max(0, widthById.get(id) ?? 0);
+        const share = Math.min(cur, Math.ceil(borrowFromWhole / n));
+        if (share > 0 && id !== toId) {
+          widthById.set(id, Math.max(0, cur - share));
+        }
+        return share;
+      };
+      let covered = 0;
+      for (let i = 0; i < n && covered < borrowFromWhole; i += 1) {
+        if (order[i] === toId) continue;
+        covered += payFromAll(order[i]!);
+      }
+      widthById.set(fromId, Math.max(0, fromW + borrowFromWhole - covered));
+    }
+    const fromWAdj = Math.max(0, widthById.get(fromId) ?? 0);
+    const tFinal = Math.min(Math.max(0, Math.floor(amount)), fromWAdj);
+    if (tFinal <= 0) return;
+    widthById.set(fromId, Math.max(0, fromWAdj - tFinal));
+    widthById.set(toId, toW + tFinal);
   };
 
   const neighborIdx = (idx: number, toward: "left" | "right"): number | null => {
