@@ -87,7 +87,10 @@ export async function register() {
             try { drained = await drainDonationQueueOnServer(uid); } catch (e) {}
             try { await refreshToonaHubStatus(uid); refreshed = true; } catch (e) {}
             try {
-              const r = await fetchToonaDonationsSinceLink(uid);
+              /** ✅ 2026-09-07 Hotfix: init 단계는 ignoreMinInterval 강제로 써서
+               *  60초 DONATION_PULL_MIN_INTERVAL_MS cooldown 이 다음 scheduled fetch 로 이어져서
+               *  실제 첫 정상 자동 fetch 가 6분 뒤로 미뤄지는 현상 원천 차단 */
+              const r = await fetchToonaDonationsSinceLink(uid, { ignoreMinInterval: true });
               if (r && typeof r === "object" && "imported" in r) pulled = Number((r as any).imported) || 0;
             } catch (e) {}
             console.info(`[b-mode] init OK user=${uid} drained=${drained} refreshed=${refreshed} pulled=${pulled}`);
@@ -96,17 +99,19 @@ export async function register() {
         })();
 
         /**
-         * 🔥 B-MODE POLLER · SINGLE STAGGERED JOB + FETCH COALESCE (B모드 단순화 P1)
+         * 🔥 B-MODE POLLER · SINGLE STAGGERED JOB + FETCH COALESCE (B모드 단순화 P1 + Fix ⑥-3)
          *  · 통합 전: 3종 독립 setInterval → 동시 fire → saveMutex 3중첩 블록
-         *  · 통합 후: 1개 setInterval(30s) + phase counter(0~5) + reentry lock
-         *    주기 RELAXED: drain(30s 항상) / refresh+fetch(180s = phase%6===0 동봉)
-         *      ↳ refresh 90s 2회 → fetch 직전 1회 180s 단축 (HTTP 66% 감소)
-         *      ↳ fetch 전역 DONATION_PULL_MIN_INTERVAL_MS 재진입 가드로 admin 중복 클릭 시 50건 풀스캔 2회 → 1회
+         *  · 통합 후: 1개 setInterval(30s) + phase counter(0~1) + reentry lock
+         *    주기 RELAXED + 반응성 FIX:
+         *      ✅ drain(30s 항상, 큐 적체 방지)
+         *      ✅ refresh+fetch(**60초마다 = phase%2===0**, 이전 180초 → 사용자 "자동 안돼요" Bug Fix)
+         *        ↳ fetch 내부 DONATION_PULL_MIN_INTERVAL_MS=60s 가드와 정확히 맞물려서 중복 호출 0회 + 최대 응답성 60초
+         *        ↳ 기존 180초 fetch 주기: 후원 보내고 최대 3분 대기 → "수동 버튼만 돼요" 오해 유발 👎
          *    실행 순서 직렬: drain → (phase0 일때 refresh→fetch)
          */
         /** @type {Record<string, boolean>} */
         const pollerLock: Record<string, boolean> = {};
-        let pollerPhase = 0; // 0 ~ 5 (6 phases = 180s full cycle)
+        let pollerPhase = 0; // 0 ~ 1 (2 phases = 60s full cycle · DIN 허브 1분 pull interval 과 일치)
         setInterval(() => {
           for (const uid of hubUserIds) {
             if (pollerLock[uid]) {
@@ -119,7 +124,7 @@ export async function register() {
                 await drainDonationQueueOnServer(uid).catch((e) =>
                   console.warn(`[b-mode] drain fail uid=${uid}`, e?.message || e)
                 );
-                if (pollerPhase % 6 === 0) {
+                if (pollerPhase % 2 === 0) {
                   await refreshToonaHubStatus(uid).catch((e) =>
                     console.warn(`[b-mode] refresh fail uid=${uid}`, e?.message || e)
                   );
@@ -132,7 +137,7 @@ export async function register() {
               }
             })();
           }
-        pollerPhase = (pollerPhase + 1) % 6;
+        pollerPhase = (pollerPhase + 1) % 2;
         }, 30_000);
 
         /**
