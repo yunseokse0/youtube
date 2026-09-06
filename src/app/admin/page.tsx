@@ -15875,15 +15875,21 @@ function AdminPageInner() {
                       참고: <strong className="text-neutral-300">1만원 = 5cm</strong>
                     </p>
                   </div>
-                  <span
-                    className={`rounded px-2.5 py-1 text-[11px] font-semibold shrink-0 ${
+                  <button
+                    type="button"
+                    onClick={() =>
+                      patchHighSocietySettings({
+                        enabled: !highSocietySettings.enabled,
+                      })
+                    }
+                    className={`rounded px-2.5 py-1 text-[11px] font-semibold shrink-0 border transition-colors cursor-pointer ${
                       highSocietySettings.enabled
-                        ? "bg-amber-600/90 text-white"
-                        : "bg-neutral-800 text-neutral-400"
+                        ? "bg-amber-600/90 text-white border-amber-400 hover:bg-amber-500/90"
+                        : "bg-neutral-800 text-neutral-400 border-white/15 hover:bg-neutral-700 hover:text-neutral-200"
                     }`}
                   >
                     {highSocietySettings.enabled ? "모드 ON" : "모드 OFF"}
-                  </span>
+                  </button>
                 </div>
                 {highSocietySettings.enabled ? (
                   <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
@@ -17578,15 +17584,21 @@ function AdminPageInner() {
                     >
                       별도 창
                     </button>
-                    <span
-                      className={`rounded px-2.5 py-1 text-[11px] font-semibold ${
+                    <button
+                      type="button"
+                      onClick={() =>
+                        patchHighSocietySettings({
+                          enabled: !highSocietySettings.enabled,
+                        })
+                      }
+                      className={`rounded px-2.5 py-1 text-[11px] font-semibold border transition-colors cursor-pointer ${
                         highSocietySettings.enabled
-                          ? "bg-amber-600/90 text-white"
-                          : "bg-neutral-800 text-neutral-400"
+                          ? "bg-amber-600/90 text-white border-amber-400 hover:bg-amber-500/90"
+                          : "bg-neutral-800 text-neutral-400 border-white/15 hover:bg-neutral-700 hover:text-neutral-200"
                       }`}
                     >
                       {highSocietySettings.enabled ? "모드 ON" : "모드 OFF"}
-                    </span>
+                    </button>
                   </div>
                 </div>
 
