@@ -51,12 +51,37 @@ if [ "$CURRENT_HEAD" = "$ORIGIN_HEAD" ]; then
   echo "       ✔️  이미 최신 커밋과 일치합니다 (계속 진행)"
 fi
 
-# ---- 2. git reset --hard origin/main -------------------------------------------
+# ---- 1-1. .env / .env.local 백업 (git reset --hard 가 덮어쓰는 사고 원천 방지) ----------
+ENV_BACKUP_DIR="/tmp/youtube-deploy-env-backups"
+mkdir -p "$ENV_BACKUP_DIR"
+ENV_TS=$(date +%Y%m%d-%H%M%S)
+for envfile in .env .env.local .env.production; do
+  if [ -f "$envfile" ]; then
+    cp -f "$envfile" "$ENV_BACKUP_DIR/${envfile}.${ENV_TS}.bak" 2>/dev/null || true
+  fi
+done
+# 가장 최근 10개 백업만 유지 (디스크 관리)
+(ls -1t "$ENV_BACKUP_DIR" 2>/dev/null | tail -n +11 | xargs -I{} rm -f "$ENV_BACKUP_DIR/{}" 2>/dev/null) || true
+echo "       🛡️  .env safety backup: $ENV_BACKUP_DIR/.env.${ENV_TS}.bak"
+
+# ---- 2. git reset --hard origin/main  →  .env 자동 복원 --------------------------------
 echo ""
 echo "[2/6] 🧹 git reset --hard origin/main"
+# reset 전 최신 env 스냅샷 1개 더 캡쳐 (reset중 변경될 위험 방지 이중화)
+cp -f .env "$ENV_BACKUP_DIR/.env.before-reset.${ENV_TS}.bak" 2>/dev/null || true
 git reset --hard origin/main
-git status --short | head -n 5 || true
+ENV_RESTORED=0
+for envfile in .env .env.local .env.production; do
+  BACKUP_LATEST=$(ls -1t "$ENV_BACKUP_DIR/${envfile}."*.bak 2>/dev/null | head -n 1 || "")
+  if [ -n "$BACKUP_LATEST" ] && [ ! -f "$envfile" ]; then
+    cp -f "$BACKUP_LATEST" "$envfile" && ENV_RESTORED=$((ENV_RESTORED+1))
+  fi
+done
+if [ "$ENV_RESTORED" -gt 0 ]; then
+  echo "       ♻️  env 자동 복원 완료: $ENV_RESTORED 개 파일 (from $ENV_BACKUP_DIR)"
+fi
 git clean -fd node_modules/.cache .next/cache 2>/dev/null || true
+git status --short | grep -v "^?? .env" | head -n 5 || true
 
 # ---- 3. npm ci (package-lock 1:1 설치)  →  실패시 npm install fallback -----------------
 echo ""
@@ -79,6 +104,41 @@ if [ "$CI_EXIT" -ne 0 ]; then
   fi
 fi
 echo "       ✔️  packages installed (exit=$CI_EXIT)"
+
+# ---- 3-1. 필수 env 값 사전 체크 (빌드 후 이상 현상 미리 방지) -------------------------
+echo ""
+echo "[3.5/6] 🔍 필수 환경변수 사전 점검"
+ENV_WARN=0
+check_env() {
+  local key="$1" local desc="$2" local severity="${3:-warn}"
+  local val
+  val=$(grep -E "^${key}=" .env 2>/dev/null | cut -d= -f2- | tr -d '\r' | xargs || true)
+  if [ -z "$val" ]; then
+    if [ "$severity" = "error" ]; then
+      echo "       ❌ [필수누락]  $key  =  (빈값) → $desc"
+      ENV_WARN=$((ENV_WARN+1))
+    else
+      echo "       ⚠️ [권장누락]  $key  =  (빈값) → $desc"
+      ENV_WARN=$((ENV_WARN+1))
+    fi
+  else
+    local masked
+    masked=$(echo "$val" | sed -E 's/^(....).+$/\1***MASKED***/')
+    echo "       ✔️  $key = $masked"
+  fi
+}
+check_env "DATABASE_URL" "MySQL 접속 주소 (전혀 안되면 모든 state read/write 불가)" "error"
+check_env "TOONA_INGEST_SECRET" "DIN 허브→유튜브 ingest 공유키 (B모드에서 /api/donations/ingest 503 ingest_secret_not_configure 원인)" "error"
+check_env "NEXTAUTH_SECRET" "관리자 세션 암호화 키 (빠지면 /admin 로그인 불가)" "warn"
+check_env "NEXTAUTH_URL" "OAuth Callback URL (외부 소셜 로그인시 필수)" "warn"
+if [ "$ENV_WARN" -gt 0 ]; then
+  echo ""
+  echo "       💡 위 누락 env는 .env 파일에 아래 형식으로 작성하세요:"
+  echo "          DATABASE_URL='mysql://user:pass@host:3306/db?ssl={"rejectUnauthorized":true}'"
+  echo "          TOONA_INGEST_SECRET='DIN허브 대시보드 > 프로젝트 > Ingest Secret에 적힌 값 그대로 복사'"
+  echo "          수정 후 → bash scripts/deploy-youtube.sh 다시 실행 또는 pm2 reload all"
+  echo ""
+fi
 
 # ---- 4. Next.js production build (실패시 abort, 기존 서비스 유지) ----------------
 echo ""
