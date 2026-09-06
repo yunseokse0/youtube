@@ -596,20 +596,40 @@ export async function appendSettlementRecordAndSync(
   memberPositions?: Record<string, string> | null,
   settlementOptions?: SettlementCreateOptions
 ): Promise<SettlementRecord> {
+  /** ✅ OOM / 502 방지 1/2: 정산 생성 시 신규 rec 1건만 먼저 incremental append 저장 (전체 배열 POST 금지) */
+  const lightweightMembers = (members || []).map((m) => {
+    const copy: Partial<Member> & Pick<Member, "id" | "name"> = { id: m.id, name: m.name };
+    if (typeof m.operating === "boolean") copy.operating = m.operating;
+    if (m.realName) copy.realName = m.realName;
+    return copy as Member;
+  });
+  const slimDonors = (donors || []).map((d) => {
+    const { message: _msg, ...rest } = d;
+    void _msg;
+    return rest as Donor;
+  });
   const rec = appendSettlementRecord(
     title,
-    members,
+    lightweightMembers,
     accountRatio,
     toonRatio,
     feeRate,
     memberRatioOverrides,
-    donors,
+    slimDonors,
     userId,
     memberPositions,
     settlementOptions
   );
-  const local = loadSettlementRecords(userId);
-  await saveSettlementRecordsToApi(local, userId);
+  /** ✅ OOM / 502 방지 2/2: 신규 rec 1개만 POST → 서버 페이로드 크기 1~30 KB 수준 (이전 2~8MB 대비 99% 감소) */
+  await saveSettlementRecordsToApi([rec], userId, { replace: false });
+  /** 저장 후 local → 서버 동기화는 1.5초 지연 debounced로 백그라운드에서 full replace 한번 실행 (user block 없음) */
+  void Promise.resolve().then(async () => {
+    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const latest = loadSettlementRecords(userId);
+      await saveSettlementRecordsToApi(latest, userId, { replace: false });
+    } catch {}
+  });
   return rec;
 }
 

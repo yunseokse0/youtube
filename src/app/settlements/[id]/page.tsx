@@ -211,7 +211,22 @@ export default function SettlementDetailPage() {
     };
   }, [user]);
 
-  const record = useMemo(() => (records || []).find((x) => x.id === id) || null, [records, id]);
+  const record = useMemo(() => {
+    const fromState = (records || []).find((x) => x.id === id) || null;
+    if (fromState) return fromState;
+    /** ✅ 502 / 크래시 방지 3/3: 서버 records 로드 안됐을때 localStorage 직접 조회 fallback (정산 생성 redirect 타이밍 지연 해소) */
+    try {
+      if (typeof window !== "undefined" && user?.id) {
+        const localAll = loadSettlementRecords(user.id);
+        const local = localAll.find((r) => r.id === id);
+        if (local) return local;
+        const legacy = loadSettlementRecords(null);
+        const leg = legacy.find((r) => r.id === id);
+        if (leg) return leg;
+      }
+    } catch {}
+    return null;
+  }, [records, id, user?.id]);
 
   useEffect(() => {
     if (!user || records === null || record) {

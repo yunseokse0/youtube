@@ -82,7 +82,16 @@ export async function POST(req: Request) {
     const writeUid = resolveWriteUserId(req);
     if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
     const userId = writeUid.userId;
-    const body = await req.json();
+    const rawText = await req.text();
+    /** ✅ 502 / OOM 방지 1/3: 페이로드 크기 2MB 하드캡 — 넘어가면 즉시 413 리턴 */
+    if (rawText.length > 2_000_000) {
+      return new Response(JSON.stringify({ ok: false, error: "payload_too_large", bytes: rawText.length }), {
+        status: 413,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    }
+    let body: unknown = null;
+    try { body = rawText.length > 0 ? JSON.parse(rawText) : []; } catch { body = []; }
     const payload = Array.isArray(body) ? (body as SettlementRecord[]) : [];
     const replace = new URL(req.url).searchParams.get("mode") === "replace";
 
@@ -129,12 +138,14 @@ export async function POST(req: Request) {
     /** monolith fallback — 마이그레이션 전 */
     const existingRaw = await upstashGet<SettlementRecord[]>(recordsKey(userId));
     const existing = Array.isArray(existingRaw) ? existingRaw : [];
-    const toSave =
+    const merged: SettlementRecord[] =
       payload.length === 0
         ? existing
         : replace
           ? normalizeSettlementRecords(payload)
           : mergeSettlementRecords(existing, normalizeSettlementRecords(payload));
+    /** ✅ 502 / OOM 방지 2/3: monolith 최대 300건 cap (3년치 = ~156건 예상) · 넘으면 오래된것 자동 prune */
+    const toSave = merged.length > 300 ? normalizeSettlementRecords(merged).slice(0, 300) : merged;
     const ok = await saveSettlementRecordsMonolith(userId, toSave);
     if (!ok) {
       return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
