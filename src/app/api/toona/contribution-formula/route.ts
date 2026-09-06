@@ -3,6 +3,10 @@ import { verifyToonaIngestAuth } from "@/app/api/donations/_shared/toona-ingest-
 import { normalizeContributionFormula } from "@/lib/contribution-formula";
 import { persistContributionFormulaForUser } from "@/lib/contribution-formula-persist";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
+import {
+  describeDonationIntakeMode,
+  isDonationIntakeModeB,
+} from "@/policies/donation-intake-mode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,8 +18,31 @@ function json(data: unknown, status = 200) {
   });
 }
 
+/**
+ * ✅ B모드 (DIN 허브 연결) 에서만 S2S 호출 허용.
+ * A모드 (투네 직접) 시 410 invalid_mode 로 reject 하여
+ * verifyToonaIngestAuth 가 TOONA_INGEST_SECRET 빈값으로 503 오판하는 False 에러 원천 차단.
+ */
+function assertModeBGuard(): Response | null {
+  if (isDonationIntakeModeB()) return null;
+  return json(
+    {
+      skipped: true,
+      mode: describeDonationIntakeMode(),
+      error: "invalid_mode",
+      message:
+        "현재 " +
+        describeDonationIntakeMode() +
+        " 이므로 DIN 허브 S2S 기여도 동기화는 수신하지 않습니다. DIN 허브를 사용하려면 TOONA_INTAKE_MODE=B 로 설정하세요.",
+    },
+    410
+  );
+}
+
 /** GET — toona S2S: 현재 기여도 계산식 (도네 얼럿 동기화용) */
 export async function GET(req: NextRequest) {
+  const guard = assertModeBGuard();
+  if (guard) return guard;
   const auth = verifyToonaIngestAuth(req);
   if (!auth.ok) return json({ error: auth.error }, auth.status);
 
@@ -30,6 +57,8 @@ export async function GET(req: NextRequest) {
 
 /** POST — toona S2S: 기여도 계산식을 youtube state에 저장 (toona → youtube 동기화) */
 export async function POST(req: NextRequest) {
+  const guard = assertModeBGuard();
+  if (guard) return guard;
   const auth = verifyToonaIngestAuth(req);
   if (!auth.ok) return json({ error: auth.error }, auth.status);
 
