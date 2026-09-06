@@ -106,18 +106,60 @@ export async function runCronJob(
   }
 }
 
-export function registerIntervalCronJobs(): {
+/**
+ * ✅ Cron interval 일괄 등록 (Single Source of Truth)
+ *  - hubUserIds: STATE_WARM_USER_IDS 로 지정된 유저 목록 (보통 ["din"])
+ *  - 매 1시간(CRON_INTERVAL_BROADCAST_PRUNE_MS)마다:
+ *     1. 각 userId 별로 AppState 를 lazy import로 불러와서 donors.id[] 목록 확보
+ *     2. donorIdsKeep 에 살려둘 ID를 넘기고 나머지 stale 행을 prune
+ *  - returns: stop() 호출로 모든 setInterval 정리 가능한 핸들
+ */
+export function registerIntervalCronJobs(opts?: {
+  hubUserIds?: string[];
+  broadcastIntervalMs?: number;
+}): {
   stop: () => void;
   handles: Map<CronJobName, ReturnType<typeof setInterval>>;
 } {
   const handles = new Map<CronJobName, ReturnType<typeof setInterval>>();
   if (typeof setInterval === "undefined") return { stop: () => {}, handles };
 
+  const hubUserIds: string[] = Array.isArray(opts?.hubUserIds) ? opts.hubUserIds! : [];
+  const intervalMs = opts?.broadcastIntervalMs ?? CRON_INTERVAL_BROADCAST_PRUNE_MS;
+
   const broadcastPrune = setInterval(() => {
-    void runCronJob("broadcast-stale-prune").catch(() => {
-      /* swallow at interval level */
-    });
-  }, CRON_INTERVAL_BROADCAST_PRUNE_MS);
+    void (async () => {
+      if (hubUserIds.length === 0) {
+        await runCronJob("broadcast-stale-prune").catch(() => {});
+        return;
+      }
+      const { loadAppStateForUserId } = await import(
+        "@/lib/app-state-server-load"
+      ).catch(() => ({ loadAppStateForUserId: () => Promise.resolve(null) }));
+      for (const uid of hubUserIds) {
+        try {
+          const st = await loadAppStateForUserId(uid).catch(() => null);
+          const ids = (st?.donors || [])
+            .map((d) => String((d as any).id || "").trim())
+            .filter(Boolean);
+          const res = await runCronJob("broadcast-stale-prune", {
+            userId: uid,
+            donorIdsKeep: ids,
+          });
+          if (res.tag === "ok" && res.value.prunedCount && res.value.prunedCount > 0) {
+            console.info(
+              `[cron:broadcast-stale-prune] OK user=${uid} removed=${res.value.prunedCount}`
+            );
+          }
+        } catch (e) {
+          console.warn(
+            `[cron:broadcast-stale-prune] fail uid=${uid}`,
+            e instanceof Error ? e.message : String(e)
+          );
+        }
+      }
+    })();
+  }, intervalMs);
   handles.set("broadcast-stale-prune", broadcastPrune);
 
   const stop = () => {

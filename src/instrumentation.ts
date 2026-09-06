@@ -132,35 +132,18 @@ export async function register() {
               }
             })();
           }
-          pollerPhase = (pollerPhase + 1) % 6;
+        pollerPhase = (pollerPhase + 1) % 6;
         }, 30_000);
 
         /**
-         * 🔥 broadcast_donations 벌크 stale 정리 cron (1시간마다 1회)
-         *  · 기존: 매 저장마다 개별 SELECT id + chunk DELETE 3~8초 병목 → add 모드 infinite skip 으로 100% 제거
+         * ✅ Single Source of Truth · cron-jobs.ts registerIntervalCronJobs(hubUserIds) 1줄로 통합!
+         *  - 기존 하드코딩 setInterval (1시간, hubUserIds 순회 loadAppState + pruneStaleBroadcastDonorsForUser)
+         *    전체 로직을 Shell Cron Layer로 이관 → cron 로직 일관성 100%
          *  · 개선: 1시간마다 현재 AppState donors 목록 → pruneStaleBroadcastDonorsForUser 1회
          *    누적 stale row 1시간치를 모아서 한 번에 정리 → DB 쓰기 부하 99% 절감
          */
-        setInterval(() => {
-          void (async () => {
-            const { loadAppStateForUserId } = await import("@/lib/app-state-server-load");
-            const { pruneStaleBroadcastDonorsForUser } = await import(
-              "@/lib/donation/broadcast-donations-mysql"
-            );
-            for (const uid of hubUserIds) {
-              try {
-                const st = await loadAppStateForUserId(uid).catch(() => null);
-                const ids = (st?.donors || []).map((d) => String(d.id || "").trim()).filter(Boolean);
-                const removed = await pruneStaleBroadcastDonorsForUser(uid, ids);
-                if (removed > 0) {
-                  console.info(`[b-mode] prune stale broadcast OK user=${uid} removed=${removed}`);
-                }
-              } catch (e) {
-                console.warn(`[b-mode] prune stale fail uid=${uid}`, e instanceof Error ? e.message : e);
-              }
-            }
-          })();
-        }, 60 * 60 * 1000); // 1시간
+        const { registerIntervalCronJobs } = await import("@/shell/cron-jobs");
+        registerIntervalCronJobs({ hubUserIds });
       }
       return;
     }
