@@ -123,6 +123,47 @@ export function mergeDonorRowFields<T extends MergeableDonor>(
   const kindFall = donorInferSourceKind(fallback);
   const relPref = KIND_RELIABILITY[kindPref] || 0;
   const relFall = KIND_RELIABILITY[kindFall] || 0;
+
+  /**
+   * ✅ 2026-09-07 Hotfix ⑥-4 깜빡임 원천 봉쇄:
+   *  한번 저장된 donor 의 **핵심 필드 (amount / at / id / message / donorKey 등)** 는 절대 덮어쓰지 않음.
+   *  fallback (기존 state 저장값) 이 존재하는 값은 100% 유지 · preferred 는 오직 fallback 에 값이 아예 없을때만 backfill 보충.
+   *  이전 baseMerge = {...preferred} 규칙은 60초 fetch 마다 새로 들어온 DIN 허브 row 가 정상 저장된 기존 donor 의
+   *  금액·시간·메시지를 뒤바꿔서 "늘었다 줄었다 깜빡거리는 현상"의 직접 원인이었음.
+   *  오직 메타 필드 (displayName 종합 우선순위 / target 매칭 결과 등) 만 신뢰도 기반으로 비교.
+   */
+  const FALLBACK_PRIMARY_FIELDS = [
+    "id", "donorKey", "primaryKey", "externalId", "provider",
+    "amount", "at", "createdAt", "ts",
+    "message", "memo", "rawMessage",
+    "donorName", "nickname", "displayName", "name",
+    "formula", "contributionPoints",
+    "memberId", "teamId", "battleId", "battleTeamId",
+    "bankAccountBank", "bankAccountHolder", "bankAccountNumber",
+    "settlementLabel", "groupSplitSourceId",
+  ] as const;
+  function primaryValue<K extends (typeof FALLBACK_PRIMARY_FIELDS)[number]>(key: K): unknown {
+    const fb = (fallback as any)?.[key];
+    const pf = (preferred as any)?.[key];
+    if (fb === undefined || fb === null || fb === "") return pf;
+    return fb;
+  }
+  // 1. 먼저 fallback 값을 100% 우선으로 base 를 깔고 → preferred backfill
+  const baseLocked: any = { ...fallback };
+  for (const k of FALLBACK_PRIMARY_FIELDS) {
+    const v = primaryValue(k);
+    if (v !== undefined && v !== null) baseLocked[k] = v;
+  }
+  // fallback 의 기본 name/target 을 잃지 않기 위해 미리 잡아둠
+  const fbAny = fallback as any;
+  const pfAny = preferred as any;
+  const finalFallbackName = String(
+    fbAny?.name || fbAny?.donorName || fbAny?.nickname || fbAny?.displayName || ""
+  ).trim();
+  const finalFallbackTarget = String(fallback.target || "").trim();
+  if (finalFallbackName && !baseLocked.name) baseLocked.name = finalFallbackName;
+  if (finalFallbackTarget && !baseLocked.target) baseLocked.target = finalFallbackTarget;
+
   const usePrefForMeta =
     relPref > relFall
       ? true
@@ -132,46 +173,43 @@ export function mergeDonorRowFields<T extends MergeableDonor>(
           String(fallback.name || fallback.donorName || "").length;
   const bestNameSrc: T = usePrefForMeta ? preferred : fallback;
   const bestTargetSrc: T = usePrefForMeta ? preferred : fallback;
-  const mergedName =
-    String(
-      bestNameSrc.name ||
-        bestNameSrc.donorName ||
-        preferred.name ||
-        preferred.donorName ||
-        fallback.name ||
-        fallback.donorName ||
-        ""
-    ).trim() || undefined;
+  const bnsAny = bestNameSrc as any;
+  const mergedNameRaw = String(
+    bnsAny?.name || bnsAny?.donorName || bnsAny?.nickname || bnsAny?.displayName || ""
+  ).trim();
+  const mergedName = finalFallbackName || mergedNameRaw || undefined;
   const rawPrefTarget = String(preferred.target || "").trim();
   const rawFallTarget = String(fallback.target || "").trim();
-  const targetPref = rawPrefTarget || bestTargetSrc.target;
-  const mergedTarget = targetPref ? String(targetPref).trim() : rawFallTarget || undefined;
+  const targetBest = String(bestTargetSrc.target || "").trim();
+  const mergedTarget = finalFallbackTarget || targetBest || rawPrefTarget || rawFallTarget || undefined;
 
-  const msg = String(preferred.message || "").trim();
-  const fallbackMsg = String(fallback.message || "").trim();
-  const baseMerge = {
-    ...preferred,
-    name: mergedName ?? preferred.name,
-    target: mergedTarget ?? preferred.target,
+  const fallbackMsg = String(fbAny?.message || fbAny?.memo || "").trim();
+  const prefMsg = String(pfAny?.message || pfAny?.memo || "").trim();
+  const mergedMsg = fallbackMsg || prefMsg || undefined;
+
+  const baseMerge: any = {
+    ...baseLocked,
+    ...(mergedName ? { name: mergedName } : {}),
+    ...(mergedTarget ? { target: mergedTarget } : {}),
+    ...(mergedMsg ? { message: mergedMsg } : {}),
   };
-  const withMessage: T = msg || !fallbackMsg ? baseMerge : { ...baseMerge, message: fallbackMsg };
-  const withPush =
-    withMessage.hsPushDir || !fallback.hsPushDir
-      ? withMessage
-      : { ...withMessage, hsPushDir: fallback.hsPushDir };
+  const withPush: any =
+    fallback.hsPushDir || !preferred.hsPushDir
+      ? { ...baseMerge, hsPushDir: fallback.hsPushDir || baseMerge.hsPushDir }
+      : baseMerge;
   const mergedAmount = Math.max(
     0,
-    Math.round(Number(preferred.amount ?? fallback.amount) || 0)
+    Math.round(Number(fallback.amount ?? preferred.amount) || 0)
   );
   const ineligible = !isDonationAmountEligibleForHighSocietyTerritory(mergedAmount);
   const territoryFlag =
-    ineligible || preferred.hsTerritoryExcluded === true
+    ineligible || fallback.hsTerritoryExcluded === true
       ? true
-      : preferred.hsTerritoryExcluded === false
+      : fallback.hsTerritoryExcluded === false
         ? false
-        : fallback?.hsTerritoryExcluded === false
+        : preferred?.hsTerritoryExcluded === false
           ? false
-          : fallback?.hsTerritoryExcluded === true
+          : preferred?.hsTerritoryExcluded === true
             ? true
             : false;
   return {
@@ -202,6 +240,38 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
   if (entry && entry.storedInputLen === donors.length) {
     return entry.result;
   }
+
+  /**
+   * ✅ 2026-09-07 Hotfix ⑥-4 SHRINK GUARD (Monotonic Increase Invariant):
+   *  "데이터가 있으면 있는대로 보여주세요 · 늘었다 줄었다 깜빡이면서 사라지면 안됨" → 사용자 요구사항.
+   *  어떤 경로(SSE stale · fetch 폴링 race · dedupe 오판 등) 로 들어오던지 간에
+   *  최종 dedupe 결과 donors 는 절대 원본 입력 donors 의 유니크 ID 갯수보다 적어져서는 안된다.
+   *  만약 병합 과정에서 실수로 strong id 1개를 잃어버렸다면 원본 donors 에만 존재하는 ID들을
+   *  강제로 뒤에 union append 해서 "원본에 있던건 최소한 다 나온다" 는 invariant 를 100% 보장.
+   */
+  function applyMonotonicShrinkGuard(finalMerged: T[]): T[] {
+    const mergedNormIds = new Set<string>();
+    for (const m of finalMerged) {
+      const raw = String(m.id || "").trim();
+      if (!raw) continue;
+      mergedNormIds.add(normalizeDonationEventId(raw) || raw);
+    }
+    const appendLostUnique: T[] = [];
+    for (const orig of donors) {
+      const raw = String(orig.id || "").trim();
+      if (!raw) continue;
+      const norm = normalizeDonationEventId(raw) || raw;
+      if (!mergedNormIds.has(norm)) {
+        mergedNormIds.add(norm);
+        appendLostUnique.push(orig);
+      }
+    }
+    if (appendLostUnique.length === 0) return finalMerged;
+    return [...finalMerged, ...appendLostUnique].sort(
+      (a, b) => donorAtEpochMs(b) - donorAtEpochMs(a)
+    );
+  }
+
   const map = new Map<string, T>();
   for (const d of donors) {
     const key = donorRowDedupeKey(d);
@@ -274,11 +344,12 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
       const other = preferred === d ? prev : d;
       merged[dupIdx] = mergeDonorRowFields(preferred, other);
     }
+    const guarded = applyMonotonicShrinkGuard(merged);
     dedupeIdentityCache.set(donors as unknown as object[], {
       storedInputLen: donors.length,
-      result: merged as unknown[],
+      result: guarded as unknown[],
     });
-    return merged;
+    return guarded;
   }
 
   const bucket = new Map<string, T[]>();
@@ -350,11 +421,12 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
     const other = preferred === d ? prev : d;
     merged[dupIdx] = mergeDonorRowFields(preferred, other);
   }
+  const guarded = applyMonotonicShrinkGuard(merged);
   dedupeIdentityCache.set(donors as unknown as object[], {
     storedInputLen: donors.length,
-    result: merged as unknown[],
+    result: guarded as unknown[],
   });
-  return merged;
+  return guarded;
 }
 
 export function donationQueueIdsForDonor(donor: { id?: string }): string[] {
