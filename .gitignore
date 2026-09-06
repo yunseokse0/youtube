@@ -29,3 +29,7 @@ Thumbs.db
 build-output.log
 vitest-output*.txt
 0
+
+# Deploy scripts local overrides
+scripts/deploy.local.*
+deploy-credentials.json
