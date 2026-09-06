@@ -462,6 +462,12 @@ export function shouldBlockHighSocietyRegression(
   patch: HighSocietySettings | null | undefined
 ): boolean {
   if (!isMeaningfulHighSocietySettings(base)) return false;
+  const baseRound = Math.max(1, Math.floor(Number(base?.round) || 1));
+  const patchRound = Math.max(1, Math.floor(Number(patch?.round) || 1));
+  /** ✅ 2026-09-06 Hotfix: patch.round > base.round = 명시적 영토 초기화(resetTerritory) 시그니처.
+   *  기존 regression guard가 reset 후의 깨끗한 snapshot undefined 패턴을 기본값 롤백으로 오판하여
+   *  base의 구 넓은 memberWidthCm을 살려버리는 회귀 방지. round bump는 의도적 리셋이므로 bypass. */
+  if (patchRound > baseRound) return false;
   const raw = patch && typeof patch === "object" ? (patch as Record<string, unknown>) : null;
   if (
     raw &&

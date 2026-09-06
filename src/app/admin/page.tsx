@@ -2364,11 +2364,18 @@ function AdminPageInner() {
       const patchStart = Number(patch?.startCmPerMember);
       const baseField = Number(base?.fieldCm);
       const patchField = Number(patch?.fieldCm);
+      const baseRound = Math.max(1, Math.floor(Number(base?.round) || 1));
+      const patchRound = Math.max(1, Math.floor(Number(patch?.round) || 1));
       const explicitDimChange =
         base &&
         patch &&
         (baseStart !== patchStart || baseField !== patchField);
+      /** ✅ 2026-09-06 Hotfix: patchRound > baseRound = 명시적 영토 초기화(resetTerritory) 시그니처.
+       *  8초 보호창이나 shouldBlockHighSocietyRegression이 구 memberWidthCm을 살려서 초기화를 막는 회귀 방지.
+       *  round bump는 관리자 의도적인 리셋/새 라운드 시작이므로 incoming 패치를 정본으로 수용. */
+      const hsResetRoundBump = Boolean(base && patch && patchRound > baseRound);
       if (
+        !hsResetRoundBump &&
         !explicitDimChange &&
         isMeaningfulHighSocietySettings(base) &&
         shouldBlockHighSocietyRegression(base, patch)
@@ -2376,6 +2383,7 @@ function AdminPageInner() {
         merged = { ...merged, highSocietySettings: base };
         didPreserve = true;
       } else if (
+        !hsResetRoundBump &&
         (pendingUnsyncedRef.current || Date.now() - lastLocalPersistAtRef.current < 8000) &&
         isMeaningfulHighSocietySettings(base)
       ) {
