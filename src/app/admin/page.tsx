@@ -756,6 +756,21 @@ function AdminPageInner() {
   const [selectedDonorIds, setSelectedDonorIds] = useState<Set<string>>(new Set());
   /** ✅ 신규: B모드 DIN 허브 누락 후원 가져오기 팝업 오픈 여부 */
   const [dinHubModalOpen, setDinHubModalOpen] = useState(false);
+  /** ✅ UI 흔들림 방지 #1: 편집 잠금 토글 (켜면 SSE/폴링 자동 setState 일시정지) */
+  const [donorEditLock, setDonorEditLock] = useState(false);
+  const donorEditLockRef = useRef(false);
+  useEffect(() => { donorEditLockRef.current = donorEditLock; }, [donorEditLock]);
+  /** ✅ UI 흔들림 방지 #2: 메시지 입력 draft Map + focus donorId · state 갱신시 DOM 재생성 NO */
+  const [draftMessages, setDraftMessages] = useState<Record<string, string>>({});
+  const draftMessagesRef = useRef<Record<string, string>>({});
+  useEffect(() => { draftMessagesRef.current = draftMessages; }, [draftMessages]);
+  const focusDonorIdRef = useRef<string | null>(null);
+  /** ✅ UI 흔들림 방지 #3: 후원 리스트 스크롤 자동 보존 (상단에 후원 추가시 scrollTop delta 유지) */
+  const donorListScrollRef = useRef<HTMLDivElement | null>(null);
+  const donorListLastScrollTopRef = useRef(0);
+  const donorListLastScrollHeightRef = useRef(0);
+  /** ✅ UI 흔들림 방지 #4: 입력/편집 감지시 자동업뎃 1.5s 지연 (focus 중복 리렌더 회피) */
+  const donorSuppressAutoUntilRef = useRef(0);
   /** 401·403 — 배지 문구·재시도 중단 */
   const [syncAuthBlocked, setSyncAuthBlocked] = useState(false);
   const stateUpdatedAtRef = useRef<number>(0);
@@ -3019,7 +3034,37 @@ function AdminPageInner() {
       void applyDonorsFromServerMainState({ silent: true });
     };
     const applyRemoteState = (incomingRemote: AppState, opts?: { forceDonorMerge?: boolean }) => {
+      /** ✅ UI 흔들림 방지 가드 — 편집잠금 ON 이면 원격 state 전부 무시 (ref 기반이니 리렌더 유발 NO) */
+      if (donorEditLockRef.current) return false;
+      /** ✅ UI 흔들림 방지 가드 — 입력/포커스 감지 후 1.5초 이내 원격 state 무시 (focus 중복 리렌더·커서 날아감 방지) */
+      if (Date.now() < donorSuppressAutoUntilRef.current) return false;
       let remote = incomingRemote;
+      /** ✅ UI 흔들림 방지: state 적용 직전 scrollTop·scrollHeight 스냅샷 찍기 (후에 diff 만큼 scroll 복구) */
+      const scrollEl = donorListScrollRef.current;
+      const beforeTop = scrollEl?.scrollTop ?? 0;
+      const beforeHeight = scrollEl?.scrollHeight ?? 0;
+      const snapBefore = (): void => {
+        donorListLastScrollTopRef.current = beforeTop;
+        donorListLastScrollHeightRef.current = beforeHeight;
+      };
+      snapBefore();
+      /** ✅ UI 흔들림 방지: setState 다음 microtask 에 scroll 복구 예약 (위에 신규 후원 N건 추가 → 높이 증가분 만큼 scrollTop +delta) */
+      const scheduleScrollRestore = (): void => {
+        if (!scrollEl) return;
+        queueMicrotask(() => {
+          const afterHeight = scrollEl.scrollHeight;
+          const delta = afterHeight - donorListLastScrollHeightRef.current;
+          if (delta > 0) {
+            scrollEl.scrollTop = donorListLastScrollTopRef.current + delta;
+          } else if (delta < 0) {
+            scrollEl.scrollTop = Math.max(0, donorListLastScrollTopRef.current + delta);
+          } else {
+            scrollEl.scrollTop = donorListLastScrollTopRef.current;
+          }
+          donorListLastScrollHeightRef.current = afterHeight;
+          donorListLastScrollTopRef.current = scrollEl.scrollTop;
+        });
+      };
       const remoteUpdatedAt = remote.updatedAt || 0;
       const localDonorCount = normalizeDonorsArray(stateRef.current.donors).length;
       const remoteDonorCount = normalizeDonorsArray(remote.donors).length;
@@ -3087,6 +3132,7 @@ function AdminPageInner() {
         stateUpdatedAtRef.current = remoteUpdatedAt;
         lastAppliedRemoteUpdatedAtRef.current = remoteUpdatedAt;
         pendingUnsyncedRef.current = false;
+        scheduleScrollRestore();
         setState(next);
         if (next.settlementUiOptions) {
           syncSettlementUiFormFromOptions(next.settlementUiOptions);
@@ -3127,6 +3173,7 @@ function AdminPageInner() {
           stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, next.updatedAt || 0);
           lastAppliedRemoteUpdatedAtRef.current = next.updatedAt || 0;
           pendingUnsyncedRef.current = false;
+          scheduleScrollRestore();
           setState(next);
           if (next.settlementUiOptions) {
             syncSettlementUiFormFromOptions(next.settlementUiOptions);
@@ -3465,6 +3512,7 @@ function AdminPageInner() {
           toApply = syncMemberTotalsFromDonors({ ...toApply, donors: deduped });
         }
       }
+      scheduleScrollRestore();
       setState(toApply);
       if (toApply.settlementUiOptions) {
         syncSettlementUiFormFromOptions(toApply.settlementUiOptions);
@@ -15743,7 +15791,7 @@ function AdminPageInner() {
                 ) : null}
               </div>
 
-              {/** ✅ 신규: 벌크 삭제 툴바 + B모드 누락후원 가져오기 버튼 */}
+              {/** ✅ 신규: 벌크 삭제 툴바 + B모드 누락후원 가져오기 버튼 + ✨ 편집 잠금 토글 */}
               <div className="mb-2 mt-1 flex items-center gap-2 flex-wrap">
                 <DonorBulkToolbar
                   visibleCount={donorListRowsVisible.length}
@@ -15754,6 +15802,14 @@ function AdminPageInner() {
                   onBulkDelete={bulkDeleteSelectedDonors}
                 />
                 <div className="flex-1" />
+                <button
+                  type="button"
+                  className={`rounded px-3 py-1 text-xs text-white flex items-center gap-1 transition-colors ${donorEditLock ? "bg-rose-700 hover:bg-rose-600 ring-2 ring-rose-400/60 ring-offset-2 ring-offset-neutral-950" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                  onClick={() => setDonorEditLock((v) => !v)}
+                  title={donorEditLock ? "🔒 편집 잠금 활성화 중 — SSE/폴링 자동 업데이트를 일시정지합니다. 해제하려면 클릭하세요." : "🔓 편집 잠금 비활성화 — 후원을 수동 편집할 때는 켜서 UI 흔들림을 막으세요."}
+                >
+                  {donorEditLock ? "🔒 편집 잠금 ON (1.5초 지연 대신 완전 차단)" : "🔓 편집 잠금 OFF"}
+                </button>
                 {/** B모드에서만 노출: DIN 허브 시나리오 B = hubSession.scenario B 또는 policy B모드. 안전하게 항상 버튼은 렌더하되 모달안에서 A모드 경고. */}
                 <button
                   type="button"
@@ -15765,7 +15821,15 @@ function AdminPageInner() {
                 </button>
               </div>
 
-              <div style={{ maxHeight: "75vh" }} className="overflow-auto pr-1 border border-white/10 rounded">
+              <div
+                ref={donorListScrollRef}
+                onScroll={(e) => {
+                  donorListLastScrollTopRef.current = (e.target as HTMLDivElement).scrollTop;
+                  donorListLastScrollHeightRef.current = (e.target as HTMLDivElement).scrollHeight;
+                }}
+                style={{ maxHeight: "75vh" }}
+                className="overflow-auto pr-1 border border-white/10 rounded"
+              >
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-neutral-400">
@@ -15869,14 +15933,51 @@ function AdminPageInner() {
                             <td className="p-1 text-neutral-400 max-w-[220px]">
                               <input
                                 type="text"
-                                key={`${d.id}:${d.message || ""}`}
-                                className="w-full min-w-[8rem] rounded border border-white/10 bg-neutral-950/80 px-1.5 py-0.5 text-xs text-neutral-200 placeholder:text-neutral-600"
-                                defaultValue={d.message || ""}
+                                id={`donor-msg-${String(d.id)}`}
+                                className="w-full min-w-[8rem] rounded border border-white/10 bg-neutral-950/80 px-1.5 py-0.5 text-xs text-neutral-200 placeholder:text-neutral-600 focus:outline-none focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400/40"
+                                value={
+                                  typeof draftMessages[String(d.id)] === "string"
+                                    ? draftMessages[String(d.id)]
+                                    : (d.message || "")
+                                }
                                 placeholder="메시지 입력"
-                                title="투네 통합알림 comment·후원 문구 — 클릭 후 입력하고 포커스를 벗어나면 저장"
+                                title="투네 통합알림 comment·후원 문구 — 클릭 후 입력하고 포커스를 벗어나면 저장 · 입력 중에는 자동 갱신을 1.5초간 억제합니다"
+                                onFocus={() => {
+                                  const idStr = String(d.id);
+                                  focusDonorIdRef.current = idStr;
+                                  donorSuppressAutoUntilRef.current = Date.now() + 1500;
+                                  if (!(idStr in draftMessagesRef.current)) {
+                                    setDraftMessages((prev) => ({ ...prev, [idStr]: d.message || "" }));
+                                  }
+                                }}
+                                onInput={(e) => {
+                                  const idStr = String(d.id);
+                                  donorSuppressAutoUntilRef.current = Date.now() + 1500;
+                                  const v = (e.target as HTMLInputElement).value;
+                                  setDraftMessages((prev) => {
+                                    if (prev[idStr] === v) return prev;
+                                    return { ...prev, [idStr]: v };
+                                  });
+                                }}
                                 onBlur={(e) => {
+                                  const idStr = String(d.id);
+                                  if (focusDonorIdRef.current === idStr) focusDonorIdRef.current = null;
+                                  donorSuppressAutoUntilRef.current = Date.now() + 800;
                                   const nextMessage = e.target.value;
-                                  if (String(nextMessage || "").trim() === String(d.message || "").trim()) return;
+                                  if (String(nextMessage || "").trim() === String(d.message || "").trim()) {
+                                    setDraftMessages((prev) => {
+                                      if (!(idStr in prev)) return prev;
+                                      const next = { ...prev };
+                                      delete next[idStr];
+                                      return next;
+                                    });
+                                    return;
+                                  }
+                                  setDraftMessages((prev) => {
+                                    const next = { ...prev };
+                                    delete next[idStr];
+                                    return next;
+                                  });
                                   void (async () => {
                                     const prev = stateRef.current;
                                     const next = updateDonorMessageInAppState(prev, d.id, nextMessage);
