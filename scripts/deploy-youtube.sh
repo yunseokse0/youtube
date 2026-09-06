@@ -58,12 +58,27 @@ git reset --hard origin/main
 git status --short | head -n 5 || true
 git clean -fd node_modules/.cache .next/cache 2>/dev/null || true
 
-# ---- 3. npm ci -----------------------------------------------------------------
+# ---- 3. npm ci (package-lock 1:1 설치)  →  실패시 npm install fallback -----------------
 echo ""
 echo "[3/6] 📦 npm ci  (package-lock.json 1:1 설치)"
 rm -rf node_modules 2>/dev/null || true
+set +e
 npm ci --no-audit --no-fund --loglevel=error 2>&1 | tail -n 3
-echo "       ✔️  npm ci exit=$?"
+CI_EXIT=$?
+set -e
+if [ "$CI_EXIT" -ne 0 ]; then
+  echo "       ⚠️  npm ci 실패 (exit $CI_EXIT) → npm install 로 fallback 재시도..."
+  echo "          (원인은 package-lock 해쉬 불일치 / 오래된 npm 캐시 corrupt / node 버전 차이 3가지 중 하나)"
+  set +e
+  npm install --no-audit --no-fund --loglevel=error --legacy-peer-deps 2>&1 | tail -n 5
+  CI_EXIT=$?
+  set -e
+  if [ "$CI_EXIT" -ne 0 ]; then
+    echo "  ❌ npm install + legacy-peer-deps 까지 전부 실패 → 배포 중단 (빌드 단계로 넘어가지 않음)"
+    exit 5
+  fi
+fi
+echo "       ✔️  packages installed (exit=$CI_EXIT)"
 
 # ---- 4. Next.js production build (실패시 abort, 기존 서비스 유지) ----------------
 echo ""
