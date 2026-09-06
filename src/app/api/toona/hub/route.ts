@@ -180,7 +180,8 @@ export async function POST(req: NextRequest) {
   };
 
   if (body.action === "sync-donations") {
-    const result = await fetchToonaDonationsSinceLink(auth.userId);
+    const force = req.nextUrl.searchParams.get("force") === "1";
+    const result = await fetchToonaDonationsSinceLink(auth.userId, { ignoreMinInterval: force });
     if (!result.ok) return json({ ok: false, error: result.error }, 502);
     const logs = await readToonaHubDonationLogs(auth.userId);
     const session = await readToonaHubSession(auth.userId);

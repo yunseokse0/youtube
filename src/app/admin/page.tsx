@@ -309,6 +309,9 @@ import {
   writeToonationSettingsToLocal,
   type ToonationListenerStatus,
 } from "@/lib/donation/toonation/listener";
+import DonorCheckboxCell from "@/components/admin/DonorCheckboxCell";
+import DonorBulkToolbar from "@/components/admin/DonorBulkToolbar";
+import DinHubMissingDonationsModal from "@/components/admin/DinHubMissingDonationsModal";
 import {
   dedupeDonorRows,
   countableDonorTotal,
@@ -745,6 +748,14 @@ function AdminPageInner() {
   const [syncStatus, setSyncStatus] = useState<"loading" | "synced" | "local" | "error">("loading");
   /** 후원 리스트 DOM — 기본 최근 N건만 (전체 렌더는 버튼) */
   const [donorListShowAll, setDonorListShowAll] = useState(false);
+  /**
+   * ✅ 신규: 후원 리스트 개별 행 체크박스 (선택 상태 Map 기반)
+   * - 핵심: donorId 기반 Set으로 관리 → SSE/Polling state 업뎃시 리렌더되어도 절대 선택 리셋 안됨
+   * - 리렌더 트리거는 immutable new Set 으로 반드시 교체 (직접 mutate 불가)
+   */
+  const [selectedDonorIds, setSelectedDonorIds] = useState<Set<string>>(new Set());
+  /** ✅ 신규: B모드 DIN 허브 누락 후원 가져오기 팝업 오픈 여부 */
+  const [dinHubModalOpen, setDinHubModalOpen] = useState(false);
   /** 401·403 — 배지 문구·재시도 중단 */
   const [syncAuthBlocked, setSyncAuthBlocked] = useState(false);
   const stateUpdatedAtRef = useRef<number>(0);
@@ -1765,7 +1776,7 @@ function AdminPageInner() {
     () => donorListRows.slice().sort((a, b) => b.at - a.at),
     [donorListRows]
   );
-  const DONOR_LIST_WINDOW = 120;
+  const DONOR_LIST_WINDOW = 300;
   const donorListRowsVisible = useMemo(
     () =>
       donorListShowAll
@@ -1773,6 +1784,41 @@ function AdminPageInner() {
         : donorListRowsSorted.slice(0, DONOR_LIST_WINDOW),
     [donorListRowsSorted, donorListShowAll]
   );
+  const toggleDonorSelect = useCallback((donorId?: string, isAll?: boolean) => {
+    if (isAll) {
+      setSelectedDonorIds((prev) => {
+        const allVisibleIds = donorListRowsVisible.map((d) => String(d.id)).filter(Boolean);
+        const alreadyAllSelected = allVisibleIds.every((id) => prev.has(id));
+        if (alreadyAllSelected) {
+          const next = new Set(prev);
+          for (const id of allVisibleIds) next.delete(id);
+          return next;
+        }
+        const next = new Set(prev);
+        for (const id of allVisibleIds) next.add(id);
+        return next;
+      });
+      return;
+    }
+    if (!donorId) return;
+    setSelectedDonorIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(donorId)) next.delete(donorId);
+      else next.add(donorId);
+      return next;
+    });
+  }, [donorListRowsVisible]);
+  const clearAllDonorSelect = useCallback(() => setSelectedDonorIds(new Set()), []);
+  const selectAllVisibleDonors = useCallback(() => {
+    setSelectedDonorIds(() => {
+      const next = new Set<string>();
+      for (const d of donorListRowsVisible) {
+        const id = String(d.id || "");
+        if (id) next.add(id);
+      }
+      return next;
+    });
+  }, [donorListRowsVisible]);
   const applyGlobalDonorsFormat = useCallback(
     (format: "full" | "short") => {
       setState((prev) => {
@@ -7824,6 +7870,30 @@ function AdminPageInner() {
     },
     [user?.id]
   );
+
+  /** ✅ 신규: 체크박스로 선택된 N건의 후원을 한 번에 삭제 · 배치 revert 후 persist 1회만 호출 (DB 부하 최적화) */
+  const bulkDeleteSelectedDonors = useCallback(async () => {
+    const idsToDelete = Array.from(selectedDonorIds);
+    if (idsToDelete.length === 0) return;
+    let base = stateRef.current;
+    for (const id of idsToDelete) {
+      void removeQueueEventsMatchingDonor({ id } as any);
+      const next = revertDonationFromAppState(base, id);
+      if (next) base = next;
+    }
+    const preserved = markAuthoritativeDonationSave(
+      { serverUpdatedAt: base.updatedAt },
+      base,
+      { replaceDonors: true, awaitingServerSave: true }
+    );
+    setState(preserved);
+    const ok = await commitAuthoritativeDonorPersist(preserved, {
+      persistToastLabel: `${idsToDelete.length}건 벌크 후원 삭제`,
+      skipSetState: true,
+      slimResponse: true,
+    });
+    if (ok) clearAllDonorSelect();
+  }, [selectedDonorIds, commitAuthoritativeDonorPersist, clearAllDonorSelect, markAuthoritativeDonationSave, removeQueueEventsMatchingDonor]);
 
   restoreDonorsFromDailyLogSnapshotRef.current = async () => {
     if (
@@ -14002,6 +14072,12 @@ function AdminPageInner() {
                   void bulkReuploadSigInventoryFromFiles(e.target.files);
                 }}
               />
+              {/** ✅ 신규: DIN 허브 누락 후원 가져오기 모달 (B모드 전용) · createPortal 내장 — A모드시 내부에서 빨간 경고 노출 */}
+              <DinHubMissingDonationsModal
+                open={dinHubModalOpen}
+                onClose={() => setDinHubModalOpen(false)}
+                userId={user?.id || overlayUserId}
+              />
               {sigImagePreviewModal ? (
                 <div
                   className="fixed inset-0 z-[500] flex items-center justify-center bg-black/80 px-4 py-6"
@@ -15667,10 +15743,33 @@ function AdminPageInner() {
                 ) : null}
               </div>
 
-              <div className="max-h-[260px] overflow-auto pr-1">
+              {/** ✅ 신규: 벌크 삭제 툴바 + B모드 누락후원 가져오기 버튼 */}
+              <div className="mb-2 mt-1 flex items-center gap-2 flex-wrap">
+                <DonorBulkToolbar
+                  visibleCount={donorListRowsVisible.length}
+                  selectedCount={selectedDonorIds.size}
+                  hasAnySelection={selectedDonorIds.size > 0}
+                  onSelectAllVisible={selectAllVisibleDonors}
+                  onClearAll={clearAllDonorSelect}
+                  onBulkDelete={bulkDeleteSelectedDonors}
+                />
+                <div className="flex-1" />
+                {/** B모드에서만 노출: DIN 허브 시나리오 B = hubSession.scenario B 또는 policy B모드. 안전하게 항상 버튼은 렌더하되 모달안에서 A모드 경고. */}
+                <button
+                  type="button"
+                  className="rounded bg-amber-800 hover:bg-amber-700 px-3 py-1 text-xs text-white flex items-center gap-1"
+                  onClick={() => setDinHubModalOpen(true)}
+                  title="DIN 허브에 연결된 후원 중 state에 반영 안된 누락 후원을 수동으로 가져옵니다 (B모드 전용)"
+                >
+                  📥 DIN 허브 · 누락 후원 가져오기 (B모드)
+                </button>
+              </div>
+
+              <div style={{ maxHeight: "75vh" }} className="overflow-auto pr-1 border border-white/10 rounded">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-neutral-400">
+                      <th className="text-left font-medium p-1 w-12">선택</th>
                       <th className="text-left font-medium p-1">시간</th>
                       <th className="text-left font-medium p-1">후원자</th>
                       <th className="text-left font-medium p-1">멤버</th>
@@ -15679,6 +15778,17 @@ function AdminPageInner() {
                       <th className="text-right font-medium p-1">금액</th>
                       <th className="text-right font-medium p-1 w-28">나누기</th>
                       <th className="text-right font-medium p-1 w-16">삭제</th>
+                    </tr>
+                    <tr className="text-neutral-400 border-b border-white/5">
+                      <th className="text-left font-medium p-1 w-12">
+                        <DonorCheckboxCell
+                          isAll
+                          selected={donorListRowsVisible.length > 0 && donorListRowsVisible.every((d) => selectedDonorIds.has(String(d.id)))}
+                          onToggle={toggleDonorSelect}
+                          label="전체 선택"
+                        />
+                      </th>
+                      <th colSpan={8}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -15692,6 +15802,13 @@ function AdminPageInner() {
                           : null;
                         return (
                           <tr key={`${d.id}-${d.at}-${rowIdx}`} className={`border-t border-white/10 ${isSplitPart ? "bg-violet-950/15" : isSplitSource ? "bg-violet-950/10" : ""}`}>
+                            <td className="p-1 w-12">
+                              <DonorCheckboxCell
+                                donorId={String(d.id)}
+                                selected={selectedDonorIds.has(String(d.id))}
+                                onToggle={toggleDonorSelect}
+                              />
+                            </td>
                             <td className="p-1 text-neutral-400"><ClientTime ts={d.at} /></td>
                             <td className="p-1">
                               {d.name}
@@ -15850,7 +15967,7 @@ function AdminPageInner() {
                         );
                       })}
                     {donorListRowsSorted.length === 0 && (
-                      <tr><td className="p-2 text-neutral-400" colSpan={8}>기록이 없습니다.</td></tr>
+                      <tr><td className="p-2 text-neutral-400" colSpan={9}>기록이 없습니다.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -15865,7 +15982,7 @@ function AdminPageInner() {
                     className="rounded bg-neutral-800 px-2 py-1 text-neutral-200 hover:bg-neutral-700"
                     onClick={() => setDonorListShowAll((v) => !v)}
                   >
-                    {donorListShowAll ? "최근 120건만" : "전체 표시"}
+                    {donorListShowAll ? "최근 300건만" : "전체 표시"}
                   </button>
                 </div>
               ) : null}

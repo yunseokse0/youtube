@@ -477,7 +477,7 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
   return { session: publicToonaHubSession(session), logs };
 }
 
-export async function fetchToonaDonationsSinceLink(youtubeUserId: string): Promise<
+export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?: { ignoreMinInterval?: boolean }): Promise<
   | { ok: true; imported: number; applied: number; skipped?: boolean }
   | { ok: false; error: string }
 > {
@@ -487,7 +487,7 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string): Promi
   /** B모드 폴러(180s) + admin(pollToonaHubForAdmin) 중복 호출 방지 전역 가드 */
   const now = Date.now();
   const last = lastDonationPullAt.get(uid) || 0;
-  if (now - last < DONATION_PULL_MIN_INTERVAL_MS) {
+  if (!opts?.ignoreMinInterval && now - last < DONATION_PULL_MIN_INTERVAL_MS) {
     return { ok: true, imported: 0, applied: 0, skipped: true };
   }
   lastDonationPullAt.set(uid, now);
