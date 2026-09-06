@@ -7921,8 +7921,20 @@ function AdminPageInner() {
 
   /** ✅ 신규: 체크박스로 선택된 N건의 후원을 한 번에 삭제 · 배치 revert 후 persist 1회만 호출 (DB 부하 최적화) */
   const bulkDeleteSelectedDonors = useCallback(async () => {
-    const idsToDelete = Array.from(selectedDonorIds);
-    if (idsToDelete.length === 0) return;
+    const allSelected = Array.from(selectedDonorIds);
+    if (allSelected.length === 0) return;
+    /** 이미 donationExcluded=true 인 행은 제외하고 실제 처리 갯수 산출 (중복 삭제 회피) */
+    const donorMap = new Map((stateRef.current.donors || []).map((d) => [String(d.id), d]));
+    const idsToDelete = allSelected.filter((id) => {
+      const d = donorMap.get(id);
+      return d && !isDonorExcludedFromDonationTotals(d as any);
+    });
+    if (idsToDelete.length === 0) {
+      showAppToast("선택된 행이 이미 모두 집계 제외 상태입니다.", { variant: "info", durationMs: 3500 });
+      clearAllDonorSelect();
+      return;
+    }
+    const skipped = allSelected.length - idsToDelete.length;
     let base = stateRef.current;
     for (const id of idsToDelete) {
       void removeQueueEventsMatchingDonor({ id } as any);
@@ -7936,7 +7948,7 @@ function AdminPageInner() {
     );
     setState(preserved);
     const ok = await commitAuthoritativeDonorPersist(preserved, {
-      persistToastLabel: `${idsToDelete.length}건 벌크 후원 삭제`,
+      persistToastLabel: `${idsToDelete.length}건 벌크 후원 삭제 (집계 제외)${skipped > 0 ? ` · ${skipped}건은 이미 제외 상태라 건너뜀` : ""}`,
       skipSetState: true,
       slimResponse: true,
     });
@@ -15860,12 +15872,13 @@ function AdminPageInner() {
                       .map((d, rowIdx) => {
                         const isSplitPart = isGroupSplitPartDonor(d);
                         const isSplitSource = isGroupSplitSourceDonor(state, d);
+                        const isExcluded = isDonorExcludedFromDonationTotals(d as any);
                         const splitPartCount = isSplitSource ? countGroupSplitParts(state, d.id) : 0;
-                        const splitPreview = !isSplitPart && !isSplitSource
+                        const splitPreview = !isSplitPart && !isSplitSource && !isExcluded
                           ? previewGroupSplitDonation(state, d.amount, state.groupSplitDonationSettings)
                           : null;
                         return (
-                          <tr key={`${d.id}-${d.at}-${rowIdx}`} className={`border-t border-white/10 ${isSplitPart ? "bg-violet-950/15" : isSplitSource ? "bg-violet-950/10" : ""}`}>
+                          <tr key={`${d.id}-${d.at}-${rowIdx}`} className={`border-t border-white/10 ${isExcluded ? "line-through decoration-rose-400/70 decoration-2 text-neutral-500 bg-rose-950/15 opacity-70" : isSplitPart ? "bg-violet-950/15" : isSplitSource ? "bg-violet-950/10" : ""}`}>
                             <td className="p-1 w-12">
                               <DonorCheckboxCell
                                 donorId={String(d.id)}
@@ -16031,33 +16044,73 @@ function AdminPageInner() {
                             <td className="p-1 text-right">
                               {isSplitSource ? (
                                 <span className="text-[10px] text-neutral-500">삭제 불가</span>
+                              ) : isExcluded ? (
+                                <button
+                                  className="px-2 py-1 rounded bg-rose-900 hover:bg-rose-800 text-rose-100 text-[10px] whitespace-nowrap"
+                                  title="후원 제외 상태입니다. 버튼 클릭시 DB에서 행을 완전히 삭제합니다"
+                                  onClick={() => {
+                                    requestConfirm(
+                                      "후원 기록 완전 삭제",
+                                      "이미 집계에서 제외된 행입니다. DB에서 완전히 삭제할까요?",
+                                      () => {
+                                        void (async () => {
+                                          void removeQueueEventsMatchingDonor(d);
+                                          const beforeDelete = stateRef.current;
+                                          const next = revertDonationFromAppState(beforeDelete, d.id, { hardDeleteRow: true });
+                                          if (!next) return;
+                                          const preserved = markAuthoritativeDonationSave(
+                                            { serverUpdatedAt: next.updatedAt },
+                                            next,
+                                            { replaceDonors: true, awaitingServerSave: true }
+                                          );
+                                          setState(preserved);
+                                          const ok = await commitAuthoritativeDonorPersist(preserved, {
+                                            persistToastLabel: "후원 완전 삭제",
+                                            skipSetState: true,
+                                            slimResponse: true,
+                                          });
+                                          if (!ok) {
+                                            stateRef.current = beforeDelete;
+                                            setState(beforeDelete);
+                                          }
+                                        })();
+                                      }, { confirmText: "완전 삭제", danger: true }
+                                    );
+                                  }}
+                                >
+                                  완전 삭제
+                                </button>
                               ) : (
                                 <button
                                   className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700"
                                   onClick={() => {
-                                    requestConfirm("후원 기록 삭제", "해당 후원 기록을 삭제할까요?", () => {
-                                      void (async () => {
-                                        void removeQueueEventsMatchingDonor(d);
-                                        const beforeDelete = stateRef.current;
-                                        const next = revertDonationFromAppState(beforeDelete, d.id);
-                                        if (!next) return;
-                                        const preserved = markAuthoritativeDonationSave(
-                                          { serverUpdatedAt: next.updatedAt },
-                                          next,
-                                          { replaceDonors: true, awaitingServerSave: true }
-                                        );
-                                        setState(preserved);
-                                        const ok = await commitAuthoritativeDonorPersist(preserved, {
-                                          persistToastLabel: "후원 삭제",
-                                          skipSetState: true,
-                                          slimResponse: true,
-                                        });
-                                        if (!ok) {
-                                          stateRef.current = beforeDelete;
-                                          setState(beforeDelete);
-                                        }
-                                      })();
-                                    }, { confirmText: "삭제", danger: true });
+                                    requestConfirm(
+                                      "후원 기록 삭제",
+                                      "해당 후원 기록을 집계에서 제외할까요?\n(행 자체는 남겨두고 허브 폴링·SSE sync 와도 제외 상태를 유지합니다)",
+                                      () => {
+                                        void (async () => {
+                                          void removeQueueEventsMatchingDonor(d);
+                                          const beforeDelete = stateRef.current;
+                                          const next = revertDonationFromAppState(beforeDelete, d.id);
+                                          if (!next) return;
+                                          const preserved = markAuthoritativeDonationSave(
+                                            { serverUpdatedAt: next.updatedAt },
+                                            next,
+                                            { replaceDonors: true, awaitingServerSave: true }
+                                          );
+                                          setState(preserved);
+                                          const ok = await commitAuthoritativeDonorPersist(preserved, {
+                                            persistToastLabel: "후원 삭제 (집계 제외)",
+                                            skipSetState: true,
+                                            slimResponse: true,
+                                          });
+                                          if (!ok) {
+                                            stateRef.current = beforeDelete;
+                                            setState(beforeDelete);
+                                          }
+                                        })();
+                                      }, { confirmText: "삭제", danger: true }
+                                    );
                                   }}
                                 >
                                   삭제

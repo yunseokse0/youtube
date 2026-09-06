@@ -186,11 +186,12 @@ export function applyDonationToAppState(
 
 export function revertDonationFromAppState(
   currentState: AppState,
-  donorId: string
+  donorId: string,
+  opts?: { hardDeleteRow?: boolean }
 ): AppState | null {
   const donor = (currentState.donors || []).find((d) => d.id === donorId);
   if (!donor) return null;
-  if (isDonorExcludedFromDonationTotals(donor)) return null;
+  if (isDonorExcludedFromDonationTotals(donor) && !opts?.hardDeleteRow) return null;
 
   const field = resolveEffectiveDonorTarget(donor);
   const amount = Math.max(0, Math.round(Number(donor.amount) || 0));
@@ -207,7 +208,7 @@ export function revertDonationFromAppState(
   const syncMode = currentState.donationSyncMode || "mealBattle";
   const mealRaw = mealBattleUsesRawDonationScore(currentState.mealBattle);
   const mealParticipants =
-    syncMode === "mealBattle"
+    syncMode === "mealBattle" && !isDonorExcludedFromDonationTotals(donor)
       ? applyMealBattleDonationToParticipants(
           currentState.mealBattle?.participants || [],
           donor.memberId,
@@ -219,26 +220,51 @@ export function revertDonationFromAppState(
       : currentState.mealBattle?.participants || [];
 
   const now = Date.now();
+  const idStr = String(donorId);
+  const nameStr = String(donor.name || donorId);
+  const memberIdStr = String(donor.memberId || "").trim();
 
-  let removed = false;
-  const nextDonors = (currentState.donors || []).filter((d) => {
-    if (!removed && d.id === donorId) {
-      removed = true;
-      return false;
-    }
+  /**
+   * ✅ FIX: 삭제 후 hub polling / SSE sync로 donor가 다시 나타나는 버그.
+   * 기존: filter(d.id !== donorId) → DB에서 다시 로드하면 복원.
+   * 변경: donationExcluded=true 플래그 마킹 + 기여도에서 제외.
+   *       dedupe pipeline에서 preferred.donationExcluded || fallback.donationExcluded로 merge 유지되므로
+   *       허브 sync·Redis 폴링·daily log restore 어디서 와도 영구적으로 집계 제외됨.
+   * opts.hardDeleteRow=true 인 경우만 과거 호환성 위해 filter 삭제 유지.
+   */
+  const nextDonors: Donor[] = opts?.hardDeleteRow
+    ? (currentState.donors || []).filter((d) => d.id !== donorId)
+    : (currentState.donors || []).map((d): Donor => {
+        if (d.id !== donorId) return d;
+        return { ...(d as Donor), donationExcluded: true };
+      });
+
+  /** ✅ FIX: contributionLogs cleanup · 삭제 donor와 관련된 +delta 추가 로그를 함께 제거 (로그 오염 방지)
+   * 1. donorId를 직접 참조하는 로그 (apply:{donorId} / revert:{donorId} / reassign:*:{donorId}:*)
+   * 2. 동일 memberId + 동일 overridePoints amount + delta+1 인 추가 로그에서 1개 제거 (best-effort 페어 매칭)
+   */
+  let nextContributionLogs = [...(currentState.contributionLogs || [])];
+  const directMatchRegex = new RegExp(`:(?:apply|revert|reassign)(?::[^:]*)*:${idStr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?::|$)`);
+  nextContributionLogs = nextContributionLogs.filter((log) => {
+    if (directMatchRegex.test(log.id)) return false;
+    if (log.note && (log.note.includes(`donor ${nameStr}`) || log.note.includes(`donor ${idStr}`))) return false;
     return true;
   });
-
-  let nextContributionLogs = [...(currentState.contributionLogs || [])];
-  if (overridePoints > 0) {
-    nextContributionLogs.push({
-      id: `revert:${donorId}:${now}`,
-      memberId: String(donor.memberId || "").trim(),
-      amount: overridePoints,
-      delta: -1 as const,
-      note: `revert donor ${donor.name || donorId}`,
-      at: now,
+  if (overridePoints > 0 && memberIdStr && !isDonorExcludedFromDonationTotals(donor)) {
+    let consumed = false;
+    nextContributionLogs = nextContributionLogs.filter((log) => {
+      if (consumed) return true;
+      if (
+        log.memberId === memberIdStr &&
+        log.delta === (1 as const) &&
+        Math.abs(Number(log.amount) - overridePoints) < 0.5
+      ) {
+        consumed = true;
+        return false;
+      }
+      return true;
     });
+    /** delta:-1 revert push는 이제 불필요 (donationExcluded로 집계에서 이미 제외 & 멤버 합계 차감 직접 적용) */
   }
 
   const positions = currentState.memberPositions || null;
@@ -253,8 +279,8 @@ export function revertDonationFromAppState(
     );
 
   const members = (currentState.members || []).map((member) => {
-    if (String(member.id) !== String(donor.memberId)) return member;
-    if (isOperating(member.id)) return member;
+    if (String(member.id) !== memberIdStr) return member;
+    if (isOperating(member.id) || isDonorExcludedFromDonationTotals(donor)) return member;
     const fallbackContrib = Math.max(0, Number(member.contribution) || 0);
     const contribution = Math.max(0, fallbackContrib - overridePoints);
     const targetField = field === "toon" ? "toon" : "account";

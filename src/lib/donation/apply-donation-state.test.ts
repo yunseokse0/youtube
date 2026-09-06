@@ -650,7 +650,7 @@ describe("applyDonationToAppState", () => {
     expect(result.state.members[0]?.account).toBe(120000);
   });
 
-  it("revertDonationFromAppState removes donor and updates rankings revision", () => {
+  it("revertDonationFromAppState marks donor donationExcluded=true (집계 제외, polling sync 와도 유지) and updates rankings revision", () => {
     const at = Date.now();
     const state = {
       ...defaultState(),
@@ -668,12 +668,18 @@ describe("applyDonationToAppState", () => {
       donorRankingsUpdatedAt: at - 1000,
     };
     const next = revertDonationFromAppState(state, "toonation:99");
-    expect(next?.donors).toHaveLength(0);
+    /** ✅ FIX: 기존 filter 삭제 → donationExcluded=true 마킹으로 변경. hub sync·dedupe merge에서 플래그 유지되어 영구 제외 */
+    expect(next?.donors).toHaveLength(1);
+    expect(next?.donors?.[0]?.donationExcluded).toBe(true);
     expect(next?.members[0]?.toon).toBe(0);
     expect(Number(next?.donorRankingsUpdatedAt || 0)).toBeGreaterThan(at - 1000);
+    /** hardDeleteRow=true 옵션은 기존 filter 삭제 호환성 유지 */
+    const hard = revertDonationFromAppState(state, "toonation:99", { hardDeleteRow: true });
+    expect(hard?.donors).toHaveLength(0);
+    expect(hard?.members[0]?.toon).toBe(0);
   });
 
-  it("revertDonationFromAppState removes only one row when duplicate ids exist", () => {
+  it("revertDonationFromAppState marks only matched donor donationExcluded=true when duplicate ids exist", () => {
     const at = Date.now();
     const row = {
       id: "toonation:dup",
@@ -689,8 +695,14 @@ describe("applyDonationToAppState", () => {
       donors: [row, { ...row }],
     };
     const next = revertDonationFromAppState(state, "toonation:dup");
-    expect(next?.donors).toHaveLength(1);
+    /** ✅ FIX: 기존 filter 1개 삭제 → 2개 모두 순회하면서 map donationExcluded=true 마킹. id 중복은 dedupe pipeline에서 나중에 하나로 합쳐짐 */
+    expect(next?.donors).toHaveLength(2);
+    expect(next?.donors?.every((d) => d.donationExcluded === true)).toBe(true);
     expect(next?.members[0]?.toon).toBe(3000);
+    /** hardDeleteRow 호환성 확인: id가 "toonation:dup" 인 행 2건 모두 filter로 삭제 */
+    const hard = revertDonationFromAppState(state, "toonation:dup", { hardDeleteRow: true });
+    expect(hard?.donors).toHaveLength(0);
+    expect(hard?.members[0]?.toon).toBe(3000);
   });
 
   it("syncMemberTotalsFromDonors aligns member columns with donor rows", () => {
@@ -1241,7 +1253,7 @@ describe("contribution formula (apply-from-now)", () => {
     expect(result.state.contributionFormula).toEqual({ accountWeightPct: 10, toonWeightPct: 10 });
   });
 
-  it("revert subtracts stored contributionPoints after formula change", () => {
+  it("revert subtracts stored contributionPoints after formula change (donationExcluded soft 마킹)", () => {
     const withDonation = {
       ...defaultState(),
       contributionFormula: { accountWeightPct: 0, toonWeightPct: 100 },
@@ -1261,6 +1273,12 @@ describe("contribution formula (apply-from-now)", () => {
     const next = revertDonationFromAppState(withDonation, "d1");
     expect(next?.members[0]?.toon).toBe(0);
     expect(next?.members[0]?.contribution).toBe(1_000);
-    expect(next?.donors).toHaveLength(0);
+    expect(next?.donors).toHaveLength(1);
+    expect(next?.donors?.[0]?.donationExcluded).toBe(true);
+    /** hardDeleteRow=true: 기존 0건 filter 삭제 동작 확인 */
+    const hard = revertDonationFromAppState(withDonation, "d1", { hardDeleteRow: true });
+    expect(hard?.members[0]?.toon).toBe(0);
+    expect(hard?.members[0]?.contribution).toBe(1_000);
+    expect(hard?.donors).toHaveLength(0);
   });
 });
