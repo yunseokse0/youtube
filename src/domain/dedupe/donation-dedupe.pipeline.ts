@@ -491,20 +491,20 @@ export function isDuplicateDonationEvent(
      * fallback 레거시 donor (id가 없는 행)에 대해서만 기존 content dedup 보험 로직을 그대로 유지. */
     const incomingHasStrongId = Boolean(eventId) && !isWeakToonationDonorId(eventId);
     const existingHasStrongId = !isWeakToonationDonorId(donorId);
-    if (incomingHasStrongId && existingHasStrongId && donorId !== eventId) {
-      // proceed to id exact match checks 아래에서만 중복 판정, content match는 무시
-    } else if (incomingHasStrongId && existingHasStrongId && normalizeDonationEventId(donorId) === normalizeDonationEventId(eventId)) {
+    /** ✅ 2026-09-07 Hotfix ⑤ Bypass: strong id 끼리 서로 다르면 시간/내용 제약 전혀 무시하고 별개 후원
+     *  fallthrough 로 shouldTreatAsDuplicateDonationContent 호출되는것을 원천 차단
+     *  → 5건/10건/4건 연타 strong id 전부 개별 row 유지 */
+    if (incomingHasStrongId && existingHasStrongId) {
+      return normalizeDonationEventId(donorId) === normalizeDonationEventId(eventId);
+    }
+    if (
+      shouldTreatAsDuplicateDonationContent(d, {
+        ...probeDonor,
+        id: eventId || externalDonorId,
+        externalId,
+      })
+    ) {
       return true;
-    } else {
-      if (
-        shouldTreatAsDuplicateDonationContent(d, {
-          ...probeDonor,
-          id: eventId || externalDonorId,
-          externalId,
-        })
-      ) {
-        return true;
-      }
     }
     if (donorRowDedupeKey(d) === probeKey) return true;
     if (donorId === eventId || donorId === baseId) return true;

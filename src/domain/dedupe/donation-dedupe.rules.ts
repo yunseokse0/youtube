@@ -418,6 +418,20 @@ export function shouldTreatAsDuplicateDonationContent(
     donationExcluded?: boolean;
   }
 ): boolean {
+  /** ✅ 2026-09-07 Hotfix ④ Bypass: DIN 허브 strong id (toonation:din:DBID) 끼리는
+   *  15초 identical-message window / 3초 near-content window 등 시간 제약과 전혀 무관하게
+   *  ID가 서로 다르면 무조건 별개 후원으로 간주 → 5건/10건 연타 후원 개별 저장
+   *  (resolveNearDupWindowMs 가 strong id 여도 15초 msg window 리턴하는 오탐을 함수 진입 전 원천 차단) */
+  const existingRawId = String(existing.id || "").trim();
+  const incomingRawId = String(incoming.id || "").trim();
+  const exStrong = Boolean(existingRawId) && !isWeakToonationDonorId(existingRawId);
+  const inStrong = Boolean(incomingRawId) && !isWeakToonationDonorId(incomingRawId);
+  if (exStrong && inStrong) {
+    const exNorm = normalizeDonationEventId(existingRawId);
+    const inNorm = normalizeDonationEventId(incomingRawId);
+    if (exNorm === inNorm) return true;
+    return false;
+  }
   const existingSplit =
     Boolean(existing.groupSplit) ||
     String(existing.id || "").includes(":split:") ||
@@ -438,9 +452,6 @@ export function shouldTreatAsDuplicateDonationContent(
       return false;
     }
   }
-
-  const existingRawId = String(existing.id || "").trim();
-  const incomingRawId = String(incoming.id || "").trim();
 
   {
     const existingReliableExt =
