@@ -96,19 +96,23 @@ export async function GET(req: NextRequest) {
   if (isToonaHubDisabledForMode()) {
     const session = await readToonaHubSession(auth.userId).catch(() => null);
     const logs = await readToonaHubDonationLogs(auth.userId).catch(() => []);
+    const scenario = isDonationIntakeModeB() ? "B" : "A";
     return json({
       ok: true,
       disabled: true,
       mode: describeDonationIntakeMode(),
+      scenario,
       reason:
         "현재 " +
         describeDonationIntakeMode() +
         " 이므로 DIN 허브 API를 사용하지 않고 투네 직접 WS 경로만 활성화됩니다. DIN 허브를 사용하려면 TOONA_INTAKE_MODE=B 로 설정하세요.",
       session: publicToonaHubSession(session),
       logs,
+      donationLogs: logs,
     });
   }
 
+  const scenario = isDonationIntakeModeB() ? "B" : "A";
   const refresh = new URL(req.url).searchParams.get("refresh") === "1";
   if (refresh) {
     try {
@@ -127,18 +131,20 @@ export async function GET(req: NextRequest) {
       );
       const result = await Promise.race([pollPromise, timeoutPromise]);
       if (result) {
-        return json({ ok: true, session: result.session, logs: result.logs });
+        return json({ ok: true, scenario, session: result.session, logs: result.logs, donationLogs: result.logs });
       }
       const session = await readToonaHubSession(auth.userId);
       const logs = await readToonaHubDonationLogs(auth.userId);
-      return json({ ok: true, session: publicToonaHubSession(session), logs, slow: true });
+      return json({ ok: true, scenario, session: publicToonaHubSession(session), logs, donationLogs: logs, slow: true });
     } catch (err) {
       const session = await readToonaHubSession(auth.userId).catch(() => null);
       const logs = await readToonaHubDonationLogs(auth.userId).catch(() => []);
       return json({
         ok: true,
+        scenario,
         session: publicToonaHubSession(session),
         logs,
+        donationLogs: logs,
         error: err instanceof Error ? String(err.message || err).slice(0, 120) : "poll_failed",
       });
     }
@@ -146,7 +152,7 @@ export async function GET(req: NextRequest) {
 
   const session = await readToonaHubSession(auth.userId);
   const logs = await readToonaHubDonationLogs(auth.userId);
-  return json({ ok: true, session: publicToonaHubSession(session), logs });
+  return json({ ok: true, scenario, session: publicToonaHubSession(session), logs, donationLogs: logs });
 }
 
 /** POST — toona 로그인 + youtubegit 연동 */
@@ -156,11 +162,13 @@ export async function POST(req: NextRequest) {
 
   if (isToonaHubDisabledForMode()) {
     const session = await readToonaHubSession(auth.userId).catch(() => null);
+    const scenario = isDonationIntakeModeB() ? "B" : "A";
     return json(
       {
         ok: false,
         disabled: true,
         mode: describeDonationIntakeMode(),
+        scenario,
         reason:
           "현재 " +
           describeDonationIntakeMode() +
@@ -185,12 +193,25 @@ export async function POST(req: NextRequest) {
     if (!result.ok) return json({ ok: false, error: result.error }, 502);
     const logs = await readToonaHubDonationLogs(auth.userId);
     const session = await readToonaHubSession(auth.userId);
+    const fetched = typeof result.imported === "number" ? result.imported : 0;
+    const resultAny = result as unknown as { duplicates?: number; skipped?: number };
+    const duplicatesNum = typeof resultAny.duplicates === "number"
+      ? resultAny.duplicates
+      : typeof fetched === "number" && typeof result.applied === "number"
+        ? Math.max(0, fetched - result.applied)
+        : 0;
+    const skippedNum = typeof resultAny.skipped === "number" ? resultAny.skipped : 0;
     return json({
       ok: true,
+      scenario: isDonationIntakeModeB() ? "B" : "A",
+      fetched,
       imported: result.imported,
       applied: result.applied,
+      duplicates: duplicatesNum,
+      skipped: skippedNum,
       session: publicToonaHubSession(session),
       logs,
+      donationLogs: logs,
     });
   }
 

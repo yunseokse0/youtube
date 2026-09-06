@@ -14232,6 +14232,9 @@ function AdminPageInner() {
                 open={dinHubModalOpen}
                 onClose={() => setDinHubModalOpen(false)}
                 userId={user?.id || overlayUserId}
+                onRefetchState={() => {
+                  void applyDonorsFromServerMainStateRef.current({ silent: false, forceReplace: true });
+                }}
               />
               {sigImagePreviewModal ? (
                 <div

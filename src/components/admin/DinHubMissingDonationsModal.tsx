@@ -7,6 +7,7 @@ export type DinHubMissingDonationsModalProps = {
   open: boolean;
   onClose: () => void;
   userId: string;
+  onRefetchState?: () => void;
 };
 
 type HubLog = { id: string; at?: number; donorName?: string; amount?: number; target?: "account" | "toon"; message?: string };
@@ -30,7 +31,7 @@ const fmtTime = (ms: number) => {
 };
 const fmtAmt = (n: number) => (typeof n === "number" && isFinite(n) ? n.toLocaleString("ko-KR") : "0");
 
-export default function DinHubMissingDonationsModal({ open, onClose, userId }: DinHubMissingDonationsModalProps) {
+export default function DinHubMissingDonationsModal({ open, onClose, userId, onRefetchState }: DinHubMissingDonationsModalProps) {
   const [mounted, setMounted] = useState(false);
   const bdr = useRef<HTMLDivElement | null>(null);
   const [tab, setTab] = useState<TabId>("status");
@@ -69,8 +70,8 @@ export default function DinHubMissingDonationsModal({ open, onClose, userId }: D
       try {
         const res = await fetch("/api/toona/hub", { credentials: "include", signal: ctrl.signal });
         window.clearTimeout(tm);
-        const d = (await res.json().catch(() => ({}))) as { scenario?: string };
-        setSc(d.scenario ?? null);
+        const d = (await res.json().catch(() => ({}))) as { scenario?: string; mode?: string; disabled?: boolean };
+        setSc(d.scenario ?? (d.disabled ? (String(d.mode || "").includes("B") ? "B" : "A") : d.mode === "B" ? "B" : null));
       } catch { window.clearTimeout(tm); }
       setScOk(true);
     })();
@@ -95,7 +96,9 @@ export default function DinHubMissingDonationsModal({ open, onClose, userId }: D
       const hd = (await hr.json().catch(() => ({}))) as { donationLogs?: HubLog[]; logs?: HubLog[] };
       const ids = new Set<string>();
       if (Array.isArray(sd.donors)) for (const x of sd.donors) if (x?.id) ids.add(String(x.id));
-      const logs: HubLog[] = Array.isArray(hd.donationLogs) ? hd.donationLogs : Array.isArray(hd.logs) ? hd.logs : [];
+      const logs: HubLog[] = Array.isArray(hd.donationLogs) && hd.donationLogs.length > 0
+        ? hd.donationLogs
+        : Array.isArray(hd.logs) ? hd.logs : [];
       const filt = logs.filter(l => l.id && (typeof l.at !== "number" || l.at >= cutoff));
       let an = 0;
       const miss: MissingDonation[] = [];
@@ -133,7 +136,7 @@ export default function DinHubMissingDonationsModal({ open, onClose, userId }: D
       let p: any = null;
       try { p = JSON.parse(text); } catch { setIRes(text || "완료"); return; }
       if (p && typeof p === "object") {
-        const f = typeof p.fetched === "number" ? p.fetched : null;
+        const f = typeof p.fetched === "number" ? p.fetched : typeof p.imported === "number" ? p.imported : null;
         const a = typeof p.applied === "number" ? p.applied : null;
         const d = typeof p.duplicates === "number" ? p.duplicates : null;
         const s = typeof p.skipped === "number" ? p.skipped : null;
@@ -151,7 +154,11 @@ export default function DinHubMissingDonationsModal({ open, onClose, userId }: D
   };
 
   const onBd = (e: React.MouseEvent<HTMLDivElement>) => { if (e.target === bdr.current) onClose(); };
-  const reload = () => { onClose(); if (typeof window !== "undefined") window.location.reload(); };
+  const reload = () => {
+    onClose();
+    try { if (typeof onRefetchState === "function") { onRefetchState(); return; } } catch {}
+    if (typeof window !== "undefined") window.location.reload();
+  };
 
   if (!mounted || !open) return null;
   const isB = scOk && sc === "B";
