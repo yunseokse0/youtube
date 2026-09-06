@@ -16250,8 +16250,57 @@ function AdminPageInner() {
                                 <button
                                   className="px-2 py-1 rounded bg-amber-700 hover:bg-amber-600 text-xs"
                                   onClick={() => {
-                                    requestConfirm("기여도 로그 되돌리기", "이 기록을 되돌리고 로그에서 제거할까요?", () => {
+                                    requestConfirm("기여도 로그 되돌리기", "이 기록을 되돌리고 로그에서 제거할까요?\n(연결된 후원 행의 제외 상태도 함께 복구됩니다)", () => {
+                                      /** ✅ FIX: 기여도 로그 되돌리기 → donor donationExcluded 플래그도 양방향 동기화.
+                                       *  - log.delta > 0 (추가 로그 / apply donor): 되돌리면 → 해당 donor donationExcluded=true 로 마킹 (집계 제외)
+                                       *  - log.delta < 0 (차감 로그 / revert donor): 되돌리면 → 해당 donor donationExcluded=false 로 롤백 (집계 재포함)
+                                       *  - 1순위 매칭: log.id 정규식 파싱으로 donorId 직접 추출 (revert:xxx:donorId:yyy 패턴)
+                                       *  - 2순위 매칭: memberId + log.amount 동일 + 플래그 상태 일치 donor 1개 유일 매치
+                                       *  - 매칭 실패: 완전 삭제(hardDelete) case → toast 안내 + 멤버 contribution만 복구
+                                       */
                                       setState((prev: AppState) => {
+                                        let matchedDonorId: string | null = null;
+                                        let matchedCount = 0;
+                                        const logIdStr = String(log.id || "");
+                                        const donorIdMatch = logIdStr.match(/:(?:apply|revert|reassign)(?::[^:]*)*:([^:]+)(?::|$)/);
+                                        if (donorIdMatch && donorIdMatch[1]) {
+                                          const candidateId = donorIdMatch[1];
+                                          const found = (prev.donors || []).some((d) => String(d.id) === candidateId);
+                                          if (found) {
+                                            matchedDonorId = candidateId;
+                                            matchedCount = 1;
+                                          }
+                                        }
+                                        if (!matchedDonorId) {
+                                          /** 2순위 memberId + amount 매치 + 기대 플래그 상태 1개 유일 */
+                                          const expectExcludedAfterUndo = log.delta > 0; // 추가 로그 → undo = 제외 마킹
+                                          const expectedCurrentExcluded = !expectExcludedAfterUndo; // 현재 반대 상태여야 의미가 있음
+                                          const candidates: Donor[] = [];
+                                          for (const d of (prev.donors || [])) {
+                                            if (String(d.memberId || "") !== String(log.memberId)) continue;
+                                            if (Math.abs(Number(d.amount || 0) - Number(log.amount)) >= 0.5) continue;
+                                            const dExcluded = isDonorExcludedFromDonationTotals(d as any);
+                                            if (dExcluded === expectedCurrentExcluded) candidates.push(d);
+                                          }
+                                          if (candidates.length === 1) {
+                                            matchedDonorId = String(candidates[0].id);
+                                            matchedCount = 1;
+                                          } else {
+                                            matchedCount = candidates.length;
+                                          }
+                                        }
+                                        /** 양방향: 추가 로그 undo → 마킹(true) / 차감 로그 undo → 롤백(false) */
+                                        const undoMarkExcluded = log.delta > 0;
+                                        let nextDonors = prev.donors || [];
+                                        let donorUndoApplied = false;
+                                        if (matchedDonorId) {
+                                          nextDonors = nextDonors.map((d): Donor => {
+                                            if (String(d.id) !== matchedDonorId) return d;
+                                            donorUndoApplied = true;
+                                            return { ...(d as Donor), donationExcluded: undoMarkExcluded ? true : false };
+                                          });
+                                        }
+                                        /** 멤버 contribution은 로그 delta 반대로 가감 (원래 로직 유지) */
                                         const members = prev.members.map((m: Member) => {
                                           if (m.id !== log.memberId) return m;
                                           const curr = Math.max(0, m.contribution || 0);
@@ -16260,13 +16309,36 @@ function AdminPageInner() {
                                             : curr + log.amount;
                                           return { ...m, contribution: nextContribution };
                                         });
+                                        /** donor 매칭 실패 → 완전 삭제 case toast 안내 */
+                                        if (!donorUndoApplied) {
+                                          setTimeout(() => {
+                                            if (matchedDonorId === null && matchedCount === 0) {
+                                              showAppToast("완전 삭제된 후원은 로그 되돌리기로 복구할 수 없습니다.\n멤버 기여도만 복구되었으며, 후원자별 합계에 반영하려면 후원을 새로 입력해주세요.", { variant: "warning", durationMs: 7000 });
+                                            } else if (matchedCount > 1) {
+                                              showAppToast(`동일 멤버+금액 후원이 ${matchedCount}건 중복되어 자동 복구할 수 없습니다.\n멤버 기여도만 복구되었으며, 후원자 리스트에서 직접 상태를 토글해주세요.`, { variant: "warning", durationMs: 7000 });
+                                            }
+                                          }, 0);
+                                        }
                                         const next: AppState = {
                                           ...prev,
                                           members,
+                                          donors: nextDonors,
                                           contributionLogs: (prev.contributionLogs || []).filter((x) => x.id !== log.id),
                                         };
-                                        persistState(next, { includeDonationFields: true });
-                                        return next;
+                                        /** markAuthoritativeDonationSave 게이트를 거쳐서 제외 플래그 보존 + persist 1회 */
+                                        const preserved = markAuthoritativeDonationSave(
+                                          { serverUpdatedAt: Date.now() },
+                                          next,
+                                          { replaceDonors: true, awaitingServerSave: true }
+                                        );
+                                        stateRef.current = preserved;
+                                        void commitAuthoritativeDonorPersist(preserved, {
+                                          persistToastLabel: donorUndoApplied
+                                            ? `기여도 로그 되돌리기 ${undoMarkExcluded ? "· 후원 제외 적용" : "· 후원 복구 적용"}`
+                                            : "기여도 로그 되돌리기 (멤버값만)",
+                                          slimResponse: true,
+                                        });
+                                        return preserved;
                                       });
                                     }, { confirmText: "되돌리기", danger: true });
                                   }}
