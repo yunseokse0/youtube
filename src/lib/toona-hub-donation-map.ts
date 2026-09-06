@@ -25,11 +25,11 @@ export function toonaHubDonationToEvent(
   let atMs = parseKstLocalTimestampToMs(row.createdAt);
   if (!Number.isFinite(atMs) || atMs <= 0) atMs = Date.now();
   /**
-   * ✅ 2026-09-07 Hotfix ⑥ 완화: 연동 시점(linkedAt) 보다 과거 후원도 30일 이내면 전부 import 허용.
-   * 기존 -5초 필터는 "연동 전에 보낸 후원"을 전부 버려서 사용자가 "패치 후 제대로 못가져옴"을 느끼는 직접적 원인이었음.
-   * 실제 중복 반영은 downstream isDuplicateDonationEvent + primary key SETNX 가 100% 막아주므로 안심.
-   * 미래 시간 (현재+1일 이상) 조작 데이터만 차단. */
-  const PAST_IMPORT_ALLOW_MS = 30 * 24 * 60 * 60 * 1000;
+   * ✅ 2026-09-07 Hotfix ⑥-2 재조정: 사용자 요청에 따라 "이후 신규 후원만 정상 적재" 용도로
+   *  연동 시점(linkedAt) 과거 후원은 1시간 이내 시간 불일치 보정 범위만 허용. 그보다 오래된 과거 후원은 자동 skip.
+   *  (실시간 유입 후원은 서버 시간차 최대 5분 내외 이므로 1시간이면 충분. 30일 허용시 폴링마다 수천건 과거 행 순회 부하)
+   *  미래 시간 (현재+1일 이상) 조작 데이터 차단은 유지. */
+  const PAST_IMPORT_ALLOW_MS = 60 * 60 * 1000;
   const FUTURE_BLOCK_MS = 1 * 24 * 60 * 60 * 1000;
   if (atMs < linkedAt - PAST_IMPORT_ALLOW_MS) return null;
   if (atMs > Date.now() + FUTURE_BLOCK_MS) return null;
