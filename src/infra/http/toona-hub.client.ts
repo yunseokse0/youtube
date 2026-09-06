@@ -493,6 +493,26 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
   const session = await readToonaHubSession(uid);
   if (!session) return { ok: false, error: "not_linked" };
 
+  /**
+   * ✅ 2026-09-07 Hotfix ⑥-7 옵션2 구현: "리셋 눌렀는데 기존 데이터 왜 살아남?"
+   *  - 정산 리셋 / 후원 일괄 삭제 의도적 클리어 시 AppState.settlementResetAt · intentionalDonationClearAt 타임스탬프 기록됨.
+   *  - 이 두 값의 max 를 구해서 toonaHubDonationToEvent 로 전달 → clear 시점 과거 후원 전부 자동 skip.
+   *  - 🔴 BUT: 관리자 페이지 수동 버튼 (ignoreMinInterval=true) 로 "일일 로그에서 후원 복구" 강제 호출시에는 이 필터 OFF.
+   *           사용자가 명시적으로 과거 데이터 복구를 원하는 경우를 제외하면, 평범한 폴링에서는 리셋 이전 데이터 절대 불러오지 않음.
+   */
+  let intentionalClearAtMs = 0;
+  if (!opts?.ignoreMinInterval) {
+    try {
+      const { loadAppStateForUserId } = await import("@/lib/app-state-server-load");
+      const cur = await loadAppStateForUserId(uid).catch(() => null);
+      if (cur) {
+        const a = Number(cur.settlementResetAt) || 0;
+        const b = Number(cur.intentionalDonationClearAt) || 0;
+        intentionalClearAtMs = Math.max(a, b, 0);
+      }
+    } catch {}
+  }
+
   /** BUG FIX: DB 오염된 trailing slash → // 중복 URL 301/timeout 방지 */
   const safeSessionBase =
     normalizeToonaApiBaseUrl(String(session.baseUrl || "").trim()) || session.baseUrl;
@@ -538,7 +558,7 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
   let imported = 0;
   let applied = 0;
   for (const row of json.donations || []) {
-    const event = toonaHubDonationToEvent(row, session.linkedAt);
+    const event = toonaHubDonationToEvent(row, session.linkedAt, { intentionalClearAtMs });
     if (!event) continue;
     const result = await handleDinDonationIngest(youtubeUserId, event, true, { logSource: "toona" });
     if (result.applied) applied += 1;
@@ -570,7 +590,10 @@ export async function pollToonaHubForAdmin(youtubeUserId: string): Promise<{
     const last = lastDonationPullAt.get(uid) || 0;
     if (Date.now() - last >= DONATION_PULL_MIN_INTERVAL_MS) {
       lastDonationPullAt.set(uid, Date.now());
-      await fetchToonaDonationsSinceLink(uid);
+      /** ✅ 2026-09-07 Hotfix ⑥-7: 관리자 페이지 수동 클릭은 명시적 의도로 간주.
+       *  ignoreMinInterval=true 부여 → (1) MIN_INTERVAL 가드 통과 + (2) intentionalReset 과거 skip 필터 OFF
+       *  → 사용자가 진짜로 과거 데이터 복구를 원하는 경우 수동 버튼 만으로 불러오기 가능. */
+      await fetchToonaDonationsSinceLink(uid, { ignoreMinInterval: true });
     }
     const logs = await readToonaHubDonationLogs(uid);
     return { session: synced.session, logs };
