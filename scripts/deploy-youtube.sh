@@ -57,7 +57,8 @@ mkdir -p "$ENV_BACKUP_DIR"
 ENV_TS=$(date +%Y%m%d-%H%M%S)
 for envfile in .env .env.local .env.production; do
   if [ -f "$envfile" ]; then
-    cp -f "$envfile" "$ENV_BACKUP_DIR/${envfile}.${ENV_TS}.bak" 2>/dev/null || true
+    mkdir -p "$ENV_BACKUP_DIR"
+    cp -f "$envfile" "${ENV_BACKUP_DIR}/${envfile}.${ENV_TS}.bak" 2>/dev/null || true
   fi
 done
 # 가장 최근 10개 백업만 유지 (디스크 관리)
@@ -72,7 +73,7 @@ cp -f .env "$ENV_BACKUP_DIR/.env.before-reset.${ENV_TS}.bak" 2>/dev/null || true
 git reset --hard origin/main
 ENV_RESTORED=0
 for envfile in .env .env.local .env.production; do
-  BACKUP_LATEST=$(ls -1t "$ENV_BACKUP_DIR/${envfile}."*.bak 2>/dev/null | head -n 1 || "")
+  BACKUP_LATEST=$(ls -1t ${ENV_BACKUP_DIR}/${envfile}.*.bak 2>/dev/null | head -n 1 || "")
   if [ -n "$BACKUP_LATEST" ] && [ ! -f "$envfile" ]; then
     cp -f "$BACKUP_LATEST" "$envfile" && ENV_RESTORED=$((ENV_RESTORED+1))
   fi

@@ -16313,9 +16313,9 @@ function AdminPageInner() {
                                         if (!donorUndoApplied) {
                                           setTimeout(() => {
                                             if (matchedDonorId === null && matchedCount === 0) {
-                                              showAppToast("완전 삭제된 후원은 로그 되돌리기로 복구할 수 없습니다.\n멤버 기여도만 복구되었으며, 후원자별 합계에 반영하려면 후원을 새로 입력해주세요.", { variant: "warning", durationMs: 7000 });
+                                              showAppToast("완전 삭제된 후원은 로그 되돌리기로 복구할 수 없습니다.\n멤버 기여도만 복구되었으며, 후원자별 합계에 반영하려면 후원을 새로 입력해주세요.", { variant: "error", durationMs: 7000 });
                                             } else if (matchedCount > 1) {
-                                              showAppToast(`동일 멤버+금액 후원이 ${matchedCount}건 중복되어 자동 복구할 수 없습니다.\n멤버 기여도만 복구되었으며, 후원자 리스트에서 직접 상태를 토글해주세요.`, { variant: "warning", durationMs: 7000 });
+                                              showAppToast(`동일 멤버+금액 후원이 ${matchedCount}건 중복되어 자동 복구할 수 없습니다.\n멤버 기여도만 복구되었으며, 후원자 리스트에서 직접 상태를 토글해주세요.`, { variant: "error", durationMs: 7000 });
                                             }
                                           }, 0);
                                         }
