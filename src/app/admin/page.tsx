@@ -3022,6 +3022,28 @@ function AdminPageInner() {
     user?.id,
   ]);
 
+  /** ✅ donationExcluded 플래그 영구 보존 3중 방어용 공통 유틸.
+   *  prevDonors(이전 state)에서 donationExcluded=true 이거나 isDonorExcludedFromDonationTotals로 제외되는 ID Set을 추출해
+   *  nextDonors(새 state, 허브 sync·SSE·서버 replace 응답 등 어떤 경로든)에 무조건 재적용.
+   *  applyRemoteState / markAuthoritativeDonationSave / commitAuthoritativeDonorPersist 서버응답 처리부 3곳에서 호출되어
+   *  어떤 donor[] 교체 경로도 사용자가 집계 제외한 기록은 절대 되살아나지 않도록 함.
+   */
+  const reapplyExcludedDonorFlagsFromPrev = (prevDonors: Donor[] | undefined | null, nextDonors: Donor[] | undefined | null): Donor[] => {
+    const normPrev = Array.isArray(prevDonors) ? prevDonors : [];
+    const normNext = Array.isArray(nextDonors) ? nextDonors : [];
+    const excludedIds = new Set<string>();
+    for (const d of normPrev) {
+      if (d && isDonorExcludedFromDonationTotals(d as any)) {
+        excludedIds.add(String(d.id));
+      }
+    }
+    if (excludedIds.size === 0) return normNext;
+    return normNext.map((d) => {
+      if (!d || !excludedIds.has(String(d.id)) || isDonorExcludedFromDonationTotals(d as any)) return d;
+      return { ...(d as Donor), donationExcluded: true };
+    });
+  };
+
   // 다른 기기·OBS 저장 반영: SSE `state_updated` → 디바운스 GET, 저주기 폴링은 폴백만.
   useEffect(() => {
     if (!user) return;
@@ -3128,6 +3150,11 @@ function AdminPageInner() {
             remote.donorRankingsUpdatedAt ?? themeMerged.merged.donorRankingsUpdatedAt,
         });
         next = mergeLocalMemberIdentityOntoRemote(next, stateRef.current);
+        /** ✅ applyRemoteState 3중 방어 1/3: 서버 정본 donors 교체 직전 이전 state의 donationExcluded 재적용 */
+        {
+          const prevDonorsSnapshot = stateRef.current.donors;
+          next = { ...next, donors: reapplyExcludedDonorFlagsFromPrev(prevDonorsSnapshot, next.donors) };
+        }
         stateRef.current = next;
         stateUpdatedAtRef.current = remoteUpdatedAt;
         lastAppliedRemoteUpdatedAtRef.current = remoteUpdatedAt;
@@ -3161,7 +3188,7 @@ function AdminPageInner() {
               totalCombined(pulled) > totalCombined(stateRef.current)))
         ) {
           const themeMerged = mergeIncomingStateSafely(remote, stateRef.current);
-          const next = syncMemberTotalsFromDonors({
+          let next = syncMemberTotalsFromDonors({
             ...themeMerged.merged,
             donors: pulledDonors,
             members: pulled.members,
@@ -3169,6 +3196,11 @@ function AdminPageInner() {
             donorRankingsUpdatedAt: pulled.donorRankingsUpdatedAt,
             updatedAt: Math.max(Number(remote.updatedAt || 0), Number(pulled.updatedAt || 0)),
           });
+          /** ✅ applyRemoteState 3중 방어 2/3: 투네 SSE pulled donors 교체 직전 donationExcluded 재적용 */
+          {
+            const prevDonorsSnapshot = stateRef.current.donors;
+            next = { ...next, donors: reapplyExcludedDonorFlagsFromPrev(prevDonorsSnapshot, next.donors) };
+          }
           stateRef.current = next;
           stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, next.updatedAt || 0);
           lastAppliedRemoteUpdatedAtRef.current = next.updatedAt || 0;
@@ -3512,6 +3544,15 @@ function AdminPageInner() {
           toApply = syncMemberTotalsFromDonors({ ...toApply, donors: deduped });
         }
       }
+      /** ✅ applyRemoteState 3중 방어 3/3: 최종 toApply.setState 직전 이전 state의 donationExcluded 무조건 재적용 */
+      {
+        const prevDonorsSnapshot = stateRef.current.donors;
+        toApply = {
+          ...toApply,
+          donors: reapplyExcludedDonorFlagsFromPrev(prevDonorsSnapshot, toApply.donors),
+        };
+      }
+      stateRef.current = toApply;
       scheduleScrollRestore();
       setState(toApply);
       if (toApply.settlementUiOptions) {
@@ -7832,6 +7873,11 @@ function AdminPageInner() {
     if (opts?.replaceDonors) {
       preserved = markIntentionalDonationEmptySession(preserved);
     }
+    /** ✅ 1중 방어: merge/replace 어느쪽이든 preserved.donors 에 이전 상태의 제외 플래그를 무조건 재적용 */
+    if (Array.isArray(preserved.donors) || Array.isArray(stateRef.current.donors)) {
+      const mergedDonors = reapplyExcludedDonorFlagsFromPrev(stateRef.current.donors, preserved.donors);
+      preserved = { ...preserved, donors: mergedDonors };
+    }
     const ts = saved.serverUpdatedAt ?? preserved.updatedAt ?? Date.now();
     donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
     stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, ts);
@@ -7879,14 +7925,24 @@ function AdminPageInner() {
         }
         return false;
       }
-      /** replace 저장 후 union(enrich)하면 삭제분이 서버·백업에서 되살아남 */
+      /** replace 저장 후 union(enrich)하면 삭제분이 서버·백업에서 되살아남
+       *  ✅ FIX 2중 방어: 서버 응답 state는 donationExcluded 플래그를 모를 수 있으므로
+       *  client preserved에서 직접 제외 ID Set을 추출 → baseState(어느쪽이든)에 무조건 재적용
+       */
       const serverAt = result.updatedAt;
       const clientUpdatedAt = Number(preserved.updatedAt || 0);
       const serverUpdatedAt = result.state ? Number(result.state.updatedAt || 0) : 0;
       const serverStateIsNewerThanClient = serverUpdatedAt >= clientUpdatedAt - 1_000;
       const shouldUseClientPreserved =
         Boolean(opts?.skipSetState) || !result.state || !serverStateIsNewerThanClient;
-      const baseState = shouldUseClientPreserved ? preserved : (result.state as AppState);
+      let baseState = shouldUseClientPreserved ? preserved : (result.state as AppState);
+      /** 서버 state를 base로 쓸 경우(shouldUseClientPreserved=false) preserved의 제외 플래그 이식 */
+      if (!shouldUseClientPreserved) {
+        baseState = {
+          ...baseState,
+          donors: reapplyExcludedDonorFlagsFromPrev(preserved.donors, baseState.donors),
+        };
+      }
       const bumped = syncMemberTotalsFromDonors({
         ...baseState,
         updatedAt: Math.max(Number(baseState.updatedAt || 0), serverAt, clientUpdatedAt),
