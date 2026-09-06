@@ -188,9 +188,17 @@ export default function HighSocietyOverlayPage() {
   const useTest = (sp.get("test") || "").toLowerCase() === "true";
   const adminPreview =
     sp.get("adminPreviewEmbed") === "1" || sp.get("hubPreview") === "1";
-  const barFromUrl = sp.get("bar") || sp.get("gauge");
-  const split = parseHighSocietySplit(sp.get("bLeft") || sp.get("b"), sp.get("cLeft") || sp.get("c"));
-  const hasUrlSplit = Boolean(sp.get("bLeft") || sp.get("b") || sp.get("cLeft") || sp.get("c"));
+  /** ✅ 2026-09-06 Fix: 설정값이 URL에 박혀서 관리자 저장 설정이 무시되는 버그 해소.
+   *  관리자 iframe 미리보기(adminPreviewEmbed/hubPreview=1) · 테스트 모드에서만 URL override 허용.
+   *  OBS(host=obs) · 실제 방송 오버레이는 URL 파라미터로 설정값을 절대 덮어쓰지 않고 서버 저장값만 사용. */
+  const allowUrlSettingOverride = adminPreview || useTest;
+  const barFromUrl = allowUrlSettingOverride ? sp.get("bar") || sp.get("gauge") : null;
+  const split = allowUrlSettingOverride
+    ? parseHighSocietySplit(sp.get("bLeft") || sp.get("b"), sp.get("cLeft") || sp.get("c"))
+    : null;
+  const hasUrlSplit =
+    allowUrlSettingOverride &&
+    Boolean(sp.get("bLeft") || sp.get("b") || sp.get("cLeft") || sp.get("c"));
 
   const { state, ready } = useOverlayRemoteState(userId, {
     /** 후원 행·hsPushDir 없으면 영토 방향/실시간 확장이 멤버 합계만 보고 어긋남 */
@@ -234,7 +242,9 @@ export default function HighSocietyOverlayPage() {
     ? parseHighSocietyBarStyle(barFromUrl)
     : hsSettings.barStyle || "flat";
 
-  const startCmFromUrl = parseHighSocietyStartCmPerMember(sp.get("startCm"));
+  const startCmFromUrl = allowUrlSettingOverride
+    ? parseHighSocietyStartCmPerMember(sp.get("startCm"))
+    : null;
   const seatCountForField = useMemo(() => {
     if (useTest) return HIGH_SOCIETY_TEST_MEMBERS.length;
     if (!state) return resolveHighSocietySeatCountForField(hsSettings);
@@ -259,7 +269,7 @@ export default function HighSocietyOverlayPage() {
       return buildHighSocietyFieldFromMembers(HIGH_SOCIETY_TEST_MEMBERS, {
         ...fieldOpts,
         split: hasUrlSplit
-          ? split
+          ? split ?? undefined
           : {
               bLeft:
                 hsSettings.defaultMiddlePush === "left"

@@ -2352,19 +2352,36 @@ function AdminPageInner() {
       };
       didPreserve = true;
     }
-    /** 상류사회: 시그 후원 연동·테마 PATCH 직후 GET/SSE가 enabled·영토 이력을 기본값으로 덮지 않게 */
-    if (
-      isMeaningfulHighSocietySettings(local.highSocietySettings) &&
-      shouldBlockHighSocietyRegression(local.highSocietySettings, merged.highSocietySettings)
-    ) {
-      merged = { ...merged, highSocietySettings: local.highSocietySettings };
-      didPreserve = true;
-    } else if (
-      (pendingUnsyncedRef.current || Date.now() - lastLocalPersistAtRef.current < 8000) &&
-      isMeaningfulHighSocietySettings(local.highSocietySettings)
-    ) {
-      merged = { ...merged, highSocietySettings: local.highSocietySettings };
-      didPreserve = true;
+    /** 상류사회: 시그 후원 연동·테마 PATCH 직후 GET/SSE가 enabled·영토 이력을 기본값으로 덮지 않게
+     *  ✅ 2026-09-06 Fix: 1인 시작 cm 변경시(폼 저장) regression guard 차단 버그 해소.
+     *  startCmPerMember / fieldCm 이 로컬 vs merged가 명시적으로 다르면 → 유저가 의도적으로 dimension을 폼 변경 저장한 것
+     *  이므로 shouldBlockHighSocietyRegression bypass. 실제 default wipe patch는 dimension 값이 defaultHighSocietySettings와 일치하면서
+     *  memberWidthCm 등 snapshot field가 누락된 경우로 오는 패턴이 별개. */
+    {
+      const base = local.highSocietySettings;
+      const patch = merged.highSocietySettings;
+      const baseStart = Number(base?.startCmPerMember);
+      const patchStart = Number(patch?.startCmPerMember);
+      const baseField = Number(base?.fieldCm);
+      const patchField = Number(patch?.fieldCm);
+      const explicitDimChange =
+        base &&
+        patch &&
+        (baseStart !== patchStart || baseField !== patchField);
+      if (
+        !explicitDimChange &&
+        isMeaningfulHighSocietySettings(base) &&
+        shouldBlockHighSocietyRegression(base, patch)
+      ) {
+        merged = { ...merged, highSocietySettings: base };
+        didPreserve = true;
+      } else if (
+        (pendingUnsyncedRef.current || Date.now() - lastLocalPersistAtRef.current < 8000) &&
+        isMeaningfulHighSocietySettings(base)
+      ) {
+        merged = { ...merged, highSocietySettings: base };
+        didPreserve = true;
+      }
     }
     const localTerritoryLogs = normalizeTerritoryLogs(local.territoryLogs);
     const mergedTerritoryLogs = normalizeTerritoryLogs(merged.territoryLogs);
@@ -17833,8 +17850,7 @@ function AdminPageInner() {
 
                 <div className="flex flex-col items-stretch gap-2">
                   <code className="max-w-full break-all text-[11px] text-amber-100/90">
-                    /overlay/high-society?u={overlayUserId}&host=obs&bar=
-                    {highSocietySettings.barStyle || "flat"}&startCm={Math.round(hsStartCm)}
+                    /overlay/high-society?u={overlayUserId}&host=obs
                   </code>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -17842,7 +17858,7 @@ function AdminPageInner() {
                       className={`rounded px-2 py-1 text-xs ${copiedId === "dash-high-society" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                       onClick={() => {
                         patchHighSocietySettings({ barStyle: "flat" });
-                        const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs&bar=flat&startCm=${Math.round(hsStartCm)}`;
+                        const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs`;
                         void copyUrl(u, "dash-high-society");
                       }}
                     >
@@ -17853,7 +17869,7 @@ function AdminPageInner() {
                       className={`rounded px-2 py-1 text-xs ${copiedId === "dash-high-society-arrow" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                       onClick={() => {
                         patchHighSocietySettings({ barStyle: "arrow" });
-                        const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs&bar=arrow&startCm=${Math.round(hsStartCm)}`;
+                        const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs`;
                         void copyUrl(u, "dash-high-society-arrow");
                       }}
                     >
@@ -17899,7 +17915,7 @@ function AdminPageInner() {
                       <AdminLazyPreviewIframe
                         key={`hs-preview-${hsPreviewIframeKeySig}-${hsPreviewIframeKey}`}
                         src={appendAdminPreviewEmbedToOverlayUrl(
-                          `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&startCm=${encodeURIComponent(String(Math.round(hsStartCm)))}&hsFx=${encodeURIComponent(hsFxParam)}`
+                          `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&hsFx=${encodeURIComponent(hsFxParam)}`
                         )}
                         title="상류사회 세로 오버레이 미리보기"
                         className="absolute inset-0 h-full w-full border-0"
