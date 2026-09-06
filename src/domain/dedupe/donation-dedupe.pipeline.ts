@@ -345,11 +345,16 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
       merged[dupIdx] = mergeDonorRowFields(preferred, other);
     }
     const guarded = applyMonotonicShrinkGuard(merged);
+    /** ✅ 2026-09-07 Hotfix ⑥-5: 새로운 후원은 제일 위에 남는게 맞습니다 = at 최신순(내림차순) 강제.
+     *  merge 과정에서 순서가 뒤섞이는 모든 케이스를 차단하기 위해 최종 return 직전 한번 더 정렬. */
+    const sorted = [...guarded].sort(
+      (a, b) => donorAtEpochMs(b) - donorAtEpochMs(a)
+    );
     dedupeIdentityCache.set(donors as unknown as object[], {
       storedInputLen: donors.length,
-      result: guarded as unknown[],
+      result: sorted as unknown[],
     });
-    return guarded;
+    return sorted;
   }
 
   const bucket = new Map<string, T[]>();
@@ -422,11 +427,16 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
     merged[dupIdx] = mergeDonorRowFields(preferred, other);
   }
   const guarded = applyMonotonicShrinkGuard(merged);
+  /** ✅ 2026-09-07 Hotfix ⑥-5: 새로운 후원은 제일 위에 남는게 맞습니다 = at 최신순(내림차순) 강제.
+   *  merge 과정에서 순서가 뒤섞이는 모든 케이스를 차단하기 위해 최종 return 직전 한번 더 정렬. */
+  const sorted = [...guarded].sort(
+    (a, b) => donorAtEpochMs(b) - donorAtEpochMs(a)
+  );
   dedupeIdentityCache.set(donors as unknown as object[], {
     storedInputLen: donors.length,
-    result: guarded as unknown[],
+    result: sorted as unknown[],
   });
-  return guarded;
+  return sorted;
 }
 
 export function donationQueueIdsForDonor(donor: { id?: string }): string[] {
