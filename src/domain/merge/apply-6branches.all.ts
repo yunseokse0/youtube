@@ -17,20 +17,68 @@ import {
   syncMemberTotalsFromDonors,
   syncAndRepairMemberTotals,
 } from "@/lib/donation/apply-donation-state";
+import { donorRowDedupeKey } from "@/domain/dedupe/donation-dedupe.pipeline";
 import { isGroupSplitPartDonor } from "@/lib/donation/group-split-donation";
 
 export { rosterDonorMatchScore } from "@/lib/donation/apply-donation-state";
+
+/**
+ * ✅ 2026-09-08 hotfix-6-10-9 Fix F: donorMap stable map-key 생성
+ *  [버그 원인] mergeDonationApplyBase L72 `donorMap.set(d.id, d)` 에서
+ *            DIN 허브 id undefined 후원이 3건 이상 들어오면 d.id = undefined 3건 전부가 동일 키 "undefined" 로 덮어써짐
+ *            → freshDonors 3건 + hintDonors 1건 입력시 최종 1건만 남고 나머지 3건 소실
+ *            → 이후 dedupe Shrink Guard false-positive append 로 "새 후원 1건 추가시 기존 후원 1건이 복제되어 총 2건 추가" 증상 발현
+ *  [해결] donorMap key 선정 우선순위:
+ *    1. donorRowDedupeKey(d) — 6-6 ID ONLY bucket key 강한 ID 우선 사용
+ *    2. 만약 key 가 여전히 공백("") 이면: `fixf-${listIdx}-${rowIdx}-${rnd4hex}` 개별 고유 키 강제 부여
+ *    => 어떤 경우에도 서로 다른 donor row가 동일 key로 덮어써지지 않음 보장!
+ */
+function _fixfRnd4hex(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+      const b = new Uint8Array(2);
+      crypto.getRandomValues(b);
+      return (((b[0] << 8) | b[1]) >>> 0).toString(16).padStart(4, "0");
+    }
+  } catch (_) { /* empty */ }
+  return Math.floor(Math.random() * 0xffff).toString(16).padStart(4, "0");
+}
+function donorStableMapKey(d: Donor | undefined | null, listIdx: number, rowIdx: number): string {
+  if (!d) return `fixf-null-${listIdx}-${rowIdx}-${_fixfRnd4hex()}`;
+  try {
+    if (typeof donorRowDedupeKey === "function") {
+      const k = String(donorRowDedupeKey(d as any) || "").trim();
+      if (k) return k;
+    }
+  } catch (_) { /* ignore */ }
+  const rawId = String((d as any).id || "").trim();
+  if (rawId) return rawId;
+  return `fixf-empty-${listIdx}-${rowIdx}-${_fixfRnd4hex()}`;
+}
+function donorAtEpochMs_mini(d: any): number {
+  if (!d || d.at === undefined || d.at === null || d.at === "") return 0;
+  if (typeof d.at === "number") { const r = Math.round(d.at); return Number.isFinite(r) ? r : 0; }
+  if (typeof d.at === "string") {
+    let p = Date.parse(d.at);
+    if (!Number.isFinite(p) || p === 0) { if (/^\d+$/.test(d.at) || /^\d+\.\d+$/.test(d.at)) p = Math.round(Number(d.at)); }
+    return Number.isFinite(p) ? p : 0;
+  }
+  return 0;
+}
 
 /** 단체짠 split·원본 행이 incoming 쪽에서 빠져도 union 에 남게 보강 */
 function unionGroupSplitDonorsIntoMap(
   donorMap: Map<string, Donor>,
   ...lists: Donor[][]
 ): void {
-  for (const list of lists) {
-    for (const d of list) {
+  for (let li = 0; li < lists.length; li++) {
+    const list = lists[li];
+    for (let ri = 0; ri < list.length; ri++) {
+      const d = list[ri];
       if (!isGroupSplitPartDonor(d) && !d.groupSplitSource) continue;
-      const prev = donorMap.get(d.id);
-      donorMap.set(d.id, prev ? mergeDonorRowFields(d, prev) : d);
+      const k = donorStableMapKey(d, 100 + li, ri);
+      const prev = donorMap.get(k);
+      donorMap.set(k, prev ? mergeDonorRowFields(d, prev) : d);
     }
   }
 }
@@ -69,13 +117,17 @@ export function mergeDonationApplyBase(
   const freshDonors = normalizeDonorsArray(fresh.donors);
   const hintDonors = normalizeDonorsArray(hint.donors);
   const donorMap = new Map<string, (typeof freshDonors)[number]>();
-  for (const d of freshDonors) donorMap.set(d.id, d);
-  for (const d of hintDonors) {
-    const prev = donorMap.get(d.id);
-    donorMap.set(d.id, prev ? mergeDonorRowFields(d, prev) : d);
+  // ✅ Fix 6-10-9 Fix F: donorMap key = donorStableMapKey (donorRowDedupeKey 우선 → empty시 개별 고유키 부여)
+  //    → 이전: d.id 직접 → id undefined donor 3건이 전부 key=undefined 로 덮어써져 1개만 남던 Bug 해소
+  for (let ri = 0; ri < freshDonors.length; ri++) donorMap.set(donorStableMapKey(freshDonors[ri], 0, ri), freshDonors[ri]);
+  for (let ri = 0; ri < hintDonors.length; ri++) {
+    const d = hintDonors[ri];
+    const k = donorStableMapKey(d, 1, ri);
+    const prev = donorMap.get(k);
+    donorMap.set(k, prev ? mergeDonorRowFields(d, prev) : d);
   }
   unionGroupSplitDonorsIntoMap(donorMap, freshDonors, hintDonors);
-  const mergedDonors = dedupeDonorRows(Array.from(donorMap.values())).sort((a, b) => b.at - a.at);
+  const mergedDonors = dedupeDonorRows(Array.from(donorMap.values())).sort((a, b) => donorAtEpochMs_mini(b) - donorAtEpochMs_mini(a));
 
   const hintStrong = hasMeaningfulMemberRoster(hint);
   const freshStrong = hasMeaningfulMemberRoster(fresh);

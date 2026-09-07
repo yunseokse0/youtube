@@ -33,3 +33,10 @@ vitest-output*.txt
 # Deploy scripts local overrides
 scripts/deploy.local.*
 deploy-credentials.json
+
+# IDE & temp repro scripts
+.trae/
+_tmp_*.js
+_tmp_*.mjs
+_tmp_*.ts
+result/evidence/
