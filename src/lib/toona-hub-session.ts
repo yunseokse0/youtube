@@ -110,16 +110,16 @@ export async function appendToonaHubDonationLogs(
   if (!uid || !entries?.length) return 0;
   const prev = await readToonaHubDonationLogs(uid);
 
-  // ==================== FixC_empty_id_fallback_generate_unique (2026-09-08 hotfix-6-10-5) ====================
-  // DIN 허브 후원중 id=undefined/null/""/"0" 으로 넘어오는 경우가 매우 많음 (14건 후원 전부 id 가 empty 케이스!)
-  // 이 경우 원래 append 로직: freshIds.add(undefined) 1번 → 나머지 13건은 freshIds.has(undefined) = true → continue 스킵 → 1건만 저장되는 Bug 발생 (14→4건 최종)
-  // FixC: id가 empty 이면 donorName+at+amount+target 의 해시를 fallback 고유 id로 생성 → 서로 다른 후원은 절대 merge되지 않고 1:1 보존
-  // 추가: NEAR_CONTENT_AT_WINDOW_MS 를 3000ms (3초) → 300ms (0.3초) 로 축소하여 버스트 후원(4초동안 14건)이 서로 다른 bucket에 들어가게 함으로 near merge가 공격적으로 병합되지 않도록 완화
-  const NEAR_CONTENT_AT_WINDOW_MS_SAFE = 300; // 원본 3000 → 0.3초 (같은 1초내 들어온 진짜 중복 하나만 합치고 나머지는 별개 유지)
+  // ==================== FixC_empty_id_fallback_generate_unique (2026-09-08 hotfix-6-10-6 REVERT: NEAR window = 유저 요청대로 3초 제한 유지) ====================
+  // DIN 허브 후원중 id=undefined/null/""/"0" 으로 넘어오는 경우가 매우 많음
+  // 이 경우 원래 append 로직: freshIds.add(undefined) 1번 → 나머지 전부 freshIds.has(undefined) → 스킵 Bug → FixD: fallback 해시 ID 생성 유지
+  // ✅ 유저 명시 요청: "후원 테스트 발송에 3초 제한을 둠"
+  //    → NEAR_CONTENT_AT_WINDOW_MS 를 3초로 유지하여 동일 인물이 3초내에 같은 내용(금액/이름/타겟)으로 후원 발송(테스트 버튼 반복 클릭 등)하면 1건으로만 merge 되도록 제한
+  const TEST_DUPLICATE_BLOCK_MS = 3_000; // 3초 제한 = 유저 요청 값
   function safeDonorId(entry: ToonaHubDonationLog): string {
     const raw = String(entry?.id || "").trim();
     if (raw && raw !== "0" && raw !== "null" && raw !== "undefined") return raw;
-    // fallback pseudo-id: bucket + name + amount + at + target 을 결합한 해시
+    // fallback pseudo-id
     const n = String(entry?.donorName || "").trim().toLowerCase();
     const a = Math.max(0, Math.round(Number(entry?.amount) || 0));
     const t = entry?.target === "account" ? "acc" : entry?.target === "toon" ? "toon" : "x";
@@ -132,13 +132,14 @@ export async function appendToonaHubDonationLogs(
     return `fallback-${ms}-${hx}`;
   }
   function nearContentKey(entry: ToonaHubDonationLog): string {
-    const bucket = Math.floor(Number(entry.at || 0) / NEAR_CONTENT_AT_WINDOW_MS_SAFE);
+    // ✅ 유저 요청 3초 제한: TEST_DUPLICATE_BLOCK_MS = 3000ms 윈도우 안에 같은 내용은 같은 bucket
+    const bucket = Math.floor(Number(entry.at || 0) / TEST_DUPLICATE_BLOCK_MS);
     const name = String(entry.donorName || "").trim().toLowerCase();
     const amt = Math.max(0, Math.round(Number(entry.amount) || 0));
     const target = entry.target === "account" ? "account" : "toon";
     return `${name}|${amt}|${target}|${bucket}`;
   }
-  // ==================== End FixC preamble ====================
+  // ==================== End FixC preamble (v2 · NEAR 3초 Revert by user request) ====================
 
   const byId = new Map<string, ToonaHubDonationLog>();
   for (const row of prev) if (row?.id) byId.set(safeDonorId(row), { ...row, id: safeDonorId(row) });
