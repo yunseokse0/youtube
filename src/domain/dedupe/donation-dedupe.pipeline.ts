@@ -57,15 +57,6 @@ export function donorRowDedupeKey(donor: MergeableDonor): string {
   if (isSplitSource) {
     return `src:${baseId}`;
   }
-  /**
-   * ✅ 2026-09-07 Hotfix 6-10 death-loop Fix:
-   *  기존 /^toonation:(.+)$/i.exec(baseId) regex Bug: normalize 후 provider prefix 가 제거된 baseId=12345 에서 매치 불가 → null.
-   *  strong id 분기를 완전히 놓치고 weak fallback bucket key 로 빠져서 → `toonation:12345` (realtime SSE) vs `toonation:din:12345` (fetch polling)
-   *  이 서로 다른 bucket key 로 pass1 map 에 분리 저장 → merge 자체가 안일어나서 → 사용자가 수동 삭제한 excluded=true 플래그가 전혀 전파되지 않았던 악순환!
-   *
-   * 변경 분기: baseId 존재 AND !isWeak(rawId) → 무조건 strong toonation bucket key `toonation:${baseId}` 통일 사용
-   *   → 두가지 ID format 이 100% 같은 bucket 에 들어가서 merge 가 강제 발생 → excluded lock 양쪽에 상속 → 사용자 삭제 후 다시 fetch 로 들어와도 자동으로 excluded 유지!
-   */
   const hasStrongToonationId = Boolean(baseId) && !isWeakToonationDonorId(rawId);
   if (hasStrongToonationId) {
     return `toonation:${baseId.toLowerCase()}`;
@@ -87,8 +78,7 @@ export function donorRowDedupeKey(donor: MergeableDonor): string {
     }
     return `id:${baseId}`;
   }
-  const name = String(donor.name || "").trim();
-  const amount = Math.floor(Number(donor.amount || 0));
+  const name = String(donor.name || donor.donorName || "").trim();
   const rawFallbackExt = String(donor.externalId || donor.rawHash || "").trim();
   if (rawFallbackExt) {
     const fallbackHash = Math.abs(
@@ -100,13 +90,22 @@ export function donorRowDedupeKey(donor: MergeableDonor): string {
       .toString(36)
       .padStart(6, "0")
       .slice(-5);
-    return `fallback:${name}|${donorAtEpochMs(donor)}|${amount}|${fallbackHash}`;
+    /**
+     * ✅ 2026-09-07 Fix #⑦ (C Donor weak bucket seed atMs/amount 제거!)
+     *  이전: `fallback:${name}|${donorAtEpochMs(donor)}|${amount}|${hash}`
+     *   - atMs (후원시간) 이 seed 에 포함되어 1ms 차이로도 완전히 다른 bucket → 동일 donor 동일 메시지여도 2행 적재 (C Donor 패턴)
+     *   - amount (금액) 도 seed 에 포함되어 금액 같을때는 괜찮지만 1원 차이로도 bucket 분리 → merge 기회 박탈
+     *  변경: donor 고유성은 `name + externalId/rawHash` 만으로 판단!
+     *   - 동일 donor 는 at/amount 가 달라도 일단 같은 bucket 에 전부 모음 → allowMergeByIdOnly 가 최종적으로 merge 여부 결정
+     *   - 결과: 짧은 시간 소액 다회 후원 C Donor (딱기둘/자키 등) bucket 1개로 통일 → false-positive merge 와 샴푸 증식 원천 봉쇄
+     */
+    return `fallback:${name}|${fallbackHash}`;
   }
-  const seedParts: string[] = [name, String(donorAtEpochMs(donor)), String(amount)];
+  const seedParts: string[] = [name];
   if (rawId) {
     seedParts.push(rawId);
   } else {
-    const wholeObj = `${name}|${donorAtEpochMs(donor)}|${amount}|${String(donor.message || "")}`;
+    const wholeObj = `${name}|${String(donor.message || "")}`;
     seedParts.push(wholeObj);
   }
   const lastResortSeed = seedParts.join("||");
@@ -119,7 +118,7 @@ export function donorRowDedupeKey(donor: MergeableDonor): string {
     .toString(36)
     .padStart(6, "0")
     .slice(-6);
-  return `fallback:${name}|${donorAtEpochMs(donor)}|${amount}|${lastResortHash}`;
+  return `fallback:${name}|${lastResortHash}`;
 }
 
 export function mergeDonorRowFields<T extends MergeableDonor>(
@@ -150,6 +149,12 @@ export function mergeDonorRowFields<T extends MergeableDonor>(
     "memberId", "teamId", "battleId", "battleTeamId",
     "bankAccountBank", "bankAccountHolder", "bankAccountNumber",
     "settlementLabel", "groupSplitSourceId",
+    /** ✅ 2026-09-07 Fix ⑫-a: 사용자 이름 변경 메타 필드 merge 시 보존
+     *  사용자가 관리자 페이지에서 후원자 이름 수정시 donor 객체에 donorNameEditAt / donorNameLastEditedBy="user" 2가지 메타가 저장됨
+     *  이전: FALLBACK_PRIMARY_FIELDS 목록에 없어서 매 merge 마다 소실 → 1분뒤 fetch polling 돌아오면 donorNameLastEditedBy 가 undefined 가 되어버림
+     *  변경: PRIMARY FIELD 로 등록 → fallback (기존 state 값) 에 있으면 100% 유지 → 절대 소실 안됨!
+     */
+    "donorNameEditAt", "donorNameLastEditedBy",
   ] as const;
   function primaryValue<K extends (typeof FALLBACK_PRIMARY_FIELDS)[number]>(key: K): unknown {
     const fb = (fallback as any)?.[key];
@@ -196,9 +201,29 @@ export function mergeDonorRowFields<T extends MergeableDonor>(
   const prefMsg = String(pfAny?.message || pfAny?.memo || "").trim();
   const mergedMsg = fallbackMsg || prefMsg || undefined;
 
+  /**
+   * ✅ 2026-09-07 Fix ⑫-b: 사용자가 직접 수정한 이름은 무조건 우선 (절대 새 fetch 원본 이름으로 덮어씌우지 않음!)
+   *  - 관리자 페이지에서 이름 변경시 donorNameLastEditedBy = "user" 로 저장됨
+   *  - preferred / fallback 어느 한쪽에라도 "user edited" 플래그가 있으면 → 그쪽 이름을 1순위로 사용
+   *  - 이전: 메타 필드가 소실되면서 preferred 원본 DIN 허브 이름 (자키집쓰볼탱69) 이 새 이름을 덮어써서 "1분뒤 원래 이름으로 복귀" Bug 발생
+   */
+  const prefEdited = String((pfAny?.donorNameLastEditedBy) || "").trim().toLowerCase() === "user";
+  const fallEdited = String((fbAny?.donorNameLastEditedBy) || "").trim().toLowerCase() === "user";
+  const prefEditedName = prefEdited
+    ? String(pfAny?.name || pfAny?.donorName || pfAny?.nickname || pfAny?.displayName || "").trim() || undefined
+    : undefined;
+  const fallEditedName = fallEdited
+    ? String(fbAny?.name || fbAny?.donorName || fbAny?.nickname || fbAny?.displayName || "").trim() || undefined
+    : undefined;
+  const mergedNameFinal = (fallEdited && fallEditedName)
+    ? fallEditedName
+    : (prefEdited && prefEditedName)
+      ? prefEditedName
+      : mergedName;
+
   const baseMerge: any = {
     ...baseLocked,
-    ...(mergedName ? { name: mergedName } : {}),
+    ...(mergedNameFinal ? { name: mergedNameFinal, donorName: mergedNameFinal } : (mergedName ? { name: mergedName } : {})),
     ...(mergedTarget ? { target: mergedTarget } : {}),
     ...(mergedMsg ? { message: mergedMsg } : {}),
   };
@@ -273,23 +298,45 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
      *   → lost unique 로 오판한 append 후보를 폐기 → append 하지 않음 (교차 오염 방지)
      */
     const mergedSnap = finalMerged.slice(0);
+    function parseAtMs(v: number | string | undefined): number {
+      if (v === undefined || v === null || v === "") return 0;
+      if (typeof v === "number") {
+        const r = Math.round(v); return Number.isFinite(r) ? r : 0;
+      }
+      if (typeof v === "string") {
+        let p = Date.parse(v);
+        if (!Number.isFinite(p) || p === 0) { if (/^\d+$/.test(v) || /^\d+\.\d+$/.test(v)) p = Math.round(Number(v)); }
+        return Number.isFinite(p) ? p : 0;
+      }
+      return 0;
+    }
     function hasTwinInMerged(cand: T): boolean {
-      const cD = cand as unknown as { name?: string; displayName?: string; amount?: number; at?: number; message?: string };
-      const cName = normalizeDonorNameKey(String(cD.displayName || cD.name || ""));
+      const cD = cand as unknown as { donorName?: string; name?: string; displayName?: string; amount?: number; at?: number | string; memberId?: string; groupSplit?: boolean; groupSplitSource?: boolean };
+      const cIsSplit = Boolean(cD.groupSplit) || Boolean(cD.groupSplitSource);
+      const cName = normalizeDonorNameKey(String(cD.donorName || cD.displayName || cD.name || ""));
       if (!cName) return false;
       const cAmt = Math.round(Number(cD.amount || 0));
-      const cAt = Math.round(Number(cD.at || 0));
+      const cAt = parseAtMs(cD.at);
+      const cMem = String(cD.memberId || "").trim();
       for (const m of mergedSnap) {
-        const mD = m as unknown as { name?: string; displayName?: string; amount?: number; at?: number; message?: string };
-        const mName = normalizeDonorNameKey(String(mD.displayName || mD.name || ""));
+        const mD = m as unknown as { donorName?: string; name?: string; displayName?: string; amount?: number; at?: number | string; memberId?: string; groupSplit?: boolean; groupSplitSource?: boolean };
+        const mIsSplit = Boolean(mD.groupSplit) || Boolean(mD.groupSplitSource);
+        const mName = normalizeDonorNameKey(String(mD.donorName || mD.displayName || mD.name || ""));
         if (mName !== cName) continue;
         const mAmt = Math.round(Number(mD.amount || 0));
         if (mAmt > 0 && cAmt > 0 && Math.abs(mAmt - cAmt) >= 1) continue;
-        const mAt = Math.round(Number(mD.at || 0));
+        const mAt = parseAtMs(mD.at);
+        const mMem = String(mD.memberId || "").trim();
+        // ✅ 2026-09-07 Fix ⑥-1: group-split donor (익명 단체짠 분할 등) 는 memberId 까지 일치해야만 twin 으로 간주
+        //   익명 단체짠 donor 를 m1/m2 로 2분할 한 경우: donor이름·금액·시간 전부 같지만 memberId 가 다름 → 개별 row 유지 필수!
+        //   이전: memberId 무시하고 이름·금액·시간만 같으면 twin true → appendLostUnique 스킵 → m2 소실 Bug 발생
+        if (cIsSplit || mIsSplit) {
+          if (cMem && mMem && cMem !== mMem) continue;
+        }
         if (mAt > 0 && cAt > 0) {
-          if (Math.abs(mAt - cAt) <= 60 * 60 * 1000) return true; // 동일 donor + 금액 같고 시간 1시간 이내면 같은 행으로 간주 (이미 존재함 → lost unique 아님!)
+          if (Math.abs(mAt - cAt) <= 60 * 60 * 1000) return true;
         } else {
-          return true; // at 누락인 경우는 donor+amount 만 같아도 이미 있다고 간주 (보수적)
+          return true;
         }
       }
       return false;
@@ -370,9 +417,34 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
     const key = donorRowDedupeKey(d);
     saveWithCollisionGuard(key, d, (prev, cur) => allowMergeByIdOnly(prev, cur));
   }
-  const pass1 = Array.from(map.values()).sort(
+  let pass1 = Array.from(map.values()).sort(
     (a, b) => donorAtEpochMs(b) - donorAtEpochMs(a)
   );
+
+  /**
+   * ✅ 2026-09-07 Fix #⑧ 2차 sweep norm merge: bucket collision/split 로 갈라진 동일 donor 후원 100% 합치기
+   *  pass1 bucket map 에서 서로 다른 bucket 으로 분리 저장되었지만 실제로는 norm ID 같거나 allowMergeByIdOnly=true 인 2 donor 를 마지막에 한번 더 훑어서 합쳐줌
+   *  - Fix ⑦ weak seed atMs 제거 를 적용했어도 기존 과거 state donors 의 atMs 가 다른 bucket 으로 남아있는 잔재 케이스 처리
+   *  - 샴푸 10건 증식 / C Donor atMs 2행 분리 패턴 등 bucket 갈라짐으로 인한 중복을 이 단계에서 100% 흡수
+   */
+  {
+    const sweepResult: T[] = [];
+    for (const d of pass1) {
+      let idx = -1;
+      for (let i = 0; i < sweepResult.length; i++) {
+        const prev = sweepResult[i]!;
+        if (allowMergeByIdOnly(prev, d as MergeableDonor)) { idx = i; break; }
+      }
+      if (idx < 0) { sweepResult.push(d); continue; }
+      const prev = sweepResult[idx]!;
+      const aWeak = isWeakToonationDonorId(String(prev.id || ""));
+      const bWeak = isWeakToonationDonorId(String(d.id || ""));
+      const preferred = aWeak && !bWeak ? d : !aWeak && bWeak ? prev : donorAtEpochMs(d) >= donorAtEpochMs(prev) ? d : prev;
+      const other = preferred === d ? prev : d;
+      sweepResult[idx] = mergeDonorRowFields(preferred, other) as T;
+    }
+    pass1 = sweepResult.sort((a, b) => donorAtEpochMs(b) - donorAtEpochMs(a));
+  }
 
   type MergeableDonorEx = MergeableDonor & { donationExcluded?: boolean };
   /**
@@ -391,35 +463,62 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
   function allowMergeByIdOnly(prev: MergeableDonor, incoming: MergeableDonor): boolean {
     const idA = String(prev.id || "").trim();
     const idB = String(incoming.id || "").trim();
-    if (!idA || !idB) return false;
-    const normA = normalizeDonationEventId(idA) || idA;
-    const normB = normalizeDonationEventId(idB) || idB;
-    if (normA === normB) return true;
+    if (idA && idB) {
+      const normA = normalizeDonationEventId(idA) || idA;
+      const normB = normalizeDonationEventId(idB) || idB;
+      if (normA === normB) return true;
+    }
 
     // 2차 안전망: ID 불일치여도 동일 donor + 동일 amount + 동일 at 1초 + 동일 msg → merge 허용
-    // 타입 캐스팅 DonorLike: donor pipeline 호출은 Donor 타입을 넘기지만 제네릭이어서 속성 any 접근 허용
+    /**
+     * ✅ 2026-09-07 Fix ⑨⑩⑪ (Issue #2 타입 이중발급 70% 패턴 전부 해결!)
+     * [Fix ⑨ donorName 필드 Bug] 이전: donor 이름을 displayName || name 으로만 읽음 → 실제 Donor/DonationEvent 객체는 donorName 필드로 값이 들어옴! → donorA="" 빈문자열 → 2차 안전망 첫 조건부터 fail
+     *                         변경: donorName 을 최우선 참조 → donorName || displayName || name || "" 순서
+     * [Fix ⑩ at=ISO string NaN Bug] 이전: at = ISO 문자열 "2026-09-07T..." 인데 Number() = NaN → NaN > 0 = false → atMs 비교 아예 fail
+     *                       변경: parseAtMs() 유틸로 typeof string 이면 Date.parse() 로 ms 숫자 변환 → 정상 atMs 비교!
+     * [Fix ⑪ target/대상 필드 판단 제외] DIN 허브에서 동일 후원을 투네 + 계좌 2행 INSERT 해서 target(대상/투네/계좌) 만 다르게 오는것을 "다른 후원" 으로 오판하면 안됨 → target 은 merge 판단 조건에 완전 배제 (donor/amt/at/msg 4가지만 AND 비교)
+     */
+    function parseAtMs(v: number | string | undefined): number {
+      if (v === undefined || v === null || v === "") return 0;
+      if (typeof v === "number") {
+        const r = Math.round(v);
+        return Number.isFinite(r) ? r : 0;
+      }
+      if (typeof v === "string") {
+        // ISO string 이면 Date.parse 로 ms 변환
+        let p = Date.parse(v);
+        if (!Number.isFinite(p) || p === 0) {
+          // 숫자로만 구성된 문자열이면 direct Number()
+          if (/^\d+$/.test(v) || /^\d+\.\d+$/.test(v)) p = Math.round(Number(v));
+        }
+        return Number.isFinite(p) ? p : 0;
+      }
+      return 0;
+    }
     const dA = prev as unknown as {
+      donorName?: string;
       displayName?: string;
       name?: string;
       amount?: number;
-      at?: number;
+      at?: number | string;
       message?: string;
     };
     const dB = incoming as unknown as {
+      donorName?: string;
       displayName?: string;
       name?: string;
       amount?: number;
-      at?: number;
+      at?: number | string;
       message?: string;
     };
-    const donorA = normalizeDonorNameKey(String(dA.displayName || dA.name || ""));
-    const donorB = normalizeDonorNameKey(String(dB.displayName || dB.name || ""));
+    const donorA = normalizeDonorNameKey(String(dA.donorName || dA.displayName || dA.name || ""));
+    const donorB = normalizeDonorNameKey(String(dB.donorName || dB.displayName || dB.name || ""));
     if (donorA && donorA === donorB) {
       const amtA = Math.round(Number(dA.amount || 0));
       const amtB = Math.round(Number(dB.amount || 0));
       if (amtA > 0 && amtA === amtB) {
-        const atA = Math.round(Number(dA.at || 0));
-        const atB = Math.round(Number(dB.at || 0));
+        const atA = parseAtMs(dA.at);
+        const atB = parseAtMs(dB.at);
         if (atA > 0 && atB > 0 && Math.abs(atA - atB) <= 1_000) {
           const mA = String(dA.message || "").replace(/\s+/g, "").toLowerCase();
           const mB = String(dB.message || "").replace(/\s+/g, "").toLowerCase();

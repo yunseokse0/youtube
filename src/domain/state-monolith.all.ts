@@ -4595,21 +4595,37 @@ export function mergeBroadcastSessionPreservingDonations(
 
 /**
  * 정산 리셋 시각 병합.
- * - `settlementReset: true` 일 때만 새 stamp 허용 (사용자 명시 리셋).
- * - 그 외에는 서버(base) 값만 유지 — 클라이언트가 올린 더 큰 settlementResetAt 로
- *   후원이 자동 초기화되는 것을 막는다. (낮추는 것도 금지 → 리셋 가드 해제 방지)
+ * - `settlementReset: true` 일 때는 새 stamp 허용 (사용자 명시 리셋).
+ * - 그 외에도 settlementResetAt은 **단조 증가만 허용 = MAX(base, patch)** 원칙:
+ *   리셋 시각이 클라이언트 어느 한쪽에서라도 상승했으면 절대 과거로 되돌리지 않는다.
+ *   (과거로 되돌리면 리셋 이전 후원이 리셋 이후로 오판 → 쓰레기값 누적 Bug 발생)
+ * - 정책: MAX(0, baseResetAt, patchResetAt) — 최대값을 사용해 어떤 경우에도 resetAt은 내려가지 않는다.
+ *   악용 방지: 만약 donors=[] 가 아니고 멤버 금액합 > 0 이면서 patchResetAt 만 급상승 한 경우는
+ *   정상 reset 이 아닐 확률이 높으므로 baseResetAt 유지하는 guard 추가 (빈 상태일 때만 상승 허용)
  */
 export function coalesceSettlementResetAt(opts: {
   baseResetAt?: number;
   patchResetAt?: number;
   settlementReset?: boolean;
   resetStamp?: number;
+  donorCount?: number;
+  memberCombinedTotal?: number;
 }): number {
   if (opts.settlementReset) {
     const stamp = Number(opts.resetStamp || 0);
     return stamp > 0 ? stamp : Date.now();
   }
-  return Math.max(0, Number(opts.baseResetAt || 0));
+  const baseR = Math.max(0, Number(opts.baseResetAt || 0));
+  const patchR = Math.max(0, Number(opts.patchResetAt || 0));
+  if (patchR <= baseR) return baseR; // patch 가 더 과거면 base 사용 (단조 감소 금지 = 당연)
+  // patchResetAt > baseResetAt 인 경우 (리셋 시각 상승 시도): 암묵적 reset 증거 있을 때만 허용
+  const dEmpty = Number(opts.donorCount ?? -1) === 0;
+  const mZero = Number(opts.memberCombinedTotal ?? -1) < 0.1;
+  const implicitResetEvidence = dEmpty || mZero;
+  if (implicitResetEvidence) return patchR; // donors=[] 또는 멤버합=0 → 진짜 reset 행위로 간주 → patch 상승 승인
+  // 애매한 경우 (후원/금액 남은 상태에서 reset 시각만 급상승): base 유지 + MAX 내림차순 없도록 둘중 큰 값은 아님에 주의
+  // ★ ROOT CAUSE 봉쇄: 그래도 0 으로 날리지 않는다. baseResetAt 그대로 유지하되, 둘 중 더 과거가 아닌 값을 써서 후원 사라짐 막음
+  return Math.max(baseR, 0); // 원칙 지킴: baseResetAt 유지, 절대 0 이하 아님. patchR 상승은 불허하되 날리지 않음.
 }
 
 export function totalAccount(state: AppState): number {

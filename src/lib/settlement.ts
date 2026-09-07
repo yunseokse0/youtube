@@ -300,6 +300,16 @@ export function appendSettlementRecord(
   memberPositions?: Record<string, string> | null,
   settlementOptions?: SettlementCreateOptions
 ): SettlementRecord {
+  /** ✅ Fix ⑮-2 dual-truth guard:
+   *  /admin 대시보드의 멤버 totals (account/toon/contribution) 은 이미 dedup, excluded 제외,
+   *  수동 리셋 입력, 기여도 직접 반영 등이 모두 적용된 진리의 최종 집계 값임.
+   *  recomputeSettlementFromDonors 는 donors 출처만 보므로 수동 입력 금액이 누락될 위험이 있음.
+   *  → computeSettlement로 멤버 totals 기준 1차 계산 (멤버 account/toon 절대 우선)
+   *  → donors가 있으면 recompute 후 멤버별로 MAX(멤버원본, donor재계산) 으로 병합 (어느 한쪽 정보 누락 보완)
+   *  → 최종 applyPaymentStatementAmounts 로 세금/fee/net 재계산하여 불일치 방지 */
+  const origMembersById = new Map<string, Member>();
+  for (const m of members || []) origMembersById.set(String(m.id || m.name || "").trim(), m);
+
   const body = computeSettlement(
     members,
     accountRatio,
@@ -329,9 +339,69 @@ export function appendSettlementRecord(
       ? { taxInvoiceVatRate: settlementOptions.taxInvoiceVatRate }
       : {}),
   };
+  let finalRec: SettlementRecord = rec;
+  if (donors && donors.length > 0) {
+    const donorRec = recomputeSettlementFromDonors(rec, donors);
+    const mergedMembers = donorRec.members.map<SettlementMemberResult>((dm) => {
+      const key = String(dm.memberId || dm.name || "").trim();
+      const origM = origMembersById.get(key);
+      const origAcc = origM ? Math.max(0, Number(origM.account || 0)) : 0;
+      const origToon = origM ? Math.max(0, Number(origM.toon || 0)) : 0;
+      const donorAcc = Math.max(0, Number(dm.account || 0));
+      const donorToon = Math.max(0, Number(dm.toon || 0));
+      /** ✅ Fix ⑮-3: 멤버 totals (admin 대시보드 진리값) 절대 우선 — computeSettlement 이 account/toon 변환해도 원본 멤버 값으로 override.
+       *  donors 집계와 원본 멤버 값중 더 큰 쪽을 최종 선택으로 MAX 병합.
+       *  computeSettlement → SettlementMemberResult 의 account/toon 은 원본 멤버 account/toon을 보장하지 않으므로 강제 주입! */
+      const finalAcc = Math.max(origAcc, donorAcc);
+      const finalToon = Math.max(origToon, donorToon);
+      const baseRow: SettlementMemberResult = {
+        ...dm,
+        account: finalAcc,
+        toon: finalToon,
+        gross: finalAcc + finalToon,
+      };
+      return applyPaymentStatementAmounts(rec, baseRow);
+    });
+    /** 개별 세금/fee 계산 후 총합 집계 → finalRec 에 반영 */
+    const totalGross = mergedMembers.reduce((s, m) => s + Number(m.gross || 0), 0);
+    const totalFee = mergedMembers.reduce((s, m) => s + Number(m.fee || 0), 0);
+    const totalNet = mergedMembers.reduce((s, m) => s + Number(m.net || 0), 0);
+    finalRec = {
+      ...donorRec,
+      members: mergedMembers,
+      totalGross,
+      totalFee,
+      totalNet,
+    };
+  } else {
+    /** donors 없음 = 멤버 totals 그대로 유지해야 함 → computeSettlement body 결과 account/toon 변형됐을 수 있으므로 원본 멤버 값으로 override 후 applyPaymentStatementAmounts 재적용! */
+    const ensuredMembers = body.members.map<SettlementMemberResult>((bm) => {
+      const key = String(bm.memberId || bm.name || "").trim();
+      const origM = origMembersById.get(key);
+      const finalAcc = origM ? Math.max(0, Number(origM.account || 0)) : Number(bm.account || 0);
+      const finalToon = origM ? Math.max(0, Number(origM.toon || 0)) : Number(bm.toon || 0);
+      const baseRow: SettlementMemberResult = {
+        ...bm,
+        account: finalAcc,
+        toon: finalToon,
+        gross: finalAcc + finalToon,
+      };
+      return applyPaymentStatementAmounts({ ...rec, members: body.members }, baseRow);
+    });
+    const totalGross = ensuredMembers.reduce((s, m) => s + Number(m.gross || 0), 0);
+    const totalFee = ensuredMembers.reduce((s, m) => s + Number(m.fee || 0), 0);
+    const totalNet = ensuredMembers.reduce((s, m) => s + Number(m.net || 0), 0);
+    finalRec = {
+      ...rec,
+      members: ensuredMembers,
+      totalGross,
+      totalFee,
+      totalNet,
+    };
+  }
   const prev = loadSettlementRecords(userId);
-  saveSettlementRecords([rec, ...prev], userId);
-  return rec;
+  saveSettlementRecords([finalRec, ...prev], userId);
+  return finalRec;
 }
 
 const settlementLoadInflight = new Map<string, Promise<SettlementRecord[] | null>>();
@@ -596,9 +666,19 @@ export async function appendSettlementRecordAndSync(
   memberPositions?: Record<string, string> | null,
   settlementOptions?: SettlementCreateOptions
 ): Promise<SettlementRecord> {
-  /** ✅ OOM / 502 방지 1/2: 정산 생성 시 신규 rec 1건만 먼저 incremental append 저장 (전체 배열 POST 금지) */
+  /** ✅ Fix ⑮: 정산 0원 Bug 봉쇄 — lightweightMembers에서 금액 숫자 필드 절대 보존.
+   *  OOM/502 방지 목적이었으나, account/toon/contribution은 long 숫자 3개 (24바이트/멤버) 로
+   *  100멤버 기준 2.4KB로 OOM과 무관. 오히려 이 필드들을 제거하면 computeSettlement에서
+   *  0원으로 계산 → donors에 출처가 없는 수동입력/기여도 금액이 전부 날아가 0원 Bug 발생!
+   *  대용량 message 필드만 donors에서 제거하고 멤버 숫자 필드는 전부 유지. */
   const lightweightMembers = (members || []).map((m) => {
-    const copy: Partial<Member> & Pick<Member, "id" | "name"> = { id: m.id, name: m.name };
+    const copy: Partial<Member> & Pick<Member, "id" | "name"> = {
+      id: m.id,
+      name: m.name,
+      account: Number(m.account || 0),
+      toon: Number(m.toon || 0),
+      contribution: Number(m.contribution || 0),
+    };
     if (typeof m.operating === "boolean") copy.operating = m.operating;
     if (m.realName) copy.realName = m.realName;
     return copy as Member;
@@ -1072,6 +1152,40 @@ export function toPaymentAlignedSettlement(record: SettlementRecord): Settlement
     totalGross: members.reduce((s, m) => s + m.gross, 0),
     totalFee: members.reduce((s, m) => s + m.fee, 0),
     totalNet: members.reduce((s, m) => s + m.net, 0),
+  };
+}
+
+/**
+ * Fix ⑭ + Fix ⑮: 정산 0원 Bug 자동 복구 — 과거 저장된 레코드에서 donors는 존재하는데
+ * 멤버 계좌/투네 합계가 전부 0인 경우, donors 기준으로 재계산하여 정상 값으로 복구.
+ * EC2 st_1788793262749_40b8b8o 와 같은 과거 피해 건 자동 복구용.
+ * + Fix ⑮ dual guard: applyPaymentStatementAmounts 멤버별 개별 호출 적용 */
+export function autoRepairSettlementZeroBug(record: SettlementRecord): SettlementRecord {
+  const donors = record.donors || [];
+  if (donors.length === 0) return record;
+  const memTotalRaw = (record.members || []).reduce(
+    (s, m) => s + Math.max(0, Number(m.account) || 0) + Math.max(0, Number(m.toon) || 0),
+    0
+  );
+  if (memTotalRaw > 0) return record;
+  const sums = donorAmountSums(donors);
+  let donorTotal = 0;
+  for (const v of sums.values()) donorTotal += Math.max(0, v.account) + Math.max(0, v.toon);
+  if (donorTotal <= 0) return record;
+  const donorRec = recomputeSettlementFromDonors(record, donors);
+  /** applyPaymentStatementAmounts 개별 멤버마다 호출 → 세금/fee/net 정확 산출 */
+  const paidMembers = donorRec.members.map<SettlementMemberResult>((m) =>
+    applyPaymentStatementAmounts(donorRec, m)
+  );
+  const totalGross = paidMembers.reduce((s, m) => s + Number(m.gross || 0), 0);
+  const totalFee = paidMembers.reduce((s, m) => s + Number(m.fee || 0), 0);
+  const totalNet = paidMembers.reduce((s, m) => s + Number(m.net || 0), 0);
+  return {
+    ...donorRec,
+    members: paidMembers,
+    totalGross,
+    totalFee,
+    totalNet,
   };
 }
 

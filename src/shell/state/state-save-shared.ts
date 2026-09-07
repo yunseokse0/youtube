@@ -465,16 +465,29 @@ export function mergePartialState(
   if (!patchSettlementReset) {
     const baseReset = Number(base.settlementResetAt || 0);
     const patchReset = Number(next.settlementResetAt || 0);
+    // ==================== FixA_settlementResetAt_MonotonicIncrease (2026-09-08 hotfix-6-10-3) ====================
+    // ROOT CAUSE 봉쇄: settlementResetAt은 시간이 거꾸로 가지 않으므로 단조증가(MAX)만 적용. 절대 undefined 로 날리지 않는다.
+    // (이전 코드는 baseReset=0 이면 resetAt을 undefined 로 날려 → 리셋시점 유실 → 과거 후원이 리셋 후 유효후원으로 오판 → 쓰레기값 누적 Bug)
+    const finalReset = Math.max(baseReset, patchReset);
+    // 암묵적 정산 리셋 증거: donors=빈 배열 AND 멤버 금액합=0 AND patchReset>baseReset → 정산 리셋 플래그로 취급해 patchReset 허용
+    const donorEmpty = Array.isArray(next.donors) && next.donors.length === 0;
+    const memZero = Array.isArray(next.members) && next.members.reduce((s, m) => s + (Number(m.account || 0) + Number(m.toon || 0)), 0) < 0.1;
+    const implicitReset = donorEmpty && memZero && patchReset > baseReset && patchReset > 0;
     if (patchReset !== baseReset) {
-      next.settlementResetAt = baseReset > 0 ? baseReset : undefined;
-      if (patchReset > baseReset) {
-        logger.warn("settlementResetAt raise blocked without settlementReset flag", {
+      if (patchReset > baseReset && !implicitReset) {
+        // 정산 리셋 플래그 없고 암묵적 증거도 없으면 → MAX 값 쓰되 경고만 로그 (이전처럼 상승 차단 ❌ → 리셋 시점을 절대 과거로 돌리지 않음)
+        logger.warn("settlementResetAt raise accepted without explicit settlementReset flag (monotonic max guard)", {
           userId,
           baseReset,
           patchReset,
+          finalReset,
+          implicitReset,
         });
       }
+      // finalReset = MAX(baseReset, patchReset). 절대 undefined 사용 금지! baseReset=0 patchReset=0 이면 0 유지.
+      next.settlementResetAt = finalReset > 0 ? finalReset : (baseReset > 0 ? baseReset : (patchReset > 0 ? patchReset : 0));
     }
+    // ==================== End FixA ====================
   }
 
   return next;

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
-import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, getTreasuryMembersForExport, isTreasurySettlementMember, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, recoverSettlementRecordsFromAllSources, saveSettlementRecords, saveSettlementRecordsToApi, toPaymentAlignedSettlement, toSettlementFormulaLine, updateSettlementRecordAndRecompute, updateSettlementRecordDonors } from "@/lib/settlement";
+import { SettlementMemberResult, SettlementRecord, autoRepairSettlementZeroBug, deleteSettlementRecordAndSync, getMembersForExport, getTreasuryMembersForExport, isTreasurySettlementMember, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, recoverSettlementRecordsFromAllSources, saveSettlementRecords, saveSettlementRecordsToApi, toPaymentAlignedSettlement, toSettlementFormulaLine, updateSettlementRecordAndRecompute, updateSettlementRecordDonors } from "@/lib/settlement";
 import type { SettlementMemberRatioOverrides } from "@/types";
 import { aggregateMemberDonors, donorsForSettlementExport, formatExportDateTime, recordToDonorRankingsCsv, recordToDonorRankingsXlsxBlob, recordToMemberDonorsCsv, recordToMemberDonorsXlsxBlob, resolveSettlementDonors, seedSettlementDonorsForEdit, type DailyLogEntry } from "@/lib/settlement-donor-export";
 import { repairDonorTimestamps } from "@/lib/donation/repair-donor-timestamps";
@@ -269,6 +269,16 @@ export default function SettlementDetailPage() {
   useEffect(() => {
     ratioUiDirtyRef.current = false;
   }, [record?.id]);
+
+  useEffect(() => {
+    if (!record || !user || !records) return;
+    const repaired = autoRepairSettlementZeroBug(record);
+    if (repaired === record) return;
+    const next = records.map((r) => (r.id === record.id ? repaired : r));
+    setRecords(next);
+    saveSettlementRecords(next, user.id);
+    void saveSettlementRecordsToApi(next, user.id, { replace: false });
+  }, [record?.id, record?.members, record?.donors, user, records]);
 
   useEffect(() => {
     if (!record) return;
