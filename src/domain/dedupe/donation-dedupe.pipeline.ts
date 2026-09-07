@@ -673,44 +673,13 @@ export function isDuplicateDonationEvent(
     groupSplitSource?: boolean;
   }
 ): boolean {
-  // ==================== FixD_test_send_3sec_block_rule (2026-09-08 hotfix-6-10-6 · 유저 명시 요청!) ====================
-  // ✅ 유저 요청: "후원 테스트 발송에 3초제한을 둠"
-  // 6-6 ID ONLY RULE 때문에 ID가 달라도 내용 똑같으면 3초 내에 버튼 연타 발송한 테스트 후원을 전부 다른 후원으로 인정하여 totals가 폭증하는 Bug 해소.
-  // RULE 추가: 이름·금액·target·메시지가 전부 100% 동일하고 |at 차이| ≤ 3000ms 이면 → ID가 달라도 무조건 중복 = return true
-  // - 서로 다른 사람의 진짜 후원: 이름이 다르므로 통과
-  // - 같은 사람이 다른 금액 후원: 금액이 다르므로 통과
-  // - 같은 사람이 3초 이후에 보낸 같은 금액 후원: 시간 차이 3초 초과 → 통과 (진짜 중복 발송 아님)
-  // - 후원 테스트 발송 버튼 14번 연타 (동일 이름/금액/메시지/4초 이내) → 전부 true (1건만 집계 정상!)
-  try {
-    const DUP_BLOCK_WINDOW_MS = 3_000; // 유저 요청 3초 제한
-    const donorName = String(rawEvent.donorName || "").trim().toLowerCase();
-    const amount = Math.max(0, Math.round(Number(rawEvent.amount) || 0));
-    const msg = String(rawEvent.message || "").trim().toLowerCase();
-    const target = (t?: string): "account" | "toon" => (t === "toon" ? "toon" : (t === "account" ? "account" : "account"));
-    const evtTarget = target(rawEvent.target);
-    const atNow = (() => { const n = Number(rawEvent.at); return Number.isFinite(n) && n > 1e12 ? n : Date.now(); })();
-    if (donorName && amount > 0) {
-      const donors = state.donors || [];
-      for (const d of donors) {
-        const dName = String(d.name || "").trim().toLowerCase();
-        if (!dName || dName !== donorName) continue;
-        const dAmt = Math.max(0, Math.round(Number(d.amount) || 0));
-        if (dAmt !== amount) continue;
-        const dMsg = String(d.message || "").trim().toLowerCase();
-        if (dMsg !== msg) continue;
-        const dTarget = target(d.target);
-        if (dTarget !== evtTarget) continue;
-        const dAt = (() => { const n = Number(d.at); return Number.isFinite(n) && n > 1e12 ? n : (typeof d.at === "string" ? Date.parse(d.at) : 0); })();
-        if (!dAt) continue;
-        const diff = Math.abs(dAt - atNow);
-        if (diff <= DUP_BLOCK_WINDOW_MS) {
-          // 동일 인물 · 동일 금액 · 동일 메시지 · 동일 target · 3초 이내 → ID 다르더라도 무조건 중복! (테스트 발송 연타 봉쇄)
-          return true;
-        }
-      }
-    }
-  } catch(_) {}
-  // ==================== End FixD 3초 중복 블록 ====================
+  // ✅ 2026-09-08 hotfix-6-10-7: FixD 3초 identical-content dedup REVERTED
+  // ❌ FixD는 유저 요청 "후원 테스트 발송 3초 제한" 을 잘못된 위치(전역 dedup pipeline) 에 넣은 실수였음.
+  // 이유: 투네(WS)에서 오는 후원과 계좌(뱅크)에서 오는 후원이 "같은 사람 + 같은 금액 + 같은 메시지 + 3초 이내 동시 도착" 하는 정상 케이스가 존재하므로,
+  //       이 둘을 중복으로 판단하면 안됨! → 기존 ⑥-6 ID ONLY RULE 로 복귀 (ID가 100% 일치하는 경우에만 중복!)
+  //
+  // 🎯 올바른 3초 제한 위치: 관리자 admin 페이지 "후원 테스트 발송" 버튼 onClick 자체에 3초 debounce 를 넣는것이 맞음
+  //    (테스트 버튼 연타 자체를 차단 = 실제 후원 flow 에는 전혀 영향 없음)
   const donors = state.donors || [];
   const eventId = String(rawEvent.id || "").trim();
   const baseId = normalizeDonationEventId(eventId);
