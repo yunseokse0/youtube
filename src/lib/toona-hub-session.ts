@@ -110,16 +110,34 @@ export async function appendToonaHubDonationLogs(
   if (!uid || !entries?.length) return 0;
   const prev = await readToonaHubDonationLogs(uid);
 
-  // ==================== FixC_empty_id_fallback_generate_unique (2026-09-08 hotfix-6-10-6 REVERT: NEAR window = 유저 요청대로 3초 제한 유지) ====================
+  // ==================== FixC v3_empty_id_fallback_각_ROW_개별저장_보장 (2026-09-08 hotfix-6-10-8) ====================
   // DIN 허브 후원중 id=undefined/null/""/"0" 으로 넘어오는 경우가 매우 많음
-  // 이 경우 원래 append 로직: freshIds.add(undefined) 1번 → 나머지 전부 freshIds.has(undefined) → 스킵 Bug → FixD: fallback 해시 ID 생성 유지
-  // ✅ 유저 명시 요청: "후원 테스트 발송에 3초 제한을 둠"
-  //    → NEAR_CONTENT_AT_WINDOW_MS 를 3초로 유지하여 동일 인물이 3초내에 같은 내용(금액/이름/타겟)으로 후원 발송(테스트 버튼 반복 클릭 등)하면 1건으로만 merge 되도록 제한
-  const TEST_DUPLICATE_BLOCK_MS = 3_000; // 3초 제한 = 유저 요청 값
+  // 이 경우 원래 append 로직: freshIds.add(undefined) 1번 → 나머지 전부 freshIds.has(undefined) → 스킵 Bug
+  //
+  // 🔴 FixC v2 → v3 치명적 Bug 수정:
+  //   [FixC v2 문제] 동일 후원자·동일 메시지·동일 금액·동일 at 밀리초 버스트 20건이 id undefined로 오면
+  //                  FNV1a(name|amount|target|ms|msg) 해시가 20건 모두 충돌 → safeDonorId 전부 동일 → byId map에서 19건 덮어써져 1건만 남음
+  //   [유저 명시적 의도 VERBATIM] "동일한 후원자 동일한 메시지는 각각의 ROW가 있으면 후원으로 집계해야해 이유는 동일한 후원자가 10번 20번 발송할수 있어"
+  //   [FixC v3 해결] fallback pseudo-id에 8-hex crypto random entropy 추가 → 동일 내용 N건이 와도 N개 모두 다른 고유 ID 보장 → N건 1:1 개별 저장
+  //
+  // ✅ NEAR_CONTENT_AT_WINDOW_MS = 3000 ms 는 " richer 필드 업그레이드용 참조 key " 로만 사용하며, 절대로 개별 ROW 를 삭제하거나 1건으로 병합하지 않음!
+  //    (richer playerName/message/mode/applied 필드가 있을 때만 같은 버킷의 다른 ROW 들의 빈 필드를 채워주는 용도로만 사용)
+  const TEST_DUPLICATE_BLOCK_MS = 3_000; // richer-필드 업그레이드 NEAR 윈도우 = 유지
+  function _fixcRandom8Hex(): string {
+    try {
+      if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+        const b = new Uint8Array(4);
+        crypto.getRandomValues(b);
+        let n = 0; for (let i = 0; i < 4; i++) n = (n << 8) | b[i];
+        return (n >>> 0).toString(16).padStart(8, "0");
+      }
+    } catch (_) { /* ignore */ }
+    return Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, "0");
+  }
   function safeDonorId(entry: ToonaHubDonationLog): string {
     const raw = String(entry?.id || "").trim();
     if (raw && raw !== "0" && raw !== "null" && raw !== "undefined") return raw;
-    // fallback pseudo-id
+    // ✅ FixC v3: 개별 ROW 100% 고유 ID 보장을 위해 name/amount/target/ms/msg FNV seed + random 8-hex suffix 강제 주입
     const n = String(entry?.donorName || "").trim().toLowerCase();
     const a = Math.max(0, Math.round(Number(entry?.amount) || 0));
     const t = entry?.target === "account" ? "acc" : entry?.target === "toon" ? "toon" : "x";
@@ -129,17 +147,21 @@ export async function appendToonaHubDonationLogs(
     const combined = `${n}|${a}|${t}|${ms}|${msg}`;
     for (let i = 0; i < combined.length; i++) { h1 ^= combined.charCodeAt(i); h1 = Math.imul(h1, 0x01000193); }
     const hx = (h1 >>> 0).toString(16).padStart(8, "0");
-    return `fallback-${ms}-${hx}`;
+    const rand = _fixcRandom8Hex();
+    return `fallback-${ms}-${hx}-${rand}`;
   }
   function nearContentKey(entry: ToonaHubDonationLog): string {
-    // ✅ 유저 요청 3초 제한: TEST_DUPLICATE_BLOCK_MS = 3000ms 윈도우 안에 같은 내용은 같은 bucket
+    // ✅ FixC v3: NEAR bucket은 오직 "richer 필드 업그레이드" 용도로만 사용! 절대로 개별 ROW 를 삭제하거나 병합하지 않음.
+    //    - 3000ms 윈도우 안 name|amount|target 이 같은 그룹에서 가장 필드가 풍부한(richer) 1개를 기준으로 삼아
+    //      다른 ROW들의 빈 필드(playerName/message/mode/applied) 만 채워줌.
+    //    - 최종 byId map의 사이즈는 절대 줄어들지 않음 (개별 ROW 1:1 저장 보장)
     const bucket = Math.floor(Number(entry.at || 0) / TEST_DUPLICATE_BLOCK_MS);
     const name = String(entry.donorName || "").trim().toLowerCase();
     const amt = Math.max(0, Math.round(Number(entry.amount) || 0));
     const target = entry.target === "account" ? "account" : "toon";
     return `${name}|${amt}|${target}|${bucket}`;
   }
-  // ==================== End FixC preamble (v2 · NEAR 3초 Revert by user request) ====================
+  // ==================== End FixC preamble (v3 · 개별 ROW 1:1 저장 보장 · 동일 후원자 10~20건 연타 N건 모두 저장) ====================
 
   const byId = new Map<string, ToonaHubDonationLog>();
   for (const row of prev) if (row?.id) byId.set(safeDonorId(row), { ...row, id: safeDonorId(row) });
