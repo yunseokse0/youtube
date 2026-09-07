@@ -110,16 +110,39 @@ export async function appendToonaHubDonationLogs(
   if (!uid || !entries?.length) return 0;
   const prev = await readToonaHubDonationLogs(uid);
 
-  const byId = new Map<string, ToonaHubDonationLog>();
-  for (const row of prev) if (row?.id) byId.set(row.id, row);
-
+  // ==================== FixC_empty_id_fallback_generate_unique (2026-09-08 hotfix-6-10-5) ====================
+  // DIN 허브 후원중 id=undefined/null/""/"0" 으로 넘어오는 경우가 매우 많음 (14건 후원 전부 id 가 empty 케이스!)
+  // 이 경우 원래 append 로직: freshIds.add(undefined) 1번 → 나머지 13건은 freshIds.has(undefined) = true → continue 스킵 → 1건만 저장되는 Bug 발생 (14→4건 최종)
+  // FixC: id가 empty 이면 donorName+at+amount+target 의 해시를 fallback 고유 id로 생성 → 서로 다른 후원은 절대 merge되지 않고 1:1 보존
+  // 추가: NEAR_CONTENT_AT_WINDOW_MS 를 3000ms (3초) → 300ms (0.3초) 로 축소하여 버스트 후원(4초동안 14건)이 서로 다른 bucket에 들어가게 함으로 near merge가 공격적으로 병합되지 않도록 완화
+  const NEAR_CONTENT_AT_WINDOW_MS_SAFE = 300; // 원본 3000 → 0.3초 (같은 1초내 들어온 진짜 중복 하나만 합치고 나머지는 별개 유지)
+  function safeDonorId(entry: ToonaHubDonationLog): string {
+    const raw = String(entry?.id || "").trim();
+    if (raw && raw !== "0" && raw !== "null" && raw !== "undefined") return raw;
+    // fallback pseudo-id: bucket + name + amount + at + target 을 결합한 해시
+    const n = String(entry?.donorName || "").trim().toLowerCase();
+    const a = Math.max(0, Math.round(Number(entry?.amount) || 0));
+    const t = entry?.target === "account" ? "acc" : entry?.target === "toon" ? "toon" : "x";
+    const ms = Math.max(0, Number(entry?.at) || 0);
+    const msg = String(entry?.message || "").trim().slice(0, 32);
+    let h1 = 0x811c9dc5;
+    const combined = `${n}|${a}|${t}|${ms}|${msg}`;
+    for (let i = 0; i < combined.length; i++) { h1 ^= combined.charCodeAt(i); h1 = Math.imul(h1, 0x01000193); }
+    const hx = (h1 >>> 0).toString(16).padStart(8, "0");
+    return `fallback-${ms}-${hx}`;
+  }
   function nearContentKey(entry: ToonaHubDonationLog): string {
-    const bucket = Math.floor(Number(entry.at || 0) / NEAR_CONTENT_AT_WINDOW_MS);
+    const bucket = Math.floor(Number(entry.at || 0) / NEAR_CONTENT_AT_WINDOW_MS_SAFE);
     const name = String(entry.donorName || "").trim().toLowerCase();
     const amt = Math.max(0, Math.round(Number(entry.amount) || 0));
     const target = entry.target === "account" ? "account" : "toon";
     return `${name}|${amt}|${target}|${bucket}`;
   }
+  // ==================== End FixC preamble ====================
+
+  const byId = new Map<string, ToonaHubDonationLog>();
+  for (const row of prev) if (row?.id) byId.set(safeDonorId(row), { ...row, id: safeDonorId(row) });
+
   function rebuildNearContent(): Map<string, ToonaHubDonationLog> {
     const byNearContent = new Map<string, ToonaHubDonationLog>();
     for (const row of byId.values()) {
@@ -144,9 +167,12 @@ export async function appendToonaHubDonationLogs(
   let mergeAppliedUpgrade = 0;
   let nearMergedCount = 0;
   for (const entry of entries) {
-    if (!entry?.id || freshIds.has(entry.id)) continue;
-    freshIds.add(entry.id);
-    const existing = byId.get(entry.id);
+    if (!entry) continue;
+    const eid = safeDonorId(entry);
+    if (!eid || freshIds.has(eid)) continue;
+    freshIds.add(eid);
+    const normalizedEntry = { ...entry, id: eid };
+    const existing = byId.get(eid);
     if (existing) {
       let changed = false;
       const next: ToonaHubDonationLog = { ...existing };
@@ -171,11 +197,11 @@ export async function appendToonaHubDonationLogs(
         next.amount = entry.amount;
         changed = true;
       }
-      if (changed) byId.set(entry.id, next);
+      if (changed) byId.set(eid, next);
       continue;
     }
 
-    byId.set(entry.id, entry);
+    byId.set(eid, normalizedEntry);
     newAddCount += 1;
   }
 
