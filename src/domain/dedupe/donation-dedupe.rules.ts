@@ -24,7 +24,29 @@ export function donorTargetField(target?: string): "account" | "toon" {
 }
 
 export function normalizeDonationEventId(id: string): string {
-  return String(id || "").replace(/::review$/i, "");
+  /**
+   * ✅ 2026-09-07 Hotfix 6-10 Fix "간헐적 후원 2개씩 쌓임" 원인:
+   *  기존 규칙은 ::review suffix 만 제거 → 2가지 ID 발급 소스의 format 불일치를 전혀 정규화 못함.
+   *   · 실시간 SSE/Webhook (parse-event.ts L569): `toonation:${externalId}` → `toonation:12345`
+   *   · B-mode 1분 fetch polling (toona-hub-donation-map.ts L98): `${provider}:din:${externalId}` → `toonation:din:12345`
+   *  두개는 진짜 같은 후원 externalId=12345 이지만 Hotfix-6-6 ID ONLY merge 에서는 ID 글자 다르다고 2개씩 쌓였었음.
+   *
+   * 변경된 정규화 규칙: provider(toonation:/bank:) + din: prefix 를 전부 제거하고 오직 "외부 ID 본체" 부분만 return
+   *  · toonation:din:12345 → 12345
+   *  · toonation:12345 → 12345
+   *  · bank:din:99999 → 99999
+   *  · fp-abc-123 (weak id) → 그대로 fp-abc-123 (provider prefix 없으므로 pass-through)
+   * 결과: externalId 가 진짜로 같은 행은 어떤 경로로 들어오던 norm 결과가 100% 같아서 ID ONLY merge 가 올바르게 작동함.
+   */
+  let base = String(id || "").trim();
+  if (!base) return "";
+  // 1. ::review 등 meta suffix 제거 (원래 존재하던 로직 유지)
+  base = base.replace(/::[a-z]+$/i, "");
+  // 2. provider prefix: {toonation|bank|other}: 제거 (case insensitive)
+  base = base.replace(/^(toonation|bank|other|toon|투네|toona):/i, "");
+  // 3. hub marker prefix: din: 제거 → 오직 외부 ID 본체 "숫자·UUID·hex·fp- weak id" 만 남김
+  base = base.replace(/^(din|hub|self):/i, "");
+  return base;
 }
 
 export function isWeakToonationDonorId(id: string): boolean {

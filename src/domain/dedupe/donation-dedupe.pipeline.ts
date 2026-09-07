@@ -57,10 +57,20 @@ export function donorRowDedupeKey(donor: MergeableDonor): string {
   if (isSplitSource) {
     return `src:${baseId}`;
   }
-  const toonationMatch = /^toonation:(.+)$/i.exec(baseId);
-  if (toonationMatch) {
-    const ext = toonationMatch[1].toLowerCase();
-    if (!isWeakToonationDonorId(rawId)) return `toonation:${ext}`;
+  /**
+   * ✅ 2026-09-07 Hotfix 6-10 death-loop Fix:
+   *  기존 /^toonation:(.+)$/i.exec(baseId) regex Bug: normalize 후 provider prefix 가 제거된 baseId=12345 에서 매치 불가 → null.
+   *  strong id 분기를 완전히 놓치고 weak fallback bucket key 로 빠져서 → `toonation:12345` (realtime SSE) vs `toonation:din:12345` (fetch polling)
+   *  이 서로 다른 bucket key 로 pass1 map 에 분리 저장 → merge 자체가 안일어나서 → 사용자가 수동 삭제한 excluded=true 플래그가 전혀 전파되지 않았던 악순환!
+   *
+   * 변경 분기: baseId 존재 AND !isWeak(rawId) → 무조건 strong toonation bucket key `toonation:${baseId}` 통일 사용
+   *   → 두가지 ID format 이 100% 같은 bucket 에 들어가서 merge 가 강제 발생 → excluded lock 양쪽에 상속 → 사용자 삭제 후 다시 fetch 로 들어와도 자동으로 excluded 유지!
+   */
+  const hasStrongToonationId = Boolean(baseId) && !isWeakToonationDonorId(rawId);
+  if (hasStrongToonationId) {
+    return `toonation:${baseId.toLowerCase()}`;
+  }
+  if (baseId) {
     const rawExt = String(donor.externalId || "").trim();
     const seed = rawExt || String(donor.rawHash || "").trim();
     if (seed) {
@@ -77,7 +87,6 @@ export function donorRowDedupeKey(donor: MergeableDonor): string {
     }
     return `id:${baseId}`;
   }
-  if (baseId) return `id:${baseId}`;
   const name = String(donor.name || "").trim();
   const amount = Math.floor(Number(donor.amount || 0));
   const rawFallbackExt = String(donor.externalId || donor.rawHash || "").trim();
@@ -256,15 +265,44 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
       if (!raw) continue;
       mergedNormIds.add(normalizeDonationEventId(raw) || raw);
     }
+    /**
+     * ✅ 2026-09-07 Hotfix 6-10 "신규 후원 추가시 과거 후원 1건 덧나는 딱기둘 패턴" 원천 봉쇄:
+     *  1차 norm ID set 만으로는 bucket collision merge 로 소실된 서로 다른 donor A 를 "lost unique" 로 false-positive 오판하여
+     *  과거 원본 donors 배열에서 꺼내와 append 하는 교차 오염 현상을 막기 위해 2차 유사도 검증 추가.
+     *  append 하기 전에 이미 merged 배열 내에 "동일 donor + 동일 amount + atMs 차이 ≤ 3600초 (1시간)" donor 가 존재하면
+     *   → lost unique 로 오판한 append 후보를 폐기 → append 하지 않음 (교차 오염 방지)
+     */
+    const mergedSnap = finalMerged.slice(0);
+    function hasTwinInMerged(cand: T): boolean {
+      const cD = cand as unknown as { name?: string; displayName?: string; amount?: number; at?: number; message?: string };
+      const cName = normalizeDonorNameKey(String(cD.displayName || cD.name || ""));
+      if (!cName) return false;
+      const cAmt = Math.round(Number(cD.amount || 0));
+      const cAt = Math.round(Number(cD.at || 0));
+      for (const m of mergedSnap) {
+        const mD = m as unknown as { name?: string; displayName?: string; amount?: number; at?: number; message?: string };
+        const mName = normalizeDonorNameKey(String(mD.displayName || mD.name || ""));
+        if (mName !== cName) continue;
+        const mAmt = Math.round(Number(mD.amount || 0));
+        if (mAmt > 0 && cAmt > 0 && Math.abs(mAmt - cAmt) >= 1) continue;
+        const mAt = Math.round(Number(mD.at || 0));
+        if (mAt > 0 && cAt > 0) {
+          if (Math.abs(mAt - cAt) <= 60 * 60 * 1000) return true; // 동일 donor + 금액 같고 시간 1시간 이내면 같은 행으로 간주 (이미 존재함 → lost unique 아님!)
+        } else {
+          return true; // at 누락인 경우는 donor+amount 만 같아도 이미 있다고 간주 (보수적)
+        }
+      }
+      return false;
+    }
     const appendLostUnique: T[] = [];
     for (const orig of donors) {
       const raw = String(orig.id || "").trim();
       if (!raw) continue;
       const norm = normalizeDonationEventId(raw) || raw;
-      if (!mergedNormIds.has(norm)) {
-        mergedNormIds.add(norm);
-        appendLostUnique.push(orig);
-      }
+      if (mergedNormIds.has(norm)) continue;
+      if (hasTwinInMerged(orig)) continue; // ✅ 2차 검증: 이미 merged 에 동일 donor·금액·시간 행이 존재하면 → false-positive lost unique 이므로 append 스킵
+      mergedNormIds.add(norm);
+      appendLostUnique.push(orig);
     }
     if (appendLostUnique.length === 0) return finalMerged;
     return [...finalMerged, ...appendLostUnique].sort(
@@ -273,18 +311,64 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
   }
 
   const map = new Map<string, T>();
+  // ✅ bucket collision 으로 인한 서로 다른 donor 간 교차 merge 를 원천 봉쇄하는 split counter
+  //    동일 donorRowDedupeKey 에 2개 이상의 donor 가 들어왔으나 allowMergeByIdOnly=false (진짜 다른 후원) 일때
+  //    key 뒤에 #1, #2, #3 suffix 붙여서 Map 에 개별 저장 → 절대 교차 merge 안함
+  let splitSeed = 0;
+  function saveWithCollisionGuard(rawKey: string, value: T, allowMerge: (prev: T, cur: T) => boolean): void {
+    const existing = map.get(rawKey);
+    if (!existing) {
+      map.set(rawKey, value);
+      return;
+    }
+    const doMerge = allowMerge(existing, value);
+    if (doMerge) {
+      if (donorAtEpochMs(value) >= donorAtEpochMs(existing)) {
+        map.set(rawKey, mergeDonorRowFields(value, existing) as T);
+      } else {
+        map.set(rawKey, mergeDonorRowFields(existing, value) as T);
+      }
+      return;
+    }
+    // ❗ allowMerge=false → 진짜 다른 후원인데 bucket key 가 hash collision 으로 겹친것!
+    //   절대 merge 하지 않고 suffix 붙여 별도 key 로 분리 저장 → 교차 오염 0%
+    splitSeed += 1;
+    const altKey = `${rawKey}#split${splitSeed}`;
+    let tries = 0;
+    let finalKey = altKey;
+    while (map.has(finalKey) && tries < 50) {
+      splitSeed += 1;
+      tries += 1;
+      finalKey = `${rawKey}#split${splitSeed}`;
+    }
+    map.set(finalKey, value);
+  }
+  /**
+   * ✅ 2026-09-07 Hotfix 6-10 삭제 악순환 차단 2차 방어:
+   *  pass1 bucket key 오류로 (과거 baseline) merge 가 누락된 경우에도 안전하게 excluded lock 을 전파.
+   *  · donors 전체를 먼저 1회 순회 → norm ID 별로 "한명이라도 donationExcluded=true 인 적 있는지" 조사
+   *  · excluded 된 norm ID 는 → bucket merge 이후 "만약에 merge 누락됐어도" 새로 유입된 같은 ID donor 에 excluded 를 사전 주입
+   *  결과: 사용자가 1번 삭제한 후원은 어떤 ID format 으로 다시 유입되든 절대 UI에 노출되지 않음
+   */
+  const excludedNormIds = new Set<string>();
+  for (const d of donors) {
+    const raw = String(d.id || "").trim();
+    if (!raw) continue;
+    const norm = normalizeDonationEventId(raw) || raw;
+    if (!norm) continue;
+    const excluded = Boolean((d as unknown as { donationExcluded?: boolean }).donationExcluded);
+    if (excluded) excludedNormIds.add(norm);
+  }
+  for (const orig of donors) {
+    const raw = String(orig.id || "").trim();
+    const norm = raw ? normalizeDonationEventId(raw) || raw : "";
+    if (norm && excludedNormIds.has(norm) && !Boolean((orig as unknown as { donationExcluded?: boolean }).donationExcluded)) {
+      (orig as unknown as { donationExcluded: boolean }).donationExcluded = true;
+    }
+  }
   for (const d of donors) {
     const key = donorRowDedupeKey(d);
-    const prev = map.get(key);
-    if (!prev) {
-      map.set(key, d);
-      continue;
-    }
-    if (donorAtEpochMs(d) >= donorAtEpochMs(prev)) {
-      map.set(key, mergeDonorRowFields(d, prev));
-    } else {
-      map.set(key, mergeDonorRowFields(prev, d));
-    }
+    saveWithCollisionGuard(key, d, (prev, cur) => allowMergeByIdOnly(prev, cur));
   }
   const pass1 = Array.from(map.values()).sort(
     (a, b) => donorAtEpochMs(b) - donorAtEpochMs(a)
@@ -292,21 +376,58 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
 
   type MergeableDonorEx = MergeableDonor & { donationExcluded?: boolean };
   /**
-   * ✅ 2026-09-07 Hotfix ⑥-6 최종: "있는 그대로의 데이터를 보여주는게 맞아" 사용자 요청 반영.
-   *  기존: allowMergeByContent + shouldTreatAsDuplicateDonationContent (15초 identical 메시지 · 3초 near-content window 등)
-   *       로 "우리가 알아서 중복이다 판단하면" 메시지·시간 같으면 1건으로 합쳐서 갯수를 줄였음 → 사용자 불만 직접 원인.
-   *  최종 RULE: 오직 donor ID 정규화 값이 100% 완전히 동일할때만 merge 허용.
-   *     - ID가 1글자라도 다르면 → 절대 merge 하지 않음 · 무조건 별개 row 로 "있는 그대로" 보존.
-   *     - weak id (fp-) / strong id (din:) / 내용 완전 일치 / 시간 1초 차이 — 전부 상관없이 ID 다르면 개별 row 유지.
-   *     - 중복 반영은 상류의 primary key SETNX + inflight lock + donorRowDedupeKey pass1 이 100% 막아줌.
+   * ✅ 2026-09-07 Hotfix ⑥-10 Fix 간헐적 후원 2개씩 쌓임 Bug:
+   *  두가지 서로 다른 ID 발급 경로가 동일 externalId 에 대해 서로 다른 format 을 내뱉어
+   *   · 실시간 SSE/Webhook:  `toonation:${externalId}`  →  `toonation:12345`
+   *   · B-mode 1분 fetch:   `${provider}:din:${externalId}` → `toonation:din:12345`
+   *  이전 ⑥-6 ID ONLY RULE 은 format 이 다르면 ID 가 다르다고 오판 → 진짜 같은 후원이 2행으로 적재되었음.
+   *
+   *  Fix 적용된 merge 규칙 (OR):
+   *   1. normalizeDonationEventId 로 provider/din prefix 전부 제거하고 비교 → 동일 externalId 이면 무조건 merge
+   *   2. norm 결과가 달라도 4가지 전부 AND 로 만족 → 무조건 merge (2차 안전망):
+   *        donor 완전일치 + amount 완전일치 + atMs 차이 ≤ 1000ms + message 완전일치
+   *   3. 그 외 모든 경우 → return false (별개 후원으로 "있는 그대로" 개별 row 유지)
    */
   function allowMergeByIdOnly(prev: MergeableDonor, incoming: MergeableDonor): boolean {
     const idA = String(prev.id || "").trim();
     const idB = String(incoming.id || "").trim();
-    if (!idA || !idB) return false; // 둘중 한쪽이라도 ID 누락 → 절대 merge 하지 않고 개별 유지
+    if (!idA || !idB) return false;
     const normA = normalizeDonationEventId(idA) || idA;
     const normB = normalizeDonationEventId(idB) || idB;
-    return normA === normB;
+    if (normA === normB) return true;
+
+    // 2차 안전망: ID 불일치여도 동일 donor + 동일 amount + 동일 at 1초 + 동일 msg → merge 허용
+    // 타입 캐스팅 DonorLike: donor pipeline 호출은 Donor 타입을 넘기지만 제네릭이어서 속성 any 접근 허용
+    const dA = prev as unknown as {
+      displayName?: string;
+      name?: string;
+      amount?: number;
+      at?: number;
+      message?: string;
+    };
+    const dB = incoming as unknown as {
+      displayName?: string;
+      name?: string;
+      amount?: number;
+      at?: number;
+      message?: string;
+    };
+    const donorA = normalizeDonorNameKey(String(dA.displayName || dA.name || ""));
+    const donorB = normalizeDonorNameKey(String(dB.displayName || dB.name || ""));
+    if (donorA && donorA === donorB) {
+      const amtA = Math.round(Number(dA.amount || 0));
+      const amtB = Math.round(Number(dB.amount || 0));
+      if (amtA > 0 && amtA === amtB) {
+        const atA = Math.round(Number(dA.at || 0));
+        const atB = Math.round(Number(dB.at || 0));
+        if (atA > 0 && atB > 0 && Math.abs(atA - atB) <= 1_000) {
+          const mA = String(dA.message || "").replace(/\s+/g, "").toLowerCase();
+          const mB = String(dB.message || "").replace(/\s+/g, "").toLowerCase();
+          if (mA === mB) return true;
+        }
+      }
+    }
+    return false;
   }
 
   const MAX_BUCKET_SCAN = 200;
