@@ -13,6 +13,16 @@ import {
 import { isSettlementResetExplicitlyConfirmed } from "@/lib/settlement-reset-confirm";
 import { normalizeDonorsArray, totalCombined } from "@/lib/state";
 import { createModuleLogger } from "@/lib/logger";
+// ==================== FixB_settlement_reset_clear_bmode_logs (2026-09-08 hotfix-6-10-4) ====================
+// 정산 리셋 직후 B모드(DIN 허브) 로그·마지막 ingest 시각이 남아있어
+// 리셋 이전 과거 후원(쓰레기값 31.7 / 17건)이 다시 살아나는 Bug 원천 봉쇄.
+// 세션(email/token) 자체는 유지하고 lastIngest 3필드만 reset 시각으로 갱신 + donationLogs 완전 삭제.
+import {
+  readToonaHubSession,
+  writeToonaHubSession,
+  clearToonaHubDonationLogs,
+} from "@/lib/toona-hub-session";
+// ==================== End FixB imports ====================
 
 const logger = createModuleLogger("api.settlement.reset");
 
@@ -65,6 +75,39 @@ export async function POST(req: Request) {
   });
 
   await clearDonationRosterBackup(userId, resetAt);
+
+  // ==================== FixB_settlement_reset_clear_bmode_logs (L77-1) ====================
+  // 🔥 정산 리셋 직후 B모드 로그·lastIngest 초기화 실행 —
+  //    만약 이 부분을 빼먹으면 lastIngestAt=리셋이전 시각 으로 박혀있어서,
+  //    B모드 폴링이 "리셋 이전 과거 후원" 을 계속 가져와 totals 에 재누적 (쓰레기값 부활)
+  //    - clearToonaHubDonationLogs: B모드가 들고있던 후원 로그 80건 통째 삭제 (과거 후원 원본 제거)
+  //    - lastIngestAt=resetAt (or 미래 1초): "나 리셋 시각 이후 후원만 새로 가져올거야" 기준점 재설정
+  //    - lastIngestError=null + lastIngestOk=true: 구 에러 메시지 stale 제거
+  try {
+    await clearToonaHubDonationLogs(userId);
+    const session = await readToonaHubSession(userId);
+    if (session) {
+      const FORWARD_RESET_MS = 1000; // 리셋 시각보다 1초 미래로 박아서 리셋 직후 들어온 후원(at=resetAt 정확히 같음)도 "리셋 이후" 로 안정적으로 필터
+      const nextSession = {
+        ...session,
+        lastIngestAt: new Date(resetAt + FORWARD_RESET_MS).toISOString(),
+        lastIngestOk: true,
+        lastIngestError: null,
+      } as const;
+      await writeToonaHubSession(nextSession);
+      logger.info("settlement reset → toona hub session lastIngestAt advanced", {
+        userId,
+        resetAt,
+        newLastIngestAt: nextSession.lastIngestAt,
+      });
+    }
+  } catch (err) {
+    logger.warn("settlement reset → toona hub logs/lastIngest clear failed (non-fatal, B모드 아닐시 스킵)", {
+      userId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+  // ==================== End FixB runtime ====================
 
   /** dual-write 미러 강제 비움: save 호출 전 선행 DELETE 하여 save 내 bypass flush 가 가장 늦게 적히도록 순서 고정 */
   try {
