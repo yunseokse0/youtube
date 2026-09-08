@@ -2417,7 +2417,7 @@ async function runServerSaveQueue(): Promise<void> {
         /* ignore malformed body */
       }
       try {
-        const { sendSSEUpdate } = require("./sse-post") as { sendSSEUpdate: (d: unknown) => Promise<void> };
+        const { sendSSEUpdate } = require("../lib/sse-post") as { sendSSEUpdate: (d: unknown) => Promise<void> };
         const pl = job.ssePayload as { updatedAt?: number; donorRankingsUpdatedAt?: number } | null;
         const updatedAt =
           typeof serverUpdatedAt === "number" && Number.isFinite(serverUpdatedAt)

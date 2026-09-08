@@ -1,5 +1,8 @@
 "use client";
-import { useEffect, useMemo, useState, useRef, useCallback, memo } from "react";
+
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
+import { useEffect, useMemo, useState, useRef, useCallback, memo, Suspense } from "react";
 import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
 import DonationTableOptionCheckboxes from "@/components/admin/DonationTableOptionCheckboxes";
@@ -730,9 +733,32 @@ function adminSyncFingerprint(s: AppState): string {
 
 export default function AdminPage() {
   return (
-    <AdminSectionCollapseProvider>
-      <AdminPageInner />
-    </AdminSectionCollapseProvider>
+    <Suspense fallback={<AdminPageSuspenseFallback />}>
+      <AdminSectionCollapseProvider>
+        <AdminPageInner />
+      </AdminSectionCollapseProvider>
+    </Suspense>
+  );
+}
+
+function AdminPageSuspenseFallback() {
+  return (
+    <div
+      style={{
+        padding: 40,
+        fontFamily: "system-ui, sans-serif",
+        color: "#e2e8f0",
+        background: "#0f172a",
+        minHeight: "100vh",
+      }}
+    >
+      <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 12 }}>
+        {APP_BRAND_NAME} {adminHeaderTitle()} 로딩 중...
+      </div>
+      <div style={{ color: "#94a3b8", fontSize: 14 }}>
+        URL 파라미터 초기화 중입니다. 1~3초 후 자동으로 페이지가 열립니다.
+      </div>
+    </div>
   );
 }
 
