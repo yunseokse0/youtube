@@ -39,6 +39,18 @@ export interface DonationEvent {
   contributionPoints?: number;
   /** toona ingest — 기여도 가중치(상태 formula 갱신·apply 계산용) */
   contributionFormula?: ContributionFormula;
+  /** Fix⑲: DIN 3초 Aggregator bucket 압축 해제용 메타데이터 — DB donors에는 Bucket Per Row로 1건만 적재하되 Alert 개별 발송은 N회 */
+  aggregatedCount?: number;
+  /** Aggregator bucket에 포함된 원본 개별 이벤트 ID 목록 (중복 차단·로그 추적용) */
+  aggregatedEventIds?: string[];
+  /** Aggregator bucket donor 목록 (중복 제거된 unique donorName 배열 — C Donor 패턴은 길이=1) */
+  aggregatedDonors?: string[];
+  /** Aggregator bucket 메시지 목록 (최대 N개 샘플링) */
+  aggregatedMessages?: string[];
+  /** Aggregator bucket playerName 목록 (unique 배열) */
+  aggregatedPlayers?: string[];
+  /** Aggregator bucket 첫 이벤트 발생 시각 (버킷 시작 시점) */
+  firstAt?: string;
 }
 
 export interface Donor {

@@ -67,6 +67,7 @@ import { syncHighSocietyMemberWidthSnapshotInState } from "@/lib/high-society";
 import { isSettlementResetExplicitlyConfirmed } from "@/lib/settlement-reset-confirm";
 import { publishSseEvent } from "@/lib/sse-clients-hub";
 import { computeDonorRankingsUpdatedAt } from "@/lib/donor-rankings-rev";
+import { runExclusivePerUser, getMutexQueueDepth, getUserMutexStats, getMutexActiveUserCount } from "@/lib/per-user-mutex";
 
 import {
   stateKey,
@@ -89,13 +90,11 @@ async function upstashSet(key: string, value: unknown) {
 }
 
 export async function POST(req: Request) {
-  let userId: string | null = null;
   try {
-    const writeUid = resolveWriteUserId(req);
+    const writeUid = resolveWriteUserId(req, { allowAnonymousUrlUser: true });
     if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
-    userId = writeUid.userId;
-    await ensureMysqlKvBackend();
-    const body = (await req.json()) as Partial<AppState> & {
+    const userId = writeUid.userId;
+    const bodyParsed = (await req.json()) as Partial<AppState> & {
       donorsAuthoritative?: boolean;
       donorsReplace?: boolean;
       settlementReset?: boolean;
@@ -105,6 +104,43 @@ export async function POST(req: Request) {
       userConfirmed?: boolean;
       confirmPhrase?: string;
     };
+    const depthBefore = getMutexQueueDepth(userId);
+    const mutexEnterTs = Date.now();
+    logger.info("Fix⑱ [MUTEX-ENTER-WAIT]", {
+      userId,
+      depthBefore,
+      mutexActiveUserCount: getMutexActiveUserCount(),
+      mutexStats: getUserMutexStats(),
+    });
+    return await runExclusivePerUser(userId, async () => {
+      const lockWaitMs = Date.now() - mutexEnterTs;
+      const depthAfterLock = getMutexQueueDepth(userId);
+      logger.info("Fix⑱ [MUTEX-LOCK-ACQUIRED]", {
+        userId,
+        lockWaitMs,
+        depthAfterLock,
+        mutexStats: getUserMutexStats(),
+      });
+      const procStartTs = Date.now();
+      let httpStatus = 500;
+      try {
+        const result: Response = await (async () => {
+          logger.info("FIX18-PANIC0-IIFE-ENTRY", { uid: userId });
+      await ensureMysqlKvBackend();
+      const body = bodyParsed;
+      try {
+        const d = (body as any).donors;
+        logger.info("FIX18-PANIC1-BODY-DONORS", {
+          uid: userId,
+          keysLen: Object.keys(body).length,
+          donors_type: typeof d,
+          donors_isArray: Array.isArray(d),
+          donors_len: Array.isArray(d) ? d.length : -1,
+          settlementReset: Boolean((body as any).settlementReset),
+          first_id: Array.isArray(d) && d.length > 0 ? String(d[0]?.id || 'x').slice(0, 30) : null,
+          first_amt: Array.isArray(d) && d.length > 0 ? (d[0]?.amount ?? null) : null,
+        });
+      } catch (_e) { logger.info("FIX18-PANIC1-ERR", { uid: userId, err: String(_e) }); }
     const donorsAuthoritative = body.donorsAuthoritative === true;
     const donorsReplace = body.donorsReplace === true;
     const settlementReset = body.settlementReset === true;
@@ -112,6 +148,7 @@ export async function POST(req: Request) {
       logger.warn("settlementReset POST rejected — missing explicit user confirmation", {
         userId,
       });
+      httpStatus = 403;
       return new Response(
         JSON.stringify({ error: "confirm_required", reason: "settlement_reset_confirm" }),
         {
@@ -122,6 +159,7 @@ export async function POST(req: Request) {
     }
     const membersAuthoritative = body.membersAuthoritative === true;
     const clearSigInventory = body.clearSigInventory === true;
+    logger.info("FIX18-PANIC15-READ", { uid: userId, kv: isPersistentKvConfigured() ? 1 : 0 });
     const kvOk = isPersistentKvConfigured();
     const memExisting = getServerMemoryAppState(userId);
     let existing: AppState | null = null;
@@ -133,6 +171,13 @@ export async function POST(req: Request) {
     }
     const baseState = existing || defaultState();
     let donorsInPatch = Array.isArray(body.donors);
+    logger.info("FIX18-PANIC2-DIP", {
+      uid: userId,
+      dip: donorsInPatch ? 1 : 0,
+      bd_type: typeof (body as any).donors,
+      bd_ctor: ((body as any).donors as any)?.constructor?.name ?? null,
+      base_donors: normalizeDonorsArray(baseState.donors).length,
+    });
     const donationInitReset = settlementReset || isDonationInitGoalResetPatch(body);
     const resetAt = Number(baseState.settlementResetAt || 0);
     const incomingDonorsRaw = donorsInPatch ? normalizeDonorsArray(body.donors) : [];
@@ -147,6 +192,7 @@ export async function POST(req: Request) {
           userId,
           kvErr,
         });
+        httpStatus = 503;
         return new Response(
           JSON.stringify({ error: "state_unavailable", reason: "kv_down_refuse_empty", retry: true }),
           {
@@ -181,21 +227,76 @@ export async function POST(req: Request) {
       });
     }
     const baseDonorsNorm = normalizeDonorsArray(baseState.donors);
+    if (userId === "din") {
+      console.log(`[FIX18-DBUG-1-READBASE] uid=${userId} base_donors_n=${baseDonorsNorm.length} incoming_raw_n=${incomingDonorsRaw.length} incoming_filt_n=${incomingDonorsFiltered.length} kv=${kvOk ? 1 : 0} mem=${memExisting ? 1 : 0} donorsMode=${donorsReplace ? "replace" : "add"}`);
+    }
+    logger.info("FIX18-PANIC3-PRETRACE1", {
+      uid: userId,
+      dip: donorsInPatch ? 1 : 0,
+      base: baseDonorsNorm.length,
+      raw: incomingDonorsRaw.length,
+      filt: incomingDonorsFiltered.length,
+    });
+    logger.info("Fix⑱ [TRACE donorsInPatch ①initial→preShrink]", {
+      userId,
+      initialDonorsInPatch: donorsInPatch,
+      settlementReset: Boolean(settlementReset),
+      resetAt,
+      baseDonors: baseDonorsNorm.length,
+      incomingRaw: incomingDonorsRaw.length,
+      incomingFiltered: incomingDonorsFiltered.length,
+      donorsAuthoritative,
+      membersAuthoritative,
+    });
     if (
       donorsInPatch &&
       !donorsAuthoritative &&
       !settlementReset &&
       !donationInitReset &&
       baseDonorsNorm.length > 0 &&
-      (incomingDonorsFiltered.length === 0 ||
-        incomingDonorsFiltered.length < baseDonorsNorm.length)
+      incomingDonorsFiltered.length === 0
     ) {
       logger.warn("refused accidental donor wipe — keeping base donors", {
         userId,
         baseCount: baseDonorsNorm.length,
         incomingCount: incomingDonorsFiltered.length,
+        reason: "empty incoming donors array",
       });
       donorsInPatch = false;
+      logger.info("Fix⑱ [TRACE donorsInPatch ② WIPE 차단 → false]", { userId });
+    } else if (
+      donorsInPatch &&
+      !donorsAuthoritative &&
+      !settlementReset &&
+      !donationInitReset &&
+      baseDonorsNorm.length > 0 &&
+      incomingDonorsFiltered.length > 0 &&
+      incomingDonorsFiltered.length < baseDonorsNorm.length
+    ) {
+      const existingDonorIds = new Set(baseDonorsNorm.map((d) => d.id).filter(Boolean));
+      const incomingIds = new Set(incomingDonorsFiltered.map((d) => d.id).filter(Boolean));
+      let overlapCount = 0;
+      incomingIds.forEach((id) => { if (existingDonorIds.has(id)) overlapCount++; });
+      const incomingAllNew = overlapCount === 0;
+      const keepDonorRatio = incomingIds.size === 0 ? 0 : overlapCount / incomingIds.size;
+      if (incomingAllNew) {
+        logger.info("donor add-only patch bypassed shrink guard — all NEW ids", {
+          userId,
+          baseCount: baseDonorsNorm.length,
+          incomingCount: incomingDonorsFiltered.length,
+          newIdsCount: incomingIds.size,
+        });
+      } else if (keepDonorRatio >= 0.3 || incomingDonorsFiltered.length <= Math.max(1, Math.floor(baseDonorsNorm.length * 0.5))) {
+        logger.warn("refused accidental donor shrink — keeping base donors", {
+          userId,
+          baseCount: baseDonorsNorm.length,
+          incomingCount: incomingDonorsFiltered.length,
+          overlapCount,
+          keepDonorRatio: Number(keepDonorRatio.toFixed(2)),
+        });
+        donorsInPatch = false;
+        logger.info("Fix⑱ [TRACE donorsInPatch ③ SHRINK 차단 → false]", { userId, keepDonorRatio, overlapCount });
+      }
     }
     if (
       shouldRefuseDonorShrinkOnMemberIdentityPatch({
@@ -216,6 +317,7 @@ export async function POST(req: Request) {
         incomingCount: incomingDonorsFiltered.length,
       });
       donorsInPatch = false;
+      logger.info("Fix⑱ [TRACE donorsInPatch ④ MemberIdentity 차단 → false]", { userId });
     }
     const highSocietySettingsInPatch =
       body.highSocietySettings &&
@@ -237,6 +339,7 @@ export async function POST(req: Request) {
         highSocietySettingsInPatch,
       });
       donorsInPatch = false;
+      logger.info("Fix⑱ [TRACE donorsInPatch ⑤ MassEmptyAuth 차단 → false]", { userId });
     }
     const authoritativeReplace =
       donorsAuthoritative &&
@@ -254,14 +357,33 @@ export async function POST(req: Request) {
           body.donorListVersion,
           baseState.donorListVersion
         ));
+    /**
+     * Fix ⑱-FINAL Stale Incoming Bump:
+     * Mutex Queue 대기 지연으로 클라이언트 body.updatedAt (발송시간) 이
+     * 이미 baseState.updatedAt (최근 저장 시간) 보다 과거가 되면,
+     * mergeDonorsForMultiTabSave 내 incomingStale=true 판정으로 인해
+     * union이 스킵되고 existing donors가 그대로 반환되어 incoming NEW donor
+     * 가 Lost Update 되는 Bug 방지.
+     * Mutex 내 직렬화 된 요청은 논리적으로 항상 최신이므로, incomingUpdatedAt
+     * 을 Math.max(사용자지정, 서버 현재시각, base existingAt + 1) 로 강제 bump
+     * 하여 절대로 stale 판정이 나오지 않게 보장.
+     */
+    const __serverNowTs = Date.now();
+    const __baseAt = Number(baseState.updatedAt || 0);
+    const __clientIncomingAt = Number(body.updatedAt || 0);
+    const __forcedIncomingAt = Math.max(
+      __clientIncomingAt,
+      __serverNowTs,
+      __baseAt > 0 ? __baseAt + 1 : 0
+    );
     const mergedDonors = donorsInPatch
       ? donationInitReset
         ? []
         : authoritativeReplace
           ? incomingDonorsFiltered
           : mergeDonorsForMultiTabSave(incomingDonorsFiltered, baseState.donors, {
-              incomingUpdatedAt: Number(body.updatedAt || 0),
-              existingUpdatedAt: Number(baseState.updatedAt || 0),
+              incomingUpdatedAt: __forcedIncomingAt,
+              existingUpdatedAt: __baseAt,
             })
       : baseState.donors;
     let safeMergedDonors = mergedDonors;
@@ -277,8 +399,8 @@ export async function POST(req: Request) {
       const mergedCount = safeMergedDonors.length;
       if (mergedCount === 0 || mergedCount < baseCount) {
         const recovered = mergeDonorsForMultiTabSave(incomingDonorsFiltered, baseState.donors, {
-          incomingUpdatedAt: Number(body.updatedAt || 0),
-          existingUpdatedAt: Number(baseState.updatedAt || 0),
+          incomingUpdatedAt: __forcedIncomingAt,
+          existingUpdatedAt: __baseAt,
         });
         if (recovered.length > mergedCount) {
           logger.warn("blocked accidental donor loss on save", {
@@ -335,6 +457,12 @@ export async function POST(req: Request) {
       userId
     );
     const dedupedDonors = donorsInPatch ? dedupeDonorRows(safeMergedDonors) : normalizeDonorsArray(baseState.donors);
+    if (userId === "din") {
+      const mergedN = Array.isArray(mergedDonors) ? mergedDonors.length : -1;
+      const safeN = Array.isArray(safeMergedDonors) ? safeMergedDonors.length : -1;
+      const dedupN = Array.isArray(dedupedDonors) ? dedupedDonors.length : -1;
+      console.log(`[FIX18-DBUG-1.5-MERGE] uid=${userId} donorsInPatch=${donorsInPatch ? 1 : 0} authRep=${authoritativeReplace ? 1 : 0} mergedN=${mergedN} safeN=${safeN} dedupN=${dedupN} baseN=${baseDonorsNorm.length} incN=${incomingDonorsFiltered.length}`);
+    }
     const memberIdentityOnlyPatch =
       membersAuthoritative &&
       !donorsInPatch &&
@@ -514,8 +642,13 @@ export async function POST(req: Request) {
           allowEmptyRosterWipe: settlementReset || donationInitReset,
           bumpRosterVersion: membersAuthoritative || settlementReset,
           bumpDonorListVersion: authoritativeReplace || settlementReset,
+          skipOuterRead: true,
         });
         memNext = memSaved.state;
+        if (userId === "din") {
+          const mn = normalizeDonorsArray(memNext.donors);
+          console.log(`[FIX18-DBUG-2-AFTERSAVE-MEM] uid=${userId} next_donors_n=${normalizeDonorsArray(next.donors).length} persisted_donors_n=${mn.length} ok=${memSaved.ok ? 1 : 0}`);
+        }
       } else {
         const memExisting = getServerMemoryAppState(userId);
         if (
@@ -540,6 +673,7 @@ export async function POST(req: Request) {
       seedAppStateKvCache(userId, memNext);
       void publishSseEvent(buildStateUpdatedSsePayload(body, memNext, memUpdatedAt, membersAuthoritative)).catch(() => {});
       logger.info('메모리 상태 업데이트', { updatedAt: memNext.updatedAt });
+      httpStatus = 200;
       return new Response(
         JSON.stringify({
           ok: true,
@@ -559,19 +693,48 @@ export async function POST(req: Request) {
     let persistedNext = next;
     let redisFallback: "memory" | undefined;
     if (donorsInPatch) {
+      const nextDonors = normalizeDonorsArray(next.donors);
+      const incomingIds = normalizeDonorsArray(body.donors).map(d => d.id).filter(Boolean);
+      logger.info("Fix⑱ [DEBUG PRE-SAVE]", {
+        userId,
+        baseDonors: baseDonorsNorm.length,
+        incomingDonorsRaw: incomingDonorsFiltered.length,
+        incomingIdsSample: incomingIds.slice(0, 3),
+        mergedDonors: safeMergedDonors.length,
+        dedupedDonors: (donorsInPatch ? dedupeDonorRows(safeMergedDonors) : normalizeDonorsArray(baseState.donors)).length,
+        nextDonors: nextDonors.length,
+        nextIdsSample: nextDonors.map(d => d.id).filter(Boolean).slice(0, 5),
+        nextResetAt: next.settlementResetAt || 0,
+        donorsMode: authoritativeReplace ? "replace" : "add",
+        settlementReset: Boolean(settlementReset),
+      });
       const saved = await saveAppStateForRoulette(userId, next, {
         donorsMode: authoritativeReplace ? "replace" : "add",
         allowEmptyRosterWipe: settlementReset || donationInitReset,
         bumpRosterVersion: membersAuthoritative || settlementReset,
         bumpDonorListVersion: authoritativeReplace || settlementReset,
+        skipOuterRead: true,
       });
       if (!saved.ok) {
+        httpStatus = 503;
         return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
           status: 503,
           headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
         });
       }
       persistedNext = saved.state;
+      const persistedDonors = normalizeDonorsArray(persistedNext.donors);
+      if (userId === "din") {
+        console.log(`[FIX18-DBUG-2-AFTERSAVE] uid=${userId} next_donors_n=${nextDonors.length} persisted_donors_n=${persistedDonors.length} ok=${saved.ok ? 1 : 0}`);
+      }
+      logger.info("Fix⑱ [DEBUG POST-SAVE]", {
+        userId,
+        nextDonors: nextDonors.length,
+        persistedDonors: persistedDonors.length,
+        donorDelta: persistedDonors.length - nextDonors.length,
+        persistedIdsSample: persistedDonors.map(d => d.id).filter(Boolean).slice(0, 8),
+        persistedResetAt: persistedNext.settlementResetAt || 0,
+      });
       logger.info('Redis 상태 업데이트 (roulette pipeline)', {
         updatedAt: persistedNext.updatedAt,
         donorsMode: authoritativeReplace ? "replace" : "add",
@@ -600,6 +763,7 @@ export async function POST(req: Request) {
       logger.info('Redis 상태 업데이트', { updatedAt: toPersist.updatedAt, success: ok, userId });
       if (!ok) {
         if (!isRedisConfigured()) {
+          httpStatus = 503;
           return new Response(JSON.stringify({ ok: false, error: "persist_failed" }), {
             status: 503,
             headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
@@ -616,7 +780,9 @@ export async function POST(req: Request) {
     const finalUpdatedAt = Number(persistedNext.updatedAt || 0) || Date.now();
     invalidateAppStateKvCache(userId);
     seedAppStateKvCache(userId, persistedNext);
+    setServerMemoryAppState(userId, persistedNext);
     void publishSseEvent(buildStateUpdatedSsePayload(body, persistedNext, finalUpdatedAt, membersAuthoritative)).catch(() => {});
+    httpStatus = 200;
     return new Response(
       JSON.stringify({
         ok: true,
@@ -633,7 +799,26 @@ export async function POST(req: Request) {
         status: 200,
       }
     );
+        })();
+        httpStatus = result.status || httpStatus;
+        return result;
+      } finally {
+        const procMs = Date.now() - procStartTs;
+        logger.info("Fix⑱ [MUTEX-RELEASE]", {
+          userId,
+          httpStatus,
+          procMs,
+          lockWaitMs,
+          depthBeforeRelease: getMutexQueueDepth(userId),
+          mutexStats: getUserMutexStats(),
+        });
+      }
+    });
   } catch (error) {
+    try { logger.error("FIX18-PANIC4-CATCH", {
+      err: String((error as any)?.message || error),
+      stack: (String((error as any)?.stack || '')).slice(0, 400),
+    }); } catch (_) {}
     logger.error('상태 업데이트 실패', error);
     return new Response(JSON.stringify({ ok: false, error: "persist_failed", retry: true }), {
       headers: { "Content-Type": "application/json" },

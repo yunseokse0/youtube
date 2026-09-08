@@ -1,11 +1,22 @@
 import type { AppState } from "@/types";
 
-/** Redis 미설정·장애 시 계정(userId)별 인메모리 스냅샷 — 전역 단일 캐시 금지 */
-const cacheByUserId = new Map<string, AppState>();
+const SERVER_MEMORY_APP_STATE_GLOBAL_KEY =
+  "__YOUTUBE_HARMONY_SERVER_MEMORY_APP_STATE_V1__";
+
+type MemoryStore = Map<string, AppState>;
+
+function getGlobalMemoryStore(): MemoryStore {
+  const g = globalThis as unknown as Record<string, unknown>;
+  if (!g[SERVER_MEMORY_APP_STATE_GLOBAL_KEY]) {
+    g[SERVER_MEMORY_APP_STATE_GLOBAL_KEY] = new Map<string, AppState>();
+  }
+  return g[SERVER_MEMORY_APP_STATE_GLOBAL_KEY] as MemoryStore;
+}
 
 export function getServerMemoryAppState(userId: string | null | undefined): AppState | null {
   const uid = String(userId || "").trim();
   if (!uid) return null;
+  const cacheByUserId = getGlobalMemoryStore();
   return cacheByUserId.get(uid) ?? null;
 }
 
@@ -15,6 +26,7 @@ export function setServerMemoryAppState(
 ): void {
   const uid = String(userId || "").trim();
   if (!uid) return;
+  const cacheByUserId = getGlobalMemoryStore();
   if (next === null) cacheByUserId.delete(uid);
   else cacheByUserId.set(uid, next);
 }

@@ -25,7 +25,33 @@ export function sanitizeDonationEventFromIngestBody(raw: unknown): DonationEvent
   if (!raw || typeof raw !== "object") return null;
   const body = raw as Record<string, unknown>;
 
-  const donorName = String(body.donorName || "").trim();
+  const aggregatedCountRaw = Number(body.aggregatedCount);
+  const aggregatedCount = Number.isFinite(aggregatedCountRaw) && aggregatedCountRaw > 1 ? Math.round(aggregatedCountRaw) : undefined;
+
+  const aggregatedDonorsRaw = Array.isArray(body.aggregatedDonors)
+    ? body.aggregatedDonors.map((x) => String(x || "").trim()).filter(Boolean)
+    : [];
+  const aggregatedEventIdsRaw = Array.isArray(body.aggregatedEventIds)
+    ? body.aggregatedEventIds.map((x) => String(x || "").trim()).filter(Boolean)
+    : [];
+  const aggregatedMessagesRaw = Array.isArray(body.aggregatedMessages)
+    ? body.aggregatedMessages.map((x) => String(x || "").trim()).filter(Boolean)
+    : [];
+  const aggregatedPlayersRaw = Array.isArray(body.aggregatedPlayers)
+    ? body.aggregatedPlayers.map((x) => String(x || "").trim()).filter(Boolean)
+    : [];
+
+  const isSameDonorOnlyBucket =
+    aggregatedCount !== undefined && aggregatedDonorsRaw.length === 1;
+
+  let donorName = String(body.donorName || "").trim();
+
+  if (isSameDonorOnlyBucket && aggregatedCount !== undefined) {
+    const singleDonor = aggregatedDonorsRaw[0] || donorName;
+    const bucketSum = Math.round(Number(body.amount) || 0);
+    donorName = `${singleDonor} 후원 ${aggregatedCount}회 (총 ${bucketSum.toLocaleString()}원)`;
+  }
+
   const externalId = String(body.externalId || "").trim();
   const amount = Math.round(Number(body.amount) || 0);
   if (!donorName || !externalId || amount <= 0) return null;
@@ -42,12 +68,6 @@ export function sanitizeDonationEventFromIngestBody(raw: unknown): DonationEvent
         ? `${provider}:${bodyIdRaw}`
         : `${provider}:din:${externalId}`;
   const atRaw = body.at;
-  /**
-   * KST local 점 구분 + 24시 표기(ex: "2026. 09. 02. 24:59:34") 를 안전하게 ISO Z 문자열로 변환.
-   * 구버전 naive new Date(atRaw).toISOString() 은 Invalid Date 시 RangeError Throw
-   * → 바로 /api/donations/ingest HTTP 500 을 뱉던 직접 원인 봉쇄.
-   * 항상 절대 throw 하지 않고 파싱 불가시 현재 시각 폴백.
-   */
   let atIso = "";
   try {
     const ms = parseKstLocalTimestampToMs(atRaw);
@@ -57,6 +77,13 @@ export function sanitizeDonationEventFromIngestBody(raw: unknown): DonationEvent
     atIso = new Date().toISOString();
   }
   const at = atIso;
+
+  let firstAt: string | undefined;
+  const firstAtRaw = body.firstAt;
+  try {
+    const ms = parseKstLocalTimestampToMs(firstAtRaw);
+    if (Number.isFinite(ms) && ms > 0) firstAt = new Date(ms).toISOString();
+  } catch {}
 
   const target =
     body.target === "account" ? "account" : body.target === "toon" ? "toon" : provider === "toonation" ? "toon" : "account";
@@ -111,6 +138,12 @@ export function sanitizeDonationEventFromIngestBody(raw: unknown): DonationEvent
     ...(manualAssignMemberId ? { manualAssignMemberId } : {}),
     ...(contributionPoints !== undefined ? { contributionPoints } : {}),
     ...(contributionFormula ? { contributionFormula } : {}),
+    ...(aggregatedCount !== undefined ? { aggregatedCount } : {}),
+    ...(aggregatedEventIdsRaw.length ? { aggregatedEventIds: aggregatedEventIdsRaw } : {}),
+    ...(aggregatedDonorsRaw.length ? { aggregatedDonors: aggregatedDonorsRaw } : {}),
+    ...(aggregatedMessagesRaw.length ? { aggregatedMessages: aggregatedMessagesRaw } : {}),
+    ...(aggregatedPlayersRaw.length ? { aggregatedPlayers: aggregatedPlayersRaw } : {}),
+    ...(firstAt ? { firstAt } : {}),
   };
 }
 
@@ -153,10 +186,15 @@ export async function handleDinDonationIngest(
   applyExcel: boolean,
   opts?: { logSource?: "ingest" | "toona"; skipHubLog?: boolean }
 ): Promise<DinIngestResult> {
+  const aggCount = event.aggregatedCount;
+  const isBucketAggregated = aggCount !== undefined && aggCount > 1;
+
   let result: DinIngestResult;
   if (!applyExcel) {
-    const enriched = await enrichDonationEventWithSigMatch(userId, event);
-    await broadcastPlayerDonationAlert(userId, enriched);
+    if (!isBucketAggregated) {
+      const enriched = await enrichDonationEventWithSigMatch(userId, event);
+      await broadcastPlayerDonationAlert(userId, enriched);
+    }
     result = { ok: true, applied: false, alert: true, mode: "alert_only" };
   } else {
     const outcome = await tryAutoApplyToonationDonationOnServer(userId, event);
@@ -171,5 +209,56 @@ export async function handleDinDonationIngest(
   if (!opts?.skipHubLog) {
     await logHubIngestIfLinked(userId, event, result, { forceSource: opts?.logSource }).catch(() => {});
   }
+
+  if (isBucketAggregated) {
+    const count = aggCount as number;
+    const totalAmt = Math.max(0, Math.round(Number(event.amount) || 0));
+    const baseAtMs = event.firstAt
+      ? new Date(event.firstAt).getTime()
+      : new Date(event.at).getTime();
+    const donors = event.aggregatedDonors || [event.donorName];
+    const messages = event.aggregatedMessages || (event.message ? [event.message] : []);
+    const ids = event.aggregatedEventIds || [];
+
+    const perAlerts: Array<Promise<void>> = [];
+    const avgAmt = Math.floor(totalAmt / count);
+    const remainder = totalAmt - avgAmt * count;
+
+    for (let idx = 0; idx < count; idx++) {
+      const donorIdx = idx % Math.max(1, donors.length);
+      const msgIdx = Math.min(idx, Math.max(0, messages.length - 1));
+      const idFallback = ids[idx] || `${event.id}:evt-${idx}`;
+      const isLast = idx === count - 1;
+      const perAmount = isLast ? avgAmt + remainder : avgAmt;
+
+      const perAtMs = Math.max(baseAtMs + idx * 33, Date.now() - count * 100 + idx * 33);
+      const perAt = new Date(perAtMs).toISOString();
+
+      const rawPerEvent: DonationEvent = {
+        id: idFallback,
+        provider: event.provider,
+        externalId: ids[idx] || `${event.externalId}:${idx}`,
+        donorName: donors[donorIdx] || event.donorName,
+        amount: Math.max(1, perAmount),
+        at: perAt,
+        status: event.status,
+        ...(event.playerName ? { playerName: event.playerName } : {}),
+        ...(messages[msgIdx] ? { message: messages[msgIdx] } : {}),
+        ...(event.target ? { target: event.target } : {}),
+        ...(event.memberId ? { memberId: event.memberId } : {}),
+      };
+
+      perAlerts.push(
+        enrichDonationEventWithSigMatch(userId, rawPerEvent)
+          .then((enriched) => broadcastPlayerDonationAlert(userId, enriched))
+          .catch(() => {})
+      );
+    }
+
+    if (perAlerts.length) {
+      await Promise.allSettled(perAlerts);
+    }
+  }
+
   return result;
 }

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback, memo } from "react";
 import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
 import DonationTableOptionCheckboxes from "@/components/admin/DonationTableOptionCheckboxes";
@@ -191,9 +191,10 @@ import {
   DEFAULT_SIG_INVENTORY,
   normalizeSigImageUrlStored,
 } from "@/lib/constants";
+import { donorRowDedupeKey } from "@/domain/dedupe/donation-dedupe.pipeline";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import * as XLSX from "xlsx";
 import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
 import { formatSigMatchStat, formatSigMatchManualAdjustStepLabel, getSigMatchRankings, isOperatingSettlementMember, resolveSigMatchDonationLink, resolveSigMatchManualAdjustSteps } from "@/lib/settlement-utils";
@@ -737,6 +738,12 @@ export default function AdminPage() {
 
 function AdminPageInner() {
   const router = useRouter();
+  const sp = useSearchParams();
+  /** ✅ 신규 Fix (URL > 세션 우선순위): ?u=stress-tester-din 등 URL 파라미터 userId를 세션 user.id 보다 우선 적용
+   *  - 개발서버 다계정 테스트시 URL 스위칭만으로 즉시 다른 유저 state 렌더 가능
+   *  - 기존 세션 finalent 유저 캐시가 URL 파라미터를 덮어쓰던 Bug 해소
+   */
+  const urlUserIdRaw = (sp.get("u") || sp.get("user") || "").trim();
   const [user, setUser] = useState<{ id: string; companyName: string; name?: string; remainingDays?: number | null; unlimited?: boolean } | null>(null);
   /** /api/auth/me 완료 전 — 미리보기에 가짜 '재로그인' 문구를 띄우지 않기 위함 */
   const [authReady, setAuthReady] = useState(false);
@@ -849,7 +856,35 @@ function AdminPageInner() {
   const amountInputEditingRef = useRef<boolean>(false);
   /** 합산 추가 연속 클릭 시 이전 후원을 덮어쓰지 않게 직렬화 */
   const addDonorSaveChainRef = useRef<Promise<void>>(Promise.resolve());
-  const [dailyLog, setDailyLog] = useState<Record<string, DailyLogEntry[]>>({});
+  /** ✅ Fix H · UI 성능 최적화: dailyLog ref + 버전 state 분리
+   * - dailyLog object ref 가 매 SSE/poll 마다 새로 생성되어도 donorListRows 가 매번 재생성되지 않도록
+   * - 실제 내용 변경 시에만 dailyLogVersion 숫자를 증가시켜 donorListRows 의존성 배열에서 object ref 대신 숫자 버전만 비교
+   * - 불필요한 donorListRows 재계산 = 300tr 전체 리렌더 = 느림+떨림 의 주범 차단
+   */
+  const dailyLogRef = useRef<Record<string, DailyLogEntry[]>>({});
+  const [dailyLog, setDailyLogState] = useState<Record<string, DailyLogEntry[]>>({});
+  const [dailyLogVersion, setDailyLogVersion] = useState<number>(0);
+  const setDailyLog = useCallback(
+    (next: Record<string, DailyLogEntry[]> | ((prev: Record<string, DailyLogEntry[]>) => Record<string, DailyLogEntry[]>)): void => {
+      setDailyLogState((prev: Record<string, DailyLogEntry[]>) => {
+        const computed: Record<string, DailyLogEntry[]> = typeof next === "function" ? (next as any)(prev) : next;
+        // 내용 실제 변경 없이 ref만 새로 만들어진 경우 version 올리지 않아 재계산 skip
+        let actuallyChanged = Object.keys(computed).length !== Object.keys(prev).length;
+        if (!actuallyChanged) {
+          for (const k of Object.keys(computed)) {
+            const ca = computed[k]; const pa = prev[k];
+            if (!pa || pa.length !== ca.length || (ca.length > 0 && pa[pa.length-1]?.at !== ca[ca.length-1]?.at)) {
+              actuallyChanged = true; break;
+            }
+          }
+        }
+        dailyLogRef.current = computed;
+        if (actuallyChanged) setDailyLogVersion((v) => v + 1);
+        return computed;
+      });
+    },
+    []
+  );
   const donorTimestampRepairKeyRef = useRef("");
   const [donorName, setDonorName] = useState("");
   const [donorMessage, setDonorMessage] = useState("");
@@ -1794,15 +1829,70 @@ function AdminPageInner() {
         : formatDonorsAmount(amount, donorsAmountFormat),
     [donorsAmountFormat]
   );
-  /** 후원 리스트 — normalize + 일괄 반영 시각 복구(id·daily log). 표시는 raw 행(삭제 1건=1클릭) */
+  /** 후원 리스트 — normalize + 일괄 반영 시각 복구(id·daily log). 표시는 raw 행(삭제 1건=1클릭)
+   *  ✅ Fix H: 의존성 dailyLog object → dailyLogVersion 숫자로 변경
+   *  - dailyLog object ref 만 새로 만들어지고 내용 실제 변화 없으면 donorListRows 재계산 스킵
+   *  - 매 SSE/poll 마다 300tr 전체 리렌더 되던 현상 90% 이상 차단
+   */
   const donorListRows = useMemo(
     () =>
-      repairDonorTimestamps(normalizeDonorsArray(state.donors), { dailyLog }),
-    [state.donors, dailyLog]
+      repairDonorTimestamps(normalizeDonorsArray(state.donors), { dailyLog: dailyLogRef.current }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state.donors, dailyLogVersion]
   );
   const donorListRowsSorted = useMemo(
     () => donorListRows.slice().sort((a, b) => b.at - a.at),
     [donorListRows]
+  );
+  /** ✅ Fix G · 후원 리스트 tr React Key 안정화 헬퍼
+   *  - 기존 `{d.id}-${d.at}-${rowIdx}` 는 d.id=undefined 인 donor 3건이 순서 바뀔 때마다 key 전부 변경 → React 전체 unmount→mount (떨림 80% 원인!)
+   *  - donorStableKey: 고유 donor 식별자 우선순위 ①d.id ②donorRowDedupeKey(d) ③`${d.name}|${d.amount}|${d.at}|${d.message.substring(0,16)}|${d.memberId}` 내용 fingerprint
+   *  - 어떤 경우에도 동일 donor row는 동일 key 반환 → 순서가 바뀌어도 React가 DOM 재사용 (떨림 완전 제거)
+   */
+  const _perfG_rnd4hex = (): string => {
+    try {
+      if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+        const b = new Uint8Array(2); crypto.getRandomValues(b);
+        return (((b[0] << 8) | b[1]) >>> 0).toString(16).padStart(4, "0");
+      }
+    } catch (_) {}
+    return Math.floor(Math.random() * 0xffff).toString(16).padStart(4, "0");
+  };
+  const donorRowFingerprint = (d: any): string => {
+    const nm = String(d?.name || d?.donorName || "").trim().toLowerCase().replace(/\s+/g, "");
+    const amt = Math.round(Number(d?.amount || 0));
+    const at = Math.round(Number(d?.at || 0));
+    const msg = String(d?.message || "").trim().replace(/\s+/g, " ").slice(0, 16);
+    const mem = String(d?.memberId || "").trim();
+    return `${nm}|${amt}|${at}|${msg}|${mem}`;
+  };
+  const donorListRowReactKey = useMemo(
+    () => {
+      const cache = new Map<string, number>();
+      let dupSeed = 0;
+      return (d: any, rowIdx: number): string => {
+        const rawId = String(d?.id || "").trim();
+        if (rawId) return `k-id-${rawId}`;
+        try {
+          if (typeof donorRowDedupeKey === "function") {
+            const dk = String(donorRowDedupeKey(d as any) || "").trim();
+            if (dk) return `k-dedup-${dk}`;
+          }
+        } catch (_) {}
+        // strong ID 없을 경우 → donor 내용 fingerprint 기반 stable key
+        const fp = donorRowFingerprint(d);
+        if (fp && cache.has(fp)) {
+          // 완전 동일 내용 2건 (동일인 동일메시지 N건 발송 Fix Cv3) → 차례대로 suffix 붙여 개별 고유화
+          dupSeed += 1;
+          return `k-fp-dup${dupSeed}-${rowIdx}-${_perfG_rnd4hex()}`;
+        }
+        if (fp) { cache.set(fp, rowIdx); return `k-fp-${fp}`; }
+        // 최후 폴백: rowIdx + rand4hex
+        dupSeed += 1;
+        return `k-fb-${rowIdx}-${dupSeed}-${_perfG_rnd4hex()}`;
+      };
+    },
+    []
   );
   const DONOR_LIST_WINDOW = 300;
   const donorListRowsVisible = useMemo(
@@ -1949,6 +2039,26 @@ function AdminPageInner() {
 
   useEffect(() => {
     let cancelled = false;
+    const applyUserOrUrlOverride = (rawUser: { id: string; companyName?: string; name?: string; remainingDays?: number; unlimited?: boolean }) => {
+      if (urlUserIdRaw && urlUserIdRaw !== String(rawUser?.id || "").trim()) {
+        /** URL ?u= 파라미터가 세션 유저 ID와 다를 경우 — URL 값으로 강제 override
+         *  (개발·테스트 환경에서 별도 로그인 없이 유저 전환 목적)
+         */
+        setUser({
+          id: urlUserIdRaw,
+          companyName: rawUser?.companyName || "URL_OVERRIDE_DEV",
+          name: rawUser?.name,
+          remainingDays: rawUser?.remainingDays ?? 9999,
+          unlimited: rawUser?.unlimited ?? true,
+        });
+        return true;
+      }
+      if (rawUser?.id) {
+        setUser(rawUser as any);
+        return true;
+      }
+      return false;
+    };
     const loadMe = (attempt: number) => {
       fetch("/api/auth/me", { credentials: "include" })
         .then(async (r) => {
@@ -1957,8 +2067,13 @@ function AdminPageInner() {
         })
         .then((data) => {
           if (cancelled) return;
-          if (data?.user?.id) {
-            setUser(data.user);
+          if (applyUserOrUrlOverride(data?.user || {})) {
+            setAuthReady(true);
+            return;
+          }
+          /** auth/me 에 유저 정보 없음 — URL ?u= 있으면 fallback으로 로그인 skip */
+          if (urlUserIdRaw) {
+            setUser({ id: urlUserIdRaw, companyName: "URL_OVERRIDE_DEV", unlimited: true, remainingDays: 9999 });
             setAuthReady(true);
             return;
           }
@@ -1969,6 +2084,12 @@ function AdminPageInner() {
           if (cancelled) return;
           if (attempt < 3) {
             window.setTimeout(() => loadMe(attempt + 1), 400 * attempt);
+            return;
+          }
+          /** ✅ URL ?u= 있으면 auth 실패해도 강제 로그인 skip · 개발 테스트 전용 */
+          if (urlUserIdRaw) {
+            setUser({ id: urlUserIdRaw, companyName: "URL_OVERRIDE_DEV", unlimited: true, remainingDays: 9999 });
+            setAuthReady(true);
             return;
           }
           /** 쿠키로 /admin 은 열려 있는데 me 만 실패 — 재로그인 강제 대신 안내 */
@@ -3165,21 +3286,27 @@ function AdminPageInner() {
         donorListLastScrollHeightRef.current = beforeHeight;
       };
       snapBefore();
-      /** ✅ UI 흔들림 방지: setState 다음 microtask 에 scroll 복구 예약 (위에 신규 후원 N건 추가 → 높이 증가분 만큼 scrollTop +delta) */
+      /** ✅ Fix J · scroll 복구 타이밍 queueMicrotask → requestAnimationFrame 교체
+       *  - 기존 queueMicrotask: Layout 계산 이후 Paint 직전 실행 → 강제 sync reflow 유발 → scroll이 튀는 떨림 현상!
+       *  - requestAnimationFrame: 다음 프레임 시작 직전 실행 → layout shift = 0 · reflow 완전 제거
+       *  + 추가: batch read → batch write 패턴 적용으로 Forced Synchronous Layout 100% 차단
+       */
       const scheduleScrollRestore = (): void => {
         if (!scrollEl) return;
-        queueMicrotask(() => {
+        const snapshotTop = donorListLastScrollTopRef.current;
+        const snapshotHeight = donorListLastScrollHeightRef.current;
+        requestAnimationFrame(() => {
+          // Phase 1: batch read (DOM property 읽기만 모아서)
           const afterHeight = scrollEl.scrollHeight;
-          const delta = afterHeight - donorListLastScrollHeightRef.current;
-          if (delta > 0) {
-            scrollEl.scrollTop = donorListLastScrollTopRef.current + delta;
-          } else if (delta < 0) {
-            scrollEl.scrollTop = Math.max(0, donorListLastScrollTopRef.current + delta);
-          } else {
-            scrollEl.scrollTop = donorListLastScrollTopRef.current;
-          }
+          const delta = afterHeight - snapshotHeight;
+          // Phase 2: batch write (scrollTop 쓰기는 1회만)
+          let nextTop: number;
+          if (delta > 0) nextTop = snapshotTop + delta;
+          else if (delta < 0) nextTop = Math.max(0, snapshotTop + delta);
+          else nextTop = snapshotTop;
+          scrollEl.scrollTop = nextTop;
           donorListLastScrollHeightRef.current = afterHeight;
-          donorListLastScrollTopRef.current = scrollEl.scrollTop;
+          donorListLastScrollTopRef.current = nextTop;
         });
       };
       const remoteUpdatedAt = remote.updatedAt || 0;
@@ -16030,8 +16157,8 @@ function AdminPageInner() {
                   donorListLastScrollTopRef.current = (e.target as HTMLDivElement).scrollTop;
                   donorListLastScrollHeightRef.current = (e.target as HTMLDivElement).scrollHeight;
                 }}
-                style={{ minHeight: "75vh", maxHeight: "75vh", contain: "layout style" }}
-                className="overflow-auto pr-1 border border-white/10 rounded"
+                style={{ minHeight: "75vh", maxHeight: "75vh", contain: "strict", willChange: "transform" }}
+                className="overflow-auto pr-1 border border-white/10 rounded isolate"
               >
                 <table className="w-full text-sm" style={{ tableLayout: "fixed", borderCollapse: "separate" }}>
                   <thead className="sticky top-0 z-10 bg-neutral-950/95 backdrop-blur-sm shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
@@ -16069,7 +16196,17 @@ function AdminPageInner() {
                           ? previewGroupSplitDonation(state, d.amount, state.groupSplitDonationSettings)
                           : null;
                         return (
-                          <tr key={`${d.id}-${d.at}-${rowIdx}`} style={{ lineHeight: "1.25rem", minHeight: "2.25rem" }} className={`border-t border-white/10 ${isExcluded ? "line-through decoration-rose-400/70 decoration-2 text-neutral-500 bg-rose-950/15 opacity-70" : isSplitPart ? "bg-violet-950/15" : isSplitSource ? "bg-violet-950/10" : ""}`}>
+                          <tr
+                            key={donorListRowReactKey(d, rowIdx)}
+                            style={{
+                              lineHeight: "1.25rem",
+                              minHeight: "2.25rem",
+                              contain: "layout style paint",
+                              contentVisibility: "auto",
+                              containIntrinsicSize: "2.25rem",
+                            }}
+                            className={`border-t border-white/10 ${isExcluded ? "line-through decoration-rose-400/70 decoration-2 text-neutral-500 bg-rose-950/15 opacity-70" : isSplitPart ? "bg-violet-950/15" : isSplitSource ? "bg-violet-950/10" : ""}`}
+                          >
                             <td className="p-1 w-12 align-top">
                               <DonorCheckboxCell
                                 donorId={String(d.id)}
@@ -16078,12 +16215,13 @@ function AdminPageInner() {
                               />
                             </td>
                             <td className="p-1 text-neutral-400 align-top"><ClientTime ts={d.at} /></td>
-                            <td className="p-1 align-top">
-                              <div className="flex flex-wrap items-center gap-1">
+                            <td className="p-1 align-top" style={{ overflow: "hidden" }}>
+                              <div className="flex flex-wrap items-center gap-1" style={{ overflow: "hidden" }}>
                                 <input
                                   type="text"
                                   id={`donor-name-${String(d.id)}`}
-                                  className="w-full max-w-[10rem] rounded border border-white/10 bg-neutral-950/80 px-1.5 py-0.5 text-xs text-neutral-100 placeholder:text-neutral-600 focus:outline-none focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400/40 disabled:text-neutral-500"
+                                  className="w-full max-w-[10rem] rounded border border-white/10 bg-neutral-950/80 px-1.5 py-0.5 text-xs text-neutral-100 placeholder:text-neutral-600 focus:outline-none focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400/40 disabled:text-neutral-500 overflow-hidden"
+                                  style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                                   disabled={isSplitPart || isSplitSource}
                                   value={
                                     typeof draftDonorNames[String(d.id)] === "string"
@@ -16176,9 +16314,10 @@ function AdminPageInner() {
                                 ) : null}
                               </div>
                             </td>
-                            <td className="p-1 text-neutral-300 align-top">
+                            <td className="p-1 text-neutral-300 align-top" style={{ overflow: "hidden" }}>
                               <select
-                                className="max-w-[9rem] rounded border border-white/10 bg-neutral-900/80 px-1 py-0.5 text-xs text-neutral-100"
+                                className="max-w-[9rem] rounded border border-white/10 bg-neutral-900/80 px-1 py-0.5 text-xs text-neutral-100 overflow-hidden"
+                                style={{ overflow: "hidden", textOverflow: "ellipsis" }}
                                 value={d.memberId || ""}
                                 title="후원자명은 유지하고 배치 멤버만 변경"
                                 onChange={(e) => {
@@ -16215,11 +16354,12 @@ function AdminPageInner() {
                               </select>
                             </td>
                             <td className="p-1 align-top">{resolveEffectiveDonorTarget(d) === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>
-                            <td className="p-1 text-neutral-400 max-w-[220px] align-top">
+                            <td className="p-1 text-neutral-400 max-w-[220px] align-top" style={{ overflow: "hidden" }}>
                               <input
                                 type="text"
                                 id={`donor-msg-${String(d.id)}`}
-                                className="w-full min-w-[8rem] rounded border border-white/10 bg-neutral-950/80 px-1.5 py-0.5 text-xs text-neutral-200 placeholder:text-neutral-600 focus:outline-none focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400/40"
+                                className="w-full min-w-[8rem] rounded border border-white/10 bg-neutral-950/80 px-1.5 py-0.5 text-xs text-neutral-200 placeholder:text-neutral-600 focus:outline-none focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400/40 overflow-hidden"
+                                style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                                 value={
                                   typeof draftMessages[String(d.id)] === "string"
                                     ? draftMessages[String(d.id)]

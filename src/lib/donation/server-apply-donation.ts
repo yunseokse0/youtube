@@ -127,8 +127,12 @@ export async function tryAutoApplyToonationDonationOnServer(
       return "not_applied";
     }
     await purgeDonationQueueForEvent(userId, event);
-    const enriched = await enrichDonationEventWithSigMatch(userId, result.event);
-    await broadcastPlayerDonationAlert(userId, enriched);
+    const isAggregatedBucket =
+      typeof event.aggregatedCount === "number" && event.aggregatedCount > 1;
+    if (!isAggregatedBucket) {
+      const enriched = await enrichDonationEventWithSigMatch(userId, result.event);
+      await broadcastPlayerDonationAlert(userId, enriched);
+    }
     return result.event.memberAutoAssigned ? "applied_needs_review" : "applied";
   } finally {
     inFlightApplyKeys.delete(lockKey);

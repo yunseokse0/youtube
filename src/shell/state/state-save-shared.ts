@@ -389,7 +389,51 @@ export function mergePartialState(
   }
   if (!("donors" in patch)) {
     next.donors = base.donors;
+  } else if (
+    // ==================== Fix⑯_EmptyDonorsMembers_ShrinkGuard (스트레스 테스트 발견 치명적 Bug) ====================
+    // ROOT CAUSE: 브라우저가 localStorage 없는 새 유저 URL(?u=stress-tester-din)으로 접속시 SSR 초기 빈 state [] 를 POST
+    //   → patch.donors = [] 이고 base.donors = 819건 richer 상태에서 무조건 덮어쓰면서 1200건 후원 데이터 전부 유실 Bug 재현
+    // GUARD RULE: 아래 4가지 조건 모두 만족하면 incoming 빈 donors patch를 REJECT 하고 base.donors 그대로 보존
+    //   ① patch.donors 가 빈 array (length 0)
+    //   ② base.donors 가 유의미하게 존재 (10건 이상 OR 총후원액 ≥ 1000원)
+    //   ③ 명시적 정산 리셋 아님 (patchSettlementReset !== true)  → 정산 리셋시는 당연히 0건으로 만들어야 하니 허용
+    //   ④ 암묵적 정산 리셋 증거 없음 (next.settlementResetAt 이 base 보다 미래 시점으로 상승 AND 멤버합 0원) → 허용
+    // 결과: 정산 리셋 의도가 없는 빈 array patch는 무조건 REJECT → 데이터 유실 원천 봉쇄
+    Array.isArray(patch.donors) &&
+    patch.donors.length === 0 &&
+    !patchSettlementReset &&
+    (() => {
+      const baseDonors = Array.isArray(base.donors) ? base.donors : [];
+      const baseDonorCount = baseDonors.length;
+      const baseDonorTotal = baseDonors.reduce((s, d) => s + Number(d?.amount || 0), 0);
+      const baseHasRichDonors = baseDonorCount >= 10 || baseDonorTotal >= 1000;
+      if (!baseHasRichDonors) return false;
+      const baseResetAt = Number(base.settlementResetAt || 0);
+      const nextResetAt = Number(next.settlementResetAt || patch.settlementResetAt || 0);
+      const patchMemberTotal = (Array.isArray(patch.members) ? patch.members : []).reduce(
+        (s, m) => s + Number(m?.account || 0) + Number(m?.toon || 0),
+        0
+      );
+      const isImplicitSettlementReset =
+        nextResetAt > baseResetAt && nextResetAt > 0 && patchMemberTotal < 0.1;
+      // 정산 리셋 증거 있으면 → 빈 donors 허용 (의도한 동작)
+      if (isImplicitSettlementReset) return false;
+      // 그 외 모든 경우 → incoming 빈 donors REJECT, base.donors 보존
+      next.donors = base.donors;
+      logger.warn("Fix⑯ donors empty-shrink-guard REJECTED incoming [] patch, preserved base donors", {
+        userId,
+        baseCount: baseDonorCount,
+        baseTotal: Math.round(baseDonorTotal),
+        baseResetAt,
+        nextResetAt,
+        patchMemberTotal: Math.round(patchMemberTotal),
+      });
+      return true;
+    })()
+  ) {
+    // guard body = 위 IIFE에서 이미 next.donors = base.donors 로 치환 완료했으므로 추가 작업 없음
   }
+  // ==================== End Fix⑯_ShrinkGuard ====================
   if (!("mealBattle" in patch)) next.mealBattle = base.mealBattle;
   if (!("mealMatch" in patch)) next.mealMatch = base.mealMatch;
   if (!("mealMatchSettings" in patch)) next.mealMatchSettings = base.mealMatchSettings;

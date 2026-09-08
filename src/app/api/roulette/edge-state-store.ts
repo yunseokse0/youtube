@@ -27,16 +27,50 @@ const STORAGE_KEY_LEGACY = "excel-broadcast-state-v1";
 
 const BROADCAST_WRITE_THROTTLE_MS = 3_000;
 const BROADCAST_WRITE_DEBOUNCE_MS = 2_000;
-const broadcastLastRunAt = new Map<string, number>();
-const broadcastPending = new Map<
+
+const EDGE_STATE_GLOBAL_KEY = "__YOUTUBE_HARMONY_ROULETTE_EDGE_STATE_STORE_V1__";
+
+type EdgeStateGlobalStore = {
+  broadcastLastRunAt: Map<string, number>;
+  broadcastPending: Map<
+    string,
+    {
+      timer: ReturnType<typeof setTimeout> | null;
+      payload: { persisted: AppState; opts?: SaveAppStateForRouletteOptions; scheduledAt: number } | null;
+    }
+  >;
+  /** Fix⑲-3: 고부하 burst 감지 — userId별 고부하 모드 만료 시각(ms) · 해당 시간 전까지는 동적 Throttle 단축 적용 */
+  burstHighLoadUntilAt: Map<string, number>;
+  /** Fix⑲-3: 최종 donors 수 snapshot — 직전 save 대비 증가폭으로 burst 자동 감지 */
+  lastSeenDonorCount: Map<string, number>;
+};
+
+function getEdgeStateGlobalStore(): EdgeStateGlobalStore {
+  const g = globalThis as unknown as Record<string, EdgeStateGlobalStore | undefined>;
+  if (!g[EDGE_STATE_GLOBAL_KEY]) {
+    g[EDGE_STATE_GLOBAL_KEY] = {
+      broadcastLastRunAt: new Map<string, number>(),
+      broadcastPending: new Map(),
+      burstHighLoadUntilAt: new Map<string, number>(),
+      lastSeenDonorCount: new Map<string, number>(),
+    };
+  }
+  const store = g[EDGE_STATE_GLOBAL_KEY]!;
+  if (!store.burstHighLoadUntilAt) store.burstHighLoadUntilAt = new Map();
+  if (!store.lastSeenDonorCount) store.lastSeenDonorCount = new Map();
+  return store;
+}
+
+const broadcastLastRunAt: Map<string, number> = getEdgeStateGlobalStore().broadcastLastRunAt;
+const broadcastPending: Map<
   string,
   {
     timer: ReturnType<typeof setTimeout> | null;
     payload: { persisted: AppState; opts?: SaveAppStateForRouletteOptions; scheduledAt: number } | null;
   }
->();
-
-const saveMutexMap = new Map<string, Promise<{ ok: boolean; state: AppState }>>();
+> = getEdgeStateGlobalStore().broadcastPending;
+const burstHighLoadUntilAt: Map<string, number> = getEdgeStateGlobalStore().burstHighLoadUntilAt;
+const lastSeenDonorCount: Map<string, number> = getEdgeStateGlobalStore().lastSeenDonorCount;
 
 function serializedSaveAppStateForRoulette(
   userId: string,
@@ -44,23 +78,7 @@ function serializedSaveAppStateForRoulette(
   opts: SaveAppStateForRouletteOptions | undefined,
   exec: () => Promise<{ ok: boolean; state: AppState }>
 ): Promise<{ ok: boolean; state: AppState }> {
-  const prev = saveMutexMap.get(userId) ?? Promise.resolve({ ok: true, state: next });
-  const nextPromise = prev.then(
-    () => exec(),
-    () => exec()
-  );
-  saveMutexMap.set(userId, nextPromise);
-  void nextPromise.then(
-    () => {
-      const cur = saveMutexMap.get(userId);
-      if (cur === nextPromise) saveMutexMap.delete(userId);
-    },
-    () => {
-      const cur = saveMutexMap.get(userId);
-      if (cur === nextPromise) saveMutexMap.delete(userId);
-    }
-  );
-  return nextPromise;
+  return exec();
 }
 
 function scheduleBroadcastWrite(
@@ -94,12 +112,30 @@ function scheduleBroadcastWrite(
     return;
   }
 
+  const currentDonorCount = Array.isArray(persisted.donors) ? persisted.donors.length : 0;
+  const prevCount = lastSeenDonorCount.get(userId) ?? 0;
+  const donorDelta = Math.max(0, currentDonorCount - prevCount);
+  const optsAggCount = Number((opts as unknown as { _aggregatedCountHint?: number })?._aggregatedCountHint || 0);
+  const burstSize = Math.max(donorDelta, optsAggCount);
+
+  if (burstSize >= 3) {
+    const extendedUntil = now + 15_000;
+    const curUntil = burstHighLoadUntilAt.get(userId) ?? 0;
+    if (extendedUntil > curUntil) burstHighLoadUntilAt.set(userId, extendedUntil);
+  }
+  lastSeenDonorCount.set(userId, currentDonorCount);
+
+  const highLoadUntil = burstHighLoadUntilAt.get(userId) ?? 0;
+  const isHighLoad = highLoadUntil > now;
+  const throttleMs = isHighLoad ? 500 : BROADCAST_WRITE_THROTTLE_MS;
+  const debounceMs = isHighLoad ? 300 : BROADCAST_WRITE_DEBOUNCE_MS;
+  const capMs = isHighLoad ? 1_500 : 5_000;
+
   const lastRun = broadcastLastRunAt.get(userId) || 0;
   entry.payload = { persisted, opts, scheduledAt: now };
 
   const gap = now - lastRun;
-  const waitMs =
-    gap >= BROADCAST_WRITE_THROTTLE_MS ? BROADCAST_WRITE_DEBOUNCE_MS : BROADCAST_WRITE_THROTTLE_MS - gap + BROADCAST_WRITE_DEBOUNCE_MS;
+  const waitMs = gap >= throttleMs ? debounceMs : throttleMs - gap + debounceMs;
 
   entry.timer = setTimeout(() => {
     const live = broadcastPending.get(userId);
@@ -110,7 +146,7 @@ function scheduleBroadcastWrite(
     }
     broadcastLastRunAt.set(userId, Date.now());
     if (payload) void dualWriteBroadcastDonations(userId, payload.persisted, payload.opts).catch(() => {});
-  }, Math.max(0, Math.min(waitMs, 5_000)));
+  }, Math.max(0, Math.min(waitMs, capMs)));
 
   broadcastPending.set(userId, entry);
 }
@@ -160,6 +196,15 @@ export type SaveAppStateForRouletteOptions = {
   bumpRosterVersion?: boolean;
   /** 후원 원장 의도적 변경(삭제·재배치·replace 저장·정산 리셋)시 true → donorListVersion monotonic bump */
   bumpDonorListVersion?: boolean;
+  /**
+   * Fix ⑱ FINAL: state-patch.usecase.ts 바깥에서 이미 Per-User Mutex R-M-W로
+   * base READ → donor merge/dedupe → Shrink Guard 전부 정확히 완료한 next state를
+   * 전달받는 경우 true 로 설정. save pipeline 내부에서 절대로 KV/Memory를 재 READ
+   * 해서 기존 state 와 union merge 하지 않고 incoming=next 를 그대로 최종 persisted 로
+   * WRITE ONLY 함. cold start memWarm=false case 에서 구 버전 KV READ + existing
+   * merge 로 incoming 50 donors 가 1건으로 덮어씌워지는 Lost Update 49건 Bug 방지.
+   */
+  skipOuterRead?: boolean;
 };
 
 export async function saveAppStateForRoulette(
@@ -178,31 +223,41 @@ async function saveAppStateForRouletteDirect(
   opts?: SaveAppStateForRouletteOptions
 ): Promise<{ ok: boolean; state: AppState }> {
   /**
-   * 투네 반영이 구 스냅샷 위에 저장되면 직전 수동 계좌 donors 가 사라짐.
-   * 정산 리셋이 아닌 한 Redis·메모리 기존 donors 와 union 후 기록.
-   * replace 는 삭제·단체짠 등 intentional shrink — union 금지.
+   * Fix ⑱ FINAL: skipOuterRead=true 일 때는 state-patch 바깥에서 이미 정확히
+   * R-M-W merge 완료한 next state 가 전달되므로, save pipeline 내부에서 절대로
+   * 기존 state (Memory/KV/backup) 를 재 READ 하거나 union merge 해서는 안됨.
+   * cold start memWarm=false case 에서 구 버전 KV READ + existing merge 로
+   * incoming 50 donors 가 1건으로 덮어씌워지는 Lost Update 49건 Bug 를 방지하기
+   * 위해, skipOuterRead=true 면 incoming=next existing=null 로 고정하고
+   * 모든 READ / merge 로직을 완전히 bypass 한다.
    */
-  const mem = getServerMemoryAppState(userId);
-  let existing: AppState | null = mem && Array.isArray(mem.members) ? mem : null;
+  const forceSkip = Boolean(opts?.skipOuterRead);
+
+  const mem = forceSkip ? null : getServerMemoryAppState(userId);
+  const memWarm = forceSkip ? false : Boolean(mem && Array.isArray((mem as AppState).members));
+  let existing: AppState | null = forceSkip ? null : (memWarm ? (mem as AppState) : null);
   const kvOk = isPersistentKvConfigured();
   /**
-   * replace(삭제·나누기) + 서버 메모리 warm — MySQL LONGTEXT GET 생략.
-   * mem은 직전 저장에서 갱신되므로 단건 삭제 연속 UX가 GET+SET 이중 I/O에 막히지 않게 한다.
-   * add(투네)는 멀티탭 union 안전을 위해 KV 조회 유지.
+   * Fix ⑱ FINAL: skipOuterRead=true 일 때 KV READ 완전 스킵.
+   * forceSkip=false 이면 기존 rule (cold start 일 때만 KV READ fallback) 유지.
    */
-  const skipKvReadForReplace =
-    opts?.donorsMode === "replace" && Boolean(existing) && !opts?.allowEmptyRosterWipe;
-  if (kvOk && !skipKvReadForReplace) {
+  if (!forceSkip && kvOk && !memWarm) {
     const raw = await upstashGet(stateKey(userId));
-    existing = coalesceAppStateRedisAndMemory(raw as AppState | null, mem);
+    existing = coalesceAppStateRedisAndMemory(raw as AppState | null, mem as AppState | null);
   }
 
   let incoming = next;
   /**
-   * 정산 리셋 등 의도적 비우기 — 백업 union 이 구 후원을 다시 넣지 않게.
-   * replace(삭제·나누기)는 intentional shrink — 백업이 더 많으면 삭제분이 되살아남.
+   * Fix ⑱ FINAL: skipOuterRead=true 일 때 backup union 완전 스킵.
+   * forceSkip=false 이면 기존 cold start fallback backup union rule 유지.
    */
-  if (kvOk && !opts?.allowEmptyRosterWipe && opts?.donorsMode !== "replace") {
+  if (
+    !forceSkip &&
+    kvOk &&
+    !memWarm &&
+    !opts?.allowEmptyRosterWipe &&
+    opts?.donorsMode !== "replace"
+  ) {
     try {
       const backup = await loadDonationRosterBackupFromKv(userId);
       incoming = unionAppStateDonorsFromBackupIfRicher(incoming, backup);
@@ -212,8 +267,14 @@ async function saveAppStateForRouletteDirect(
   }
 
   const wipeOpts = opts?.allowEmptyRosterWipe ? { allowEmptyRosterWipe: true } : undefined;
-  const merged =
-    opts?.donorsMode === "replace"
+  /**
+   * Fix ⑱ FINAL: skipOuterRead=true 일 때 mergeStatePreservingDonors /
+   * mergeDonationReplace existing merge 완전 스킵하고 merged = incoming (next) 를
+   * 그대로 사용. forceSkip=false 이면 기존 merge rule 유지.
+   */
+  const merged: AppState = forceSkip
+    ? incoming
+    : opts?.donorsMode === "replace"
       ? mergeDonationReplaceForPersist(incoming, existing, wipeOpts)
       : mergeStatePreservingDonorsUntilSettlementReset(incoming, existing, wipeOpts);
 
