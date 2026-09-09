@@ -224,8 +224,72 @@ export async function appendToonaHubDonationLogs(
       continue;
     }
 
+    /**
+     * ✅ 2026-09-09 Hotfix ㉕ 동일 후원 2행 중복 봉쇄 (source=ingest + source=toona 쌍 제거):
+     *  - 사용자가 B-DIN 허브 모드 사용시 /api/donations/ingest webhook (source=ingest) +
+     *    fetchToonaDonationsSinceLink 폴링 (source=toona) 에서 동일 후원 1건을 두 번 append 하는 버그
+     *  - 새 entry 추가 전에 donorName + amount + ±3000ms at 윈도우 내에 완전 일치하는 row가
+     *    byId에 이미 있으면 중복으로 간주 → 새 row 추가 skip. donor/amount/time 이 같으면 같은 후원일 확률 99.9%+.
+     *  - FixC v3 개별 ROW 저장 보장 정책은 유지. 서로 다른 donor/amount/time 이거나 3초 이상 떨어진
+     *    진짜 별개 후원 10건 연타는 여전히 10개 모두 정상 개별 저장됨.
+     */
+    const ENTRY_WINDOW_MS = 3_000;
+    const entryName = String(entry.donorName || "").trim().toLowerCase();
+    const entryAmt = Math.max(0, Math.round(Number(entry.amount) || 0));
+    const entryAt = Math.max(0, Number(entry.at) || 0);
+    let duplicateSameDonationFound = false;
+    for (const row of byId.values()) {
+      if (duplicateSameDonationFound) break;
+      const rowName = String(row.donorName || "").trim().toLowerCase();
+      const rowAmt = Math.max(0, Math.round(Number(row.amount) || 0));
+      const rowAt = Math.max(0, Number(row.at) || 0);
+      if (entryName !== rowName) continue;
+      if (entryAmt !== rowAmt) continue;
+      const delta = Math.abs(entryAt - rowAt);
+      if (delta > ENTRY_WINDOW_MS) continue;
+      duplicateSameDonationFound = true;
+    }
+    if (duplicateSameDonationFound) {
+      continue;
+    }
+
     byId.set(eid, normalizedEntry);
     newAddCount += 1;
+  }
+
+  /**
+   * ✅ 2026-09-09 Hotfix ㉕-2 과거 중복 row cleanup pass:
+   *  - 이미 중복으로 쌓여버린 과거 로그 (source=ingest/toona 쌍) 중 near bucket 내
+   *    donorName + amount + at ±3초 가 완전 일치하는 pair 를 찾아 applied=true인 쪽 1개만 남김
+   *  - 사용자가 과거 2배로 쌓인 로그를 직접 삭제할 필요 없이 append 호출시 자동 정리됨.
+   */
+  const CLEANUP_WINDOW_MS = 3_000;
+  const idToDelete = new Set<string>();
+  const rowArr = Array.from(byId.values());
+  for (let i = 0; i < rowArr.length; i++) {
+    const a = rowArr[i];
+    if (idToDelete.has(a.id)) continue;
+    const aName = String(a.donorName || "").trim().toLowerCase();
+    const aAmt = Math.max(0, Math.round(Number(a.amount) || 0));
+    const aAt = Math.max(0, Number(a.at) || 0);
+    for (let j = i + 1; j < rowArr.length; j++) {
+      const b = rowArr[j];
+      if (idToDelete.has(b.id)) continue;
+      if (a.source === b.source) continue;
+      const bName = String(b.donorName || "").trim().toLowerCase();
+      const bAmt = Math.max(0, Math.round(Number(b.amount) || 0));
+      const bAt = Math.max(0, Number(b.at) || 0);
+      if (aName !== bName) continue;
+      if (aAmt !== bAmt) continue;
+      if (Math.abs(aAt - bAt) > CLEANUP_WINDOW_MS) continue;
+      const keepA = a.applied === b.applied ? a.at >= b.at : a.applied === true;
+      idToDelete.add(keepA ? b.id : a.id);
+      if (!keepA) break;
+    }
+  }
+  if (idToDelete.size) {
+    for (const id of idToDelete) byId.delete(id);
+    newAddCount = Math.max(1, newAddCount);
   }
 
   const byNearContent = rebuildNearContent();

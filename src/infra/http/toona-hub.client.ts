@@ -653,10 +653,15 @@ export async function pollToonaHubForAdmin(youtubeUserId: string): Promise<{
     const last = lastDonationPullAt.get(uid) || 0;
     if (Date.now() - last >= DONATION_PULL_MIN_INTERVAL_MS) {
       lastDonationPullAt.set(uid, Date.now());
-      /** ✅ 2026-09-07 Hotfix ⑥-7: 관리자 페이지 수동 클릭은 명시적 의도로 간주.
-       *  ignoreMinInterval=true 부여 → (1) MIN_INTERVAL 가드 통과 + (2) intentionalReset 과거 skip 필터 OFF
-       *  → 사용자가 진짜로 과거 데이터 복구를 원하는 경우 수동 버튼 만으로 불러오기 가능. */
-      await fetchToonaDonationsSinceLink(uid, { ignoreMinInterval: true });
+      /**
+       * ✅ 2026-09-09 Hotfix ㉕-3 관리자 새로고침 폴링 쓰로틀 강화:
+       *  - ignoreMinInterval=true → false 로 변경.
+       *  - B모드 = DIN 허브 push webhook (/api/donations/ingest) 가 실시간으로 후원을 전송하므로,
+       *    관리자 페이지 상태새로고침 버튼 연타로 폴링을 N번 강제 호출할 필요가 없음.
+       *  - MIN_INTERVAL=60s 쓰로틀 적용으로 동일 후원 webhook 1건 + poll 1건 중복 append 소스 자체를 줄임.
+       *  - (사용자가 정말로 과거 데이터 복구 poll 강제 실행 필요시: route.ts POST body.action="sync-donations&force=1 query param 으로 가능)
+       */
+      await fetchToonaDonationsSinceLink(uid, { ignoreMinInterval: false });
     }
     const logs = await readToonaHubDonationLogs(uid);
     return { session: synced.session, logs };
