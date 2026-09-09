@@ -37,9 +37,21 @@ export function normalizeDonationEventId(id: string): string {
    *  · bank:din:99999 → 99999
    *  · fp-abc-123 (weak id) → 그대로 fp-abc-123 (provider prefix 없으므로 pass-through)
    * 결과: externalId 가 진짜로 같은 행은 어떤 경로로 들어오던 norm 결과가 100% 같아서 ID ONLY merge 가 올바르게 작동함.
+   *
+   * ✅ 2026-09-09 Hotfix 26 P0 B-MODE:
+   *  DIN 허브 2중 후원 복제 Bug 완전봉쇄:
+   *  logHubIngestIfLinked 가 log.id: `id` = {ingest|toona}:$PREFIX 추가:
+   *    · /api/donations/ingest webhook push: id=`ingest:toonation:din:12345`
+   *    · fetchToonaDonationsSinceLink poll: id=`toona:toonation:din:12345`
+   *  두 경우 externalId는 같은데 1자라도 다르면 ID 불일치 → donors 배열에 2건 적재되어 총액 2배
+   *
+   *  FIX: source-label prefix(ingest:, toona:, account:, hub: 등등 가장 앞단을 먼저 제거하고 위 1~3 규칙 실행 →
+   *       → ingest:toonation:din:12345 → 12345 · toona:toonation:din:12345 → 12345 로 동일 → 정규화.
    */
   let base = String(id || "").trim();
   if (!base) return "";
+  // 0. source-label prefix: 로그 표시용 prefix: ingest / toona / account / hub / polling / 등 가장 앞 1단어 구분자 제거 (dedup만 영향 zero, 로그 저장 자체는 id 값과 별개로 처리함
+  base = base.replace(/^(ingest|toona|account|din|hub|din|poll|dinpush|poll|push|din_ingest|din_hub):/i, "");
   // 1. ::review 등 meta suffix 제거 (원래 존재하던 로직 유지)
   base = base.replace(/::[a-z]+$/i, "");
   // 2. provider prefix: {toonation|bank|other}: 제거 (case insensitive)

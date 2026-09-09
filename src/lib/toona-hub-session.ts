@@ -150,6 +150,36 @@ export async function appendToonaHubDonationLogs(
     const rand = _fixcRandom8Hex();
     return `fallback-${ms}-${hx}-${rand}`;
   }
+  /**
+   * ✅ 2026-09-09 Hotfix ㉖ Core Donation ID:
+   *  - DIN 허브 B모드에서 로그 저장 id가 `ingest:<baseId>` 와 `toona:<baseId>` 로 prefix만 다르고
+   *    실제 후원 ID(baseId)는 같아서 safeDonorId(byId key) 가 달라서 중복 저장되던 허점 원천 봉쇄.
+   *  - 동시에 위 FixC v3 fallback의 경우에도 8hex 랜덤 suffix 제거한 hash 만으로 coreId 구성 →
+   *    donorName+amount+target+at(±3초 bucket) 이 완전 같으면 같은 후원 coreId 같게 매칭.
+   *  - 👉 오직 hub 로그 dedupe/cleanup 에만 사용하고 state donors 저장 dedupe와는 무관 (state dedupe는 normalizeDonationEventId 가 전담)
+   */
+  function coreDonationId(entry: ToonaHubDonationLog): string {
+    const raw = String(entry?.id || "").trim();
+    let strippedPrefix = raw;
+    // strip outermost source-label prefix first (ingest:/toona:/account: 등)
+    strippedPrefix = strippedPrefix.replace(/^(ingest|toona|account|din|hub|poll|push|din_ingest|din_hub):/i, "");
+    // secondary: strip provider(:toonation|bank|etc) + din marker
+    strippedPrefix = strippedPrefix.replace(/^(toonation|bank|other|toon|투네|toona):/i, "");
+    strippedPrefix = strippedPrefix.replace(/^(din|hub|self):/i, "");
+    strippedPrefix = strippedPrefix.replace(/::[a-z]+$/i, "");
+    strippedPrefix = strippedPrefix.trim();
+    // 만약 위 stripping으로도 core가 안잡히면 (FixC v3 fallback 인 경우 등) —
+    // 이름+금액+target+at bucket (3초) 으로 구성해 동일 후원 매칭
+    if (strippedPrefix && !strippedPrefix.startsWith("fallback-")) {
+      return strippedPrefix.toLowerCase();
+    }
+    const n = String(entry?.donorName || "").trim().toLowerCase();
+    const a = Math.max(0, Math.round(Number(entry?.amount) || 0));
+    const t = entry?.target === "account" ? "account" : "toon";
+    const ms = Math.max(0, Number(entry?.at) || 0);
+    const bucket = Math.floor(ms / TEST_DUPLICATE_BLOCK_MS);
+    return `nc:${n}|${a}|${t}|${bucket}`;
+  }
   function nearContentKey(entry: ToonaHubDonationLog): string {
     // ✅ FixC v3: NEAR bucket은 오직 "richer 필드 업그레이드" 용도로만 사용! 절대로 개별 ROW 를 삭제하거나 병합하지 않음.
     //    - 3000ms 윈도우 안 name|amount|target 이 같은 그룹에서 가장 필드가 풍부한(richer) 1개를 기준으로 삼아
@@ -165,6 +195,9 @@ export async function appendToonaHubDonationLogs(
 
   const byId = new Map<string, ToonaHubDonationLog>();
   for (const row of prev) if (row?.id) byId.set(safeDonorId(row), { ...row, id: safeDonorId(row) });
+
+  const prevCoreIds = new Set<string>();
+  for (const row of byId.values()) prevCoreIds.add(coreDonationId(row));
 
   function rebuildNearContent(): Map<string, ToonaHubDonationLog> {
     const byNearContent = new Map<string, ToonaHubDonationLog>();
@@ -186,6 +219,7 @@ export async function appendToonaHubDonationLogs(
   }
 
   const freshIds = new Set<string>();
+  const freshCoreIds = new Set<string>();
   let newAddCount = 0;
   let mergeAppliedUpgrade = 0;
   let nearMergedCount = 0;
@@ -225,15 +259,26 @@ export async function appendToonaHubDonationLogs(
     }
 
     /**
+     * ✅ 2026-09-09 Hotfix ㉖-1 CORE ID DEDUPE (hub 로그 저장용 1차 봉쇄):
+     *  - 위 byId(safeDonorId) 는 source label prefix 때문에 ingest:X vs toona:X 가 달라서 통과할 수 있으므로
+     *    coreDonationId(prefix 를 모두 제거한 실제 후원 ID) 가 prev 저장소 혹은 fresh entries 내에 이미 존재하면
+     *    source label 이 달라도 같은 후원으로 간주 → 새 row 추가를 **절대** skip.
+     *  - 똑같은 10회 후원이 ingest 10번 + poll 10번 2중 append 되면 20개 적재 → 10개로 줄이는 근본 Fix.
+     *  - 근데 동일 donor가 3초내에 계좌 10만 + 투네 10만을 따로 보낸 경우 coreId (fallback-nc:name|amt|target|bucket) 에
+     *    target 까지 포함되어 있으므로 coreId가 달라서 정상 2건 저장됨 (오탐 0%)
+     */
+    const coreId = coreDonationId(entry);
+    if (freshCoreIds.has(coreId) || prevCoreIds.has(coreId)) {
+      continue;
+    }
+    freshCoreIds.add(coreId);
+
+    /**
      * ✅ 2026-09-09 Hotfix ㉕ 동일 후원 2행 중복 봉쇄 (source=ingest + source=toona 쌍 제거):
-     *  - 사용자가 B-DIN 허브 모드 사용시 /api/donations/ingest webhook (source=ingest) +
-     *    fetchToonaDonationsSinceLink 폴링 (source=toona) 에서 동일 후원 1건을 두 번 append 하는 버그
      *  - 새 entry 추가 전에 donorName + amount + target + ±3000ms at 윈도우 내 완전 일치 row가
      *    byId에 이미 있으면 중복으로 간주 → 새 row 추가 skip. 4가지가 전부 일치하면 같은 후원일 확률 99.9%+.
-     *  - target 까지 포함한 이유: 동일 donor가 3초내에 계좌 10만 + 투네 10만 따로 보낸 진짜 별개 후원은
-     *    정상적으로 2건 모두 저장되어야 함. 이전 로직은 target 구분 없이 donor+amount로 병합하는 오탐 위험이 있었음.
-     *  - FixC v3 개별 ROW 저장 보장 정책은 유지. donor/amount/target/time 중 어느 하나라도 다르거나
-     *    3초 이상 떨어진 진짜 별개 후원 10건 연타는 여전히 10개 모두 정상 개별 저장됨.
+     *  - 👉 위 coreId dedupe가 이미 prefix 제거 기반으로 100% 매칭하므로, 이 near dedupe는 "coreId를 못구하는
+     *    구석진 케이스"에 대한 2차 보험 용도로 남겨둠 (두 체크가 AND가 아니라 OR skip 구조라서 안전망 중첩)
      */
     const ENTRY_WINDOW_MS = 3_000;
     const entryName = String(entry.donorName || "").trim().toLowerCase();
@@ -263,37 +308,60 @@ export async function appendToonaHubDonationLogs(
   }
 
   /**
-   * ✅ 2026-09-09 Hotfix ㉕-2 과거 중복 row cleanup pass (target-aware):
-   *  - 이미 중복으로 쌓여버린 과거 로그 (source=ingest/toona 쌍) 중
-   *    donorName + amount + target + at ±3초 가 완전 일치하는 pair 를 찾아 applied=true인 쪽 1개만 남김.
-   *  - target까지 4가지가 전부 일치할 때만 cleanup 실행 → 계좌 10만 + 투네 10만 을 서로 다른 후원으로
+   * ✅ 2026-09-09 Hotfix ㉕-2 / ㉖-2 과거 중복 row cleanup pass (target-aware + coreId-aware):
+   *  - 이미 중복으로 쌓여버린 과거 로그 (source=ingest/toona 쌍) cleanup
+   *  - ① 우선순위 높음: coreDonationId가 서로 일치하는 pair 100% 확실 중복 → applied=true 인쪽 1개만 남기고 delete
+   *  - ② 보험 fallback(낮은 우선순위): donorName + amount + target + at ±3초 가 완전 일치하는 pair → applied=true 유지
+   *  - target 까지 포함한 4가지가 전부 일치할 때만 cleanup 실행 → 계좌 10만 + 투네 10만 을 서로 다른 후원으로
    *    정상 저장한 진짜 2건을 잘못 지우는 오탐 100% 방지.
    *  - 사용자가 과거 2배로 쌓인 로그를 직접 삭제할 필요 없이 append 호출시 자동 정리됨.
    */
   const CLEANUP_WINDOW_MS = 3_000;
   const idToDelete = new Set<string>();
   const rowArr = Array.from(byId.values());
+
+  // Pass 1: CoreId exact 매칭 cleanup (확실한 중복만 삭제)
+  const byCoreDup = new Map<string, ToonaHubDonationLog[]>();
+  for (const r of rowArr) {
+    if (idToDelete.has(r.id)) continue;
+    const c = coreDonationId(r);
+    // fallback nc: prefix coreId 는 near-pass 에서만 처리. 완전 확실한 coreId(접두어 제거된 실제 ID) 만 coreId-pass 에서 cleanup
+    if (c.startsWith("nc:")) continue;
+    const arr = byCoreDup.get(c) || [];
+    arr.push(r);
+    byCoreDup.set(c, arr);
+  }
+  for (const [, group] of byCoreDup) {
+    if (group.length < 2) continue;
+    const sorted = [...group].sort((a, b) => {
+      if (a.applied !== b.applied) return a.applied ? -1 : 1;
+      return Math.max(0, Number(b.at) || 0) - Math.max(0, Number(a.at) || 0);
+    });
+    for (let i = 1; i < sorted.length; i++) idToDelete.add(sorted[i]!.id);
+  }
+
+  // Pass 2: near-content 3초 bucket cleanup (보험 fallback)
   for (let i = 0; i < rowArr.length; i++) {
     const a = rowArr[i];
-    if (idToDelete.has(a.id)) continue;
-    const aName = String(a.donorName || "").trim().toLowerCase();
-    const aAmt = Math.max(0, Math.round(Number(a.amount) || 0));
-    const aAt = Math.max(0, Number(a.at) || 0);
-    const aTarget = a.target === "account" ? "account" : "toon";
+    if (idToDelete.has(a!.id)) continue;
+    const aName = String(a!.donorName || "").trim().toLowerCase();
+    const aAmt = Math.max(0, Math.round(Number(a!.amount) || 0));
+    const aAt = Math.max(0, Number(a!.at) || 0);
+    const aTarget = a!.target === "account" ? "account" : "toon";
     for (let j = i + 1; j < rowArr.length; j++) {
       const b = rowArr[j];
-      if (idToDelete.has(b.id)) continue;
-      if (a.source === b.source) continue;
-      const bName = String(b.donorName || "").trim().toLowerCase();
-      const bAmt = Math.max(0, Math.round(Number(b.amount) || 0));
-      const bAt = Math.max(0, Number(b.at) || 0);
-      const bTarget = b.target === "account" ? "account" : "toon";
+      if (idToDelete.has(b!.id)) continue;
+      if (a!.source === b!.source) continue;
+      const bName = String(b!.donorName || "").trim().toLowerCase();
+      const bAmt = Math.max(0, Math.round(Number(b!.amount) || 0));
+      const bAt = Math.max(0, Number(b!.at) || 0);
+      const bTarget = b!.target === "account" ? "account" : "toon";
       if (aName !== bName) continue;
       if (aAmt !== bAmt) continue;
       if (aTarget !== bTarget) continue;
       if (Math.abs(aAt - bAt) > CLEANUP_WINDOW_MS) continue;
-      const keepA = a.applied === b.applied ? a.at >= b.at : a.applied === true;
-      idToDelete.add(keepA ? b.id : a.id);
+      const keepA = a!.applied === b!.applied ? aAt >= bAt : a!.applied === true;
+      idToDelete.add(keepA ? b!.id : a!.id);
       if (!keepA) break;
     }
   }
