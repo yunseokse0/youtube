@@ -88,30 +88,72 @@ export function repairSettlementDonorTimestamps(
   return repairDonorTimestamps(donors, opts);
 }
 
-/** 엑셀/CSV 내보내기 직전 — 최신 daily log·후원 목록으로 시각 재보정 */
+/** 엑셀/CSV 내보내기 직전 — 최신 daily log·후원 목록으로 시각 재보정 · message 누락시 referenceDonors+dailyLog에서 복구 */
 export function donorsForSettlementExport(
   record: SettlementRecord,
   donors: Donor[],
   dailyLog?: Record<string, DailyLogEntry[]>,
   referenceDonors?: Donor[]
 ): Donor[] {
+  const messageById = new Map<string, string>();
+  for (const d of referenceDonors || []) {
+    const id = String(d.id || "").trim();
+    const msg = String(d.message || "").trim();
+    if (id && msg) messageById.set(id, msg);
+  }
+  if (dailyLog) {
+    for (const entries of Object.values(dailyLog)) {
+      if (!Array.isArray(entries)) continue;
+      for (const entry of entries) {
+        for (const d of entry.donors || []) {
+          const id = String(d.id || "").trim();
+          const msg = String(d.message || "").trim();
+          if (id && msg && !messageById.has(id)) messageById.set(id, msg);
+        }
+      }
+    }
+  }
   const repaired = repairSettlementDonorTimestamps(donors, {
     dailyLog,
     referenceDonors,
     settlementCreatedAt: record.createdAt,
   });
-  return repaired.map((d) => ({
-    ...d,
-    name: applyTemporarySettlementDonorAlias(record, d.name || "무명"),
-  }));
+  return repaired.map((d) => {
+    const id = String(d.id || "").trim();
+    const baseMessage = String(d.message || "").trim();
+    const message = baseMessage || (id ? messageById.get(id) : "") || "";
+    return {
+      ...d,
+      name: applyTemporarySettlementDonorAlias(record, d.name || "무명"),
+      ...(message ? { message } : d.message != null ? { message: "" } : {}),
+    };
+  });
 }
 
-/** 정산 시점 후원 스냅샷 기준 · 없으면 해당 날짜 daily log에서 복원 */
+/** 정산 시점 후원 스냅샷 기준 · 없으면 해당 날짜 daily log에서 복원 · message 누락시 referenceDonors+dailyLog로 복구 */
 export function resolveSettlementDonors(
   record: SettlementRecord,
   dailyLog?: Record<string, DailyLogEntry[]>,
   referenceDonors?: Donor[]
 ): Donor[] {
+  const messageById = new Map<string, string>();
+  for (const d of referenceDonors || []) {
+    const id = String(d.id || "").trim();
+    const msg = String(d.message || "").trim();
+    if (id && msg) messageById.set(id, msg);
+  }
+  if (dailyLog) {
+    for (const entries of Object.values(dailyLog)) {
+      if (!Array.isArray(entries)) continue;
+      for (const entry of entries) {
+        for (const d of entry.donors || []) {
+          const id = String(d.id || "").trim();
+          const msg = String(d.message || "").trim();
+          if (id && msg && !messageById.has(id)) messageById.set(id, msg);
+        }
+      }
+    }
+  }
   const fromRecord = record.donors && record.donors.length > 0 ? record.donors : [];
   let donors: Donor[];
   if (fromRecord.length > 0) {
@@ -132,10 +174,19 @@ export function resolveSettlementDonors(
       donors = best?.donors || [];
     }
   }
-  return repairSettlementDonorTimestamps(donors, {
+  const repaired = repairSettlementDonorTimestamps(donors, {
     dailyLog,
     referenceDonors,
     settlementCreatedAt: record.createdAt,
+  });
+  if (messageById.size === 0) return repaired;
+  return repaired.map((d) => {
+    const id = String(d.id || "").trim();
+    const baseMessage = String(d.message || "").trim();
+    if (baseMessage) return d;
+    const restored = id ? messageById.get(id) : "";
+    if (!restored) return d;
+    return { ...d, message: restored };
   });
 }
 

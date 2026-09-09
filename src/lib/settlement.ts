@@ -683,11 +683,6 @@ export async function appendSettlementRecordAndSync(
     if (m.realName) copy.realName = m.realName;
     return copy as Member;
   });
-  const slimDonors = (donors || []).map((d) => {
-    const { message: _msg, ...rest } = d;
-    void _msg;
-    return rest as Donor;
-  });
   const rec = appendSettlementRecord(
     title,
     lightweightMembers,
@@ -695,7 +690,7 @@ export async function appendSettlementRecordAndSync(
     toonRatio,
     feeRate,
     memberRatioOverrides,
-    slimDonors,
+    donors,
     userId,
     memberPositions,
     settlementOptions
