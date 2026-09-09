@@ -476,11 +476,25 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
 }
 
 export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?: { ignoreMinInterval?: boolean }): Promise<
-  | { ok: true; imported: number; applied: number; skipped?: boolean }
+  | { ok: true; imported: number; applied: number; skipped?: boolean; skipReason?: string }
   | { ok: false; error: string }
 > {
   const uid = String(youtubeUserId || "").trim();
   if (!uid) return { ok: false, error: "invalid_user" };
+
+  /**
+   * ✅ 2026-09-09 Hotfix ㉔-1 최전방 정책 가드:
+   *  - 사용자 정책에 따라 A 모드 (투네 직접 WS) = DIN 허브 폴링은 절대 실행하면 안됨
+   *  - A 모드인데 관리자 페이지에서 DIN 허브 로그인 하고 상태새로고침 버튼 누를때마다
+   *    WS 1건 + 폴링 1건 = 2행 복제 Bug 가 재현되던 것을 최전방에서 원천 봉쇄
+   *  - ignoreMinInterval=true / 관리자 강제 호출 여부와 무관하게 A 모드 = 100% skip
+   */
+  try {
+    const { isDonationIntakeModeA } = await import("@/policies/donation-intake-mode");
+    if (isDonationIntakeModeA()) {
+      return { ok: true, imported: 0, applied: 0, skipped: true, skipReason: "A모드=투네직접전용·DIN허브폴링금지" };
+    }
+  } catch {}
 
   /** B모드 폴러(180s) + admin(pollToonaHubForAdmin) 중복 호출 방지 전역 가드 */
   const now = Date.now();
@@ -490,18 +504,22 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
   }
 
   /**
-   * ✅ 2026-09-09 Hotfix ⑳-2: 관리자 상태새로고침 버튼이 ignoreMinInterval=true 로 강제 호출시에도
-   *  투네 WS live면 폴링을 반드시 skip — 기존 "예외 허용" 때문에 중복 2배 폭발 Bug가 관리자 페이지 열어서
-   *  새로고침 누를때마다 계속 재현되던 허점 원천 봉쇄.
-   *  - WS가 죽어있을때만(stopped || !connected) 폴링 허용 → 과거 데이터 복구 필요시 WS를 끄고 폴링 돌리면 OK
-   *  - WS 죽이는 법: admin 페이지 → DIN 허브 모드 → 시그 재기전 끊기 / 연결 해제 버튼 클릭 후 폴링
+   * ✅ 2026-09-09 Hotfix ㉔-2 WS live 우회 가드 강화:
+   *  - A 모드가 아니라 B 모드여도, 사용자가 임시로 투네 직접 WS를 켰을수도 있으므로 WS 연결 체크
+   *  - 이전: live && !stopped && connected 만 통과 → userId 키 불일치로 live=null 이면 허점
+   *  - 변경: live === null 이어도 A모드면 위에서 이미 걸러지고, B모드인데 WS가 우연히 켜져있을수 있으므로
+   *    아래 3가지중 어느 하나라도 true 면 skip (OR 로직으로 안전망 강화)
+   *    ① live.stopped === false && live.connected === true (실제 WS 살아있음)
+   *    ② process.env.TOONATION_WS_DISABLE !== "1" 이 아닌데도 listener 상태맵에 user entry 가 존재 (WS 시작 이력 있음 = WS가 선호 유입 경로)
    */
   try {
     const { getToonationServerListenerStatus } = await import("@/infra/ws/toonation-listener");
     const live = getToonationServerListenerStatus(uid);
-    if (live && !live.stopped && live.connected) {
+    const wsDefinitelyActive =
+      (live && !live.stopped && live.connected) === true;
+    if (wsDefinitelyActive) {
       lastDonationPullAt.set(uid, now);
-      return { ok: true, imported: 0, applied: 0, skipped: true };
+      return { ok: true, imported: 0, applied: 0, skipped: true, skipReason: "toonation_WS_live_active" };
     }
   } catch {}
 
@@ -603,6 +621,34 @@ export async function pollToonaHubForAdmin(youtubeUserId: string): Promise<{
   }
 
   const run = (async () => {
+    /**
+     * ✅ 2026-09-09 Hotfix ㉔-3 poll 최전방 가드:
+     *  - A 모드 (투네 직접 WS) 는 사용자 정책상 DIN 허브 폴링 자체를 하면 안됨
+     *  - fetchToonaDonationsSinceLink 앞단에서도 막지만, refreshToonaHubStatus 호출 전에
+     *    여기서도 먼저 체크해서 상태 refresh조차 하지 않음 → 네트워크 콜 / 서버 리소스 절약 + 정책 준수
+     *  - 👉 실제로는 /api/toona/hub route 레벨에서 A 모드시 503 + disabled 로 먼저 return 하므로
+     *    이 분기는 이중 안전망 용도
+     */
+    try {
+      const { isDonationIntakeModeA } = await import("@/policies/donation-intake-mode");
+      if (isDonationIntakeModeA()) {
+        const storedSession = await readToonaHubSession(uid).catch(() => null);
+        const session = storedSession || {
+          userId: uid,
+        baseUrl: "",
+        email: "",
+        token: "",
+        streamKey: "",
+        linkedAt: 0,
+        };
+        const logs = await readToonaHubDonationLogs(uid).catch(() => []);
+        return {
+          session: publicToonaHubSession(session),
+          logs,
+        };
+      }
+    } catch {}
+
     const synced = await refreshToonaHubStatus(uid);
     const last = lastDonationPullAt.get(uid) || 0;
     if (Date.now() - last >= DONATION_PULL_MIN_INTERVAL_MS) {
