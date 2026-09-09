@@ -1057,12 +1057,12 @@ export default function DonorRankingsOverlayPage() {
       <div
         className={
           isFullVertical
-            ? "relative z-10 mx-auto w-full max-w-full overflow-hidden"
+            ? "relative z-10 mx-auto w-full max-w-full overflow-visible p-[1px] box-border"
             : "contents"
         }
         style={
           isFullVertical && fullContentHeight > 0
-            ? { height: Math.ceil(fullContentHeight * zoomScale) }
+            ? { height: Math.ceil(fullContentHeight * zoomScale) + 2 }
             : undefined
         }
       >
@@ -1108,13 +1108,33 @@ export default function DonorRankingsOverlayPage() {
             className={`relative z-[2] overflow-visible ${
               showFrame
                 ? "rounded-none border-0 shadow-none"
-                : "rounded-studio border border-t border-r border-b border-l border-solid"
+                : "rounded-studio"
             }`}
-            style={{
-              borderColor: showFrame ? "transparent" : borderColor,
-              backgroundColor: "transparent",
-              boxShadow: "none",
-            }}
+            style={
+              showFrame
+                ? {}
+                : {
+                    borderTopWidth: 1,
+                    borderRightWidth: 1,
+                    borderBottomWidth: 1,
+                    borderLeftWidth: 1,
+                    borderTopStyle: "solid",
+                    borderRightStyle: "solid",
+                    borderBottomStyle: "solid",
+                    borderLeftStyle: "solid",
+                    borderTopColor: borderColor,
+                    borderRightColor: borderColor,
+                    borderBottomColor: borderColor,
+                    borderLeftColor: borderColor,
+                    backgroundColor: "transparent",
+                    boxShadow: "none",
+                    willChange: "transform",
+                    outlineWidth: 1,
+                    outlineStyle: "solid",
+                    outlineColor: "transparent",
+                    outlineOffset: 0,
+                  }
+            }
           >
             <RankingColumn
               title={rankingTitle}
