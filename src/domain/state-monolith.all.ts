@@ -3317,6 +3317,7 @@ export type VisualSettingsPatch = Partial<
     | "sigRolling"
     | "sigRollingMeta"
     | "sigMatchSettings"
+    | "donorRankingsUpdatedAt"
   >
 >;
 

@@ -5416,15 +5416,17 @@ function AdminPageInner() {
 
   const updateDonorRankingsTheme = (patch: Partial<AppState["donorRankingsTheme"]>) => {
     setState((prev: AppState) => {
+      const now = Date.now();
       const next: AppState = {
         ...prev,
         donorRankingsTheme: {
           ...(prev.donorRankingsTheme || defaultState().donorRankingsTheme),
           ...patch,
         },
-        updatedAt: Date.now(),
+        donorRankingsUpdatedAt: now,
+        updatedAt: now,
       };
-      persistVisualSettings(next, { donorRankingsTheme: next.donorRankingsTheme });
+      persistVisualSettings(next, { donorRankingsTheme: next.donorRankingsTheme, donorRankingsUpdatedAt: now });
       notifyAdminPreviewDonorRankingsThemeUpdated(
         overlayUserId,
         next.donorRankingsTheme,
@@ -5482,16 +5484,24 @@ function AdminPageInner() {
       const builtIn = BUILT_IN_DONOR_RANKINGS_PRESETS.find((x) => x.id === id);
       const preset = builtIn || (prev.donorRankingsPresets || []).find((x) => x.id === id);
       if (!preset) return prev;
+      const now = Date.now();
       const next: AppState = {
         ...prev,
         donorRankingsPresetId: id,
         donorRankingsTheme: { ...preset.theme },
-        updatedAt: Date.now(),
+        donorRankingsUpdatedAt: now,
+        updatedAt: now,
       };
       persistVisualSettings(next, {
         donorRankingsPresetId: next.donorRankingsPresetId,
         donorRankingsTheme: next.donorRankingsTheme,
+        donorRankingsUpdatedAt: now,
       });
+      notifyAdminPreviewDonorRankingsThemeUpdated(
+        overlayUserId,
+        next.donorRankingsTheme,
+        next.updatedAt
+      );
       return next;
     });
   };
@@ -5499,8 +5509,9 @@ function AdminPageInner() {
   const saveDonorRankingsPreset = () => {
     const name = (donorRankingPresetName || "").trim() || `후원순위 프리셋 ${(state.donorRankingsPresets?.length || 0) + 1}`;
     setState((prev: AppState) => {
+      const now = Date.now();
       const preset = {
-        id: `drp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        id: `drp_${now}_${Math.random().toString(36).slice(2, 6)}`,
         name,
         theme: { ...(prev.donorRankingsTheme || defaultState().donorRankingsTheme) },
       };
@@ -5508,11 +5519,13 @@ function AdminPageInner() {
         ...prev,
         donorRankingsPresets: [...(prev.donorRankingsPresets || []), preset],
         donorRankingsPresetId: preset.id,
-        updatedAt: Date.now(),
+        donorRankingsUpdatedAt: now,
+        updatedAt: now,
       };
       persistVisualSettings(next, {
         donorRankingsPresets: next.donorRankingsPresets,
         donorRankingsPresetId: next.donorRankingsPresetId,
+        donorRankingsUpdatedAt: now,
       });
       return next;
     });
@@ -5522,17 +5535,30 @@ function AdminPageInner() {
   const deleteDonorRankingsPreset = (id: string) => {
     if (isBuiltInDonorRankingsPresetId(id)) return;
     setState((prev: AppState) => {
+      const now = Date.now();
       const presets = (prev.donorRankingsPresets || []).filter((x) => x.id !== id);
+      const nextPresetId = prev.donorRankingsPresetId === id ? presets[0]?.id : prev.donorRankingsPresetId;
+      const presetApplied = presets.find((p) => p.id === nextPresetId);
+      const mergedTheme = presetApplied ? { ...presetApplied.theme } : prev.donorRankingsTheme;
       const next: AppState = {
         ...prev,
         donorRankingsPresets: presets,
-        donorRankingsPresetId: prev.donorRankingsPresetId === id ? presets[0]?.id : prev.donorRankingsPresetId,
-        updatedAt: Date.now(),
+        donorRankingsPresetId: nextPresetId,
+        donorRankingsTheme: mergedTheme,
+        donorRankingsUpdatedAt: now,
+        updatedAt: now,
       };
       persistVisualSettings(next, {
         donorRankingsPresets: next.donorRankingsPresets,
         donorRankingsPresetId: next.donorRankingsPresetId,
+        donorRankingsTheme: next.donorRankingsTheme,
+        donorRankingsUpdatedAt: now,
       });
+      notifyAdminPreviewDonorRankingsThemeUpdated(
+        overlayUserId,
+        next.donorRankingsTheme,
+        next.updatedAt
+      );
       return next;
     });
   };
