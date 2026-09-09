@@ -115,6 +115,8 @@ export async function getOwnerNameCandidates(userId: string, ownerName?: string)
 /**
  * 채널 주인 자기 후원(계좌) — 메시지 본문 파싱
  * - `계좌` 접두 있으면 건너뛴 뒤 동일 규칙
+ * - ✅ 2026-09-09 Hotfix ㉓-1: accountIdx = -1 (메시지에 계좌 키워드 없음) 이면 절대 donorName 추출하지 않음
+ *   → "후원 테스트 입니다" 같은 일반 메시지가 idx=0 부터 잘못 추출되어 계좌 후원으로 오판되는 구조적 결함 봉쇄
  * - 1번째 토큰 = 실제 후원자명 (익명)
  * - 2번째 토큰 = 멤버명
  * - 3번째~ = 메시지(선택)
@@ -130,7 +132,11 @@ export function parseOwnerAccountMessageBody(message: string): {
     .map(cleanMessageToken)
     .filter(Boolean);
   const accountIdx = tokens.findIndex((t) => isAccountFormatToken(t));
-  let idx = accountIdx >= 0 ? accountIdx + 1 : 0;
+  if (accountIdx < 0) {
+    /** 계좌 접두가 전혀 없으면 → 파싱 결과를 전부 비워서 상위 호출자가 계좌 리맵핑을 취소하도록 유도 */
+    return { donorName: "", playerName: "", restMessage: String(message || "").trim() };
+  }
+  let idx = accountIdx + 1;
   const donorName = tokens[idx] || "";
   const playerName = tokens[idx + 1] || "";
   const restMessage = tokens.slice(idx + 2).join(" ").trim();
@@ -139,12 +145,27 @@ export function parseOwnerAccountMessageBody(message: string): {
 
 /** 알림 닉=채널 주인 → 계좌 처리 + 메시지에서 후원자·멤버 분리 */
 export function remapOwnerSelfDonationAsAccount(source: DonationEvent): DonationEvent {
+  /**
+   * ✅ 2026-09-09 Hotfix ㉓-2: remap 호출 진입시 1차 방어
+   *  - 채널 주인 자기 후원은 메시지에 "계좌" 라는 명시적 키워드가 있거나, 진짜 계좌 후원 포맷(메시지 비어있음) 일때만 target=account 허용
+   *  - 일반 투네 후원 메시지("후원 테스트 입니다")가 우연히 owner 이름과 같아서 들어온 경우는 그대로 이벤트 리턴 (target=account로 강제 변경 안함)
+   */
   const msg = String(source.message || "").trim();
+  const msgTokens = msg.split(/\s+/).map((t) => t.trim()).filter(Boolean);
+  const hasAccountKeyword =
+    msgTokens.length === 0 ||
+    msgTokens.some((t) => isAccountFormatToken(t)) ||
+    /(은행|입금|예금주|계좌이체|무통장|계좌|통장|기업|계정|계정후원)/.test(msg);
+  if (!hasAccountKeyword) {
+    /** 명시적 계좌 키워드 없으면 절대 계좌로 리맵핑 하지 않음 */
+    return source;
+  }
+
   if (!msg) {
     return { ...source, target: "account" };
   }
   const parsed = parseOwnerAccountMessageBody(msg);
-  return {
+  const parsedResult: DonationEvent = {
     ...source,
     target: "account",
     ...(parsed.donorName ? { donorName: parsed.donorName } : {}),
@@ -157,6 +178,27 @@ export function remapOwnerSelfDonationAsAccount(source: DonationEvent): Donation
      */
     message: msg,
   };
+
+  /**
+   * ✅ 2026-09-09 Hotfix ㉓-2: 계좌 리맵핑 직후 2차 검증
+   *  - 위 hasAccountKeyword 를 통과했음에도, 최종적으로 donorName 이 블랙리스트("후원" 등 너무 흔한 단어) 이면
+   *    진짜 채널 주인의 계좌 자기 후원일 확률은 0 → 리턴 직전 target=toon 으로 강제 롤백
+   */
+  const donorNorm = normalizeOwnerNameForCompare(parsedResult.donorName || "");
+  const BLACKLIST_ROLLBACK = new Set([
+    "후원",
+    "테스트",
+    "익명",
+    "관리자",
+    "방송",
+    "스트리머",
+    "투네",
+    "시청자",
+  ]);
+  if (BLACKLIST_ROLLBACK.has(donorNorm)) {
+    return { ...parsedResult, target: "toon" };
+  }
+  return parsedResult;
 }
 
 /**
@@ -187,7 +229,28 @@ export function applyOwnerDonationRemapIfNeeded(
     /** 계좌 키워드가 없는 일반 메시지("후원 테스트 입니다" 등)는 100% 투네 후원 → 리맵핑 취소 */
     return event;
   }
-  return remapOwnerSelfDonationAsAccount(event);
+  const remapped = remapOwnerSelfDonationAsAccount(event);
+
+  /**
+   * ✅ 2026-09-09 Hotfix ㉓-3: apply 단계 최종 방어망 (WS listener 등 어떤 경로에서 호출해도 적용)
+   *  - 위 1,2,3 단계 필터를 전부 우회해서 계좌로 리맵된 경우라도, 최종 return 직전에
+   *    ① donorName 이 블랙리스트("후원" 등 너무 흔한 단어) 이거나
+   *    ② provider=toonation 인데 donorName 에 숫자/특수기호 섞인 일반 닉네임 패턴이면
+   *    진짜 채널 주인 계좌 후원일 확률 0 → target=toon 으로 강제 롤백
+   */
+  const donorNorm = normalizeOwnerNameForCompare(remapped.donorName || "");
+  const BLACKLIST_ROLLBACK = new Set([
+    "후원", "테스트", "익명", "관리자", "방송", "스트리머", "투네", "시청자",
+    "일반", "개인", "유튜브", "계좌", "은행", "입금", "기부", "서포터",
+  ]);
+  if (
+    remapped.target === "account" &&
+    remapped.provider === "toonation" &&
+    (BLACKLIST_ROLLBACK.has(donorNorm) || /[0-9!@#$%^&*()_+=\[\]{}|;:'",.<>?`~-]/.test(remapped.donorName || ""))
+  ) {
+    return { ...remapped, target: "toon" };
+  }
+  return remapped;
 }
 
 export async function resolveToonationDonationWithOwnerRemap(
