@@ -7,6 +7,7 @@ import {
 import { getMembersForExport } from "@/lib/settlement";
 import { donorAtEpochMs, formatKstDateTime } from "@/lib/state";
 import type { DonorTotalsByNameRow } from "@/lib/donor-rankings-aggregate";
+import { isDonorExcludedFromDonationTotals } from "@/domain/dedupe/donation-dedupe.rules";
 
 export { buildDailyLogMinAtByDonorId } from "@/lib/donation/repair-donor-timestamps";
 
@@ -88,15 +89,16 @@ export function repairSettlementDonorTimestamps(
   return repairDonorTimestamps(donors, opts);
 }
 
-/** 엑셀/CSV 내보내기 직전 — 최신 daily log·후원 목록으로 시각 재보정 · message 누락시 3중 fallback 으로 복구 */
+/** 엑셀/CSV 내보내기 직전 — 최신 daily log·후원 목록으로 시각 재보정 · donationExcluded 제외 + message 3중 fallback 복구 */
 export function donorsForSettlementExport(
   record: SettlementRecord,
   donors: Donor[],
   dailyLog?: Record<string, DailyLogEntry[]>,
   referenceDonors?: Donor[]
 ): Donor[] {
+  const validDonors = (donors || []).filter((d) => !isDonorExcludedFromDonationTotals(d));
   const maps = buildDonorMessageFallbackMaps(dailyLog, referenceDonors);
-  const repaired = repairSettlementDonorTimestamps(donors, {
+  const repaired = repairSettlementDonorTimestamps(validDonors, {
     dailyLog,
     referenceDonors,
     settlementCreatedAt: record.createdAt,
@@ -166,14 +168,16 @@ function resolveDonorMessageFromMaps(d: Donor, maps: DonorMessageFallbackMaps): 
   return "";
 }
 
-/** 정산 시점 후원 스냅샷 기준 · 없으면 해당 날짜 daily log에서 복원 · message 누락시 referenceDonors+dailyLog로 3중 복구 */
+/** 정산 시점 후원 스냅샷 기준 · 없으면 해당 날짜 daily log에서 복원 · donationExcluded 제외 + message 3중 복구 */
 export function resolveSettlementDonors(
   record: SettlementRecord,
   dailyLog?: Record<string, DailyLogEntry[]>,
   referenceDonors?: Donor[]
 ): Donor[] {
   const maps = buildDonorMessageFallbackMaps(dailyLog, referenceDonors);
-  const fromRecord = record.donors && record.donors.length > 0 ? record.donors : [];
+  const fromRecord = (record.donors && record.donors.length > 0 ? record.donors : []).filter(
+    (d) => !isDonorExcludedFromDonationTotals(d)
+  );
   let donors: Donor[];
   if (fromRecord.length > 0) {
     donors = fromRecord;

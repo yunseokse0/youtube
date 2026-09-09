@@ -10,6 +10,7 @@ import {
   filterSettlementRecordsByDeleteLogs,
 } from "@/lib/settlement-delete-tombstone";
 import type { Donor, Member, SettlementDeleteLog, SettlementMemberRatioOverrides, SettlementMemberResult, SettlementRecord } from "@/types";
+import { isDonorExcludedFromDonationTotals } from "@/domain/dedupe/donation-dedupe.rules";
 
 export const SETTLEMENT_RECORDS_KEY = "excel-broadcast-settlement-records-v1";
 export const SETTLEMENT_DELETE_LOGS_KEY = "excel-broadcast-settlement-delete-logs-v1";
@@ -683,6 +684,7 @@ export async function appendSettlementRecordAndSync(
     if (m.realName) copy.realName = m.realName;
     return copy as Member;
   });
+  const validDonors = (donors || []).filter((d) => !isDonorExcludedFromDonationTotals(d));
   const rec = appendSettlementRecord(
     title,
     lightweightMembers,
@@ -690,7 +692,7 @@ export async function appendSettlementRecordAndSync(
     toonRatio,
     feeRate,
     memberRatioOverrides,
-    donors,
+    validDonors,
     userId,
     memberPositions,
     settlementOptions
