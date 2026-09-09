@@ -228,23 +228,28 @@ export async function appendToonaHubDonationLogs(
      * ✅ 2026-09-09 Hotfix ㉕ 동일 후원 2행 중복 봉쇄 (source=ingest + source=toona 쌍 제거):
      *  - 사용자가 B-DIN 허브 모드 사용시 /api/donations/ingest webhook (source=ingest) +
      *    fetchToonaDonationsSinceLink 폴링 (source=toona) 에서 동일 후원 1건을 두 번 append 하는 버그
-     *  - 새 entry 추가 전에 donorName + amount + ±3000ms at 윈도우 내에 완전 일치하는 row가
-     *    byId에 이미 있으면 중복으로 간주 → 새 row 추가 skip. donor/amount/time 이 같으면 같은 후원일 확률 99.9%+.
-     *  - FixC v3 개별 ROW 저장 보장 정책은 유지. 서로 다른 donor/amount/time 이거나 3초 이상 떨어진
-     *    진짜 별개 후원 10건 연타는 여전히 10개 모두 정상 개별 저장됨.
+     *  - 새 entry 추가 전에 donorName + amount + target + ±3000ms at 윈도우 내 완전 일치 row가
+     *    byId에 이미 있으면 중복으로 간주 → 새 row 추가 skip. 4가지가 전부 일치하면 같은 후원일 확률 99.9%+.
+     *  - target 까지 포함한 이유: 동일 donor가 3초내에 계좌 10만 + 투네 10만 따로 보낸 진짜 별개 후원은
+     *    정상적으로 2건 모두 저장되어야 함. 이전 로직은 target 구분 없이 donor+amount로 병합하는 오탐 위험이 있었음.
+     *  - FixC v3 개별 ROW 저장 보장 정책은 유지. donor/amount/target/time 중 어느 하나라도 다르거나
+     *    3초 이상 떨어진 진짜 별개 후원 10건 연타는 여전히 10개 모두 정상 개별 저장됨.
      */
     const ENTRY_WINDOW_MS = 3_000;
     const entryName = String(entry.donorName || "").trim().toLowerCase();
     const entryAmt = Math.max(0, Math.round(Number(entry.amount) || 0));
     const entryAt = Math.max(0, Number(entry.at) || 0);
+    const entryTarget = entry.target === "account" ? "account" : "toon";
     let duplicateSameDonationFound = false;
     for (const row of byId.values()) {
       if (duplicateSameDonationFound) break;
       const rowName = String(row.donorName || "").trim().toLowerCase();
       const rowAmt = Math.max(0, Math.round(Number(row.amount) || 0));
       const rowAt = Math.max(0, Number(row.at) || 0);
+      const rowTarget = row.target === "account" ? "account" : "toon";
       if (entryName !== rowName) continue;
       if (entryAmt !== rowAmt) continue;
+      if (entryTarget !== rowTarget) continue;
       const delta = Math.abs(entryAt - rowAt);
       if (delta > ENTRY_WINDOW_MS) continue;
       duplicateSameDonationFound = true;
@@ -258,9 +263,11 @@ export async function appendToonaHubDonationLogs(
   }
 
   /**
-   * ✅ 2026-09-09 Hotfix ㉕-2 과거 중복 row cleanup pass:
-   *  - 이미 중복으로 쌓여버린 과거 로그 (source=ingest/toona 쌍) 중 near bucket 내
-   *    donorName + amount + at ±3초 가 완전 일치하는 pair 를 찾아 applied=true인 쪽 1개만 남김
+   * ✅ 2026-09-09 Hotfix ㉕-2 과거 중복 row cleanup pass (target-aware):
+   *  - 이미 중복으로 쌓여버린 과거 로그 (source=ingest/toona 쌍) 중
+   *    donorName + amount + target + at ±3초 가 완전 일치하는 pair 를 찾아 applied=true인 쪽 1개만 남김.
+   *  - target까지 4가지가 전부 일치할 때만 cleanup 실행 → 계좌 10만 + 투네 10만 을 서로 다른 후원으로
+   *    정상 저장한 진짜 2건을 잘못 지우는 오탐 100% 방지.
    *  - 사용자가 과거 2배로 쌓인 로그를 직접 삭제할 필요 없이 append 호출시 자동 정리됨.
    */
   const CLEANUP_WINDOW_MS = 3_000;
@@ -272,6 +279,7 @@ export async function appendToonaHubDonationLogs(
     const aName = String(a.donorName || "").trim().toLowerCase();
     const aAmt = Math.max(0, Math.round(Number(a.amount) || 0));
     const aAt = Math.max(0, Number(a.at) || 0);
+    const aTarget = a.target === "account" ? "account" : "toon";
     for (let j = i + 1; j < rowArr.length; j++) {
       const b = rowArr[j];
       if (idToDelete.has(b.id)) continue;
@@ -279,8 +287,10 @@ export async function appendToonaHubDonationLogs(
       const bName = String(b.donorName || "").trim().toLowerCase();
       const bAmt = Math.max(0, Math.round(Number(b.amount) || 0));
       const bAt = Math.max(0, Number(b.at) || 0);
+      const bTarget = b.target === "account" ? "account" : "toon";
       if (aName !== bName) continue;
       if (aAmt !== bAmt) continue;
+      if (aTarget !== bTarget) continue;
       if (Math.abs(aAt - bAt) > CLEANUP_WINDOW_MS) continue;
       const keepA = a.applied === b.applied ? a.at >= b.at : a.applied === true;
       idToDelete.add(keepA ? b.id : a.id);
