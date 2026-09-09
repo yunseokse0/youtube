@@ -9801,11 +9801,14 @@ function AdminPageInner() {
         setSigMatchPreviewIframeKey((k) => k + 1);
         setMealMatchPreviewIframeKey((k) => k + 1);
         setObsTextPreviewIframeKey((k) => k + 1);
-        showAppToast("정산 리셋 완료 · 서버 후원·금액이 비워졌습니다", {
+        try {
+          await fetch("/api/toona/hub", { method: "DELETE", credentials: "include" });
+        } catch {}
+        showAppToast("정산 리셋 완료 · 서버 후원·금액이 비워졌습니다 · DIN허브 연결을 끊었습니다", {
           variant: "success",
-          durationMs: 4200,
+          durationMs: 4500,
         });
-        setSigExcelResult("정산 리셋 완료 — 잠시(약 90초) 서버 후원 자동 복구를 막습니다.");
+        setSigExcelResult("정산 리셋 완료 — 잠시(약 90초) 서버 후원 자동 복구를 막고 DIN허브 연결을 해제했습니다.");
       } catch {
         rollbackOptimisticReset(
           "정산 리셋 요청이 실패했습니다. 네트워크·서버(502)를 확인한 뒤 다시 시도하세요."
