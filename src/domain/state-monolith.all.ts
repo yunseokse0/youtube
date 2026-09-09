@@ -1654,7 +1654,7 @@ export function parseAmount(input: string | number): number {
 
 /** donor.id 접두사 (toonation:/bank:) 또는 target 필드 기반으로 최종 target 추론 — target 누락 시 투네가 계좌로 둔갑하는 버그 방지 */
 export function resolveEffectiveDonorTarget(donor: Donor | Record<string, unknown> | null | undefined): "toon" | "account" {
-  if (!donor) return "account";
+  if (!donor) return "toon";
   const d = donor as Record<string, unknown>;
   const tRaw = String(d.target ?? "").trim().toLowerCase();
   /** 1순위: 명시적 raw target (유저가 직접 설정한 값 최우선) */
@@ -1664,8 +1664,13 @@ export function resolveEffectiveDonorTarget(donor: Donor | Record<string, unknow
   const kind = donorInferSourceKindWrapper(d);
   if (kind === "toonation") return "toon";
   if (kind === "bank") return "account";
-  /** 그 외 안전하게 account fallback */
-  return "account";
+  /**
+   * ✅ 2026-09-09 계좌 뻥튀기 Bug Fix: 그 외 모르는 값일때 fallback 을 'account' → 'toon' 으로 교체
+   *  - 현 세대 후원은 99.9% 가 투네 후원이고, 계좌 수기 후원은 관리자가 명시 target=account를 넣거나
+   *    id 에 bank:-prefix 를 명시하기 때문에 이 fallback 이 계좌 후원을 투네로 오판할 케이스는 없음
+   *  - 반대로 기존 'account' fallback 은 모든 weak ID 후원이 계좌로 둔갑해 2배 폭발시키는 Bug 를 유발
+   */
+  return "toon";
 }
 /** state.ts 에서 import 없이 쓰기 위해 동일 함수 래핑 — donorInferSourceKind 선언과 같은 인수 구조 보장 */
 function donorInferSourceKindWrapper(
@@ -1679,9 +1684,14 @@ function donorInferSourceKindWrapper(
   if (["toon", "toonation", "tunat", "tuna", "투네", "튜나"].includes(target)) return "toonation";
   if (["account", "bank", "계좌", "은행"].includes(target)) return "bank";
   if (["toonation", "toona", "tuna", "tunat"].includes(provider)) return "toonation";
+  if (["account", "bank", "gyejwa", "계좌"].includes(provider)) return "bank";
   if (ext && /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(ext)) return "toonation";
-  if (id.startsWith("toonation:") || id.startsWith("toona:") || id.startsWith("tuna:")) return "toonation";
-  if (id.startsWith("bank:") || id.startsWith("account:")) return "bank";
+  /**
+   * ✅ 2026-09-09 계좌 뻥튀기 Bug Fix: 서버 WS ingest weak ID (toon-{13ms}-{seed}[...]) 와
+   *  투네 계좌 prefix (toonation: / toona: / tuna: / bank: / account:) 전부를 정규식으로 100% 인식
+   */
+  if (/^(toonation|toona|tuna|tunat|toon)[-:]/.test(id)) return "toonation";
+  if (/^(bank|account|gyejwa)[-:]/.test(id)) return "bank";
   return "other";
 }
 

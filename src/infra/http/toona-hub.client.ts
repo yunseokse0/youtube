@@ -490,21 +490,20 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
   }
 
   /**
-   * ✅ 2026-09-09 Hotfix ⑳: 투네 WS 직접 ingest (server-ws 연결 active) 중인데 DIN 허브 폴러가 추가로
-   *  같은 후원을 toona 경로로 2중 넣어서 1건당 10만 → 20만 으로 2배 폭발하는 Bug 원천 봉쇄.
-   *  - 서버 WS 연결이 active(stopped=false·connected=true)면 polling pull을 skip → 오직 1경로만 유지
-   *  - 단, 관리자 명시적 복구(ignoreMinInterval=true)때는 유저 의도 존중해 허용
+   * ✅ 2026-09-09 Hotfix ⑳-2: 관리자 상태새로고침 버튼이 ignoreMinInterval=true 로 강제 호출시에도
+   *  투네 WS live면 폴링을 반드시 skip — 기존 "예외 허용" 때문에 중복 2배 폭발 Bug가 관리자 페이지 열어서
+   *  새로고침 누를때마다 계속 재현되던 허점 원천 봉쇄.
+   *  - WS가 죽어있을때만(stopped || !connected) 폴링 허용 → 과거 데이터 복구 필요시 WS를 끄고 폴링 돌리면 OK
+   *  - WS 죽이는 법: admin 페이지 → DIN 허브 모드 → 시그 재기전 끊기 / 연결 해제 버튼 클릭 후 폴링
    */
-  if (!opts?.ignoreMinInterval) {
-    try {
-      const { getToonationServerListenerStatus } = await import("@/infra/ws/toonation-listener");
-      const live = getToonationServerListenerStatus(uid);
-      if (live && !live.stopped && live.connected) {
-        lastDonationPullAt.set(uid, now);
-        return { ok: true, imported: 0, applied: 0, skipped: true };
-      }
-    } catch {}
-  }
+  try {
+    const { getToonationServerListenerStatus } = await import("@/infra/ws/toonation-listener");
+    const live = getToonationServerListenerStatus(uid);
+    if (live && !live.stopped && live.connected) {
+      lastDonationPullAt.set(uid, now);
+      return { ok: true, imported: 0, applied: 0, skipped: true };
+    }
+  } catch {}
 
   lastDonationPullAt.set(uid, now);
 

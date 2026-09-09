@@ -116,12 +116,15 @@ export function donorInferSourceKind(
     ext = String(d.externalId ?? d.rawHash ?? "").trim();
   }
   if (["toonation", "toona", "tuna", "tunat"].includes(provider)) return "toonation";
-  if (["bank", "sms", "account", "din_bank"].includes(provider)) return "bank";
+  if (["bank", "sms", "account", "din_bank", "gyejwa"].includes(provider)) return "bank";
   if (ext && /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(ext))
     return "toonation";
-  if (id.startsWith("toonation:") || id.startsWith("toona:") || id.startsWith("tuna:"))
-    return "toonation";
-  if (id.startsWith("bank:") || id.startsWith("account:")) return "bank";
+  /**
+   * ✅ 2026-09-09 계좌 뻥튀기 Bug Fix: 서버 WS ingest weak ID (toon-{13ms}-{seed}[...]) 와
+   *  투네 / 계좌 모든 prefix (toonation: / toona: / tuna: / bank: / account: / 등) 을 정규식으로 100% 인식
+   */
+  if (/^(toonation|toona|tuna|tunat|toon)[-:]/.test(id)) return "toonation";
+  if (/^(bank|account|gyejwa|sms|din_bank)[-:]/.test(id)) return "bank";
   if (["toon", "toonation", "tunat", "tuna", "투네", "튜나"].includes(target)) return "toonation";
   if (["account", "bank", "계좌", "은행"].includes(target)) return "bank";
   return "other";
