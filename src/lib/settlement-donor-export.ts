@@ -346,6 +346,38 @@ export function recordToMemberDonorsCsv(record: SettlementRecord, donors: Donor[
       .join(",")
   );
 
+  const perMemberSections: string[] = ["", "=== 멤버별 후원 리스트 ==="];
+  for (const m of getMembersForExport(record)) {
+    const memberDonors = donors.filter((d) => d.memberId === m.memberId);
+    if (memberDonors.length === 0) continue;
+    const memberTotal = memberDonors.reduce((s, d) => s + (Number(d.amount) || 0), 0);
+    const memberLabel = `${m.name}${m.realName ? `(${m.realName})` : ""}`;
+    perMemberSections.push("", `== [${memberLabel}] 후원 ${memberDonors.length}건 · 총 ${memberTotal.toLocaleString()}원 ==`);
+    const perDonor = aggregateMemberDonors(record, memberDonors);
+    perMemberSections.push(["후원자", "합계금액", "후원횟수", "계좌합", "투네합"].join(","));
+    for (const row of perDonor) {
+      perMemberSections.push(
+        [row.donorName, String(row.totalAmount), String(row.count), String(row.accountAmount), String(row.toonAmount)]
+          .map(csvEscape)
+          .join(",")
+      );
+    }
+    perMemberSections.push("", ["후원자", "금액", "채널", "후원시각", "메시지"].join(","));
+    for (const d of [...memberDonors].sort((a, b) => b.at - a.at)) {
+      perMemberSections.push(
+        [
+          (d.name || "무명").trim() || "무명",
+          String(Math.max(0, Number(d.amount) || 0)),
+          donorTargetLabel(d.target),
+          formatExportDateTime(d.at),
+          String(d.message || "").trim(),
+        ]
+          .map(csvEscape)
+          .join(",")
+      );
+    }
+  }
+
   return `\uFEFF${[
     "=== 후원 내역(건별) ===",
     detailHeader,
@@ -354,6 +386,7 @@ export function recordToMemberDonorsCsv(record: SettlementRecord, donors: Donor[
     "=== 멤버별·후원자별 합계 ===",
     summaryHeader,
     ...summaryRows,
+    ...perMemberSections,
   ].join("\r\n")}`;
 }
 
