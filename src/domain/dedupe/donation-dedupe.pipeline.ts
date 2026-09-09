@@ -21,6 +21,7 @@ import {
   isDonationAmountEligibleForHighSocietyTerritory,
   isDonorHsTerritoryIncluded,
 } from "@/lib/high-society";
+import { resolveEffectiveDonorTarget } from "@/domain/state-monolith.all";
 
 const isDonorExcludedFromDonationTotals = _excluded;
 export { isDonorExcludedFromDonationTotals };
@@ -186,7 +187,8 @@ export function mergeDonorRowFields<T extends MergeableDonor>(
         : String(preferred.name || preferred.donorName || "").length >=
           String(fallback.name || fallback.donorName || "").length;
   const bestNameSrc: T = usePrefForMeta ? preferred : fallback;
-  const bestTargetSrc: T = usePrefForMeta ? preferred : fallback;
+  /** target 은 bestMeta 와 별도로 donorInferSourceKind 신뢰도 (KIND_RELIABILITY) 순서를 1순위로 */
+  const bestTargetSrc: T = relPref >= relFall ? preferred : fallback;
   const bnsAny = bestNameSrc as any;
   const mergedNameRaw = String(
     bnsAny?.name || bnsAny?.donorName || bnsAny?.nickname || bnsAny?.displayName || ""
@@ -195,7 +197,29 @@ export function mergeDonorRowFields<T extends MergeableDonor>(
   const rawPrefTarget = String(preferred.target || "").trim();
   const rawFallTarget = String(fallback.target || "").trim();
   const targetBest = String(bestTargetSrc.target || "").trim();
-  const mergedTarget = finalFallbackTarget || targetBest || rawPrefTarget || rawFallTarget || undefined;
+  const candidateTarget =
+    (finalFallbackTarget && (finalFallbackTarget === "toon" || finalFallbackTarget === "account"))
+      ? finalFallbackTarget
+      : (targetBest && (targetBest === "toon" || targetBest === "account"))
+        ? targetBest
+        : (rawPrefTarget && (rawPrefTarget === "toon" || rawPrefTarget === "account"))
+          ? rawPrefTarget
+          : (rawFallTarget && (rawFallTarget === "toon" || rawFallTarget === "account"))
+            ? rawFallTarget
+            : undefined;
+  /** ✅ Hotfix ㉑-3: merge 에서 섞인 target 최종 1회 resolveEffectiveDonorTarget 으로 확정 (fallback=toon 보장) */
+  const mergedTarget: "toon" | "account" = (() => {
+    if (candidateTarget === "toon" || candidateTarget === "account") return candidateTarget;
+    const probe: Record<string, unknown> = {
+      id: fallback.id || preferred.id,
+      provider: (fbAny?.provider || pfAny?.provider) as unknown,
+      externalId: (fbAny?.externalId || pfAny?.externalId) as unknown,
+      target: candidateTarget,
+      name: mergedName || fbAny?.name || pfAny?.name,
+    };
+    const eff = resolveEffectiveDonorTarget(probe);
+    return eff === "account" ? "account" : "toon";
+  })();
 
   const fallbackMsg = String(fbAny?.message || fbAny?.memo || "").trim();
   const prefMsg = String(pfAny?.message || pfAny?.memo || "").trim();

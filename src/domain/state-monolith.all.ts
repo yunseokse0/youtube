@@ -1720,9 +1720,20 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
         memberId: String(x.memberId ?? ""),
         at: donorAtEpochMs(x as Donor) || Date.now(),
       };
-      const finalTarget =
-        resolveEffectiveDonorTarget(x) || target || resolveEffectiveDonorTarget(row);
-      if (finalTarget) row.target = finalTarget;
+      /**
+       * ✅ 2026-09-09 Hotfix ㉑-2 계좌 뻥튀기: normalize 단계에서 target을 1번만 최종 확정.
+       *  - 기존 3단 OR (targetRaw→infer→resolve) 중간에 weak id 'other' 오판이 account fallback 으로 새어나가던 허점 제거
+       *  - resolveEffectiveDonorTarget 는 Hotfix ㉑로 fallback=toon 이 보장됨 → 무조건 toon|account 2가지중 하나 반환
+       */
+      const effectiveTarget = resolveEffectiveDonorTarget({
+        ...x,
+        ...row,
+        target,
+        id: row.id,
+      } as Record<string, unknown>);
+      const finalTarget: DonorTarget =
+        (effectiveTarget === "account" || effectiveTarget === "toon") ? effectiveTarget : "toon";
+      row.target = finalTarget;
       const message = typeof x.message === "string" ? x.message.trim() : "";
       if (message) row.message = message;
       if (x.memberAutoAssigned === true) row.memberAutoAssigned = true;
