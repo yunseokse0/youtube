@@ -46,7 +46,6 @@ import {
   resolveDonorRankingsThemeColor,
   resolveDonorRankingsThemeNumber,
 } from "@/lib/donor-rankings-theme-resolve";
-import { splitOverlayListAtHalf } from "@/lib/utils";
 
 /** 4등+ 순위 숫자 기본: 흰색 + 검정 외곽선 (관리자 rankColor가 있으면 우선) */
 const RANK_NUMBER_FALLBACK = "#ffffff";
@@ -615,7 +614,7 @@ function RankingColumn({
   const outerClass = unified
     ? `relative z-[1] flex min-w-0 flex-1 flex-col overflow-visible ${
         showColumnDivider
-          ? "border-b border-solid border-r-0 md:border-b-0 md:border-r md:border-solid border-white/20"
+          ? "border-b border-solid border-r-0 md:border-b-0 md:border-r md:border-solid"
           : ""
       }`
     : "relative z-[1] w-full overflow-visible";
@@ -624,7 +623,18 @@ function RankingColumn({
   const panelIsVisible =
     Boolean(panelBgResolved.background) &&
     panelBgResolved.background !== "transparent";
-  const outerStyle: CSSProperties | undefined = { borderColor };
+  const colDivColor = showColumnDivider
+    ? (() => {
+        const resolved = backgroundWithOpacityFrac(borderColor || "#000000", 0.2);
+        return resolved.background || "rgba(0,0,0,0.2)";
+      })()
+    : undefined;
+  const outerStyle: CSSProperties = {
+    borderColor,
+    ...(showColumnDivider
+      ? { borderBottomColor: colDivColor, borderRightColor: colDivColor }
+      : {}),
+  };
 
   const headerOpacityFrac = unified
     ? panelFrac
@@ -708,11 +718,12 @@ function RankingColumn({
       </div>
       ) : (
       <div
-        className="relative overflow-hidden border-b border-white/20 px-4 py-2.5 text-center font-bold tracking-tight"
+        className="relative overflow-hidden border-b border-solid px-4 py-2.5 text-center font-bold tracking-tight"
         style={{
           color: titleColor,
           fontSize: `${Math.round(titleSize * 1.1)}px`,
           fontWeight: 700,
+          borderBottomColor: colDivColor || (backgroundWithOpacityFrac(borderColor || "#000000", 0.2).background || "rgba(0,0,0,0.2)"),
           ...titleOutline,
         }}
       >
@@ -775,7 +786,12 @@ export default function DonorRankingsOverlayPage() {
     sp.get("adminPreviewEmbed") === "1" || sp.get("hubPreview") === "1";
   /** 관리자 미리보기는 API 완료 전에도 저장·기본 테마를 즉시 적용 */
   const themeLive = ready || isAdminPreview;
-  const layoutDual = !isFullVertical && (sp.get("layout") || "").toLowerCase() === "dual";
+  /**
+   * ⚠️ 후원순위 모드는 오직 2가지만 존재:
+   *  1. COMPACT (기본) → 10위까지 통합 후원순위 1덩어리 (isFullVertical=false)
+   *  2. FULL (전체 세로) → 후원자 전체를 세로로 길게 (isFullVertical=true, /dr/full 또는 ?mode=full)
+   *  - dual (계좌/투네 별도 패널) · split(좌우2단) 모드는 사용자 요구에 따라 2026-09-09 삭제
+   */
   const adminPreviewTheme = useAdminPreviewDonorRankingsThemeOverride(isAdminPreview, userId);
   const savedTheme = {
     ...(state?.donorRankingsTheme || defaultState().donorRankingsTheme),
@@ -949,13 +965,6 @@ export default function DonorRankingsOverlayPage() {
     topN,
     isFullVertical,
   ]);
-  const unifiedHalf = useMemo(
-    () =>
-      isFullVertical
-        ? { left: unifiedTop, right: [] as DonorRankingRow[], split: false }
-        : splitOverlayListAtHalf(unifiedTop),
-    [unifiedTop, isFullVertical]
-  );
 
   useLayoutEffect(() => {
     if (!isFullVertical) {
@@ -1079,199 +1088,34 @@ export default function DonorRankingsOverlayPage() {
           </div>
         ) : null}
         {bodyImageEl && bodyPos === "abovePanel" ? bodyImageEl : null}
-        {layoutDual ? (
-          <>
-            {bodyImageEl && bodyPos === "belowTitle" ? bodyImageEl : null}
-            <div
-              className="relative"
-              style={showFrame ? { padding: frameInsetPx } : undefined}
-              data-donor-rankings-frame-wrap={showFrame ? "true" : undefined}
-            >
-              {showFrame ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={overlayCfg.frameUrl}
-                  alt=""
-                  className="pointer-events-none absolute inset-0 z-0 h-full w-full object-fill"
-                  style={{ opacity: frameOpacityFrac }}
-                  loading="eager"
-                  decoding="async"
-                />
-              ) : null}
-              <div
-                className={`relative z-[2] grid grid-cols-1 overflow-hidden md:grid-cols-2 md:gap-0 ${
-                  showFrame
-                    ? "rounded-none border-0 shadow-none"
-                    : "rounded-studio border border-solid"
-                }`}
-                style={{
-                  borderColor: showFrame ? "transparent" : borderColor,
-                  backgroundColor: "transparent",
-                  boxShadow: "none",
-                }}
-              >
-              <RankingColumn
-                title="계좌 후원 순위"
-                items={accountTop}
-                amountFormat={amountFormat}
-                headerBg={headerAccountBg}
-                panelBg={panelBg}
-                borderColor={borderColor}
-                titleSize={titleSize}
-                rowSize={rowSize}
-                rankSize={rankSize}
-                rankColor={rankColor}
-                nameColor={nameColor}
-                amountColor={amountColor}
-                titleColor={titleColor}
-                outlineColor={outlineColor}
-                outlineWidthPx={outlineWidthPx}
-                headerOpacity={overlayOpacity}
-                unified
-                showColumnDivider
-                panelOpacityFrac={overlayOpacityFrac}
-                rowEvenBg={rowEvenBg}
-                rowOddBg={rowOddBg}
-                disableMotion={hostObs}
-              />
-              <RankingColumn
-                title="투네 후원 순위"
-                items={toonTop}
-                suffix="캐시"
-                amountFormat={amountFormat}
-                headerBg={headerToonBg}
-                panelBg={panelBg}
-                borderColor={borderColor}
-                titleSize={titleSize}
-                rowSize={rowSize}
-                rankSize={rankSize}
-                rankColor={rankColor}
-                nameColor={nameColor}
-                amountColor={amountColor}
-                titleColor={titleColor}
-                outlineColor={outlineColor}
-                outlineWidthPx={outlineWidthPx}
-                headerOpacity={overlayOpacity}
-                unified
-                panelOpacityFrac={overlayOpacityFrac}
-                rowEvenBg={rowEvenBg}
-                rowOddBg={rowOddBg}
-                disableMotion={hostObs}
-              />
-              </div>
-            </div>
-            {bodyImageEl && bodyPos === "belowList" ? bodyImageEl : null}
-          </>
-        ) : (
+        <div
+          className="relative mx-auto max-w-[720px]"
+          style={showFrame ? { padding: frameInsetPx } : undefined}
+          data-donor-rankings-frame-wrap={showFrame ? "true" : undefined}
+        >
+          {showFrame ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={overlayCfg.frameUrl}
+              alt=""
+              className="pointer-events-none absolute inset-0 z-0 h-full w-full object-fill"
+              style={{ opacity: frameOpacityFrac }}
+              loading="eager"
+              decoding="async"
+            />
+          ) : null}
           <div
-            className={`relative mx-auto ${unifiedHalf.split ? "max-w-[1500px]" : "max-w-[720px]"}`}
-            style={showFrame ? { padding: frameInsetPx } : undefined}
-            data-donor-rankings-frame-wrap={showFrame ? "true" : undefined}
+            className={`relative z-[2] overflow-visible ${
+              showFrame
+                ? "rounded-none border-0 shadow-none"
+                : "rounded-studio border border-t border-r border-b border-l border-solid"
+            }`}
+            style={{
+              borderColor: showFrame ? "transparent" : borderColor,
+              backgroundColor: "transparent",
+              boxShadow: "none",
+            }}
           >
-            {showFrame ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={overlayCfg.frameUrl}
-                alt=""
-                className="pointer-events-none absolute inset-0 z-0 h-full w-full object-fill"
-                style={{ opacity: frameOpacityFrac }}
-                loading="eager"
-                decoding="async"
-              />
-            ) : null}
-            <div
-              className={`relative z-[2] overflow-visible ${
-                showFrame
-                  ? "rounded-none border-0 shadow-none"
-                  : "rounded-studio border border-solid"
-              }`}
-              style={{
-                borderColor: showFrame ? "transparent" : borderColor,
-                backgroundColor: "transparent",
-                boxShadow: "none",
-              }}
-            >
-            {unifiedHalf.split ? (
-              <>
-                <RankingColumn
-                  title={rankingTitle}
-                  items={[]}
-                  amountFormat={amountFormat}
-                  headerBg={headerUnifiedBg}
-                  panelBg={panelBg}
-                  borderColor={borderColor}
-                  titleSize={titleSize}
-                  rowSize={rowSize}
-                  rankSize={rankSize}
-                  rankColor={rankColor}
-                  nameColor={nameColor}
-                  amountColor={amountColor}
-                  titleColor={titleColor}
-                  outlineColor={outlineColor}
-                  outlineWidthPx={outlineWidthPx}
-                  headerOpacity={overlayOpacity}
-                  unified
-                  panelOpacityFrac={overlayOpacityFrac}
-                  rowEvenBg={rowEvenBg}
-                  rowOddBg={rowOddBg}
-                  disableMotion={hostObs}
-                  bodyImageBelowTitle={bodyPos === "belowTitle" ? bodyImageEl : null}
-                />
-                <div className="grid grid-cols-2">
-                  <RankingColumn
-                    title=""
-                    items={unifiedHalf.left}
-                    amountFormat={amountFormat}
-                    headerBg={headerUnifiedBg}
-                    panelBg={panelBg}
-                    borderColor={borderColor}
-                    titleSize={titleSize}
-                    rowSize={rowSize}
-                    rankSize={rankSize}
-                    rankColor={rankColor}
-                    nameColor={nameColor}
-                    amountColor={amountColor}
-                    titleColor={titleColor}
-                    outlineColor={outlineColor}
-                    outlineWidthPx={outlineWidthPx}
-                    headerOpacity={overlayOpacity}
-                    unified
-                    hideTitle
-                    showColumnDivider
-                    panelOpacityFrac={overlayOpacityFrac}
-                    rowEvenBg={rowEvenBg}
-                    rowOddBg={rowOddBg}
-                    disableMotion={hostObs}
-                  />
-                  <RankingColumn
-                    title=""
-                    items={unifiedHalf.right}
-                    amountFormat={amountFormat}
-                    headerBg={headerUnifiedBg}
-                    panelBg={panelBg}
-                    borderColor={borderColor}
-                    titleSize={titleSize}
-                    rowSize={rowSize}
-                    rankSize={rankSize}
-                    rankColor={rankColor}
-                    nameColor={nameColor}
-                    amountColor={amountColor}
-                    titleColor={titleColor}
-                    outlineColor={outlineColor}
-                    outlineWidthPx={outlineWidthPx}
-                    headerOpacity={overlayOpacity}
-                    unified
-                    hideTitle
-                    rankOffset={unifiedHalf.left.length}
-                    panelOpacityFrac={overlayOpacityFrac}
-                    rowEvenBg={rowEvenBg}
-                    rowOddBg={rowOddBg}
-                    disableMotion={hostObs}
-                    bodyImageBelowList={bodyPos === "belowList" ? bodyImageEl : null}
-                  />
-                </div>
-              </>
-            ) : (
             <RankingColumn
               title={rankingTitle}
               items={unifiedTop}
@@ -1297,10 +1141,8 @@ export default function DonorRankingsOverlayPage() {
               bodyImageBelowTitle={bodyPos === "belowTitle" ? bodyImageEl : null}
               bodyImageBelowList={bodyPos === "belowList" ? bodyImageEl : null}
             />
-            )}
-            </div>
           </div>
-        )}
+        </div>
         </div>
       </div>
       </div>
