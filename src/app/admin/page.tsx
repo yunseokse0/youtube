@@ -1433,14 +1433,6 @@ function AdminPageInner() {
   /** 정산 리셋 직후 GET/SSE·서버가져오기가 구 후원을 되살리지 않게 (성공 시 90초) */
   const SETTLEMENT_RESET_PROTECT_MS = 90_000;
   const settlementResetUntilRef = useRef(0);
-  // ==================== FixE: 2026-09-08 hotfix-6-10-7
-  // ✅ 유저 요청 정확히 구현: "후원 테스트 발송(테스트 이벤트 주입(투네)) 버튼 3초 debounce.
-  // - 위치: 버튼 onClick 자체에만 걸음 → 실제 후원(투네 WS / 뱅크 계좌 / DIN 허브) flow 와는 완전히 분리 →
-  //   투네에서 오고 계좌에서 오고 동일 시간 동일 금액 후원 = ID 달라서 2건 정상 집계!
-  // - dedup pipeline 에는 아무런 영향 없음 (ID ONLY rule 그대로 유지)
-  const INJECT_TEST_EVENT_DEBOUNCE_MS = 3_000; // 유저 요청 3초 제한
-  const lastInjectTestEventAtRef = useRef(0);
-  // ==================== End FixE refs ====================
   /** 방송 종료(정산 생성) 직후 시각 복구·빈 원격 동기화가 후원을 지우지 않게 */
   const settlementSnapshotUntilRef = useRef(0);
   const [actionSheet, setActionSheet] = useState<{ open: boolean; title: string; desc: string; confirmText: string; danger: boolean }>({
@@ -8471,19 +8463,7 @@ function AdminPageInner() {
   }, [fetchUnmatchedEvents, user?.id]);
 
   const injectToonationTestEvent = useCallback(async () => {
-    // FixE v6-10-7: 유저 요청 "후원 테스트 발송 3초 제한"
-    // dedup pipeline 수정이 아닌 버튼 onClick 자체에만 3초 debounce 걸어서
-    // 투네/계좌 동시 후원 (ID 다른 정상 케이스) 는 2건 정상 집계 유지!
     const now = Date.now();
-    const last = lastInjectTestEventAtRef.current || 0;
-    const remainMs = INJECT_TEST_EVENT_DEBOUNCE_MS - (now - last);
-    if (remainMs > 0) {
-      pushToonationLog(
-        `테스트 발송 3초 제한: ${Math.ceil(remainMs / 1000)}초 후에 다시 클릭해주세요. (같은 버튼 연타 차단)`
-      );
-      return;
-    }
-    lastInjectTestEventAtRef.current = now;
     const amount = parseAmount(donorAmount || "10000");
     const name = (donorName || "투네테스트").trim();
     if (amount <= 0) return;

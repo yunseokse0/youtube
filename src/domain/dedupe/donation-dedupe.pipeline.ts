@@ -142,19 +142,19 @@ export function mergeDonorRowFields<T extends MergeableDonor>(
    */
   const FALLBACK_PRIMARY_FIELDS = [
     "id", "donorKey", "primaryKey", "externalId", "provider",
-    "amount", "at", "createdAt", "ts",
+    "at", "createdAt", "ts",
     "message", "memo", "rawMessage",
     "donorName", "nickname", "displayName", "name",
-    "formula", "contributionPoints",
+    "formula",
     "memberId", "teamId", "battleId", "battleTeamId",
     "bankAccountBank", "bankAccountHolder", "bankAccountNumber",
     "settlementLabel", "groupSplitSourceId",
-    /** ✅ 2026-09-07 Fix ⑫-a: 사용자 이름 변경 메타 필드 merge 시 보존
-     *  사용자가 관리자 페이지에서 후원자 이름 수정시 donor 객체에 donorNameEditAt / donorNameLastEditedBy="user" 2가지 메타가 저장됨
-     *  이전: FALLBACK_PRIMARY_FIELDS 목록에 없어서 매 merge 마다 소실 → 1분뒤 fetch polling 돌아오면 donorNameLastEditedBy 가 undefined 가 되어버림
-     *  변경: PRIMARY FIELD 로 등록 → fallback (기존 state 값) 에 있으면 100% 유지 → 절대 소실 안됨!
-     */
     "donorNameEditAt", "donorNameLastEditedBy",
+    /** ✅ 2026-09-08 Hotfix XX-amount: amount · contributionPoints 는 ⑥-4 FALLBACK_PRIMARY_FIELDS 에서 의도적으로 제외.
+     *  amount 는 아래 블록에서 "ID가 다른 2 donor 를 병합할 때만 합산, ID가 같으면 (같은 이벤트 재동기화) fallback 값을 유지"
+     *  라는 별도의 명시적인 정책을 사용하기 때문.
+     *  FALLBACK_PRIMARY_FIELDS 에 넣어버리면 합산이 필요한 경우에도 항상 fallback.amount 로 고정되어
+     *  dedup bucket merge 시 amount가 전혀 증가하지 않는 문제가 발생함. */
   ] as const;
   function primaryValue<K extends (typeof FALLBACK_PRIMARY_FIELDS)[number]>(key: K): unknown {
     const fb = (fallback as any)?.[key];
@@ -231,10 +231,43 @@ export function mergeDonorRowFields<T extends MergeableDonor>(
     fallback.hsPushDir || !preferred.hsPushDir
       ? { ...baseMerge, hsPushDir: fallback.hsPushDir || baseMerge.hsPushDir }
       : baseMerge;
-  const mergedAmount = Math.max(
-    0,
-    Math.round(Number(fallback.amount ?? preferred.amount) || 0)
-  );
+  /**
+   * ✅ 2026-09-08 Hotfix XX-amount: amount / contributionPoints 병합 규칙 재정의 (500ms 50건 burst amount 폭증 Fix)
+   *  규칙:
+   *  - preferred 와 fallback 의 normalizeDonationEventId 가 100% 일치하는 경우
+   *    → 같은 외부 후원 이벤트를 서로 다른 경로로 재동기화 하는 상황 이므로
+   *    → amount 를 합산하지 않고 fallback.amount (기존 저장값) 을 100% 유지 (⑥-4 원칙)
+   *  - ID 가 서로 다른 경우
+   *    → 진짜 "2건의 후원" 을 1 donor bucket 으로 합치는 burst/연타 케이스 이므로
+   *    → amount + contributionPoints 를 "두 값의 합" 으로 계산해서 1건의 donor 로 집계
+   *  결과:
+   *   ① SSE/폴링 재동기화 (ID 같음) → 금액 합산 NO → 기존 깜빡임 방지 원칙 유지 (amount 폭증 차단)
+   *   ② 0.5초 burst / 동일 donor 연타 (ID 다름, 2차 안전망 merge) → 금액 합산 YES → 1 donor row 로 정상 집계
+   */
+  const idPref = String((preferred as { id?: string }).id || "").trim();
+  const idFall = String((fallback as { id?: string }).id || "").trim();
+  const normIdPref = idPref ? normalizeDonationEventId(idPref) || idPref : "";
+  const normIdFall = idFall ? normalizeDonationEventId(idFall) || idFall : "";
+  const sameEventId = normIdPref && normIdFall && normIdPref === normIdFall;
+
+  let mergedAmount = Number((withPush as { amount?: number }).amount) || 0;
+  let mergedCp = Number((withPush as { contributionPoints?: number }).contributionPoints || 0);
+  if (!sameEventId) {
+    /** ② ID가 다른 진짜 별개 후원 → 합산 처리 */
+    mergedAmount = Math.max(0, Math.round(Number(fallback.amount || 0) + Number(preferred.amount || 0)));
+    const cpFb = Number((fallback as { contributionPoints?: number }).contributionPoints || 0);
+    const cpPf = Number((preferred as { contributionPoints?: number }).contributionPoints || 0);
+    mergedCp = cpFb + cpPf > 0 ? Math.max(0, Math.round(cpFb + cpPf)) : 0;
+  } else if (!mergedAmount && Number(fallback.amount || 0) > 0) {
+    /** ① ID가 같은 경우 FALLBACK_PRIMARY_FIELDS에 amount가 없으므로 fallback amount를 명시적으로 backfill (⑥-4 원칙) */
+    mergedAmount = Math.max(0, Math.round(Number(fallback.amount || 0)));
+    const cpFb = Number((fallback as { contributionPoints?: number }).contributionPoints || 0);
+    if (cpFb > 0) mergedCp = cpFb;
+  } else if (!mergedAmount && Number(preferred.amount || 0) > 0) {
+    mergedAmount = Math.max(0, Math.round(Number(preferred.amount || 0)));
+  }
+  const withAmount: any = { ...withPush, amount: mergedAmount };
+  if (mergedCp > 0) withAmount.contributionPoints = mergedCp;
   const ineligible = !isDonationAmountEligibleForHighSocietyTerritory(mergedAmount);
   const territoryFlag =
     ineligible || fallback.hsTerritoryExcluded === true
@@ -247,7 +280,7 @@ export function mergeDonorRowFields<T extends MergeableDonor>(
             ? true
             : false;
   return {
-    ...withPush,
+    ...withAmount,
     ...(preferred.donationExcluded || fallback.donationExcluded
       ? { donationExcluded: true as const }
       : {}),
@@ -452,13 +485,14 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
    *  두가지 서로 다른 ID 발급 경로가 동일 externalId 에 대해 서로 다른 format 을 내뱉어
    *   · 실시간 SSE/Webhook:  `toonation:${externalId}`  →  `toonation:12345`
    *   · B-mode 1분 fetch:   `${provider}:din:${externalId}` → `toonation:din:12345`
-   *  이전 ⑥-6 ID ONLY RULE 은 format 이 다르면 ID 가 다르다고 오판 → 진짜 같은 후원이 2행으로 적재되었음.
+   *  normalizeDonationEventId 가 provider/din prefix 를 전부 제거해 externalId 본체만 남기므로,
+   *  경로에 상관없이 진짜 같은 후원은 Rule 1에서 100% 정규화 매치되어 merge 됨.
    *
-   *  Fix 적용된 merge 규칙 (OR):
-   *   1. normalizeDonationEventId 로 provider/din prefix 전부 제거하고 비교 → 동일 externalId 이면 무조건 merge
-   *   2. norm 결과가 달라도 4가지 전부 AND 로 만족 → 무조건 merge (2차 안전망):
-   *        donor 완전일치 + amount 완전일치 + atMs 차이 ≤ 1000ms + message 완전일치
-   *   3. 그 외 모든 경우 → return false (별개 후원으로 "있는 그대로" 개별 row 유지)
+   * ✅ 2026-09-08 Hotfix XX-rule2: "Rule 2 (4가지 AND 조건 2차 안전망)"을 완전 삭제.
+   *  - 기존 Rule 2 는 ⑥-6 "ID ONLY RULE" 을 위반하여, ID가 완전히 다른 20건의 burst 후원을
+   *    "동일 donor · 동일 금액 · 동일 1초 · 동일 메시지" 라는 이유로 거짓 merge 시키는 Bug 원인.
+   *  - SSE/Webhook + B-mode 이중 발급 중복은 Rule 1 의 normalizeDonationEventId 만으로도
+   *    100% 커버되므로, Rule 2 는 순기능 없이 오탐만 유발 → 제거 결정.
    */
   function allowMergeByIdOnly(prev: MergeableDonor, incoming: MergeableDonor): boolean {
     const idA = String(prev.id || "").trim();
@@ -467,64 +501,6 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
       const normA = normalizeDonationEventId(idA) || idA;
       const normB = normalizeDonationEventId(idB) || idB;
       if (normA === normB) return true;
-    }
-
-    // 2차 안전망: ID 불일치여도 동일 donor + 동일 amount + 동일 at 1초 + 동일 msg → merge 허용
-    /**
-     * ✅ 2026-09-07 Fix ⑨⑩⑪ (Issue #2 타입 이중발급 70% 패턴 전부 해결!)
-     * [Fix ⑨ donorName 필드 Bug] 이전: donor 이름을 displayName || name 으로만 읽음 → 실제 Donor/DonationEvent 객체는 donorName 필드로 값이 들어옴! → donorA="" 빈문자열 → 2차 안전망 첫 조건부터 fail
-     *                         변경: donorName 을 최우선 참조 → donorName || displayName || name || "" 순서
-     * [Fix ⑩ at=ISO string NaN Bug] 이전: at = ISO 문자열 "2026-09-07T..." 인데 Number() = NaN → NaN > 0 = false → atMs 비교 아예 fail
-     *                       변경: parseAtMs() 유틸로 typeof string 이면 Date.parse() 로 ms 숫자 변환 → 정상 atMs 비교!
-     * [Fix ⑪ target/대상 필드 판단 제외] DIN 허브에서 동일 후원을 투네 + 계좌 2행 INSERT 해서 target(대상/투네/계좌) 만 다르게 오는것을 "다른 후원" 으로 오판하면 안됨 → target 은 merge 판단 조건에 완전 배제 (donor/amt/at/msg 4가지만 AND 비교)
-     */
-    function parseAtMs(v: number | string | undefined): number {
-      if (v === undefined || v === null || v === "") return 0;
-      if (typeof v === "number") {
-        const r = Math.round(v);
-        return Number.isFinite(r) ? r : 0;
-      }
-      if (typeof v === "string") {
-        // ISO string 이면 Date.parse 로 ms 변환
-        let p = Date.parse(v);
-        if (!Number.isFinite(p) || p === 0) {
-          // 숫자로만 구성된 문자열이면 direct Number()
-          if (/^\d+$/.test(v) || /^\d+\.\d+$/.test(v)) p = Math.round(Number(v));
-        }
-        return Number.isFinite(p) ? p : 0;
-      }
-      return 0;
-    }
-    const dA = prev as unknown as {
-      donorName?: string;
-      displayName?: string;
-      name?: string;
-      amount?: number;
-      at?: number | string;
-      message?: string;
-    };
-    const dB = incoming as unknown as {
-      donorName?: string;
-      displayName?: string;
-      name?: string;
-      amount?: number;
-      at?: number | string;
-      message?: string;
-    };
-    const donorA = normalizeDonorNameKey(String(dA.donorName || dA.displayName || dA.name || ""));
-    const donorB = normalizeDonorNameKey(String(dB.donorName || dB.displayName || dB.name || ""));
-    if (donorA && donorA === donorB) {
-      const amtA = Math.round(Number(dA.amount || 0));
-      const amtB = Math.round(Number(dB.amount || 0));
-      if (amtA > 0 && amtA === amtB) {
-        const atA = parseAtMs(dA.at);
-        const atB = parseAtMs(dB.at);
-        if (atA > 0 && atB > 0 && Math.abs(atA - atB) <= 1_000) {
-          const mA = String(dA.message || "").replace(/\s+/g, "").toLowerCase();
-          const mB = String(dB.message || "").replace(/\s+/g, "").toLowerCase();
-          if (mA === mB) return true;
-        }
-      }
     }
     return false;
   }
@@ -769,7 +745,6 @@ export function isDuplicateDonationEvent(
     const donorIdNorm = normalizeDonationEventId(donorId);
     const eventIdNorm = normalizeDonationEventId(eventId);
     if (donorIdNorm && eventIdNorm && donorIdNorm === eventIdNorm) return true;
-    if (donorRowDedupeKey(d) === probeKey) return true;
     if (donorId === eventId || donorId === baseId) return true;
     if (baseId && normalizeDonationEventId(donorId) === baseId) return true;
     if (

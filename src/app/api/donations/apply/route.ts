@@ -14,6 +14,7 @@ import { isOk } from "@/domain/types/result";
 import { persistDonationApplyLikeToonation } from "@/lib/donation/persist-donation-like-toon";
 import type { DonationEvent } from "@/lib/donation/types";
 import { normalizeDonorsArray } from "@/lib/state";
+import { runExclusivePerUser } from "@/lib/per-user-mutex";
 
 type ApplyBody = {
   donorName?: string;
@@ -104,103 +105,112 @@ async function handleApplyPostInner(req: Request): Promise<Response> {
   if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
   const userId = writeUid.userId;
 
-  const body = (await req.json().catch(() => null)) as ApplyBody | null;
-  if (!body || typeof body !== "object") {
-    return new Response(JSON.stringify({ error: "invalid_body" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  /** Fix ⑱-Apply: PerUser Mutex 직렬화 (同 user 50건 Burst → Lost Update 防)
+   *  HANDLER_TIMEOUT_MS=25000 보다 짧은 22000ms 內 반드시 종료 (else MutexTimeout reject)
+   */
+  return runExclusivePerUser(
+    userId,
+    async () => {
+      const body = (await req.json().catch(() => null)) as ApplyBody | null;
+      if (!body || typeof body !== "object") {
+        return new Response(JSON.stringify({ error: "invalid_body" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
-  const defaultTarget = body.target === "toon" ? "toon" : "account";
-  const rows =
-    Array.isArray(body.items) && body.items.length > 0
-      ? body.items
-      : [body];
+      const defaultTarget = body.target === "toon" ? "toon" : "account";
+      const rows =
+        Array.isArray(body.items) && body.items.length > 0
+          ? body.items
+          : [body];
 
-  const aliases = await readDonationAliases(userId);
-  let state = await loadAppStateForUserId(userId);
-  if (!state) {
-    return new Response(
-      JSON.stringify({ error: "state_unavailable", reason: "kv_down", retry: true }),
-      { status: 503, headers: { "Content-Type": "application/json" } }
-    );
-  }
-  const appliedEvents: DonationEvent[] = [];
-  let lastEvent: DonationEvent | null = null;
-
-  for (const row of rows) {
-    const event = buildBankEvent(row, defaultTarget);
-    if (!event) continue;
-    if (isDuplicateDonationEvent(state, event)) {
-      appliedEvents.push({ ...event, status: "processed" });
-      lastEvent = event;
-      continue;
-    }
-    const result = applyDonationToAppState(state, event, aliases);
-    if (!result.ok) {
-      if (result.reason === "paused") {
+      const aliases = await readDonationAliases(userId);
+      let state = await loadAppStateForUserId(userId);
+      if (!state) {
         return new Response(
-          JSON.stringify({
-            error: "high_society_paused",
-            applied: appliedEvents.length,
-          }),
-          { status: 423, headers: { "Content-Type": "application/json" } }
+          JSON.stringify({ error: "state_unavailable", reason: "kv_down", retry: true }),
+          { status: 503, headers: { "Content-Type": "application/json" } }
         );
       }
+      const appliedEvents: DonationEvent[] = [];
+      let lastEvent: DonationEvent | null = null;
+
+      for (const row of rows) {
+        const event = buildBankEvent(row, defaultTarget);
+        if (!event) continue;
+        if (isDuplicateDonationEvent(state, event)) {
+          appliedEvents.push({ ...event, status: "processed" });
+          lastEvent = event;
+          continue;
+        }
+        const result = applyDonationToAppState(state, event, aliases);
+        if (!result.ok) {
+          if (result.reason === "paused") {
+            return new Response(
+              JSON.stringify({
+                error: "high_society_paused",
+                applied: appliedEvents.length,
+              }),
+              { status: 423, headers: { "Content-Type": "application/json" } }
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              error: result.reason || "apply_failed",
+              applied: appliedEvents.length,
+            }),
+            { status: 422, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        state = result.state;
+        lastEvent = result.event;
+        appliedEvents.push({ ...result.event, status: "processed" });
+      }
+
+      if (appliedEvents.length === 0 || !lastEvent) {
+        return new Response(JSON.stringify({ error: "no_valid_items" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      /** 투네와 동일: apply 후 Redis·SSE 한 번에 (일괄은 메모리 합산 후 1회 저장) */
+      const persisted = await persistDonationApplyLikeToonation(userId, state, lastEvent);
+      if (!persisted.ok) {
+        return new Response(JSON.stringify({ error: "persist_failed", applied: 0 }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      /** TR-7.1: 4단계 pipeline 경유 재링크 (실패시 fallback으로 legacy 호출 회귀0 방지 */
+      const assembleRes = await assembleStateAfterDonationEvent(persisted.state!, "apply", {
+        kind: "apply",
+        previousState: state,
+      });
+      const repaired = isOk(assembleRes)
+        ? assembleRes.value
+        : syncAndRepairMemberTotals(persisted.state!, state);
+
       return new Response(
         JSON.stringify({
-          error: result.reason || "apply_failed",
-          applied: appliedEvents.length,
+          ok: true,
+          updatedAt: repaired.updatedAt,
+          donorRankingsUpdatedAt: repaired.donorRankingsUpdatedAt,
+          donorsCount: normalizeDonorsArray(repaired.donors).length,
+          applied: appliedEvents,
+          state: repaired,
         }),
-        { status: 422, headers: { "Content-Type": "application/json" } }
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store, max-age=0",
+          },
+        }
       );
-    }
-    state = result.state;
-    lastEvent = result.event;
-    appliedEvents.push({ ...result.event, status: "processed" });
-  }
-
-  if (appliedEvents.length === 0 || !lastEvent) {
-    return new Response(JSON.stringify({ error: "no_valid_items" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  /** 투네와 동일: apply 후 Redis·SSE 한 번에 (일괄은 메모리 합산 후 1회 저장) */
-  const persisted = await persistDonationApplyLikeToonation(userId, state, lastEvent);
-  if (!persisted.ok) {
-    return new Response(JSON.stringify({ error: "persist_failed", applied: 0 }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  /** TR-7.1: 4단계 pipeline 경유 재링크 (실패시 fallback으로 legacy 호출 회귀0 방지 */
-  const assembleRes = await assembleStateAfterDonationEvent(persisted.state!, "apply", {
-    kind: "apply",
-    previousState: state,
-  });
-  const repaired = isOk(assembleRes)
-    ? assembleRes.value
-    : syncAndRepairMemberTotals(persisted.state!, state);
-
-  return new Response(
-    JSON.stringify({
-      ok: true,
-      updatedAt: repaired.updatedAt,
-      donorRankingsUpdatedAt: repaired.donorRankingsUpdatedAt,
-      donorsCount: normalizeDonorsArray(repaired.donors).length,
-      applied: appliedEvents,
-      state: repaired,
-    }),
-    {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store, max-age=0",
-      },
-    }
+    },
+    { timeoutMs: 22_000 }
   );
 }

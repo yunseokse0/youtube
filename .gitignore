@@ -36,7 +36,9 @@ deploy-credentials.json
 
 # IDE & temp repro scripts
 .trae/
-_tmp_*.js
-_tmp_*.mjs
-_tmp_*.ts
+_tmp_*
 result/evidence/
+result/*.log
+result/burst-*.log
+result/mixed-*.log
+src/__tests__/
