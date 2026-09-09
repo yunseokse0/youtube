@@ -88,40 +88,21 @@ export function repairSettlementDonorTimestamps(
   return repairDonorTimestamps(donors, opts);
 }
 
-/** 엑셀/CSV 내보내기 직전 — 최신 daily log·후원 목록으로 시각 재보정 · message 누락시 referenceDonors+dailyLog에서 복구 */
+/** 엑셀/CSV 내보내기 직전 — 최신 daily log·후원 목록으로 시각 재보정 · message 누락시 3중 fallback 으로 복구 */
 export function donorsForSettlementExport(
   record: SettlementRecord,
   donors: Donor[],
   dailyLog?: Record<string, DailyLogEntry[]>,
   referenceDonors?: Donor[]
 ): Donor[] {
-  const messageById = new Map<string, string>();
-  for (const d of referenceDonors || []) {
-    const id = String(d.id || "").trim();
-    const msg = String(d.message || "").trim();
-    if (id && msg) messageById.set(id, msg);
-  }
-  if (dailyLog) {
-    for (const entries of Object.values(dailyLog)) {
-      if (!Array.isArray(entries)) continue;
-      for (const entry of entries) {
-        for (const d of entry.donors || []) {
-          const id = String(d.id || "").trim();
-          const msg = String(d.message || "").trim();
-          if (id && msg && !messageById.has(id)) messageById.set(id, msg);
-        }
-      }
-    }
-  }
+  const maps = buildDonorMessageFallbackMaps(dailyLog, referenceDonors);
   const repaired = repairSettlementDonorTimestamps(donors, {
     dailyLog,
     referenceDonors,
     settlementCreatedAt: record.createdAt,
   });
   return repaired.map((d) => {
-    const id = String(d.id || "").trim();
-    const baseMessage = String(d.message || "").trim();
-    const message = baseMessage || (id ? messageById.get(id) : "") || "";
+    const message = resolveDonorMessageFromMaps(d, maps);
     return {
       ...d,
       name: applyTemporarySettlementDonorAlias(record, d.name || "무명"),
@@ -130,30 +111,68 @@ export function donorsForSettlementExport(
   });
 }
 
-/** 정산 시점 후원 스냅샷 기준 · 없으면 해당 날짜 daily log에서 복원 · message 누락시 referenceDonors+dailyLog로 복구 */
+type DonorMessageFallbackMaps = {
+  byId: Map<string, string>;
+  byNameAmountAt: Map<string, string>;
+  byNameAmount: Map<string, string>;
+};
+
+function buildDonorMessageFallbackMaps(
+  dailyLog: Record<string, DailyLogEntry[]> | undefined,
+  referenceDonors: Donor[] | undefined
+): DonorMessageFallbackMaps {
+  const byId = new Map<string, string>();
+  const byNameAmountAt = new Map<string, string>();
+  const byNameAmount = new Map<string, string>();
+
+  const register = (d: { id?: string | number; name?: string; amount?: string | number; at?: string | number; message?: string }) => {
+    const msg = String(d.message || "").trim();
+    if (!msg) return;
+    const id = String(d.id || "").trim();
+    if (id && !byId.has(id)) byId.set(id, msg);
+    const name = String(d.name || "무명").replace(/\s+/g, "") || "무명";
+    const amount = Math.max(0, Math.round(Number(d.amount) || 0));
+    const at = donorAtEpochMs(d as Donor);
+    const naa = `${name}\0${amount}\0${at}`;
+    if (!byNameAmountAt.has(naa)) byNameAmountAt.set(naa, msg);
+    const na = `${name}\0${amount}`;
+    if (!byNameAmount.has(na)) byNameAmount.set(na, msg);
+  };
+
+  for (const d of referenceDonors || []) register(d);
+  if (dailyLog) {
+    for (const entries of Object.values(dailyLog)) {
+      if (!Array.isArray(entries)) continue;
+      for (const entry of entries) {
+        for (const d of entry.donors || []) register(d);
+      }
+    }
+  }
+  return { byId, byNameAmountAt, byNameAmount };
+}
+
+function resolveDonorMessageFromMaps(d: Donor, maps: DonorMessageFallbackMaps): string {
+  const base = String(d.message || "").trim();
+  if (base) return base;
+  const id = String(d.id || "").trim();
+  if (id && maps.byId.has(id)) return maps.byId.get(id)!;
+  const name = String(d.name || "무명").replace(/\s+/g, "") || "무명";
+  const amount = Math.max(0, Math.round(Number(d.amount) || 0));
+  const at = donorAtEpochMs(d);
+  const keyNaa = `${name}\0${amount}\0${at}`;
+  if (maps.byNameAmountAt.has(keyNaa)) return maps.byNameAmountAt.get(keyNaa)!;
+  const keyNa = `${name}\0${amount}`;
+  if (maps.byNameAmount.has(keyNa)) return maps.byNameAmount.get(keyNa)!;
+  return "";
+}
+
+/** 정산 시점 후원 스냅샷 기준 · 없으면 해당 날짜 daily log에서 복원 · message 누락시 referenceDonors+dailyLog로 3중 복구 */
 export function resolveSettlementDonors(
   record: SettlementRecord,
   dailyLog?: Record<string, DailyLogEntry[]>,
   referenceDonors?: Donor[]
 ): Donor[] {
-  const messageById = new Map<string, string>();
-  for (const d of referenceDonors || []) {
-    const id = String(d.id || "").trim();
-    const msg = String(d.message || "").trim();
-    if (id && msg) messageById.set(id, msg);
-  }
-  if (dailyLog) {
-    for (const entries of Object.values(dailyLog)) {
-      if (!Array.isArray(entries)) continue;
-      for (const entry of entries) {
-        for (const d of entry.donors || []) {
-          const id = String(d.id || "").trim();
-          const msg = String(d.message || "").trim();
-          if (id && msg && !messageById.has(id)) messageById.set(id, msg);
-        }
-      }
-    }
-  }
+  const maps = buildDonorMessageFallbackMaps(dailyLog, referenceDonors);
   const fromRecord = record.donors && record.donors.length > 0 ? record.donors : [];
   let donors: Donor[];
   if (fromRecord.length > 0) {
@@ -179,12 +198,10 @@ export function resolveSettlementDonors(
     referenceDonors,
     settlementCreatedAt: record.createdAt,
   });
-  if (messageById.size === 0) return repaired;
+  const anyMapEmpty = maps.byId.size === 0 && maps.byNameAmountAt.size === 0 && maps.byNameAmount.size === 0;
+  if (anyMapEmpty) return repaired;
   return repaired.map((d) => {
-    const id = String(d.id || "").trim();
-    const baseMessage = String(d.message || "").trim();
-    if (baseMessage) return d;
-    const restored = id ? messageById.get(id) : "";
+    const restored = resolveDonorMessageFromMaps(d, maps);
     if (!restored) return d;
     return { ...d, message: restored };
   });
@@ -200,28 +217,11 @@ export function seedSettlementDonorsForEdit(
   referenceDonors?: Donor[]
 ): Donor[] {
   const existing = resolveSettlementDonors(record, dailyLog, referenceDonors);
-  const messageById = new Map<string, string>();
-  for (const d of referenceDonors || []) {
-    const id = String(d.id || "").trim();
-    const msg = String(d.message || "").trim();
-    if (id && msg) messageById.set(id, msg);
-  }
-  if (dailyLog) {
-    for (const entries of Object.values(dailyLog)) {
-      if (!Array.isArray(entries)) continue;
-      for (const entry of entries) {
-        for (const d of entry.donors || []) {
-          const id = String(d.id || "").trim();
-          const msg = String(d.message || "").trim();
-          if (id && msg && !messageById.has(id)) messageById.set(id, msg);
-        }
-      }
-    }
-  }
+  const maps = buildDonorMessageFallbackMaps(dailyLog, referenceDonors);
   if (existing.length > 0) {
     return existing.map((d) => {
       const id = String(d.id || "").trim() || `d_seed_${d.memberId}_${d.at}`;
-      const message = String(d.message || "").trim() || messageById.get(id) || "";
+      const message = resolveDonorMessageFromMaps(d, maps);
       const ms = donorAtEpochMs(d);
       return {
         ...d,
