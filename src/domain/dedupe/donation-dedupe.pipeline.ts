@@ -502,7 +502,23 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
       const normB = normalizeDonationEventId(idB) || idB;
       if (normA === normB) return true;
     }
-    return false;
+    const aWeak = !idA || isWeakToonationDonorId(idA);
+    const bWeak = !idB || isWeakToonationDonorId(idB);
+    if (aWeak || bWeak) return false;
+    const extA = String(prev.externalId || "").trim();
+    const extB = String(incoming.externalId || "").trim();
+    if (!extA || !extB) return false;
+    if (extA.toLowerCase() !== extB.toLowerCase()) return false;
+    const nameA = normalizeDonorNameKey(prev.name ?? prev.donorName);
+    const nameB = normalizeDonorNameKey(incoming.name ?? incoming.donorName);
+    if (!nameA || !nameB || nameA !== nameB) return false;
+    const amountA = Math.max(0, Math.round(Number(prev.amount) || 0));
+    const amountB = Math.max(0, Math.round(Number(incoming.amount) || 0));
+    if (amountA <= 0 || amountA !== amountB) return false;
+    const atA = donorAtEpochMs(prev);
+    const atB = donorAtEpochMs(incoming);
+    if (!atA || !atB) return false;
+    return Math.abs(atA - atB) <= DONATION_NEAR_DUP_WINDOW_MS;
   }
 
   const MAX_BUCKET_SCAN = 200;

@@ -44,6 +44,7 @@ export type ToonationServerListenerStatus = {
   alertboxUrl: string;
   ownerName?: string;
   connected: boolean;
+  stopped: boolean;
   wsPayload?: string;
   lastEventAt?: number;
   lastDonationAt?: number;
@@ -165,6 +166,7 @@ function statusFromConn(conn: ActiveConnection): ToonationServerListenerStatus {
     alertboxUrl: conn.alertboxUrl,
     ownerName: conn.ownerName || "",
     connected: conn.connected,
+    stopped: conn.stopped,
     wsPayload: conn.wsPayload,
     lastEventAt: conn.lastEventAt,
     lastDonationAt: conn.lastDonationAt,
@@ -526,6 +528,7 @@ export async function syncToonationServerListener(
       alertboxUrl: url,
       ownerName: String(ownerName || "").trim(),
       connected: false,
+      stopped: true,
       updatedAt: Date.now(),
     };
   }
@@ -555,6 +558,7 @@ export async function getToonationListenerStatusForUser(userId: string): Promise
       alertboxUrl: "",
       ownerName: "",
       connected: false,
+      stopped: true,
       lastEventAt: ingestMeta?.lastEventAt,
       lastDonationAt: ingestMeta?.lastDonationAt,
       updatedAt: Date.now(),
@@ -566,6 +570,7 @@ export async function getToonationListenerStatusForUser(userId: string): Promise
     alertboxUrl: saved.alertboxUrl,
     ownerName: saved.ownerName || "",
     connected: false,
+    stopped: !saved.enabled,
     lastEventAt: ingestMeta?.lastEventAt,
     lastDonationAt: ingestMeta?.lastDonationAt,
     updatedAt: saved.updatedAt,

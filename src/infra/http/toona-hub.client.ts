@@ -488,6 +488,24 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
   if (!opts?.ignoreMinInterval && now - last < DONATION_PULL_MIN_INTERVAL_MS) {
     return { ok: true, imported: 0, applied: 0, skipped: true };
   }
+
+  /**
+   * ✅ 2026-09-09 Hotfix ⑳: 투네 WS 직접 ingest (server-ws 연결 active) 중인데 DIN 허브 폴러가 추가로
+   *  같은 후원을 toona 경로로 2중 넣어서 1건당 10만 → 20만 으로 2배 폭발하는 Bug 원천 봉쇄.
+   *  - 서버 WS 연결이 active(stopped=false·connected=true)면 polling pull을 skip → 오직 1경로만 유지
+   *  - 단, 관리자 명시적 복구(ignoreMinInterval=true)때는 유저 의도 존중해 허용
+   */
+  if (!opts?.ignoreMinInterval) {
+    try {
+      const { getToonationServerListenerStatus } = await import("@/infra/ws/toonation-listener");
+      const live = getToonationServerListenerStatus(uid);
+      if (live && !live.stopped && live.connected) {
+        lastDonationPullAt.set(uid, now);
+        return { ok: true, imported: 0, applied: 0, skipped: true };
+      }
+    } catch {}
+  }
+
   lastDonationPullAt.set(uid, now);
 
   const session = await readToonaHubSession(uid);
