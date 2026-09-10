@@ -106,8 +106,7 @@ export function donorRowDedupeKey(donor: MergeableDonor): string {
   if (rawId) {
     seedParts.push(rawId);
   } else {
-    const wholeObj = `${name}|${String(donor.message || "")}`;
-    seedParts.push(wholeObj);
+    seedParts.push(name);
   }
   const lastResortSeed = seedParts.join("||");
   const lastResortHash = Math.abs(
@@ -526,19 +525,34 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
       const normB = normalizeDonationEventId(idB) || idB;
       if (normA === normB) return true;
     }
-    const aWeak = !idA || isWeakToonationDonorId(idA);
-    const bWeak = !idB || isWeakToonationDonorId(idB);
-    if (aWeak || bWeak) return false;
     const extA = String(prev.externalId || "").trim();
     const extB = String(incoming.externalId || "").trim();
+    if (extA && extB && extA.toLowerCase() === extB.toLowerCase()) {
+      const nameA = normalizeDonorNameKey(prev.name ?? prev.donorName);
+      const nameB = normalizeDonorNameKey(incoming.name ?? incoming.donorName);
+      const amountA = Math.max(0, Math.round(Number(prev.amount) || 0));
+      const amountB = Math.max(0, Math.round(Number(incoming.amount) || 0));
+      if ((!nameA || !nameB || nameA === nameB) && amountA > 0 && amountA === amountB) {
+        return true;
+      }
+    }
+    const donorKeyA = String((prev as unknown as { donorKey?: string | number }).donorKey || "").trim();
+    const donorKeyB = String((incoming as unknown as { donorKey?: string | number }).donorKey || "").trim();
+    if (donorKeyA && donorKeyB && donorKeyA.toLowerCase() === donorKeyB.toLowerCase()) return true;
+    const pkA = String((prev as unknown as { primaryKey?: string | number }).primaryKey || "").trim();
+    const pkB = String((incoming as unknown as { primaryKey?: string | number }).primaryKey || "").trim();
+    if (pkA && pkB && pkA.toLowerCase() === pkB.toLowerCase()) return true;
+    const aWeak = !idA || isWeakToonationDonorId(idA);
+    const bWeak = !idB || isWeakToonationDonorId(idB);
+    if (aWeak && bWeak) return false;
     if (!extA || !extB) return false;
     if (extA.toLowerCase() !== extB.toLowerCase()) return false;
-    const nameA = normalizeDonorNameKey(prev.name ?? prev.donorName);
-    const nameB = normalizeDonorNameKey(incoming.name ?? incoming.donorName);
-    if (!nameA || !nameB || nameA !== nameB) return false;
-    const amountA = Math.max(0, Math.round(Number(prev.amount) || 0));
-    const amountB = Math.max(0, Math.round(Number(incoming.amount) || 0));
-    if (amountA <= 0 || amountA !== amountB) return false;
+    const nameA2 = normalizeDonorNameKey(prev.name ?? prev.donorName);
+    const nameB2 = normalizeDonorNameKey(incoming.name ?? incoming.donorName);
+    if (!nameA2 || !nameB2 || nameA2 !== nameB2) return false;
+    const amountA2 = Math.max(0, Math.round(Number(prev.amount) || 0));
+    const amountB2 = Math.max(0, Math.round(Number(incoming.amount) || 0));
+    if (amountA2 <= 0 || amountA2 !== amountB2) return false;
     const atA = donorAtEpochMs(prev);
     const atB = donorAtEpochMs(incoming);
     if (!atA || !atB) return false;
@@ -687,6 +701,8 @@ export function isDuplicateDonationEvent(
     memberId?: string;
     groupSplit?: boolean;
     groupSplitSource?: boolean;
+    donorKey?: string | number;
+    primaryKey?: string | number;
   }
 ): boolean {
   // ✅ 2026-09-08 hotfix-6-10-7: FixD 3초 identical-content dedup REVERTED
@@ -714,6 +730,8 @@ export function isDuplicateDonationEvent(
     groupSplitSource: Boolean((rawEvent as { groupSplitSource?: boolean }).groupSplitSource),
     memberId:
       String((rawEvent as { memberId?: string })?.memberId || "").trim() || undefined,
+    donorKey: rawEvent.donorKey,
+    primaryKey: rawEvent.primaryKey,
   };
   const probeKey = donorRowDedupeKey(probeDonor);
   const isOwnerRemapSplitDuplicate = (
@@ -804,8 +822,23 @@ export function isDuplicateDonationEvent(
       ) {
         return true;
       }
+      const dExternal = String((d as unknown as { externalId?: string }).externalId || "").trim();
+      if (dExternal && dExternal.toLowerCase() === externalId.toLowerCase()) {
+        const dAmount = Math.max(0, Math.round(Number(d.amount) || 0));
+        const evAmount = Math.max(0, Math.round(Number(rawEvent.amount) || 0));
+        if (dAmount > 0 && evAmount > 0 && dAmount === evAmount) return true;
+      }
     }
-    // ✅ ⑥-6: 위 5가지 ID 매칭에 전부 해당 안되면 → ID가 다르다는 뜻 = 절대 중복 아님. (메시지·시간·금액 같아도!)
+    const dDonorKey = String((d as unknown as { donorKey?: string | number }).donorKey || "").trim();
+    const evDonorKey = String(rawEvent.donorKey || "").trim();
+    if (dDonorKey && evDonorKey && dDonorKey.toLowerCase() === evDonorKey.toLowerCase()) return true;
+    const dPrimaryKey = String((d as unknown as { primaryKey?: string | number }).primaryKey || "").trim();
+    const evPrimaryKey = String(rawEvent.primaryKey || "").trim();
+    if (dPrimaryKey && evPrimaryKey && dPrimaryKey.toLowerCase() === evPrimaryKey.toLowerCase()) return true;
+    const dHasStrongId = Boolean(donorId) && !isWeakToonationDonorId(donorId);
+    const evHasStrongId = Boolean(eventId) && !isWeakToonationDonorId(eventId);
+    if (dHasStrongId && evHasStrongId && donorIdNorm !== eventIdNorm) return false;
+    // ✅ ⑥-6: 위 전부에 매칭 안되면 → 절대 중복 아님.
     return false;
   });
 }
