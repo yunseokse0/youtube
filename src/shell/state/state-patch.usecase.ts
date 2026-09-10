@@ -68,6 +68,11 @@ import { isSettlementResetExplicitlyConfirmed } from "@/lib/settlement-reset-con
 import { publishSseEvent } from "@/lib/sse-clients-hub";
 import { computeDonorRankingsUpdatedAt } from "@/lib/donor-rankings-rev";
 import { runExclusivePerUser, getMutexQueueDepth, getUserMutexStats, getMutexActiveUserCount } from "@/lib/per-user-mutex";
+import {
+  donationContentMatchKey,
+  donorAtEpochMs,
+  normalizeDonorNameKey,
+} from "@/domain/dedupe/donation-dedupe.rules";
 
 import {
   stateKey,
@@ -87,6 +92,117 @@ async function upstashGet<T = unknown>(key: string): Promise<T | null> {
 
 async function upstashSet(key: string, value: unknown) {
   return upstashSetAppStateJson(key, value);
+}
+
+type ServerDedupeEntry = { uidKey: string; touchedAt: number };
+const SERVER_DEDUP_WINDOW_TTL_MS = 30_000;
+const SERVER_DEDUP_MAX_CACHE = 80_000;
+const _serverDedupCache = new Map<string, ServerDedupeEntry>();
+let _serverDedupPruneTs = 0;
+
+function pruneServerDedupCacheLocked(now: number) {
+  if (_serverDedupCache.size <= SERVER_DEDUP_MAX_CACHE && now - _serverDedupPruneTs < 10_000) return;
+  _serverDedupPruneTs = now;
+  for (const [k, v] of _serverDedupCache) {
+    if (now - v.touchedAt > SERVER_DEDUP_WINDOW_TTL_MS) _serverDedupCache.delete(k);
+  }
+  if (_serverDedupCache.size > SERVER_DEDUP_MAX_CACHE * 1.2) {
+    const sorted = Array.from(_serverDedupCache.entries()).sort((a, b) => a[1].touchedAt - b[1].touchedAt);
+    const dropN = Math.max(2000, Math.floor(_serverDedupCache.size * 0.3));
+    for (let i = 0; i < dropN && i < sorted.length; i++) _serverDedupCache.delete(sorted[i]![0]);
+  }
+}
+
+function buildServerDedupeSignature(
+  userId: string,
+  d: {
+    id?: string;
+    externalId?: string;
+    name?: string;
+    donorName?: string;
+    amount?: number | string;
+    target?: string;
+    message?: string;
+    memberId?: string | number | null;
+    at?: string | number;
+    donorKey?: string | number;
+    primaryKey?: string | number;
+  }
+): string[] {
+  const keys: string[] = [];
+  const uid = String(userId || "").trim().toLowerCase();
+  const id = String(d.id || "").trim();
+  if (id) {
+    let base = id;
+    base = base.replace(/^(ingest|toona|account|din|hub|poll|push|din_ingest|din_hub):/i, "");
+    base = base.replace(/::[a-z]+$/i, "");
+    base = base.replace(/^(toonation|bank|other|toon|투네|toona):/i, "");
+    base = base.replace(/^(din|hub|self):/i, "");
+    if (base) keys.push(`${uid}|id:${base.toLowerCase()}`);
+  }
+  const ext = String(d.externalId || "").trim().toLowerCase();
+  if (ext) keys.push(`${uid}|ext:${ext}`);
+  const dk = String(d.donorKey || "").trim().toLowerCase();
+  if (dk) keys.push(`${uid}|dk:${dk}`);
+  const pk = String(d.primaryKey || "").trim().toLowerCase();
+  if (pk) keys.push(`${uid}|pk:${pk}`);
+  const name = normalizeDonorNameKey(d.donorName || d.name);
+  const amt = Math.max(0, Math.round(Number(d.amount) || 0));
+  const msg = String(d.message || "").trim();
+  const tgt = String(d.target || "").trim().toLowerCase() === "toon" ? "toon" : "account";
+  const mid = String(d.memberId || "").trim().toLowerCase();
+  const atMs = donorAtEpochMs({ at: d.at as any });
+  if (name && amt > 0 && msg.length > 0) {
+    const atBucket = Math.max(0, Math.floor((atMs || 0) / 1_000));
+    keys.push(
+      `${uid}|exact:${name}:${amt}:${tgt}:${mid}:${atBucket}:${msg.toLowerCase()}`
+    );
+  }
+  return keys;
+}
+
+function serverDedupCheckAndStamp(
+  userId: string,
+  donors: Array<{
+    id?: string;
+    externalId?: string;
+    name?: string;
+    donorName?: string;
+    amount?: number | string;
+    target?: string;
+    message?: string;
+    memberId?: string | number | null;
+    at?: string | number;
+    donorKey?: string | number;
+    primaryKey?: string | number;
+  }>
+): { kept: number; dropped: number; hitKeys: number } {
+  const now = Date.now();
+  pruneServerDedupCacheLocked(now);
+  let dropped = 0;
+  let kept = 0;
+  let hitKeys = 0;
+  for (const d of donors) {
+    const signatures = buildServerDedupeSignature(userId, d);
+    let duplicate = false;
+    for (const k of signatures) {
+      const cached = _serverDedupCache.get(k);
+      if (cached && now - cached.touchedAt <= SERVER_DEDUP_WINDOW_TTL_MS) {
+        duplicate = true;
+        hitKeys += 1;
+        break;
+      }
+    }
+    if (duplicate) {
+      dropped++;
+      continue;
+    }
+    kept++;
+    for (const k of signatures) {
+      _serverDedupCache.set(k, { uidKey: k, touchedAt: now });
+    }
+  }
+  return { kept, dropped, hitKeys };
 }
 
 export async function POST(req: Request) {
@@ -693,6 +809,48 @@ export async function POST(req: Request) {
     let persistedNext = next;
     let redisFallback: "memory" | undefined;
     if (donorsInPatch) {
+      const beforeFinalDedup = normalizeDonorsArray(next.donors);
+      const finalDeduped = dedupeDonorRows(beforeFinalDedup);
+      if (finalDeduped.length !== beforeFinalDedup.length) {
+        logger.warn("FINAL PERSIST-LEVEL DEDUPE HIT (in-patch)", {
+          userId,
+          before: beforeFinalDedup.length,
+          after: finalDeduped.length,
+          dropped: beforeFinalDedup.length - finalDeduped.length,
+        });
+        next = syncMemberTotalsFromDonors({ ...next, donors: finalDeduped });
+      }
+      const beforeWindow = normalizeDonorsArray(next.donors);
+      const windowDedupResult = serverDedupCheckAndStamp(userId, beforeWindow);
+      if (windowDedupResult.dropped > 0) {
+        const keptDonors: any[] = [];
+        const signaturesByRow = beforeWindow.map((d: any) => buildServerDedupeSignature(userId, d));
+        const now = Date.now();
+        let idx = 0;
+        for (const d of beforeWindow) {
+          const sigs = signaturesByRow[idx++] || [];
+          let dup = false;
+          for (const k of sigs) {
+            const c = _serverDedupCache.get(k);
+            if (c && c.uidKey === k && now - c.touchedAt <= SERVER_DEDUP_WINDOW_TTL_MS && Math.abs(now - c.touchedAt) > 0) {
+              dup = true;
+              break;
+            }
+          }
+          if (!dup) {
+            keptDonors.push(d);
+            for (const k of sigs) _serverDedupCache.set(k, { uidKey: k, touchedAt: now });
+          }
+        }
+        logger.warn("SERVER 30s WINDOW DEDUPE HIT (in-patch)", {
+          userId,
+          before: beforeWindow.length,
+          after: keptDonors.length,
+          dropped: windowDedupResult.dropped,
+          hitKeys: windowDedupResult.hitKeys,
+        });
+        next = syncMemberTotalsFromDonors({ ...next, donors: keptDonors });
+      }
       const nextDonors = normalizeDonorsArray(next.donors);
       const incomingIds = normalizeDonorsArray(body.donors).map(d => d.id).filter(Boolean);
       logger.info("Fix⑱ [DEBUG PRE-SAVE]", {

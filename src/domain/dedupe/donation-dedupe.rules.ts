@@ -78,9 +78,25 @@ export function isWeakToonationDonorId(id: string): boolean {
 
 export function donorAtEpochMs(donor: { at?: number | string }): number {
   const raw = donor.at;
-  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    if (raw <= 0) return 0;
+    if (raw < 10_000_000_000) {
+      return Math.max(0, Math.round(raw * 1_000));
+    }
+    return Math.max(0, Math.round(raw));
+  }
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return 0;
+    if (/^-?\d+$/.test(trimmed)) {
+      const n = Number(trimmed);
+      if (!Number.isFinite(n) || n <= 0) return 0;
+      if (n < 10_000_000_000) return Math.max(0, Math.round(n * 1_000));
+      return Math.max(0, Math.round(n));
+    }
+  }
   const parsed = Date.parse(String(raw || ""));
-  return Number.isFinite(parsed) ? parsed : 0;
+  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
 }
 
 export function isDonorExcludedFromDonationTotals(donor: { donationExcluded?: boolean }): boolean {
