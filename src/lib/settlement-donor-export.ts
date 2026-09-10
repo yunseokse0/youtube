@@ -37,6 +37,30 @@ function donorTargetField(target?: DonorTarget): "account" | "toon" {
   return target === "toon" ? "toon" : "account";
 }
 
+function normMemberId(id: string | number | null | undefined): string {
+  return String(id || "").trim();
+}
+
+function buildMemberFallbackFromDonors(record: SettlementRecord, donors: Donor[]): { memberId: string; name: string; realName: string }[] {
+  const seen = new Set<string>();
+  const out: { memberId: string; name: string; realName: string }[] = [];
+  const rec = record?.members || [];
+  for (const m of rec) {
+    const mid = normMemberId((m as { memberId?: string }).memberId);
+    if (!mid || seen.has(mid)) continue;
+    seen.add(mid);
+    const mm = m as { name?: string; realName?: string };
+    out.push({ memberId: mid, name: String(mm.name || mid).trim() || mid, realName: String(mm.realName || "").trim() });
+  }
+  for (const d of donors || []) {
+    const mid = normMemberId(d.memberId);
+    if (!mid || seen.has(mid)) continue;
+    seen.add(mid);
+    out.push({ memberId: mid, name: mid, realName: "" });
+  }
+  return out;
+}
+
 function normalizeSettlementDonorName(raw: string): string {
   return (raw || "무명").trim() || "무명";
 }
@@ -86,10 +110,10 @@ export function formatExportDateTime(at: number | string | Date): string {
   return formatKstDateTime(at);
 }
 
-function memberMaps(record: SettlementRecord) {
+function memberMaps(record: SettlementRecord, donors?: Donor[]) {
   const nameById = new Map<string, string>();
   const realById = new Map<string, string>();
-  for (const m of record.members || []) {
+  for (const m of buildMemberFallbackFromDonors(record, donors || [])) {
     nameById.set(m.memberId, m.name || m.memberId);
     realById.set(m.memberId, m.realName || "");
   }
@@ -294,17 +318,18 @@ export function aggregateMemberDonors(
   record: SettlementRecord,
   donors: Donor[]
 ): MemberDonorAggregateRow[] {
-  const { nameById, realById } = memberMaps(record);
+  const { nameById, realById } = memberMaps(record, donors);
   const agg = new Map<string, MemberDonorAggregateRow>();
   for (const d of donors) {
+    const mid = normMemberId(d.memberId);
     const donorName = applyTemporarySettlementDonorAlias(record, d.name || "무명");
-    const key = `${d.memberId}\0${donorName}`;
+    const key = `${mid}\0${donorName}`;
     const prev =
       agg.get(key) ||
       ({
-        memberId: d.memberId,
-        memberName: nameById.get(d.memberId) || d.memberId,
-        memberRealName: realById.get(d.memberId) || "",
+        memberId: mid,
+        memberName: nameById.get(mid) || mid,
+        memberRealName: realById.get(mid) || "",
         donorName,
         totalAmount: 0,
         count: 0,
@@ -326,13 +351,16 @@ export function aggregateMemberDonors(
 }
 
 export function recordToMemberDonorsCsv(record: SettlementRecord, donors: Donor[]): string {
-  const { nameById, realById } = memberMaps(record);
+  const { nameById, realById } = memberMaps(record, donors);
+  const fallbackMembers = buildMemberFallbackFromDonors(record, donors);
+  const baseMembers = getMembersForExport(record);
+  const hasBase = Array.isArray(baseMembers) && baseMembers.length > 0;
   const createdAt = formatExportDateTime(record.createdAt);
   const detailHeader = ["정산제목", "정산시각", "멤버", "멤버실명", "후원자", "금액", "채널", "후원시각", "메시지"].map(csvEscapeSafe).join(",");
   const detailRows = [...donors]
     .sort((a, b) => {
-      const ma = nameById.get(a.memberId) || a.memberId;
-      const mb = nameById.get(b.memberId) || b.memberId;
+      const ma = nameById.get(normMemberId(a.memberId)) || normMemberId(a.memberId);
+      const mb = nameById.get(normMemberId(b.memberId)) || normMemberId(b.memberId);
       if (ma !== mb) return ma.localeCompare(mb, "ko");
       return b.at - a.at;
     })
@@ -340,8 +368,8 @@ export function recordToMemberDonorsCsv(record: SettlementRecord, donors: Donor[
       [
         record.title,
         createdAt,
-        nameById.get(d.memberId) || d.memberId,
-        realById.get(d.memberId) || "",
+        nameById.get(normMemberId(d.memberId)) || normMemberId(d.memberId),
+        realById.get(normMemberId(d.memberId)) || "",
         (d.name || "무명").trim() || "무명",
         String(Math.max(0, Number(d.amount) || 0)),
         donorTargetLabel(d.target),
@@ -368,12 +396,19 @@ export function recordToMemberDonorsCsv(record: SettlementRecord, donors: Donor[
   );
 
   const perMemberSections: string[] = ["", csvEscapeSafe("▸▸▸ 멤버별 후원 리스트 ◂◂◂")];
-  for (const m of getMembersForExport(record)) {
-    const memberDonors = donors.filter((d) => d.memberId === m.memberId);
+  const memberList: Array<{ memberId: string; name: string; realName?: string }> = hasBase
+    ? (baseMembers as unknown as Array<{ memberId: string; name: string; realName?: string }>)
+    : fallbackMembers;
+  for (const m of memberList) {
+    const mid = normMemberId(m.memberId);
+    const memberDonors = donors.filter((d) => normMemberId(d.memberId) === mid);
     if (memberDonors.length === 0) continue;
     const memberTotal = memberDonors.reduce((s, d) => s + (Number(d.amount) || 0), 0);
-    const memberLabel = `${m.name}${m.realName ? `(${m.realName})` : ""}`;
-    perMemberSections.push("", csvEscapeSafe(`▸▸ [${memberLabel}] 후원 ${memberDonors.length}건 · 총 ${memberTotal.toLocaleString()}원 ◂◂`));
+    const memberLabel = `${m.name || mid}${m.realName ? `(${m.realName})` : ""}`;
+    perMemberSections.push(
+      "",
+      csvEscapeSafe(`▸▸ [${memberLabel}] 후원 ${memberDonors.length}건 · 총 ${memberTotal.toLocaleString()}원 ◂◂`)
+    );
     const perDonor = aggregateMemberDonors(record, memberDonors);
     perMemberSections.push(["후원자", "합계금액", "후원횟수", "계좌합", "투네합"].map(csvEscapeSafe).join(","));
     for (const row of perDonor) {
@@ -425,7 +460,13 @@ function sanitizeSheetName(raw: string, used: Set<string>): string {
 }
 
 export function recordToMemberDonorsXlsxBlob(record: SettlementRecord, donors: Donor[]): Blob {
-  const { nameById, realById } = memberMaps(record);
+  const { nameById, realById } = memberMaps(record, donors);
+  const fallbackMembers = buildMemberFallbackFromDonors(record, donors);
+  const baseMembers = getMembersForExport(record);
+  const hasBase = Array.isArray(baseMembers) && baseMembers.length > 0;
+  const memberList: Array<{ memberId: string; name: string; realName?: string }> = hasBase
+    ? (baseMembers as unknown as Array<{ memberId: string; name: string; realName?: string }>)
+    : fallbackMembers;
   const wb = XLSX.utils.book_new();
   const createdAt = formatExportDateTime(record.createdAt);
 
@@ -433,16 +474,16 @@ export function recordToMemberDonorsXlsxBlob(record: SettlementRecord, donors: D
     ["정산제목", "정산시각", "멤버", "멤버실명", "후원자", "금액", "채널", "후원시각", "메시지"],
     ...[...donors]
       .sort((a, b) => {
-        const ma = nameById.get(a.memberId) || a.memberId;
-        const mb = nameById.get(b.memberId) || b.memberId;
+        const ma = nameById.get(normMemberId(a.memberId)) || normMemberId(a.memberId);
+        const mb = nameById.get(normMemberId(b.memberId)) || normMemberId(b.memberId);
         if (ma !== mb) return ma.localeCompare(mb, "ko");
         return b.at - a.at;
       })
       .map((d) => [
         sanitizeExportCell(record.title),
         sanitizeExportCell(createdAt),
-        sanitizeExportCell(nameById.get(d.memberId) || d.memberId),
-        sanitizeExportCell(realById.get(d.memberId) || ""),
+        sanitizeExportCell(nameById.get(normMemberId(d.memberId)) || normMemberId(d.memberId)),
+        sanitizeExportCell(realById.get(normMemberId(d.memberId)) || ""),
         sanitizeExportCell((d.name || "무명").trim() || "무명"),
         Math.max(0, Number(d.amount) || 0),
         sanitizeExportCell(donorTargetLabel(d.target)),
@@ -467,8 +508,9 @@ export function recordToMemberDonorsXlsxBlob(record: SettlementRecord, donors: D
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryAoA), "멤버별후원자합계");
 
   const usedSheetNames = new Set<string>(["건별내역", "멤버별후원자합계"]);
-  for (const m of getMembersForExport(record)) {
-    const memberDonors = donors.filter((d) => d.memberId === m.memberId);
+  for (const m of memberList) {
+    const mid = normMemberId(m.memberId);
+    const memberDonors = donors.filter((d) => normMemberId(d.memberId) === mid);
     if (memberDonors.length === 0) continue;
     const byDonor = aggregateMemberDonors(record, memberDonors);
     const sheetAoA: (string | number)[][] = [
@@ -492,7 +534,7 @@ export function recordToMemberDonorsXlsxBlob(record: SettlementRecord, donors: D
           sanitizeExportCell(String(d.message || "").trim()),
         ]),
     ];
-    const sheetName = sanitizeSheetName(m.name || m.memberId, usedSheetNames);
+    const sheetName = sanitizeSheetName(m.name || mid, usedSheetNames);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheetAoA), sheetName);
   }
 

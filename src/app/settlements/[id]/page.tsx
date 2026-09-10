@@ -161,8 +161,7 @@ export default function SettlementDetailPage() {
         setRecords(local);
         loadSettlementRecordsPreferApi(u.id).then(setRecords);
         setDailyLog(loadDailyLog(u.id) as Record<string, DailyLogEntry[]>);
-        /** 정산 상세는 최근 스냅샷만 — full(수 MB) 로드로 502 유발 금지 */
-        loadDailyLogFromApi(u.id, { days: 2, maxEntries: 10 }).then((serverLog) => {
+        loadDailyLogFromApi(u.id, { days: 60, maxEntries: 10000 }).then((serverLog) => {
           if (serverLog) setDailyLog(serverLog as Record<string, DailyLogEntry[]>);
         });
         setReferenceDonors(
