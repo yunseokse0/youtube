@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
 import { SettlementMemberResult, SettlementRecord, autoRepairSettlementZeroBug, deleteSettlementRecordAndSync, getMembersForExport, getTreasuryMembersForExport, isTreasurySettlementMember, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, recoverSettlementRecordsFromAllSources, saveSettlementRecords, saveSettlementRecordsToApi, toPaymentAlignedSettlement, toSettlementFormulaLine, updateSettlementRecordAndRecompute, updateSettlementRecordDonors } from "@/lib/settlement";
 import type { SettlementMemberRatioOverrides } from "@/types";
-import { aggregateMemberDonors, donorsForSettlementExport, formatExportDateTime, recordToDonorRankingsCsv, recordToDonorRankingsXlsxBlob, recordToMemberDonorsCsv, recordToMemberDonorsXlsxBlob, resolveSettlementDonors, seedSettlementDonorsForEdit, type DailyLogEntry } from "@/lib/settlement-donor-export";
+import { aggregateMemberDonors, buildDonorMessageFallbackMaps, donorsForSettlementExport, formatExportDateTime, recordToDonorRankingsCsv, recordToDonorRankingsXlsxBlob, recordToMemberDonorsCsv, recordToMemberDonorsXlsxBlob, resolveDonorMessageFromMaps, resolveSettlementDonors, seedSettlementDonorsForEdit, type DailyLogEntry } from "@/lib/settlement-donor-export";
 import { repairDonorTimestamps } from "@/lib/donation/repair-donor-timestamps";
 import {
   memberToPaymentStatementPdfBlob,
@@ -311,6 +311,10 @@ export default function SettlementDetailPage() {
   const treasuryExcludedMembers = useMemo(
     () => (viewRecord ? getTreasuryMembersForExport(viewRecord) : []),
     [viewRecord]
+  );
+  const donorMsgFallbackMaps = useMemo(
+    () => buildDonorMessageFallbackMaps(dailyLog, referenceDonors),
+    [dailyLog, referenceDonors]
   );
   const settlementDonors = useMemo(
     () => (record ? resolveSettlementDonors(record, dailyLog, referenceDonors) : []),
@@ -1533,10 +1537,16 @@ export default function SettlementDetailPage() {
                             <td className="p-2">
                               <input
                                 className="w-full min-w-[12rem] max-w-[28rem] px-2 py-1 rounded bg-neutral-800 border border-white/10 text-neutral-200"
-                                value={String(live.message || "")}
+                                value={
+                                  resolveDonorMessageFromMaps(live, donorMsgFallbackMaps) ||
+                                  String(live.message || "")
+                                }
                                 placeholder="(메시지 없음)"
                                 disabled={donorEditBusy}
-                                title={String(live.message || "")}
+                                title={
+                                  resolveDonorMessageFromMaps(live, donorMsgFallbackMaps) ||
+                                  String(live.message || "")
+                                }
                                 onChange={(e) =>
                                   patchEditableDonor(d.id, {
                                     message: e.target.value,

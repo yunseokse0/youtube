@@ -154,13 +154,13 @@ export function donorsForSettlementExport(
   });
 }
 
-type DonorMessageFallbackMaps = {
+export type DonorMessageFallbackMaps = {
   byId: Map<string, string>;
   byNameAmountAt: Map<string, string>;
   byNameAmount: Map<string, string>;
 };
 
-function buildDonorMessageFallbackMaps(
+export function buildDonorMessageFallbackMaps(
   dailyLog: Record<string, DailyLogEntry[]> | undefined,
   referenceDonors: Donor[] | undefined
 ): DonorMessageFallbackMaps {
@@ -194,7 +194,7 @@ function buildDonorMessageFallbackMaps(
   return { byId, byNameAmountAt, byNameAmount };
 }
 
-function resolveDonorMessageFromMaps(d: Donor, maps: DonorMessageFallbackMaps): string {
+export function resolveDonorMessageFromMaps(d: Donor, maps: DonorMessageFallbackMaps): string {
   const base = String(d.message || "").trim();
   if (base) return base;
   const id = String(d.id || "").trim();
