@@ -544,7 +544,38 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
     if (pkA && pkB && pkA.toLowerCase() === pkB.toLowerCase()) return true;
     const aWeak = !idA || isWeakToonationDonorId(idA);
     const bWeak = !idB || isWeakToonationDonorId(idB);
-    if (aWeak && bWeak) return false;
+    if (aWeak && bWeak) {
+      const msgA = String((prev as unknown as { message?: string }).message || "").trim();
+      const msgB = String((incoming as unknown as { message?: string }).message || "").trim();
+      const nameA = normalizeDonorNameKey(prev.name ?? (prev as unknown as { donorName?: string }).donorName);
+      const nameB = normalizeDonorNameKey(incoming.name ?? (incoming as unknown as { donorName?: string }).donorName);
+      const amtA = Math.max(0, Math.round(Number(prev.amount) || 0));
+      const amtB = Math.max(0, Math.round(Number(incoming.amount) || 0));
+      const tgtA = String((prev as unknown as { target?: string }).target || "").trim().toLowerCase();
+      const tgtB = String((incoming as unknown as { target?: string }).target || "").trim().toLowerCase();
+      const memA = String((prev as unknown as { memberId?: string }).memberId || "").trim();
+      const memB = String((incoming as unknown as { memberId?: string }).memberId || "").trim();
+      const atA = donorAtEpochMs(prev as unknown as any);
+      const atB = donorAtEpochMs(incoming as unknown as any);
+      if (
+        msgA &&
+        msgB &&
+        msgA === msgB &&
+        nameA &&
+        nameB &&
+        nameA === nameB &&
+        amtA > 0 &&
+        amtA === amtB &&
+        (!tgtA || !tgtB || tgtA === tgtB) &&
+        (!memA || !memB || memA === memB) &&
+        atA &&
+        atB &&
+        Math.abs(atA - atB) <= 1_000
+      ) {
+        return true;
+      }
+      return false;
+    }
     if (!extA || !extB) return false;
     if (extA.toLowerCase() !== extB.toLowerCase()) return false;
     const nameA2 = normalizeDonorNameKey(prev.name ?? prev.donorName);
@@ -838,6 +869,37 @@ export function isDuplicateDonationEvent(
     const dHasStrongId = Boolean(donorId) && !isWeakToonationDonorId(donorId);
     const evHasStrongId = Boolean(eventId) && !isWeakToonationDonorId(eventId);
     if (dHasStrongId && evHasStrongId && donorIdNorm !== eventIdNorm) return false;
+    {
+      const msgA = String((d as unknown as { message?: string }).message || "").trim();
+      const msgB = String(rawEvent.message || "").trim();
+      const nameA = normalizeDonorNameKey((d as unknown as { name?: string; donorName?: string }).name || (d as unknown as { donorName?: string }).donorName);
+      const nameB = normalizeDonorNameKey(rawEvent.donorName || (rawEvent as unknown as { name?: string }).name);
+      const amtA = Math.max(0, Math.round(Number(d.amount) || 0));
+      const amtB = Math.max(0, Math.round(Number(rawEvent.amount) || 0));
+      const tgtA = String((d as unknown as { target?: string }).target || "").trim().toLowerCase();
+      const tgtB = String(rawEvent.target || "").trim().toLowerCase();
+      const memA = String((d as unknown as { memberId?: string }).memberId || "").trim();
+      const memB = String(rawEvent.memberId || "").trim();
+      const atA = donorAtEpochMs(d as unknown as any);
+      const atB = donorAtEpochMs({ at: rawEvent.at } as any);
+      if (
+        msgA &&
+        msgB &&
+        msgA === msgB &&
+        nameA &&
+        nameB &&
+        nameA === nameB &&
+        amtA > 0 &&
+        amtA === amtB &&
+        (!tgtA || !tgtB || tgtA === tgtB) &&
+        (!memA || !memB || memA === memB) &&
+        atA &&
+        atB &&
+        Math.abs(atA - atB) <= 1_000
+      ) {
+        return true;
+      }
+    }
     // ✅ ⑥-6: 위 전부에 매칭 안되면 → 절대 중복 아님.
     return false;
   });
