@@ -7,6 +7,16 @@ export interface DonationEvent {
   provider: DonationProvider;
   externalId: string;
   donorName: string;
+  /** ✅ 2026-09-11 Hotfix P0: 계좌/SMS 후원 건별 고유 키 — 동일인 동일금액 연속후원 중복 방지용 */
+  donorKey?: string | number;
+  /** ✅ 2026-09-11 Hotfix P0: DB 저장 기본키 (저장 round-trip 후 unique 식별) */
+  primaryKey?: string | number;
+  /** ✅ 2026-09-11 Hotfix P0: 익명 랜덤명 등 최종 표시용 displayName */
+  displayName?: string;
+  /** ✅ 2026-09-11 Hotfix P0: 소스에서 발급한 그대로의 rawId (정규화 전) */
+  rawId?: string;
+  /** ✅ 2026-09-11 Hotfix P0: 컨텐츠 기반 signature 해시 — dedupe 버킷 충돌 방지 */
+  rawHash?: string;
   /** 메시지에서 파싱한 플레이어(멤버) 이름 — 엑셀 행 매칭 */
   playerName?: string;
   /** @deprecated playerName 우선 — 하위 호환 */

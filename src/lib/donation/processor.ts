@@ -89,6 +89,17 @@ export async function processDonationEvent(
             target,
             ...(event.message ? { message: event.message } : {}),
             id: event.id,
+            ...(event.externalId ? { externalId: event.externalId } : {}),
+            ...(event.provider ? { provider: event.provider } : {}),
+            ...(event.donorKey !== undefined && event.donorKey !== null
+              ? { donorKey: event.donorKey }
+              : {}),
+            ...(event.primaryKey !== undefined && event.primaryKey !== null
+              ? { primaryKey: event.primaryKey }
+              : {}),
+            ...(event.displayName ? { displayName: event.displayName } : {}),
+            ...(event.rawId ? { rawId: event.rawId } : {}),
+            ...(event.rawHash ? { rawHash: event.rawHash } : {}),
           },
         ],
         { target }

@@ -62,7 +62,14 @@ export function normalizeDonationEventId(id: string): string {
 }
 
 export function isWeakToonationDonorId(id: string): boolean {
-  const base = normalizeDonationEventId(String(id || "").trim()).replace(/^toonation:/i, "");
+  const raw = String(id || "").trim();
+  if (!raw) return false;
+  /** ✅ Fix #7-1 2026-09-11 계좌 다건이체 P0: bank/sms/account/gyejwa/din_bank 계열 provider prefix ID는
+   *  무조건 Strong ID로 간주 → isWeakToonationDonorId=false 반환.
+   *  bank:stress-r1-xxx / bank:din:ext-12345 등 모든 계좌 소스 ID는 고유 식별자로 발급되므로
+   *  weak fp-xxx id 취급하면 identical-content dedup 에서 10건 중 9건 오판 소실됨. */
+  if (/^(bank|sms|account|din_bank|gyejwa|toonation|toona|tuna):/i.test(raw)) return false;
+  const base = normalizeDonationEventId(raw).replace(/^toonation:/i, "");
   if (!base) return false;
   /** ✅ 2026-09-06 Hotfix: toonation:din:<DB id> 형식 = DIN 허브 정식 발급 row ID.
    *  기존 default fallback return true (weak) 로 인해 DIN 허브 후원이 전부 weak ID로 오인되어,

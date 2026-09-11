@@ -1711,15 +1711,49 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
         if (kind === "toonation") target = "toon";
         else if (kind === "bank") target = "account";
       }
+      const donorNameRaw =
+        typeof x.donorName === "string" ? x.donorName.trim() :
+        typeof x.name === "string" ? x.name.trim() :
+        "";
+      const displayNameRaw = typeof x.displayName === "string" ? x.displayName.trim() : "";
+      const nameInputForNormalize = displayNameRaw || x.name || x.donorName || "";
       const row: Donor = {
         id: idRaw || `d_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         name: normalizeAnonymousDonorDisplayName(
-          typeof x.name === "string" ? x.name : String(x.name ?? "")
+          typeof nameInputForNormalize === "string" ? nameInputForNormalize : String(nameInputForNormalize ?? "")
         ),
         amount: Math.max(0, Math.floor(Number(x.amount) || 0)),
         memberId: String(x.memberId ?? ""),
         at: donorAtEpochMs(x as Donor) || Date.now(),
       };
+      /**
+       * ✅ 2026-09-11 Hotfix P0: 계좌 다건이체 10건 90% 누락 Bug #3 봉쇄
+       *  donorKey / externalId / provider / primaryKey / donorName / displayName / rawId / rawHash
+       *  이 8가지 Strong 식별자 및 메타 필드를 normalize 과정에서 절대 DROP 하지 않고 원본 그대로 복사.
+       *  이전엔 이 필드들이 전부 누락되어 hasTwinInMerged shrink guard 가 이름+금액+1시간 으로만 오판하는 원인이었음.
+       */
+      if (donorNameRaw) row.donorName = donorNameRaw;
+      if (displayNameRaw) row.displayName = displayNameRaw;
+      if (typeof x.externalId === "string" && x.externalId.trim()) {
+        row.externalId = x.externalId.trim();
+      }
+      const dkRaw = x.donorKey;
+      if (dkRaw !== undefined && dkRaw !== null && String(dkRaw).trim() !== "") {
+        row.donorKey = typeof dkRaw === "number" ? dkRaw : String(dkRaw);
+      }
+      const pkRaw = x.primaryKey;
+      if (pkRaw !== undefined && pkRaw !== null && String(pkRaw).trim() !== "") {
+        row.primaryKey = typeof pkRaw === "number" ? pkRaw : String(pkRaw);
+      }
+      if (typeof x.provider === "string" && x.provider.trim()) {
+        row.provider = x.provider.trim();
+      }
+      if (typeof x.rawId === "string" && x.rawId.trim()) {
+        row.rawId = x.rawId.trim();
+      }
+      if (typeof x.rawHash === "string" && x.rawHash.trim()) {
+        row.rawHash = x.rawHash.trim();
+      }
       /**
        * ✅ 2026-09-09 Hotfix ㉑-2 계좌 뻥튀기: normalize 단계에서 target을 1번만 최종 확정.
        *  - 기존 3단 OR (targetRaw→infer→resolve) 중간에 weak id 'other' 오판이 account fallback 으로 새어나가던 허점 제거
@@ -1757,6 +1791,11 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
       if (Number.isFinite(contributionPoints) && contributionPoints >= 0) {
         row.contributionPoints = contributionPoints;
       }
+      const donorNameEditAtRaw = Number(x.donorNameEditAt);
+      if (Number.isFinite(donorNameEditAtRaw) && donorNameEditAtRaw > 0) {
+        row.donorNameEditAt = donorNameEditAtRaw;
+      }
+      if (x.donorNameLastEditedBy === "user") row.donorNameLastEditedBy = "user";
       return row;
     });
 }

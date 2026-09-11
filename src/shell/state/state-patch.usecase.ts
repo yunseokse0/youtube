@@ -152,7 +152,16 @@ function buildServerDedupeSignature(
   const tgt = String(d.target || "").trim().toLowerCase() === "toon" ? "toon" : "account";
   const mid = String(d.memberId || "").trim().toLowerCase();
   const atMs = donorAtEpochMs({ at: d.at as any });
-  if (name && amt > 0 && msg.length > 0) {
+  /**
+   * ✅ 2026-09-11 Hotfix P0 "계좌 다건이체 10건 동시 입금시 9건 누락" Bug 원천 봉쇄:
+   *  5번째 exact: content 기반 idempotency signature 는 "4가지 Strong 고유 식별자"가 하나도 없을 때만 발급한다.
+   *  - Strong 식별자 (이미 발급된 경우 절대 content fallback 으로 또 잡지 않음: id / externalId / donorKey / primaryKey)
+   *  - 이유: 계좌이체 10건 처럼 donor.id / externalId / donorKey 가 전부 고유하게 존재하는데
+   *          이름+금액+메시지+1초버킷 이 우연히 같다는 이유만으로 signature 5번이 충돌해서 9건을 완전 소실시키는 false positive 원천 차단.
+   *  - 원래 exact: fallback 은 "strong ID 하나도 없는 완전 익명 레거시 후원" (SSE Webhook 경로 이슈 등) 을 위한 마지막 보호막이었음.
+   */
+  const hasAnyStrongId = Boolean(id) || Boolean(ext) || Boolean(dk) || Boolean(pk);
+  if (!hasAnyStrongId && name && amt > 0 && msg.length > 0) {
     const atBucket = Math.max(0, Math.floor((atMs || 0) / 1_000));
     keys.push(
       `${uid}|exact:${name}:${amt}:${tgt}:${mid}:${atBucket}:${msg.toLowerCase()}`

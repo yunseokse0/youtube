@@ -97,12 +97,23 @@ export function applyDonationToAppState(
     };
   }
 
-  const newDonor = {
+  const evAny = processedEvent as DonationEvent & {
+    donorKey?: string | number;
+    primaryKey?: string | number;
+    displayName?: string;
+    rawId?: string;
+    rawHash?: string;
+    provider?: string;
+  };
+  const newDonor: Donor = {
     id: processedEvent.id,
-    name: normalizeAnonymousDonorDisplayName(processedEvent.donorName),
+    name: normalizeAnonymousDonorDisplayName(
+      evAny.displayName || processedEvent.donorName
+    ),
+    donorName: processedEvent.donorName,
     amount: Math.max(0, Math.round(Number(processedEvent.amount) || 0)),
     memberId: processedEvent.memberId,
-    at: processedEvent.at,
+    at: toEpochMs(String(processedEvent.at || "")),
     target: processedEvent.target || "toon",
     ...(String(processedEvent.message || "").trim()
       ? { message: String(processedEvent.message).trim() }
@@ -111,6 +122,37 @@ export function applyDonationToAppState(
     processedEvent.hsPushDir === "right" ||
     processedEvent.hsPushDir === "split"
       ? { hsPushDir: processedEvent.hsPushDir }
+      : {}),
+    /**
+     * ✅ 2026-09-11 Hotfix P0 Bug #5: 계좌 다건이체 10건 90% 누락 원천 봉쇄 (핵심!)
+     *  applyDonationToAppState 진입 단계부터 8가지 Strong 식별자/메타 필드를 절대 소실시키지 않고 원본 그대로 Donor 객체에 forward.
+     *  이전엔 이 필드들이 전부 drop 되어 Fix #3 (normalizeDonorsArray 복사) / Fix #4 (hasTwinInMerged early exit) 이 아무 소용 없었음.
+     *  donorKey / externalId / provider / primaryKey / displayName / rawId / rawHash / donorName 이 8가지를 끝까지 유지 →
+     *    → pipeline dedupe → shrink guard → normalize → 저장 까지 Strong uniqueness 가 깨지지 않음
+     */
+    ...(String(evAny.externalId || "").trim()
+      ? { externalId: String(evAny.externalId).trim() }
+      : {}),
+    ...(evAny.donorKey !== undefined && evAny.donorKey !== null && String(evAny.donorKey).trim() !== ""
+      ? { donorKey: typeof evAny.donorKey === "number" ? evAny.donorKey : String(evAny.donorKey) }
+      : {}),
+    ...(evAny.primaryKey !== undefined && evAny.primaryKey !== null && String(evAny.primaryKey).trim() !== ""
+      ? { primaryKey: typeof evAny.primaryKey === "number" ? evAny.primaryKey : String(evAny.primaryKey) }
+      : {}),
+    ...(String(evAny.provider || "").trim()
+      ? { provider: String(evAny.provider).trim() }
+      : {}),
+    ...(String(evAny.displayName || "").trim()
+      ? { displayName: String(evAny.displayName).trim() }
+      : {}),
+    ...(String(evAny.rawId || "").trim()
+      ? { rawId: String(evAny.rawId).trim() }
+      : {}),
+    ...(String(evAny.rawHash || "").trim()
+      ? { rawHash: String(evAny.rawHash).trim() }
+      : {}),
+    ...((evAny as { memberAutoAssigned?: boolean }).memberAutoAssigned
+      ? { memberAutoAssigned: true as const }
       : {}),
   };
   const atMs = toEpochMs(String(processedEvent.at || ""));
@@ -151,18 +193,15 @@ export function applyDonationToAppState(
     donors: dedupeDonorRows([
       ...existingDonors,
       {
-        id: newDonor.id,
-        name: newDonor.name,
-        amount: newDonor.amount,
-        memberId: newDonor.memberId,
+        /**
+         * ✅ 2026-09-11 Hotfix P0 Bug #5: 계좌 다건이체 10건 90% 누락 원천 봉쇄 (두번째 장소)
+         *  newDonor 에 이미 복사해둔 8가지 Strong 필드(donorKey/externalId/provider/donorName/primaryKey/displayName/rawId/rawHash) 를
+         *  전부 ...newDonor 로 spread 해서 donors 배열 적재 단계에서도 절대 소실되지 않도록 함.
+         *  이전: 일부 필드(id/name/amount/memberId/at/target) 만 수동으로 나열해서 나머지 Strong 식별자 전부 drop → hasTwinInMerged 오판 유발
+         */
+        ...newDonor,
         at: atMs,
-        target: newDonor.target,
         contributionPoints,
-        ...(newDonor.message ? { message: newDonor.message } : {}),
-        ...(newDonor.hsPushDir ? { hsPushDir: newDonor.hsPushDir } : {}),
-        ...((processedEvent as { memberAutoAssigned?: boolean }).memberAutoAssigned
-          ? { memberAutoAssigned: true }
-          : {}),
         ...(normalizeHighSocietySettings(currentState.highSocietySettings).enabled ||
         !isDonationAmountEligibleForHighSocietyTerritory(newDonor.amount)
           ? { hsTerritoryExcluded: true as const }

@@ -24,7 +24,7 @@ export type DonorTarget = "account" | "toon";
 export type Donor = {
   /** 후원 건 식별자 */
   id: string;
-  /** 후원자 표시명 */
+  /** 후원자 표시명 (normalize 최종 결과) */
   name: string;
   /** 후원 금액 */
   amount: number;
@@ -57,6 +57,22 @@ export type Donor = {
   donorNameEditAt?: number;
   /** 후원자명 수정 주체 = "user" (관리자 직접 수정) 또는 미지정(자동 유입) */
   donorNameLastEditedBy?: "user";
+  /** ✅ 2026-09-11 Hotfix P0: 원본 소스 후원자명 (name 은 displayName 에 의해 덮어씌워질 수 있으므로 원본 보존용) */
+  donorName?: string;
+  /** ✅ 2026-09-11 Hotfix P0: 익명 랜덤명 등 최종 표시용 displayName — name 필드 우선순위 조정용 */
+  displayName?: string;
+  /** ✅ 2026-09-11 Hotfix P0: 외부 소스 고유 ID (투네 payCode / DIN허브 eventId / 은행SMS 거래일련번호 등) */
+  externalId?: string;
+  /** ✅ 2026-09-11 Hotfix P0: 계좌/은행/SMS 소스 donor 건별 고유 키 — 동일인 동일금액 연속후원 dedupe 정확도 ↑ */
+  donorKey?: string | number;
+  /** ✅ 2026-09-11 Hotfix P0: DB 저장소 기본키 (MySQL auto_increment 등) — 저장 round-trip 후 unique 식별용 */
+  primaryKey?: string | number;
+  /** ✅ 2026-09-11 Hotfix P0: provider 소스 라벨 — toonation / bank / sms / din_hub / din_ingest 등 */
+  provider?: string;
+  /** ✅ 2026-09-11 Hotfix P0: 원본 rawId (소스에서 발급한 그대로의 id 정규화 전) */
+  rawId?: string;
+  /** ✅ 2026-09-11 Hotfix P0: 컨텐츠 기반 signature 해시 (정규화 at / 이름 / 금액 / 메시지 → sha1 조각) — dedupe 버킷 충돌 방지용 */
+  rawHash?: string;
 };
 
 /** 기여도 계산식 — 저장 이후 후원부터 적용 (소급 없음) */

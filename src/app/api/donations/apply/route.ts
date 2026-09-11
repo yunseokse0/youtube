@@ -25,6 +25,13 @@ type ApplyBody = {
   id?: string;
   at?: string | number;
   hsPushDir?: "left" | "right" | "split";
+  externalId?: string;
+  provider?: string;
+  donorKey?: string | number;
+  primaryKey?: string | number;
+  displayName?: string;
+  rawId?: string;
+  rawHash?: string;
   /** 여러 건 일괄 (붙여넣기) */
   items?: Array<{
     donorName?: string;
@@ -35,6 +42,13 @@ type ApplyBody = {
     id?: string;
     at?: string | number;
     hsPushDir?: "left" | "right" | "split";
+    externalId?: string;
+    provider?: string;
+    donorKey?: string | number;
+    primaryKey?: string | number;
+    displayName?: string;
+    rawId?: string;
+    rawHash?: string;
   }>;
 };
 
@@ -61,10 +75,19 @@ function buildBankEvent(
       : typeof atRaw === "string" && atRaw.trim()
         ? new Date(atRaw).toISOString()
         : new Date().toISOString();
+  const donorKeyRaw = (row as { donorKey?: string|number }).donorKey;
+  const primaryKeyRaw = (row as { primaryKey?: string|number }).primaryKey;
+  const providerRaw = String((row as { provider?: string }).provider || "").trim();
+  const externalIdRaw = String((row as { externalId?: string }).externalId || "").trim();
+  const displayNameRaw = String((row as { displayName?: string }).displayName || "").trim();
+  const rawIdRaw = String((row as { rawId?: string }).rawId || "").trim();
+  const rawHashRaw = String((row as { rawHash?: string }).rawHash || "").trim();
+  const _dk = donorKeyRaw !== undefined && donorKeyRaw !== null && String(donorKeyRaw).trim() !== "";
+  const _pk = primaryKeyRaw !== undefined && primaryKeyRaw !== null && String(primaryKeyRaw).trim() !== "";
   return {
     id,
-    provider: "bank",
-    externalId: id,
+    provider: providerRaw || "bank",
+    externalId: externalIdRaw || id,
     donorName,
     amount,
     at,
@@ -74,6 +97,11 @@ function buildBankEvent(
     manualAssignMemberId: memberId,
     ...(String(row.message || "").trim() ? { message: String(row.message).trim() } : {}),
     ...(hsPushDir ? { hsPushDir } : {}),
+    ...(_dk ? { donorKey: donorKeyRaw } : {}),
+    ...(_pk ? { primaryKey: primaryKeyRaw } : {}),
+    ...(displayNameRaw ? { displayName: displayNameRaw } : {}),
+    ...(rawIdRaw ? { rawId: rawIdRaw } : {}),
+    ...(rawHashRaw ? { rawHash: rawHashRaw } : {}),
   };
 }
 

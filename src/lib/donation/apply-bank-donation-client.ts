@@ -8,6 +8,13 @@ export type BankDonationApplyItem = {
   message?: string;
   id?: string;
   hsPushDir?: "left" | "right" | "split";
+  externalId?: string;
+  provider?: string;
+  donorKey?: string | number;
+  primaryKey?: string | number;
+  displayName?: string;
+  rawId?: string;
+  rawHash?: string;
 };
 
 export type BankDonationApplyResult =
@@ -53,6 +60,13 @@ export async function applyBankDonationsViaApi(
           ...(it.hsPushDir === "left" || it.hsPushDir === "right" || it.hsPushDir === "split"
             ? { hsPushDir: it.hsPushDir }
             : {}),
+          ...(it.externalId ? { externalId: it.externalId } : {}),
+          ...(it.provider ? { provider: it.provider } : {}),
+          ...(it.donorKey !== undefined && it.donorKey !== null ? { donorKey: it.donorKey } : {}),
+          ...(it.primaryKey !== undefined && it.primaryKey !== null ? { primaryKey: it.primaryKey } : {}),
+          ...(it.displayName ? { displayName: it.displayName } : {}),
+          ...(it.rawId ? { rawId: it.rawId } : {}),
+          ...(it.rawHash ? { rawHash: it.rawHash } : {}),
         })),
       }),
     });

@@ -367,22 +367,50 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
       return 0;
     }
     function hasTwinInMerged(cand: T): boolean {
-      const cD = cand as unknown as { donorName?: string; name?: string; displayName?: string; amount?: number; at?: number | string; memberId?: string; groupSplit?: boolean; groupSplitSource?: boolean };
-      const cIsSplit = Boolean(cD.groupSplit) || Boolean(cD.groupSplitSource);
-      const cName = normalizeDonorNameKey(String(cD.donorName || cD.displayName || cD.name || ""));
+      const cAny = cand as unknown as {
+        id?: string; donorName?: string; name?: string; displayName?: string;
+        amount?: number; at?: number | string; memberId?: string;
+        groupSplit?: boolean; groupSplitSource?: boolean;
+        donorKey?: string | number; externalId?: string; primaryKey?: string | number;
+      };
+      const cIsSplit = Boolean(cAny.groupSplit) || Boolean(cAny.groupSplitSource);
+      const cName = normalizeDonorNameKey(String(cAny.donorName || cAny.displayName || cAny.name || ""));
       if (!cName) return false;
-      const cAmt = Math.round(Number(cD.amount || 0));
-      const cAt = parseAtMs(cD.at);
-      const cMem = String(cD.memberId || "").trim();
+      const cAmt = Math.round(Number(cAny.amount || 0));
+      const cAt = parseAtMs(cAny.at);
+      const cMem = String(cAny.memberId || "").trim();
+      /**
+       * ✅ 2026-09-11 Hotfix P0 Bug #4: 계좌 다건이체 10건 90% 누락 원천 봉쇄
+       *  Shrink Guard hasTwinInMerged 는 "이름+금액+1시간 이내" 만 보고 "twin 이다" 라고 오판 → appendLostUnique 에서 9건 스킵 → 소실.
+       *  EARLY EXIT: 4가지 Strong ID(id norm / donorKey / externalId / primaryKey) 중 "둘 다 값이 존재 + 서로 다르면" → 이름/금액/시간이 100% 같아도 절대 twin 이 아님.
+       *  계좌/SMS/은행 후원은 소스에서 건별로 고유 id / donorKey / externalId 를 발급하므로, 이것이 다르다는 것은 "진짜 다른 입금" 이라는 확정 증거임.
+       */
+      const cIdNorm = (() => { const r = String(cAny.id || "").trim(); return (normalizeDonationEventId(r) || r).toLowerCase(); })();
+      const cDk = String(cAny.donorKey || "").trim().toLowerCase();
+      const cExt = String(cAny.externalId || "").trim().toLowerCase();
+      const cPk = String(cAny.primaryKey || "").trim().toLowerCase();
       for (const m of mergedSnap) {
-        const mD = m as unknown as { donorName?: string; name?: string; displayName?: string; amount?: number; at?: number | string; memberId?: string; groupSplit?: boolean; groupSplitSource?: boolean };
-        const mIsSplit = Boolean(mD.groupSplit) || Boolean(mD.groupSplitSource);
-        const mName = normalizeDonorNameKey(String(mD.donorName || mD.displayName || mD.name || ""));
+        const mAny = m as unknown as {
+          id?: string; donorName?: string; name?: string; displayName?: string;
+          amount?: number; at?: number | string; memberId?: string;
+          groupSplit?: boolean; groupSplitSource?: boolean;
+          donorKey?: string | number; externalId?: string; primaryKey?: string | number;
+        };
+        const mIdNorm = (() => { const r = String(mAny.id || "").trim(); return (normalizeDonationEventId(r) || r).toLowerCase(); })();
+        const mDk = String(mAny.donorKey || "").trim().toLowerCase();
+        const mExt = String(mAny.externalId || "").trim().toLowerCase();
+        const mPk = String(mAny.primaryKey || "").trim().toLowerCase();
+        if (cIdNorm && mIdNorm && cIdNorm !== mIdNorm) return false;
+        if (cDk && mDk && cDk !== mDk) return false;
+        if (cExt && mExt && cExt !== mExt) return false;
+        if (cPk && mPk && cPk !== mPk) return false;
+        const mIsSplit = Boolean(mAny.groupSplit) || Boolean(mAny.groupSplitSource);
+        const mName = normalizeDonorNameKey(String(mAny.donorName || mAny.displayName || mAny.name || ""));
         if (mName !== cName) continue;
-        const mAmt = Math.round(Number(mD.amount || 0));
+        const mAmt = Math.round(Number(mAny.amount || 0));
         if (mAmt > 0 && cAmt > 0 && Math.abs(mAmt - cAmt) >= 1) continue;
-        const mAt = parseAtMs(mD.at);
-        const mMem = String(mD.memberId || "").trim();
+        const mAt = parseAtMs(mAny.at);
+        const mMem = String(mAny.memberId || "").trim();
         // ✅ 2026-09-07 Fix ⑥-1: group-split donor (익명 단체짠 분할 등) 는 memberId 까지 일치해야만 twin 으로 간주
         //   익명 단체짠 donor 를 m1/m2 로 2분할 한 경우: donor이름·금액·시간 전부 같지만 memberId 가 다름 → 개별 row 유지 필수!
         //   이전: memberId 무시하고 이름·금액·시간만 같으면 twin true → appendLostUnique 스킵 → m2 소실 Bug 발생
@@ -542,6 +570,33 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
     const pkA = String((prev as unknown as { primaryKey?: string | number }).primaryKey || "").trim();
     const pkB = String((incoming as unknown as { primaryKey?: string | number }).primaryKey || "").trim();
     if (pkA && pkB && pkA.toLowerCase() === pkB.toLowerCase()) return true;
+    /**
+     * ✅ 2026-09-11 Hotfix P0 "계좌 다건이체 10건 동시 입금시 9건 누락" Bug 봉쇄 · 내용 기반 병합 진입 직전 차단:
+     *  위 4가지 Strong ID 체크(id norm / externalId / donorKey / primaryKey) 가 전부 다 통과하지 못한 상태에서
+     *  둘 중 한명이라도 명시적 bank/account/sms provider 소스 donor 라면 → 내용이 완전 같고 시간 1초 이내라도 절대 병합하지 않음.
+     *  이유: 은행SMS 계좌이체는 소스 자체에서 이미 "건별로 고유 식별자 id / externalId / donorKey" 를 발급해서 보내주므로
+     *        이 3종이 모두 다르다는 것 자체가 "진짜로 다른 1건의 입금" 이라는 의미.
+     *  내용기반 병합(=weak+weak fallback 블록)은 **오직 투네 weak fallback fp- id 일때만** 허용한다.
+     *  결과: 계좌이체 박자키 1만원 메시지 같고 10ms 간격 10건 → 10건 전부 개별 저장 (누락 0)
+     */
+    {
+      const pKind = donorInferSourceKind(prev as any);
+      const iKind = donorInferSourceKind(incoming as any);
+      if (pKind === "bank" || iKind === "bank") {
+        const prevAny = prev as unknown as { provider?: unknown; rawId?: string; id?: string };
+        const incAny = incoming as unknown as { provider?: unknown; rawId?: string; id?: string };
+        const hasAnyStrongProv = (_o: unknown) => {
+          const o = _o as any;
+          const p = String(o?.provider || "").trim().toLowerCase();
+          if (["bank", "sms", "account", "din_bank", "gyejwa"].includes(p)) return true;
+          const rid = String(o?.id || o?.rawId || "").trim().toLowerCase();
+          return /^(bank|sms|account|din_bank|gyejwa|은행|계좌|무통장)[-:]/.test(rid);
+        };
+        if (hasAnyStrongProv(prevAny) || hasAnyStrongProv(incAny)) {
+          return false;
+        }
+      }
+    }
     const aWeak = !idA || isWeakToonationDonorId(idA);
     const bWeak = !idB || isWeakToonationDonorId(idB);
     if (aWeak && bWeak) {
@@ -869,6 +924,12 @@ export function isDuplicateDonationEvent(
     const dHasStrongId = Boolean(donorId) && !isWeakToonationDonorId(donorId);
     const evHasStrongId = Boolean(eventId) && !isWeakToonationDonorId(eventId);
     if (dHasStrongId && evHasStrongId && donorIdNorm !== eventIdNorm) return false;
+    /** ✅ Fix #7-2 2026-09-11 계좌 다건이체 P0: donorInferSourceKind 가 bank/sms/account 계열 소스면
+     *  이름·금액·메시지·시간이 100% 같아도 절대 identical-content 블록으로 중복 오판하지 않음.
+     *  → Fix #7-1 이외 2중 Safety Net (로직 실수로 bank: prefix 패턴이 늦게 추가돼도 여기서 한 번 더 차단) */
+    const srcD = donorInferSourceKind({ id: d.id, provider: (d as any).provider, target: d.target, externalId: (d as any).externalId });
+    const srcEv = donorInferSourceKind({ id: eventId, provider: rawEvent.provider, target: rawEvent.target, externalId: rawEvent.externalId });
+    if ((srcD === "bank" || srcEv === "bank") && donorIdNorm !== eventIdNorm) return false;
     {
       const msgA = String((d as unknown as { message?: string }).message || "").trim();
       const msgB = String(rawEvent.message || "").trim();
