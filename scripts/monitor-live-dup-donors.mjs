@@ -7,6 +7,7 @@ const DEDUP_WINDOW_MS = Number(process.env.WINDOW_MS || "5000");
 const REPORT_SUMMARY_EVERY = Number(process.env.SUMMARY_EVERY || "40");
 const SOUND_ALERT = process.env.ALERT !== "0";
 const SKIP_SETTLEMENT_EXCLUDED = process.env.SKIP_EXCLUDED !== "0";
+const ENABLE_LOOSE_WARN = process.env.LOOSE_WARN === "1"; // 기본 OFF — 필요시 LOOSE_WARN=1 로 명시적 활성화
 
 const SSE_URL = `${TARGET}/api/events`;
 const STATE_URL = `${TARGET}/api/state?u=${encodeURIComponent(USER_ID)}&t=`;
@@ -174,6 +175,8 @@ function scanDuplicates(donors) {
   }
 
   // level 3 — 3요소 loose 경고용 (이름+금액+at ±10초 · 메시지 빠졌거나 다를 수 있음)
+  // 기본 OFF (ENABLE_LOOSE_WARN=1 환경변수로 명시적으로 켤 때만 활성화 — 허위 양성 너무 많아서)
+  if (ENABLE_LOOSE_WARN) {
   const bucketLoose = new Map();
   for (const d of list) {
     if (d._skip || d.amt <= 0) continue;
@@ -220,6 +223,7 @@ function scanDuplicates(donors) {
       });
     }
   }
+  } // END if (ENABLE_LOOSE_WARN)
 
   return { list, dupGroups };
 }
@@ -242,11 +246,12 @@ function printBanner() {
   console.log(`   대상 서버 : ${TARGET}`);
   console.log(`   사용자 ID : ${USER_ID}`);
   console.log(`   폴링 간격 : ${POLL_MS}ms (${(POLL_MS/1000).toFixed(1)}초)`);
-  console.log(`   dedupe 윈도우 : exact=${DEDUP_WINDOW_MS}ms / loose=10_000ms`);
+  console.log(`   dedupe 윈도우 : exact=${DEDUP_WINDOW_MS}ms`);
+  console.log(`   L3 Loose WARN (이름+금액+±10초) : ${ENABLE_LOOSE_WARN ? "ON (허위 양성 다수 유의)" : "OFF (기본) · LOOSE_WARN=1 로 켜기)"}`);
   console.log(`   정산제외 후원 스킵 : ${SKIP_SETTLEMENT_EXCLUDED ? "YES (donationExcluded 제외)" : "NO"}`);
   console.log(`   소리 알림 : ${SOUND_ALERT ? "ON (터미널 벨)" : "OFF"}`);
   console.log(`   SSE 시그널 리슨 : ${SSE_URL}`);
-  console.log(`   중복 레벨 : L1(CRITICAL)=Strong Key exact / L2(HIGH)=6요소 exact / L3(WARN)=3요소 loose 경고`);
+  console.log(`   중복 레벨 : L1(CRITICAL)=Strong Key exact / L2(HIGH)=6요소 exact${ENABLE_LOOSE_WARN ? " / L3(WARN)=3요소 loose 경고" : ""}`);
   console.log("=".repeat(96));
 }
 
