@@ -16097,7 +16097,13 @@ function AdminPageInner() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <div className="text-sm font-semibold text-amber-100">상류사회 · 영토</div>
-                    <p className="text-[11px] text-neutral-400 mt-0.5">
+                    <p
+                      className="text-[11px] text-neutral-400 mt-0.5"
+                      title="후원·투네 합산은 영토 게이지와 연동되지 않습니다.
+cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반영하세요.
+·
+참고: 1만원 = 5cm"
+                    >
                       후원·투네 합산은 영토 게이지와 <strong className="text-neutral-300">연동되지 않습니다</strong>.
                       cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반영하세요.
                       {" · "}
@@ -16264,7 +16270,7 @@ function AdminPageInner() {
                                       : (d.name || "")
                                   }
                                   placeholder="후원자명"
-                                  title="후원자명 수정 — 클릭 후 입력하고 포커스를 벗어나면 저장 · 입력 중에는 자동 갱신을 1.5초간 억제합니다"
+                                  title={`👤 후원자명: ${String(d.name || "").trim() || "무명"}\n\n---\n(수정하려면 클릭 후 입력하고 포커스를 벗어나면 저장 · 입력 중 자동 갱신을 1.5초간 억제합니다)`}
                                   onFocus={() => {
                                     const idStr = String(d.id);
                                     focusDonorIdRef.current = idStr;
@@ -16354,7 +16360,7 @@ function AdminPageInner() {
                                 className="max-w-[9rem] rounded border border-white/10 bg-neutral-900/80 px-1 py-0.5 text-xs text-neutral-100 overflow-hidden"
                                 style={{ overflow: "hidden", textOverflow: "ellipsis" }}
                                 value={d.memberId || ""}
-                                title="후원자명은 유지하고 배치 멤버만 변경"
+                                title={`👥 배치 멤버: ${state.members.find((x) => x.id === d.memberId)?.name || "미지정"}\n\n---\n(후원자명은 유지하고 배치 멤버만 변경하려면 선택)`}
                                 onChange={(e) => {
                                   const nextMemberId = e.target.value;
                                   if (!nextMemberId || nextMemberId === d.memberId) return;
@@ -16401,7 +16407,13 @@ function AdminPageInner() {
                                     : (d.message || "")
                                 }
                                 placeholder="메시지 입력"
-                                title="투네 통합알림 comment·후원 문구 — 클릭 후 입력하고 포커스를 벗어나면 저장 · 입력 중에는 자동 갱신을 1.5초간 억제합니다"
+                                title={
+                                  (typeof draftMessages[String(d.id)] === "string" && draftMessages[String(d.id)] !== (d.message || ""))
+                                    ? `💬 수정중인 메시지:\n${draftMessages[String(d.id)] || "(빈 메시지)"}${d.message ? `\n\n💾 저장된 원본:\n${d.message}` : ""}\n\n---\n(수정하려면 클릭 후 입력하고 포커스를 벗어나면 저장 · 입력 중 자동 갱신 1.5초간 억제)`
+                                    : (d.message
+                                        ? `💬 원본 메시지:\n${d.message}\n\n---\n(수정하려면 클릭 후 입력하고 포커스를 벗어나면 저장 · 입력 중 자동 갱신 1.5초간 억제)`
+                                        : `(빈 메시지) — 메시지를 입력하려면 클릭하세요`)
+                                }
                                 onFocus={() => {
                                   const idStr = String(d.id);
                                   focusDonorIdRef.current = idStr;

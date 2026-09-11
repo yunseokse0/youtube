@@ -134,6 +134,10 @@ export async function appendToonaHubDonationLogs(
     } catch (_) { /* ignore */ }
     return Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, "0");
   }
+  function hasRealDonorId(entry: ToonaHubDonationLog): boolean {
+    const raw = String(entry?.id || "").trim();
+    return !!(raw && raw !== "0" && raw !== "null" && raw !== "undefined");
+  }
   function safeDonorId(entry: ToonaHubDonationLog): string {
     const raw = String(entry?.id || "").trim();
     if (raw && raw !== "0" && raw !== "null" && raw !== "undefined") return raw;
@@ -229,6 +233,7 @@ export async function appendToonaHubDonationLogs(
     if (!eid || freshIds.has(eid)) continue;
     freshIds.add(eid);
     const normalizedEntry = { ...entry, id: eid };
+    const entryHasRealId = hasRealDonorId(entry);
     const existing = byId.get(eid);
     if (existing) {
       let changed = false;
@@ -262,16 +267,30 @@ export async function appendToonaHubDonationLogs(
      * ✅ 2026-09-09 Hotfix ㉖-1 CORE ID DEDUPE (hub 로그 저장용 1차 봉쇄):
      *  - 위 byId(safeDonorId) 는 source label prefix 때문에 ingest:X vs toona:X 가 달라서 통과할 수 있으므로
      *    coreDonationId(prefix 를 모두 제거한 실제 후원 ID) 가 prev 저장소 혹은 fresh entries 내에 이미 존재하면
-     *    source label 이 달라도 같은 후원으로 간주 → 새 row 추가를 **절대** skip.
+     *    source label 이 달라도 같은 후원로 간주 → 새 row 추가를 **절대** skip.
      *  - 똑같은 10회 후원이 ingest 10번 + poll 10번 2중 append 되면 20개 적재 → 10개로 줄이는 근본 Fix.
      *  - 근데 동일 donor가 3초내에 계좌 10만 + 투네 10만을 따로 보낸 경우 coreId (fallback-nc:name|amt|target|bucket) 에
      *    target 까지 포함되어 있으므로 coreId가 달라서 정상 2건 저장됨 (오탐 0%)
+     *
+     *  ✅ 2026-09-11 Hotfix ㉗ Safety Net 강화:
+     *   - entry에 실제 고유 id가 존재하는 경우 (hasRealDonorId=true) 오직 "prefix 제거한 실제 ID exact 매칭" 일 때만 dedupe.
+     *   - fallback nc: bucket 기반 퍼지 dedupe (이름+금액+3초) 는 실제 id가 있는 정상 후원 2건을 오판 skip 하므로
+     *     hasRealDonorId=true 면 절대 실행하지 않음 → 동일 donor 동일 금액 3초 내 2건 연속 후원 = 정상 2건 저장 보장.
      */
     const coreId = coreDonationId(entry);
-    if (freshCoreIds.has(coreId) || prevCoreIds.has(coreId)) {
-      continue;
+    if (entryHasRealId) {
+      if (!coreId.startsWith("nc:")) {
+        if (freshCoreIds.has(coreId) || prevCoreIds.has(coreId)) {
+          continue;
+        }
+        freshCoreIds.add(coreId);
+      }
+    } else {
+      if (freshCoreIds.has(coreId) || prevCoreIds.has(coreId)) {
+        continue;
+      }
+      freshCoreIds.add(coreId);
     }
-    freshCoreIds.add(coreId);
 
     /**
      * ✅ 2026-09-09 Hotfix ㉕ 동일 후원 2행 중복 봉쇄 (source=ingest + source=toona 쌍 제거):
@@ -279,28 +298,33 @@ export async function appendToonaHubDonationLogs(
      *    byId에 이미 있으면 중복으로 간주 → 새 row 추가 skip. 4가지가 전부 일치하면 같은 후원일 확률 99.9%+.
      *  - 👉 위 coreId dedupe가 이미 prefix 제거 기반으로 100% 매칭하므로, 이 near dedupe는 "coreId를 못구하는
      *    구석진 케이스"에 대한 2차 보험 용도로 남겨둠 (두 체크가 AND가 아니라 OR skip 구조라서 안전망 중첩)
+     *
+     *  ✅ 2026-09-11 Hotfix ㉗ Safety Net: entry에 실제 고유 id가 존재하면 이 Fuzzy dedupe는 전면 SKIP.
+     *    → 18:00:01 / 18:00:03 2초 간격 동일후원자 동일금액 정상 후원 2건이 오판되어 1건 누락되는 Bug 원천 봉쇄.
      */
-    const ENTRY_WINDOW_MS = 3_000;
-    const entryName = String(entry.donorName || "").trim().toLowerCase();
-    const entryAmt = Math.max(0, Math.round(Number(entry.amount) || 0));
-    const entryAt = Math.max(0, Number(entry.at) || 0);
-    const entryTarget = entry.target === "account" ? "account" : "toon";
-    let duplicateSameDonationFound = false;
-    for (const row of byId.values()) {
-      if (duplicateSameDonationFound) break;
-      const rowName = String(row.donorName || "").trim().toLowerCase();
-      const rowAmt = Math.max(0, Math.round(Number(row.amount) || 0));
-      const rowAt = Math.max(0, Number(row.at) || 0);
-      const rowTarget = row.target === "account" ? "account" : "toon";
-      if (entryName !== rowName) continue;
-      if (entryAmt !== rowAmt) continue;
-      if (entryTarget !== rowTarget) continue;
-      const delta = Math.abs(entryAt - rowAt);
-      if (delta > ENTRY_WINDOW_MS) continue;
-      duplicateSameDonationFound = true;
-    }
-    if (duplicateSameDonationFound) {
-      continue;
+    if (!entryHasRealId) {
+      const ENTRY_WINDOW_MS = 3_000;
+      const entryName = String(entry.donorName || "").trim().toLowerCase();
+      const entryAmt = Math.max(0, Math.round(Number(entry.amount) || 0));
+      const entryAt = Math.max(0, Number(entry.at) || 0);
+      const entryTarget = entry.target === "account" ? "account" : "toon";
+      let duplicateSameDonationFound = false;
+      for (const row of byId.values()) {
+        if (duplicateSameDonationFound) break;
+        const rowName = String(row.donorName || "").trim().toLowerCase();
+        const rowAmt = Math.max(0, Math.round(Number(row.amount) || 0));
+        const rowAt = Math.max(0, Number(row.at) || 0);
+        const rowTarget = row.target === "account" ? "account" : "toon";
+        if (entryName !== rowName) continue;
+        if (entryAmt !== rowAmt) continue;
+        if (entryTarget !== rowTarget) continue;
+        const delta = Math.abs(entryAt - rowAt);
+        if (delta > ENTRY_WINDOW_MS) continue;
+        duplicateSameDonationFound = true;
+      }
+      if (duplicateSameDonationFound) {
+        continue;
+      }
     }
 
     byId.set(eid, normalizedEntry);
@@ -360,6 +384,17 @@ export async function appendToonaHubDonationLogs(
       if (aAmt !== bAmt) continue;
       if (aTarget !== bTarget) continue;
       if (Math.abs(aAt - bAt) > CLEANUP_WINDOW_MS) continue;
+      /** 🔥 2026-09-11 Hotfix ㉗ Safety Net:
+       *  둘 다 실제 고유 id를 가지고 있고 coreDonationId(prefix 제거 실제ID)가 서로 다르면
+       *  진짜 별개의 정상 후원이므로 cleanup 절대 삭제 금지 → 오판 0건 보장
+       */
+      if (hasRealDonorId(a!) && hasRealDonorId(b!)) {
+        const coreA = coreDonationId(a!);
+        const coreB = coreDonationId(b!);
+        if (!coreA.startsWith("nc:") && !coreB.startsWith("nc:") && coreA !== coreB) {
+          continue;
+        }
+      }
       const keepA = a!.applied === b!.applied ? aAt >= bAt : a!.applied === true;
       idToDelete.add(keepA ? b!.id : a!.id);
       if (!keepA) break;
