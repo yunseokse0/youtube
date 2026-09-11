@@ -26,6 +26,19 @@ import { resolveEffectiveDonorTarget } from "@/domain/state-monolith.all";
 const isDonorExcludedFromDonationTotals = _excluded;
 export { isDonorExcludedFromDonationTotals };
 
+/**
+ * ✅ 2026-09-11 P0 9V 17,760원 뻥튀기 Fix: hasRealDonorId 헬퍼
+ *  - entry.id 가 null/undefined/0/빈문자열이 아닌 실제 고유 id 소유 여부 판정
+ *  - 추가로 isWeakToonationDonorId === false 인 경우 (toonation: / bank: prefix 등)
+ *    Strong ID로 간주 → 내용 기반 merge / amount 합산 절대 금지
+ */
+function hasRealDonorId(d: MergeableDonor | { id?: string } | null | undefined): boolean {
+  if (!d) return false;
+  const raw = String((d as { id?: string }).id || "").trim();
+  if (!raw) return false;
+  return !isWeakToonationDonorId(raw);
+}
+
 type MergeableDonor = {
   id?: string;
   name?: string;
@@ -275,8 +288,23 @@ export function mergeDonorRowFields<T extends MergeableDonor>(
 
   let mergedAmount = Number((withPush as { amount?: number }).amount) || 0;
   let mergedCp = Number((withPush as { contributionPoints?: number }).contributionPoints || 0);
-  if (!sameEventId) {
-    /** ② ID가 다른 진짜 별개 후원 → 합산 처리 */
+  /**
+   * ✅ 2026-09-11 P0 9V 17,760원 뻥튀기 Fix #B: 양쪽 Strong ID 보유 + ID 불일치 → amount 합산 절대 NO
+   *  - Fix #A (allowMergeByIdOnly) 에서 merge를 원천 차단하는 것이 1차 방어선이지만,
+   *    만약 상위 sweep 패스(L514-L531) 등 다른 경로로 mergeDonorRowFields 가 직접 호출된 경우에도
+   *    실제 고유 ID가 있는 정상 후원 2건의 amount 가 합산되지 않도록 2차 방어선 구축
+   *  - fallback.amount (기존 저장값) 을 그대로 유지 → preferred.amount 는 버리지 않고
+   *    Shrink Guard 가 appendLostUnique 로 추후 별도 row 로 복구할 수 있게 함
+   */
+  const bothRealIds = hasRealDonorId(preferred) && hasRealDonorId(fallback);
+  const idMismatch = (normIdPref && normIdFall && normIdPref !== normIdFall) || false;
+  if (bothRealIds && idMismatch) {
+    mergedAmount = Math.max(0, Math.round(Number(fallback.amount || preferred.amount || 0)));
+    const cpFb = Number((fallback as { contributionPoints?: number }).contributionPoints || 0);
+    const cpPf = Number((preferred as { contributionPoints?: number }).contributionPoints || 0);
+    mergedCp = Math.max(0, Math.max(cpFb, cpPf));
+  } else if (!sameEventId) {
+    /** ② ID가 다른 진짜 별개 후원 (weak id 끼리만 허용) → 합산 처리 */
     mergedAmount = Math.max(0, Math.round(Number(fallback.amount || 0) + Number(preferred.amount || 0)));
     const cpFb = Number((fallback as { contributionPoints?: number }).contributionPoints || 0);
     const cpPf = Number((preferred as { contributionPoints?: number }).contributionPoints || 0);
@@ -552,6 +580,18 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
       const normA = normalizeDonationEventId(idA) || idA;
       const normB = normalizeDonationEventId(idB) || idB;
       if (normA === normB) return true;
+    }
+    /**
+     * ✅ 2026-09-11 P0 9V 17,760원 뻥튀기 Fix #A: Strong ID 양쪽 보유 + ID 불일치 → 절대 merge NO
+     *  - 9V 8,880원 후원 2건이 toonation:xxx 고유 ID를 각각 보유하고 있으므로 hasRealDonorId=true
+     *  - SSE 경로와 B-mode polling 경로에서 externalId 가 같다고 오판되어
+     *    하위 externalId 블록(L571)이나 weak fallback 블록(L615)에서 merge 허용되는 것을 원천 봉쇄.
+     *  - real ID가 존재하는 정상 후원끼리는 "이름/금액/메시지/시간이 100% 같아도" 절대 병합하지 않음 = 투네이션 원본 데이터 1:1 보존
+     */
+    if (hasRealDonorId(prev) && hasRealDonorId(incoming)) {
+      const normA = (idA && normalizeDonationEventId(idA)) || idA;
+      const normB = (idB && normalizeDonationEventId(idB)) || idB;
+      if (normA !== normB) return false;
     }
     const extA = String(prev.externalId || "").trim();
     const extB = String(incoming.externalId || "").trim();
