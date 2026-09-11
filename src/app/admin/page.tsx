@@ -815,6 +815,26 @@ function AdminPageInner() {
   const stateRef = useRef<AppState>(state);
   const lastLocalPersistAtRef = useRef<number>(0);
   const syncStatusRef = useRef<"loading" | "synced" | "local" | "error">("loading");
+  /** ✅ 2026-09-11 관리자 페이지 숫자 왔다갔다 Fix #1: UI Atomic Freeze
+   *  - 최초 서버 state hydrate 가 완료되기 전까지 3박스(총후원액/후원건수/멤버수) 숫자 대신 `--` 표시
+   *  - 서버 재부팅 1.5초간 메모리 init → Redis 로드 → dedupe → ranking 재계산이 순차 setState 되는 것을 다 숨기고,
+   *    최종 "안정 상태" 도달 후 1회만 페인트
+   */
+  const [uiReady, setUiReady] = useState<boolean>(false);
+  const uiReadyRef = useRef<boolean>(false);
+  useEffect(() => { uiReadyRef.current = uiReady; }, [uiReady]);
+  /** ✅ 2026-09-11 관리자 페이지 숫자 왔다갔다 Fix #2: Boot / Reconnect Coalescing Window
+   *  - 초기 mount / SSE 재연결 후 2초간 들어오는 다중 state_updated 이벤트 → 가장 마지막(updatedAt 최신) state 1개만 apply
+   *  - 중간 과정 state는 ref에만 저장, setState 호출 X → 중간 페인트 완전 제거
+   */
+  const bootCoalesceUntilRef = useRef<number>(0);
+  const pendingCoalescedRemoteRef = useRef<AppState | null>(null);
+  const pendingCoalescedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** ✅ 2026-09-11 관리자 페이지 숫자 왔다갔다 Fix #3: Fingerprint Dedupe
+   *  - updatedAt/donorRankingsUpdatedAt 만 오르고 donors/members/총액은 그대로인 이벤트(테마변경 등)
+   *    → stateRef만 갱신하고 setState는 호출 X → 3박스 숫자 불필요 리렌더 0
+   */
+  const lastPaintedFingerprintRef = useRef<string>("");
   /** Admin 부하 감소 FIX #3: persistDonationStateViaApi debounce — 80ms 이내 연속 저장호출은 가장 마지막 1회만 POST → 후원 10건 연속 들어와도 1회만 서버 요청 */
   const persistDonationDebounceRef = useRef<number | null>(null);
   const persistDonationLastStateRef = useRef<{ s: AppState; mode: "replace" | "add"; label?: string } | null>(null);
@@ -825,6 +845,13 @@ function AdminPageInner() {
       const m = meta ?? getLastStateApiFetchMeta();
       const offline = typeof navigator !== "undefined" && !navigator.onLine;
       if (isStateServerSyncVerified(m, apiState !== null)) {
+        if (syncStatusRef.current === "loading") {
+          bootCoalesceUntilRef.current = Date.now() + 2000;
+          uiReadyRef.current = true;
+          window.setTimeout(() => {
+            if (uiReadyRef.current) setUiReady(true);
+          }, 1950);
+        }
         setSyncStatus("synced");
       } else if (offline) {
         setSyncStatus("local");
@@ -3294,6 +3321,36 @@ function AdminPageInner() {
       if (donorEditLockRef.current) return false;
       /** ✅ UI 흔들림 방지 가드 — 입력/포커스 감지 후 1.5초 이내 원격 state 무시 (focus 중복 리렌더·커서 날아감 방지) */
       if (Date.now() < donorSuppressAutoUntilRef.current) return false;
+      /** ✅ 2026-09-11 관리자 페이지 숫자 왔다갔다 Fix #2: Boot / Reconnect Coalescing Window
+       *  - 서버 재부팅 / SSE 재연결 직후 2초간 원격 state는 "메모리 init → Redis 로드 → dedupe → ranking 재계산" 단계별로
+       *    donorsCount=3 → 5 → 115 등 숫자가 불안정하게 여러번 들어옴. 이걸 다 paint 하면 3박스 숫자가 왔다갔다.
+       *  - bootCoalesceUntilRef 시간 창 내부에서는 가장 updatedAt 최신 state 1개만 ref에 저장했다가,
+       *    시간 창 종료시 forceDonorMerge=true 로 단 1번만 apply → 1회만 paint, 왔다갔다 완전 제거.
+       */
+      const remoteUpdatedAtFirst = incomingRemote.updatedAt || 0;
+      if (
+        !opts?.forceDonorMerge &&
+        bootCoalesceUntilRef.current > 0 &&
+        Date.now() < bootCoalesceUntilRef.current
+      ) {
+        const pending = pendingCoalescedRemoteRef.current;
+        if (!pending || remoteUpdatedAtFirst > Number(pending.updatedAt || 0)) {
+          pendingCoalescedRemoteRef.current = incomingRemote;
+        }
+        if (pendingCoalescedTimerRef.current === null) {
+          const remaining = Math.max(50, bootCoalesceUntilRef.current - Date.now());
+          pendingCoalescedTimerRef.current = setTimeout(() => {
+            pendingCoalescedTimerRef.current = null;
+            const latest = pendingCoalescedRemoteRef.current;
+            pendingCoalescedRemoteRef.current = null;
+            bootCoalesceUntilRef.current = 0;
+            if (latest) {
+              applyRemoteState(latest, { forceDonorMerge: true });
+            }
+          }, remaining);
+        }
+        return false;
+      }
       let remote = incomingRemote;
       /** ✅ UI 흔들림 방지: state 적용 직전 scrollTop·scrollHeight 스냅샷 찍기 (후에 diff 만큼 scroll 복구) */
       const scrollEl = donorListScrollRef.current;
@@ -3400,12 +3457,22 @@ function AdminPageInner() {
             contributionLogs: mergeContributionLogsPreferLocal(prevLogsSnapshot, next.contributionLogs),
           };
         }
+        const fingerprintNext = (() => {
+          const d = normalizeDonorsArray(next.donors).length;
+          const t = totalCombined(next);
+          const m = (next.members || []).filter(x => x && (x.account || x.toon)).length;
+          const mt = (next.members || []).reduce((s,x)=>s+Math.max(0,Number(x.account||0))+Math.max(0,Number(x.toon||0)),0);
+          return `${d}|${t}|${m}|${mt}`;
+        })();
         stateRef.current = next;
         stateUpdatedAtRef.current = remoteUpdatedAt;
         lastAppliedRemoteUpdatedAtRef.current = remoteUpdatedAt;
         pendingUnsyncedRef.current = false;
         scheduleScrollRestore();
-        setState(next);
+        if (lastPaintedFingerprintRef.current !== fingerprintNext) {
+          lastPaintedFingerprintRef.current = fingerprintNext;
+          setState(next);
+        }
         if (next.settlementUiOptions) {
           syncSettlementUiFormFromOptions(next.settlementUiOptions);
         }
@@ -3451,12 +3518,22 @@ function AdminPageInner() {
               contributionLogs: mergeContributionLogsPreferLocal(prevLogsSnapshot, next.contributionLogs),
             };
           }
+          const fingerprintNext = (() => {
+            const d = normalizeDonorsArray(next.donors).length;
+            const t = totalCombined(next);
+            const m = (next.members || []).filter(x => x && (x.account || x.toon)).length;
+            const mt = (next.members || []).reduce((s,x)=>s+Math.max(0,Number(x.account||0))+Math.max(0,Number(x.toon||0)),0);
+            return `${d}|${t}|${m}|${mt}`;
+          })();
           stateRef.current = next;
           stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, next.updatedAt || 0);
           lastAppliedRemoteUpdatedAtRef.current = next.updatedAt || 0;
           pendingUnsyncedRef.current = false;
           scheduleScrollRestore();
-          setState(next);
+          if (lastPaintedFingerprintRef.current !== fingerprintNext) {
+            lastPaintedFingerprintRef.current = fingerprintNext;
+            setState(next);
+          }
           if (next.settlementUiOptions) {
             syncSettlementUiFormFromOptions(next.settlementUiOptions);
           }
@@ -3804,9 +3881,19 @@ function AdminPageInner() {
           contributionLogs: mergeContributionLogsPreferLocal(prevLogsSnapshot, toApply.contributionLogs),
         };
       }
+      const fingerprintNext = (() => {
+        const d = normalizeDonorsArray(toApply.donors).length;
+        const t = totalCombined(toApply);
+        const m = (toApply.members || []).filter(x => x && (x.account || x.toon)).length;
+        const mt = (toApply.members || []).reduce((s,x)=>s+Math.max(0,Number(x.account||0))+Math.max(0,Number(x.toon||0)),0);
+        return `${d}|${t}|${m}|${mt}`;
+      })();
       stateRef.current = toApply;
       scheduleScrollRestore();
-      setState(toApply);
+      if (lastPaintedFingerprintRef.current !== fingerprintNext) {
+        lastPaintedFingerprintRef.current = fingerprintNext;
+        setState(toApply);
+      }
       if (toApply.settlementUiOptions) {
         syncSettlementUiFormFromOptions(toApply.settlementUiOptions);
       }
@@ -10344,15 +10431,15 @@ function AdminPageInner() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="rounded-lg bg-[#1e1e1e] border border-white/10 px-3 py-2">
               <div className="text-xs text-neutral-400">오늘 총 후원액</div>
-              <div className="text-xl font-bold text-white">{formatManThousand(total)}</div>
+              <div className="text-xl font-bold text-white">{uiReady ? formatManThousand(total) : "—"}</div>
             </div>
             <div className="rounded-lg bg-[#1e1e1e] border border-white/10 px-3 py-2">
               <div className="text-xs text-neutral-400">후원 건수</div>
-              <div className="text-xl font-bold text-[#6366f1]">{normalizeDonorsArray(state.donors).length.toLocaleString("ko-KR")}</div>
+              <div className="text-xl font-bold text-[#6366f1]">{uiReady ? normalizeDonorsArray(state.donors).length.toLocaleString("ko-KR") : "—"}</div>
             </div>
             <div className="rounded-lg bg-[#1e1e1e] border border-white/10 px-3 py-2">
               <div className="text-xs text-neutral-400">멤버 수</div>
-              <div className="text-xl font-bold text-[#22c55e]">{activeMemberCount.toLocaleString("ko-KR")}</div>
+              <div className="text-xl font-bold text-[#22c55e]">{uiReady ? activeMemberCount.toLocaleString("ko-KR") : "—"}</div>
             </div>
           </div>
         </AdminCollapsibleSection>
