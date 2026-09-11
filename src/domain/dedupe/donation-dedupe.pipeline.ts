@@ -289,26 +289,45 @@ export function mergeDonorRowFields<T extends MergeableDonor>(
   let mergedAmount = Number((withPush as { amount?: number }).amount) || 0;
   let mergedCp = Number((withPush as { contributionPoints?: number }).contributionPoints || 0);
   /**
-   * ✅ 2026-09-11 P0 9V 17,760원 뻥튀기 Fix #B: 양쪽 Strong ID 보유 + ID 불일치 → amount 합산 절대 NO
-   *  - Fix #A (allowMergeByIdOnly) 에서 merge를 원천 차단하는 것이 1차 방어선이지만,
-   *    만약 상위 sweep 패스(L514-L531) 등 다른 경로로 mergeDonorRowFields 가 직접 호출된 경우에도
-   *    실제 고유 ID가 있는 정상 후원 2건의 amount 가 합산되지 않도록 2차 방어선 구축
+   * ✅ 2026-09-11 P0 9V 17,760원 뻥튀기 Fix #B + #B-2 (Blind Spot V2 확장):
+   *  - #B: 양쪽 Strong ID 보유 + ID 불일치 → amount 합산 절대 NO
+   *  - #B-2 (Blind Spot V2 2차 방어): 어느 한쪽이라도 Strong ID + normId 불일치 → amount 합산 NO
+   *    Fix #A-2 가 allowMergeByIdOnly 를 차단하지만 sweep 패스 등 다른 경로로
+   *    mergeDonorRowFields 가 직접 호출된 경우에 대비한 이중 백업
    *  - fallback.amount (기존 저장값) 을 그대로 유지 → preferred.amount 는 버리지 않고
    *    Shrink Guard 가 appendLostUnique 로 추후 별도 row 로 복구할 수 있게 함
    */
-  const bothRealIds = hasRealDonorId(preferred) && hasRealDonorId(fallback);
+  const eitherRealIds = hasRealDonorId(preferred) || hasRealDonorId(fallback);
   const idMismatch = (normIdPref && normIdFall && normIdPref !== normIdFall) || false;
-  if (bothRealIds && idMismatch) {
+  if (eitherRealIds && idMismatch) {
     mergedAmount = Math.max(0, Math.round(Number(fallback.amount || preferred.amount || 0)));
     const cpFb = Number((fallback as { contributionPoints?: number }).contributionPoints || 0);
     const cpPf = Number((preferred as { contributionPoints?: number }).contributionPoints || 0);
     mergedCp = Math.max(0, Math.max(cpFb, cpPf));
   } else if (!sameEventId) {
-    /** ② ID가 다른 진짜 별개 후원 (weak id 끼리만 허용) → 합산 처리 */
-    mergedAmount = Math.max(0, Math.round(Number(fallback.amount || 0) + Number(preferred.amount || 0)));
-    const cpFb = Number((fallback as { contributionPoints?: number }).contributionPoints || 0);
-    const cpPf = Number((preferred as { contributionPoints?: number }).contributionPoints || 0);
-    mergedCp = cpFb + cpPf > 0 ? Math.max(0, Math.round(cpFb + cpPf)) : 0;
+    /** ② ID가 다른 케이스 분기:
+     *  - 양쪽 모두 weak donor 끼리 exact 6요소 일치로 merge 허용된 경우:
+     *    → SSE 재연결 / 폴링 중복 유입일 확률이 압도적으로 높으므로 amount 합산 NO ·
+     *      Math.max(fallback, preferred) 유지 (burst 80ms 간격 사용자 연타 후원을 amount 뻥튀기 방지)
+     *  - 그 외 (정상 burst weak+weak 로 명백히 2건 인 경우 등) 는 합산 유지
+     *  - Blind Spot V1 weak donor burst 10건 amount 50,000 → 85,000 뻥튀기 원천 봉쇄
+     */
+    const bothWeak =
+      (fallback.id ? isWeakToonationDonorId(String(fallback.id)) : true) &&
+      (preferred.id ? isWeakToonationDonorId(String(preferred.id)) : true);
+    if (bothWeak) {
+      const fbAmt = Math.max(0, Math.round(Number(fallback.amount || 0)));
+      const pfAmt = Math.max(0, Math.round(Number(preferred.amount || 0)));
+      mergedAmount = fbAmt > 0 && pfAmt > 0 ? Math.max(fbAmt, pfAmt) : fbAmt + pfAmt;
+      const cpFb = Number((fallback as { contributionPoints?: number }).contributionPoints || 0);
+      const cpPf = Number((preferred as { contributionPoints?: number }).contributionPoints || 0);
+      mergedCp = cpFb > 0 && cpPf > 0 ? Math.max(0, Math.max(cpFb, cpPf)) : Math.max(0, Math.round(cpFb + cpPf));
+    } else {
+      mergedAmount = Math.max(0, Math.round(Number(fallback.amount || 0) + Number(preferred.amount || 0)));
+      const cpFb = Number((fallback as { contributionPoints?: number }).contributionPoints || 0);
+      const cpPf = Number((preferred as { contributionPoints?: number }).contributionPoints || 0);
+      mergedCp = cpFb + cpPf > 0 ? Math.max(0, Math.round(cpFb + cpPf)) : 0;
+    }
   } else if (!mergedAmount && Number(fallback.amount || 0) > 0) {
     /** ① ID가 같은 경우 FALLBACK_PRIMARY_FIELDS에 amount가 없으므로 fallback amount를 명시적으로 backfill (⑥-4 원칙) */
     mergedAmount = Math.max(0, Math.round(Number(fallback.amount || 0)));
@@ -582,13 +601,14 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
       if (normA === normB) return true;
     }
     /**
-     * ✅ 2026-09-11 P0 9V 17,760원 뻥튀기 Fix #A: Strong ID 양쪽 보유 + ID 불일치 → 절대 merge NO
-     *  - 9V 8,880원 후원 2건이 toonation:xxx 고유 ID를 각각 보유하고 있으므로 hasRealDonorId=true
-     *  - SSE 경로와 B-mode polling 경로에서 externalId 가 같다고 오판되어
-     *    하위 externalId 블록(L571)이나 weak fallback 블록(L615)에서 merge 허용되는 것을 원천 봉쇄.
+     * ✅ 2026-09-11 P0 9V 17,760원 뻥튀기 Fix #A + Fix #A-2 (Blind Spot V2 확장):
+     *  - #A: Strong ID 양쪽 모두 보유 + norm ID 불일치 → 절대 merge NO
+     *  - #A-2 (Blind Spot V2 차단): 어느 한쪽이라도 Strong ID 보유 + norm ID가 서로 다르면
+     *    externalId 같다는 이유만으로 merge NO (SSE fallback mode fp- weak id가
+     *    정상 Strong donor 와 externalId 공유해서 뻥튀기 merge 하는 케이스 원천 봉쇄)
      *  - real ID가 존재하는 정상 후원끼리는 "이름/금액/메시지/시간이 100% 같아도" 절대 병합하지 않음 = 투네이션 원본 데이터 1:1 보존
      */
-    if (hasRealDonorId(prev) && hasRealDonorId(incoming)) {
+    if (hasRealDonorId(prev) || hasRealDonorId(incoming)) {
       const normA = (idA && normalizeDonationEventId(idA)) || idA;
       const normB = (idB && normalizeDonationEventId(idB)) || idB;
       if (normA !== normB) return false;
@@ -652,6 +672,15 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
       const memB = String((incoming as unknown as { memberId?: string }).memberId || "").trim();
       const atA = donorAtEpochMs(prev as unknown as any);
       const atB = donorAtEpochMs(incoming as unknown as any);
+      /**
+       * ✅ 2026-09-11 Blind Spot V1 weak burst amount 70,000 → 85,000 뻥튀기 봉쇄:
+       *  기존 ±1_000ms 윈도우는 "동일 익명후원자가 10번 연속 후원 버튼 클릭 burst" (80ms 간격 10건) 을
+       *  SSE/Webhook 재연결 중복 유입으로 오판 → exact 6요소 일치 블록 통과 → merge 허용 → amount 합산 뻥튀기.
+       *  → 1_000ms → 150ms 으로 윈도우 축소.
+       *    · 150ms 이내 차이: SSE 재연결 / 폴링 중복 발급의 전형적인 시간차 → 중복 차단 (merge 허용)
+       *    · 150ms 이상 차이: 사용자가 진짜 여러번 눌렀거나 다른 순간의 후원 → merge NO (뻥튀기 0)
+       */
+      const WEAK_NEAR_DUP_MS = 150;
       if (
         msgA &&
         msgB &&
@@ -665,7 +694,7 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
         (!memA || !memB || memA === memB) &&
         atA &&
         atB &&
-        Math.abs(atA - atB) <= 1_000
+        Math.abs(atA - atB) <= WEAK_NEAR_DUP_MS
       ) {
         return true;
       }
