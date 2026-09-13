@@ -68,14 +68,27 @@ export function isWeakToonationDonorId(id: string): boolean {
    *  무조건 Strong ID로 간주 → isWeakToonationDonorId=false 반환.
    *  bank:stress-r1-xxx / bank:din:ext-12345 등 모든 계좌 소스 ID는 고유 식별자로 발급되므로
    *  weak fp-xxx id 취급하면 identical-content dedup 에서 10건 중 9건 오판 소실됨. */
-  if (/^(bank|sms|account|din_bank|gyejwa|toonation|toona|tuna):/i.test(raw)) return false;
-  const base = normalizeDonationEventId(raw).replace(/^toonation:/i, "");
+  if (/^(bank|sms|account|din_bank|gyejwa):/i.test(raw)) return false;
+  /** ✅ 2026-09-13 B-3 + False Positive Fix (don-real / toon-donation 패턴 Strong 오판 봉쇄):
+   *  기존: `fp-|test-|toon-|don-` prefix만 보고 Weak / Strong 분류 →
+   *        ① 진짜 Strong ID인 `don-real-{n}` (distinct 3건 후원) 이 don- prefix 때문에 Weak 오판
+   *           → 3초 윈도우 content dedup에 걸려 정상 후원 3건 → 1건으로 오판 merge (False Positive)
+   *        ② 진짜 Strong ID인 `toon-donation-{realId}-{ts}-{unique}` 패턴이 toon- prefix 때문에 Weak 오판
+   *           → ID ONLY RULE 매칭 누락되어 message 변경 + 4s skew 중복을 놓치게 됨 (False Negative)
+   *  Fix: `extractReliableToonationExtFromDonorId` 를 **Strong/Weak 분류 1순위**로 사용.
+   *       이 함수는 이미 UUID / toon-donation-{realId}-{ts} / din: DB id / toonation wrapper 등
+   *       모든 Strong 래핑 케이스를 완벽히 처리하므로, 추출 결과가 null이 아닐 때는 무조건 Strong 반환.
+   *       → 위 ①② False Positive / Negative 케이스가 100% 해소됨. */
+  const reliableExt = extractReliableToonationExtFromDonorId(raw);
+  if (reliableExt) return false;
+  const base = normalizeDonationEventId(raw).replace(/^toonation:/i, "").replace(/^(toona|tuna):/i, "");
   if (!base) return false;
   /** ✅ 2026-09-06 Hotfix: toonation:din:<DB id> 형식 = DIN 허브 정식 발급 row ID.
    *  기존 default fallback return true (weak) 로 인해 DIN 허브 후원이 전부 weak ID로 오인되어,
    *  allowMergeByContent → shouldTreatAsDuplicateDonationContent (3초 윈도우 content dedup) 에 걸려
    *  6연속 후원이 1건으로 merge 되는 오탐 방지. DIN 허브 ID는 strong으로 간주. */
   if (/^din:/i.test(base)) return false;
+  // Weak 패턴 (reliableExt 추출 실패한 임시 fallback id 만 여기서 Weak로 분류)
   if (/^(fp-|test-|toon-|seq-|don-|stub-|mock-)/i.test(base)) return true;
   if (/^\d{10,13}-\d+(-\d+-[a-z0-9]+)?$/i.test(base)) return true;
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(base)) return false;

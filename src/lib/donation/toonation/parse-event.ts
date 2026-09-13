@@ -388,15 +388,22 @@ export function isReliableToonationExternalId(id: string): boolean {
 export function extractReliableToonationExtFromDonorId(id: string): string | null {
   const raw = String(id || "").trim();
   if (!raw) return null;
-  /** FIRST GATE (완화됨 v2):
+  /** FIRST GATE (완화됨 v3 · 2026-09-13 B-2 CATE Fix):
    *  - toonation: / toona: prefix 둘 다 허용 (DIN 허브가 toona: 로 내려주는 경우도 존재)
    *  - raw pure UUID = 32hex no-hyphen OR 표준 UUID hyphen 8-4-4-4-12 둘 다 허용
+   *  ✅ NEW: `toon-` prefix 패턴도 FIRST GATE 통과 허용!
+   *       → donor.id 가 state 저장 시 normalizeDonationEventId 로 인해 toonation: prefix 가 strip 되어
+   *         `toon-donation-{realId}-{ts}-{unique}` 형태로 저장되는 경우가 있음.
+   *         이 경우 toonation: prefix 없으므로 기존 FIRST GATE에서 즉시 return null → CASE 3 toon 패턴 real id 추출이
+   *         아예 실행조차 못하게 되어 "same real id 4s skew + remapped message" 중복을 놓치게 됨.
+   *         `toon-` prefix로 시작하면 donorInferSourceKind에서도 toonation으로 분류하므로, FIRST GATE 통과 시켜야 안전함.
    *  → bank:* / fp-* / 기타 임의 문자열은 여기서 즉시 return null (blacklist false negative 방어) */
   const toonationPrefixed = /^(toonation|toona):/i.test(raw);
   const STANDARD_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const isRawPureUuid32 = /^[0-9a-f]{32}$/i.test(raw);
   const isRawStandardUuid = STANDARD_UUID_RE.test(raw);
-  if (!toonationPrefixed && !isRawPureUuid32 && !isRawStandardUuid) return null;
+  const isToonDonorIdPattern = /^toon-/i.test(raw);  // ✅ NEW: toon-{realId}-{ts} 투네 real donor id 패턴
+  if (!toonationPrefixed && !isRawPureUuid32 && !isRawStandardUuid && !isToonDonorIdPattern) return null;
 
   /** toonation / toona prefix / ::review suffix 제거한 ext 추출 */
   let ext = raw
@@ -438,9 +445,11 @@ export function extractReliableToonationExtFromDonorId(id: string): string | nul
 
   /** CASE 3: toon-{realId}-{ts}[...] 패턴에서 realId 추출 (suffix 엄격하지 않게 유연화)
    *  기존 regex: ^toon-(.+)-(\d{13,}-\d+-)$ (끝이 정확히 숫자- 로 끝나야 함 → 너무 엄격)
-   *  완화 regex: ^toon-(.+?)-(\d{10,})   → realId 를 non-greedy 캡처, ts=10자리 이상 숫자만 있으면 매치 */
+   *  완화 regex: ^toon-(.+?)-(\d{10,})   → realId 를 non-greedy 캡처, ts=10자리 이상 숫자만 있으면 매치
+   *  ✅ 2026-09-13: FIRST GATE 통과한 isToonDonorIdPattern (toon- prefix만 있음 · toonation: prefix 없이 저장된 경우)
+   *       도 CASE 3 추출 허용 → && (toonationPrefixed || isToonDonorIdPattern) 으로 완화 */
   const toonMatch = /^toon-(.+?)-(\d{10,})/i.exec(ext);
-  if (toonMatch?.[1] && isReliableToonationExternalId(toonMatch[1]) && toonationPrefixed) {
+  if (toonMatch?.[1] && isReliableToonationExternalId(toonMatch[1]) && (toonationPrefixed || isToonDonorIdPattern)) {
     const realIdRaw = toonMatch[1];
     const realUuid = normalizeAsUuid32(realIdRaw);
     return realUuid ? realUuid : realIdRaw.toLowerCase();

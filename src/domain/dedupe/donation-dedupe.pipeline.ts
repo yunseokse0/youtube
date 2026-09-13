@@ -1,5 +1,8 @@
 import type { Donor } from "@/types";
 import {
+  extractReliableToonationExtFromDonorId,
+} from "@/lib/donation/toonation/parse-event";
+import {
   donorAtEpochMs,
   donorInferSourceKind,
   donorTargetField,
@@ -563,8 +566,24 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
         const mDk = String(mAny.donorKey || "").trim().toLowerCase();
         const mExt = String(mAny.externalId || "").trim().toLowerCase();
         const mPk = String(mAny.primaryKey || "").trim().toLowerCase();
-        // Strong ID 불일치 early-exit (둘 다 값이 존재 + 서로 다름 → 절대 twin 아님)
-        if (cIdNorm && mIdNorm && cIdNorm !== mIdNorm) return false;
+        /** ✅ 2026-09-13 C 카테고리 Fix: hasTwinInMerged Strong ID 불일치 early-exit 로직 개선
+         *  기존: cIdNorm 과 mIdNorm 둘다 존재만 하면 글자 다를때 즉시 return false (절대 twin 아님)
+         *  Problem: Weak ID (fp-a, fp-b 등 dual-apply 다른 임시 id) 도 둘다 id가 존재하고 글자가 다르다고
+         *           early-exit 해버림 → 실제로는 같은 donor 인데도 twin false 로 오판
+         *           → applyMonotonicShrinkGuard 에서 appendLostUnique 로 Weak ID donor 다시 2행째 추가
+         *           → 최종 dedupeDonorRows 결과가 2건으로 남아 C TC FAIL.
+         *  Fix: donor.id 양쪽 모두 **실제 Strong ID** (isWeak=false) 일 때만 글자 불일치 early-exit 적용.
+         *       한쪽이라도 Weak ID 라면 (임시 fallback id 발급) 글자가 달라도 같은 donor일 가능성이 있으므로
+         *       계속 이름+금액+시간 비교를 진행해야 함.
+         */
+        const cIdIsStrong = Boolean(cIdRaw) && !isWeakToonationDonorId(cIdRaw);
+        const mIdIsStrong = Boolean(mIdRaw) && !isWeakToonationDonorId(mIdRaw);
+        // ✅ 2026-09-13 B-2 Final Fix: reliable ext real id 같으면 Strong ID norm 불일치라도 twin 가능하므로 early-exit 차단 스킵
+        const relC = cIdRaw ? extractReliableToonationExtFromDonorId(cIdRaw) : null;
+        const relM = mIdRaw ? extractReliableToonationExtFromDonorId(mIdRaw) : null;
+        const sameReliable = relC && relM && relC.toLowerCase() === relM.toLowerCase();
+        if (cIdIsStrong && mIdIsStrong && cIdNorm && mIdNorm && cIdNorm !== mIdNorm && !sameReliable) return false;
+        // donorKey / externalId / primaryKey 는 자체가 Strong 식별자이므로 양쪽 존재+불일치 시 즉시 차단 (기존 규칙 유지)
         if (cDk && mDk && cDk !== mDk) return false;
         if (cExt && mExt && cExt !== mExt) return false;
         if (cPk && mPk && cPk !== mPk) return false;
@@ -872,6 +891,9 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
       const normB = cachedNormId(idB) || idB;
       if (normA === normB) return true;
     }
+    const relPrev = idA ? extractReliableToonationExtFromDonorId(idA) : null;
+    const relInc = idB ? extractReliableToonationExtFromDonorId(idB) : null;
+    if (relPrev && relInc && relPrev.toLowerCase() === relInc.toLowerCase()) return true;
     if (hasRealDonorId(prev) || hasRealDonorId(incoming)) {
       const normA = (idA && cachedNormId(idA)) || idA;
       const normB = (idB && cachedNormId(idB)) || idB;
@@ -927,14 +949,13 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
       const memB = String((incoming as unknown as { memberId?: string }).memberId || "").trim();
       const atA = cachedEpochMs(prev as object, () => donorAtEpochMs(prev as unknown as any));
       const atB = cachedEpochMs(incoming as object, () => donorAtEpochMs(incoming as unknown as any));
-      const WEAK_NEAR_DUP_MS = 150;
       if (
         msgA && msgB && msgA === msgB &&
         nameA && nameB && nameA === nameB &&
         amtA > 0 && amtA === amtB &&
         (!tgtA || !tgtB || tgtA === tgtB) &&
         (!memA || !memB || memA === memB) &&
-        atA && atB && Math.abs(atA - atB) <= WEAK_NEAR_DUP_MS
+        atA && atB && Math.abs(atA - atB) <= DONATION_NEAR_DUP_WINDOW_MS
       ) return true;
       return false;
     }
@@ -1194,12 +1215,15 @@ export function isDuplicateDonationEvent(
     const atA = donorAtEpochMs(existing);
     const atB = donorAtEpochMs(incoming);
     if (Math.abs(atA - atB) > DONATION_NEAR_DUP_WINDOW_MS) return false;
-    const targetA = (t?: string): "account" | "toon" => (t === "toon" ? "toon" : "account");
-    const targetB = targetA;
-    if (targetA(existing.target) !== targetB(incoming.target)) return false;
     const memA = String(existing.memberId || "").trim();
     const memB = String(incoming.memberId || "").trim();
     if (memA && memB && memA !== memB) return false;
+    /** ✅ 2026-09-13 B-1 Fix: owner-remap split pair target 이 달라도 허용
+     *  실제 시나리오: "익명 계좌 후원 (target=account) + 원닉 투네이션 후원 (target=toon)"
+     *  은 동일인이 출금 경로만 바꾼 owner remap 케이스 이므로,
+     *  기존 `targetA !== targetB return false` 는 이 정상 케이스를 차단 → 총액 2배 발생.
+     *  Fix: target 비교 삭제 (동일인의 계좌↔투네 owner remap 을 이제 정상적으로 duplicate 판단)
+     */
     const msgA = String(existing.message || "").trim().toLowerCase();
     const msgB = String(incoming.message || "").trim().toLowerCase();
     if (msgA && msgB && msgA === msgB) return true;
@@ -1247,6 +1271,14 @@ export function isDuplicateDonationEvent(
     ) {
       return true;
     }
+    /** ✅ 2026-09-13 B-2 Fix: "same toonation real id with ts skew / remapped message" reject 안됨
+     *  donor.id 와 rawEvent.id 자체에서 `extractReliableToonationExtFromDonorId` 로 실제 투네 realId (toon-{uuid}-{ts} / uuid / din prefix 등) 를 추출한 뒤
+     *  둘 다 reliable 추출 성공 + 추출된 realId 가 100% 같으면 ID ONLY 매칭 성공 → 중복 return true.
+     *  기존 정책이 donorId / externalId 글자 그대로만 비교해서 "ts skew 다른 suffix 붙은 같은 실제 후원" 이 중복으로 누적되던 Bug 해소.
+     */
+    const relDonor = donorId ? extractReliableToonationExtFromDonorId(donorId) : null;
+    const relEvent = eventId ? extractReliableToonationExtFromDonorId(eventId) : null;
+    if (relDonor && relEvent && relDonor.toLowerCase() === relEvent.toLowerCase()) return true;
     if (externalId) {
       const normDonor = normalizeDonationEventId(donorId);
       if (
@@ -1273,14 +1305,71 @@ export function isDuplicateDonationEvent(
     if (dPrimaryKey && evPrimaryKey && dPrimaryKey.toLowerCase() === evPrimaryKey.toLowerCase()) return true;
     const dHasStrongId = Boolean(donorId) && !isWeakToonationDonorId(donorId);
     const evHasStrongId = Boolean(eventId) && !isWeakToonationDonorId(eventId);
+    const dIsWeak_ = isWeakToonationDonorId(donorId);
+    const evIsWeak_ = !eventId || isWeakToonationDonorId(eventId);
+    const weakEither_ = dIsWeak_ || evIsWeak_;
+    /** ✅ 2026-09-13 B 카테고리 Fix: owner-remap split pair · dual apply path · 동일메시지 burst 등
+     *  isOwnerRemapSplitDuplicate 함수가 true 반환하면 예외적으로 중복 판정 return true.
+     *  ★ 단, False Positive 방지를 위해 아래 2가지 조건 중 하나는 **반드시 만족해야 함**:
+     *    ① target 이 양쪽 모두 존재하면서 **서로 다름** (account ↔ toon 교차 = 진짜 owner remap)
+     *    ② 어느 한쪽이라도 Weak ID(fallback fp-xxx) 를 사용 = dual-apply / WS 재시도 재유입 케이스
+     *  만약 둘다 Strong ID 이고 target도 서로 같다면 (toon ↔ toon · account ↔ account)
+     *  그것은 진짜 owner remap이 아니라 **정상 후원 연타** 이므로 ID ONLY RULE 그대로 따라야 함!
+     *  → 기존 로직은 이 케이스를 중복으로 오판해 3건 후원이 1건으로 줄어드는 False Positive 발생.
+     */
+    const ownerRemapHit = isOwnerRemapSplitDuplicate(d, rawEvent);
+    if (ownerRemapHit) {
+      const tgtD = String((d as unknown as { target?: string }).target || "").trim().toLowerCase();
+      const tgtEv = String(rawEvent.target || "").trim().toLowerCase();
+      const targetsDifferent = Boolean(tgtD && tgtEv && tgtD !== tgtEv);
+      if (targetsDifferent || weakEither_) return true;
+    }
     if (dHasStrongId && evHasStrongId && donorIdNorm !== eventIdNorm) return false;
     /** ✅ Fix #7-2 2026-09-11 계좌 다건이체 P0: donorInferSourceKind 가 bank/sms/account 계열 소스면
      *  이름·금액·메시지·시간이 100% 같아도 절대 identical-content 블록으로 중복 오판하지 않음.
      *  → Fix #7-1 이외 2중 Safety Net (로직 실수로 bank: prefix 패턴이 늦게 추가돼도 여기서 한 번 더 차단) */
     const srcD = donorInferSourceKind({ id: d.id, provider: (d as any).provider, target: d.target, externalId: (d as any).externalId });
     const srcEv = donorInferSourceKind({ id: eventId, provider: rawEvent.provider, target: rawEvent.target, externalId: rawEvent.externalId });
-    if ((srcD === "bank" || srcEv === "bank") && donorIdNorm !== eventIdNorm) return false;
+    if ((srcD === "bank" || srcEv === "bank") && donorIdNorm !== eventIdNorm) {
+      /** ✅ 2026-09-13 B 카테고리 Fix: "near-duplicate 익명 owner-remap split pair within 3s reject 안됨"
+       *  기존: donorInferSourceKind bank 계열 소스면 ID 다를때 무조건 return false (content 기반 near-dup 일절 금지)
+       *  Problem: owner-remap split pair (익명 계좌 후원 + 원닉 투네이션 3초 이내 동일 메시지·금액 유입)
+       *           → 둘중 소스 하나라도 bank 이면 무조건 false 라서 중복 reject 이뤄지지 않고 2건 남아 총액 2배 Bug
+       *  Fix: bank 소스라도 아래 3가지 조건에 하나라도 해당하면 content 기반 중복 체크를 **계속 진행** (return false 안함)
+       *       ① isOwnerRemapSplitDuplicate 판정 true (익명+메시지·금액 매칭 3초 이내 owner remap)
+       *       ② 양쪽 중 한쪽이라도 Weak ID(fallback fp-xxx) 가 있을때 (dual-apply / WS 재시도)
+       *       ③ message 가 양쪽에 존재하고 100% 일치 + 금액 일치 (의도치 않은 중복 유입)
+       *       → bank ID 불일치 일괄 return false -> 선택적 허용으로 완화.
+       */
+      const dIsWeakId = isWeakToonationDonorId(donorId);
+      const evIsWeakId = !eventId || isWeakToonationDonorId(eventId);
+      const hasWeakEither = dIsWeakId || evIsWeakId;
+      const ownerRemapHit = isOwnerRemapSplitDuplicate(d, rawEvent);
+      const rawMsgD = String((d as unknown as { message?: string }).message || "").trim();
+      const rawMsgEv = String(rawEvent.message || "").trim();
+      const exactMsgMatch = rawMsgD && rawMsgEv && rawMsgD === rawMsgEv;
+      const amtMatch =
+        Math.max(0, Math.round(Number(d.amount) || 0)) ===
+        Math.max(0, Math.round(Number(rawEvent.amount) || 0));
+      const allowContentDedupForBank = ownerRemapHit || (hasWeakEither && exactMsgMatch && amtMatch);
+      if (!allowContentDedupForBank) return false;
+    }
     {
+      /** ✅ 2026-09-13 B 카테고리 9건 near-duplicate reject Fix:
+       *  2026-09-08 hotfix-6-10-7 "ID ONLY RULE" 로 near-dup content dedup 전면 비활성화 →
+       *  한쪽 이상 Weak ID(fallback fp-xxx) 이거나 dual-apply 경로면
+       *  ID ONLY 로는 중복 잡을 수가 없어서 "같은 후원 2번 총액 2배" Bug 9건 재현.
+       *
+       *  Fix 분기: 양쪽 모두 Strong ID → ID ONLY 유지 (뒤 블록은 실행 안되고 위에서 return false)
+       *           한쪽이라도 Weak / dual-apply / 익명 owner remap 이면 아래 content + window 체크
+       *  윈도우 기준:
+       *    · 기본 near-dup = 3_000 ms (DONATION_NEAR_DUP_WINDOW_MS)
+       *    · 양쪽 모두 Weak fallback id (fp-xxx) · identical message burst = 15_000 ms (DONATION_IDENTICAL_MESSAGE_NEAR_DUP_MS)
+       */
+      const dIsWeakId = isWeakToonationDonorId(donorId);
+      const evIsWeakId = !eventId || isWeakToonationDonorId(eventId);
+      const weakEitherSide = dIsWeakId || evIsWeakId;
+      const bothWeak = dIsWeakId && evIsWeakId;
       const msgA = String((d as unknown as { message?: string }).message || "").trim();
       const msgB = String(rawEvent.message || "").trim();
       const nameA = normalizeDonorNameKey((d as unknown as { name?: string; donorName?: string }).name || (d as unknown as { donorName?: string }).donorName);
@@ -1293,25 +1382,45 @@ export function isDuplicateDonationEvent(
       const memB = String(rawEvent.memberId || "").trim();
       const atA = donorAtEpochMs(d as unknown as any);
       const atB = donorAtEpochMs({ at: rawEvent.at } as any);
+
+      if (!weakEitherSide) {
+        // 양쪽 모두 Strong ID는 ID ONLY RULE 유지 → content dedup NO (위에서 이미 return false 되었으니 여기 안들어옴. 방어용)
+        return false;
+      }
+
+      if (amtA <= 0 || amtB <= 0) return false;
+      if (amtA !== amtB) return false;
+      if (tgtA && tgtB && tgtA !== tgtB) return false;
+      if (memA && memB && memA !== memB) return false;
+      if (!atA || !atB) return false;
+
+      const atGap = Math.abs(atA - atB);
+
+      // Case 1: owner-remap split pair (3s window · 메시지 매칭 · 익명 처리)
+      if (isOwnerRemapSplitDuplicate(d, rawEvent)) return true;
+
+      // Case 2: identical 메시지 + 동일 이름 · both Weak ID = 15s window (WS 연타 burst)
       if (
+        bothWeak &&
         msgA &&
         msgB &&
         msgA === msgB &&
-        nameA &&
-        nameB &&
-        nameA === nameB &&
-        amtA > 0 &&
-        amtA === amtB &&
-        (!tgtA || !tgtB || tgtA === tgtB) &&
-        (!memA || !memB || memA === memB) &&
-        atA &&
-        atB &&
-        Math.abs(atA - atB) <= 1_000
+        atGap <= DONATION_IDENTICAL_MESSAGE_NEAR_DUP_MS
       ) {
         return true;
       }
+
+      // Case 3: Weak 어느 한쪽 이상 · 기본 near-dup 3s · 메시지·이름 둘다 있으면 매칭 or 하나만 존재 + 나머지 불일치 없음
+      if (atGap <= DONATION_NEAR_DUP_WINDOW_MS) {
+        // same-instant dual-apply · 메시지가 비어있어도 이름·금액·target 일치 = 중복
+        const hasAnyName = Boolean(nameA) && Boolean(nameB);
+        const nameMatch = hasAnyName ? nameA === nameB : true;
+        const msgMatch = msgA && msgB ? msgA === msgB : true;
+        if (msgMatch && nameMatch) return true;
+      }
+
+      // 위 1~3 케이스 모두 해당 없음 = 중복 아님
+      return false;
     }
-    // ✅ ⑥-6: 위 전부에 매칭 안되면 → 절대 중복 아님.
-    return false;
   });
 }

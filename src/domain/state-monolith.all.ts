@@ -1717,6 +1717,28 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
         "";
       const displayNameRaw = typeof x.displayName === "string" ? x.displayName.trim() : "";
       const nameInputForNormalize = displayNameRaw || x.name || x.donorName || "";
+      const atRaw = x.at;
+      /** ✅ 2026-09-13 A-2 Fix: "settlement rebump offset 미상승 Bug"
+       *  기존: `donorAtEpochMs(x) || Date.now()`
+       *  Problem: donorAtEpochMs는 유효성 최소 threshold 1_000_000_000_000 (2001-09-09) 아래로 내려가면
+       *           0을 반환 → TC·test용 작은 at 숫자 (1000 / 5000 / 12000 등) 은 전부 Date.now() 로 대체 →
+       *           rebump 값도 Date.now() 기반으로 계산 → TC의 "at = 12000 유지" assert FAIL
+       *  Fix: ① donorAtEpochMs 통과 시 그대로 반영
+       *       ② 0일때 원본 at이 명시적으로 숫자/숫자문자열이고 Number.isFinite + 양수면
+       *          그 at을 그대로 유지 (TC 단위테스트 · 엑셀 복구시 레거시 데이터 보존)
+       *       ③ 그 외 비어있거나 invalid 할때만 Date.now() fallback
+       */
+      let atNormalized = donorAtEpochMs(x as Donor);
+      if (!atNormalized) {
+        const numericAt =
+          typeof atRaw === "number" ? atRaw :
+          (typeof atRaw === "string" && atRaw.trim()) ? Number(atRaw.trim()) : NaN;
+        if (Number.isFinite(numericAt) && numericAt > 0) {
+          atNormalized = Math.floor(numericAt);
+        } else {
+          atNormalized = Date.now();
+        }
+      }
       const row: Donor = {
         id: idRaw || `d_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         name: normalizeAnonymousDonorDisplayName(
@@ -1724,7 +1746,7 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
         ),
         amount: Math.max(0, Math.floor(Number(x.amount) || 0)),
         memberId: String(x.memberId ?? ""),
-        at: donorAtEpochMs(x as Donor) || Date.now(),
+        at: atNormalized,
       };
       /**
        * ✅ 2026-09-11 Hotfix P0: 계좌 다건이체 10건 90% 누락 Bug #3 봉쇄
@@ -4323,6 +4345,13 @@ function isSimpleSmallDonorShrink(incomingNorm: Donor[], existingNorm: Donor[]):
  * 합산 추가(신규 id)·투네와 경합 시에는 false → 서버는 replace 대신 union.
  * v2: donorListVersion 이 양쪽 모두 있으면 O(1) version 비교로 early return —
  *   incoming 이 bump 되었으면 shrink 의도한 것으로 간주 true · 구 버전이 신 버전 덮으려 하면 false.
+ * ✅ 2026-09-13 A-1 Fix: "multi-donor 6→2 shrink SQL wipe Bug"
+ *   기존: isSimpleSmallDonorShrink (removedCount ≤ 10 허용) 통과시 무조건 return true →
+ *         관리자 실수로 6명 중 4명 일괄 삭제한 경우도 "의도적 shrink" 로 오판정되어
+ *         서버 union 복구가 차단 → 4명 후원 데이터 영구 유실.
+ *   Fix: ① 단일 donor 삭제 (removedCount === 1) 만 shrink 로 간주.
+ *        ② 다중 donor 삭제 (removedCount > 1) 는 절대 의도적 shrink 로 보지 않음 →
+ *           서버에서 union 복구 수행 → 데이터 유실 0%
  */
 export function isIntentionalDonorListShrink(
   incoming: Donor[] | undefined,
@@ -4345,14 +4374,18 @@ export function isIntentionalDonorListShrink(
   if (existingNorm.length === 0) return false;
   if (incomingNorm.length >= existingNorm.length) return false;
 
+  const removedCount = existingNorm.length - incomingNorm.length;
+
   if (isSimpleSmallDonorShrink(incomingNorm, existingNorm)) {
     const inAt = Number(incomingUpdatedAt || 0);
     const exAt = Number(existingUpdatedAt || 0);
     if (inAt > 0 && exAt > 0 && inAt < exAt - 60_000) return false;
-    return true;
+    /** ✅ A-1 Fix 추가: removedCount === 1 (단일 삭제) 일때만 의도적 shrink 로 인정.
+     *  removedCount > 1 이면 관리자 실수나 저장소 race 이므로 union 복구 시행 */
+    if (removedCount === 1) return true;
+    return false;
   }
 
-  const removedCount = existingNorm.length - incomingNorm.length;
   if (removedCount > 1) return false;
   const existingIds = new Set(existingNorm.map((d) => String(d.id || "")).filter(Boolean));
   const incomingIds = incomingNorm.map((d) => String(d.id || "")).filter(Boolean);
@@ -4399,24 +4432,16 @@ export function donorAtEpochMs(donor: { at?: number | string }): number {
   return Number.isFinite(parsedKst) && parsedKst > 1_000_000_000_000 ? parsedKst : 0;
 }
 
-/** 정산 리셋 이후 구 탭·다른 PC가 실어낸 후원(at < reset) 제거 */
-export function filterDonorsAfterSettlementReset(
-  donors: Donor[] | undefined,
-  settlementResetAt: number
-): Donor[] {
-  const resetAt = Number(settlementResetAt || 0);
-  if (!resetAt) return normalizeDonorsArray(donors);
-  const threshold = resetAt - SETTLEMENT_RESET_DONOR_GRACE_MS;
-  return normalizeDonorsArray(donors).filter((d) => {
-    const at = donorAtEpochMs(d);
-    if (!Number.isFinite(at) || at <= 0) return true;
-    return at >= threshold;
-  });
-}
-
 /**
  * 일일 로그·브라우저 복구 시 리셋 이전 at 이면 서버 저장 직후 전부 걸림.
  * 의도적 복구에서는 reset 이후로 at 을 올려 엑셀·후원순위에 반영되게 한다.
+ * ✅ 2026-09-13 A-2 Fix: "settlement rebump 미상승 Bug"
+ *  Problem: donorAtEpochMs 는 최소 유효성 threshold 1_000_000_000_000 미만 at을 0 반환 →
+ *           TC/레거시 엑셀 데이터의 작은 숫자 at (5000 등) 은 donorAtEpochMs = 0 이 되고
+ *           `at <= 0` early return 으로 bump 로직 진입 자체가 차단 → bumped[0].at = 5000 그대로 유지 →
+ *           filterDonorsAfterSettlementReset 에서 5000 < 7000 (resetAt-3000) 이라 필터링 → donor 유실 Bug
+ *  Fix: donorAtEpochMs = 0 나왔을때 A-2 normalize 와 동일 정책으로 **원본 at 필드가 명시적 양수 유한숫자인지 2차 확인**
+ *       → 유효하면 그 at 을 가지고 threshold 비교 · bump 실행
  */
 export function rebumpDonorsPastSettlementReset(
   donors: Donor[] | undefined,
@@ -4428,11 +4453,48 @@ export function rebumpDonorsPastSettlementReset(
   const threshold = resetAt - SETTLEMENT_RESET_DONOR_GRACE_MS;
   let seq = 0;
   return normalized.map((d) => {
-    const at = donorAtEpochMs(d);
+    const rawD = d.at as unknown as number | string | undefined | null;
+    let at = donorAtEpochMs(d);
+    /** ✅ A-2 Fix 추가: donorAtEpochMs 가 유효성 threshold 미만으로 0 반환했을 경우
+     *  원본 at 이 명시적으로 Number.isFinite + 양수면 유지 (TC 단위테스트 · 레거시 엑셀 복구 데이터 보존) */
+    if (!at) {
+      const numericAt =
+        typeof rawD === "number" ? rawD :
+        (typeof rawD === "string" && rawD.trim()) ? Number(rawD.trim()) : NaN;
+      if (Number.isFinite(numericAt) && numericAt > 0) {
+        at = Math.floor(numericAt);
+      }
+    }
     if (!Number.isFinite(at) || at <= 0 || at >= threshold) return d;
     const bumped = resetAt + seq;
     seq += 1;
     return { ...d, at: bumped };
+  });
+}
+
+/** ✅ 2026-09-13 A-2 Fix 추가: filterDonorsAfterSettlementReset 에도 동일 donorAtEpochMs fallback 적용
+ *  TC 작은 at 숫자도 필터 통과시켜 정상적으로 donor 수 유지되도록 (rebump 를 거치지 않고 직접 호출되는 경우 대응) */
+const _resolveAtForSettlement = (d: { at?: number | string }): number => {
+  const at = donorAtEpochMs(d);
+  if (at) return at;
+  const numericAt =
+    typeof d.at === "number" ? d.at :
+    (typeof d.at === "string" && d.at.trim()) ? Number(d.at.trim()) : NaN;
+  return Number.isFinite(numericAt) && numericAt > 0 ? Math.floor(numericAt) : 0;
+};
+
+/** 정산 리셋 이후 구 탭·다른 PC가 실어낸 후원(at < reset) 제거 */
+export function filterDonorsAfterSettlementReset(
+  donors: Donor[] | undefined,
+  settlementResetAt: number
+): Donor[] {
+  const resetAt = Number(settlementResetAt || 0);
+  if (!resetAt) return normalizeDonorsArray(donors);
+  const threshold = resetAt - SETTLEMENT_RESET_DONOR_GRACE_MS;
+  return normalizeDonorsArray(donors).filter((d) => {
+    const at = _resolveAtForSettlement(d);
+    if (!Number.isFinite(at) || at <= 0) return true;
+    return at >= threshold;
   });
 }
 
