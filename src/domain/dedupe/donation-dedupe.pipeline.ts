@@ -956,18 +956,37 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
   function allowMergeByIdOnly(prev: MergeableDonor, incoming: MergeableDonor): boolean {
     const idA = String(prev.id || "").trim();
     const idB = String(incoming.id || "").trim();
+    // ✅ 2026-09-14 Bug 5/5 박자키 LIVE 중복 Fix: SAME UUID tail matching 을 hasRealDonorId 차단 블록 **앞**에서 선행 처리
+    //    (toonation:din:UUID ↔ bank:sms:UUID 는 둘다 Strong ID 라 hasRealDonorId=true 인데 normId 는 서로 달라서
+    //     hasRealDonorId 블록에서 return false 당하는 것을 막기 위해 UUID tail 일치 시 즉시 merge 허용을 가장 위로 올림)
+    const idTailEq = (() => {
+      const lastOf = (raw: string) => {
+        const s = String(raw || "").trim();
+        if (!s) return "";
+        const byColon = s.split(/[:\-_]/).filter(Boolean);
+        return (byColon[byColon.length - 1] || "").toLowerCase();
+      };
+      const tA = lastOf(idA);
+      const tB = lastOf(idB);
+      return Boolean(tA && tB && tA.length >= 12 && tA === tB);
+    })();
     if (idA && idB) {
       const normA = cachedNormId(idA) || idA;
       const normB = cachedNormId(idB) || idB;
       if (normA === normB) return true;
     }
+    if (idTailEq) return true;
     const relPrev = idA ? extractReliableToonationExtFromDonorId(idA) : null;
     const relInc = idB ? extractReliableToonationExtFromDonorId(idB) : null;
     if (relPrev && relInc && relPrev.toLowerCase() === relInc.toLowerCase()) return true;
     if (hasRealDonorId(prev) || hasRealDonorId(incoming)) {
-      const normA = (idA && cachedNormId(idA)) || idA;
-      const normB = (idB && cachedNormId(idB)) || idB;
-      if (normA !== normB) return false;
+      if (idTailEq) {
+        // ✅ 2026-09-14 Bug 5/5: 양 Strong ID 이지만 real UUID tail 이 완벽 일치 = 실제 SAME 후원 SSE/Polling 이중 유입 → norm 불일치 차단 bypass
+      } else {
+        const normA = (idA && cachedNormId(idA)) || idA;
+        const normB = (idB && cachedNormId(idB)) || idB;
+        if (normA !== normB) return false;
+      }
     }
     const extA = String(prev.externalId || "").trim();
     const extB = String(incoming.externalId || "").trim();
@@ -986,20 +1005,6 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
     const pkA = String((prev as unknown as { primaryKey?: string | number }).primaryKey || "").trim();
     const pkB = String((incoming as unknown as { primaryKey?: string | number }).primaryKey || "").trim();
     if (pkA && pkB && pkA.toLowerCase() === pkB.toLowerCase()) return true;
-    // ✅ 2026-09-14 LIVE BUGFIX 박자키 12:59:53: SAME UUID tail matching (hasTwinInMerged 와 동일 로직)
-    //    toonation:din:cmu002fnp... (SSE)  ↔  bank:sms:cmu002fnp... (B-mode Polling) → prefix 다르지만 맨 뒷 UUID 완벽 일치 = SAME 후원
-    const idTailEq = (() => {
-      const lastOf = (raw: string) => {
-        const s = String(raw || "").trim();
-        if (!s) return "";
-        const byColon = s.split(/[:\-_]/).filter(Boolean);
-        return (byColon[byColon.length - 1] || "").toLowerCase();
-      };
-      const tA = lastOf(idA);
-      const tB = lastOf(idB);
-      return Boolean(tA && tB && tA.length >= 12 && tA === tB);
-    })();
-    if (idTailEq) return true;
     {
       const pKind = donorInferSourceKind(prev as any);
       const iKind = donorInferSourceKind(incoming as any);
