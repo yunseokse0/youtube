@@ -582,11 +582,46 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
         const relC = cIdRaw ? extractReliableToonationExtFromDonorId(cIdRaw) : null;
         const relM = mIdRaw ? extractReliableToonationExtFromDonorId(mIdRaw) : null;
         const sameReliable = relC && relM && relC.toLowerCase() === relM.toLowerCase();
-        if (cIdIsStrong && mIdIsStrong && cIdNorm && mIdNorm && cIdNorm !== mIdNorm && !sameReliable) return false;
+        // ✅ 2026-09-14 LIVE BUGFIX 박자키 12:59:53: SSE(toonation:din:UUID) + B-mode(bank:sms:UUID) SAME UUID dual path!
+        // id prefix만 다르고 (toonation:din: VS bank:sms:) 실제 UUID 뒷부분은 완전 일치하거나 externalId/donorKey/primaryKey 중 어느 하나라도 완전 일치하면
+        // BANK PROVIDER 에서 파생된 다른 prefix Strong ID라도 진짜 같은 후원이므로 twin으로 간주해 Strong early-exit 를 bypass 해야 함.
+        // (hasTwinInMerged가 return false 해버리면 그 뒤 allowMergeByIdOnly는 아예 호출도 안됨!)
+        let sameAnyStrongKey = false;
+        if (cIdIsStrong && mIdIsStrong) {
+          // 1) donorKey / externalId / primaryKey 완벽 일치 검사
+          const keyExistAndEq = (a: string, b: string) => Boolean(a && b && a === b);
+          if (keyExistAndEq(cDk, mDk) || keyExistAndEq(cExt, mExt) || keyExistAndEq(cPk, mPk)) {
+            sameAnyStrongKey = true;
+          } else {
+            // 2) id raw에서 맨 마지막 : split 한 토큰 (= 실제 UUID / 발급번호 부분) 이 100% 일치하는지 확인
+            //    toonation:din:cmu002fnp001q5jz5jgfmbejr 와 bank:sms:cmu002fnp001q5jz5jgfmbejr 의 경우
+            //    맨 뒷 UUID가 cmu002fnp... 로 정확히 같으므로 이 경우도 SAME 후원으로 간주
+            const lastOf = (raw: string) => {
+              const s = String(raw || "").trim();
+              if (!s) return "";
+              // : split 도 하고 - 도 고려 (toon-donation-XXX 패턴도 있으니 맨 뒤 12자 이상의 알파벳+숫자 슬러그만 추출)
+              const byColon = s.split(/[:\-_]/).filter(Boolean);
+              return (byColon[byColon.length - 1] || "").toLowerCase();
+            };
+            const tailC = lastOf(cIdRaw || "");
+            const tailM = lastOf(mIdRaw || "");
+            // UUID or 발급번호는 최소 12자 이상이어야 우연일치 회피
+            if (tailC && tailM && tailC.length >= 12 && tailC === tailM) {
+              sameAnyStrongKey = true;
+            }
+          }
+        }
+        if (cIdIsStrong && mIdIsStrong && cIdNorm && mIdNorm && cIdNorm !== mIdNorm && !sameReliable && !sameAnyStrongKey) return false;
         // donorKey / externalId / primaryKey 는 자체가 Strong 식별자이므로 양쪽 존재+불일치 시 즉시 차단 (기존 규칙 유지)
-        if (cDk && mDk && cDk !== mDk) return false;
-        if (cExt && mExt && cExt !== mExt) return false;
-        if (cPk && mPk && cPk !== mPk) return false;
+        // ✅ 2026-09-14 LIVE BUGFIX 박자키 12:59:53:
+        //    하지만! id-tail 일치 (SSE+Polling 이중발급 SAME UUID) 또는 reliable ext 일치 / donorKey 일치 등
+        //    sameReliable || sameAnyStrongKey === true 인 "진짜 같은 후원" 케이스에서는 externalId 형식 차이
+        //    (SSE: cmu002fn 원본  VS  B-mode polling: toonation:ws:이름:금액:ts 커스텀)
+        //    때문에 억지로 차단하면 안됨 → 차단 로직 bypass!
+        const skipExtDkPkBlock = Boolean(sameReliable || sameAnyStrongKey);
+        if (!skipExtDkPkBlock && cDk && mDk && cDk !== mDk) return false;
+        if (!skipExtDkPkBlock && cExt && mExt && cExt !== mExt) return false;
+        if (!skipExtDkPkBlock && cPk && mPk && cPk !== mPk) return false;
         const mIsSplit = Boolean(mAny.groupSplit) || Boolean(mAny.groupSplitSource);
         const mName = cachedNormName(String(mAny.donorName || mAny.displayName || mAny.name || ""));
         if (mName !== cName) continue;
@@ -701,6 +736,11 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
     const phaseExt = new Map<string, T[]>();
     const phaseDk = new Map<string, T[]>();
     const phasePk = new Map<string, T[]>();
+    // ✅ 2026-09-14 LIVE BUGFIX 박자키 12:59:53: 5번째 id-tail 버킷 추가
+    //    SSE(toonation:din:UUID) + B-mode(bank:sms:UUID) 이중 발급 시
+    //    normId / externalId 모두 각자 달라서 서로 다른 버켓에 담겨 pushOrMerge가 함께 호출 안되는 문제!
+    //    → id 문자열 맨 마지막 12자 이상 UUID/발급번호 슬러그로 공통 버켓 한번 더 묶어줘서 진짜 같은 후원은 반드시 같은 버켓에 타게 함
+    const phaseTail = new Map<string, T[]>();
     const weakRest: T[] = [];
     for (const d of pass1) {
       const rawId = String(d.id || "").trim();
@@ -733,15 +773,27 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
         phasePk.set(pk, arr);
         pushed = true;
       }
+      // ✅ LIVE BUGFIX: id tail 버켓 (맨 마지막 : - _ split 후 토큰, 12자 이상 UUID 슬러그)
+      if (rawId) {
+        const byColon = rawId.split(/[:\-_]/).filter(Boolean);
+        const tail = (byColon[byColon.length - 1] || "").trim().toLowerCase();
+        if (tail && tail.length >= 12) {
+          const arr = phaseTail.get(tail) || [];
+          arr.push(d);
+          phaseTail.set(tail, arr);
+          pushed = true;
+        }
+      }
       if (!pushed) weakRest.push(d);
     }
     const merged = new Map<T, boolean>();
     const sweepResult: T[] = [];
-    // sweepResult 에서 "이미 삽입된 donor" 의 normId/externalId/donorKey/pk 로 O(1) 조회용 idx map
+    // sweepResult 에서 "이미 삽입된 donor" 의 normId/externalId/donorKey/pk/id-tail 로 O(1) 조회용 idx map
     const srByIdNorm = new Map<string, number>();
     const srByExt = new Map<string, number>();
     const srByDk = new Map<string, number>();
     const srByPk = new Map<string, number>();
+    const srByTail = new Map<string, number>();
     function _registerSr(d: T, idx: number) {
       const rawId = String(d.id || "").trim();
       const nId = rawId ? cachedNormId(rawId) || rawId : "";
@@ -752,6 +804,12 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
       if (dk) srByDk.set(dk, idx);
       const pk = String((d as unknown as { primaryKey?: string | number }).primaryKey || "").trim().toLowerCase();
       if (pk) srByPk.set(pk, idx);
+      // ✅ LIVE BUGFIX: id-tail sr idx map 추가
+      if (rawId) {
+        const tks = rawId.split(/[:\-_]/).filter(Boolean);
+        const tl = (tks[tks.length - 1] || "").trim().toLowerCase();
+        if (tl && tl.length >= 12) srByTail.set(tl, idx);
+      }
     }
     function _findInSr(d: T): number {
       const rawId = String(d.id || "").trim();
@@ -774,6 +832,15 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
       if (pk) {
         const h = srByPk.get(pk);
         if (h !== undefined) return h;
+      }
+      // ✅ LIVE BUGFIX: _findInSr 에서도 id-tail idx 조회 시도
+      if (rawId) {
+        const tks = rawId.split(/[:\-_]/).filter(Boolean);
+        const tl = (tks[tks.length - 1] || "").trim().toLowerCase();
+        if (tl && tl.length >= 12) {
+          const h = srByTail.get(tl);
+          if (h !== undefined) return h;
+        }
       }
       return -1;
     }
@@ -846,6 +913,9 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
     for (const bucket of phaseExt.values()) pushOrMerge(bucket);
     for (const bucket of phaseDk.values()) pushOrMerge(bucket);
     for (const bucket of phasePk.values()) pushOrMerge(bucket);
+    // ✅ 2026-09-14 LIVE BUGFIX 박자키 12:59:53: Phase 2-1 id-tail 병합 버킷 실행
+    //    (SSE + B-mode Polling 서로 다른 prefix 같은 UUID 실제 후원 묶기)
+    for (const bucket of phaseTail.values()) pushOrMerge(bucket);
     // Phase 3: weak donor 이름+금액 bucket 병합
     if (weakRest.length > 0) {
       const wBuckets = new Map<string, T[]>();
@@ -916,12 +986,26 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
     const pkA = String((prev as unknown as { primaryKey?: string | number }).primaryKey || "").trim();
     const pkB = String((incoming as unknown as { primaryKey?: string | number }).primaryKey || "").trim();
     if (pkA && pkB && pkA.toLowerCase() === pkB.toLowerCase()) return true;
+    // ✅ 2026-09-14 LIVE BUGFIX 박자키 12:59:53: SAME UUID tail matching (hasTwinInMerged 와 동일 로직)
+    //    toonation:din:cmu002fnp... (SSE)  ↔  bank:sms:cmu002fnp... (B-mode Polling) → prefix 다르지만 맨 뒷 UUID 완벽 일치 = SAME 후원
+    const idTailEq = (() => {
+      const lastOf = (raw: string) => {
+        const s = String(raw || "").trim();
+        if (!s) return "";
+        const byColon = s.split(/[:\-_]/).filter(Boolean);
+        return (byColon[byColon.length - 1] || "").toLowerCase();
+      };
+      const tA = lastOf(idA);
+      const tB = lastOf(idB);
+      return Boolean(tA && tB && tA.length >= 12 && tA === tB);
+    })();
+    if (idTailEq) return true;
     {
       const pKind = donorInferSourceKind(prev as any);
       const iKind = donorInferSourceKind(incoming as any);
       if (pKind === "bank" || iKind === "bank") {
-        const prevAny = prev as unknown as { provider?: unknown; rawId?: string; id?: string };
-        const incAny = incoming as unknown as { provider?: unknown; rawId?: string; id?: string };
+        const prevAny = prev as unknown as { provider?: unknown; rawId?: string; id?: string; externalId?: unknown; donorKey?: unknown; primaryKey?: unknown };
+        const incAny = incoming as unknown as { provider?: unknown; rawId?: string; id?: string; externalId?: unknown; donorKey?: unknown; primaryKey?: unknown };
         const hasAnyStrongProv = (_o: unknown) => {
           const o = _o as any;
           const p = String(o?.provider || "").trim().toLowerCase();
@@ -930,7 +1014,26 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
           return /^(bank|sms|account|din_bank|gyejwa|은행|계좌|무통장)[-:]/.test(rid);
         };
         if (hasAnyStrongProv(prevAny) || hasAnyStrongProv(incAny)) {
-          return false;
+          // ✅ 2026-09-14 LIVE BUGFIX (박자키 12:59:53 2건 중복):
+          // SSE(toonation:din:UUID) + B-mode Polling(bank:sms:UUID) 이중 발급 SAME REAL UUID 패턴!
+          // Bank/sms provider prefix만 다르고 reliable/external/donorKey / id-tail 중 어느 하나라도 완벽 일치하면
+          // 진짜 같은 후원이므로 Bank Strong GATE를 bypass 해서 merge 허용 (금액 뻥튀기 방지 Math.max는 상위 레이어에서 적용됨)
+          const extP = String(prevAny.externalId || "").trim().toLowerCase();
+          const extI = String(incAny.externalId || "").trim().toLowerCase();
+          const dkP = String(prevAny.donorKey || "").trim().toLowerCase();
+          const dkI = String(incAny.donorKey || "").trim().toLowerCase();
+          const pkP = String(prevAny.primaryKey || "").trim().toLowerCase();
+          const pkI = String(incAny.primaryKey || "").trim().toLowerCase();
+          const sameReliable = relPrev && relInc && relPrev.toLowerCase() === relInc.toLowerCase();
+          const sameAnyStrongKey =
+            (extP && extI && extP === extI) ||
+            (dkP && dkI && dkP === dkI) ||
+            (pkP && pkI && pkP === pkI) ||
+            sameReliable ||
+            idTailEq;
+          if (!sameAnyStrongKey) {
+            return false;
+          }
         }
       }
     }
