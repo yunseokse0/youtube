@@ -86,7 +86,9 @@ function buildBankEvent(
   const _pk = primaryKeyRaw !== undefined && primaryKeyRaw !== null && String(primaryKeyRaw).trim() !== "";
   return {
     id,
-    provider: providerRaw || "bank",
+    /** ✅ 2026-09-13 빌드 타입 Fix: DonationProvider = "toonation" | "bank" 타입만 허용하므로
+     *  providerRaw 가 명시적으로 "toonation" 일때만 그대로 쓰고, 그 외 모든 문자열/빈 값은 "bank" fallback */
+    provider: providerRaw === "toonation" ? "toonation" : "bank",
     externalId: externalIdRaw || id,
     donorName,
     amount,

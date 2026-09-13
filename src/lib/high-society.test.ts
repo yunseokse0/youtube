@@ -1549,12 +1549,17 @@ describe("detectHighSocietyGrowFlashSeatIds", () => {
 });
 
 describe("high-society fx settings", () => {
-  it("defaults all production effects to OFF", () => {
+  it("defaults production-safe effects to ON (벽 구분선·영토 가장자리), motion effects to OFF", () => {
     const fx = defaultHighSocietyFxSettings();
     expect(fx).toEqual({
-      frontier: false,
+      /** ✅ 2026-09-13 벽 사라짐 Bug Fix 기본값 상향:
+       *  frontier=true (영토 가장자리 장식) + contestedEdge=true (진한 칸 사이 벽 구분선) 은
+       *  디폴트로 켜서 신규 유저·settings 리셋 후에도 벽 구분선이 항상 잘 보이도록.
+       *  모션 효과(growFlash) · 화살표 전용(arrowBlade) · 강한 외곽선(strongOutline) 은 성능/시각 영향으로 OFF 유지.
+       */
+      frontier: true,
       growFlash: false,
-      contestedEdge: false,
+      contestedEdge: true,
       arrowBlade: false,
       strongOutline: false,
     });
@@ -1563,16 +1568,18 @@ describe("high-society fx settings", () => {
     expect(normalizeHighSocietySettings(null).fx).toEqual(fx);
   });
 
-  it("only enables effects explicitly set to true", () => {
+  it("respects explicit false, otherwise falls back to new defaults (contestedEdge·frontier ON)", () => {
     expect(
       normalizeHighSocietyFxSettings({
-        frontier: true,
-        growFlash: false,
+        frontier: true,            // 명시적 true → 유지
+        growFlash: false,          // 명시적 false → 유지
+        // contestedEdge: undefined → 이제 기본값 true 유지 (Fix #normalize undefined 처리)
+        // arrowBlade, strongOutline: undefined → 기본값 false 유지
       })
     ).toEqual({
       frontier: true,
       growFlash: false,
-      contestedEdge: false,
+      contestedEdge: true,       // ✅ 2026-09-13 Fix: undefined → 기본값 true (벽 구분선 기본 ON)
       arrowBlade: false,
       strongOutline: false,
     });

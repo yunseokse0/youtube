@@ -308,9 +308,23 @@ export function mergeDonorRowFields<T extends MergeableDonor>(
     ...(mergedTarget ? { target: mergedTarget } : {}),
     ...(mergedMsg ? { message: mergedMsg } : {}),
   };
-  const withPush: any =
-    fallback.hsPushDir || !preferred.hsPushDir
-      ? { ...baseMerge, hsPushDir: fallback.hsPushDir || baseMerge.hsPushDir }
+  /**
+   * ✅ 2026-09-13 영토 자리이동 (hsPushDir) Bug Fix: 우선순위 재정렬
+   *  사용자 제보: "자리 이동시 제대로 반영 안됨"
+   *  Root Cause: 기존 L311 `fallback.hsPushDir || !preferred.hsPushDir` 는
+   *   1) fallback에 값이 있으면 무조건 fallback을 우선 (신규 자리이동 요청 완전 무시)
+   *   2) preferred만 있으면 baseMerge에 hsPushDir가 없을때 fallback undefined를 넣어서 소실
+   *  Fix: 명시적 값이 있는지 여부로만 체크 (truthy/falsy 아님 — ""나 0은 없으나 향후 확장 고려)
+   *       ① preferred 에 hsPushDir 명시 → 제일 높은 우선순위로 반영
+   *       ② fallback 에만 hsPushDir 명시 → 기존 자리이동 정보 유지
+   *       ③ 둘 다 없으면 아예 필드를 추가하지 않음 (baseMerge 만 사용)
+   */
+  const pfHasPush = preferred?.hsPushDir === "left" || preferred?.hsPushDir === "right" || preferred?.hsPushDir === "split";
+  const fbHasPush = fallback.hsPushDir === "left" || fallback.hsPushDir === "right" || fallback.hsPushDir === "split";
+  const withPush: any = pfHasPush
+    ? { ...baseMerge, hsPushDir: preferred.hsPushDir }
+    : fbHasPush
+      ? { ...baseMerge, hsPushDir: fallback.hsPushDir }
       : baseMerge;
   /**
    * ✅ 2026-09-08 Hotfix XX-amount: amount / contributionPoints 병합 규칙 재정의 (500ms 50건 burst amount 폭증 Fix)
@@ -384,16 +398,27 @@ export function mergeDonorRowFields<T extends MergeableDonor>(
   const withAmount: any = { ...withPush, amount: mergedAmount };
   if (mergedCp > 0) withAmount.contributionPoints = mergedCp;
   const ineligible = !isDonationAmountEligibleForHighSocietyTerritory(mergedAmount);
-  const territoryFlag =
-    ineligible || fallback.hsTerritoryExcluded === true
+  /**
+   * ✅ 2026-09-13 영토 Bug Fix: 우선순위 재정렬 (기존: 자동 > 이전 > 신규 / 신규: 신규 명시 > 이전 명시 > 자동)
+   *  사용자 제보: "영토가 사라진 상태에서 추가 및 자리 이동시 제대로 반영 안됨"
+   *  Root Cause: 기존 삼항 L388 이 `ineligible || fallback.hsTerritoryExcluded === true` 를 최상단에 놓아
+   *   preferred (새로 들어온 관리자/사용자 명시적 hsTerritoryExcluded=false) 가 위에서 true로 덮어써져 완전히 무시됨.
+   *  Fix: ① preferred 에 명시적으로 true/false 가 있으면 제일 높은 우선순위로 100% 반영
+   *       ② preferred 가 없고 fallback 에 명시적으로 true/false 가 있으면 차선으로 반영
+   *       ③ 둘 다 명시가 없을때만 마지막으로 ineligible 자동 계산값으로 정함 (기존 기능 유지)
+   */
+  const territoryFlag: boolean | undefined =
+    preferred?.hsTerritoryExcluded === true
       ? true
-      : fallback.hsTerritoryExcluded === false
+      : preferred?.hsTerritoryExcluded === false
         ? false
-        : preferred?.hsTerritoryExcluded === false
-          ? false
-          : preferred?.hsTerritoryExcluded === true
-            ? true
-            : false;
+        : fallback.hsTerritoryExcluded === true
+          ? true
+          : fallback.hsTerritoryExcluded === false
+            ? false
+            : ineligible
+              ? true
+              : undefined;
   return {
     ...withAmount,
     ...(preferred.donationExcluded || fallback.donationExcluded

@@ -211,9 +211,16 @@ export function parseHighSocietyTerritoryUpdateMode(
 
 export function defaultHighSocietyFxSettings(): HighSocietyFxSettings {
   return {
-    frontier: false,
+    /** ✅ 2026-09-13 벽 사라짐 Bug Fix:
+     *  사용자 제보: "영토 오버레이에 벽이 어느순간 사라짐"
+     *  기존 기본값 contestedEdge=false + CSS에서 contested OFF시 border를 2px 45% 반투명 검정으로 약화시켜
+     *  채도 높은 색상 영토 칸 사이에서 벽 구분선이 시각적으로 사라지는 Bug.
+     *  Fix: 기본값 frontier(영토 가장자리 장식) + contestedEdge(진한 벽 구분선) 를 모두 true 로 켜서
+     *       신규 유저 settings 초기화시에도 벽 구분선이 항상 명확히 보이도록 기본값 상향.
+     */
+    frontier: true,
     growFlash: false,
-    contestedEdge: false,
+    contestedEdge: true,
     arrowBlade: false,
     strongOutline: false,
   };
@@ -223,12 +230,17 @@ export function normalizeHighSocietyFxSettings(input: unknown): HighSocietyFxSet
   const base = defaultHighSocietyFxSettings();
   if (!input || typeof input !== "object") return base;
   const v = input as Partial<HighSocietyFxSettings>;
+  /** ✅ 2026-09-13 Fix: 사용자가 명시적으로 false/true 로 준 값만 적용하고, undefined(저장된 적 없음) 는 기본값(true) 유지.
+   *  기존: `frontier: v.frontier === true` → undefined 일때 강제로 false 로 떨어져서 벽/장식이 꺼지던 Bug.
+   *  Fix: 각 필드마다 `undefined 아니면 명시값` else `defaultHighSocietyFxSettings의 기본값(true)` 적용 */
+  const coerce = (raw: unknown, fallback: boolean): boolean =>
+    raw === undefined ? fallback : raw === true;
   return {
-    frontier: v.frontier === true,
-    growFlash: v.growFlash === true,
-    contestedEdge: v.contestedEdge === true,
-    arrowBlade: v.arrowBlade === true,
-    strongOutline: v.strongOutline === true,
+    frontier: coerce(v.frontier, base.frontier),
+    growFlash: coerce(v.growFlash, base.growFlash),
+    contestedEdge: coerce(v.contestedEdge, base.contestedEdge),
+    arrowBlade: coerce(v.arrowBlade, base.arrowBlade),
+    strongOutline: coerce(v.strongOutline, base.strongOutline),
   };
 }
 
