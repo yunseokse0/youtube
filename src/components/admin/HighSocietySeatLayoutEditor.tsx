@@ -51,7 +51,7 @@ export default function HighSocietySeatLayoutEditor({
     [hsSeatPlayers]
   );
   const hsUnseatedMembers = useMemo(
-    () => (members || []).filter((m) => !m.operating && !hsSeatedIdSet.has(String(m.id))),
+    () => (members || []).filter((m) => !hsSeatedIdSet.has(String(m.id))),
     [members, hsSeatedIdSet]
   );
   const hsSeatCountForStart = resolveHighSocietySeatCountForField(settings, hsSeatPlayers.length);

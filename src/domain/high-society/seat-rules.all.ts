@@ -1299,8 +1299,28 @@ export function resolveHighSocietyFieldWithMemberWidths(opts: {
   if (sum <= 0) {
     scaledWidths = rawWidths.map(() => startCm);
   } else if (hasExplicitZero && sum < fieldCm) {
-    /** 0cm 탈락 슬롯 유지 — 기존 영토 cm 절대값 보존(신규 좌석 추가 시 N등분 회귀 방지) */
-    scaledWidths = rawWidths;
+    /**
+     * ✅ 2026-09-14 LIVE BUG FIX: "탈락 멤버 맨 뒤로 이동시 다른 멤버 영토 사라짐"
+     *  - 이전 버그: seat 이동/재정렬 시 hasExplicitZero=true + raw sum < fieldCm 이면 scaling 완전 bypass
+     *    → 0cm 탈락 멤버 1명이 이동하는 순간 alive 멤버들의 width 합이 fieldCm 보다 작아져도
+     *      비율 보정 없이 rawWidths 그대로 저장 → 영토가 사라지는 현상
+     *  - Fix: 0cm 슬롯은 그대로 유지하되, alive 멤버의 width 합만 fieldCm 에 가깝게 정규화하여
+     *    기존 비율 보존 + 전체 영토 절대값 보존 + 0cm 탈락 슬롯 유지 3마리 토끼 동시 충족.
+     */
+    const zeroSlotMask = rawWidths.map((w) => w === 0);
+    const aliveIdx = zeroSlotMask.map((isZero, i) => (isZero ? -1 : i)).filter((i) => i >= 0);
+    const aliveSum = aliveIdx.reduce((s, i) => s + (rawWidths[i] || 0), 0);
+    const zeroSlots = zeroSlotMask.filter(Boolean).length;
+    const targetAliveTotal = Math.max(1, fieldCm - 0 * zeroSlots);
+    if (aliveIdx.length > 0 && aliveSum > 0 && Math.abs(aliveSum - targetAliveTotal) >= 1) {
+      const ratio = targetAliveTotal / aliveSum;
+      scaledWidths = rawWidths.slice();
+      for (const i of aliveIdx) {
+        scaledWidths[i] = (rawWidths[i] || 0) * ratio;
+      }
+    } else {
+      scaledWidths = rawWidths;
+    }
   } else {
     scaledWidths = rawWidths.map((w) => w * (fieldCm / sum));
   }
@@ -1408,7 +1428,7 @@ export function resolveHighSocietySeatMembers(
     return ids
       .map((sid) => {
         const m = byId.get(sid);
-        if (!m || m.operating) return null;
+        if (!m) return null;
         return { id: m.id, name: m.name, donationWon: m.donationWon };
       })
       .filter((x): x is { id: string; name: string; donationWon: number } => Boolean(x))
