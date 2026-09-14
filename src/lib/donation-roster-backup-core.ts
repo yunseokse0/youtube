@@ -57,11 +57,13 @@ export function buildDonationRosterBackupPayload(state: AppState): DonationRoste
   };
 }
 
+const BACKUP_STALE_GATE_MS = 180_000;
+
 /** 메인 상태가 비거나 줄었을 때 백업에서 후원·금액을 되살릴지 */
 export function shouldRestoreDonationRosterFromBackup(
   current: Pick<
     AppState,
-    "members" | "donors" | "settlementResetAt" | "intentionalDonationClearAt"
+    "members" | "donors" | "settlementResetAt" | "intentionalDonationClearAt" | "updatedAt"
   > | null | undefined,
   backup: DonationRosterBackupPayload | null | undefined
 ): boolean {
@@ -77,7 +79,22 @@ export function shouldRestoreDonationRosterFromBackup(
   if (curReset > backupReset) {
     return false;
   }
+  const curUpdated = Number(current?.updatedAt || 0);
   const placeholderMembers = isDefaultPlaceholderMemberList(current?.members);
+  /** 메인 state가 백업보다 3분 이상 최신이고, 현재 state에 이미 의미있는 donor/멤버가 살아있는 경우에만 stale 복원 금지.
+   *  (placeholder / donors=0 사고성 초기화 wipe는 savedAt과 무관하게 복원 허용 — TC 2건 회귀 방지)
+   *  타 PC 오래된 localStorage stale backup으로 의도 삭제한 후원자 되살아남 방지 */
+  const hasLiveRowsInMain =
+    curDonors.length > 0 ||
+    (!placeholderMembers && hasMeaningfulMemberRoster({ members: current?.members || [] } as AppState));
+  if (
+    hasLiveRowsInMain &&
+    curUpdated > 0 &&
+    backup.savedAt > 0 &&
+    curUpdated - backup.savedAt > BACKUP_STALE_GATE_MS
+  ) {
+    return false;
+  }
   if (placeholderMembers && curDonors.length === 0 && backup.donorsCount > 0) {
     return true;
   }
@@ -166,6 +183,21 @@ export function unionAppStateDonorsFromBackupIfRicher(
   const curReset = Number(state.settlementResetAt || 0);
   const backupReset = Number(normalized.settlementResetAt || 0);
   if (curReset > backupReset) return state;
+  const curUpdated = Number(state.updatedAt || 0);
+  /** 메인 state가 백업보다 3분 이상 최신이고, 현재 state에 이미 의미있는 donor/멤버가 살아있는 경우에만 stale union 차단.
+   *  (placeholder/donors=0 사고성 초기화 wipe는 savedAt 무관하게 복원 허용)
+   *  타 PC 구 localStorage stale backup으로 의도 삭제한 후원자 되살아남 방지 */
+  const hasLiveRowsInMain =
+    curDonors.length > 0 ||
+    (!isDefaultPlaceholderMemberList(state.members) && hasMeaningfulMemberRoster(state));
+  if (
+    hasLiveRowsInMain &&
+    curUpdated > 0 &&
+    normalized.savedAt > 0 &&
+    curUpdated - normalized.savedAt > BACKUP_STALE_GATE_MS
+  ) {
+    return state;
+  }
   if (
     curDonors.length > 0 &&
     hasMeaningfulMemberRoster(state) &&
