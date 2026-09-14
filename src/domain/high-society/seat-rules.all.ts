@@ -2441,14 +2441,14 @@ export function resolveHighSocietySeatCountForField(
   return 4;
 }
 
-/** 삭제·운영비 멤버 id — seatMemberIds 에 남은 유령 항목 제거 */
+/** 삭제 멤버 id — seatMemberIds 에 남은 유령 항목 제거 (운영진 멤버도 수동 선택시 보존) */
 export function pruneHighSocietySeatMemberIds(
   settings: HighSocietySettings,
   members: Array<Pick<Member, "id" | "operating">>
 ): HighSocietySettings {
   if (!isHighSocietySeatSelectionManual(settings)) return settings;
   const playable = new Set(
-    members.filter((m) => !m.operating).map((m) => String(m.id))
+    members.map((m) => String(m.id))
   );
   const pruned = (settings.seatMemberIds || [])
     .map((id) => String(id || "").trim())
