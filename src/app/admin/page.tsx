@@ -2059,8 +2059,14 @@ function AdminPageInner() {
   
   const { expand: expandAdminSection } = useAdminSectionCollapse();
   const moveToSection = (key: AdminNavKey, targetId: string) => {
-    setActiveNav(key);
-    setSidebarOpen(false); // 햄버거 메뉴: 섹션 이동시 자동 닫기
+    /** ✅ toona 스타일 탭 전환: activeNav만 변경 → 해당 탭 그룹만 렌더 */
+    let finalActiveNav: AdminNavKey = key;
+    if (key === "goal") {
+      // 후원 목표는 오버레이 설정 섹션 하단에 있으므로 overlay 탭으로 이동 후 expand
+      finalActiveNav = "overlay";
+    }
+    setActiveNav(finalActiveNav);
+    setSidebarOpen(false);
     if (typeof window === "undefined") return;
     expandAdminSection(targetId);
     let parent = ADMIN_SECTION_EXPAND_PARENTS[targetId];
@@ -2070,17 +2076,9 @@ function AdminPageInner() {
       expandAdminSection(parent);
       parent = ADMIN_SECTION_EXPAND_PARENTS[parent];
     }
+    /** ✅ 탭 전환시 스크롤 TOP으로 (새 페이지 느낌) */
     window.requestAnimationFrame(() => {
-      window.setTimeout(() => {
-        const el = document.getElementById(targetId);
-        if (!el) return;
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
-        el.classList.remove("ui-section-arrive");
-        // reflow restart
-        void el.offsetWidth;
-        el.classList.add("ui-section-arrive");
-        window.setTimeout(() => el.classList.remove("ui-section-arrive"), 1050);
-      }, 40);
+      window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
     });
   };
   /** `<input type="color">`는 #rrggbb만 허용 — transparent 등은 fallback으로 표시 */
@@ -10427,14 +10425,14 @@ function AdminPageInner() {
             ✕
           </button>
         </div>
-        <div className="p-3 space-y-1">
+        <div className="p-3 space-y-1.5">
           {navItems.map((item) => (
             <button
               key={item.key}
               type="button"
               onClick={() => moveToSection(item.key, item.targetId)}
-              className={`ui-din-nav-item w-full text-left ${
-                activeNav === item.key ? "ui-nav-active" : "text-slate-200"
+              className={`ui-din-nav-item ${
+                activeNav === item.key ? "ui-nav-active" : ""
               }`}
             >
               {item.label}
@@ -10514,7 +10512,8 @@ function AdminPageInner() {
             <Link className="text-sm text-neutral-300 underline" href="/settlements" prefetch={false}>정산 기록 보기</Link>
           </div>
         </div>
-        {isAdminNavSectionVisible("dashboard") && (
+        {isAdminNavSectionVisible("dashboard") && activeNav === "dashboard" && (
+          <div key="tab-dashboard" className="ui-tab-fade-in">
         <AdminCollapsibleSection
           id="dashboard-summary"
           title="대시보드"
@@ -10566,6 +10565,7 @@ function AdminPageInner() {
             </div>
           </div>
         </AdminCollapsibleSection>
+          </div>
         )}
         <AdminAccountSettingsModal
           open={accountSettingsOpen}
@@ -10582,7 +10582,8 @@ function AdminPageInner() {
         />
         <div className="grid grid-cols-1 gap-6">
           <div className="space-y-6">
-            {isAdminNavSectionVisible("settlement") && (
+            {isAdminNavSectionVisible("settlement") && activeNav === "settlement" && (
+              <div key="tab-settlement-board" className="ui-tab-fade-in">
             <AdminCollapsibleSection
               id="settlement-member-board"
               title="멤버 정산 보드"
@@ -15167,9 +15168,11 @@ function AdminPageInner() {
                 })}
               </AdminCollapsibleBlock>
             </AdminCollapsibleSection>
+              </div>
             )}
 
-            {isAdminNavSectionVisible("donor") && (
+            {isAdminNavSectionVisible("donor") && activeNav === "donor" && (
+              <div key="tab-donor" className="ui-tab-fade-in">
             <>
             <AdminCollapsibleSection
               id="donor-management"
@@ -17222,9 +17225,11 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
               <div className="text-xs text-neutral-400 mt-2">오버레이 프리셋에서 &quot;미션 전광판&quot;을 ON하면 우측→좌측 흐름으로 방송 화면에 표시됩니다.</div>
             </AdminCollapsibleSection>
             </>
+              </div>
             )}
 
-            {isAdminNavSectionVisible("overlay") && (
+            {isAdminNavSectionVisible("overlay") && activeNav === "overlay" && (
+              <div key="tab-overlay" className="ui-tab-fade-in">
             <AdminCollapsibleSection
               id="overlay-settings"
               title="오버레이 관리 (다중)"
@@ -21169,9 +21174,11 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                 })}
               </div>
             </AdminCollapsibleSection>
+              </div>
             )}
 
-            {isAdminNavSectionVisible("settlement") && (
+            {isAdminNavSectionVisible("settlement") && activeNav === "settlement" && (
+              <div key="tab-settlement-finalize" className="ui-tab-fade-in">
             <AdminCollapsibleSection
               id="settlement-finalize"
               title="방송 종료 정산"
@@ -21368,9 +21375,11 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                 ) : null}
               </div>
             </AdminCollapsibleSection>
+              </div>
             )}
 
-            {isAdminNavSectionVisible("logs") && (
+            {isAdminNavSectionVisible("logs") && activeNav === "logs" && (
+              <div key="tab-logs" className="ui-tab-fade-in">
             <AdminCollapsibleSection
               id="logs-data"
               title="데이터"
@@ -21477,6 +21486,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                 ))}
               </div>
             </AdminCollapsibleSection>
+              </div>
             )}
           </div>
         </div>

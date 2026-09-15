@@ -230,23 +230,40 @@ body {
     border-color: var(--ui-blue-500);
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18), var(--ui-blue-glow);
   }
+  /* ✅ toona 기존 스타일 Nav: 아이콘 X · 텍스트만 · Active 보라색 블록 */
   .ui-din-nav-item {
-    border-radius: 10px;
-    padding: 0.7rem 1rem;
-    font-weight: 700;
-    transition: all 0.18s ease;
-    border: 1px solid transparent;
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 0.65rem 0.85rem;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #d4d4d8;
+    background: transparent;
+    border: 0;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
   }
   .ui-din-nav-item:hover {
-    background: rgba(59, 130, 246, 0.1);
-    border-color: rgba(147, 197, 253, 0.2);
-    transform: translateX(2px);
+    background: rgba(99, 102, 241, 0.10);
+    color: #e0e7ff;
   }
   .ui-din-nav-item.ui-nav-active {
-    background-image: var(--ui-blue-gradient);
-    color: #fff;
-    border-color: rgba(191, 219, 254, 0.45);
-    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.35);
+    background: linear-gradient(90deg, #6366f1 0%, #7c3aed 100%);
+    color: #ffffff;
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(99,102,241,0.28);
+  }
+  /* 투네 스타일 탭 페이드 인 */
+  .ui-tab-fade-in {
+    animation: ui-tab-fade 0.18s ease-out both;
+  }
+  @keyframes ui-tab-fade {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
   /* 모바일·햄버거 drawer: 좌측 슬라이드 애니메이션 */
   @keyframes ui-drawer-slide-in {

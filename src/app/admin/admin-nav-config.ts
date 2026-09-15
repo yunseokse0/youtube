@@ -16,17 +16,16 @@ export type AdminNavItem = {
 
 export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { key: "dashboard", label: "대시보드", targetId: "dashboard-summary", mobileShort: "홈" },
-  { key: "settlement", label: "정산", targetId: "settlement-member-board", mobileShort: "정산" },
+  { key: "settlement", label: "정산 관리", targetId: "settlement-member-board", mobileShort: "정산" },
   { key: "donor", label: "후원자", targetId: "donor-management", mobileShort: "후원자" },
-  { key: "overlay", label: "오버레이", targetId: "overlay-settings", mobileShort: "오버레이" },
+  { key: "overlay", label: "오버레이 설정", targetId: "overlay-settings", mobileShort: "설정" },
   { key: "goal", label: "후원 목표", targetId: "overlay-goal-shortcut", mobileShort: "목표" },
   { key: "logs", label: "로그 / 데이터", targetId: "logs-data" },
 ];
 
 /** ✅ 간소화 메뉴: 핵심 4개만 보이고 나머지 고급 기능은 숨김 */
 export const ADMIN_NAV_HIDDEN_KEYS: ReadonlySet<AdminNavKey> = new Set([
-  "goal",
-  "logs",
+  // 숨길 메뉴는 여기에
 ]);
 
 export function getVisibleAdminNavItems(): AdminNavItem[] {
