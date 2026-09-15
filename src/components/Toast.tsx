@@ -74,8 +74,16 @@ export default function Toast() {
 
   return (
     <div className="fixed top-4 right-4 z-50 max-w-[min(92vw,420px)]">
-      <div className={`rounded px-4 py-3 text-sm font-semibold leading-snug shadow-lg ${tone}`}>
-        {msg}
+      <div
+        className={`rounded px-4 py-3 text-sm font-semibold leading-snug shadow-lg ${tone} ui-din-toast ui-animate-pop-in`}
+        data-variant={variant}
+      >
+        <div className="flex items-start gap-2">
+          <span aria-hidden className="text-base leading-none mt-0.5">
+            {variant === "error" ? "🚨" : variant === "info" ? "ℹ️" : "✅"}
+          </span>
+          <div className="whitespace-pre-line break-words">{msg}</div>
+        </div>
       </div>
     </div>
   );

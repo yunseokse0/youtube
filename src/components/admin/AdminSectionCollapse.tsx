@@ -175,6 +175,7 @@ type SectionProps = {
   className?: string;
   bodyClassName?: string;
   headerClassName?: string;
+  titleClassName?: string;
   headerAside?: ReactNode;
   children: ReactNode;
 };
@@ -187,6 +188,7 @@ export function AdminCollapsibleSection({
   className = "",
   bodyClassName = "px-4 pb-4 pt-2 md:px-6 md:pb-6",
   headerClassName = "px-4 pt-4 md:px-6 md:pt-6",
+  titleClassName = "",
   headerAside,
   children,
 }: SectionProps) {
@@ -211,7 +213,7 @@ export function AdminCollapsibleSection({
           onClick={() => toggle(id, defaultOpen)}
         >
           <Chevron open={open} />
-          <h2 className="text-lg font-semibold text-white">{title}</h2>
+          <h2 className={`text-lg font-semibold text-white ${titleClassName}`}>{title}</h2>
           <span className="hidden text-[11px] text-neutral-500 sm:inline group-hover:text-neutral-400">
             {open ? "접기" : "펼치기"}
           </span>

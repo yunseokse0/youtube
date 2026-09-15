@@ -1475,8 +1475,46 @@ function AdminPageInner() {
   /** 정산「멤버 초기화」 시 생성할 멤버 슬롯 수(1~30) */
   const [resetMemberSlotCount, setResetMemberSlotCount] = useState(3);
   const [activeNav, setActiveNav] = useState<AdminNavKey>("dashboard");
-  const panelCardClass = "rounded-xl border border-white/10 bg-[#252525] shadow-[0_8px_24px_rgba(0,0,0,0.28)]";
+  /** ✅ UI v2: 사이드바 숨기기 (햄버거 메뉴 토글) */
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const panelCardClass = "ui-din-card";
   const simpleMode = false;
+  /** ✅ UX BEST 4-③ 후원자 행 저장 플래시 (saving: blue, saved: green) */
+  const [donorFlashIds, setDonorFlashIds] = useState<Record<string, "saving" | "saved">>({});
+  const flashDonorSaving = useCallback((donorId: string | number) => {
+    const id = String(donorId);
+    setDonorFlashIds((prev) => ({ ...prev, [id]: "saving" }));
+  }, []);
+  const flashDonorSaved = useCallback((donorId: string | number) => {
+    const id = String(donorId);
+    setDonorFlashIds((prev) => ({ ...prev, [id]: "saved" }));
+    window.setTimeout(() => {
+      setDonorFlashIds((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }, 950);
+  }, []);
+  /** ✅ UX BEST 4-① 맨위로 Floating 버튼 */
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  /** ✅ UX BEST 4-⑦ 복사 완료 버튼 플래시 ID (string key → copied) */
+  const [copiedButtonId, setCopiedButtonId] = useState<string | null>(null);
+  const flashCopiedButton = useCallback((key: string, autoHideMs = 1200) => {
+    setCopiedButtonId(key);
+    window.setTimeout(() => {
+      setCopiedButtonId((cur) => (cur === key ? null : cur));
+    }, autoHideMs);
+  }, []);
+  /** 플래시가 동시에 여러개일때 최초 1건만 toast로 (중복 토스트 방지) */
+  const lastCopyToastAtRef = useRef(0);
+  const toastIfCopyFresh = useCallback((label: string) => {
+    const now = Date.now();
+    if (now - lastCopyToastAtRef.current < 900) return;
+    lastCopyToastAtRef.current = now;
+    showAppToast(`✅ 클립보드에 복사 완료 · ${label}`, { variant: "success", durationMs: 1400 });
+  }, []);
 
   const syncOneShotSigItem = useCallback((prev: AppState): AppState => {
     const inv = prev.sigInventory || [];
@@ -2022,6 +2060,7 @@ function AdminPageInner() {
   const { expand: expandAdminSection } = useAdminSectionCollapse();
   const moveToSection = (key: AdminNavKey, targetId: string) => {
     setActiveNav(key);
+    setSidebarOpen(false); // 햄버거 메뉴: 섹션 이동시 자동 닫기
     if (typeof window === "undefined") return;
     expandAdminSection(targetId);
     let parent = ADMIN_SECTION_EXPAND_PARENTS[targetId];
@@ -2033,7 +2072,14 @@ function AdminPageInner() {
     }
     window.requestAnimationFrame(() => {
       window.setTimeout(() => {
-        document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+        const el = document.getElementById(targetId);
+        if (!el) return;
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        el.classList.remove("ui-section-arrive");
+        // reflow restart
+        void el.offsetWidth;
+        el.classList.add("ui-section-arrive");
+        window.setTimeout(() => el.classList.remove("ui-section-arrive"), 1050);
       }, 40);
     });
   };
@@ -4008,6 +4054,23 @@ function AdminPageInner() {
     };
   }, [user?.id, persistState, mergeIncomingStateSafely, syncSettlementUiFormFromOptions, applyDonorsFromServerMainState, applySyncStatusAfterStateFetch]);
 
+  /** ✅ UX BEST 4-① 맨위로 가기 Floating 버튼: 스크롤 350px 이상일때만 노출 */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onScroll = () => setShowBackToTop(window.scrollY > 350);
+    onScroll();
+    let raf = 0;
+    const throttled = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => { raf = 0; onScroll(); });
+    };
+    window.addEventListener("scroll", throttled, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", throttled);
+      if (raf) window.cancelAnimationFrame(raf);
+    };
+  }, []);
+
   const normalizeOverlayPresetLabels = (list: OverlayPreset[]): OverlayPreset[] =>
     list.map((p) => {
       const label = String(p.accountHeaderLabel || "").trim();
@@ -4582,12 +4645,14 @@ function AdminPageInner() {
     return () => window.clearTimeout(t);
   }, [buildMealMatchLiveUrl]);
 
-  const copyUrl = async (url: string, id: string) => {
+  const copyUrl = async (url: string, id: string, label = "URL") => {
     const clean = sanitizeBroadcastOverlayUrl(url);
     try {
       if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(clean); }
       else { const ta = document.createElement("textarea"); ta.value = clean; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); }
       setCopiedId(id); setTimeout(() => setCopiedId(null), 1500);
+      flashCopiedButton(id, 1200);
+      toastIfCopyFresh(label);
     } catch {}
   };
   const rouletteUserId = overlayUserId;
@@ -9737,6 +9802,8 @@ function AdminPageInner() {
         document.body.removeChild(ta);
       }
       setCopied(true);
+      flashCopiedButton("chat-draft-copy", 1200);
+      toastIfCopyFresh("방송 요약문");
       const t = setTimeout(() => setCopied(false), 1500);
       return () => clearTimeout(t);
     } catch {
@@ -10311,19 +10378,68 @@ function AdminPageInner() {
     />
   );
 
-  /** 세션 오류만 배지 — 후원 건수 불일치·동기화 중 문구는 표시하지 않음 */
+  // 세션 오류만 배지 — 후원 건수 불일치·동기화 중 문구는 표시하지 않음
   const showSyncStatusBadge = syncStatus === "error" && syncAuthBlocked;
 
   return (
     <main
-      className="min-h-screen p-4 md:p-8 pb-24 md:pb-10 text-neutral-100"
-      style={{ backgroundColor: "#1a1a1a" }}
+      className="min-h-screen p-4 md:p-8 pb-24 md:pb-10 text-neutral-100 admin-page-root"
+      style={{ backgroundColor: "var(--ui-admin-bg)" }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
       <Toast />
       <SigUploadProgressOverlay progress={sigUploadProgress} busy={sigBulkReuploadBusy} />
+      {/* ✅ UI v2: 사이드바 백드롭 dim (햄버거 메뉴 오픈시) */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-[85] bg-black/55 backdrop-blur-sm ui-animate-fade-in"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden
+        />
+      )}
+      {/* ✅ UI v2: 햄버거 드로어 사이드바 (모바일·데스크탑 공통) */}
+      {sidebarOpen && (
+        <aside
+          className="fixed z-[90] top-0 left-0 h-full w-[280px] max-w-[85vw] ui-animate-drawer-in"
+          style={{
+            background: "linear-gradient(180deg, #151c2e 0%, #0e1423 100%)",
+            borderRight: "1px solid rgba(147, 197, 253, 0.2)",
+            boxShadow: "16px 0 60px rgba(30, 64, 175, 0.35)",
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between px-4 pt-5 pb-3 border-b border-white/10">
+            <div>
+              <div className="text-xs uppercase tracking-[0.18em] text-blue-300/80">Menu</div>
+              <div className="text-lg font-extrabold mt-0.5">DIN 관리자</div>
+            </div>
+            <button
+              type="button"
+              className="w-9 h-9 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 flex items-center justify-center text-lg transition"
+              onClick={() => setSidebarOpen(false)}
+              aria-label="메뉴 닫기"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="p-3 space-y-1">
+            {navItems.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => moveToSection(item.key, item.targetId)}
+                className={`ui-din-nav-item w-full text-left ${
+                  activeNav === item.key ? "ui-nav-active" : "text-slate-200"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </aside>
+      )}
       <div className="lg:hidden fixed left-1/2 -translate-x-1/2 top-2 z-40 pointer-events-none">
         <div
           className={`px-3 py-1 rounded-full text-[11px] border border-white/10 transition-all ${
@@ -10334,29 +10450,22 @@ function AdminPageInner() {
           {pullRefreshing ? "동기화 중..." : pullDistance >= 64 ? "놓아서 동기화" : "아래로 당겨 동기화"}
         </div>
       </div>
-      <div className="mx-auto max-w-[1600px] grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] gap-6">
-        <aside className="hidden lg:block lg:sticky lg:top-6 self-start rounded-xl border border-white/10 bg-[#222222] p-3 h-fit">
-          <div className="text-xs uppercase tracking-[0.12em] text-neutral-400 px-2 pb-2">메뉴</div>
-          <div className="space-y-1">
-            {navItems.map((item) => (
-              <button
-                key={item.key}
-                onClick={() => moveToSection(item.key, item.targetId)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                  activeNav === item.key
-                    ? "bg-indigo-500 text-white"
-                    : "bg-transparent text-neutral-300 hover:bg-white/5"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </aside>
-        <div>
+      {/* ✅ UI v2: 기존 240px 고정 2분할 → 단일 컬럼 (콘텐츠 영역 넓게 사용) */}
+      <div className="mx-auto max-w-[1700px]">
         <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 mb-6">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <h1 className="text-2xl font-bold">{adminHeaderTitle(user)}</h1>
+            {/* ✅ UI v2: 햄버거 토글 버튼 (헤더 좌측 상단) */}
+            <button
+              type="button"
+              className="h-10 px-3 ui-din-btn ui-din-btn-secondary flex items-center justify-center gap-2"
+              onClick={() => setSidebarOpen((o) => !o)}
+              aria-label="메뉴 열기"
+              title="전체 메뉴 (대시보드·정산·후원자·오버레이 등)"
+            >
+              <span className="text-lg leading-none">☰</span>
+              <span className="hidden sm:inline">메뉴</span>
+            </button>
+            <h1 className="text-2xl font-extrabold">{adminHeaderTitle(user)}</h1>
             <AdminCollapseToolbar />
             {(user?.remainingDays != null || user?.unlimited) && (
               <span className={`px-2 py-0.5 rounded text-xs font-medium ${user?.unlimited ? "bg-blue-900/60 text-blue-300" : (user?.remainingDays ?? 0) <= 7 ? "bg-amber-900/60 text-amber-300" : "bg-neutral-800 text-neutral-400"}`}>
@@ -10372,28 +10481,31 @@ function AdminPageInner() {
             </span>
             ) : null}
             <button
-              className="px-2 py-1 rounded bg-[#22c55e] hover:bg-[#16a34a] text-xs font-medium text-white"
+              type="button"
+              className="ui-din-btn ui-din-btn-success h-10 text-sm"
               onClick={onFetchLatestFromServer}
               title="서버에 저장된 상태를 정본으로 가져옵니다(후원이 줄어도 서버 기준)"
             >
-              서버에서 가져오기
+              🟢 서버에서 가져오기
             </button>
             <button
-              className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+              type="button"
+              className="ui-din-btn ui-din-btn-secondary h-10 text-sm"
               onClick={() => setAccountSettingsOpen(true)}
               title="비밀번호 변경"
             >
-              계정 설정
+              ⚙️ 계정 설정
             </button>
             <button
-              className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+              type="button"
+              className="ui-din-btn ui-din-btn-secondary h-10 text-sm"
               onClick={async () => {
                 await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
                 router.push("/login");
                 router.refresh();
               }}
             >
-              로그아웃
+              🔒 로그아웃
             </button>
           </div>
           <div className="flex items-center gap-2">
@@ -10429,17 +10541,26 @@ function AdminPageInner() {
             </div>
           )}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="rounded-lg bg-[#1e1e1e] border border-white/10 px-3 py-2">
-              <div className="text-xs text-neutral-400">오늘 총 후원액</div>
-              <div className="text-xl font-bold text-white">{uiReady ? formatManThousand(total) : "—"}</div>
+            <div
+              className="rounded-2xl border border-blue-300/15 px-4 py-3"
+              style={{ background: "linear-gradient(135deg, rgba(59,130,246,0.12) 0%, rgba(30,64,175,0.10) 100%)", boxShadow: "0 8px 24px rgba(30,64,175,0.15)" }}
+            >
+              <div className="text-xs font-semibold text-blue-200/80">오늘 총 후원액</div>
+              <div className="text-2xl font-extrabold text-white mt-0.5">{uiReady ? formatManThousand(total) : "—"}</div>
             </div>
-            <div className="rounded-lg bg-[#1e1e1e] border border-white/10 px-3 py-2">
-              <div className="text-xs text-neutral-400">후원 건수</div>
-              <div className="text-xl font-bold text-[#6366f1]">{uiReady ? normalizeDonorsArray(state.donors).length.toLocaleString("ko-KR") : "—"}</div>
+            <div
+              className="rounded-2xl border border-indigo-300/15 px-4 py-3"
+              style={{ background: "linear-gradient(135deg, rgba(99,102,241,0.14) 0%, rgba(79,70,229,0.11) 100%)", boxShadow: "0 8px 24px rgba(79,70,229,0.16)" }}
+            >
+              <div className="text-xs font-semibold text-indigo-200/85">후원 건수</div>
+              <div className="text-2xl font-extrabold text-white mt-0.5">{uiReady ? normalizeDonorsArray(state.donors).length.toLocaleString("ko-KR") : "—"}</div>
             </div>
-            <div className="rounded-lg bg-[#1e1e1e] border border-white/10 px-3 py-2">
-              <div className="text-xs text-neutral-400">멤버 수</div>
-              <div className="text-xl font-bold text-[#22c55e]">{uiReady ? activeMemberCount.toLocaleString("ko-KR") : "—"}</div>
+            <div
+              className="rounded-2xl border border-emerald-300/15 px-4 py-3"
+              style={{ background: "linear-gradient(135deg, rgba(16,185,129,0.14) 0%, rgba(5,150,105,0.10) 100%)", boxShadow: "0 8px 24px rgba(16,185,129,0.14)" }}
+            >
+              <div className="text-xs font-semibold text-emerald-200/85">멤버 수</div>
+              <div className="text-2xl font-extrabold text-white mt-0.5">{uiReady ? activeMemberCount.toLocaleString("ko-KR") : "—"}</div>
             </div>
           </div>
         </AdminCollapsibleSection>
@@ -10463,6 +10584,7 @@ function AdminPageInner() {
             <AdminCollapsibleSection
               id="settlement-member-board"
               title="멤버 정산 보드"
+              titleClassName="ui-din-section-title-accent font-bold tracking-wide"
               className={panelCardClass}
               headerAside={
                 <div className="text-right">
@@ -16167,6 +16289,7 @@ function AdminPageInner() {
             <AdminCollapsibleSection
               id="donor-list"
               title="후원자 리스트"
+              titleClassName="ui-din-section-title-accent font-bold tracking-wide"
               className={`${panelCardClass} ${simpleMode ? "hidden" : ""}`}
             >
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -16333,7 +16456,12 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                               contentVisibility: "auto",
                               containIntrinsicSize: "2.25rem",
                             }}
-                            className={`border-t border-white/10 ${isExcluded ? "line-through decoration-rose-400/70 decoration-2 text-neutral-500 bg-rose-950/15 opacity-70" : isSplitPart ? "bg-violet-950/15" : isSplitSource ? "bg-violet-950/10" : ""}`}
+                            data-excluded={isExcluded ? "true" : undefined}
+                            data-selected={selectedDonorIds.has(String(d.id)) ? "true" : undefined}
+                            className={`border-t border-white/10 transition-[background,box-shadow] duration-200 ease-out ui-din-row-zebra ${
+                              donorFlashIds[String(d.id)] === "saving" ? "ui-donor-flash-saving" :
+                              donorFlashIds[String(d.id)] === "saved"  ? "ui-donor-flash-saved"  : ""
+                            } ${isExcluded ? "line-through decoration-rose-400/70 decoration-2 text-neutral-500 bg-rose-950/15 opacity-70" : isSplitPart ? "bg-violet-950/15" : isSplitSource ? "bg-violet-950/10" : ""}`}
                           >
                             <td className="p-1 w-12 align-top">
                               <DonorCheckboxCell
@@ -16397,6 +16525,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                       return next;
                                     });
                                     void (async () => {
+                                      flashDonorSaving(d.id);
                                       const prev = stateRef.current;
                                       const next = updateDonorNameInAppState(prev, d.id, nextName);
                                       if (!next) return;
@@ -16407,6 +16536,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                       );
                                       setState(preserved);
                                       await commitAuthoritativeDonorPersist(preserved);
+                                      flashDonorSaved(d.id);
                                     })();
                                   }}
                                   onKeyDown={(e) => {
@@ -16458,6 +16588,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                     `후원자「${d.name}」의 배치만「${memberName}」로 바꿀까요? (후원자명·금액·메시지는 그대로입니다)`,
                                     () => {
                                       void (async () => {
+                                        flashDonorSaving(d.id);
                                         const prev = stateRef.current;
                                         const next = reassignDonorMemberInAppState(prev, d.id, nextMemberId);
                                         if (!next) return;
@@ -16468,6 +16599,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                         );
                                         setState(preserved);
                                         await commitAuthoritativeDonorPersist(preserved);
+                                        flashDonorSaved(d.id);
                                       })();
                                     },
                                     { confirmText: "재배치", danger: false }
@@ -16538,6 +16670,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                     return next;
                                   });
                                   void (async () => {
+                                    flashDonorSaving(d.id);
                                     const prev = stateRef.current;
                                     const next = updateDonorMessageInAppState(prev, d.id, nextMessage);
                                     if (!next) return;
@@ -16548,6 +16681,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                     );
                                     setState(preserved);
                                     await commitAuthoritativeDonorPersist(preserved);
+                                    flashDonorSaved(d.id);
                                   })();
                                 }}
                               />
@@ -17092,7 +17226,8 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
             <AdminCollapsibleSection
               id="overlay-settings"
               title="오버레이 관리 (다중)"
-              className={panelCardClass}
+              titleClassName="ui-din-section-title-accent font-bold tracking-wide"
+              className={`${panelCardClass} shadow-blue-500/10`}
               headerAside={
                 <div className="flex gap-1 flex-wrap">
                   {PRESET_TEMPLATES.map((t) => (
@@ -21038,72 +21173,80 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
             <AdminCollapsibleSection
               id="settlement-finalize"
               title="방송 종료 정산"
-              className={panelCardClass}
+              titleClassName="ui-din-section-title-accent font-bold tracking-wide"
+              className={`${panelCardClass} shadow-blue-500/10`}
               headerAside={
-                <Link className="text-sm text-neutral-300 underline" href="/settlements" prefetch={false}>정산 기록 보기</Link>
+                <Link className="text-sm text-neutral-300 underline decoration-blue-400/40 hover:text-blue-300 transition-colors" href="/settlements" prefetch={false}>📊 정산 기록 보기</Link>
               }
             >
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <input
-                  className="flex-1 min-w-[220px] px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  type="text"
+                  className="flex-1 min-w-[220px] px-3 py-2.5 rounded-lg bg-neutral-900/80 border border-white/10 text-sm"
                   placeholder="정산 제목 (예: 16화 세부)"
                   value={settlementTitle}
                   onChange={(e) => setSettlementTitle(e.target.value)}
                 />
                 <input
-                  className="w-[120px] px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  type="text"
+                  inputMode="decimal"
+                  className="w-[120px] px-3 py-2.5 rounded-lg bg-neutral-900/80 border border-white/10 text-sm"
                   placeholder="계좌 비율 % (예: 70)"
                   value={accountRatioInput}
                   onChange={(e) => setAccountRatioInput(e.target.value.replace(/[^\d.]/g, ""))}
                 />
                 <input
-                  className="w-[120px] px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  type="text"
+                  inputMode="decimal"
+                  className="w-[120px] px-3 py-2.5 rounded-lg bg-neutral-900/80 border border-white/10 text-sm"
                   placeholder="투네 비율 % (예: 60)"
                   value={toonRatioInput}
                   onChange={(e) => setToonRatioInput(e.target.value.replace(/[^\d.]/g, ""))}
                 />
                 <input
-                  className="w-[120px] px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  type="text"
+                  inputMode="decimal"
+                  className="w-[120px] px-3 py-2.5 rounded-lg bg-neutral-900/80 border border-white/10 text-sm"
                   placeholder="세금 비율 % (예: 3.3)"
                   value={taxRateInput}
                   onChange={(e) => setTaxRateInput(e.target.value.replace(/[^\d.]/g, ""))}
                 />
                 <button
                   type="button"
-                  className={`px-3 py-2 rounded border text-sm whitespace-nowrap ${vatIncluded ? "border-emerald-500 bg-emerald-950/40 text-emerald-300" : "border-white/10 bg-neutral-900/80 text-neutral-400"}`}
+                  className={`px-3 py-2.5 rounded-xl border text-sm font-bold whitespace-nowrap transition-all hover:-translate-y-0.5 ${vatIncluded ? "border-emerald-500/50 bg-gradient-to-r from-emerald-950/70 to-emerald-900/40 text-emerald-200 shadow-emerald-500/10" : "border-white/10 bg-neutral-800/60 text-neutral-300"}`}
                   onClick={() => setVatIncluded((v) => !v)}
                 >
-                  부가세 포함 {vatIncluded ? "ON" : "OFF"}
+                  💰 부가세 포함 {vatIncluded ? "ON" : "OFF"}
                 </button>
                 <button
                   type="button"
-                  className={`px-3 py-2 rounded border text-sm whitespace-nowrap ${taxInvoiceIssued ? "border-violet-500 bg-violet-950/40 text-violet-300" : "border-white/10 bg-neutral-900/80 text-neutral-400"}`}
+                  className={`px-3 py-2.5 rounded-xl border text-sm font-bold whitespace-nowrap transition-all hover:-translate-y-0.5 ${taxInvoiceIssued ? "border-violet-500/50 bg-gradient-to-r from-violet-950/70 to-violet-900/40 text-violet-200 shadow-violet-500/10" : "border-white/10 bg-neutral-800/60 text-neutral-300"}`}
                   onClick={() => setTaxInvoiceIssued((v) => !v)}
                   title="체크 시 최종정산에 부가세 10% 가산(세금계산서). 미체크 시 원천세만"
                 >
-                  세금계산서 {taxInvoiceIssued ? "ON" : "OFF"}
+                  🧾 세금계산서 {taxInvoiceIssued ? "ON" : "OFF"}
                 </button>
                 <button
                   type="button"
-                  className={`px-3 py-2 rounded border text-sm whitespace-nowrap ${omitTreasuryFromSettlement ? "border-amber-500 bg-amber-950/40 text-amber-300" : "border-white/10 bg-neutral-900/80 text-neutral-400"}`}
+                  className={`px-3 py-2.5 rounded-xl border text-sm font-bold whitespace-nowrap transition-all hover:-translate-y-0.5 ${omitTreasuryFromSettlement ? "border-amber-500/50 bg-gradient-to-r from-amber-950/70 to-amber-900/40 text-amber-200 shadow-amber-500/10" : "border-white/10 bg-neutral-800/60 text-neutral-300"}`}
                   onClick={() => setOmitTreasuryFromSettlement((v) => !v)}
                   title="운영비(국고) 멤버 후원은 정산 합계·지급 대상에서 제외하고 별도 표시"
                 >
-                  운영비 {omitTreasuryFromSettlement ? "ON" : "OFF"}
+                  🏛️ 운영비 {omitTreasuryFromSettlement ? "ON" : "OFF"}
                 </button>
                 <button
                   type="button"
-                  className={`px-3 py-2 rounded border text-sm whitespace-nowrap ${includeTreasuryInFullStatement ? "border-cyan-500 bg-cyan-950/40 text-cyan-300" : "border-white/10 bg-neutral-900/80 text-neutral-400"}`}
+                  className={`px-3 py-2.5 rounded-xl border text-sm font-bold whitespace-nowrap transition-all hover:-translate-y-0.5 ${includeTreasuryInFullStatement ? "border-cyan-500/50 bg-gradient-to-r from-cyan-950/70 to-cyan-900/40 text-cyan-200 shadow-cyan-500/10" : "border-white/10 bg-neutral-800/60 text-neutral-300"}`}
                   onClick={() => setIncludeTreasuryInFullStatement((v) => !v)}
                   title="전체 정산서 PDF의 국고 50% 행 반영"
                 >
-                  전체정산서 국고 포함 {includeTreasuryInFullStatement ? "ON" : "OFF"}
+                  📄 국고포함 {includeTreasuryInFullStatement ? "ON" : "OFF"}
                 </button>
                 <button
-                  className="px-4 py-2 rounded bg-[#22c55e] hover:bg-[#16a34a] font-semibold text-white whitespace-nowrap flex-none"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 via-green-600 to-emerald-700 hover:from-emerald-400 hover:to-emerald-600 font-extrabold text-white whitespace-nowrap flex-none shadow-lg shadow-emerald-500/25 transition-all hover:-translate-y-0.5 active:translate-y-0"
                   onClick={onFinishBroadcastAndSettle}
                 >
-                  방송 종료(정산 생성)
+                  ✅ 방송 종료 (정산 생성)
                 </button>
               </div>
               <div className="mt-2 text-xs text-neutral-400 leading-relaxed">
@@ -21111,14 +21254,14 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                 {" · "}
                 <span className="text-neutral-300">전체정산서 국고 포함</span>: 전체 정산서 PDF에 국고 50% 송금 행을 넣습니다(매출 30%의 절반).
               </div>
-              <div className="mt-3 rounded border border-white/10 bg-neutral-900/40 p-3 space-y-2">
+              <div className="mt-4 rounded-2xl border border-blue-500/15 bg-gradient-to-br from-slate-900/60 via-blue-950/20 to-slate-900/60 p-4 space-y-2.5 shadow-blue-500/5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm text-neutral-200 font-medium">멤버별 개별 비율</div>
+                  <div className="text-sm text-neutral-100 font-bold tracking-wide ui-din-section-title-accent">멤버별 개별 비율</div>
                   <button
-                    className={`px-2 py-1 rounded border text-xs ${useMemberRatioOverrides ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${useMemberRatioOverrides ? "border-emerald-500/50 text-emerald-200 bg-gradient-to-r from-emerald-950/60 to-emerald-900/30 shadow-emerald-500/10" : "border-white/10 text-neutral-300 bg-neutral-800/50"}`}
                     onClick={() => setUseMemberRatioOverrides((v) => !v)}
                   >
-                    {useMemberRatioOverrides ? "사용 중" : "미사용"}
+                    {useMemberRatioOverrides ? "✅ 사용 중" : "⚪ 미사용"}
                   </button>
                 </div>
                 <div className="text-xs text-neutral-400">
@@ -21336,17 +21479,19 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
           </div>
         </div>
       </div>
-      </div>
       {actionSheet.open && (
-        <div className="fixed inset-0 z-50 lg:hidden flex items-center justify-center p-4">
-          <button className="absolute inset-0 bg-black/55" onClick={closeActionSheet} aria-label="액션 시트 닫기" />
-          <div className="relative w-full max-w-sm rounded-2xl border border-white/10 bg-[#202020] p-4 shadow-xl">
-            <div className="text-sm font-semibold text-white">{actionSheet.title}</div>
-            {actionSheet.desc && <div className="text-xs text-neutral-400 mt-1 whitespace-pre-line">{actionSheet.desc}</div>}
-            <div className="grid grid-cols-2 gap-2 mt-4">
-              <button className="px-3 py-2 rounded-lg bg-neutral-700 text-sm" onClick={closeActionSheet}>취소</button>
+        <div className="fixed inset-0 z-50 lg:hidden flex items-center justify-center p-4 ui-animate-fade-in">
+          <button className="absolute inset-0 bg-black/55 ui-din-action-sheet-backdrop" onClick={closeActionSheet} aria-label="액션 시트 닫기" />
+          <div className="relative w-full max-w-sm rounded-2xl border border-white/10 bg-[#202020] p-4 shadow-xl ui-din-action-sheet ui-animate-pop-in">
+            <div className="text-sm font-bold text-white flex items-center gap-2">
+              <span className="inline-block w-1.5 h-5 rounded-sm bg-gradient-to-b from-blue-400 to-blue-700 shadow-[0_0_6px_rgba(59,130,246,0.65)]" />
+              {actionSheet.title}
+            </div>
+            {actionSheet.desc && <div className="text-xs text-neutral-300 mt-2 whitespace-pre-line leading-relaxed">{actionSheet.desc}</div>}
+            <div className="grid grid-cols-2 gap-2 mt-5">
+              <button className="px-3 py-2.5 rounded-xl bg-neutral-700/80 hover:bg-neutral-600 text-white text-sm font-semibold transition-colors border border-white/10" onClick={closeActionSheet}>취소</button>
               <button
-                className={`px-3 py-2 rounded-lg text-sm font-semibold ${actionSheet.danger ? "bg-[#ef4444] text-white" : "bg-[#22c55e] text-white"}`}
+                className={`px-3 py-2.5 rounded-xl text-sm font-bold shadow-md transition-transform hover:-translate-y-0.5 ${actionSheet.danger ? "bg-gradient-to-r from-red-500 to-red-700 text-white shadow-red-500/30" : "bg-gradient-to-r from-emerald-500 to-emerald-700 text-white shadow-emerald-500/30"}`}
                 onClick={() => {
                   const fn = actionConfirmRef.current;
                   closeActionSheet();
@@ -21456,7 +21601,28 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
       <footer className="mt-8 text-center text-xs text-neutral-500">
         © 2026 {APP_BRAND_NAME}. All rights reserved.
       </footer>
-      <nav className="fixed bottom-0 left-0 right-0 z-40 lg:hidden border-t border-white/10 bg-[#202020]/95 backdrop-blur">
+      {/* ✅ UX BEST 4-① 맨위로 가기 Floating DIN 블루 버튼 (스크롤 350px 이상일때만 표시) */}
+      {showBackToTop && (
+        <button
+          type="button"
+          aria-label="맨 위로 가기"
+          title="맨 위로 가기 (Home)"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="ui-back-to-top fixed right-4 lg:right-6 z-[65] shadow-[0_10px_30px_rgba(59,130,246,0.45),0_0_0_1px_rgba(96,165,250,0.35)] rounded-full border border-blue-400/45 text-white flex items-center justify-center select-none active:scale-95"
+          style={{
+            bottom: "calc(env(safe-area-inset-bottom, 0px) + 88px)",
+            width: "48px",
+            height: "48px",
+            background: "linear-gradient(145deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%)",
+            backdropFilter: "blur(6px)",
+          }}
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <polyline points="18 15 12 9 6 15" />
+          </svg>
+        </button>
+      )}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 lg:hidden border-t border-white/10 bg-[#0f172a]/95 backdrop-blur-md">
         <div
           className="grid gap-1 p-2"
           style={{
@@ -21470,7 +21636,11 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                 key={item.key}
                 type="button"
                 onClick={() => moveToSection(item.key, item.targetId)}
-                className={`rounded-md py-2 text-xs ${activeNav === item.key ? "bg-[#6366f1] text-white" : "text-neutral-300"}`}
+                className={`rounded-lg py-2.5 text-[11px] font-bold transition-all ${
+                  activeNav === item.key
+                    ? "bg-gradient-to-r from-blue-500 to-blue-700 text-white shadow-[0_4px_14px_rgba(59,130,246,0.35)]"
+                    : "text-neutral-300 hover:bg-white/5"
+                }`}
               >
                 {item.mobileShort}
               </button>
@@ -21499,6 +21669,7 @@ function VerticalPreview({ url, presetName, previewBump = 0 }: { url: string; pr
   const [loading, setLoading] = useState(true);
   const [iframeKey, setIframeKey] = useState(0);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [localCopied, setLocalCopied] = useState(false);
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [w, h] = orientation === "portrait" ? [540, 960] : [960, 540];
   const previewUrl = useMemo(() => {
@@ -21635,7 +21806,29 @@ function VerticalPreview({ url, presetName, previewBump = 0 }: { url: string; pr
           <div><span className="text-neutral-500">상태:</span> {loading ? "로딩 중" : err || "로드 완료"}</div>
           <div className="flex flex-wrap gap-2">
             <a href={previewUrl} target="_blank" rel="noopener noreferrer" className="text-amber-400 underline">새 탭에서 열기</a>
-            <button type="button" className="text-amber-400 underline" onClick={() => { navigator.clipboard?.writeText(previewUrl || ""); }}>URL 복사</button>
+            <button
+              type="button"
+              className={`text-sm underline transition-colors ${localCopied ? "ui-btn-copied !bg-transparent !border-0 !shadow-none text-emerald-300" : "text-amber-400"}`}
+              onClick={() => {
+                if (!previewUrl) return;
+                const doAfter = () => {
+                  setLocalCopied(true);
+                  window.setTimeout(() => setLocalCopied(false), 1200);
+                  if (typeof window !== "undefined") {
+                    try {
+                      const ev = new CustomEvent("app-toast", { detail: { text: "✅ 클립보드에 복사 완료 · 오버레이 미리보기", variant: "success", durationMs: 1400 } });
+                      window.dispatchEvent(ev);
+                    } catch {}
+                  }
+                };
+                if (navigator.clipboard && window.isSecureContext) {
+                  void navigator.clipboard.writeText(previewUrl).then(doAfter).catch(() => {});
+                } else {
+                  const ta = document.createElement("textarea"); ta.value = previewUrl; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+                  doAfter();
+                }
+              }}
+            >{localCopied ? "✅ 복사됨!" : "URL 복사"}</button>
           </div>
           {previewUrl && previewUrl.length > 1800 && (
             <div className="text-amber-400">⚠ URL이 너무 길어 일부 환경에서 실패할 수 있습니다. 멤버/후원자 수를 줄여보세요.</div>
