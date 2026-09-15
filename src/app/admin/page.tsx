@@ -1475,8 +1475,8 @@ function AdminPageInner() {
   /** 정산「멤버 초기화」 시 생성할 멤버 슬롯 수(1~30) */
   const [resetMemberSlotCount, setResetMemberSlotCount] = useState(3);
   const [activeNav, setActiveNav] = useState<AdminNavKey>("dashboard");
-  /** ✅ UI v2: 사이드바 숨기기 (햄버거 메뉴 토글) */
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  /** ✅ UI v2: 사이드바 토글 (모바일 햄버거, 데스크탑은 상시 노출) */
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const panelCardClass = "ui-din-card";
   const simpleMode = false;
   /** ✅ UX BEST 4-③ 후원자 행 저장 플래시 (saving: blue, saved: green) */
@@ -10383,7 +10383,7 @@ function AdminPageInner() {
 
   return (
     <main
-      className="min-h-screen p-4 md:p-8 pb-24 md:pb-10 text-neutral-100 admin-page-root"
+      className="min-h-screen p-4 md:p-8 pb-24 md:pb-10 text-neutral-100 admin-page-root lg:flex lg:flex-row lg:items-start lg:gap-0"
       style={{ backgroundColor: "var(--ui-admin-bg)" }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -10391,55 +10391,57 @@ function AdminPageInner() {
     >
       <Toast />
       <SigUploadProgressOverlay progress={sigUploadProgress} busy={sigBulkReuploadBusy} />
-      {/* ✅ UI v2: 사이드바 백드롭 dim (햄버거 메뉴 오픈시) */}
+      {/* ✅ UI v2: 모바일 햄버거 백드롭 (데스크탑은 상시 고정 메뉴라 필요 없음) */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-[85] bg-black/55 backdrop-blur-sm ui-animate-fade-in"
+          className="fixed inset-0 z-[85] bg-black/55 backdrop-blur-sm ui-animate-fade-in lg:hidden"
           onClick={() => setSidebarOpen(false)}
           aria-hidden
         />
       )}
-      {/* ✅ UI v2: 햄버거 드로어 사이드바 (모바일·데스크탑 공통) */}
-      {sidebarOpen && (
-        <aside
-          className="fixed z-[90] top-0 left-0 h-full w-[280px] max-w-[85vw] ui-animate-drawer-in"
-          style={{
-            background: "linear-gradient(180deg, #151c2e 0%, #0e1423 100%)",
-            borderRight: "1px solid rgba(147, 197, 253, 0.2)",
-            boxShadow: "16px 0 60px rgba(30, 64, 175, 0.35)",
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-center justify-between px-4 pt-5 pb-3 border-b border-white/10">
-            <div>
-              <div className="text-xs uppercase tracking-[0.18em] text-blue-300/80">Menu</div>
-              <div className="text-lg font-extrabold mt-0.5">DIN 관리자</div>
-            </div>
+      {/* ✅ UI v2: 메뉴 — 데스크탑 상시 고정 280px · 모바일 햄버거 드로어 */}
+      <aside
+        className={`lg:static lg:z-0 lg:top-auto lg:left-auto lg:h-auto lg:w-[280px] lg:shrink-0 lg:animate-none lg:translate-x-0 lg:rounded-none lg:mr-8 lg:rounded-2xl ${
+          sidebarOpen
+            ? "fixed z-[90] top-0 left-0 h-full w-[280px] max-w-[85vw] ui-animate-drawer-in"
+            : "fixed z-[90] top-0 left-0 h-full w-[280px] max-w-[85vw] -translate-x-full lg:translate-x-0"
+        }`}
+        style={{
+          background: "linear-gradient(180deg, #151c2e 0%, #0e1423 100%)",
+          borderRight: "1px solid rgba(147, 197, 253, 0.2)",
+          boxShadow: "16px 0 60px rgba(30, 64, 175, 0.28)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 pt-5 pb-3 border-b border-white/10">
+          <div>
+            <div className="text-xs uppercase tracking-[0.18em] text-blue-300/80">Menu</div>
+            <div className="text-lg font-extrabold mt-0.5">DIN 관리자</div>
+          </div>
+          <button
+            type="button"
+            className="w-9 h-9 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 flex items-center justify-center text-lg transition lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="메뉴 닫기"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="p-3 space-y-1">
+          {navItems.map((item) => (
             <button
+              key={item.key}
               type="button"
-              className="w-9 h-9 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 flex items-center justify-center text-lg transition"
-              onClick={() => setSidebarOpen(false)}
-              aria-label="메뉴 닫기"
+              onClick={() => moveToSection(item.key, item.targetId)}
+              className={`ui-din-nav-item w-full text-left ${
+                activeNav === item.key ? "ui-nav-active" : "text-slate-200"
+              }`}
             >
-              ✕
+              {item.label}
             </button>
-          </div>
-          <div className="p-3 space-y-1">
-            {navItems.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => moveToSection(item.key, item.targetId)}
-                className={`ui-din-nav-item w-full text-left ${
-                  activeNav === item.key ? "ui-nav-active" : "text-slate-200"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </aside>
-      )}
+          ))}
+        </div>
+      </aside>
       <div className="lg:hidden fixed left-1/2 -translate-x-1/2 top-2 z-40 pointer-events-none">
         <div
           className={`px-3 py-1 rounded-full text-[11px] border border-white/10 transition-all ${
@@ -10450,14 +10452,14 @@ function AdminPageInner() {
           {pullRefreshing ? "동기화 중..." : pullDistance >= 64 ? "놓아서 동기화" : "아래로 당겨 동기화"}
         </div>
       </div>
-      {/* ✅ UI v2: 기존 240px 고정 2분할 → 단일 컬럼 (콘텐츠 영역 넓게 사용) */}
-      <div className="mx-auto max-w-[1700px]">
+      {/* ✅ UI v2: 콘텐츠 영역 — 데스크탑은 메뉴 옆에 flex-1 · max-width 1420px 로 적정 가독성 */}
+      <div className="flex-1 min-w-0 mx-auto w-full max-w-[1420px]">
         <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 mb-6">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            {/* ✅ UI v2: 햄버거 토글 버튼 (헤더 좌측 상단) */}
+            {/* ✅ UI v2: 햄버거 토글 (모바일에서만 노출 · 데스크탑은 메뉴 상시 고정) */}
             <button
               type="button"
-              className="h-10 px-3 ui-din-btn ui-din-btn-secondary flex items-center justify-center gap-2"
+              className="h-10 px-3 ui-din-btn ui-din-btn-secondary flex items-center justify-center gap-2 lg:hidden"
               onClick={() => setSidebarOpen((o) => !o)}
               aria-label="메뉴 열기"
               title="전체 메뉴 (대시보드·정산·후원자·오버레이 등)"
