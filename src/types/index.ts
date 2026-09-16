@@ -460,6 +460,14 @@ export type TerritoryLog = {
   at: number;
 };
 
+/** 상류사회 팀 — 팀전 모드 전용 */
+export type HighSocietyTeam = {
+  id: string;
+  name: string;
+  color?: string;
+  seatOrderHint?: number;
+};
+
 /** 상류사회 오버레이 연출 토글 */
 export type HighSocietyFxSettings = {
   /** 확장 방향 쪽 전선(경계 빛) */
@@ -541,6 +549,12 @@ export type HighSocietySettings = {
   territoryPauseExcludeWindows?: Array<{ from: number; to: number }>;
   /** @deprecated 일시정지는 영토만 동결 — donationSyncMode 변경 없음 */
   donationSyncModeBeforePause?: "none" | "mealBattle" | "sigMatch" | "sigSales" | "highSociety";
+  /** 개인전 / 팀전 모드 — 미설정 시 "individual" 로 폴백 */
+  matchMode?: "individual" | "team";
+  /** 팀 리스트 — matchMode=team 일 때만 사용 */
+  teams?: HighSocietyTeam[];
+  /** memberId -> teamId 매핑. 미키 = 미배정 상태 */
+  memberTeamAssignments?: Record<string, string>;
 };
 
 /** `/overlay/sig-rolling` — 이미지/GIF 순환 한 장 항목 */

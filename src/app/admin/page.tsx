@@ -283,7 +283,7 @@ import {
   recalculateMealParticipantScoresFromDonors,
 } from "@/lib/battle-donation-sync";
 import { normalizeMealGaugeEffects } from "@/lib/meal-gauge-effects";
-import { getVisibleAdminNavItems, isAdminNavSectionVisible, type AdminNavKey } from "@/app/admin/admin-nav-config";
+import { getVisibleAdminNavItems, isAdminNavSectionVisible, resolveNavKeyFromTargetId, type AdminNavKey, type AdminNavSubItem } from "@/app/admin/admin-nav-config";
 import {
   appendObsTextInstance,
   buildObsTextOverlayUrl,
@@ -1091,13 +1091,33 @@ function AdminPageInner() {
   const [donationIngestMode, setDonationIngestMode] = useState<DonationIngestMode>(
     DEFAULT_DONATION_INGEST_MODE
   );
+  const [intakeModeModalOpen, setIntakeModeModalOpen] = useState(false);
+  const [intakeModeSaving, setIntakeModeSaving] = useState(false);
+  /** 서버 런타임 모드 (KV 저장 → 서버 리스너/폴러 즉시 on/off). 기존 로컬 LS와 별개 유지 */
+  const [runtimeIntakeMode, setRuntimeIntakeMode] = useState<"A" | "B" | null>(null);
+  const [runtimeIntakeModeLoaded, setRuntimeIntakeModeLoaded] = useState(false);
+  const [runtimeIntakeModeBusy, setRuntimeIntakeModeBusy] = useState(false);
 
   useEffect(() => {
     if (!user?.id) {
       setDonationIngestMode(DEFAULT_DONATION_INGEST_MODE);
+      setRuntimeIntakeMode(null);
+      setRuntimeIntakeModeLoaded(false);
       return;
     }
     setDonationIngestMode(readDonationIngestMode(user.id));
+    /** 서버 Runtime A/B 모드 GET으로 헤더 배지 업데이트 */
+    setRuntimeIntakeModeLoaded(false);
+    void (async () => {
+      try {
+        const res = await fetch("/api/settings/intake-mode", { credentials: "include", cache: "no-store" });
+        const r = await res.json().catch(() => null) as { mode?: "A" | "B" };
+        if (r?.mode === "A" || r?.mode === "B") {
+          setRuntimeIntakeMode(r.mode);
+        }
+      } catch {}
+      setRuntimeIntakeModeLoaded(true);
+    })();
   }, [user?.id]);
   const sigBulkReuploadInputRef = useRef<HTMLInputElement | null>(null);
   const sigRestoreJsonInputRef = useRef<HTMLInputElement | null>(null);
@@ -1475,8 +1495,20 @@ function AdminPageInner() {
   /** 정산「멤버 초기화」 시 생성할 멤버 슬롯 수(1~30) */
   const [resetMemberSlotCount, setResetMemberSlotCount] = useState(3);
   const [activeNav, setActiveNav] = useState<AdminNavKey>("dashboard");
-  /** ✅ UI v2: 사이드바 토글 (모바일 햄버거, 데스크탑은 상시 노출) */
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  /** ✅ Level 1 심플화: 초기 진입 부담 감소 — dashboard · settlement 2개만 펼치고 나머지 접기 */
+  const [expandedNavGroups, setExpandedNavGroups] = useState<Record<AdminNavKey, boolean>>({
+    dashboard: true,
+    settlement: true,
+    donor: false,
+    overlay: false,
+    goal: false,
+    logs: false,
+  });
+  /** ✅ 상세 분류 메뉴: 현재 활성화된 소메뉴 targetId (좌측 하이라이트 표시용) */
+  const [activeSubTargetId, setActiveSubTargetId] = useState<string | null>("dashboard-summary");
+  /** ✅ UI v2: 사이드바 **닫을 수 없게** 상시 열림 고정 (메뉴 노출 유지) */
+  const sidebarOpen = true;
+  const setSidebarOpen = (_: boolean | ((prev: boolean) => boolean)) => { /* noop: 항상 열림 */ };
   const panelCardClass = "ui-din-card";
   const simpleMode = false;
   /** ✅ UX BEST 4-③ 후원자 행 저장 플래시 (saving: blue, saved: green) */
@@ -2058,15 +2090,22 @@ function AdminPageInner() {
   );
   
   const { expand: expandAdminSection } = useAdminSectionCollapse();
-  const moveToSection = (key: AdminNavKey, targetId: string) => {
-    /** ✅ toona 스타일 탭 전환: activeNav만 변경 → 해당 탭 그룹만 렌더 */
+  /**
+   * ✅ toona 스타일 탭 전환 + 상세 분류 소메뉴 스크롤 이동
+   * @param key 대분류 AdminNavKey (goal → overlay 로 auto 라우팅)
+   * @param targetId 이동할 AdminCollapsibleSection id
+   * @param opts.fromSubItem true = 소메뉴에서 호출 → scrollTop=0 유지하지 않고 해당 섹션으로 스크롤
+   */
+  const moveToSection = (key: AdminNavKey, targetId: string, opts?: { fromSubItem?: boolean }) => {
     let finalActiveNav: AdminNavKey = key;
     if (key === "goal") {
-      // 후원 목표는 오버레이 설정 섹션 하단에 있으므로 overlay 탭으로 이동 후 expand
       finalActiveNav = "overlay";
     }
     setActiveNav(finalActiveNav);
-    setSidebarOpen(false);
+    /** ✅ 상세 분류: 해당 대분류 자동 펼침 + 소메뉴 하이라이트 */
+    setExpandedNavGroups((prev) => ({ ...prev, [finalActiveNav]: true }));
+    setActiveSubTargetId(targetId);
+    /** ✅ 사이드바 항상 열림: setSidebarOpen(false) 호출 금지 */
     if (typeof window === "undefined") return;
     expandAdminSection(targetId);
     let parent = ADMIN_SECTION_EXPAND_PARENTS[targetId];
@@ -2076,10 +2115,44 @@ function AdminPageInner() {
       expandAdminSection(parent);
       parent = ADMIN_SECTION_EXPAND_PARENTS[parent];
     }
-    /** ✅ 탭 전환시 스크롤 TOP으로 (새 페이지 느낌) */
+    /**
+     * ✅ 상세 분류 동작 분기:
+     * - 대분류 헤더 클릭(fromSubItem=false) → scrollTop=0 (탭 전환 느낌)
+     * - 소메뉴 클릭(fromSubItem=true) → 해당 섹션으로 스크롤 + scroll-margin-top 110px 자동 적용
+     */
     window.requestAnimationFrame(() => {
-      window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+      if (opts?.fromSubItem) {
+        /**
+         * ✅ 상세 분류: 소메뉴 클릭시 탭 전환刚 DOM 마운트 지연될 수 있으므로
+         *    requestAnimationFrame 1번 → setTimeout 150ms 로 재시도 1회 보장
+         *    (activeNav=overlay 세팅 후 overlay 섹션 DOM mount까지 React re-render 소요)
+         */
+        const tryScroll = (retry: number) => {
+          const el = document.getElementById(targetId);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "start" });
+            el.classList.remove("ui-section-arrive");
+            window.setTimeout(() => el.classList.add("ui-section-arrive"), 30);
+          } else if (retry > 0) {
+            window.setTimeout(() => tryScroll(retry - 1), 180);
+          } else {
+            window.scrollTo({ top: 0, behavior: "smooth" as ScrollBehavior });
+          }
+        };
+        tryScroll(4);
+      } else {
+        window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+      }
     });
+  };
+  /** ✅ 상세 분류: 대분류 아코디언 펼침/접힘 토글 (탭 전환 X, 소메뉴 가시성만 토글) */
+  const toggleNavGroup = (key: AdminNavKey) => {
+    setExpandedNavGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+  /** ✅ 상세 분류: 소메뉴 클릭 핸들러 — resolveNavKeyFromTargetId 로 대분류 자동 추론 */
+  const clickSubItem = (sub: AdminNavSubItem) => {
+    const navKey = resolveNavKeyFromTargetId(sub.targetId);
+    moveToSection(navKey, sub.targetId, { fromSubItem: true });
   };
   /** `<input type="color">`는 #rrggbb만 허용 — transparent 등은 fallback으로 표시 */
   const toColorPickerValue = (raw?: string, fallback = "#ffffff") => {
@@ -9018,6 +9091,47 @@ function AdminPageInner() {
     [donationIngestMode, persistToonationSettings, toonationSocketEnabled, user?.id]
   );
 
+  const selectRuntimeDonationIntakeMode = useCallback(
+    async (mode: "A" | "B") => {
+      if (!user?.id) return;
+      if (runtimeIntakeModeBusy) return;
+      if (runtimeIntakeMode === mode) {
+        setIntakeModeModalOpen(false);
+        return;
+      }
+      setRuntimeIntakeModeBusy(true);
+      try {
+        const res = await fetch("/api/settings/intake-mode", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode }),
+        });
+        const r = (await res.json().catch(() => null)) as { ok?: boolean; mode?: "A" | "B"; short?: string; applied?: boolean; appliedDetail?: unknown; error?: string };
+        if (!r?.ok) {
+          showAppToast(r?.error || "모드 변경 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.", { variant: "error", durationMs: 3000 });
+          return;
+        }
+        if (r.mode === "A" || r.mode === "B") setRuntimeIntakeMode(r.mode);
+        /** 호환성: 로컬 LS 기존 donationIngestMode도 같이 동기화 → 오버레이 등 하위 호환 유지 */
+        const legacyMode: DonationIngestMode = r.mode === "B" ? "toona" : "toonation";
+        writeDonationIngestMode(user.id, legacyMode);
+        setDonationIngestMode(legacyMode);
+        if (r.mode === "B" && toonationSocketEnabled) {
+          await persistToonationSettings({ socketEnabled: false });
+        }
+        showAppToast(
+          `✅ 모드 변경 완료 · ${r.short || (r.mode === "A" ? "A · 투네이션 자동" : "B · DIN 허브 모드")}${r.applied ? " · 리스너/폴러 전환 성공" : " · 설정은 저장되었으나 리스너 전환 일부 SKIP"}`,
+          { variant: "success", durationMs: 3200 }
+        );
+        setIntakeModeModalOpen(false);
+      } finally {
+        setRuntimeIntakeModeBusy(false);
+      }
+    },
+    [donationIngestMode, persistToonationSettings, runtimeIntakeMode, runtimeIntakeModeBusy, toonationSocketEnabled, user?.id]
+  );
+
   /** DIN 허브 모드에서는 youtube 직접 WS를 유지하지 않음 */
   useEffect(() => {
     if (!user?.id || !toonationSettingsHydrated) return;
@@ -10389,55 +10503,86 @@ function AdminPageInner() {
     >
       <Toast />
       <SigUploadProgressOverlay progress={sigUploadProgress} busy={sigBulkReuploadBusy} />
-      {/* ✅ UI v2: 모바일 햄버거 백드롭 (데스크탑은 상시 고정 메뉴라 필요 없음) */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-[85] bg-black/55 backdrop-blur-sm ui-animate-fade-in lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-          aria-hidden
-        />
-      )}
-      {/* ✅ UI v2: 메뉴 — 데스크탑 상시 고정 280px · 모바일 햄버거 드로어 */}
+      {/* ✅ 사이드바 **항상 열림 고정**: backdrop overlay · 모바일 드로어 닫기 기능 전체 제거 */}
+      {/* ✅ UI v2: 메뉴 — 항상 열린 상태 고정 280px · 모바일/데스크탑 모두 같은 static 레이아웃 */}
       <aside
-        className={`lg:static lg:z-0 lg:top-auto lg:left-auto lg:h-auto lg:w-[280px] lg:shrink-0 lg:animate-none lg:translate-x-0 lg:rounded-none lg:mr-8 lg:rounded-2xl ${
-          sidebarOpen
-            ? "fixed z-[90] top-0 left-0 h-full w-[280px] max-w-[85vw] ui-animate-drawer-in"
-            : "fixed z-[90] top-0 left-0 h-full w-[280px] max-w-[85vw] -translate-x-full lg:translate-x-0"
-        }`}
+        className="static shrink-0 w-[280px] mr-6 rounded-2xl min-h-[calc(100vh-2rem)]"
         style={{
-          background: "linear-gradient(180deg, #151c2e 0%, #0e1423 100%)",
-          borderRight: "1px solid rgba(147, 197, 253, 0.2)",
-          boxShadow: "16px 0 60px rgba(30, 64, 175, 0.28)",
+          background: "#101624",
+          border: "1px solid #1f2937",
+          boxShadow: "none",
+          backdropFilter: "none",
+          WebkitBackdropFilter: "none",
         }}
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 pt-5 pb-3 border-b border-white/10">
           <div>
-            <div className="text-xs uppercase tracking-[0.18em] text-blue-300/80">Menu</div>
-            <div className="text-lg font-extrabold mt-0.5">DIN 관리자</div>
+            <div className="text-xs uppercase tracking-[0.18em] text-neutral-500/80">Menu</div>
+            <div className="text-lg font-bold mt-0.5 text-neutral-100">DIN 관리자</div>
           </div>
-          <button
-            type="button"
-            className="w-9 h-9 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 flex items-center justify-center text-lg transition lg:hidden"
-            onClick={() => setSidebarOpen(false)}
-            aria-label="메뉴 닫기"
-          >
-            ✕
-          </button>
         </div>
-        <div className="p-3 space-y-1.5">
-          {navItems.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => moveToSection(item.key, item.targetId)}
-              className={`ui-din-nav-item ${
-                activeNav === item.key ? "ui-nav-active" : ""
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
+        <div className="p-2.5 space-y-1 overflow-y-auto max-h-[calc(100vh-90px)] pr-1">
+          {navItems.map((item) => {
+            const hasSubs = Array.isArray(item.subItems) && item.subItems.length > 0;
+            /** ✅ L1 심플화: fallback을 FALSE로 — key 누락시 무조건 접혀서 ALL TRUE 노출 방지 */
+            const isExpanded = expandedNavGroups[item.key] ?? false;
+            const isGroupActive = activeNav === item.key || (item.key === "goal" && activeNav === "overlay");
+            return (
+              <div key={item.key} className="ui-din-nav-group">
+                {hasSubs ? (
+                  <div className="flex items-stretch gap-1">
+                    <button
+                      type="button"
+                      onClick={() => moveToSection(item.key, item.targetId)}
+                      className={`ui-din-nav-item ui-din-nav-category flex-1 ${
+                        isGroupActive ? "ui-nav-active" : ""
+                      } ${isExpanded ? "ui-nav-expanded" : ""}`}
+                    >
+                      <span>{item.label}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); toggleNavGroup(item.key); }}
+                      className={`ui-din-nav-item !w-auto !px-2 flex items-center justify-center ${
+                        isGroupActive ? "ui-nav-active ui-nav-expanded" : isExpanded ? "ui-nav-expanded" : ""
+                      }`}
+                      aria-label={isExpanded ? `${item.label} 메뉴 접기` : `${item.label} 메뉴 펼치기`}
+                      title={isExpanded ? "소메뉴 접기" : "소메뉴 펼치기"}
+                    >
+                      <span className="ui-din-nav-chevron">▶</span>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => moveToSection(item.key, item.targetId)}
+                    className={`ui-din-nav-item ${
+                      isGroupActive ? "ui-nav-active" : ""
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                )}
+                {hasSubs && isExpanded && item.subItems && (
+                  <div className="ui-din-nav-sublist ui-tab-fade-in">
+                    {item.subItems.map((sub) => (
+                      <button
+                        key={sub.subKey}
+                        type="button"
+                        onClick={() => clickSubItem(sub)}
+                        className={`ui-din-nav-subitem ${
+                          activeSubTargetId === sub.targetId ? "ui-nav-sub-active" : ""
+                        }`}
+                        title={sub.targetId}
+                      >
+                        {sub.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </aside>
       <div className="lg:hidden fixed left-1/2 -translate-x-1/2 top-2 z-40 pointer-events-none">
@@ -10454,18 +10599,7 @@ function AdminPageInner() {
       <div className="flex-1 min-w-0 mx-auto w-full max-w-[1420px]">
         <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 mb-6">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            {/* ✅ UI v2: 햄버거 토글 (모바일에서만 노출 · 데스크탑은 메뉴 상시 고정) */}
-            <button
-              type="button"
-              className="h-10 px-3 ui-din-btn ui-din-btn-secondary flex items-center justify-center gap-2 lg:hidden"
-              onClick={() => setSidebarOpen((o) => !o)}
-              aria-label="메뉴 열기"
-              title="전체 메뉴 (대시보드·정산·후원자·오버레이 등)"
-            >
-              <span className="text-lg leading-none">☰</span>
-              <span className="hidden sm:inline">메뉴</span>
-            </button>
-            <h1 className="text-2xl font-extrabold">{adminHeaderTitle(user)}</h1>
+            <h1 className="text-2xl font-bold">{adminHeaderTitle(user)}</h1>
             <AdminCollapseToolbar />
             {(user?.remainingDays != null || user?.unlimited) && (
               <span className={`px-2 py-0.5 rounded text-xs font-medium ${user?.unlimited ? "bg-blue-900/60 text-blue-300" : (user?.remainingDays ?? 0) <= 7 ? "bg-amber-900/60 text-amber-300" : "bg-neutral-800 text-neutral-400"}`}>
@@ -10480,6 +10614,47 @@ function AdminPageInner() {
               세션 확인 필요
             </span>
             ) : null}
+            {/* ✅ A/B 모드 런타임 스위치 — 헤더 배지 클릭 → 팝업 모달 · 심플 Flat 다크: 그림자·상승 효과 제거 */}
+            <button
+              type="button"
+              onClick={() => setIntakeModeModalOpen(true)}
+              className={`group relative inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold transition ${
+                runtimeIntakeMode === "A"
+                  ? "border-emerald-900/60 bg-emerald-950/60 text-emerald-200 hover:bg-emerald-900/40"
+                  : runtimeIntakeMode === "B"
+                    ? "border-indigo-900/60 bg-indigo-950/60 text-indigo-200 hover:bg-indigo-900/40"
+                    : "border-neutral-700 bg-neutral-900 text-neutral-300 hover:bg-neutral-800"
+              }`}
+              title={
+                runtimeIntakeMode === "A"
+                  ? "A모드 — 투네이션만 자동으로 연결해요. 투네이션 링크(알림박스 URL)만 넣어주세요. (EC2 서버가 직접 WS 연결)"
+                  : runtimeIntakeMode === "B"
+                    ? "B모드 — DIN 허브 모드로 운영해요. DIN 허브에 로그인 하시면 서버가 30초/60초마다 자동으로 긁어옵니다."
+                    : "A/B 모드 — 클릭해서 설정해 주세요. (로딩 중...)"
+              }
+            >
+              <span
+                className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-extrabold leading-none ${
+                  runtimeIntakeMode === "A"
+                    ? "bg-emerald-500 text-white"
+                    : runtimeIntakeMode === "B"
+                      ? "bg-indigo-500 text-white"
+                      : "bg-neutral-600 text-white"
+                }`}
+              >
+                {runtimeIntakeMode || "?"}
+              </span>
+              <span>
+                {runtimeIntakeMode === "A"
+                  ? "A · 투네이션 자동"
+                  : runtimeIntakeMode === "B"
+                    ? "B · DIN 허브 모드"
+                    : runtimeIntakeModeLoaded
+                      ? "모드 설정 (기본 B)"
+                      : "모드 로딩중…"}
+              </span>
+              <span className="text-[10px] opacity-70">▼</span>
+            </button>
             <button
               type="button"
               className="ui-din-btn ui-din-btn-success h-10 text-sm"
@@ -10580,6 +10755,142 @@ function AdminPageInner() {
                 : undefined
           }
         />
+        {intakeModeModalOpen && (
+          <div
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 ui-animate-fade-in"
+            onClick={() => !runtimeIntakeModeBusy && setIntakeModeModalOpen(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="intake-mode-modal-title"
+          >
+            <div
+              className="ui-din-card w-full max-w-[520px] overflow-hidden p-0 ui-animate-pop-in"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+                <div>
+                  <h2 id="intake-mode-modal-title" className="text-xl font-extrabold">
+                    후원 수집 모드 (A · B)
+                  </h2>
+                  <p className="mt-1 text-xs text-neutral-400">
+                    관리자 창을 닫아도 EC2 서버가 **자동으로 후원을 수집합니다**. 방송 전 한 번만 선택해 주세요.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={runtimeIntakeModeBusy}
+                  onClick={() => setIntakeModeModalOpen(false)}
+                  className="w-9 h-9 shrink-0 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 flex items-center justify-center text-lg transition disabled:opacity-50"
+                  aria-label="닫기"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-5">
+                <button
+                  type="button"
+                  disabled={runtimeIntakeModeBusy}
+                  onClick={() => void selectRuntimeDonationIntakeMode("A")}
+                  className={`relative rounded-2xl border-2 p-4 text-left transition-all disabled:opacity-60 ${
+                    runtimeIntakeMode === "A"
+                      ? "border-neutral-500 bg-neutral-800"
+                      : "border-white/10 bg-neutral-900/50 hover:border-neutral-500 hover:bg-neutral-800/50"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-neutral-700 text-white text-xs font-extrabold">A</span>
+                    <div className="text-base font-bold text-neutral-100">A 모드</div>
+                    {runtimeIntakeMode === "A" && (
+                      <span className="ml-auto rounded-full bg-neutral-800 border border-neutral-600 px-2 py-0.5 text-[11px] font-semibold text-neutral-200">적용중</span>
+                    )}
+                  </div>
+                  <div className="mt-2 text-sm font-semibold text-neutral-200">투네이션만 자동</div>
+                  <ul className="mt-2 space-y-1 text-xs text-neutral-300 leading-relaxed">
+                    <li>• 투네(Toonation) WebSocket 직접 연결</li>
+                    <li>• 후원 발생 → 실시간 즉시 정산표 반영</li>
+                    <li>• 투네 알림박스 URL(linkKey)만 있으면 OK</li>
+                  </ul>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (runtimeIntakeModeBusy) return;
+                      setIntakeModeModalOpen(false);
+                      window.setTimeout(() => setAccountSettingsOpen(true), 120);
+                    }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (e.target as HTMLElement).click(); } }}
+                    className="mt-4 inline-flex items-center gap-2 rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-1.5 text-xs font-bold text-neutral-100 hover:bg-neutral-700 hover:border-neutral-500 select-none active:scale-[0.98] transition"
+                  >
+                    <span>🔗</span>
+                    <span>투네이션 링크 관리</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={runtimeIntakeModeBusy}
+                  onClick={() => void selectRuntimeDonationIntakeMode("B")}
+                  className={`relative rounded-2xl border-2 p-4 text-left transition-all disabled:opacity-60 ${
+                    runtimeIntakeMode === "B"
+                      ? "border-neutral-500 bg-neutral-800"
+                      : "border-white/10 bg-neutral-900/50 hover:border-neutral-500 hover:bg-neutral-800/50"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-neutral-700 text-white text-xs font-extrabold">B</span>
+                    <div className="text-base font-bold text-neutral-100">B 모드</div>
+                    {runtimeIntakeMode === "B" && (
+                      <span className="ml-auto rounded-full bg-neutral-800 border border-neutral-600 px-2 py-0.5 text-[11px] font-semibold text-neutral-200">적용중</span>
+                    )}
+                  </div>
+                  <div className="mt-2 text-sm font-semibold text-neutral-200">DIN 허브 모드</div>
+                  <ul className="mt-2 space-y-1 text-xs text-neutral-300 leading-relaxed">
+                    <li>• DIN 허브에 등록된 투나(Toona) 프로젝트</li>
+                    <li>• 서버가 30초/60초마다 자동 pull + 큐 소진</li>
+                    <li>• 중복 이중 수집 완벽 차단 (권장!)</li>
+                  </ul>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (runtimeIntakeModeBusy) return;
+                      try {
+                        window.open("http://13.125.221.195:4000/dashboard/history", "din-hub-login", "noopener,noreferrer,width=1280,height=840");
+                      } catch (_) { /* noop */ }
+                      setDinHubModalOpen(true);
+                    }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (e.target as HTMLElement).click(); } }}
+                    className="mt-4 inline-flex items-center gap-2 rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-1.5 text-xs font-bold text-neutral-100 hover:bg-neutral-700 hover:border-neutral-500 select-none active:scale-[0.98] transition"
+                  >
+                    <span>🔐</span>
+                    <span>DIN 허브 로그인</span>
+                  </div>
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-3 border-t border-white/10 bg-neutral-950/40 px-5 py-3">
+                <div className="text-[11px] text-neutral-500 mr-auto">
+                  모드 변경시 EC2 내부 리스너/폴러가 즉시 재시작됩니다. (서버 재시작 X)
+                </div>
+                <button
+                  type="button"
+                  disabled={runtimeIntakeModeBusy}
+                  onClick={() => setIntakeModeModalOpen(false)}
+                  className="ui-din-btn ui-din-btn-secondary text-sm h-9"
+                >
+                  닫기
+                </button>
+              </div>
+              {runtimeIntakeModeBusy && (
+                <div className="absolute inset-0 rounded-2xl bg-black/70 flex items-center justify-center text-sm font-semibold text-white z-10">
+                  <span className="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-2" />
+                  리스너/폴러 전환중…
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-1 gap-6">
           <div className="space-y-6">
             {isAdminNavSectionVisible("settlement") && activeNav === "settlement" && (
@@ -21620,13 +21931,14 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
           aria-label="맨 위로 가기"
           title="맨 위로 가기 (Home)"
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          className="ui-back-to-top fixed right-4 lg:right-6 z-[65] shadow-[0_10px_30px_rgba(59,130,246,0.45),0_0_0_1px_rgba(96,165,250,0.35)] rounded-full border border-blue-400/45 text-white flex items-center justify-center select-none active:scale-95"
+          className="ui-back-to-top fixed right-4 lg:right-6 z-[65] rounded-full border border-neutral-700 text-neutral-200 flex items-center justify-center select-none active:scale-95"
           style={{
             bottom: "calc(env(safe-area-inset-bottom, 0px) + 88px)",
             width: "48px",
             height: "48px",
-            background: "linear-gradient(145deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%)",
-            backdropFilter: "blur(6px)",
+            background: "#1e293b",
+            backdropFilter: "none",
+            WebkitBackdropFilter: "none",
           }}
         >
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -21634,7 +21946,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
           </svg>
         </button>
       )}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 lg:hidden border-t border-white/10 bg-[#0f172a]/95 backdrop-blur-md">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 lg:hidden border-t border-white/10 bg-[#0f172a]">
         <div
           className="grid gap-1 p-2"
           style={{

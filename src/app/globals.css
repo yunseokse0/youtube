@@ -147,15 +147,15 @@
   --ui-blue-900: #1e3a8a;
   --ui-blue-gradient: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%);
   --ui-blue-glow: 0 0 24px rgba(59, 130, 246, 0.25);
-  --ui-radius-card: 16px;
-  --ui-radius-btn: 12px;
+  --ui-radius-card: 12px;
+  --ui-radius-btn: 10px;
   --ui-radius-pill: 999px;
-  --ui-shadow-soft-blue: 0 12px 40px rgba(30, 64, 175, 0.18);
-  --ui-shadow-hover-blue: 0 16px 48px rgba(59, 130, 246, 0.28);
-  --ui-font-weight-base: 600;
-  --ui-font-weight-bold: 800;
-  --ui-admin-bg: #0d1117;
-  --ui-admin-bg-alt: #131925;
+  --ui-shadow-soft-blue: none;
+  --ui-shadow-hover-blue: none;
+  --ui-font-weight-base: 500;
+  --ui-font-weight-bold: 700;
+  --ui-admin-bg: #0b0f18;
+  --ui-admin-bg-alt: #111827;
 }
 
 body {
@@ -164,98 +164,167 @@ body {
   font-weight: var(--ui-font-weight-base);
 }
 
-/* ✅ UI v2: DIN 블루 테마 카드 · 버튼 · 입력 공통 헬퍼 클래스 */
+/* ✅ 심플 Flat 다크 테마: AI 느낌(그라데이션·블러·glow shadow) 전부 제거 · 단색 슬레이트 기반 */
 @layer components {
   .ui-din-card {
     border-radius: var(--ui-radius-card);
-    border: 1px solid rgba(147, 197, 253, 0.15);
-    background: linear-gradient(160deg, #202634 0%, #1a2131 45%, #131a2a 100%);
-    box-shadow: var(--ui-shadow-soft-blue);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    transition: box-shadow 0.2s ease, transform 0.2s ease;
+    border: 1px solid #1f2937;
+    background: #111827;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    transition: border-color 0.14s ease, background 0.14s ease;
   }
   .ui-din-card:hover {
-    box-shadow: var(--ui-shadow-hover-blue);
+    box-shadow: none;
+    border-color: #374151;
+    background: #151e2f;
   }
   .ui-din-btn {
     border-radius: var(--ui-radius-btn);
-    padding: 0.75rem 1.25rem;
-    font-weight: 700;
-    transition: transform 0.16s ease, box-shadow 0.2s ease, background 0.16s ease;
+    padding: 0.6rem 1rem;
+    font-weight: 600;
+    transition: background 0.14s ease, border-color 0.14s ease;
     cursor: pointer;
   }
-  .ui-din-btn:hover {
-    transform: translateY(-1px) scale(1.015);
-    box-shadow: var(--ui-shadow-hover-blue);
-  }
   .ui-din-btn:active {
-    transform: translateY(0) scale(0.985);
+    transform: translateY(0) scale(0.99);
   }
   .ui-din-btn-primary {
-    background-image: var(--ui-blue-gradient);
-    color: #ffffff;
-    border: 1px solid rgba(147, 197, 253, 0.35);
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    background-color: #1f2937;
+    color: #f9fafb;
+    border: 1px solid #374151;
   }
+  .ui-din-btn-primary:hover { background-color: #273449; }
   .ui-din-btn-secondary {
-    background: linear-gradient(135deg, #273043 0%, #1e2638 100%);
-    color: #dbeafe;
-    border: 1px solid rgba(147, 197, 253, 0.18);
+    background-color: #111827;
+    color: #e5e7eb;
+    border: 1px solid #1f2937;
   }
-  .ui-din-btn-secondary:hover {
-    background: linear-gradient(135deg, #2f3a52 0%, #242e44 100%);
-  }
+  .ui-din-btn-secondary:hover { background-color: #172033; }
   .ui-din-btn-danger {
-    background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
-    color: #fff;
-    border: 1px solid rgba(252, 165, 165, 0.35);
+    background-color: #7f1d1d;
+    color: #fee2e2;
+    border: 1px solid #991b1b;
   }
+  .ui-din-btn-danger:hover { background-color: #991b1b; }
   .ui-din-btn-success {
-    background: linear-gradient(135deg, #22c55e 0%, #15803d 100%);
-    color: #fff;
-    border: 1px solid rgba(134, 239, 172, 0.35);
+    background-color: #14532d;
+    color: #dcfce7;
+    border: 1px solid #166534;
   }
+  .ui-din-btn-success:hover { background-color: #166534; }
   .ui-din-input {
-    border-radius: var(--ui-radius-btn);
-    padding: 0.7rem 0.9rem;
-    background: #0f172a;
-    border: 1px solid rgba(147, 197, 253, 0.2);
-    color: #e2e8f0;
-    font-weight: 600;
-    transition: border-color 0.16s ease, box-shadow 0.16s ease;
+    border-radius: 8px;
+    padding: 0.55rem 0.8rem;
+    background: #0b0f18;
+    border: 1px solid #1f2937;
+    color: #e5e7eb;
+    font-weight: 500;
+    transition: border-color 0.14s ease, background 0.14s ease;
   }
   .ui-din-input:focus {
     outline: none;
-    border-color: var(--ui-blue-500);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18), var(--ui-blue-glow);
+    border-color: #475569;
+    box-shadow: none;
+    background: #0f172a;
   }
-  /* ✅ toona 기존 스타일 Nav: 아이콘 X · 텍스트만 · Active 보라색 블록 */
+  /* ✅ Nav: toona 스타일 유지하되 단색 플랫. 그라데이션/그림자 전부 삭제 */
   .ui-din-nav-item {
     position: relative;
     display: flex;
     align-items: center;
-    padding: 0.65rem 0.85rem;
+    padding: 0.62rem 0.8rem;
     border-radius: 6px;
-    font-size: 14px;
+    font-size: 13.5px;
     font-weight: 500;
-    color: #d4d4d8;
+    color: #cbd5e1;
     background: transparent;
     border: 0;
     width: 100%;
     text-align: left;
     cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
+    transition: background 0.1s ease, color 0.1s ease;
   }
   .ui-din-nav-item:hover {
-    background: rgba(99, 102, 241, 0.10);
-    color: #e0e7ff;
+    background: #172033;
+    color: #e5e7eb;
   }
   .ui-din-nav-item.ui-nav-active {
-    background: linear-gradient(90deg, #6366f1 0%, #7c3aed 100%);
+    background: #1e293b;
     color: #ffffff;
-    font-weight: 700;
-    box-shadow: 0 2px 8px rgba(99,102,241,0.28);
+    font-weight: 600;
+    box-shadow: none;
+    border: 1px solid #334155;
+    padding: 0.56rem 0.78rem;
+  }
+  .ui-din-nav-group {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .ui-din-nav-category {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .ui-din-nav-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    font-size: 11px;
+    color: #94a3b8;
+    transition: transform 0.14s ease, color 0.14s ease;
+    flex-shrink: 0;
+  }
+  .ui-din-nav-item.ui-nav-expanded .ui-din-nav-chevron {
+    transform: rotate(90deg);
+    color: #e2e8f0;
+  }
+  .ui-din-nav-item:hover .ui-din-nav-chevron {
+    color: #e2e8f0;
+  }
+  .ui-din-nav-sublist {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-top: 2px;
+    margin-bottom: 4px;
+    padding-left: 0.55rem;
+    border-left: 1px solid #1f2937;
+    margin-left: 0.65rem;
+    overflow: hidden;
+  }
+  .ui-din-nav-subitem {
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 0.42rem 0.7rem 0.42rem 0.75rem;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 450;
+    line-height: 1.35;
+    color: #a1a1aa;
+    background: transparent;
+    border: 0;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.1s ease, color 0.1s ease, padding-left 0.12s ease;
+  }
+  .ui-din-nav-subitem:hover {
+    background: rgba(99, 102, 241, 0.09);
+    color: #e0e7ff;
+    padding-left: 0.9rem;
+  }
+  .ui-din-nav-subitem.ui-nav-sub-active {
+    background: rgba(99, 102, 241, 0.16);
+    color: #c7d2fe;
+    font-weight: 600;
+    box-shadow: inset 2px 0 0 0 #818cf8;
   }
   /* 투네 스타일 탭 페이드 인 */
   .ui-tab-fade-in {
@@ -288,22 +357,7 @@ body {
   .ui-animate-pop-in {
     animation: ui-pop-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
-  /* Donor Row 테마 (행 호버·홀짝 그라데이션·선택) */
-  .ui-din-row-zebra:nth-child(odd):not([data-excluded="true"]):not([data-selected="true"]) {
-    background: linear-gradient(180deg, rgba(59, 130, 246, 0.025) 0%, rgba(37, 99, 235, 0.04) 100%);
-  }
-  .ui-din-row-zebra:nth-child(even):not([data-excluded="true"]):not([data-selected="true"]) {
-    background: linear-gradient(180deg, rgba(15, 23, 42, 0.55) 0%, rgba(15, 23, 42, 0.72) 100%);
-  }
-  .ui-din-row-zebra:hover:not([data-excluded="true"]):not([data-selected="true"]) {
-    background: linear-gradient(90deg, rgba(59, 130, 246, 0.11) 0%, rgba(37, 99, 235, 0.06) 40%, transparent 100%);
-    box-shadow: inset 3px 0 0 0 var(--ui-blue-500);
-  }
-  .ui-din-row-zebra[data-selected="true"] {
-    background: linear-gradient(90deg, rgba(59, 130, 246, 0.22) 0%, rgba(37, 99, 235, 0.14) 50%, rgba(59, 130, 246, 0.08) 100%) !important;
-    box-shadow: inset 3px 0 0 0 #60a5fa, 0 0 0 1px rgba(96, 165, 250, 0.25);
-  }
-  /* Admin 내부 input/select/textarea 일괄 DIN 블루 틴트 스타일 (오버레이 컴포넌트는 영향 X) */
+  /* ✅ Level 1 심플 — Admin 입력박스 공통: gradient→단색 · inset shadow 제거 · glow 1단계 축소 */
   .admin-page-root input[type="text"]:not(.bypass-din-input),
   .admin-page-root input[type="number"]:not(.bypass-din-input),
   .admin-page-root input[type="date"]:not(.bypass-din-input),
@@ -311,11 +365,10 @@ body {
   .admin-page-root select:not(.bypass-din-input),
   .admin-page-root textarea:not(.bypass-din-input) {
     border-radius: 10px;
-    background: linear-gradient(180deg, rgba(15, 23, 42, 0.92) 0%, rgba(15, 23, 42, 0.82) 100%);
-    border: 1px solid rgba(96, 165, 250, 0.18);
+    background: #0f172a;
+    border: 1px solid rgba(148, 163, 184, 0.18);
     color: rgb(241 245 249);
-    transition: all 0.18s ease;
-    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.03);
+    transition: border-color 0.16s ease, background 0.16s ease;
   }
   .admin-page-root input[type="text"]:not(.bypass-din-input):focus,
   .admin-page-root input[type="number"]:not(.bypass-din-input):focus,
@@ -325,8 +378,23 @@ body {
   .admin-page-root textarea:not(.bypass-din-input):focus {
     outline: none;
     border-color: rgba(96, 165, 250, 0.55);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16), 0 4px 16px rgba(59, 130, 246, 0.22);
-    background: linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(30, 41, 59, 0.95) 100%);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.12);
+    background: #101a2e;
+  }
+  /* ✅ Level 1 심플 — 후원자 테이블 행 테마: 다중 gradient → 미세 단색 틴트로 교체 (가독성 ↑ · 시각 부담 ↓) */
+  .ui-din-row-zebra:nth-child(odd):not([data-excluded="true"]):not([data-selected="true"]) {
+    background: rgba(30, 41, 59, 0.55);
+  }
+  .ui-din-row-zebra:nth-child(even):not([data-excluded="true"]):not([data-selected="true"]) {
+    background: rgba(15, 23, 42, 0.45);
+  }
+  .ui-din-row-zebra:hover:not([data-excluded="true"]):not([data-selected="true"]) {
+    background: rgba(37, 99, 235, 0.09);
+    box-shadow: inset 2px 0 0 0 var(--ui-blue-500);
+  }
+  .ui-din-row-zebra[data-selected="true"] {
+    background: rgba(37, 99, 235, 0.22) !important;
+    box-shadow: inset 2px 0 0 0 #60a5fa;
   }
   /* Toast / 알림 박스 DIN 블루 틴트 */
   .ui-din-toast {

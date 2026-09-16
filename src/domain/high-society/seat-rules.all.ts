@@ -4,6 +4,7 @@ import type {
   HighSocietyFxSettings,
   HighSocietyPushDir,
   HighSocietySettings,
+  HighSocietyTeam,
   Member,
   TerritoryLog,
 } from "@/types";
@@ -402,6 +403,18 @@ function highSocietyDonorAtMs(d: Pick<Donor, "at">): number {
   return Number.isFinite(Number(d.at)) ? Math.max(0, Math.floor(Number(d.at))) : 0;
 }
 
+export function normalizeTeam(raw: unknown): HighSocietyTeam | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const id = String(r.id || "").trim();
+  if (!id) return null;
+  const name = String(r.name || "").trim() || id;
+  const color = typeof r.color === "string" && /^#[0-9a-f]{3,8}$/i.test(r.color.trim()) ? r.color.trim() : undefined;
+  const hintRaw = Number(r.seatOrderHint);
+  const seatOrderHint = Number.isFinite(hintRaw) ? Math.floor(hintRaw) : undefined;
+  return { id, name, ...(color ? { color } : {}), ...(seatOrderHint !== undefined ? { seatOrderHint } : {}) };
+}
+
 export function defaultHighSocietySettings(): HighSocietySettings {
   return {
     enabled: false,
@@ -417,6 +430,9 @@ export function defaultHighSocietySettings(): HighSocietySettings {
     startCmPerMember: Math.round(HIGH_SOCIETY_DEFAULT_FIELD_CM / 4),
     territoryUpdateMode: "realtime",
     fx: defaultHighSocietyFxSettings(),
+    matchMode: "individual",
+    teams: [],
+    memberTeamAssignments: {},
   };
 }
 
@@ -632,6 +648,17 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
   const memberWidthDonationSnapshot = normalizeMemberDonationSnapshotRecord(v.memberWidthDonationSnapshot);
   const memberTerritoryExpand = normalizeMemberTerritoryExpandRecord(v.memberTerritoryExpand);
   const zeroCmGaugeDisplay = normalizeZeroCmGaugeDisplay(v.zeroCmGaugeDisplay);
+  const matchMode: "individual" | "team" = v.matchMode === "team" ? "team" : "individual";
+  const teamsArr = Array.isArray(v.teams) ? v.teams.map(normalizeTeam).filter((t): t is HighSocietyTeam => Boolean(t)) : [];
+  const assignmentsRaw = v.memberTeamAssignments;
+  const memberTeamAssignments: Record<string, string> =
+    assignmentsRaw && typeof assignmentsRaw === "object" && !Array.isArray(assignmentsRaw)
+      ? Object.fromEntries(
+          Object.entries(assignmentsRaw as Record<string, unknown>)
+            .map(([k, val]) => [String(k || "").trim(), String(val || "").trim()])
+            .filter(([k, val]) => k && val)
+        )
+      : {};
   return {
     enabled: Boolean(v.enabled),
     seatMemberIds,
@@ -656,6 +683,9 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     ...(memberWidthDonationSnapshot ? { memberWidthDonationSnapshot } : {}),
     ...(memberTerritoryExpand ? { memberTerritoryExpand } : {}),
     ...(zeroCmGaugeDisplay !== "hidden" ? { zeroCmGaugeDisplay } : {}),
+    matchMode,
+    teams: teamsArr,
+    memberTeamAssignments,
   };
 }
 
@@ -2455,6 +2485,88 @@ export function pruneHighSocietySeatMemberIds(
     .filter((id) => playable.has(id));
   if (pruned.length === (settings.seatMemberIds || []).length) return settings;
   return { ...settings, seatMemberIds: pruned, seatMemberIdsManual: true };
+}
+
+/** 팀 id 로 팀 색상 fallback lookup — HIGH_SOCIETY_SEAT_COLORS circular */
+export function resolveTeamColor(team: HighSocietyTeam | null | undefined, fallbackIndex = 0): string {
+  if (team?.color) return team.color;
+  const palette = Array.from(HIGH_SOCIETY_SEAT_COLORS);
+  const hash = (team?.id || String(fallbackIndex))
+    .split("")
+    .reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  return palette[Math.abs(hash) % palette.length]!;
+}
+
+/** TerritoryLog 를 팀별로 재집계 (TerritoryLog.memberId → memberTeamAssignments 로 조인) */
+export function aggregateTeamPushesFromTerritoryLogs(opts: {
+  seatPlayers: Array<{ id: string; name: string }>;
+  logs: TerritoryLog[];
+  settings: HighSocietySettings;
+  memberTeamAssignments: Record<string, string>;
+  teams: HighSocietyTeam[];
+}): Array<{
+  id: string;
+  teamName: string;
+  color: string;
+  donationWon: number;
+  expandLeftCm: number;
+  expandRightCm: number;
+  memberIds: string[];
+}> {
+  const { seatPlayers, logs, memberTeamAssignments, teams } = opts;
+  const playerExpandMap = new Map<string, { expandLeftCm: number; expandRightCm: number }>();
+  for (const m of seatPlayers) {
+    playerExpandMap.set(m.id, { expandLeftCm: 0, expandRightCm: 0 });
+  }
+  for (const log of logs || []) {
+    const cm = Math.max(0, Number(log.amount) || 0);
+    const isExpand = Number(log.delta) >= 0;
+    if (!isExpand) continue;
+    const entry = playerExpandMap.get(log.memberId);
+    if (!entry) continue;
+    const pushDir = (log as unknown as { pushDir?: string }).pushDir || "both";
+    if (pushDir === "left") {
+      entry.expandLeftCm += cm;
+    } else if (pushDir === "right") {
+      entry.expandRightCm += cm;
+    } else {
+      const half = Math.floor(cm / 2);
+      entry.expandLeftCm += half;
+      entry.expandRightCm += cm - half;
+    }
+  }
+  const teamIndexMap = new Map(teams.map((t, i) => [t.id, { team: t, idx: i }]));
+  type Acc = { expandLeftCm: number; expandRightCm: number; donationWon: number; memberIds: string[] };
+  const accMap = new Map<string, Acc>();
+  const teamOrder: string[] = [];
+  for (const p of seatPlayers) {
+    const tid = String(memberTeamAssignments[p.id] || "").trim();
+    if (!tid) continue;
+    const entry = teamIndexMap.get(tid);
+    if (!entry) continue;
+    if (!accMap.has(tid)) {
+      accMap.set(tid, { expandLeftCm: 0, expandRightCm: 0, donationWon: 0, memberIds: [] });
+      teamOrder.push(tid);
+    }
+    const acc = accMap.get(tid)!;
+    const pe = playerExpandMap.get(p.id);
+    acc.expandLeftCm += pe?.expandLeftCm || 0;
+    acc.expandRightCm += pe?.expandRightCm || 0;
+    acc.memberIds.push(p.id);
+  }
+  return teamOrder.map((tid) => {
+    const { team, idx } = teamIndexMap.get(tid)!;
+    const acc = accMap.get(tid)!;
+    return {
+      id: team.id,
+      teamName: team.name,
+      color: resolveTeamColor(team, idx),
+      donationWon: acc.donationWon,
+      expandLeftCm: acc.expandLeftCm,
+      expandRightCm: acc.expandRightCm,
+      memberIds: acc.memberIds,
+    };
+  });
 }
 
 /** 저장된 1인 시작 cm — startCmPerMember 우선, 없으면 fieldCm/N */

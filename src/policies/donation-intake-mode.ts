@@ -1,5 +1,6 @@
 export const DONATION_INTAKE_ENV_KEY = "TOONA_INTAKE_MODE";
 export const DONATION_INTAKE_ENV_KEY_ALT = "DONATION_INTAKE_MODE";
+export const DONATION_INTAKE_RUNTIME_KV_PREFIX = "din:runtime:intake-mode";
 
 export type DonationIntakeMode = "A" | "B";
 
@@ -20,9 +21,14 @@ export const DONATION_INTAKE_MODE_B: DonationIntakeMode = "B";
  *             + instrumentation b-mode poller 가 hub 자동 폴&드레인
  *    - Toonation 직접 WS 리스너는 시작하지 않음
  *
- * .env 설정법:
+ * .env 설정법 (최초 기본값 / 사용자가 런타임 설정 안했을때 fallback):
  *   TOONA_INTAKE_MODE=A    (A모드 · 투네 직접)
  *   TOONA_INTAKE_MODE=B    (B모드 · DIN 허브 투나 프로젝트)
+ *
+ * ★ 2026-09-16 런타임 오버라이드 (관리자 헤더 버튼으로 A/B 토글):
+ *   관리자 헤더 모드 배지 클릭 → 팝업에서 A 또는 B 클릭 → KV에 user별 저장
+ *   → getRuntimeDonationIntakeMode(userId) 가 항상 KV → env 순서로 읽음
+ *   → 모든 경로(instrumentation·ingest route·poller)는 이 함수를 최우선 참조
  *
  * 과거 호환 별칭 (하위 호환 유지):
  *   din_only / din-hub-only / b-mode  →  B 모드로 해석
@@ -50,7 +56,15 @@ const MODE_B_ALIASES = new Set([
   "hub",
 ]);
 
-function readRawMode(): string {
+function normalizeRawMode(raw: string | null | undefined): DonationIntakeMode | null {
+  const v = String(raw || "").trim().toLowerCase();
+  if (!v) return null;
+  if (MODE_A_ALIASES.has(v)) return DONATION_INTAKE_MODE_A;
+  if (MODE_B_ALIASES.has(v)) return DONATION_INTAKE_MODE_B;
+  return null;
+}
+
+function readRawEnvMode(): string {
   const v = String(
     process.env[DONATION_INTAKE_ENV_KEY] ||
       process.env[DONATION_INTAKE_ENV_KEY_ALT] ||
@@ -61,12 +75,57 @@ function readRawMode(): string {
   return v;
 }
 
+/** 기본 Env 모드만 읽음 (런타임 오버라이드 없는 경우) */
+export function getDonationIntakeEnvFallbackMode(): DonationIntakeMode {
+  const fromEnv = normalizeRawMode(readRawEnvMode());
+  return fromEnv ?? DONATION_INTAKE_MODE_B;
+}
+
+/** 하위 호환용 (사용처 전부 그대로 동작하지만, userId 넘길 수 있을때는 Runtime 함수 쓰세요) */
 export function getDonationIntakeMode(): DonationIntakeMode {
-  const raw = readRawMode();
-  if (!raw) return DONATION_INTAKE_MODE_B;
-  if (MODE_A_ALIASES.has(raw)) return DONATION_INTAKE_MODE_A;
-  if (MODE_B_ALIASES.has(raw)) return DONATION_INTAKE_MODE_B;
-  return DONATION_INTAKE_MODE_B;
+  return getDonationIntakeEnvFallbackMode();
+}
+
+/** ✅ Runtime 우선순위 1순위 함수 (모든 새로운 경로는 이것을 사용!)
+ *  순서: ① KV user 저장값 → ② .env → ③ B 모드 기본
+ */
+export async function getRuntimeDonationIntakeMode(
+  userId: string | null | undefined
+): Promise<DonationIntakeMode> {
+  if (userId && String(userId).trim()) {
+    const key = `${DONATION_INTAKE_RUNTIME_KV_PREFIX}:${String(userId).trim()}`;
+    try {
+      const { upstashGetJson } = await import("@/app/api/_shared/upstash");
+      const raw = (await upstashGetJson(key)) as unknown;
+      if (raw && typeof raw === "object" && "mode" in raw) {
+        const runtimeMode = normalizeRawMode(String((raw as { mode?: unknown }).mode || ""));
+        if (runtimeMode) return runtimeMode;
+      }
+    } catch {
+      /* KV 오류나면 env fallback으로 넘어가기 */
+    }
+  }
+  return getDonationIntakeEnvFallbackMode();
+}
+
+/** user별 Runtime 모드 KV에 저장. 저장 성공 여부 boolean 리턴 */
+export async function setRuntimeDonationIntakeMode(
+  userId: string | null | undefined,
+  mode: DonationIntakeMode
+): Promise<boolean> {
+  if (!userId || !String(userId).trim()) return false;
+  const normalizedMode = normalizeRawMode(mode) ?? DONATION_INTAKE_MODE_B;
+  const key = `${DONATION_INTAKE_RUNTIME_KV_PREFIX}:${String(userId).trim()}`;
+  const payload = {
+    mode: normalizedMode,
+    updatedAt: Date.now(),
+  };
+  try {
+    const { upstashSetJsonWithSetPath } = await import("@/app/api/_shared/upstash");
+    return await upstashSetJsonWithSetPath(key, payload);
+  } catch {
+    return false;
+  }
 }
 
 export function isDonationIntakeModeA(): boolean {
@@ -77,10 +136,35 @@ export function isDonationIntakeModeB(): boolean {
   return getDonationIntakeMode() === DONATION_INTAKE_MODE_B;
 }
 
+export async function isRuntimeDonationIntakeModeA(
+  userId: string | null | undefined
+): Promise<boolean> {
+  return (await getRuntimeDonationIntakeMode(userId)) === DONATION_INTAKE_MODE_A;
+}
+
+export async function isRuntimeDonationIntakeModeB(
+  userId: string | null | undefined
+): Promise<boolean> {
+  return (await getRuntimeDonationIntakeMode(userId)) === DONATION_INTAKE_MODE_B;
+}
+
 export function describeDonationIntakeMode(): string {
   const mode = getDonationIntakeMode();
   if (mode === "A") {
-    return `A모드 (투네 직접 연결 · Toonation WS Direct)`;
+    return `A모드 (투네이션 자동 · Toonation WS Direct)`;
   }
-  return `B모드 (DIN 허브 연결 · 투나 프로젝트 후원만)`;
+  return `B모드 (DIN 허브 모드 · Toona Project Hub)`;
+}
+
+export function describeDonationIntakeModeShort(mode: DonationIntakeMode): string {
+  return mode === "A" ? "A · 투네이션 자동" : "B · DIN 허브 모드";
+}
+
+export function describeRuntimeDonationIntakeModeByMode(
+  mode: DonationIntakeMode
+): string {
+  if (mode === "A") {
+    return `A모드 (투네이션 직접 WebSocket 자동 연결 · 투네이션 링크만 넣으면 OK)`;
+  }
+  return `B모드 (DIN 허브 모드 · DIN 허브 로그인 후 30초/60초 자동 폴링)`;
 }

@@ -17,8 +17,10 @@ import {
   seatRoleForMemberId,
   appendTerritoryLogToAppState,
   removeTerritoryLogFromAppState,
+  resolveTeamColor,
   type HighSocietySettingsAdminPatch,
 } from "@/lib/high-society";
+import type { HighSocietyTeam } from "@/types";
 import HighSocietySeatLayoutEditor from "@/components/admin/HighSocietySeatLayoutEditor";
 import {
   createTerritoryLog,
@@ -140,6 +142,59 @@ export default function AdminHighSocietyPopupPanel() {
     });
   };
 
+  const matchMode = highSocietySettings.matchMode;
+  const teams = highSocietySettings.teams || [];
+  const memberTeamAssignments = highSocietySettings.memberTeamAssignments || {};
+
+  const teamMemberMap = useMemo(() => {
+    const map: Record<string, typeof hsSeatPlayers> = {};
+    for (const t of teams) map[t.id] = [];
+    for (const m of hsSeatPlayers) {
+      const tid = memberTeamAssignments[m.id];
+      if (tid && map[tid]) map[tid]!.push(m);
+    }
+    return map;
+  }, [teams, hsSeatPlayers, memberTeamAssignments]);
+
+  const unassignedMembers = useMemo(
+    () => hsSeatPlayers.filter((m) => !memberTeamAssignments[m.id]),
+    [hsSeatPlayers, memberTeamAssignments]
+  );
+
+  const addTeam = () => {
+    const idx = teams.length + 1;
+    const id = `team_${Date.now()}_${idx}`;
+    const name = `${idx}팀`;
+    void patchHighSociety({ teams: [...teams, { id, name }] });
+  };
+
+  const updateTeam = (teamId: string, patch: Partial<HighSocietyTeam>) => {
+    void patchHighSociety({
+      teams: teams.map((t) => (t.id === teamId ? { ...t, ...patch } : t)),
+    });
+  };
+
+  const removeTeam = (teamId: string) => {
+    if (!window.confirm("이 팀을 삭제할까요? 소속 멤버는 미배정으로 변경됩니다.")) return;
+    const newTeams = teams.filter((t) => t.id !== teamId);
+    const newAssignments = Object.fromEntries(
+      Object.entries(memberTeamAssignments).filter(([, tid]) => tid !== teamId)
+    );
+    void patchHighSociety({ teams: newTeams, memberTeamAssignments: newAssignments });
+  };
+
+  const assignMemberToTeam = (memberId: string, teamId: string) => {
+    void patchHighSociety({
+      memberTeamAssignments: { ...memberTeamAssignments, [memberId]: teamId },
+    });
+  };
+
+  const unassignMember = (memberId: string) => {
+    const next = { ...memberTeamAssignments };
+    delete next[memberId];
+    void patchHighSociety({ memberTeamAssignments: next });
+  };
+
   const previewUrl = `/overlay/high-society?u=${scopedUserId}`;
   const testUrl = `${previewUrl}&test=true`;
 
@@ -174,6 +229,30 @@ export default function AdminHighSocietyPopupPanel() {
                 >
                   {highSocietySettings.enabled ? "ON" : "OFF"}
                 </button>
+                <div className="flex rounded border border-white/15 overflow-hidden">
+                  <button
+                    type="button"
+                    className={`px-3 py-1.5 text-xs font-semibold ${
+                      matchMode === "individual"
+                        ? "bg-neutral-600 text-white"
+                        : "bg-neutral-800 text-neutral-400 hover:text-white"
+                    }`}
+                    onClick={() => void patchHighSociety({ matchMode: "individual" })}
+                  >
+                    개인전
+                  </button>
+                  <button
+                    type="button"
+                    className={`px-3 py-1.5 text-xs font-semibold border-l border-white/15 ${
+                      matchMode === "team"
+                        ? "bg-neutral-600 text-white"
+                        : "bg-neutral-800 text-neutral-400 hover:text-white"
+                    }`}
+                    onClick={() => void patchHighSociety({ matchMode: "team" })}
+                  >
+                    팀전
+                  </button>
+                </div>
                 <button
                   type="button"
                   disabled={!highSocietySettings.enabled}
@@ -260,6 +339,138 @@ export default function AdminHighSocietyPopupPanel() {
             </div>
           </section>
 
+          {matchMode === "team" ? (
+            <section className="rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-sm font-semibold">팀 관리</h2>
+                  <p className="mt-1 text-[11px] text-neutral-400 leading-snug">
+                    팀 이름·색상 편집 / 멤버 배정 — 팀에 속한 멤버끼리 영토를 합산합니다.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="rounded border border-white/15 bg-neutral-800 px-3 py-1.5 text-xs font-semibold hover:bg-neutral-700"
+                  onClick={() => addTeam()}
+                >
+                  + 팀 추가
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {teams.map((team, idx) => {
+                  const color = resolveTeamColor(team, idx);
+                  const members = teamMemberMap[team.id] || [];
+                  return (
+                    <div
+                      key={team.id}
+                      className="rounded-lg border border-white/10 bg-neutral-950/40 p-3 space-y-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="inline-block w-3 h-3 rounded-sm shrink-0 border border-white/20"
+                          style={{ backgroundColor: color }}
+                        />
+                        <input
+                          className="flex-1 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-xs font-semibold"
+                          value={team.name}
+                          onChange={(e) => updateTeam(team.id, { name: e.target.value })}
+                        />
+                        <button
+                          type="button"
+                          className="rounded border border-white/15 bg-neutral-800 px-2 py-1 text-[11px] hover:bg-rose-800 hover:border-rose-600/50"
+                          onClick={() => removeTeam(team.id)}
+                        >
+                          삭제
+                        </button>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <div className="text-[11px] text-neutral-400">
+                          소속 멤버 ({members.length})
+                        </div>
+                        <div className="flex flex-wrap gap-1 min-h-[24px]">
+                          {members.length === 0 ? (
+                            <span className="text-[11px] text-neutral-600">— 배정 없음</span>
+                          ) : (
+                            members.map((m) => (
+                              <span
+                                key={m.id}
+                                className="inline-flex items-center gap-1 rounded border border-white/10 bg-neutral-800 px-1.5 py-0.5 text-[11px]"
+                              >
+                                {m.name}
+                                <button
+                                  type="button"
+                                  className="text-neutral-500 hover:text-rose-400 leading-none"
+                                  onClick={() => unassignMember(m.id)}
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex gap-1.5">
+                        <select
+                          className="flex-1 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-[11px]"
+                          defaultValue=""
+                          onChange={(e) => {
+                            const mid = e.target.value;
+                            if (mid) assignMemberToTeam(mid, team.id);
+                            e.currentTarget.value = "";
+                          }}
+                        >
+                          <option value="" disabled>
+                            + 멤버 배정
+                          </option>
+                          {(unassignedMembers.length === 0
+                            ? hsSeatPlayers.filter((m) => memberTeamAssignments[m.id] !== team.id)
+                            : unassignedMembers
+                          ).map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}
+                              {memberTeamAssignments[m.id]
+                                ? ` (${
+                                    teams.find((t) => t.id === memberTeamAssignments[m.id])?.name || "타팀"
+                                  })`
+                                : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {teams.length === 0 ? (
+                <div className="rounded border border-dashed border-white/15 p-4 text-center text-xs text-neutral-500">
+                  아직 팀이 없습니다. 위 「+ 팀 추가」 버튼으로 1팀부터 만들어 보세요.
+                </div>
+              ) : null}
+
+              {unassignedMembers.length > 0 ? (
+                <div className="rounded-lg border border-white/10 bg-neutral-950/40 p-3 space-y-1.5">
+                  <div className="text-[11px] text-neutral-400">
+                    미배정 멤버 ({unassignedMembers.length})
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {unassignedMembers.map((m) => (
+                      <span
+                        key={m.id}
+                        className="inline-flex items-center gap-1 rounded border border-white/10 bg-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-300"
+                      >
+                        ◦ {m.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
           <section className="rounded-lg border border-amber-400/35 bg-amber-950/20 p-3 space-y-2">
             <h2 className="text-sm font-semibold text-amber-100">영토 배치도</h2>
             <p className="text-[11px] text-neutral-400 leading-snug">
@@ -303,11 +514,19 @@ export default function AdminHighSocietyPopupPanel() {
                     onChange={(e) => setTerritoryMemberId(e.target.value)}
                     disabled={hsSeatPlayers.length === 0}
                   >
-                    {hsSeatPlayers.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
+                    {hsSeatPlayers.map((m) => {
+                      const tid = memberTeamAssignments[m.id];
+                      const team = teams.find((t) => t.id === tid);
+                      const label =
+                        matchMode === "team" && team
+                          ? `[${team.name}] ${m.name}`
+                          : m.name;
+                      return (
+                        <option key={m.id} value={m.id}>
+                          {label}
+                        </option>
+                      );
+                    })}
                   </select>
                   <select
                     className="rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"

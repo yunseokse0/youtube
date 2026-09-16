@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import {
   buildHighSocietyFieldFromMembers,
@@ -73,6 +73,9 @@ import {
   highSocietyNeedsMemberWidthSnapshotPersist,
   appendTerritoryLogToAppState,
   removeTerritoryLogFromAppState,
+  aggregateTeamPushesFromTerritoryLogs,
+  normalizeTeam,
+  resolveTeamColor,
 } from "./high-society";
 import { createTerritoryLog } from "./territory-utils";
 
@@ -2391,5 +2394,61 @@ describe("manual territory log vs neighbor width", () => {
     expect(after.seats.find((s) => s.id === "jaki")!.widthCm).toBe(15);
     expect(after.seats.find((s) => s.id === "saa")!.widthCm).toBe(100);
     expect(after.seats.find((s) => s.id === "jaki")!.widthCm).not.toBe(115);
+  });
+});
+
+describe('high-society team mode (normalizeTeam / aggregateTeam / resolveTeamColor)', () => {
+  it('normalizeTeam — id 필수, name 기본값 id, color hex 만 통과', () => {
+    expect(normalizeTeam(null)).toBeNull();
+    expect(normalizeTeam({})).toBeNull();
+    expect(normalizeTeam({ id: '' })).toBeNull();
+    const t1 = normalizeTeam({ id: 'red', name: '레드팀' });
+    expect(t1).toEqual({ id: 'red', name: '레드팀' });
+    const t2 = normalizeTeam({ id: 'blue', color: 'badcolor' });
+    expect(t2).toEqual({ id: 'blue', name: 'blue' });
+    const t3 = normalizeTeam({ id: 'green', name: '그린', color: '#10B981', seatOrderHint: 'x' });
+    expect(t3).toEqual({ id: 'green', name: '그린', color: '#10B981' });
+  });
+
+  it('aggregateTeamPushesFromTerritoryLogs — 2팀 각 expand left/right 양분 집계', () => {
+    const members = [
+      { id: 'a1', name: 'A1' },
+      { id: 'a2', name: 'A2' },
+      { id: 'b1', name: 'B1' },
+      { id: 'b2', name: 'B2' },
+    ];
+    const teams = [
+      { id: 'ta', name: 'A팀' },
+      { id: 'tb', name: 'B팀' },
+    ];
+    const assignments: Record<string, string> = { a1: 'ta', a2: 'ta', b1: 'tb', b2: 'tb' };
+    const logs = [
+      createTerritoryLog('a1', 1, 100, { pushDir: 'left' }),
+      createTerritoryLog('a2', 1, 60, { pushDir: 'split' }),
+      createTerritoryLog('b1', 1, 80, { pushDir: 'right' }),
+      createTerritoryLog('b2', -1, 10, { pushDir: 'right' }),
+    ];
+    const settings = normalizeHighSocietySettings({ enabled: true });
+    const out = aggregateTeamPushesFromTerritoryLogs({ seatPlayers: members, logs, settings, memberTeamAssignments: assignments, teams });
+    expect(out).toHaveLength(2);
+    const ta = out.find((x) => x.id === 'ta')!;
+    const tb = out.find((x) => x.id === 'tb')!;
+    expect(ta.teamName).toBe('A팀');
+    expect(ta.expandLeftCm).toBe(100 + 30);
+    expect(ta.expandRightCm).toBe(30);
+    expect(ta.memberIds).toEqual(['a1', 'a2']);
+    expect(tb.expandLeftCm).toBe(0);
+    expect(tb.expandRightCm).toBe(80);
+    expect(tb.memberIds).toEqual(['b1', 'b2']);
+  });
+
+  it('resolveTeamColor — user color 있으면 우선, 없으면 id hash 기반 할당', () => {
+    const t1 = { id: 'team_red', name: 'R', color: '#EF4444' };
+    expect(resolveTeamColor(t1, 0)).toBe('#EF4444');
+    const noColor1 = resolveTeamColor({ id: 'team_blue', name: 'B' }, 0);
+    const noColor2 = resolveTeamColor({ id: 'team_green', name: 'G' }, 1);
+    expect(noColor1).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    expect(noColor2).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    expect(noColor1).not.toBe(noColor2);
   });
 });

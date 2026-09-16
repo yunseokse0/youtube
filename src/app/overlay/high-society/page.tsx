@@ -30,11 +30,13 @@ import {
   resolveHighSocietySeatCountForField,
   resolveHighSocietySeatMembers,
   resolveHighSocietyStartCmPerMember,
+  resolveTeamColor,
   type HighSocietyBarStyle,
   type HighSocietyExpandPressure,
   type HighSocietySeat,
   type HighSocietyZeroCmGaugeDisplay,
 } from "@/lib/high-society";
+import type { HighSocietyTeam } from "@/types";
 import "./high-society.css";
 
 function TerritoryGauge({
@@ -379,8 +381,89 @@ export default function HighSocietyOverlayPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- field.seats via fieldSeatsSig
   }, [hsSettings.territoryUpdateMode, roundInProgress, fieldSeatsSig]);
 
-  const displaySeats =
+  const baseDisplaySeats =
     freezeTerritory && frozenSeats && frozenSeats.length > 0 ? frozenSeats : field.seats;
+
+  const displaySeats = useMemo<HighSocietySeat[]>(() => {
+    try {
+      if (hsSettings.matchMode !== "team") return baseDisplaySeats;
+      const teams = hsSettings.teams || [];
+      if (teams.length === 0) return baseDisplaySeats;
+      const assignments = hsSettings.memberTeamAssignments || {};
+      const unassignedTeamId = "__hs_unassigned__";
+      const teamMap = new Map<string, {
+        team: HighSocietyTeam | null;
+        idx: number;
+        seats: HighSocietySeat[];
+      }>();
+      teams.forEach((t, i) => {
+        teamMap.set(t.id, { team: t, idx: i, seats: [] });
+      });
+      let unassignedIdx = teams.length;
+      for (const s of baseDisplaySeats) {
+        const tid = assignments[s.id] || unassignedTeamId;
+        let bucket = teamMap.get(tid);
+        if (!bucket) {
+          bucket = { team: null, idx: unassignedIdx++, seats: [] };
+          teamMap.set(tid, bucket);
+        }
+        bucket.seats.push(s);
+      }
+      const result: HighSocietySeat[] = [];
+      let letterCode = "A".charCodeAt(0);
+      let seatIdx = 0;
+      const sortedBuckets = Array.from(teamMap.entries()).sort((a, b) => a[1].idx - b[1].idx);
+      const totalFieldCm = Math.max(
+        1,
+        baseDisplaySeats.reduce((n, s) => n + Math.max(0, s.widthCm), 0)
+      );
+      for (const [tid, bucket] of sortedBuckets) {
+        if (bucket.seats.length === 0) continue;
+        const isUnassigned = tid === unassignedTeamId || bucket.team == null;
+        if (isUnassigned) {
+          for (const s of bucket.seats) {
+            result.push({ ...s, seatIndex: seatIdx++ });
+          }
+          continue;
+        }
+        const team = bucket.team!;
+        const totalWidth = bucket.seats.reduce((n, s) => n + Math.max(0, s.widthCm), 0);
+        const totalExpandL = bucket.seats.reduce((n, s) => n + Math.max(0, s.expandLeftCm || 0), 0);
+        const totalExpandR = bucket.seats.reduce((n, s) => n + Math.max(0, s.expandRightCm || 0), 0);
+        const totalExpand = bucket.seats.reduce((n, s) => n + Math.max(0, s.expandCm || 0), 0);
+        const totalDonation = bucket.seats.reduce((n, s) => n + (Number(s.donationWon) || 0), 0);
+        const allElim = bucket.seats.every((s) => s.eliminated);
+        const expandDir: "left" | "right" | "both" =
+          totalExpandL > 0 && totalExpandR === 0
+            ? "left"
+            : totalExpandR > 0 && totalExpandL === 0
+              ? "right"
+              : "both";
+        const color = resolveTeamColor(team, bucket.idx);
+        const letter = String.fromCharCode(letterCode);
+        letterCode++;
+        const pct = Math.max(0, Math.min(100, (totalWidth / totalFieldCm) * 100));
+        result.push({
+          id: `team:${team.id}`,
+          name: team.name,
+          letter,
+          color,
+          widthCm: totalWidth,
+          expandCm: totalExpand,
+          expandLeftCm: totalExpandL,
+          expandRightCm: totalExpandR,
+          expandDir,
+          eliminated: allElim,
+          seatIndex: seatIdx++,
+          donationWon: totalDonation,
+          pct,
+        });
+      }
+      return result.length > 0 ? result : baseDisplaySeats;
+    } catch (_err) {
+      return baseDisplaySeats;
+    }
+  }, [baseDisplaySeats, hsSettings.matchMode, hsSettings.teams, hsSettings.memberTeamAssignments]);
 
   const fxClass = [
     fx.frontier ? "hs-fx-frontier" : "",

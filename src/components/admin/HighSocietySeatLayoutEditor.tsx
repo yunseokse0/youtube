@@ -17,6 +17,7 @@ import {
   resolveHighSocietySeatMembers,
   resolveHighSocietyStartCmPerMember,
   resolveSystemMiddlePushDir,
+  resolveTeamColor,
   type HighSocietySettingsAdminPatch,
 } from "@/lib/high-society";
 import type { AppState, Donor, HighSocietySettings, Member, TerritoryLog } from "@/types";
@@ -41,6 +42,9 @@ export default function HighSocietySeatLayoutEditor({
   showMiddlePushSelect = true,
 }: Props) {
   const settings = useMemo(() => normalizeHighSocietySettings(settingsRaw), [settingsRaw]);
+  const matchMode = settings.matchMode;
+  const teams = settings.teams || [];
+  const memberTeamAssignments = settings.memberTeamAssignments || {};
   const hsSeatPlayers = useMemo(
     () => resolveHighSocietySeatMembers(members, settings),
     [members, settings]
@@ -54,6 +58,18 @@ export default function HighSocietySeatLayoutEditor({
     () => (members || []).filter((m) => !hsSeatedIdSet.has(String(m.id))),
     [members, hsSeatedIdSet]
   );
+
+  const teamByMemberId = useMemo(() => {
+    const map = new Map<string, (typeof teams)[number]>();
+    for (const m of hsSeatPlayers) {
+      const tid = memberTeamAssignments[m.id];
+      if (tid) {
+        const t = teams.find((x) => x.id === tid);
+        if (t) map.set(m.id, t);
+      }
+    }
+    return map;
+  }, [hsSeatPlayers, memberTeamAssignments, teams]);
   const hsSeatCountForStart = resolveHighSocietySeatCountForField(settings, hsSeatPlayers.length);
   const hsStartCm = resolveHighSocietyStartCmPerMember(settings, hsSeatCountForStart);
   const hsEffectiveFieldCm = fieldCmFromStartPerMember(hsStartCm, hsSeatCountForStart);
@@ -143,7 +159,7 @@ export default function HighSocietySeatLayoutEditor({
   );
 
   const addSeat = useCallback(
-    (memberId: string, atIndex?: number) => {
+    (memberId: string, atIndex?: number, assignTeamId?: string) => {
       const id = String(memberId || "").trim();
       if (!id) return;
       const seated = resolveHighSocietySeatMembers(members, settings);
@@ -157,12 +173,19 @@ export default function HighSocietySeatLayoutEditor({
         typeof atIndex === "number" && Number.isFinite(atIndex)
           ? Math.max(0, Math.min(Math.floor(atIndex), cur.length))
           : cur.length;
-      void onPatch({
+      const patchObj: HighSocietySettingsAdminPatch = {
         seatMemberIds: insertHighSocietySeatMemberIdAt(cur, id, insertAt),
         seatMemberIdsManual: true,
-      });
+      };
+      if (assignTeamId) {
+        patchObj.memberTeamAssignments = {
+          ...(memberTeamAssignments || {}),
+          [id]: assignTeamId,
+        };
+      }
+      void onPatch(patchObj);
     },
-    [settings, members, onPatch]
+    [settings, members, onPatch, memberTeamAssignments]
   );
 
   const removeSeat = useCallback(
@@ -288,7 +311,31 @@ export default function HighSocietySeatLayoutEditor({
                     {i + 1}
                   </span>
                   <div className="leading-tight">
-                    <div className="text-[11px] font-semibold text-white">{p.name}</div>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <div className="text-[11px] font-semibold text-white">{p.name}</div>
+                      {matchMode === "team"
+                        ? (() => {
+                            const team = teamByMemberId.get(p.id);
+                            if (!team) return null;
+                            const color = resolveTeamColor(
+                              team,
+                              teams.findIndex((t) => t.id === team.id)
+                            );
+                            return (
+                              <span
+                                className="inline-flex items-center gap-1 rounded border border-white/15 bg-neutral-800 px-1 py-0.5"
+                                style={{ fontSize: "9px" }}
+                              >
+                                <span
+                                  className="inline-block w-1.5 h-1.5 rounded-sm shrink-0"
+                                  style={{ backgroundColor: color }}
+                                />
+                                <span className="text-neutral-200">{team.name}</span>
+                              </span>
+                            );
+                          })()
+                        : null}
+                    </div>
                     <div className="text-[9px] text-amber-200/70">
                       {eliminated
                         ? `${formatSeatWidthCm(0, zeroCmDisplay)} 탈락 · ${expandHint}`
@@ -357,7 +404,10 @@ export default function HighSocietySeatLayoutEditor({
 
         {hsUnseatedMembers.length > 0 ? (
           <div className="space-y-1">
-            <div className="text-[10px] text-neutral-500">좌석에 추가 — 위치(좌→右)를 고른 뒤 추가</div>
+            <div className="text-[10px] text-neutral-500">
+              좌석에 추가 — 위치(좌→右)
+              {matchMode === "team" ? " · 팀" : ""}를 고른 뒤 추가
+            </div>
             <div className="flex flex-col gap-1.5">
               {hsUnseatedMembers.map((m) => (
                 <div key={`hs-add-${m.id}`} className="flex flex-wrap items-center gap-1.5">
@@ -377,15 +427,42 @@ export default function HighSocietySeatLayoutEditor({
                       </option>
                     ))}
                   </select>
+                  {matchMode === "team" ? (
+                    <select
+                      className="rounded border border-white/15 bg-neutral-950 px-1.5 py-1 text-[10px] text-neutral-200"
+                      defaultValue=""
+                      aria-label={`${m.name} 팀 배정 (선택)`}
+                      id={`hs-popup-add-team-${m.id}`}
+                    >
+                      <option value="">미배정</option>
+                      {teams.map((t, ti) => (
+                        <option key={`hs-add-team-${m.id}-${t.id}`} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
                   <button
                     type="button"
                     className="rounded border border-white/15 bg-neutral-900 px-2 py-1 text-[11px] font-semibold text-neutral-300 hover:border-amber-400/50 hover:text-amber-100"
                     onClick={() => {
-                      const sel = document.getElementById(
+                      const selAt = document.getElementById(
                         `hs-popup-add-seat-at-${m.id}`
                       ) as HTMLSelectElement | null;
-                      const at = Number(sel?.value ?? hsSeatPlayers.length);
-                      addSeat(m.id, Number.isFinite(at) ? at : hsSeatPlayers.length);
+                      const at = Number(selAt?.value ?? hsSeatPlayers.length);
+                      let assignTeamId: string | undefined;
+                      if (matchMode === "team") {
+                        const selT = document.getElementById(
+                          `hs-popup-add-team-${m.id}`
+                        ) as HTMLSelectElement | null;
+                        const v = selT?.value || "";
+                        if (v) assignTeamId = v;
+                      }
+                      addSeat(
+                        m.id,
+                        Number.isFinite(at) ? at : hsSeatPlayers.length,
+                        assignTeamId
+                      );
                     }}
                   >
                     + {m.name}
@@ -439,17 +516,45 @@ export function HighSocietySeatLayoutSummary({
   const startCm = resolveHighSocietyStartCmPerMember(hs, seatCount);
   const fieldCm = fieldCmFromStartPerMember(startCm, seatCount);
   const names = seats.map((s) => s.name).join(" → ") || "좌석 없음";
+  const matchMode = hs.matchMode;
+  const teams = hs.teams || [];
+  const assignments = hs.memberTeamAssignments || {};
+
+  const teamSummary = useMemo(() => {
+    if (matchMode !== "team" || teams.length === 0) return null;
+    const parts: string[] = [];
+    for (const t of teams) {
+      const cnt = seats.filter((s) => assignments[s.id] === t.id).length;
+      parts.push(`${t.name} ${cnt}명`);
+    }
+    return parts.length > 0 ? parts.join(" · ") : null;
+  }, [matchMode, teams, seats, assignments]);
 
   return (
     <div className="space-y-2 rounded border border-dashed border-amber-400/40 bg-black/25 p-2.5">
-      <div className="text-[11px] font-semibold text-amber-100/95">영토 배치도</div>
+      <div className="text-[11px] font-semibold text-amber-100/95 flex flex-wrap items-center gap-2">
+        영토 배치도
+        {matchMode === "team" ? (
+          <span className="rounded border border-white/15 bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-200 font-normal">
+            팀전 · {teams.length}팀
+          </span>
+        ) : (
+          <span className="rounded border border-white/15 bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-200 font-normal">
+            개인전
+          </span>
+        )}
+      </div>
       <p className="text-[11px] text-neutral-300 leading-snug">
         좌석 추가·순서·삭제·1인 시작 cm는{" "}
         <strong className="text-amber-100">상류사회 팝업</strong>에서만 편집합니다.
       </p>
       <p className="text-[11px] text-neutral-400 break-keep">
-        현재: {seats.length}명 · 1인 {Math.round(startCm)}cm · 전장 {fieldCm.toLocaleString("ko-KR")}
-        cm
+        현재: {seats.length}명
+        {matchMode === "team" && teams.length > 0
+          ? ` · ${teams.length}팀${teamSummary ? ` (${teamSummary})` : ""}`
+          : ""}
+        {" · 1인 "}
+        {Math.round(startCm)}cm · 전장 {fieldCm.toLocaleString("ko-KR")}cm
         <span className="mt-0.5 block text-neutral-500">{names}</span>
       </p>
       <button
