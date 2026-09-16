@@ -202,13 +202,13 @@ export function AdminCollapsibleSection({
   return (
     <section id={id} className={className} data-admin-section={id} data-open={open ? "1" : "0"}>
       <div
-        className={`flex flex-wrap items-start justify-between gap-2 ${headerClassName} ${
+        className={`flex flex-wrap items-center justify-between gap-3 gap-y-2 ${headerClassName} ${
           open ? "border-b border-white/10 pb-3" : "pb-4 md:pb-6"
         }`}
       >
         <button
           type="button"
-          className="group flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left hover:bg-white/[0.04] -mx-1 px-1 py-0.5"
+          className="group flex min-w-[220px] flex-1 items-center gap-2 rounded-lg text-left hover:bg-white/[0.04] -mx-1 px-1 py-0.5"
           aria-expanded={open}
           onClick={() => toggle(id, defaultOpen)}
         >
@@ -218,7 +218,7 @@ export function AdminCollapsibleSection({
             {open ? "접기" : "펼치기"}
           </span>
         </button>
-        {headerAside ? <div className="shrink-0">{headerAside}</div> : null}
+        {headerAside ? <div className="shrink-0 flex flex-wrap items-center gap-1">{headerAside}</div> : null}
       </div>
       {open ? <div className={bodyClassName}>{children}</div> : null}
     </section>
@@ -257,10 +257,10 @@ export function AdminCollapsibleBlock({
       data-admin-block={id}
       data-open={open ? "1" : "0"}
     >
-      <div className="flex flex-wrap items-start justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3 gap-y-2">
         <button
           type="button"
-          className="group flex min-w-0 flex-1 items-center gap-2 rounded text-left hover:bg-white/[0.04] -mx-1 px-1 py-0.5"
+          className="group flex min-w-[180px] flex-1 items-center gap-2 rounded text-left hover:bg-white/[0.04] -mx-1 px-1 py-0.5"
           aria-expanded={open}
           onClick={() => toggle(id, defaultOpen)}
         >
@@ -270,7 +270,7 @@ export function AdminCollapsibleBlock({
             {open ? "접기" : "펼치기"}
           </span>
         </button>
-        {headerAside ? <div className="shrink-0">{headerAside}</div> : null}
+        {headerAside ? <div className="shrink-0 flex flex-wrap items-center gap-1">{headerAside}</div> : null}
       </div>
       {open ? <div className="mt-2">{children}</div> : null}
     </div>

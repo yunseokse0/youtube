@@ -10530,7 +10530,7 @@ function AdminPageInner() {
             return (
               <div key={item.key} className="ui-din-nav-group">
                 {hasSubs ? (
-                  <div className="flex items-stretch gap-1">
+                  <div className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => moveToSection(item.key, item.targetId)}
@@ -10543,9 +10543,10 @@ function AdminPageInner() {
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); toggleNavGroup(item.key); }}
-                      className={`ui-din-nav-item !w-auto !px-2 flex items-center justify-center ${
+                      className={`ui-din-nav-chevron-btn !w-auto !py-1.5 !px-2 inline-flex items-center justify-center rounded-md border border-transparent ${
                         isGroupActive ? "ui-nav-active ui-nav-expanded" : isExpanded ? "ui-nav-expanded" : ""
-                      }`}
+                      } hover:bg-white/5`}
+                      style={{ boxSizing: "border-box" }}
                       aria-label={isExpanded ? `${item.label} 메뉴 접기` : `${item.label} 메뉴 펼치기`}
                       title={isExpanded ? "소메뉴 접기" : "소메뉴 펼치기"}
                     >
@@ -17549,7 +17550,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
               headerAside={
                 <div className="flex gap-1 flex-wrap">
                   {PRESET_TEMPLATES.map((t) => (
-                    <button key={t.name} className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white" onClick={() => addPreset(t.name, t.preset)}>+ {t.name}</button>
+                    <button key={t.name} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white leading-none" onClick={() => addPreset(t.name, t.preset)}>+ {t.name}</button>
                   ))}
                 </div>
               }
