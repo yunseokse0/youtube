@@ -2452,3 +2452,138 @@ describe('high-society team mode (normalizeTeam / aggregateTeam / resolveTeamCol
     expect(noColor1).not.toBe(noColor2);
   });
 });
+
+describe('high-society seat rejoin (member 빠졌다 재가입) — territory 복원 정확성', () => {
+  const baseMembers = [
+    { id: 'm1', name: 'M1', account: 0, toon: 0, operating: false },
+    { id: 'm2', name: 'M2', account: 0, toon: 0, operating: false },
+    { id: 'm3', name: 'M3', account: 0, toon: 0, operating: false },
+    { id: 'm4', name: 'M4', account: 0, toon: 0, operating: false },
+  ];
+
+  it('seat 에 없던 멤버가 새로 진입 (신규 배정) → m1/m3 스냅 100 그대로 유지, m2 expand 좌우가 로그대로 65/15 복원 (레거시 0cm eliminate 깨지지 않음)', () => {
+    const settingsBefore = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ['m1', 'm3'],
+      seatMemberIdsManual: true,
+      startCmPerMember: 60,
+      fieldCm: 400,
+      memberWidthCm: { m1: 100, m3: 100 },
+      memberTerritoryExpand: {
+        m1: { expandLeftCm: 0, expandRightCm: 0 },
+        m3: { expandLeftCm: 0, expandRightCm: 0 },
+      },
+    });
+    const logs = [
+      createTerritoryLog('m2', 1, 50, { pushDir: 'left' }),
+      createTerritoryLog('m2', 1, 30, { pushDir: 'split' }),
+    ];
+    const settingsRejoin = normalizeHighSocietySettings({
+      ...settingsBefore,
+      seatMemberIds: ['m1', 'm2', 'm3'],
+    });
+    const clearCheck = shouldClearMemberWidthSnapshotOnSeatChange({
+      prevSettings: settingsBefore,
+      nextSettings: settingsRejoin,
+      members: baseMembers,
+      donors: [],
+    });
+    expect(clearCheck).toBe(false);
+    const next = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: settingsBefore,
+      nextSettings: settingsRejoin,
+      members: baseMembers,
+      donors: [],
+      territoryLogs: logs,
+      now: 1,
+    });
+    expect(next.memberWidthCm?.m1).toBe(100);
+    expect(next.memberWidthCm?.m3).toBe(100);
+    expect(next.memberTerritoryExpand?.m2?.expandLeftCm).toBeGreaterThanOrEqual(60);
+    expect(next.memberTerritoryExpand?.m2?.expandRightCm).toBe(15);
+    const nextState = {
+      id: 'x',
+      userId: 'x',
+      createdAt: 0,
+      startedAt: 0,
+      liveInfo: { status: 'offline' },
+      settings: { locale: 'ko-KR' },
+      members: baseMembers,
+      donors: [],
+      memberTotals: { rows: [] },
+      highSocietySettings: next,
+      territoryLogs: logs,
+      updatedAt: 1,
+    } as unknown as AppState;
+    const reconciled = reconcileHighSocietyFieldDimensions(next, resolveHighSocietySeatCountForField(next, 3), baseMembers);
+    expect(reconciled.fieldCm).toBeGreaterThan(0);
+    const field = buildHighSocietyFieldFromAppState(nextState);
+    const m2 = field.seats.find((s) => s.id === 'm2')!;
+    expect(m2.expandLeftCm + m2.expandRightCm).toBeGreaterThanOrEqual(75);
+  });
+
+  it('재가입 멤버에 prev expand 스냅샷 없어도 TerritoryLog expand 집계 반영', () => {
+    const prevSettings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ['m1', 'm3'],
+      seatMemberIdsManual: true,
+      startCmPerMember: 80,
+      fieldCm: 400,
+      memberWidthCm: { m1: 80, m3: 80 },
+      memberTerritoryExpand: {
+        m1: { expandLeftCm: 0, expandRightCm: 0 },
+        m3: { expandLeftCm: 0, expandRightCm: 0 },
+      },
+    });
+    const nextSettings = normalizeHighSocietySettings({
+      ...prevSettings,
+      seatMemberIds: ['m1', 'm2', 'm3'],
+    });
+    const logs = [createTerritoryLog('m2', 1, 100, { pushDir: 'right' })];
+    const next = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings,
+      nextSettings,
+      members: baseMembers,
+      donors: [],
+      territoryLogs: logs,
+      now: 1,
+    });
+    expect(next.memberTerritoryExpand?.m2?.expandRightCm).toBeGreaterThanOrEqual(90);
+    expect(next.memberTerritoryExpand?.m2?.expandLeftCm).toBe(0);
+  });
+
+  it('영토 기록 삭제 후 콜드 재계산 → 삭제된 기록만큼 m2 너비 감소 (좀비 expand 방지)', () => {
+    const stateBefore: AppState = {
+      id: 'x',
+      userId: 'x',
+      createdAt: 0,
+      startedAt: 0,
+      liveInfo: { status: 'offline' },
+      settings: { locale: 'ko-KR' } as AppState['settings'],
+      members: baseMembers,
+      donors: [],
+      memberTotals: { rows: [] },
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: ['m1', 'm2', 'm3'],
+        seatMemberIdsManual: true,
+        startCmPerMember: 60,
+        fieldCm: 300,
+      }),
+      territoryLogs: [createTerritoryLog('m2', 1, 60, { pushDir: 'left' })],
+      updatedAt: 1,
+    } as AppState;
+    const afterAdd = appendTerritoryLogToAppState(stateBefore, createTerritoryLog('m2', 1, 40, { pushDir: 'left' }));
+    const fieldAdd = buildHighSocietyFieldFromAppState(afterAdd);
+    const m2AddW = fieldAdd.seats.find((s) => s.id === 'm2')!.widthCm;
+    expect(m2AddW).toBeGreaterThan(60);
+    const targetId = afterAdd.territoryLogs[afterAdd.territoryLogs.length - 1]!.id;
+    const afterRemove = removeTerritoryLogFromAppState(afterAdd, targetId);
+    expect(afterRemove.territoryLogs).toHaveLength(1);
+    const fieldRemove = buildHighSocietyFieldFromAppState(afterRemove);
+    const m2RemoveSeat = fieldRemove.seats.find((s) => s.id === 'm2')!;
+    const totalAfter = fieldRemove.seats.reduce((s, x) => s + x.widthCm, 0);
+    expect(m2RemoveSeat.widthCm).toBeGreaterThanOrEqual(60);
+    expect(totalAfter).toBeLessThanOrEqual(300);
+  });
+});

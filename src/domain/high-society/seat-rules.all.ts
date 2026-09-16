@@ -831,6 +831,7 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
   members: Array<Pick<Member, "id" | "name" | "account" | "toon" | "operating">>;
   resetTerritory?: boolean;
   donors?: Array<Pick<Donor, "memberId" | "amount" | "hsPushDir" | "donationExcluded" | "hsTerritoryExcluded" | "at">>;
+  territoryLogs?: Array<Pick<TerritoryLog, "id" | "memberId" | "delta" | "amount" | "pushDir">>;
   now?: number;
 }): HighSocietySettings {
   const { prevSettings, nextSettings, members, resetTerritory = false } = opts;
@@ -889,6 +890,9 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
   const buildSeatLayoutPreservingWidthSnapshot = (): Partial<HighSocietySettings> => {
     /** 멤버 id별 widthCm 유지(스냅샷 정본). startCm+expand 「복구」는 소량 재진입을 부풀림 */
     const prevWidths = prevSettings.memberWidthCm || {};
+    const prevExpands = prevSettings.memberTerritoryExpand || {};
+    const prevSeatMembers = resolveHighSocietySeatMembers(members, prevSettings);
+    const prevValid = new Set(prevSeatMembers.map((s) => s.id));
     const nextPlayers = resolveHighSocietySeatMembers(members, nextSettings);
     const playersAgg = aggregateSeatPushesFromDonors({
       seatPlayers: nextPlayers.map((p) => ({ ...p, donationWon: 0 })),
@@ -896,20 +900,68 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
       settings: nextSettings,
     });
     const aggById = new Map(playersAgg.map((p) => [p.id, p]));
+    const logs = (opts as unknown as { territoryLogs?: TerritoryLog[] }).territoryLogs || [];
+    const logExpandById = new Map<string, { expandLeftCm: number; expandRightCm: number; totalCm: number }>();
+    if (logs.length > 0) {
+      for (const p of nextPlayers) {
+        logExpandById.set(p.id, { expandLeftCm: 0, expandRightCm: 0, totalCm: 0 });
+      }
+      for (const log of logs) {
+        const cm = Math.max(0, Number(log.amount) || 0);
+        if (cm <= 0) continue;
+        const delta = Number(log.delta);
+        if (!Number.isFinite(delta) || delta === 0) continue;
+        const entry = logExpandById.get(log.memberId);
+        if (!entry) continue;
+        const signed = delta > 0 ? cm : -cm;
+        const pushDir = (log as unknown as { pushDir?: string }).pushDir || "both";
+        if (pushDir === "left") {
+          entry.expandLeftCm += signed;
+        } else if (pushDir === "right") {
+          entry.expandRightCm += signed;
+        } else {
+          const half = Math.floor(cm / 2) * (delta > 0 ? 1 : -1);
+          entry.expandLeftCm += half;
+          entry.expandRightCm += signed - half;
+        }
+        entry.totalCm += signed;
+      }
+    }
     const memberWidthCm: Record<string, number> = {};
     const memberWidthDonationSnapshot: Record<string, number> = {};
     const memberTerritoryExpand: Record<string, { expandLeftCm: number; expandRightCm: number }> =
       {};
+    const startCmPerMember = resolveHighSocietyStartCmPerMember(nextSettings, nextPlayers.length);
     for (const p of nextPlayers) {
-      const snapW = prevWidths[p.id];
-      memberWidthCm[p.id] =
-        snapW != null ? Math.max(0, Math.round(Number(snapW) || 0)) : 0;
+      const wasSeated = prevValid.has(p.id);
+      const snapW = Number(prevWidths[p.id]);
+      const hasPrevSnap = wasSeated && Number.isFinite(snapW) && snapW >= 0;
       const agg = aggById.get(p.id);
+      const prevExp = wasSeated ? prevExpands[p.id] : undefined;
+      const logExp = logExpandById.get(p.id);
+      const startW = Math.max(0, Math.round(startCmPerMember));
+      let width: number;
+      let expandLeft: number;
+      let expandRight: number;
+      if (wasSeated) {
+        width = hasPrevSnap ? Math.max(0, Math.round(snapW)) : Math.max(0, Math.round(Number(snapW) || 0));
+        expandLeft = Math.max(0, Number(prevExp?.expandLeftCm ?? agg?.expandLeftCm) || 0);
+        expandRight = Math.max(0, Number(prevExp?.expandRightCm ?? agg?.expandRightCm) || 0);
+      } else {
+        width = startW;
+        expandLeft = Math.max(0, Number(agg?.expandLeftCm) || 0);
+        expandRight = Math.max(0, Number(agg?.expandRightCm) || 0);
+        if (logExp) {
+          width = Math.max(0, Math.round(startW + (logExp.totalCm || 0)));
+          expandLeft = Math.max(0, expandLeft + (logExp.expandLeftCm || 0));
+          expandRight = Math.max(0, expandRight + (logExp.expandRightCm || 0));
+        }
+      }
+      memberWidthCm[p.id] = Math.max(0, width);
       memberWidthDonationSnapshot[p.id] = Math.max(0, Number(agg?.donationWon) || 0);
-      const prevExp = prevSettings.memberTerritoryExpand?.[p.id];
       memberTerritoryExpand[p.id] = {
-        expandLeftCm: Math.max(0, Number(prevExp?.expandLeftCm ?? agg?.expandLeftCm) || 0),
-        expandRightCm: Math.max(0, Number(prevExp?.expandRightCm ?? agg?.expandRightCm) || 0),
+        expandLeftCm: Math.max(0, expandLeft),
+        expandRightCm: Math.max(0, expandRight),
       };
     }
     return { memberWidthCm, memberWidthDonationSnapshot, memberTerritoryExpand };
