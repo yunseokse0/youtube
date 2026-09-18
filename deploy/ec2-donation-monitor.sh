@@ -100,6 +100,35 @@ print('₩'+'{:,}'.format(n))
 " "$n"
 }
 
+# ANSI escape 코드를 제거한 실제 표시 길이 (wchar 문자 폭은 1로 단순화)
+visible_len() {
+  local s="$1"
+  # ANSI CSI 패턴 제거: \x1B[ ... m / \x1B[ ... A .. H 등
+  printf '%s' "$s" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g' | "$PY" -c "
+import sys
+s=sys.stdin.buffer.read()
+try: t=s.decode('utf-8','ignore')
+except: t=str(s)
+# control chars 0-31 / 127 제거 (ESC는 위 sed에서 처리됐으나 안전하게)
+t=''.join(c for c in t if ord(c)>=32 and ord(c)!=127)
+# 한글 등 wchar 폭 2 처리 → 단순 byte 길이가 아니라 유니코드 len으로만.
+# 컬럼 폭이 필요하면 wcwidth 고려하나 편의상 len(t)로 사용.
+print(len(t))
+" 2>/dev/null
+}
+
+safe_pad_from() {
+  local line="$1" avail="$2"
+  local vlen
+  vlen="$(visible_len "$line")"
+  vlen="${vlen:-0}"
+  if ! [[ "$vlen" =~ ^[0-9]+$ ]]; then vlen=0; fi
+  if ! [[ "$avail" =~ ^[0-9]+$ ]]; then avail=0; fi
+  local pad=$(( avail - vlen ))
+  if [ "$pad" -lt 0 ]; then pad=0; fi
+  echo "$pad"
+}
+
 safe_pad() {
   local pad="$1"
   [ -z "$pad" ] && pad=0
@@ -173,7 +202,8 @@ collect_snapshot() {
 }
 
 render_ui() {
-  clear
+  local pad
+  printf '\033[H\033[2J'
   local cols
   cols=$(tput cols 2>/dev/null || echo 120)
   local lines
@@ -188,12 +218,13 @@ render_ui() {
   local now
   now=$(date '+%Y-%m-%d %H:%M:%S %Z')
 
-  local pad
   printf '\033[H'
   pad="$(safe_pad $((cols - 2)))"
   printf '%s%*s%s\n' "${BOLD}${C_CYAN}┌─${C_RST}" "$pad" "" "${BOLD}${C_CYAN}─┐${C_RST}"
-  pad="$(safe_pad $(( cols - 12 - ${#now} )))"
-  printf '%s%s %s%*s%s%s\n' "${C_CYAN}│${C_RST}" "$hdr" "${C_DIM}refresh every $((REFRESH_MS/1000))s · ${now}${C_RST}" "$pad" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
+
+  local line1_hdr="${C_CYAN}│${C_RST} ${hdr} ${C_DIM}refresh every $((REFRESH_MS/1000))s · ${now}${C_RST}"
+  pad="$(safe_pad_from "$line1_hdr" "$(( cols - 2 ))" )"
+  printf '%s%*s%s\n' "$line1_hdr" "$pad" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
   pad="$(safe_pad $((cols - 2)))"
   printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "$pad" "" "${C_CYAN}─┤${C_RST}"
 
@@ -286,33 +317,56 @@ print(s)
   [ $panel_w -lt 40 ] && panel_w=40
 
   # === [좌] 투네 WS 리스너 ===
-  printf ' %s%-*s%s%s\n' "${C_CYAN}│ ${C_RST}${BOLD}[A] 투네 WS 직결 리스너${C_RST}" "$((panel_w - 20))" "" "" "${C_CYAN} │${C_RST}"
+  local ws_title_line="${C_CYAN}│ ${C_RST}${BOLD}[A] 투네 WS 직결 리스너${C_RST}"
+  pad="$(safe_pad_from "$ws_title_line" "$(( cols - 4 ))" )"
+  printf '%s%*s%s\n' "$ws_title_line" "$pad" "" "${C_CYAN} │${C_RST}"
+
   local ws_line1="상태: $ws_pill"
   local ws_line2="수신 누적: ${ws_count}건 · 마지막 수신: $(fmt_ago "$ws_last_rx")"
   local ws_line3="링크 활성: ${ws_enabled} · 에러: ${ws_error}"
-  printf '%s%*s%s\n' "${C_CYAN}│ ${C_RST}  ${ws_line1}" "$((cols - 8 - 2 - ${#ws_line1}))" "" "${C_CYAN} │${C_RST}"
-  printf '%s%*s%s\n' "${C_CYAN}│ ${C_RST}  ${ws_line2}" "$((cols - 8 - 2 - ${#ws_line2}))" "" "${C_CYAN} │${C_RST}"
-  printf '%s%*s%s\n' "${C_CYAN}│ ${C_RST}  ${ws_line3}" "$((cols - 8 - 2 - ${#ws_line3}))" "" "${C_CYAN} │${C_RST}"
+
+  local ln1="${C_CYAN}│ ${C_RST}  ${ws_line1}"
+  pad="$(safe_pad_from "$ln1" "$(( cols - 4 ))" )"
+  printf '%s%*s%s\n' "$ln1" "$pad" "" "${C_CYAN} │${C_RST}"
+  local ln2="${C_CYAN}│ ${C_RST}  ${ws_line2}"
+  pad="$(safe_pad_from "$ln2" "$(( cols - 4 ))" )"
+  printf '%s%*s%s\n' "$ln2" "$pad" "" "${C_CYAN} │${C_RST}"
+  local ln3="${C_CYAN}│ ${C_RST}  ${ws_line3}"
+  pad="$(safe_pad_from "$ln3" "$(( cols - 4 ))" )"
+  printf '%s%*s%s\n' "$ln3" "$pad" "" "${C_CYAN} │${C_RST}"
 
   # === [우] DIN 허브 폴러 ===
-  printf '%s%*s%s\n' "${C_CYAN}│${C_RST}  ${BOLD}[B] DIN 허브 폴러${C_RST}: $hub_pill" "$((cols - 8 - 2 - 6 - ${#hub_pill}))" "" "${C_CYAN} │${C_RST}"
+  local hub_title_line="${C_CYAN}│${C_RST}  ${BOLD}[B] DIN 허브 폴러${C_RST}: $hub_pill"
+  pad="$(safe_pad_from "$hub_title_line" "$(( cols - 4 ))" )"
+  printf '%s%*s%s\n' "$hub_title_line" "$pad" "" "${C_CYAN} │${C_RST}"
   local hub_line1="계정: ${hub_email:-<미로그인>} · 연동: $(fmt_ago "$hub_linked")"
   local hub_line2="Ingest: $( [ "$hub_last_ingest_ok" = "true" ] && printf '%sOK%s' "$C_GREEN" "$C_RST" || [ "$hub_last_ingest_ok" = "false" ] && printf '%sFAIL%s' "$C_RED" "$C_RST" || printf '%s—%s' "$C_DIM" "$C_RST" ) · $(fmt_ago "$hub_last_ingest_at")  · Status: $( [ "$hub_last_status_ok" = "true" ] && printf '%sOK%s' "$C_GREEN" "$C_RST" || [ "$hub_last_status_ok" = "false" ] && printf '%sFAIL%s' "$C_RED" "$C_RST" || printf '%s—%s' "$C_DIM" "$C_RST" ) · $(fmt_ago "$hub_last_status_at")"
   local hub_line3="로그 개수: ${hub_log_n}건 · B모드 disabled=${hub_disabled:-false}"
-  printf '%s%*s%s\n' "${C_CYAN}│ ${C_RST}  ${hub_line1}" "$((cols - 8 - 2 - ${#hub_line1}))" "" "${C_CYAN} │${C_RST}"
-  printf '%s%*s%s\n' "${C_CYAN}│ ${C_RST}  ${hub_line2}" "$((cols - 8 - 2 - ${#hub_line2}))" "" "${C_CYAN} │${C_RST}"
-  printf '%s%*s%s\n' "${C_CYAN}│ ${C_RST}  ${hub_line3}" "$((cols - 8 - 2 - ${#hub_line3}))" "" "${C_CYAN} │${C_RST}"
 
-  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "$((cols-2))" "" "${C_CYAN}─┤${C_RST}"
+  local hl1="${C_CYAN}│ ${C_RST}  ${hub_line1}"
+  pad="$(safe_pad_from "$hl1" "$(( cols - 4 ))" )"
+  printf '%s%*s%s\n' "$hl1" "$pad" "" "${C_CYAN} │${C_RST}"
+  local hl2="${C_CYAN}│ ${C_RST}  ${hub_line2}"
+  pad="$(safe_pad_from "$hl2" "$(( cols - 4 ))" )"
+  printf '%s%*s%s\n' "$hl2" "$pad" "" "${C_CYAN} │${C_RST}"
+  local hl3="${C_CYAN}│ ${C_RST}  ${hub_line3}"
+  pad="$(safe_pad_from "$hl3" "$(( cols - 4 ))" )"
+  printf '%s%*s%s\n' "$hl3" "$pad" "" "${C_CYAN} │${C_RST}"
+
+  pad="$(safe_pad $((cols - 2)))"
+  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "$pad" "" "${C_CYAN}─┤${C_RST}"
 
   # === 현재 Runtime 모드 + 요약 ===
-  local sum_line="▶ 런타임 모드: $mode_label ｜ A/B 짧은설명: ${short} ｜ ${desc}"
-  printf '%s%*s%s\n' "${C_CYAN}│ ${C_RST}${sum_line}" "$((cols - 4 - ${#sum_line} + ${#BOLD} + ${#C_RST}*6))" "" "${C_CYAN} │${C_RST}" | cut -c1-"$cols"
+  local sum_line="${C_CYAN}│ ${C_RST}▶ 런타임 모드: $mode_label ｜ A/B 짧은설명: ${short} ｜ ${desc}"
+  pad="$(safe_pad_from "$sum_line" "$(( cols - 4 ))" )"
+  printf '%s%*s%s\n' "$sum_line" "$pad" "" "${C_CYAN} │${C_RST}" | cut -c1-"$cols"
 
-  local sum_line2="전체 후원 ${BOLD}${donors_n}${C_RST}건 · 누적 $(fmt_krw "$donors_sum") · 미처리 QUEUE ${q_len}건 · 미매칭 UNMATCH ${un_len}건"
-  printf '%s%*s%s\n' "${C_CYAN}│ ${C_RST}${sum_line2}" "$((cols - 4 - ${#sum_line2} + ${#BOLD} + ${#C_RST}*2))" "" "${C_CYAN} │${C_RST}"
+  local sum_line2="${C_CYAN}│ ${C_RST}전체 후원 ${BOLD}${donors_n}${C_RST}건 · 누적 $(fmt_krw "$donors_sum") · 미처리 QUEUE ${q_len}건 · 미매칭 UNMATCH ${un_len}건"
+  pad="$(safe_pad_from "$sum_line2" "$(( cols - 4 ))" )"
+  printf '%s%*s%s\n' "$sum_line2" "$pad" "" "${C_CYAN} │${C_RST}"
 
-  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "$((cols-2))" "" "${C_CYAN}─┤${C_RST}"
+  pad="$(safe_pad $((cols - 2)))"
+  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "$pad" "" "${C_CYAN}─┤${C_RST}"
 
   # === 최근 후원 로그: hub logs 위 / state donors 아래 합쳐서 최신 N개 ===
   local recent_body="$TMP_DIR/recent.txt"
@@ -327,31 +381,39 @@ print(s)
   local log_rows=$(( lines - 14 ))
   [ $log_rows -lt 4 ] && log_rows=4
 
-  printf '%s%s%*s%s%s\n' "${C_CYAN}│ ${C_RST}${BOLD}📌 최근 후원 로그 (표시 영역 ${log_rows}행)${C_RST}" "$((cols - 6 - 80))" "" "${C_DIM}  [q=종료 r=새로고침 h=도움 t=추세 d=정합성 v=되돌리기]${C_RST}" "${C_CYAN} │${C_RST}" | cut -c1-"$cols"
+  local log_hdr="${C_CYAN}│ ${C_RST}${BOLD}📌 최근 후원 로그 (표시 영역 ${log_rows}행)${C_RST}${C_DIM}  [q=종료 r=새로고침 h=도움 t=추세 d=정합성 v=되돌리기]${C_RST}"
+  pad="$(safe_pad_from "$log_hdr" "$(( cols - 4 ))" )"
+  printf '%s%*s%s\n' "$log_hdr" "$pad" "" "${C_CYAN} │${C_RST}" | cut -c1-"$cols"
 
   local shown=0
   if [ -s "$recent_body" ]; then
     awk 'NF && !seen[$0]++' "$recent_body" 2>/dev/null | head -n "$log_rows" | while IFS= read -r line; do
       shown=$((shown+1))
-      printf '%s%s%*s%s\n' "${C_CYAN}│ ${C_RST}  ${C_DIM}·${C_RST} $line" "$((cols - 6 - ${#line}))" "" "${C_CYAN} │${C_RST}" | cut -c1-"$cols"
+      local lline="${C_CYAN}│ ${C_RST}  ${C_DIM}·${C_RST} $line"
+      pad="$(safe_pad_from "$lline" "$(( cols - 4 ))" )"
+      printf '%s%*s%s\n' "$lline" "$pad" "" "${C_CYAN} │${C_RST}" | cut -c1-"$cols"
     done
   else
-    printf '%s%s%*s%s\n' "${C_CYAN}│ ${C_RST}   ${C_DIM}(아직 수신된 후원 로그가 없거나 state/hub 응답이 비었습니다)${C_RST}" "$((cols - 6 - 40))" "" "${C_CYAN} │${C_RST}"
+    local empty_line="${C_CYAN}│ ${C_RST}   ${C_DIM}(아직 수신된 후원 로그가 없거나 state/hub 응답이 비었습니다)${C_RST}"
+    pad="$(safe_pad_from "$empty_line" "$(( cols - 4 ))" )"
+    printf '%s%*s%s\n' "$empty_line" "$pad" "" "${C_CYAN} │${C_RST}"
   fi
 
   for ((; shown<log_rows; shown++)); do
-    printf '%s%*s%s\n' "${C_CYAN}│ ${C_RST}" "$((cols-4))" "" "${C_CYAN} │${C_RST}"
+    local bl="${C_CYAN}│ ${C_RST}"
+    pad="$(safe_pad_from "$bl" "$(( cols - 4 ))" )"
+    printf '%s%*s%s\n' "$bl" "$pad" "" "${C_CYAN} │${C_RST}"
   done
 
-  printf '%s%*s%s\n' "${C_CYAN}└─${C_RST}" "$((cols-2))" "" "${C_CYAN}─┘${C_RST}"
+  pad="$(safe_pad $((cols - 2)))"
+  printf '%s%*s%s\n' "${C_CYAN}└─${C_RST}" "$pad" "" "${C_CYAN}─┘${C_RST}"
 }
 
 render_help() {
   local cols lines
   cols=$(tput cols 2>/dev/null || echo 120)
   lines=$(tput lines 2>/dev/null || echo 40)
-  clear
-  printf '\033[H'
+  printf '\033[H\033[2J'
   echo "${BOLD}${C_CYAN}━━━━━━━━━━━ DIN Studio 후원 모니터 · 도움말 ━━━━━━━━━━━${C_RST}"
   echo ""
   echo "  ${BOLD}${C_YELLOW}핫키:${C_RST}"
@@ -754,8 +816,11 @@ render_trend_panel() {
   local pad
   pad="$(safe_pad $(( cols - 2 )))"
   printf '%s%*s%s\n' "${BOLD}${C_CYAN}┌─ TREND/추세 ─${C_RST}" "$pad" "" "${BOLD}${C_CYAN}─┐${C_RST}"
-  printf '%s  %s%s%*s%s\n' "${C_CYAN}│${C_RST}" "${BOLD}${C_BLUE}후원 건수(추세) · RRA 4단계: 2s(raw 10분) → 1분(12h) → 10분(24h) → 1시간(60일)${C_RST}" "${C_DIM}저장위치: ${TS_DIR}${C_RST}" "$(safe_pad $(( cols - 8 - 40 )))" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
-  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "$(safe_pad $(( cols - 2 )))" "" "${C_CYAN}─┤${C_RST}"
+  local trend_title="${C_CYAN}│${C_RST}  ${BOLD}${C_BLUE}후원 건수(추세) · RRA 4단계: 2s(raw 10분) → 1분(12h) → 10분(24h) → 1시간(60일)${C_RST}${C_DIM}저장위치: ${TS_DIR}${C_RST}"
+  pad="$(safe_pad_from "$trend_title" "$(( cols - 4 ))" )"
+  printf '%s%*s%s\n' "$trend_title" "$pad" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
+  pad="$(safe_pad $(( cols - 2 )))"
+  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "$pad" "" "${C_CYAN}─┤${C_RST}"
 
   local chart_w=$(( cols - 8 ))
   [ $chart_w -lt 20 ] && chart_w=20
@@ -790,10 +855,14 @@ render_trend_panel() {
   while IFS= read -r line; do
     shown=$((shown+1))
     [ $shown -gt $max_rows ] && break
-    printf '%s  %s%*s%s\n' "${C_CYAN}│${C_RST}" "$line" "$(safe_pad $(( cols - 6 - ${#line} )) )" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
+    local tl="${C_CYAN}│${C_RST}  $line"
+    pad="$(safe_pad_from "$tl" "$(( cols - 4 ))" )"
+    printf '%s%*s%s\n' "$tl" "$pad" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
   done < "$out"
   for ((; shown<=max_rows; shown++)); do
-    printf '%s%*s%s\n' "${C_CYAN}│ ${C_RST}" "$(safe_pad $(( cols - 4 )))" "" "${C_CYAN}│${C_RST}"
+    local bl="${C_CYAN}│ ${C_RST}"
+    pad="$(safe_pad_from "$bl" "$(( cols - 4 ))")"
+    printf '%s%*s%s\n' "$bl" "$pad" "" "${C_CYAN}│${C_RST}"
   done
 
   pad="$(safe_pad $(( cols - 2 )))"
@@ -943,8 +1012,11 @@ render_diff_panel() {
   local pad
   pad="$(safe_pad $(( cols - 2 )))"
   printf '%s%*s%s\n' "${BOLD}${C_CYAN}┌─ DIFF/정합성 ─${C_RST}" "$pad" "" "${BOLD}${C_CYAN}─┐${C_RST}"
-  printf '%s  %s%*s%s\n' "${C_CYAN}│${C_RST}" "${BOLD}${C_MAGENTA}후원 숫자 교차 검증 · Hub logs <-> state donors (최근 1h / 24h)${C_RST}" "$(safe_pad $(( cols - 8 - 50 )))" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
-  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "$(safe_pad $(( cols - 2 )))" "" "${C_CYAN}─┤${C_RST}"
+  local diff_title="${C_CYAN}│${C_RST}  ${BOLD}${C_MAGENTA}후원 숫자 교차 검증 · Hub logs <-> state donors (최근 1h / 24h)${C_RST}"
+  pad="$(safe_pad_from "$diff_title" "$(( cols - 4 ))" )"
+  printf '%s%*s%s\n' "$diff_title" "$pad" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
+  pad="$(safe_pad $(( cols - 2 )))"
+  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "$pad" "" "${C_CYAN}─┤${C_RST}"
 
   local diff_out="$TMP_DIR/diff.txt"
   donation_integrity_diff "$diff_out"
@@ -952,10 +1024,14 @@ render_diff_panel() {
   while IFS= read -r line; do
     shown=$((shown+1))
     [ $shown -gt $max_rows ] && break
-    printf '%s  %s%*s%s\n' "${C_CYAN}│${C_RST}" "$line" "$(safe_pad $(( cols - 6 - ${#line} )) )" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
+    local dline="${C_CYAN}│${C_RST}  $line"
+    pad="$(safe_pad_from "$dline" "$(( cols - 4 ))" )"
+    printf '%s%*s%s\n' "$dline" "$pad" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
   done < "$diff_out"
   for ((; shown<=max_rows; shown++)); do
-    printf '%s%*s%s\n' "${C_CYAN}│ ${C_RST}" "$(safe_pad $(( cols - 4 )))" "" "${C_CYAN}│${C_RST}"
+    local bl="${C_CYAN}│ ${C_RST}"
+    pad="$(safe_pad_from "$bl" "$(( cols - 4 ))")"
+    printf '%s%*s%s\n' "$bl" "$pad" "" "${C_CYAN}│${C_RST}"
   done
   pad="$(safe_pad $(( cols - 2 )))"
   printf '%s%*s%s\n' "${C_CYAN}└─${C_RST}" "$pad" "" "${C_CYAN}─┘${C_RST}"
