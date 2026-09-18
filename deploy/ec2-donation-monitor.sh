@@ -327,7 +327,7 @@ print(s)
   local log_rows=$(( lines - 14 ))
   [ $log_rows -lt 4 ] && log_rows=4
 
-  printf '%s%s%*s%s%s\n' "${C_CYAN}│ ${C_RST}${BOLD}📌 최근 후원 로그 (표시 영역 ${log_rows}행, 오래된 순 → 최신 순)${C_RST}" "$((cols - 6 - 40))" "" "${C_DIM}  [q=종료 r=새로고침 h=도움]${C_RST}" "${C_CYAN} │${C_RST}" | cut -c1-"$cols"
+  printf '%s%s%*s%s%s\n' "${C_CYAN}│ ${C_RST}${BOLD}📌 최근 후원 로그 (표시 영역 ${log_rows}행)${C_RST}" "$((cols - 6 - 80))" "" "${C_DIM}  [q=종료 r=새로고침 h=도움 t=추세 d=정합성 v=되돌리기]${C_RST}" "${C_CYAN} │${C_RST}" | cut -c1-"$cols"
 
   local shown=0
   if [ -s "$recent_body" ]; then
@@ -398,8 +398,572 @@ except Exception: pass
   fi
 }
 
+# ------------------------------------------------------------------
+# 시계열 추세 저장 · 4단계 RRA (Round Robin Archive · CSV)
+# 컬럼: ts_ms, mode(A/B/?), donors_n, donors_sum_won, queue_n, unmatch_n,
+#       ws_open(0/1/-), ws_rx_cnt, hub_ingest_ok(0/1/-), hub_ingest_ago_s, hub_status_ok(0/1/-), hub_logs_n,
+#       hub_sum_won(최근 1시간 hub logs), hub_count(최근 1시간 hub logs 건수)
+# ------------------------------------------------------------------
+TS_DIR="${TS_DIR:-${HOME}/.din-studio/donation-ts}"
+mkdir -p "$TS_DIR" 2>/dev/null
+TS_RAW="${TS_DIR}/raw-${TARGET_USER}.csv"
+TS_R1M="${TS_DIR}/r1m-${TARGET_USER}.csv"
+TS_R10M="${TS_DIR}/r10m-${TARGET_USER}.csv"
+TS_R1H="${TS_DIR}/r1h-${TARGET_USER}.csv"
+TS_HDR="ts_ms,mode,donors_n,donors_sum_won,queue_n,unmatch_n,ws_open,ws_rx_cnt,hub_ingest_ok,hub_ingest_ago_s,hub_status_ok,hub_logs_n,hub_sum_won_l1h,hub_count_l1h"
+
+for _f in "$TS_RAW" "$TS_R1M" "$TS_R10M" "$TS_R1H"; do
+  if [ ! -f "$_f" ] || [ ! -s "$_f" ]; then
+    echo "$TS_HDR" > "$_f" 2>/dev/null
+  fi
+done
+
+# 2s 단위 raw = 최근 300개 (10분) 유지. 초과시 오래된 행 삭제
+ts_raw_cap="${TS_RAW_CAP:-300}"
+ts_r1m_cap="${TS_R1M_CAP:-720}"     # 1분 단위 720개 = 12시간
+ts_r10m_cap="${TS_R10M_CAP:-144}"   # 10분 단위 144개 = 24시간
+ts_r1h_cap="${TS_R1H_CAP:-60}"      # 1시간 단위 60개 = 60일
+
+ts_bucket_ts() {
+  local ms="$1" sec="$2"
+  printf $(( (ms / 1000 / sec) * sec * 1000 ))
+}
+
+ts_append() {
+  local ts="$1" line="$2"
+  [ -z "$ts" ] || [ -z "$line" ] && return 0
+  echo "${ts},${line}" >> "$TS_RAW" 2>/dev/null
+  # cap 유지 (tail -n 은 느리니 python 으로)
+  "$PY" -c "
+import sys,os
+p=sys.argv[1]; cap=int(sys.argv[2])
+if not os.path.isfile(p): sys.exit(0)
+with open(p,'rb') as f: lines=f.read().splitlines()
+hdr=lines[0:1]
+tail=lines[-cap:] if len(lines)>cap+1 else lines[1:]
+with open(p,'wb') as f: f.write(b'\n'.join(hdr+tail)+b'\n')
+" "$TS_RAW" "$ts_raw_cap" 2>/dev/null
+
+  # 1분 롤업
+  "$PY" -c "
+import sys,os
+raw=sys.argv[1]; out=sys.argv[2]; bucket=int(sys.argv[3]); cap=int(sys.argv[4])
+def avg(xs):
+  xs=[v for v in xs if v not in (None,'') and str(v).replace('-','').isdigit()]
+  return sum(map(int,xs))//len(xs) if xs else ''
+def maxs(xs):
+  xs=[int(v) for v in xs if str(v).lstrip('-').isdigit()]
+  return max(xs) if xs else ''
+def sums(xs):
+  xs=[int(v) for v in xs if str(v).lstrip('-').isdigit()]
+  return sum(xs) if xs else ''
+def modebucket(rows):
+  from collections import Counter
+  c=Counter([r[1] for r in rows if r and r[1]])
+  return c.most_common(1)[0][0] if c else '?'
+if not os.path.isfile(raw): sys.exit(0)
+with open(raw,'r') as f: lines=f.read().splitlines()
+if len(lines)<2: sys.exit(0)
+hdr=lines[0]; cols=hdr.split(',')
+rows=[l.split(',',len(cols)-1) for l in lines[1:] if l.strip()]
+by_b={}
+for r in rows:
+  try:
+    ts=int(r[0]); key=(ts//(bucket*1000))*(bucket*1000)
+  except Exception: continue
+  by_b.setdefault(key,[]).append(r)
+merged_hdr=hdr
+out_exists=os.path.isfile(out) and os.path.getsize(out)>0
+existing={}
+if out_exists:
+  with open(out,'r') as f: olines=f.read().splitlines()
+  existing_hdr=olines[0]
+  for l in olines[1:]:
+    p=l.split(',',len(cols)-1)
+    try: existing[int(p[0])]=l
+    except Exception: pass
+written=[]
+for k in sorted(by_b.keys()):
+  rs=by_b[k]
+  vs=[str(k),
+      modebucket(rs),
+      str(avg([r[2] for r in rs if len(r)>2])),
+      str(maxs([r[3] for r in rs if len(r)>3])),
+      str(maxs([r[4] for r in rs if len(r)>4])),
+      str(maxs([r[5] for r in rs if len(r)>5])),
+      str(maxs([r[6] for r in rs if len(r)>6])),
+      str(maxs([r[7] for r in rs if len(r)>7])),
+      str(maxs([r[8] for r in rs if len(r)>8])),
+      str(min([int(r[9]) for r in rs if len(r)>9 and str(r[9]).isdigit()]) or ''),
+      str(maxs([r[10] for r in rs if len(r)>10])),
+      str(maxs([r[11] for r in rs if len(r)>11])),
+      str(maxs([r[12] for r in rs if len(r)>12])),
+      str(maxs([r[13] for r in rs if len(r)>13]))
+  ]
+  line=','.join([v if v!='' else '' for v in vs])
+  existing[k]=line
+ordered=sorted(existing.keys())[-cap:]
+with open(out,'w') as f:
+  f.write(merged_hdr+'\n')
+  for k in ordered: f.write(existing[k]+'\n')
+" "$TS_RAW" "$TS_R1M" 60 "$ts_r1m_cap" 2>/dev/null
+  # 10분 롤업
+  "$PY" -c "
+import sys,os
+raw=sys.argv[1]; out=sys.argv[2]; bucket=int(sys.argv[3]); cap=int(sys.argv[4])
+def avg(xs):
+  xs=[v for v in xs if v not in (None,'') and str(v).replace('-','').isdigit()]
+  return sum(map(int,xs))//len(xs) if xs else ''
+def maxs(xs):
+  xs=[int(v) for v in xs if str(v).lstrip('-').isdigit()]
+  return max(xs) if xs else ''
+def modebucket(rows):
+  from collections import Counter
+  c=Counter([r[1] for r in rows if r and r[1]])
+  return c.most_common(1)[0][0] if c else '?'
+if not os.path.isfile(raw): sys.exit(0)
+with open(raw,'r') as f: lines=f.read().splitlines()
+if len(lines)<2: sys.exit(0)
+hdr=lines[0]; cols=hdr.split(',')
+rows=[l.split(',',len(cols)-1) for l in lines[1:] if l.strip()]
+by_b={}
+for r in rows:
+  try:
+    ts=int(r[0]); key=(ts//(bucket*1000))*(bucket*1000)
+  except Exception: continue
+  by_b.setdefault(key,[]).append(r)
+existing={}
+out_exists=os.path.isfile(out) and os.path.getsize(out)>0
+if out_exists:
+  with open(out,'r') as f: olines=f.read().splitlines()
+  for l in olines[1:]:
+    p=l.split(',',len(cols)-1)
+    try: existing[int(p[0])]=l
+    except Exception: pass
+for k in sorted(by_b.keys()):
+  rs=by_b[k]
+  vs=[str(k), modebucket(rs),
+      str(avg([r[2] for r in rs if len(r)>2])),
+      str(maxs([r[3] for r in rs if len(r)>3])),
+      str(maxs([r[4] for r in rs if len(r)>4])),
+      str(maxs([r[5] for r in rs if len(r)>5])),
+      str(maxs([r[6] for r in rs if len(r)>6])),
+      str(maxs([r[7] for r in rs if len(r)>7])),
+      str(maxs([r[8] for r in rs if len(r)>8])),
+      '' if not [int(r[9]) for r in rs if len(r)>9 and str(r[9]).isdigit()] else str(min([int(r[9]) for r in rs if len(r)>9 and str(r[9]).isdigit()])),
+      str(maxs([r[10] for r in rs if len(r)>10])),
+      str(maxs([r[11] for r in rs if len(r)>11])),
+      str(maxs([r[12] for r in rs if len(r)>12])),
+      str(maxs([r[13] for r in rs if len(r)>13]))
+  ]
+  line=','.join(vs)
+  existing[k]=line
+ordered=sorted(existing.keys())[-cap:]
+with open(out,'w') as f:
+  f.write(hdr+'\n')
+  for k in ordered: f.write(existing[k]+'\n')
+" "$TS_R1M" "$TS_R10M" 10 "$ts_r10m_cap" 2>/dev/null
+  # 1시간 롤업
+  "$PY" -c "
+import sys,os
+raw=sys.argv[1]; out=sys.argv[2]; bucket=int(sys.argv[3]); cap=int(sys.argv[4])
+def avg(xs):
+  xs=[v for v in xs if v not in (None,'') and str(v).replace('-','').isdigit()]
+  return sum(map(int,xs))//len(xs) if xs else ''
+def maxs(xs):
+  xs=[int(v) for v in xs if str(v).lstrip('-').isdigit()]
+  return max(xs) if xs else ''
+def modebucket(rows):
+  from collections import Counter
+  c=Counter([r[1] for r in rows if r and r[1]])
+  return c.most_common(1)[0][0] if c else '?'
+if not os.path.isfile(raw): sys.exit(0)
+with open(raw,'r') as f: lines=f.read().splitlines()
+if len(lines)<2: sys.exit(0)
+hdr=lines[0]; cols=hdr.split(',')
+rows=[l.split(',',len(cols)-1) for l in lines[1:] if l.strip()]
+by_b={}
+for r in rows:
+  try:
+    ts=int(r[0]); key=(ts//(bucket*1000))*(bucket*1000)
+  except Exception: continue
+  by_b.setdefault(key,[]).append(r)
+existing={}
+out_exists=os.path.isfile(out) and os.path.getsize(out)>0
+if out_exists:
+  with open(out,'r') as f: olines=f.read().splitlines()
+  for l in olines[1:]:
+    p=l.split(',',len(cols)-1)
+    try: existing[int(p[0])]=l
+    except Exception: pass
+for k in sorted(by_b.keys()):
+  rs=by_b[k]
+  vs=[str(k), modebucket(rs),
+      str(avg([r[2] for r in rs if len(r)>2])),
+      str(maxs([r[3] for r in rs if len(r)>3])),
+      str(maxs([r[4] for r in rs if len(r)>4])),
+      str(maxs([r[5] for r in rs if len(r)>5])),
+      str(maxs([r[6] for r in rs if len(r)>6])),
+      str(maxs([r[7] for r in rs if len(r)>7])),
+      str(maxs([r[8] for r in rs if len(r)>8])),
+      '' if not [int(r[9]) for r in rs if len(r)>9 and str(r[9]).isdigit()] else str(min([int(r[9]) for r in rs if len(r)>9 and str(r[9]).isdigit()])),
+      str(maxs([r[10] for r in rs if len(r)>10])),
+      str(maxs([r[11] for r in rs if len(r)>11])),
+      str(maxs([r[12] for r in rs if len(r)>12])),
+      str(maxs([r[13] for r in rs if len(r)>13]))
+  ]
+  line=','.join(vs)
+  existing[k]=line
+ordered=sorted(existing.keys())[-cap:]
+with open(out,'w') as f:
+  f.write(hdr+'\n')
+  for k in ordered: f.write(existing[k]+'\n')
+" "$TS_R10M" "$TS_R1H" 60 "$ts_r1h_cap" 2>/dev/null
+}
+
+ts_collect_now() {
+  local ts_ms
+  ts_ms=$(date +%s%3N)
+  local mode_v donors_n_v donors_sum_v q_v un_v wsopen_v wsrx_v hok_v hago_s hsok_v hlogn_v hsum_l1h_v hcnt_l1h_v
+  mode_v="$(json_field_str "$SNAP_MODE_JSON" 'd.get("mode")' '?')"
+  donors_n_v="${donors_n:-0}"
+  donors_sum_v="${donors_sum:-0}"
+  q_v="${q_len:-0}"
+  un_v="${un_len:-0}"
+  [ "${ws_open:-}" = "true" ] && wsopen_v=1 || [ "${ws_open:-}" = "false" ] && wsopen_v=0 || wsopen_v="-"
+  wsrx_v="${ws_count:-0}"
+  [ "${hub_last_ingest_ok:-}" = "true" ] && hok_v=1 || [ "${hub_last_ingest_ok:-}" = "false" ] && hok_v=0 || hok_v="-"
+  if [[ "${hub_last_ingest_at:-}" =~ ^[0-9]+$ ]]; then
+    hago_s=$(( (ts_ms - hub_last_ingest_at) / 1000 ))
+    [ "$hago_s" -lt 0 ] && hago_s=0
+    hago_s_v="$hago_s"
+  else
+    hago_s_v="-"
+  fi
+  [ "${hub_last_status_ok:-}" = "true" ] && hsok_v=1 || [ "${hub_last_status_ok:-}" = "false" ] && hsok_v=0 || hsok_v="-"
+  hlogn_v="${hub_log_n:-0}"
+
+  local hub_hour_stats_file="$TMP_DIR/hub_hour.json"
+  "$PY" -c "
+import json,sys
+try:
+  d=json.loads(sys.stdin.read() or '{}')
+except Exception:
+  print(json.dumps({'sum':0,'count':0})); sys.exit(0)
+logs=d.get('logs') or d.get('donationLogs') or []
+if not isinstance(logs,list): logs=[]
+import time
+cutoff=int(time.time()*1000)-3600*1000
+s=0; c=0
+for l in logs:
+  try:
+    at=l.get('at') or l.get('ingestedAt') or 0
+    if isinstance(at,str):
+      from datetime import datetime
+      try: at=int(datetime.fromisoformat(at.replace('Z','+00:00')).timestamp()*1000)
+      except Exception: at=0
+    amt=int(l.get('amount') or 0)
+    if at and at>=cutoff and amt>0: s+=amt; c+=1
+  except Exception: pass
+print(json.dumps({'sum':s,'count':c}))
+" <<< "$SNAP_HUB_JSON" > "$hub_hour_stats_file" 2>/dev/null
+  hsum_l1h_v=$("$PY" -c "import json,sys
+try: d=json.loads(open(sys.argv[1]).read()); print(d.get('sum',0))
+except Exception: print(0)" "$hub_hour_stats_file" 2>/dev/null)
+  hcnt_l1h_v=$("$PY" -c "import json,sys
+try: d=json.loads(open(sys.argv[1]).read()); print(d.get('count',0))
+except Exception: print(0)" "$hub_hour_stats_file" 2>/dev/null)
+
+  [ -z "$donors_n_v" ] && donors_n_v=0
+  [ -z "$donors_sum_v" ] && donors_sum_v=0
+  ts_append "$ts_ms" "${mode_v},${donors_n_v},${donors_sum_v},${q_v},${un_v},${wsopen_v},${wsrx_v},${hok_v},${hago_s_v},${hsok_v},${hlogn_v},${hsum_l1h_v},${hcnt_l1h_v}"
+}
+
+# ------------------------------------------------------------------
+# ASCII 시계열 차트 렌더 · RRA 파일 → 지정 컬럼 → N 틱 세로 막대
+# ------------------------------------------------------------------
+ts_ascii_chart() {
+  local csv="$1" col="$2" ticks="$3" label="$4"
+  [ -f "$csv" ] || return 0
+  [ "$ticks" -gt 2 ] 2>/dev/null || ticks=40
+  "$PY" -c "
+import sys,os
+p=sys.argv[1]; col=sys.argv[2]; ticks=int(sys.argv[3]); label=sys.argv[4]
+if not os.path.isfile(p):
+  sys.stdout.write('(no data)'); sys.exit(0)
+with open(p) as f: lines=f.read().splitlines()
+if len(lines)<2:
+  sys.stdout.write('(no data)'); sys.exit(0)
+hdr=lines[0].split(','); rows=[]
+for l in lines[1:]:
+  r=l.split(',',len(hdr)-1)
+  if len(r)<=0: continue
+  rows.append(r)
+if not rows:
+  sys.stdout.write('(no data)'); sys.exit(0)
+try: ci=hdr.index(col)
+except ValueError:
+  sys.stdout.write(f'(col {col} 없음: '+'/'.join(hdr)+')'); sys.exit(0)
+vals=[]
+for r in rows:
+  v=r[ci] if len(r)>ci else ''
+  try: vals.append(int(v))
+  except Exception: continue
+if not vals:
+  sys.stdout.write('(all NA)'); sys.exit(0)
+# 최근 ticks 개만
+vals=vals[-ticks:]
+# 최소/최대 정규화
+vmin=min(vals); vmax=max(vals)
+if vmax==vmin: bars=['█' if v>0 else ' ' for v in vals]
+else:
+  # block element 8단계 활용: ▁▂▃▄▅▆▇█
+  blocks=[' ','▁','▂','▃','▄','▅','▆','▇','█']
+  bars=[]
+  for v in vals:
+    frac=(v-vmin)/float(vmax-vmin)
+    idx=min(8,max(0,int(round(frac*8))))
+    bars.append(blocks[idx])
+trend=''.join(bars)
+# header label + 값 범위
+sys.stdout.write(f'{label} [{len(vals)}틱] min={vmin} max={vmax}')
+sys.stdout.write('\n'+trend+'\n')
+# X축 눈금 (왼쪽=가장오래된 / 오른쪽=가장최신)
+if len(vals)>=10:
+  ticks_line='├'+'─'*(len(vals)-2)+'┤'
+  sys.stdout.write(ticks_line+'\n')
+  left_ts=None; right_ts=None
+  # ts 값 (0번째 컬럼)
+  tss=[r[0] for r in rows[-ticks:]]
+  if tss:
+    try:
+      import datetime
+      lt=int(tss[0])//1000; rt=int(tss[-1])//1000
+      ld=datetime.datetime.fromtimestamp(lt).strftime('%H:%M')
+      rd=datetime.datetime.fromtimestamp(rt).strftime('%H:%M')
+      pad=' '*(max(0,len(vals)-len(ld)-len(rd)-4))
+      sys.stdout.write(f'│ {ld}{pad}{rd} │\n')
+    except Exception: pass
+" "$csv" "$col" "$ticks" "$label" 2>/dev/null
+}
+
+render_trend_panel() {
+  local cols=$1 lines=$2
+  local panel_rows=$(( lines - 8 ))
+  [ $panel_rows -lt 12 ] && panel_rows=12
+  local pad
+  pad="$(safe_pad $(( cols - 2 )))"
+  printf '%s%*s%s\n' "${BOLD}${C_CYAN}┌─ TREND/추세 ─${C_RST}" "$pad" "" "${BOLD}${C_CYAN}─┐${C_RST}"
+  printf '%s  %s%s%*s%s\n' "${C_CYAN}│${C_RST}" "${BOLD}${C_BLUE}후원 건수(추세) · RRA 4단계: 2s(raw 10분) → 1분(12h) → 10분(24h) → 1시간(60일)${C_RST}" "${C_DIM}저장위치: ${TS_DIR}${C_RST}" "$(safe_pad $(( cols - 8 - 40 )))" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
+  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "$(safe_pad $(( cols - 2 )))" "" "${C_CYAN}─┤${C_RST}"
+
+  local chart_w=$(( cols - 8 ))
+  [ $chart_w -lt 20 ] && chart_w=20
+
+  local out="$TMP_DIR/trend_out.txt"
+  : > "$out"
+  {
+    echo "${C_MAGENTA}── donors_n (state 후원 건수 / 실제 엑셀 반영된 건)${C_RST}"
+    echo "${C_DIM}[RAW 2s · 최근 10분]${C_RST}"
+    ts_ascii_chart "$TS_RAW" "donors_n" "$chart_w" "donors_n·2s"
+    echo "${C_DIM}[1분 롤업 · 최근 12시간]${C_RST}"
+    ts_ascii_chart "$TS_R1M" "donors_n" "$chart_w" "donors_n·1m"
+    echo "${C_DIM}[10분 롤업 · 최근 24시간]${C_RST}"
+    ts_ascii_chart "$TS_R10M" "donors_n" "$chart_w" "donors_n·10m"
+    echo ""
+    echo "${C_CYAN}── donors_sum_won (state 후원 누적금액 추세 · 최고점)${C_RST}"
+    ts_ascii_chart "$TS_R1M" "donors_sum_won" "$chart_w" "donors_sum_won·1m"
+    ts_ascii_chart "$TS_R10M" "donors_sum_won" "$chart_w" "donors_sum_won·10m"
+    echo ""
+    echo "${C_YELLOW}── queue_n / unmatch_n (처리 백로그 추세, 0이 정상, 급증은 블로킹 발생 의미)${C_RST}"
+    ts_ascii_chart "$TS_RAW" "queue_n" "$chart_w" "QUEUE·2s"
+    ts_ascii_chart "$TS_RAW" "unmatch_n" "$chart_w" "UNMATCH·2s"
+    echo ""
+    echo "${C_GREEN}── hub_ingest_ok (B모드: ingest 1=OK / 0=FAIL / -=측정안됨. 0으로 떨어지면 5xx/폴러 사망)${C_RST}"
+    ts_ascii_chart "$TS_RAW" "hub_ingest_ok" "$chart_w" "hub_ingest_OK"
+    echo "${C_GREEN}── ws_open (A모드: 1=CONNECTED / 0=설정됐지만 미연결 / -=측정안됨)${C_RST}"
+    ts_ascii_chart "$TS_RAW" "ws_open" "$chart_w" "WS_OPEN"
+  } > "$out" 2>/dev/null
+
+  local shown=0
+  local max_rows=$(( panel_rows - 2 ))
+  while IFS= read -r line; do
+    shown=$((shown+1))
+    [ $shown -gt $max_rows ] && break
+    printf '%s  %s%*s%s\n' "${C_CYAN}│${C_RST}" "$line" "$(safe_pad $(( cols - 6 - ${#line} )) )" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
+  done < "$out"
+  for ((; shown<=max_rows; shown++)); do
+    printf '%s%*s%s\n' "${C_CYAN}│ ${C_RST}" "$(safe_pad $(( cols - 4 )))" "" "${C_CYAN}│${C_RST}"
+  done
+
+  pad="$(safe_pad $(( cols - 2 )))"
+  printf '%s%*s%s\n' "${C_CYAN}└─${C_RST}" "$pad" "" "${C_CYAN}─┘${C_RST}"
+}
+
+# ------------------------------------------------------------------
+# DIFF / 후원 숫자 정합성 검사
+#   레벨 1: state donors[총 건수/총 금액] vs 허브 logs[최근 1시간 / 24시간] 교차 검증
+#   레벨 2: hub logs 상세 id 와 state donors.id 차집합 → 누락 후원 건수/금액
+#   레벨 3: QUEUE/UNMATCH 에러 레벨. queue>20 · unmatch>5 면 심각
+# ------------------------------------------------------------------
+donation_integrity_diff() {
+  local out="$1"
+  "$PY" -c "
+import json,sys,time,os
+try:
+  state=json.loads(sys.argv[1] or '{}')
+except Exception: state={}
+try:
+  hub=json.loads(sys.argv[2] or '{}')
+except Exception: hub={}
+q_n=int(sys.argv[3] or 0)
+u_n=int(sys.argv[4] or 0)
+# state donors
+st_donors=state.get('donors') or []
+st_ids=set(); st_sum=0; st_cnt=0
+for d in st_donors:
+  try:
+    iid=str(d.get('id') or '').strip()
+    if not iid: continue
+    st_ids.add(iid); st_cnt+=1
+    st_sum += int(d.get('amount') or 0)
+  except Exception: pass
+# hub logs
+h_logs = hub.get('logs') or hub.get('donationLogs') or []
+now_ms=int(time.time()*1000)
+cutoff_1h=now_ms-3600*1000
+cutoff_24h=now_ms-86400*1000
+h_ids_1h=set(); h_sum_1h=0; h_cnt_1h=0
+h_ids_24h=set(); h_sum_24h=0; h_cnt_24h=0
+def parse_at_to_ms(at):
+  if not at: return 0
+  if isinstance(at,(int,float)) and at>1e11: return int(at)
+  if isinstance(at,(int,float)) and at<1e11: return int(at)*1000
+  try:
+    from datetime import datetime
+    return int(datetime.fromisoformat(str(at).replace('Z','+00:00')).timestamp()*1000)
+  except Exception: return 0
+for l in h_logs:
+  try:
+    amt=int(l.get('amount') or 0); iid=str(l.get('id') or '').strip()
+    if amt<=0 or not iid: continue
+    ms=parse_at_to_ms(l.get('at') or l.get('ingestedAt'))
+    if ms and ms>=cutoff_24h:
+      h_ids_24h.add(iid); h_cnt_24h+=1; h_sum_24h+=amt
+      if ms>=cutoff_1h:
+        h_ids_1h.add(iid); h_cnt_1h+=1; h_sum_1h+=amt
+  except Exception: pass
+# state 에 있는 24시간 이내 후원 id
+st_ids_24h=set(); st_sum_24h=0; st_cnt_24h=0
+st_ids_1h=set(); st_sum_1h=0; st_cnt_1h=0
+for d in st_donors:
+  try:
+    iid=str(d.get('id') or '').strip()
+    if not iid: continue
+    amt=int(d.get('amount') or 0)
+    at=parse_at_to_ms(d.get('at'))
+    if at and at>=cutoff_24h:
+      st_ids_24h.add(iid); st_cnt_24h+=1; st_sum_24h+=amt
+      if at>=cutoff_1h:
+        st_ids_1h.add(iid); st_cnt_1h+=1; st_sum_1h+=amt
+  except Exception: pass
+missing_ids_1h = sorted(list(h_ids_1h - st_ids_1h))[:20]
+missing_ids_24h = sorted(list(h_ids_24h - st_ids_24h))[:20]
+excess_ids = sorted(list(st_ids_24h - h_ids_24h))[:20]
+missing_ids_1h_sum=0
+missing_ids_24h_sum=0
+# missing id 금액 추적 (hub logs 에서 amount 조회)
+id_to_amt_h24={}
+for l in h_logs:
+  try:
+    iid=str(l.get('id') or '').strip()
+    if not iid: continue
+    ms=parse_at_to_ms(l.get('at') or l.get('ingestedAt'))
+    if ms and ms>=cutoff_24h:
+      id_to_amt_h24[iid]=int(l.get('amount') or 0)
+  except Exception: pass
+for iid in missing_ids_1h: missing_ids_1h_sum += id_to_amt_h24.get(iid,0)
+for iid in missing_ids_24h: missing_ids_24h_sum += id_to_amt_h24.get(iid,0)
+# 레벨 판정
+warnings=[]; level='OK'
+def krw(n):
+  try: n=int(n)
+  except: n=0
+  return '₩'+'{:,}'.format(n)
+if q_n>=100 or u_n>=50:
+  level='CRITICAL'
+  warnings.append(f'백로그 과다: QUEUE {q_n}건 / UNMATCH {u_n}건')
+elif q_n>=20 or u_n>=10:
+  if level!='CRITICAL': level='WARN'
+  warnings.append(f'백로그 주의: QUEUE {q_n}건 / UNMATCH {u_n}건')
+if len(missing_ids_24h)>=10 or missing_ids_24h_sum>=500000:
+  if level!='CRITICAL': level='CRITICAL'
+  warnings.append(f'24h 허브→state 누락: {len(h_ids_24h-st_ids_24h)}건 / {krw(missing_ids_24h_sum)}')
+elif len(missing_ids_24h)>=3 or missing_ids_24h_sum>=50000:
+  if level not in ('CRITICAL','WARN'): level='WARN'
+  warnings.append(f'24h 허브→state 경미 누락: {len(h_ids_24h-st_ids_24h)}건 / {krw(missing_ids_24h_sum)}')
+if len(excess_ids)>=20:
+  if level!='CRITICAL': level='CRITICAL' if level=='OK' else level
+  warnings.append(f'state 에만 있는 24h 이내 후원 과다(중복 삽입?): {len(excess_ids)}건')
+# 출력
+lines=[]
+lv_color={'OK':'\033[32m','WARN':'\033[33m','CRITICAL':'\033[31m'}.get(level,'\033[37m')
+lines.append(f'통합 정합성 레벨: {lv_color}{level}\033[0m' + (f'  ⚠ {len(warnings)}건' if warnings else ''))
+lines.append('')
+lines.append(f'■ 전체 state donors:       {st_cnt:>8}건 / 총 {krw(st_sum)}')
+lines.append(f'')
+lines.append(f'  ┌─ 최근 1시간 교차 검증')
+lines.append(f'  │ Hub logs     : {h_cnt_1h:>6}건 / {krw(h_sum_1h)}')
+lines.append(f'  │ State donors : {st_cnt_1h:>6}건 / {krw(st_sum_1h)}')
+lines.append(f'  │ Diff(Hub-St) : {len(h_ids_1h-st_ids_1h):>+6}건 / {krw(h_sum_1h-st_sum_1h)}')
+lines.append(f'  │ Hub→State 미반영(missing) : {len(h_ids_1h-st_ids_1h)}건 / {krw(missing_ids_1h_sum)}' + (f' ({", ".join(missing_ids_1h[:5])})' if missing_ids_1h else ''))
+lines.append(f'  └ State→Hub 초과(excess)   : {len(st_ids_1h-h_ids_1h)}건')
+lines.append(f'')
+lines.append(f'  ┌─ 최근 24시간 교차 검증')
+lines.append(f'  │ Hub logs     : {h_cnt_24h:>6}건 / {krw(h_sum_24h)}')
+lines.append(f'  │ State donors : {st_cnt_24h:>6}건 / {krw(st_sum_24h)}')
+lines.append(f'  │ Diff(Hub-St) : {len(h_ids_24h-st_ids_24h):>+6}건 / {krw(h_sum_24h-st_sum_24h)}')
+lines.append(f'  │ Hub→State 미반영(missing) Top5: {len(h_ids_24h-st_ids_24h)}건 / {krw(missing_ids_24h_sum)}' + (f' → id 샘플: {", ".join(missing_ids_24h[:5])}' if missing_ids_24h else ' (clean!)'))
+lines.append(f'  └ State→Hub 초과(excess) Top5  : {len(excess_ids)}건' + (f' → 샘플: {", ".join(excess_ids[:5])}' if excess_ids else ''))
+lines.append(f'')
+lines.append(f'  처리 백로그 QUEUE={q_n}  UNMATCH={u_n}')
+if warnings:
+  lines.append('')
+  lines.append('경고 상세:')
+  for w in warnings: lines.append(f'  ⚠ {w}')
+with open(sys.argv[5],'w') as f:
+  f.write('\n'.join(lines)+'\n')
+" "$(printf '%s' "$SNAP_STATE_JSON" | cut -c1-200000)" "$(printf '%s' "$SNAP_HUB_JSON" | cut -c1-200000)" "${q_len:-0}" "${un_len:-0}" "$out" 2>/dev/null
+}
+
+render_diff_panel() {
+  local cols=$1 lines=$2
+  local panel_rows=$(( lines - 8 ))
+  [ $panel_rows -lt 12 ] && panel_rows=12
+  local pad
+  pad="$(safe_pad $(( cols - 2 )))"
+  printf '%s%*s%s\n' "${BOLD}${C_CYAN}┌─ DIFF/정합성 ─${C_RST}" "$pad" "" "${BOLD}${C_CYAN}─┐${C_RST}"
+  printf '%s  %s%*s%s\n' "${C_CYAN}│${C_RST}" "${BOLD}${C_MAGENTA}후원 숫자 교차 검증 · Hub logs <-> state donors (최근 1h / 24h)${C_RST}" "$(safe_pad $(( cols - 8 - 50 )))" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
+  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "$(safe_pad $(( cols - 2 )))" "" "${C_CYAN}─┤${C_RST}"
+
+  local diff_out="$TMP_DIR/diff.txt"
+  donation_integrity_diff "$diff_out"
+  local shown=0 max_rows=$(( panel_rows - 2 ))
+  while IFS= read -r line; do
+    shown=$((shown+1))
+    [ $shown -gt $max_rows ] && break
+    printf '%s  %s%*s%s\n' "${C_CYAN}│${C_RST}" "$line" "$(safe_pad $(( cols - 6 - ${#line} )) )" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
+  done < "$diff_out"
+  for ((; shown<=max_rows; shown++)); do
+    printf '%s%*s%s\n' "${C_CYAN}│ ${C_RST}" "$(safe_pad $(( cols - 4 )))" "" "${C_CYAN}│${C_RST}"
+  done
+  pad="$(safe_pad $(( cols - 2 )))"
+  printf '%s%*s%s\n' "${C_CYAN}└─${C_RST}" "$pad" "" "${C_CYAN}─┘${C_RST}"
+}
+
 if [ "$MODE_ONCE" = "1" ]; then
   collect_snapshot
+  ts_collect_now
   render_ui
   exit 0
 fi
@@ -408,6 +972,7 @@ if [ ! -t 0 ]; then
   echo "Warning: TTY가 아니라서 TUI 입력이 안됩니다. MODE=once 로 1회 덤프를 사용하세요." >&2
   MODE_ONCE=1
   collect_snapshot
+  ts_collect_now
   render_ui
   exit 0
 fi
@@ -416,15 +981,34 @@ stty -echo 2>/dev/null
 printf '\033[?25l'
 
 SHOW_HELP=0
+VIEW="ui"  # ui | trend | diff
 while true; do
   collect_snapshot
+  ts_collect_now
   if [ "$SHOW_HELP" = "1" ]; then
     render_help
     SHOW_HELP=0
     read -n 1 -t 0.1 -r -s _unused || true
     continue
   fi
-  render_ui
+  case "$VIEW" in
+    ui)    render_ui ;;
+    trend)
+      cols=$(tput cols 2>/dev/null || echo 120)
+      lines=$(tput lines 2>/dev/null || echo 40)
+      [ -z "$cols" ] && cols=120
+      [ -z "$lines" ] && lines=40
+      render_trend_panel "$cols" "$lines"
+      ;;
+    diff)
+      cols=$(tput cols 2>/dev/null || echo 120)
+      lines=$(tput lines 2>/dev/null || echo 40)
+      [ -z "$cols" ] && cols=120
+      [ -z "$lines" ] && lines=40
+      render_diff_panel "$cols" "$lines"
+      ;;
+    *) render_ui ;;
+  esac
 
   read_cmd=""
   IFS= read -r -s -n 1 -t "$((REFRESH_MS/1000)).$(( (REFRESH_MS%1000)/100 ))" read_cmd 2>/dev/null || read_cmd=""
@@ -432,6 +1016,9 @@ while true; do
     q|Q) break ;;
     r|R) continue ;;
     h|H) SHOW_HELP=1 ;;
+    t|T) VIEW="trend" ; continue ;;
+    d|D) VIEW="diff"  ; continue ;;
+    v|V|s|S) VIEW="ui"       ; continue ;;
     "") ;;
     *) ;;
   esac
