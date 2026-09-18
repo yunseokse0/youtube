@@ -38,7 +38,7 @@ BOLD=$'\e[1m'
 
 TMP_DIR="$(mktemp -d 2>/dev/null || echo "/tmp/ec2-dm-$$")"
 mkdir -p "$TMP_DIR" 2>/dev/null
-trap 'rm -rf "$TMP_DIR"; printf "\033[?25h\033[0m"; stty echo 2>/dev/null' EXIT
+trap 'rm -rf "$TMP_DIR"; printf "\033[?1049l\033[?25h\033[0m"; stty echo 2>/dev/null' EXIT
 
 PY=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo "")
 if [ -z "$PY" ]; then
@@ -875,6 +875,7 @@ render_trend_panel() {
 # ------------------------------------------------------------------
 donation_integrity_diff() {
   local out="$1"
+  : > "$out" 2>/dev/null || { mkdir -p "$(dirname "$out")" 2>/dev/null; : > "$out" 2>/dev/null; }
   "$PY" -c "
 import json,sys,time,os
 try:
@@ -885,122 +886,137 @@ try:
 except Exception: hub={}
 q_n=int(sys.argv[3] or 0)
 u_n=int(sys.argv[4] or 0)
-# state donors
-st_donors=state.get('donors') or []
-st_ids=set(); st_sum=0; st_cnt=0
-for d in st_donors:
-  try:
-    iid=str(d.get('id') or '').strip()
-    if not iid: continue
-    st_ids.add(iid); st_cnt+=1
-    st_sum += int(d.get('amount') or 0)
-  except Exception: pass
-# hub logs
-h_logs = hub.get('logs') or hub.get('donationLogs') or []
-now_ms=int(time.time()*1000)
-cutoff_1h=now_ms-3600*1000
-cutoff_24h=now_ms-86400*1000
-h_ids_1h=set(); h_sum_1h=0; h_cnt_1h=0
-h_ids_24h=set(); h_sum_24h=0; h_cnt_24h=0
-def parse_at_to_ms(at):
-  if not at: return 0
-  if isinstance(at,(int,float)) and at>1e11: return int(at)
-  if isinstance(at,(int,float)) and at<1e11: return int(at)*1000
-  try:
-    from datetime import datetime
-    return int(datetime.fromisoformat(str(at).replace('Z','+00:00')).timestamp()*1000)
-  except Exception: return 0
-for l in h_logs:
-  try:
-    amt=int(l.get('amount') or 0); iid=str(l.get('id') or '').strip()
-    if amt<=0 or not iid: continue
-    ms=parse_at_to_ms(l.get('at') or l.get('ingestedAt'))
-    if ms and ms>=cutoff_24h:
-      h_ids_24h.add(iid); h_cnt_24h+=1; h_sum_24h+=amt
-      if ms>=cutoff_1h:
-        h_ids_1h.add(iid); h_cnt_1h+=1; h_sum_1h+=amt
-  except Exception: pass
-# state 에 있는 24시간 이내 후원 id
-st_ids_24h=set(); st_sum_24h=0; st_cnt_24h=0
-st_ids_1h=set(); st_sum_1h=0; st_cnt_1h=0
-for d in st_donors:
-  try:
-    iid=str(d.get('id') or '').strip()
-    if not iid: continue
-    amt=int(d.get('amount') or 0)
-    at=parse_at_to_ms(d.get('at'))
-    if at and at>=cutoff_24h:
-      st_ids_24h.add(iid); st_cnt_24h+=1; st_sum_24h+=amt
-      if at>=cutoff_1h:
-        st_ids_1h.add(iid); st_cnt_1h+=1; st_sum_1h+=amt
-  except Exception: pass
-missing_ids_1h = sorted(list(h_ids_1h - st_ids_1h))[:20]
-missing_ids_24h = sorted(list(h_ids_24h - st_ids_24h))[:20]
-excess_ids = sorted(list(st_ids_24h - h_ids_24h))[:20]
-missing_ids_1h_sum=0
-missing_ids_24h_sum=0
-# missing id 금액 추적 (hub logs 에서 amount 조회)
-id_to_amt_h24={}
-for l in h_logs:
-  try:
-    iid=str(l.get('id') or '').strip()
-    if not iid: continue
-    ms=parse_at_to_ms(l.get('at') or l.get('ingestedAt'))
-    if ms and ms>=cutoff_24h:
-      id_to_amt_h24[iid]=int(l.get('amount') or 0)
-  except Exception: pass
-for iid in missing_ids_1h: missing_ids_1h_sum += id_to_amt_h24.get(iid,0)
-for iid in missing_ids_24h: missing_ids_24h_sum += id_to_amt_h24.get(iid,0)
-# 레벨 판정
-warnings=[]; level='OK'
+out_path=sys.argv[5]
 def krw(n):
   try: n=int(n)
   except: n=0
   return '₩'+'{:,}'.format(n)
-if q_n>=100 or u_n>=50:
-  level='CRITICAL'
-  warnings.append(f'백로그 과다: QUEUE {q_n}건 / UNMATCH {u_n}건')
-elif q_n>=20 or u_n>=10:
-  if level!='CRITICAL': level='WARN'
-  warnings.append(f'백로그 주의: QUEUE {q_n}건 / UNMATCH {u_n}건')
-if len(missing_ids_24h)>=10 or missing_ids_24h_sum>=500000:
-  if level!='CRITICAL': level='CRITICAL'
-  warnings.append(f'24h 허브→state 누락: {len(h_ids_24h-st_ids_24h)}건 / {krw(missing_ids_24h_sum)}')
-elif len(missing_ids_24h)>=3 or missing_ids_24h_sum>=50000:
-  if level not in ('CRITICAL','WARN'): level='WARN'
-  warnings.append(f'24h 허브→state 경미 누락: {len(h_ids_24h-st_ids_24h)}건 / {krw(missing_ids_24h_sum)}')
-if len(excess_ids)>=20:
-  if level!='CRITICAL': level='CRITICAL' if level=='OK' else level
-  warnings.append(f'state 에만 있는 24h 이내 후원 과다(중복 삽입?): {len(excess_ids)}건')
-# 출력
-lines=[]
-lv_color={'OK':'\033[32m','WARN':'\033[33m','CRITICAL':'\033[31m'}.get(level,'\033[37m')
-lines.append(f'통합 정합성 레벨: {lv_color}{level}\033[0m' + (f'  ⚠ {len(warnings)}건' if warnings else ''))
-lines.append('')
-lines.append(f'■ 전체 state donors:       {st_cnt:>8}건 / 총 {krw(st_sum)}')
-lines.append(f'')
-lines.append(f'  ┌─ 최근 1시간 교차 검증')
-lines.append(f'  │ Hub logs     : {h_cnt_1h:>6}건 / {krw(h_sum_1h)}')
-lines.append(f'  │ State donors : {st_cnt_1h:>6}건 / {krw(st_sum_1h)}')
-lines.append(f'  │ Diff(Hub-St) : {len(h_ids_1h-st_ids_1h):>+6}건 / {krw(h_sum_1h-st_sum_1h)}')
-lines.append(f'  │ Hub→State 미반영(missing) : {len(h_ids_1h-st_ids_1h)}건 / {krw(missing_ids_1h_sum)}' + (f' ({", ".join(missing_ids_1h[:5])})' if missing_ids_1h else ''))
-lines.append(f'  └ State→Hub 초과(excess)   : {len(st_ids_1h-h_ids_1h)}건')
-lines.append(f'')
-lines.append(f'  ┌─ 최근 24시간 교차 검증')
-lines.append(f'  │ Hub logs     : {h_cnt_24h:>6}건 / {krw(h_sum_24h)}')
-lines.append(f'  │ State donors : {st_cnt_24h:>6}건 / {krw(st_sum_24h)}')
-lines.append(f'  │ Diff(Hub-St) : {len(h_ids_24h-st_ids_24h):>+6}건 / {krw(h_sum_24h-st_sum_24h)}')
-lines.append(f'  │ Hub→State 미반영(missing) Top5: {len(h_ids_24h-st_ids_24h)}건 / {krw(missing_ids_24h_sum)}' + (f' → id 샘플: {", ".join(missing_ids_24h[:5])}' if missing_ids_24h else ' (clean!)'))
-lines.append(f'  └ State→Hub 초과(excess) Top5  : {len(excess_ids)}건' + (f' → 샘플: {", ".join(excess_ids[:5])}' if excess_ids else ''))
-lines.append(f'')
-lines.append(f'  처리 백로그 QUEUE={q_n}  UNMATCH={u_n}')
-if warnings:
+def bail(msg):
+  lines=['(정합성 데이터 준비중: '+str(msg)+')','','전체 state donors: 불러오는 중','Hub logs: 불러오는 중']
+  try:
+    with open(out_path,'w') as f: f.write(chr(10).join(lines)+chr(10))
+  except Exception: pass
+  sys.exit(0)
+try:
+  # state donors
+  st_donors=state.get('donors') or []
+  st_ids=set(); st_sum=0; st_cnt=0
+  for d in st_donors:
+    try:
+      iid=str(d.get('id') or '').strip()
+      if not iid: continue
+      st_ids.add(iid); st_cnt+=1
+      st_sum += int(d.get('amount') or 0)
+    except Exception: pass
+  # hub logs
+  h_logs = hub.get('logs') or hub.get('donationLogs') or []
+  now_ms=int(time.time()*1000)
+  cutoff_1h=now_ms-3600*1000
+  cutoff_24h=now_ms-86400*1000
+  h_ids_1h=set(); h_sum_1h=0; h_cnt_1h=0
+  h_ids_24h=set(); h_sum_24h=0; h_cnt_24h=0
+  def parse_at_to_ms(at):
+    if not at: return 0
+    if isinstance(at,(int,float)) and at>1e11: return int(at)
+    if isinstance(at,(int,float)) and at<1e11: return int(at)*1000
+    try:
+      from datetime import datetime
+      return int(datetime.fromisoformat(str(at).replace('Z','+00:00')).timestamp()*1000)
+    except Exception: return 0
+  for l in h_logs:
+    try:
+      amt=int(l.get('amount') or 0); iid=str(l.get('id') or '').strip()
+      if amt<=0 or not iid: continue
+      ms=parse_at_to_ms(l.get('at') or l.get('ingestedAt'))
+      if ms and ms>=cutoff_24h:
+        h_ids_24h.add(iid); h_cnt_24h+=1; h_sum_24h+=amt
+        if ms>=cutoff_1h:
+          h_ids_1h.add(iid); h_cnt_1h+=1; h_sum_1h+=amt
+    except Exception: pass
+  # state 에 있는 24시간 이내 후원 id
+  st_ids_24h=set(); st_sum_24h=0; st_cnt_24h=0
+  st_ids_1h=set(); st_sum_1h=0; st_cnt_1h=0
+  for d in st_donors:
+    try:
+      iid=str(d.get('id') or '').strip()
+      if not iid: continue
+      amt=int(d.get('amount') or 0)
+      at=parse_at_to_ms(d.get('at'))
+      if at and at>=cutoff_24h:
+        st_ids_24h.add(iid); st_cnt_24h+=1; st_sum_24h+=amt
+        if at>=cutoff_1h:
+          st_ids_1h.add(iid); st_cnt_1h+=1; st_sum_1h+=amt
+    except Exception: pass
+  missing_ids_1h = sorted(list(h_ids_1h - st_ids_1h))[:20]
+  missing_ids_24h = sorted(list(h_ids_24h - st_ids_24h))[:20]
+  excess_ids = sorted(list(st_ids_24h - h_ids_24h))[:20]
+  missing_ids_1h_sum=0
+  missing_ids_24h_sum=0
+  id_to_amt_h24={}
+  for l in h_logs:
+    try:
+      iid=str(l.get('id') or '').strip()
+      if not iid: continue
+      ms=parse_at_to_ms(l.get('at') or l.get('ingestedAt'))
+      if ms and ms>=cutoff_24h:
+        id_to_amt_h24[iid]=int(l.get('amount') or 0)
+    except Exception: pass
+  for iid in missing_ids_1h: missing_ids_1h_sum += id_to_amt_h24.get(iid,0)
+  for iid in missing_ids_24h: missing_ids_24h_sum += id_to_amt_h24.get(iid,0)
+  warnings=[]; level='OK'
+  if q_n>=100 or u_n>=50:
+    level='CRITICAL'
+    warnings.append(f'백로그 과다: QUEUE {q_n}건 / UNMATCH {u_n}건')
+  elif q_n>=20 or u_n>=10:
+    if level!='CRITICAL': level='WARN'
+    warnings.append(f'백로그 주의: QUEUE {q_n}건 / UNMATCH {u_n}건')
+  if len(missing_ids_24h)>=10 or missing_ids_24h_sum>=500000:
+    if level!='CRITICAL': level='CRITICAL'
+    warnings.append(f'24h 허브→state 누락: {len(h_ids_24h-st_ids_24h)}건 / {krw(missing_ids_24h_sum)}')
+  elif len(missing_ids_24h)>=3 or missing_ids_24h_sum>=50000:
+    if level not in ('CRITICAL','WARN'): level='WARN'
+    warnings.append(f'24h 허브→state 경미 누락: {len(h_ids_24h-st_ids_24h)}건 / {krw(missing_ids_24h_sum)}')
+  if len(excess_ids)>=20:
+    if level!='CRITICAL': level='CRITICAL' if level=='OK' else level
+    warnings.append(f'state 에만 있는 24h 이내 후원 과다(중복 삽입?): {len(excess_ids)}건')
+  lines=[]
+  lv_color={'OK':'\033[32m','WARN':'\033[33m','CRITICAL':'\033[31m'}.get(level,'\033[37m')
+  lines.append(f'통합 정합성 레벨: {lv_color}{level}\033[0m' + (f'   {len(warnings)}건' if warnings else ''))
   lines.append('')
-  lines.append('경고 상세:')
-  for w in warnings: lines.append(f'  ⚠ {w}')
-with open(sys.argv[5],'w') as f:
-  f.write('\n'.join(lines)+'\n')
+  lines.append(f'  전체 state donors:       {st_cnt:>8}건 / 총 {krw(st_sum)}')
+  lines.append(f'')
+  lines.append(f'  ┌─ 최근 1시간 교차 검증')
+  lines.append(f'  │ Hub logs     : {h_cnt_1h:>6}건 / {krw(h_sum_1h)}')
+  lines.append(f'  │ State donors : {st_cnt_1h:>6}건 / {krw(st_sum_1h)}')
+  lines.append(f'  │ Diff(Hub-St) : {len(h_ids_1h-st_ids_1h):>+6}건 / {krw(h_sum_1h-st_sum_1h)}')
+  lines.append(f'  │ Hub→State 미반영(missing) : {len(h_ids_1h-st_ids_1h)}건 / {krw(missing_ids_1h_sum)}' + (f' ({", ".join(missing_ids_1h[:5])})' if missing_ids_1h else ''))
+  lines.append(f'  └ State→Hub 초과(excess)   : {len(st_ids_1h-h_ids_1h)}건')
+  lines.append(f'')
+  lines.append(f'  ┌─ 최근 24시간 교차 검증')
+  lines.append(f'  │ Hub logs     : {h_cnt_24h:>6}건 / {krw(h_sum_24h)}')
+  lines.append(f'  │ State donors : {st_cnt_24h:>6}건 / {krw(st_sum_24h)}')
+  lines.append(f'  │ Diff(Hub-St) : {len(h_ids_24h-st_ids_24h):>+6}건 / {krw(h_sum_24h-st_sum_24h)}')
+  lines.append(f'  │ Hub→State 미반영(missing) Top5: {len(h_ids_24h-st_ids_24h)}건 / {krw(missing_ids_24h_sum)}' + (f' → id 샘플: {", ".join(missing_ids_24h[:5])}' if missing_ids_24h else ' (clean!)'))
+  lines.append(f'  └ State→Hub 초과(excess) Top5  : {len(excess_ids)}건' + (f' → 샘플: {", ".join(excess_ids[:5])}' if excess_ids else ''))
+  lines.append(f'')
+  lines.append(f'  처리 백로그 QUEUE={q_n}  UNMATCH={u_n}')
+  if warnings:
+    lines.append('')
+    lines.append('경고 상세:')
+    for w in warnings: lines.append(f'   {w}')
+  with open(out_path,'w') as f:
+    f.write('\n'.join(lines)+'\n')
+except Exception as e:
+  bail(str(e))
 " "$(printf '%s' "$SNAP_STATE_JSON" | cut -c1-200000)" "$(printf '%s' "$SNAP_HUB_JSON" | cut -c1-200000)" "${q_len:-0}" "${un_len:-0}" "$out" 2>/dev/null
+  if [ ! -s "$out" ]; then
+    {
+      echo "(정합성 데이터 준비중...)"
+      echo ""
+      echo "  후원 state / hub logs 를 아직 불러오지 못했습니다."
+      echo "  잠시 후 자동으로 갱신됩니다."
+    } > "$out" 2>/dev/null
+  fi
 }
 
 render_diff_panel() {
@@ -1017,9 +1033,18 @@ render_diff_panel() {
   printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "${pad:-0}" "" "${C_CYAN}─┤${C_RST}"
 
   local diff_out="$TMP_DIR/diff.txt"
+  mkdir -p "$TMP_DIR" 2>/dev/null
   donation_integrity_diff "$diff_out"
+  if [ ! -r "$diff_out" ]; then
+    {
+      echo "(정합성 데이터 준비중...)"
+      echo ""
+      echo "  후원 state / hub logs 를 아직 불러오지 못했습니다."
+      echo "  잠시 후 자동으로 갱신됩니다."
+    } > "$diff_out" 2>/dev/null
+  fi
   local shown=0 max_rows=$(( panel_rows - 2 ))
-  while IFS= read -r line; do
+  while IFS= read -r line || [ -n "$line" ]; do
     shown=$((shown+1))
     [ $shown -gt $max_rows ] && break
     local dline="${C_CYAN}│${C_RST}  $line"
@@ -1052,7 +1077,9 @@ if [ ! -t 0 ]; then
 fi
 
 stty -echo 2>/dev/null
-printf '\033[?25l'
+printf '\033[?1049h\033[2J\033[H\033[?25l'
+
+exec 2>/dev/null
 
 SHOW_HELP=0
 VIEW="ui"  # ui | trend | diff
