@@ -890,6 +890,12 @@ def krw(n):
   try: n=int(n)
   except: n=0
   return '₩'+'{:,}'.format(n)
+def fmt_ms(ms):
+  if not ms or ms<=0: return '없음'
+  try:
+    from datetime import datetime, timezone
+    return datetime.fromtimestamp(ms/1000, tz=timezone.utc).astimezone().strftime('%m-%d %H:%M')
+  except Exception: return str(ms)
 def bail(msg):
   lines=['(정합성 데이터 준비중: '+str(msg)+')','','전체 state donors: 불러오는 중','Hub logs: 불러오는 중']
   try:
@@ -897,8 +903,9 @@ def bail(msg):
   except Exception: pass
   sys.exit(0)
 try:
-  # state donors
+  # state donors + settlementResetAt
   st_donors=state.get('donors') or []
+  reset_at=int(state.get('settlementResetAt') or 0)
   st_ids=set(); st_sum=0; st_cnt=0
   for d in st_donors:
     try:
@@ -922,19 +929,28 @@ try:
       from datetime import datetime
       return int(datetime.fromisoformat(str(at).replace('Z','+00:00')).timestamp()*1000)
     except Exception: return 0
+  # hub logs id→amount dict (24h 기준, reset 전 구간 커버링 위해 30일치 보존)
+  cutoff_long=now_ms-86400*1000*30
+  id_to_amt={}; id_to_ms={}
   for l in h_logs:
     try:
       amt=int(l.get('amount') or 0); iid=str(l.get('id') or '').strip()
       if amt<=0 or not iid: continue
       ms=parse_at_to_ms(l.get('at') or l.get('ingestedAt'))
-      if ms and ms>=cutoff_24h:
+      if not ms or ms<cutoff_long: continue
+      if iid not in id_to_amt: id_to_amt[iid]=0
+      if amt>id_to_amt[iid]: id_to_amt[iid]=amt
+      id_to_ms[iid]=ms
+      if ms>=cutoff_24h:
         h_ids_24h.add(iid); h_cnt_24h+=1; h_sum_24h+=amt
         if ms>=cutoff_1h:
           h_ids_1h.add(iid); h_cnt_1h+=1; h_sum_1h+=amt
     except Exception: pass
-  # state 에 있는 24시간 이내 후원 id
+  # state donors 시간대별 bucket
   st_ids_24h=set(); st_sum_24h=0; st_cnt_24h=0
   st_ids_1h=set(); st_sum_1h=0; st_cnt_1h=0
+  st_ids_pres=set(); st_sum_pres=0; st_cnt_pres=0  # state donors 중 at < reset_at 인 것 (filter 실패 → 과거 후원 유령)
+  st_ids_post=set(); st_sum_post=0; st_cnt_post=0  # state donors 중 at >= reset_at 인 것 (이게 정상 state donor)
   for d in st_donors:
     try:
       iid=str(d.get('id') or '').strip()
@@ -945,23 +961,56 @@ try:
         st_ids_24h.add(iid); st_cnt_24h+=1; st_sum_24h+=amt
         if at>=cutoff_1h:
           st_ids_1h.add(iid); st_cnt_1h+=1; st_sum_1h+=amt
+      if reset_at>0:
+        if at and at<reset_at:
+          st_ids_pres.add(iid); st_cnt_pres+=1; st_sum_pres+=amt
+        elif at==0 or at>=reset_at:
+          st_ids_post.add(iid); st_cnt_post+=1; st_sum_post+=amt
     except Exception: pass
   missing_ids_1h = sorted(list(h_ids_1h - st_ids_1h))[:20]
   missing_ids_24h = sorted(list(h_ids_24h - st_ids_24h))[:20]
   excess_ids = sorted(list(st_ids_24h - h_ids_24h))[:20]
   missing_ids_1h_sum=0
   missing_ids_24h_sum=0
-  id_to_amt_h24={}
-  for l in h_logs:
-    try:
-      iid=str(l.get('id') or '').strip()
-      if not iid: continue
-      ms=parse_at_to_ms(l.get('at') or l.get('ingestedAt'))
-      if ms and ms>=cutoff_24h:
-        id_to_amt_h24[iid]=int(l.get('amount') or 0)
-    except Exception: pass
-  for iid in missing_ids_1h: missing_ids_1h_sum += id_to_amt_h24.get(iid,0)
-  for iid in missing_ids_24h: missing_ids_24h_sum += id_to_amt_h24.get(iid,0)
+  for iid in missing_ids_1h: missing_ids_1h_sum += id_to_amt.get(iid,0)
+  for iid in missing_ids_24h: missing_ids_24h_sum += id_to_amt.get(iid,0)
+  # ---------------------------------------------------------------------------
+  # ★ 리셋 경계 검증 (PRE-RESET / POST-RESET 2구간 분석)
+  # ---------------------------------------------------------------------------
+  reset_sections=[]
+  if reset_at>0:
+    pre_cutoff_begin=reset_at - 86400*3*1000  # reset 직전 72h
+    post_cutoff_end=reset_at + min(86400*2*1000, now_ms-reset_at)  # reset 이후 최대 48h
+    # PRE-RESET hub (reset -72h ~ reset_at)
+    h_ids_pre=set(); h_sum_pre=0; h_cnt_pre=0
+    for iid,ms in id_to_ms.items():
+      if pre_cutoff_begin<=ms and ms<reset_at:
+        h_ids_pre.add(iid); h_cnt_pre+=1; h_sum_pre+=id_to_amt.get(iid,0)
+    # PRE-RESET 에서 state에 남아있는 것 (이상 현상: reset 이후 filter가 안먹혀서 과거 후원이 살아남은 것 = 레벨링 교란 유령 후원)
+    st_in_pre=set(); st_in_pre_sum=0; st_in_pre_cnt=0
+    for d in st_donors:
+      try:
+        iid=str(d.get('id') or '').strip()
+        if not iid: continue
+        amt=int(d.get('amount') or 0)
+        at=parse_at_to_ms(d.get('at'))
+        if at and pre_cutoff_begin<=at and at<reset_at:
+          st_in_pre.add(iid); st_in_pre_cnt+=1; st_in_pre_sum+=amt
+      except Exception: pass
+    # POST-RESET hub (reset_at ~ now 또는 reset + 48h 중 작은 쪽)
+    h_ids_post=set(); h_sum_post=0; h_cnt_post=0
+    for iid,ms in id_to_ms.items():
+      if ms>=reset_at and ms<=max(reset_at,now_ms):
+        h_ids_post.add(iid); h_cnt_post+=1; h_sum_post+=id_to_amt.get(iid,0)
+    # POST-RESET state donor (at>=reset_at) 와 post hub 교차 → 누락 후원 감지
+    missing_post_ids=sorted(list(h_ids_post - st_ids_post))[:20]
+    missing_post_sum=sum(id_to_amt.get(i,0) for i in missing_post_ids)
+    # 리셋 직전 1시간 경계 drop 감지: reset -1h ~ reset 사이 hub 후원이 state에 하나도 안남았으면 의심 (정상 reset이면 의도된 필터링이지만 잊고 지나칠수 있으므로 알림)
+    pre_boundary_beg=reset_at - 3600*1000
+    h_pre_bd_ids=set()
+    for iid,ms in id_to_ms.items():
+      if pre_boundary_beg<=ms and ms<reset_at:
+        h_pre_bd_ids.add(iid)
   warnings=[]; level='OK'
   if q_n>=100 or u_n>=50:
     level='CRITICAL'
@@ -978,11 +1027,35 @@ try:
   if len(excess_ids)>=20:
     if level!='CRITICAL': level='CRITICAL' if level=='OK' else level
     warnings.append(f'state 에만 있는 24h 이내 후원 과다(중복 삽입?): {len(excess_ids)}건')
+  # Reset-specific warning rules
+  if reset_at>0:
+    # ① 리셋이 있는데 PRE-RESET 구간 state donor 가 많이 남아있음 → filterDonorsAfterSettlementReset 작동 오류 의심
+    if st_in_pre_cnt>=5:
+      if level!='CRITICAL': level='CRITICAL' if level=='OK' else level
+      warnings.append(f'RESET 경계 오류: 리셋({fmt_ms(reset_at)}) 이전 후원 {st_in_pre_cnt}건 / {krw(st_in_pre_sum)} 이 state donors 에 남아있음 (filter 미작동 의심)')
+    elif st_in_pre_cnt>=1:
+      if level not in ('CRITICAL','WARN'): level='WARN'
+      warnings.append(f'RESET 경계: 리셋 이전 후원 {st_in_pre_cnt}건 미량 유령 후원 남아있음')
+    # ② POST-RESET hub 대비 state 누락 3건 이상 또는 10만원 이상
+    if (len(missing_post_ids)>=3 or missing_post_sum>=100000):
+      if len(missing_post_ids)>=10 or missing_post_sum>=500000:
+        if level!='CRITICAL': level='CRITICAL' if level=='OK' else level
+        warnings.append(f'RESET 이후 누락 심각: POST hub {h_cnt_post}건 중 state 에 {len(missing_post_ids)}건 / {krw(missing_post_sum)} 누락')
+      else:
+        if level not in ('CRITICAL','WARN'): level='WARN'
+        warnings.append(f'RESET 이후 누락 주의: POST hub {h_cnt_post}건 중 state 에 {len(missing_post_ids)}건 / {krw(missing_post_sum)} 누락')
+    # ④ reset 직전 1시간 경계 hub에 후원 있는데 state donors에 하나도 없고 hub log도 1건 이상 → 경고 (reset 타이밍으로 drop 의심 알림)
+    if len(h_pre_bd_ids)>=3 and len(h_pre_bd_ids - st_ids_post)>=len(h_pre_bd_ids):
+      warnings.append(f'RESET 경계 알림: 리셋 직전 1시간 hub 후원 {len(h_pre_bd_ids)}건이 정상적으로 리셋으로 필터링됨 (state에 없음)')
   lines=[]
   lv_color={'OK':'\033[32m','WARN':'\033[33m','CRITICAL':'\033[31m'}.get(level,'\033[37m')
   lines.append(f'통합 정합성 레벨: {lv_color}{level}\033[0m' + (f'   {len(warnings)}건' if warnings else ''))
   lines.append('')
+  lines.append(f'  정산 리셋 시점 settlementResetAt: \033[1m{fmt_ms(reset_at)}\033[0m' + (f'  ({reset_at:,} ms)' if reset_at>0 else ' (리셋 기록 없음 → 전체 시간대 단순 비교 중)'))
   lines.append(f'  전체 state donors:       {st_cnt:>8}건 / 총 {krw(st_sum)}')
+  if reset_at>0:
+    lines.append(f'   └─ 리셋 이후 정상 POST  : {st_cnt_post:>8}건 / 총 {krw(st_sum_post)}')
+    lines.append(f'   └─ 리셋 이전 유령 PRE?  : \033[33m{st_cnt_pre:>8}건 / 총 {krw(st_sum_pres)}\033[0m' + ('  ← filter 미작동 의심!' if st_cnt_pre>0 else '  (clean)'))
   lines.append(f'')
   lines.append(f'  ┌─ 최근 1시간 교차 검증')
   lines.append(f'  │ Hub logs     : {h_cnt_1h:>6}건 / {krw(h_sum_1h)}')
@@ -997,6 +1070,16 @@ try:
   lines.append(f'  │ Diff(Hub-St) : {len(h_ids_24h-st_ids_24h):>+6}건 / {krw(h_sum_24h-st_sum_24h)}')
   lines.append(f'  │ Hub→State 미반영(missing) Top5: {len(h_ids_24h-st_ids_24h)}건 / {krw(missing_ids_24h_sum)}' + (f' → id 샘플: {", ".join(missing_ids_24h[:5])}' if missing_ids_24h else ' (clean!)'))
   lines.append(f'  └ State→Hub 초과(excess) Top5  : {len(excess_ids)}건' + (f' → 샘플: {", ".join(excess_ids[:5])}' if excess_ids else ''))
+  if reset_at>0:
+    lines.append(f'')
+    lines.append(f'  ┌─ ★ 리셋 경계 정밀 검증 (정산 resetAt={fmt_ms(reset_at)} 기준)')
+    lines.append(f'  │ ▣ PRE-RESET 구간 (리셋 이전 72h) Hub  : {h_cnt_pre:>6}건 / {krw(h_sum_pre)}')
+    lines.append(f'  │ ▣ PRE-RESET 구간 State 유령 남은 것   : {st_in_pre_cnt:>6}건 / {krw(st_in_pre_sum)}' + (f'  (샘플: {", ".join(sorted(st_in_pre)[:3])})' if st_in_pre else '  (0건 clean!)'))
+    lines.append(f'  │')
+    lines.append(f'  │ ▣ POST-RESET 구간 (리셋~현재) Hub     : {h_cnt_post:>6}건 / {krw(h_sum_post)}')
+    lines.append(f'  │ ▣ POST-RESET 구간 State (at>=reset)  : {st_cnt_post:>6}건 / {krw(st_sum_post)}')
+    lines.append(f'  │ ▣ POST 누락 (Hub에만 있고 State X)    : {len(missing_post_ids):>6}건 / {krw(missing_post_sum)}' + (f'  id 샘플: {", ".join(missing_post_ids[:5])}' if missing_post_ids else '  (clean!)'))
+    lines.append(f'  └ (리셋 직전 1시간 Hub 후원 {len(h_pre_bd_ids)}건 → state에 없음 = 정상 필터링 완료 표시)')
   lines.append(f'')
   lines.append(f'  처리 백로그 QUEUE={q_n}  UNMATCH={u_n}')
   if warnings:
@@ -1024,8 +1107,8 @@ render_diff_panel() {
   [ $panel_rows -lt 12 ] && panel_rows=12
   local pad
   pad="$(safe_pad $(( cols - 2 )))"
-  printf '%s%*s%s\n' "${BOLD}${C_CYAN}┌─ DIFF/정합성 ─${C_RST}" "${pad:-0}" "" "${BOLD}${C_CYAN}─┐${C_RST}"
-  local diff_title="${C_CYAN}│${C_RST}  ${BOLD}${C_MAGENTA}후원 숫자 교차 검증 · Hub logs <-> state donors (최근 1h / 24h)${C_RST}"
+  printf '%s%*s%s\n' "${BOLD}${C_CYAN}┌─ DIFF/정합성 (1h/24h + reset 경계 포함) ─${C_RST}" "${pad:-0}" "" "${BOLD}${C_CYAN}─┐${C_RST}"
+  local diff_title="${C_CYAN}│${C_RST}  ${BOLD}${C_MAGENTA}후원 숫자 교차 검증 · Hub logs <-> state donors (최근 1h / 24h / ★리셋 경계 정밀검사)${C_RST}"
   pad="$(safe_pad_from "$diff_title" "$(( cols - 4 ))" )"
   printf '%s%*s%s\n' "$diff_title" "${pad:-0}" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
   pad="$(safe_pad $(( cols - 2 )))"
