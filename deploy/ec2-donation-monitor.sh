@@ -199,6 +199,20 @@ collect_snapshot() {
   SNAP_UNMATCH_JSON="$(curl_get "$unmatched_url")"
   SNAP_STATE_JSON="$(curl_get "$state_url" | cut -c 1-500000)"
   SNAP_HEALTH_JSON="$(curl_get "$pm2_log_url")"
+
+  # DIFF 정합성 검증용 JSON 파일 저장 + 디버그 메트릭 (ARG_MAX 오버플로우 방지 위해 파일 경로로 전달)
+  SNAP_STATE_FILE="$TMP_DIR/snap_state.json"
+  SNAP_HUB_FILE="$TMP_DIR/snap_hub.json"
+  printf '%s' "$SNAP_STATE_JSON" > "$SNAP_STATE_FILE" 2>/dev/null || : > "$SNAP_STATE_FILE"
+  printf '%s' "$SNAP_HUB_JSON"   > "$SNAP_HUB_FILE"   2>/dev/null || : > "$SNAP_HUB_FILE"
+  STATE_BYTES=$(wc -c < "$SNAP_STATE_FILE" 2>/dev/null)
+  HUB_BYTES=$(wc -c   < "$SNAP_HUB_FILE"   2>/dev/null)
+  [[ "$STATE_BYTES" =~ ^[0-9]+$ ]] || STATE_BYTES=0
+  [[ "$HUB_BYTES"   =~ ^[0-9]+$ ]] || HUB_BYTES=0
+  DBG_DONORS_N=$(json_field_str "$SNAP_STATE_JSON" 'len(d.get("donors") or [])' '0')
+  DBG_HUBLOG_N=$(json_field_str "$SNAP_HUB_JSON"   'len(d.get("logs") or d.get("donationLogs") or [])' '0')
+  [[ "$DBG_DONORS_N" =~ ^[0-9]+$ ]] || DBG_DONORS_N=0
+  [[ "$DBG_HUBLOG_N" =~ ^[0-9]+$ ]] || DBG_HUBLOG_N=0
 }
 
 render_ui() {
@@ -877,15 +891,15 @@ donation_integrity_diff() {
   : > "$out" 2>/dev/null || { mkdir -p "$(dirname "$out")" 2>/dev/null; : > "$out" 2>/dev/null; }
   "$PY" -c "
 import json,sys,time,os
-try:
-  state=json.loads(sys.argv[1] or '{}')
-except Exception: state={}
-try:
-  hub=json.loads(sys.argv[2] or '{}')
-except Exception: hub={}
+state_file=sys.argv[1]
+hub_file=sys.argv[2]
 q_n=int(sys.argv[3] or 0)
 u_n=int(sys.argv[4] or 0)
 out_path=sys.argv[5]
+def file_size(p):
+  try: return os.path.getsize(p)
+  except Exception: return 0
+st_bytes=file_size(state_file); hb_bytes=file_size(hub_file)
 def krw(n):
   try: n=int(n)
   except: n=0
@@ -897,11 +911,32 @@ def fmt_ms(ms):
     return datetime.fromtimestamp(ms/1000, tz=timezone.utc).astimezone().strftime('%m-%d %H:%M')
   except Exception: return str(ms)
 def bail(msg):
-  lines=['(정합성 데이터 준비중: '+str(msg)+')','','전체 state donors: 불러오는 중','Hub logs: 불러오는 중']
+  lines=['(정합성 데이터 준비중: '+str(msg)+')',
+         f'  debug: state_file={st_bytes:,} bytes · hub_file={hb_bytes:,} bytes',
+         f'  debug: q_n={q_n} · u_n={u_n}',
+         '',
+         '전체 state donors: 불러오는 중',
+         'Hub logs: 불러오는 중']
   try:
     with open(out_path,'w') as f: f.write(chr(10).join(lines)+chr(10))
   except Exception: pass
   sys.exit(0)
+try:
+  with open(state_file,'r',encoding='utf-8',errors='replace') as f: state_raw=f.read()
+except Exception as e:
+  bail('state 파일을 읽을 수 없음: '+str(e))
+try:
+  with open(hub_file,'r',encoding='utf-8',errors='replace') as f: hub_raw=f.read()
+except Exception as e:
+  bail('hub 파일을 읽을 수 없음: '+str(e))
+try:
+  state=json.loads(state_raw or '{}')
+except Exception as e:
+  bail('state JSON 파싱 실패: '+str(e)+' (state_bytes='+str(st_bytes)+')')
+try:
+  hub=json.loads(hub_raw or '{}')
+except Exception as e:
+  bail('hub JSON 파싱 실패: '+str(e)+' (hub_bytes='+str(hb_bytes)+')')
 try:
   # state donors + settlementResetAt
   st_donors=state.get('donors') or []
@@ -1090,7 +1125,7 @@ try:
     f.write('\n'.join(lines)+'\n')
 except Exception as e:
   bail(str(e))
-" "$(printf '%s' "$SNAP_STATE_JSON" | cut -c1-200000)" "$(printf '%s' "$SNAP_HUB_JSON" | cut -c1-200000)" "${q_len:-0}" "${un_len:-0}" "$out" 2>/dev/null
+" "$SNAP_STATE_FILE" "$SNAP_HUB_FILE" "${q_len:-0}" "${un_len:-0}" "$out" 2>/dev/null
   if [ ! -s "$out" ]; then
     {
       echo "(정합성 데이터 준비중...)"
@@ -1113,6 +1148,37 @@ render_diff_panel() {
   printf '%s%*s%s\n' "$diff_title" "${pad:-0}" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
   pad="$(safe_pad $(( cols - 2 )))"
   printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "${pad:-0}" "" "${C_CYAN}─┤${C_RST}"
+
+  # q_len/un_len 은 render_ui 내에서만 계산되므로, diff 뷰로 직접 진입시에도 값 존재하도록 여기서 재계산
+  local q_len un_len
+  q_len=$(json_field_str "$SNAP_QUEUE_JSON"   'len(d.get("items") or [])' '0')
+  un_len=$(json_field_str "$SNAP_UNMATCH_JSON" 'len(d.get("items") or [])' '0')
+  [[ "$q_len" =~ ^[0-9]+$ ]] || q_len=0
+  [[ "$un_len" =~ ^[0-9]+$ ]] || un_len=0
+
+  # DEBUG 상태바: JSON 크기 / 후원 건수 시각화 → 빈 데이터면 즉시 원인 파악 가능
+  local st_="${C_DIM}state${C_RST}="
+  if [ "${STATE_BYTES:-0}" -gt 0 ] && [ "${DBG_DONORS_N:-0}" -gt 0 ]; then
+    st_="${st_}${C_GREEN}${STATE_BYTES:-0}B/${DBG_DONORS_N:-0}donors${C_RST}"
+  elif [ "${STATE_BYTES:-0}" -gt 0 ]; then
+    st_="${st_}${C_YELLOW}${STATE_BYTES:-0}B/0donors${C_RST}"
+  else
+    st_="${st_}${C_RED}0B/0donors (curl fail?)${C_RST}"
+  fi
+  local hb_="${C_DIM}hub${C_RST}="
+  if [ "${HUB_BYTES:-0}" -gt 0 ] && [ "${DBG_HUBLOG_N:-0}" -gt 0 ]; then
+    hb_="${hb_}${C_GREEN}${HUB_BYTES:-0}B/${DBG_HUBLOG_N:-0}logs${C_RST}"
+  elif [ "${HUB_BYTES:-0}" -gt 0 ]; then
+    hb_="${hb_}${C_YELLOW}${HUB_BYTES:-0}B/0logs${C_RST}"
+  else
+    hb_="${hb_}${C_RED}0B/0logs (curl fail?)${C_RST}"
+  fi
+  local dbg_line="${C_CYAN}│${C_RST}  ${C_DIM}DEBUG:${C_RST} ${st_}  ${hb_}  ${C_DIM}base=${BASE_URL}?u=${TARGET_USER}${C_RST}  QUEUE=${q_len} UNMATCH=${un_len}"
+  pad="$(safe_pad_from "$dbg_line" "$(( cols - 4 ))" )"
+  printf '%s%*s%s\n' "$dbg_line" "${pad:-0}" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
+  pad="$(safe_pad $(( cols - 2 )))"
+  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "${pad:-0}" "" "${C_CYAN}─┤${C_RST}"
+  panel_rows=$(( panel_rows - 2 ))
 
   local diff_out="$TMP_DIR/diff.txt"
   mkdir -p "$TMP_DIR" 2>/dev/null
