@@ -2,12 +2,14 @@
 
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
+import ToonaHubPanel from "./ToonaHubPanel";
 
 export type DinHubMissingDonationsModalProps = {
   open: boolean;
   onClose: () => void;
   userId: string;
   onRefetchState?: () => void;
+  onLoggedInToonaHub?: () => void;
 };
 
 type HubLog = { id: string; at?: number; donorName?: string; amount?: number; target?: "account" | "toon"; message?: string };
@@ -31,7 +33,7 @@ const fmtTime = (ms: number) => {
 };
 const fmtAmt = (n: number) => (typeof n === "number" && isFinite(n) ? n.toLocaleString("ko-KR") : "0");
 
-export default function DinHubMissingDonationsModal({ open, onClose, userId, onRefetchState }: DinHubMissingDonationsModalProps) {
+export default function DinHubMissingDonationsModal({ open, onClose, userId, onRefetchState, onLoggedInToonaHub }: DinHubMissingDonationsModalProps) {
   const [mounted, setMounted] = useState(false);
   const bdr = useRef<HTMLDivElement | null>(null);
   const [tab, setTab] = useState<TabId>("status");
@@ -186,6 +188,10 @@ export default function DinHubMissingDonationsModal({ open, onClose, userId, onR
             ⚠️ 현재 A모드 (투네 직접 연결) 입니다. TOONA_INTAKE_MODE=B 또는 DIN 허브와 연동한 상태에서만 사용하세요.
           </div>
         )}
+
+        <div className="mx-4 mt-4 shrink-0">
+          <ToonaHubPanel youtubeUserId={userId} onLoggedIn={onLoggedInToonaHub} />
+        </div>
 
         {scOk && !warn && (
           <>

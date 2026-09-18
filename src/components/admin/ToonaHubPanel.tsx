@@ -45,6 +45,7 @@ type SigImportResult = {
 
 type Props = {
   youtubeUserId: string;
+  onLoggedIn?: () => void;
 };
 
 function formatSigImport(sig: SigImportResult | undefined): string {
@@ -54,7 +55,7 @@ function formatSigImport(sig: SigImportResult | undefined): string {
   return `시그 ${sig.count ?? 0}개 병합 (추가 ${sig.added ?? 0} · 갱신 ${sig.updated ?? 0})`;
 }
 
-export default function ToonaHubPanel({ youtubeUserId }: Props) {
+export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [baseUrl, setBaseUrl] = useState(getToonaDashboardUrl());
@@ -207,6 +208,9 @@ export default function ToonaHubPanel({ youtubeUserId }: Props) {
             ? "toona 로그인·연동 완료 · 시그 가져오기는 백그라운드에서 진행 중"
             : "toona 로그인·youtubegit 연동 완료"
       );
+      if (typeof onLoggedIn === "function") {
+        try { onLoggedIn(); } catch (_) { /* noop */ }
+      }
     } catch (err) {
       const timedOut =
         err instanceof Error &&

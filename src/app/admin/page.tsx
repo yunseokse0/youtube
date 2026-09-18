@@ -25,7 +25,7 @@ import {
   ADMIN_SECTION_EXPAND_PARENTS,
   useAdminSectionCollapse,
 } from "@/components/admin/AdminSectionCollapse";
-import { AdminAccountSettingsModal } from "@/components/admin/AdminPasswordChangePanel";
+import { AdminAccountSettingsModal, type AdminAccountSettingsTab } from "@/components/admin/AdminPasswordChangePanel";
 import {
   DEFAULT_DONATION_INGEST_MODE,
   readDonationIngestMode,
@@ -1088,6 +1088,11 @@ function AdminPageInner() {
   const [sigSalesModalOpen, setSigSalesModalOpen] = useState(false);
   const [sigSalesModalTab, setSigSalesModalTab] = useState<SigSalesHybridTab>("inventory");
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
+  const [accountSettingsTab, setAccountSettingsTab] = useState<AdminAccountSettingsTab>("password");
+  /** 로그인 성공 후 재시도할 pending 액션 (A/B 모드 저장 등) */
+  const accountSettingsRetryActionRef = useRef<(newUserId: string) => void | Promise<void>>(() => {});
+  const accountSettingsLoginInitialIdRef = useRef<string>("");
+  const dinHubOpenForBModeRef = useRef<boolean>(false);
   const [donationIngestMode, setDonationIngestMode] = useState<DonationIngestMode>(
     DEFAULT_DONATION_INGEST_MODE
   );
@@ -9116,9 +9121,13 @@ function AdminPageInner() {
           if (err === "login_required" || err === "unauthorized" || res.status === 401 || res.status === 403) {
             toastMsg = "🔐 관리자 로그인이 필요합니다. 브라우저 쿠키로 로그인한 후 다시 시도해 주세요.";
             durationMs = 5200;
+            accountSettingsLoginInitialIdRef.current = user?.id || "";
+            accountSettingsRetryActionRef.current = async () => selectRuntimeDonationIntakeMode(mode);
+            setAccountSettingsTab("login");
+            setAccountSettingsOpen(true);
           } else if (err.includes("save_failed") || err.includes("KV")) {
             toastMsg = "저장소에 영구 저장은 실패했으나, 현재 서버에 일시 적용되었습니다. (재시작시 초기화 주의)";
-            variant = "warning";
+            variant = "info";
             durationMs = 5200;
           } else if (r?.error) {
             toastMsg = `${r.error}`;
@@ -9137,7 +9146,7 @@ function AdminPageInner() {
         const baseMsg = saved ? "✅ 모드 변경 완료 · " : "⚠️ 일시 적용 완료 (영구 저장 실패 · 재시작시 초기화 주의) · ";
         showAppToast(
           `${baseMsg}${r.short || (r.mode === "A" ? "A · 투네이션 자동" : "B · DIN 허브 모드")}${r.applied ? " · 리스너/폴러 전환 성공" : " · 설정은 저장되었으나 리스너 전환 일부 SKIP"}`,
-          { variant: saved ? "success" : "warning", durationMs: 3800 }
+          { variant: saved ? "success" : "info", durationMs: 3800 }
         );
         setIntakeModeModalOpen(false);
       } finally {
@@ -9145,6 +9154,44 @@ function AdminPageInner() {
       }
     },
     [donationIngestMode, persistToonationSettings, runtimeIntakeMode, runtimeIntakeModeBusy, toonationSocketEnabled, user?.id]
+  );
+
+  const handleSelectBModeWithHubCheck = useCallback(
+    async () => {
+      if (!user?.id) return;
+      if (runtimeIntakeModeBusy) return;
+      if (runtimeIntakeMode === "B") {
+        setIntakeModeModalOpen(false);
+        return;
+      }
+      setRuntimeIntakeModeBusy(true);
+      try {
+        const res = await fetch("/api/toona/hub", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (res.status === 401 || res.status === 403) {
+          showAppToast("🔐 관리자 로그인이 필요합니다. 브라우저 쿠키로 로그인한 후 다시 시도해 주세요.", { variant: "error", durationMs: 5200 });
+          accountSettingsLoginInitialIdRef.current = user?.id || "";
+          accountSettingsRetryActionRef.current = async () => handleSelectBModeWithHubCheck();
+          setAccountSettingsTab("login");
+          setAccountSettingsOpen(true);
+          return;
+        }
+        const r = (await res.json().catch(() => ({}))) as { ok?: boolean; session?: { email?: string | null; linkedAt?: number | null } | null; error?: string };
+        if (res.ok && r?.ok !== false && r?.session && (r.session.email || r.session.linkedAt)) {
+          await selectRuntimeDonationIntakeMode("B");
+          return;
+        }
+        dinHubOpenForBModeRef.current = true;
+        setIntakeModeModalOpen(false);
+        showAppToast("B 모드를 사용하려면 DIN 허브 로그인을 먼저 완료해 주세요.", { variant: "info", durationMs: 4200 });
+        window.setTimeout(() => setDinHubModalOpen(true), 120);
+      } finally {
+        setRuntimeIntakeModeBusy(false);
+      }
+    },
+    [runtimeIntakeMode, runtimeIntakeModeBusy, selectRuntimeDonationIntakeMode, user?.id]
   );
 
   /** DIN 허브 모드에서는 youtube 직접 WS를 유지하지 않음 */
@@ -10771,6 +10818,16 @@ function AdminPageInner() {
                 ? "내장 개발 계정(finalent)은 비밀번호 변경을 지원하지 않습니다."
                 : undefined
           }
+          defaultTab={accountSettingsTab}
+          loginInitialId={accountSettingsLoginInitialIdRef.current || user?.id || ""}
+          onLoggedIn={(loggedUser) => {
+            const retry = accountSettingsRetryActionRef.current;
+            accountSettingsRetryActionRef.current = () => {};
+            setAccountSettingsOpen(false);
+            window.setTimeout(async () => {
+              try { await retry(loggedUser.id); } catch { /* noop */ }
+            }, 700);
+          }}
         />
         {intakeModeModalOpen && (
           <div
@@ -10847,7 +10904,7 @@ function AdminPageInner() {
                 <button
                   type="button"
                   disabled={runtimeIntakeModeBusy}
-                  onClick={() => void selectRuntimeDonationIntakeMode("B")}
+                  onClick={() => void handleSelectBModeWithHubCheck()}
                   className={`relative rounded-2xl border-2 p-4 text-left transition-all disabled:opacity-60 ${
                     runtimeIntakeMode === "B"
                       ? "border-neutral-500 bg-neutral-800"
@@ -15023,6 +15080,16 @@ function AdminPageInner() {
                 userId={user?.id || overlayUserId}
                 onRefetchState={() => {
                   void applyDonorsFromServerMainStateRef.current({ silent: false, forceReplace: true });
+                }}
+                onLoggedInToonaHub={() => {
+                  const pending = dinHubOpenForBModeRef.current;
+                  dinHubOpenForBModeRef.current = false;
+                  if (pending) {
+                    window.setTimeout(async () => {
+                      setDinHubModalOpen(false);
+                      try { await selectRuntimeDonationIntakeMode("B"); } catch (_) { /* noop */ }
+                    }, 500);
+                  }
                 }}
               />
               {sigImagePreviewModal ? (

@@ -13,29 +13,32 @@ function PasswordInput({
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
-  autoComplete: "current-password" | "new-password";
+  autoComplete: "current-password" | "new-password" | "username";
   id: string;
 }) {
   const [visible, setVisible] = useState(false);
+  const showToggle = autoComplete !== "username";
   return (
     <div className="relative">
       <input
         id={id}
-        type={visible ? "text" : "password"}
+        type={visible ? "text" : (autoComplete === "username" ? "text" : "password")}
         className="w-full rounded-lg border border-white/10 bg-[#1e1e1e] px-3 py-2 pr-16 text-sm text-white"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoComplete={autoComplete}
       />
-      <button
-        type="button"
-        className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-0.5 text-xs text-neutral-300 hover:bg-white/10 hover:text-white"
-        onClick={() => setVisible((v) => !v)}
-        aria-label={visible ? "비밀번호 숨기기" : "비밀번호 보기"}
-      >
-        {visible ? "숨기기" : "보기"}
-      </button>
+      {showToggle && (
+        <button
+          type="button"
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-0.5 text-xs text-neutral-300 hover:bg-white/10 hover:text-white"
+          onClick={() => setVisible((v) => !v)}
+          aria-label={visible ? "비밀번호 숨기기" : "비밀번호 보기"}
+        >
+          {visible ? "숨기기" : "보기"}
+        </button>
+      )}
     </div>
   );
 }
@@ -177,22 +180,155 @@ export function AdminPasswordChangePanel({
   );
 }
 
+/**
+ * 관리자 로그인 폼 (A/B 모드 저장시 login_required 튕기면 자동 Open)
+ * 성공시 onLoggedIn 콜백 실행 → 바로 다음 액션 재시도할 수 있게
+ */
+export function AdminLoginForm({
+  initialId = "",
+  onLoggedIn,
+}: {
+  initialId?: string;
+  onLoggedIn?: (user: { id: string; companyName?: string | null }) => void;
+}) {
+  const [id, setId] = useState(initialId || "");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    if (initialId) setId(initialId);
+  }, [initialId]);
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMessage(null);
+    const trimmedId = id.trim();
+    if (!trimmedId || !password) {
+      setMessage({ tone: "err", text: "아이디와 비밀번호를 모두 입력해 주세요." });
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: trimmedId, password }),
+      });
+      const data = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        user?: { id: string; companyName?: string | null };
+      } | null;
+      if (!res.ok || data?.ok === false || !data?.user) {
+        setMessage({
+          tone: "err",
+          text: data?.error || "로그인에 실패했습니다. 아이디/비밀번호를 확인해 주세요.",
+        });
+        return;
+      }
+      setMessage({ tone: "ok", text: "로그인 성공! 1초 뒤 자동으로 재시도 합니다." });
+      onLoggedIn?.(data.user);
+    } catch {
+      setMessage({ tone: "err", text: "로그인 중 네트워크 오류가 발생했습니다." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={(e) => void onSubmit(e)} className="space-y-3">
+      <p className="text-sm text-neutral-400">
+        관리자 쿠키 로그인이 만료되어 A/B 모드 저장 등 권한이 필요한 액션이 차단되었습니다.
+        로그인 후 자동으로 저장을 재시도합니다.
+      </p>
+      <label className="block space-y-1">
+        <span className="text-xs text-neutral-400">아이디</span>
+        <PasswordInput
+          id="admin-login-id"
+          value={id}
+          onChange={setId}
+          placeholder="관리자 아이디"
+          autoComplete="username"
+        />
+      </label>
+      <label className="block space-y-1">
+        <span className="text-xs text-neutral-400">비밀번호</span>
+        <PasswordInput
+          id="admin-login-password"
+          value={password}
+          onChange={setPassword}
+          placeholder="관리자 비밀번호"
+          autoComplete="current-password"
+        />
+      </label>
+      <div className="flex flex-wrap items-center gap-2 pt-1">
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-60"
+        >
+          {busy ? "로그인 중…" : "로그인"}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          className="rounded-lg bg-neutral-700 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-600 disabled:opacity-60"
+          onClick={() => {
+            setPassword("");
+            setMessage(null);
+          }}
+        >
+          비밀번호 비우기
+        </button>
+      </div>
+      <p className="rounded-lg border border-sky-400/30 bg-sky-950/30 px-3 py-2 text-xs text-sky-100 leading-relaxed">
+        💡 로컬/개발 환경에서는 아이디 <code className="px-1 rounded bg-black/40">admin</code> ·
+        비밀번호 <code className="px-1 rounded bg-black/40">admin</code> 으로 로그인할 수 있습니다.
+      </p>
+      {message ? (
+        <p
+          className={`text-sm ${message.tone === "ok" ? "text-emerald-300" : "text-rose-300"}`}
+          role="status"
+        >
+          {message.text}
+        </p>
+      ) : null}
+    </form>
+  );
+}
+
+export type AdminAccountSettingsTab = "login" | "password";
+
 type AdminAccountSettingsModalProps = AdminPasswordChangePanelProps & {
   open: boolean;
   onClose: () => void;
+  defaultTab?: AdminAccountSettingsTab;
+  onLoggedIn?: (user: { id: string; companyName?: string | null }) => void;
+  loginInitialId?: string;
 };
 
-/** 관리자 「계정 설정」팝업 — 비밀번호 변경 */
+/** 관리자 「계정 설정」팝업 — 로그인 / 비밀번호 변경 탭 지원 */
 export function AdminAccountSettingsModal({
   open,
   onClose,
   userId,
   disabled,
   disabledReason,
+  defaultTab = "password",
+  onLoggedIn,
+  loginInitialId,
 }: AdminAccountSettingsModalProps) {
   const [mounted, setMounted] = useState(false);
+  const [tab, setTab] = useState<AdminAccountSettingsTab>(defaultTab);
 
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!open) return;
+    setTab(userId ? defaultTab : "login");
+  }, [open, userId, defaultTab]);
 
   useEffect(() => {
     if (!open) return;
@@ -210,6 +346,11 @@ export function AdminAccountSettingsModal({
 
   if (!mounted || !open) return null;
 
+  const title =
+    tab === "login"
+      ? "로그인 (쿠키 세션 갱신)"
+      : "계정 설정";
+
   return createPortal(
     <div
       className="fixed inset-0 z-[520] flex items-center justify-center bg-black/75 px-4 py-6"
@@ -226,9 +367,9 @@ export function AdminAccountSettingsModal({
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <h2 id="admin-account-settings-title" className="text-lg font-bold text-white">
-              계정 설정
+              {title}
             </h2>
-            {userId ? (
+            {userId && tab === "password" ? (
               <p className="mt-0.5 text-xs text-neutral-400">로그인 계정: {userId}</p>
             ) : null}
           </div>
@@ -240,11 +381,53 @@ export function AdminAccountSettingsModal({
             닫기
           </button>
         </div>
-        <AdminPasswordChangePanel
-          userId={userId}
-          disabled={disabled}
-          disabledReason={disabledReason}
-        />
+
+        <div
+          role="tablist"
+          className="mb-3 grid grid-cols-2 gap-2 rounded-lg border border-white/10 bg-neutral-900/40 p-1"
+        >
+          <button
+            role="tab"
+            type="button"
+            aria-selected={tab === "login"}
+            onClick={() => setTab("login")}
+            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+              tab === "login"
+                ? "bg-neutral-700 text-white shadow"
+                : "text-neutral-400 hover:text-white"
+            }`}
+          >
+            🔐 로그인
+          </button>
+          <button
+            role="tab"
+            type="button"
+            aria-selected={tab === "password"}
+            onClick={() => setTab("password")}
+            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+              tab === "password"
+                ? "bg-neutral-700 text-white shadow"
+                : "text-neutral-400 hover:text-white"
+            }`}
+          >
+            🔑 비밀번호 변경
+          </button>
+        </div>
+
+        {tab === "login" ? (
+          <AdminLoginForm
+            initialId={loginInitialId || userId || ""}
+            onLoggedIn={(u) => {
+              onLoggedIn?.(u);
+            }}
+          />
+        ) : (
+          <AdminPasswordChangePanel
+            userId={userId}
+            disabled={disabled}
+            disabledReason={disabledReason}
+          />
+        )}
       </div>
     </div>,
     document.body
