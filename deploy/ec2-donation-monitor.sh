@@ -90,9 +90,22 @@ fmt_ago() {
 
 fmt_krw() {
   local n="$1"
-  if [ -z "$n" ] || [ "$n" = "null" ]; then echo "₩0"; return; fi
+  if [ -z "$n" ] || [ "$n" = "null" ] || [ "$n" = "None" ]; then n=0; fi
   if ! [[ "$n" =~ ^-?[0-9]+$ ]]; then echo "₩$n"; return; fi
-  printf "₩%'d" "$n" 2>/dev/null || echo "₩$n"
+  "$PY" -c "
+import sys
+try: n=int(sys.argv[1])
+except: n=0
+print('₩'+'{:,}'.format(n))
+" "$n"
+}
+
+safe_pad() {
+  local pad="$1"
+  [ -z "$pad" ] && pad=0
+  if ! [[ "$pad" =~ ^-?[0-9]+$ ]]; then pad=0; fi
+  if [ "$pad" -lt 0 ]; then pad=0; fi
+  echo "$pad"
 }
 
 json_list_tail_donors() {
@@ -144,7 +157,7 @@ for r in reversed(rows): print(r)
 collect_snapshot() {
   local mode_url="${BASE_URL}/api/settings/intake-mode?u=${TARGET_USER}"
   local listener_url="${BASE_URL}/api/donations/toonation/listener?u=${TARGET_USER}"
-  local hub_url="${BASE_URL}/api/toona/hub"
+  local hub_url="${BASE_URL}/api/toona/hub?u=${TARGET_USER}"
   local queue_url="${BASE_URL}/api/donations/queue?u=${TARGET_USER}"
   local unmatched_url="${BASE_URL}/api/donations/unmatched?u=${TARGET_USER}"
   local state_url="${BASE_URL}/api/state?u=${TARGET_USER}"
@@ -175,10 +188,14 @@ render_ui() {
   local now
   now=$(date '+%Y-%m-%d %H:%M:%S %Z')
 
+  local pad
   printf '\033[H'
-  printf '%s%*s%s\n' "${BOLD}${C_CYAN}┌─${C_RST}" "$((cols-2))" "" "${BOLD}${C_CYAN}─┐${C_RST}"
-  printf '%s%s %s%s%*s %s%s%s%s\n' "${C_CYAN}│${C_RST}" "$hdr" "${C_DIM}refresh every $((REFRESH_MS/1000))s · ${now}${C_RST}" "$((cols-2-${#hdr}-40-${#now}))" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
-  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "$((cols-2))" "" "${C_CYAN}─┤${C_RST}"
+  pad="$(safe_pad $((cols - 2)))"
+  printf '%s%*s%s\n' "${BOLD}${C_CYAN}┌─${C_RST}" "$pad" "" "${BOLD}${C_CYAN}─┐${C_RST}"
+  pad="$(safe_pad $(( cols - 12 - ${#now} )))"
+  printf '%s%s %s%*s%s%s\n' "${C_CYAN}│${C_RST}" "$hdr" "${C_DIM}refresh every $((REFRESH_MS/1000))s · ${now}${C_RST}" "$pad" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
+  pad="$(safe_pad $((cols - 2)))"
+  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "$pad" "" "${C_CYAN}─┤${C_RST}"
 
   local mode_ok short mode_val applied desc runtime_mem
   mode_ok=$(json_field_str "$SNAP_MODE_JSON" 'd.get("ok")' '')
