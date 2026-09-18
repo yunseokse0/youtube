@@ -9107,22 +9107,37 @@ function AdminPageInner() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mode }),
         });
-        const r = (await res.json().catch(() => null)) as { ok?: boolean; mode?: "A" | "B"; short?: string; applied?: boolean; appliedDetail?: unknown; error?: string };
+        const r = (await res.json().catch(() => null)) as { ok?: boolean; mode?: "A" | "B"; short?: string; applied?: boolean; appliedDetail?: unknown; error?: string; saved?: boolean; permanent?: boolean };
         if (!r?.ok) {
-          showAppToast(r?.error || "모드 변경 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.", { variant: "error", durationMs: 3000 });
+          const err = String(r?.error || "").trim();
+          let toastMsg = "모드 변경 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.";
+          let variant: "error" | "warning" | "info" = "error";
+          let durationMs = 3800;
+          if (err === "login_required" || err === "unauthorized" || res.status === 401 || res.status === 403) {
+            toastMsg = "🔐 관리자 로그인이 필요합니다. 브라우저 쿠키로 로그인한 후 다시 시도해 주세요.";
+            durationMs = 5200;
+          } else if (err.includes("save_failed") || err.includes("KV")) {
+            toastMsg = "저장소에 영구 저장은 실패했으나, 현재 서버에 일시 적용되었습니다. (재시작시 초기화 주의)";
+            variant = "warning";
+            durationMs = 5200;
+          } else if (r?.error) {
+            toastMsg = `${r.error}`;
+          }
+          showAppToast(toastMsg, { variant, durationMs });
           return;
         }
         if (r.mode === "A" || r.mode === "B") setRuntimeIntakeMode(r.mode);
-        /** 호환성: 로컬 LS 기존 donationIngestMode도 같이 동기화 → 오버레이 등 하위 호환 유지 */
         const legacyMode: DonationIngestMode = r.mode === "B" ? "toona" : "toonation";
         writeDonationIngestMode(user.id, legacyMode);
         setDonationIngestMode(legacyMode);
         if (r.mode === "B" && toonationSocketEnabled) {
           await persistToonationSettings({ socketEnabled: false });
         }
+        const saved = r.saved !== false && r.permanent !== false;
+        const baseMsg = saved ? "✅ 모드 변경 완료 · " : "⚠️ 일시 적용 완료 (영구 저장 실패 · 재시작시 초기화 주의) · ";
         showAppToast(
-          `✅ 모드 변경 완료 · ${r.short || (r.mode === "A" ? "A · 투네이션 자동" : "B · DIN 허브 모드")}${r.applied ? " · 리스너/폴러 전환 성공" : " · 설정은 저장되었으나 리스너 전환 일부 SKIP"}`,
-          { variant: "success", durationMs: 3200 }
+          `${baseMsg}${r.short || (r.mode === "A" ? "A · 투네이션 자동" : "B · DIN 허브 모드")}${r.applied ? " · 리스너/폴러 전환 성공" : " · 설정은 저장되었으나 리스너 전환 일부 SKIP"}`,
+          { variant: saved ? "success" : "warning", durationMs: 3800 }
         );
         setIntakeModeModalOpen(false);
       } finally {

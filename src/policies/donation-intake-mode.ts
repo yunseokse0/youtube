@@ -2,6 +2,13 @@ export const DONATION_INTAKE_ENV_KEY = "TOONA_INTAKE_MODE";
 export const DONATION_INTAKE_ENV_KEY_ALT = "DONATION_INTAKE_MODE";
 export const DONATION_INTAKE_RUNTIME_KV_PREFIX = "din:runtime:intake-mode";
 
+/**
+ * KV (Upstash/MySQL) 다운·미설치시 프로세스 생존 동안 모드를 기억하는 인메모리 Fallback.
+ * Safety Net: 프로덕션 배포 직후나 KV 장애시에도 모드 전환이 즉시 동작하도록.
+ */
+type InMemoryModeRecord = { mode: DonationIntakeMode; updatedAt: number };
+const inMemoryRuntimeMode = new Map<string, InMemoryModeRecord>();
+
 export type DonationIntakeMode = "A" | "B";
 
 export const DONATION_INTAKE_MODE_A: DonationIntakeMode = "A";
@@ -94,35 +101,54 @@ export async function getRuntimeDonationIntakeMode(
 ): Promise<DonationIntakeMode> {
   if (userId && String(userId).trim()) {
     const key = `${DONATION_INTAKE_RUNTIME_KV_PREFIX}:${String(userId).trim()}`;
+    /** ① 인메모리 Fallback 우선 참조 (KV 다운 상태에서 이전에 set한 값 기억) */
+    const memoKey = `${String(userId).trim()}`;
+    const inMem = inMemoryRuntimeMode.get(memoKey);
     try {
       const { upstashGetJson } = await import("@/app/api/_shared/upstash");
       const raw = (await upstashGetJson(key)) as unknown;
       if (raw && typeof raw === "object" && "mode" in raw) {
         const runtimeMode = normalizeRawMode(String((raw as { mode?: unknown }).mode || ""));
-        if (runtimeMode) return runtimeMode;
+        if (runtimeMode) {
+          inMemoryRuntimeMode.set(memoKey, {
+            mode: runtimeMode,
+            updatedAt: Number((raw as { updatedAt?: unknown }).updatedAt) || Date.now(),
+          });
+          return runtimeMode;
+        }
       }
     } catch {
-      /* KV 오류나면 env fallback으로 넘어가기 */
+      /* KV 오류나면 인메모리 Fallback → env fallback 순으로 넘어가기 */
+      if (inMem) return inMem.mode;
     }
+    if (inMem) return inMem.mode;
   }
   return getDonationIntakeEnvFallbackMode();
 }
 
-/** user별 Runtime 모드 KV에 저장. 저장 성공 여부 boolean 리턴 */
+/** user별 Runtime 모드 KV에 저장. 저장 성공 여부 boolean 리턴.
+ *  Safety Net: 영구 저장소(KV) 실패해도 인메모리에는 반드시 저장 → 최소한 현 프로세스에서 적용은 보장
+ */
 export async function setRuntimeDonationIntakeMode(
   userId: string | null | undefined,
   mode: DonationIntakeMode
 ): Promise<boolean> {
   if (!userId || !String(userId).trim()) return false;
   const normalizedMode = normalizeRawMode(mode) ?? DONATION_INTAKE_MODE_B;
-  const key = `${DONATION_INTAKE_RUNTIME_KV_PREFIX}:${String(userId).trim()}`;
+  const memoKey = `${String(userId).trim()}`;
+  const nowTs = Date.now();
+  /** 인메모리에 먼저 저장 (영구 저장 실패해도 현 프로세스에서는 적용 보장) */
+  inMemoryRuntimeMode.set(memoKey, { mode: normalizedMode, updatedAt: nowTs });
+
+  const key = `${DONATION_INTAKE_RUNTIME_KV_PREFIX}:${memoKey}`;
   const payload = {
     mode: normalizedMode,
-    updatedAt: Date.now(),
+    updatedAt: nowTs,
   };
   try {
     const { upstashSetJsonWithSetPath } = await import("@/app/api/_shared/upstash");
-    return await upstashSetJsonWithSetPath(key, payload);
+    const saved = await upstashSetJsonWithSetPath(key, payload);
+    return saved;
   } catch {
     return false;
   }
