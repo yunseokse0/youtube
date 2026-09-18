@@ -38,7 +38,9 @@ BOLD=$'\e[1m'
 
 TMP_DIR="$(mktemp -d 2>/dev/null || echo "/tmp/ec2-dm-$$")"
 mkdir -p "$TMP_DIR" 2>/dev/null
-trap 'rm -rf "$TMP_DIR"; printf "\033[?1049l\033[?25h\033[0m"; stty echo 2>/dev/null' EXIT
+FRAME_BUF="$TMP_DIR/framebuf.txt"
+: > "$FRAME_BUF"
+trap 'rm -rf "$TMP_DIR"; printf "\033[?25h\033[0m"; stty echo 2>/dev/null' EXIT
 
 PY=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo "")
 if [ -z "$PY" ]; then
@@ -201,7 +203,6 @@ collect_snapshot() {
 
 render_ui() {
   local pad
-  printf '\033[H\033[2J'
   local cols
   cols=$(tput cols 2>/dev/null || echo 120)
   local lines
@@ -216,7 +217,6 @@ render_ui() {
   local now
   now=$(date '+%Y-%m-%d %H:%M:%S %Z')
 
-  printf '\033[H'
   pad="$(safe_pad $((cols - 2)))"
   printf '%s%*s%s\n' "${BOLD}${C_CYAN}┌─${C_RST}" "${pad:-0}" "" "${BOLD}${C_CYAN}─┐${C_RST}"
 
@@ -411,7 +411,6 @@ render_help() {
   local cols lines
   cols=$(tput cols 2>/dev/null || echo 120)
   lines=$(tput lines 2>/dev/null || echo 40)
-  printf '\033[H\033[2J'
   echo "${BOLD}${C_CYAN}━━━━━━━━━━━ DIN Studio 후원 모니터 · 도움말 ━━━━━━━━━━━${C_RST}"
   echo ""
   echo "  ${BOLD}${C_YELLOW}핫키:${C_RST}"
@@ -1077,7 +1076,7 @@ if [ ! -t 0 ]; then
 fi
 
 stty -echo 2>/dev/null
-printf '\033[?1049h\033[2J\033[H\033[?25l'
+printf '\033[?25l'
 
 exec 2>/dev/null
 
@@ -1086,30 +1085,34 @@ VIEW="ui"  # ui | trend | diff
 while true; do
   collect_snapshot
   ts_collect_now
+  # 프레임 버퍼링: 모든 render 출력을 단일 파일에 모은 뒤 1번에 cat → stdout syscall 1/40로 감소 & 브라우저 DOM 리렌더 횟수 급감
+  : > "$FRAME_BUF"
   if [ "$SHOW_HELP" = "1" ]; then
-    render_help
+    render_help >> "$FRAME_BUF" 2>/dev/null
     SHOW_HELP=0
-    read -n 1 -t 0.1 -r -s _unused || true
-    continue
+  else
+    case "$VIEW" in
+      ui)    render_ui >> "$FRAME_BUF" 2>/dev/null ;;
+      trend)
+        cols=$(tput cols 2>/dev/null || echo 120)
+        lines=$(tput lines 2>/dev/null || echo 40)
+        [ -z "$cols" ] && cols=120
+        [ -z "$lines" ] && lines=40
+        render_trend_panel "$cols" "$lines" >> "$FRAME_BUF" 2>/dev/null
+        ;;
+      diff)
+        cols=$(tput cols 2>/dev/null || echo 120)
+        lines=$(tput lines 2>/dev/null || echo 40)
+        [ -z "$cols" ] && cols=120
+        [ -z "$lines" ] && lines=40
+        render_diff_panel "$cols" "$lines" >> "$FRAME_BUF" 2>/dev/null
+        ;;
+      *) render_ui >> "$FRAME_BUF" 2>/dev/null ;;
+    esac
   fi
-  case "$VIEW" in
-    ui)    render_ui ;;
-    trend)
-      cols=$(tput cols 2>/dev/null || echo 120)
-      lines=$(tput lines 2>/dev/null || echo 40)
-      [ -z "$cols" ] && cols=120
-      [ -z "$lines" ] && lines=40
-      render_trend_panel "$cols" "$lines"
-      ;;
-    diff)
-      cols=$(tput cols 2>/dev/null || echo 120)
-      lines=$(tput lines 2>/dev/null || echo 40)
-      [ -z "$cols" ] && cols=120
-      [ -z "$lines" ] && lines=40
-      render_diff_panel "$cols" "$lines"
-      ;;
-    *) render_ui ;;
-  esac
+  # 프레임 Flush: 커서 홈 이동 → 단일 cat → 터미널 write 1회 + erase display J 안써서 DOM 깜빡임 최소화
+  printf '\033[H'
+  cat "$FRAME_BUF" 2>/dev/null || true
 
   read_cmd=""
   IFS= read -r -s -n 1 -t "$((REFRESH_MS/1000)).$(( (REFRESH_MS%1000)/100 ))" read_cmd 2>/dev/null || read_cmd=""
