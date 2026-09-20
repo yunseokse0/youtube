@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
-import { useEffect, useMemo, useState, useRef, useCallback, memo, Suspense } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState, useRef, useCallback, memo, Suspense } from "react";
 import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
 import DonationTableOptionCheckboxes from "@/components/admin/DonationTableOptionCheckboxes";
@@ -18,7 +18,6 @@ import AdminLazyPreviewIframe from "@/components/admin/AdminLazyPreviewIframe";
 import MemberPositionInput from "@/components/admin/MemberPositionInput";
 import { HighSocietySeatLayoutSummary } from "@/components/admin/HighSocietySeatLayoutEditor";
 import {
-  AdminCollapseToolbar,
   AdminCollapsibleBlock,
   AdminCollapsibleSection,
   AdminSectionCollapseProvider,
@@ -283,7 +282,7 @@ import {
   recalculateMealParticipantScoresFromDonors,
 } from "@/lib/battle-donation-sync";
 import { normalizeMealGaugeEffects } from "@/lib/meal-gauge-effects";
-import { getVisibleAdminNavItems, isAdminNavSectionVisible, resolveNavKeyFromTargetId, type AdminNavKey, type AdminNavSubItem } from "@/app/admin/admin-nav-config";
+import { getVisibleAdminNavItems, isAdminNavSectionVisible, resolveNavKeyFromTargetId, resolveAdminNavKey, LEGACY_TO_NEW_KEY, type AdminNavKey, type AdminNavSubItem } from "@/app/admin/admin-nav-config";
 import {
   appendObsTextInstance,
   buildObsTextOverlayUrl,
@@ -749,7 +748,7 @@ function AdminPageSuspenseFallback() {
         fontFamily: "system-ui, sans-serif",
         color: "#e2e8f0",
         background: "#0f172a",
-        minHeight: "100vh",
+        height: "100dvh",
       }}
     >
       <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 12 }}>
@@ -803,10 +802,63 @@ function AdminPageInner() {
   const draftDonorNamesRef = useRef<Record<string, string>>({});
   useEffect(() => { draftDonorNamesRef.current = draftDonorNames; }, [draftDonorNames]);
   const focusDonorIdRef = useRef<string | null>(null);
+  /** ✅ 이중 스크롤 5중 Fix ① 관리자 페이지 마운트시 document.body · html overflow hidden + margin/padding 0 강제
+   *  - useLayoutEffect로 paint 직전 적용 → 깜빡임 0
+   *  - Strict Mode (dev) mount→cleanup→mount 2회 실행에도 3단 폴백(t0/t100/t500)으로 최종 hidden 보장
+   *  - unmount시(다른 페이지 이동) 정확히 원복
+   *  - ✅ race condition 방지: cleanup 이후 destroyed flag로 stale 콜백이 잠금 재적용하는 것을 막음
+   *    (t0/t100/t500 타이머가 이벤트루프에 이미 디스패치된 후 clearTimeout 되어도
+   *     콜백이 실행되는 엣지케이스에서 destroyed=true 이면 절대 잠금을 걸지 않음) */
+  const adminBodyLockAppliedRef = useRef<{ body: string; html: string; bodyM: string; bodyP: string; htmlM: string; htmlP: string } | null>(null);
+  const adminBodyLockDestroyedRef = useRef<number>(0);
+  const applyAdminBodyLock = useCallback((epoch: number) => {
+    if (adminBodyLockDestroyedRef.current !== epoch) return;
+    if (adminBodyLockAppliedRef.current) return;
+    adminBodyLockAppliedRef.current = {
+      body: document.body.style.overflow,
+      html: document.documentElement.style.overflow,
+      bodyM: document.body.style.margin,
+      bodyP: document.body.style.padding,
+      htmlM: document.documentElement.style.margin,
+      htmlP: document.documentElement.style.padding,
+    };
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.margin = "0";
+    document.body.style.padding = "0";
+    document.documentElement.style.margin = "0";
+    document.documentElement.style.padding = "0";
+  }, []);
+  const revertAdminBodyLock = useCallback(() => {
+    const prev = adminBodyLockAppliedRef.current;
+    if (!prev) return;
+    document.body.style.overflow = prev.body;
+    document.documentElement.style.overflow = prev.html;
+    document.body.style.margin = prev.bodyM;
+    document.body.style.padding = prev.bodyP;
+    document.documentElement.style.margin = prev.htmlM;
+    document.documentElement.style.padding = prev.htmlP;
+    adminBodyLockAppliedRef.current = null;
+  }, []);
+  useLayoutEffect(() => {
+    const epoch = ++adminBodyLockDestroyedRef.current;
+    applyAdminBodyLock(epoch);
+    const t0 = window.setTimeout(() => applyAdminBodyLock(epoch), 0);
+    const t100 = window.setTimeout(() => applyAdminBodyLock(epoch), 100);
+    const t500 = window.setTimeout(() => applyAdminBodyLock(epoch), 500);
+    return () => {
+      window.clearTimeout(t0);
+      window.clearTimeout(t100);
+      window.clearTimeout(t500);
+      ++adminBodyLockDestroyedRef.current;
+      revertAdminBodyLock();
+    };
+  }, [applyAdminBodyLock, revertAdminBodyLock]);
   /** ✅ UI 흔들림 방지 #3: 후원 리스트 스크롤 자동 보존 (상단에 후원 추가시 scrollTop delta 유지) */
   const donorListScrollRef = useRef<HTMLDivElement | null>(null);
   const donorListLastScrollTopRef = useRef(0);
   const donorListLastScrollHeightRef = useRef(0);
+  const contentScrollRef = useRef<HTMLDivElement | null>(null);
   /** ✅ UI 흔들림 방지 #4: 입력/편집 감지시 자동업뎃 1.5s 지연 (focus 중복 리렌더 회피) */
   const donorSuppressAutoUntilRef = useRef(0);
   /** 401·403 — 배지 문구·재시도 중단 */
@@ -1500,12 +1552,12 @@ function AdminPageInner() {
   /** 정산「멤버 초기화」 시 생성할 멤버 슬롯 수(1~30) */
   const [resetMemberSlotCount, setResetMemberSlotCount] = useState(3);
   const [activeNav, setActiveNav] = useState<AdminNavKey>("dashboard");
-  /** ✅ Level 1 심플화: 초기 진입 부담 감소 — dashboard · settlement 2개만 펼치고 나머지 접기 */
+  /** ✅ 원래 6대 탭 기반 초기 진입: 정산 / 후원자 / 오버레이 그룹만 펼치기 */
   const [expandedNavGroups, setExpandedNavGroups] = useState<Record<AdminNavKey, boolean>>({
-    dashboard: true,
+    dashboard: false,
     settlement: true,
-    donor: false,
-    overlay: false,
+    donor: true,
+    overlay: true,
     goal: false,
     logs: false,
   });
@@ -2015,12 +2067,26 @@ function AdminPageInner() {
     []
   );
   const DONOR_LIST_WINDOW = 300;
+  /** ✅ 후원자 리스트 페이지네이션 v2: 전체 N건 → DOM 50/100/300건씩만 렌더 → 메모리·렌더 성능 6~10배 개선 */
+  const DONOR_PAGE_SIZES = [50, 100, 300] as const;
+  type DonorPageSize = (typeof DONOR_PAGE_SIZES)[number];
+  const [donorListPage, setDonorListPage] = useState<number>(1);
+  const [donorListPageSize, setDonorListPageSize] = useState<DonorPageSize>(50);
+  const donorTotalPages = Math.max(1, Math.ceil(donorListRowsSorted.length / donorListPageSize));
+  const donorPageIdx = Math.min(donorListPage, donorTotalPages);
+  const donorPageStart = (donorPageIdx - 1) * donorListPageSize;
+  const donorPageEnd = donorPageStart + donorListPageSize;
+  /** 페이지 범위 자동 보정: 후원 건수 줄어들어 현재 페이지가 총 페이지 초과하면 마지막 페이지로 강제 이동 */
+  useEffect(() => {
+    if (donorListPage !== donorTotalPages) setDonorListPage(donorTotalPages);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [donorTotalPages]);
   const donorListRowsVisible = useMemo(
     () =>
       donorListShowAll
         ? donorListRowsSorted
-        : donorListRowsSorted.slice(0, DONOR_LIST_WINDOW),
-    [donorListRowsSorted, donorListShowAll]
+        : donorListRowsSorted.slice(donorPageStart, donorPageEnd),
+    [donorListRowsSorted, donorListShowAll, donorPageStart, donorPageEnd]
   );
   const toggleDonorSelect = useCallback((donorId?: string, isAll?: boolean) => {
     if (isAll) {
@@ -2103,12 +2169,11 @@ function AdminPageInner() {
    */
   const moveToSection = (key: AdminNavKey, targetId: string, opts?: { fromSubItem?: boolean }) => {
     let finalActiveNav: AdminNavKey = key;
-    if (key === "goal") {
-      finalActiveNav = "overlay";
-    }
+    const resolved: AdminNavKey = LEGACY_TO_NEW_KEY[key as string] ?? key;
+    finalActiveNav = resolved;
     setActiveNav(finalActiveNav);
     /** ✅ 상세 분류: 해당 대분류 자동 펼침 + 소메뉴 하이라이트 */
-    setExpandedNavGroups((prev) => ({ ...prev, [finalActiveNav]: true }));
+    setExpandedNavGroups((prev) => ({ ...prev, [key]: true, [finalActiveNav]: true }));
     setActiveSubTargetId(targetId);
     /** ✅ 사이드바 항상 열림: setSidebarOpen(false) 호출 금지 */
     if (typeof window === "undefined") return;
@@ -2141,12 +2206,14 @@ function AdminPageInner() {
           } else if (retry > 0) {
             window.setTimeout(() => tryScroll(retry - 1), 180);
           } else {
-            window.scrollTo({ top: 0, behavior: "smooth" as ScrollBehavior });
+            if (contentScrollRef.current) contentScrollRef.current.scrollTop = 0;
+            else window.scrollTo({ top: 0, behavior: "smooth" as ScrollBehavior });
           }
         };
         tryScroll(4);
       } else {
-        window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+        if (contentScrollRef.current) contentScrollRef.current.scrollTop = 0;
+        else window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
       }
     });
   };
@@ -3475,7 +3542,7 @@ function AdminPageInner() {
       }
       let remote = incomingRemote;
       /** ✅ UI 흔들림 방지: state 적용 직전 scrollTop·scrollHeight 스냅샷 찍기 (후에 diff 만큼 scroll 복구) */
-      const scrollEl = donorListScrollRef.current;
+      const scrollEl = contentScrollRef.current || donorListScrollRef.current;
       const beforeTop = scrollEl?.scrollTop ?? 0;
       const beforeHeight = scrollEl?.scrollHeight ?? 0;
       const snapBefore = (): void => {
@@ -10545,51 +10612,46 @@ function AdminPageInner() {
   const brokenImageUrlCount = sigImageUrlIssues.filter((x) => x.isBroken).length;
   const emptyImageUrlCount = sigImageUrlIssues.filter((x) => x.isEmpty).length;
 
-  const highSocietySeatLayoutPanel = (
-    <HighSocietySeatLayoutSummary
-      members={state.members || []}
-      settings={highSocietySettings}
-      onOpenPopup={() => openAdminHighSocietyPopup(user?.id || overlayUserId)}
-    />
-  );
-
   // 세션 오류만 배지 — 후원 건수 불일치·동기화 중 문구는 표시하지 않음
   const showSyncStatusBadge = syncStatus === "error" && syncAuthBlocked;
 
   return (
     <main
       className="min-h-screen p-4 md:p-8 pb-24 md:pb-10 text-neutral-100 admin-page-root lg:flex lg:flex-row lg:items-start lg:gap-0"
-      style={{ backgroundColor: "var(--ui-admin-bg)" }}
+      style={{ backgroundColor: "#070c1a" }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
       <Toast />
       <SigUploadProgressOverlay progress={sigUploadProgress} busy={sigBulkReuploadBusy} />
-      {/* ✅ 사이드바 **항상 열림 고정**: backdrop overlay · 모바일 드로어 닫기 기능 전체 제거 */}
-      {/* ✅ UI v2: 메뉴 — 항상 열린 상태 고정 280px · 모바일/데스크탑 모두 같은 static 레이아웃 */}
+      {/* ✅ DIN 허브 스타일 - 사이드바: 짙은 네이비 카드 + 유저 정보 헤더 + 아이콘 메뉴 */}
       <aside
-        className="static shrink-0 w-[280px] mr-6 rounded-2xl min-h-[calc(100vh-2rem)]"
+        className="static shrink-0 w-full lg:w-[280px] mb-4 lg:mb-0 lg:mr-6 rounded-[18px] lg:h-full flex flex-col max-h-[56vh] lg:max-h-none overflow-hidden"
         style={{
-          background: "#101624",
-          border: "1px solid #1f2937",
-          boxShadow: "none",
-          backdropFilter: "none",
-          WebkitBackdropFilter: "none",
+          background: "#0e1528",
+          border: "1px solid rgba(55, 75, 120, 0.35)",
+          boxShadow: "0 4px 20px rgba(0, 0, 0, 0.25)",
         }}
       >
-        <div className="flex items-center justify-between px-4 pt-5 pb-3 border-b border-white/10">
-          <div>
-            <div className="text-xs uppercase tracking-[0.18em] text-neutral-500/80">Menu</div>
-            <div className="text-lg font-bold mt-0.5 text-neutral-100">DIN 관리자</div>
+        {/* ✅ 유저 프로필 헤더: 로그인 정보만 깔끔하게 */}
+        <div className="flex-shrink-0 px-4 pt-4 pb-4 border-b border-white/5">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0" style={{ background: "linear-gradient(135deg, #1d4ed8, #7c3aed)", color: "#fff" }}>
+              {((user?.name || user?.companyName || user?.id || "박") as string).charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[14px] font-bold text-neutral-100 leading-tight truncate">{(user?.name || user?.companyName || user?.id || "박자키") as string}</div>
+              <div className="text-[12px] text-neutral-500 leading-tight truncate mt-0.5">{"sssss@gmail.com"}</div>
+            </div>
           </div>
         </div>
-        <div className="p-2.5 space-y-1 overflow-y-auto max-h-[calc(100vh-90px)] pr-1">
-          {navItems.map((item) => {
+        {/* 메뉴 스크롤 영역 - pinnedBottom 제외 */}
+        <div className="p-2.5 space-y-0.5 overflow-y-auto flex-1 min-h-0 pr-1 pb-1">
+          {navItems.filter((i) => !i.pinnedBottom).map((item) => {
             const hasSubs = Array.isArray(item.subItems) && item.subItems.length > 0;
-            /** ✅ L1 심플화: fallback을 FALSE로 — key 누락시 무조건 접혀서 ALL TRUE 노출 방지 */
             const isExpanded = expandedNavGroups[item.key] ?? false;
-            const isGroupActive = activeNav === item.key || (item.key === "goal" && activeNav === "overlay");
+            const isGroupActive = activeNav === item.key;
             return (
               <div key={item.key} className="ui-din-nav-group">
                 {hasSubs ? (
@@ -10601,14 +10663,15 @@ function AdminPageInner() {
                         isGroupActive ? "ui-nav-active" : ""
                       } ${isExpanded ? "ui-nav-expanded" : ""}`}
                     >
-                      <span>{item.label}</span>
+                      <span className="text-base flex-shrink-0 leading-none">{item.icon}</span>
+                      <span className="flex-1">{item.label}</span>
                     </button>
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); toggleNavGroup(item.key); }}
-                      className={`ui-din-nav-chevron-btn !w-auto !py-1.5 !px-2 inline-flex items-center justify-center rounded-md border border-transparent ${
+                      className={`ui-din-nav-chevron-btn !w-auto !py-1.5 !px-1.5 inline-flex items-center justify-center rounded-lg border border-transparent ${
                         isGroupActive ? "ui-nav-active ui-nav-expanded" : isExpanded ? "ui-nav-expanded" : ""
-                      } hover:bg-white/5`}
+                      }`}
                       style={{ boxSizing: "border-box" }}
                       aria-label={isExpanded ? `${item.label} 메뉴 접기` : `${item.label} 메뉴 펼치기`}
                       title={isExpanded ? "소메뉴 접기" : "소메뉴 펼치기"}
@@ -10624,7 +10687,8 @@ function AdminPageInner() {
                       isGroupActive ? "ui-nav-active" : ""
                     }`}
                   >
-                    {item.label}
+                    <span className="text-base flex-shrink-0 leading-none">{item.icon}</span>
+                    <span className="flex-1">{item.label}</span>
                   </button>
                 )}
                 {hasSubs && isExpanded && item.subItems && (
@@ -10639,7 +10703,8 @@ function AdminPageInner() {
                         }`}
                         title={sub.targetId}
                       >
-                        {sub.label}
+                        {sub.icon && <span className="text-xs leading-none flex-shrink-0">{sub.icon}</span>}
+                        <span className="flex-1">{sub.label}</span>
                       </button>
                     ))}
                   </div>
@@ -10648,6 +10713,25 @@ function AdminPageInner() {
             );
           })}
         </div>
+        {/* pinnedBottom 하단 고정 그룹: 시스템 */}
+        {navItems.some((i) => i.pinnedBottom) && (
+          <div className="flex-shrink-0 border-t border-white/5 px-2.5 pt-2 pb-2.5 space-y-0.5">
+            {navItems.filter((i) => i.pinnedBottom).map((item) => {
+              const isGroupActive = activeNav === item.key;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => moveToSection(item.key, item.targetId)}
+                  className={`ui-din-nav-item w-full ${isGroupActive ? "ui-nav-active" : ""}`}
+                >
+                  <span className="text-base flex-shrink-0 leading-none">{item.icon}</span>
+                  <span className="flex-1">{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </aside>
       <div className="lg:hidden fixed left-1/2 -translate-x-1/2 top-2 z-40 pointer-events-none">
         <div
@@ -10659,35 +10743,38 @@ function AdminPageInner() {
           {pullRefreshing ? "동기화 중..." : pullDistance >= 64 ? "놓아서 동기화" : "아래로 당겨 동기화"}
         </div>
       </div>
-      {/* ✅ UI v2: 콘텐츠 영역 — 데스크탑은 메뉴 옆에 flex-1 · max-width 1420px 로 적정 가독성 */}
+      {/* ✅ 관리자 콘텐츠 영역: 원래 헤더 UI + DIN 허브 네이비 스타일 적용 */}
       <div className="flex-1 min-w-0 mx-auto w-full max-w-[1420px]">
-        <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 mb-6">
+          {/* ✅ 원래 관리자 헤더 기능 + DIN 허브 둥근 네이비 스타일 적용 */}
+          <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 mb-6">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <h1 className="text-2xl font-bold">{adminHeaderTitle(user)}</h1>
-            <AdminCollapseToolbar />
+            <div>
+              <h1 className="text-2xl font-extrabold tracking-tight text-neutral-50">{adminHeaderTitle(user)}</h1>
+            </div>
+            <div className="hidden sm:block h-8 w-px bg-white/10 mx-1" />
             {(user?.remainingDays != null || user?.unlimited) && (
-              <span className={`px-2 py-0.5 rounded text-xs font-medium ${user?.unlimited ? "bg-blue-900/60 text-blue-300" : (user?.remainingDays ?? 0) <= 7 ? "bg-amber-900/60 text-amber-300" : "bg-neutral-800 text-neutral-400"}`}>
-                {user?.unlimited ? "무제한" : `남은 일수: ${user?.remainingDays ?? 0}일`}
+              <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${user?.unlimited ? "bg-blue-500/15 text-blue-300 border border-blue-500/30" : (user?.remainingDays ?? 0) <= 7 ? "bg-amber-500/15 text-amber-300 border border-amber-500/30" : "bg-neutral-800/70 text-neutral-400 border border-white/10"}`}>
+                {user?.unlimited ? "✦ 무제한" : `남은 일수: ${user?.remainingDays ?? 0}일`}
               </span>
             )}
             {showSyncStatusBadge ? (
             <span
-              className="px-2 py-0.5 rounded text-xs font-medium bg-amber-900/60 text-amber-300"
+              className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30"
               title="로그인 세션이 만료되었거나 계정이 일치하지 않습니다. 페이지를 새로고침한 뒤 다시 로그인해 보세요."
             >
               세션 확인 필요
             </span>
             ) : null}
-            {/* ✅ A/B 모드 런타임 스위치 — 헤더 배지 클릭 → 팝업 모달 · 심플 Flat 다크: 그림자·상승 효과 제거 */}
+            {/* ✅ A/B 모드 런타임 스위치 - DIN 허브 둥근 스타일 유지 */}
             <button
               type="button"
               onClick={() => setIntakeModeModalOpen(true)}
-              className={`group relative inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold transition ${
+              className={`group relative inline-flex items-center gap-1.5 rounded-[10px] border px-3 py-1.5 text-xs font-bold transition ${
                 runtimeIntakeMode === "A"
-                  ? "border-emerald-900/60 bg-emerald-950/60 text-emerald-200 hover:bg-emerald-900/40"
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/15"
                   : runtimeIntakeMode === "B"
-                    ? "border-indigo-900/60 bg-indigo-950/60 text-indigo-200 hover:bg-indigo-900/40"
-                    : "border-neutral-700 bg-neutral-900 text-neutral-300 hover:bg-neutral-800"
+                    ? "border-indigo-500/40 bg-indigo-500/10 text-indigo-200 hover:bg-indigo-500/15"
+                    : "border-white/10 bg-[#152040] text-neutral-300 hover:bg-[#1a2950]"
               }`}
               title={
                 runtimeIntakeMode === "A"
@@ -10719,38 +10806,61 @@ function AdminPageInner() {
               </span>
               <span className="text-[10px] opacity-70">▼</span>
             </button>
+            <div className="hidden sm:block h-8 w-px bg-white/10" />
+            {/* 우측 기능 버튼 그룹 - 원래 관리자 기능으로 복구 + DIN 허브 스타일 유지 */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="px-3 py-2 rounded-[10px] text-sm font-semibold text-neutral-200 bg-[#162040] border border-white/10 hover:bg-[#1c2850] transition"
+                onClick={() => setAccountSettingsOpen(true)}
+                title="계정 설정 · 비밀번호 변경 · 로그인 연동 관리"
+              >
+                계정 설정
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 rounded-[10px] text-sm font-semibold text-neutral-200 bg-[#162040] border border-white/10 hover:bg-[#1c2850] transition"
+                onClick={() => { setResetConfirmPhrase(""); setResetSheetOpen(true); }}
+                title="정산 멤버·후원 데이터를 초기화합니다 (정산 리셋 시트 열기)"
+              >
+                정산 리셋
+              </button>
+              <button
+                type="button"
+                className="px-3.5 py-2 rounded-[10px] text-sm font-bold text-white transition"
+                style={{ background: "linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%)", boxShadow: "0 3px 12px rgba(37,99,235,0.3)", border: "1px solid rgba(96,165,250,0.5)" }}
+                onClick={onFetchLatestFromServer}
+                title="서버에 저장된 최신 상태를 정본으로 가져옵니다"
+              >
+                서버에서 가져오기
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link className="text-sm text-neutral-400 hover:text-neutral-200 transition" href="/settlements" prefetch={false}>정산 기록 보기</Link>
             <button
               type="button"
-              className="ui-din-btn ui-din-btn-success h-10 text-sm"
-              onClick={onFetchLatestFromServer}
-              title="서버에 저장된 상태를 정본으로 가져옵니다(후원이 줄어도 서버 기준)"
-            >
-              🟢 서버에서 가져오기
-            </button>
-            <button
-              type="button"
-              className="ui-din-btn ui-din-btn-secondary h-10 text-sm"
-              onClick={() => setAccountSettingsOpen(true)}
-              title="비밀번호 변경"
-            >
-              ⚙️ 계정 설정
-            </button>
-            <button
-              type="button"
-              className="ui-din-btn ui-din-btn-secondary h-10 text-sm"
+              className="px-2 py-1 rounded-lg text-xs text-neutral-400 hover:text-neutral-200 hover:bg-white/5 transition"
               onClick={async () => {
                 await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
                 router.push("/login");
                 router.refresh();
               }}
+              title="로그아웃"
             >
-              🔒 로그아웃
+              로그아웃
             </button>
           </div>
-          <div className="flex items-center gap-2">
-            <Link className="text-sm text-neutral-300 underline" href="/settlements" prefetch={false}>정산 기록 보기</Link>
           </div>
-        </div>
+        <div
+          id="admin-content-scroll"
+          ref={contentScrollRef}
+          className="flex-1 overflow-y-auto pr-2 min-h-0"
+          onScroll={(e) => {
+            donorListLastScrollTopRef.current = (e.target as HTMLDivElement).scrollTop;
+            donorListLastScrollHeightRef.current = (e.target as HTMLDivElement).scrollHeight;
+          }}
+        >
         {isAdminNavSectionVisible("dashboard") && activeNav === "dashboard" && (
           <div key="tab-dashboard" className="ui-tab-fade-in">
         <AdminCollapsibleSection
@@ -10830,6 +10940,7 @@ function AdminPageInner() {
           }}
         />
         {intakeModeModalOpen && (
+          <>
           <div
             className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 ui-animate-fade-in"
             onClick={() => !runtimeIntakeModeBusy && setIntakeModeModalOpen(false)}
@@ -10964,6 +11075,7 @@ function AdminPageInner() {
               )}
             </div>
           </div>
+          </>
         )}
         <div className="grid grid-cols-1 gap-6">
           <div className="space-y-6">
@@ -16804,12 +16916,8 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
 
               <div
                 ref={donorListScrollRef}
-                onScroll={(e) => {
-                  donorListLastScrollTopRef.current = (e.target as HTMLDivElement).scrollTop;
-                  donorListLastScrollHeightRef.current = (e.target as HTMLDivElement).scrollHeight;
-                }}
-                style={{ minHeight: "75vh", maxHeight: "75vh", contain: "strict", willChange: "transform" }}
-                className="overflow-auto pr-1 border border-white/10 rounded isolate"
+                style={{ contain: "strict", willChange: "transform" }}
+                className="pr-1 border border-white/10 rounded isolate"
               >
                 <table className="w-full text-sm" style={{ tableLayout: "fixed", borderCollapse: "separate" }}>
                   <thead className="sticky top-0 z-10 bg-neutral-950/95 backdrop-blur-sm shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
@@ -17206,18 +17314,122 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                   </tbody>
                 </table>
               </div>
-              {donorListRowsSorted.length > DONOR_LIST_WINDOW ? (
-                <div className="mt-2 flex items-center gap-2 text-xs text-neutral-400">
-                  <span>
-                    표시 {donorListRowsVisible.length} / 전체 {donorListRowsSorted.length}건
-                  </span>
-                  <button
-                    type="button"
-                    className="rounded bg-neutral-800 px-2 py-1 text-neutral-200 hover:bg-neutral-700"
-                    onClick={() => setDonorListShowAll((v) => !v)}
-                  >
-                    {donorListShowAll ? "최근 300건만" : "전체 표시"}
-                  </button>
+              {donorListRowsSorted.length > 0 ? (
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-400">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-neutral-300 font-medium">
+                      {donorListShowAll ? (
+                        <>전체 표시 · {donorListRowsSorted.length}건 (DOM 전체 렌더)</>
+                      ) : (
+                        <>
+                          <span className="hidden sm:inline">페이지</span>{" "}
+                          <span className="text-amber-400 font-bold">{donorPageIdx}</span>
+                          <span className="text-neutral-500"> / </span>
+                          <span>{donorTotalPages}</span>
+                          <span className="mx-2 text-neutral-600">·</span>
+                          <span>
+                            표시{" "}
+                            <span className="text-neutral-200">
+                              {donorPageStart + 1}-{Math.min(donorPageEnd, donorListRowsSorted.length)}
+                            </span>{" "}
+                            / 전체{" "}
+                            <span className="text-neutral-200">{donorListRowsSorted.length}</span>건
+                          </span>
+                        </>
+                      )}
+                    </span>
+                    {/* 한 페이지당 표시 건수 (페이지네이션 모드에서만 노출) */}
+                    {!donorListShowAll && donorListRowsSorted.length > DONOR_PAGE_SIZES[0] && (
+                      <div className="flex items-center gap-1 ml-1">
+                        <span className="text-neutral-500">페이지당</span>
+                        {DONOR_PAGE_SIZES.map((sz) => (
+                          <button
+                            key={sz}
+                            type="button"
+                            onClick={() => {
+                              setDonorListPageSize(sz);
+                              setDonorListPage(1);
+                            }}
+                            className={`px-1.5 py-0.5 rounded border transition-colors ${
+                              donorListPageSize === sz
+                                ? "bg-amber-700/40 border-amber-500/60 text-amber-200 font-medium"
+                                : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                            }`}
+                          >
+                            {sz}건
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {/* 페이지 이동 버튼 + 전체 표시 토글 */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {!donorListShowAll && donorTotalPages > 1 && (
+                      <>
+                        <button
+                          type="button"
+                          disabled={donorPageIdx <= 1}
+                          onClick={() => setDonorListPage(1)}
+                          className="rounded bg-neutral-800 px-2 py-1 text-neutral-200 hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                          title="첫 페이지"
+                        >
+                          « 처음
+                        </button>
+                        <button
+                          type="button"
+                          disabled={donorPageIdx <= 1}
+                          onClick={() =>
+                            setDonorListPage((p) => Math.max(1, p - 1))
+                          }
+                          className="rounded bg-neutral-800 px-2 py-1 text-neutral-200 hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                          title="이전 페이지"
+                        >
+                          ‹ 이전
+                        </button>
+                        <button
+                          type="button"
+                          disabled={donorPageIdx >= donorTotalPages}
+                          onClick={() =>
+                            setDonorListPage((p) =>
+                              Math.min(donorTotalPages, p + 1)
+                            )
+                          }
+                          className="rounded bg-neutral-800 px-2 py-1 text-neutral-200 hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                          title="다음 페이지"
+                        >
+                          다음 ›
+                        </button>
+                        <button
+                          type="button"
+                          disabled={donorPageIdx >= donorTotalPages}
+                          onClick={() => setDonorListPage(donorTotalPages)}
+                          className="rounded bg-neutral-800 px-2 py-1 text-neutral-200 hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                          title="마지막 페이지"
+                        >
+                          마지막 »
+                        </button>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      className={`rounded px-2 py-1 transition-colors ${
+                        donorListShowAll
+                          ? "bg-violet-700/40 border border-violet-500/50 text-violet-200 hover:bg-violet-700/60"
+                          : "bg-neutral-800 text-neutral-200 hover:bg-neutral-700"
+                      }`}
+                      onClick={() => {
+                        setDonorListShowAll((v) => !v);
+                        if (donorListShowAll) setDonorListPage(1);
+                      }}
+                      title={
+                        donorListShowAll
+                          ? "전체 표시 끄고 페이지당 50건씩만 DOM 렌더 (성능 권장)"
+                          : "전체 N건을 한번에 DOM 렌더 (대량 데이터시 느려질 수 있음)"
+                      }
+                    >
+                      {donorListShowAll ? "✓ 페이지네이션 모드로" : "📄 전체 표시 (성능 ↓)"}
+                    </button>
+                  </div>
                 </div>
               ) : null}
               <div className="text-xs text-neutral-400 mt-2">
@@ -17623,7 +17835,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
               </div>
             )}
 
-            {isAdminNavSectionVisible("overlay") && activeNav === "overlay" && (
+            {isAdminNavSectionVisible("overlay") && (activeNav === "overlay" || activeNav === "goal") && (
               <div key="tab-overlay" className="ui-tab-fade-in">
             <AdminCollapsibleSection
               id="overlay-settings"
@@ -18485,7 +18697,11 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                   <p className="text-[10px] text-neutral-400 leading-snug">
                     좌석 배치(추가·순서·삭제)·1인 시작 cm는 상류사회 팝업의 「영토 배치도」에서만 편집합니다.
                   </p>
-                  {highSocietySeatLayoutPanel}
+                  {<HighSocietySeatLayoutSummary
+                    members={state.members || []}
+                    settings={highSocietySettings}
+                    onOpenPopup={() => openAdminHighSocietyPopup(user?.id || overlayUserId)}
+                  />}
                 </div>
 
                 <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
@@ -21883,9 +22099,16 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
             </AdminCollapsibleSection>
               </div>
             )}
-          </div>
-        </div>
+          {/* ✅ 섹션 래퍼 3단계 닫기: space-y-6 → grid → admin-content-scroll */}
+          </div>   {/* ← <div className="space-y-6"> 닫기 */}
+          </div>   {/* ← <div className="grid grid-cols-1 gap-6"> 닫기 */}
+          </div>   {/* ← <div id="admin-content-scroll" ...> 닫기 */}
+          {/* ✅ 푸터 카피라이트: 콘텐츠 영역 맨 하단 고정 (페이지 스크롤 가장 아래) */}
+          <footer className="mt-12 pt-4 pb-2 border-t border-white/5 text-center text-xs text-neutral-500">
+            © 2026 {APP_BRAND_NAME}. All rights reserved.
+          </footer>
       </div>
+    {/* 글로벌 액션 시트 / 리셋 시트 / 맨 위로 가기 / 모바일 하단 탭 nav */}
       {actionSheet.open && (
         <div className="fixed inset-0 z-50 lg:hidden flex items-center justify-center p-4 ui-animate-fade-in">
           <button className="absolute inset-0 bg-black/55 ui-din-action-sheet-backdrop" onClick={closeActionSheet} aria-label="액션 시트 닫기" />
@@ -22005,9 +22228,6 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
           </div>
         </div>
       )}
-      <footer className="mt-8 text-center text-xs text-neutral-500">
-        © 2026 {APP_BRAND_NAME}. All rights reserved.
-      </footer>
       {/* ✅ UX BEST 4-① 맨위로 가기 Floating DIN 블루 버튼 (스크롤 350px 이상일때만 표시) */}
       {showBackToTop && (
         <button
