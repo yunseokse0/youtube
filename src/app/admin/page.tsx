@@ -1562,6 +1562,8 @@ function AdminPageInner() {
   /** 정산「멤버 초기화」 시 생성할 멤버 슬롯 수(1~30) */
   const [resetMemberSlotCount, setResetMemberSlotCount] = useState(3);
   const [activeNav, setActiveNav] = useState<AdminNavKey>("dashboard");
+  /** ✅ 탭 전환 강제 리렌더 트리거 (flushSync 탈락시 state 재 커밋 보장용) */
+  const [__navForceTick, setNavForceTick] = useState<number>(0);
   /** ✅ 원래 6대 탭 기반 초기 진입: 정산 / 후원자 / 오버레이 그룹만 펼치기 */
   const [expandedNavGroups, setExpandedNavGroups] = useState<Record<AdminNavKey, boolean>>({
     dashboard: false,
@@ -2247,23 +2249,50 @@ function AdminPageInner() {
   const moveToSection = (key: AdminNavKey, targetId: string, opts?: { fromSubItem?: boolean }) => {
     const resolved: AdminNavKey = LEGACY_TO_NEW_KEY[key as string] ?? key;
     const finalActiveNav: AdminNavKey = resolved;
-    const commitState = () => {
+    if (typeof window !== "undefined") {
+      try {
+        // eslint-disable-next-line no-console
+        console.debug("[admin-nav] moveToSection called:", { key, finalActiveNav, targetId, opts });
+      } catch (_noop) { /* noop */ }
+    }
+    const commitState = (tick = true) => {
       setActiveNav(() => finalActiveNav);
       setExpandedNavGroups((prev) => ({ ...prev, [key]: true, [finalActiveNav]: true }));
       setActiveSubTargetId(() => targetId);
+      if (tick) { try { setNavForceTick((t) => t + 1); } catch (_noop) { /* noop */ } }
     };
     try {
       if (typeof flushSync === "function") {
-        try {
-          flushSync(() => { commitState(); });
-        } catch (_fsErr) {
-          commitState();
+        try { flushSync(() => { commitState(true); }); } catch (_fsErr) { commitState(true); }
+      } else { commitState(true); }
+    } catch (_err) { try { commitState(true); } catch (_noop) { /* noop */ } }
+    const applyDomFallback = () => {
+      try {
+        const TAB_KEYS: Array<AdminNavKey> = ["dashboard", "settlement", "donor", "overlay", "goal", "logs"];
+        for (const k of TAB_KEYS) {
+          const els = document.querySelectorAll<HTMLElement>(`[data-admin-tab="${k}"]`);
+          if (!els || els.length === 0) continue;
+          const visible = (k === finalActiveNav) || (finalActiveNav === "goal" && k === "overlay");
+          els.forEach((el) => {
+            el.style.display = visible ? "" : "none";
+            el.setAttribute("aria-hidden", visible ? "false" : "true");
+          });
         }
-      } else {
-        commitState();
-      }
-    } catch (_err) {
-      try { commitState(); } catch (_noop) { /* noop */ }
+        try {
+          // eslint-disable-next-line no-console
+          console.debug("[admin-nav] applyDomFallback done → finalActiveNav=", finalActiveNav, {
+            dashDisplay: document.querySelector('[data-admin-tab="dashboard"]')?.getAttribute("style"),
+            settleDisplay: document.querySelector('[data-admin-tab="settlement"]')?.getAttribute("style"),
+          });
+        } catch (_noop) { /* noop */ }
+      } catch (_noop) { /* noop */ }
+    };
+    if (typeof window !== "undefined") {
+      try { (window as any).__adminApplyFallback = applyDomFallback; } catch (_noop) { /* noop */ }
+      try { (window as any).__adminMoveTo = moveToSection; } catch (_noop) { /* noop */ }
+      window.setTimeout(() => { try { commitState(true); } catch (_noop) { /* noop */ } applyDomFallback(); }, 0);
+      window.setTimeout(() => { try { commitState(true); } catch (_noop) { /* noop */ } applyDomFallback(); }, 90);
+      window.setTimeout(applyDomFallback, 260);
     }
     if (typeof window === "undefined") return;
     try { expandAdminSection(targetId); } catch (_noop) { /* noop */ }
@@ -10986,6 +11015,7 @@ function AdminPageInner() {
         <div
           id="admin-content-scroll"
           ref={contentScrollRef}
+          data-nav-force-render={__navForceTick}
           className="flex-1 min-h-0 max-h-[calc(100dvh-140px)] overflow-y-auto pr-2 pt-1"
           onScroll={(e) => {
             donorListLastScrollTopRef.current = (e.target as HTMLDivElement).scrollTop;
@@ -10993,7 +11023,12 @@ function AdminPageInner() {
           }}
         >
         {isAdminNavSectionVisible("dashboard") && (
-          <div key="tab-dashboard" className="ui-tab-fade-in">
+          <div
+            key="tab-dashboard"
+            data-admin-tab="dashboard"
+            className="ui-tab-fade-in"
+            style={{ display: activeNav === "dashboard" ? "" : "none" }}
+          >
         <AdminCollapsibleSection
           id="dashboard-summary"
           title="대시보드"
@@ -11211,7 +11246,12 @@ function AdminPageInner() {
         <div className="grid grid-cols-1 gap-6">
           <div className="space-y-6">
             {isAdminNavSectionVisible("dashboard") && (
-              <div key="tab-dashboard-board" className="ui-tab-fade-in">
+              <div
+                key="tab-dashboard-board"
+                data-admin-tab="dashboard"
+                className="ui-tab-fade-in"
+                style={{ display: activeNav === "dashboard" ? "" : "none" }}
+              >
             <AdminCollapsibleSection
               id="settlement-member-board"
               title="멤버 정산 보드"
@@ -13285,7 +13325,7 @@ function AdminPageInner() {
 
                             type="color"
 
-                            value={toColorPickerValue(String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] ?? ""), "#ffffff")}
+                            value={toColorPickerValue(String((state.donorRankingsTheme as any)[key] ?? ""), "#ffffff")}
 
                             onChange={(e) => updateDonorRankingsTheme({ [key]: e.target.value } as Partial<AppState["donorRankingsTheme"]>)}
 
@@ -13331,7 +13371,7 @@ function AdminPageInner() {
 
                             value={toColorPickerValue(
 
-                              String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] ?? ""),
+                              String((state.donorRankingsTheme as any)[key] ?? ""),
 
                               fallback
 
@@ -13351,7 +13391,7 @@ function AdminPageInner() {
 
                             type="text"
 
-                            value={String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] || "")}
+                            value={String((state.donorRankingsTheme as any)[key] || "")}
 
                             onChange={(e) => updateDonorRankingsTheme({ [key]: e.target.value } as Partial<AppState["donorRankingsTheme"]>)}
 
@@ -15810,7 +15850,12 @@ function AdminPageInner() {
             )}
 
             {isAdminNavSectionVisible("donor") && (
-              <div key="tab-donor" className="ui-tab-fade-in">
+              <div
+                key="tab-donor"
+                data-admin-tab="donor"
+                className="ui-tab-fade-in"
+                style={{ display: activeNav === "donor" ? "" : "none" }}
+              >
             <>
             <AdminCollapsibleSection
               id="donor-management"
@@ -18116,7 +18161,12 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
             )}
 
             {isAdminNavSectionVisible("overlay") && (
-              <div key="tab-overlay" className="ui-tab-fade-in">
+              <div
+                key="tab-overlay"
+                data-admin-tab="overlay"
+                className="ui-tab-fade-in"
+                style={{ display: (activeNav === "overlay" || activeNav === "goal") ? "" : "none" }}
+              >
             <AdminCollapsibleSection
               id="overlay-settings"
               title="오버레이 관리 (다중)"
@@ -18298,7 +18348,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                       <input
                         type="color"
                         value={toColorPickerValue(
-                          String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] ?? ""),
+                          String((state.donorRankingsTheme as any)[key] ?? ""),
                           "#ffffff"
                         )}
                         onChange={(e) =>
@@ -18324,7 +18374,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                       <input
                         type="color"
                         value={toColorPickerValue(
-                          String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] ?? ""),
+                          String((state.donorRankingsTheme as any)[key] ?? ""),
                           fallback
                         )}
                         onChange={(e) =>
@@ -18334,7 +18384,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                       />
                       <input
                         type="text"
-                        value={String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] || "")}
+                        value={String((state.donorRankingsTheme as any)[key] || "")}
                         onChange={(e) =>
                           updateDonorRankingsTheme({ [key]: e.target.value } as Partial<AppState["donorRankingsTheme"]>)
                         }
@@ -20801,7 +20851,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                           텍스트 효과
                                           <select
                                             className="mt-0.5 w-full rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs"
-                                            value={String((p as unknown as Record<string, string | undefined>)[effectKey] || "")}
+                                            value={String((p as any)[effectKey] || "")}
                                             onChange={(e) => updatePreset(p.id, { [effectKey]: e.target.value } as Partial<OverlayPreset>)}
                                           >
                                             <option value="">공통/기본</option>
@@ -20817,7 +20867,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                             <input
                                               type="color"
                                               className="mt-0.5 h-7 w-full rounded border border-white/10 bg-neutral-900/80 p-0.5"
-                                              value={toColorPickerValue(String((p as unknown as Record<string, string | undefined>)[colorKey] || ""), colorFallback)}
+                                              value={toColorPickerValue(String((p as any)[colorKey] || ""), colorFallback)}
                                               onChange={(e) => updatePreset(p.id, { [colorKey]: e.target.value } as Partial<OverlayPreset>)}
                                             />
                                           </label>
@@ -20826,7 +20876,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                             <input
                                               type="color"
                                               className="mt-0.5 h-7 w-full rounded border border-white/10 bg-neutral-900/80 p-0.5"
-                                              value={toColorPickerValue(String((p as unknown as Record<string, string | undefined>)[colorAltKey] || ""), colorAltFallback)}
+                                              value={toColorPickerValue(String((p as any)[colorAltKey] || ""), colorAltFallback)}
                                               onChange={(e) => updatePreset(p.id, { [colorAltKey]: e.target.value } as Partial<OverlayPreset>)}
                                             />
                                           </label>
@@ -22069,7 +22119,12 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
             )}
 
             {isAdminNavSectionVisible("settlement") && (
-              <div key="tab-settlement-finalize" className="ui-tab-fade-in">
+              <div
+                key="tab-settlement-finalize"
+                data-admin-tab="settlement"
+                className="ui-tab-fade-in"
+                style={{ display: activeNav === "settlement" ? "" : "none" }}
+              >
             <AdminCollapsibleSection
               id="settlement-finalize"
               title="방송 종료 정산"
@@ -22270,7 +22325,12 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
             )}
 
             {isAdminNavSectionVisible("logs") && (
-              <div key="tab-logs" className="ui-tab-fade-in">
+              <div
+                key="tab-logs"
+                data-admin-tab="logs"
+                className="ui-tab-fade-in"
+                style={{ display: activeNav === "logs" ? "" : "none" }}
+              >
             <AdminCollapsibleSection
               id="logs-data"
               title="데이터"
