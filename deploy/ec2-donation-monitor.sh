@@ -51,9 +51,9 @@ fi
 curl_get() {
   local url="$1"
   if [ -n "$COOKIE" ]; then
-    curl -s -m 8 --max-time 8 -b "$COOKIE" "$url" 2>/dev/null
+    curl -s -m 8 --max-time 8 --connect-timeout 3 --retry 2 --retry-delay 1 --retry-all-errors -b "$COOKIE" "$url" 2>/dev/null
   else
-    curl -s -m 8 --max-time 8 "$url" 2>/dev/null
+    curl -s -m 8 --max-time 8 --connect-timeout 3 --retry 2 --retry-delay 1 --retry-all-errors "$url" 2>/dev/null
   fi
 }
 
@@ -209,8 +209,26 @@ collect_snapshot() {
   HUB_BYTES=$(wc -c   < "$SNAP_HUB_FILE"   2>/dev/null)
   [[ "$STATE_BYTES" =~ ^[0-9]+$ ]] || STATE_BYTES=0
   [[ "$HUB_BYTES"   =~ ^[0-9]+$ ]] || HUB_BYTES=0
-  DBG_DONORS_N=$(json_field_str "$SNAP_STATE_JSON" 'len(d.get("donors") or [])' '0')
-  DBG_HUBLOG_N=$(json_field_str "$SNAP_HUB_JSON"   'len(d.get("logs") or d.get("donationLogs") or [])' '0')
+  DBG_DONORS_N=$("$PY" -c '
+import json,sys
+try:
+  d=json.loads(open(sys.argv[1],encoding="utf-8",errors="replace").read() or "{}")
+  donors=d.get("donors")
+  if isinstance(donors,list): print(len(donors))
+  else: print(0)
+except Exception:
+  print(0)
+' "$SNAP_STATE_FILE" 2>/dev/null)
+  DBG_HUBLOG_N=$("$PY" -c '
+import json,sys
+try:
+  d=json.loads(open(sys.argv[1],encoding="utf-8",errors="replace").read() or "{}")
+  logs=d.get("logs") or d.get("donationLogs")
+  if isinstance(logs,list): print(len(logs))
+  else: print(0)
+except Exception:
+  print(0)
+' "$SNAP_HUB_FILE" 2>/dev/null)
   [[ "$DBG_DONORS_N" =~ ^[0-9]+$ ]] || DBG_DONORS_N=0
   [[ "$DBG_HUBLOG_N" =~ ^[0-9]+$ ]] || DBG_HUBLOG_N=0
 }
@@ -390,7 +408,7 @@ print(s)
     cat "$donors_list_tmp" >> "$recent_body"
   fi
 
-  local log_rows=$(( lines - 14 ))
+  local log_rows=$(( lines - 17 ))
   [ $log_rows -lt 4 ] && log_rows=4
 
   local log_hdr="${C_CYAN}│ ${C_RST}${BOLD}📌 최근 후원 로그 (표시 영역 ${log_rows}행)${C_RST}${C_DIM}  [q=종료 r=새로고침 h=도움 t=추세 d=정합성 v=되돌리기]${C_RST}"
@@ -399,12 +417,12 @@ print(s)
 
   local shown=0
   if [ -s "$recent_body" ]; then
-    awk 'NF && !seen[$0]++' "$recent_body" 2>/dev/null | head -n "$log_rows" | while IFS= read -r line; do
+    while IFS= read -r line; do
       shown=$((shown+1))
       local lline="${C_CYAN}│ ${C_RST}  ${C_DIM}·${C_RST} $line"
       pad="$(safe_pad_from "$lline" "$(( cols - 4 ))" )"
       printf '%s%*s%s\n' "$lline" "${pad:-0}" "" "${C_CYAN} │${C_RST}" | cut -c1-"$cols"
-    done
+    done < <(awk 'NF && !seen[$0]++' "$recent_body" 2>/dev/null | head -n "$log_rows")
   else
     local empty_line="${C_CYAN}│ ${C_RST}   ${C_DIM}(아직 수신된 후원 로그가 없거나 state/hub 응답이 비었습니다)${C_RST}"
     pad="$(safe_pad_from "$empty_line" "$(( cols - 4 ))" )"
@@ -900,6 +918,31 @@ def file_size(p):
   try: return os.path.getsize(p)
   except Exception: return 0
 st_bytes=file_size(state_file); hb_bytes=file_size(hub_file)
+_st_meta='(not-yet-parsed)'
+_hb_meta='(not-yet-parsed)'
+def _hub_meta(hub_raw_dict):
+  try:
+    ok=str(hub_raw_dict.get('ok') or '')
+    disabled=str(hub_raw_dict.get('disabled') or 'false')
+    sess=hub_raw_dict.get('session') or {}
+    if isinstance(sess,dict):
+      email=str(sess.get('email') or '')
+      linked=str(sess.get('linkedAt') or '')
+    else:
+      email=''; linked=''
+    logs=hub_raw_dict.get('logs') or hub_raw_dict.get('donationLogs') or []
+    l_n=len(logs) if isinstance(logs,list) else 0
+    return f'ok={ok} disabled={disabled} email={email or "<none>"} linked={linked or "-"} logs_n={l_n}'
+  except Exception as e:
+    return f'(meta_parse_err:{e})'
+def _state_meta(state_raw_dict):
+  try:
+    donors=state_raw_dict.get('donors') or []
+    d_n=len(donors) if isinstance(donors,list) else 0
+    reset=str(state_raw_dict.get('settlementResetAt') or '0')
+    return f'donors_n={d_n} resetAt={reset}'
+  except Exception as e:
+    return f'(state_meta_parse_err:{e})'
 def krw(n):
   try: n=int(n)
   except: n=0
@@ -914,9 +957,11 @@ def bail(msg):
   lines=['(정합성 데이터 준비중: '+str(msg)+')',
          f'  debug: state_file={st_bytes:,} bytes · hub_file={hb_bytes:,} bytes',
          f'  debug: q_n={q_n} · u_n={u_n}',
+         f'  state_meta: {_st_meta}',
+         f'  hub_meta: {_hb_meta}',
          '',
-         '전체 state donors: 불러오는 중',
-         'Hub logs: 불러오는 중']
+         '전체 state donors: 불러오는 중 (state 파일 정상이면 곧 표시됨)',
+         'Hub logs: 불러오는 중 (DIN 허브 로그인 확인 필요)']
   try:
     with open(out_path,'w') as f: f.write(chr(10).join(lines)+chr(10))
   except Exception: pass
@@ -932,11 +977,13 @@ except Exception as e:
 try:
   state=json.loads(state_raw or '{}')
 except Exception as e:
-  bail('state JSON 파싱 실패: '+str(e)+' (state_bytes='+str(st_bytes)+')')
+  bail('state JSON 파싱 실패: '+str(e)+' (state_bytes='+str(st_bytes)+', raw[:120]='+repr(state_raw[:120])+')')
 try:
   hub=json.loads(hub_raw or '{}')
 except Exception as e:
-  bail('hub JSON 파싱 실패: '+str(e)+' (hub_bytes='+str(hb_bytes)+')')
+  bail('hub JSON 파싱 실패: '+str(e)+' (hub_bytes='+str(hb_bytes)+', raw[:120]='+repr(hub_raw[:120])+')')
+_st_meta=_state_meta(state)
+_hb_meta=_hub_meta(hub)
 try:
   # state donors + settlementResetAt
   st_donors=state.get('donors') or []
@@ -1125,11 +1172,16 @@ try:
     f.write('\n'.join(lines)+'\n')
 except Exception as e:
   bail(str(e))
-" "$SNAP_STATE_FILE" "$SNAP_HUB_FILE" "${q_len:-0}" "${un_len:-0}" "$out" 2>/dev/null
-  if [ ! -s "$out" ]; then
+" "$SNAP_STATE_FILE" "$SNAP_HUB_FILE" "${q_len:-0}" "${un_len:-0}" "$out" 2> "$TMP_DIR/diff.err"
+  local py_rc=$?
+  if [ ! -s "$out" ] || [ $py_rc -ne 0 ]; then
     {
-      echo "(정합성 데이터 준비중...)"
+      echo "(정합성 데이터 준비중: Python rc=$py_rc, state_bytes=${STATE_BYTES:-0}, hub_bytes=${HUB_BYTES:-0})"
       echo ""
+      if [ -s "$TMP_DIR/diff.err" ]; then
+        echo "  [stderr] $(head -c 300 "$TMP_DIR/diff.err" | tr '\n' ' ')"
+        echo ""
+      fi
       echo "  후원 state / hub logs 를 아직 불러오지 못했습니다."
       echo "  잠시 후 자동으로 갱신됩니다."
     } > "$out" 2>/dev/null
@@ -1169,7 +1221,18 @@ render_diff_panel() {
   if [ "${HUB_BYTES:-0}" -gt 0 ] && [ "${DBG_HUBLOG_N:-0}" -gt 0 ]; then
     hb_="${hb_}${C_GREEN}${HUB_BYTES:-0}B/${DBG_HUBLOG_N:-0}logs${C_RST}"
   elif [ "${HUB_BYTES:-0}" -gt 0 ]; then
-    hb_="${hb_}${C_YELLOW}${HUB_BYTES:-0}B/0logs${C_RST}"
+    local hub_email hub_ok
+    hub_email=$(json_field_str "$SNAP_HUB_JSON" 'd.get("session",{}).get("email") or ""' '')
+    hub_ok=$(json_field_str "$SNAP_HUB_JSON" 'd.get("ok")' '')
+    local ses_tag=""
+    if [ -n "$hub_email" ] && [ "$hub_email" != "null" ]; then
+      ses_tag="${C_BLUE}login=${hub_email}${C_RST} "
+    elif [ "$hub_ok" = "true" ]; then
+      ses_tag="${C_YELLOW}ok=yes/no-email${C_RST} "
+    else
+      ses_tag="${C_RED}no-session${C_RST} "
+    fi
+    hb_="${hb_}${C_YELLOW}${HUB_BYTES:-0}B/0logs${C_RST} ${ses_tag}"
   else
     hb_="${hb_}${C_RED}0B/0logs (curl fail?)${C_RST}"
   fi

@@ -22,6 +22,8 @@ source "$ROOT/deploy/ec2-free-port.sh"
 
 PM2_APP="${PM2_APP:-youtube}"
 NODE_HEAP_MB="${NODE_HEAP_MB:-1536}"
+SERVER_HEAP_MB="${SERVER_HEAP_MB:-768}"
+PM2_MAX_MEM_MB="${PM2_MAX_MEM_MB:-850}"
 STAGING_DIR="${NEXT_BUILD_DIR:-.next-staging}"
 PORT="${PORT:-3000}"
 SWAP_FILE="${SWAP_FILE:-/swapfile}"
@@ -34,6 +36,11 @@ DEPLOY_FAST="${DEPLOY_FAST:-0}"
 MYSQL_WAS_STOPPED=0
 SWAP_CREATED_BY_US=0
 PM2_STOPPED_FOR_BUILD=0
+
+SERVER_NODE_OPTIONS="${SERVER_NODE_OPTIONS:---max-old-space-size=${SERVER_HEAP_MB} --gc-interval=8192}"
+PM2_KILL_TIMEOUT_MS="${PM2_KILL_TIMEOUT_MS:-10000}"
+PM2_MIN_UPTIME_MS="${PM2_MIN_UPTIME_MS:-30000}"
+PM2_RESTART_DELAY_MS="${PM2_RESTART_DELAY_MS:-4000}"
 
 run() {
   if [[ "$(id -u)" == "0" ]]; then "$@"; else sudo "$@"; fi
@@ -281,6 +288,17 @@ if systemctl list-unit-files nginx.service >/dev/null 2>&1; then
   run systemctl reload nginx 2>/dev/null || true
 fi
 
+apply_pm2_runtime_guardrails() {
+  local app="$1"
+  pm2 set "${app}:max_memory_restart" "${PM2_MAX_MEM_MB}M" 2>/dev/null || true
+  pm2 set "${app}:kill_timeout" "${PM2_KILL_TIMEOUT_MS}" 2>/dev/null || true
+  pm2 set "${app}:min_uptime"    "${PM2_MIN_UPTIME_MS}"  2>/dev/null || true
+  pm2 set "${app}:restart_delay" "${PM2_RESTART_DELAY_MS}" 2>/dev/null || true
+  pm2 set "${app}:autorestart"  "true" 2>/dev/null || true
+  pm2 env "${app}" NODE_OPTIONS "${SERVER_NODE_OPTIONS}" 2>/dev/null || true
+  pm2 env "${app}" SERVER_HEAP_MB "${SERVER_HEAP_MB}" 2>/dev/null || true
+}
+
 clear_pm2_build_env() {
   unset NEXT_BUILD_DIR NEXT_USE_STAGING_DIST || true
   export NEXT_BUILD_DIR="" NEXT_USE_STAGING_DIST=""
@@ -291,14 +309,18 @@ clear_pm2_build_env() {
 reload_pm2_app() {
   clear_pm2_build_env
   cd "$ROOT"
+  apply_pm2_runtime_guardrails "$PM2_APP" >/dev/null 2>&1 || true
   if pm2 describe "$PM2_APP" >/dev/null 2>&1; then
-    echo "== pm2 reload ${PM2_APP} =="
+    echo "== pm2 reload ${PM2_APP} (mem<=${PM2_MAX_MEM_MB}M heap=${SERVER_HEAP_MB}M) =="
     pm2 reload "$PM2_APP" --update-env 2>/dev/null || pm2 restart "$PM2_APP" --update-env
     return $?
   fi
-  echo "== pm2 최초 기동 ${PM2_APP} =="
+  echo "== pm2 최초 기동 ${PM2_APP} (mem<=${PM2_MAX_MEM_MB}M heap=${SERVER_HEAP_MB}M) =="
   free_listen_port "$PORT"
-  NEXT_BUILD_DIR= NEXT_USE_STAGING_DIST= pm2 start npm --name "$PM2_APP" -- start
+  NODE_OPTIONS="${SERVER_NODE_OPTIONS}" NEXT_BUILD_DIR= NEXT_USE_STAGING_DIST= \
+    pm2 start npm --name "$PM2_APP" --max-memory-restart "${PM2_MAX_MEM_MB}M" \
+      --kill-timeout "${PM2_KILL_TIMEOUT_MS}" --min-up-time "${PM2_MIN_UPTIME_MS}" \
+      --restart-delay "${PM2_RESTART_DELAY_MS}" -- start
   return $?
 }
 
@@ -308,7 +330,11 @@ start_pm2_app_fresh() {
   pm2 delete "$PM2_APP" 2>/dev/null || true
   free_listen_port "$PORT"
   cd "$ROOT"
-  NEXT_BUILD_DIR= NEXT_USE_STAGING_DIST= pm2 start npm --name "$PM2_APP" -- start
+  echo "== pm2 fresh start ${PM2_APP} (mem<=${PM2_MAX_MEM_MB}M heap=${SERVER_HEAP_MB}M) =="
+  NODE_OPTIONS="${SERVER_NODE_OPTIONS}" NEXT_BUILD_DIR= NEXT_USE_STAGING_DIST= \
+    pm2 start npm --name "$PM2_APP" --max-memory-restart "${PM2_MAX_MEM_MB}M" \
+      --kill-timeout "${PM2_KILL_TIMEOUT_MS}" --min-up-time "${PM2_MIN_UPTIME_MS}" \
+      --restart-delay "${PM2_RESTART_DELAY_MS}" -- start
   return $?
 }
 
@@ -335,6 +361,33 @@ if [[ "$KEEP_SWAP" != "1" ]] && [[ "$SWAP_CREATED_BY_US" == "1" || "${FORCE_REMO
   run rm -f "$SWAP_FILE"
 fi
 
+rollback_next_build() {
+  if [[ -d .next.old ]]; then
+    echo "== ROLLBACK: .next → .next.bad · .next.old → .next =="
+    rm -rf .next.bad
+    if [[ -d .next ]]; then
+      mv .next .next.bad 2>/dev/null || rm -rf .next
+    fi
+    mv .next.old .next
+    start_pm2_app_fresh >/dev/null 2>&1 || true
+    sleep 4
+    local rb_health=0 rb_i
+    for rb_i in 1 2 3 4 5; do
+      if curl -sf --max-time 5 "http://127.0.0.1:${PORT}/api/health" >/dev/null 2>&1; then
+        rb_health=1; break
+      fi
+      sleep 1
+    done
+    if [[ "$rb_health" == "1" ]]; then
+      echo " ROLLBACK OK (직전 정상 빌드로 복구됨)"
+      return 0
+    fi
+    echo " ROLLBACK FAIL — 배포를 중단합니다"
+    return 1
+  fi
+  return 1
+}
+
 # ----- 헬스 -----
 echo "== health =="
 sleep $([[ "$DEPLOY_FAST" == "1" ]] && echo 1 || echo 2)
@@ -348,16 +401,26 @@ for i in 1 2 3 4 5; do
   sleep 1
 done
 if [[ "$HEALTH_OK" != "1" ]]; then
-  echo " health check 실패 — pm2 logs ${PM2_APP} 확인"
+  echo " health check FAIL"
   pm2 logs "$PM2_APP" --lines 30 --nostream 2>/dev/null || true
-  exit 1
+  if rollback_next_build; then
+    echo " 배포 실패 → 자동 롤백 완료 · 사용자는 영향 없음"
+    exit 2
+  else
+    exit 1
+  fi
 fi
 
 if ! verify_state_api "$PORT"; then
   echo "== /api/state 스모크 실패 — zombie·MySQL·pm2 logs 확인 =="
   pm2 logs "$PM2_APP" --lines 30 --nostream 2>/dev/null || true
   systemctl is-active mysql 2>/dev/null || true
-  exit 1
+  if rollback_next_build; then
+    echo " 배포 실패 → 자동 롤백 완료 · 사용자는 영향 없음"
+    exit 2
+  else
+    exit 1
+  fi
 fi
 
 OBS_TEXT_CODE="$(curl -sf -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/overlay/obs-text?u=finalent&host=obs&textId=default" || echo "000")"
@@ -368,9 +431,13 @@ if ! verify_static_serving; then
   reload_pm2_app || start_pm2_app_fresh || true
   sleep 4
   if ! verify_static_serving; then
-    echo "== static 재시도 실패 — pm2 logs ${PM2_APP} 확인 =="
+    echo "== static 재시도 FAIL — pm2 logs ${PM2_APP} 확인 =="
     df -h / | awk 'NR==1 || /root|\/$/'
     pm2 logs "$PM2_APP" --lines 20 --nostream 2>/dev/null || true
+    if rollback_next_build; then
+      echo " 배포 실패 → 자동 롤백 완료 · 사용자는 영향 없음"
+      exit 2
+    fi
     echo "  bash deploy/ec2-recover-youtube.sh"
     echo "  브라우저: Ctrl+Shift+R 후 재접속"
     exit 1

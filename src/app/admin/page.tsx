@@ -782,6 +782,16 @@ function AdminPageInner() {
   const [syncStatus, setSyncStatus] = useState<"loading" | "synced" | "local" | "error">("loading");
   /** 후원 리스트 DOM — 기본 최근 N건만 (전체 렌더는 버튼) */
   const [donorListShowAll, setDonorListShowAll] = useState(false);
+  /** ✅ 후원자 리스트 개선 v3: 필터 / 검색 / 압축보기 상태 (짧은 시간 대량 데이터 적재 대응) */
+  const [donorListQuery, setDonorListQuery] = useState<string>("");
+  const donorListQueryRef = useRef<string>("");
+  useEffect(() => { donorListQueryRef.current = donorListQuery; }, [donorListQuery]);
+  type DonorTimeFilterKey = "all" | "today" | "1h" | "30m" | "10m" | "5m";
+  const [donorListTimeFilter, setDonorListTimeFilter] = useState<DonorTimeFilterKey>("all");
+  const [donorListMinAmount, setDonorListMinAmount] = useState<number | "">("");
+  const [donorListMaxAmount, setDonorListMaxAmount] = useState<number | "">("");
+  const [donorListDenseMode, setDonorListDenseMode] = useState<boolean>(false);
+  const [donorListFilterExpanded, setDonorListFilterExpanded] = useState<boolean>(false);
   /**
    * ✅ 신규: 후원 리스트 개별 행 체크박스 (선택 상태 Map 기반)
    * - 핵심: donorId 기반 Set으로 관리 → SSE/Polling state 업뎃시 리렌더되어도 절대 선택 리셋 안됨
@@ -2067,15 +2077,73 @@ function AdminPageInner() {
     []
   );
   const DONOR_LIST_WINDOW = 300;
-  /** ✅ 후원자 리스트 페이지네이션 v2: 전체 N건 → DOM 50/100/300건씩만 렌더 → 메모리·렌더 성능 6~10배 개선 */
-  const DONOR_PAGE_SIZES = [50, 100, 300] as const;
+  /** ✅ 후원자 리스트 페이지네이션 v3: 20/50/100/300 — 대량 데이터 20건 단위 촘촘한 페이지 지원 */
+  const DONOR_PAGE_SIZES = [20, 50, 100, 300] as const;
   type DonorPageSize = (typeof DONOR_PAGE_SIZES)[number];
   const [donorListPage, setDonorListPage] = useState<number>(1);
-  const [donorListPageSize, setDonorListPageSize] = useState<DonorPageSize>(50);
-  const donorTotalPages = Math.max(1, Math.ceil(donorListRowsSorted.length / donorListPageSize));
+  const [donorListPageSize, setDonorListPageSize] = useState<DonorPageSize>(20);
+  /** ✅ 후원자 리스트 필터 파이프라인 (useMemo로 O(N) 1회만, 변경시 재계산)
+   *  1단계: 시간범위 필터 → 2단계: 금액범위 → 3단계: 텍스트 검색 (이름 / 메시지 / 멤버명)  */
+  const donorListRowsFiltered = useMemo(() => {
+    const rows = donorListRowsSorted;
+    let out = rows;
+    // 1) 시간 범위 필터
+    if (donorListTimeFilter !== "all") {
+      const now = Date.now();
+      let fromTs = 0;
+      if (donorListTimeFilter === "today") {
+        const d = new Date(); d.setHours(0, 0, 0, 0); fromTs = d.getTime();
+      } else if (donorListTimeFilter === "1h")  { fromTs = now - 60 * 60 * 1000; }
+      else if (donorListTimeFilter === "30m") { fromTs = now - 30 * 60 * 1000; }
+      else if (donorListTimeFilter === "10m") { fromTs = now - 10 * 60 * 1000; }
+      else if (donorListTimeFilter === "5m")  { fromTs = now - 5  * 60 * 1000; }
+      if (fromTs > 0) out = out.filter((d) => Number(d.at || 0) >= fromTs);
+    }
+    // 2) 금액 범위 필터
+    const minAmt = typeof donorListMinAmount === "number" && Number.isFinite(donorListMinAmount) ? donorListMinAmount : null;
+    const maxAmt = typeof donorListMaxAmount === "number" && Number.isFinite(donorListMaxAmount) ? donorListMaxAmount : null;
+    if (minAmt !== null || maxAmt !== null) {
+      out = out.filter((d: any) => {
+        const a = Number(d?.amount ?? 0);
+        if (minAmt !== null && a < minAmt) return false;
+        if (maxAmt !== null && a > maxAmt) return false;
+        return true;
+      });
+    }
+    // 3) 텍스트 검색 — 이름 / 메시지 / 멤버명 / 투네ID 어느쪽이든 대소문자 구분없이 포함 매치
+    const q = donorListQuery.trim().toLowerCase();
+    if (q.length > 0) {
+      out = out.filter((d: any) => {
+        const name = String(d?.name || d?.donorName || "").toLowerCase();
+        const msg  = String(d?.message || "").toLowerCase();
+        const mem  = String(d?.memberId || d?.memberName || d?.member || "").toLowerCase();
+        const src  = String(d?.source || d?.origin || "").toLowerCase();
+        return name.includes(q) || msg.includes(q) || mem.includes(q) || src.includes(q);
+      });
+    }
+    return out;
+  }, [donorListRowsSorted, donorListTimeFilter, donorListMinAmount, donorListMaxAmount, donorListQuery]);
+  /** ✅ 페이지 범위 재계산 — donorListRowsSorted → donorListRowsFiltered 로 소스 교체 */
+  const donorTotalPages = Math.max(1, Math.ceil(donorListRowsFiltered.length / donorListPageSize));
   const donorPageIdx = Math.min(donorListPage, donorTotalPages);
   const donorPageStart = (donorPageIdx - 1) * donorListPageSize;
   const donorPageEnd = donorPageStart + donorListPageSize;
+  /** ✅ 페이지 내 & 선택 행 총액 집계 (실시간 확인용) */
+  const donorPageAgg = useMemo(() => {
+    let pageSum = 0; let pageCount = 0;
+    const vis = donorListShowAll ? donorListRowsFiltered : donorListRowsFiltered.slice(donorPageStart, donorPageEnd);
+    for (const d of vis as any[]) { pageSum += Number(d?.amount ?? 0); pageCount += 1; }
+    return { pageSum, pageCount };
+  }, [donorListRowsFiltered, donorListShowAll, donorPageStart, donorPageEnd]);
+  const donorSelectedAgg = useMemo(() => {
+    let selSum = 0; let selCount = 0;
+    if (selectedDonorIds.size === 0) return { selSum: 0, selCount: 0 };
+    for (const d of donorListRowsFiltered as any[]) {
+      const id = String(d?.id ?? "");
+      if (id && selectedDonorIds.has(id)) { selSum += Number(d?.amount ?? 0); selCount += 1; }
+    }
+    return { selSum, selCount };
+  }, [donorListRowsFiltered, selectedDonorIds]);
   /** 페이지 범위 자동 보정: 후원 건수 줄어들어 현재 페이지가 총 페이지 초과하면 마지막 페이지로 강제 이동 */
   useEffect(() => {
     if (donorListPage !== donorTotalPages) setDonorListPage(donorTotalPages);
@@ -2084,10 +2152,19 @@ function AdminPageInner() {
   const donorListRowsVisible = useMemo(
     () =>
       donorListShowAll
-        ? donorListRowsSorted
-        : donorListRowsSorted.slice(donorPageStart, donorPageEnd),
-    [donorListRowsSorted, donorListShowAll, donorPageStart, donorPageEnd]
+        ? donorListRowsFiltered
+        : donorListRowsFiltered.slice(donorPageStart, donorPageEnd),
+    [donorListRowsFiltered, donorListShowAll, donorPageStart, donorPageEnd]
   );
+  /** 필터 활성화 여부 — UI에 "필터 적용 중" 뱃지 표시용 */
+  const donorFilterActive = donorListTimeFilter !== "all" || donorListQuery.trim().length > 0 || typeof donorListMinAmount === "number" || typeof donorListMaxAmount === "number";
+  const clearDonorFilters = useCallback(() => {
+    setDonorListTimeFilter("all");
+    setDonorListQuery("");
+    setDonorListMinAmount("");
+    setDonorListMaxAmount("");
+    setDonorListPage(1);
+  }, []);
   const toggleDonorSelect = useCallback((donorId?: string, isAll?: boolean) => {
     if (isAll) {
       setSelectedDonorIds((prev) => {
@@ -2171,11 +2248,11 @@ function AdminPageInner() {
     let finalActiveNav: AdminNavKey = key;
     const resolved: AdminNavKey = LEGACY_TO_NEW_KEY[key as string] ?? key;
     finalActiveNav = resolved;
-    setActiveNav(finalActiveNav);
-    /** ✅ 상세 분류: 해당 대분류 자동 펼침 + 소메뉴 하이라이트 */
-    setExpandedNavGroups((prev) => ({ ...prev, [key]: true, [finalActiveNav]: true }));
-    setActiveSubTargetId(targetId);
-    /** ✅ 사이드바 항상 열림: setSidebarOpen(false) 호출 금지 */
+    flushSync(() => {
+      setActiveNav(finalActiveNav);
+      setExpandedNavGroups((prev) => ({ ...prev, [key]: true, [finalActiveNav]: true }));
+      setActiveSubTargetId(targetId);
+    });
     if (typeof window === "undefined") return;
     expandAdminSection(targetId);
     let parent = ADMIN_SECTION_EXPAND_PARENTS[targetId];
@@ -2185,37 +2262,38 @@ function AdminPageInner() {
       expandAdminSection(parent);
       parent = ADMIN_SECTION_EXPAND_PARENTS[parent];
     }
-    /**
-     * ✅ 상세 분류 동작 분기:
-     * - 대분류 헤더 클릭(fromSubItem=false) → scrollTop=0 (탭 전환 느낌)
-     * - 소메뉴 클릭(fromSubItem=true) → 해당 섹션으로 스크롤 + scroll-margin-top 110px 자동 적용
-     */
-    window.requestAnimationFrame(() => {
-      if (opts?.fromSubItem) {
-        /**
-         * ✅ 상세 분류: 소메뉴 클릭시 탭 전환刚 DOM 마운트 지연될 수 있으므로
-         *    requestAnimationFrame 1번 → setTimeout 150ms 로 재시도 1회 보장
-         *    (activeNav=overlay 세팅 후 overlay 섹션 DOM mount까지 React re-render 소요)
-         */
-        const tryScroll = (retry: number) => {
-          const el = document.getElementById(targetId);
-          if (el) {
-            el.scrollIntoView({ behavior: "smooth", block: "start" });
-            el.classList.remove("ui-section-arrive");
-            window.setTimeout(() => el.classList.add("ui-section-arrive"), 30);
-          } else if (retry > 0) {
-            window.setTimeout(() => tryScroll(retry - 1), 180);
-          } else {
-            if (contentScrollRef.current) contentScrollRef.current.scrollTop = 0;
-            else window.scrollTo({ top: 0, behavior: "smooth" as ScrollBehavior });
-          }
-        };
-        tryScroll(4);
-      } else {
-        if (contentScrollRef.current) contentScrollRef.current.scrollTop = 0;
-        else window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
-      }
-    });
+    if (opts?.fromSubItem) {
+      const tryScroll = (retry: number) => {
+        const el = document.getElementById(targetId);
+        const sc = contentScrollRef.current;
+        if (el && sc) {
+          const elTop = el.getBoundingClientRect().top;
+          const scTop = sc.getBoundingClientRect().top;
+          const delta = (elTop - scTop) + sc.scrollTop - 16;
+          sc.scrollTo({ top: Math.max(0, delta), behavior: "smooth" });
+          el.classList.remove("ui-section-arrive");
+          window.setTimeout(() => el.classList.add("ui-section-arrive"), 30);
+        } else if (retry > 0) {
+          window.setTimeout(() => tryScroll(retry - 1), 180);
+        } else if (sc) {
+          sc.scrollTop = 0;
+        } else {
+          window.scrollTo({ top: 0, behavior: "smooth" as ScrollBehavior });
+        }
+      };
+      tryScroll(4);
+    } else {
+      const resetScroll = () => {
+        if (contentScrollRef.current) {
+          contentScrollRef.current.scrollTop = 0;
+        } else {
+          window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+        }
+      };
+      resetScroll();
+      window.requestAnimationFrame(() => resetScroll());
+      window.setTimeout(resetScroll, 80);
+    }
   };
   /** ✅ 상세 분류: 대분류 아코디언 펼침/접힘 토글 (탭 전환 X, 소메뉴 가시성만 토글) */
   const toggleNavGroup = (key: AdminNavKey) => {
@@ -10617,7 +10695,7 @@ function AdminPageInner() {
 
   return (
     <main
-      className="min-h-screen p-4 md:p-8 pb-24 md:pb-10 text-neutral-100 admin-page-root lg:flex lg:flex-row lg:items-start lg:gap-0"
+      className="min-h-screen p-4 md:p-8 pb-24 md:pb-10 text-neutral-100 admin-page-root lg:flex lg:flex-row lg:items-stretch lg:gap-0 lg:h-screen lg:min-h-0 overflow-hidden"
       style={{ backgroundColor: "#070c1a" }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -10744,7 +10822,7 @@ function AdminPageInner() {
         </div>
       </div>
       {/* ✅ 관리자 콘텐츠 영역: 원래 헤더 UI + DIN 허브 네이비 스타일 적용 */}
-      <div className="flex-1 min-w-0 mx-auto w-full max-w-[1420px]">
+      <div className="flex-1 min-w-0 min-h-0 h-full overflow-hidden mx-auto w-full max-w-[1420px] flex flex-col">
           {/* ✅ 원래 관리자 헤더 기능 + DIN 허브 둥근 네이비 스타일 적용 */}
           <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 mb-6">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -10855,7 +10933,7 @@ function AdminPageInner() {
         <div
           id="admin-content-scroll"
           ref={contentScrollRef}
-          className="flex-1 overflow-y-auto pr-2 min-h-0"
+          className="flex-1 min-h-0 max-h-[calc(100dvh-140px)] overflow-y-auto pr-2 pt-1"
           onScroll={(e) => {
             donorListLastScrollTopRef.current = (e.target as HTMLDivElement).scrollTop;
             donorListLastScrollHeightRef.current = (e.target as HTMLDivElement).scrollHeight;
@@ -11079,8 +11157,8 @@ function AdminPageInner() {
         )}
         <div className="grid grid-cols-1 gap-6">
           <div className="space-y-6">
-            {isAdminNavSectionVisible("settlement") && activeNav === "settlement" && (
-              <div key="tab-settlement-board" className="ui-tab-fade-in">
+            {isAdminNavSectionVisible("dashboard") && activeNav === "dashboard" && (
+              <div key="tab-dashboard-board" className="ui-tab-fade-in">
             <AdminCollapsibleSection
               id="settlement-member-board"
               title="멤버 정산 보드"
@@ -16914,26 +16992,158 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                 </button>
               </div>
 
+              {/** ✅ 후원자 리스트 v3: 검색·필터·압축보기 툴바 (대량 데이터 빠른 탐색) */}
+              <div className="mb-2 mt-1 rounded-lg border border-slate-700/50 bg-slate-900/40 p-2.5 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {donorFilterActive && (
+                    <span className="din-badge-mode-on !px-2 !py-0.5 !text-[11px]" title="필터 적용 중 — 결과 수가 전체보다 적습니다">
+                      🔍 필터 적용 중
+                    </span>
+                  )}
+                  <div className="relative flex-1 min-w-[180px] max-w-[380px]">
+                    <input
+                      type="text"
+                      value={donorListQuery}
+                      onChange={(e) => { setDonorListQuery(e.target.value); setDonorListPage(1); }}
+                      placeholder="검색: 후원자명 / 메시지 / 멤버 / 소스"
+                      className="w-full pl-8 pr-8 py-1.5 text-xs rounded-lg !bg-[#0D111D] !border !border-slate-700/60 !text-slate-200 placeholder:!text-slate-500 focus:!outline-none focus:!ring-2 focus:!ring-blue-500 focus:!border-blue-500"
+                    />
+                    <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                    {donorListQuery && (
+                      <button type="button" onClick={() => { setDonorListQuery(""); setDonorListPage(1); }}
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded text-slate-500 hover:text-slate-300 hover:bg-slate-800"
+                        title="검색어 지우기">✕</button>
+                    )}
+                  </div>
+                  {[
+                    { k: "all",  label: "전체" },
+                    { k: "today",label: "오늘" },
+                    { k: "1h",   label: "1시간" },
+                    { k: "30m",  label: "30분" },
+                    { k: "10m",  label: "10분" },
+                    { k: "5m",   label: "5분" },
+                  ].map(({ k, label }) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => { setDonorListTimeFilter(k as any); setDonorListPage(1); }}
+                      className={`px-2 py-1 text-[11px] rounded border transition-colors ${
+                        donorListTimeFilter === k
+                          ? "bg-blue-600/30 border-blue-500/60 text-blue-100 font-semibold"
+                          : "bg-slate-800/70 border-slate-700/60 text-slate-300 hover:bg-slate-700/70"
+                      }`}
+                    >{label}</button>
+                  ))}
+                  <div className="flex-1" />
+                  <button
+                    type="button"
+                    onClick={() => setDonorListDenseMode((v) => !v)}
+                    className={`px-2.5 py-1 rounded border text-[11px] font-semibold transition-colors ${
+                      donorListDenseMode
+                        ? "bg-emerald-700/40 border-emerald-500/60 text-emerald-100"
+                        : "bg-slate-800/70 border-slate-700/60 text-slate-300 hover:bg-slate-700/70"
+                    }`}
+                    title="압축 보기: 행 높이를 줄여 한 화면에 더 많은 후원 기록을 표시합니다"
+                  >{donorListDenseMode ? "📦 압축 ON" : "📦 압축 OFF"}</button>
+                  <button
+                    type="button"
+                    onClick={() => setDonorListFilterExpanded((v) => !v)}
+                    className={`px-2.5 py-1 rounded border text-[11px] font-semibold transition-colors ${
+                      donorListFilterExpanded
+                        ? "bg-amber-700/40 border-amber-500/60 text-amber-100"
+                        : "bg-slate-800/70 border-slate-700/60 text-slate-300 hover:bg-slate-700/70"
+                    }`}
+                  >{donorListFilterExpanded ? "⚙ 상세필터 ▲" : "⚙ 상세필터 ▼"}</button>
+                  {donorFilterActive && (
+                    <button
+                      type="button"
+                      onClick={clearDonorFilters}
+                      className="ui-din-btn-v2-danger !px-2.5 !py-1 !text-[11px]"
+                    >필터 초기화</button>
+                  )}
+                </div>
+                {donorListFilterExpanded && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-700/40 mt-1">
+                    <span className="text-[11px] text-slate-400 shrink-0">금액 범위 (원)</span>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        value={donorListMinAmount}
+                        onChange={(e) => {
+                          const v = e.target.value === "" ? "" : Math.max(0, Number(e.target.value) || 0);
+                          setDonorListMinAmount(v as any); setDonorListPage(1);
+                        }}
+                        placeholder="최소"
+                        className="w-24 px-2 py-1 text-xs rounded"
+                      />
+                      <span className="text-slate-500 text-xs">~</span>
+                      <input
+                        type="number"
+                        value={donorListMaxAmount}
+                        onChange={(e) => {
+                          const v = e.target.value === "" ? "" : Math.max(0, Number(e.target.value) || 0);
+                          setDonorListMaxAmount(v as any); setDonorListPage(1);
+                        }}
+                        placeholder="최대"
+                        className="w-24 px-2 py-1 text-xs rounded"
+                      />
+                    </div>
+                    <span className="text-[11px] text-slate-400 mx-1">·</span>
+                    <span className="text-[11px] text-slate-300">
+                      결과 <span className="text-amber-400 font-semibold">{donorListRowsFiltered.length}</span> 건
+                      {donorFilterActive && <span className="text-slate-500"> / 전체 {donorListRowsSorted.length} 건</span>}
+                    </span>
+                  </div>
+                )}
+              </div>
+              {/** ✅ 페이지/선택 행 실시간 집계 바 (대량 데이터 빠른 금액 확인) */}
+              <div className="mb-1.5 flex flex-wrap items-center gap-2 text-[11px]">
+                <div className="flex items-center gap-1.5 rounded bg-slate-900/60 border border-slate-700/50 px-2.5 py-1">
+                  <span className="text-slate-400">페이지 합계</span>
+                  <span className="text-slate-100 font-semibold">{donorPageAgg.pageCount}건</span>
+                  <span className="text-slate-500">·</span>
+                  <span className="text-emerald-300 font-bold">{formatDonorAmountDisplay(donorPageAgg.pageSum)}</span>
+                </div>
+                <div className={`flex items-center gap-1.5 rounded border px-2.5 py-1 transition-colors ${
+                  donorSelectedAgg.selCount > 0
+                    ? "bg-blue-950/50 border-blue-500/50"
+                    : "bg-slate-900/30 border-slate-800/40 opacity-70"
+                }`}>
+                  <span className="text-slate-400">선택 합계</span>
+                  <span className={`font-semibold ${donorSelectedAgg.selCount > 0 ? "text-blue-200" : "text-slate-500"}`}>
+                    {donorSelectedAgg.selCount}건
+                  </span>
+                  <span className="text-slate-500">·</span>
+                  <span className={`font-bold ${donorSelectedAgg.selCount > 0 ? "text-sky-300" : "text-slate-500"}`}>
+                    {formatDonorAmountDisplay(donorSelectedAgg.selSum)}
+                  </span>
+                </div>
+                <div className="flex-1" />
+                <span className="text-slate-400">
+                  기본 정렬: <span className="text-slate-200">최신순 (시간 내림차순)</span>
+                </span>
+              </div>
+
               <div
                 ref={donorListScrollRef}
                 style={{ contain: "strict", willChange: "transform" }}
                 className="pr-1 border border-white/10 rounded isolate"
               >
-                <table className="w-full text-sm" style={{ tableLayout: "fixed", borderCollapse: "separate" }}>
+                <table className={`w-full ${donorListDenseMode ? "text-[12px]" : "text-sm"}`} style={{ tableLayout: "fixed", borderCollapse: "separate" }}>
                   <thead className="sticky top-0 z-10 bg-neutral-950/95 backdrop-blur-sm shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
-                    <tr className="text-neutral-400" style={{ lineHeight: "1.25rem", height: "2rem" }}>
-                      <th className="text-left font-medium p-1 w-10 shrink-0">선택</th>
-                      <th className="text-left font-medium p-1 w-20 shrink-0">시간</th>
-                      <th className="text-left font-medium p-1 w-[8rem] shrink-0">후원자</th>
-                      <th className="text-left font-medium p-1 w-[5.5rem] shrink-0">멤버</th>
-                      <th className="text-left font-medium p-1 w-[4rem] shrink-0">대상</th>
-                      <th className="text-left font-medium p-1 min-w-[120px]">메시지</th>
-                      <th className="text-right font-medium p-1 w-[6rem] shrink-0">금액</th>
-                      <th className="text-right font-medium p-1 w-28 shrink-0">나누기</th>
-                      <th className="text-right font-medium p-1 w-16 shrink-0">삭제</th>
+                    <tr className="text-neutral-400" style={{ lineHeight: donorListDenseMode ? "1rem" : "1.25rem", height: donorListDenseMode ? "1.5rem" : "2rem" }}>
+                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-8" : "p-1 w-10"}`}>선택</th>
+                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[4.5rem]" : "p-1 w-20"}`}>시간</th>
+                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[5.5rem]" : "p-1 w-[8rem]"}`}>후원자</th>
+                      {!donorListDenseMode && <th className="text-left font-medium p-1 w-[5.5rem] shrink-0">멤버</th>}
+                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[3rem]" : "p-1 w-[4rem]"}`}>대상</th>
+                      <th className={`text-left font-medium ${donorListDenseMode ? "p-0.5 min-w-[80px]" : "p-1 min-w-[120px]"}`}>메시지</th>
+                      <th className={`text-right font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[4.5rem]" : "p-1 w-[6rem]"}`}>금액</th>
+                      {!donorListDenseMode && <th className="text-right font-medium p-1 w-28 shrink-0">나누기</th>}
+                      <th className={`text-right font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[3.5rem]" : "p-1 w-16"}`}>삭제</th>
                     </tr>
-                    <tr className="text-neutral-400 border-b border-white/5" style={{ lineHeight: "1.25rem", height: "2rem" }}>
-                      <th className="text-left font-medium p-1 w-10 shrink-0">
+                    <tr className="text-neutral-400 border-b border-white/5" style={{ lineHeight: donorListDenseMode ? "0.875rem" : "1.25rem", height: donorListDenseMode ? "1.25rem" : "2rem" }}>
+                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-8" : "p-1 w-10"}`}>
                         <DonorCheckboxCell
                           isAll
                           selected={donorListRowsVisible.length > 0 && donorListRowsVisible.every((d) => selectedDonorIds.has(String(d.id)))}
@@ -16941,7 +17151,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                           label="전체 선택"
                         />
                       </th>
-                      <th colSpan={8}></th>
+                      <th colSpan={donorListDenseMode ? 6 : 8}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -16954,37 +17164,40 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                         const splitPreview = !isSplitPart && !isSplitSource && !isExcluded
                           ? previewGroupSplitDonation(state, d.amount, state.groupSplitDonationSettings)
                           : null;
+                        const rowH = donorListDenseMode ? "1.625rem" : "2.25rem";
+                        const rowLH = donorListDenseMode ? "1.05rem" : "1.25rem";
                         return (
                           <tr
                             key={donorListRowReactKey(d, rowIdx)}
                             style={{
-                              lineHeight: "1.25rem",
-                              minHeight: "2.25rem",
+                              lineHeight: rowLH,
+                              minHeight: rowH,
                               contain: "layout style paint",
                               contentVisibility: "auto",
-                              containIntrinsicSize: "2.25rem",
+                              containIntrinsicSize: rowH,
                             }}
                             data-excluded={isExcluded ? "true" : undefined}
                             data-selected={selectedDonorIds.has(String(d.id)) ? "true" : undefined}
-                            className={`border-t border-white/10 transition-[background,box-shadow] duration-200 ease-out ui-din-row-zebra ${
+                            data-dense={donorListDenseMode ? "true" : "false"}
+                            className={`border-t border-white/10 transition-[background,box-shadow] duration-200 ease-out ui-din-row-zebra ${donorListDenseMode ? "ui-din-row-dense" : ""} ${
                               donorFlashIds[String(d.id)] === "saving" ? "ui-donor-flash-saving" :
                               donorFlashIds[String(d.id)] === "saved"  ? "ui-donor-flash-saved"  : ""
                             } ${isExcluded ? "line-through decoration-rose-400/70 decoration-2 text-neutral-500 bg-rose-950/15 opacity-70" : isSplitPart ? "bg-violet-950/15" : isSplitSource ? "bg-violet-950/10" : ""}`}
                           >
-                            <td className="p-1 w-12 align-top">
+                            <td className={`${donorListDenseMode ? "p-0.5 w-8" : "p-1 w-12"} align-top`}>
                               <DonorCheckboxCell
                                 donorId={String(d.id)}
                                 selected={selectedDonorIds.has(String(d.id))}
                                 onToggle={toggleDonorSelect}
                               />
                             </td>
-                            <td className="p-1 text-neutral-400 align-top"><ClientTime ts={d.at} /></td>
-                            <td className="p-1 align-top" style={{ overflow: "hidden" }}>
+                            <td className={`${donorListDenseMode ? "p-0.5" : "p-1"} text-neutral-400 align-top`}><ClientTime ts={d.at} /></td>
+                            <td className={`${donorListDenseMode ? "p-0.5" : "p-1"} align-top`} style={{ overflow: "hidden" }}>
                               <div className="flex flex-wrap items-center gap-1" style={{ overflow: "hidden" }}>
                                 <input
                                   type="text"
                                   id={`donor-name-${String(d.id)}`}
-                                  className="w-full max-w-[10rem] rounded border border-white/10 bg-neutral-950/80 px-1.5 py-0.5 text-xs text-neutral-100 placeholder:text-neutral-600 focus:outline-none focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400/40 disabled:text-neutral-500 overflow-hidden"
+                                  className={`w-full ${donorListDenseMode ? "max-w-[7.5rem] px-1 py-px text-[11px]" : "max-w-[10rem] px-1.5 py-0.5 text-xs"} rounded border border-white/10 bg-neutral-950/80 text-neutral-100 placeholder:text-neutral-600 focus:outline-none focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400/40 disabled:text-neutral-500 overflow-hidden`}
                                   style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                                   disabled={isSplitPart || isSplitSource}
                                   value={
@@ -17080,6 +17293,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                 ) : null}
                               </div>
                             </td>
+                            {!donorListDenseMode && (
                             <td className="p-1 text-neutral-300 align-top" style={{ overflow: "hidden" }}>
                               <select
                                 className="max-w-[9rem] rounded border border-white/10 bg-neutral-900/80 px-1 py-0.5 text-xs text-neutral-100 overflow-hidden"
@@ -17114,6 +17328,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                   );
                                 }}
                               >
+                                <option value="">— 미지정 —</option>
                                 {state.members.map((mem) => (
                                   <option key={mem.id} value={mem.id}>
                                     {mem.name}
@@ -17121,12 +17336,13 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                 ))}
                               </select>
                             </td>
-                            <td className="p-1 align-top">{resolveEffectiveDonorTarget(d) === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>
-                            <td className="p-1 text-neutral-400 max-w-[220px] align-top" style={{ overflow: "hidden" }}>
+                            )}
+                            <td className={`${donorListDenseMode ? "p-0.5" : "p-1"} align-top`}>{resolveEffectiveDonorTarget(d) === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>
+                            <td className={`${donorListDenseMode ? "p-0.5" : "p-1"} text-neutral-400 max-w-[220px] align-top`} style={{ overflow: "hidden" }}>
                               <input
                                 type="text"
                                 id={`donor-msg-${String(d.id)}`}
-                                className="w-full min-w-[8rem] rounded border border-white/10 bg-neutral-950/80 px-1.5 py-0.5 text-xs text-neutral-200 placeholder:text-neutral-600 focus:outline-none focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400/40 overflow-hidden"
+                                className={`w-full min-w-[8rem] rounded border border-white/10 bg-neutral-950/80 ${donorListDenseMode ? "px-1 py-px text-[11px]" : "px-1.5 py-0.5 text-xs"} text-neutral-200 placeholder:text-neutral-600 focus:outline-none focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400/40 overflow-hidden`}
                                 style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                                 value={
                                   typeof draftMessages[String(d.id)] === "string"
@@ -17194,11 +17410,12 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                 }}
                               />
                             </td>
-                            <td className="p-1 text-right whitespace-nowrap align-top" title={`저장값 ${d.amount.toLocaleString("ko-KR")}원${isSplitSource ? " (합산 제외)" : ""}`}>
+                            <td className={`${donorListDenseMode ? "p-0.5" : "p-1"} text-right whitespace-nowrap align-top`} title={`저장값 ${d.amount.toLocaleString("ko-KR")}원${isSplitSource ? " (합산 제외)" : ""}`}>
                               <span className={isSplitSource ? "text-neutral-500 line-through decoration-neutral-600" : ""}>
                                 {formatDonorAmountDisplay(d.amount)}
                               </span>
                             </td>
+                            {!donorListDenseMode && (
                             <td className="p-1 text-right align-top">
                               {isSplitPart ? (
                                 <span className="text-[10px] text-violet-300/90 whitespace-nowrap">↳ 스플릿</span>
@@ -17229,12 +17446,13 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                 <span className="text-neutral-600">—</span>
                               )}
                             </td>
-                            <td className="p-1 text-right align-top">
+                            )}
+                            <td className={`${donorListDenseMode ? "p-0.5" : "p-1"} text-right align-top`}>
                               {isSplitSource ? (
-                                <span className="text-[10px] text-neutral-500">삭제 불가</span>
+                                <span className={donorListDenseMode ? "text-[10px] text-neutral-500" : "text-[10px] text-neutral-500"}>삭제 불가</span>
                               ) : isExcluded ? (
                                 <button
-                                  className="px-2 py-1 rounded bg-rose-900 hover:bg-rose-800 text-rose-100 text-[10px] whitespace-nowrap"
+                                  className={`${donorListDenseMode ? "px-1 py-0.5 text-[10px]" : "px-2 py-1 text-[10px]"} rounded bg-rose-900 hover:bg-rose-800 text-rose-100 whitespace-nowrap`}
                                   title="후원 제외 상태입니다. 버튼 클릭시 DB에서 행을 완전히 삭제합니다"
                                   onClick={() => {
                                     requestConfirm(
@@ -17266,11 +17484,11 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                     );
                                   }}
                                 >
-                                  완전 삭제
+                                  {donorListDenseMode ? "✕" : "완전 삭제"}
                                 </button>
                               ) : (
                                 <button
-                                  className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700"
+                                  className={`${donorListDenseMode ? "px-1 py-0.5" : "px-2 py-1"} rounded bg-neutral-800 hover:bg-neutral-700`}
                                   onClick={() => {
                                     requestConfirm(
                                       "후원 기록 삭제",
@@ -17301,25 +17519,33 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                     );
                                   }}
                                 >
-                                  삭제
+                                  {donorListDenseMode ? "✕" : "삭제"}
                                 </button>
                               )}
                             </td>
                           </tr>
                         );
                       })}
-                    {donorListRowsSorted.length === 0 && (
-                      <tr><td className="p-2 text-neutral-400" colSpan={9}>기록이 없습니다.</td></tr>
+                    {donorListRowsFiltered.length === 0 && (
+                      <tr>
+                        <td className={`${donorListDenseMode ? "p-1.5" : "p-2"} ${donorFilterActive ? "text-amber-300" : "text-neutral-400"}`} colSpan={donorListDenseMode ? 7 : 9}>
+                          {donorFilterActive
+                            ? `🔍 필터 조건과 일치하는 후원 기록이 없습니다. (전체 ${donorListRowsSorted.length}건 중 0건)`
+                            : "기록이 없습니다."}
+                        </td>
+                      </tr>
                     )}
                   </tbody>
                 </table>
               </div>
-              {donorListRowsSorted.length > 0 ? (
+              {donorListRowsFiltered.length > 0 ? (
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-400">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-neutral-300 font-medium">
                       {donorListShowAll ? (
-                        <>전체 표시 · {donorListRowsSorted.length}건 (DOM 전체 렌더)</>
+                        <>전체 표시 · {donorListRowsFiltered.length}건 (DOM 전체 렌더)
+                          {donorFilterActive && <span className="text-neutral-500 ml-1"> / 원본 {donorListRowsSorted.length}건</span>}
+                        </>
                       ) : (
                         <>
                           <span className="hidden sm:inline">페이지</span>{" "}
@@ -17330,16 +17556,17 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                           <span>
                             표시{" "}
                             <span className="text-neutral-200">
-                              {donorPageStart + 1}-{Math.min(donorPageEnd, donorListRowsSorted.length)}
+                              {donorPageStart + 1}-{Math.min(donorPageEnd, donorListRowsFiltered.length)}
                             </span>{" "}
-                            / 전체{" "}
-                            <span className="text-neutral-200">{donorListRowsSorted.length}</span>건
+                            / 필터결과{" "}
+                            <span className="text-neutral-200">{donorListRowsFiltered.length}</span>건
+                            {donorFilterActive && <span className="text-neutral-500 ml-1">(원본 {donorListRowsSorted.length}건)</span>}
                           </span>
                         </>
                       )}
                     </span>
                     {/* 한 페이지당 표시 건수 (페이지네이션 모드에서만 노출) */}
-                    {!donorListShowAll && donorListRowsSorted.length > DONOR_PAGE_SIZES[0] && (
+                    {!donorListShowAll && donorListRowsFiltered.length > DONOR_PAGE_SIZES[0] && (
                       <div className="flex items-center gap-1 ml-1">
                         <span className="text-neutral-500">페이지당</span>
                         {DONOR_PAGE_SIZES.map((sz) => (

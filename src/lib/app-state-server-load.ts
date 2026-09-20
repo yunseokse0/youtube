@@ -11,6 +11,10 @@ import {
   type AppState,
 } from "@/lib/state";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
+import {
+  donorShardCoalesceOnSave,
+  type AppStateLikeDonors,
+} from "@/lib/donor-store-shard";
 
 const STORAGE_KEY_BASE = "excel-broadcast-state-v1";
 
@@ -110,8 +114,13 @@ async function loadAppStateForUserIdOnce(
           if (hit && Date.now() - hit.loadedAt < KV_READ_CACHE_TTL_MS) {
             const picked = coalesceAppStateRedisAndMemory(hit.state, mem);
             if (picked) {
-              if (mem !== picked) setServerMemoryAppState(userId, picked);
-              return picked;
+              const coalesced = (await donorShardCoalesceOnSave<AppState & AppStateLikeDonors>(
+                userId,
+                picked as AppState & AppStateLikeDonors,
+                { callerMode: 'load', effectiveSettlementResetAt: Number(picked.settlementResetAt || 0) }
+              )).final as AppState;
+              if (mem !== coalesced) setServerMemoryAppState(userId, coalesced);
+              return coalesced;
             }
           }
         }
@@ -121,9 +130,13 @@ async function loadAppStateForUserIdOnce(
         }
         const picked = coalesceAppStateRedisAndMemory(saved, mem);
         if (picked) {
-          /** 메모리보다 Redis가 앞서면 메모리도 맞춤(반대는 덮어쓰지 않음) */
-          if (mem !== picked) setServerMemoryAppState(userId, picked);
-          return picked;
+          const coalesced = (await donorShardCoalesceOnSave<AppState & AppStateLikeDonors>(
+            userId,
+            picked as AppState & AppStateLikeDonors,
+            { callerMode: 'load', effectiveSettlementResetAt: Number(picked.settlementResetAt || 0) }
+          )).final as AppState;
+          if (mem !== coalesced) setServerMemoryAppState(userId, coalesced);
+          return coalesced;
         }
         const kvErr = await getPersistentKvLastError();
         if (kvErr) {

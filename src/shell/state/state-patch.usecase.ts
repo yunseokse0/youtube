@@ -73,6 +73,10 @@ import {
   donorAtEpochMs,
   normalizeDonorNameKey,
 } from "@/domain/dedupe/donation-dedupe.rules";
+import {
+  donorShardCoalesceOnSave,
+  type AppStateLikeDonors,
+} from "@/lib/donor-store-shard";
 
 import {
   stateKey,
@@ -96,7 +100,7 @@ async function upstashSet(key: string, value: unknown) {
 
 type ServerDedupeEntry = { uidKey: string; touchedAt: number };
 const SERVER_DEDUP_WINDOW_TTL_MS = 30_000;
-const SERVER_DEDUP_MAX_CACHE = 80_000;
+const SERVER_DEDUP_MAX_CACHE = 250_000;
 const _serverDedupCache = new Map<string, ServerDedupeEntry>();
 let _serverDedupPruneTs = 0;
 
@@ -106,9 +110,9 @@ function pruneServerDedupCacheLocked(now: number) {
   for (const [k, v] of _serverDedupCache) {
     if (now - v.touchedAt > SERVER_DEDUP_WINDOW_TTL_MS) _serverDedupCache.delete(k);
   }
-  if (_serverDedupCache.size > SERVER_DEDUP_MAX_CACHE * 1.2) {
+  if (_serverDedupCache.size > SERVER_DEDUP_MAX_CACHE * 1.5) {
     const sorted = Array.from(_serverDedupCache.entries()).sort((a, b) => a[1].touchedAt - b[1].touchedAt);
-    const dropN = Math.max(2000, Math.floor(_serverDedupCache.size * 0.3));
+    const dropN = Math.max(5000, Math.floor(_serverDedupCache.size * 0.4));
     for (let i = 0; i < dropN && i < sorted.length; i++) _serverDedupCache.delete(sorted[i]![0]);
   }
 }
@@ -791,6 +795,8 @@ export async function POST(req: Request) {
             settlementResetAt: memExisting.settlementResetAt,
           };
         }
+        const scMem = await donorShardCoalesceOnSave(userId, memNext as AppState & AppStateLikeDonors, { callerMode: 'save', effectiveSettlementResetAt: effectiveResetAt }).catch(() => null);
+        if (scMem?.final) memNext = scMem.final as typeof memNext;
         setServerMemoryAppState(userId, memNext);
       }
       const memUpdatedAt = Number(memNext.updatedAt || 0) || Date.now();
@@ -890,6 +896,8 @@ export async function POST(req: Request) {
         });
       }
       persistedNext = saved.state;
+      const scRoulette = await donorShardCoalesceOnSave(userId, persistedNext as AppState & AppStateLikeDonors, { callerMode: 'save', effectiveSettlementResetAt: effectiveResetAt }).catch(() => null);
+      if (scRoulette?.final) persistedNext = scRoulette.final as typeof persistedNext;
       const persistedDonors = normalizeDonorsArray(persistedNext.donors);
       if (userId === "din") {
         console.log(`[FIX18-DBUG-2-AFTERSAVE] uid=${userId} next_donors_n=${nextDonors.length} persisted_donors_n=${persistedDonors.length} ok=${saved.ok ? 1 : 0}`);
@@ -914,7 +922,7 @@ export async function POST(req: Request) {
         !donationInitReset &&
         memExisting &&
         shouldBlockAccidentalEmptyOverwrite(memExisting, next);
-      const toPersist = blockEmpty
+      let toPersist: typeof next = blockEmpty
         ? {
             ...next,
             members: memExisting.members,
@@ -926,6 +934,8 @@ export async function POST(req: Request) {
       if (blockEmpty) {
         logger.warn("refused accidental empty persist on non-donor PATCH", { userId });
       }
+      const scGeneral = await donorShardCoalesceOnSave(userId, toPersist as AppState & AppStateLikeDonors, { callerMode: 'save', effectiveSettlementResetAt: effectiveResetAt }).catch(() => null);
+      if (scGeneral?.final) toPersist = scGeneral.final as typeof toPersist;
       const ok = await upstashSet(stateKey(userId), toPersist);
       logger.info('Redis 상태 업데이트', { updatedAt: toPersist.updatedAt, success: ok, userId });
       if (!ok) {

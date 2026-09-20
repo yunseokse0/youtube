@@ -58,6 +58,10 @@ export type StateUpdatedSsePayload = {
   /** 시그 판매 OBS: 회전 시작 직후 동기화 힌트(sessionId가 바뀌면 GET 강제) */
   roulettePhase?: string;
   rouletteSessionId?: string;
+  /** ✅ 상류사회 설정 변경 힌트 — OBS 상류사회 오버레이 forceFull sync 트리거 */
+  highSocietySettingsUpdatedAt?: number;
+  /** ✅ 상류사회 영토 푸시 방향/좌석 재배치 힌트 — OBS 상류사회 오버레이 forceFull sync 트리거 */
+  territoryLogsUpdatedAt?: number;
 };
 
 /** 저장·회전판 등 상태 변경 후 OBS 알림(전체 JSON은 보내지 않음) */
@@ -67,6 +71,10 @@ export async function broadcastStateUpdatedAt(
     donorRankingsUpdatedAt?: number;
     roulettePhase?: string;
     rouletteSessionId?: string;
+    /** 상류사회 설정 변경 → 오버레이 즉시 반영용 */
+    highSocietySettingsUpdatedAt?: number;
+    /** 영토 푸시/좌석 재배치 → 오버레이 즉시 반영용 */
+    territoryLogsUpdatedAt?: number;
   }
 ): Promise<void> {
   const ts = Number(updatedAt);
@@ -78,5 +86,9 @@ export async function broadcastStateUpdatedAt(
   const sid = String(extra?.rouletteSessionId || "").trim();
   if (phase) payload.roulettePhase = phase;
   if (sid) payload.rouletteSessionId = sid;
+  const hsAt = Number(extra?.highSocietySettingsUpdatedAt);
+  if (Number.isFinite(hsAt) && hsAt > 0) payload.highSocietySettingsUpdatedAt = hsAt;
+  const trAt = Number(extra?.territoryLogsUpdatedAt);
+  if (Number.isFinite(trAt) && trAt > 0) payload.territoryLogsUpdatedAt = trAt;
   await sendSSEUpdate(payload);
 }

@@ -872,6 +872,41 @@ export function useOverlayRemoteState(
       }
     }
 
+    /** ✅ 상류사회 설정 변경: 기본 시작 cm / 바 스타일 / 좌석 수 / 기본 푸시 방향 등 → 즉시 forceFull sync */
+    const highSocietySettingsAt = Number(
+      (o as { highSocietySettingsUpdatedAt?: unknown }).highSocietySettingsUpdatedAt
+    );
+    if (Number.isFinite(highSocietySettingsAt) && highSocietySettingsAt > 0) {
+      if (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) {
+        void syncFromApiRef.current({ forceFull: true });
+        /** 타이머/로스터 변경 때처럼 schedule 후 0.45s / 1.4s 재차 forceFull — stale GET 경합 방지 이중 보장 */
+        window.setTimeout(
+          () => void syncFromApiRef.current({ forceFull: true }),
+          450
+        );
+        window.setTimeout(
+          () => void syncFromApiRef.current({ forceFull: true }),
+          1400
+        );
+        return;
+      }
+    }
+
+    /** ✅ 상류사회 영토 푸시/좌석 재배치 로그 변경 → 즉시 forceFull 게이지 반영 (expandLeftCm/expandRightCm 방향) */
+    const territoryLogsAt = Number(
+      (o as { territoryLogsUpdatedAt?: unknown }).territoryLogsUpdatedAt
+    );
+    if (Number.isFinite(territoryLogsAt) && territoryLogsAt > 0) {
+      if (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) {
+        void syncFromApiRef.current({ forceFull: true });
+        window.setTimeout(
+          () => void syncFromApiRef.current({ forceFull: true }),
+          450
+        );
+        return;
+      }
+    }
+
     if (obsTextPick) {
       if (
         shouldSyncObsTextFromStateUpdatedEvent(

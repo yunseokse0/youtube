@@ -112,19 +112,27 @@ export async function register() {
         /** @type {Record<string, boolean>} */
         const pollerLock: Record<string, boolean> = {};
         let pollerPhase = 0; // 0 ~ 1 (2 phases = 60s full cycle · DIN 허브 1분 pull interval 과 일치)
-        setInterval(() => {
-          for (const uid of hubUserIds) {
+        const HUB_POLLER_CONCURRENCY = Math.max(1, 4);
+        /**
+         * B-MODE POLLER: hubUserIds 전체를 concurrency=4 세마포어로 병렬 처리
+         *  · 기존: for-loop 순차 → 20명 유저시 20*saveMutex 대기열 연쇄
+         *  · 개선: Promise.allSettled N=4 chunk → saveMutex contention 을 4-way 분산
+         */
+        async function runPollerTickForUsers(userIds: string[], phase: number): Promise<void> {
+          const active: Array<Promise<void>> = [];
+          for (let i = 0; i < userIds.length; i++) {
+            const uid = userIds[i]!;
             if (pollerLock[uid]) {
               console.warn(`[b-mode] poller reentry SKIP user=${uid} (prev job still running >30s, saveMutex 밀로 예상)`);
               continue;
             }
             pollerLock[uid] = true;
-            void (async () => {
+            const task = (async () => {
               try {
                 await drainDonationQueueOnServer(uid).catch((e) =>
                   console.warn(`[b-mode] drain fail uid=${uid}`, e?.message || e)
                 );
-                if (pollerPhase % 2 === 0) {
+                if (phase % 2 === 0) {
                   await refreshToonaHubStatus(uid).catch((e) =>
                     console.warn(`[b-mode] refresh fail uid=${uid}`, e?.message || e)
                   );
@@ -136,8 +144,23 @@ export async function register() {
                 pollerLock[uid] = false;
               }
             })();
+            active.push(task);
+            if (active.length >= HUB_POLLER_CONCURRENCY || i === userIds.length - 1) {
+              await Promise.allSettled(active);
+              active.length = 0;
+            }
           }
-        pollerPhase = (pollerPhase + 1) % 2;
+        }
+        setInterval(() => {
+          void (async () => {
+            try {
+              await runPollerTickForUsers(hubUserIds, pollerPhase);
+            } catch (topErr) {
+              console.warn(`[b-mode] poller tick failed phase=${pollerPhase}`, topErr instanceof Error ? topErr.message : String(topErr));
+            } finally {
+              pollerPhase = (pollerPhase + 1) % 2;
+            }
+          })();
         }, 30_000);
 
         /**

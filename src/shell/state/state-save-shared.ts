@@ -35,6 +35,10 @@ import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { shouldBlockHighSocietyRegression, syncHighSocietyMemberWidthSnapshotInState } from "@/lib/high-society";
 import { normalizeTerritoryLogs, mergeTerritoryLogsFromPatch } from "@/lib/territory-utils";
 import { memberCombinedTotal } from "@/shell/state/state-freshness.guard";
+import {
+  donorShardCoalesceOnSave,
+  type AppStateLikeDonors,
+} from "@/lib/donor-store-shard";
 
 export const logger = createModuleLogger('API/State');
 

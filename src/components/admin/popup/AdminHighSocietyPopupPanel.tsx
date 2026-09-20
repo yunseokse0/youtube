@@ -10,6 +10,7 @@ import {
   buildHighSocietySettingsPersistToast,
   fieldCmFromStartPerMember,
   formatCm,
+  HIGH_SOCIETY_SEAT_COLORS,
   normalizeHighSocietySettings,
   resolveHighSocietySeatMembers,
   resolveHighSocietyStartCmPerMember,
@@ -366,23 +367,67 @@ export default function AdminHighSocietyPopupPanel() {
                       key={team.id}
                       className="rounded-lg border border-white/10 bg-neutral-950/40 p-3 space-y-2"
                     >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="inline-block w-3 h-3 rounded-sm shrink-0 border border-white/20"
-                          style={{ backgroundColor: color }}
-                        />
-                        <input
-                          className="flex-1 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-xs font-semibold"
-                          value={team.name}
-                          onChange={(e) => updateTeam(team.id, { name: e.target.value })}
-                        />
-                        <button
-                          type="button"
-                          className="rounded border border-white/15 bg-neutral-800 px-2 py-1 text-[11px] hover:bg-rose-800 hover:border-rose-600/50"
-                          onClick={() => removeTeam(team.id)}
-                        >
-                          삭제
-                        </button>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="inline-block w-4 h-4 rounded-sm shrink-0 border border-white/20 shadow-inner"
+                            style={{ backgroundColor: color }}
+                          />
+                          <input
+                            className="flex-1 rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-xs font-semibold"
+                            value={team.name}
+                            placeholder="팀 이름 (예: 금수저팀)"
+                            onChange={(e) => updateTeam(team.id, { name: e.target.value })}
+                          />
+                          <label
+                            className="cursor-pointer rounded border border-white/15 bg-neutral-800 px-2 py-1.5 text-[11px] hover:bg-neutral-700 flex items-center gap-1.5"
+                            title="커스텀 색상 선택"
+                          >
+                            <span
+                              className="inline-block w-3 h-3 rounded-sm border border-white/20"
+                              style={{ backgroundColor: color }}
+                            />
+                            색
+                            <input
+                              type="color"
+                              className="sr-only"
+                              value={/^#[0-9a-f]{6}$/i.test(color) ? color : "#000000"}
+                              onChange={(e) => {
+                                const val = e.target.value.trim();
+                                if (/^#[0-9a-f]{6}$/i.test(val)) {
+                                  updateTeam(team.id, { color: val });
+                                }
+                              }}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="rounded border border-white/15 bg-neutral-800 px-2 py-1.5 text-[11px] hover:bg-rose-800 hover:border-rose-600/50"
+                            onClick={() => removeTeam(team.id)}
+                          >
+                            삭제
+                          </button>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {Array.from(HIGH_SOCIETY_SEAT_COLORS).map((preset) => {
+                            const selected = color.toLowerCase() === preset.toLowerCase();
+                            return (
+                              <button
+                                key={preset}
+                                type="button"
+                                title={`프리셋 ${preset}`}
+                                className={`w-6 h-6 rounded border transition-all ${
+                                  selected
+                                    ? "border-white/90 scale-110 ring-2 ring-white/50"
+                                    : "border-white/20 hover:scale-105 hover:border-white/50"
+                                }`}
+                                style={{ backgroundColor: preset }}
+                                onClick={() => updateTeam(team.id, { color: preset })}
+                              />
+                            );
+                          })}
+                        </div>
                       </div>
 
                       <div className="space-y-1.5">

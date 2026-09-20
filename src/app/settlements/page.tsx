@@ -428,7 +428,7 @@ export default function SettlementsPage() {
               onChange={(e) => setDateQuery(e.target.value)}
             />
             <button
-              className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs whitespace-nowrap"
+              className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 text-sm whitespace-nowrap min-h-[40px]"
               onClick={() => {
                 setTitleQuery("");
                 setMemberQuery("");
@@ -696,16 +696,16 @@ export default function SettlementsPage() {
         </section>
 
         <div className="rounded border border-white/10 bg-neutral-900/50 overflow-auto">
-          <table className="w-full text-sm whitespace-nowrap">
-            <thead>
+          <table className="min-w-[960px] w-full text-sm whitespace-nowrap">
+            <thead className="sticky top-0 z-10 bg-neutral-900/95 backdrop-blur">
               <tr className="text-neutral-400 border-b border-white/10">
-                <th className="p-2 text-left">일시</th>
-                <th className="p-2 text-left">제목</th>
-                <th className="p-2 text-right">참여자</th>
-                <th className="p-2 text-right">후원</th>
-                <th className="p-2 text-right">최종 정산</th>
-                <th className="p-2 text-right">열기</th>
-                <th className="p-2 text-right">삭제</th>
+                <th className="p-3 text-left">일시</th>
+                <th className="p-3 text-left">제목</th>
+                <th className="p-3 text-right">참여자</th>
+                <th className="p-3 text-right">후원</th>
+                <th className="p-3 text-right">최종 정산</th>
+                <th className="p-3 text-right">열기</th>
+                <th className="p-3 text-right">삭제</th>
               </tr>
             </thead>
             <tbody>
@@ -713,16 +713,16 @@ export default function SettlementsPage() {
                 const donors = recordToDonors.get(r.id) || [];
                 return (
                 <tr key={r.id} className="border-b border-white/10">
-                  <td className="p-2 whitespace-nowrap">{new Date(r.createdAt).toLocaleString()}</td>
-                  <td className="p-2 whitespace-nowrap">{r.title}</td>
-                  <td className="p-2 text-right">{r.members.length}</td>
-                  <td className="p-2 text-right text-cyan-400" title={donors.length > 0 ? `${donors.length}건` : "데이터 없음"}>{donors.length}</td>
-                  <td className="p-2 text-right font-semibold">{r.totalNet.toLocaleString()}</td>
-                  <td className="p-2 text-right">
-                    <Link className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 whitespace-nowrap inline-block" href={`/settlements/${encodeURIComponent(r.id)}`}>상세</Link>
+                  <td className="p-3 whitespace-nowrap">{new Date(r.createdAt).toLocaleString()}</td>
+                  <td className="p-3 whitespace-nowrap">{r.title}</td>
+                  <td className="p-3 text-right">{r.members.length}</td>
+                  <td className="p-3 text-right text-cyan-400" title={donors.length > 0 ? `${donors.length}건` : "데이터 없음"}>{donors.length}</td>
+                  <td className="p-3 text-right font-semibold">{r.totalNet.toLocaleString()}</td>
+                  <td className="p-3 text-right">
+                    <Link className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 whitespace-nowrap inline-block min-h-[40px] text-sm" href={`/settlements/${encodeURIComponent(r.id)}`}>상세</Link>
                   </td>
-                  <td className="p-2 text-right">
-                    <button className="px-2 py-1 rounded bg-red-800 hover:bg-red-700 whitespace-nowrap" onClick={() => onDeleteRecord(r.id)}>삭제</button>
+                  <td className="p-3 text-right">
+                    <button className="px-3 py-2 rounded bg-red-800 hover:bg-red-700 whitespace-nowrap min-h-[40px] text-sm" onClick={() => onDeleteRecord(r.id)}>삭제</button>
                   </td>
                 </tr>
               );
@@ -737,22 +737,22 @@ export default function SettlementsPage() {
         </div>
         <div className="rounded border border-white/10 bg-neutral-900/40 overflow-auto">
           <div className="px-3 py-2 border-b border-white/10 text-sm font-semibold">삭제 로그 (보관)</div>
-          <table className="w-full text-sm whitespace-nowrap">
-            <thead>
+          <table className="min-w-[720px] w-full text-sm whitespace-nowrap">
+            <thead className="sticky top-0 z-10 bg-neutral-900/95 backdrop-blur">
               <tr className="text-neutral-400 border-b border-white/10">
-                <th className="p-2 text-left">삭제 시각</th>
-                <th className="p-2 text-left">정산 제목</th>
-                <th className="p-2 text-left">원본 생성시각</th>
-                <th className="p-2 text-right">최종 정산</th>
+                <th className="p-3 text-left">삭제 시각</th>
+                <th className="p-3 text-left">정산 제목</th>
+                <th className="p-3 text-left">원본 생성시각</th>
+                <th className="p-3 text-right">최종 정산</th>
               </tr>
             </thead>
             <tbody>
               {deleteLogs.map((log) => (
                 <tr key={`${log.recordId}_${log.deletedAt}`} className="border-b border-white/10">
-                  <td className="p-2">{new Date(log.deletedAt).toLocaleString()}</td>
-                  <td className="p-2">{log.title}</td>
-                  <td className="p-2">{new Date(log.createdAt).toLocaleString()}</td>
-                  <td className="p-2 text-right">{log.totalNet.toLocaleString()}</td>
+                  <td className="p-3">{new Date(log.deletedAt).toLocaleString()}</td>
+                  <td className="p-3">{log.title}</td>
+                  <td className="p-3">{new Date(log.createdAt).toLocaleString()}</td>
+                  <td className="p-3 text-right">{log.totalNet.toLocaleString()}</td>
                 </tr>
               ))}
               {deleteLogs.length === 0 && (

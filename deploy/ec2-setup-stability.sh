@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# EC2 안정성 일괄 설치 — 일일 디스크 정리 + 5분 워치독 + pm2 재부팅 자동 기동
+# EC2 안정성 일괄 설치 — 일일 디스크 정리 + 5분 워치독 + pm2 재부팅 자동 기동 + 일일 백업
 #
 # 사용 (EC2에서 1회, git pull 후):
 #   cd ~/youtube && bash deploy/ec2-setup-stability.sh
@@ -15,12 +15,15 @@ echo "=========================================="
 bash "$ROOT/deploy/ec2-setup-daily-disk-clean.sh"
 bash "$ROOT/deploy/ec2-setup-watchdog.sh"
 bash "$ROOT/deploy/ec2-setup-pm2-startup.sh"
+bash "$ROOT/deploy/ec2-setup-backup.sh"
 
 echo
 echo "=== 완료 ==="
 echo "· 매일 04:10 — 로그·binlog 정리"
-echo "· 5분마다 — 디스크·health·MySQL 점검 (자동 recover)"
+echo "· 매일 03:30 — state JSON + MySQL 백업 (30/14일 보존)"
+echo "· 5분마다 — 디스크·health·MySQL 점검 (자동 recover + 알람)"
 echo "· 재부팅 후 — pm2 자동 기동"
 echo
-echo "로그: tail -f /var/log/youtube-watchdog.log"
-echo "진단: bash deploy/ec2-disk-report.sh"
+echo "워치독 로그: tail -f /var/log/youtube-watchdog.log"
+echo "백업  로그: tail -f /var/log/youtube-backup.log"
+echo "진단     : bash deploy/ec2-disk-report.sh"

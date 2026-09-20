@@ -20,9 +20,9 @@ export const DEFAULT_STATE_UPDATED_DEBOUNCE_MS = 100;
 /** 연속 이벤트가 끊이지 않아도 이 간격(ms)마다 최소 1회는 동기화 */
 export const DEFAULT_STATE_UPDATED_MAX_WAIT_MS = 900;
 /** SSE 없음(OBS host=obs·관리자 iframe 등) — 설정·대전 UI 즉시 반영 폴링 (since/304) */
-export const DEFAULT_OVERLAY_LIVE_SYNC_POLL_MS = 4000;
+export const DEFAULT_OVERLAY_LIVE_SYNC_POLL_MS = 6000;
 /** 관리자 미리보기 iframe — 본문 탭·OBS보다 GET를 덜 보냄 */
-export const DEFAULT_ADMIN_PREVIEW_POLL_MS = 4000;
+export const DEFAULT_ADMIN_PREVIEW_POLL_MS = 6000;
 /** 후원·순위 반영 — 짧은 디바운스(느리게 느껴지지 않게) */
 export const DONOR_STATE_UPDATED_DEBOUNCE_MS = 60;
 export const DONOR_STATE_UPDATED_MAX_WAIT_MS = 350;
@@ -128,7 +128,7 @@ export function readOverlayLiveSyncPollMs(): number {
   if (!env) return DEFAULT_OVERLAY_LIVE_SYNC_POLL_MS;
   const n = parseInt(env.replace(/[^\d]/g, ""), 10);
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_OVERLAY_LIVE_SYNC_POLL_MS;
-  return Math.max(400, Math.min(15_000, n));
+  return Math.max(500, Math.min(30_000, n));
 }
 
 /**

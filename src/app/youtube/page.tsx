@@ -525,10 +525,10 @@ export default function YoutubePage() {
             <input className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10" value={chatIntervalSec} onChange={(e)=>setChatIntervalSec(Math.max(2, parseInt(e.target.value||"10",10)))} />
             <label className="text-xs text-neutral-400 self-center">유지 개수</label>
             <input className="w-24 px-2 py-1 rounded bg-neutral-900/80 border border-white/10" value={chatKeep} onChange={(e)=>setChatKeep(Math.max(50, parseInt(e.target.value||"300",10)))} />
-            <button className={`px-2 py-1 rounded border ${latestOnTop ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-300"}`} onClick={()=>setLatestOnTop(!latestOnTop)}>
+            <button className={`px-3 py-2 min-h-[40px] text-sm rounded border ${latestOnTop ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-300"}`} onClick={()=>setLatestOnTop(!latestOnTop)}>
               최신 {latestOnTop ? "상단" : "하단"}
             </button>
-            <button className={`px-2 py-1 rounded border ${autoKeep ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-300"}`} onClick={()=>setAutoKeep(!autoKeep)}>
+            <button className={`px-3 py-2 min-h-[40px] text-sm rounded border ${autoKeep ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-300"}`} onClick={()=>setAutoKeep(!autoKeep)}>
               자동 유지 {autoKeep ? "켜짐" : "꺼짐"}
             </button>
             <label className="text-xs text-neutral-400 self-center">작성자 필터</label>
