@@ -180,7 +180,7 @@ type SectionProps = {
   children: ReactNode;
 };
 
-/** 상위 카드형 섹션 (panel) */
+/** 상위 카드형 섹션 (panel) — 접기 기능 제거: 항상 펼쳐짐 + 토글 버튼 없음 */
 export function AdminCollapsibleSection({
   id,
   title,
@@ -192,35 +192,24 @@ export function AdminCollapsibleSection({
   headerAside,
   children,
 }: SectionProps) {
-  const { isOpen, toggle, register, storageHydrated } = useAdminSectionCollapse();
-  const open = storageHydrated ? isOpen(id, defaultOpen) : defaultOpen;
+  const { register } = useAdminSectionCollapse();
+  const open = true;
 
   useEffect(() => {
     register(id);
   }, [id, register]);
 
   return (
-    <section id={id} className={className} data-admin-section={id} data-open={open ? "1" : "0"}>
+    <section id={id} className={className} data-admin-section={id} data-open="1">
       <div
-        className={`flex flex-wrap items-center justify-between gap-3 gap-y-2 ${headerClassName} ${
-          open ? "border-b border-white/10 pb-3" : "pb-4 md:pb-6"
-        }`}
+        className={`flex flex-wrap items-center justify-between gap-3 gap-y-2 ${headerClassName} border-b border-white/10 pb-3`}
       >
-        <button
-          type="button"
-          className="group flex min-w-[220px] flex-1 items-center gap-2 rounded-lg text-left hover:bg-white/[0.04] -mx-1 px-1 py-0.5"
-          aria-expanded={open}
-          onClick={() => toggle(id, defaultOpen)}
-        >
-          <Chevron open={open} />
+        <div className="flex min-w-[220px] flex-1 items-center gap-2 -mx-1 px-1 py-0.5">
           <h2 className={`text-lg font-semibold text-white ${titleClassName}`}>{title}</h2>
-          <span className="hidden text-[11px] text-neutral-500 sm:inline group-hover:text-neutral-400">
-            {open ? "접기" : "펼치기"}
-          </span>
-        </button>
+        </div>
         {headerAside ? <div className="shrink-0 flex flex-wrap items-center gap-1">{headerAside}</div> : null}
       </div>
-      {open ? <div className={bodyClassName}>{children}</div> : null}
+      <div className={bodyClassName}>{children}</div>
     </section>
   );
 }
@@ -234,7 +223,7 @@ type BlockProps = {
   children: ReactNode;
 };
 
-/** 카드 안쪽 하위 블록 */
+/** 카드 안쪽 하위 블록 — 접기 기능 제거: 항상 펼쳐짐 + 토글 버튼 없음 */
 export function AdminCollapsibleBlock({
   id,
   title,
@@ -243,8 +232,8 @@ export function AdminCollapsibleBlock({
   headerAside,
   children,
 }: BlockProps) {
-  const { isOpen, toggle, register, storageHydrated } = useAdminSectionCollapse();
-  const open = storageHydrated ? isOpen(id, defaultOpen) : defaultOpen;
+  const { register } = useAdminSectionCollapse();
+  const open = true;
 
   useEffect(() => {
     register(id);
@@ -255,24 +244,15 @@ export function AdminCollapsibleBlock({
       id={id}
       className={className}
       data-admin-block={id}
-      data-open={open ? "1" : "0"}
+      data-open="1"
     >
       <div className="flex flex-wrap items-center justify-between gap-3 gap-y-2">
-        <button
-          type="button"
-          className="group flex min-w-[180px] flex-1 items-center gap-2 rounded text-left hover:bg-white/[0.04] -mx-1 px-1 py-0.5"
-          aria-expanded={open}
-          onClick={() => toggle(id, defaultOpen)}
-        >
-          <Chevron open={open} />
+        <div className="flex min-w-[180px] flex-1 items-center gap-2 -mx-1 px-1 py-0.5">
           <div className="min-w-0 text-base font-semibold text-inherit">{title}</div>
-          <span className="hidden text-[11px] text-neutral-500 sm:inline group-hover:text-neutral-400">
-            {open ? "접기" : "펼치기"}
-          </span>
-        </button>
+        </div>
         {headerAside ? <div className="shrink-0 flex flex-wrap items-center gap-1">{headerAside}</div> : null}
       </div>
-      {open ? <div className="mt-2">{children}</div> : null}
+      <div className="mt-2">{children}</div>
     </div>
   );
 }

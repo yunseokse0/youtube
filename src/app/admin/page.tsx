@@ -10810,48 +10810,20 @@ function AdminPageInner() {
         <div className="p-2.5 space-y-0.5 overflow-y-auto flex-1 min-h-0 pr-1 pb-1">
           {navItems.filter((i) => !i.pinnedBottom).map((item) => {
             const hasSubs = Array.isArray(item.subItems) && item.subItems.length > 0;
-            const isExpanded = expandedNavGroups[item.key] ?? false;
             const isGroupActive = activeNav === item.key;
             return (
               <div key={item.key} className="ui-din-nav-group">
-                {hasSubs ? (
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => moveToSection(item.key, item.targetId)}
-                      className={`ui-din-nav-item ui-din-nav-category flex-1 ${
-                        isGroupActive ? "ui-nav-active" : ""
-                      } ${isExpanded ? "ui-nav-expanded" : ""}`}
-                    >
-                      <span className="text-base flex-shrink-0 leading-none">{item.icon}</span>
-                      <span className="flex-1">{item.label}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); toggleNavGroup(item.key); }}
-                      className={`ui-din-nav-chevron-btn !w-auto !py-1.5 !px-1.5 inline-flex items-center justify-center rounded-lg border border-transparent ${
-                        isGroupActive ? "ui-nav-active ui-nav-expanded" : isExpanded ? "ui-nav-expanded" : ""
-                      }`}
-                      style={{ boxSizing: "border-box" }}
-                      aria-label={isExpanded ? `${item.label} 메뉴 접기` : `${item.label} 메뉴 펼치기`}
-                      title={isExpanded ? "소메뉴 접기" : "소메뉴 펼치기"}
-                    >
-                      <span className="ui-din-nav-chevron">▶</span>
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => moveToSection(item.key, item.targetId)}
-                    className={`ui-din-nav-item ${
-                      isGroupActive ? "ui-nav-active" : ""
-                    }`}
-                  >
-                    <span className="text-base flex-shrink-0 leading-none">{item.icon}</span>
-                    <span className="flex-1">{item.label}</span>
-                  </button>
-                )}
-                {hasSubs && isExpanded && item.subItems && (
+                <button
+                  type="button"
+                  onClick={() => moveToSection(item.key, item.targetId)}
+                  className={`ui-din-nav-item ${hasSubs ? "ui-din-nav-category" : ""} ${
+                    isGroupActive ? "ui-nav-active" : ""
+                  }`}
+                >
+                  <span className="text-base flex-shrink-0 leading-none">{item.icon}</span>
+                  <span className="flex-1">{item.label}</span>
+                </button>
+                {hasSubs && item.subItems && (
                   <div className="ui-din-nav-sublist ui-tab-fade-in">
                     {item.subItems.map((sub) => (
                       <button
@@ -10911,62 +10883,7 @@ function AdminPageInner() {
             <div>
               <h1 className="text-2xl font-extrabold tracking-tight text-neutral-50">{adminHeaderTitle(user)}</h1>
             </div>
-            <div className="hidden sm:block h-8 w-px bg-white/10 mx-1" />
-            {(user?.remainingDays != null || user?.unlimited) && (
-              <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${user?.unlimited ? "bg-blue-500/15 text-blue-300 border border-blue-500/30" : (user?.remainingDays ?? 0) <= 7 ? "bg-amber-500/15 text-amber-300 border border-amber-500/30" : "bg-neutral-800/70 text-neutral-400 border border-white/10"}`}>
-                {user?.unlimited ? "✦ 무제한" : `남은 일수: ${user?.remainingDays ?? 0}일`}
-              </span>
-            )}
-            {showSyncStatusBadge ? (
-            <span
-              className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30"
-              title="로그인 세션이 만료되었거나 계정이 일치하지 않습니다. 페이지를 새로고침한 뒤 다시 로그인해 보세요."
-            >
-              세션 확인 필요
-            </span>
-            ) : null}
-            {/* ✅ A/B 모드 런타임 스위치 - DIN 허브 둥근 스타일 유지 */}
-            <button
-              type="button"
-              onClick={() => setIntakeModeModalOpen(true)}
-              className={`group relative inline-flex items-center gap-1.5 rounded-[10px] border px-3 py-1.5 text-xs font-bold transition ${
-                runtimeIntakeMode === "A"
-                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/15"
-                  : runtimeIntakeMode === "B"
-                    ? "border-indigo-500/40 bg-indigo-500/10 text-indigo-200 hover:bg-indigo-500/15"
-                    : "border-white/10 bg-[#152040] text-neutral-300 hover:bg-[#1a2950]"
-              }`}
-              title={
-                runtimeIntakeMode === "A"
-                  ? "A모드 — 투네이션만 자동으로 연결해요. 투네이션 링크(알림박스 URL)만 넣어주세요. (EC2 서버가 직접 WS 연결)"
-                  : runtimeIntakeMode === "B"
-                    ? "B모드 — DIN 허브 모드로 운영해요. DIN 허브에 로그인 하시면 서버가 30초/60초마다 자동으로 긁어옵니다."
-                    : "A/B 모드 — 클릭해서 설정해 주세요. (로딩 중...)"
-              }
-            >
-              <span
-                className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-extrabold leading-none ${
-                  runtimeIntakeMode === "A"
-                    ? "bg-emerald-500 text-white"
-                    : runtimeIntakeMode === "B"
-                      ? "bg-indigo-500 text-white"
-                      : "bg-neutral-600 text-white"
-                }`}
-              >
-                {runtimeIntakeMode || "?"}
-              </span>
-              <span>
-                {runtimeIntakeMode === "A"
-                  ? "A · 투네이션 자동"
-                  : runtimeIntakeMode === "B"
-                    ? "B · DIN 허브 모드"
-                    : runtimeIntakeModeLoaded
-                      ? "모드 설정 (기본 B)"
-                      : "모드 로딩중…"}
-              </span>
-              <span className="text-[10px] opacity-70">▼</span>
-            </button>
-            <div className="hidden sm:block h-8 w-px bg-white/10" />
+
             {/* 우측 기능 버튼 그룹 - 원래 관리자 기능으로 복구 + DIN 허브 스타일 유지 */}
             <div className="flex items-center gap-2">
               <button
@@ -16940,38 +16857,6 @@ function AdminPageInner() {
                   </div>
                 </>
               )}
-            </AdminCollapsibleSection>
-
-            <AdminCollapsibleSection
-              id="chat-copy-security"
-              title="채팅용 복사 & 보안"
-              className={`${panelCardClass} ${simpleMode ? "hidden" : ""}`}
-              defaultOpen={false}
-            >
-              <textarea
-                className="w-full min-h-[100px] px-3 py-2 rounded bg-neutral-900/80 border border-white/10 font-mono"
-                value={chatDraft}
-                onChange={(e) => { setChatDraft(e.target.value); setChatDraftDirty(true); }}
-                placeholder="여기에 결과가 표시됩니다. 방송 전 텍스트를 직접 보정할 수 있어요."
-              />
-              <div className="flex gap-2 mt-2">
-                <button
-                  className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700"
-                  onClick={regenerateDraft}
-                >
-                  재생성
-                </button>
-                <button
-                  className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700"
-                  onClick={onCopyDraft}
-                >
-                  복사하기
-                </button>
-                {copied && <span className="self-center text-emerald-400">복사됨</span>}
-              </div>
-              <div className="text-sm text-neutral-400 mt-2">
-                HTTPS 환경에서 클립보드 API 사용. 실패 시 폴백 사용.
-              </div>
             </AdminCollapsibleSection>
 
             <AdminCollapsibleSection
