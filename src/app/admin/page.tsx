@@ -2263,6 +2263,11 @@ function AdminPageInner() {
       parent = ADMIN_SECTION_EXPAND_PARENTS[parent];
     }
     if (opts?.fromSubItem) {
+      const isInScroller = (el: HTMLElement, sc: HTMLElement): boolean => {
+        const r = el.getBoundingClientRect();
+        const s = sc.getBoundingClientRect();
+        return r.top < s.bottom - 4 && r.bottom > s.top + 4;
+      };
       const tryScroll = (retry: number) => {
         const el = document.getElementById(targetId);
         const sc = contentScrollRef.current;
@@ -2270,18 +2275,44 @@ function AdminPageInner() {
           const elTop = el.getBoundingClientRect().top;
           const scTop = sc.getBoundingClientRect().top;
           const delta = (elTop - scTop) + sc.scrollTop - 16;
-          sc.scrollTo({ top: Math.max(0, delta), behavior: "smooth" });
+          sc.scrollTo({ top: Math.max(0, delta), behavior: retry >= 5 ? "smooth" : "auto" });
           el.classList.remove("ui-section-arrive");
-          window.setTimeout(() => el.classList.add("ui-section-arrive"), 30);
+          window.setTimeout(() => {
+            el.classList.add("ui-section-arrive");
+            const stillVisible = isInScroller(el, sc);
+            if (!stillVisible && retry <= 2) {
+              try {
+                el.scrollIntoView({ block: "start", behavior: "smooth", inline: "nearest" });
+              } catch (_) { /* noop */ }
+            }
+          }, 30);
+          if (retry > 0) {
+            window.setTimeout(() => {
+              const postEl = document.getElementById(targetId);
+              const postSc = contentScrollRef.current;
+              if (!(postEl && postSc && isInScroller(postEl, postSc))) {
+                tryScroll(retry - 1);
+              }
+            }, 250);
+          } else {
+            window.setTimeout(() => {
+              const postEl = document.getElementById(targetId);
+              if (postEl) {
+                try {
+                  postEl.scrollIntoView({ block: "start", behavior: "smooth", inline: "nearest" });
+                } catch (_) { /* noop */ }
+              }
+            }, 100);
+          }
         } else if (retry > 0) {
-          window.setTimeout(() => tryScroll(retry - 1), 180);
+          window.setTimeout(() => tryScroll(retry - 1), 250);
         } else if (sc) {
           sc.scrollTop = 0;
         } else {
           window.scrollTo({ top: 0, behavior: "smooth" as ScrollBehavior });
         }
       };
-      tryScroll(4);
+      tryScroll(8);
     } else {
       const resetScroll = () => {
         if (contentScrollRef.current) {
