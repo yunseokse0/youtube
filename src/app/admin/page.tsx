@@ -2245,23 +2245,44 @@ function AdminPageInner() {
    * @param opts.fromSubItem true = 소메뉴에서 호출 → scrollTop=0 유지하지 않고 해당 섹션으로 스크롤
    */
   const moveToSection = (key: AdminNavKey, targetId: string, opts?: { fromSubItem?: boolean }) => {
-    let finalActiveNav: AdminNavKey = key;
     const resolved: AdminNavKey = LEGACY_TO_NEW_KEY[key as string] ?? key;
-    finalActiveNav = resolved;
-    flushSync(() => {
-      setActiveNav(finalActiveNav);
+    const finalActiveNav: AdminNavKey = resolved;
+    const commitState = () => {
+      setActiveNav(() => finalActiveNav);
       setExpandedNavGroups((prev) => ({ ...prev, [key]: true, [finalActiveNav]: true }));
-      setActiveSubTargetId(targetId);
-    });
+      setActiveSubTargetId(() => targetId);
+    };
+    try {
+      if (typeof flushSync === "function") {
+        try {
+          flushSync(() => { commitState(); });
+        } catch (_fsErr) {
+          commitState();
+        }
+      } else {
+        commitState();
+      }
+    } catch (_err) {
+      try { commitState(); } catch (_noop) { /* noop */ }
+    }
     if (typeof window === "undefined") return;
-    expandAdminSection(targetId);
+    try { expandAdminSection(targetId); } catch (_noop) { /* noop */ }
     let parent = ADMIN_SECTION_EXPAND_PARENTS[targetId];
     const seen = new Set<string>();
     while (parent && !seen.has(parent)) {
       seen.add(parent);
-      expandAdminSection(parent);
+      try { expandAdminSection(parent); } catch (_noop) { /* noop */ }
       parent = ADMIN_SECTION_EXPAND_PARENTS[parent];
     }
+    const guardRailRender = () => {
+      const sc = contentScrollRef.current;
+      const current = sc?.querySelector(`[id="${targetId}"]`);
+      if (current) return true;
+      const candidate = document.getElementById(targetId);
+      if (candidate) return true;
+      setActiveSubTargetId(() => targetId);
+      return false;
+    };
     if (opts?.fromSubItem) {
       const isInScroller = (el: HTMLElement, sc: HTMLElement): boolean => {
         const r = el.getBoundingClientRect();
@@ -2272,18 +2293,19 @@ function AdminPageInner() {
         const el = document.getElementById(targetId);
         const sc = contentScrollRef.current;
         if (el && sc) {
+          guardRailRender();
           const elTop = el.getBoundingClientRect().top;
           const scTop = sc.getBoundingClientRect().top;
           const delta = (elTop - scTop) + sc.scrollTop - 16;
-          sc.scrollTo({ top: Math.max(0, delta), behavior: retry >= 5 ? "smooth" : "auto" });
-          el.classList.remove("ui-section-arrive");
+          try { sc.scrollTo({ top: Math.max(0, delta), behavior: retry >= 5 ? "smooth" : "auto" }); }
+          catch (_noop) { sc.scrollTop = Math.max(0, delta); }
+          try { el.classList.remove("ui-section-arrive"); } catch (_noop) { /* noop */ }
           window.setTimeout(() => {
-            el.classList.add("ui-section-arrive");
+            try { el.classList.add("ui-section-arrive"); } catch (_noop) { /* noop */ }
             const stillVisible = isInScroller(el, sc);
             if (!stillVisible && retry <= 2) {
-              try {
-                el.scrollIntoView({ block: "start", behavior: "smooth", inline: "nearest" });
-              } catch (_) { /* noop */ }
+              try { el.scrollIntoView({ block: "start", behavior: "smooth", inline: "nearest" }); }
+              catch (_) { /* noop */ }
             }
           }, 30);
           if (retry > 0) {
@@ -2291,6 +2313,7 @@ function AdminPageInner() {
               const postEl = document.getElementById(targetId);
               const postSc = contentScrollRef.current;
               if (!(postEl && postSc && isInScroller(postEl, postSc))) {
+                guardRailRender();
                 tryScroll(retry - 1);
               }
             }, 250);
@@ -2298,21 +2321,20 @@ function AdminPageInner() {
             window.setTimeout(() => {
               const postEl = document.getElementById(targetId);
               if (postEl) {
-                try {
-                  postEl.scrollIntoView({ block: "start", behavior: "smooth", inline: "nearest" });
-                } catch (_) { /* noop */ }
+                try { postEl.scrollIntoView({ block: "start", behavior: "smooth", inline: "nearest" }); }
+                catch (_) { /* noop */ }
               }
             }, 100);
           }
         } else if (retry > 0) {
-          window.setTimeout(() => tryScroll(retry - 1), 250);
+          window.setTimeout(() => { guardRailRender(); tryScroll(retry - 1); }, 250);
         } else if (sc) {
-          sc.scrollTop = 0;
+          try { sc.scrollTop = 0; } catch (_noop) { /* noop */ }
         } else {
           window.scrollTo({ top: 0, behavior: "smooth" as ScrollBehavior });
         }
       };
-      tryScroll(8);
+      tryScroll(10);
     } else {
       const resetScroll = () => {
         if (contentScrollRef.current) {
@@ -10970,7 +10992,7 @@ function AdminPageInner() {
             donorListLastScrollHeightRef.current = (e.target as HTMLDivElement).scrollHeight;
           }}
         >
-        {isAdminNavSectionVisible("dashboard") && activeNav === "dashboard" && (
+        {isAdminNavSectionVisible("dashboard") && (
           <div key="tab-dashboard" className="ui-tab-fade-in">
         <AdminCollapsibleSection
           id="dashboard-summary"
@@ -11188,7 +11210,7 @@ function AdminPageInner() {
         )}
         <div className="grid grid-cols-1 gap-6">
           <div className="space-y-6">
-            {isAdminNavSectionVisible("dashboard") && activeNav === "dashboard" && (
+            {isAdminNavSectionVisible("dashboard") && (
               <div key="tab-dashboard-board" className="ui-tab-fade-in">
             <AdminCollapsibleSection
               id="settlement-member-board"
@@ -15787,7 +15809,7 @@ function AdminPageInner() {
               </div>
             )}
 
-            {isAdminNavSectionVisible("donor") && activeNav === "donor" && (
+            {isAdminNavSectionVisible("donor") && (
               <div key="tab-donor" className="ui-tab-fade-in">
             <>
             <AdminCollapsibleSection
@@ -18093,7 +18115,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
               </div>
             )}
 
-            {isAdminNavSectionVisible("overlay") && (activeNav === "overlay" || activeNav === "goal") && (
+            {isAdminNavSectionVisible("overlay") && (
               <div key="tab-overlay" className="ui-tab-fade-in">
             <AdminCollapsibleSection
               id="overlay-settings"
@@ -22046,7 +22068,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
               </div>
             )}
 
-            {isAdminNavSectionVisible("settlement") && activeNav === "settlement" && (
+            {isAdminNavSectionVisible("settlement") && (
               <div key="tab-settlement-finalize" className="ui-tab-fade-in">
             <AdminCollapsibleSection
               id="settlement-finalize"
@@ -22247,7 +22269,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
               </div>
             )}
 
-            {isAdminNavSectionVisible("logs") && activeNav === "logs" && (
+            {isAdminNavSectionVisible("logs") && (
               <div key="tab-logs" className="ui-tab-fade-in">
             <AdminCollapsibleSection
               id="logs-data"
