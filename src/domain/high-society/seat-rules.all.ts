@@ -1884,6 +1884,21 @@ export function applyTerritoryLogDirectTransfers(
       const idx = order.indexOf(memberId.startsWith("__team_") ? "" : memberId);
       if (idx >= 0) targetIdxs.push(idx);
     }
+    /** ✅ 3중 fallback: (1) log.teamId (2) memberId __team_ prefix (3) 개별 memberId → teamAssignments[memberId] 로부터 역추출
+     *  persist reload 시 TerritoryLog.teamId 가 strip되고 memberId가 개인ID로 매핑된 경우에도,
+     *  seat에 할당된 팀 정보(teamAssignments) 기반으로 반드시 team-scope 브랜치 진입 보장
+     */
+    if (!rawTeamId || targetIdxs.length === 0) {
+      const memTeam = memberId && !memberId.startsWith("__team_") ? teamAssignments[memberId] : undefined;
+      if (memTeam && typeof memTeam === "string" && memTeam.trim()) {
+        rawTeamId = memTeam.trim();
+        targetIdxs.length = 0;
+        for (let i = 0; i < n; i += 1) {
+          const mid = order[i]!;
+          if (teamAssignments[mid] === rawTeamId) targetIdxs.push(i);
+        }
+      }
+    }
     if (targetIdxs.length === 0) continue;
 
     if (rawTeamId && targetIdxs.length >= 1) {

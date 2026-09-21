@@ -2312,7 +2312,10 @@ function AdminPageInner() {
                 tab.hidden = false;
                 tab.classList.remove("hidden");
               }
-              const el = document.getElementById(h);
+              const el =
+                document.getElementById(`${h}-content`) ||
+                document.querySelector(`[data-admin-section-content="${h}"]`) ||
+                document.getElementById(h);
               if (el) {
                 el.style.setProperty("display", "block", "important");
                 el.hidden = false;
@@ -2322,7 +2325,7 @@ function AdminPageInner() {
                 if (sc) {
                   const rect = el.getBoundingClientRect();
                   const scr = sc.getBoundingClientRect();
-                  sc.scrollTop = Math.max(0, (rect.top - scr.top) + sc.scrollTop - 24);
+                  sc.scrollTop = Math.max(0, (rect.top - scr.top) + sc.scrollTop - 120);
                 }
               }
             } catch (_noop) { /* noop */ }
@@ -2378,13 +2381,16 @@ function AdminPageInner() {
           window.setTimeout(() => tryScroll(retry), 120);
           return;
         }
-        const el = document.getElementById(targetId);
+        const el =
+          document.getElementById(`${targetId}-content`) ||
+          document.querySelector(`[data-admin-section-content="${targetId}"]`) ||
+          document.getElementById(targetId);
         const sc = contentScrollRef.current;
         if (el && sc) {
           guardRailRender();
           const elTop = el.getBoundingClientRect().top;
           const scTop = sc.getBoundingClientRect().top;
-          const delta = (elTop - scTop) + sc.scrollTop - 24;
+          const delta = (elTop - scTop) + sc.scrollTop - 120;
           try { sc.scrollTo({ top: Math.max(0, delta), behavior: retry >= 12 ? "smooth" : "auto" }); }
           catch (_noop) { sc.scrollTop = Math.max(0, delta); }
           try { el.classList.remove("ui-section-arrive"); } catch (_noop) { /* noop */ }
@@ -2399,7 +2405,10 @@ function AdminPageInner() {
           if (retry > 0) {
             window.setTimeout(() => {
               try { applyDomFallback(); } catch (_noop) { /* noop */ }
-              const postEl = document.getElementById(targetId);
+              const postEl =
+                document.getElementById(`${targetId}-content`) ||
+                document.querySelector(`[data-admin-section-content="${targetId}"]`) ||
+                document.getElementById(targetId);
               const postSc = contentScrollRef.current;
               if (!(postEl && postSc && isInScroller(postEl, postSc))) {
                 guardRailRender();
@@ -2408,7 +2417,10 @@ function AdminPageInner() {
             }, 280);
           } else {
             window.setTimeout(() => {
-              const postEl = document.getElementById(targetId);
+              const postEl =
+                document.getElementById(`${targetId}-content`) ||
+                document.querySelector(`[data-admin-section-content="${targetId}"]`) ||
+                document.getElementById(targetId);
               if (postEl) {
                 try { postEl.scrollIntoView({ block: "start", behavior: "smooth", inline: "nearest" }); }
                 catch (_) { /* noop */ }
@@ -2463,6 +2475,8 @@ function AdminPageInner() {
             tab.hidden = false;
           }
           const els = [
+            document.getElementById(`${sub.targetId}-content`),
+            document.querySelector(`[data-admin-section-content="${sub.targetId}"]`),
             document.getElementById(sub.targetId),
             document.querySelector(`section[id="${sub.targetId}"]`),
             document.querySelector(`[data-admin-section="${sub.targetId}"]`),
@@ -2481,7 +2495,7 @@ function AdminPageInner() {
             if (sc) {
               const rect = el.getBoundingClientRect();
               const scr = sc.getBoundingClientRect();
-              const delta = (rect.top - scr.top) + sc.scrollTop - 40;
+              const delta = (rect.top - scr.top) + sc.scrollTop - 120;
               try { sc.scrollTo({ top: Math.max(0, delta), behavior: "auto" }); }
               catch (_) { sc.scrollTop = Math.max(0, delta); }
             }
@@ -3868,8 +3882,12 @@ function AdminPageInner() {
           }
         }
       }
-      /** 서버(MySQL) donors > UI — updatedAt 같아도 실시간 반영 */
-      const serverDonorAhead = remoteDonorCount > localDonorCount && remoteDonorCount > 0;
+      /** 서버(MySQL) donors > UI — updatedAt 같아도 실시간 반영
+       *  ✅ 2026-09-21 방어: 오래된 서버 스냅샷(사용자가 지운 과거 후원多)이 donorCount 많다고 덮어쓰지 않게
+       *    remoteUpdatedAt >= localUpdatedAt (최신 or 동일 timestamp) 일 때만 serverDonorAhead 유효화.
+       */
+      const localStateUpdated = Number(stateUpdatedAtRef.current || 0);
+      const serverDonorAhead = remoteDonorCount > localDonorCount && remoteDonorCount > 0 && remoteUpdatedAt >= localStateUpdated;
       const shouldApplyRemote =
         remoteUpdatedAt > stateUpdatedAtRef.current ||
         Boolean(opts?.forceDonorMerge) ||
@@ -17086,20 +17104,32 @@ function AdminPageInner() {
                   <button
                     type="button"
                     className="rounded bg-neutral-800 hover:bg-neutral-700 border border-white/15 text-[10px] font-semibold px-2 py-0.5 text-neutral-200 transition"
-                    title="후원자 리스트 섹션을 화면 최상단으로 강제 스크롤합니다."
+                    title="후원자 리스트 개별 행 테이블을 화면에 강제 표시 + 상단으로 스크롤합니다."
                     onClick={() => {
-                      const el = document.getElementById("donor-list");
+                      const el =
+                        document.getElementById("donor-list-content") ||
+                        document.querySelector(`[data-admin-section-content="donor-list"]`) ||
+                        document.getElementById("donor-list");
                       const sc = contentScrollRef.current;
                       if (el) {
+                        const tabEl = document.querySelector<HTMLElement>('[data-admin-tab="donor"]');
+                        if (tabEl) {
+                          tabEl.style.setProperty("display", "block", "important");
+                          tabEl.hidden = false;
+                          tabEl.classList.remove("hidden");
+                        }
+                        el.style.setProperty("display", "block", "important");
+                        el.hidden = false;
+                        el.classList.remove("hidden");
                         el.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" });
                         if (sc) {
                           const rect = el.getBoundingClientRect();
                           const scr = sc.getBoundingClientRect();
-                          sc.scrollTop = Math.max(0, (rect.top - scr.top) + sc.scrollTop - 24);
+                          sc.scrollTop = Math.max(0, (rect.top - scr.top) + sc.scrollTop - 120);
                         }
                       }
                     }}
-                  >⤵ 바로가기</button>
+                  >⤵ 리스트 바로가기</button>
                 </div>
               }
             >
@@ -17346,9 +17376,11 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
               </div>
 
               <div
+                id="donor-list-content"
                 ref={donorListScrollRef}
                 style={{ contain: "strict", willChange: "transform" }}
                 className="pr-1 border border-white/10 rounded isolate"
+                data-admin-section-content="donor-list"
               >
                 <table className={`w-full ${donorListDenseMode ? "text-[12px]" : "text-sm"}`} style={{ tableLayout: "fixed", borderCollapse: "separate" }}>
                   <thead className="sticky top-0 z-10 bg-neutral-950/95 backdrop-blur-sm shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
