@@ -2270,11 +2270,13 @@ function AdminPageInner() {
       } else { commitState(true); }
     } catch (_err) { try { commitState(true); } catch (_noop) { /* noop */ } }
 
-    /** ✅ 2026-09-21 forceScrollToElement v3 (clean)
+    /** ✅ 2026-09-21 forceScrollToElement v4
      *  - 뷰포트 절대좌표: rect.top + window.scrollY 계산 (부모 position:relative 관계없이 오차 0)
-     *  - scroll container: contentScrollRef → overflow 조상 → docEl → body 순 4계층
-     *  - container 내 localOffset: (절대좌표 doc) - (container의 절대좌표 doc)
-     *  - fallback window.scrollTo → scrollIntoView
+     *  - scroll container: contentScrollRef **강제 최우선** → overflow 조상 → docEl → body 순
+     *  - container가 내부 scroll(contentScrollRef 등) 이면 header 160px 공제 X (container 위치에 이미 반영)
+     *    - window.document fallback (전체 스크롤) 일때만 -160 적용
+     *  - retry 허용 오차 32 → 120 으로 완화 (브라우저 reflow bounce 방지)
+     *  - fallback: sc.scrollTop → sc.scrollTo → window.scrollTo → scrollIntoView
      */
     const forceScrollToElement = (rawEl: HTMLElement | null | undefined, label = "scroll") => {
       if (!rawEl) return { ok: false, reason: "no-el" };
@@ -2282,8 +2284,7 @@ function AdminPageInner() {
         const rect = rawEl.getBoundingClientRect();
         const winY = Number(window.scrollY || window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0);
         const absDocTop = rect.top + winY;
-        const absDocTopMinusHeader = Math.max(0, absDocTop - 160);
-        // 1. scroll container 후보 수집
+        // 1. scroll container 후보 수집 — contentScrollRef 를 **강제 최우선**으로 맨 앞에 고정
         const cand: HTMLElement[] = [];
         if (contentScrollRef.current) cand.push(contentScrollRef.current);
         let w: HTMLElement | null = rawEl.parentElement;
@@ -2297,7 +2298,13 @@ function AdminPageInner() {
         }
         if (document.documentElement) cand.push(document.documentElement);
         if (document.body) cand.push(document.body);
-        const uniq = Array.from(new Set(cand)).filter(Boolean) as HTMLElement[];
+        // 중복 제거 + contentScrollRef 가 반드시 index 0 오도록 강제
+        let uniq = Array.from(new Set(cand)).filter(Boolean) as HTMLElement[];
+        if (contentScrollRef.current) {
+          uniq = uniq.filter(x => x !== contentScrollRef.current);
+          uniq.unshift(contentScrollRef.current);
+        }
+        const contentScrollEl = contentScrollRef.current;
         // 2. container별 절대좌표 계산
         const containerAbsDoc = (el: HTMLElement): number => {
           const r = el.getBoundingClientRect();
@@ -2308,15 +2315,20 @@ function AdminPageInner() {
         let chosen: HTMLElement | null = null;
         let applied = -1;
         for (const sc of uniq) {
-          if (!sc || sc.scrollHeight <= sc.clientHeight + 4) continue;
+          if (!sc) continue;
+          if (sc !== document.documentElement && sc !== document.body && sc.scrollHeight <= sc.clientHeight + 4) continue;
+          const isGlobal = (sc === document.documentElement || sc === document.body);
           const scAbs = containerAbsDoc(sc);
-          const localTarget = Math.max(0, absDocTopMinusHeader - scAbs);
+          // header offset: 전체 window/doc 스크롤일때만 160 공제 / 내부 overflow 컨테이너는 header offset이 container 위치에 반영되어 있으므로 0
+          const headerOffset = isGlobal ? 160 : 0;
+          const absTargetGlobal = Math.max(0, absDocTop - headerOffset);
+          // localTarget: container 내부 상대 offset = (타겟 절대좌표) - (컨테이너 절대좌표) + 24(여유)
+          const localTarget = Math.max(0, absTargetGlobal - scAbs + 24);
           try {
             sc.scrollTop = localTarget;
-            // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-            sc.scrollTop;
+            void sc.scrollTop;
             applied = sc.scrollTop;
-            if (Math.abs(applied - localTarget) < 32) { chosen = sc; ok = true; break; }
+            if (Math.abs(applied - localTarget) < 120) { chosen = sc; ok = true; break; }
           } catch (_) { /* noop */ }
           if (!ok) {
             try { sc.scrollTo({ top: localTarget, behavior: "auto" }); ok = true; chosen = sc; applied = localTarget; break; }
@@ -2325,18 +2337,26 @@ function AdminPageInner() {
         }
         // 3. window 글로벌 최종 fallback
         if (!ok) {
-          try { window.scrollTo({ top: absDocTopMinusHeader, left: 0, behavior: "auto" }); ok = true; } catch (_) { /* noop */ }
-          try { document.documentElement.scrollTop = absDocTopMinusHeader; document.body.scrollTop = absDocTopMinusHeader; ok = true; } catch (_) { /* noop */ }
+          const globalTarget = Math.max(0, absDocTop - 160);
+          try { window.scrollTo({ top: globalTarget, left: 0, behavior: "auto" }); ok = true; } catch (_) { /* noop */ }
+          try { document.documentElement.scrollTop = globalTarget; document.body.scrollTop = globalTarget; ok = true; } catch (_) { /* noop */ }
         }
         if (!ok) {
           try { rawEl.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" }); ok = true; }
           catch (_) { /* noop */ }
         }
+        // 4. contentScrollRef 의 최종 scrollTop 이 0이 아니면 donorListLastScrollTopRef 동기화 (다음 렌더시 유지)
+        try {
+          if (contentScrollEl && applied >= 0) {
+            donorListLastScrollTopRef.current = applied;
+            donorListLastScrollHeightRef.current = contentScrollEl.scrollHeight;
+          }
+        } catch (_noop) { /* noop */ }
         try {
           // eslint-disable-next-line no-console
-          console.warn(`[admin-scroll] ${label} el=<${rawEl.tagName} id="${rawEl.id || ''}"> rect.top=${Math.round(rect.top)} winY=${Math.round(winY)} → absDocTop=${Math.round(absDocTop)} target=${Math.round(absDocTopMinusHeader)} · ok=${ok} · chosen=${chosen?.tagName || 'NULL'} applied=${applied}`);
+          console.warn(`[admin-scroll-v4] ${label} el=<${rawEl.tagName} id="${rawEl.id || ''}"> rect.top=${Math.round(rect.top)} winY=${Math.round(winY)} → absDocTop=${Math.round(absDocTop)} · chosen=${chosen?.tagName || 'NULL'} id=${(chosen as any)?.id || ''} applied=${applied} ok=${ok}`);
         } catch (_noop) { /* noop */ }
-        return { ok, absDocTop, target: absDocTopMinusHeader };
+        return { ok, absDocTop, target: applied >= 0 ? applied : Math.max(0, absDocTop - 160) };
       } catch (_e) {
         return { ok: false, reason: String(_e || "err") };
       }
@@ -2391,14 +2411,23 @@ function AdminPageInner() {
       window.setTimeout(() => { try { commitState(true); } catch (_noop) { /* noop */ } applyDomFallback(); }, 90);
       window.setTimeout(applyDomFallback, 260);
       window.setTimeout(applyDomFallback, 600);
-      /** ✅ hash based 강제 앵커 이동: URL #section-id 직접 접근 or hashchange 이벤트시 스크롤 + display:block 강제 */
+      /** ✅ hash based 강제 앵커 이동: URL #section-id 직접 접근 or hashchange 이벤트시 스크롤 + display:block 강제
+       *  - 2026-09-21 v4 hydration 대기: el 이 null 이면 50ms 간격 최대 40회 (2초) retry → Next.js 첫 paint 지연 대응
+       */
       const resolveHashTarget = () => {
         try {
           const h = (window.location.hash || "").replace(/^#/, "").trim();
           if (!h) return;
           const navKey = resolveNavKeyFromTargetId(h) || (finalActiveNav as AdminNavKey);
           moveToSection(navKey, h, { fromSubItem: true });
-          const forceJump = () => {
+          const findAnchor = (): HTMLElement | null => {
+            return (
+              document.getElementById(`${h}-content`) ||
+              document.querySelector<HTMLElement>(`[data-admin-section-content="${h}"]`) ||
+              document.getElementById(h)
+            );
+          };
+          const ensureTab = () => {
             try {
               const tabKey = (navKey === "goal") ? "overlay" : navKey;
               const tab = document.querySelector<HTMLElement>(`[data-admin-tab="${tabKey}"]`);
@@ -2407,22 +2436,46 @@ function AdminPageInner() {
                 tab.hidden = false;
                 tab.classList.remove("hidden");
               }
-              const el =
-                document.getElementById(`${h}-content`) ||
-                document.querySelector(`[data-admin-section-content="${h}"]`) ||
-                document.getElementById(h);
-              if (el) {
+            } catch (_noop) { /* noop */ }
+          };
+          const forceJump = (label = "hash") => {
+            try {
+              ensureTab();
+              const el = findAnchor();
+              if (!el) return { ok: false, reason: "el-null" };
+              try {
                 el.style.setProperty("display", "block", "important");
                 el.hidden = false;
                 el.classList.remove("hidden");
-                forceScrollToElement(el, `hash#${h}`);
-              }
-            } catch (_noop) { /* noop */ }
+              } catch (_noop) { /* noop */ }
+              const r = forceScrollToElement(el, `${label}#${h}`);
+              return { ok: true, r };
+            } catch (_e) { return { ok: false, reason: String(_e || "err") }; }
           };
-          forceJump();
-          window.setTimeout(forceJump, 1);
-          window.setTimeout(forceJump, 120);
-          window.setTimeout(forceJump, 700);
+          // 1) 4단 즉시 + 지연 실행
+          forceJump("immediate");
+          window.setTimeout(() => forceJump("t1"), 1);
+          window.setTimeout(() => forceJump("t120"), 120);
+          window.setTimeout(() => forceJump("t700"), 700);
+          // 2) hydration 대기: el 못찾으면 50ms 마다 최대 40회 (2초) retry
+          try {
+            let hydrationTicks = 0;
+            const hydrationInterval = window.setInterval(() => {
+              try {
+                hydrationTicks += 1;
+                const el = findAnchor();
+                if (!el) {
+                  if (hydrationTicks >= 40) window.clearInterval(hydrationInterval);
+                  return;
+                }
+                window.clearInterval(hydrationInterval);
+                forceJump(`hydrated-${hydrationTicks}`);
+                // 120ms / 360ms 후 한번 더 보정 (reflow bounce)
+                window.setTimeout(() => forceJump(`post-${hydrationTicks}-120`), 120);
+                window.setTimeout(() => forceJump(`post-${hydrationTicks}-360`), 360);
+              } catch (_noop) { window.clearInterval(hydrationInterval); }
+            }, 50);
+          } catch (_noop) { /* noop */ }
         } catch (_noop) { /* noop */ }
       };
       window.setTimeout(resolveHashTarget, 1);
@@ -2467,12 +2520,12 @@ function AdminPageInner() {
       const tryScroll = (retry: number) => {
         try { applyDomFallback(); } catch (_noop) { /* noop */ }
         if (!ensureTabVisible()) {
-          window.setTimeout(() => tryScroll(retry), 120);
+          window.setTimeout(() => tryScroll(retry), 90);
           return;
         }
         const el =
           document.getElementById(`${targetId}-content`) ||
-          document.querySelector(`[data-admin-section-content="${targetId}"]`) ||
+          document.querySelector<HTMLElement>(`[data-admin-section-content="${targetId}"]`) ||
           document.getElementById(targetId);
         if (el) {
           guardRailRender();
@@ -2483,7 +2536,7 @@ function AdminPageInner() {
             try { el.classList.add("ui-section-arrive"); } catch (_noop) { /* noop */ }
             const sc = contentScrollRef.current;
             const stillVisible = sc ? isInScroller(el, sc) : false;
-            if (!stillVisible && retry <= 4) {
+            if (!stillVisible && retry <= 6) {
               try { forceScrollToElement(el, `retry-${retry}-${targetId}`); }
               catch (_) { /* noop */ }
             }
@@ -2493,32 +2546,32 @@ function AdminPageInner() {
               try { applyDomFallback(); } catch (_noop) { /* noop */ }
               const postEl =
                 document.getElementById(`${targetId}-content`) ||
-                document.querySelector(`[data-admin-section-content="${targetId}"]`) ||
+                document.querySelector<HTMLElement>(`[data-admin-section-content="${targetId}"]`) ||
                 document.getElementById(targetId);
               const postSc = contentScrollRef.current;
               if (!(postEl && postSc && isInScroller(postEl, postSc))) {
                 guardRailRender();
                 tryScroll(retry - 1);
               }
-            }, 280);
+            }, 260);
           } else {
             window.setTimeout(() => {
               const postEl =
                 document.getElementById(`${targetId}-content`) ||
-                document.querySelector(`[data-admin-section-content="${targetId}"]`) ||
+                document.querySelector<HTMLElement>(`[data-admin-section-content="${targetId}"]`) ||
                 document.getElementById(targetId);
               if (postEl) forceScrollToElement(postEl, `fallbackFinal-${targetId}`);
             }, 120);
           }
         } else if (retry > 0) {
-          window.setTimeout(() => { guardRailRender(); tryScroll(retry - 1); }, 280);
+          window.setTimeout(() => { guardRailRender(); tryScroll(retry - 1); }, 80);
         } else if (contentScrollRef.current) {
           try { contentScrollRef.current.scrollTop = 0; } catch (_noop) { /* noop */ }
         } else {
           window.scrollTo({ top: 0, behavior: "smooth" as ScrollBehavior });
         }
       };
-      window.setTimeout(() => tryScroll(20), 60);
+      window.setTimeout(() => tryScroll(30), 30);
     } else {
       const resetScroll = () => {
         if (contentScrollRef.current) {
