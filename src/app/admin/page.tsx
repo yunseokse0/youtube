@@ -2436,25 +2436,35 @@ function AdminPageInner() {
               document.getElementById(h)
             );
           };
+          /** ✅ v7 final resolveHashTarget ensureTab: dirty 체크 + _hashEnsureToggledOnce 1회 마킹 → 깜빡임 0
+           *  moveToSection 의 forceToggleSixTabsDomOnly 와 동일 로직. 4중 속성 비교 후 dirty 한 경우만 쓰기.
+           */
+          // eslint-disable-next-line @typescript-eslint/no-use-before-define
+          let _hashEnsureToggledOnce = (window as any).__adminHashEnsureToggledOnceV7 === true;
           const ensureTab = () => {
+            if (_hashEnsureToggledOnce) return;
             try {
-              // v6: 목표 탭만 display:block, 나머지 5탭은 직접 display:none !important (React state 의존 X)
               const TAB_KEYS_DIRECT: Array<AdminNavKey> = ["dashboard", "settlement", "donor", "overlay", "goal", "logs"];
               for (const k of TAB_KEYS_DIRECT) {
                 const els = document.querySelectorAll<HTMLElement>(`[data-admin-tab="${k}"]`);
                 if (!els || els.length === 0) continue;
                 const visible = (k === navKey) || (navKey === "goal" && k === "overlay");
+                const wantDisplay = visible ? "block" : "none";
+                const wantHiddenAttr = visible ? null : "until-found";
+                const ariaWant = visible ? "false" : "true";
                 els.forEach((el) => {
-                  const want = visible ? "block" : "none";
-                  el.style.setProperty("display", want, "important");
-                  el.setAttribute("aria-hidden", visible ? "false" : "true");
-                  if (visible) {
-                    el.removeAttribute("hidden");
-                    el.classList.remove("hidden");
-                  } else {
-                    el.setAttribute("hidden", "until-found");
-                    if (!el.classList.contains("hidden")) el.classList.add("hidden");
+                  const nowDisplay = el.style.getPropertyValue("display");
+                  const nowPriority = el.style.getPropertyPriority("display");
+                  if (nowDisplay !== wantDisplay || nowPriority !== "important") el.style.setProperty("display", wantDisplay, "important");
+                  const ariaNow = el.getAttribute("aria-hidden");
+                  if (ariaNow !== ariaWant) el.setAttribute("aria-hidden", ariaWant);
+                  const nowHidden = el.hasAttribute("hidden") ? el.getAttribute("hidden") : null;
+                  if ((wantHiddenAttr === null && nowHidden !== null) || (wantHiddenAttr !== null && nowHidden !== wantHiddenAttr)) {
+                    if (wantHiddenAttr === null) el.removeAttribute("hidden"); else el.setAttribute("hidden", wantHiddenAttr);
                   }
+                  const hasHiddenClass = el.classList.contains("hidden");
+                  if (visible && hasHiddenClass) el.classList.remove("hidden");
+                  else if (!visible && !hasHiddenClass) el.classList.add("hidden");
                 });
               }
             } catch (_noop) { /* noop */ }
@@ -2462,11 +2472,15 @@ function AdminPageInner() {
               const tabKey = (navKey === "goal") ? "overlay" : navKey;
               const tab = document.querySelector<HTMLElement>(`[data-admin-tab="${tabKey}"]`);
               if (tab) {
-                tab.style.setProperty("display", "block", "important");
-                tab.hidden = false;
-                tab.classList.remove("hidden");
+                const nowD = tab.style.getPropertyValue("display");
+                const nowP = tab.style.getPropertyPriority("display");
+                if (nowD !== "block" || nowP !== "important") tab.style.setProperty("display", "block", "important");
+                if (tab.hidden) tab.hidden = false;
+                if (tab.classList.contains("hidden")) tab.classList.remove("hidden");
               }
             } catch (_noop) { /* noop */ }
+            _hashEnsureToggledOnce = true;
+            (window as any).__adminHashEnsureToggledOnceV7 = true;
           };
           const forceJump = (label = "hash") => {
             try {
@@ -2474,20 +2488,20 @@ function AdminPageInner() {
               const el = findAnchor();
               if (!el) return { ok: false, reason: "el-null" };
               try {
-                el.style.setProperty("display", "block", "important");
-                el.hidden = false;
-                el.classList.remove("hidden");
+                const nowD = el.style.getPropertyValue("display");
+                const nowP = el.style.getPropertyPriority("display");
+                if (nowD !== "block" || nowP !== "important") el.style.setProperty("display", "block", "important");
+                if (el.hidden) el.hidden = false;
+                if (el.classList.contains("hidden")) el.classList.remove("hidden");
               } catch (_noop) { /* noop */ }
               const r = forceScrollToElement(el, `${label}#${h}`);
               return { ok: true, r };
             } catch (_e) { return { ok: false, reason: String(_e || "err") }; }
           };
-          // 1) 4단 즉시 + 지연 실행
           forceJump("immediate");
           window.setTimeout(() => forceJump("t1"), 1);
           window.setTimeout(() => forceJump("t120"), 120);
           window.setTimeout(() => forceJump("t700"), 700);
-          // 2) hydration 대기: el 못찾으면 50ms 마다 최대 40회 (2초) retry
           try {
             let hydrationTicks = 0;
             const hydrationInterval = window.setInterval(() => {
@@ -2500,7 +2514,6 @@ function AdminPageInner() {
                 }
                 window.clearInterval(hydrationInterval);
                 forceJump(`hydrated-${hydrationTicks}`);
-                // 120ms / 360ms 후 한번 더 보정 (reflow bounce)
                 window.setTimeout(() => forceJump(`post-${hydrationTicks}-120`), 120);
                 window.setTimeout(() => forceJump(`post-${hydrationTicks}-360`), 360);
               } catch (_noop) { window.clearInterval(hydrationInterval); }
@@ -2546,34 +2559,58 @@ function AdminPageInner() {
         const s = sc.getBoundingClientRect();
         return r.top < s.bottom - 20 && r.bottom > s.top + 16;
       };
-      /** ✅ 2026-09-21 v6 final: 직접 6대 탭 DOM 순회 display 토글 (state flush 의존성 제거)
-       *  기존 applyDomFallback 은 finalActiveNav state 에 의존 → state flush 지연시 타탭 display:none 누락 → 全섹션 display:block 으로 쌓여 후원자 리스트가 3000px 아래로 밀리는 RC 해결.
-       *  이 함수는 moveToSection(navKey, ...) 로 전달된 navKey 만을 기준으로 DOM 직접 변경 — React state 와 100% 분리되어 즉시 발동.
+      /** ✅ 2026-09-21 v7 final: 직접 6대 탭 DOM 순회 display 토글 (state flush 의존성 제거)
+       *  - v7 추가: dirty 체크 (현재 display/aria/hidden/classList 와 want 비교) → dirty 한 속성만 쓰기 → 깜빡임 0
+       *  - 한번이라도 성공 토글하면 _displayToggledOnce=true 로 마킹 → 이후 호출은 즉시 return (중복호출로 인한 repaint 원천 봉쇄)
        */
+      let _displayToggledOnce = false;
       const forceToggleSixTabsDomOnly = () => {
+        if (_displayToggledOnce) return;
         try {
           const TAB_KEYS_DIRECT: Array<AdminNavKey> = ["dashboard", "settlement", "donor", "overlay", "goal", "logs"];
+          let anyDirty = false;
           for (const k of TAB_KEYS_DIRECT) {
             const els = document.querySelectorAll<HTMLElement>(`[data-admin-tab="${k}"]`);
             if (!els || els.length === 0) continue;
             const visible = (k === key) || (key === "goal" && k === "overlay");
             const wantDisplay = visible ? "block" : "none";
+            const wantHiddenAttr = visible ? null : "until-found";
+            const ariaWant = visible ? "false" : "true";
             els.forEach((el) => {
-              // dirty 체크 없이 무조건 강제 (6개 탭에 대해 1번씩 쓰기는 reflow 거의 0)
-              el.style.setProperty("display", wantDisplay, "important");
-              el.setAttribute("aria-hidden", visible ? "false" : "true");
-              if (visible) {
-                el.removeAttribute("hidden");
-                el.classList.remove("hidden");
-              } else {
-                el.setAttribute("hidden", "until-found");
-                if (!el.classList.contains("hidden")) el.classList.add("hidden");
+              // 1) display !important dirty 체크
+              const nowDisplay = el.style.getPropertyValue("display");
+              const nowPriority = el.style.getPropertyPriority("display");
+              if (nowDisplay !== wantDisplay || nowPriority !== "important") {
+                el.style.setProperty("display", wantDisplay, "important");
+                anyDirty = true;
               }
+              // 2) aria-hidden dirty 체크
+              const ariaNow = el.getAttribute("aria-hidden");
+              if (ariaNow !== ariaWant) {
+                el.setAttribute("aria-hidden", ariaWant);
+                anyDirty = true;
+              }
+              // 3) hidden 속성 dirty 체크
+              const nowHidden = el.hasAttribute("hidden") ? el.getAttribute("hidden") : null;
+              if ((wantHiddenAttr === null && nowHidden !== null) || (wantHiddenAttr !== null && nowHidden !== wantHiddenAttr)) {
+                if (wantHiddenAttr === null) el.removeAttribute("hidden");
+                else el.setAttribute("hidden", wantHiddenAttr);
+                anyDirty = true;
+              }
+              // 4) classList .hidden dirty 체크
+              const hasHiddenClass = el.classList.contains("hidden");
+              if (visible && hasHiddenClass) { el.classList.remove("hidden"); anyDirty = true; }
+              else if (!visible && !hasHiddenClass) { el.classList.add("hidden"); anyDirty = true; }
             });
           }
+          _displayToggledOnce = true;
+          try {
+            // eslint-disable-next-line no-console
+            console.debug("[admin-nav-v7] forceToggleSixTabsDomOnly done → anyDirty=", anyDirty, "navKey=", key);
+          } catch (_noop) { /* noop */ }
         } catch (_e3) { /* noop */ }
       };
-      /** 2026-09-21 최종 scroll retry 시리즈
+      /** 2026-09-21 scroll retry 시리즈
        *  - 8단계로 나눠서 각기 다른 타이밍에 강제 실행 — reflow/hydration 지연에 관계없이 반드시 도달
        *  - 10ms / 40ms / 100ms / 220ms / 460ms / 800ms / 1400ms / 2200ms
        */
@@ -2584,7 +2621,6 @@ function AdminPageInner() {
         return (
           document.getElementById(`${targetId}-content`) ||
           document.querySelector<HTMLElement>(`[data-admin-section-content="${targetId}"]`) ||
-          // ✅ v6 딥 셀렉터 보강: donor-list-content 내부 실제 데이터 rows 지점을 최우선 타겟
           (() => {
             const content = document.getElementById(`${targetId}-content`);
             if (content) {
@@ -2601,34 +2637,48 @@ function AdminPageInner() {
         );
       };
       const once = (label: string) => {
+        // ✅ v7: s0@10ms 최초 1회에만 forceToggleSixTabsDomOnly / applyDomFallback 실행 → 이후 중복 reflow 0
         try {
-          // 0순위: 직접 DOM 탭 토글 (React state 무관 즉시 발동) — 이것이 RC 해결 핵심
-          forceToggleSixTabsDomOnly();
+          if (!_displayToggledOnce) {
+            forceToggleSixTabsDomOnly();
+            try { applyDomFallback(); } catch (_noop) { /* noop */ }
+          }
         } catch (_noop) { /* noop */ }
-        try { applyDomFallback(); } catch (_noop) { /* noop */ }
-        // ✅ v6: sectionCollapseHydrated stuck 방지 800ms 타임아웃.
-        // AdminCollapsibleSection 은 open=true 고정이므로 storageHydrated 가 false 라도 좌표는 정확함.
+        // v7: sectionCollapseHydrated stuck 방지 800ms 타임아웃. AdminCollapsibleSection 은 open=true 고정
         const now = Date.now();
         if (_hydrateBypassAt === 0) _hydrateBypassAt = now + COLLAPSE_HYDRATED_TIMEOUT_MS;
         const hydOk = sectionCollapseHydrated || (now >= _hydrateBypassAt);
         if (!hydOk) return false;
         const el = findAnchorEl();
         if (!el) return false;
-        // display / collapsed 강제 풀기
+        // display / collapsed 강제 풀기 (v7: dirty 체크)
         try {
-          el.style.setProperty("display", "block", "important");
-          (el as any).hidden = false;
-          el.classList.remove("hidden");
+          const nowD = el.style.getPropertyValue("display");
+          const nowP = el.style.getPropertyPriority("display");
+          if (nowD !== "block" || nowP !== "important") el.style.setProperty("display", "block", "important");
+          if ((el as any).hidden) (el as any).hidden = false;
+          if (el.classList.contains("hidden")) el.classList.remove("hidden");
           const sec = el.closest<HTMLElement>(`[data-admin-section]`);
-          if (sec) { sec.style.setProperty("display", "block", "important"); sec.classList.remove("hidden"); sec.removeAttribute("hidden"); }
+          if (sec) {
+            const sd = sec.style.getPropertyValue("display");
+            const sp = sec.style.getPropertyPriority("display");
+            if (sd !== "block" || sp !== "important") sec.style.setProperty("display", "block", "important");
+            if (sec.classList.contains("hidden")) sec.classList.remove("hidden");
+            if (sec.hasAttribute("hidden")) sec.removeAttribute("hidden");
+          }
           const tabEl = el.closest<HTMLElement>(`[data-admin-tab]`);
-          if (tabEl) { tabEl.style.setProperty("display", "block", "important"); tabEl.classList.remove("hidden"); tabEl.removeAttribute("hidden"); }
+          if (tabEl) {
+            const td = tabEl.style.getPropertyValue("display");
+            const tp = tabEl.style.getPropertyPriority("display");
+            if (td !== "block" || tp !== "important") tabEl.style.setProperty("display", "block", "important");
+            if (tabEl.classList.contains("hidden")) tabEl.classList.remove("hidden");
+            if (tabEl.hasAttribute("hidden")) tabEl.removeAttribute("hidden");
+          }
         } catch (_noop) { /* noop */ }
         guardRailRender();
         const r = forceScrollToElement(el, `${label}-${targetId}`);
         void r;
         try { el.classList.remove("ui-section-arrive"); } catch (_noop) { /* noop */ }
-        // 80ms 후 recheck → 아직 안보이면 1회 더 보정 (reflow bounce)
         window.setTimeout(() => {
           try { el.classList.add("ui-section-arrive"); } catch (_noop) { /* noop */ }
           const sc = contentScrollRef.current;
@@ -2643,8 +2693,8 @@ function AdminPageInner() {
       const hydIv = window.setInterval(() => {
         try {
           hydTicks += 1;
-          // v6: 매 틱마다 forceToggleSixTabsDomOnly 를 먼저 실행 → display 토글 안된 상태로 대기하는 일 0
-          try { forceToggleSixTabsDomOnly(); } catch (_noop) { /* noop */ }
+          // ✅ v7: hydIv 매틱마다 토글 호출 NO → 최초 1틱에만 토글 시도 (이후는 scroll만 기다림)
+          if (hydTicks === 1) { try { forceToggleSixTabsDomOnly(); } catch (_noop) { /* noop */ } }
           const now = Date.now();
           if (_hydrateBypassAt === 0) _hydrateBypassAt = now + COLLAPSE_HYDRATED_TIMEOUT_MS;
           const hydOk = sectionCollapseHydrated || (now >= _hydrateBypassAt);
@@ -2653,7 +2703,6 @@ function AdminPageInner() {
             return;
           }
           window.clearInterval(hydIv);
-          // 스케쥴 8단계 한번씩 등록
           SCHEDULE_MS.forEach((ms, idx) => {
             window.setTimeout(() => { void once(`s${idx}@${ms}`); }, ms);
           });
