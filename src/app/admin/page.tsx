@@ -2296,6 +2296,47 @@ function AdminPageInner() {
       window.setTimeout(() => { try { commitState(true); } catch (_noop) { /* noop */ } applyDomFallback(); }, 90);
       window.setTimeout(applyDomFallback, 260);
       window.setTimeout(applyDomFallback, 600);
+      /** ✅ hash based 강제 앵커 이동: URL #section-id 직접 접근 or hashchange 이벤트시 스크롤 + display:block 강제 */
+      const resolveHashTarget = () => {
+        try {
+          const h = (window.location.hash || "").replace(/^#/, "").trim();
+          if (!h) return;
+          const navKey = resolveNavKeyFromTargetId(h) || (finalActiveNav as AdminNavKey);
+          moveToSection(navKey, h, { fromSubItem: true });
+          const forceJump = () => {
+            try {
+              const tabKey = (navKey === "goal") ? "overlay" : navKey;
+              const tab = document.querySelector<HTMLElement>(`[data-admin-tab="${tabKey}"]`);
+              if (tab) {
+                tab.style.setProperty("display", "block", "important");
+                tab.hidden = false;
+                tab.classList.remove("hidden");
+              }
+              const el = document.getElementById(h);
+              if (el) {
+                el.style.setProperty("display", "block", "important");
+                el.hidden = false;
+                el.classList.remove("hidden");
+                const sc = contentScrollRef.current;
+                try { el.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" }); } catch (_) { /* noop */ }
+                if (sc) {
+                  const rect = el.getBoundingClientRect();
+                  const scr = sc.getBoundingClientRect();
+                  sc.scrollTop = Math.max(0, (rect.top - scr.top) + sc.scrollTop - 24);
+                }
+              }
+            } catch (_noop) { /* noop */ }
+          };
+          forceJump();
+          window.setTimeout(forceJump, 1);
+          window.setTimeout(forceJump, 120);
+          window.setTimeout(forceJump, 700);
+        } catch (_noop) { /* noop */ }
+      };
+      window.setTimeout(resolveHashTarget, 1);
+      window.setTimeout(resolveHashTarget, 120);
+      window.setTimeout(resolveHashTarget, 700);
+      window.addEventListener("hashchange", resolveHashTarget, { passive: true });
     }
     if (typeof window === "undefined") return;
     try { expandAdminSection(targetId); } catch (_noop) { /* noop */ }
@@ -2400,10 +2441,63 @@ function AdminPageInner() {
   const toggleNavGroup = (key: AdminNavKey) => {
     setExpandedNavGroups((prev) => ({ ...prev, [key]: !prev[key] }));
   };
-  /** ✅ 상세 분류: 소메뉴 클릭 핸들러 — resolveNavKeyFromTargetId 로 대분류 자동 추론 */
+  /** ✅ 상세 분류: 소메뉴 클릭 핸들러 — resolveNavKeyFromTargetId 로 대분류 자동 추론 + 앵커 hash 강제 스크롤 */
   const clickSubItem = (sub: AdminNavSubItem) => {
     const navKey = resolveNavKeyFromTargetId(sub.targetId);
     moveToSection(navKey, sub.targetId, { fromSubItem: true });
+    if (typeof window !== "undefined") {
+      try {
+        if (window.location.hash !== `#${sub.targetId}`) {
+          window.history.replaceState(null, "", `#${sub.targetId}`);
+        }
+      } catch (_noop) { /* noop */ }
+      const forceScrollToSection = (label: string) => {
+        try {
+          const tabKey = (navKey === "goal") ? "overlay" : navKey;
+          const tab = document.querySelector<HTMLElement>(`[data-admin-tab="${tabKey}"]`);
+          if (tab) {
+            tab.style.setProperty("display", "block", "important");
+            tab.style.removeProperty("visibility");
+            tab.setAttribute("aria-hidden", "false");
+            tab.classList.remove("hidden");
+            tab.hidden = false;
+          }
+          const els = [
+            document.getElementById(sub.targetId),
+            document.querySelector(`section[id="${sub.targetId}"]`),
+            document.querySelector(`[data-admin-section="${sub.targetId}"]`),
+            document.querySelector(`[id^="${sub.targetId}"]`),
+          ].filter(Boolean) as HTMLElement[];
+          for (const el of els) {
+            if (!el) continue;
+            el.style.removeProperty("display");
+            el.style.setProperty("display", "block", "important");
+            el.style.removeProperty("visibility");
+            el.classList.remove("hidden");
+            el.hidden = false;
+            el.setAttribute("aria-hidden", "false");
+            try { el.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" }); } catch (_) { /* noop */ }
+            const sc = contentScrollRef.current;
+            if (sc) {
+              const rect = el.getBoundingClientRect();
+              const scr = sc.getBoundingClientRect();
+              const delta = (rect.top - scr.top) + sc.scrollTop - 40;
+              try { sc.scrollTo({ top: Math.max(0, delta), behavior: "auto" }); }
+              catch (_) { sc.scrollTop = Math.max(0, delta); }
+            }
+            try { el.classList.add("ui-section-arrive"); } catch (_) { /* noop */ }
+          }
+          if (typeof (window as any).__adminApplyFallback === "function") {
+            try { (window as any).__adminApplyFallback(); } catch (_noop) { /* noop */ }
+          }
+        } catch (_noop) { /* noop */ }
+      };
+      forceScrollToSection("t0");
+      window.setTimeout(() => forceScrollToSection("t1"), 1);
+      window.setTimeout(() => forceScrollToSection("t2"), 120);
+      window.setTimeout(() => forceScrollToSection("t3"), 280);
+      window.setTimeout(() => forceScrollToSection("t4"), 700);
+    }
   };
   /** `<input type="color">`는 #rrggbb만 허용 — transparent 등은 fallback으로 표시 */
   const toColorPickerValue = (raw?: string, fallback = "#ffffff") => {
@@ -16986,6 +17080,28 @@ function AdminPageInner() {
               title="후원자 리스트"
               titleClassName="ui-din-section-title-accent font-bold tracking-wide"
               className={`${panelCardClass} ${simpleMode ? "hidden" : ""}`}
+              headerAside={
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded bg-violet-800/70 border border-violet-500/50 text-[10px] px-2 py-0.5 text-violet-100 font-mono tracking-tight" title="후원자 리스트 섹션 DOM 식별자">section-id=donor-list</span>
+                  <button
+                    type="button"
+                    className="rounded bg-neutral-800 hover:bg-neutral-700 border border-white/15 text-[10px] font-semibold px-2 py-0.5 text-neutral-200 transition"
+                    title="후원자 리스트 섹션을 화면 최상단으로 강제 스크롤합니다."
+                    onClick={() => {
+                      const el = document.getElementById("donor-list");
+                      const sc = contentScrollRef.current;
+                      if (el) {
+                        el.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" });
+                        if (sc) {
+                          const rect = el.getBoundingClientRect();
+                          const scr = sc.getBoundingClientRect();
+                          sc.scrollTop = Math.max(0, (rect.top - scr.top) + sc.scrollTop - 24);
+                        }
+                      }
+                    }}
+                  >⤵ 바로가기</button>
+                </div>
+              }
             >
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <button
