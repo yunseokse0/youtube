@@ -2888,6 +2888,14 @@ function AdminPageInner() {
         return inner || sec;
       };
       const once = (label: string) => {
+        // ✅ v12 1단계: 초반 0~900ms 떨림 Zero 봉쇄
+        // - 10ms / 300ms 시점에는 오직 Squash FIX + display 토글 (DOM 변경) 만 실행 → 스크롤 절대 건드리지 않음
+        // - 900ms (s2@900) 시점에 모든 DOM 변경이 끝난 뒤 **딱 1회만** scroll 실행 → 초반 점프 떨림 0%
+        if (label === "s0@10" || label === "s1@300") {
+          try { forceToggleSixTabsDomOnly(); } catch (_noop) { /* noop */ }
+          try { guardRailRender(); } catch (_noop) { /* noop */ }
+          return true;
+        }
         // ✅ v8: fromSubItem 일 때 applyDomFallback 절대 SKIP — React state flush 덮어씌움 원천봉쇄
         try { forceToggleSixTabsDomOnly(); } catch (_noop) { /* noop */ }
         const now = Date.now();
@@ -2909,9 +2917,7 @@ function AdminPageInner() {
           }
         } catch (_noop) { /* noop */ }
         try { el.classList.remove("ui-section-arrive"); } catch (_noop) { /* noop */ }
-        // ✅ v11 No-Flicker: 스크롤 보정 중복 2회 → 1회만 실행 + 무한 재귀 방지
-        // (기존) s0@ 시 80ms recheck + 300ms 재보정 → forceScroll 3회 중복 실행 → scroll 깜빡임
-        // (개선) 오직 80ms 1회만 recheck, s0@ 라벨과 무관하게 300ms 블록은 폐기
+        // ✅ v12: 80ms recheck는 유지 (단 900ms 시점에만 1회 실행 → 중복 scroll 없음)
         window.setTimeout(() => {
           try { el.classList.add("ui-section-arrive"); } catch (_noop) { /* noop */ }
           const sc = contentScrollRef.current;
@@ -17757,7 +17763,7 @@ function AdminPageInner() {
               id="donor-list"
               title="후원자 리스트"
               titleClassName="ui-din-section-title-accent font-bold tracking-wide"
-              className={`${panelCardClass} ${simpleMode ? "hidden" : ""}`}
+              className={`${panelCardClass} ${simpleMode ? "hidden" : ""} w-full !max-w-none !px-0 !mx-0`}
               headerAside={
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded bg-violet-800/70 border border-violet-500/50 text-[10px] px-2 py-0.5 text-violet-100 font-mono tracking-tight" title="후원자 리스트 섹션 DOM 식별자">section-id=donor-list</span>
@@ -18043,24 +18049,24 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                 id="donor-list-content"
                 ref={donorListScrollRef}
                 style={{ contain: "strict", willChange: "transform" }}
-                className="pr-1 border border-white/10 rounded isolate"
+                className="w-full !max-w-full mx-0 px-0.5 border border-white/10 rounded isolate"
                 data-admin-section-content="donor-list"
               >
-                <table className={`w-full ${donorListDenseMode ? "text-[12px]" : "text-sm"}`} style={{ tableLayout: "fixed", borderCollapse: "separate" }}>
+                <table className={`w-full ${donorListDenseMode ? "text-[12px]" : "text-sm"}`} style={{ tableLayout: "auto", borderCollapse: "separate", width: "100%" }}>
                   <thead className="sticky top-0 z-10 bg-neutral-950/95 backdrop-blur-sm shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
                     <tr className="text-neutral-400" style={{ lineHeight: donorListDenseMode ? "1rem" : "1.25rem", height: donorListDenseMode ? "1.5rem" : "2rem" }}>
-                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-8" : "p-1 w-10"}`}>선택</th>
-                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[4.5rem]" : "p-1 w-20"}`}>시간</th>
-                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[5.5rem]" : "p-1 w-[8rem]"}`}>후원자</th>
-                      {!donorListDenseMode && <th className="text-left font-medium p-1 w-[5.5rem] shrink-0">멤버</th>}
-                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[3rem]" : "p-1 w-[4rem]"}`}>대상</th>
-                      <th className={`text-left font-medium ${donorListDenseMode ? "p-0.5 min-w-[80px]" : "p-1 min-w-[120px]"}`}>메시지</th>
-                      <th className={`text-right font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[4.5rem]" : "p-1 w-[6rem]"}`}>금액</th>
-                      {!donorListDenseMode && <th className="text-right font-medium p-1 w-28 shrink-0">나누기</th>}
-                      <th className={`text-right font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[3.5rem]" : "p-1 w-16"}`}>삭제</th>
+                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-10" : "p-1 w-12"}`}>선택</th>
+                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[5.5rem]" : "p-1 w-[8rem]"}`}>시간</th>
+                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[7rem]" : "p-1 w-[10rem]"}`}>후원자</th>
+                      {!donorListDenseMode && <th className="text-left font-medium p-1 w-[7rem] shrink-0">멤버</th>}
+                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[4rem]" : "p-1 w-[5.5rem]"}`}>대상</th>
+                      <th className={`text-left font-medium w-full ${donorListDenseMode ? "p-0.5 min-w-[140px]" : "p-1 min-w-[220px]"}`}>메시지</th>
+                      <th className={`text-right font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[6rem]" : "p-1 w-[8rem]"}`}>금액</th>
+                      {!donorListDenseMode && <th className="text-right font-medium p-1 w-[10rem] shrink-0">나누기</th>}
+                      <th className={`text-right font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[5rem]" : "p-1 w-[7rem]"}`}>삭제</th>
                     </tr>
                     <tr className="text-neutral-400 border-b border-white/5" style={{ lineHeight: donorListDenseMode ? "0.875rem" : "1.25rem", height: donorListDenseMode ? "1.25rem" : "2rem" }}>
-                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-8" : "p-1 w-10"}`}>
+                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-10" : "p-1 w-12"}`}>
                         <DonorCheckboxCell
                           isAll
                           selected={donorListRowsVisible.length > 0 && donorListRowsVisible.every((d) => selectedDonorIds.has(String(d.id)))}
@@ -18101,7 +18107,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                               donorFlashIds[String(d.id)] === "saved"  ? "ui-donor-flash-saved"  : ""
                             } ${isExcluded ? "line-through decoration-rose-400/70 decoration-2 text-neutral-500 bg-rose-950/15 opacity-70" : isSplitPart ? "bg-violet-950/15" : isSplitSource ? "bg-violet-950/10" : ""}`}
                           >
-                            <td className={`${donorListDenseMode ? "p-0.5 w-8" : "p-1 w-12"} align-top`}>
+                            <td className={`${donorListDenseMode ? "p-0.5 w-10" : "p-1 w-12"} align-top`}>
                               <DonorCheckboxCell
                                 donorId={String(d.id)}
                                 selected={selectedDonorIds.has(String(d.id))}
