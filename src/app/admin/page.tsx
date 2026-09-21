@@ -2267,6 +2267,80 @@ function AdminPageInner() {
         try { flushSync(() => { commitState(true); }); } catch (_fsErr) { commitState(true); }
       } else { commitState(true); }
     } catch (_err) { try { commitState(true); } catch (_noop) { /* noop */ } }
+
+    /** ✅ 2026-09-21 forceScrollToElement v3 (clean)
+     *  - 뷰포트 절대좌표: rect.top + window.scrollY 계산 (부모 position:relative 관계없이 오차 0)
+     *  - scroll container: contentScrollRef → overflow 조상 → docEl → body 순 4계층
+     *  - container 내 localOffset: (절대좌표 doc) - (container의 절대좌표 doc)
+     *  - fallback window.scrollTo → scrollIntoView
+     */
+    const forceScrollToElement = (rawEl: HTMLElement | null | undefined, label = "scroll") => {
+      if (!rawEl) return { ok: false, reason: "no-el" };
+      try {
+        const rect = rawEl.getBoundingClientRect();
+        const winY = Number(window.scrollY || window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0);
+        const absDocTop = rect.top + winY;
+        const absDocTopMinusHeader = Math.max(0, absDocTop - 160);
+        // 1. scroll container 후보 수집
+        const cand: HTMLElement[] = [];
+        if (contentScrollRef.current) cand.push(contentScrollRef.current);
+        let w: HTMLElement | null = rawEl.parentElement;
+        while (w) {
+          const st = window.getComputedStyle(w);
+          const oy = st.overflowY;
+          if ((oy === "auto" || oy === "scroll" || oy === "overlay") && w.scrollHeight > w.clientHeight + 8) {
+            cand.push(w);
+          }
+          w = w.parentElement;
+        }
+        if (document.documentElement) cand.push(document.documentElement);
+        if (document.body) cand.push(document.body);
+        const uniq = Array.from(new Set(cand)).filter(Boolean) as HTMLElement[];
+        // 2. container별 절대좌표 계산
+        const containerAbsDoc = (el: HTMLElement): number => {
+          const r = el.getBoundingClientRect();
+          const wwin = Number(window.scrollY || document.documentElement.scrollTop || 0);
+          return r.top + wwin;
+        };
+        let ok = false;
+        let chosen: HTMLElement | null = null;
+        let applied = -1;
+        for (const sc of uniq) {
+          if (!sc || sc.scrollHeight <= sc.clientHeight + 4) continue;
+          const scAbs = containerAbsDoc(sc);
+          const localTarget = Math.max(0, absDocTopMinusHeader - scAbs);
+          try {
+            sc.scrollTop = localTarget;
+            // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+            sc.scrollTop;
+            applied = sc.scrollTop;
+            if (Math.abs(applied - localTarget) < 32) { chosen = sc; ok = true; break; }
+          } catch (_) { /* noop */ }
+          if (!ok) {
+            try { sc.scrollTo({ top: localTarget, behavior: "auto" }); ok = true; chosen = sc; applied = localTarget; break; }
+            catch (_) { /* noop */ }
+          }
+        }
+        // 3. window 글로벌 최종 fallback
+        if (!ok) {
+          try { window.scrollTo({ top: absDocTopMinusHeader, left: 0, behavior: "auto" }); ok = true; } catch (_) { /* noop */ }
+          try { document.documentElement.scrollTop = absDocTopMinusHeader; document.body.scrollTop = absDocTopMinusHeader; ok = true; } catch (_) { /* noop */ }
+        }
+        if (!ok) {
+          try { rawEl.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" }); ok = true; }
+          catch (_) { /* noop */ }
+        }
+        try {
+          // eslint-disable-next-line no-console
+          console.warn(`[admin-scroll] ${label} el=<${rawEl.tagName} id="${rawEl.id || ''}"> rect.top=${Math.round(rect.top)} winY=${Math.round(winY)} → absDocTop=${Math.round(absDocTop)} target=${Math.round(absDocTopMinusHeader)} · ok=${ok} · chosen=${chosen?.tagName || 'NULL'} applied=${applied}`);
+        } catch (_noop) { /* noop */ }
+        return { ok, absDocTop, target: absDocTopMinusHeader };
+      } catch (_e) {
+        return { ok: false, reason: String(_e || "err") };
+      }
+    };
+    try { (window as any).__adminForceScroll = forceScrollToElement; } catch (_noop) { /* noop */ }
+
     const applyDomFallback = () => {
       try {
         const TAB_KEYS: Array<AdminNavKey> = ["dashboard", "settlement", "donor", "overlay", "goal", "logs"];
@@ -2275,8 +2349,27 @@ function AdminPageInner() {
           if (!els || els.length === 0) continue;
           const visible = (k === finalActiveNav) || (finalActiveNav === "goal" && k === "overlay");
           els.forEach((el) => {
-            el.style.setProperty("display", visible ? "block" : "none", "important");
-            el.setAttribute("aria-hidden", visible ? "false" : "true");
+            // ✅ 2026-09-21 깜빡임 방지 guard: 이미 원하는 상태면 setProperty 하지 않아 reflow 0
+            const currentDisplay = el.style.getPropertyValue("display");
+            const currentImportant = el.style.getPropertyPriority("display");
+            const want = visible ? "block" : "none";
+            const ariaNow = el.getAttribute("aria-hidden");
+            const ariaWant = visible ? "false" : "true";
+            let dirty = false;
+            if (currentDisplay !== want || currentImportant !== "important") {
+              el.style.setProperty("display", want, "important");
+              dirty = true;
+            }
+            if (ariaNow !== ariaWant) {
+              el.setAttribute("aria-hidden", ariaWant);
+              dirty = true;
+            }
+            // hidden 속성은 visible true일 때만 강제 제거 (한번 hidden=false 해놓으면 반복 안함)
+            if (visible && el.hidden !== false) el.hidden = false;
+            if (!visible && el.hidden !== true) el.hidden = true;
+            if (visible && el.classList.contains("hidden")) el.classList.remove("hidden");
+            if (!visible && !el.classList.contains("hidden")) el.classList.add("hidden");
+            void dirty;
           });
         }
         try {
@@ -2320,13 +2413,7 @@ function AdminPageInner() {
                 el.style.setProperty("display", "block", "important");
                 el.hidden = false;
                 el.classList.remove("hidden");
-                const sc = contentScrollRef.current;
-                try { el.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" }); } catch (_) { /* noop */ }
-                if (sc) {
-                  const rect = el.getBoundingClientRect();
-                  const scr = sc.getBoundingClientRect();
-                  sc.scrollTop = Math.max(0, (rect.top - scr.top) + sc.scrollTop - 120);
-                }
+                forceScrollToElement(el, `hash#${h}`);
               }
             } catch (_noop) { /* noop */ }
           };
@@ -2385,23 +2472,20 @@ function AdminPageInner() {
           document.getElementById(`${targetId}-content`) ||
           document.querySelector(`[data-admin-section-content="${targetId}"]`) ||
           document.getElementById(targetId);
-        const sc = contentScrollRef.current;
-        if (el && sc) {
+        if (el) {
           guardRailRender();
-          const elTop = el.getBoundingClientRect().top;
-          const scTop = sc.getBoundingClientRect().top;
-          const delta = (elTop - scTop) + sc.scrollTop - 120;
-          try { sc.scrollTo({ top: Math.max(0, delta), behavior: retry >= 12 ? "smooth" : "auto" }); }
-          catch (_noop) { sc.scrollTop = Math.max(0, delta); }
+          const scrollRes = forceScrollToElement(el, `tryScroll-${targetId}`);
+          void scrollRes;
           try { el.classList.remove("ui-section-arrive"); } catch (_noop) { /* noop */ }
           window.setTimeout(() => {
             try { el.classList.add("ui-section-arrive"); } catch (_noop) { /* noop */ }
-            const stillVisible = isInScroller(el, sc);
+            const sc = contentScrollRef.current;
+            const stillVisible = sc ? isInScroller(el, sc) : false;
             if (!stillVisible && retry <= 4) {
-              try { el.scrollIntoView({ block: "start", behavior: "smooth", inline: "nearest" }); }
+              try { forceScrollToElement(el, `retry-${retry}-${targetId}`); }
               catch (_) { /* noop */ }
             }
-          }, 60);
+          }, 80);
           if (retry > 0) {
             window.setTimeout(() => {
               try { applyDomFallback(); } catch (_noop) { /* noop */ }
@@ -2421,16 +2505,13 @@ function AdminPageInner() {
                 document.getElementById(`${targetId}-content`) ||
                 document.querySelector(`[data-admin-section-content="${targetId}"]`) ||
                 document.getElementById(targetId);
-              if (postEl) {
-                try { postEl.scrollIntoView({ block: "start", behavior: "smooth", inline: "nearest" }); }
-                catch (_) { /* noop */ }
-              }
+              if (postEl) forceScrollToElement(postEl, `fallbackFinal-${targetId}`);
             }, 120);
           }
         } else if (retry > 0) {
           window.setTimeout(() => { guardRailRender(); tryScroll(retry - 1); }, 280);
-        } else if (sc) {
-          try { sc.scrollTop = 0; } catch (_noop) { /* noop */ }
+        } else if (contentScrollRef.current) {
+          try { contentScrollRef.current.scrollTop = 0; } catch (_noop) { /* noop */ }
         } else {
           window.scrollTo({ top: 0, behavior: "smooth" as ScrollBehavior });
         }
@@ -2490,15 +2571,22 @@ function AdminPageInner() {
             el.classList.remove("hidden");
             el.hidden = false;
             el.setAttribute("aria-hidden", "false");
-            try { el.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" }); } catch (_) { /* noop */ }
-            const sc = contentScrollRef.current;
-            if (sc) {
-              const rect = el.getBoundingClientRect();
-              const scr = sc.getBoundingClientRect();
-              const delta = (rect.top - scr.top) + sc.scrollTop - 120;
-              try { sc.scrollTo({ top: Math.max(0, delta), behavior: "auto" }); }
-              catch (_) { sc.scrollTop = Math.max(0, delta); }
-            }
+            // ✅ 2026-09-21 공용 forceScrollToElement (v3 절대좌표) 로 실제 스크롤
+            try {
+              const fn = (window as any).__adminForceScroll as ((e: HTMLElement, l: string) => unknown) | undefined;
+              if (typeof fn === "function") fn(el, `clickSubItem:${sub.targetId}:${label}`);
+              else {
+                try { el.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" }); } catch (_) { /* noop */ }
+                const sc = contentScrollRef.current;
+                if (sc) {
+                  const rect = el.getBoundingClientRect();
+                  const scr = sc.getBoundingClientRect();
+                  const delta = (rect.top - scr.top) + sc.scrollTop - 160;
+                  try { sc.scrollTo({ top: Math.max(0, delta), behavior: "auto" }); }
+                  catch (_) { sc.scrollTop = Math.max(0, delta); }
+                }
+              }
+            } catch (_) { /* noop */ }
             try { el.classList.add("ui-section-arrive"); } catch (_) { /* noop */ }
           }
           if (typeof (window as any).__adminApplyFallback === "function") {
@@ -10539,19 +10627,21 @@ function AdminPageInner() {
                   document.getElementById("settlement-finalize-content") ||
                   document.querySelector('[data-admin-section-content="settlement-finalize"]') ||
                   document.getElementById("settlement-finalize");
-                const __sc = contentScrollRef.current;
                 if (__e) {
                   __e.style.setProperty("display", "block", "important");
                   __e.hidden = false;
                   __e.classList.remove("hidden");
-                  try { __e.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" }); } catch (_) { /* noop */ }
-                  if (__sc) {
-                    const _r = __e.getBoundingClientRect();
-                    const _sr = __sc.getBoundingClientRect();
-                    __sc.scrollTop = Math.max(0, (_r.top - _sr.top) + __sc.scrollTop - 120);
+                  const fn = (window as any).__adminForceScroll as ((e: HTMLElement, l: string) => unknown) | undefined;
+                  if (typeof fn === "function") fn(__e, `settlementReset#${Date.now()}`);
+                  else {
+                    try { __e.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" }); } catch (_) { /* noop */ }
+                    const __sc = contentScrollRef.current;
+                    if (__sc) {
+                      const _r = __e.getBoundingClientRect();
+                      const _sr = __sc.getBoundingClientRect();
+                      __sc.scrollTop = Math.max(0, (_r.top - _sr.top) + __sc.scrollTop - 160);
+                    }
                   }
-                } else if (__sc) {
-                  __sc.scrollTop = 0;
                 }
                 if (typeof (window as any).__adminApplyFallback === "function") {
                   try { (window as any).__adminApplyFallback(); } catch (_noop) { /* noop */ }
@@ -11164,6 +11254,63 @@ function AdminPageInner() {
               >
                 서버에서 가져오기
               </button>
+              {/* ✅ 2026-09-21 개발서버 디버그 유틸 (NODE_ENV !== production 에만 노출)
+               *  - 가상 후원 15건 즉시 주입 → 후원자 리스트 rows 렌더 정상·scroll 정상작동 확인용
+               *  - 로그 아웃핏 없음, 1 클릭으로 state donors에 15건 추가
+               */}
+              {typeof process !== "undefined" && (process as any).env?.NODE_ENV !== "production" && (
+                <div className="flex flex-wrap items-center gap-1.5 pl-2 ml-2 border-l border-white/10">
+                  <span className="text-[10px] text-amber-300 font-mono tracking-tight select-none">DEV</span>
+                  <button
+                    type="button"
+                    className="px-2.5 py-1.5 rounded-[10px] text-xs font-bold text-white transition"
+                    style={{ background: "linear-gradient(180deg,#b45309 0%, #92400e 100%)", border: "1px solid rgba(251,191,36,0.55)" }}
+                    title="[DEV ONLY] 가상 후원 15건을 로컬 state에 즉시 주입합니다 (로컬 저장소에만 반영)."
+                    onClick={() => {
+                      try {
+                        const now = Date.now();
+                        const NAMES = ["한유이", "쥬디", "자키", "다경", "송현빵", "민경", "보라", "유진", "시아", "나리", "단비", "로제", "하니", "슬기", "지민"];
+                        const fake = NAMES.map((name, idx) => {
+                          const amount = (idx + 1) * 11000 + ((idx * 777) % 50000);
+                          return {
+                            id: `debug-${now}-${idx}`,
+                            donorDisplayName: name,
+                            donorNormalizedName: name,
+                            donorRawInput: `${name}(테스트)`,
+                            amount,
+                            origin: "daily_log" as const,
+                            ts: now - idx * 60000,
+                            source: "debug_inject" as const,
+                            memberId: (idx % 6 === 0) ? state.members?.[idx % (state.members?.length || 1)]?.id || undefined : undefined,
+                            memo: idx % 3 === 0 ? "[DEV-ONLY] 디버그 가상 후원" : undefined,
+                          };
+                        });
+                        const cur = stateRef.current;
+                        const mergedDonors = [...(Array.isArray(cur.donors) ? cur.donors : []), ...fake];
+                        const next = { ...(cur as any), donors: mergedDonors as any, updatedAt: now };
+                        stateRef.current = next;
+                        setState(next);
+                        try { persistState(next, {}); } catch (_) { /* noop */ }
+                        showAppToast(`🔧 [DEV] 가상 후원 ${fake.length}건 주입 완료 (합계 ${fake.reduce((s, d) => s + d.amount, 0).toLocaleString()}원)`, { variant: "info", durationMs: 2200 });
+                        // 후원자 리스트로 이동 + 스크롤
+                        try { window.history.replaceState(null, "", "#donor-list"); } catch (_) { /* noop */ }
+                        moveToSection("donor", "donor-list", { fromSubItem: true });
+                        setTimeout(() => {
+                          const el = document.getElementById("donor-list-content") || document.getElementById("donor-list");
+                          if (el) {
+                            const fn = (window as any).__adminForceScroll as ((e: HTMLElement, l: string) => unknown) | undefined;
+                            if (typeof fn === "function") fn(el, "DEBUG_injectDonors");
+                          }
+                        }, 320);
+                      } catch (e) {
+                        try { showAppToast("DEBUG 후원 주입 실패", { variant: "error", durationMs: 3000 }); } catch (_noop) { /* noop */ }
+                      }
+                    }}
+                  >
+                    🔧 DEBUG · 가상후원 15건 주입
+                  </button>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -17165,7 +17312,6 @@ function AdminPageInner() {
                         document.getElementById("donor-list-content") ||
                         document.querySelector(`[data-admin-section-content="donor-list"]`) ||
                         document.getElementById("donor-list");
-                      const sc = contentScrollRef.current;
                       if (el) {
                         const tabEl = document.querySelector<HTMLElement>('[data-admin-tab="donor"]');
                         if (tabEl) {
@@ -17176,11 +17322,16 @@ function AdminPageInner() {
                         el.style.setProperty("display", "block", "important");
                         el.hidden = false;
                         el.classList.remove("hidden");
-                        el.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" });
-                        if (sc) {
-                          const rect = el.getBoundingClientRect();
-                          const scr = sc.getBoundingClientRect();
-                          sc.scrollTop = Math.max(0, (rect.top - scr.top) + sc.scrollTop - 120);
+                        const fn = (window as any).__adminForceScroll as ((e: HTMLElement, l: string) => unknown) | undefined;
+                        if (typeof fn === "function") fn(el, "donorShortcutBtn");
+                        else {
+                          el.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" });
+                          const sc = contentScrollRef.current;
+                          if (sc) {
+                            const rect = el.getBoundingClientRect();
+                            const scr = sc.getBoundingClientRect();
+                            sc.scrollTop = Math.max(0, (rect.top - scr.top) + sc.scrollTop - 160);
+                          }
                         }
                       }
                     }}
