@@ -2657,7 +2657,7 @@ function AdminPageInner() {
           //   content 높이가 2px로 squash 됨 → 실제 자식 TABLE(1456px)은 부모 밖으로 밀려 후원자 rows가 보이지 않음
           // - 해결: 탭 내 모든 [data-admin-section-content] 엘리먼트에 대해 6종 Flex anti-squash !important 강제
           const SQUASH_FIX = {
-            height: "auto", "min-height": "0", "flex-shrink": "0",
+            "min-height": "0", "flex-shrink": "0",
             "align-self": "stretch", "flex-grow": "0", "overflow-anchor": "none",
           } as const;
           try {
@@ -2670,6 +2670,41 @@ function AdminPageInner() {
                   node.style.setProperty(prop, val, "important");
                   dirty = true;
                 }
+              }
+              // ✅ 2026-09-21 v10.2 Squash 완전봉쇄 1/3:
+              // - height:auto + 부모 고정 높이 제약 충돌시 content가 2px로 남는 현상 해소
+              // - 자식 총 높이(sum of children offsetHeight, 최소 400px)를 직접 content height에 px로 주입
+              // - 이를 통해 scrollHeight / layout 계산에 rows 공간이 정확히 반영됨
+              let sumChild = 0;
+              for (let k = 0; k < node.children.length; k++) {
+                const c = node.children[k] as HTMLElement | null;
+                if (c && typeof c.offsetHeight === "number") sumChild += c.offsetHeight;
+              }
+              const targetH = Math.max(400, node.scrollHeight, sumChild);
+              const wantH = targetH + "px";
+              const curH = node.style.getPropertyValue("height");
+              const curHP = node.style.getPropertyPriority("height");
+              if (curH !== wantH || curHP !== "important") {
+                node.style.setProperty("height", wantH, "important");
+                dirty = true;
+              }
+              // ✅ 2026-09-21 v10.2 Squash 완전봉쇄 2/3:
+              // - 부모 wrapping 2단계 (섹션 내 padding div + 섹션 자체) 의 고정 높이 제약 해방
+              // - min-height: fit-content + height: auto 로 부모가 자식 높이에 따라 자동 확장
+              const PARENT_UNLOCK: Record<string, string> = {
+                height: "auto", "min-height": "fit-content", "overflow-y": "visible", "flex-shrink": "0",
+              };
+              let p: HTMLElement | null = node.parentElement;
+              for (let depth = 0; depth < 2 && p; depth += 1) {
+                for (const [prop, val] of Object.entries(PARENT_UNLOCK)) {
+                  const curPV = p.style.getPropertyValue(prop);
+                  const curPP = p.style.getPropertyPriority(prop);
+                  if (curPV !== val || curPP !== "important") {
+                    p.style.setProperty(prop, val, "important");
+                    dirty = true;
+                  }
+                }
+                p = p.parentElement;
               }
             });
           } catch (_noop) { /* noop */ }
