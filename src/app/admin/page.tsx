@@ -2328,9 +2328,11 @@ function AdminPageInner() {
       const isInScroller = (el: HTMLElement, sc: HTMLElement): boolean => {
         const r = el.getBoundingClientRect();
         const s = sc.getBoundingClientRect();
-        return r.top < s.bottom - 4 && r.bottom > s.top + 4;
+        const margin = 80;
+        return r.top < s.bottom + margin - 4 && r.bottom > s.top - margin + 4;
       };
       const tryScroll = (retry: number) => {
+        try { applyDomFallback(); } catch (_noop) { /* noop */ }
         if (!ensureTabVisible()) {
           window.setTimeout(() => tryScroll(retry), 120);
           return;
@@ -2341,27 +2343,28 @@ function AdminPageInner() {
           guardRailRender();
           const elTop = el.getBoundingClientRect().top;
           const scTop = sc.getBoundingClientRect().top;
-          const delta = (elTop - scTop) + sc.scrollTop - 16;
-          try { sc.scrollTo({ top: Math.max(0, delta), behavior: retry >= 5 ? "smooth" : "auto" }); }
+          const delta = (elTop - scTop) + sc.scrollTop - 24;
+          try { sc.scrollTo({ top: Math.max(0, delta), behavior: retry >= 12 ? "smooth" : "auto" }); }
           catch (_noop) { sc.scrollTop = Math.max(0, delta); }
           try { el.classList.remove("ui-section-arrive"); } catch (_noop) { /* noop */ }
           window.setTimeout(() => {
             try { el.classList.add("ui-section-arrive"); } catch (_noop) { /* noop */ }
             const stillVisible = isInScroller(el, sc);
-            if (!stillVisible && retry <= 2) {
+            if (!stillVisible && retry <= 4) {
               try { el.scrollIntoView({ block: "start", behavior: "smooth", inline: "nearest" }); }
               catch (_) { /* noop */ }
             }
-          }, 30);
+          }, 60);
           if (retry > 0) {
             window.setTimeout(() => {
+              try { applyDomFallback(); } catch (_noop) { /* noop */ }
               const postEl = document.getElementById(targetId);
               const postSc = contentScrollRef.current;
               if (!(postEl && postSc && isInScroller(postEl, postSc))) {
                 guardRailRender();
                 tryScroll(retry - 1);
               }
-            }, 250);
+            }, 280);
           } else {
             window.setTimeout(() => {
               const postEl = document.getElementById(targetId);
@@ -2369,17 +2372,17 @@ function AdminPageInner() {
                 try { postEl.scrollIntoView({ block: "start", behavior: "smooth", inline: "nearest" }); }
                 catch (_) { /* noop */ }
               }
-            }, 100);
+            }, 120);
           }
         } else if (retry > 0) {
-          window.setTimeout(() => { guardRailRender(); tryScroll(retry - 1); }, 250);
+          window.setTimeout(() => { guardRailRender(); tryScroll(retry - 1); }, 280);
         } else if (sc) {
           try { sc.scrollTop = 0; } catch (_noop) { /* noop */ }
         } else {
           window.scrollTo({ top: 0, behavior: "smooth" as ScrollBehavior });
         }
       };
-      window.setTimeout(() => tryScroll(10), 60);
+      window.setTimeout(() => tryScroll(20), 60);
     } else {
       const resetScroll = () => {
         if (contentScrollRef.current) {
@@ -10490,6 +10493,16 @@ function AdminPageInner() {
     }).catch(() => setDailyLog(loadDailyLog(user?.id)));
   };
   const onFetchLatestFromServer = async () => {
+    if (donorEditLockRef.current) {
+      try {
+        setDonorEditLock(false);
+        donorEditLockRef.current = false;
+        donorSuppressAutoUntilRef.current = 0;
+      } catch (_noop) { /* noop */ }
+      try {
+        showAppToast("🔓 편집 잠금 해제 후 서버 상태를 가져옵니다…", { variant: "info", durationMs: 1500 });
+      } catch (_noop) { /* noop */ }
+    }
     setSyncStatus("loading");
     const { state: remote, meta } = await loadStateFromApiWithMeta(user?.id, { forceFull: true });
     if (!remote) {
@@ -10926,6 +10939,30 @@ function AdminPageInner() {
       </div>
       {/* ✅ 관리자 콘텐츠 영역: 원래 헤더 UI + DIN 허브 네이비 스타일 적용 */}
       <div className="flex-1 min-w-0 min-h-0 h-full overflow-hidden mx-auto w-full max-w-[1420px] flex flex-col">
+          {donorEditLock && (
+            <div className="mb-4 rounded-xl border-2 border-rose-500/60 bg-rose-950/40 px-4 py-2.5 flex items-center gap-3 shadow-lg shadow-rose-950/40">
+              <span className="text-xl leading-none">🔒</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-bold text-rose-100">편집 잠금 활성화 중 — SSE/자동 폴링 일시 정지</div>
+                <div className="text-[11px] text-rose-200/80 leading-snug">
+                  후원 수동 편집중 UI 흔들림 방지를 위해 새 후원이 자동 반영되지 않고 있습니다. 편집 완료 후 아래 버튼으로 잠금을 해제해 주세요.
+                </div>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold px-3 py-1.5 border border-rose-400/60 transition"
+                onClick={() => {
+                  setDonorEditLock(false);
+                  donorEditLockRef.current = false;
+                  donorSuppressAutoUntilRef.current = 0;
+                  showAppToast("🔓 편집 잠금 해제 — 자동 동기화 재개", { variant: "success", durationMs: 1800 });
+                  void onFetchLatestFromServerRef.current?.();
+                }}
+              >
+                잠금 해제 + 동기화
+              </button>
+            </div>
+          )}
           {/* ✅ 원래 관리자 헤더 기능 + DIN 허브 둥근 네이비 스타일 적용 */}
           <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 mb-6">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
