@@ -2438,6 +2438,27 @@ function AdminPageInner() {
           };
           const ensureTab = () => {
             try {
+              // v6: 목표 탭만 display:block, 나머지 5탭은 직접 display:none !important (React state 의존 X)
+              const TAB_KEYS_DIRECT: Array<AdminNavKey> = ["dashboard", "settlement", "donor", "overlay", "goal", "logs"];
+              for (const k of TAB_KEYS_DIRECT) {
+                const els = document.querySelectorAll<HTMLElement>(`[data-admin-tab="${k}"]`);
+                if (!els || els.length === 0) continue;
+                const visible = (k === navKey) || (navKey === "goal" && k === "overlay");
+                els.forEach((el) => {
+                  const want = visible ? "block" : "none";
+                  el.style.setProperty("display", want, "important");
+                  el.setAttribute("aria-hidden", visible ? "false" : "true");
+                  if (visible) {
+                    el.removeAttribute("hidden");
+                    el.classList.remove("hidden");
+                  } else {
+                    el.setAttribute("hidden", "until-found");
+                    if (!el.classList.contains("hidden")) el.classList.add("hidden");
+                  }
+                });
+              }
+            } catch (_noop) { /* noop */ }
+            try {
               const tabKey = (navKey === "goal") ? "overlay" : navKey;
               const tab = document.querySelector<HTMLElement>(`[data-admin-tab="${tabKey}"]`);
               if (tab) {
@@ -2523,20 +2544,53 @@ function AdminPageInner() {
       const isInScroller = (el: HTMLElement, sc: HTMLElement): boolean => {
         const r = el.getBoundingClientRect();
         const s = sc.getBoundingClientRect();
-        // 완화: row table 상단 1~2줄만 보여도 OK
         return r.top < s.bottom - 20 && r.bottom > s.top + 16;
+      };
+      /** ✅ 2026-09-21 v6 final: 직접 6대 탭 DOM 순회 display 토글 (state flush 의존성 제거)
+       *  기존 applyDomFallback 은 finalActiveNav state 에 의존 → state flush 지연시 타탭 display:none 누락 → 全섹션 display:block 으로 쌓여 후원자 리스트가 3000px 아래로 밀리는 RC 해결.
+       *  이 함수는 moveToSection(navKey, ...) 로 전달된 navKey 만을 기준으로 DOM 직접 변경 — React state 와 100% 분리되어 즉시 발동.
+       */
+      const forceToggleSixTabsDomOnly = () => {
+        try {
+          const TAB_KEYS_DIRECT: Array<AdminNavKey> = ["dashboard", "settlement", "donor", "overlay", "goal", "logs"];
+          for (const k of TAB_KEYS_DIRECT) {
+            const els = document.querySelectorAll<HTMLElement>(`[data-admin-tab="${k}"]`);
+            if (!els || els.length === 0) continue;
+            const visible = (k === key) || (key === "goal" && k === "overlay");
+            const wantDisplay = visible ? "block" : "none";
+            els.forEach((el) => {
+              // dirty 체크 없이 무조건 강제 (6개 탭에 대해 1번씩 쓰기는 reflow 거의 0)
+              el.style.setProperty("display", wantDisplay, "important");
+              el.setAttribute("aria-hidden", visible ? "false" : "true");
+              if (visible) {
+                el.removeAttribute("hidden");
+                el.classList.remove("hidden");
+              } else {
+                el.setAttribute("hidden", "until-found");
+                if (!el.classList.contains("hidden")) el.classList.add("hidden");
+              }
+            });
+          }
+        } catch (_e3) { /* noop */ }
       };
       /** 2026-09-21 최종 scroll retry 시리즈
        *  - 8단계로 나눠서 각기 다른 타이밍에 강제 실행 — reflow/hydration 지연에 관계없이 반드시 도달
        *  - 10ms / 40ms / 100ms / 220ms / 460ms / 800ms / 1400ms / 2200ms
        */
       const SCHEDULE_MS = [10, 40, 100, 220, 460, 800, 1400, 2200] as const;
+      const COLLAPSE_HYDRATED_TIMEOUT_MS = 800;
+      let _hydrateBypassAt = 0;
       const findAnchorEl = (): HTMLElement | null => {
         return (
           document.getElementById(`${targetId}-content`) ||
           document.querySelector<HTMLElement>(`[data-admin-section-content="${targetId}"]`) ||
-          // 추가 후보: 섹션 내부 첫 유의미한 자식 (rows / table / p-3 등)
+          // ✅ v6 딥 셀렉터 보강: donor-list-content 내부 실제 데이터 rows 지점을 최우선 타겟
           (() => {
+            const content = document.getElementById(`${targetId}-content`);
+            if (content) {
+              const cand = content.querySelector<HTMLElement>("table thead, table tbody, table, .donor-list-wrap, .grid-rows-start");
+              if (cand) return cand;
+            }
             const sec = document.getElementById(targetId);
             if (!sec) return null;
             const inner = sec.querySelector<HTMLElement>("[data-admin-section-content]")
@@ -2547,8 +2601,17 @@ function AdminPageInner() {
         );
       };
       const once = (label: string) => {
+        try {
+          // 0순위: 직접 DOM 탭 토글 (React state 무관 즉시 발동) — 이것이 RC 해결 핵심
+          forceToggleSixTabsDomOnly();
+        } catch (_noop) { /* noop */ }
         try { applyDomFallback(); } catch (_noop) { /* noop */ }
-        if (!sectionCollapseHydrated) return false;
+        // ✅ v6: sectionCollapseHydrated stuck 방지 800ms 타임아웃.
+        // AdminCollapsibleSection 은 open=true 고정이므로 storageHydrated 가 false 라도 좌표는 정확함.
+        const now = Date.now();
+        if (_hydrateBypassAt === 0) _hydrateBypassAt = now + COLLAPSE_HYDRATED_TIMEOUT_MS;
+        const hydOk = sectionCollapseHydrated || (now >= _hydrateBypassAt);
+        if (!hydOk) return false;
         const el = findAnchorEl();
         if (!el) return false;
         // display / collapsed 강제 풀기
@@ -2557,9 +2620,9 @@ function AdminPageInner() {
           (el as any).hidden = false;
           el.classList.remove("hidden");
           const sec = el.closest<HTMLElement>(`[data-admin-section]`);
-          if (sec) { sec.style.setProperty("display", "block", "important"); sec.classList.remove("hidden"); }
+          if (sec) { sec.style.setProperty("display", "block", "important"); sec.classList.remove("hidden"); sec.removeAttribute("hidden"); }
           const tabEl = el.closest<HTMLElement>(`[data-admin-tab]`);
-          if (tabEl) { tabEl.style.setProperty("display", "block", "important"); tabEl.classList.remove("hidden"); }
+          if (tabEl) { tabEl.style.setProperty("display", "block", "important"); tabEl.classList.remove("hidden"); tabEl.removeAttribute("hidden"); }
         } catch (_noop) { /* noop */ }
         guardRailRender();
         const r = forceScrollToElement(el, `${label}-${targetId}`);
@@ -2580,7 +2643,12 @@ function AdminPageInner() {
       const hydIv = window.setInterval(() => {
         try {
           hydTicks += 1;
-          if (!sectionCollapseHydrated) {
+          // v6: 매 틱마다 forceToggleSixTabsDomOnly 를 먼저 실행 → display 토글 안된 상태로 대기하는 일 0
+          try { forceToggleSixTabsDomOnly(); } catch (_noop) { /* noop */ }
+          const now = Date.now();
+          if (_hydrateBypassAt === 0) _hydrateBypassAt = now + COLLAPSE_HYDRATED_TIMEOUT_MS;
+          const hydOk = sectionCollapseHydrated || (now >= _hydrateBypassAt);
+          if (!hydOk) {
             if (hydTicks >= 60) window.clearInterval(hydIv);
             return;
           }
