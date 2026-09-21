@@ -2430,7 +2430,8 @@ function AdminPageInner() {
       try { (window as any).__adminMoveTo = moveToSection; } catch (_noop) { /* noop */ }
       // ✅ 2026-09-21 본문 떨림 방지: 0/90/260/600ms 반복 호출 제거 → 초기 1회만 + 탭/scroll 필요시 개별 호출
       try { applyDomFallback(); } catch (_noop) { /* noop */ }
-      window.setTimeout(() => { try { commitState(false); applyDomFallback(); } catch (_noop) { /* noop */ } }, 120);
+    // ✅ v11 No-Flicker: applyDomFallback 중복 2회 호출 제거 → 초기 reflow 2번 → 1번 감소
+    // window.setTimeout(() => { try { commitState(false); applyDomFallback(); } catch (_noop) { /* noop */ } }, 120);
       /** ✅ hash based 강제 앵커 이동: URL #section-id 직접 접근 or hashchange 이벤트시 스크롤 + display:block 강제
        *  - 2026-09-21 v4 hydration 대기: el 이 null 이면 50ms 간격 최대 40회 (2초) retry → Next.js 첫 paint 지연 대응
        */
@@ -2741,11 +2742,16 @@ function AdminPageInner() {
           if (anyDirty || wrongTab) {
             try { console.debug("[admin-nav-v8] forceToggleSixTabsDomOnly 정정실행 → anyDirty=", anyDirty, "wrongTab=", wrongTab, "navKey=", key, "공간축소=적용"); } catch (_noop) { /* noop */ }
           }
-          // ✅ 2026-09-21 v10.3: display/height dirty 상태와 관계없이 매틱 Squash FIX 독립 실행
+          // ✅ 2026-09-21 v11 No-Flicker: display/height dirty 상태와 관계없이 매틱 Squash FIX 독립 실행
           // → applyTabVisibilityStyles 가 dirty=false 로 조기종료되어도 아래 블록은 반드시 실행됨 (이중화 보장)
+          // ✅ v11 핵심: 3초 쿨다운 + height px 정확 비교 dirty-only + 부모 unlock 최초 1회만
           try {
+            const NOW_MS = Date.now();
+            const WIN = window as any;
+            if (typeof WIN.__adminSquashLastFix !== "number") WIN.__adminSquashLastFix = 0;
+            const COOLDOWN_MS = 3000;
             const SQUASH_PX_FALLBACK_MIN = 400;
-            const PARENT_UNLOCK_V103: Record<string, string> = {
+            const PARENT_UNLOCK_V11: Record<string, string> = {
               height: "auto", "min-height": "fit-content", "overflow-y": "visible", "flex-shrink": "0",
             };
             const allTabs = document.querySelectorAll<HTMLElement>(`[data-admin-tab]`);
@@ -2754,7 +2760,9 @@ function AdminPageInner() {
               const tk = tabEl.getAttribute("data-admin-tab") || "";
               if (!tk || !desiredVisible(tk as any)) continue;
               const cs = tabEl.querySelectorAll<HTMLElement>("[data-admin-section-content]");
-              cs.forEach((node) => {
+              // ★ v11 수정: forEach 대신 index 기반 for loop 로 변경 → 부모 unlock 키에 ci 인덱스 전달
+              for (let ci = 0; ci < cs.length; ci += 1) {
+                const node = cs[ci]!;
                 let sumCh = 0;
                 for (let k = 0; k < node.children.length; k++) {
                   const ch = node.children[k] as HTMLElement | null;
@@ -2764,22 +2772,36 @@ function AdminPageInner() {
                 const want = tgtH + "px";
                 const curH = node.style.getPropertyValue("height");
                 const curHP = node.style.getPropertyPriority("height");
-                if (curH !== want || curHP !== "important") node.style.setProperty("height", want, "important");
+                // ★ v11: want(계산값) 과 curH(현재) 다를때만 write → 동일하면 DOM 건드리지 않음 → reflow 0
+                const heightDirty = (curH !== want || curHP !== "important");
+                const nodeOhBad = (node.offsetHeight > 0 && node.offsetHeight < Math.max(80, tgtH * 0.75));
+                if (heightDirty || nodeOhBad) {
+                  node.style.setProperty("height", want, "important");
+                }
                 const anc = node.style.getPropertyValue("flex-shrink");
                 const anp = node.style.getPropertyPriority("flex-shrink");
                 if (anc !== "0" || anp !== "important") node.style.setProperty("flex-shrink", "0", "important");
-                // 부모 2단계 unlock
-                let p: HTMLElement | null = node.parentElement;
-                for (let d = 0; d < 2 && p; d += 1) {
-                  for (const [prop, val] of Object.entries(PARENT_UNLOCK_V103)) {
-                    const pv = p.style.getPropertyValue(prop);
-                    const pp = p.style.getPropertyPriority(prop);
-                    if (pv !== val || pp !== "important") p.style.setProperty(prop, val, "important");
+                // ★ v11: 부모 unlock은 최초 1회만 실행 (쿨다운 3초 + __adminParentUnlockDone={tabId_nodeIdx:1} 키 존재시 SKIP)
+                if (NOW_MS - WIN.__adminSquashLastFix > COOLDOWN_MS) {
+                  if (typeof WIN.__adminParentUnlockDone !== "object") WIN.__adminParentUnlockDone = {};
+                  const key = tk + "@" + t + "#" + ci;
+                  if (!WIN.__adminParentUnlockDone[key]) {
+                    WIN.__adminParentUnlockDone[key] = 1;
+                    let p: HTMLElement | null = node.parentElement;
+                    for (let d = 0; d < 2 && p; d += 1) {
+                      for (const [prop, val] of Object.entries(PARENT_UNLOCK_V11)) {
+                        const pv = p.style.getPropertyValue(prop);
+                        const pp = p.style.getPropertyPriority(prop);
+                        if (pv !== val || pp !== "important") p.style.setProperty(prop, val, "important");
+                      }
+                      p = p.parentElement;
+                    }
                   }
-                  p = p.parentElement;
                 }
-              });
+              }
             }
+            // 마지막 실행 시점 기록 (쿨다운 기준)
+            WIN.__adminSquashLastFix = NOW_MS;
           } catch (_noop) { /* noop */ }
         } catch (_e3) { /* noop */ }
       };
@@ -2798,8 +2820,9 @@ function AdminPageInner() {
             if (h !== "0px") return false;
           }
         }
-        // ✅ 2026-09-21 v10.3: visible 탭 내 [data-admin-section-content] 중 높이 80px 미만으로 Squash 된 것이 있다면 강제로 false 반환
-        // → hydIv가 매틱 forceToggleSixTabsDomOnly 를 호출하도록 유도하여 SQUASH_FIX 주입 블록이 반드시 실행되게 함
+        // ✅ 2026-09-21 v11 No-Flicker 개편:
+        // (기존) 부모 min-height 까지 매틱 검사 → content 높이 정상이어도 fit-content 타이밍에 따라 false 반환 → 무한 재실행 → 깜빡임
+        // (개선) 오직 **실제 content div 높이가 정상인지** 만 체크. 부모 unlock은 forceToggleSixTabsDomOnly 최초 1회에만 설정하고 그 후로는 건드리지 않음.
         try {
           const allVisibleTabs = document.querySelectorAll<HTMLElement>(`[data-admin-tab]`);
           for (let t = 0; t < allVisibleTabs.length; t += 1) {
@@ -2810,25 +2833,23 @@ function AdminPageInner() {
             const cs = tabEl.querySelectorAll<HTMLElement>("[data-admin-section-content]");
             for (let ci = 0; ci < cs.length; ci += 1) {
               const node = cs[ci]!;
-              if (node.offsetHeight > 0 && node.offsetHeight < 80) {
-                const curH = node.style.getPropertyValue("height");
-                if (!curH || curH.endsWith("px") === false || parseInt(curH, 10) < 80) {
-                  return false;
-                }
-              }
-              // parent unlock 검사
-              let p: HTMLElement | null = node.parentElement;
-              for (let d = 0; d < 2 && p; d += 1) {
-                const pmh = p.style.getPropertyValue("min-height");
-                if (pmh !== "fit-content") return false;
-                p = p.parentElement;
-              }
+              // content 실제 높이가 80px 미만이거나, height: px 값 주입이 안됐을때만 재실행 요청
+              if (node.offsetHeight > 0 && node.offsetHeight < 80) return false;
+              const curH = node.style.getPropertyValue("height");
+              if (!curH || curH.endsWith("px") === false) return false;
+              const curHNum = parseInt(curH, 10);
+              if (Number.isFinite(curHNum) && curHNum < 80) return false;
+              // flex-shrink: 0 !important 반드시 설정
+              const anc = node.style.getPropertyValue("flex-shrink");
+              const anp = node.style.getPropertyPriority("flex-shrink");
+              if (anc !== "0" || anp !== "important") return false;
             }
           }
         } catch (_noop) { /* noop */ }
         return true;
       };
-      const SCHEDULE_MS = [10, 40, 100, 220, 460, 800, 1400, 2200] as const;
+      // ✅ v11 No-Flicker: 8단계 → 3단계로 축소 (10ms 최초정렬 / 300ms scrollHeight 안정화 / 900ms 최종보장)
+      const SCHEDULE_MS = [10, 300, 900] as const;
       const COLLAPSE_HYDRATED_TIMEOUT_MS = 800;
       let _hydrateBypassAt = 0;
       const findAnchorEl = (): HTMLElement | null => {
@@ -2888,29 +2909,20 @@ function AdminPageInner() {
           }
         } catch (_noop) { /* noop */ }
         try { el.classList.remove("ui-section-arrive"); } catch (_noop) { /* noop */ }
-        // 스크롤 점검 ②: 80ms 후 recheck (reflow bounce 발생시 재보정
+        // ✅ v11 No-Flicker: 스크롤 보정 중복 2회 → 1회만 실행 + 무한 재귀 방지
+        // (기존) s0@ 시 80ms recheck + 300ms 재보정 → forceScroll 3회 중복 실행 → scroll 깜빡임
+        // (개선) 오직 80ms 1회만 recheck, s0@ 라벨과 무관하게 300ms 블록은 폐기
         window.setTimeout(() => {
           try { el.classList.add("ui-section-arrive"); } catch (_noop) { /* noop */ }
           const sc = contentScrollRef.current;
           if (sc) {
             if (sc.scrollTop < 0) sc.scrollTop = 0;
             if (sc.scrollTop > sc.scrollHeight) sc.scrollTop = Math.max(0, sc.scrollHeight - sc.clientHeight - 8);
-            if (!(el && isInScroller(el, sc))) {
+            if (el && !isInScroller(el, sc)) {
               try { forceScrollToElement(el, `recheck-${label}-${targetId}`); } catch (_) { /* noop */ }
             }
           }
         }, 80);
-        // 스크롤 점검 ③: label=s0@10ms 이후 300ms (scrollHeight 안정화 시점) 한번 더 보장
-        if (label.startsWith("s0@")) {
-          window.setTimeout(() => {
-            try {
-              forceToggleSixTabsDomOnly();
-              const sc = contentScrollRef.current;
-              const e2 = findAnchorEl();
-              if (sc && e2 && !isInScroller(e2, sc)) forceScrollToElement(e2, `post300-${targetId}`);
-            } catch (_noop) { /* noop */ }
-          }, 300);
-        }
         return true;
       };
       let hydTicks = 0;
