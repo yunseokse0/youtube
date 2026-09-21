@@ -10510,6 +10510,61 @@ function AdminPageInner() {
         settlementSnapshotUntilRef.current = Date.now() + SETTLEMENT_RESET_PROTECT_MS;
         pendingUnsyncedRef.current = false;
         setSyncStatus("synced");
+        /** ✅ 2026-09-21 정산 리셋 후 스크롤 고정:
+         *  - setState(cleared)로 donors·기여도·영토 rows가 대량 삭제 → scrollHeight 급감 → 스크롤 위치가 망가지는 현상 해소
+         *  - settlement 탭 display:block !important 강제 → "정산·종료 settlement-finalize" 섹션 헤더로 4단계 retry 강제 스크롤
+         */
+        try {
+          if (typeof window !== "undefined") {
+            const _tab = document.querySelector<HTMLElement>('[data-admin-tab="settlement"]');
+            if (_tab) {
+              _tab.style.setProperty("display", "block", "important");
+              _tab.hidden = false;
+              _tab.classList.remove("hidden");
+            }
+            setExpandedNavGroups((prev) => ({ ...prev, settlement: true }));
+            setActiveNav("settlement");
+            setActiveSubTargetId("settlement-finalize");
+            try { window.history.replaceState(null, "", "#settlement-finalize"); } catch (_noop) { /* noop */ }
+            moveToSection("settlement", "settlement-finalize", { fromSubItem: true });
+            const __forceSettleJump = () => {
+              try {
+                const _t = document.querySelector<HTMLElement>('[data-admin-tab="settlement"]');
+                if (_t) {
+                  _t.style.setProperty("display", "block", "important");
+                  _t.hidden = false;
+                  _t.classList.remove("hidden");
+                }
+                const __e =
+                  document.getElementById("settlement-finalize-content") ||
+                  document.querySelector('[data-admin-section-content="settlement-finalize"]') ||
+                  document.getElementById("settlement-finalize");
+                const __sc = contentScrollRef.current;
+                if (__e) {
+                  __e.style.setProperty("display", "block", "important");
+                  __e.hidden = false;
+                  __e.classList.remove("hidden");
+                  try { __e.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" }); } catch (_) { /* noop */ }
+                  if (__sc) {
+                    const _r = __e.getBoundingClientRect();
+                    const _sr = __sc.getBoundingClientRect();
+                    __sc.scrollTop = Math.max(0, (_r.top - _sr.top) + __sc.scrollTop - 120);
+                  }
+                } else if (__sc) {
+                  __sc.scrollTop = 0;
+                }
+                if (typeof (window as any).__adminApplyFallback === "function") {
+                  try { (window as any).__adminApplyFallback(); } catch (_noop) { /* noop */ }
+                }
+              } catch (_noop) { /* noop */ }
+            };
+            __forceSettleJump();
+            window.setTimeout(__forceSettleJump, 1);
+            window.setTimeout(__forceSettleJump, 120);
+            window.setTimeout(__forceSettleJump, 320);
+            window.setTimeout(__forceSettleJump, 800);
+          }
+        } catch (_noop) { /* noop */ }
         try {
           cacheBroadcastStateSnapshot(cleared, user?.id);
           window.localStorage.setItem(presetStorageKey, JSON.stringify(clearedPresets));
@@ -22289,7 +22344,11 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                 <Link className="text-sm text-neutral-300 underline decoration-blue-400/40 hover:text-blue-300 transition-colors" href="/settlements" prefetch={false}>📊 정산 기록 보기</Link>
               }
             >
-              <div className="flex flex-wrap items-center gap-2.5">
+              <div
+                id="settlement-finalize-content"
+                data-admin-section-content="settlement-finalize"
+                className="flex flex-wrap items-center gap-2.5"
+              >
                 <input
                   type="text"
                   className="flex-1 min-w-[220px] px-3 py-2.5 rounded-lg bg-neutral-900/80 border border-white/10 text-sm"
