@@ -2438,7 +2438,32 @@ function AdminPageInner() {
         try {
           const h = (window.location.hash || "").replace(/^#/, "").trim();
           if (!h) return;
-          const navKey = resolveNavKeyFromTargetId(h) || (finalActiveNav as AdminNavKey);
+          /** ✅ 2026-09-21 v9-lexical-fix:
+           *  - 과거 버그: moveToSection 내부에서 resolveHashTarget 이 정의되므로, 각 moveToSection 호출마다
+           *    finalActiveNav / h 를 lexical capture 하고 setTimeout 3개 + hashchange 리스너가 누적 등록됨 →
+           *    120ms/700ms 후 과거 캡처된 overlay 상태가 현재 donor 상태를 다시 덮어씌우는 치명적 버그.
+           *  - 해결: 매 실행마다 (1) __adminDominantNavKey (사용자 마지막 액션) 을 최우선 읽고
+           *    (2) hash 기반 fresh resolve 수행, (3) 둘을 조합하여 절대 과거 캡처값 사용 안함.
+           *  - (4) setTimeout / addEventListener 는 전역 __adminHashBootstrapDone 플래그로 최초 1회만 등록.
+           */
+          const W = (window as any);
+          const dominantNow = W.__adminDominantNavKey as AdminNavKey | undefined;
+          const hashResolved = resolveNavKeyFromTargetId(h);
+          // hash 가 정확히 특정 섹션(대분류/소분류)으로 매핑되는 경우는 hash 우선 → 그 외 (dashboard fallback)는 dominant 우선
+          let navKey: AdminNavKey;
+          const isHashMappedProperly = (): boolean => {
+            if (!hashResolved) return false;
+            if (hashResolved === "dashboard") {
+              // dashboard 가 실제로 dashboard 관련 섹션인지 확인 (targetId 정확 매칭)
+              const allDashSubs = new Set(["dashboard-summary","settlement-member-board","block-member-positions","block-donation-sync-sig-match","block-meal-match","timer-control-section"]);
+              return allDashSubs.has(h);
+            }
+            return true;
+          };
+          if (isHashMappedProperly()) navKey = hashResolved;
+          else if (dominantNow) navKey = dominantNow;
+          else navKey = hashResolved || (W.__adminLastFinalNav as AdminNavKey) || "dashboard";
+          try { W.__adminLastFinalNav = navKey; } catch(_noop){}
           moveToSection(navKey, h, { fromSubItem: true });
           const findAnchor = (): HTMLElement | null => {
             return (
@@ -2472,7 +2497,6 @@ function AdminPageInner() {
                   const hasH = el.classList.contains("hidden");
                   if (visible && hasH) el.classList.remove("hidden");
                   else if (!visible && !hasH) el.classList.add("hidden");
-                  // 공간축소
                   if (visible) {
                     for (const prop of Object.keys(HIDE_VARS) as Array<keyof typeof HIDE_VARS>) {
                       const v = el.style.getPropertyValue(prop);
@@ -2539,10 +2563,15 @@ function AdminPageInner() {
           } catch (_noop) { /* noop */ }
         } catch (_noop) { /* noop */ }
       };
-      window.setTimeout(resolveHashTarget, 1);
-      window.setTimeout(resolveHashTarget, 120);
-      window.setTimeout(resolveHashTarget, 700);
-      window.addEventListener("hashchange", resolveHashTarget, { passive: true });
+      /** ✅ v9 중복등록 방지: 최초 1회만 timers + hashchange 리스너 등록 */
+      const W_ANY = (window as any);
+      if (!W_ANY.__adminHashBootstrapDone) {
+        W_ANY.__adminHashBootstrapDone = true;
+        window.setTimeout(resolveHashTarget, 1);
+        window.setTimeout(resolveHashTarget, 120);
+        window.setTimeout(resolveHashTarget, 700);
+        window.addEventListener("hashchange", resolveHashTarget, { passive: true });
+      }
     }
     if (typeof window === "undefined") return;
     try { expandAdminSection(targetId); } catch (_noop) { /* noop */ }
