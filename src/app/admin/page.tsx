@@ -2652,6 +2652,27 @@ function AdminPageInner() {
           }
           const curOverflow = el.style.getPropertyValue("overflow");
           if (curOverflow !== "" && curOverflow !== "visible") { el.style.removeProperty("overflow"); dirty = true; }
+          // ✅ 2026-09-21 v10 Flex Squash 2px 버그 봉쇄:
+          // - 현상: donor-list-content 등 섹션 content div가 부모 Flex/Grid 내에서 flex-shrink 기본값 1에 의해
+          //   content 높이가 2px로 squash 됨 → 실제 자식 TABLE(1456px)은 부모 밖으로 밀려 후원자 rows가 보이지 않음
+          // - 해결: 탭 내 모든 [data-admin-section-content] 엘리먼트에 대해 6종 Flex anti-squash !important 강제
+          const SQUASH_FIX = {
+            height: "auto", "min-height": "0", "flex-shrink": "0",
+            "align-self": "stretch", "flex-grow": "0", "overflow-anchor": "none",
+          } as const;
+          try {
+            const cs = el.querySelectorAll<HTMLElement>("[data-admin-section-content]");
+            cs.forEach((node) => {
+              for (const [prop, val] of Object.entries(SQUASH_FIX)) {
+                const curV = node.style.getPropertyValue(prop);
+                const curP = node.style.getPropertyPriority(prop);
+                if (curV !== val || curP !== "important") {
+                  node.style.setProperty(prop, val, "important");
+                  dirty = true;
+                }
+              }
+            });
+          } catch (_noop) { /* noop */ }
         } else {
           // 숨김 상태: height 0 + padding 0 + margin 0 + border 0 + overflow hidden 모두 !important
           for (const [prop, val] of Object.entries(HEIGHT_HIDE)) {
@@ -2708,23 +2729,39 @@ function AdminPageInner() {
       const COLLAPSE_HYDRATED_TIMEOUT_MS = 800;
       let _hydrateBypassAt = 0;
       const findAnchorEl = (): HTMLElement | null => {
-        return (
+        const primary =
           document.getElementById(`${targetId}-content`) ||
           document.querySelector<HTMLElement>(`[data-admin-section-content="${targetId}"]`) ||
-          (() => {
-            const content = document.getElementById(`${targetId}-content`);
-            if (content) {
-              const cand = content.querySelector<HTMLElement>("table thead, table tbody, table, .donor-list-wrap, .grid-rows-start");
-              if (cand) return cand;
-            }
-            const sec = document.getElementById(targetId);
-            if (!sec) return null;
-            const inner = sec.querySelector<HTMLElement>("[data-admin-section-content]")
-              || sec.querySelector<HTMLElement>("table, tbody, .donor-list-wrap, .panel-card-body, section > div:last-child, section > div:nth-child(2)");
-            return inner || sec;
-          })() ||
-          document.getElementById(targetId)
-        );
+          document.getElementById(targetId);
+        /** ✅ v10 Flex Squash 버그: primary content div 가 50px 이하로 squash 된 경우
+         *  실제로 높이가 있는 자식 (thead/tbody/테이블/wrap 등) 으로 교체하여 스크롤 타겟 정확도 보장
+         */
+        if (primary && primary.offsetHeight < 50) {
+          try {
+            const cands = primary.querySelectorAll<HTMLElement>("table thead, table tbody, table, .donor-list-wrap, .grid-rows-start, [role=\"rowgroup\"], tbody, thead");
+            let best: HTMLElement | null = null;
+            let bestH = 0;
+            cands.forEach((c) => { if (c.offsetHeight > bestH) { bestH = c.offsetHeight; best = c; } });
+            if (best && bestH >= 80) return best;
+            // fallback: primary의 직계 자식 중 가장 높이가 큰 것
+            const children = Array.from(primary.children) as HTMLElement[];
+            let best2: HTMLElement | null = null; let bestH2 = 0;
+            children.forEach((c) => { if (c.offsetHeight > bestH2) { bestH2 = c.offsetHeight; best2 = c; } });
+            if (best2 && bestH2 >= 80) return best2;
+          } catch (_noop) { /* noop */ }
+        }
+        if (primary && primary.offsetHeight > 0) return primary;
+        // 위에서 실패한 경우 기존 fallback
+        const content = document.getElementById(`${targetId}-content`);
+        if (content) {
+          const cand = content.querySelector<HTMLElement>("table thead, table tbody, table, .donor-list-wrap, .grid-rows-start");
+          if (cand) return cand;
+        }
+        const sec = document.getElementById(targetId);
+        if (!sec) return null;
+        const inner = sec.querySelector<HTMLElement>("[data-admin-section-content]")
+          || sec.querySelector<HTMLElement>("table, tbody, .donor-list-wrap, .panel-card-body, section > div:last-child, section > div:nth-child(2)");
+        return inner || sec;
       };
       const once = (label: string) => {
         // ✅ v8: fromSubItem 일 때 applyDomFallback 절대 SKIP — React state flush 덮어씌움 원천봉쇄
@@ -2774,18 +2811,23 @@ function AdminPageInner() {
         return true;
       };
       let hydTicks = 0;
+      let hydConsOk = 0;
       const hydIv = window.setInterval(() => {
         try {
           hydTicks += 1;
-          // v8 매틱 display+공간축소 정합성 감시 → 틀렸을때만 정정
-          if (!isTabsDisplayCorrect()) {
+          // v10 스크롤 떨림 봉쇄: ① display 정합성 맞을때 강제 재적용 절대 안함
+          const tabOk = isTabsDisplayCorrect();
+          if (!tabOk) {
             try { forceToggleSixTabsDomOnly(); } catch (_noop) { /* noop */ }
+            hydConsOk = 0;
+          } else {
+            hydConsOk += 1;
           }
           const now = Date.now();
           if (_hydrateBypassAt === 0) _hydrateBypassAt = now + COLLAPSE_HYDRATED_TIMEOUT_MS;
           const hydOk = sectionCollapseHydrated || (now >= _hydrateBypassAt);
           if (!hydOk) {
-            if (hydTicks >= 60) window.clearInterval(hydIv);
+            if (hydTicks >= 15 || hydConsOk >= 3) window.clearInterval(hydIv);
             return;
           }
           window.clearInterval(hydIv);
@@ -2793,7 +2835,7 @@ function AdminPageInner() {
             window.setTimeout(() => { void once(`s${idx}@${ms}`); }, ms);
           });
         } catch (_noop) { window.clearInterval(hydIv); }
-      }, 50);
+      }, 200);
     } else {
       const resetScroll = () => {
         if (contentScrollRef.current) {
