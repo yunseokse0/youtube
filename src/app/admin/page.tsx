@@ -2741,6 +2741,46 @@ function AdminPageInner() {
           if (anyDirty || wrongTab) {
             try { console.debug("[admin-nav-v8] forceToggleSixTabsDomOnly 정정실행 → anyDirty=", anyDirty, "wrongTab=", wrongTab, "navKey=", key, "공간축소=적용"); } catch (_noop) { /* noop */ }
           }
+          // ✅ 2026-09-21 v10.3: display/height dirty 상태와 관계없이 매틱 Squash FIX 독립 실행
+          // → applyTabVisibilityStyles 가 dirty=false 로 조기종료되어도 아래 블록은 반드시 실행됨 (이중화 보장)
+          try {
+            const SQUASH_PX_FALLBACK_MIN = 400;
+            const PARENT_UNLOCK_V103: Record<string, string> = {
+              height: "auto", "min-height": "fit-content", "overflow-y": "visible", "flex-shrink": "0",
+            };
+            const allTabs = document.querySelectorAll<HTMLElement>(`[data-admin-tab]`);
+            for (let t = 0; t < allTabs.length; t += 1) {
+              const tabEl = allTabs[t]!;
+              const tk = tabEl.getAttribute("data-admin-tab") || "";
+              if (!tk || !desiredVisible(tk as any)) continue;
+              const cs = tabEl.querySelectorAll<HTMLElement>("[data-admin-section-content]");
+              cs.forEach((node) => {
+                let sumCh = 0;
+                for (let k = 0; k < node.children.length; k++) {
+                  const ch = node.children[k] as HTMLElement | null;
+                  if (ch && typeof ch.offsetHeight === "number") sumCh += ch.offsetHeight;
+                }
+                const tgtH = Math.max(SQUASH_PX_FALLBACK_MIN, node.scrollHeight, sumCh);
+                const want = tgtH + "px";
+                const curH = node.style.getPropertyValue("height");
+                const curHP = node.style.getPropertyPriority("height");
+                if (curH !== want || curHP !== "important") node.style.setProperty("height", want, "important");
+                const anc = node.style.getPropertyValue("flex-shrink");
+                const anp = node.style.getPropertyPriority("flex-shrink");
+                if (anc !== "0" || anp !== "important") node.style.setProperty("flex-shrink", "0", "important");
+                // 부모 2단계 unlock
+                let p: HTMLElement | null = node.parentElement;
+                for (let d = 0; d < 2 && p; d += 1) {
+                  for (const [prop, val] of Object.entries(PARENT_UNLOCK_V103)) {
+                    const pv = p.style.getPropertyValue(prop);
+                    const pp = p.style.getPropertyPriority(prop);
+                    if (pv !== val || pp !== "important") p.style.setProperty(prop, val, "important");
+                  }
+                  p = p.parentElement;
+                }
+              });
+            }
+          } catch (_noop) { /* noop */ }
         } catch (_e3) { /* noop */ }
       };
       /** v8: 탭 display+공간축소 상태 정합성 감시 (hydIv 매틱) */
@@ -2758,6 +2798,34 @@ function AdminPageInner() {
             if (h !== "0px") return false;
           }
         }
+        // ✅ 2026-09-21 v10.3: visible 탭 내 [data-admin-section-content] 중 높이 80px 미만으로 Squash 된 것이 있다면 강제로 false 반환
+        // → hydIv가 매틱 forceToggleSixTabsDomOnly 를 호출하도록 유도하여 SQUASH_FIX 주입 블록이 반드시 실행되게 함
+        try {
+          const allVisibleTabs = document.querySelectorAll<HTMLElement>(`[data-admin-tab]`);
+          for (let t = 0; t < allVisibleTabs.length; t += 1) {
+            const tabEl = allVisibleTabs[t]!;
+            const tk = tabEl.getAttribute("data-admin-tab") || "";
+            if (!tk) continue;
+            if (!desiredVisible(tk as any)) continue;
+            const cs = tabEl.querySelectorAll<HTMLElement>("[data-admin-section-content]");
+            for (let ci = 0; ci < cs.length; ci += 1) {
+              const node = cs[ci]!;
+              if (node.offsetHeight > 0 && node.offsetHeight < 80) {
+                const curH = node.style.getPropertyValue("height");
+                if (!curH || curH.endsWith("px") === false || parseInt(curH, 10) < 80) {
+                  return false;
+                }
+              }
+              // parent unlock 검사
+              let p: HTMLElement | null = node.parentElement;
+              for (let d = 0; d < 2 && p; d += 1) {
+                const pmh = p.style.getPropertyValue("min-height");
+                if (pmh !== "fit-content") return false;
+                p = p.parentElement;
+              }
+            }
+          }
+        } catch (_noop) { /* noop */ }
         return true;
       };
       const SCHEDULE_MS = [10, 40, 100, 220, 460, 800, 1400, 2200] as const;
