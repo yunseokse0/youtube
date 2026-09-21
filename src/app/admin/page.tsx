@@ -2254,8 +2254,11 @@ function AdminPageInner() {
     const finalActiveNav: AdminNavKey = resolved;
     if (typeof window !== "undefined") {
       try {
+        (window as any).__adminDominantNavKey = finalActiveNav;
+      } catch (_noop) { /* noop */ }
+      try {
         // eslint-disable-next-line no-console
-        console.debug("[admin-nav] moveToSection called:", { key, finalActiveNav, targetId, opts });
+        console.debug("[admin-nav-v8] moveToSection called:", { key, finalActiveNav, targetId, opts, dominant: (window as any).__adminDominantNavKey });
       } catch (_noop) { /* noop */ }
     }
     const commitState = (tick = true) => {
@@ -2367,6 +2370,14 @@ function AdminPageInner() {
 
     const applyDomFallback = () => {
       try {
+        const dominant = (window as any).__adminDominantNavKey as AdminNavKey | undefined;
+        if (dominant && dominant !== (finalActiveNav as AdminNavKey)) {
+          try {
+            // eslint-disable-next-line no-console
+            console.debug("[admin-nav-v8] applyDomFallback SKIP (dominant guard): dominant=", dominant, "/ stateFinal=", finalActiveNav);
+          } catch (_noop) { /* noop */ }
+          return;
+        }
         const TAB_KEYS: Array<AdminNavKey> = ["dashboard", "settlement", "donor", "overlay", "goal", "logs"];
         for (const k of TAB_KEYS) {
           const els = document.querySelectorAll<HTMLElement>(`[data-admin-tab="${k}"]`);
