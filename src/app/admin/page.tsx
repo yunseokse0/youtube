@@ -3031,6 +3031,30 @@ function AdminPageInner() {
   }, [router]);
 
   useEffect(() => {
+    if (typeof window === "undefined" || !authReady) return;
+    try {
+      const hash = (window.location.hash || "").replace(/^#/, "").trim();
+      let targetKey: AdminNavKey = "dashboard";
+      let targetId = "dashboard-summary";
+      if (hash) {
+        const r = resolveNavKeyFromTargetId(hash);
+        if (r) {
+          targetKey = r;
+          targetId = hash;
+        }
+      }
+      try {
+        // eslint-disable-next-line no-console
+        console.debug("[admin-bootstrap-v10.1] 초기 moveToSection 강제:", { hash, targetKey, targetId });
+      } catch (_noop) { /* noop */ }
+      moveToSection(targetKey, targetId, { fromSubItem: !!hash });
+    } catch (_e) { /* noop */ }
+    return () => {
+      try { (window as any).__adminHashBootstrapDone = false; } catch (_noop) { /* noop */ }
+    };
+  }, [authReady, user?.id]);
+
+  useEffect(() => {
     stateRef.current = state;
   }, [state]);
   useEffect(() => {
