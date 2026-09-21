@@ -1881,6 +1881,220 @@ export function applyTerritoryLogDirectTransfers(
     }
     if (targetIdxs.length === 0) continue;
 
+    if (rawTeamId && targetIdxs.length > 1) {
+      const sortedIdx = [...targetIdxs].sort((a, b) => a - b);
+      const teamStartIdx = sortedIdx[0]!;
+      const teamEndIdx = sortedIdx[sortedIdx.length - 1]!;
+      const outsideLeftIdx = teamStartIdx > 0 ? teamStartIdx - 1 : -1;
+      const outsideRightIdx = teamEndIdx < n - 1 ? teamEndIdx + 1 : -1;
+      const memberCnt = sortedIdx.length;
+
+      const snapshotTeamWidths = () => {
+        const m = new Map<number, number>();
+        for (const i of sortedIdx) m.set(i, Math.max(0, widthById.get(order[i]!) ?? 0));
+        return m;
+      };
+      const sumTeamWidth = (snap: Map<number, number>) => {
+        let t = 0;
+        for (const v of snap.values()) t += v;
+        return t;
+      };
+      const rebalanceTeamAfterTransfer = (before: Map<number, number>) => {
+        const after = snapshotTeamWidths();
+        const beforeSum = sumTeamWidth(before);
+        const afterSum = sumTeamWidth(after);
+        const netDelta = Math.max(0, Math.floor(afterSum - beforeSum));
+        if (netDelta <= 0) return;
+        const uniformBase = Math.floor(netDelta / memberCnt);
+        const rem = netDelta - uniformBase * memberCnt;
+        const desired = new Map<number, number>();
+        for (let k = 0; k < memberCnt; k += 1) {
+          const idx = sortedIdx[k]!;
+          const base = Math.max(0, before.get(idx) ?? 0);
+          const add = uniformBase + (k === 0 ? rem : 0);
+          desired.set(idx, base + add);
+        }
+        for (const idx of sortedIdx) {
+          const id = order[idx]!;
+          widthById.set(id, Math.max(0, desired.get(idx) ?? 0));
+        }
+      };
+      const takeEquallyFromTeam = (totalToSub: number) => {
+        if (totalToSub <= 0) return 0;
+        const sharePer = Math.max(0, Math.floor(totalToSub / memberCnt));
+        const rem = Math.max(0, totalToSub - sharePer * memberCnt);
+        let covered = 0;
+        for (let k = 0; k < memberCnt; k += 1) {
+          const idx = sortedIdx[k]!;
+          const id = order[idx]!;
+          const cur = Math.max(0, widthById.get(id) ?? 0);
+          const sub = Math.min(cur, sharePer + (k === 0 ? rem : 0));
+          if (sub <= 0) continue;
+          widthById.set(id, Math.max(0, cur - sub));
+          covered += sub;
+        }
+        if (covered < totalToSub) {
+          const short = totalToSub - covered;
+          let c = 0;
+          const list = [...sortedIdx].sort((a, b) => {
+            const wa = Math.max(0, widthById.get(order[a]!) ?? 0);
+            const wb = Math.max(0, widthById.get(order[b]!) ?? 0);
+            return wb - wa;
+          });
+          for (const idx of list) {
+            if (c >= short) break;
+            const id = order[idx]!;
+            const cur = Math.max(0, widthById.get(id) ?? 0);
+            const sub = Math.min(cur, short - c);
+            if (sub <= 0) continue;
+            widthById.set(id, Math.max(0, cur - sub));
+            c += sub;
+          }
+          covered += c;
+        }
+        return covered;
+      };
+      const giveEquallyToTeam = (totalToAdd: number) => {
+        if (totalToAdd <= 0) return;
+        const sharePer = Math.max(0, Math.floor(totalToAdd / memberCnt));
+        const rem = Math.max(0, totalToAdd - sharePer * memberCnt);
+        for (let k = 0; k < memberCnt; k += 1) {
+          const idx = sortedIdx[k]!;
+          const id = order[idx]!;
+          const cur = Math.max(0, widthById.get(id) ?? 0);
+          widthById.set(id, cur + sharePer + (k === 0 ? rem : 0));
+        }
+      };
+      const collectFromOutsideTeam = (totalToCollect: number, excludeFromWhole = false) => {
+        if (totalToCollect <= 0) return 0;
+        let covered = 0;
+        const others = [];
+        for (let i = 0; i < n; i += 1) {
+          if (sortedIdx.includes(i)) continue;
+          const id = order[i]!;
+          const cur = Math.max(0, widthById.get(id) ?? 0);
+          if (cur > 0) others.push(i);
+        }
+        for (const i of others) {
+          if (covered >= totalToCollect) break;
+          const id = order[i]!;
+          const cur = Math.max(0, widthById.get(id) ?? 0);
+          const need = totalToCollect - covered;
+          const take = Math.min(cur, Math.ceil(need / Math.max(1, others.length)));
+          if (take <= 0) continue;
+          widthById.set(id, Math.max(0, cur - take));
+          covered += take;
+        }
+        if (covered < totalToCollect && !excludeFromWhole) {
+          const short = totalToCollect - covered;
+          const all = [];
+          for (let i = 0; i < n; i += 1) {
+            if (sortedIdx.includes(i)) continue;
+            all.push(i);
+          }
+          let c = 0;
+          for (const i of all) {
+            if (c >= short) break;
+            const id = order[i]!;
+            const cur = Math.max(0, widthById.get(id) ?? 0);
+            const take = Math.min(cur, Math.ceil((short - c) / Math.max(1, all.length)));
+            if (take <= 0) continue;
+            widthById.set(id, Math.max(0, cur - take));
+            c += take;
+          }
+          covered += c;
+        }
+        return covered;
+      };
+
+      let explicitPush = parseHighSocietyPushDir(log.pushDir);
+      if (!explicitPush) {
+        const teamCenter = (teamStartIdx + teamEndIdx) / 2;
+        const rawDir = seatExpandDirForIndex(Math.round(teamCenter), n) || middleDir;
+        explicitPush =
+          rawDir === "both" ? "split" : (rawDir as Exclude<typeof rawDir, "both">);
+      }
+
+      if (sign > 0) {
+        if (explicitPush === "split") {
+          const lr = pushDirToLeftRight(cm, "split");
+          let leftSnap = snapshotTeamWidths();
+          if (outsideLeftIdx >= 0) {
+            transferAcross(outsideLeftIdx, teamStartIdx, lr.left);
+          } else {
+            const got = collectFromOutsideTeam(lr.left, false);
+            giveEquallyToTeam(got);
+          }
+          rebalanceTeamAfterTransfer(leftSnap);
+          let rightSnap = snapshotTeamWidths();
+          if (outsideRightIdx >= 0) {
+            transferAcross(outsideRightIdx, teamEndIdx, lr.right);
+          } else {
+            const got = collectFromOutsideTeam(lr.right, false);
+            giveEquallyToTeam(got);
+          }
+          rebalanceTeamAfterTransfer(rightSnap);
+        } else if (explicitPush === "left") {
+          if (outsideLeftIdx >= 0) {
+            const before = snapshotTeamWidths();
+            transferAcross(outsideLeftIdx, teamStartIdx, cm);
+            rebalanceTeamAfterTransfer(before);
+          } else {
+            const got = collectFromOutsideTeam(cm, false);
+            giveEquallyToTeam(got);
+          }
+        } else {
+          if (outsideRightIdx >= 0) {
+            const before = snapshotTeamWidths();
+            transferAcross(outsideRightIdx, teamEndIdx, cm);
+            rebalanceTeamAfterTransfer(before);
+          } else {
+            const got = collectFromOutsideTeam(cm, false);
+            giveEquallyToTeam(got);
+          }
+        }
+      } else {
+        if (explicitPush === "split") {
+          const lr = pushDirToLeftRight(cm, "split");
+          const takenFromTeamL = takeEquallyFromTeam(lr.left);
+          if (takenFromTeamL > 0 && outsideLeftIdx >= 0) {
+            const leftId = order[outsideLeftIdx]!;
+            const cur = Math.max(0, widthById.get(leftId) ?? 0);
+            widthById.set(leftId, cur + takenFromTeamL);
+          } else if (takenFromTeamL > 0) {
+            giveEquallyToTeam(takenFromTeamL);
+          }
+          const takenFromTeamR = takeEquallyFromTeam(lr.right);
+          if (takenFromTeamR > 0 && outsideRightIdx >= 0) {
+            const rightId = order[outsideRightIdx]!;
+            const cur = Math.max(0, widthById.get(rightId) ?? 0);
+            widthById.set(rightId, cur + takenFromTeamR);
+          } else if (takenFromTeamR > 0) {
+            giveEquallyToTeam(takenFromTeamR);
+          }
+        } else if (explicitPush === "left") {
+          const taken = takeEquallyFromTeam(cm);
+          if (taken > 0 && outsideLeftIdx >= 0) {
+            const leftId = order[outsideLeftIdx]!;
+            const cur = Math.max(0, widthById.get(leftId) ?? 0);
+            widthById.set(leftId, cur + taken);
+          } else if (taken > 0) {
+            giveEquallyToTeam(taken);
+          }
+        } else {
+          const taken = takeEquallyFromTeam(cm);
+          if (taken > 0 && outsideRightIdx >= 0) {
+            const rightId = order[outsideRightIdx]!;
+            const cur = Math.max(0, widthById.get(rightId) ?? 0);
+            widthById.set(rightId, cur + taken);
+          } else if (taken > 0) {
+            giveEquallyToTeam(taken);
+          }
+        }
+      }
+      continue;
+    }
+
     const shareCmPer = Math.max(0, Math.floor(cm / targetIdxs.length));
     const remainderCm = Math.max(0, cm - shareCmPer * targetIdxs.length);
     const perMemberCmList = targetIdxs.map((_, i) => shareCmPer + (i === 0 ? remainderCm : 0));
