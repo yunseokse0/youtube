@@ -1861,9 +1861,13 @@ export function applyTerritoryLogDirectTransfers(
   };
 
   for (const log of logs) {
-    const rawTeamId = typeof (log as unknown as { teamId?: string }).teamId === "string"
+    let rawTeamId = typeof (log as unknown as { teamId?: string }).teamId === "string"
       ? String((log as unknown as { teamId?: string }).teamId || "").trim()
       : "";
+    if (!rawTeamId) {
+      const m = String(log.memberId || "").match(/^__team_(.+)$/);
+      if (m) rawTeamId = String(m[1] || "").trim();
+    }
     const memberId = String(log.memberId || "").trim();
     const cm = Math.max(0, Math.floor(Number(log.amount) || 0));
     if (cm <= 0) continue;
@@ -1875,13 +1879,14 @@ export function applyTerritoryLogDirectTransfers(
         const mid = order[i]!;
         if (teamAssignments[mid] === rawTeamId) targetIdxs.push(i);
       }
-    } else {
-      const idx = order.indexOf(memberId);
+    }
+    if (!rawTeamId || targetIdxs.length === 0) {
+      const idx = order.indexOf(memberId.startsWith("__team_") ? "" : memberId);
       if (idx >= 0) targetIdxs.push(idx);
     }
     if (targetIdxs.length === 0) continue;
 
-    if (rawTeamId && targetIdxs.length > 1) {
+    if (rawTeamId && targetIdxs.length >= 1) {
       const sortedIdx = [...targetIdxs].sort((a, b) => a - b);
       const teamStartIdx = sortedIdx[0]!;
       const teamEndIdx = sortedIdx[sortedIdx.length - 1]!;
