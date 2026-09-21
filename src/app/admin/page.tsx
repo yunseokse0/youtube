@@ -2274,7 +2274,7 @@ function AdminPageInner() {
           if (!els || els.length === 0) continue;
           const visible = (k === finalActiveNav) || (finalActiveNav === "goal" && k === "overlay");
           els.forEach((el) => {
-            el.style.display = visible ? "" : "none";
+            el.style.setProperty("display", visible ? "block" : "none", "important");
             el.setAttribute("aria-hidden", visible ? "false" : "true");
           });
         }
@@ -2290,9 +2290,11 @@ function AdminPageInner() {
     if (typeof window !== "undefined") {
       try { (window as any).__adminApplyFallback = applyDomFallback; } catch (_noop) { /* noop */ }
       try { (window as any).__adminMoveTo = moveToSection; } catch (_noop) { /* noop */ }
+      try { applyDomFallback(); } catch (_noop) { /* noop */ }
       window.setTimeout(() => { try { commitState(true); } catch (_noop) { /* noop */ } applyDomFallback(); }, 0);
       window.setTimeout(() => { try { commitState(true); } catch (_noop) { /* noop */ } applyDomFallback(); }, 90);
       window.setTimeout(applyDomFallback, 260);
+      window.setTimeout(applyDomFallback, 600);
     }
     if (typeof window === "undefined") return;
     try { expandAdminSection(targetId); } catch (_noop) { /* noop */ }
@@ -2303,6 +2305,15 @@ function AdminPageInner() {
       try { expandAdminSection(parent); } catch (_noop) { /* noop */ }
       parent = ADMIN_SECTION_EXPAND_PARENTS[parent];
     }
+    const ensureTabVisible = (): boolean => {
+      try {
+        const tabKey = (finalActiveNav === "goal") ? "overlay" : finalActiveNav;
+        const tabEl = document.querySelector<HTMLElement>(`[data-admin-tab="${tabKey}"]`);
+        if (!tabEl) return false;
+        const disp = tabEl.style.display;
+        return disp === "block" || disp === "";
+      } catch { return false; }
+    };
     const guardRailRender = () => {
       const sc = contentScrollRef.current;
       const current = sc?.querySelector(`[id="${targetId}"]`);
@@ -2319,6 +2330,10 @@ function AdminPageInner() {
         return r.top < s.bottom - 4 && r.bottom > s.top + 4;
       };
       const tryScroll = (retry: number) => {
+        if (!ensureTabVisible()) {
+          window.setTimeout(() => tryScroll(retry), 120);
+          return;
+        }
         const el = document.getElementById(targetId);
         const sc = contentScrollRef.current;
         if (el && sc) {
@@ -2363,7 +2378,7 @@ function AdminPageInner() {
           window.scrollTo({ top: 0, behavior: "smooth" as ScrollBehavior });
         }
       };
-      tryScroll(10);
+      window.setTimeout(() => tryScroll(10), 60);
     } else {
       const resetScroll = () => {
         if (contentScrollRef.current) {
