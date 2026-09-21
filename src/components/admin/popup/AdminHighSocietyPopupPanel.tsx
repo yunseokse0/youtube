@@ -47,7 +47,9 @@ export default function AdminHighSocietyPopupPanel() {
   const [territoryMemberId, setTerritoryMemberId] = useState("");
   const [territoryPushDir, setTerritoryPushDir] = useState<"left" | "right" | "split" | "system">("system");
   const [territoryNote, setTerritoryNote] = useState("");
+  const [territoryTeamId, setTerritoryTeamId] = useState<string>("");
   const [copied, setCopied] = useState(false);
+  const [teamEditingNames, setTeamEditingNames] = useState<Record<string, string>>({});
 
   const highSocietySettings = useMemo(
     () => normalizeHighSocietySettings(state?.highSocietySettings),
@@ -99,7 +101,8 @@ export default function AdminHighSocietyPopupPanel() {
       showAppToast("상류사회가 OFF입니다. 먼저 모드를 켜 주세요.", { variant: "info" });
       return;
     }
-    if (!territoryMemberId) return;
+    const matchModeNow = hsNow.matchMode;
+    const useTeamMode = matchModeNow === "team";
     const seated = resolveHighSocietySeatMembers(cur.members || [], hsNow);
     if (seated.length === 0) {
       showAppToast("좌석 멤버가 없습니다. 메인 관리자 오버레이 탭에서 좌석을 지정해 주세요.", {
@@ -109,17 +112,35 @@ export default function AdminHighSocietyPopupPanel() {
     }
     const cm = parseCmInput(territoryCm);
     if (cm <= 0) return;
-    const seatRole = seatRoleForMemberId(hsNow, cur.members || [], territoryMemberId);
+
+    let teamIdForLog: string | undefined;
+    let memberIdForLog: string = "";
+    if (useTeamMode) {
+      if (!territoryTeamId) return;
+      const assignments = hsNow.memberTeamAssignments || {};
+      const membersInTeam = seated.filter((m) => assignments[m.id] === territoryTeamId);
+      if (membersInTeam.length === 0) {
+        showAppToast("해당 팀에 소속된 좌석 멤버가 없습니다.", { variant: "info" });
+        return;
+      }
+      teamIdForLog = territoryTeamId;
+      memberIdForLog = membersInTeam[0]!.id;
+    } else {
+      if (!territoryMemberId) return;
+      memberIdForLog = territoryMemberId;
+    }
+
+    const seatRole = seatRoleForMemberId(hsNow, cur.members || [], memberIdForLog);
     const pushForLog = resolveTerritoryLogPushDirForWrite({
       seatRole,
       chosen: territoryPushDir,
       settings: hsNow,
     });
     const log = createTerritoryLog(
-      territoryMemberId,
+      memberIdForLog,
       territoryMode === "plus" ? 1 : -1,
       cm,
-      { pushDir: pushForLog, note: territoryNote }
+      { pushDir: pushForLog, note: territoryNote, teamId: teamIdForLog }
     );
     const next = appendTerritoryLogToAppState(cur, log);
     const ok = await persistAppState(next, {
@@ -147,6 +168,22 @@ export default function AdminHighSocietyPopupPanel() {
   const teams = highSocietySettings.teams || [];
   const memberTeamAssignments = highSocietySettings.memberTeamAssignments || {};
 
+  useEffect(() => {
+    if (matchMode !== "team") return;
+    const assignments = memberTeamAssignments;
+    const seatedTeamIds = Array.from(
+      new Set(
+        hsSeatPlayers
+          .map((m) => assignments[m.id])
+          .filter((tid): tid is string => Boolean(tid) && teams.some((t) => t.id === tid))
+      )
+    );
+    if (seatedTeamIds.length === 0) return;
+    if (!territoryTeamId || !seatedTeamIds.includes(territoryTeamId)) {
+      setTerritoryTeamId(seatedTeamIds[0]!);
+    }
+  }, [matchMode, teams, hsSeatPlayers, memberTeamAssignments, territoryTeamId]);
+
   const teamMemberMap = useMemo(() => {
     const map: Record<string, typeof hsSeatPlayers> = {};
     for (const t of teams) map[t.id] = [];
@@ -172,7 +209,27 @@ export default function AdminHighSocietyPopupPanel() {
   const updateTeam = (teamId: string, patch: Partial<HighSocietyTeam>) => {
     void patchHighSociety({
       teams: teams.map((t) => (t.id === teamId ? { ...t, ...patch } : t)),
+    }).then(() => {
+      setTeamEditingNames((prev) => {
+        if (!(teamId in prev)) return prev;
+        const next = { ...prev };
+        delete next[teamId];
+        return next;
+      });
     });
+  };
+
+  const commitTeamNameEdit = (teamId: string) => {
+    const draft = teamEditingNames[teamId];
+    if (typeof draft === "undefined") return;
+    const trimmed = draft.trim();
+    setTeamEditingNames((prev) => {
+      const next = { ...prev };
+      delete next[teamId];
+      return next;
+    });
+    if (!trimmed) return;
+    void updateTeam(teamId, { name: trimmed });
   };
 
   const removeTeam = (teamId: string) => {
@@ -375,9 +432,27 @@ export default function AdminHighSocietyPopupPanel() {
                           />
                           <input
                             className="flex-1 rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-xs font-semibold"
-                            value={team.name}
+                            value={teamEditingNames[team.id] ?? team.name}
                             placeholder="팀 이름 (예: 금수저팀)"
-                            onChange={(e) => updateTeam(team.id, { name: e.target.value })}
+                            onChange={(e) =>
+                              setTeamEditingNames((prev) => ({ ...prev, [team.id]: e.target.value }))
+                            }
+                            onBlur={() => commitTeamNameEdit(team.id)}
+                            onCompositionEnd={() => commitTeamNameEdit(team.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                commitTeamNameEdit(team.id);
+                                (e.currentTarget as HTMLInputElement).blur();
+                              } else if (e.key === "Escape") {
+                                setTeamEditingNames((prev) => {
+                                  const next = { ...prev };
+                                  delete next[team.id];
+                                  return next;
+                                });
+                                (e.currentTarget as HTMLInputElement).blur();
+                              }
+                            }}
                           />
                           <label
                             className="cursor-pointer rounded border border-white/15 bg-neutral-800 px-2 py-1.5 text-[11px] hover:bg-neutral-700 flex items-center gap-1.5"
@@ -553,26 +628,42 @@ export default function AdminHighSocietyPopupPanel() {
                     value={territoryCm}
                     onChange={(e) => setTerritoryCm(e.target.value)}
                   />
-                  <select
-                    className="rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"
-                    value={territoryMemberId}
-                    onChange={(e) => setTerritoryMemberId(e.target.value)}
-                    disabled={hsSeatPlayers.length === 0}
-                  >
-                    {hsSeatPlayers.map((m) => {
-                      const tid = memberTeamAssignments[m.id];
-                      const team = teams.find((t) => t.id === tid);
-                      const label =
-                        matchMode === "team" && team
-                          ? `[${team.name}] ${m.name}`
-                          : m.name;
-                      return (
-                        <option key={m.id} value={m.id}>
-                          {label}
-                        </option>
-                      );
-                    })}
-                  </select>
+                  {matchMode === "team" ? (
+                    <select
+                      className="rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"
+                      value={territoryTeamId}
+                      onChange={(e) => setTerritoryTeamId(e.target.value)}
+                      disabled={teams.length === 0}
+                    >
+                      {teams.map((t, idx) => {
+                        const color = resolveTeamColor(t, idx);
+                        const members = teamMemberMap[t.id] || [];
+                        return (
+                          <option key={t.id} value={t.id}>
+                            [{t.name}] {members.map((m) => m.name).join("·") || "팀원 없음"}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  ) : (
+                    <select
+                      className="rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"
+                      value={territoryMemberId}
+                      onChange={(e) => setTerritoryMemberId(e.target.value)}
+                      disabled={hsSeatPlayers.length === 0}
+                    >
+                      {hsSeatPlayers.map((m) => {
+                        const tid = memberTeamAssignments[m.id];
+                        const team = teams.find((t) => t.id === tid);
+                        const label = team ? `[${team.name}] ${m.name}` : m.name;
+                        return (
+                          <option key={m.id} value={m.id}>
+                            {label}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  )}
                   <select
                     className="rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"
                     value={territoryPushDir}
@@ -622,11 +713,21 @@ export default function AdminHighSocietyPopupPanel() {
                         .slice()
                         .sort((a, b) => b.at - a.at)
                         .map((log) => {
-                          const member = state.members.find((m) => m.id === log.memberId);
+                          const logTeamId = typeof (log as unknown as { teamId?: string }).teamId === "string"
+                            ? String((log as unknown as { teamId?: string }).teamId || "").trim()
+                            : "";
+                          let displayLabel: string;
+                          if (logTeamId) {
+                            const team = teams.find((t) => t.id === logTeamId);
+                            displayLabel = team ? `[${team.name}] 팀` : log.memberId;
+                          } else {
+                            const member = state.members.find((m) => m.id === log.memberId);
+                            displayLabel = member?.name || log.memberId;
+                          }
                           return (
                             <tr key={log.id} className="border-t border-white/10">
                               <td className="p-1 text-neutral-400">{formatTime(log.at)}</td>
-                              <td className="p-1">{member?.name || log.memberId}</td>
+                              <td className="p-1">{displayLabel}</td>
                               <td className="p-1">{log.delta > 0 ? "확장" : "축소"}</td>
                               <td className="p-1 text-right tabular-nums">{log.amount}</td>
                               <td className="p-1 text-neutral-400">

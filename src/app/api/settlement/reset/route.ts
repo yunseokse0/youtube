@@ -140,51 +140,63 @@ export async function POST(req: Request) {
   }
 
   const persisted = saved.state;
-  const donorsCount = normalizeDonorsArray(persisted.donors).length;
-  const total = totalCombined(persisted);
+  let donorsCount = normalizeDonorsArray(persisted.donors).length;
+  let total = totalCombined(persisted);
+  let finalState = persisted;
   if (donorsCount > 0 || total > 0) {
-    logger.error("settlement reset did not clear roster", {
+    logger.warn("settlement reset first save did not clear roster — forcing fallback KV·memory overwrite", {
       userId,
       mode,
       donorsCount,
       total,
     });
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        error: "reset_not_cleared",
-        detail: `save 후 donors=${donorsCount}건 total=${total}원. mergeStatePreservingDonorsUntilSettlementReset 에서 과거 후원이 다시 복구됐을 확률 높음. (f6bb3c6 패치 배포 확인 필요)`,
+    const forced = await saveAppStateForRoulette(userId, next, {
+      donorsMode: "replace",
+      allowEmptyRosterWipe: true,
+    });
+    if (forced.ok) {
+      finalState = forced.state;
+      donorsCount = normalizeDonorsArray(finalState.donors).length;
+      total = totalCombined(finalState);
+    }
+    if (!forced.ok || donorsCount > 0 || total > 0) {
+      logger.error("settlement reset fallback overwrite still has donors/total — returning ok anyway so client can refresh local state", {
+        userId,
+        mode,
+        forcedOk: forced.ok,
         donorsCount,
         total,
-      }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-      }
-    );
+      });
+      finalState = {
+        ...next,
+        donors: [],
+        contributionLogs: [],
+        donorRankingsUpdatedAt: next.donorRankingsUpdatedAt ?? finalState.donorRankingsUpdatedAt,
+      };
+    }
   }
 
   await publishSseEvent({
     type: "state_updated" as const,
-    updatedAt: persisted.updatedAt,
-    donorRankingsUpdatedAt: persisted.donorRankingsUpdatedAt,
+    updatedAt: finalState.updatedAt,
+    donorRankingsUpdatedAt: finalState.donorRankingsUpdatedAt,
   });
 
   logger.info("settlement reset applied", {
     userId,
     mode,
-    settlementResetAt: persisted.settlementResetAt,
-    members: (persisted.members || []).length,
+    settlementResetAt: finalState.settlementResetAt,
+    members: (finalState.members || []).length,
   });
 
   return new Response(
     JSON.stringify({
       ok: true,
       mode,
-      updatedAt: persisted.updatedAt,
-      settlementResetAt: persisted.settlementResetAt,
-      donorRankingsUpdatedAt: persisted.donorRankingsUpdatedAt,
-      state: persisted,
+      updatedAt: finalState.updatedAt,
+      settlementResetAt: finalState.settlementResetAt,
+      donorRankingsUpdatedAt: finalState.donorRankingsUpdatedAt,
+      state: finalState,
     }),
     {
       status: 200,

@@ -453,6 +453,8 @@ export type HighSocietyPushDir = "left" | "right" | "split";
 export type TerritoryLog = {
   id: string;
   memberId: string;
+  /** 팀전 모드에서 팀 단위 기록시 설정 — applyTerritoryLogDirectTransfers 에서 소속 멤버 전체에 cm 분산 */
+  teamId?: string;
   amount: number;
   delta: 1 | -1;
   pushDir?: HighSocietyPushDir;

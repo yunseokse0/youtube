@@ -1113,6 +1113,7 @@ function AdminPageInner() {
   const [territoryMode, setTerritoryMode] = useState<"plus" | "minus">("plus");
   const [territoryNote, setTerritoryNote] = useState("");
   const [territoryPushDir, setTerritoryPushDir] = useState<"system" | "left" | "right" | "split">("system");
+  const [territoryTeamId, setTerritoryTeamId] = useState<string | null>(null);
   const [restroomNote, setRestroomNote] = useState("");
   const [copied, setCopied] = useState(false);
   const [newMemberName, setNewMemberName] = useState("");
@@ -9769,7 +9770,7 @@ function AdminPageInner() {
       showAppToast("상류사회가 OFF입니다. 먼저 모드를 켜 주세요.", { variant: "info" });
       return;
     }
-    if (!territoryMemberId) return;
+    const useTeamMode = hsSettings.matchMode === "team";
     const seated = resolveHighSocietySeatMembers(
       stateRef.current.members || [],
       hsSettings
@@ -9780,16 +9781,32 @@ function AdminPageInner() {
       });
       return;
     }
-    if (!seated.some((m) => m.id === territoryMemberId)) {
-      showAppToast("영토 반영은 좌석에 배치된 멤버만 가능합니다.", { variant: "info" });
-      return;
+    let teamIdForLog: string | undefined;
+    let memberIdForLog: string = "";
+    if (useTeamMode) {
+      if (!territoryTeamId) return;
+      const assignments = hsSettings.memberTeamAssignments || {};
+      const membersInTeam = seated.filter((m) => assignments[m.id] === territoryTeamId);
+      if (membersInTeam.length === 0) {
+        showAppToast("해당 팀에 소속된 좌석 멤버가 없습니다.", { variant: "info" });
+        return;
+      }
+      teamIdForLog = territoryTeamId;
+      memberIdForLog = membersInTeam[0]!.id;
+    } else {
+      if (!territoryMemberId) return;
+      if (!seated.some((m) => m.id === territoryMemberId)) {
+        showAppToast("영토 반영은 좌석에 배치된 멤버만 가능합니다.", { variant: "info" });
+        return;
+      }
+      memberIdForLog = territoryMemberId;
     }
     const cm = Math.max(0, Math.floor(parseAmount(territoryCm)));
     if (cm <= 0) return;
     const seatRole = seatRoleForMemberId(
       hsSettings,
       stateRef.current.members || [],
-      territoryMemberId
+      memberIdForLog
     );
     const pushForLog = resolveTerritoryLogPushDirForWrite({
       seatRole,
@@ -9797,10 +9814,10 @@ function AdminPageInner() {
       settings: hsSettings,
     });
     const log = createTerritoryLog(
-      territoryMemberId,
+      memberIdForLog,
       territoryMode === "plus" ? 1 : -1,
       cm,
-      { pushDir: pushForLog, note: territoryNote }
+      { pushDir: pushForLog, note: territoryNote, teamId: teamIdForLog }
     );
     setState((prev: AppState) => {
       const next = appendTerritoryLogToAppState(prev, log);
@@ -9874,6 +9891,23 @@ function AdminPageInner() {
     const exists = hsSeatPlayers.some((m) => m.id === territoryMemberId);
     if (!territoryMemberId || !exists) setTerritoryMemberId(hsSeatPlayers[0].id);
   }, [state.members, territoryMemberId, hsSeatPlayers]);
+
+  useEffect(() => {
+    if (highSocietySettings.matchMode !== "team") return;
+    const teams = highSocietySettings.teams || [];
+    const assignments = highSocietySettings.memberTeamAssignments || {};
+    const seatedTeamIds = Array.from(
+      new Set(
+        hsSeatPlayers
+          .map((m) => assignments[m.id])
+          .filter((tid): tid is string => Boolean(tid) && teams.some((t) => t.id === tid))
+      )
+    );
+    if (seatedTeamIds.length === 0) return;
+    if (!territoryTeamId || !seatedTeamIds.includes(territoryTeamId)) {
+      setTerritoryTeamId(seatedTeamIds[0]!);
+    }
+  }, [hsSeatPlayers, highSocietySettings, territoryTeamId]);
   const hsSeatFieldByMemberId = useMemo(() => {
     const map = new Map<string, { widthCm: number; eliminated: boolean }>();
     if (!highSocietySettings.enabled) return map;
@@ -16751,18 +16785,44 @@ function AdminPageInner() {
                       value={territoryCm}
                       onChange={(e) => setTerritoryCm(e.target.value)}
                     />
-                    <select
-                      className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
-                      value={territoryMemberId || ""}
-                      onChange={(e) => setTerritoryMemberId(e.target.value)}
-                      disabled={hsSeatPlayers.length === 0}
-                    >
-                      {hsSeatPlayers.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name}
-                        </option>
-                      ))}
-                    </select>
+                    {highSocietySettings.matchMode === "team" ? (
+                      <select
+                        className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                        value={territoryTeamId || ""}
+                        onChange={(e) => setTerritoryTeamId(e.target.value)}
+                        disabled={(highSocietySettings.teams || []).length === 0}
+                      >
+                        {(highSocietySettings.teams || []).map((t, idx) => {
+                          const assignments = highSocietySettings.memberTeamAssignments || {};
+                          const membersInTeam = hsSeatPlayers
+                            .filter((m) => assignments[m.id] === t.id)
+                            .map((m) => m.name);
+                          return (
+                            <option key={t.id} value={t.id}>
+                              [{t.name}] {membersInTeam.join("·") || "팀원 없음"}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    ) : (
+                      <select
+                        className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                        value={territoryMemberId || ""}
+                        onChange={(e) => setTerritoryMemberId(e.target.value)}
+                        disabled={hsSeatPlayers.length === 0}
+                      >
+                        {hsSeatPlayers.map((m) => {
+                          const assignments = highSocietySettings.memberTeamAssignments || {};
+                          const tid = assignments[m.id];
+                          const team = (highSocietySettings.teams || []).find((t) => t.id === tid);
+                          return (
+                            <option key={m.id} value={m.id}>
+                              {team ? `[${team.name}] ${m.name}` : m.name}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    )}
                     {hsSeatPlayers.length === 0 && (
                       <p className="text-xs text-amber-300/90 col-span-full">
                         좌석 멤버가 없습니다. 오버레이 탭에서 상류사회 좌석을 지정해 주세요.
@@ -16818,13 +16878,23 @@ function AdminPageInner() {
                           .slice()
                           .sort((a, b) => b.at - a.at)
                           .map((log) => {
-                            const member = state.members.find((m) => m.id === log.memberId);
+                            const logTeamId = typeof (log as unknown as { teamId?: string }).teamId === "string"
+                              ? String((log as unknown as { teamId?: string }).teamId || "").trim()
+                              : "";
+                            let displayLabel: string;
+                            if (logTeamId) {
+                              const team = (highSocietySettings.teams || []).find((t) => t.id === logTeamId);
+                              displayLabel = team ? `[${team.name}] 팀` : log.memberId;
+                            } else {
+                              const member = state.members.find((m) => m.id === log.memberId);
+                              displayLabel = member?.name || log.memberId;
+                            }
                             return (
                               <tr key={log.id} className="border-t border-white/10">
                                 <td className="p-1 text-neutral-400">
                                   <ClientTime ts={log.at} />
                                 </td>
-                                <td className="p-1 text-neutral-300">{member?.name || log.memberId}</td>
+                                <td className="p-1 text-neutral-300">{displayLabel}</td>
                                 <td className="p-1">
                                   {log.delta > 0 ? (
                                     <span className="text-amber-300">확장</span>

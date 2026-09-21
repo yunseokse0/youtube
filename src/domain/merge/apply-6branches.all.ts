@@ -231,6 +231,8 @@ export function enrichStateBeforeAuthoritativeDonationSave(
 /**
  * 정산 리셋(settlementResetAt 상승) 전에는 기존 donors 를 버리지 않고 incoming 과 union.
  * 투네 자동 반영이 수동 계좌 붙여넣기를 덮어쓰는 lost-update 방지.
+ * 🔥 2026-09-21 Fix: opts.allowEmptyRosterWipe=true (정산 리셋·수동 초기화) 이면
+ *    어떤 경우에도 incoming.donors 를 절대 union 하지 않고 그대로 존중 → donors revive 원봉쇄.
  */
 export function mergeStatePreservingDonorsUntilSettlementReset(
   incoming: AppState,
@@ -240,12 +242,21 @@ export function mergeStatePreservingDonorsUntilSettlementReset(
   if (!existing) return incoming;
   const incomingReset = Number(incoming.settlementResetAt || 0);
   const existingReset = Number(existing.settlementResetAt || 0);
+  if (opts?.allowEmptyRosterWipe) {
+    const effReset = Math.max(incomingReset, existingReset) || incomingReset || 0;
+    const baseDonors = normalizeDonorsArray(incoming.donors);
+    const filteredDonors = effReset > 0
+      ? filterDonorsAfterSettlementReset(baseDonors, effReset)
+      : baseDonors;
+    return syncAndRepairMemberTotals({
+      ...incoming,
+      settlementResetAt: incomingReset > existingReset ? incomingReset : incoming.settlementResetAt,
+      donors: filteredDonors,
+    });
+  }
   if (incomingReset > existingReset) {
     /** stamp만 앞서고 멤버1·2…/빈 후원이면 강제 리셋으로 취급하지 않음 */
-    if (
-      !opts?.allowEmptyRosterWipe &&
-      shouldBlockAccidentalEmptyOverwrite(existing, incoming)
-    ) {
+    if (shouldBlockAccidentalEmptyOverwrite(existing, incoming)) {
       const effReset = Number(existing.settlementResetAt || 0);
       const baseDonors = normalizeDonorsArray(existing.donors);
       const filteredDonors = effReset > 0
@@ -311,6 +322,40 @@ export function mergeDonationReplaceForPersist(
   opts?: { allowEmptyRosterWipe?: boolean }
 ): AppState {
   const incomingDonors = normalizeDonorsArray(incoming.donors);
+  const incomingReset = Number(incoming.settlementResetAt || 0);
+  const existingReset = Number(existing?.settlementResetAt || 0);
+
+  if (opts?.allowEmptyRosterWipe) {
+    const effReset = Math.max(incomingReset, existingReset) || incomingReset || 0;
+    const filteredDonors = effReset > 0
+      ? filterDonorsAfterSettlementReset(incomingDonors, effReset)
+      : incomingDonors;
+    const wiped = syncAndRepairMemberTotals(
+      {
+        ...incoming,
+        settlementResetAt:
+          incomingReset > existingReset ? incomingReset : incoming.settlementResetAt,
+        donors: filteredDonors,
+      },
+      incoming
+    );
+    if (!existing) return wiped;
+    const shell = mergeDonationApplyBase(incoming, existing) ?? incoming;
+    return syncAndRepairMemberTotals(
+      {
+        ...shell,
+        donors: wiped.donors,
+        settlementResetAt: wiped.settlementResetAt ?? shell.settlementResetAt,
+        members: hasMeaningfulMemberRoster(incoming) ? incoming.members : shell.members,
+        memberPositions: hasMeaningfulMemberRoster(incoming)
+          ? incoming.memberPositions ?? shell.memberPositions
+          : shell.memberPositions,
+      },
+      existing,
+      incoming
+    );
+  }
+
   if (!existing) {
     const effReset = Number(incoming.settlementResetAt || 0);
     const filteredDonors = effReset > 0
@@ -318,8 +363,6 @@ export function mergeDonationReplaceForPersist(
       : incomingDonors;
     return syncAndRepairMemberTotals({ ...incoming, donors: filteredDonors }, incoming);
   }
-  const incomingReset = Number(incoming.settlementResetAt || 0);
-  const existingReset = Number(existing.settlementResetAt || 0);
   if (incomingReset > existingReset) {
     if (
       !opts?.allowEmptyRosterWipe &&

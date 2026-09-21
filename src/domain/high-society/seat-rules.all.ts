@@ -1815,6 +1815,7 @@ export function applyTerritoryLogDirectTransfers(
   const widthById = new Map(field.seats.map((s) => [s.id, s.widthCm]));
   const seatMeta = new Map(field.seats.map((s) => [s.id, s]));
   const middleDir = resolveSystemMiddlePushDir(settings);
+  const teamAssignments: Record<string, string> = settings?.memberTeamAssignments ?? {};
 
   const transferAcross = (fromIdx: number, toIdx: number, amount: number) => {
     if (fromIdx < 0 || toIdx < 0 || fromIdx >= n || toIdx >= n) return;
@@ -1860,56 +1861,79 @@ export function applyTerritoryLogDirectTransfers(
   };
 
   for (const log of logs) {
+    const rawTeamId = typeof (log as unknown as { teamId?: string }).teamId === "string"
+      ? String((log as unknown as { teamId?: string }).teamId || "").trim()
+      : "";
     const memberId = String(log.memberId || "").trim();
-    const idx = order.indexOf(memberId);
-    if (idx < 0) continue;
     const cm = Math.max(0, Math.floor(Number(log.amount) || 0));
     if (cm <= 0) continue;
     const sign = log.delta === -1 ? -1 : 1;
 
-    const pushFromNeighbor = (toward: "left" | "right", amount: number) => {
-      const neighbor = neighborIdx(idx, toward);
-      if (neighbor == null) return;
-      if (sign > 0) transferAcross(neighbor, idx, amount);
-      else transferAcross(idx, neighbor, amount);
-    };
-
-    const explicitPush = parseHighSocietyPushDir(log.pushDir);
-    if (explicitPush) {
-      if (explicitPush === "split") {
-        const lr = pushDirToLeftRight(cm, explicitPush);
-        if (sign > 0) {
-          pushFromNeighbor("left", lr.left);
-          pushFromNeighbor("right", lr.right);
-        } else {
-          const leftN = neighborIdx(idx, "left");
-          const rightN = neighborIdx(idx, "right");
-          if (leftN != null) transferAcross(idx, leftN, lr.left);
-          if (rightN != null) transferAcross(idx, rightN, lr.right);
-        }
-      } else if (explicitPush === "left") {
-        pushFromNeighbor("left", cm);
-      } else {
-        pushFromNeighbor("right", cm);
+    const targetIdxs: number[] = [];
+    if (rawTeamId) {
+      for (let i = 0; i < n; i += 1) {
+        const mid = order[i]!;
+        if (teamAssignments[mid] === rawTeamId) targetIdxs.push(i);
       }
-      continue;
-    }
-
-    const seatDir = seatExpandDirForIndex(idx, n);
-    if (seatDir === "right") {
-      pushFromNeighbor("right", cm);
-      continue;
-    }
-    if (seatDir === "left") {
-      pushFromNeighbor("left", cm);
-      continue;
-    }
-
-    const push = middleDir;
-    if (push === "left") {
-      pushFromNeighbor("left", cm);
     } else {
-      pushFromNeighbor("right", cm);
+      const idx = order.indexOf(memberId);
+      if (idx >= 0) targetIdxs.push(idx);
+    }
+    if (targetIdxs.length === 0) continue;
+
+    const shareCmPer = Math.max(0, Math.floor(cm / targetIdxs.length));
+    const remainderCm = Math.max(0, cm - shareCmPer * targetIdxs.length);
+    const perMemberCmList = targetIdxs.map((_, i) => shareCmPer + (i === 0 ? remainderCm : 0));
+
+    for (let k = 0; k < targetIdxs.length; k += 1) {
+      const idx = targetIdxs[k]!;
+      const shareCm = perMemberCmList[k] || 0;
+      if (shareCm <= 0) continue;
+
+      const pushFromNeighbor = (toward: "left" | "right", amount: number) => {
+        const neighbor = neighborIdx(idx, toward);
+        if (neighbor == null) return;
+        if (sign > 0) transferAcross(neighbor, idx, amount);
+        else transferAcross(idx, neighbor, amount);
+      };
+
+      const explicitPush = parseHighSocietyPushDir(log.pushDir);
+      if (explicitPush) {
+        if (explicitPush === "split") {
+          const lr = pushDirToLeftRight(shareCm, explicitPush);
+          if (sign > 0) {
+            pushFromNeighbor("left", lr.left);
+            pushFromNeighbor("right", lr.right);
+          } else {
+            const leftN = neighborIdx(idx, "left");
+            const rightN = neighborIdx(idx, "right");
+            if (leftN != null) transferAcross(idx, leftN, lr.left);
+            if (rightN != null) transferAcross(idx, rightN, lr.right);
+          }
+        } else if (explicitPush === "left") {
+          pushFromNeighbor("left", shareCm);
+        } else {
+          pushFromNeighbor("right", shareCm);
+        }
+        continue;
+      }
+
+      const seatDir = seatExpandDirForIndex(idx, n);
+      if (seatDir === "right") {
+        pushFromNeighbor("right", shareCm);
+        continue;
+      }
+      if (seatDir === "left") {
+        pushFromNeighbor("left", shareCm);
+        continue;
+      }
+
+      const push = middleDir;
+      if (push === "left") {
+        pushFromNeighbor("left", shareCm);
+      } else {
+        pushFromNeighbor("right", shareCm);
+      }
     }
   }
 
@@ -2574,9 +2598,39 @@ export function aggregateTeamPushesFromTerritoryLogs(opts: {
     const cm = Math.max(0, Number(log.amount) || 0);
     const isExpand = Number(log.delta) >= 0;
     if (!isExpand) continue;
+    const logTeamId = typeof (log as unknown as { teamId?: string }).teamId === "string"
+      ? String((log as unknown as { teamId?: string }).teamId || "").trim()
+      : "";
+    const pushDir = (log as unknown as { pushDir?: string }).pushDir || "both";
+
+    if (logTeamId) {
+      const memberIdsInTeam = seatPlayers
+        .filter((m) => memberTeamAssignments[m.id] === logTeamId)
+        .map((m) => m.id);
+      if (memberIdsInTeam.length === 0) continue;
+      const sharePer = Math.max(0, Math.floor(cm / memberIdsInTeam.length));
+      const remainder = Math.max(0, cm - sharePer * memberIdsInTeam.length);
+      for (let i = 0; i < memberIdsInTeam.length; i += 1) {
+        const mid = memberIdsInTeam[i]!;
+        const entry = playerExpandMap.get(mid);
+        if (!entry) continue;
+        const share = sharePer + (i === 0 ? remainder : 0);
+        if (share <= 0) continue;
+        if (pushDir === "left") {
+          entry.expandLeftCm += share;
+        } else if (pushDir === "right") {
+          entry.expandRightCm += share;
+        } else {
+          const half = Math.floor(share / 2);
+          entry.expandLeftCm += half;
+          entry.expandRightCm += share - half;
+        }
+      }
+      continue;
+    }
+
     const entry = playerExpandMap.get(log.memberId);
     if (!entry) continue;
-    const pushDir = (log as unknown as { pushDir?: string }).pushDir || "both";
     if (pushDir === "left") {
       entry.expandLeftCm += cm;
     } else if (pushDir === "right") {

@@ -11,7 +11,8 @@ export function normalizeTerritoryLog(raw: unknown): TerritoryLog | null {
   if (!raw || typeof raw !== "object") return null;
   const x = raw as Record<string, unknown>;
   const memberId = String(x.memberId || "").trim();
-  if (!memberId) return null;
+  const teamId = typeof x.teamId === "string" && x.teamId.trim() ? x.teamId.trim() : undefined;
+  if (!memberId && !teamId) return null;
   const amount = Math.max(0, Math.floor(Number(x.amount) || 0));
   const delta = x.delta === -1 ? -1 : 1;
   const pushRaw = String(x.pushDir || "").trim().toLowerCase();
@@ -19,7 +20,8 @@ export function normalizeTerritoryLog(raw: unknown): TerritoryLog | null {
     pushRaw === "left" || pushRaw === "right" || pushRaw === "split" ? pushRaw : undefined;
   return {
     id: String(x.id || `tl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`),
-    memberId,
+    memberId: memberId || (teamId ? `__team_${teamId}` : ""),
+    ...(teamId ? { teamId } : {}),
     amount,
     delta,
     ...(pushDir ? { pushDir } : {}),
@@ -96,13 +98,15 @@ export function createTerritoryLog(
   memberId: string,
   delta: 1 | -1,
   amountCm: number,
-  opts?: { pushDir?: HighSocietyPushDir; note?: string; now?: number }
+  opts?: { pushDir?: HighSocietyPushDir; note?: string; now?: number; teamId?: string }
 ): TerritoryLog {
   const now = opts?.now ?? Date.now();
   const amount = Math.max(0, Math.floor(amountCm));
+  const teamId = typeof opts?.teamId === "string" && opts.teamId.trim() ? opts.teamId.trim() : undefined;
   return {
     id: `tl_${now}_${Math.random().toString(36).slice(2, 6)}`,
-    memberId,
+    memberId: teamId ? `__team_${teamId}` : memberId,
+    ...(teamId ? { teamId } : {}),
     amount,
     delta,
     ...(opts?.pushDir ? { pushDir: opts.pushDir } : {}),
