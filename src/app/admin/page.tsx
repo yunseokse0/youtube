@@ -1668,6 +1668,8 @@ function AdminPageInner() {
     };
   }, []);
   const navItems = useMemo(() => getVisibleAdminNavItems(), []);
+  const mobileNavItems = useMemo(() => navItems.filter((i) => i.mobileShort), [navItems]);
+  const mobileNavCount = Math.max(1, mobileNavItems.length);
   useEffect(() => {
     const keys = navItems.map((n) => n.key);
     if (keys.length === 0) return;
@@ -11096,7 +11098,7 @@ function AdminPageInner() {
 
   return (
     <main
-      className="min-h-screen p-4 md:p-8 pb-24 md:pb-10 text-neutral-100 admin-page-root lg:flex lg:flex-row lg:items-stretch lg:gap-0 lg:h-screen lg:min-h-0 overflow-hidden"
+      className="min-h-screen p-4 md:p-2 md:pr-3 lg:p-6 pb-32 md:pb-8 text-neutral-100 admin-page-root md:flex md:flex-row md:items-stretch md:gap-0 md:h-screen md:min-h-0 lg:flex lg:flex-row lg:items-stretch lg:gap-0 lg:h-screen lg:min-h-0 overflow-hidden"
       style={{ backgroundColor: "#070c1a" }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -11106,7 +11108,7 @@ function AdminPageInner() {
       <SigUploadProgressOverlay progress={sigUploadProgress} busy={sigBulkReuploadBusy} />
       {/* ✅ DIN 허브 스타일 - 사이드바: 짙은 네이비 카드 + 유저 정보 헤더 + 아이콘 메뉴 */}
       <aside
-        className="static shrink-0 w-full lg:w-[280px] mb-4 lg:mb-0 lg:mr-6 rounded-[18px] lg:h-full flex flex-col max-h-[56vh] lg:max-h-none overflow-hidden"
+        className="static shrink-0 w-full md:w-[260px] lg:w-[280px] mb-4 md:mb-0 md:mr-4 lg:mb-0 lg:mr-6 rounded-[18px] md:h-full lg:h-full flex flex-col max-h-[56vh] md:max-h-none lg:max-h-none overflow-hidden"
         style={{
           background: "#0e1528",
           border: "1px solid rgba(55, 75, 120, 0.35)",
@@ -11184,7 +11186,7 @@ function AdminPageInner() {
           </div>
         )}
       </aside>
-      <div className="lg:hidden fixed left-1/2 -translate-x-1/2 top-2 z-40 pointer-events-none">
+      <div className="md:hidden fixed left-1/2 -translate-x-1/2 top-2 z-40 pointer-events-none">
         <div
           className={`px-3 py-1 rounded-full text-[11px] border border-white/10 transition-all ${
             pullRefreshing ? "bg-[#22c55e]/30 text-[#86efac]" : "bg-black/50 text-neutral-300"
@@ -22815,7 +22817,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
       </div>
     {/* 글로벌 액션 시트 / 리셋 시트 / 맨 위로 가기 / 모바일 하단 탭 nav */}
       {actionSheet.open && (
-        <div className="fixed inset-0 z-50 lg:hidden flex items-center justify-center p-4 ui-animate-fade-in">
+        <div className="fixed inset-0 z-50 md:hidden flex items-center justify-center p-4 ui-animate-fade-in">
           <button className="absolute inset-0 bg-black/55 ui-din-action-sheet-backdrop" onClick={closeActionSheet} aria-label="액션 시트 닫기" />
           <div className="relative w-full max-w-sm rounded-2xl border border-white/10 bg-[#202020] p-4 shadow-xl ui-din-action-sheet ui-animate-pop-in">
             <div className="text-sm font-bold text-white flex items-center gap-2">
@@ -22955,29 +22957,27 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
           </svg>
         </button>
       )}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 lg:hidden border-t border-white/10 bg-[#0f172a]">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden border-t border-white/10 bg-[#0f172a]">
         <div
           className="grid gap-1 p-2"
           style={{
-            gridTemplateColumns: `repeat(${Math.max(1, navItems.filter((i) => i.mobileShort).length)}, minmax(0, 1fr))`,
+            gridTemplateColumns: `repeat(${mobileNavCount}, minmax(0, 1fr))`,
           }}
         >
-          {navItems
-            .filter((item) => item.mobileShort)
-            .map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => moveToSection(item.key, item.targetId)}
-                className={`rounded-lg py-2.5 text-[11px] font-bold transition-all ${
-                  activeNav === item.key
-                    ? "bg-gradient-to-r from-blue-500 to-blue-700 text-white shadow-[0_4px_14px_rgba(59,130,246,0.35)]"
-                    : "text-neutral-300 hover:bg-white/5"
-                }`}
-              >
-                {item.mobileShort}
-              </button>
-            ))}
+          {mobileNavItems.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => moveToSection(item.key, item.targetId)}
+              className={`rounded-lg py-2.5 text-[11px] font-bold transition ${
+                activeNav === item.key
+                  ? "bg-gradient-to-r from-blue-500 to-blue-700 text-white shadow-[0_4px_14px_rgba(59,130,246,0.35)]"
+                  : "text-neutral-300 hover:bg-white/5"
+              }`}
+            >
+              {item.mobileShort}
+            </button>
+          ))}
         </div>
       </nav>
     </main>
