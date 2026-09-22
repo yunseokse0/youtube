@@ -15,6 +15,7 @@ import {
   mergeTerritoryLogsPreferFresher,
   normalizeTerritoryLogs,
   resolveTerritoryLogsResetAtForEditorMerge,
+  mergeTerritoryLogsNeverShrink,
 } from "@/lib/territory-utils";
 import { mergeHighSocietySettingsPreferBaseline } from "@/lib/high-society";
 import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
@@ -274,9 +275,21 @@ export function useAdminPopupBroadcastState() {
         try {
         const hsOnly = Boolean(opts?.highSocietySettingsOnly || opts?.omitDonationFields);
         const existingSession = readSessionBroadcastState(scopedUserId) ?? loadState(scopedUserId);
+        const live = stateRef.current;
+        const logsForSave = opts?.territoryLogsAuthoritative
+          ? mergeTerritoryLogsNeverShrink(live?.territoryLogs, next.territoryLogs, {
+              patchAuthoritative: true,
+              patchIsReset: Array.isArray(next.territoryLogs) && next.territoryLogs.length === 0,
+              deletedIds: mergeDeletedTerritoryLogIds(
+                live?.deletedTerritoryLogIds,
+                next.deletedTerritoryLogIds
+              ),
+            })
+          : next.territoryLogs;
         const stamped = {
           ...mergeBroadcastSessionPreservingDonations(existingSession, {
             ...next,
+            territoryLogs: logsForSave,
             updatedAt: Date.now(),
           }),
         };

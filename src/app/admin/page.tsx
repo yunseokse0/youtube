@@ -924,6 +924,7 @@ function AdminPageInner() {
     opts: {
       omitDonationFields?: boolean;
       highSocietySettingsOnly?: boolean;
+      territoryLogsAuthoritative?: boolean;
       persistToastLabel?: string;
     };
   } | null>(null);
@@ -1791,6 +1792,8 @@ function AdminPageInner() {
       clearSigInventory?: boolean;
       /** 상류사회 OFF·일시정지 등 — API 에 HS 설정만 전송 */
       highSocietySettingsOnly?: boolean;
+      /** 영토 기록부 추가·삭제·초기화 — 지금 목록으로 서버를 교체 */
+      territoryLogsAuthoritative?: boolean;
       /** 저장 완료 시 서버(MySQL) 반영 토스트 */
       persistToastLabel?: string;
     }
@@ -10670,7 +10673,11 @@ function AdminPageInner() {
     setState((prev: AppState) => {
       const next = appendTerritoryLogToAppState(prev, log);
       /** 영토 cm 만 저장 — donors/members 금액 POST 금지(후원순위·기록 초기화 회귀 방지) */
-      persistState(next, { omitDonationFields: true, highSocietySettingsOnly: true });
+      persistState(next, {
+        omitDonationFields: true,
+        highSocietySettingsOnly: true,
+        territoryLogsAuthoritative: true,
+      });
       notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
       return next;
     });
@@ -10888,6 +10895,7 @@ function AdminPageInner() {
                 omitDonationFields: true,
                 highSocietySettingsOnly: true,
                 persistToastLabel,
+                ...(resetTerritory ? { territoryLogsAuthoritative: true } : {}),
               }
         );
         return next;
@@ -17969,6 +17977,7 @@ function AdminPageInner() {
                                           persistState(next, {
                                             omitDonationFields: true,
                                             highSocietySettingsOnly: true,
+                                            territoryLogsAuthoritative: true,
                                           });
                                           notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
                                           return next;

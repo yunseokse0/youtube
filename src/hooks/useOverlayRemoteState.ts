@@ -104,7 +104,7 @@ import {
 } from "@/lib/state-api-pick";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { mergeHighSocietySettingsPreferBaseline, isMeaningfulHighSocietySettings } from "@/lib/high-society";
-import { normalizeTerritoryLogs, mergeTerritoryLogsPreferFresher, filterTerritoryLogsAfterReset, mergeDeletedTerritoryLogIds, resolveTerritoryLogsResetAtForEditorMerge } from "@/lib/territory-utils";
+import { normalizeTerritoryLogs, mergeTerritoryLogsPreferFresher, mergeTerritoryLogsNeverShrink, filterTerritoryLogsAfterReset, mergeDeletedTerritoryLogIds, resolveTerritoryLogsResetAtForEditorMerge } from "@/lib/territory-utils";
 
 /** 관리자 iframe — 서버 정본 모드에서는 LS/세션 힌트로 서버 스냅샷을 덮지 않음 */
 function mergeAdminPreviewLocalHintOntoRemote(
@@ -422,19 +422,18 @@ function applySyncedState(
   );
   const incomingLogsResetAt = Number(hsIncoming?.territoryLogsResetAt || 0);
   const lastGoodLogs = normalizeTerritoryLogs(refs.lastGoodRef.current?.territoryLogs);
+  const lastGoodResetAt = Number(hsBaseline?.territoryLogsResetAt || 0);
+  const incomingLogsEmpty =
+    Array.isArray(dataForApply.territoryLogs) &&
+    normalizeTerritoryLogs(dataForApply.territoryLogs).length === 0;
   const mergedTerritoryLogs =
     pick === STATE_PICK_OVERLAY || pick === STATE_PICK_OVERLAY_DONORS
       ? Array.isArray(dataForApply.territoryLogs)
-        ? mergeTerritoryLogsPreferFresher(
-            lastGoodLogs,
-            normalizeTerritoryLogs(dataForApply.territoryLogs),
-            {
-              localUpdatedAt: hsBaselineUpdatedAt,
-              remoteUpdatedAt: hsIncomingUpdatedAt,
-              territoryLogsResetAt: incomingLogsResetAt,
-              deletedIds: overlayDeletedIds,
-            }
-          )
+        ? mergeTerritoryLogsNeverShrink(lastGoodLogs, dataForApply.territoryLogs, {
+            deletedIds: overlayDeletedIds,
+            patchAuthoritative: true,
+            patchIsReset: incomingLogsEmpty && incomingLogsResetAt >= lastGoodResetAt,
+          })
         : lastGoodLogs
       : dataForApply.territoryLogs;
   const prunedTerritoryLogs = Array.isArray(dataForApply.territoryLogs)

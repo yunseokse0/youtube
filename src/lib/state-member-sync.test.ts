@@ -494,7 +494,31 @@ describe("member sync helpers", () => {
     expect(merged.territoryLogs.map((l) => l.id).sort()).toEqual(["tl_a", "tl_b", "tl_c", "tl_d"]);
   });
 
-  it("appStatePayloadForApi highSocietySettingsOnly sends territoryLogs without donors/members", () => {
+  it("mergeServerSaveApiBodies keeps the longer logbook when a later authoritative body is shorter", () => {
+    const rows = Array.from({ length: 12 }, (_, i) => ({
+      id: `tl_${i}`,
+      memberId: "ta",
+      amount: 10 + i,
+      delta: 1 as const,
+      at: 1000 + i,
+    }));
+    const prev = JSON.stringify({
+      updatedAt: 4000,
+      territoryLogs: rows,
+      territoryLogsAuthoritative: true,
+    });
+    const next = JSON.stringify({
+      updatedAt: 5000,
+      territoryLogs: rows.slice(0, 11),
+      territoryLogsAuthoritative: true,
+    });
+    const merged = JSON.parse(mergeServerSaveApiBodies(prev, next)) as {
+      territoryLogs: Array<{ id: string }>;
+    };
+    expect(merged.territoryLogs).toHaveLength(12);
+  });
+
+  it("appStatePayloadForApi highSocietySettingsOnly omits logbook unless authoritative", () => {
     const state = {
       ...defaultState(),
       updatedAt: 2000,
@@ -522,8 +546,33 @@ describe("member sync helpers", () => {
     expect(payload.donors).toBeUndefined();
     expect(payload.members).toBeUndefined();
     expect(payload.highSocietySettings).toBeTruthy();
-    expect(payload.territoryLogs).toEqual(state.territoryLogs);
+    expect(payload.territoryLogs).toBeUndefined();
     expect(payload.donationSyncMode).toBe("highSociety");
+  });
+
+  it("appStatePayloadForApi highSocietySettingsOnly+territoryLogsAuthoritative sends the logbook", () => {
+    const state = {
+      ...defaultState(),
+      updatedAt: 2000,
+      highSocietySettings: { enabled: true, fieldCm: 400, startCmPerMember: 100 },
+      territoryLogs: [
+        {
+          id: "tl1",
+          memberId: "m1",
+          delta: 1 as const,
+          amount: 50,
+          at: 100,
+          pushDir: "right" as const,
+        },
+      ],
+    } as AppState;
+    const payload = appStatePayloadForApi(state, "finalent", {
+      omitDonationFields: true,
+      highSocietySettingsOnly: true,
+      territoryLogsAuthoritative: true,
+    }) as Record<string, unknown>;
+    expect(payload.territoryLogs).toEqual(state.territoryLogs);
+    expect(payload.territoryLogsAuthoritative).toBe(true);
   });
 
   it("omitDonationFields payload keeps highSocietySettings so server can treat as HS-only", () => {

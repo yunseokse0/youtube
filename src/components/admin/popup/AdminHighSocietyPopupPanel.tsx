@@ -97,10 +97,11 @@ export default function AdminHighSocietyPopupPanel() {
         resetTerritory: Boolean(patch.resetTerritory),
         members: cur.members || [],
       }) ?? undefined;
-    const ok = await persistAppState(next, {
-      omitDonationFields: true,
-      highSocietySettingsOnly: true,
-    });
+      const ok = await persistAppState(next, {
+        omitDonationFields: true,
+        highSocietySettingsOnly: true,
+        territoryLogsAuthoritative: Boolean(patch.resetTerritory),
+      });
     if (ok && toast) showAppToast(toast);
     return ok;
   };
@@ -171,6 +172,7 @@ export default function AdminHighSocietyPopupPanel() {
       const ok = await persistAppState(next, {
         omitDonationFields: true,
         highSocietySettingsOnly: true,
+        territoryLogsAuthoritative: true,
       });
       if (ok) {
         showAppToast(`영토 ${mode === "plus" ? "추가" : "차감"}: ${cm}cm`);
@@ -197,6 +199,7 @@ export default function AdminHighSocietyPopupPanel() {
     await persistAppState(next, {
       omitDonationFields: true,
       highSocietySettingsOnly: true,
+      territoryLogsAuthoritative: true,
     });
   };
 

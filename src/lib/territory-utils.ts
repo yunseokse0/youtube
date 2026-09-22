@@ -82,6 +82,31 @@ function dropDeletedTerritoryLogs(
 }
 
 /**
+ * 기록부는 길어질 수만 있다. 짧은 POST 로 앞줄을 덮지 않는다.
+ * 줄어드는 경우: 영토 초기화 [] 또는 deletedIds tombstone.
+ * 정본 목록이 더 길거나 같으면 그 목록이 현재 화면(옛 세션 3건 제거).
+ */
+export function mergeTerritoryLogsNeverShrink(
+  baseLogs: TerritoryLog[] | undefined,
+  patchLogs: TerritoryLog[] | undefined,
+  opts?: {
+    deletedIds?: string[];
+    patchIsReset?: boolean;
+    patchAuthoritative?: boolean;
+  }
+): TerritoryLog[] {
+  const base = normalizeTerritoryLogs(baseLogs);
+  const patch = normalizeTerritoryLogs(patchLogs);
+  if (opts?.patchIsReset) return [];
+  if (opts?.patchAuthoritative && Array.isArray(patchLogs) && patch.length === 0) return [];
+  const deletedIds = opts?.deletedIds;
+  if (opts?.patchAuthoritative && patch.length >= base.length) {
+    return dropDeletedTerritoryLogs(patch, deletedIds);
+  }
+  return dropDeletedTerritoryLogs(unionTerritoryLogsById(base, patch), deletedIds);
+}
+
+/**
  * PATCH territoryLogs 병합.
  * 기본은 id union (연속 입력 3건이 2건 POST 로 덮이지 않게).
  * 한 건 삭제는 patch 가 base 보다 최신일 때만 (기록 한 줄 삭제).

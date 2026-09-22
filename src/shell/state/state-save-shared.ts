@@ -33,7 +33,7 @@ import { createModuleLogger } from "@/lib/logger";
 import { isRouletteLocked } from "@/app/api/roulette/roulette-lock";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { shouldBlockHighSocietyRegression, syncHighSocietyMemberWidthSnapshotInState } from "@/lib/high-society";
-import { normalizeTerritoryLogs, mergeTerritoryLogsFromPatch, mergeDeletedTerritoryLogIds } from "@/lib/territory-utils";
+import { normalizeTerritoryLogs, mergeTerritoryLogsNeverShrink, mergeDeletedTerritoryLogIds } from "@/lib/territory-utils";
 import { memberCombinedTotal } from "@/shell/state/state-freshness.guard";
 import {
   donorShardCoalesceOnSave,
@@ -403,26 +403,21 @@ export function mergePartialState(
   if (!("territoryLogs" in patch)) {
     next.territoryLogs = base.territoryLogs;
   } else if (Array.isArray(patch.territoryLogs)) {
-    next.territoryLogs = mergeTerritoryLogsFromPatch(base.territoryLogs, patch.territoryLogs, {
-      baseUpdatedAt: Number(base.updatedAt || 0),
-      patchUpdatedAt: Number(patch.updatedAt || 0),
-      deletedIds: mergeDeletedTerritoryLogIds(
-        Array.isArray((patch as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds)
-          ? (patch as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds
-          : [],
-        Array.isArray((base as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds)
-          ? (base as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds
-          : []
-      ),
+    const patchDeleted = Array.isArray((patch as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds)
+      ? (patch as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds
+      : [];
+    const baseDeleted = Array.isArray((base as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds)
+      ? (base as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds
+      : [];
+    const deletedIds = mergeDeletedTerritoryLogIds(patchDeleted, baseDeleted);
+    const authoritative = (patch as { territoryLogsAuthoritative?: boolean }).territoryLogsAuthoritative === true;
+    next.territoryLogs = mergeTerritoryLogsNeverShrink(base.territoryLogs, patch.territoryLogs, {
+      deletedIds,
+      patchAuthoritative: authoritative,
+      patchIsReset:
+        authoritative && Array.isArray(patch.territoryLogs) && patch.territoryLogs.length === 0,
     });
-    next.deletedTerritoryLogIds = mergeDeletedTerritoryLogIds(
-      Array.isArray((base as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds)
-        ? (base as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds
-        : [],
-      Array.isArray((patch as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds)
-        ? (patch as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds
-        : []
-    );
+    next.deletedTerritoryLogIds = mergeDeletedTerritoryLogIds(baseDeleted, patchDeleted);
     const patchHs = patch.highSocietySettings as { round?: unknown } | undefined;
     const baseHs = base.highSocietySettings as { round?: unknown } | undefined;
     const patchRound = Math.max(1, Math.floor(Number(patchHs?.round) || 1));

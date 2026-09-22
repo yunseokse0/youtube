@@ -59,7 +59,7 @@ import {
 import { ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
 import { isBundledSigPlaceholderItem } from "@/lib/sig-placeholder";
 import { normalizeRestroomCount } from "@/lib/restroom-utils";
-import { normalizeTerritoryLogs, mergeDeletedTerritoryLogIds, mergeTerritoryLogsFromPatch } from "@/lib/territory-utils";
+import { normalizeTerritoryLogs, mergeDeletedTerritoryLogIds, mergeTerritoryLogsFromPatch, mergeTerritoryLogsNeverShrink } from "@/lib/territory-utils";
 import { mergeGeneralTimerPreferEffective, snapshotTimerForPersist } from "@/lib/timer-utils";
 import { sanitizeOverlayEmbedMediaUrl } from "@/lib/gif-url";
 import {
@@ -2138,6 +2138,11 @@ export type SaveStateAsyncOptions = {
    * members/donors 가 0원으로 서버 후원·엑셀표를 덮지 않게 함.
    */
   highSocietySettingsOnly?: boolean;
+  /**
+   * 상류사회 기록부 정본 — 지금 화면 목록으로 서버 기록부를 교체한다.
+   * (메인 관리자 leftover 저장이 옛 3건으로 덮지 않게, 팝업 추가·삭제·초기화만 켠다)
+   */
+  territoryLogsAuthoritative?: boolean;
 };
 
 export type SaveStateAsyncResult = {
@@ -2423,16 +2428,26 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
       if (prevDel.length > 0 || nextDel.length > 0) {
         merged.deletedTerritoryLogIds = mergeDeletedTerritoryLogIds(prevDel, nextDel);
       }
-      /** 저장 큐 last-win 이 2건 POST 로 4건 기록부를 덮지 않게 union. 삭제는 tombstone */
-      if (Array.isArray(prev.territoryLogs) || Array.isArray(next.territoryLogs)) {
+      /** 저장 큐 — 짧은 목록이 긴 기록부를 덮지 않음. 정본 추가는 더 긴 쪽을 유지 */
+      if ((next as { territoryLogsAuthoritative?: boolean }).territoryLogsAuthoritative === true && Array.isArray(next.territoryLogs)) {
+        merged.territoryLogs = mergeTerritoryLogsNeverShrink(
+          Array.isArray(prev.territoryLogs) ? prev.territoryLogs : [],
+          next.territoryLogs,
+          {
+            deletedIds: mergeDeletedTerritoryLogIds(prevDel, nextDel),
+            patchAuthoritative: true,
+            patchIsReset: next.territoryLogs.length === 0,
+          }
+        );
+        merged.territoryLogsAuthoritative = true;
+      } else if (Array.isArray(prev.territoryLogs) || Array.isArray(next.territoryLogs)) {
         if (Array.isArray(next.territoryLogs)) {
-          merged.territoryLogs = mergeTerritoryLogsFromPatch(
+          merged.territoryLogs = mergeTerritoryLogsNeverShrink(
             Array.isArray(prev.territoryLogs) ? prev.territoryLogs : [],
             next.territoryLogs,
             {
-              baseUpdatedAt: Number(prev.updatedAt || 0),
-              patchUpdatedAt: Number(next.updatedAt || 0),
               deletedIds: mergeDeletedTerritoryLogIds(prevDel, nextDel),
+              patchIsReset: next.territoryLogs.length === 0 && Number(next.updatedAt || 0) >= Number(prev.updatedAt || 0),
             }
           );
         } else if (Array.isArray(prev.territoryLogs)) {
@@ -2744,9 +2759,14 @@ export function appStatePayloadForApi(
         updatedAt: next.updatedAt,
         highSocietySettings: next.highSocietySettings,
         ...(next.donationSyncMode ? { donationSyncMode: next.donationSyncMode } : {}),
-        /** 영토만 초기화 시 [] 전달 — 키 없으면 서버가 기존 기록부 유지 */
-        ...(Array.isArray(next.territoryLogs) ? { territoryLogs: next.territoryLogs } : {}),
-        ...(Array.isArray(next.deletedTerritoryLogIds) && next.deletedTerritoryLogIds.length > 0
+        /** 영토만 초기화 시 [] 전달 — 키 없으면 서버가 기존 기록부 유지.
+         * 기록부 정본(추가·삭제)일 때만 목록을 보낸다. leftover 저장이 옛 줄을 실어 덮지 않게. */
+        ...(options?.territoryLogsAuthoritative === true && Array.isArray(next.territoryLogs)
+          ? { territoryLogs: next.territoryLogs, territoryLogsAuthoritative: true as const }
+          : {}),
+        ...(options?.territoryLogsAuthoritative === true &&
+        Array.isArray(next.deletedTerritoryLogIds) &&
+        next.deletedTerritoryLogIds.length > 0
           ? { deletedTerritoryLogIds: next.deletedTerritoryLogIds }
           : {}),
       },

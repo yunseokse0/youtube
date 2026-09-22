@@ -11,6 +11,7 @@ import {
   mergeTerritoryLogsPreferFresher,
   resolveTerritoryLogPushDirForWrite,
   resolveTerritoryLogsResetAtForEditorMerge,
+  mergeTerritoryLogsNeverShrink,
 } from "@/lib/territory-utils";
 
 describe("territory-utils", () => {
@@ -247,5 +248,29 @@ describe("territory-utils", () => {
       remoteUpdatedAt: 5000,
     });
     expect(merged.map((l) => l.id).sort()).toEqual([a.id, b.id, c.id, d.id].sort());
+  });
+
+  it("neverShrink: growing 11 then stale 10 does not drop the last row", () => {
+    const rows = Array.from({ length: 11 }, (_, i) =>
+      createTerritoryLog("a", 1, (i + 1) * 5, { now: 1000 + i })
+    );
+    const grown = mergeTerritoryLogsNeverShrink(rows.slice(0, 10), rows, { patchAuthoritative: true });
+    expect(grown).toHaveLength(11);
+    const stale = mergeTerritoryLogsNeverShrink(rows, rows.slice(0, 10), { patchAuthoritative: true });
+    expect(stale).toHaveLength(11);
+    expect(stale.map((l) => l.id).sort()).toEqual(rows.map((l) => l.id).sort());
+  });
+
+  it("neverShrink: longer current book replaces older session rows", () => {
+    const oldSession = [
+      createTerritoryLog("old", 1, 180, { now: 1000 }),
+      createTerritoryLog("old", 1, 120, { now: 2000 }),
+      createTerritoryLog("old", 1, 25, { now: 3000 }),
+    ];
+    const current = Array.from({ length: 8 }, (_, i) =>
+      createTerritoryLog("a", 1, 10 + i, { now: 10_000 + i })
+    );
+    const merged = mergeTerritoryLogsNeverShrink(oldSession, current, { patchAuthoritative: true });
+    expect(merged.map((l) => l.id).sort()).toEqual(current.map((l) => l.id).sort());
   });
 });
