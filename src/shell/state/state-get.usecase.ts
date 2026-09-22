@@ -394,10 +394,27 @@ async function handleStateGetInner(req: Request): Promise<Response> {
           const dailyLog = await loadDailyLogForUserId(userId, {
             recentDays: DAILY_LOG_SHARD_DAYS_DEFAULT,
           });
-          const fromLog = enrichAppStateFromDailyLogWhenDonorsMissing(
+          // ✅ 2026-09-22 v16 Hotfix: 정산 리셋 후 구 로그에서 후원 되살리기 차단
+          //   - enrich 하기 전에 settlementResetAt 이 있으면 → dailyLog 에서도 리셋보다 오래된 행은 버림
+          //   - 리셋 직후는 빈 후원 상태가 정상이므로 enrich 결과를 무조건 믿지 않음
+          const resetAt = Number(mergedForResponse.settlementResetAt || 0);
+          let fromLog = enrichAppStateFromDailyLogWhenDonorsMissing(
             mergedForResponse,
             dailyLog
           );
+          const logDonorsBefore = normalizeDonorsArray(fromLog.donors);
+          if (resetAt > 0 && logDonorsBefore.length > 0) {
+            const filtered = filterDonorsAfterSettlementReset(logDonorsBefore, resetAt);
+            if (filtered.length !== logDonorsBefore.length) {
+              fromLog = { ...fromLog, donors: filtered };
+              logger.warn("정산 리셋 보호 적용: 일일 로그 donors 구 행 제거", {
+                userId,
+                settlementResetAt: resetAt,
+                beforeN: logDonorsBefore.length,
+                afterN: filtered.length,
+              });
+            }
+          }
           if (normalizeDonorsArray(fromLog.donors).length > 0) {
             mergedForResponse = syncMemberTotalsFromDonors(fromLog);
             setServerMemoryAppState(userId, mergedForResponse);
@@ -413,23 +430,24 @@ async function handleStateGetInner(req: Request): Promise<Response> {
       }
     }
 
-    if (normalizeDonorsArray(mergedForResponse.donors).length > 0) {
-      mergedForResponse = syncMemberTotalsFromDonors(mergedForResponse);
-      setServerMemoryAppState(userId, mergedForResponse);
-    }
-
+    // ✅ 2026-09-22 v16 Hotfix: 순서 반전!
+    //   기존: 1) syncMemberTotalsFromDonors (구 후원 총액 멤버에 심음) → 2) filter donors 리셋 (donors만 날림) 🔥 버그!
+    //   신규: 1) 먼저 settlementResetAt 보다 오래된 donors 싹 날림 → 2) 그 다음 syncMemberTotalsFromDonors (최종 0원으로 멤버 업데이트) ✅ 정상!
     {
       const resetAt = Number(mergedForResponse.settlementResetAt || 0);
       if (resetAt > 0) {
         const before = normalizeDonorsArray(mergedForResponse.donors);
         const after = filterDonorsAfterSettlementReset(before, resetAt);
-        if (after.length !== before.length) {
+        if (after.length !== before.length || normalizeDonorsArray(mergedForResponse.donors).length > 0) {
           mergedForResponse = syncMemberTotalsFromDonors({
             ...mergedForResponse,
             donors: after,
           });
           setServerMemoryAppState(userId, mergedForResponse);
         }
+      } else if (normalizeDonorsArray(mergedForResponse.donors).length > 0) {
+        mergedForResponse = syncMemberTotalsFromDonors(mergedForResponse);
+        setServerMemoryAppState(userId, mergedForResponse);
       }
     }
 

@@ -16738,14 +16738,14 @@ function AdminPageInner() {
               <div
                 key="tab-donor"
                 data-admin-tab="donor"
-                className="ui-tab-fade-in"
+                className="ui-tab-fade-in w-full !max-w-none !px-0 !mx-0 !min-w-0"
                 style={{ display: activeNav === "donor" ? "" : "none" }}
               >
             <>
             <AdminCollapsibleSection
               id="donor-management"
               title="계정 연동 및 후원 수동입력"
-              className={panelCardClass}
+              className={`${panelCardClass} w-full !max-w-none !px-0 !mx-0`}
             >
               <div className="flex flex-wrap items-center gap-2 mb-3">
                 <span className="text-xs text-neutral-400">금액 표시</span>
@@ -18153,7 +18153,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                 id="donor-list-content"
                 ref={donorListScrollRef}
                 style={{ contain: "strict", willChange: "transform" }}
-                className="w-full !max-w-full mx-0 px-0.5 border border-white/10 rounded isolate"
+                className="w-full !max-w-full mx-0 px-0 border border-white/10 rounded isolate overflow-hidden !ml-0 !mr-0"
                 data-admin-section-content="donor-list"
               >
                 <table className={`w-full ${donorListDenseMode ? "text-[12px]" : "text-sm"}`} style={{ tableLayout: "auto", borderCollapse: "separate", width: "100%" }}>
