@@ -10,7 +10,12 @@ import {
   mergeBroadcastSessionPreservingDonations,
   saveStateAsync,
 } from "@/lib/state";
-import { mergeDeletedTerritoryLogIds, mergeTerritoryLogsPreferFresher } from "@/lib/territory-utils";
+import {
+  mergeDeletedTerritoryLogIds,
+  mergeTerritoryLogsPreferFresher,
+  normalizeTerritoryLogs,
+  resolveTerritoryLogsResetAtForEditorMerge,
+} from "@/lib/territory-utils";
 import { mergeHighSocietySettingsPreferBaseline } from "@/lib/high-society";
 import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
 import {
@@ -96,6 +101,8 @@ export function useAdminPopupBroadcastState() {
   const [state, setState] = useState<AppState | null>(null);
   const stateRef = useRef<AppState | null>(null);
   const reloadBusyRef = useRef(false);
+  const persistInFlightRef = useRef(0);
+  const persistGenRef = useRef(0);
 
   /** ✅ 2026-09-22 v17.8 Revert: 팝업 창 state ID (finalent 폴백 절대 금지!
    *  1순위: URL ?u= 파라미터 (명시적 전달)
@@ -166,14 +173,24 @@ export function useAdminPopupBroadcastState() {
 
   const reload = useCallback(async () => {
     if (reloadBusyRef.current) return;
+    if (persistInFlightRef.current > 0) return;
     reloadBusyRef.current = true;
+    const gen = persistGenRef.current;
     try {
       const remote = await loadStateFromApi(scopedUserId, { forceFull: true });
+      if (gen !== persistGenRef.current || persistInFlightRef.current > 0) return;
       if (remote) {
         const local = stateRef.current;
         const localResetAt = Number(local?.highSocietySettings?.territoryLogsResetAt || 0);
         const remoteResetAt = Number(remote.highSocietySettings?.territoryLogsResetAt || 0);
-        const resetAt = Math.max(localResetAt, remoteResetAt);
+        const remoteLogsEmpty =
+          Array.isArray(remote.territoryLogs) &&
+          normalizeTerritoryLogs(remote.territoryLogs).length === 0;
+        const resetAt = resolveTerritoryLogsResetAtForEditorMerge({
+          localResetAt,
+          remoteResetAt,
+          remoteLogsEmpty,
+        });
         const mergedLogs = mergeTerritoryLogsPreferFresher(local?.territoryLogs, remote.territoryLogs, {
           localUpdatedAt: Number(local?.updatedAt || 0),
           remoteUpdatedAt: Number(remote.updatedAt || 0),
@@ -237,7 +254,11 @@ export function useAdminPopupBroadcastState() {
 
   useSSEConnection((d: unknown) => {
     const o = d as { type?: string };
-    if (o?.type === "state_updated") void reload();
+    /** 저장 중 SSE GET 은 아직 안 올라간 짧은 기록부로 화면을 되돌림 — 이 창 기록부가 정본 */
+    if (o?.type === "state_updated") {
+      if (persistInFlightRef.current > 0) return;
+      void reload();
+    }
   });
 
   const persistChainRef = useRef(Promise.resolve(true));
@@ -248,6 +269,9 @@ export function useAdminPopupBroadcastState() {
       opts?: Parameters<typeof saveStateAsync>[2]
     ): Promise<boolean> => {
       const run = async (): Promise<boolean> => {
+        persistGenRef.current += 1;
+        persistInFlightRef.current += 1;
+        try {
         const hsOnly = Boolean(opts?.highSocietySettingsOnly || opts?.omitDonationFields);
         const existingSession = readSessionBroadcastState(scopedUserId) ?? loadState(scopedUserId);
         const stamped = {
@@ -268,6 +292,9 @@ export function useAdminPopupBroadcastState() {
          * 로컬 stamped 가 정본. 오버레이는 SSE state_updated 로 따라옴.
          */
         return result.ok;
+        } finally {
+          persistInFlightRef.current = Math.max(0, persistInFlightRef.current - 1);
+        }
       };
       const queued = persistChainRef.current.then(run, run);
       persistChainRef.current = queued.then(

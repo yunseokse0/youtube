@@ -104,7 +104,7 @@ import {
 } from "@/lib/state-api-pick";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { mergeHighSocietySettingsPreferBaseline, isMeaningfulHighSocietySettings } from "@/lib/high-society";
-import { normalizeTerritoryLogs, mergeTerritoryLogsPreferFresher, filterTerritoryLogsAfterReset, mergeDeletedTerritoryLogIds } from "@/lib/territory-utils";
+import { normalizeTerritoryLogs, mergeTerritoryLogsPreferFresher, filterTerritoryLogsAfterReset, mergeDeletedTerritoryLogIds, resolveTerritoryLogsResetAtForEditorMerge } from "@/lib/territory-utils";
 
 /** 관리자 iframe — 서버 정본 모드에서는 LS/세션 힌트로 서버 스냅샷을 덮지 않음 */
 function mergeAdminPreviewLocalHintOntoRemote(
@@ -175,10 +175,11 @@ function mergeAdminPreviewLocalHintOntoRemote(
       {
         localUpdatedAt: localAt,
         remoteUpdatedAt: remoteAt,
-        territoryLogsResetAt: Math.max(
-          Number(local.highSocietySettings?.territoryLogsResetAt || 0),
-          Number(remote.highSocietySettings?.territoryLogsResetAt || 0)
-        ),
+        territoryLogsResetAt: resolveTerritoryLogsResetAtForEditorMerge({
+          localResetAt: Number(local.highSocietySettings?.territoryLogsResetAt || 0),
+          remoteResetAt: Number(remote.highSocietySettings?.territoryLogsResetAt || 0),
+          remoteLogsEmpty: remoteTerritoryLogs.length === 0,
+        }),
         deletedIds: mergeDeletedTerritoryLogIds(local.deletedTerritoryLogIds, remote.deletedTerritoryLogIds),
       }
     );
@@ -420,25 +421,36 @@ function applySyncedState(
     refs.lastGoodRef.current?.deletedTerritoryLogIds
   );
   const incomingLogsResetAt = Number(hsIncoming?.territoryLogsResetAt || 0);
+  const lastGoodLogs = normalizeTerritoryLogs(refs.lastGoodRef.current?.territoryLogs);
   const mergedTerritoryLogs =
     pick === STATE_PICK_OVERLAY || pick === STATE_PICK_OVERLAY_DONORS
       ? Array.isArray(dataForApply.territoryLogs)
         ? mergeTerritoryLogsPreferFresher(
-            normalizeTerritoryLogs(dataForApply.territoryLogs),
+            lastGoodLogs,
             normalizeTerritoryLogs(dataForApply.territoryLogs),
             {
+              localUpdatedAt: hsBaselineUpdatedAt,
+              remoteUpdatedAt: hsIncomingUpdatedAt,
               territoryLogsResetAt: incomingLogsResetAt,
               deletedIds: overlayDeletedIds,
             }
           )
-        : normalizeTerritoryLogs(refs.lastGoodRef.current?.territoryLogs)
+        : lastGoodLogs
       : dataForApply.territoryLogs;
   const prunedTerritoryLogs = Array.isArray(dataForApply.territoryLogs)
     ? filterTerritoryLogsAfterReset(mergedTerritoryLogs, incomingLogsResetAt)
     : mergedTerritoryLogs;
+  const overlayHsSettings =
+    pick === STATE_PICK_OVERLAY || pick === STATE_PICK_OVERLAY_DONORS
+      ? {
+          ...(mergedHighSocietySettings || {}),
+          /** last-good 의 더 큰 resetAt 으로 앞 기록을 잘라 OBS 게이지가 어긋나지 않게 */
+          territoryLogsResetAt: incomingLogsResetAt,
+        }
+      : mergedHighSocietySettings;
   const next = {
     ...dataForApply,
-    highSocietySettings: mergedHighSocietySettings,
+    highSocietySettings: overlayHsSettings,
     territoryLogs: prunedTerritoryLogs,
     generalTimer: mergedTimer,
     matchTimer: mergedMatchTimer,

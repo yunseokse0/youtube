@@ -475,6 +475,25 @@ describe("member sync helpers", () => {
     expect(merged.overlaySettings.a).toBe(2);
   });
 
+  it("mergeServerSaveApiBodies unions territory logs so a later 2-row body does not drop earlier rows", () => {
+    const a = { id: "tl_a", memberId: "ta", amount: 80, delta: 1 as const, at: 1000 };
+    const b = { id: "tl_b", memberId: "ta", amount: 40, delta: 1 as const, at: 2000 };
+    const c = { id: "tl_c", memberId: "tb", amount: 50, delta: 1 as const, at: 3000 };
+    const d = { id: "tl_d", memberId: "ta", amount: 10, delta: 1 as const, at: 4000 };
+    const prev = JSON.stringify({
+      updatedAt: 4000,
+      territoryLogs: [a, b, c, d],
+    });
+    const next = JSON.stringify({
+      updatedAt: 5000,
+      territoryLogs: [c, d],
+    });
+    const merged = JSON.parse(mergeServerSaveApiBodies(prev, next)) as {
+      territoryLogs: Array<{ id: string }>;
+    };
+    expect(merged.territoryLogs.map((l) => l.id).sort()).toEqual(["tl_a", "tl_b", "tl_c", "tl_d"]);
+  });
+
   it("appStatePayloadForApi highSocietySettingsOnly sends territoryLogs without donors/members", () => {
     const state = {
       ...defaultState(),

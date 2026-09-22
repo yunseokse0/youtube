@@ -179,7 +179,7 @@ import {
   RESTROOM_UNLIMITED_SYMBOL,
   restroomValueAfterUndoLog,
 } from "@/lib/restroom-utils";
-import { createTerritoryLog, filterTerritoryLogsAfterReset, formatTerritoryLogPushDirLabel, mergeDeletedTerritoryLogIds, mergeTerritoryLogsPreferFresher, normalizeTerritoryLogs, resolveTerritoryLogPushDirForWrite } from "@/lib/territory-utils";
+import { createTerritoryLog, filterTerritoryLogsAfterReset, formatTerritoryLogPushDirLabel, mergeDeletedTerritoryLogIds, mergeTerritoryLogsPreferFresher, normalizeTerritoryLogs, resolveTerritoryLogPushDirForWrite, resolveTerritoryLogsResetAtForEditorMerge } from "@/lib/territory-utils";
 import { isNearDuplicateTerritoryLog } from "@/lib/territory-log-collapse";
 import { useSSEConnection } from "@/lib/sse-client";
 import { createStateUpdatedScheduler, DONOR_STATE_UPDATED_DEBOUNCE_MS, DONOR_STATE_UPDATED_MAX_WAIT_MS } from "@/lib/overlay-pull-policy";
@@ -1955,7 +1955,17 @@ function AdminPageInner() {
         const queued = persistHsLastRef.current;
         persistHsLastRef.current = null;
         if (!queued) return;
-        finishHsOrGenericSave(queued.s, queued.opts);
+        const live = stateRef.current;
+        const payload = live
+          ? {
+              ...queued.s,
+              territoryLogs: live.territoryLogs,
+              deletedTerritoryLogIds: live.deletedTerritoryLogIds,
+              highSocietySettings: live.highSocietySettings,
+              updatedAt: Date.now(),
+            }
+          : queued.s;
+        finishHsOrGenericSave(payload, queued.opts);
       }, 120);
       return;
     }
@@ -3748,10 +3758,11 @@ function AdminPageInner() {
     }
     const localTerritoryLogs = normalizeTerritoryLogs(local.territoryLogs);
     const mergedTerritoryLogs = normalizeTerritoryLogs(merged.territoryLogs);
-    const territoryLogsResetAt = Math.max(
-      Number(local.highSocietySettings?.territoryLogsResetAt || 0),
-      Number(merged.highSocietySettings?.territoryLogsResetAt || 0)
-    );
+    const territoryLogsResetAt = resolveTerritoryLogsResetAtForEditorMerge({
+      localResetAt: Number(local.highSocietySettings?.territoryLogsResetAt || 0),
+      remoteResetAt: Number(merged.highSocietySettings?.territoryLogsResetAt || 0),
+      remoteLogsEmpty: mergedTerritoryLogs.length === 0,
+    });
     const territoryLogsUnion = mergeTerritoryLogsPreferFresher(
       localTerritoryLogs,
       mergedTerritoryLogs,

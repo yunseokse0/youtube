@@ -16,11 +16,22 @@ const MANUAL_SIG_BROADCAST_STATE_KEY = "sigSalesManualBroadcastV1";
 export const STATE_PICK_DONOR_RANKINGS = "donor-rankings";
 export const STATE_PICK_OBS_TEXT = "obs-text";
 
+function overlayTerritoryLogsRevision(state: AppState): number {
+  const logs = Array.isArray(state.territoryLogs) ? state.territoryLogs : [];
+  let rev = Number(state.highSocietySettings?.territoryLogsResetAt || 0);
+  rev = Math.max(rev, logs.length);
+  for (const log of logs) {
+    rev = Math.max(rev, Number(log.at || 0));
+  }
+  return rev;
+}
+
 function overlayPickRevision(state: AppState): number {
   return Math.max(
     Number(state.updatedAt || 0),
     Number(state.membersRosterUpdatedAt || 0),
-    readDonorRankingsRevision(state)
+    readDonorRankingsRevision(state),
+    overlayTerritoryLogsRevision(state)
   );
 }
 

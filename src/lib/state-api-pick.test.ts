@@ -162,4 +162,17 @@ describe("state-api-pick", () => {
     expect(revisionForStatePick(state, STATE_PICK_DONOR_RANKINGS)).toBe(9_000);
     expect(revisionForStatePick(state, STATE_PICK_OVERLAY)).toBe(9_000);
   });
+
+  it("overlay pick revision follows territory log time so 304 does not skip a log-only update", () => {
+    const state = {
+      ...defaultState(),
+      updatedAt: 5_000,
+      donorRankingsUpdatedAt: 5_000,
+      membersRosterUpdatedAt: 0,
+      territoryLogs: [
+        { id: "tl1", memberId: "m1", amount: 10, delta: 1 as const, at: 12_000, note: "" },
+      ],
+    };
+    expect(revisionForStatePick(state, STATE_PICK_OVERLAY)).toBe(12_000);
+  });
 });

@@ -116,11 +116,15 @@ export function mergeTerritoryLogsFromPatch(
   }
   const patchIds = new Set(patch.map((l) => String(l.id)));
   const baseIds = new Set(base.map((l) => String(l.id)));
-  const isSingleDeletion =
+  const missingFromPatch = base.filter((l) => !patchIds.has(String(l.id)));
+  const deletedSet = new Set((deletedIds || []).map((id) => String(id || "").trim()).filter(Boolean));
+  const isTombstonedSingleDeletion =
+    patchIsNewer &&
     patch.length === base.length - 1 &&
-    patch.length < base.length &&
-    [...patchIds].every((id) => baseIds.has(id));
-  if (isSingleDeletion && patchIsNewer) {
+    missingFromPatch.length === 1 &&
+    [...patchIds].every((id) => baseIds.has(id)) &&
+    deletedSet.has(String(missingFromPatch[0]!.id));
+  if (isTombstonedSingleDeletion) {
     return dropDeletedTerritoryLogs(patch, deletedIds);
   }
   return dropDeletedTerritoryLogs(
@@ -129,6 +133,22 @@ export function mergeTerritoryLogsFromPatch(
     }),
     deletedIds
   );
+}
+
+/**
+ * 기록부 병합 시 resetAt.
+ * 화면(로컬)에 있는 줄이 정본이다. 원격 resetAt 이 더 크다고 앞 줄을 자르지 않는다.
+ * 원격이 빈 목록 + 더 최신 reset 일 때만 초기화로 본다.
+ */
+export function resolveTerritoryLogsResetAtForEditorMerge(opts: {
+  localResetAt?: number;
+  remoteResetAt?: number;
+  remoteLogsEmpty?: boolean;
+}): number {
+  const localResetAt = Number(opts.localResetAt || 0);
+  const remoteResetAt = Number(opts.remoteResetAt || 0);
+  if (opts.remoteLogsEmpty && remoteResetAt > localResetAt) return remoteResetAt;
+  return localResetAt;
 }
 
 /** 「영토만 초기화」 시각 이전 기록은 계산·표시에서 제외 */
@@ -170,19 +190,8 @@ export function mergeTerritoryLogsPreferFresher(
   } else if (rem.length === 0 && remoteAt > 0) {
     const kept = keepOnOrAfter(loc, remoteAt);
     result = remoteAt >= localAt || kept.length === 0 ? rem : kept;
-  } else if (loc.length === rem.length - 1 && localAt >= remoteAt) {
-    const remIds = new Set(rem.map((l) => String(l.id)));
-    const locIds = new Set(loc.map((l) => String(l.id)));
-    result = [...locIds].every((id) => remIds.has(id))
-      ? loc
-      : unionTerritoryLogsById(rem, loc);
-  } else if (rem.length === loc.length - 1 && remoteAt >= localAt) {
-    const locIds = new Set(loc.map((l) => String(l.id)));
-    const remIds = new Set(rem.map((l) => String(l.id)));
-    result = [...remIds].every((id) => locIds.has(id))
-      ? rem
-      : unionTerritoryLogsById(rem, loc);
   } else {
+    /** 한 줄 삭제는 deletedIds tombstone 으로만. 길이 n-1 만으로 지우면 늦은 2건 POST 가 앞 기록을 지움 */
     result = unionTerritoryLogsById(rem, loc);
   }
   result = dropDeletedTerritoryLogs(result, opts?.deletedIds);

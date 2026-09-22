@@ -59,7 +59,7 @@ import {
 import { ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
 import { isBundledSigPlaceholderItem } from "@/lib/sig-placeholder";
 import { normalizeRestroomCount } from "@/lib/restroom-utils";
-import { normalizeTerritoryLogs, mergeDeletedTerritoryLogIds } from "@/lib/territory-utils";
+import { normalizeTerritoryLogs, mergeDeletedTerritoryLogIds, mergeTerritoryLogsFromPatch } from "@/lib/territory-utils";
 import { mergeGeneralTimerPreferEffective, snapshotTimerForPersist } from "@/lib/timer-utils";
 import { sanitizeOverlayEmbedMediaUrl } from "@/lib/gif-url";
 import {
@@ -2422,6 +2422,22 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
         : [];
       if (prevDel.length > 0 || nextDel.length > 0) {
         merged.deletedTerritoryLogIds = mergeDeletedTerritoryLogIds(prevDel, nextDel);
+      }
+      /** 저장 큐 last-win 이 2건 POST 로 4건 기록부를 덮지 않게 union. 삭제는 tombstone */
+      if (Array.isArray(prev.territoryLogs) || Array.isArray(next.territoryLogs)) {
+        if (Array.isArray(next.territoryLogs)) {
+          merged.territoryLogs = mergeTerritoryLogsFromPatch(
+            Array.isArray(prev.territoryLogs) ? prev.territoryLogs : [],
+            next.territoryLogs,
+            {
+              baseUpdatedAt: Number(prev.updatedAt || 0),
+              patchUpdatedAt: Number(next.updatedAt || 0),
+              deletedIds: mergeDeletedTerritoryLogIds(prevDel, nextDel),
+            }
+          );
+        } else if (Array.isArray(prev.territoryLogs)) {
+          merged.territoryLogs = prev.territoryLogs;
+        }
       }
     }
     /** 시그 전체 삭제 플래그 — 큐 병합 시 유실되지 않게 */

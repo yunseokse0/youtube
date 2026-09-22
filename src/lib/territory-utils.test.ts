@@ -10,6 +10,7 @@ import {
   mergeTerritoryLogsFromPatch,
   mergeTerritoryLogsPreferFresher,
   resolveTerritoryLogPushDirForWrite,
+  resolveTerritoryLogsResetAtForEditorMerge,
 } from "@/lib/territory-utils";
 
 describe("territory-utils", () => {
@@ -104,10 +105,10 @@ describe("territory-utils", () => {
     expect(b?.widthCm).toBeGreaterThan(100);
   });
 
-  it("mergeTerritoryLogsFromPatch applies subset deletion", () => {
+  it("mergeTerritoryLogsFromPatch applies subset deletion only with tombstone", () => {
     const a = createTerritoryLog("a", 1, 10);
     const b = createTerritoryLog("b", 1, 20);
-    const merged = mergeTerritoryLogsFromPatch([a, b], [a]);
+    const merged = mergeTerritoryLogsFromPatch([a, b], [a], { deletedIds: [b.id] });
     expect(merged).toHaveLength(1);
     expect(merged[0]?.id).toBe(a.id);
   });
@@ -123,13 +124,25 @@ describe("territory-utils", () => {
     expect(merged.map((l) => l.id).sort()).toEqual([a.id, b.id, c.id].sort());
   });
 
-  it("newer subset patch still deletes a log", () => {
+  it("newer shorter patch without tombstone does not drop the extra log", () => {
     const a = createTerritoryLog("a", 1, 20, { now: 1000 });
     const b = createTerritoryLog("b", 1, 20, { now: 2000 });
     const c = createTerritoryLog("c", 1, 20, { now: 3000 });
     const merged = mergeTerritoryLogsFromPatch([a, b, c], [a, b], {
       baseUpdatedAt: 3000,
       patchUpdatedAt: 4000,
+    });
+    expect(merged.map((l) => l.id).sort()).toEqual([a.id, b.id, c.id].sort());
+  });
+
+  it("newer subset patch with tombstone deletes that log", () => {
+    const a = createTerritoryLog("a", 1, 20, { now: 1000 });
+    const b = createTerritoryLog("b", 1, 20, { now: 2000 });
+    const c = createTerritoryLog("c", 1, 20, { now: 3000 });
+    const merged = mergeTerritoryLogsFromPatch([a, b, c], [a, b], {
+      baseUpdatedAt: 3000,
+      patchUpdatedAt: 4000,
+      deletedIds: [c.id],
     });
     expect(merged).toHaveLength(2);
     expect(merged.map((l) => l.id).sort()).toEqual([a.id, b.id].sort());
@@ -163,6 +176,23 @@ describe("territory-utils", () => {
       remoteUpdatedAt: 40_000,
     });
     expect(merged).toEqual([]);
+  });
+
+  it("editor merge resetAt does not use a higher remote stamp to drop local rows", () => {
+    expect(
+      resolveTerritoryLogsResetAtForEditorMerge({
+        localResetAt: 10,
+        remoteResetAt: 50_000,
+        remoteLogsEmpty: false,
+      })
+    ).toBe(10);
+    expect(
+      resolveTerritoryLogsResetAtForEditorMerge({
+        localResetAt: 10,
+        remoteResetAt: 50_000,
+        remoteLogsEmpty: true,
+      })
+    ).toBe(50_000);
   });
 
   it("filterTerritoryLogsAfterReset keeps only post-reset logs", () => {
@@ -205,5 +235,17 @@ describe("territory-utils", () => {
       remoteUpdatedAt: 3000,
     });
     expect(merged.map((l) => l.id).sort()).toEqual([a.id, b.id, c.id].sort());
+  });
+
+  it("preferFresher keeps older rows when a newer 2-row snapshot arrives without tombstone", () => {
+    const a = createTerritoryLog("a", 1, 80, { now: 1000 });
+    const b = createTerritoryLog("a", 1, 40, { now: 2000 });
+    const c = createTerritoryLog("b", 1, 50, { now: 3000 });
+    const d = createTerritoryLog("a", 1, 10, { now: 4000 });
+    const merged = mergeTerritoryLogsPreferFresher([a, b, c, d], [c, d], {
+      localUpdatedAt: 4000,
+      remoteUpdatedAt: 5000,
+    });
+    expect(merged.map((l) => l.id).sort()).toEqual([a.id, b.id, c.id, d.id].sort());
   });
 });
