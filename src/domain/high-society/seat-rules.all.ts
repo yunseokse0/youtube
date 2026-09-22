@@ -554,6 +554,13 @@ export function mergeHighSocietySettingsPreferBaseline(
   if (!base || !isMeaningfulHighSocietySettings(base)) return inc;
   if (shouldBlockHighSocietyRegression(base, inc)) return base;
 
+  const incRound = Math.max(1, Math.floor(Number(inc.round) || 1));
+  const baseRound = Math.max(1, Math.floor(Number(base.round) || 1));
+  const incResetAt = Number(inc.territoryLogsResetAt || 0);
+  const baseResetAt = Number(base.territoryLogsResetAt || 0);
+  /** 영토만 초기화 — 구 스냅샷·기록부를 baseline 에서 되살리지 않음 */
+  if (incRound > baseRound || incResetAt > baseResetAt) return inc;
+
   const patch: Partial<HighSocietySettings> = { ...inc };
   let hasPatch = false;
 
@@ -652,6 +659,9 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
   const cutoffRaw = Number(v.territoryCutoffAt);
   const territoryCutoffAt =
     Number.isFinite(cutoffRaw) && cutoffRaw > 0 ? Math.floor(cutoffRaw) : undefined;
+  const logsResetRaw = Number(v.territoryLogsResetAt);
+  const territoryLogsResetAt =
+    Number.isFinite(logsResetRaw) && logsResetRaw > 0 ? Math.floor(logsResetRaw) : undefined;
   const reopenRaw = Number(v.territoryReopenAt);
   const territoryReopenAt =
     Number.isFinite(reopenRaw) && reopenRaw > 0 ? Math.floor(reopenRaw) : undefined;
@@ -712,6 +722,7 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     fx,
     donationLinks: donationLinks || {},
     ...(territoryCutoffAt !== undefined ? { territoryCutoffAt } : {}),
+    ...(territoryLogsResetAt !== undefined ? { territoryLogsResetAt } : {}),
     ...(territoryReopenAt !== undefined ? { territoryReopenAt } : {}),
     ...(territoryPaused ? { territoryPaused: true } : {}),
     ...(territoryPaused && territoryPausedAt !== undefined ? { territoryPausedAt } : {}),
@@ -884,6 +895,7 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
         memberWidthCm: undefined,
         memberWidthDonationSnapshot: undefined,
         memberTerritoryExpand: undefined,
+        territoryLogsResetAt: now,
       };
     }
     if (turningOff) {
@@ -1767,7 +1779,10 @@ export function buildHighSocietyFieldFromAppState(
     players: equalPlayers,
     fieldCm: effectiveFieldCm,
   });
-  const territoryLogs = (state.territoryLogs || []) as TerritoryLog[];
+  const resetAt = Number(settingsForField.territoryLogsResetAt || 0);
+  const territoryLogs = ((state.territoryLogs || []) as TerritoryLog[]).filter((log) =>
+    resetAt > 0 ? Number(log.at || 0) >= resetAt : true
+  );
   if (territoryLogs.length > 0) {
     const fieldResolved = applyTerritoryLogDirectTransfers(
       equalField,

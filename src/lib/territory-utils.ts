@@ -72,10 +72,21 @@ export function mergeTerritoryLogsFromPatch(
   const patchAt = Number(opts?.patchUpdatedAt || 0);
   const baseAt = Number(opts?.baseUpdatedAt || 0);
   const patchIsNewer = patchAt <= 0 || baseAt <= 0 || patchAt >= baseAt;
-  /** 영토만 초기화 — 명시적 빈 목록. 오래된 [] POST 는 최신 기록을 지우지 않음. */
+  /** 영토만 초기화 — 명시적 빈 목록. 오래된 [] POST 는 최신(리셋 이후) 기록을 지우지 않음. */
   if (Array.isArray(patchLogs) && patch.length === 0) {
     if (patchIsNewer) return [];
+    if (patchAt > 0 && base.every((l) => Number(l.at || 0) < patchAt)) return [];
     return base;
+  }
+  /** 리셋으로 비운 뒤 늦게 도착한 옛 기록 POST 는 타임스탬프가 더 커도 되살리지 않음 */
+  if (
+    base.length === 0 &&
+    Array.isArray(baseLogs) &&
+    baseAt > 0 &&
+    patch.length > 0 &&
+    patch.every((l) => Number(l.at || 0) + 2_000 < baseAt)
+  ) {
+    return [];
   }
   const patchIds = new Set(patch.map((l) => String(l.id)));
   const baseIds = new Set(base.map((l) => String(l.id)));
@@ -87,27 +98,56 @@ export function mergeTerritoryLogsFromPatch(
   });
 }
 
+/** 「영토만 초기화」 시각 이전 기록은 계산·표시에서 제외 */
+export function filterTerritoryLogsAfterReset(
+  logs: TerritoryLog[] | undefined,
+  resetAt?: number
+): TerritoryLog[] {
+  const all = normalizeTerritoryLogs(logs);
+  const cutoff = Number(resetAt || 0);
+  if (!(cutoff > 0)) return all;
+  return all.filter((l) => Number(l.at || 0) >= cutoff);
+}
+
 /** 로컬·원격 영토 기록부 — 삭제(부분집합)는 더 최신 쪽 정본, 아니면 id union */
 export function mergeTerritoryLogsPreferFresher(
   local: TerritoryLog[] | undefined,
   remote: TerritoryLog[] | undefined,
-  opts?: { localUpdatedAt?: number; remoteUpdatedAt?: number }
+  opts?: { localUpdatedAt?: number; remoteUpdatedAt?: number; territoryLogsResetAt?: number }
 ): TerritoryLog[] {
   const loc = normalizeTerritoryLogs(local);
   const rem = normalizeTerritoryLogs(remote);
   const localAt = Number(opts?.localUpdatedAt || 0);
   const remoteAt = Number(opts?.remoteUpdatedAt || 0);
-  if (loc.length < rem.length && localAt >= remoteAt) {
+  const keepOnOrAfter = (logs: TerritoryLog[], cutoff: number) => {
+    const t = Number(cutoff || 0);
+    if (!(t > 0)) return logs;
+    return logs.filter((l) => Number(l.at || 0) >= t);
+  };
+  let result: TerritoryLog[];
+  /** 영토만 초기화 [] — 상대 쪽 기록이 모두 리셋 시각 이전이면 되살리지 않음 */
+  if (loc.length === 0 && localAt > 0) {
+    const kept = keepOnOrAfter(rem, localAt);
+    result = localAt >= remoteAt || kept.length === 0 ? loc : kept;
+  } else if (rem.length === 0 && remoteAt > 0) {
+    const kept = keepOnOrAfter(loc, remoteAt);
+    result = remoteAt >= localAt || kept.length === 0 ? rem : kept;
+  } else if (loc.length < rem.length && localAt >= remoteAt) {
     const remIds = new Set(rem.map((l) => String(l.id)));
     const locIds = new Set(loc.map((l) => String(l.id)));
-    if ([...locIds].every((id) => remIds.has(id))) return loc;
-  }
-  if (rem.length < loc.length && remoteAt >= localAt) {
+    result = [...locIds].every((id) => remIds.has(id))
+      ? loc
+      : unionTerritoryLogsById(rem, loc);
+  } else if (rem.length < loc.length && remoteAt >= localAt) {
     const locIds = new Set(loc.map((l) => String(l.id)));
     const remIds = new Set(rem.map((l) => String(l.id)));
-    if ([...remIds].every((id) => locIds.has(id))) return rem;
+    result = [...remIds].every((id) => locIds.has(id))
+      ? rem
+      : unionTerritoryLogsById(rem, loc);
+  } else {
+    result = unionTerritoryLogsById(rem, loc);
   }
-  return unionTerritoryLogsById(rem, loc);
+  return filterTerritoryLogsAfterReset(result, opts?.territoryLogsResetAt);
 }
 
 export function createTerritoryLog(

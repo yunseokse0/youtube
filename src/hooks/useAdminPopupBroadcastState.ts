@@ -10,6 +10,8 @@ import {
   mergeBroadcastSessionPreservingDonations,
   saveStateAsync,
 } from "@/lib/state";
+import { filterTerritoryLogsAfterReset, mergeTerritoryLogsPreferFresher } from "@/lib/territory-utils";
+import { mergeHighSocietySettingsPreferBaseline } from "@/lib/high-society";
 import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
 import {
   readSessionBroadcastState,
@@ -168,8 +170,25 @@ export function useAdminPopupBroadcastState() {
     try {
       const remote = await loadStateFromApi(scopedUserId, { forceFull: true });
       if (remote) {
-        setState(remote);
-        writeSessionBroadcastState(remote, scopedUserId);
+        const local = stateRef.current;
+        const localResetAt = Number(local?.highSocietySettings?.territoryLogsResetAt || 0);
+        const remoteResetAt = Number(remote.highSocietySettings?.territoryLogsResetAt || 0);
+        const resetAt = Math.max(localResetAt, remoteResetAt);
+        const mergedLogs = mergeTerritoryLogsPreferFresher(local?.territoryLogs, remote.territoryLogs, {
+          localUpdatedAt: Number(local?.updatedAt || 0),
+          remoteUpdatedAt: Number(remote.updatedAt || 0),
+          territoryLogsResetAt: resetAt,
+        });
+        const next = {
+          ...remote,
+          highSocietySettings:
+            localResetAt > remoteResetAt && local?.highSocietySettings
+              ? local.highSocietySettings
+              : mergeHighSocietySettingsPreferBaseline(local?.highSocietySettings, remote.highSocietySettings),
+          territoryLogs: filterTerritoryLogsAfterReset(mergedLogs, resetAt),
+        };
+        setState(next);
+        writeSessionBroadcastState(next, scopedUserId);
         return;
       }
       const local = loadState(scopedUserId);

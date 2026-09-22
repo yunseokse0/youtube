@@ -1466,10 +1466,58 @@ describe("high-society territory (aux)", () => {
     } as import("@/types").AppState;
     const next = applyHighSocietyAdminPatchToState(prev, { resetTerritory: true });
     expect(next.territoryLogs).toEqual([]);
+    expect(Number(next.highSocietySettings?.territoryLogsResetAt)).toBeGreaterThan(0);
     expect(next.donors?.[0]?.hsTerritoryExcluded).toBeUndefined();
     expect(next.donors?.[0]?.amount).toBe(50_000);
     const field = buildHighSocietyFieldFromAppState(next);
     expect(field.seats.every((s) => s.widthCm === 300)).toBe(true);
+  });
+
+  it("buildHighSocietyFieldFromAppState ignores logs before territoryLogsResetAt", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    const oldLog = createTerritoryLog("b", 1, 120, { now: 1_000, pushDir: "right" });
+    const newLog = createTerritoryLog("b", 1, 20, { now: 60_000, pushDir: "right" });
+    const state = {
+      members,
+      donors: [],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: ["a", "b", "c", "d"],
+        startCmPerMember: 100,
+        territoryLogsResetAt: 50_000,
+      }),
+      territoryLogs: [oldLog, newLog],
+    } as import("@/types").AppState;
+    const field = buildHighSocietyFieldFromAppState(state);
+    expect(field.seats.find((s) => s.id === "b")?.widthCm).toBe(120);
+    expect(field.seats.find((s) => s.id === "c")?.widthCm).toBe(80);
+    expect(field.seats.find((s) => s.id === "a")?.widthCm).toBe(100);
+  });
+
+  it("mergeHighSocietySettingsPreferBaseline does not restore snapshot after territory reset", () => {
+    const baseline = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b"],
+      round: 1,
+      fieldCm: 400,
+      memberWidthCm: { a: 360, b: 40 },
+    });
+    const afterReset = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b"],
+      round: 2,
+      fieldCm: 400,
+      territoryLogsResetAt: 50_000,
+    });
+    const merged = mergeHighSocietySettingsPreferBaseline(baseline, afterReset);
+    expect(merged.round).toBe(2);
+    expect(merged.territoryLogsResetAt).toBe(50_000);
+    expect(merged.memberWidthCm).toBeUndefined();
   });
 
   it("honors explicit single-seat list without falling back to all members", () => {

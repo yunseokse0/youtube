@@ -104,7 +104,7 @@ import {
 } from "@/lib/state-api-pick";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { mergeHighSocietySettingsPreferBaseline, isMeaningfulHighSocietySettings } from "@/lib/high-society";
-import { normalizeTerritoryLogs, mergeTerritoryLogsPreferFresher } from "@/lib/territory-utils";
+import { normalizeTerritoryLogs, mergeTerritoryLogsPreferFresher, filterTerritoryLogsAfterReset } from "@/lib/territory-utils";
 
 /** 관리자 iframe — 서버 정본 모드에서는 LS/세션 힌트로 서버 스냅샷을 덮지 않음 */
 function mergeAdminPreviewLocalHintOntoRemote(
@@ -172,7 +172,14 @@ function mergeAdminPreviewLocalHintOntoRemote(
     merged.territoryLogs = mergeTerritoryLogsPreferFresher(
       localTerritoryLogs,
       remoteTerritoryLogs,
-      { localUpdatedAt: localAt, remoteUpdatedAt: remoteAt }
+      {
+        localUpdatedAt: localAt,
+        remoteUpdatedAt: remoteAt,
+        territoryLogsResetAt: Math.max(
+          Number(local.highSocietySettings?.territoryLogsResetAt || 0),
+          Number(remote.highSocietySettings?.territoryLogsResetAt || 0)
+        ),
+      }
     );
   }
   if (Array.isArray(local.members) && local.members.length > 0) {
@@ -417,13 +424,24 @@ function applySyncedState(
             {
               localUpdatedAt: hsBaselineUpdatedAt,
               remoteUpdatedAt: hsIncomingUpdatedAt,
+              territoryLogsResetAt: Math.max(
+                Number(hsIncoming?.territoryLogsResetAt || 0),
+                Number(hsBaseline?.territoryLogsResetAt || 0)
+              ),
             }
           )
       : dataForApply.territoryLogs;
+  const territoryLogsResetAt = Math.max(
+    Number(
+      (mergedHighSocietySettings as { territoryLogsResetAt?: number } | undefined)?.territoryLogsResetAt || 0
+    ),
+    Number(hsIncoming?.territoryLogsResetAt || 0)
+  );
+  const prunedTerritoryLogs = filterTerritoryLogsAfterReset(mergedTerritoryLogs, territoryLogsResetAt);
   const next = {
     ...dataForApply,
     highSocietySettings: mergedHighSocietySettings,
-    territoryLogs: mergedTerritoryLogs,
+    territoryLogs: prunedTerritoryLogs,
     generalTimer: mergedTimer,
     matchTimer: mergedMatchTimer,
     ...(incomingHiddenTimer && incomingTimerStyles

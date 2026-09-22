@@ -27,6 +27,7 @@ import type { HighSocietyTeam } from "@/types";
 import HighSocietySeatLayoutEditor from "@/components/admin/HighSocietySeatLayoutEditor";
 import {
   createTerritoryLog,
+  filterTerritoryLogsAfterReset,
   formatTerritoryLogPushDirLabel,
   resolveTerritoryLogPushDirForWrite,
 } from "@/lib/territory-utils";
@@ -57,6 +58,10 @@ export default function AdminHighSocietyPopupPanel() {
   const highSocietySettings = useMemo(
     () => normalizeHighSocietySettings(state?.highSocietySettings),
     [state?.highSocietySettings]
+  );
+  const visibleTerritoryLogs = useMemo(
+    () => filterTerritoryLogsAfterReset(state?.territoryLogs, highSocietySettings.territoryLogsResetAt),
+    [state?.territoryLogs, highSocietySettings.territoryLogsResetAt]
   );
   const hsSeatPlayers = useMemo(
     () => resolveHighSocietySeatMembers(state?.members || [], highSocietySettings),
@@ -626,7 +631,7 @@ export default function AdminHighSocietyPopupPanel() {
             <HighSocietySeatLayoutEditor
               members={state.members || []}
               donors={state.donors || []}
-              territoryLogs={state.territoryLogs || []}
+              territoryLogs={visibleTerritoryLogs}
               settings={highSocietySettings}
               onPatch={(patch) => void patchHighSociety(patch)}
               showMiddlePushSelect={false}
@@ -732,7 +737,7 @@ export default function AdminHighSocietyPopupPanel() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(state.territoryLogs || [])
+                      {visibleTerritoryLogs
                         .slice()
                         .sort((a, b) => b.at - a.at)
                         .map((log) => {
@@ -769,7 +774,7 @@ export default function AdminHighSocietyPopupPanel() {
                             </tr>
                           );
                         })}
-                      {(state.territoryLogs || []).length === 0 ? (
+                      {visibleTerritoryLogs.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="p-3 text-center text-neutral-500">
                             기록 없음

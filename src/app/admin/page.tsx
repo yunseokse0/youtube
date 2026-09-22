@@ -179,7 +179,7 @@ import {
   RESTROOM_UNLIMITED_SYMBOL,
   restroomValueAfterUndoLog,
 } from "@/lib/restroom-utils";
-import { createTerritoryLog, formatTerritoryLogPushDirLabel, mergeTerritoryLogsPreferFresher, normalizeTerritoryLogs, resolveTerritoryLogPushDirForWrite } from "@/lib/territory-utils";
+import { createTerritoryLog, filterTerritoryLogsAfterReset, formatTerritoryLogPushDirLabel, mergeTerritoryLogsPreferFresher, normalizeTerritoryLogs, resolveTerritoryLogPushDirForWrite } from "@/lib/territory-utils";
 import { useSSEConnection } from "@/lib/sse-client";
 import { createStateUpdatedScheduler, DONOR_STATE_UPDATED_DEBOUNCE_MS, DONOR_STATE_UPDATED_MAX_WAIT_MS } from "@/lib/overlay-pull-policy";
 import {
@@ -1935,8 +1935,18 @@ function AdminPageInner() {
     };
     if (resolvedOpts?.highSocietySettingsOnly) {
       persistHsLastRef.current = { s, opts: resolvedOpts };
+      const isTerritoryReset =
+        Array.isArray(s.territoryLogs) &&
+        s.territoryLogs.length === 0 &&
+        Number(s.highSocietySettings?.territoryLogsResetAt || 0) > 0;
       if (persistHsDebounceRef.current !== null) {
         window.clearTimeout(persistHsDebounceRef.current);
+        persistHsDebounceRef.current = null;
+      }
+      if (isTerritoryReset) {
+        persistHsLastRef.current = null;
+        finishHsOrGenericSave(s, resolvedOpts);
+        return;
       }
       persistHsDebounceRef.current = window.setTimeout(() => {
         persistHsDebounceRef.current = null;
@@ -3736,12 +3746,17 @@ function AdminPageInner() {
     }
     const localTerritoryLogs = normalizeTerritoryLogs(local.territoryLogs);
     const mergedTerritoryLogs = normalizeTerritoryLogs(merged.territoryLogs);
+    const territoryLogsResetAt = Math.max(
+      Number(local.highSocietySettings?.territoryLogsResetAt || 0),
+      Number(merged.highSocietySettings?.territoryLogsResetAt || 0)
+    );
     const territoryLogsUnion = mergeTerritoryLogsPreferFresher(
       localTerritoryLogs,
       mergedTerritoryLogs,
       {
         localUpdatedAt: Number(local.updatedAt || 0),
         remoteUpdatedAt: Number(incoming.updatedAt || 0),
+        territoryLogsResetAt,
       }
     );
     if (JSON.stringify(territoryLogsUnion) !== JSON.stringify(mergedTerritoryLogs)) {
@@ -17870,7 +17885,10 @@ function AdminPageInner() {
                         </tr>
                       </thead>
                       <tbody>
-                        {(state.territoryLogs || [])
+                        {filterTerritoryLogsAfterReset(
+                          state.territoryLogs,
+                          highSocietySettings.territoryLogsResetAt
+                        )
                           .slice()
                           .sort((a, b) => b.at - a.at)
                           .map((log) => {
@@ -17926,7 +17944,10 @@ function AdminPageInner() {
                               </tr>
                             );
                           })}
-                        {(state.territoryLogs || []).length === 0 && (
+                        {filterTerritoryLogsAfterReset(
+                          state.territoryLogs,
+                          highSocietySettings.territoryLogsResetAt
+                        ).length === 0 && (
                           <tr>
                             <td colSpan={7} className="p-3 text-neutral-500 text-center">
                               기록 없음

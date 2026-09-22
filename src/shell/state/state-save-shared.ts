@@ -393,6 +393,17 @@ export function mergePartialState(
       baseUpdatedAt: Number(base.updatedAt || 0),
       patchUpdatedAt: Number(patch.updatedAt || 0),
     });
+    const patchHs = patch.highSocietySettings as { round?: unknown } | undefined;
+    const baseHs = base.highSocietySettings as { round?: unknown } | undefined;
+    const patchRound = Math.max(1, Math.floor(Number(patchHs?.round) || 1));
+    const baseRound = Math.max(1, Math.floor(Number(baseHs?.round) || 1));
+    if (
+      patchRound > baseRound &&
+      Array.isArray(patch.territoryLogs) &&
+      patch.territoryLogs.length === 0
+    ) {
+      next.territoryLogs = [];
+    }
   }
   if (!("donors" in patch)) {
     next.donors = base.donors;

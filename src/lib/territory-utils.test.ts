@@ -4,9 +4,11 @@ import { buildHighSocietyFieldFromAppState, normalizeHighSocietySettings } from 
 import {
   aggregateSeatPushesFromTerritoryLogs,
   createTerritoryLog,
+  filterTerritoryLogsAfterReset,
   formatTerritoryLogPushDirLabel,
   mergeHighSocietyPlayerPushInputs,
   mergeTerritoryLogsFromPatch,
+  mergeTerritoryLogsPreferFresher,
   resolveTerritoryLogPushDirForWrite,
 } from "@/lib/territory-utils";
 
@@ -142,5 +144,30 @@ describe("territory-utils", () => {
       patchUpdatedAt: 9000,
     });
     expect(merged.map((l) => l.id).sort()).toEqual([a.id, b.id].sort());
+  });
+
+  it("reset empty base does not resurrect older logs even if patch timestamp is newer", () => {
+    const oldA = createTerritoryLog("a", 1, 20, { now: 1000 });
+    const oldB = createTerritoryLog("b", 1, 25, { now: 2000 });
+    const merged = mergeTerritoryLogsFromPatch([], [oldA, oldB], {
+      baseUpdatedAt: 10_000,
+      patchUpdatedAt: 12_000,
+    });
+    expect(merged).toEqual([]);
+  });
+
+  it("empty local reset does not union older remote logs", () => {
+    const oldA = createTerritoryLog("a", 1, 100, { now: 1000 });
+    const merged = mergeTerritoryLogsPreferFresher([], [oldA], {
+      localUpdatedAt: 50_000,
+      remoteUpdatedAt: 40_000,
+    });
+    expect(merged).toEqual([]);
+  });
+
+  it("filterTerritoryLogsAfterReset keeps only post-reset logs", () => {
+    const oldA = createTerritoryLog("a", 1, 100, { now: 1000 });
+    const newA = createTerritoryLog("a", 1, 180, { now: 60_000 });
+    expect(filterTerritoryLogsAfterReset([oldA, newA], 50_000).map((l) => l.id)).toEqual([newA.id]);
   });
 });

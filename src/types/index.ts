@@ -527,6 +527,10 @@ export type HighSocietySettings = {
   /** reorder 스냅샷 — 멤버별 확장 압력(표시·연출용, index 무관) */
   memberTerritoryExpand?: Record<string, { expandLeftCm: number; expandRightCm: number }>;
   /**
+   * 「영토만 초기화」 시각(ms). 이 시각보다 이전 기록부 행은 계산·표시에서 제외한다.
+   */
+  territoryLogsResetAt?: number;
+  /**
    * 마지막 OFF 전환 시각(ms).
    * OFF 중·재ON 직후 baseline — 이 시각 이전 후원만 누적 영토에 포함(OFF 이후 후원 무시).
    */
