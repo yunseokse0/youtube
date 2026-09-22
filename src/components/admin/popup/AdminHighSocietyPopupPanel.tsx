@@ -167,9 +167,10 @@ export default function AdminHighSocietyPopupPanel() {
   };
 
   const deleteTerritoryLog = async (logId: string) => {
-    if (!state) return;
+    const cur = stateRef.current;
+    if (!cur) return;
     if (!window.confirm("이 영토 기록을 삭제할까요?")) return;
-    const next = removeTerritoryLogFromAppState(state, logId);
+    const next = removeTerritoryLogFromAppState(cur, logId);
     await persistAppState(next, {
       omitDonationFields: true,
       highSocietySettingsOnly: true,

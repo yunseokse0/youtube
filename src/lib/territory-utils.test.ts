@@ -132,4 +132,15 @@ describe("territory-utils", () => {
     expect(merged).toHaveLength(2);
     expect(merged.map((l) => l.id).sort()).toEqual([a.id, b.id].sort());
   });
+
+  it("newer stale longer patch does not resurrect a deleted log", () => {
+    const a = createTerritoryLog("a", 1, 20, { now: 1000 });
+    const b = createTerritoryLog("b", 1, 20, { now: 2000 });
+    const c = createTerritoryLog("c", 1, 20, { now: 3000 });
+    const merged = mergeTerritoryLogsFromPatch([a, b], [a, b, c], {
+      baseUpdatedAt: 8000,
+      patchUpdatedAt: 9000,
+    });
+    expect(merged.map((l) => l.id).sort()).toEqual([a.id, b.id].sort());
+  });
 });

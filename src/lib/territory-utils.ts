@@ -35,13 +35,24 @@ export function normalizeTerritoryLogs(input: unknown): TerritoryLog[] {
   return input.map(normalizeTerritoryLog).filter((x): x is TerritoryLog => Boolean(x));
 }
 
-function unionTerritoryLogsById(base: TerritoryLog[], patch: TerritoryLog[]): TerritoryLog[] {
+function unionTerritoryLogsById(
+  base: TerritoryLog[],
+  patch: TerritoryLog[],
+  opts?: { dropStalePatchOnlyBefore?: number }
+): TerritoryLog[] {
   const byId = new Map<string, TerritoryLog>();
   for (const log of base) byId.set(String(log.id), log);
+  const cutoff = Number(opts?.dropStalePatchOnlyBefore || 0);
   for (const log of patch) {
     const id = String(log.id);
     const prev = byId.get(id);
-    if (!prev || Number(log.at || 0) >= Number(prev.at || 0)) byId.set(id, log);
+    if (prev) {
+      if (Number(log.at || 0) >= Number(prev.at || 0)) byId.set(id, log);
+      continue;
+    }
+    /** 삭제된 id 가 늦은 debounce PATCH 로 되살아나지 않게 — 기록 시각이 베이스보다 옛것이면 무시 */
+    if (cutoff > 0 && Number(log.at || 0) + 2_000 < cutoff) continue;
+    byId.set(id, log);
   }
   return [...byId.values()].sort((a, b) => Number(a.at || 0) - Number(b.at || 0));
 }
@@ -71,7 +82,9 @@ export function mergeTerritoryLogsFromPatch(
   const isSubsetDeletion =
     patch.length < base.length && [...patchIds].every((id) => baseIds.has(id));
   if (isSubsetDeletion && patchIsNewer) return patch;
-  return unionTerritoryLogsById(base, patch);
+  return unionTerritoryLogsById(base, patch, {
+    dropStalePatchOnlyBefore: patchIsNewer ? baseAt : 0,
+  });
 }
 
 /** 로컬·원격 영토 기록부 — 삭제(부분집합)는 더 최신 쪽 정본, 아니면 id union */
@@ -89,7 +102,7 @@ export function mergeTerritoryLogsPreferFresher(
     const locIds = new Set(loc.map((l) => String(l.id)));
     if ([...locIds].every((id) => remIds.has(id))) return loc;
   }
-  if (rem.length < loc.length && remoteAt > localAt) {
+  if (rem.length < loc.length && remoteAt >= localAt) {
     const locIds = new Set(loc.map((l) => String(l.id)));
     const remIds = new Set(rem.map((l) => String(l.id)));
     if ([...remIds].every((id) => locIds.has(id))) return rem;

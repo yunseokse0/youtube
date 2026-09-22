@@ -409,14 +409,16 @@ function applySyncedState(
       : hsIncoming;
   const mergedTerritoryLogs =
     pick === STATE_PICK_OVERLAY || pick === STATE_PICK_OVERLAY_DONORS
-      ? mergeTerritoryLogsPreferFresher(
-          normalizeTerritoryLogs(refs.lastGoodRef.current?.territoryLogs),
-          normalizeTerritoryLogs(dataForApply.territoryLogs),
-          {
-            localUpdatedAt: hsBaselineUpdatedAt,
-            remoteUpdatedAt: hsIncomingUpdatedAt,
-          }
-        )
+      ? Array.isArray(dataForApply.territoryLogs)
+        ? normalizeTerritoryLogs(dataForApply.territoryLogs)
+        : mergeTerritoryLogsPreferFresher(
+            normalizeTerritoryLogs(refs.lastGoodRef.current?.territoryLogs),
+            normalizeTerritoryLogs(dataForApply.territoryLogs),
+            {
+              localUpdatedAt: hsBaselineUpdatedAt,
+              remoteUpdatedAt: hsIncomingUpdatedAt,
+            }
+          )
       : dataForApply.territoryLogs;
   const next = {
     ...dataForApply,
