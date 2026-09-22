@@ -11049,7 +11049,24 @@ function AdminPageInner() {
         setMealMatchPreviewIframeKey((k) => k + 1);
       } catch {}
 
-      const rollbackOptimisticReset = (reason: string) => {
+      const rollbackOptimisticReset = (reason: string, detail?: { error?: string; status?: number; urlId?: string | null; cookieClue?: string | null }) => {
+        // ✅ v14: 상세 디버깅 정보를 콘솔에 출력 (사용자가 원인 파악 쉽게)
+        if (typeof console !== "undefined") {
+          try {
+            // eslint-disable-next-line no-console
+            console.error("[SettlementReset FAIL]", {
+              reason,
+              error: detail?.error || null,
+              status: detail?.status || null,
+              urlUserIdParam: detail?.urlId || null,
+              loginCookieUserId: detail?.cookieClue || null,
+              loginUserObj: user?.id || null,
+              mode,
+              confirmPhrase: confirmPhrase ?? SETTLEMENT_RESET_CONFIRM_PHRASE,
+              time_ms: Date.now(),
+            });
+          } catch (_noop) { /* noop */ }
+        }
         setPresets(previousPresets);
         setState(previousState);
         stateRef.current = previousState;
@@ -11075,22 +11092,28 @@ function AdminPageInner() {
         setSigExcelResult(reason);
         showAppToast(reason, { variant: "error", durationMs: 6500 });
         if (typeof window !== "undefined") {
+          let extraHint = "";
+          if (detail?.error === "user_mismatch") {
+            extraHint = "\n\n▣ 원인: 쿠키(로그인 계정)과 URL user 파라미터가 불일치 했습니다. v14 패치로 정상 로그인 계정만 사용하도록 수정됐습니다.\n→ Ctrl+Shift+R 로 캐시 지우고 다시 시도해보세요.";
+          } else if (detail?.status === 401 || detail?.error === "login_required") {
+            extraHint = "\n\n▣ 원인: 로그인 세션이 만료됐습니다. 로그아웃 후 재로그인 하십시오.";
+          } else if (detail?.error === "confirm_required") {
+            extraHint = "\n\n▣ 원인: 정산리셋 확인 문구를 다시 확인하십시오. (정확히 '정산리셋' 글자 입력 필요)";
+          }
           window.alert(
-            `${reason}\n\n` +
+            `${reason}${extraHint}\n\n` +
               "화면은 리셋 전 상태로 되돌렸습니다.\n" +
-              "서버가 살아 있는지 확인한 뒤 다시 「정산리셋」을 실행하세요.\n" +
               "지금은 「서버에서 가져오기」로 구 후원이 다시 보일 수 있습니다."
           );
         }
       };
 
       try {
-        const q = new URLSearchParams();
-        if (user?.id) {
-          q.set("user", user.id);
-          q.set("u", user.id);
-        }
-        const res = await fetch(`/api/settlement/reset?${q.toString()}`, {
+        // ✅ v14: URL ?user= / ?u= 파라미터 **완전 제거**
+        // → 백엔드 resolveWriteUserId 는 HttpOnly 로그인 쿠키만 100% 신뢰하고 ?u=는 전혀 보지 않으므로,
+        //   로그인 계정(쿠키)과 로컬스토리지 user(?u=) 가 불일치해도 user_mismatch가 발생할 가능성이 0% 가 됨.
+        // POST 본문에 userId를 추가로 담아서, 백엔드 로그에서 누가 호출한건지 추적 가능하도록 보강.
+        const res = await fetch(`/api/settlement/reset`, {
           method: "POST",
           credentials: "include",
           cache: "no-store",
@@ -11100,6 +11123,8 @@ function AdminPageInner() {
             userConfirmed: true,
             confirmPhrase: confirmPhrase ?? SETTLEMENT_RESET_CONFIRM_PHRASE,
             ...(mode === "init" ? { memberSlotCount } : {}),
+            // 클라이언트 로그인 user id (디버깅용)
+            clientUserId: user?.id ?? null,
           }),
         });
         const data = (await res.json().catch(() => null)) as {
@@ -11110,8 +11135,18 @@ function AdminPageInner() {
           settlementResetAt?: number;
         } | null;
         if (!res.ok || !data?.ok || !data.state) {
+          let urlUserIdParam = null;
+          try { urlUserIdParam = (new URL(window.location.href)).searchParams.get("u") || (new URL(window.location.href)).searchParams.get("user"); } catch {}
+          let cookieClue = null;
+          try { cookieClue = String(document.cookie.match(/(?:^|;\s*)ytna_auth=([^;]*)/)?.[1] || "").slice(0, 48); } catch {}
           rollbackOptimisticReset(
-            `정산 리셋 실패: ${data?.error || `http_${res.status}`}. 서버에 반영되지 않았습니다.`
+            `정산 리셋 실패: ${data?.error || `http_${res.status}`}. 서버에 반영되지 않았습니다.`,
+            {
+              error: data?.error,
+              status: res.status,
+              urlId: urlUserIdParam,
+              cookieClue,
+            }
           );
           resetInProgressRef.current = false;
           return;
