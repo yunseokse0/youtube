@@ -1618,7 +1618,13 @@ export function applyTerritoryLogDirectTransfers(
     giveToIndices([targets[0]!], amount);
   };
 
-  for (const log of logs) {
+  const orderedLogs = [...logs].sort((a, b) => {
+    const at = Number(a.at || 0) - Number(b.at || 0);
+    if (at !== 0) return at;
+    return String(a.id || "").localeCompare(String(b.id || ""));
+  });
+
+  for (const log of orderedLogs) {
     let rawTeamId =
       typeof (log as unknown as { teamId?: string }).teamId === "string"
         ? String((log as unknown as { teamId?: string }).teamId || "").trim()
@@ -1687,6 +1693,28 @@ export function applyTerritoryLogDirectTransfers(
     }
   }
 
+  /** 팀전 — 팀 합은 as-is 이전 결과 유지, 팀원끼리는 균등. OBS 팀 게이지 = 기록부 팀 합. */
+  if (matchMode === "team") {
+    const byTeam = new Map<string, number[]>();
+    for (let i = 0; i < n; i += 1) {
+      const tid = String(teamAssignments[order[i]!] || "").trim();
+      if (!tid) continue;
+      const idxs = byTeam.get(tid);
+      if (idxs) idxs.push(i);
+      else byTeam.set(tid, [i]);
+    }
+    for (const idxs of byTeam.values()) {
+      if (idxs.length === 0) continue;
+      const total = idxs.reduce((s, i) => s + widthAt(i), 0);
+      const cnt = idxs.length;
+      const base = Math.floor(total / cnt);
+      const rem = total - base * cnt;
+      for (let k = 0; k < cnt; k += 1) {
+        widthById.set(order[idxs[k]!]!, Math.max(0, base + (k === 0 ? rem : 0)));
+      }
+    }
+  }
+
   const widthsArr = order.map((id) => Math.max(0, widthById.get(id) ?? 0));
   const quantized = quantizeSeatWidthsToFieldCm(widthsArr, field.fieldCm);
   const seats: HighSocietySeat[] = order.map((id, i) => {
@@ -1708,7 +1736,7 @@ export function applyTerritoryLogDirectTransfers(
   };
 }
 
-/** AppState 기준 영토 해상 — 좌석(이름) + 스냅샷(있으면) 또는 기록부 replay. 후원 금액은 쓰지 않음. */
+/** AppState 기준 영토 해상 — 기록부가 있으면 균등 시작 후 replay. 스냅샷 leftover 는 덮지 않음. */
 export function buildHighSocietyFieldFromAppState(
   state: Pick<AppState, "members" | "donors" | "highSocietySettings" | "territoryLogs">,
   opts?: { startCmPerMemberOverride?: number }
@@ -1739,6 +1767,19 @@ export function buildHighSocietyFieldFromAppState(
     players: equalPlayers,
     fieldCm: effectiveFieldCm,
   });
+  const territoryLogs = (state.territoryLogs || []) as TerritoryLog[];
+  if (territoryLogs.length > 0) {
+    const fieldResolved = applyTerritoryLogDirectTransfers(
+      equalField,
+      seatIds,
+      territoryLogs,
+      settingsForField
+    );
+    return {
+      ...fieldResolved,
+      settings: { ...settingsForField, fieldCm: effectiveFieldCm },
+    };
+  }
   const widths = settingsForField.memberWidthCm;
   const snapshotComplete =
     Boolean(widths) && seatIds.length > 0 && seatIds.every((id) => widths![id] != null);
@@ -1750,19 +1791,6 @@ export function buildHighSocietyFieldFromAppState(
         widthByMemberId: widths!,
         expandByMemberId: settingsForField.memberTerritoryExpand,
       }),
-      settings: { ...settingsForField, fieldCm: effectiveFieldCm },
-    };
-  }
-  const territoryLogs = (state.territoryLogs || []) as TerritoryLog[];
-  if (territoryLogs.length > 0) {
-    const fieldResolved = applyTerritoryLogDirectTransfers(
-      equalField,
-      seatIds,
-      territoryLogs,
-      settingsForField
-    );
-    return {
-      ...fieldResolved,
       settings: { ...settingsForField, fieldCm: effectiveFieldCm },
     };
   }

@@ -5,6 +5,7 @@ import { showAppToast } from "@/lib/app-toast";
 import {
   HIGH_SOCIETY_MAX_SEATS,
   buildHighSocietyFieldFromAppState,
+  aggregateHighSocietySeatsByTeam,
   fieldCmFromStartPerMember,
   formatCm,
   formatSeatWidthCm,
@@ -58,23 +59,11 @@ export default function HighSocietySeatLayoutEditor({
     () => (members || []).filter((m) => !hsSeatedIdSet.has(String(m.id))),
     [members, hsSeatedIdSet]
   );
-
-  const teamByMemberId = useMemo(() => {
-    const map = new Map<string, (typeof teams)[number]>();
-    for (const m of hsSeatPlayers) {
-      const tid = memberTeamAssignments[m.id];
-      if (tid) {
-        const t = teams.find((x) => x.id === tid);
-        if (t) map.set(m.id, t);
-      }
-    }
-    return map;
-  }, [hsSeatPlayers, memberTeamAssignments, teams]);
   const hsSeatCountForStart = resolveHighSocietySeatCountForField(settings, hsSeatPlayers.length);
   const hsStartCm = resolveHighSocietyStartCmPerMember(settings, hsSeatCountForStart);
   const hsEffectiveFieldCm = fieldCmFromStartPerMember(hsStartCm, hsSeatCountForStart);
 
-  const hsSeatFieldByMemberId = useMemo(() => {
+  const hsFieldView = useMemo(() => {
     const map = new Map<string, { widthCm: number; eliminated: boolean }>();
     const field = buildHighSocietyFieldFromAppState({
       members,
@@ -85,8 +74,17 @@ export default function HighSocietySeatLayoutEditor({
     for (const seat of field.seats) {
       map.set(seat.id, { widthCm: seat.widthCm, eliminated: seat.eliminated });
     }
-    return map;
-  }, [settings, donors, members, territoryLogs]);
+    const teamSeats =
+      matchMode === "team"
+        ? aggregateHighSocietySeatsByTeam(field.seats, settings)
+        : [];
+    return { byMember: map, teamSeats };
+  }, [settings, donors, members, territoryLogs, matchMode]);
+  const hsSeatFieldByMemberId = hsFieldView.byMember;
+  const seatedUnassigned = useMemo(
+    () => hsSeatPlayers.filter((p) => !memberTeamAssignments[p.id]),
+    [hsSeatPlayers, memberTeamAssignments]
+  );
 
   const [startCmDraft, setStartCmDraft] = useState<string | null>(null);
   const startCmInputValue =
@@ -220,7 +218,9 @@ export default function HighSocietySeatLayoutEditor({
           <strong className="text-neutral-200">
             {hsEffectiveFieldCm.toLocaleString("ko-KR")}cm
           </strong>
-          ({hsSeatCountForStart}명 기준 · OFF여도 저장값 유지)
+          {matchMode === "team" && teams.length > 0
+            ? ` (${hsSeatCountForStart}명 · ${teams.length}팀 · OFF여도 저장값 유지)`
+            : ` (${hsSeatCountForStart}명 기준 · OFF여도 저장값 유지)`}
         </span>
       </label>
       <div className="flex flex-wrap gap-1.5">
@@ -257,9 +257,9 @@ export default function HighSocietySeatLayoutEditor({
               </>
             )}
             <span className="block mt-0.5 text-[10px] text-neutral-500">
-              0cm 탈락 멤버는 기본적으로 게이지에서 빠집니다. 영토 cm 조절은 「영토 기록부」에서만
-              수동 반영합니다. 영토 반영 후에도 「N번 위치」로 원하는 자리로 옮길 수 있으며 cm는
-              멤버에 유지됩니다.
+              {matchMode === "team"
+                ? "팀전에서는 오버레이와 같이 팀 합 cm만 보여 줍니다. 멤버 이름은 소속 표시이고, 개인 영토는 나누지 않습니다."
+                : "0cm 탈락 멤버는 기본적으로 게이지에서 빠집니다. 영토 cm 조절은 「영토 기록부」에서만 수동 반영합니다. 영토 반영 후에도 「N번 위치」로 원하는 자리로 옮길 수 있으며 cm는 멤버에 유지됩니다."}
             </span>
           </div>
           {hsSeatExplicit ? (
@@ -291,6 +291,52 @@ export default function HighSocietySeatLayoutEditor({
         </label>
 
         {hsSeatPlayers.length > 0 ? (
+          matchMode === "team" && teams.length > 0 ? (
+            <div className="space-y-2">
+              {teams.map((team, idx) => {
+                const color = resolveTeamColor(team, idx);
+                const teamSeat = hsFieldView.teamSeats.find((s) => s.id === `team:${team.id}`);
+                const widthCm = Math.max(0, Number(teamSeat?.widthCm) || 0);
+                const eliminated = teamSeat?.eliminated === true || widthCm <= 0;
+                const teamMembers = hsSeatPlayers.filter(
+                  (p) => memberTeamAssignments[p.id] === team.id
+                );
+                return (
+                  <div
+                    key={`hs-team-seat-${team.id}`}
+                    className={`rounded border px-2.5 py-2 ${
+                      eliminated
+                        ? "border-neutral-500/50 bg-neutral-900/80 opacity-75"
+                        : "border-amber-400/50 bg-amber-900/40"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="inline-block w-3 h-3 rounded-sm shrink-0 border border-white/20"
+                          style={{ backgroundColor: color }}
+                        />
+                        <span className="text-sm font-semibold text-white truncate">{team.name}</span>
+                      </div>
+                      <span className="text-sm font-bold text-amber-100 tabular-nums shrink-0">
+                        {formatCm(widthCm)}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-[11px] text-neutral-300 leading-snug">
+                      {teamMembers.length > 0
+                        ? teamMembers.map((m) => m.name).join(" · ")
+                        : "멤버 없음"}
+                    </div>
+                  </div>
+                );
+              })}
+              {seatedUnassigned.length > 0 ? (
+                <div className="rounded border border-dashed border-white/15 bg-black/20 px-2.5 py-2 text-[11px] text-neutral-400">
+                  미배정: {seatedUnassigned.map((m) => m.name).join(" · ")}
+                </div>
+              ) : null}
+            </div>
+          ) : (
           <div className="flex flex-wrap gap-2">
             {hsSeatPlayers.map((p, i) => {
               const expandHint = i === 0 ? "→만" : i === hsSeatPlayers.length - 1 ? "←만" : "↔";
@@ -312,28 +358,6 @@ export default function HighSocietySeatLayoutEditor({
                   <div className="leading-tight">
                     <div className="flex items-center gap-1 flex-wrap">
                       <div className="text-[11px] font-semibold text-white">{p.name}</div>
-                      {matchMode === "team"
-                        ? (() => {
-                            const team = teamByMemberId.get(p.id);
-                            if (!team) return null;
-                            const color = resolveTeamColor(
-                              team,
-                              teams.findIndex((t) => t.id === team.id)
-                            );
-                            return (
-                              <span
-                                className="inline-flex items-center gap-1 rounded border border-white/15 bg-neutral-800 px-1 py-0.5"
-                                style={{ fontSize: "9px" }}
-                              >
-                                <span
-                                  className="inline-block w-1.5 h-1.5 rounded-sm shrink-0"
-                                  style={{ backgroundColor: color }}
-                                />
-                                <span className="text-neutral-200">{team.name}</span>
-                              </span>
-                            );
-                          })()
-                        : null}
                     </div>
                     <div className="text-[9px] text-amber-200/70">
                       {eliminated
@@ -395,6 +419,7 @@ export default function HighSocietySeatLayoutEditor({
               );
             })}
           </div>
+          )
         ) : (
           <div className="rounded border border-dashed border-white/15 bg-black/20 px-2 py-2 text-[11px] text-neutral-500">
             좌석에 멤버가 없습니다. 아래에서 추가하거나 「자동(전원)으로」를 누르세요.
@@ -404,8 +429,9 @@ export default function HighSocietySeatLayoutEditor({
         {hsUnseatedMembers.length > 0 ? (
           <div className="space-y-1">
             <div className="text-[10px] text-neutral-500">
-              좌석에 추가 — 위치(좌→右)
-              {matchMode === "team" ? " · 팀" : ""}를 고른 뒤 추가
+              {matchMode === "team"
+                ? "좌석에 추가 — 팀을 고른 뒤 추가 (영토는 팀 합으로만 표시)"
+                : "좌석에 추가 — 위치(좌→右)를 고른 뒤 추가"}
             </div>
             <div className="flex flex-col gap-1.5">
               {hsUnseatedMembers.map((m) => (
@@ -493,7 +519,9 @@ export default function HighSocietySeatLayoutEditor({
       ) : null}
 
       <p className="text-[10px] text-neutral-500 leading-snug">
-        좌석에는 멤버 이름만 씁니다. 영토 cm는 「영토 기록부」에서만 넣고, 후원 금액과는 연결되지 않습니다.
+        {matchMode === "team"
+          ? "팀전 영토는 팀 합만 표시합니다. 기록부도 팀을 대상으로 넣고, 후원 금액과는 연결되지 않습니다."
+          : "좌석에는 멤버 이름만 씁니다. 영토 cm는 「영토 기록부」에서만 넣고, 후원 금액과는 연결되지 않습니다."}
       </p>
     </div>
   );
@@ -554,7 +582,11 @@ export function HighSocietySeatLayoutSummary({
           : ""}
         {" · 1인 "}
         {Math.round(startCm)}cm · 전장 {fieldCm.toLocaleString("ko-KR")}cm
-        <span className="mt-0.5 block text-neutral-500">{names}</span>
+        <span className="mt-0.5 block text-neutral-500">
+          {matchMode === "team" && teams.length > 0
+            ? teams.map((t) => t.name).join(" | ")
+            : names}
+        </span>
       </p>
       <button
         type="button"

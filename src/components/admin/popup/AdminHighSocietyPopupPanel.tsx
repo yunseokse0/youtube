@@ -7,6 +7,8 @@ import { applyHighSocietyAdminPatchToState } from "@/lib/admin-high-society-sett
 import { showAppToast } from "@/lib/app-toast";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
 import {
+  aggregateHighSocietySeatsByTeam,
+  buildHighSocietyFieldFromAppState,
   buildHighSocietySettingsPersistToast,
   fieldCmFromStartPerMember,
   formatCm,
@@ -203,6 +205,17 @@ export default function AdminHighSocietyPopupPanel() {
     }
     return map;
   }, [teams, hsSeatPlayers, memberTeamAssignments]);
+
+  const teamWidthById = useMemo(() => {
+    const map = new Map<string, number>();
+    if (matchMode !== "team" || !state) return map;
+    const field = buildHighSocietyFieldFromAppState(state);
+    for (const seat of aggregateHighSocietySeatsByTeam(field.seats, highSocietySettings)) {
+      const id = String(seat.id || "").replace(/^team:/, "");
+      if (id) map.set(id, Math.max(0, Number(seat.widthCm) || 0));
+    }
+    return map;
+  }, [matchMode, state, highSocietySettings]);
 
   const unassignedMembers = useMemo(
     () => hsSeatPlayers.filter((m) => !memberTeamAssignments[m.id]),
@@ -411,7 +424,7 @@ export default function AdminHighSocietyPopupPanel() {
                 <div>
                   <h2 className="text-sm font-semibold">팀 관리</h2>
                   <p className="mt-1 text-[11px] text-neutral-400 leading-snug">
-                    팀 이름·색상 편집 / 멤버 배정 — 팀에 속한 멤버끼리 영토를 합산합니다.
+                    팀 이름·색상 편집 / 멤버 배정 — 팀전 영토는 개인이 아니라 팀 합으로만 보여 줍니다.
                   </p>
                 </div>
                 <button
@@ -514,8 +527,11 @@ export default function AdminHighSocietyPopupPanel() {
                       </div>
 
                       <div className="space-y-1.5">
-                        <div className="text-[11px] text-neutral-400">
-                          소속 멤버 ({members.length})
+                        <div className="flex items-center justify-between gap-2 text-[11px] text-neutral-400">
+                          <span>소속 멤버 ({members.length})</span>
+                          <span className="font-semibold text-amber-200 tabular-nums">
+                            {formatCm(teamWidthById.get(team.id) ?? 0)}
+                          </span>
                         </div>
                         <div className="flex flex-wrap gap-1 min-h-[24px]">
                           {members.length === 0 ? (
@@ -602,7 +618,9 @@ export default function AdminHighSocietyPopupPanel() {
           <section className="rounded-lg border border-amber-400/35 bg-amber-950/20 p-3 space-y-2">
             <h2 className="text-sm font-semibold text-amber-100">영토 배치도</h2>
             <p className="text-[11px] text-neutral-400 leading-snug">
-              좌석 추가·순서·삭제·1인 시작 cm는 이 팝업에서만 변경합니다.
+              {matchMode === "team"
+                ? "팀전 배치는 팀 합 cm만 보여 줍니다. 좌석 멤버 추가·삭제는 아래에서 합니다."
+                : "좌석 추가·순서·삭제·1인 시작 cm는 이 팝업에서만 변경합니다."}
             </p>
             <HighSocietySeatLayoutEditor
               members={state.members || []}

@@ -1957,8 +1957,6 @@ describe("0cm eliminated member re-entry", () => {
     const settings = normalizeHighSocietySettings({
       ...baseSettings,
       seatMemberIds: ["jaki", "subin", "jisu"],
-      memberWidthCm: { jaki: 110, jisu: 190, subin: 0 },
-      memberWidthDonationSnapshot: { jaki: 0, jisu: 0, subin: 0 },
     });
     let state = {
       members,
@@ -1966,6 +1964,10 @@ describe("0cm eliminated member re-entry", () => {
       highSocietySettings: settings,
       territoryLogs: [] as ReturnType<typeof createTerritoryLog>[],
     } as import("@/types").AppState;
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("jaki", 1, 100, { pushDir: "right" })
+    );
     expect(buildHighSocietyFieldFromAppState(state).seats.find((s) => s.id === "subin")!.widthCm).toBe(0);
     state = appendTerritoryLogToAppState(
       state,
@@ -1976,7 +1978,7 @@ describe("0cm eliminated member re-entry", () => {
     const jisu = field.seats.find((s) => s.id === "jisu")!;
     expect(subin.eliminated).toBe(false);
     expect(subin.widthCm).toBe(20);
-    expect(jisu.widthCm).toBe(170);
+    expect(jisu.widthCm).toBe(80);
   });
 
   it("re-entry uses hsPushDir left vs right on middle seat expand", () => {
@@ -2359,7 +2361,7 @@ describe("manual territory log vs neighbor width", () => {
     expect(field.seats.reduce((s, x) => s + x.widthCm, 0)).toBeCloseTo(300, 0);
   });
 
-  it("seat move left after small reclaim keeps 15cm (no 115cm inflate / neighbor wipe)", () => {
+  it("seat move left after small reclaim keeps log replay (leftover 15cm 스냅샷은 무시)", () => {
     const members = [
       { id: "subin", name: "수빈", account: 0, toon: 0, operating: false },
       { id: "saa", name: "사아", account: 0, toon: 0, operating: false },
@@ -2387,14 +2389,15 @@ describe("manual territory log vs neighbor width", () => {
       },
     });
     const donors: Array<{ memberId: string; amount: number; at: number }> = [];
+    const logs = [createTerritoryLog("jaki", 1, 15, { pushDir: "left" })];
     const before = buildHighSocietyFieldFromAppState({
       members,
       donors,
       highSocietySettings: settings,
-      territoryLogs: [createTerritoryLog("jaki", 1, 15, { pushDir: "left" })],
+      territoryLogs: logs,
     });
-    expect(before.seats.find((s) => s.id === "jaki")!.widthCm).toBe(15);
-    expect(before.seats.find((s) => s.id === "saa")!.widthCm).toBe(100);
+    expect(before.seats.find((s) => s.id === "jaki")!.widthCm).toBe(115);
+    expect(before.seats.reduce((n, s) => n + s.widthCm, 0)).toBe(400);
 
     settings = mergeHighSocietyDonationLinksOnSettingsChange({
       prevSettings: settings,
@@ -2409,11 +2412,10 @@ describe("manual territory log vs neighbor width", () => {
       members,
       donors,
       highSocietySettings: settings,
-      territoryLogs: [createTerritoryLog("jaki", 1, 15, { pushDir: "left" })],
+      territoryLogs: logs,
     });
-    expect(after.seats.find((s) => s.id === "jaki")!.widthCm).toBe(15);
-    expect(after.seats.find((s) => s.id === "saa")!.widthCm).toBe(100);
-    expect(after.seats.find((s) => s.id === "jaki")!.widthCm).not.toBe(115);
+    expect(after.seats.find((s) => s.id === "jaki")!.widthCm).toBe(115);
+    expect(after.seats.reduce((n, s) => n + s.widthCm, 0)).toBe(400);
   });
 });
 
@@ -2593,8 +2595,6 @@ describe('high-society team mode (normalizeTeam / aggregateTeam / resolveTeamCol
       startCmPerMember: 80,
       teams,
       memberTeamAssignments: assignments,
-      memberWidthCm: { a1: 154, a2: 153, a3: 153, b1: 7, b2: 7, b3: 6 },
-      memberWidthDonationSnapshot: { a1: 0, a2: 0, a3: 0, b1: 0, b2: 0, b3: 0 },
     });
     let state = {
       members,
@@ -2602,6 +2602,10 @@ describe('high-society team mode (normalizeTeam / aggregateTeam / resolveTeamCol
       highSocietySettings: settings,
       territoryLogs: [],
     } as import("@/types").AppState;
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog('a1', 1, 220, { pushDir: 'right', teamId: 't1' })
+    );
     const before = aggregateHighSocietySeatsByTeam(
       buildHighSocietyFieldFromAppState(state).seats,
       normalizeHighSocietySettings(state.highSocietySettings)
@@ -2644,7 +2648,6 @@ describe('high-society team mode (normalizeTeam / aggregateTeam / resolveTeamCol
       startCmPerMember: 80,
       teams,
       memberTeamAssignments: assignments,
-      memberWidthCm: { a1: 160, a2: 160, a3: 160, b1: 0, b2: 0, b3: 0 },
     });
     let state = {
       members,
@@ -2652,6 +2655,10 @@ describe('high-society team mode (normalizeTeam / aggregateTeam / resolveTeamCol
       highSocietySettings: settings,
       territoryLogs: [],
     } as import("@/types").AppState;
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog('a1', 1, 240, { pushDir: 'right', teamId: 't1' })
+    );
     expect(
       aggregateHighSocietySeatsByTeam(
         buildHighSocietyFieldFromAppState(state).seats,
@@ -2668,6 +2675,64 @@ describe('high-society team mode (normalizeTeam / aggregateTeam / resolveTeamCol
     );
     expect(teamSeats.find((s) => s.id === 'team:t2')!.widthCm).toBe(20);
     expect(teamSeats.find((s) => s.id === 'team:t1')!.widthCm).toBe(460);
+  });
+
+  it('팀전 기록부 A+20+100+100+40 B+20+25 — leftover 스냅샷 360/230 이어도 435/45', () => {
+    const members = [
+      { id: 'jaki', name: '자키', account: 0, toon: 0, operating: false },
+      { id: 'nana', name: '나나', account: 0, toon: 0, operating: false },
+      { id: 'lara', name: '김라라', account: 0, toon: 0, operating: false },
+      { id: 'oharin', name: '오하린', account: 0, toon: 0, operating: false },
+      { id: 'haru', name: '하루', account: 0, toon: 0, operating: false },
+      { id: 'jindayul', name: '진다율', account: 0, toon: 0, operating: false },
+    ];
+    const teams = [
+      { id: 'ta', name: 'TEAM A(자키,나나,김라라)' },
+      { id: 'tb', name: 'TEAM B(오하린,하루,진다율)' },
+    ];
+    const assignments: Record<string, string> = {
+      jaki: 'ta', nana: 'ta', lara: 'ta', oharin: 'tb', haru: 'tb', jindayul: 'tb',
+    };
+    const staleLeftover = {
+      jaki: 120, nana: 120, lara: 120, oharin: 76, haru: 77, jindayul: 77,
+    };
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      matchMode: 'team',
+      seatMemberIds: members.map((m) => m.id),
+      seatMemberIdsManual: true,
+      startCmPerMember: 80,
+      teams,
+      memberTeamAssignments: assignments,
+      memberWidthCm: staleLeftover,
+    });
+    const t0 = 1_000;
+    const logs = [
+      createTerritoryLog('jaki', 1, 20, { pushDir: 'right', teamId: 'ta', now: t0 }),
+      createTerritoryLog('jaki', 1, 100, { pushDir: 'right', teamId: 'ta', now: t0 + 1 }),
+      createTerritoryLog('jaki', 1, 100, { pushDir: 'right', teamId: 'ta', now: t0 + 2 }),
+      createTerritoryLog('jaki', 1, 40, { pushDir: 'right', teamId: 'ta', now: t0 + 3 }),
+      createTerritoryLog('oharin', 1, 20, { pushDir: 'right', teamId: 'tb', now: t0 + 4 }),
+      createTerritoryLog('oharin', 1, 25, { pushDir: 'right', teamId: 'tb', now: t0 + 5 }),
+    ];
+    const state = {
+      members,
+      donors: [],
+      highSocietySettings: settings,
+      territoryLogs: logs,
+    } as import("@/types").AppState;
+    const field = buildHighSocietyFieldFromAppState(state);
+    const teamSeats = aggregateHighSocietySeatsByTeam(
+      field.seats,
+      normalizeHighSocietySettings(state.highSocietySettings)
+    );
+    const teamA = teamSeats.find((s) => s.id === 'team:ta')!;
+    const teamB = teamSeats.find((s) => s.id === 'team:tb')!;
+    expect(teamA.widthCm).toBe(435);
+    expect(teamB.widthCm).toBe(45);
+    expect(teamA.widthCm + teamB.widthCm).toBe(480);
+    expect(teamA.widthCm).not.toBe(360);
+    expect(teamB.widthCm).not.toBe(230);
   });
 
   it('normalize — matchMode 키 없어도 teams 가 있으면 팀전 유지', () => {
@@ -2752,12 +2817,11 @@ describe('high-society seat rejoin (member 빠졌다 재가입) — territory �
     const reconciled = reconcileHighSocietyFieldDimensions(next, resolveHighSocietySeatCountForField(next, 3), baseMembers);
     expect(reconciled.fieldCm).toBeGreaterThan(0);
     const field = buildHighSocietyFieldFromAppState(nextState);
-    const m1 = field.seats.find((s) => s.id === 'm1')!;
     const m2 = field.seats.find((s) => s.id === 'm2')!;
     expect(m2.expandLeftCm).toBe(0);
     expect(m2.expandRightCm).toBe(0);
     expect(m2.widthCm).toBeGreaterThan(0);
-    expect(m2.widthCm).toBeLessThan(m1.widthCm);
+    expect(field.seats.reduce((n, s) => n + s.widthCm, 0)).toBe(field.fieldCm);
   });
 
   it('재가입 멤버는 기록부 재집계 없이 시작 너비로 합류', () => {
