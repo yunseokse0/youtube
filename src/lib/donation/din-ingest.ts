@@ -10,6 +10,7 @@ import type { DonationEvent } from "@/lib/donation/types";
 import { normalizeContributionFormula } from "@/lib/contribution-formula";
 import { appendToonaHubDonationLog, readToonaHubSession } from "@/lib/toona-hub-session";
 import { parseKstLocalTimestampToMs } from "@/lib/state";
+import { resolveScopedOverlayUserId } from "@/lib/overlay-params";
 
 export function parseApplyExcelFromRequest(req: Request): boolean {
   try {
@@ -186,28 +187,37 @@ export async function handleDinDonationIngest(
   applyExcel: boolean,
   opts?: { logSource?: "ingest" | "toona"; skipHubLog?: boolean }
 ): Promise<DinIngestResult> {
+  /**
+   * ✅ 2026-09-22 v17.4 핫픽스: userId (로그인 ID=din) 와 state 저장용 ID(finalent) 분리!
+   *  - hubSessionUserId: DIN 허브 세션·로그 조회용 (원본 userId 그대로, din 과 1:1 매칭)
+   *  - stateUserId: 후원 저장·시그 매치·알림 브로드캐스트 등 AppState 에 read/write 할 ID (무조건 finalent 로 스코프)
+   *  → 이로써 관리자 페이지가 overlayUserId(finalent) 로 state 보는것과 인제스트가 저장하는 ID가 100% 일치!
+   */
+  const hubSessionUserId = userId;
+  const stateUserId = resolveScopedOverlayUserId(userId, "finalent");
+
   const aggCount = event.aggregatedCount;
   const isBucketAggregated = aggCount !== undefined && aggCount > 1;
 
   let result: DinIngestResult;
   if (!applyExcel) {
     if (!isBucketAggregated) {
-      const enriched = await enrichDonationEventWithSigMatch(userId, event);
-      await broadcastPlayerDonationAlert(userId, enriched);
+      const enriched = await enrichDonationEventWithSigMatch(stateUserId, event);
+      await broadcastPlayerDonationAlert(stateUserId, enriched);
     }
     result = { ok: true, applied: false, alert: true, mode: "alert_only" };
   } else {
-    const outcome = await tryAutoApplyToonationDonationOnServer(userId, event);
+    const outcome = await tryAutoApplyToonationDonationOnServer(stateUserId, event);
     if (outcome === "applied" || outcome === "applied_needs_review") {
       result = { ok: true, applied: true, outcome, mode: "excel" };
     } else {
-      await enqueueUnmatchedToonationDonation(userId, event);
+      await enqueueUnmatchedToonationDonation(stateUserId, event);
       result = { ok: true, applied: false, queued: true, mode: "excel" };
     }
   }
 
   if (!opts?.skipHubLog) {
-    await logHubIngestIfLinked(userId, event, result, { forceSource: opts?.logSource }).catch(() => {});
+    await logHubIngestIfLinked(hubSessionUserId, event, result, { forceSource: opts?.logSource }).catch(() => {});
   }
 
   if (isBucketAggregated) {
@@ -249,8 +259,8 @@ export async function handleDinDonationIngest(
       };
 
       perAlerts.push(
-        enrichDonationEventWithSigMatch(userId, rawPerEvent)
-          .then((enriched) => broadcastPlayerDonationAlert(userId, enriched))
+        enrichDonationEventWithSigMatch(stateUserId, rawPerEvent)
+          .then((enriched) => broadcastPlayerDonationAlert(stateUserId, enriched))
           .catch(() => {})
       );
     }

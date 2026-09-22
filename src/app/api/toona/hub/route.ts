@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { resolveWriteUserId, writeUserIdErrorResponse } from "@/app/api/_shared/user-id";
+import { resolveScopedOverlayUserId } from "@/lib/overlay-params";
 import {
   fetchToonaDonationsSinceLink,
   fetchToonaHubContributionFormula,
@@ -47,7 +48,11 @@ function json(data: unknown, status = 200) {
   });
 }
 
-async function importSigsAfterHubLogin(userId: string): Promise<{
+function scopedStateUserIdOf(authUserId: string): string {
+  return resolveScopedOverlayUserId(authUserId, "finalent");
+}
+
+async function importSigsAfterHubLogin(hubSessionUserId: string): Promise<{
   ok: boolean;
   count: number;
   added?: number;
@@ -56,16 +61,17 @@ async function importSigsAfterHubLogin(userId: string): Promise<{
   items?: SigItem[];
   saved?: boolean;
 }> {
-  const fetched = await fetchToonaSignaturesViaHubSession(userId);
+  const stateUserId = scopedStateUserIdOf(hubSessionUserId);
+  const fetched = await fetchToonaSignaturesViaHubSession(hubSessionUserId);
   if (!fetched.ok) return { ok: false, count: 0, error: fetched.error };
-  const state = (await loadAppStateForUserId(userId)) ?? defaultState();
+  const state = (await loadAppStateForUserId(stateUserId)) ?? defaultState();
   const { nextInventory, added, updated } = applyToonaSigItemsToInventory(
     state.sigInventory || [],
     fetched.items,
     "merge"
   );
   const next = { ...state, sigInventory: nextInventory, updatedAt: Date.now() };
-  const saved = await saveAppStateForRoulette(userId, next, { donorsMode: "add" });
+  const saved = await saveAppStateForRoulette(stateUserId, next, { donorsMode: "add" });
   if (!saved.ok) {
     return {
       ok: false,
@@ -241,7 +247,7 @@ export async function POST(req: NextRequest) {
   }
 
   const result = await loginAndLinkToonaHub({
-    youtubeUserId: auth.userId,
+    youtubeUserId: scopedStateUserIdOf(auth.userId),
     email: String(body.email || ""),
     password: String(body.password || ""),
     baseUrl: body.baseUrl,
@@ -277,17 +283,18 @@ export async function POST(req: NextRequest) {
   };
 
   const postLinkWork = (async (): Promise<SigImportPayload> => {
-    const state = await loadAppStateForUserId(auth.userId);
+    const stateUserId = scopedStateUserIdOf(auth.userId);
+    const state = await loadAppStateForUserId(stateUserId);
     let formula = normalizeContributionFormula(
       body.contributionFormula ?? state?.contributionFormula
     );
     if (body.contributionFormula) {
-      await persistContributionFormulaForUser(auth.userId, formula);
+      await persistContributionFormulaForUser(stateUserId, formula);
     } else {
       const fromToona = await fetchToonaHubContributionFormula(auth.userId);
       if (fromToona) {
         formula = fromToona;
-        await persistContributionFormulaForUser(auth.userId, fromToona);
+        await persistContributionFormulaForUser(stateUserId, fromToona);
       }
     }
     await syncContributionFormulaToToonaHub(auth.userId, formula);
