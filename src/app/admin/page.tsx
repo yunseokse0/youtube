@@ -18197,7 +18197,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                       <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-10" : "p-1 w-12"}`} style={{ width: donorListDenseMode ? "2.5rem" : "3rem" }}>선택</th>
                       <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5" : "p-1"}`} style={{ width: donorListDenseMode ? "6rem" : "8.5rem", minWidth: donorListDenseMode ? "6rem" : "8.5rem" }}>시간</th>
                       <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5" : "p-1"}`} style={{ width: donorListDenseMode ? "8rem" : "11rem", minWidth: donorListDenseMode ? "8rem" : "11rem", maxWidth: donorListDenseMode ? "10rem" : "14rem" }}>후원자</th>
-                      {!donorListDenseMode && <th className="text-left font-medium p-1 shrink-0" style={{ width: "9rem", minWidth: "9rem" }}>멤버</th>}
+                      {!donorListDenseMode && <th className="text-left font-medium p-1 shrink-0" style={{ width: "10rem", minWidth: "10rem" }}>멤버</th>}
                       <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5" : "p-1"}`} style={{ width: donorListDenseMode ? "4.5rem" : "5.5rem", minWidth: donorListDenseMode ? "4.5rem" : "5.5rem", maxWidth: donorListDenseMode ? "5rem" : "6rem" }}>대상</th>
                       <th className={`text-left font-medium ${donorListDenseMode ? "p-0.5" : "p-1"}`} style={{ width: "auto", minWidth: donorListDenseMode ? "140px" : "220px" }}>메시지</th>
                       <th className={`text-right font-medium shrink-0 ${donorListDenseMode ? "p-0.5" : "p-1"}`} style={{ width: donorListDenseMode ? "6rem" : "8rem", minWidth: donorListDenseMode ? "6rem" : "8rem" }}>금액</th>
@@ -18356,10 +18356,10 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                               </div>
                             </td>
                             {!donorListDenseMode && (
-                            <td className="p-1 text-neutral-300 align-top" style={{ width: "9rem", minWidth: "9rem", overflow: "visible" }}>
+                            <td className="p-1 text-neutral-300 align-top" style={{ width: "10rem", minWidth: "10rem", overflow: "visible" }}>
                               <select
-                                className="w-full rounded border border-white/10 bg-neutral-900/80 px-1.5 py-0 text-[11px] text-neutral-100 overflow-hidden whitespace-nowrap"
-                                style={{ overflow: "visible", textOverflow: "clip", height: "1.7rem", lineHeight: "1.7rem" }}
+                                className="w-full rounded border border-white/10 bg-neutral-900/80 px-3 py-0 text-[12px] text-neutral-100 overflow-visible whitespace-nowrap"
+                                style={{ overflow: "visible", textOverflow: "clip", height: "1.7rem", lineHeight: "1.7rem", minWidth: "100%", paddingLeft: "0.65rem", paddingRight: "1.8rem" }}
                                 value={d.memberId || ""}
                                 title={`👥 배치 멤버: ${state.members.find((x) => x.id === d.memberId)?.name || "미지정"}\n\n---\n(후원자명은 유지하고 배치 멤버만 변경하려면 선택)`}
                                 onChange={(e) => {
