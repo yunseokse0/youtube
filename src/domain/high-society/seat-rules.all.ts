@@ -2045,7 +2045,16 @@ export function applyTerritoryLogDirectTransfers(
           const lr = pushDirToLeftRight(cm, "split");
           let leftSnap = snapshotTeamWidths();
           if (outsideLeftIdx >= 0) {
-            transferAcross(outsideLeftIdx, teamStartIdx, lr.left);
+            let leftRemain = lr.left;
+            for (let i = outsideLeftIdx; i >= 0 && leftRemain > 0; i -= 1) {
+              transferAcross(i, teamStartIdx, leftRemain);
+              const gotL = (sortedIdx.reduce((_s, _idx) => _s + Math.max(0, widthById.get(order[_idx]!) ?? 0), 0)) - sumTeamWidth(leftSnap);
+              leftRemain = Math.max(0, lr.left - Math.max(0, gotL));
+            }
+            if (leftRemain > 0) {
+              const got = collectFromOutsideTeam(leftRemain, false);
+              giveEquallyToTeam(got);
+            }
           } else {
             const got = collectFromOutsideTeam(lr.left, false);
             giveEquallyToTeam(got);
@@ -2053,7 +2062,16 @@ export function applyTerritoryLogDirectTransfers(
           rebalanceTeamAfterTransfer(leftSnap);
           let rightSnap = snapshotTeamWidths();
           if (outsideRightIdx >= 0) {
-            transferAcross(outsideRightIdx, teamEndIdx, lr.right);
+            let rightRemain = lr.right;
+            for (let i = outsideRightIdx; i < n && rightRemain > 0; i += 1) {
+              transferAcross(i, teamEndIdx, rightRemain);
+              const gotR = (sortedIdx.reduce((_s, _idx) => _s + Math.max(0, widthById.get(order[_idx]!) ?? 0), 0)) - sumTeamWidth(rightSnap);
+              rightRemain = Math.max(0, lr.right - Math.max(0, gotR));
+            }
+            if (rightRemain > 0) {
+              const got = collectFromOutsideTeam(rightRemain, false);
+              giveEquallyToTeam(got);
+            }
           } else {
             const got = collectFromOutsideTeam(lr.right, false);
             giveEquallyToTeam(got);
@@ -2062,7 +2080,18 @@ export function applyTerritoryLogDirectTransfers(
         } else if (explicitPush === "left") {
           if (outsideLeftIdx >= 0) {
             const before = snapshotTeamWidths();
-            transferAcross(outsideLeftIdx, teamStartIdx, cm);
+            const beforeSum = sumTeamWidth(before);
+            let remain = cm;
+            for (let i = outsideLeftIdx; i >= 0 && remain > 0; i -= 1) {
+              transferAcross(i, teamStartIdx, remain);
+              const curSum = sortedIdx.reduce((_s, _idx) => _s + Math.max(0, widthById.get(order[_idx]!) ?? 0), 0);
+              const got = Math.max(0, curSum - beforeSum);
+              remain = Math.max(0, cm - got);
+            }
+            if (remain > 0) {
+              const got = collectFromOutsideTeam(remain, false);
+              giveEquallyToTeam(got);
+            }
             rebalanceTeamAfterTransfer(before);
           } else {
             const got = collectFromOutsideTeam(cm, false);
@@ -2071,7 +2100,18 @@ export function applyTerritoryLogDirectTransfers(
         } else {
           if (outsideRightIdx >= 0) {
             const before = snapshotTeamWidths();
-            transferAcross(outsideRightIdx, teamEndIdx, cm);
+            const beforeSum = sumTeamWidth(before);
+            let remain = cm;
+            for (let i = outsideRightIdx; i < n && remain > 0; i += 1) {
+              transferAcross(i, teamEndIdx, remain);
+              const curSum = sortedIdx.reduce((_s, _idx) => _s + Math.max(0, widthById.get(order[_idx]!) ?? 0), 0);
+              const got = Math.max(0, curSum - beforeSum);
+              remain = Math.max(0, cm - got);
+            }
+            if (remain > 0) {
+              const got = collectFromOutsideTeam(remain, false);
+              giveEquallyToTeam(got);
+            }
             rebalanceTeamAfterTransfer(before);
           } else {
             const got = collectFromOutsideTeam(cm, false);
