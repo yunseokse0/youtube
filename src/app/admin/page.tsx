@@ -18167,8 +18167,8 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
               <div
                 id="donor-list-content"
                 ref={donorListScrollRef}
-                style={{ contain: "strict", willChange: "transform" }}
-                className="w-full !max-w-full mx-0 px-0 border border-white/10 rounded isolate overflow-hidden !ml-0 !mr-0"
+                style={{ contain: "strict", willChange: "transform", maxHeight: "780px" }}
+                className="w-full !max-w-full mx-0 px-0 border border-white/10 rounded isolate overflow-y-auto !ml-0 !mr-0 pr-1"
                 data-admin-section-content="donor-list"
               >
                 <table className={`w-full ${donorListDenseMode ? "text-[12px]" : "text-sm"}`} style={{ tableLayout: "fixed", borderCollapse: "separate", width: "100%" }}>
