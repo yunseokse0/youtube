@@ -1953,40 +1953,30 @@ describe("0cm eliminated member re-entry", () => {
     },
   });
 
-  it("re-enters when memberWidthCm snapshot is 0 but territory expand exists", () => {
+  it("0cm 멤버가 영토 기록으로 확장하면 한 번에 땅이 생긴다", () => {
     const settings = normalizeHighSocietySettings({
       ...baseSettings,
       seatMemberIds: ["jaki", "subin", "jisu"],
-      memberWidthCm: { jaki: 110, jisu: 110, subin: 0 },
-      memberWidthDonationSnapshot: { jaki: 10_000, jisu: 10_000, subin: 100_000 },
-      memberTerritoryExpand: {
-        jaki: { expandLeftCm: 0, expandRightCm: 5 },
-        jisu: { expandLeftCm: 5, expandRightCm: 0 },
-        subin: { expandLeftCm: 0, expandRightCm: 50 },
-      },
+      memberWidthCm: { jaki: 110, jisu: 190, subin: 0 },
+      memberWidthDonationSnapshot: { jaki: 0, jisu: 0, subin: 0 },
     });
-    const donors = [
-      { id: "d1", name: "x", amount: 10_000, memberId: "jaki", at: 2000, ...hsTerritoryOn },
-      { id: "d2", name: "y", amount: 10_000, memberId: "jisu", at: 2000, ...hsTerritoryOn },
-      {
-        id: "d-subin",
-        name: "z",
-        amount: 100_000,
-        memberId: "subin",
-        at: 3000,
-        hsPushDir: "right" as const,
-        ...hsTerritoryOn,
-      },
-    ];
-    const field = buildHighSocietyFieldFromAppState({
+    let state = {
       members,
-      donors,
+      donors: [] as never[],
       highSocietySettings: settings,
-    });
+      territoryLogs: [] as ReturnType<typeof createTerritoryLog>[],
+    } as import("@/types").AppState;
+    expect(buildHighSocietyFieldFromAppState(state).seats.find((s) => s.id === "subin")!.widthCm).toBe(0);
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("subin", 1, 20, { pushDir: "right" })
+    );
+    const field = buildHighSocietyFieldFromAppState(state);
     const subin = field.seats.find((s) => s.id === "subin")!;
+    const jisu = field.seats.find((s) => s.id === "jisu")!;
     expect(subin.eliminated).toBe(false);
-    expect(subin.widthCm).toBeGreaterThan(0);
-    expect(subin.expandRightCm).toBe(50);
+    expect(subin.widthCm).toBe(20);
+    expect(jisu.widthCm).toBe(170);
   });
 
   it("re-entry uses hsPushDir left vs right on middle seat expand", () => {
@@ -2577,6 +2567,107 @@ describe('high-society team mode (normalizeTeam / aggregateTeam / resolveTeamCol
     const teamSeats = aggregateHighSocietySeatsByTeam(field.seats, normalizeHighSocietySettings(state.highSocietySettings));
     expect(teamSeats.find((s) => s.id === 'team:t1')!.widthCm).toBe(500);
     expect(teamSeats.find((s) => s.id === 'team:t2')!.widthCm).toBe(100);
+  });
+
+  it('팀전 우측 팀 20cm에서 +20 오른쪽 — 벽이면 상대에서 20 전부 가져와 40 (ceil 분할 35 금지)', () => {
+    const members = [
+      { id: 'a1', name: 'A1', account: 0, toon: 0, operating: false },
+      { id: 'a2', name: 'A2', account: 0, toon: 0, operating: false },
+      { id: 'a3', name: 'A3', account: 0, toon: 0, operating: false },
+      { id: 'b1', name: 'B1', account: 0, toon: 0, operating: false },
+      { id: 'b2', name: 'B2', account: 0, toon: 0, operating: false },
+      { id: 'b3', name: 'B3', account: 0, toon: 0, operating: false },
+    ];
+    const teams = [
+      { id: 't1', name: '1팀' },
+      { id: 't2', name: '2팀' },
+    ];
+    const assignments: Record<string, string> = {
+      a1: 't1', a2: 't1', a3: 't1', b1: 't2', b2: 't2', b3: 't2',
+    };
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      matchMode: 'team',
+      seatMemberIds: members.map((m) => m.id),
+      seatMemberIdsManual: true,
+      startCmPerMember: 80,
+      teams,
+      memberTeamAssignments: assignments,
+      memberWidthCm: { a1: 154, a2: 153, a3: 153, b1: 7, b2: 7, b3: 6 },
+      memberWidthDonationSnapshot: { a1: 0, a2: 0, a3: 0, b1: 0, b2: 0, b3: 0 },
+    });
+    let state = {
+      members,
+      donors: [],
+      highSocietySettings: settings,
+      territoryLogs: [],
+    } as import("@/types").AppState;
+    const before = aggregateHighSocietySeatsByTeam(
+      buildHighSocietyFieldFromAppState(state).seats,
+      normalizeHighSocietySettings(state.highSocietySettings)
+    );
+    expect(before.find((s) => s.id === 'team:t2')!.widthCm).toBe(20);
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog('b1', 1, 20, { pushDir: 'right', teamId: 't2' })
+    );
+    const teamSeats = aggregateHighSocietySeatsByTeam(
+      buildHighSocietyFieldFromAppState(state).seats,
+      normalizeHighSocietySettings(state.highSocietySettings)
+    );
+    expect(teamSeats.find((s) => s.id === 'team:t2')!.widthCm).toBe(40);
+    expect(teamSeats.find((s) => s.id === 'team:t1')!.widthCm).toBe(440);
+    expect(teamSeats.find((s) => s.id === 'team:t2')!.widthCm).not.toBe(35);
+  });
+
+  it('0cm 팀이 기록으로 +20 하면 한 번에 20이 생긴다', () => {
+    const members = [
+      { id: 'a1', name: 'A1', account: 0, toon: 0, operating: false },
+      { id: 'a2', name: 'A2', account: 0, toon: 0, operating: false },
+      { id: 'a3', name: 'A3', account: 0, toon: 0, operating: false },
+      { id: 'b1', name: 'B1', account: 0, toon: 0, operating: false },
+      { id: 'b2', name: 'B2', account: 0, toon: 0, operating: false },
+      { id: 'b3', name: 'B3', account: 0, toon: 0, operating: false },
+    ];
+    const teams = [
+      { id: 't1', name: '1팀' },
+      { id: 't2', name: '2팀' },
+    ];
+    const assignments: Record<string, string> = {
+      a1: 't1', a2: 't1', a3: 't1', b1: 't2', b2: 't2', b3: 't2',
+    };
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      matchMode: 'team',
+      seatMemberIds: members.map((m) => m.id),
+      seatMemberIdsManual: true,
+      startCmPerMember: 80,
+      teams,
+      memberTeamAssignments: assignments,
+      memberWidthCm: { a1: 160, a2: 160, a3: 160, b1: 0, b2: 0, b3: 0 },
+    });
+    let state = {
+      members,
+      donors: [],
+      highSocietySettings: settings,
+      territoryLogs: [],
+    } as import("@/types").AppState;
+    expect(
+      aggregateHighSocietySeatsByTeam(
+        buildHighSocietyFieldFromAppState(state).seats,
+        normalizeHighSocietySettings(state.highSocietySettings)
+      ).find((s) => s.id === 'team:t2')!.widthCm
+    ).toBe(0);
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog('b1', 1, 20, { pushDir: 'right', teamId: 't2' })
+    );
+    const teamSeats = aggregateHighSocietySeatsByTeam(
+      buildHighSocietyFieldFromAppState(state).seats,
+      normalizeHighSocietySettings(state.highSocietySettings)
+    );
+    expect(teamSeats.find((s) => s.id === 'team:t2')!.widthCm).toBe(20);
+    expect(teamSeats.find((s) => s.id === 'team:t1')!.widthCm).toBe(460);
   });
 
   it('normalize — matchMode 키 없어도 teams 가 있으면 팀전 유지', () => {

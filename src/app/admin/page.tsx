@@ -11722,15 +11722,21 @@ function AdminPageInner() {
           boxShadow: "0 4px 20px rgba(0, 0, 0, 0.25)",
         }}
       >
-        {/* ✅ 유저 프로필 헤더: 로그인 정보만 깔끔하게 */}
+        {/* ✅ 유저 프로필 헤더: 이 시스템 로그인 ID (B모드 허브 이름·메일이 아님) */}
         <div className="flex-shrink-0 px-4 pt-4 pb-4 border-b border-white/5">
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0" style={{ background: "linear-gradient(135deg, #1d4ed8, #7c3aed)", color: "#fff" }}>
-              {((user?.name || user?.companyName || user?.id || "박") as string).charAt(0).toUpperCase()}
+              {(String(user?.id || overlayUserId || "?").trim().charAt(0) || "?").toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-[14px] font-bold text-neutral-100 leading-tight truncate">{(user?.name || user?.companyName || user?.id || "박자키") as string}</div>
-              <div className="text-[12px] text-neutral-500 leading-tight truncate mt-0.5">{"sssss@gmail.com"}</div>
+              <div className="text-[14px] font-bold text-neutral-100 leading-tight truncate" title={String(user?.id || overlayUserId || "")}>
+                {String(user?.id || overlayUserId || "—").trim() || "—"}
+              </div>
+              <div className="text-[12px] text-neutral-500 leading-tight truncate mt-0.5">
+                {overlayUserId && user?.id && overlayUserId !== user.id
+                  ? `state ${overlayUserId}`
+                  : "시스템 계정"}
+              </div>
             </div>
           </div>
         </div>
