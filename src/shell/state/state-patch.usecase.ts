@@ -64,7 +64,10 @@ import {
   saveDonationRosterBackup,
 } from "@/lib/donation-roster-backup";
 import { syncHighSocietyMemberWidthSnapshotInState } from "@/lib/high-society";
-import { isSettlementResetExplicitlyConfirmed } from "@/lib/settlement-reset-confirm";
+import {
+  isSettlementResetExplicitlyConfirmed,
+  stripUnconfirmedSettlementResetFromApiPayload,
+} from "@/lib/settlement-reset-confirm";
 import { publishSseEvent } from "@/lib/sse-clients-hub";
 import { computeDonorRankingsUpdatedAt } from "@/lib/donor-rankings-rev";
 import { runExclusivePerUser, getMutexQueueDepth, getUserMutexStats, getMutexActiveUserCount } from "@/lib/per-user-mutex";
@@ -272,7 +275,21 @@ export async function POST(req: Request) {
       } catch (_e) { logger.info("FIX18-PANIC1-ERR", { uid: userId, err: String(_e) }); }
     const donorsAuthoritative = body.donorsAuthoritative === true;
     const donorsReplace = body.donorsReplace === true;
-    const settlementReset = body.settlementReset === true;
+    // ✅ 2026-09-22 v13 정산 리셋 403 Fix: 
+    // /api/settlement/reset 에서 이미 정산 리셋을 완료한 뒤 /api/state로 자동 병합 POST 올라올때
+    // body.settlementReset=true 만 있고 confirmPhrase는 빠진 채로 오기 때문에, 그냥 403 리턴하지 말고
+    // stripUnconfirmedSettlementResetFromApiPayload 로 settlementReset=true 플래그만 벗겨내고 정상 저장 진행.
+    // (정산 리셋 본작업은 /settlement/reset 에서 100% 완료되므로 여기서 재적용할 필요 없음)
+    let settlementReset = body.settlementReset === true;
+    if (settlementReset && !isSettlementResetExplicitlyConfirmed(body)) {
+      const stripped = stripUnconfirmedSettlementResetFromApiPayload(body as Record<string, unknown>) as typeof body;
+      if ((stripped as any).settlementReset !== true) {
+        settlementReset = false;
+        // field-by-field copy (원본 body 객체 mutation 방지 위해 새 객체 할당)
+        Object.assign(body, stripped);
+        logger.info("settlementReset=true 플래그 confirm 없음 → strip 후 정상 저장 계속", { userId });
+      }
+    }
     if (settlementReset && !isSettlementResetExplicitlyConfirmed(body)) {
       logger.warn("settlementReset POST rejected — missing explicit user confirmation", {
         userId,

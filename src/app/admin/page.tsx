@@ -2252,6 +2252,26 @@ function AdminPageInner() {
   const moveToSection = (key: AdminNavKey, targetId: string, opts?: { fromSubItem?: boolean }) => {
     const resolved: AdminNavKey = LEGACY_TO_NEW_KEY[key as string] ?? key;
     const finalActiveNav: AdminNavKey = resolved;
+    // ✅ v13 No-Flicker B-②: 타이머 누적 100% 봉쇄
+    // 메뉴 10번 클릭시 SCHEDULE_MS 3개 + 80ms recheck + hydIv interval 이 타이머 40개가 쌓여서 동시에 scrollTop 덮어쓰는게 떨림의 핵심 원인
+    // 매 moveToSection 진입 마다 **기존에 등록된 타이머 5종을 전부 clear** → 메모리 누수 + 타이머 누적 동시 해결
+    if (typeof window !== "undefined") {
+      try {
+        const W = window as any;
+        const timers: number[] = [
+          ...(W.__adminScheduleTimers || []),
+          W.__adminOnceRecheckTimer || 0,
+        ].filter(Boolean) as number[];
+        timers.forEach((id) => { try { clearTimeout(id); } catch (_noop) { /* noop */ } });
+        if (typeof W.__adminHydIv === "number") {
+          try { clearInterval(W.__adminHydIv); } catch (_noop) { /* noop */ }
+          W.__adminHydIv = 0;
+        }
+        // 초기화
+        W.__adminScheduleTimers = [];
+        W.__adminOnceRecheckTimer = 0;
+      } catch (_noop) { /* noop */ }
+    }
     if (typeof window !== "undefined") {
       try {
         (window as any).__adminDominantNavKey = finalActiveNav;
@@ -2281,6 +2301,26 @@ function AdminPageInner() {
      */
     const forceScrollToElement = (rawEl: HTMLElement | null | undefined, label = "scroll") => {
       if (!rawEl) return { ok: false, reason: "no-el" };
+      // ✅ v13 No-Flicker B-③: 글로벌 300ms scroll 락 → 중복 scrollTop 덮어쓰기 차단
+      // 메뉴 10번 클릭시 10개의 forceScrollToElement 가 동시에 실행되면서 scrollTop 왔다갔다 = 떨림
+      // 락이 걸린 300ms 동안은 첫 번째 실행한 놈 빼고 나머지 전부 return → 떨림 0%
+      if (typeof window !== "undefined") {
+        try {
+          const W = window as any;
+          const LOCK_MS = 300;
+          const now = Date.now();
+          // 단, 같은 label 재실행 (recheck-xxx 등) 은 락 풀지 않고 허용할 필요 없음
+          // → 단 1번만 락을 잡으면 됨. 기존 락이 남아있으면 즉시 return
+          if (typeof W.__adminScrollLockUntil === "number" && W.__adminScrollLockUntil > now) {
+            try {
+              // eslint-disable-next-line no-console
+              console.debug(`[admin-scroll-v5] ${label} SKIP scrollLockUntil 남음(${W.__adminScrollLockUntil - now}ms) — 중복 scroll 차단`);
+            } catch (_noop) { /* noop */ }
+            return { ok: true, locked: true, reason: "lock_active" };
+          }
+          W.__adminScrollLockUntil = now + LOCK_MS;
+        } catch (_noop) { /* noop */ }
+      }
       try {
         const rect = rawEl.getBoundingClientRect();
         const winY = Number(window.scrollY || window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0);
@@ -2833,12 +2873,21 @@ function AdminPageInner() {
             const cs = tabEl.querySelectorAll<HTMLElement>("[data-admin-section-content]");
             for (let ci = 0; ci < cs.length; ci += 1) {
               const node = cs[ci]!;
-              // content 실제 높이가 80px 미만이거나, height: px 값 주입이 안됐을때만 재실행 요청
-              if (node.offsetHeight > 0 && node.offsetHeight < 80) return false;
+              // ✅ v13 No-Flicker: Squash 상태 감지 로직 관대화 (75% 이상 ok)
+              // (기존) style height === offsetHeight 완벽 일치 요구 → reflow 타이밍에 1~5px 차이로 매번 false → hydIv 영원히 안꺼짐 → 떨림
+              // (개선) 오직 2가지 케이스만 FAIL: (가) oh<80px 확실 Squash (나) style height 자체가 없거나 <80px
+              // 실제 oh ≥ (styleHeight × 0.75) 이면 정상 → PASS. 1456px 일때 1092px 이상이면 ok
               const curH = node.style.getPropertyValue("height");
+              const curHP = node.style.getPropertyPriority("height");
               if (!curH || curH.endsWith("px") === false) return false;
               const curHNum = parseInt(curH, 10);
               if (Number.isFinite(curHNum) && curHNum < 80) return false;
+              if (curHP !== "important") return false;
+              if (node.offsetHeight > 0 && node.offsetHeight < 80) return false;
+              if (curHNum >= 80 && node.offsetHeight > 0) {
+                const minAcceptable = Math.max(80, Math.floor(curHNum * 0.75));
+                if (node.offsetHeight < minAcceptable) return false;
+              }
               // flex-shrink: 0 !important 반드시 설정
               const anc = node.style.getPropertyValue("flex-shrink");
               const anp = node.style.getPropertyPriority("flex-shrink");
@@ -2918,7 +2967,8 @@ function AdminPageInner() {
         } catch (_noop) { /* noop */ }
         try { el.classList.remove("ui-section-arrive"); } catch (_noop) { /* noop */ }
         // ✅ v12: 80ms recheck는 유지 (단 900ms 시점에만 1회 실행 → 중복 scroll 없음)
-        window.setTimeout(() => {
+        // ✅ v13 B-②: once 80ms recheck setTimeout ID 전역 저장 → moveToSection 진입시 clearTimeout 대상
+        const rtId = window.setTimeout(() => {
           try { el.classList.add("ui-section-arrive"); } catch (_noop) { /* noop */ }
           const sc = contentScrollRef.current;
           if (sc) {
@@ -2929,6 +2979,10 @@ function AdminPageInner() {
             }
           }
         }, 80);
+        try {
+          const W = window as any;
+          W.__adminOnceRecheckTimer = rtId;
+        } catch (_noop) { /* noop */ }
         return true;
       };
       let hydTicks = 0;
@@ -2948,15 +3002,30 @@ function AdminPageInner() {
           if (_hydrateBypassAt === 0) _hydrateBypassAt = now + COLLAPSE_HYDRATED_TIMEOUT_MS;
           const hydOk = sectionCollapseHydrated || (now >= _hydrateBypassAt);
           if (!hydOk) {
-            if (hydTicks >= 15 || hydConsOk >= 3) window.clearInterval(hydIv);
+            if (hydTicks >= 15 || hydConsOk >= 3) {
+              window.clearInterval(hydIv);
+              try { (window as any).__adminHydIv = 0; } catch (_noop) { /* noop */ }
+            }
             return;
           }
           window.clearInterval(hydIv);
+          try { (window as any).__adminHydIv = 0; } catch (_noop) { /* noop */ }
+          // ✅ v13 B-②: SCHEDULE_MS setTimeout ID 전역 배열에 저장 → 다음 moveToSection 진입시 clearTimeout 가능
           SCHEDULE_MS.forEach((ms, idx) => {
-            window.setTimeout(() => { void once(`s${idx}@${ms}`); }, ms);
+            const tid = window.setTimeout(() => { void once(`s${idx}@${ms}`); }, ms);
+            try {
+              const W = window as any;
+              if (!Array.isArray(W.__adminScheduleTimers)) W.__adminScheduleTimers = [];
+              W.__adminScheduleTimers.push(tid);
+            } catch (_noop) { /* noop */ }
           });
-        } catch (_noop) { window.clearInterval(hydIv); }
+        } catch (_noop) {
+          window.clearInterval(hydIv);
+          try { (window as any).__adminHydIv = 0; } catch (_noop2) { /* noop */ }
+        }
       }, 200);
+      // ✅ v13 B-②: hydIv interval ID 전역에 저장 → 중복 생성 차단
+      try { (window as any).__adminHydIv = hydIv; } catch (_noop) { /* noop */ }
     } else {
       const resetScroll = () => {
         if (contentScrollRef.current) {
