@@ -2148,11 +2148,14 @@ function AdminPageInner() {
   const donorPageIdx = Math.min(donorListPage, donorTotalPages);
   const donorPageStart = (donorPageIdx - 1) * donorListPageSize;
   const donorPageEnd = donorPageStart + donorListPageSize;
-  /** ✅ 페이지 내 & 선택 행 총액 집계 (실시간 확인용) */
+  /** ✅ 페이지 내 & 선택 행 총액 집계 (실시간 확인용) — ⚠️ 삭제된 건(deletedAt 존재)은 페이지 합계/선택 합계 둘 다 제외! */
   const donorPageAgg = useMemo(() => {
     let pageSum = 0; let pageCount = 0;
     const vis = donorListShowAll ? donorListRowsFiltered : donorListRowsFiltered.slice(donorPageStart, donorPageEnd);
-    for (const d of vis as any[]) { pageSum += Number(d?.amount ?? 0); pageCount += 1; }
+    for (const d of vis as any[]) {
+      if (d?.deletedAt) continue;
+      pageSum += Number(d?.amount ?? 0); pageCount += 1;
+    }
     return { pageSum, pageCount };
   }, [donorListRowsFiltered, donorListShowAll, donorPageStart, donorPageEnd]);
   const donorSelectedAgg = useMemo(() => {
@@ -2160,7 +2163,7 @@ function AdminPageInner() {
     if (selectedDonorIds.size === 0) return { selSum: 0, selCount: 0 };
     for (const d of donorListRowsFiltered as any[]) {
       const id = String(d?.id ?? "");
-      if (id && selectedDonorIds.has(id)) { selSum += Number(d?.amount ?? 0); selCount += 1; }
+      if (id && selectedDonorIds.has(id) && !d?.deletedAt) { selSum += Number(d?.amount ?? 0); selCount += 1; }
     }
     return { selSum, selCount };
   }, [donorListRowsFiltered, selectedDonorIds]);
