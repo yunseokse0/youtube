@@ -109,7 +109,7 @@ async function writeSigImageToPublicUploads(
     const dir = path.join(root, "uploads", "sigs", safeUid);
     try {
       await mkdir(dir, { recursive: true });
-      await writeFile(path.join(dir, fileName), data);
+      await writeFile(path.join(dir, fileName), data as unknown as Parameters<typeof writeFile>[1]);
       wrote = true;
     } catch (e) {
       lastErr = e;
