@@ -489,6 +489,11 @@ export function shouldBlockHighSocietyRegression(
   base: HighSocietySettings | null | undefined,
   patch: HighSocietySettings | null | undefined
 ): boolean {
+  const baseN = base ? normalizeHighSocietySettings(base) : null;
+  const patchN = patch ? normalizeHighSocietySettings(patch) : null;
+  // ✅ 2026-09-22 v15 Hotfix: 명시적 ON/OFF 토글은 절대 regression guard 로 막으면 안됨
+  //   → 사용자가 OFF → ON 또는 ON → OFF 버튼 클릭시 그 즉시 허용 (그 외 모든 wipe block은 정상 유지)
+  if (Boolean(patchN?.enabled) !== Boolean(baseN?.enabled)) return false;
   if (!isMeaningfulHighSocietySettings(base)) return false;
   const baseRound = Math.max(1, Math.floor(Number(base?.round) || 1));
   const patchRound = Math.max(1, Math.floor(Number(patch?.round) || 1));
