@@ -419,6 +419,7 @@ function applySyncedState(
     dataForApply.deletedTerritoryLogIds,
     refs.lastGoodRef.current?.deletedTerritoryLogIds
   );
+  const incomingLogsResetAt = Number(hsIncoming?.territoryLogsResetAt || 0);
   const mergedTerritoryLogs =
     pick === STATE_PICK_OVERLAY || pick === STATE_PICK_OVERLAY_DONORS
       ? Array.isArray(dataForApply.territoryLogs)
@@ -426,34 +427,15 @@ function applySyncedState(
             normalizeTerritoryLogs(dataForApply.territoryLogs),
             normalizeTerritoryLogs(dataForApply.territoryLogs),
             {
-              territoryLogsResetAt: Math.max(
-                Number(hsIncoming?.territoryLogsResetAt || 0),
-                Number(hsBaseline?.territoryLogsResetAt || 0)
-              ),
+              territoryLogsResetAt: incomingLogsResetAt,
               deletedIds: overlayDeletedIds,
             }
           )
-        : mergeTerritoryLogsPreferFresher(
-            normalizeTerritoryLogs(refs.lastGoodRef.current?.territoryLogs),
-            normalizeTerritoryLogs(dataForApply.territoryLogs),
-            {
-              localUpdatedAt: hsBaselineUpdatedAt,
-              remoteUpdatedAt: hsIncomingUpdatedAt,
-              territoryLogsResetAt: Math.max(
-                Number(hsIncoming?.territoryLogsResetAt || 0),
-                Number(hsBaseline?.territoryLogsResetAt || 0)
-              ),
-              deletedIds: overlayDeletedIds,
-            }
-          )
+        : normalizeTerritoryLogs(refs.lastGoodRef.current?.territoryLogs)
       : dataForApply.territoryLogs;
-  const territoryLogsResetAt = Math.max(
-    Number(
-      (mergedHighSocietySettings as { territoryLogsResetAt?: number } | undefined)?.territoryLogsResetAt || 0
-    ),
-    Number(hsIncoming?.territoryLogsResetAt || 0)
-  );
-  const prunedTerritoryLogs = filterTerritoryLogsAfterReset(mergedTerritoryLogs, territoryLogsResetAt);
+  const prunedTerritoryLogs = Array.isArray(dataForApply.territoryLogs)
+    ? filterTerritoryLogsAfterReset(mergedTerritoryLogs, incomingLogsResetAt)
+    : mergedTerritoryLogs;
   const next = {
     ...dataForApply,
     highSocietySettings: mergedHighSocietySettings,

@@ -2783,6 +2783,60 @@ describe('high-society team mode (normalizeTeam / aggregateTeam / resolveTeamCol
     expect(teamB.widthCm).not.toBe(230);
   });
 
+  it("팀전 A+240 B+300 B+180 A+120 — 전체 replay 는 120/360, 앞 두 줄만이면 180/300", () => {
+    const members = [
+      { id: "jaki", name: "자키", account: 0, toon: 0, operating: false },
+      { id: "nana", name: "나나", account: 0, toon: 0, operating: false },
+      { id: "lara", name: "김라라", account: 0, toon: 0, operating: false },
+      { id: "oharin", name: "오하린", account: 0, toon: 0, operating: false },
+      { id: "haru", name: "하루", account: 0, toon: 0, operating: false },
+      { id: "jindayul", name: "진다율", account: 0, toon: 0, operating: false },
+    ];
+    const teams = [
+      { id: "ta", name: "TEAM A" },
+      { id: "tb", name: "TEAM B" },
+    ];
+    const assignments: Record<string, string> = {
+      jaki: "ta",
+      nana: "ta",
+      lara: "ta",
+      oharin: "tb",
+      haru: "tb",
+      jindayul: "tb",
+    };
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      matchMode: "team",
+      seatMemberIds: members.map((m) => m.id),
+      seatMemberIdsManual: true,
+      startCmPerMember: 80,
+      teams,
+      memberTeamAssignments: assignments,
+    });
+    const t0 = 1_000;
+    const logs = [
+      createTerritoryLog("jaki", 1, 240, { pushDir: "right", teamId: "ta", now: t0 }),
+      createTerritoryLog("oharin", 1, 300, { pushDir: "right", teamId: "tb", now: t0 + 1 }),
+      createTerritoryLog("oharin", 1, 180, { pushDir: "right", teamId: "tb", now: t0 + 2 }),
+      createTerritoryLog("jaki", 1, 120, { pushDir: "right", teamId: "ta", now: t0 + 3 }),
+    ];
+    const teamOf = (stateLogs: typeof logs) => {
+      const field = buildHighSocietyFieldFromAppState({
+        members,
+        donors: [],
+        highSocietySettings: settings,
+        territoryLogs: stateLogs,
+      } as import("@/types").AppState);
+      const teamSeats = aggregateHighSocietySeatsByTeam(field.seats, settings);
+      return {
+        a: teamSeats.find((s) => s.id === "team:ta")!.widthCm,
+        b: teamSeats.find((s) => s.id === "team:tb")!.widthCm,
+      };
+    };
+    expect(teamOf(logs.slice(0, 2))).toEqual({ a: 180, b: 300 });
+    expect(teamOf(logs)).toEqual({ a: 120, b: 360 });
+  });
+
   it('normalize — matchMode 키 없어도 teams 가 있으면 팀전 유지', () => {
     const n = normalizeHighSocietySettings({
       enabled: true,

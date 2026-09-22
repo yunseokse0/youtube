@@ -78,6 +78,20 @@ export function buildStateUpdatedSsePayload(
   }
   if (timerDisplayStylesUpdated) pl.timerDisplayStylesUpdatedAt = updatedAt;
   if (generalTimerUpdated) pl.generalTimerUpdatedAt = updatedAt;
+  try {
+    if (body.highSocietySettings != null && typeof body.highSocietySettings === "object") {
+      pl.highSocietySettingsUpdatedAt = updatedAt;
+    }
+    if (
+      Array.isArray(body.territoryLogs) ||
+      (Array.isArray((body as { deletedTerritoryLogIds?: unknown }).deletedTerritoryLogIds) &&
+        ((body as { deletedTerritoryLogIds?: unknown[] }).deletedTerritoryLogIds?.length || 0) > 0)
+    ) {
+      pl.territoryLogsUpdatedAt = updatedAt;
+    }
+  } catch {
+    /* noop */
+  }
 
   return pl;
 }

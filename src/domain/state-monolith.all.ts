@@ -2538,6 +2538,8 @@ async function runServerSaveQueue(): Promise<void> {
         let membersRosterUpdated = false;
         let timerDisplayStylesUpdated = false;
         let generalTimerUpdated = false;
+        let highSocietySettingsUpdated = false;
+        let territoryLogsUpdated = false;
         try {
           const body = JSON.parse(job.apiBodyJson) as {
             membersAuthoritative?: boolean;
@@ -2545,6 +2547,9 @@ async function runServerSaveQueue(): Promise<void> {
             timerDisplayStyles?: unknown;
             generalTimer?: unknown;
             matchTimer?: unknown;
+            highSocietySettings?: unknown;
+            territoryLogs?: unknown;
+            deletedTerritoryLogIds?: unknown;
           };
           /** 테마·시그 PATCH 에 members 가 실려도 OBS forceFull 폭주 방지 — 추가·삭제 권위만 */
           membersRosterUpdated = body.membersAuthoritative === true;
@@ -2553,6 +2558,11 @@ async function runServerSaveQueue(): Promise<void> {
           generalTimerUpdated =
             (body.generalTimer != null && typeof body.generalTimer === "object") ||
             (body.matchTimer != null && typeof body.matchTimer === "object");
+          highSocietySettingsUpdated =
+            body.highSocietySettings != null && typeof body.highSocietySettings === "object";
+          territoryLogsUpdated =
+            Array.isArray(body.territoryLogs) ||
+            (Array.isArray(body.deletedTerritoryLogIds) && body.deletedTerritoryLogIds.length > 0);
         } catch {
           /* ignore */
         }
@@ -2572,6 +2582,9 @@ async function runServerSaveQueue(): Promise<void> {
           ...(timerDisplayStylesUpdated ? { timerDisplayStylesUpdatedAt: updatedAt } : {}),
           /** 일반·대전 타이머 일시정지/재개 — OBS 즉시 동기화 */
           ...(generalTimerUpdated ? { generalTimerUpdatedAt: updatedAt } : {}),
+          /** 상류사회 설정·영토 기록 — OBS forceFull (디바운스 since가 오래된 lastGood을 남기지 않도록) */
+          ...(highSocietySettingsUpdated ? { highSocietySettingsUpdatedAt: updatedAt } : {}),
+          ...(territoryLogsUpdated ? { territoryLogsUpdatedAt: updatedAt } : {}),
         }).catch(() => {});
       } catch {
         /* ignore */
