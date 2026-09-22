@@ -114,8 +114,32 @@ export function useAdminPopupBroadcastState() {
 
   useEffect(() => {
     if (!authReady) return;
+    /** ✅ Fix v17.9.3: scopedUserId 가 아직 세션과 불일치 상태면 reload 스킵 — 교정 완료 후 아래 useEffect에서 자동 reload
+     *  이전 버그: authReady 직후 finalent 버킷 state를 먼저 불러와 사용자가 din임에도 finalent HS 설정(OFF)이 표시됨
+     */
+    if (user?.id) {
+      const resolvedSessionUid = resolveScopedOverlayUserId(user.id);
+      if (scopedUserId !== resolvedSessionUid) {
+        const isLocalhost =
+          typeof window !== "undefined" &&
+          (window.location.hostname === "localhost" ||
+            window.location.hostname === "127.0.0.1" ||
+            window.location.hostname.includes("local"));
+        const resolvedUrlUid = urlUserId ? resolveScopedOverlayUserId(urlUserId) : "";
+        const urlMatchesSession = resolvedUrlUid && resolvedUrlUid === resolvedSessionUid;
+        if (!isLocalhost && !urlMatchesSession) return; // 프로덕션에서 교정 대기 중 → reload 스킵
+      }
+    }
     void reload();
-  }, [authReady, reload]);
+  }, [authReady, reload, scopedUserId, user?.id, urlUserId]);
+
+  useEffect(() => {
+    /** ✅ Fix v17.9.3: scopedUserId 가 교정되면(= finalent → din) 자동으로 새 버킷 state reload */
+    if (!authReady) return;
+    if (!scopedUserId) return;
+    if (stateRef.current == null) return; // 첫 init은 위 authReady effect에서 담당
+    void reload();
+  }, [scopedUserId]);
 
   useSSEConnection((d: unknown) => {
     const o = d as { type?: string };

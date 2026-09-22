@@ -11850,6 +11850,17 @@ function AdminPageInner() {
               </button>
               <button
                 type="button"
+                className="px-3 py-2 rounded-[10px] text-sm font-semibold text-amber-200 bg-[#1a1405] border border-amber-500/30 hover:bg-[#2a1f08] transition"
+                onClick={() => {
+                  const uid = encodeURIComponent(overlayUserId || user?.id || "");
+                  window.location.href = `/admin/high-society?u=${uid}`;
+                }}
+                title="상류사회 · 영토 팝업을 올바른 계정(u=로그인ID)으로 새 창에서 엽니다 (기존 북마크 ?u=finalent 오류 방지)"
+              >
+                상류사회 · 영토
+              </button>
+              <button
+                type="button"
                 className="px-3.5 py-2 rounded-[10px] text-sm font-bold text-white transition"
                 style={{ background: "linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%)", boxShadow: "0 3px 12px rgba(37,99,235,0.3)", border: "1px solid rgba(96,165,250,0.5)" }}
                 onClick={onFetchLatestFromServer}
