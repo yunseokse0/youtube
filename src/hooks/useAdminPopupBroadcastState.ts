@@ -28,7 +28,12 @@ export function useAdminPopupBroadcastState() {
   const stateRef = useRef<AppState | null>(null);
   const reloadBusyRef = useRef(false);
 
-  const scopedUserId = resolveScopedOverlayUserId(user?.id || urlUserId || "finalent");
+  /** ✅ 2026-09-22 v16.1 Hotfix: 팝업 창은 URL ?u= 파라미터를 최우선으로 state 저장 ID 를 결정!
+   *  기존: user?.id || urlUserId || "finalent"  →  로그인 ID(din) 가 우선이라 다른 유저 state를 불러와서 OFF + 멤버0명 됐음
+   *  신규: urlUserId(팝업 오픈시 명시적 전달) > user?.id > finalent
+   *    → 로그인한 계정 user.id 는 권한 인증(/api/auth/me) 에만 사용하고, state 조회/저장은 URL 기준으로 통일
+   */
+  const scopedUserId = resolveScopedOverlayUserId(urlUserId || user?.id, "finalent");
 
   useEffect(() => {
     stateRef.current = state;
