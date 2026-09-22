@@ -18197,18 +18197,18 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                 className="w-full !max-w-full mx-0 px-0 border border-white/10 rounded isolate overflow-hidden !ml-0 !mr-0"
                 data-admin-section-content="donor-list"
               >
-                <table className={`w-full ${donorListDenseMode ? "text-[12px]" : "text-sm"}`} style={{ tableLayout: "auto", borderCollapse: "separate", width: "100%" }}>
+                <table className={`w-full ${donorListDenseMode ? "text-[12px]" : "text-sm"}`} style={{ tableLayout: "fixed", borderCollapse: "separate", width: "100%" }}>
                   <thead className="sticky top-0 z-10 bg-neutral-950/95 backdrop-blur-sm shadow-[0_1px_0_0_rgba(255,255,255,0.1)]">
                     <tr className="text-neutral-400" style={{ lineHeight: donorListDenseMode ? "1rem" : "1.25rem", height: donorListDenseMode ? "1.5rem" : "2rem" }}>
-                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-10" : "p-1 w-12"}`}>선택</th>
-                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[5.5rem]" : "p-1 w-[8rem]"}`}>시간</th>
-                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[7rem]" : "p-1 w-[10rem]"}`}>후원자</th>
-                      {!donorListDenseMode && <th className="text-left font-medium p-1 w-[7rem] shrink-0">멤버</th>}
-                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[4rem]" : "p-1 w-[5.5rem]"}`}>대상</th>
-                      <th className={`text-left font-medium w-full ${donorListDenseMode ? "p-0.5 min-w-[140px]" : "p-1 min-w-[220px]"}`}>메시지</th>
-                      <th className={`text-right font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[6rem]" : "p-1 w-[8rem]"}`}>금액</th>
-                      {!donorListDenseMode && <th className="text-right font-medium p-1 w-[10rem] shrink-0">나누기</th>}
-                      <th className={`text-right font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-[5rem]" : "p-1 w-[7rem]"}`}>삭제</th>
+                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-10" : "p-1 w-12"}`} style={{ width: donorListDenseMode ? "2.5rem" : "3rem" }}>선택</th>
+                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5" : "p-1"}`} style={{ width: donorListDenseMode ? "6rem" : "8.5rem", minWidth: donorListDenseMode ? "6rem" : "8.5rem" }}>시간</th>
+                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5" : "p-1"}`} style={{ width: donorListDenseMode ? "8rem" : "11rem", minWidth: donorListDenseMode ? "8rem" : "11rem", maxWidth: donorListDenseMode ? "10rem" : "14rem" }}>후원자</th>
+                      {!donorListDenseMode && <th className="text-left font-medium p-1 shrink-0" style={{ width: "7rem", minWidth: "7rem" }}>멤버</th>}
+                      <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5" : "p-1"}`} style={{ width: donorListDenseMode ? "4rem" : "5.5rem", minWidth: donorListDenseMode ? "4rem" : "5.5rem" }}>대상</th>
+                      <th className={`text-left font-medium ${donorListDenseMode ? "p-0.5" : "p-1"}`} style={{ width: "auto", minWidth: donorListDenseMode ? "140px" : "220px" }}>메시지</th>
+                      <th className={`text-right font-medium shrink-0 ${donorListDenseMode ? "p-0.5" : "p-1"}`} style={{ width: donorListDenseMode ? "6rem" : "8rem", minWidth: donorListDenseMode ? "6rem" : "8rem" }}>금액</th>
+                      {!donorListDenseMode && <th className="text-right font-medium p-1 shrink-0" style={{ width: "10rem", minWidth: "10rem" }}>나누기</th>}
+                      <th className={`text-right font-medium shrink-0 ${donorListDenseMode ? "p-0.5" : "p-1"}`} style={{ width: donorListDenseMode ? "5rem" : "7rem", minWidth: donorListDenseMode ? "5rem" : "7rem" }}>삭제</th>
                     </tr>
                     <tr className="text-neutral-400 border-b border-white/5" style={{ lineHeight: donorListDenseMode ? "0.875rem" : "1.25rem", height: donorListDenseMode ? "1.25rem" : "2rem" }}>
                       <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-10" : "p-1 w-12"}`}>
@@ -18259,13 +18259,13 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                 onToggle={toggleDonorSelect}
                               />
                             </td>
-                            <td className={`${donorListDenseMode ? "p-0.5" : "p-1"} text-neutral-400 align-top`}><ClientTime ts={d.at} /></td>
-                            <td className={`${donorListDenseMode ? "p-0.5" : "p-1"} align-top`} style={{ overflow: "hidden" }}>
-                              <div className="flex flex-wrap items-center gap-1" style={{ overflow: "hidden" }}>
+                            <td className={`${donorListDenseMode ? "p-0.5" : "p-1"} text-neutral-400 align-top`} style={{ width: donorListDenseMode ? "6rem" : "8.5rem", minWidth: donorListDenseMode ? "6rem" : "8.5rem" }}><ClientTime ts={d.at} /></td>
+                            <td className={`${donorListDenseMode ? "p-0.5" : "p-1"} align-top`} style={{ width: donorListDenseMode ? "8rem" : "11rem", minWidth: donorListDenseMode ? "8rem" : "11rem", maxWidth: donorListDenseMode ? "10rem" : "14rem", overflow: "visible" }}>
+                              <div className="flex flex-wrap items-center gap-1">
                                 <input
                                   type="text"
                                   id={`donor-name-${String(d.id)}`}
-                                  className={`w-full ${donorListDenseMode ? "max-w-[7.5rem] px-1 py-px text-[11px]" : "max-w-[10rem] px-1.5 py-0.5 text-xs"} rounded border border-white/10 bg-neutral-950/80 text-neutral-100 placeholder:text-neutral-600 focus:outline-none focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400/40 disabled:text-neutral-500 overflow-hidden`}
+                                  className={`w-full ${donorListDenseMode ? "px-1 py-px text-[11px]" : "px-1.5 py-0.5 text-xs"} rounded border border-white/10 bg-neutral-950/80 text-neutral-100 placeholder:text-neutral-600 focus:outline-none focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400/40 disabled:text-neutral-500`}
                                   style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                                   disabled={isSplitPart || isSplitSource}
                                   value={
@@ -18362,7 +18362,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                               </div>
                             </td>
                             {!donorListDenseMode && (
-                            <td className="p-1 text-neutral-300 align-top" style={{ overflow: "hidden" }}>
+                            <td className="p-1 text-neutral-300 align-top" style={{ width: "7rem", minWidth: "7rem", overflow: "visible" }}>
                               <select
                                 className="max-w-[9rem] rounded border border-white/10 bg-neutral-900/80 px-1 py-0.5 text-xs text-neutral-100 overflow-hidden"
                                 style={{ overflow: "hidden", textOverflow: "ellipsis" }}
