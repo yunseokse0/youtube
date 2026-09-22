@@ -330,7 +330,10 @@ export async function POST(req: Request) {
     const incomingDonorsRaw = donorsInPatch ? normalizeDonorsArray(body.donors) : [];
     let incomingDonorsFiltered =
       resetAt > 0 && !settlementReset && donorsInPatch
-        ? applySettlementResetDonorPipeline(incomingDonorsRaw, resetAt, { allowFullWipe: false })
+        ? applySettlementResetDonorPipeline(incomingDonorsRaw, resetAt, {
+            allowFullWipe: false,
+            intentionalClearAt: Number(baseState.intentionalDonationClearAt || 0),
+          })
         : incomingDonorsRaw;
     if (kvOk && !existing && !settlementReset && !donationInitReset) {
       const kvErr = await getPersistentKvLastError();
@@ -729,7 +732,10 @@ export async function POST(req: Request) {
       let donorsToUse = before;
       let stripped = false;
       if (!settlementReset && effectiveResetAt > 0) {
-        donorsToUse = applySettlementResetDonorPipeline(before, effectiveResetAt, { allowFullWipe: false });
+        donorsToUse = applySettlementResetDonorPipeline(before, effectiveResetAt, {
+          allowFullWipe: false,
+          intentionalClearAt: Number(next.intentionalDonationClearAt || effectiveClearAt || 0),
+        });
         stripped = donorsToUse.length !== before.length;
       } else {
         donorsToUse = before;

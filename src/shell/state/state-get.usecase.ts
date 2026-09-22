@@ -405,7 +405,10 @@ async function handleStateGetInner(req: Request): Promise<Response> {
           );
           const logDonorsBefore = normalizeDonorsArray(fromLog.donors);
           if (resetAt > 0 && logDonorsBefore.length > 0) {
-            const filtered = applySettlementResetDonorPipeline(logDonorsBefore, resetAt, { allowFullWipe: false });
+            const filtered = applySettlementResetDonorPipeline(logDonorsBefore, resetAt, {
+              allowFullWipe: false,
+              intentionalClearAt: Number(mergedForResponse.intentionalDonationClearAt || 0),
+            });
             if (filtered.length !== logDonorsBefore.length) {
               fromLog = { ...fromLog, donors: filtered };
               logger.warn("정산 리셋 보호 적용: 일일 로그 donors 구 행 제거", {
@@ -438,7 +441,10 @@ async function handleStateGetInner(req: Request): Promise<Response> {
       const resetAt = Number(mergedForResponse.settlementResetAt || 0);
       if (resetAt > 0) {
         const before = normalizeDonorsArray(mergedForResponse.donors);
-        const after = applySettlementResetDonorPipeline(before, resetAt, { allowFullWipe: false });
+        const after = applySettlementResetDonorPipeline(before, resetAt, {
+          allowFullWipe: false,
+          intentionalClearAt: Number(mergedForResponse.intentionalDonationClearAt || 0),
+        });
         if (after.length !== before.length || normalizeDonorsArray(mergedForResponse.donors).length > 0) {
           mergedForResponse = syncMemberTotalsFromDonors({
             ...mergedForResponse,

@@ -4501,18 +4501,28 @@ export function filterDonorsAfterSettlementReset(
   });
 }
 
-/** rebump → filter. 명시 리셋이 아닐 때 필터가 전량 탈락시키면 rebump 본을 유지 */
+/** rebump → filter. 명시 리셋이 아닐 때 필터가 전량 탈락시키면 rebump 본을 유지
+ *  ✅ v17.5 intentionalClearAt 매칭 안전망:
+ *   · intentionalClearAt === settlementResetAt 인 경우 (정산리셋 버튼으로 의도적으로 비움) →
+ *     allowFullWipe 를 자동으로 true 로 상향 → 구 후원 rebump 부활 100% 봉쇄!
+ *   · intentionalClearAt 가 없거나 settlementResetAt 와 불일치 (우발적 sync/merge 등) →
+ *     기존대로 allowFullWipe 파라미터 우선 (안전망 유지)
+ */
 export function applySettlementResetDonorPipeline(
   donors: Donor[] | undefined,
   settlementResetAt: number,
-  opts?: { allowFullWipe?: boolean }
+  opts?: { allowFullWipe?: boolean; intentionalClearAt?: number }
 ): Donor[] {
   const resetAt = Number(settlementResetAt || 0);
   const normalized = normalizeDonorsArray(donors);
   if (!resetAt) return normalized;
+  const explicitIntentionalReset =
+    Number(opts?.intentionalClearAt || 0) > 0 &&
+    Math.abs(Number(opts?.intentionalClearAt || 0) - resetAt) < 10_000; // 10초 오차 허용
   const rebumped = rebumpDonorsPastSettlementReset(normalized, resetAt);
   const filtered = filterDonorsAfterSettlementReset(rebumped, resetAt);
-  if (!opts?.allowFullWipe && normalized.length > 0 && filtered.length === 0) {
+  const finalAllowFullWipe = explicitIntentionalReset ? true : Boolean(opts?.allowFullWipe);
+  if (!finalAllowFullWipe && normalized.length > 0 && filtered.length === 0) {
     return rebumped;
   }
   return filtered;
