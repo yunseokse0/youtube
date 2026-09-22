@@ -2311,17 +2311,11 @@ export function resolveScopedOverlayUserId(
   userId: string | null | undefined,
   ...fallbacks: Array<string | null | undefined>
 ): string {
-  let picked = "";
-  for (const cand of [userId, ...fallbacks, "finalent"]) {
+  for (const cand of [userId, ...fallbacks]) {
     const id = String(cand || "").trim();
-    if (id && id !== "undefined" && id !== "null") {
-      picked = id;
-      break;
-    }
+    if (id && id !== "undefined" && id !== "null") return id;
   }
-  const legacyAliases = new Set(["din", "admin", "default", "ss", "youtube"]);
-  if (!picked || legacyAliases.has(picked)) return "finalent";
-  return picked;
+  return "";
 }
 
 /** OBS 프리셋 등에서 `memberId=null` 문자열이 들어오면 필터가 깨지므로 무시 */

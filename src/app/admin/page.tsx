@@ -772,22 +772,21 @@ function AdminPageInner() {
   const [user, setUser] = useState<{ id: string; companyName: string; name?: string; remainingDays?: number | null; unlimited?: boolean } | null>(null);
   /** /api/auth/me 완료 전 — 미리보기에 가짜 '재로그인' 문구를 띄우지 않기 위함 */
   const [authReady, setAuthReady] = useState(false);
-  /** 오버레이 URL·미리보기 — ✅ 2026-09-22 v17.2 Hotfix:
+  /** 오버레이 URL·미리보기 — ✅ 2026-09-22 v17.8 Revert:
    *   1순위: URL ?u= 파라미터 (수동 지정)
-   *   2순위: 구글 로그인 ID (권한 인증)
-   *   3순위: 강제 폴백 finalent (어떤 경우에도 빈 ID가 되지 않도록!)
-   *   + 추가: 불러온 state가 완전 빈 상태면 자동으로 finalent 로 전환 + URL에 ?u=finalent 자동 붙여주기 (수동 파라미터 붙이기 불필요)
+   *   2순위: 로그인 ID user.id (로그인=din 이면 state=din 이 정답!)
+   *   3순위: 폴백 없음. finalent 강제 주입 절대 금지 (타계정 state 불러오는 버그 방지)
    */
   const [overlayUserId, setOverlayUserId] = useState<string>(() => {
     const fromUrl = (typeof window !== "undefined" ? (new URLSearchParams(window.location.search).get("u") || new URLSearchParams(window.location.search).get("user") || "") : "") || "";
-    return resolveScopedOverlayUserId(fromUrl, "finalent");
+    return resolveScopedOverlayUserId(fromUrl);
   });
   useEffect(() => {
     const fromUrl = (sp.get("u") || sp.get("user") || "").trim();
     if (fromUrl) {
-      setOverlayUserId(resolveScopedOverlayUserId(fromUrl, "finalent"));
+      setOverlayUserId(resolveScopedOverlayUserId(fromUrl));
     } else if (user?.id) {
-      setOverlayUserId(resolveScopedOverlayUserId(user.id, "finalent"));
+      setOverlayUserId(resolveScopedOverlayUserId(user.id));
     }
   }, [user?.id, urlUserIdRaw]);
   const [state, setState] = useState<AppState>(() => ({
@@ -5048,31 +5047,6 @@ function AdminPageInner() {
           if (typeof navigator !== "undefined" && !navigator.onLine) setSyncStatus("local");
           else applySyncStatusAfterStateFetch(null, remote.meta);
           return;
-        }
-        // ✅ 2026-09-22 v17.2 Hotfix: state가 완전 빈 상태(멤버0 + 후원0 + 정산안함) 이고, 아직 finalent 로 시도 안했으면
-        //   → 자동으로 finalent state로 전환 + URL에 ?u=finalent 자동 붙여주기 (사용자 수동 파라미터 붙이기 X)
-        const s = remote.state;
-        const isEmptyState =
-          normalizeDonorsArray(s.donors).length === 0 &&
-          (s.members?.length || 0) === 0 &&
-          totalCombined(s) === 0;
-        if (!opts?.suppressEmptyFallback && isEmptyState && overlayUserId !== "finalent") {
-          console.warn("[admin] 빈 state 감지 → 자동 finalent fallback", { from: overlayUserId });
-          setOverlayUserId("finalent");
-          if (typeof window !== "undefined" && window.history && window.history.replaceState) {
-            try {
-              const url = new URL(window.location.href);
-              url.searchParams.set("u", "finalent");
-              window.history.replaceState(window.history.state, "", url.toString());
-            } catch {}
-          }
-          // 1회 finalent 로 재시도
-          const remoteFb = await loadStateFromApiWithMeta("finalent", { ifUpdatedSince: 0, forceFull: true });
-          if (remoteFb.state) {
-            applySyncStatusAfterStateFetch(remoteFb.state, remoteFb.meta);
-            applyRemoteState(remoteFb.state, { forceDonorMerge: true });
-            return;
-          }
         }
         applySyncStatusAfterStateFetch(remote.state, remote.meta);
         applyRemoteState(remote.state, { forceDonorMerge: opts?.forceDonorMerge });
