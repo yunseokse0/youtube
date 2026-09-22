@@ -179,7 +179,8 @@ import {
   RESTROOM_UNLIMITED_SYMBOL,
   restroomValueAfterUndoLog,
 } from "@/lib/restroom-utils";
-import { createTerritoryLog, filterTerritoryLogsAfterReset, formatTerritoryLogPushDirLabel, mergeTerritoryLogsPreferFresher, normalizeTerritoryLogs, resolveTerritoryLogPushDirForWrite } from "@/lib/territory-utils";
+import { createTerritoryLog, filterTerritoryLogsAfterReset, formatTerritoryLogPushDirLabel, mergeDeletedTerritoryLogIds, mergeTerritoryLogsPreferFresher, normalizeTerritoryLogs, resolveTerritoryLogPushDirForWrite } from "@/lib/territory-utils";
+import { isNearDuplicateTerritoryLog } from "@/lib/territory-log-collapse";
 import { useSSEConnection } from "@/lib/sse-client";
 import { createStateUpdatedScheduler, DONOR_STATE_UPDATED_DEBOUNCE_MS, DONOR_STATE_UPDATED_MAX_WAIT_MS } from "@/lib/overlay-pull-policy";
 import {
@@ -917,6 +918,7 @@ function AdminPageInner() {
   const persistDonationLastStateRef = useRef<{ s: AppState; mode: "replace" | "add"; label?: string } | null>(null);
   const flushingPersistRef = useRef(false);
   const persistHsDebounceRef = useRef<number | null>(null);
+  const territorySubmitLockRef = useRef(false);
   const persistHsLastRef = useRef<{
     s: AppState;
     opts: {
@@ -3757,6 +3759,10 @@ function AdminPageInner() {
         localUpdatedAt: Number(local.updatedAt || 0),
         remoteUpdatedAt: Number(incoming.updatedAt || 0),
         territoryLogsResetAt,
+        deletedIds: mergeDeletedTerritoryLogIds(
+          local.deletedTerritoryLogIds,
+          merged.deletedTerritoryLogIds
+        ),
       }
     );
     if (JSON.stringify(territoryLogsUnion) !== JSON.stringify(mergedTerritoryLogs)) {
@@ -10587,6 +10593,7 @@ function AdminPageInner() {
   };
 
   const addTerritoryRecord = () => {
+    if (territorySubmitLockRef.current) return;
     const hsSettings = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
     const useTeamMode = hsSettings.matchMode === "team";
     const seated = resolveHighSocietySeatMembers(
@@ -10621,6 +10628,12 @@ function AdminPageInner() {
     }
     const cm = Math.max(0, Math.floor(parseAmount(territoryCm)));
     if (cm <= 0) return;
+    territorySubmitLockRef.current = true;
+    const modeSnap = territoryMode;
+    const noteSnap = territoryNote;
+    const pushSnap = territoryPushDir;
+    setTerritoryCm("");
+    setTerritoryNote("");
     const seatRole = seatRoleForMemberId(
       hsSettings,
       stateRef.current.members || [],
@@ -10628,15 +10641,21 @@ function AdminPageInner() {
     );
     const pushForLog = resolveTerritoryLogPushDirForWrite({
       seatRole,
-      chosen: territoryPushDir,
+      chosen: pushSnap,
       settings: hsSettings,
     });
     const log = createTerritoryLog(
       memberIdForLog,
-      territoryMode === "plus" ? 1 : -1,
+      modeSnap === "plus" ? 1 : -1,
       cm,
-      { pushDir: pushForLog, note: territoryNote, teamId: teamIdForLog }
+      { pushDir: pushForLog, note: noteSnap, teamId: teamIdForLog }
     );
+    if (isNearDuplicateTerritoryLog(stateRef.current.territoryLogs, log)) {
+      window.setTimeout(() => {
+        territorySubmitLockRef.current = false;
+      }, 400);
+      return;
+    }
     setState((prev: AppState) => {
       const next = appendTerritoryLogToAppState(prev, log);
       /** 영토 cm 만 저장 — donors/members 금액 POST 금지(후원순위·기록 초기화 회귀 방지) */
@@ -10644,9 +10663,10 @@ function AdminPageInner() {
       notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
       return next;
     });
-    setTerritoryCm("");
-    setTerritoryNote("");
-    showAppToast(`상류사회 영토 ${territoryMode === "plus" ? "추가" : "차감"}: ${cm}cm`);
+    showAppToast(`상류사회 영토 ${modeSnap === "plus" ? "추가" : "차감"}: ${cm}cm`);
+    window.setTimeout(() => {
+      territorySubmitLockRef.current = false;
+    }, 400);
   };
 
   useEffect(() => {
@@ -10823,7 +10843,7 @@ function AdminPageInner() {
           highSocietySettings: nextSettings,
           donationSyncMode: nextDonationSyncMode,
           updatedAt: Date.now(),
-          ...(resetTerritory ? { territoryLogs: [] } : {}),
+          ...(resetTerritory ? { territoryLogs: [], deletedTerritoryLogIds: [] } : {}),
         };
         if (hasDonorsToPersist) {
           next = guardMemberTotalsAgainstAccidentalZeroWipe(
@@ -17795,6 +17815,13 @@ function AdminPageInner() {
                       inputMode="numeric"
                       value={territoryCm}
                       onChange={(e) => setTerritoryCm(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addTerritoryRecord();
+                        }
+                      }}
                     />
                     {highSocietySettings.matchMode === "team" ? (
                       <select

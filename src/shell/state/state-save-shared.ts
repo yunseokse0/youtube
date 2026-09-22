@@ -33,7 +33,7 @@ import { createModuleLogger } from "@/lib/logger";
 import { isRouletteLocked } from "@/app/api/roulette/roulette-lock";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { shouldBlockHighSocietyRegression, syncHighSocietyMemberWidthSnapshotInState } from "@/lib/high-society";
-import { normalizeTerritoryLogs, mergeTerritoryLogsFromPatch } from "@/lib/territory-utils";
+import { normalizeTerritoryLogs, mergeTerritoryLogsFromPatch, mergeDeletedTerritoryLogIds } from "@/lib/territory-utils";
 import { memberCombinedTotal } from "@/shell/state/state-freshness.guard";
 import {
   donorShardCoalesceOnSave,
@@ -392,7 +392,23 @@ export function mergePartialState(
     next.territoryLogs = mergeTerritoryLogsFromPatch(base.territoryLogs, patch.territoryLogs, {
       baseUpdatedAt: Number(base.updatedAt || 0),
       patchUpdatedAt: Number(patch.updatedAt || 0),
+      deletedIds: mergeDeletedTerritoryLogIds(
+        Array.isArray((patch as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds)
+          ? (patch as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds
+          : [],
+        Array.isArray((base as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds)
+          ? (base as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds
+          : []
+      ),
     });
+    next.deletedTerritoryLogIds = mergeDeletedTerritoryLogIds(
+      Array.isArray((base as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds)
+        ? (base as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds
+        : [],
+      Array.isArray((patch as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds)
+        ? (patch as { deletedTerritoryLogIds?: string[] }).deletedTerritoryLogIds
+        : []
+    );
     const patchHs = patch.highSocietySettings as { round?: unknown } | undefined;
     const baseHs = base.highSocietySettings as { round?: unknown } | undefined;
     const patchRound = Math.max(1, Math.floor(Number(patchHs?.round) || 1));
@@ -403,6 +419,7 @@ export function mergePartialState(
       patch.territoryLogs.length === 0
     ) {
       next.territoryLogs = [];
+      next.deletedTerritoryLogIds = [];
     }
   }
   if (!("donors" in patch)) {

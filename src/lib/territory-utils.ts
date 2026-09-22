@@ -57,26 +57,52 @@ function unionTerritoryLogsById(
   return [...byId.values()].sort((a, b) => Number(a.at || 0) - Number(b.at || 0));
 }
 
+export function mergeDeletedTerritoryLogIds(
+  a?: string[] | null,
+  b?: string[] | null
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of [...(a || []), ...(b || [])]) {
+    const id = String(raw || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out.slice(-80);
+}
+
+function dropDeletedTerritoryLogs(
+  logs: TerritoryLog[],
+  deletedIds?: string[] | null
+): TerritoryLog[] {
+  const drop = new Set((deletedIds || []).map((id) => String(id || "").trim()).filter(Boolean));
+  if (drop.size === 0) return logs;
+  return logs.filter((l) => !drop.has(String(l.id)));
+}
+
 /**
  * PATCH territoryLogs 병합.
  * 기본은 id union (연속 입력 3건이 2건 POST 로 덮이지 않게).
- * 부분집합 삭제는 patch 가 base 보다 최신일 때만 (기록 삭제·영토 초기화).
+ * 한 건 삭제는 patch 가 base 보다 최신일 때만 (기록 한 줄 삭제).
+ * 여러 줄을 한 번에 짧은 목록으로 덮으면 나머지가 통째로 사라지므로 union + deletedIds 만 제거.
  */
 export function mergeTerritoryLogsFromPatch(
   baseLogs: TerritoryLog[] | undefined,
   patchLogs: TerritoryLog[] | undefined,
-  opts?: { baseUpdatedAt?: number; patchUpdatedAt?: number }
+  opts?: { baseUpdatedAt?: number; patchUpdatedAt?: number; deletedIds?: string[] }
 ): TerritoryLog[] {
   const base = normalizeTerritoryLogs(baseLogs);
   const patch = normalizeTerritoryLogs(patchLogs);
   const patchAt = Number(opts?.patchUpdatedAt || 0);
   const baseAt = Number(opts?.baseUpdatedAt || 0);
   const patchIsNewer = patchAt <= 0 || baseAt <= 0 || patchAt >= baseAt;
+  const deletedIds = opts?.deletedIds;
   /** 영토만 초기화 — 명시적 빈 목록. 오래된 [] POST 는 최신(리셋 이후) 기록을 지우지 않음. */
   if (Array.isArray(patchLogs) && patch.length === 0) {
     if (patchIsNewer) return [];
     if (patchAt > 0 && base.every((l) => Number(l.at || 0) < patchAt)) return [];
-    return base;
+    return dropDeletedTerritoryLogs(base, deletedIds);
   }
   /** 리셋으로 비운 뒤 늦게 도착한 옛 기록 POST 는 타임스탬프가 더 커도 되살리지 않음 */
   if (
@@ -90,12 +116,19 @@ export function mergeTerritoryLogsFromPatch(
   }
   const patchIds = new Set(patch.map((l) => String(l.id)));
   const baseIds = new Set(base.map((l) => String(l.id)));
-  const isSubsetDeletion =
-    patch.length < base.length && [...patchIds].every((id) => baseIds.has(id));
-  if (isSubsetDeletion && patchIsNewer) return patch;
-  return unionTerritoryLogsById(base, patch, {
-    dropStalePatchOnlyBefore: patchIsNewer ? baseAt : 0,
-  });
+  const isSingleDeletion =
+    patch.length === base.length - 1 &&
+    patch.length < base.length &&
+    [...patchIds].every((id) => baseIds.has(id));
+  if (isSingleDeletion && patchIsNewer) {
+    return dropDeletedTerritoryLogs(patch, deletedIds);
+  }
+  return dropDeletedTerritoryLogs(
+    unionTerritoryLogsById(base, patch, {
+      dropStalePatchOnlyBefore: patchIsNewer ? baseAt : 0,
+    }),
+    deletedIds
+  );
 }
 
 /** 「영토만 초기화」 시각 이전 기록은 계산·표시에서 제외 */
@@ -113,7 +146,12 @@ export function filterTerritoryLogsAfterReset(
 export function mergeTerritoryLogsPreferFresher(
   local: TerritoryLog[] | undefined,
   remote: TerritoryLog[] | undefined,
-  opts?: { localUpdatedAt?: number; remoteUpdatedAt?: number; territoryLogsResetAt?: number }
+  opts?: {
+    localUpdatedAt?: number;
+    remoteUpdatedAt?: number;
+    territoryLogsResetAt?: number;
+    deletedIds?: string[];
+  }
 ): TerritoryLog[] {
   const loc = normalizeTerritoryLogs(local);
   const rem = normalizeTerritoryLogs(remote);
@@ -132,13 +170,13 @@ export function mergeTerritoryLogsPreferFresher(
   } else if (rem.length === 0 && remoteAt > 0) {
     const kept = keepOnOrAfter(loc, remoteAt);
     result = remoteAt >= localAt || kept.length === 0 ? rem : kept;
-  } else if (loc.length < rem.length && localAt >= remoteAt) {
+  } else if (loc.length === rem.length - 1 && localAt >= remoteAt) {
     const remIds = new Set(rem.map((l) => String(l.id)));
     const locIds = new Set(loc.map((l) => String(l.id)));
     result = [...locIds].every((id) => remIds.has(id))
       ? loc
       : unionTerritoryLogsById(rem, loc);
-  } else if (rem.length < loc.length && remoteAt >= localAt) {
+  } else if (rem.length === loc.length - 1 && remoteAt >= localAt) {
     const locIds = new Set(loc.map((l) => String(l.id)));
     const remIds = new Set(rem.map((l) => String(l.id)));
     result = [...remIds].every((id) => locIds.has(id))
@@ -147,6 +185,7 @@ export function mergeTerritoryLogsPreferFresher(
   } else {
     result = unionTerritoryLogsById(rem, loc);
   }
+  result = dropDeletedTerritoryLogs(result, opts?.deletedIds);
   return filterTerritoryLogsAfterReset(result, opts?.territoryLogsResetAt);
 }
 

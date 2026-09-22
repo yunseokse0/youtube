@@ -104,7 +104,7 @@ import {
 } from "@/lib/state-api-pick";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { mergeHighSocietySettingsPreferBaseline, isMeaningfulHighSocietySettings } from "@/lib/high-society";
-import { normalizeTerritoryLogs, mergeTerritoryLogsPreferFresher, filterTerritoryLogsAfterReset } from "@/lib/territory-utils";
+import { normalizeTerritoryLogs, mergeTerritoryLogsPreferFresher, filterTerritoryLogsAfterReset, mergeDeletedTerritoryLogIds } from "@/lib/territory-utils";
 
 /** 관리자 iframe — 서버 정본 모드에서는 LS/세션 힌트로 서버 스냅샷을 덮지 않음 */
 function mergeAdminPreviewLocalHintOntoRemote(
@@ -179,6 +179,7 @@ function mergeAdminPreviewLocalHintOntoRemote(
           Number(local.highSocietySettings?.territoryLogsResetAt || 0),
           Number(remote.highSocietySettings?.territoryLogsResetAt || 0)
         ),
+        deletedIds: mergeDeletedTerritoryLogIds(local.deletedTerritoryLogIds, remote.deletedTerritoryLogIds),
       }
     );
   }
@@ -414,10 +415,24 @@ function applySyncedState(
             hsIncoming
           )
       : hsIncoming;
+  const overlayDeletedIds = mergeDeletedTerritoryLogIds(
+    dataForApply.deletedTerritoryLogIds,
+    refs.lastGoodRef.current?.deletedTerritoryLogIds
+  );
   const mergedTerritoryLogs =
     pick === STATE_PICK_OVERLAY || pick === STATE_PICK_OVERLAY_DONORS
       ? Array.isArray(dataForApply.territoryLogs)
-        ? normalizeTerritoryLogs(dataForApply.territoryLogs)
+        ? mergeTerritoryLogsPreferFresher(
+            normalizeTerritoryLogs(dataForApply.territoryLogs),
+            normalizeTerritoryLogs(dataForApply.territoryLogs),
+            {
+              territoryLogsResetAt: Math.max(
+                Number(hsIncoming?.territoryLogsResetAt || 0),
+                Number(hsBaseline?.territoryLogsResetAt || 0)
+              ),
+              deletedIds: overlayDeletedIds,
+            }
+          )
         : mergeTerritoryLogsPreferFresher(
             normalizeTerritoryLogs(refs.lastGoodRef.current?.territoryLogs),
             normalizeTerritoryLogs(dataForApply.territoryLogs),
@@ -428,6 +443,7 @@ function applySyncedState(
                 Number(hsIncoming?.territoryLogsResetAt || 0),
                 Number(hsBaseline?.territoryLogsResetAt || 0)
               ),
+              deletedIds: overlayDeletedIds,
             }
           )
       : dataForApply.territoryLogs;

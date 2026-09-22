@@ -1875,9 +1875,14 @@ export function appendTerritoryLogToAppState(state: AppState, log: TerritoryLog)
  */
 export function removeTerritoryLogFromAppState(state: AppState, logId: string): AppState {
   const settings = normalizeHighSocietySettings(state.highSocietySettings);
+  const id = String(logId || "").trim();
+  const prevDeleted = Array.isArray(state.deletedTerritoryLogIds) ? state.deletedTerritoryLogIds : [];
   const cleared: AppState = {
     ...state,
-    territoryLogs: (state.territoryLogs || []).filter((x) => String(x.id) !== String(logId)),
+    territoryLogs: (state.territoryLogs || []).filter((x) => String(x.id) !== id),
+    deletedTerritoryLogIds: id
+      ? [...new Set([...prevDeleted.map((x) => String(x)), id])].filter(Boolean).slice(-80)
+      : prevDeleted,
     highSocietySettings: normalizeHighSocietySettings({
       ...settings,
       memberWidthCm: undefined,

@@ -31,6 +31,7 @@ import {
   formatTerritoryLogPushDirLabel,
   resolveTerritoryLogPushDirForWrite,
 } from "@/lib/territory-utils";
+import { isNearDuplicateTerritoryLog } from "@/lib/territory-log-collapse";
 import { loadState, type AppState } from "@/lib/state";
 
 function formatTime(ts: number): string {
@@ -54,6 +55,7 @@ export default function AdminHighSocietyPopupPanel() {
   const [copied, setCopied] = useState(false);
   const [teamEditingNames, setTeamEditingNames] = useState<Record<string, string>>({});
   const addTerritoryChainRef = useRef(Promise.resolve());
+  const territorySubmitLockRef = useRef(false);
 
   const highSocietySettings = useMemo(
     () => normalizeHighSocietySettings(state?.highSocietySettings),
@@ -104,15 +106,20 @@ export default function AdminHighSocietyPopupPanel() {
   };
 
   const addTerritoryRecord = () => {
+    if (territorySubmitLockRef.current) return;
     const cm = parseCmInput(territoryCm);
     if (cm <= 0) return;
+    territorySubmitLockRef.current = true;
     const mode = territoryMode;
     const teamIdSnap = territoryTeamId;
     const memberIdSnap = territoryMemberId;
     const pushSnap = territoryPushDir;
     const noteSnap = territoryNote;
+    setTerritoryCm("");
+    setTerritoryNote("");
     addTerritoryChainRef.current = addTerritoryChainRef.current
       .then(async () => {
+      try {
       const cur = stateRef.current;
       if (!cur) return;
       const hsNow = normalizeHighSocietySettings(cur.highSocietySettings);
@@ -123,6 +130,7 @@ export default function AdminHighSocietyPopupPanel() {
         showAppToast("좌석 멤버가 없습니다. 메인 관리자 오버레이 탭에서 좌석을 지정해 주세요.", {
           variant: "info",
         });
+        setTerritoryCm(String(cm));
         return;
       }
 
@@ -134,6 +142,7 @@ export default function AdminHighSocietyPopupPanel() {
         const membersInTeam = seated.filter((m) => assignments[m.id] === teamIdSnap);
         if (membersInTeam.length === 0) {
           showAppToast("해당 팀에 소속된 좌석 멤버가 없습니다.", { variant: "info" });
+          setTerritoryCm(String(cm));
           return;
         }
         teamIdForLog = teamIdSnap;
@@ -155,19 +164,28 @@ export default function AdminHighSocietyPopupPanel() {
         cm,
         { pushDir: pushForLog, note: noteSnap, teamId: teamIdForLog }
       );
+      if (isNearDuplicateTerritoryLog(cur.territoryLogs, log)) {
+        return;
+      }
       const next = appendTerritoryLogToAppState(cur, log);
       const ok = await persistAppState(next, {
         omitDonationFields: true,
         highSocietySettingsOnly: true,
       });
       if (ok) {
-        setTerritoryCm("");
-        setTerritoryNote("");
         showAppToast(`영토 ${mode === "plus" ? "추가" : "차감"}: ${cm}cm`);
+      } else {
+        setTerritoryCm(String(cm));
+        if (noteSnap) setTerritoryNote(noteSnap);
+      }
+      } finally {
+        territorySubmitLockRef.current = false;
       }
     })
     .catch(() => {
-      /* 이전 저장 실패가 다음 입력을 막지 않음 */
+      territorySubmitLockRef.current = false;
+      setTerritoryCm(String(cm));
+      if (noteSnap) setTerritoryNote(noteSnap);
     });
   };
 
@@ -655,6 +673,13 @@ export default function AdminHighSocietyPopupPanel() {
                     inputMode="numeric"
                     value={territoryCm}
                     onChange={(e) => setTerritoryCm(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addTerritoryRecord();
+                      }
+                    }}
                   />
                   {matchMode === "team" ? (
                     <select
@@ -718,7 +743,7 @@ export default function AdminHighSocietyPopupPanel() {
                     className={`rounded px-3 py-1.5 text-sm font-semibold ${
                       territoryMode === "plus" ? "bg-amber-600 hover:bg-amber-500" : "bg-rose-600 hover:bg-rose-500"
                     }`}
-                    onClick={() => void addTerritoryRecord()}
+                    onClick={() => addTerritoryRecord()}
                   >
                     반영
                   </button>

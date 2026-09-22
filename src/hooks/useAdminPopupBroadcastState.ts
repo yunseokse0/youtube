@@ -10,7 +10,7 @@ import {
   mergeBroadcastSessionPreservingDonations,
   saveStateAsync,
 } from "@/lib/state";
-import { filterTerritoryLogsAfterReset, mergeTerritoryLogsPreferFresher } from "@/lib/territory-utils";
+import { mergeDeletedTerritoryLogIds, mergeTerritoryLogsPreferFresher } from "@/lib/territory-utils";
 import { mergeHighSocietySettingsPreferBaseline } from "@/lib/high-society";
 import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
 import {
@@ -178,6 +178,10 @@ export function useAdminPopupBroadcastState() {
           localUpdatedAt: Number(local?.updatedAt || 0),
           remoteUpdatedAt: Number(remote.updatedAt || 0),
           territoryLogsResetAt: resetAt,
+          deletedIds: mergeDeletedTerritoryLogIds(
+            local?.deletedTerritoryLogIds,
+            remote.deletedTerritoryLogIds
+          ),
         });
         const next = {
           ...remote,
@@ -185,7 +189,11 @@ export function useAdminPopupBroadcastState() {
             localResetAt > remoteResetAt && local?.highSocietySettings
               ? local.highSocietySettings
               : mergeHighSocietySettingsPreferBaseline(local?.highSocietySettings, remote.highSocietySettings),
-          territoryLogs: filterTerritoryLogsAfterReset(mergedLogs, resetAt),
+          territoryLogs: mergedLogs,
+          deletedTerritoryLogIds: mergeDeletedTerritoryLogIds(
+            local?.deletedTerritoryLogIds,
+            remote.deletedTerritoryLogIds
+          ),
         };
         setState(next);
         writeSessionBroadcastState(next, scopedUserId);

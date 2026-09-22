@@ -639,6 +639,8 @@ export type AppState = {
   restroomLogs: RestroomLog[];
   /** 상류사회 영토 수동 기록 로그 (후원 리스트 ON 과 별개) */
   territoryLogs?: TerritoryLog[];
+  /** 사용자가 삭제한 영토 기록 id — 병합이 짧은 목록으로 나머지를 지우지 않게 */
+  deletedTerritoryLogIds?: string[];
   forbiddenWords: string[];
   missions?: MissionItem[];
   sigInventory: SigItem[];

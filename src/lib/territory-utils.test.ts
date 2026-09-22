@@ -170,4 +170,40 @@ describe("territory-utils", () => {
     const newA = createTerritoryLog("a", 1, 180, { now: 60_000 });
     expect(filterTerritoryLogsAfterReset([oldA, newA], 50_000).map((l) => l.id)).toEqual([newA.id]);
   });
+
+  it("short 1-row patch does not wipe the rest of the logbook", () => {
+    const a = createTerritoryLog("a", 1, 25, { now: 1000 });
+    const b = createTerritoryLog("a", 1, 180, { now: 2000 });
+    const c = createTerritoryLog("a", 1, 35, { now: 3000 });
+    const d = createTerritoryLog("b", 1, 30, { now: 4000 });
+    const e = createTerritoryLog("b", 1, 50, { now: 5000 });
+    const merged = mergeTerritoryLogsFromPatch([a, b, c, d, e], [a], {
+      baseUpdatedAt: 1000,
+      patchUpdatedAt: 9000,
+    });
+    expect(merged).toHaveLength(5);
+  });
+
+  it("deletedTerritoryLogIds removes only those logs", () => {
+    const a = createTerritoryLog("a", 1, 25, { now: 1000 });
+    const b = createTerritoryLog("a", 1, 300, { now: 2000 });
+    const c = createTerritoryLog("b", 1, 50, { now: 3000 });
+    const merged = mergeTerritoryLogsFromPatch([a, b, c], [a, c], {
+      baseUpdatedAt: 1000,
+      patchUpdatedAt: 4000,
+      deletedIds: [b.id],
+    });
+    expect(merged.map((l) => l.id).sort()).toEqual([a.id, c.id].sort());
+  });
+
+  it("preferFresher does not replace many logs with a single newer local row", () => {
+    const a = createTerritoryLog("a", 1, 25, { now: 1000 });
+    const b = createTerritoryLog("a", 1, 180, { now: 2000 });
+    const c = createTerritoryLog("b", 1, 50, { now: 3000 });
+    const merged = mergeTerritoryLogsPreferFresher([a], [a, b, c], {
+      localUpdatedAt: 9000,
+      remoteUpdatedAt: 3000,
+    });
+    expect(merged.map((l) => l.id).sort()).toEqual([a.id, b.id, c.id].sort());
+  });
 });

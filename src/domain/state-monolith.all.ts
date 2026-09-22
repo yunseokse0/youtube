@@ -59,7 +59,7 @@ import {
 import { ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
 import { isBundledSigPlaceholderItem } from "@/lib/sig-placeholder";
 import { normalizeRestroomCount } from "@/lib/restroom-utils";
-import { normalizeTerritoryLogs } from "@/lib/territory-utils";
+import { normalizeTerritoryLogs, mergeDeletedTerritoryLogIds } from "@/lib/territory-utils";
 import { mergeGeneralTimerPreferEffective, snapshotTimerForPersist } from "@/lib/timer-utils";
 import { sanitizeOverlayEmbedMediaUrl } from "@/lib/gif-url";
 import {
@@ -1911,6 +1911,10 @@ export function loadState(userId?: string | null): AppState {
           }))
       : [];
     data.territoryLogs = normalizeTerritoryLogs((data as AppState).territoryLogs);
+    data.deletedTerritoryLogIds = mergeDeletedTerritoryLogIds(
+      (data as AppState).deletedTerritoryLogIds,
+      []
+    );
     data.forbiddenWords = data.forbiddenWords || [];
     data.missions = ensureMissionItems(data.missions);
     data.sigInventory = normalizeSigInventory((data as AppState).sigInventory);
@@ -2409,6 +2413,17 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
         merged.sigSoldOutStampUrl = prev.sigSoldOutStampUrl;
       }
     }
+    {
+      const prevDel = Array.isArray(prev.deletedTerritoryLogIds)
+        ? (prev.deletedTerritoryLogIds as string[])
+        : [];
+      const nextDel = Array.isArray(next.deletedTerritoryLogIds)
+        ? (next.deletedTerritoryLogIds as string[])
+        : [];
+      if (prevDel.length > 0 || nextDel.length > 0) {
+        merged.deletedTerritoryLogIds = mergeDeletedTerritoryLogIds(prevDel, nextDel);
+      }
+    }
     /** 시그 전체 삭제 플래그 — 큐 병합 시 유실되지 않게 */
     if (prev.clearSigInventory === true || next.clearSigInventory === true) {
       merged.clearSigInventory = true;
@@ -2702,6 +2717,9 @@ export function appStatePayloadForApi(
         ...(next.donationSyncMode ? { donationSyncMode: next.donationSyncMode } : {}),
         /** 영토만 초기화 시 [] 전달 — 키 없으면 서버가 기존 기록부 유지 */
         ...(Array.isArray(next.territoryLogs) ? { territoryLogs: next.territoryLogs } : {}),
+        ...(Array.isArray(next.deletedTerritoryLogIds) && next.deletedTerritoryLogIds.length > 0
+          ? { deletedTerritoryLogIds: next.deletedTerritoryLogIds }
+          : {}),
       },
       options
     );
@@ -4028,6 +4046,10 @@ async function doLoadStateFromApi(
             }))
         : [];
       data.territoryLogs = normalizeTerritoryLogs((data as AppState).territoryLogs);
+    data.deletedTerritoryLogIds = mergeDeletedTerritoryLogIds(
+      (data as AppState).deletedTerritoryLogIds,
+      []
+    );
       data.forbiddenWords = data.forbiddenWords || [];
       data.missions = ensureMissionItems(data.missions);
       data.sigInventory = normalizeSigInventory((data as AppState).sigInventory);
