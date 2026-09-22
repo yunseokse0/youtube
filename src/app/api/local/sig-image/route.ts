@@ -56,7 +56,7 @@ export async function GET(req: Request) {
     const ext = path.extname(uploadLocal).toLowerCase();
     const type =
       ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/gif";
-    return new NextResponse(buf, {
+    return new NextResponse(buf as unknown as BodyInit, {
       headers: { "Content-Type": type, "Cache-Control": "private, max-age=3600" },
     });
   }
@@ -67,7 +67,7 @@ export async function GET(req: Request) {
     const ext = path.extname(local).toLowerCase();
     const type =
       ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/gif";
-    return new NextResponse(buf, {
+    return new NextResponse(buf as unknown as BodyInit, {
       headers: { "Content-Type": type, "Cache-Control": "private, max-age=3600" },
     });
   }
@@ -81,7 +81,7 @@ export async function GET(req: Request) {
       if (res.ok) {
         const buf = Buffer.from(await res.arrayBuffer());
         const type = res.headers.get("content-type") || "image/gif";
-        return new NextResponse(buf, {
+        return new NextResponse(buf as unknown as BodyInit, {
           headers: { "Content-Type": type, "Cache-Control": "private, max-age=300" },
         });
       }

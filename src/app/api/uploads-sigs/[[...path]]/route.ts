@@ -30,7 +30,7 @@ export async function GET(
   if (!buf) {
     return new Response("Not found", { status: 404 });
   }
-  return new Response(buf, {
+  return new Response(buf as unknown as BodyInit, {
     status: 200,
     headers: {
       "Content-Type": mimeFromFileName(fileName),

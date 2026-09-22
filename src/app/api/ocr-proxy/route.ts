@@ -96,7 +96,7 @@ export async function GET(req: NextRequest) {
       if (!sniffed) {
         return NextResponse.json({ error: "unsupported content type" }, { status: 415 });
       }
-      return new NextResponse(buf, {
+      return new NextResponse(buf as unknown as BodyInit, {
         headers: {
           "Content-Type": sniffed,
           "Cache-Control": "private, max-age=120",
@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
     const outType =
       ct && ct.toLowerCase().startsWith("image/") ? ct.split(";")[0].trim() : sniffImageMime(buf) || "application/octet-stream";
 
-    return new NextResponse(buf, {
+    return new NextResponse(buf as unknown as BodyInit, {
       headers: {
         "Content-Type": outType,
         "Cache-Control": "private, max-age=120",
