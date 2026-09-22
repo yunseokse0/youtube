@@ -8,6 +8,7 @@ import {
   defaultState,
   coalesceSettlementResetAt,
   filterDonorsAfterSettlementReset,
+  applySettlementResetDonorPipeline,
   hasExpandedSigInventory,
   mergeDonorsForMultiTabSave,
   isIntentionalDonorListShrink,
@@ -329,7 +330,7 @@ export async function POST(req: Request) {
     const incomingDonorsRaw = donorsInPatch ? normalizeDonorsArray(body.donors) : [];
     let incomingDonorsFiltered =
       resetAt > 0 && !settlementReset && donorsInPatch
-        ? filterDonorsAfterSettlementReset(incomingDonorsRaw, resetAt)
+        ? applySettlementResetDonorPipeline(incomingDonorsRaw, resetAt, { allowFullWipe: false })
         : incomingDonorsRaw;
     if (kvOk && !existing && !settlementReset && !donationInitReset) {
       const kvErr = await getPersistentKvLastError();
@@ -728,7 +729,7 @@ export async function POST(req: Request) {
       let donorsToUse = before;
       let stripped = false;
       if (!settlementReset && effectiveResetAt > 0) {
-        donorsToUse = filterDonorsAfterSettlementReset(before, effectiveResetAt);
+        donorsToUse = applySettlementResetDonorPipeline(before, effectiveResetAt, { allowFullWipe: false });
         stripped = donorsToUse.length !== before.length;
       } else {
         donorsToUse = before;

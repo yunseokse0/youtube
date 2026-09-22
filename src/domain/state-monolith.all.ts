@@ -4401,7 +4401,7 @@ export function isIntentionalDonorListShrink(
 }
 
 /** filterDonorsAfterSettlementReset / rebump 와 동일 grace */
-const SETTLEMENT_RESET_DONOR_GRACE_MS = 3000;
+const SETTLEMENT_RESET_DONOR_GRACE_MS = 300_000;
 
 /**
  * Donor.at 필드 (number | string | undefined) 를 항상 유효한 epoch ms 로 정규화.
