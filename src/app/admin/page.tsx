@@ -772,8 +772,10 @@ function AdminPageInner() {
   const [user, setUser] = useState<{ id: string; companyName: string; name?: string; remainingDays?: number | null; unlimited?: boolean } | null>(null);
   /** /api/auth/me 완료 전 — 미리보기에 가짜 '재로그인' 문구를 띄우지 않기 위함 */
   const [authReady, setAuthReady] = useState(false);
-  /** 오버레이 URL·미리보기 — finalent 폴백 금지(타계정 후원 노출) */
-  const overlayUserId = resolveScopedOverlayUserId(user?.id);
+  /** 오버레이 URL·미리보기 — finalent 폴백 금지(타계정 후원 노출)
+   *  ✅ 2026-09-22 v17.1 Hotfix: URL ?u= 파라미터 최우선 → 로그인 ID(din)와 실제 state ID(finalent) 불일치 해소
+   */
+  const overlayUserId = resolveScopedOverlayUserId(urlUserIdRaw || user?.id);
   const [state, setState] = useState<AppState>(() => ({
     ...defaultState(),
     /** 첫 페인트만 — hydrate로 비우거나 초기화하지 않음. 로드 중에는 플레이스홀더 UI만 가림 */
@@ -1077,7 +1079,7 @@ function AdminPageInner() {
     []
   );
   const refreshStorageHealth = useCallback(async () => {
-    const uid = user?.id;
+    const uid = overlayUserId;
     if (!uid) return;
     try {
       const r = await fetch(
@@ -1854,7 +1856,7 @@ function AdminPageInner() {
             "후원·금액이 줄어든 저장은 차단했습니다. 정산/후원 초기화는 메뉴에서 직접 실행해 주세요."
           );
           /** 후원 제외하고 나머지 설정만 저장 시도 — 멤버 권위 플래그는 유지 */
-          saveStateAsync(s, user?.id, {
+          saveStateAsync(s, overlayUserId, {
             omitDonationFields: true,
             ...(resolvedOpts.membersAuthoritative ? { membersAuthoritative: true as const } : {}),
           }).then((r) => {
@@ -1877,7 +1879,7 @@ function AdminPageInner() {
     lastLocalPersistAtRef.current = now;
     stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, s.updatedAt || now, now);
     pendingUnsyncedRef.current = true;
-    saveStateAsync(s, user?.id, resolvedOpts).then((r) => {
+    saveStateAsync(s, overlayUserId, resolvedOpts).then((r) => {
       if (resolvedOpts?.persistToastLabel) {
         showServerPersistToast(resolvedOpts.persistToastLabel, {
           ok: r.ok,
@@ -5024,7 +5026,7 @@ function AdminPageInner() {
         const since = opts?.forceFull
           ? 0
           : Math.max(stateUpdatedAtRef.current, lastAppliedRemoteUpdatedAtRef.current);
-        const remote = await loadStateFromApiWithMeta(user?.id, {
+        const remote = await loadStateFromApiWithMeta(overlayUserId, {
           ifUpdatedSince: since,
           forceFull: Boolean(opts?.forceFull),
         });
@@ -6030,7 +6032,7 @@ function AdminPageInner() {
        * 개명은 membersAuthoritative + 이름만 서버 반영.
        * donorsAuthoritative 는 불완전 React donors 로 후원 전체가 지워질 수 있음.
        */
-      void saveStateAsync(next, user?.id, {
+      void saveStateAsync(next, overlayUserId, {
         membersAuthoritative: true,
         omitDonationFields: true,
       }).then((r) => {
@@ -6192,7 +6194,7 @@ function AdminPageInner() {
           cacheBroadcastStateSnapshot(next, user?.id);
         } catch {}
         notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
-        void saveStateAsync(next, user?.id, {
+        void saveStateAsync(next, overlayUserId, {
           membersAuthoritative: true,
           omitDonationFields: true,
         }).then((r) => {
@@ -6304,7 +6306,7 @@ function AdminPageInner() {
       } catch {}
       notifyBroadcastStateLocalUpdated(user?.id, toPersist.updatedAt);
       /** persistState 큐 경합을 피하고 멤버 권위 저장을 즉시 보냄 (후원 필드 제외) */
-      void saveStateAsync(toPersist, user?.id, {
+      void saveStateAsync(toPersist, overlayUserId, {
         membersAuthoritative: true,
         omitDonationFields: true,
       }).then((r) => {
@@ -7418,7 +7420,7 @@ function AdminPageInner() {
     void (async () => {
       lastLocalPersistAtRef.current = Date.now();
       pendingUnsyncedRef.current = true;
-      const r = await saveStateAsync(next, user?.id);
+      const r = await saveStateAsync(next, overlayUserId);
       if (r.ok) {
         if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
           stateUpdatedAtRef.current = r.serverUpdatedAt;
@@ -17447,7 +17449,7 @@ function AdminPageInner() {
                       contributionFormula: next,
                       updatedAt: Date.now(),
                     };
-                    void saveStateAsync(updated, user?.id, { omitDonationFields: true });
+                    void saveStateAsync(updated, overlayUserId, { omitDonationFields: true });
                     return updated;
                   });
                   /** toona 도네 얼럿 기여도 점수 동기화 (허브 연동 시에만) */
