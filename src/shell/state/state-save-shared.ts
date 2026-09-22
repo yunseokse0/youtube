@@ -389,7 +389,10 @@ export function mergePartialState(
   if (!("territoryLogs" in patch)) {
     next.territoryLogs = base.territoryLogs;
   } else if (Array.isArray(patch.territoryLogs)) {
-    next.territoryLogs = mergeTerritoryLogsFromPatch(base.territoryLogs, patch.territoryLogs);
+    next.territoryLogs = mergeTerritoryLogsFromPatch(base.territoryLogs, patch.territoryLogs, {
+      baseUpdatedAt: Number(base.updatedAt || 0),
+      patchUpdatedAt: Number(patch.updatedAt || 0),
+    });
   }
   if (!("donors" in patch)) {
     next.donors = base.donors;

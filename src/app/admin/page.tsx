@@ -179,7 +179,7 @@ import {
   RESTROOM_UNLIMITED_SYMBOL,
   restroomValueAfterUndoLog,
 } from "@/lib/restroom-utils";
-import { createTerritoryLog, formatTerritoryLogPushDirLabel, normalizeTerritoryLogs, resolveTerritoryLogPushDirForWrite } from "@/lib/territory-utils";
+import { createTerritoryLog, formatTerritoryLogPushDirLabel, mergeTerritoryLogsPreferFresher, normalizeTerritoryLogs, resolveTerritoryLogPushDirForWrite } from "@/lib/territory-utils";
 import { useSSEConnection } from "@/lib/sse-client";
 import { createStateUpdatedScheduler, DONOR_STATE_UPDATED_DEBOUNCE_MS, DONOR_STATE_UPDATED_MAX_WAIT_MS } from "@/lib/overlay-pull-policy";
 import {
@@ -916,6 +916,15 @@ function AdminPageInner() {
   const persistDonationDebounceRef = useRef<number | null>(null);
   const persistDonationLastStateRef = useRef<{ s: AppState; mode: "replace" | "add"; label?: string } | null>(null);
   const flushingPersistRef = useRef(false);
+  const persistHsDebounceRef = useRef<number | null>(null);
+  const persistHsLastRef = useRef<{
+    s: AppState;
+    opts: {
+      omitDonationFields?: boolean;
+      highSocietySettingsOnly?: boolean;
+      persistToastLabel?: string;
+    };
+  } | null>(null);
   /** GET/304 응답 메타 — 영속 KV(`redis`/`mysql`) 확인 후에만 synced */
   const applySyncStatusAfterStateFetch = useCallback(
     (apiState: AppState | null, meta?: StateApiFetchMeta | null) => {
@@ -1892,36 +1901,53 @@ function AdminPageInner() {
     lastLocalPersistAtRef.current = now;
     stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, s.updatedAt || now, now);
     pendingUnsyncedRef.current = true;
-    saveStateAsync(s, overlayUserId, resolvedOpts).then((r) => {
-      if (resolvedOpts?.persistToastLabel) {
-        showServerPersistToast(resolvedOpts.persistToastLabel, {
-          ok: r.ok,
-          storageFallback: r.storageFallback,
-        });
-      }
-      if (r.ok) {
-        if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
-          stateUpdatedAtRef.current = r.serverUpdatedAt;
-          lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
+    const finishHsOrGenericSave = (payload: AppState, saveOpts: typeof resolvedOpts) => {
+      saveStateAsync(payload, overlayUserId, saveOpts).then((r) => {
+        if (saveOpts?.persistToastLabel) {
+          showServerPersistToast(saveOpts.persistToastLabel, {
+            ok: r.ok,
+            storageFallback: r.storageFallback,
+          });
         }
-        pendingUnsyncedRef.current = false;
-        lastSaveHttpStatusRef.current = null;
-        setSyncAuthBlocked(false);
-        if (r.storageFallback) {
-          setSyncStatus("error");
-          setSigExcelResult(
-            "서버 저장 실패 — 이 브라우저에만 반영됐습니다. 다른 PC·브라우저에는 보이지 않습니다. 네트워크·서버 연결을 확인하세요."
-          );
+        if (r.ok) {
+          if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
+            stateUpdatedAtRef.current = r.serverUpdatedAt;
+            lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
+          }
+          pendingUnsyncedRef.current = false;
+          lastSaveHttpStatusRef.current = null;
+          setSyncAuthBlocked(false);
+          if (r.storageFallback) {
+            setSyncStatus("error");
+            setSigExcelResult(
+              "서버 저장 실패 — 이 브라우저에만 반영됐습니다. 다른 PC·브라우저에는 보이지 않습니다. 네트워크·서버 연결을 확인하세요."
+            );
+          } else {
+            setSyncStatus("synced");
+          }
         } else {
-          setSyncStatus("synced");
+          lastSaveHttpStatusRef.current = r.httpStatus ?? null;
+          setSyncAuthBlocked(r.httpStatus === 401);
+          const offline = typeof navigator !== "undefined" && !navigator.onLine;
+          setSyncStatus(offline ? "local" : "error");
         }
-      } else {
-        lastSaveHttpStatusRef.current = r.httpStatus ?? null;
-        setSyncAuthBlocked(r.httpStatus === 401);
-        const offline = typeof navigator !== "undefined" && !navigator.onLine;
-        setSyncStatus(offline ? "local" : "error");
+      });
+    };
+    if (resolvedOpts?.highSocietySettingsOnly) {
+      persistHsLastRef.current = { s, opts: resolvedOpts };
+      if (persistHsDebounceRef.current !== null) {
+        window.clearTimeout(persistHsDebounceRef.current);
       }
-    });
+      persistHsDebounceRef.current = window.setTimeout(() => {
+        persistHsDebounceRef.current = null;
+        const queued = persistHsLastRef.current;
+        persistHsLastRef.current = null;
+        if (!queued) return;
+        finishHsOrGenericSave(queued.s, queued.opts);
+      }, 120);
+      return;
+    }
+    finishHsOrGenericSave(s, resolvedOpts);
   }, [user?.id]);
 
   const syncSettlementUiFormFromOptions = useCallback(
@@ -3710,17 +3736,16 @@ function AdminPageInner() {
     }
     const localTerritoryLogs = normalizeTerritoryLogs(local.territoryLogs);
     const mergedTerritoryLogs = normalizeTerritoryLogs(merged.territoryLogs);
-    const territoryLogsDiff =
-      JSON.stringify(localTerritoryLogs) !== JSON.stringify(mergedTerritoryLogs);
-    const localTerritoryNewer =
-      Number(local.updatedAt || 0) >= Number(incoming.updatedAt || 0);
-    if (
-      territoryLogsDiff &&
-      localTerritoryNewer &&
-      (localTerritoryLogs.length > 0 ||
-        localTerritoryLogs.length < mergedTerritoryLogs.length)
-    ) {
-      merged = { ...merged, territoryLogs: localTerritoryLogs };
+    const territoryLogsUnion = mergeTerritoryLogsPreferFresher(
+      localTerritoryLogs,
+      mergedTerritoryLogs,
+      {
+        localUpdatedAt: Number(local.updatedAt || 0),
+        remoteUpdatedAt: Number(incoming.updatedAt || 0),
+      }
+    );
+    if (JSON.stringify(territoryLogsUnion) !== JSON.stringify(mergedTerritoryLogs)) {
+      merged = { ...merged, territoryLogs: territoryLogsUnion };
       didPreserve = true;
     }
     const localDonorsNorm = normalizeDonorsArray(local.donors);
@@ -11863,10 +11888,7 @@ function AdminPageInner() {
               <button
                 type="button"
                 className="px-3 py-2 rounded-[10px] text-sm font-semibold text-amber-200 bg-[#1a1405] border border-amber-500/30 hover:bg-[#2a1f08] transition"
-                onClick={() => {
-                  const uid = encodeURIComponent(overlayUserId || user?.id || "");
-                  window.location.href = `/admin/high-society?u=${uid}`;
-                }}
+                onClick={() => openAdminHighSocietyPopup(overlayUserId || user?.id)}
                 title="상류사회 · 영토 팝업을 올바른 계정(u=로그인ID)으로 새 창에서 엽니다 (기존 북마크 ?u=finalent 오류 방지)"
               >
                 상류사회 · 영토

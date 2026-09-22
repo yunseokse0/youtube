@@ -213,36 +213,43 @@ export function useAdminPopupBroadcastState() {
     if (o?.type === "state_updated") void reload();
   });
 
+  const persistChainRef = useRef(Promise.resolve(true));
+
   const persistAppState = useCallback(
     async (
       next: AppState,
       opts?: Parameters<typeof saveStateAsync>[2]
     ): Promise<boolean> => {
-      const hsOnly = Boolean(opts?.highSocietySettingsOnly || opts?.omitDonationFields);
-      /**
-       * 영토·HS 저장 전에 팝업 React state(후원 비어 있을 수 있음)로 세션을 덮지 않음.
-       * 기존 세션 후원·금액을 유지한 채 HS/영토 필드만 얹어 미리보기 0화 방지.
-       */
-      const existingSession = readSessionBroadcastState(scopedUserId) ?? loadState(scopedUserId);
-      const stamped = {
-        ...mergeBroadcastSessionPreservingDonations(existingSession, {
-          ...next,
-          updatedAt: Date.now(),
-        }),
+      const run = async (): Promise<boolean> => {
+        const hsOnly = Boolean(opts?.highSocietySettingsOnly || opts?.omitDonationFields);
+        const existingSession = readSessionBroadcastState(scopedUserId) ?? loadState(scopedUserId);
+        const stamped = {
+          ...mergeBroadcastSessionPreservingDonations(existingSession, {
+            ...next,
+            updatedAt: Date.now(),
+          }),
+        };
+        setState(stamped);
+        stateRef.current = stamped;
+        if (hsOnly) {
+          writeSessionBroadcastState(stamped, scopedUserId);
+          notifyBroadcastStateLocalUpdated(scopedUserId, stamped.updatedAt);
+        }
+        const result = await saveStateAsync(stamped, scopedUserId, opts);
+        /**
+         * HS 저장 직후 reload 하면 이전 POST 가 늦게 도착해 기록부를 2건으로 되돌림.
+         * 로컬 stamped 가 정본. 오버레이는 SSE state_updated 로 따라옴.
+         */
+        return result.ok;
       };
-      setState(stamped);
-      stateRef.current = stamped;
-      if (hsOnly) {
-        writeSessionBroadcastState(stamped, scopedUserId);
-        notifyBroadcastStateLocalUpdated(scopedUserId, stamped.updatedAt);
-      }
-      const result = await saveStateAsync(stamped, scopedUserId, opts);
-      if (result.ok && hsOnly) {
-        void reload();
-      }
-      return result.ok;
+      const queued = persistChainRef.current.then(run, run);
+      persistChainRef.current = queued.then(
+        () => true,
+        () => true
+      );
+      return queued;
     },
-    [scopedUserId, reload]
+    [scopedUserId]
   );
 
   const accountMismatch =

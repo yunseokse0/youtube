@@ -35,25 +35,7 @@ export function normalizeTerritoryLogs(input: unknown): TerritoryLog[] {
   return input.map(normalizeTerritoryLog).filter((x): x is TerritoryLog => Boolean(x));
 }
 
-/**
- * PATCH territoryLogs 병합 — id 부분집합(삭제)이면 patch 를 정본으로 쓴다.
- * 빈 배열([])은 전체 삭제(영토만 초기화)로 취급한다.
- * 그 외(동시 추가)는 id union.
- */
-export function mergeTerritoryLogsFromPatch(
-  baseLogs: TerritoryLog[] | undefined,
-  patchLogs: TerritoryLog[] | undefined
-): TerritoryLog[] {
-  const base = normalizeTerritoryLogs(baseLogs);
-  const patch = normalizeTerritoryLogs(patchLogs);
-  /** 영토만 초기화 — 명시적 빈 목록 */
-  if (Array.isArray(patchLogs) && patch.length === 0) return [];
-  if (patch.length >= base.length) return patch;
-  const baseIds = new Set(base.map((l) => String(l.id)));
-  const patchIds = new Set(patch.map((l) => String(l.id)));
-  const isSubsetDeletion =
-    patch.length < base.length && [...patchIds].every((id) => baseIds.has(id));
-  if (isSubsetDeletion) return patch;
+function unionTerritoryLogsById(base: TerritoryLog[], patch: TerritoryLog[]): TerritoryLog[] {
   const byId = new Map<string, TerritoryLog>();
   for (const log of base) byId.set(String(log.id), log);
   for (const log of patch) {
@@ -62,6 +44,34 @@ export function mergeTerritoryLogsFromPatch(
     if (!prev || Number(log.at || 0) >= Number(prev.at || 0)) byId.set(id, log);
   }
   return [...byId.values()].sort((a, b) => Number(a.at || 0) - Number(b.at || 0));
+}
+
+/**
+ * PATCH territoryLogs 병합.
+ * 기본은 id union (연속 입력 3건이 2건 POST 로 덮이지 않게).
+ * 부분집합 삭제는 patch 가 base 보다 최신일 때만 (기록 삭제·영토 초기화).
+ */
+export function mergeTerritoryLogsFromPatch(
+  baseLogs: TerritoryLog[] | undefined,
+  patchLogs: TerritoryLog[] | undefined,
+  opts?: { baseUpdatedAt?: number; patchUpdatedAt?: number }
+): TerritoryLog[] {
+  const base = normalizeTerritoryLogs(baseLogs);
+  const patch = normalizeTerritoryLogs(patchLogs);
+  const patchAt = Number(opts?.patchUpdatedAt || 0);
+  const baseAt = Number(opts?.baseUpdatedAt || 0);
+  const patchIsNewer = patchAt <= 0 || baseAt <= 0 || patchAt >= baseAt;
+  /** 영토만 초기화 — 명시적 빈 목록. 오래된 [] POST 는 최신 기록을 지우지 않음. */
+  if (Array.isArray(patchLogs) && patch.length === 0) {
+    if (patchIsNewer) return [];
+    return base;
+  }
+  const patchIds = new Set(patch.map((l) => String(l.id)));
+  const baseIds = new Set(base.map((l) => String(l.id)));
+  const isSubsetDeletion =
+    patch.length < base.length && [...patchIds].every((id) => baseIds.has(id));
+  if (isSubsetDeletion && patchIsNewer) return patch;
+  return unionTerritoryLogsById(base, patch);
 }
 
 /** 로컬·원격 영토 기록부 — 삭제(부분집합)는 더 최신 쪽 정본, 아니면 id union */
@@ -84,14 +94,7 @@ export function mergeTerritoryLogsPreferFresher(
     const remIds = new Set(rem.map((l) => String(l.id)));
     if ([...remIds].every((id) => locIds.has(id))) return rem;
   }
-  const byId = new Map<string, TerritoryLog>();
-  for (const log of rem) byId.set(String(log.id), log);
-  for (const log of loc) {
-    const id = String(log.id);
-    const prev = byId.get(id);
-    if (!prev || Number(log.at || 0) >= Number(prev.at || 0)) byId.set(id, log);
-  }
-  return [...byId.values()].sort((a, b) => Number(a.at || 0) - Number(b.at || 0));
+  return unionTerritoryLogsById(rem, loc);
 }
 
 export function createTerritoryLog(
@@ -104,7 +107,7 @@ export function createTerritoryLog(
   const amount = Math.max(0, Math.floor(amountCm));
   const teamId = typeof opts?.teamId === "string" && opts.teamId.trim() ? opts.teamId.trim() : undefined;
   return {
-    id: `tl_${now}_${Math.random().toString(36).slice(2, 6)}`,
+    id: `tl_${now}_${Math.random().toString(36).slice(2, 10)}`,
     memberId: teamId ? `__team_${teamId}` : memberId,
     ...(teamId ? { teamId } : {}),
     amount,

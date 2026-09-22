@@ -109,4 +109,27 @@ describe("territory-utils", () => {
     expect(merged).toHaveLength(1);
     expect(merged[0]?.id).toBe(a.id);
   });
+
+  it("stale shorter patch does not drop a newer concurrent log", () => {
+    const a = createTerritoryLog("a", 1, 20, { now: 1000 });
+    const b = createTerritoryLog("b", 1, 20, { now: 2000 });
+    const c = createTerritoryLog("c", 1, 20, { now: 3000 });
+    const merged = mergeTerritoryLogsFromPatch([a, b, c], [a, b], {
+      baseUpdatedAt: 3000,
+      patchUpdatedAt: 2000,
+    });
+    expect(merged.map((l) => l.id).sort()).toEqual([a.id, b.id, c.id].sort());
+  });
+
+  it("newer subset patch still deletes a log", () => {
+    const a = createTerritoryLog("a", 1, 20, { now: 1000 });
+    const b = createTerritoryLog("b", 1, 20, { now: 2000 });
+    const c = createTerritoryLog("c", 1, 20, { now: 3000 });
+    const merged = mergeTerritoryLogsFromPatch([a, b, c], [a, b], {
+      baseUpdatedAt: 3000,
+      patchUpdatedAt: 4000,
+    });
+    expect(merged).toHaveLength(2);
+    expect(merged.map((l) => l.id).sort()).toEqual([a.id, b.id].sort());
+  });
 });

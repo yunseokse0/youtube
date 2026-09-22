@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AdminPopupShell from "@/components/admin/popup/AdminPopupShell";
 import { useAdminPopupBroadcastState } from "@/hooks/useAdminPopupBroadcastState";
 import { applyHighSocietyAdminPatchToState } from "@/lib/admin-high-society-settings-patch";
@@ -50,6 +50,7 @@ export default function AdminHighSocietyPopupPanel() {
   const [territoryTeamId, setTerritoryTeamId] = useState<string>("");
   const [copied, setCopied] = useState(false);
   const [teamEditingNames, setTeamEditingNames] = useState<Record<string, string>>({});
+  const addTerritoryChainRef = useRef(Promise.resolve());
 
   const highSocietySettings = useMemo(
     () => normalizeHighSocietySettings(state?.highSocietySettings),
@@ -71,11 +72,12 @@ export default function AdminHighSocietyPopupPanel() {
   }, [hsSeatPlayers, territoryMemberId]);
 
   const patchHighSociety = async (patch: HighSocietySettingsAdminPatch) => {
-    if (!state) return;
-    const prevSettings = normalizeHighSocietySettings(state.highSocietySettings);
+    const cur = stateRef.current;
+    if (!cur) return false;
+    const prevSettings = normalizeHighSocietySettings(cur.highSocietySettings);
     const wasOn = prevSettings.enabled;
     const lsDonors = loadState(scopedUserId)?.donors;
-    const next = applyHighSocietyAdminPatchToState(state, patch, { lsDonors });
+    const next = applyHighSocietyAdminPatchToState(cur, patch, { lsDonors });
     const after = normalizeHighSocietySettings(next.highSocietySettings);
     const toast =
       buildHighSocietySettingsPersistToast({
@@ -84,70 +86,82 @@ export default function AdminHighSocietyPopupPanel() {
         wasOn,
         after,
         resetTerritory: Boolean(patch.resetTerritory),
-        members: state.members || [],
+        members: cur.members || [],
       }) ?? undefined;
     const ok = await persistAppState(next, {
       omitDonationFields: true,
       highSocietySettingsOnly: true,
     });
     if (ok && toast) showAppToast(toast);
+    return ok;
   };
 
-  const addTerritoryRecord = async () => {
-    const cur = stateRef.current;
-    if (!cur) return;
-    const hsNow = normalizeHighSocietySettings(cur.highSocietySettings);
-    const matchModeNow = hsNow.matchMode;
-    const useTeamMode = matchModeNow === "team";
-    const seated = resolveHighSocietySeatMembers(cur.members || [], hsNow);
-    if (seated.length === 0) {
-      showAppToast("좌석 멤버가 없습니다. 메인 관리자 오버레이 탭에서 좌석을 지정해 주세요.", {
-        variant: "info",
-      });
-      return;
-    }
+  const addTerritoryRecord = () => {
     const cm = parseCmInput(territoryCm);
     if (cm <= 0) return;
-
-    let teamIdForLog: string | undefined;
-    let memberIdForLog: string = "";
-    if (useTeamMode) {
-      if (!territoryTeamId) return;
-      const assignments = hsNow.memberTeamAssignments || {};
-      const membersInTeam = seated.filter((m) => assignments[m.id] === territoryTeamId);
-      if (membersInTeam.length === 0) {
-        showAppToast("해당 팀에 소속된 좌석 멤버가 없습니다.", { variant: "info" });
+    const mode = territoryMode;
+    const teamIdSnap = territoryTeamId;
+    const memberIdSnap = territoryMemberId;
+    const pushSnap = territoryPushDir;
+    const noteSnap = territoryNote;
+    addTerritoryChainRef.current = addTerritoryChainRef.current
+      .then(async () => {
+      const cur = stateRef.current;
+      if (!cur) return;
+      const hsNow = normalizeHighSocietySettings(cur.highSocietySettings);
+      const matchModeNow = hsNow.matchMode;
+      const useTeamMode = matchModeNow === "team";
+      const seated = resolveHighSocietySeatMembers(cur.members || [], hsNow);
+      if (seated.length === 0) {
+        showAppToast("좌석 멤버가 없습니다. 메인 관리자 오버레이 탭에서 좌석을 지정해 주세요.", {
+          variant: "info",
+        });
         return;
       }
-      teamIdForLog = territoryTeamId;
-      memberIdForLog = membersInTeam[0]!.id;
-    } else {
-      if (!territoryMemberId) return;
-      memberIdForLog = territoryMemberId;
-    }
 
-    const seatRole = seatRoleForMemberId(hsNow, cur.members || [], memberIdForLog);
-    const pushForLog = resolveTerritoryLogPushDirForWrite({
-      seatRole,
-      chosen: territoryPushDir,
-      settings: hsNow,
+      let teamIdForLog: string | undefined;
+      let memberIdForLog: string = "";
+      if (useTeamMode) {
+        if (!teamIdSnap) return;
+        const assignments = hsNow.memberTeamAssignments || {};
+        const membersInTeam = seated.filter((m) => assignments[m.id] === teamIdSnap);
+        if (membersInTeam.length === 0) {
+          showAppToast("해당 팀에 소속된 좌석 멤버가 없습니다.", { variant: "info" });
+          return;
+        }
+        teamIdForLog = teamIdSnap;
+        memberIdForLog = membersInTeam[0]!.id;
+      } else {
+        if (!memberIdSnap) return;
+        memberIdForLog = memberIdSnap;
+      }
+
+      const seatRole = seatRoleForMemberId(hsNow, cur.members || [], memberIdForLog);
+      const pushForLog = resolveTerritoryLogPushDirForWrite({
+        seatRole,
+        chosen: pushSnap,
+        settings: hsNow,
+      });
+      const log = createTerritoryLog(
+        memberIdForLog,
+        mode === "plus" ? 1 : -1,
+        cm,
+        { pushDir: pushForLog, note: noteSnap, teamId: teamIdForLog }
+      );
+      const next = appendTerritoryLogToAppState(cur, log);
+      const ok = await persistAppState(next, {
+        omitDonationFields: true,
+        highSocietySettingsOnly: true,
+      });
+      if (ok) {
+        setTerritoryCm("");
+        setTerritoryNote("");
+        showAppToast(`영토 ${mode === "plus" ? "추가" : "차감"}: ${cm}cm`);
+      }
+    })
+    .catch(() => {
+      /* 이전 저장 실패가 다음 입력을 막지 않음 */
     });
-    const log = createTerritoryLog(
-      memberIdForLog,
-      territoryMode === "plus" ? 1 : -1,
-      cm,
-      { pushDir: pushForLog, note: territoryNote, teamId: teamIdForLog }
-    );
-    const next = appendTerritoryLogToAppState(cur, log);
-    const ok = await persistAppState(next, {
-      omitDonationFields: true,
-      highSocietySettingsOnly: true,
-    });
-    if (ok) {
-      setTerritoryCm("");
-      setTerritoryNote("");
-      showAppToast(`영토 ${territoryMode === "plus" ? "추가" : "차감"}: ${cm}cm`);
-    }
   };
 
   const deleteTerritoryLog = async (logId: string) => {
@@ -203,15 +217,22 @@ export default function AdminHighSocietyPopupPanel() {
   };
 
   const updateTeam = (teamId: string, patch: Partial<HighSocietyTeam>) => {
-    void patchHighSociety({
-      teams: teams.map((t) => (t.id === teamId ? { ...t, ...patch } : t)),
-    }).then(() => {
+    const cur = stateRef.current;
+    const currentTeams = normalizeHighSocietySettings(cur?.highSocietySettings).teams || teams;
+    return patchHighSociety({
+      teams: currentTeams.map((t) => (t.id === teamId ? { ...t, ...patch } : t)),
+    }).then((ok) => {
+      if (!ok) return false;
       setTeamEditingNames((prev) => {
         if (!(teamId in prev)) return prev;
+        if (typeof patch.name === "string" && prev[teamId]!.trim() !== patch.name.trim()) {
+          return prev;
+        }
         const next = { ...prev };
         delete next[teamId];
         return next;
       });
+      return true;
     });
   };
 
@@ -219,12 +240,16 @@ export default function AdminHighSocietyPopupPanel() {
     const draft = teamEditingNames[teamId];
     if (typeof draft === "undefined") return;
     const trimmed = draft.trim();
-    setTeamEditingNames((prev) => {
-      const next = { ...prev };
-      delete next[teamId];
-      return next;
-    });
-    if (!trimmed) return;
+    const currentName = (teams.find((t) => t.id === teamId)?.name || "").trim();
+    if (!trimmed || trimmed === currentName) {
+      setTeamEditingNames((prev) => {
+        if (!(teamId in prev)) return prev;
+        const next = { ...prev };
+        delete next[teamId];
+        return next;
+      });
+      return;
+    }
     void updateTeam(teamId, { name: trimmed });
   };
 
@@ -421,8 +446,8 @@ export default function AdminHighSocietyPopupPanel() {
                               setTeamEditingNames((prev) => ({ ...prev, [team.id]: e.target.value }))
                             }
                             onBlur={() => commitTeamNameEdit(team.id)}
-                            onCompositionEnd={() => commitTeamNameEdit(team.id)}
                             onKeyDown={(e) => {
+                              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                               if (e.key === "Enter") {
                                 e.preventDefault();
                                 commitTeamNameEdit(team.id);
