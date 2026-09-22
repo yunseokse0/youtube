@@ -1819,7 +1819,7 @@ function AdminPageInner() {
         persistDonationLastStateRef.current = null;
         if (!payload || flushingPersistRef.current) return;
         flushingPersistRef.current = true;
-        void persistDonationStateViaApi(user?.id, payload.s, payload.mode).then((r) => {
+        void persistDonationStateViaApi(overlayUserId, payload.s, payload.mode).then((r) => {
           flushingPersistRef.current = false;
           if (payload.label) {
             showServerPersistToast(payload.label, { ok: r.ok });
@@ -3841,7 +3841,7 @@ function AdminPageInner() {
       setSyncStatus("local");
     }
     /** fast=1 — enrich 생략·KV 캐시 활용. forceFull 생략으로 동시 GET dedupe 허용 */
-    const loadMain = () => loadStateFromApiWithMeta(user.id, { fast: true });
+    const loadMain = () => loadStateFromApiWithMeta(overlayUserId, { fast: true });
     void loadMain()
       .then(({ state: apiState, meta }) => {
         if (cancelled) return;
@@ -3931,7 +3931,7 @@ function AdminPageInner() {
           ) {
             window.setTimeout(() => {
               if (cancelled) return;
-              void loadStateFromApiWithMeta(user.id, { forceFull: true }).then(
+              void loadStateFromApiWithMeta(overlayUserId, { forceFull: true }).then(
                 ({ state: full, meta: fullMeta }) => {
                   if (cancelled || !full) return;
                   if (normalizeDonorsArray(full.donors).length === 0) return;
@@ -3994,8 +3994,8 @@ function AdminPageInner() {
       updatedAt: Date.now(),
     });
     setState(next);
-    void persistDonationStateViaApi(user.id, next, "add");
-  }, [user, dailyLog, state.donors]);
+    void persistDonationStateViaApi(overlayUserId, next, "add");
+  }, [user, dailyLog, state.donors, overlayUserId]);
 
   /** 후원 0건 — LS·일일 로그·서버 백업에서 자동 복구 (한 세션 1회) */
   useEffect(() => {
@@ -4039,9 +4039,9 @@ function AdminPageInner() {
     autoOrphanDonorRestoreAttemptedRef.current = true;
 
     const tryDailyLogRestore = async () => {
-      const serverLog = await loadDailyLogFromApi(user?.id);
+      const serverLog = await loadDailyLogFromApi(overlayUserId);
       const mergedLog: Record<string, DailyLogEntry[]> = {
-        ...loadDailyLog(user.id),
+        ...loadDailyLog(overlayUserId),
         ...serverLog,
       };
       const entry = pickDailyLogEntryForAutoRestore(mergedLog, broadcastDateKey());
@@ -4062,7 +4062,7 @@ function AdminPageInner() {
       if (!restored) return false;
       setState(restored);
       donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
-      void persistDonationStateViaApi(user.id, restored, "add").then((r) => {
+      void persistDonationStateViaApi(overlayUserId, restored, "add").then((r) => {
         if (r.ok) {
           setState(r.state);
           stateRef.current = r.state;
@@ -4153,7 +4153,7 @@ function AdminPageInner() {
         return false;
       }
       const localDonorsBefore = normalizeDonorsArray(stateRef.current.donors);
-      const remoteResult = await loadStateFromApiWithMeta(user.id, {
+      const remoteResult = await loadStateFromApiWithMeta(overlayUserId, {
         ...(opts?.forceReplace || localDonorsBefore.length === 0
           ? { forceFull: true }
           : {
@@ -5055,10 +5055,7 @@ function AdminPageInner() {
         const isEmptyState =
           normalizeDonorsArray(s.donors).length === 0 &&
           (s.members?.length || 0) === 0 &&
-          totalCombined(s) === 0 &&
-          !Number(s.settlementResetAt || 0) &&
-          !Number(s.intentionalDonationClearAt || 0) &&
-          !Number(s.updatedAt || 0);
+          totalCombined(s) === 0;
         if (!opts?.suppressEmptyFallback && isEmptyState && overlayUserId !== "finalent") {
           console.warn("[admin] 빈 state 감지 → 자동 finalent fallback", { from: overlayUserId });
           setOverlayUserId("finalent");
@@ -5956,7 +5953,7 @@ function AdminPageInner() {
           // ignore
         }
       } else if (e.key === dailyKey) {
-        setDailyLog(loadDailyLog(user.id));
+        setDailyLog(loadDailyLog(overlayUserId));
       }
     };
     window.addEventListener("storage", handler);
@@ -9446,7 +9443,7 @@ function AdminPageInner() {
       const protectionMs = opts?.protectionMs ?? 45_000;
       const slimResponse = opts?.slimResponse ?? Boolean(opts?.skipSetState);
       donationAuthoritativeSaveUntilRef.current = Date.now() + protectionMs;
-      const result = await persistDonationStateViaApi(user?.id, preserved, "replace", {
+      const result = await persistDonationStateViaApi(overlayUserId, preserved, "replace", {
         returnState: !slimResponse,
       });
       if (!result.ok) {
@@ -9560,8 +9557,8 @@ function AdminPageInner() {
       );
       return;
     }
-    const serverLog = await loadDailyLogFromApi(user?.id);
-    const localLog = loadDailyLog(user?.id);
+    const serverLog = await loadDailyLogFromApi(overlayUserId);
+    const localLog = loadDailyLog(overlayUserId);
     const merged: Record<string, DailyLogEntry[]> = { ...localLog, ...serverLog };
     const todayKey = broadcastDateKey();
     const currentDonorCount = normalizeDonorsArray(stateRef.current.donors).length;
@@ -9633,7 +9630,7 @@ function AdminPageInner() {
     setState(preserved);
     /** 후원 반영 직후 서버 저장 실패·누락 시 즉시 재저장 */
     if (needsResave) {
-      void persistDonationStateViaApi(user?.id, preserved, "add").then((r) => {
+      void persistDonationStateViaApi(overlayUserId, preserved, "add").then((r) => {
         if (r.ok) {
           setState(r.state);
           stateRef.current = r.state;
@@ -11061,15 +11058,15 @@ function AdminPageInner() {
       serverDonorMismatchRestoreAttemptedRef.current = true;
       setResetSheetOpen(false);
       setResetConfirmPhrase("");
-      appendDailyLog(previousState, user?.id);
-      loadDailyLogFromApi(user?.id)
+      appendDailyLog(previousState, overlayUserId);
+      loadDailyLogFromApi(overlayUserId)
         .then((serverLog) => {
           setDailyLog(serverLog);
           try {
-            window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog));
+            window.localStorage.setItem(dailyLogStorageKey(overlayUserId), JSON.stringify(serverLog));
           } catch {}
         })
-        .catch(() => setDailyLog(loadDailyLog(user?.id)));
+        .catch(() => setDailyLog(loadDailyLog(overlayUserId)));
 
       const optimistic = applySettlementResetToState(previousState, {
         mode,
@@ -11355,11 +11352,11 @@ function AdminPageInner() {
   };
 
   const onSnapshotNow = () => {
-    appendDailyLog(state, user?.id);
-    loadDailyLogFromApi(user?.id).then((serverLog) => {
+    appendDailyLog(state, overlayUserId);
+    loadDailyLogFromApi(overlayUserId).then((serverLog) => {
       setDailyLog(serverLog);
-      try { window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog)); } catch {}
-    }).catch(() => setDailyLog(loadDailyLog(user?.id)));
+      try { window.localStorage.setItem(dailyLogStorageKey(overlayUserId), JSON.stringify(serverLog)); } catch {}
+    }).catch(() => setDailyLog(loadDailyLog(overlayUserId)));
   };
   const onFetchLatestFromServer = async () => {
     if (donorEditLockRef.current) {
@@ -11373,7 +11370,7 @@ function AdminPageInner() {
       } catch (_noop) { /* noop */ }
     }
     setSyncStatus("loading");
-    const { state: remote, meta } = await loadStateFromApiWithMeta(user?.id, { forceFull: true });
+    const { state: remote, meta } = await loadStateFromApiWithMeta(overlayUserId, { forceFull: true });
     if (!remote) {
       applySyncStatusAfterStateFetch(null, meta);
       if (typeof window !== "undefined" && !isStateServerSyncVerified(meta, false)) {
@@ -11560,14 +11557,14 @@ function AdminPageInner() {
       setPullDistance(0);
     }
     /** 23MB daily-log 는 state GET 과 MySQL pool 경합 — 당겨 동기화는 state 만 기다림 */
-    void loadDailyLogFromApi(user?.id)
+    void loadDailyLogFromApi(overlayUserId)
       .then((serverLog) => {
         setDailyLog(serverLog);
         try {
-          window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog));
+          window.localStorage.setItem(dailyLogStorageKey(overlayUserId), JSON.stringify(serverLog));
         } catch {}
       })
-      .catch(() => setDailyLog(loadDailyLog(user?.id)));
+      .catch(() => setDailyLog(loadDailyLog(overlayUserId)));
   };
   const handleTouchStart = (e: any) => {
     if (typeof window === "undefined") return;
@@ -11589,7 +11586,7 @@ function AdminPageInner() {
     setPullDistance(0);
   };
   const onDownloadLog = () => {
-    const raw = JSON.stringify(loadDailyLog(user?.id), null, 2);
+    const raw = JSON.stringify(loadDailyLog(overlayUserId), null, 2);
     const blob = new Blob([raw], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -11630,10 +11627,10 @@ function AdminPageInner() {
       settlementTitle.trim() ||
       `${broadcastDateKey()} 정산`;
     const mergedLog: Record<string, DailyLogEntry[]> = {
-      ...loadDailyLog(user?.id),
+      ...loadDailyLog(overlayUserId),
       ...dailyLog,
     };
-    let snapshot = buildSettlementCreationSnapshot(stateRef.current, user?.id);
+    let snapshot = buildSettlementCreationSnapshot(stateRef.current, overlayUserId);
     snapshot = enrichSettlementSnapshotFromDailyLog(
       snapshot,
       mergedLog,
@@ -11652,10 +11649,10 @@ function AdminPageInner() {
     stateRef.current = snapshot;
     setState(snapshot);
     try {
-      cacheBroadcastStateSnapshot(snapshot, user?.id);
+      cacheBroadcastStateSnapshot(snapshot, overlayUserId);
     } catch {}
-    await persistDonationStateViaApi(user?.id, snapshot, "add");
-    appendDailyLog(snapshot, user?.id);
+    await persistDonationStateViaApi(overlayUserId, snapshot, "add");
+    appendDailyLog(snapshot, overlayUserId);
     const rec = await appendSettlementRecordAndSync(
       title,
       snapshot.members,
