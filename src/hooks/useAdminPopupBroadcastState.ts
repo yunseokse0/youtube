@@ -33,7 +33,51 @@ export function useAdminPopupBroadcastState() {
    *  2순위: 자기 로그인user.id (사용자 의도 그대로! 로그인=din 이면 state=din 이 정답!)
    *  3순위: 폴백 없음. finalent 강제 주입 절대 금지 (타계정 state 엉뚱하게 읽는 버그 방지
    */
-  const scopedUserId = resolveScopedOverlayUserId(urlUserId || user?.id);
+  const [scopedUserId, setScopedUserId] = useState<string>(() =>
+    resolveScopedOverlayUserId(urlUserId || "")
+  );
+  const [overrideReason, setOverrideReason] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!authReady || !user?.id) return;
+    const resolvedUrlUid = urlUserId ? resolveScopedOverlayUserId(urlUserId) : "";
+    const resolvedSessionUid = resolveScopedOverlayUserId(user.id);
+    const isLocalhost =
+      typeof window !== "undefined" &&
+      (window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1" ||
+        window.location.hostname.includes("local"));
+
+    if (!resolvedUrlUid) {
+      setScopedUserId(resolvedSessionUid);
+      return;
+    }
+
+    if (resolvedUrlUid === resolvedSessionUid) {
+      setScopedUserId(resolvedSessionUid);
+      setOverrideReason(null);
+      return;
+    }
+
+    if (isLocalhost) {
+      setScopedUserId(resolvedUrlUid);
+      setOverrideReason("개발모드 URL override");
+      return;
+    }
+
+    /** ✅ 프로덕션: URL ?u=finalent 등 세션 계정과 다르면
+     *  세션 user.id 로 URL을 강제 교정 → 북마크 등으로 잘못된 URL 접근시 자동 정상화!
+     */
+    setScopedUserId(resolvedSessionUid);
+    setOverrideReason(`URL ${resolvedUrlUid} → ${resolvedSessionUid} 교정`);
+    try {
+      const current = new URL(window.location.href);
+      current.searchParams.set("u", resolvedSessionUid);
+      window.history.replaceState(null, "", current.toString());
+    } catch (_noop) {
+      /* noop */
+    }
+  }, [authReady, urlUserId, user?.id]);
 
   useEffect(() => {
     stateRef.current = state;

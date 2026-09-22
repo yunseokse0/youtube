@@ -4412,7 +4412,7 @@ function OverlayInner() {
           }
         ` }} />
       );
-    const nameWrapCls = effectiveNameGrow ? "" : "truncate";
+    const nameWrapCls = "";
     const tfTable = memberTableFitFactor;
     const mobileMinFontPx = mobileBroadcast ? 17 : externalHost ? 15 : 8;
     let memberFontPx = Math.max(mobileMinFontPx, Math.round(mSize * tfTable));
@@ -5123,7 +5123,7 @@ function OverlayInner() {
         }
         `
         }
-        /* table-layout:fixed + col 너비 — nameGrow OFF 일 때만 말줄임 */
+        /* table-layout:fixed + col 너비 — nameGrow OFF 일 때 최소 9rem 보장 (멤버명 잘림 방지) */
         ${
           effectiveNameGrow
             ? `
@@ -5141,7 +5141,15 @@ function OverlayInner() {
         }`
             : `
         .overlay-root .overlay-elegant-table td.overlay-col-name {
-          max-width: 0;
+          max-width: none !important;
+          min-width: 9rem !important;
+          overflow: visible !important;
+          text-overflow: clip !important;
+        }
+        .overlay-root .overlay-elegant-table td.overlay-col-name .overlay-cell-text-inner {
+          overflow: visible !important;
+          text-overflow: clip !important;
+          white-space: nowrap !important;
         }`
         }
         ${

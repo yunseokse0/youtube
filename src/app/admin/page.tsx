@@ -2148,12 +2148,13 @@ function AdminPageInner() {
   const donorPageIdx = Math.min(donorListPage, donorTotalPages);
   const donorPageStart = (donorPageIdx - 1) * donorListPageSize;
   const donorPageEnd = donorPageStart + donorListPageSize;
-  /** ✅ 페이지 내 & 선택 행 총액 집계 (실시간 확인용) — ⚠️ 삭제된 건(deletedAt 존재)은 페이지 합계/선택 합계 둘 다 제외! */
+  /** ✅ 페이지 내 & 선택 행 총액 집계 (실시간 확인용) — ⚠️ 삭제된 건(deletedAt 존재) + 후원 제외 건(donationExcluded=true) 모두 제외! */
   const donorPageAgg = useMemo(() => {
     let pageSum = 0; let pageCount = 0;
     const vis = donorListShowAll ? donorListRowsFiltered : donorListRowsFiltered.slice(donorPageStart, donorPageEnd);
     for (const d of vis as any[]) {
       if (d?.deletedAt) continue;
+      if (isDonorExcludedFromDonationTotals(d)) continue;
       pageSum += Number(d?.amount ?? 0); pageCount += 1;
     }
     return { pageSum, pageCount };
@@ -2163,7 +2164,7 @@ function AdminPageInner() {
     if (selectedDonorIds.size === 0) return { selSum: 0, selCount: 0 };
     for (const d of donorListRowsFiltered as any[]) {
       const id = String(d?.id ?? "");
-      if (id && selectedDonorIds.has(id) && !d?.deletedAt) { selSum += Number(d?.amount ?? 0); selCount += 1; }
+      if (id && selectedDonorIds.has(id) && !d?.deletedAt && !isDonorExcludedFromDonationTotals(d)) { selSum += Number(d?.amount ?? 0); selCount += 1; }
     }
     return { selSum, selCount };
   }, [donorListRowsFiltered, selectedDonorIds]);
@@ -3175,19 +3176,35 @@ function AdminPageInner() {
 
   useEffect(() => {
     let cancelled = false;
+    const isLocalhost =
+      typeof window !== "undefined" &&
+      (window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1" ||
+        window.location.hostname.includes("local"));
     const applyUserOrUrlOverride = (rawUser: { id: string; companyName?: string; name?: string; remainingDays?: number; unlimited?: boolean }) => {
-      if (urlUserIdRaw && urlUserIdRaw !== String(rawUser?.id || "").trim()) {
-        /** URL ?u= 파라미터가 세션 유저 ID와 다를 경우 — URL 값으로 강제 override
-         *  (개발·테스트 환경에서 별도 로그인 없이 유저 전환 목적)
-         */
-        setUser({
-          id: urlUserIdRaw,
-          companyName: rawUser?.companyName || "URL_OVERRIDE_DEV",
-          name: rawUser?.name,
-          remainingDays: rawUser?.remainingDays ?? 9999,
-          unlimited: rawUser?.unlimited ?? true,
-        });
-        return true;
+      const rawUid = String(rawUser?.id || "").trim();
+      if (urlUserIdRaw && urlUserIdRaw !== rawUid) {
+        if (isLocalhost) {
+          /** ✅ 개발 모드: URL ?u= 파라미터가 세션 유저 ID와 다를 경우 — URL 값으로 강제 override (테스트 목적) */
+          setUser({
+            id: urlUserIdRaw,
+            companyName: rawUser?.companyName || "URL_OVERRIDE_DEV",
+            name: rawUser?.name,
+            remainingDays: rawUser?.remainingDays ?? 9999,
+            unlimited: rawUser?.unlimited ?? true,
+          });
+          return true;
+        }
+        /** 🚨 프로덕션: URL ?u=finalent 등 세션 계정과 다르면 URL을 교정하고 실제 세션 ID 사용 */
+        if (rawUid) {
+          try {
+            const current = new URL(window.location.href);
+            current.searchParams.set("u", rawUid);
+            window.history.replaceState(null, "", current.toString());
+          } catch (_noop) { /* noop */ }
+          setUser(rawUser as any);
+          return true;
+        }
       }
       if (rawUser?.id) {
         setUser(rawUser as any);
@@ -3207,8 +3224,8 @@ function AdminPageInner() {
             setAuthReady(true);
             return;
           }
-          /** auth/me 에 유저 정보 없음 — URL ?u= 있으면 fallback으로 로그인 skip */
-          if (urlUserIdRaw) {
+          /** auth/me 에 유저 정보 없음 — URL ?u= 있으면 개발 모드에서만 fallback으로 로그인 skip */
+          if (urlUserIdRaw && isLocalhost) {
             setUser({ id: urlUserIdRaw, companyName: "URL_OVERRIDE_DEV", unlimited: true, remainingDays: 9999 });
             setAuthReady(true);
             return;
@@ -3222,8 +3239,8 @@ function AdminPageInner() {
             window.setTimeout(() => loadMe(attempt + 1), 400 * attempt);
             return;
           }
-          /** ✅ URL ?u= 있으면 auth 실패해도 강제 로그인 skip · 개발 테스트 전용 */
-          if (urlUserIdRaw) {
+          /** ✅ URL ?u= 있으면 auth 실패해도 강제 로그인 skip · 개발 테스트 전용 (개발 모드 한정) */
+          if (urlUserIdRaw && isLocalhost) {
             setUser({ id: urlUserIdRaw, companyName: "URL_OVERRIDE_DEV", unlimited: true, remainingDays: 9999 });
             setAuthReady(true);
             return;

@@ -493,7 +493,14 @@ export function shouldBlockHighSocietyRegression(
   const patchN = patch ? normalizeHighSocietySettings(patch) : null;
   // ✅ 2026-09-22 v15 Hotfix: 명시적 ON/OFF 토글은 절대 regression guard 로 막으면 안됨
   //   → 사용자가 OFF → ON 또는 ON → OFF 버튼 클릭시 그 즉시 허용 (그 외 모든 wipe block은 정상 유지)
-  if (Boolean(patchN?.enabled) !== Boolean(baseN?.enabled)) return false;
+  // ✅ 2026-09-22 v15.1 Hotfix: enabled가 달라도 patch 자체가 완전 기본값 꼴이면 stale 스냅샷이므로 차단 로직 계속 진행
+  //   → SSE 폴링으로 들어온 깡통 기본값(enabled:false + seat[] + field 1200 등)이 사용자의 저장된 ON 설정을 덮어쓰는 롤백 버그 방지
+  if (
+    Boolean(patchN?.enabled) !== Boolean(baseN?.enabled) &&
+    !isDefaultLikeHighSocietySettings(patchN)
+  ) {
+    return false;
+  }
   if (!isMeaningfulHighSocietySettings(base)) return false;
   const baseRound = Math.max(1, Math.floor(Number(base?.round) || 1));
   const patchRound = Math.max(1, Math.floor(Number(patch?.round) || 1));

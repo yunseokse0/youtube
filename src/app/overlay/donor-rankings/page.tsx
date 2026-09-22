@@ -460,9 +460,10 @@ function RankingRow({
         )}
       </span>
       <span
-        className="overlay-cell-text-inner min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap px-[0.2em] py-[0.12em] text-left font-bold leading-snug"
+        className="overlay-cell-text-inner min-w-0 flex-1 overflow-visible text-clip whitespace-nowrap px-[0.5em] py-[0.12em] text-left font-bold leading-snug"
         style={{
           color: nameColor,
+          minWidth: "9rem",
           ...rowOutline,
         }}
         title={nameDisplay}
