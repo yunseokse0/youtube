@@ -16315,7 +16315,7 @@ function AdminPageInner() {
                     type="button"
                     className="shrink-0 rounded border border-violet-500/40 bg-violet-950/50 px-3 py-1.5 text-xs font-semibold text-violet-100 hover:bg-violet-900/60"
                     title="타이머 전용 팝업 창"
-                    onClick={() => openAdminTimerPopup(user?.id || overlayUserId)}
+                    onClick={() => openAdminTimerPopup(overlayUserId || user?.id)}
                   >
                     별도 창에서 열기
                   </button>
@@ -17674,7 +17674,7 @@ function AdminPageInner() {
                 <button
                   type="button"
                   className="rounded border border-violet-500/40 bg-violet-950/50 px-3 py-1.5 text-xs font-semibold text-violet-100 hover:bg-violet-900/60"
-                  onClick={() => openAdminHighSocietyPopup(user?.id || overlayUserId)}
+                  onClick={() => openAdminHighSocietyPopup(overlayUserId || user?.id)}
                 >
                   별도 창에서 열기
                 </button>
@@ -17979,7 +17979,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                     <button
                       type="button"
                       className="text-sky-400 underline ml-1"
-                      onClick={() => openAdminHighSocietyPopup(user?.id || overlayUserId)}
+                      onClick={() => openAdminHighSocietyPopup(overlayUserId || user?.id)}
                     >
                       영토 배치도 (팝업)
                     </button>
@@ -19932,7 +19932,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                     <button
                       type="button"
                       className="rounded border border-violet-500/40 bg-violet-950/50 px-2.5 py-1 text-[11px] font-semibold text-violet-100 hover:bg-violet-900/60"
-                      onClick={() => openAdminHighSocietyPopup(user?.id || overlayUserId)}
+                      onClick={() => openAdminHighSocietyPopup(overlayUserId || user?.id)}
                     >
                       별도 창
                     </button>
@@ -19962,7 +19962,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                   {<HighSocietySeatLayoutSummary
                     members={state.members || []}
                     settings={highSocietySettings}
-                    onOpenPopup={() => openAdminHighSocietyPopup(user?.id || overlayUserId)}
+                    onOpenPopup={() => openAdminHighSocietyPopup(overlayUserId || user?.id)}
                   />}
                 </div>
 
