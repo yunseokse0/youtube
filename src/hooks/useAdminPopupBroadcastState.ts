@@ -22,8 +22,75 @@ export function useAdminPopupBroadcastState() {
   const router = useRouter();
   const sp = useSearchParams();
   const urlUserId = (sp.get("u") || sp.get("user") || "").trim();
-  const [user, setUser] = useState<{ id: string } | null>(null);
+  const [user, setUser] = useState<{ id: string; name?: string; companyName?: string; unlimited?: boolean; remainingDays?: number } | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const sessionUserId = resolveScopedOverlayUserId(user?.id || "");
+
+  /** ✅ v17.9.4: useAdminPopupBroadcastState 자체 /api/auth/me 인증 로직 내장
+   *  이전 BUG: HS 팝업 페이지(/admin/high-society)는 admin 메인 페이지의 auth 로직을 공유하지 않아
+   *             로그인 쿠키가 없는 타 PC에서도 URL 파라미터 만으로 finalent 버킷 state 전체 노출 (보안 구멍!)
+   *  Fix: /api/auth/me 3회 재시도 → 세션 user.id 없으면 프로덕션은 로그인 페이지로 강제 이동
+   */
+  useEffect(() => {
+    let cancelled = false;
+    const isLocalhost =
+      typeof window !== "undefined" &&
+      (window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1" ||
+        window.location.hostname.includes("local"));
+    const loadAuth = (attempt: number) => {
+      fetch("/api/auth/me", { credentials: "include" })
+        .then(async (r) => {
+          if (!r.ok) throw new Error(`auth_me_${r.status}`);
+          return r.json();
+        })
+        .then((data) => {
+          if (cancelled) return;
+          const rawUser = data?.user;
+          const rawUid = String(rawUser?.id || "").trim();
+          if (rawUid) {
+            setUser(rawUser);
+            setAuthReady(true);
+            return;
+          }
+          /** 세션 로그인 자체가 없음 — 개발모드 URL ?u= 있을 때만 가장 로그인 허용 */
+          const resolvedUrlUid = urlUserId ? resolveScopedOverlayUserId(urlUserId) : "";
+          if (isLocalhost && resolvedUrlUid) {
+            setUser({ id: resolvedUrlUid, companyName: "URL_OVERRIDE_DEV", unlimited: true, remainingDays: 9999 });
+            setAuthReady(true);
+            return;
+          }
+          /** 🚨 프로덕션 미로그인 → /login?redirect= 로 강제 이동 */
+          setAuthReady(true);
+          try {
+            const next = encodeURIComponent(window.location.pathname + window.location.search);
+            window.location.href = `/login?redirect=${next}`;
+          } catch (_noop) { /* noop */ }
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (attempt < 3) {
+            window.setTimeout(() => loadAuth(attempt + 1), 450 * attempt);
+            return;
+          }
+          const resolvedUrlUid = urlUserId ? resolveScopedOverlayUserId(urlUserId) : "";
+          if (isLocalhost && resolvedUrlUid) {
+            setUser({ id: resolvedUrlUid, companyName: "URL_OVERRIDE_DEV", unlimited: true, remainingDays: 9999 });
+            setAuthReady(true);
+            return;
+          }
+          /** 네트워크 오류 등 auth 실패 — 프로덕션에서는 로그인 페이지로 이동 */
+          setAuthReady(true);
+          try {
+            const next = encodeURIComponent(window.location.pathname + window.location.search);
+            window.location.href = `/login?redirect=${next}`;
+          } catch (_noop) { /* noop */ }
+        });
+    };
+    loadAuth(1);
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [state, setState] = useState<AppState | null>(null);
   const stateRef = useRef<AppState | null>(null);
   const reloadBusyRef = useRef(false);
