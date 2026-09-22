@@ -4,6 +4,7 @@ import {
   isReliableToonationExternalId,
 } from "./toonation/parse-event";
 import type { DonationEvent } from "./types";
+import { resolveScopedOverlayUserId } from "@/lib/overlay-params";
 
 /** 이중 경로(서버 WS+브라우저·큐) 단기 차단 창 — 이후 동일 금액 연속 후원은 허용 */
 export const DONATION_CONTENT_DEDUPE_TTL_SEC = 3;
@@ -24,6 +25,17 @@ export const CROSS_SOURCE_NEAR_DUP_MS = 30_000;
 
 /** 동일 bank:sms 재전송(푸시 연타) — id만 다른 동일 후원 */
 export const BANK_RESEND_NEAR_DUP_MS = 30_000;
+
+/**
+ * ✅ v17.5 이중 경로 중복봉쇄 helper:
+ *  · userId = 로그인 세션 ID (din 등)
+ *  · stateUserId = 실제 AppState donor[] 가 저장되는 overlay scoped ID (finalent 등)
+ *  → 모든 dedupe lock / primary / content / inflight 키는 **무조건 stateUserId 기준**으로 통일
+ *  → ingest(toona push + din poll) 2경로가 같은 후원에 대해 키가 100% 일치 → 동시 도달해도 중복 저장 zero!
+ */
+function scopedStateUserIdOf(userId: string): string {
+  return resolveScopedOverlayUserId(userId, "finalent");
+}
 
 /** 후원자·금액·대상·메시지 기준 내용 키 (건별 unique id 와 무관) */
 export function donationContentDedupeFingerprint(event: {
@@ -63,21 +75,22 @@ export function donationContentClaimTtlSec(event: DonationEvent): number {
 
 /** in-flight 직렬화 — 동일 내용 동시 apply 방지 (투네 실 id 있으면 id 단위) */
 export function donationApplyInFlightKey(userId: string, event: DonationEvent): string {
+  const uid = scopedStateUserIdOf(userId);
   /** ✅ 2026-09-07 Hotfix ② Bypass: DIN 허브 strong id (toonation:din:DBID) 면
    *  resolveToonationPrimaryExt 의 Fallback 도달 여부와 무관하게 직접 strong 체크 후
    *  content 기반 inflight 잠금 진입 자체를 차단 → 10건 연타 전부 개별 primaryKey 획득 */
   const eventIdDirect = normalizeDonationEventId(String(event.id || "").trim());
   if (event.provider === "toonation" && eventIdDirect && !isWeakToonationDonorId(eventIdDirect)) {
-    return donationApplyPrimaryKey(userId, event);
+    return donationApplyPrimaryKey(uid, event);
   }
   if (
     event.provider === "toonation" &&
     hasIdenticalMessageDedupeFingerprint(event) &&
     !resolveToonationPrimaryExt(event)
   ) {
-    return `${userId}:inflight:${donationContentDedupeFingerprint(event)}`;
+    return `${uid}:inflight:${donationContentDedupeFingerprint(event)}`;
   }
-  return donationApplyPrimaryKey(userId, event);
+  return donationApplyPrimaryKey(uid, event);
 }
 
 /** weak toon-{real}-{unique} · reliable externalId → 투네 실 id (동일 후원 이중 ingest 차단) */
@@ -113,6 +126,7 @@ const NEAR_CONTENT_BUCKET_MS = 3_000;
 
 /** Redis·인메모리 — weak id·이중 경로 동일 내용 선점 (투네 실 id 는 primary key) */
 export function donationApplyContentKey(userId: string, event: DonationEvent): string | null {
+  const uid = scopedStateUserIdOf(userId);
   if (event.provider !== "toonation") return null;
   /** ✅ 2026-09-07 Hotfix ① Bypass: DIN 허브 strong id (toonation:din:DBID) 면
    *  resolveToonationPrimaryExt 도달 여부와 무관하게 직접 strong 체크 후
@@ -125,7 +139,7 @@ export function donationApplyContentKey(userId: string, event: DonationEvent): s
   if (resolveToonationPrimaryExt(event)) return null;
   const fp = donationContentDedupeFingerprint(event);
   if (hasIdenticalMessageDedupeFingerprint(event)) {
-    return `${userId}:content:${fp}`;
+    return `${uid}:content:${fp}`;
   }
   const ext = String(event.externalId || "").trim();
   if (isReliableToonationExternalId(ext) && !isWeakToonationDonorId(`toonation:${ext}`)) {
@@ -135,19 +149,20 @@ export function donationApplyContentKey(userId: string, event: DonationEvent): s
   const bucket = Number.isFinite(atMs)
     ? Math.floor(atMs / NEAR_CONTENT_BUCKET_MS)
     : Math.floor(Date.now() / NEAR_CONTENT_BUCKET_MS);
-  return `${userId}:content:${donationContentDedupeFingerprint(event)}:${bucket}`;
+  return `${uid}:content:${donationContentDedupeFingerprint(event)}:${bucket}`;
 }
 
 /** Redis·인메모리 중복 반영 방지용 키 */
 export function donationApplyPrimaryKey(userId: string, event: DonationEvent): string {
+  const uid = scopedStateUserIdOf(userId);
   const realExt = resolveToonationPrimaryExt(event);
-  if (realExt) return `${userId}:toonation:ext:${realExt}`;
+  if (realExt) return `${uid}:toonation:ext:${realExt}`;
   const ext = String(event.externalId || "").trim();
   const eventId = normalizeDonationEventId(String(event.id || "").trim());
-  if (eventId) return `${userId}:evt:${eventId.toLowerCase()}`;
+  if (eventId) return `${uid}:evt:${eventId.toLowerCase()}`;
   const name = String(event.donorName || "").trim().toLowerCase();
   const amount = Math.max(0, Math.round(Number(event.amount) || 0));
   const target = event.target === "account" ? "account" : "toon";
   const msg = String(event.message || "").trim();
-  return `${userId}:fp:${name}|${amount}|${target}|${msg}|${ext}`;
+  return `${uid}:fp:${name}|${amount}|${target}|${msg}|${ext}`;
 }
