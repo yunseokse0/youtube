@@ -45,6 +45,15 @@ export function applyHighSocietyAdminPatchToState(
   const turningOn = !wasOn && nextSettings.enabled;
   const turningOff = wasOn && !nextSettings.enabled;
   const isFirstOn = turningOn && !isHighSocietyReopen(prevSettings);
+  /** 개인전↔팀전 전환 시 멤버/팀 기하가 달라지므로 스냅샷을 비우고 기록부 replay 로 재계산 */
+  if (prevSettings.matchMode !== nextSettings.matchMode) {
+    nextSettings = normalizeHighSocietySettings({
+      ...nextSettings,
+      memberWidthCm: undefined,
+      memberWidthDonationSnapshot: undefined,
+      memberTerritoryExpand: undefined,
+    });
+  }
   nextSettings = mergeHighSocietyDonationLinksOnSettingsChange({
     prevSettings,
     nextSettings,

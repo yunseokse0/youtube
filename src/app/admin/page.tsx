@@ -2723,7 +2723,9 @@ function AdminPageInner() {
           try {
             const cs = el.querySelectorAll<HTMLElement>("[data-admin-section-content]");
             cs.forEach((node) => {
+              const isDonorList = node.id === "donor-list-content";
               for (const [prop, val] of Object.entries(SQUASH_FIX)) {
+                if (isDonorList && prop === "min-height") continue;
                 const curV = node.style.getPropertyValue(prop);
                 const curP = node.style.getPropertyPriority(prop);
                 if (curV !== val || curP !== "important") {
@@ -2731,6 +2733,14 @@ function AdminPageInner() {
                   dirty = true;
                 }
               }
+              // 후원자 리스트는 max-height 스크롤 박스 — height 를 400px로 고정하면 표가 짧아짐
+              if (isDonorList) {
+                const curH = node.style.getPropertyValue("height");
+                if (curH !== "") {
+                  node.style.removeProperty("height");
+                  dirty = true;
+                }
+              } else {
               // ✅ 2026-09-21 v10.2 Squash 완전봉쇄 1/3:
               // - height:auto + 부모 고정 높이 제약 충돌시 content가 2px로 남는 현상 해소
               // - 자식 총 높이(sum of children offsetHeight, 최소 400px)를 직접 content height에 px로 주입
@@ -2747,6 +2757,7 @@ function AdminPageInner() {
               if (curH !== wantH || curHP !== "important") {
                 node.style.setProperty("height", wantH, "important");
                 dirty = true;
+              }
               }
               // ✅ 2026-09-21 v10.2 Squash 완전봉쇄 2/3:
               // - 부모 wrapping 2단계 (섹션 내 padding div + 섹션 자체) 의 고정 높이 제약 해방
@@ -10537,10 +10548,6 @@ function AdminPageInner() {
 
   const addTerritoryRecord = () => {
     const hsSettings = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
-    if (!hsSettings.enabled) {
-      showAppToast("상류사회가 OFF입니다. 먼저 모드를 켜 주세요.", { variant: "info" });
-      return;
-    }
     const useTeamMode = hsSettings.matchMode === "team";
     const seated = resolveHighSocietySeatMembers(
       stateRef.current.members || [],
@@ -10681,7 +10688,6 @@ function AdminPageInner() {
   }, [hsSeatPlayers, highSocietySettings, territoryTeamId]);
   const hsSeatFieldByMemberId = useMemo(() => {
     const map = new Map<string, { widthCm: number; eliminated: boolean }>();
-    if (!highSocietySettings.enabled) return map;
     const field = buildHighSocietyFieldFromAppState({
       members: state.members || [],
       donors: state.donors || [],
@@ -10821,7 +10827,7 @@ function AdminPageInner() {
   /** 관리자 로컬 영토 cm — 서버·OBS 미동기화 시 자동 HS-only 저장 (실시간 모드) */
   useEffect(() => {
     if (syncStatus !== "synced") return;
-    if (!highSocietySettings.enabled || highSocietySettings.territoryPaused) return;
+    if (highSocietySettings.territoryPaused) return;
     if (highSocietySettings.territoryUpdateMode === "onRoundEnd") return;
     if (hsSeatPlayers.length === 0) return;
     const cur = stateRef.current;
@@ -12333,7 +12339,8 @@ function AdminPageInner() {
                 <div className="rounded-lg border border-amber-300/30 bg-amber-500/10 p-3 space-y-2">
                   <div className="text-sm font-semibold text-amber-200">후원 동기화 일괄 관리 (중복 방지)</div>
                     <p className="text-xs text-neutral-300">
-                      후원 입력은 아래에서 선택한 대상에만 동기화됩니다. 시그/식사/상류사회를 켜면 모드가 자동 전환됩니다.
+                      후원 입력은 아래에서 선택한 대상에만 동기화됩니다. 시그/식사대전을 켜면 모드가 자동 전환됩니다.
+                      상류사회 영토는 후원과 연동되지 않고, 멤버 이름 + 영토 기록부만 사용합니다.
                       참가자별 「후원 연동 ON/OFF」로 엑셀에 배정된 후원이 해당 대전 점수에 반영될지 제어합니다.
                     </p>
                   <div className="flex flex-wrap gap-2">
@@ -17728,12 +17735,8 @@ function AdminPageInner() {
             >
               <p className="text-sm text-neutral-400 mb-3">
                 후원·투네와 <strong className="text-neutral-300">자동 연동 없음</strong> — cm을 직접 추가/차감합니다.
-                영토 게이지 반영은 이 기록부에서만 합니다(후원 리스트 금액·영토 ON과 무관).
+                영토 게이지는 이 기록부와 좌석 멤버 이름만 사용합니다.
               </p>
-              {!highSocietySettings.enabled ? (
-                <p className="text-sm text-amber-200/90">상류사회 모드를 ON 한 뒤 사용하세요.</p>
-              ) : (
-                <>
                   <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr_auto_auto_auto_auto] gap-3">
                     <select
                       className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
@@ -17905,8 +17908,6 @@ function AdminPageInner() {
                       </tbody>
                     </table>
                   </div>
-                </>
-              )}
             </AdminCollapsibleSection>
 
             <AdminCollapsibleSection
@@ -17971,34 +17972,14 @@ function AdminPageInner() {
                     <p
                       className="text-[11px] text-neutral-400 mt-0.5"
                       title="후원·투네 합산은 영토 게이지와 연동되지 않습니다.
-cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반영하세요.
-·
-참고: 1만원 = 5cm"
+cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반영하세요."
                     >
                       후원·투네 합산은 영토 게이지와 <strong className="text-neutral-300">연동되지 않습니다</strong>.
                       cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반영하세요.
-                      {" · "}
-                      참고: <strong className="text-neutral-300">1만원 = 5cm</strong>
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      patchHighSocietySettings({
-                        enabled: !highSocietySettings.enabled,
-                      })
-                    }
-                    className={`rounded px-2.5 py-1 text-[11px] font-semibold shrink-0 border transition-colors cursor-pointer ${
-                      highSocietySettings.enabled
-                        ? "bg-amber-600/90 text-white border-amber-400 hover:bg-amber-500/90"
-                        : "bg-neutral-800 text-neutral-400 border-white/15 hover:bg-neutral-700 hover:text-neutral-200"
-                    }`}
-                  >
-                    {highSocietySettings.enabled ? "모드 ON" : "모드 OFF"}
-                  </button>
                 </div>
-                {highSocietySettings.enabled ? (
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
                     <span className="text-neutral-400">가운데 기본</span>
                     <button
                       type="button"
@@ -18030,7 +18011,6 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                       영토 배치도 (팝업)
                     </button>
                   </div>
-                ) : null}
               </div>
 
               {/** ✅ 신규: 벌크 삭제 툴바 + B모드 누락후원 가져오기 버튼 + ✨ 편집 잠금 토글 */}
@@ -18198,7 +18178,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
               <div
                 id="donor-list-content"
                 ref={donorListScrollRef}
-                style={{ contain: "strict", willChange: "transform", maxHeight: "780px" }}
+                style={{ contain: "layout style", willChange: "transform", maxHeight: "calc(100dvh - 170px)", minHeight: "560px" }}
                 className="w-full !max-w-full mx-0 px-0 border border-white/10 rounded isolate overflow-y-auto !ml-0 !mr-0 pr-1"
                 data-admin-section-content="donor-list"
               >
@@ -18208,7 +18188,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                       <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5 w-10" : "p-1 w-12"}`} style={{ width: donorListDenseMode ? "2.5rem" : "3rem" }}>선택</th>
                       <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5" : "p-1"}`} style={{ width: donorListDenseMode ? "6rem" : "8.5rem", minWidth: donorListDenseMode ? "6rem" : "8.5rem" }}>시간</th>
                       <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5" : "p-1"}`} style={{ width: donorListDenseMode ? "8rem" : "11rem", minWidth: donorListDenseMode ? "8rem" : "11rem", maxWidth: donorListDenseMode ? "10rem" : "14rem" }}>후원자</th>
-                      {!donorListDenseMode && <th className="text-left font-medium p-1 shrink-0" style={{ width: "10rem", minWidth: "10rem" }}>멤버</th>}
+                      {!donorListDenseMode && <th className="text-left font-medium p-1 shrink-0" style={{ width: "13rem", minWidth: "13rem" }}>멤버</th>}
                       <th className={`text-left font-medium shrink-0 ${donorListDenseMode ? "p-0.5" : "p-1"}`} style={{ width: donorListDenseMode ? "4.5rem" : "5.5rem", minWidth: donorListDenseMode ? "4.5rem" : "5.5rem", maxWidth: donorListDenseMode ? "5rem" : "6rem" }}>대상</th>
                       <th className={`text-left font-medium ${donorListDenseMode ? "p-0.5" : "p-1"}`} style={{ width: "auto", minWidth: donorListDenseMode ? "140px" : "220px" }}>메시지</th>
                       <th className={`text-right font-medium shrink-0 ${donorListDenseMode ? "p-0.5" : "p-1"}`} style={{ width: donorListDenseMode ? "6rem" : "8rem", minWidth: donorListDenseMode ? "6rem" : "8rem" }}>금액</th>
@@ -18367,10 +18347,9 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                               </div>
                             </td>
                             {!donorListDenseMode && (
-                            <td className="p-1 text-neutral-300 align-top" style={{ width: "10rem", minWidth: "10rem", overflow: "visible" }}>
+                            <td className="p-1 text-neutral-300 align-top" style={{ width: "13rem", minWidth: "13rem", overflow: "visible" }}>
                               <select
-                                className="w-full rounded border border-white/10 bg-neutral-900/80 px-3 py-0 text-[12px] text-neutral-100 overflow-visible whitespace-nowrap"
-                                style={{ overflow: "visible", textOverflow: "clip", height: "1.7rem", lineHeight: "1.7rem", minWidth: "100%", paddingLeft: "0.65rem", paddingRight: "1.8rem" }}
+                                className="donor-member-select w-full rounded border border-white/10 bg-neutral-900/80 text-neutral-100 overflow-visible whitespace-nowrap"
                                 value={d.memberId || ""}
                                 title={`👥 배치 멤버: ${state.members.find((x) => x.id === d.memberId)?.name || "미지정"}\n\n---\n(후원자명은 유지하고 배치 멤버만 변경하려면 선택)`}
                                 onChange={(e) => {
@@ -18402,8 +18381,11 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                                 }}
                               >
                                 <option value="">— 미지정 —</option>
+                                {d.memberId && !state.members.some((m) => m.id === d.memberId) ? (
+                                  <option value={d.memberId}>{d.memberId}</option>
+                                ) : null}
                                 {state.members.map((mem) => (
-                                  <option key={mem.id} value={mem.id} className="whitespace-normal">
+                                  <option key={mem.id} value={mem.id}>
                                     {mem.name}
                                   </option>
                                 ))}
@@ -19969,9 +19951,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                   <div>
                     <h4 className="text-sm font-semibold text-amber-100">상류사회 · 세로(9:16) 오버레이</h4>
                     <p className="mt-1 text-[11px] text-neutral-400 leading-snug max-w-xl">
-                      좌석 멤버 후원이 상단 영토 게이지에 반영됩니다.{" "}
-                      확장: <strong className="text-neutral-300">1만원=5cm</strong>
-                      · 1만원 배수만(1만9천→0cm).{" "}
+                      좌석 멤버 이름과 영토 기록부가 상단 게이지에 반영됩니다.{" "}
                       <strong className="text-neutral-300">갱신 시점</strong>은 아래 옵션으로 선택합니다.
                       OBS 캔버스·브라우저 소스 <strong className="text-neutral-300">1080×1920</strong>.
                     </p>
@@ -19984,28 +19964,14 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                     >
                       별도 창
                     </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        patchHighSocietySettings({
-                          enabled: !highSocietySettings.enabled,
-                        })
-                      }
-                      className={`rounded px-2.5 py-1 text-[11px] font-semibold border transition-colors cursor-pointer ${
-                        highSocietySettings.enabled
-                          ? "bg-amber-600/90 text-white border-amber-400 hover:bg-amber-500/90"
-                          : "bg-neutral-800 text-neutral-400 border-white/15 hover:bg-neutral-700 hover:text-neutral-200"
-                      }`}
-                    >
-                      {highSocietySettings.enabled ? "모드 ON" : "모드 OFF"}
-                    </button>
                   </div>
                 </div>
 
                 <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
-                  <div className="text-[11px] font-semibold text-amber-100/95">좌석 · 전장 · 후원 연동</div>
+                  <div className="text-[11px] font-semibold text-amber-100/95">좌석 · 전장</div>
                   <p className="text-[10px] text-neutral-400 leading-snug">
                     좌석 배치(추가·순서·삭제)·1인 시작 cm는 상류사회 팝업의 「영토 배치도」에서만 편집합니다.
+                    영토는 기록부로만 반영됩니다.
                   </p>
                   {<HighSocietySeatLayoutSummary
                     members={state.members || []}
@@ -20017,9 +19983,9 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                 <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
                   <div className="text-[11px] font-semibold text-amber-100/95">영토 게이지 갱신</div>
                   <p className="text-[10px] text-neutral-400 leading-snug">
-                    실시간은 후원이 들어올 때마다 게이지가 움직이고, 라운드 종료 후는 「타이머 제어」 일반
+                    실시간은 영토 기록부가 들어올 때마다 게이지가 움직이고, 라운드 종료 후는 「타이머 제어」 일반
                     타이머가 0이 될 때까지 게이지를 고정한 뒤 한 번에 반영합니다. 「영토 일시정지」는
-                    게이지(영토)만 멈추고, 후원·투네 합산은 계속 반영됩니다.
+                    게이지만 멈춥니다.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -20051,8 +20017,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                           ? "border-sky-400 bg-sky-700/90 text-white"
                           : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-sky-400/50"
                       }`}
-                      disabled={!highSocietySettings.enabled}
-                      title="영토·후원 합산·투네 반영 모두 동결"
+                      title="영토 게이지만 동결"
                       onClick={() =>
                         patchHighSocietySettings({ territoryPaused: !highSocietySettings.territoryPaused })
                       }
@@ -20062,7 +20027,6 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                     <button
                       type="button"
                       className="rounded px-3 py-1.5 text-xs font-semibold border border-white/15 bg-neutral-900 text-neutral-300 hover:border-amber-400/50 disabled:opacity-40"
-                      disabled={!highSocietySettings.enabled}
                       title="영토 게이지만 새 라운드로 — 후원·멤버 금액은 유지"
                       onClick={() => {
                         if (
@@ -20083,20 +20047,11 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                 <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
                   <div className="text-[11px] font-semibold text-amber-100/95">가운데 좌석 · 확장 방향</div>
                   <p className="text-[10px] text-neutral-400 leading-snug">
-                    양끝은 고정(좌끝→ / 우끝←). 가운데 후원 건별 수동 방향은{" "}
-                    <button
-                      type="button"
-                      className="text-sky-400 underline"
-                      onClick={() => moveToSection("donor", "donor-management")}
-                    >
-                      계정 연동 및 후원 수동입력
-                    </button>
-                    의 상류사회 팝업에서 설정합니다.
+                    양끝은 고정(좌끝→ / 우끝←). 가운데 좌석의 영토 기록부 기본 방향입니다.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      disabled={!highSocietySettings.enabled}
                       className={`rounded px-3 py-1.5 text-xs font-semibold border disabled:opacity-40 ${
                         resolveSystemMiddlePushDir(highSocietySettings) === "left"
                           ? "border-amber-400 bg-amber-700/90 text-white"
@@ -20108,7 +20063,6 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                     </button>
                     <button
                       type="button"
-                      disabled={!highSocietySettings.enabled}
                       className={`rounded px-3 py-1.5 text-xs font-semibold border disabled:opacity-40 ${
                         resolveSystemMiddlePushDir(highSocietySettings) === "right"
                           ? "border-amber-400 bg-amber-700/90 text-white"
@@ -20119,9 +20073,6 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                       오른쪽 →
                     </button>
                   </div>
-                  {!highSocietySettings.enabled ? (
-                    <p className="text-[10px] text-amber-200/80">방향 설정은 상류사회 ON일 때만 적용됩니다.</p>
-                  ) : null}
                 </div>
 
                 <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">

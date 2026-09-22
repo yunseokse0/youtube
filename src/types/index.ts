@@ -485,7 +485,7 @@ export type HighSocietyFxSettings = {
 };
 
 export type HighSocietySettings = {
-  /** 후원 목록에서 상류사회 모드·방향 설정 표시 */
+  /** @deprecated 후원 연동 창구용. UI·영토 해상에서는 쓰지 않음 */
   enabled: boolean;
   /**
    * 좌→우 좌석 멤버 id (순서=전장 배치).
@@ -494,7 +494,7 @@ export type HighSocietySettings = {
   seatMemberIds: string[];
   /** true: seatMemberIds 그대로(빈 배열=좌석 없음). false/미설정+빈 배열=자동 전원 N등분 */
   seatMemberIdsManual?: boolean;
-  /** 가운데 멤버 기본 확장 방향(후원 행 hsPushDir 없을 때) */
+  /** 가운데 멤버 기본 확장 방향(영토 기록부에서 방향을 안 고른 경우) */
   defaultMiddlePush: HighSocietyPushDir;
   /** @deprecated defaultMiddlePush로 통합 — 하위 호환 */
   defaultBPush?: HighSocietyPushDir;
@@ -510,20 +510,19 @@ export type HighSocietySettings = {
   startCmPerMember?: number;
   /**
    * 영토 게이지 갱신 시점
-   * - realtime: 계좌·투네 합산이 들어올 때마다 즉시 반영
+   * - realtime: 영토 기록부 반영을 즉시 표시
    * - onRoundEnd: matchTimer 라운드가 끝날 때까지 동결, 종료 후 반영
    */
   territoryUpdateMode?: "realtime" | "onRoundEnd";
   /** 땅따먹기 연출 ON/OFF (기본 OFF — 명시 true 일 때만 켜짐) */
   fx?: HighSocietyFxSettings;
-  /** 좌석 멤버별 후원 연동(ON 시 startedAt 이후만 영토 집계) */
+  /** @deprecated 하위 호환. 영토 집계에는 쓰지 않음 */
   donationLinks?: Record<string, { active: boolean; startedAt?: number }>;
   /**
    * 좌석 순서만 바뀐 직후 — 멤버 id별 widthCm 유지(슬롯 index cm 승계 방지).
-   * memberWidthDonationSnapshot 과 쌍으로, 후원액 변경 시 자동 해제.
    */
   memberWidthCm?: Record<string, number>;
-  /** memberWidthCm 스냅샷 시점 멤버별 집계 후원액(원) */
+  /** @deprecated 후원 연동 잔재. 영토 집계에는 쓰지 않음(항상 0으로 기록) */
   memberWidthDonationSnapshot?: Record<string, number>;
   /** reorder 스냅샷 — 멤버별 확장 압력(표시·연출용, index 무관) */
   memberTerritoryExpand?: Record<string, { expandLeftCm: number; expandRightCm: number }>;

@@ -76,7 +76,6 @@ export default function HighSocietySeatLayoutEditor({
 
   const hsSeatFieldByMemberId = useMemo(() => {
     const map = new Map<string, { widthCm: number; eliminated: boolean }>();
-    if (!settings.enabled) return map;
     const field = buildHighSocietyFieldFromAppState({
       members,
       donors,
@@ -477,6 +476,7 @@ export default function HighSocietySeatLayoutEditor({
       {showMiddlePushSelect ? (
         <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
           가운데 시스템 기본 방향
+          <span className="text-neutral-500">(영토 기록부에서 방향을 안 고르면 사용)</span>
           <select
             className="rounded border border-white/10 bg-neutral-950 px-2 py-1"
             value={resolveSystemMiddlePushDir(settings)}
@@ -493,8 +493,7 @@ export default function HighSocietySeatLayoutEditor({
       ) : null}
 
       <p className="text-[10px] text-neutral-500 leading-snug">
-        ON 시 좌석 멤버 후원 연동이 켜집니다. OFF·설정 저장·영토 초기화는 후원 기록·멤버 금액을
-        건드리지 않습니다.
+        좌석에는 멤버 이름만 씁니다. 영토 cm는 「영토 기록부」에서만 넣고, 후원 금액과는 연결되지 않습니다.
       </p>
     </div>
   );

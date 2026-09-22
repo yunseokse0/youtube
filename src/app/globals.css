@@ -932,3 +932,20 @@ html body main.admin-page-root textarea:not(.bypass-din-input)::placeholder {
   padding-bottom: 1px !important;
   line-height: 1.15 !important;
 }
+
+/* 후원자 리스트 멤버 select — 전역 padding+height 충돌로 이름이 "..." 로 잘리지 않게 */
+html body main.admin-page-root #donor-list-content select.donor-member-select {
+  height: 2.15rem !important;
+  min-height: 2.15rem !important;
+  max-height: none !important;
+  padding: 0.2rem 1.6rem 0.2rem 0.5rem !important;
+  line-height: 1.35 !important;
+  font-size: 12px !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: nowrap !important;
+  box-sizing: border-box !important;
+  min-width: 9.5rem !important;
+  width: 100% !important;
+  color: rgb(241 245 249) !important;
+}

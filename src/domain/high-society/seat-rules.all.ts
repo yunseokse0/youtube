@@ -34,7 +34,7 @@ export type HighSocietySeat = {
   seatIndex: number;
   id: string;
   name: string;
-  /** 라운드 후원(원) — 1만원 미만 버림 전 원본 */
+  /** @deprecated 후원 합계. 영토 해상에는 쓰지 않음(항상 0) */
   donationWon: number;
   /** 확장 합(cm) */
   expandCm: number;
@@ -570,6 +570,21 @@ export function mergeHighSocietySettingsPreferBaseline(
     (patch as { territoryLogs?: unknown[] }).territoryLogs = (base as { territoryLogs?: unknown[] }).territoryLogs;
     hasPatch = true;
   }
+  /** stale wire 가 팀 목록을 비우면 팀전 설정 유지 (matchMode 키 누락 → individual 폴백 방지) */
+  if (
+    base.matchMode === "team" &&
+    (base.teams || []).length > 0 &&
+    (inc.teams || []).length === 0 &&
+    inc.matchMode !== "individual"
+  ) {
+    patch.matchMode = "team";
+    patch.teams = base.teams;
+    patch.memberTeamAssignments = {
+      ...(base.memberTeamAssignments || {}),
+      ...(inc.memberTeamAssignments || {}),
+    };
+    hasPatch = true;
+  }
   // 반대 방향: inc 에만 스냅샷 있고 base 에 없을 때는 inc 유지 (return inc)
   return hasPatch ? normalizeHighSocietySettings({ ...inc, ...patch }) : inc;
 }
@@ -660,7 +675,18 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
   const memberWidthDonationSnapshot = normalizeMemberDonationSnapshotRecord(v.memberWidthDonationSnapshot);
   const memberTerritoryExpand = normalizeMemberTerritoryExpandRecord(v.memberTerritoryExpand);
   const zeroCmGaugeDisplay = normalizeZeroCmGaugeDisplay(v.zeroCmGaugeDisplay);
-  const matchMode: "individual" | "team" = v.matchMode === "team" ? "team" : "individual";
+  /**
+   * matchMode 키가 빠진 stale PATCH/SSE 는 teams 가 있으면 팀전으로 복구.
+   * 명시적 "individual" 은 팀이 남아 있어도 개인전 유지.
+   */
+  const matchMode: "individual" | "team" =
+    v.matchMode === "team"
+      ? "team"
+      : v.matchMode === "individual"
+        ? "individual"
+        : Array.isArray(v.teams) && v.teams.length > 0
+          ? "team"
+          : "individual";
   const teamsArr = Array.isArray(v.teams) ? v.teams.map(normalizeTeam).filter((t): t is HighSocietyTeam => Boolean(t)) : [];
   const assignmentsRaw = v.memberTeamAssignments;
   const memberTeamAssignments: Record<string, string> =
@@ -823,19 +849,9 @@ export function shouldClearMemberWidthSnapshotOnSeatChange(opts: {
   return false;
 }
 
-function isHighSocietyMemberWidthEliminatedInSnapshot(
-  settings: Pick<HighSocietySettings, "memberWidthCm">,
-  memberId: string
-): boolean {
-  const snap = settings.memberWidthCm?.[memberId];
-  return snap != null && snap <= 0;
-}
-
 /**
- * 상류사회 설정 저장·ON/OFF·영토 초기화 시 donationLinks 정합.
- * - OFF/설정 저장: startedAt·기존 link 유지 (후원 집계 기준 리셋 없음)
- * - ON/좌석 추가: 신규 좌석만 active (startedAt 없음 = 전체 기간)
- * - resetTerritory: 영토 집계만 now 기준 새 라운드 (후원 rows 불변)
+ * 상류사회 설정 변경 시 영토 스냅샷·라운드만 맞춤.
+ * 후원 연동(donationLinks)은 하위 호환으로 유지하되 영토 계산에 쓰지 않는다.
  */
 export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
   prevSettings: HighSocietySettings;
@@ -856,9 +872,6 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
   const prevSeatIds = prevSettings.seatMemberIds || [];
   const nextSeatIds = nextSettings.seatMemberIds || [];
   const seatsChanged = !seatMemberIdsEqual(prevSeatIds, nextSeatIds);
-
-  const seatMembers = resolveHighSocietySeatMembers(members, nextSettings);
-  const valid = new Set(seatMembers.map((s) => s.id));
 
   const territoryTimingPatch = (): Partial<HighSocietySettings> => {
     if (resetTerritory) {
@@ -899,81 +912,27 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
     memberTerritoryExpand: undefined,
   });
 
-  const buildSeatLayoutPreservingWidthSnapshot = (): Partial<HighSocietySettings> => {
-    /** 멤버 id별 widthCm 유지(스냅샷 정본). startCm+expand 「복구」는 소량 재진입을 부풀림 */
+  const preserveWidthsByMemberId = (): Partial<HighSocietySettings> => {
     const prevWidths = prevSettings.memberWidthCm || {};
     const prevExpands = prevSettings.memberTerritoryExpand || {};
-    const prevSeatMembers = resolveHighSocietySeatMembers(members, prevSettings);
-    const prevValid = new Set(prevSeatMembers.map((s) => s.id));
+    const prevSeated = new Set(resolveHighSocietySeatMembers(members, prevSettings).map((s) => s.id));
     const nextPlayers = resolveHighSocietySeatMembers(members, nextSettings);
-    const playersAgg = aggregateSeatPushesFromDonors({
-      seatPlayers: nextPlayers.map((p) => ({ ...p, donationWon: 0 })),
-      donors: (opts.donors ?? []) as Donor[],
-      settings: nextSettings,
-    });
-    const aggById = new Map(playersAgg.map((p) => [p.id, p]));
-    const logs = (opts as unknown as { territoryLogs?: TerritoryLog[] }).territoryLogs || [];
-    const logExpandById = new Map<string, { expandLeftCm: number; expandRightCm: number; totalCm: number }>();
-    if (logs.length > 0) {
-      for (const p of nextPlayers) {
-        logExpandById.set(p.id, { expandLeftCm: 0, expandRightCm: 0, totalCm: 0 });
-      }
-      for (const log of logs) {
-        const cm = Math.max(0, Number(log.amount) || 0);
-        if (cm <= 0) continue;
-        const delta = Number(log.delta);
-        if (!Number.isFinite(delta) || delta === 0) continue;
-        const entry = logExpandById.get(log.memberId);
-        if (!entry) continue;
-        const signed = delta > 0 ? cm : -cm;
-        const pushDir = (log as unknown as { pushDir?: string }).pushDir || "both";
-        if (pushDir === "left") {
-          entry.expandLeftCm += signed;
-        } else if (pushDir === "right") {
-          entry.expandRightCm += signed;
-        } else {
-          const half = Math.floor(cm / 2) * (delta > 0 ? 1 : -1);
-          entry.expandLeftCm += half;
-          entry.expandRightCm += signed - half;
-        }
-        entry.totalCm += signed;
-      }
-    }
+    const startW = Math.max(
+      0,
+      Math.round(resolveHighSocietyStartCmPerMember(nextSettings, nextPlayers.length))
+    );
     const memberWidthCm: Record<string, number> = {};
     const memberWidthDonationSnapshot: Record<string, number> = {};
-    const memberTerritoryExpand: Record<string, { expandLeftCm: number; expandRightCm: number }> =
-      {};
-    const startCmPerMember = resolveHighSocietyStartCmPerMember(nextSettings, nextPlayers.length);
+    const memberTerritoryExpand: Record<string, { expandLeftCm: number; expandRightCm: number }> = {};
     for (const p of nextPlayers) {
-      const wasSeated = prevValid.has(p.id);
+      const wasSeated = prevSeated.has(p.id);
       const snapW = Number(prevWidths[p.id]);
-      const hasPrevSnap = wasSeated && Number.isFinite(snapW) && snapW >= 0;
-      const agg = aggById.get(p.id);
+      memberWidthCm[p.id] = wasSeated && Number.isFinite(snapW) && snapW >= 0 ? Math.round(snapW) : startW;
+      memberWidthDonationSnapshot[p.id] = 0;
       const prevExp = wasSeated ? prevExpands[p.id] : undefined;
-      const logExp = logExpandById.get(p.id);
-      const startW = Math.max(0, Math.round(startCmPerMember));
-      let width: number;
-      let expandLeft: number;
-      let expandRight: number;
-      if (wasSeated) {
-        width = hasPrevSnap ? Math.max(0, Math.round(snapW)) : Math.max(0, Math.round(Number(snapW) || 0));
-        expandLeft = Math.max(0, Number(prevExp?.expandLeftCm ?? agg?.expandLeftCm) || 0);
-        expandRight = Math.max(0, Number(prevExp?.expandRightCm ?? agg?.expandRightCm) || 0);
-      } else {
-        width = startW;
-        expandLeft = Math.max(0, Number(agg?.expandLeftCm) || 0);
-        expandRight = Math.max(0, Number(agg?.expandRightCm) || 0);
-        if (logExp) {
-          width = Math.max(0, Math.round(startW + (logExp.totalCm || 0)));
-          expandLeft = Math.max(0, expandLeft + (logExp.expandLeftCm || 0));
-          expandRight = Math.max(0, expandRight + (logExp.expandRightCm || 0));
-        }
-      }
-      memberWidthCm[p.id] = Math.max(0, width);
-      memberWidthDonationSnapshot[p.id] = Math.max(0, Number(agg?.donationWon) || 0);
       memberTerritoryExpand[p.id] = {
-        expandLeftCm: Math.max(0, expandLeft),
-        expandRightCm: Math.max(0, expandRight),
+        expandLeftCm: Math.max(0, Number(prevExp?.expandLeftCm) || 0),
+        expandRightCm: Math.max(0, Number(prevExp?.expandRightCm) || 0),
       };
     }
     return { memberWidthCm, memberWidthDonationSnapshot, memberTerritoryExpand };
@@ -985,96 +944,17 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
     members,
     donors: opts.donors,
   });
-
   const preserveLayoutOnSeatChange = seatsChanged && !clearWidthsOnSeatChange;
-
   const memberWidthPatch =
-    resetTerritory || firstOn || turningOff || clearWidthsOnSeatChange
+    resetTerritory || clearWidthsOnSeatChange
       ? clearMemberWidthSnapshot()
       : preserveLayoutOnSeatChange
-        ? buildSeatLayoutPreservingWidthSnapshot()
+        ? preserveWidthsByMemberId()
         : {};
-
-  const needsDonationLinkRebuild =
-    resetTerritory || turningOn || clearWidthsOnSeatChange;
-
-  const patchReaddedSeatDonationLinks = (): Partial<HighSocietySettings> => {
-    if (!preserveLayoutOnSeatChange) return {};
-    const prevValid = new Set(resolveHighSocietySeatMembers(members, prevSettings).map((s) => s.id));
-    const links = { ...(nextSettings.donationLinks || {}) };
-    let changed = false;
-    for (const id of valid) {
-      if (prevValid.has(id)) continue;
-      const archived = prevSettings.donationLinks?.[id];
-      const archivedStart = Number(archived?.startedAt);
-      if (archived && Number.isFinite(archivedStart) && archivedStart > 0) {
-        links[id] = { active: true, startedAt: Math.floor(archivedStart) };
-      } else {
-        links[id] = {
-          active: true,
-          ...(links[id]?.startedAt !== undefined ? { startedAt: links[id]!.startedAt } : {}),
-        };
-      }
-      changed = true;
-    }
-    return changed
-      ? { donationLinks: normalizeHighSocietyDonationLinks(links, valid) }
-      : {};
-  };
-
-  if (!needsDonationLinkRebuild) {
-    return {
-      ...nextSettings,
-      donationLinks: normalizeHighSocietyDonationLinks(nextSettings.donationLinks, valid),
-      ...patchReaddedSeatDonationLinks(),
-      ...territoryTimingPatch(),
-      ...memberWidthPatch,
-    };
-  }
-
-  const donationLinks: Record<string, { active: boolean; startedAt?: number }> = {
-    ...(nextSettings.donationLinks || {}),
-  };
-
-  for (const id of valid) {
-    const prevLink = donationLinks[id];
-    if (resetTerritory) {
-      donationLinks[id] = { active: true, startedAt: now };
-      continue;
-    }
-    if (turningOn) {
-      if (reOn && prevLink?.active && Number(prevLink.startedAt) > 0) {
-        /** 재ON — baseline link 유지, 신규 후원은 territoryReopenAt 으로 필터 */
-        donationLinks[id] = { active: true, startedAt: prevLink.startedAt };
-      } else {
-        /** 최초 ON — ON 시점 이후 후원만 영토 반영 */
-        donationLinks[id] = { active: true, startedAt: now };
-      }
-      continue;
-    }
-    if (!prevLink) {
-      const archived = prevSettings.donationLinks?.[id];
-      const archivedStart = Number(archived?.startedAt);
-      if (archived && Number.isFinite(archivedStart) && archivedStart > 0) {
-        donationLinks[id] = { active: true, startedAt: Math.floor(archivedStart) };
-      } else {
-        donationLinks[id] = { active: true, startedAt: now };
-      }
-    } else {
-      donationLinks[id] = { ...prevLink, active: true };
-    }
-  }
-
-  for (const id of Object.keys(donationLinks)) {
-    if (!valid.has(id)) {
-      donationLinks[id] = { ...donationLinks[id]!, active: false };
-    }
-  }
 
   const prevRound = Math.max(1, Math.floor(Number(prevSettings.round) || 1));
   return {
     ...nextSettings,
-    donationLinks: normalizeHighSocietyDonationLinks(donationLinks, valid),
     ...(resetTerritory ? { round: Math.min(99, prevRound + 1) } : {}),
     ...territoryTimingPatch(),
     ...memberWidthPatch,
@@ -1199,39 +1079,18 @@ export function resolveHighSocietyField(opts: {
   }
 
   const startCm = fieldCm / n;
-  const middleLeft = clamp01(
-    opts.middleLeftRatio ?? opts.split?.bLeft ?? opts.split?.cLeft ?? 0.5
-  );
-  const bLeft = clamp01(opts.split?.bLeft ?? middleLeft);
-  const cLeft = clamp01(opts.split?.cLeft ?? middleLeft);
 
   const filled = players.map((p, i) => {
-    const donationWon = Math.max(0, Number(p?.donationWon || 0));
-    const expandCm = donationToExpandCm(donationWon);
     const dir = seatExpandDirForIndex(i, n);
-    let expandLeftCm = 0;
-    let expandRightCm = 0;
-    if (p && (p.expandLeftCm != null || p.expandRightCm != null)) {
-      expandLeftCm = Math.max(0, Number(p.expandLeftCm) || 0);
-      expandRightCm = Math.max(0, Number(p.expandRightCm) || 0);
-    } else if (dir === "right") {
-      expandRightCm = expandCm;
-    } else if (dir === "left") {
-      expandLeftCm = expandCm;
-    } else if (n === 4 && i === 1) {
-      ({ expandLeftCm, expandRightCm } = splitExpandCmByRatio(expandCm, bLeft));
-    } else if (n === 4 && i === 2) {
-      ({ expandLeftCm, expandRightCm } = splitExpandCmByRatio(expandCm, cLeft));
-    } else {
-      ({ expandLeftCm, expandRightCm } = splitExpandCmByRatio(expandCm, middleLeft));
-    }
+    const expandLeftCm = Math.max(0, Number(p?.expandLeftCm) || 0);
+    const expandRightCm = Math.max(0, Number(p?.expandRightCm) || 0);
     const letter = seatIndexLabel(i);
     return {
       letter,
       seatIndex: i,
       id: p?.id ? String(p.id) : `seat-${letter}`,
       name: p?.name?.trim() || `플레이어 ${letter}`,
-      donationWon,
+      donationWon: 0,
       expandCm: expandLeftCm + expandRightCm,
       expandLeftCm,
       expandRightCm,
@@ -1277,76 +1136,6 @@ export function resolveHighSocietyField(opts: {
     leader: alive[0] ?? null,
     cushion: seats.filter((s) => s.eliminated),
   };
-}
-
-function playerTerritoryExpandCm(p: HighSocietyPlayerInput): number {
-  return Math.max(0, Number(p.expandLeftCm) || 0) + Math.max(0, Number(p.expandRightCm) || 0);
-}
-
-function shouldUseMemberWidthSnapshot(
-  settings: HighSocietySettings,
-  players: HighSocietyPlayerInput[]
-): settings is HighSocietySettings & {
-  memberWidthCm: Record<string, number>;
-  memberWidthDonationSnapshot: Record<string, number>;
-} {
-  const widths = settings.memberWidthCm;
-  const snap = settings.memberWidthDonationSnapshot;
-  if (!widths || !snap || Object.keys(widths).length === 0) return false;
-  for (const p of players) {
-    if (widths[p.id] == null) return false;
-    const snapWon = Math.max(0, Number(snap[p.id]) || 0);
-    const wonNow = Math.max(0, Number(p.donationWon) || 0);
-    /** 레거시 donation 스냅(>0) + 현재 won=0 — 영토 기록부 전환 후 width 스냅은 유지 */
-    if (wonNow !== snapWon && !(snapWon > 0 && wonNow === 0)) return false;
-    const snapWidth = Math.max(0, Number(widths[p.id]) || 0);
-    const expandNow = playerTerritoryExpandCm(p);
-    /** 0cm 탈락 후 영토 재적용 — 스냅샷 width=0 고정을 풀고 실시간 재계산 */
-    if (snapWidth <= 0 && expandNow > 0) return false;
-    const expandSnap = settings.memberTerritoryExpand?.[p.id];
-    if (expandSnap) {
-      const left = Math.max(0, Number(p.expandLeftCm) || 0);
-      const right = Math.max(0, Number(p.expandRightCm) || 0);
-      if (expandSnap.expandLeftCm !== left || expandSnap.expandRightCm !== right) return false;
-    }
-  }
-  return true;
-}
-
-/** 옛 스냅샷 width=expandCm(5)만 저장된 경우 복구 — fieldCm 합 유지하며 타 좌석에서 균등 차감 */
-function repairMemberWidthSnapshot(
-  widthByMemberId: Record<string, number>,
-  players: HighSocietyPlayerInput[],
-  startCm: number,
-  fieldCm: number
-): Record<string, number> {
-  const out = { ...widthByMemberId };
-  const corruptIds = new Set<string>();
-  let extraNeeded = 0;
-  for (const p of players) {
-    const w = out[p.id];
-    if (w == null) continue;
-    const expand = (p.expandLeftCm || 0) + (p.expandRightCm || 0);
-    if (expand > 0 && w < startCm * 0.5) {
-      const target = Math.round(startCm + expand);
-      extraNeeded += target - w;
-      out[p.id] = target;
-      corruptIds.add(p.id);
-    }
-  }
-  if (extraNeeded <= 0) return out;
-  const others = players.filter((p) => out[p.id] != null && !corruptIds.has(p.id));
-  const otherSum = others.reduce((s, p) => s + (out[p.id] || 0), 0);
-  if (otherSum <= extraNeeded) return out;
-  const shrink = (otherSum - extraNeeded) / otherSum;
-  for (const p of others) {
-    out[p.id] = Math.max(0, Math.round(out[p.id]! * shrink));
-  }
-  const sum = players.reduce((s, p) => s + (out[p.id] || 0), 0);
-  if (Math.abs(sum - fieldCm) > 0.5 && others[0]) {
-    out[others[0].id] = Math.max(0, Math.round((out[others[0].id] || 0) + (fieldCm - sum)));
-  }
-  return out;
 }
 
 /** 좌석 reorder 직후 — 멤버 id별 widthCm 유지(슬롯 index 물리 재계산 생략) */
@@ -1495,7 +1284,7 @@ export function resolveHighSocietySeatMembers(
       {
         id: String(m.id),
         name: String(m.name || "").trim() || "멤버",
-        donationWon: memberTotal(m),
+        donationWon: 0,
         operating: Boolean(m.operating),
       },
     ])
@@ -1506,7 +1295,7 @@ export function resolveHighSocietySeatMembers(
     .map((m) => ({
       id: String(m.id),
       name: String(m.name || "").trim() || "멤버",
-      donationWon: memberTotal(m),
+      donationWon: 0,
     }));
 
   const normalized = normalizeHighSocietySeatSelectionInput(selection);
@@ -1637,17 +1426,17 @@ export function shouldPersistDonorsForHighSocietySettingsPatch(opts: {
   resetTerritory: boolean;
   isFirstOn: boolean;
 }): boolean {
-  void opts.resetTerritory;
-  return Boolean(opts.isFirstOn);
+  void opts;
+  return false;
 }
 
-/** 최초 ON 만 로컬 donors 에 hsTerritoryExcluded 표시 — 영토만 초기화는 donors 를 건드리지 않음(후원순위 브로드캐스트 오염 방지) */
+/** 상류사회는 후원을 건드리지 않음 — 영토 기록부만 사용 */
 export function shouldMarkDonorsLocallyForHighSocietySettingsPatch(opts: {
   resetTerritory: boolean;
   isFirstOn: boolean;
 }): boolean {
-  void opts.resetTerritory;
-  return Boolean(opts.isFirstOn);
+  void opts;
+  return false;
 }
 
 /**
@@ -1667,14 +1456,14 @@ export function markDonorsForHighSocietyTerritoryRoundBump(opts: {
   return markDonorsHsTerritoryExcluded(donors, true);
 }
 
-/** 상류사회 ON/OFF 시 donationSyncMode — OFF 후에도 후원 합산·투네는 mealBattle 경로 유지 */
+/** 상류사회 ON/OFF 는 후원 동기화 모드를 바꾸지 않음 (영토는 기록부만) */
 export function resolveDonationSyncModeForHighSocietySettingsChange(opts: {
   turningOn: boolean;
   turningOff: boolean;
   prevMode: AppState["donationSyncMode"] | undefined;
 }): NonNullable<AppState["donationSyncMode"]> {
-  if (opts.turningOn) return "highSociety";
-  if (opts.turningOff && opts.prevMode === "highSociety") return "mealBattle";
+  void opts.turningOn;
+  void opts.turningOff;
   const m = opts.prevMode;
   if (
     m === "none" ||
@@ -1689,8 +1478,8 @@ export function resolveDonationSyncModeForHighSocietySettingsChange(opts: {
 }
 
 /**
- * 상류사회 설정 patch(OFF·일시정지·ON·영토 리셋) 직전 donors 확정.
- * React·ref·LS union 후, 최초 ON 때만 hsTerritoryExcluded 표시(영토 리셋은 donors 불변).
+ * 상류사회 설정 patch 직전 donors 확정.
+ * 영토는 기록부만 쓰므로 hsTerritoryExcluded 표시를 하지 않는다.
  */
 export function resolveDonorsForHighSocietySettingsPatch(opts: {
   prevDonorsReact: Donor[] | null | undefined;
@@ -1699,17 +1488,13 @@ export function resolveDonorsForHighSocietySettingsPatch(opts: {
   resetTerritory: boolean;
   isFirstOn: boolean;
 }): Donor[] {
-  const prevDonors = mergeDonorRostersPreferFullest(
+  void opts.resetTerritory;
+  void opts.isFirstOn;
+  return mergeDonorRostersPreferFullest(
     opts.prevDonorsReact,
     opts.refDonors,
     opts.lsDonors
   );
-  void opts.resetTerritory;
-  /** id 없는 행·일시적 React 비움 — 영토 patch 가 donors/members 를 0으로 덮지 않게 */
-  const shouldMarkHsTerritoryOff = opts.isFirstOn && prevDonors.length > 0;
-  return shouldMarkHsTerritoryOff
-    ? markDonorsHsTerritoryExcluded(prevDonors, true)
-    : prevDonors;
 }
 
 /** 영토 리셋·최초 ON patch 에서 donors 를 state/LS/API 에 반영할지 */
@@ -1747,67 +1532,19 @@ export function seatLetterForMemberId(
   return seatIndexLabel(role.index);
 }
 
-/** 후원 행별 방향을 반영해 좌석 확장 cm 합산 */
+/** @deprecated 후원 금액은 영토에 쓰지 않음. 좌석명만 유지한 0 expand 스텁 */
 export function aggregateSeatPushesFromDonors(opts: {
   seatPlayers: Array<{ id: string; name: string; donationWon: number }>;
-  donors: Array<Pick<Donor, "memberId" | "amount" | "hsPushDir" | "donationExcluded" | "hsTerritoryExcluded" | "at">>;
-  settings: HighSocietySettings;
+  donors?: Array<Pick<Donor, "memberId" | "amount" | "hsPushDir" | "donationExcluded" | "hsTerritoryExcluded" | "at">>;
+  settings?: HighSocietySettings;
 }): HighSocietyPlayerInput[] {
-  const { seatPlayers, donors, settings } = opts;
-  const n = seatPlayers.length;
-  const middleDir = resolveSystemMiddlePushDir(settings);
-
-  return seatPlayers.map((player, i) => {
-    const dir = seatExpandDirForIndex(i, n);
-    const eliminatedSnap = isHighSocietyMemberWidthEliminatedInSnapshot(settings, player.id);
-    const link = resolveHighSocietyDonationLink(settings, player.id);
-    const rows = (donors || []).filter((d) => {
-      if (String(d.memberId || "") !== player.id) return false;
-      return shouldDonorCountForHighSocietyTerritory(d, settings, link);
-    });
-
-    const applyPushCm = (cm: number, d: (typeof rows)[number]) => {
-      if (eliminatedSnap || dir === "both") {
-        const push = parseHighSocietyPushDir(d.hsPushDir) || middleDir;
-        const lr = pushDirToLeftRight(cm, push);
-        return { left: lr.left, right: lr.right };
-      }
-      if (dir === "right") return { left: 0, right: cm };
-      if (dir === "left") return { left: cm, right: 0 };
-      const push = parseHighSocietyPushDir(d.hsPushDir) || middleDir;
-      const lr = pushDirToLeftRight(cm, push);
-      return { left: lr.left, right: lr.right };
-    };
-
-    if (rows.length === 0) {
-      const cm = 0;
-      const base = { id: player.id, name: player.name, donationWon: 0 };
-      const lr = applyPushCm(cm, { hsPushDir: undefined } as (typeof rows)[number]);
-      return { ...base, expandLeftCm: lr.left, expandRightCm: lr.right };
-    }
-
-    let left = 0;
-    let right = 0;
-    let won = 0;
-    for (const d of rows) {
-      const amount = Math.max(0, Math.round(Number(d.amount) || 0));
-      const cm = donationToExpandCm(amount);
-      /** 스냅샷 비교용 — 1만원 배수만 합산(1만3천 등은 영토·won 변동 없음) */
-      if (isDonationAmountEligibleForHighSocietyTerritory(amount)) {
-        won += amount;
-      }
-      const lr = applyPushCm(cm, d);
-      left += lr.left;
-      right += lr.right;
-    }
-    return {
-      id: player.id,
-      name: player.name,
-      donationWon: won,
-      expandLeftCm: left,
-      expandRightCm: right,
-    };
-  });
+  return opts.seatPlayers.map((player) => ({
+    id: player.id,
+    name: player.name,
+    donationWon: 0,
+    expandLeftCm: 0,
+    expandRightCm: 0,
+  }));
 }
 
 /**
@@ -1997,6 +1734,37 @@ export function applyTerritoryLogDirectTransfers(
           widthById.set(id, cur + sharePer + (k === 0 ? rem : 0));
         }
       };
+      /**
+       * 상대 팀 좌석에서만 뺏음. 0cm(탈락) 좌석은 건너뜀.
+       * transferAcross 의 borrowFromWhole(전장 1cm 차감)는 팀 확장에 쓰면
+       * 자기 팀·상대 팀이 1cm씩 깎여 501/99 같은 잔여 cm 가 생긴다.
+       */
+      const takeFromOpponentSeats = (
+        startIdx: number,
+        step: 1 | -1,
+        toIdx: number,
+        amount: number
+      ): number => {
+        if (amount <= 0) return 0;
+        let remain = Math.max(0, Math.floor(amount));
+        let taken = 0;
+        for (let i = startIdx; i >= 0 && i < n && remain > 0; i += step) {
+          if (sortedIdx.includes(i)) continue;
+          const fromId = order[i]!;
+          const toId = order[toIdx]!;
+          const fromW = Math.max(0, widthById.get(fromId) ?? 0);
+          if (fromW <= 0) continue;
+          const t = Math.min(remain, fromW);
+          if (t <= 0) continue;
+          const toW = Math.max(0, widthById.get(toId) ?? 0);
+          widthById.set(fromId, fromW - t);
+          widthById.set(toId, toW + t);
+          remain -= t;
+          taken += t;
+        }
+        return taken;
+      };
+
       const collectFromOutsideTeam = (totalToCollect: number, excludeFromWhole = false) => {
         if (totalToCollect <= 0) return 0;
         let covered = 0;
@@ -2052,76 +1820,52 @@ export function applyTerritoryLogDirectTransfers(
           const lr = pushDirToLeftRight(cm, "split");
           let leftSnap = snapshotTeamWidths();
           if (outsideLeftIdx >= 0) {
-            let leftRemain = lr.left;
-            for (let i = outsideLeftIdx; i >= 0 && leftRemain > 0; i -= 1) {
-              transferAcross(i, teamStartIdx, leftRemain);
-              const gotL = (sortedIdx.reduce((_s, _idx) => _s + Math.max(0, widthById.get(order[_idx]!) ?? 0), 0)) - sumTeamWidth(leftSnap);
-              leftRemain = Math.max(0, lr.left - Math.max(0, gotL));
-            }
-            if (leftRemain > 0) {
-              const got = collectFromOutsideTeam(leftRemain, false);
-              giveEquallyToTeam(got);
+            const gotL = takeFromOpponentSeats(outsideLeftIdx, -1, teamStartIdx, lr.left);
+            if (gotL < lr.left) {
+              const extra = collectFromOutsideTeam(lr.left - gotL, true);
+              giveEquallyToTeam(extra);
             }
           } else {
-            const got = collectFromOutsideTeam(lr.left, false);
+            const got = collectFromOutsideTeam(lr.left, true);
             giveEquallyToTeam(got);
           }
           rebalanceTeamAfterTransfer(leftSnap);
           let rightSnap = snapshotTeamWidths();
           if (outsideRightIdx >= 0) {
-            let rightRemain = lr.right;
-            for (let i = outsideRightIdx; i < n && rightRemain > 0; i += 1) {
-              transferAcross(i, teamEndIdx, rightRemain);
-              const gotR = (sortedIdx.reduce((_s, _idx) => _s + Math.max(0, widthById.get(order[_idx]!) ?? 0), 0)) - sumTeamWidth(rightSnap);
-              rightRemain = Math.max(0, lr.right - Math.max(0, gotR));
-            }
-            if (rightRemain > 0) {
-              const got = collectFromOutsideTeam(rightRemain, false);
-              giveEquallyToTeam(got);
+            const gotR = takeFromOpponentSeats(outsideRightIdx, 1, teamEndIdx, lr.right);
+            if (gotR < lr.right) {
+              const extra = collectFromOutsideTeam(lr.right - gotR, true);
+              giveEquallyToTeam(extra);
             }
           } else {
-            const got = collectFromOutsideTeam(lr.right, false);
+            const got = collectFromOutsideTeam(lr.right, true);
             giveEquallyToTeam(got);
           }
           rebalanceTeamAfterTransfer(rightSnap);
         } else if (explicitPush === "left") {
           if (outsideLeftIdx >= 0) {
             const before = snapshotTeamWidths();
-            const beforeSum = sumTeamWidth(before);
-            let remain = cm;
-            for (let i = outsideLeftIdx; i >= 0 && remain > 0; i -= 1) {
-              transferAcross(i, teamStartIdx, remain);
-              const curSum = sortedIdx.reduce((_s, _idx) => _s + Math.max(0, widthById.get(order[_idx]!) ?? 0), 0);
-              const got = Math.max(0, curSum - beforeSum);
-              remain = Math.max(0, cm - got);
-            }
-            if (remain > 0) {
-              const got = collectFromOutsideTeam(remain, false);
-              giveEquallyToTeam(got);
+            const got = takeFromOpponentSeats(outsideLeftIdx, -1, teamStartIdx, cm);
+            if (got < cm) {
+              const extra = collectFromOutsideTeam(cm - got, true);
+              giveEquallyToTeam(extra);
             }
             rebalanceTeamAfterTransfer(before);
           } else {
-            const got = collectFromOutsideTeam(cm, false);
+            const got = collectFromOutsideTeam(cm, true);
             giveEquallyToTeam(got);
           }
         } else {
           if (outsideRightIdx >= 0) {
             const before = snapshotTeamWidths();
-            const beforeSum = sumTeamWidth(before);
-            let remain = cm;
-            for (let i = outsideRightIdx; i < n && remain > 0; i += 1) {
-              transferAcross(i, teamEndIdx, remain);
-              const curSum = sortedIdx.reduce((_s, _idx) => _s + Math.max(0, widthById.get(order[_idx]!) ?? 0), 0);
-              const got = Math.max(0, curSum - beforeSum);
-              remain = Math.max(0, cm - got);
-            }
-            if (remain > 0) {
-              const got = collectFromOutsideTeam(remain, false);
-              giveEquallyToTeam(got);
+            const got = takeFromOpponentSeats(outsideRightIdx, 1, teamEndIdx, cm);
+            if (got < cm) {
+              const extra = collectFromOutsideTeam(cm - got, true);
+              giveEquallyToTeam(extra);
             }
             rebalanceTeamAfterTransfer(before);
           } else {
-            const got = collectFromOutsideTeam(cm, false);
+            const got = collectFromOutsideTeam(cm, true);
             giveEquallyToTeam(got);
           }
         }
@@ -2244,152 +1988,14 @@ export function applyTerritoryLogDirectTransfers(
   };
 }
 
-/**
- * 영토 기록부를 Source of Truth로 균등 startCm + 시간순 replay → 최종 멤버별 widthCm map 도출.
- * @param seatIds 좌석 순서 배열 (idx 기준 이웃 판단)
- * @param logs 기록부 전체 (at 오름차순 정렬해 사용)
- * @param startCmPerMember 1인 시작 cm (균등 초기값)
- * @param fieldCm 전체 영토 cm (양자화 기준)
- * @param settings 방향 설정
- */
-function deriveSeatsWidthMapFromTerritoryLogs(
-  seatIds: string[],
-  logs: TerritoryLog[],
-  startCmPerMember: number,
-  fieldCm: number,
-  settings: HighSocietySettings
-): Record<string, number> {
-  const n = seatIds.filter(Boolean).length;
-  if (n === 0) return {};
-  const startWidth = n > 0 ? fieldCm / n : 0;
-  const players: HighSocietyPlayerInput[] = seatIds
-    .filter(Boolean)
-    .map((id) => ({
-      id,
-      name: id,
-      donationWon: 0,
-      expandLeftCm: 0,
-      expandRightCm: 0,
-    }));
-  const fieldEqual = resolveHighSocietyField({ players, fieldCm });
-  const sortedLogs = [...(logs || [])].sort(
-    (a, b) => Number(a.at || 0) - Number(b.at || 0)
-  );
-  const resolved = applyTerritoryLogDirectTransfers(
-    fieldEqual,
-    seatIds.filter(Boolean),
-    sortedLogs,
-    settings
-  );
-  const out: Record<string, number> = {};
-  for (const seat of resolved.seats) {
-    out[seat.id] = Math.max(0, Math.round(seat.widthCm));
-  }
-  return out;
-}
-
-/**
- * 스냅샷(memberWidthCm)과 기록부 replay 결과를 비교해 1cm 이상 불합치가 있으면
- * 스냅샷 3종(memberWidthCm/memberWidthDonationSnapshot/memberTerritoryExpand)을
- * 기록부 기준으로 덮어쓴 settings를 반환. 불합치 없으면 원본 그대로 반환.
- */
-function healSettingsFromTerritoryLogs(
-  settings: HighSocietySettings,
-  seatIds: string[],
-  logs: TerritoryLog[],
-  startCmPerMember: number,
-  fieldCm: number
-): HighSocietySettings {
-  if (!logs?.length) return settings;
-  const validSeatIds = seatIds.filter(Boolean);
-  const n = validSeatIds.length;
-  if (n === 0) return settings;
-  const equalWidth = n > 0 ? fieldCm / n : 0;
-  const derived = deriveSeatsWidthMapFromTerritoryLogs(
-    validSeatIds,
-    logs,
-    startCmPerMember,
-    fieldCm,
-    settings
-  );
-  if (Object.keys(derived).length === 0) return settings;
-
-  const snapW = settings.memberWidthCm || {};
-  const hasSnapshot = snapW && Object.keys(snapW).length > 0;
-
-  let mismatch = false;
-  for (const id of validSeatIds) {
-    const expected = Math.max(0, Number(derived[id]) || 0);
-    const actual = Math.max(0, Number(snapW[id]) || 0);
-    if (Math.abs(expected - actual) >= 1) {
-      mismatch = true;
-      break;
-    }
-  }
-  if (!mismatch) return settings;
-
-  /**
-   * Seat order change guard — replay net direction vs snapshot direction.
-   * 좌석 순서 변경 후 old log replay 시 equal start 대비 + / - 방향이
-   * 1cm 이상 양쪽에서 반전되는 멤버가 존재하면 좌석이동으로 판단해 heal 중단.
-   * (useSnap=true 방어막 로직 재현: seat move → snapshot 우선)
-   */
-  if (hasSnapshot) {
-    let seatOrderSuspicious = false;
-    for (const id of validSeatIds) {
-      const rw = Math.max(0, Number(derived[id]) || 0);
-      const sw = Math.max(0, Number(snapW[id]) ?? equalWidth);
-      const rDiff = rw - equalWidth;
-      const sDiff = sw - equalWidth;
-      if (Math.abs(rDiff) >= 1 && Math.abs(sDiff) >= 1) {
-        const rPos = rDiff > 0;
-        const sPos = sDiff > 0;
-        if (rPos !== sPos) {
-          seatOrderSuspicious = true;
-          break;
-        }
-      }
-    }
-    if (seatOrderSuspicious) {
-      return settings;
-    }
-  }
-
-  const memberWidthCm: Record<string, number> = { ...snapW };
-  const memberWidthDonationSnapshot: Record<string, number> = {
-    ...(settings.memberWidthDonationSnapshot || {}),
-  };
-  const memberTerritoryExpand: Record<
-    string,
-    { expandLeftCm: number; expandRightCm: number }
-  > = { ...(settings.memberTerritoryExpand || {}) };
-  for (const id of validSeatIds) {
-    const w = Math.max(0, Number(derived[id]) || 0);
-    memberWidthCm[id] = w;
-    if (memberWidthDonationSnapshot[id] == null) {
-      memberWidthDonationSnapshot[id] = 0;
-    }
-    if (!memberTerritoryExpand[id]) {
-      memberTerritoryExpand[id] = { expandLeftCm: 0, expandRightCm: 0 };
-    }
-  }
-  return normalizeHighSocietySettings({
-    ...settings,
-    memberWidthCm,
-    memberWidthDonationSnapshot,
-    memberTerritoryExpand,
-  });
-}
-
-/** AppState 기준 영토 해상 (좌석·후원 방향·수동 기록부 반영) */
+/** AppState 기준 영토 해상 — 좌석(이름) + 스냅샷(있으면) 또는 기록부 replay. 후원 금액은 쓰지 않음. */
 export function buildHighSocietyFieldFromAppState(
   state: Pick<AppState, "members" | "donors" | "highSocietySettings" | "territoryLogs">,
   opts?: { startCmPerMemberOverride?: number }
 ) {
   const settings = normalizeHighSocietySettings(state.highSocietySettings);
-  const seatPlayers = resolveHighSocietySeatMembers(state.members || [], settings).map(
-    (p) => ({ ...p, donationWon: 0 })
-  );
+  const seatPlayers = resolveHighSocietySeatMembers(state.members || [], settings);
+  const seatIds = seatPlayers.map((p) => p.id);
   const seatCount = resolveHighSocietySeatCountForField(settings, seatPlayers.length);
   const startOverrideRaw = Number(opts?.startCmPerMemberOverride);
   const startCmPerMember =
@@ -2397,65 +2003,51 @@ export function buildHighSocietyFieldFromAppState(
       ? Math.max(1, Math.min(5000, Math.floor(startOverrideRaw)))
       : resolveHighSocietyStartCmPerMember(settings, seatCount);
   const effectiveFieldCm = fieldCmFromStartPerMember(startCmPerMember, seatCount);
-  const territoryLogs = (state.territoryLogs || []) as TerritoryLog[];
-  const hasTerritoryLogs = territoryLogs.length > 0;
-  let settingsForField = normalizeHighSocietySettings({
+  const settingsForField = normalizeHighSocietySettings({
     ...settings,
     startCmPerMember,
     fieldCm: effectiveFieldCm,
   });
-  /**
-   * 영토 기록부가 있으면 언제나 기록부 replay 결과를 기준으로 스냅샷을 auto-heal.
-   * useSnap=true 이던 false 이던 기록부가 Source of Truth.
-   */
-  if (hasTerritoryLogs) {
-    settingsForField = healSettingsFromTerritoryLogs(
-      settingsForField,
-      seatPlayers.map((p) => p.id),
-      territoryLogs,
-      startCmPerMember,
-      effectiveFieldCm
-    );
-  }
-  /** 영토는 기록부만 — 후원 expand·won 은 field 해상에 쓰지 않음(스냅 expand 는 유지용) */
-  const players: HighSocietyPlayerInput[] = seatPlayers.map((p) => {
-    const exp = settingsForField.memberTerritoryExpand?.[p.id];
-    return {
-      id: p.id,
-      name: p.name,
-      donationWon: 0,
-      expandLeftCm: Math.max(0, Number(exp?.expandLeftCm) || 0),
-      expandRightCm: Math.max(0, Number(exp?.expandRightCm) || 0),
-    };
+  const equalPlayers: HighSocietyPlayerInput[] = seatPlayers.map((p) => ({
+    id: p.id,
+    name: p.name,
+    donationWon: 0,
+    expandLeftCm: 0,
+    expandRightCm: 0,
+  }));
+  const equalField = resolveHighSocietyField({
+    players: equalPlayers,
+    fieldCm: effectiveFieldCm,
   });
-  const startCm = seatCount > 0 ? effectiveFieldCm / seatCount : 0;
-  const useSnap = shouldUseMemberWidthSnapshot(settingsForField, players);
-  const fieldBase = useSnap
-    ? resolveHighSocietyFieldWithMemberWidths({
-        players,
+  const widths = settingsForField.memberWidthCm;
+  const snapshotComplete =
+    Boolean(widths) && seatIds.length > 0 && seatIds.every((id) => widths![id] != null);
+  if (snapshotComplete) {
+    return {
+      ...resolveHighSocietyFieldWithMemberWidths({
+        players: equalPlayers,
         fieldCm: effectiveFieldCm,
-        widthByMemberId: hasTerritoryLogs
-          ? settingsForField.memberWidthCm!
-          : repairMemberWidthSnapshot(
-              settingsForField.memberWidthCm!,
-              players,
-              startCm,
-              effectiveFieldCm
-            ),
+        widthByMemberId: widths!,
         expandByMemberId: settingsForField.memberTerritoryExpand,
-      })
-    : resolveHighSocietyField({ players, fieldCm: effectiveFieldCm });
-  const fieldResolved =
-    hasTerritoryLogs && !useSnap
-      ? applyTerritoryLogDirectTransfers(
-          fieldBase,
-          seatPlayers.map((p) => p.id),
-          territoryLogs,
-          settingsForField
-        )
-      : fieldBase;
+      }),
+      settings: { ...settingsForField, fieldCm: effectiveFieldCm },
+    };
+  }
+  const territoryLogs = (state.territoryLogs || []) as TerritoryLog[];
+  if (territoryLogs.length > 0) {
+    const fieldResolved = applyTerritoryLogDirectTransfers(
+      equalField,
+      seatIds,
+      territoryLogs,
+      settingsForField
+    );
+    return {
+      ...fieldResolved,
+      settings: { ...settingsForField, fieldCm: effectiveFieldCm },
+    };
+  }
   return {
-    ...fieldResolved,
+    ...equalField,
     settings: { ...settingsForField, fieldCm: effectiveFieldCm },
   };
 }
@@ -2539,7 +2131,7 @@ export function shouldSyncHighSocietyMemberWidthSnapshot(
   settings: HighSocietySettings | null | undefined
 ): boolean {
   const s = normalizeHighSocietySettings(settings);
-  if (!s.enabled || s.territoryPaused) return false;
+  if (s.territoryPaused) return false;
   if (s.territoryUpdateMode === "onRoundEnd") return false;
   return true;
 }
@@ -2961,6 +2553,102 @@ export function aggregateTeamPushesFromTerritoryLogs(opts: {
   });
 }
 
+/**
+ * 팀전 오버레이 — 멤버 좌석 width 를 팀 단위로 합산한 뒤 전장 cm 에 맞게 양자화.
+ * 멤버별 floor 잔여(501/99)가 팀 합에 남지 않게 한다.
+ */
+export function aggregateHighSocietySeatsByTeam(
+  seats: HighSocietySeat[],
+  settings: Pick<HighSocietySettings, "matchMode" | "teams" | "memberTeamAssignments">
+): HighSocietySeat[] {
+  if (settings.matchMode !== "team") return seats;
+  const teams = settings.teams || [];
+  if (teams.length === 0) return seats;
+  const assignments = settings.memberTeamAssignments || {};
+  const unassignedTeamId = "__hs_unassigned__";
+  const teamMap = new Map<
+    string,
+    {
+      team: HighSocietyTeam | null;
+      idx: number;
+      seats: HighSocietySeat[];
+    }
+  >();
+  teams.forEach((t, i) => {
+    teamMap.set(t.id, { team: t, idx: i, seats: [] });
+  });
+  let unassignedIdx = teams.length;
+  for (const s of seats) {
+    const tid = assignments[s.id] || unassignedTeamId;
+    let bucket = teamMap.get(tid);
+    if (!bucket) {
+      bucket = { team: null, idx: unassignedIdx++, seats: [] };
+      teamMap.set(tid, bucket);
+    }
+    bucket.seats.push(s);
+  }
+  const result: HighSocietySeat[] = [];
+  let letterCode = "A".charCodeAt(0);
+  let seatIdx = 0;
+  const sortedBuckets = Array.from(teamMap.entries()).sort((a, b) => a[1].idx - b[1].idx);
+  const totalFieldCm = Math.max(
+    1,
+    seats.reduce((n, s) => n + Math.max(0, s.widthCm), 0)
+  );
+  const teamBuckets = sortedBuckets.filter(
+    ([tid, bucket]) => bucket.seats.length > 0 && tid !== unassignedTeamId && bucket.team != null
+  );
+  const rawTeamWidths = teamBuckets.map(([, bucket]) =>
+    bucket.seats.reduce((n, s) => n + Math.max(0, s.widthCm), 0)
+  );
+  const quantizedTeamWidths = quantizeSeatWidthsToFieldCm(rawTeamWidths, totalFieldCm);
+  let teamWidthCursor = 0;
+  for (const [tid, bucket] of sortedBuckets) {
+    if (bucket.seats.length === 0) continue;
+    const isUnassigned = tid === unassignedTeamId || bucket.team == null;
+    if (isUnassigned) {
+      for (const s of bucket.seats) {
+        result.push({ ...s, seatIndex: seatIdx++ });
+      }
+      continue;
+    }
+    const team = bucket.team!;
+    const totalWidth = Math.max(0, quantizedTeamWidths[teamWidthCursor] ?? 0);
+    teamWidthCursor += 1;
+    const totalExpandL = bucket.seats.reduce((n, s) => n + Math.max(0, s.expandLeftCm || 0), 0);
+    const totalExpandR = bucket.seats.reduce((n, s) => n + Math.max(0, s.expandRightCm || 0), 0);
+    const totalExpand = bucket.seats.reduce((n, s) => n + Math.max(0, s.expandCm || 0), 0);
+    const totalDonation = bucket.seats.reduce((n, s) => n + (Number(s.donationWon) || 0), 0);
+    const allElim = totalWidth <= 0;
+    const expandDir: "left" | "right" | "both" =
+      totalExpandL > 0 && totalExpandR === 0
+        ? "left"
+        : totalExpandR > 0 && totalExpandL === 0
+          ? "right"
+          : "both";
+    const color = resolveTeamColor(team, bucket.idx);
+    const letter = String.fromCharCode(letterCode);
+    letterCode += 1;
+    const pct = Math.max(0, Math.min(100, (totalWidth / totalFieldCm) * 100));
+    result.push({
+      id: `team:${team.id}`,
+      name: team.name,
+      letter,
+      color,
+      widthCm: totalWidth,
+      expandCm: totalExpand,
+      expandLeftCm: totalExpandL,
+      expandRightCm: totalExpandR,
+      expandDir,
+      eliminated: allElim,
+      seatIndex: seatIdx++,
+      donationWon: totalDonation,
+      pct,
+    });
+  }
+  return result.length > 0 ? result : seats;
+}
+
 /** 저장된 1인 시작 cm — startCmPerMember 우선, 없으면 fieldCm/N */
 export function resolveHighSocietyStartCmPerMember(
   settings: Pick<HighSocietySettings, "fieldCm" | "startCmPerMember" | "seatMemberIds">,
@@ -3085,7 +2773,7 @@ export function buildHighSocietySettingsPersistToast(args: {
       ? isHighSocietyReopen(before)
         ? "상류사회 재ON — 기존 영토 유지, cm 조절은 영토 기록부에서만"
         : "상류사회 ON — 영토는 영토 기록부에서만 수동 반영(후원 리스트와 무관)"
-      : "상류사회 OFF — 영토는 리셋 전까지 유지(OFF 이후 후원은 영토 미반영)";
+      : "상류사회 OFF";
   }
   if (patch.defaultMiddlePush && after.defaultMiddlePush !== before.defaultMiddlePush) {
     const dir = resolveSystemMiddlePushDir(after);

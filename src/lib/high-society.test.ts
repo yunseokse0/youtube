@@ -74,6 +74,7 @@ import {
   appendTerritoryLogToAppState,
   removeTerritoryLogFromAppState,
   aggregateTeamPushesFromTerritoryLogs,
+  aggregateHighSocietySeatsByTeam,
   normalizeTeam,
   resolveTeamColor,
 } from "./high-society";
@@ -166,10 +167,10 @@ describe("high-society rule field", () => {
   it("A only expands right into B", () => {
     const { seats } = resolveHighSocietyField({
       players: [
-        { id: "a", name: "A", donationWon: 100_000 }, // 50cm
-        { id: "b", name: "B", donationWon: 0 },
-        { id: "c", name: "C", donationWon: 0 },
-        { id: "d", name: "D", donationWon: 0 },
+        { id: "a", name: "A", expandRightCm: 50 },
+        { id: "b", name: "B" },
+        { id: "c", name: "C" },
+        { id: "d", name: "D" },
       ],
     });
     expect(seats[0]!.widthCm).toBe(350);
@@ -181,10 +182,10 @@ describe("high-society rule field", () => {
   it("D only expands left into C", () => {
     const { seats } = resolveHighSocietyField({
       players: [
-        { id: "a", name: "A", donationWon: 0 },
-        { id: "b", name: "B", donationWon: 0 },
-        { id: "c", name: "C", donationWon: 0 },
-        { id: "d", name: "D", donationWon: 40_000 }, // 20cm
+        { id: "a", name: "A" },
+        { id: "b", name: "B" },
+        { id: "c", name: "C" },
+        { id: "d", name: "D", expandLeftCm: 20 },
       ],
     });
     expect(seats[3]!.widthCm).toBe(320);
@@ -194,12 +195,11 @@ describe("high-society rule field", () => {
   it("B all-left push expands into A", () => {
     const { seats } = resolveHighSocietyField({
       players: [
-        { id: "a", name: "A", donationWon: 0 },
-        { id: "b", name: "B", donationWon: 60_000 }, // 30cm
-        { id: "c", name: "C", donationWon: 0 },
-        { id: "d", name: "D", donationWon: 0 },
+        { id: "a", name: "A" },
+        { id: "b", name: "B", expandLeftCm: 30 },
+        { id: "c", name: "C" },
+        { id: "d", name: "D" },
       ],
-      split: { bLeft: 1, cLeft: 0.5 },
     });
     expect(seats[1]!.widthCm).toBe(330);
     expect(seats[0]!.widthCm).toBe(270);
@@ -239,10 +239,10 @@ describe("high-society rule field", () => {
   it("eliminates a seat that loses all width (cushion)", () => {
     const { seats, cushion } = resolveHighSocietyField({
       players: [
-        { id: "a", name: "A", donationWon: 600_000 }, // 300cm — eats all of B start
-        { id: "b", name: "B", donationWon: 0 },
-        { id: "c", name: "C", donationWon: 0 },
-        { id: "d", name: "D", donationWon: 0 },
+        { id: "a", name: "A", expandRightCm: 300 },
+        { id: "b", name: "B" },
+        { id: "c", name: "C" },
+        { id: "d", name: "D" },
       ],
     });
     expect(seats[0]!.widthCm).toBe(600);
@@ -930,7 +930,7 @@ describe("high-society territory (aux)", () => {
     ).toBe(true);
   });
 
-  it("first ON without prior link sets startedAt (only post-ON donations count)", () => {
+  it("first ON does not create donationLinks (territory is log-only)", () => {
     const members = [
       { id: "a", name: "A", account: 0, toon: 0, operating: false },
       { id: "b", name: "B", account: 0, toon: 0, operating: false },
@@ -946,9 +946,39 @@ describe("high-society territory (aux)", () => {
       members,
       now: 99_000,
     });
-    expect(next.donationLinks?.a?.active).toBe(true);
-    expect(next.donationLinks?.a?.startedAt).toBe(99_000);
-    expect(next.donationLinks?.b?.startedAt).toBe(99_000);
+    expect(next.enabled).toBe(true);
+    expect(next.donationLinks?.a).toBeUndefined();
+    expect(next.memberWidthCm).toBeUndefined();
+  });
+
+  it("enabled toggle does not clear stored territory snapshot", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+    ];
+    const prev = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b"],
+      memberWidthCm: { a: 80, b: 120 },
+      memberTerritoryExpand: {
+        a: { expandLeftCm: 0, expandRightCm: 0 },
+        b: { expandLeftCm: 0, expandRightCm: 0 },
+      },
+    });
+    const off = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: prev,
+      nextSettings: normalizeHighSocietySettings({ ...prev, enabled: false }),
+      members,
+      now: 10_000,
+    });
+    expect(off.memberWidthCm).toEqual({ a: 80, b: 120 });
+    const on = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: off,
+      nextSettings: normalizeHighSocietySettings({ ...off, enabled: true }),
+      members,
+      now: 20_000,
+    });
+    expect(on.memberWidthCm).toEqual({ a: 80, b: 120 });
   });
 
   it("ignores member account balance — only qualifying donor rows expand territory", () => {
@@ -1030,7 +1060,7 @@ describe("high-society territory (aux)", () => {
     expect(field.seats.find((s) => s.id === "c")!.eliminated).toBe(false);
   });
 
-  it("repairs corrupt memberWidthCm (expand-only width) without dropping zero-donation seats", () => {
+  it("uses stored snapshot widths as-is (donations never expand territory)", () => {
     const members = [
       { id: "yoon", name: "윤시우", account: 0, toon: 25_000, operating: false },
       { id: "jaki", name: "자키", account: 0, toon: 0, operating: false },
@@ -1063,11 +1093,11 @@ describe("high-society territory (aux)", () => {
       highSocietySettings: settings,
     });
     expect(field.seats.find((s) => s.id === "ga")!.eliminated).toBe(false);
-    expect(field.seats.find((s) => s.id === "yoon")!.widthCm).toBeCloseTo(105, 0);
+    expect(field.seats.find((s) => s.id === "yoon")!.widthCm).toBe(5);
     expect(field.seats.reduce((s, x) => s + x.widthCm, 0)).toBeCloseTo(400, 0);
   });
 
-  it("manual mode ignores startedAt — only territory ON rows expand", () => {
+  it("donors never expand territory regardless of startedAt / 영토 ON", () => {
     const members = [
       { id: "a", name: "A", account: 0, toon: 0, operating: false },
       { id: "b", name: "B", account: 0, toon: 0, operating: false },
@@ -1247,7 +1277,7 @@ describe("high-society territory (aux)", () => {
     expect(donors[0]!.amount).toBe(12_000);
   });
 
-  it("resolveDonorsForHighSocietySettingsPatch marks hsTerritoryExcluded only on first ON", () => {
+  it("resolveDonorsForHighSocietySettingsPatch never marks hsTerritoryExcluded", () => {
     const existing = [
       { id: "d1", name: "A", amount: 5000, memberId: "m1", at: 100 },
     ];
@@ -1266,10 +1296,10 @@ describe("high-society territory (aux)", () => {
       resetTerritory: false,
       isFirstOn: true,
     });
-    expect(firstOn[0]!.hsTerritoryExcluded).toBe(true);
+    expect(firstOn[0]!.hsTerritoryExcluded).toBeUndefined();
   });
 
-  it("shouldPersistDonorsForHighSocietySettingsPatch is true only for first ON (not resetTerritory)", () => {
+  it("shouldPersistDonorsForHighSocietySettingsPatch is always false (territory log only)", () => {
     expect(
       shouldPersistDonorsForHighSocietySettingsPatch({ resetTerritory: false, isFirstOn: false })
     ).toBe(false);
@@ -1278,10 +1308,10 @@ describe("high-society territory (aux)", () => {
     ).toBe(false);
     expect(
       shouldPersistDonorsForHighSocietySettingsPatch({ resetTerritory: false, isFirstOn: true })
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it("shouldMarkDonorsLocallyForHighSocietySettingsPatch is true only for first ON", () => {
+  it("shouldMarkDonorsLocallyForHighSocietySettingsPatch is always false", () => {
     expect(
       shouldMarkDonorsLocallyForHighSocietySettingsPatch({ resetTerritory: false, isFirstOn: false })
     ).toBe(false);
@@ -1290,7 +1320,7 @@ describe("high-society territory (aux)", () => {
     ).toBe(false);
     expect(
       shouldMarkDonorsLocallyForHighSocietySettingsPatch({ resetTerritory: false, isFirstOn: true })
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("markDonorsForHighSocietyTerritoryRoundBump marks OFF on round increase only", () => {
@@ -1309,21 +1339,21 @@ describe("high-society territory (aux)", () => {
     expect(marked?.[0]?.amount).toBe(50_000);
   });
 
-  it("resolveDonationSyncModeForHighSocietySettingsChange restores mealBattle on OFF", () => {
+  it("resolveDonationSyncModeForHighSocietySettingsChange does not steal mealBattle", () => {
     expect(
       resolveDonationSyncModeForHighSocietySettingsChange({
         turningOn: false,
         turningOff: true,
         prevMode: "highSociety",
       })
-    ).toBe("mealBattle");
+    ).toBe("highSociety");
     expect(
       resolveDonationSyncModeForHighSocietySettingsChange({
         turningOn: true,
         turningOff: false,
         prevMode: "mealBattle",
       })
-    ).toBe("highSociety");
+    ).toBe("mealBattle");
     expect(
       resolveDonationSyncModeForHighSocietySettingsChange({
         turningOn: false,
@@ -1393,7 +1423,8 @@ describe("high-society territory (aux)", () => {
       now: resetAt,
     });
     expect(next.round).toBe(3);
-    expect(next.donationLinks?.b?.startedAt).toBe(resetAt);
+    expect(next.donationLinks?.b?.startedAt).toBe(5000);
+    expect(next.memberWidthCm).toBeUndefined();
     const beforeReset = buildHighSocietyFieldFromAppState({
       members,
       donors,
@@ -1519,7 +1550,6 @@ describe("high-society territory (aux)", () => {
       members,
     });
     expect(resolveHighSocietySeatMembers(members, reAdded).map((s) => s.id)).toEqual(["a", "b"]);
-    expect(reAdded.donationLinks?.b?.active).toBe(true);
   });
 });
 
@@ -1890,7 +1920,7 @@ describe("highSociety regression guards", () => {
       members,
       donors: [{ memberId: "b", amount: 10_000, at: 6000 }],
     });
-    expect(removed.donationLinks?.b?.active).toBe(false);
+    expect(removed.seatMemberIds).toEqual(["a"]);
     expect(removed.donationLinks?.b?.startedAt).toBe(startedAt);
 
     const reAdded = mergeHighSocietyDonationLinksOnSettingsChange({
@@ -1899,7 +1929,7 @@ describe("highSociety regression guards", () => {
       members,
       donors: [{ memberId: "b", amount: 10_000, at: 6000 }],
     });
-    expect(reAdded.donationLinks?.b?.active).toBe(true);
+    expect(reAdded.seatMemberIds).toEqual(["a", "b"]);
     expect(reAdded.donationLinks?.b?.startedAt).toBe(startedAt);
   });
 });
@@ -2451,6 +2481,118 @@ describe('high-society team mode (normalizeTeam / aggregateTeam / resolveTeamCol
     expect(noColor2).toMatch(/^#[0-9A-Fa-f]{6}$/);
     expect(noColor1).not.toBe(noColor2);
   });
+
+  it('팀전 영토 100cm 두 번(오른쪽) — 인접 0cm 좌석에서 전장을 깎지 않고 500/100', () => {
+    const members = [
+      { id: 'a1', name: '차지니', account: 0, toon: 0, operating: false },
+      { id: 'a2', name: '나나', account: 0, toon: 0, operating: false },
+      { id: 'a3', name: '김덕희', account: 0, toon: 0, operating: false },
+      { id: 'b1', name: '오태림', account: 0, toon: 0, operating: false },
+      { id: 'b2', name: '김덕희2', account: 0, toon: 0, operating: false },
+      { id: 'b3', name: '전다은', account: 0, toon: 0, operating: false },
+    ];
+    const teams = [
+      { id: 't1', name: '1팀' },
+      { id: 't2', name: '2팀' },
+    ];
+    const assignments: Record<string, string> = {
+      a1: 't1',
+      a2: 't1',
+      a3: 't1',
+      b1: 't2',
+      b2: 't2',
+      b3: 't2',
+    };
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      matchMode: 'team',
+      seatMemberIds: members.map((m) => m.id),
+      seatMemberIdsManual: true,
+      startCmPerMember: 100,
+      teams,
+      memberTeamAssignments: assignments,
+    });
+    let state = {
+      members,
+      donors: [],
+      highSocietySettings: settings,
+      territoryLogs: [],
+    } as import("@/types").AppState;
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog('a1', 1, 100, { pushDir: 'right', teamId: 't1' })
+    );
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog('a1', 1, 100, { pushDir: 'right', teamId: 't1' })
+    );
+    const field = buildHighSocietyFieldFromAppState(state);
+    const teamSeats = aggregateHighSocietySeatsByTeam(field.seats, normalizeHighSocietySettings(state.highSocietySettings));
+    const t1 = teamSeats.find((s) => s.id === 'team:t1')!;
+    const t2 = teamSeats.find((s) => s.id === 'team:t2')!;
+    expect(t1.widthCm).toBe(500);
+    expect(t2.widthCm).toBe(100);
+    expect(t1.widthCm + t2.widthCm).toBe(600);
+  });
+
+  it('팀전 100 두 번 후 개인전→팀전 전환해도 500/100 유지', async () => {
+    const members = [
+      { id: 'a1', name: 'A1', account: 0, toon: 0, operating: false },
+      { id: 'a2', name: 'A2', account: 0, toon: 0, operating: false },
+      { id: 'a3', name: 'A3', account: 0, toon: 0, operating: false },
+      { id: 'b1', name: 'B1', account: 0, toon: 0, operating: false },
+      { id: 'b2', name: 'B2', account: 0, toon: 0, operating: false },
+      { id: 'b3', name: 'B3', account: 0, toon: 0, operating: false },
+    ];
+    const teams = [
+      { id: 't1', name: '1팀' },
+      { id: 't2', name: '2팀' },
+    ];
+    const assignments: Record<string, string> = {
+      a1: 't1', a2: 't1', a3: 't1', b1: 't2', b2: 't2', b3: 't2',
+    };
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      matchMode: 'team',
+      seatMemberIds: members.map((m) => m.id),
+      seatMemberIdsManual: true,
+      startCmPerMember: 100,
+      teams,
+      memberTeamAssignments: assignments,
+    });
+    let state = {
+      members,
+      donors: [],
+      highSocietySettings: settings,
+      territoryLogs: [],
+    } as import("@/types").AppState;
+    state = appendTerritoryLogToAppState(state, createTerritoryLog('a1', 1, 100, { pushDir: 'right', teamId: 't1' }));
+    state = appendTerritoryLogToAppState(state, createTerritoryLog('a1', 1, 100, { pushDir: 'right', teamId: 't1' }));
+    const { applyHighSocietyAdminPatchToState } = await import('@/lib/admin-high-society-settings-patch');
+    state = applyHighSocietyAdminPatchToState(state, { matchMode: 'individual' });
+    expect(normalizeHighSocietySettings(state.highSocietySettings).matchMode).toBe('individual');
+    state = applyHighSocietyAdminPatchToState(state, { matchMode: 'team' });
+    expect(normalizeHighSocietySettings(state.highSocietySettings).matchMode).toBe('team');
+    const field = buildHighSocietyFieldFromAppState(state);
+    const teamSeats = aggregateHighSocietySeatsByTeam(field.seats, normalizeHighSocietySettings(state.highSocietySettings));
+    expect(teamSeats.find((s) => s.id === 'team:t1')!.widthCm).toBe(500);
+    expect(teamSeats.find((s) => s.id === 'team:t2')!.widthCm).toBe(100);
+  });
+
+  it('normalize — matchMode 키 없어도 teams 가 있으면 팀전 유지', () => {
+    const n = normalizeHighSocietySettings({
+      enabled: true,
+      teams: [{ id: 't1', name: '1팀' }, { id: 't2', name: '2팀' }],
+      memberTeamAssignments: { a: 't1' },
+    });
+    expect(n.matchMode).toBe('team');
+    const explicit = normalizeHighSocietySettings({
+      enabled: true,
+      matchMode: 'individual',
+      teams: [{ id: 't1', name: '1팀' }],
+    });
+    expect(explicit.matchMode).toBe('individual');
+  });
 });
 
 describe('high-society seat rejoin (member 빠졌다 재가입) — territory 복원 정확성', () => {
@@ -2461,7 +2603,7 @@ describe('high-society seat rejoin (member 빠졌다 재가입) — territory �
     { id: 'm4', name: 'M4', account: 0, toon: 0, operating: false },
   ];
 
-  it('seat 에 없던 멤버가 새로 진입 (신규 배정) → m1/m3 스냅 100 그대로 유지, m2 expand 좌우가 로그대로 65/15 복원 (레거시 0cm eliminate 깨지지 않음)', () => {
+  it('seat 에 없던 멤버가 새로 진입 → 기존 좌석은 스냅샷 유지, 신규는 시작 너비', () => {
     const settingsBefore = normalizeHighSocietySettings({
       enabled: true,
       seatMemberIds: ['m1', 'm3'],
@@ -2499,8 +2641,9 @@ describe('high-society seat rejoin (member 빠졌다 재가입) — territory �
     });
     expect(next.memberWidthCm?.m1).toBe(100);
     expect(next.memberWidthCm?.m3).toBe(100);
-    expect(next.memberTerritoryExpand?.m2?.expandLeftCm).toBeGreaterThanOrEqual(60);
-    expect(next.memberTerritoryExpand?.m2?.expandRightCm).toBe(15);
+    expect(next.memberWidthCm?.m2).toBe(60);
+    expect(next.memberTerritoryExpand?.m2?.expandLeftCm).toBe(0);
+    expect(next.memberTerritoryExpand?.m2?.expandRightCm).toBe(0);
     const nextState = {
       id: 'x',
       userId: 'x',
@@ -2518,11 +2661,15 @@ describe('high-society seat rejoin (member 빠졌다 재가입) — territory �
     const reconciled = reconcileHighSocietyFieldDimensions(next, resolveHighSocietySeatCountForField(next, 3), baseMembers);
     expect(reconciled.fieldCm).toBeGreaterThan(0);
     const field = buildHighSocietyFieldFromAppState(nextState);
+    const m1 = field.seats.find((s) => s.id === 'm1')!;
     const m2 = field.seats.find((s) => s.id === 'm2')!;
-    expect(m2.expandLeftCm + m2.expandRightCm).toBeGreaterThanOrEqual(75);
+    expect(m2.expandLeftCm).toBe(0);
+    expect(m2.expandRightCm).toBe(0);
+    expect(m2.widthCm).toBeGreaterThan(0);
+    expect(m2.widthCm).toBeLessThan(m1.widthCm);
   });
 
-  it('재가입 멤버에 prev expand 스냅샷 없어도 TerritoryLog expand 집계 반영', () => {
+  it('재가입 멤버는 기록부 재집계 없이 시작 너비로 합류', () => {
     const prevSettings = normalizeHighSocietySettings({
       enabled: true,
       seatMemberIds: ['m1', 'm3'],
@@ -2548,7 +2695,8 @@ describe('high-society seat rejoin (member 빠졌다 재가입) — territory �
       territoryLogs: logs,
       now: 1,
     });
-    expect(next.memberTerritoryExpand?.m2?.expandRightCm).toBeGreaterThanOrEqual(90);
+    expect(next.memberWidthCm?.m2).toBe(80);
+    expect(next.memberTerritoryExpand?.m2?.expandRightCm).toBe(0);
     expect(next.memberTerritoryExpand?.m2?.expandLeftCm).toBe(0);
   });
 

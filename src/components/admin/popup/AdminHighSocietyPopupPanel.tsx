@@ -97,10 +97,6 @@ export default function AdminHighSocietyPopupPanel() {
     const cur = stateRef.current;
     if (!cur) return;
     const hsNow = normalizeHighSocietySettings(cur.highSocietySettings);
-    if (!hsNow.enabled) {
-      showAppToast("상류사회가 OFF입니다. 먼저 모드를 켜 주세요.", { variant: "info" });
-      return;
-    }
     const matchModeNow = hsNow.matchMode;
     const useTeamMode = matchModeNow === "team";
     const seated = resolveHighSocietySeatMembers(cur.members || [], hsNow);
@@ -278,15 +274,6 @@ export default function AdminHighSocietyPopupPanel() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className={`rounded px-3 py-1.5 text-xs font-semibold ${
-                    highSocietySettings.enabled ? "bg-amber-600 text-white" : "bg-neutral-700 hover:bg-neutral-600"
-                  }`}
-                  onClick={() => void patchHighSociety({ enabled: !highSocietySettings.enabled })}
-                >
-                  {highSocietySettings.enabled ? "ON" : "OFF"}
-                </button>
                 <div className="flex rounded border border-white/15 overflow-hidden">
                   <button
                     type="button"
@@ -313,7 +300,6 @@ export default function AdminHighSocietyPopupPanel() {
                 </div>
                 <button
                   type="button"
-                  disabled={!highSocietySettings.enabled}
                   className={`rounded px-3 py-1.5 text-xs font-semibold border disabled:opacity-40 ${
                     highSocietySettings.territoryPaused
                       ? "border-sky-400 bg-sky-700/90 text-white"
@@ -352,7 +338,6 @@ export default function AdminHighSocietyPopupPanel() {
               </button>
               <button
                 type="button"
-                disabled={!highSocietySettings.enabled}
                 className="rounded px-2.5 py-1 border border-white/15 bg-neutral-900 disabled:opacity-40"
                 onClick={() => {
                   if (
@@ -372,7 +357,6 @@ export default function AdminHighSocietyPopupPanel() {
               <span className="text-neutral-400">가운데 기본</span>
               <button
                 type="button"
-                disabled={!highSocietySettings.enabled}
                 className={`rounded px-2.5 py-1 border disabled:opacity-40 ${
                   resolveSystemMiddlePushDir(highSocietySettings) === "left"
                     ? "border-amber-400 bg-amber-700/90 text-white"
@@ -384,7 +368,6 @@ export default function AdminHighSocietyPopupPanel() {
               </button>
               <button
                 type="button"
-                disabled={!highSocietySettings.enabled}
                 className={`rounded px-2.5 py-1 border disabled:opacity-40 ${
                   resolveSystemMiddlePushDir(highSocietySettings) === "right"
                     ? "border-amber-400 bg-amber-700/90 text-white"
@@ -608,10 +591,6 @@ export default function AdminHighSocietyPopupPanel() {
 
           <section className="rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
             <h2 className="text-sm font-semibold">영토 기록부</h2>
-            {!highSocietySettings.enabled ? (
-              <p className="text-sm text-amber-200/90">상류사회 모드를 ON 한 뒤 사용하세요.</p>
-            ) : (
-              <>
                 <div className="grid grid-cols-1 md:grid-cols-[auto_1fr_auto_auto_auto_auto] gap-2">
                   <select
                     className="rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"
@@ -756,8 +735,6 @@ export default function AdminHighSocietyPopupPanel() {
                     </tbody>
                   </table>
                 </div>
-              </>
-            )}
           </section>
 
           <section className="rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-2">
