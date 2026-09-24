@@ -259,7 +259,7 @@ export default function HighSocietySeatLayoutEditor({
             <span className="block mt-0.5 text-[10px] text-neutral-500">
               {matchMode === "team"
                 ? "팀전에서는 오버레이와 같이 팀 합 cm만 보여 줍니다. 멤버 이름은 소속 표시이고, 개인 영토는 나누지 않습니다."
-                : "0cm 탈락 멤버는 기본적으로 게이지에서 빠집니다. 영토 cm 조절은 「영토 기록부」에서만 수동 반영합니다. 영토 반영 후에도 「N번 위치」로 원하는 자리로 옮길 수 있으며 cm는 멤버에 유지됩니다."}
+                : "0cm가 된 인원은 게이지에서 빠집니다. 다시 영토가 생기면 양쪽 끝으로만 진입합니다. 가운데 인원의 확장은 좌우 양분입니다."}
             </span>
           </div>
           {hsSeatExplicit ? (
@@ -506,13 +506,16 @@ export default function HighSocietySeatLayoutEditor({
           <select
             className="rounded border border-white/10 bg-neutral-950 px-2 py-1"
             value={resolveSystemMiddlePushDir(settings)}
-            onChange={(e) =>
+            onChange={(e) => {
+              const v = e.target.value;
               void onPatch({
-                defaultMiddlePush: e.target.value === "left" ? "left" : "right",
-              })
-            }
+                defaultMiddlePush:
+                  v === "left" ? "left" : v === "right" ? "right" : "split",
+              });
+            }}
           >
-            <option value="right">오른쪽 → (기본)</option>
+            <option value="split">↔ 양분 (기본)</option>
+            <option value="right">오른쪽 →</option>
             <option value="left">← 왼쪽</option>
           </select>
         </label>

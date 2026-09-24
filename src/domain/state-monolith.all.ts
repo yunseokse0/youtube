@@ -1264,7 +1264,7 @@ export function defaultState(): AppState {
     highSocietySettings: {
       enabled: false,
       seatMemberIds: [],
-      defaultMiddlePush: "right",
+      defaultMiddlePush: "split",
       defaultBPush: "right",
       defaultCPush: "right",
       barStyle: "flat",
@@ -2680,7 +2680,23 @@ function finalizeAppStateApiPayload<T extends Record<string, unknown>>(
           confirmPhrase: options.confirmPhrase,
         }
       : payload;
-  return stripUnconfirmedSettlementResetFromApiPayload(withReset) as T;
+  const stripped = stripUnconfirmedSettlementResetFromApiPayload(withReset) as T;
+  /**
+   * 테마·후원 leftover POST 가 본문 React의 옛 기록부를 실어 팝업 추가·초기화를 덮지 않게.
+   * 기록부 키는 팝업 정본(territoryLogsAuthoritative)일 때만 보낸다.
+   */
+  if (options?.territoryLogsAuthoritative === true) return stripped;
+  const {
+    territoryLogs: _territoryLogs,
+    deletedTerritoryLogIds: _deletedTerritoryLogIds,
+    territoryLogsAuthoritative: _territoryLogsAuthoritative,
+    ...rest
+  } = stripped as T & {
+    territoryLogs?: unknown;
+    deletedTerritoryLogIds?: unknown;
+    territoryLogsAuthoritative?: unknown;
+  };
+  return rest as T;
 }
 
 /** 관리자 /api/state 저장 시 — 스핀 결과·historyLogs는 서버 전용(POST 생략으로 대역폭 절감) */

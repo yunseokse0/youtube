@@ -395,7 +395,7 @@ import type { ToonationRelayForwarded } from "@/components/ToonationBrowserRelay
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
 import { buildPlayerAlertPopupUrl, openPlayerAlertPopup } from "@/lib/donation/player-alert-url";
 import { buildDonationAlertUrl } from "@/lib/donation/donation-alert-overlay";
-import { openAdminHighSocietyPopup, openAdminTimerPopup } from "@/lib/admin-popup-url";
+import { openAdminDonorListPopup, openAdminHighSocietyPopup, openAdminTimerPopup } from "@/lib/admin-popup-url";
 
 /** 후원 계열 오버레이 배경 GIF 프리셋 — 외부 URL은 방송망에서 차단될 수 있음 */
 const DONATION_LISTS_BG_GIF_PRESETS: { label: string; url: string }[] = [
@@ -796,8 +796,8 @@ function AdminPageInner() {
     members: [],
   }));
   const [syncStatus, setSyncStatus] = useState<"loading" | "synced" | "local" | "error">("loading");
-  /** 후원 리스트 DOM — 기본 전체 표시 (사용자 요청: 전체표시만 고정) */
-  const [donorListShowAll, setDonorListShowAll] = useState(true);
+  /** 후원 리스트 DOM — 기본 페이지네이션(50건). 전체 표시는 하단 토글로 opt-in */
+  const [donorListShowAll, setDonorListShowAll] = useState(false);
   /** ✅ 후원자 리스트 개선 v3: 필터 / 검색 / 압축보기 상태 (짧은 시간 대량 데이터 적재 대응) */
   const [donorListQuery, setDonorListQuery] = useState<string>("");
   const donorListQueryRef = useRef<string>("");
@@ -2147,12 +2147,11 @@ function AdminPageInner() {
     },
     []
   );
-  const DONOR_LIST_WINDOW = 300;
-  /** ✅ 후원자 리스트 페이지네이션 v3: 20/50/100/300 — 대량 데이터 20건 단위 촘촘한 페이지 지원 */
+  /** 후원자 리스트 페이지네이션: 기본 50건. 493건 전체 DOM은 멤버 select·입력란 때문에 관리자가 버벅임 */
   const DONOR_PAGE_SIZES = [20, 50, 100, 300] as const;
   type DonorPageSize = (typeof DONOR_PAGE_SIZES)[number];
   const [donorListPage, setDonorListPage] = useState<number>(1);
-  const [donorListPageSize, setDonorListPageSize] = useState<DonorPageSize>(99999 as any);
+  const [donorListPageSize, setDonorListPageSize] = useState<DonorPageSize>(50);
   /** ✅ 후원자 리스트 필터 파이프라인 (useMemo로 O(N) 1회만, 변경시 재계산)
    *  1단계: 시간범위 필터 → 2단계: 금액범위 → 3단계: 텍스트 검색 (이름 / 메시지 / 멤버명)  */
   const donorListRowsFiltered = useMemo(() => {
@@ -2200,6 +2199,17 @@ function AdminPageInner() {
   const donorPageStart = (donorPageIdx - 1) * donorListPageSize;
   const donorPageEnd = donorPageStart + donorListPageSize;
   /** ✅ 페이지 내 & 선택 행 총액 집계 (실시간 확인용) — ⚠️ 삭제된 건(deletedAt 존재) + 후원 제외 건(donationExcluded=true) 모두 제외! */
+  const donorFilteredAgg = useMemo(() => {
+    let sum = 0;
+    let count = 0;
+    for (const d of donorListRowsFiltered as any[]) {
+      if (d?.deletedAt) continue;
+      if (isDonorExcludedFromDonationTotals(d)) continue;
+      sum += Number(d?.amount ?? 0);
+      count += 1;
+    }
+    return { sum, count };
+  }, [donorListRowsFiltered]);
   const donorPageAgg = useMemo(() => {
     let pageSum = 0; let pageCount = 0;
     const vis = donorListShowAll ? donorListRowsFiltered : donorListRowsFiltered.slice(donorPageStart, donorPageEnd);
@@ -2219,11 +2229,10 @@ function AdminPageInner() {
     }
     return { selSum, selCount };
   }, [donorListRowsFiltered, selectedDonorIds]);
-  /** 페이지 범위 자동 보정: 후원 건수 줄어들어 현재 페이지가 총 페이지 초과하면 마지막 페이지로 강제 이동 */
+  /** 건수 감소로 현재 페이지만 범위를 넘을 때 마지막 페이지로 맞춤. 새 후원마다 맨 끝(오래된 쪽)으로 점프하지 않음 */
   useEffect(() => {
-    if (donorListPage !== donorTotalPages) setDonorListPage(donorTotalPages);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [donorTotalPages]);
+    if (donorListPage > donorTotalPages) setDonorListPage(donorTotalPages);
+  }, [donorListPage, donorTotalPages]);
   const donorListRowsVisible = useMemo(
     () =>
       donorListShowAll
@@ -3126,6 +3135,18 @@ function AdminPageInner() {
   };
   /** ✅ 상세 분류: 소메뉴 클릭 핸들러 — resolveNavKeyFromTargetId 로 대분류 자동 추론 + 앵커 hash 강제 스크롤 */
   const clickSubItem = (sub: AdminNavSubItem) => {
+    if (sub.targetId === "donor-list") {
+      openAdminDonorListPopup(overlayUserId || user?.id);
+      setActiveNav("donor");
+      setActiveSubTargetId("donor-list");
+      return;
+    }
+    if (sub.targetId === "territory-management") {
+      openAdminHighSocietyPopup(overlayUserId || user?.id);
+      setActiveNav("donor");
+      setActiveSubTargetId("territory-management");
+      return;
+    }
     const navKey = resolveNavKeyFromTargetId(sub.targetId);
     moveToSection(navKey, sub.targetId, { fromSubItem: true });
     if (typeof window !== "undefined") {
@@ -11949,6 +11970,14 @@ function AdminPageInner() {
               </button>
               <button
                 type="button"
+                className="px-3 py-2 rounded-[10px] text-sm font-semibold text-emerald-200 bg-[#05140f] border border-emerald-500/30 hover:bg-[#0a2218] transition"
+                onClick={() => openAdminDonorListPopup(overlayUserId || user?.id)}
+                title="후원자 리스트를 별도 창에서 엽니다. 기본 50건 페이지네이션 · 관리자 본문은 가볍게 유지"
+              >
+                후원자 리스트
+              </button>
+              <button
+                type="button"
                 className="px-3.5 py-2 rounded-[10px] text-sm font-bold text-white transition"
                 style={{ background: "linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%)", boxShadow: "0 3px 12px rgba(37,99,235,0.3)", border: "1px solid rgba(96,165,250,0.5)" }}
                 onClick={onFetchLatestFromServer}
@@ -17805,205 +17834,20 @@ function AdminPageInner() {
               id="territory-management"
               title="상류사회 · 영토 기록부"
               className={panelCardClass}
-              headerAside={
+            >
+              <div className="rounded-lg border border-amber-400/35 bg-amber-950/25 p-4 space-y-3">
+                <p className="text-sm text-neutral-300 leading-relaxed">
+                  영토 기록부·cm 반영은 <strong className="text-amber-100">상류사회 팝업에서만</strong> 관리합니다.
+                  본문과 팝업이 동시에 쓰면 기록이 늘어날수록 게이지가 늦게 붙거나, 초기화를 여러 번 해야 할 수 있습니다.
+                </p>
                 <button
                   type="button"
-                  className="rounded border border-violet-500/40 bg-violet-950/50 px-3 py-1.5 text-xs font-semibold text-violet-100 hover:bg-violet-900/60"
+                  className="rounded border border-violet-400/50 bg-violet-800 hover:bg-violet-700 px-4 py-2 text-sm font-semibold text-violet-50"
                   onClick={() => openAdminHighSocietyPopup(overlayUserId || user?.id)}
                 >
-                  별도 창에서 열기
+                  영토 기록부 팝업 열기
                 </button>
-              }
-            >
-              <p className="text-sm text-neutral-400 mb-3">
-                후원·투네와 <strong className="text-neutral-300">자동 연동 없음</strong> — cm을 직접 추가/차감합니다.
-                영토 게이지는 이 기록부와 좌석 멤버 이름만 사용합니다.
-              </p>
-                  <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr_auto_auto_auto_auto] gap-3">
-                    <select
-                      className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
-                      value={territoryMode}
-                      onChange={(e) => setTerritoryMode(e.target.value === "minus" ? "minus" : "plus")}
-                    >
-                      <option value="plus">확장(+)</option>
-                      <option value="minus">축소(-)</option>
-                    </select>
-                    <input
-                      className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
-                      placeholder="cm (예: 5, 10)"
-                      inputMode="numeric"
-                      value={territoryCm}
-                      onChange={(e) => setTerritoryCm(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          addTerritoryRecord();
-                        }
-                      }}
-                    />
-                    {highSocietySettings.matchMode === "team" ? (
-                      <select
-                        className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
-                        value={territoryTeamId || ""}
-                        onChange={(e) => setTerritoryTeamId(e.target.value)}
-                        disabled={(highSocietySettings.teams || []).length === 0}
-                      >
-                        {(highSocietySettings.teams || []).map((t, idx) => {
-                          const assignments = highSocietySettings.memberTeamAssignments || {};
-                          const membersInTeam = hsSeatPlayers
-                            .filter((m) => assignments[m.id] === t.id)
-                            .map((m) => m.name);
-                          return (
-                            <option key={t.id} value={t.id}>
-                              [{t.name}] {membersInTeam.join("·") || "팀원 없음"}
-                            </option>
-                          );
-                        })}
-                      </select>
-                    ) : (
-                      <select
-                        className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
-                        value={territoryMemberId || ""}
-                        onChange={(e) => setTerritoryMemberId(e.target.value)}
-                        disabled={hsSeatPlayers.length === 0}
-                      >
-                        {hsSeatPlayers.map((m) => {
-                          const assignments = highSocietySettings.memberTeamAssignments || {};
-                          const tid = assignments[m.id];
-                          const team = (highSocietySettings.teams || []).find((t) => t.id === tid);
-                          return (
-                            <option key={m.id} value={m.id}>
-                              {team ? `[${team.name}] ${m.name}` : m.name}
-                            </option>
-                          );
-                        })}
-                      </select>
-                    )}
-                    {hsSeatPlayers.length === 0 && (
-                      <p className="text-xs text-amber-300/90 col-span-full">
-                        좌석 멤버가 없습니다. 오버레이 탭에서 상류사회 좌석을 지정해 주세요.
-                      </p>
-                    )}
-                    <select
-                      className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
-                      value={territoryPushDir}
-                      onChange={(e) =>
-                        setTerritoryPushDir(
-                          e.target.value === "left" || e.target.value === "right" || e.target.value === "split"
-                            ? e.target.value
-                            : "system"
-                        )
-                      }
-                      title="가운데 좌석만 방향 적용"
-                    >
-                      <option value="system">방향·시스템</option>
-                      <option value="left">← 왼쪽</option>
-                      <option value="right">→ 오른쪽</option>
-                      <option value="split">↔ 양분</option>
-                    </select>
-                    <input
-                      className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
-                      placeholder="메모(선택)"
-                      value={territoryNote}
-                      onChange={(e) => setTerritoryNote(e.target.value)}
-                    />
-                    <button
-                      className={`px-4 py-2 rounded font-semibold ${
-                        territoryMode === "plus" ? "bg-amber-600 hover:bg-amber-500" : "bg-rose-600 hover:bg-rose-500"
-                      }`}
-                      onClick={addTerritoryRecord}
-                    >
-                      영토 반영
-                    </button>
-                  </div>
-                  <div className="mt-4 overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-neutral-400">
-                          <th className="text-left font-medium p-1">시각</th>
-                          <th className="text-left font-medium p-1">멤버</th>
-                          <th className="text-left font-medium p-1">구분</th>
-                          <th className="text-right font-medium p-1">cm</th>
-                          <th className="text-left font-medium p-1">방향</th>
-                          <th className="text-left font-medium p-1">메모</th>
-                          <th className="text-right font-medium p-1 w-24">작업</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filterTerritoryLogsAfterReset(
-                          state.territoryLogs,
-                          highSocietySettings.territoryLogsResetAt
-                        )
-                          .slice()
-                          .sort((a, b) => b.at - a.at)
-                          .map((log) => {
-                            const logTeamId = typeof (log as unknown as { teamId?: string }).teamId === "string"
-                              ? String((log as unknown as { teamId?: string }).teamId || "").trim()
-                              : "";
-                            let displayLabel: string;
-                            if (logTeamId) {
-                              const team = (highSocietySettings.teams || []).find((t) => t.id === logTeamId);
-                              displayLabel = team ? `[${team.name}] 팀` : log.memberId;
-                            } else {
-                              const member = state.members.find((m) => m.id === log.memberId);
-                              displayLabel = member?.name || log.memberId;
-                            }
-                            return (
-                              <tr key={log.id} className="border-t border-white/10">
-                                <td className="p-1 text-neutral-400">
-                                  <ClientTime ts={log.at} />
-                                </td>
-                                <td className="p-1 text-neutral-300">{displayLabel}</td>
-                                <td className="p-1">
-                                  {log.delta > 0 ? (
-                                    <span className="text-amber-300">확장</span>
-                                  ) : (
-                                    <span className="text-rose-300">축소</span>
-                                  )}
-                                </td>
-                                <td className="p-1 text-right tabular-nums">{log.amount}</td>
-                                <td className="p-1 text-neutral-400">
-                                  {formatTerritoryLogPushDirLabel(log, highSocietySettings, state.members || [])}
-                                </td>
-                                <td className="p-1 text-neutral-400">{log.note || "-"}</td>
-                                <td className="p-1 text-right">
-                                  <button
-                                    className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
-                                    onClick={() => {
-                                      requestConfirm("영토 로그 삭제", "이 기록을 삭제할까요?", () => {
-                                        setState((prev: AppState) => {
-                                          const next = removeTerritoryLogFromAppState(prev, log.id);
-                                          persistState(next, {
-                                            omitDonationFields: true,
-                                            highSocietySettingsOnly: true,
-                                            territoryLogsAuthoritative: true,
-                                          });
-                                          notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
-                                          return next;
-                                        });
-                                      });
-                                    }}
-                                  >
-                                    삭제
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        {filterTerritoryLogsAfterReset(
-                          state.territoryLogs,
-                          highSocietySettings.territoryLogsResetAt
-                        ).length === 0 && (
-                          <tr>
-                            <td colSpan={7} className="p-3 text-neutral-500 text-center">
-                              기록 없음
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+              </div>
             </AdminCollapsibleSection>
 
             <AdminCollapsibleSection
@@ -18014,6 +17858,14 @@ function AdminPageInner() {
               headerAside={
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded bg-violet-800/70 border border-violet-500/50 text-[10px] px-2 py-0.5 text-violet-100 font-mono tracking-tight" title="후원자 리스트 섹션 DOM 식별자">section-id=donor-list</span>
+                  <button
+                    type="button"
+                    className="rounded bg-emerald-800 hover:bg-emerald-700 border border-emerald-400/40 text-[10px] font-semibold px-2 py-0.5 text-emerald-50 transition"
+                    title="후원자 리스트를 별도 창에서 엽니다. 기본 50건 페이지네이션, 전체 표시는 팝업에서 선택"
+                    onClick={() => openAdminDonorListPopup(overlayUserId || user?.id)}
+                  >
+                    ⧉ 팝업으로 열기
+                  </button>
                   <button
                     type="button"
                     className="rounded bg-neutral-800 hover:bg-neutral-700 border border-white/15 text-[10px] font-semibold px-2 py-0.5 text-neutral-200 transition"
@@ -18098,6 +17950,17 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                       onClick={() => patchHighSocietySettings({ defaultMiddlePush: "right" })}
                     >
                       오른쪽 →
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded px-2.5 py-1 font-semibold border ${
+                        resolveSystemMiddlePushDir(highSocietySettings) === "split"
+                          ? "border-amber-400 bg-amber-700/90 text-white"
+                          : "border-white/15 bg-neutral-900"
+                      }`}
+                      onClick={() => patchHighSocietySettings({ defaultMiddlePush: "split" })}
+                    >
+                      ↔ 양분
                     </button>
                     <button
                       type="button"
@@ -18246,11 +18109,19 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
               {/** ✅ 페이지/선택 행 실시간 집계 바 (대량 데이터 빠른 금액 확인) */}
               <div className="mb-1.5 flex flex-wrap items-center gap-2 text-[11px]">
                 <div className="flex items-center gap-1.5 rounded bg-slate-900/60 border border-slate-700/50 px-2.5 py-1">
-                  <span className="text-slate-400">페이지 합계</span>
+                  <span className="text-slate-400">전체 합계</span>
+                  <span className="text-slate-100 font-semibold">{donorFilteredAgg.count}건</span>
+                  <span className="text-slate-500">·</span>
+                  <span className="text-emerald-300 font-bold">{formatDonorAmountDisplay(donorFilteredAgg.sum)}</span>
+                </div>
+                {!donorListShowAll && (
+                <div className="flex items-center gap-1.5 rounded bg-slate-900/40 border border-slate-700/40 px-2.5 py-1">
+                  <span className="text-slate-400">이 페이지</span>
                   <span className="text-slate-100 font-semibold">{donorPageAgg.pageCount}건</span>
                   <span className="text-slate-500">·</span>
-                  <span className="text-emerald-300 font-bold">{formatDonorAmountDisplay(donorPageAgg.pageSum)}</span>
+                  <span className="text-emerald-200 font-bold">{formatDonorAmountDisplay(donorPageAgg.pageSum)}</span>
                 </div>
+                )}
                 <div className={`flex items-center gap-1.5 rounded border px-2.5 py-1 transition-colors ${
                   donorSelectedAgg.selCount > 0
                     ? "bg-blue-950/50 border-blue-500/50"
@@ -18718,9 +18589,8 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                         </>
                       )}
                     </span>
-                    {/* 한 페이지당 표시 건수 — 전체표시만 고정으로 영구 숨김 */}
-                    {false && !donorListShowAll && donorListRowsFiltered.length > DONOR_PAGE_SIZES[0] && (
-                      <div className="flex items-center gap-1 ml-1 hidden" style={{ display: "none !important" }}>
+                    {!donorListShowAll && (
+                      <div className="flex items-center gap-1 ml-1">
                         <span className="text-neutral-500">페이지당</span>
                         {DONOR_PAGE_SIZES.map((sz) => (
                           <button
@@ -18742,9 +18612,8 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                       </div>
                     )}
                   </div>
-                  {/* 페이지 이동 버튼 + 전체 표시 토글 — 전체표시만 고정으로 페이지 버튼 영구 숨김 */}
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    {false && !donorListShowAll && donorTotalPages > 1 && (
+                    {!donorListShowAll && donorTotalPages > 1 && (
                       <>
                         <button
                           type="button"
@@ -18790,8 +18659,6 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                         </button>
                       </>
                     )}
-                    {/* 전체 표시 ↔ 페이지네이션 토글 — 전체표시만 고정으로 영구 숨김 */}
-                    {false && (
                     <button
                       type="button"
                       className={`rounded px-2 py-1 transition-colors ${
@@ -18805,13 +18672,12 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                       }}
                       title={
                         donorListShowAll
-                          ? "전체 표시 끄고 페이지당 50건씩만 DOM 렌더 (성능 권장)"
-                          : "전체 N건을 한번에 DOM 렌더 (대량 데이터시 느려질 수 있음)"
+                          ? "페이지당 50건씩만 DOM 렌더 (성능 권장)"
+                          : "전체 건을 한번에 DOM 렌더 (대량 데이터시 느려질 수 있음)"
                       }
                     >
                       {donorListShowAll ? "✓ 페이지네이션 모드로" : "📄 전체 표시 (성능 ↓)"}
                     </button>
-                    )}
                   </div>
                 </div>
               ) : null}
@@ -20143,7 +20009,8 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                 <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
                   <div className="text-[11px] font-semibold text-amber-100/95">가운데 좌석 · 확장 방향</div>
                   <p className="text-[10px] text-neutral-400 leading-snug">
-                    양끝은 고정(좌끝→ / 우끝←). 가운데 좌석의 영토 기록부 기본 방향입니다.
+                    양끝은 고정(좌끝→ / 우끝←). 개인전 가운데는 기본 좌·우 양분입니다.
+                    0cm가 된 인원은 게이지에서 빠지고, 다시 영토가 생기면 양쪽 끝으로만 진입합니다.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -20167,6 +20034,17 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                       onClick={() => patchHighSocietySettings({ defaultMiddlePush: "right" })}
                     >
                       오른쪽 →
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded px-3 py-1.5 text-xs font-semibold border disabled:opacity-40 ${
+                        resolveSystemMiddlePushDir(highSocietySettings) === "split"
+                          ? "border-amber-400 bg-amber-700/90 text-white"
+                          : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
+                      }`}
+                      onClick={() => patchHighSocietySettings({ defaultMiddlePush: "split" })}
+                    >
+                      ↔ 양분
                     </button>
                   </div>
                 </div>

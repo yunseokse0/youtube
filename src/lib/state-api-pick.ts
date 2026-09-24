@@ -140,6 +140,7 @@ function overlayCoreFields(
     highSocietySettings: state.highSocietySettings,
     /** 수동 영토 기록부 — OBS(host=obs)는 LS 없이 API만 사용 */
     territoryLogs: state.territoryLogs || [],
+    deletedTerritoryLogIds: state.deletedTerritoryLogIds || [],
   };
 }
 

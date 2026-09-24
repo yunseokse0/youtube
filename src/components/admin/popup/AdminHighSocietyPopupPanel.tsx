@@ -442,6 +442,17 @@ export default function AdminHighSocietyPopupPanel() {
               >
                 오른쪽 →
               </button>
+              <button
+                type="button"
+                className={`rounded px-2.5 py-1 border disabled:opacity-40 ${
+                  resolveSystemMiddlePushDir(highSocietySettings) === "split"
+                    ? "border-amber-400 bg-amber-700/90 text-white"
+                    : "border-white/15 bg-neutral-900"
+                }`}
+                onClick={() => void patchHighSociety({ defaultMiddlePush: "split" })}
+              >
+                ↔ 양분
+              </button>
             </div>
           </section>
 

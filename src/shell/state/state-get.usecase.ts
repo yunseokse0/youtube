@@ -152,13 +152,13 @@ async function handleStateGetInner(req: Request): Promise<Response> {
     if (since > 0 && kvOk && !isRedisConfigured() && isMysqlKvConfigured()) {
       const memEarly = getServerMemoryAppState(userId);
       const memRev = memEarly ? revisionAt(memEarly) : 0;
-      const pickUsesDedicatedRevision =
+      /** 텍스트·순위·시그: 메모리 revision만으로 304. overlay/overlay-donors 는
+       *  PM2 워커 메모리가 스테일이면 영토 로그가 DB에만 있어도 영구 304가 되므로 DB peek까지 본다. */
+      const memoryOnly304Safe =
         pickMode === STATE_PICK_OBS_TEXT ||
         pickMode === STATE_PICK_DONOR_RANKINGS ||
-        pickMode === STATE_PICK_OVERLAY_DONORS ||
-        pickMode === STATE_PICK_OVERLAY ||
         pickMode === STATE_PICK_SIG_SALES;
-      if (pickUsesDedicatedRevision && memEarly && memRev > 0 && memRev <= since) {
+      if (memoryOnly304Safe && memEarly && memRev > 0 && memRev <= since) {
         return stateNotModifiedResponse("mysql-rev");
       }
       if (!(memRev > since)) {

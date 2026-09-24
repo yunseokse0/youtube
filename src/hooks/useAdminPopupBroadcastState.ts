@@ -319,6 +319,16 @@ export function useAdminPopupBroadcastState() {
     [scopedUserId]
   );
 
+  const runExclusivePersist = useCallback(async <T,>(fn: () => Promise<T>): Promise<T> => {
+    persistInFlightRef.current += 1;
+    persistGenRef.current += 1;
+    try {
+      return await fn();
+    } finally {
+      persistInFlightRef.current = Math.max(0, persistInFlightRef.current - 1);
+    }
+  }, []);
+
   const accountMismatch =
     user?.id != null && urlUserId.length > 0 && user.id !== urlUserId;
 
@@ -332,6 +342,7 @@ export function useAdminPopupBroadcastState() {
     stateRef,
     reload,
     persistAppState,
+    runExclusivePersist,
     accountMismatch,
   };
 }

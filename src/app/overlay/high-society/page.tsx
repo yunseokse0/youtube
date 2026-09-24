@@ -242,6 +242,7 @@ export default function HighSocietyOverlayPage() {
     Boolean(sp.get("bLeft") || sp.get("b") || sp.get("cLeft") || sp.get("c"));
 
   const { state, ready } = useOverlayRemoteState(userId, {
+    enabled: spReady && (Boolean(userId) || useTest),
     statePick: STATE_PICK_OVERLAY_DONORS,
     /** OBS: CEF LS 옛 멤버명으로 서버 개명을 덮지 않음 */
     skipLocalSnapshot: hostObs,
@@ -249,6 +250,8 @@ export default function HighSocietyOverlayPage() {
     persistLastGood: !hostObs,
     /** 관리자 미리보기: 재배치·나누기·방향 적용이 게이지에 바로 보이게 since 폴링 */
     adminPreviewAllowPoll: true,
+    /** OBS는 SSE가 꺼져 있으므로 2초 since 폴링으로 영토 입력을 따라감 (로그인 쿠키 불필요) */
+    overlayPollMs: hostObs ? 2000 : undefined,
   });
   const [nowTick, setNowTick] = useState(() => Date.now());
   /** test 전용: 서버 타이머 없을 때 로컬 카운트다운 앵커 (라운드 종료 후 모드용) */
@@ -401,6 +404,13 @@ export default function HighSocietyOverlayPage() {
     .join(" ");
 
   if (!spReady) return null;
+  if (!userId && !useTest) {
+    return (
+      <main className="hs-overlay-root flex items-start justify-center p-4 text-sm text-white/70">
+        오버레이 URL에 계정(?u=로그인ID)이 필요합니다. 시스템 로그인은 필요 없습니다.
+      </main>
+    );
+  }
   if (!ready && !useTest) {
     return (
       <main className="hs-overlay-root flex items-start justify-center p-4 text-sm text-white/70">

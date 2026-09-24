@@ -176,6 +176,37 @@ export function resolveTerritoryLogsResetAtForEditorMerge(opts: {
   return localResetAt;
 }
 
+/**
+ * OBS 오버레이 병합 — 서버 incoming 이 정본이되, 더 최신 로컬 초기화([])를
+ * 옛 기록 GET 으로 되살리지 않는다. resetAt 은 양쪽 max.
+ */
+export function mergeOverlayTerritoryLogs(opts: {
+  lastGoodLogs: TerritoryLog[] | undefined;
+  incomingLogs: TerritoryLog[] | undefined;
+  incomingHasKey: boolean;
+  lastGoodResetAt?: number;
+  incomingResetAt?: number;
+  deletedIds?: string[];
+}): TerritoryLog[] {
+  const lastGood = normalizeTerritoryLogs(opts.lastGoodLogs);
+  const lastGoodResetAt = Number(opts.lastGoodResetAt || 0);
+  const incomingResetAt = Number(opts.incomingResetAt || 0);
+  const resetAt = Math.max(lastGoodResetAt, incomingResetAt);
+  if (!opts.incomingHasKey) {
+    return filterTerritoryLogsAfterReset(lastGood, resetAt);
+  }
+  const incoming = normalizeTerritoryLogs(opts.incomingLogs);
+  const incomingEmpty = Array.isArray(opts.incomingLogs) && incoming.length === 0;
+  if (incomingEmpty && incomingResetAt >= lastGoodResetAt) return [];
+  if (lastGoodResetAt > incomingResetAt && lastGood.length === 0) return [];
+  const merged = mergeTerritoryLogsNeverShrink(lastGood, incoming, {
+    deletedIds: opts.deletedIds,
+    patchAuthoritative: true,
+    patchIsReset: incomingEmpty && incomingResetAt >= lastGoodResetAt,
+  });
+  return filterTerritoryLogsAfterReset(merged, resetAt);
+}
+
 /** 「영토만 초기화」 시각 이전 기록은 계산·표시에서 제외 */
 export function filterTerritoryLogsAfterReset(
   logs: TerritoryLog[] | undefined,
@@ -254,7 +285,7 @@ export function resolveTerritoryLogPushDirForWrite(args: {
   if (!seatRole) return undefined;
   if (seatRole.canChoosePush) {
     if (chosen === "left" || chosen === "right" || chosen === "split") return chosen;
-    return resolveSystemMiddlePushDir(settings);
+    return "split";
   }
   if (seatRole.expandDir === "left") return "left";
   if (seatRole.expandDir === "right") return "right";
@@ -278,7 +309,7 @@ export function formatTerritoryLogPushDirLabel(
           ? "right"
           : null
       : null) ||
-    (role?.canChoosePush ? resolveSystemMiddlePushDir(settings) : null);
+    (role?.canChoosePush ? "split" : null);
   if (effective === "left") return "← 왼쪽";
   if (effective === "right") return "→ 오른쪽";
   if (effective === "split") return "↔ 양분";
@@ -320,7 +351,7 @@ export function aggregateSeatPushesFromTerritoryLogs(opts: {
       netByMember.set(memberId, { left: prev.left + signed, right: prev.right });
       continue;
     }
-    const push = parseHighSocietyPushDir(log.pushDir) || middleDir;
+    const push = parseHighSocietyPushDir(log.pushDir) || (dir === "both" ? "split" : middleDir);
     const lr = pushDirToLeftRight(Math.abs(signed), push);
     const sign = signed < 0 ? -1 : 1;
     netByMember.set(memberId, {

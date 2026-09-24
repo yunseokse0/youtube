@@ -557,4 +557,52 @@ describe("mergeDonationReplaceForPersist", () => {
     expect(merged.donors.map((d) => d.id)).toEqual(["d1"]);
     expect(merged.members.find((m) => m.id === "m1")?.account).toBe(10000);
   });
+
+  it("does not let a shorter leftover territory book overwrite popup logs", async () => {
+    const { mergeDonationReplaceForPersist } = await import("./merge-donation-apply-base");
+    const logA = { id: "tl_a", memberId: "m1", amount: 20, delta: 1 as const, at: 1000 };
+    const logB = { id: "tl_b", memberId: "m1", amount: 40, delta: 1 as const, at: 2000 };
+    const existing: AppState = {
+      ...defaultState(),
+      members: members(["BT태호"]),
+      donors: [{ id: "d1", name: "A", amount: 10000, memberId: "m1", at: 1000, target: "account" }],
+      territoryLogs: [logA, logB] as AppState["territoryLogs"],
+      highSocietySettings: { ...defaultState().highSocietySettings!, territoryLogsResetAt: 0 },
+      updatedAt: 3000,
+    };
+    const incoming: AppState = {
+      ...defaultState(),
+      members: members(["BT태호"]),
+      donors: [{ id: "d1", name: "A", amount: 10000, memberId: "m1", at: 1000, target: "account" }],
+      territoryLogs: [logA] as AppState["territoryLogs"],
+      highSocietySettings: { ...defaultState().highSocietySettings!, territoryLogsResetAt: 0 },
+      updatedAt: 4000,
+    };
+    const merged = mergeDonationReplaceForPersist(incoming, existing);
+    expect(merged.territoryLogs?.map((l) => l.id).sort()).toEqual(["tl_a", "tl_b"]);
+  });
+
+  it("keeps an empty territory book after a newer reset when leftover still has old rows", async () => {
+    const { mergeDonationReplaceForPersist } = await import("./merge-donation-apply-base");
+    const logA = { id: "tl_a", memberId: "m1", amount: 20, delta: 1 as const, at: 1000 };
+    const existing: AppState = {
+      ...defaultState(),
+      members: members(["BT태호"]),
+      donors: [{ id: "d1", name: "A", amount: 10000, memberId: "m1", at: 1000, target: "account" }],
+      territoryLogs: [],
+      highSocietySettings: { ...defaultState().highSocietySettings!, territoryLogsResetAt: 9_000 },
+      updatedAt: 9000,
+    };
+    const incoming: AppState = {
+      ...defaultState(),
+      members: members(["BT태호"]),
+      donors: [{ id: "d1", name: "A", amount: 10000, memberId: "m1", at: 1000, target: "account" }],
+      territoryLogs: [logA] as AppState["territoryLogs"],
+      highSocietySettings: { ...defaultState().highSocietySettings!, territoryLogsResetAt: 0 },
+      updatedAt: 9100,
+    };
+    const merged = mergeDonationReplaceForPersist(incoming, existing);
+    expect(merged.territoryLogs).toEqual([]);
+    expect(Number(merged.highSocietySettings?.territoryLogsResetAt)).toBe(9_000);
+  });
 });

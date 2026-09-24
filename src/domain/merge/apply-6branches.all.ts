@@ -19,6 +19,7 @@ import {
 } from "@/lib/donation/apply-donation-state";
 import { donorRowDedupeKey } from "@/domain/dedupe/donation-dedupe.pipeline";
 import { isGroupSplitPartDonor } from "@/lib/donation/group-split-donation";
+import { mergeDeletedTerritoryLogIds, mergeTerritoryLogsNeverShrink } from "@/lib/territory-utils";
 
 export { rosterDonorMatchScore } from "@/lib/donation/apply-donation-state";
 
@@ -405,6 +406,9 @@ export function mergeDonationReplaceForPersist(
   const filteredDonors = effReset > 0
     ? filterDonorsAfterSettlementReset(incomingDonors, effReset)
     : incomingDonors;
+  const existingHsReset = Number(existing.highSocietySettings?.territoryLogsResetAt || 0);
+  const incomingHsReset = Number(incoming.highSocietySettings?.territoryLogsResetAt || 0);
+  const hsKeepExisting = existingHsReset >= incomingHsReset;
   const replaced = {
     ...shell,
     donors: filteredDonors,
@@ -413,6 +417,35 @@ export function mergeDonationReplaceForPersist(
       ? incoming.memberPositions ?? shell.memberPositions
       : shell.memberPositions,
     settlementResetAt: effReset || shell.settlementResetAt,
+    /** 후원 persist 는 영토 기록부 정본이 아님 — 짧은 leftover 목록으로 덮지 않고 union.
+     *  팝업 초기화([])는 resetAt 이 더 클 때만 유지 */
+    territoryLogs: mergeTerritoryLogsNeverShrink(existing.territoryLogs, incoming.territoryLogs, {
+      deletedIds: mergeDeletedTerritoryLogIds(
+        existing.deletedTerritoryLogIds,
+        incoming.deletedTerritoryLogIds
+      ),
+      patchAuthoritative: hsKeepExisting,
+      patchIsReset:
+        hsKeepExisting &&
+        Array.isArray(existing.territoryLogs) &&
+        existing.territoryLogs.length === 0 &&
+        existingHsReset > incomingHsReset,
+    }),
+    deletedTerritoryLogIds: mergeDeletedTerritoryLogIds(
+      existing.deletedTerritoryLogIds,
+      incoming.deletedTerritoryLogIds
+    ),
+    highSocietySettings: hsKeepExisting
+      ? {
+          ...(incoming.highSocietySettings || {}),
+          ...(existing.highSocietySettings || {}),
+          territoryLogsResetAt: existingHsReset,
+        }
+      : {
+          ...(existing.highSocietySettings || {}),
+          ...(incoming.highSocietySettings || {}),
+          territoryLogsResetAt: incomingHsReset,
+        },
     updatedAt:
       Math.max(Number(incoming.updatedAt || 0), Number(existing.updatedAt || 0)) ||
       Date.now(),

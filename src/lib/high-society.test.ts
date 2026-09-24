@@ -2027,6 +2027,67 @@ describe("0cm eliminated member re-entry", () => {
     expect(subin.eliminated).toBe(false);
     expect(subin.widthCm).toBe(20);
     expect(jisu.widthCm).toBe(80);
+    const aliveIds = field.seats.filter((s) => !s.eliminated).map((s) => s.id);
+    expect(aliveIds[aliveIds.length - 1]).toBe("subin");
+    expect(aliveIds.includes("jaki")).toBe(true);
+    expect(aliveIds.includes("jisu")).toBe(true);
+  });
+
+  it("개인전 가운데 +20 무방향은 좌우 양분", () => {
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+      { id: "c", name: "C", account: 0, toon: 0, operating: false },
+      { id: "d", name: "D", account: 0, toon: 0, operating: false },
+    ];
+    let state = {
+      members,
+      donors: [] as never[],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: ["a", "b", "c", "d"],
+        startCmPerMember: 100,
+        fieldCm: 400,
+        matchMode: "individual",
+      }),
+      territoryLogs: [] as ReturnType<typeof createTerritoryLog>[],
+    } as import("@/types").AppState;
+    state = appendTerritoryLogToAppState(state, createTerritoryLog("b", 1, 20));
+    const field = buildHighSocietyFieldFromAppState(state);
+    expect(field.seats.find((s) => s.id === "a")!.widthCm).toBe(90);
+    expect(field.seats.find((s) => s.id === "b")!.widthCm).toBe(120);
+    expect(field.seats.find((s) => s.id === "c")!.widthCm).toBe(90);
+    expect(field.seats.find((s) => s.id === "d")!.widthCm).toBe(100);
+    expect(field.seats.filter((s) => !s.eliminated).map((s) => s.id)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("0cm 인원은 땅이 생기기 전엔 탈락이고, +왼쪽이면 왼쪽 끝으로만 재진입", () => {
+    let state = {
+      members,
+      donors: [] as never[],
+      highSocietySettings: normalizeHighSocietySettings({
+        ...baseSettings,
+        seatMemberIds: ["jaki", "subin", "jisu"],
+      }),
+      territoryLogs: [] as ReturnType<typeof createTerritoryLog>[],
+    } as import("@/types").AppState;
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("jaki", 1, 100, { pushDir: "right" })
+    );
+    const zeroField = buildHighSocietyFieldFromAppState(state);
+    expect(zeroField.seats.find((s) => s.id === "subin")!.eliminated).toBe(true);
+    expect(zeroField.seats.find((s) => s.id === "subin")!.widthCm).toBe(0);
+    expect(zeroField.seats.filter((s) => !s.eliminated).map((s) => s.id)).toEqual(["jaki", "jisu"]);
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("subin", 1, 20, { pushDir: "left" })
+    );
+    const field = buildHighSocietyFieldFromAppState(state);
+    const aliveIds = field.seats.filter((s) => !s.eliminated).map((s) => s.id);
+    expect(aliveIds[0]).toBe("subin");
+    expect(aliveIds).toEqual(["subin", "jaki", "jisu"]);
+    expect(field.seats.find((s) => s.id === "subin")!.widthCm).toBe(20);
   });
 
   it("re-entry uses hsPushDir left vs right on middle seat expand", () => {

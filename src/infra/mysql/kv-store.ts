@@ -8,6 +8,8 @@
 import "server-only";
 import mysql, { type Pool, type PoolConnection, type RowDataPacket } from "mysql2/promise";
 import { DIN_INFRA_202, DIN_SHELL_101, ErrorEnvelope } from "@/domain/types/error-envelope";
+import { revisionForStatePick, STATE_PICK_OVERLAY } from "@/lib/state-api-pick";
+import type { AppState } from "@/types";
 
 let pool: Pool | null = null;
 let bulkPool: Pool | null = null;
@@ -71,9 +73,10 @@ function revHashForStateLike(value: unknown): { hashKey: string; rev: number } {
   const updatedAt = Number(o.updatedAt || 0);
   const donorsLen = Array.isArray(o.donors) ? (o.donors as unknown[]).length : 0;
   const membersLen = Array.isArray(o.members) ? (o.members as unknown[]).length : 0;
+  const logsLen = Array.isArray(o.territoryLogs) ? (o.territoryLogs as unknown[]).length : 0;
   const dr = Number(o.donorRankingsUpdatedAt || 0);
-  const rev = updatedAt ^ dr ^ donorsLen ^ membersLen;
-  return { hashKey: `${updatedAt}:${dr}:${donorsLen}:${membersLen}`, rev };
+  const rev = updatedAt ^ dr ^ donorsLen ^ membersLen ^ logsLen;
+  return { hashKey: `${updatedAt}:${dr}:${donorsLen}:${membersLen}:${logsLen}`, rev };
 }
 
 /** 동시 GET(멀티탭·멀티PC) — 동일 키 1회 MySQL 쿼리로 합침 */
@@ -534,13 +537,11 @@ export async function mysqlKvGet(key: string): Promise<string | null> {
   return p;
 }
 
-/** 저장 시 app_kv.updated_at — GET since/304 경량 비교용 */
+/** 저장 시 app_kv.updated_at — GET since/304 경량 비교용.
+ *  overlay pick revision(영토 log.at 포함)과 같아야 OBS since가 304에 고착되지 않는다. */
 function storedRevisionMsFromValue(value: unknown): number {
   if (!value || typeof value !== "object" || Array.isArray(value)) return Date.now();
-  const o = value as Record<string, unknown>;
-  let rev = Number(o.updatedAt || 0);
-  rev = Math.max(rev, Number(o.membersRosterUpdatedAt || 0));
-  rev = Math.max(rev, Number(o.donorRankingsUpdatedAt || 0));
+  const rev = revisionForStatePick(value as AppState, STATE_PICK_OVERLAY);
   return rev > 0 ? rev : Date.now();
 }
 

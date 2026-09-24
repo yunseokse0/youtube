@@ -98,6 +98,7 @@ describe("state-api-pick", () => {
     const state = { ...base, territoryLogs: logs };
     const out = projectStateForGetPick(state, STATE_PICK_OVERLAY_DONORS) as Record<string, unknown>;
     expect(out.territoryLogs).toEqual(logs);
+    expect(out.deletedTerritoryLogIds).toEqual([]);
   });
 
   it("sig-sales pick is minimal", () => {
@@ -174,5 +175,19 @@ describe("state-api-pick", () => {
       ],
     };
     expect(revisionForStatePick(state, STATE_PICK_OVERLAY)).toBe(12_000);
+    expect(revisionForStatePick(state, STATE_PICK_OVERLAY_DONORS)).toBe(12_000);
+  });
+
+  it("overlay-donors pick forwards deletedTerritoryLogIds so OBS can drop tombstoned rows", () => {
+    const state = {
+      ...defaultState(),
+      deletedTerritoryLogIds: ["tl-gone"],
+      territoryLogs: [],
+    };
+    const out = projectStateForGetPick(state, STATE_PICK_OVERLAY_DONORS) as Record<
+      string,
+      unknown
+    >;
+    expect(out.deletedTerritoryLogIds).toEqual(["tl-gone"]);
   });
 });

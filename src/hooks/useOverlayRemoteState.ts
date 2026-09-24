@@ -104,7 +104,7 @@ import {
 } from "@/lib/state-api-pick";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { mergeHighSocietySettingsPreferBaseline, isMeaningfulHighSocietySettings } from "@/lib/high-society";
-import { normalizeTerritoryLogs, mergeTerritoryLogsPreferFresher, mergeTerritoryLogsNeverShrink, filterTerritoryLogsAfterReset, mergeDeletedTerritoryLogIds, resolveTerritoryLogsResetAtForEditorMerge } from "@/lib/territory-utils";
+import { normalizeTerritoryLogs, mergeTerritoryLogsPreferFresher, mergeOverlayTerritoryLogs, mergeDeletedTerritoryLogIds, resolveTerritoryLogsResetAtForEditorMerge } from "@/lib/territory-utils";
 
 /** 관리자 iframe — 서버 정본 모드에서는 LS/세션 힌트로 서버 스냅샷을 덮지 않음 */
 function mergeAdminPreviewLocalHintOntoRemote(
@@ -423,28 +423,25 @@ function applySyncedState(
   const incomingLogsResetAt = Number(hsIncoming?.territoryLogsResetAt || 0);
   const lastGoodLogs = normalizeTerritoryLogs(refs.lastGoodRef.current?.territoryLogs);
   const lastGoodResetAt = Number(hsBaseline?.territoryLogsResetAt || 0);
-  const incomingLogsEmpty =
-    Array.isArray(dataForApply.territoryLogs) &&
-    normalizeTerritoryLogs(dataForApply.territoryLogs).length === 0;
+  const overlayResetAt = Math.max(incomingLogsResetAt, lastGoodResetAt);
   const mergedTerritoryLogs =
     pick === STATE_PICK_OVERLAY || pick === STATE_PICK_OVERLAY_DONORS
-      ? Array.isArray(dataForApply.territoryLogs)
-        ? mergeTerritoryLogsNeverShrink(lastGoodLogs, dataForApply.territoryLogs, {
-            deletedIds: overlayDeletedIds,
-            patchAuthoritative: true,
-            patchIsReset: incomingLogsEmpty && incomingLogsResetAt >= lastGoodResetAt,
-          })
-        : lastGoodLogs
+      ? mergeOverlayTerritoryLogs({
+          lastGoodLogs,
+          incomingLogs: dataForApply.territoryLogs,
+          incomingHasKey: Array.isArray(dataForApply.territoryLogs),
+          lastGoodResetAt,
+          incomingResetAt: incomingLogsResetAt,
+          deletedIds: overlayDeletedIds,
+        })
       : dataForApply.territoryLogs;
-  const prunedTerritoryLogs = Array.isArray(dataForApply.territoryLogs)
-    ? filterTerritoryLogsAfterReset(mergedTerritoryLogs, incomingLogsResetAt)
-    : mergedTerritoryLogs;
+  const prunedTerritoryLogs = mergedTerritoryLogs;
   const overlayHsSettings =
     pick === STATE_PICK_OVERLAY || pick === STATE_PICK_OVERLAY_DONORS
       ? {
           ...(mergedHighSocietySettings || {}),
           /** last-good 의 더 큰 resetAt 으로 앞 기록을 잘라 OBS 게이지가 어긋나지 않게 */
-          territoryLogsResetAt: incomingLogsResetAt,
+          territoryLogsResetAt: overlayResetAt,
         }
       : mergedHighSocietySettings;
   const next = {
@@ -589,6 +586,8 @@ export function useOverlayRemoteState(
   const syncFromApi = useCallback(
     async (opts?: { forceFull?: boolean; membersRosterSync?: boolean }) => {
       if (!enabled) return;
+      /** OBS·비로그인: `?u=` 준비 전 쿠키 GET(401)을 하지 않음. 오버레이는 로그인 불필요 */
+      if (!userId) return;
       if (syncingRef.current) {
         if (opts?.forceFull) pendingForceSyncRef.current = true;
         return;
@@ -837,7 +836,7 @@ export function useOverlayRemoteState(
         setSyncedOnce(true);
         if (pendingForceSyncRef.current) {
           pendingForceSyncRef.current = false;
-          void syncFromApi({ forceFull: true });
+          void syncFromApiRef.current({ forceFull: true });
         }
       }
     },
@@ -1106,10 +1105,17 @@ export function useOverlayRemoteState(
       const previewPollMs = adminPreviewEmbed
         ? Math.max(pollMs, DEFAULT_ADMIN_PREVIEW_POLL_MS)
         : pollMs;
+      let obsPollN = 0;
       stopPoll = startStaggeredOverlayPoll(
         () => {
+          const heartbeatFull =
+            preferServerOnly &&
+            (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
+            ++obsPollN % 8 === 0;
           const pollOpts =
-            sigSalesPick && !sigSalesIncrementalPoll ? { forceFull: true as const } : undefined;
+            (sigSalesPick && !sigSalesIncrementalPoll) || heartbeatFull
+              ? { forceFull: true as const }
+              : undefined;
           void syncFromApiRef.current(pollOpts);
         },
         previewPollMs,

@@ -12,6 +12,7 @@ import {
   resolveTerritoryLogPushDirForWrite,
   resolveTerritoryLogsResetAtForEditorMerge,
   mergeTerritoryLogsNeverShrink,
+  mergeOverlayTerritoryLogs,
 } from "@/lib/territory-utils";
 
 describe("territory-utils", () => {
@@ -58,6 +59,13 @@ describe("territory-utils", () => {
         settings,
       })
     ).toBe("right");
+    expect(
+      resolveTerritoryLogPushDirForWrite({
+        seatRole: { canChoosePush: true, expandDir: "both", index: 1 },
+        chosen: "system",
+        settings,
+      })
+    ).toBe("split");
   });
 
   it("formatTerritoryLogPushDirLabel shows implicit end direction for legacy logs", () => {
@@ -73,6 +81,9 @@ describe("territory-utils", () => {
     });
     const log = createTerritoryLog("jisu", 1, 105);
     expect(formatTerritoryLogPushDirLabel(log, settings, members)).toBe("← 왼쪽");
+    expect(
+      formatTerritoryLogPushDirLabel(createTerritoryLog("jaki", 1, 20), settings, members)
+    ).toBe("↔ 양분");
     expect(
       formatTerritoryLogPushDirLabel(
         createTerritoryLog("subin", 1, 5, { pushDir: "right" }),
@@ -272,5 +283,33 @@ describe("territory-utils", () => {
     );
     const merged = mergeTerritoryLogsNeverShrink(oldSession, current, { patchAuthoritative: true });
     expect(merged.map((l) => l.id).sort()).toEqual(current.map((l) => l.id).sort());
+  });
+
+  it("overlay merge does not resurrect stale logs after a newer empty reset", () => {
+    const stale = [
+      createTerritoryLog("a", 1, 80, { now: 1_000 }),
+      createTerritoryLog("b", 1, 40, { now: 2_000 }),
+    ];
+    const merged = mergeOverlayTerritoryLogs({
+      lastGoodLogs: [],
+      incomingLogs: stale,
+      incomingHasKey: true,
+      lastGoodResetAt: 9_000,
+      incomingResetAt: 0,
+    });
+    expect(merged).toEqual([]);
+  });
+
+  it("overlay merge keeps a newly added log when last-good is shorter", () => {
+    const older = createTerritoryLog("a", 1, 20, { now: 1_000 });
+    const newer = createTerritoryLog("b", 1, 50, { now: 2_000 });
+    const merged = mergeOverlayTerritoryLogs({
+      lastGoodLogs: [older],
+      incomingLogs: [older, newer],
+      incomingHasKey: true,
+      lastGoodResetAt: 0,
+      incomingResetAt: 0,
+    });
+    expect(merged.map((l) => l.id).sort()).toEqual([older.id, newer.id].sort());
   });
 });

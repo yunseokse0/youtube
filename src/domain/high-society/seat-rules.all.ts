@@ -420,10 +420,10 @@ export function defaultHighSocietySettings(): HighSocietySettings {
     enabled: false,
     seatMemberIds: [],
     donationLinks: {},
-    /** 시스템 기본: 가운데도 한쪽(오른쪽)만 */
-    defaultMiddlePush: "right",
-    defaultBPush: "right",
-    defaultCPush: "right",
+    /** 시스템 기본: 개인전 가운데는 좌·우 양분 */
+    defaultMiddlePush: "split",
+    defaultBPush: "split",
+    defaultCPush: "split",
     barStyle: "flat",
     round: 1,
     fieldCm: HIGH_SOCIETY_DEFAULT_FIELD_CM,
@@ -596,16 +596,16 @@ export function mergeHighSocietySettingsPreferBaseline(
   return hasPatch ? normalizeHighSocietySettings({ ...inc, ...patch }) : inc;
 }
 
-/** 시스템 기본 방향 — split 불가, left|right 만 */
+/** 시스템 기본 방향 — 개인전 가운데는 양분(split) */
 export function resolveSystemMiddlePushDir(
   settings: Pick<HighSocietySettings, "defaultMiddlePush" | "defaultBPush" | "defaultCPush">
-): "left" | "right" {
-  const raw =
+): HighSocietyPushDir {
+  return (
     parseHighSocietyPushDir(settings.defaultMiddlePush) ||
     parseHighSocietyPushDir(settings.defaultBPush) ||
     parseHighSocietyPushDir(settings.defaultCPush) ||
-    "right";
-  return raw === "left" ? "left" : "right";
+    "split"
+  );
 }
 
 export function normalizeTerritoryPauseExcludeWindows(
@@ -1553,7 +1553,7 @@ export function applyTerritoryLogDirectTransfers(
   logs: TerritoryLog[],
   settings: HighSocietySettings
 ): ReturnType<typeof resolveHighSocietyField> {
-  const order = seatMemberIds.filter(Boolean);
+  let order = seatMemberIds.filter(Boolean);
   const n = order.length;
   if (n === 0 || !logs?.length) return field;
 
@@ -1681,8 +1681,27 @@ export function applyTerritoryLogDirectTransfers(
         explicitPush = rawDir === "both" ? "split" : rawDir;
       } else {
         const seatDir = seatExpandDirForIndex(targetIdxs[0]!, n);
-        explicitPush = seatDir === "both" ? middleDir : seatDir;
+        /** 개인전 가운데는 기본 좌·우 양분. 양끝은 단방향. */
+        explicitPush = seatDir === "both" ? "split" : seatDir;
       }
+    }
+
+    /** 개인전: 0cm 인원은 땅이 다시 생길 때만, 양쪽 끝으로만 재진입 */
+    if (
+      matchMode === "individual" &&
+      sign > 0 &&
+      targetIdxs.length === 1 &&
+      widthAt(targetIdxs[0]!) <= 0
+    ) {
+      const fromIdx = targetIdxs[0]!;
+      const memberIdAt = order[fromIdx]!;
+      const end: "left" | "right" =
+        explicitPush === "left" ? "left" : explicitPush === "right" ? "right" : fromIdx < n / 2 ? "left" : "right";
+      const rest = order.filter((_, i) => i !== fromIdx);
+      order = end === "left" ? [memberIdAt, ...rest] : [...rest, memberIdAt];
+      targetIdxs.length = 0;
+      targetIdxs.push(order.indexOf(memberIdAt));
+      explicitPush = end === "left" ? "right" : "left";
     }
 
     const parts: Array<{ dir: "left" | "right"; cm: number }> =
@@ -1734,6 +1753,9 @@ export function applyTerritoryLogDirectTransfers(
     const widthCm = Math.max(0, quantized[i]!);
     return {
       ...prev,
+      letter: seatIndexLabel(i),
+      seatIndex: i,
+      expandDir: seatExpandDirForIndex(i, n),
       widthCm,
       pct: Math.round((widthCm / field.fieldCm) * 1000) / 10,
       eliminated: widthCm <= 0,
@@ -2545,7 +2567,9 @@ export function buildHighSocietySettingsPersistToast(args: {
   }
   if (patch.defaultMiddlePush && after.defaultMiddlePush !== before.defaultMiddlePush) {
     const dir = resolveSystemMiddlePushDir(after);
-    return `상류사회 · 가운데 기본 확장 → ${dir === "left" ? "← 왼쪽" : "→ 오른쪽"} (시스템 추종 후원에 적용)`;
+    const label =
+      dir === "left" ? "← 왼쪽" : dir === "right" ? "→ 오른쪽" : "↔ 양분";
+    return `상류사회 · 가운데 기본 확장 → ${label} (시스템 추종 후원에 적용)`;
   }
   if (typeof patch.fieldCm === "number" && Number(patch.fieldCm) !== Number(before.fieldCm)) {
     const seats = Math.max(

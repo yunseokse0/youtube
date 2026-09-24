@@ -55,11 +55,11 @@ export function showServerPersistToast(
 
 export function formatHsPushDirLabel(
   dir: "left" | "right" | "split" | "system" | null | undefined,
-  systemDir: "left" | "right"
+  systemDir: "left" | "right" | "split"
 ): string {
   if (dir === "left") return "← 왼쪽 수동";
   if (dir === "right") return "→ 오른쪽 수동";
   if (dir === "split") return "↔ 분할 수동";
-  const sys = systemDir === "left" ? "←" : "→";
+  const sys = systemDir === "left" ? "←" : systemDir === "right" ? "→" : "↔";
   return `시스템 기본(${sys})`;
 }
