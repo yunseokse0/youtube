@@ -48,12 +48,22 @@ if [ -z "$PY" ]; then
   exit 1
 fi
 
+MONITOR_DIR="$(cd "$(dirname "$0")" && pwd)"
+INTEGRITY_PY="${MONITOR_DIR}/ec2-donation-integrity.py"
+
 curl_get() {
   local url="$1"
+  local dest="${2:-}"
+  local t="${3:-8}"
+  local -a args
+  args=(-s --max-time "$t" --connect-timeout 3 --retry 2 --retry-delay 1 --retry-all-errors)
   if [ -n "$COOKIE" ]; then
-    curl -s -m 8 --max-time 8 --connect-timeout 3 --retry 2 --retry-delay 1 --retry-all-errors -b "$COOKIE" "$url" 2>/dev/null
+    args+=(-b "$COOKIE")
+  fi
+  if [ -n "$dest" ]; then
+    curl "${args[@]}" "$url" -o "$dest" 2>/dev/null
   else
-    curl -s -m 8 --max-time 8 --connect-timeout 3 --retry 2 --retry-delay 1 --retry-all-errors "$url" 2>/dev/null
+    curl "${args[@]}" "$url" 2>/dev/null
   fi
 }
 
@@ -192,19 +202,18 @@ collect_snapshot() {
   local state_url="${BASE_URL}/api/state?u=${TARGET_USER}"
   local pm2_log_url="${BASE_URL}/api/health"
 
-  SNAP_MODE_JSON="$(curl_get "$mode_url")"
-  SNAP_WS_JSON="$(curl_get "$listener_url")"
-  SNAP_HUB_JSON="$(curl_get "$hub_url")"
-  SNAP_QUEUE_JSON="$(curl_get "$queue_url")"
-  SNAP_UNMATCH_JSON="$(curl_get "$unmatched_url")"
-  SNAP_STATE_JSON="$(curl_get "$state_url" | cut -c 1-500000)"
-  SNAP_HEALTH_JSON="$(curl_get "$pm2_log_url")"
-
-  # DIFF 정합성 검증용 JSON 파일 저장 + 디버그 메트릭 (ARG_MAX 오버플로우 방지 위해 파일 경로로 전달)
   SNAP_STATE_FILE="$TMP_DIR/snap_state.json"
   SNAP_HUB_FILE="$TMP_DIR/snap_hub.json"
-  printf '%s' "$SNAP_STATE_JSON" > "$SNAP_STATE_FILE" 2>/dev/null || : > "$SNAP_STATE_FILE"
-  printf '%s' "$SNAP_HUB_JSON"   > "$SNAP_HUB_FILE"   2>/dev/null || : > "$SNAP_HUB_FILE"
+  SNAP_MODE_JSON="$(curl_get "$mode_url")"
+  SNAP_WS_JSON="$(curl_get "$listener_url")"
+  SNAP_QUEUE_JSON="$(curl_get "$queue_url")"
+  SNAP_UNMATCH_JSON="$(curl_get "$unmatched_url")"
+  SNAP_HEALTH_JSON="$(curl_get "$pm2_log_url")"
+  # 3MB+ state 를 500KB로 자르면 JSON이 깨져 정합성이 Python rc=1 로 빈다
+  curl_get "$state_url" "$SNAP_STATE_FILE" 45
+  curl_get "$hub_url" "$SNAP_HUB_FILE" 15
+  SNAP_STATE_JSON="$(cat "$SNAP_STATE_FILE" 2>/dev/null || true)"
+  SNAP_HUB_JSON="$(cat "$SNAP_HUB_FILE" 2>/dev/null || true)"
   STATE_BYTES=$(wc -c < "$SNAP_STATE_FILE" 2>/dev/null)
   HUB_BYTES=$(wc -c   < "$SNAP_HUB_FILE"   2>/dev/null)
   [[ "$STATE_BYTES" =~ ^[0-9]+$ ]] || STATE_BYTES=0
@@ -904,288 +913,188 @@ render_trend_panel() {
 #   레벨 2: hub logs 상세 id 와 state donors.id 차집합 → 누락 후원 건수/금액
 #   레벨 3: QUEUE/UNMATCH 에러 레벨. queue>20 · unmatch>5 면 심각
 # ------------------------------------------------------------------
+# bash double-quoted python -c 안의 ", ".join 이 문자열을 끊어서 SyntaxError(rc=1)가 난다.
+# 스크립트 파일 또는 quoted heredoc 만 사용한다.
+donation_integrity_run_py() {
+  local out="$1"
+  if [ -f "$INTEGRITY_PY" ]; then
+    "$PY" "$INTEGRITY_PY" "$SNAP_STATE_FILE" "$SNAP_HUB_FILE" "${q_len:-0}" "${un_len:-0}" "$out"
+    return $?
+  fi
+  "$PY" - "$SNAP_STATE_FILE" "$SNAP_HUB_FILE" "${q_len:-0}" "${un_len:-0}" "$out" <<'PY'
+import json, sys, time
+from datetime import datetime, timezone
+
+def krw(n):
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        n = 0
+    return "₩{:,}".format(n)
+
+def parse_at(at):
+    if not at:
+        return 0
+    if isinstance(at, (int, float)):
+        at = int(at)
+        return at if at > 1e11 else at * 1000
+    try:
+        return int(datetime.fromisoformat(str(at).replace("Z", "+00:00")).timestamp() * 1000)
+    except Exception:
+        return 0
+
+def load(p):
+    try:
+        with open(p, "r", encoding="utf-8", errors="replace") as f:
+            return json.loads(f.read() or "{}")
+    except Exception as e:
+        return {"_err": str(e)}
+
+state_file, hub_file, q_s, u_s, out_path = sys.argv[1:6]
+q_n = int(q_s or 0)
+u_n = int(u_s or 0)
+state = load(state_file)
+hub = load(hub_file)
+lines = []
+if state.get("_err"):
+    lines.append("state 파싱 실패: " + state["_err"])
+if hub.get("_err"):
+    lines.append("hub 파싱 실패: " + hub["_err"])
+donors = state.get("donors") if isinstance(state.get("donors"), list) else []
+logs = hub.get("logs") or hub.get("donationLogs") or []
+if not isinstance(logs, list):
+    logs = []
+reset_at = int(state.get("settlementResetAt") or 0)
+st_sum = 0
+st_ids = set()
+st_cnt_1h = 0
+st_sum_1h = 0
+st_ids_1h = set()
+st_cnt_24h = 0
+st_sum_24h = 0
+st_ids_24h = set()
+st_cnt_post = 0
+st_sum_post = 0
+now = int(time.time() * 1000)
+c1 = now - 3600 * 1000
+c24 = now - 86400 * 1000
+for d in donors:
+    if not isinstance(d, dict):
+        continue
+    iid = str(d.get("id") or "").strip()
+    if not iid:
+        continue
+    amt = int(d.get("amount") or 0)
+    st_ids.add(iid)
+    st_sum += amt
+    at = parse_at(d.get("at"))
+    if at >= c24:
+        st_ids_24h.add(iid)
+        st_cnt_24h += 1
+        st_sum_24h += amt
+        if at >= c1:
+            st_ids_1h.add(iid)
+            st_cnt_1h += 1
+            st_sum_1h += amt
+    if reset_at <= 0 or at == 0 or at >= reset_at:
+        st_cnt_post += 1
+        st_sum_post += amt
+sess = hub.get("session") if isinstance(hub.get("session"), dict) else {}
+email = str((sess or {}).get("email") or "").strip()
+h_ids_1h = set()
+h_sum_1h = 0
+h_cnt_1h = 0
+h_ids_24h = set()
+h_sum_24h = 0
+h_cnt_24h = 0
+for log in logs:
+    if not isinstance(log, dict):
+        continue
+    amt = int(log.get("amount") or 0)
+    iid = str(log.get("id") or "").strip()
+    if amt <= 0 or not iid:
+        continue
+    ms = parse_at(log.get("at") or log.get("ingestedAt"))
+    if ms >= c24:
+        h_ids_24h.add(iid)
+        h_cnt_24h += 1
+        h_sum_24h += amt
+        if ms >= c1:
+            h_ids_1h.add(iid)
+            h_cnt_1h += 1
+            h_sum_1h += amt
+miss_1h = sorted(h_ids_1h - st_ids_1h)
+miss_24h = sorted(h_ids_24h - st_ids_24h)
+level = "OK"
+if q_n >= 20 or u_n >= 10:
+    level = "WARN"
+if q_n >= 100 or u_n >= 50:
+    level = "CRITICAL"
+if len(logs) == 0:
+    level = "WARN"
+lines += [
+    "통합 정합성 레벨: " + level,
+    "",
+    "  전체 state donors:       {:>8}건 / 총 {}".format(len(st_ids), krw(st_sum)),
+]
+if reset_at > 0:
+    try:
+        rs = datetime.fromtimestamp(reset_at / 1000, tz=timezone.utc).astimezone().strftime("%m-%d %H:%M")
+    except Exception:
+        rs = str(reset_at)
+    lines.append("  정산 리셋 시점:           " + rs)
+    lines.append("   └─ 리셋 이후 POST     : {:>8}건 / 총 {}".format(st_cnt_post, krw(st_sum_post)))
+if email:
+    lines.append("  Hub session email:      " + email)
+else:
+    lines.append("  Hub session email:      (없음)  ← COOKIE 필요")
+if len(logs) == 0:
+    if email:
+        lines.append("  Hub logs:               0건  ← 세션은 있으나 로그 비어 있음 (관리자 화면과 동일)")
+    else:
+        lines.append("  Hub logs:               0건  ← 미로그인")
+    lines.append("  ※ 허브↔state 누락 교차검증 불가. 위 state 합계만 유효.")
+lines += [
+    "",
+    "  ┌─ 최근 1시간",
+    "  │ Hub logs     : {:>6}건 / {}".format(h_cnt_1h, krw(h_sum_1h)),
+    "  │ State donors : {:>6}건 / {}".format(st_cnt_1h, krw(st_sum_1h)),
+    "  │ Hub→State 미반영 : {}건".format(len(miss_1h)),
+    "  │ (누락=허브id가 state 전체에 없음. state가 더 많은 것은 정상)",
+    "  └─ 최근 24시간",
+    "    Hub logs     : {:>6}건 / {}".format(h_cnt_24h, krw(h_sum_24h)),
+    "    State donors : {:>6}건 / {}".format(st_cnt_24h, krw(st_sum_24h)),
+    "    Hub→State 미반영 : {}건".format(len(miss_24h)),
+    "",
+    "  처리 백로그 QUEUE={}  UNMATCH={}".format(q_n, u_n),
+]
+with open(out_path, "w", encoding="utf-8") as f:
+    f.write("\n".join(lines) + "\n")
+PY
+}
+
 donation_integrity_diff() {
   local out="$1"
   : > "$out" 2>/dev/null || { mkdir -p "$(dirname "$out")" 2>/dev/null; : > "$out" 2>/dev/null; }
-  "$PY" -c "
-import json,sys,time,os
-state_file=sys.argv[1]
-hub_file=sys.argv[2]
-q_n=int(sys.argv[3] or 0)
-u_n=int(sys.argv[4] or 0)
-out_path=sys.argv[5]
-def file_size(p):
-  try: return os.path.getsize(p)
-  except Exception: return 0
-st_bytes=file_size(state_file); hb_bytes=file_size(hub_file)
-_st_meta='(not-yet-parsed)'
-_hb_meta='(not-yet-parsed)'
-def _hub_meta(hub_raw_dict):
-  try:
-    ok=str(hub_raw_dict.get('ok') or '')
-    disabled=str(hub_raw_dict.get('disabled') or 'false')
-    sess=hub_raw_dict.get('session') or {}
-    if isinstance(sess,dict):
-      email=str(sess.get('email') or '')
-      linked=str(sess.get('linkedAt') or '')
-    else:
-      email=''; linked=''
-    logs=hub_raw_dict.get('logs') or hub_raw_dict.get('donationLogs') or []
-    l_n=len(logs) if isinstance(logs,list) else 0
-    return f'ok={ok} disabled={disabled} email={email or "<none>"} linked={linked or "-"} logs_n={l_n}'
-  except Exception as e:
-    return f'(meta_parse_err:{e})'
-def _state_meta(state_raw_dict):
-  try:
-    donors=state_raw_dict.get('donors') or []
-    d_n=len(donors) if isinstance(donors,list) else 0
-    reset=str(state_raw_dict.get('settlementResetAt') or '0')
-    return f'donors_n={d_n} resetAt={reset}'
-  except Exception as e:
-    return f'(state_meta_parse_err:{e})'
-def krw(n):
-  try: n=int(n)
-  except: n=0
-  return '₩'+'{:,}'.format(n)
-def fmt_ms(ms):
-  if not ms or ms<=0: return '없음'
-  try:
-    from datetime import datetime, timezone
-    return datetime.fromtimestamp(ms/1000, tz=timezone.utc).astimezone().strftime('%m-%d %H:%M')
-  except Exception: return str(ms)
-def bail(msg):
-  lines=['(정합성 데이터 준비중: '+str(msg)+')',
-         f'  debug: state_file={st_bytes:,} bytes · hub_file={hb_bytes:,} bytes',
-         f'  debug: q_n={q_n} · u_n={u_n}',
-         f'  state_meta: {_st_meta}',
-         f'  hub_meta: {_hb_meta}',
-         '',
-         '전체 state donors: 불러오는 중 (state 파일 정상이면 곧 표시됨)',
-         'Hub logs: 불러오는 중 (DIN 허브 로그인 확인 필요)']
-  try:
-    with open(out_path,'w') as f: f.write(chr(10).join(lines)+chr(10))
-  except Exception: pass
-  sys.exit(0)
-try:
-  with open(state_file,'r',encoding='utf-8',errors='replace') as f: state_raw=f.read()
-except Exception as e:
-  bail('state 파일을 읽을 수 없음: '+str(e))
-try:
-  with open(hub_file,'r',encoding='utf-8',errors='replace') as f: hub_raw=f.read()
-except Exception as e:
-  bail('hub 파일을 읽을 수 없음: '+str(e))
-try:
-  state=json.loads(state_raw or '{}')
-except Exception as e:
-  bail('state JSON 파싱 실패: '+str(e)+' (state_bytes='+str(st_bytes)+', raw[:120]='+repr(state_raw[:120])+')')
-try:
-  hub=json.loads(hub_raw or '{}')
-except Exception as e:
-  bail('hub JSON 파싱 실패: '+str(e)+' (hub_bytes='+str(hb_bytes)+', raw[:120]='+repr(hub_raw[:120])+')')
-_st_meta=_state_meta(state)
-_hb_meta=_hub_meta(hub)
-try:
-  # state donors + settlementResetAt
-  st_donors=state.get('donors') or []
-  reset_at=int(state.get('settlementResetAt') or 0)
-  st_ids=set(); st_sum=0; st_cnt=0
-  for d in st_donors:
-    try:
-      iid=str(d.get('id') or '').strip()
-      if not iid: continue
-      st_ids.add(iid); st_cnt+=1
-      st_sum += int(d.get('amount') or 0)
-    except Exception: pass
-  # hub logs
-  h_logs = hub.get('logs') or hub.get('donationLogs') or []
-  now_ms=int(time.time()*1000)
-  cutoff_1h=now_ms-3600*1000
-  cutoff_24h=now_ms-86400*1000
-  h_ids_1h=set(); h_sum_1h=0; h_cnt_1h=0
-  h_ids_24h=set(); h_sum_24h=0; h_cnt_24h=0
-  def parse_at_to_ms(at):
-    if not at: return 0
-    if isinstance(at,(int,float)) and at>1e11: return int(at)
-    if isinstance(at,(int,float)) and at<1e11: return int(at)*1000
-    try:
-      from datetime import datetime
-      return int(datetime.fromisoformat(str(at).replace('Z','+00:00')).timestamp()*1000)
-    except Exception: return 0
-  # hub logs id→amount dict (24h 기준, reset 전 구간 커버링 위해 30일치 보존)
-  cutoff_long=now_ms-86400*1000*30
-  id_to_amt={}; id_to_ms={}
-  for l in h_logs:
-    try:
-      amt=int(l.get('amount') or 0); iid=str(l.get('id') or '').strip()
-      if amt<=0 or not iid: continue
-      ms=parse_at_to_ms(l.get('at') or l.get('ingestedAt'))
-      if not ms or ms<cutoff_long: continue
-      if iid not in id_to_amt: id_to_amt[iid]=0
-      if amt>id_to_amt[iid]: id_to_amt[iid]=amt
-      id_to_ms[iid]=ms
-      if ms>=cutoff_24h:
-        h_ids_24h.add(iid); h_cnt_24h+=1; h_sum_24h+=amt
-        if ms>=cutoff_1h:
-          h_ids_1h.add(iid); h_cnt_1h+=1; h_sum_1h+=amt
-    except Exception: pass
-  # state donors 시간대별 bucket
-  st_ids_24h=set(); st_sum_24h=0; st_cnt_24h=0
-  st_ids_1h=set(); st_sum_1h=0; st_cnt_1h=0
-  st_ids_pres=set(); st_sum_pres=0; st_cnt_pres=0  # state donors 중 at < reset_at 인 것 (filter 실패 → 과거 후원 유령)
-  st_ids_post=set(); st_sum_post=0; st_cnt_post=0  # state donors 중 at >= reset_at 인 것 (이게 정상 state donor)
-  for d in st_donors:
-    try:
-      iid=str(d.get('id') or '').strip()
-      if not iid: continue
-      amt=int(d.get('amount') or 0)
-      at=parse_at_to_ms(d.get('at'))
-      if at and at>=cutoff_24h:
-        st_ids_24h.add(iid); st_cnt_24h+=1; st_sum_24h+=amt
-        if at>=cutoff_1h:
-          st_ids_1h.add(iid); st_cnt_1h+=1; st_sum_1h+=amt
-      if reset_at>0:
-        if at and at<reset_at:
-          st_ids_pres.add(iid); st_cnt_pres+=1; st_sum_pres+=amt
-        elif at==0 or at>=reset_at:
-          st_ids_post.add(iid); st_cnt_post+=1; st_sum_post+=amt
-    except Exception: pass
-  missing_ids_1h = sorted(list(h_ids_1h - st_ids_1h))[:20]
-  missing_ids_24h = sorted(list(h_ids_24h - st_ids_24h))[:20]
-  excess_ids = sorted(list(st_ids_24h - h_ids_24h))[:20]
-  missing_ids_1h_sum=0
-  missing_ids_24h_sum=0
-  for iid in missing_ids_1h: missing_ids_1h_sum += id_to_amt.get(iid,0)
-  for iid in missing_ids_24h: missing_ids_24h_sum += id_to_amt.get(iid,0)
-  # ---------------------------------------------------------------------------
-  # ★ 리셋 경계 검증 (PRE-RESET / POST-RESET 2구간 분석)
-  # ---------------------------------------------------------------------------
-  reset_sections=[]
-  if reset_at>0:
-    pre_cutoff_begin=reset_at - 86400*3*1000  # reset 직전 72h
-    post_cutoff_end=reset_at + min(86400*2*1000, now_ms-reset_at)  # reset 이후 최대 48h
-    # PRE-RESET hub (reset -72h ~ reset_at)
-    h_ids_pre=set(); h_sum_pre=0; h_cnt_pre=0
-    for iid,ms in id_to_ms.items():
-      if pre_cutoff_begin<=ms and ms<reset_at:
-        h_ids_pre.add(iid); h_cnt_pre+=1; h_sum_pre+=id_to_amt.get(iid,0)
-    # PRE-RESET 에서 state에 남아있는 것 (이상 현상: reset 이후 filter가 안먹혀서 과거 후원이 살아남은 것 = 레벨링 교란 유령 후원)
-    st_in_pre=set(); st_in_pre_sum=0; st_in_pre_cnt=0
-    for d in st_donors:
-      try:
-        iid=str(d.get('id') or '').strip()
-        if not iid: continue
-        amt=int(d.get('amount') or 0)
-        at=parse_at_to_ms(d.get('at'))
-        if at and pre_cutoff_begin<=at and at<reset_at:
-          st_in_pre.add(iid); st_in_pre_cnt+=1; st_in_pre_sum+=amt
-      except Exception: pass
-    # POST-RESET hub (reset_at ~ now 또는 reset + 48h 중 작은 쪽)
-    h_ids_post=set(); h_sum_post=0; h_cnt_post=0
-    for iid,ms in id_to_ms.items():
-      if ms>=reset_at and ms<=max(reset_at,now_ms):
-        h_ids_post.add(iid); h_cnt_post+=1; h_sum_post+=id_to_amt.get(iid,0)
-    # POST-RESET state donor (at>=reset_at) 와 post hub 교차 → 누락 후원 감지
-    missing_post_ids=sorted(list(h_ids_post - st_ids_post))[:20]
-    missing_post_sum=sum(id_to_amt.get(i,0) for i in missing_post_ids)
-    # 리셋 직전 1시간 경계 drop 감지: reset -1h ~ reset 사이 hub 후원이 state에 하나도 안남았으면 의심 (정상 reset이면 의도된 필터링이지만 잊고 지나칠수 있으므로 알림)
-    pre_boundary_beg=reset_at - 3600*1000
-    h_pre_bd_ids=set()
-    for iid,ms in id_to_ms.items():
-      if pre_boundary_beg<=ms and ms<reset_at:
-        h_pre_bd_ids.add(iid)
-  warnings=[]; level='OK'
-  if q_n>=100 or u_n>=50:
-    level='CRITICAL'
-    warnings.append(f'백로그 과다: QUEUE {q_n}건 / UNMATCH {u_n}건')
-  elif q_n>=20 or u_n>=10:
-    if level!='CRITICAL': level='WARN'
-    warnings.append(f'백로그 주의: QUEUE {q_n}건 / UNMATCH {u_n}건')
-  if len(missing_ids_24h)>=10 or missing_ids_24h_sum>=500000:
-    if level!='CRITICAL': level='CRITICAL'
-    warnings.append(f'24h 허브→state 누락: {len(h_ids_24h-st_ids_24h)}건 / {krw(missing_ids_24h_sum)}')
-  elif len(missing_ids_24h)>=3 or missing_ids_24h_sum>=50000:
-    if level not in ('CRITICAL','WARN'): level='WARN'
-    warnings.append(f'24h 허브→state 경미 누락: {len(h_ids_24h-st_ids_24h)}건 / {krw(missing_ids_24h_sum)}')
-  if len(excess_ids)>=20:
-    if level!='CRITICAL': level='CRITICAL' if level=='OK' else level
-    warnings.append(f'state 에만 있는 24h 이내 후원 과다(중복 삽입?): {len(excess_ids)}건')
-  # Reset-specific warning rules
-  if reset_at>0:
-    # ① 리셋이 있는데 PRE-RESET 구간 state donor 가 많이 남아있음 → filterDonorsAfterSettlementReset 작동 오류 의심
-    if st_in_pre_cnt>=5:
-      if level!='CRITICAL': level='CRITICAL' if level=='OK' else level
-      warnings.append(f'RESET 경계 오류: 리셋({fmt_ms(reset_at)}) 이전 후원 {st_in_pre_cnt}건 / {krw(st_in_pre_sum)} 이 state donors 에 남아있음 (filter 미작동 의심)')
-    elif st_in_pre_cnt>=1:
-      if level not in ('CRITICAL','WARN'): level='WARN'
-      warnings.append(f'RESET 경계: 리셋 이전 후원 {st_in_pre_cnt}건 미량 유령 후원 남아있음')
-    # ② POST-RESET hub 대비 state 누락 3건 이상 또는 10만원 이상
-    if (len(missing_post_ids)>=3 or missing_post_sum>=100000):
-      if len(missing_post_ids)>=10 or missing_post_sum>=500000:
-        if level!='CRITICAL': level='CRITICAL' if level=='OK' else level
-        warnings.append(f'RESET 이후 누락 심각: POST hub {h_cnt_post}건 중 state 에 {len(missing_post_ids)}건 / {krw(missing_post_sum)} 누락')
-      else:
-        if level not in ('CRITICAL','WARN'): level='WARN'
-        warnings.append(f'RESET 이후 누락 주의: POST hub {h_cnt_post}건 중 state 에 {len(missing_post_ids)}건 / {krw(missing_post_sum)} 누락')
-    # ④ reset 직전 1시간 경계 hub에 후원 있는데 state donors에 하나도 없고 hub log도 1건 이상 → 경고 (reset 타이밍으로 drop 의심 알림)
-    if len(h_pre_bd_ids)>=3 and len(h_pre_bd_ids - st_ids_post)>=len(h_pre_bd_ids):
-      warnings.append(f'RESET 경계 알림: 리셋 직전 1시간 hub 후원 {len(h_pre_bd_ids)}건이 정상적으로 리셋으로 필터링됨 (state에 없음)')
-  lines=[]
-  lv_color={'OK':'\033[32m','WARN':'\033[33m','CRITICAL':'\033[31m'}.get(level,'\033[37m')
-  lines.append(f'통합 정합성 레벨: {lv_color}{level}\033[0m' + (f'   {len(warnings)}건' if warnings else ''))
-  lines.append('')
-  lines.append(f'  정산 리셋 시점 settlementResetAt: \033[1m{fmt_ms(reset_at)}\033[0m' + (f'  ({reset_at:,} ms)' if reset_at>0 else ' (리셋 기록 없음 → 전체 시간대 단순 비교 중)'))
-  lines.append(f'  전체 state donors:       {st_cnt:>8}건 / 총 {krw(st_sum)}')
-  if reset_at>0:
-    lines.append(f'   └─ 리셋 이후 정상 POST  : {st_cnt_post:>8}건 / 총 {krw(st_sum_post)}')
-    lines.append(f'   └─ 리셋 이전 유령 PRE?  : \033[33m{st_cnt_pre:>8}건 / 총 {krw(st_sum_pres)}\033[0m' + ('  ← filter 미작동 의심!' if st_cnt_pre>0 else '  (clean)'))
-  lines.append(f'')
-  lines.append(f'  ┌─ 최근 1시간 교차 검증')
-  lines.append(f'  │ Hub logs     : {h_cnt_1h:>6}건 / {krw(h_sum_1h)}')
-  lines.append(f'  │ State donors : {st_cnt_1h:>6}건 / {krw(st_sum_1h)}')
-  lines.append(f'  │ Diff(Hub-St) : {len(h_ids_1h-st_ids_1h):>+6}건 / {krw(h_sum_1h-st_sum_1h)}')
-  lines.append(f'  │ Hub→State 미반영(missing) : {len(h_ids_1h-st_ids_1h)}건 / {krw(missing_ids_1h_sum)}' + (f' ({", ".join(missing_ids_1h[:5])})' if missing_ids_1h else ''))
-  lines.append(f'  └ State→Hub 초과(excess)   : {len(st_ids_1h-h_ids_1h)}건')
-  lines.append(f'')
-  lines.append(f'  ┌─ 최근 24시간 교차 검증')
-  lines.append(f'  │ Hub logs     : {h_cnt_24h:>6}건 / {krw(h_sum_24h)}')
-  lines.append(f'  │ State donors : {st_cnt_24h:>6}건 / {krw(st_sum_24h)}')
-  lines.append(f'  │ Diff(Hub-St) : {len(h_ids_24h-st_ids_24h):>+6}건 / {krw(h_sum_24h-st_sum_24h)}')
-  lines.append(f'  │ Hub→State 미반영(missing) Top5: {len(h_ids_24h-st_ids_24h)}건 / {krw(missing_ids_24h_sum)}' + (f' → id 샘플: {", ".join(missing_ids_24h[:5])}' if missing_ids_24h else ' (clean!)'))
-  lines.append(f'  └ State→Hub 초과(excess) Top5  : {len(excess_ids)}건' + (f' → 샘플: {", ".join(excess_ids[:5])}' if excess_ids else ''))
-  if reset_at>0:
-    lines.append(f'')
-    lines.append(f'  ┌─ ★ 리셋 경계 정밀 검증 (정산 resetAt={fmt_ms(reset_at)} 기준)')
-    lines.append(f'  │ ▣ PRE-RESET 구간 (리셋 이전 72h) Hub  : {h_cnt_pre:>6}건 / {krw(h_sum_pre)}')
-    lines.append(f'  │ ▣ PRE-RESET 구간 State 유령 남은 것   : {st_in_pre_cnt:>6}건 / {krw(st_in_pre_sum)}' + (f'  (샘플: {", ".join(sorted(st_in_pre)[:3])})' if st_in_pre else '  (0건 clean!)'))
-    lines.append(f'  │')
-    lines.append(f'  │ ▣ POST-RESET 구간 (리셋~현재) Hub     : {h_cnt_post:>6}건 / {krw(h_sum_post)}')
-    lines.append(f'  │ ▣ POST-RESET 구간 State (at>=reset)  : {st_cnt_post:>6}건 / {krw(st_sum_post)}')
-    lines.append(f'  │ ▣ POST 누락 (Hub에만 있고 State X)    : {len(missing_post_ids):>6}건 / {krw(missing_post_sum)}' + (f'  id 샘플: {", ".join(missing_post_ids[:5])}' if missing_post_ids else '  (clean!)'))
-    lines.append(f'  └ (리셋 직전 1시간 Hub 후원 {len(h_pre_bd_ids)}건 → state에 없음 = 정상 필터링 완료 표시)')
-  lines.append(f'')
-  lines.append(f'  처리 백로그 QUEUE={q_n}  UNMATCH={u_n}')
-  if warnings:
-    lines.append('')
-    lines.append('경고 상세:')
-    for w in warnings: lines.append(f'   {w}')
-  with open(out_path,'w') as f:
-    f.write('\n'.join(lines)+'\n')
-except Exception as e:
-  bail(str(e))
-" "$SNAP_STATE_FILE" "$SNAP_HUB_FILE" "${q_len:-0}" "${un_len:-0}" "$out" 2> "$TMP_DIR/diff.err"
+  donation_integrity_run_py "$out" 2> "$TMP_DIR/diff.err"
   local py_rc=$?
-  if [ ! -s "$out" ] || [ $py_rc -ne 0 ]; then
-    {
-      echo "(정합성 데이터 준비중: Python rc=$py_rc, state_bytes=${STATE_BYTES:-0}, hub_bytes=${HUB_BYTES:-0})"
-      echo ""
-      if [ -s "$TMP_DIR/diff.err" ]; then
-        echo "  [stderr] $(head -c 300 "$TMP_DIR/diff.err" | tr '\n' ' ')"
-        echo ""
-      fi
-      echo "  후원 state / hub logs 를 아직 불러오지 못했습니다."
-      echo "  잠시 후 자동으로 갱신됩니다."
-    } > "$out" 2>/dev/null
+  if [ -s "$out" ]; then
+    return 0
   fi
+  {
+    echo "state donors: ${DBG_DONORS_N:-0}건  (${STATE_BYTES:-0} bytes)"
+    echo "hub logs:     ${DBG_HUBLOG_N:-0}건  (${HUB_BYTES:-0} bytes)  login 여부는 DEBUG 줄 참고"
+    echo "QUEUE=${q_len:-0}  UNMATCH=${un_len:-0}"
+    echo ""
+    echo "상세 교차검증은 실패했지만, 위 건수는 curl/JSON 파싱 결과로 유효합니다."
+    echo "허브 로그 0건이면 관리자 '후원자 관리'의 후원 로그와 같습니다. 누락 교차검증은 불가합니다."
+    if [ "${py_rc:-0}" -ne 0 ]; then
+      echo "Python rc=${py_rc}"
+    fi
+    if [ -s "$TMP_DIR/diff.err" ]; then
+      echo "  [stderr] $(head -c 300 "$TMP_DIR/diff.err" | tr '\n' ' ')"
+    fi
+  } > "$out" 2>/dev/null
 }
 
 render_diff_panel() {
@@ -1246,12 +1155,16 @@ render_diff_panel() {
   local diff_out="$TMP_DIR/diff.txt"
   mkdir -p "$TMP_DIR" 2>/dev/null
   donation_integrity_diff "$diff_out"
-  if [ ! -r "$diff_out" ]; then
+  if [ ! -s "$diff_out" ]; then
     {
-      echo "(정합성 데이터 준비중...)"
+      echo "state donors: ${DBG_DONORS_N:-0}건  (${STATE_BYTES:-0} bytes)"
+      echo "hub logs:     ${DBG_HUBLOG_N:-0}건  (${HUB_BYTES:-0} bytes)"
       echo ""
-      echo "  후원 state / hub logs 를 아직 불러오지 못했습니다."
-      echo "  잠시 후 자동으로 갱신됩니다."
+      if [ "${STATE_BYTES:-0}" -gt 0 ]; then
+        echo "  state는 불러왔습니다. 상세 교차검증만 실패했습니다."
+      else
+        echo "  state / hub logs 를 아직 불러오지 못했습니다."
+      fi
     } > "$diff_out" 2>/dev/null
   fi
   local shown=0 max_rows=$(( panel_rows - 2 ))
