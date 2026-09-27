@@ -25,10 +25,13 @@ import {
 } from "@/lib/donation/group-split-donation";
 import { writeSessionBroadcastState } from "@/lib/server-authoritative-broadcast-state";
 import { normalizeDonorsArray, resolveEffectiveDonorTarget } from "@/lib/state";
+import {
+  DONOR_PAGE_SIZES,
+  type DonorPageSize,
+  donorMemberSelectOptions,
+  sliceDonorListPage,
+} from "@/lib/donor-list-pagination";
 import type { AppState, Donor } from "@/types";
-
-const DONOR_PAGE_SIZES = [50, 100, 300] as const;
-type DonorPageSize = (typeof DONOR_PAGE_SIZES)[number];
 type TimeFilterKey = "all" | "today" | "1h" | "30m" | "10m" | "5m";
 
 function formatWon(n: number): string {
@@ -128,11 +131,13 @@ export default function AdminDonorListPopupPanel() {
     return out;
   }, [rowsSorted, timeFilter, query, state?.members]);
 
-  const totalPages = Math.max(1, Math.ceil(rowsFiltered.length / pageSize));
-  const pageIdx = Math.min(page, totalPages);
-  const pageStart = (pageIdx - 1) * pageSize;
-  const pageEnd = pageStart + pageSize;
-  const rowsVisible = showAll ? rowsFiltered : rowsFiltered.slice(pageStart, pageEnd);
+  const {
+    totalPages,
+    pageIdx,
+    pageStart,
+    pageEnd,
+    visible: rowsVisible,
+  } = sliceDonorListPage(rowsFiltered, page, pageSize, showAll);
 
   const filteredAgg = useMemo(() => {
     let sum = 0;
@@ -382,21 +387,35 @@ export default function AdminDonorListPopupPanel() {
                       </td>
                       {!dense && (
                         <td className="p-1">
-                          <select
-                            className="w-full rounded border border-white/10 bg-neutral-900/80 text-neutral-100"
-                            value={d.memberId || ""}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              if (v && v !== d.memberId) void saveMember(d, v);
-                            }}
-                          >
-                            <option value="">— 미지정 —</option>
-                            {members.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.name}
-                              </option>
-                            ))}
-                          </select>
+                          <div className="flex items-center gap-1">
+                            <select
+                              className="w-full min-w-0 rounded border border-white/10 bg-neutral-900/80 text-neutral-100"
+                              value={String(d.memberId || "").trim()}
+                              title={
+                                d.memberAutoAssigned
+                                  ? "규칙으로 자동 배치된 멤버입니다. 후원자명은 그대로 두고 배치만 바꿀 수 있습니다."
+                                  : "후원자명은 그대로 두고 배치 멤버만 바꿉니다"
+                              }
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v && v !== d.memberId) void saveMember(d, v);
+                              }}
+                            >
+                              {donorMemberSelectOptions(d.memberId, members).map((opt) => (
+                                <option key={opt.value || "pick"} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                            {d.memberAutoAssigned && d.memberId ? (
+                              <span
+                                className="shrink-0 text-[10px] text-emerald-400/90"
+                                title="메시지·별명 일치 실패 시 규칙으로 자동 배치됨"
+                              >
+                                자동
+                              </span>
+                            ) : null}
+                          </div>
                         </td>
                       )}
                       <td className="p-1 whitespace-nowrap">
