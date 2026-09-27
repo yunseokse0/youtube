@@ -9,6 +9,7 @@ import {
   parseApplyExcelFromRequest,
   sanitizeDonationEventFromIngestBody,
 } from "@/lib/donation/din-ingest";
+import { enqueueDinExcelIngest } from "@/lib/din-ingest-batch-queue";
 import {
   describeDonationIntakeMode,
   isDonationIntakeModeB,
@@ -68,6 +69,26 @@ export async function POST(req: Request) {
   const applyExcel = parseApplyExcelFromRequest(req);
 
   try {
+    /**
+     * 엑셀/정산표 반영은 ACK 후 계정당 워커가 메모리에서 처리하고, 끝난 뒤에만 AppState 저장 1회.
+     * (정산표에는 중복·리셋 폐기까지 끝난 결과만 올라간다. 투네 WS 즉시 반영 경로는 유지.)
+     */
+    if (applyExcel) {
+      const enq = enqueueDinExcelIngest(userId, event);
+      if (!enq.ok) {
+        return json({ error: enq.error, retry: true }, 503);
+      }
+      return json({
+        userId,
+        applyExcel: true,
+        ok: true,
+        queued: true,
+        applied: true,
+        accepted: 1,
+        duplicateQueued: enq.duplicateQueued,
+        queueDepth: enq.depth,
+      });
+    }
     const result = await handleDinDonationIngest(userId, event, applyExcel);
     return json({ userId, applyExcel, ...result });
   } catch (err) {
