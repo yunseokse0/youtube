@@ -150,47 +150,64 @@ safe_pad() {
 json_list_tail_donors() {
   local src="$1" expr="$2" limit="$3"
   if [ -z "$src" ]; then return; fi
-  "$PY" -c "
+  local py='
 import json,sys
+path=sys.argv[3] if len(sys.argv)>3 else ""
 try:
-  d=json.loads(sys.stdin.read() or '{}')
+  raw=open(path,encoding="utf-8",errors="replace").read() if path else (sys.stdin.read() or "{}")
+  d=json.loads(raw or "{}")
 except Exception:
   sys.exit(0)
 try:
-  arr=eval(sys.argv[1].replace('/','.'), {'__builtins__':{}}, {'d':d})
+  arr=eval(sys.argv[1].replace("/", "."), {"__builtins__": {}}, {"d": d})
 except Exception:
   sys.exit(0)
-if not isinstance(arr,list): sys.exit(0)
+if not isinstance(arr, list):
+  sys.exit(0)
 limit=int(sys.argv[2])
 rows=[]
 for x in arr[-limit:]:
-  if not isinstance(x,dict): continue
-  at=str(x.get('at') or x.get('ingestedAt') or '')
-  if at and at.endswith('Z'):
+  if not isinstance(x, dict):
+    continue
+  at=str(x.get("at") or x.get("ingestedAt") or "")
+  if at and at.endswith("Z"):
     try:
       import datetime
-      dt=datetime.datetime.fromisoformat(at.replace('Z','+00:00'))
+      dt=datetime.datetime.fromisoformat(at.replace("Z", "+00:00"))
       dt_kr=dt.astimezone(datetime.timezone(datetime.timedelta(hours=9)))
-      at=dt_kr.strftime('%m-%d %H:%M:%S')
-    except Exception: pass
-  elif at and len(at)>=19:
-    at=at[5:10]+' '+at[11:19]
-  name=str(x.get('donorName') or x.get('donor') or '?')[:14]
-  amt=x.get('amount') or 0
-  try: amt=int(amt)
-  except: amt=0
-  target=str(x.get('target') or '')
-  target_short={'account':'계좌','toon':'툰','toonation':'투네','bank':'계좌'}.get(target, target[:4] if target else '')
-  msg=str(x.get('message') or '')[:28].replace('\n',' ').replace('\r',' ')
-  src_tag=''
-  if x.get('provider')=='toonation' or x.get('source')=='ws': src_tag='WS'
-  elif x.get('provider')=='bank' or x.get('source')=='ingest': src_tag='HB'
-  elif x.get('source')=='toona': src_tag='HB'
-  if src_tag: src_tag='['+src_tag+']'
-  amt_s='₩'+'{:>10,}'.format(amt)
-  rows.append(f'{at} {src_tag:<4} {name:<14} {amt_s} {target_short:<3} {msg}')
-for r in reversed(rows): print(r)
-" "$expr" "$limit" <<< "$src"
+      at=dt_kr.strftime("%m-%d %H:%M:%S")
+    except Exception:
+      pass
+  elif at and len(at) >= 19:
+    at=at[5:10] + " " + at[11:19]
+  name=str(x.get("name") or x.get("donorName") or x.get("donor") or "?")[:14]
+  amt=x.get("amount") or 0
+  try:
+    amt=int(amt)
+  except Exception:
+    amt=0
+  target=str(x.get("target") or "")
+  target_short={"account":"계좌","toon":"툰","toonation":"투네","bank":"계좌"}.get(target, target[:4] if target else "")
+  msg=str(x.get("message") or "").replace("\n"," ").replace("\r"," ")[:28]
+  src_tag=""
+  if x.get("provider")=="toonation" or x.get("source")=="ws":
+    src_tag="WS"
+  elif x.get("provider")=="bank" or x.get("source")=="ingest":
+    src_tag="HB"
+  elif x.get("source")=="toona":
+    src_tag="HB"
+  if src_tag:
+    src_tag="[" + src_tag + "]"
+  amt_s="₩" + "{:>10,}".format(amt)
+  rows.append(f"{at} {src_tag:<4} {name:<14} {amt_s} {target_short:<3} {msg}")
+for r in reversed(rows):
+  print(r)
+'
+  if [ -f "$src" ]; then
+    "$PY" -c "$py" "$expr" "$limit" "$src"
+  else
+    "$PY" -c "$py" "$expr" "$limit" "" <<< "$src"
+  fi
 }
 
 collect_snapshot() {
@@ -212,22 +229,38 @@ collect_snapshot() {
   # 3MB+ state 를 500KB로 자르면 JSON이 깨져 정합성이 Python rc=1 로 빈다
   curl_get "$state_url" "$SNAP_STATE_FILE" 45
   curl_get "$hub_url" "$SNAP_HUB_FILE" 15
-  SNAP_STATE_JSON="$(cat "$SNAP_STATE_FILE" 2>/dev/null || true)"
+  # 큰 state 를 bash 변수에 cat 하면 here-string 이 잘려 건수=0 으로 추세가 빈다. 허브만 변수로 둔다.
+  SNAP_STATE_JSON=""
   SNAP_HUB_JSON="$(cat "$SNAP_HUB_FILE" 2>/dev/null || true)"
   STATE_BYTES=$(wc -c < "$SNAP_STATE_FILE" 2>/dev/null)
   HUB_BYTES=$(wc -c   < "$SNAP_HUB_FILE"   2>/dev/null)
   [[ "$STATE_BYTES" =~ ^[0-9]+$ ]] || STATE_BYTES=0
   [[ "$HUB_BYTES"   =~ ^[0-9]+$ ]] || HUB_BYTES=0
-  DBG_DONORS_N=$("$PY" -c '
+  local _st
+  _st=$("$PY" -c '
 import json,sys
 try:
   d=json.loads(open(sys.argv[1],encoding="utf-8",errors="replace").read() or "{}")
-  donors=d.get("donors")
-  if isinstance(donors,list): print(len(donors))
-  else: print(0)
 except Exception:
-  print(0)
+  print("0 0"); raise SystemExit(0)
+arr=d.get("donors")
+if not isinstance(arr,list):
+  print("0 0"); raise SystemExit(0)
+s=0
+for x in arr:
+  if not isinstance(x,dict):
+    continue
+  try:
+    s += int(x.get("amount") or 0)
+  except Exception:
+    pass
+print(len(arr), s)
 ' "$SNAP_STATE_FILE" 2>/dev/null)
+  DONORS_N=$(printf '%s' "$_st" | awk '{print $1}')
+  DONORS_SUM=$(printf '%s' "$_st" | awk '{print $2}')
+  [[ "$DONORS_N" =~ ^[0-9]+$ ]] || DONORS_N=0
+  [[ "$DONORS_SUM" =~ ^-?[0-9]+$ ]] || DONORS_SUM=0
+  DBG_DONORS_N="$DONORS_N"
   DBG_HUBLOG_N=$("$PY" -c '
 import json,sys
 try:
@@ -238,8 +271,17 @@ try:
 except Exception:
   print(0)
 ' "$SNAP_HUB_FILE" 2>/dev/null)
-  [[ "$DBG_DONORS_N" =~ ^[0-9]+$ ]] || DBG_DONORS_N=0
   [[ "$DBG_HUBLOG_N" =~ ^[0-9]+$ ]] || DBG_HUBLOG_N=0
+  Q_LEN=$(json_field_str "$SNAP_QUEUE_JSON" 'len(d.get("items") or [])' '0')
+  UN_LEN=$(json_field_str "$SNAP_UNMATCH_JSON" 'len(d.get("items") or [])' '0')
+  [[ "$Q_LEN" =~ ^[0-9]+$ ]] || Q_LEN=0
+  [[ "$UN_LEN" =~ ^[0-9]+$ ]] || UN_LEN=0
+  WS_OPEN=$(json_field_str "$SNAP_WS_JSON" 'd.get("status",{}).get("wsConnected")' '')
+  WS_COUNT=$(json_field_str "$SNAP_WS_JSON" 'd.get("status",{}).get("receivedCount")' '0')
+  HUB_INGEST_OK=$(json_field_str "$SNAP_HUB_JSON" 'd.get("session",{}).get("lastIngestOk")' '')
+  HUB_INGEST_AT=$(json_field_str "$SNAP_HUB_JSON" 'd.get("session",{}).get("lastIngestAt")' '')
+  HUB_STATUS_OK=$(json_field_str "$SNAP_HUB_JSON" 'd.get("session",{}).get("lastStatusOk")' '')
+  HUB_LOG_N="$DBG_HUBLOG_N"
 }
 
 render_ui() {
@@ -327,30 +369,20 @@ render_ui() {
   fi
 
   local q_len un_len
-  q_len=$(json_field_str "$SNAP_QUEUE_JSON" 'len(d.get("items") or [])' '0')
-  un_len=$(json_field_str "$SNAP_UNMATCH_JSON" 'len(d.get("items") or [])' '0')
+  q_len="${Q_LEN:-0}"
+  un_len="${UN_LEN:-0}"
   if ! [[ "$q_len" =~ ^[0-9]+$ ]]; then q_len=0; fi
   if ! [[ "$un_len" =~ ^[0-9]+$ ]]; then un_len=0; fi
 
   local donors_n donors_sum donors_list donors_sample
-  donors_n=$(json_field_str "$SNAP_STATE_JSON" 'len(d.get("donors") or [])' '0')
-  donors_sum=$("$PY" -c '
-import json,sys
-try:
-  d=json.loads(sys.stdin.read() or "{}")
-except Exception:
-  print(0); sys.exit(0)
-arr=d.get("donors") or []
-s=0
-for x in arr:
-  try: s += int(x.get("amount") or 0)
-  except: pass
-print(s)
-' <<< "$SNAP_STATE_JSON")
+  donors_n="${DONORS_N:-0}"
+  donors_sum="${DONORS_SUM:-0}"
+  [[ "$donors_n" =~ ^[0-9]+$ ]] || donors_n=0
+  [[ "$donors_sum" =~ ^-?[0-9]+$ ]] || donors_sum=0
   donors_list_tmp="$TMP_DIR/donors.txt"
-  json_list_tail_donors "$SNAP_STATE_JSON" 'd.get("donors") or []' 100 > "$donors_list_tmp"
+  json_list_tail_donors "$SNAP_STATE_FILE" 'd.get("donors") or []' 100 > "$donors_list_tmp"
   donors_list_head_tmp="$TMP_DIR/hub_logs.txt"
-  json_list_tail_donors "$SNAP_HUB_JSON" 'd.get("logs") or d.get("donationLogs") or []' 50 > "$donors_list_head_tmp"
+  json_list_tail_donors "$SNAP_HUB_FILE" 'd.get("logs") or d.get("donationLogs") or []' 50 > "$donors_list_head_tmp"
 
   local panel_w=$(( (cols - 8) / 2 ))
   [ $panel_w -lt 40 ] && panel_w=40
@@ -726,22 +758,22 @@ ts_collect_now() {
   ts_ms=$(date +%s%3N)
   local mode_v donors_n_v donors_sum_v q_v un_v wsopen_v wsrx_v hok_v hago_s hsok_v hlogn_v hsum_l1h_v hcnt_l1h_v
   mode_v="$(json_field_str "$SNAP_MODE_JSON" 'd.get("mode")' '?')"
-  donors_n_v="${donors_n:-0}"
-  donors_sum_v="${donors_sum:-0}"
-  q_v="${q_len:-0}"
-  un_v="${un_len:-0}"
-  [ "${ws_open:-}" = "true" ] && wsopen_v=1 || [ "${ws_open:-}" = "false" ] && wsopen_v=0 || wsopen_v="-"
-  wsrx_v="${ws_count:-0}"
-  [ "${hub_last_ingest_ok:-}" = "true" ] && hok_v=1 || [ "${hub_last_ingest_ok:-}" = "false" ] && hok_v=0 || hok_v="-"
-  if [[ "${hub_last_ingest_at:-}" =~ ^[0-9]+$ ]]; then
-    hago_s=$(( (ts_ms - hub_last_ingest_at) / 1000 ))
+  donors_n_v="${DONORS_N:-0}"
+  donors_sum_v="${DONORS_SUM:-0}"
+  q_v="${Q_LEN:-0}"
+  un_v="${UN_LEN:-0}"
+  [ "${WS_OPEN:-}" = "true" ] && wsopen_v=1 || [ "${WS_OPEN:-}" = "false" ] && wsopen_v=0 || wsopen_v="-"
+  wsrx_v="${WS_COUNT:-0}"
+  [ "${HUB_INGEST_OK:-}" = "true" ] && hok_v=1 || [ "${HUB_INGEST_OK:-}" = "false" ] && hok_v=0 || hok_v="-"
+  if [[ "${HUB_INGEST_AT:-}" =~ ^[0-9]+$ ]]; then
+    hago_s=$(( (ts_ms - HUB_INGEST_AT) / 1000 ))
     [ "$hago_s" -lt 0 ] && hago_s=0
     hago_s_v="$hago_s"
   else
     hago_s_v="-"
   fi
-  [ "${hub_last_status_ok:-}" = "true" ] && hsok_v=1 || [ "${hub_last_status_ok:-}" = "false" ] && hsok_v=0 || hsok_v="-"
-  hlogn_v="${hub_log_n:-0}"
+  [ "${HUB_STATUS_OK:-}" = "true" ] && hsok_v=1 || [ "${HUB_STATUS_OK:-}" = "false" ] && hsok_v=0 || hsok_v="-"
+  hlogn_v="${HUB_LOG_N:-0}"
 
   local hub_hour_stats_file="$TMP_DIR/hub_hour.json"
   "$PY" -c "
