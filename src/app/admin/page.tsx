@@ -2146,7 +2146,7 @@ function AdminPageInner() {
     []
   );
   /** 후원자 리스트 페이지네이션: 기본 50건. 493건 전체 DOM은 멤버 select·입력란 때문에 관리자가 버벅임 */
-  const DONOR_PAGE_SIZES = [20, 50, 100, 300] as const;
+  const DONOR_PAGE_SIZES = [50, 100, 300] as const;
   type DonorPageSize = (typeof DONOR_PAGE_SIZES)[number];
   const [donorListPage, setDonorListPage] = useState<number>(1);
   const [donorListPageSize, setDonorListPageSize] = useState<DonorPageSize>(50);
@@ -17934,7 +17934,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
               <div className="rounded-xl border border-emerald-400/35 bg-emerald-950/25 p-5 space-y-3">
                 <div className="text-sm font-semibold text-emerald-100">후원자 리스트는 별도 창에서만 봅니다</div>
                 <p className="text-[12px] text-neutral-300 leading-relaxed">
-                  관리자 본문에는 표를 두지 않습니다. 페이지네이션(20 / 50 / 100 / 300건)으로
+                  관리자 본문에는 표를 두지 않습니다. 페이지네이션(50 / 100 / 300건)으로
                   넓게 보려면 아래 버튼으로 전용 창을 여세요. 현재{" "}
                   <span className="font-semibold text-amber-200">{donorListRowsSorted.length.toLocaleString("ko-KR")}건</span>.
                 </p>

@@ -27,7 +27,7 @@ import { writeSessionBroadcastState } from "@/lib/server-authoritative-broadcast
 import { normalizeDonorsArray, resolveEffectiveDonorTarget } from "@/lib/state";
 import type { AppState, Donor } from "@/types";
 
-const DONOR_PAGE_SIZES = [20, 50, 100, 300] as const;
+const DONOR_PAGE_SIZES = [50, 100, 300] as const;
 type DonorPageSize = (typeof DONOR_PAGE_SIZES)[number];
 type TimeFilterKey = "all" | "today" | "1h" | "30m" | "10m" | "5m";
 
@@ -242,7 +242,7 @@ export default function AdminDonorListPopupPanel() {
   return (
     <AdminPopupShell
       title="후원자 리스트"
-      subtitle="이 창에서만 리스트를 봅니다 · 페이지네이션으로 넓게 탐색 (기본 50건)"
+      subtitle="이 창에서만 리스트를 봅니다 · 페이지네이션 50 / 100 / 300건 (최소 50)"
       userId={scopedUserId}
       accountMismatch={accountMismatch}
       sessionUserId={user?.id}
