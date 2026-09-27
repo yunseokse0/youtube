@@ -242,7 +242,7 @@ export default function AdminDonorListPopupPanel() {
   return (
     <AdminPopupShell
       title="후원자 리스트"
-      subtitle="별도 창 · 기본 50건 페이지네이션 · 전체 표시는 필요할 때만"
+      subtitle="이 창에서만 리스트를 봅니다 · 페이지네이션으로 넓게 탐색 (기본 50건)"
       userId={scopedUserId}
       accountMismatch={accountMismatch}
       sessionUserId={user?.id}
@@ -319,8 +319,8 @@ export default function AdminDonorListPopupPanel() {
             onBulkDelete={bulkDelete}
           />
 
-          <div className="overflow-auto rounded border border-white/10" style={{ maxHeight: "calc(100dvh - 260px)" }}>
-            <table className={`w-full ${dense ? "text-[12px]" : "text-sm"}`} style={{ tableLayout: "fixed" }}>
+          <div className="overflow-auto rounded border border-white/10" style={{ maxHeight: "calc(100dvh - 220px)", minHeight: "560px" }}>
+            <table className={`w-full min-w-[1180px] ${dense ? "text-[12px]" : "text-sm"}`}>
               <thead className="sticky top-0 z-10 bg-neutral-950/95">
                 <tr className="text-neutral-400">
                   <th className="w-10 p-1 text-left">

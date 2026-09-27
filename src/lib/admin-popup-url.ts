@@ -39,9 +39,14 @@ export function openAdminHighSocietyPopup(userId?: string | null): Window | null
 export function openAdminDonorListPopup(userId?: string | null): Window | null {
   if (typeof window === "undefined") return null;
   const url = buildAdminDonorListPopupUrl(userId);
+  const availW = Number(window.screen?.availWidth) || 1440;
+  const availH = Number(window.screen?.availHeight) || 920;
+  const width = Math.max(1280, Math.min(availW - 16, 1920));
+  const height = Math.max(820, Math.min(availH - 40, 1200));
   const win =
-    window.open(url, "admin-donors-popup", `width=1440,height=920,${POPUP_FEATURES}`) ||
-    window.open(url, "admin-donors-popup");
+    window.open(url, "admin-donors-popup", `width=${width},height=${height},${POPUP_FEATURES}`) ||
+    window.open(url, "admin-donors-popup") ||
+    window.open(url, "_blank");
   try {
     win?.focus();
   } catch (_noop) {

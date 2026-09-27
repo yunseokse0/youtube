@@ -46,7 +46,7 @@ export default function AdminPopupShell({
           </p>
         ) : null}
       </header>
-      <main className="p-4">
+      <main className="w-full max-w-none p-3">
         {loading ? (
           <div className="py-16 text-center text-sm text-neutral-400">불러오는 중…</div>
         ) : (

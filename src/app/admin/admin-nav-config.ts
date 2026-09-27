@@ -81,7 +81,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
       { subKey: "dr-contrib", label: "기여도 기록부", targetId: "contribution-management", icon: "📓" },
       { subKey: "dr-restroom", label: "화장실 기록부", targetId: "restroom-management", icon: "🚻" },
       { subKey: "dr-territory", label: "영토 기록부 (팝업)", targetId: "territory-management", icon: "🗺️" },
-      { subKey: "dr-list", label: "후원자 리스트 (팝업)", targetId: "donor-list", icon: "🧾" },
+      { subKey: "dr-list", label: "후원자 리스트 (별도 창)", targetId: "donor-list", icon: "🧾" },
       { subKey: "dr-logs", label: "기여도 로그", targetId: "contribution-logs", icon: "📜" },
       { subKey: "dr-cumulative", label: "후원자별 누적 합계", targetId: "donor-cumulative-totals", icon: "💹" },
       { subKey: "dr-mission", label: "미션 전광판", targetId: "mission-board", icon: "🎪" },
