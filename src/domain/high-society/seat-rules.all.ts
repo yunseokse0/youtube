@@ -1553,7 +1553,14 @@ export function applyTerritoryLogDirectTransfers(
   logs: TerritoryLog[],
   settings: HighSocietySettings
 ): ReturnType<typeof resolveHighSocietyField> {
-  let order = seatMemberIds.filter(Boolean);
+  const idsFromSettings = seatMemberIds.filter(Boolean);
+  const idsFromField = (field.seats || []).map((s) => s.id).filter(Boolean);
+  const sameSeatSet =
+    idsFromField.length === idsFromSettings.length &&
+    idsFromField.length > 0 &&
+    idsFromField.every((id) => idsFromSettings.includes(id));
+  /** 증분 적용은 현재 게이지 좌석 순서를 유지. 콜드 재계산은 equalField 순서 = seatMemberIds. */
+  let order = sameSeatSet ? idsFromField : idsFromSettings;
   const n = order.length;
   if (n === 0 || !logs?.length) return field;
 
@@ -1630,11 +1637,15 @@ export function applyTerritoryLogDirectTransfers(
     giveToIndices([targets[0]!], amount);
   };
 
-  const orderedLogs = [...logs].sort((a, b) => {
-    const at = Number(a.at || 0) - Number(b.at || 0);
-    if (at !== 0) return at;
-    return String(a.id || "").localeCompare(String(b.id || ""));
-  });
+  /** 같은 ms 는 입력 배열 순서 유지. id(난수)로 뒤집으면 0cm 재진입이 깨진다. */
+  const orderedLogs = logs
+    .map((log, i) => ({ log, i }))
+    .sort((a, b) => {
+      const at = Number(a.log.at || 0) - Number(b.log.at || 0);
+      if (at !== 0) return at;
+      return a.i - b.i;
+    })
+    .map((x) => x.log);
 
   for (const log of orderedLogs) {
     let rawTeamId =
@@ -1871,19 +1882,22 @@ function memberWidthPatchFromFieldSeats(
 export function appendTerritoryLogToAppState(state: AppState, log: TerritoryLog): AppState {
   const settings = normalizeHighSocietySettings(state.highSocietySettings);
   const seatIds = resolveHighSocietySeatMembers(state.members || [], settings).map((s) => s.id);
+  const prevLogs = state.territoryLogs || [];
+  const maxAt = prevLogs.reduce((m, l) => Math.max(m, Number(l.at || 0)), 0);
+  const nextLog = Number(log.at || 0) > maxAt ? log : { ...log, at: maxAt + 1 };
   if (seatIds.length === 0) {
     return {
       ...state,
-      territoryLogs: [...(state.territoryLogs || []), log],
+      territoryLogs: [...prevLogs, nextLog],
       updatedAt: Date.now(),
     };
   }
   const fieldBefore = buildHighSocietyFieldFromAppState(state);
-  const fieldAfter = applyTerritoryLogDirectTransfers(fieldBefore, seatIds, [log], settings);
+  const fieldAfter = applyTerritoryLogDirectTransfers(fieldBefore, seatIds, [nextLog], settings);
   const widthPatch = memberWidthPatchFromFieldSeats(fieldAfter.seats);
   return {
     ...state,
-    territoryLogs: [...(state.territoryLogs || []), log],
+    territoryLogs: [...prevLogs, nextLog],
     highSocietySettings: normalizeHighSocietySettings({
       ...fieldBefore.settings,
       ...widthPatch,
