@@ -19,6 +19,28 @@ def load_json(path: str) -> tuple[dict, bool]:
         return {}, False
 
 
+# 허브는 toona.com:xxx, 정산표는 toonation:din:toona.com:xxx 로 저장된다.
+STATE_ID_PREFIXES = (
+    "toonation:din:",
+    "bank:din:",
+    "toonation:",
+    "bank:sms:",
+    "bank:",
+)
+
+
+def add_state_match_keys(keys: set[str], donor: dict) -> None:
+    iid = str(donor.get("id") or "").strip()
+    ext = str(donor.get("externalId") or "").strip()
+    for raw in (iid, ext):
+        if not raw:
+            continue
+        keys.add(raw)
+        for p in STATE_ID_PREFIXES:
+            if raw.startswith(p) and len(raw) > len(p):
+                keys.add(raw[len(p) :])
+
+
 def ids_and_sum(rows: list) -> tuple[set[str], int, int]:
     ids: set[str] = set()
     total = 0
@@ -38,6 +60,14 @@ def ids_and_sum(rows: list) -> tuple[set[str], int, int]:
     return ids, n, total
 
 
+def state_match_keys(rows: list) -> set[str]:
+    keys: set[str] = set()
+    for x in rows:
+        if isinstance(x, dict):
+            add_state_match_keys(keys, x)
+    return keys
+
+
 def summarize(state: dict, hub: dict, q_n: int, u_n: int, state_bytes: int, parse_ok: bool) -> dict:
     st_rows = state.get("donors") if isinstance(state.get("donors"), list) else []
     h_rows = hub.get("logs") if isinstance(hub.get("logs"), list) else []
@@ -45,7 +75,7 @@ def summarize(state: dict, hub: dict, q_n: int, u_n: int, state_bytes: int, pars
         h_rows = hub.get("donationLogs") if isinstance(hub.get("donationLogs"), list) else []
     st_ids, st_n, st_sum = ids_and_sum(st_rows)
     h_ids, h_n, h_sum = ids_and_sum(h_rows)
-    missing = sorted(h_ids - st_ids)
+    missing = sorted(h_ids - state_match_keys(st_rows))
     by_amt = {str(x.get("id") or ""): int(x.get("amount") or 0) for x in h_rows if isinstance(x, dict)}
     miss_sum = sum(by_amt.get(iid, 0) for iid in missing)
     donors_ok = parse_ok and isinstance(state.get("donors"), list)
