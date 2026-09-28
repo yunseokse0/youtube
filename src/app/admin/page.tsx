@@ -200,6 +200,8 @@ import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as XLSX from "xlsx";
 import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
+import MemberExcelAccountReconcile from "@/components/settlement/MemberExcelAccountReconcile";
+import { mergeDonorsWithMissingAccount, type MemberExcelReconcileResult } from "@/lib/member-toonation-excel";
 import { formatSigMatchStat, formatSigMatchManualAdjustStepLabel, getSigMatchRankings, isOperatingSettlementMember, resolveSigMatchDonationLink, resolveSigMatchManualAdjustSteps } from "@/lib/settlement-utils";
 import { buildDonorTotalsByNameFromDonors } from "@/lib/donor-rankings-aggregate";
 import { globalDonorTotalsByNameToCsv, globalDonorTotalsByNameToXlsxBlob } from "@/lib/settlement-donor-export";
@@ -1438,6 +1440,7 @@ function AdminPageInner() {
   const [rouletteSpinBusy, setRouletteSpinBusy] = useState(false);
   const [donorRankingPresetName, setDonorRankingPresetName] = useState("");
   const [settlementTitle, setSettlementTitle] = useState("");
+  const [memberExcelReconcile, setMemberExcelReconcile] = useState<MemberExcelReconcileResult | null>(null);
   const [accountRatioInput, setAccountRatioInput] = useState("70");
   const [toonRatioInput, setToonRatioInput] = useState("60");
   const [taxRateInput, setTaxRateInput] = useState("3.3");
@@ -11745,6 +11748,30 @@ function AdminPageInner() {
       );
       return;
     }
+    if (!memberExcelReconcile) {
+      const proceed = window.confirm(
+        "멤버 계좌 엑셀을 올리지 않았습니다.\n" +
+          "은행 SMS가 빠진 계좌 후원이 정산에 남을 수 있습니다.\n" +
+          "엑셀 없이 정산을 만들까요?"
+      );
+      if (!proceed) return;
+    } else if (memberExcelReconcile.unresolvedLabels.length > 0) {
+      const proceed = window.confirm(
+        `파일명과 멤버가 안 맞는 엑셀: ${memberExcelReconcile.unresolvedLabels.join(", ")}\n` +
+          "이 파일의 계좌 누락은 넣지 않습니다. 계속할까요?"
+      );
+      if (!proceed) return;
+    }
+    const settleDonors = memberExcelReconcile?.missingDonors.length
+      ? mergeDonorsWithMissingAccount(snapshotDonors, memberExcelReconcile.missingDonors)
+      : snapshotDonors;
+    if (memberExcelReconcile?.missingDonors.length) {
+      const n = memberExcelReconcile.missingDonors.length;
+      const sum = memberExcelReconcile.missingDonors.reduce((s, d) => s + (Number(d.amount) || 0), 0);
+      window.alert(
+        `멤버 계좌 엑셀에서 SMS 누락 ${n}건(${sum.toLocaleString("ko-KR")}원)을 정산에 포함합니다.`
+      );
+    }
     settlementSnapshotUntilRef.current = Date.now() + 30_000;
     donationAuthoritativeSaveUntilRef.current = Date.now() + 30_000;
     stateRef.current = snapshot;
@@ -11761,7 +11788,7 @@ function AdminPageInner() {
       toonRatio,
       taxRate,
       memberRatioOverrides,
-      snapshotDonors,
+      settleDonors,
       user?.id,
       snapshot.memberPositions || null,
       {
@@ -22381,6 +22408,13 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                 >
                   ✅ 방송 종료 (정산 생성)
                 </button>
+              </div>
+              <div className="mt-3">
+                <MemberExcelAccountReconcile
+                  members={state.members}
+                  donors={normalizeDonorsArray(state.donors)}
+                  onResultChange={setMemberExcelReconcile}
+                />
               </div>
               <div className="mt-2 text-xs text-neutral-400 leading-relaxed">
                 · <span className="text-neutral-300">운영비</span>: 국고 멤버 후원은 멤버별 최종 정산·합계에서 빠지고 참고용으로만 표시됩니다.

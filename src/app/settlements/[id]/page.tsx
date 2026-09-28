@@ -16,6 +16,8 @@ import {
 import { downloadTextFile, downloadBlobFile } from "@/lib/download";
 import { showAppToast } from "@/lib/app-toast";
 import Toast from "@/components/Toast";
+import MemberExcelAccountReconcile from "@/components/settlement/MemberExcelAccountReconcile";
+import { mergeDonorsWithMissingAccount } from "@/lib/member-toonation-excel";
 import { loadDailyLog, loadDailyLogFromApi, loadState, loadStateFromApi, normalizeDonorsArray } from "@/lib/state";
 import {
   defaultSettlementStatementText,
@@ -1390,6 +1392,21 @@ export default function SettlementDetailPage() {
         </div>
 
         <div className="rounded border border-white/10 bg-neutral-900/50 p-3 space-y-3">
+          <MemberExcelAccountReconcile
+            members={(record?.members || []).map((m) => ({
+              id: m.memberId,
+              name: m.name,
+              realName: m.realName,
+            }))}
+            donors={editableDonors}
+            busy={donorEditBusy}
+            applyLabel="누락 계좌를 이 정산에 반영"
+            onApplyMissing={(missing) => {
+              if (!record) return;
+              const base = editingDonors ?? seedSettlementDonorsForEdit(record, dailyLog, referenceDonors);
+              persistDonorAdjustments(mergeDonorsWithMissingAccount(base, missing));
+            }}
+          />
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <div className="text-sm font-semibold">멤버별 후원자 내역 · 조정</div>
