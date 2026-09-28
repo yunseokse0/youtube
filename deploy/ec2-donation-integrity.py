@@ -289,18 +289,14 @@ def main() -> int:
             )
         if level == "OK":
             level = "WARN"
-    if len(missing_ids_24h) >= 10 or missing_ids_24h_sum >= 500000:
+    n_miss_24h = len(h_ids_24h - st_ids)
+    if n_miss_24h >= 10 or missing_ids_24h_sum >= 500000:
         level = "CRITICAL"
-        warnings.append(f"24h 허브→state 누락: {len(h_ids_24h - st_ids_24h)}건 / {krw(missing_ids_24h_sum)}")
-    elif len(missing_ids_24h) >= 3 or missing_ids_24h_sum >= 50000:
+        warnings.append(f"24h 허브→정산표 누락: {n_miss_24h}건 / {krw(missing_ids_24h_sum)}")
+    elif n_miss_24h >= 3 or missing_ids_24h_sum >= 50000:
         if level not in ("CRITICAL", "WARN"):
             level = "WARN"
-        warnings.append(f"24h 허브→state 경미 누락: {len(h_ids_24h - st_ids_24h)}건 / {krw(missing_ids_24h_sum)}")
-    if len(h_logs) > 0 and len(h_ids_24h) > 0:
-        warnings.append(
-            f"허브 로그는 최근 버퍼({len(h_logs)}건)이고 state는 정산표 전체({st_cnt}건). "
-            f"건수 차이 자체는 누락이 아님. 누락 판정은 Hub→State 만 사용."
-        )
+        warnings.append(f"24h 허브→정산표 경미 누락: {n_miss_24h}건 / {krw(missing_ids_24h_sum)}")
 
     if reset_at > 0:
         if st_in_pre_cnt >= 5:
@@ -329,42 +325,66 @@ def main() -> int:
         if len(h_pre_bd_ids) >= 3 and len(h_pre_bd_ids - st_ids_post) >= len(h_pre_bd_ids):
             warnings.append(f"RESET 경계 알림: 리셋 직전 1시간 hub 후원 {len(h_pre_bd_ids)}건이 리셋으로 필터링됨")
 
+    h_ids_all = set(id_to_amt.keys())
+    missing_all = sorted(h_ids_all - st_ids)
+    missing_all_sum = sum(id_to_amt.get(i, 0) for i in missing_all)
+    if missing_all:
+        if len(missing_all) >= 10 or missing_all_sum >= 500000:
+            level = "CRITICAL"
+        elif level == "OK":
+            level = "WARN"
+        warnings.insert(0, f"누락 {len(missing_all)}건 / {krw(missing_all_sum)} — 허브에 있고 정산표에 없음")
+
     lv_color = {"OK": "\033[32m", "WARN": "\033[33m", "CRITICAL": "\033[31m"}.get(level, "\033[37m")
+    if missing_all:
+        verdict_line = f"판정: {lv_color}MISSING\033[0m  누락 {len(missing_all)}건 / {krw(missing_all_sum)}"
+    elif level == "OK":
+        verdict_line = f"판정: {lv_color}OK\033[0m  누락 0건"
+    else:
+        verdict_line = f"판정: {lv_color}{level}\033[0m  누락 0건 (대기/세션 이슈는 아래 경고)"
+
     lines = [
-        f"통합 정합성 레벨: {lv_color}{level}\033[0m" + (f"   {len(warnings)}건" if warnings else ""),
+        verdict_line,
         "",
-        f"  정산 리셋 시점 settlementResetAt: \033[1m{fmt_ms(reset_at)}\033[0m"
-        + (f"  ({reset_at:,} ms)" if reset_at > 0 else " (리셋 기록 없음 → 전체 시간대 단순 비교)"),
-        f"  전체 state donors:       {st_cnt:>8}건 / 총 {krw(st_sum)}",
+        f"  정산표(엑셀 반영 전체) : {st_cnt:>8}건 / {krw(st_sum)}",
+        f"  허브 최근버퍼           : {len(h_logs):>8}건 / {krw(sum(id_to_amt.values()))}",
+        "    ※ 허브 건수가 정산표보다 작아도 누락이 아님. 허브는 최근 일부만 보관.",
+        f"  누락(허브id ∉ 정산표)   : {len(missing_all):>8}건 / {krw(missing_all_sum)}",
+    ]
+    if missing_all:
+        lines.append("  누락 id: " + ", ".join(missing_all[:12]) + (" …" if len(missing_all) > 12 else ""))
+    else:
+        lines.append("  누락 id: (없음)")
+    lines += [
+        f"  처리 대기 QUEUE={q_n}  UNMATCH={u_n}  ← 엑셀 반영 전. 누락이 아님",
+        "",
+        f"  정산 리셋: {fmt_ms(reset_at)}"
+        + (f"  ({reset_at:,} ms)" if reset_at > 0 else " (기록 없음)"),
     ]
     if not hub_email:
-        lines.append("  Hub session email:      (없음)  ← COOKIE='sb_user=...' 필요")
+        lines.append("  Hub email: (없음)  ← COOKIE='sb_user=...' 필요")
     else:
-        lines.append(f"  Hub session email:      {hub_email}")
+        lines.append(f"  Hub email: {hub_email}")
     if reset_at > 0:
-        lines.append(f"   └─ 리셋 이후 정상 POST  : {st_cnt_post:>8}건 / 총 {krw(st_sum_post)}")
-        ghost = f"\033[33m{st_cnt_pres:>8}건 / 총 {krw(st_sum_pres)}\033[0m"
+        lines.append(f"   └─ 리셋 이후 POST  : {st_cnt_post:>8}건 / {krw(st_sum_post)}")
+        ghost = f"\033[33m{st_cnt_pres:>8}건 / {krw(st_sum_pres)}\033[0m"
         lines.append(
-            f"   └─ 리셋 이전 유령 PRE?  : {ghost}" + ("  ← filter 미작동 의심!" if st_cnt_pres > 0 else "  (clean)")
+            f"   └─ 리셋 이전 유령  : {ghost}" + ("  ← filter 미작동 의심!" if st_cnt_pres > 0 else "  (clean)")
         )
     lines += [
         "",
-        "  ┌─ 최근 1시간 교차 검증",
-        f"  │ Hub logs     : {h_cnt_1h:>6}건 / {krw(h_sum_1h)}",
-        f"  │ State donors : {st_cnt_1h:>6}건 / {krw(st_sum_1h)}",
-        f"  │ Diff(Hub-St) : {len(h_ids_1h - st_ids_1h):>+6}건 / {krw(h_sum_1h - st_sum_1h)}",
-        f"  │ Hub→State 미반영 : {len(h_ids_1h - st_ids_1h)}건 / {krw(missing_ids_1h_sum)}"
-        + (f" ({', '.join(missing_ids_1h[:5])})" if missing_ids_1h else ""),
-        f"  └ State→Hub 초과   : {len(st_ids_1h - h_ids_1h)}건  (허브 버퍼라 참고용)"
+        "  ┌─ 참고: 최근 1시간 (창끼리 건수 차이는 누락이 아님)",
+        f"  │ 허브버퍼 : {h_cnt_1h:>6}건 / {krw(h_sum_1h)}",
+        f"  │ 정산표   : {st_cnt_1h:>6}건 / {krw(st_sum_1h)}",
+        f"  │ 누락     : {len(h_ids_1h - st_ids)}건 / {krw(missing_ids_1h_sum)}"
+        + (f" ({', '.join(missing_ids_1h[:5])})" if missing_ids_1h else " (없음)"),
         "",
-        "  ┌─ 최근 24시간 교차 검증",
-        f"  │ Hub logs     : {h_cnt_24h:>6}건 / {krw(h_sum_24h)}",
-        f"  │ State donors : {st_cnt_24h:>6}건 / {krw(st_sum_24h)}",
-        f"  │ Diff(Hub-St) : {len(h_ids_24h - st_ids_24h):>+6}건 / {krw(h_sum_24h - st_sum_24h)}",
-        f"  │ Hub→State 미반영 Top5: {len(h_ids_24h - st_ids_24h)}건 / {krw(missing_ids_24h_sum)}"
-        + (f" → {', '.join(missing_ids_24h[:5])}" if missing_ids_24h else " (clean!)"),
-        f"  └ State→Hub 초과 Top5  : {len(excess_ids)}건  (허브 버퍼라 참고용)"
-        + (f" → {', '.join(excess_ids[:5])}" if excess_ids else ""),
+        "  ┌─ 참고: 최근 24시간",
+        f"  │ 허브버퍼 : {h_cnt_24h:>6}건 / {krw(h_sum_24h)}",
+        f"  │ 정산표   : {st_cnt_24h:>6}건 / {krw(st_sum_24h)}",
+        f"  │ 누락     : {n_miss_24h}건 / {krw(missing_ids_24h_sum)}"
+        + (f" → {', '.join(missing_ids_24h[:5])}" if missing_ids_24h else " (없음)"),
+        f"  └ 정산표만 있고 허브에 없음 {len(excess_ids)}건  (허브 버퍼라 정상)",
     ]
     if reset_at > 0:
         lines += [
@@ -379,7 +399,6 @@ def main() -> int:
             + (f"  {', '.join(missing_post_ids[:5])}" if missing_post_ids else "  (clean!)"),
             f"  └ 리셋 직전 1시간 Hub {len(h_pre_bd_ids)}건 → state 없음 = 정상 필터",
         ]
-    lines += ["", f"  처리 백로그 QUEUE={q_n}  UNMATCH={u_n}"]
     if warnings:
         lines.append("")
         lines.append("경고 상세:")

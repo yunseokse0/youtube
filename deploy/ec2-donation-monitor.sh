@@ -7,8 +7,13 @@
 #   MODE=once NO_COLOR=1 bash deploy/ec2-donation-monitor.sh   # 1회 덤프 + 파이프 가능
 #   COOKIE='sb_user=<value>; Path=/' TARGET_USER=finalent bash deploy/ec2-donation-monitor.sh
 #
+# 부하테스트 감시:
+#   정산표 = state.donors 전체 (엑셀 반영). 허브버퍼 = 최근 ingest 일부.
+#   누락   = 허브 id 가 정산표에 없는 경우만. 허브 건수 < 정산표 는 정상.
 # 핫키 (TUI 모드):
 #   [r]   즉시 새로고침
+#   [d]   누락 상세
+#   [t]   추세
 #   [h]   도움말 토글
 #   [q]   종료
 #
@@ -50,6 +55,12 @@ fi
 
 MONITOR_DIR="$(cd "$(dirname "$0")" && pwd)"
 INTEGRITY_PY="${MONITOR_DIR}/ec2-donation-integrity.py"
+LOADTEST_PY="${MONITOR_DIR}/ec2-donation-loadtest-summary.py"
+LOADTEST_JSON=""
+LT_BASE_N=""
+LT_BASE_SUM=""
+LT_BASE_TS=""
+LT_BASE_SET=""
 
 curl_get() {
   local url="$1"
@@ -210,6 +221,35 @@ for r in reversed(rows):
   fi
 }
 
+# 한글 깨짐 방지: cut -c 로 자르지 않고 줄만 출력한다.
+ui_row() {
+  printf '%s\n' "${C_CYAN}│${C_RST} $1"
+}
+
+lt_get() {
+  local key="$1"
+  local def="${2:-}"
+  if [ ! -s "${LOADTEST_JSON:-}" ]; then
+    printf '%s' "$def"
+    return
+  fi
+  "$PY" -c '
+import json,sys
+try:
+  d=json.loads(open(sys.argv[1],encoding="utf-8").read())
+except Exception:
+  d={}
+k=sys.argv[2]
+v=d.get(k)
+if v is None:
+  sys.stdout.write(sys.argv[3])
+elif isinstance(v, list):
+  sys.stdout.write(",".join(str(x) for x in v[:8]))
+else:
+  sys.stdout.write(str(v))
+' "$LOADTEST_JSON" "$key" "$def"
+}
+
 collect_snapshot() {
   local mode_url="${BASE_URL}/api/settings/intake-mode?u=${TARGET_USER}"
   local listener_url="${BASE_URL}/api/donations/toonation/listener?u=${TARGET_USER}"
@@ -282,6 +322,19 @@ except Exception:
   HUB_INGEST_AT=$(json_field_str "$SNAP_HUB_JSON" 'd.get("session",{}).get("lastIngestAt")' '')
   HUB_STATUS_OK=$(json_field_str "$SNAP_HUB_JSON" 'd.get("session",{}).get("lastStatusOk")' '')
   HUB_LOG_N="$DBG_HUBLOG_N"
+  LOADTEST_JSON="$TMP_DIR/loadtest.json"
+  if [ -f "$LOADTEST_PY" ]; then
+    "$PY" "$LOADTEST_PY" "$SNAP_STATE_FILE" "$SNAP_HUB_FILE" "${Q_LEN:-0}" "${UN_LEN:-0}" "$LOADTEST_JSON" 2>/dev/null || true
+  fi
+  if [ -z "${LT_BASE_SET:-}" ]; then
+    _lv="$(lt_get verdict STATE_FAIL)"
+    if [ "$_lv" != "STATE_FAIL" ]; then
+      LT_BASE_N="${DONORS_N:-0}"
+      LT_BASE_SUM="${DONORS_SUM:-0}"
+      LT_BASE_TS="$(date +%s)"
+      LT_BASE_SET=1
+    fi
+  fi
 }
 
 render_ui() {
@@ -295,21 +348,10 @@ render_ui() {
   if [ "$cols" -lt 80 ]; then cols=80; fi
   if [ "$lines" -lt 20 ]; then lines=20; fi
 
-  local hdr
-  hdr="DIN 후원 실시간 모니터 · TARGET=${BOLD}${TARGET_USER}${C_RST} · ${BASE_URL}"
   local now
   now=$(date '+%Y-%m-%d %H:%M:%S %Z')
 
-  pad="$(safe_pad $((cols - 2)))"
-  printf '%s%*s%s\n' "${BOLD}${C_CYAN}┌─${C_RST}" "${pad:-0}" "" "${BOLD}${C_CYAN}─┐${C_RST}"
-
-  local line1_hdr="${C_CYAN}│${C_RST} ${hdr} ${C_DIM}refresh every $((REFRESH_MS/1000))s · ${now}${C_RST}"
-  pad="$(safe_pad_from "$line1_hdr" "$(( cols - 2 ))" )"
-  printf '%s%*s%s\n' "$line1_hdr" "${pad:-0}" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
-  pad="$(safe_pad $((cols - 2)))"
-  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "${pad:-0}" "" "${C_CYAN}─┤${C_RST}"
-
-  local mode_ok short mode_val applied desc runtime_mem
+  local mode_ok short mode_val desc
   mode_ok=$(json_field_str "$SNAP_MODE_JSON" 'd.get("ok")' '')
   mode_val=$(json_field_str "$SNAP_MODE_JSON" 'd.get("mode")' '—')
   short=$(json_field_str "$SNAP_MODE_JSON" 'd.get("short")' '')
@@ -320,163 +362,151 @@ render_ui() {
     elif [ "$mode_val" = "B" ]; then
       mode_label="${C_MAGENTA}${BOLD}B 모드 · DIN 허브 폴러${C_RST}"
     else
-      mode_label="${C_YELLOW}${BOLD}${mode_val} 모드 (알수없음)${C_RST}"
+      mode_label="${C_YELLOW}${BOLD}${mode_val} 모드${C_RST}"
     fi
   else
-    mode_label="${C_RED}${BOLD}조회실패 · 응답: ${SNAP_MODE_JSON:0:60}${C_RST}"
+    mode_label="${C_RED}${BOLD}모드 조회실패${C_RST}"
   fi
 
-  local ws_enabled ws_open ws_last_rx ws_count ws_error ws_summary
+  local ws_enabled ws_open ws_last_rx ws_count
   ws_enabled=$(json_field_str "$SNAP_WS_JSON" 'd.get("status",{}).get("enabled")' '')
   ws_open=$(json_field_str "$SNAP_WS_JSON" 'd.get("status",{}).get("wsConnected")' '')
   ws_last_rx=$(json_field_str "$SNAP_WS_JSON" 'd.get("status",{}).get("lastMessageAt")' '')
   ws_count=$(json_field_str "$SNAP_WS_JSON" 'd.get("status",{}).get("receivedCount")' '0')
-  ws_error=$(json_field_str "$SNAP_WS_JSON" 'd.get("status",{}).get("error")' '')
-
   if [ "$ws_open" = "true" ]; then
-    ws_pill="${C_GREEN}● CONNECTED${C_RST}"
+    ws_pill="${C_GREEN}● WS 연결${C_RST}"
   elif [ "$ws_enabled" = "true" ]; then
-    ws_pill="${C_YELLOW}⚠ ENABLED · WS 미연결${C_RST}"
+    ws_pill="${C_YELLOW}⚠ WS 미연결${C_RST}"
   else
-    ws_pill="${C_DIM}○ disabled${C_RST}"
+    ws_pill="${C_DIM}○ WS off${C_RST}"
   fi
 
-  local hub_ok hub_disabled hub_email hub_linked hub_last_ingest_at hub_last_ingest_ok hub_last_status_at hub_last_status_ok hub_log_n hub_pill
+  local hub_ok hub_email hub_last_ingest_at hub_last_ingest_ok hub_log_n hub_pill
   hub_ok=$(json_field_str "$SNAP_HUB_JSON" 'd.get("ok")' '')
-  hub_disabled=$(json_field_str "$SNAP_HUB_JSON" 'd.get("disabled")' '')
   hub_email=$(json_field_str "$SNAP_HUB_JSON" 'd.get("session",{}).get("email")' '')
-  hub_linked=$(json_field_str "$SNAP_HUB_JSON" 'd.get("session",{}).get("linkedAt")' '')
   hub_last_ingest_at=$(json_field_str "$SNAP_HUB_JSON" 'd.get("session",{}).get("lastIngestAt")' '')
   hub_last_ingest_ok=$(json_field_str "$SNAP_HUB_JSON" 'd.get("session",{}).get("lastIngestOk")' '')
-  hub_last_status_at=$(json_field_str "$SNAP_HUB_JSON" 'd.get("session",{}).get("lastStatusAt")' '')
-  hub_last_status_ok=$(json_field_str "$SNAP_HUB_JSON" 'd.get("session",{}).get("lastStatusOk")' '')
   hub_log_n=$(json_field_str "$SNAP_HUB_JSON" 'len(d.get("logs") or [])' '0')
-
   if [ "$hub_ok" = "true" ]; then
-    if [ -n "$hub_email" ] && [ "$hub_email" != "null" ] && [ -n "$hub_email" ]; then
+    if [ -n "$hub_email" ] && [ "$hub_email" != "null" ]; then
       if [ "$hub_last_ingest_ok" = "true" ]; then
-        hub_pill="${C_GREEN}● 로그인됨 · ingest OK${C_RST}"
+        hub_pill="${C_GREEN}● ingest OK${C_RST} $(fmt_ago "$hub_last_ingest_at")"
       elif [ "$hub_last_ingest_ok" = "false" ]; then
-        hub_pill="${C_RED}✖ 로그인됨 · ingest FAIL${C_RST}"
+        hub_pill="${C_RED}✖ ingest FAIL${C_RST} $(fmt_ago "$hub_last_ingest_at")"
       else
-        hub_pill="${C_YELLOW}◐ 로그인됨 · ingest 미수신${C_RST}"
+        hub_pill="${C_YELLOW}◐ ingest 대기${C_RST}"
       fi
     else
-      hub_pill="${C_YELLOW}⚠ 미로그인 · B 모드 사용전 로그인 필요${C_RST}"
+      hub_pill="${C_YELLOW}⚠ 허브 미로그인 (COOKIE 필요)${C_RST}"
     fi
   else
-    hub_pill="${C_RED}✖ /api/toona/hub 응답거부 (COOKIE 설정 필요?)${C_RST}"
+    hub_pill="${C_RED}✖ 허브 API 거부${C_RST}"
   fi
 
   local q_len un_len
   q_len="${Q_LEN:-0}"
   un_len="${UN_LEN:-0}"
-  if ! [[ "$q_len" =~ ^[0-9]+$ ]]; then q_len=0; fi
-  if ! [[ "$un_len" =~ ^[0-9]+$ ]]; then un_len=0; fi
+  [[ "$q_len" =~ ^[0-9]+$ ]] || q_len=0
+  [[ "$un_len" =~ ^[0-9]+$ ]] || un_len=0
 
-  local donors_n donors_sum donors_list donors_sample
+  local donors_n donors_sum
   donors_n="${DONORS_N:-0}"
   donors_sum="${DONORS_SUM:-0}"
   [[ "$donors_n" =~ ^[0-9]+$ ]] || donors_n=0
   [[ "$donors_sum" =~ ^-?[0-9]+$ ]] || donors_sum=0
-  donors_list_tmp="$TMP_DIR/donors.txt"
-  json_list_tail_donors "$SNAP_STATE_FILE" 'd.get("donors") or []' 100 > "$donors_list_tmp"
-  donors_list_head_tmp="$TMP_DIR/hub_logs.txt"
-  json_list_tail_donors "$SNAP_HUB_FILE" 'd.get("logs") or d.get("donationLogs") or []' 50 > "$donors_list_head_tmp"
 
-  local panel_w=$(( (cols - 8) / 2 ))
-  [ $panel_w -lt 40 ] && panel_w=40
+  local lt_verdict lt_ko lt_miss_n lt_miss_sum lt_hub_n lt_state_n miss_ids
+  lt_verdict="$(lt_get verdict OK)"
+  lt_ko="$(lt_get verdict_ko '누락 없음')"
+  lt_miss_n="$(lt_get missing_n 0)"
+  lt_miss_sum="$(lt_get missing_sum 0)"
+  lt_hub_n="$(lt_get hub_n "${HUB_LOG_N:-0}")"
+  lt_state_n="$(lt_get state_n "$donors_n")"
+  miss_ids="$(lt_get missing_ids "")"
+  [[ "$lt_miss_n" =~ ^[0-9]+$ ]] || lt_miss_n=0
+  [[ "$lt_miss_sum" =~ ^-?[0-9]+$ ]] || lt_miss_sum=0
+  [[ "$lt_hub_n" =~ ^[0-9]+$ ]] || lt_hub_n=0
+  [[ "$lt_state_n" =~ ^[0-9]+$ ]] || lt_state_n="$donors_n"
 
-  # === [좌] 투네 WS 리스너 ===
-  local ws_title_line="${C_CYAN}│ ${C_RST}${BOLD}[A] 투네 WS 직결 리스너${C_RST}"
-  pad="$(safe_pad_from "$ws_title_line" "$(( cols - 4 ))" )"
-  printf '%s%*s%s\n' "$ws_title_line" "${pad:-0}" "" "${C_CYAN} │${C_RST}"
-
-  local ws_line1="상태: $ws_pill"
-  local ws_line2="수신 누적: ${ws_count}건 · 마지막 수신: $(fmt_ago "$ws_last_rx")"
-  local ws_line3="링크 활성: ${ws_enabled} · 에러: ${ws_error}"
-
-  local ln1="${C_CYAN}│ ${C_RST}  ${ws_line1}"
-  pad="$(safe_pad_from "$ln1" "$(( cols - 4 ))" )"
-  printf '%s%*s%s\n' "$ln1" "${pad:-0}" "" "${C_CYAN} │${C_RST}"
-  local ln2="${C_CYAN}│ ${C_RST}  ${ws_line2}"
-  pad="$(safe_pad_from "$ln2" "$(( cols - 4 ))" )"
-  printf '%s%*s%s\n' "$ln2" "${pad:-0}" "" "${C_CYAN} │${C_RST}"
-  local ln3="${C_CYAN}│ ${C_RST}  ${ws_line3}"
-  pad="$(safe_pad_from "$ln3" "$(( cols - 4 ))" )"
-  printf '%s%*s%s\n' "$ln3" "${pad:-0}" "" "${C_CYAN} │${C_RST}"
-
-  # === [우] DIN 허브 폴러 ===
-  local hub_title_line="${C_CYAN}│${C_RST}  ${BOLD}[B] DIN 허브 폴러${C_RST}: $hub_pill"
-  pad="$(safe_pad_from "$hub_title_line" "$(( cols - 4 ))" )"
-  printf '%s%*s%s\n' "$hub_title_line" "${pad:-0}" "" "${C_CYAN} │${C_RST}"
-  local hub_line1="계정: ${hub_email:-<미로그인>} · 연동: $(fmt_ago "$hub_linked")"
-  local hub_line2="Ingest: $( [ "$hub_last_ingest_ok" = "true" ] && printf '%sOK%s' "$C_GREEN" "$C_RST" || [ "$hub_last_ingest_ok" = "false" ] && printf '%sFAIL%s' "$C_RED" "$C_RST" || printf '%s—%s' "$C_DIM" "$C_RST" ) · $(fmt_ago "$hub_last_ingest_at")  · Status: $( [ "$hub_last_status_ok" = "true" ] && printf '%sOK%s' "$C_GREEN" "$C_RST" || [ "$hub_last_status_ok" = "false" ] && printf '%sFAIL%s' "$C_RED" "$C_RST" || printf '%s—%s' "$C_DIM" "$C_RST" ) · $(fmt_ago "$hub_last_status_at")"
-  local hub_line3="로그 개수: ${hub_log_n}건 · B모드 disabled=${hub_disabled:-false}"
-
-  local hl1="${C_CYAN}│ ${C_RST}  ${hub_line1}"
-  pad="$(safe_pad_from "$hl1" "$(( cols - 4 ))" )"
-  printf '%s%*s%s\n' "$hl1" "${pad:-0}" "" "${C_CYAN} │${C_RST}"
-  local hl2="${C_CYAN}│ ${C_RST}  ${hub_line2}"
-  pad="$(safe_pad_from "$hl2" "$(( cols - 4 ))" )"
-  printf '%s%*s%s\n' "$hl2" "${pad:-0}" "" "${C_CYAN} │${C_RST}"
-  local hl3="${C_CYAN}│ ${C_RST}  ${hub_line3}"
-  pad="$(safe_pad_from "$hl3" "$(( cols - 4 ))" )"
-  printf '%s%*s%s\n' "$hl3" "${pad:-0}" "" "${C_CYAN} │${C_RST}"
-
-  pad="$(safe_pad $((cols - 2)))"
-  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "${pad:-0}" "" "${C_CYAN}─┤${C_RST}"
-
-  # === 현재 Runtime 모드 + 요약 ===
-  local sum_line="${C_CYAN}│ ${C_RST}▶ 런타임 모드: $mode_label ｜ A/B 짧은설명: ${short} ｜ ${desc}"
-  pad="$(safe_pad_from "$sum_line" "$(( cols - 4 ))" )"
-  printf '%s%*s%s\n' "$sum_line" "${pad:-0}" "" "${C_CYAN} │${C_RST}" | cut -c1-"$cols"
-
-  local sum_line2="${C_CYAN}│ ${C_RST}전체 후원 ${BOLD}${donors_n}${C_RST}건 · 누적 $(fmt_krw "$donors_sum") · 미처리 QUEUE ${q_len}건 · 미매칭 UNMATCH ${un_len}건"
-  pad="$(safe_pad_from "$sum_line2" "$(( cols - 4 ))" )"
-  printf '%s%*s%s\n' "$sum_line2" "${pad:-0}" "" "${C_CYAN} │${C_RST}"
-
-  pad="$(safe_pad $((cols - 2)))"
-  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "${pad:-0}" "" "${C_CYAN}─┤${C_RST}"
-
-  # === 최근 후원 로그: hub logs 위 / state donors 아래 합쳐서 최신 N개 ===
-  local recent_body="$TMP_DIR/recent.txt"
-  : > "$recent_body"
-  if [ -s "$donors_list_head_tmp" ]; then
-    cat "$donors_list_head_tmp" >> "$recent_body"
-  fi
-  if [ -s "$donors_list_tmp" ]; then
-    cat "$donors_list_tmp" >> "$recent_body"
+  local verdict_pill
+  if [ "$lt_verdict" = "OK" ]; then
+    verdict_pill="${C_GREEN}${BOLD}판정  OK${C_RST}   ${C_GREEN}누락 ${lt_miss_n}건${C_RST}  · ${lt_ko}"
+  elif [ "$lt_verdict" = "MISSING" ]; then
+    verdict_pill="${C_RED}${BOLD}판정  MISSING${C_RST}   ${C_RED}누락 ${lt_miss_n}건 $(fmt_krw "$lt_miss_sum")${C_RST}  · ${lt_ko}"
+  elif [ "$lt_verdict" = "BACKLOG" ]; then
+    verdict_pill="${C_YELLOW}${BOLD}판정  BACKLOG${C_RST}   누락 ${lt_miss_n}건  · ${lt_ko}"
+  else
+    verdict_pill="${C_RED}${BOLD}판정  ${lt_verdict}${C_RST}   · ${lt_ko}"
   fi
 
-  local log_rows=$(( lines - 17 ))
+  local base_n="${LT_BASE_N:-0}"
+  local base_sum="${LT_BASE_SUM:-0}"
+  [[ "$base_n" =~ ^[0-9]+$ ]] || base_n=0
+  [[ "$base_sum" =~ ^-?[0-9]+$ ]] || base_sum=0
+  local delta_n=$(( donors_n - base_n ))
+  local delta_sum=$(( donors_sum - base_sum ))
+  local delta_n_s delta_sum_s
+  if [ "$delta_n" -ge 0 ]; then delta_n_s="+${delta_n}"; else delta_n_s="${delta_n}"; fi
+  if [ "$delta_sum" -ge 0 ]; then delta_sum_s="+$(fmt_krw "$delta_sum")"; else delta_sum_s="$(fmt_krw "$delta_sum")"; fi
+  local now_s elapsed_s elapsed_h
+  now_s=$(date +%s)
+  elapsed_s=$(( now_s - ${LT_BASE_TS:-$now_s} ))
+  if [ "$elapsed_s" -lt 0 ]; then elapsed_s=0; fi
+  if [ "$elapsed_s" -lt 60 ]; then
+    elapsed_h="${elapsed_s}초"
+  elif [ "$elapsed_s" -lt 3600 ]; then
+    elapsed_h="$((elapsed_s/60))분"
+  else
+    elapsed_h="$((elapsed_s/3600))시간$(( (elapsed_s%3600)/60 ))분"
+  fi
+
+  local hub_logs_tmp="$TMP_DIR/hub_logs.txt"
+  json_list_tail_donors "$SNAP_HUB_FILE" 'd.get("logs") or d.get("donationLogs") or []' 40 > "$hub_logs_tmp"
+
+  pad="$(safe_pad $((cols - 2)))"
+  printf '%s%*s%s\n' "${BOLD}${C_CYAN}┌─ 부하테스트 감시${C_RST}" "${pad:-0}" "" "${BOLD}${C_CYAN}─┐${C_RST}"
+  ui_row "${BOLD}TARGET=${TARGET_USER}${C_RST}  ${BASE_URL}  ${C_DIM}$((REFRESH_MS/1000))s · ${now}${C_RST}"
+  ui_row "${mode_label}${C_DIM}  ${short} ${desc}${C_RST}"
+  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "${pad:-0}" "" "${C_CYAN}─┤${C_RST}"
+
+  ui_row "$verdict_pill"
+  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "${pad:-0}" "" "${C_CYAN}─┤${C_RST}"
+
+  ui_row "${BOLD}정산표${C_RST}  엑셀에 반영된 전체     ${BOLD}${lt_state_n}${C_RST}건  $(fmt_krw "$donors_sum")"
+  if [ "${LT_BASE_SET:-}" = "1" ]; then
+    ui_row "${BOLD}세션증가${C_RST}  기준 잡힌 뒤 ${elapsed_h}   ${C_GREEN}${delta_n_s}건${C_RST}  ${delta_sum_s}"
+  else
+    ui_row "${BOLD}세션증가${C_RST}  ${C_DIM}정산표 로딩 후 시작${C_RST}"
+  fi
+  ui_row "${BOLD}허브버퍼${C_RST}  최근 ingest 일부만    ${lt_hub_n}건   ${C_DIM}← 정산표보다 적어도 정상. 이 숫자로 누락 판단 금지${C_RST}"
+  ui_row "${BOLD}누락${C_RST}     허브에 있고 정산표에 없음  ${BOLD}${lt_miss_n}${C_RST}건  $(fmt_krw "$lt_miss_sum")"
+  if [ "$lt_miss_n" -gt 0 ] && [ -n "$miss_ids" ]; then
+    ui_row "         ${C_RED}id: ${miss_ids}${C_RST}  ${C_DIM}(d 키로 전체)${C_RST}"
+  fi
+  ui_row "${BOLD}대기${C_RST}     QUEUE ${q_len}   UNMATCH ${un_len}   ${C_DIM}(엑셀 반영 전. 누락이 아님)${C_RST}"
+  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "${pad:-0}" "" "${C_CYAN}─┤${C_RST}"
+
+  ui_row "[A] ${ws_pill}  수신 ${ws_count}건  $(fmt_ago "$ws_last_rx")     [B] ${hub_pill}  ${hub_email:-no-login}"
+  printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "${pad:-0}" "" "${C_CYAN}─┤${C_RST}"
+
+  local log_rows=$(( lines - 18 ))
   [ $log_rows -lt 4 ] && log_rows=4
-
-  local log_hdr="${C_CYAN}│ ${C_RST}${BOLD}📌 최근 후원 로그 (표시 영역 ${log_rows}행)${C_RST}${C_DIM}  [q=종료 r=새로고침 h=도움 t=추세 d=정합성 v=되돌리기]${C_RST}"
-  pad="$(safe_pad_from "$log_hdr" "$(( cols - 4 ))" )"
-  printf '%s%*s%s\n' "$log_hdr" "${pad:-0}" "" "${C_CYAN} │${C_RST}" | cut -c1-"$cols"
+  ui_row "${BOLD}최근 허브 수신${C_RST} ${C_DIM}(버퍼만. 정산표 전체가 아님)  [q종료 r새로고침 d누락상세 t추세 h도움]${C_RST}"
 
   local shown=0
-  if [ -s "$recent_body" ]; then
+  if [ -s "$hub_logs_tmp" ]; then
     while IFS= read -r line; do
       shown=$((shown+1))
-      local lline="${C_CYAN}│ ${C_RST}  ${C_DIM}·${C_RST} $line"
-      pad="$(safe_pad_from "$lline" "$(( cols - 4 ))" )"
-      printf '%s%*s%s\n' "$lline" "${pad:-0}" "" "${C_CYAN} │${C_RST}" | cut -c1-"$cols"
-    done < <(awk 'NF && !seen[$0]++' "$recent_body" 2>/dev/null | head -n "$log_rows")
+      ui_row "  ${C_DIM}·${C_RST} $line"
+    done < <(awk 'NF && !seen[$0]++' "$hub_logs_tmp" 2>/dev/null | head -n "$log_rows")
   else
-    local empty_line="${C_CYAN}│ ${C_RST}   ${C_DIM}(아직 수신된 후원 로그가 없거나 state/hub 응답이 비었습니다)${C_RST}"
-    pad="$(safe_pad_from "$empty_line" "$(( cols - 4 ))" )"
-    printf '%s%*s%s\n' "$empty_line" "${pad:-0}" "" "${C_CYAN} │${C_RST}"
+    ui_row "  ${C_DIM}(허브 버퍼 비어 있음. 정산표 ${lt_state_n}건은 위에 있음)${C_RST}"
+    shown=1
   fi
-
   for ((; shown<log_rows; shown++)); do
-    local bl="${C_CYAN}│ ${C_RST}"
-    pad="$(safe_pad_from "$bl" "$(( cols - 4 ))" )"
-    printf '%s%*s%s\n' "$bl" "${pad:-0}" "" "${C_CYAN} │${C_RST}"
+    ui_row ""
   done
 
-  pad="$(safe_pad $((cols - 2)))"
   printf '%s%*s%s\n' "${C_CYAN}└─${C_RST}" "${pad:-0}" "" "${C_CYAN}─┘${C_RST}"
 }
 
@@ -488,8 +518,18 @@ render_help() {
   echo ""
   echo "  ${BOLD}${C_YELLOW}핫키:${C_RST}"
   echo "    ${BOLD}q${C_RST} / Ctrl+C  종료"
-  echo "    ${BOLD}r${C_RST}         즉시 새로고침 (refresh 주기 무시)"
-  echo "    ${BOLD}h${C_RST}         이 도움말 토글"
+  echo "    ${BOLD}r${C_RST}         즉시 새로고침"
+  echo "    ${BOLD}d${C_RST}         누락 상세 (허브 id 가 정산표에 없는 것만)"
+  echo "    ${BOLD}t${C_RST}         추세"
+  echo "    ${BOLD}h${C_RST}         이 도움말"
+  echo ""
+  echo "  ${BOLD}${C_YELLOW}숫자를 이렇게 읽으세요 (부하테스트):${C_RST}"
+  echo "    판정 OK        · 허브에 있는 후원이 전부 정산표에 있음"
+  echo "    판정 MISSING   · 허브 id 가 정산표(state.donors)에 없음 = 진짜 누락"
+  echo "    정산표         · 엑셀에 반영된 전체 후원. 이게 진짜 건수"
+  echo "    허브버퍼       · 최근 ingest 일부. 정산표보다 적어도 정상. 비교하지 말 것"
+  echo "    세션증가       · 이 모니터를 켠 뒤 정산표가 늘어난 건수"
+  echo "    QUEUE/UNMATCH  · 아직 엑셀 반영 전. 누락이 아님"
   echo ""
   echo "  ${BOLD}${C_YELLOW}환경변수:${C_RST}"
   echo "    TARGET_USER=finalent       · 모니터링 대상 유저 ID (필수, 관리자 ?u= 에 사용)"
@@ -500,17 +540,10 @@ render_help() {
   echo "    MODE=once                  · 1회 덤프 + TUI 비활성 (CI/cron 로그용)"
   echo "    NO_COLOR=1                 · ANSI 색상 제거 · grep 용이"
   echo ""
-  echo "  ${BOLD}${C_YELLOW}로그 패널 설명:${C_RST}"
-  echo "    [A] 투네 WS 직결        · 투네이션 WebSocket 서버 리스너 상태. ● = 연결, ⚠ = 설정됐지만 소켓 없음"
-  echo "    [B] DIN 허브 폴러       · B 모드 전용 30s/60s 폴러. Ingest OK → 수집 정상, Ingest FAIL → 원인은 EC2 logs 확인"
-  echo "    QUEUE                   · 수신됐지만 아직 apply 안된 후원 (오류나 memberAutoAssigned 실패시 쌓임)"
-  echo "    UNMATCH                 · 멤버 추정 실패 / 시그 매칭 실패 등 후원은 있지만 엑셀 반영 안된 항목"
-  echo "    최근 후원 로그            · state donors + hub logs 를 합쳐서 신규 수신 순으로 표시"
-  echo ""
   echo "  ${BOLD}${C_YELLOW}트러블슈팅 팁:${C_RST}"
   echo "    ① /api/toona/hub 응답이 'unauthorized' → 관리자 페이지 로그인 후 sb_user 쿠키를 COOKIE= 로 넘기세요."
-  echo "    ② B 모드인데 hub_last_ingest_ok = false → \`pm2 logs youtube --lines 200 --nostream\` 에서 poller 스택트레이스 확인."
-  echo "    ③ A 모드인데 ws 미연결 → 링크키 alertboxUrl 이 올바른지 (http://toon.at/alertbox/xxx) 확인 · POST sync 강제."
+  echo "    ② B 모드인데 ingest FAIL → \`pm2 logs youtube --lines 200 --nostream\` 에서 poller 확인."
+  echo "    ③ 정산표 0건인데 관리자 화면엔 있으면 → state curl 실패. DEBUG/STATE_BYTES 확인."
   echo ""
   read -n 1 -s -r -p "  [ 아무 키나 눌러서 돌아가기 ] " _unused
 }
@@ -1135,10 +1168,8 @@ render_diff_panel() {
   [ $panel_rows -lt 12 ] && panel_rows=12
   local pad
   pad="$(safe_pad $(( cols - 2 )))"
-  printf '%s%*s%s\n' "${BOLD}${C_CYAN}┌─ DIFF/정합성 (1h/24h + reset 경계 포함) ─${C_RST}" "${pad:-0}" "" "${BOLD}${C_CYAN}─┐${C_RST}"
-  local diff_title="${C_CYAN}│${C_RST}  ${BOLD}${C_MAGENTA}후원 숫자 교차 검증 · Hub logs <-> state donors (최근 1h / 24h / ★리셋 경계 정밀검사)${C_RST}"
-  pad="$(safe_pad_from "$diff_title" "$(( cols - 4 ))" )"
-  printf '%s%*s%s\n' "$diff_title" "${pad:-0}" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
+  printf '%s%*s%s\n' "${BOLD}${C_CYAN}┌─ 누락 상세 (허브에 있고 정산표에 없는 것만)${C_RST}" "${pad:-0}" "" "${BOLD}${C_CYAN}─┐${C_RST}"
+  ui_row "${BOLD}허브 건수 < 정산표 는 정상${C_RST} ${C_DIM}· 누락 ≠ Diff(Hub-State)${C_RST}"
   pad="$(safe_pad $(( cols - 2 )))"
   printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "${pad:-0}" "" "${C_CYAN}─┤${C_RST}"
 
@@ -1177,9 +1208,8 @@ render_diff_panel() {
   else
     hb_="${hb_}${C_RED}0B/0logs (curl fail?)${C_RST}"
   fi
-  local dbg_line="${C_CYAN}│${C_RST}  ${C_DIM}DEBUG:${C_RST} ${st_}  ${hb_}  ${C_DIM}base=${BASE_URL}?u=${TARGET_USER}${C_RST}  QUEUE=${q_len} UNMATCH=${un_len}"
-  pad="$(safe_pad_from "$dbg_line" "$(( cols - 4 ))" )"
-  printf '%s%*s%s\n' "$dbg_line" "${pad:-0}" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
+  local dbg_line="DEBUG: ${st_}  ${hb_}  base=${BASE_URL}?u=${TARGET_USER}  QUEUE=${q_len} UNMATCH=${un_len}"
+  ui_row "$dbg_line"
   pad="$(safe_pad $(( cols - 2 )))"
   printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "${pad:-0}" "" "${C_CYAN}─┤${C_RST}"
   panel_rows=$(( panel_rows - 2 ))
@@ -1203,9 +1233,7 @@ render_diff_panel() {
   while IFS= read -r line || [ -n "$line" ]; do
     shown=$((shown+1))
     [ $shown -gt $max_rows ] && break
-    local dline="${C_CYAN}│${C_RST}  $line"
-    pad="$(safe_pad_from "$dline" "$(( cols - 4 ))" )"
-    printf '%s%*s%s\n' "$dline" "${pad:-0}" "" "${C_CYAN}│${C_RST}" | cut -c1-"$cols"
+    ui_row "$line"
   done < "$diff_out"
   for ((; shown<=max_rows; shown++)); do
     local bl="${C_CYAN}│ ${C_RST}"
