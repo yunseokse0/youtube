@@ -8,7 +8,6 @@ import {
   isOverlayBroadcastHost,
 } from "@/lib/overlay-params";
 import { STATE_PICK_OVERLAY_DONORS } from "@/lib/state-api-pick";
-import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 import {
   buildHighSocietyFieldFromAppState,
   buildHighSocietyFieldFromMembers,
@@ -16,13 +15,11 @@ import {
   fieldCmFromStartPerMember,
   formatCm,
   formatSeatWidthCm,
-  HIGH_SOCIETY_ROUND_SEC,
   HIGH_SOCIETY_TEST_MEMBERS,
   normalizeHighSocietyFxSettings,
   normalizeHighSocietySettings,
   normalizeZeroCmGaugeDisplay,
   shouldShowZeroCmSeatsOnGauge,
-  highSocietyFxToHsFxParam,
   parseHighSocietyFxFromHsFxParam,
   parseHighSocietyBarStyle,
   parseHighSocietySplit,
@@ -250,12 +247,9 @@ export default function HighSocietyOverlayPage() {
     persistLastGood: !hostObs,
     /** 관리자 미리보기: 재배치·나누기·방향 적용이 게이지에 바로 보이게 since 폴링 */
     adminPreviewAllowPoll: true,
-    /** OBS는 SSE가 꺼져 있으므로 2초 since 폴링으로 영토 입력을 따라감 (로그인 쿠키 불필요) */
-    overlayPollMs: hostObs ? 2000 : undefined,
+    /** 영토 기록부 추종: SSE가 끊겨도 2초 since 폴링. host=obs 가 없어도 동일 */
+    overlayPollMs: 2000,
   });
-  const [nowTick, setNowTick] = useState(() => Date.now());
-  /** test 전용: 서버 타이머 없을 때 로컬 카운트다운 앵커 (라운드 종료 후 모드용) */
-  const [demoAnchor] = useState(() => Date.now());
 
   const hsSettings = useMemo(
     () => normalizeHighSocietySettings(state?.highSocietySettings),
@@ -270,16 +264,6 @@ export default function HighSocietyOverlayPage() {
     }
     return normalizeHighSocietyFxSettings(hsSettings.fx);
   }, [adminPreview, sp, hsSettings.fx]);
-
-  /** 실시간 모드에서는 250ms 틱이 게이지를 불필요하게 재렌더 → 프리뷰 움찔 유발 */
-  const needsTimerTick =
-    hsSettings.territoryUpdateMode === "onRoundEnd" || useTest;
-
-  useEffect(() => {
-    if (!needsTimerTick) return;
-    const id = window.setInterval(() => setNowTick(Date.now()), 250);
-    return () => window.clearInterval(id);
-  }, [needsTimerTick]);
 
   const barStyle: HighSocietyBarStyle = barFromUrl
     ? parseHighSocietyBarStyle(barFromUrl)
@@ -300,11 +284,6 @@ export default function HighSocietyOverlayPage() {
   }, [startCmFromUrl, hsSettings, seatCountForField]);
   /** 전장 = 1인 시작 cm × 좌석 멤버 수 (fieldCm 고정값·URL fieldCm 미사용) */
   const effectiveFieldCm = fieldCmFromStartPerMember(startCmPerMember, seatCountForField);
-
-  const demoTimerSec = useMemo(() => {
-    const raw = Number(sp.get("timerSec") || sp.get("timer"));
-    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : HIGH_SOCIETY_ROUND_SEC;
-  }, [sp]);
 
   const field = useMemo(() => {
     const fieldOpts = { fieldCm: effectiveFieldCm };
@@ -337,61 +316,14 @@ export default function HighSocietyOverlayPage() {
     });
   }, [useTest, state, hsSettings, hasUrlSplit, split, effectiveFieldCm, startCmFromUrl]);
 
-  const timerState = state?.matchTimer ?? state?.generalTimer ?? null;
-
-  const remainingSec = useMemo(() => {
-    if (timerState) {
-      return getEffectiveRemainingTime(timerState, nowTick);
-    }
-    if (useTest) {
-      const elapsed = Math.floor((nowTick - demoAnchor) / 1000);
-      return Math.max(0, demoTimerSec - elapsed);
-    }
-    return 0;
-  }, [timerState, nowTick, useTest, demoTimerSec, demoAnchor]);
-
-  /** 라운드 종료 후 모드: 타이머 남은 동안 게이지 동결, 종료 시 라이브 반영 (HUD 없음) */
-  const roundInProgress = remainingSec > 0;
-  /** 관리자 iframe 미리보기는 항상 현재 영토 반영(라운드 동결·OBS 방송과 분리) */
-  const freezeTerritory =
-    !adminPreview &&
-    hsSettings.territoryUpdateMode === "onRoundEnd" &&
-    roundInProgress;
-  const [frozenSeats, setFrozenSeats] = useState<HighSocietySeat[] | null>(null);
-  const wasRoundInProgressRef = useRef(false);
-
-  const fieldSeatsSig = field.seats.map((s) => `${s.id}:${s.widthCm}`).join("|");
-
-  useEffect(() => {
-    if (hsSettings.territoryUpdateMode !== "onRoundEnd") {
-      wasRoundInProgressRef.current = false;
-      setFrozenSeats(null);
-      return;
-    }
-    if (roundInProgress) {
-      if (!wasRoundInProgressRef.current) {
-        setFrozenSeats(field.seats.map((s) => ({ ...s })));
-      }
-      wasRoundInProgressRef.current = true;
-      return;
-    }
-    if (wasRoundInProgressRef.current) {
-      wasRoundInProgressRef.current = false;
-      setFrozenSeats(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- field.seats via fieldSeatsSig
-  }, [hsSettings.territoryUpdateMode, roundInProgress, fieldSeatsSig]);
-
-  const baseDisplaySeats =
-    freezeTerritory && frozenSeats && frozenSeats.length > 0 ? frozenSeats : field.seats;
-
+  /** 게이지는 영토 기록부 해상만 표시. 타이머·후원·라운드 종료 동결은 쓰지 않음 */
   const displaySeats = useMemo<HighSocietySeat[]>(() => {
     try {
-      return aggregateHighSocietySeatsByTeam(baseDisplaySeats, hsSettings);
+      return aggregateHighSocietySeatsByTeam(field.seats, hsSettings);
     } catch (_err) {
-      return baseDisplaySeats;
+      return field.seats;
     }
-  }, [baseDisplaySeats, hsSettings]);
+  }, [field.seats, hsSettings]);
 
   const fxClass = [
     fx.frontier ? "hs-fx-frontier" : "",

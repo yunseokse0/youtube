@@ -363,44 +363,9 @@ export default function AdminHighSocietyPopupPanel() {
                     팀전
                   </button>
                 </div>
-                <button
-                  type="button"
-                  className={`rounded px-3 py-1.5 text-xs font-semibold border disabled:opacity-40 ${
-                    highSocietySettings.territoryPaused
-                      ? "border-sky-400 bg-sky-700/90 text-white"
-                      : "border-white/15 bg-neutral-800"
-                  }`}
-                  onClick={() =>
-                    void patchHighSociety({ territoryPaused: !highSocietySettings.territoryPaused })
-                  }
-                >
-                  {highSocietySettings.territoryPaused ? "영토 재개" : "영토 일시정지"}
-                </button>
               </div>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
-              <button
-                type="button"
-                className={`rounded px-2.5 py-1 border ${
-                  (highSocietySettings.territoryUpdateMode || "realtime") === "realtime"
-                    ? "border-amber-400 bg-amber-700/90 text-white"
-                    : "border-white/15 bg-neutral-900"
-                }`}
-                onClick={() => void patchHighSociety({ territoryUpdateMode: "realtime" })}
-              >
-                실시간 갱신
-              </button>
-              <button
-                type="button"
-                className={`rounded px-2.5 py-1 border ${
-                  highSocietySettings.territoryUpdateMode === "onRoundEnd"
-                    ? "border-amber-400 bg-amber-700/90 text-white"
-                    : "border-white/15 bg-neutral-900"
-                }`}
-                onClick={() => void patchHighSociety({ territoryUpdateMode: "onRoundEnd" })}
-              >
-                라운드 종료 후
-              </button>
               <button
                 type="button"
                 className="rounded px-2.5 py-1 border border-white/15 bg-neutral-900 disabled:opacity-40"

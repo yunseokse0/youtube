@@ -9141,9 +9141,7 @@ function AdminPageInner() {
         );
         pendingUnsyncedRef.current = false;
         window.alert(
-          result.error === "high_society_paused"
-            ? "상류사회 일시정지 중입니다.\n「영토 재개」 후 다시 합산해 주세요."
-            : `합산 추가에 실패했습니다.\n(${result.error})` +
+          `합산 추가에 실패했습니다.\n(${result.error})` +
             (result.error === "persist_failed"
               ? "\n\n서버 저장 검증 오류입니다. 새로고침 후 후원 목록을 확인해 주세요."
               : "")
@@ -10931,8 +10929,6 @@ function AdminPageInner() {
   /** 관리자 로컬 영토 cm — 서버·OBS 미동기화 시 자동 HS-only 저장 (실시간 모드) */
   useEffect(() => {
     if (syncStatus !== "synced") return;
-    if (highSocietySettings.territoryPaused) return;
-    if (highSocietySettings.territoryUpdateMode === "onRoundEnd") return;
     if (hsSeatPlayers.length === 0) return;
     const cur = stateRef.current;
     if (!highSocietyNeedsMemberWidthSnapshotPersist(cur)) return;
@@ -10962,8 +10958,6 @@ function AdminPageInner() {
   }, [
     syncStatus,
     highSocietySettings.enabled,
-    highSocietySettings.territoryPaused,
-    highSocietySettings.territoryUpdateMode,
     hsSeatPlayers.length,
     hsSeatFieldByMemberId,
     state.donors,
@@ -19239,49 +19233,11 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                 </div>
 
                 <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
-                  <div className="text-[11px] font-semibold text-amber-100/95">영토 게이지 갱신</div>
+                  <div className="text-[11px] font-semibold text-amber-100/95">영토 게이지</div>
                   <p className="text-[10px] text-neutral-400 leading-snug">
-                    실시간은 영토 기록부가 들어올 때마다 게이지가 움직이고, 라운드 종료 후는 「타이머 제어」 일반
-                    타이머가 0이 될 때까지 게이지를 고정한 뒤 한 번에 반영합니다. 「영토 일시정지」는
-                    게이지만 멈춥니다.
+                    게이지는 영토 기록부만 따릅니다. 후원은 정산에만 쌓이고 영토는 움직이지 않습니다.
                   </p>
                   <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className={`rounded px-3 py-1.5 text-xs font-semibold border ${
-                        (highSocietySettings.territoryUpdateMode || "realtime") === "realtime"
-                          ? "border-amber-400 bg-amber-700/90 text-white"
-                          : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
-                      }`}
-                      onClick={() => patchHighSocietySettings({ territoryUpdateMode: "realtime" })}
-                    >
-                      실시간
-                    </button>
-                    <button
-                      type="button"
-                      className={`rounded px-3 py-1.5 text-xs font-semibold border ${
-                        highSocietySettings.territoryUpdateMode === "onRoundEnd"
-                          ? "border-amber-400 bg-amber-700/90 text-white"
-                          : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
-                      }`}
-                      onClick={() => patchHighSocietySettings({ territoryUpdateMode: "onRoundEnd" })}
-                    >
-                      라운드 종료 후
-                    </button>
-                    <button
-                      type="button"
-                      className={`rounded px-3 py-1.5 text-xs font-semibold border ${
-                        highSocietySettings.territoryPaused
-                          ? "border-sky-400 bg-sky-700/90 text-white"
-                          : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-sky-400/50"
-                      }`}
-                      title="영토 게이지만 동결"
-                      onClick={() =>
-                        patchHighSocietySettings({ territoryPaused: !highSocietySettings.territoryPaused })
-                      }
-                    >
-                      {highSocietySettings.territoryPaused ? "영토 재개" : "영토 일시정지"}
-                    </button>
                     <button
                       type="button"
                       className="rounded px-3 py-1.5 text-xs font-semibold border border-white/15 bg-neutral-900 text-neutral-300 hover:border-amber-400/50 disabled:opacity-40"

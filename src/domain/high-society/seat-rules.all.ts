@@ -201,12 +201,9 @@ export function pushDirToLeftRight(
 export type HighSocietyTerritoryUpdateMode = "realtime" | "onRoundEnd";
 
 export function parseHighSocietyTerritoryUpdateMode(
-  raw: unknown
+  _raw: unknown
 ): HighSocietyTerritoryUpdateMode {
-  const v = String(raw || "").trim().toLowerCase();
-  if (v === "onroundend" || v === "on_round_end" || v === "end" || v === "round") {
-    return "onRoundEnd";
-  }
+  /** 라운드 종료 후(onRoundEnd) 동결은 폐기. 저장값에 남아 있어도 기록부 실시간만 쓴다. */
   return "realtime";
 }
 
@@ -1936,7 +1933,6 @@ export function shouldSyncHighSocietyMemberWidthSnapshot(
 ): boolean {
   const s = normalizeHighSocietySettings(settings);
   if (s.territoryPaused) return false;
-  if (s.territoryUpdateMode === "onRoundEnd") return false;
   return true;
 }
 

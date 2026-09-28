@@ -509,9 +509,8 @@ export type HighSocietySettings = {
   /** 1인 시작 cm — OFF·재시작 후에도 UI·미리보기에 유지 */
   startCmPerMember?: number;
   /**
-   * 영토 게이지 갱신 시점
-   * - realtime: 영토 기록부 반영을 즉시 표시
-   * - onRoundEnd: matchTimer 라운드가 끝날 때까지 동결, 종료 후 반영
+   * 영토 게이지 갱신 시점. onRoundEnd 는 폐기(정규화 시 항상 realtime).
+   * 게이지는 영토 기록부만 따른다.
    */
   territoryUpdateMode?: "realtime" | "onRoundEnd";
   /** 땅따먹기 연출 ON/OFF (기본 OFF — 명시 true 일 때만 켜짐) */

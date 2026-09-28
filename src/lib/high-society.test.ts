@@ -357,13 +357,13 @@ describe("high-society territory (aux)", () => {
     expect(formatManWon(50000)).toBe("5만");
   });
 
-  it("parses territory update mode (realtime | onRoundEnd)", () => {
+  it("parses territory update mode — onRoundEnd 저장값은 realtime 으로 정규화", () => {
     expect(parseHighSocietyTerritoryUpdateMode("realtime")).toBe("realtime");
-    expect(parseHighSocietyTerritoryUpdateMode("onRoundEnd")).toBe("onRoundEnd");
-    expect(parseHighSocietyTerritoryUpdateMode("end")).toBe("onRoundEnd");
+    expect(parseHighSocietyTerritoryUpdateMode("onRoundEnd")).toBe("realtime");
+    expect(parseHighSocietyTerritoryUpdateMode("end")).toBe("realtime");
     expect(parseHighSocietyTerritoryUpdateMode("")).toBe("realtime");
     expect(normalizeHighSocietySettings({ territoryUpdateMode: "onRoundEnd" }).territoryUpdateMode).toBe(
-      "onRoundEnd"
+      "realtime"
     );
   });
 
@@ -2347,7 +2347,7 @@ describe("syncHighSocietyMemberWidthSnapshot", () => {
     expect(withSnap.seats.reduce((s, x) => s + x.widthCm, 0)).toBeCloseTo(300, 0);
   });
 
-  it("does not sync when territory paused or onRoundEnd", () => {
+  it("does not sync when territory paused; onRoundEnd leftover still syncs", () => {
     const state = { members, donors, highSocietySettings: baseSettings, territoryLogs: [] };
     const paused = syncHighSocietyMemberWidthSnapshotInState({
       ...(state as never),
@@ -2364,7 +2364,7 @@ describe("syncHighSocietyMemberWidthSnapshot", () => {
         territoryUpdateMode: "onRoundEnd",
       }),
     });
-    expect(roundEnd.highSocietySettings?.memberWidthCm).toBeUndefined();
+    expect(roundEnd.highSocietySettings?.memberWidthCm).toBeDefined();
   });
 
   it("highSocietyNeedsMemberWidthSnapshotPersist when snapshot missing", () => {
@@ -3482,5 +3482,184 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
     expect(alive[alive.length - 1]).toBe("b");
     expect(byId.b).toBe(15);
     expect(total).toBe(400);
+  });
+});
+
+describe("상류사회 개인전 6인", () => {
+  function six() {
+    const ids = ["a", "b", "c", "d", "e", "f"] as const;
+    const members = ids.map((id) => ({
+      id,
+      name: id.toUpperCase(),
+      account: 0,
+      toon: 0,
+      operating: false,
+    }));
+    return {
+      members,
+      donors: [] as never[],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: [...ids],
+        startCmPerMember: 100,
+        fieldCm: 600,
+        matchMode: "individual",
+      }),
+      territoryLogs: [] as ReturnType<typeof createTerritoryLog>[],
+    } as import("@/types").AppState;
+  }
+
+  function widths(state: import("@/types").AppState) {
+    const field = buildHighSocietyFieldFromAppState(state);
+    const byId: Record<string, number> = {};
+    for (const s of field.seats) byId[s.id] = s.widthCm;
+    const total = field.seats.reduce((s, x) => s + x.widthCm, 0);
+    const alive = field.seats.filter((s) => !s.eliminated).map((s) => s.id);
+    return { field, byId, total, alive };
+  }
+
+  it("시작은 6등분 100cm이고 전장 합은 600", () => {
+    const { field, byId, total, alive } = widths(six());
+    expect(field.playerCount).toBe(6);
+    expect(field.seats.map((s) => s.id)).toEqual(["a", "b", "c", "d", "e", "f"]);
+    expect(field.seats.map((s) => s.expandDir)).toEqual([
+      "right",
+      "both",
+      "both",
+      "both",
+      "both",
+      "left",
+    ]);
+    expect(Object.values(byId)).toEqual([100, 100, 100, 100, 100, 100]);
+    expect(total).toBe(600);
+    expect(alive).toEqual(["a", "b", "c", "d", "e", "f"]);
+  });
+
+  it("기본 전장 1200이면 6인은 1인 200cm", () => {
+    const { seats, startCm, fieldCm, playerCount } = resolveHighSocietyField({
+      players: ["a", "b", "c", "d", "e", "f"].map((id) => ({
+        id,
+        name: id.toUpperCase(),
+        donationWon: 0,
+      })),
+    });
+    expect(playerCount).toBe(6);
+    expect(fieldCm).toBe(HIGH_SOCIETY_DEFAULT_FIELD_CM);
+    expect(startCm).toBe(200);
+    expect(seats.map((s) => s.widthCm)).toEqual([200, 200, 200, 200, 200, 200]);
+  });
+
+  it("가운데 C 무방향 +20은 좌우 양분 (B·D에서 10씩)", () => {
+    let state = six();
+    state = appendTerritoryLogToAppState(state, createTerritoryLog("c", 1, 20, { now: 1_000 }));
+    const { byId, total, alive } = widths(state);
+    expect(byId).toEqual({ a: 100, b: 90, c: 120, d: 90, e: 100, f: 100 });
+    expect(total).toBe(600);
+    expect(alive).toEqual(["a", "b", "c", "d", "e", "f"]);
+  });
+
+  it("가운데 D 무방향 +20도 좌우 양분 (C·E에서 10씩)", () => {
+    let state = six();
+    state = appendTerritoryLogToAppState(state, createTerritoryLog("d", 1, 20, { now: 1_000 }));
+    const { byId, total } = widths(state);
+    expect(byId).toEqual({ a: 100, b: 100, c: 90, d: 120, e: 90, f: 100 });
+    expect(total).toBe(600);
+  });
+
+  it("홀수 21cm 양분은 좌 10 + 우 11 이고 전장 합이 깨지지 않는다", () => {
+    let state = six();
+    state = appendTerritoryLogToAppState(state, createTerritoryLog("c", 1, 21, { now: 1_000 }));
+    const { byId, total } = widths(state);
+    expect(byId.b).toBe(90);
+    expect(byId.c).toBe(121);
+    expect(byId.d).toBe(89);
+    expect(byId.a).toBe(100);
+    expect(byId.e).toBe(100);
+    expect(byId.f).toBe(100);
+    expect(total).toBe(600);
+  });
+
+  it("왼쪽 끝 A는 오른쪽으로만 밀어 B에서 가져온다", () => {
+    let state = six();
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("a", 1, 20, { pushDir: "right", now: 1_000 })
+    );
+    const { byId, total } = widths(state);
+    expect(byId).toEqual({ a: 120, b: 80, c: 100, d: 100, e: 100, f: 100 });
+    expect(total).toBe(600);
+  });
+
+  it("오른쪽 끝 F는 왼쪽으로만 밀어 E에서 가져온다", () => {
+    let state = six();
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("f", 1, 20, { pushDir: "left", now: 1_000 })
+    );
+    const { byId, total } = widths(state);
+    expect(byId).toEqual({ a: 100, b: 100, c: 100, d: 100, e: 80, f: 120 });
+    expect(total).toBe(600);
+  });
+
+  it("0cm 이웃은 건너뛰고 그 너머에서 가져온다", () => {
+    let state = six();
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("a", 1, 100, { pushDir: "right", now: 1_000 })
+    );
+    expect(widths(state).byId.b).toBe(0);
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("a", 1, 20, { pushDir: "right", now: 2_000 })
+    );
+    const { byId, total, field } = widths(state);
+    expect(byId.b).toBe(0);
+    expect(byId.a).toBe(220);
+    expect(byId.c).toBe(80);
+    expect(byId.d).toBe(100);
+    expect(total).toBe(600);
+    expect(field.seats.find((s) => s.id === "b")!.eliminated).toBe(true);
+  });
+
+  it("0cm이 된 B가 무방향이면 왼쪽 끝으로 재진입", () => {
+    let state = six();
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("a", 1, 100, { pushDir: "right", now: 1_000 })
+    );
+    state = appendTerritoryLogToAppState(state, createTerritoryLog("b", 1, 20, { now: 2_000 }));
+    const { alive, byId, total, field } = widths(state);
+    expect(alive[0]).toBe("b");
+    expect(byId.b).toBe(20);
+    expect(total).toBe(600);
+    expect(field.seats.map((s) => s.id)[0]).toBe("b");
+  });
+
+  it("오른쪽 끝에서 전장을 가로질러 가져와도 합은 600", () => {
+    let state = six();
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("f", 1, 450, { pushDir: "left", now: 1_000 })
+    );
+    const { byId, total, alive } = widths(state);
+    expect(total).toBe(600);
+    expect(byId.f).toBe(550);
+    expect(byId.e).toBe(0);
+    expect(byId.d).toBe(0);
+    expect(byId.c).toBe(0);
+    expect(byId.b).toBe(0);
+    expect(byId.a).toBe(50);
+    expect(alive).toEqual(["a", "f"]);
+  });
+
+  it("연속 양분 여러 번도 전장 합이 유지된다", () => {
+    let state = six();
+    state = appendTerritoryLogToAppState(state, createTerritoryLog("c", 1, 20, { now: 1_000 }));
+    state = appendTerritoryLogToAppState(state, createTerritoryLog("d", 1, 20, { now: 2_000 }));
+    state = appendTerritoryLogToAppState(state, createTerritoryLog("c", 1, 21, { now: 3_000 }));
+    const { total, byId } = widths(state);
+    expect(total).toBe(600);
+    expect(byId.c).toBeGreaterThan(byId.b);
+    expect(byId.d).toBeGreaterThan(byId.e);
   });
 });
