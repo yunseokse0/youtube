@@ -1,6 +1,7 @@
 import { normalizeContributionFormula } from "@/lib/contribution-formula";
 import { parseKstLocalTimestampToMs } from "@/lib/state";
 import type { DonationEvent } from "@/lib/donation/types";
+import { TOONA_DONATION_PULL_PAST_MS } from "@/lib/toona-hub-pull";
 
 export type ToonaHubDonationApiRow = {
   id?: string;
@@ -37,7 +38,7 @@ export function toonaHubDonationToEvent(
    *   · 결과: 리셋 누른 그 시점 이후의 신규 후원만 자동으로 가져오고, 리셋 이전 과거 후원은 절대 다시 살아나지 않음.
    *   · 의도: 과거 데이터를 새로 불러오고 싶을땐 관리자 수동 「일일 로그에서 후원 복구」 버튼 (ignoreMinInterval 경로) 를 통해서만 가능.
    */
-  const PAST_IMPORT_ALLOW_MS = 60 * 60 * 1000;
+  const PAST_IMPORT_ALLOW_MS = TOONA_DONATION_PULL_PAST_MS;
   const FUTURE_BLOCK_MS = 1 * 24 * 60 * 60 * 1000;
   const INTENTIONAL_CLEAR_BUFFER_MS = 500;
   if (atMs < linkedAt - PAST_IMPORT_ALLOW_MS) return null;

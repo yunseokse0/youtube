@@ -16,6 +16,13 @@ import {
   toonaHubDonationToEvent,
   type ToonaHubDonationApiRow,
 } from "@/lib/toona-hub-donation-map";
+import {
+  buildToonaDonationsPullUrl,
+  nextToonaDonationPullAfter,
+  resolveToonaDonationPullFromMs,
+  TOONA_DONATION_PULL_MAX_PAGES,
+  TOONA_DONATION_PULL_PAGE_SIZE,
+} from "@/lib/toona-hub-pull";
 
 export { toonaHubDonationToEvent, type ToonaHubDonationApiRow } from "@/lib/toona-hub-donation-map";
 
@@ -25,7 +32,7 @@ const lastDonationPullAt = new Map<string, number>();
 const lastBaseUrlRepairAt = new Map<string, number>();
 const DONATION_PULL_MIN_INTERVAL_MS = 60_000;
 const STATUS_FETCH_MS = 5_000;
-const DONATION_FETCH_MS = 8_000;
+const DONATION_FETCH_MS = 15_000;
 const BASEURL_REPAIR_COOLDOWN_MS = 5 * 60_000;
 
 export type ToonaHubLoginInput = {
@@ -556,48 +563,63 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
     void writeToonaHubSession(session).catch(() => {});
   }
 
-  let res: Response;
-  try {
-    res = await fetch(
-      `${safeSessionBase}/api/donations/${encodeURIComponent(session.streamKey)}?page=1&limit=50`,
-      {
+  /**
+   * 시나리오 B: toona 후원 ↔ youtube 엑셀 1:1.
+   * page=1&limit=50 은 최신 50건만 가져와 방송 중 계좌 누락이 생겼다.
+   * 연동/리셋 이후 건은 sort=asc + after 커서로 페이지를 이어 전부 반영. 이미 있는 건 apply 에서 중복 스킵.
+   */
+  const fromMs = resolveToonaDonationPullFromMs({
+    linkedAt: session.linkedAt,
+    intentionalClearAtMs,
+  });
+  let imported = 0;
+  let applied = 0;
+  let after = "";
+  for (let page = 0; page < TOONA_DONATION_PULL_MAX_PAGES; page += 1) {
+    const url = buildToonaDonationsPullUrl({
+      baseUrl: safeSessionBase,
+      streamKey: session.streamKey,
+      fromMs,
+      limit: TOONA_DONATION_PULL_PAGE_SIZE,
+      after,
+    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
         headers: {
           Accept: "application/json",
           Authorization: `Bearer ${session.token}`,
         },
         signal: AbortSignal.timeout(DONATION_FETCH_MS),
-      }
-    );
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : "donations_unreachable",
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : "donations_unreachable",
+      };
+    }
+
+    const json = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      donations?: ToonaHubDonationApiRow[];
     };
-  }
 
-  const json = (await res.json().catch(() => ({}))) as {
-    error?: string;
-    donations?: ToonaHubDonationApiRow[];
-  };
+    if (!res.ok) {
+      return { ok: false, error: json.error || `HTTP ${res.status}` };
+    }
 
-  if (!res.ok) {
-    return { ok: false, error: json.error || `HTTP ${res.status}` };
-  }
+    const rows = Array.isArray(json.donations) ? json.donations : [];
+    for (const row of rows) {
+      const event = toonaHubDonationToEvent(row, session.linkedAt, { intentionalClearAtMs });
+      if (!event) continue;
+      const result = await handleDinDonationIngest(youtubeUserId, event, true, { logSource: "toona" });
+      if (result.applied) applied += 1;
+      imported += 1;
+    }
 
-  /**
-   * 시나리오 B: toona 후원 ↔ youtube 엑셀 1:1.
-   * 실시간 ingest 누락분을 pull 로 보정. 이미 반영된 건은 apply 경로에서 중복 스킵.
-   * 🔴 FIX: 기존 handleDinDonationIngest 내부 로그 1행 + batch.push 1행 → 총 2행 중복 저장되던 버그.
-   *         logSource="toona" + skipBatchLog 단일화하여 1건당 1행만 저장.
-   */
-  let imported = 0;
-  let applied = 0;
-  for (const row of json.donations || []) {
-    const event = toonaHubDonationToEvent(row, session.linkedAt, { intentionalClearAtMs });
-    if (!event) continue;
-    const result = await handleDinDonationIngest(youtubeUserId, event, true, { logSource: "toona" });
-    if (result.applied) applied += 1;
-    imported += 1;
+    const nextAfter = nextToonaDonationPullAfter(rows, TOONA_DONATION_PULL_PAGE_SIZE);
+    if (!nextAfter) break;
+    after = nextAfter;
   }
 
   return { ok: true, imported, applied };
