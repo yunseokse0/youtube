@@ -53,6 +53,19 @@ class LoadtestSummaryTest(unittest.TestCase):
         self.assertEqual(out["verdict"], "OK")
         self.assertEqual(out["missing_n"], 0)
 
+    def test_hub_toona_prefix_matches_state_din_id(self):
+        hub_id = "toona.com:cmukq3ku04e5j1ap1aurgqk"
+        out = mod.summarize(
+            {"donors": [{"id": "toonation:din:" + hub_id, "amount": 1000, "externalId": hub_id}]},
+            {"logs": [{"id": "toona:" + hub_id, "amount": 1000}]},
+            0,
+            0,
+            200,
+            True,
+        )
+        self.assertEqual(out["verdict"], "OK")
+        self.assertEqual(out["missing_n"], 0)
+
     def test_unreadable_state_is_fail_not_zero(self):
         out = mod.summarize({}, {}, 0, 0, 0, False)
         self.assertEqual(out["verdict"], "STATE_FAIL")

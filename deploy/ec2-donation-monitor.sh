@@ -483,6 +483,9 @@ render_ui() {
   if [ "$lt_miss_n" -gt 0 ] && [ -n "$miss_ids" ]; then
     ui_row "         ${C_RED}id: ${miss_ids}${C_RST}  ${C_DIM}(d 키로 전체)${C_RST}"
   fi
+  if [ "$lt_miss_n" -gt 0 ] && [ "$lt_hub_n" -gt 0 ] && [ "$lt_miss_n" -eq "$lt_hub_n" ]; then
+    ui_row "         ${C_YELLOW}허브버퍼와 누락 건수가 같음 → 아직 id 접두어 오탐이거나, 새 스크립트가 안 올라온 상태${C_RST}"
+  fi
   ui_row "${BOLD}대기${C_RST}     QUEUE ${q_len}   UNMATCH ${un_len}   ${C_DIM}(엑셀 반영 전. 누락이 아님)${C_RST}"
   printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "${pad:-0}" "" "${C_CYAN}─┤${C_RST}"
 
@@ -1169,7 +1172,7 @@ render_diff_panel() {
   local pad
   pad="$(safe_pad $(( cols - 2 )))"
   printf '%s%*s%s\n' "${BOLD}${C_CYAN}┌─ 누락 상세 (허브에 있고 정산표에 없는 것만)${C_RST}" "${pad:-0}" "" "${BOLD}${C_CYAN}─┐${C_RST}"
-  ui_row "${BOLD}허브 건수 < 정산표 는 정상${C_RST} ${C_DIM}· 누락 ≠ Diff(Hub-State)${C_RST}"
+  ui_row "${BOLD}허브 건수 < 정산표 는 정상${C_RST} ${C_DIM}· 누락은 접두어(toona:/toonation:din:)를 떼고 비교${C_RST}"
   pad="$(safe_pad $(( cols - 2 )))"
   printf '%s%*s%s\n' "${C_CYAN}├─${C_RST}" "${pad:-0}" "" "${C_CYAN}─┤${C_RST}"
 

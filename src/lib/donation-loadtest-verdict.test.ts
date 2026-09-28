@@ -1,17 +1,39 @@
 import { describe, expect, it } from "vitest";
 
 /** deploy/ec2-donation-loadtest-summary.py 와 같은 판정. 누락 = 허브 id ∉ 정산표 전체 */
-const STATE_ID_PREFIXES = ["toonation:din:", "bank:din:", "toonation:", "bank:sms:", "bank:"];
+const ID_PREFIXES = [
+  "toonation:din:",
+  "bank:din:",
+  "toonation:",
+  "bank:sms:",
+  "bank:",
+  "ingest:",
+  "toona:",
+  "account:",
+  "din:",
+  "hub:",
+];
+
+function idCores(raw: string) {
+  const keys = new Set<string>();
+  const s = raw.trim();
+  if (!s) return keys;
+  keys.add(s);
+  let cur = s;
+  for (let n = 0; n < 8; n++) {
+    const p = ID_PREFIXES.find((x) => cur.startsWith(x) && cur.length > x.length);
+    if (!p) break;
+    cur = cur.slice(p.length);
+    keys.add(cur);
+  }
+  return keys;
+}
 
 function stateMatchKeys(donors: Array<{ id?: string; externalId?: string }>) {
   const keys = new Set<string>();
   for (const d of donors) {
-    for (const raw of [String(d.id || "").trim(), String(d.externalId || "").trim()]) {
-      if (!raw) continue;
-      keys.add(raw);
-      for (const p of STATE_ID_PREFIXES) {
-        if (raw.startsWith(p) && raw.length > p.length) keys.add(raw.slice(p.length));
-      }
+    for (const raw of [String(d.id || ""), String(d.externalId || "")]) {
+      for (const k of idCores(raw)) keys.add(k);
     }
   }
   return keys;
@@ -28,7 +50,11 @@ function summarize(args: {
   const stIds = new Set(args.stateDonors.map((x) => String(x.id || "").trim()).filter(Boolean));
   const stMatch = stateMatchKeys(args.stateDonors);
   const hIds = new Set(args.hubLogs.map((x) => String(x.id || "").trim()).filter(Boolean));
-  const missing = [...hIds].filter((id) => !stMatch.has(id)).sort();
+  const missing = [...hIds].filter((id) => {
+    const cores = idCores(id);
+    for (const c of cores) if (stMatch.has(c)) return false;
+    return true;
+  }).sort();
   const donorsOk = args.parseOk && Array.isArray(args.stateDonors);
   let verdict: string;
   if (!donorsOk || args.stateBytes <= 0) verdict = "STATE_FAIL";
@@ -101,6 +127,19 @@ describe("부하테스트 모니터 판정", () => {
     const out = summarize({
       stateDonors: [{ id: `toonation:din:${hubId}`, externalId: hubId, amount: 1000 }],
       hubLogs: [{ id: hubId, amount: 1000 }],
+      queue: 0,
+      unmatch: 0,
+      stateBytes: 200,
+      parseOk: true,
+    });
+    expect(out).toEqual({ verdict: "OK", missing_n: 0, state_n: 1, hub_n: 1 });
+  });
+
+  it("허브 toona: 접두어와 정산표 toonation:din: 은 같은 후원이다", () => {
+    const hubId = "toona.com:cmukq3ku04e5j1ap1aurgqk";
+    const out = summarize({
+      stateDonors: [{ id: `toonation:din:${hubId}`, externalId: hubId, amount: 1000 }],
+      hubLogs: [{ id: `toona:${hubId}`, amount: 1000 }],
       queue: 0,
       unmatch: 0,
       stateBytes: 200,

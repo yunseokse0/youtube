@@ -39,19 +39,40 @@ STATE_ID_PREFIXES = (
     "toonation:",
     "bank:sms:",
     "bank:",
+    "ingest:",
+    "toona:",
+    "account:",
+    "din:",
+    "hub:",
 )
 
 
-def add_state_match_keys(keys: set[str], donor: dict) -> None:
-    iid = str(donor.get("id") or "").strip()
-    ext = str(donor.get("externalId") or "").strip()
-    for raw in (iid, ext):
-        if not raw:
-            continue
-        keys.add(raw)
+def id_cores(raw: str) -> set[str]:
+    raw = (raw or "").strip()
+    if not raw:
+        return set()
+    keys = {raw}
+    cur = raw
+    for _ in range(8):
+        hit = False
         for p in STATE_ID_PREFIXES:
-            if raw.startswith(p) and len(raw) > len(p):
-                keys.add(raw[len(p) :])
+            if cur.startswith(p) and len(cur) > len(p):
+                cur = cur[len(p) :]
+                keys.add(cur)
+                hit = True
+                break
+        if not hit:
+            break
+    return keys
+
+
+def add_state_match_keys(keys: set[str], donor: dict) -> None:
+    for field in ("id", "externalId"):
+        keys |= id_cores(str(donor.get(field) or ""))
+
+
+def hub_ids_missing(hub_ids: set[str], st_keys: set[str]) -> set[str]:
+    return {hid for hid in hub_ids if id_cores(hid).isdisjoint(st_keys)}
 
 
 def parse_at_to_ms(at) -> int:
@@ -240,8 +261,8 @@ def main() -> int:
             pass
 
     # 누락 = 허브 로그 id 가 state 전체(시간창 무관)에 없음. 1h 창끼리 빼면 ingest 시각 차이로 오탐 남.
-    missing_ids_1h = sorted(h_ids_1h - st_match)[:20]
-    missing_ids_24h = sorted(h_ids_24h - st_match)[:20]
+    missing_ids_1h = sorted(hub_ids_missing(h_ids_1h, st_match))[:20]
+    missing_ids_24h = sorted(hub_ids_missing(h_ids_24h, st_match))[:20]
     excess_ids = sorted(st_ids_24h - h_ids_24h)[:20]
     missing_ids_1h_sum = sum(id_to_amt.get(i, 0) for i in missing_ids_1h)
     missing_ids_24h_sum = sum(id_to_amt.get(i, 0) for i in missing_ids_24h)
@@ -283,7 +304,7 @@ def main() -> int:
                 h_ids_post.add(iid)
                 h_cnt_post += 1
                 h_sum_post += id_to_amt.get(iid, 0)
-        missing_post_ids = sorted(h_ids_post - st_match)[:20]
+        missing_post_ids = sorted(hub_ids_missing(h_ids_post, st_match))[:20]
         missing_post_sum = sum(id_to_amt.get(i, 0) for i in missing_post_ids)
         pre_boundary_beg = reset_at - 3600 * 1000
         for iid, ms in id_to_ms.items():
@@ -312,7 +333,7 @@ def main() -> int:
             )
         if level == "OK":
             level = "WARN"
-    n_miss_24h = len(h_ids_24h - st_match)
+    n_miss_24h = len(hub_ids_missing(h_ids_24h, st_match))
     if n_miss_24h >= 10 or missing_ids_24h_sum >= 500000:
         level = "CRITICAL"
         warnings.append(f"24h 허브→정산표 누락: {n_miss_24h}건 / {krw(missing_ids_24h_sum)}")
@@ -345,11 +366,11 @@ def main() -> int:
                 warnings.append(
                     f"RESET 이후 누락 주의: POST hub {h_cnt_post}건 중 state에 {len(missing_post_ids)}건 / {krw(missing_post_sum)}"
                 )
-        if len(h_pre_bd_ids) >= 3 and len(h_pre_bd_ids - st_match) >= len(h_pre_bd_ids):
+        if len(h_pre_bd_ids) >= 3 and len(hub_ids_missing(h_pre_bd_ids, st_match)) >= len(h_pre_bd_ids):
             warnings.append(f"RESET 경계 알림: 리셋 직전 1시간 hub 후원 {len(h_pre_bd_ids)}건이 리셋으로 필터링됨")
 
     h_ids_all = set(id_to_amt.keys())
-    missing_all = sorted(h_ids_all - st_match)
+    missing_all = sorted(hub_ids_missing(h_ids_all, st_match))
     missing_all_sum = sum(id_to_amt.get(i, 0) for i in missing_all)
     if missing_all:
         if len(missing_all) >= 10 or missing_all_sum >= 500000:
@@ -399,7 +420,7 @@ def main() -> int:
         "  ┌─ 참고: 최근 1시간 (창끼리 건수 차이는 누락이 아님)",
         f"  │ 허브버퍼 : {h_cnt_1h:>6}건 / {krw(h_sum_1h)}",
         f"  │ 정산표   : {st_cnt_1h:>6}건 / {krw(st_sum_1h)}",
-        f"  │ 누락     : {len(h_ids_1h - st_match)}건 / {krw(missing_ids_1h_sum)}"
+        f"  │ 누락     : {len(hub_ids_missing(h_ids_1h, st_match))}건 / {krw(missing_ids_1h_sum)}"
         + (f" ({', '.join(missing_ids_1h[:5])})" if missing_ids_1h else " (없음)"),
         "",
         "  ┌─ 참고: 최근 24시간",

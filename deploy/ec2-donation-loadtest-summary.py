@@ -19,26 +19,47 @@ def load_json(path: str) -> tuple[dict, bool]:
         return {}, False
 
 
-# 허브는 toona.com:xxx, 정산표는 toonation:din:toona.com:xxx 로 저장된다.
-STATE_ID_PREFIXES = (
+# 긴 접두어를 먼저. toonation: 을 toona: 보다 앞에 둬야 toonation:din 이 tion:din 으로 안 잘린다.
+ID_PREFIXES = (
     "toonation:din:",
     "bank:din:",
     "toonation:",
     "bank:sms:",
     "bank:",
+    "ingest:",
+    "toona:",
+    "account:",
+    "din:",
+    "hub:",
 )
 
 
+def id_cores(raw: str) -> set[str]:
+    raw = (raw or "").strip()
+    if not raw:
+        return set()
+    keys = {raw}
+    cur = raw
+    for _ in range(8):
+        hit = False
+        for p in ID_PREFIXES:
+            if cur.startswith(p) and len(cur) > len(p):
+                cur = cur[len(p) :]
+                keys.add(cur)
+                hit = True
+                break
+        if not hit:
+            break
+    return keys
+
+
 def add_state_match_keys(keys: set[str], donor: dict) -> None:
-    iid = str(donor.get("id") or "").strip()
-    ext = str(donor.get("externalId") or "").strip()
-    for raw in (iid, ext):
-        if not raw:
-            continue
-        keys.add(raw)
-        for p in STATE_ID_PREFIXES:
-            if raw.startswith(p) and len(raw) > len(p):
-                keys.add(raw[len(p) :])
+    for field in ("id", "externalId"):
+        keys |= id_cores(str(donor.get(field) or ""))
+
+
+def hub_ids_missing(hub_ids: set[str], st_keys: set[str]) -> set[str]:
+    return {hid for hid in hub_ids if id_cores(hid).isdisjoint(st_keys)}
 
 
 def ids_and_sum(rows: list) -> tuple[set[str], int, int]:
@@ -75,7 +96,7 @@ def summarize(state: dict, hub: dict, q_n: int, u_n: int, state_bytes: int, pars
         h_rows = hub.get("donationLogs") if isinstance(hub.get("donationLogs"), list) else []
     st_ids, st_n, st_sum = ids_and_sum(st_rows)
     h_ids, h_n, h_sum = ids_and_sum(h_rows)
-    missing = sorted(h_ids - state_match_keys(st_rows))
+    missing = sorted(hub_ids_missing(h_ids, state_match_keys(st_rows)))
     by_amt = {str(x.get("id") or ""): int(x.get("amount") or 0) for x in h_rows if isinstance(x, dict)}
     miss_sum = sum(by_amt.get(iid, 0) for iid in missing)
     donors_ok = parse_ok and isinstance(state.get("donors"), list)
