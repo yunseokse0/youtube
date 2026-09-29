@@ -275,6 +275,47 @@ export function createTerritoryLog(
   };
 }
 
+/** 기록부 멤버 칸 — 개인전은 팀 라벨을 쓰지 않는다. */
+export function formatTerritoryLogActorLabel(
+  log: TerritoryLog,
+  opts: {
+    matchMode?: "individual" | "team";
+    teams?: Array<{ id: string; name: string }>;
+    members: Array<Pick<Member, "id" | "name">>;
+    memberTeamAssignments?: Record<string, string>;
+  }
+): string {
+  const matchMode = opts.matchMode === "team" ? "team" : "individual";
+  const teams = opts.teams || [];
+  const members = opts.members || [];
+  const assignments = opts.memberTeamAssignments || {};
+  const memberId = String(log.memberId || "").trim();
+  const teamFromMember = memberId.match(/^__team_(.+)$/);
+  const teamId =
+    (typeof log.teamId === "string" && log.teamId.trim()) ||
+    (teamFromMember ? String(teamFromMember[1] || "").trim() : "");
+  const member = members.find((m) => m.id === memberId && !memberId.startsWith("__team_"));
+
+  if (matchMode === "team" && teamId) {
+    const team = teams.find((t) => t.id === teamId);
+    if (team?.name) return `[${team.name}] 팀`;
+  }
+
+  if (member?.name) return member.name;
+
+  if (teamId) {
+    const names = members
+      .filter((m) => assignments[m.id] === teamId)
+      .map((m) => String(m.name || "").trim())
+      .filter(Boolean);
+    if (names.length) return names.join("·");
+    const team = teams.find((t) => t.id === teamId);
+    if (team?.name) return team.name;
+  }
+
+  return memberId.replace(/^__team_/, "") || "—";
+}
+
 /** 영토 기록 저장 시 pushDir — 양끝 좌석은 고정 방향, 가운데는 선택·시스템 기본 */
 export function resolveTerritoryLogPushDirForWrite(args: {
   seatRole: { canChoosePush: boolean; expandDir: "left" | "right" | "both" } | null;

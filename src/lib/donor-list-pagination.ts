@@ -15,8 +15,7 @@ export type DonorListPageSlice<T> = {
 export function sliceDonorListPage<T>(
   rows: T[],
   page: number,
-  pageSize: number,
-  showAll = false
+  pageSize: number
 ): DonorListPageSlice<T> {
   const size = Math.max(DONOR_LIST_MIN_PAGE_SIZE, Number(pageSize) || DONOR_LIST_MIN_PAGE_SIZE);
   const totalPages = Math.max(1, Math.ceil(rows.length / size) || 1);
@@ -28,8 +27,31 @@ export function sliceDonorListPage<T>(
     pageIdx,
     pageStart,
     pageEnd,
-    visible: showAll ? rows : rows.slice(pageStart, pageEnd),
+    visible: rows.slice(pageStart, pageEnd),
   };
+}
+
+export type DonorListPageItem = number | "ellipsis";
+
+/** 하단 중앙 페이지 번호. 양끝·현재 근처만 보여 46페이지여도 한 줄에 맞춘다. */
+export function buildDonorListPageItems(
+  page: number,
+  totalPages: number
+): DonorListPageItem[] {
+  const total = Math.max(1, Math.floor(Number(totalPages) || 1));
+  const current = Math.min(Math.max(1, Math.floor(Number(page) || 1)), total);
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  const siblings = 2;
+  const left = Math.max(2, current - siblings);
+  const right = Math.min(total - 1, current + siblings);
+  const items: DonorListPageItem[] = [1];
+  if (left > 2) items.push("ellipsis");
+  for (let i = left; i <= right; i += 1) items.push(i);
+  if (right < total - 1) items.push("ellipsis");
+  items.push(total);
+  return items;
 }
 
 export function sortDonorsNewestFirst<T extends { at?: number }>(rows: T[]): T[] {

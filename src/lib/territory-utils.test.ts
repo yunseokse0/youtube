@@ -5,6 +5,7 @@ import {
   aggregateSeatPushesFromTerritoryLogs,
   createTerritoryLog,
   filterTerritoryLogsAfterReset,
+  formatTerritoryLogActorLabel,
   formatTerritoryLogPushDirLabel,
   mergeHighSocietyPlayerPushInputs,
   mergeTerritoryLogsFromPatch,
@@ -91,6 +92,26 @@ describe("territory-utils", () => {
         members
       )
     ).toBe("→ 오른쪽");
+  });
+
+  it("개인전 기록부는 팀 로그를 멤버 이름으로 보여 주고 팀전만 [팀] 라벨을 쓴다", () => {
+    const members = [
+      { id: "jaki", name: "자키" },
+      { id: "nana", name: "나나" },
+      { id: "kim", name: "김라라" },
+    ];
+    const teams = [{ id: "ta", name: "TEAM A(자키,나나,김라라)" }];
+    const assignments = { jaki: "ta", nana: "ta", kim: "ta" };
+    const teamLog = createTerritoryLog("jaki", 1, 50, { teamId: "ta" });
+    const personLog = createTerritoryLog("jaki", 1, 10);
+    const opts = { teams, members, memberTeamAssignments: assignments };
+    expect(formatTerritoryLogActorLabel(teamLog, { ...opts, matchMode: "team" })).toBe(
+      "[TEAM A(자키,나나,김라라)] 팀"
+    );
+    expect(formatTerritoryLogActorLabel(teamLog, { ...opts, matchMode: "individual" })).toBe(
+      "자키·나나·김라라"
+    );
+    expect(formatTerritoryLogActorLabel(personLog, { ...opts, matchMode: "individual" })).toBe("자키");
   });
 
   it("buildHighSocietyFieldFromAppState includes territory logs", () => {

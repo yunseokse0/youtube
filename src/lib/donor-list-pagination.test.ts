@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DONOR_LIST_MIN_PAGE_SIZE,
   DONOR_PAGE_SIZES,
+  buildDonorListPageItems,
   donorMemberSelectOptions,
   sliceDonorListPage,
   sortDonorsNewestFirst,
@@ -78,6 +79,13 @@ describe("후원자 리스트 페이지네이션 · 수신 중 누락/흔들림"
     const afterSizeChange = sliceDonorListPage(list, 1, 100);
     expect(afterSizeChange.pageIdx).toBe(1);
     expect(afterSizeChange.visible).toHaveLength(100);
+  });
+
+  it("하단 페이지 번호는 양끝과 현재 근처만 보여 준다", () => {
+    expect(buildDonorListPageItems(1, 5)).toEqual([1, 2, 3, 4, 5]);
+    expect(buildDonorListPageItems(1, 46)).toEqual([1, 2, 3, "ellipsis", 46]);
+    expect(buildDonorListPageItems(20, 46)).toEqual([1, "ellipsis", 18, 19, 20, 21, 22, "ellipsis", 46]);
+    expect(buildDonorListPageItems(46, 46)).toEqual([1, "ellipsis", 44, 45, 46]);
   });
 });
 

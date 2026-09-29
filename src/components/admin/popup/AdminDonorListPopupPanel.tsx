@@ -28,6 +28,7 @@ import { normalizeDonorsArray, resolveEffectiveDonorTarget } from "@/lib/state";
 import {
   DONOR_PAGE_SIZES,
   type DonorPageSize,
+  buildDonorListPageItems,
   donorMemberSelectOptions,
   sliceDonorListPage,
 } from "@/lib/donor-list-pagination";
@@ -58,7 +59,6 @@ export default function AdminDonorListPopupPanel() {
 
   const [query, setQuery] = useState("");
   const [timeFilter, setTimeFilter] = useState<TimeFilterKey>("all");
-  const [showAll, setShowAll] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<DonorPageSize>(50);
   const [dense, setDense] = useState(false);
@@ -134,10 +134,13 @@ export default function AdminDonorListPopupPanel() {
   const {
     totalPages,
     pageIdx,
-    pageStart,
-    pageEnd,
     visible: rowsVisible,
-  } = sliceDonorListPage(rowsFiltered, page, pageSize, showAll);
+  } = sliceDonorListPage(rowsFiltered, page, pageSize);
+
+  const pageItems = useMemo(
+    () => buildDonorListPageItems(pageIdx, totalPages),
+    [pageIdx, totalPages]
+  );
 
   const filteredAgg = useMemo(() => {
     let sum = 0;
@@ -263,14 +266,12 @@ export default function AdminDonorListPopupPanel() {
               <span className="text-slate-500">·</span>
               <span className="font-bold text-emerald-300">{formatWon(filteredAgg.sum)}</span>
             </div>
-            {!showAll && (
-              <div className="flex items-center gap-1.5 rounded border border-slate-700/40 bg-slate-900/40 px-2.5 py-1">
-                <span className="text-slate-400">이 페이지</span>
-                <span className="font-semibold text-slate-100">{pageAgg.count}건</span>
-                <span className="text-slate-500">·</span>
-                <span className="font-bold text-emerald-200">{formatWon(pageAgg.sum)}</span>
-              </div>
-            )}
+            <div className="flex items-center gap-1.5 rounded border border-slate-700/40 bg-slate-900/40 px-2.5 py-1">
+              <span className="text-slate-400">이 페이지</span>
+              <span className="font-semibold text-slate-100">{pageAgg.count}건</span>
+              <span className="text-slate-500">·</span>
+              <span className="font-bold text-emerald-200">{formatWon(pageAgg.sum)}</span>
+            </div>
             <span className="text-slate-500">최신순</span>
           </div>
 
@@ -502,72 +503,66 @@ export default function AdminDonorListPopupPanel() {
           </div>
 
           {rowsFiltered.length > 0 ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-400">
-              <div className="flex items-center gap-2 flex-wrap">
-                {showAll ? (
-                  <span>전체 표시 · {rowsFiltered.length}건 (DOM 전체 렌더)</span>
-                ) : (
-                  <span>
-                    페이지 <span className="font-bold text-amber-400">{pageIdx}</span> / {totalPages}
-                    <span className="mx-2 text-neutral-600">·</span>
-                    표시 {pageStart + 1}-{Math.min(pageEnd, rowsFiltered.length)} / {rowsFiltered.length}건
-                  </span>
-                )}
-                {!showAll && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-neutral-500">페이지당</span>
-                    {DONOR_PAGE_SIZES.map((sz) => (
-                      <button
-                        key={sz}
-                        type="button"
-                        onClick={() => {
-                          setPageSize(sz);
-                          setPage(1);
-                        }}
-                        className={`rounded border px-1.5 py-0.5 ${
-                          pageSize === sz
-                            ? "border-amber-500/60 bg-amber-700/40 text-amber-200"
-                            : "border-neutral-700 bg-neutral-800 text-neutral-300"
-                        }`}
-                      >
-                        {sz}건
-                      </button>
-                    ))}
-                  </div>
-                )}
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-xs text-neutral-400">
+              <div className="flex items-center gap-1 justify-self-start">
+                <span className="text-neutral-500">페이지당</span>
+                {DONOR_PAGE_SIZES.map((sz) => (
+                  <button
+                    key={sz}
+                    type="button"
+                    onClick={() => {
+                      setPageSize(sz);
+                      setPage(1);
+                    }}
+                    className={`rounded border px-1.5 py-0.5 ${
+                      pageSize === sz
+                        ? "border-amber-500/60 bg-amber-700/40 text-amber-200"
+                        : "border-neutral-700 bg-neutral-800 text-neutral-300"
+                    }`}
+                  >
+                    {sz}건
+                  </button>
+                ))}
               </div>
-              <div className="flex items-center gap-1.5">
-                {!showAll && totalPages > 1 && (
-                  <>
-                    <button type="button" disabled={pageIdx <= 1} onClick={() => setPage(1)} className="rounded bg-neutral-800 px-2 py-1 disabled:opacity-40">
-                      « 처음
+              <nav className="flex items-center justify-center gap-1" aria-label="후원자 리스트 페이지">
+                <button
+                  type="button"
+                  disabled={pageIdx <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="rounded bg-neutral-800 px-2 py-1 disabled:opacity-40"
+                >
+                  ‹
+                </button>
+                {pageItems.map((item, i) =>
+                  item === "ellipsis" ? (
+                    <span key={`e-${i}`} className="px-1 text-neutral-600">
+                      …
+                    </span>
+                  ) : (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => setPage(item)}
+                      className={`min-w-[1.75rem] rounded px-1.5 py-1 ${
+                        item === pageIdx
+                          ? "bg-amber-700/70 font-bold text-amber-100"
+                          : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
+                      }`}
+                    >
+                      {item}
                     </button>
-                    <button type="button" disabled={pageIdx <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="rounded bg-neutral-800 px-2 py-1 disabled:opacity-40">
-                      ‹ 이전
-                    </button>
-                    <button type="button" disabled={pageIdx >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="rounded bg-neutral-800 px-2 py-1 disabled:opacity-40">
-                      다음 ›
-                    </button>
-                    <button type="button" disabled={pageIdx >= totalPages} onClick={() => setPage(totalPages)} className="rounded bg-neutral-800 px-2 py-1 disabled:opacity-40">
-                      마지막 »
-                    </button>
-                  </>
+                  )
                 )}
                 <button
                   type="button"
-                  className={`rounded px-2 py-1 ${
-                    showAll
-                      ? "border border-violet-500/50 bg-violet-700/40 text-violet-200"
-                      : "bg-neutral-800 text-neutral-200"
-                  }`}
-                  onClick={() => {
-                    setShowAll((v) => !v);
-                    setPage(1);
-                  }}
+                  disabled={pageIdx >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="rounded bg-neutral-800 px-2 py-1 disabled:opacity-40"
                 >
-                  {showAll ? "✓ 페이지네이션 모드로" : "📄 전체 표시 (성능 ↓)"}
+                  ›
                 </button>
-              </div>
+              </nav>
+              <div />
             </div>
           ) : null}
         </div>

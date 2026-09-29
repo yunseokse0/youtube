@@ -28,6 +28,7 @@ import HighSocietySeatLayoutEditor from "@/components/admin/HighSocietySeatLayou
 import {
   createTerritoryLog,
   filterTerritoryLogsAfterReset,
+  formatTerritoryLogActorLabel,
   formatTerritoryLogPushDirLabel,
   resolveTerritoryLogPushDirForWrite,
 } from "@/lib/territory-utils";
@@ -635,11 +636,11 @@ export default function AdminHighSocietyPopupPanel() {
             />
           </section>
 
-          <section className="rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
+          <section className="rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3 min-w-0 overflow-x-hidden">
             <h2 className="text-sm font-semibold">영토 기록부</h2>
-                <div className="grid grid-cols-1 md:grid-cols-[auto_1fr_auto_auto_auto_auto] gap-2">
+                <div className="flex flex-wrap items-center gap-2 min-w-0 w-full">
                   <select
-                    className="rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"
+                    className="shrink-0 rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"
                     value={territoryMode}
                     onChange={(e) => setTerritoryMode(e.target.value === "minus" ? "minus" : "plus")}
                   >
@@ -647,7 +648,7 @@ export default function AdminHighSocietyPopupPanel() {
                     <option value="minus">축소(-)</option>
                   </select>
                   <input
-                    className="rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"
+                    className="w-28 shrink-0 rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"
                     placeholder="cm (예: 5, 105)"
                     inputMode="numeric"
                     value={territoryCm}
@@ -662,7 +663,7 @@ export default function AdminHighSocietyPopupPanel() {
                   />
                   {matchMode === "team" ? (
                     <select
-                      className="rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"
+                      className="min-w-0 max-w-full flex-1 basis-40 rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"
                       value={territoryTeamId}
                       onChange={(e) => setTerritoryTeamId(e.target.value)}
                       disabled={teams.length === 0}
@@ -679,25 +680,20 @@ export default function AdminHighSocietyPopupPanel() {
                     </select>
                   ) : (
                     <select
-                      className="rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"
+                      className="min-w-0 max-w-full flex-1 basis-36 rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"
                       value={territoryMemberId}
                       onChange={(e) => setTerritoryMemberId(e.target.value)}
                       disabled={hsSeatPlayers.length === 0}
                     >
-                      {hsSeatPlayers.map((m) => {
-                        const tid = memberTeamAssignments[m.id];
-                        const team = teams.find((t) => t.id === tid);
-                        const label = team ? `[${team.name}] ${m.name}` : m.name;
-                        return (
-                          <option key={m.id} value={m.id}>
-                            {label}
-                          </option>
-                        );
-                      })}
+                      {hsSeatPlayers.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
                     </select>
                   )}
                   <select
-                    className="rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"
+                    className="shrink-0 rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"
                     value={territoryPushDir}
                     onChange={(e) => {
                       const v = e.target.value;
@@ -712,14 +708,14 @@ export default function AdminHighSocietyPopupPanel() {
                     <option value="split">↔ 양분</option>
                   </select>
                   <input
-                    className="rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"
+                    className="min-w-0 flex-1 basis-24 rounded border border-white/10 bg-neutral-950 px-2 py-1.5 text-sm"
                     placeholder="메모"
                     value={territoryNote}
                     onChange={(e) => setTerritoryNote(e.target.value)}
                   />
                   <button
                     type="button"
-                    className={`rounded px-3 py-1.5 text-sm font-semibold ${
+                    className={`shrink-0 rounded px-3 py-1.5 text-sm font-semibold ${
                       territoryMode === "plus" ? "bg-amber-600 hover:bg-amber-500" : "bg-rose-600 hover:bg-rose-500"
                     }`}
                     onClick={() => addTerritoryRecord()}
@@ -727,17 +723,17 @@ export default function AdminHighSocietyPopupPanel() {
                     반영
                   </button>
                 </div>
-                <div className="max-h-64 overflow-auto">
-                  <table className="w-full text-xs">
+                <div className="max-h-64 min-w-0 overflow-auto">
+                  <table className="w-full table-fixed text-xs">
                     <thead>
                       <tr className="text-neutral-400">
-                        <th className="p-1 text-left">시각</th>
+                        <th className="w-[5.5rem] p-1 text-left">시각</th>
                         <th className="p-1 text-left">멤버</th>
-                        <th className="p-1 text-left">구분</th>
-                        <th className="p-1 text-right">cm</th>
-                        <th className="p-1 text-left">방향</th>
+                        <th className="w-12 p-1 text-left">구분</th>
+                        <th className="w-12 p-1 text-right">cm</th>
+                        <th className="w-[4.5rem] p-1 text-left">방향</th>
                         <th className="p-1 text-left">메모</th>
-                        <th className="p-1 text-right">삭제</th>
+                        <th className="w-14 p-1 text-right">삭제</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -745,27 +741,24 @@ export default function AdminHighSocietyPopupPanel() {
                         .slice()
                         .sort((a, b) => b.at - a.at)
                         .map((log) => {
-                          const logTeamId = typeof (log as unknown as { teamId?: string }).teamId === "string"
-                            ? String((log as unknown as { teamId?: string }).teamId || "").trim()
-                            : "";
-                          let displayLabel: string;
-                          if (logTeamId) {
-                            const team = teams.find((t) => t.id === logTeamId);
-                            displayLabel = team ? `[${team.name}] 팀` : log.memberId;
-                          } else {
-                            const member = state.members.find((m) => m.id === log.memberId);
-                            displayLabel = member?.name || log.memberId;
-                          }
+                          const displayLabel = formatTerritoryLogActorLabel(log, {
+                            matchMode,
+                            teams,
+                            members: state.members || [],
+                            memberTeamAssignments,
+                          });
                           return (
                             <tr key={log.id} className="border-t border-white/10">
-                              <td className="p-1 text-neutral-400">{formatTime(log.at)}</td>
-                              <td className="p-1">{displayLabel}</td>
+                              <td className="p-1 text-neutral-400 whitespace-nowrap">{formatTime(log.at)}</td>
+                              <td className="p-1 truncate" title={displayLabel}>
+                                {displayLabel}
+                              </td>
                               <td className="p-1">{log.delta > 0 ? "확장" : "축소"}</td>
                               <td className="p-1 text-right tabular-nums">{log.amount}</td>
                               <td className="p-1 text-neutral-400">
                                 {formatTerritoryLogPushDirLabel(log, highSocietySettings, state.members || [])}
                               </td>
-                              <td className="p-1 text-neutral-400">{log.note || "-"}</td>
+                              <td className="p-1 text-neutral-400 truncate">{log.note || "-"}</td>
                               <td className="p-1 text-right">
                                 <button
                                   type="button"
