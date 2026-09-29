@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getToonaDashboardUrl } from "@/lib/donation-ingest-mode";
+import { ingestErrorVisibleAfterLink } from "@/lib/toona-hub-ingest-error";
 import { loadStateFromApi, saveState } from "@/lib/state";
 import { TOONA_HUB_CLIENT_CONNECT_TIMEOUT_MS } from "@/lib/toona-hub-login";
 
@@ -298,6 +299,8 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
     }
   };
 
+  const ingestError = session ? ingestErrorVisibleAfterLink(session) : null;
+
   const statusLabel = !session
     ? "미연결"
     : session.lastStatusOk === false
@@ -320,7 +323,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
         {session?.lastIngestAt ? (
           <span className="text-[11px] text-neutral-400">
             마지막 ingest: {new Date(session.lastIngestAt).toLocaleString("ko-KR")}
-            {session.lastIngestOk === false ? " · 실패" : session.lastIngestOk ? " · 성공" : ""}
+            {ingestError ? " · 실패" : session.lastIngestOk ? " · 성공" : ""}
           </span>
         ) : null}
       </div>
@@ -387,8 +390,8 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
             {session.lastStatusError ? (
               <div className="text-rose-300">상태 오류: {session.lastStatusError}</div>
             ) : null}
-            {session.lastIngestError ? (
-              <div className="text-amber-200">ingest 오류: {session.lastIngestError}</div>
+            {ingestError ? (
+              <div className="text-amber-200">ingest 오류: {ingestError}</div>
             ) : null}
           </div>
           <div className="flex flex-wrap gap-2">

@@ -1,4 +1,5 @@
 import { normalizeToonaApiBaseUrl } from "@/lib/toona-sig-import";
+import { ingestErrorVisibleAfterLink } from "@/lib/toona-hub-ingest-error";
 import { getToonaApiBaseUrl, normalizePublicBaseUrl } from "@/lib/toona-link";
 import {
   clearToonaHubDonationLogs,
@@ -129,7 +130,12 @@ export async function loginAndLinkToonaHub(input: ToonaHubLoginInput): Promise<
     lastStatusError: null,
     lastIngestAt: patchJson.lastIngestAt ?? null,
     lastIngestOk: patchJson.lastIngestOk ?? null,
-    lastIngestError: patchJson.lastIngestError ?? null,
+    lastIngestError: ingestErrorVisibleAfterLink({
+      linkedAt,
+      lastIngestAt: patchJson.lastIngestAt,
+      lastIngestOk: patchJson.lastIngestOk,
+      lastIngestError: patchJson.lastIngestError,
+    }),
     youtubegitEnabled: patchJson.enabled !== false,
     youtubeUserId,
   };

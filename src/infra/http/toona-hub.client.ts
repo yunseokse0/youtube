@@ -1,4 +1,5 @@
 import { mapToonaSignaturesToSigItems, normalizeToonaApiBaseUrl, type ToonaSignatureRow } from "@/lib/toona-sig-import";
+import { ingestErrorVisibleAfterLink } from "@/lib/toona-hub-ingest-error";
 import { getToonaApiBaseUrl, getYoutubePublicBaseUrl, normalizePublicBaseUrl } from "@/lib/toona-link";
 import { normalizeContributionFormula } from "@/lib/contribution-formula";
 import { persistContributionFormulaForUser } from "@/lib/contribution-formula-persist";
@@ -264,7 +265,12 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
       session.youtubegitEnabled = json.enabled !== false;
       session.lastIngestAt = json.lastIngestAt ?? null;
       session.lastIngestOk = json.lastIngestOk ?? null;
-      session.lastIngestError = json.lastIngestError ?? null;
+      session.lastIngestError = ingestErrorVisibleAfterLink({
+        linkedAt: session.linkedAt,
+        lastIngestAt: json.lastIngestAt,
+        lastIngestOk: json.lastIngestOk,
+        lastIngestError: json.lastIngestError,
+      });
       if (json.userId) session.youtubeUserId = String(json.userId);
 
       const hubFormula = contributionFormulaFromYoutubegitJson(json as Record<string, unknown>);
