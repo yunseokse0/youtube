@@ -13,14 +13,12 @@ import {
   describeDonationIntakeMode,
   isDonationIntakeModeB,
 } from "@/policies/donation-intake-mode";
-import {
-  TOONA_HUB_ROUTE_MAX_DURATION_SEC,
-  toonaHubLoginSuccessBody,
-} from "@/lib/toona-hub-login";
+import { toonaHubLoginSuccessBody } from "@/lib/toona-hub-login";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = TOONA_HUB_ROUTE_MAX_DURATION_SEC;
+/** Next가 라우트 설정을 정적으로 읽으므로 숫자 리터럴만 허용. src/lib/toona-hub-login.ts 의 60초와 같게 유지. */
+export const maxDuration = 60;
 
 function isToonaHubDisabledForMode(): boolean {
   return !isDonationIntakeModeB();

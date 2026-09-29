@@ -1,6 +1,6 @@
 /** DIN 허브 로그인 POST가 시그/기여도 후처리에 막히지 않게 하는 계약값 */
 
-/** youtube `/api/toona/hub` 라우트 maxDuration (초) */
+/** youtube `/api/toona/hub` 라우트 maxDuration (초). route.ts 의 `export const maxDuration = 60` 과 같아야 한다. */
 export const TOONA_HUB_ROUTE_MAX_DURATION_SEC = 60;
 
 /** 허브 `/api/auth/login` — 실제 거절은 ~50ms, hang 시에만 끊음 */
