@@ -13,6 +13,7 @@ import {
   fieldCmFromStartPerMember,
   formatCm,
   HIGH_SOCIETY_SEAT_COLORS,
+  normalizeHighSocietyFxSettings,
   normalizeHighSocietySettings,
   resolveHighSocietySeatMembers,
   resolveHighSocietyStartCmPerMember,
@@ -781,6 +782,93 @@ export default function AdminHighSocietyPopupPanel() {
                     </tbody>
                   </table>
                 </div>
+          </section>
+
+          <section className="rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">연출 효과</h2>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  className="rounded border border-white/15 bg-neutral-900 px-2 py-0.5 text-[10px] text-neutral-300 hover:border-amber-400/50"
+                  onClick={() =>
+                    void patchHighSociety({
+                      fx: {
+                        frontier: true,
+                        growFlash: true,
+                        contestedEdge: true,
+                        arrowBlade: true,
+                        strongOutline: true,
+                      },
+                    })
+                  }
+                >
+                  전부 ON
+                </button>
+                <button
+                  type="button"
+                  className="rounded border border-white/15 bg-neutral-900 px-2 py-0.5 text-[10px] text-neutral-300 hover:border-amber-400/50"
+                  onClick={() =>
+                    void patchHighSociety({
+                      fx: {
+                        frontier: false,
+                        growFlash: false,
+                        contestedEdge: false,
+                        arrowBlade: false,
+                        strongOutline: false,
+                      },
+                    })
+                  }
+                >
+                  전부 OFF
+                </button>
+              </div>
+            </div>
+            <p className="text-[10px] leading-snug text-neutral-400">
+              저장되면 OBS 영토 오버레이에 바로 반영됩니다.
+            </p>
+            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+              {(
+                [
+                  { key: "frontier" as const, label: "잠식 전선", desc: "확장 방향 경계 빛" },
+                  { key: "growFlash" as const, label: "확장 플래시", desc: "땅이 늘 때 번쩍" },
+                  { key: "contestedEdge" as const, label: "분쟁 경계", desc: "평평 모드 줄무늬" },
+                  { key: "arrowBlade" as const, label: "화살 칼날", desc: "화살표 금색 팁" },
+                  { key: "strongOutline" as const, label: "강한 외곽선", desc: "텍스트 stroke" },
+                ] as const
+              ).map((opt) => {
+                const fxNow = normalizeHighSocietyFxSettings(highSocietySettings.fx);
+                const on = Boolean(fxNow[opt.key]);
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    className={`flex items-center justify-between gap-2 rounded border px-2.5 py-1.5 text-left ${
+                      on
+                        ? "border-amber-400/70 bg-amber-900/40 text-amber-50"
+                        : "border-white/10 bg-neutral-900 text-neutral-400"
+                    }`}
+                    onClick={() =>
+                      void patchHighSociety({
+                        fx: { ...fxNow, [opt.key]: !on },
+                      })
+                    }
+                  >
+                    <span>
+                      <span className="block text-[11px] font-semibold">{opt.label}</span>
+                      <span className="block text-[9px] opacity-80">{opt.desc}</span>
+                    </span>
+                    <span
+                      className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                        on ? "bg-amber-500 text-black" : "bg-neutral-700 text-neutral-300"
+                      }`}
+                    >
+                      {on ? "ON" : "OFF"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </section>
 
           <section className="rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-2">

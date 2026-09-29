@@ -258,17 +258,21 @@
   flex-shrink: 0;
 }
 
-/** 좁은 영토 칸 — 긴 팀명이 옆 칸으로 넘치지 않게 cm만 표시 */
+/** 좁은 영토 칸 — 이름은 유지하고 글자만 줄여 칸 안에 맞춘다 */
 @container hs-seg (max-width: 150px) {
   .hs-field-label {
     max-width: 100%;
     min-width: 0;
-    padding: 5px 6px;
-    font-size: clamp(13px, 2vw, 18px);
+    padding: 3px 4px;
+    gap: 1px;
+    font-size: clamp(11px, 1.6vw, 15px);
   }
 
   .hs-field-name {
-    display: none;
+    display: block;
+    font-size: 0.95em;
+    line-height: 1.15;
+    padding: 0 1px;
   }
 }
 
