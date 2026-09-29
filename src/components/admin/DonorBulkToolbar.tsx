@@ -77,7 +77,7 @@ export default function DonorBulkToolbar({
       <span style={{ fontSize: 13, color: "#e5e5e5", fontWeight: 500 }}>
         🗂️ {selectedCount}건 선택됨 · 전체 {visibleCount}건 중
       </span>
-      <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+      <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap", maxWidth: "100%" }}>
         <button
           type="button" onClick={onSelectAllVisible} disabled={allDisabled}
           style={btnStyle(allDisabled)}

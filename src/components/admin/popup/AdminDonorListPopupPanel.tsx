@@ -258,7 +258,7 @@ export default function AdminDonorListPopupPanel() {
       loading={loading}
     >
       {!state ? null : (
-        <div className="space-y-3">
+        <div className="flex min-h-0 flex-col gap-3" style={{ height: "calc(100dvh - 6.5rem)" }}>
           <div className="flex flex-wrap items-center gap-2 text-[11px]">
             <div className="flex items-center gap-1.5 rounded border border-slate-700/50 bg-slate-900/60 px-2.5 py-1">
               <span className="text-slate-400">전체 합계</span>
@@ -275,7 +275,7 @@ export default function AdminDonorListPopupPanel() {
             <span className="text-slate-500">최신순</span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-col gap-2 landscape:lg:flex-row landscape:lg:flex-wrap landscape:lg:items-center">
             <input
               type="text"
               value={query}
@@ -284,8 +284,9 @@ export default function AdminDonorListPopupPanel() {
                 setPage(1);
               }}
               placeholder="검색: 후원자명 / 메시지 / 멤버"
-              className="min-w-[180px] flex-1 rounded-lg border border-slate-700/60 bg-[#0D111D] px-3 py-1.5 text-xs text-slate-200"
+              className="w-full rounded-lg border border-slate-700/60 bg-[#0D111D] px-3 py-1.5 text-xs text-slate-200 landscape:lg:min-w-[180px] landscape:lg:flex-1"
             />
+            <div className="flex flex-wrap gap-1">
             {(["all", "today", "1h", "30m", "10m", "5m"] as const).map((k) => (
               <button
                 key={k}
@@ -314,6 +315,7 @@ export default function AdminDonorListPopupPanel() {
             >
               {dense ? "압축 ON" : "압축 OFF"}
             </button>
+            </div>
           </div>
 
           <DonorBulkToolbar
@@ -325,8 +327,138 @@ export default function AdminDonorListPopupPanel() {
             onBulkDelete={bulkDelete}
           />
 
-          <div className="overflow-auto rounded border border-white/10" style={{ maxHeight: "calc(100dvh - 220px)", minHeight: "560px" }}>
-            <table className={`w-full min-w-[1180px] ${dense ? "text-[12px]" : "text-sm"}`}>
+          <div className="min-h-0 flex-1 overflow-auto rounded border border-white/10">
+            <ul className="space-y-2 p-2 landscape:lg:hidden">
+              {rowsVisible.map((d, idx) => {
+                const idStr = String(d.id);
+                const isSplitPart = isGroupSplitPartDonor(d);
+                const isSplitSource = isGroupSplitSourceDonor(state, d);
+                const isExcluded = isDonorExcludedFromDonationTotals(d);
+                const splitPreview =
+                  !dense && !isSplitPart && !isSplitSource && !isExcluded
+                    ? previewGroupSplitDonation(state, d.amount, state.groupSplitDonationSettings)
+                    : null;
+                return (
+                  <li key={idStr || `card-${idx}`} className="rounded border border-white/10 bg-neutral-950/60 p-2">
+                    <div className="flex items-center gap-2">
+                      <DonorCheckboxCell
+                        donorId={idStr}
+                        selected={selectedIds.has(idStr)}
+                        onToggle={toggleSelect}
+                      />
+                      <span className="text-[11px] text-neutral-400">{formatTime(Number(d.at || 0))}</span>
+                      <span className="ml-auto text-sm font-semibold text-neutral-100">{formatWon(d.amount)}</span>
+                      {resolveEffectiveDonorTarget(d) === "toon" ? (
+                        <span className="text-[11px] text-amber-300">투네</span>
+                      ) : (
+                        <span className="text-[11px] text-emerald-300">계좌</span>
+                      )}
+                    </div>
+                    <input
+                      className="mt-2 w-full rounded border border-white/10 bg-neutral-950/80 px-2 py-1 text-sm text-neutral-100"
+                      value={typeof draftNames[idStr] === "string" ? draftNames[idStr] : d.name || ""}
+                      aria-label="후원자"
+                      onFocus={() => {
+                        setDraftNames((prev) => (idStr in prev ? prev : { ...prev, [idStr]: d.name || "" }));
+                      }}
+                      onChange={(e) => setDraftNames((prev) => ({ ...prev, [idStr]: e.target.value }))}
+                      onBlur={(e) => {
+                        const nextName = String(e.target.value || "").trim() || "무명";
+                        setDraftNames((prev) => {
+                          const next = { ...prev };
+                          delete next[idStr];
+                          return next;
+                        });
+                        if (nextName !== (String(d.name || "").trim() || "무명")) void saveName(d, nextName);
+                      }}
+                    />
+                    {!dense ? (
+                      <div className="mt-2 flex items-center gap-1">
+                        <select
+                          className="min-w-0 flex-1 rounded border border-white/10 bg-neutral-900/80 px-1 py-1 text-sm text-neutral-100"
+                          value={String(d.memberId || "").trim()}
+                          aria-label="멤버"
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v && v !== d.memberId) void saveMember(d, v);
+                          }}
+                        >
+                          {donorMemberSelectOptions(d.memberId, members).map((opt) => (
+                            <option key={opt.value || "pick"} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                        {d.memberAutoAssigned && d.memberId ? (
+                          <span className="shrink-0 text-[10px] text-emerald-400/90">자동</span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <input
+                      className="mt-2 w-full rounded border border-white/10 bg-neutral-950/80 px-2 py-1 text-sm text-neutral-200"
+                      value={typeof draftMessages[idStr] === "string" ? draftMessages[idStr] : d.message || ""}
+                      aria-label="메시지"
+                      placeholder="메시지"
+                      onFocus={() => {
+                        setDraftMessages((prev) => (idStr in prev ? prev : { ...prev, [idStr]: d.message || "" }));
+                      }}
+                      onChange={(e) => setDraftMessages((prev) => ({ ...prev, [idStr]: e.target.value }))}
+                      onBlur={(e) => {
+                        const nextMessage = e.target.value;
+                        setDraftMessages((prev) => {
+                          const next = { ...prev };
+                          delete next[idStr];
+                          return next;
+                        });
+                        if (String(nextMessage || "").trim() !== String(d.message || "").trim()) {
+                          void saveMessage(d, nextMessage);
+                        }
+                      }}
+                    />
+                    <div className="mt-2 flex items-center justify-end gap-2">
+                      {!dense ? (
+                        isSplitPart ? (
+                          <span className="text-[10px] text-violet-300">↳ 스플릿</span>
+                        ) : isSplitSource ? (
+                          <span className="text-[10px] text-violet-300">스플릿됨</span>
+                        ) : splitPreview && splitPreview.eligibleMembers.length > 0 && splitPreview.sharePerMember > 0 ? (
+                          <button
+                            type="button"
+                            className="rounded bg-violet-800 px-2 py-0.5 text-[10px] hover:bg-violet-700"
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `${d.name} ${formatWon(d.amount)}을 ${splitPreview.eligibleMembers.length}명에게 나눌까요?`
+                                )
+                              ) {
+                                void splitRow(d);
+                              }
+                            }}
+                          >
+                            나누기
+                          </button>
+                        ) : null
+                      ) : null}
+                      {isSplitSource ? (
+                        <span className="text-[10px] text-neutral-500">삭제 불가</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="rounded bg-rose-900 px-2 py-0.5 text-[10px] text-rose-100 hover:bg-rose-800"
+                          onClick={() => void deleteRow(d)}
+                        >
+                          삭제
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+              {rowsVisible.length === 0 ? (
+                <li className="p-6 text-center text-sm text-neutral-500">표시할 후원이 없습니다.</li>
+              ) : null}
+            </ul>
+            <table className={`hidden w-full table-fixed landscape:lg:table ${dense ? "text-[12px]" : "text-sm"}`}>
               <thead className="sticky top-0 z-10 bg-neutral-950/95">
                 <tr className="text-neutral-400">
                   <th className="w-10 p-1 text-left">
@@ -337,14 +469,14 @@ export default function AdminDonorListPopupPanel() {
                       label="전체 선택"
                     />
                   </th>
-                  <th className="w-24 p-1 text-left">시간</th>
-                  <th className="w-36 p-1 text-left">후원자</th>
-                  {!dense && <th className="w-36 p-1 text-left">멤버</th>}
-                  <th className="w-14 p-1 text-left">대상</th>
+                  <th className="w-[4.5rem] p-1 text-left">시간</th>
+                  <th className="w-[18%] p-1 text-left">후원자</th>
+                  {!dense && <th className="w-[16%] p-1 text-left">멤버</th>}
+                  <th className="w-12 p-1 text-left">대상</th>
                   <th className="p-1 text-left">메시지</th>
-                  <th className="w-24 p-1 text-right">금액</th>
-                  {!dense && <th className="w-24 p-1 text-right">나누기</th>}
-                  <th className="w-16 p-1 text-right">삭제</th>
+                  <th className="w-[5.5rem] p-1 text-right">금액</th>
+                  {!dense && <th className="w-16 p-1 text-right">나누기</th>}
+                  <th className="w-12 p-1 text-right">삭제</th>
                 </tr>
               </thead>
               <tbody>
@@ -503,7 +635,7 @@ export default function AdminDonorListPopupPanel() {
           </div>
 
           {rowsFiltered.length > 0 ? (
-            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-xs text-neutral-400">
+            <div className="flex flex-col gap-2 text-xs text-neutral-400 landscape:lg:grid landscape:lg:grid-cols-[1fr_auto_1fr] landscape:lg:items-center">
               <div className="flex items-center gap-1 justify-self-start">
                 <span className="text-neutral-500">페이지당</span>
                 {DONOR_PAGE_SIZES.map((sz) => (
@@ -524,7 +656,7 @@ export default function AdminDonorListPopupPanel() {
                   </button>
                 ))}
               </div>
-              <nav className="flex items-center justify-center gap-1" aria-label="후원자 리스트 페이지">
+              <nav className="flex flex-wrap items-center justify-center gap-1" aria-label="후원자 리스트 페이지">
                 <button
                   type="button"
                   disabled={pageIdx <= 1}
