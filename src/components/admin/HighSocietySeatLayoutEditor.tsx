@@ -10,6 +10,7 @@ import {
   formatCm,
   formatSeatWidthCm,
   insertHighSocietySeatMemberIdAt,
+  moveHighSocietySeatMemberToIndex,
   isHighSocietySeatSelectionManual,
   normalizeHighSocietySettings,
   normalizeZeroCmGaugeDisplay,
@@ -120,6 +121,19 @@ export default function HighSocietySeatLayoutEditor({
     patchStartCm(n);
   }, [startCmDraft, patchStartCm]);
 
+  const moveSeatToIndex = useCallback(
+    (memberId: string, targetIndex: number) => {
+      const id = String(memberId || "").trim();
+      if (!id) return;
+      const cur = resolveHighSocietySeatMemberIdsForEdit(settings, members);
+      if (!cur.includes(id)) return;
+      const next = moveHighSocietySeatMemberToIndex(cur, id, targetIndex);
+      if (next.join(",") === cur.join(",")) return;
+      void onPatch({ seatMemberIds: next, seatMemberIdsManual: true });
+    },
+    [settings, members, onPatch]
+  );
+
   const moveSeat = useCallback(
     (memberId: string, dir: -1 | 1) => {
       const id = String(memberId || "").trim();
@@ -129,27 +143,25 @@ export default function HighSocietySeatLayoutEditor({
       if (idx < 0) return;
       const nextIdx = idx + dir;
       if (nextIdx < 0 || nextIdx >= cur.length) return;
-      const swapped = cur.slice();
-      const tmp = swapped[idx]!;
-      swapped[idx] = swapped[nextIdx]!;
-      swapped[nextIdx] = tmp;
-      void onPatch({ seatMemberIds: swapped, seatMemberIdsManual: true });
+      moveSeatToIndex(id, nextIdx);
     },
-    [settings, members, onPatch]
+    [moveSeatToIndex, settings, members]
   );
 
-  const moveSeatToIndex = useCallback(
-    (memberId: string, targetIndex: number) => {
+  const placePendingEnd = useCallback(
+    (memberId: string, end: "left" | "right") => {
       const id = String(memberId || "").trim();
       if (!id) return;
       const cur = resolveHighSocietySeatMemberIdsForEdit(settings, members);
-      const idx = cur.findIndex((sid) => String(sid) === id);
-      if (idx < 0) return;
-      const without = cur.filter((sid) => String(sid) !== id);
-      const at = Math.max(0, Math.min(Math.floor(targetIndex), without.length));
+      if (!cur.includes(id)) return;
+      const at = end === "left" ? 0 : Math.max(0, cur.length - 1);
+      const next = moveHighSocietySeatMemberToIndex(cur, id, at);
+      const pending = (settings.pendingEndEntryMemberIds || []).filter((sid) => sid !== id);
       void onPatch({
-        seatMemberIds: [...without.slice(0, at), id, ...without.slice(at)],
+        seatMemberIds: next,
         seatMemberIdsManual: true,
+        pendingEndEntryMemberIds: pending,
+        territorySnapshotEpochAt: Date.now(),
       });
     },
     [settings, members, onPatch]
@@ -259,7 +271,7 @@ export default function HighSocietySeatLayoutEditor({
             <span className="block mt-0.5 text-[10px] text-neutral-500">
               {matchMode === "team"
                 ? "팀전에서는 오버레이와 같이 팀 합 cm만 보여 줍니다. 멤버 이름은 소속 표시이고, 개인 영토는 나누지 않습니다."
-                : "0cm가 된 인원은 게이지에서 빠집니다. 다시 영토가 생기면 양쪽 끝으로만 진입합니다. 가운데 인원의 확장은 좌우 양분입니다."}
+                : "땅이 없어졌다가 다시 생기면 왼쪽 끝 또는 오른쪽 끝을 고르기 전에는 게이지에 나오지 않습니다. 나온 뒤에는 자리를 옮길 수 있습니다. 가운데 인원의 확장은 좌우 양분입니다."}
             </span>
           </div>
           {hsSeatExplicit ? (
@@ -342,6 +354,7 @@ export default function HighSocietySeatLayoutEditor({
               const expandHint = i === 0 ? "→만" : i === hsSeatPlayers.length - 1 ? "←만" : "↔";
               const fieldSeat = hsSeatFieldByMemberId.get(p.id);
               const eliminated = fieldSeat?.eliminated === true;
+              const pendingEnd = (settings.pendingEndEntryMemberIds || []).includes(p.id);
               const zeroCmDisplay = normalizeZeroCmGaugeDisplay(settings.zeroCmGaugeDisplay);
               return (
                 <div
@@ -360,52 +373,69 @@ export default function HighSocietySeatLayoutEditor({
                       <div className="text-[11px] font-semibold text-white">{p.name}</div>
                     </div>
                     <div className="text-[9px] text-amber-200/70">
-                      {eliminated
-                        ? `${formatSeatWidthCm(0, zeroCmDisplay)} 탈락 · ${expandHint}`
-                        : fieldSeat
-                          ? `${formatCm(fieldSeat.widthCm)} · ${expandHint}`
-                          : expandHint}
+                      {pendingEnd
+                        ? `${fieldSeat ? formatCm(fieldSeat.widthCm) : ""} 끝 선택 전`.trim()
+                        : eliminated
+                          ? `${formatSeatWidthCm(0, zeroCmDisplay)} 탈락 · ${expandHint}`
+                          : fieldSeat
+                            ? `${formatCm(fieldSeat.widthCm)} · ${expandHint}`
+                            : expandHint}
                     </div>
                   </div>
                   <div className="ml-1 flex flex-col gap-0.5">
-                    <select
-                      className="max-w-[5.5rem] rounded bg-neutral-950/70 px-1 py-0.5 text-[9px] text-neutral-200"
-                      value={String(i)}
-                      title={
-                        eliminated
-                          ? "0cm 탈락 — 재진입 위치(좌→右)"
-                          : "좌석 위치(좌→右) — 영토 cm는 멤버에 유지"
-                      }
-                      aria-label={`${p.name} 좌석 위치`}
-                      onChange={(e) => {
-                        const at = Number(e.target.value);
-                        if (Number.isFinite(at) && at !== i) moveSeatToIndex(p.id, at);
-                      }}
-                    >
-                      {Array.from({ length: hsSeatPlayers.length }, (_, at) => (
-                        <option key={`hs-seat-at-${p.id}-${at}`} value={String(at)}>
-                          {at + 1}번 위치
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="rounded bg-neutral-950/70 px-1.5 py-0.5 text-[10px] text-neutral-200 hover:bg-neutral-800 disabled:opacity-30"
-                      disabled={i === 0}
-                      title="왼쪽으로"
-                      onClick={() => moveSeat(p.id, -1)}
-                    >
-                      ←
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded bg-neutral-950/70 px-1.5 py-0.5 text-[10px] text-neutral-200 hover:bg-neutral-800 disabled:opacity-30"
-                      disabled={i >= hsSeatPlayers.length - 1}
-                      title="오른쪽으로"
-                      onClick={() => moveSeat(p.id, 1)}
-                    >
-                      →
-                    </button>
+                    {pendingEnd ? (
+                      <select
+                        className="max-w-[5.5rem] rounded bg-neutral-950/70 px-1 py-0.5 text-[9px] text-neutral-200"
+                        value=""
+                        title="땅이 생겼습니다. 왼쪽 끝 또는 오른쪽 끝을 고르면 게이지에 나옵니다."
+                        aria-label={`${p.name} 재진입 끝`}
+                        onChange={(e) => {
+                          const end = e.target.value;
+                          if (end === "left" || end === "right") placePendingEnd(p.id, end);
+                        }}
+                      >
+                        <option value="">끝 선택</option>
+                        <option value="left">왼쪽</option>
+                        <option value="right">오른쪽</option>
+                      </select>
+                    ) : (
+                      <>
+                        <select
+                          className="max-w-[5.5rem] rounded bg-neutral-950/70 px-1 py-0.5 text-[9px] text-neutral-200"
+                          value={String(i)}
+                          title="좌석 위치(좌→右) — 영토 cm는 멤버에 유지"
+                          aria-label={`${p.name} 좌석 위치`}
+                          onChange={(e) => {
+                            const at = Number(e.target.value);
+                            if (Number.isFinite(at) && at !== i) moveSeatToIndex(p.id, at);
+                          }}
+                        >
+                          {Array.from({ length: hsSeatPlayers.length }, (_, at) => (
+                            <option key={`hs-seat-at-${p.id}-${at}`} value={String(at)}>
+                              {at + 1}번 위치
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="rounded bg-neutral-950/70 px-1.5 py-0.5 text-[10px] text-neutral-200 hover:bg-neutral-800 disabled:opacity-30"
+                          disabled={i === 0}
+                          title="왼쪽으로"
+                          onClick={() => moveSeat(p.id, -1)}
+                        >
+                          ←
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded bg-neutral-950/70 px-1.5 py-0.5 text-[10px] text-neutral-200 hover:bg-neutral-800 disabled:opacity-30"
+                          disabled={i >= hsSeatPlayers.length - 1}
+                          title="오른쪽으로"
+                          onClick={() => moveSeat(p.id, 1)}
+                        >
+                          →
+                        </button>
+                      </>
+                    )}
                   </div>
                   <button
                     type="button"

@@ -318,10 +318,12 @@ export default function HighSocietyOverlayPage() {
 
   /** 게이지는 영토 기록부 해상만 표시. 타이머·후원·라운드 종료 동결은 쓰지 않음 */
   const displaySeats = useMemo<HighSocietySeat[]>(() => {
+    const pending = new Set(hsSettings.pendingEndEntryMemberIds || []);
+    const visible = field.seats.filter((seat) => !pending.has(seat.id));
     try {
-      return aggregateHighSocietySeatsByTeam(field.seats, hsSettings);
+      return aggregateHighSocietySeatsByTeam(visible, hsSettings);
     } catch (_err) {
-      return field.seats;
+      return visible;
     }
   }, [field.seats, hsSettings]);
 

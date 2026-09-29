@@ -458,6 +458,7 @@ export function isDefaultLikeHighSocietySettings(
   if ((s.seatMemberIds || []).length > 0) return false;
   if (s.seatMemberIdsManual === true) return false;
   if (Number(s.territorySnapshotEpochAt || 0) > 0) return false;
+  if ((s.pendingEndEntryMemberIds || []).length > 0) return false;
   if (Object.keys(s.memberTerritoryExpand || {}).length > 0) return false;
   if (Object.keys(s.memberWidthCm || {}).length > 0) return false;
   if (Object.keys(s.memberWidthDonationSnapshot || {}).length > 0) return false;
@@ -482,6 +483,7 @@ export function isMeaningfulHighSocietySettings(
   if ((s.seatMemberIds || []).length > 0) return true;
   if (s.seatMemberIdsManual === true) return true;
   if (Number(s.territorySnapshotEpochAt || 0) > 0) return true;
+  if ((s.pendingEndEntryMemberIds || []).length > 0) return true;
   if (Object.keys(s.memberTerritoryExpand || {}).length > 0) return true;
   if (Object.keys(s.memberWidthCm || {}).length > 0) return true;
   if (Object.keys(s.memberWidthDonationSnapshot || {}).length > 0) return true;
@@ -699,6 +701,12 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
   const memberWidthDonationSnapshot = normalizeMemberDonationSnapshotRecord(v.memberWidthDonationSnapshot);
   const memberTerritoryExpand = normalizeMemberTerritoryExpandRecord(v.memberTerritoryExpand);
   const zeroCmGaugeDisplay = normalizeZeroCmGaugeDisplay(v.zeroCmGaugeDisplay);
+  const pendingEndEntryMemberIds = Array.isArray(v.pendingEndEntryMemberIds)
+    ? [...new Set(v.pendingEndEntryMemberIds.map((id) => String(id || "").trim()).filter(Boolean))].slice(
+        0,
+        HIGH_SOCIETY_MAX_SEATS
+      )
+    : [];
   /**
    * matchMode 키가 빠진 stale PATCH/SSE 는 teams 가 있으면 팀전으로 복구.
    * 명시적 "individual" 은 팀이 남아 있어도 개인전 유지.
@@ -747,6 +755,7 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     ...(memberWidthDonationSnapshot ? { memberWidthDonationSnapshot } : {}),
     ...(memberTerritoryExpand ? { memberTerritoryExpand } : {}),
     ...(zeroCmGaugeDisplay !== "hidden" ? { zeroCmGaugeDisplay } : {}),
+    ...(pendingEndEntryMemberIds.length > 0 ? { pendingEndEntryMemberIds } : {}),
     matchMode,
     teams: teamsArr,
     memberTeamAssignments,
@@ -927,6 +936,7 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
         memberTerritoryExpand: undefined,
         territoryLogsResetAt: now,
         territorySnapshotEpochAt: undefined,
+        pendingEndEntryMemberIds: undefined,
       };
     }
     if (turningOff) {
@@ -1380,6 +1390,19 @@ export function appendHighSocietySeatMemberId(curIds: string[], memberId: string
   return insertHighSocietySeatMemberIdAt(curIds, memberId, Number.MAX_SAFE_INTEGER);
 }
 
+/**
+ * 0cm 멤버가 앉을 수 있는 최종 인덱스.
+ * 가운데를 고르면 더 가까운 끝(왼쪽 끝 또는 오른쪽 끝)으로 붙인다.
+ */
+export function eliminatedSeatEndIndex(targetIndex: number, seatCount: number): number {
+  const n = Math.max(0, Math.floor(seatCount));
+  if (n <= 1) return 0;
+  const last = n - 1;
+  const at = Math.max(0, Math.min(Math.floor(Number(targetIndex) || 0), last));
+  if (at === 0 || at === last) return at;
+  return at <= last - at ? 0 : last;
+}
+
 /** 좌석 재추가 — 지정 인덱스(0=맨 왼쪽)에 삽입. atIndex≥length 이면 맨 뒤 */
 export function insertHighSocietySeatMemberIdAt(
   curIds: string[],
@@ -1392,6 +1415,28 @@ export function insertHighSocietySeatMemberIdAt(
   const next = base.filter((x) => x !== id);
   const idx = Math.max(0, Math.min(Math.floor(atIndex), next.length));
   return [...next.slice(0, idx), id, ...next.slice(idx)];
+}
+
+/**
+ * 좌석 순서 변경. endsOnly 이면 그 멤버는 왼쪽 끝·오른쪽 끝에만 앉는다.
+ * targetIndex 는 옮긴 뒤 전체 좌석에서의 위치(0=맨 왼쪽)다.
+ */
+export function moveHighSocietySeatMemberToIndex(
+  curIds: string[],
+  memberId: string,
+  targetIndex: number,
+  opts?: { endsOnly?: boolean }
+): string[] {
+  const id = String(memberId || "").trim();
+  const base = curIds.map((x) => String(x).trim()).filter(Boolean);
+  if (!id || !base.includes(id)) return base;
+  const without = base.filter((x) => x !== id);
+  const finalCount = without.length + 1;
+  const desired = opts?.endsOnly
+    ? eliminatedSeatEndIndex(targetIndex, finalCount)
+    : Math.max(0, Math.min(Math.floor(Number(targetIndex) || 0), finalCount - 1));
+  const at = desired >= finalCount - 1 ? without.length : desired;
+  return [...without.slice(0, at), id, ...without.slice(at)];
 }
 
 export function seatRoleForMemberId(
@@ -1984,12 +2029,22 @@ export function appendTerritoryLogToAppState(state: AppState, log: TerritoryLog)
   const fieldBefore = buildHighSocietyFieldFromAppState(state);
   const fieldAfter = applyTerritoryLogDirectTransfers(fieldBefore, seatIds, [nextLog], settings);
   const widthPatch = memberWidthPatchFromFieldSeats(fieldAfter.seats);
+  const beforeWidth = new Map(fieldBefore.seats.map((seat) => [seat.id, seat.widthCm]));
+  const pending = new Set(settings.pendingEndEntryMemberIds || []);
+  if (settings.matchMode !== "team") {
+    for (const seat of fieldAfter.seats) {
+      const prevWidth = beforeWidth.get(seat.id) ?? 0;
+      if (prevWidth <= 0 && seat.widthCm > 0) pending.add(seat.id);
+      if (seat.widthCm <= 0) pending.delete(seat.id);
+    }
+  }
   return {
     ...state,
     territoryLogs: [...prevLogs, nextLog],
     highSocietySettings: normalizeHighSocietySettings({
       ...fieldBefore.settings,
       ...widthPatch,
+      pendingEndEntryMemberIds: [...pending],
     }),
     updatedAt: Date.now(),
   };

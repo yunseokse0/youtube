@@ -60,7 +60,9 @@ import {
   isHighSocietySeatSelectionManual,
   resolveHighSocietySeatMemberIdsForEdit,
   appendHighSocietySeatMemberId,
+  eliminatedSeatEndIndex,
   insertHighSocietySeatMemberIdAt,
+  moveHighSocietySeatMemberToIndex,
   mergeHighSocietySettingsPreferBaseline,
   defaultHighSocietySettings,
   isDonationAmountEligibleForHighSocietyTerritory,
@@ -2165,6 +2167,91 @@ describe("0cm eliminated member re-entry", () => {
     expect(subinRight.expandLeftCm).toBe(0);
     expect(subinLeft.expandLeftCm).toBe(50);
     expect(subinLeft.expandRightCm).toBe(0);
+  });
+
+  it("땅이 다시 생기면 왼쪽 또는 오른쪽을 고르기 전에는 대기하고, 고른 뒤에만 그 끝에 앉는다", () => {
+    const members = [
+      { id: "jaki", name: "자기", account: 0, toon: 0, operating: false },
+      { id: "subin", name: "수빈", account: 0, toon: 0, operating: false },
+      { id: "jisu", name: "지수", account: 0, toon: 0, operating: false },
+    ];
+    let state = {
+      members,
+      donors: [] as never[],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: ["jaki", "subin", "jisu"],
+        seatMemberIdsManual: true,
+        startCmPerMember: 100,
+        fieldCm: 300,
+      }),
+      territoryLogs: [] as ReturnType<typeof createTerritoryLog>[],
+    } as import("@/types").AppState;
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("jaki", 1, 100, { pushDir: "right", now: 1_000 })
+    );
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("subin", 1, 20, { pushDir: "left", now: 2_000 })
+    );
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("subin");
+    expect(state.highSocietySettings?.seatMemberIds).toEqual(["jaki", "subin", "jisu"]);
+
+    const placed = moveHighSocietySeatMemberToIndex(
+      state.highSocietySettings?.seatMemberIds || [],
+      "subin",
+      0
+    );
+    expect(placed).toEqual(["subin", "jaki", "jisu"]);
+    const afterChoice = normalizeHighSocietySettings({
+      ...state.highSocietySettings,
+      seatMemberIds: placed,
+      pendingEndEntryMemberIds: [],
+      territorySnapshotEpochAt: 3_000,
+    });
+    const shown = buildHighSocietyFieldFromAppState({
+      ...state,
+      highSocietySettings: afterChoice,
+    });
+    expect(shown.seats.map((s) => s.id)[0]).toBe("subin");
+    expect(shown.seats.find((s) => s.id === "subin")!.widthCm).toBeGreaterThan(0);
+    const movedAgain = moveHighSocietySeatMemberToIndex(placed, "subin", 1);
+    expect(movedAgain).toEqual(["jaki", "subin", "jisu"]);
+  });
+
+  it("땅이 없는 멤버는 왼쪽 끝과 오른쪽 끝에만 다시 앉는다", () => {
+    const ids = ["yuri", "gwak", "young", "jaki", "pong", "reze"];
+    expect(eliminatedSeatEndIndex(0, 6)).toBe(0);
+    expect(eliminatedSeatEndIndex(5, 6)).toBe(5);
+    expect(eliminatedSeatEndIndex(1, 6)).toBe(0);
+    expect(eliminatedSeatEndIndex(2, 6)).toBe(0);
+    expect(eliminatedSeatEndIndex(3, 6)).toBe(5);
+    expect(eliminatedSeatEndIndex(4, 6)).toBe(5);
+    expect(moveHighSocietySeatMemberToIndex(ids, "jaki", 2, { endsOnly: true })).toEqual([
+      "jaki",
+      "yuri",
+      "gwak",
+      "young",
+      "pong",
+      "reze",
+    ]);
+    expect(moveHighSocietySeatMemberToIndex(ids, "reze", 0, { endsOnly: true })).toEqual([
+      "reze",
+      "yuri",
+      "gwak",
+      "young",
+      "jaki",
+      "pong",
+    ]);
+    expect(moveHighSocietySeatMemberToIndex(ids, "yuri", 3)).toEqual([
+      "gwak",
+      "young",
+      "jaki",
+      "yuri",
+      "pong",
+      "reze",
+    ]);
   });
 
   it("insertHighSocietySeatMemberIdAt places member at chosen index", () => {
