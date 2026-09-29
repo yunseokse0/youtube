@@ -61,7 +61,7 @@ describe("pickAuthoritativeDonorsForEmptySession", () => {
     expect(picked.map((d) => d.id)).toEqual(["new"]);
   });
 
-  it("rebumps pre-reset server donors when local has no settlement reset stamp", () => {
+  it("drops pre-reset server donors when a reset cutoff is passed", () => {
     const resetAt = 1_700_000_000_000;
     const local: AppState = {
       ...defaultState(),
@@ -81,8 +81,7 @@ describe("pickAuthoritativeDonorsForEmptySession", () => {
       },
     ];
     const picked = pickAuthoritativeDonorsForEmptySession(local, serverDonors, [], resetAt);
-    expect(picked).toHaveLength(1);
-    expect(picked[0]?.at).toBeGreaterThanOrEqual(resetAt);
+    expect(picked).toHaveLength(0);
   });
 
   it("prefers server donors over empty local spread merge", () => {

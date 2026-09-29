@@ -2191,10 +2191,7 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
       if (Array.isArray(next.donors)) {
         mergedReset.donors =
           resetAt > 0
-            ? filterDonorsAfterSettlementReset(
-                rebumpDonorsPastSettlementReset(next.donors as Donor[], resetAt),
-                resetAt
-              )
+            ? filterDonorsAfterSettlementReset(next.donors as Donor[], resetAt)
             : next.donors;
       } else if (Array.isArray(prev.donors)) {
         mergedReset.donors = prev.donors;
@@ -4588,31 +4585,16 @@ export function filterDonorsAfterSettlementReset(
   });
 }
 
-/** rebump → filter. 명시 리셋이 아닐 때 필터가 전량 탈락시키면 rebump 본을 유지
- *  ✅ v17.5 intentionalClearAt 매칭 안전망:
- *   · intentionalClearAt === settlementResetAt 인 경우 (정산리셋 버튼으로 의도적으로 비움) →
- *     allowFullWipe 를 자동으로 true 로 상향 → 구 후원 rebump 부활 100% 봉쇄!
- *   · intentionalClearAt 가 없거나 settlementResetAt 와 불일치 (우발적 sync/merge 등) →
- *     기존대로 allowFullWipe 파라미터 우선 (안전망 유지)
- */
+/** 정산 리셋 시각보다 앞선 후원은 시간을 고쳐 되살리지 않고 뺀다. */
 export function applySettlementResetDonorPipeline(
   donors: Donor[] | undefined,
   settlementResetAt: number,
-  opts?: { allowFullWipe?: boolean; intentionalClearAt?: number }
+  _opts?: { allowFullWipe?: boolean; intentionalClearAt?: number }
 ): Donor[] {
   const resetAt = Number(settlementResetAt || 0);
   const normalized = normalizeDonorsArray(donors);
   if (!resetAt) return normalized;
-  const explicitIntentionalReset =
-    Number(opts?.intentionalClearAt || 0) > 0 &&
-    Math.abs(Number(opts?.intentionalClearAt || 0) - resetAt) < 10_000; // 10초 오차 허용
-  const rebumped = rebumpDonorsPastSettlementReset(normalized, resetAt);
-  const filtered = filterDonorsAfterSettlementReset(rebumped, resetAt);
-  const finalAllowFullWipe = explicitIntentionalReset ? true : Boolean(opts?.allowFullWipe);
-  if (!finalAllowFullWipe && normalized.length > 0 && filtered.length === 0) {
-    return rebumped;
-  }
-  return filtered;
+  return filterDonorsAfterSettlementReset(normalized, resetAt);
 }
 
 /**
@@ -4636,10 +4618,7 @@ export function resolveServerDonorsForEmptyLocal(opts: {
     const surviving = filterDonorsAfterSettlementReset(incomingDonors, localReset);
     return surviving.length > 0 ? surviving : null;
   }
-  const restored = applySettlementResetDonorPipeline(
-    rebumpDonorsPastSettlementReset(incomingDonors, resetAt),
-    resetAt
-  );
+  const restored = applySettlementResetDonorPipeline(incomingDonors, resetAt);
   return restored.length > 0 ? restored : null;
 }
 
@@ -4657,10 +4636,7 @@ export function pickAuthoritativeDonorsForEmptySession(
   const localReset = Number(local.settlementResetAt || 0);
   const resetAt = Math.max(Number(settlementResetAt || 0), localReset);
   const applyPipeline = (donors: Donor[]) =>
-    applySettlementResetDonorPipeline(
-      rebumpDonorsPastSettlementReset(donors, resetAt),
-      resetAt
-    );
+    applySettlementResetDonorPipeline(donors, resetAt);
   /** 의도적 정산 리셋 직후 — 구 후원(at < reset) 을 rebump 해 되살리지 않음 */
   const respectLocalSettlementReset =
     localDonors.length === 0 &&

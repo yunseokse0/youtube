@@ -1798,7 +1798,7 @@ export function applyTerritoryLogDirectTransfers(
 
 /** AppState 기준 영토 해상 — 기록부가 있으면 균등 시작 후 replay. 스냅샷 leftover 는 덮지 않음. */
 export function buildHighSocietyFieldFromAppState(
-  state: Pick<AppState, "members" | "donors" | "highSocietySettings" | "territoryLogs">,
+  state: Pick<AppState, "members" | "donors" | "highSocietySettings" | "territoryLogs" | "settlementResetAt">,
   opts?: { startCmPerMemberOverride?: number }
 ) {
   const settings = normalizeHighSocietySettings(state.highSocietySettings);
@@ -1827,10 +1827,17 @@ export function buildHighSocietyFieldFromAppState(
     players: equalPlayers,
     fieldCm: effectiveFieldCm,
   });
-  const resetAt = Number(settingsForField.territoryLogsResetAt || 0);
+  const settlementResetAt = Number(state.settlementResetAt || 0);
+  const resetAt = Math.max(Number(settingsForField.territoryLogsResetAt || 0), settlementResetAt);
   const territoryLogs = ((state.territoryLogs || []) as TerritoryLog[]).filter((log) =>
     resetAt > 0 ? Number(log.at || 0) >= resetAt : true
   );
+  if (territoryLogs.length === 0 && settlementResetAt > 0) {
+    return {
+      ...equalField,
+      settings: { ...settingsForField, fieldCm: effectiveFieldCm },
+    };
+  }
   if (territoryLogs.length > 0) {
     const fieldResolved = applyTerritoryLogDirectTransfers(
       equalField,

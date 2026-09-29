@@ -51,6 +51,13 @@ export function applySettlementResetToState(
   const resetPresets = resetOverlayPresetsGoalForDonationInit(state.overlayPresets);
   const preserved = pickSettingsPreservedAcrossSettlementReset(state);
   const battleRuntime = buildSettlementResetBattleRuntime(state, resetAt);
+  const highSocietySettings = {
+    ...(state.highSocietySettings || {}),
+    territoryLogsResetAt: resetAt,
+    memberWidthCm: {},
+    memberWidthDonationSnapshot: {},
+    memberTerritoryExpand: {},
+  };
 
   if (opts.mode === "keep") {
     const next: AppState = {
@@ -73,6 +80,7 @@ export function applySettlementResetToState(
         participants: (state.mealBattle?.participants || []).map((p) => ({ ...p, score: 0 })),
       },
       overlayPresets: resetPresets as AppState["overlayPresets"],
+      highSocietySettings,
       missions: preserved.missions || state.missions || [],
       settlementResetAt: resetAt,
       intentionalDonationClearAt: resetAt,
@@ -98,6 +106,7 @@ export function applySettlementResetToState(
     memberPositions: {},
     donors: [],
     overlayPresets: resetPresets as AppState["overlayPresets"],
+    highSocietySettings,
     mealBattle: {
       ...state.mealBattle,
       participants: filteredMealParticipants,

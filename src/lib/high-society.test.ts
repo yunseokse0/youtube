@@ -395,6 +395,28 @@ describe("high-society territory (aux)", () => {
     expect(seats[0]!.widthCm).toBe(100);
   });
 
+  it("settlement reset hides earlier territory logs and width snapshots", () => {
+    const resetAt = 5_000_000;
+    const members = [
+      { id: "a", name: "A", account: 0, toon: 0, operating: false },
+      { id: "b", name: "B", account: 0, toon: 0, operating: false },
+    ];
+    const { seats } = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [],
+      settlementResetAt: resetAt,
+      territoryLogs: [
+        { id: "old", memberId: "a", amount: 30, delta: 1, at: resetAt - 10_000, pushDir: "right" },
+      ],
+      highSocietySettings: normalizeHighSocietySettings({
+        seatMemberIds: ["a", "b"],
+        startCmPerMember: 100,
+        memberWidthCm: { a: 169, b: 31 },
+      }),
+    });
+    expect(seats.map((s) => s.widthCm)).toEqual([100, 100]);
+  });
+
   it("field seat count follows resolved players not ghost seatMemberIds", () => {
     const members = [
       { id: "a", name: "자키", account: 0, toon: 0, operating: false },

@@ -419,17 +419,15 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
    *           사용자가 명시적으로 과거 데이터 복구를 원하는 경우를 제외하면, 평범한 폴링에서는 리셋 이전 데이터 절대 불러오지 않음.
    */
   let intentionalClearAtMs = 0;
-  if (!opts?.ignoreMinInterval) {
-    try {
-      const { loadAppStateForUserId } = await import("@/lib/app-state-server-load");
-      const cur = await loadAppStateForUserId(uid).catch(() => null);
-      if (cur) {
-        const a = Number(cur.settlementResetAt) || 0;
-        const b = Number(cur.intentionalDonationClearAt) || 0;
-        intentionalClearAtMs = Math.max(a, b, 0);
-      }
-    } catch {}
-  }
+  try {
+    const { loadAppStateForUserId } = await import("@/lib/app-state-server-load");
+    const cur = await loadAppStateForUserId(uid).catch(() => null);
+    if (cur) {
+      const a = Number(cur.settlementResetAt) || 0;
+      const b = Number(cur.intentionalDonationClearAt) || 0;
+      intentionalClearAtMs = Math.max(a, b, 0);
+    }
+  } catch {}
 
   /** BUG FIX: DB 오염된 trailing slash → // 중복 URL 301/timeout 방지 */
   const safeSessionBase =

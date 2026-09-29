@@ -14,6 +14,7 @@ import {
 } from "./apply-donation-state";
 import { enrichAppStateWithDonationRosterBackupFromKv, loadDonationRosterBackupFromKv } from "@/lib/donation-roster-backup-redis";
 import { unionAppStateDonorsFromBackupIfRicher } from "@/lib/donation-roster-backup-core";
+import { shouldDiscardIngestEventForReset } from "@/lib/din-ingest-batch-fold";
 import { persistDonationApplyLikeToonation } from "@/lib/donation/persist-donation-like-toon";
 import { fetchToonaHubContributionFormula } from "@/lib/toona-hub-client";
 import { donationApplyInFlightKey } from "./donation-dedupe-keys";
@@ -97,6 +98,15 @@ export async function tryAutoApplyToonationDonationOnServer(
     );
     const state = await loadAppStateForUserId(uid);
     if (!state) return "not_applied";
+    if (
+      shouldDiscardIngestEventForReset(
+        event,
+        Number(state.settlementResetAt || 0),
+        Number((state as { intentionalDonationClearAt?: number }).intentionalDonationClearAt || 0)
+      )
+    ) {
+      return "applied";
+    }
     if (isDuplicateDonationEvent(state, event)) return "applied";
     if (!(await tryClaimDonationApply(uid, event))) {
       const deferred = await resolveAlreadyAppliedOrDefer(userId, event);
@@ -113,6 +123,15 @@ export async function tryAutoApplyToonationDonationOnServer(
     if (!freshState) {
       await releaseDonationApplyClaim(uid, event);
       return "not_applied";
+    }
+    if (
+      shouldDiscardIngestEventForReset(
+        event,
+        Number(freshState.settlementResetAt || 0),
+        Number((freshState as { intentionalDonationClearAt?: number }).intentionalDonationClearAt || 0)
+      )
+    ) {
+      return "applied";
     }
     if (isDuplicateDonationEvent(freshState, event)) return "applied";
 

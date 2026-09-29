@@ -181,8 +181,8 @@ describe("rebumpDonorsPastSettlementReset", () => {
 });
 
 describe("mergeServerSaveApiBodies", () => {
-  it("rebumps then filters donors after settlementReset queue merge", () => {
-    const resetAt = 10_000;
+  it("drops pre-reset donors when a reset save is merged with a later roster", () => {
+    const resetAt = 1_700_000_000_000;
     const prev = JSON.stringify({
       settlementReset: true,
       settlementResetAt: resetAt,
@@ -190,7 +190,7 @@ describe("mergeServerSaveApiBodies", () => {
       updatedAt: resetAt,
     });
     const next = JSON.stringify({
-      donors: [donor("a", 1000, 5000), donor("b", 2000, 12_000)],
+      donors: [donor("a", 1000, resetAt - 400_000), donor("b", 2000, resetAt + 1_000)],
       updatedAt: resetAt + 100,
     });
     const merged = JSON.parse(mergeServerSaveApiBodies(prev, next)) as {
@@ -198,8 +198,8 @@ describe("mergeServerSaveApiBodies", () => {
       settlementResetAt: number;
     };
     expect(merged.settlementResetAt).toBe(resetAt);
-    expect(merged.donors.map((d) => d.id).sort()).toEqual(["a", "b"]);
-    expect(Number(merged.donors.find((d) => d.id === "a")?.at)).toBeGreaterThanOrEqual(resetAt - 3000);
+    expect(merged.donors.map((d) => d.id)).toEqual(["b"]);
+    expect(Number(merged.donors.find((d) => d.id === "b")?.at)).toBe(resetAt + 1_000);
   });
 
   it("unions consecutive donorsAuthoritative saves so manual is not dropped by later toon", () => {
