@@ -2174,6 +2174,53 @@ describe("0cm eliminated member re-entry", () => {
     expect(appendHighSocietySeatMemberId(["a", "b"], "c")).toEqual(["a", "b", "c"]);
   });
 
+  it("0cm 멤버를 옮겨도 옆 사람 영토는 초기화되지 않는다", () => {
+    const members = [
+      { id: "jaki", name: "자기", account: 0, toon: 0, operating: false },
+      { id: "jisu", name: "지수", account: 0, toon: 0, operating: false },
+      { id: "subin", name: "수빈", account: 0, toon: 0, operating: false },
+    ];
+    const logs = [createTerritoryLog("jaki", 1, 100, { pushDir: "right", now: 1_000 })];
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["jaki", "subin", "jisu"],
+      seatMemberIdsManual: true,
+      startCmPerMember: 100,
+      fieldCm: 300,
+    });
+    const before = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [],
+      highSocietySettings: settings,
+      territoryLogs: logs,
+    });
+    expect(before.seats.find((s) => s.id === "subin")!.widthCm).toBe(0);
+    const widthById = Object.fromEntries(before.seats.map((s) => [s.id, s.widthCm]));
+
+    const moved = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: settings,
+      nextSettings: normalizeHighSocietySettings({
+        ...settings,
+        seatMemberIds: ["jaki", "jisu", "subin"],
+        seatMemberIdsManual: true,
+      }),
+      members,
+      territoryLogs: logs,
+      now: 5_000,
+    });
+    const after = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [],
+      highSocietySettings: moved,
+      territoryLogs: logs,
+    });
+    expect(after.seats.map((s) => s.id)).toEqual(["jaki", "jisu", "subin"]);
+    expect(after.seats.find((s) => s.id === "subin")!.widthCm).toBe(0);
+    expect(after.seats.find((s) => s.id === "jaki")!.widthCm).toBe(widthById.jaki);
+    expect(after.seats.find((s) => s.id === "jisu")!.widthCm).toBe(widthById.jisu);
+    expect(logs).toHaveLength(1);
+  });
+
   it("0cm seat layout change preserves other member widths (no equal-split reset)", () => {
     const members = [
       { id: "jaki", name: "자기", account: 0, toon: 0, operating: false },
@@ -2317,6 +2364,90 @@ describe("0cm eliminated member re-entry", () => {
     });
     expect(next.memberWidthCm?.a).toBeCloseTo(120, 0);
     expect(next.memberWidthCm?.c).toBeCloseTo(180, 0);
+  });
+
+  it("땅이 있는 멤버를 빼도 남은 영토는 유지되고 자리 이동으로 되살아나지 않는다", () => {
+    const members = [
+      { id: "gwak", name: "곽호경", account: 0, toon: 0, operating: false },
+      { id: "young", name: "영실이", account: 0, toon: 0, operating: false },
+      { id: "jaki", name: "자키", account: 0, toon: 0, operating: false },
+      { id: "yuri", name: "유리", account: 0, toon: 0, operating: false },
+      { id: "pong", name: "풍이", account: 0, toon: 0, operating: false },
+      { id: "reze", name: "레제", account: 0, toon: 0, operating: false },
+    ];
+    const settings = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["gwak", "young", "jaki", "yuri", "pong", "reze"],
+      seatMemberIdsManual: true,
+      startCmPerMember: 100,
+      fieldCm: 600,
+      memberWidthCm: { gwak: 100, young: 100, jaki: 0, yuri: 300, pong: 5, reze: 95 },
+    });
+    const logs = [
+      createTerritoryLog("yuri", 1, 200, { pushDir: "split", now: 1_000 }),
+      createTerritoryLog("pong", 1, 5, { pushDir: "split", now: 2_000 }),
+    ];
+    const removed = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: settings,
+      nextSettings: normalizeHighSocietySettings({
+        ...settings,
+        seatMemberIds: ["gwak", "young", "jaki"],
+        seatMemberIdsManual: true,
+      }),
+      members,
+      territoryLogs: logs,
+    });
+    expect(removed.seatMemberIds).toEqual(["gwak", "young", "jaki"]);
+    expect(removed.memberWidthCm?.gwak).toBe(100);
+    expect(removed.memberWidthCm?.young).toBe(100);
+    expect(removed.memberWidthCm?.jaki).toBe(0);
+
+    const afterRemove = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [],
+      highSocietySettings: removed,
+      territoryLogs: logs,
+    });
+    expect(afterRemove.seats.map((s) => s.id)).toEqual(["gwak", "young", "jaki"]);
+    expect(afterRemove.seats.find((s) => s.id === "gwak")!.widthCm).toBe(100);
+    expect(afterRemove.seats.find((s) => s.id === "jaki")!.widthCm).toBe(0);
+
+    const revived = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: removed,
+      nextSettings: normalizeHighSocietySettings({
+        ...removed,
+        seatMemberIds: ["gwak", "young", "jaki", "yuri"],
+        seatMemberIdsManual: true,
+      }),
+      members,
+      territoryLogs: logs,
+    });
+    expect(revived.seatMemberIds).toEqual(["gwak", "young", "jaki", "yuri"]);
+    expect(revived.memberWidthCm?.gwak).toBe(100);
+    expect(revived.memberWidthCm?.jaki).toBe(0);
+
+    const moved = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: revived,
+      nextSettings: normalizeHighSocietySettings({
+        ...revived,
+        seatMemberIds: ["gwak", "yuri", "young", "jaki"],
+        seatMemberIdsManual: true,
+      }),
+      members,
+      territoryLogs: logs,
+    });
+    expect(moved.seatMemberIds).toEqual(["gwak", "yuri", "young", "jaki"]);
+    expect(moved.seatMemberIds).not.toContain("reze");
+    expect(moved.seatMemberIds).not.toContain("pong");
+    const afterMove = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [],
+      highSocietySettings: moved,
+      territoryLogs: logs,
+    });
+    expect(afterMove.seats.map((s) => s.id)).toEqual(["gwak", "yuri", "young", "jaki"]);
+    expect(afterMove.seats.find((s) => s.id === "gwak")!.widthCm).toBe(100);
+    expect(afterMove.seats.find((s) => s.id === "jaki")!.widthCm).toBe(0);
   });
 });
 

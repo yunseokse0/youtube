@@ -530,6 +530,10 @@ export type HighSocietySettings = {
    */
   territoryLogsResetAt?: number;
   /**
+   * 좌석을 넣거나 뺀 시각(ms). 이 시각 이전 기록은 다시 깔지 않고, 그 시점 cm 를 유지한다.
+   */
+  territorySnapshotEpochAt?: number;
+  /**
    * 마지막 OFF 전환 시각(ms).
    * OFF 중·재ON 직후 baseline — 이 시각 이전 후원만 누적 영토에 포함(OFF 이후 후원 무시).
    */

@@ -457,6 +457,7 @@ export function isDefaultLikeHighSocietySettings(
   if (s.territoryPaused) return false;
   if ((s.seatMemberIds || []).length > 0) return false;
   if (s.seatMemberIdsManual === true) return false;
+  if (Number(s.territorySnapshotEpochAt || 0) > 0) return false;
   if (Object.keys(s.memberTerritoryExpand || {}).length > 0) return false;
   if (Object.keys(s.memberWidthCm || {}).length > 0) return false;
   if (Object.keys(s.memberWidthDonationSnapshot || {}).length > 0) return false;
@@ -480,6 +481,7 @@ export function isMeaningfulHighSocietySettings(
   if (s.territoryPaused) return true;
   if ((s.seatMemberIds || []).length > 0) return true;
   if (s.seatMemberIdsManual === true) return true;
+  if (Number(s.territorySnapshotEpochAt || 0) > 0) return true;
   if (Object.keys(s.memberTerritoryExpand || {}).length > 0) return true;
   if (Object.keys(s.memberWidthCm || {}).length > 0) return true;
   if (Object.keys(s.memberWidthDonationSnapshot || {}).length > 0) return true;
@@ -669,6 +671,11 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
   const logsResetRaw = Number(v.territoryLogsResetAt);
   const territoryLogsResetAt =
     Number.isFinite(logsResetRaw) && logsResetRaw > 0 ? Math.floor(logsResetRaw) : undefined;
+  const snapshotEpochRaw = Number(v.territorySnapshotEpochAt);
+  const territorySnapshotEpochAt =
+    Number.isFinite(snapshotEpochRaw) && snapshotEpochRaw > 0
+      ? Math.floor(snapshotEpochRaw)
+      : undefined;
   const reopenRaw = Number(v.territoryReopenAt);
   const territoryReopenAt =
     Number.isFinite(reopenRaw) && reopenRaw > 0 ? Math.floor(reopenRaw) : undefined;
@@ -730,6 +737,7 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     donationLinks: donationLinks || {},
     ...(territoryCutoffAt !== undefined ? { territoryCutoffAt } : {}),
     ...(territoryLogsResetAt !== undefined ? { territoryLogsResetAt } : {}),
+    ...(territorySnapshotEpochAt !== undefined ? { territorySnapshotEpochAt } : {}),
     ...(territoryReopenAt !== undefined ? { territoryReopenAt } : {}),
     ...(territoryPaused ? { territoryPaused: true } : {}),
     ...(territoryPaused && territoryPausedAt !== undefined ? { territoryPausedAt } : {}),
@@ -854,16 +862,11 @@ export function shouldClearMemberWidthSnapshotOnSeatChange(opts: {
   if (isSeatMemberIdsReorderOnly(prevSettings.seatMemberIds || [], nextSettings.seatMemberIds || [], roster)) {
     return false;
   }
-  const prevField = buildHighSocietyFieldFromAppState({
-    members,
-    donors: (opts.donors ?? []) as Donor[],
-    highSocietySettings: prevSettings,
-  });
-  const widthById = new Map(prevField.seats.map((s) => [s.id, s.widthCm]));
-  const nextSet = new Set(nextOrder);
-  for (const id of prevOrder) {
-    if (!nextSet.has(id) && (widthById.get(id) ?? 0) > 0) return true;
-  }
+  /**
+   * 땅이 있는 멤버를 좌석에서 빼거나, 빼 둔 멤버를 다시 앉히거나, 순서를 바꿔도
+   * 스냅샷을 비우지 않는다. 비우면 기록부를 100cm부터 다시 깔아 남은 영토가 초기화되고
+   * 빼 둔 멤버가 전원 배치로 되살아난다.
+   */
   return false;
 }
 
@@ -890,6 +893,26 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
   const prevSeatIds = prevSettings.seatMemberIds || [];
   const nextSeatIds = nextSettings.seatMemberIds || [];
   const seatsChanged = !seatMemberIdsEqual(prevSeatIds, nextSeatIds);
+  const rosterIds = resolveHighSocietySeatMembers(members, null).map((s) => s.id);
+  const reorderOnly =
+    seatsChanged && isSeatMemberIdsReorderOnly(prevSeatIds, nextSeatIds, rosterIds);
+  const membershipChanged = seatsChanged && !reorderOnly;
+  /**
+   * 0cm 인원을 옮기면 기록부를 균등 100cm부터 다시 깔아 옆 사람 땅이 초기화된다.
+   * 옮기기 직전 폭을 고정하고, 그 시각 이전 기록은 다시 계산하지 않는다.
+   */
+  const zeroSeatReorderField =
+    reorderOnly && !resetTerritory
+      ? buildHighSocietyFieldFromAppState({
+          members,
+          donors: (opts.donors ?? []) as Donor[],
+          highSocietySettings: prevSettings,
+          territoryLogs: (opts.territoryLogs ?? []) as TerritoryLog[],
+        })
+      : null;
+  const freezeZeroSeatReorder = Boolean(
+    zeroSeatReorderField?.seats.some((s) => s.widthCm <= 0)
+  );
 
   const territoryTimingPatch = (): Partial<HighSocietySettings> => {
     if (resetTerritory) {
@@ -903,6 +926,7 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
         memberWidthDonationSnapshot: undefined,
         memberTerritoryExpand: undefined,
         territoryLogsResetAt: now,
+        territorySnapshotEpochAt: undefined,
       };
     }
     if (turningOff) {
@@ -967,9 +991,11 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
   const memberWidthPatch =
     resetTerritory || clearWidthsOnSeatChange
       ? clearMemberWidthSnapshot()
-      : preserveLayoutOnSeatChange
-        ? preserveWidthsByMemberId()
-        : {};
+      : freezeZeroSeatReorder && zeroSeatReorderField
+        ? memberWidthPatchFromFieldSeats(zeroSeatReorderField.seats)
+        : preserveLayoutOnSeatChange
+          ? preserveWidthsByMemberId()
+          : {};
 
   const prevRound = Math.max(1, Math.floor(Number(prevSettings.round) || 1));
   return {
@@ -977,6 +1003,9 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
     ...(resetTerritory ? { round: Math.min(99, prevRound + 1) } : {}),
     ...territoryTimingPatch(),
     ...memberWidthPatch,
+    ...((membershipChanged || freezeZeroSeatReorder) && !resetTerritory
+      ? { territorySnapshotEpochAt: now }
+      : {}),
   };
 }
 
@@ -1796,7 +1825,11 @@ export function applyTerritoryLogDirectTransfers(
   };
 }
 
-/** AppState 기준 영토 해상 — 기록부가 있으면 균등 시작 후 replay. 스냅샷 leftover 는 덮지 않음. */
+/**
+ * AppState 기준 영토 해상 — 기록부가 있으면 균등 시작 후 replay. 스냅샷 leftover 는 덮지 않음.
+ * 좌석 추가·제거로 territorySnapshotEpochAt 이 찍힌 뒤에는, 그 시각 이전 기록은 다시 깔지 않고
+ * 그 시점의 cm 스냅샷을 유지한다. 그 이후 기록만 스냅샷 위에 더한다.
+ */
 export function buildHighSocietyFieldFromAppState(
   state: Pick<AppState, "members" | "donors" | "highSocietySettings" | "territoryLogs" | "settlementResetAt">,
   opts?: { startCmPerMemberOverride?: number }
@@ -1832,6 +1865,43 @@ export function buildHighSocietyFieldFromAppState(
   const territoryLogs = ((state.territoryLogs || []) as TerritoryLog[]).filter((log) =>
     resetAt > 0 ? Number(log.at || 0) >= resetAt : true
   );
+  const snapshotEpochAt = Number(settingsForField.territorySnapshotEpochAt || 0);
+  const logsAfterEpoch =
+    snapshotEpochAt > 0
+      ? territoryLogs.filter((log) => Number(log.at || 0) > snapshotEpochAt)
+      : territoryLogs;
+  const widths = settingsForField.memberWidthCm;
+  const snapshotComplete =
+    Boolean(widths) && seatIds.length > 0 && seatIds.every((id) => widths![id] != null);
+  if (snapshotEpochAt > 0 && snapshotComplete) {
+    const snapSum = seatIds.reduce(
+      (sum, id) => sum + Math.max(0, Number(widths![id]) || 0),
+      0
+    );
+    const fieldForSnap = snapSum > 0 ? snapSum : effectiveFieldCm;
+    const snapField = resolveHighSocietyFieldWithMemberWidths({
+      players: equalPlayers,
+      fieldCm: fieldForSnap,
+      widthByMemberId: widths!,
+      expandByMemberId: settingsForField.memberTerritoryExpand,
+    });
+    if (logsAfterEpoch.length === 0) {
+      return {
+        ...snapField,
+        settings: { ...settingsForField, fieldCm: fieldForSnap },
+      };
+    }
+    const fieldResolved = applyTerritoryLogDirectTransfers(
+      snapField,
+      seatIds,
+      logsAfterEpoch,
+      settingsForField
+    );
+    return {
+      ...fieldResolved,
+      settings: { ...settingsForField, fieldCm: fieldForSnap },
+    };
+  }
   if (territoryLogs.length === 0 && settlementResetAt > 0) {
     return {
       ...equalField,
@@ -1850,9 +1920,6 @@ export function buildHighSocietyFieldFromAppState(
       settings: { ...settingsForField, fieldCm: effectiveFieldCm },
     };
   }
-  const widths = settingsForField.memberWidthCm;
-  const snapshotComplete =
-    Boolean(widths) && seatIds.length > 0 && seatIds.every((id) => widths![id] != null);
   if (snapshotComplete) {
     return {
       ...resolveHighSocietyFieldWithMemberWidths({
