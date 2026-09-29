@@ -41,7 +41,12 @@ function formatWon(n: number): string {
 
 function formatTime(ts: number): string {
   if (!Number.isFinite(ts) || ts <= 0) return "";
-  return new Date(ts).toLocaleTimeString("ko-KR");
+  return new Date(ts).toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 export default function AdminDonorListPopupPanel() {
@@ -469,7 +474,7 @@ export default function AdminDonorListPopupPanel() {
                       label="전체 선택"
                     />
                   </th>
-                  <th className="w-[4.5rem] p-1 text-left">시간</th>
+                  <th className="w-[6.5rem] p-1 text-left">시간</th>
                   <th className="w-[18%] p-1 text-left">후원자</th>
                   {!dense && <th className="w-[16%] p-1 text-left">멤버</th>}
                   <th className="w-12 p-1 text-left">대상</th>
@@ -498,7 +503,9 @@ export default function AdminDonorListPopupPanel() {
                           onToggle={toggleSelect}
                         />
                       </td>
-                      <td className="p-1 whitespace-nowrap text-neutral-400">{formatTime(Number(d.at || 0))}</td>
+                      <td className="p-1 whitespace-nowrap text-neutral-300 tabular-nums" title={formatTime(Number(d.at || 0))}>
+                        {formatTime(Number(d.at || 0))}
+                      </td>
                       <td className="p-1">
                         <input
                           className="w-full rounded border border-white/10 bg-neutral-950/80 px-1.5 py-0.5 text-neutral-100"
