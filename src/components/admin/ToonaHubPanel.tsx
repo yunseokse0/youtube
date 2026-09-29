@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getToonaDashboardUrl } from "@/lib/donation-ingest-mode";
 import { loadStateFromApi, saveState } from "@/lib/state";
+import { TOONA_HUB_CLIENT_CONNECT_TIMEOUT_MS } from "@/lib/toona-hub-login";
 
 const SIG_INVENTORY_IMPORTED_EVENT = "youtube-sig-inventory-imported";
 
@@ -182,7 +183,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, baseUrl }),
         /** 서버 무응답·후처리 지연 시 「연결 중…」고착 방지 */
-        signal: AbortSignal.timeout(45_000),
+        signal: AbortSignal.timeout(TOONA_HUB_CLIENT_CONNECT_TIMEOUT_MS),
       });
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;

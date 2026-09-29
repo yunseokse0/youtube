@@ -1,15 +1,7 @@
 import { NextRequest } from "next/server";
 import { resolveWriteUserId, writeUserIdErrorResponse } from "@/app/api/_shared/user-id";
-import { resolveScopedOverlayUserId } from "@/lib/overlay-params";
-import {
-  fetchToonaDonationsSinceLink,
-  fetchToonaHubContributionFormula,
-  fetchToonaSignaturesViaHubSession,
-  getYoutubePublicBaseUrl,
-  loginAndLinkToonaHub,
-  pollToonaHubForAdmin,
-  syncContributionFormulaToToonaHub,
-} from "@/lib/toona-hub-client";
+import { getYoutubePublicBaseUrl } from "@/lib/toona-link";
+import { loginAndLinkToonaHub } from "@/infra/http/toona-hub-login-link";
 import {
   clearToonaHubDonationLogs,
   clearToonaHubSession,
@@ -17,26 +9,19 @@ import {
   readToonaHubDonationLogs,
   readToonaHubSession,
 } from "@/lib/toona-hub-session";
-import { defaultState } from "@/lib/state";
-import { normalizeContributionFormula } from "@/lib/contribution-formula";
-import { persistContributionFormulaForUser } from "@/lib/contribution-formula-persist";
-import { loadAppStateForUserId } from "@/lib/app-state-server-load";
-import { applyToonaSigItemsToInventory } from "@/lib/toona-sig-import";
-import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
-import { publishSseEvent } from "@/lib/sse-clients-hub";
-import type { SigItem } from "@/types";
 import {
   describeDonationIntakeMode,
   isDonationIntakeModeB,
 } from "@/policies/donation-intake-mode";
+import {
+  TOONA_HUB_ROUTE_MAX_DURATION_SEC,
+  toonaHubLoginSuccessBody,
+} from "@/lib/toona-hub-login";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 15;
+export const maxDuration = TOONA_HUB_ROUTE_MAX_DURATION_SEC;
 
-/** ✅ B모드 (= DIN 허브 연결 모드) 일때만 /toona/hub endpoint (세션·폴링·연동)을 활성화함.
- *  · A모드 (투네 직접) 시 DIN 허브 연동 자체가 필요 없으므로 전부 disabled 처리 → 후원 출처 2중 입력 방지
- *  · 과거 TOONA_HUB_POLL_DISABLE env 로직을 donation-intake-mode 정책으로 통일. */
 function isToonaHubDisabledForMode(): boolean {
   return !isDonationIntakeModeB();
 }
@@ -49,21 +34,23 @@ function json(data: unknown, status = 200) {
 }
 
 function scopedStateUserIdOf(authUserId: string): string {
-  return resolveScopedOverlayUserId(authUserId, "finalent");
+  const id = String(authUserId || "").trim();
+  return id || "finalent";
 }
 
-async function importSigsAfterHubLogin(hubSessionUserId: string): Promise<{
-  ok: boolean;
-  count: number;
-  added?: number;
-  updated?: number;
-  error?: string;
-  items?: SigItem[];
-  saved?: boolean;
-}> {
+async function importSigsAfterHubLogin(hubSessionUserId: string) {
+  const [{ fetchToonaSignaturesViaHubSession }, { defaultState }, { loadAppStateForUserId }, { applyToonaSigItemsToInventory }, { saveAppStateForRoulette }, { publishSseEvent }] =
+    await Promise.all([
+      import("@/lib/toona-hub-client"),
+      import("@/lib/state"),
+      import("@/lib/app-state-server-load"),
+      import("@/lib/toona-sig-import"),
+      import("@/app/api/roulette/edge-state-store"),
+      import("@/lib/sse-clients-hub"),
+    ]);
   const stateUserId = scopedStateUserIdOf(hubSessionUserId);
   const fetched = await fetchToonaSignaturesViaHubSession(hubSessionUserId);
-  if (!fetched.ok) return { ok: false, count: 0, error: fetched.error };
+  if (!fetched.ok) return { ok: false as const, count: 0, error: fetched.error };
   const state = (await loadAppStateForUserId(stateUserId)) ?? defaultState();
   const { nextInventory, added, updated } = applyToonaSigItemsToInventory(
     state.sigInventory || [],
@@ -74,7 +61,7 @@ async function importSigsAfterHubLogin(hubSessionUserId: string): Promise<{
   const saved = await saveAppStateForRoulette(stateUserId, next, { donorsMode: "add" });
   if (!saved.ok) {
     return {
-      ok: false,
+      ok: false as const,
       count: fetched.count,
       added,
       updated,
@@ -85,7 +72,7 @@ async function importSigsAfterHubLogin(hubSessionUserId: string): Promise<{
   }
   await publishSseEvent({ type: "state_updated", updatedAt: next.updatedAt });
   return {
-    ok: true,
+    ok: true as const,
     count: fetched.count,
     added,
     updated,
@@ -94,7 +81,6 @@ async function importSigsAfterHubLogin(hubSessionUserId: string): Promise<{
   };
 }
 
-/** GET — 허브 세션 상태 + 로그인 이후 후원 로그 */
 export async function GET(req: NextRequest) {
   const auth = resolveWriteUserId(req);
   if (!auth.ok) return writeUserIdErrorResponse(auth);
@@ -124,6 +110,7 @@ export async function GET(req: NextRequest) {
     try {
       const timeoutMs = 12_000;
       const abortRef = { aborted: false };
+      const { pollToonaHubForAdmin } = await import("@/lib/toona-hub-client");
       const pollPromise = (async () => {
         const polled = await pollToonaHubForAdmin(auth.userId);
         if (abortRef.aborted) return null;
@@ -161,7 +148,6 @@ export async function GET(req: NextRequest) {
   return json({ ok: true, scenario, session: publicToonaHubSession(session), logs, donationLogs: logs });
 }
 
-/** POST — toona 로그인 + youtubegit 연동 */
 export async function POST(req: NextRequest) {
   const auth = resolveWriteUserId(req);
   if (!auth.ok) return writeUserIdErrorResponse(auth);
@@ -195,6 +181,7 @@ export async function POST(req: NextRequest) {
 
   if (body.action === "sync-donations") {
     const force = req.nextUrl.searchParams.get("force") === "1";
+    const { fetchToonaDonationsSinceLink } = await import("@/lib/toona-hub-client");
     const result = await fetchToonaDonationsSinceLink(auth.userId, { ignoreMinInterval: force });
     if (!result.ok) return json({ ok: false, error: result.error }, 502);
     const logs = await readToonaHubDonationLogs(auth.userId);
@@ -222,6 +209,10 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.action === "sync-contribution-formula") {
+    const [{ normalizeContributionFormula }, { syncContributionFormulaToToonaHub }] = await Promise.all([
+      import("@/lib/contribution-formula"),
+      import("@/lib/toona-hub-client"),
+    ]);
     const formula = normalizeContributionFormula(body.contributionFormula);
     const result = await syncContributionFormulaToToonaHub(auth.userId, formula);
     if (!result.ok) {
@@ -262,27 +253,18 @@ export async function POST(req: NextRequest) {
     return json({ ok: false, error: result.error }, status);
   }
 
-  /**
-   * 연동 성공 응답은 빠르게 반환한다.
-   * 기여도 동기화·시그 병합은 AppState 저장(대용량 donors)에 막혀
-   * 「연결 중…」이 무한히 유지되는 원인이었음 → 짧은 예산 후 deferred.
-   */
-  type SigImportPayload = {
-    ok: boolean;
-    count: number;
-    added: number;
-    updated: number;
-    error?: string;
-  };
-  const deferredSig: SigImportPayload = {
-    ok: false,
-    count: 0,
-    added: 0,
-    updated: 0,
-    error: "deferred",
-  };
-
-  const postLinkWork = (async (): Promise<SigImportPayload> => {
+  void (async () => {
+    const [
+      { loadAppStateForUserId },
+      { normalizeContributionFormula },
+      { persistContributionFormulaForUser },
+      { fetchToonaHubContributionFormula, syncContributionFormulaToToonaHub },
+    ] = await Promise.all([
+      import("@/lib/app-state-server-load"),
+      import("@/lib/contribution-formula"),
+      import("@/lib/contribution-formula-persist"),
+      import("@/lib/toona-hub-client"),
+    ]);
     const stateUserId = scopedStateUserIdOf(auth.userId);
     const state = await loadAppStateForUserId(stateUserId);
     let formula = normalizeContributionFormula(
@@ -298,46 +280,12 @@ export async function POST(req: NextRequest) {
       }
     }
     await syncContributionFormulaToToonaHub(auth.userId, formula);
-    const sigImport = await importSigsAfterHubLogin(auth.userId);
-    return {
-      ok: sigImport.ok,
-      count: sigImport.count,
-      added: sigImport.added ?? 0,
-      updated: sigImport.updated ?? 0,
-      error: sigImport.error,
-    };
-  })();
+    await importSigsAfterHubLogin(auth.userId);
+  })().catch(() => {});
 
-  const POST_LINK_BUDGET_MS = 10_000;
-  let sigImport: SigImportPayload = deferredSig;
-  try {
-    sigImport = await Promise.race([
-      postLinkWork,
-      new Promise<SigImportPayload>((resolve) =>
-        setTimeout(() => resolve(deferredSig), POST_LINK_BUDGET_MS)
-      ),
-    ]);
-  } catch (err) {
-    sigImport = {
-      ok: false,
-      count: 0,
-      added: 0,
-      updated: 0,
-      error: err instanceof Error ? err.message : "post_link_failed",
-    };
-  }
-  /** race로 먼저 빠져도 백그라운드 작업은 계속 */
-  void postLinkWork.catch(() => {});
-
-  return json({
-    ok: true,
-    session: result.session,
-    logs: [],
-    sigImport,
-  });
+  return json(toonaHubLoginSuccessBody(result.session));
 }
 
-/** DELETE — 허브 로그아웃(세션·로그 삭제, toona 측 설정은 유지) */
 export async function DELETE(req: NextRequest) {
   const auth = resolveWriteUserId(req);
   if (!auth.ok) return writeUserIdErrorResponse(auth);
