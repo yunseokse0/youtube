@@ -253,7 +253,7 @@ export function useAdminPopupBroadcastState() {
     void reload();
   }, [scopedUserId]);
 
-  useSSEConnection((d: unknown) => {
+  const { connected: sseConnected } = useSSEConnection((d: unknown) => {
     const o = d as { type?: string };
     /** 저장 중 SSE GET 은 아직 안 올라간 짧은 기록부로 화면을 되돌림 — 이 창 기록부가 정본 */
     if (o?.type === "state_updated") {
@@ -261,6 +261,34 @@ export function useAdminPopupBroadcastState() {
       void reload();
     }
   });
+
+  /** 후원자 리스트 창은 SSE만 기다리면, 연결이 끊긴 동안 들어온 후원은 새로고침 전까지 안 보인다. */
+  useEffect(() => {
+    if (!authReady || !scopedUserId) return;
+    let stopped = false;
+    const pullIfNewer = async () => {
+      if (stopped || persistInFlightRef.current > 0 || reloadBusyRef.current) return;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      const since = Number(stateRef.current?.updatedAt || 0);
+      if (since <= 0) return;
+      const remote = await loadStateFromApi(scopedUserId, { ifUpdatedSince: since });
+      if (stopped || !remote) return;
+      if (Number(remote.updatedAt || 0) <= since) return;
+      void reload();
+    };
+    const timer = window.setInterval(() => {
+      void pullIfNewer();
+    }, sseConnected ? 8_000 : 4_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void reload();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [authReady, scopedUserId, sseConnected, reload]);
 
   const persistChainRef = useRef(Promise.resolve(true));
 
