@@ -1426,13 +1426,15 @@ export function isDuplicateDonationEvent(
      *  → 기존 로직은 이 케이스를 중복으로 오판해 3건 후원이 1건으로 줄어드는 False Positive 발생.
      */
     const ownerRemapHit = isOwnerRemapSplitDuplicate(d, rawEvent);
-    if (ownerRemapHit) {
+    const distinctStrongUid =
+      dHasStrongId && evHasStrongId && Boolean(donorIdNorm) && Boolean(eventIdNorm) && donorIdNorm !== eventIdNorm;
+    if (ownerRemapHit && !distinctStrongUid) {
       const tgtD = String((d as unknown as { target?: string }).target || "").trim().toLowerCase();
       const tgtEv = String(rawEvent.target || "").trim().toLowerCase();
       const targetsDifferent = Boolean(tgtD && tgtEv && tgtD !== tgtEv);
       if (targetsDifferent || weakEither_) return true;
     }
-    if (dHasStrongId && evHasStrongId && donorIdNorm !== eventIdNorm) return false;
+    if (distinctStrongUid) return false;
     /** ✅ Fix #7-2 2026-09-11 계좌 다건이체 P0: donorInferSourceKind 가 bank/sms/account 계열 소스면
      *  이름·금액·메시지·시간이 100% 같아도 절대 identical-content 블록으로 중복 오판하지 않음.
      *  → Fix #7-1 이외 2중 Safety Net (로직 실수로 bank: prefix 패턴이 늦게 추가돼도 여기서 한 번 더 차단) */

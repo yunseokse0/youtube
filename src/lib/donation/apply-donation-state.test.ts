@@ -484,6 +484,80 @@ describe("applyDonationToAppState", () => {
     expect(result.reason).toBe("duplicate");
   });
 
+  it("keeps distinct strong UIDs one second apart when message and amount match", () => {
+    const at = Date.now();
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "자키", account: 0, toon: 777, contribution: 777 }],
+      donors: [
+        {
+          id: "toonation:din:cmumcrom203qg5jncr6t599j6",
+          name: "익명",
+          amount: 777,
+          memberId: "m1",
+          at,
+          target: "toon" as const,
+          message: "시그 아닌 일반 멘트",
+        },
+      ],
+    };
+    const event: DonationEvent = {
+      id: "bank:din:cmumcrpff03ql5jncq2dclks1",
+      provider: "bank",
+      externalId: "cmumcrpff03ql5jncq2dclks1",
+      donorName: "ovmum786obmumcnqykn181",
+      playerName: "자키",
+      amount: 777,
+      message: "시그 아닌 일반 멘트",
+      at: new Date(at + 1000).toISOString(),
+      status: "queued",
+      target: "account",
+    };
+    const result = applyDonationToAppState(state, event);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.donors).toHaveLength(2);
+    expect(result.state.donors.map((d) => d.id).sort()).toEqual([
+      "bank:din:cmumcrpff03ql5jncq2dclks1",
+      "toonation:din:cmumcrom203qg5jncr6t599j6",
+    ]);
+  });
+
+  it("still rejects the same strong UID arriving again within one second", () => {
+    const at = Date.now();
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "자키", account: 0, toon: 777, contribution: 777 }],
+      donors: [
+        {
+          id: "toonation:din:cmumcrom203qg5jncr6t599j6",
+          name: "익명",
+          amount: 777,
+          memberId: "m1",
+          at,
+          target: "toon" as const,
+          message: "시그 아닌 일반 멘트",
+        },
+      ],
+    };
+    const event: DonationEvent = {
+      id: "bank:din:cmumcrom203qg5jncr6t599j6",
+      provider: "bank",
+      externalId: "cmumcrom203qg5jncr6t599j6",
+      donorName: "익명",
+      playerName: "자키",
+      amount: 777,
+      message: "시그 아닌 일반 멘트",
+      at: new Date(at + 1000).toISOString(),
+      status: "queued",
+      target: "account",
+    };
+    const result = applyDonationToAppState(state, event);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("duplicate");
+  });
+
   it("rejects owner-remap split pair (익명 계좌 + 원닉 투네) within 3s", () => {
     const at = Date.now();
     const state = {
