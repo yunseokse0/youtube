@@ -272,7 +272,8 @@ describe("high-society rule field", () => {
     expect(parseHighSocietySplit("70", "30")).toEqual({ bLeft: 0.7, cLeft: 0.3 });
     expect(parseHighSocietySplit("0.2", "0.8")).toEqual({ bLeft: 0.2, cLeft: 0.8 });
     expect(formatCm(305)).toBe("305cm");
-    expect(formatCm(230.1)).toBe("230cm");
+    expect(formatCm(230.1)).toBe("230.1cm");
+    expect(formatCm(7.5)).toBe("7.5cm");
     expect(formatSeatWidthCm(0, "00cm")).toBe("00cm");
     expect(formatSeatWidthCm(0, "0cm")).toBe("0cm");
     expect(formatSeatWidthCm(0, "hidden")).toBe("0cm");
@@ -3180,13 +3181,13 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
     expect(total).toBe(500);
   });
 
-  it("홀수 21cm 양분은 좌 10 + 우 11 이고 전장 합이 깨지지 않는다", () => {
+  it("홀수 21cm 양분은 좌우 10.5 이고 전장 합이 깨지지 않는다", () => {
     let state = four();
     state = appendTerritoryLogToAppState(state, createTerritoryLog("b", 1, 21, { now: 1_000 }));
     const { byId, total } = widths(state);
-    expect(byId.a).toBe(90);
+    expect(byId.a).toBe(89.5);
     expect(byId.b).toBe(121);
-    expect(byId.c).toBe(89);
+    expect(byId.c).toBe(89.5);
     expect(byId.d).toBe(100);
     expect(total).toBe(400);
   });
@@ -3566,13 +3567,13 @@ describe("상류사회 개인전 6인", () => {
     expect(total).toBe(600);
   });
 
-  it("홀수 21cm 양분은 좌 10 + 우 11 이고 전장 합이 깨지지 않는다", () => {
+  it("홀수 21cm 양분은 좌우 10.5 이고 전장 합이 깨지지 않는다", () => {
     let state = six();
     state = appendTerritoryLogToAppState(state, createTerritoryLog("c", 1, 21, { now: 1_000 }));
     const { byId, total } = widths(state);
-    expect(byId.b).toBe(90);
+    expect(byId.b).toBe(89.5);
     expect(byId.c).toBe(121);
-    expect(byId.d).toBe(89);
+    expect(byId.d).toBe(89.5);
     expect(byId.a).toBe(100);
     expect(byId.e).toBe(100);
     expect(byId.f).toBe(100);

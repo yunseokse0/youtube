@@ -162,12 +162,19 @@ export function shouldShowZeroCmSeatsOnGauge(
   return normalizeZeroCmGaugeDisplay(display) !== "hidden";
 }
 
-/** 좌석 width 표시 — 0cm일 때 zeroCmGaugeDisplay 에 따라 0cm / 00cm */
+/** 영토 cm — 소수 첫째 자리. 홀수 양분(7.5)이 정수 반올림으로 사라지지 않게 */
+export function roundTerritoryCm(cm: number): number {
+  const n = Number(cm);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(Math.max(0, n) * 10) / 10;
+}
+
+/** 좌석 width 표시 — 0cm일 때 zeroCmGaugeDisplay 에 따라 0cm / 00cm. 정수가 아니면 소수 첫째 자리 */
 export function formatSeatWidthCm(
   widthCm: number,
   zeroDisplay?: HighSocietyZeroCmGaugeDisplay | null
 ): string {
-  const v = Math.max(0, Math.round(widthCm));
+  const v = roundTerritoryCm(widthCm);
   const mode = normalizeZeroCmGaugeDisplay(zeroDisplay);
   if (v === 0 && mode === "00cm") return "00cm";
   if (v === 0 && mode === "0cm") return "0cm";
@@ -175,8 +182,11 @@ export function formatSeatWidthCm(
 }
 
 export function formatCm(cm: number): string {
-  const v = Math.max(0, Math.round(cm));
-  return `${v.toLocaleString("ko-KR")}cm`;
+  const v = roundTerritoryCm(cm);
+  const text = Number.isInteger(v)
+    ? v.toLocaleString("ko-KR")
+    : v.toLocaleString("ko-KR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  return `${text}cm`;
 }
 
 export function parseHighSocietyPushDir(raw: unknown): HighSocietyPushDir | null {
@@ -987,6 +997,14 @@ function splitExpandCmByRatio(
  */
 function quantizeSeatWidthsToFieldCm(widths: number[], fieldCm: number): number[] {
   if (widths.length === 0) return [];
+  const tenths = widths.map((w) => roundTerritoryCm(w));
+  const tenthSum = roundTerritoryCm(tenths.reduce((a, b) => a + b, 0));
+  const tenthTarget = roundTerritoryCm(fieldCm);
+  const onlyWholeOrHalf = tenths.every((w) => {
+    const frac = Math.abs(w - Math.trunc(w));
+    return frac < 0.05 || Math.abs(frac - 0.5) < 0.05;
+  });
+  if (onlyWholeOrHalf && Math.abs(tenthSum - tenthTarget) < 0.05) return tenths;
   const target = Math.round(fieldCm);
   const floored = widths.map((w) => Math.max(0, Math.floor(w)));
   let deficit = target - floored.reduce((a, b) => a + b, 0);
@@ -1562,7 +1580,7 @@ export function applyTerritoryLogDirectTransfers(
   if (n === 0 || !logs?.length) return field;
 
   const widthById = new Map(
-    field.seats.map((s) => [s.id, Math.max(0, Math.round(s.widthCm))])
+    field.seats.map((s) => [s.id, roundTerritoryCm(s.widthCm)])
   );
   const seatMeta = new Map(field.seats.map((s) => [s.id, s]));
   const middleDir = resolveSystemMiddlePushDir(settings);
@@ -1576,7 +1594,7 @@ export function applyTerritoryLogDirectTransfers(
   };
 
   const takeFromIndices = (idxs: number[], amount: number): number => {
-    let remain = Math.max(0, Math.floor(amount));
+    let remain = roundTerritoryCm(amount);
     if (remain <= 0) return 0;
     let taken = 0;
     for (const idx of idxs) {
@@ -1584,16 +1602,16 @@ export function applyTerritoryLogDirectTransfers(
       if (idx < 0 || idx >= n) continue;
       const cur = widthAt(idx);
       if (cur <= 0) continue;
-      const t = Math.min(remain, cur);
+      const t = roundTerritoryCm(Math.min(remain, cur));
       addAt(idx, -t);
-      remain -= t;
-      taken += t;
+      remain = roundTerritoryCm(remain - t);
+      taken = roundTerritoryCm(taken + t);
     }
     return taken;
   };
 
   const giveToIndices = (idxs: number[], amount: number) => {
-    const total = Math.max(0, Math.floor(amount));
+    const total = roundTerritoryCm(amount);
     if (total <= 0 || idxs.length === 0) return;
     const cnt = idxs.length;
     const base = Math.floor(total / cnt);
@@ -1715,8 +1733,8 @@ export function applyTerritoryLogDirectTransfers(
     const parts: Array<{ dir: "left" | "right"; cm: number }> =
       explicitPush === "split"
         ? [
-            { dir: "left", cm: Math.floor(cm / 2) },
-            { dir: "right", cm: cm - Math.floor(cm / 2) },
+            { dir: "left", cm: roundTerritoryCm(cm / 2) },
+            { dir: "right", cm: roundTerritoryCm(cm - roundTerritoryCm(cm / 2)) },
           ]
         : [{ dir: explicitPush === "left" ? "left" : "right", cm }];
 
