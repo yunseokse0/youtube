@@ -8,18 +8,24 @@ import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import { persistDonationApplyLikeToonation } from "@/lib/donation/persist-donation-like-toon";
 import { enqueueDonationEvent } from "@/lib/donation/toonation/enqueue-donation";
 import type { DonationEvent } from "@/lib/donation/types";
-import { foldIngestEventsIntoState } from "@/lib/din-ingest-batch-fold";
+import {
+  eventMatchesDonorLedger,
+  foldIngestEventsIntoState,
+} from "@/lib/din-ingest-batch-fold";
 import { resolveScopedOverlayUserId } from "@/lib/overlay-params";
 import { runExclusivePerUser } from "@/lib/per-user-mutex";
 
 const MAX_QUEUE = 8_000;
 const MAX_FLUSH_BATCH = 200;
 const DRAIN_MUTEX_MS = 60_000;
+/** 저장본에 UID가 없으면 다시 넣는다. 같은 건이 계속 빠지면 루프를 끊고 로그만 남긴다. */
+const MAX_LAND_ATTEMPTS = 4;
 
 type QueuedIngest = {
   hubUserId: string;
   stateUserId: string;
   event: DonationEvent;
+  attempts?: number;
 };
 
 type QueueStore = {
@@ -81,9 +87,29 @@ function requeueFront(stateUserId: string, rows: QueuedIngest[]): void {
   store.byUser.set(stateUserId, rows.concat(q));
 }
 
-async function flushBatch(stateUserId: string, rows: QueuedIngest[]): Promise<boolean> {
+type FlushOutcome = { committed: boolean; retry: QueuedIngest[] };
+
+function retryMissing(rows: QueuedIngest[]): QueuedIngest[] {
+  const retry: QueuedIngest[] = [];
+  for (const row of rows) {
+    const attempts = (row.attempts || 0) + 1;
+    if (attempts >= MAX_LAND_ATTEMPTS) {
+      console.error(
+        "[din-ingest-batch-queue] donor missing after persist",
+        row.event.id,
+        row.event.amount,
+        row.event.donorName
+      );
+      continue;
+    }
+    retry.push({ ...row, attempts });
+  }
+  return retry;
+}
+
+async function flushBatch(stateUserId: string, rows: QueuedIngest[]): Promise<FlushOutcome> {
   const state = await loadAppStateForUserId(stateUserId);
-  if (!state) return false;
+  if (!state) return { committed: false, retry: rows };
   const aliases = await readDonationAliases(stateUserId);
   const folded = foldIngestEventsIntoState(
     state,
@@ -93,10 +119,20 @@ async function flushBatch(stateUserId: string, rows: QueuedIngest[]): Promise<bo
   for (const event of folded.unmatched) {
     await enqueueDonationEvent(stateUserId, event, { notify: false }).catch(() => false);
   }
-  if (folded.applied.length === 0) return true;
+  if (folded.applied.length === 0) return { committed: true, retry: [] };
   const last = folded.applied[folded.applied.length - 1]!;
   const persisted = await persistDonationApplyLikeToonation(stateUserId, folded.state, last);
-  return persisted.ok;
+  if (!persisted.ok) return { committed: false, retry: rows };
+  const donors = persisted.state.donors || [];
+  const missing = rows.filter((row) => {
+    const landedInFold = folded.applied.some(
+      (event) => String(event.id || "") === String(row.event.id || "")
+    );
+    if (!landedInFold) return false;
+    return !eventMatchesDonorLedger(row.event, donors);
+  });
+  if (!missing.length) return { committed: true, retry: [] };
+  return { committed: false, retry: retryMissing(missing) };
 }
 
 export async function drainDinIngestQueue(stateUserId: string): Promise<void> {
@@ -112,9 +148,9 @@ export async function drainDinIngestQueue(stateUserId: string): Promise<void> {
         while (true) {
           const batch = takeBatch(uid);
           if (batch.length === 0) break;
-          const ok = await flushBatch(uid, batch);
-          if (!ok) {
-            requeueFront(uid, batch);
+          const outcome = await flushBatch(uid, batch);
+          if (!outcome.committed) {
+            requeueFront(uid, outcome.retry);
             break;
           }
         }

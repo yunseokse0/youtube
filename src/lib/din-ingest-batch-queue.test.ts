@@ -3,6 +3,7 @@ import { defaultState } from "@/lib/state";
 import type { DonationEvent } from "@/lib/donation/types";
 import type { AppState, Member } from "@/types";
 import {
+  eventMatchesDonorLedger,
   foldIngestEventsIntoState,
   shouldDiscardIngestEventForReset,
 } from "./din-ingest-batch-fold";
@@ -42,6 +43,32 @@ function evt(id: string, atMs: number, extra?: Partial<DonationEvent>): Donation
     ...extra,
   };
 }
+
+describe("eventMatchesDonorLedger", () => {
+  it("finds a hub log id when the ledger stored bank:din:<cuid>", () => {
+    const event = evt("bank:toona:cmumgtnxp050g5jdim6kc0vlj", 10_000, {
+      externalId: "cmumgtnxp050g5jdim6kc0vlj",
+      amount: 34000,
+    });
+    expect(
+      eventMatchesDonorLedger(event, [
+        { id: "bank:din:cmumgtnxp050g5jdim6kc0vlj", amount: 34000 },
+      ])
+    ).toBe(true);
+  });
+
+  it("is false when neither the uid nor the external id is in the ledger", () => {
+    const event = evt("bank:din:cmumgtnxp050g5jdim6kc0vlj", 10_000, {
+      externalId: "cmumgtnxp050g5jdim6kc0vlj",
+      amount: 34000,
+    });
+    expect(
+      eventMatchesDonorLedger(event, [
+        { id: "bank:din:cmumgto5a050m5jdiwu872g7c", externalId: "cmumgto5a050m5jdiwu872g7c", amount: 35000 },
+      ])
+    ).toBe(false);
+  });
+});
 
 describe("shouldDiscardIngestEventForReset", () => {
   it("keeps events after settlementResetAt", () => {

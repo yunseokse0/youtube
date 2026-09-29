@@ -56,8 +56,11 @@ async function runWithTimeout<T>(
   userId: string
 ): Promise<T> {
   let timer: NodeJS.Timeout | null = null;
+  let timedOut = false;
+  const work = fn();
   const timeoutPromise = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
+      timedOut = true;
       const err = new Error(
         `PerUserMutex timed out after ${timeoutMs}ms (userId=${userId})`
       );
@@ -66,7 +69,18 @@ async function runWithTimeout<T>(
     }, timeoutMs);
   });
   try {
-    return await Promise.race([fn(), timeoutPromise]);
+    return await Promise.race([work, timeoutPromise]);
+  } catch (err) {
+    if (!timedOut) throw err;
+    /**
+     * 타임아웃은 대기자에게만 알리고 작업은 취소하지 않는다.
+     * 여기서 락을 풀면 다음 저장이 아직 쓰는 스냅샷을 읽어 한 건이 덮인다.
+     * 작업이 끝날 때까지 락을 유지하고, 끝나면 그 결과를 그대로 반환한다.
+     */
+    log.warn(
+      `mutex timeout userId=${userId} after ${timeoutMs}ms — holding lock until in-flight work finishes`
+    );
+    return await work;
   } finally {
     if (timer) clearTimeout(timer);
   }

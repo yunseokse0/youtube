@@ -2,6 +2,7 @@ import {
   applyDonationToAppState,
   isDuplicateDonationEvent,
 } from "@/lib/donation/apply-donation-state";
+import { normalizeDonationEventId } from "@/domain/dedupe/donation-dedupe.rules";
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
 import type { AppState } from "@/types";
 
@@ -22,6 +23,25 @@ export function shouldDiscardIngestEventForReset(
   const at = ingestEventTimeMs(event);
   if (at <= 0) return false;
   return at < cutoff - RESET_DISCARD_BUFFER_MS;
+}
+
+type LedgerDonor = { id?: string; externalId?: string; amount?: number };
+
+/** 저장본 donors 에 이 이벤트의 UID(외부 ID)가 실제로 있는지. 금액이 달라도 UID가 같으면 있는 것으로 본다. */
+export function eventMatchesDonorLedger(event: DonationEvent, donors: LedgerDonor[]): boolean {
+  const core = normalizeDonationEventId(String(event.id || "")).trim().toLowerCase();
+  const ext = String(event.externalId || "").trim().toLowerCase();
+  if (!core && !ext) return false;
+  for (const donor of donors) {
+    const id = String(donor.id || "").trim();
+    const donorCore = normalizeDonationEventId(id).trim().toLowerCase();
+    const donorExt = String(donor.externalId || "").trim().toLowerCase();
+    if (core && donorCore && core === donorCore) return true;
+    if (ext && donorExt && ext === donorExt) return true;
+    if (ext && donorCore === ext) return true;
+    if (core && donorExt === core) return true;
+  }
+  return false;
 }
 
 export type FoldIngestResult = {
