@@ -318,10 +318,10 @@ reload_pm2_app() {
   echo "== pm2 최초 기동 ${PM2_APP} (mem<=${PM2_MAX_MEM_MB}M heap=${SERVER_HEAP_MB}M) =="
   free_listen_port "$PORT"
   NODE_OPTIONS="${SERVER_NODE_OPTIONS}" NEXT_BUILD_DIR= NEXT_USE_STAGING_DIST= \
-    pm2 start npm --name "$PM2_APP" --max_memory_restart "${PM2_MAX_MEM_MB}M" \
-      --kill_timeout "${PM2_KILL_TIMEOUT_MS}" --min_uptime "${PM2_MIN_UPTIME_MS}" \
-      --restart_delay "${PM2_RESTART_DELAY_MS}" -- start
-  return $?
+    pm2 start npm --name "$PM2_APP" -- start
+  local rc=$?
+  apply_pm2_runtime_guardrails "$PM2_APP" >/dev/null 2>&1 || true
+  return $rc
 }
 
 start_pm2_app_fresh() {
@@ -332,10 +332,10 @@ start_pm2_app_fresh() {
   cd "$ROOT"
   echo "== pm2 fresh start ${PM2_APP} (mem<=${PM2_MAX_MEM_MB}M heap=${SERVER_HEAP_MB}M) =="
   NODE_OPTIONS="${SERVER_NODE_OPTIONS}" NEXT_BUILD_DIR= NEXT_USE_STAGING_DIST= \
-    pm2 start npm --name "$PM2_APP" --max_memory_restart "${PM2_MAX_MEM_MB}M" \
-      --kill_timeout "${PM2_KILL_TIMEOUT_MS}" --min_uptime "${PM2_MIN_UPTIME_MS}" \
-      --restart_delay "${PM2_RESTART_DELAY_MS}" -- start
-  return $?
+    pm2 start npm --name "$PM2_APP" -- start
+  local rc=$?
+  apply_pm2_runtime_guardrails "$PM2_APP" >/dev/null 2>&1 || true
+  return $rc
 }
 
 if ! reload_pm2_app; then
