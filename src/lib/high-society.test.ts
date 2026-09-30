@@ -2067,6 +2067,92 @@ describe("highSociety regression guards", () => {
     expect(merged.memberWidthDonationSnapshot).toEqual({ a: 100000, b: 80000 });
   });
 
+  it("OBS last-good은 한 명이 다 먹은 판을 균등 100cm stale 스냅샷으로 되돌리지 않는다", () => {
+    const ids = ["pong", "yuri", "jaki", "gwak", "yeong", "reze"];
+    const baseline = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ids,
+      seatMemberIdsManual: true,
+      startCmPerMember: 100,
+      fieldCm: 600,
+      memberWidthCm: { pong: 0, yuri: 0, jaki: 600, gwak: 0, yeong: 0, reze: 0 },
+      territorySnapshotEpochAt: 2_000,
+    });
+    const staleEqual = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ids,
+      seatMemberIdsManual: true,
+      startCmPerMember: 100,
+      fieldCm: 600,
+      memberWidthCm: Object.fromEntries(ids.map((id) => [id, 100])),
+      territorySnapshotEpochAt: 9_000,
+    });
+    const merged = mergeHighSocietySettingsPreferBaseline(baseline, staleEqual);
+    expect(merged.memberWidthCm?.jaki).toBe(600);
+    expect(merged.memberWidthCm?.pong).toBe(0);
+    expect(Object.values(merged.memberWidthCm || {}).filter((w) => Number(w) > 0)).toHaveLength(1);
+  });
+
+  it("OBS last-good은 혼자 남은 땅을 일부만 있는 stale 스냅샷으로 줄이지 않는다", () => {
+    const ids = ["pong", "yuri", "jaki", "gwak", "yeong", "reze"];
+    const baseline = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ids,
+      seatMemberIdsManual: true,
+      startCmPerMember: 100,
+      fieldCm: 600,
+      memberWidthCm: { pong: 0, yuri: 0, jaki: 600, gwak: 0, yeong: 0, reze: 0 },
+      territorySnapshotEpochAt: 2_000,
+    });
+    const stalePartial = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ids,
+      seatMemberIdsManual: true,
+      startCmPerMember: 100,
+      fieldCm: 600,
+      memberWidthCm: { pong: 0, yuri: 200, jaki: 200, gwak: 0, yeong: 200, reze: 0 },
+      territorySnapshotEpochAt: 9_000,
+    });
+    const mergedSplit = mergeHighSocietySettingsPreferBaseline(baseline, stalePartial);
+    expect(mergedSplit.memberWidthCm?.jaki).toBe(600);
+    const staleWeaker = normalizeHighSocietySettings({
+      ...stalePartial,
+      memberWidthCm: { pong: 0, yuri: 0, jaki: 400, gwak: 0, yeong: 0, reze: 0 },
+    });
+    const mergedWeaker = mergeHighSocietySettingsPreferBaseline(baseline, staleWeaker);
+    expect(mergedWeaker.memberWidthCm?.jaki).toBe(600);
+    const liveGrow = normalizeHighSocietySettings({
+      ...stalePartial,
+      memberWidthCm: { pong: 0, yuri: 0, jaki: 600, gwak: 0, yeong: 0, reze: 0 },
+    });
+    const fromStart = mergeHighSocietySettingsPreferBaseline(
+      normalizeHighSocietySettings({
+        ...baseline,
+        memberWidthCm: Object.fromEntries(ids.map((id) => [id, 100])),
+      }),
+      liveGrow
+    );
+    expect(fromStart.memberWidthCm?.jaki).toBe(600);
+    const pendingOne = normalizeHighSocietySettings({
+      ...baseline,
+      pendingEndEntryMemberIds: ["pong"],
+      memberWidthCm: { pong: 10, yuri: 0, jaki: 590, gwak: 0, yeong: 0, reze: 0 },
+      territorySnapshotEpochAt: 9_000,
+    });
+    const mergedPending = mergeHighSocietySettingsPreferBaseline(baseline, pendingOne);
+    expect(mergedPending.memberWidthCm?.jaki).toBe(590);
+    expect(mergedPending.memberWidthCm?.pong).toBe(10);
+    const startCmReset = normalizeHighSocietySettings({
+      ...stalePartial,
+      startCmPerMember: 200,
+      fieldCm: 1200,
+      memberWidthCm: Object.fromEntries(ids.map((id) => [id, 200])),
+    });
+    const mergedStartCm = mergeHighSocietySettingsPreferBaseline(baseline, startCmReset);
+    expect(mergedStartCm.memberWidthCm?.jaki).toBe(200);
+    expect(mergedStartCm.startCmPerMember).toBe(200);
+  });
+
   it("가운데 끝 선택 대기는 stale 전체 스냅샷이 전원을 한 번에 되살리지 않는다", () => {
     const baseline = normalizeHighSocietySettings({
       enabled: true,

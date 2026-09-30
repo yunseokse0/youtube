@@ -695,6 +695,58 @@ function positiveWidthMemberCount(widths: Record<string, number> | undefined): n
   return Object.values(widths).filter((w) => Number(w) > 0).length;
 }
 
+/** 전원 시작 cm — 한 명이 다 먹은 판을 stale GET 이 100cm 균등으로 되돌리는지 본다 */
+function isUniformStartCmSnapshot(settings: HighSocietySettings | null | undefined): boolean {
+  const s = settings ? normalizeHighSocietySettings(settings) : null;
+  if (!s || !hasMemberWidthSnapshot(s)) return false;
+  const ids = (s.seatMemberIds || []).map((id) => String(id || "").trim()).filter(Boolean);
+  if (ids.length < 2) return false;
+  const start = Math.max(0, Math.round(resolveHighSocietyStartCmPerMember(s, ids.length)));
+  if (start <= 0) return false;
+  const w = s.memberWidthCm || {};
+  return ids.every((id) => roundTerritoryCm(Number(w[id] ?? 0)) === start);
+}
+
+function memberWidthStatsForSeats(
+  settings: HighSocietySettings,
+  seatIds: string[]
+): { positives: number; max: number; sum: number } {
+  const w = settings.memberWidthCm || {};
+  let positives = 0;
+  let max = 0;
+  let sum = 0;
+  for (const id of seatIds) {
+    const v = roundTerritoryCm(Number(w[id] ?? 0));
+    sum = roundTerritoryCm(sum + v);
+    if (v > 0) positives += 1;
+    if (v > max) max = v;
+  }
+  return { positives, max, sum };
+}
+
+function incomingLooksLikeStaleWidthRevertFromBaseline(
+  base: HighSocietySettings,
+  inc: HighSocietySettings,
+  seatsChanged: boolean
+): boolean {
+  if (seatsChanged) return false;
+  if (!hasMemberWidthSnapshot(base) || !hasMemberWidthSnapshot(inc)) return false;
+  const ids = (inc.seatMemberIds || base.seatMemberIds || [])
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+  if (ids.length < 2) return false;
+  const startBase = Math.max(0, Math.round(resolveHighSocietyStartCmPerMember(base, ids.length)));
+  const startInc = Math.max(0, Math.round(resolveHighSocietyStartCmPerMember(inc, ids.length)));
+  if (startBase !== startInc) return false;
+  const b = memberWidthStatsForSeats(base, ids);
+  const n = memberWidthStatsForSeats(inc, ids);
+  /** 한 명 재진입(+1)은 허용. 전원·다수 부활만 stale */
+  if (n.positives > b.positives + 1) return true;
+  if (isUniformStartCmSnapshot(inc) && !isUniformStartCmSnapshot(base)) return true;
+  if (b.positives === 1 && n.positives === 1 && n.max + 0.05 < b.max) return true;
+  return false;
+}
+
 /**
  * 가운데에서 땅이 생긴 사람은 왼쪽·오른쪽 끝에 앉기 전에는 대기를 유지한다.
  * pending 배열만 빠진 stale 저장이 전원을 한 번에 게이지에 올리지 않게 한다.
@@ -802,11 +854,25 @@ export function mergeHighSocietySettingsPreferBaseline(
   const epochInc = Number(inc.territorySnapshotEpochAt || 0);
   const epochBase = Number(base.territorySnapshotEpochAt || 0);
   const seatsChanged = !seatMemberIdsEqual(base.seatMemberIds || [], inc.seatMemberIds || []);
+  /** stale GET: 전원 부활·균등 100cm·혼자 남은 땅이 줄어든 판으로 OBS만 되돌리지 않는다 */
+  const incomingLooksLikeStaleWidthRevert = incomingLooksLikeStaleWidthRevertFromBaseline(
+    base,
+    inc,
+    seatsChanged
+  );
+  if (incomingLooksLikeStaleWidthRevert) {
+    patch.memberWidthCm = base.memberWidthCm;
+    patch.memberWidthDonationSnapshot =
+      base.memberWidthDonationSnapshot ?? inc.memberWidthDonationSnapshot;
+    patch.memberTerritoryExpand = base.memberTerritoryExpand ?? inc.memberTerritoryExpand;
+    hasPatch = true;
+  }
   /** 자리·epoch 가 바뀐 새 판에 last-good 대기·옛 cm를 되살리면 OBS가 이전 게이지를 붙잡는다 */
   const incomingIsFreshBoard =
     hasMemberWidthSnapshot(inc) &&
     (epochInc > epochBase || seatsChanged) &&
-    (incPending.length === 0 || seatsChanged);
+    (incPending.length === 0 || seatsChanged) &&
+    !incomingLooksLikeStaleWidthRevert;
   if (
     !incomingIsFreshBoard &&
     pendingKept.length > 0 &&
