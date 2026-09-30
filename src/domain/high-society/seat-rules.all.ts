@@ -603,6 +603,7 @@ export function isDefaultLikeHighSocietySettings(
   if ((s.seatMemberIds || []).length > 0) return false;
   if (s.seatMemberIdsManual === true) return false;
   if (Number(s.territorySnapshotEpochAt || 0) > 0) return false;
+  if (Number(s.territoryBoardResetAt || 0) > 0) return false;
   if ((s.pendingEndEntryMemberIds || []).length > 0) return false;
   if (Object.keys(s.pendingEndEntryBoardCm || {}).length > 0) return false;
   if (Number(s.pendingEndEntrySinceAt || 0) > 0) return false;
@@ -632,6 +633,7 @@ export function isMeaningfulHighSocietySettings(
   if ((s.seatMemberIds || []).length > 0) return true;
   if (s.seatMemberIdsManual === true) return true;
   if (Number(s.territorySnapshotEpochAt || 0) > 0) return true;
+  if (Number(s.territoryBoardResetAt || 0) > 0) return true;
   if ((s.pendingEndEntryMemberIds || []).length > 0) return true;
   if (Object.keys(s.pendingEndEntryBoardCm || {}).length > 0) return true;
   if (Number(s.pendingEndEntrySinceAt || 0) > 0) return true;
@@ -690,12 +692,6 @@ function hasMemberWidthSnapshot(
   return Boolean(widths && Object.keys(widths).length > 0);
 }
 
-function positiveWidthMemberCount(widths: Record<string, number> | undefined): number {
-  if (!widths) return 0;
-  return Object.values(widths).filter((w) => Number(w) > 0).length;
-}
-
-/** 전원 시작 cm — 한 명이 다 먹은 판을 stale GET 이 100cm 균등으로 되돌리는지 본다 */
 function isUniformStartCmSnapshot(settings: HighSocietySettings | null | undefined): boolean {
   const s = settings ? normalizeHighSocietySettings(settings) : null;
   if (!s || !hasMemberWidthSnapshot(s)) return false;
@@ -707,44 +703,39 @@ function isUniformStartCmSnapshot(settings: HighSocietySettings | null | undefin
   return ids.every((id) => roundTerritoryCm(Number(w[id] ?? 0)) === start);
 }
 
-function memberWidthStatsForSeats(
-  settings: HighSocietySettings,
-  seatIds: string[]
-): { positives: number; max: number; sum: number } {
-  const w = settings.memberWidthCm || {};
-  let positives = 0;
-  let max = 0;
-  let sum = 0;
-  for (const id of seatIds) {
-    const v = roundTerritoryCm(Number(w[id] ?? 0));
-    sum = roundTerritoryCm(sum + v);
-    if (v > 0) positives += 1;
-    if (v > max) max = v;
-  }
-  return { positives, max, sum };
+/** 1인 시작 cm·영토만 초기화 등 사용자가 판을 다시 깐 경우만 true */
+function incomingIsUserTerritoryInit(base: HighSocietySettings, inc: HighSocietySettings): boolean {
+  const incRound = Math.max(1, Math.floor(Number(inc.round) || 1));
+  const baseRound = Math.max(1, Math.floor(Number(base.round) || 1));
+  if (incRound > baseRound) return true;
+  if (Number(inc.territoryLogsResetAt || 0) > Number(base.territoryLogsResetAt || 0)) return true;
+  if (Number(inc.territoryBoardResetAt || 0) > Number(base.territoryBoardResetAt || 0)) return true;
+  const idsLen = Math.max(
+    (inc.seatMemberIds || []).filter(Boolean).length,
+    (base.seatMemberIds || []).filter(Boolean).length,
+    1
+  );
+  const startInc = Math.max(0, Math.round(resolveHighSocietyStartCmPerMember(inc, idsLen)));
+  const startBase = Math.max(0, Math.round(resolveHighSocietyStartCmPerMember(base, idsLen)));
+  return startInc > 0 && startBase > 0 && startInc !== startBase;
 }
 
-function incomingLooksLikeStaleWidthRevertFromBaseline(
-  base: HighSocietySettings,
-  inc: HighSocietySettings,
-  seatsChanged: boolean
-): boolean {
-  if (seatsChanged) return false;
-  if (!hasMemberWidthSnapshot(base) || !hasMemberWidthSnapshot(inc)) return false;
-  const ids = (inc.seatMemberIds || base.seatMemberIds || [])
-    .map((id) => String(id || "").trim())
-    .filter(Boolean);
-  if (ids.length < 2) return false;
-  const startBase = Math.max(0, Math.round(resolveHighSocietyStartCmPerMember(base, ids.length)));
-  const startInc = Math.max(0, Math.round(resolveHighSocietyStartCmPerMember(inc, ids.length)));
-  if (startBase !== startInc) return false;
-  const b = memberWidthStatsForSeats(base, ids);
-  const n = memberWidthStatsForSeats(inc, ids);
-  /** 한 명 재진입(+1)은 허용. 전원·다수 부활만 stale */
-  if (n.positives > b.positives + 1) return true;
-  if (isUniformStartCmSnapshot(inc) && !isUniformStartCmSnapshot(base)) return true;
-  if (b.positives === 1 && n.positives === 1 && n.max + 0.05 < b.max) return true;
-  return false;
+function countTerritoryLogsAfterReset(
+  logs: TerritoryLog[] | undefined,
+  settings: HighSocietySettings | null | undefined,
+  settlementResetAt?: number
+): number {
+  const resetAt = Math.max(
+    Number(settings?.territoryLogsResetAt || 0),
+    Number(settlementResetAt || 0)
+  );
+  let n = 0;
+  for (const log of logs || []) {
+    const at = Number(log.at || 0);
+    if (resetAt > 0 && at < resetAt) continue;
+    n += 1;
+  }
+  return n;
 }
 
 /**
@@ -854,27 +845,43 @@ export function mergeHighSocietySettingsPreferBaseline(
   const epochInc = Number(inc.territorySnapshotEpochAt || 0);
   const epochBase = Number(base.territorySnapshotEpochAt || 0);
   const seatsChanged = !seatMemberIdsEqual(base.seatMemberIds || [], inc.seatMemberIds || []);
-  /** stale GET: 전원 부활·균등 100cm·혼자 남은 땅이 줄어든 판으로 OBS만 되돌리지 않는다 */
-  const incomingLooksLikeStaleWidthRevert = incomingLooksLikeStaleWidthRevertFromBaseline(
-    base,
-    inc,
-    seatsChanged
-  );
-  if (incomingLooksLikeStaleWidthRevert) {
+  /**
+   * 폭 스냅샷이 있는 서버 판이 정본.
+   * last-good 은 폭이 빠진 GET, 더 오래된 epoch GET,
+   * 그리고 사용자가 초기화하지 않은 균등 시작 cm 되돌리기만 보정한다.
+   */
+  if (
+    hasMemberWidthSnapshot(base) &&
+    hasMemberWidthSnapshot(inc) &&
+    !seatsChanged &&
+    epochBase > 0 &&
+    epochInc > 0 &&
+    epochInc < epochBase
+  ) {
     patch.memberWidthCm = base.memberWidthCm;
     patch.memberWidthDonationSnapshot =
       base.memberWidthDonationSnapshot ?? inc.memberWidthDonationSnapshot;
     patch.memberTerritoryExpand = base.memberTerritoryExpand ?? inc.memberTerritoryExpand;
     hasPatch = true;
-  }
-  /** 자리·epoch 가 바뀐 새 판에 last-good 대기·옛 cm를 되살리면 OBS가 이전 게이지를 붙잡는다 */
-  const incomingIsFreshBoard =
+  } else if (
+    hasMemberWidthSnapshot(base) &&
     hasMemberWidthSnapshot(inc) &&
-    (epochInc > epochBase || seatsChanged) &&
-    (incPending.length === 0 || seatsChanged) &&
-    !incomingLooksLikeStaleWidthRevert;
+    !seatsChanged &&
+    isUniformStartCmSnapshot(inc) &&
+    !isUniformStartCmSnapshot(base) &&
+    !incomingIsUserTerritoryInit(base, inc)
+  ) {
+    patch.memberWidthCm = base.memberWidthCm;
+    patch.memberWidthDonationSnapshot =
+      base.memberWidthDonationSnapshot ?? inc.memberWidthDonationSnapshot;
+    patch.memberTerritoryExpand = base.memberTerritoryExpand ?? inc.memberTerritoryExpand;
+    patch.territorySnapshotEpochAt = base.territorySnapshotEpochAt;
+    patch.territoryBoardResetAt = base.territoryBoardResetAt;
+    hasPatch = true;
+  }
+  const incomingIsNewerBoard = seatsChanged || epochInc > epochBase;
   if (
-    !incomingIsFreshBoard &&
+    !incomingIsNewerBoard &&
     pendingKept.length > 0 &&
     pendingKept.join("\0") !== incPending.join("\0")
   ) {
@@ -884,15 +891,6 @@ export function mergeHighSocietySettingsPreferBaseline(
       patch.pendingEndEntrySinceAt = base.pendingEndEntrySinceAt;
     }
     hasPatch = true;
-    if (
-      positiveWidthMemberCount(inc.memberWidthCm) > positiveWidthMemberCount(base.memberWidthCm) &&
-      hasMemberWidthSnapshot(base)
-    ) {
-      patch.memberWidthCm = base.memberWidthCm;
-      patch.memberWidthDonationSnapshot =
-        base.memberWidthDonationSnapshot ?? inc.memberWidthDonationSnapshot;
-      patch.memberTerritoryExpand = base.memberTerritoryExpand ?? inc.memberTerritoryExpand;
-    }
   }
   return hasPatch ? normalizeHighSocietySettings({ ...inc, ...patch }) : inc;
 }
@@ -986,6 +984,9 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     Number.isFinite(snapshotEpochRaw) && snapshotEpochRaw > 0
       ? Math.floor(snapshotEpochRaw)
       : undefined;
+  const boardResetRaw = Number(v.territoryBoardResetAt);
+  const territoryBoardResetAt =
+    Number.isFinite(boardResetRaw) && boardResetRaw > 0 ? Math.floor(boardResetRaw) : undefined;
   const reopenRaw = Number(v.territoryReopenAt);
   const territoryReopenAt =
     Number.isFinite(reopenRaw) && reopenRaw > 0 ? Math.floor(reopenRaw) : undefined;
@@ -1060,6 +1061,7 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     ...(territoryCutoffAt !== undefined ? { territoryCutoffAt } : {}),
     ...(territoryLogsResetAt !== undefined ? { territoryLogsResetAt } : {}),
     ...(territorySnapshotEpochAt !== undefined ? { territorySnapshotEpochAt } : {}),
+    ...(territoryBoardResetAt !== undefined ? { territoryBoardResetAt } : {}),
     ...(territoryReopenAt !== undefined ? { territoryReopenAt } : {}),
     ...(territoryPaused ? { territoryPaused: true } : {}),
     ...(territoryPaused && territoryPausedAt !== undefined ? { territoryPausedAt } : {}),
@@ -1395,6 +1397,7 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
         memberTerritoryExpand: undefined,
         territoryLogsResetAt: now,
         territorySnapshotEpochAt: undefined,
+        territoryBoardResetAt: now,
         pendingEndEntryMemberIds: undefined,
         pendingEndEntryBoardCm: undefined,
         pendingEndEntrySinceAt: undefined,
@@ -2750,9 +2753,16 @@ export function buildHighSocietyMemberWidthSnapshotPatch(
 
 /** 후원·영토 변경 직후 AppState.highSocietySettings 스냅샷 갱신 */
 export function syncHighSocietyMemberWidthSnapshotInState(state: AppState): AppState {
+  const settings = normalizeHighSocietySettings(state.highSocietySettings);
+  /** 스냅샷이 비었는데 기록부가 있으면 균등 시작 cm 로 덮어 쓰지 않는다 */
+  if (
+    !hasMemberWidthSnapshot(settings) &&
+    countTerritoryLogsAfterReset(state.territoryLogs, settings, state.settlementResetAt) > 0
+  ) {
+    return state;
+  }
   const patch = buildHighSocietyMemberWidthSnapshotPatch(state);
   if (!patch) return state;
-  const settings = normalizeHighSocietySettings(state.highSocietySettings);
   const resetAt = Math.max(
     Number(settings.territoryLogsResetAt || 0),
     Number(state.settlementResetAt || 0)
@@ -2783,6 +2793,9 @@ export function highSocietyNeedsMemberWidthSnapshotPersist(
   const cur = normalizeHighSocietySettings(state.highSocietySettings);
   const curW = cur.memberWidthCm;
   if (curW && Object.keys(curW).length > 0) return false;
+  if (countTerritoryLogsAfterReset(state.territoryLogs, cur, state.settlementResetAt) > 0) {
+    return false;
+  }
   const patch = buildHighSocietyMemberWidthSnapshotPatch(state);
   return Boolean(patch && Object.keys(patch.memberWidthCm).length > 0);
 }

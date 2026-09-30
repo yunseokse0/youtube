@@ -534,6 +534,11 @@ export type HighSocietySettings = {
    */
   territorySnapshotEpochAt?: number;
   /**
+   * 사용자가 영토를 초기화한 시각(ms).
+   * 1인 시작 cm 변경·「영토만 초기화」만 올린다. 이 값이 오르기 전에는 균등 시작 cm로 되돌리지 않는다.
+   */
+  territoryBoardResetAt?: number;
+  /**
    * 0cm였다가 땅이 생겼지만, 왼쪽/오른쪽 끝을 고르기 전에는 게이지에 나오지 않는 멤버.
    */
   pendingEndEntryMemberIds?: string[];

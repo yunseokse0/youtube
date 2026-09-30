@@ -105,15 +105,19 @@ export default function HighSocietySeatLayoutEditor({
       );
       const clamped = Math.max(1, Math.min(5000, Math.floor(Number(startCm) || 0)));
       setStartCmDraft(null);
+      const ids = resolveHighSocietySeatMemberIdsForEdit(settings, members);
+      const equalWidths = Object.fromEntries(ids.map((id) => [id, clamped]));
       void onPatch({
         startCmPerMember: clamped,
         fieldCm: fieldCmFromStartPerMember(clamped, seats),
-        memberWidthCm: undefined,
-        memberWidthDonationSnapshot: undefined,
+        memberWidthCm: equalWidths,
+        memberWidthDonationSnapshot: Object.fromEntries(ids.map((id) => [id, 0])),
         memberTerritoryExpand: undefined,
+        territorySnapshotEpochAt: Date.now(),
+        territoryBoardResetAt: Date.now(),
       });
     },
-    [settings, hsSeatCountForStart, hsSeatPlayers.length, onPatch]
+    [settings, hsSeatCountForStart, hsSeatPlayers.length, members, onPatch]
   );
 
   const commitStartCmDraft = useCallback(() => {

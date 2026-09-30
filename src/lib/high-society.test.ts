@@ -2067,7 +2067,7 @@ describe("highSociety regression guards", () => {
     expect(merged.memberWidthDonationSnapshot).toEqual({ a: 100000, b: 80000 });
   });
 
-  it("OBS last-good은 한 명이 다 먹은 판을 균등 100cm stale 스냅샷으로 되돌리지 않는다", () => {
+  it("OBS last-good은 epoch가 더 오래된 GET만 버리고, 서버의 새 판은 그대로 따른다", () => {
     const ids = ["pong", "yuri", "jaki", "gwak", "yeong", "reze"];
     const baseline = normalizeHighSocietySettings({
       enabled: true,
@@ -2076,81 +2076,74 @@ describe("highSociety regression guards", () => {
       startCmPerMember: 100,
       fieldCm: 600,
       memberWidthCm: { pong: 0, yuri: 0, jaki: 600, gwak: 0, yeong: 0, reze: 0 },
-      territorySnapshotEpochAt: 2_000,
+      territorySnapshotEpochAt: 9_000,
     });
-    const staleEqual = normalizeHighSocietySettings({
+    const olderEqual = normalizeHighSocietySettings({
       enabled: true,
       seatMemberIds: ids,
       seatMemberIdsManual: true,
       startCmPerMember: 100,
       fieldCm: 600,
       memberWidthCm: Object.fromEntries(ids.map((id) => [id, 100])),
-      territorySnapshotEpochAt: 9_000,
-    });
-    const merged = mergeHighSocietySettingsPreferBaseline(baseline, staleEqual);
-    expect(merged.memberWidthCm?.jaki).toBe(600);
-    expect(merged.memberWidthCm?.pong).toBe(0);
-    expect(Object.values(merged.memberWidthCm || {}).filter((w) => Number(w) > 0)).toHaveLength(1);
-  });
-
-  it("OBS last-good은 혼자 남은 땅을 일부만 있는 stale 스냅샷으로 줄이지 않는다", () => {
-    const ids = ["pong", "yuri", "jaki", "gwak", "yeong", "reze"];
-    const baseline = normalizeHighSocietySettings({
-      enabled: true,
-      seatMemberIds: ids,
-      seatMemberIdsManual: true,
-      startCmPerMember: 100,
-      fieldCm: 600,
-      memberWidthCm: { pong: 0, yuri: 0, jaki: 600, gwak: 0, yeong: 0, reze: 0 },
       territorySnapshotEpochAt: 2_000,
     });
-    const stalePartial = normalizeHighSocietySettings({
+    const mergedOlder = mergeHighSocietySettingsPreferBaseline(baseline, olderEqual);
+    expect(mergedOlder.memberWidthCm?.jaki).toBe(600);
+    expect(Object.values(mergedOlder.memberWidthCm || {}).filter((w) => Number(w) > 0)).toHaveLength(1);
+
+    const liveBoard = normalizeHighSocietySettings({
       enabled: true,
       seatMemberIds: ids,
       seatMemberIdsManual: true,
       startCmPerMember: 100,
       fieldCm: 600,
-      memberWidthCm: { pong: 0, yuri: 200, jaki: 200, gwak: 0, yeong: 200, reze: 0 },
-      territorySnapshotEpochAt: 9_000,
+      memberWidthCm: { pong: 100, yuri: 0, jaki: 400, gwak: 0, yeong: 50, reze: 50 },
+      territorySnapshotEpochAt: 12_000,
     });
-    const mergedSplit = mergeHighSocietySettingsPreferBaseline(baseline, stalePartial);
-    expect(mergedSplit.memberWidthCm?.jaki).toBe(600);
-    const staleWeaker = normalizeHighSocietySettings({
-      ...stalePartial,
-      memberWidthCm: { pong: 0, yuri: 0, jaki: 400, gwak: 0, yeong: 0, reze: 0 },
+    const mergedLive = mergeHighSocietySettingsPreferBaseline(baseline, liveBoard);
+    expect(mergedLive.memberWidthCm?.jaki).toBe(400);
+    expect(mergedLive.memberWidthCm?.yeong).toBe(50);
+    expect(mergedLive.memberWidthCm?.pong).toBe(100);
+
+    const newerEqualNoInit = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ids,
+      seatMemberIdsManual: true,
+      startCmPerMember: 100,
+      fieldCm: 600,
+      memberWidthCm: Object.fromEntries(ids.map((id) => [id, 100])),
+      territorySnapshotEpochAt: 20_000,
     });
-    const mergedWeaker = mergeHighSocietySettingsPreferBaseline(baseline, staleWeaker);
-    expect(mergedWeaker.memberWidthCm?.jaki).toBe(600);
-    const liveGrow = normalizeHighSocietySettings({
-      ...stalePartial,
-      memberWidthCm: { pong: 0, yuri: 0, jaki: 600, gwak: 0, yeong: 0, reze: 0 },
+    const blockedEqual = mergeHighSocietySettingsPreferBaseline(baseline, newerEqualNoInit);
+    expect(blockedEqual.memberWidthCm?.jaki).toBe(600);
+
+    const userInitEqual = normalizeHighSocietySettings({
+      ...newerEqualNoInit,
+      territoryBoardResetAt: 21_000,
     });
-    const fromStart = mergeHighSocietySettingsPreferBaseline(
-      normalizeHighSocietySettings({
-        ...baseline,
-        memberWidthCm: Object.fromEntries(ids.map((id) => [id, 100])),
-      }),
-      liveGrow
-    );
-    expect(fromStart.memberWidthCm?.jaki).toBe(600);
-    const pendingOne = normalizeHighSocietySettings({
-      ...baseline,
-      pendingEndEntryMemberIds: ["pong"],
-      memberWidthCm: { pong: 10, yuri: 0, jaki: 590, gwak: 0, yeong: 0, reze: 0 },
-      territorySnapshotEpochAt: 9_000,
-    });
-    const mergedPending = mergeHighSocietySettingsPreferBaseline(baseline, pendingOne);
-    expect(mergedPending.memberWidthCm?.jaki).toBe(590);
-    expect(mergedPending.memberWidthCm?.pong).toBe(10);
+    const afterInit = mergeHighSocietySettingsPreferBaseline(baseline, userInitEqual);
+    expect(afterInit.memberWidthCm?.jaki).toBe(100);
+
     const startCmReset = normalizeHighSocietySettings({
-      ...stalePartial,
+      ...liveBoard,
       startCmPerMember: 200,
       fieldCm: 1200,
       memberWidthCm: Object.fromEntries(ids.map((id) => [id, 200])),
+      territorySnapshotEpochAt: 13_000,
     });
     const mergedStartCm = mergeHighSocietySettingsPreferBaseline(baseline, startCmReset);
     expect(mergedStartCm.memberWidthCm?.jaki).toBe(200);
     expect(mergedStartCm.startCmPerMember).toBe(200);
+
+    const pendingOne = normalizeHighSocietySettings({
+      ...baseline,
+      pendingEndEntryMemberIds: ["pong"],
+      memberWidthCm: { pong: 10, yuri: 0, jaki: 590, gwak: 0, yeong: 0, reze: 0 },
+      territorySnapshotEpochAt: 12_000,
+    });
+    const mergedPending = mergeHighSocietySettingsPreferBaseline(baseline, pendingOne);
+    expect(mergedPending.memberWidthCm?.jaki).toBe(590);
+    expect(mergedPending.memberWidthCm?.pong).toBe(10);
   });
 
   it("가운데 끝 선택 대기는 stale 전체 스냅샷이 전원을 한 번에 되살리지 않는다", () => {
@@ -2174,7 +2167,7 @@ describe("highSociety regression guards", () => {
     ).toEqual(["gwak", "pong", "yeong", "yuri"]);
     const merged = mergeHighSocietySettingsPreferBaseline(baseline, incomingAlive);
     expect(merged.pendingEndEntryMemberIds).toEqual(["gwak", "pong", "yeong", "yuri"]);
-    expect(merged.memberWidthCm).toEqual(baseline.memberWidthCm);
+    expect(merged.memberWidthCm).toEqual(incomingAlive.memberWidthCm);
     const wiped = mergeHighSocietyDonationLinksOnSettingsChange({
       prevSettings: baseline,
       nextSettings: incomingAlive,
@@ -3539,6 +3532,24 @@ describe("syncHighSocietyMemberWidthSnapshot", () => {
     expect(highSocietyNeedsMemberWidthSnapshotPersist(state as never)).toBe(true);
     const synced = syncHighSocietyMemberWidthSnapshotInState(state as never);
     expect(highSocietyNeedsMemberWidthSnapshotPersist(synced as never)).toBe(false);
+  });
+
+  it("기록부가 있는데 스냅샷만 비면 균등 시작 cm로 덮어 저장하지 않는다", () => {
+    const ids = ["jaki", "jisu", "subin"];
+    const state = {
+      members,
+      donors: [],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: ids,
+        startCmPerMember: 100,
+        fieldCm: 300,
+      }),
+      territoryLogs: [{ id: "l1", memberId: "jaki", amount: 30, delta: 1, at: 3_000 }],
+    };
+    expect(highSocietyNeedsMemberWidthSnapshotPersist(state as never)).toBe(false);
+    const synced = syncHighSocietyMemberWidthSnapshotInState(state as never);
+    expect(synced.highSocietySettings?.memberWidthCm).toBeUndefined();
   });
 });
 
