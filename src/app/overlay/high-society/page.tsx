@@ -28,6 +28,8 @@ import {
   resolveHighSocietySeatMembers,
   resolveHighSocietyStartCmPerMember,
   aggregateHighSocietySeatsByTeam,
+  resolveHighSocietyOverlayGaugeSeats,
+  holdHighSocietyOverlayGaugeIfPending,
   type HighSocietyBarStyle,
   type HighSocietyExpandPressure,
   type HighSocietySeat,
@@ -106,19 +108,10 @@ function TerritoryGauge({
   const zeroDisplay = normalizeZeroCmGaugeDisplay(zeroCmGaugeDisplay);
   const showZeroLabel = shouldShowZeroCmSeatsOnGauge(zeroDisplay);
   /**
-   * ✅ 2026-09-07 Fix: "멤버들 기본 영토만 보여야지 후원대기중은 왜 보임?"
-   *  이전 Bug: zeroCmGaugeDisplay = "hidden" 기본값일때
-   *            seats.filter(!s.eliminated) 로 widthCm<=0 인 멤버를 seat 자체를 게이지에서 제거
-   *            → 멤버가 20명 있어도 전부 후원 0원이면 gaugeSeats = [] → 후원 대기중 fallback 타는 오류.
-   *  변경된 의미 분리:
-   *   · seat.eliminated = 실제 경기에서 탈락 처리된 멤버 → 게이지에서 영구 제거 (숨김)
-   *   · seat.widthCm <= 0 + zeroCmGaugeDisplay = "hidden" → 멤버 자리는 게이지에 정상 표시 (기본 영토로)
-   *     단 width 표시 문자열만 "0cm"/"00cm" 대신 빈 문자열로 숨기기.
-   *  결과: seats.length >= 1 이면 (멤버 1명이라도 등록되어 있으면) widthCm=0 이어도 게이지에 개별 기본 바가 미리 채워짐.
-   *        후원 대기중 텍스트 fallback 은 오직 진짜로 seats.length === 0 (멤버 아무도 등록 안됨) 일때만.
+   * 좌석을 배열에서 빼면 옆칸이 붙어 OBS에 다른 모양이 튄다.
+   * 0cm·탈락은 칸을 접고, 후원 대기 문구는 멤버가 한 명도 없을 때만.
    */
-  const gaugeSeats = seats.filter((s) => !s.eliminated);
-  const hasMembers = gaugeSeats.length > 0;
+  const gaugeSeats = seats;
 
   if (gaugeSeats.length === 0) {
     return (
@@ -164,45 +157,46 @@ function TerritoryGauge({
           const growing = motion && fx.growFlash && Boolean(flashIds[seat.id]);
           const expand = seat.expandDir === "left" || seat.expandDir === "right" ? seat.expandDir : "both";
           const isZeroCm = seat.eliminated || seat.widthCm <= 0;
-          /**
-           * ✅ 2026-09-07 Fix 기본 영토 렌더링:
-           *  isZeroCm (후원 0원, width=0) 멤버라도 seats 배열에 존재 (= 등록된 멤버) 이면
-           *  zeroCmGaugeDisplay 가 "hidden" 이라도 게이지에서 seat 자리를 제거하지 않고
-           *  아주 옅은 색상의 기본 영토 바로 개별 표시 → 전체 멤버 수 만큼의 영역이 미리 채워짐.
-           *  오직 width 표시 문자열만 zeroDisplay="hidden" 이면 빈 문자열로 숨김 처리 (formatSeatWidthCm 의 기본 동작에 위임)
-           */
-          const showZeroRow = true;
+          const collapseZero = isZeroCm && !showZeroLabel;
           return (
             <div
               key={seat.id}
               className={`hs-field-seg hs-field-${seat.letter.toLowerCase()} hs-expand-${expand}${
-                growing ? " hs-field-seg-growing" : ""
-              }${isZeroCm && showZeroRow ? " hs-field-zero-cm" : ""}`}
+                growing && !collapseZero ? " hs-field-seg-growing" : ""
+              }${isZeroCm && !collapseZero ? " hs-field-zero-cm" : ""}${
+                collapseZero ? " hs-field-seg-collapsed" : ""
+              }`}
               style={
                 {
-                  flexGrow: showAtFull ? Math.max(seat.widthCm, isZeroCm ? 0.0001 : 0.0001) : 0.0001,
-                  flexBasis: isZeroCm ? "2.75rem" : 0,
-                  background: isZeroCm ? "rgba(55, 65, 81, 0.85)" : seat.color,
+                  flexGrow: collapseZero ? 0 : showAtFull ? Math.max(seat.widthCm, 0.0001) : 0.0001,
+                  flexBasis: collapseZero ? 0 : 0,
+                  background: collapseZero
+                    ? "transparent"
+                    : isZeroCm
+                      ? "rgba(55, 65, 81, 0.85)"
+                      : seat.color,
                   ["--hs-i" as string]: index,
                   ["--hs-seg-color" as string]: seat.color,
                 } as CSSProperties
               }
               title={`${seat.name} · ${formatSeatWidthCm(seat.widthCm, zeroDisplay)} · 확장 ${formatCm(seat.expandCm)}`}
             >
-              {fx.frontier ? (
+              {fx.frontier && !collapseZero ? (
                 <span className={`hs-field-front hs-field-front-${expand}`} aria-hidden />
               ) : null}
-              <span className={`hs-field-label${fx.strongOutline ? " hs-text-outline" : ""}`}>
-                <span className="hs-field-name">{seat.name || seat.letter}</span>
-                <span
-                  className="hs-field-meta"
-                  style={{ opacity: isZeroCm && !showZeroLabel ? 0 : undefined }}
-                >
-                  <span className="hs-field-cm">
-                    {isZeroCm && !showZeroLabel ? "\u00A0" : formatSeatWidthCm(seat.widthCm, zeroDisplay)}
+              {collapseZero ? null : (
+                <span className={`hs-field-label${fx.strongOutline ? " hs-text-outline" : ""}`}>
+                  <span className="hs-field-name">{seat.name || seat.letter}</span>
+                  <span
+                    className="hs-field-meta"
+                    style={{ opacity: isZeroCm && !showZeroLabel ? 0 : undefined }}
+                  >
+                    <span className="hs-field-cm">
+                      {isZeroCm && !showZeroLabel ? "\u00A0" : formatSeatWidthCm(seat.widthCm, zeroDisplay)}
+                    </span>
                   </span>
                 </span>
-              </span>
+              )}
             </div>
           );
         })}
@@ -316,15 +310,23 @@ export default function HighSocietyOverlayPage() {
     });
   }, [useTest, state, hsSettings, hasUrlSplit, split, effectiveFieldCm, startCmFromUrl]);
 
-  /** 게이지는 영토 기록부 해상만 표시. 타이머·후원·라운드 종료 동결은 쓰지 않음 */
+  /** 게이지는 영토 기록부 해상만 표시. 끝 선택 전에는 직전 판을 유지한다. */
+  const overlayHoldRef = useRef<HighSocietySeat[]>([]);
   const displaySeats = useMemo<HighSocietySeat[]>(() => {
-    const pending = new Set(hsSettings.pendingEndEntryMemberIds || []);
-    const visible = field.seats.filter((seat) => !pending.has(seat.id));
+    const resolved = resolveHighSocietyOverlayGaugeSeats(field.seats, hsSettings);
+    let visible = resolved;
     try {
-      return aggregateHighSocietySeatsByTeam(visible, hsSettings);
+      visible = aggregateHighSocietySeatsByTeam(resolved, hsSettings);
     } catch (_err) {
-      return visible;
+      visible = resolved;
     }
+    const held = holdHighSocietyOverlayGaugeIfPending(
+      visible,
+      overlayHoldRef.current,
+      hsSettings
+    );
+    overlayHoldRef.current = held;
+    return held;
   }, [field.seats, hsSettings]);
 
   const fxClass = [

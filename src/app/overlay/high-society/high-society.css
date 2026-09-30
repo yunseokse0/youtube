@@ -130,6 +130,33 @@
   container-name: hs-seg;
 }
 
+/* 0cm 탈락: DOM은 유지하고 폭만 접어 옆칸이 갑자기 붙지 않게 한다 */
+.hs-field-seg-collapsed {
+  flex-grow: 0 !important;
+  flex-basis: 0 !important;
+  flex-shrink: 0;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  width: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  border: none !important;
+  box-shadow: none !important;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hs-field-flat .hs-field-seg-collapsed:not(:last-child) {
+  border-right: none;
+  box-shadow: none;
+}
+
+.hs-field-flat .hs-field-seg-collapsed:not(:last-child)::after {
+  content: none;
+  width: 0;
+  background: none;
+}
+
 /* —— 평평: 사각 영토 + 분쟁 경계선 —— */
 .hs-field-flat .hs-field-seg:not(:last-child) {
   border-right: 3px solid rgba(0, 0, 0, 0.75);

@@ -238,6 +238,55 @@ export function shouldShowZeroCmSeatsOnGauge(
   return normalizeZeroCmGaugeDisplay(display) !== "hidden";
 }
 
+/**
+ * OBS 게이지: 좌석을 배열에서 빼지 않는다.
+ * 가운데 재진입 대기 중에는 대기 직전 판(pendingEndEntryBoardCm)을 그려
+ * 한가운데에 큰 땅이 갑자기 붙었다가 사라지는 튀김을 막는다.
+ */
+export function resolveHighSocietyOverlayGaugeSeats(
+  seats: HighSocietySeat[],
+  settings: HighSocietySettings | null | undefined
+): HighSocietySeat[] {
+  const s = normalizeHighSocietySettings(settings);
+  const pending = new Set(
+    (s.pendingEndEntryMemberIds || []).map((id) => String(id || "").trim()).filter(Boolean)
+  );
+  const frozen = s.pendingEndEntryBoardCm || {};
+  const useFrozen = pending.size > 0 && Object.keys(frozen).length > 0;
+  return seats.map((seat) => {
+    let widthCm = roundTerritoryCm(seat.widthCm);
+    if (useFrozen && frozen[seat.id] != null) {
+      widthCm = roundTerritoryCm(Number(frozen[seat.id]));
+    } else if (pending.has(seat.id)) {
+      widthCm = 0;
+    }
+    return {
+      ...seat,
+      widthCm,
+      eliminated: widthCm <= 0,
+    };
+  });
+}
+
+/** 대기 중인데 직전 판 스냅샷이 없으면, 이미 그린 게이지를 그대로 유지한다. */
+export function holdHighSocietyOverlayGaugeIfPending(
+  next: HighSocietySeat[],
+  prev: HighSocietySeat[],
+  settings: HighSocietySettings | null | undefined
+): HighSocietySeat[] {
+  const s = normalizeHighSocietySettings(settings);
+  if ((s.pendingEndEntryMemberIds || []).length === 0) return next;
+  if (Object.keys(s.pendingEndEntryBoardCm || {}).length > 0) return next;
+  if (
+    prev.length > 0 &&
+    prev.length === next.length &&
+    prev.every((seat, i) => seat.id === next[i]?.id)
+  ) {
+    return prev;
+  }
+  return next;
+}
+
 /** 영토 cm — 소수 첫째 자리. 홀수 양분(7.5)이 정수 반올림으로 사라지지 않게 */
 export function roundTerritoryCm(cm: number): number {
   const n = Number(cm);

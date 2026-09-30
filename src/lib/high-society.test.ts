@@ -76,6 +76,8 @@ import {
   highSocietyNeedsMemberWidthSnapshotPersist,
   appendTerritoryLogToAppState,
   removeTerritoryLogFromAppState,
+  resolveHighSocietyOverlayGaugeSeats,
+  holdHighSocietyOverlayGaugeIfPending,
   aggregateTeamPushesFromTerritoryLogs,
   aggregateHighSocietySeatsByTeam,
   normalizeTeam,
@@ -2227,6 +2229,65 @@ describe("0cm eliminated member re-entry", () => {
     expect(jisu.widthCm).toBe(100);
     expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("subin");
     expect(field.seats.map((s) => s.id)).toEqual(["jaki", "subin", "jisu"]);
+  });
+
+  it("OBS 게이지는 가운데 재진입 대기 때 직전 판을 유지하고 좌석을 빼지 않는다", () => {
+    const settings = normalizeHighSocietySettings({
+      ...baseSettings,
+      seatMemberIds: ["jaki", "subin", "jisu"],
+    });
+    let state = {
+      members,
+      donors: [] as never[],
+      highSocietySettings: settings,
+      territoryLogs: [] as ReturnType<typeof createTerritoryLog>[],
+    } as import("@/types").AppState;
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("jaki", 1, 100, { pushDir: "right", now: 1_000 })
+    );
+    const before = buildHighSocietyFieldFromAppState(state);
+    expect(before.seats.find((s) => s.id === "subin")!.widthCm).toBe(0);
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("subin", 1, 20, { pushDir: "right", now: 2_000 })
+    );
+    const live = buildHighSocietyFieldFromAppState(state);
+    expect(live.seats.find((s) => s.id === "subin")!.widthCm).toBe(20);
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("subin");
+    const overlay = resolveHighSocietyOverlayGaugeSeats(
+      live.seats,
+      state.highSocietySettings
+    );
+    expect(overlay.map((s) => s.id)).toEqual(["jaki", "subin", "jisu"]);
+    expect(overlay.find((s) => s.id === "subin")!.widthCm).toBe(0);
+    expect(overlay.find((s) => s.id === "jaki")!.widthCm).toBe(
+      before.seats.find((s) => s.id === "jaki")!.widthCm
+    );
+    expect(overlay.find((s) => s.id === "jisu")!.widthCm).toBe(
+      before.seats.find((s) => s.id === "jisu")!.widthCm
+    );
+  });
+
+  it("대기 스냅샷이 없어도 이미 그린 게이지 모양을 유지한다", () => {
+    const prev = [
+      { id: "a", widthCm: 100, eliminated: false },
+      { id: "b", widthCm: 0, eliminated: true },
+      { id: "c", widthCm: 200, eliminated: false },
+    ] as import("@/lib/high-society").HighSocietySeat[];
+    const next = [
+      { id: "a", widthCm: 50, eliminated: false },
+      { id: "b", widthCm: 300, eliminated: false },
+      { id: "c", widthCm: 50, eliminated: false },
+    ] as import("@/lib/high-society").HighSocietySeat[];
+    const held = holdHighSocietyOverlayGaugeIfPending(
+      next,
+      prev,
+      normalizeHighSocietySettings({
+        pendingEndEntryMemberIds: ["b"],
+      })
+    );
+    expect(held).toBe(prev);
   });
 
   it("개인전 가운데 +20 무방향은 좌우 양분", () => {
