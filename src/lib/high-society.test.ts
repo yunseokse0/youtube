@@ -2392,7 +2392,7 @@ describe("0cm eliminated member re-entry", () => {
     expect(field.seats.map((s) => s.id)).toEqual(["jaki", "subin", "jisu"]);
   });
 
-  it("OBS 게이지는 가운데 재진입 대기 때 직전 판을 유지하고 좌석을 빼지 않는다", () => {
+  it("OBS·관리자 게이지는 끝 선택 전에 가운데 땅을 붙이지 않는다", () => {
     const settings = normalizeHighSocietySettings({
       ...baseSettings,
       seatMemberIds: ["jaki", "subin", "jisu"],
@@ -2432,14 +2432,14 @@ describe("0cm eliminated member re-entry", () => {
 
   it("대기 스냅샷이 없어도 이미 그린 게이지 모양을 유지한다", () => {
     const prev = [
-      { id: "a", widthCm: 100, eliminated: false },
-      { id: "b", widthCm: 0, eliminated: true },
-      { id: "c", widthCm: 200, eliminated: false },
+      { id: "a", name: "A", color: "#111111", widthCm: 100, eliminated: false },
+      { id: "b", name: "B", color: "#222222", widthCm: 0, eliminated: true },
+      { id: "c", name: "C", color: "#333333", widthCm: 200, eliminated: false },
     ] as import("@/lib/high-society").HighSocietySeat[];
     const next = [
-      { id: "a", widthCm: 50, eliminated: false },
-      { id: "b", widthCm: 300, eliminated: false },
-      { id: "c", widthCm: 50, eliminated: false },
+      { id: "a", name: "에이", color: "#abcdef", widthCm: 50, eliminated: false },
+      { id: "b", name: "비", color: "#fedcba", widthCm: 300, eliminated: false },
+      { id: "c", name: "씨", color: "#010101", widthCm: 50, eliminated: false },
     ] as import("@/lib/high-society").HighSocietySeat[];
     const held = holdHighSocietyOverlayGaugeIfPending(
       next,
@@ -2448,7 +2448,10 @@ describe("0cm eliminated member re-entry", () => {
         pendingEndEntryMemberIds: ["b"],
       })
     );
-    expect(held).toBe(prev);
+    expect(held.map((s) => s.widthCm)).toEqual([100, 0, 200]);
+    expect(held.find((s) => s.id === "a")!.name).toBe("에이");
+    expect(held.find((s) => s.id === "a")!.color).toBe("#abcdef");
+    expect(held.find((s) => s.id === "b")!.widthCm).toBe(0);
   });
 
   it("옛 대기 스냅샷에 땅이 있으면 OBS는 새 저장 cm를 그린다", () => {

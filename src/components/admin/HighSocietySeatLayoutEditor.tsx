@@ -12,10 +12,11 @@ import {
   formatSeatWidthCm,
   insertHighSocietySeatMemberIdAt,
   moveHighSocietySeatMemberToIndex,
-  isHighSocietySeatSelectionManual,
   normalizeHighSocietySettings,
   normalizeTerritoryHexColor,
   normalizeZeroCmGaugeDisplay,
+  resolveHighSocietyOverlayGaugeSeats,
+  roundTerritoryCm,
   resolveHighSocietySeatCountForField,
   resolveHighSocietySeatMemberIdsForEdit,
   resolveHighSocietySeatMembers,
@@ -55,7 +56,6 @@ export default function HighSocietySeatLayoutEditor({
     () => resolveHighSocietySeatMembers(members, settings),
     [members, settings]
   );
-  const hsSeatExplicit = isHighSocietySeatSelectionManual(settings);
   const hsSeatedIdSet = useMemo(
     () => new Set(hsSeatPlayers.map((p) => String(p.id))),
     [hsSeatPlayers]
@@ -76,12 +76,13 @@ export default function HighSocietySeatLayoutEditor({
       highSocietySettings: settings,
       territoryLogs,
     } as Pick<AppState, "members" | "donors" | "highSocietySettings" | "territoryLogs">);
-    for (const seat of field.seats) {
+    const shown = resolveHighSocietyOverlayGaugeSeats(field.seats, settings);
+    for (const seat of shown) {
       map.set(seat.id, { widthCm: seat.widthCm, eliminated: seat.eliminated });
     }
     const teamSeats =
       matchMode === "team"
-        ? aggregateHighSocietySeatsByTeam(field.seats, settings)
+        ? aggregateHighSocietySeatsByTeam(shown, settings)
         : [];
     return { byMember: map, teamSeats };
   }, [settings, donors, members, territoryLogs, matchMode]);
@@ -292,33 +293,13 @@ export default function HighSocietySeatLayoutEditor({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-[11px] text-neutral-400 leading-snug">
             좌석 배치(좌→右). ←→로 순서 변경 · 최대 {HIGH_SOCIETY_MAX_SEATS}명.
-            {hsSeatExplicit ? (
-              <>
-                {" "}
-                <strong className="text-amber-200/90">수동 고정</strong>
-              </>
-            ) : (
-              <>
-                {" "}
-                지금은 <strong className="text-neutral-300">자동(전원 N등분)</strong>
-                — 삭제/이동 시 그 배치로 고정됩니다.
-              </>
-            )}
+            좌석은 아래에서 직접 넣고, 영토 cm는 기록부로만 넣습니다.
             <span className="block mt-0.5 text-[10px] text-neutral-500">
               {matchMode === "team"
                 ? "팀전에서는 오버레이와 같이 팀 합 cm만 보여 줍니다. 멤버 이름은 소속 표시이고, 개인 영토는 나누지 않습니다."
                 : "땅이 없어졌다가 다시 생기면 왼쪽 끝 또는 오른쪽 끝을 고르기 전에는 게이지에 나오지 않습니다. 나온 뒤에는 자리를 옮길 수 있습니다. 가운데 인원의 확장은 좌우 양분입니다."}
             </span>
           </div>
-          {hsSeatExplicit ? (
-            <button
-              type="button"
-              className="rounded px-2 py-0.5 text-[10px] font-semibold border border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
-              onClick={() => void onPatch({ seatMemberIds: [], seatMemberIdsManual: false })}
-            >
-              자동(전원)으로
-            </button>
-          ) : null}
         </div>
 
         <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
@@ -393,9 +374,10 @@ export default function HighSocietySeatLayoutEditor({
                 settings.territoryColorByMemberId?.[p.id] ||
                 HIGH_SOCIETY_SEAT_COLORS[i % HIGH_SOCIETY_SEAT_COLORS.length];
               const seatLabel = labelDraft[p.id] ?? settings.territoryLabelByMemberId?.[p.id] ?? p.name;
-              const eliminated = fieldSeat?.eliminated === true;
               const pendingEnd = (settings.pendingEndEntryMemberIds || []).includes(p.id);
               const zeroCmDisplay = normalizeZeroCmGaugeDisplay(settings.zeroCmGaugeDisplay);
+              const pendingAmount = roundTerritoryCm(Number(settings.memberWidthCm?.[p.id] ?? 0));
+              const eliminated = !pendingEnd && fieldSeat?.eliminated === true;
               return (
                 <div
                   key={`hs-seat-${p.id}`}
@@ -432,7 +414,7 @@ export default function HighSocietySeatLayoutEditor({
                     />
                     <div className="text-[9px] text-amber-200/70">
                       {pendingEnd
-                        ? `${fieldSeat ? formatCm(fieldSeat.widthCm) : ""} 끝 선택 전`.trim()
+                        ? `${pendingAmount > 0 ? formatCm(pendingAmount) : ""} 끝 선택 전`.trim()
                         : eliminated
                           ? `${formatSeatWidthCm(0, zeroCmDisplay)} 탈락 · ${expandHint}`
                           : fieldSeat
@@ -510,7 +492,7 @@ export default function HighSocietySeatLayoutEditor({
           )
         ) : (
           <div className="rounded border border-dashed border-white/15 bg-black/20 px-2 py-2 text-[11px] text-neutral-500">
-            좌석에 멤버가 없습니다. 아래에서 추가하거나 「자동(전원)으로」를 누르세요.
+            좌석에 멤버가 없습니다. 아래에서 추가하세요.
           </div>
         )}
 

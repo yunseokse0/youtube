@@ -310,7 +310,7 @@ export default function HighSocietyOverlayPage() {
     });
   }, [useTest, state, hsSettings, hasUrlSplit, split, effectiveFieldCm, startCmFromUrl]);
 
-  /** 게이지는 영토 기록부 해상만 표시. 끝 선택 전에는 직전 판을 유지한다. */
+  /** 끝 선택 전 게이지는 대기 직전 판. 관리자 배치도와 같다. */
   const overlayHoldRef = useRef<HighSocietySeat[]>([]);
   const displaySeats = useMemo<HighSocietySeat[]>(() => {
     const resolved = resolveHighSocietyOverlayGaugeSeats(field.seats, hsSettings);

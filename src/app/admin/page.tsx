@@ -360,6 +360,7 @@ import {
   type HighSocietySettingsAdminPatch,
   resolveHighSocietySeatMembers,
   buildHighSocietyFieldFromAppState,
+  resolveHighSocietyOverlayGaugeSeats,
   appendTerritoryLogToAppState,
   removeTerritoryLogFromAppState,
   resolveHighSocietyStartCmPerMember,
@@ -10791,7 +10792,8 @@ function AdminPageInner() {
       highSocietySettings,
       territoryLogs: state.territoryLogs || [],
     });
-    for (const seat of field.seats) {
+    const shown = resolveHighSocietyOverlayGaugeSeats(field.seats, highSocietySettings);
+    for (const seat of shown) {
       map.set(seat.id, { widthCm: seat.widthCm, eliminated: seat.eliminated });
     }
     return map;

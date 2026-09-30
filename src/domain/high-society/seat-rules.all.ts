@@ -239,9 +239,8 @@ export function shouldShowZeroCmSeatsOnGauge(
 }
 
 /**
- * OBS 게이지: 좌석을 배열에서 빼지 않는다.
- * 가운데 재진입 대기 중에는 대기 직전 판(pendingEndEntryBoardCm)을 그려
- * 한가운데에 큰 땅이 갑자기 붙었다가 사라지는 튀김을 막는다.
+ * 게이지(관리자 배치도·OBS): 끝 선택 전에는 대기 직전 판을 그린다.
+ * 가운데에 땅이 붙지 않고, 좌석을 배열에서 빼지 않는다. 0cm는 CSS 로 칸만 접는다.
  */
 export function resolveHighSocietyOverlayGaugeSeats(
   seats: HighSocietySeat[],
@@ -299,7 +298,13 @@ export function holdHighSocietyOverlayGaugeIfPending(
     const was = prev[idx]!;
     return live.widthCm > 0 && was.widthCm <= 0;
   });
-  return pendingAppearedInMiddle ? prev : next;
+  return pendingAppearedInMiddle
+    ? prev.map((seat, i) => {
+        const live = next[i];
+        if (!live || live.id !== seat.id) return seat;
+        return { ...seat, name: live.name, color: live.color };
+      })
+    : next;
 }
 
 /** 영토 cm — 소수 첫째 자리. 홀수 양분(7.5)이 정수 반올림으로 사라지지 않게 */
