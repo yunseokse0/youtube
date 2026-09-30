@@ -1236,8 +1236,49 @@ function widthPatchFromDisplayedField(opts: {
 }
 
 /**
+ * 0cm 재진입: 고른 벽 쪽 사람은 없애지 않고 반대쪽으로 민다.
+ * 안쪽 이웃을 0으로 만들 양이면 그 칸은 건너뛰고, 더 큰 땅에서 가져온다.
+ */
+function takeCmInwardSkippingWipedBlocks(opts: {
+  order: string[];
+  placedId: string;
+  amount: number;
+  getWidth: (id: string) => number;
+  setWidth: (id: string, widthCm: number) => void;
+  skipIds?: Set<string>;
+}): number {
+  const idx = opts.order.indexOf(opts.placedId);
+  const last = opts.order.length - 1;
+  if (idx !== 0 && idx !== last) return 0;
+  const step = idx === 0 ? 1 : -1;
+  const amount = roundTerritoryCm(opts.amount);
+  if (amount <= 0) return 0;
+  let remain = amount;
+  const seq: string[] = [];
+  for (let i = idx + step; i >= 0 && i <= last; i += step) {
+    const id = opts.order[i]!;
+    if (opts.skipIds?.has(id)) continue;
+    seq.push(id);
+  }
+  const takeFrom = (ids: string[], onlyIfSurvives: boolean) => {
+    for (const id of ids) {
+      if (remain <= 0) break;
+      const have = roundTerritoryCm(opts.getWidth(id));
+      if (have <= 0) continue;
+      if (onlyIfSurvives && have <= remain) continue;
+      const got = roundTerritoryCm(Math.min(remain, have));
+      opts.setWidth(id, roundTerritoryCm(have - got));
+      remain = roundTerritoryCm(remain - got);
+    }
+  };
+  takeFrom(seq, true);
+  if (remain > 0) takeFrom([...seq].reverse(), false);
+  return roundTerritoryCm(amount - remain);
+}
+
+/**
  * 끝 선택은 지금 판에서 한 번만 가져온다.
- * 고른 끝의 안쪽 이웃에게서, 대기 중인 그 사람의 cm만 뺀다.
+ * 0cm 재진입은 같은 쪽 벽을 0으로 만들지 않고, 반대쪽 큰 땅에서 뺀다.
  */
 function widthPatchAfterPendingEndChoice(opts: {
   prevSettings: HighSocietySettings;
@@ -1273,20 +1314,18 @@ function widthPatchAfterPendingEndChoice(opts: {
     const idx = nextIds.indexOf(id);
     const amount = widthByMemberId[id] ?? 0;
     if (idx < 0 || amount <= 0) continue;
-    const step = idx === 0 ? 1 : idx === nextIds.length - 1 ? -1 : 0;
-    if (step === 0) continue;
-    let remain = amount;
-    for (let neighborIdx = idx + step; neighborIdx >= 0 && neighborIdx < nextIds.length; neighborIdx += step) {
-      if (remain <= 0) break;
-      const neighborId = nextIds[neighborIdx]!;
-      if (nextPending.has(neighborId) || placed.includes(neighborId)) continue;
-      const have = widthByMemberId[neighborId] ?? 0;
-      if (have <= 0) continue;
-      const got = roundTerritoryCm(Math.min(remain, have));
-      widthByMemberId[neighborId] = roundTerritoryCm(have - got);
-      remain = roundTerritoryCm(remain - got);
-    }
-    widthByMemberId[id] = roundTerritoryCm(amount - remain);
+    const skipIds = new Set([...nextPending, ...placed].filter((sid) => sid !== id));
+    const got = takeCmInwardSkippingWipedBlocks({
+      order: nextIds,
+      placedId: id,
+      amount,
+      getWidth: (sid) => widthByMemberId[sid] ?? 0,
+      setWidth: (sid, widthCm) => {
+        widthByMemberId[sid] = widthCm;
+      },
+      skipIds,
+    });
+    widthByMemberId[id] = got;
   }
   const seats = nextPlayers.map((player) => ({
     id: player.id,
@@ -2283,6 +2322,7 @@ export function applyTerritoryLogDirectTransfers(
     }
 
     /** 개인전: 0cm 인원은 땅이 다시 생길 때만, 양쪽 끝으로만 재진입 */
+    let zeroCmEndReentry = false;
     if (
       matchMode === "individual" &&
       sign > 0 &&
@@ -2306,6 +2346,7 @@ export function applyTerritoryLogDirectTransfers(
         targetIdxs.push(order.indexOf(memberIdAt));
         explicitPush = end === "left" ? "right" : "left";
       }
+      zeroCmEndReentry = true;
     }
 
     const parts: Array<{ dir: "left" | "right"; cm: number }> =
@@ -2319,7 +2360,18 @@ export function applyTerritoryLogDirectTransfers(
     for (const part of parts) {
       if (part.cm <= 0) continue;
       if (sign > 0) {
-        const got = takeToward(targetIdxs, part.dir, part.cm);
+        const got = zeroCmEndReentry
+          ? takeCmInwardSkippingWipedBlocks({
+              order,
+              placedId: order[targetIdxs[0]!]!,
+              amount: part.cm,
+              getWidth: (id) => widthById.get(id) ?? 0,
+              setWidth: (id, widthCm) => {
+                widthById.set(id, widthCm);
+              },
+              skipIds: protectedWidthIds,
+            })
+          : takeToward(targetIdxs, part.dir, part.cm);
         giveToIndices(targetIdxs, got);
       } else {
         const got = takeFromIndices(targetIdxs, part.cm);

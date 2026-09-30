@@ -3124,6 +3124,49 @@ describe("0cm eliminated member re-entry", () => {
     expect(placed.highSocietySettings?.memberWidthCm?.reze).toBe(10);
   });
 
+  it("0cm가 왼쪽 벽으로 들어오면 같은 쪽 작은 땅은 밀고 큰 땅에서 가져온다", async () => {
+    const { applyHighSocietyAdminPatchToState } = await import("@/lib/admin-high-society-settings-patch");
+    const members = [
+      { id: "yuri", name: "유리", account: 0, toon: 0, operating: false },
+      { id: "jaki", name: "자기", account: 0, toon: 0, operating: false },
+      { id: "gwak", name: "곽호경", account: 0, toon: 0, operating: false },
+      { id: "reze", name: "레제", account: 0, toon: 0, operating: false },
+      { id: "pong", name: "퐁이", account: 0, toon: 0, operating: false },
+      { id: "yeong", name: "영실이", account: 0, toon: 0, operating: false },
+    ];
+    const prev = {
+      members,
+      donors: [],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: ["yuri", "jaki", "gwak", "reze", "pong", "yeong"],
+        seatMemberIdsManual: true,
+        startCmPerMember: 100,
+        fieldCm: 600,
+        memberWidthCm: { yuri: 10, jaki: 580, gwak: 0, reze: 0, pong: 10, yeong: 10 },
+        pendingEndEntryMemberIds: ["yeong"],
+        territorySnapshotEpochAt: 1_000,
+      }),
+      territoryLogs: [],
+      updatedAt: 1,
+    } as import("@/types").AppState;
+    const nextIds = placeHighSocietyPendingEndMember(
+      prev.highSocietySettings?.seatMemberIds || [],
+      "yeong",
+      "left"
+    );
+    const placed = applyHighSocietyAdminPatchToState(prev, {
+      seatMemberIds: nextIds,
+      seatMemberIdsManual: true,
+      pendingEndEntryMemberIds: [],
+    });
+    expect(nextIds[0]).toBe("yeong");
+    expect(placed.highSocietySettings?.memberWidthCm?.yeong).toBe(10);
+    expect(placed.highSocietySettings?.memberWidthCm?.yuri).toBe(10);
+    expect(placed.highSocietySettings?.memberWidthCm?.jaki).toBe(570);
+    expect(placed.highSocietySettings?.memberWidthCm?.pong).toBe(10);
+  });
+
   it("insertHighSocietySeatMemberIdAt places member at chosen index", () => {
     expect(insertHighSocietySeatMemberIdAt(["a", "b", "c"], "d", 0)).toEqual(["d", "a", "b", "c"]);
     expect(insertHighSocietySeatMemberIdAt(["a", "b", "c"], "d", 2)).toEqual(["a", "b", "d", "c"]);
