@@ -365,7 +365,7 @@ function normalizeMemberWidthRecord(raw: unknown): Record<string, number> | unde
   for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
     const key = String(id || "").trim();
     const n = Number(v);
-    if (key && Number.isFinite(n) && n >= 0) out[key] = Math.round(n);
+    if (key && Number.isFinite(n) && n >= 0) out[key] = roundTerritoryCm(n);
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }
@@ -391,8 +391,8 @@ function normalizeMemberTerritoryExpandRecord(
     if (!key || !v || typeof v !== "object") continue;
     const o = v as Record<string, unknown>;
     out[key] = {
-      expandLeftCm: Math.max(0, Math.round(Number(o.expandLeftCm) || 0)),
-      expandRightCm: Math.max(0, Math.round(Number(o.expandRightCm) || 0)),
+      expandLeftCm: roundTerritoryCm(Number(o.expandLeftCm) || 0),
+      expandRightCm: roundTerritoryCm(Number(o.expandRightCm) || 0),
     };
   }
   return Object.keys(out).length > 0 ? out : undefined;
@@ -1063,7 +1063,10 @@ function widthPatchAfterPendingEndChoice(opts: {
           nextPlayers.map((player) => player.id),
           logs,
           opts.prevSettings,
-          { lockSeatOrderMemberIds: opts.prevSettings.pendingEndEntryMemberIds || [] }
+          {
+            lockSeatOrderMemberIds: opts.prevSettings.pendingEndEntryMemberIds || [],
+            protectWidthMemberIds: opts.prevSettings.pendingEndEntryMemberIds || [],
+          }
         )
       : arranged;
   return memberWidthPatchFromFieldSeats(field.seats);
@@ -1833,7 +1836,7 @@ export function applyTerritoryLogDirectTransfers(
   seatMemberIds: string[],
   logs: TerritoryLog[],
   settings: HighSocietySettings,
-  opts?: { lockSeatOrderMemberIds?: string[] }
+  opts?: { lockSeatOrderMemberIds?: string[]; protectWidthMemberIds?: string[] }
 ): ReturnType<typeof resolveHighSocietyField> {
   const idsFromSettings = seatMemberIds.filter(Boolean);
   const idsFromField = (field.seats || []).map((s) => s.id).filter(Boolean);
@@ -1907,8 +1910,21 @@ export function applyTerritoryLogDirectTransfers(
     return [...prefer, ...rest];
   };
 
-  const takeToward = (own: number[], dir: "left" | "right", amount: number): number =>
-    takeFromIndices(preferToward(own, dir), amount);
+  const protectedWidthIds = new Set(
+    (opts?.protectWidthMemberIds || []).map((id) => String(id || "").trim()).filter(Boolean)
+  );
+  /**
+   * 끝 선택 대기 중인 칸은 게이지에 없다.
+   * 다른 사람의 확장이 그 칸을 0으로 만들면 대기와 함께 땅이 사라진다.
+   */
+  const takeToward = (own: number[], dir: "left" | "right", amount: number): number => {
+    const ownIds = new Set(own.map((idx) => order[idx]!));
+    const seq = preferToward(own, dir).filter((idx) => {
+      const id = order[idx]!;
+      return !protectedWidthIds.has(id) || ownIds.has(id);
+    });
+    return takeFromIndices(seq, amount);
+  };
 
   const giveToward = (own: number[], dir: "left" | "right", amount: number) => {
     const targets = preferToward(own, dir);
@@ -2200,11 +2216,11 @@ function memberWidthPatchFromFieldSeats(
   const memberTerritoryExpand: Record<string, { expandLeftCm: number; expandRightCm: number }> =
     {};
   for (const seat of seats) {
-    memberWidthCm[seat.id] = Math.max(0, Math.round(seat.widthCm));
+    memberWidthCm[seat.id] = roundTerritoryCm(seat.widthCm);
     memberWidthDonationSnapshot[seat.id] = 0;
     memberTerritoryExpand[seat.id] = {
-      expandLeftCm: Math.max(0, Number(seat.expandLeftCm) || 0),
-      expandRightCm: Math.max(0, Number(seat.expandRightCm) || 0),
+      expandLeftCm: roundTerritoryCm(Number(seat.expandLeftCm) || 0),
+      expandRightCm: roundTerritoryCm(Number(seat.expandRightCm) || 0),
     };
   }
   return { memberWidthCm, memberWidthDonationSnapshot, memberTerritoryExpand };
@@ -2228,7 +2244,9 @@ export function appendTerritoryLogToAppState(state: AppState, log: TerritoryLog)
     };
   }
   const fieldBefore = buildHighSocietyFieldFromAppState(state);
-  const fieldAfter = applyTerritoryLogDirectTransfers(fieldBefore, seatIds, [nextLog], settings);
+  const fieldAfter = applyTerritoryLogDirectTransfers(fieldBefore, seatIds, [nextLog], settings, {
+    protectWidthMemberIds: settings.pendingEndEntryMemberIds || [],
+  });
   const widthPatch = memberWidthPatchFromFieldSeats(fieldAfter.seats);
   const beforeWidth = new Map(fieldBefore.seats.map((seat) => [seat.id, seat.widthCm]));
   const pending = new Set(settings.pendingEndEntryMemberIds || []);
@@ -2245,7 +2263,7 @@ export function appendTerritoryLogToAppState(state: AppState, log: TerritoryLog)
   let pendingEndEntrySinceAt = settings.pendingEndEntrySinceAt;
   if (enteredPending.length > 0 && !pendingEndEntryBoardCm) {
     pendingEndEntryBoardCm = Object.fromEntries(
-      fieldBefore.seats.map((seat) => [seat.id, Math.max(0, Math.round(seat.widthCm))])
+      fieldBefore.seats.map((seat) => [seat.id, roundTerritoryCm(seat.widthCm)])
     );
     pendingEndEntrySinceAt = Number(nextLog.at || 0);
   }
@@ -2327,7 +2345,7 @@ export function buildHighSocietyMemberWidthSnapshotPatch(
   const memberWidthDonationSnapshot: Record<string, number> = {};
   const memberTerritoryExpand: Record<string, { expandLeftCm: number; expandRightCm: number }> = {};
   for (const seat of field.seats) {
-    memberWidthCm[seat.id] = Math.max(0, Math.round(seat.widthCm));
+    memberWidthCm[seat.id] = roundTerritoryCm(seat.widthCm);
     memberWidthDonationSnapshot[seat.id] = 0;
     memberTerritoryExpand[seat.id] = {
       expandLeftCm: Math.max(0, Number(seat.expandLeftCm) || 0),

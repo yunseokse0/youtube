@@ -2402,6 +2402,72 @@ describe("0cm eliminated member re-entry", () => {
     expect(shown.seats.find((seat) => seat.id === "subin")!.widthCm).toBe(20);
   });
 
+  it("끝 선택 대기 중인 자키의 5cm는 다른 사람의 끝 선택으로 0이 되지 않는다", () => {
+    const members = ["jaki", "gwak", "yeong", "yuri", "reze", "pong"].map((id) => ({
+      id,
+      name: id,
+      account: 0,
+      toon: 0,
+      operating: false,
+    }));
+    let state = {
+      members,
+      donors: [] as never[],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: members.map((m) => m.id),
+        seatMemberIdsManual: true,
+        startCmPerMember: 100,
+        fieldCm: 600,
+        memberWidthCm: { jaki: 0, gwak: 73, yeong: 0, yuri: 355, reze: 73, pong: 95 },
+        territorySnapshotEpochAt: 1_000,
+      }),
+      territoryLogs: [] as ReturnType<typeof createTerritoryLog>[],
+    } as import("@/types").AppState;
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("jaki", 1, 5, { pushDir: "right", now: 2_000 })
+    );
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("jaki");
+    expect(state.highSocietySettings?.memberWidthCm?.jaki).toBe(5);
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("yeong", 1, 10, { pushDir: "split", now: 3_000 })
+    );
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toEqual(
+      expect.arrayContaining(["jaki", "yeong"])
+    );
+    expect(state.highSocietySettings?.memberWidthCm?.jaki).toBe(5);
+    const nextIds = moveHighSocietySeatMemberToIndex(
+      state.highSocietySettings?.seatMemberIds || [],
+      "yeong",
+      5
+    );
+    const placed = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: state.highSocietySettings!,
+      nextSettings: normalizeHighSocietySettings({
+        ...state.highSocietySettings,
+        seatMemberIds: nextIds,
+        seatMemberIdsManual: true,
+        pendingEndEntryMemberIds: (state.highSocietySettings?.pendingEndEntryMemberIds || []).filter(
+          (id) => id !== "yeong"
+        ),
+      }),
+      members,
+      territoryLogs: state.territoryLogs,
+      now: 4_000,
+    });
+    expect(placed.pendingEndEntryMemberIds).toContain("jaki");
+    expect(placed.memberWidthCm?.jaki).toBe(5);
+    expect(placed.memberWidthCm?.yeong).toBe(10);
+    const shown = buildHighSocietyFieldFromAppState({
+      ...state,
+      highSocietySettings: placed,
+    });
+    expect(shown.seats.find((seat) => seat.id === "jaki")!.widthCm).toBe(5);
+    expect(shown.seats.find((seat) => seat.id === "yeong")!.widthCm).toBe(10);
+  });
+
   it("좌석을 고정한 뒤 기록은 한 번만 반영된다", () => {
     const members = [
       { id: "a", name: "A", account: 0, toon: 0, operating: false },
@@ -3655,6 +3721,50 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
     expect(byId.c).toBe(89.5);
     expect(byId.d).toBe(100);
     expect(total).toBe(400);
+  });
+
+  it("5cm 양분은 좌우 2.5로 저장되고 0.5가 정수로 올라가지 않는다", () => {
+    const members = ["곽호경", "염섬이", "유리", "자키", "레제", "풍이"].map((name, i) => ({
+      id: `m${i}`,
+      name,
+      account: 0,
+      toon: 0,
+      operating: false,
+    }));
+    let state = {
+      members,
+      donors: [] as never[],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: members.map((m) => m.id),
+        seatMemberIdsManual: true,
+        startCmPerMember: 100,
+        fieldCm: 600,
+        matchMode: "individual",
+      }),
+      territoryLogs: [] as ReturnType<typeof createTerritoryLog>[],
+    } as import("@/types").AppState;
+    state = appendTerritoryLogToAppState(state, createTerritoryLog("m2", 1, 5, { pushDir: "split", now: 1_000 }));
+    state = appendTerritoryLogToAppState(state, createTerritoryLog("m2", 1, 50, { pushDir: "split", now: 2_000 }));
+    state = appendTerritoryLogToAppState(state, createTerritoryLog("m2", 1, 200, { pushDir: "split", now: 3_000 }));
+    const saved = state.highSocietySettings?.memberWidthCm || {};
+    expect(saved.m0).toBe(72.5);
+    expect(saved.m1).toBe(0);
+    expect(saved.m2).toBe(355);
+    expect(saved.m3).toBe(0);
+    expect(saved.m4).toBe(72.5);
+    expect(saved.m5).toBe(100);
+    const shown = buildHighSocietyFieldFromAppState({
+      ...state,
+      highSocietySettings: normalizeHighSocietySettings({
+        ...state.highSocietySettings,
+        territorySnapshotEpochAt: 3_000,
+      }),
+    });
+    const byId = Object.fromEntries(shown.seats.map((s) => [s.id, s.widthCm]));
+    expect(byId.m0).toBe(72.5);
+    expect(byId.m2).toBe(355);
+    expect(byId.m4).toBe(72.5);
   });
 
   it("0cm이 된 이웃은 건너뛰고 그 너머에서 가져온다", () => {
