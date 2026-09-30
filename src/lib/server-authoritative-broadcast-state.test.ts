@@ -11,10 +11,23 @@ describe("clampBrowserPersistOptionsForServerAuthority", () => {
     ).toEqual({
       membersAuthoritative: true,
       omitDonationFields: true,
+      omitHighSocietyFields: true,
     });
   });
 
-  it("allows settlementReset with donorsAuthoritative", () => {
+  it("allows highSocietySettingsOnly to keep sending territory settings", () => {
+    expect(
+      clampBrowserPersistOptionsForServerAuthority({
+        omitDonationFields: true,
+        highSocietySettingsOnly: true,
+      })
+    ).toEqual({
+      omitDonationFields: true,
+      highSocietySettingsOnly: true,
+    });
+  });
+
+  it("allows settlementReset with donorsAuthoritative without touching territory", () => {
     expect(
       clampBrowserPersistOptionsForServerAuthority({
         settlementReset: true,
@@ -24,6 +37,7 @@ describe("clampBrowserPersistOptionsForServerAuthority", () => {
       settlementReset: true,
       omitDonationFields: false,
       donorsAuthoritative: true,
+      omitHighSocietyFields: true,
     });
   });
 });

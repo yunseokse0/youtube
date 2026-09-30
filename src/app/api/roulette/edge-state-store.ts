@@ -9,6 +9,7 @@ import { coalesceAppStateRedisAndMemory, loadAppStateForUserId, seedAppStateKvCa
 import {
   mergeDonationReplaceForPersist,
   mergeStatePreservingDonorsUntilSettlementReset,
+  preserveExistingHighSocietyTerritory,
 } from "@/lib/donation/merge-donation-apply-base";
 import { loadDonationRosterBackupFromKv } from "@/lib/donation-roster-backup-redis";
 import { unionAppStateDonorsFromBackupIfRicher } from "@/lib/donation-roster-backup-core";
@@ -272,11 +273,12 @@ async function saveAppStateForRouletteDirect(
    * mergeDonationReplace existing merge 완전 스킵하고 merged = incoming (next) 를
    * 그대로 사용. forceSkip=false 이면 기존 merge rule 유지.
    */
-  const merged: AppState = forceSkip
+  const mergedRaw: AppState = forceSkip
     ? incoming
     : opts?.donorsMode === "replace"
       ? mergeDonationReplaceForPersist(incoming, existing, wipeOpts)
       : mergeStatePreservingDonorsUntilSettlementReset(incoming, existing, wipeOpts);
+  const merged: AppState = preserveExistingHighSocietyTerritory(mergedRaw, existing);
 
   const persistedBeforeFinalize: AppState = clearIntentionalDonationClearIfHasDonations({
     ...merged,

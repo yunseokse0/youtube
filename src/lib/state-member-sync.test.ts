@@ -575,7 +575,7 @@ describe("member sync helpers", () => {
     expect(payload.territoryLogsAuthoritative).toBe(true);
   });
 
-  it("omitDonationFields payload keeps highSocietySettings so server can treat as HS-only", () => {
+  it("omitDonationFields payload omits highSocietySettings so donation/theme saves cannot overwrite territory", () => {
     const state = {
       ...defaultState(),
       updatedAt: 2000,
@@ -588,9 +588,10 @@ describe("member sync helpers", () => {
     } as AppState;
     const payload = appStatePayloadForApi(state, "finalent", {
       omitDonationFields: true,
+      omitHighSocietyFields: true,
     }) as Record<string, unknown>;
     expect(payload.donors).toBeUndefined();
-    expect(payload.highSocietySettings).toBeTruthy();
+    expect(payload.highSocietySettings).toBeUndefined();
   });
 
   it("mergeBroadcastSessionPreservingDonations keeps session donors when patch is empty", () => {

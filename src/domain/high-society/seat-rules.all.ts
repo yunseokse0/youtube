@@ -621,6 +621,41 @@ function hasMemberWidthSnapshot(
   return Boolean(widths && Object.keys(widths).length > 0);
 }
 
+function positiveWidthMemberCount(widths: Record<string, number> | undefined): number {
+  if (!widths) return 0;
+  return Object.values(widths).filter((w) => Number(w) > 0).length;
+}
+
+/**
+ * 가운데에서 땅이 생긴 사람은 왼쪽·오른쪽 끝에 앉기 전에는 대기를 유지한다.
+ * pending 배열만 빠진 stale 저장이 전원을 한 번에 게이지에 올리지 않게 한다.
+ */
+export function pendingEndEntryIdsAfterIncomingSettings(
+  prev: HighSocietySettings | null | undefined,
+  next: HighSocietySettings | null | undefined
+): string[] {
+  const prevIds = [...new Set((prev?.pendingEndEntryMemberIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  const nextIds = [...new Set((next?.pendingEndEntryMemberIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  if (prevIds.length === 0) return nextIds;
+  const seats = (next?.seatMemberIds || prev?.seatMemberIds || []).map((id) => String(id || "").trim());
+  const last = seats.length - 1;
+  const kept: string[] = [];
+  for (const id of prevIds) {
+    const idx = seats.indexOf(id);
+    if (idx < 0) continue;
+    if (nextIds.includes(id)) {
+      kept.push(id);
+      continue;
+    }
+    const atEnd = idx === 0 || (last >= 0 && idx === last);
+    if (!atEnd) kept.push(id);
+  }
+  for (const id of nextIds) {
+    if (!kept.includes(id) && seats.includes(id)) kept.push(id);
+  }
+  return kept;
+}
+
 function hasMemberTerritoryExpand(
   settings: HighSocietySettings | null | undefined
 ): boolean {
@@ -687,7 +722,25 @@ export function mergeHighSocietySettingsPreferBaseline(
     };
     hasPatch = true;
   }
-  // 반대 방향: inc 에만 스냅샷 있고 base 에 없을 때는 inc 유지 (return inc)
+  const pendingKept = pendingEndEntryIdsAfterIncomingSettings(base, inc);
+  const incPending = inc.pendingEndEntryMemberIds || [];
+  if (pendingKept.length > 0 && pendingKept.join("\0") !== incPending.join("\0")) {
+    patch.pendingEndEntryMemberIds = pendingKept;
+    if (base.pendingEndEntryBoardCm && !inc.pendingEndEntryBoardCm) {
+      patch.pendingEndEntryBoardCm = base.pendingEndEntryBoardCm;
+      patch.pendingEndEntrySinceAt = base.pendingEndEntrySinceAt;
+    }
+    hasPatch = true;
+    if (
+      positiveWidthMemberCount(inc.memberWidthCm) > positiveWidthMemberCount(base.memberWidthCm) &&
+      hasMemberWidthSnapshot(base)
+    ) {
+      patch.memberWidthCm = base.memberWidthCm;
+      patch.memberWidthDonationSnapshot =
+        base.memberWidthDonationSnapshot ?? inc.memberWidthDonationSnapshot;
+      patch.memberTerritoryExpand = base.memberTerritoryExpand ?? inc.memberTerritoryExpand;
+    }
+  }
   return hasPatch ? normalizeHighSocietySettings({ ...inc, ...patch }) : inc;
 }
 
@@ -1119,13 +1172,17 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
   const nextResolvedIds = resolveHighSocietySeatMembers(members, nextSettings).map((s) => s.id);
   const prevResolvedSet = new Set(prevResolvedIds);
   const nextResolvedSet = new Set(nextResolvedIds);
-  const pendingKept = (nextSettings.pendingEndEntryMemberIds || []).filter(
+  const pendingKept = pendingEndEntryIdsAfterIncomingSettings(prevSettings, nextSettings).filter(
     (id) => nextResolvedSet.has(id) && prevResolvedSet.has(id)
   );
   const prevPending = new Set(prevSettings.pendingEndEntryMemberIds || []);
   const placedIds = [...prevPending].filter(
     (id) => nextResolvedSet.has(id) && prevResolvedSet.has(id) && !pendingKept.includes(id)
   );
+  const nextSettingsForPlace = normalizeHighSocietySettings({
+    ...nextSettings,
+    pendingEndEntryMemberIds: pendingKept,
+  });
   const droppedPendingIds = [...prevPending].filter((id) => !nextResolvedSet.has(id));
 
   const territoryTimingPatch = (): Partial<HighSocietySettings> => {
@@ -1183,7 +1240,7 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
       ? widthPatchAfterPendingEndChoice({
           ...replayState,
           prevSettings,
-          nextSettings,
+          nextSettings: nextSettingsForPlace,
         })
       : null;
   const displayedPatch =

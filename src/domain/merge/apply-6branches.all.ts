@@ -19,9 +19,22 @@ import {
 } from "@/lib/donation/apply-donation-state";
 import { donorRowDedupeKey } from "@/domain/dedupe/donation-dedupe.pipeline";
 import { isGroupSplitPartDonor } from "@/lib/donation/group-split-donation";
-import { mergeDeletedTerritoryLogIds, mergeTerritoryLogsNeverShrink } from "@/lib/territory-utils";
 
 export { rosterDonorMatchScore } from "@/lib/donation/apply-donation-state";
+
+/** 후원 persist 는 상류사회 영토를 쓰지 않는다. 서버에 있는 영토·기록부를 그대로 둔다. */
+export function preserveExistingHighSocietyTerritory(
+  next: AppState,
+  existing: AppState | null | undefined
+): AppState {
+  if (!existing) return next;
+  return {
+    ...next,
+    highSocietySettings: existing.highSocietySettings,
+    territoryLogs: existing.territoryLogs,
+    deletedTerritoryLogIds: existing.deletedTerritoryLogIds,
+  };
+}
 
 /**
  * ✅ 2026-09-08 hotfix-6-10-9 Fix F: donorMap stable map-key 생성
@@ -342,18 +355,21 @@ export function mergeDonationReplaceForPersist(
     );
     if (!existing) return wiped;
     const shell = mergeDonationApplyBase(incoming, existing) ?? incoming;
-    return syncAndRepairMemberTotals(
-      {
-        ...shell,
-        donors: wiped.donors,
-        settlementResetAt: wiped.settlementResetAt ?? shell.settlementResetAt,
-        members: hasMeaningfulMemberRoster(incoming) ? incoming.members : shell.members,
-        memberPositions: hasMeaningfulMemberRoster(incoming)
-          ? incoming.memberPositions ?? shell.memberPositions
-          : shell.memberPositions,
-      },
-      existing,
-      incoming
+    return preserveExistingHighSocietyTerritory(
+      syncAndRepairMemberTotals(
+        {
+          ...shell,
+          donors: wiped.donors,
+          settlementResetAt: wiped.settlementResetAt ?? shell.settlementResetAt,
+          members: hasMeaningfulMemberRoster(incoming) ? incoming.members : shell.members,
+          memberPositions: hasMeaningfulMemberRoster(incoming)
+            ? incoming.memberPositions ?? shell.memberPositions
+            : shell.memberPositions,
+        },
+        existing,
+        incoming
+      ),
+      existing
     );
   }
 
@@ -374,7 +390,8 @@ export function mergeDonationReplaceForPersist(
       const filteredDonors = effReset > 0
         ? filterDonorsAfterSettlementReset(baseDonors, effReset)
         : baseDonors;
-      return syncAndRepairMemberTotals(
+      return preserveExistingHighSocietyTerritory(
+        syncAndRepairMemberTotals(
         {
           ...incoming,
           members: hasMeaningfulMemberRoster(existing) ? existing.members : incoming.members,
@@ -384,20 +401,25 @@ export function mergeDonationReplaceForPersist(
         },
         existing,
         incoming
+        ),
+        existing
       );
     }
     const effReset = incomingReset;
     const filteredDonors = effReset > 0
       ? filterDonorsAfterSettlementReset(incomingDonors, effReset)
       : incomingDonors;
-    return syncAndRepairMemberTotals(
-      {
-        ...incoming,
-        settlementResetAt: effReset,
-        donors: filteredDonors,
-      },
-      existing,
-      incoming
+    return preserveExistingHighSocietyTerritory(
+      syncAndRepairMemberTotals(
+        {
+          ...incoming,
+          settlementResetAt: effReset,
+          donors: filteredDonors,
+        },
+        existing,
+        incoming
+      ),
+      existing
     );
   }
   const shell = mergeDonationApplyBase(incoming, existing) ?? incoming;
@@ -406,9 +428,6 @@ export function mergeDonationReplaceForPersist(
   const filteredDonors = effReset > 0
     ? filterDonorsAfterSettlementReset(incomingDonors, effReset)
     : incomingDonors;
-  const existingHsReset = Number(existing.highSocietySettings?.territoryLogsResetAt || 0);
-  const incomingHsReset = Number(incoming.highSocietySettings?.territoryLogsResetAt || 0);
-  const hsKeepExisting = existingHsReset >= incomingHsReset;
   const replaced = {
     ...shell,
     donors: filteredDonors,
@@ -417,35 +436,6 @@ export function mergeDonationReplaceForPersist(
       ? incoming.memberPositions ?? shell.memberPositions
       : shell.memberPositions,
     settlementResetAt: effReset || shell.settlementResetAt,
-    /** 후원 persist 는 영토 기록부 정본이 아님 — 짧은 leftover 목록으로 덮지 않고 union.
-     *  팝업 초기화([])는 resetAt 이 더 클 때만 유지 */
-    territoryLogs: mergeTerritoryLogsNeverShrink(existing.territoryLogs, incoming.territoryLogs, {
-      deletedIds: mergeDeletedTerritoryLogIds(
-        existing.deletedTerritoryLogIds,
-        incoming.deletedTerritoryLogIds
-      ),
-      patchAuthoritative: hsKeepExisting,
-      patchIsReset:
-        hsKeepExisting &&
-        Array.isArray(existing.territoryLogs) &&
-        existing.territoryLogs.length === 0 &&
-        existingHsReset > incomingHsReset,
-    }),
-    deletedTerritoryLogIds: mergeDeletedTerritoryLogIds(
-      existing.deletedTerritoryLogIds,
-      incoming.deletedTerritoryLogIds
-    ),
-    highSocietySettings: hsKeepExisting
-      ? {
-          ...(incoming.highSocietySettings || {}),
-          ...(existing.highSocietySettings || {}),
-          territoryLogsResetAt: existingHsReset,
-        }
-      : {
-          ...(existing.highSocietySettings || {}),
-          ...(incoming.highSocietySettings || {}),
-          territoryLogsResetAt: incomingHsReset,
-        },
     updatedAt:
       Math.max(Number(incoming.updatedAt || 0), Number(existing.updatedAt || 0)) ||
       Date.now(),
@@ -455,5 +445,8 @@ export function mergeDonationReplaceForPersist(
         Number(existing.donorRankingsUpdatedAt || 0)
       ) || incoming.donorRankingsUpdatedAt,
   };
-  return syncAndRepairMemberTotals(replaced, existing, incoming);
+  return preserveExistingHighSocietyTerritory(
+    syncAndRepairMemberTotals(replaced, existing, incoming),
+    existing
+  );
 }

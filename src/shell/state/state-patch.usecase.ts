@@ -596,6 +596,15 @@ export async function POST(req: Request) {
       } = bodyForMerge;
       bodyForMerge = hsOnlyRest;
     }
+    if (donorsInPatch) {
+      const {
+        highSocietySettings: _hs,
+        territoryLogs: _tl,
+        deletedTerritoryLogIds: _dtl,
+        ...withoutHs
+      } = bodyForMerge;
+      bodyForMerge = withoutHs;
+    }
     const merged = mergePartialState(
       baseState,
       {

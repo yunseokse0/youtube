@@ -605,4 +605,41 @@ describe("mergeDonationReplaceForPersist", () => {
     expect(merged.territoryLogs).toEqual([]);
     expect(Number(merged.highSocietySettings?.territoryLogsResetAt)).toBe(9_000);
   });
+
+  it("does not let a donation persist payload overwrite pending territory snapshot", async () => {
+    const { mergeDonationReplaceForPersist } = await import("./merge-donation-apply-base");
+    const existing: AppState = {
+      ...defaultState(),
+      members: members(["레제", "유리"]),
+      donors: [{ id: "d1", name: "A", amount: 10000, memberId: "m1", at: 1000, target: "account" }],
+      highSocietySettings: {
+        ...defaultState().highSocietySettings!,
+        enabled: true,
+        seatMemberIds: ["m1", "m2"],
+        pendingEndEntryMemberIds: ["m2"],
+        memberWidthCm: { m1: 55, m2: 5 },
+        territoryLogsResetAt: 0,
+      },
+      updatedAt: 3000,
+    };
+    const incoming: AppState = {
+      ...defaultState(),
+      members: members(["레제", "유리"]).map((m, i) =>
+        i === 0 ? { ...m, account: 10000, contribution: 10000 } : m
+      ),
+      donors: [{ id: "d1", name: "A", amount: 10000, memberId: "m1", at: 1000, target: "account" }],
+      highSocietySettings: {
+        ...defaultState().highSocietySettings!,
+        enabled: true,
+        seatMemberIds: ["m1", "m2"],
+        memberWidthCm: { m1: 55, m2: 545 },
+        territoryLogsResetAt: 0,
+      },
+      updatedAt: 4000,
+    };
+    const merged = mergeDonationReplaceForPersist(incoming, existing);
+    expect(merged.highSocietySettings?.pendingEndEntryMemberIds).toEqual(["m2"]);
+    expect(merged.highSocietySettings?.memberWidthCm).toEqual({ m1: 55, m2: 5 });
+    expect(merged.donors.map((d) => d.id)).toEqual(["d1"]);
+  });
 });

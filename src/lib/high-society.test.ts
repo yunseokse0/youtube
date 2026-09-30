@@ -66,6 +66,7 @@ import {
   insertHighSocietySeatMemberIdAt,
   moveHighSocietySeatMemberToIndex,
   mergeHighSocietySettingsPreferBaseline,
+  pendingEndEntryIdsAfterIncomingSettings,
   defaultHighSocietySettings,
   isDonationAmountEligibleForHighSocietyTerritory,
   highSocietyAdminPreviewSig,
@@ -1922,6 +1923,43 @@ describe("highSociety regression guards", () => {
     const merged = mergeHighSocietySettingsPreferBaseline(baseline, staleWire);
     expect(merged.memberWidthCm).toEqual({ a: 220, b: 180 });
     expect(merged.memberWidthDonationSnapshot).toEqual({ a: 100000, b: 80000 });
+  });
+
+  it("가운데 끝 선택 대기는 stale 전체 스냅샷이 전원을 한 번에 되살리지 않는다", () => {
+    const baseline = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["reze", "gwak", "pong", "yeong", "yuri", "jaki"],
+      fieldCm: 600,
+      startCmPerMember: 100,
+      pendingEndEntryMemberIds: ["gwak", "pong", "yeong", "yuri"],
+      memberWidthCm: { reze: 55, gwak: 45, pong: 45, yeong: 0, yuri: 0, jaki: 5 },
+    });
+    const incomingAlive = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["reze", "gwak", "pong", "yeong", "yuri", "jaki"],
+      fieldCm: 600,
+      startCmPerMember: 100,
+      memberWidthCm: { reze: 55, gwak: 45, pong: 45, yeong: 175, yuri: 275, jaki: 5 },
+    });
+    expect(
+      pendingEndEntryIdsAfterIncomingSettings(baseline, incomingAlive)
+    ).toEqual(["gwak", "pong", "yeong", "yuri"]);
+    const merged = mergeHighSocietySettingsPreferBaseline(baseline, incomingAlive);
+    expect(merged.pendingEndEntryMemberIds).toEqual(["gwak", "pong", "yeong", "yuri"]);
+    expect(merged.memberWidthCm).toEqual(baseline.memberWidthCm);
+    const wiped = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: baseline,
+      nextSettings: incomingAlive,
+      members: ["reze", "gwak", "pong", "yeong", "yuri", "jaki"].map((id) => ({
+        id,
+        name: id,
+        account: 0,
+        toon: 0,
+        operating: false,
+      })),
+      now: 5_000,
+    });
+    expect(wiped.pendingEndEntryMemberIds).toEqual(["gwak", "pong", "yeong", "yuri"]);
   });
 
   it("상류사회 현재 설정은 더 큰 updatedAt 이 와도 그대로 저장한다", () => {

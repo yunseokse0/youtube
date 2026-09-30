@@ -27,6 +27,7 @@ export type BrowserPersistOptionsInput = {
   /** 시그 목록 「전체 지우기」·기본 초기화 — 서버 축소 차단·백업 복구를 건너뜀 */
   clearSigInventory?: boolean;
   highSocietySettingsOnly?: boolean;
+  territoryLogsAuthoritative?: boolean;
 };
 
 /**
@@ -42,12 +43,16 @@ export function clampBrowserPersistOptionsForServerAuthority(
       ...opts,
       settlementReset: true,
       donorsAuthoritative: true,
+      omitHighSocietyFields: true,
     };
   }
   const { donorsAuthoritative: _da, donorsReplace: _dr, ...rest } = opts ?? {};
+  const keepHs =
+    rest.highSocietySettingsOnly === true || rest.territoryLogsAuthoritative === true;
   return {
     ...rest,
     omitDonationFields: true,
+    ...(keepHs ? {} : { omitHighSocietyFields: true }),
   };
 }
 

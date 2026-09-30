@@ -3285,11 +3285,17 @@ export async function saveStateAsync(
         !saveOpts?.donorsAuthoritative &&
         local != null &&
         wouldShrinkDonationData(local, guarded)));
+  /** 후원·테마 저장은 상류사회 영토를 보내지 않는다. 기록부·좌석 저장만 영토를 갱신한다. */
+  const omitHighSociety =
+    Boolean(saveOpts?.omitHighSocietyFields) ||
+    (!saveOpts?.highSocietySettingsOnly &&
+      !saveOpts?.territoryLogsAuthoritative &&
+      (Boolean(saveOpts?.donorsAuthoritative) || omitDonations));
   const apiOpts: SaveStateAsyncOptions = {
     ...saveOpts,
     ...(omitDonations ? { omitDonationFields: true } : {}),
+    ...(omitHighSociety ? { omitHighSocietyFields: true } : {}),
   };
-  /** 후원·일반 저장은 영토 cm를 다시 그리지 않는다. 영토 기록부·좌석 저장만 스냅샷을 갱신한다. */
   /**
    * 영토·HS·omitDonation 저장: API 본문은 후원을 안 보내도
    * 세션 스냅샷에 0원 React state 를 쓰면 엑셀·후원순위 미리보기가 즉시 초기화됨.

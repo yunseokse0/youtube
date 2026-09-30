@@ -403,18 +403,11 @@ function applySyncedState(
     (!hasIncomingTimerKey || isDefaultLikeTimerDisplayStyle(incomingTimerStyles?.general));
   const hsBaseline = refs.lastGoodRef.current?.highSocietySettings;
   const hsIncoming = dataForApply.highSocietySettings;
-  const hsIncomingIsMeaningful = isMeaningfulHighSocietySettings(hsIncoming);
-  const hsIncomingUpdatedAt = Number(dataForApply.updatedAt || 0);
-  const hsBaselineUpdatedAt = Number(refs.lastGoodRef.current?.updatedAt || 0);
-  const hsIncomingIsNewerOrEq = hsIncomingUpdatedAt >= hsBaselineUpdatedAt - 1_000;
   const mergedHighSocietySettings =
     pick === STATE_PICK_OVERLAY || pick === STATE_PICK_OVERLAY_DONORS
-      ? hsIncomingIsMeaningful && hsIncomingIsNewerOrEq
-        ? hsIncoming
-        : mergeHighSocietySettingsPreferBaseline(
-            hsBaseline,
-            hsIncoming
-          )
+      ? hsBaseline && isMeaningfulHighSocietySettings(hsBaseline)
+        ? mergeHighSocietySettingsPreferBaseline(hsBaseline, hsIncoming)
+        : hsIncoming
       : hsIncoming;
   const overlayDeletedIds = mergeDeletedTerritoryLogIds(
     dataForApply.deletedTerritoryLogIds,
