@@ -61,6 +61,7 @@ export function applyHighSocietyAdminPatchToState(
     resetTerritory,
     donors: prev.donors || [],
     territoryLogs: prev.territoryLogs || [],
+    settlementResetAt: prev.settlementResetAt,
   });
   const hsSeatPlayersForPersist = resolveHighSocietySeatMembers(prev.members || [], nextSettings);
   const hsSeatCountForPersist = resolveHighSocietySeatCountForField(

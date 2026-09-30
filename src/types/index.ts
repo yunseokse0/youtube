@@ -538,6 +538,12 @@ export type HighSocietySettings = {
    */
   pendingEndEntryMemberIds?: string[];
   /**
+   * 끝 선택 전 좌석 폭. 고른 끝에 그 이후 기록만 다시 얹기 위한 기준.
+   */
+  pendingEndEntryBoardCm?: Record<string, number>;
+  /** 이 시각(ms) 이후 기록은 끝 선택 때 기준 폭 위에 다시 적용한다. */
+  pendingEndEntrySinceAt?: number;
+  /**
    * 마지막 OFF 전환 시각(ms).
    * OFF 중·재ON 직후 baseline — 이 시각 이전 후원만 누적 영토에 포함(OFF 이후 후원 무시).
    */

@@ -348,6 +348,7 @@ import {
   normalizeHighSocietySettings,
   mergeHighSocietyDonationLinksOnSettingsChange,
   isHighSocietyReopen,
+  shouldKeepLocalHighSocietySettings,
   buildTerritoryPauseToggleSettingsPatch,
   resolveDonorsForHighSocietySettingsPatch,
   shouldMarkDonorsLocallyForHighSocietySettingsPatch,
@@ -369,8 +370,6 @@ import {
   fieldCmFromStartPerMember,
   startCmFromField,
   HIGH_SOCIETY_DEFAULT_FIELD_CM,
-  shouldBlockHighSocietyRegression,
-  isMeaningfulHighSocietySettings,
   syncHighSocietyMemberWidthSnapshotInState,
   highSocietyNeedsMemberWidthSnapshotPersist,
 } from "@/lib/high-society";
@@ -1940,7 +1939,14 @@ function AdminPageInner() {
       });
     };
     if (resolvedOpts?.highSocietySettingsOnly) {
-      persistHsLastRef.current = { s, opts: resolvedOpts };
+      const prevQueued = persistHsLastRef.current;
+      const keepLogs =
+        resolvedOpts.territoryLogsAuthoritative === true ||
+        prevQueued?.opts?.territoryLogsAuthoritative === true;
+      persistHsLastRef.current = {
+        s,
+        opts: keepLogs ? { ...resolvedOpts, territoryLogsAuthoritative: true } : resolvedOpts,
+      };
       const isTerritoryReset =
         Array.isArray(s.territoryLogs) &&
         s.territoryLogs.length === 0 &&
@@ -3745,43 +3751,20 @@ function AdminPageInner() {
       };
       didPreserve = true;
     }
-    /** 상류사회: 시그 후원 연동·테마 PATCH 직후 GET/SSE가 enabled·영토 이력을 기본값으로 덮지 않게
-     *  ✅ 2026-09-06 Fix: 1인 시작 cm 변경시(폼 저장) regression guard 차단 버그 해소.
-     *  startCmPerMember / fieldCm 이 로컬 vs merged가 명시적으로 다르면 → 유저가 의도적으로 dimension을 폼 변경 저장한 것
-     *  이므로 shouldBlockHighSocietyRegression bypass. 실제 default wipe patch는 dimension 값이 defaultHighSocietySettings와 일치하면서
-     *  memberWidthCm 등 snapshot field가 누락된 경우로 오는 패턴이 별개. */
+    /** 상류사회는 지금 화면 설정을 저장한다. updatedAt 이 더 큰 GET 으로 바꾸지 않는다. */
     {
       const base = local.highSocietySettings;
-      const patch = merged.highSocietySettings;
-      const baseStart = Number(base?.startCmPerMember);
-      const patchStart = Number(patch?.startCmPerMember);
-      const baseField = Number(base?.fieldCm);
-      const patchField = Number(patch?.fieldCm);
-      const baseRound = Math.max(1, Math.floor(Number(base?.round) || 1));
-      const patchRound = Math.max(1, Math.floor(Number(patch?.round) || 1));
-      const explicitDimChange =
-        base &&
-        patch &&
-        (baseStart !== patchStart || baseField !== patchField);
-      /** ✅ 2026-09-06 Hotfix: patchRound > baseRound = 명시적 영토 초기화(resetTerritory) 시그니처.
-       *  8초 보호창이나 shouldBlockHighSocietyRegression이 구 memberWidthCm을 살려서 초기화를 막는 회귀 방지.
-       *  round bump는 관리자 의도적인 리셋/새 라운드 시작이므로 incoming 패치를 정본으로 수용. */
-      const hsResetRoundBump = Boolean(base && patch && patchRound > baseRound);
       if (
-        !hsResetRoundBump &&
-        !explicitDimChange &&
-        isMeaningfulHighSocietySettings(base) &&
-        shouldBlockHighSocietyRegression(base, patch)
+        shouldKeepLocalHighSocietySettings({
+          local: base,
+          incoming: merged.highSocietySettings,
+        })
       ) {
+        const incomingSettings = merged.highSocietySettings;
         merged = { ...merged, highSocietySettings: base };
-        didPreserve = true;
-      } else if (
-        !hsResetRoundBump &&
-        (pendingUnsyncedRef.current || Date.now() - lastLocalPersistAtRef.current < 8000) &&
-        isMeaningfulHighSocietySettings(base)
-      ) {
-        merged = { ...merged, highSocietySettings: base };
-        didPreserve = true;
+        if (JSON.stringify(base ?? null) !== JSON.stringify(incomingSettings ?? null)) {
+          didPreserve = true;
+        }
       }
     }
     const localTerritoryLogs = normalizeTerritoryLogs(local.territoryLogs);
@@ -10829,6 +10812,7 @@ function AdminPageInner() {
           resetTerritory,
           donors: prev.donors || [],
           territoryLogs: prev.territoryLogs || [],
+          settlementResetAt: prev.settlementResetAt,
         });
         const hsSeatPlayersForPersist = resolveHighSocietySeatMembers(prev.members || [], nextSettings);
         const hsSeatCountForPersist = resolveHighSocietySeatCountForField(
@@ -10942,6 +10926,7 @@ function AdminPageInner() {
     if (hsSnapshotHealBusyRef.current || hsSnapshotHealSigRef.current === sig) return;
     const timer = window.setTimeout(() => {
       const latest = stateRef.current;
+      if (pendingUnsyncedRef.current) return;
       if (!highSocietyNeedsMemberWidthSnapshotPersist(latest)) return;
       hsSnapshotHealBusyRef.current = true;
       hsSnapshotHealSigRef.current = sig;

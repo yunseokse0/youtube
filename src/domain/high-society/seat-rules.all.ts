@@ -459,6 +459,8 @@ export function isDefaultLikeHighSocietySettings(
   if (s.seatMemberIdsManual === true) return false;
   if (Number(s.territorySnapshotEpochAt || 0) > 0) return false;
   if ((s.pendingEndEntryMemberIds || []).length > 0) return false;
+  if (Object.keys(s.pendingEndEntryBoardCm || {}).length > 0) return false;
+  if (Number(s.pendingEndEntrySinceAt || 0) > 0) return false;
   if (Object.keys(s.memberTerritoryExpand || {}).length > 0) return false;
   if (Object.keys(s.memberWidthCm || {}).length > 0) return false;
   if (Object.keys(s.memberWidthDonationSnapshot || {}).length > 0) return false;
@@ -484,6 +486,8 @@ export function isMeaningfulHighSocietySettings(
   if (s.seatMemberIdsManual === true) return true;
   if (Number(s.territorySnapshotEpochAt || 0) > 0) return true;
   if ((s.pendingEndEntryMemberIds || []).length > 0) return true;
+  if (Object.keys(s.pendingEndEntryBoardCm || {}).length > 0) return true;
+  if (Number(s.pendingEndEntrySinceAt || 0) > 0) return true;
   if (Object.keys(s.memberTerritoryExpand || {}).length > 0) return true;
   if (Object.keys(s.memberWidthCm || {}).length > 0) return true;
   if (Object.keys(s.memberWidthDonationSnapshot || {}).length > 0) return true;
@@ -607,6 +611,24 @@ export function mergeHighSocietySettingsPreferBaseline(
   return hasPatch ? normalizeHighSocietySettings({ ...inc, ...patch }) : inc;
 }
 
+/**
+ * 관리자 GET/SSE — 지금 화면의 상류사회 설정을 저장한다.
+ * 서버 updatedAt 이 더 커도 이 화면의 현재 설정을 바꾸지 않는다.
+ * 아직 설정이 없거나, 다른 화면이 영토를 리셋해 회차가 올라온 경우만 서버를 받는다.
+ */
+export function shouldKeepLocalHighSocietySettings(opts: {
+  local: HighSocietySettings | null | undefined;
+  incoming: HighSocietySettings | null | undefined;
+}): boolean {
+  const local = opts.local;
+  const incoming = opts.incoming;
+  if (!isMeaningfulHighSocietySettings(local)) return false;
+  const localRound = Math.max(1, Math.floor(Number(local?.round) || 1));
+  const incomingRound = Math.max(1, Math.floor(Number(incoming?.round) || 1));
+  if (incoming && incomingRound > localRound) return false;
+  return true;
+}
+
 /** 시스템 기본 방향 — 개인전 가운데는 양분(split) */
 export function resolveSystemMiddlePushDir(
   settings: Pick<HighSocietySettings, "defaultMiddlePush" | "defaultBPush" | "defaultCPush">
@@ -707,6 +729,10 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
         HIGH_SOCIETY_MAX_SEATS
       )
     : [];
+  const pendingEndEntryBoardCm = normalizeMemberWidthRecord(v.pendingEndEntryBoardCm);
+  const pendingSinceRaw = Number(v.pendingEndEntrySinceAt);
+  const pendingEndEntrySinceAt =
+    Number.isFinite(pendingSinceRaw) && pendingSinceRaw > 0 ? Math.floor(pendingSinceRaw) : undefined;
   /**
    * matchMode 키가 빠진 stale PATCH/SSE 는 teams 가 있으면 팀전으로 복구.
    * 명시적 "individual" 은 팀이 남아 있어도 개인전 유지.
@@ -756,6 +782,8 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     ...(memberTerritoryExpand ? { memberTerritoryExpand } : {}),
     ...(zeroCmGaugeDisplay !== "hidden" ? { zeroCmGaugeDisplay } : {}),
     ...(pendingEndEntryMemberIds.length > 0 ? { pendingEndEntryMemberIds } : {}),
+    ...(pendingEndEntryBoardCm ? { pendingEndEntryBoardCm } : {}),
+    ...(pendingEndEntrySinceAt !== undefined ? { pendingEndEntrySinceAt } : {}),
     matchMode,
     teams: teamsArr,
     memberTeamAssignments,
@@ -879,6 +907,99 @@ export function shouldClearMemberWidthSnapshotOnSeatChange(opts: {
   return false;
 }
 
+function widthPatchFromDisplayedField(opts: {
+  prevSettings: HighSocietySettings;
+  nextSettings: HighSocietySettings;
+  members: Array<Pick<Member, "id" | "name" | "account" | "toon" | "operating">>;
+  donors: Donor[];
+  territoryLogs: TerritoryLog[];
+  settlementResetAt?: number;
+}): ReturnType<typeof memberWidthPatchFromFieldSeats> | null {
+  const live = buildHighSocietyFieldFromAppState({
+    members: opts.members,
+    donors: opts.donors,
+    highSocietySettings: opts.prevSettings,
+    territoryLogs: opts.territoryLogs,
+    settlementResetAt: opts.settlementResetAt,
+  });
+  const liveById = new Map(live.seats.map((seat) => [seat.id, seat]));
+  const nextPlayers = resolveHighSocietySeatMembers(opts.members, opts.nextSettings);
+  if (nextPlayers.length === 0) return null;
+  const startW = Math.max(
+    0,
+    Math.round(resolveHighSocietyStartCmPerMember(opts.nextSettings, nextPlayers.length))
+  );
+  return memberWidthPatchFromFieldSeats(
+    nextPlayers.map((player) => {
+      const prev = liveById.get(player.id);
+      if (prev) {
+        return {
+          id: player.id,
+          widthCm: prev.widthCm,
+          expandLeftCm: prev.expandLeftCm,
+          expandRightCm: prev.expandRightCm,
+        };
+      }
+      return { id: player.id, widthCm: startW, expandLeftCm: 0, expandRightCm: 0 };
+    })
+  );
+}
+
+/**
+ * 끝 선택 직전 폭 위에, 그 이후 기록만 고른 자리 순서로 다시 얹는다.
+ * 기록 시점의 자동 끝 이동으로 빠진 이웃을 그대로 두지 않는다.
+ */
+function widthPatchAfterPendingEndChoice(opts: {
+  prevSettings: HighSocietySettings;
+  nextSettings: HighSocietySettings;
+  members: Array<Pick<Member, "id" | "name" | "account" | "toon" | "operating">>;
+  donors: Donor[];
+  territoryLogs: TerritoryLog[];
+  settlementResetAt?: number;
+}): ReturnType<typeof memberWidthPatchFromFieldSeats> | null {
+  const board = opts.prevSettings.pendingEndEntryBoardCm;
+  const since = Number(opts.prevSettings.pendingEndEntrySinceAt || 0);
+  if (!board || since <= 0) return null;
+  const nextPlayers = resolveHighSocietySeatMembers(opts.members, opts.nextSettings);
+  if (nextPlayers.length === 0) return null;
+  const startW = Math.max(
+    0,
+    Math.round(resolveHighSocietyStartCmPerMember(opts.nextSettings, nextPlayers.length))
+  );
+  const widthByMemberId: Record<string, number> = {};
+  for (const player of nextPlayers) {
+    const snap = board[player.id];
+    widthByMemberId[player.id] =
+      snap != null && Number.isFinite(Number(snap)) ? Math.max(0, Math.round(Number(snap))) : startW;
+  }
+  const sum = Object.values(widthByMemberId).reduce((total, width) => total + width, 0);
+  const arranged = resolveHighSocietyFieldWithMemberWidths({
+    players: nextPlayers.map((player) => ({ id: player.id, name: player.name, donationWon: 0 })),
+    fieldCm: sum > 0 ? sum : Math.max(nextPlayers.length, 1),
+    widthByMemberId,
+  });
+  const resetAt = Math.max(
+    Number(opts.prevSettings.territoryLogsResetAt || 0),
+    Number(opts.settlementResetAt || 0)
+  );
+  const logs = (opts.territoryLogs || []).filter((log) => {
+    const at = Number(log.at || 0);
+    if (resetAt > 0 && at < resetAt) return false;
+    return at >= since;
+  });
+  const field =
+    logs.length > 0
+      ? applyTerritoryLogDirectTransfers(
+          arranged,
+          nextPlayers.map((player) => player.id),
+          logs,
+          opts.prevSettings,
+          { lockSeatOrderMemberIds: opts.prevSettings.pendingEndEntryMemberIds || [] }
+        )
+      : arranged;
+  return memberWidthPatchFromFieldSeats(field.seats);
+}
+
 /**
  * 상류사회 설정 변경 시 영토 스냅샷·라운드만 맞춤.
  * 후원 연동(donationLinks)은 하위 호환으로 유지하되 영토 계산에 쓰지 않는다.
@@ -889,7 +1010,8 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
   members: Array<Pick<Member, "id" | "name" | "account" | "toon" | "operating">>;
   resetTerritory?: boolean;
   donors?: Array<Pick<Donor, "memberId" | "amount" | "hsPushDir" | "donationExcluded" | "hsTerritoryExcluded" | "at">>;
-  territoryLogs?: Array<Pick<TerritoryLog, "id" | "memberId" | "delta" | "amount" | "pushDir">>;
+  territoryLogs?: TerritoryLog[];
+  settlementResetAt?: number;
   now?: number;
 }): HighSocietySettings {
   const { prevSettings, nextSettings, members, resetTerritory = false } = opts;
@@ -902,26 +1024,18 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
   const prevSeatIds = prevSettings.seatMemberIds || [];
   const nextSeatIds = nextSettings.seatMemberIds || [];
   const seatsChanged = !seatMemberIdsEqual(prevSeatIds, nextSeatIds);
-  const rosterIds = resolveHighSocietySeatMembers(members, null).map((s) => s.id);
-  const reorderOnly =
-    seatsChanged && isSeatMemberIdsReorderOnly(prevSeatIds, nextSeatIds, rosterIds);
-  const membershipChanged = seatsChanged && !reorderOnly;
-  /**
-   * 0cm 인원을 옮기면 기록부를 균등 100cm부터 다시 깔아 옆 사람 땅이 초기화된다.
-   * 옮기기 직전 폭을 고정하고, 그 시각 이전 기록은 다시 계산하지 않는다.
-   */
-  const zeroSeatReorderField =
-    reorderOnly && !resetTerritory
-      ? buildHighSocietyFieldFromAppState({
-          members,
-          donors: (opts.donors ?? []) as Donor[],
-          highSocietySettings: prevSettings,
-          territoryLogs: (opts.territoryLogs ?? []) as TerritoryLog[],
-        })
-      : null;
-  const freezeZeroSeatReorder = Boolean(
-    zeroSeatReorderField?.seats.some((s) => s.widthCm <= 0)
+  const prevResolvedIds = resolveHighSocietySeatMembers(members, prevSettings).map((s) => s.id);
+  const nextResolvedIds = resolveHighSocietySeatMembers(members, nextSettings).map((s) => s.id);
+  const prevResolvedSet = new Set(prevResolvedIds);
+  const nextResolvedSet = new Set(nextResolvedIds);
+  const pendingKept = (nextSettings.pendingEndEntryMemberIds || []).filter(
+    (id) => nextResolvedSet.has(id) && prevResolvedSet.has(id)
   );
+  const prevPending = new Set(prevSettings.pendingEndEntryMemberIds || []);
+  const placedIds = [...prevPending].filter(
+    (id) => nextResolvedSet.has(id) && prevResolvedSet.has(id) && !pendingKept.includes(id)
+  );
+  const droppedPendingIds = [...prevPending].filter((id) => !nextResolvedSet.has(id));
 
   const territoryTimingPatch = (): Partial<HighSocietySettings> => {
     if (resetTerritory) {
@@ -937,6 +1051,8 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
         territoryLogsResetAt: now,
         territorySnapshotEpochAt: undefined,
         pendingEndEntryMemberIds: undefined,
+        pendingEndEntryBoardCm: undefined,
+        pendingEndEntrySinceAt: undefined,
       };
     }
     if (turningOff) {
@@ -965,47 +1081,41 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
     memberTerritoryExpand: undefined,
   });
 
-  const preserveWidthsByMemberId = (): Partial<HighSocietySettings> => {
-    const prevWidths = prevSettings.memberWidthCm || {};
-    const prevExpands = prevSettings.memberTerritoryExpand || {};
-    const prevSeated = new Set(resolveHighSocietySeatMembers(members, prevSettings).map((s) => s.id));
-    const nextPlayers = resolveHighSocietySeatMembers(members, nextSettings);
-    const startW = Math.max(
-      0,
-      Math.round(resolveHighSocietyStartCmPerMember(nextSettings, nextPlayers.length))
-    );
-    const memberWidthCm: Record<string, number> = {};
-    const memberWidthDonationSnapshot: Record<string, number> = {};
-    const memberTerritoryExpand: Record<string, { expandLeftCm: number; expandRightCm: number }> = {};
-    for (const p of nextPlayers) {
-      const wasSeated = prevSeated.has(p.id);
-      const snapW = Number(prevWidths[p.id]);
-      memberWidthCm[p.id] = wasSeated && Number.isFinite(snapW) && snapW >= 0 ? Math.round(snapW) : startW;
-      memberWidthDonationSnapshot[p.id] = 0;
-      const prevExp = wasSeated ? prevExpands[p.id] : undefined;
-      memberTerritoryExpand[p.id] = {
-        expandLeftCm: Math.max(0, Number(prevExp?.expandLeftCm) || 0),
-        expandRightCm: Math.max(0, Number(prevExp?.expandRightCm) || 0),
-      };
-    }
-    return { memberWidthCm, memberWidthDonationSnapshot, memberTerritoryExpand };
+  const replayState = {
+    members,
+    donors: (opts.donors ?? []) as Donor[],
+    territoryLogs: opts.territoryLogs ?? [],
+    settlementResetAt: opts.settlementResetAt,
   };
-
+  const placedPatch =
+    !resetTerritory && (placedIds.length > 0 || droppedPendingIds.length > 0)
+      ? widthPatchAfterPendingEndChoice({
+          ...replayState,
+          prevSettings,
+          nextSettings,
+        })
+      : null;
+  const displayedPatch =
+    !resetTerritory && seatsChanged && !placedPatch
+      ? widthPatchFromDisplayedField({
+          ...replayState,
+          prevSettings,
+          nextSettings,
+        })
+      : null;
   const clearWidthsOnSeatChange = shouldClearMemberWidthSnapshotOnSeatChange({
     prevSettings,
     nextSettings,
     members,
     donors: opts.donors,
   });
-  const preserveLayoutOnSeatChange = seatsChanged && !clearWidthsOnSeatChange;
   const memberWidthPatch =
     resetTerritory || clearWidthsOnSeatChange
       ? clearMemberWidthSnapshot()
-      : freezeZeroSeatReorder && zeroSeatReorderField
-        ? memberWidthPatchFromFieldSeats(zeroSeatReorderField.seats)
-        : preserveLayoutOnSeatChange
-          ? preserveWidthsByMemberId()
-          : {};
+      : placedPatch || displayedPatch || {};
+  const logAts = (opts.territoryLogs ?? []).map((log) => Number(log.at) || 0);
+  const epochAt = Math.max(now, ...logAts, 0);
+  const stampEpoch = !resetTerritory && (Boolean(placedPatch) || Boolean(displayedPatch));
 
   const prevRound = Math.max(1, Math.floor(Number(prevSettings.round) || 1));
   return {
@@ -1013,8 +1123,14 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
     ...(resetTerritory ? { round: Math.min(99, prevRound + 1) } : {}),
     ...territoryTimingPatch(),
     ...memberWidthPatch,
-    ...((membershipChanged || freezeZeroSeatReorder) && !resetTerritory
-      ? { territorySnapshotEpochAt: now }
+    ...(stampEpoch ? { territorySnapshotEpochAt: epochAt } : {}),
+    ...(!resetTerritory
+      ? {
+          pendingEndEntryMemberIds: pendingKept,
+          ...(pendingKept.length === 0
+            ? { pendingEndEntryBoardCm: undefined, pendingEndEntrySinceAt: undefined }
+            : {}),
+        }
       : {}),
   };
 }
@@ -1640,7 +1756,8 @@ export function applyTerritoryLogDirectTransfers(
   field: ReturnType<typeof resolveHighSocietyField>,
   seatMemberIds: string[],
   logs: TerritoryLog[],
-  settings: HighSocietySettings
+  settings: HighSocietySettings,
+  opts?: { lockSeatOrderMemberIds?: string[] }
 ): ReturnType<typeof resolveHighSocietyField> {
   const idsFromSettings = seatMemberIds.filter(Boolean);
   const idsFromField = (field.seats || []).map((s) => s.id).filter(Boolean);
@@ -1795,13 +1912,20 @@ export function applyTerritoryLogDirectTransfers(
     ) {
       const fromIdx = targetIdxs[0]!;
       const memberIdAt = order[fromIdx]!;
-      const end: "left" | "right" =
-        explicitPush === "left" ? "left" : explicitPush === "right" ? "right" : fromIdx < n / 2 ? "left" : "right";
-      const rest = order.filter((_, i) => i !== fromIdx);
-      order = end === "left" ? [memberIdAt, ...rest] : [...rest, memberIdAt];
-      targetIdxs.length = 0;
-      targetIdxs.push(order.indexOf(memberIdAt));
-      explicitPush = end === "left" ? "right" : "left";
+      const lockSeat = (opts?.lockSeatOrderMemberIds || []).includes(memberIdAt);
+      if (lockSeat) {
+        /** 사용자가 고른 끝은 유지하고, 그 끝에서 안쪽 이웃에게서만 가져온다. */
+        if (fromIdx === 0) explicitPush = "right";
+        else if (fromIdx === n - 1) explicitPush = "left";
+      } else {
+        const end: "left" | "right" =
+          explicitPush === "left" ? "left" : explicitPush === "right" ? "right" : fromIdx < n / 2 ? "left" : "right";
+        const rest = order.filter((_, i) => i !== fromIdx);
+        order = end === "left" ? [memberIdAt, ...rest] : [...rest, memberIdAt];
+        targetIdxs.length = 0;
+        targetIdxs.push(order.indexOf(memberIdAt));
+        explicitPush = end === "left" ? "right" : "left";
+      }
     }
 
     const parts: Array<{ dir: "left" | "right"; cm: number }> =
@@ -2038,6 +2162,26 @@ export function appendTerritoryLogToAppState(state: AppState, log: TerritoryLog)
       if (seat.widthCm <= 0) pending.delete(seat.id);
     }
   }
+  const prevPendingIds = new Set(settings.pendingEndEntryMemberIds || []);
+  const enteredPending = [...pending].filter((id) => !prevPendingIds.has(id));
+  let pendingEndEntryBoardCm = settings.pendingEndEntryBoardCm;
+  let pendingEndEntrySinceAt = settings.pendingEndEntrySinceAt;
+  if (enteredPending.length > 0 && !pendingEndEntryBoardCm) {
+    pendingEndEntryBoardCm = Object.fromEntries(
+      fieldBefore.seats.map((seat) => [seat.id, Math.max(0, Math.round(seat.widthCm))])
+    );
+    pendingEndEntrySinceAt = Number(nextLog.at || 0);
+  }
+  if (pending.size === 0) {
+    pendingEndEntryBoardCm = undefined;
+    pendingEndEntrySinceAt = undefined;
+  }
+  /**
+   * 좌석 변경으로 epoch 가 있는 뒤에는 스냅샷이 이미 이 기록을 포함한다.
+   * epoch 를 기록 시각까지 올려 다음 해상이 같은 기록을 한 번 더 얹지 않게 한다.
+   */
+  const prevEpoch = Number(fieldBefore.settings.territorySnapshotEpochAt || 0);
+  const bakedEpoch = prevEpoch > 0 ? Math.max(prevEpoch, Number(nextLog.at || 0)) : 0;
   return {
     ...state,
     territoryLogs: [...prevLogs, nextLog],
@@ -2045,6 +2189,9 @@ export function appendTerritoryLogToAppState(state: AppState, log: TerritoryLog)
       ...fieldBefore.settings,
       ...widthPatch,
       pendingEndEntryMemberIds: [...pending],
+      ...(pendingEndEntryBoardCm ? { pendingEndEntryBoardCm } : { pendingEndEntryBoardCm: undefined }),
+      ...(pendingEndEntrySinceAt ? { pendingEndEntrySinceAt } : { pendingEndEntrySinceAt: undefined }),
+      ...(bakedEpoch > 0 ? { territorySnapshotEpochAt: bakedEpoch } : {}),
     }),
     updatedAt: Date.now(),
   };
