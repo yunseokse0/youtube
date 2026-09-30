@@ -711,6 +711,9 @@ export function pendingEndEntryIdsAfterIncomingSettings(
   const prevSeats = (prev?.seatMemberIds || []).map((id) => String(id || "").trim()).filter(Boolean);
   const seats = nextSeats.length > 0 ? nextSeats : prevSeats;
   const last = seats.length - 1;
+  const dropped = prevIds.filter((id) => !nextIds.includes(id));
+  /** 끝 선택 1명은 아직 가운데여도 배치로 본다. stale 가 대기 전체를 비우면 가운데는 유지. */
+  const allowPlaceOffEnd = dropped.length === 1;
   const kept: string[] = [];
   for (const id of prevIds) {
     const idx = seats.indexOf(id);
@@ -720,7 +723,7 @@ export function pendingEndEntryIdsAfterIncomingSettings(
       continue;
     }
     const atEnd = idx === 0 || (last >= 0 && idx === last);
-    if (!atEnd) kept.push(id);
+    if (!atEnd && !allowPlaceOffEnd) kept.push(id);
   }
   for (const id of nextIds) {
     if (!kept.includes(id) && seats.includes(id)) kept.push(id);
@@ -1263,8 +1266,14 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
   const placedIds = [...prevPending].filter(
     (id) => nextResolvedSet.has(id) && prevResolvedSet.has(id) && !pendingKept.includes(id)
   );
+  const snappedSeatIds =
+    placedIds.length > 0
+      ? snapPlacedPendingEndMembersToWall(prevSeatIds, nextSeatIds, placedIds)
+      : nextSeatIds;
   const nextSettingsForPlace = normalizeHighSocietySettings({
     ...nextSettings,
+    seatMemberIds: snappedSeatIds,
+    ...(placedIds.length > 0 ? { seatMemberIdsManual: true } : {}),
     pendingEndEntryMemberIds: pendingKept,
   });
 
@@ -1355,6 +1364,9 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
       : nextSettings.territoryColorByMemberId;
   return {
     ...nextSettings,
+    ...(placedIds.length > 0
+      ? { seatMemberIds: snappedSeatIds, seatMemberIdsManual: true }
+      : {}),
     ...(territoryColorByMemberId ? { territoryColorByMemberId } : {}),
     ...(resetTerritory ? { round: Math.min(99, prevRound + 1) } : {}),
     ...territoryTimingPatch(),
@@ -1363,7 +1375,9 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
     ...(!resetTerritory
       ? {
           pendingEndEntryMemberIds: pendingKept,
-          ...(pendingKept.length === 0 || seatsChanged
+          ...(pendingKept.length === 0 ||
+          seatsChanged ||
+          (placedIds.length > 0 && !seatMemberIdsEqual(prevSeatIds, snappedSeatIds))
             ? { pendingEndEntryBoardCm: undefined, pendingEndEntrySinceAt: undefined }
             : {}),
         }
@@ -1774,6 +1788,49 @@ export function insertHighSocietySeatMemberIdAt(
   const next = base.filter((x) => x !== id);
   const idx = Math.max(0, Math.min(Math.floor(atIndex), next.length));
   return [...next.slice(0, idx), id, ...next.slice(idx)];
+}
+
+/**
+ * 끝 선택 — 왼쪽 벽 옆(0) 또는 오른쪽 벽 옆(마지막). 가운데 인덱스는 쓰지 않는다.
+ */
+export function placeHighSocietyPendingEndMember(
+  curIds: string[],
+  memberId: string,
+  end: "left" | "right"
+): string[] {
+  const id = String(memberId || "").trim();
+  const base = curIds.map((x) => String(x).trim()).filter(Boolean);
+  if (!id || !base.includes(id)) return base;
+  const rest = base.filter((x) => x !== id);
+  return end === "left" ? [id, ...rest] : [...rest, id];
+}
+
+/** 끝 선택 패치가 가운데에 남겼으면 이동 방향으로 벽에 붙인다. */
+export function snapPlacedPendingEndMembersToWall(
+  prevIds: string[],
+  nextIds: string[],
+  placedIds: string[]
+): string[] {
+  const prev = prevIds.map((x) => String(x).trim()).filter(Boolean);
+  let ids = (nextIds.length > 0 ? nextIds : prev).map((x) => String(x).trim()).filter(Boolean);
+  for (const raw of placedIds) {
+    const id = String(raw || "").trim();
+    if (!id || !ids.includes(id)) continue;
+    const after = ids.indexOf(id);
+    const last = ids.length - 1;
+    if (after === 0 || after === last) continue;
+    const before = prev.indexOf(id);
+    const end: "left" | "right" =
+      before >= 0 && after !== before
+        ? after < before
+          ? "left"
+          : "right"
+        : after <= last - after
+          ? "left"
+          : "right";
+    ids = placeHighSocietyPendingEndMember(ids, id, end);
+  }
+  return ids;
 }
 
 /**
@@ -2383,8 +2440,15 @@ export function appendTerritoryLogToAppState(state: AppState, log: TerritoryLog)
       if (prevWidth <= 0 && nextWidth > 0 && !alreadyAtEnd) revivedMiddle.add(seat.id);
     }
   }
-  const seatsForPatch =
-    revivedMiddle.size === 0
+  const logMemberId = String(nextLog.memberId || "").trim();
+  const logEnd = parseHighSocietyPushDir(nextLog.pushDir);
+  const placeNow =
+    settings.matchMode !== "team" &&
+    revivedMiddle.has(logMemberId) &&
+    (logEnd === "left" || logEnd === "right");
+  const seatsForPatch = placeNow
+    ? fieldAfter.seats
+    : revivedMiddle.size === 0
       ? fieldAfter.seats
       : fieldBefore.seats.map((seat) => ({
           ...seat,
@@ -2401,10 +2465,13 @@ export function appendTerritoryLogToAppState(state: AppState, log: TerritoryLog)
       const nextWidth = widthNow.get(seat.id) ?? 0;
       const prevIndex = beforeIndex.get(seat.id);
       const alreadyAtEnd = prevIndex === 0 || prevIndex === beforeLast;
-      if (prevWidth <= 0 && nextWidth > 0 && !alreadyAtEnd) pending.add(seat.id);
+      if (prevWidth <= 0 && nextWidth > 0 && !alreadyAtEnd && !(placeNow && seat.id === logMemberId)) {
+        pending.add(seat.id);
+      }
       if (nextWidth <= 0) pending.delete(seat.id);
     }
   }
+  if (placeNow) pending.delete(logMemberId);
   const prevPendingIds = new Set(settings.pendingEndEntryMemberIds || []);
   const enteredPending = [...pending].filter((id) => !prevPendingIds.has(id));
   let pendingEndEntryBoardCm = settings.pendingEndEntryBoardCm;
@@ -2432,6 +2499,12 @@ export function appendTerritoryLogToAppState(state: AppState, log: TerritoryLog)
     highSocietySettings: normalizeHighSocietySettings({
       ...fieldBefore.settings,
       ...widthPatch,
+      ...(placeNow
+        ? {
+            seatMemberIds: fieldAfter.seats.map((seat) => seat.id),
+            seatMemberIdsManual: true,
+          }
+        : {}),
       pendingEndEntryMemberIds: [...pending],
       ...(pendingEndEntryBoardCm ? { pendingEndEntryBoardCm } : { pendingEndEntryBoardCm: undefined }),
       ...(pendingEndEntrySinceAt ? { pendingEndEntrySinceAt } : { pendingEndEntrySinceAt: undefined }),

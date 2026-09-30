@@ -12,6 +12,7 @@ import {
   formatSeatWidthCm,
   insertHighSocietySeatMemberIdAt,
   moveHighSocietySeatMemberToIndex,
+  placeHighSocietyPendingEndMember,
   normalizeHighSocietySettings,
   normalizeTerritoryHexColor,
   normalizeZeroCmGaugeDisplay,
@@ -189,10 +190,12 @@ export default function HighSocietySeatLayoutEditor({
     (memberId: string, end: "left" | "right") => {
       const id = String(memberId || "").trim();
       if (!id) return;
-      const cur = resolveHighSocietySeatMemberIdsForEdit(settings, members);
+      const displayed = hsSeatPlayers.map((p) => p.id);
+      const cur = displayed.includes(id)
+        ? displayed
+        : resolveHighSocietySeatMemberIdsForEdit(settings, members);
       if (!cur.includes(id)) return;
-      const at = end === "left" ? 0 : Math.max(0, cur.length - 1);
-      const next = moveHighSocietySeatMemberToIndex(cur, id, at);
+      const next = placeHighSocietyPendingEndMember(cur, id, end);
       const pending = (settings.pendingEndEntryMemberIds || []).filter((sid) => sid !== id);
       void onPatch({
         seatMemberIds: next,
@@ -201,7 +204,7 @@ export default function HighSocietySeatLayoutEditor({
         territorySnapshotEpochAt: Date.now(),
       });
     },
-    [settings, members, onPatch]
+    [hsSeatPlayers, settings, members, onPatch]
   );
 
   const addSeat = useCallback(

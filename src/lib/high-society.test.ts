@@ -65,6 +65,7 @@ import {
   eliminatedSeatEndIndex,
   insertHighSocietySeatMemberIdAt,
   moveHighSocietySeatMemberToIndex,
+  placeHighSocietyPendingEndMember,
   mergeHighSocietySettingsPreferBaseline,
   pendingEndEntryIdsAfterIncomingSettings,
   defaultHighSocietySettings,
@@ -2387,9 +2388,9 @@ describe("0cm eliminated member re-entry", () => {
     const jisu = field.seats.find((s) => s.id === "jisu")!;
     expect(subin.eliminated).toBe(false);
     expect(subin.widthCm).toBe(20);
-    expect(jisu.widthCm).toBe(100);
-    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("subin");
-    expect(field.seats.map((s) => s.id)).toEqual(["jaki", "subin", "jisu"]);
+    expect(jisu.widthCm).toBe(80);
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds ?? []).not.toContain("subin");
+    expect(field.seats.map((s) => s.id)).toEqual(["jaki", "jisu", "subin"]);
   });
 
   it("OBS·관리자 게이지는 끝 선택 전에 가운데 땅을 붙이지 않는다", () => {
@@ -2411,7 +2412,7 @@ describe("0cm eliminated member re-entry", () => {
     expect(before.seats.find((s) => s.id === "subin")!.widthCm).toBe(0);
     state = appendTerritoryLogToAppState(
       state,
-      createTerritoryLog("subin", 1, 20, { pushDir: "right", now: 2_000 })
+      createTerritoryLog("subin", 1, 20, { pushDir: "split", now: 2_000 })
     );
     const live = buildHighSocietyFieldFromAppState(state);
     expect(live.seats.find((s) => s.id === "subin")!.widthCm).toBe(20);
@@ -2545,10 +2546,10 @@ describe("0cm eliminated member re-entry", () => {
       createTerritoryLog("subin", 1, 20, { pushDir: "left", now: 2_000 })
     );
     const field = buildHighSocietyFieldFromAppState(state);
-    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("subin");
-    expect(field.seats.map((s) => s.id)).toEqual(["jaki", "subin", "jisu"]);
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds ?? []).not.toContain("subin");
+    expect(field.seats.map((s) => s.id)).toEqual(["subin", "jaki", "jisu"]);
     expect(field.seats.find((s) => s.id === "subin")!.widthCm).toBe(20);
-    expect(field.seats.find((s) => s.id === "jaki")!.widthCm).toBe(200);
+    expect(field.seats.find((s) => s.id === "jaki")!.widthCm).toBe(180);
   });
 
   it("re-entry uses hsPushDir left vs right on middle seat expand", () => {
@@ -2630,15 +2631,15 @@ describe("0cm eliminated member re-entry", () => {
     );
     state = appendTerritoryLogToAppState(
       state,
-      createTerritoryLog("subin", 1, 20, { pushDir: "left", now: 2_000 })
+      createTerritoryLog("subin", 1, 20, { pushDir: "split", now: 2_000 })
     );
     expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("subin");
     expect(state.highSocietySettings?.seatMemberIds).toEqual(["jaki", "subin", "jisu"]);
 
-    const placed = moveHighSocietySeatMemberToIndex(
+    const placed = placeHighSocietyPendingEndMember(
       state.highSocietySettings?.seatMemberIds || [],
       "subin",
-      0
+      "left"
     );
     expect(placed).toEqual(["subin", "jaki", "jisu"]);
     const afterChoice = normalizeHighSocietySettings({
@@ -2681,7 +2682,7 @@ describe("0cm eliminated member re-entry", () => {
     );
     state = appendTerritoryLogToAppState(
       state,
-      createTerritoryLog("subin", 1, 20, { pushDir: "left", now: 2_000 })
+      createTerritoryLog("subin", 1, 20, { pushDir: "split", now: 2_000 })
     );
     expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("subin");
     const removed = mergeHighSocietyDonationLinksOnSettingsChange({
@@ -2730,12 +2731,12 @@ describe("0cm eliminated member re-entry", () => {
     );
     fresh = appendTerritoryLogToAppState(
       fresh,
-      createTerritoryLog("subin", 1, 20, { pushDir: "left", now: 2_000 })
+      createTerritoryLog("subin", 1, 20, { pushDir: "split", now: 2_000 })
     );
-    const nextIds = moveHighSocietySeatMemberToIndex(
+    const nextIds = placeHighSocietyPendingEndMember(
       fresh.highSocietySettings?.seatMemberIds || [],
       "subin",
-      2
+      "right"
     );
     const placed = mergeHighSocietyDonationLinksOnSettingsChange({
       prevSettings: fresh.highSocietySettings!,
@@ -2783,7 +2784,7 @@ describe("0cm eliminated member re-entry", () => {
     } as import("@/types").AppState;
     state = appendTerritoryLogToAppState(
       state,
-      createTerritoryLog("jaki", 1, 5, { pushDir: "right", now: 2_000 })
+      createTerritoryLog("jaki", 1, 5, { pushDir: "split", now: 2_000 })
     );
     expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("jaki");
     expect(state.highSocietySettings?.memberWidthCm?.jaki).toBe(5);
@@ -2965,6 +2966,76 @@ describe("0cm eliminated member re-entry", () => {
       "pong",
       "reze",
     ]);
+    expect(placeHighSocietyPendingEndMember(ids, "pong", "right")).toEqual([
+      "yuri",
+      "gwak",
+      "young",
+      "jaki",
+      "reze",
+      "pong",
+    ]);
+  });
+
+  it("5번 자리 0cm가 오른쪽으로 앉으면 맨 오른쪽 벽으로 간다", async () => {
+    const { applyHighSocietyAdminPatchToState } = await import("@/lib/admin-high-society-settings-patch");
+    const members = [
+      { id: "pong", name: "퐁이", account: 0, toon: 0, operating: false },
+      { id: "yuri", name: "유리", account: 0, toon: 0, operating: false },
+      { id: "jaki", name: "자기", account: 0, toon: 0, operating: false },
+      { id: "gwak", name: "곽호경", account: 0, toon: 0, operating: false },
+      { id: "yeong", name: "영실이", account: 0, toon: 0, operating: false },
+      { id: "reze", name: "레제", account: 0, toon: 0, operating: false },
+    ];
+    const ids = ["pong", "yuri", "jaki", "gwak", "yeong", "reze"];
+    let state = {
+      members,
+      donors: [],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: ids,
+        seatMemberIdsManual: true,
+        startCmPerMember: 100,
+        fieldCm: 600,
+        memberWidthCm: { pong: 10, yuri: 190, jaki: 380, gwak: 0, yeong: 0, reze: 20 },
+        territorySnapshotEpochAt: 1_000,
+      }),
+      territoryLogs: [],
+      updatedAt: 1,
+    } as import("@/types").AppState;
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("yeong", 1, 10, { pushDir: "right", now: 2_000 })
+    );
+    expect(state.highSocietySettings?.seatMemberIds?.at(-1)).toBe("yeong");
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds ?? []).not.toContain("yeong");
+    expect(state.highSocietySettings?.memberWidthCm?.yeong).toBe(10);
+    expect(state.highSocietySettings?.memberWidthCm?.reze).toBe(10);
+
+    let pendingState = {
+      members,
+      donors: [],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: ids,
+        seatMemberIdsManual: true,
+        startCmPerMember: 100,
+        fieldCm: 600,
+        memberWidthCm: { pong: 10, yuri: 190, jaki: 380, gwak: 0, yeong: 10, reze: 20 },
+        pendingEndEntryMemberIds: ["yeong"],
+        territorySnapshotEpochAt: 1_000,
+      }),
+      territoryLogs: [],
+      updatedAt: 1,
+    } as import("@/types").AppState;
+    const placed = applyHighSocietyAdminPatchToState(pendingState, {
+      seatMemberIds: ids,
+      seatMemberIdsManual: true,
+      pendingEndEntryMemberIds: [],
+    });
+    expect(placed.highSocietySettings?.seatMemberIds?.at(-1)).toBe("yeong");
+    expect(placed.highSocietySettings?.pendingEndEntryMemberIds ?? []).not.toContain("yeong");
+    expect(placed.highSocietySettings?.memberWidthCm?.yeong).toBe(10);
+    expect(placed.highSocietySettings?.memberWidthCm?.reze).toBe(10);
   });
 
   it("insertHighSocietySeatMemberIdAt places member at chosen index", () => {
@@ -4283,15 +4354,15 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
     state = appendTerritoryLogToAppState(state, createTerritoryLog("b", 1, 20, { pushDir: "left", now: 3_000 }));
     state = appendTerritoryLogToAppState(state, createTerritoryLog("c", 1, 20, { pushDir: "right", now: 4_000 }));
     const { field, byId, total } = widths(state);
-    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toEqual(
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds ?? []).not.toEqual(
       expect.arrayContaining(["b", "c"])
     );
-    expect(field.seats.map((s) => s.id)).toEqual(["a", "b", "c", "d"]);
+    expect(field.seats.map((s) => s.id)).toEqual(["b", "a", "d", "c"]);
     expect(byId.b).toBe(20);
     expect(byId.c).toBe(20);
-    expect(byId.a).toBe(200);
-    expect(byId.d).toBe(200);
-    expect(total).toBe(440);
+    expect(byId.a).toBe(180);
+    expect(byId.d).toBe(180);
+    expect(total).toBe(400);
   });
 
   it("음수로 0cm가 된 뒤 다시 살면 끝을 고르기 전에는 그 자리에 남는다", () => {
@@ -4301,11 +4372,11 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
     expect(widths(state).field.seats.find((s) => s.id === "b")!.eliminated).toBe(true);
     state = appendTerritoryLogToAppState(state, createTerritoryLog("b", 1, 30, { pushDir: "left", now: 2_000 }));
     const { field, byId, total } = widths(state);
-    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("b");
-    expect(field.seats.map((s) => s.id)[1]).toBe("b");
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds ?? []).not.toContain("b");
+    expect(field.seats.map((s) => s.id)[0]).toBe("b");
     expect(byId.b).toBe(30);
-    expect(byId.a).toBe(200);
-    expect(total).toBe(430);
+    expect(byId.a).toBe(170);
+    expect(total).toBe(400);
   });
 
   it("팀전 0cm 팀원은 끝으로 옮기지 않고 팀 합만 유지", () => {
@@ -4642,11 +4713,12 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
       createTerritoryLog("b", 1, 15, { pushDir: "right", now: 4_000 })
     );
     const { field, byId, total } = widths(state);
-    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("b");
-    expect(field.seats.map((s) => s.id)).toEqual(["a", "b", "c", "d"]);
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds ?? []).not.toContain("b");
+    expect(field.seats.map((s) => s.id)).toEqual(["a", "c", "d", "b"]);
     expect(byId.b).toBe(15);
     expect(byId.c).toBe(120);
-    expect(total).toBe(435);
+    expect(byId.d).toBe(85);
+    expect(total).toBe(420);
   });
 });
 
