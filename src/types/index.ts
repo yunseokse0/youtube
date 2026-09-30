@@ -573,6 +573,13 @@ export type HighSocietySettings = {
   teams?: HighSocietyTeam[];
   /** memberId -> teamId 매핑. 미키 = 미배정 상태 */
   memberTeamAssignments?: Record<string, string>;
+  /**
+   * 게이지에 보일 이름. 비어 있으면 멤버 이름을 쓴다.
+   * 멤버 명단 이름과 따로 둔다.
+   */
+  territoryLabelByMemberId?: Record<string, string>;
+  /** 게이지 색. 좌석 순서가 아니라 이 멤버 칸에 붙는다. */
+  territoryColorByMemberId?: Record<string, string>;
 };
 
 /** `/overlay/sig-rolling` — 이미지/GIF 순환 한 장 항목 */

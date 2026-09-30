@@ -94,6 +94,67 @@ export const HIGH_SOCIETY_SEAT_COLORS = [
   "#ea580c",
 ] as const;
 
+export function normalizeTerritoryHexColor(raw: unknown): string | undefined {
+  const s = String(raw || "").trim();
+  if (/^#[0-9a-f]{6}$/i.test(s)) return s.toLowerCase();
+  if (/^#[0-9a-f]{3}$/i.test(s)) {
+    const r = s[1];
+    const g = s[2];
+    const b = s[3];
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  return undefined;
+}
+
+/** 저장된 색이 있으면 그 색. 없으면 지금 좌석 순번의 기본색. */
+export function resolveHighSocietySeatColor(saved: unknown, seatIndex: number): string {
+  return (
+    normalizeTerritoryHexColor(saved) ||
+    HIGH_SOCIETY_SEAT_COLORS[Math.max(0, seatIndex) % HIGH_SOCIETY_SEAT_COLORS.length]!
+  );
+}
+
+export function normalizeTerritoryLabelByMemberId(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const id = String(key || "").trim();
+    const label = String(value || "").trim().slice(0, 24);
+    if (!id || !label) continue;
+    out[id] = label;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+export function normalizeTerritoryColorByMemberId(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const id = String(key || "").trim();
+    const color = normalizeTerritoryHexColor(value);
+    if (!id || !color) continue;
+    out[id] = color;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * 자리를 옮기기 직전 순번의 색을 멤버 칸에 고정한다.
+ * 0cm 인원을 옮겨도 다른 칸의 색이 순번을 따라 바뀌지 않게 한다.
+ */
+export function stampTerritoryColorsFromPreviousSeats(
+  prevSettings: HighSocietySettings,
+  nextSettings: HighSocietySettings,
+  members: Array<Pick<Member, "id" | "name" | "account" | "toon" | "operating">>
+): Record<string, string> | undefined {
+  const colors = { ...(nextSettings.territoryColorByMemberId || {}) };
+  const prevIds = resolveHighSocietySeatMembers(members, prevSettings).map((seat) => seat.id);
+  prevIds.forEach((id, index) => {
+    if (!colors[id]) colors[id] = resolveHighSocietySeatColor(undefined, index);
+  });
+  return Object.keys(colors).length > 0 ? colors : undefined;
+}
+
 /** @deprecated 4인 고정 라벨 — 하위 호환 */
 export const HIGH_SOCIETY_SEAT_LETTERS: HighSocietySeatLetter[] = ["A", "B", "C", "D"];
 
@@ -464,6 +525,8 @@ export function isDefaultLikeHighSocietySettings(
   if (Object.keys(s.memberTerritoryExpand || {}).length > 0) return false;
   if (Object.keys(s.memberWidthCm || {}).length > 0) return false;
   if (Object.keys(s.memberWidthDonationSnapshot || {}).length > 0) return false;
+  if (Object.keys(s.territoryLabelByMemberId || {}).length > 0) return false;
+  if (Object.keys(s.territoryColorByMemberId || {}).length > 0) return false;
   if (Array.isArray((s as { territoryLogs?: unknown[] }).territoryLogs) && (s as { territoryLogs?: unknown[] }).territoryLogs!.length > 0) return false;
   if (Math.max(1, Math.floor(Number(s.round) || 1)) > 1) return false;
   if (Math.floor(Number(s.fieldCm) || 0) !== def.fieldCm) return false;
@@ -491,6 +554,8 @@ export function isMeaningfulHighSocietySettings(
   if (Object.keys(s.memberTerritoryExpand || {}).length > 0) return true;
   if (Object.keys(s.memberWidthCm || {}).length > 0) return true;
   if (Object.keys(s.memberWidthDonationSnapshot || {}).length > 0) return true;
+  if (Object.keys(s.territoryLabelByMemberId || {}).length > 0) return true;
+  if (Object.keys(s.territoryColorByMemberId || {}).length > 0) return true;
   if (Array.isArray((s as { territoryLogs?: unknown[] }).territoryLogs) && (s as { territoryLogs?: unknown[] }).territoryLogs!.length > 0) return true;
   if (Math.max(1, Math.floor(Number(s.round) || 1)) > 1) return true;
   const def = defaultHighSocietySettings();
@@ -733,6 +798,8 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
   const pendingSinceRaw = Number(v.pendingEndEntrySinceAt);
   const pendingEndEntrySinceAt =
     Number.isFinite(pendingSinceRaw) && pendingSinceRaw > 0 ? Math.floor(pendingSinceRaw) : undefined;
+  const territoryLabelByMemberId = normalizeTerritoryLabelByMemberId(v.territoryLabelByMemberId);
+  const territoryColorByMemberId = normalizeTerritoryColorByMemberId(v.territoryColorByMemberId);
   /**
    * matchMode 키가 빠진 stale PATCH/SSE 는 teams 가 있으면 팀전으로 복구.
    * 명시적 "individual" 은 팀이 남아 있어도 개인전 유지.
@@ -784,6 +851,8 @@ export function normalizeHighSocietySettings(input: unknown): HighSocietySetting
     ...(pendingEndEntryMemberIds.length > 0 ? { pendingEndEntryMemberIds } : {}),
     ...(pendingEndEntryBoardCm ? { pendingEndEntryBoardCm } : {}),
     ...(pendingEndEntrySinceAt !== undefined ? { pendingEndEntrySinceAt } : {}),
+    ...(territoryLabelByMemberId ? { territoryLabelByMemberId } : {}),
+    ...(territoryColorByMemberId ? { territoryColorByMemberId } : {}),
     matchMode,
     teams: teamsArr,
     memberTeamAssignments,
@@ -1118,8 +1187,13 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
   const stampEpoch = !resetTerritory && (Boolean(placedPatch) || Boolean(displayedPatch));
 
   const prevRound = Math.max(1, Math.floor(Number(prevSettings.round) || 1));
+  const territoryColorByMemberId =
+    !resetTerritory && seatsChanged
+      ? stampTerritoryColorsFromPreviousSeats(prevSettings, nextSettings, members)
+      : nextSettings.territoryColorByMemberId;
   return {
     ...nextSettings,
+    ...(territoryColorByMemberId ? { territoryColorByMemberId } : {}),
     ...(resetTerritory ? { round: Math.min(99, prevRound + 1) } : {}),
     ...territoryTimingPatch(),
     ...memberWidthPatch,
@@ -1230,6 +1304,8 @@ export type HighSocietyPlayerInput = {
   /** 지정 시 split 비율 대신 절대 cm 사용 */
   expandLeftCm?: number;
   expandRightCm?: number;
+  /** 칸에 고정한 게이지 색. 없으면 현재 좌석 순번의 기본색 */
+  color?: string;
 };
 
 /**
@@ -1277,7 +1353,7 @@ export function resolveHighSocietyField(opts: {
       expandLeftCm,
       expandRightCm,
       expandDir: dir,
-      color: HIGH_SOCIETY_SEAT_COLORS[i % HIGH_SOCIETY_SEAT_COLORS.length]!,
+      color: resolveHighSocietySeatColor(p?.color, i),
     };
   });
 
@@ -1400,7 +1476,7 @@ export function resolveHighSocietyFieldWithMemberWidths(opts: {
       expandLeftCm,
       expandRightCm,
       expandDir: seatExpandDirForIndex(i, n),
-      color: HIGH_SOCIETY_SEAT_COLORS[i % HIGH_SOCIETY_SEAT_COLORS.length]!,
+      color: resolveHighSocietySeatColor(p.color, i),
       widthCm,
       pct: Math.round((widthCm / fieldCm) * 1000) / 10,
       eliminated: widthCm <= 0,
@@ -2020,10 +2096,11 @@ export function buildHighSocietyFieldFromAppState(
   });
   const equalPlayers: HighSocietyPlayerInput[] = seatPlayers.map((p) => ({
     id: p.id,
-    name: p.name,
+    name: settingsForField.territoryLabelByMemberId?.[p.id]?.trim() || p.name,
     donationWon: 0,
     expandLeftCm: 0,
     expandRightCm: 0,
+    color: settingsForField.territoryColorByMemberId?.[p.id],
   }));
   const equalField = resolveHighSocietyField({
     players: equalPlayers,

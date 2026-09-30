@@ -41,12 +41,9 @@ function formatWon(n: number): string {
 
 function formatTime(ts: number): string {
   if (!Number.isFinite(ts) || ts <= 0) return "";
-  return new Date(ts).toLocaleTimeString("ko-KR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
+  const d = new Date(ts);
+  const p = (n: number, w = 2) => String(n).padStart(w, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
 }
 
 export default function AdminDonorListPopupPanel() {
@@ -344,7 +341,7 @@ export default function AdminDonorListPopupPanel() {
                       label="전체 선택"
                     />
                   </th>
-                  <th className="w-[6.5rem] p-1 text-left">시간</th>
+                  <th className="w-[9.25rem] p-1 text-left">시간</th>
                   <th className="w-[18%] p-1 text-left">후원자</th>
                   {!dense && <th className="w-[16%] p-1 text-left">멤버</th>}
                   <th className="w-12 p-1 text-left">대상</th>

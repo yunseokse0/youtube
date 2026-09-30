@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { showAppToast } from "@/lib/app-toast";
 import {
   HIGH_SOCIETY_MAX_SEATS,
+  HIGH_SOCIETY_SEAT_COLORS,
   buildHighSocietyFieldFromAppState,
   aggregateHighSocietySeatsByTeam,
   fieldCmFromStartPerMember,
@@ -13,6 +14,7 @@ import {
   moveHighSocietySeatMemberToIndex,
   isHighSocietySeatSelectionManual,
   normalizeHighSocietySettings,
+  normalizeTerritoryHexColor,
   normalizeZeroCmGaugeDisplay,
   resolveHighSocietySeatCountForField,
   resolveHighSocietySeatMemberIdsForEdit,
@@ -44,6 +46,7 @@ export default function HighSocietySeatLayoutEditor({
   showMiddlePushSelect = true,
 }: Props) {
   const settings = useMemo(() => normalizeHighSocietySettings(settingsRaw), [settingsRaw]);
+  const [labelDraft, setLabelDraft] = useState<Record<string, string>>({});
   const matchMode = settings.matchMode;
   const teams = settings.teams || [];
   const memberTeamAssignments = settings.memberTeamAssignments || {};
@@ -146,6 +149,36 @@ export default function HighSocietySeatLayoutEditor({
       moveSeatToIndex(id, nextIdx);
     },
     [moveSeatToIndex, settings, members]
+  );
+
+  const commitSeatLabel = useCallback(
+    (memberId: string, memberName: string, raw: string) => {
+      const id = String(memberId || "").trim();
+      if (!id) return;
+      const next = raw.slice(0, 24);
+      setLabelDraft((prev) => ({ ...prev, [id]: next }));
+      const map = { ...(settings.territoryLabelByMemberId || {}) };
+      const trimmed = next.trim();
+      if (!trimmed || trimmed === memberName.trim()) delete map[id];
+      else map[id] = trimmed;
+      void onPatch({ territoryLabelByMemberId: map });
+    },
+    [onPatch, settings.territoryLabelByMemberId]
+  );
+
+  const setSeatColor = useCallback(
+    (memberId: string, color: string) => {
+      const id = String(memberId || "").trim();
+      const hex = normalizeTerritoryHexColor(color);
+      if (!id || !hex) return;
+      void onPatch({
+        territoryColorByMemberId: {
+          ...(settings.territoryColorByMemberId || {}),
+          [id]: hex,
+        },
+      });
+    },
+    [onPatch, settings.territoryColorByMemberId]
   );
 
   const placePendingEnd = useCallback(
@@ -353,6 +386,10 @@ export default function HighSocietySeatLayoutEditor({
             {hsSeatPlayers.map((p, i) => {
               const expandHint = i === 0 ? "→만" : i === hsSeatPlayers.length - 1 ? "←만" : "↔";
               const fieldSeat = hsSeatFieldByMemberId.get(p.id);
+              const seatColor =
+                settings.territoryColorByMemberId?.[p.id] ||
+                HIGH_SOCIETY_SEAT_COLORS[i % HIGH_SOCIETY_SEAT_COLORS.length];
+              const seatLabel = labelDraft[p.id] ?? settings.territoryLabelByMemberId?.[p.id] ?? p.name;
               const eliminated = fieldSeat?.eliminated === true;
               const pendingEnd = (settings.pendingEndEntryMemberIds || []).includes(p.id);
               const zeroCmDisplay = normalizeZeroCmGaugeDisplay(settings.zeroCmGaugeDisplay);
@@ -368,10 +405,28 @@ export default function HighSocietySeatLayoutEditor({
                   <span className="min-w-[1.25rem] text-center text-[10px] font-bold text-amber-200">
                     {i + 1}
                   </span>
+                  <label className="relative shrink-0" title="영토 색">
+                    <span
+                      className="block h-4 w-4 rounded-sm border border-white/30"
+                      style={{ backgroundColor: seatColor }}
+                    />
+                    <input
+                      type="color"
+                      className="absolute inset-0 cursor-pointer opacity-0"
+                      aria-label={`${p.name} 영토 색`}
+                      value={/^#[0-9a-f]{6}$/i.test(seatColor) ? seatColor : "#2563eb"}
+                      onChange={(e) => setSeatColor(p.id, e.target.value)}
+                    />
+                  </label>
                   <div className="leading-tight">
-                    <div className="flex items-center gap-1 flex-wrap">
-                      <div className="text-[11px] font-semibold text-white">{p.name}</div>
-                    </div>
+                    <input
+                      className="w-[4.75rem] rounded border border-white/10 bg-neutral-950/80 px-1 py-0.5 text-[11px] font-semibold text-white"
+                      value={seatLabel}
+                      maxLength={24}
+                      aria-label={`${p.name} 영토 이름`}
+                      title="게이지에 보이는 이름. 멤버 명단과 따로 둡니다."
+                      onChange={(e) => commitSeatLabel(p.id, p.name, e.target.value)}
+                    />
                     <div className="text-[9px] text-amber-200/70">
                       {pendingEnd
                         ? `${fieldSeat ? formatCm(fieldSeat.widthCm) : ""} 끝 선택 전`.trim()

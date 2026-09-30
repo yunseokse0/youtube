@@ -791,6 +791,48 @@ describe("high-society territory (aux)", () => {
     expect(next.donationSyncModeBeforePause).toBeUndefined();
   });
 
+  it("영토 이름과 색은 멤버 명단·자리 순서와 따로 유지된다", () => {
+    const members = [
+      { id: "a", name: "유리", account: 0, toon: 0, operating: false },
+      { id: "b", name: "자키", account: 0, toon: 0, operating: false },
+    ];
+    const prev = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["a", "b"],
+      seatMemberIdsManual: true,
+      startCmPerMember: 100,
+    });
+    const moved = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: prev,
+      nextSettings: normalizeHighSocietySettings({
+        ...prev,
+        seatMemberIds: ["b", "a"],
+      }),
+      members,
+      territoryLogs: [],
+      now: 20_000,
+    });
+    expect(moved.territoryColorByMemberId?.a).toBe("#2563eb");
+    expect(moved.territoryColorByMemberId?.b).toBe("#16a34a");
+    const named = normalizeHighSocietySettings({
+      ...moved,
+      territoryLabelByMemberId: { a: "유리팀" },
+      territoryColorByMemberId: { ...moved.territoryColorByMemberId, a: "#112233" },
+    });
+    const field = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [],
+      highSocietySettings: named,
+      territoryLogs: [],
+    });
+    const seatA = field.seats.find((seat) => seat.id === "a");
+    const seatB = field.seats.find((seat) => seat.id === "b");
+    expect(seatA?.name).toBe("유리팀");
+    expect(seatA?.color).toBe("#112233");
+    expect(seatB?.name).toBe("자키");
+    expect(seatB?.color).toBe("#16a34a");
+  });
+
   it("isHighSocietyDonationIngestPaused is always false (territory pause does not block ingest)", () => {
     expect(
       isHighSocietyDonationIngestPaused({
