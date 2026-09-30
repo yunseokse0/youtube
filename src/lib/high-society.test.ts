@@ -1598,6 +1598,116 @@ describe("high-society territory (aux)", () => {
     expect(next.highSocietySettings?.seatMemberIds).toEqual(["b", "a", "c"]);
   });
 
+  it("자리만 바꾸면 탈락 cm 은 그대로이고 퐁이가 되살아나지 않는다", async () => {
+    const { applyHighSocietyAdminPatchToState } = await import("@/lib/admin-high-society-settings-patch");
+    const members = [
+      { id: "yuri", name: "유리", account: 0, toon: 0, operating: false },
+      { id: "pong", name: "퐁이", account: 0, toon: 0, operating: false },
+      { id: "reze", name: "레제", account: 0, toon: 0, operating: false },
+      { id: "yeong", name: "영실이", account: 0, toon: 0, operating: false },
+      { id: "jaki", name: "자기", account: 0, toon: 0, operating: false },
+      { id: "gwak", name: "곽호경", account: 0, toon: 0, operating: false },
+    ];
+    const widths = { yuri: 20, pong: 0, reze: 0, yeong: 400, jaki: 180, gwak: 0 };
+    const prev = {
+      members,
+      donors: [],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: ["yuri", "pong", "reze", "yeong", "jaki", "gwak"],
+        seatMemberIdsManual: true,
+        startCmPerMember: 100,
+        fieldCm: 600,
+        memberWidthCm: widths,
+      }),
+      territoryLogs: [
+        createTerritoryLog("yeong", 1, 600, { pushDir: "split", now: 1_000 }),
+        createTerritoryLog("pong", 1, 5, { pushDir: "split", now: 2_000 }),
+      ],
+      updatedAt: 1,
+    } as import("@/types").AppState;
+    const moved = applyHighSocietyAdminPatchToState(prev, {
+      seatMemberIds: ["pong", "reze", "yeong", "yuri", "jaki", "gwak"],
+      seatMemberIdsManual: true,
+    });
+    expect(moved.highSocietySettings?.memberWidthCm).toMatchObject(widths);
+    const autoAll = applyHighSocietyAdminPatchToState(prev, {
+      seatMemberIds: [],
+      seatMemberIdsManual: false,
+    });
+    expect(autoAll.highSocietySettings?.memberWidthCm).toMatchObject(widths);
+    expect(autoAll.highSocietySettings?.memberWidthCm?.pong).toBe(0);
+    expect(autoAll.highSocietySettings?.memberWidthCm?.yeong).toBe(400);
+  });
+
+  it("자리만 바꾸면 대기 직전 게이지 스냅샷을 버린다", async () => {
+    const { applyHighSocietyAdminPatchToState } = await import("@/lib/admin-high-society-settings-patch");
+    const members = [
+      { id: "yuri", name: "유리", account: 0, toon: 0, operating: false },
+      { id: "pong", name: "퐁이", account: 0, toon: 0, operating: false },
+      { id: "yeong", name: "영실이", account: 0, toon: 0, operating: false },
+    ];
+    const prev = {
+      members,
+      donors: [],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: ["yuri", "pong", "yeong"],
+        seatMemberIdsManual: true,
+        startCmPerMember: 100,
+        fieldCm: 300,
+        memberWidthCm: { yuri: 20, pong: 0, yeong: 280 },
+        pendingEndEntryMemberIds: ["pong"],
+        pendingEndEntryBoardCm: { yuri: 20, pong: 0, yeong: 280 },
+      }),
+      territoryLogs: [],
+      updatedAt: 1,
+    } as import("@/types").AppState;
+    const next = applyHighSocietyAdminPatchToState(prev, {
+      seatMemberIds: ["pong", "yuri", "yeong"],
+      seatMemberIdsManual: true,
+    });
+    expect(next.highSocietySettings?.memberWidthCm?.yuri).toBe(20);
+    expect(next.highSocietySettings?.memberWidthCm?.pong).toBe(0);
+    expect(next.highSocietySettings?.memberWidthCm?.yeong).toBe(280);
+    expect(next.highSocietySettings?.pendingEndEntryBoardCm).toBeUndefined();
+  });
+
+  it("자동(전원)은 끝 선택 대기를 이웃 영토에서 빼서 되살리지 않는다", async () => {
+    const { applyHighSocietyAdminPatchToState } = await import("@/lib/admin-high-society-settings-patch");
+    const members = [
+      { id: "pong", name: "퐁이", account: 0, toon: 0, operating: false },
+      { id: "reze", name: "레제", account: 0, toon: 0, operating: false },
+      { id: "yeong", name: "영실이", account: 0, toon: 0, operating: false },
+      { id: "yuri", name: "유리", account: 0, toon: 0, operating: false },
+      { id: "jaki", name: "자기", account: 0, toon: 0, operating: false },
+      { id: "gwak", name: "곽호경", account: 0, toon: 0, operating: false },
+    ];
+    const prev = {
+      members,
+      donors: [],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: ["yuri", "pong", "reze", "yeong", "jaki", "gwak"],
+        seatMemberIdsManual: true,
+        startCmPerMember: 100,
+        fieldCm: 600,
+        memberWidthCm: { yuri: 20, pong: 5, reze: 0, yeong: 400, jaki: 175, gwak: 0 },
+        pendingEndEntryMemberIds: ["pong"],
+      }),
+      territoryLogs: [],
+      updatedAt: 1,
+    } as import("@/types").AppState;
+    const next = applyHighSocietyAdminPatchToState(prev, {
+      seatMemberIds: [],
+      seatMemberIdsManual: false,
+    });
+    expect(next.highSocietySettings?.pendingEndEntryMemberIds).toContain("pong");
+    expect(next.highSocietySettings?.memberWidthCm?.pong).toBe(5);
+    expect(next.highSocietySettings?.memberWidthCm?.yeong).toBe(400);
+    expect(next.highSocietySettings?.memberWidthCm?.yuri).toBe(20);
+  });
+
   it("저장된 cm가 없으면 기록부는 다시 깔지 않는다", () => {
     const members = [
       { id: "a", name: "A", account: 0, toon: 0, operating: false },
@@ -2016,6 +2126,32 @@ describe("highSociety regression guards", () => {
     expect(merged.pendingEndEntryMemberIds ?? []).toEqual([]);
     expect(merged.memberWidthCm).toEqual(incoming.memberWidthCm);
     expect(merged.seatMemberIds).toEqual(incoming.seatMemberIds);
+  });
+
+  it("자리가 바뀐 판은 대기가 남아 있어도 last-good 게이지를 붙잡지 않는다", () => {
+    const baseline = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["yuri", "pong", "reze", "yeong", "jaki", "gwak"],
+      fieldCm: 600,
+      startCmPerMember: 100,
+      pendingEndEntryMemberIds: ["pong"],
+      pendingEndEntryBoardCm: { yuri: 20, pong: 0, reze: 0, yeong: 400, jaki: 180, gwak: 0 },
+      memberWidthCm: { yuri: 20, pong: 0, reze: 0, yeong: 400, jaki: 180, gwak: 0 },
+      territorySnapshotEpochAt: 1_000,
+    });
+    const incoming = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["pong", "reze", "yeong", "yuri", "jaki", "gwak"],
+      fieldCm: 600,
+      startCmPerMember: 100,
+      pendingEndEntryMemberIds: ["pong"],
+      memberWidthCm: { yuri: 20, pong: 0, reze: 0, yeong: 400, jaki: 180, gwak: 0 },
+      territorySnapshotEpochAt: 2_000,
+    });
+    const merged = mergeHighSocietySettingsPreferBaseline(baseline, incoming);
+    expect(merged.seatMemberIds).toEqual(incoming.seatMemberIds);
+    expect(merged.memberWidthCm).toEqual(incoming.memberWidthCm);
+    expect(merged.pendingEndEntryBoardCm).toBeUndefined();
   });
 
   it("상류사회 현재 설정은 더 큰 updatedAt 이 와도 그대로 저장한다", () => {

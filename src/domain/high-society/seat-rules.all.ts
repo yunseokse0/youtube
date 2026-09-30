@@ -701,7 +701,10 @@ export function pendingEndEntryIdsAfterIncomingSettings(
   const prevIds = [...new Set((prev?.pendingEndEntryMemberIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
   const nextIds = [...new Set((next?.pendingEndEntryMemberIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
   if (prevIds.length === 0) return nextIds;
-  const seats = (next?.seatMemberIds || prev?.seatMemberIds || []).map((id) => String(id || "").trim());
+  /** 빈 seatMemberIds([]) 는 truthy 라 전원 자동 배치 때 대기를 끝 선택으로 오인하지 않게 이전 자리를 쓴다. */
+  const nextSeats = (next?.seatMemberIds || []).map((id) => String(id || "").trim()).filter(Boolean);
+  const prevSeats = (prev?.seatMemberIds || []).map((id) => String(id || "").trim()).filter(Boolean);
+  const seats = nextSeats.length > 0 ? nextSeats : prevSeats;
   const last = seats.length - 1;
   const kept: string[] = [];
   for (const id of prevIds) {
@@ -791,11 +794,11 @@ export function mergeHighSocietySettingsPreferBaseline(
   const epochInc = Number(inc.territorySnapshotEpochAt || 0);
   const epochBase = Number(base.territorySnapshotEpochAt || 0);
   const seatsChanged = !seatMemberIdsEqual(base.seatMemberIds || [], inc.seatMemberIds || []);
-  /** 자리·epoch 가 바뀐 새 판(대기 없음)에 last-good 대기를 되살리면 OBS가 이전 게이지를 붙잡는다 */
+  /** 자리·epoch 가 바뀐 새 판에 last-good 대기·옛 cm를 되살리면 OBS가 이전 게이지를 붙잡는다 */
   const incomingIsFreshBoard =
-    incPending.length === 0 &&
     hasMemberWidthSnapshot(inc) &&
-    (epochInc > epochBase || seatsChanged);
+    (epochInc > epochBase || seatsChanged) &&
+    (incPending.length === 0 || seatsChanged);
   if (
     !incomingIsFreshBoard &&
     pendingKept.length > 0 &&
@@ -1259,7 +1262,6 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
     ...nextSettings,
     pendingEndEntryMemberIds: pendingKept,
   });
-  const droppedPendingIds = [...prevPending].filter((id) => !nextResolvedSet.has(id));
 
   const territoryTimingPatch = (): Partial<HighSocietySettings> => {
     if (resetTerritory) {
@@ -1312,7 +1314,7 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
     settlementResetAt: opts.settlementResetAt,
   };
   const placedPatch =
-    !resetTerritory && (placedIds.length > 0 || droppedPendingIds.length > 0)
+    !resetTerritory && placedIds.length > 0
       ? widthPatchAfterPendingEndChoice({
           ...replayState,
           prevSettings,
@@ -1356,7 +1358,7 @@ export function mergeHighSocietyDonationLinksOnSettingsChange(opts: {
     ...(!resetTerritory
       ? {
           pendingEndEntryMemberIds: pendingKept,
-          ...(pendingKept.length === 0
+          ...(pendingKept.length === 0 || seatsChanged
             ? { pendingEndEntryBoardCm: undefined, pendingEndEntrySinceAt: undefined }
             : {}),
         }
@@ -2284,7 +2286,7 @@ export function buildHighSocietyFieldFromAppState(
       widthByMemberId[id] =
         snap != null && Number.isFinite(Number(snap))
           ? roundTerritoryCm(Number(snap))
-          : startCmPerMember;
+          : 0;
     }
     const snapSum = seatIds.reduce((sum, id) => sum + Math.max(0, widthByMemberId[id] || 0), 0);
     const fieldForSnap = snapSum > 0 ? snapSum : effectiveFieldCm;
