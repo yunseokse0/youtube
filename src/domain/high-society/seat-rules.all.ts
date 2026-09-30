@@ -1420,6 +1420,8 @@ export function resolveHighSocietyFieldWithMemberWidths(opts: {
   fieldCm: number;
   widthByMemberId: Record<string, number>;
   expandByMemberId?: Record<string, { expandLeftCm: number; expandRightCm: number }>;
+  /** 저장된 사용자 cm 를 전장 길이에 맞춰 늘리거나 줄이지 않는다. */
+  preserveWidths?: boolean;
 }): ReturnType<typeof resolveHighSocietyField> {
   const players = (opts.players || []).slice(0, HIGH_SOCIETY_MAX_SEATS);
   const n = players.length;
@@ -1438,7 +1440,9 @@ export function resolveHighSocietyFieldWithMemberWidths(opts: {
   const sum = rawWidths.reduce((s, w) => s + w, 0);
   const hasExplicitZero = players.some((p) => opts.widthByMemberId[p.id] === 0);
   let scaledWidths: number[];
-  if (sum <= 0) {
+  if (opts.preserveWidths) {
+    scaledWidths = rawWidths;
+  } else if (sum <= 0) {
     scaledWidths = rawWidths.map(() => startCm);
   } else if (hasExplicitZero && sum < fieldCm) {
     /**
@@ -1466,8 +1470,9 @@ export function resolveHighSocietyFieldWithMemberWidths(opts: {
   } else {
     scaledWidths = rawWidths.map((w) => w * (fieldCm / sum));
   }
-  const quantizedWidths =
-    hasExplicitZero && sum < fieldCm
+  const quantizedWidths = opts.preserveWidths
+    ? scaledWidths.map((w) => roundTerritoryCm(w))
+    : hasExplicitZero && sum < fieldCm
       ? scaledWidths.map((w) => Math.max(0, Math.round(w)))
       : quantizeSeatWidthsToFieldCm(scaledWidths, fieldCm);
 
@@ -2138,8 +2143,7 @@ export function buildHighSocietyFieldFromAppState(
     players: equalPlayers,
     fieldCm: effectiveFieldCm,
   });
-  const settlementResetAt = Number(state.settlementResetAt || 0);
-  const resetAt = Math.max(Number(settingsForField.territoryLogsResetAt || 0), settlementResetAt);
+  const resetAt = Number(settingsForField.territoryLogsResetAt || 0);
   const territoryLogs = ((state.territoryLogs || []) as TerritoryLog[]).filter((log) =>
     resetAt > 0 ? Number(log.at || 0) >= resetAt : true
   );
@@ -2151,7 +2155,7 @@ export function buildHighSocietyFieldFromAppState(
   const widths = settingsForField.memberWidthCm;
   const snapshotComplete =
     Boolean(widths) && seatIds.length > 0 && seatIds.every((id) => widths![id] != null);
-  if (snapshotEpochAt > 0 && snapshotComplete) {
+  if (snapshotComplete) {
     const snapSum = seatIds.reduce(
       (sum, id) => sum + Math.max(0, Number(widths![id]) || 0),
       0
@@ -2162,29 +2166,56 @@ export function buildHighSocietyFieldFromAppState(
       fieldCm: fieldForSnap,
       widthByMemberId: widths!,
       expandByMemberId: settingsForField.memberTerritoryExpand,
+      preserveWidths: true,
     });
-    if (logsAfterEpoch.length === 0) {
+    const logsToApply = snapshotEpochAt > 0 ? logsAfterEpoch : territoryLogs;
+    if (logsToApply.length === 0) {
       return {
         ...snapField,
         settings: { ...settingsForField, fieldCm: fieldForSnap },
       };
     }
-    const fieldResolved = applyTerritoryLogDirectTransfers(
+    const sameWidths = (
+      left: Array<{ id: string; widthCm: number }>,
+      right: Array<{ id: string; widthCm: number }>
+    ) => {
+      if (left.length !== right.length) return false;
+      const byId = new Map(left.map((seat) => [seat.id, roundTerritoryCm(seat.widthCm)]));
+      return right.every((seat) => byId.get(seat.id) === roundTerritoryCm(seat.widthCm));
+    };
+    /**
+     * 저장된 cm 가 이미 기록 전체와 같으면 다시 깔지 않는다.
+     * 다르면 한 번만 얹고, 그 결과도 기록과 다르면 저장값을 유지한다.
+     * 100cm 재시작·비율 보정으로 사용자 입력을 바꾸지 않는다.
+     */
+    const fullReplay = applyTerritoryLogDirectTransfers(
+      equalField,
+      seatIds,
+      territoryLogs,
+      settingsForField
+    );
+    if (sameWidths(snapField.seats, fullReplay.seats)) {
+      return {
+        ...fullReplay,
+        settings: { ...settingsForField, fieldCm: fullReplay.fieldCm },
+      };
+    }
+    const appliedOnce = applyTerritoryLogDirectTransfers(
       snapField,
       seatIds,
-      logsAfterEpoch,
+      logsToApply,
       settingsForField,
       { protectWidthMemberIds: settingsForField.pendingEndEntryMemberIds || [] }
     );
+    if (sameWidths(appliedOnce.seats, fullReplay.seats)) {
+      return {
+        ...appliedOnce,
+        settings: { ...settingsForField, fieldCm: fieldForSnap },
+      };
+    }
     return {
-      ...fieldResolved,
+      ...snapField,
       settings: { ...settingsForField, fieldCm: fieldForSnap },
-    };
-  }
-  if (territoryLogs.length === 0 && settlementResetAt > 0) {
-    return {
-      ...equalField,
-      settings: { ...settingsForField, fieldCm: effectiveFieldCm },
     };
   }
   if (territoryLogs.length > 0) {
@@ -2196,17 +2227,6 @@ export function buildHighSocietyFieldFromAppState(
     );
     return {
       ...fieldResolved,
-      settings: { ...settingsForField, fieldCm: effectiveFieldCm },
-    };
-  }
-  if (snapshotComplete) {
-    return {
-      ...resolveHighSocietyFieldWithMemberWidths({
-        players: equalPlayers,
-        fieldCm: effectiveFieldCm,
-        widthByMemberId: widths!,
-        expandByMemberId: settingsForField.memberTerritoryExpand,
-      }),
       settings: { ...settingsForField, fieldCm: effectiveFieldCm },
     };
   }
@@ -2295,6 +2315,7 @@ export function appendTerritoryLogToAppState(state: AppState, log: TerritoryLog)
   /**
    * 좌석 변경으로 epoch 가 있는 뒤에는 스냅샷이 이미 이 기록을 포함한다.
    * epoch 를 기록 시각까지 올려 다음 해상이 같은 기록을 한 번 더 얹지 않게 한다.
+   * epoch 가 없으면 기록 전체를 다시 깔아 0cm 재진입 순서를 유지한다.
    */
   const prevEpoch = Number(fieldBefore.settings.territorySnapshotEpochAt || 0);
   const bakedEpoch = prevEpoch > 0 ? Math.max(prevEpoch, Number(nextLog.at || 0)) : 0;
@@ -2380,11 +2401,25 @@ export function buildHighSocietyMemberWidthSnapshotPatch(
 export function syncHighSocietyMemberWidthSnapshotInState(state: AppState): AppState {
   const patch = buildHighSocietyMemberWidthSnapshotPatch(state);
   if (!patch) return state;
+  const settings = normalizeHighSocietySettings(state.highSocietySettings);
+  const resetAt = Math.max(
+    Number(settings.territoryLogsResetAt || 0),
+    Number(state.settlementResetAt || 0)
+  );
+  let maxLogAt = 0;
+  for (const log of state.territoryLogs || []) {
+    const at = Number(log.at || 0);
+    if (resetAt > 0 && at < resetAt) continue;
+    if (at > maxLogAt) maxLogAt = at;
+  }
+  const prevEpoch = Number(settings.territorySnapshotEpochAt || 0);
+  const nextEpoch = prevEpoch > 0 ? Math.max(prevEpoch, maxLogAt) : 0;
   return {
     ...state,
     highSocietySettings: normalizeHighSocietySettings({
       ...state.highSocietySettings,
       ...patch,
+      ...(nextEpoch > 0 ? { territorySnapshotEpochAt: nextEpoch } : {}),
     }),
   };
 }

@@ -76,4 +76,18 @@ describe("applySettlementResetToState", () => {
     expect(next.settlementResetAt).toBe(9000);
     expect(next.intentionalDonationClearAt).toBe(9000);
   });
+
+  it("keep: 정산 리셋은 영토 기록과 cm 를 비우지 않는다", () => {
+    const prev = richState();
+    prev.territoryLogs = [{ id: "t1", memberId: "m1", amount: 100, delta: 1, at: 3000 }];
+    prev.highSocietySettings = {
+      ...prev.highSocietySettings!,
+      memberWidthCm: { m1: 180, m2: 20 },
+      territoryLogsResetAt: 1000,
+    };
+    const next = applySettlementResetToState(prev, { mode: "keep", resetAt: 9000 });
+    expect(next.territoryLogs).toEqual(prev.territoryLogs);
+    expect(next.highSocietySettings?.memberWidthCm).toEqual({ m1: 180, m2: 20 });
+    expect(next.highSocietySettings?.territoryLogsResetAt).toBe(1000);
+  });
 });

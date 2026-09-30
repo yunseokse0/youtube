@@ -51,13 +51,8 @@ export function applySettlementResetToState(
   const resetPresets = resetOverlayPresetsGoalForDonationInit(state.overlayPresets);
   const preserved = pickSettingsPreservedAcrossSettlementReset(state);
   const battleRuntime = buildSettlementResetBattleRuntime(state, resetAt);
-  const highSocietySettings = {
-    ...(state.highSocietySettings || {}),
-    territoryLogsResetAt: resetAt,
-    memberWidthCm: {},
-    memberWidthDonationSnapshot: {},
-    memberTerritoryExpand: {},
-  };
+  /** 정산 리셋은 후원만 비운다. 영토 cm·기록은 영토 초기화 전까지 둔다. */
+  const highSocietySettings = state.highSocietySettings;
 
   if (opts.mode === "keep") {
     const next: AppState = {
@@ -74,7 +69,6 @@ export function applySettlementResetToState(
       donors: [],
       contributionLogs: [],
       restroomLogs: [],
-      territoryLogs: [],
       mealBattle: {
         ...state.mealBattle,
         participants: (state.mealBattle?.participants || []).map((p) => ({ ...p, score: 0 })),
@@ -105,6 +99,7 @@ export function applySettlementResetToState(
     members: nextMembers,
     memberPositions: {},
     donors: [],
+    territoryLogs: state.territoryLogs,
     overlayPresets: resetPresets as AppState["overlayPresets"],
     highSocietySettings,
     mealBattle: {

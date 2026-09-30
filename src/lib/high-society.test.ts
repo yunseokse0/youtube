@@ -399,7 +399,7 @@ describe("high-society territory (aux)", () => {
     expect(seats[0]!.widthCm).toBe(100);
   });
 
-  it("settlement reset hides earlier territory logs and width snapshots", () => {
+  it("정산 리셋 시각이 있어도 저장된 영토 cm 는 100cm로 되돌리지 않는다", () => {
     const resetAt = 5_000_000;
     const members = [
       { id: "a", name: "A", account: 0, toon: 0, operating: false },
@@ -418,7 +418,7 @@ describe("high-society territory (aux)", () => {
         memberWidthCm: { a: 169, b: 31 },
       }),
     });
-    expect(seats.map((s) => s.widthCm)).toEqual([100, 100]);
+    expect(seats.map((s) => s.widthCm)).toEqual([169, 31]);
   });
 
   it("field seat count follows resolved players not ghost seatMemberIds", () => {
@@ -3016,7 +3016,7 @@ describe("manual territory log vs neighbor width", () => {
     expect(field.seats.reduce((s, x) => s + x.widthCm, 0)).toBeCloseTo(300, 0);
   });
 
-  it("seat move left after small reclaim keeps log replay (leftover 15cm 스냅샷은 무시)", () => {
+  it("자리만 옮겨도 저장된 15cm 는 기록 재계산으로 115cm가 되지 않는다", () => {
     const members = [
       { id: "subin", name: "수빈", account: 0, toon: 0, operating: false },
       { id: "saa", name: "사아", account: 0, toon: 0, operating: false },
@@ -3051,7 +3051,7 @@ describe("manual territory log vs neighbor width", () => {
       highSocietySettings: settings,
       territoryLogs: logs,
     });
-    expect(before.seats.find((s) => s.id === "jaki")!.widthCm).toBe(115);
+    expect(before.seats.find((s) => s.id === "jaki")!.widthCm).toBe(15);
     expect(before.seats.reduce((n, s) => n + s.widthCm, 0)).toBe(400);
 
     const widthBefore = Object.fromEntries(before.seats.map((seat) => [seat.id, seat.widthCm]));
@@ -3337,7 +3337,7 @@ describe('high-society team mode (normalizeTeam / aggregateTeam / resolveTeamCol
     expect(teamSeats.find((s) => s.id === 'team:t1')!.widthCm).toBe(460);
   });
 
-  it('팀전 기록부 A+20+100+100+40 B+20+25 — leftover 스냅샷 360/230 이어도 435/45', () => {
+  it('팀전 기록부가 있어도 저장된 360/230 을 다시 계산해 435/45로 바꾸지 않는다', () => {
     const members = [
       { id: 'jaki', name: '자키', account: 0, toon: 0, operating: false },
       { id: 'nana', name: '나나', account: 0, toon: 0, operating: false },
@@ -3388,11 +3388,9 @@ describe('high-society team mode (normalizeTeam / aggregateTeam / resolveTeamCol
     );
     const teamA = teamSeats.find((s) => s.id === 'team:ta')!;
     const teamB = teamSeats.find((s) => s.id === 'team:tb')!;
-    expect(teamA.widthCm).toBe(435);
-    expect(teamB.widthCm).toBe(45);
-    expect(teamA.widthCm + teamB.widthCm).toBe(480);
-    expect(teamA.widthCm).not.toBe(360);
-    expect(teamB.widthCm).not.toBe(230);
+    expect(teamA.widthCm).toBe(360);
+    expect(teamB.widthCm).toBe(230);
+    expect(teamA.widthCm + teamB.widthCm).toBe(590);
   });
 
   it("팀전 A+240 B+300 B+180 A+120 — 전체 replay 는 120/360, 앞 두 줄만이면 180/300", () => {
@@ -3563,8 +3561,8 @@ describe('high-society seat rejoin (member 빠졌다 재가입) — territory �
       territoryLogs: logs,
       now: 1,
     });
-    expect(next.memberWidthCm?.m1).toBe(60);
-    expect(next.memberWidthCm?.m3).toBe(60);
+    expect(next.memberWidthCm?.m1).toBe(100);
+    expect(next.memberWidthCm?.m3).toBe(100);
     expect(next.memberWidthCm?.m2).toBe(60);
     expect(next.memberTerritoryExpand?.m2?.expandLeftCm).toBe(0);
     expect(next.memberTerritoryExpand?.m2?.expandRightCm).toBe(0);
@@ -4064,6 +4062,64 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
     expect(total).toBe(600);
     expect(state.highSocietySettings?.pendingEndEntryMemberIds || []).not.toContain("reze");
     expect(state.highSocietySettings?.pendingEndEntryMemberIds || []).not.toContain("pong");
+  });
+
+  it("가운데에 100을 두 번 양분하면 200만 더하고 다시 읽어도 500이 되지 않는다", () => {
+    const ids = ["jaki", "gwak", "pong", "yeong", "reze", "yuri"] as const;
+    const members = ids.map((id) => ({
+      id,
+      name: id,
+      account: 0,
+      toon: 0,
+      operating: false,
+    }));
+    let state = {
+      members,
+      donors: [] as never[],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: [...ids],
+        seatMemberIdsManual: true,
+        startCmPerMember: 100,
+        fieldCm: 600,
+        matchMode: "individual",
+        territoryLogsResetAt: 4_000,
+        territorySnapshotEpochAt: 5_000,
+        memberWidthCm: Object.fromEntries(ids.map((id) => [id, 100])),
+      }),
+      territoryLogs: [] as ReturnType<typeof createTerritoryLog>[],
+    } as import("@/types").AppState;
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("pong", 1, 100, { pushDir: "split", now: 6_000 })
+    );
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("pong", 1, 100, { pushDir: "split", now: 7_000 })
+    );
+    expect(widths(state).byId).toEqual({
+      jaki: 100,
+      gwak: 0,
+      pong: 300,
+      yeong: 0,
+      reze: 100,
+      yuri: 100,
+    });
+    const staleEpoch = {
+      ...state,
+      highSocietySettings: normalizeHighSocietySettings({
+        ...state.highSocietySettings,
+        territorySnapshotEpochAt: 5_000,
+      }),
+    };
+    expect(widths(staleEpoch).byId.pong).toBe(300);
+    const synced = syncHighSocietyMemberWidthSnapshotInState(staleEpoch);
+    expect(widths(synced).byId.pong).toBe(300);
+    const syncedAgain = syncHighSocietyMemberWidthSnapshotInState(synced);
+    expect(widths(syncedAgain).byId.pong).toBe(300);
+    expect(Number(syncedAgain.highSocietySettings?.territorySnapshotEpochAt || 0)).toBeGreaterThanOrEqual(
+      7_000
+    );
   });
 
   it("연속 양분 여러 번도 전장 합이 유지된다", () => {
