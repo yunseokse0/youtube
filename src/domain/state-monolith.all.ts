@@ -53,8 +53,6 @@ import {
   normalizeHighSocietyDonationLinks,
   resolveHighSocietySeatMembers,
   shouldBlockHighSocietyRegression,
-  shouldSyncHighSocietyMemberWidthSnapshot,
-  syncHighSocietyMemberWidthSnapshotInState,
 } from "@/lib/high-society";
 import { ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
 import { isBundledSigPlaceholderItem } from "@/lib/sig-placeholder";
@@ -3291,9 +3289,7 @@ export async function saveStateAsync(
     ...saveOpts,
     ...(omitDonations ? { omitDonationFields: true } : {}),
   };
-  if (!apiOpts.omitHighSocietyFields && shouldSyncHighSocietyMemberWidthSnapshot(guarded.highSocietySettings)) {
-    guarded = syncHighSocietyMemberWidthSnapshotInState(guarded);
-  }
+  /** 후원·일반 저장은 영토 cm를 다시 그리지 않는다. 영토 기록부·좌석 저장만 스냅샷을 갱신한다. */
   /**
    * 영토·HS·omitDonation 저장: API 본문은 후원을 안 보내도
    * 세션 스냅샷에 0원 React state 를 쓰면 엑셀·후원순위 미리보기가 즉시 초기화됨.

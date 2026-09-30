@@ -761,7 +761,7 @@ export async function POST(req: Request) {
       }
     }
 
-    if (!settlementReset && !donationInitReset) {
+    if (!settlementReset && !donationInitReset && highSocietySettingsOnlyPatch) {
       next = syncHighSocietyMemberWidthSnapshotInState(next);
     }
 

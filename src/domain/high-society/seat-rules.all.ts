@@ -2424,26 +2424,16 @@ export function syncHighSocietyMemberWidthSnapshotInState(state: AppState): AppS
   };
 }
 
-/** 서버·OBS에 영토 cm 스냅샷을 올려야 하는지 — 누락·현재 해상과 불일치 */
+/** 스냅샷이 아예 없을 때만 올린다. 저장된 cm와 다시 그린 값이 달라도 덮어쓰지 않는다. */
 export function highSocietyNeedsMemberWidthSnapshotPersist(
   state: Pick<AppState, "members" | "donors" | "highSocietySettings" | "territoryLogs">
 ): boolean {
   if (!shouldSyncHighSocietyMemberWidthSnapshot(state.highSocietySettings)) return false;
-  const patch = buildHighSocietyMemberWidthSnapshotPatch(state);
-  if (!patch) return false;
   const cur = normalizeHighSocietySettings(state.highSocietySettings);
   const curW = cur.memberWidthCm;
-  const curSnap = cur.memberWidthDonationSnapshot;
-  const curExp = cur.memberTerritoryExpand;
-  if (!curW || Object.keys(curW).length === 0) return true;
-  if (
-    JSON.stringify(curW) !== JSON.stringify(patch.memberWidthCm) ||
-    JSON.stringify(curSnap ?? {}) !== JSON.stringify(patch.memberWidthDonationSnapshot ?? {}) ||
-    JSON.stringify(curExp ?? {}) !== JSON.stringify(patch.memberTerritoryExpand ?? {})
-  ) {
-    return true;
-  }
-  return false;
+  if (curW && Object.keys(curW).length > 0) return false;
+  const patch = buildHighSocietyMemberWidthSnapshotPatch(state);
+  return Boolean(patch && Object.keys(patch.memberWidthCm).length > 0);
 }
 
 /** 운영비 제외 멤버의 계좌+투네 합으로 영토 점유율 계산 (보조 게이지용) */

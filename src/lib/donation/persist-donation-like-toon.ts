@@ -4,7 +4,6 @@ import { maybeAppendDailyLogFromState } from "@/lib/daily-log-server-append";
 import { getServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { publishSseEvent } from "@/lib/sse-clients-hub";
 import { isDuplicateDonationEvent } from "@/lib/donation/apply-donation-state";
-import { syncHighSocietyMemberWidthSnapshotInState } from "@/lib/high-society";
 import type { DonationEvent } from "@/lib/donation/types";
 import type { AppState } from "@/types";
 
@@ -19,8 +18,7 @@ export type DonationAppliedSseHint = {
 async function broadcastDonationStateUpdated(
   updatedAt: number,
   donorRankingsUpdatedAt?: number,
-  donationApplied?: DonationAppliedSseHint,
-  extraHints?: { highSocietySettingsUpdatedAt?: number; territoryLogsUpdatedAt?: number }
+  donationApplied?: DonationAppliedSseHint
 ): Promise<void> {
   await publishSseEvent({
     type: "state_updated" as const,
@@ -29,12 +27,6 @@ async function broadcastDonationStateUpdated(
       ? { donorRankingsUpdatedAt }
       : {}),
     ...(donationApplied ? { donationApplied } : {}),
-    ...(typeof extraHints?.highSocietySettingsUpdatedAt === "number" && extraHints.highSocietySettingsUpdatedAt > 0
-      ? { highSocietySettingsUpdatedAt: extraHints.highSocietySettingsUpdatedAt }
-      : {}),
-    ...(typeof extraHints?.territoryLogsUpdatedAt === "number" && extraHints.territoryLogsUpdatedAt > 0
-      ? { territoryLogsUpdatedAt: extraHints.territoryLogsUpdatedAt }
-      : {}),
   });
 }
 
@@ -55,8 +47,7 @@ export async function persistDonationStateToServer(
   opts?: PersistDonationStateOptions
 ): Promise<{ ok: true; state: AppState } | { ok: false }> {
   const mode = opts?.mode ?? "add";
-  const stateToSave = syncHighSocietyMemberWidthSnapshotInState(nextState);
-  const saved = await saveAppStateForRoulette(userId, stateToSave, { donorsMode: mode });
+  const saved = await saveAppStateForRoulette(userId, nextState, { donorsMode: mode });
   if (!saved.ok) return { ok: false };
   const persisted = saved.state;
 
@@ -77,13 +68,7 @@ export async function persistDonationStateToServer(
   await broadcastDonationStateUpdated(
     persisted.updatedAt,
     persisted.donorRankingsUpdatedAt,
-    opts?.donationApplied,
-    {
-      /** 후원 → 멤버 합산 기여도 → 상류사회 게이지 좌석 너비(cm)가 항상 변동되므로 힌트 첨부 = OBS forceFull sync 트리거.
-       *  수신측에서 buildOverlaySyncSignature 시그니처 비교 후 실제 변화 없으면 setState skip 하므로 안전한 중복 호출. */
-      highSocietySettingsUpdatedAt: persisted.updatedAt,
-      territoryLogsUpdatedAt: persisted.updatedAt,
-    }
+    opts?.donationApplied
   );
   void maybeAppendDailyLogFromState(userId, persisted);
   return { ok: true, state: persisted };

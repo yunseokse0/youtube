@@ -8,7 +8,6 @@ import {
   isDonorHsTerritoryIncluded,
   normalizeHighSocietySettings,
   resolveSystemMiddlePushDir,
-  syncHighSocietyMemberWidthSnapshotInState,
 } from "@/lib/high-society";
 import { computeContributionPoints, normalizeContributionFormula } from "@/lib/contribution-formula";
 import { mapToMember } from "@/lib/donation/mapper";
@@ -218,7 +217,7 @@ export function applyDonationToAppState(
 
   return {
     ok: true,
-    state: syncHighSocietyMemberWidthSnapshotInState(updatedState),
+    state: updatedState,
     event: { ...processedEvent, memberId: processedEvent.memberId, status: "processed" },
   };
 }
@@ -328,7 +327,7 @@ export function revertDonationFromAppState(
     return { ...member, contribution, [targetField]: target };
   });
 
-  return syncHighSocietyMemberWidthSnapshotInState({
+  return {
     ...currentState,
     donors: nextDonors,
     contributionLogs: nextContributionLogs,
@@ -339,7 +338,7 @@ export function revertDonationFromAppState(
     },
     donorRankingsUpdatedAt: now,
     updatedAt: now,
-  });
+  };
 }
 
 export function reassignDonorMemberInAppState(
@@ -571,12 +570,12 @@ export function applyManualHsPushDirChange(
     return { ...rest, hsPushDir: wantOverride };
   });
 
-  return syncHighSocietyMemberWidthSnapshotInState({
+  return {
     ...currentState,
     donors: nextDonors,
     donorRankingsUpdatedAt: now,
     updatedAt: now,
-  });
+  };
 }
 
 export function applyManualHsTerritoryExcludedChange(
@@ -611,12 +610,12 @@ export function applyManualHsTerritoryExcludedChange(
     return { ...d, hsTerritoryExcluded: false };
   });
 
-  return syncHighSocietyMemberWidthSnapshotInState({
+  return {
     ...currentState,
     donors: nextDonors,
     donorRankingsUpdatedAt: now,
     updatedAt: now,
-  });
+  };
 }
 
 export function clearAllDonorHsPushDirs(currentState: AppState): AppState {

@@ -111,6 +111,10 @@ describe("상류사회 × 후원 반영 (게이지는 기록부, 후원은 정�
     const sigAfter = fieldSig(after);
 
     expect(sigAfter).toEqual(sigBefore);
+    expect(after.highSocietySettings?.memberWidthCm).toEqual(before.highSocietySettings?.memberWidthCm);
+    expect(after.highSocietySettings?.territorySnapshotEpochAt).toBe(
+      before.highSocietySettings?.territorySnapshotEpochAt
+    );
     expect(after.donors).toHaveLength(1);
     expect(after.donors?.[0]?.hsTerritoryExcluded).toBe(true);
     expect(after.members.find((m) => m.id === "a")?.toon).toBe(10_000);

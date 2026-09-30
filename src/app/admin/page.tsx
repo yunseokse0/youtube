@@ -10787,7 +10787,7 @@ function AdminPageInner() {
     const map = new Map<string, { widthCm: number; eliminated: boolean }>();
     const field = buildHighSocietyFieldFromAppState({
       members: state.members || [],
-      donors: state.donors || [],
+      donors: [],
       highSocietySettings,
       territoryLogs: state.territoryLogs || [],
     });
@@ -10795,7 +10795,7 @@ function AdminPageInner() {
       map.set(seat.id, { widthCm: seat.widthCm, eliminated: seat.eliminated });
     }
     return map;
-  }, [highSocietySettings, state.donors, state.members, state.territoryLogs]);
+  }, [highSocietySettings, state.members, state.territoryLogs]);
   const patchHighSocietySettings = useCallback(
     (patch: HighSocietySettingsAdminPatch) => {
       const resetTerritory = Boolean(patch.resetTerritory);
@@ -10929,13 +10929,10 @@ function AdminPageInner() {
     if (hsSeatPlayers.length === 0) return;
     const cur = stateRef.current;
     if (!highSocietyNeedsMemberWidthSnapshotPersist(cur)) return;
-    const sig = [
-      ...[...hsSeatFieldByMemberId.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([id, v]) => `${id}:${v.widthCm}:${v.eliminated ? 1 : 0}`),
-      normalizeDonorsArray(cur.donors).length,
-      cur.updatedAt ?? 0,
-    ].join("|");
+    const sig = [...hsSeatFieldByMemberId.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([id, v]) => `${id}:${v.widthCm}:${v.eliminated ? 1 : 0}`)
+      .join("|");
     if (hsSnapshotHealBusyRef.current || hsSnapshotHealSigRef.current === sig) return;
     const timer = window.setTimeout(() => {
       const latest = stateRef.current;
@@ -10958,8 +10955,6 @@ function AdminPageInner() {
     highSocietySettings.enabled,
     hsSeatPlayers.length,
     hsSeatFieldByMemberId,
-    state.donors,
-    state.updatedAt,
     persistState,
   ]);
   const hsSeatCountForStart = resolveHighSocietySeatCountForField(
