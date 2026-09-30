@@ -31,6 +31,7 @@ import {
   writeDonationIngestMode,
   type DonationIngestMode,
 } from "@/lib/donation-ingest-mode";
+import { sliceDonorListPage } from "@/lib/donor-list-pagination";
 import ToonaHubPanel from "@/components/admin/ToonaHubPanel";
 import ContributionFormulaPanel from "@/components/admin/ContributionFormulaPanel";
 import {
@@ -2200,11 +2201,12 @@ function AdminPageInner() {
     }
     return out;
   }, [donorListRowsSorted, donorListTimeFilter, donorListMinAmount, donorListMaxAmount, donorListQuery]);
-  /** ✅ 페이지 범위 재계산 — donorListRowsSorted → donorListRowsFiltered 로 소스 교체 */
-  const donorTotalPages = Math.max(1, Math.ceil(donorListRowsFiltered.length / donorListPageSize));
-  const donorPageIdx = Math.min(donorListPage, donorTotalPages);
-  const donorPageStart = (donorPageIdx - 1) * donorListPageSize;
-  const donorPageEnd = donorPageStart + donorListPageSize;
+  /** ✅ 페이지 범위 재계산 — 맨 뒤는 끝에서 페이지 크기만큼 채운다 */
+  const donorPageSlice = sliceDonorListPage(donorListRowsFiltered, donorListPage, donorListPageSize);
+  const donorTotalPages = donorPageSlice.totalPages;
+  const donorPageIdx = donorPageSlice.pageIdx;
+  const donorPageStart = donorPageSlice.pageStart;
+  const donorPageEnd = donorPageSlice.pageEnd;
   /** ✅ 페이지 내 & 선택 행 총액 집계 (실시간 확인용) — ⚠️ 삭제된 건(deletedAt 존재) + 후원 제외 건(donationExcluded=true) 모두 제외! */
   const donorFilteredAgg = useMemo(() => {
     let sum = 0;

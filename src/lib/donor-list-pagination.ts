@@ -20,7 +20,11 @@ export function sliceDonorListPage<T>(
   const size = Math.max(DONOR_LIST_MIN_PAGE_SIZE, Number(pageSize) || DONOR_LIST_MIN_PAGE_SIZE);
   const totalPages = Math.max(1, Math.ceil(rows.length / size) || 1);
   const pageIdx = Math.min(Math.max(1, page), totalPages);
-  const pageStart = (pageIdx - 1) * size;
+  let pageStart = (pageIdx - 1) * size;
+  /** 맨 뒤는 나머지 몇 건이 아니라, 끝에서 페이지 크기만큼 채워 보여 준다. */
+  if (pageIdx === totalPages && rows.length > size) {
+    pageStart = rows.length - size;
+  }
   const pageEnd = pageStart + size;
   return {
     totalPages,

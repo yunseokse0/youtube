@@ -81,6 +81,22 @@ describe("후원자 리스트 페이지네이션 · 수신 중 누락/흔들림"
     expect(afterSizeChange.visible).toHaveLength(100);
   });
 
+  it("맨 뒷페이지는 나머지 건수가 아니라 50건이 채워져 있다", () => {
+    const list = sortDonorsNewestFirst(rows(412));
+    const last = sliceDonorListPage(list, 9, 50);
+    expect(last.totalPages).toBe(9);
+    expect(last.pageIdx).toBe(9);
+    expect(last.visible).toHaveLength(50);
+    expect(last.visible[0]?.id).toBe(list[412 - 50]?.id);
+    expect(last.visible.at(-1)?.id).toBe(list.at(-1)?.id);
+    const first = sliceDonorListPage(list, 1, 50);
+    expect(first.visible).toHaveLength(50);
+    expect(first.visible[0]?.id).toBe(list[0]?.id);
+    const exact = sliceDonorListPage(rows(100), 2, 50);
+    expect(exact.visible).toHaveLength(50);
+    expect(exact.pageStart).toBe(50);
+  });
+
   it("하단 페이지 번호는 양끝과 현재 근처만 보여 준다", () => {
     expect(buildDonorListPageItems(1, 5)).toEqual([1, 2, 3, 4, 5]);
     expect(buildDonorListPageItems(1, 46)).toEqual([1, 2, 3, "ellipsis", 46]);
