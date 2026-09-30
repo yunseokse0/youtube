@@ -6101,9 +6101,20 @@ function AdminPageInner() {
   const renameMember = (id: string, name: string) => {
     const cleaned = (name || "무명").trim() || "무명";
     setState((prev: AppState) => {
+      const prevName = String(prev.members.find((x: Member) => x.id === id)?.name || "").trim();
+      const labels = { ...(prev.highSocietySettings?.territoryLabelByMemberId || {}) };
+      if (labels[id] && labels[id] === prevName) labels[id] = cleaned;
       let next: AppState = {
         ...prev,
         members: prev.members.map((x: Member) => (x.id === id ? { ...x, name: cleaned } : x)),
+        ...(prev.highSocietySettings
+          ? {
+              highSocietySettings: {
+                ...prev.highSocietySettings,
+                ...(Object.keys(labels).length > 0 ? { territoryLabelByMemberId: labels } : {}),
+              },
+            }
+          : {}),
         updatedAt: Date.now(),
       };
       const richestDonors = resolveRichestDonorsFromSources(
@@ -6131,7 +6142,7 @@ function AdminPageInner() {
         };
       }
       const now = Date.now();
-      next = { ...next, updatedAt: now };
+      next = { ...next, updatedAt: now, membersRosterUpdatedAt: now };
       stateRef.current = next;
       stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, now);
       membersAuthoritativeSaveUntilRef.current = Date.now() + 120_000;

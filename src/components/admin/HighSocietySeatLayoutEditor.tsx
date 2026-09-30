@@ -22,6 +22,7 @@ import {
   resolveHighSocietyStartCmPerMember,
   resolveSystemMiddlePushDir,
   resolveTeamColor,
+  territoryLabelMapAfterEdit,
   type HighSocietySettingsAdminPatch,
 } from "@/lib/high-society";
 import type { AppState, Donor, HighSocietySettings, Member, TerritoryLog } from "@/types";
@@ -152,16 +153,18 @@ export default function HighSocietySeatLayoutEditor({
   );
 
   const commitSeatLabel = useCallback(
-    (memberId: string, memberName: string, raw: string) => {
+    (memberId: string, _memberName: string, raw: string) => {
       const id = String(memberId || "").trim();
       if (!id) return;
       const next = raw.slice(0, 24);
       setLabelDraft((prev) => ({ ...prev, [id]: next }));
-      const map = { ...(settings.territoryLabelByMemberId || {}) };
-      const trimmed = next.trim();
-      if (!trimmed || trimmed === memberName.trim()) delete map[id];
-      else map[id] = trimmed;
-      void onPatch({ territoryLabelByMemberId: map });
+      void onPatch({
+        territoryLabelByMemberId: territoryLabelMapAfterEdit(
+          settings.territoryLabelByMemberId,
+          id,
+          next
+        ),
+      });
     },
     [onPatch, settings.territoryLabelByMemberId]
   );

@@ -91,4 +91,21 @@ describe("mergeLocalMemberIdentityOntoRemote", () => {
     expect(merged.members[0]?.name).toBe("지키");
     expect(merged.members[1]?.name).toBe("333");
   });
+
+  it("서버 멤버 이름 변경은 로컬 updatedAt 이 더 커도 로스터 시각이 최신이면 반영된다", () => {
+    const local = {
+      ...defaultState(),
+      updatedAt: 9000,
+      membersRosterUpdatedAt: 1000,
+      members: [{ id: "m1", name: "곽", account: 0, toon: 0, contribution: 0 }],
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: 8000,
+      membersRosterUpdatedAt: 9000,
+      members: [{ id: "m1", name: "곽호경", account: 0, toon: 0, contribution: 0 }],
+    };
+    const merged = mergeLocalMemberIdentityOntoRemote(remote, local);
+    expect(merged.members[0]?.name).toBe("곽호경");
+  });
 });

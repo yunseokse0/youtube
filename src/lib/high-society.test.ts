@@ -24,6 +24,7 @@ import {
   highSocietyFxToHsFxParam,
   parseHighSocietyFxFromHsFxParam,
   mergeHighSocietyDonationLinksOnSettingsChange,
+  territoryLabelMapAfterEdit,
   shouldKeepLocalHighSocietySettings,
   isSeatMemberIdsReorderOnly,
   shouldClearMemberWidthSnapshotOnSeatChange,
@@ -831,6 +832,25 @@ describe("high-society territory (aux)", () => {
     expect(seatA?.color).toBe("#112233");
     expect(seatB?.name).toBe("자키");
     expect(seatB?.color).toBe("#16a34a");
+  });
+
+  it("게이지 이름을 멤버 이름과 같게 적어도 그 문자열이 오버레이에 남는다", () => {
+    const map = territoryLabelMapAfterEdit({ a: "곽" }, "a", "곽호경");
+    expect(map.a).toBe("곽호경");
+    const members = [{ id: "a", name: "곽", account: 0, toon: 0, operating: false }];
+    const field = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: ["a"],
+        seatMemberIdsManual: true,
+        startCmPerMember: 100,
+        territoryLabelByMemberId: map,
+      }),
+      territoryLogs: [],
+    });
+    expect(field.seats[0]?.name).toBe("곽호경");
   });
 
   it("isHighSocietyDonationIngestPaused is always false (territory pause does not block ingest)", () => {
@@ -2403,7 +2423,7 @@ describe("0cm eliminated member re-entry", () => {
   });
 
   it("끝 선택 대기 중인 자키의 5cm는 다른 사람의 끝 선택으로 0이 되지 않는다", () => {
-    const members = ["jaki", "gwak", "yeong", "yuri", "reze", "pong"].map((id) => ({
+    const members = ["gwak", "jaki", "yeong", "yuri", "reze", "pong"].map((id) => ({
       id,
       name: id,
       account: 0,
@@ -3978,7 +3998,7 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
     expect(total).toBe(300);
   });
 
-  it("왼쪽 끝 전량 손실 후 +오른쪽이면 오른쪽 끝으로 재진입", () => {
+  it("왼쪽 끝에 앉아 0cm가 된 사람은 다시 살아도 그 끝에 남고 안쪽에서 가져온다", () => {
     let state = four();
     state = appendTerritoryLogToAppState(
       state,
@@ -3990,9 +4010,60 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
       createTerritoryLog("a", 1, 30, { pushDir: "right", now: 2_000 })
     );
     const { alive, byId, total } = widths(state);
-    expect(alive[alive.length - 1]).toBe("a");
+    expect(alive[0]).toBe("a");
     expect(byId.a).toBe(30);
+    expect(byId.b).toBe(170);
     expect(total).toBe(400);
+  });
+
+  it("양 끝을 다시 살릴 때 오른쪽 끝의 왼쪽 기록은 왼쪽 끝 영토를 지우지 않는다", () => {
+    const ids = ["pong", "jaki", "kwak", "young", "glass", "reze"] as const;
+    const members = ids.map((id) => ({
+      id,
+      name: id,
+      account: 0,
+      toon: 0,
+      operating: false,
+    }));
+    let state = {
+      members,
+      donors: [] as never[],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: [...ids],
+        seatMemberIdsManual: true,
+        startCmPerMember: 100,
+        fieldCm: 600,
+        matchMode: "individual",
+        territorySnapshotEpochAt: 5_000,
+        memberWidthCm: {
+          pong: 5,
+          jaki: 95,
+          kwak: 100,
+          young: 100,
+          glass: 300,
+          reze: 0,
+        },
+      }),
+      territoryLogs: [] as ReturnType<typeof createTerritoryLog>[],
+    } as import("@/types").AppState;
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("reze", 1, 5, { pushDir: "left", now: 6_000 })
+    );
+    const { field, byId, total, alive } = widths(state);
+    expect(field.seats.map((seat) => seat.id)).toEqual([...ids]);
+    expect(alive[0]).toBe("pong");
+    expect(alive[alive.length - 1]).toBe("reze");
+    expect(byId.pong).toBe(5);
+    expect(byId.jaki).toBe(95);
+    expect(byId.kwak).toBe(100);
+    expect(byId.young).toBe(100);
+    expect(byId.glass).toBe(295);
+    expect(byId.reze).toBe(5);
+    expect(total).toBe(600);
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds || []).not.toContain("reze");
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds || []).not.toContain("pong");
   });
 
   it("연속 양분 여러 번도 전장 합이 유지된다", () => {
@@ -4055,7 +4126,7 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
       createTerritoryLog("b", 1, 15, { pushDir: "right", now: 4_000 })
     );
     const { alive, byId, total } = widths(state);
-    expect(alive[alive.length - 1]).toBe("b");
+    expect(alive[0]).toBe("b");
     expect(byId.b).toBe(15);
     expect(total).toBe(400);
   });

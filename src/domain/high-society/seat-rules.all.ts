@@ -114,6 +114,21 @@ export function resolveHighSocietySeatColor(saved: unknown, seatIndex: number): 
   );
 }
 
+/** 게이지에 보일 이름. 멤버 이름과 같아도 그 문자열을 남긴다. 빈 칸이면 그 멤버 이름만 지운다. */
+export function territoryLabelMapAfterEdit(
+  current: Record<string, string> | undefined,
+  memberId: string,
+  raw: string
+): Record<string, string> {
+  const id = String(memberId || "").trim();
+  const map = { ...(current || {}) };
+  if (!id) return map;
+  const trimmed = String(raw || "").trim().slice(0, 24);
+  if (!trimmed) delete map[id];
+  else map[id] = trimmed;
+  return map;
+}
+
 export function normalizeTerritoryLabelByMemberId(raw: unknown): Record<string, string> | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
   const out: Record<string, string> = {};
@@ -1039,7 +1054,7 @@ function widthPatchAfterPendingEndChoice(opts: {
   for (const player of nextPlayers) {
     const snap = board[player.id];
     widthByMemberId[player.id] =
-      snap != null && Number.isFinite(Number(snap)) ? Math.max(0, Math.round(Number(snap))) : startW;
+      snap != null && Number.isFinite(Number(snap)) ? roundTerritoryCm(Number(snap)) : startW;
   }
   const sum = Object.values(widthByMemberId).reduce((total, width) => total + width, 0);
   const arranged = resolveHighSocietyFieldWithMemberWidths({
@@ -2005,8 +2020,9 @@ export function applyTerritoryLogDirectTransfers(
       const fromIdx = targetIdxs[0]!;
       const memberIdAt = order[fromIdx]!;
       const lockSeat = (opts?.lockSeatOrderMemberIds || []).includes(memberIdAt);
-      if (lockSeat) {
-        /** 사용자가 고른 끝은 유지하고, 그 끝에서 안쪽 이웃에게서만 가져온다. */
+      const alreadyAtEnd = fromIdx === 0 || fromIdx === n - 1;
+      if (lockSeat || alreadyAtEnd) {
+        /** 이미 끝에 있으면 반대 끝으로 옮기지 않고, 안쪽 이웃에게서만 가져온다. */
         if (fromIdx === 0) explicitPush = "right";
         else if (fromIdx === n - 1) explicitPush = "left";
       } else {
@@ -2157,7 +2173,8 @@ export function buildHighSocietyFieldFromAppState(
       snapField,
       seatIds,
       logsAfterEpoch,
-      settingsForField
+      settingsForField,
+      { protectWidthMemberIds: settingsForField.pendingEndEntryMemberIds || [] }
     );
     return {
       ...fieldResolved,
@@ -2249,11 +2266,15 @@ export function appendTerritoryLogToAppState(state: AppState, log: TerritoryLog)
   });
   const widthPatch = memberWidthPatchFromFieldSeats(fieldAfter.seats);
   const beforeWidth = new Map(fieldBefore.seats.map((seat) => [seat.id, seat.widthCm]));
+  const beforeIndex = new Map(fieldBefore.seats.map((seat, index) => [seat.id, index]));
+  const beforeLast = fieldBefore.seats.length - 1;
   const pending = new Set(settings.pendingEndEntryMemberIds || []);
   if (settings.matchMode !== "team") {
     for (const seat of fieldAfter.seats) {
       const prevWidth = beforeWidth.get(seat.id) ?? 0;
-      if (prevWidth <= 0 && seat.widthCm > 0) pending.add(seat.id);
+      const prevIndex = beforeIndex.get(seat.id);
+      const alreadyAtEnd = prevIndex === 0 || prevIndex === beforeLast;
+      if (prevWidth <= 0 && seat.widthCm > 0 && !alreadyAtEnd) pending.add(seat.id);
       if (seat.widthCm <= 0) pending.delete(seat.id);
     }
   }

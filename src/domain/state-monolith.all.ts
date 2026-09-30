@@ -5035,9 +5035,12 @@ export function mergeLocalMemberIdentityOntoRemote(
     const goalDiff = lm.goal !== rm.goal;
     const opDiff = Boolean(lm.operating) !== Boolean(rm.operating);
     if (!nameDiff && !goalDiff && !opDiff) return rm;
+    const remoteRosterAt = Number(remote.membersRosterUpdatedAt || 0);
+    const localRosterAt = Number(local.membersRosterUpdatedAt || 0);
     const preferLocalName =
       nameDiff &&
-      (isPlaceholderMemberName(remoteName, rm.id) || localNewerOrEqual);
+      (isPlaceholderMemberName(remoteName, rm.id) ||
+        (localNewerOrEqual && remoteRosterAt <= localRosterAt));
     if (!preferLocalName && !goalDiff && !opDiff) return rm;
     changed = true;
     return {
