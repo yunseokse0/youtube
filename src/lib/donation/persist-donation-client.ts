@@ -1,5 +1,11 @@
 import type { AppState } from "@/types";
 import type { DonorsPersistMode } from "@/app/api/roulette/edge-state-store";
+import { mergeHighSocietySettingsPreferBaseline } from "@/lib/high-society";
+import {
+  mergeDeletedTerritoryLogIds,
+  mergeTerritoryLogsPreferFresher,
+  resolveTerritoryLogsResetAtForEditorMerge,
+} from "@/lib/territory-utils";
 
 export type PersistDonationApiResult =
   | {
@@ -63,7 +69,31 @@ export async function persistDonationStateViaApi(
         ? data.donorRankingsUpdatedAt
         : Number(data.state?.donorRankingsUpdatedAt || state.donorRankingsUpdatedAt || 0);
     const nextState: AppState = data.state
-      ? data.state
+      ? {
+          ...data.state,
+          highSocietySettings: mergeHighSocietySettingsPreferBaseline(
+            state.highSocietySettings,
+            data.state.highSocietySettings
+          ),
+          territoryLogs: mergeTerritoryLogsPreferFresher(state.territoryLogs, data.state.territoryLogs, {
+            localUpdatedAt: Number(state.updatedAt || 0),
+            remoteUpdatedAt: Number(data.state.updatedAt || updatedAt || 0),
+            territoryLogsResetAt: resolveTerritoryLogsResetAtForEditorMerge({
+              localResetAt: Number(state.highSocietySettings?.territoryLogsResetAt || 0),
+              remoteResetAt: Number(data.state.highSocietySettings?.territoryLogsResetAt || 0),
+              remoteLogsEmpty:
+                Array.isArray(data.state.territoryLogs) && data.state.territoryLogs.length === 0,
+            }),
+            deletedIds: mergeDeletedTerritoryLogIds(
+              state.deletedTerritoryLogIds,
+              data.state.deletedTerritoryLogIds
+            ),
+          }),
+          deletedTerritoryLogIds: mergeDeletedTerritoryLogIds(
+            state.deletedTerritoryLogIds,
+            data.state.deletedTerritoryLogIds
+          ),
+        }
       : {
           ...state,
           updatedAt: Math.max(Number(state.updatedAt || 0), updatedAt),

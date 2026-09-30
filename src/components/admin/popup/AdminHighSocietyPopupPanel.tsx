@@ -103,7 +103,9 @@ export default function AdminHighSocietyPopupPanel() {
       const ok = await persistAppState(next, {
         omitDonationFields: true,
         highSocietySettingsOnly: true,
-        territoryLogsAuthoritative: Boolean(patch.resetTerritory),
+        territoryLogsAuthoritative:
+          Boolean(patch.resetTerritory) ||
+          (Array.isArray(next.territoryLogs) && next.territoryLogs.length > 0),
       });
     if (ok && toast) showAppToast(toast);
     return ok;

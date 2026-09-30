@@ -304,16 +304,21 @@ export function useAdminPopupBroadcastState() {
         const hsOnly = Boolean(opts?.highSocietySettingsOnly || opts?.omitDonationFields);
         const existingSession = readSessionBroadcastState(scopedUserId) ?? loadState(scopedUserId);
         const live = stateRef.current;
-        const logsForSave = opts?.territoryLogsAuthoritative
-          ? mergeTerritoryLogsNeverShrink(live?.territoryLogs, next.territoryLogs, {
-              patchAuthoritative: true,
-              patchIsReset: Array.isArray(next.territoryLogs) && next.territoryLogs.length === 0,
-              deletedIds: mergeDeletedTerritoryLogIds(
-                live?.deletedTerritoryLogIds,
-                next.deletedTerritoryLogIds
-              ),
-            })
-          : next.territoryLogs;
+        const logReset =
+          opts?.territoryLogsAuthoritative === true &&
+          Array.isArray(next.territoryLogs) &&
+          next.territoryLogs.length === 0;
+        const logsForSave =
+          opts?.territoryLogsAuthoritative || opts?.highSocietySettingsOnly
+            ? mergeTerritoryLogsNeverShrink(live?.territoryLogs, next.territoryLogs, {
+                patchAuthoritative: Boolean(opts?.territoryLogsAuthoritative),
+                patchIsReset: logReset,
+                deletedIds: mergeDeletedTerritoryLogIds(
+                  live?.deletedTerritoryLogIds,
+                  next.deletedTerritoryLogIds
+                ),
+              })
+            : next.territoryLogs;
         const stamped = {
           ...mergeBroadcastSessionPreservingDonations(existingSession, {
             ...next,

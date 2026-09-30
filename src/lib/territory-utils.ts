@@ -194,12 +194,15 @@ export function mergeOverlayTerritoryLogs(opts: {
   }
   const incoming = normalizeTerritoryLogs(opts.incomingLogs);
   const incomingEmpty = Array.isArray(opts.incomingLogs) && incoming.length === 0;
-  if (incomingEmpty && incomingResetAt >= lastGoodResetAt) return [];
+  const incomingIsReset = incomingEmpty && incomingResetAt > 0 && incomingResetAt >= lastGoodResetAt;
+  if (incomingIsReset) return [];
   if (lastGoodResetAt > incomingResetAt && lastGood.length === 0) return [];
+  if (incomingEmpty) {
+    return filterTerritoryLogsAfterReset(lastGood, resetAt);
+  }
   const merged = mergeTerritoryLogsNeverShrink(lastGood, incoming, {
     deletedIds: opts.deletedIds,
     patchAuthoritative: true,
-    patchIsReset: incomingEmpty && incomingResetAt >= lastGoodResetAt,
   });
   return filterTerritoryLogsAfterReset(merged, resetAt);
 }
@@ -237,12 +240,19 @@ export function mergeTerritoryLogsPreferFresher(
   };
   let result: TerritoryLog[];
   /** 영토만 초기화 [] — 상대 쪽 기록이 모두 리셋 시각 이전이면 되살리지 않음 */
+  const resetCutoff = Number(opts?.territoryLogsResetAt || 0);
+  const logsAllBefore = (logs: TerritoryLog[], cutoff: number) =>
+    cutoff > 0 && (logs.length === 0 || logs.every((l) => Number(l.at || 0) < cutoff));
   if (loc.length === 0 && localAt > 0) {
     const kept = keepOnOrAfter(rem, localAt);
     result = localAt >= remoteAt || kept.length === 0 ? loc : kept;
   } else if (rem.length === 0 && remoteAt > 0) {
-    const kept = keepOnOrAfter(loc, remoteAt);
-    result = remoteAt >= localAt || kept.length === 0 ? rem : kept;
+    /** 좌석 변경 등은 updatedAt 만 올리고 기록부 키를 안 보낸다. 빈 GET 을 초기화로 보지 않는다. */
+    if (logsAllBefore(loc, resetCutoff)) {
+      result = rem;
+    } else {
+      result = loc;
+    }
   } else {
     /** 한 줄 삭제는 deletedIds tombstone 으로만. 길이 n-1 만으로 지우면 늦은 2건 POST 가 앞 기록을 지움 */
     result = unionTerritoryLogsById(rem, loc);

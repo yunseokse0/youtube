@@ -10915,7 +10915,10 @@ function AdminPageInner() {
                 omitDonationFields: true,
                 highSocietySettingsOnly: true,
                 persistToastLabel,
-                ...(resetTerritory ? { territoryLogsAuthoritative: true } : {}),
+                ...(resetTerritory ||
+                (Array.isArray(next.territoryLogs) && next.territoryLogs.length > 0)
+                  ? { territoryLogsAuthoritative: true }
+                  : {}),
               }
         );
         return next;
@@ -10944,6 +10947,9 @@ function AdminPageInner() {
       persistState(synced, {
         omitDonationFields: true,
         highSocietySettingsOnly: true,
+        ...(Array.isArray(synced.territoryLogs) && synced.territoryLogs.length > 0
+          ? { territoryLogsAuthoritative: true }
+          : {}),
       });
       window.setTimeout(() => {
         hsSnapshotHealBusyRef.current = false;

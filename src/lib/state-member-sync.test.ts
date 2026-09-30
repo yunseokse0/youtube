@@ -518,6 +518,23 @@ describe("member sync helpers", () => {
     expect(merged.territoryLogs).toHaveLength(12);
   });
 
+  it("mergeServerSaveApiBodies does not treat a newer empty leftover logbook as a territory reset", () => {
+    const a = { id: "tl_a", memberId: "ta", amount: 80, delta: 1 as const, at: 1000 };
+    const b = { id: "tl_b", memberId: "ta", amount: 40, delta: 1 as const, at: 2000 };
+    const prev = JSON.stringify({
+      updatedAt: 4000,
+      territoryLogs: [a, b],
+    });
+    const next = JSON.stringify({
+      updatedAt: 5000,
+      territoryLogs: [],
+    });
+    const merged = JSON.parse(mergeServerSaveApiBodies(prev, next)) as {
+      territoryLogs: Array<{ id: string }>;
+    };
+    expect(merged.territoryLogs.map((l) => l.id).sort()).toEqual(["tl_a", "tl_b"]);
+  });
+
   it("appStatePayloadForApi highSocietySettingsOnly omits logbook unless authoritative", () => {
     const state = {
       ...defaultState(),

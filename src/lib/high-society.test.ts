@@ -1567,6 +1567,35 @@ describe("high-society territory (aux)", () => {
     expect(field.seats.every((s) => s.widthCm === 300)).toBe(true);
   });
 
+  it("applyHighSocietyAdminPatchToState 자리 변경은 기록부를 비우지 않는다", async () => {
+    const { applyHighSocietyAdminPatchToState } = await import("@/lib/admin-high-society-settings-patch");
+    const members = [
+      { id: "a", name: "퐁이", account: 0, toon: 0, operating: false },
+      { id: "b", name: "곽호경", account: 0, toon: 0, operating: false },
+      { id: "c", name: "명실이", account: 0, toon: 0, operating: false },
+    ];
+    const log = createTerritoryLog("b", 1, 185, { pushDir: "right", now: 2000 });
+    const prev = {
+      members,
+      donors: [],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: ["a", "b", "c"],
+        seatMemberIdsManual: true,
+        memberWidthCm: { a: 15, b: 285, c: 100 },
+      }),
+      territoryLogs: [log],
+      updatedAt: 1,
+    } as import("@/types").AppState;
+    const next = applyHighSocietyAdminPatchToState(prev, {
+      seatMemberIds: ["b", "a", "c"],
+      seatMemberIdsManual: true,
+    });
+    expect(next.territoryLogs?.map((l) => l.id)).toEqual([log.id]);
+    expect(Number(next.highSocietySettings?.territoryLogsResetAt || 0)).toBe(0);
+    expect(next.highSocietySettings?.seatMemberIds).toEqual(["b", "a", "c"]);
+  });
+
   it("저장된 cm가 없으면 기록부는 다시 깔지 않는다", () => {
     const members = [
       { id: "a", name: "A", account: 0, toon: 0, operating: false },

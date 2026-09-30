@@ -2443,7 +2443,8 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
             next.territoryLogs,
             {
               deletedIds: mergeDeletedTerritoryLogIds(prevDel, nextDel),
-              patchIsReset: next.territoryLogs.length === 0 && Number(next.updatedAt || 0) >= Number(prev.updatedAt || 0),
+              /** 빈 목록은 영토 초기화 정본일 때만. updatedAt 만 큰 leftover [] 는 기록부를 지우지 않는다. */
+              patchIsReset: false,
             }
           );
         } else if (Array.isArray(prev.territoryLogs)) {

@@ -229,6 +229,17 @@ describe("territory-utils", () => {
     expect(merged).toEqual([]);
   });
 
+  it("자리 변경처럼 빈 원격·더 큰 updatedAt 만으로는 로컬 기록부를 지우지 않는다", () => {
+    const a = createTerritoryLog("a", 1, 80, { now: 1000 });
+    const b = createTerritoryLog("b", 1, 40, { now: 2000 });
+    const merged = mergeTerritoryLogsPreferFresher([a, b], [], {
+      localUpdatedAt: 4000,
+      remoteUpdatedAt: 5000,
+      territoryLogsResetAt: 0,
+    });
+    expect(merged.map((l) => l.id).sort()).toEqual([a.id, b.id].sort());
+  });
+
   it("editor merge resetAt does not use a higher remote stamp to drop local rows", () => {
     expect(
       resolveTerritoryLogsResetAtForEditorMerge({
@@ -328,6 +339,18 @@ describe("territory-utils", () => {
     const second = createTerritoryLog("pong", 1, 100, { now: 6_000 });
     const raced = mergeTerritoryLogsNeverShrink([first], [second], { patchAuthoritative: true });
     expect(raced.map((l) => l.id).sort()).toEqual([first.id, second.id].sort());
+  });
+
+  it("overlay merge keeps last-good when incoming is empty without a reset stamp", () => {
+    const a = createTerritoryLog("a", 1, 80, { now: 1_000 });
+    const merged = mergeOverlayTerritoryLogs({
+      lastGoodLogs: [a],
+      incomingLogs: [],
+      incomingHasKey: true,
+      lastGoodResetAt: 0,
+      incomingResetAt: 0,
+    });
+    expect(merged.map((l) => l.id)).toEqual([a.id]);
   });
 
   it("overlay merge does not resurrect stale logs after a newer empty reset", () => {
