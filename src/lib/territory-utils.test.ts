@@ -311,7 +311,7 @@ describe("territory-utils", () => {
     expect(stale.map((l) => l.id).sort()).toEqual(rows.map((l) => l.id).sort());
   });
 
-  it("neverShrink: longer current book replaces older session rows", () => {
+  it("neverShrink: 초기화 전에는 다른 목록이 와도 기존 기록을 지우지 않는다", () => {
     const oldSession = [
       createTerritoryLog("old", 1, 180, { now: 1000 }),
       createTerritoryLog("old", 1, 120, { now: 2000 }),
@@ -321,7 +321,13 @@ describe("territory-utils", () => {
       createTerritoryLog("a", 1, 10 + i, { now: 10_000 + i })
     );
     const merged = mergeTerritoryLogsNeverShrink(oldSession, current, { patchAuthoritative: true });
-    expect(merged.map((l) => l.id).sort()).toEqual(current.map((l) => l.id).sort());
+    expect(merged.map((l) => l.id).sort()).toEqual(
+      [...oldSession, ...current].map((l) => l.id).sort()
+    );
+    const first = createTerritoryLog("pong", 1, 100, { now: 5_000 });
+    const second = createTerritoryLog("pong", 1, 100, { now: 6_000 });
+    const raced = mergeTerritoryLogsNeverShrink([first], [second], { patchAuthoritative: true });
+    expect(raced.map((l) => l.id).sort()).toEqual([first.id, second.id].sort());
   });
 
   it("overlay merge does not resurrect stale logs after a newer empty reset", () => {

@@ -82,9 +82,9 @@ function dropDeletedTerritoryLogs(
 }
 
 /**
- * 기록부는 길어질 수만 있다. 짧은 POST 로 앞줄을 덮지 않는다.
+ * 기록부는 영토 초기화 전까지 줄어들지 않는다.
+ * 같은 길이의 다른 목록이 와도 id 가 다르면 둘 다 남긴다.
  * 줄어드는 경우: 영토 초기화 [] 또는 deletedIds tombstone.
- * 정본 목록이 더 길거나 같으면 그 목록이 현재 화면(옛 세션 3건 제거).
  */
 export function mergeTerritoryLogsNeverShrink(
   baseLogs: TerritoryLog[] | undefined,
@@ -100,9 +100,6 @@ export function mergeTerritoryLogsNeverShrink(
   if (opts?.patchIsReset) return [];
   if (opts?.patchAuthoritative && Array.isArray(patchLogs) && patch.length === 0) return [];
   const deletedIds = opts?.deletedIds;
-  if (opts?.patchAuthoritative && patch.length >= base.length) {
-    return dropDeletedTerritoryLogs(patch, deletedIds);
-  }
   return dropDeletedTerritoryLogs(unionTerritoryLogsById(base, patch), deletedIds);
 }
 
