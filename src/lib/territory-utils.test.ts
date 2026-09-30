@@ -380,4 +380,17 @@ describe("territory-utils", () => {
     });
     expect(merged.map((l) => l.id).sort()).toEqual([older.id, newer.id].sort());
   });
+
+  it("overlay merge replaces last-good when incoming log ids do not overlap", () => {
+    const stale = createTerritoryLog("yeong", 1, 100, { now: 1_000 });
+    const fresh = createTerritoryLog("pong", 1, 500, { now: 2_000 });
+    const merged = mergeOverlayTerritoryLogs({
+      lastGoodLogs: [stale],
+      incomingLogs: [fresh],
+      incomingHasKey: true,
+      lastGoodResetAt: 0,
+      incomingResetAt: 0,
+    });
+    expect(merged.map((l) => l.id)).toEqual([fresh.id]);
+  });
 });

@@ -1993,6 +1993,31 @@ describe("highSociety regression guards", () => {
     expect(wiped.pendingEndEntryMemberIds).toEqual(["gwak", "pong", "yeong", "yuri"]);
   });
 
+  it("자리·epoch 가 바뀐 새 판은 last-good 대기와 옛 cm를 붙잡지 않는다", () => {
+    const baseline = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["pong", "yeong", "jaki", "yuri", "gwak"],
+      fieldCm: 600,
+      startCmPerMember: 100,
+      pendingEndEntryMemberIds: ["yeong", "jaki"],
+      pendingEndEntryBoardCm: { pong: 5, yeong: 235, jaki: 340, yuri: 15, gwak: 5 },
+      memberWidthCm: { pong: 5, yeong: 235, jaki: 340, yuri: 15, gwak: 5 },
+      territorySnapshotEpochAt: 1_000,
+    });
+    const incoming = normalizeHighSocietySettings({
+      enabled: true,
+      seatMemberIds: ["jaki", "gwak", "pong", "reze", "yeong", "yuri"],
+      fieldCm: 600,
+      startCmPerMember: 100,
+      memberWidthCm: { jaki: 5, gwak: 0, pong: 585, reze: 0, yeong: 0, yuri: 10 },
+      territorySnapshotEpochAt: 2_000,
+    });
+    const merged = mergeHighSocietySettingsPreferBaseline(baseline, incoming);
+    expect(merged.pendingEndEntryMemberIds ?? []).toEqual([]);
+    expect(merged.memberWidthCm).toEqual(incoming.memberWidthCm);
+    expect(merged.seatMemberIds).toEqual(incoming.seatMemberIds);
+  });
+
   it("상류사회 현재 설정은 더 큰 updatedAt 이 와도 그대로 저장한다", () => {
     const local = normalizeHighSocietySettings({
       enabled: true,
@@ -2288,6 +2313,46 @@ describe("0cm eliminated member re-entry", () => {
       })
     );
     expect(held).toBe(prev);
+  });
+
+  it("옛 대기 스냅샷에 땅이 있으면 OBS는 새 저장 cm를 그린다", () => {
+    const live = [
+      { id: "jaki", widthCm: 5, eliminated: false },
+      { id: "gwak", widthCm: 0, eliminated: true },
+      { id: "pong", widthCm: 585, eliminated: false },
+      { id: "reze", widthCm: 0, eliminated: true },
+      { id: "yeong", widthCm: 0, eliminated: true },
+      { id: "yuri", widthCm: 10, eliminated: false },
+    ] as import("@/lib/high-society").HighSocietySeat[];
+    const overlay = resolveHighSocietyOverlayGaugeSeats(
+      live,
+      normalizeHighSocietySettings({
+        pendingEndEntryMemberIds: ["yeong", "jaki"],
+        pendingEndEntryBoardCm: { pong: 5, yeong: 235, jaki: 340, yuri: 15, gwak: 5 },
+      })
+    );
+    expect(overlay.find((s) => s.id === "pong")!.widthCm).toBe(585);
+    expect(overlay.find((s) => s.id === "jaki")!.widthCm).toBe(0);
+    expect(overlay.find((s) => s.id === "yuri")!.widthCm).toBe(10);
+  });
+
+  it("좌석 순서가 바뀌면 이미 그린 게이지를 붙잡지 않는다", () => {
+    const prev = [
+      { id: "pong", widthCm: 5, eliminated: false },
+      { id: "yeong", widthCm: 235, eliminated: false },
+      { id: "jaki", widthCm: 340, eliminated: false },
+    ] as import("@/lib/high-society").HighSocietySeat[];
+    const next = [
+      { id: "jaki", widthCm: 5, eliminated: false },
+      { id: "pong", widthCm: 585, eliminated: false },
+      { id: "yeong", widthCm: 0, eliminated: true },
+    ] as import("@/lib/high-society").HighSocietySeat[];
+    const held = holdHighSocietyOverlayGaugeIfPending(
+      next,
+      prev,
+      normalizeHighSocietySettings({ pendingEndEntryMemberIds: ["jaki"] })
+    );
+    expect(held).toBe(next);
   });
 
   it("개인전 가운데 +20 무방향은 좌우 양분", () => {

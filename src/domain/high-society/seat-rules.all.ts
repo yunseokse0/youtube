@@ -252,10 +252,14 @@ export function resolveHighSocietyOverlayGaugeSeats(
     (s.pendingEndEntryMemberIds || []).map((id) => String(id || "").trim()).filter(Boolean)
   );
   const frozen = s.pendingEndEntryBoardCm || {};
-  const useFrozen = pending.size > 0 && Object.keys(frozen).length > 0;
+  const pendingIds = [...pending];
+  const freezeIsPreReentry =
+    pendingIds.length > 0 &&
+    Object.keys(frozen).length > 0 &&
+    pendingIds.every((id) => roundTerritoryCm(Number(frozen[id] ?? 0)) <= 0);
   return seats.map((seat) => {
     let widthCm = roundTerritoryCm(seat.widthCm);
-    if (useFrozen && frozen[seat.id] != null) {
+    if (freezeIsPreReentry && frozen[seat.id] != null) {
       widthCm = roundTerritoryCm(Number(frozen[seat.id]));
     } else if (pending.has(seat.id)) {
       widthCm = 0;
@@ -268,23 +272,34 @@ export function resolveHighSocietyOverlayGaugeSeats(
   });
 }
 
-/** 대기 중인데 직전 판 스냅샷이 없으면, 이미 그린 게이지를 그대로 유지한다. */
+/** 가운데 재진입이 게이지에 붙을 때만 직전 칸을 유지한다. 새 좌석 순서는 붙잡지 않는다. */
 export function holdHighSocietyOverlayGaugeIfPending(
   next: HighSocietySeat[],
   prev: HighSocietySeat[],
   settings: HighSocietySettings | null | undefined
 ): HighSocietySeat[] {
   const s = normalizeHighSocietySettings(settings);
-  if ((s.pendingEndEntryMemberIds || []).length === 0) return next;
+  const pending = (s.pendingEndEntryMemberIds || [])
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+  if (pending.length === 0) return next;
   if (Object.keys(s.pendingEndEntryBoardCm || {}).length > 0) return next;
   if (
-    prev.length > 0 &&
-    prev.length === next.length &&
-    prev.every((seat, i) => seat.id === next[i]?.id)
+    prev.length === 0 ||
+    prev.length !== next.length ||
+    !prev.every((seat, i) => seat.id === next[i]?.id)
   ) {
-    return prev;
+    return next;
   }
-  return next;
+  const last = next.length - 1;
+  const pendingAppearedInMiddle = pending.some((id) => {
+    const idx = next.findIndex((seat) => seat.id === id);
+    if (idx < 0 || idx === 0 || idx === last) return false;
+    const live = next[idx]!;
+    const was = prev[idx]!;
+    return live.widthCm > 0 && was.widthCm <= 0;
+  });
+  return pendingAppearedInMiddle ? prev : next;
 }
 
 /** 영토 cm — 소수 첫째 자리. 홀수 양분(7.5)이 정수 반올림으로 사라지지 않게 */
@@ -773,7 +788,19 @@ export function mergeHighSocietySettingsPreferBaseline(
   }
   const pendingKept = pendingEndEntryIdsAfterIncomingSettings(base, inc);
   const incPending = inc.pendingEndEntryMemberIds || [];
-  if (pendingKept.length > 0 && pendingKept.join("\0") !== incPending.join("\0")) {
+  const epochInc = Number(inc.territorySnapshotEpochAt || 0);
+  const epochBase = Number(base.territorySnapshotEpochAt || 0);
+  const seatsChanged = !seatMemberIdsEqual(base.seatMemberIds || [], inc.seatMemberIds || []);
+  /** 자리·epoch 가 바뀐 새 판(대기 없음)에 last-good 대기를 되살리면 OBS가 이전 게이지를 붙잡는다 */
+  const incomingIsFreshBoard =
+    incPending.length === 0 &&
+    hasMemberWidthSnapshot(inc) &&
+    (epochInc > epochBase || seatsChanged);
+  if (
+    !incomingIsFreshBoard &&
+    pendingKept.length > 0 &&
+    pendingKept.join("\0") !== incPending.join("\0")
+  ) {
     patch.pendingEndEntryMemberIds = pendingKept;
     if (base.pendingEndEntryBoardCm && !inc.pendingEndEntryBoardCm) {
       patch.pendingEndEntryBoardCm = base.pendingEndEntryBoardCm;

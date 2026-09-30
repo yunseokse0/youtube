@@ -200,6 +200,12 @@ export function mergeOverlayTerritoryLogs(opts: {
   if (incomingEmpty) {
     return filterTerritoryLogsAfterReset(lastGood, resetAt);
   }
+  const lastGoodIds = new Set(lastGood.map((log) => String(log.id)));
+  const overlap = incoming.filter((log) => lastGoodIds.has(String(log.id))).length;
+  /** 자리 변경 후 새 기록부(id 가 안 겹침)는 last-good 옛 줄을 합치지 않는다 */
+  if (lastGood.length > 0 && overlap === 0) {
+    return filterTerritoryLogsAfterReset(incoming, resetAt);
+  }
   const merged = mergeTerritoryLogsNeverShrink(lastGood, incoming, {
     deletedIds: opts.deletedIds,
     patchAuthoritative: true,
