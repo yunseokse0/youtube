@@ -9,6 +9,7 @@ import {
   extractReliableToonationExtFromDonorId,
   isReliableToonationExternalId,
 } from "@/lib/donation/toonation/parse-event";
+import { donationHubIdentity } from "@/domain/dedupe/donation-hub-identity";
 import { resolveEffectiveDonorTarget } from "@/lib/state";
 
 export type SourceKind = "bank" | "toonation" | "other";
@@ -48,17 +49,7 @@ export function normalizeDonationEventId(id: string): string {
    *  FIX: source-label prefix(ingest:, toona:, account:, hub: 등등 가장 앞단을 먼저 제거하고 위 1~3 규칙 실행 →
    *       → ingest:toonation:din:12345 → 12345 · toona:toonation:din:12345 → 12345 로 동일 → 정규화.
    */
-  let base = String(id || "").trim();
-  if (!base) return "";
-  // 0. source-label prefix: 로그 표시용 prefix: ingest / toona / account / hub / polling / 등 가장 앞 1단어 구분자 제거 (dedup만 영향 zero, 로그 저장 자체는 id 값과 별개로 처리함
-  base = base.replace(/^(ingest|toona|account|din|hub|din|poll|dinpush|poll|push|din_ingest|din_hub):/i, "");
-  // 1. ::review 등 meta suffix 제거 (원래 존재하던 로직 유지)
-  base = base.replace(/::[a-z]+$/i, "");
-  // 2. provider prefix: {toonation|bank|other}: 제거 (case insensitive)
-  base = base.replace(/^(toonation|bank|other|toon|투네|toona):/i, "");
-  // 3. hub marker prefix: din: 제거 → 오직 외부 ID 본체 "숫자·UUID·hex·fp- weak id" 만 남김
-  base = base.replace(/^(din|hub|self):/i, "");
-  return base;
+  return donationHubIdentity(id);
 }
 
 export function isWeakToonationDonorId(id: string): boolean {

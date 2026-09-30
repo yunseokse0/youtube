@@ -78,6 +78,7 @@ import {
   type StateApiPick,
 } from "@/lib/state-api-pick";
 import { MANUAL_SIG_BROADCAST_STATE_KEY } from "@/lib/manual-sig-broadcast-state";
+import { donationHubIdentity } from "@/domain/dedupe/donation-hub-identity";
 import { mergeDonorRowFields, syncMemberTotalsFromDonors, syncAndRepairMemberTotals } from "@/domain/apply-donation-state.all";
 import { guardMemberTotalsAgainstAccidentalZeroWipe, wouldAccidentallyZeroRemainingMembers } from "@/domain/guards/zero-wipe-guard";
 import { mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
@@ -4343,24 +4344,23 @@ export function isDonorListMemberReassignment(
 
 function unionDonorsById(existing: Donor[], incoming: Donor[]): Donor[] {
   const map = new Map<string, Donor>();
-  for (const d of existing) map.set(String(d.id), d);
-  for (const d of incoming) {
-    const id = String(d.id);
-    const prev = map.get(id);
+  const put = (d: Donor) => {
+    const raw = String(d.id || "");
+    const key = donationHubIdentity(raw) || raw;
+    if (!key) return;
+    const prev = map.get(key);
     if (!prev) {
-      map.set(id, d);
-      continue;
+      map.set(key, d);
+      return;
     }
     const prevAt = donorAtEpochMs(prev);
     const nextAt = donorAtEpochMs(d);
-    if (nextAt > prevAt) {
-      map.set(id, mergeDonorRowFields(d, prev));
-    } else if (nextAt < prevAt) {
-      map.set(id, mergeDonorRowFields(prev, d));
-    } else {
-      map.set(id, mergeDonorRowFields(d, prev));
-    }
-  }
+    if (nextAt > prevAt) map.set(key, mergeDonorRowFields(d, prev));
+    else if (nextAt < prevAt) map.set(key, mergeDonorRowFields(prev, d));
+    else map.set(key, mergeDonorRowFields(d, prev));
+  };
+  for (const d of existing) put(d);
+  for (const d of incoming) put(d);
   return Array.from(map.values()).sort((a, b) => donorAtEpochMs(b) - donorAtEpochMs(a));
 }
 
