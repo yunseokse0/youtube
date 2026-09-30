@@ -101,8 +101,10 @@ describe("상류사회 × 후원 반영 (게이지는 기록부, 후원은 정�
   it("후원이 들어와도 영토 기록·0cm 재진입 자리는 그대로다", () => {
     const before = withLogs(hsState());
     const sigBefore = fieldSig(before);
-    expect(sigBefore.alive[0]).toBe("b");
-    expect(sigBefore.total).toBe(400);
+    expect(sigBefore.ids).toEqual(["a", "b", "c", "d"]);
+    expect(sigBefore.alive[1]).toBe("b");
+    expect(sigBefore.widths[1]).toBe(20);
+    expect(sigBefore.total).toBe(420);
 
     const applied = applyDonationToAppState(before, evt("toonation:hs-1", "a"));
     expect(applied.ok).toBe(true);
@@ -252,7 +254,7 @@ describe("상류사회 × 후원 반영 (게이지는 기록부, 후원은 정�
     const sheet = computeSettlement(applied.state.members, 0.7, 0.6);
     const rowA = sheet.members.find((m) => m.memberId === "a");
     expect(rowA?.account).toBe(100_000);
-    expect(fieldSig(applied.state).total).toBe(400);
+    expect(fieldSig(applied.state).total).toBe(420);
   });
 
   it("저장 병합이 짧은 leftover 기록부로 게이지를 되돌리지 않는다", () => {
@@ -269,7 +271,8 @@ describe("상류사회 × 후원 반영 (게이지는 기록부, 후원은 정�
     expect(merged.territoryLogs?.map((l) => l.id)).toEqual(
       applied.state.territoryLogs?.map((l) => l.id)
     );
-    expect(fieldSig(merged).alive[0]).toBe("b");
+    expect(fieldSig(merged).ids).toEqual(["a", "b", "c", "d"]);
+    expect(fieldSig(merged).widths[1]).toBe(20);
     expect(merged.donors?.some((d) => d.id === "toonation:merge")).toBe(true);
   });
 

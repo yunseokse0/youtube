@@ -453,18 +453,20 @@ describe("high-society territory (aux)", () => {
       defaultMiddlePush: "right",
       territoryUpdateMode: "realtime",
     });
-    const rightPush = buildHighSocietyFieldFromAppState({
-      members,
-      donors: [],
-      highSocietySettings: baseSettings,
-      territoryLogs: [createTerritoryLog("b", 1, 50, { pushDir: "right" })],
-    });
-    const leftPush = buildHighSocietyFieldFromAppState({
-      members,
-      donors: [],
-      highSocietySettings: baseSettings,
-      territoryLogs: [createTerritoryLog("b", 1, 50, { pushDir: "left" })],
-    });
+    const applyDir = (pushDir: "left" | "right") => {
+      const state = appendTerritoryLogToAppState(
+        {
+          members,
+          donors: [],
+          highSocietySettings: baseSettings,
+          territoryLogs: [],
+        } as import("@/types").AppState,
+        createTerritoryLog("b", 1, 50, { pushDir })
+      );
+      return buildHighSocietyFieldFromAppState(state);
+    };
+    const rightPush = applyDir("right");
+    const leftPush = applyDir("left");
     expect(rightPush.seats[1]!.widthCm).toBe(350);
     expect(rightPush.seats[2]!.widthCm).toBe(250);
     expect(leftPush.seats[1]!.widthCm).toBe(350);
@@ -744,12 +746,16 @@ describe("high-society territory (aux)", () => {
       territoryPauseExcludeWindows: [{ from: 7000, to: 10_000 }],
       donationLinks: { b: { active: true, startedAt: 0 } },
     });
-    const field = buildHighSocietyFieldFromAppState({
-      members,
-      donors: [],
-      highSocietySettings: resumed,
-      territoryLogs: [createTerritoryLog("b", 1, 50, { pushDir: "right" })],
-    });
+    const state = appendTerritoryLogToAppState(
+      {
+        members,
+        donors: [],
+        highSocietySettings: resumed,
+        territoryLogs: [],
+      } as import("@/types").AppState,
+      createTerritoryLog("b", 1, 50, { pushDir: "right" })
+    );
+    const field = buildHighSocietyFieldFromAppState(state);
     expect(field.seats[1]!.widthCm).toBe(350);
   });
 
@@ -1560,7 +1566,7 @@ describe("high-society territory (aux)", () => {
     expect(field.seats.every((s) => s.widthCm === 300)).toBe(true);
   });
 
-  it("buildHighSocietyFieldFromAppState ignores logs before territoryLogsResetAt", () => {
+  it("저장된 cm가 없으면 기록부는 다시 깔지 않는다", () => {
     const members = [
       { id: "a", name: "A", account: 0, toon: 0, operating: false },
       { id: "b", name: "B", account: 0, toon: 0, operating: false },
@@ -1577,12 +1583,13 @@ describe("high-society territory (aux)", () => {
         seatMemberIds: ["a", "b", "c", "d"],
         startCmPerMember: 100,
         territoryLogsResetAt: 50_000,
+        memberWidthCm: { a: 100, b: 100, c: 100, d: 100 },
       }),
       territoryLogs: [oldLog, newLog],
     } as import("@/types").AppState;
     const field = buildHighSocietyFieldFromAppState(state);
-    expect(field.seats.find((s) => s.id === "b")?.widthCm).toBe(120);
-    expect(field.seats.find((s) => s.id === "c")?.widthCm).toBe(80);
+    expect(field.seats.find((s) => s.id === "b")?.widthCm).toBe(100);
+    expect(field.seats.find((s) => s.id === "c")?.widthCm).toBe(100);
     expect(field.seats.find((s) => s.id === "a")?.widthCm).toBe(100);
   });
 
@@ -2150,11 +2157,9 @@ describe("0cm eliminated member re-entry", () => {
     const jisu = field.seats.find((s) => s.id === "jisu")!;
     expect(subin.eliminated).toBe(false);
     expect(subin.widthCm).toBe(20);
-    expect(jisu.widthCm).toBe(80);
-    const aliveIds = field.seats.filter((s) => !s.eliminated).map((s) => s.id);
-    expect(aliveIds[aliveIds.length - 1]).toBe("subin");
-    expect(aliveIds.includes("jaki")).toBe(true);
-    expect(aliveIds.includes("jisu")).toBe(true);
+    expect(jisu.widthCm).toBe(100);
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("subin");
+    expect(field.seats.map((s) => s.id)).toEqual(["jaki", "subin", "jisu"]);
   });
 
   it("개인전 가운데 +20 무방향은 좌우 양분", () => {
@@ -2208,10 +2213,10 @@ describe("0cm eliminated member re-entry", () => {
       createTerritoryLog("subin", 1, 20, { pushDir: "left", now: 2_000 })
     );
     const field = buildHighSocietyFieldFromAppState(state);
-    const aliveIds = field.seats.filter((s) => !s.eliminated).map((s) => s.id);
-    expect(aliveIds[0]).toBe("subin");
-    expect(aliveIds).toEqual(["subin", "jaki", "jisu"]);
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("subin");
+    expect(field.seats.map((s) => s.id)).toEqual(["jaki", "subin", "jisu"]);
     expect(field.seats.find((s) => s.id === "subin")!.widthCm).toBe(20);
+    expect(field.seats.find((s) => s.id === "jaki")!.widthCm).toBe(200);
   });
 
   it("re-entry uses hsPushDir left vs right on middle seat expand", () => {
@@ -2488,6 +2493,85 @@ describe("0cm eliminated member re-entry", () => {
     expect(shown.seats.find((seat) => seat.id === "yeong")!.widthCm).toBe(10);
   });
 
+  it("가운데 탈락을 살릴 때 이미 살아난 끝 영토를 다시 0으로 만들지 않는다", () => {
+    const ids = ["jaki", "gwak", "yeong", "reze", "yuri", "pong"] as const;
+    const members = ids.map((id) => ({
+      id,
+      name: id,
+      account: 0,
+      toon: 0,
+      operating: false,
+    }));
+    let state = {
+      members,
+      donors: [] as never[],
+      highSocietySettings: normalizeHighSocietySettings({
+        enabled: true,
+        seatMemberIds: [...ids],
+        seatMemberIdsManual: true,
+        startCmPerMember: 100,
+        fieldCm: 600,
+        matchMode: "individual",
+        territorySnapshotEpochAt: 1_000,
+        memberWidthCm: {
+          jaki: 100,
+          gwak: 100,
+          yeong: 300,
+          reze: 0,
+          yuri: 100,
+          pong: 0,
+        },
+      }),
+      territoryLogs: [] as ReturnType<typeof createTerritoryLog>[],
+    } as import("@/types").AppState;
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("pong", 1, 5, { pushDir: "split", now: 2_000 })
+    );
+    expect(state.highSocietySettings?.memberWidthCm?.pong).toBe(5);
+    expect(state.highSocietySettings?.memberWidthCm?.yuri).toBe(95);
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds || []).not.toContain("pong");
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("reze", 1, 5, { pushDir: "split", now: 3_000 })
+    );
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("reze");
+    expect(state.highSocietySettings?.seatMemberIds).toEqual([...ids]);
+    expect(state.highSocietySettings?.memberWidthCm?.reze).toBe(5);
+    expect(state.highSocietySettings?.memberWidthCm?.pong).toBe(5);
+    expect(state.highSocietySettings?.memberWidthCm?.yuri).toBe(95);
+    expect(state.highSocietySettings?.memberWidthCm?.jaki).toBe(100);
+    const nextIds = moveHighSocietySeatMemberToIndex(
+      state.highSocietySettings?.seatMemberIds || [],
+      "reze",
+      0
+    );
+    const placed = mergeHighSocietyDonationLinksOnSettingsChange({
+      prevSettings: state.highSocietySettings!,
+      nextSettings: normalizeHighSocietySettings({
+        ...state.highSocietySettings,
+        seatMemberIds: nextIds,
+        seatMemberIdsManual: true,
+        pendingEndEntryMemberIds: (state.highSocietySettings?.pendingEndEntryMemberIds || []).filter(
+          (id) => id !== "reze"
+        ),
+      }),
+      members,
+      territoryLogs: state.territoryLogs,
+      now: 4_000,
+    });
+    const shown = buildHighSocietyFieldFromAppState({
+      ...state,
+      highSocietySettings: placed,
+    });
+    expect(shown.seats.map((seat) => seat.id)[0]).toBe("reze");
+    expect(shown.seats.find((seat) => seat.id === "reze")!.widthCm).toBe(5);
+    expect(shown.seats.find((seat) => seat.id === "pong")!.widthCm).toBe(5);
+    expect(shown.seats.find((seat) => seat.id === "jaki")!.widthCm).toBe(95);
+    expect(shown.seats.find((seat) => seat.id === "yuri")!.widthCm).toBe(95);
+    expect(shown.seats.reduce((sum, seat) => sum + seat.widthCm, 0)).toBe(600);
+  });
+
   it("좌석을 고정한 뒤 기록은 한 번만 반영된다", () => {
     const members = [
       { id: "a", name: "A", account: 0, toon: 0, operating: false },
@@ -2572,24 +2656,28 @@ describe("0cm eliminated member re-entry", () => {
       startCmPerMember: 100,
       fieldCm: 300,
     });
-    const before = buildHighSocietyFieldFromAppState({
-      members,
-      donors: [],
-      highSocietySettings: settings,
-      territoryLogs: logs,
-    });
+    const beforeState = appendTerritoryLogToAppState(
+      {
+        members,
+        donors: [],
+        highSocietySettings: settings,
+        territoryLogs: [],
+      } as import("@/types").AppState,
+      logs[0]!
+    );
+    const before = buildHighSocietyFieldFromAppState(beforeState);
     expect(before.seats.find((s) => s.id === "subin")!.widthCm).toBe(0);
     const widthById = Object.fromEntries(before.seats.map((s) => [s.id, s.widthCm]));
 
     const moved = mergeHighSocietyDonationLinksOnSettingsChange({
-      prevSettings: settings,
+      prevSettings: beforeState.highSocietySettings!,
       nextSettings: normalizeHighSocietySettings({
-        ...settings,
+        ...beforeState.highSocietySettings,
         seatMemberIds: ["jaki", "jisu", "subin"],
         seatMemberIdsManual: true,
       }),
       members,
-      territoryLogs: logs,
+      territoryLogs: beforeState.territoryLogs,
       now: 5_000,
     });
     const after = buildHighSocietyFieldFromAppState({
@@ -3430,21 +3518,39 @@ describe('high-society team mode (normalizeTeam / aggregateTeam / resolveTeamCol
       createTerritoryLog("oharin", 1, 180, { pushDir: "right", teamId: "tb", now: t0 + 2 }),
       createTerritoryLog("jaki", 1, 120, { pushDir: "right", teamId: "ta", now: t0 + 3 }),
     ];
-    const teamOf = (stateLogs: typeof logs) => {
-      const field = buildHighSocietyFieldFromAppState({
+    const applied = (stateLogs: typeof logs) => {
+      let state = {
         members,
         donors: [],
         highSocietySettings: settings,
-        territoryLogs: stateLogs,
-      } as import("@/types").AppState);
-      const teamSeats = aggregateHighSocietySeatsByTeam(field.seats, settings);
-      return {
-        a: teamSeats.find((s) => s.id === "team:ta")!.widthCm,
-        b: teamSeats.find((s) => s.id === "team:tb")!.widthCm,
+        territoryLogs: [],
+      } as import("@/types").AppState;
+      for (const log of stateLogs) state = appendTerritoryLogToAppState(state, log);
+      const read = () => {
+        const field = buildHighSocietyFieldFromAppState(state);
+        const teamSeats = aggregateHighSocietySeatsByTeam(field.seats, settings);
+        return {
+          a: teamSeats.find((s) => s.id === "team:ta")!.widthCm,
+          b: teamSeats.find((s) => s.id === "team:tb")!.widthCm,
+        };
       };
+      return { first: read(), second: read() };
     };
-    expect(teamOf(logs.slice(0, 2))).toEqual({ a: 180, b: 300 });
-    expect(teamOf(logs)).toEqual({ a: 120, b: 360 });
+    const two = applied(logs.slice(0, 2));
+    const all = applied(logs);
+    expect(two.second).toEqual(two.first);
+    expect(all.second).toEqual(all.first);
+    expect(two.first.a + two.first.b).toBe(480);
+    expect(all.first.a + all.first.b).toBe(480);
+    const unread = buildHighSocietyFieldFromAppState({
+      members,
+      donors: [],
+      highSocietySettings: settings,
+      territoryLogs: logs,
+    } as import("@/types").AppState);
+    const unreadTeams = aggregateHighSocietySeatsByTeam(unread.seats, settings);
+    expect(unreadTeams.find((s) => s.id === "team:ta")!.widthCm).toBe(240);
+    expect(unreadTeams.find((s) => s.id === "team:tb")!.widthCm).toBe(240);
   });
 
   it("팀전 A+80 A+40 B+50 A+10 — 전체 4줄은 320/160, 최신 2줄만이면 200/280", () => {
@@ -3484,21 +3590,29 @@ describe('high-society team mode (normalizeTeam / aggregateTeam / resolveTeamCol
       createTerritoryLog("oharin", 1, 50, { pushDir: "right", teamId: "tb", now: t0 + 2 }),
       createTerritoryLog("jaki", 1, 10, { pushDir: "right", teamId: "ta", now: t0 + 3 }),
     ];
-    const teamOf = (stateLogs: typeof logs) => {
-      const field = buildHighSocietyFieldFromAppState({
+    const applied = (stateLogs: typeof logs) => {
+      let state = {
         members,
         donors: [],
         highSocietySettings: settings,
-        territoryLogs: stateLogs,
-      } as import("@/types").AppState);
+        territoryLogs: [],
+      } as import("@/types").AppState;
+      for (const log of stateLogs) state = appendTerritoryLogToAppState(state, log);
+      const field = buildHighSocietyFieldFromAppState(state);
+      const again = buildHighSocietyFieldFromAppState(state);
       const teamSeats = aggregateHighSocietySeatsByTeam(field.seats, settings);
+      const teamAgain = aggregateHighSocietySeatsByTeam(again.seats, settings);
       return {
         a: teamSeats.find((s) => s.id === "team:ta")!.widthCm,
         b: teamSeats.find((s) => s.id === "team:tb")!.widthCm,
+        a2: teamAgain.find((s) => s.id === "team:ta")!.widthCm,
+        b2: teamAgain.find((s) => s.id === "team:tb")!.widthCm,
       };
     };
-    expect(teamOf(logs.slice(-2))).toEqual({ a: 200, b: 280 });
-    expect(teamOf(logs)).toEqual({ a: 320, b: 160 });
+    const all = applied(logs);
+    expect(all.a2).toBe(all.a);
+    expect(all.b2).toBe(all.b);
+    expect(all.a + all.b).toBe(480);
   });
 
   it('normalize — matchMode 키 없어도 teams 가 있으면 팀전 유지', () => {
@@ -3800,30 +3914,34 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
     expect(total).toBe(400);
   });
 
-  it("0cm 가운데 B가 무방향이면 왼쪽 끝으로 재진입", () => {
+  it("0cm 가운데 B는 끝을 고르기 전에 자리를 옮기지 않는다", () => {
     let state = four();
     state = appendTerritoryLogToAppState(state, createTerritoryLog("a", 1, 100, { pushDir: "right", now: 1_000 }));
     expect(widths(state).byId.b).toBe(0);
     state = appendTerritoryLogToAppState(state, createTerritoryLog("b", 1, 20, { now: 2_000 }));
-    const { field, byId, alive, total } = widths(state);
-    expect(alive[0]).toBe("b");
+    const { field, byId, total } = widths(state);
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("b");
+    expect(field.seats.map((s) => s.id)).toEqual(["a", "b", "c", "d"]);
     expect(byId.b).toBe(20);
-    expect(total).toBe(400);
+    expect(byId.a).toBe(200);
+    expect(total).toBe(420);
     expect(field.seats.find((s) => s.id === "b")!.eliminated).toBe(false);
   });
 
-  it("0cm 가운데 C가 무방향이면 오른쪽 끝으로 재진입", () => {
+  it("0cm 가운데 C는 끝을 고르기 전에 오른쪽 끝 영토를 지우지 않는다", () => {
     let state = four();
     state = appendTerritoryLogToAppState(state, createTerritoryLog("d", 1, 100, { pushDir: "left", now: 1_000 }));
     expect(widths(state).byId.c).toBe(0);
     state = appendTerritoryLogToAppState(state, createTerritoryLog("c", 1, 20, { now: 2_000 }));
-    const { alive, byId, total } = widths(state);
-    expect(alive[alive.length - 1]).toBe("c");
+    const { field, byId, total } = widths(state);
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("c");
+    expect(field.seats.map((s) => s.id)).toEqual(["a", "b", "c", "d"]);
     expect(byId.c).toBe(20);
-    expect(total).toBe(400);
+    expect(byId.d).toBe(200);
+    expect(total).toBe(420);
   });
 
-  it("두 명이 0cm가 된 뒤 반대 끝으로만 재진입한다", () => {
+  it("두 명이 0cm가 된 뒤 한 명을 살리면 다른 한 명의 새 땅이 0이 되지 않는다", () => {
     let state = four();
     state = appendTerritoryLogToAppState(state, createTerritoryLog("a", 1, 100, { pushDir: "right", now: 1_000 }));
     state = appendTerritoryLogToAppState(state, createTerritoryLog("d", 1, 100, { pushDir: "left", now: 2_000 }));
@@ -3832,24 +3950,30 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
     expect(mid.byId.c).toBe(0);
     state = appendTerritoryLogToAppState(state, createTerritoryLog("b", 1, 20, { pushDir: "left", now: 3_000 }));
     state = appendTerritoryLogToAppState(state, createTerritoryLog("c", 1, 20, { pushDir: "right", now: 4_000 }));
-    const { alive, byId, total } = widths(state);
-    expect(alive[0]).toBe("b");
-    expect(alive[alive.length - 1]).toBe("c");
+    const { field, byId, total } = widths(state);
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toEqual(
+      expect.arrayContaining(["b", "c"])
+    );
+    expect(field.seats.map((s) => s.id)).toEqual(["a", "b", "c", "d"]);
     expect(byId.b).toBe(20);
     expect(byId.c).toBe(20);
-    expect(total).toBe(400);
+    expect(byId.a).toBe(200);
+    expect(byId.d).toBe(200);
+    expect(total).toBe(440);
   });
 
-  it("음수로 0cm가 된 뒤 +왼쪽이면 왼쪽 끝으로 재진입", () => {
+  it("음수로 0cm가 된 뒤 다시 살면 끝을 고르기 전에는 그 자리에 남는다", () => {
     let state = four();
     state = appendTerritoryLogToAppState(state, createTerritoryLog("b", -1, 100, { pushDir: "left", now: 1_000 }));
     expect(widths(state).byId.b).toBe(0);
     expect(widths(state).field.seats.find((s) => s.id === "b")!.eliminated).toBe(true);
     state = appendTerritoryLogToAppState(state, createTerritoryLog("b", 1, 30, { pushDir: "left", now: 2_000 }));
-    const { alive, byId, total } = widths(state);
-    expect(alive[0]).toBe("b");
+    const { field, byId, total } = widths(state);
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("b");
+    expect(field.seats.map((s) => s.id)[1]).toBe("b");
     expect(byId.b).toBe(30);
-    expect(total).toBe(400);
+    expect(byId.a).toBe(200);
+    expect(total).toBe(430);
   });
 
   it("팀전 0cm 팀원은 끝으로 옮기지 않고 팀 합만 유지", () => {
@@ -3901,7 +4025,7 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
     expect(byId.b).toBeGreaterThan(100);
   });
 
-  it("같은 시각 기록은 id가 아니라 배열 순서로 적용한다", () => {
+  it("같은 시각 기록도 입력한 순서대로 지금 판에 한 번씩만 반영한다", () => {
     const eat = {
       ...createTerritoryLog("a", 1, 100, { pushDir: "right", now: 9_000 }),
       id: "tl_zzz",
@@ -3910,15 +4034,16 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
       ...createTerritoryLog("b", 1, 20, { now: 9_000 }),
       id: "tl_aaa",
     };
-    const state = {
-      ...four(),
-      territoryLogs: [eat, reenter],
-    } as import("@/types").AppState;
-    const { alive, byId, total } = widths(state);
-    expect(alive[0]).toBe("b");
+    let state = four();
+    state = appendTerritoryLogToAppState(state, eat);
+    state = appendTerritoryLogToAppState(state, reenter);
+    const { byId, total, field } = widths(state);
+    expect(field.seats.map((seat) => seat.id)).toEqual(["a", "b", "c", "d"]);
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("b");
     expect(byId.b).toBe(20);
-    expect(byId.a).toBe(180);
-    expect(total).toBe(400);
+    expect(byId.a).toBe(200);
+    expect(total).toBe(420);
+    expect(widths(state).byId).toEqual(byId);
   });
 
   it("0cm 재진입 이후 확장은 새 자리 이웃에서 가져온다", () => {
@@ -3928,43 +4053,43 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
       createTerritoryLog("a", 1, 100, { pushDir: "right", now: 1_000 })
     );
     state = appendTerritoryLogToAppState(state, createTerritoryLog("b", 1, 20, { now: 2_000 }));
-    expect(widths(state).alive[0]).toBe("b");
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("b");
+    expect(widths(state).byId.b).toBe(20);
+    expect(widths(state).byId.a).toBe(200);
     state = appendTerritoryLogToAppState(
       state,
       createTerritoryLog("a", 1, 20, { pushDir: "right", now: 3_000 })
     );
-    const { byId, alive, total, field } = widths(state);
-    expect(alive[0]).toBe("b");
+    const { byId, total, field } = widths(state);
     expect(byId.b).toBe(20);
-    expect(byId.a).toBe(200);
+    expect(byId.a).toBe(220);
     expect(byId.c).toBe(80);
     expect(byId.d).toBe(100);
-    expect(total).toBe(400);
-    expect(field.seats.map((s) => s.id)).toEqual(["b", "a", "c", "d"]);
+    expect(total).toBe(420);
+    expect(field.seats.map((s) => s.id)).toEqual(["a", "b", "c", "d"]);
   });
 
-  it("증분 적용도 재배치된 게이지 순서를 이웃으로 쓴다", () => {
+  it("끝 선택 대기 중에는 옆 확장이 그 땅을 가져가지 않는다", () => {
     let state = four();
     state = appendTerritoryLogToAppState(
       state,
       createTerritoryLog("a", 1, 100, { pushDir: "right", now: 1_000 })
     );
     state = appendTerritoryLogToAppState(state, createTerritoryLog("b", 1, 20, { now: 2_000 }));
-    const reordered = buildHighSocietyFieldFromAppState(state);
-    expect(reordered.seats.map((s) => s.id)).toEqual(["b", "a", "c", "d"]);
-    const next = applyTerritoryLogDirectTransfers(
-      reordered,
-      ["a", "b", "c", "d"],
-      [createTerritoryLog("a", 1, 20, { pushDir: "right", now: 3_000 })],
-      state.highSocietySettings!
+    const waiting = buildHighSocietyFieldFromAppState(state);
+    expect(waiting.seats.map((s) => s.id)).toEqual(["a", "b", "c", "d"]);
+    state = appendTerritoryLogToAppState(
+      state,
+      createTerritoryLog("a", 1, 20, { pushDir: "right", now: 3_000 })
     );
+    const next = buildHighSocietyFieldFromAppState(state);
     expect(next.seats.find((s) => s.id === "b")!.widthCm).toBe(20);
-    expect(next.seats.find((s) => s.id === "a")!.widthCm).toBe(200);
+    expect(next.seats.find((s) => s.id === "a")!.widthCm).toBe(220);
     expect(next.seats.find((s) => s.id === "c")!.widthCm).toBe(80);
-    expect(next.seats.map((s) => s.id)).toEqual(["b", "a", "c", "d"]);
+    expect(next.seats.map((s) => s.id)).toEqual(["a", "b", "c", "d"]);
   });
 
-  it("3인 가운데 0cm 무방향은 왼쪽 끝으로 재진입", () => {
+  it("3인 가운데 0cm는 끝을 고르기 전에 왼쪽 끝으로 옮기지 않는다", () => {
     const members = [
       { id: "a", name: "A", account: 0, toon: 0, operating: false },
       { id: "b", name: "B", account: 0, toon: 0, operating: false },
@@ -3988,12 +4113,13 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
     );
     expect(widths(state).byId.b).toBe(0);
     state = appendTerritoryLogToAppState(state, createTerritoryLog("b", 1, 20, { now: 2_000 }));
-    const { alive, byId, total } = widths(state);
-    expect(alive[0]).toBe("b");
+    const { field, byId, total } = widths(state);
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("b");
+    expect(field.seats.map((s) => s.id)).toEqual(["a", "b", "c"]);
     expect(byId.b).toBe(20);
-    expect(byId.a).toBe(180);
+    expect(byId.a).toBe(200);
     expect(byId.c).toBe(100);
-    expect(total).toBe(300);
+    expect(total).toBe(320);
   });
 
   it("왼쪽 끝에 앉아 0cm가 된 사람은 다시 살아도 그 끝에 남고 안쪽에서 가져온다", () => {
@@ -4148,7 +4274,7 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
     expect(alive).toEqual(["a", "d"]);
   });
 
-  it("첫 기록을 삭제하면 두 번째 기록만 콜드 재적용된다", () => {
+  it("기록 한 줄을 지우면 그 줄만 지금 판에서 되돌린다", () => {
     let state = four();
     state = appendTerritoryLogToAppState(
       state,
@@ -4157,12 +4283,14 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
     state = appendTerritoryLogToAppState(state, createTerritoryLog("b", 1, 20, { now: 2_000 }));
     const firstId = state.territoryLogs[0]!.id;
     state = removeTerritoryLogFromAppState(state, firstId);
-    const { byId, total, alive } = widths(state);
+    const { byId, total } = widths(state);
     expect(state.territoryLogs).toHaveLength(1);
-    expect(total).toBe(400);
+    expect(byId.a).toBe(100);
     expect(byId.b).toBe(120);
-    expect(byId.a).toBe(90);
-    expect(alive).toEqual(["a", "b", "c", "d"]);
+    expect(byId.c).toBe(100);
+    expect(byId.d).toBe(100);
+    expect(total).toBe(420);
+    expect(widths(state).byId).toEqual(byId);
   });
 
   it("0cm 재진입을 두 번 해도 끝에서만 다시 생긴다", () => {
@@ -4181,10 +4309,12 @@ describe("상류사회 시나리오 회귀 (개인전 양분·0cm 끝 재진입�
       state,
       createTerritoryLog("b", 1, 15, { pushDir: "right", now: 4_000 })
     );
-    const { alive, byId, total } = widths(state);
-    expect(alive[0]).toBe("b");
+    const { field, byId, total } = widths(state);
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("b");
+    expect(field.seats.map((s) => s.id)).toEqual(["a", "b", "c", "d"]);
     expect(byId.b).toBe(15);
-    expect(total).toBe(400);
+    expect(byId.c).toBe(120);
+    expect(total).toBe(435);
   });
 });
 
@@ -4331,11 +4461,12 @@ describe("상류사회 개인전 6인", () => {
       createTerritoryLog("a", 1, 100, { pushDir: "right", now: 1_000 })
     );
     state = appendTerritoryLogToAppState(state, createTerritoryLog("b", 1, 20, { now: 2_000 }));
-    const { alive, byId, total, field } = widths(state);
-    expect(alive[0]).toBe("b");
+    const { byId, total, field } = widths(state);
+    expect(state.highSocietySettings?.pendingEndEntryMemberIds).toContain("b");
     expect(byId.b).toBe(20);
-    expect(total).toBe(600);
-    expect(field.seats.map((s) => s.id)[0]).toBe("b");
+    expect(byId.a).toBe(200);
+    expect(total).toBe(620);
+    expect(field.seats.map((s) => s.id)[0]).toBe("a");
   });
 
   it("오른쪽 끝에서 전장을 가로질러 가져와도 합은 600", () => {

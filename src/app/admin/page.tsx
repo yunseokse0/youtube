@@ -19228,7 +19228,7 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                 <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
                   <div className="text-[11px] font-semibold text-amber-100/95">영토 게이지</div>
                   <p className="text-[10px] text-neutral-400 leading-snug">
-                    게이지는 영토 기록부만 따릅니다. 후원은 정산에만 쌓이고 영토는 움직이지 않습니다.
+                    게이지는 반영해서 저장한 cm를 그대로 보여 줍니다. 기록부를 나중에 다시 계산하지 않습니다. 후원은 정산에만 쌓이고 영토는 움직이지 않습니다.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <button
