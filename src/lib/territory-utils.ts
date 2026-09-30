@@ -275,6 +275,16 @@ export function createTerritoryLog(
   };
 }
 
+/** 기록부에 보이는 멤버 이름 — 배치도에서 바꾼 영토 이름이 있으면 그걸 쓴다. */
+export function territoryLogMemberDisplayName(
+  member: Pick<Member, "id" | "name">,
+  territoryLabelByMemberId?: Record<string, string>
+): string {
+  const custom = String(territoryLabelByMemberId?.[member.id] || "").trim();
+  if (custom) return custom;
+  return String(member.name || "").trim();
+}
+
 /** 기록부 멤버 칸 — 개인전은 팀 라벨을 쓰지 않는다. */
 export function formatTerritoryLogActorLabel(
   log: TerritoryLog,
@@ -283,12 +293,14 @@ export function formatTerritoryLogActorLabel(
     teams?: Array<{ id: string; name: string }>;
     members: Array<Pick<Member, "id" | "name">>;
     memberTeamAssignments?: Record<string, string>;
+    territoryLabelByMemberId?: Record<string, string>;
   }
 ): string {
   const matchMode = opts.matchMode === "team" ? "team" : "individual";
   const teams = opts.teams || [];
   const members = opts.members || [];
   const assignments = opts.memberTeamAssignments || {};
+  const labels = opts.territoryLabelByMemberId;
   const memberId = String(log.memberId || "").trim();
   const teamFromMember = memberId.match(/^__team_(.+)$/);
   const teamId =
@@ -301,12 +313,13 @@ export function formatTerritoryLogActorLabel(
     if (team?.name) return `[${team.name}] 팀`;
   }
 
-  if (member?.name) return member.name;
+  const memberLabel = member ? territoryLogMemberDisplayName(member, labels) : "";
+  if (memberLabel) return memberLabel;
 
   if (teamId) {
     const names = members
       .filter((m) => assignments[m.id] === teamId)
-      .map((m) => String(m.name || "").trim())
+      .map((m) => territoryLogMemberDisplayName(m, labels))
       .filter(Boolean);
     if (names.length) return names.join("·");
     const team = teams.find((t) => t.id === teamId);

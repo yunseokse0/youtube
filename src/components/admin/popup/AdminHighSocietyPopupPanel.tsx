@@ -30,6 +30,7 @@ import {
   createTerritoryLog,
   filterTerritoryLogsAfterReset,
   formatTerritoryLogActorLabel,
+  territoryLogMemberDisplayName,
   formatTerritoryLogPushDirLabel,
   resolveTerritoryLogPushDirForWrite,
 } from "@/lib/territory-utils";
@@ -674,7 +675,7 @@ export default function AdminHighSocietyPopupPanel() {
                         const members = teamMemberMap[t.id] || [];
                         return (
                           <option key={t.id} value={t.id}>
-                            [{t.name}] {members.map((m) => m.name).join("·") || "팀원 없음"}
+                            [{t.name}] {members.map((m) => territoryLogMemberDisplayName(m, highSocietySettings.territoryLabelByMemberId)).join("·") || "팀원 없음"}
                           </option>
                         );
                       })}
@@ -688,7 +689,7 @@ export default function AdminHighSocietyPopupPanel() {
                     >
                       {hsSeatPlayers.map((m) => (
                         <option key={m.id} value={m.id}>
-                          {m.name}
+                          {territoryLogMemberDisplayName(m, highSocietySettings.territoryLabelByMemberId)}
                         </option>
                       ))}
                     </select>
@@ -747,6 +748,7 @@ export default function AdminHighSocietyPopupPanel() {
                             teams,
                             members: state.members || [],
                             memberTeamAssignments,
+                            territoryLabelByMemberId: highSocietySettings.territoryLabelByMemberId,
                           });
                           return (
                             <tr key={log.id} className="border-t border-white/10">

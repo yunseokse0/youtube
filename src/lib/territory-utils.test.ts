@@ -114,6 +114,24 @@ describe("territory-utils", () => {
     expect(formatTerritoryLogActorLabel(personLog, { ...opts, matchMode: "individual" })).toBe("자키");
   });
 
+  it("배치도에서 바꾼 영토 이름은 기록부 멤버 칸에 그대로 나온다", () => {
+    const members = [{ id: "jaki", name: "자키" }];
+    const personLog = createTerritoryLog("jaki", 1, 10);
+    expect(
+      formatTerritoryLogActorLabel(personLog, {
+        matchMode: "individual",
+        members,
+        territoryLabelByMemberId: { jaki: "자키땅" },
+      })
+    ).toBe("자키땅");
+    expect(
+      formatTerritoryLogActorLabel(personLog, {
+        matchMode: "individual",
+        members,
+      })
+    ).toBe("자키");
+  });
+
   it("buildHighSocietyFieldFromAppState includes territory logs", () => {
     const base = defaultState();
     const state = {
