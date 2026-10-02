@@ -103,7 +103,11 @@ import {
   type StateApiPick,
 } from "@/lib/state-api-pick";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
-import { mergeHighSocietySettingsPreferBaseline, isMeaningfulHighSocietySettings } from "@/lib/high-society";
+import {
+  mergeHighSocietySettingsPreferBaseline,
+  isMeaningfulHighSocietySettings,
+  normalizeHighSocietySettings,
+} from "@/lib/high-society";
 import { normalizeTerritoryLogs, mergeTerritoryLogsPreferFresher, mergeOverlayTerritoryLogs, mergeDeletedTerritoryLogIds, resolveTerritoryLogsResetAtForEditorMerge } from "@/lib/territory-utils";
 
 /** 관리자 iframe — 서버 정본 모드에서는 LS/세션 힌트로 서버 스냅샷을 덮지 않음 */
@@ -437,9 +441,11 @@ function applySyncedState(
           territoryLogsResetAt: overlayResetAt,
         }
       : mergedHighSocietySettings;
-  const next = {
+  const next: AppState = {
     ...dataForApply,
-    highSocietySettings: overlayHsSettings,
+    highSocietySettings: overlayHsSettings
+      ? normalizeHighSocietySettings(overlayHsSettings)
+      : overlayHsSettings,
     territoryLogs: prunedTerritoryLogs,
     generalTimer: mergedTimer,
     matchTimer: mergedMatchTimer,

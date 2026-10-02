@@ -16,7 +16,6 @@ import {
 } from "@/components/admin/ExcelMemberPillBgPresetPanel";
 import AdminLazyPreviewIframe from "@/components/admin/AdminLazyPreviewIframe";
 import MemberPositionInput from "@/components/admin/MemberPositionInput";
-import { HighSocietySeatLayoutSummary } from "@/components/admin/HighSocietySeatLayoutEditor";
 import {
   AdminCollapsibleBlock,
   AdminCollapsibleSection,
@@ -180,8 +179,7 @@ import {
   RESTROOM_UNLIMITED_SYMBOL,
   restroomValueAfterUndoLog,
 } from "@/lib/restroom-utils";
-import { createTerritoryLog, filterTerritoryLogsAfterReset, formatTerritoryLogPushDirLabel, mergeDeletedTerritoryLogIds, mergeTerritoryLogsPreferFresher, normalizeTerritoryLogs, resolveTerritoryLogPushDirForWrite, resolveTerritoryLogsResetAtForEditorMerge } from "@/lib/territory-utils";
-import { isNearDuplicateTerritoryLog } from "@/lib/territory-log-collapse";
+import { mergeDeletedTerritoryLogIds, mergeTerritoryLogsPreferFresher, normalizeTerritoryLogs, resolveTerritoryLogsResetAtForEditorMerge } from "@/lib/territory-utils";
 import { useSSEConnection } from "@/lib/sse-client";
 import { createStateUpdatedScheduler, DONOR_STATE_UPDATED_DEBOUNCE_MS, DONOR_STATE_UPDATED_MAX_WAIT_MS } from "@/lib/overlay-pull-policy";
 import {
@@ -341,40 +339,7 @@ import { mergeDonationApplyBase, enrichStateBeforeAuthoritativeDonationSave } fr
 import { applyBankDonationsViaApi } from "@/lib/donation/apply-bank-donation-client";
 import { persistDonationStateViaApi } from "@/lib/donation/persist-donation-client";
 import { applyDonationDummySeed } from "@/lib/dev/seed-donation-dummy";
-import {
-  formatCm,
-  normalizeHighSocietyFxSettings,
-  highSocietyFxToHsFxParam,
-  highSocietyAdminPreviewIframeKeySig,
-  normalizeHighSocietySettings,
-  mergeHighSocietyDonationLinksOnSettingsChange,
-  isHighSocietyReopen,
-  shouldKeepLocalHighSocietySettings,
-  buildTerritoryPauseToggleSettingsPatch,
-  resolveDonorsForHighSocietySettingsPatch,
-  shouldMarkDonorsLocallyForHighSocietySettingsPatch,
-  shouldPersistDonorsForHighSocietySettingsPatch,
-  shouldApplyDonorsForHighSocietySettingsPatch,
-  resolveDonationSyncModeForHighSocietySettingsChange,
-  buildHighSocietySettingsPersistToast,
-  type HighSocietySettingsAdminPatch,
-  resolveHighSocietySeatMembers,
-  buildHighSocietyFieldFromAppState,
-  resolveHighSocietyOverlayGaugeSeats,
-  appendTerritoryLogToAppState,
-  removeTerritoryLogFromAppState,
-  resolveHighSocietyStartCmPerMember,
-  resolveHighSocietyEffectiveFieldCm,
-  reconcileHighSocietyFieldDimensions,
-  resolveHighSocietySeatCountForField,
-  resolveSystemMiddlePushDir,
-  seatRoleForMemberId,
-  fieldCmFromStartPerMember,
-  startCmFromField,
-  HIGH_SOCIETY_DEFAULT_FIELD_CM,
-  syncHighSocietyMemberWidthSnapshotInState,
-  highSocietyNeedsMemberWidthSnapshotPersist,
-} from "@/lib/high-society";
+import { shouldKeepLocalHighSocietySettings } from "@/lib/high-society";
 import { showAppToast, showServerPersistToast } from "@/lib/app-toast";
 import {
   parseBulkDonationText,
@@ -396,7 +361,7 @@ import type { ToonationRelayForwarded } from "@/components/ToonationBrowserRelay
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
 import { buildPlayerAlertPopupUrl, openPlayerAlertPopup } from "@/lib/donation/player-alert-url";
 import { buildDonationAlertUrl } from "@/lib/donation/donation-alert-overlay";
-import { openAdminDonorListPopup, openAdminHighSocietyPopup, openAdminTimerPopup } from "@/lib/admin-popup-url";
+import { openAdminDonorListPopup, openAdminTimerPopup } from "@/lib/admin-popup-url";
 
 /** 후원 계열 오버레이 배경 GIF 프리셋 — 외부 URL은 방송망에서 차단될 수 있음 */
 const DONATION_LISTS_BG_GIF_PRESETS: { label: string; url: string }[] = [
@@ -918,17 +883,6 @@ function AdminPageInner() {
   const persistDonationDebounceRef = useRef<number | null>(null);
   const persistDonationLastStateRef = useRef<{ s: AppState; mode: "replace" | "add"; label?: string } | null>(null);
   const flushingPersistRef = useRef(false);
-  const persistHsDebounceRef = useRef<number | null>(null);
-  const territorySubmitLockRef = useRef(false);
-  const persistHsLastRef = useRef<{
-    s: AppState;
-    opts: {
-      omitDonationFields?: boolean;
-      highSocietySettingsOnly?: boolean;
-      territoryLogsAuthoritative?: boolean;
-      persistToastLabel?: string;
-    };
-  } | null>(null);
   /** GET/304 응답 메타 — 영속 KV(`redis`/`mysql`) 확인 후에만 synced */
   const applySyncStatusAfterStateFetch = useCallback(
     (apiState: AppState | null, meta?: StateApiFetchMeta | null) => {
@@ -1136,12 +1090,6 @@ function AdminPageInner() {
   const [restroomMemberId, setRestroomMemberId] = useState<string | null>(null);
   /** plus | minus | unlimited */
   const [restroomMode, setRestroomMode] = useState<"plus" | "minus" | "unlimited">("minus");
-  const [territoryCm, setTerritoryCm] = useState("");
-  const [territoryMemberId, setTerritoryMemberId] = useState<string | null>(null);
-  const [territoryMode, setTerritoryMode] = useState<"plus" | "minus">("plus");
-  const [territoryNote, setTerritoryNote] = useState("");
-  const [territoryPushDir, setTerritoryPushDir] = useState<"system" | "left" | "right" | "split">("system");
-  const [territoryTeamId, setTerritoryTeamId] = useState<string | null>(null);
   const [restroomNote, setRestroomNote] = useState("");
   const [copied, setCopied] = useState(false);
   const [newMemberName, setNewMemberName] = useState("");
@@ -1542,12 +1490,8 @@ function AdminPageInner() {
   const [battleContentWidthPct, setBattleContentWidthPct] = useState("100");
   const [sigSalesMenuCount, setSigSalesMenuCount] = useState("10");
   const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
-  const [hsPreviewIframeKey, setHsPreviewIframeKey] = useState(0);
   /** 정산 리셋·멤버 대규모 변경 시 모든 preset 미리보기 iframe 을 한번에 remount — stale 캐시 방지 */
   const [globalPreviewBump, setGlobalPreviewBump] = useState(0);
-  const hsSnapshotHealBusyRef = useRef(false);
-  const hsSnapshotHealSigRef = useRef("");
-  /** 상류사회 1인 시작 cm — 입력 중 25 클램프에 막히지 않게 초안 문자열 유지 */
   const [obsTextPreviewIframeKey, setObsTextPreviewIframeKey] = useState(0);
   const [obsTextPreviewInstanceId, setObsTextPreviewInstanceId] = useState<string | null>(null);
   const [memberRankChangeFxEditPresetId, setMemberRankChangeFxEditPresetId] = useState<string | null>(null);
@@ -1792,10 +1736,6 @@ function AdminPageInner() {
       clearSigSoldOutStamp?: boolean;
       /** 시그 목록 전체 삭제·기본 초기화 */
       clearSigInventory?: boolean;
-      /** 상류사회 OFF·일시정지 등 — API 에 HS 설정만 전송 */
-      highSocietySettingsOnly?: boolean;
-      /** 영토 기록부 추가·삭제·초기화 — 지금 목록으로 서버를 교체 */
-      territoryLogsAuthoritative?: boolean;
       /** 저장 완료 시 서버(MySQL) 반영 토스트 */
       persistToastLabel?: string;
     }
@@ -1807,6 +1747,7 @@ function AdminPageInner() {
     const omitDonationFields = Boolean(opts?.omitDonationFields) || !includeDonations;
     const resolvedOpts = clampBrowserPersistOptionsForServerAuthority({
       ...opts,
+      omitHighSocietyFields: true,
       ...(omitDonationFields ? { omitDonationFields: true as const } : {}),
     }) as typeof opts & { omitDonationFields?: boolean };
     /** 후원·금액 변경 — 브라우저 스냅샷으로 /api/state POST 금지, 서버 donations 파이프라인만 */
@@ -1908,7 +1849,7 @@ function AdminPageInner() {
     lastLocalPersistAtRef.current = now;
     stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, s.updatedAt || now, now);
     pendingUnsyncedRef.current = true;
-    const finishHsOrGenericSave = (payload: AppState, saveOpts: typeof resolvedOpts) => {
+    const finishGenericSave = (payload: AppState, saveOpts: typeof resolvedOpts) => {
       saveStateAsync(payload, overlayUserId, saveOpts).then((r) => {
         if (saveOpts?.persistToastLabel) {
           showServerPersistToast(saveOpts.persistToastLabel, {
@@ -1940,48 +1881,7 @@ function AdminPageInner() {
         }
       });
     };
-    if (resolvedOpts?.highSocietySettingsOnly) {
-      const prevQueued = persistHsLastRef.current;
-      const keepLogs =
-        resolvedOpts.territoryLogsAuthoritative === true ||
-        prevQueued?.opts?.territoryLogsAuthoritative === true;
-      persistHsLastRef.current = {
-        s,
-        opts: keepLogs ? { ...resolvedOpts, territoryLogsAuthoritative: true } : resolvedOpts,
-      };
-      const isTerritoryReset =
-        Array.isArray(s.territoryLogs) &&
-        s.territoryLogs.length === 0 &&
-        Number(s.highSocietySettings?.territoryLogsResetAt || 0) > 0;
-      if (persistHsDebounceRef.current !== null) {
-        window.clearTimeout(persistHsDebounceRef.current);
-        persistHsDebounceRef.current = null;
-      }
-      if (isTerritoryReset) {
-        persistHsLastRef.current = null;
-        finishHsOrGenericSave(s, resolvedOpts);
-        return;
-      }
-      persistHsDebounceRef.current = window.setTimeout(() => {
-        persistHsDebounceRef.current = null;
-        const queued = persistHsLastRef.current;
-        persistHsLastRef.current = null;
-        if (!queued) return;
-        const live = stateRef.current;
-        const payload = live
-          ? {
-              ...queued.s,
-              territoryLogs: live.territoryLogs,
-              deletedTerritoryLogIds: live.deletedTerritoryLogIds,
-              highSocietySettings: live.highSocietySettings,
-              updatedAt: Date.now(),
-            }
-          : queued.s;
-        finishHsOrGenericSave(payload, queued.opts);
-      }, 120);
-      return;
-    }
-    finishHsOrGenericSave(s, resolvedOpts);
+    finishGenericSave(s, resolvedOpts);
   }, [user?.id]);
 
   const syncSettlementUiFormFromOptions = useCallback(
@@ -3149,12 +3049,6 @@ function AdminPageInner() {
       openAdminDonorListPopup(overlayUserId || user?.id);
       setActiveNav("donor");
       setActiveSubTargetId("donor-list");
-      return;
-    }
-    if (sub.targetId === "territory-management") {
-      openAdminHighSocietyPopup(overlayUserId || user?.id);
-      setActiveNav("donor");
-      setActiveSubTargetId("territory-management");
       return;
     }
     const navKey = resolveNavKeyFromTargetId(sub.targetId);
@@ -6104,20 +5998,9 @@ function AdminPageInner() {
   const renameMember = (id: string, name: string) => {
     const cleaned = (name || "무명").trim() || "무명";
     setState((prev: AppState) => {
-      const prevName = String(prev.members.find((x: Member) => x.id === id)?.name || "").trim();
-      const labels = { ...(prev.highSocietySettings?.territoryLabelByMemberId || {}) };
-      if (labels[id] && labels[id] === prevName) labels[id] = cleaned;
       let next: AppState = {
         ...prev,
         members: prev.members.map((x: Member) => (x.id === id ? { ...x, name: cleaned } : x)),
-        ...(prev.highSocietySettings
-          ? {
-              highSocietySettings: {
-                ...prev.highSocietySettings,
-                ...(Object.keys(labels).length > 0 ? { territoryLabelByMemberId: labels } : {}),
-              },
-            }
-          : {}),
         updatedAt: Date.now(),
       };
       const richestDonors = resolveRichestDonorsFromSources(
@@ -9017,7 +8900,7 @@ function AdminPageInner() {
           </div>
         </div>
         <p className="text-[11px] text-neutral-500">
-          시그·식사 대전·상류사회 OBS가 이 타이머(matchTimer)를 봅니다. 「타이머 제어」의 일반 타이머와 별개입니다. 위 초는 리셋·새 시작 기준이며, 정지 중 입력 후 Enter/blur 하면 남은 시간도 맞춰집니다.
+          시그·식사 대전 OBS가 이 타이머(matchTimer)를 봅니다. 「타이머 제어」의 일반 타이머와 별개입니다. 위 초는 리셋·새 시작 기준이며, 정지 중 입력 후 Enter/blur 하면 남은 시간도 맞춰집니다.
         </p>
       </div>
     );
@@ -9114,7 +8997,6 @@ function AdminPageInner() {
     const rawMessage = donorMessage;
     const donorNameClean = (rawName || "무명").replace(/\s+/g, "") || "무명";
     const messageClean = String(rawMessage || "").trim();
-    const hsSettingsNow = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
     addDonorSaveChainRef.current = addDonorSaveChainRef.current
       .catch(() => {})
       .then(async () => {
@@ -9177,7 +9059,7 @@ function AdminPageInner() {
       notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
       setState(bumped);
       setSyncStatus("synced");
-      if (hsSettingsNow.enabled) {
+      {
         const memberName =
           (stateRef.current.members || []).find((m) => m.id === memberId)?.name || memberId;
         showAppToast(
@@ -10626,86 +10508,6 @@ function AdminPageInner() {
     setRestroomNote("");
   };
 
-  const addTerritoryRecord = () => {
-    if (territorySubmitLockRef.current) return;
-    const hsSettings = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
-    const useTeamMode = hsSettings.matchMode === "team";
-    const seated = resolveHighSocietySeatMembers(
-      stateRef.current.members || [],
-      hsSettings
-    );
-    if (seated.length === 0) {
-      showAppToast("영토 좌석이 없습니다. 오버레이 탭에서 좌석을 먼저 지정해 주세요.", {
-        variant: "info",
-      });
-      return;
-    }
-    let teamIdForLog: string | undefined;
-    let memberIdForLog: string = "";
-    if (useTeamMode) {
-      if (!territoryTeamId) return;
-      const assignments = hsSettings.memberTeamAssignments || {};
-      const membersInTeam = seated.filter((m) => assignments[m.id] === territoryTeamId);
-      if (membersInTeam.length === 0) {
-        showAppToast("해당 팀에 소속된 좌석 멤버가 없습니다.", { variant: "info" });
-        return;
-      }
-      teamIdForLog = territoryTeamId;
-      memberIdForLog = membersInTeam[0]!.id;
-    } else {
-      if (!territoryMemberId) return;
-      if (!seated.some((m) => m.id === territoryMemberId)) {
-        showAppToast("영토 반영은 좌석에 배치된 멤버만 가능합니다.", { variant: "info" });
-        return;
-      }
-      memberIdForLog = territoryMemberId;
-    }
-    const cm = Math.max(0, Math.floor(parseAmount(territoryCm)));
-    if (cm <= 0) return;
-    territorySubmitLockRef.current = true;
-    const modeSnap = territoryMode;
-    const noteSnap = territoryNote;
-    const pushSnap = territoryPushDir;
-    setTerritoryCm("");
-    setTerritoryNote("");
-    const seatRole = seatRoleForMemberId(
-      hsSettings,
-      stateRef.current.members || [],
-      memberIdForLog
-    );
-    const pushForLog = resolveTerritoryLogPushDirForWrite({
-      seatRole,
-      chosen: pushSnap,
-      settings: hsSettings,
-    });
-    const log = createTerritoryLog(
-      memberIdForLog,
-      modeSnap === "plus" ? 1 : -1,
-      cm,
-      { pushDir: pushForLog, note: noteSnap, teamId: teamIdForLog }
-    );
-    if (isNearDuplicateTerritoryLog(stateRef.current.territoryLogs, log)) {
-      window.setTimeout(() => {
-        territorySubmitLockRef.current = false;
-      }, 400);
-      return;
-    }
-    setState((prev: AppState) => {
-      const next = appendTerritoryLogToAppState(prev, log);
-      /** 영토 cm 만 저장 — donors/members 금액 POST 금지(후원순위·기록 초기화 회귀 방지) */
-      persistState(next, {
-        omitDonationFields: true,
-        highSocietySettingsOnly: true,
-        territoryLogsAuthoritative: true,
-      });
-      notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
-      return next;
-    });
-    showAppToast(`상류사회 영토 ${modeSnap === "plus" ? "추가" : "차감"}: ${cm}cm`);
-    window.setTimeout(() => {
-      territorySubmitLockRef.current = false;
-    }, 400);
-  };
 
   useEffect(() => {
     if (!state.members.length) return;
@@ -10747,237 +10549,13 @@ function AdminPageInner() {
     () => state.members.filter((m) => !isOperatingMember(m)).length,
     [state.members, isOperatingMember]
   );
-  const donationSyncMode = (state.donationSyncMode || "mealBattle") as
+  const donationSyncMode = (state.donationSyncMode === "highSociety"
+    ? "none"
+    : state.donationSyncMode || "mealBattle") as
     | "none"
     | "mealBattle"
     | "sigMatch"
-    | "sigSales"
-    | "highSociety";
-  const highSocietySettings = useMemo(
-    () => normalizeHighSocietySettings(state.highSocietySettings),
-    [state.highSocietySettings]
-  );
-  const hsSeatPlayers = useMemo(
-    () => resolveHighSocietySeatMembers(state.members || [], highSocietySettings),
-    [state.members, highSocietySettings]
-  );
-  useEffect(() => {
-    if (!state.members.length) return;
-    if (hsSeatPlayers.length === 0) return;
-    const exists = hsSeatPlayers.some((m) => m.id === territoryMemberId);
-    if (!territoryMemberId || !exists) setTerritoryMemberId(hsSeatPlayers[0].id);
-  }, [state.members, territoryMemberId, hsSeatPlayers]);
-
-  useEffect(() => {
-    if (highSocietySettings.matchMode !== "team") return;
-    const teams = highSocietySettings.teams || [];
-    const assignments = highSocietySettings.memberTeamAssignments || {};
-    const seatedTeamIds = Array.from(
-      new Set(
-        hsSeatPlayers
-          .map((m) => assignments[m.id])
-          .filter((tid): tid is string => Boolean(tid) && teams.some((t) => t.id === tid))
-      )
-    );
-    if (seatedTeamIds.length === 0) return;
-    if (!territoryTeamId || !seatedTeamIds.includes(territoryTeamId)) {
-      setTerritoryTeamId(seatedTeamIds[0]!);
-    }
-  }, [hsSeatPlayers, highSocietySettings, territoryTeamId]);
-  const hsSeatFieldByMemberId = useMemo(() => {
-    const map = new Map<string, { widthCm: number; eliminated: boolean }>();
-    const field = buildHighSocietyFieldFromAppState({
-      members: state.members || [],
-      donors: [],
-      highSocietySettings,
-      territoryLogs: state.territoryLogs || [],
-    });
-    const shown = resolveHighSocietyOverlayGaugeSeats(field.seats, highSocietySettings);
-    for (const seat of shown) {
-      map.set(seat.id, { widthCm: seat.widthCm, eliminated: seat.eliminated });
-    }
-    return map;
-  }, [highSocietySettings, state.members, state.territoryLogs]);
-  const patchHighSocietySettings = useCallback(
-    (patch: HighSocietySettingsAdminPatch) => {
-      const resetTerritory = Boolean(patch.resetTerritory);
-      const { resetTerritory: _resetTerritory, ...settingsPatchRaw } = patch;
-      const prevForPause = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
-      let settingsPatch = { ...settingsPatchRaw };
-      if (typeof patch.territoryPaused === "boolean") {
-        settingsPatch = {
-          ...settingsPatch,
-          ...buildTerritoryPauseToggleSettingsPatch(patch, prevForPause),
-        };
-      }
-      const wasOn = prevForPause.enabled;
-      setState((prev: AppState) => {
-        const prevSettings = normalizeHighSocietySettings(prev.highSocietySettings);
-        let nextSettings = normalizeHighSocietySettings({
-          ...prevSettings,
-          ...settingsPatch,
-        });
-        const turningOn = !wasOn && nextSettings.enabled;
-        const turningOff = wasOn && !nextSettings.enabled;
-        const isFirstOn = turningOn && !isHighSocietyReopen(prevSettings);
-        nextSettings = mergeHighSocietyDonationLinksOnSettingsChange({
-          prevSettings,
-          nextSettings,
-          members: prev.members || [],
-          resetTerritory,
-          donors: prev.donors || [],
-          territoryLogs: prev.territoryLogs || [],
-          settlementResetAt: prev.settlementResetAt,
-        });
-        const hsSeatPlayersForPersist = resolveHighSocietySeatMembers(prev.members || [], nextSettings);
-        const hsSeatCountForPersist = resolveHighSocietySeatCountForField(
-          nextSettings,
-          hsSeatPlayersForPersist.length
-        );
-        nextSettings = reconcileHighSocietyFieldDimensions(
-          nextSettings,
-          hsSeatCountForPersist,
-          prev.members || []
-        );
-        const needsDonorPersist = shouldPersistDonorsForHighSocietySettingsPatch({
-          resetTerritory,
-          isFirstOn,
-        });
-        const needsDonorLocalMark = shouldMarkDonorsLocallyForHighSocietySettingsPatch({
-          resetTerritory,
-          isFirstOn,
-        });
-        /** 영토 일시정지·OFF·재ON 등 — React donors 를 비우거나 authoritative 저장하지 않음 */
-        let donorsPatch: Donor[] | null = null;
-        if (needsDonorLocalMark) {
-          let fromLsDonors: Donor[] = [];
-          try {
-            fromLsDonors = normalizeDonorsArray(loadState(user?.id)?.donors);
-          } catch {}
-          const resolvedDonors = resolveDonorsForHighSocietySettingsPatch({
-            prevDonorsReact: prev.donors,
-            refDonors: stateRef.current?.donors,
-            lsDonors: fromLsDonors,
-            resetTerritory,
-            isFirstOn,
-          });
-          if (shouldApplyDonorsForHighSocietySettingsPatch(resolvedDonors)) {
-            donorsPatch = resolvedDonors;
-          }
-        }
-        let nextDonationSyncMode = resolveDonationSyncModeForHighSocietySettingsChange({
-          turningOn,
-          turningOff,
-          prevMode: prev.donationSyncMode,
-        });
-        const hasDonorsToPersist = needsDonorPersist && donorsPatch != null;
-        if (hasDonorsToPersist) {
-          donationAuthoritativeSaveUntilRef.current = Math.max(
-            donationAuthoritativeSaveUntilRef.current,
-            Date.now() + 12_000
-          );
-        }
-        let next: AppState = {
-          ...prev,
-          ...(donorsPatch ? { donors: donorsPatch } : {}),
-          highSocietySettings: nextSettings,
-          donationSyncMode: nextDonationSyncMode,
-          updatedAt: Date.now(),
-          ...(resetTerritory ? { territoryLogs: [], deletedTerritoryLogIds: [] } : {}),
-        };
-        if (hasDonorsToPersist) {
-          next = guardMemberTotalsAgainstAccidentalZeroWipe(
-            syncMemberTotalsFromDonors(next),
-            prev
-          );
-        }
-        next = syncHighSocietyMemberWidthSnapshotInState(next);
-        const nextSettingsSynced = normalizeHighSocietySettings(next.highSocietySettings);
-        next = { ...next, highSocietySettings: nextSettingsSynced };
-        stateRef.current = next;
-        try {
-          /** defaultState() 폴백으로 빈 donors 스냅샷을 쓰지 않음 — React next 전체를 세션에 반영 */
-          cacheBroadcastStateSnapshot(next, user?.id);
-          notifyBroadcastStateLocalUpdated(user?.id, next.updatedAt);
-        } catch {}
-        const persistToastLabel =
-          buildHighSocietySettingsPersistToast({
-            patch,
-            before: prevSettings,
-            wasOn,
-            after: nextSettingsSynced,
-            resetTerritory,
-            members: prev.members || [],
-          }) ?? undefined;
-        persistState(
-          next,
-          hasDonorsToPersist
-            ? { includeDonationFields: true, persistToastLabel }
-            : {
-                omitDonationFields: true,
-                highSocietySettingsOnly: true,
-                persistToastLabel,
-                ...(resetTerritory ||
-                (Array.isArray(next.territoryLogs) && next.territoryLogs.length > 0)
-                  ? { territoryLogsAuthoritative: true }
-                  : {}),
-              }
-        );
-        return next;
-      });
-    },
-    [persistState, user?.id]
-  );
-  /** 관리자 로컬 영토 cm — 서버·OBS 미동기화 시 자동 HS-only 저장 (실시간 모드) */
-  useEffect(() => {
-    if (syncStatus !== "synced") return;
-    if (hsSeatPlayers.length === 0) return;
-    const cur = stateRef.current;
-    if (!highSocietyNeedsMemberWidthSnapshotPersist(cur)) return;
-    const sig = [...hsSeatFieldByMemberId.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([id, v]) => `${id}:${v.widthCm}:${v.eliminated ? 1 : 0}`)
-      .join("|");
-    if (hsSnapshotHealBusyRef.current || hsSnapshotHealSigRef.current === sig) return;
-    const timer = window.setTimeout(() => {
-      const latest = stateRef.current;
-      if (pendingUnsyncedRef.current) return;
-      if (!highSocietyNeedsMemberWidthSnapshotPersist(latest)) return;
-      hsSnapshotHealBusyRef.current = true;
-      hsSnapshotHealSigRef.current = sig;
-      const synced = syncHighSocietyMemberWidthSnapshotInState(latest);
-      persistState(synced, {
-        omitDonationFields: true,
-        highSocietySettingsOnly: true,
-        ...(Array.isArray(synced.territoryLogs) && synced.territoryLogs.length > 0
-          ? { territoryLogsAuthoritative: true }
-          : {}),
-      });
-      window.setTimeout(() => {
-        hsSnapshotHealBusyRef.current = false;
-      }, 15_000);
-    }, 2500);
-    return () => window.clearTimeout(timer);
-  }, [
-    syncStatus,
-    highSocietySettings.enabled,
-    hsSeatPlayers.length,
-    hsSeatFieldByMemberId,
-    persistState,
-  ]);
-  const hsSeatCountForStart = resolveHighSocietySeatCountForField(
-    highSocietySettings,
-    hsSeatPlayers.length
-  );
-  const hsStartCm = resolveHighSocietyStartCmPerMember(highSocietySettings, hsSeatCountForStart);
-  const hsEffectiveFieldCm = resolveHighSocietyEffectiveFieldCm(
-    highSocietySettings,
-    hsSeatCountForStart
-  );
-  const hsPreviewIframeKeySig = useMemo(
-    () => highSocietyAdminPreviewIframeKeySig(highSocietySettings),
-    [highSocietySettings]
-  );
+    | "sigSales";
   const sigMatchDonors = state.donors || [];
   const sigMatchRanking = useMemo(
     () => getSigMatchRankings(
@@ -11396,7 +10974,6 @@ function AdminPageInner() {
         } catch {}
         setGlobalPreviewBump((k) => k + 1);
         setDonorRankingsPreviewIframeKey((k) => k + 1);
-        setHsPreviewIframeKey((k) => k + 1);
         setSigMatchPreviewIframeKey((k) => k + 1);
         setMealMatchPreviewIframeKey((k) => k + 1);
         setObsTextPreviewIframeKey((k) => k + 1);
@@ -11985,14 +11562,6 @@ function AdminPageInner() {
               </button>
               <button
                 type="button"
-                className="px-3 py-2 rounded-[10px] text-sm font-semibold text-amber-200 bg-[#1a1405] border border-amber-500/30 hover:bg-[#2a1f08] transition"
-                onClick={() => openAdminHighSocietyPopup(overlayUserId || user?.id)}
-                title="상류사회 · 영토 팝업을 올바른 계정(u=로그인ID)으로 새 창에서 엽니다 (기존 북마크 ?u=finalent 오류 방지)"
-              >
-                상류사회 · 영토
-              </button>
-              <button
-                type="button"
                 className="px-3 py-2 rounded-[10px] text-sm font-semibold text-emerald-200 bg-[#05140f] border border-emerald-500/30 hover:bg-[#0a2218] transition"
                 onClick={() => openAdminDonorListPopup(overlayUserId || user?.id)}
                 title="후원자 리스트는 별도 창에서만 봅니다. 페이지네이션으로 넓게 확인"
@@ -12465,14 +12034,12 @@ function AdminPageInner() {
                   <div className="text-sm font-semibold text-amber-200">후원 동기화 일괄 관리 (중복 방지)</div>
                     <p className="text-xs text-neutral-300">
                       후원 입력은 아래에서 선택한 대상에만 동기화됩니다. 시그/식사대전을 켜면 모드가 자동 전환됩니다.
-                      상류사회 영토는 후원과 연동되지 않고, 멤버 이름 + 영토 기록부만 사용합니다.
                       참가자별 「후원 연동 ON/OFF」로 엑셀에 배정된 후원이 해당 대전 점수에 반영될지 제어합니다.
                     </p>
                   <div className="flex flex-wrap gap-2">
                     {([
                       ["mealBattle", "식사대전 동기화"],
                       ["sigMatch", "시그대전 동기화"],
-                      ["highSociety", "상류사회 동기화"],
                       ["sigSales", "시그판매 동기화"],
                       ["none", "동기화 안 함"],
                     ] as Array<[AppState["donationSyncMode"], string]>).map(([mode, label]) => (
@@ -17844,25 +17411,6 @@ function AdminPageInner() {
               </div>
             </AdminCollapsibleSection>
 
-            <AdminCollapsibleSection
-              id="territory-management"
-              title="상류사회 · 영토 기록부"
-              className={panelCardClass}
-            >
-              <div className="rounded-lg border border-amber-400/35 bg-amber-950/25 p-4 space-y-3">
-                <p className="text-sm text-neutral-300 leading-relaxed">
-                  영토 기록부·cm 반영은 <strong className="text-amber-100">상류사회 팝업에서만</strong> 관리합니다.
-                  본문과 팝업이 동시에 쓰면 기록이 늘어날수록 게이지가 늦게 붙거나, 초기화를 여러 번 해야 할 수 있습니다.
-                </p>
-                <button
-                  type="button"
-                  className="rounded border border-violet-400/50 bg-violet-800 hover:bg-violet-700 px-4 py-2 text-sm font-semibold text-violet-50"
-                  onClick={() => openAdminHighSocietyPopup(overlayUserId || user?.id)}
-                >
-                  영토 기록부 팝업 열기
-                </button>
-              </div>
-            </AdminCollapsibleSection>
 
             <AdminCollapsibleSection
               id="donor-list"
@@ -17894,64 +17442,6 @@ function AdminPageInner() {
                 </button>
               </div>
 
-              <div className="mb-3 rounded-lg border border-amber-400/40 bg-amber-950/30 p-3 space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <div className="text-sm font-semibold text-amber-100">상류사회 · 영토</div>
-                    <p
-                      className="text-[11px] text-neutral-400 mt-0.5"
-                      title="후원·투네 합산은 영토 게이지와 연동되지 않습니다.
-cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반영하세요."
-                    >
-                      후원·투네 합산은 영토 게이지와 <strong className="text-neutral-300">연동되지 않습니다</strong>.
-                      cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반영하세요.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
-                    <span className="text-neutral-400">가운데 기본</span>
-                    <button
-                      type="button"
-                      className={`rounded px-2.5 py-1 font-semibold border ${
-                        resolveSystemMiddlePushDir(highSocietySettings) === "left"
-                          ? "border-amber-400 bg-amber-700/90 text-white"
-                          : "border-white/15 bg-neutral-900"
-                      }`}
-                      onClick={() => patchHighSocietySettings({ defaultMiddlePush: "left" })}
-                    >
-                      ← 왼쪽
-                    </button>
-                    <button
-                      type="button"
-                      className={`rounded px-2.5 py-1 font-semibold border ${
-                        resolveSystemMiddlePushDir(highSocietySettings) === "right"
-                          ? "border-amber-400 bg-amber-700/90 text-white"
-                          : "border-white/15 bg-neutral-900"
-                      }`}
-                      onClick={() => patchHighSocietySettings({ defaultMiddlePush: "right" })}
-                    >
-                      오른쪽 →
-                    </button>
-                    <button
-                      type="button"
-                      className={`rounded px-2.5 py-1 font-semibold border ${
-                        resolveSystemMiddlePushDir(highSocietySettings) === "split"
-                          ? "border-amber-400 bg-amber-700/90 text-white"
-                          : "border-white/15 bg-neutral-900"
-                      }`}
-                      onClick={() => patchHighSocietySettings({ defaultMiddlePush: "split" })}
-                    >
-                      ↔ 양분
-                    </button>
-                    <button
-                      type="button"
-                      className="text-sky-400 underline ml-1"
-                      onClick={() => openAdminHighSocietyPopup(overlayUserId || user?.id)}
-                    >
-                      영토 배치도 (팝업)
-                    </button>
-                  </div>
-              </div>
 
               <div className="rounded-xl border border-emerald-400/35 bg-emerald-950/25 p-5 space-y-3">
                 <div className="text-sm font-semibold text-emerald-100">후원자 리스트는 별도 창에서만 봅니다</div>
@@ -19198,285 +18688,6 @@ cm 조절은 아래 「상류사회 · 영토 기록부」에서만 수동 반�
                     </div>
                   );
                 })()}
-              </div>
-              <div id="high-society-overlay" className="mb-3 rounded border border-amber-500/35 bg-amber-950/25 p-3 space-y-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <h4 className="text-sm font-semibold text-amber-100">상류사회 · 세로(9:16) 오버레이</h4>
-                    <p className="mt-1 text-[11px] text-neutral-400 leading-snug max-w-xl">
-                      좌석 멤버 이름과 영토 기록부가 상단 게이지에 반영됩니다.{" "}
-                      <strong className="text-neutral-300">갱신 시점</strong>은 아래 옵션으로 선택합니다.
-                      OBS 캔버스·브라우저 소스 <strong className="text-neutral-300">1080×1920</strong>.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      className="rounded border border-violet-500/40 bg-violet-950/50 px-2.5 py-1 text-[11px] font-semibold text-violet-100 hover:bg-violet-900/60"
-                      onClick={() => openAdminHighSocietyPopup(overlayUserId || user?.id)}
-                    >
-                      별도 창
-                    </button>
-                  </div>
-                </div>
-
-                <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
-                  <div className="text-[11px] font-semibold text-amber-100/95">좌석 · 전장</div>
-                  <p className="text-[10px] text-neutral-400 leading-snug">
-                    좌석 배치(추가·순서·삭제)·1인 시작 cm는 상류사회 팝업의 「영토 배치도」에서만 편집합니다.
-                    영토는 기록부로만 반영됩니다.
-                  </p>
-                  {<HighSocietySeatLayoutSummary
-                    members={state.members || []}
-                    settings={highSocietySettings}
-                    onOpenPopup={() => openAdminHighSocietyPopup(overlayUserId || user?.id)}
-                  />}
-                </div>
-
-                <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
-                  <div className="text-[11px] font-semibold text-amber-100/95">영토 게이지</div>
-                  <p className="text-[10px] text-neutral-400 leading-snug">
-                    게이지는 반영해서 저장한 cm를 그대로 보여 줍니다. 기록부를 나중에 다시 계산하지 않습니다. 후원은 정산에만 쌓이고 영토는 움직이지 않습니다.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className="rounded px-3 py-1.5 text-xs font-semibold border border-white/15 bg-neutral-900 text-neutral-300 hover:border-amber-400/50 disabled:opacity-40"
-                      title="영토 게이지만 새 라운드로 — 후원·멤버 금액은 유지"
-                      onClick={() => {
-                        if (
-                          !window.confirm(
-                            "영토 게이지만 초기화합니다.\n후원 기록·멤버 계좌/투네 금액은 그대로 유지됩니다.\n계속할까요?"
-                          )
-                        ) {
-                          return;
-                        }
-                        patchHighSocietySettings({ resetTerritory: true });
-                      }}
-                    >
-                      영토만 초기화
-                    </button>
-                  </div>
-                </div>
-
-                <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
-                  <div className="text-[11px] font-semibold text-amber-100/95">가운데 좌석 · 확장 방향</div>
-                  <p className="text-[10px] text-neutral-400 leading-snug">
-                    양끝은 고정(좌끝→ / 우끝←). 개인전 가운데는 기본 좌·우 양분입니다.
-                    0cm가 된 인원은 게이지에서 빠지고, 다시 영토가 생기면 양쪽 끝으로만 진입합니다.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className={`rounded px-3 py-1.5 text-xs font-semibold border disabled:opacity-40 ${
-                        resolveSystemMiddlePushDir(highSocietySettings) === "left"
-                          ? "border-amber-400 bg-amber-700/90 text-white"
-                          : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
-                      }`}
-                      onClick={() => patchHighSocietySettings({ defaultMiddlePush: "left" })}
-                    >
-                      ← 왼쪽
-                    </button>
-                    <button
-                      type="button"
-                      className={`rounded px-3 py-1.5 text-xs font-semibold border disabled:opacity-40 ${
-                        resolveSystemMiddlePushDir(highSocietySettings) === "right"
-                          ? "border-amber-400 bg-amber-700/90 text-white"
-                          : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
-                      }`}
-                      onClick={() => patchHighSocietySettings({ defaultMiddlePush: "right" })}
-                    >
-                      오른쪽 →
-                    </button>
-                    <button
-                      type="button"
-                      className={`rounded px-3 py-1.5 text-xs font-semibold border disabled:opacity-40 ${
-                        resolveSystemMiddlePushDir(highSocietySettings) === "split"
-                          ? "border-amber-400 bg-amber-700/90 text-white"
-                          : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
-                      }`}
-                      onClick={() => patchHighSocietySettings({ defaultMiddlePush: "split" })}
-                    >
-                      ↔ 양분
-                    </button>
-                  </div>
-                </div>
-
-                <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-[11px] font-semibold text-amber-100/95">연출 효과</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      <button
-                        type="button"
-                        className="rounded px-2 py-0.5 text-[10px] border border-white/15 bg-neutral-900 text-neutral-300 hover:border-amber-400/50"
-                        onClick={() =>
-                          patchHighSocietySettings({
-                            fx: {
-                              frontier: true,
-                              growFlash: true,
-                              contestedEdge: true,
-                              arrowBlade: true,
-                              strongOutline: true,
-                            },
-                          })
-                        }
-                      >
-                        전부 ON
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded px-2 py-0.5 text-[10px] border border-white/15 bg-neutral-900 text-neutral-300 hover:border-amber-400/50"
-                        onClick={() =>
-                          patchHighSocietySettings({
-                            fx: {
-                              frontier: false,
-                              growFlash: false,
-                              contestedEdge: false,
-                              arrowBlade: false,
-                              strongOutline: false,
-                            },
-                          })
-                        }
-                      >
-                        전부 OFF
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-neutral-400 leading-snug">
-                    땅따먹기 잠식·경계·외곽선 연출을 개별로 켜고 끕니다. 기본은 전부 OFF이며, 저장되면 OBS·아래 미리보기에 반영됩니다.
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                    {(
-                      [
-                        { key: "frontier" as const, label: "잠식 전선", desc: "확장 방향 경계 빛" },
-                        { key: "growFlash" as const, label: "확장 플래시", desc: "땅이 늘 때 번쩍" },
-                        { key: "contestedEdge" as const, label: "분쟁 경계", desc: "평평 모드 줄무늬" },
-                        { key: "arrowBlade" as const, label: "화살 칼날", desc: "화살표 금색 팁" },
-                        { key: "strongOutline" as const, label: "강한 외곽선", desc: "텍스트 stroke" },
-                      ] as const
-                    ).map((opt) => {
-                      const fxNow = normalizeHighSocietyFxSettings(highSocietySettings.fx);
-                      const on = Boolean(fxNow[opt.key]);
-                      return (
-                        <button
-                          key={opt.key}
-                          type="button"
-                          className={`flex items-center justify-between gap-2 rounded px-2.5 py-1.5 text-left border ${
-                            on
-                              ? "border-amber-400/70 bg-amber-900/40 text-amber-50"
-                              : "border-white/10 bg-neutral-900 text-neutral-400"
-                          }`}
-                          onClick={() =>
-                            patchHighSocietySettings({
-                              fx: {
-                                ...fxNow,
-                                [opt.key]: !on,
-                              },
-                            })
-                          }
-                        >
-                          <span>
-                            <span className="block text-[11px] font-semibold">{opt.label}</span>
-                            <span className="block text-[9px] opacity-80">{opt.desc}</span>
-                          </span>
-                          <span
-                            className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                              on ? "bg-amber-500 text-black" : "bg-neutral-700 text-neutral-300"
-                            }`}
-                          >
-                            {on ? "ON" : "OFF"}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="flex flex-col items-stretch gap-2">
-                  <code className="max-w-full break-all text-[11px] text-amber-100/90">
-                    /overlay/high-society?u={overlayUserId}&host=obs
-                  </code>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className={`rounded px-2 py-1 text-xs ${copiedId === "dash-high-society" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
-                      onClick={() => {
-                        patchHighSocietySettings({ barStyle: "flat" });
-                        const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs`;
-                        void copyUrl(u, "dash-high-society");
-                      }}
-                    >
-                      {copiedId === "dash-high-society" ? "복사됨!" : "OBS URL 복사(평평)"}
-                    </button>
-                    <button
-                      type="button"
-                      className={`rounded px-2 py-1 text-xs ${copiedId === "dash-high-society-arrow" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
-                      onClick={() => {
-                        patchHighSocietySettings({ barStyle: "arrow" });
-                        const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs`;
-                        void copyUrl(u, "dash-high-society-arrow");
-                      }}
-                    >
-                      {copiedId === "dash-high-society-arrow" ? "복사됨!" : "OBS URL 복사(화살표)"}
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded bg-amber-700 hover:bg-amber-600 px-2 py-1 text-xs font-semibold text-white"
-                      onClick={() =>
-                        window.open(
-                          `/overlay/high-society?u=${overlayUserId}&test=true&bar=${highSocietySettings.barStyle || "flat"}`,
-                          "_blank",
-                          "noopener,noreferrer"
-                        )
-                      }
-                    >
-                      테스트 미리보기
-                    </button>
-                  </div>
-                </div>
-                <div className="rounded-lg border border-white/10 bg-black/30 overflow-hidden p-2">
-                  <div className="mb-1.5 flex items-center justify-end">
-                    <button
-                      type="button"
-                      className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-amber-500/60 hover:text-amber-200"
-                      onClick={() => {
-                        notifyBroadcastStateLocalUpdated(user?.id, stateRef.current?.updatedAt);
-                        setHsPreviewIframeKey((k) => k + 1);
-                      }}
-                    >
-                      미리보기 새로고침
-                    </button>
-                  </div>
-                  {(() => {
-                    const hsFxNow = normalizeHighSocietyFxSettings(highSocietySettings.fx);
-                    const hsFxParam = highSocietyFxToHsFxParam(hsFxNow);
-                    return (
-                  <div
-                    className="relative w-full bg-black/60 mx-auto overflow-hidden rounded-md"
-                    style={{ maxWidth: 720, minHeight: 148, aspectRatio: "18 / 5" }}
-                  >
-                    {overlayUserId ? (
-                      <AdminLazyPreviewIframe
-                        key={`hs-preview-${hsPreviewIframeKeySig}-${hsPreviewIframeKey}`}
-                        src={appendAdminPreviewEmbedToOverlayUrl(
-                          `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&hsFx=${encodeURIComponent(hsFxParam)}`
-                        )}
-                        title="상류사회 세로 오버레이 미리보기"
-                        className="absolute inset-0 h-full w-full border-0"
-                        style={{ background: "transparent" }}
-                      />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-500">
-                        {authReady ? "계정 ID 대기 중" : "계정 불러오는 중…"}
-                      </div>
-                    )}
-                  </div>
-                    );
-                  })()}
-                  <p className="mt-1.5 text-[10px] text-neutral-500 text-center">
-                    게이지 미리보기 · OBS는 1080×1920 세로 소스 사용
-                  </p>
-                </div>
               </div>
 
               <div className="mb-3 rounded-lg border border-white/10 bg-black/30 overflow-hidden">

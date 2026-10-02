@@ -1930,13 +1930,14 @@ export function loadState(userId?: string | null): AppState {
         : {};
     data.sigSalesExcludedIds = normalizeSigSalesExcludedIds((data as AppState).sigSalesExcludedIds);
     data.donationSyncMode =
-      (data as AppState).donationSyncMode === "none" ||
-      (data as AppState).donationSyncMode === "mealBattle" ||
-      (data as AppState).donationSyncMode === "sigMatch" ||
-      (data as AppState).donationSyncMode === "sigSales" ||
       (data as AppState).donationSyncMode === "highSociety"
-        ? (data as AppState).donationSyncMode
-        : "mealBattle";
+        ? "none"
+        : (data as AppState).donationSyncMode === "none" ||
+            (data as AppState).donationSyncMode === "mealBattle" ||
+            (data as AppState).donationSyncMode === "sigMatch" ||
+            (data as AppState).donationSyncMode === "sigSales"
+          ? (data as AppState).donationSyncMode
+          : "mealBattle";
     data.sigMatch = data.sigMatch && typeof data.sigMatch === "object" ? data.sigMatch : {};
     data.mealBattle = normalizeMealBattle((data as AppState).mealBattle);
     data.mealMatch = data.mealMatch && typeof data.mealMatch === "object" ? data.mealMatch : {};
@@ -3600,7 +3601,7 @@ export async function saveGeneralTimerPatchAsync(
   }
 }
 
-/** 대전(시그·식사·상류사회) 타이머만 PATCH — generalTimer·후원 필드는 건드리지 않음 */
+/** 대전(시그·식사) 타이머만 PATCH — generalTimer·후원 필드는 건드리지 않음 */
 export async function saveMatchTimerPatchAsync(
   matchTimer: TimerState,
   userId?: string | null,
@@ -4132,13 +4133,14 @@ async function doLoadStateFromApi(
           : {};
       data.sigSalesExcludedIds = normalizeSigSalesExcludedIds((data as AppState).sigSalesExcludedIds);
       data.donationSyncMode =
-        (data as AppState).donationSyncMode === "none" ||
-        (data as AppState).donationSyncMode === "mealBattle" ||
-        (data as AppState).donationSyncMode === "sigMatch" ||
-        (data as AppState).donationSyncMode === "sigSales" ||
         (data as AppState).donationSyncMode === "highSociety"
-          ? (data as AppState).donationSyncMode
-          : "mealBattle";
+          ? "none"
+          : (data as AppState).donationSyncMode === "none" ||
+              (data as AppState).donationSyncMode === "mealBattle" ||
+              (data as AppState).donationSyncMode === "sigMatch" ||
+              (data as AppState).donationSyncMode === "sigSales"
+            ? (data as AppState).donationSyncMode
+            : "mealBattle";
       data.sigMatch = data.sigMatch && typeof data.sigMatch === "object" ? data.sigMatch : {};
       data.mealBattle = normalizeMealBattle((data as AppState).mealBattle);
       data.mealMatch = data.mealMatch && typeof data.mealMatch === "object" ? data.mealMatch : {};

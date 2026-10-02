@@ -64,7 +64,6 @@ import {
   clearDonationRosterBackup,
   saveDonationRosterBackup,
 } from "@/lib/donation-roster-backup";
-import { syncHighSocietyMemberWidthSnapshotInState } from "@/lib/high-society";
 import {
   isSettlementResetExplicitlyConfirmed,
   stripUnconfirmedSettlementResetFromApiPayload,
@@ -768,10 +767,6 @@ export async function POST(req: Request) {
           afterTotal: totalCombined(next),
         });
       }
-    }
-
-    if (!settlementReset && !donationInitReset && highSocietySettingsOnlyPatch) {
-      next = syncHighSocietyMemberWidthSnapshotInState(next);
     }
 
     if (membersAuthoritative) {

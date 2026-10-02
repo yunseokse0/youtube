@@ -2787,7 +2787,7 @@ export function syncHighSocietyMemberWidthSnapshotInState(state: AppState): AppS
 
 /** 스냅샷이 아예 없을 때만 올린다. 저장된 cm와 다시 그린 값이 달라도 덮어쓰지 않는다. */
 export function highSocietyNeedsMemberWidthSnapshotPersist(
-  state: Pick<AppState, "members" | "donors" | "highSocietySettings" | "territoryLogs">
+  state: Pick<AppState, "members" | "donors" | "highSocietySettings" | "territoryLogs" | "settlementResetAt">
 ): boolean {
   if (!shouldSyncHighSocietyMemberWidthSnapshot(state.highSocietySettings)) return false;
   const cur = normalizeHighSocietySettings(state.highSocietySettings);
@@ -2797,7 +2797,8 @@ export function highSocietyNeedsMemberWidthSnapshotPersist(
     return false;
   }
   const patch = buildHighSocietyMemberWidthSnapshotPatch(state);
-  return Boolean(patch && Object.keys(patch.memberWidthCm).length > 0);
+  const widths = patch?.memberWidthCm;
+  return Boolean(widths && Object.keys(widths).length > 0);
 }
 
 /** 운영비 제외 멤버의 계좌+투네 합으로 영토 점유율 계산 (보조 게이지용) */

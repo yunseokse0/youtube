@@ -148,7 +148,7 @@ describe("applyDonationToAppState", () => {
     expect(result.state.donors?.[0]?.message).toBe("제트스키 부탁해요!");
   });
 
-  it("auto-marks hsTerritoryExcluded when amount is not 1만원 exact multiple", () => {
+  it("does not attach high-society territory flags on donation ingest", () => {
     const state = {
       ...defaultState(),
       members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 }],
@@ -168,7 +168,8 @@ describe("applyDonationToAppState", () => {
     const bad = applyDonationToAppState(state, ineligible);
     expect(bad.ok).toBe(true);
     if (!bad.ok) return;
-    expect(bad.state.donors?.[0]?.hsTerritoryExcluded).toBe(true);
+    expect(bad.state.donors?.[0]?.amount).toBe(13_000);
+    expect(bad.state.donors?.[0]?.hsTerritoryExcluded).toBeUndefined();
 
     const eligible: DonationEvent = {
       ...ineligible,
@@ -193,7 +194,8 @@ describe("applyDonationToAppState", () => {
     });
     expect(hsEligible.ok).toBe(true);
     if (!hsEligible.ok) return;
-    expect(hsEligible.state.donors?.[0]?.hsTerritoryExcluded).toBe(true);
+    expect(hsEligible.state.donors?.[0]?.amount).toBe(10_000);
+    expect(hsEligible.state.donors?.[0]?.hsTerritoryExcluded).toBeUndefined();
   });
 
   it("still applies donation while high society territory is paused", () => {
@@ -201,14 +203,14 @@ describe("applyDonationToAppState", () => {
       ...defaultState(),
       members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 }],
       donors: [],
-      highSocietySettings: {
+      highSocietySettings: normalizeHighSocietySettings({
         enabled: true,
         territoryPaused: true,
         territoryPausedAt: Date.now(),
         seatMemberIds: [],
         defaultMiddlePush: "right",
         donationLinks: {},
-      },
+      }),
     };
     const event: DonationEvent = {
       id: "bank:paused-1",

@@ -282,8 +282,6 @@ export function AdminCollapseToolbar({ className = "" }: { className?: string })
 /** 좌측 네비 이동 시 대상·부모 섹션을 펼친 뒤 스크롤 */
 export const ADMIN_SECTION_EXPAND_PARENTS: Record<string, string> = {
   "overlay-goal-shortcut": "overlay-settings",
-  "high-society-mode": "donor-management",
-  "high-society-overlay": "overlay-settings",
   "overlay-bg-media": "overlay-settings",
   "timer-control-section": "settlement-member-board",
   "block-member-positions": "settlement-member-board",

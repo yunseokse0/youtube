@@ -201,10 +201,6 @@ export function applyDonationToAppState(
         ...newDonor,
         at: atMs,
         contributionPoints,
-        ...(normalizeHighSocietySettings(currentState.highSocietySettings).enabled ||
-        !isDonationAmountEligibleForHighSocietyTerritory(newDonor.amount)
-          ? { hsTerritoryExcluded: true as const }
-          : {}),
       },
     ]),
     mealBattle: {

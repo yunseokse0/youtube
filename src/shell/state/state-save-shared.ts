@@ -32,7 +32,7 @@ import { isManualOverlaySessionId } from "@/lib/sig-sales-manual-round";
 import { createModuleLogger } from "@/lib/logger";
 import { isRouletteLocked } from "@/app/api/roulette/roulette-lock";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
-import { shouldBlockHighSocietyRegression, syncHighSocietyMemberWidthSnapshotInState } from "@/lib/high-society";
+import { shouldBlockHighSocietyRegression } from "@/lib/high-society";
 import { normalizeTerritoryLogs, mergeTerritoryLogsNeverShrink, mergeDeletedTerritoryLogIds } from "@/lib/territory-utils";
 import { memberCombinedTotal } from "@/shell/state/state-freshness.guard";
 import {

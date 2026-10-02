@@ -492,7 +492,7 @@ export default function AdminTimerPopupPanel() {
           <section className="rounded-lg border border-cyan-500/35 bg-cyan-950/20 p-3 space-y-2">
             <h2 className="text-sm font-semibold text-cyan-100">대전 오버레이 타이머 (matchTimer)</h2>
             <p className="text-[11px] text-neutral-400">
-              시그·식사·상류사회 OBS가 사용합니다. 일반 타이머와 별개입니다.
+              시그·식사 OBS가 사용합니다. 일반 타이머와 별개입니다.
             </p>
             <div className="text-sm tabular-nums">
               남은 {formatClock(matchRem)} ·{" "}

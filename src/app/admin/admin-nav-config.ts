@@ -80,7 +80,6 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
       { subKey: "dr-formula", label: "기여도 계산식", targetId: "contribution-formula", icon: "🧮" },
       { subKey: "dr-contrib", label: "기여도 기록부", targetId: "contribution-management", icon: "📓" },
       { subKey: "dr-restroom", label: "화장실 기록부", targetId: "restroom-management", icon: "🚻" },
-      { subKey: "dr-territory", label: "영토 기록부 (팝업)", targetId: "territory-management", icon: "🗺️" },
       { subKey: "dr-list", label: "후원자 리스트 (별도 창)", targetId: "donor-list", icon: "🧾" },
       { subKey: "dr-logs", label: "기여도 로그", targetId: "contribution-logs", icon: "📜" },
       { subKey: "dr-cumulative", label: "후원자별 누적 합계", targetId: "donor-cumulative-totals", icon: "💹" },
@@ -95,7 +94,6 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     mobileShort: "오버레이",
     subItems: [
       { subKey: "ov-manage", label: "오버레이 관리 (다중)", targetId: "overlay-settings", icon: "🖼️" },
-      { subKey: "ov-hs", label: "HS 상류사회 오버레이", targetId: "overlay-settings", icon: "📐" },
       { subKey: "ov-sig", label: "수동 시그 판매", targetId: "overlay-settings", icon: "🛒" },
       { subKey: "ov-obs", label: "OBS 텍스트", targetId: "overlay-settings", icon: "📝" },
     ],
