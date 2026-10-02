@@ -1,7 +1,15 @@
-export default function HighSocietyDemoPage() {
+/** 미리보기용. 상태는 `/api/shangliu?u=` 를 폴링한다. */
+export default function HighSocietyDemoPage({
+  searchParams,
+}: {
+  searchParams?: { u?: string; user?: string };
+}) {
+  const u = String(searchParams?.u || searchParams?.user || "finalent").trim() || "finalent";
   return (
-    <main className="flex min-h-[100dvh] items-center justify-center bg-neutral-950 px-6 text-center text-sm text-neutral-400">
-      상류사회 영토 오버레이는 제거되었습니다.
-    </main>
+    <iframe
+      src={`/overlay.html?u=${encodeURIComponent(u)}`}
+      title="상류사회 오버레이 미리보기"
+      className="h-screen w-screen border-0 bg-[#05020a]"
+    />
   );
 }

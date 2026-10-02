@@ -1,9 +1,17 @@
 export const dynamic = "force-dynamic";
 
-export default function AdminHighSocietyPopupPage() {
+/** 상류사회 영토는 후원과 분리된 서버 연동 컨트롤러(`/admin.html?u=`). */
+export default function AdminHighSocietyPopupPage({
+  searchParams,
+}: {
+  searchParams?: { u?: string; user?: string };
+}) {
+  const u = String(searchParams?.u || searchParams?.user || "finalent").trim() || "finalent";
   return (
-    <main className="flex min-h-screen items-center justify-center bg-neutral-950 px-6 text-center text-sm text-neutral-400">
-      상류사회 영토 기능은 제거되었습니다.
-    </main>
+    <iframe
+      src={`/admin.html?u=${encodeURIComponent(u)}`}
+      title="상류사회 백오피스"
+      className="h-screen w-screen border-0 bg-[#0a0510]"
+    />
   );
 }

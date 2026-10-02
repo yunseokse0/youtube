@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>상류사회 백오피스 컨트롤러</title>
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+        * { box-sizing: border-box; font-family: 'Pretendard', sans-serif; margin: 0; padding: 0; }
+        body { background: #0a0510; color: #fff; padding: 40px; }
+        .container { max-width: 1100px; margin: 0 auto; }
+
+        .header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+        .header h1 { font-size: 32px; font-weight: 900; color: #ffdf00; letter-spacing: 2px; }
+        .header p { color: #888; font-size: 14px; margin-top: 5px; }
+
+        .panel { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 30px; margin-bottom: 20px; }
+        .panel h3 { margin-bottom: 20px; color: #ccc; }
+
+        input, select, button { padding: 12px; border-radius: 8px; border: 1px solid #444; background: #000; color: #fff; font-size: 15px; }
+        button { cursor: pointer; font-weight: bold; transition: all 0.2s; }
+        button:hover { background: #333; }
+
+        .btn-start { background: #00ff88; color: #000; border: none; padding: 12px 30px; font-size: 16px; margin-left: 10px; }
+        .btn-start:hover { background: #00cc6a; }
+        .btn-reset { background: #ff3366; color: #fff; border: none; }
+
+        .setup-row { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }
+
+        /* 조작 카드 그리드 */
+        .controls-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+
+        .card { background: rgba(0,0,0,0.6); border: 2px solid; border-radius: 12px; padding: 25px; display: flex; flex-direction: column; gap: 15px; position: relative; overflow: hidden; }
+        .card-header { display: flex; justify-content: space-between; align-items: center; }
+        .card-name { font-size: 24px; font-weight: 800; }
+        .card-cm { font-size: 28px; font-weight: 900; color: #fff; }
+        .card-cm span { font-size: 16px; color: #aaa; font-weight: normal; }
+
+        .action-group { display: flex; gap: 10px; }
+        .action-group input { flex: 1; text-align: center; }
+        .btn-expand { background: rgba(255,255,255,0.1); flex: 1; border: 1px solid rgba(255,255,255,0.2); }
+        .btn-expand:hover { background: #fff; color: #000; }
+
+        .rule-text { font-size: 13px; color: #888; text-align: center; background: rgba(0,0,0,0.5); padding: 8px; border-radius: 6px; }
+
+        .card.island { border-color: #555 !important; }
+        .card.island .card-name { color: #666 !important; }
+        .btn-revive { background: transparent; border: 1px dashed #666; color: #ccc; flex: 1; }
+        .btn-revive:hover { border-color: #fff; color: #fff; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>상류사회 백오피스</h1>
+                <p>서버 연동 — 백오피스 PC와 방송 PC가 달라도 같은 주소·같은 계정(u=)이면 오버레이가 따라갑니다.</p>
+            </div>
+            <button class="btn-reset" onclick="resetSystem()">🔄 시스템 초기화</button>
+        </div>
+
+        <!-- 게임 기본 설정 화면 -->
+        <div id="setupScreen" class="panel">
+            <h3>🎮 게임 초기 세팅</h3>
+            <div class="setup-row">
+                <label>방송 계정 u=</label>
+                <input type="text" id="userIdInput" value="finalent" style="width: 160px;" autocomplete="off">
+                <button type="button" class="btn-expand" onclick="copyOverlayUrl()">OBS 오버레이 URL 복사</button>
+                <span id="syncHint" style="color:#888;font-size:13px;"></span>
+            </div>
+            <div class="setup-row">
+                <label>게임 모드:</label>
+                <select id="modeSelect" onchange="updatePlayerCount()">
+                    <option value="team">팀전 (2~3팀)</option>
+                    <option value="individual" selected>개인전 (2~6인)</option>
+                </select>
+
+                <label id="countLabel">참여 인원:</label>
+                <select id="countSelect">
+                    <option value="2">2명</option>
+                    <option value="3">3명</option>
+                    <option value="4" selected>4명</option>
+                    <option value="5">5명</option>
+                    <option value="6">6명</option>
+                </select>
+            </div>
+            <div class="setup-row">
+                <label>초기 땅 크기:</label>
+                <input type="number" id="initCm" value="100" style="width: 120px;"> cm
+                <button class="btn-start" onclick="startGame()">게임 시작</button>
+            </div>
+        </div>
+        <!-- 실시간 조작 화면 -->
+        <div id="controlScreen" style="display:none;">
+            <div class="controls-grid" id="controls">
+                <!-- JS로 카드 렌더링 -->
+            </div>
+        </div>
+    </div>
+    <script>
+        let state = {};
+        let persistTimer = null;
+        function readUserId() {
+            const fromUrl = new URLSearchParams(location.search).get('u')
+                || new URLSearchParams(location.search).get('user')
+                || '';
+            const typed = (document.getElementById('userIdInput')?.value || '').trim();
+            const id = typed || fromUrl || 'finalent';
+            return /^[a-zA-Z0-9_-]{1,64}$/.test(id) ? id : 'finalent';
+        }
+        function apiUrl() {
+            return `/api/shangliu?u=${encodeURIComponent(readUserId())}`;
+        }
+        function overlayUrl() {
+            return `${location.origin}/overlay.html?u=${encodeURIComponent(readUserId())}`;
+        }
+        function copyOverlayUrl() {
+            const url = overlayUrl();
+            navigator.clipboard.writeText(url).then(() => {
+                document.getElementById('syncHint').textContent = '복사됨: ' + url;
+            }).catch(() => {
+                prompt('OBS 브라우저 소스에 이 주소를 넣으세요', url);
+            });
+        }
+        function setSyncHint(text, ok) {
+            const el = document.getElementById('syncHint');
+            if (!el) return;
+            el.textContent = text;
+            el.style.color = ok === false ? '#ff6688' : ok ? '#00ff88' : '#888';
+        }
+        // 멤버 고유 컬러 (네온 핑크, 네온 시안, 네온 골드, 네온 퍼플)
+        const defaultColors = ['#ff007f', '#00f3ff', '#ffdf00', '#b700ff', '#00ff88', '#ff6b00'];
+        const defaultNames = ['박자키', '갓정은', '왓컴퍼니', '꽃돼지', '멤버5', '멤버6'];
+        // 모드 변경 시 인원수 셀렉트 박스 제어
+        function updatePlayerCount() {
+            const mode = document.getElementById('modeSelect').value;
+            const countSelect = document.getElementById('countSelect');
+            const countLabel = document.getElementById('countLabel');
+            const prev = parseInt(countSelect.value, 10);
+            countSelect.innerHTML = '';
+            if (mode === 'team') {
+                countLabel.textContent = '참여 팀:';
+                [2, 3].forEach((n) => {
+                    const opt = document.createElement('option');
+                    opt.value = String(n);
+                    opt.textContent = `${n}팀`;
+                    countSelect.appendChild(opt);
+                });
+                countSelect.value = String(prev === 3 ? 3 : 2);
+            } else {
+                countLabel.textContent = '참여 인원:';
+                [2, 3, 4, 5, 6].forEach((n) => {
+                    const opt = document.createElement('option');
+                    opt.value = String(n);
+                    opt.textContent = `${n}명`;
+                    countSelect.appendChild(opt);
+                });
+                const next = Math.min(6, Math.max(2, prev || 4));
+                countSelect.value = String(next);
+            }
+            countSelect.disabled = false;
+        }
+        // 게임 시작 및 상태 초기화
+        function startGame() {
+            const mode = document.getElementById('modeSelect').value;
+            const rawCount = parseInt(document.getElementById('countSelect').value, 10);
+            const count = mode === 'team'
+                ? Math.min(3, Math.max(2, rawCount || 2))
+                : Math.min(6, Math.max(2, rawCount || 4));
+            const initCm = parseFloat(document.getElementById('initCm').value);
+
+            state = { mode: mode, activeOrder: [], members: {} };
+
+            for(let i = 0; i < count; i++) {
+                const id = String.fromCharCode(65 + i); // A, B, C, D
+                state.activeOrder.push(id);
+                state.members[id] = {
+                    name: mode === 'team' ? `팀 ${id}` : defaultNames[i],
+                    color: defaultColors[i],
+                    cm: initCm
+                };
+            }
+
+            document.getElementById('setupScreen').style.display = 'none';
+            document.getElementById('controlScreen').style.display = 'block';
+            const u = readUserId();
+            history.replaceState(null, '', `${location.pathname}?u=${encodeURIComponent(u)}`);
+
+            saveState();
+            renderControls();
+        }
+        function resetSystem() {
+            const u = readUserId();
+            location.href = `${location.pathname}?u=${encodeURIComponent(u)}`;
+        }
+        // 서버 + 로컬 스토리지에 저장 (다른 PC 오버레이가 /api/shangliu 를 폴링)
+        function saveState() {
+            const payload = JSON.stringify(state);
+            try { localStorage.setItem('shangliu_state', payload); } catch (_e) {}
+            if (persistTimer) window.clearTimeout(persistTimer);
+            persistTimer = window.setTimeout(() => {
+                persistTimer = null;
+                fetch(apiUrl(), {
+                    method: 'PUT',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ state }),
+                }).then((r) => r.json().then((j) => ({ r, j })).catch(() => ({ r, j: null })))
+                  .then(({ r, j }) => {
+                    if (r.ok && j && j.ok) {
+                        setSyncHint(j.persisted ? '서버 저장됨 (OBS 연동)' : '이 서버 메모리에 저장됨', true);
+                    } else {
+                        setSyncHint('서버 저장 실패 — OBS PC가 못 따라갈 수 있습니다', false);
+                    }
+                }).catch(() => setSyncHint('서버 저장 실패', false));
+            }, 80);
+        }
+        // ⚔️ 땅 넓히기 (뺏기) 로직
+        function expandTerritory(targetId) {
+            const amount = parseFloat(document.getElementById(`input-${targetId}`).value);
+            if(isNaN(amount) || amount <= 0) {
+                alert("정확한 cm를 입력하세요.");
+                return;
+            }
+            let idx = state.activeOrder.indexOf(targetId);
+            if (idx === -1) return; // 무인도에 있으면 실행 불가
+            if (state.activeOrder.length === 2) {
+                // 2명이면 무조건 상대방 것을 전체 뺏음
+                const opponentIdx = idx === 0 ? 1 : 0;
+                takeFrom(state.activeOrder[opponentIdx], targetId, amount);
+            } else {
+                if (idx === 0) {
+                    // 좌측 벽: 우측 멤버의 땅만 전체 뺏음
+                    takeFrom(state.activeOrder[1], targetId, amount);
+                } else if (idx === state.activeOrder.length - 1) {
+                    // 우측 벽: 좌측 멤버의 땅만 전체 뺏음
+                    takeFrom(state.activeOrder[idx - 1], targetId, amount);
+                } else {
+                    // 중앙: 양옆 멤버의 땅을 절반(1/2)씩 뺏음
+                    takeFrom(state.activeOrder[idx - 1], targetId, amount / 2);
+                    takeFrom(state.activeOrder[idx + 1], targetId, amount / 2);
+                }
+            }
+
+            document.getElementById(`input-${targetId}`).value = "";
+            checkElimination();
+            saveState();
+            renderControls();
+        }
+        // 땅 차감 및 증가 계산 함수
+        function takeFrom(victimId, attackerId, amount) {
+            let actualTake = Math.min(state.members[victimId].cm, amount);
+            state.members[victimId].cm -= actualTake;
+            state.members[attackerId].cm += actualTake;
+        }
+        // 땅이 0 이하가 된 멤버를 메인 영토(activeOrder)에서 제거 (무인도행)
+        function checkElimination() {
+            state.activeOrder = state.activeOrder.filter(id => {
+                if(state.members[id].cm <= 0) {
+                    state.members[id].cm = 0; // 마이너스 방지
+                    return false;
+                }
+                return true;
+            });
+        }
+        // 🌴 무인도 부활 로직 (벽 진입)
+        function reviveMember(id, side) {
+            let amount = parseFloat(document.getElementById(`revive-${id}`).value);
+            if(isNaN(amount) || amount <= 0) amount = 20; // 미입력 시 기본 20cm 뺏으며 부활
+            if (side === 'left') {
+                if(state.activeOrder.length > 0) {
+                    takeFrom(state.activeOrder[0], id, amount);
+                } else {
+                    state.members[id].cm = amount;
+                }
+                state.activeOrder.unshift(id); // 맨 앞에 추가
+            } else {
+                if(state.activeOrder.length > 0) {
+                    takeFrom(state.activeOrder[state.activeOrder.length-1], id, amount);
+                } else {
+                    state.members[id].cm = amount;
+                }
+                state.activeOrder.push(id); // 맨 뒤에 추가
+            }
+
+            checkElimination(); // 끝 유저의 땅을 뺏다가 끝 유저가 죽었을 경우 체크
+            saveState();
+            renderControls();
+        }
+        // UI 렌더링 함수
+        function renderControls() {
+            const controls = document.getElementById('controls');
+            controls.innerHTML = '';
+
+            Object.keys(state.members).forEach(id => {
+                const m = state.members[id];
+                const isAlive = state.activeOrder.includes(id);
+
+                let html = '';
+                if (isAlive) {
+                    let idx = state.activeOrder.indexOf(id);
+                    let rule = state.activeOrder.length <= 2 ? "전체 흡수 (1:1)" :
+                              (idx === 0 || idx === state.activeOrder.length-1) ? "단방향 흡수 (100%)" : "양분 흡수 (좌우 50%씩)";
+
+                    html = `
+                    <div class="card" style="border-color:${m.color}">
+                        <div class="card-header">
+                            <div class="card-name" style="color:${m.color}">${m.name}</div>
+                            <div class="card-cm">${Number(m.cm).toFixed(1)} <span>cm</span></div>
+                        </div>
+                        <div class="action-group">
+                            <input type="number" id="input-${id}" placeholder="뺏을 cm">
+                            <button class="btn-expand" onclick="expandTerritory('${id}')">⚔️ 땅 넓히기</button>
+                        </div>
+                        <div class="rule-text">적용 룰: ${rule}</div>
+                    </div>`;
+                } else {
+                    // 무인도 카드
+                    html = `
+                    <div class="card island">
+                        <div class="card-header">
+                            <div class="card-name">${m.name} <span style="font-size:14px;">(무인도)</span></div>
+                            <div class="card-cm" style="color:#666;">0.0 <span>cm</span></div>
+                        </div>
+                        <input type="number" id="revive-${id}" placeholder="부활 진입 시 뺏을 cm (기본 20)" style="width:100%; margin-bottom:5px;">
+                        <div class="action-group">
+                            <button class="btn-revive" onclick="reviveMember('${id}', 'left')">⏪ 좌측 진입</button>
+                            <button class="btn-revive" onclick="reviveMember('${id}', 'right')">우측 진입 ⏩</button>
+                        </div>
+                    </div>`;
+                }
+                controls.innerHTML += html;
+            });
+        }
+        updatePlayerCount();
+        (function boot() {
+            const params = new URLSearchParams(location.search);
+            const u = params.get('u') || params.get('user') || 'finalent';
+            const input = document.getElementById('userIdInput');
+            if (input) input.value = u;
+            fetch(apiUrl(), { credentials: 'include', cache: 'no-store' })
+                .then((r) => r.json())
+                .then((j) => {
+                    if (!j || !j.ok || !j.state || !j.state.members) return;
+                    state = j.state;
+                    document.getElementById('setupScreen').style.display = 'none';
+                    document.getElementById('controlScreen').style.display = 'block';
+                    renderControls();
+                    setSyncHint('서버에서 진행 중인 판을 불러왔습니다', true);
+                })
+                .catch(() => {});
+        })();
+    </script>
+</body>
+</html>
