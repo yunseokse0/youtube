@@ -361,7 +361,7 @@ import type { ToonationRelayForwarded } from "@/components/ToonationBrowserRelay
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
 import { buildPlayerAlertPopupUrl, openPlayerAlertPopup } from "@/lib/donation/player-alert-url";
 import { buildDonationAlertUrl } from "@/lib/donation/donation-alert-overlay";
-import { openAdminDonorListPopup, openAdminTimerPopup } from "@/lib/admin-popup-url";
+import { openAdminDonorListPopup, openAdminHighSocietyPopup, openAdminTimerPopup } from "@/lib/admin-popup-url";
 
 /** 후원 계열 오버레이 배경 GIF 프리셋 — 외부 URL은 방송망에서 차단될 수 있음 */
 const DONATION_LISTS_BG_GIF_PRESETS: { label: string; url: string }[] = [
@@ -744,10 +744,9 @@ function AdminPageInner() {
    *   2순위: 로그인 ID user.id (로그인=din 이면 state=din 이 정답!)
    *   3순위: 폴백 없음. finalent 강제 주입 절대 금지 (타계정 state 불러오는 버그 방지)
    */
-  const [overlayUserId, setOverlayUserId] = useState<string>(() => {
-    const fromUrl = (typeof window !== "undefined" ? (new URLSearchParams(window.location.search).get("u") || new URLSearchParams(window.location.search).get("user") || "") : "") || "";
-    return resolveScopedOverlayUserId(fromUrl);
-  });
+  const [overlayUserId, setOverlayUserId] = useState<string>(() =>
+    resolveScopedOverlayUserId(urlUserIdRaw)
+  );
   useEffect(() => {
     const fromUrl = (sp.get("u") || sp.get("user") || "").trim();
     if (fromUrl) {
@@ -11567,6 +11566,14 @@ function AdminPageInner() {
                 title="후원자 리스트는 별도 창에서만 봅니다. 페이지네이션으로 넓게 확인"
               >
                 후원자 리스트
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 rounded-[10px] text-sm font-semibold text-fuchsia-100 bg-[#1a0b22] border border-fuchsia-500/35 hover:bg-[#2a1234] transition"
+                onClick={() => openAdminHighSocietyPopup(overlayUserId || user?.id)}
+                title="상류사회 영토는 후원과 분리된 별도 창에서 관리합니다"
+              >
+                상류사회
               </button>
               <button
                 type="button"

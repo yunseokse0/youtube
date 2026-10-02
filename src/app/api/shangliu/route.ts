@@ -5,13 +5,49 @@ import { NextResponse } from "next/server";
 import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
 import { upstashGetJson, upstashSetJsonWithPipeline } from "@/app/api/_shared/upstash";
 
+const STEAL_FX_IDS = [
+  "slide",
+  "neon",
+  "shock",
+  "slash",
+  "absorb",
+  "glitch",
+  "ember",
+  "volt",
+  "crystal",
+  "void",
+  "pixel",
+  "tidal",
+  "stamp",
+  "random",
+] as const;
+
+type StealFxId = (typeof STEAL_FX_IDS)[number];
+type GrantLogItem = {
+  t: number;
+  kind: string;
+  id: string;
+  name: string;
+  amount: number;
+  note: string;
+};
 type ShangliuMember = { name: string; color: string; cm: number };
 type ShangliuState = {
   mode: "team" | "individual";
   activeOrder: string[];
   members: Record<string, ShangliuMember>;
+  stealFx: StealFxId;
+  stealSeq: number;
+  stealDemo: boolean;
+  boardTotalCm: number;
+  grantLog: GrantLogItem[];
   updatedAt: number;
 };
+
+function sanitizeStealFx(value: unknown): StealFxId {
+  const id = String(value || "");
+  return (STEAL_FX_IDS as readonly string[]).includes(id) ? (id as StealFxId) : "neon";
+}
 
 /** 후원 AppState와 분리된 영토 전용 키 */
 function shangliuKey(userId: string): string {
@@ -24,6 +60,34 @@ function clampCm(value: unknown): number {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.min(1_000_000, n));
+}
+
+const GRANT_LOG_KINDS = new Set(["grant", "set", "steal", "swap", "equal", "revive"]);
+
+function sanitizeGrantLog(raw: unknown): GrantLogItem[] {
+  if (!Array.isArray(raw)) return [];
+  const out: GrantLogItem[] = [];
+  for (const row of raw.slice(0, 80)) {
+    if (!row || typeof row !== "object") continue;
+    const item = row as Record<string, unknown>;
+    const kind = String(item.kind || "");
+    if (!GRANT_LOG_KINDS.has(kind)) continue;
+    const t = Number(item.t);
+    const amountRaw = Number(item.amount);
+    const amount = Number.isFinite(amountRaw)
+      ? Math.max(-1_000_000, Math.min(1_000_000, amountRaw))
+      : 0;
+    out.push({
+      t: Number.isFinite(t) && t > 0 ? t : Date.now(),
+      kind,
+      id: String(item.id || "").slice(0, 8),
+      name: String(item.name || "").slice(0, 40),
+      amount,
+      note: String(item.note || "").slice(0, 80),
+    });
+    if (out.length >= 80) break;
+  }
+  return out;
 }
 
 function sanitizeState(raw: unknown): ShangliuState | null {
@@ -43,14 +107,25 @@ function sanitizeState(raw: unknown): ShangliuState | null {
       cm: clampCm(m.cm),
     };
   }
-  const ids = Object.keys(members);
+  const ids = Object.keys(members).sort();
   if (ids.length < 2 || ids.length > 6) return null;
   const orderRaw = Array.isArray(o.activeOrder) ? o.activeOrder.map((x) => String(x)) : ids;
   const activeOrder = orderRaw.filter((id, i, arr) => members[id] && arr.indexOf(id) === i);
+  const stealSeqRaw = Number(o.stealSeq);
+  const occupied = Object.values(members).reduce((sum, m) => sum + m.cm, 0);
+  const boardRaw = Number(o.boardTotalCm);
+  const boardTotalCm = Number.isFinite(boardRaw) && boardRaw > 0
+    ? Math.max(1, clampCm(boardRaw))
+    : Math.max(1, occupied || 400);
   return {
     mode,
     members,
     activeOrder,
+    stealFx: sanitizeStealFx(o.stealFx),
+    stealSeq: Number.isFinite(stealSeqRaw) ? Math.max(0, Math.min(1_000_000_000, Math.floor(stealSeqRaw))) : 0,
+    stealDemo: o.stealDemo === true,
+    boardTotalCm,
+    grantLog: sanitizeGrantLog(o.grantLog),
     updatedAt: Date.now(),
   };
 }

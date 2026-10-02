@@ -7,15 +7,15 @@
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
 
         * { box-sizing: border-box; font-family: 'Pretendard', sans-serif; margin: 0; padding: 0; }
-        body { background: #0a0510; color: #fff; padding: 40px; }
-        .container { max-width: 1100px; margin: 0 auto; }
+        body { background: #0a0510; color: #fff; padding: 28px; }
+        .container { max-width: 1280px; margin: 0 auto; }
 
-        .header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+        .header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1px solid #333; padding-bottom: 20px; margin-bottom: 24px; }
         .header h1 { font-size: 32px; font-weight: 900; color: #ffdf00; letter-spacing: 2px; }
         .header p { color: #888; font-size: 14px; margin-top: 5px; }
 
-        .panel { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 30px; margin-bottom: 20px; }
-        .panel h3 { margin-bottom: 20px; color: #ccc; }
+        .panel { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 24px; margin-bottom: 18px; }
+        .panel h3 { margin-bottom: 16px; color: #ccc; }
 
         input, select, button { padding: 12px; border-radius: 8px; border: 1px solid #444; background: #000; color: #fff; font-size: 15px; }
         button { cursor: pointer; font-weight: bold; transition: all 0.2s; }
@@ -24,29 +24,182 @@
         .btn-start { background: #00ff88; color: #000; border: none; padding: 12px 30px; font-size: 16px; margin-left: 10px; }
         .btn-start:hover { background: #00cc6a; }
         .btn-reset { background: #ff3366; color: #fff; border: none; }
+        .btn-grant { background: #ffdf00; color: #111; border: none; }
+        .btn-grant:hover { background: #e6c800; color: #111; }
+        .btn-set { background: rgba(0,243,255,0.18); border: 1px solid #00f3ff; color: #00f3ff; }
 
-        .setup-row { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }
+        .setup-row { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; flex-wrap: wrap; }
 
-        /* 조작 카드 그리드 */
-        .controls-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+        .roster-table { width: 100%; border-collapse: collapse; }
+        .roster-table th { text-align: left; color: #888; font-size: 12px; font-weight: 700; padding: 6px 8px; }
+        .roster-table td { padding: 6px 8px; }
+        .roster-table input[type="number"] { width: 120px; text-align: center; }
+        .roster-table input[type="text"] { width: 100%; font-weight: 800; }
+        .roster-table input[type="color"] { width: 46px; height: 42px; padding: 3px; cursor: pointer; background: #111; }
 
-        .card { background: rgba(0,0,0,0.6); border: 2px solid; border-radius: 12px; padding: 25px; display: flex; flex-direction: column; gap: 15px; position: relative; overflow: hidden; }
-        .card-header { display: flex; justify-content: space-between; align-items: center; }
-        .card-name { font-size: 24px; font-weight: 800; }
-        .card-cm { font-size: 28px; font-weight: 900; color: #fff; }
-        .card-cm span { font-size: 16px; color: #aaa; font-weight: normal; }
+        .preview-wrap {
+            background: #1e1628;
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 12px;
+            overflow: hidden;
+            height: 240px;
+            position: relative;
+        }
+        .preview-wrap iframe {
+            width: 1080px;
+            height: 320px;
+            border: 0;
+            transform: scale(0.78);
+            transform-origin: top left;
+            pointer-events: none;
+        }
+        .preview-caption { font-size: 13px; color: #888; margin-top: 8px; }
 
-        .action-group { display: flex; gap: 10px; }
-        .action-group input { flex: 1; text-align: center; }
+        .seat-bar {
+            display: flex;
+            align-items: stretch;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .seat-wall {
+            width: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            writing-mode: vertical-rl;
+            text-orientation: upright;
+            letter-spacing: 4px;
+            font-size: 11px;
+            font-weight: 900;
+            color: rgba(255,255,255,0.35);
+            background: #111;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+        .seat-chip {
+            flex: 1;
+            min-width: 0;
+            padding: 10px 12px;
+            border: 2px solid;
+            border-radius: 10px;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .seat-chip .seat-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+        .seat-chip .seat-name { font-weight: 800; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .seat-chip .seat-cm { font-size: 12px; color: #aaa; }
+        .seat-chip .seat-actions { display: flex; gap: 6px; }
+        .seat-chip .seat-actions button { flex: 1; padding: 8px; font-size: 12px; }
+        .seat-chip select { width: 100%; padding: 8px; font-size: 13px; }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 10px;
+        }
+        .card {
+            background: rgba(0,0,0,0.55);
+            border: 2px solid;
+            border-radius: 8px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            position: relative;
+            overflow: hidden;
+        }
+        .card-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+        .card-cm { font-size: 18px; font-weight: 900; color: #fff; line-height: 1.1; }
+        .card-cm span { font-size: 11px; color: #aaa; font-weight: 700; }
+        .seat-badge {
+            font-size: 10px; font-weight: 800; color: #ffdf00;
+            background: rgba(255,223,0,0.12); border: 1px solid rgba(255,223,0,0.35);
+            border-radius: 999px; padding: 2px 7px; white-space: nowrap;
+        }
+        .card input, .card select, .card button { padding: 7px 8px; font-size: 13px; border-radius: 6px; }
+        .action-group { display: flex; gap: 6px; }
+        .action-group input { flex: 1; text-align: center; min-width: 0; }
+        .action-group button { flex: 0 0 auto; white-space: nowrap; }
         .btn-expand { background: rgba(255,255,255,0.1); flex: 1; border: 1px solid rgba(255,255,255,0.2); }
         .btn-expand:hover { background: #fff; color: #000; }
-
-        .rule-text { font-size: 13px; color: #888; text-align: center; background: rgba(0,0,0,0.5); padding: 8px; border-radius: 6px; }
+        .rule-text { font-size: 11px; color: #777; text-align: left; padding: 0; background: none; }
+        .identity-row { display: flex; gap: 6px; align-items: center; }
+        .identity-row input[type="color"] {
+            width: 32px; height: 32px; padding: 2px; cursor: pointer;
+            background: #111; border: 1px solid #444;
+        }
+        .identity-row input[type="text"] { flex: 1; font-weight: 800; font-size: 14px; min-width: 0; }
+        .btn-swap { flex: 1; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); }
+        .btn-swap:disabled { opacity: 0.35; cursor: not-allowed; }
 
         .card.island { border-color: #555 !important; }
         .card.island .card-name { color: #666 !important; }
         .btn-revive { background: transparent; border: 1px dashed #666; color: #ccc; flex: 1; }
         .btn-revive:hover { border-color: #fff; color: #fff; }
+
+        .fx-toolbar {
+            display: grid;
+            grid-template-columns: minmax(280px, 1fr) auto;
+            align-items: start;
+            gap: 14px 16px;
+            margin-bottom: 10px;
+        }
+        .fx-toolbar label { color: #aaa; font-size: 13px; font-weight: 700; grid-column: 1 / -1; }
+        #fxSelect {
+            width: 100%;
+            height: 420px;
+            font-size: 16px;
+            font-weight: 800;
+            padding: 6px;
+            background: #0c0812;
+            border: 1px solid #ffdf00;
+            color: #fff;
+            overflow-y: auto;
+        }
+        #fxSelect option {
+            padding: 11px 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        #fxSelect option:checked {
+            background: linear-gradient(#ffdf00, #ffdf00);
+            color: #111;
+        }
+        .fx-toolbar .btn-expand { align-self: start; white-space: nowrap; }
+        .fx-desc-line { color: #888; font-size: 13px; line-height: 1.45; min-height: 1.4em; }
+        .alloc-hint { font-size: 13px; color: #888; }
+        .alloc-hint.ok { color: #00ff88; }
+        .alloc-hint.warn { color: #ff6688; }
+        .territory-bar {
+            display: flex; height: 18px; border-radius: 9px; overflow: hidden;
+            background: #111; border: 1px solid #333; margin: 10px 0 4px;
+        }
+        .territory-bar span { display: block; height: 100%; min-width: 0; }
+        .btn-add { background: #00ff88; color: #000; border: none; }
+        .btn-del { background: transparent; border: 1px solid #553; color: #faa; }
+        .grant-log {
+            max-height: 220px;
+            overflow-y: auto;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            background: #07050a;
+        }
+        .grant-log-row {
+            display: grid;
+            grid-template-columns: 72px 52px 1fr auto;
+            gap: 8px;
+            align-items: center;
+            padding: 7px 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            font-size: 13px;
+        }
+        .grant-log-row:last-child { border-bottom: none; }
+        .grant-log-time { color: #888; font-variant-numeric: tabular-nums; }
+        .grant-log-kind { font-weight: 800; color: #ffdf00; font-size: 12px; }
+        .grant-log-note { color: #ddd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .grant-log-amt { font-weight: 800; color: #00ff88; white-space: nowrap; }
+        .grant-log-empty { color: #666; padding: 14px 12px; font-size: 13px; }
     </style>
 </head>
 <body>
@@ -54,14 +207,57 @@
         <div class="header">
             <div>
                 <h1>상류사회 백오피스</h1>
-                <p>서버 연동 — 백오피스 PC와 방송 PC가 달라도 같은 주소·같은 계정(u=)이면 오버레이가 따라갑니다.</p>
             </div>
             <button class="btn-reset" onclick="resetSystem()">🔄 시스템 초기화</button>
         </div>
 
-        <!-- 게임 기본 설정 화면 -->
+        <div class="panel">
+            <h3>오버레이 미리보기</h3>
+            <div class="preview-wrap">
+                <iframe id="previewFrame" title="상류사회 오버레이 미리보기"></iframe>
+            </div>
+            <p class="preview-caption">OBS에 넣는 화면과 같은 게이지입니다. 자리·cm을 바꾸면 약 0.4초 안에 반영됩니다.</p>
+        </div>
+
+        <div class="panel">
+            <h3>땅 뺏기 연출</h3>
+            <div class="fx-toolbar">
+                <label for="fxSelect">연출</label>
+                <select id="fxSelect" size="14" onchange="selectStealFx(this.value)"></select>
+                <button type="button" class="btn-expand" onclick="previewStealFx()">선택한 효과 미리보기</button>
+            </div>
+            <p class="fx-desc-line" id="fxCurrentHint"></p>
+        </div>
+
+        <div class="panel">
+            <h3>총 영토</h3>
+            <div class="setup-row">
+                <label>보드 전체</label>
+                <input type="number" id="boardTotalInput" value="400" min="1" step="1" style="width: 140px;" onchange="commitBoardTotal()">
+                cm
+                <button type="button" class="btn-expand" onclick="splitEqualOnBoard()">전원 1/N 균등</button>
+                <button type="button" class="btn-add" onclick="addMember()">+ 멤버 추가</button>
+            </div>
+            <div class="territory-bar" id="territoryBar"></div>
+            <p class="alloc-hint ok" id="boardSumHint">총 400cm를 멤버 수로 나눕니다.</p>
+            <div id="liveAllocWrap" style="display:none; margin-top: 12px;">
+                <table class="roster-table">
+                    <thead>
+                        <tr>
+                            <th>자리</th>
+                            <th>멤버</th>
+                            <th>영토 cm</th>
+                            <th>비중</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="liveAlloc"></tbody>
+                </table>
+            </div>
+        </div>
+
         <div id="setupScreen" class="panel">
-            <h3>🎮 게임 초기 세팅</h3>
+            <h3>멤버</h3>
             <div class="setup-row">
                 <label>방송 계정 u=</label>
                 <input type="text" id="userIdInput" value="finalent" style="width: 160px;" autocomplete="off">
@@ -70,36 +266,112 @@
             </div>
             <div class="setup-row">
                 <label>게임 모드:</label>
-                <select id="modeSelect" onchange="updatePlayerCount()">
+                <select id="modeSelect" onchange="onModeChange()">
                     <option value="team">팀전 (2~3팀)</option>
                     <option value="individual" selected>개인전 (2~6인)</option>
                 </select>
-
-                <label id="countLabel">참여 인원:</label>
-                <select id="countSelect">
-                    <option value="2">2명</option>
-                    <option value="3">3명</option>
-                    <option value="4" selected>4명</option>
-                    <option value="5">5명</option>
-                    <option value="6">6명</option>
-                </select>
+                <span id="rosterCountHint" style="color:#aaa;">4명</span>
+                <label>1인당</label>
+                <span id="equalHint" style="color:#00ff88;font-size:16px;font-weight:800;">100cm</span>
+                <button type="button" class="btn-add" onclick="addMember()">+ 멤버 추가</button>
             </div>
-            <div class="setup-row">
-                <label>초기 땅 크기:</label>
-                <input type="number" id="initCm" value="100" style="width: 120px;"> cm
-                <button class="btn-start" onclick="startGame()">게임 시작</button>
-            </div>
+            <table class="roster-table">
+                <thead>
+                    <tr>
+                        <th>자리(왼쪽부터)</th>
+                        <th>색</th>
+                        <th>이름</th>
+                        <th>영토</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="rosterSetup"></tbody>
+            </table>
         </div>
-        <!-- 실시간 조작 화면 -->
-        <div id="controlScreen" style="display:none;">
-            <div class="controls-grid" id="controls">
-                <!-- JS로 카드 렌더링 -->
+        <div id="controlScreen">
+            <div class="panel" style="padding: 16px 18px;">
+                <h3>오버레이 자리 (왼쪽 → 오른쪽)</h3>
+                <div class="seat-bar" id="seatBar"></div>
+            </div>
+            <div class="controls-grid" id="controls"></div>
+            <div class="panel" style="padding: 14px 16px; margin-top: 12px;">
+                <h3>영토 기록</h3>
+                <div class="grant-log" id="grantLog"></div>
             </div>
         </div>
     </div>
     <script>
         let state = {};
         let persistTimer = null;
+        function formatCm(n) {
+            const s = (Math.max(0, Number(n) || 0)).toFixed(1);
+            return s.endsWith('.0') ? s.slice(0, -2) : s;
+        }
+        const GRANT_KIND_LABEL = {
+            grant: '부여',
+            set: '지정',
+            steal: '뺏기',
+            swap: '교환',
+            equal: '균등',
+            revive: '부활',
+        };
+        function formatLogTime(t) {
+            const d = new Date(Number(t) || Date.now());
+            const p = (n) => String(n).padStart(2, '0');
+            return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+        }
+        function pushGrantLog(kind, id, amount, note) {
+            if (!Array.isArray(state.grantLog)) state.grantLog = [];
+            const name = state.members?.[id]?.name || id || '';
+            state.grantLog.unshift({
+                t: Date.now(),
+                kind,
+                id: String(id || ''),
+                name: String(name).slice(0, 40),
+                amount: Number(amount) || 0,
+                note: String(note || '').slice(0, 80),
+            });
+            if (state.grantLog.length > 80) state.grantLog.length = 80;
+        }
+        function renderGrantLog() {
+            const box = document.getElementById('grantLog');
+            if (!box) return;
+            const rows = Array.isArray(state.grantLog) ? state.grantLog : [];
+            if (!rows.length) {
+                box.innerHTML = '<div class="grant-log-empty">아직 부여 기록이 없습니다.</div>';
+                return;
+            }
+            box.innerHTML = rows.map((row) => {
+                const kind = GRANT_KIND_LABEL[row.kind] || row.kind || '기록';
+                const amt = Number(row.amount);
+                const sign = amt < 0 ? '-' : (row.kind === 'grant' && amt > 0 ? '+' : '');
+                const amtText = Number.isFinite(amt) && amt !== 0
+                    ? `${sign}${formatCm(Math.abs(amt))}cm`
+                    : '';
+                return `<div class="grant-log-row">
+                    <span class="grant-log-time">${formatLogTime(row.t)}</span>
+                    <span class="grant-log-kind">${escapeHtml(kind)}</span>
+                    <span class="grant-log-note">${escapeHtml(row.note || row.name || '')}</span>
+                    <span class="grant-log-amt">${escapeHtml(amtText)}</span>
+                </div>`;
+            }).join('');
+        }
+        const STEAL_FX_LIST = [
+            { id: 'slide', name: '기본 슬라이드', desc: '게이지가 부드럽게 늘어나고 줄어듭니다.' },
+            { id: 'neon', name: '네온 플래시', desc: '뺏는 땅은 번쩍, 뺏기는 땅은 화이트 아웃.' },
+            { id: 'shock', name: '충격파', desc: '경계에서 원형 충격파가 퍼집니다.' },
+            { id: 'slash', name: '참격', desc: '보드를 가로지르는 참격이 땅을 가릅니다.' },
+            { id: 'absorb', name: '흡수 입자', desc: '뺏긴 땅에서 입자가 승자에게 빨려갑니다.' },
+            { id: 'glitch', name: '글리치', desc: 'RGB 분리와 화면 찢김으로 잠식됩니다.' },
+            { id: 'ember', name: '불꽃', desc: '뺏기는 땅이 타오르며 불티가 올라갑니다.' },
+            { id: 'volt', name: '전격', desc: '양쪽 땅을 잇는 번개가 칩니다.' },
+            { id: 'crystal', name: '크리스탈 파편', desc: '땅이 깨지며 파편이 흩어집니다.' },
+            { id: 'void', name: '블랙홀', desc: '어두운 소용돌이가 땅을 삼킵니다.' },
+            { id: 'pixel', name: '픽셀 붕괴', desc: '땅이 네모 조각으로 무너집니다.' },
+            { id: 'tidal', name: '해일', desc: '승자 색의 파도가 덮칩니다.' },
+            { id: 'stamp', name: '각인 펀치', desc: '짧게 때리듯 커졌다가 자리를 차지합니다.' },
+            { id: 'random', name: '랜덤', desc: '뺏을 때마다 위 효과 중 하나가 나갑니다.' },
+        ];
         function readUserId() {
             const fromUrl = new URLSearchParams(location.search).get('u')
                 || new URLSearchParams(location.search).get('user')
@@ -113,6 +385,59 @@
         }
         function overlayUrl() {
             return `${location.origin}/overlay.html?u=${encodeURIComponent(readUserId())}`;
+        }
+        function previewUrl() {
+            return `/overlay.html?u=${encodeURIComponent(readUserId())}&preview=1&_t=${Date.now()}`;
+        }
+        function refreshPreview() {
+            const frame = document.getElementById('previewFrame');
+            if (!frame) return;
+            frame.onload = () => pushPreviewState();
+            frame.src = previewUrl();
+        }
+        function currentOverlayState() {
+            ensureLiveState();
+            if (!state.members || Object.keys(state.members).length < 2) return null;
+            return state;
+        }
+        function pushPreviewState() {
+            const frame = document.getElementById('previewFrame');
+            const snap = currentOverlayState();
+            if (!frame || !snap || !frame.contentWindow) {
+                window.setTimeout(() => {
+                    const f = document.getElementById('previewFrame');
+                    const s = currentOverlayState();
+                    if (!f || !s || !f.contentWindow) return;
+                    try { f.contentWindow.postMessage({ type: 'shangliu-state', state: s }, location.origin); } catch (_e) {}
+                }, 400);
+                return;
+            }
+            try {
+                frame.contentWindow.postMessage({ type: 'shangliu-state', state: snap }, location.origin);
+            } catch (_e) {}
+        }
+        function pingPreviewFx(fxId) {
+            const frame = document.getElementById('previewFrame');
+            if (!frame) return;
+            const payload = {
+                type: 'shangliu-play-fx',
+                fxId: fxId || state.stealFx || 'neon',
+                gainers: (state.activeOrder || Object.keys(state.members || {}))[0]
+                    ? [(state.activeOrder || Object.keys(state.members || {}))[0]] : [],
+                losers: (state.activeOrder || Object.keys(state.members || {}))[1]
+                    ? [(state.activeOrder || Object.keys(state.members || {}))[1]] : [],
+            };
+            const send = () => {
+                try {
+                    const ready = (frame.contentDocument?.querySelectorAll('.territory') || []).length >= 2;
+                    if (!ready || !frame.contentWindow) return false;
+                    frame.contentWindow.postMessage(payload, location.origin);
+                    return true;
+                } catch (_e) {
+                    return false;
+                }
+            };
+            if (!send()) window.setTimeout(send, 400);
         }
         function copyOverlayUrl() {
             const url = overlayUrl();
@@ -128,75 +453,415 @@
             el.textContent = text;
             el.style.color = ok === false ? '#ff6688' : ok ? '#00ff88' : '#888';
         }
-        // 멤버 고유 컬러 (네온 핑크, 네온 시안, 네온 골드, 네온 퍼플)
         const defaultColors = ['#ff007f', '#00f3ff', '#ffdf00', '#b700ff', '#00ff88', '#ff6b00'];
         const defaultNames = ['박자키', '갓정은', '왓컴퍼니', '꽃돼지', '멤버5', '멤버6'];
-        // 모드 변경 시 인원수 셀렉트 박스 제어
-        function updatePlayerCount() {
-            const mode = document.getElementById('modeSelect').value;
-            const countSelect = document.getElementById('countSelect');
-            const countLabel = document.getElementById('countLabel');
-            const prev = parseInt(countSelect.value, 10);
-            countSelect.innerHTML = '';
-            if (mode === 'team') {
-                countLabel.textContent = '참여 팀:';
-                [2, 3].forEach((n) => {
-                    const opt = document.createElement('option');
-                    opt.value = String(n);
-                    opt.textContent = `${n}팀`;
-                    countSelect.appendChild(opt);
-                });
-                countSelect.value = String(prev === 3 ? 3 : 2);
-            } else {
-                countLabel.textContent = '참여 인원:';
-                [2, 3, 4, 5, 6].forEach((n) => {
-                    const opt = document.createElement('option');
-                    opt.value = String(n);
-                    opt.textContent = `${n}명`;
-                    countSelect.appendChild(opt);
-                });
-                const next = Math.min(6, Math.max(2, prev || 4));
-                countSelect.value = String(next);
-            }
-            countSelect.disabled = false;
+        function maxRosterSize() {
+            return document.getElementById('modeSelect')?.value === 'team' ? 3 : 6;
         }
-        // 게임 시작 및 상태 초기화
-        function startGame() {
-            const mode = document.getElementById('modeSelect').value;
-            const rawCount = parseInt(document.getElementById('countSelect').value, 10);
-            const count = mode === 'team'
-                ? Math.min(3, Math.max(2, rawCount || 2))
-                : Math.min(6, Math.max(2, rawCount || 4));
-            const initCm = parseFloat(document.getElementById('initCm').value);
-
-            state = { mode: mode, activeOrder: [], members: {} };
-
-            for(let i = 0; i < count; i++) {
-                const id = String.fromCharCode(65 + i); // A, B, C, D
-                state.activeOrder.push(id);
-                state.members[id] = {
-                    name: mode === 'team' ? `팀 ${id}` : defaultNames[i],
-                    color: defaultColors[i],
-                    cm: initCm
-                };
+        function nextFreeId(used) {
+            const taken = new Set((used || []).map((id) => String(id)));
+            for (let i = 0; i < 26; i += 1) {
+                const id = String.fromCharCode(65 + i);
+                if (!taken.has(id)) return id;
             }
-
-            document.getElementById('setupScreen').style.display = 'none';
-            document.getElementById('controlScreen').style.display = 'block';
+            return null;
+        }
+        function uniqueMemberIds() {
+            return Object.keys(state.members || {}).filter((id) => /^[A-Z]$/.test(id));
+        }
+        function seatIds() {
+            const members = state.members || {};
+            const seen = new Set();
+            const order = [];
+            (Array.isArray(state.activeOrder) ? state.activeOrder : []).forEach((id) => {
+                if (members[id] && !seen.has(id)) {
+                    seen.add(id);
+                    order.push(id);
+                }
+            });
+            uniqueMemberIds().sort().forEach((id) => {
+                if (seen.has(id)) return;
+                if ((Number(members[id]?.cm) || 0) <= 0) return;
+                seen.add(id);
+                order.push(id);
+            });
+            return order;
+        }
+        function rosterCount() {
+            return uniqueMemberIds().length;
+        }
+        function ensureLiveState() {
+            const modeEl = document.getElementById('modeSelect');
+            if (!state || typeof state !== 'object') state = {};
+            if (!Array.isArray(state.activeOrder)) state.activeOrder = [];
+            if (!state.members || typeof state.members !== 'object') state.members = {};
+            let ids = uniqueMemberIds();
+            if (ids.length < 2) {
+                const mode = modeEl?.value === 'team' ? 'team' : 'individual';
+                const total = boardTotal();
+                const seed = 4;
+                const each = total / seed;
+                state.members = {};
+                state.activeOrder = [];
+                for (let i = 0; i < seed; i += 1) {
+                    const id = String.fromCharCode(65 + i);
+                    state.activeOrder.push(id);
+                    state.members[id] = {
+                        name: mode === 'team' ? `팀 ${id}` : defaultNames[i],
+                        color: defaultColors[i],
+                        cm: each,
+                    };
+                }
+                state.boardTotalCm = total;
+                state.mode = mode;
+                ids = uniqueMemberIds();
+            }
+            if (state.mode !== 'team') state.mode = 'individual';
+            state.stealFx = state.stealFx || 'neon';
+            state.stealSeq = Number(state.stealSeq) || 0;
+            if (state.stealDemo !== true) state.stealDemo = false;
+            if (!Array.isArray(state.grantLog)) state.grantLog = [];
+            state.boardTotalCm = boardTotal();
+            state.activeOrder = seatIds();
+            const totalInput = document.getElementById('boardTotalInput');
+            if (totalInput) totalInput.value = String(state.boardTotalCm || 400);
+            if (modeEl) modeEl.value = state.mode;
+        }
+        function clampBoardTotal(n) {
+            const v = Number(n);
+            if (!Number.isFinite(v) || v <= 0) return 400;
+            return Math.max(1, Math.min(1_000_000, v));
+        }
+        function boardTotal() {
+            return clampBoardTotal(state.boardTotalCm || document.getElementById('boardTotalInput')?.value);
+        }
+        function occupiedFromState() {
+            return Object.values(state.members || {}).reduce((sum, m) => sum + Math.max(0, Number(m.cm) || 0), 0);
+        }
+        function shareEach() {
+            return boardTotal() / Math.max(1, rosterCount());
+        }
+        function renderBoardHint() {
+            const total = boardTotal();
+            const n = Math.max(1, rosterCount());
+            const each = total / n;
+            const hint = document.getElementById('boardSumHint');
+            const bar = document.getElementById('territoryBar');
+            const equal = document.getElementById('equalHint');
+            const countHint = document.getElementById('rosterCountHint');
+            const mode = document.getElementById('modeSelect')?.value === 'team' ? '팀' : '명';
+            if (equal) equal.textContent = `${formatCm(each)}cm`;
+            if (countHint) countHint.textContent = `${n}${mode} · 1/${n}`;
+            if (hint) {
+                hint.className = 'alloc-hint ok';
+                hint.textContent = `총 ${formatCm(total)}cm ÷ ${n} = 1인당 ${formatCm(each)}cm`;
+            }
+            if (bar) {
+                const chunks = [];
+                const order = state.activeOrder || [];
+                const occupied = occupiedFromState() || 1;
+                order.forEach((id) => {
+                    const m = state.members && state.members[id];
+                    const cm = Math.max(0, Number(m?.cm) || 0);
+                    if (cm > 0) chunks.push(`<span style="width:${(cm / occupied) * 100}%;background:${m.color}"></span>`);
+                });
+                bar.innerHTML = chunks.join('');
+            }
+            pushPreviewState();
+        }
+        function applyEqualToState() {
+            if (!Array.isArray(state.activeOrder)) state.activeOrder = [];
+            const ids = uniqueMemberIds();
+            if (!ids.length) return;
+            const total = boardTotal();
+            const each = total / ids.length;
+            ids.forEach((id) => {
+                state.members[id].cm = each;
+            });
+            state.activeOrder = seatIds();
+        }
+        function commitBoardTotal() {
+            const total = clampBoardTotal(document.getElementById('boardTotalInput')?.value);
+            document.getElementById('boardTotalInput').value = String(total);
+            state.boardTotalCm = total;
+            splitEqualOnBoard();
+        }
+        function splitEqualOnBoard() {
+            const total = clampBoardTotal(document.getElementById('boardTotalInput')?.value || boardTotal());
+            document.getElementById('boardTotalInput').value = String(total);
+            state.boardTotalCm = total;
+            applyEqualToState();
+            const n = Math.max(1, uniqueMemberIds().length);
+            pushGrantLog('equal', '', total / n, `전원 1/${n} 균등`);
+            saveState();
+            renderRosterSetup();
+            renderControls();
+            pushPreviewState();
+        }
+        function addMember() {
+            ensureLiveState();
+            const max = maxRosterSize();
+            const used = uniqueMemberIds();
+            if (used.length >= max) {
+                alert(max === 3 ? '팀전은 최대 3팀입니다.' : '개인전은 최대 6명입니다.');
+                return;
+            }
+            const id = nextFreeId(used);
+            if (!id) {
+                alert(max === 3 ? '팀전은 최대 3팀입니다.' : '개인전은 최대 6명입니다.');
+                return;
+            }
+            const idx = used.length;
+            state.members[id] = {
+                name: state.mode === 'team' ? `팀 ${id}` : (defaultNames[idx] || `멤버${idx + 1}`),
+                color: defaultColors[idx] || defaultColors[idx % defaultColors.length] || '#888888',
+                cm: 0,
+            };
+            if (!state.activeOrder.includes(id)) state.activeOrder.push(id);
+            applyEqualToState();
+            saveState();
+            renderRosterSetup();
+            renderControls();
+            pushPreviewState();
+        }
+        function removeMember(id) {
+            ensureLiveState();
+            if (!state.members || Object.keys(state.members).length <= 2) {
+                alert('최소 2명입니다.');
+                return;
+            }
+            delete state.members[id];
+            state.activeOrder = state.activeOrder.filter((x) => x !== id);
+            applyEqualToState();
+            saveState();
+            renderRosterSetup();
+            renderControls();
+            pushPreviewState();
+        }
+        function renderLiveAlloc() {
+            const wrap = document.getElementById('liveAllocWrap');
+            const tbody = document.getElementById('liveAlloc');
+            if (!wrap || !tbody) return;
+            if (!state.members) {
+                wrap.style.display = 'none';
+                renderBoardHint();
+                return;
+            }
+            wrap.style.display = 'block';
+            const total = boardTotal();
+            const order = state.activeOrder || [];
+            const island = Object.keys(state.members).filter((x) => !order.includes(x));
+            const n = Object.keys(state.members).length;
+            tbody.innerHTML = [...order, ...island].map((id) => {
+                const m = state.members[id];
+                const cm = Math.max(0, Number(m.cm) || 0);
+                const pct = total > 0 ? (cm / total) * 100 : 0;
+                const seat = order.indexOf(id) + 1;
+                const canDel = n > 2;
+                return `
+                    <tr>
+                        <td>${seat > 0 ? `${seat}번` : '무인도'}</td>
+                        <td style="color:${escapeHtml(m.color)}">${escapeHtml(m.name || id)}</td>
+                        <td>${formatCm(cm)}</td>
+                        <td>${pct.toFixed(1)}%</td>
+                        <td><button type="button" class="btn-del" ${canDel ? '' : 'disabled'} onclick="removeMember('${id}')">삭제</button></td>
+                    </tr>
+                `;
+            }).join('');
+            renderBoardHint();
+        }
+        function renderRosterSetup() {
+            ensureLiveState();
+            const tbody = document.getElementById('rosterSetup');
+            if (!tbody) return;
+            const order = state.activeOrder || [];
+            tbody.innerHTML = order.map((id, i) => {
+                const m = state.members[id];
+                if (!m) return '';
+                const canDel = order.length > 2;
+                return `
+                <tr>
+                    <td>${i + 1}번</td>
+                    <td><input type="color" value="${escapeHtml(m.color)}" oninput="patchMember('${id}','color',this.value)"></td>
+                    <td><input type="text" maxlength="40" value="${escapeHtml(m.name)}" oninput="patchMember('${id}','name',this.value)"></td>
+                    <td>${formatCm(m.cm)} cm</td>
+                    <td><button type="button" class="btn-del" ${canDel ? '' : 'disabled'} onclick="removeMember('${id}')">삭제</button></td>
+                </tr>`;
+            }).join('');
+            renderBoardHint();
+        }
+        function onModeChange() {
+            ensureLiveState();
+            const mode = document.getElementById('modeSelect').value === 'team' ? 'team' : 'individual';
+            state.mode = mode;
+            const max = maxRosterSize();
+            while (uniqueMemberIds().length > max) {
+                const last = state.activeOrder[state.activeOrder.length - 1];
+                if (!last) break;
+                delete state.members[last];
+                state.activeOrder.pop();
+            }
+            if (mode === 'team') {
+                uniqueMemberIds().forEach((id) => {
+                    state.members[id].name = `팀 ${id}`;
+                });
+            }
+            applyEqualToState();
+            saveState();
+            renderRosterSetup();
+            renderControls();
+        }
+        function renderFxList() {
+            const sel = document.getElementById('fxSelect');
+            const current = state.stealFx || 'neon';
+            if (sel) {
+                sel.innerHTML = STEAL_FX_LIST.map((fx) =>
+                    `<option value="${fx.id}">${escapeHtml(fx.name)}</option>`
+                ).join('');
+                sel.size = String(STEAL_FX_LIST.length);
+                sel.value = STEAL_FX_LIST.some((fx) => fx.id === current) ? current : 'neon';
+            }
+            const hint = document.getElementById('fxCurrentHint');
+            const picked = STEAL_FX_LIST.find((fx) => fx.id === (sel?.value || current));
+            if (hint) hint.textContent = picked ? picked.desc : '';
+        }
+        function selectStealFx(id) {
+            if (!STEAL_FX_LIST.some((fx) => fx.id === id)) return;
+            state.stealFx = id;
+            state.stealDemo = false;
+            renderFxList();
+            previewStealFx();
+        }
+        function previewStealFx() {
+            ensureLiveState();
+            pingPreviewFx(state.stealFx);
+            state.stealSeq = (Number(state.stealSeq) || 0) + 1;
+            state.stealDemo = true;
+            saveState();
+        }
+        function bumpStealFx() {
+            state.stealSeq = (Number(state.stealSeq) || 0) + 1;
+            state.stealDemo = false;
+        }
+        let resetArmed = false;
+        function resetSystem() {
+            if (resetArmed) return;
+            resetArmed = true;
             const u = readUserId();
-            history.replaceState(null, '', `${location.pathname}?u=${encodeURIComponent(u)}`);
-
+            location.replace(`${location.pathname}?u=${encodeURIComponent(u)}`);
+        }
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;");
+        }
+        function patchMember(id, field, value) {
+            if (!state.members || !state.members[id]) return;
+            if (field === "name") {
+                state.members[id].name = String(value || "").slice(0, 40);
+            } else if (field === "color") {
+                const color = String(value || "");
+                if (!/^#[0-9a-fA-F]{6}$/.test(color)) return;
+                state.members[id].color = color;
+                const card = document.querySelector(`[data-member="${id}"]`);
+                if (card) card.style.borderColor = color;
+            }
+            saveState();
+            renderSeatBar();
+            renderBoardHint();
+        }
+        function swapPartnerOptions(id) {
+            const order = Array.isArray(state.activeOrder) ? state.activeOrder : [];
+            return order
+                .filter((other) => other !== id && state.members[other])
+                .map((other) => {
+                    const m = state.members[other];
+                    const seat = order.indexOf(other) + 1;
+                    return `<option value="${other}">${escapeHtml(m.name || other)} (${seat}번 · ${formatCm(m.cm)}cm)</option>`;
+                })
+                .join('');
+        }
+        function swapTerritory(id, otherId) {
+            if (!id || !otherId || id === otherId) return;
+            const a = state.members[id];
+            const b = state.members[otherId];
+            if (!a || !b) return;
+            const order = Array.isArray(state.activeOrder) ? state.activeOrder : [];
+            const ia = order.indexOf(id);
+            const ib = order.indexOf(otherId);
+            if (ia < 0 || ib < 0) return;
+            order[ia] = otherId;
+            order[ib] = id;
+            const cmA = Math.max(0, Number(a.cm) || 0);
+            const cmB = Math.max(0, Number(b.cm) || 0);
+            a.cm = cmB;
+            b.cm = cmA;
+            pushGrantLog('swap', id, 0, `${a.name || id} ↔ ${b.name || otherId} (${formatCm(cmB)}cm ↔ ${formatCm(cmA)}cm)`);
+            saveState();
+            renderControls();
+            renderRosterSetup();
+            pushPreviewState();
+        }
+        function rescaleOthersToFill(id) {
+            const total = boardTotal();
+            const mine = Math.min(total, Math.max(0, Number(state.members[id]?.cm) || 0));
+            state.members[id].cm = mine;
+            const remain = Math.max(0, total - mine);
+            const others = Object.keys(state.members).filter((x) => x !== id);
+            if (!others.length) return;
+            const otherSum = others.reduce((sum, x) => sum + Math.max(0, Number(state.members[x].cm) || 0), 0);
+            if (otherSum <= 0) {
+                const each = remain / others.length;
+                others.forEach((x) => { state.members[x].cm = each; });
+                return;
+            }
+            const scale = remain / otherSum;
+            others.forEach((x) => {
+                state.members[x].cm = Math.max(0, (Number(state.members[x].cm) || 0) * scale);
+            });
+        }
+        function grantMemberCm(id) {
+            const amount = parseFloat(document.getElementById(`grant-${id}`).value);
+            if (!Number.isFinite(amount) || amount === 0) {
+                alert("부여할 cm를 입력하세요. (음수는 차감)");
+                return;
+            }
+            if (!state.members[id]) return;
+            state.members[id].cm = Math.max(0, (Number(state.members[id].cm) || 0) + amount);
+            if (state.members[id].cm > 0 && !state.activeOrder.includes(id)) {
+                state.activeOrder.push(id);
+            }
+            rescaleOthersToFill(id);
+            document.getElementById(`grant-${id}`).value = "";
+            pushGrantLog('grant', id, amount, `${state.members[id].name} ${amount > 0 ? '+' : ''}${formatCm(amount)}cm → ${formatCm(state.members[id].cm)}cm`);
+            checkElimination();
             saveState();
             renderControls();
         }
-        function resetSystem() {
-            const u = readUserId();
-            location.href = `${location.pathname}?u=${encodeURIComponent(u)}`;
+        function setMemberCm(id) {
+            const amount = parseFloat(document.getElementById(`setcm-${id}`).value);
+            if (!Number.isFinite(amount) || amount < 0) {
+                alert("지정할 cm를 0 이상으로 입력하세요.");
+                return;
+            }
+            if (!state.members[id]) return;
+            state.members[id].cm = amount;
+            if (state.members[id].cm > 0 && !state.activeOrder.includes(id)) {
+                state.activeOrder.push(id);
+            }
+            rescaleOthersToFill(id);
+            document.getElementById(`setcm-${id}`).value = "";
+            pushGrantLog('set', id, amount, `${state.members[id].name} ${formatCm(amount)}cm로 지정`);
+            checkElimination();
+            saveState();
+            renderControls();
         }
-        // 서버 + 로컬 스토리지에 저장 (다른 PC 오버레이가 /api/shangliu 를 폴링)
         function saveState() {
             const payload = JSON.stringify(state);
             try { localStorage.setItem('shangliu_state', payload); } catch (_e) {}
+            pushPreviewState();
             if (persistTimer) window.clearTimeout(persistTimer);
             persistTimer = window.setTimeout(() => {
                 persistTimer = null;
@@ -215,7 +880,6 @@
                 }).catch(() => setSyncHint('서버 저장 실패', false));
             }, 80);
         }
-        // ⚔️ 땅 넓히기 (뺏기) 로직
         function expandTerritory(targetId) {
             const amount = parseFloat(document.getElementById(`input-${targetId}`).value);
             if(isNaN(amount) || amount <= 0) {
@@ -223,76 +887,96 @@
                 return;
             }
             let idx = state.activeOrder.indexOf(targetId);
-            if (idx === -1) return; // 무인도에 있으면 실행 불가
+            if (idx === -1) return;
             if (state.activeOrder.length === 2) {
-                // 2명이면 무조건 상대방 것을 전체 뺏음
                 const opponentIdx = idx === 0 ? 1 : 0;
                 takeFrom(state.activeOrder[opponentIdx], targetId, amount);
             } else {
                 if (idx === 0) {
-                    // 좌측 벽: 우측 멤버의 땅만 전체 뺏음
                     takeFrom(state.activeOrder[1], targetId, amount);
                 } else if (idx === state.activeOrder.length - 1) {
-                    // 우측 벽: 좌측 멤버의 땅만 전체 뺏음
                     takeFrom(state.activeOrder[idx - 1], targetId, amount);
                 } else {
-                    // 중앙: 양옆 멤버의 땅을 절반(1/2)씩 뺏음
                     takeFrom(state.activeOrder[idx - 1], targetId, amount / 2);
                     takeFrom(state.activeOrder[idx + 1], targetId, amount / 2);
                 }
             }
 
             document.getElementById(`input-${targetId}`).value = "";
+            pushGrantLog('steal', targetId, amount, `${state.members[targetId].name} ${formatCm(amount)}cm 뺏음 → ${formatCm(state.members[targetId].cm)}cm`);
             checkElimination();
+            bumpStealFx();
             saveState();
             renderControls();
         }
-        // 땅 차감 및 증가 계산 함수
         function takeFrom(victimId, attackerId, amount) {
             let actualTake = Math.min(state.members[victimId].cm, amount);
             state.members[victimId].cm -= actualTake;
             state.members[attackerId].cm += actualTake;
         }
-        // 땅이 0 이하가 된 멤버를 메인 영토(activeOrder)에서 제거 (무인도행)
         function checkElimination() {
             state.activeOrder = state.activeOrder.filter(id => {
                 if(state.members[id].cm <= 0) {
-                    state.members[id].cm = 0; // 마이너스 방지
+                    state.members[id].cm = 0;
                     return false;
                 }
                 return true;
             });
         }
-        // 🌴 무인도 부활 로직 (벽 진입)
         function reviveMember(id, side) {
             let amount = parseFloat(document.getElementById(`revive-${id}`).value);
-            if(isNaN(amount) || amount <= 0) amount = 20; // 미입력 시 기본 20cm 뺏으며 부활
+            if(isNaN(amount) || amount <= 0) amount = 20;
             if (side === 'left') {
                 if(state.activeOrder.length > 0) {
                     takeFrom(state.activeOrder[0], id, amount);
                 } else {
-                    state.members[id].cm = amount;
+                    state.members[id].cm = boardTotal();
                 }
-                state.activeOrder.unshift(id); // 맨 앞에 추가
+                state.activeOrder.unshift(id);
             } else {
                 if(state.activeOrder.length > 0) {
                     takeFrom(state.activeOrder[state.activeOrder.length-1], id, amount);
                 } else {
-                    state.members[id].cm = amount;
+                    state.members[id].cm = boardTotal();
                 }
-                state.activeOrder.push(id); // 맨 뒤에 추가
+                state.activeOrder.push(id);
             }
 
-            checkElimination(); // 끝 유저의 땅을 뺏다가 끝 유저가 죽었을 경우 체크
+            checkElimination();
+            bumpStealFx();
+            pushGrantLog('revive', id, amount, `${state.members[id].name} ${side === 'left' ? '좌측' : '우측'} 진입 ${formatCm(amount)}cm`);
             saveState();
             renderControls();
         }
-        // UI 렌더링 함수
+        function renderSeatBar() {
+            const bar = document.getElementById('seatBar');
+            if (!bar || !state.activeOrder) return;
+            const order = state.activeOrder;
+            const chips = order.map((id, idx) => {
+                const m = state.members[id] || {};
+                const partners = swapPartnerOptions(id);
+                return `
+                    <div class="seat-chip" style="border-color:${escapeHtml(m.color || '#888')}">
+                        <div class="seat-top">
+                            <div class="seat-name">${idx + 1}. ${escapeHtml(m.name || id)}</div>
+                            <div class="seat-cm">${formatCm(m.cm)} cm</div>
+                        </div>
+                        <select onchange="if (this.value) swapTerritory('${id}', this.value)" ${partners ? '' : 'disabled'}>
+                            <option value="">땅 교환할 멤버</option>
+                            ${partners}
+                        </select>
+                    </div>
+                `;
+            }).join('');
+            bar.innerHTML = `<div class="seat-wall">벽</div>${chips}<div class="seat-wall">벽</div>`;
+        }
         function renderControls() {
             const controls = document.getElementById('controls');
             controls.innerHTML = '';
+            renderSeatBar();
 
-            Object.keys(state.members).forEach(id => {
+            const islandIds = Object.keys(state.members).filter((id) => !state.activeOrder.includes(id));
+            [...state.activeOrder, ...islandIds].forEach(id => {
                 const m = state.members[id];
                 const isAlive = state.activeOrder.includes(id);
 
@@ -303,52 +987,88 @@
                               (idx === 0 || idx === state.activeOrder.length-1) ? "단방향 흡수 (100%)" : "양분 흡수 (좌우 50%씩)";
 
                     html = `
-                    <div class="card" style="border-color:${m.color}">
+                    <div class="card" data-member="${id}" style="border-color:${escapeHtml(m.color)}">
                         <div class="card-header">
-                            <div class="card-name" style="color:${m.color}">${m.name}</div>
-                            <div class="card-cm">${Number(m.cm).toFixed(1)} <span>cm</span></div>
+                            <div class="card-cm">${formatCm(m.cm)} <span>cm</span></div>
+                            <div class="seat-badge">${idx + 1}번</div>
+                        </div>
+                        <div class="identity-row">
+                            <input type="color" value="${escapeHtml(m.color)}" title="땅 색" oninput="patchMember('${id}','color',this.value)">
+                            <input type="text" maxlength="40" value="${escapeHtml(m.name)}" placeholder="이름" oninput="patchMember('${id}','name',this.value)">
+                        </div>
+                        <div class="action-group">
+                            <input type="number" id="grant-${id}" placeholder="+/- cm">
+                            <button class="btn-grant" onclick="grantMemberCm('${id}')">부여</button>
+                        </div>
+                        <div class="action-group">
+                            <input type="number" id="setcm-${id}" placeholder="지정 cm" min="0">
+                            <button class="btn-set" onclick="setMemberCm('${id}')">지정</button>
                         </div>
                         <div class="action-group">
                             <input type="number" id="input-${id}" placeholder="뺏을 cm">
-                            <button class="btn-expand" onclick="expandTerritory('${id}')">⚔️ 땅 넓히기</button>
+                            <button class="btn-expand" onclick="expandTerritory('${id}')">뺏기</button>
                         </div>
-                        <div class="rule-text">적용 룰: ${rule}</div>
+                        <div class="rule-text">${rule}</div>
                     </div>`;
                 } else {
-                    // 무인도 카드
                     html = `
-                    <div class="card island">
+                    <div class="card island" data-member="${id}">
                         <div class="card-header">
-                            <div class="card-name">${m.name} <span style="font-size:14px;">(무인도)</span></div>
-                            <div class="card-cm" style="color:#666;">0.0 <span>cm</span></div>
+                            <div class="card-cm" style="color:#666;">0 <span>cm</span></div>
+                            <div class="seat-badge" style="color:#aaa;border-color:#555;background:#111;">무인도</div>
                         </div>
-                        <input type="number" id="revive-${id}" placeholder="부활 진입 시 뺏을 cm (기본 20)" style="width:100%; margin-bottom:5px;">
+                        <div class="identity-row">
+                            <input type="color" value="${escapeHtml(m.color)}" title="땅 색" oninput="patchMember('${id}','color',this.value)">
+                            <input type="text" maxlength="40" value="${escapeHtml(m.name)}" placeholder="이름" oninput="patchMember('${id}','name',this.value)">
+                        </div>
                         <div class="action-group">
-                            <button class="btn-revive" onclick="reviveMember('${id}', 'left')">⏪ 좌측 진입</button>
-                            <button class="btn-revive" onclick="reviveMember('${id}', 'right')">우측 진입 ⏩</button>
+                            <input type="number" id="grant-${id}" placeholder="+/- cm">
+                            <button class="btn-grant" onclick="grantMemberCm('${id}')">부여</button>
+                        </div>
+                        <div class="action-group">
+                            <input type="number" id="revive-${id}" placeholder="진입 cm" min="0">
+                            <button class="btn-revive" onclick="reviveMember('${id}', 'left')">좌측</button>
+                            <button class="btn-revive" onclick="reviveMember('${id}', 'right')">우측</button>
                         </div>
                     </div>`;
                 }
                 controls.innerHTML += html;
             });
+            renderLiveAlloc();
+            renderGrantLog();
         }
-        updatePlayerCount();
+        ensureLiveState();
+        renderRosterSetup();
+        renderFxList();
+        renderControls();
         (function boot() {
             const params = new URLSearchParams(location.search);
             const u = params.get('u') || params.get('user') || 'finalent';
             const input = document.getElementById('userIdInput');
             if (input) input.value = u;
+            refreshPreview();
             fetch(apiUrl(), { credentials: 'include', cache: 'no-store' })
                 .then((r) => r.json())
                 .then((j) => {
-                    if (!j || !j.ok || !j.state || !j.state.members) return;
-                    state = j.state;
-                    document.getElementById('setupScreen').style.display = 'none';
-                    document.getElementById('controlScreen').style.display = 'block';
+                    const fromServer = Boolean(j && j.ok && j.state && j.state.members && Object.keys(j.state.members).length >= 2);
+                    if (fromServer) {
+                        state = j.state;
+                    }
+                    ensureLiveState();
+                    const totalInput = document.getElementById('boardTotalInput');
+                    if (totalInput) totalInput.value = String(state.boardTotalCm || occupiedFromState() || 400);
+                    renderFxList();
+                    renderRosterSetup();
                     renderControls();
-                    setSyncHint('서버에서 진행 중인 판을 불러왔습니다', true);
+                    pushPreviewState();
+                    if (!fromServer) saveState();
                 })
-                .catch(() => {});
+                .catch(() => {
+                    ensureLiveState();
+                    renderRosterSetup();
+                    renderControls();
+                    pushPreviewState();
+                });
         })();
     </script>
 </body>

@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>상류사회 오버레이 (타이틀 제거버전)</title>
+    <title>상류사회 오버레이 (프리미엄 디자인)</title>
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&display=swap');
@@ -11,122 +11,766 @@
 
         body {
             width: 1080px; height: 1920px;
-            background-color: #05020a;
-            background-image: radial-gradient(circle at 50% 20%, rgba(70, 20, 100, 0.35) 0%, transparent 60%), radial-gradient(circle at 50% 80%, rgba(20, 60, 100, 0.2) 0%, transparent 60%);
+            background-color: transparent;
             color: white; overflow: hidden; position: relative;
         }
 
-        .ambient-light { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 1200px; height: 1200px; background: radial-gradient(circle, rgba(255,223,0,0.05) 0%, transparent 70%); z-index: 0; }
-
-        /* 벽과 영토 게이지를 묶는 컨테이너 (타이틀 제거로 margin-top 증가) */
-        .board-container {
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        .stage {
             width: 1040px;
-            margin: 400px auto 0;
-            gap: 15px;
+            margin: 450px auto 0;
             position: relative;
             z-index: 10;
-        }
-        /* 좌우 벽(Wall) 디자인 */
-        .wall {
-            width: 55px;
-            height: 340px;
-            background: #111;
-            background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.03) 10px, rgba(255,255,255,0.03) 20px);
-            border: 2px solid #333;
-            border-radius: 12px;
             display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: inset 0 0 15px #000, 0 10px 20px rgba(0,0,0,0.8);
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 16px;
         }
 
+        .board-container {
+            display: flex; align-items: stretch; justify-content: center;
+            width: 1040px; height: 220px;
+            gap: 6px;
+            position: relative;
+            filter: drop-shadow(0 18px 28px rgba(0,0,0,0.45));
+        }
+        .fx-layer {
+            position: absolute;
+            inset: -28px;
+            pointer-events: none;
+            z-index: 40;
+            overflow: visible;
+        }
+
+        .wall {
+            width: 45px;
+            background: linear-gradient(90deg, #3a3344, #5a5166, #3a3344);
+            border: 1px solid rgba(255,255,255,0.22);
+            display: flex; align-items: center; justify-content: center;
+            position: relative; overflow: hidden;
+        }
+        .wall::before {
+            content: ''; position: absolute; inset: 0;
+            background: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(255,255,255,0.06) 4px, rgba(255,255,255,0.06) 8px);
+        }
         .wall-left {
-            border-right: 3px solid #ff0066;
-            box-shadow: inset 0 0 15px #000, 5px 0 20px rgba(255, 0, 102, 0.4);
+            border-radius: 12px 4px 4px 12px;
+            border-right: 3px solid rgba(255, 80, 140, 1);
+            box-shadow: inset -5px 0 18px rgba(255, 80, 140, 0.55), 8px 0 22px rgba(255, 80, 140, 0.4);
         }
         .wall-right {
-            border-left: 3px solid #00ff88;
-            box-shadow: inset 0 0 15px #000, -5px 0 20px rgba(0, 255, 136, 0.4);
+            border-radius: 4px 12px 12px 4px;
+            border-left: 3px solid rgba(80, 255, 180, 1);
+            box-shadow: inset 5px 0 18px rgba(80, 255, 180, 0.55), -8px 0 22px rgba(80, 255, 180, 0.4);
+        }
+        .wall-text {
+            position: relative; z-index: 2;
+            writing-mode: vertical-rl; text-orientation: upright;
+            color: rgba(255,255,255,0.72); font-weight: 900; font-size: 16px; letter-spacing: 6px;
         }
 
-        .wall-text {
-            writing-mode: vertical-rl;
-            text-orientation: upright;
-            color: #555;
-            font-weight: 900;
-            font-size: 22px;
-            letter-spacing: 8px;
-            text-shadow: 0 0 5px rgba(0,0,0,0.8);
-        }
-        /* 날렵해진 메인 영토 게이지 */
         .game-board-wrapper {
             flex: 1;
-            height: 280px;
-            background: rgba(20, 10, 30, 0.4);
-            backdrop-filter: blur(20px);
-            border: 2px solid rgba(255, 255, 255, 0.15);
-            border-radius: 20px;
-            padding: 10px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.8), inset 0 0 30px rgba(255,255,255,0.05);
+            background: rgba(48, 36, 62, 0.55);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border: none;
+            padding: 6px;
+            border-radius: 12px;
+            position: relative;
+            box-shadow:
+                0 16px 36px rgba(0,0,0,0.45),
+                inset 0 1px 1px rgba(255,255,255,0.55),
+                inset 0 -1px 2px rgba(0,0,0,0.35),
+                0 0 0 1px rgba(255, 255, 255, 0.16),
+                0 0 0 4px rgba(28, 20, 36, 0.55);
+        }
+        .game-board-wrapper::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: 14px;
+            pointer-events: none;
+            z-index: 10;
+            background:
+                linear-gradient(to right, #d4af37 100%, transparent) 0 0 / 25px 2px,
+                linear-gradient(to bottom, #d4af37 100%, transparent) 0 0 / 2px 25px,
+                linear-gradient(to left, #d4af37 100%, transparent) 100% 0 / 25px 2px,
+                linear-gradient(to bottom, #d4af37 100%, transparent) 100% 0 / 2px 25px,
+                linear-gradient(to right, #d4af37 100%, transparent) 0 100% / 25px 2px,
+                linear-gradient(to top, #d4af37 100%, transparent) 0 100% / 2px 25px,
+                linear-gradient(to left, #d4af37 100%, transparent) 100% 100% / 25px 2px,
+                linear-gradient(to top, #d4af37 100%, transparent) 100% 100% / 2px 25px;
+            background-repeat: no-repeat;
+            opacity: 1;
+            filter: drop-shadow(0 0 10px rgba(255, 214, 90, 0.75));
+        }
+        .game-board {
+            display: flex; width: 100%; height: 100%;
+            border-radius: 6px; overflow: hidden; background: #2a2233;
+            box-shadow: inset 0 0 18px rgba(0,0,0,0.35);
         }
 
-        .game-board { display: flex; width: 100%; height: 100%; border-radius: 12px; overflow: hidden; background: #000; }
-
-        .territory { height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; position: relative; transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); border-right: 2px solid rgba(0, 0, 0, 0.8); }
+        .territory {
+            height: 100%;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center; position: relative;
+            flex: 0 0 auto;
+            transition: flex-grow 0.8s cubic-bezier(0.25, 1, 0.5, 1), width 0.8s cubic-bezier(0.25, 1, 0.5, 1);
+            overflow: hidden;
+            min-width: 0;
+            background-color: var(--neon-color, #888);
+            background-image: linear-gradient(180deg, rgba(255,255,255,0.25) 0%, transparent 40%, rgba(0,0,0,0.3) 100%) !important;
+            border-right: 2px solid rgba(255, 255, 255, 0.5);
+            box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.4), inset 0 -10px 20px rgba(0, 0, 0, 0.5) !important;
+            container-type: inline-size;
+            container-name: territory;
+        }
         .territory:last-child { border-right: none; }
-        .territory-bg { position: absolute; inset: 0; opacity: 0.25; background-image: linear-gradient(180deg, rgba(255,255,255,0.1) 0%, transparent 100%); }
+        .territory::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 45%;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.05) 100%);
+            pointer-events: none;
+            z-index: 1;
+        }
+        .territory.eliminating .member-info { opacity: 0; transform: scale(0.5); }
 
-        .member-info { position: relative; z-index: 2; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 15px; }
-        .t-name { font-size: 42px; font-weight: 800; letter-spacing: 2px; color: #fff; }
-        .t-size { font-family: 'Cinzel', serif; font-size: 38px; font-weight: 700; color: #fff; background: rgba(0, 0, 0, 0.6); padding: 8px 25px; border-radius: 50px; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(5px); display: flex; align-items: baseline; gap: 6px; }
-        .t-unit { font-family: 'Pretendard', sans-serif; font-size: 22px; font-weight: 600; color: #aaa; }
+        .member-info {
+            position: relative; z-index: 2; text-align: center;
+            display: flex; flex-direction: column; align-items: center; gap: 8px;
+            width: 90%; max-width: 90%;
+            white-space: nowrap; overflow: hidden;
+            transform-origin: center center;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        .member-info.is-tight .t-unit { display: none; }
+        .member-info.is-nano .t-name,
+        .member-info.is-nano .t-size { display: none; }
 
-        /* 무인도 영역 */
-        .island-area { position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%); width: 920px; min-height: 220px; background: linear-gradient(135deg, rgba(15, 20, 25, 0.8), rgba(5, 10, 15, 0.9)); border: 2px solid #00ff88; border-radius: 25px; padding: 30px; box-shadow: 0 0 40px rgba(0, 255, 136, 0.15); z-index: 10; }
-        .island-title { font-size: 30px; font-weight: 800; color: #00ff88; text-align: center; margin-bottom: 25px; letter-spacing: 8px; }
-        .island-members { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }
-        .island-item { padding: 15px 30px; background: rgba(0,0,0,0.8); border-radius: 15px; font-size: 30px; font-weight: 800; color: #fff; border: 2px solid; filter: grayscale(0.3) brightness(0.7); transition: all 0.5s ease; }
+        .t-name {
+            font-size: 42px; font-weight: 900; letter-spacing: 1px; color: #fff;
+            text-shadow:
+                -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000,
+                0 4px 15px rgba(0,0,0,0.9),
+                0 0 15px rgba(255,255,255,0.5);
+            max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .t-size {
+            font-family: 'Cinzel', serif; font-size: 32px; font-weight: 800; color: #fff;
+            background: rgba(0, 0, 0, 0.45);
+            padding: 6px 20px; border-radius: 50px;
+            border: 1px solid rgba(255,255,255,0.3);
+            display: flex; align-items: baseline; gap: 6px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.6), inset 0 0 8px rgba(255,255,255,0.1);
+            backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+            max-width: 100%; flex-shrink: 1; white-space: nowrap; overflow: hidden;
+        }
+        .t-unit {
+            font-family: 'Pretendard', sans-serif; font-size: 18px; font-weight: 600; color: #eee;
+        }
+
+        @container territory (max-width: 200px) {
+            .member-info { gap: 8px; }
+            .t-name { font-size: 24px; }
+            .t-size { font-size: 20px; padding: 6px 12px; }
+            .t-unit { font-size: 12px; }
+        }
+        @container territory (max-width: 140px) {
+            .member-info { gap: 6px; }
+            .t-name { font-size: 18px; }
+            .t-size { font-size: 15px; padding: 4px 8px; }
+            .t-unit { font-size: 11px; }
+        }
+        @container territory (max-width: 78px) {
+            .t-name { font-size: 14px; }
+            .t-size { font-size: 12px; padding: 3px 5px; }
+            .t-unit { display: none; }
+        }
+
+        .island-area {
+            position: relative;
+            width: 320px;
+            background: rgba(5, 2, 10, 0.85);
+            backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px; padding: 24px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.9), inset 0 0 20px rgba(255,255,255,0.03);
+            z-index: 10; display: none;
+        }
+        .island-area.active { display: block; animation: slideUp 0.5s cubic-bezier(0.25, 1, 0.5, 1); }
+
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideInFromLeft { from { opacity: 0; transform: translateX(-30px); } to { opacity: 1; transform: translateX(0); } }
+
+        .island-title {
+            font-size: 18px; font-weight: 800; color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 16px; letter-spacing: 4px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding-bottom: 12px;
+        }
+        .island-members { display: flex; flex-direction: column; gap: 12px; }
+        .island-item {
+            padding: 12px 18px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 8px; font-size: 22px; font-weight: 800;
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.05);
+            border-left: 6px solid var(--neon-color, #888);
+            display: flex; align-items: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.6);
+            animation: slideInFromLeft 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+            -webkit-text-stroke: 2px #0a0610;
+            paint-order: stroke fill;
+            text-shadow:
+                -1px -1px 0 #0a0610,
+                 1px -1px 0 #0a0610,
+                -1px  1px 0 #0a0610,
+                 1px  1px 0 #0a0610;
+        }
+
+        .game-board.fx-slide .territory { transition: width 0.8s cubic-bezier(0.25, 1, 0.5, 1); }
+        .game-board.fx-neon .territory,
+        .game-board.fx-shock .territory { transition: width 0.7s cubic-bezier(0.22, 1, 0.36, 1); }
+        .game-board.fx-slash .territory { transition: width 0.55s cubic-bezier(0.7, 0, 0.3, 1); }
+        .game-board.fx-absorb .territory { transition: width 0.95s cubic-bezier(0.16, 1, 0.3, 1); }
+        .game-board.fx-glitch .territory { transition: width 0.45s steps(6, end); }
+        .game-board.fx-ember .territory { transition: width 0.85s ease-in; }
+        .game-board.fx-volt .territory { transition: width 0.4s cubic-bezier(0.2, 0.9, 0.2, 1); }
+        .game-board.fx-crystal .territory { transition: width 0.65s cubic-bezier(0.5, 0, 0, 1); }
+        .game-board.fx-void .territory { transition: width 1.15s cubic-bezier(0.7, 0, 0.2, 1); }
+        .game-board.fx-pixel .territory { transition: width 0.7s steps(8, end); }
+        .game-board.fx-tidal .territory { transition: width 1s cubic-bezier(0.22, 1, 0.36, 1); }
+        .game-board.fx-stamp .territory { transition: width 0.32s cubic-bezier(0.2, 1.6, 0.3, 1); }
+
+        .territory.fx-gain.fx-neon { animation: fxNeonGain 0.7s ease; }
+        .territory.fx-loss.fx-neon { animation: fxNeonLoss 0.7s ease; }
+        .territory.fx-gain.fx-shock { animation: fxShockGain 0.75s ease-out; }
+        .territory.fx-loss.fx-shock { animation: fxShockLoss 0.75s ease-out; }
+        .territory.fx-gain.fx-slash { animation: fxSlashGain 0.55s linear; }
+        .territory.fx-loss.fx-slash { animation: fxSlashLoss 0.55s linear; }
+        .territory.fx-gain.fx-absorb { animation: fxAbsorbGain 0.9s ease; }
+        .territory.fx-loss.fx-absorb { animation: fxAbsorbLoss 0.9s ease; }
+        .territory.fx-gain.fx-glitch { animation: fxGlitchGain 0.6s steps(8, end); }
+        .territory.fx-loss.fx-glitch { animation: fxGlitchLoss 0.6s steps(8, end); }
+        .territory.fx-gain.fx-ember { animation: fxEmberGain 0.85s ease; }
+        .territory.fx-loss.fx-ember { animation: fxEmberLoss 0.85s ease; }
+        .territory.fx-gain.fx-volt { animation: fxVoltGain 0.5s ease; }
+        .territory.fx-loss.fx-volt { animation: fxVoltLoss 0.5s ease; }
+        .territory.fx-gain.fx-crystal { animation: fxCrystalGain 0.7s ease; }
+        .territory.fx-loss.fx-crystal { animation: fxCrystalLoss 0.7s ease; }
+        .territory.fx-gain.fx-void { animation: fxVoidGain 1.1s ease; }
+        .territory.fx-loss.fx-void { animation: fxVoidLoss 1.1s ease; }
+        .territory.fx-gain.fx-pixel { animation: fxPixelGain 0.7s steps(6, end); }
+        .territory.fx-loss.fx-pixel { animation: fxPixelLoss 0.7s steps(6, end); }
+        .territory.fx-gain.fx-tidal { animation: fxTidalGain 1s ease; }
+        .territory.fx-loss.fx-tidal { animation: fxTidalLoss 1s ease; }
+        .territory.fx-gain.fx-stamp { animation: fxStampGain 0.4s cubic-bezier(0.2, 1.6, 0.3, 1); }
+        .territory.fx-loss.fx-stamp { animation: fxStampLoss 0.4s ease; }
+
+        @keyframes fxNeonGain {
+            0% { filter: brightness(1) saturate(1); }
+            12% { filter: brightness(6) saturate(2.4); box-shadow: inset 0 0 120px #fff, 0 0 80px var(--neon-color); }
+            40% { filter: brightness(2.8) saturate(1.8); box-shadow: inset 0 0 90px var(--neon-color), 0 0 70px var(--neon-color); }
+            100% { filter: brightness(1) saturate(1); }
+        }
+        @keyframes fxNeonLoss {
+            0% { filter: brightness(1); }
+            15% { filter: brightness(8) grayscale(0.2); }
+            45% { filter: brightness(0.35) grayscale(0.6); }
+            100% { filter: brightness(0.7); }
+        }
+        @keyframes fxShockGain {
+            0% { transform: scaleX(1) scaleY(1); filter: brightness(1); }
+            25% { transform: scaleX(1.16) scaleY(1.08); filter: brightness(2.4); }
+            100% { transform: scaleX(1) scaleY(1); filter: brightness(1); }
+        }
+        @keyframes fxShockLoss {
+            0% { filter: contrast(1) brightness(1); }
+            30% { filter: contrast(2.4) brightness(2.2); }
+            100% { filter: contrast(1) brightness(1); }
+        }
+        @keyframes fxSlashGain {
+            0% { filter: brightness(1); }
+            10% { filter: brightness(5) contrast(1.4); }
+            100% { filter: brightness(1); }
+        }
+        @keyframes fxSlashLoss {
+            0% { filter: brightness(1); clip-path: inset(0 0 0 0); }
+            35% { filter: brightness(2.2); clip-path: inset(0 18% 0 0); }
+            100% { filter: brightness(0.65); clip-path: inset(0 0 0 0); }
+        }
+        @keyframes fxAbsorbGain {
+            0% { filter: saturate(1) brightness(1); }
+            40% { filter: saturate(2.6) brightness(2.1); }
+            100% { filter: saturate(1) brightness(1); }
+        }
+        @keyframes fxAbsorbLoss {
+            0% { opacity: 1; filter: brightness(1); }
+            35% { opacity: 0.35; filter: brightness(1.8) blur(1px); }
+            100% { opacity: 1; filter: brightness(1); }
+        }
+        @keyframes fxGlitchGain {
+            0%, 100% { transform: translateX(0); filter: none; }
+            12% { transform: translateX(-10px); filter: hue-rotate(80deg) brightness(1.8); }
+            28% { transform: translateX(12px); filter: hue-rotate(-70deg) contrast(1.8); }
+            44% { transform: translateX(-7px) skewX(8deg); }
+            62% { transform: translateX(6px); filter: saturate(2); }
+        }
+        @keyframes fxGlitchLoss {
+            0%, 100% { transform: skewX(0); opacity: 1; }
+            18% { transform: skewX(14deg); opacity: 0.55; }
+            36% { transform: skewX(-12deg) translateY(4px); opacity: 0.7; }
+            58% { transform: skewX(8deg); }
+        }
+        @keyframes fxEmberGain {
+            0% { filter: sepia(0) brightness(1); }
+            30% { filter: sepia(0.7) saturate(3) hue-rotate(-25deg) brightness(2); }
+            100% { filter: none; }
+        }
+        @keyframes fxEmberLoss {
+            0% { filter: brightness(1); }
+            40% { filter: brightness(2.4) sepia(0.85) saturate(2); }
+            100% { filter: brightness(0.65); }
+        }
+        @keyframes fxVoltGain {
+            0%, 100% { filter: brightness(1); }
+            8%, 22%, 38%, 55%, 72% { filter: brightness(4.2) contrast(1.5); }
+            14%, 30%, 48%, 64% { filter: brightness(0.6); }
+        }
+        @keyframes fxVoltLoss {
+            0%, 100% { filter: contrast(1); }
+            15%, 40%, 65% { filter: contrast(2.4) brightness(2.2); }
+            25%, 50% { filter: contrast(0.6) brightness(0.5); }
+        }
+        @keyframes fxCrystalGain {
+            0% { filter: saturate(1) brightness(1); }
+            30% { filter: saturate(2.8) brightness(2.2) contrast(1.3); }
+            100% { filter: none; }
+        }
+        @keyframes fxCrystalLoss {
+            0% { filter: blur(0) brightness(1); }
+            28% { filter: blur(4px) brightness(2.2) contrast(1.5); }
+            100% { filter: none; }
+        }
+        @keyframes fxVoidGain {
+            0% { filter: brightness(1); }
+            40% { filter: brightness(0.15) contrast(1.8) saturate(0.4); }
+            100% { filter: brightness(1); }
+        }
+        @keyframes fxVoidLoss {
+            0% { transform: scale(1); filter: brightness(1); }
+            45% { transform: scale(0.72); filter: brightness(0.08) contrast(1.6); }
+            100% { transform: scale(1); filter: brightness(1); }
+        }
+        @keyframes fxPixelGain {
+            0%, 100% { filter: none; }
+            20% { filter: contrast(2.4) brightness(1.8); }
+            45% { filter: contrast(1.2) brightness(1.2); }
+        }
+        @keyframes fxPixelLoss {
+            0% { opacity: 1; filter: none; }
+            40% { opacity: 0.2; filter: contrast(2); }
+            100% { opacity: 1; filter: none; }
+        }
+        @keyframes fxTidalGain {
+            0% { filter: brightness(1) saturate(1); }
+            35% { filter: brightness(2.2) saturate(2); }
+            100% { filter: none; }
+        }
+        @keyframes fxTidalLoss {
+            0% { filter: none; }
+            40% { filter: brightness(0.4) blur(2px) saturate(0.5); }
+            100% { filter: none; }
+        }
+        @keyframes fxStampGain {
+            0% { transform: scale(1); filter: brightness(1); }
+            30% { transform: scale(1.22); filter: brightness(2.6); }
+            100% { transform: scale(1); filter: brightness(1); }
+        }
+        @keyframes fxStampLoss {
+            0% { transform: scale(1); }
+            30% { transform: scale(0.78); filter: brightness(0.5); }
+            100% { transform: scale(1); filter: brightness(1); }
+        }
+        @keyframes boardKick {
+            0%, 100% { transform: translateX(0); }
+            18% { transform: translateX(-10px); }
+            36% { transform: translateX(10px); }
+            54% { transform: translateX(-6px); }
+            72% { transform: translateX(4px); }
+        }
+        .game-board.fx-shock,
+        .game-board.fx-slash,
+        .game-board.fx-stamp,
+        .game-board.fx-volt { animation: boardKick 0.45s ease; }
+
+        .fx-layer .fx-flash {
+            position: absolute; inset: 28px;
+            border-radius: 8px;
+            background: radial-gradient(circle at 50% 50%, #fff 0%, var(--neon-color, #fff) 38%, transparent 72%);
+            mix-blend-mode: screen;
+            opacity: 0;
+            animation: fxFlashBang 0.55s ease-out forwards;
+        }
+        @keyframes fxFlashBang { 0% { opacity: 0.95; } 100% { opacity: 0; } }
+        .fx-layer .fx-scan {
+            position: absolute; left: 28px; right: 28px; top: 28px; height: 55%;
+            background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(255,255,255,0.15), transparent);
+            mix-blend-mode: screen;
+            animation: fxScanDown 0.55s ease-out forwards;
+        }
+        @keyframes fxScanDown { 0% { transform: translateY(-20%); opacity: 1; } 100% { transform: translateY(90%); opacity: 0; } }
+        .fx-layer .fx-rgb {
+            position: absolute; inset: 28px;
+            border-radius: 8px;
+            mix-blend-mode: screen;
+            background: repeating-linear-gradient(
+                90deg,
+                rgba(255, 0, 80, 0.45) 0 10px,
+                transparent 10px 20px,
+                rgba(0, 255, 255, 0.4) 20px 30px,
+                transparent 30px 40px
+            );
+            animation: fxRgbSplit 0.6s steps(6, end) forwards;
+        }
+        @keyframes fxRgbSplit { 0% { opacity: 0.9; transform: translateX(-8px); } 100% { opacity: 0; transform: translateX(8px); } }
+        .fx-layer .fx-slash-bar {
+            position: absolute; height: 28px; width: 160%;
+            left: -30%; top: 50%;
+            background: linear-gradient(90deg, transparent, #fff, var(--neon-color, #fff), #fff, transparent);
+            transform: translateY(-50%) rotate(-14deg) scaleX(0);
+            transform-origin: left center;
+            animation: fxSlashSweep 0.6s cubic-bezier(0.15, 0.9, 0.2, 1) forwards;
+            box-shadow: 0 0 28px #fff, 0 0 70px var(--neon-color, #fff), 0 0 120px #fff;
+        }
+        .fx-layer .fx-slash-bar.alt { top: 38%; animation-delay: 60ms; transform: translateY(-50%) rotate(12deg) scaleX(0); }
+        @keyframes fxSlashSweep { 0% { transform: translateY(-50%) rotate(-14deg) scaleX(0); opacity: 1; } 65% { opacity: 1; } 100% { transform: translateY(-50%) rotate(-14deg) scaleX(1); opacity: 0; } }
+        .fx-layer .fx-shock-ring {
+            position: absolute; border: 7px solid var(--neon-color, #fff);
+            border-radius: 50%; width: 48px; height: 48px;
+            transform: translate(-50%, -50%) scale(0.15);
+            animation: fxShockRing 0.7s ease-out forwards;
+            box-shadow: 0 0 30px var(--neon-color, #fff), 0 0 80px #fff;
+        }
+        @keyframes fxShockRing { to { transform: translate(-50%, -50%) scale(18); opacity: 0; } }
+        .fx-layer .fx-dot {
+            position: absolute; width: 14px; height: 14px; border-radius: 50%;
+            background: var(--neon-color, #fff);
+            box-shadow: 0 0 16px var(--neon-color, #fff), 0 0 28px #fff;
+            left: var(--x0); top: var(--y0);
+            animation: fxDotFly 0.9s cubic-bezier(0.15, 0.85, 0.2, 1) forwards;
+        }
+        @keyframes fxDotFly { to { left: var(--x1); top: var(--y1); opacity: 0; transform: scale(0.2); } }
+        .fx-layer .fx-ember {
+            position: absolute; width: 10px; height: 18px; border-radius: 3px;
+            background: linear-gradient(#fff, #ffb000, #ff3300);
+            box-shadow: 0 0 14px #ff6a00;
+            left: var(--x0); top: var(--y0);
+            animation: fxEmberUp 1s ease-out forwards;
+        }
+        @keyframes fxEmberUp { to { transform: translateY(-140px) rotate(50deg); opacity: 0; } }
+        .fx-layer .fx-shard {
+            position: absolute; width: 16px; height: 28px;
+            background: var(--neon-color, #fff);
+            clip-path: polygon(50% 0, 100% 100%, 0 100%);
+            left: var(--x0); top: var(--y0);
+            box-shadow: 0 0 16px #fff;
+            animation: fxShardOut 0.85s ease-out forwards;
+        }
+        @keyframes fxShardOut { to { transform: translate(var(--dx), var(--dy)) rotate(220deg); opacity: 0; } }
+        .fx-layer .fx-pixel {
+            position: absolute; width: 18px; height: 18px;
+            background: var(--neon-color, #888);
+            box-shadow: 0 0 10px var(--neon-color, #888);
+            left: var(--x0); top: var(--y0);
+            animation: fxPixelDrop 0.85s steps(7, end) forwards;
+        }
+        @keyframes fxPixelDrop { to { transform: translateY(70px) rotate(20deg); opacity: 0; } }
+        .fx-layer .fx-void-core {
+            position: absolute; width: 36px; height: 36px; border-radius: 50%;
+            background: radial-gradient(circle, #000 22%, var(--neon-color, #fff) 62%, transparent 74%);
+            transform: translate(-50%, -50%) scale(0.3);
+            animation: fxVoidGrow 1.15s ease forwards;
+            box-shadow: 0 0 40px #000, 0 0 80px var(--neon-color, #fff);
+        }
+        @keyframes fxVoidGrow { 45% { transform: translate(-50%, -50%) scale(10); opacity: 1; } 100% { transform: translate(-50%, -50%) scale(0.15); opacity: 0; } }
+        .fx-layer .fx-tidal-wave {
+            position: absolute; inset: 28px;
+            background: linear-gradient(90deg, transparent 0%, var(--neon-color, #00f3ff) 40%, #fff 52%, var(--neon-color, #00f3ff) 64%, transparent 100%);
+            opacity: 0;
+            animation: fxTidalWave 1s ease forwards;
+            mix-blend-mode: screen;
+        }
+        @keyframes fxTidalWave { 0% { transform: translateX(-55%); opacity: 0; } 30% { opacity: 0.95; } 100% { transform: translateX(55%); opacity: 0; } }
+        .fx-layer .fx-volt-line {
+            position: absolute; height: 6px;
+            background: linear-gradient(90deg, transparent, #fff, var(--neon-color, #00f3ff), #fff, transparent);
+            box-shadow: 0 0 18px #fff, 0 0 40px var(--neon-color, #fff);
+            transform-origin: left center;
+            animation: fxVoltFlicker 0.65s linear;
+        }
+        @keyframes fxVoltFlicker { 0%, 100% { opacity: 0; } 10%, 28%, 48%, 70% { opacity: 1; } 18%, 38%, 58% { opacity: 0.15; } }
+
+        html.preview, html.preview body {
+            width: 100% !important;
+            height: auto !important;
+            min-height: 0;
+            overflow: hidden !important;
+            background: #24182f !important;
+        }
+        html.preview .stage {
+            margin: 16px auto 28px !important;
+            width: min(1040px, calc(100% - 16px));
+        }
+        html.preview .board-container {
+            width: 100%;
+            height: 200px;
+            overflow: visible;
+        }
+        html.preview .t-name {
+            font-size: 22px;
+            letter-spacing: 0;
+        }
+        html.preview .t-size {
+            font-size: 16px;
+            padding: 4px 12px;
+        }
+        html.preview .t-unit { font-size: 11px; }
+        html.preview .member-info { gap: 6px; }
     </style>
+    <script>
+        (function () {
+            try {
+                if (new URLSearchParams(location.search).get('preview') === '1') {
+                    document.documentElement.classList.add('preview');
+                }
+            } catch (_e) {}
+        })();
+    </script>
 </head>
 <body>
-    <div class="ambient-light"></div>
-
-    <!-- 장벽과 영토 게이지를 포함하는 컨테이너 -->
-    <div class="board-container">
-        <div class="wall wall-left"><div class="wall-text">WALL</div></div>
-
-        <div class="game-board-wrapper">
-            <div class="game-board" id="gameBoard"></div>
+    <div class="stage">
+        <div class="board-container">
+            <div class="wall wall-left"><div class="wall-text">벽</div></div>
+            <div class="game-board-wrapper">
+                <div class="game-board" id="gameBoard"></div>
+            </div>
+            <div class="wall wall-right"><div class="wall-text">벽</div></div>
+            <div class="fx-layer" id="fxLayer"></div>
         </div>
+        <div class="island-area" id="islandArea">
+            <div class="island-title">무인도</div>
+            <div class="island-members" id="islandMembers"></div>
+        </div>
+    </div>
 
-        <div class="wall wall-right"><div class="wall-text">WALL</div></div>
-    </div>
-    <div class="island-area">
-        <div class="island-title">ISLAND (방석 자리)</div>
-        <div class="island-members" id="islandMembers"></div>
-    </div>
     <script>
         const board = document.getElementById('gameBoard');
-        const island = document.getElementById('islandMembers');
+        const islandArea = document.getElementById('islandArea');
+        const islandMembers = document.getElementById('islandMembers');
+        const fxLayer = document.getElementById('fxLayer');
         let lastDataString = "";
+        let lastRoster = null;
+        let lastMembers = {};
+        let lastOrder = [];
+        let lastStealSeq = -1;
+        let localStateLockUntil = 0;
+        function formatCm(n) {
+            const s = (Math.max(0, Number(n) || 0)).toFixed(1);
+            return s.endsWith('.0') ? s.slice(0, -2) : s;
+        }
+        const labelFitObserver = new ResizeObserver(() => fitTerritoryLabels());
+        const STEAL_FX_POOL = ['neon','shock','slash','absorb','glitch','ember','volt','crystal','void','pixel','tidal','stamp'];
+        const FX_TERR_CLASSES = STEAL_FX_POOL.concat('slide').map((id) => `fx-${id}`);
+
+        function resolveStealFx(id) {
+            if (id === 'random') return STEAL_FX_POOL[Math.floor(Math.random() * STEAL_FX_POOL.length)];
+            return STEAL_FX_POOL.includes(id) || id === 'slide' ? id : 'neon';
+        }
+        function snapshotCm(members) {
+            const out = {};
+            Object.keys(members || {}).forEach((id) => {
+                out[id] = Math.max(0, Number(members[id]?.cm) || 0);
+            });
+            return out;
+        }
+        function detectSteal(prev, next) {
+            const gainers = [];
+            const losers = [];
+            if (!prev || !next) return { gainers, losers };
+            const ids = new Set([...Object.keys(prev), ...Object.keys(next)]);
+            ids.forEach((id) => {
+                const d = (Number(next[id]) || 0) - (Number(prev[id]) || 0);
+                if (d > 0.05) gainers.push(id);
+                if (d < -0.05) losers.push(id);
+            });
+            return { gainers, losers };
+        }
+        function layerPoint(el) {
+            if (!el || !fxLayer) return { x: 0, y: 0 };
+            const a = el.getBoundingClientRect();
+            const b = fxLayer.getBoundingClientRect();
+            return { x: a.left + a.width / 2 - b.left, y: a.top + a.height / 2 - b.top };
+        }
+        function spawnFxEl(cls, styles, life) {
+            const node = document.createElement('div');
+            node.className = cls;
+            Object.entries(styles || {}).forEach(([k, v]) => node.style.setProperty(k, v));
+            fxLayer.appendChild(node);
+            window.setTimeout(() => node.remove(), life || 1800);
+            return node;
+        }
+        function playStealFx(fxId, gainers, losers, roster) {
+            const fx = resolveStealFx(fxId);
+            board.className = `game-board fx-${fx}`;
+            const mark = (ids, kind) => {
+                ids.forEach((id) => {
+                    const el = document.getElementById(`terr-${id}`);
+                    if (!el) return;
+                    el.classList.remove('fx-gain', 'fx-loss', ...FX_TERR_CLASSES);
+                    void el.offsetWidth;
+                    el.classList.add(kind, `fx-${fx}`);
+                });
+            };
+            mark(gainers, 'fx-gain');
+            mark(losers, 'fx-loss');
+            const gEl = document.getElementById(`terr-${gainers[0]}`);
+            const lEl = document.getElementById(`terr-${losers[0]}`);
+            const gColor = roster?.[gainers[0]]?.color || '#ffffff';
+            const lColor = roster?.[losers[0]]?.color || '#ffffff';
+            fxLayer.style.setProperty('--neon-color', gColor);
+            spawnFxEl('fx-flash', { '--neon-color': gColor }, 700);
+            if (fx === 'slide' || fx === 'neon' || fx === 'stamp') spawnFxEl('fx-scan', {}, 700);
+            if (fx === 'glitch') spawnFxEl('fx-rgb', {}, 800);
+            if (fx === 'slash') {
+                spawnFxEl('fx-slash-bar', { '--neon-color': gColor });
+                spawnFxEl('fx-slash-bar alt', { '--neon-color': gColor, top: '36%' });
+            }
+            if (fx === 'shock' && (gEl || lEl)) {
+                const p = layerPoint(lEl || gEl);
+                spawnFxEl('fx-shock-ring', { left: `${p.x}px`, top: `${p.y}px`, '--neon-color': gColor });
+                spawnFxEl('fx-shock-ring', { left: `${p.x}px`, top: `${p.y}px`, '--neon-color': '#fff', 'animation-delay': '90ms' });
+                spawnFxEl('fx-shock-ring', { left: `${p.x}px`, top: `${p.y}px`, '--neon-color': gColor, 'animation-delay': '180ms' });
+            }
+            if (fx === 'absorb' && gEl && lEl) {
+                const a = layerPoint(lEl);
+                const b = layerPoint(gEl);
+                for (let i = 0; i < 36; i++) {
+                    spawnFxEl('fx-dot', {
+                        '--x0': `${a.x + (Math.random() - 0.5) * 90}px`,
+                        '--y0': `${a.y + (Math.random() - 0.5) * 80}px`,
+                        '--x1': `${b.x}px`,
+                        '--y1': `${b.y}px`,
+                        '--neon-color': gColor,
+                        'animation-delay': `${i * 18}ms`,
+                    });
+                }
+            }
+            if (fx === 'ember' && lEl) {
+                const p = layerPoint(lEl);
+                for (let i = 0; i < 28; i++) {
+                    spawnFxEl('fx-ember', {
+                        '--x0': `${p.x + (Math.random() - 0.5) * 110}px`,
+                        '--y0': `${p.y + 28}px`,
+                        'animation-delay': `${i * 28}ms`,
+                    });
+                }
+            }
+            if (fx === 'crystal' && lEl) {
+                const p = layerPoint(lEl);
+                for (let i = 0; i < 24; i++) {
+                    spawnFxEl('fx-shard', {
+                        '--x0': `${p.x}px`,
+                        '--y0': `${p.y}px`,
+                        '--dx': `${(Math.random() - 0.5) * 240}px`,
+                        '--dy': `${(Math.random() - 0.65) * 180}px`,
+                        '--neon-color': i % 2 ? lColor : gColor,
+                    });
+                }
+            }
+            if (fx === 'pixel' && lEl) {
+                const p = layerPoint(lEl);
+                for (let i = 0; i < 42; i++) {
+                    spawnFxEl('fx-pixel', {
+                        '--x0': `${p.x + (Math.random() - 0.5) * 130}px`,
+                        '--y0': `${p.y + (Math.random() - 0.5) * 70}px`,
+                        '--neon-color': lColor,
+                        'animation-delay': `${i * 16}ms`,
+                    });
+                }
+            }
+            if (fx === 'void' && (lEl || gEl)) {
+                const p = layerPoint(lEl || gEl);
+                spawnFxEl('fx-void-core', { left: `${p.x}px`, top: `${p.y}px`, '--neon-color': gColor }, 1400);
+                spawnFxEl('fx-shock-ring', { left: `${p.x}px`, top: `${p.y}px`, '--neon-color': '#000' });
+            }
+            if (fx === 'tidal') spawnFxEl('fx-tidal-wave', { '--neon-color': gColor }, 1200);
+            if (fx === 'volt' && gEl && lEl) {
+                const a = layerPoint(lEl);
+                const b = layerPoint(gEl);
+                const dx = b.x - a.x;
+                const dy = b.y - a.y;
+                const len = Math.max(8, Math.hypot(dx, dy));
+                const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+                for (let i = 0; i < 3; i++) {
+                    spawnFxEl('fx-volt-line', {
+                        left: `${a.x}px`,
+                        top: `${a.y + (i - 1) * 10}px`,
+                        width: `${len}px`,
+                        transform: `rotate(${ang + (i - 1) * 6}deg)`,
+                        '--neon-color': gColor,
+                        'animation-delay': `${i * 40}ms`,
+                    });
+                }
+            }
+            window.setTimeout(() => {
+                board.querySelectorAll('.fx-gain, .fx-loss').forEach((el) => {
+                    el.classList.remove('fx-gain', 'fx-loss', ...FX_TERR_CLASSES);
+                });
+                board.className = 'game-board';
+            }, 1400);
+        }
+        function playFxOnBoard(fxId, gainers, losers, roster) {
+            const ids = lastOrder.length ? lastOrder : Array.from(board.querySelectorAll('.territory')).map((el) => el.id.replace('terr-', ''));
+            const g = (gainers && gainers.length) ? gainers : (ids[0] ? [ids[0]] : []);
+            const l = (losers && losers.length) ? losers : (ids[1] ? [ids[1]] : ids[0] ? [ids[0]] : []);
+            if (!g.length || !l.length) return;
+            playStealFx(fxId, g, l, roster || lastMembers);
+        }
+
+        function territorySharePct(el) {
+            const grow = parseFloat(el.style.flexGrow);
+            if (Number.isFinite(grow) && grow > 0) return grow;
+            const parent = board.clientWidth || 0;
+            if (parent > 0) return (el.clientWidth / parent) * 100;
+            return parseFloat(el.style.width) || 0;
+        }
+        function fitTerritoryLabels() {
+            board.querySelectorAll('.territory').forEach((el) => {
+                if (el.classList.contains('eliminating')) return;
+                const info = el.querySelector('.member-info');
+                if (!info) return;
+                const pct = territorySharePct(el);
+                info.classList.toggle('is-tight', pct > 0 && pct <= 12);
+                info.classList.toggle('is-nano', pct > 0 && pct <= 6);
+                info.style.transform = 'scale(1)';
+                const avail = Math.max(0, el.clientWidth - 8);
+                const need = Math.max(info.scrollWidth, info.offsetWidth);
+                let scale = avail > 0 && need > avail ? avail / need : 1;
+                if (pct > 0 && pct <= 10) scale = Math.min(scale, Math.max(0.38, pct / 11));
+                info.style.transform = `scale(${Math.max(0.35, Math.min(1, scale))})`;
+            });
+        }
         const userId = (() => {
             const q = new URLSearchParams(location.search);
             const raw = (q.get('u') || q.get('user') || 'finalent').trim();
             return /^[a-zA-Z0-9_-]{1,64}$/.test(raw) ? raw : 'finalent';
         })();
 
-        function escapeHtml(value) {
-            return String(value ?? "")
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;");
-        }
-
         function fetchGameState() {
+            if (Date.now() < localStateLockUntil) return;
             fetch(`/api/shangliu?u=${encodeURIComponent(userId)}`, { cache: 'no-store' })
                 .then((r) => r.json())
                 .then((j) => {
@@ -145,62 +789,154 @@
                 });
         }
 
+        function upsertTerritory(id, m, visualPercentage) {
+            const color = m.color || "#888888";
+            const name = m.name || id;
+            const cm = Math.max(0, Number(m.cm) || 0);
+            let el = document.getElementById(`terr-${id}`);
+            const isNew = !el;
+            if (!el) {
+                el = document.createElement("div");
+                el.id = `terr-${id}`;
+                el.className = "territory";
+                el.style.width = "0%";
+                el.innerHTML = `
+                    <div class="member-info">
+                        <div class="t-name"></div>
+                        <div class="t-size">
+                            <span class="val"></span> <span class="t-unit">cm</span>
+                        </div>
+                    </div>
+                `;
+                el.addEventListener("transitionend", (ev) => {
+                    if (ev.propertyName === "width") fitTerritoryLabels();
+                });
+                board.appendChild(el);
+                labelFitObserver.observe(el);
+            }
+            el.classList.remove("eliminating");
+            el.style.setProperty("--neon-color", color);
+            el.style.backgroundColor = color;
+            el.style.boxShadow = `inset 0 0 70px ${color}, inset 0 0 24px rgba(255,255,255,0.25), 0 0 18px ${color}66`;
+            const nameEl = el.querySelector(".t-name");
+            if (nameEl) nameEl.textContent = name;
+            const valEl = el.querySelector(".t-size .val");
+            if (valEl) valEl.textContent = formatCm(cm);
+            el.style.flexGrow = String(Math.max(0.001, visualPercentage));
+            el.style.flexShrink = "0";
+            el.style.flexBasis = "0";
+            el.style.width = "auto";
+            return el;
+        }
+
         function render(data) {
             const { activeOrder, members } = data;
-            const order = Array.isArray(activeOrder) ? activeOrder : Object.keys(members || {});
+            const order = Array.isArray(activeOrder) && activeOrder.length
+                ? activeOrder
+                : Object.keys(members || {}).sort();
             const roster = members && typeof members === "object" ? members : {};
+            const cmNow = snapshotCm(roster);
+            const steal = detectSteal(lastRoster, cmNow);
+            const stealSeq = Number(data.stealSeq) || 0;
+            const stealDemo = data.stealDemo === true;
+            const fxId = data.stealFx || 'neon';
 
-            let totalCm = 0;
-            order.forEach((id) => { if (roster[id]) totalCm += Number(roster[id].cm) || 0; });
-
-            board.innerHTML = "";
-            island.innerHTML = "";
+            let occupied = 0;
+            order.forEach((id) => {
+                if (roster[id]) occupied += Math.max(0, Number(roster[id].cm) || 0);
+            });
+            const denom = occupied > 0 ? occupied : 1;
 
             order.forEach((id) => {
                 const m = roster[id];
-                if (!m) return;
-                const cm = Math.max(0, Number(m.cm) || 0);
-                const color = m.color || "#888888";
-                const name = m.name || id;
+                if (!m || (Number(m.cm) || 0) <= 0) return;
+                const visualPercentage = ((Number(m.cm) || 0) / denom) * 100;
+                upsertTerritory(id, m, visualPercentage);
+            });
 
-                if (cm <= 0) {
-                    const item = document.createElement("div");
-                    item.className = "island-item";
-                    item.style.borderColor = color;
-                    item.textContent = name;
-                    island.appendChild(item);
-                    return;
-                }
+            order.forEach((id) => {
+                const el = document.getElementById(`terr-${id}`);
+                if (el && !el.classList.contains("eliminating")) board.appendChild(el);
+            });
 
-                const visualPercentage = totalCm > 0 ? (cm / totalCm) * 100 : 0;
-                const div = document.createElement("div");
-                div.className = "territory";
-                div.style.width = `${visualPercentage}%`;
-                div.style.background = `linear-gradient(180deg, ${color} 0%, ${color}99 100%)`;
-                div.style.boxShadow = `inset 0 0 60px ${color}50`;
-                div.innerHTML = `
-                    <div class="territory-bg" style="background-color:${escapeHtml(color)}"></div>
-                    <div class="member-info">
-                        <div class="t-name">${escapeHtml(name)}</div>
-                        <div class="t-size">${escapeHtml(String(cm))}<span class="t-unit">cm</span></div>
-                    </div>
-                `;
-                board.appendChild(div);
+            Array.from(board.children).forEach((node) => {
+                const id = node.id.replace("terr-", "");
+                const stillAlive = order.includes(id) && roster[id] && (Number(roster[id].cm) || 0) > 0;
+                if (stillAlive || node.classList.contains("eliminating")) return;
+                node.classList.add("eliminating");
+                node.style.flexGrow = "0";
+                node.style.width = "0";
+                window.setTimeout(() => {
+                    if (node.parentNode) node.remove();
+                    renderIsland(order, roster);
+                }, 800);
+            });
+
+            renderIsland(order, roster);
+            requestAnimationFrame(() => {
+                fitTerritoryLabels();
+                requestAnimationFrame(fitTerritoryLabels);
+            });
+
+            const seqChanged = stealSeq !== lastStealSeq;
+            lastStealSeq = stealSeq;
+            if (lastRoster && steal.gainers.length && steal.losers.length) {
+                requestAnimationFrame(() => playStealFx(fxId, steal.gainers, steal.losers, roster));
+            } else if (lastRoster && stealDemo && seqChanged && order.length >= 2) {
+                requestAnimationFrame(() => playStealFx(fxId, [order[0]], [order[1]], roster));
+            }
+            lastRoster = cmNow;
+            lastMembers = roster;
+            lastOrder = order;
+        }
+
+        function renderIsland(activeOrder, members) {
+            const order = Array.isArray(activeOrder) ? activeOrder : [];
+            const roster = members && typeof members === "object" ? members : {};
+
+            Array.from(islandMembers.children).forEach((node) => {
+                const id = node.id.replace("isl-", "");
+                const m = roster[id];
+                const onBoard = order.includes(id) && m && (Number(m.cm) || 0) > 0;
+                if (onBoard) node.remove();
             });
 
             Object.keys(roster).forEach((id) => {
-                if (order.includes(id)) return;
                 const m = roster[id];
                 if (!m) return;
-                const item = document.createElement("div");
-                item.className = "island-item";
-                item.style.borderColor = m.color || "#00ff88";
-                item.textContent = m.name || id;
-                island.appendChild(item);
+                const gone = !order.includes(id) || (Number(m.cm) || 0) <= 0;
+                if (!gone) return;
+                if (document.getElementById(`terr-${id}`)) return;
+                const color = m.color || "#888888";
+                let el = document.getElementById(`isl-${id}`);
+                if (!el) {
+                    el = document.createElement("div");
+                    el.id = `isl-${id}`;
+                    el.className = "island-item";
+                    islandMembers.appendChild(el);
+                }
+                el.style.setProperty("--neon-color", color);
+                el.style.textShadow = `0 0 15px ${color}90`;
+                el.textContent = m.name || id;
             });
+
+            islandArea.classList.toggle("active", islandMembers.childElementCount > 0);
         }
 
         window.addEventListener("storage", fetchGameState);
+        window.addEventListener("message", (ev) => {
+            const msg = ev.data;
+            if (!msg || typeof msg !== "object") return;
+            if (msg.type === "shangliu-state" && msg.state && msg.state.members) {
+                lastDataString = JSON.stringify(msg.state);
+                localStateLockUntil = Date.now() + 2000;
+                render(msg.state);
+                return;
+            }
+            if (msg.type === "shangliu-play-fx") {
+                playFxOnBoard(msg.fxId, msg.gainers, msg.losers, lastMembers);
+            }
+        });
         setInterval(fetchGameState, 400);
         fetchGameState();
     </script>
