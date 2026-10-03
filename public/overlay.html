@@ -230,19 +230,37 @@
                  1px  1px 0 #0a0610;
         }
 
-        .game-board.fx-slide .territory { transition: width 0.8s cubic-bezier(0.25, 1, 0.5, 1); }
+        .game-board.fx-slide .territory {
+            transition: flex-grow 1s cubic-bezier(0.22, 1, 0.36, 1), width 1s cubic-bezier(0.22, 1, 0.36, 1);
+        }
         .game-board.fx-neon .territory,
-        .game-board.fx-shock .territory { transition: width 0.7s cubic-bezier(0.22, 1, 0.36, 1); }
-        .game-board.fx-slash .territory { transition: width 0.55s cubic-bezier(0.7, 0, 0.3, 1); }
-        .game-board.fx-absorb .territory { transition: width 0.95s cubic-bezier(0.16, 1, 0.3, 1); }
-        .game-board.fx-glitch .territory { transition: width 0.45s steps(6, end); }
-        .game-board.fx-ember .territory { transition: width 0.85s ease-in; }
-        .game-board.fx-volt .territory { transition: width 0.4s cubic-bezier(0.2, 0.9, 0.2, 1); }
-        .game-board.fx-crystal .territory { transition: width 0.65s cubic-bezier(0.5, 0, 0, 1); }
-        .game-board.fx-void .territory { transition: width 1.15s cubic-bezier(0.7, 0, 0.2, 1); }
-        .game-board.fx-pixel .territory { transition: width 0.7s steps(8, end); }
-        .game-board.fx-tidal .territory { transition: width 1s cubic-bezier(0.22, 1, 0.36, 1); }
-        .game-board.fx-stamp .territory { transition: width 0.32s cubic-bezier(0.2, 1.6, 0.3, 1); }
+        .game-board.fx-shock .territory { transition: flex-grow 0.7s cubic-bezier(0.22, 1, 0.36, 1), width 0.7s cubic-bezier(0.22, 1, 0.36, 1); }
+        .game-board.fx-slash .territory { transition: flex-grow 0.55s cubic-bezier(0.7, 0, 0.3, 1), width 0.55s cubic-bezier(0.7, 0, 0.3, 1); }
+        .game-board.fx-absorb .territory { transition: flex-grow 0.95s cubic-bezier(0.16, 1, 0.3, 1), width 0.95s cubic-bezier(0.16, 1, 0.3, 1); }
+        .game-board.fx-glitch .territory { transition: flex-grow 0.45s steps(6, end), width 0.45s steps(6, end); }
+        .game-board.fx-ember .territory { transition: flex-grow 0.85s ease-in, width 0.85s ease-in; }
+        .game-board.fx-volt .territory { transition: flex-grow 0.4s cubic-bezier(0.2, 0.9, 0.2, 1), width 0.4s cubic-bezier(0.2, 0.9, 0.2, 1); }
+        .game-board.fx-crystal .territory { transition: flex-grow 0.65s cubic-bezier(0.5, 0, 0, 1), width 0.65s cubic-bezier(0.5, 0, 0, 1); }
+        .game-board.fx-void .territory { transition: flex-grow 1.15s cubic-bezier(0.7, 0, 0.2, 1), width 1.15s cubic-bezier(0.7, 0, 0.2, 1); }
+        .game-board.fx-pixel .territory { transition: flex-grow 0.7s steps(8, end), width 0.7s steps(8, end); }
+        .game-board.fx-tidal .territory { transition: flex-grow 1s cubic-bezier(0.22, 1, 0.36, 1), width 1s cubic-bezier(0.22, 1, 0.36, 1); }
+        .game-board.fx-stamp .territory { transition: flex-grow 0.32s cubic-bezier(0.2, 1.6, 0.3, 1), width 0.32s cubic-bezier(0.2, 1.6, 0.3, 1); }
+
+        .territory.fx-gain.fx-slide {
+            z-index: 3;
+            animation: fxSlideGain 1s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .territory.fx-loss.fx-slide { animation: fxSlideLoss 1s cubic-bezier(0.22, 1, 0.36, 1); }
+        @keyframes fxSlideGain {
+            0% { filter: brightness(1); }
+            25% { filter: brightness(1.45); }
+            100% { filter: brightness(1); }
+        }
+        @keyframes fxSlideLoss {
+            0% { filter: brightness(1); }
+            35% { filter: brightness(0.72); }
+            100% { filter: brightness(1); }
+        }
 
         .territory.fx-gain.fx-neon { animation: fxNeonGain 0.7s ease; }
         .territory.fx-loss.fx-neon { animation: fxNeonLoss 0.7s ease; }
@@ -422,6 +440,26 @@
             animation: fxScanDown 0.55s ease-out forwards;
         }
         @keyframes fxScanDown { 0% { transform: translateY(-20%); opacity: 1; } 100% { transform: translateY(90%); opacity: 0; } }
+        .fx-layer .fx-slide-edge {
+            position: absolute;
+            width: 7px;
+            margin-left: -3px;
+            border-radius: 4px;
+            background: linear-gradient(180deg, #fff, var(--neon-color, #fff), #fff);
+            box-shadow: 0 0 14px #fff, 0 0 32px var(--neon-color, #fff);
+            pointer-events: none;
+            z-index: 8;
+        }
+        .fx-layer .fx-slide-edge.left { animation: fxSlidePushL 1s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+        .fx-layer .fx-slide-edge.right { animation: fxSlidePushR 1s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+        @keyframes fxSlidePushL {
+            0% { transform: translateX(0); opacity: 1; }
+            100% { transform: translateX(-56px); opacity: 0; }
+        }
+        @keyframes fxSlidePushR {
+            0% { transform: translateX(0); opacity: 1; }
+            100% { transform: translateX(56px); opacity: 0; }
+        }
         .fx-layer .fx-rgb {
             position: absolute; inset: 28px;
             border-radius: 8px;
@@ -622,8 +660,46 @@
             window.setTimeout(() => node.remove(), life || 1800);
             return node;
         }
-        function playStealFx(fxId, gainers, losers, roster) {
+        let demoSlideGen = 0;
+        function demoSlideWidths(gainers, losers) {
+            const gEl = document.getElementById(`terr-${gainers[0]}`);
+            const lEls = (losers || []).map((id) => document.getElementById(`terr-${id}`)).filter(Boolean);
+            if (!gEl || !lEls.length) return;
+            const gen = ++demoSlideGen;
+            const snap = [];
+            [gEl, ...lEls].forEach((el) => {
+                const grow = parseFloat(el.style.flexGrow);
+                snap.push({ el, grow: Number.isFinite(grow) ? grow : 1 });
+            });
+            const per = Math.max(7, Math.min(14, (snap[0].grow || 33) * 0.22));
+            requestAnimationFrame(() => {
+                if (gen !== demoSlideGen) return;
+                gEl.style.flexGrow = String(snap[0].grow + per * lEls.length);
+                lEls.forEach((el, i) => {
+                    el.style.flexGrow = String(Math.max(0.8, snap[i + 1].grow - per));
+                });
+            });
+            window.setTimeout(() => {
+                if (gen !== demoSlideGen) return;
+                snap.forEach(({ el, grow }) => { el.style.flexGrow = String(grow); });
+            }, 1050);
+        }
+        function spawnSlideEdges(gEl, color) {
+            if (!gEl || !fxLayer) return;
+            const a = gEl.getBoundingClientRect();
+            const b = fxLayer.getBoundingClientRect();
+            const top = `${a.top - b.top}px`;
+            const height = `${a.height}px`;
+            spawnFxEl('fx-slide-edge left', {
+                top, height, left: `${a.left - b.left}px`, '--neon-color': color,
+            }, 1100);
+            spawnFxEl('fx-slide-edge right', {
+                top, height, left: `${a.right - b.left}px`, '--neon-color': color,
+            }, 1100);
+        }
+        function playStealFx(fxId, gainers, losers, roster, opts) {
             const fx = resolveStealFx(fxId);
+            if (!(opts && opts.demo)) demoSlideGen += 1;
             board.className = `game-board fx-${fx}`;
             const mark = (ids, kind) => {
                 ids.forEach((id) => {
@@ -641,8 +717,12 @@
             const gColor = roster?.[gainers[0]]?.color || '#ffffff';
             const lColor = roster?.[losers[0]]?.color || '#ffffff';
             fxLayer.style.setProperty('--neon-color', gColor);
-            spawnFxEl('fx-flash', { '--neon-color': gColor }, 700);
-            if (fx === 'slide' || fx === 'neon' || fx === 'stamp') spawnFxEl('fx-scan', {}, 700);
+            if (fx !== 'slide') spawnFxEl('fx-flash', { '--neon-color': gColor }, 700);
+            if (fx === 'neon' || fx === 'stamp') spawnFxEl('fx-scan', {}, 700);
+            if (fx === 'slide') {
+                spawnSlideEdges(gEl, gColor);
+                if (opts && opts.demo) demoSlideWidths(gainers, losers);
+            }
             if (fx === 'glitch') spawnFxEl('fx-rgb', {}, 800);
             if (fx === 'slash') {
                 spawnFxEl('fx-slash-bar', { '--neon-color': gColor });
@@ -737,7 +817,7 @@
             const g = (gainers && gainers.length) ? gainers : (ids[0] ? [ids[0]] : []);
             const l = (losers && losers.length) ? losers : (ids[1] ? [ids[1]] : ids[0] ? [ids[0]] : []);
             if (!g.length || !l.length) return;
-            playStealFx(fxId, g, l, roster || lastMembers);
+            playStealFx(fxId, g, l, roster || lastMembers, { demo: true });
         }
 
         function territorySharePct(el) {
@@ -809,7 +889,7 @@
                     </div>
                 `;
                 el.addEventListener("transitionend", (ev) => {
-                    if (ev.propertyName === "width") fitTerritoryLabels();
+                    if (ev.propertyName === "width" || ev.propertyName === "flex-grow") fitTerritoryLabels();
                 });
                 board.appendChild(el);
                 labelFitObserver.observe(el);
@@ -839,6 +919,8 @@
             const stealSeq = Number(data.stealSeq) || 0;
             const stealDemo = data.stealDemo === true;
             const fxId = data.stealFx || 'neon';
+            const stealNow = !!(lastRoster && steal.gainers.length && steal.losers.length);
+            if (stealNow) board.className = `game-board fx-${resolveStealFx(fxId)}`;
 
             let occupied = 0;
             order.forEach((id) => {
@@ -879,10 +961,10 @@
 
             const seqChanged = stealSeq !== lastStealSeq;
             lastStealSeq = stealSeq;
-            if (lastRoster && steal.gainers.length && steal.losers.length) {
+            if (stealNow) {
                 requestAnimationFrame(() => playStealFx(fxId, steal.gainers, steal.losers, roster));
             } else if (lastRoster && stealDemo && seqChanged && order.length >= 2) {
-                requestAnimationFrame(() => playStealFx(fxId, [order[0]], [order[1]], roster));
+                requestAnimationFrame(() => playStealFx(fxId, [order[0]], [order[1]], roster, { demo: true }));
             }
             lastRoster = cmNow;
             lastMembers = roster;
