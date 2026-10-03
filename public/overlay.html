@@ -831,10 +831,9 @@
 
         function render(data) {
             const { activeOrder, members } = data;
-            const order = Array.isArray(activeOrder) && activeOrder.length
-                ? activeOrder
-                : Object.keys(members || {}).sort();
             const roster = members && typeof members === "object" ? members : {};
+            const order = (Array.isArray(activeOrder) ? activeOrder : [])
+                .filter((id) => roster[id] && (Number(roster[id].cm) || 0) > 0);
             const cmNow = snapshotCm(roster);
             const steal = detectSteal(lastRoster, cmNow);
             const stealSeq = Number(data.stealSeq) || 0;

@@ -474,14 +474,8 @@
             const seen = new Set();
             const order = [];
             (Array.isArray(state.activeOrder) ? state.activeOrder : []).forEach((id) => {
-                if (members[id] && !seen.has(id)) {
-                    seen.add(id);
-                    order.push(id);
-                }
-            });
-            uniqueMemberIds().sort().forEach((id) => {
-                if (seen.has(id)) return;
-                if ((Number(members[id]?.cm) || 0) <= 0) return;
+                if (!members[id] || seen.has(id)) return;
+                if ((Number(members[id].cm) || 0) <= 0) return;
                 seen.add(id);
                 order.push(id);
             });
@@ -830,9 +824,6 @@
             }
             if (!state.members[id]) return;
             state.members[id].cm = Math.max(0, (Number(state.members[id].cm) || 0) + amount);
-            if (state.members[id].cm > 0 && !state.activeOrder.includes(id)) {
-                state.activeOrder.push(id);
-            }
             rescaleOthersToFill(id);
             document.getElementById(`grant-${id}`).value = "";
             pushGrantLog('grant', id, amount, `${state.members[id].name} ${amount > 0 ? '+' : ''}${formatCm(amount)}cm → ${formatCm(state.members[id].cm)}cm`);
@@ -848,9 +839,6 @@
             }
             if (!state.members[id]) return;
             state.members[id].cm = amount;
-            if (state.members[id].cm > 0 && !state.activeOrder.includes(id)) {
-                state.activeOrder.push(id);
-            }
             rescaleOthersToFill(id);
             document.getElementById(`setcm-${id}`).value = "";
             pushGrantLog('set', id, amount, `${state.members[id].name} ${formatCm(amount)}cm로 지정`);
@@ -924,27 +912,23 @@
             });
         }
         function reviveMember(id, side) {
-            let amount = parseFloat(document.getElementById(`revive-${id}`).value);
-            if(isNaN(amount) || amount <= 0) amount = 20;
-            if (side === 'left') {
-                if(state.activeOrder.length > 0) {
-                    takeFrom(state.activeOrder[0], id, amount);
-                } else {
-                    state.members[id].cm = boardTotal();
-                }
-                state.activeOrder.unshift(id);
-            } else {
-                if(state.activeOrder.length > 0) {
-                    takeFrom(state.activeOrder[state.activeOrder.length-1], id, amount);
-                } else {
-                    state.members[id].cm = boardTotal();
-                }
-                state.activeOrder.push(id);
+            if (!state.members[id] || state.activeOrder.includes(id)) return;
+            const pending = Math.max(0, Number(state.members[id].cm) || 0);
+            if (pending <= 0) {
+                alert('먼저 영토를 부여하세요. 땅이 생긴 뒤 왼쪽 또는 오른쪽 벽을 고르면 오버레이에 나타납니다.');
+                return;
             }
-
+            const typed = parseFloat(document.getElementById(`revive-${id}`)?.value);
+            const stealAmt = Number.isFinite(typed) && typed > 0 ? typed : 0;
+            const wallId = side === 'left'
+                ? state.activeOrder[0]
+                : state.activeOrder[state.activeOrder.length - 1];
+            if (stealAmt > 0 && wallId) takeFrom(wallId, id, stealAmt);
+            if (side === 'left') state.activeOrder.unshift(id);
+            else state.activeOrder.push(id);
             checkElimination();
             bumpStealFx();
-            pushGrantLog('revive', id, amount, `${state.members[id].name} ${side === 'left' ? '좌측' : '우측'} 진입 ${formatCm(amount)}cm`);
+            pushGrantLog('revive', id, stealAmt || pending, `${state.members[id].name} ${side === 'left' ? '좌측' : '우측'} 벽 진입`);
             saveState();
             renderControls();
         }
@@ -1011,10 +995,11 @@
                         <div class="rule-text">${rule}</div>
                     </div>`;
                 } else {
+                    const canEnter = (Number(m.cm) || 0) > 0;
                     html = `
                     <div class="card island" data-member="${id}">
                         <div class="card-header">
-                            <div class="card-cm" style="color:#666;">0 <span>cm</span></div>
+                            <div class="card-cm" style="color:#ccc;">${formatCm(m.cm)} <span>cm</span></div>
                             <div class="seat-badge" style="color:#aaa;border-color:#555;background:#111;">무인도</div>
                         </div>
                         <div class="identity-row">
@@ -1026,10 +1011,11 @@
                             <button class="btn-grant" onclick="grantMemberCm('${id}')">부여</button>
                         </div>
                         <div class="action-group">
-                            <input type="number" id="revive-${id}" placeholder="진입 cm" min="0">
-                            <button class="btn-revive" onclick="reviveMember('${id}', 'left')">좌측</button>
-                            <button class="btn-revive" onclick="reviveMember('${id}', 'right')">우측</button>
+                            <input type="number" id="revive-${id}" placeholder="추가 뺏기 cm" min="0" ${canEnter ? '' : 'disabled'}>
+                            <button class="btn-revive" ${canEnter ? '' : 'disabled'} onclick="reviveMember('${id}', 'left')">좌측 벽</button>
+                            <button class="btn-revive" ${canEnter ? '' : 'disabled'} onclick="reviveMember('${id}', 'right')">우측 벽</button>
                         </div>
+                        <div class="rule-text">${canEnter ? '왼쪽 또는 오른쪽 벽을 고르면 오버레이에 나타납니다.' : '영토를 부여한 뒤 왼쪽·오른쪽 벽을 고르세요.'}</div>
                     </div>`;
                 }
                 controls.innerHTML += html;
