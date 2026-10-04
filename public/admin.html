@@ -134,40 +134,18 @@
         .btn-swap { flex: 1; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); }
         .btn-swap:disabled { opacity: 0.35; cursor: not-allowed; }
 
-        .card.island { border-color: #555 !important; }
-        .card.island .card-name { color: #666 !important; }
+        .card.offboard { border-color: #555 !important; }
         .btn-revive { background: transparent; border: 1px dashed #666; color: #ccc; flex: 1; }
         .btn-revive:hover { border-color: #fff; color: #fff; }
 
         .fx-toolbar {
-            display: grid;
-            grid-template-columns: minmax(280px, 1fr) auto;
-            align-items: start;
-            gap: 14px 16px;
-            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 4px;
         }
-        .fx-toolbar label { color: #aaa; font-size: 13px; font-weight: 700; grid-column: 1 / -1; }
-        #fxSelect {
-            width: 100%;
-            height: 420px;
-            font-size: 16px;
-            font-weight: 800;
-            padding: 6px;
-            background: #0c0812;
-            border: 1px solid #ffdf00;
-            color: #fff;
-            overflow-y: auto;
-        }
-        #fxSelect option {
-            padding: 11px 12px;
-            border-bottom: 1px solid rgba(255,255,255,0.06);
-        }
-        #fxSelect option:checked {
-            background: linear-gradient(#ffdf00, #ffdf00);
-            color: #111;
-        }
-        .fx-toolbar .btn-expand { align-self: start; white-space: nowrap; }
-        .fx-desc-line { color: #888; font-size: 13px; line-height: 1.45; min-height: 1.4em; }
+        .fx-toolbar .btn-expand { white-space: nowrap; }
+        .fx-desc-line { color: #888; font-size: 13px; line-height: 1.45; }
         .alloc-hint { font-size: 13px; color: #888; }
         .alloc-hint.ok { color: #00ff88; }
         .alloc-hint.warn { color: #ff6688; }
@@ -222,11 +200,9 @@
         <div class="panel">
             <h3>땅 뺏기 연출</h3>
             <div class="fx-toolbar">
-                <label for="fxSelect">연출</label>
-                <select id="fxSelect" size="14" onchange="selectStealFx(this.value)"></select>
-                <button type="button" class="btn-expand" onclick="previewStealFx()">선택한 효과 미리보기</button>
+                <button type="button" class="btn-expand" onclick="previewStealFx()">슬라이드 미리보기</button>
             </div>
-            <p class="fx-desc-line" id="fxCurrentHint"></p>
+            <p class="fx-desc-line">기본 슬라이드만 사용합니다. 게이지가 양옆으로 부드럽게 늘어나고 줄어듭니다.</p>
         </div>
 
         <div class="panel">
@@ -356,22 +332,6 @@
                 </div>`;
             }).join('');
         }
-        const STEAL_FX_LIST = [
-            { id: 'slide', name: '기본 슬라이드', desc: '게이지가 부드럽게 늘어나고 줄어듭니다.' },
-            { id: 'neon', name: '네온 플래시', desc: '뺏는 땅은 번쩍, 뺏기는 땅은 화이트 아웃.' },
-            { id: 'shock', name: '충격파', desc: '경계에서 원형 충격파가 퍼집니다.' },
-            { id: 'slash', name: '참격', desc: '보드를 가로지르는 참격이 땅을 가릅니다.' },
-            { id: 'absorb', name: '흡수 입자', desc: '뺏긴 땅에서 입자가 승자에게 빨려갑니다.' },
-            { id: 'glitch', name: '글리치', desc: 'RGB 분리와 화면 찢김으로 잠식됩니다.' },
-            { id: 'ember', name: '불꽃', desc: '뺏기는 땅이 타오르며 불티가 올라갑니다.' },
-            { id: 'volt', name: '전격', desc: '양쪽 땅을 잇는 번개가 칩니다.' },
-            { id: 'crystal', name: '크리스탈 파편', desc: '땅이 깨지며 파편이 흩어집니다.' },
-            { id: 'void', name: '블랙홀', desc: '어두운 소용돌이가 땅을 삼킵니다.' },
-            { id: 'pixel', name: '픽셀 붕괴', desc: '땅이 네모 조각으로 무너집니다.' },
-            { id: 'tidal', name: '해일', desc: '승자 색의 파도가 덮칩니다.' },
-            { id: 'stamp', name: '각인 펀치', desc: '짧게 때리듯 커졌다가 자리를 차지합니다.' },
-            { id: 'random', name: '랜덤', desc: '뺏을 때마다 위 효과 중 하나가 나갑니다.' },
-        ];
         function readUserId() {
             const fromUrl = new URLSearchParams(location.search).get('u')
                 || new URLSearchParams(location.search).get('user')
@@ -421,7 +381,7 @@
             if (!frame) return;
             const payload = {
                 type: 'shangliu-play-fx',
-                fxId: fxId || state.stealFx || 'neon',
+                fxId: 'slide',
                 gainers: (state.activeOrder || Object.keys(state.members || {}))[0]
                     ? [(state.activeOrder || Object.keys(state.members || {}))[0]] : [],
                 losers: (state.activeOrder || Object.keys(state.members || {}))[1]
@@ -511,7 +471,7 @@
                 ids = uniqueMemberIds();
             }
             if (state.mode !== 'team') state.mode = 'individual';
-            state.stealFx = state.stealFx || 'neon';
+            state.stealFx = 'slide';
             state.stealSeq = Number(state.stealSeq) || 0;
             if (state.stealDemo !== true) state.stealDemo = false;
             if (!Array.isArray(state.grantLog)) state.grantLog = [];
@@ -774,7 +734,7 @@
                 const canDel = n > 2;
                 return `
                     <tr>
-                        <td>${seat > 0 ? `${seat}번` : '무인도'}</td>
+                        <td>${seat > 0 ? `${seat}번` : '—'}</td>
                         <td style="color:${escapeHtml(m.color)}">${escapeHtml(m.name || id)}</td>
                         <td>${formatCm(cm)}</td>
                         <td>${pct.toFixed(1)}%</td>
@@ -844,30 +804,10 @@
             renderControls();
             pushPreviewState();
         }
-        function renderFxList() {
-            const sel = document.getElementById('fxSelect');
-            const current = state.stealFx || 'neon';
-            if (sel) {
-                sel.innerHTML = STEAL_FX_LIST.map((fx) =>
-                    `<option value="${fx.id}">${escapeHtml(fx.name)}</option>`
-                ).join('');
-                sel.size = String(STEAL_FX_LIST.length);
-                sel.value = STEAL_FX_LIST.some((fx) => fx.id === current) ? current : 'neon';
-            }
-            const hint = document.getElementById('fxCurrentHint');
-            const picked = STEAL_FX_LIST.find((fx) => fx.id === (sel?.value || current));
-            if (hint) hint.textContent = picked ? picked.desc : '';
-        }
-        function selectStealFx(id) {
-            if (!STEAL_FX_LIST.some((fx) => fx.id === id)) return;
-            state.stealFx = id;
-            state.stealDemo = false;
-            renderFxList();
-            previewStealFx();
-        }
         function previewStealFx() {
             ensureLiveState();
-            pingPreviewFx(state.stealFx);
+            state.stealFx = 'slide';
+            pingPreviewFx('slide');
             state.stealSeq = (Number(state.stealSeq) || 0) + 1;
             state.stealDemo = true;
             saveState();
@@ -969,6 +909,7 @@
         }
         function saveState() {
             enforceBoardTotal();
+            state.stealFx = 'slide';
             const payload = JSON.stringify(state);
             try { localStorage.setItem('shangliu_state', payload); } catch (_e) {}
             pushPreviewState();
@@ -1121,10 +1062,10 @@
                 } else {
                     const canEnter = (Number(m.cm) || 0) > 0;
                     html = `
-                    <div class="card island" data-member="${id}">
+                    <div class="card offboard" data-member="${id}">
                         <div class="card-header">
                             <div class="card-cm" style="color:#ccc;">${formatCm(m.cm)} <span>cm</span></div>
-                            <div class="seat-badge" style="color:#aaa;border-color:#555;background:#111;">무인도</div>
+                            <div class="seat-badge" style="color:#aaa;border-color:#555;background:#111;">대기</div>
                         </div>
                         <div class="identity-row">
                             <input type="color" value="${escapeHtml(m.color)}" title="땅 색" oninput="patchMember('${id}','color',this.value)">
@@ -1149,7 +1090,6 @@
         }
         ensureLiveState();
         renderRosterSetup();
-        renderFxList();
         renderControls();
         (function boot() {
             const params = new URLSearchParams(location.search);
@@ -1167,7 +1107,6 @@
                     ensureLiveState();
                     const totalInput = document.getElementById('boardTotalInput');
                     if (totalInput) totalInput.value = String(state.boardTotalCm || occupiedFromState() || 400);
-                    renderFxList();
                     renderRosterSetup();
                     renderControls();
                     pushPreviewState();

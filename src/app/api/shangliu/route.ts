@@ -5,24 +5,7 @@ import { NextResponse } from "next/server";
 import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
 import { upstashGetJson, upstashSetJsonWithPipeline } from "@/app/api/_shared/upstash";
 
-const STEAL_FX_IDS = [
-  "slide",
-  "neon",
-  "shock",
-  "slash",
-  "absorb",
-  "glitch",
-  "ember",
-  "volt",
-  "crystal",
-  "void",
-  "pixel",
-  "tidal",
-  "stamp",
-  "random",
-] as const;
-
-type StealFxId = (typeof STEAL_FX_IDS)[number];
+type StealFxId = "slide";
 type GrantLogItem = {
   t: number;
   kind: string;
@@ -44,9 +27,8 @@ type ShangliuState = {
   updatedAt: number;
 };
 
-function sanitizeStealFx(value: unknown): StealFxId {
-  const id = String(value || "");
-  return (STEAL_FX_IDS as readonly string[]).includes(id) ? (id as StealFxId) : "neon";
+function sanitizeStealFx(_value: unknown): StealFxId {
+  return "slide";
 }
 
 /** 후원 AppState와 분리된 영토 전용 키 */

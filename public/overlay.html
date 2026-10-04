@@ -189,62 +189,9 @@
             .t-unit { display: none; }
         }
 
-        .island-area {
-            position: relative;
-            width: 320px;
-            background: rgba(5, 2, 10, 0.85);
-            backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-top: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 16px; padding: 24px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.9), inset 0 0 20px rgba(255,255,255,0.03);
-            z-index: 10; display: none;
-        }
-        .island-area.active { display: block; animation: slideUp 0.5s cubic-bezier(0.25, 1, 0.5, 1); }
-
-        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes slideInFromLeft { from { opacity: 0; transform: translateX(-30px); } to { opacity: 1; transform: translateX(0); } }
-
-        .island-title {
-            font-size: 18px; font-weight: 800; color: rgba(255, 255, 255, 0.7);
-            margin-bottom: 16px; letter-spacing: 4px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding-bottom: 12px;
-        }
-        .island-members { display: flex; flex-direction: column; gap: 12px; }
-        .island-item {
-            padding: 12px 18px;
-            background: rgba(0, 0, 0, 0.6);
-            border-radius: 8px; font-size: 22px; font-weight: 800;
-            color: #fff;
-            border: 1px solid rgba(255,255,255,0.05);
-            border-left: 6px solid var(--neon-color, #888);
-            display: flex; align-items: center;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.6);
-            animation: slideInFromLeft 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
-            -webkit-text-stroke: 2px #0a0610;
-            paint-order: stroke fill;
-            text-shadow:
-                -1px -1px 0 #0a0610,
-                 1px -1px 0 #0a0610,
-                -1px  1px 0 #0a0610,
-                 1px  1px 0 #0a0610;
-        }
-
         .game-board.fx-slide .territory {
             transition: flex-grow 1s cubic-bezier(0.22, 1, 0.36, 1), width 1s cubic-bezier(0.22, 1, 0.36, 1);
         }
-        .game-board.fx-neon .territory,
-        .game-board.fx-shock .territory { transition: flex-grow 0.7s cubic-bezier(0.22, 1, 0.36, 1), width 0.7s cubic-bezier(0.22, 1, 0.36, 1); }
-        .game-board.fx-slash .territory { transition: flex-grow 0.55s cubic-bezier(0.7, 0, 0.3, 1), width 0.55s cubic-bezier(0.7, 0, 0.3, 1); }
-        .game-board.fx-absorb .territory { transition: flex-grow 0.95s cubic-bezier(0.16, 1, 0.3, 1), width 0.95s cubic-bezier(0.16, 1, 0.3, 1); }
-        .game-board.fx-glitch .territory { transition: flex-grow 0.45s steps(6, end), width 0.45s steps(6, end); }
-        .game-board.fx-ember .territory { transition: flex-grow 0.85s ease-in, width 0.85s ease-in; }
-        .game-board.fx-volt .territory { transition: flex-grow 0.4s cubic-bezier(0.2, 0.9, 0.2, 1), width 0.4s cubic-bezier(0.2, 0.9, 0.2, 1); }
-        .game-board.fx-crystal .territory { transition: flex-grow 0.65s cubic-bezier(0.5, 0, 0, 1), width 0.65s cubic-bezier(0.5, 0, 0, 1); }
-        .game-board.fx-void .territory { transition: flex-grow 1.15s cubic-bezier(0.7, 0, 0.2, 1), width 1.15s cubic-bezier(0.7, 0, 0.2, 1); }
-        .game-board.fx-pixel .territory { transition: flex-grow 0.7s steps(8, end), width 0.7s steps(8, end); }
-        .game-board.fx-tidal .territory { transition: flex-grow 1s cubic-bezier(0.22, 1, 0.36, 1), width 1s cubic-bezier(0.22, 1, 0.36, 1); }
-        .game-board.fx-stamp .territory { transition: flex-grow 0.32s cubic-bezier(0.2, 1.6, 0.3, 1), width 0.32s cubic-bezier(0.2, 1.6, 0.3, 1); }
 
         .territory.fx-gain.fx-slide {
             z-index: 3;
@@ -262,184 +209,6 @@
             100% { filter: brightness(1); }
         }
 
-        .territory.fx-gain.fx-neon { animation: fxNeonGain 0.7s ease; }
-        .territory.fx-loss.fx-neon { animation: fxNeonLoss 0.7s ease; }
-        .territory.fx-gain.fx-shock { animation: fxShockGain 0.75s ease-out; }
-        .territory.fx-loss.fx-shock { animation: fxShockLoss 0.75s ease-out; }
-        .territory.fx-gain.fx-slash { animation: fxSlashGain 0.55s linear; }
-        .territory.fx-loss.fx-slash { animation: fxSlashLoss 0.55s linear; }
-        .territory.fx-gain.fx-absorb { animation: fxAbsorbGain 0.9s ease; }
-        .territory.fx-loss.fx-absorb { animation: fxAbsorbLoss 0.9s ease; }
-        .territory.fx-gain.fx-glitch { animation: fxGlitchGain 0.6s steps(8, end); }
-        .territory.fx-loss.fx-glitch { animation: fxGlitchLoss 0.6s steps(8, end); }
-        .territory.fx-gain.fx-ember { animation: fxEmberGain 0.85s ease; }
-        .territory.fx-loss.fx-ember { animation: fxEmberLoss 0.85s ease; }
-        .territory.fx-gain.fx-volt { animation: fxVoltGain 0.5s ease; }
-        .territory.fx-loss.fx-volt { animation: fxVoltLoss 0.5s ease; }
-        .territory.fx-gain.fx-crystal { animation: fxCrystalGain 0.7s ease; }
-        .territory.fx-loss.fx-crystal { animation: fxCrystalLoss 0.7s ease; }
-        .territory.fx-gain.fx-void { animation: fxVoidGain 1.1s ease; }
-        .territory.fx-loss.fx-void { animation: fxVoidLoss 1.1s ease; }
-        .territory.fx-gain.fx-pixel { animation: fxPixelGain 0.7s steps(6, end); }
-        .territory.fx-loss.fx-pixel { animation: fxPixelLoss 0.7s steps(6, end); }
-        .territory.fx-gain.fx-tidal { animation: fxTidalGain 1s ease; }
-        .territory.fx-loss.fx-tidal { animation: fxTidalLoss 1s ease; }
-        .territory.fx-gain.fx-stamp { animation: fxStampGain 0.4s cubic-bezier(0.2, 1.6, 0.3, 1); }
-        .territory.fx-loss.fx-stamp { animation: fxStampLoss 0.4s ease; }
-
-        @keyframes fxNeonGain {
-            0% { filter: brightness(1) saturate(1); }
-            12% { filter: brightness(6) saturate(2.4); box-shadow: inset 0 0 120px #fff, 0 0 80px var(--neon-color); }
-            40% { filter: brightness(2.8) saturate(1.8); box-shadow: inset 0 0 90px var(--neon-color), 0 0 70px var(--neon-color); }
-            100% { filter: brightness(1) saturate(1); }
-        }
-        @keyframes fxNeonLoss {
-            0% { filter: brightness(1); }
-            15% { filter: brightness(8) grayscale(0.2); }
-            45% { filter: brightness(0.35) grayscale(0.6); }
-            100% { filter: brightness(0.7); }
-        }
-        @keyframes fxShockGain {
-            0% { transform: scaleX(1) scaleY(1); filter: brightness(1); }
-            25% { transform: scaleX(1.16) scaleY(1.08); filter: brightness(2.4); }
-            100% { transform: scaleX(1) scaleY(1); filter: brightness(1); }
-        }
-        @keyframes fxShockLoss {
-            0% { filter: contrast(1) brightness(1); }
-            30% { filter: contrast(2.4) brightness(2.2); }
-            100% { filter: contrast(1) brightness(1); }
-        }
-        @keyframes fxSlashGain {
-            0% { filter: brightness(1); }
-            10% { filter: brightness(5) contrast(1.4); }
-            100% { filter: brightness(1); }
-        }
-        @keyframes fxSlashLoss {
-            0% { filter: brightness(1); clip-path: inset(0 0 0 0); }
-            35% { filter: brightness(2.2); clip-path: inset(0 18% 0 0); }
-            100% { filter: brightness(0.65); clip-path: inset(0 0 0 0); }
-        }
-        @keyframes fxAbsorbGain {
-            0% { filter: saturate(1) brightness(1); }
-            40% { filter: saturate(2.6) brightness(2.1); }
-            100% { filter: saturate(1) brightness(1); }
-        }
-        @keyframes fxAbsorbLoss {
-            0% { opacity: 1; filter: brightness(1); }
-            35% { opacity: 0.35; filter: brightness(1.8) blur(1px); }
-            100% { opacity: 1; filter: brightness(1); }
-        }
-        @keyframes fxGlitchGain {
-            0%, 100% { transform: translateX(0); filter: none; }
-            12% { transform: translateX(-10px); filter: hue-rotate(80deg) brightness(1.8); }
-            28% { transform: translateX(12px); filter: hue-rotate(-70deg) contrast(1.8); }
-            44% { transform: translateX(-7px) skewX(8deg); }
-            62% { transform: translateX(6px); filter: saturate(2); }
-        }
-        @keyframes fxGlitchLoss {
-            0%, 100% { transform: skewX(0); opacity: 1; }
-            18% { transform: skewX(14deg); opacity: 0.55; }
-            36% { transform: skewX(-12deg) translateY(4px); opacity: 0.7; }
-            58% { transform: skewX(8deg); }
-        }
-        @keyframes fxEmberGain {
-            0% { filter: sepia(0) brightness(1); }
-            30% { filter: sepia(0.7) saturate(3) hue-rotate(-25deg) brightness(2); }
-            100% { filter: none; }
-        }
-        @keyframes fxEmberLoss {
-            0% { filter: brightness(1); }
-            40% { filter: brightness(2.4) sepia(0.85) saturate(2); }
-            100% { filter: brightness(0.65); }
-        }
-        @keyframes fxVoltGain {
-            0%, 100% { filter: brightness(1); }
-            8%, 22%, 38%, 55%, 72% { filter: brightness(4.2) contrast(1.5); }
-            14%, 30%, 48%, 64% { filter: brightness(0.6); }
-        }
-        @keyframes fxVoltLoss {
-            0%, 100% { filter: contrast(1); }
-            15%, 40%, 65% { filter: contrast(2.4) brightness(2.2); }
-            25%, 50% { filter: contrast(0.6) brightness(0.5); }
-        }
-        @keyframes fxCrystalGain {
-            0% { filter: saturate(1) brightness(1); }
-            30% { filter: saturate(2.8) brightness(2.2) contrast(1.3); }
-            100% { filter: none; }
-        }
-        @keyframes fxCrystalLoss {
-            0% { filter: blur(0) brightness(1); }
-            28% { filter: blur(4px) brightness(2.2) contrast(1.5); }
-            100% { filter: none; }
-        }
-        @keyframes fxVoidGain {
-            0% { filter: brightness(1); }
-            40% { filter: brightness(0.15) contrast(1.8) saturate(0.4); }
-            100% { filter: brightness(1); }
-        }
-        @keyframes fxVoidLoss {
-            0% { transform: scale(1); filter: brightness(1); }
-            45% { transform: scale(0.72); filter: brightness(0.08) contrast(1.6); }
-            100% { transform: scale(1); filter: brightness(1); }
-        }
-        @keyframes fxPixelGain {
-            0%, 100% { filter: none; }
-            20% { filter: contrast(2.4) brightness(1.8); }
-            45% { filter: contrast(1.2) brightness(1.2); }
-        }
-        @keyframes fxPixelLoss {
-            0% { opacity: 1; filter: none; }
-            40% { opacity: 0.2; filter: contrast(2); }
-            100% { opacity: 1; filter: none; }
-        }
-        @keyframes fxTidalGain {
-            0% { filter: brightness(1) saturate(1); }
-            35% { filter: brightness(2.2) saturate(2); }
-            100% { filter: none; }
-        }
-        @keyframes fxTidalLoss {
-            0% { filter: none; }
-            40% { filter: brightness(0.4) blur(2px) saturate(0.5); }
-            100% { filter: none; }
-        }
-        @keyframes fxStampGain {
-            0% { transform: scale(1); filter: brightness(1); }
-            30% { transform: scale(1.22); filter: brightness(2.6); }
-            100% { transform: scale(1); filter: brightness(1); }
-        }
-        @keyframes fxStampLoss {
-            0% { transform: scale(1); }
-            30% { transform: scale(0.78); filter: brightness(0.5); }
-            100% { transform: scale(1); filter: brightness(1); }
-        }
-        @keyframes boardKick {
-            0%, 100% { transform: translateX(0); }
-            18% { transform: translateX(-10px); }
-            36% { transform: translateX(10px); }
-            54% { transform: translateX(-6px); }
-            72% { transform: translateX(4px); }
-        }
-        .game-board.fx-shock,
-        .game-board.fx-slash,
-        .game-board.fx-stamp,
-        .game-board.fx-volt { animation: boardKick 0.45s ease; }
-
-        .fx-layer .fx-flash {
-            position: absolute; inset: 28px;
-            border-radius: 8px;
-            background: radial-gradient(circle at 50% 50%, #fff 0%, var(--neon-color, #fff) 38%, transparent 72%);
-            mix-blend-mode: screen;
-            opacity: 0;
-            animation: fxFlashBang 0.55s ease-out forwards;
-        }
-        @keyframes fxFlashBang { 0% { opacity: 0.95; } 100% { opacity: 0; } }
-        .fx-layer .fx-scan {
-            position: absolute; left: 28px; right: 28px; top: 28px; height: 55%;
-            background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(255,255,255,0.15), transparent);
-            mix-blend-mode: screen;
-            animation: fxScanDown 0.55s ease-out forwards;
-        }
-        @keyframes fxScanDown { 0% { transform: translateY(-20%); opacity: 1; } 100% { transform: translateY(90%); opacity: 0; } }
         .fx-layer .fx-slide-edge {
             position: absolute;
             width: 7px;
@@ -460,96 +229,6 @@
             0% { transform: translateX(0); opacity: 1; }
             100% { transform: translateX(56px); opacity: 0; }
         }
-        .fx-layer .fx-rgb {
-            position: absolute; inset: 28px;
-            border-radius: 8px;
-            mix-blend-mode: screen;
-            background: repeating-linear-gradient(
-                90deg,
-                rgba(255, 0, 80, 0.45) 0 10px,
-                transparent 10px 20px,
-                rgba(0, 255, 255, 0.4) 20px 30px,
-                transparent 30px 40px
-            );
-            animation: fxRgbSplit 0.6s steps(6, end) forwards;
-        }
-        @keyframes fxRgbSplit { 0% { opacity: 0.9; transform: translateX(-8px); } 100% { opacity: 0; transform: translateX(8px); } }
-        .fx-layer .fx-slash-bar {
-            position: absolute; height: 28px; width: 160%;
-            left: -30%; top: 50%;
-            background: linear-gradient(90deg, transparent, #fff, var(--neon-color, #fff), #fff, transparent);
-            transform: translateY(-50%) rotate(-14deg) scaleX(0);
-            transform-origin: left center;
-            animation: fxSlashSweep 0.6s cubic-bezier(0.15, 0.9, 0.2, 1) forwards;
-            box-shadow: 0 0 28px #fff, 0 0 70px var(--neon-color, #fff), 0 0 120px #fff;
-        }
-        .fx-layer .fx-slash-bar.alt { top: 38%; animation-delay: 60ms; transform: translateY(-50%) rotate(12deg) scaleX(0); }
-        @keyframes fxSlashSweep { 0% { transform: translateY(-50%) rotate(-14deg) scaleX(0); opacity: 1; } 65% { opacity: 1; } 100% { transform: translateY(-50%) rotate(-14deg) scaleX(1); opacity: 0; } }
-        .fx-layer .fx-shock-ring {
-            position: absolute; border: 7px solid var(--neon-color, #fff);
-            border-radius: 50%; width: 48px; height: 48px;
-            transform: translate(-50%, -50%) scale(0.15);
-            animation: fxShockRing 0.7s ease-out forwards;
-            box-shadow: 0 0 30px var(--neon-color, #fff), 0 0 80px #fff;
-        }
-        @keyframes fxShockRing { to { transform: translate(-50%, -50%) scale(18); opacity: 0; } }
-        .fx-layer .fx-dot {
-            position: absolute; width: 14px; height: 14px; border-radius: 50%;
-            background: var(--neon-color, #fff);
-            box-shadow: 0 0 16px var(--neon-color, #fff), 0 0 28px #fff;
-            left: var(--x0); top: var(--y0);
-            animation: fxDotFly 0.9s cubic-bezier(0.15, 0.85, 0.2, 1) forwards;
-        }
-        @keyframes fxDotFly { to { left: var(--x1); top: var(--y1); opacity: 0; transform: scale(0.2); } }
-        .fx-layer .fx-ember {
-            position: absolute; width: 10px; height: 18px; border-radius: 3px;
-            background: linear-gradient(#fff, #ffb000, #ff3300);
-            box-shadow: 0 0 14px #ff6a00;
-            left: var(--x0); top: var(--y0);
-            animation: fxEmberUp 1s ease-out forwards;
-        }
-        @keyframes fxEmberUp { to { transform: translateY(-140px) rotate(50deg); opacity: 0; } }
-        .fx-layer .fx-shard {
-            position: absolute; width: 16px; height: 28px;
-            background: var(--neon-color, #fff);
-            clip-path: polygon(50% 0, 100% 100%, 0 100%);
-            left: var(--x0); top: var(--y0);
-            box-shadow: 0 0 16px #fff;
-            animation: fxShardOut 0.85s ease-out forwards;
-        }
-        @keyframes fxShardOut { to { transform: translate(var(--dx), var(--dy)) rotate(220deg); opacity: 0; } }
-        .fx-layer .fx-pixel {
-            position: absolute; width: 18px; height: 18px;
-            background: var(--neon-color, #888);
-            box-shadow: 0 0 10px var(--neon-color, #888);
-            left: var(--x0); top: var(--y0);
-            animation: fxPixelDrop 0.85s steps(7, end) forwards;
-        }
-        @keyframes fxPixelDrop { to { transform: translateY(70px) rotate(20deg); opacity: 0; } }
-        .fx-layer .fx-void-core {
-            position: absolute; width: 36px; height: 36px; border-radius: 50%;
-            background: radial-gradient(circle, #000 22%, var(--neon-color, #fff) 62%, transparent 74%);
-            transform: translate(-50%, -50%) scale(0.3);
-            animation: fxVoidGrow 1.15s ease forwards;
-            box-shadow: 0 0 40px #000, 0 0 80px var(--neon-color, #fff);
-        }
-        @keyframes fxVoidGrow { 45% { transform: translate(-50%, -50%) scale(10); opacity: 1; } 100% { transform: translate(-50%, -50%) scale(0.15); opacity: 0; } }
-        .fx-layer .fx-tidal-wave {
-            position: absolute; inset: 28px;
-            background: linear-gradient(90deg, transparent 0%, var(--neon-color, #00f3ff) 40%, #fff 52%, var(--neon-color, #00f3ff) 64%, transparent 100%);
-            opacity: 0;
-            animation: fxTidalWave 1s ease forwards;
-            mix-blend-mode: screen;
-        }
-        @keyframes fxTidalWave { 0% { transform: translateX(-55%); opacity: 0; } 30% { opacity: 0.95; } 100% { transform: translateX(55%); opacity: 0; } }
-        .fx-layer .fx-volt-line {
-            position: absolute; height: 6px;
-            background: linear-gradient(90deg, transparent, #fff, var(--neon-color, #00f3ff), #fff, transparent);
-            box-shadow: 0 0 18px #fff, 0 0 40px var(--neon-color, #fff);
-            transform-origin: left center;
-            animation: fxVoltFlicker 0.65s linear;
-        }
-        @keyframes fxVoltFlicker { 0%, 100% { opacity: 0; } 10%, 28%, 48%, 70% { opacity: 1; } 18%, 38%, 58% { opacity: 0.15; } }
 
         html.preview, html.preview body {
             width: 100% !important;
@@ -598,16 +277,10 @@
             <div class="wall wall-right"><div class="wall-text">벽</div></div>
             <div class="fx-layer" id="fxLayer"></div>
         </div>
-        <div class="island-area" id="islandArea">
-            <div class="island-title">무인도</div>
-            <div class="island-members" id="islandMembers"></div>
-        </div>
     </div>
 
     <script>
         const board = document.getElementById('gameBoard');
-        const islandArea = document.getElementById('islandArea');
-        const islandMembers = document.getElementById('islandMembers');
         const fxLayer = document.getElementById('fxLayer');
         let lastDataString = "";
         let lastRoster = null;
@@ -620,13 +293,8 @@
             return s.endsWith('.0') ? s.slice(0, -2) : s;
         }
         const labelFitObserver = new ResizeObserver(() => fitTerritoryLabels());
-        const STEAL_FX_POOL = ['neon','shock','slash','absorb','glitch','ember','volt','crystal','void','pixel','tidal','stamp'];
-        const FX_TERR_CLASSES = STEAL_FX_POOL.concat('slide').map((id) => `fx-${id}`);
+        const FX_TERR_CLASSES = ['fx-slide'];
 
-        function resolveStealFx(id) {
-            if (id === 'random') return STEAL_FX_POOL[Math.floor(Math.random() * STEAL_FX_POOL.length)];
-            return STEAL_FX_POOL.includes(id) || id === 'slide' ? id : 'neon';
-        }
         function snapshotCm(members) {
             const out = {};
             Object.keys(members || {}).forEach((id) => {
@@ -645,12 +313,6 @@
                 if (d < -0.05) losers.push(id);
             });
             return { gainers, losers };
-        }
-        function layerPoint(el) {
-            if (!el || !fxLayer) return { x: 0, y: 0 };
-            const a = el.getBoundingClientRect();
-            const b = fxLayer.getBoundingClientRect();
-            return { x: a.left + a.width / 2 - b.left, y: a.top + a.height / 2 - b.top };
         }
         function spawnFxEl(cls, styles, life) {
             const node = document.createElement('div');
@@ -697,114 +359,25 @@
                 top, height, left: `${a.right - b.left}px`, '--neon-color': color,
             }, 1100);
         }
-        function playStealFx(fxId, gainers, losers, roster, opts) {
-            const fx = resolveStealFx(fxId);
+        function playStealFx(_fxId, gainers, losers, roster, opts) {
             if (!(opts && opts.demo)) demoSlideGen += 1;
-            board.className = `game-board fx-${fx}`;
+            board.className = 'game-board fx-slide';
             const mark = (ids, kind) => {
                 ids.forEach((id) => {
                     const el = document.getElementById(`terr-${id}`);
                     if (!el) return;
                     el.classList.remove('fx-gain', 'fx-loss', ...FX_TERR_CLASSES);
                     void el.offsetWidth;
-                    el.classList.add(kind, `fx-${fx}`);
+                    el.classList.add(kind, 'fx-slide');
                 });
             };
             mark(gainers, 'fx-gain');
             mark(losers, 'fx-loss');
             const gEl = document.getElementById(`terr-${gainers[0]}`);
-            const lEl = document.getElementById(`terr-${losers[0]}`);
             const gColor = roster?.[gainers[0]]?.color || '#ffffff';
-            const lColor = roster?.[losers[0]]?.color || '#ffffff';
             fxLayer.style.setProperty('--neon-color', gColor);
-            if (fx !== 'slide') spawnFxEl('fx-flash', { '--neon-color': gColor }, 700);
-            if (fx === 'neon' || fx === 'stamp') spawnFxEl('fx-scan', {}, 700);
-            if (fx === 'slide') {
-                spawnSlideEdges(gEl, gColor);
-                if (opts && opts.demo) demoSlideWidths(gainers, losers);
-            }
-            if (fx === 'glitch') spawnFxEl('fx-rgb', {}, 800);
-            if (fx === 'slash') {
-                spawnFxEl('fx-slash-bar', { '--neon-color': gColor });
-                spawnFxEl('fx-slash-bar alt', { '--neon-color': gColor, top: '36%' });
-            }
-            if (fx === 'shock' && (gEl || lEl)) {
-                const p = layerPoint(lEl || gEl);
-                spawnFxEl('fx-shock-ring', { left: `${p.x}px`, top: `${p.y}px`, '--neon-color': gColor });
-                spawnFxEl('fx-shock-ring', { left: `${p.x}px`, top: `${p.y}px`, '--neon-color': '#fff', 'animation-delay': '90ms' });
-                spawnFxEl('fx-shock-ring', { left: `${p.x}px`, top: `${p.y}px`, '--neon-color': gColor, 'animation-delay': '180ms' });
-            }
-            if (fx === 'absorb' && gEl && lEl) {
-                const a = layerPoint(lEl);
-                const b = layerPoint(gEl);
-                for (let i = 0; i < 36; i++) {
-                    spawnFxEl('fx-dot', {
-                        '--x0': `${a.x + (Math.random() - 0.5) * 90}px`,
-                        '--y0': `${a.y + (Math.random() - 0.5) * 80}px`,
-                        '--x1': `${b.x}px`,
-                        '--y1': `${b.y}px`,
-                        '--neon-color': gColor,
-                        'animation-delay': `${i * 18}ms`,
-                    });
-                }
-            }
-            if (fx === 'ember' && lEl) {
-                const p = layerPoint(lEl);
-                for (let i = 0; i < 28; i++) {
-                    spawnFxEl('fx-ember', {
-                        '--x0': `${p.x + (Math.random() - 0.5) * 110}px`,
-                        '--y0': `${p.y + 28}px`,
-                        'animation-delay': `${i * 28}ms`,
-                    });
-                }
-            }
-            if (fx === 'crystal' && lEl) {
-                const p = layerPoint(lEl);
-                for (let i = 0; i < 24; i++) {
-                    spawnFxEl('fx-shard', {
-                        '--x0': `${p.x}px`,
-                        '--y0': `${p.y}px`,
-                        '--dx': `${(Math.random() - 0.5) * 240}px`,
-                        '--dy': `${(Math.random() - 0.65) * 180}px`,
-                        '--neon-color': i % 2 ? lColor : gColor,
-                    });
-                }
-            }
-            if (fx === 'pixel' && lEl) {
-                const p = layerPoint(lEl);
-                for (let i = 0; i < 42; i++) {
-                    spawnFxEl('fx-pixel', {
-                        '--x0': `${p.x + (Math.random() - 0.5) * 130}px`,
-                        '--y0': `${p.y + (Math.random() - 0.5) * 70}px`,
-                        '--neon-color': lColor,
-                        'animation-delay': `${i * 16}ms`,
-                    });
-                }
-            }
-            if (fx === 'void' && (lEl || gEl)) {
-                const p = layerPoint(lEl || gEl);
-                spawnFxEl('fx-void-core', { left: `${p.x}px`, top: `${p.y}px`, '--neon-color': gColor }, 1400);
-                spawnFxEl('fx-shock-ring', { left: `${p.x}px`, top: `${p.y}px`, '--neon-color': '#000' });
-            }
-            if (fx === 'tidal') spawnFxEl('fx-tidal-wave', { '--neon-color': gColor }, 1200);
-            if (fx === 'volt' && gEl && lEl) {
-                const a = layerPoint(lEl);
-                const b = layerPoint(gEl);
-                const dx = b.x - a.x;
-                const dy = b.y - a.y;
-                const len = Math.max(8, Math.hypot(dx, dy));
-                const ang = Math.atan2(dy, dx) * 180 / Math.PI;
-                for (let i = 0; i < 3; i++) {
-                    spawnFxEl('fx-volt-line', {
-                        left: `${a.x}px`,
-                        top: `${a.y + (i - 1) * 10}px`,
-                        width: `${len}px`,
-                        transform: `rotate(${ang + (i - 1) * 6}deg)`,
-                        '--neon-color': gColor,
-                        'animation-delay': `${i * 40}ms`,
-                    });
-                }
-            }
+            spawnSlideEdges(gEl, gColor);
+            if (opts && opts.demo) demoSlideWidths(gainers, losers);
             window.setTimeout(() => {
                 board.querySelectorAll('.fx-gain, .fx-loss').forEach((el) => {
                     el.classList.remove('fx-gain', 'fx-loss', ...FX_TERR_CLASSES);
@@ -918,9 +491,9 @@
             const steal = detectSteal(lastRoster, cmNow);
             const stealSeq = Number(data.stealSeq) || 0;
             const stealDemo = data.stealDemo === true;
-            const fxId = data.stealFx || 'neon';
+            const fxId = 'slide';
             const stealNow = !!(lastRoster && steal.gainers.length && steal.losers.length);
-            if (stealNow) board.className = `game-board fx-${resolveStealFx(fxId)}`;
+            if (stealNow) board.className = 'game-board fx-slide';
 
             let occupied = 0;
             order.forEach((id) => {
@@ -949,11 +522,9 @@
                 node.style.width = "0";
                 window.setTimeout(() => {
                     if (node.parentNode) node.remove();
-                    renderIsland(order, roster);
                 }, 800);
             });
 
-            renderIsland(order, roster);
             requestAnimationFrame(() => {
                 fitTerritoryLabels();
                 requestAnimationFrame(fitTerritoryLabels);
@@ -969,39 +540,6 @@
             lastRoster = cmNow;
             lastMembers = roster;
             lastOrder = order;
-        }
-
-        function renderIsland(activeOrder, members) {
-            const order = Array.isArray(activeOrder) ? activeOrder : [];
-            const roster = members && typeof members === "object" ? members : {};
-
-            Array.from(islandMembers.children).forEach((node) => {
-                const id = node.id.replace("isl-", "");
-                const m = roster[id];
-                const onBoard = order.includes(id) && m && (Number(m.cm) || 0) > 0;
-                if (onBoard) node.remove();
-            });
-
-            Object.keys(roster).forEach((id) => {
-                const m = roster[id];
-                if (!m) return;
-                const gone = !order.includes(id) || (Number(m.cm) || 0) <= 0;
-                if (!gone) return;
-                if (document.getElementById(`terr-${id}`)) return;
-                const color = m.color || "#888888";
-                let el = document.getElementById(`isl-${id}`);
-                if (!el) {
-                    el = document.createElement("div");
-                    el.id = `isl-${id}`;
-                    el.className = "island-item";
-                    islandMembers.appendChild(el);
-                }
-                el.style.setProperty("--neon-color", color);
-                el.style.textShadow = `0 0 15px ${color}90`;
-                el.textContent = m.name || id;
-            });
-
-            islandArea.classList.toggle("active", islandMembers.childElementCount > 0);
         }
 
         window.addEventListener("storage", fetchGameState);
