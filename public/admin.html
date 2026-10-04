@@ -494,7 +494,6 @@
                 const mode = modeEl?.value === 'team' ? 'team' : 'individual';
                 const total = boardTotal();
                 const seed = 4;
-                const each = total / seed;
                 state.members = {};
                 state.activeOrder = [];
                 for (let i = 0; i < seed; i += 1) {
@@ -503,11 +502,12 @@
                     state.members[id] = {
                         name: mode === 'team' ? `팀 ${id}` : defaultNames[i],
                         color: defaultColors[i],
-                        cm: each,
+                        cm: 0,
                     };
                 }
                 state.boardTotalCm = total;
                 state.mode = mode;
+                applyEqualToState();
                 ids = uniqueMemberIds();
             }
             if (state.mode !== 'team') state.mode = 'individual';
@@ -532,13 +532,131 @@
         function occupiedFromState() {
             return Object.values(state.members || {}).reduce((sum, m) => sum + Math.max(0, Number(m.cm) || 0), 0);
         }
+        function toTenths(n) {
+            const v = Number(n);
+            if (!Number.isFinite(v)) return 0;
+            return Math.round(v * 10);
+        }
+        function fromTenths(t) {
+            return Math.round(Number(t) || 0) / 10;
+        }
+        function setMemberCmVal(id, cm) {
+            if (!state.members || !state.members[id]) return;
+            state.members[id].cm = fromTenths(Math.max(0, toTenths(cm)));
+        }
+        function snapRosterCm() {
+            Object.keys(state.members || {}).forEach((id) => setMemberCmVal(id, state.members[id].cm));
+        }
+        function splitTenths(ids, remainT, weights) {
+            const n = ids.length;
+            if (!n) return [];
+            const need = Math.max(0, Math.round(Number(remainT) || 0));
+            if (need <= 0) return ids.map(() => 0);
+            let w = (weights || []).map((x) => Math.max(0, Math.round(Number(x) || 0)));
+            let wsum = w.reduce((a, b) => a + b, 0);
+            if (wsum <= 0) w = ids.map(() => 1);
+            wsum = w.reduce((a, b) => a + b, 0);
+            const raw = w.map((x) => (need * x) / wsum);
+            const floors = raw.map((v) => Math.floor(v + 1e-9));
+            let leftover = need - floors.reduce((a, b) => a + b, 0);
+            const order = raw
+                .map((v, i) => ({ i, frac: v - Math.floor(v + 1e-9) }))
+                .sort((a, b) => b.frac - a.frac);
+            const extra = new Array(n).fill(0);
+            for (let k = 0; k < leftover; k += 1) extra[order[k % n].i] += 1;
+            return floors.map((f, i) => f + extra[i]);
+        }
+        function takeTenthsFromOthers(exceptId, needT) {
+            let left = Math.max(0, needT);
+            const ids = Object.keys(state.members || {}).filter((id) => id !== exceptId);
+            let guard = 0;
+            while (left > 0 && guard < 20) {
+                guard += 1;
+                const holders = ids.filter((id) => toTenths(state.members[id].cm) > 0);
+                if (!holders.length) break;
+                const weights = holders.map((id) => toTenths(state.members[id].cm));
+                const have = weights.reduce((a, b) => a + b, 0);
+                const plan = splitTenths(holders, Math.min(left, have), weights);
+                plan.forEach((t, i) => {
+                    const id = holders[i];
+                    const haveT = toTenths(state.members[id].cm);
+                    const take = Math.min(haveT, t);
+                    setMemberCmVal(id, fromTenths(haveT - take));
+                    left -= take;
+                });
+            }
+            return needT - left;
+        }
+        function giveTenthsToOthers(exceptId, giveT) {
+            const left = Math.max(0, giveT);
+            if (!left) return 0;
+            const ids = Object.keys(state.members || {}).filter((id) => id !== exceptId);
+            if (!ids.length) return 0;
+            const seated = ids.filter((id) => (state.activeOrder || []).includes(id));
+            const targets = seated.length ? seated : ids;
+            const weights = targets.map((id) => toTenths(state.members[id].cm));
+            const plan = splitTenths(targets, left, weights);
+            plan.forEach((t, i) => {
+                const id = targets[i];
+                setMemberCmVal(id, fromTenths(toTenths(state.members[id].cm) + t));
+            });
+            return left;
+        }
+        function shiftMemberCm(id, deltaT) {
+            if (!state.members[id] || !deltaT) return;
+            const totalT = toTenths(boardTotal());
+            const curT = toTenths(state.members[id].cm);
+            const nextT = Math.max(0, Math.min(totalT, curT + deltaT));
+            const actual = nextT - curT;
+            setMemberCmVal(id, fromTenths(nextT));
+            if (actual > 0) takeTenthsFromOthers(id, actual);
+            else if (actual < 0) giveTenthsToOthers(id, -actual);
+        }
+        function enforceBoardTotal() {
+            snapRosterCm();
+            const ids = Object.keys(state.members || {});
+            if (!ids.length) return;
+            const totalT = toTenths(boardTotal());
+            let sumT = ids.reduce((s, id) => s + toTenths(state.members[id].cm), 0);
+            let drift = totalT - sumT;
+            if (drift === 0) return;
+            const ranked = ids.slice().sort((a, b) => toTenths(state.members[b].cm) - toTenths(state.members[a].cm));
+            let guard = 0;
+            while (drift !== 0 && guard < 10000) {
+                guard += 1;
+                const step = drift > 0 ? 1 : -1;
+                const pick = ranked.find((id) => {
+                    const t = toTenths(state.members[id].cm);
+                    if (step < 0 && t <= 0) return false;
+                    if (step > 0 && t >= totalT) return false;
+                    return true;
+                });
+                if (!pick) break;
+                setMemberCmVal(pick, fromTenths(toTenths(state.members[pick].cm) + step));
+                drift -= step;
+            }
+        }
+        function applyEqualShares(ids, total) {
+            const list = (ids || []).filter((id) => state.members && state.members[id]);
+            const n = list.length;
+            if (!n) return;
+            const need = toTenths(total);
+            const each = Math.floor(need / n);
+            let extra = need - each * n;
+            list.forEach((id) => {
+                const add = extra > 0 ? 1 : 0;
+                extra -= add;
+                setMemberCmVal(id, fromTenths(each + add));
+            });
+        }
         function shareEach() {
             return boardTotal() / Math.max(1, rosterCount());
         }
         function renderBoardHint() {
-            const total = boardTotal();
+            const occupied = occupiedFromState();
             const n = Math.max(1, rosterCount());
-            const each = total / n;
+            const total = boardTotal();
+            const each = n ? total / n : 0;
             const hint = document.getElementById('boardSumHint');
             const bar = document.getElementById('territoryBar');
             const equal = document.getElementById('equalHint');
@@ -554,16 +672,16 @@
             });
             if (hint) {
                 hint.className = 'alloc-hint ok';
-                hint.textContent = `총 ${formatCm(total)}cm ÷ ${n} = 1인당 ${formatCm(each)}cm`;
+                hint.textContent = `현재 합 ${formatCm(occupiedFromState())}cm / 보드 ${formatCm(total)}cm · 균등 시 ${formatCm(each)}cm`;
             }
             if (bar) {
                 const chunks = [];
                 const order = state.activeOrder || [];
-                const occupied = occupiedFromState() || 1;
+                const occ = occupied || 1;
                 order.forEach((id) => {
                     const m = state.members && state.members[id];
                     const cm = Math.max(0, Number(m?.cm) || 0);
-                    if (cm > 0) chunks.push(`<span style="width:${(cm / occupied) * 100}%;background:${m.color}"></span>`);
+                    if (cm > 0) chunks.push(`<span style="width:${(cm / occ) * 100}%;background:${m.color}"></span>`);
                 });
                 bar.innerHTML = chunks.join('');
             }
@@ -573,11 +691,7 @@
             if (!Array.isArray(state.activeOrder)) state.activeOrder = [];
             const ids = uniqueMemberIds();
             if (!ids.length) return;
-            const total = boardTotal();
-            const each = total / ids.length;
-            ids.forEach((id) => {
-                state.members[id].cm = each;
-            });
+            applyEqualShares(ids, boardTotal());
             state.activeOrder = seatIds();
         }
         function commitBoardTotal() {
@@ -813,8 +927,8 @@
             if (ia < 0 || ib < 0) return;
             order[ia] = otherId;
             order[ib] = id;
-            const cmA = Math.max(0, Number(a.cm) || 0);
-            const cmB = Math.max(0, Number(b.cm) || 0);
+            const cmA = fromTenths(toTenths(a.cm));
+            const cmB = fromTenths(toTenths(b.cm));
             a.cm = cmB;
             b.cm = cmA;
             pushGrantLog('swap', id, 0, `${a.name || id} ↔ ${b.name || otherId} (${formatCm(cmB)}cm ↔ ${formatCm(cmA)}cm)`);
@@ -823,48 +937,30 @@
             renderRosterSetup();
             pushPreviewState();
         }
-        function rescaleOthersToFill(id) {
-            const total = boardTotal();
-            const mine = Math.min(total, Math.max(0, Number(state.members[id]?.cm) || 0));
-            state.members[id].cm = mine;
-            const remain = Math.max(0, total - mine);
-            const others = Object.keys(state.members).filter((x) => x !== id);
-            if (!others.length) return;
-            const otherSum = others.reduce((sum, x) => sum + Math.max(0, Number(state.members[x].cm) || 0), 0);
-            if (otherSum <= 0) {
-                const each = remain / others.length;
-                others.forEach((x) => { state.members[x].cm = each; });
-                return;
-            }
-            const scale = remain / otherSum;
-            others.forEach((x) => {
-                state.members[x].cm = Math.max(0, (Number(state.members[x].cm) || 0) * scale);
-            });
-        }
         function grantMemberCm(id) {
-            const amount = parseFloat(document.getElementById(`grant-${id}`).value);
-            if (!Number.isFinite(amount) || amount === 0) {
+            const add = Number(document.getElementById(`grant-${id}`)?.value);
+            const addT = Math.round(add * 10);
+            if (!Number.isFinite(add) || addT === 0) {
                 alert("부여할 cm를 입력하세요. (음수는 차감)");
                 return;
             }
             if (!state.members[id]) return;
-            state.members[id].cm = Math.max(0, (Number(state.members[id].cm) || 0) + amount);
-            rescaleOthersToFill(id);
+            shiftMemberCm(id, addT);
             document.getElementById(`grant-${id}`).value = "";
-            pushGrantLog('grant', id, amount, `${state.members[id].name} ${amount > 0 ? '+' : ''}${formatCm(amount)}cm → ${formatCm(state.members[id].cm)}cm`);
+            pushGrantLog('grant', id, add, `${state.members[id].name} ${add > 0 ? '+' : ''}${formatCm(add)}cm → ${formatCm(state.members[id].cm)}cm`);
             checkElimination();
             saveState();
             renderControls();
         }
         function setMemberCm(id) {
-            const amount = parseFloat(document.getElementById(`setcm-${id}`).value);
-            if (!Number.isFinite(amount) || amount < 0) {
+            const raw = Number(document.getElementById(`setcm-${id}`)?.value);
+            if (!Number.isFinite(raw) || raw < 0) {
                 alert("지정할 cm를 0 이상으로 입력하세요.");
                 return;
             }
             if (!state.members[id]) return;
-            state.members[id].cm = amount;
-            rescaleOthersToFill(id);
+            const amount = fromTenths(Math.min(toTenths(boardTotal()), toTenths(raw)));
+            shiftMemberCm(id, toTenths(amount) - toTenths(state.members[id].cm));
             document.getElementById(`setcm-${id}`).value = "";
             pushGrantLog('set', id, amount, `${state.members[id].name} ${formatCm(amount)}cm로 지정`);
             checkElimination();
@@ -872,6 +968,7 @@
             renderControls();
         }
         function saveState() {
+            enforceBoardTotal();
             const payload = JSON.stringify(state);
             try { localStorage.setItem('shangliu_state', payload); } catch (_e) {}
             pushPreviewState();
@@ -894,8 +991,8 @@
             }, 80);
         }
         function expandTerritory(targetId) {
-            const amount = parseFloat(document.getElementById(`input-${targetId}`).value);
-            if(isNaN(amount) || amount <= 0) {
+            const amount = fromTenths(toTenths(document.getElementById(`input-${targetId}`).value));
+            if (!amount) {
                 alert("정확한 cm를 입력하세요.");
                 return;
             }
@@ -904,15 +1001,15 @@
             if (state.activeOrder.length === 2) {
                 const opponentIdx = idx === 0 ? 1 : 0;
                 takeFrom(state.activeOrder[opponentIdx], targetId, amount);
+            } else if (idx === 0) {
+                takeFrom(state.activeOrder[1], targetId, amount);
+            } else if (idx === state.activeOrder.length - 1) {
+                takeFrom(state.activeOrder[idx - 1], targetId, amount);
             } else {
-                if (idx === 0) {
-                    takeFrom(state.activeOrder[1], targetId, amount);
-                } else if (idx === state.activeOrder.length - 1) {
-                    takeFrom(state.activeOrder[idx - 1], targetId, amount);
-                } else {
-                    takeFrom(state.activeOrder[idx - 1], targetId, amount / 2);
-                    takeFrom(state.activeOrder[idx + 1], targetId, amount / 2);
-                }
+                const totalT = toTenths(amount);
+                const leftT = Math.floor(totalT / 2);
+                takeFrom(state.activeOrder[idx - 1], targetId, fromTenths(leftT));
+                takeFrom(state.activeOrder[idx + 1], targetId, fromTenths(totalT - leftT));
             }
 
             document.getElementById(`input-${targetId}`).value = "";
@@ -923,9 +1020,11 @@
             renderControls();
         }
         function takeFrom(victimId, attackerId, amount) {
-            let actualTake = Math.min(state.members[victimId].cm, amount);
-            state.members[victimId].cm -= actualTake;
-            state.members[attackerId].cm += actualTake;
+            if (!state.members[victimId] || !state.members[attackerId]) return 0;
+            const takeT = Math.min(toTenths(state.members[victimId].cm), toTenths(amount));
+            setMemberCmVal(victimId, fromTenths(toTenths(state.members[victimId].cm) - takeT));
+            setMemberCmVal(attackerId, fromTenths(toTenths(state.members[attackerId].cm) + takeT));
+            return fromTenths(takeT);
         }
         function checkElimination() {
             state.activeOrder = state.activeOrder.filter(id => {
@@ -943,8 +1042,8 @@
                 alert('먼저 영토를 부여하세요. 땅이 생긴 뒤 왼쪽 또는 오른쪽 벽을 고르면 오버레이에 나타납니다.');
                 return;
             }
-            const typed = parseFloat(document.getElementById(`revive-${id}`)?.value);
-            const stealAmt = Number.isFinite(typed) && typed > 0 ? typed : 0;
+            const typed = Number(document.getElementById(`revive-${id}`)?.value);
+            const stealAmt = Number.isFinite(typed) && typed > 0 ? fromTenths(toTenths(typed)) : 0;
             const wallId = side === 'left'
                 ? state.activeOrder[0]
                 : state.activeOrder[state.activeOrder.length - 1];
