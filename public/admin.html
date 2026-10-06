@@ -953,30 +953,48 @@
                 }).catch(() => setSyncHint('서버 저장 실패', false));
             }, 80);
         }
+        function takeChain(ids, attackerId, needT) {
+            let left = Math.max(0, Math.round(Number(needT) || 0));
+            let taken = 0;
+            (ids || []).forEach((id) => {
+                if (left <= 0 || !state.members[id]) return;
+                const gotT = toTenths(takeFrom(id, attackerId, fromTenths(left)));
+                taken += gotT;
+                left -= gotT;
+            });
+            return taken;
+        }
         function expandTerritory(targetId) {
             const amount = fromTenths(toTenths(document.getElementById(`input-${targetId}`).value));
             if (!amount) {
                 alert("정확한 cm를 입력하세요.");
                 return;
             }
-            let idx = state.activeOrder.indexOf(targetId);
+            const order = state.activeOrder || [];
+            const idx = order.indexOf(targetId);
             if (idx === -1) return;
-            if (state.activeOrder.length === 2) {
-                const opponentIdx = idx === 0 ? 1 : 0;
-                takeFrom(state.activeOrder[opponentIdx], targetId, amount);
+            const amountT = toTenths(amount);
+            let takenT = 0;
+            if (order.length === 2) {
+                const opponentId = order[idx === 0 ? 1 : 0];
+                takenT = toTenths(takeFrom(opponentId, targetId, amount));
             } else if (idx === 0) {
-                takeFrom(state.activeOrder[1], targetId, amount);
-            } else if (idx === state.activeOrder.length - 1) {
-                takeFrom(state.activeOrder[idx - 1], targetId, amount);
+                takenT = takeChain(order.slice(1), targetId, amountT);
+            } else if (idx === order.length - 1) {
+                takenT = takeChain(order.slice(0, idx).reverse(), targetId, amountT);
             } else {
-                const totalT = toTenths(amount);
-                const leftT = Math.floor(totalT / 2);
-                takeFrom(state.activeOrder[idx - 1], targetId, fromTenths(leftT));
-                takeFrom(state.activeOrder[idx + 1], targetId, fromTenths(totalT - leftT));
+                const leftT = Math.floor(amountT / 2);
+                const rightT = amountT - leftT;
+                takenT = takeChain(order.slice(0, idx).reverse(), targetId, leftT)
+                    + takeChain(order.slice(idx + 1), targetId, rightT);
             }
-
+            if (takenT <= 0) {
+                alert("뺏을 땅이 없습니다.");
+                return;
+            }
+            const takenCm = fromTenths(takenT);
             document.getElementById(`input-${targetId}`).value = "";
-            pushGrantLog('steal', targetId, amount, `${state.members[targetId].name} ${formatCm(amount)}cm 뺏음 → ${formatCm(state.members[targetId].cm)}cm`);
+            pushGrantLog('steal', targetId, takenCm, `${state.members[targetId].name} ${formatCm(takenCm)}cm 뺏음 → ${formatCm(state.members[targetId].cm)}cm`);
             checkElimination();
             bumpStealFx();
             saveState();
@@ -1070,7 +1088,7 @@
                 if (isAlive) {
                     let idx = state.activeOrder.indexOf(id);
                     let rule = state.activeOrder.length <= 2 ? "전체 흡수 (1:1)" :
-                              (idx === 0 || idx === state.activeOrder.length-1) ? "단방향 흡수 (100%)" : "양분 흡수 (좌우 50%씩)";
+                              (idx === 0 || idx === state.activeOrder.length-1) ? "단방향 흡수 (모자라면 다음 사람)" : "양분 흡수 (한쪽이 모자라면 그쪽으로 이어서)";
 
                     html = `
                     <div class="card" data-member="${id}" style="border-color:${escapeHtml(m.color)}">
