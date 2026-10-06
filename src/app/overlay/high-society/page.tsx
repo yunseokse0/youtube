@@ -1,17 +1,11 @@
-/** OBS 브라우저 소스 — 타이틀 없는 영토 게이지 (`public/overlay.html`). */
+import { redirect } from "next/navigation";
+
+/** OBS 브라우저 소스. iframe으로 감싸면 투명 배경이 흰 판으로 남는다. */
 export default function HighSocietyOverlayPage({
   searchParams,
 }: {
   searchParams?: { u?: string; user?: string };
 }) {
   const u = String(searchParams?.u || searchParams?.user || "finalent").trim() || "finalent";
-  return (
-    <iframe
-      src={`/overlay.html?u=${encodeURIComponent(u)}`}
-      title="상류사회 오버레이"
-      className="h-screen w-screen border-0 bg-transparent"
-      style={{ background: "transparent", backgroundColor: "rgba(0,0,0,0)" }}
-      data-hs-overlay="titleless"
-    />
-  );
+  redirect(`/overlay.html?u=${encodeURIComponent(u)}`);
 }
