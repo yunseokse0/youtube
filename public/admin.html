@@ -526,9 +526,12 @@
             for (let k = 0; k < leftover; k += 1) extra[order[k % n].i] += 1;
             return floors.map((f, i) => f + extra[i]);
         }
+        function isSeated(id) {
+            return (state.activeOrder || []).includes(id);
+        }
         function takeTenthsFromOthers(exceptId, needT) {
             let left = Math.max(0, needT);
-            const ids = Object.keys(state.members || {}).filter((id) => id !== exceptId);
+            const ids = (state.activeOrder || []).filter((id) => id !== exceptId && state.members[id]);
             let guard = 0;
             while (left > 0 && guard < 20) {
                 guard += 1;
@@ -564,8 +567,12 @@
         }
         function shiftMemberCm(id, deltaT) {
             if (!state.members[id] || !deltaT) return;
-            const totalT = toTenths(boardTotal());
             const curT = toTenths(state.members[id].cm);
+            if (!isSeated(id)) {
+                setMemberCmVal(id, fromTenths(Math.max(0, curT + deltaT)));
+                return;
+            }
+            const totalT = toTenths(boardTotal());
             const nextT = Math.max(0, Math.min(totalT, curT + deltaT));
             const actual = nextT - curT;
             setMemberCmVal(id, fromTenths(nextT));
@@ -574,7 +581,7 @@
         }
         function enforceBoardTotal() {
             snapRosterCm();
-            const ids = Object.keys(state.members || {});
+            const ids = (state.activeOrder || []).filter((id) => state.members[id]);
             if (!ids.length) return;
             const totalT = toTenths(boardTotal());
             let sumT = ids.reduce((s, id) => s + toTenths(state.members[id].cm), 0);
@@ -988,16 +995,31 @@
                 return;
             }
             const typed = Number(document.getElementById(`revive-${id}`)?.value);
-            const stealAmt = Number.isFinite(typed) && typed > 0 ? fromTenths(toTenths(typed)) : 0;
+            const extraT = Number.isFinite(typed) && typed > 0 ? toTenths(typed) : 0;
             const wallId = side === 'left'
                 ? state.activeOrder[0]
                 : state.activeOrder[state.activeOrder.length - 1];
-            if (stealAmt > 0 && wallId) takeFrom(wallId, id, stealAmt);
+            let takenT = 0;
+            if (wallId && state.members[wallId]) {
+                const heldT = toTenths(state.members[id].cm);
+                const wallT = toTenths(state.members[wallId].cm);
+                const takeHeld = Math.min(heldT, wallT);
+                const takeExtra = Math.min(extraT, wallT - takeHeld);
+                takenT = takeHeld + takeExtra;
+                setMemberCmVal(wallId, fromTenths(wallT - takenT));
+                setMemberCmVal(id, fromTenths(takeHeld + takeExtra));
+            }
             if (side === 'left') state.activeOrder.unshift(id);
             else state.activeOrder.push(id);
             checkElimination();
             bumpStealFx();
-            pushGrantLog('revive', id, stealAmt || pending, `${state.members[id].name} ${side === 'left' ? '좌측' : '우측'} 벽 진입`);
+            const wallName = wallId && state.members[wallId] ? (state.members[wallId].name || wallId) : '';
+            const takenCm = fromTenths(takenT);
+            const sideLabel = side === 'left' ? '좌측' : '우측';
+            const note = takenCm > 0
+                ? `${state.members[id].name} ${sideLabel} 벽 진입 · ${wallName} ${formatCm(takenCm)}cm`
+                : `${state.members[id].name} ${sideLabel} 벽 진입`;
+            pushGrantLog('revive', id, takenCm || pending, note);
             saveState();
             renderControls();
         }
@@ -1084,7 +1106,7 @@
                             <button class="btn-revive" ${canEnter ? '' : 'disabled'} onclick="reviveMember('${id}', 'left')">좌측 벽</button>
                             <button class="btn-revive" ${canEnter ? '' : 'disabled'} onclick="reviveMember('${id}', 'right')">우측 벽</button>
                         </div>
-                        <div class="rule-text">${canEnter ? '왼쪽 또는 오른쪽 벽을 고르면 오버레이에 나타납니다.' : '영토를 부여한 뒤 왼쪽·오른쪽 벽을 고르세요.'}</div>
+                        <div class="rule-text">${canEnter ? '고른 쪽 끝의 땅에서 부여한 cm를 가져옵니다. 그 끝이 0cm가 되면 탈락합니다.' : '영토를 부여한 뒤 왼쪽·오른쪽 벽을 고르세요.'}</div>
                     </div>`;
                 }
                 controls.innerHTML += html;
