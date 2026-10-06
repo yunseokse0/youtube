@@ -9,9 +9,12 @@
 
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Pretendard', sans-serif; user-select: none; }
 
+        html, body {
+            background: transparent !important;
+            background-color: rgba(0, 0, 0, 0) !important;
+        }
         body {
             width: 1080px; height: 1920px;
-            background-color: transparent;
             color: white; overflow: hidden; position: relative;
         }
 
@@ -70,19 +73,14 @@
 
         .game-board-wrapper {
             flex: 1;
-            background: rgba(48, 36, 62, 0.55);
-            backdrop-filter: blur(18px);
-            -webkit-backdrop-filter: blur(18px);
+            background: transparent;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
             border: none;
             padding: 6px;
             border-radius: 12px;
             position: relative;
-            box-shadow:
-                0 16px 36px rgba(0,0,0,0.45),
-                inset 0 1px 1px rgba(255,255,255,0.55),
-                inset 0 -1px 2px rgba(0,0,0,0.35),
-                0 0 0 1px rgba(255, 255, 255, 0.16),
-                0 0 0 4px rgba(28, 20, 36, 0.55);
+            box-shadow: none;
         }
         .game-board-wrapper::before {
             content: '';
@@ -106,8 +104,8 @@
         }
         .game-board {
             display: flex; width: 100%; height: 100%;
-            border-radius: 6px; overflow: hidden; background: #2a2233;
-            box-shadow: inset 0 0 18px rgba(0,0,0,0.35);
+            border-radius: 6px; overflow: hidden; background: transparent;
+            box-shadow: none;
         }
 
         .territory {
