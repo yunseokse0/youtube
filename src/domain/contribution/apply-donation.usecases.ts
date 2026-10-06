@@ -86,6 +86,7 @@ export function applyDonationToAppState(
     processedEvent = mapToMember(rawEvent, currentState.members || [], aliases, {
       autoAssignToonPlayer: true,
       memberPositions: currentState.memberPositions,
+      preferredAutoAssignMemberId: currentState.donationAutoAssignMemberId,
     });
   }
   if (!processedEvent.memberId) {

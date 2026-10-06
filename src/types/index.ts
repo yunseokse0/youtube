@@ -700,6 +700,11 @@ export type AppState = {
   donationListsOverlayConfig: OverlayConfig;
   /** 단체짠 후원 분배 — 제외 멤버 등 */
   groupSplitDonationSettings?: GroupSplitDonationSettings;
+  /**
+   * 메시지·별명으로 멤버를 못 찾을 때 후원을 넣을 멤버.
+   * 비어 있으면 기존 자동 배치(순위·운영비)를 쓴다.
+   */
+  donationAutoAssignMemberId?: string;
   /** 상류사회(땅따먹기) — 후원 목록·오버레이 연동 */
   highSocietySettings?: HighSocietySettings;
   /** 시그 판매/회전판에서 제외할 시그 ID 목록 */

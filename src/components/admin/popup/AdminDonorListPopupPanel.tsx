@@ -275,6 +275,31 @@ export default function AdminDonorListPopupPanel() {
               <span className="font-bold text-emerald-200">{formatWon(pageAgg.sum)}</span>
             </div>
             <span className="text-slate-500">최신순</span>
+            <label className="ml-auto flex items-center gap-1.5 rounded border border-slate-700/50 bg-slate-900/60 px-2.5 py-1">
+              <span className="text-slate-400">자동부여 멤버</span>
+              <select
+                className="rounded border border-white/10 bg-neutral-900 px-1.5 py-0.5 text-slate-100"
+                value={String(state.donationAutoAssignMemberId || "")}
+                title="메시지에서 멤버를 못 찾으면 이 멤버에게 넣습니다. 메시지에 이름이 있으면 그 멤버가 우선입니다."
+                onChange={(e) => {
+                  const memberId = String(e.target.value || "").trim();
+                  const next: AppState = { ...state };
+                  if (memberId && members.some((m) => m.id === memberId)) {
+                    next.donationAutoAssignMemberId = memberId;
+                  } else {
+                    delete next.donationAutoAssignMemberId;
+                  }
+                  void persistReplace(next);
+                }}
+              >
+                <option value="">선택 안 함</option>
+                {members.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name || m.id}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <div className="flex flex-col gap-2 landscape:lg:flex-row landscape:lg:flex-wrap landscape:lg:items-center">

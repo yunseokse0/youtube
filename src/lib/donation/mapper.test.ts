@@ -114,6 +114,54 @@ describe("mapToMember", () => {
     expect(mapped.status).toBe("processed");
   });
 
+  it("uses the chosen member when the message does not name anyone", () => {
+    const event: DonationEvent = {
+      id: "t13b",
+      provider: "toonation",
+      externalId: "e13b",
+      donorName: "익명",
+      message: "그냥 응원합니다",
+      amount: 4000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const team: Member[] = [
+      { id: "m1", name: "피자", account: 1000, toon: 0, contribution: 1000 },
+      { id: "m2", name: "문형배", account: 5000, toon: 0, contribution: 5000 },
+    ];
+    const mapped = mapToMember(event, team, [], {
+      autoAssignToonPlayer: true,
+      preferredAutoAssignMemberId: "m1",
+    });
+    expect(mapped.memberId).toBe("m1");
+    expect(mapped.memberAutoAssigned).toBe(true);
+  });
+
+  it("keeps a message name match ahead of the chosen auto member", () => {
+    const event: DonationEvent = {
+      id: "t13c",
+      provider: "toonation",
+      externalId: "e13c",
+      donorName: "익명",
+      message: "문형배 화이팅",
+      amount: 4000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const team: Member[] = [
+      { id: "m1", name: "피자", account: 1000, toon: 0, contribution: 1000 },
+      { id: "m2", name: "문형배", account: 5000, toon: 0, contribution: 5000 },
+    ];
+    const mapped = mapToMember(event, team, [], {
+      autoAssignToonPlayer: true,
+      preferredAutoAssignMemberId: "m1",
+    });
+    expect(mapped.memberId).toBe("m2");
+    expect(mapped.memberAutoAssigned).toBeUndefined();
+  });
+
   it("falls back to rank-1 when player hint does not match any member", () => {
     const event: DonationEvent = {
       id: "t4",

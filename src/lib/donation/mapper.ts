@@ -391,6 +391,8 @@ export type MapToMemberOptions = {
   /** 유사 일치 실패 시 운영비→대표→국고 자동 배치 */
   autoAssignToonPlayer?: boolean;
   memberPositions?: Record<string, string> | null;
+  /** 메시지 매칭 실패 시 이 멤버로 넣는다. 없으면 기존 자동 배치. */
+  preferredAutoAssignMemberId?: string | null;
 };
 
 export function mapToMember(
@@ -451,6 +453,16 @@ export function mapToMember(
    * - 그 외: 후원 순위 1위 → 없으면 운영비 → 대표 → 국고
    */
   if (opts?.autoAssignToonPlayer) {
+    const preferredId = String(opts.preferredAutoAssignMemberId || "").trim();
+    const preferred = preferredId ? members.find((m) => m.id === preferredId) : undefined;
+    if (preferred) {
+      return {
+        ...event,
+        memberId: preferred.id,
+        memberAutoAssigned: true,
+        status: "processed",
+      };
+    }
     const fallback = isSmallDonationForOperating(event.amount)
       ? pickSmallDonationAutoAssignMember(members, opts.memberPositions)
       : pickTopRankedDonationMember(members, opts.memberPositions) ||
