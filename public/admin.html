@@ -276,12 +276,15 @@
             </div>
         </div>
     </div>
+    <script src="/shangliu-board.js?v=20261007"></script>
     <script>
         let state = {};
         let persistTimer = null;
         function formatCm(n) {
-            const s = (Math.max(0, Number(n) || 0)).toFixed(1);
-            return s.endsWith('.0') ? s.slice(0, -2) : s;
+            return ShangliuBoard.formatCm(n);
+        }
+        function formatSignedCm(n) {
+            return ShangliuBoard.formatSignedCm(n);
         }
         const GRANT_KIND_LABEL = {
             grant: '부여',
@@ -427,19 +430,10 @@
             return null;
         }
         function uniqueMemberIds() {
-            return Object.keys(state.members || {}).filter((id) => /^[A-Z]$/.test(id));
+            return ShangliuBoard.uniqueMemberIds(state);
         }
         function seatIds() {
-            const members = state.members || {};
-            const seen = new Set();
-            const order = [];
-            (Array.isArray(state.activeOrder) ? state.activeOrder : []).forEach((id) => {
-                if (!members[id] || seen.has(id)) return;
-                if ((Number(members[id].cm) || 0) <= 0) return;
-                seen.add(id);
-                order.push(id);
-            });
-            return order;
+            return ShangliuBoard.seatIds(state);
         }
         function rosterCount() {
             return uniqueMemberIds().length;
@@ -493,134 +487,24 @@
             return Object.values(state.members || {}).reduce((sum, m) => sum + Math.max(0, Number(m.cm) || 0), 0);
         }
         function toTenths(n) {
-            const v = Number(n);
-            if (!Number.isFinite(v)) return 0;
-            return Math.round(v * 10);
+            return ShangliuBoard.toTenths(n);
         }
         function fromTenths(t) {
-            return Math.round(Number(t) || 0) / 10;
+            return ShangliuBoard.fromTenths(t);
         }
         function setMemberCmVal(id, cm) {
-            if (!state.members || !state.members[id]) return;
-            state.members[id].cm = fromTenths(Math.max(0, toTenths(cm)));
-        }
-        function snapRosterCm() {
-            Object.keys(state.members || {}).forEach((id) => setMemberCmVal(id, state.members[id].cm));
-        }
-        function splitTenths(ids, remainT, weights) {
-            const n = ids.length;
-            if (!n) return [];
-            const need = Math.max(0, Math.round(Number(remainT) || 0));
-            if (need <= 0) return ids.map(() => 0);
-            let w = (weights || []).map((x) => Math.max(0, Math.round(Number(x) || 0)));
-            let wsum = w.reduce((a, b) => a + b, 0);
-            if (wsum <= 0) w = ids.map(() => 1);
-            wsum = w.reduce((a, b) => a + b, 0);
-            const raw = w.map((x) => (need * x) / wsum);
-            const floors = raw.map((v) => Math.floor(v + 1e-9));
-            let leftover = need - floors.reduce((a, b) => a + b, 0);
-            const order = raw
-                .map((v, i) => ({ i, frac: v - Math.floor(v + 1e-9) }))
-                .sort((a, b) => b.frac - a.frac);
-            const extra = new Array(n).fill(0);
-            for (let k = 0; k < leftover; k += 1) extra[order[k % n].i] += 1;
-            return floors.map((f, i) => f + extra[i]);
-        }
-        function isSeated(id) {
-            return (state.activeOrder || []).includes(id);
-        }
-        function takeTenthsFromOthers(exceptId, needT) {
-            let left = Math.max(0, needT);
-            const ids = (state.activeOrder || []).filter((id) => id !== exceptId && state.members[id]);
-            let guard = 0;
-            while (left > 0 && guard < 20) {
-                guard += 1;
-                const holders = ids.filter((id) => toTenths(state.members[id].cm) > 0);
-                if (!holders.length) break;
-                const weights = holders.map((id) => toTenths(state.members[id].cm));
-                const have = weights.reduce((a, b) => a + b, 0);
-                const plan = splitTenths(holders, Math.min(left, have), weights);
-                plan.forEach((t, i) => {
-                    const id = holders[i];
-                    const haveT = toTenths(state.members[id].cm);
-                    const take = Math.min(haveT, t);
-                    setMemberCmVal(id, fromTenths(haveT - take));
-                    left -= take;
-                });
-            }
-            return needT - left;
-        }
-        function giveTenthsToOthers(exceptId, giveT) {
-            const left = Math.max(0, giveT);
-            if (!left) return 0;
-            const ids = Object.keys(state.members || {}).filter((id) => id !== exceptId);
-            if (!ids.length) return 0;
-            const seated = ids.filter((id) => (state.activeOrder || []).includes(id));
-            const targets = seated.length ? seated : ids;
-            const weights = targets.map((id) => toTenths(state.members[id].cm));
-            const plan = splitTenths(targets, left, weights);
-            plan.forEach((t, i) => {
-                const id = targets[i];
-                setMemberCmVal(id, fromTenths(toTenths(state.members[id].cm) + t));
-            });
-            return left;
+            ShangliuBoard.setMemberCm(state, id, cm);
         }
         function shiftMemberCm(id, deltaT) {
-            if (!state.members[id] || !deltaT) return;
-            const curT = toTenths(state.members[id].cm);
-            if (!isSeated(id)) {
-                setMemberCmVal(id, fromTenths(Math.max(0, curT + deltaT)));
-                return;
-            }
-            const totalT = toTenths(boardTotal());
-            const nextT = Math.max(0, Math.min(totalT, curT + deltaT));
-            const actual = nextT - curT;
-            setMemberCmVal(id, fromTenths(nextT));
-            if (actual > 0) takeTenthsFromOthers(id, actual);
-            else if (actual < 0) giveTenthsToOthers(id, -actual);
+            return ShangliuBoard.shiftMemberCm(state, id, deltaT);
         }
         function enforceBoardTotal() {
-            snapRosterCm();
-            const ids = (state.activeOrder || []).filter((id) => state.members[id]);
-            if (!ids.length) return;
-            const totalT = toTenths(boardTotal());
-            let sumT = ids.reduce((s, id) => s + toTenths(state.members[id].cm), 0);
-            let drift = totalT - sumT;
-            if (drift === 0) return;
-            const ranked = ids.slice().sort((a, b) => toTenths(state.members[b].cm) - toTenths(state.members[a].cm));
-            let guard = 0;
-            while (drift !== 0 && guard < 10000) {
-                guard += 1;
-                const step = drift > 0 ? 1 : -1;
-                const pick = ranked.find((id) => {
-                    const t = toTenths(state.members[id].cm);
-                    if (step < 0 && t <= 0) return false;
-                    if (step > 0 && t >= totalT) return false;
-                    return true;
-                });
-                if (!pick) break;
-                setMemberCmVal(pick, fromTenths(toTenths(state.members[pick].cm) + step));
-                drift -= step;
-            }
-        }
-        function applyEqualShares(ids, total) {
-            const list = (ids || []).filter((id) => state.members && state.members[id]);
-            const n = list.length;
-            if (!n) return;
-            const need = toTenths(total);
-            const each = Math.floor(need / n);
-            let extra = need - each * n;
-            list.forEach((id) => {
-                const add = extra > 0 ? 1 : 0;
-                extra -= add;
-                setMemberCmVal(id, fromTenths(each + add));
-            });
+            ShangliuBoard.enforceBoardTotal(state);
         }
         function shareEach() {
             return boardTotal() / Math.max(1, rosterCount());
         }
         function renderBoardHint() {
-            const occupied = occupiedFromState();
             const n = Math.max(1, rosterCount());
             const total = boardTotal();
             const each = n ? total / n : 0;
@@ -637,14 +521,15 @@
                     btn.textContent = team ? '+ 팀 추가' : '+ 멤버 추가';
                 }
             });
+            const seatedSum = ShangliuBoard.seatedSumCm(state);
             if (hint) {
                 hint.className = 'alloc-hint ok';
-                hint.textContent = `현재 합 ${formatCm(occupiedFromState())}cm / 보드 ${formatCm(total)}cm · 균등 시 ${formatCm(each)}cm`;
+                hint.textContent = `자리 합 ${formatCm(seatedSum)}cm / 보드 ${formatCm(total)}cm · 균등 시 ${formatCm(each)}cm`;
             }
             if (bar) {
                 const chunks = [];
                 const order = state.activeOrder || [];
-                const occ = occupied || 1;
+                const occ = seatedSum || 1;
                 order.forEach((id) => {
                     const m = state.members && state.members[id];
                     const cm = Math.max(0, Number(m?.cm) || 0);
@@ -655,15 +540,7 @@
             pushPreviewState();
         }
         function applyEqualToState() {
-            if (!Array.isArray(state.activeOrder)) state.activeOrder = [];
-            const ids = uniqueMemberIds();
-            if (!ids.length) return;
-            const prev = state.activeOrder.filter((id) => state.members[id]);
-            const waiting = ids.filter((id) => !prev.includes(id));
-            applyEqualShares(ids, boardTotal());
-            state.activeOrder = [...prev, ...waiting].filter((id, i, arr) => {
-                return state.members[id] && arr.indexOf(id) === i && (Number(state.members[id].cm) || 0) > 0;
-            });
+            ShangliuBoard.applyEqualToState(state);
         }
         function commitBoardTotal() {
             const total = clampBoardTotal(document.getElementById('boardTotalInput')?.value);
@@ -849,18 +726,14 @@
                 .replace(/"/g, "&quot;");
         }
         function patchMember(id, field, value) {
-            if (!state.members || !state.members[id]) return;
+            if (!ShangliuBoard.patchMember(state, id, field, value)) return;
             if (field === "name") {
-                state.members[id].name = String(value || "").slice(0, 40);
                 document.querySelectorAll(`input[data-member-name="${id}"]`).forEach((el) => {
                     if (el !== document.activeElement) el.value = state.members[id].name;
                 });
             } else if (field === "color") {
-                const color = String(value || "");
-                if (!/^#[0-9a-fA-F]{6}$/.test(color)) return;
-                state.members[id].color = color;
                 const card = document.querySelector(`[data-member="${id}"]`);
-                if (card) card.style.borderColor = color;
+                if (card) card.style.borderColor = state.members[id].color;
             }
             saveState();
             renderSeatBar();
@@ -879,21 +752,11 @@
                 .join('');
         }
         function swapTerritory(id, otherId) {
-            if (!id || !otherId || id === otherId) return;
-            const a = state.members[id];
-            const b = state.members[otherId];
-            if (!a || !b) return;
-            const order = Array.isArray(state.activeOrder) ? state.activeOrder : [];
-            const ia = order.indexOf(id);
-            const ib = order.indexOf(otherId);
-            if (ia < 0 || ib < 0) return;
-            order[ia] = otherId;
-            order[ib] = id;
-            const cmA = fromTenths(toTenths(a.cm));
-            const cmB = fromTenths(toTenths(b.cm));
-            a.cm = cmB;
-            b.cm = cmA;
-            pushGrantLog('swap', id, 0, `${a.name || id} ↔ ${b.name || otherId} (${formatCm(cmB)}cm ↔ ${formatCm(cmA)}cm)`);
+            const a = state.members && state.members[id];
+            const b = state.members && state.members[otherId];
+            const swapped = ShangliuBoard.swap(state, id, otherId);
+            if (!swapped.ok || !a || !b) return;
+            pushGrantLog('swap', id, 0, `${a.name || id} ↔ ${b.name || otherId} (${formatCm(a.cm)}cm ↔ ${formatCm(b.cm)}cm)`);
             saveState();
             renderControls();
             renderRosterSetup();
@@ -907,9 +770,13 @@
                 return;
             }
             if (!state.members[id]) return;
-            shiftMemberCm(id, addT);
+            const actual = shiftMemberCm(id, addT);
+            if (!actual) {
+                alert("바꿀 수 있는 땅이 없습니다.");
+                return;
+            }
             document.getElementById(`grant-${id}`).value = "";
-            pushGrantLog('grant', id, add, `${state.members[id].name} ${add > 0 ? '+' : ''}${formatCm(add)}cm → ${formatCm(state.members[id].cm)}cm`);
+            pushGrantLog('grant', id, actual, `${state.members[id].name} ${formatSignedCm(actual)}cm → ${formatCm(state.members[id].cm)}cm`);
             checkElimination();
             saveState();
             renderControls();
@@ -922,9 +789,13 @@
             }
             if (!state.members[id]) return;
             const amount = fromTenths(Math.min(toTenths(boardTotal()), toTenths(raw)));
-            shiftMemberCm(id, toTenths(amount) - toTenths(state.members[id].cm));
+            const actual = shiftMemberCm(id, toTenths(amount) - toTenths(state.members[id].cm));
+            if (!actual) {
+                alert("바꿀 수 있는 땅이 없습니다.");
+                return;
+            }
             document.getElementById(`setcm-${id}`).value = "";
-            pushGrantLog('set', id, amount, `${state.members[id].name} ${formatCm(amount)}cm로 지정`);
+            pushGrantLog('set', id, state.members[id].cm, `${state.members[id].name} ${formatCm(state.members[id].cm)}cm로 지정`);
             checkElimination();
             saveState();
             renderControls();
@@ -953,16 +824,8 @@
                 }).catch(() => setSyncHint('서버 저장 실패', false));
             }, 80);
         }
-        function takeChain(ids, attackerId, needT) {
-            let left = Math.max(0, Math.round(Number(needT) || 0));
-            let taken = 0;
-            (ids || []).forEach((id) => {
-                if (left <= 0 || !state.members[id]) return;
-                const gotT = toTenths(takeFrom(id, attackerId, fromTenths(left)));
-                taken += gotT;
-                left -= gotT;
-            });
-            return taken;
+        function checkElimination() {
+            ShangliuBoard.checkElimination(state);
         }
         function expandTerritory(targetId) {
             const amount = fromTenths(toTenths(document.getElementById(`input-${targetId}`).value));
@@ -970,95 +833,29 @@
                 alert("정확한 cm를 입력하세요.");
                 return;
             }
-            const order = state.activeOrder || [];
-            const idx = order.indexOf(targetId);
-            if (idx === -1) return;
-            const amountT = toTenths(amount);
-            let takenT = 0;
-            if (order.length === 2) {
-                const opponentId = order[idx === 0 ? 1 : 0];
-                takenT = toTenths(takeFrom(opponentId, targetId, amount));
-            } else if (idx === 0) {
-                takenT = takeChain(order.slice(1), targetId, amountT);
-            } else if (idx === order.length - 1) {
-                takenT = takeChain(order.slice(0, idx).reverse(), targetId, amountT);
-            } else {
-                const leftT = Math.floor(amountT / 2);
-                const rightT = amountT - leftT;
-                takenT = takeChain(order.slice(0, idx).reverse(), targetId, leftT)
-                    + takeChain(order.slice(idx + 1), targetId, rightT);
-            }
-            if (takenT <= 0) {
-                alert("뺏을 땅이 없습니다.");
+            const result = ShangliuBoard.steal(state, targetId, amount);
+            if (!result.ok) {
+                if (result.reason === "short") alert("뺏을 땅이 없습니다.");
                 return;
             }
-            const takenCm = fromTenths(takenT);
             document.getElementById(`input-${targetId}`).value = "";
-            pushGrantLog('steal', targetId, takenCm, `${state.members[targetId].name} ${formatCm(takenCm)}cm 뺏음 → ${formatCm(state.members[targetId].cm)}cm`);
-            checkElimination();
+            pushGrantLog('steal', targetId, result.takenCm, `${state.members[targetId].name} ${formatCm(result.takenCm)}cm 뺏음 → ${formatCm(state.members[targetId].cm)}cm`);
             bumpStealFx();
             saveState();
             renderControls();
         }
-        function takeFrom(victimId, attackerId, amount) {
-            if (!state.members[victimId] || !state.members[attackerId]) return 0;
-            const takeT = Math.min(toTenths(state.members[victimId].cm), toTenths(amount));
-            setMemberCmVal(victimId, fromTenths(toTenths(state.members[victimId].cm) - takeT));
-            setMemberCmVal(attackerId, fromTenths(toTenths(state.members[attackerId].cm) + takeT));
-            return fromTenths(takeT);
-        }
-        function checkElimination() {
-            state.activeOrder = state.activeOrder.filter(id => {
-                if(state.members[id].cm <= 0) {
-                    state.members[id].cm = 0;
-                    return false;
-                }
-                return true;
-            });
-        }
-        function drainChain(ids, needT) {
-            let left = Math.max(0, Math.round(Number(needT) || 0));
-            const parts = [];
-            (ids || []).forEach((vid) => {
-                if (left <= 0 || !state.members[vid]) return;
-                const haveT = toTenths(state.members[vid].cm);
-                const takeT = Math.min(haveT, left);
-                if (takeT <= 0) return;
-                setMemberCmVal(vid, fromTenths(haveT - takeT));
-                parts.push({ id: vid, cm: fromTenths(takeT) });
-                left -= takeT;
-            });
-            return parts;
-        }
         function reviveMember(id, side) {
-            if (!state.members[id] || state.activeOrder.includes(id)) return;
-            const pending = Math.max(0, Number(state.members[id].cm) || 0);
-            if (pending <= 0) {
-                alert('먼저 영토를 부여하세요. 땅이 생긴 뒤 왼쪽 또는 오른쪽 벽을 고르면 오버레이에 나타납니다.');
+            const typed = Number(document.getElementById(`revive-${id}`)?.value);
+            const extra = Number.isFinite(typed) && typed > 0 ? typed : 0;
+            const result = ShangliuBoard.revive(state, id, side, extra);
+            if (!result.ok) {
+                if (result.reason === "empty") {
+                    alert('먼저 영토를 부여하세요. 땅이 생긴 뒤 왼쪽 또는 오른쪽 벽을 고르면 오버레이에 나타납니다.');
+                }
                 return;
             }
-            const typed = Number(document.getElementById(`revive-${id}`)?.value);
-            const extraT = Number.isFinite(typed) && typed > 0 ? toTenths(typed) : 0;
-            const order = Array.isArray(state.activeOrder) ? state.activeOrder.slice() : [];
-            const sideLabel = side === 'left' ? '좌측' : '우측';
-            let parts = [];
-            if (order.length) {
-                const chain = side === 'left' ? order : order.slice().reverse();
-                parts = drainChain(chain, toTenths(state.members[id].cm) + extraT);
-                setMemberCmVal(id, fromTenths(parts.reduce((sum, part) => sum + toTenths(part.cm), 0)));
-            }
-            if (side === 'left') state.activeOrder.unshift(id);
-            else state.activeOrder.push(id);
-            checkElimination();
             bumpStealFx();
-            const takenCm = fromTenths(parts.reduce((sum, part) => sum + toTenths(part.cm), 0));
-            const detail = parts
-                .map((part) => `${state.members[part.id]?.name || part.id} ${formatCm(part.cm)}cm`)
-                .join(' · ');
-            const note = detail
-                ? `${state.members[id].name} ${sideLabel} 벽 진입 · ${detail}`
-                : `${state.members[id].name} ${sideLabel} 벽 진입`;
-            pushGrantLog('revive', id, takenCm || pending, note);
+            pushGrantLog('revive', id, result.takenCm || result.pending, result.note);
             saveState();
             renderControls();
         }
