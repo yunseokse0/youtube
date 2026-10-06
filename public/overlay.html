@@ -286,6 +286,7 @@
         let lastOrder = [];
         let lastStealSeq = -1;
         let localStateLockUntil = 0;
+        let fetchGen = 0;
         function formatCm(n) {
             const s = (Math.max(0, Number(n) || 0)).toFixed(1);
             return s.endsWith('.0') ? s.slice(0, -2) : s;
@@ -422,9 +423,12 @@
 
         function fetchGameState() {
             if (Date.now() < localStateLockUntil) return;
-            fetch(`/api/shangliu?u=${encodeURIComponent(userId)}`, { cache: 'no-store' })
+            const gen = ++fetchGen;
+            fetch(`/api/shangliu?u=${encodeURIComponent(userId)}&_=${Date.now()}`, { cache: 'no-store' })
                 .then((r) => r.json())
                 .then((j) => {
+                    if (gen !== fetchGen) return;
+                    if (Date.now() < localStateLockUntil) return;
                     if (!j || !j.ok || !j.state) return;
                     const dataStr = JSON.stringify(j.state);
                     if (lastDataString === dataStr) return;
@@ -545,6 +549,7 @@
             const msg = ev.data;
             if (!msg || typeof msg !== "object") return;
             if (msg.type === "shangliu-state" && msg.state && msg.state.members) {
+                fetchGen += 1;
                 lastDataString = JSON.stringify(msg.state);
                 localStateLockUntil = Date.now() + 2000;
                 render(msg.state);
