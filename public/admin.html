@@ -658,8 +658,12 @@
             if (!Array.isArray(state.activeOrder)) state.activeOrder = [];
             const ids = uniqueMemberIds();
             if (!ids.length) return;
+            const prev = state.activeOrder.filter((id) => state.members[id]);
+            const waiting = ids.filter((id) => !prev.includes(id));
             applyEqualShares(ids, boardTotal());
-            state.activeOrder = seatIds();
+            state.activeOrder = [...prev, ...waiting].filter((id, i, arr) => {
+                return state.members[id] && arr.indexOf(id) === i && (Number(state.members[id].cm) || 0) > 0;
+            });
         }
         function commitBoardTotal() {
             const total = clampBoardTotal(document.getElementById('boardTotalInput')?.value);
@@ -671,9 +675,16 @@
             const total = clampBoardTotal(document.getElementById('boardTotalInput')?.value || boardTotal());
             document.getElementById('boardTotalInput').value = String(total);
             state.boardTotalCm = total;
+            const before = new Set(Array.isArray(state.activeOrder) ? state.activeOrder : []);
             applyEqualToState();
+            const joined = (state.activeOrder || [])
+                .filter((id) => !before.has(id))
+                .map((id) => state.members[id]?.name || id);
             const n = Math.max(1, uniqueMemberIds().length);
-            pushGrantLog('equal', '', total / n, `전원 1/${n} 균등`);
+            const note = joined.length
+                ? `전원 1/${n} 균등 · ${joined.join(', ')} 합류`
+                : `전원 1/${n} 균등`;
+            pushGrantLog('equal', '', total / n, note);
             saveState();
             renderRosterSetup();
             renderControls();
