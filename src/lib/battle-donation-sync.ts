@@ -13,6 +13,26 @@ function donorAtMs(donor: { at?: number | string }): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/**
+ * 식사 대전 게이지만 0으로 돌린다.
+ * 연동 중인 참가자는 이 시각 이후 후원만 다시 집계한다. 후원 목록·멤버 정산은 건드리지 않는다.
+ */
+export function resetMealBattleDonationUi(
+  mealBattle: MealBattleState | undefined,
+  resetAt = Date.now()
+): MealBattleState {
+  const at = Math.max(0, Math.floor(Number(resetAt) || Date.now()));
+  const base = (mealBattle || {}) as MealBattleState;
+  return {
+    ...base,
+    participants: (base.participants || []).map((p) => ({
+      ...p,
+      score: 0,
+      ...(p.donationLinkActive ? { donationLinkStartedAt: at } : {}),
+    })),
+  };
+}
+
 /** 식사 대전 — 참가자별 donors 기준 점수 재계산(연동 켤 때·대전 시작 시) */
 export function recalculateMealParticipantScoresFromDonors(
   mealBattle: MealBattleState | undefined,

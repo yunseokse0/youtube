@@ -282,6 +282,7 @@ import {
 import {
   enableMealBattleDonationSync,
   recalculateMealParticipantScoresFromDonors,
+  resetMealBattleDonationUi,
 } from "@/lib/battle-donation-sync";
 import { normalizeMealGaugeEffects } from "@/lib/meal-gauge-effects";
 import { getVisibleAdminNavItems, isAdminNavSectionVisible, resolveNavKeyFromTargetId, resolveAdminNavKey, LEGACY_TO_NEW_KEY, type AdminNavKey, type AdminNavSubItem } from "@/app/admin/admin-nav-config";
@@ -6962,14 +6963,22 @@ function AdminPageInner() {
   };
 
   const resetMealMatchScores = () => {
+    if (
+      !window.confirm(
+        "식사 대전 게이지 후원만 0으로 돌립니다. 멤버 정산과 후원 목록은 그대로 둡니다."
+      )
+    ) {
+      return;
+    }
     setState((prev: AppState) => {
+      const resetAt = Date.now();
       const next: AppState = {
         ...prev,
-        mealBattle: {
-          ...prev.mealBattle,
-          participants: (prev.mealBattle?.participants || []).map((p) => ({ ...p, score: 0 })),
-        },
+        mealMatch: {},
+        mealBattle: resetMealBattleDonationUi(prev.mealBattle, resetAt),
+        updatedAt: resetAt,
       };
+      stateRef.current = next;
       persistState(next);
       return next;
     });
@@ -12650,17 +12659,35 @@ function AdminPageInner() {
 
                   </div>
 
-                  <button
+                  <div className="flex flex-wrap items-center gap-2">
 
-                    className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs"
+                    <button
 
-                    onClick={() => window.open(buildMealMatchLiveUrl(), "_blank", "noopener,noreferrer")}
+                      type="button"
 
-                  >
+                      className="px-2 py-1 rounded border border-rose-400/50 bg-rose-950/50 text-xs text-rose-100 hover:bg-rose-900/70"
 
-                    식사대전 오버레이 열기
+                      onClick={resetMealMatchScores}
 
-                  </button>
+                    >
+
+                      대전 후원 초기화
+
+                    </button>
+
+                    <button
+
+                      className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs"
+
+                      onClick={() => window.open(buildMealMatchLiveUrl(), "_blank", "noopener,noreferrer")}
+
+                    >
+
+                      식사대전 오버레이 열기
+
+                    </button>
+
+                  </div>
 
                 </div>
 
@@ -13488,9 +13515,9 @@ function AdminPageInner() {
 
                 <div className="flex flex-wrap items-center gap-2">
 
-                  <button className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 text-sm" onClick={resetMealMatchScores}>
+                  <button className="px-3 py-2 rounded border border-rose-400/40 bg-rose-950/40 text-sm text-rose-100 hover:bg-rose-900/60" onClick={resetMealMatchScores}>
 
-                    점수 초기화
+                    대전 후원 초기화
 
                   </button>
 
