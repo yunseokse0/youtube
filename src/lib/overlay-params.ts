@@ -2523,6 +2523,8 @@ export function shouldSkipOverlaySseForObsBroadcast(): boolean {
     if (sp.get("adminPreviewEmbed") === "1" || sp.get("hubPreview") === "1") return false;
     /** 짧은 후원순위 `/dr` — host 없이도 OBS 소스로 취급(폴링) */
     if (isDonorRankingsShortPath(window.location.pathname)) return true;
+    /** 타이머 단독 소스는 1개 — 시작·일시정지·테마를 SSE로 바로 받는다 */
+    if (isTimerOnlyOverlayBroadcastUrl(sp)) return false;
     /** prism 도 SSE 중복·레이스로 엑셀표만 갱신 누락되기 쉬움 — 폴링만 사용 */
     const host = sp.get("host")?.trim().toLowerCase();
     return host === "obs" || host === "prism" || host === "external";

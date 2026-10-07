@@ -120,6 +120,9 @@ export function readDonationListsOverlayPollMs(): number {
   return Math.max(800, Math.min(30_000, n));
 }
 
+/** 타이머 단독 OBS — 시작 직후 초가 통째로 건너뛰지 않게 짧게 폴링 */
+export const TIMER_ONLY_OVERLAY_POLL_MS = 500;
+
 /** SSE 생략 환경에서 설정·표 옵션·대전 UI 반영 주기. `NEXT_PUBLIC_OVERLAY_LIVE_SYNC_POLL_MS=0` 으로 끔 */
 export function readOverlayLiveSyncPollMs(): number {
   if (typeof window === "undefined") return DEFAULT_OVERLAY_LIVE_SYNC_POLL_MS;

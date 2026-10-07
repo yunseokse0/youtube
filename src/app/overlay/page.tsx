@@ -63,6 +63,7 @@ import {
   isEmbeddedInSameOriginAdminFrame,
   isExternalOverlayBroadcastHost,
   isOverlayServerAuthoritativeUrl,
+  isTimerOnlyOverlayBroadcastUrl,
   shouldSuppressOverlaySseConnection,
   resolveScopedOverlayUserId,
   mergeOverlayPresetsForOverlayView,
@@ -89,6 +90,10 @@ import MissionBoard from "@/components/MissionBoard";
 import MissionBoardSlot from "@/components/MissionBoardSlot";
 import OverlayToonationRelayHost from "@/components/OverlayToonationRelayHost";
 import { GoalBar } from "@/components/GoalBar";
+import {
+  readCachedTimerDisplayStyle,
+  writeCachedTimerDisplayStyle,
+} from "@/lib/timer-style-cache";
 import { FlipCountdownTimer } from "@/components/FlipCountdownTimer";
 import { LedMatrixTimer } from "@/components/LedMatrixTimer";
 import { CircularImageTimer } from "@/components/CircularImageTimer";
@@ -118,6 +123,7 @@ import {
   DONOR_STATE_UPDATED_MAX_WAIT_MS,
   readDonationListsOverlayPollMs,
   readOverlayLiveSyncPollMs,
+  TIMER_ONLY_OVERLAY_POLL_MS,
 } from "@/lib/overlay-pull-policy";
 import { startStaggeredOverlayPoll } from "@/lib/overlay-poll-stagger";
 import { buildOverlaySyncSignature, isRicherDonationSnapshot, isNewerIntentionalDonationShrink, shouldRejectPoorerDonationRemote, shouldKeepStaleOverlayOverRemote, isEmptyDonationRemote, isIntentionalMemberRosterShrink, isServerAuthoritativeMemberRosterShrink, isLocalMemberRosterGrowOverRemote, isMemberRosterRevisionShrinkFromLocal } from "@/lib/overlay-sync-signature";
@@ -1004,11 +1010,13 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
       shouldSuppressOverlaySseConnection() ||
       isExternalOverlayBroadcastHost() ||
       isOverlayServerAuthoritativeUrl();
-    const pollMs = adminPreview
-      ? DEFAULT_ADMIN_PREVIEW_POLL_MS
-      : liveSyncPoll
-        ? readOverlayLiveSyncPollMs()
-        : readDonationListsOverlayPollMs();
+    const pollMs = isTimerOnlyOverlayBroadcastUrl()
+      ? TIMER_ONLY_OVERLAY_POLL_MS
+      : adminPreview
+        ? DEFAULT_ADMIN_PREVIEW_POLL_MS
+        : liveSyncPoll
+          ? readOverlayLiveSyncPollMs()
+          : readDonationListsOverlayPollMs();
     let stopPoll: (() => void) | undefined;
     if (pollMs > 0) {
       stopPoll = startStaggeredOverlayPoll(
@@ -2738,38 +2746,49 @@ function OverlayInner() {
     }
     return s.timerDisplayStyles?.general || null;
   }, [resolvedTimerType, s]);
+  const [cachedTimerStyle, setCachedTimerStyle] = useState<NonNullable<AppState["timerDisplayStyles"]>["general"] | null>(null);
+  useLayoutEffect(() => {
+    const cached = readCachedTimerDisplayStyle(userId);
+    if (cached) setCachedTimerStyle(cached);
+  }, [userId]);
+  useEffect(() => {
+    if (!timerStyleFromState) return;
+    writeCachedTimerDisplayStyle(userId, timerStyleFromState);
+    setCachedTimerStyle(timerStyleFromState);
+  }, [timerStyleFromState, userId]);
+  const timerStyleForResolve = timerStyleFromState || cachedTimerStyle;
   const timerStyleResolved = useMemo(() => {
     /** 배경/테두리 없음 — state 가 정본이면 stale ref·프리셋 fallback 없이 즉시 반영 */
-    if (timerStyleFromState && isHiddenTimerDisplayStyle(timerStyleFromState)) {
+    if (timerStyleForResolve && isHiddenTimerDisplayStyle(timerStyleForResolve)) {
       const hiddenOnly = applyHiddenTimerStyleFromState(
-        resolveTimerOverlayStyle(rawSp, effectivePreset, timerStyleFromState, {
-          ready,
+        resolveTimerOverlayStyle(rawSp, effectivePreset, timerStyleForResolve, {
+          ready: ready || Boolean(cachedTimerStyle),
           timerOnlyDefaultShowHours: timerOnlyMode,
         }),
-        timerStyleFromState
+        timerStyleForResolve
       );
       lastStableTimerStyleRef.current = hiddenOnly;
       timerStyleEmptySinceRef.current = null;
       return hiddenOnly;
     }
-    const resolvedBase = resolveTimerOverlayStyle(rawSp, effectivePreset, timerStyleFromState, {
-      ready,
+    const resolvedBase = resolveTimerOverlayStyle(rawSp, effectivePreset, timerStyleForResolve, {
+      ready: ready || Boolean(cachedTimerStyle),
       timerOnlyDefaultShowHours: timerOnlyMode,
     });
     /** timerDisplayStyles 가 정본 — 프리셋·URL·stale ref 가 배경/테두리/투명도를 덮지 않게 */
-    const next = applyHiddenTimerStyleFromState(resolvedBase, timerStyleFromState);
+    const next = applyHiddenTimerStyleFromState(resolvedBase, timerStyleForResolve);
     const stateHiddenBg =
-      timerStyleFromState &&
+      timerStyleForResolve &&
       isTimerBackgroundHidden(
-        timerStyleFromState.bgColor,
-        timerStyleFromState.bgOpacity ?? next.bgOpacity ?? 40
+        timerStyleForResolve.bgColor,
+        timerStyleForResolve.bgOpacity ?? next.bgOpacity ?? 40
       );
     const stateHiddenBorder =
-      timerStyleFromState &&
+      timerStyleForResolve &&
       isTimerBorderVisuallyHidden(
-        timerStyleFromState.bgColor,
-        timerStyleFromState.borderColor,
-        timerStyleFromState.bgOpacity ?? next.bgOpacity ?? 40
+        timerStyleForResolve.bgColor,
+        timerStyleForResolve.borderColor,
+        timerStyleForResolve.bgOpacity ?? next.bgOpacity ?? 40
       );
     if (timerOverlayStyleHasCustomColors(next) || stateHiddenBg || stateHiddenBorder) {
       lastStableTimerStyleRef.current = next;
@@ -2811,43 +2830,43 @@ function OverlayInner() {
         };
         if (
           isTimerBackgroundHidden(next.bgColor, next.bgOpacity) ||
-          isTimerBackgroundHidden(timerStyleFromState?.bgColor, timerStyleFromState?.bgOpacity ?? 40)
+          isTimerBackgroundHidden(timerStyleForResolve?.bgColor, timerStyleForResolve?.bgOpacity ?? 40)
         ) {
           return applyHiddenTimerStyleFromState(
             keepHiddenFrom(
-              isTimerBackgroundHidden(next.bgColor, next.bgOpacity) ? next : timerStyleFromState
+              isTimerBackgroundHidden(next.bgColor, next.bgOpacity) ? next : timerStyleForResolve
             ),
-            timerStyleFromState
+            timerStyleForResolve
           );
         }
         if (
           isTimerBorderVisuallyHidden(next.bgColor, next.borderColor, next.bgOpacity) ||
-          (timerStyleFromState &&
+          (timerStyleForResolve &&
             isTimerBorderVisuallyHidden(
-              timerStyleFromState.bgColor,
-              timerStyleFromState.borderColor,
-              timerStyleFromState.bgOpacity ?? 40
+              timerStyleForResolve.bgColor,
+              timerStyleForResolve.borderColor,
+              timerStyleForResolve.bgOpacity ?? 40
             ))
         ) {
           return applyHiddenTimerStyleFromState(
             keepHiddenFrom(
               isTimerBorderVisuallyHidden(next.bgColor, next.borderColor, next.bgOpacity)
                 ? next
-                : timerStyleFromState
+                : timerStyleForResolve
             ),
-            timerStyleFromState
+            timerStyleForResolve
           );
         }
         return applyHiddenTimerStyleFromState(
           { ...merged, bgOpacity: next.bgOpacity },
-          timerStyleFromState
+          timerStyleForResolve
         );
       }
       lastStableTimerStyleRef.current = null;
       timerStyleEmptySinceRef.current = null;
     }
-    return applyHiddenTimerStyleFromState(next, timerStyleFromState);
-  }, [rawSp, effectivePreset, timerStyleFromState, ready, timerOnlyMode]);
+    return applyHiddenTimerStyleFromState(next, timerStyleForResolve);
+  }, [rawSp, effectivePreset, timerStyleForResolve, cachedTimerStyle, ready, timerOnlyMode]);
   const timerShowHours = timerStyleResolved.showHours;
   const timerDesign = normalizeTimerDesign(timerStyleResolved.design);
   const timerFontFamily = timerStyleResolved.fontFamily;
@@ -5938,7 +5957,7 @@ function OverlayInner() {
         )}
         {showTimer &&
           effectiveTimerAllowed &&
-          (ready || isPreviewGuide || externalHost) &&
+          (isPreviewGuide || Boolean(timerStyleForResolve) || (ready && !externalHost)) &&
           !(showTeamBattle && teamBattleBoard) && (
           <div className={`absolute ${posClass(timerAnchor)} z-[10000]`}>
             {timerDesign === "flip-countdown" ? (
