@@ -242,10 +242,11 @@
   }
 
   /**
-   * 뺏기.
+   * 뺏기. 넣은 양만큼 가져가되, 남의 땅이 모자라면 있는 만큼만.
+   * 보드 총합은 넘지 않는다.
    * 2명: 상대 한 명.
-   * 끝: 안쪽으로 100%. 모자라면 그 방향 다음 사람.
-   * 가운데: 좌우 반반. 한쪽이 모자라면 그 방향으로만 이어지고, 반대편으로 넘기지 않는다.
+   * 끝: 안쪽으로 이어서.
+   * 가운데: 먼저 좌우 반반, 한쪽이 모자라면 반대편에서 나머지를 채운다.
    */
   function steal(state, targetId, amountCm) {
     const amountT = toTenths(amountCm);
@@ -262,10 +263,18 @@
     } else if (idx === order.length - 1) {
       takenT = takeChain(state, order.slice(0, idx).reverse(), targetId, amountT);
     } else {
+      const leftIds = order.slice(0, idx).reverse();
+      const rightIds = order.slice(idx + 1);
       const leftT = Math.floor(amountT / 2);
       const rightT = amountT - leftT;
-      takenT = takeChain(state, order.slice(0, idx).reverse(), targetId, leftT)
-        + takeChain(state, order.slice(idx + 1), targetId, rightT);
+      takenT = takeChain(state, leftIds, targetId, leftT)
+        + takeChain(state, rightIds, targetId, rightT);
+      if (takenT < amountT) {
+        takenT += takeChain(state, leftIds, targetId, amountT - takenT);
+      }
+      if (takenT < amountT) {
+        takenT += takeChain(state, rightIds, targetId, amountT - takenT);
+      }
     }
     if (takenT <= 0) return { ok: false, reason: "short", takenCm: 0 };
     checkElimination(state);

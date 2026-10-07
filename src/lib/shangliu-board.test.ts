@@ -170,7 +170,7 @@ describe("상류사회 영토", () => {
     expect(state.members.B.cm).toBe(480);
   });
 
-  it("가운데 뺏기는 좌우 반반이고 모자란 쪽은 그 방향으로만 이어진다", () => {
+  it("가운데 뺏기는 좌우 반반으로 시작한 뒤 넣은 양만큼 채운다", () => {
     const state = board({
       total: 220,
       order: ["A", "B", "C", "D", "E"],
@@ -180,9 +180,10 @@ describe("상류사회 영토", () => {
     expect(result.takenCm).toBe(120);
     expect(state.members.C.cm).toBe(220);
     expect(state.activeOrder).toEqual(["C"]);
+    expect(Board.seatedSumCm(state)).toBe(220);
   });
 
-  it("가운데 반쪽에서 모자라더라도 반대편 땅을 대신 뺏지 않는다", () => {
+  it("가운데 한쪽이 모자라면 반대편에서 채워 넣은 양만큼 가져간다", () => {
     const state = board({
       total: 175,
       order: ["A", "B", "C"],
@@ -193,11 +194,33 @@ describe("상류사회 영토", () => {
       },
     });
     const result = Board.steal(state, "B", 77.5);
-    expect(result.takenCm).toBe(48.8);
+    expect(result.takenCm).toBe(77.5);
     expect(state.members.A.cm).toBe(0);
-    expect(state.members.C.cm).toBe(28.7);
-    expect(state.members.B.cm).toBe(146.3);
+    expect(state.members.C.cm).toBe(0);
+    expect(state.members.B.cm).toBe(175);
     expect(Board.seatedSumCm(state)).toBe(175);
+  });
+
+  it("6인 가운데에서 240을 넣으면 240을 가져가고 합은 480이다", () => {
+    const state = board({
+      order: ["A", "B", "C", "D", "E", "F"],
+      members: { A: 80, B: 80, C: 80, D: 80, E: 80, F: 80 },
+    });
+    const result = Board.steal(state, "B", 240);
+    expect(result.takenCm).toBe(240);
+    expect(state.members.B.cm).toBe(320);
+    expect(Board.seatedSumCm(state)).toBe(480);
+  });
+
+  it("남의 땅보다 많이 넣으면 있는 만큼만 가져가고 합은 유지한다", () => {
+    const state = board({
+      order: ["A", "B", "C"],
+      members: { A: 80, B: 80, C: 320 },
+    });
+    const result = Board.steal(state, "C", 240);
+    expect(result.takenCm).toBe(160);
+    expect(state.members.C.cm).toBe(480);
+    expect(Board.seatedSumCm(state)).toBe(480);
   });
 
   it("0.1cm 가운데 뺏기는 오른쪽 0.1만 가져간다", () => {

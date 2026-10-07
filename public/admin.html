@@ -894,8 +894,8 @@
                 let html = '';
                 if (isAlive) {
                     let idx = state.activeOrder.indexOf(id);
-                    let rule = state.activeOrder.length <= 2 ? "전체 흡수 (1:1)" :
-                              (idx === 0 || idx === state.activeOrder.length-1) ? "단방향 흡수 (모자라면 다음 사람)" : "양분 흡수 (한쪽이 모자라면 그쪽으로 이어서)";
+                    let rule = state.activeOrder.length <= 2 ? "넣은 양만큼 (남의 땅이 모자라면 있는 만큼)" :
+                              (idx === 0 || idx === state.activeOrder.length-1) ? "넣은 양만큼 · 안쪽으로 이어서 (보드 합 유지)" : "넣은 양만큼 · 좌우 반반 후 모자라면 반대편 (보드 합 유지)";
 
                     html = `
                     <div class="card" data-member="${id}" style="border-color:${escapeHtml(m.color)}">
