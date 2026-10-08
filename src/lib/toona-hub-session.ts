@@ -36,10 +36,19 @@ export type ToonaHubDonationLog = {
 
 const SESSION_KEY = "toona-hub-session-v1";
 const LOG_KEY = "toona-hub-donation-log-v1";
+const PULL_CURSOR_KEY = "toona-hub-pull-cursor-v1";
 const MAX_LOGS = 80;
+
+/** 연결 해제 후에도 남긴다. 재연결 linkedAt이 바닥을 앞으로 밀지 않게 한다. */
+export type ToonaHubPullCursor = {
+  floorAt: number;
+  fromMs: number;
+  after: string;
+};
 
 const sessionMemory = new Map<string, ToonaHubSession>();
 const logMemory = new Map<string, ToonaHubDonationLog[]>();
+const pullCursorMemory = new Map<string, ToonaHubPullCursor>();
 
 export async function readToonaHubSession(userId: string): Promise<ToonaHubSession | null> {
   const uid = String(userId || "").trim();
@@ -62,6 +71,45 @@ export async function writeToonaHubSession(session: ToonaHubSession): Promise<vo
     return;
   }
   sessionMemory.set(uid, session);
+}
+
+export async function readToonaHubPullCursor(userId: string): Promise<ToonaHubPullCursor | null> {
+  const uid = String(userId || "").trim();
+  if (!uid) return null;
+  if (isPersistentKvConfigured()) {
+    const all = await upstashGetJson<Record<string, ToonaHubPullCursor>>(PULL_CURSOR_KEY);
+    const row = all?.[uid];
+    if (!row || typeof row !== "object") return null;
+    const floorAt = Math.max(0, Number(row.floorAt) || 0);
+    if (!floorAt) return null;
+    return {
+      floorAt,
+      fromMs: Math.max(0, Number(row.fromMs) || 0),
+      after: String(row.after || "").trim(),
+    };
+  }
+  return pullCursorMemory.get(uid) || null;
+}
+
+export async function writeToonaHubPullCursor(
+  userId: string,
+  cursor: ToonaHubPullCursor
+): Promise<void> {
+  const uid = String(userId || "").trim();
+  if (!uid) return;
+  const next: ToonaHubPullCursor = {
+    floorAt: Math.max(0, Math.floor(Number(cursor.floorAt) || 0)),
+    fromMs: Math.max(0, Math.floor(Number(cursor.fromMs) || 0)),
+    after: String(cursor.after || "").trim(),
+  };
+  if (!next.floorAt) return;
+  if (isPersistentKvConfigured()) {
+    const all = (await upstashGetJson<Record<string, ToonaHubPullCursor>>(PULL_CURSOR_KEY)) || {};
+    all[uid] = next;
+    await upstashSetJsonWithPipeline(PULL_CURSOR_KEY, all);
+    return;
+  }
+  pullCursorMemory.set(uid, next);
 }
 
 export async function clearToonaHubSession(userId: string): Promise<void> {

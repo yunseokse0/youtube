@@ -7,7 +7,9 @@ import {
   clearToonaHubDonationLogs,
   publicToonaHubSession,
   readToonaHubDonationLogs,
+  readToonaHubPullCursor,
   readToonaHubSession,
+  writeToonaHubPullCursor,
   writeToonaHubSession,
   type ToonaHubSession,
 } from "@/lib/toona-hub-session";
@@ -19,7 +21,9 @@ import {
 } from "@/lib/toona-hub-donation-map";
 import {
   buildToonaDonationsPullUrl,
+  lastToonaDonationPullId,
   nextToonaDonationPullAfter,
+  resolveToonaDonationPullAfter,
   resolveToonaDonationPullFromMs,
   TOONA_DONATION_PULL_MAX_PAGES,
   TOONA_DONATION_PULL_PAGE_SIZE,
@@ -418,11 +422,8 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
   if (!session) return { ok: false, error: "not_linked" };
 
   /**
-   * ✅ 2026-09-07 Hotfix ⑥-7 옵션2 구현: "리셋 눌렀는데 기존 데이터 왜 살아남?"
-   *  - 정산 리셋 / 후원 일괄 삭제 의도적 클리어 시 AppState.settlementResetAt · intentionalDonationClearAt 타임스탬프 기록됨.
-   *  - 이 두 값의 max 를 구해서 toonaHubDonationToEvent 로 전달 → clear 시점 과거 후원 전부 자동 skip.
-   *  - 🔴 BUT: 관리자 페이지 수동 버튼 (ignoreMinInterval=true) 로 "일일 로그에서 후원 복구" 강제 호출시에는 이 필터 OFF.
-   *           사용자가 명시적으로 과거 데이터 복구를 원하는 경우를 제외하면, 평범한 폴링에서는 리셋 이전 데이터 절대 불러오지 않음.
+   * 정산 리셋 / 후원 일괄 삭제의 settlementResetAt · intentionalDonationClearAt 이후만 가져온다.
+   * 리셋 이전 후원은 수동 복구를 포함해 이 경로로 되살리지 않는다.
    */
   let intentionalClearAtMs = 0;
   try {
@@ -444,17 +445,27 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
   }
 
   /**
-   * 시나리오 B: toona 후원 ↔ youtube 엑셀 1:1.
-   * page=1&limit=50 은 최신 50건만 가져와 방송 중 계좌 누락이 생겼다.
-   * 연동/리셋 이후 건은 sort=asc + after 커서로 페이지를 이어 전부 반영. 이미 있는 건 apply 에서 중복 스킵.
+   * 시나리오 B: toona 후원 ↔ youtube 정산표 1:1.
+   * 한 번에 최대 5,000건만 읽고 커서를 버리면, 원장이 그 한도를 넘은 뒤의 후원은 영영 닿지 않는다.
+   * 커서를 저장해 다음 주기가 이어서 읽고, 이미 있는 건은 apply 에서 중복 스킵한다.
+   * 재연결로 linkedAt 이 앞으로 가도 저장한 바닥은 유지한다. 정산 리셋이 더 뒤면 바닥만 올린다.
    */
+  const savedCursor = await readToonaHubPullCursor(uid).catch(() => null);
   const fromMs = resolveToonaDonationPullFromMs({
     linkedAt: session.linkedAt,
     intentionalClearAtMs,
+    persistedFloorAt: savedCursor?.floorAt,
   });
   let imported = 0;
   let applied = 0;
-  let after = "";
+  let after = resolveToonaDonationPullAfter({
+    fromMs,
+    savedFromMs: savedCursor?.fromMs,
+    savedAfter: savedCursor?.after,
+  });
+  const persistCursor = async (nextAfter: string) => {
+    await writeToonaHubPullCursor(uid, { floorAt: fromMs, fromMs, after: nextAfter }).catch(() => {});
+  };
   for (let page = 0; page < TOONA_DONATION_PULL_MAX_PAGES; page += 1) {
     const url = buildToonaDonationsPullUrl({
       baseUrl: safeSessionBase,
@@ -473,6 +484,7 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
         signal: AbortSignal.timeout(DONATION_FETCH_MS),
       });
     } catch (err) {
+      await persistCursor(after);
       return {
         ok: false,
         error: err instanceof Error ? err.message : "donations_unreachable",
@@ -485,21 +497,37 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
     };
 
     if (!res.ok) {
+      await persistCursor(after);
       return { ok: false, error: json.error || `HTTP ${res.status}` };
     }
 
     const rows = Array.isArray(json.donations) ? json.donations : [];
+    let stoppedOnRow = false;
     for (const row of rows) {
-      const event = toonaHubDonationToEvent(row, session.linkedAt, { intentionalClearAtMs });
+      const event = toonaHubDonationToEvent(row, session.linkedAt, {
+        intentionalClearAtMs,
+        importFromMs: fromMs,
+      });
       if (!event) continue;
-      const result = await handleDinDonationIngest(youtubeUserId, event, true, { logSource: "toona" });
-      if (result.applied) applied += 1;
-      imported += 1;
+      try {
+        const result = await handleDinDonationIngest(youtubeUserId, event, true, { logSource: "toona" });
+        if (result.applied) applied += 1;
+        imported += 1;
+      } catch {
+        stoppedOnRow = true;
+        break;
+      }
     }
 
+    const scannedId = lastToonaDonationPullId(rows);
+    if (stoppedOnRow) {
+      await persistCursor(after);
+      break;
+    }
+    if (scannedId) after = scannedId;
+    await persistCursor(after);
     const nextAfter = nextToonaDonationPullAfter(rows, TOONA_DONATION_PULL_PAGE_SIZE);
     if (!nextAfter) break;
-    after = nextAfter;
   }
 
   return { ok: true, imported, applied };

@@ -6,11 +6,40 @@ export const TOONA_DONATION_PULL_PAST_MS = 60 * 60 * 1000;
 export function resolveToonaDonationPullFromMs(input: {
   linkedAt: number;
   intentionalClearAtMs?: number;
+  /** 이미 저장한 당겨오기 바닥. 재연결로 linkedAt이 앞으로 가도 이 시각은 유지한다. */
+  persistedFloorAt?: number;
 }): number {
   const linked = Math.max(0, Number(input.linkedAt) || 0);
   const clear = Math.max(0, Number(input.intentionalClearAtMs) || 0);
+  const persisted = Math.max(0, Number(input.persistedFloorAt) || 0);
   const fromLink = linked > 0 ? Math.max(0, linked - TOONA_DONATION_PULL_PAST_MS) : 0;
-  return Math.max(fromLink, clear);
+  let floor = persisted > 0 ? persisted : fromLink;
+  if (clear > floor) floor = clear;
+  return Math.floor(floor);
+}
+
+/** 정산 리셋으로 바닥이 올라가면 커서를 버리고, 같은 바닥이면 이어서 읽는다. */
+export function resolveToonaDonationPullAfter(input: {
+  fromMs: number;
+  savedFromMs?: number;
+  savedAfter?: string;
+}): string {
+  const after = String(input.savedAfter || "").trim();
+  if (!after) return "";
+  const savedFrom = Math.floor(Math.max(0, Number(input.savedFromMs) || 0));
+  if (savedFrom !== Math.floor(Math.max(0, Number(input.fromMs) || 0))) return "";
+  return after;
+}
+
+export function lastToonaDonationPullId(
+  rows: Array<{ id?: string } | null | undefined>
+): string {
+  if (!Array.isArray(rows)) return "";
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const id = String(rows[i]?.id || "").trim();
+    if (id) return id;
+  }
+  return "";
 }
 
 export function buildToonaDonationsPullUrl(input: {

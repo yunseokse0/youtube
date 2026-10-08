@@ -1,9 +1,13 @@
 import { normalizeToonaApiBaseUrl } from "@/lib/toona-sig-import";
 import { ingestErrorVisibleAfterLink } from "@/lib/toona-hub-ingest-error";
 import { getToonaApiBaseUrl, normalizePublicBaseUrl } from "@/lib/toona-link";
+import { TOONA_DONATION_PULL_PAST_MS } from "@/lib/toona-hub-pull";
 import {
   clearToonaHubDonationLogs,
   publicToonaHubSession,
+  readToonaHubPullCursor,
+  readToonaHubSession,
+  writeToonaHubPullCursor,
   writeToonaHubSession,
   type ToonaHubSession,
 } from "@/lib/toona-hub-session";
@@ -117,6 +121,14 @@ export async function loginAndLinkToonaHub(input: ToonaHubLoginInput): Promise<
   }
 
   const linkedAt = Date.now();
+  const previous = await readToonaHubSession(youtubeUserId).catch(() => null);
+  const existingCursor = await readToonaHubPullCursor(youtubeUserId).catch(() => null);
+  if (!existingCursor?.floorAt) {
+    const seed = previous?.linkedAt
+      ? Math.max(0, previous.linkedAt - TOONA_DONATION_PULL_PAST_MS)
+      : Math.max(0, linkedAt - TOONA_DONATION_PULL_PAST_MS);
+    await writeToonaHubPullCursor(youtubeUserId, { floorAt: seed, fromMs: seed, after: "" }).catch(() => {});
+  }
   const session: ToonaHubSession = {
     userId: youtubeUserId,
     baseUrl,

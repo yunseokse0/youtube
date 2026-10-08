@@ -1,6 +1,7 @@
 export type DonationIngestMode = "toonation" | "toona";
 
-export const DEFAULT_DONATION_INGEST_MODE: DonationIngestMode = "toonation";
+/** A(투네 직접)는 폐기. 화면·저장값 기본은 DIN 허브. */
+export const DEFAULT_DONATION_INGEST_MODE: DonationIngestMode = "toona";
 
 const LS_PREFIX = "donationIngestMode";
 
@@ -8,8 +9,8 @@ export function donationIngestModeStorageKey(userId: string): string {
   return `${LS_PREFIX}:${String(userId || "").trim()}`;
 }
 
-export function parseDonationIngestMode(raw: unknown): DonationIngestMode {
-  return raw === "toona" ? "toona" : "toonation";
+export function parseDonationIngestMode(_raw: unknown): DonationIngestMode {
+  return "toona";
 }
 
 export function readDonationIngestMode(userId: string | null | undefined): DonationIngestMode {

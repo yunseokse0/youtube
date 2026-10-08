@@ -6,10 +6,11 @@ import {
 } from "@/lib/donation-ingest-mode";
 
 describe("donation-ingest-mode", () => {
-  it("defaults to toonation", () => {
-    expect(DEFAULT_DONATION_INGEST_MODE).toBe("toonation");
-    expect(parseDonationIngestMode(null)).toBe("toonation");
-    expect(parseDonationIngestMode("garbage")).toBe("toonation");
+  it("defaults to DIN hub and ignores the retired direct mode", () => {
+    expect(DEFAULT_DONATION_INGEST_MODE).toBe("toona");
+    expect(parseDonationIngestMode(null)).toBe("toona");
+    expect(parseDonationIngestMode("toonation")).toBe("toona");
+    expect(parseDonationIngestMode("garbage")).toBe("toona");
   });
 
   it("parses toona", () => {

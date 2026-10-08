@@ -41,51 +41,12 @@ export const DONATION_INTAKE_MODE_B: DonationIntakeMode = "B";
  *   din_only / din-hub-only / b-mode  →  B 모드로 해석
  *   toonation_only / a-mode / direct  →  A 모드로 해석
  */
-const MODE_A_ALIASES = new Set([
-  "a",
-  "a-mode",
-  "toonation",
-  "toonation_only",
-  "direct",
-  "ws",
-  "browser-relay",
-]);
-
-const MODE_B_ALIASES = new Set([
-  "b",
-  "b-mode",
-  "din_only",
-  "din-hub-only",
-  "din",
-  "din-hub",
-  "toona",
-  "toona-project",
-  "hub",
-]);
-
-function normalizeRawMode(raw: string | null | undefined): DonationIntakeMode | null {
-  const v = String(raw || "").trim().toLowerCase();
-  if (!v) return null;
-  if (MODE_A_ALIASES.has(v)) return DONATION_INTAKE_MODE_A;
-  if (MODE_B_ALIASES.has(v)) return DONATION_INTAKE_MODE_B;
-  return null;
-}
-
-function readRawEnvMode(): string {
-  const v = String(
-    process.env[DONATION_INTAKE_ENV_KEY] ||
-      process.env[DONATION_INTAKE_ENV_KEY_ALT] ||
-      ""
-  )
-    .trim()
-    .toLowerCase();
-  return v;
-}
-
-/** 기본 Env 모드만 읽음 (런타임 오버라이드 없는 경우) */
+/**
+ * 2026-10-09: A모드(투네 직접 WS)는 더 이상 쓰지 않는다.
+ * env·KV에 A가 남아 있어도 후원 유입은 B(DIN 허브)만 연다.
+ */
 export function getDonationIntakeEnvFallbackMode(): DonationIntakeMode {
-  const fromEnv = normalizeRawMode(readRawEnvMode());
-  return fromEnv ?? DONATION_INTAKE_MODE_B;
+  return DONATION_INTAKE_MODE_B;
 }
 
 /** 하위 호환용 (사용처 전부 그대로 동작하지만, userId 넘길 수 있을때는 Runtime 함수 쓰세요) */
@@ -93,37 +54,11 @@ export function getDonationIntakeMode(): DonationIntakeMode {
   return getDonationIntakeEnvFallbackMode();
 }
 
-/** ✅ Runtime 우선순위 1순위 함수 (모든 새로운 경로는 이것을 사용!)
- *  순서: ① KV user 저장값 → ② .env → ③ B 모드 기본
- */
+/** 후원 유입은 B만. 저장값·env가 A여도 B를 돌려준다. */
 export async function getRuntimeDonationIntakeMode(
-  userId: string | null | undefined
+  _userId: string | null | undefined
 ): Promise<DonationIntakeMode> {
-  if (userId && String(userId).trim()) {
-    const key = `${DONATION_INTAKE_RUNTIME_KV_PREFIX}:${String(userId).trim()}`;
-    /** ① 인메모리 Fallback 우선 참조 (KV 다운 상태에서 이전에 set한 값 기억) */
-    const memoKey = `${String(userId).trim()}`;
-    const inMem = inMemoryRuntimeMode.get(memoKey);
-    try {
-      const { upstashGetJson } = await import("@/app/api/_shared/upstash");
-      const raw = (await upstashGetJson(key)) as unknown;
-      if (raw && typeof raw === "object" && "mode" in raw) {
-        const runtimeMode = normalizeRawMode(String((raw as { mode?: unknown }).mode || ""));
-        if (runtimeMode) {
-          inMemoryRuntimeMode.set(memoKey, {
-            mode: runtimeMode,
-            updatedAt: Number((raw as { updatedAt?: unknown }).updatedAt) || Date.now(),
-          });
-          return runtimeMode;
-        }
-      }
-    } catch {
-      /* KV 오류나면 인메모리 Fallback → env fallback 순으로 넘어가기 */
-      if (inMem) return inMem.mode;
-    }
-    if (inMem) return inMem.mode;
-  }
-  return getDonationIntakeEnvFallbackMode();
+  return DONATION_INTAKE_MODE_B;
 }
 
 /** user별 Runtime 모드 KV에 저장. 저장 성공 여부 boolean 리턴.
@@ -131,10 +66,10 @@ export async function getRuntimeDonationIntakeMode(
  */
 export async function setRuntimeDonationIntakeMode(
   userId: string | null | undefined,
-  mode: DonationIntakeMode
+  _mode: DonationIntakeMode
 ): Promise<boolean> {
   if (!userId || !String(userId).trim()) return false;
-  const normalizedMode = normalizeRawMode(mode) ?? DONATION_INTAKE_MODE_B;
+  const normalizedMode = DONATION_INTAKE_MODE_B;
   const memoKey = `${String(userId).trim()}`;
   const nowTs = Date.now();
   /** 인메모리에 먼저 저장 (영구 저장 실패해도 현 프로세스에서는 적용 보장) */
