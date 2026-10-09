@@ -12,79 +12,44 @@ import {
   eventMatchesDonorLedger,
   foldIngestEventsIntoState,
 } from "@/lib/din-ingest-batch-fold";
+import {
+  forgetQueuedIds,
+  getDinIngestStore,
+  offerPendingIngest,
+  requeueFront,
+  takeBatch,
+  type OfferDinIngestResult,
+  type QueuedIngest,
+} from "@/lib/din-ingest-pending";
 import { resolveScopedOverlayUserId } from "@/lib/overlay-params";
 import { runExclusivePerUser } from "@/lib/per-user-mutex";
 
-const MAX_QUEUE = 8_000;
-const MAX_FLUSH_BATCH = 200;
+export { resetDinIngestBatchQueueForTests } from "@/lib/din-ingest-pending";
+
 const DRAIN_MUTEX_MS = 60_000;
 /** 저장본에 UID가 없으면 다시 넣는다. 같은 건이 계속 빠지면 루프를 끊고 로그만 남긴다. */
 const MAX_LAND_ATTEMPTS = 4;
 
-type QueuedIngest = {
-  hubUserId: string;
-  stateUserId: string;
-  event: DonationEvent;
-  attempts?: number;
-};
+export type EnqueueDinIngestResult = OfferDinIngestResult;
 
-type QueueStore = {
-  byUser: Map<string, QueuedIngest[]>;
-  draining: Set<string>;
-};
-
-const STORE_KEY = "__YOUTUBE_DIN_INGEST_BATCH_QUEUE_V1__";
-
-function getStore(): QueueStore {
-  const g = globalThis as unknown as Record<string, unknown>;
-  if (!g[STORE_KEY]) {
-    g[STORE_KEY] = { byUser: new Map<string, QueuedIngest[]>(), draining: new Set<string>() };
-  }
-  return g[STORE_KEY] as QueueStore;
+/** 대기 상한 없이 받는다. 같은 ID는 한 줄만 남긴다. 저장은 drain 이 200건씩 이어서 한다. */
+export function offerDinExcelIngest(
+  hubUserId: string,
+  event: DonationEvent
+): EnqueueDinIngestResult {
+  const stateUserId = resolveScopedOverlayUserId(hubUserId, "finalent") || hubUserId;
+  return offerPendingIngest(hubUserId, stateUserId, event);
 }
-
-export function resetDinIngestBatchQueueForTests(): void {
-  const store = getStore();
-  store.byUser.clear();
-  store.draining.clear();
-}
-
-export type EnqueueDinIngestResult =
-  | { ok: true; queued: true; depth: number; duplicateQueued: boolean }
-  | { ok: false; error: "queue_full" };
 
 export function enqueueDinExcelIngest(
   hubUserId: string,
   event: DonationEvent
 ): EnqueueDinIngestResult {
-  const stateUserId = resolveScopedOverlayUserId(hubUserId, "finalent") || hubUserId;
-  const store = getStore();
-  const q = store.byUser.get(stateUserId) || [];
-  const id = String(event.id || "").trim();
-  if (id && q.some((row) => String(row.event.id || "").trim() === id)) {
-    return { ok: true, queued: true, depth: q.length, duplicateQueued: true };
+  const result = offerDinExcelIngest(hubUserId, event);
+  if (!result.duplicateQueued) {
+    void drainDinIngestQueue(resolveScopedOverlayUserId(hubUserId, "finalent") || hubUserId);
   }
-  if (q.length >= MAX_QUEUE) {
-    return { ok: false, error: "queue_full" };
-  }
-  q.push({ hubUserId, stateUserId, event });
-  store.byUser.set(stateUserId, q);
-  void drainDinIngestQueue(stateUserId);
-  return { ok: true, queued: true, depth: q.length, duplicateQueued: false };
-}
-
-function takeBatch(stateUserId: string): QueuedIngest[] {
-  const store = getStore();
-  const q = store.byUser.get(stateUserId);
-  if (!q?.length) return [];
-  return q.splice(0, MAX_FLUSH_BATCH);
-}
-
-function requeueFront(stateUserId: string, rows: QueuedIngest[]): void {
-  if (!rows.length) return;
-  const store = getStore();
-  const q = store.byUser.get(stateUserId) || [];
-  store.byUser.set(stateUserId, rows.concat(q));
+  return result;
 }
 
 type FlushOutcome = { committed: boolean; retry: QueuedIngest[] };
@@ -119,7 +84,10 @@ async function flushBatch(stateUserId: string, rows: QueuedIngest[]): Promise<Fl
   for (const event of folded.unmatched) {
     await enqueueDonationEvent(stateUserId, event, { notify: false }).catch(() => false);
   }
-  if (folded.applied.length === 0) return { committed: true, retry: [] };
+  if (folded.applied.length === 0) {
+    forgetQueuedIds(stateUserId, rows);
+    return { committed: true, retry: [] };
+  }
   const last = folded.applied[folded.applied.length - 1]!;
   const persisted = await persistDonationApplyLikeToonation(stateUserId, folded.state, last);
   if (!persisted.ok) return { committed: false, retry: rows };
@@ -131,6 +99,11 @@ async function flushBatch(stateUserId: string, rows: QueuedIngest[]): Promise<Fl
     if (!landedInFold) return false;
     return !eventMatchesDonorLedger(row.event, donors);
   });
+  const missingIds = new Set(missing.map((row) => String(row.event.id || "").trim()).filter(Boolean));
+  forgetQueuedIds(
+    stateUserId,
+    rows.filter((row) => !missingIds.has(String(row.event.id || "").trim()))
+  );
   if (!missing.length) return { committed: true, retry: [] };
   return { committed: false, retry: retryMissing(missing) };
 }
@@ -138,7 +111,7 @@ async function flushBatch(stateUserId: string, rows: QueuedIngest[]): Promise<Fl
 export async function drainDinIngestQueue(stateUserId: string): Promise<void> {
   const uid = String(stateUserId || "").trim();
   if (!uid) return;
-  const store = getStore();
+  const store = getDinIngestStore();
   if (store.draining.has(uid)) return;
   store.draining.add(uid);
   try {

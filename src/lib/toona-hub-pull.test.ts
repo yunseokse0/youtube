@@ -97,6 +97,32 @@ describe("toona-hub-pull", () => {
     expect(fixed.cycles).toBeGreaterThan(1);
   });
 
+  it("does not drop any of 20,000 donations when the cursor continues across short cycles", () => {
+    const ledger = Array.from({ length: 20_000 }, (_, i) => ({ id: `burst${i}` }));
+    const pagesPerShortCycle = 3;
+    const broken = collectToonaDonationsSequentially({
+      ledger,
+      pageSize: TOONA_DONATION_PULL_PAGE_SIZE,
+      maxPagesPerCycle: pagesPerShortCycle,
+      persistCursor: false,
+    });
+    expect(broken.ids).toHaveLength(TOONA_DONATION_PULL_PAGE_SIZE * pagesPerShortCycle);
+    expect(broken.ids).not.toContain("burst19999");
+
+    const fixed = collectToonaDonationsSequentially({
+      ledger,
+      pageSize: TOONA_DONATION_PULL_PAGE_SIZE,
+      maxPagesPerCycle: pagesPerShortCycle,
+      persistCursor: true,
+    });
+    expect(fixed.reachedEnd).toBe(true);
+    expect(new Set(fixed.ids).size).toBe(20_000);
+    expect(fixed.ids).toEqual(ledger.map((row) => row.id));
+    expect(fixed.ids[0]).toBe("burst0");
+    expect(fixed.ids[19_999]).toBe("burst19999");
+    expect(fixed.cycles).toBeGreaterThan(30);
+  });
+
   it("continues cursor until a short page", () => {
     const full = Array.from({ length: TOONA_DONATION_PULL_PAGE_SIZE }, (_, i) => ({ id: `id${i}` }));
     expect(nextToonaDonationPullAfter(full, TOONA_DONATION_PULL_PAGE_SIZE)).toBe(

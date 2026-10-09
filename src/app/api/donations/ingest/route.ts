@@ -75,9 +75,6 @@ export async function POST(req: Request) {
      */
     if (applyExcel) {
       const enq = enqueueDinExcelIngest(userId, event);
-      if (!enq.ok) {
-        return json({ error: enq.error, retry: true }, 503);
-      }
       return json({
         userId,
         applyExcel: true,
