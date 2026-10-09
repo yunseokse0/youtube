@@ -23,6 +23,15 @@ describe("settlement reset guards", () => {
     expect(filtered.map((d) => d.id)).toEqual(["new"]);
   });
 
+  it("drops the last test donation even if it is only a minute before reset", () => {
+    const resetAt = 1_728_000_000_000;
+    const filtered = filterDonorsAfterSettlementReset(
+      [donor("last-test", 1000, resetAt - 60_000), donor("after", 2000, resetAt + 1)],
+      resetAt
+    );
+    expect(filtered.map((d) => d.id)).toEqual(["after"]);
+  });
+
   it("does not restore old donors onto empty server after reset", () => {
     const resetAt = 10_000;
     const stale = [donor("old", 1000, 5000), donor("old2", 2000, 6000)];

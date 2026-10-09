@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { resolveWriteUserId, writeUserIdErrorResponse } from "@/app/api/_shared/user-id";
 import { getYoutubePublicBaseUrl } from "@/lib/toona-link";
-import { loginAndLinkToonaHub } from "@/infra/http/toona-hub-login-link";
+import { linkToonaHubByStreamKey, loginAndLinkToonaHub } from "@/infra/http/toona-hub-login-link";
 import {
   clearToonaHubDonationLogs,
   clearToonaHubSession,
@@ -172,6 +172,7 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
     email?: string;
     password?: string;
+    streamKey?: string;
     baseUrl?: string;
     action?: string;
     contributionFormula?: unknown;
@@ -235,13 +236,21 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const result = await loginAndLinkToonaHub({
-    youtubeUserId: scopedStateUserIdOf(auth.userId),
-    email: String(body.email || ""),
-    password: String(body.password || ""),
-    baseUrl: body.baseUrl,
-    youtubePublicBaseUrl: getYoutubePublicBaseUrl(req),
-  });
+  const streamKey = String(body.streamKey || "").trim();
+  const result = streamKey
+    ? await linkToonaHubByStreamKey({
+        youtubeUserId: scopedStateUserIdOf(auth.userId),
+        streamKey,
+        baseUrl: body.baseUrl,
+        youtubePublicBaseUrl: getYoutubePublicBaseUrl(req),
+      })
+    : await loginAndLinkToonaHub({
+        youtubeUserId: scopedStateUserIdOf(auth.userId),
+        email: String(body.email || ""),
+        password: String(body.password || ""),
+        baseUrl: body.baseUrl,
+        youtubePublicBaseUrl: getYoutubePublicBaseUrl(req),
+      });
 
   if (!result.ok) {
     const status =

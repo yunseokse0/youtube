@@ -185,7 +185,7 @@ export default function DinHubMissingDonationsModal({ open, onClose, userId, onR
 
         {warn && (
           <div className="mx-4 mt-4 rounded border p-3 text-sm shrink-0" style={{ background: "rgba(220,38,38,0.15)", borderColor: "#dc2626", color: "#fca5a5" }}>
-            ⚠️ 현재 A모드 (투네 직접 연결) 입니다. TOONA_INTAKE_MODE=B 또는 DIN 허브와 연동한 상태에서만 사용하세요.
+            ⚠️ 허브가 연결되지 않았습니다. 스트림 키로 DIN 허브를 연결한 뒤 사용하세요.
           </div>
         )}
 

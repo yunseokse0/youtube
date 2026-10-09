@@ -5,6 +5,7 @@ import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state"
 import { shouldSuppressAutoRosterRestore } from "@/lib/intentional-donation-clear";
 import {
   defaultState,
+  filterDonorsAfterSettlementReset,
   loadState,
   normalizeDonationListsOverlayConfig,
   normalizeDonorRankingsOverlayConfig,
@@ -82,19 +83,30 @@ export function buildAppStateFromDailyLogRestore(
   /** 의도적 정산 리셋 세션 — 자동/헬퍼 복구 거부 (수동 UI는 별도 경로) */
   if (shouldSuppressAutoRosterRestore(base)) return null;
   const resetAt = Number(base.settlementResetAt || 0);
-  const entryTs = Date.parse(String(entry.at || ""));
   /**
-   * 정산 리셋으로 비운 세션에, 리셋 직전·직후 찍힌 일일 로그를 rebump 해
-   * 되살리면 「멤버 유지/초기화」가 즉시 무력화됨.
+   * 정산 리셋으로 비운 세션에는 일일 로그를 시간만 고쳐 되살리지 않는다.
+   * (다른 PC가 리셋 이후 접속해도 마지막 테스트 후원이 다시 안 올라가게)
    */
   if (
     resetAt > 0 &&
     normalizeDonorsArray(base.donors).length === 0 &&
-    totalCombined(base) === 0 &&
-    Number.isFinite(entryTs) &&
-    entryTs <= resetAt + 5_000
+    totalCombined(base) === 0
   ) {
-    return null;
+    const surviving = filterDonorsAfterSettlementReset(
+      donorCount > 0 ? normalizeDonorsArray(entry.donors) : [],
+      resetAt
+    );
+    if (surviving.length === 0) return null;
+    const now = Date.now();
+    const nextSurviving = syncMemberTotalsFromDonors({
+      ...base,
+      ...(memberCount > 0 ? { members: entry.members as Member[] } : {}),
+      donors: surviving,
+      donorRankingsUpdatedAt: now,
+      updatedAt: now,
+    });
+    delete nextSurviving.intentionalDonationClearAt;
+    return nextSurviving;
   }
   const rebumpedDonors = rebumpDonorsPastSettlementReset(
     donorCount > 0 ? normalizeDonorsArray(entry.donors) : base.donors,

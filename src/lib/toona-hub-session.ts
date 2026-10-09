@@ -5,7 +5,7 @@ export type ToonaHubSession = {
   baseUrl: string;
   email: string;
   streamKey: string;
-  /** toona JWT — 서버만 보관 */
+  /** toona JWT 또는 스트림 키 연동의 s2s 표식 — 서버만 보관 */
   token: string;
   linkedAt: number;
   displayName?: string;
@@ -34,6 +34,22 @@ export type ToonaHubDonationLog = {
   message?: string;
 };
 
+/** 스트림 키만으로 연동할 때 JWT 대신 쓰는 표식. 실제 Bearer 는 TOONA_INGEST_SECRET. */
+export const TOONA_HUB_S2S_TOKEN = "s2s-ingest";
+
+export function resolveToonaHubBearer(session?: { token?: string } | null): string {
+  const t = String(session?.token || "").trim();
+  if (t && t !== TOONA_HUB_S2S_TOKEN) return t;
+  return String(process.env.TOONA_INGEST_SECRET || "").trim();
+}
+
+export function toonaHubAuthHeaders(session?: { token?: string } | null): Record<string, string> {
+  const bearer = resolveToonaHubBearer(session);
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (bearer) headers.Authorization = `Bearer ${bearer}`;
+  return headers;
+}
+
 const SESSION_KEY = "toona-hub-session-v1";
 const LOG_KEY = "toona-hub-donation-log-v1";
 const PULL_CURSOR_KEY = "toona-hub-pull-cursor-v1";
@@ -56,7 +72,7 @@ export async function readToonaHubSession(userId: string): Promise<ToonaHubSessi
   if (isPersistentKvConfigured()) {
     const all = await upstashGetJson<Record<string, ToonaHubSession>>(SESSION_KEY);
     const row = all?.[uid];
-    return row && typeof row === "object" && row.token && row.streamKey ? row : null;
+    return row && typeof row === "object" && String(row.streamKey || "").trim() ? row : null;
   }
   return sessionMemory.get(uid) || null;
 }

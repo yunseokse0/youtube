@@ -4026,11 +4026,7 @@ function AdminPageInner() {
       return;
     }
     const resetAt = Number(state.settlementResetAt || stateRef.current.settlementResetAt || 0);
-    if (
-      resetAt > 0 &&
-      Date.now() - resetAt < 120_000 &&
-      isEmptyBroadcastDonationSession(stateRef.current)
-    ) {
+    if (resetAt > 0 && isEmptyBroadcastDonationSession(stateRef.current)) {
       autoOrphanDonorRestoreAttemptedRef.current = true;
       return;
     }
@@ -4047,13 +4043,7 @@ function AdminPageInner() {
         return false;
       }
       const liveReset = Number(stateRef.current.settlementResetAt || 0);
-      const entryTs = Date.parse(String(entry.at || ""));
-      if (
-        liveReset > 0 &&
-        isEmptyBroadcastDonationSession(stateRef.current) &&
-        Number.isFinite(entryTs) &&
-        entryTs <= liveReset + 5_000
-      ) {
+      if (liveReset > 0 && isEmptyBroadcastDonationSession(stateRef.current)) {
         return false;
       }
       const restored = buildAppStateFromDailyLogRestore(stateRef.current, entry);
@@ -10175,14 +10165,14 @@ function AdminPageInner() {
           setAccountSettingsOpen(true);
           return;
         }
-        const r = (await res.json().catch(() => ({}))) as { ok?: boolean; session?: { email?: string | null; linkedAt?: number | null } | null; error?: string };
-        if (res.ok && r?.ok !== false && r?.session && (r.session.email || r.session.linkedAt)) {
+        const r = (await res.json().catch(() => ({}))) as { ok?: boolean; session?: { streamKey?: string | null; linkedAt?: number | null } | null; error?: string };
+        if (res.ok && r?.ok !== false && r?.session && (r.session.streamKey || r.session.linkedAt)) {
           await selectRuntimeDonationIntakeMode("B");
           return;
         }
         dinHubOpenForBModeRef.current = true;
         setIntakeModeModalOpen(false);
-        showAppToast("B 모드를 사용하려면 DIN 허브 로그인을 먼저 완료해 주세요.", { variant: "info", durationMs: 4200 });
+        showAppToast("후원을 받으려면 DIN 허브 스트림 키로 먼저 연결해 주세요.", { variant: "info", durationMs: 4200 });
         window.setTimeout(() => setDinHubModalOpen(true), 120);
       } finally {
         setRuntimeIntakeModeBusy(false);
@@ -11830,7 +11820,7 @@ function AdminPageInner() {
                     className="mt-4 inline-flex items-center gap-2 rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-1.5 text-xs font-bold text-neutral-100 hover:bg-neutral-700 hover:border-neutral-500 select-none active:scale-[0.98] transition"
                   >
                     <span>🔐</span>
-                    <span>DIN 허브 로그인</span>
+                    <span>DIN 허브 스트림 키</span>
                   </div>
                 </button>
               </div>
@@ -16746,7 +16736,7 @@ function AdminPageInner() {
                 <div className="rounded border border-white/10 bg-black/25 px-3 py-2 space-y-2">
                   <div className="text-xs font-semibold text-violet-200">후원 수신은 DIN 허브만</div>
                   <p className="text-[11px] text-neutral-400 leading-relaxed">
-                    투네 직접 연동(A)은 쓰지 않습니다. toona에 들어온 후원만 정산표로 가져옵니다.
+                    투네 직접 연동은 쓰지 않습니다. DIN 허브 스트림 키로 연결한 toona 후원만 정산표로 가져옵니다.
                   </p>
                 </div>
 

@@ -58,8 +58,7 @@ function formatSigImport(sig: SigImportResult | undefined): string {
 }
 
 export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [streamKey, setStreamKey] = useState("");
   const [baseUrl, setBaseUrl] = useState(getToonaDashboardUrl());
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -93,7 +92,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
           return { ok: false, slow: data.slow === true, status: res.status } as const;
         }
         applyPayload(data);
-        if (data.session?.email) setEmail(data.session.email);
+        if (data.session?.streamKey) setStreamKey(data.session.streamKey);
         if (data.session?.baseUrl) setBaseUrl(data.session.baseUrl);
         if (data.error) setMessage(data.error);
         else if (!refresh) setMessage("");
@@ -182,7 +181,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, baseUrl }),
+        body: JSON.stringify({ streamKey, baseUrl }),
         /** 서버 무응답·후처리 지연 시 「연결 중…」고착 방지 */
         signal: AbortSignal.timeout(TOONA_HUB_CLIENT_CONNECT_TIMEOUT_MS),
       });
@@ -194,10 +193,9 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
         sigImport?: SigImportResult;
       };
       if (!res.ok || !data.ok) {
-        setMessage(data.error || "로그인 실패");
+        setMessage(data.error || "연결 실패");
         return;
       }
-      setPassword("");
       applyPayload(data);
       if (data.sigImport?.ok) {
         await syncLocalSigInventory();
@@ -205,10 +203,10 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
       const sigMsg = formatSigImport(data.sigImport);
       setMessage(
         sigMsg
-          ? `toona 로그인·연동 완료 · ${sigMsg}`
+          ? `스트림 키 연결 완료 · ${sigMsg}`
           : data.sigImport?.error === "deferred"
-            ? "toona 로그인·연동 완료 · 시그 가져오기는 백그라운드에서 진행 중"
-            : "toona 로그인·youtubegit 연동 완료"
+            ? "스트림 키 연결 완료 · 시그 가져오기는 백그라운드에서 진행 중"
+            : "스트림 키로 DIN 허브 연결 완료"
       );
       if (typeof onLoggedIn === "function") {
         try { onLoggedIn(); } catch (_) { /* noop */ }
@@ -222,7 +220,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
           ? "연결 시간 초과 — youtube 서버(/api/toona/hub) 응답이 없습니다. EC2 상태를 확인하세요."
           : err instanceof Error
             ? err.message
-            : "로그인 실패"
+            : "연결 실패"
       );
     } finally {
       setBusy(false);
@@ -236,7 +234,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
       await fetch("/api/toona/hub", { method: "DELETE", credentials: "include" });
       setSession(null);
       setLogs([]);
-      setPassword("");
+      setStreamKey("");
       setMessage("허브 연결을 해제했습니다.");
     } finally {
       setBusy(false);
@@ -331,57 +329,34 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
       {!session ? (
         <div className="space-y-2">
           <p className="text-[11px] text-neutral-300 leading-relaxed">
-            toona 계정으로 로그인하면 youtube-git 연동(시나리오 B·후원 1:1 엑셀 반영)·시그 가져오기가
-            함께 됩니다. 비밀번호는 서버에서만 사용하며 저장하지 않습니다.
+            DIN 허브(toona) 스트림 키만 넣으면 후원 수신·정산표 반영이 연결됩니다. 투네 직접 연동은 쓰지
+            않습니다.
           </p>
           <label className="block text-[11px] text-neutral-400">
-            toona API Base URL
+            스트림 키
             <input
               className="mt-0.5 w-full rounded bg-black/40 border border-white/15 px-2 py-1.5 text-sm font-mono text-neutral-100"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="http://localhost:4000"
+              value={streamKey}
+              onChange={(e) => setStreamKey(e.target.value)}
+              placeholder="toona 스트림 키"
+              autoComplete="off"
+              spellCheck={false}
             />
           </label>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            <label className="block text-[11px] text-neutral-400">
-              이메일
-              <input
-                className="mt-0.5 w-full rounded bg-black/40 border border-white/15 px-2 py-1.5 text-sm text-neutral-100"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="username"
-              />
-            </label>
-            <label className="block text-[11px] text-neutral-400">
-              비밀번호
-              <input
-                type="password"
-                className="mt-0.5 w-full rounded bg-black/40 border border-white/15 px-2 py-1.5 text-sm text-neutral-100"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-              />
-            </label>
-          </div>
           <button
             type="button"
-            disabled={busy || !email.trim() || !password}
+            disabled={busy || !streamKey.trim()}
             className="px-3 py-1.5 rounded bg-violet-700 hover:bg-violet-600 text-xs font-semibold disabled:opacity-50"
             onClick={() => void onLogin()}
           >
-            {busy ? "연결 중…" : "toona 로그인 · 연동"}
+            {busy ? "연결 중…" : "스트림 키로 연결"}
           </button>
         </div>
       ) : (
         <div className="space-y-2">
           <div className="text-[11px] text-neutral-300 leading-relaxed space-y-0.5">
             <div>
-              계정: <span className="text-violet-100">{session.displayName || session.email}</span> (
-              {session.email})
-            </div>
-            <div>
-              streamKey: <code className="text-violet-100">{session.streamKey}</code>
+              스트림 키: <code className="text-violet-100">{session.streamKey}</code>
             </div>
             <div>
               youtube u= <code className="text-violet-100">{session.youtubeUserId || youtubeUserId}</code>
@@ -442,7 +417,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
       {session ? (
         <div className="rounded border border-white/10 bg-black/25 p-2">
           <div className="text-xs text-neutral-400 mb-2">
-            로그인 이후 후원 로그 ({logs.length})
+            연결 이후 후원 로그 ({logs.length})
           </div>
           <div className="max-h-[200px] overflow-auto space-y-1 pr-1">
             {logs.length === 0 ? (

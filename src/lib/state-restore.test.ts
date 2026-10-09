@@ -254,4 +254,31 @@ describe("state-restore", () => {
     );
     expect(next.donors).toHaveLength(0);
   });
+
+  it("does not revive last test donations from a daily log snapshot taken after reset", () => {
+    const resetAt = Date.parse("2026-10-09T10:00:00.000Z");
+    const cleared = {
+      ...defaultState(),
+      settlementResetAt: resetAt,
+      donors: [],
+      members: [{ id: "m1", name: "멤버", account: 0, toon: 0, contribution: 0 }],
+      updatedAt: resetAt,
+    };
+    const restored = buildAppStateFromDailyLogRestore(cleared, {
+      at: "2026-10-09T10:03:00.000Z",
+      total: 1000,
+      members: [{ id: "m1", name: "멤버", account: 1000, toon: 0, contribution: 1000 }],
+      donors: [
+        {
+          id: "last-test",
+          name: "테스트",
+          amount: 1000,
+          memberId: "m1",
+          at: resetAt - 30_000,
+          target: "account",
+        },
+      ],
+    });
+    expect(restored).toBeNull();
+  });
 });

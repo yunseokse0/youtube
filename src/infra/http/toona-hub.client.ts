@@ -9,6 +9,8 @@ import {
   readToonaHubDonationLogs,
   readToonaHubPullCursor,
   readToonaHubSession,
+  resolveToonaHubBearer,
+  toonaHubAuthHeaders,
   writeToonaHubPullCursor,
   writeToonaHubSession,
   type ToonaHubSession,
@@ -65,16 +67,13 @@ export async function fetchToonaHubContributionFormula(
   youtubeUserId: string
 ): Promise<ContributionFormula | null> {
   const session = await readToonaHubSession(youtubeUserId);
-  if (!session?.token || !session.streamKey || !session.baseUrl) return null;
+  if (!resolveToonaHubBearer(session) || !session.streamKey || !session.baseUrl) return null;
   try {
     const res = await fetch(
       `${session.baseUrl}/api/youtubegit/${encodeURIComponent(session.streamKey)}`,
       {
         method: "GET",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${session.token}`,
-        },
+        headers: toonaHubAuthHeaders(session),
         signal: AbortSignal.timeout(8_000),
       }
     );
@@ -123,7 +122,7 @@ export async function syncContributionFormulaToToonaHub(
       }
     } catch (err) {
       /* JWT 폴백 시도 */
-      if (!session?.token || !session.streamKey) {
+      if (!resolveToonaHubBearer(session) || !session.streamKey) {
         return {
           ok: false,
           error: `toona_unreachable: ${err instanceof Error ? err.message : "fetch_failed"}`,
@@ -132,7 +131,7 @@ export async function syncContributionFormulaToToonaHub(
     }
   }
 
-  if (!session?.token || !session.streamKey) {
+  if (!resolveToonaHubBearer(session) || !session.streamKey) {
     return { ok: false, error: "hub_not_linked" };
   }
   try {
@@ -142,8 +141,7 @@ export async function syncContributionFormulaToToonaHub(
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          Accept: "application/json",
-          Authorization: `Bearer ${session.token}`,
+          ...toonaHubAuthHeaders(session),
         },
         body: JSON.stringify({
           accountWeightPct: formula.accountWeightPct,
@@ -173,7 +171,7 @@ export async function fetchToonaSignaturesViaHubSession(
   | { ok: false; error: string }
 > {
   const session = await readToonaHubSession(youtubeUserId);
-  if (!session?.token || !session.streamKey || !session.baseUrl) {
+  if (!resolveToonaHubBearer(session) || !session.streamKey || !session.baseUrl) {
     return { ok: false, error: "hub_not_linked" };
   }
   const baseUrl = normalizeToonaApiBaseUrl(session.baseUrl) || session.baseUrl;
@@ -182,10 +180,7 @@ export async function fetchToonaSignaturesViaHubSession(
       `${baseUrl}/api/signatures/${encodeURIComponent(session.streamKey)}`,
       {
         method: "GET",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${session.token}`,
-        },
+        headers: toonaHubAuthHeaders(session),
         signal: AbortSignal.timeout(20_000),
       }
     );
@@ -237,10 +232,7 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
       `${safeBase}/api/youtubegit/${encodeURIComponent(session.streamKey)}`,
       {
         method: "GET",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${session.token}`,
-        },
+        headers: toonaHubAuthHeaders(session),
         signal: AbortSignal.timeout(STATUS_FETCH_MS),
       }
     );
@@ -296,8 +288,7 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
                 method: "PATCH",
                 headers: {
                   "Content-Type": "application/json",
-                  Accept: "application/json",
-                  Authorization: `Bearer ${session.token}`,
+                  ...toonaHubAuthHeaders(session),
                 },
                 body: JSON.stringify({ scenario: "B" }),
                 signal: AbortSignal.timeout(STATUS_FETCH_MS),
@@ -335,8 +326,7 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
                 method: "PATCH",
                 headers: {
                   "Content-Type": "application/json",
-                  Accept: "application/json",
-                  Authorization: `Bearer ${session.token}`,
+                  ...toonaHubAuthHeaders(session),
                 },
                 body: JSON.stringify({
                   baseUrl: desiredBaseUrl,
@@ -441,10 +431,7 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
     let res: Response;
     try {
       res = await fetch(url, {
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${session.token}`,
-        },
+        headers: toonaHubAuthHeaders(session),
         signal: AbortSignal.timeout(DONATION_FETCH_MS),
       });
     } catch (err) {
