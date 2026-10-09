@@ -280,7 +280,10 @@ import {
   mealBattleUsesRawDonationScore,
 } from "@/lib/meal-battle-donation";
 import {
+  applyMealBattleDonationsFromTime,
   enableMealBattleDonationSync,
+  formatMealBattleFromAtInput,
+  parseMealBattleFromAtInput,
   recalculateMealParticipantScoresFromDonors,
   resetMealBattleDonationUi,
 } from "@/lib/battle-donation-sync";
@@ -1483,6 +1486,8 @@ function AdminPageInner() {
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [sigMatchPreviewIframeKey, setSigMatchPreviewIframeKey] = useState(0);
   const [mealMatchPreviewIframeKey, setMealMatchPreviewIframeKey] = useState(0);
+  const [mealBattleFromAt, setMealBattleFromAt] = useState(() => formatMealBattleFromAtInput(Date.now()));
+  const [mealBattleApplyMemberIds, setMealBattleApplyMemberIds] = useState<string[] | null>(null);
   const [battleScalePct, setBattleScalePct] = useState("100");
   /** 시그/식사 대전 오버레이 본문 max-width (%), URL contentWidthPct */
   const [battleContentWidthPct, setBattleContentWidthPct] = useState("100");
@@ -6970,15 +6975,62 @@ function AdminPageInner() {
     }
     setState((prev: AppState) => {
       const resetAt = Date.now();
+      const resetUi = resetMealBattleDonationUi(prev.mealBattle, resetAt);
       const next: AppState = {
         ...prev,
         mealMatch: {},
-        mealBattle: resetMealBattleDonationUi(prev.mealBattle, resetAt),
+        mealBattle: {
+          ...resetUi,
+          participants: recalculateMealParticipantScoresFromDonors(resetUi, prev.donors),
+        },
         updatedAt: resetAt,
       };
       stateRef.current = next;
       persistState(next);
       return next;
+    });
+  };
+
+  const applyMealBattleFromChosenTime = () => {
+    const fromAt = parseMealBattleFromAtInput(
+      mealBattleFromAt || formatMealBattleFromAtInput(Date.now())
+    );
+    const fallbackIds = (state.mealBattle?.participants || []).map((p) => p.memberId);
+    const ids = (mealBattleApplyMemberIds ?? fallbackIds).filter(Boolean);
+    if (ids.length === 0) {
+      showAppToast("대전 UI에 넣을 멤버를 고르세요.", { variant: "info", durationMs: 2800 });
+      return;
+    }
+    setState((prev: AppState) => {
+      let participants = prev.mealBattle?.participants || [];
+      for (const id of ids) {
+        const member = prev.members.find((m) => m.id === id);
+        if (!member || isOperatingSettlementMember(member, prev.memberPositions)) continue;
+        participants = ensureMealBattleParticipantRow(
+          { ...prev.mealBattle, participants },
+          member,
+          MEAL_PARTICIPANT_COLORS,
+          prev.memberPositions
+        );
+      }
+      const mealBattle = applyMealBattleDonationsFromTime(
+        { ...prev.mealBattle, participants },
+        prev.donors,
+        { fromAt, memberIds: ids }
+      );
+      const next: AppState = {
+        ...prev,
+        donationSyncMode: "mealBattle",
+        mealBattle,
+        updatedAt: Date.now(),
+      };
+      stateRef.current = next;
+      persistState(next);
+      return next;
+    });
+    showAppToast("고른 멤버의 대전 게이지에 그 시각 이후 후원을 넣었습니다.", {
+      variant: "success",
+      durationMs: 2200,
     });
   };
 
@@ -10535,6 +10587,11 @@ function AdminPageInner() {
     [state.sigMatchSettings?.signatureAmounts]
   );
   const mealParticipants = useMemo(() => state.mealBattle?.participants || [], [state.mealBattle?.participants]);
+  const mealBattleSelectableMembers = useMemo(
+    () => (state.members || []).filter((m) => !isOperatingSettlementMember(m, state.memberPositions)),
+    [state.members, state.memberPositions]
+  );
+  const mealBattleApplyIds = mealBattleApplyMemberIds ?? mealParticipants.map((p) => p.memberId);
 
   const toggleSigMatchActive = async () => {
     const wasActive = Boolean(state.sigMatchSettings?.isActive);
@@ -12601,6 +12658,68 @@ function AdminPageInner() {
 
                 </div>
 
+                <div className="rounded-lg border border-amber-500/30 bg-amber-950/20 p-3 space-y-2">
+                  <div className="text-xs font-medium text-amber-100">대전 UI 후원 반영</div>
+                  <p className="text-[11px] text-neutral-400">
+                    초기화는 게이지만 0으로 돌리고 지금부터 후원을 받습니다. 아래 시각을 고르면 그 시각 이후, 체크한 멤버에게 들어온 후원만 대전 게이지에 다시 넣습니다. 정산표 후원 목록은 그대로 둡니다.
+                  </p>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className="space-y-1 text-xs text-neutral-400">
+                      후원 반영 시작
+                      <input
+                        type="datetime-local"
+                        className="block rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-neutral-100"
+                        value={mealBattleFromAt}
+                        onChange={(e) => setMealBattleFromAt(e.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="rounded bg-amber-700 px-2 py-1 text-xs font-medium text-white hover:bg-amber-600"
+                      onClick={applyMealBattleFromChosenTime}
+                    >
+                      이 시각부터 반영
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded bg-neutral-700 px-2 py-1 text-xs text-neutral-200 hover:bg-neutral-600"
+                      onClick={() =>
+                        setMealBattleApplyMemberIds(mealBattleSelectableMembers.map((m) => m.id))
+                      }
+                    >
+                      멤버 전체
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded bg-neutral-700 px-2 py-1 text-xs text-neutral-200 hover:bg-neutral-600"
+                      onClick={() => setMealBattleApplyMemberIds([])}
+                    >
+                      선택 해제
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1">
+                    {mealBattleSelectableMembers.map((m) => {
+                      const checked = mealBattleApplyIds.includes(m.id);
+                      return (
+                        <label key={`meal-apply-${m.id}`} className="flex cursor-pointer items-center gap-1 text-xs text-neutral-300">
+                          <input
+                            type="checkbox"
+                            className="rounded border-white/20"
+                            checked={checked}
+                            onChange={() => {
+                              const set = new Set(mealBattleApplyIds);
+                              if (set.has(m.id)) set.delete(m.id);
+                              else set.add(m.id);
+                              setMealBattleApplyMemberIds(Array.from(set));
+                            }}
+                          />
+                          <span className="truncate max-w-[120px]">{m.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {renderBattleOverlayTimerControls({ id: "meal-battle-overlay-timer" })}
 
                 <p className="text-[11px] text-neutral-500">
@@ -13599,6 +13718,36 @@ function AdminPageInner() {
 
                         </label>
 
+                        <label className="flex items-center gap-1 text-xs text-neutral-400">
+                          후원 시작
+                          <input
+                            type="datetime-local"
+                            className="rounded border border-white/10 bg-neutral-900/80 px-1 py-1 text-[11px] text-neutral-100"
+                            value={
+                              row.donationLinkStartedAt
+                                ? formatMealBattleFromAtInput(row.donationLinkStartedAt)
+                                : ""
+                            }
+                            onChange={(e) => {
+                              const fromAt = parseMealBattleFromAtInput(e.target.value);
+                              setState((prev: AppState) => {
+                                const mealBattle = applyMealBattleDonationsFromTime(
+                                  prev.mealBattle,
+                                  prev.donors,
+                                  { fromAt, memberIds: [row.memberId] }
+                                );
+                                const next: AppState = {
+                                  ...prev,
+                                  donationSyncMode: "mealBattle",
+                                  mealBattle,
+                                  updatedAt: Date.now(),
+                                };
+                                persistState(next);
+                                return next;
+                              });
+                            }}
+                          />
+                        </label>
                         <button
 
                           type="button"

@@ -1,7 +1,6 @@
 import { normalizeContributionFormula } from "@/lib/contribution-formula";
 import { parseKstLocalTimestampToMs } from "@/lib/state";
 import type { DonationEvent } from "@/lib/donation/types";
-import { TOONA_DONATION_PULL_PAST_MS } from "@/lib/toona-hub-pull";
 
 export type ToonaHubDonationApiRow = {
   id?: string;
@@ -27,26 +26,13 @@ export function toonaHubDonationToEvent(
   let atMs = parseKstLocalTimestampToMs(row.createdAt);
   if (!Number.isFinite(atMs) || atMs <= 0) atMs = Date.now();
   /**
-   * importFromMs 가 있으면 그 시각 이후만 넣는다. 재연결로 linkedAt 이 앞으로 가도 이 바닥은 유지된다.
-   * importFromMs 가 없으면 처음 연결의 linkedAt-1시간보다 오래된 후원은 넣지 않는다.
-   * 정산 리셋·일괄 삭제 시각보다 이전 후원은 넣지 않는다.
-   * 미래 1일 이상 시각은 막는다.
+   * 수집은 시간창·연동 시각·정산 리셋으로 자르지 않는다. 오래된 것부터 순차로 넣는다.
+   * 이미 표에 있는 고유 ID는 apply 에서 중복 스킵한다. 미래 1일 이상 시각만 막는다.
    */
-  const PAST_IMPORT_ALLOW_MS = TOONA_DONATION_PULL_PAST_MS;
+  void linkedAt;
+  void opts;
   const FUTURE_BLOCK_MS = 1 * 24 * 60 * 60 * 1000;
-  const INTENTIONAL_CLEAR_BUFFER_MS = 500;
-  const importFromMs = Math.max(0, Number(opts?.importFromMs) || 0);
-  const pastFloor =
-    importFromMs > 0 ? importFromMs : Math.max(0, linkedAt - PAST_IMPORT_ALLOW_MS);
-  if (atMs < pastFloor) return null;
   if (atMs > Date.now() + FUTURE_BLOCK_MS) return null;
-  if (
-    typeof opts?.intentionalClearAtMs === "number" &&
-    opts.intentionalClearAtMs > 0 &&
-    atMs < opts.intentionalClearAtMs - INTENTIONAL_CLEAR_BUFFER_MS
-  ) {
-    return null;
-  }
   const externalId = String(row.id || "").trim();
   if (!externalId) return null;
   const rawDisplayName = String(row.displayNickname || row.nickname || "무명");

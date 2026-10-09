@@ -80,10 +80,8 @@ export async function readToonaHubPullCursor(userId: string): Promise<ToonaHubPu
     const all = await upstashGetJson<Record<string, ToonaHubPullCursor>>(PULL_CURSOR_KEY);
     const row = all?.[uid];
     if (!row || typeof row !== "object") return null;
-    const floorAt = Math.max(0, Number(row.floorAt) || 0);
-    if (!floorAt) return null;
     return {
-      floorAt,
+      floorAt: Math.max(0, Number(row.floorAt) || 0),
       fromMs: Math.max(0, Number(row.fromMs) || 0),
       after: String(row.after || "").trim(),
     };
@@ -102,7 +100,6 @@ export async function writeToonaHubPullCursor(
     fromMs: Math.max(0, Math.floor(Number(cursor.fromMs) || 0)),
     after: String(cursor.after || "").trim(),
   };
-  if (!next.floorAt) return;
   if (isPersistentKvConfigured()) {
     const all = (await upstashGetJson<Record<string, ToonaHubPullCursor>>(PULL_CURSOR_KEY)) || {};
     all[uid] = next;

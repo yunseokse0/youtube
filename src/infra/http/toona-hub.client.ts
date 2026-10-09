@@ -42,6 +42,7 @@ const lastBaseUrlRepairAt = new Map<string, number>();
 const DONATION_PULL_MIN_INTERVAL_MS = 60_000;
 const STATUS_FETCH_MS = 5_000;
 const DONATION_FETCH_MS = 15_000;
+const DONATION_PULL_CYCLE_BUDGET_MS = 25_000;
 const BASEURL_REPAIR_COOLDOWN_MS = 5 * 60_000;
 
 function contributionFormulaFromYoutubegitJson(json: Record<string, unknown>): ContributionFormula | null {
@@ -396,45 +397,10 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
     return { ok: true, imported: 0, applied: 0, skipped: true };
   }
 
-  /**
-   * ✅ 2026-09-09 Hotfix ㉔-2 WS live 우회 가드 강화:
-   *  - A 모드가 아니라 B 모드여도, 사용자가 임시로 투네 직접 WS를 켰을수도 있으므로 WS 연결 체크
-   *  - 이전: live && !stopped && connected 만 통과 → userId 키 불일치로 live=null 이면 허점
-   *  - 변경: live === null 이어도 A모드면 위에서 이미 걸러지고, B모드인데 WS가 우연히 켜져있을수 있으므로
-   *    아래 3가지중 어느 하나라도 true 면 skip (OR 로직으로 안전망 강화)
-   *    ① live.stopped === false && live.connected === true (실제 WS 살아있음)
-   *    ② process.env.TOONATION_WS_DISABLE !== "1" 이 아닌데도 listener 상태맵에 user entry 가 존재 (WS 시작 이력 있음 = WS가 선호 유입 경로)
-   */
-  try {
-    const { getToonationServerListenerStatus } = await import("@/infra/ws/toonation-listener");
-    const live = getToonationServerListenerStatus(uid);
-    const wsDefinitelyActive =
-      (live && !live.stopped && live.connected) === true;
-    if (wsDefinitelyActive) {
-      lastDonationPullAt.set(uid, now);
-      return { ok: true, imported: 0, applied: 0, skipped: true, skipReason: "toonation_WS_live_active" };
-    }
-  } catch {}
-
   lastDonationPullAt.set(uid, now);
 
   const session = await readToonaHubSession(uid);
   if (!session) return { ok: false, error: "not_linked" };
-
-  /**
-   * 정산 리셋 / 후원 일괄 삭제의 settlementResetAt · intentionalDonationClearAt 이후만 가져온다.
-   * 리셋 이전 후원은 수동 복구를 포함해 이 경로로 되살리지 않는다.
-   */
-  let intentionalClearAtMs = 0;
-  try {
-    const { loadAppStateForUserId } = await import("@/lib/app-state-server-load");
-    const cur = await loadAppStateForUserId(uid).catch(() => null);
-    if (cur) {
-      const a = Number(cur.settlementResetAt) || 0;
-      const b = Number(cur.intentionalDonationClearAt) || 0;
-      intentionalClearAtMs = Math.max(a, b, 0);
-    }
-  } catch {}
 
   /** BUG FIX: DB 오염된 trailing slash → // 중복 URL 301/timeout 방지 */
   const safeSessionBase =
@@ -446,26 +412,24 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
 
   /**
    * 시나리오 B: toona 후원 ↔ youtube 정산표 1:1.
-   * 한 번에 최대 5,000건만 읽고 커서를 버리면, 원장이 그 한도를 넘은 뒤의 후원은 영영 닿지 않는다.
-   * 커서를 저장해 다음 주기가 이어서 읽고, 이미 있는 건은 apply 에서 중복 스킵한다.
-   * 재연결로 linkedAt 이 앞으로 가도 저장한 바닥은 유지한다. 정산 리셋이 더 뒤면 바닥만 올린다.
+   * 시간창 없이 오래된 것부터 sort=asc + after 커서로 전부 읽는다.
+   * 한 주기가 길면 커서를 남기고 다음 주기가 이어서 읽는다. 이미 있는 ID는 apply 가 스킵한다.
    */
   const savedCursor = await readToonaHubPullCursor(uid).catch(() => null);
-  const fromMs = resolveToonaDonationPullFromMs({
-    linkedAt: session.linkedAt,
-    intentionalClearAtMs,
-    persistedFloorAt: savedCursor?.floorAt,
-  });
+  const fromMs = resolveToonaDonationPullFromMs();
   let imported = 0;
   let applied = 0;
-  let after = resolveToonaDonationPullAfter({
-    fromMs,
-    savedFromMs: savedCursor?.fromMs,
-    savedAfter: savedCursor?.after,
-  });
+  let after = opts?.ignoreMinInterval
+    ? ""
+    : resolveToonaDonationPullAfter({
+        fromMs,
+        savedFromMs: savedCursor?.fromMs,
+        savedAfter: savedCursor?.after,
+      });
   const persistCursor = async (nextAfter: string) => {
     await writeToonaHubPullCursor(uid, { floorAt: fromMs, fromMs, after: nextAfter }).catch(() => {});
   };
+  const cycleStartedAt = Date.now();
   for (let page = 0; page < TOONA_DONATION_PULL_MAX_PAGES; page += 1) {
     const url = buildToonaDonationsPullUrl({
       baseUrl: safeSessionBase,
@@ -504,10 +468,7 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
     const rows = Array.isArray(json.donations) ? json.donations : [];
     let stoppedOnRow = false;
     for (const row of rows) {
-      const event = toonaHubDonationToEvent(row, session.linkedAt, {
-        intentionalClearAtMs,
-        importFromMs: fromMs,
-      });
+      const event = toonaHubDonationToEvent(row, session.linkedAt);
       if (!event) continue;
       try {
         const result = await handleDinDonationIngest(youtubeUserId, event, true, { logSource: "toona" });
@@ -528,6 +489,7 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
     await persistCursor(after);
     const nextAfter = nextToonaDonationPullAfter(rows, TOONA_DONATION_PULL_PAGE_SIZE);
     if (!nextAfter) break;
+    if (Date.now() - cycleStartedAt >= DONATION_PULL_CYCLE_BUDGET_MS) break;
   }
 
   return { ok: true, imported, applied };

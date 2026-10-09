@@ -100,3 +100,41 @@ export function activateSigMatchDonationSync(state: AppState): AppState {
 export function mealBattleDonationApplyOpts(mealBattle: MealBattleState | undefined) {
   return { useRawAmount: mealBattleUsesRawDonationScore(mealBattle) };
 }
+
+/** datetime-local 입력(로컬 시각) → epoch ms */
+export function parseMealBattleFromAtInput(raw: string, fallback = Date.now()): number {
+  const t = Date.parse(String(raw || "").trim());
+  return Number.isFinite(t) && t > 0 ? t : fallback;
+}
+
+/** epoch ms → datetime-local 값 */
+export function formatMealBattleFromAtInput(ms: number): string {
+  const n = Math.max(0, Math.floor(Number(ms) || 0));
+  const d = new Date(n > 0 ? n : Date.now());
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+/**
+ * 고른 멤버의 대전 UI에, 이 시각 이후 후원만 다시 넣는다.
+ * 정산표 후원 목록은 건드리지 않는다. 연동이 꺼져 있던 멤버는 켠다.
+ */
+export function applyMealBattleDonationsFromTime(
+  mealBattle: MealBattleState | undefined,
+  donors: AppState["donors"],
+  opts: { fromAt: number; memberIds: string[] }
+): MealBattleState {
+  const fromAt = Math.max(0, Math.floor(Number(opts.fromAt) || 0));
+  const want = new Set((opts.memberIds || []).map((id) => String(id || "").trim()).filter(Boolean));
+  const base = (mealBattle || {}) as MealBattleState;
+  const participants = (base.participants || []).map((p) =>
+    want.has(p.memberId)
+      ? { ...p, donationLinkActive: true, donationLinkStartedAt: fromAt }
+      : p
+  );
+  const next: MealBattleState = { ...base, participants };
+  return {
+    ...next,
+    participants: recalculateMealParticipantScoresFromDonors(next, donors),
+  };
+}

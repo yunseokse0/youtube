@@ -68,7 +68,7 @@ describe("toonaHubDonationToEvent (scenario B 1:1)", () => {
     expect(event).toMatchObject({ id: "toonation:din:missed-1", amount: 17000, donorName: "춘삼" });
   });
 
-  it("skips donations before hub link", () => {
+  it("does not drop old donations just because the hub was linked later", () => {
     expect(
       toonaHubDonationToEvent(
         {
@@ -79,7 +79,22 @@ describe("toonaHubDonationToEvent (scenario B 1:1)", () => {
         },
         linkedAt
       )
-    ).toBeNull();
+    ).toMatchObject({ id: "toonation:din:old", amount: 1000 });
+  });
+
+  it("still maps donations even if a later settlement reset exists", () => {
+    expect(
+      toonaHubDonationToEvent(
+        {
+          id: "pre-reset",
+          nickname: "a",
+          amount: 1000,
+          createdAt: "2026-09-02T00:00:00.000Z",
+        },
+        linkedAt,
+        { intentionalClearAtMs: Date.parse("2026-09-03T00:00:00.000Z") }
+      )
+    ).toMatchObject({ id: "toonation:din:pre-reset", amount: 1000 });
   });
 });
 
