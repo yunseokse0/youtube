@@ -751,10 +751,10 @@ function AdminPageInner() {
   );
   useEffect(() => {
     const fromUrl = (sp.get("u") || sp.get("user") || "").trim();
-    if (fromUrl) {
-      setOverlayUserId(resolveScopedOverlayUserId(fromUrl));
-    } else if (user?.id) {
+    if (user?.id) {
       setOverlayUserId(resolveScopedOverlayUserId(user.id));
+    } else if (fromUrl) {
+      setOverlayUserId(resolveScopedOverlayUserId(fromUrl));
     }
   }, [user?.id, urlUserIdRaw]);
   const [state, setState] = useState<AppState>(() => ({
@@ -3839,7 +3839,8 @@ function AdminPageInner() {
       setSyncStatus("local");
     }
     /** fast=1 — enrich 생략·KV 캐시 활용. forceFull 생략으로 동시 GET dedupe 허용 */
-    const loadMain = () => loadStateFromApiWithMeta(overlayUserId, { fast: true });
+    const readUserId = resolveScopedOverlayUserId(user.id);
+    const loadMain = () => loadStateFromApiWithMeta(readUserId, { fast: true });
     void loadMain()
       .then(({ state: apiState, meta }) => {
         if (cancelled) return;
@@ -3929,7 +3930,7 @@ function AdminPageInner() {
           ) {
             window.setTimeout(() => {
               if (cancelled) return;
-              void loadStateFromApiWithMeta(overlayUserId, { forceFull: true }).then(
+              void loadStateFromApiWithMeta(readUserId, { forceFull: true }).then(
                 ({ state: full, meta: fullMeta }) => {
                   if (cancelled || !full) return;
                   if (normalizeDonorsArray(full.donors).length === 0) return;
@@ -4141,7 +4142,7 @@ function AdminPageInner() {
         return false;
       }
       const localDonorsBefore = normalizeDonorsArray(stateRef.current.donors);
-      const remoteResult = await loadStateFromApiWithMeta(overlayUserId, {
+      const remoteResult = await loadStateFromApiWithMeta(resolveScopedOverlayUserId(user.id), {
         ...(opts?.forceReplace || localDonorsBefore.length === 0
           ? { forceFull: true }
           : {
@@ -5028,7 +5029,7 @@ function AdminPageInner() {
         const since = opts?.forceFull
           ? 0
           : Math.max(stateUpdatedAtRef.current, lastAppliedRemoteUpdatedAtRef.current);
-        const remote = await loadStateFromApiWithMeta(overlayUserId, {
+        const remote = await loadStateFromApiWithMeta(resolveScopedOverlayUserId(user?.id), {
           ifUpdatedSince: since,
           forceFull: Boolean(opts?.forceFull),
         });

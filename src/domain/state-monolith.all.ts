@@ -4823,8 +4823,11 @@ export function coalesceSettlementResetAt(opts: {
   const patchR = Math.max(0, Number(opts.patchResetAt || 0));
   if (patchR <= baseR) return baseR; // patch 가 더 과거면 base 사용 (단조 감소 금지 = 당연)
   // patchResetAt > baseResetAt 인 경우 (리셋 시각 상승 시도): 암묵적 reset 증거 있을 때만 허용
-  const dEmpty = Number(opts.donorCount ?? -1) === 0;
-  const mZero = Number(opts.memberCombinedTotal ?? -1) < 0.1;
+  const dEmpty = typeof opts.donorCount === "number" && opts.donorCount === 0;
+  const mZero =
+    typeof opts.memberCombinedTotal === "number" &&
+    Number.isFinite(opts.memberCombinedTotal) &&
+    opts.memberCombinedTotal < 0.1;
   const implicitResetEvidence = dEmpty || mZero;
   if (implicitResetEvidence) return patchR; // donors=[] 또는 멤버합=0 → 진짜 reset 행위로 간주 → patch 상승 승인
   // 애매한 경우 (후원/금액 남은 상태에서 reset 시각만 급상승): base 유지 + MAX 내림차순 없도록 둘중 큰 값은 아님에 주의

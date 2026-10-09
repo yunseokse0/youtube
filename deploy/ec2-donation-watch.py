@@ -196,6 +196,10 @@ def analyze(state: dict, hub: dict, prev: dict | None = None, state_ok: bool = T
     else:
         verdict = "OK"
 
+    hub_ok = hub.get("ok") is True
+    if not hub_ok:
+        verdict = "HUB_FAIL" if verdict == "OK" else verdict
+
     scenario = str(hub.get("scenario") or "").strip().upper()
     if scenario == "B":
         scenario_line = "시나리오 B: 유튜브가 amount를 더합니다. 이 서버 시트는 그 건을 건너뜁니다."
@@ -216,6 +220,13 @@ def analyze(state: dict, hub: dict, prev: dict | None = None, state_ok: bool = T
         "창에만 있고 장부에 없는 uid {0}개 {1}".format(len(missing), krw(missing_sum)),
         "줄 수로 빠짐을 보지 않습니다. 창 밖 후원은 이 화면으로 확인할 수 없습니다.",
     ]
+    if not hub_ok:
+        lines.insert(
+            1,
+            "허브 로그를 읽지 못했습니다({0}). 로그인 쿠키(COOKIE)를 확인하세요. 빠짐은 판정하지 않았습니다.".format(
+                str(hub.get("error") or "응답 없음")
+            ),
+        )
     if same_look_groups:
         lines.append(
             "이름·금액·말이 같아도 uid가 다른 묶음 {0}개. 각각 더합니다.".format(len(same_look_groups))

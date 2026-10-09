@@ -7,13 +7,13 @@
 #
 # 판정은 uid 본문이다. 같은 사람·말·금액이라도 id가 다르면 각각 더한다.
 # 최근 허브 창의 줄 수로 빠짐을 보지 않는다.
-# 종료 코드(MODE=once): 0 정상, 1 중복 또는 창 안 누락, 2 장부를 못 읽음.
+# 종료 코드(MODE=once): 0 정상, 1 중복·창 안 누락·허브를 못 읽음, 2 장부를 못 읽음.
 set -u
 
 PORT="${PORT:-3000}"
 BASE_URL="${BASE_URL:-http://127.0.0.1:${PORT}}"
 TARGET_USER="${TARGET_USER:-din}"
-COOKIE="${COOKIE:-}"
+COOKIE="${COOKIE:-sb_user=%7B%22id%22%3A%22${TARGET_USER}%22%7D}"
 INTERVAL="${INTERVAL:-2}"
 MODE="${MODE:-watch}"
 

@@ -950,6 +950,10 @@
             renderLiveAlloc();
             renderGrantLog();
         }
+        document.addEventListener('wheel', (ev) => {
+            const el = document.activeElement;
+            if (el && el.tagName === 'INPUT' && el.type === 'number' && ev.target === el) el.blur();
+        }, { passive: true });
         ensureLiveState();
         renderRosterSetup();
         renderControls();
