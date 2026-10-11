@@ -40,4 +40,22 @@ describe("offerPendingIngest", () => {
     expect(first[0]?.event.id).toBe("bank:din:burst-0");
     resetDinIngestBatchQueueForTests();
   });
+
+  it("treats hub push bank:sms:<id> and pull bank:din:<id> as the same donation", () => {
+    resetDinIngestBatchQueueForTests();
+    const push = offerPendingIngest(
+      "paeza",
+      "paeza",
+      evt("bank:sms:cmhubdonation01", 10_000)
+    );
+    expect(push.duplicateQueued).toBe(false);
+    const pull = offerPendingIngest(
+      "paeza",
+      "paeza",
+      evt("bank:din:cmhubdonation01", 10_000)
+    );
+    expect(pull.duplicateQueued).toBe(true);
+    expect(pull.depth).toBe(1);
+    resetDinIngestBatchQueueForTests();
+  });
 });

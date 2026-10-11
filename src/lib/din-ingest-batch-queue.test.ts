@@ -104,4 +104,25 @@ describe("foldIngestEventsIntoState", () => {
     expect(folded.applied.map((x) => x.id)).toEqual(["bank:din:new"]);
     expect((folded.state.donors || []).some((d) => d.id === "bank:din:old")).toBe(false);
   });
+
+  it("does not double-count the same hub donation from ingest push and pull ids", () => {
+    const push = evt("bank:sms:cmhubdonation01", 10_000, {
+      externalId: "cmhubdonation01",
+    });
+    const pull = evt("bank:din:cmhubdonation01", 10_100, {
+      externalId: "cmhubdonation01",
+    });
+    const folded = foldIngestEventsIntoState(baseState(), [push, pull]);
+    expect(folded.applied).toHaveLength(1);
+    expect(folded.duplicates).toBe(1);
+    expect(folded.state.donors?.filter((d) => !d.donationExcluded).length).toBe(1);
+  });
+
+  it("keeps two hub rows with different ids even at the same amount and name", () => {
+    const a = evt("bank:din:one", 10_000, { donorName: "이민수", amount: 3000 });
+    const b = evt("bank:din:two", 10_050, { donorName: "이민수", amount: 3000 });
+    const folded = foldIngestEventsIntoState(baseState(), [a, b]);
+    expect(folded.applied).toHaveLength(2);
+    expect(folded.duplicates).toBe(0);
+  });
 });

@@ -176,6 +176,44 @@ export type ToonaHubStreamKeyInput = {
   youtubePublicBaseUrl: string;
 };
 
+/** 연결 POST를 막지 않고 시나리오 B PATCH를 몇 번 더 시도한다. */
+function scheduleYoutubegitScenarioBPatch(input: {
+  baseUrl: string;
+  streamKey: string;
+  youtubePublicBaseUrl: string;
+  youtubeUserId: string;
+  ingestSecret: string;
+}) {
+  const url = `${input.baseUrl}/api/youtubegit/${encodeURIComponent(input.streamKey)}`;
+  const headers = {
+    "Content-Type": "application/json",
+    ...toonaHubAuthHeaders({ token: TOONA_HUB_S2S_TOKEN }),
+  };
+  const body = JSON.stringify({
+    enabled: true,
+    baseUrl: input.youtubePublicBaseUrl,
+    userId: input.youtubeUserId,
+    scenario: "B",
+    allowEventsFallback: true,
+    ingestSecret: input.ingestSecret,
+  });
+  const attempt = (n: number) => {
+    void fetch(url, {
+      method: "PATCH",
+      headers,
+      body,
+      signal: AbortSignal.timeout(TOONA_HUB_PATCH_FETCH_MS),
+    })
+      .then((res) => {
+        if (!res.ok && n < 3) setTimeout(() => attempt(n + 1), 1_500 * n);
+      })
+      .catch(() => {
+        if (n < 3) setTimeout(() => attempt(n + 1), 1_500 * n);
+      });
+  };
+  attempt(1);
+}
+
 /** 스트림 키만으로 youtubegit PATCH + 세션 저장. toona 이메일/비밀번호를 받지 않는다. */
 export async function linkToonaHubByStreamKey(input: ToonaHubStreamKeyInput): Promise<
   | { ok: true; session: ReturnType<typeof publicToonaHubSession> }
@@ -237,22 +275,13 @@ export async function linkToonaHubByStreamKey(input: ToonaHubStreamKeyInput): Pr
     };
   }
 
-  void fetch(`${baseUrl}/api/youtubegit/${encodeURIComponent(streamKey)}`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...toonaHubAuthHeaders({ token: TOONA_HUB_S2S_TOKEN }),
-    },
-    body: JSON.stringify({
-      enabled: true,
-      baseUrl: youtubePublicBaseUrl,
-      userId: youtubeUserId,
-      scenario: "B",
-      allowEventsFallback: true,
-      ingestSecret,
-    }),
-    signal: AbortSignal.timeout(TOONA_HUB_PATCH_FETCH_MS),
-  }).catch(() => {});
+  scheduleYoutubegitScenarioBPatch({
+    baseUrl,
+    streamKey,
+    youtubePublicBaseUrl,
+    youtubeUserId,
+    ingestSecret,
+  });
   void clearToonaHubDonationLogs(youtubeUserId).catch(() => {});
 
   return { ok: true, session: publicToonaHubSession(session) };

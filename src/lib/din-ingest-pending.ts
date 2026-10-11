@@ -1,7 +1,8 @@
 /**
- * DIN ingest 메모리 대기열. 건수 상한 없음. 같은 ID는 한 줄만.
+ * DIN ingest 메모리 대기열. 건수 상한 없음. 같은 허브 UID는 한 줄만.
  * 저장(flush)은 din-ingest-batch-queue 가 200건씩 이어서 한다.
  */
+import { donationHubIdentity } from "@/domain/dedupe/donation-hub-identity";
 import type { DonationEvent } from "@/lib/donation/types";
 
 export const DIN_INGEST_FLUSH_BATCH = 200;
@@ -47,6 +48,15 @@ export type OfferDinIngestResult = {
   duplicateQueued: boolean;
 };
 
+/** push `bank:sms:<cuid>` 와 pull `bank:din:<cuid>` 를 같은 후원으로 본다. */
+export function ingestQueueIdentity(event: DonationEvent): string {
+  const fromId = donationHubIdentity(String(event.id || "")).trim().toLowerCase();
+  if (fromId) return fromId;
+  const fromExt = donationHubIdentity(String(event.externalId || "")).trim().toLowerCase();
+  if (fromExt) return fromExt;
+  return String(event.id || event.externalId || "").trim().toLowerCase();
+}
+
 function queuedIds(stateUserId: string): Set<string> {
   const store = getDinIngestStore();
   let ids = store.idsByUser.get(stateUserId);
@@ -65,7 +75,7 @@ export function offerPendingIngest(
   const store = getDinIngestStore();
   const q = store.byUser.get(stateUserId) || [];
   const ids = queuedIds(stateUserId);
-  const id = String(event.id || "").trim();
+  const id = ingestQueueIdentity(event);
   if (id && ids.has(id)) {
     return { ok: true, queued: true, depth: q.length, duplicateQueued: true };
   }
@@ -85,7 +95,7 @@ export function forgetQueuedIds(stateUserId: string, rows: QueuedIngest[]): void
   const ids = getDinIngestStore().idsByUser.get(stateUserId);
   if (!ids) return;
   for (const row of rows) {
-    const id = String(row.event.id || "").trim();
+    const id = ingestQueueIdentity(row.event);
     if (id) ids.delete(id);
   }
 }

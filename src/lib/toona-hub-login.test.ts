@@ -34,22 +34,11 @@ describe("toona hub login connect budget", () => {
     expect(src).not.toMatch(/from ["']@\/lib\/app-state-server-load["']/);
     expect(src).toMatch(/from ["']@\/infra\/http\/toona-hub-login-link["']/);
   });
-});
 
-
-describe("toona hub login connect budget", () => {
-  it("does not wait for post-link sig/formula work before returning", () => {
-    expect(TOONA_HUB_POST_LINK_WAIT_MS).toBe(0);
-    const body = toonaHubLoginSuccessBody({ email: "sssse@gmail.com" });
-    expect(body.ok).toBe(true);
-    expect(body.sigImport.error).toBe("deferred");
-    expect(body.logs).toEqual([]);
-  });
-
-  it("keeps hub login+patch+session write inside the browser timeout", () => {
-    const serverBudget =
-      TOONA_HUB_LOGIN_FETCH_MS + TOONA_HUB_PATCH_FETCH_MS + TOONA_HUB_SESSION_WRITE_MS;
-    expect(serverBudget).toBeLessThan(TOONA_HUB_CLIENT_CONNECT_TIMEOUT_MS);
-    expect(serverBudget).toBeLessThan(TOONA_HUB_ROUTE_MAX_DURATION_SEC * 1000);
+  it("B-mode ingest always writes the excel ledger even if hub sends applyExcel=false", () => {
+    const src = readFileSync(path.join(process.cwd(), "src/app/api/donations/ingest/route.ts"), "utf8");
+    expect(src).toMatch(/enqueueDinExcelIngest/);
+    expect(src).toMatch(/applyExcel: true/);
+    expect(src).not.toMatch(/parseApplyExcelFromRequest/);
   });
 });

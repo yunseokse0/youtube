@@ -18,7 +18,8 @@ import {
   type ToonaHubSession,
 } from "@/lib/toona-hub-session";
 import type { ContributionFormula, SigItem } from "@/types";
-import { handleDinDonationIngest } from "@/lib/donation/din-ingest";
+import { offerDinExcelIngest, drainDinIngestQueue } from "@/lib/din-ingest-batch-queue";
+import { getDinIngestStore } from "@/lib/din-ingest-pending";
 import {
   toonaHubDonationToEvent,
   type ToonaHubDonationApiRow,
@@ -473,10 +474,23 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
     });
     let res: Response;
     try {
+      const sessionHeaders = toonaHubAuthHeaders(session);
       res = await fetch(url, {
-        headers: toonaHubAuthHeaders(session),
+        headers: sessionHeaders,
         signal: AbortSignal.timeout(DONATION_FETCH_MS),
       });
+      const ingestHeaders = toonaHubAuthHeaders({ token: TOONA_HUB_S2S_TOKEN });
+      if (
+        !res.ok &&
+        isToonaHubUserLoginRequired(res.status) &&
+        ingestHeaders.Authorization &&
+        ingestHeaders.Authorization !== sessionHeaders.Authorization
+      ) {
+        res = await fetch(url, {
+          headers: ingestHeaders,
+          signal: AbortSignal.timeout(DONATION_FETCH_MS),
+        });
+      }
     } catch (err) {
       await persistCursor(after);
       return {
@@ -496,25 +510,22 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
     }
 
     const rows = Array.isArray(json.donations) ? json.donations : [];
-    let stoppedOnRow = false;
+    const stateUserId = youtubeUserId;
     for (const row of rows) {
       const event = toonaHubDonationToEvent(row, session.linkedAt);
       if (!event) continue;
-      try {
-        const result = await handleDinDonationIngest(youtubeUserId, event, true, { logSource: "toona" });
-        if (result.applied) applied += 1;
-        imported += 1;
-      } catch {
-        stoppedOnRow = true;
-        break;
-      }
+      const enq = offerDinExcelIngest(youtubeUserId, event);
+      if (!enq.duplicateQueued) imported += 1;
     }
-
-    const scannedId = lastToonaDonationPullId(rows);
-    if (stoppedOnRow) {
+    await drainDinIngestQueue(stateUserId);
+    applied = imported;
+    const leftover = (getDinIngestStore().byUser.get(stateUserId) || []).length;
+    if (leftover > 0) {
       await persistCursor(after);
       break;
     }
+
+    const scannedId = lastToonaDonationPullId(rows);
     if (scannedId) after = scannedId;
     await persistCursor(after);
     const nextAfter = nextToonaDonationPullAfter(rows, TOONA_DONATION_PULL_PAGE_SIZE);

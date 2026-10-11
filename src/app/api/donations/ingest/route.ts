@@ -4,11 +4,7 @@ export const revalidate = 0;
 
 import { isValidUserId } from "@/app/api/_shared/user-id";
 import { verifyToonaIngestAuth } from "@/app/api/donations/_shared/toona-ingest-auth";
-import {
-  handleDinDonationIngest,
-  parseApplyExcelFromRequest,
-  sanitizeDonationEventFromIngestBody,
-} from "@/lib/donation/din-ingest";
+import { sanitizeDonationEventFromIngestBody } from "@/lib/donation/din-ingest";
 import { enqueueDinExcelIngest } from "@/lib/din-ingest-batch-queue";
 import {
   describeDonationIntakeMode,
@@ -66,28 +62,22 @@ export async function POST(req: Request) {
     return json({ error: "invalid_donation_event" }, 400);
   }
 
-  const applyExcel = parseApplyExcelFromRequest(req);
-
   try {
     /**
-     * 엑셀/정산표 반영은 ACK 후 계정당 워커가 메모리에서 처리하고, 끝난 뒤에만 AppState 저장 1회.
-     * (정산표에는 중복·리셋 폐기까지 끝난 결과만 올라간다. 투네 WS 즉시 반영 경로는 유지.)
+     * B모드 전용 라우트 — 허브가 applyExcel=false(시나리오 A 알림만)로 보내도 정산표에 넣는다.
+     * ACK 후 계정당 워커가 메모리에서 처리하고, 끝난 뒤에만 AppState 저장 1회.
      */
-    if (applyExcel) {
-      const enq = enqueueDinExcelIngest(userId, event);
-      return json({
-        userId,
-        applyExcel: true,
-        ok: true,
-        queued: true,
-        applied: true,
-        accepted: 1,
-        duplicateQueued: enq.duplicateQueued,
-        queueDepth: enq.depth,
-      });
-    }
-    const result = await handleDinDonationIngest(userId, event, applyExcel);
-    return json({ userId, applyExcel, ...result });
+    const enq = enqueueDinExcelIngest(userId, event);
+    return json({
+      userId,
+      applyExcel: true,
+      ok: true,
+      queued: true,
+      applied: true,
+      accepted: 1,
+      duplicateQueued: enq.duplicateQueued,
+      queueDepth: enq.depth,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "ingest_failed";
     console.error("[donations/ingest]", userId, message);
