@@ -197,7 +197,9 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
         setMessage(
           err === "login_required" || err === "unauthorized"
             ? "관리자 로그인이 필요합니다. 다시 로그인해 주세요."
-            : err || "연결 실패"
+            : res.status === 502 || res.status === 504
+              ? "서버가 응답하지 못했습니다(502/504). 잠시 후 다시 연결해 주세요."
+              : err || "연결 실패"
         );
         return;
       }

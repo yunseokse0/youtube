@@ -4,7 +4,6 @@ import { buildToonaDonationsPullUrl } from "@/lib/toona-hub-pull";
 import { getToonaApiBaseUrl, normalizePublicBaseUrl } from "@/lib/toona-link";
 import {
   clearToonaHubDonationLogs,
-  isToonaHubUserLoginRequired,
   publicToonaHubSession,
   readToonaHubPullCursor,
   TOONA_HUB_S2S_TOKEN,
@@ -250,14 +249,9 @@ export async function linkToonaHubByStreamKey(input: ToonaHubStreamKeyInput): Pr
       signal: AbortSignal.timeout(TOONA_HUB_PATCH_FETCH_MS),
     });
     patchJson = (await patchRes.json().catch(() => ({}))) as typeof patchJson;
-    if (!patchRes.ok && !isToonaHubUserLoginRequired(patchRes.status, patchJson.error)) {
-      return {
-        ok: false,
-        error: patchJson.error || `youtubegit_patch_failed HTTP ${patchRes.status}`,
-      };
-    }
+    /** 시그·후원 pull 은 스트림 키만으로 된다. youtubegit PATCH 실패로 연결 자체를 502 내지 않는다. */
   } catch {
-    /** pull 검증은 됐으므로 JWT PATCH 실패는 연결을 막지 않는다 */
+    /** pull 검증은 됐으므로 PATCH 타임아웃·502 는 연결을 막지 않는다 */
   }
 
   const linkedAt = Date.now();

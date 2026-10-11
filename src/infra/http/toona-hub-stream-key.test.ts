@@ -83,6 +83,27 @@ describe("linkToonaHubByStreamKey", () => {
     process.env.TOONA_INGEST_SECRET = prev;
   });
 
+  it("still links when youtubegit PATCH returns 502 after the stream key is verified", async () => {
+    const prev = process.env.TOONA_INGEST_SECRET;
+    process.env.TOONA_INGEST_SECRET = "s2s-secret";
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).includes("/api/donations/")) {
+        return new Response(JSON.stringify({ donations: [] }), { status: 200 });
+      }
+      return new Response("<html>Bad Gateway</html>", { status: 502 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const out = await linkToonaHubByStreamKey({
+      youtubeUserId: "din",
+      streamKey: "sk_live_test",
+      baseUrl: "http://toona.test",
+      youtubePublicBaseUrl: "http://youtube.test",
+    });
+    expect(out.ok).toBe(true);
+    process.env.TOONA_INGEST_SECRET = prev;
+  });
+
   it("rejects an unknown stream key from the donations probe", async () => {
     const prev = process.env.TOONA_INGEST_SECRET;
     process.env.TOONA_INGEST_SECRET = "s2s-secret";
