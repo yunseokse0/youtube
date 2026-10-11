@@ -3048,6 +3048,21 @@ function AdminPageInner() {
   };
   /** ✅ 상세 분류: 소메뉴 클릭 핸들러 — resolveNavKeyFromTargetId 로 대분류 자동 추론 + 앵커 hash 강제 스크롤 */
   const clickSubItem = (sub: AdminNavSubItem) => {
+    if (sub.href) {
+      const uid = overlayUserId || user?.id;
+      const url =
+        uid && !sub.href.includes("u=")
+          ? `${sub.href}${sub.href.includes("?") ? "&" : "?"}u=${encodeURIComponent(uid)}`
+          : sub.href;
+      window.location.assign(url);
+      return;
+    }
+    if (sub.targetId === "sig-sales-inventory") {
+      openSigSalesModal("inventory");
+      setActiveNav("overlay");
+      setActiveSubTargetId(sub.targetId);
+      return;
+    }
     if (sub.targetId === "donor-list") {
       openAdminDonorListPopup(overlayUserId || user?.id);
       setActiveNav("donor");
@@ -18482,6 +18497,16 @@ function AdminPageInner() {
                 <code className="block break-all text-[11px] text-sky-100/90">
                   /overlay/sig-sales-manual?u={overlayUserId}&hideSigBoard=1
                 </code>
+              </div>
+              <div className="mb-3">
+                <SigSalesCompactCard
+                  sigCount={sigInventoryCount}
+                  activeCount={sigActiveCount}
+                  rollingCount={rollingItemsForAdmin.length}
+                  roulettePhase={rouletteServerStatus.phase}
+                  uploadBusy={sigBulkReuploadBusy}
+                  onOpen={openSigSalesModal}
+                />
               </div>
               <div className="mb-3 rounded border border-violet-500/30 bg-violet-950/25 p-3 space-y-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">

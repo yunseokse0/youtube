@@ -27,6 +27,13 @@ describe("toona hub login connect budget", () => {
     expect(serverBudget).toBeLessThan(TOONA_HUB_ROUTE_MAX_DURATION_SEC * 1000);
   });
 
+  it("import-signatures returns before hub GET so nginx does not 502", () => {
+    const src = readFileSync(path.join(process.cwd(), "src/app/api/toona/hub/route.ts"), "utf8");
+    expect(src).toMatch(/action === "import-signatures"/);
+    expect(src).toMatch(/deferred: true/);
+    expect(src).toMatch(/setTimeout\(\(\) => \{\s*void importSigsAfterHubLogin/);
+  });
+
   it("hub route does not statically import heavy post-link modules", () => {
     const src = readFileSync(path.join(process.cwd(), "src/app/api/toona/hub/route.ts"), "utf8");
     expect(src).not.toMatch(/from ["']@\/lib\/toona-hub-client["']/);

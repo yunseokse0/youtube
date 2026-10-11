@@ -222,18 +222,20 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.action === "import-signatures") {
-    const imported = await importSigsAfterHubLogin(auth.userId);
-    if (!imported.ok) {
-      const status = imported.error === "hub_not_linked" ? 409 : 502;
-      return json({ ok: false, error: imported.error }, status);
+    const session = await readToonaHubSession(auth.userId).catch(() => null);
+    if (!String(session?.streamKey || "").trim()) {
+      return json({ ok: false, error: "hub_not_linked" }, 409);
     }
-    return json({
-      ok: true,
-      count: imported.count,
-      added: imported.added,
-      updated: imported.updated,
-      items: imported.items,
-    });
+    /**
+     * 허브 시그 목록+저장을 이 요청에서 기다리면 EC2 nginx가 502를 내고
+     * 같은 Node의 다른 API까지 막힌다. 연결 때와 같이 응답 후 백그라운드에서 가져온다.
+     */
+    setTimeout(() => {
+      void importSigsAfterHubLogin(auth.userId).then((r) => {
+        if (!r.ok) console.error("[toona-hub] sig import", r.error);
+      });
+    }, 0);
+    return json({ ok: true, deferred: true, sigImport: { error: "deferred" } });
   }
 
   const streamKey = String(body.streamKey || "").trim();

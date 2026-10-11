@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { AppState } from "@/lib/state";
@@ -27,7 +27,9 @@ import {
   resolveManualOneShotDisplayFromState,
   resolveManualOverlaySelectedSigs,
 } from "@/lib/manual-sig-broadcast";
+import { parseSigMetaFromFileName } from "@/lib/sig-filename-meta";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
+import type { SigItem } from "@/types";
 import {
   MANUAL_SIG_DRAFT_STATE_KEY,
   clampManualSigPickCount,
@@ -43,6 +45,7 @@ import {
 } from "@/lib/manual-sig-workbench";
 
 const SIG_INVENTORY_IMPORTED_EVENT = "youtube-sig-inventory-imported";
+const MAX_SIG_UPLOAD_BYTES = 30 * 1024 * 1024;
 
 export default function ManualSigSalesSimple() {
   const router = useRouter();
@@ -52,6 +55,8 @@ export default function ManualSigSalesSimple() {
   const [memberFilterId, setMemberFilterId] = useState("");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [defaultPrice, setDefaultPrice] = useState("10000");
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const userId = user?.id || "finalent";
 
   useEffect(() => {
@@ -451,6 +456,123 @@ export default function ManualSigSalesSimple() {
     [state, soldFlags, persistState]
   );
 
+  const onImportFromHub = useCallback(async () => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/toona/hub", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "import-signatures" }),
+        signal: AbortSignal.timeout(12_000),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        deferred?: boolean;
+      };
+      if (!res.ok || data.ok === false) {
+        setToast(data.error || "시그 가져오기 실패");
+        return;
+      }
+      setToast(
+        data.deferred
+          ? "시그 가져오기는 백그라운드에서 진행 중. 잠시 후 이 페이지를 새로고침해 주세요."
+          : "시그를 가져왔습니다."
+      );
+      window.setTimeout(() => {
+        void loadRemote();
+      }, 5000);
+    } catch {
+      setToast("시그 가져오기 실패 — 아래 PC 업로드를 사용하거나 시그 판매 관리에서 올려 주세요.");
+    } finally {
+      setBusy(false);
+    }
+  }, [loadRemote]);
+
+  const onUploadFiles = useCallback(
+    async (fileList: FileList | null) => {
+      if (!state) return;
+      const files = Array.from(fileList || []).filter((f) => {
+        const mime = String(f.type || "").toLowerCase();
+        const name = String(f.name || "").toLowerCase();
+        return /image\/(gif|png|jpe?g|webp)/i.test(mime) || /\.(gif|png|jpe?g|webp)$/i.test(name);
+      });
+      if (!files.length) {
+        setToast("gif, png, jpg, webp 파일만 올릴 수 있습니다.");
+        return;
+      }
+      const fallbackPrice = Math.max(0, Math.floor(Number(defaultPrice || 0) || 0));
+      setBusy(true);
+      try {
+        const nextInventory: SigItem[] = [...(state.sigInventory || [])];
+        let added = 0;
+        let updated = 0;
+        let failed = 0;
+        for (const file of files) {
+          if (file.size > MAX_SIG_UPLOAD_BYTES) {
+            failed += 1;
+            continue;
+          }
+          const fd = new FormData();
+          fd.append("file", file);
+          const q = new URLSearchParams({ user: userId, u: userId, skipMirror: "1" });
+          const res = await fetch(`/api/upload/sig-image?${q.toString()}`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "x-user-id": userId, "x-sig-upload-skip-mirror": "1" },
+            body: fd,
+          });
+          const j = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string };
+          if (!res.ok || !j.ok || !j.url) {
+            failed += 1;
+            continue;
+          }
+          const meta = parseSigMetaFromFileName(file.name);
+          const name = meta.name.replace(/\s*시그\s*(세로|가로|영상)?\s*$/u, "").trim() || meta.name;
+          const price = meta.priceFromFileName ? meta.price : fallbackPrice;
+          const nameKey = name.replace(/\s+/g, "").toLowerCase();
+          const existing = nextInventory.find(
+            (x) => x.id !== ONE_SHOT_SIG_ID && (x.name || "").replace(/\s+/g, "").toLowerCase() === nameKey
+          );
+          if (existing) {
+            existing.imageUrl = j.url;
+            if (price > 0 && !(Number(existing.price) > 0)) existing.price = price;
+            existing.isActive = true;
+            existing.isRolling = true;
+            updated += 1;
+          } else {
+            nextInventory.push({
+              id: `sig_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+              name,
+              price,
+              imageUrl: j.url,
+              memberId: "",
+              maxCount: 1,
+              soldCount: 0,
+              isRolling: true,
+              isActive: true,
+            });
+            added += 1;
+          }
+        }
+        const next: AppState = { ...state, sigInventory: nextInventory, updatedAt: Date.now() };
+        const priced = nextInventory.filter(
+          (x) => x.id !== ONE_SHOT_SIG_ID && Math.floor(Number(x.price || 0)) > 0
+        ).length;
+        await persistState(
+          next,
+          `업로드 완료: 추가 ${added} · 갱신 ${updated}${failed ? ` · 실패 ${failed}` : ""} · 가격 있는 시그 ${priced}개`,
+          "이미지는 올렸지만 서버 저장이 지연됩니다. 새로고침 후 확인하세요."
+        );
+      } finally {
+        setBusy(false);
+        if (uploadInputRef.current) uploadInputRef.current.value = "";
+      }
+    },
+    [state, defaultPrice, persistState, userId]
+  );
+
   const members = state?.members || [];
 
   return (
@@ -461,10 +583,67 @@ export default function ManualSigSalesSimple() {
           <p className="mt-1 text-sm text-neutral-400">
             판매 중 시그 랜덤(최대 {MAX_MANUAL_SIG_PICK_COUNT}개·한방 제외) → OBS 반영 · 체크 후 판매 확정
           </p>
-          <Link href="/admin/sig-sales" className="mt-2 inline-block text-xs text-yellow-300/90 underline">
-            회전판·상세 수동 입력은 여기
-          </Link>
+          <div className="mt-2 flex flex-wrap gap-3 text-xs">
+            <Link href={`/admin?sigSales=inventory&u=${encodeURIComponent(userId)}`} className="text-yellow-300/90 underline">
+              시그 판매 관리(목록·가격·업로드)
+            </Link>
+            <Link href="/admin/sig-sales" className="text-yellow-300/90 underline">
+              회전판
+            </Link>
+          </div>
         </header>
+
+        {inventoryCount === 0 ? (
+          <p className="rounded-lg border border-amber-400/40 bg-amber-950/50 px-3 py-2 text-sm text-amber-100">
+            시그 인벤토리가 비어 있습니다. 허브에서 가져오거나 PC에서 올린 뒤, 가격이 있는 시그만 판매에 나옵니다.
+          </p>
+        ) : null}
+
+        <section className="rounded-xl border border-lime-400/25 bg-lime-950/20 p-4 space-y-3">
+          <p className="text-sm font-semibold text-lime-100">시그 올리기</p>
+          <p className="text-[11px] text-neutral-400">
+            데스크톱 GIF를 여러 장 선택하면 판매 목록에 추가됩니다. 파일명에 금액이 없으면 아래 기본 가격을 씁니다.
+          </p>
+          <label className="block text-xs text-neutral-300">
+            기본 가격(원)
+            <input
+              type="number"
+              min={0}
+              value={defaultPrice}
+              disabled={busy}
+              onChange={(e) => setDefaultPrice(e.target.value)}
+              className="mt-1 w-full rounded bg-neutral-800 px-2 py-2 text-sm"
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={!authReady || busy}
+              onClick={() => uploadInputRef.current?.click()}
+              className="rounded-lg bg-lime-800 px-4 py-2 text-sm font-bold text-white hover:bg-lime-700 disabled:opacity-50"
+            >
+              {busy ? "처리 중…" : "PC에서 시그 올리기"}
+            </button>
+            <button
+              type="button"
+              disabled={!authReady || busy}
+              onClick={() => void onImportFromHub()}
+              className="rounded-lg border border-sky-400/50 bg-sky-900/50 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-800/60 disabled:opacity-50"
+            >
+              허브에서 시그 가져오기
+            </button>
+          </div>
+          <input
+            ref={uploadInputRef}
+            type="file"
+            className="hidden"
+            multiple
+            accept=".gif,.png,.jpg,.jpeg,.webp,image/gif,image/png,image/jpeg,image/webp"
+            onChange={(e) => {
+              void onUploadFiles(e.target.files);
+            }}
+          />
+        </section>
 
         <section className="rounded-xl border border-white/10 bg-black/40 p-4 space-y-3">
           <label className="block text-xs text-neutral-300">

@@ -306,9 +306,18 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
       const data = (await res.json().catch(() => ({}))) as SigImportResult & {
         ok?: boolean;
         error?: string;
+        deferred?: boolean;
+        sigImport?: SigImportResult;
       };
-      if (!res.ok || !data.ok) {
+      if (!res.ok || data.ok === false) {
         setMessage(data.error || "시그 가져오기 실패");
+        return;
+      }
+      if (data.deferred || data.sigImport?.error === "deferred") {
+        setMessage("시그 가져오기는 백그라운드에서 진행 중. 잠시 후 시그 판매를 새로고침해 주세요.");
+        window.setTimeout(() => {
+          void syncLocalSigInventory();
+        }, 5000);
         return;
       }
       await syncLocalSigInventory();

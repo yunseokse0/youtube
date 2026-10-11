@@ -31,6 +31,8 @@ export type AdminNavSubItem = {
   label: string;
   targetId: string;
   icon?: string;
+  /** 있으면 섹션 스크롤 대신 이 경로로 이동 */
+  href?: string;
 };
 
 export type AdminNavItem = {
@@ -94,7 +96,8 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     mobileShort: "오버레이",
     subItems: [
       { subKey: "ov-manage", label: "오버레이 관리 (다중)", targetId: "overlay-settings", icon: "🖼️" },
-      { subKey: "ov-sig", label: "수동 시그 판매", targetId: "overlay-settings", icon: "🛒" },
+      { subKey: "ov-sig-inv", label: "시그 판매 관리", targetId: "sig-sales-inventory", icon: "🛒" },
+      { subKey: "ov-sig", label: "수동 시그 판매", targetId: "sig-sales-manual-page", href: "/admin/sig-sales-manual", icon: "🎯" },
       { subKey: "ov-obs", label: "OBS 텍스트", targetId: "overlay-settings", icon: "📝" },
     ],
   },
