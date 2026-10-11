@@ -754,17 +754,15 @@ describe("resolveSpinQueueForSession", () => {
 });
 
 describe("sigOverlayBroadcast card metrics", () => {
-  it("한방 카드는 개별 가로 카드보다 조금만 넓다", () => {
+  it("한방 카드는 세로형 개별 시그와 같은 폭·미디어 비율이다", () => {
     const w = sigOverlayBroadcastCardWidthPx(78);
-    const mediaH = sigOverlayBroadcastMediaHeightPx(78, "landscape");
-    expect(w).toBe(Math.round(188 * 0.78));
-    expect(mediaH).toBe(Math.round(w * (180 / 300)));
+    expect(w).toBe(Math.round(230 * 0.78));
+    const portrait = sigOverlayBroadcastMediaSizePx(78, "portrait");
     const oneShotW = sigOverlayBroadcastOneShotWidthPx(78);
     const oneShotMedia = sigOverlayBroadcastOneShotMediaSizePx(78);
-    expect(oneShotW).toBe(Math.round(w * 1.12));
-    expect(oneShotW).toBeGreaterThan(w);
-    expect(oneShotW).toBeLessThan(Math.round((w * 300) / 180));
-    expect(oneShotMedia.width).toBe(oneShotW);
+    expect(oneShotW).toBe(w);
+    expect(oneShotMedia.width).toBe(portrait.width);
+    expect(oneShotMedia.height).toBe(portrait.height);
   });
 
   it("세로형 카드 폭은 가로형과 같고 미디어가 더 높다", () => {
@@ -794,7 +792,7 @@ describe("layoutSigOverlayResultRow", () => {
     const natural = 6 * SIG_OVERLAY_CARD_MAX_PX + 5 * 6;
     const expected = Math.floor((1080 / natural) * 100);
     expect(cardScalePct).toBeLessThanOrEqual(expected);
-    expect(cardScalePct).toBeGreaterThanOrEqual(24);
+    expect(cardScalePct).toBeGreaterThanOrEqual(16);
   });
 
   it("10+한방(11칸)이 1080px 행에 들어간다", () => {
@@ -820,10 +818,10 @@ describe("layoutSigOverlayResultRow", () => {
     const rowW =
       21 * sigOverlayBroadcastCardWidthPx(cardScalePct) + 20 * 6;
     expect(rowW).toBeLessThanOrEqual(1080);
-    expect(cardScalePct).toBeGreaterThanOrEqual(24);
+    expect(cardScalePct).toBeGreaterThanOrEqual(16);
   });
 
-  it("6칸(5+한방)이면 한방 폭이 개별 카드보다 크다", () => {
+  it("6칸(5+한방)이면 한방과 개별 카드 폭이 같다", () => {
     const { cardScalePct } = layoutSigOverlayResultRow({
       cellCount: 6,
       userScalePct: 92,
@@ -831,7 +829,7 @@ describe("layoutSigOverlayResultRow", () => {
       allowOverflow: true,
       hasOneShot: true,
     });
-    expect(sigOverlayBroadcastOneShotWidthPx(cardScalePct)).toBeGreaterThan(
+    expect(sigOverlayBroadcastOneShotWidthPx(cardScalePct)).toBe(
       sigOverlayBroadcastCardWidthPx(cardScalePct)
     );
   });

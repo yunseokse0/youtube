@@ -754,6 +754,12 @@ function SigSalesOverlayPageInner() {
       const serverSel = state?.rouletteState?.selectedSigs ?? state?.rouletteState?.results;
       if (Array.isArray(serverSel) && serverSel.length > 0) return false;
     }
+    if (
+      wheelDemoActive &&
+      ((broadcastStickySigs?.length ?? 0) >= 2 || pendingLanding || demoSpin || wheelPhase !== "idle")
+    ) {
+      return false;
+    }
     return (
       machine.phase === "IDLE" &&
       !pendingLanding &&
@@ -769,25 +775,32 @@ function SigSalesOverlayPageInner() {
     pendingLanding,
     demoSpin,
     wheelPhase,
+    wheelDemoActive,
+    broadcastStickySigs?.length,
   ]);
 
   const spinQueueSelected = useMemo(() => {
+    const withoutOneShot = (items: SigItem[] | null | undefined) =>
+      (items || []).filter((s) => canonicalSigIdFromWheelSliceId(s.id) !== ONE_SHOT_SIG_ID);
+    if (wheelDemoActive && withoutOneShot(broadcastStickySigs).length >= 2) {
+      return withoutOneShot(broadcastStickySigs).slice(0, CONFIRMED_VISIBLE_SLOTS);
+    }
     const idleBeforeSpin = overlayIdleBeforeSpin && !wheelDemoAutoSpin;
     const resolved = resolveSpinQueueForSession(
       spinQueuePinRef.current,
       machine.sessionId || "",
-      idleBeforeSpin ? [] : machine.selectedSigs || [],
+      idleBeforeSpin ? [] : withoutOneShot(machine.selectedSigs),
       pendingLanding?.selected?.length
-        ? pendingLanding.selected
+        ? withoutOneShot(pendingLanding.selected)
         : idleBeforeSpin
           ? []
-          : broadcastStickySigs || [],
+          : withoutOneShot(broadcastStickySigs),
       CONFIRMED_VISIBLE_SLOTS
     );
     spinQueuePinRef.current = resolved.pin;
     if (resolved.queue.length > 0) return resolved.queue;
     if (idleBeforeSpin) return [];
-    return (broadcastStickySigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
+    return withoutOneShot(broadcastStickySigs).slice(0, CONFIRMED_VISIBLE_SLOTS);
   }, [
     machine.selectedSigs,
     machine.sessionId,
@@ -795,6 +808,7 @@ function SigSalesOverlayPageInner() {
     broadcastStickySigs,
     wheelDemoAutoSpin,
     overlayIdleBeforeSpin,
+    wheelDemoActive,
   ]);
   const useSequentialWheel = spinQueueSelected.length > 1;
   const rouletteHasWinnerQueue =
@@ -1120,7 +1134,9 @@ function SigSalesOverlayPageInner() {
   /** 당첨 배열을 재고와 맞춰 휠 라벨·이미지와 동일 시그로 표시 */
   const displaySelectedSigsForUi = useMemo(() => {
     const hydrated = displaySelectedSigs.map((s) => hydrateSigItemFromInventory(s, wheelInventory, sigImageUserId));
-    return stripBundledSigPlaceholderItems(hydrated);
+    return stripBundledSigPlaceholderItems(hydrated).filter(
+      (s) => canonicalSigIdFromWheelSliceId(s.id) !== ONE_SHOT_SIG_ID
+    );
   }, [displaySelectedSigs, wheelInventory, sigImageUserId]);
   const manualDraftFromState = useMemo((): ManualSigDraftPersistOverlay | null => {
     const os = state?.overlaySettings;
@@ -2006,7 +2022,9 @@ function SigSalesOverlayPageInner() {
     setDemoSpin(boot.demoSpin);
     setBroadcastStickySigs(selected);
     setShowResultPanel(true);
-    setOverlayHoldResults(false);
+    setOverlayHoldResults(true);
+    setRevealedSigCount(selected.length);
+    setOneShotRevealUnlocked(true);
     dispatch({ type: "START_SPIN" });
   }, [
     wheelDemoAutoSpin,
@@ -2115,6 +2133,11 @@ function SigSalesOverlayPageInner() {
 
   useEffect(() => {
     if (machine.phase === "IDLE") {
+      if (wheelDemoActive && (broadcastStickySigs?.length ?? 0) >= 2) {
+        setShowResultPanel(true);
+        setOverlayHoldResults(true);
+        return;
+      }
       setShowResultPanel(false);
       setOverlayHoldResults(false);
       if (!pendingLanding && !demoSpin && (machine.selectedSigs?.length ?? 0) === 0) {
@@ -2140,7 +2163,7 @@ function SigSalesOverlayPageInner() {
       return;
     }
     if (machine.selectedSigs.length > 0) setShowResultPanel(true);
-  }, [machine.phase, machine.selectedSigs, overlayHoldResults, demoSpin, pendingLanding]);
+  }, [machine.phase, machine.selectedSigs, overlayHoldResults, demoSpin, pendingLanding, wheelDemoActive, broadcastStickySigs?.length]);
 
   // IDLE 동기화 시에도 방송 화면 결과를 유지한다.
   // 새로운 회차가 시작되면 SPINNING 전환 effect에서 초기화된다.
@@ -2328,7 +2351,7 @@ function SigSalesOverlayPageInner() {
                       setShowResultPanel(true);
                       const partialQueue = selectedQueue.slice(0, revealedAfterRound);
                       const snapSessionMid = machine.sessionId;
-                      if (snapSessionMid && partialQueue.length > 0) {
+                      if (snapSessionMid && partialQueue.length > 0 && !wheelDemoActive) {
                         void fetch(`/api/roulette/land?user=${encodeURIComponent(userId)}`, {
                           method: "POST",
                           credentials: "include",
@@ -2421,7 +2444,7 @@ function SigSalesOverlayPageInner() {
                   setShowResultPanel(true);
                   const signUrl = getSignImageUrl(finalResultId);
                   setCurrentSignImageUrl(signUrl || "");
-                  if (snapSession) {
+                  if (snapSession && !wheelDemoActive) {
                     void (async () => {
                       try {
                         const res = await fetch(`/api/roulette/land?user=${encodeURIComponent(userId)}`, {

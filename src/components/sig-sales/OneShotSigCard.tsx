@@ -12,11 +12,8 @@ import {
   SIG_OVERLAY_CARD_ONESHOT_FOOTER_CLASS,
   SIG_OVERLAY_CARD_PRICE_CLASS,
   SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS,
-  sigOverlayBroadcastCardShellStyle,
-  sigOverlayBroadcastMediaBoxStyle,
   sigOverlayBroadcastOneShotMediaBoxStyle,
   sigOverlayBroadcastOneShotShellStyle,
-  shouldBoostOneShotOverlaySize,
   sigOverlayCardNameOutlineStyle,
   sigOverlayCardPriceOutlineStyle,
   sigOverlayOneShotFooterStyle,
@@ -71,21 +68,13 @@ export default function OneShotSigCard({
 }: OneShotSigCardProps) {
   /** 결과 줄: 개별 시그 카드와 동일 폭·미디어·셸 높이 */
   const useBroadcastSizing = Boolean(matchSigCardSize || (compact && !showToggle));
-  const boostOneShotSize = shouldBoostOneShotOverlaySize(
-    typeof selectedSigCount === "number" ? selectedSigCount + 1 : 1,
-    true
-  );
   const shellStyle = useBroadcastSizing
     ? fillRowCell
       ? { width: "100%", height: "100%", minHeight: "100%", boxSizing: "border-box" as const }
-      : boostOneShotSize
-        ? sigOverlayBroadcastOneShotShellStyle(cardScalePct, { withToggle: showToggle })
-        : sigOverlayBroadcastCardShellStyle(cardScalePct, { withToggle: showToggle, orientation: "landscape" })
+      : sigOverlayBroadcastOneShotShellStyle(cardScalePct, { withToggle: showToggle })
     : undefined;
   const mediaBoxStyle = useBroadcastSizing
-    ? boostOneShotSize
-      ? sigOverlayBroadcastOneShotMediaBoxStyle(cardScalePct)
-      : sigOverlayBroadcastMediaBoxStyle(cardScalePct, "landscape")
+    ? sigOverlayBroadcastOneShotMediaBoxStyle(cardScalePct)
     : undefined;
   const sumLine =
     typeof selectedSigCount === "number" && selectedSigCount > 0
@@ -143,9 +132,9 @@ export default function OneShotSigCard({
           sigImageUserId={sigImageUserId}
           alt={name}
           fill
-          objectFit="cover"
+          objectFit="contain"
           sizes={useBroadcastSizing || compact ? `${SIG_OVERLAY_CARD_MAX_PX}px` : "160px"}
-          className={`relative z-[2] object-cover object-center ${
+          className={`relative z-[2] object-contain object-center ${
             compact
               ? sold
                 ? "brightness-[1.08] contrast-[1.05] saturate-[1.08]"

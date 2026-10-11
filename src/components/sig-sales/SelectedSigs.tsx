@@ -17,7 +17,6 @@ import {
   sigOverlayBroadcastCardShellStyle,
   sigOverlayBroadcastMediaBoxStyle,
   sigOverlayBroadcastOneShotShellStyle,
-  shouldBoostOneShotOverlaySize,
   sigOverlayCardMediaBoxClass,
   sigOverlayCardNameOutlineStyle,
   sigOverlayCardPriceOutlineStyle,
@@ -101,6 +100,8 @@ function SelectedSigCard({
   const canonId = canonicalSigIdFromWheelSliceId(item.id);
   const [orientation, setOrientation] = useState<SigOverlayMediaOrientation>("landscape");
   const isNewest = idx === latestIdx;
+  /** 방송 결과 줄은 세로 시그 카드 비율로 통일(한방·일반 동일). 이미지는 contain. */
+  const frameOrientation: SigOverlayMediaOrientation = broadcastMatch ? "portrait" : orientation;
 
   const onNaturalSize = useCallback((w: number, h: number) => {
     setOrientation(classifySigRollingOrientation(w, h));
@@ -133,7 +134,7 @@ function SelectedSigCard({
         broadcastMatch
           ? sigOverlayBroadcastCardShellStyle(cardScalePct, {
               withToggle: showToggle,
-              orientation,
+              orientation: frameOrientation,
             })
           : undefined
       }
@@ -144,8 +145,8 @@ function SelectedSigCard({
           ? SIG_OVERLAY_CARD_SHELL_CLASS
           : compact
             ? orientation === "portrait"
-              ? "w-full max-w-[113px] justify-self-start"
-              : "w-full max-w-[188px] justify-self-start"
+              ? "w-full max-w-[140px] justify-self-start"
+              : "w-full max-w-[230px] justify-self-start"
             : ""
       } ${isLatestConfirmed ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" : broadcastMatch ? "" : "border-white/20"}`}
     >
@@ -164,7 +165,7 @@ function SelectedSigCard({
           />
         ) : null}
         <div
-          style={broadcastMatch ? sigOverlayBroadcastMediaBoxStyle(cardScalePct, orientation) : undefined}
+          style={broadcastMatch ? sigOverlayBroadcastMediaBoxStyle(cardScalePct, frameOrientation) : undefined}
           className={`overflow-hidden rounded-lg border border-white/20 bg-black/40 ${
             broadcastMatch
               ? SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS
@@ -356,9 +357,7 @@ export default function SelectedSigs({
         <div
           style={
             broadcastMatch && matchOneShotCardSize
-              ? shouldBoostOneShotOverlaySize(cellCount, true)
-                ? sigOverlayBroadcastOneShotShellStyle(cardScalePct)
-                : sigOverlayBroadcastCardShellStyle(cardScalePct, { orientation: "landscape" })
+              ? sigOverlayBroadcastOneShotShellStyle(cardScalePct)
               : undefined
           }
           className={

@@ -8,8 +8,8 @@ export type SigOverlayMediaOrientation = "portrait" | "landscape";
  * 방송 결과 카드 셸 폭 상한(px). 가로 원본 아트는 **300×180**(5:3).
  * 추가 축소는 `/overlay/sig-sales` 의 `sigResultScalePct`(50~100%)로 조절.
  */
-/** 가로형 결과 카드 공통 폭(SelectedSigs compact `max-w-[188px]` 와 동일) */
-export const SIG_OVERLAY_CARD_MAX_PX = 188;
+/** 방송 결과 카드 공통 폭. 세로 시그 이름·금액이 한 카드에 들어가게 가로형보다 여유 있게. */
+export const SIG_OVERLAY_CARD_MAX_PX = 230;
 
 /** 시그 롤링·카드 미디어 고정 프레임(px) — 가로 원본 300×180 / 세로는 교환 */
 export const SIG_ROLLING_MEDIA_WIDTH_PX = 300;
@@ -119,7 +119,7 @@ export function sigOverlayResultBandStyle(_scalePct?: number): CSSProperties {
 /** `cardScalePct` 반영 가로형 기준 폭(px) */
 export function sigOverlayBroadcastCardWidthPx(scalePct = 100): number {
   const n = Math.floor(Number(scalePct) || 100);
-  const clamped = Math.max(24, Math.min(100, n));
+  const clamped = Math.max(16, Math.min(100, n));
   return Math.round((SIG_OVERLAY_CARD_MAX_PX * clamped) / 100);
 }
 
@@ -183,25 +183,18 @@ export function sigOverlayBroadcastCardTotalHeightPx(
   return mediaH + footerH + shellPad;
 }
 
-/** 한방은 개별 카드보다 조금만 넓게(금색 구분). 세로 시그 높이까지 키우지 않는다. */
-export const SIG_OVERLAY_ONESHOT_WIDTH_MULT = 1.12;
+/** 한방 카드는 세로형 개별 시그와 같은 폭·3:5 미디어(가로 이미지를 contain). */
+export const SIG_OVERLAY_ONESHOT_WIDTH_MULT = 1;
 
 export function sigOverlayBroadcastOneShotWidthPx(scalePct = 100): number {
-  return Math.round(sigOverlayBroadcastCardWidthPx(scalePct) * SIG_OVERLAY_ONESHOT_WIDTH_MULT);
+  return sigOverlayBroadcastCardWidthPx(scalePct);
 }
 
 export function sigOverlayBroadcastOneShotMediaSizePx(scalePct = 100): {
   width: number;
   height: number;
 } {
-  const width = sigOverlayBroadcastOneShotWidthPx(scalePct);
-  return {
-    width,
-    height: Math.max(
-      1,
-      Math.round((width * SIG_ROLLING_MEDIA_HEIGHT_PX) / SIG_ROLLING_MEDIA_WIDTH_PX)
-    ),
-  };
+  return sigOverlayBroadcastMediaSizePx(scalePct, "portrait");
 }
 
 export function sigOverlayBroadcastOneShotMediaBoxStyle(scalePct = 100): CSSProperties {
@@ -266,11 +259,11 @@ export function sigOverlayBroadcastCardShellStyle(
   };
 }
 
-/** 당첨이 많지 않을 때만 한방 카드를 키운다(20장+한방은 행에 안 들어감) */
-export const SIG_OVERLAY_ONESHOT_BOOST_MAX_CELLS = 8;
+/** 한방은 개별 세로 시그와 같은 칸 크기(비율 맞춤). */
+export const SIG_OVERLAY_ONESHOT_BOOST_MAX_CELLS = 0;
 
-export function shouldBoostOneShotOverlaySize(cellCount: number, hasOneShot = true): boolean {
-  return Boolean(hasOneShot) && Math.max(0, Math.floor(cellCount || 0)) <= SIG_OVERLAY_ONESHOT_BOOST_MAX_CELLS;
+export function shouldBoostOneShotOverlaySize(_cellCount: number, _hasOneShot = true): boolean {
+  return false;
 }
 
 /** 당첨 N장+한방이 한 줄에 잘리지 않도록 카드 폭을 행 너비에 맞춘다(줌 래퍼 대신 카드 자체 축소) */
@@ -295,7 +288,7 @@ export function layoutSigOverlayResultRow(opts: {
     cells * SIG_OVERLAY_CARD_MAX_PX + Math.max(0, cells - 1) * gapPx + oneShotExtra;
   const fromUser = Math.floor(user * 100);
   if (opts.allowOverflow) {
-    const cardScalePct = Math.min(100, Math.max(24, fromUser));
+    const cardScalePct = Math.min(100, Math.max(16, fromUser));
     return {
       cardScalePct,
       bandStyle: sigOverlayResultBandStyle(cardScalePct),
@@ -312,7 +305,7 @@ export function layoutSigOverlayResultRow(opts: {
     (maxW - Math.max(0, cells - 1) * gapPx) / Math.max(1, denom)
   );
   const fromFit = Math.floor((maxCardW / SIG_OVERLAY_CARD_MAX_PX) * 100);
-  let cardScalePct = Math.min(100, Math.max(24, Math.min(Math.floor(combined * 100), fromFit)));
+  let cardScalePct = Math.min(100, Math.max(16, Math.min(Math.floor(combined * 100), fromFit)));
   const rowWidthAt = (pct: number) => {
     const regular = boostOneShot ? Math.max(0, cells - 1) : cells;
     const gaps = Math.max(0, cells - 1) * gapPx;
@@ -322,7 +315,7 @@ export function layoutSigOverlayResultRow(opts: {
       gaps
     );
   };
-  while (cardScalePct > 24 && rowWidthAt(cardScalePct) > maxW) {
+  while (cardScalePct > 16 && rowWidthAt(cardScalePct) > maxW) {
     cardScalePct -= 1;
   }
   return {
