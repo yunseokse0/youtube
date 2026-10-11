@@ -165,12 +165,12 @@ export default function OneShotSigCard({
           <>
             <div
               className={SIG_OVERLAY_CARD_NAME_CLASS}
-              style={sigOverlayCardNameOutlineStyle(20)}
+              style={sigOverlayCardNameOutlineStyle(21)}
               title={sumLine}
             >
               {name}
             </div>
-            <div className={SIG_OVERLAY_CARD_PRICE_CLASS} style={sigOverlayCardPriceOutlineStyle(20)}>
+            <div className={SIG_OVERLAY_CARD_PRICE_CLASS} style={sigOverlayCardPriceOutlineStyle(21)}>
               {formatWon(price)}
             </div>
             {showToggle ? (

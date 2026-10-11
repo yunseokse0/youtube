@@ -18,6 +18,7 @@ import {
   sigOverlayBroadcastMediaBoxStyle,
   sigOverlayBroadcastOneShotShellStyle,
   sigOverlayCardMediaBoxClass,
+  sigOverlayBroadcastFooterStyle,
   sigOverlayCardNameOutlineStyle,
   sigOverlayCardPriceOutlineStyle,
   type SigOverlayMediaOrientation,
@@ -209,6 +210,7 @@ function SelectedSigCard({
                 ? "space-y-0 p-1"
                 : "space-y-1 p-2"
           }
+          style={broadcastMatch ? sigOverlayBroadcastFooterStyle() : undefined}
         >
           <div
             className={
@@ -218,7 +220,7 @@ function SelectedSigCard({
             }
             style={
               broadcastMatch
-                ? sigOverlayCardNameOutlineStyle(18)
+                ? sigOverlayCardNameOutlineStyle(21)
                 : compact
                   ? sigOverlayCardNameOutlineStyle(10)
                   : sigOverlayCardNameOutlineStyle(14)
@@ -236,7 +238,7 @@ function SelectedSigCard({
             }
             style={
               broadcastMatch
-                ? sigOverlayCardPriceOutlineStyle(18)
+                ? sigOverlayCardPriceOutlineStyle(21)
                 : compact
                   ? sigOverlayCardPriceOutlineStyle(9)
                   : sigOverlayCardPriceOutlineStyle(12)

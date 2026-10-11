@@ -38,18 +38,23 @@ export const SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS =
   "relative mb-1 w-full shrink-0 overflow-hidden";
 
 /** 방송 오버레이: 개별 시그 하단 이름·금액 — 금액 줄은 잘리지 않게 고정 */
-export const SIG_OVERLAY_CARD_FOOTER_H_PX = 90;
-export const SIG_OVERLAY_CARD_FOOTER_H_TOGGLE_PX = 108;
+export const SIG_OVERLAY_CARD_FOOTER_H_PX = 100;
+export const SIG_OVERLAY_CARD_FOOTER_H_TOGGLE_PX = 118;
 export const SIG_OVERLAY_CARD_FOOTER_CLASS =
-  "mt-auto flex min-h-[90px] shrink-0 flex-col justify-center gap-0.5 rounded-b-[10px] border-t border-white/15 px-2 py-2";
-/** 한방 시그: 이름·금액 영역 반투명 검은 배경 — Tailwind opacity 클래스 대신 인라인 rgba(OBS CEF) */
-export const SIG_OVERLAY_CARD_ONESHOT_FOOTER_BG = "rgba(0, 0, 0, 0.72)";
+  "relative z-[3] mt-auto flex min-h-[100px] shrink-0 flex-col justify-center gap-1 rounded-b-[10px] border-t border-white/20 px-2 py-2.5 text-center";
+/** 이름·금액 영역 반투명 검은 배경 — Tailwind opacity 클래스 대신 인라인 rgba(OBS CEF) */
+export const SIG_OVERLAY_CARD_ONESHOT_FOOTER_BG = "rgba(0, 0, 0, 0.82)";
+export const SIG_OVERLAY_CARD_FOOTER_BG = SIG_OVERLAY_CARD_ONESHOT_FOOTER_BG;
 export const SIG_OVERLAY_CARD_ONESHOT_FOOTER_CLASS =
-  "relative z-[3] mt-auto flex min-h-[90px] w-full shrink-0 flex-col justify-center gap-0.5 rounded-b-[10px] border-t border-white/15 px-2 py-2";
+  "relative z-[3] mt-auto flex min-h-[100px] w-full shrink-0 flex-col justify-center gap-1 rounded-b-[10px] border-t border-white/20 px-2 py-2.5 text-center";
 
 export function sigOverlayOneShotFooterStyle(): CSSProperties {
+  return sigOverlayBroadcastFooterStyle();
+}
+
+export function sigOverlayBroadcastFooterStyle(): CSSProperties {
   return {
-    backgroundColor: SIG_OVERLAY_CARD_ONESHOT_FOOTER_BG,
+    backgroundColor: SIG_OVERLAY_CARD_FOOTER_BG,
     width: "100%",
     flexShrink: 0,
     position: "relative",
@@ -57,31 +62,32 @@ export function sigOverlayOneShotFooterStyle(): CSSProperties {
   };
 }
 export const SIG_OVERLAY_CARD_NAME_CLASS =
-  "line-clamp-2 shrink-0 break-words font-extrabold text-[18px] leading-snug sm:text-[20px]";
+  "line-clamp-2 shrink-0 break-words font-black text-[20px] leading-tight sm:text-[22px]";
 export const SIG_OVERLAY_CARD_PRICE_CLASS =
-  "shrink-0 text-[17px] font-black tabular-nums sm:text-[20px]";
+  "shrink-0 text-[20px] font-black tabular-nums sm:text-[22px]";
 
-const SIG_OVERLAY_TEXT_OUTLINE_COLOR = "rgba(6, 12, 24, 0.95)";
+const SIG_OVERLAY_TEXT_OUTLINE_COLOR = "rgba(0, 0, 0, 0.98)";
+const SIG_OVERLAY_TEXT_OUTLINE_WIDTH_PX = 2.4;
 
-/** 텍스트 오버레이와 동일 — OBS CEF에서 stroke + shadow 병행 */
-export function sigOverlayCardNameOutlineStyle(fontSizePx = 18): CSSProperties {
+/** OBS CEF: 두꺼운 stroke + 링 섀도우로 사진 위에서도 글자가 읽히게 */
+export function sigOverlayCardNameOutlineStyle(fontSizePx = 21): CSSProperties {
   return {
     color: "#ffffff",
     ...buildTextOutlineStyle({
       fontSizePx,
       outlineColor: SIG_OVERLAY_TEXT_OUTLINE_COLOR,
-      outlineWidthPx: 1.25,
+      outlineWidthPx: SIG_OVERLAY_TEXT_OUTLINE_WIDTH_PX,
     }),
   };
 }
 
-export function sigOverlayCardPriceOutlineStyle(fontSizePx = 18): CSSProperties {
+export function sigOverlayCardPriceOutlineStyle(fontSizePx = 21): CSSProperties {
   return {
-    color: "#fde68a",
+    color: "#facc15",
     ...buildTextOutlineStyle({
       fontSizePx,
       outlineColor: SIG_OVERLAY_TEXT_OUTLINE_COLOR,
-      outlineWidthPx: 1.25,
+      outlineWidthPx: SIG_OVERLAY_TEXT_OUTLINE_WIDTH_PX,
     }),
   };
 }
