@@ -5,6 +5,7 @@ import {
   SIG_OVERLAY_CARD_MAX_PX,
   sigOverlayBroadcastCardWidthPx,
   sigOverlayBroadcastMediaHeightPx,
+  sigOverlayBroadcastMediaSizePx,
   sigOverlayBroadcastCardTotalHeightPx,
   sigOverlayBroadcastOneShotWidthPx,
   sigOverlayBroadcastOneShotMediaSizePx,
@@ -753,25 +754,26 @@ describe("resolveSpinQueueForSession", () => {
 });
 
 describe("sigOverlayBroadcast card metrics", () => {
-  it("한방 가로 카드는 세로형 개별 시그 미디어 높이에 맞춰 더 크다", () => {
+  it("한방 카드는 개별 가로 카드보다 조금만 넓다", () => {
     const w = sigOverlayBroadcastCardWidthPx(78);
     const mediaH = sigOverlayBroadcastMediaHeightPx(78, "landscape");
     expect(w).toBe(Math.round(188 * 0.78));
     expect(mediaH).toBe(Math.round(w * (180 / 300)));
     const oneShotW = sigOverlayBroadcastOneShotWidthPx(78);
     const oneShotMedia = sigOverlayBroadcastOneShotMediaSizePx(78);
+    expect(oneShotW).toBe(Math.round(w * 1.12));
     expect(oneShotW).toBeGreaterThan(w);
-    expect(oneShotMedia.height).toBe(w);
-    expect(oneShotMedia.width).toBe(Math.round((w * 300) / 180));
+    expect(oneShotW).toBeLessThan(Math.round((w * 300) / 180));
+    expect(oneShotMedia.width).toBe(oneShotW);
   });
 
-  it("세로형 카드는 폭이 줄고 높이가 기준폭이 된다", () => {
+  it("세로형 카드 폭은 가로형과 같고 미디어가 더 높다", () => {
     const baseW = sigOverlayBroadcastCardWidthPx(100);
-    const mediaH = sigOverlayBroadcastMediaHeightPx(100, "portrait");
-    expect(mediaH).toBe(baseW);
-    expect(sigOverlayBroadcastMediaHeightPx(100, "portrait")).toBeGreaterThan(
-      sigOverlayBroadcastMediaHeightPx(100, "landscape")
-    );
+    const portrait = sigOverlayBroadcastMediaSizePx(100, "portrait");
+    const landscape = sigOverlayBroadcastMediaSizePx(100, "landscape");
+    expect(portrait.width).toBe(baseW);
+    expect(landscape.width).toBe(baseW);
+    expect(portrait.height).toBeGreaterThan(landscape.height);
   });
 
   it("한방·개별 셸 전체 높이가 동일(px)", () => {

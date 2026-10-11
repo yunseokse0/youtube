@@ -37,13 +37,15 @@ export function sigOverlayCardMediaBoxClass(
 export const SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS =
   "relative mb-1 w-full shrink-0 overflow-hidden";
 
-/** 방송 오버레이: 개별 시그 하단 이름·금액(배경 없음 — 외곽선으로 가독성) */
+/** 방송 오버레이: 개별 시그 하단 이름·금액 — 금액 줄은 잘리지 않게 고정 */
+export const SIG_OVERLAY_CARD_FOOTER_H_PX = 90;
+export const SIG_OVERLAY_CARD_FOOTER_H_TOGGLE_PX = 108;
 export const SIG_OVERLAY_CARD_FOOTER_CLASS =
-  "space-y-1 rounded-b-[10px] border-t border-white/15 px-2 py-2.5";
+  "mt-auto flex min-h-[90px] shrink-0 flex-col justify-center gap-0.5 rounded-b-[10px] border-t border-white/15 px-2 py-2";
 /** 한방 시그: 이름·금액 영역 반투명 검은 배경 — Tailwind opacity 클래스 대신 인라인 rgba(OBS CEF) */
 export const SIG_OVERLAY_CARD_ONESHOT_FOOTER_BG = "rgba(0, 0, 0, 0.72)";
 export const SIG_OVERLAY_CARD_ONESHOT_FOOTER_CLASS =
-  "relative z-[3] mt-auto w-full shrink-0 space-y-1 rounded-b-[10px] border-t border-white/15 px-2 py-2.5";
+  "relative z-[3] mt-auto flex min-h-[90px] w-full shrink-0 flex-col justify-center gap-0.5 rounded-b-[10px] border-t border-white/15 px-2 py-2";
 
 export function sigOverlayOneShotFooterStyle(): CSSProperties {
   return {
@@ -55,9 +57,9 @@ export function sigOverlayOneShotFooterStyle(): CSSProperties {
   };
 }
 export const SIG_OVERLAY_CARD_NAME_CLASS =
-  "line-clamp-2 break-words font-extrabold text-[18px] leading-snug sm:text-[20px]";
+  "line-clamp-2 shrink-0 break-words font-extrabold text-[18px] leading-snug sm:text-[20px]";
 export const SIG_OVERLAY_CARD_PRICE_CLASS =
-  "text-[17px] font-black tabular-nums sm:text-[20px]";
+  "shrink-0 text-[17px] font-black tabular-nums sm:text-[20px]";
 
 const SIG_OVERLAY_TEXT_OUTLINE_COLOR = "rgba(6, 12, 24, 0.95)";
 
@@ -123,8 +125,9 @@ export function sigOverlayBroadcastCardWidthPx(scalePct = 100): number {
 
 /**
  * 방송 미디어 박스 크기(px).
- * - landscape: 가로형 300×180 비율 (폭=기준폭)
- * - portrait: 세로형 180×300 비율 (폭=기준폭×180/300, 높이=기준폭)
+ * - 카드 폭은 가로/세로 모두 기준폭(이름·금액이 들어갈 자리).
+ * - landscape: 높이 = 폭×180/300
+ * - portrait: 높이 = 폭×300/180 (세로 사진이 좁은 칸에 찌그러지지 않게)
  */
 export function sigOverlayBroadcastMediaSizePx(
   scalePct = 100,
@@ -133,8 +136,11 @@ export function sigOverlayBroadcastMediaSizePx(
   const baseW = sigOverlayBroadcastCardWidthPx(scalePct);
   if (orientation === "portrait") {
     return {
-      width: Math.max(1, Math.round((baseW * SIG_ROLLING_MEDIA_HEIGHT_PX) / SIG_ROLLING_MEDIA_WIDTH_PX)),
-      height: baseW,
+      width: baseW,
+      height: Math.max(
+        1,
+        Math.round((baseW * SIG_ROLLING_MEDIA_WIDTH_PX) / SIG_ROLLING_MEDIA_HEIGHT_PX)
+      ),
     };
   }
   return {
@@ -172,20 +178,16 @@ export function sigOverlayBroadcastCardTotalHeightPx(
   orientation: SigOverlayMediaOrientation = "landscape"
 ): number {
   const mediaH = sigOverlayBroadcastMediaSizePx(scalePct, orientation).height;
-  const footerH = withToggle ? 98 : 80;
+  const footerH = withToggle ? SIG_OVERLAY_CARD_FOOTER_H_TOGGLE_PX : SIG_OVERLAY_CARD_FOOTER_H_PX;
   const shellPad = 16;
   return mediaH + footerH + shellPad;
 }
 
-/**
- * 한방 가로 카드 폭. 세로형 개별 시그 미디어 높이와 맞춰 한방이 작아 보이지 않게 한다.
- * scalePct 클램프(≤100)를 우회하므로 `sigOverlayBroadcastCardWidthPx`에 큰 %를 넣지 않는다.
- */
+/** 한방은 개별 카드보다 조금만 넓게(금색 구분). 세로 시그 높이까지 키우지 않는다. */
+export const SIG_OVERLAY_ONESHOT_WIDTH_MULT = 1.12;
+
 export function sigOverlayBroadcastOneShotWidthPx(scalePct = 100): number {
-  const regular = sigOverlayBroadcastCardWidthPx(scalePct);
-  return Math.round(
-    (regular * SIG_ROLLING_MEDIA_WIDTH_PX) / SIG_ROLLING_MEDIA_HEIGHT_PX
-  );
+  return Math.round(sigOverlayBroadcastCardWidthPx(scalePct) * SIG_OVERLAY_ONESHOT_WIDTH_MULT);
 }
 
 export function sigOverlayBroadcastOneShotMediaSizePx(scalePct = 100): {
@@ -218,7 +220,7 @@ export function sigOverlayBroadcastOneShotShellStyle(
   opts?: { withToggle?: boolean }
 ): CSSProperties {
   const media = sigOverlayBroadcastOneShotMediaSizePx(scalePct);
-  const footerH = opts?.withToggle ? 98 : 80;
+  const footerH = opts?.withToggle ? SIG_OVERLAY_CARD_FOOTER_H_TOGGLE_PX : SIG_OVERLAY_CARD_FOOTER_H_PX;
   const shellPad = 16;
   const totalH = media.height + footerH + shellPad;
   return {
@@ -287,8 +289,7 @@ export function layoutSigOverlayResultRow(opts: {
   const gapPx = 6;
   const boostOneShot = shouldBoostOneShotOverlaySize(cells, opts.hasOneShot);
   const oneShotExtra = boostOneShot
-    ? SIG_OVERLAY_CARD_MAX_PX *
-        (SIG_ROLLING_MEDIA_WIDTH_PX / SIG_ROLLING_MEDIA_HEIGHT_PX - 1)
+    ? SIG_OVERLAY_CARD_MAX_PX * (SIG_OVERLAY_ONESHOT_WIDTH_MULT - 1)
     : 0;
   const natural =
     cells * SIG_OVERLAY_CARD_MAX_PX + Math.max(0, cells - 1) * gapPx + oneShotExtra;
@@ -304,9 +305,7 @@ export function layoutSigOverlayResultRow(opts: {
   const combined = Math.min(user, fit);
   /** 정수 폭 반올림까지 고려해 행이 maxW를 넘지 않게(한방 추가 폭 포함) */
   const regularCells = boostOneShot ? Math.max(1, cells - 1) : cells;
-  const oneShotFactor = boostOneShot
-    ? SIG_ROLLING_MEDIA_WIDTH_PX / SIG_ROLLING_MEDIA_HEIGHT_PX
-    : 0;
+  const oneShotFactor = boostOneShot ? SIG_OVERLAY_ONESHOT_WIDTH_MULT : 0;
   const denom =
     regularCells + (boostOneShot ? oneShotFactor : 0);
   const maxCardW = Math.floor(
