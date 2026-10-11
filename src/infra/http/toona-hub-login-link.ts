@@ -15,7 +15,6 @@ import {
   TOONA_HUB_LOGIN_FETCH_MS,
   TOONA_HUB_PATCH_FETCH_MS,
   TOONA_HUB_SESSION_WRITE_MS,
-  TOONA_HUB_VERIFY_FETCH_MS,
 } from "@/lib/toona-hub-login";
 
 export type ToonaHubLoginInput = {
@@ -197,56 +196,7 @@ export async function linkToonaHubByStreamKey(input: ToonaHubStreamKeyInput): Pr
   const ingestSecret = String(process.env.TOONA_INGEST_SECRET || "").trim();
   if (!ingestSecret) return { ok: false, error: "ingest_secret_not_configured" };
 
-  /** 후원 원장 GET 은 대량이면 youtube Node 가 502 난다. 가벼운 youtubegit GET 만 짧게 본다. */
-  try {
-    const verifyRes = await fetch(`${baseUrl}/api/youtubegit/${encodeURIComponent(streamKey)}`, {
-      method: "GET",
-      headers: toonaHubAuthHeaders({ token: TOONA_HUB_S2S_TOKEN }),
-      signal: AbortSignal.timeout(TOONA_HUB_VERIFY_FETCH_MS),
-    });
-    if (verifyRes.status === 404) {
-      const verifyJson = (await verifyRes.json().catch(() => ({}))) as { error?: string };
-      return {
-        ok: false,
-        error: verifyJson.error || "존재하지 않는 스트리머입니다.",
-      };
-    }
-  } catch {
-    /** 허브 지연·502 는 연결을 막지 않는다 */
-  }
-
-  const patchBody = {
-    enabled: true,
-    baseUrl: youtubePublicBaseUrl,
-    userId: youtubeUserId,
-    scenario: "B",
-    allowEventsFallback: true,
-    ingestSecret,
-  };
-
-  const patchJson: {
-    error?: string;
-    enabled?: boolean;
-    lastIngestAt?: string | null;
-    lastIngestOk?: boolean | null;
-    lastIngestError?: string | null;
-    userId?: string;
-  } = {};
-  void fetch(`${baseUrl}/api/youtubegit/${encodeURIComponent(streamKey)}`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...toonaHubAuthHeaders({ token: TOONA_HUB_S2S_TOKEN }),
-    },
-    body: JSON.stringify(patchBody),
-    signal: AbortSignal.timeout(TOONA_HUB_PATCH_FETCH_MS),
-  }).catch(() => {});
-
   const linkedAt = Date.now();
-  const existingCursor = await readToonaHubPullCursor(youtubeUserId).catch(() => null);
-  if (!existingCursor) {
-    await writeToonaHubPullCursor(youtubeUserId, { floorAt: 0, fromMs: 0, after: "" }).catch(() => {});
-  }
   const session: ToonaHubSession = {
     userId: youtubeUserId,
     baseUrl,
@@ -258,15 +208,15 @@ export async function linkToonaHubByStreamKey(input: ToonaHubStreamKeyInput): Pr
     lastStatusAt: linkedAt,
     lastStatusOk: true,
     lastStatusError: null,
-    lastIngestAt: patchJson.lastIngestAt ?? null,
-    lastIngestOk: patchJson.lastIngestOk ?? null,
+    lastIngestAt: null,
+    lastIngestOk: null,
     lastIngestError: ingestErrorVisibleAfterLink({
       linkedAt,
-      lastIngestAt: patchJson.lastIngestAt,
-      lastIngestOk: patchJson.lastIngestOk,
-      lastIngestError: patchJson.lastIngestError,
+      lastIngestAt: null,
+      lastIngestOk: null,
+      lastIngestError: null,
     }),
-    youtubegitEnabled: patchJson.enabled !== false,
+    youtubegitEnabled: true,
     youtubeUserId,
   };
 
@@ -286,6 +236,23 @@ export async function linkToonaHubByStreamKey(input: ToonaHubStreamKeyInput): Pr
           : `session_save_failed: ${err instanceof Error ? err.message : "write_failed"}`,
     };
   }
+
+  void fetch(`${baseUrl}/api/youtubegit/${encodeURIComponent(streamKey)}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      ...toonaHubAuthHeaders({ token: TOONA_HUB_S2S_TOKEN }),
+    },
+    body: JSON.stringify({
+      enabled: true,
+      baseUrl: youtubePublicBaseUrl,
+      userId: youtubeUserId,
+      scenario: "B",
+      allowEventsFallback: true,
+      ingestSecret,
+    }),
+    signal: AbortSignal.timeout(TOONA_HUB_PATCH_FETCH_MS),
+  }).catch(() => {});
   void clearToonaHubDonationLogs(youtubeUserId).catch(() => {});
 
   return { ok: true, session: publicToonaHubSession(session) };

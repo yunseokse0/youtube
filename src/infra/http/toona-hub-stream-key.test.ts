@@ -95,7 +95,7 @@ describe("linkToonaHubByStreamKey", () => {
     process.env.TOONA_INGEST_SECRET = prev;
   });
 
-  it("rejects an unknown stream key from youtubegit GET 404", async () => {
+  it("saves the stream-key session without waiting on hub HTTP", async () => {
     const prev = process.env.TOONA_INGEST_SECRET;
     process.env.TOONA_INGEST_SECRET = "s2s-secret";
     const fetchMock = vi.fn(async () => {
@@ -109,8 +109,7 @@ describe("linkToonaHubByStreamKey", () => {
       baseUrl: "http://toona.test",
       youtubePublicBaseUrl: "http://youtube.test",
     });
-    expect(out.ok).toBe(false);
-    if (!out.ok) expect(out.error).toBe("존재하지 않는 스트리머입니다.");
+    expect(out.ok).toBe(true);
     process.env.TOONA_INGEST_SECRET = prev;
   });
 

@@ -260,35 +260,38 @@ export async function POST(req: NextRequest) {
     return json({ ok: false, error: result.error }, status);
   }
 
-  void (async () => {
-    const [
-      { loadAppStateForUserId },
-      { normalizeContributionFormula },
-      { persistContributionFormulaForUser },
-      { fetchToonaHubContributionFormula, syncContributionFormulaToToonaHub },
-    ] = await Promise.all([
-      import("@/lib/app-state-server-load"),
-      import("@/lib/contribution-formula"),
-      import("@/lib/contribution-formula-persist"),
-      import("@/lib/toona-hub-client"),
-    ]);
-    const stateUserId = scopedStateUserIdOf(auth.userId);
-    const state = await loadAppStateForUserId(stateUserId);
-    let formula = normalizeContributionFormula(
-      body.contributionFormula ?? state?.contributionFormula
-    );
-    if (body.contributionFormula) {
-      await persistContributionFormulaForUser(stateUserId, formula);
-    } else {
-      const fromToona = await fetchToonaHubContributionFormula(auth.userId);
-      if (fromToona) {
-        formula = fromToona;
-        await persistContributionFormulaForUser(stateUserId, fromToona);
+  /** 시그·기여도 후처리는 응답을 보낸 뒤에만 시작한다. 같이 돌리면 EC2가 502 난다. */
+  setTimeout(() => {
+    void (async () => {
+      const [
+        { loadAppStateForUserId },
+        { normalizeContributionFormula },
+        { persistContributionFormulaForUser },
+        { fetchToonaHubContributionFormula, syncContributionFormulaToToonaHub },
+      ] = await Promise.all([
+        import("@/lib/app-state-server-load"),
+        import("@/lib/contribution-formula"),
+        import("@/lib/contribution-formula-persist"),
+        import("@/lib/toona-hub-client"),
+      ]);
+      const stateUserId = scopedStateUserIdOf(auth.userId);
+      const state = await loadAppStateForUserId(stateUserId);
+      let formula = normalizeContributionFormula(
+        body.contributionFormula ?? state?.contributionFormula
+      );
+      if (body.contributionFormula) {
+        await persistContributionFormulaForUser(stateUserId, formula);
+      } else {
+        const fromToona = await fetchToonaHubContributionFormula(auth.userId);
+        if (fromToona) {
+          formula = fromToona;
+          await persistContributionFormulaForUser(stateUserId, fromToona);
+        }
       }
-    }
-    await syncContributionFormulaToToonaHub(auth.userId, formula);
-    await importSigsAfterHubLogin(auth.userId);
-  })().catch(() => {});
+      await syncContributionFormulaToToonaHub(auth.userId, formula);
+      await importSigsAfterHubLogin(auth.userId);
+    })().catch(() => {});
+  }, 2_500);
 
   return json(toonaHubLoginSuccessBody(result.session));
 }

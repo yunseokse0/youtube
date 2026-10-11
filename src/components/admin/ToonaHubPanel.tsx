@@ -89,14 +89,19 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
         };
         if (!res.ok || data.ok === false) {
           setMessage(data.error || `상태 조회 실패 (HTTP ${res.status})`);
-          return { ok: false, slow: data.slow === true, status: res.status } as const;
+          return {
+            ok: false,
+            slow: data.slow === true,
+            status: res.status,
+            session: data.session ?? null,
+          } as const;
         }
         applyPayload(data);
         if (data.session?.streamKey) setStreamKey(data.session.streamKey);
         if (data.session?.baseUrl) setBaseUrl(data.session.baseUrl);
         if (data.error) setMessage(data.error);
         else if (!refresh) setMessage("");
-        return { ok: true, slow: data.slow === true, status: res.status } as const;
+        return { ok: true, slow: data.slow === true, status: res.status, session: data.session ?? null } as const;
       } catch (err) {
         window.clearTimeout(timeout);
         const msg =
@@ -104,7 +109,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
             ? "허브 폴링 타임아웃 (15초 초과)"
             : "네트워크 오류 — 잠시 후 재시도";
         setMessage(msg);
-        return { ok: false, slow: true, status: 0 } as const;
+        return { ok: false, slow: true, status: 0, session: null } as const;
       }
     },
     [applyPayload]
@@ -193,6 +198,14 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
         sigImport?: SigImportResult;
       };
       if (!res.ok || !data.ok) {
+        const recovered = await load(false);
+        if (recovered.ok && recovered.session?.streamKey) {
+          setMessage("스트림 키로 DIN 허브 연결 완료");
+          if (typeof onLoggedIn === "function") {
+            try { onLoggedIn(); } catch (_) { /* noop */ }
+          }
+          return;
+        }
         const err = String(data.error || "");
         setMessage(
           err === "login_required" || err === "unauthorized"
