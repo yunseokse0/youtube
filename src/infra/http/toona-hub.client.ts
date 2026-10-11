@@ -165,7 +165,7 @@ export async function syncContributionFormulaToToonaHub(
   }
 }
 
-/** 허브 세션(JWT)으로 toona 시그 목록 조회 — 비밀번호 재입력 없음 */
+/** 허브 세션(JWT 또는 스트림 키 S2S)으로 toona 시그 목록 조회 — 비밀번호 재입력 없음 */
 export async function fetchToonaSignaturesViaHubSession(
   youtubeUserId: string
 ): Promise<
