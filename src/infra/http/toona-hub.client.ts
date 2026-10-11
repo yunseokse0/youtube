@@ -5,11 +5,13 @@ import { normalizeContributionFormula } from "@/lib/contribution-formula";
 import { persistContributionFormulaForUser } from "@/lib/contribution-formula-persist";
 import {
   clearToonaHubDonationLogs,
+  isToonaHubUserLoginRequired,
   publicToonaHubSession,
   readToonaHubDonationLogs,
   readToonaHubPullCursor,
   readToonaHubSession,
   resolveToonaHubBearer,
+  TOONA_HUB_S2S_TOKEN,
   toonaHubAuthHeaders,
   writeToonaHubPullCursor,
   writeToonaHubSession,
@@ -252,9 +254,39 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
     };
 
     if (!res.ok) {
-      session.lastStatusAt = Date.now();
-      session.lastStatusOk = false;
-      session.lastStatusError = json.error || `HTTP ${res.status}`;
+      if (
+        session.token === TOONA_HUB_S2S_TOKEN &&
+        isToonaHubUserLoginRequired(res.status, json.error)
+      ) {
+        try {
+          const ping = await fetch(
+            buildToonaDonationsPullUrl({
+              baseUrl: safeBase,
+              streamKey: session.streamKey,
+              fromMs: 0,
+              limit: 1,
+            }),
+            { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(STATUS_FETCH_MS) }
+          );
+          session.lastStatusAt = Date.now();
+          if (ping.ok) {
+            session.lastStatusOk = true;
+            session.lastStatusError = null;
+          } else {
+            const pingJson = (await ping.json().catch(() => ({}))) as { error?: string };
+            session.lastStatusOk = false;
+            session.lastStatusError = pingJson.error || `HTTP ${ping.status}`;
+          }
+        } catch (err) {
+          session.lastStatusAt = Date.now();
+          session.lastStatusOk = false;
+          session.lastStatusError = err instanceof Error ? err.message : "status_failed";
+        }
+      } else {
+        session.lastStatusAt = Date.now();
+        session.lastStatusOk = false;
+        session.lastStatusError = json.error || `HTTP ${res.status}`;
+      }
     } else {
       session.lastStatusAt = Date.now();
       session.lastStatusOk = true;

@@ -193,7 +193,12 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
         sigImport?: SigImportResult;
       };
       if (!res.ok || !data.ok) {
-        setMessage(data.error || "연결 실패");
+        const err = String(data.error || "");
+        setMessage(
+          err === "login_required" || err === "unauthorized"
+            ? "관리자 로그인이 필요합니다. 다시 로그인해 주세요."
+            : err || "연결 실패"
+        );
         return;
       }
       applyPayload(data);

@@ -50,6 +50,12 @@ export function toonaHubAuthHeaders(session?: { token?: string } | null): Record
   return headers;
 }
 
+/** 허브 `/api/youtubegit` 은 유저 JWT만 받고, 스트림 키·ingest secret 으로는 401 이다. */
+export function isToonaHubUserLoginRequired(status: number, error?: string): boolean {
+  if (status === 401 || status === 403) return true;
+  return /login_required|로그인이 필요/i.test(String(error || ""));
+}
+
 const SESSION_KEY = "toona-hub-session-v1";
 const LOG_KEY = "toona-hub-donation-log-v1";
 const PULL_CURSOR_KEY = "toona-hub-pull-cursor-v1";
