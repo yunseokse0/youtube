@@ -15,6 +15,7 @@ import {
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
 import { buildSigSalesManualOverlayUrl } from "@/lib/sig-sales-overlay-urls";
 import { DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE } from "@/lib/constants";
+import SigSalesStampAndOneShotPanel from "@/components/admin/SigSalesStampAndOneShotPanel";
 import { listActiveManualSigPool } from "@/lib/manual-sig-active-pool";
 import { readManualSigBroadcastFromState } from "@/lib/manual-sig-broadcast-state";
 import {
@@ -264,7 +265,9 @@ export default function ManualSigSalesSimple() {
           drafts,
           oneShotName: bundle.oneShot.name,
           oneShotPriceInput: String(bundle.oneShot.price),
-          oneShotImageUrl: DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
+          oneShotImageUrl:
+            String((state.sigInventory || []).find((x) => x.id === ONE_SHOT_SIG_ID)?.imageUrl || "").trim() ||
+            DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
           sigSoldFlags: emptyManualSoldFlags(pickCount),
           oneShotMarkSold: false,
         },
@@ -448,6 +451,102 @@ export default function ManualSigSalesSimple() {
       }
     },
     [state, soldFlags, persistState]
+  );
+
+  const uploadOneImage = useCallback(
+    async (file: File): Promise<string | null> => {
+      const mime = String(file.type || "").toLowerCase();
+      const name = String(file.name || "").toLowerCase();
+      if (!/image\/(gif|png|jpe?g|webp)/i.test(mime) && !/\.(gif|png|jpe?g|webp)$/i.test(name)) {
+        setToast("gif, png, jpg, webp 파일만 올릴 수 있습니다.");
+        return null;
+      }
+      if (file.size > MAX_SIG_UPLOAD_BYTES) {
+        setToast(`이미지 용량이 30MB를 초과합니다. (${(file.size / (1024 * 1024)).toFixed(1)}MB)`);
+        return null;
+      }
+      const fd = new FormData();
+      fd.append("file", file);
+      const q = new URLSearchParams({ user: userId, u: userId, skipMirror: "1" });
+      const res = await fetch(`/api/upload/sig-image?${q.toString()}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "x-user-id": userId, "x-sig-upload-skip-mirror": "1" },
+        body: fd,
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string; error?: string };
+      if (!res.ok || !j.ok || !j.url) {
+        setToast(`이미지 업로드 실패(${res.status}): ${j.error || file.name}`);
+        return null;
+      }
+      return j.url;
+    },
+    [userId]
+  );
+
+  const onStampFile = useCallback(
+    async (file: File | null) => {
+      if (!state || !file) return;
+      setBusy(true);
+      try {
+        const url = await uploadOneImage(file);
+        if (!url) return;
+        await persistState(
+          { ...state, sigSoldOutStampUrl: url, updatedAt: Date.now() },
+          "판매 완료 이미지를 저장했습니다.",
+          "이미지는 올렸지만 서버 저장이 지연됩니다."
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [state, persistState, uploadOneImage]
+  );
+
+  const onResetStamp = useCallback(async () => {
+    if (!state) return;
+    await persistState(
+      { ...state, sigSoldOutStampUrl: "", updatedAt: Date.now() },
+      "기본 판매 완료 도장을 사용합니다.",
+      "설정 저장이 지연됩니다."
+    );
+  }, [state, persistState]);
+
+  const onOneShotFile = useCallback(
+    async (file: File | null) => {
+      if (!state || !file) return;
+      setBusy(true);
+      try {
+        const url = await uploadOneImage(file);
+        if (!url) return;
+        const inv = state.sigInventory || [];
+        const has = inv.some((x) => x.id === ONE_SHOT_SIG_ID);
+        const nextInv = has
+          ? inv.map((x) => (x.id === ONE_SHOT_SIG_ID ? { ...x, imageUrl: url, isActive: true } : x))
+          : [
+              ...inv,
+              {
+                id: ONE_SHOT_SIG_ID,
+                name: "한방 시그",
+                price: 0,
+                imageUrl: url,
+                memberId: "",
+                maxCount: 1,
+                soldCount: 0,
+                isRolling: false,
+                isActive: true,
+              },
+            ];
+        await persistState(
+          { ...state, sigInventory: nextInv, updatedAt: Date.now() },
+          "한방 시그 이미지를 저장했습니다.",
+          "이미지는 올렸지만 서버 저장이 지연됩니다."
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [state, persistState, uploadOneImage]
   );
 
   const onImportFromHub = useCallback(async () => {
@@ -643,6 +742,18 @@ export default function ManualSigSalesSimple() {
             }}
           />
         </section>
+
+        <SigSalesStampAndOneShotPanel
+          userId={userId}
+          stampUrl={String(state?.sigSoldOutStampUrl || "")}
+          oneShotImageUrl={String(
+            (state?.sigInventory || []).find((x) => x.id === ONE_SHOT_SIG_ID)?.imageUrl || ""
+          )}
+          busy={busy}
+          onStampFile={(file) => void onStampFile(file)}
+          onResetStamp={() => void onResetStamp()}
+          onOneShotFile={(file) => void onOneShotFile(file)}
+        />
 
         <section className="rounded-xl border border-white/10 bg-black/40 p-4 space-y-3">
           <label className="block text-xs text-neutral-300">

@@ -69,25 +69,16 @@ function ManualOverlayStatus({
   );
 }
 
-function readBootOverlaySearchParams(): URLSearchParams {
-  if (typeof window === "undefined") return new URLSearchParams();
-  return new URLSearchParams(window.location.search);
-}
-
 export default function ManualSigOverlaySimple() {
-  const bootSp = useMemo(() => readBootOverlaySearchParams(), []);
-  const bootHostObs = isOverlayBroadcastHost(bootSp);
-  const bootUserId = getOverlayUserIdFromSearchParams(bootSp);
-
-  useLayoutEffect(() => {
-    if (!bootHostObs) return;
-    /** OBS 첫 마운트 — 구 last-good이 IDLE 리셋·리롤을 가리는 것 방지 */
-    clearOverlayLastGood(bootUserId, STATE_PICK_SIG_SALES);
-  }, [bootHostObs, bootUserId]);
-
   const { params: sp, ready: spReady } = useClientOnlySearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
-  const hostObs = spReady ? isOverlayBroadcastHost(sp) : bootHostObs;
+  const hostObs = isOverlayBroadcastHost(sp);
+
+  useLayoutEffect(() => {
+    if (!spReady || !hostObs) return;
+    /** OBS 첫 마운트 — 구 last-good이 IDLE 리셋·리롤을 가리는 것 방지 */
+    clearOverlayLastGood(userId, STATE_PICK_SIG_SALES);
+  }, [spReady, hostObs, userId]);
   const debugOverlay = sp.get("overlayDebug") === "1";
   const scaleRaw = sp.get("sigResultScalePct") || sp.get("resultScalePct") || "";
   const scalePct = (() => {
@@ -197,12 +188,9 @@ export default function ManualSigOverlaySimple() {
 
   const rootClass = obsOverlayRootClass(hostObs);
 
-  if (!spReady && !bootHostObs) {
-    return (
-      <ManualOverlayStatus hostObs={hostObs}>
-        수동 시그 오버레이 불러오는 중…
-      </ManualOverlayStatus>
-    );
+  /** SSR·클라 첫 페인트는 동일하게 비움. window.search 를 쓰면 React #418 */
+  if (!spReady) {
+    return null;
   }
 
   if (!ready && !hostObs) {

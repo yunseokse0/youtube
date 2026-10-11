@@ -70,6 +70,7 @@ import {
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { parseSigMetaFromFileName } from "@/lib/sig-filename-meta";
+import SigSalesStampAndOneShotPanel from "@/components/admin/SigSalesStampAndOneShotPanel";
 import { formatSigImageUploadFailureMessage } from "@/lib/sig-upload-errors";
 import {
   WHEEL_DEMO_WIN_COUNT,
@@ -2449,6 +2450,35 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     }
   }, [userId]);
 
+  const onSoldOutStampFile = useCallback(
+    async (file: File | null) => {
+      if (!file) return;
+      setInventoryUploadBusy(true);
+      try {
+        const url = await uploadManualSigImage(file);
+        if (!url) return;
+        await persistInventoryPatch((prev) => ({
+          ...prev,
+          sigSoldOutStampUrl: url,
+          updatedAt: Date.now(),
+        }));
+        setToast("판매 완료 이미지를 저장했습니다.");
+      } finally {
+        setInventoryUploadBusy(false);
+      }
+    },
+    [uploadManualSigImage, persistInventoryPatch]
+  );
+
+  const onResetSoldOutStamp = useCallback(async () => {
+    await persistInventoryPatch((prev) => ({
+      ...prev,
+      sigSoldOutStampUrl: "",
+      updatedAt: Date.now(),
+    }));
+    setToast("기본 판매 완료 도장을 사용합니다.");
+  }, [persistInventoryPatch]);
+
   const mergeUploadedSigFile = useCallback(
     (inventory: SigItem[], fileName: string, imageUrl: string, fallbackPrice: number) => {
       const meta = parseSigMetaFromFileName(fileName);
@@ -4205,6 +4235,21 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
                 }}
               />
             </div>
+            <SigSalesStampAndOneShotPanel
+              userId={userId}
+              stampUrl={String(state?.sigSoldOutStampUrl || "")}
+              oneShotImageUrl={
+                String(
+                  manualOneShotImageUrl ||
+                    (state?.sigInventory || []).find((x) => x.id === ONE_SHOT_SIG_ID)?.imageUrl ||
+                    ""
+                )
+              }
+              busy={inventoryUploadBusy || manualOneShotUploadBusy}
+              onStampFile={(file) => void onSoldOutStampFile(file)}
+              onResetStamp={() => void onResetSoldOutStamp()}
+              onOneShotFile={(file) => void handleManualOneShotFileUpload(file)}
+            />
           </div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded border border-white/10 bg-black/25 px-2 py-1.5 text-[11px] text-neutral-400">
             <span>행 접기: 헤더만 표시 · 금액/멤버/URL은 펼친 뒤 수정</span>
