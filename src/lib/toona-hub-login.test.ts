@@ -42,6 +42,13 @@ describe("toona hub login connect budget", () => {
     expect(src).not.toMatch(/parseApplyExcelFromRequest/);
   });
 
+  it("hub poll fills empty excel sig inventory from hub signatures", () => {
+    const src = readFileSync(path.join(process.cwd(), "src/infra/http/toona-hub.client.ts"), "utf8");
+    expect(src).toMatch(/fillInventoryFromHubIfEmpty/);
+    expect(src).toMatch(/hasExpandedSigInventory/);
+    expect(src).toMatch(/\/api\/signatures\/\$\{encodeURIComponent\(streamKey\)\}/);
+  });
+
   it("hub status fallback pings health, not overlay-protected donations", () => {
     const src = readFileSync(path.join(process.cwd(), "src/infra/http/toona-hub.client.ts"), "utf8");
     expect(src).toMatch(/fetchToonaHubWithIngestRetry/);

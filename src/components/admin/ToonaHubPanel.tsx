@@ -301,6 +301,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "import-signatures" }),
+        signal: AbortSignal.timeout(45_000),
       });
       const data = (await res.json().catch(() => ({}))) as SigImportResult & {
         ok?: boolean;
@@ -312,6 +313,10 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
       }
       await syncLocalSigInventory();
       setMessage(formatSigImport(data));
+    } catch (err) {
+      const timedOut =
+        err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+      setMessage(timedOut ? "시그 가져오기 시간 초과 — 잠시 후 다시 시도해 주세요." : "시그 가져오기 실패");
     } finally {
       setBusy(false);
     }

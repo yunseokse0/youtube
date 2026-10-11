@@ -208,28 +208,15 @@ export async function fetchToonaSignaturesViaHubSession(
   const baseUrl = normalizeToonaApiBaseUrl(session.baseUrl) || session.baseUrl;
   const streamKey = session.streamKey;
   try {
-    const request = (headers: Record<string, string>) =>
-      fetch(`${baseUrl}/api/signatures/${encodeURIComponent(streamKey)}`, {
-        method: "GET",
-        headers,
-        signal: AbortSignal.timeout(20_000),
-      });
-    const sessionHeaders = toonaHubAuthHeaders(session);
-    let sigRes = await request(sessionHeaders);
-    let sigJson = (await sigRes.json().catch(() => ({}))) as {
+    const sigRes = await fetchToonaHubWithIngestRetry(
+      `${baseUrl}/api/signatures/${encodeURIComponent(streamKey)}`,
+      session,
+      25_000
+    );
+    const sigJson = (await sigRes.json().catch(() => ({}))) as {
       signatures?: ToonaSignatureRow[];
       error?: string;
     };
-    const ingestHeaders = toonaHubAuthHeaders({ token: TOONA_HUB_S2S_TOKEN });
-    if (
-      !sigRes.ok &&
-      isToonaHubUserLoginRequired(sigRes.status, sigJson.error) &&
-      ingestHeaders.Authorization &&
-      ingestHeaders.Authorization !== sessionHeaders.Authorization
-    ) {
-      sigRes = await request(ingestHeaders);
-      sigJson = (await sigRes.json().catch(() => ({}))) as typeof sigJson;
-    }
     if (!sigRes.ok) {
       return {
         ok: false,
@@ -561,6 +548,47 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
   return { ok: true, imported, applied };
 }
 
+const hubSigFillInflight = new Set<string>();
+
+/**
+ * 스트림 키 연동 후 엑셀 시그 인벤이 한방만 남으면 허브 시그를 병합한다.
+ * 시그 판매 회전판/보드는 한방 시그를 빼므로, 인벤이 비면 화면이 비어 보인다.
+ */
+async function fillInventoryFromHubIfEmpty(youtubeUserId: string): Promise<void> {
+  const uid = String(youtubeUserId || "").trim();
+  if (!uid || hubSigFillInflight.has(uid)) return;
+  hubSigFillInflight.add(uid);
+  try {
+    const [{ loadAppStateForUserId }, { defaultState, hasExpandedSigInventory }, { applyToonaSigItemsToInventory }, { saveAppStateForRoulette }, { publishSseEvent }] =
+      await Promise.all([
+        import("@/lib/app-state-server-load"),
+        import("@/lib/state"),
+        import("@/lib/toona-sig-import"),
+        import("@/app/api/roulette/edge-state-store"),
+        import("@/lib/sse-clients-hub"),
+      ]);
+    const state = (await loadAppStateForUserId(uid)) ?? defaultState();
+    if (hasExpandedSigInventory(state.sigInventory)) return;
+    const fetched = await fetchToonaSignaturesViaHubSession(uid);
+    if (!fetched.ok || fetched.items.length === 0) return;
+    const { nextInventory, added } = applyToonaSigItemsToInventory(
+      state.sigInventory || [],
+      fetched.items,
+      "merge"
+    );
+    if (added <= 0 && nextInventory.length <= (state.sigInventory || []).length) return;
+    const next = { ...state, sigInventory: nextInventory, updatedAt: Date.now() };
+    const saved = await saveAppStateForRoulette(uid, next, { donorsMode: "add" });
+    if (saved.ok) {
+      await publishSseEvent({ type: "state_updated", updatedAt: next.updatedAt });
+    }
+  } catch {
+    /* 상태 폴링을 막지 않음 */
+  } finally {
+    hubSigFillInflight.delete(uid);
+  }
+}
+
 /**
  * 관리자 hub 폴링용 — 상태 갱신 + (쓰로틀된) 후원 pull.
  * 동시 요청은 같은 Promise를 공유해 Node/MySQL을 막지 않음.
@@ -608,6 +636,7 @@ export async function pollToonaHubForAdmin(youtubeUserId: string): Promise<{
     } catch {}
 
     const synced = await refreshToonaHubStatus(uid);
+    void fillInventoryFromHubIfEmpty(uid);
     const last = lastDonationPullAt.get(uid) || 0;
     if (Date.now() - last >= DONATION_PULL_MIN_INTERVAL_MS) {
       lastDonationPullAt.set(uid, Date.now());
