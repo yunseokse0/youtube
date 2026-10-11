@@ -177,19 +177,30 @@ export async function fetchToonaSignaturesViaHubSession(
     return { ok: false, error: "hub_not_linked" };
   }
   const baseUrl = normalizeToonaApiBaseUrl(session.baseUrl) || session.baseUrl;
+  const streamKey = session.streamKey;
   try {
-    const sigRes = await fetch(
-      `${baseUrl}/api/signatures/${encodeURIComponent(session.streamKey)}`,
-      {
+    const request = (headers: Record<string, string>) =>
+      fetch(`${baseUrl}/api/signatures/${encodeURIComponent(streamKey)}`, {
         method: "GET",
-        headers: toonaHubAuthHeaders(session),
+        headers,
         signal: AbortSignal.timeout(20_000),
-      }
-    );
-    const sigJson = (await sigRes.json().catch(() => ({}))) as {
+      });
+    const sessionHeaders = toonaHubAuthHeaders(session);
+    let sigRes = await request(sessionHeaders);
+    let sigJson = (await sigRes.json().catch(() => ({}))) as {
       signatures?: ToonaSignatureRow[];
       error?: string;
     };
+    const ingestHeaders = toonaHubAuthHeaders({ token: TOONA_HUB_S2S_TOKEN });
+    if (
+      !sigRes.ok &&
+      isToonaHubUserLoginRequired(sigRes.status, sigJson.error) &&
+      ingestHeaders.Authorization &&
+      ingestHeaders.Authorization !== sessionHeaders.Authorization
+    ) {
+      sigRes = await request(ingestHeaders);
+      sigJson = (await sigRes.json().catch(() => ({}))) as typeof sigJson;
+    }
     if (!sigRes.ok) {
       return {
         ok: false,
@@ -200,7 +211,7 @@ export async function fetchToonaSignaturesViaHubSession(
     return {
       ok: true,
       items,
-      streamKey: session.streamKey,
+      streamKey,
       baseUrl,
       count: items.length,
     };
