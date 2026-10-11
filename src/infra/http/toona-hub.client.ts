@@ -296,24 +296,23 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
         isToonaHubUserLoginRequired(res.status, json.error)
       ) {
         try {
-          const ping = await fetchToonaHubWithIngestRetry(
-            buildToonaDonationsPullUrl({
-              baseUrl: safeBase,
-              streamKey: session.streamKey,
-              fromMs: 0,
-              limit: 1,
-            }),
-            session,
-            STATUS_FETCH_MS
-          );
+          /**
+           * 스트림 키 연동은 JWT/오버레이 read 토큰이 없다.
+           * 허브 후원 GET은 읽기 토큰을 요구하므로 상태 확인에 쓰지 않는다.
+           * ingest 푸시가 살아 있으면 /api/health 로 허브만 확인한다.
+           */
+          const ping = await fetch(`${safeBase}/api/health`, {
+            method: "GET",
+            headers: { Accept: "application/json" },
+            signal: AbortSignal.timeout(STATUS_FETCH_MS),
+          });
           session.lastStatusAt = Date.now();
           if (ping.ok) {
             session.lastStatusOk = true;
             session.lastStatusError = null;
           } else {
-            const pingJson = (await ping.json().catch(() => ({}))) as { error?: string };
             session.lastStatusOk = false;
-            session.lastStatusError = pingJson.error || `HTTP ${ping.status}`;
+            session.lastStatusError = `HTTP ${ping.status}`;
           }
         } catch (err) {
           session.lastStatusAt = Date.now();
