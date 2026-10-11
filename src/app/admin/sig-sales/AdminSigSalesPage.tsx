@@ -36,6 +36,7 @@ import {
   loadState,
   loadStateFromApi,
   saveSigSalesManualStateAsync,
+  shouldPreferLocalSigInventoryOverIncoming,
   storageKey,
   type AppState,
 } from "@/lib/state";
@@ -400,6 +401,8 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
   const [manualOneShotUploadBusy, setManualOneShotUploadBusy] = useState(false);
   const [newSigName, setNewSigName] = useState("");
   const [newSigPrice, setNewSigPrice] = useState("10000");
+  const [newSigImageUrl, setNewSigImageUrl] = useState("");
+  const [newSigImageLabel, setNewSigImageLabel] = useState("");
   const [inventoryDefaultPrice, setInventoryDefaultPrice] = useState("10000");
   const [inventoryUploadBusy, setInventoryUploadBusy] = useState(false);
   const inventoryBulkInputRef = useRef<HTMLInputElement | null>(null);
@@ -453,7 +456,18 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     if (ts > 0) lastSyncedUpdatedAtRef.current = Math.max(lastSyncedUpdatedAtRef.current, ts);
     lastAppliedRemoteUpdatedAtRef.current = ts;
     lastRouletteSyncRef.current = sigSalesRouletteSyncCursorFromState(remote.rouletteState);
-    setState(remote);
+    setState((prev) => {
+      if (
+        prev &&
+        shouldPreferLocalSigInventoryOverIncoming(prev.sigInventory, remote.sigInventory, {
+          localUpdatedAt: Number(prev.updatedAt || 0),
+          incomingUpdatedAt: Number(remote.updatedAt || 0),
+        })
+      ) {
+        return { ...remote, sigInventory: prev.sigInventory };
+      }
+      return remote;
+    });
   }, [authReady, userId]);
 
   const loadRemoteRef = useRef(loadRemote);
@@ -2416,12 +2430,23 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
   }, [machine.sessionId, machine.selectedSigs, machine.oneShot, userId, loadHistory]);
 
   const persistInventoryPatch = useCallback(async (updater: (prev: AppState) => AppState) => {
-    setState((prev) => {
-      if (!prev) return prev;
-      const next = updater(prev);
-      void saveSigSalesManualStateAsync(next, userId);
-      return next;
-    });
+    const prev = latestStateRef.current;
+    if (!prev) return;
+    const next = updater(prev);
+    latestStateRef.current = next;
+    setState(next);
+    pendingLocalSaveRef.current = true;
+    try {
+      const saved = await saveSigSalesManualStateAsync(next, userId);
+      if (saved.ok && typeof saved.serverUpdatedAt === "number") {
+        lastAppliedRemoteUpdatedAtRef.current = saved.serverUpdatedAt;
+        lastSyncedUpdatedAtRef.current = Math.max(lastSyncedUpdatedAtRef.current, saved.serverUpdatedAt);
+      } else if (!saved.ok) {
+        setToast("시그 목록은 화면에 반영됐지만 서버 저장에 실패했습니다.");
+      }
+    } finally {
+      pendingLocalSaveRef.current = false;
+    }
   }, [userId]);
 
   const mergeUploadedSigFile = useCallback(
@@ -2549,6 +2574,29 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     [inventoryDefaultPrice, mergeUploadedSigFile, persistInventoryPatch, uploadManualSigImage]
   );
 
+  const onPickNewSigImage = useCallback(
+    async (file: File | null) => {
+      if (!file) return;
+      setInventoryUploadBusy(true);
+      try {
+        const url = await uploadManualSigImage(file);
+        if (!url) return;
+        setNewSigImageUrl(url);
+        setNewSigImageLabel(file.name);
+        const meta = parseSigMetaFromFileName(file.name);
+        const inferred = meta.name.replace(/\s*시그\s*(세로|가로|영상)?\s*$/u, "").trim() || meta.name;
+        setNewSigName((prev) => prev.trim() || inferred);
+        if (meta.priceFromFileName && meta.price > 0) {
+          setNewSigPrice(String(meta.price));
+        }
+        setToast(`이미지 업로드 완료: ${file.name}`);
+      } finally {
+        setInventoryUploadBusy(false);
+      }
+    },
+    [uploadManualSigImage]
+  );
+
   const onAddNewSigRow = useCallback(async () => {
     const name = newSigName.trim();
     if (!name) {
@@ -2559,8 +2607,8 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     const file = newSigImageInputRef.current?.files?.[0] || null;
     setInventoryUploadBusy(true);
     try {
-      let imageUrl = "";
-      if (file) {
+      let imageUrl = newSigImageUrl.trim();
+      if (file && !imageUrl) {
         const url = await uploadManualSigImage(file);
         if (!url) return;
         imageUrl = url;
@@ -2570,7 +2618,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         (x) => x.id !== ONE_SHOT_SIG_ID && (x.name || "").replace(/\s+/g, "").toLowerCase() === nameKey
       );
       if (exists) {
-        setToast(`이미 「${name}」 시그가 있습니다.`);
+        setToast(`이미 「${name}」 시그가 있습니다. 목록에서 해당 행을 펼쳐 이미지를 바꾸세요.`);
         return;
       }
       await persistInventoryPatch((prev) => ({
@@ -2592,12 +2640,14 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         updatedAt: Date.now(),
       }));
       setNewSigName("");
+      setNewSigImageUrl("");
+      setNewSigImageLabel("");
       if (newSigImageInputRef.current) newSigImageInputRef.current.value = "";
       setToast(price > 0 ? `「${name}」 시그를 등록했습니다.` : `「${name}」 등록됨. 가격을 넣어야 판매 풀에 나옵니다.`);
     } finally {
       setInventoryUploadBusy(false);
     }
-  }, [newSigName, newSigPrice, persistInventoryPatch, uploadManualSigImage]);
+  }, [newSigName, newSigPrice, newSigImageUrl, persistInventoryPatch, uploadManualSigImage]);
 
   const buildSoldSetFromFlags = useCallback(
     (flags: boolean[]) => {
@@ -4094,13 +4144,17 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
                 onChange={(e) => setNewSigPrice(e.target.value)}
               />
               <label className="cursor-pointer rounded bg-indigo-800 px-2 py-1.5 text-center text-xs hover:bg-indigo-700">
-                이미지 선택
+                {newSigImageLabel ? `이미지: ${newSigImageLabel}` : "이미지 업로드"}
                 <input
                   ref={newSigImageInputRef}
                   className="hidden"
                   type="file"
                   accept=".gif,.png,.jpg,.jpeg,.webp,image/gif,image/png,image/jpeg,image/webp"
                   disabled={inventoryUploadBusy}
+                  onChange={(e) => {
+                    void onPickNewSigImage(e.target.files?.[0] || null);
+                    e.currentTarget.value = "";
+                  }}
                 />
               </label>
               <button

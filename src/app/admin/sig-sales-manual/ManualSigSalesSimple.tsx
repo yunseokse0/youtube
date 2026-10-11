@@ -9,6 +9,7 @@ import {
   loadStateFromApi,
   saveSigSalesManualStateAsync,
   saveState,
+  isRicherSigInventory,
   shouldPreferLocalSigInventoryOverIncoming,
 } from "@/lib/state";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
@@ -216,24 +217,17 @@ export default function ManualSigSalesSimple() {
       failMsg: string,
       saveOpts?: { omitSigInventory?: boolean }
     ) => {
+      setState(next);
       const saved = await saveSigSalesManualStateAsync(next, userId, saveOpts);
       if (saved.ok) {
-        /** LS가 시그 재고를 잃어버린 경우에도 서버·next 기준으로 복구 */
         const remote = await loadStateFromApi(userId, { forceFull: true });
         if (remote) {
-          const preferNextInv =
-            shouldPreferLocalSigInventoryOverIncoming(next.sigInventory, remote.sigInventory, {
-              localUpdatedAt: Number(next.updatedAt || 0),
-              incomingUpdatedAt: Number(remote.updatedAt || 0),
-            });
-          setState(
-            preferNextInv ? { ...remote, sigInventory: next.sigInventory } : remote
-          );
-        } else {
-          setState(next);
+          /** 방금 추가한 시그를 구 GET(1~2개 차이)이 지워 버리지 않게, 더 풍부한 인벤만 수용 */
+          const inventory = isRicherSigInventory(remote.sigInventory, next.sigInventory)
+            ? remote.sigInventory
+            : next.sigInventory;
+          setState({ ...remote, sigInventory: inventory });
         }
-      } else {
-        setState(next);
       }
       setToast(saved.ok ? okMsg : failMsg);
       return saved.ok;
@@ -523,9 +517,14 @@ export default function ManualSigSalesSimple() {
             headers: { "x-user-id": userId, "x-sig-upload-skip-mirror": "1" },
             body: fd,
           });
-          const j = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string };
+          const j = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string; error?: string };
           if (!res.ok || !j.ok || !j.url) {
             failed += 1;
+            if (failed === 1) {
+              setToast(
+                `이미지 업로드 실패(${res.status}): ${j.error || file.name}`
+              );
+            }
             continue;
           }
           const meta = parseSigMetaFromFileName(file.name);
