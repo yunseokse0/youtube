@@ -41,4 +41,10 @@ describe("toona hub login connect budget", () => {
     expect(src).toMatch(/applyExcel: true/);
     expect(src).not.toMatch(/parseApplyExcelFromRequest/);
   });
+
+  it("hub status ping does not call donations without ingest auth", () => {
+    const src = readFileSync(path.join(process.cwd(), "src/infra/http/toona-hub.client.ts"), "utf8");
+    expect(src).toMatch(/fetchToonaHubWithIngestRetry/);
+    expect(src).not.toMatch(/headers:\s*\{\s*Accept:\s*"application\/json"\s*\}/);
+  });
 });

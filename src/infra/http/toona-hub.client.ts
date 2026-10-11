@@ -50,6 +50,34 @@ const DONATION_FETCH_MS = 15_000;
 const DONATION_PULL_CYCLE_BUDGET_MS = 25_000;
 const BASEURL_REPAIR_COOLDOWN_MS = 5 * 60_000;
 
+/** 스트림 키 연동은 JWT가 없어서, 401/403이면 ingest secret으로 한 번 더 읽는다. */
+async function fetchToonaHubWithIngestRetry(
+  url: string,
+  session: { token?: string } | null,
+  timeoutMs: number
+): Promise<Response> {
+  const sessionHeaders = toonaHubAuthHeaders(session);
+  let res = await fetch(url, {
+    method: "GET",
+    headers: sessionHeaders,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const ingestHeaders = toonaHubAuthHeaders({ token: TOONA_HUB_S2S_TOKEN });
+  if (
+    !res.ok &&
+    isToonaHubUserLoginRequired(res.status) &&
+    ingestHeaders.Authorization &&
+    ingestHeaders.Authorization !== sessionHeaders.Authorization
+  ) {
+    res = await fetch(url, {
+      method: "GET",
+      headers: ingestHeaders,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  }
+  return res;
+}
+
 function contributionFormulaFromYoutubegitJson(json: Record<string, unknown>): ContributionFormula | null {
   if (
     json.accountWeightPct === undefined &&
@@ -242,13 +270,10 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
   const safeBase = normalizedBaseUrl || session.baseUrl;
 
   try {
-    const res = await fetch(
+    const res = await fetchToonaHubWithIngestRetry(
       `${safeBase}/api/youtubegit/${encodeURIComponent(session.streamKey)}`,
-      {
-        method: "GET",
-        headers: toonaHubAuthHeaders(session),
-        signal: AbortSignal.timeout(STATUS_FETCH_MS),
-      }
+      session,
+      STATUS_FETCH_MS
     );
     const json = (await res.json().catch(() => ({}))) as {
       error?: string;
@@ -271,14 +296,15 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
         isToonaHubUserLoginRequired(res.status, json.error)
       ) {
         try {
-          const ping = await fetch(
+          const ping = await fetchToonaHubWithIngestRetry(
             buildToonaDonationsPullUrl({
               baseUrl: safeBase,
               streamKey: session.streamKey,
               fromMs: 0,
               limit: 1,
             }),
-            { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(STATUS_FETCH_MS) }
+            session,
+            STATUS_FETCH_MS
           );
           session.lastStatusAt = Date.now();
           if (ping.ok) {
