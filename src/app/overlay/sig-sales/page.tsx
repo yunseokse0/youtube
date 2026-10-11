@@ -1706,8 +1706,9 @@ function SigSalesOverlayPageInner() {
         userScalePct: sigResultScalePct,
         /** OBS 소스 폭이 좁아도 sigResultScalePct 이하로만 줄임(한방·당첨이 과소 축소되지 않게) */
         maxRowWidthPx: Math.max(1080, resultRowWidthPx),
+        hasOneShot: Boolean(oneShotForResultOverlay),
       }),
-    [resultCardCount, sigResultScalePct, resultRowWidthPx]
+    [resultCardCount, sigResultScalePct, resultRowWidthPx, oneShotForResultOverlay]
   );
   /** 저장 경로(인벤·수동 초안) — 카드에서 `resolveSigOverlayCardImageUrl`로 OBS용 URL 생성 */
   const oneShotStoredImageUrl = useMemo(() => {

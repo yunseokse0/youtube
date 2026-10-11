@@ -1325,8 +1325,13 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     return Math.max(1, n);
   }, [displaySelectedSigsForUi.length, displayOneShot, oneShotReveal]);
   const resultRowLayout = useMemo(
-    () => layoutSigOverlayResultRow({ cellCount: resultCardCount, userScalePct: sigResultScalePct }),
-    [resultCardCount, sigResultScalePct]
+    () =>
+      layoutSigOverlayResultRow({
+        cellCount: resultCardCount,
+        userScalePct: sigResultScalePct,
+        hasOneShot: Boolean(displayOneShot && oneShotReveal),
+      }),
+    [resultCardCount, sigResultScalePct, displayOneShot, oneShotReveal]
   );
   const manualReady = manualReadyEarly;
 

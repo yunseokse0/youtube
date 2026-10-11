@@ -98,6 +98,7 @@ export default function WheelDemoPlaythroughClient() {
       layoutSigOverlayResultRow({
         cellCount: revealed.length + (oneShotReveal ? 1 : 0),
         userScalePct: 78,
+        hasOneShot: Boolean(oneShotReveal),
       }),
     [revealed.length, oneShotReveal]
   );

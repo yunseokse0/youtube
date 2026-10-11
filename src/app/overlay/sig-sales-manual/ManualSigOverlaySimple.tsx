@@ -175,6 +175,7 @@ export default function ManualSigOverlaySimple() {
         cellCount: selected.length + (oneShot ? 1 : 0),
         userScalePct: scalePct,
         allowOverflow: hostObs,
+        hasOneShot: Boolean(oneShot),
       }),
     [scalePct, selected.length, oneShot, hostObs]
   );

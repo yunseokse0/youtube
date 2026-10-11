@@ -39,11 +39,11 @@ export const SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS =
 
 /** 방송 오버레이: 개별 시그 하단 이름·금액(배경 없음 — 외곽선으로 가독성) */
 export const SIG_OVERLAY_CARD_FOOTER_CLASS =
-  "space-y-0.5 rounded-b-[10px] border-t border-white/15 px-2 py-2";
+  "space-y-1 rounded-b-[10px] border-t border-white/15 px-2 py-2.5";
 /** 한방 시그: 이름·금액 영역 반투명 검은 배경 — Tailwind opacity 클래스 대신 인라인 rgba(OBS CEF) */
 export const SIG_OVERLAY_CARD_ONESHOT_FOOTER_BG = "rgba(0, 0, 0, 0.72)";
 export const SIG_OVERLAY_CARD_ONESHOT_FOOTER_CLASS =
-  "relative z-[3] mt-auto w-full shrink-0 space-y-0.5 rounded-b-[10px] border-t border-white/15 px-2 py-2";
+  "relative z-[3] mt-auto w-full shrink-0 space-y-1 rounded-b-[10px] border-t border-white/15 px-2 py-2.5";
 
 export function sigOverlayOneShotFooterStyle(): CSSProperties {
   return {
@@ -55,14 +55,14 @@ export function sigOverlayOneShotFooterStyle(): CSSProperties {
   };
 }
 export const SIG_OVERLAY_CARD_NAME_CLASS =
-  "truncate font-extrabold text-[15px] leading-tight sm:text-[17px]";
+  "line-clamp-2 break-words font-extrabold text-[18px] leading-snug sm:text-[20px]";
 export const SIG_OVERLAY_CARD_PRICE_CLASS =
-  "text-base font-black tabular-nums sm:text-[18px]";
+  "text-[17px] font-black tabular-nums sm:text-[20px]";
 
 const SIG_OVERLAY_TEXT_OUTLINE_COLOR = "rgba(6, 12, 24, 0.95)";
 
 /** 텍스트 오버레이와 동일 — OBS CEF에서 stroke + shadow 병행 */
-export function sigOverlayCardNameOutlineStyle(fontSizePx = 16): CSSProperties {
+export function sigOverlayCardNameOutlineStyle(fontSizePx = 18): CSSProperties {
   return {
     color: "#ffffff",
     ...buildTextOutlineStyle({
@@ -73,7 +73,7 @@ export function sigOverlayCardNameOutlineStyle(fontSizePx = 16): CSSProperties {
   };
 }
 
-export function sigOverlayCardPriceOutlineStyle(fontSizePx = 17): CSSProperties {
+export function sigOverlayCardPriceOutlineStyle(fontSizePx = 18): CSSProperties {
   return {
     color: "#fde68a",
     ...buildTextOutlineStyle({
@@ -172,9 +172,69 @@ export function sigOverlayBroadcastCardTotalHeightPx(
   orientation: SigOverlayMediaOrientation = "landscape"
 ): number {
   const mediaH = sigOverlayBroadcastMediaSizePx(scalePct, orientation).height;
-  const footerH = withToggle ? 76 : 58;
+  const footerH = withToggle ? 98 : 80;
   const shellPad = 16;
   return mediaH + footerH + shellPad;
+}
+
+/**
+ * 한방 가로 카드 폭. 세로형 개별 시그 미디어 높이와 맞춰 한방이 작아 보이지 않게 한다.
+ * scalePct 클램프(≤100)를 우회하므로 `sigOverlayBroadcastCardWidthPx`에 큰 %를 넣지 않는다.
+ */
+export function sigOverlayBroadcastOneShotWidthPx(scalePct = 100): number {
+  const regular = sigOverlayBroadcastCardWidthPx(scalePct);
+  return Math.round(
+    (regular * SIG_ROLLING_MEDIA_WIDTH_PX) / SIG_ROLLING_MEDIA_HEIGHT_PX
+  );
+}
+
+export function sigOverlayBroadcastOneShotMediaSizePx(scalePct = 100): {
+  width: number;
+  height: number;
+} {
+  const width = sigOverlayBroadcastOneShotWidthPx(scalePct);
+  return {
+    width,
+    height: Math.max(
+      1,
+      Math.round((width * SIG_ROLLING_MEDIA_HEIGHT_PX) / SIG_ROLLING_MEDIA_WIDTH_PX)
+    ),
+  };
+}
+
+export function sigOverlayBroadcastOneShotMediaBoxStyle(scalePct = 100): CSSProperties {
+  const { height: h } = sigOverlayBroadcastOneShotMediaSizePx(scalePct);
+  return {
+    width: "100%",
+    height: `${h}px`,
+    minHeight: `${h}px`,
+    maxHeight: `${h}px`,
+    flexShrink: 0,
+  };
+}
+
+export function sigOverlayBroadcastOneShotShellStyle(
+  scalePct = 100,
+  opts?: { withToggle?: boolean }
+): CSSProperties {
+  const media = sigOverlayBroadcastOneShotMediaSizePx(scalePct);
+  const footerH = opts?.withToggle ? 98 : 80;
+  const shellPad = 16;
+  const totalH = media.height + footerH + shellPad;
+  return {
+    flexGrow: 0,
+    flexShrink: 0,
+    flexBasis: `${media.width}px`,
+    width: `${media.width}px`,
+    minWidth: media.width,
+    maxWidth: media.width,
+    height: totalH,
+    minHeight: totalH,
+    alignSelf: "flex-start",
+    boxSizing: "border-box",
+    display: "flex",
+    flexDirection: "column",
+  };
 }
 
 export function sigOverlayBroadcastCardShellStyle(
@@ -204,6 +264,13 @@ export function sigOverlayBroadcastCardShellStyle(
   };
 }
 
+/** 당첨이 많지 않을 때만 한방 카드를 키운다(20장+한방은 행에 안 들어감) */
+export const SIG_OVERLAY_ONESHOT_BOOST_MAX_CELLS = 8;
+
+export function shouldBoostOneShotOverlaySize(cellCount: number, hasOneShot = true): boolean {
+  return Boolean(hasOneShot) && Math.max(0, Math.floor(cellCount || 0)) <= SIG_OVERLAY_ONESHOT_BOOST_MAX_CELLS;
+}
+
 /** 당첨 N장+한방이 한 줄에 잘리지 않도록 카드 폭을 행 너비에 맞춘다(줌 래퍼 대신 카드 자체 축소) */
 export function layoutSigOverlayResultRow(opts: {
   cellCount: number;
@@ -211,20 +278,54 @@ export function layoutSigOverlayResultRow(opts: {
   maxRowWidthPx?: number;
   /** true: OBS에서 카드가 화면보다 넓어져도 뷰포트 맞춤 축소 생략 */
   allowOverflow?: boolean;
+  /** true면 마지막 칸은 한방 가로 카드(더 넓음)로 두고 행 맞춤 폭을 계산 */
+  hasOneShot?: boolean;
 }): { cardScalePct: number; bandStyle: CSSProperties } {
   const cells = Math.max(1, Math.floor(opts.cellCount || 1));
   const user = clampSigOverlayResultScalePct(opts.userScalePct ?? 92) / 100;
   const maxW = Math.max(360, Math.floor(opts.maxRowWidthPx ?? 1080));
   const gapPx = 6;
-  const natural = cells * SIG_OVERLAY_CARD_MAX_PX + Math.max(0, cells - 1) * gapPx;
-  const fit =
-    opts.allowOverflow || natural <= 0 ? 1 : Math.min(1, maxW / natural);
+  const boostOneShot = shouldBoostOneShotOverlaySize(cells, opts.hasOneShot);
+  const oneShotExtra = boostOneShot
+    ? SIG_OVERLAY_CARD_MAX_PX *
+        (SIG_ROLLING_MEDIA_WIDTH_PX / SIG_ROLLING_MEDIA_HEIGHT_PX - 1)
+    : 0;
+  const natural =
+    cells * SIG_OVERLAY_CARD_MAX_PX + Math.max(0, cells - 1) * gapPx + oneShotExtra;
+  const fromUser = Math.floor(user * 100);
+  if (opts.allowOverflow) {
+    const cardScalePct = Math.min(100, Math.max(24, fromUser));
+    return {
+      cardScalePct,
+      bandStyle: sigOverlayResultBandStyle(cardScalePct),
+    };
+  }
+  const fit = natural <= 0 ? 1 : Math.min(1, maxW / natural);
   const combined = Math.min(user, fit);
-  /** 정수 폭 반올림까지 고려해 행이 maxW를 넘지 않게 */
-  const maxCardW = Math.floor((maxW - Math.max(0, cells - 1) * gapPx) / cells);
+  /** 정수 폭 반올림까지 고려해 행이 maxW를 넘지 않게(한방 추가 폭 포함) */
+  const regularCells = boostOneShot ? Math.max(1, cells - 1) : cells;
+  const oneShotFactor = boostOneShot
+    ? SIG_ROLLING_MEDIA_WIDTH_PX / SIG_ROLLING_MEDIA_HEIGHT_PX
+    : 0;
+  const denom =
+    regularCells + (boostOneShot ? oneShotFactor : 0);
+  const maxCardW = Math.floor(
+    (maxW - Math.max(0, cells - 1) * gapPx) / Math.max(1, denom)
+  );
   const fromFit = Math.floor((maxCardW / SIG_OVERLAY_CARD_MAX_PX) * 100);
-  const fromUser = Math.floor(combined * 100);
-  const cardScalePct = Math.min(100, Math.max(24, Math.min(fromUser, fromFit)));
+  let cardScalePct = Math.min(100, Math.max(24, Math.min(Math.floor(combined * 100), fromFit)));
+  const rowWidthAt = (pct: number) => {
+    const regular = boostOneShot ? Math.max(0, cells - 1) : cells;
+    const gaps = Math.max(0, cells - 1) * gapPx;
+    return (
+      regular * sigOverlayBroadcastCardWidthPx(pct) +
+      (boostOneShot ? sigOverlayBroadcastOneShotWidthPx(pct) : 0) +
+      gaps
+    );
+  };
+  while (cardScalePct > 24 && rowWidthAt(cardScalePct) > maxW) {
+    cardScalePct -= 1;
+  }
   return {
     cardScalePct,
     bandStyle: sigOverlayResultBandStyle(cardScalePct),

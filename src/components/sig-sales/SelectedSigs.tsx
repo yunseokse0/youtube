@@ -16,6 +16,8 @@ import {
   SIG_OVERLAY_CARD_SHELL_CLASS,
   sigOverlayBroadcastCardShellStyle,
   sigOverlayBroadcastMediaBoxStyle,
+  sigOverlayBroadcastOneShotShellStyle,
+  shouldBoostOneShotOverlaySize,
   sigOverlayCardMediaBoxClass,
   sigOverlayCardNameOutlineStyle,
   sigOverlayCardPriceOutlineStyle,
@@ -215,7 +217,7 @@ function SelectedSigCard({
             }
             style={
               broadcastMatch
-                ? sigOverlayCardNameOutlineStyle(16)
+                ? sigOverlayCardNameOutlineStyle(18)
                 : compact
                   ? sigOverlayCardNameOutlineStyle(10)
                   : sigOverlayCardNameOutlineStyle(14)
@@ -233,7 +235,7 @@ function SelectedSigCard({
             }
             style={
               broadcastMatch
-                ? sigOverlayCardPriceOutlineStyle(17)
+                ? sigOverlayCardPriceOutlineStyle(18)
                 : compact
                   ? sigOverlayCardPriceOutlineStyle(9)
                   : sigOverlayCardPriceOutlineStyle(12)
@@ -295,7 +297,7 @@ export default function SelectedSigs({
     ? `repeat(${columnCount}, auto)`
     : `repeat(${columnCount}, minmax(0, 1fr))`;
   const gridAlign =
-    compact && trailingActive && matchOneShotCardSize ? "items-start" : compact && trailingActive ? "items-start" : "";
+    compact && trailingActive && matchOneShotCardSize ? "items-end" : compact && trailingActive ? "items-end" : "";
   const justifyCompact =
     compact && compactGridJustify === "start" ? "justify-start" : compact ? "justify-center" : "";
   const sigRowJustify =
@@ -310,9 +312,9 @@ export default function SelectedSigs({
           : "";
   const nowrapRow = overlaySingleRow ? "flex-nowrap overflow-visible" : "flex-wrap";
   const sectionClass = overlaySingleRow
-    ? `flex min-w-0 max-w-full ${nowrapRow} items-start ${sigRowJustify || "justify-center"} gap-1 sm:gap-1 ${className}`.trim()
+    ? `flex min-w-0 max-w-full ${nowrapRow} items-end ${sigRowJustify || "justify-center"} gap-1 sm:gap-1 ${className}`.trim()
     : broadcastMatch
-      ? `flex w-full min-w-0 max-w-full flex-wrap items-start justify-center gap-1 sm:gap-1 ${className}`.trim()
+      ? `flex w-full min-w-0 max-w-full flex-wrap items-end justify-center gap-1 sm:gap-1 ${className}`.trim()
       : `grid w-full min-w-0 max-w-full gap-1 ${justifyCompact} ${gridAlign} ${className}`.trim();
 
   const latestIdx = items.length - 1;
@@ -354,14 +356,16 @@ export default function SelectedSigs({
         <div
           style={
             broadcastMatch && matchOneShotCardSize
-              ? sigOverlayBroadcastCardShellStyle(cardScalePct, { orientation: "landscape" })
+              ? shouldBoostOneShotOverlaySize(cellCount, true)
+                ? sigOverlayBroadcastOneShotShellStyle(cardScalePct)
+                : sigOverlayBroadcastCardShellStyle(cardScalePct, { orientation: "landscape" })
               : undefined
           }
           className={
             broadcastMatch && matchOneShotCardSize
-              ? "flex h-full min-h-0 shrink-0 flex-col self-start"
+              ? "flex h-full min-h-0 shrink-0 flex-col self-end"
               : broadcastMatch || compact
-                ? "flex min-h-0 shrink-0 self-start"
+                ? "flex min-h-0 shrink-0 self-end"
                 : "min-h-[280px]"
           }
         >

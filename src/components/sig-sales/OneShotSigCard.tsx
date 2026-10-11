@@ -14,6 +14,9 @@ import {
   SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS,
   sigOverlayBroadcastCardShellStyle,
   sigOverlayBroadcastMediaBoxStyle,
+  sigOverlayBroadcastOneShotMediaBoxStyle,
+  sigOverlayBroadcastOneShotShellStyle,
+  shouldBoostOneShotOverlaySize,
   sigOverlayCardNameOutlineStyle,
   sigOverlayCardPriceOutlineStyle,
   sigOverlayOneShotFooterStyle,
@@ -68,13 +71,21 @@ export default function OneShotSigCard({
 }: OneShotSigCardProps) {
   /** 결과 줄: 개별 시그 카드와 동일 폭·미디어·셸 높이 */
   const useBroadcastSizing = Boolean(matchSigCardSize || (compact && !showToggle));
+  const boostOneShotSize = shouldBoostOneShotOverlaySize(
+    typeof selectedSigCount === "number" ? selectedSigCount + 1 : 1,
+    true
+  );
   const shellStyle = useBroadcastSizing
     ? fillRowCell
       ? { width: "100%", height: "100%", minHeight: "100%", boxSizing: "border-box" as const }
-      : sigOverlayBroadcastCardShellStyle(cardScalePct, { withToggle: showToggle, orientation: "landscape" })
+      : boostOneShotSize
+        ? sigOverlayBroadcastOneShotShellStyle(cardScalePct, { withToggle: showToggle })
+        : sigOverlayBroadcastCardShellStyle(cardScalePct, { withToggle: showToggle, orientation: "landscape" })
     : undefined;
   const mediaBoxStyle = useBroadcastSizing
-    ? sigOverlayBroadcastMediaBoxStyle(cardScalePct, "landscape")
+    ? boostOneShotSize
+      ? sigOverlayBroadcastOneShotMediaBoxStyle(cardScalePct)
+      : sigOverlayBroadcastMediaBoxStyle(cardScalePct, "landscape")
     : undefined;
   const sumLine =
     typeof selectedSigCount === "number" && selectedSigCount > 0
@@ -165,12 +176,12 @@ export default function OneShotSigCard({
           <>
             <div
               className={SIG_OVERLAY_CARD_NAME_CLASS}
-              style={sigOverlayCardNameOutlineStyle(16)}
+              style={sigOverlayCardNameOutlineStyle(20)}
               title={sumLine}
             >
               {name}
             </div>
-            <div className={SIG_OVERLAY_CARD_PRICE_CLASS} style={sigOverlayCardPriceOutlineStyle(17)}>
+            <div className={SIG_OVERLAY_CARD_PRICE_CLASS} style={sigOverlayCardPriceOutlineStyle(20)}>
               {formatWon(price)}
             </div>
             {showToggle ? (

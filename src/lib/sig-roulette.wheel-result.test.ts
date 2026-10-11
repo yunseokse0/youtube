@@ -6,6 +6,8 @@ import {
   sigOverlayBroadcastCardWidthPx,
   sigOverlayBroadcastMediaHeightPx,
   sigOverlayBroadcastCardTotalHeightPx,
+  sigOverlayBroadcastOneShotWidthPx,
+  sigOverlayBroadcastOneShotMediaSizePx,
 } from "@/components/sig-sales/sig-overlay-card-size";
 import {
   buildSessionSpinExclusion,
@@ -751,11 +753,16 @@ describe("resolveSpinQueueForSession", () => {
 });
 
 describe("sigOverlayBroadcast card metrics", () => {
-  it("한방·개별 가로형 카드가 동일 폭·미디어 높이(px)를 쓴다", () => {
+  it("한방 가로 카드는 세로형 개별 시그 미디어 높이에 맞춰 더 크다", () => {
     const w = sigOverlayBroadcastCardWidthPx(78);
     const mediaH = sigOverlayBroadcastMediaHeightPx(78, "landscape");
     expect(w).toBe(Math.round(188 * 0.78));
     expect(mediaH).toBe(Math.round(w * (180 / 300)));
+    const oneShotW = sigOverlayBroadcastOneShotWidthPx(78);
+    const oneShotMedia = sigOverlayBroadcastOneShotMediaSizePx(78);
+    expect(oneShotW).toBeGreaterThan(w);
+    expect(oneShotMedia.height).toBe(w);
+    expect(oneShotMedia.width).toBe(Math.round((w * 300) / 180));
   });
 
   it("세로형 카드는 폭이 줄고 높이가 기준폭이 된다", () => {
@@ -793,6 +800,7 @@ describe("layoutSigOverlayResultRow", () => {
       cellCount: 11,
       userScalePct: 78,
       maxRowWidthPx: 1080,
+      hasOneShot: true,
     });
     const rowW =
       11 * sigOverlayBroadcastCardWidthPx(cardScalePct) + 10 * 6;
@@ -805,11 +813,36 @@ describe("layoutSigOverlayResultRow", () => {
       cellCount: 21,
       userScalePct: 78,
       maxRowWidthPx: 1080,
+      hasOneShot: true,
     });
     const rowW =
       21 * sigOverlayBroadcastCardWidthPx(cardScalePct) + 20 * 6;
     expect(rowW).toBeLessThanOrEqual(1080);
     expect(cardScalePct).toBeGreaterThanOrEqual(24);
+  });
+
+  it("6칸(5+한방)이면 한방 폭이 개별 카드보다 크다", () => {
+    const { cardScalePct } = layoutSigOverlayResultRow({
+      cellCount: 6,
+      userScalePct: 92,
+      maxRowWidthPx: 1920,
+      allowOverflow: true,
+      hasOneShot: true,
+    });
+    expect(sigOverlayBroadcastOneShotWidthPx(cardScalePct)).toBeGreaterThan(
+      sigOverlayBroadcastCardWidthPx(cardScalePct)
+    );
+  });
+
+  it("OBS allowOverflow면 한방 폭을 키워도 사용자 스케일을 유지한다", () => {
+    const { cardScalePct } = layoutSigOverlayResultRow({
+      cellCount: 6,
+      userScalePct: 92,
+      maxRowWidthPx: 720,
+      allowOverflow: true,
+      hasOneShot: true,
+    });
+    expect(cardScalePct).toBe(92);
   });
 });
 

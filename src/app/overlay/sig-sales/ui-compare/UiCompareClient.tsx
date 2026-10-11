@@ -50,7 +50,13 @@ function CompareColumn({ poolSize, winCount }: { poolSize: number; winCount: num
   }, [winCount, winners]);
   const cardCount = winners.length + (oneShot ? 1 : 0);
   const rowLayout = useMemo(
-    () => layoutSigOverlayResultRow({ cellCount: cardCount, userScalePct: 78, maxRowWidthPx: 1080 }),
+    () =>
+      layoutSigOverlayResultRow({
+        cellCount: cardCount,
+        userScalePct: 78,
+        maxRowWidthPx: 1080,
+        hasOneShot: Boolean(oneShot),
+      }),
     [cardCount]
   );
   const soldSet = useMemo(() => {
