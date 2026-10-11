@@ -6,7 +6,10 @@ export const TOONA_HUB_ROUTE_MAX_DURATION_SEC = 60;
 /** 허브 `/api/auth/login` — 실제 거절은 ~50ms, hang 시에만 끊음 */
 export const TOONA_HUB_LOGIN_FETCH_MS = 8_000;
 
-/** 허브 youtubegit PATCH */
+/** 허브 스트림 키 존재 확인(GET youtubegit). 후원 원장 pull 은 쓰지 않는다. */
+export const TOONA_HUB_VERIFY_FETCH_MS = 3_000;
+
+/** 허브 youtubegit PATCH — 연결 응답을 기다리지 않음 */
 export const TOONA_HUB_PATCH_FETCH_MS = 8_000;
 
 /** 연동 세션 KV 저장. 로그인 응답을 막지 않도록 상한 */

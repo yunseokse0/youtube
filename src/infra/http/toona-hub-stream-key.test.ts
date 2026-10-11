@@ -32,15 +32,12 @@ describe("linkToonaHubByStreamKey", () => {
     const prev = process.env.TOONA_INGEST_SECRET;
     process.env.TOONA_INGEST_SECRET = "s2s-secret";
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      const href = String(url);
-      if (href.includes("/api/donations/")) {
-        return new Response(JSON.stringify({ donations: [] }), { status: 200 });
+      expect(String(url)).toContain("/api/youtubegit/sk_live_test");
+      if (init?.method === "PATCH") {
+        const body = JSON.parse(String(init?.body || "{}")) as { scenario?: string; userId?: string };
+        expect(body.scenario).toBe("B");
+        expect(body.userId).toBe("din");
       }
-      expect(href).toContain("/api/youtubegit/sk_live_test");
-      expect(init?.method).toBe("PATCH");
-      const body = JSON.parse(String(init?.body || "{}")) as { scenario?: string; userId?: string };
-      expect(body.scenario).toBe("B");
-      expect(body.userId).toBe("din");
       return new Response(JSON.stringify({ enabled: true }), { status: 200 });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -63,10 +60,7 @@ describe("linkToonaHubByStreamKey", () => {
   it("links by stream key even when youtubegit PATCH asks for hub login", async () => {
     const prev = process.env.TOONA_INGEST_SECRET;
     process.env.TOONA_INGEST_SECRET = "s2s-secret";
-    const fetchMock = vi.fn(async (url: string) => {
-      if (String(url).includes("/api/donations/")) {
-        return new Response(JSON.stringify({ donations: [] }), { status: 200 });
-      }
+    const fetchMock = vi.fn(async () => {
       return new Response(JSON.stringify({ error: "로그인이 필요합니다." }), { status: 401 });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -86,10 +80,7 @@ describe("linkToonaHubByStreamKey", () => {
   it("still links when youtubegit PATCH returns 502 after the stream key is verified", async () => {
     const prev = process.env.TOONA_INGEST_SECRET;
     process.env.TOONA_INGEST_SECRET = "s2s-secret";
-    const fetchMock = vi.fn(async (url: string) => {
-      if (String(url).includes("/api/donations/")) {
-        return new Response(JSON.stringify({ donations: [] }), { status: 200 });
-      }
+    const fetchMock = vi.fn(async () => {
       return new Response("<html>Bad Gateway</html>", { status: 502 });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -104,7 +95,7 @@ describe("linkToonaHubByStreamKey", () => {
     process.env.TOONA_INGEST_SECRET = prev;
   });
 
-  it("rejects an unknown stream key from the donations probe", async () => {
+  it("rejects an unknown stream key from youtubegit GET 404", async () => {
     const prev = process.env.TOONA_INGEST_SECRET;
     process.env.TOONA_INGEST_SECRET = "s2s-secret";
     const fetchMock = vi.fn(async () => {

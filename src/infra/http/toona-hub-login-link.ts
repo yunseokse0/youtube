@@ -1,6 +1,5 @@
 import { normalizeToonaApiBaseUrl } from "@/lib/toona-sig-import";
 import { ingestErrorVisibleAfterLink } from "@/lib/toona-hub-ingest-error";
-import { buildToonaDonationsPullUrl } from "@/lib/toona-hub-pull";
 import { getToonaApiBaseUrl, normalizePublicBaseUrl } from "@/lib/toona-link";
 import {
   clearToonaHubDonationLogs,
@@ -16,6 +15,7 @@ import {
   TOONA_HUB_LOGIN_FETCH_MS,
   TOONA_HUB_PATCH_FETCH_MS,
   TOONA_HUB_SESSION_WRITE_MS,
+  TOONA_HUB_VERIFY_FETCH_MS,
 } from "@/lib/toona-hub-login";
 
 export type ToonaHubLoginInput = {
@@ -197,28 +197,22 @@ export async function linkToonaHubByStreamKey(input: ToonaHubStreamKeyInput): Pr
   const ingestSecret = String(process.env.TOONA_INGEST_SECRET || "").trim();
   if (!ingestSecret) return { ok: false, error: "ingest_secret_not_configured" };
 
-  /** youtubegit PATCH는 허브 유저 JWT가 필요하므로, 스트림 키는 후원 pull로 먼저 확인한다. */
-  let verifyRes: Response;
+  /** 후원 원장 GET 은 대량이면 youtube Node 가 502 난다. 가벼운 youtubegit GET 만 짧게 본다. */
   try {
-    verifyRes = await fetch(
-      buildToonaDonationsPullUrl({ baseUrl, streamKey, fromMs: 0, limit: 1 }),
-      {
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(TOONA_HUB_PATCH_FETCH_MS),
-      }
-    );
-  } catch (err) {
-    return {
-      ok: false,
-      error: `toona_unreachable: ${err instanceof Error ? err.message : "fetch_failed"}`,
-    };
-  }
-  const verifyJson = (await verifyRes.json().catch(() => ({}))) as { error?: string };
-  if (!verifyRes.ok) {
-    return {
-      ok: false,
-      error: verifyJson.error || `stream_key_verify_failed HTTP ${verifyRes.status}`,
-    };
+    const verifyRes = await fetch(`${baseUrl}/api/youtubegit/${encodeURIComponent(streamKey)}`, {
+      method: "GET",
+      headers: toonaHubAuthHeaders({ token: TOONA_HUB_S2S_TOKEN }),
+      signal: AbortSignal.timeout(TOONA_HUB_VERIFY_FETCH_MS),
+    });
+    if (verifyRes.status === 404) {
+      const verifyJson = (await verifyRes.json().catch(() => ({}))) as { error?: string };
+      return {
+        ok: false,
+        error: verifyJson.error || "존재하지 않는 스트리머입니다.",
+      };
+    }
+  } catch {
+    /** 허브 지연·502 는 연결을 막지 않는다 */
   }
 
   const patchBody = {
@@ -230,7 +224,7 @@ export async function linkToonaHubByStreamKey(input: ToonaHubStreamKeyInput): Pr
     ingestSecret,
   };
 
-  let patchJson: {
+  const patchJson: {
     error?: string;
     enabled?: boolean;
     lastIngestAt?: string | null;
@@ -238,21 +232,15 @@ export async function linkToonaHubByStreamKey(input: ToonaHubStreamKeyInput): Pr
     lastIngestError?: string | null;
     userId?: string;
   } = {};
-  try {
-    const patchRes = await fetch(`${baseUrl}/api/youtubegit/${encodeURIComponent(streamKey)}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        ...toonaHubAuthHeaders({ token: TOONA_HUB_S2S_TOKEN }),
-      },
-      body: JSON.stringify(patchBody),
-      signal: AbortSignal.timeout(TOONA_HUB_PATCH_FETCH_MS),
-    });
-    patchJson = (await patchRes.json().catch(() => ({}))) as typeof patchJson;
-    /** 시그·후원 pull 은 스트림 키만으로 된다. youtubegit PATCH 실패로 연결 자체를 502 내지 않는다. */
-  } catch {
-    /** pull 검증은 됐으므로 PATCH 타임아웃·502 는 연결을 막지 않는다 */
-  }
+  void fetch(`${baseUrl}/api/youtubegit/${encodeURIComponent(streamKey)}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      ...toonaHubAuthHeaders({ token: TOONA_HUB_S2S_TOKEN }),
+    },
+    body: JSON.stringify(patchBody),
+    signal: AbortSignal.timeout(TOONA_HUB_PATCH_FETCH_MS),
+  }).catch(() => {});
 
   const linkedAt = Date.now();
   const existingCursor = await readToonaHubPullCursor(youtubeUserId).catch(() => null);
