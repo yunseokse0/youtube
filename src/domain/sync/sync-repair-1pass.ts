@@ -170,16 +170,13 @@ function buildMembersFromTotals(
       },
       positions
     );
-    const hasDonorSrc = contribMap.get(member.id)?.hasDonorSource === true;
-    const hasLogSrc = logMap.get(member.id)?.hasLogSource === true;
-    const contribution =
-      isOperating || !(hasDonorSrc || hasLogSrc)
-        ? Math.max(0, Number(member.contribution) || 0)
-        : Math.max(
-            0,
-            (contribMap.get(member.id)?.donorPoints || 0) +
-              (logMap.get(member.id)?.deltaSum || 0)
-          );
+    const contribution = isOperating
+      ? Math.max(0, Number(member.contribution) || 0)
+      : Math.max(
+          0,
+          (contribMap.get(member.id)?.donorPoints || 0) +
+            (logMap.get(member.id)?.deltaSum || 0)
+        );
     return {
       ...member,
       account: bucket.account,
@@ -231,16 +228,13 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
       },
       positions
     );
-    const hasDonorSrc = contribMap.get(member.id)?.hasDonorSource === true;
-    const hasLogSrc = logMap.get(member.id)?.hasLogSource === true;
-    const contribution =
-      isOperating || !(hasDonorSrc || hasLogSrc)
-        ? Math.max(0, Number(member.contribution) || 0)
-        : Math.max(
-            0,
-            (contribMap.get(member.id)?.donorPoints || 0) +
-              (logMap.get(member.id)?.deltaSum || 0)
-          );
+    const contribution = isOperating
+      ? Math.max(0, Number(member.contribution) || 0)
+      : Math.max(
+          0,
+          (contribMap.get(member.id)?.donorPoints || 0) +
+            (logMap.get(member.id)?.deltaSum || 0)
+        );
     return {
       ...member,
       account: bucket.account,

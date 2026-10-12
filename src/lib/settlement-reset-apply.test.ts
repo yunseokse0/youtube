@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applySettlementResetToState } from "@/lib/settlement-reset-apply";
 import { defaultState, totalCombined } from "@/lib/state";
+import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import type { AppState } from "@/types";
 
 function richState(): AppState {
@@ -89,5 +90,14 @@ describe("applySettlementResetToState", () => {
     expect(next.territoryLogs).toEqual(prev.territoryLogs);
     expect(next.highSocietySettings?.memberWidthCm).toEqual({ m1: 180, m2: 20 });
     expect(next.highSocietySettings?.territoryLogsResetAt).toBe(1000);
+  });
+
+  it("keep: 리셋 뒤 옛 탭이 보낸 기여도는 후원·로그가 없으면 0으로 맞춘다", () => {
+    const reset = applySettlementResetToState(richState(), { mode: "keep", resetAt: 9000 });
+    const staleTabMembers = reset.members.map((m) =>
+      m.id === "m1" ? { ...m, contribution: 2_147_908 } : m
+    );
+    const synced = syncMemberTotalsFromDonors({ ...reset, members: staleTabMembers });
+    expect(synced.members.every((m) => m.contribution === 0)).toBe(true);
   });
 });
