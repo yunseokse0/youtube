@@ -102,6 +102,7 @@ import {
   donorsListContentDiffers,
   isIntentionalDonorListShrink,
   rebumpDonorsPastSettlementReset,
+  rebumpOnlyPostResetDonors,
   filterDonorsAfterSettlementReset,
   resolveServerDonorsForEmptyLocal,
   buildUiStateFromServerDonorPull,
@@ -4001,7 +4002,7 @@ function AdminPageInner() {
     const repaired = repairDonorTimestamps(raw, { dailyLog });
     if (!donorTimestampsChanged(raw, repaired)) return;
     const resetAt = Number(stateRef.current.settlementResetAt || 0);
-    const rebumped = rebumpDonorsPastSettlementReset(repaired, resetAt);
+    const rebumped = rebumpOnlyPostResetDonors(raw, repaired, resetAt);
     const next = syncMemberTotalsFromDonors({
       ...stateRef.current,
       donors: rebumped,
@@ -9427,6 +9428,8 @@ function AdminPageInner() {
         skipSetState?: boolean;
         /** 응답 state 생략 (기본: skipSetState 이면 true) */
         slimResponse?: boolean;
+        /** 사용자가 직접 실행한 일일 로그 복구 */
+        allowSettlementRestore?: boolean;
       }
     ): Promise<boolean> => {
       const protectionMs = opts?.protectionMs ?? 45_000;
@@ -9434,6 +9437,7 @@ function AdminPageInner() {
       donationAuthoritativeSaveUntilRef.current = Date.now() + protectionMs;
       const result = await persistDonationStateViaApi(overlayUserId, preserved, "replace", {
         returnState: !slimResponse,
+        ...(opts?.allowSettlementRestore ? { allowSettlementRestore: true } : {}),
       });
       if (!result.ok) {
         pendingUnsyncedRef.current = false;
@@ -9592,7 +9596,10 @@ function AdminPageInner() {
       { replaceDonors: true, awaitingServerSave: true }
     );
     setState(preserved);
-    const ok = await commitAuthoritativeDonorPersist(preserved, { protectionMs: 20_000 });
+    const ok = await commitAuthoritativeDonorPersist(preserved, {
+      protectionMs: 20_000,
+      allowSettlementRestore: true,
+    });
     if (ok) {
       window.alert(
         `일일 로그 복구 완료: 후원 ${rebumpedDonors.length}건 · 멤버 ${
@@ -9924,7 +9931,7 @@ function AdminPageInner() {
       const rebumpedState = syncMemberTotalsFromDonors({
         ...applied.state,
         settlementResetAt: resetAt || applied.state.settlementResetAt,
-        donors: rebumpDonorsPastSettlementReset(applied.state.donors, resetAt),
+        donors: rebumpOnlyPostResetDonors(base.donors, applied.state.donors, resetAt),
         donorRankingsUpdatedAt: Date.now(),
         updatedAt: Date.now(),
       });

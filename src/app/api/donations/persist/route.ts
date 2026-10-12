@@ -14,13 +14,20 @@ import {
   saveDonationRosterBackup,
 } from "@/lib/donation-roster-backup";
 import { normalizeDonorsArray, totalCombined } from "@/lib/state";
+import { loadAppStateForUserId } from "@/lib/app-state-server-load";
+import { dropRebumpedPreResetDonors } from "@/lib/settlement-rebump-guard";
+import { createModuleLogger } from "@/lib/logger";
 import type { AppState } from "@/types";
+
+const logger = createModuleLogger("api.donations.persist");
 
 type PersistBody = {
   state?: AppState;
   mode?: DonorsPersistMode;
   /** false 면 응답에 state 생략 — 삭제 UX 가속 */
   returnState?: boolean;
+  /** 사용자가 직접 실행한 일일 로그 복구 — 리셋 이후로 rebump 된 구 후원을 허용 */
+  allowSettlementRestore?: boolean;
 };
 
 /**
@@ -41,7 +48,21 @@ export async function POST(req: Request) {
 
   const mode: DonorsPersistMode = body.mode === "add" ? "add" : "replace";
   const returnState = body.returnState !== false;
-  const persisted = await persistDonationStateToServer(userId, body.state, { mode });
+  let incomingState = body.state;
+  if (body.allowSettlementRestore !== true) {
+    const server = await loadAppStateForUserId(userId);
+    const guarded = dropRebumpedPreResetDonors(incomingState, server);
+    if (guarded.dropped > 0) {
+      logger.warn("dropped rebumped pre-reset donors from browser persist", {
+        userId,
+        mode,
+        dropped: guarded.dropped,
+        settlementResetAt: server?.settlementResetAt,
+      });
+      incomingState = guarded.state;
+    }
+  }
+  const persisted = await persistDonationStateToServer(userId, incomingState, { mode });
   if (!persisted.ok) {
     return new Response(JSON.stringify({ error: "persist_failed" }), {
       status: 500,
@@ -52,12 +73,12 @@ export async function POST(req: Request) {
   /** TR-7.1: 4단계 pipeline 경유 재링크 (실패시 fallback으로 legacy 호출 회귀0 방지 */
   const assembleRes = await assembleStateAfterDonationEvent(persisted.state!, "persist", {
     kind: "persist",
-    previousState: body.state,
+    previousState: incomingState,
     mode,
   });
   let repaired = isOk(assembleRes)
     ? assembleRes.value
-    : syncAndRepairMemberTotals(persisted.state!, body.state);
+    : syncAndRepairMemberTotals(persisted.state!, incomingState);
   const donorsEmpty =
     normalizeDonorsArray(repaired.donors).length === 0 && totalCombined(repaired) <= 0;
   if (mode === "replace" && donorsEmpty) {

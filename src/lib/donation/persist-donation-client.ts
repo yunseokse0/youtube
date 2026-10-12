@@ -22,6 +22,8 @@ export type PersistDonationApiOptions = {
    * JSON 파싱·전송 비용을 줄인다.
    */
   returnState?: boolean;
+  /** 사용자가 직접 실행한 일일 로그 복구 — 서버의 리셋 rebump 차단을 건너뛴다 */
+  allowSettlementRestore?: boolean;
 };
 
 /**
@@ -45,7 +47,12 @@ export async function persistDonationStateViaApi(
       credentials: "include",
       cache: "no-store",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ state, mode, returnState }),
+      body: JSON.stringify({
+        state,
+        mode,
+        returnState,
+        ...(opts?.allowSettlementRestore ? { allowSettlementRestore: true } : {}),
+      }),
     });
     const data = (await res.json().catch(() => null)) as
       | {

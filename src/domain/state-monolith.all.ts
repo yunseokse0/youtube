@@ -4590,6 +4590,34 @@ export function filterDonorsAfterSettlementReset(
   });
 }
 
+/**
+ * 자동 보정(시각 복구·나누기·방송 종료 스냅샷)용 rebump.
+ * `original` 에서 이미 리셋 이전이던 행은 버리고, 원래 리셋 이후였던 행만 rebump 한다.
+ * 옛 탭이 들고 있던 구 후원을 리셋 이후 시각으로 되살리지 않게 한다.
+ */
+export function rebumpOnlyPostResetDonors(
+  original: Donor[] | undefined,
+  next: Donor[] | undefined,
+  settlementResetAt: number
+): Donor[] {
+  const resetAt = Number(settlementResetAt || 0);
+  const normalizedNext = normalizeDonorsArray(next);
+  if (!resetAt) return normalizedNext;
+  const threshold = resetAt - SETTLEMENT_RESET_DONOR_GRACE_MS;
+  const preResetIds = new Set(
+    normalizeDonorsArray(original)
+      .filter((d) => {
+        const at = _resolveAtForSettlement(d);
+        return Number.isFinite(at) && at > 0 && at < threshold;
+      })
+      .map((d) => String(d.id))
+  );
+  return rebumpDonorsPastSettlementReset(
+    normalizedNext.filter((d) => !preResetIds.has(String(d.id))),
+    resetAt
+  );
+}
+
 /** 정산 리셋 시각보다 앞선 후원은 시간을 고쳐 되살리지 않고 뺀다. */
 export function applySettlementResetDonorPipeline(
   donors: Donor[] | undefined,
