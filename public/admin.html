@@ -715,8 +715,32 @@
         function resetSystem() {
             if (resetArmed) return;
             resetArmed = true;
-            const u = readUserId();
-            location.replace(`${location.pathname}?u=${encodeURIComponent(u)}`);
+            ensureLiveState();
+            state.grantLog = [];
+            renderGrantLog();
+            if (persistTimer) {
+                window.clearTimeout(persistTimer);
+                persistTimer = null;
+            }
+            enforceBoardTotal();
+            state.stealFx = "slide";
+            const payload = JSON.stringify(state);
+            try { localStorage.setItem("shangliu_state", payload); } catch (_e) {}
+            pushPreviewState();
+            fetch(apiUrl(), {
+                method: "PUT",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ state }),
+            }).then((r) => r.json().then((j) => ({ r, j })).catch(() => ({ r, j: null })))
+              .then(({ r, j }) => {
+                if (r && r.ok && j && j.ok) {
+                    setSyncHint("영토 기록을 비웠습니다", true);
+                } else {
+                    setSyncHint("영토 기록 초기화 저장 실패", false);
+                }
+            }).catch(() => setSyncHint("영토 기록 초기화 저장 실패", false))
+              .finally(() => { resetArmed = false; });
         }
         function escapeHtml(value) {
             return String(value ?? "")
