@@ -28,6 +28,8 @@ type PersistBody = {
   returnState?: boolean;
   /** 사용자가 직접 실행한 일일 로그 복구 — 리셋 이후로 rebump 된 구 후원을 허용 */
   allowSettlementRestore?: boolean;
+  /** 멤버 카드 편집(운영비·이름·목표·화장실) — 요청 멤버 값 우선 */
+  memberFieldsAuthoritative?: boolean;
 };
 
 /**
@@ -62,7 +64,10 @@ export async function POST(req: Request) {
       incomingState = guarded.state;
     }
   }
-  const persisted = await persistDonationStateToServer(userId, incomingState, { mode });
+  const persisted = await persistDonationStateToServer(userId, incomingState, {
+    mode,
+    ...(body.memberFieldsAuthoritative === true ? { preferIncomingMemberFields: true } : {}),
+  });
   if (!persisted.ok) {
     return new Response(JSON.stringify({ error: "persist_failed" }), {
       status: 500,

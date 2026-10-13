@@ -24,6 +24,8 @@ export type PersistDonationApiOptions = {
   returnState?: boolean;
   /** 사용자가 직접 실행한 일일 로그 복구 — 서버의 리셋 rebump 차단을 건너뛴다 */
   allowSettlementRestore?: boolean;
+  /** 멤버 카드 편집(운영비·이름·목표·화장실) — 서버가 이 요청의 멤버 값을 우선한다 */
+  memberFieldsAuthoritative?: boolean;
 };
 
 /**
@@ -52,6 +54,7 @@ export async function persistDonationStateViaApi(
         mode,
         returnState,
         ...(opts?.allowSettlementRestore ? { allowSettlementRestore: true } : {}),
+        ...(opts?.memberFieldsAuthoritative ? { memberFieldsAuthoritative: true } : {}),
       }),
     });
     const data = (await res.json().catch(() => null)) as

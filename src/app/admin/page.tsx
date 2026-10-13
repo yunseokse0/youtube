@@ -883,7 +883,12 @@ function AdminPageInner() {
   const lastPaintedFingerprintRef = useRef<string>("");
   /** Admin 부하 감소 FIX #3: persistDonationStateViaApi debounce — 80ms 이내 연속 저장호출은 가장 마지막 1회만 POST → 후원 10건 연속 들어와도 1회만 서버 요청 */
   const persistDonationDebounceRef = useRef<number | null>(null);
-  const persistDonationLastStateRef = useRef<{ s: AppState; mode: "replace" | "add"; label?: string } | null>(null);
+  const persistDonationLastStateRef = useRef<{
+    s: AppState;
+    mode: "replace" | "add";
+    label?: string;
+    memberFieldsAuthoritative?: boolean;
+  } | null>(null);
   const flushingPersistRef = useRef(false);
   /** GET/304 응답 메타 — 영속 KV(`redis`/`mysql`) 확인 후에만 synced */
   const applySyncStatusAfterStateFetch = useCallback(
@@ -1742,6 +1747,8 @@ function AdminPageInner() {
       clearSigInventory?: boolean;
       /** 저장 완료 시 서버(MySQL) 반영 토스트 */
       persistToastLabel?: string;
+      /** 멤버 카드 편집(운영비·이름·목표·화장실) — 서버가 이 멤버 값을 우선 */
+      memberFieldsAuthoritative?: boolean;
     }
   ) => {
     const includeDonations =
@@ -1769,6 +1776,9 @@ function AdminPageInner() {
         s,
         mode: opts?.donorsReplace ? "replace" : "add",
         label: opts?.persistToastLabel,
+        memberFieldsAuthoritative:
+          Boolean(opts?.memberFieldsAuthoritative) ||
+          Boolean(persistDonationLastStateRef.current?.memberFieldsAuthoritative),
       };
       if (persistDonationDebounceRef.current !== null) {
         window.clearTimeout(persistDonationDebounceRef.current);
@@ -1779,7 +1789,9 @@ function AdminPageInner() {
         persistDonationLastStateRef.current = null;
         if (!payload || flushingPersistRef.current) return;
         flushingPersistRef.current = true;
-        void persistDonationStateViaApi(overlayUserId, payload.s, payload.mode).then((r) => {
+        void persistDonationStateViaApi(overlayUserId, payload.s, payload.mode, {
+          ...(payload.memberFieldsAuthoritative ? { memberFieldsAuthoritative: true } : {}),
+        }).then((r) => {
           flushingPersistRef.current = false;
           if (payload.label) {
             showServerPersistToast(payload.label, { ok: r.ok });
@@ -6000,7 +6012,7 @@ function AdminPageInner() {
       if (normalizeDonorsArray(next.donors).length > 0) {
         next = syncMemberTotalsFromDonors(next);
       }
-      persistState(next, { includeDonationFields: true });
+      persistState(next, { includeDonationFields: true, memberFieldsAuthoritative: true });
       return next;
     });
   };

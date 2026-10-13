@@ -14,6 +14,7 @@ import {
 import { loadDonationRosterBackupFromKv } from "@/lib/donation-roster-backup-redis";
 import { unionAppStateDonorsFromBackupIfRicher } from "@/lib/donation-roster-backup-core";
 import { clearIntentionalDonationClearIfHasDonations } from "@/lib/intentional-donation-clear";
+import { mergeManualMemberFieldsFromPatch } from "@/lib/member-roster-merge";
 import { snapshotTimerForPersist } from "@/lib/timer-utils";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { resolveWriteUserId } from "../_shared/user-id";
@@ -206,6 +207,11 @@ export type SaveAppStateForRouletteOptions = {
    * merge 로 incoming 50 donors 가 1건으로 덮어씌워지는 Lost Update 49건 Bug 방지.
    */
   skipOuterRead?: boolean;
+  /**
+   * 관리자 멤버 카드 편집 저장 — 이름·목표·운영비·화장실은 incoming 멤버 값을 쓴다.
+   * (union 의 로스터 동점 시 기존 서버 멤버가 이겨 체크가 되돌아가는 것을 막음)
+   */
+  preferIncomingMemberFields?: boolean;
 };
 
 export async function saveAppStateForRoulette(
@@ -278,7 +284,16 @@ async function saveAppStateForRouletteDirect(
     : opts?.donorsMode === "replace"
       ? mergeDonationReplaceForPersist(incoming, existing, wipeOpts)
       : mergeStatePreservingDonorsUntilSettlementReset(incoming, existing, wipeOpts);
-  const merged: AppState = preserveExistingHighSocietyTerritory(mergedRaw, existing);
+  const mergedWithMemberFields: AppState =
+    opts?.preferIncomingMemberFields &&
+    Array.isArray(incoming.members) &&
+    incoming.members.length > 0
+      ? {
+          ...mergedRaw,
+          members: mergeManualMemberFieldsFromPatch(mergedRaw.members || [], incoming.members),
+        }
+      : mergedRaw;
+  const merged: AppState = preserveExistingHighSocietyTerritory(mergedWithMemberFields, existing);
 
   const persistedBeforeFinalize: AppState = clearIntentionalDonationClearIfHasDonations({
     ...merged,

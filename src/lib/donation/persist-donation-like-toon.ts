@@ -35,6 +35,8 @@ export type PersistDonationStateOptions = {
   donationApplied?: DonationAppliedSseHint;
   /** add 모드에서 중복 검증용 (투네·수동 apply) */
   verifyEvent?: DonationEvent;
+  /** 관리자 멤버 카드 편집 — 이름·목표·운영비·화장실은 요청 값 우선 */
+  preferIncomingMemberFields?: boolean;
 };
 
 /**
@@ -47,7 +49,10 @@ export async function persistDonationStateToServer(
   opts?: PersistDonationStateOptions
 ): Promise<{ ok: true; state: AppState } | { ok: false }> {
   const mode = opts?.mode ?? "add";
-  const saved = await saveAppStateForRoulette(userId, nextState, { donorsMode: mode });
+  const saved = await saveAppStateForRoulette(userId, nextState, {
+    donorsMode: mode,
+    ...(opts?.preferIncomingMemberFields ? { preferIncomingMemberFields: true } : {}),
+  });
   if (!saved.ok) return { ok: false };
   const persisted = saved.state;
 
