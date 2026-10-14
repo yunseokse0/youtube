@@ -108,6 +108,18 @@ async function loadAppStateForUserIdOnce(
   const workP = (async () => {
     try {
       const mem = getServerMemoryAppState(userId);
+      /**
+       * MySQL 전용(단일 프로세스)에서는 모든 저장이 메모리를 먼저 갱신하므로 메모리가 정본이다.
+       * 저장 중인 MySQL 을 다시 읽으면 바쁠 때 14초 제한에 걸려 후원 반영이 멈춘다 — 콜드 스타트에만 읽는다.
+       */
+      if (
+        !opts?.bypassCache &&
+        isMysqlOnlyPersistentKvConfigured() &&
+        mem &&
+        hasMeaningfulMemberRoster(mem)
+      ) {
+        return mem;
+      }
       if (isPersistentKvConfigured()) {
         if (!opts?.bypassCache) {
           const hit = kvReadCache.get(userId);

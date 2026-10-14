@@ -197,8 +197,21 @@ export function resolveDonorLookupCandidate(event: DonationEvent): string | unde
   return isUsefulDonorLookupName(donor) ? donor : undefined;
 }
 
+/** 입금자명 `후원자_멤버` `후원자-멤버` `후원자/멤버` — 허브가 나누지 못하고 넘긴 멤버 부분 (`->` 제외) */
+function resolveDonorSeparatorCandidates(event: DonationEvent): string[] {
+  const donor = String(event.donorName || "").trim();
+  return donor
+    .split(/\s*(?:_+|\/|(?<!-)-(?!>))\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .slice(1);
+}
+
 function resolveAllMemberLookupCandidates(event: DonationEvent): string[] {
   const out = resolveMemberLookupCandidates(event);
+  for (const part of resolveDonorSeparatorCandidates(event)) {
+    if (isUsefulDonorLookupName(part) && !out.includes(part)) out.push(part);
+  }
   const donor = resolveDonorLookupCandidate(event);
   if (donor && !out.includes(donor)) out.push(donor);
   return out;

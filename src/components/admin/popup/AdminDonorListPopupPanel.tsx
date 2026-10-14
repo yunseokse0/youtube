@@ -15,7 +15,10 @@ import {
   updateDonorMessageInAppState,
   updateDonorNameInAppState,
 } from "@/lib/donation/apply-donation-state";
-import { persistDonationStateViaApi } from "@/lib/donation/persist-donation-client";
+import {
+  persistDonationStateViaApi,
+  removedDonorIdsBetween,
+} from "@/lib/donation/persist-donation-client";
 import { repairDonorTimestamps } from "@/lib/donation/repair-donor-timestamps";
 import {
   isGroupSplitPartDonor,
@@ -70,7 +73,8 @@ export default function AdminDonorListPopupPanel() {
   const persistChainRef = useRef(Promise.resolve(true));
 
   const persistReplace = useCallback(
-    async (next: AppState): Promise<boolean> => {
+    async (next: AppState, base: AppState): Promise<boolean> => {
+      const removedDonorIds = removedDonorIdsBetween(base.donors, next.donors);
       const stamped = syncMemberTotalsFromDonors({
         ...next,
         updatedAt: Date.now(),
@@ -82,7 +86,10 @@ export default function AdminDonorListPopupPanel() {
       notifyBroadcastStateLocalUpdated(scopedUserId, stamped.updatedAt);
       const run = async (): Promise<boolean> => {
         const result = await runExclusivePersist(() =>
-          persistDonationStateViaApi(scopedUserId, stamped, "replace", { returnState: false })
+          persistDonationStateViaApi(scopedUserId, stamped, "replace", {
+            returnState: false,
+            removedDonorIds,
+          })
         );
         if (!result.ok) {
           showAppToast("후원 저장 실패", { variant: "error" });
@@ -198,7 +205,7 @@ export default function AdminDonorListPopupPanel() {
       if (updated) next = updated;
     }
     setSelectedIds(new Set());
-    await persistReplace(next);
+    await persistReplace(next, live);
   }, [persistReplace, selectedIds, stateRef]);
 
   const saveName = async (d: Donor, nextName: string) => {
@@ -206,7 +213,7 @@ export default function AdminDonorListPopupPanel() {
     if (!live) return;
     const next = updateDonorNameInAppState(live, d.id, nextName);
     if (!next) return;
-    await persistReplace(next);
+    await persistReplace(next, live);
   };
 
   const saveMessage = async (d: Donor, nextMessage: string) => {
@@ -214,7 +221,7 @@ export default function AdminDonorListPopupPanel() {
     if (!live) return;
     const next = updateDonorMessageInAppState(live, d.id, nextMessage);
     if (!next) return;
-    await persistReplace(next);
+    await persistReplace(next, live);
   };
 
   const saveMember = async (d: Donor, memberId: string) => {
@@ -222,7 +229,7 @@ export default function AdminDonorListPopupPanel() {
     if (!live) return;
     const next = reassignDonorMemberInAppState(live, d.id, memberId);
     if (!next) return;
-    await persistReplace(next);
+    await persistReplace(next, live);
   };
 
   const deleteRow = async (d: Donor) => {
@@ -232,7 +239,7 @@ export default function AdminDonorListPopupPanel() {
     if (!window.confirm(`${d.name || "후원"} ${formatWon(d.amount)}을 삭제할까요?`)) return;
     const next = revertDonationFromAppState(live, d.id, { hardDeleteRow: true });
     if (!next) return;
-    await persistReplace(next);
+    await persistReplace(next, live);
   };
 
   const splitRow = async (d: Donor) => {
@@ -243,7 +250,7 @@ export default function AdminDonorListPopupPanel() {
       showAppToast(`나누기 실패: ${applied.reason}`, { variant: "error" });
       return;
     }
-    await persistReplace(applied.state);
+    await persistReplace(applied.state, live);
   };
 
   const members = state?.members || [];
@@ -289,7 +296,7 @@ export default function AdminDonorListPopupPanel() {
                   } else {
                     delete next.donationAutoAssignMemberId;
                   }
-                  void persistReplace(next);
+                  void persistReplace(next, state);
                 }}
               >
                 <option value="">선택 안 함</option>

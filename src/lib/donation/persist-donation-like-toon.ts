@@ -37,6 +37,8 @@ export type PersistDonationStateOptions = {
   verifyEvent?: DonationEvent;
   /** 관리자 멤버 카드 편집 — 이름·목표·운영비·화장실은 요청 값 우선 */
   preferIncomingMemberFields?: boolean;
+  /** replace 저장에서 브라우저가 실제로 지운 후원 ID — 탭이 못 받은 서버 새 후원은 남긴다 */
+  removedDonorIds?: string[];
 };
 
 /**
@@ -52,6 +54,7 @@ export async function persistDonationStateToServer(
   const saved = await saveAppStateForRoulette(userId, nextState, {
     donorsMode: mode,
     ...(opts?.preferIncomingMemberFields ? { preferIncomingMemberFields: true } : {}),
+    ...(opts?.removedDonorIds ? { removedDonorIds: opts.removedDonorIds } : {}),
   });
   if (!saved.ok) return { ok: false };
   const persisted = saved.state;

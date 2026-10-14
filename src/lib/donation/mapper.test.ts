@@ -60,6 +60,28 @@ describe("mapToMember", () => {
     expect(mapped.memberAutoAssigned).toBe(true);
   });
 
+  it.each(["준이_문형배", "준이 _ 문형배", "준이-문형배", "준이/문형배"])(
+    "matches the member after a separator in the depositor name (%s) before the auto-assign member",
+    (donorName) => {
+      const event: DonationEvent = {
+        id: `bank:sms:${donorName}`,
+        provider: "bank",
+        externalId: donorName,
+        donorName,
+        amount: 11_900,
+        at: new Date().toISOString(),
+        status: "queued",
+        target: "account",
+      };
+      const mapped = mapToMember(event, [operatingMember, ...members], [], {
+        autoAssignToonPlayer: true,
+        preferredAutoAssignMemberId: "m1",
+      });
+      expect(mapped.memberId).toBe("m2");
+      expect(mapped.memberAutoAssigned).toBeUndefined();
+    }
+  );
+
   it("auto-assigns excel rank-1 when account has no player hint", () => {
     const event: DonationEvent = {
       id: "t3",

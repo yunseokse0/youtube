@@ -17,6 +17,7 @@ import {
   getDinIngestStore,
   offerPendingIngest,
   requeueFront,
+  resetDinIngestBatchQueueForTests as resetPendingForTests,
   takeBatch,
   type OfferDinIngestResult,
   type QueuedIngest,
@@ -24,11 +25,23 @@ import {
 import { resolveScopedOverlayUserId } from "@/lib/overlay-params";
 import { runExclusivePerUser } from "@/lib/per-user-mutex";
 
-export { resetDinIngestBatchQueueForTests } from "@/lib/din-ingest-pending";
-
 const DRAIN_MUTEX_MS = 60_000;
-/** 저장본에 UID가 없으면 다시 넣는다. 같은 건이 계속 빠지면 루프를 끊고 로그만 남긴다. */
+/**
+ * 꺼낸 후원은 정산표나 관리자 매칭 대기열에 들어가기 전까지 버리지 않는다.
+ * 대기열 ID 기억만 남고 줄이 사라지면 허브 보조 수집이 같은 후원을 영영 무시한다.
+ * 저장본에 계속 안 보이면 이 횟수 뒤 관리자 매칭 대기열로 넘긴다.
+ */
 const MAX_LAND_ATTEMPTS = 4;
+/** 저장 실패·예외 뒤 바로 다시 돌면 같은 실패를 연타하므로 잠시 쉰다. */
+const DRAIN_RETRY_DELAY_MS = 2_000;
+
+const drainRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+export function resetDinIngestBatchQueueForTests(): void {
+  for (const timer of drainRetryTimers.values()) clearTimeout(timer);
+  drainRetryTimers.clear();
+  resetPendingForTests();
+}
 
 export type EnqueueDinIngestResult = OfferDinIngestResult;
 
@@ -54,20 +67,39 @@ export function enqueueDinExcelIngest(
 
 type FlushOutcome = { committed: boolean; retry: QueuedIngest[] };
 
-function retryMissing(rows: QueuedIngest[]): QueuedIngest[] {
+function rowKey(row: QueuedIngest): string {
+  return String(row.event.id || "").trim();
+}
+
+/** 관리자 매칭 대기열에 넣었거나 이미 있으면 true. 저장소 오류면 false. */
+async function handOverToAdminQueue(stateUserId: string, event: DonationEvent): Promise<boolean> {
+  return enqueueDonationEvent(stateUserId, event, { notify: false }).then(
+    () => true,
+    () => false
+  );
+}
+
+/** 저장본에 안 보인 줄: 횟수 안이면 재시도, 넘으면 관리자 대기열. 대기열 쓰기도 실패하면 계속 재시도. */
+async function retryOrHandOverMissing(
+  stateUserId: string,
+  rows: QueuedIngest[]
+): Promise<QueuedIngest[]> {
   const retry: QueuedIngest[] = [];
   for (const row of rows) {
     const attempts = (row.attempts || 0) + 1;
-    if (attempts >= MAX_LAND_ATTEMPTS) {
-      console.error(
-        "[din-ingest-batch-queue] donor missing after persist",
-        row.event.id,
-        row.event.amount,
-        row.event.donorName
-      );
+    if (attempts < MAX_LAND_ATTEMPTS) {
+      retry.push({ ...row, attempts });
       continue;
     }
-    retry.push({ ...row, attempts });
+    const queued = await handOverToAdminQueue(stateUserId, row.event);
+    console.error(
+      "[din-ingest-batch-queue] donor missing after persist",
+      row.event.id,
+      row.event.amount,
+      row.event.donorName,
+      queued ? "→ 관리자 대기열" : "→ 대기열 저장 실패, 다시 시도"
+    );
+    if (!queued) retry.push({ ...row, attempts });
   }
   return retry;
 }
@@ -81,31 +113,51 @@ async function flushBatch(stateUserId: string, rows: QueuedIngest[]): Promise<Fl
     rows.map((r) => r.event),
     aliases
   );
-  for (const event of folded.unmatched) {
-    await enqueueDonationEvent(stateUserId, event, { notify: false }).catch(() => false);
-  }
-  if (folded.applied.length === 0) {
-    forgetQueuedIds(stateUserId, rows);
-    return { committed: true, retry: [] };
-  }
-  const last = folded.applied[folded.applied.length - 1]!;
-  const persisted = await persistDonationApplyLikeToonation(stateUserId, folded.state, last);
-  if (!persisted.ok) return { committed: false, retry: rows };
-  const donors = persisted.state.donors || [];
-  const missing = rows.filter((row) => {
-    const landedInFold = folded.applied.some(
-      (event) => String(event.id || "") === String(row.event.id || "")
+  if (folded.discardedReset > 0) {
+    console.warn(
+      "[din-ingest-batch-queue] discarded donations older than settlement reset",
+      stateUserId,
+      folded.discardedReset
     );
-    if (!landedInFold) return false;
-    return !eventMatchesDonorLedger(row.event, donors);
-  });
-  const missingIds = new Set(missing.map((row) => String(row.event.id || "").trim()).filter(Boolean));
+  }
+  const handOverFailedKeys = new Set<string>();
+  for (const event of folded.unmatched) {
+    if (!(await handOverToAdminQueue(stateUserId, event))) {
+      handOverFailedKeys.add(String(event.id || "").trim());
+    }
+  }
+  const handOverFailed = rows.filter((row) => handOverFailedKeys.has(rowKey(row)));
+
+  let missing: QueuedIngest[] = [];
+  if (folded.applied.length > 0) {
+    const last = folded.applied[folded.applied.length - 1]!;
+    const persisted = await persistDonationApplyLikeToonation(stateUserId, folded.state, last);
+    if (!persisted.ok) return { committed: false, retry: rows };
+    const donors = persisted.state.donors || [];
+    const appliedKeys = new Set(folded.applied.map((e) => String(e.id || "").trim()));
+    missing = rows.filter(
+      (row) => appliedKeys.has(rowKey(row)) && !eventMatchesDonorLedger(row.event, donors)
+    );
+  }
+
+  const missingRetry = await retryOrHandOverMissing(stateUserId, missing);
+  const retry = [...missingRetry, ...handOverFailed];
+  const retryKeys = new Set(retry.map(rowKey));
   forgetQueuedIds(
     stateUserId,
-    rows.filter((row) => !missingIds.has(String(row.event.id || "").trim()))
+    rows.filter((row) => !retryKeys.has(rowKey(row)))
   );
-  if (!missing.length) return { committed: true, retry: [] };
-  return { committed: false, retry: retryMissing(missing) };
+  if (retry.length === 0) return { committed: true, retry: [] };
+  return { committed: false, retry };
+}
+
+function scheduleDrainRetry(uid: string): void {
+  if (drainRetryTimers.has(uid)) return;
+  const timer = setTimeout(() => {
+    drainRetryTimers.delete(uid);
+    void drainDinIngestQueue(uid);
+  }, DRAIN_RETRY_DELAY_MS);
+  drainRetryTimers.set(uid, timer);
 }
 
 export async function drainDinIngestQueue(stateUserId: string): Promise<void> {
@@ -114,6 +166,7 @@ export async function drainDinIngestQueue(stateUserId: string): Promise<void> {
   const store = getDinIngestStore();
   if (store.draining.has(uid)) return;
   store.draining.add(uid);
+  let failed = false;
   try {
     await runExclusivePerUser(
       uid,
@@ -121,9 +174,21 @@ export async function drainDinIngestQueue(stateUserId: string): Promise<void> {
         while (true) {
           const batch = takeBatch(uid);
           if (batch.length === 0) break;
-          const outcome = await flushBatch(uid, batch);
+          let outcome: FlushOutcome;
+          try {
+            outcome = await flushBatch(uid, batch);
+          } catch (err) {
+            /** takeBatch 로 이미 꺼낸 줄이다. 되돌리지 않으면 ID 기억만 남고 후원이 사라진다. */
+            console.error(
+              "[din-ingest-batch-queue] flush failed",
+              uid,
+              err instanceof Error ? err.message : err
+            );
+            outcome = { committed: false, retry: batch };
+          }
           if (!outcome.committed) {
             requeueFront(uid, outcome.retry);
+            failed = true;
             break;
           }
         }
@@ -131,11 +196,13 @@ export async function drainDinIngestQueue(stateUserId: string): Promise<void> {
       { timeoutMs: DRAIN_MUTEX_MS }
     );
   } catch (err) {
+    failed = true;
     console.error("[din-ingest-batch-queue] drain failed", uid, err instanceof Error ? err.message : err);
   } finally {
     store.draining.delete(uid);
     if ((store.byUser.get(uid) || []).length > 0) {
-      void drainDinIngestQueue(uid);
+      if (failed) scheduleDrainRetry(uid);
+      else void drainDinIngestQueue(uid);
     }
   }
 }

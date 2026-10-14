@@ -34,9 +34,9 @@ const MYSQL_QUERY_TIMEOUT_MS = 8_000;
 const POOL_ACQUIRE_AND_QUERY_TOTAL_TIMEOUT_MS = 10_000;
 /** resetMysqlPool 내부 pool.end() 가 hang 시 3초 강제 타임아웃 — 회로차단기 자체 데드락 방지 (P0-1) */
 const RESET_POOL_HARD_TIMEOUT_MS = 3_000;
-/** 연속 실패 시 MySQL 접속 중단 — ETIMEDOUT 폭주·event loop hang 방지 */
+/** 연속 접속 오류 시 잠깐 쉬기 — ETIMEDOUT 폭주 방지. 정산표 저장은 쉬는 동안 실패해도 다시 쓴다. */
 const CIRCUIT_FAIL_THRESHOLD = 3;
-const CIRCUIT_COOLDOWN_MS = 30_000;
+const CIRCUIT_COOLDOWN_MS = 5_000;
 let consecutiveFailures = 0;
 let circuitOpenUntil = 0;
 
@@ -227,16 +227,20 @@ async function withPoolConn<T>(
       layer: "infra",
     });
   }
-  /** 🔥 CRITICAL: getConnection + query 합쳐서 15초 넘어가면 영구 hang으로 간주하고 풀 리셋 → 0바이트 데드락 근본 차단 */
+  /**
+   * 호출자가 영원히 기다리지 않게 제한시간만 둔다. 다른 요청의 연결까지 끊는 풀 리셋은
+   * 연결을 끝내 못 받은 경우(풀이 막힌 경우)에만 한다 — 느린 쿼리 하나는 그 연결만 정리된다.
+   */
   let timedOut = false;
+  let acquired = false;
   let timerDestroy: ReturnType<typeof setTimeout> | null = null;
   const totalTimeout = new Promise<never>((_, reject) => {
     timerDestroy = setTimeout(() => {
       timedOut = true;
-      void resetMysqlPool();
+      if (!acquired) void resetMysqlPool();
       reject(new ErrorEnvelope({
         code: DIN_SHELL_101,
-        message: `MySQL withPoolConn total timeout after ${POOL_ACQUIRE_AND_QUERY_TOTAL_TIMEOUT_MS}ms — Pool forcibly reset (hang-prevention)`,
+        message: `MySQL withPoolConn total timeout after ${POOL_ACQUIRE_AND_QUERY_TOTAL_TIMEOUT_MS}ms${acquired ? "" : " — no connection, pool reset"}`,
         layer: "infra",
       }));
     }, POOL_ACQUIRE_AND_QUERY_TOTAL_TIMEOUT_MS);
@@ -252,7 +256,8 @@ async function withPoolConn<T>(
         });
       }
       const c = await p.getConnection();
-      if (timedOut) { try { c.destroy(); } catch {}
+      acquired = true;
+      if (timedOut) { try { c.release(); } catch {}
         throw new ErrorEnvelope({
           code: DIN_SHELL_101,
           message: "MySQL connection acquired but total timeout already fired — aborted",
@@ -374,11 +379,13 @@ function buildPoolOptions(raw: string, connectionLimit: number, queueLimit: numb
       connectTimeout: 8_000,
       /** 🔥 enableKeepAlive 끄기 → 소켓 half-open 상태 방지 */
       enableKeepAlive: false,
-      /** waitForConnections=false → 풀 꽉 찼을 때 대기안하고 즉시 POOL_CONNECTION_LIMIT 에러 → 0바이트 hang 방지 (fail fast) */
-      waitForConnections: false,
+      /**
+       * 풀이 잠깐 꽉 차도 실패하지 않고 차례를 기다린다(queueLimit 0 = 대기 무제한).
+       * 무한 대기는 withPoolConn 전체 제한시간이 막는다.
+       */
+      waitForConnections: true,
       maxIdle: connectionLimit,
       idleTimeout: POOL_IDLE_TIMEOUT_MS,
-      /** queueLimit=0: 대기열 없음 → 풀 다차면 즉시 에러 → hang 대신 fast-fail */
       queueLimit: 0,
       connectionLimit,
     };

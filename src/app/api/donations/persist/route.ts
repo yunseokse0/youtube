@@ -16,6 +16,7 @@ import {
 import { normalizeDonorsArray, totalCombined } from "@/lib/state";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import { dropRebumpedPreResetDonors } from "@/lib/settlement-rebump-guard";
+import { sanitizeRemovedDonorIds } from "@/lib/donation-replace-keep";
 import { createModuleLogger } from "@/lib/logger";
 import type { AppState } from "@/types";
 
@@ -30,6 +31,8 @@ type PersistBody = {
   allowSettlementRestore?: boolean;
   /** 멤버 카드 편집(운영비·이름·목표·화장실) — 요청 멤버 값 우선 */
   memberFieldsAuthoritative?: boolean;
+  /** replace 저장에서 탭이 실제로 지운 후원 ID — 없으면 예전처럼 요청 목록으로 통째 교체 */
+  removedDonorIds?: unknown;
 };
 
 /**
@@ -64,9 +67,11 @@ export async function POST(req: Request) {
       incomingState = guarded.state;
     }
   }
+  const removedDonorIds = mode === "replace" ? sanitizeRemovedDonorIds(body.removedDonorIds) : undefined;
   const persisted = await persistDonationStateToServer(userId, incomingState, {
     mode,
     ...(body.memberFieldsAuthoritative === true ? { preferIncomingMemberFields: true } : {}),
+    ...(removedDonorIds ? { removedDonorIds } : {}),
   });
   if (!persisted.ok) {
     return new Response(JSON.stringify({ error: "persist_failed" }), {

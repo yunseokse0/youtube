@@ -342,7 +342,10 @@ import { guardMemberTotalsAgainstAccidentalZeroWipe } from "@/lib/donation/zero-
 import { mergeMemberRosterPreservingAmounts, mergeManualMemberFieldsFromPatch } from "@/lib/member-roster-merge";
 import { mergeDonationApplyBase, enrichStateBeforeAuthoritativeDonationSave } from "@/lib/donation/merge-donation-apply-base";
 import { applyBankDonationsViaApi } from "@/lib/donation/apply-bank-donation-client";
-import { persistDonationStateViaApi } from "@/lib/donation/persist-donation-client";
+import {
+  persistDonationStateViaApi,
+  removedDonorIdsBetween,
+} from "@/lib/donation/persist-donation-client";
 import { applyDonationDummySeed } from "@/lib/dev/seed-donation-dummy";
 import { shouldKeepLocalHighSocietySettings } from "@/lib/high-society";
 import { showAppToast, showServerPersistToast } from "@/lib/app-toast";
@@ -888,6 +891,7 @@ function AdminPageInner() {
     mode: "replace" | "add";
     label?: string;
     memberFieldsAuthoritative?: boolean;
+    removedDonorIds?: string[];
   } | null>(null);
   const flushingPersistRef = useRef(false);
   /** GET/304 응답 메타 — 영속 KV(`redis`/`mysql`) 확인 후에만 synced */
@@ -1749,6 +1753,8 @@ function AdminPageInner() {
       persistToastLabel?: string;
       /** 멤버 카드 편집(운영비·이름·목표·화장실) — 서버가 이 멤버 값을 우선 */
       memberFieldsAuthoritative?: boolean;
+      /** donorsReplace 저장에서 이 탭이 실제로 지운 후원 ID */
+      removedDonorIds?: string[];
     }
   ) => {
     const includeDonations =
@@ -1772,6 +1778,11 @@ function AdminPageInner() {
        * 후원·멤버 금액 변경이 80ms 내 여러번 발생해도 가장 마지막 state 스냅샷으로 1회만 POST →
        * 서버 요청 10건 → 1건 감소, Admin 리렌더 부하·SSE 과잉 publish 모두 감소
        */
+      const pendingRemoved = persistDonationLastStateRef.current?.removedDonorIds;
+      const removedDonorIds =
+        opts?.removedDonorIds || pendingRemoved
+          ? Array.from(new Set([...(pendingRemoved || []), ...(opts?.removedDonorIds || [])]))
+          : undefined;
       persistDonationLastStateRef.current = {
         s,
         mode: opts?.donorsReplace ? "replace" : "add",
@@ -1779,6 +1790,7 @@ function AdminPageInner() {
         memberFieldsAuthoritative:
           Boolean(opts?.memberFieldsAuthoritative) ||
           Boolean(persistDonationLastStateRef.current?.memberFieldsAuthoritative),
+        ...(removedDonorIds ? { removedDonorIds } : {}),
       };
       if (persistDonationDebounceRef.current !== null) {
         window.clearTimeout(persistDonationDebounceRef.current);
@@ -1791,6 +1803,7 @@ function AdminPageInner() {
         flushingPersistRef.current = true;
         void persistDonationStateViaApi(overlayUserId, payload.s, payload.mode, {
           ...(payload.memberFieldsAuthoritative ? { memberFieldsAuthoritative: true } : {}),
+          ...(payload.removedDonorIds ? { removedDonorIds: payload.removedDonorIds } : {}),
         }).then((r) => {
           flushingPersistRef.current = false;
           if (payload.label) {
@@ -6096,7 +6109,11 @@ function AdminPageInner() {
         updatedAt: Date.now(),
       });
       /** donors 를 줄인 채 sync — replace 로 서버에 반영 (add 면 구 후원이 되살아남) */
-      persistState(next, { includeDonationFields: true, donorsReplace: true });
+      persistState(next, {
+        includeDonationFields: true,
+        donorsReplace: true,
+        removedDonorIds: removedDonorIdsBetween(prev.donors, next.donors),
+      });
       return next;
     });
   };
@@ -9447,8 +9464,13 @@ function AdminPageInner() {
       const protectionMs = opts?.protectionMs ?? 45_000;
       const slimResponse = opts?.slimResponse ?? Boolean(opts?.skipSetState);
       donationAuthoritativeSaveUntilRef.current = Date.now() + protectionMs;
+      const nowTs = Date.now();
+      const removedDonorIds = Array.from(recentlyRemovedDonorIdsRef.current.entries())
+        .filter(([, until]) => until >= nowTs)
+        .map(([id]) => id);
       const result = await persistDonationStateViaApi(overlayUserId, preserved, "replace", {
         returnState: !slimResponse,
+        removedDonorIds,
         ...(opts?.allowSettlementRestore ? { allowSettlementRestore: true } : {}),
       });
       if (!result.ok) {

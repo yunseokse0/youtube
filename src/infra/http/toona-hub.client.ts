@@ -19,14 +19,13 @@ import {
 } from "@/lib/toona-hub-session";
 import type { ContributionFormula, SigItem } from "@/types";
 import { offerDinExcelIngest, drainDinIngestQueue } from "@/lib/din-ingest-batch-queue";
-import { getDinIngestStore } from "@/lib/din-ingest-pending";
+import { isDinIngestPending } from "@/lib/din-ingest-pending";
 import {
   toonaHubDonationToEvent,
   type ToonaHubDonationApiRow,
 } from "@/lib/toona-hub-donation-map";
 import {
   buildToonaDonationsPullUrl,
-  lastToonaDonationPullId,
   nextToonaDonationPullAfter,
   resolveToonaDonationPullAfter,
   resolveToonaDonationPullFromMs,
@@ -465,13 +464,15 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
   const fromMs = resolveToonaDonationPullFromMs();
   let imported = 0;
   let applied = 0;
-  let after = opts?.ignoreMinInterval
-    ? ""
-    : resolveToonaDonationPullAfter({
-        fromMs,
-        savedFromMs: savedCursor?.fromMs,
-        savedAfter: savedCursor?.after,
-      });
+  /**
+   * 재시작·강제 동기화도 저장된 커서부터 읽는다. 처음부터 다시 읽으면 리셋 뒤 지운 후원이 되살아나고
+   * 수동으로 넣은 건이 허브 원본과 이중으로 잡힌다. ignoreMinInterval 은 60초 대기만 건너뛴다.
+   */
+  let after = resolveToonaDonationPullAfter({
+    fromMs,
+    savedFromMs: savedCursor?.fromMs,
+    savedAfter: savedCursor?.after,
+  });
   const persistCursor = async (nextAfter: string) => {
     await writeToonaHubPullCursor(uid, { floorAt: fromMs, fromMs, after: nextAfter }).catch(() => {});
   };
@@ -523,23 +524,31 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
 
     const rows = Array.isArray(json.donations) ? json.donations : [];
     const stateUserId = youtubeUserId;
+    const offered: Array<{ rowId: string; event: ReturnType<typeof toonaHubDonationToEvent> }> = [];
     for (const row of rows) {
       const event = toonaHubDonationToEvent(row, session.linkedAt);
+      offered.push({ rowId: String(row?.id || "").trim(), event });
       if (!event) continue;
       const enq = offerDinExcelIngest(youtubeUserId, event);
       if (!enq.duplicateQueued) imported += 1;
     }
     await drainDinIngestQueue(stateUserId);
     applied = imported;
-    const leftover = (getDinIngestStore().byUser.get(stateUserId) || []).length;
-    if (leftover > 0) {
-      await persistCursor(after);
-      break;
-    }
 
-    const scannedId = lastToonaDonationPullId(rows);
-    if (scannedId) after = scannedId;
+    /**
+     * 커서는 정산표(또는 관리자 대기열)에 확정된 줄까지만 옮긴다. 아직 처리 중인 후원을 지나치면
+     * 그 사이 재시작될 때 푸시·수집 둘 다 다시 가져오지 않아 영구 누락된다.
+     */
+    let settledAll = true;
+    for (const { rowId, event } of offered) {
+      if (event && isDinIngestPending(stateUserId, event)) {
+        settledAll = false;
+        break;
+      }
+      if (rowId) after = rowId;
+    }
     await persistCursor(after);
+    if (!settledAll) break;
     const nextAfter = nextToonaDonationPullAfter(rows, TOONA_DONATION_PULL_PAGE_SIZE);
     if (!nextAfter) break;
     if (Date.now() - cycleStartedAt >= DONATION_PULL_CYCLE_BUDGET_MS) break;

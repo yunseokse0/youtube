@@ -85,6 +85,13 @@ export function offerPendingIngest(
   return { ok: true, queued: true, depth: q.length, duplicateQueued: false };
 }
 
+/** 아직 정산표·관리자 대기열에 확정되지 않은(대기 중이거나 처리 중인) 후원이면 true */
+export function isDinIngestPending(stateUserId: string, event: DonationEvent): boolean {
+  const id = ingestQueueIdentity(event);
+  if (!id) return false;
+  return Boolean(getDinIngestStore().idsByUser.get(stateUserId)?.has(id));
+}
+
 export function takeBatch(stateUserId: string): QueuedIngest[] {
   const q = getDinIngestStore().byUser.get(stateUserId);
   if (!q?.length) return [];

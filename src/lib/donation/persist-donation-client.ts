@@ -26,7 +26,26 @@ export type PersistDonationApiOptions = {
   allowSettlementRestore?: boolean;
   /** 멤버 카드 편집(운영비·이름·목표·화장실) — 서버가 이 요청의 멤버 값을 우선한다 */
   memberFieldsAuthoritative?: boolean;
+  /**
+   * replace 저장에서 이 탭이 실제로 지운 후원 ID.
+   * 보내면 서버는 이 탭이 아직 못 받은 새 후원을 지우지 않는다.
+   */
+  removedDonorIds?: string[];
 };
+
+/** 이 탭의 이전 후원 목록에서 다음 목록으로 갈 때 빠진 ID */
+export function removedDonorIdsBetween(
+  prev: AppState["donors"] | undefined,
+  next: AppState["donors"] | undefined
+): string[] {
+  const nextIds = new Set((next || []).map((d) => String(d?.id || "").trim()).filter(Boolean));
+  const out: string[] = [];
+  for (const d of prev || []) {
+    const id = String(d?.id || "").trim();
+    if (id && !nextIds.has(id)) out.push(id);
+  }
+  return out;
+}
 
 /**
  * 삭제·나누기·재배치 — 투네 apply 와 동일 서버 파이프라인(`/api/donations/persist`).
@@ -55,6 +74,9 @@ export async function persistDonationStateViaApi(
         returnState,
         ...(opts?.allowSettlementRestore ? { allowSettlementRestore: true } : {}),
         ...(opts?.memberFieldsAuthoritative ? { memberFieldsAuthoritative: true } : {}),
+        ...(mode === "replace" && opts?.removedDonorIds
+          ? { removedDonorIds: opts.removedDonorIds }
+          : {}),
       }),
     });
     const data = (await res.json().catch(() => null)) as

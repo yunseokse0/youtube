@@ -3,8 +3,10 @@ import {
   defaultState,
   hasMeaningfulMemberRoster,
   isAccidentalEmptyRosterState,
+  normalizeDonorsArray,
   shouldBlockAccidentalEmptyOverwrite,
 } from "@/lib/state";
+import { keepServerDonorsUnseenByReplace } from "@/lib/donation-replace-keep";
 import { coalesceAppStateRedisAndMemory, loadAppStateForUserId, seedAppStateKvCache } from "@/lib/app-state-server-load";
 import {
   mergeDonationReplaceForPersist,
@@ -212,6 +214,11 @@ export type SaveAppStateForRouletteOptions = {
    * (union 의 로스터 동점 시 기존 서버 멤버가 이겨 체크가 되돌아가는 것을 막음)
    */
   preferIncomingMemberFields?: boolean;
+  /**
+   * replace 저장에서 브라우저가 실제로 지운 후원 ID.
+   * 있으면 여기에도 incoming 에도 없는 서버 후원(탭이 아직 못 받은 새 후원)은 남긴다.
+   */
+  removedDonorIds?: string[];
 };
 
 export async function saveAppStateForRoulette(
@@ -270,6 +277,28 @@ async function saveAppStateForRouletteDirect(
       incoming = unionAppStateDonorsFromBackupIfRicher(incoming, backup);
     } catch {
       /* noop */
+    }
+  }
+
+  if (
+    !forceSkip &&
+    existing &&
+    opts?.donorsMode === "replace" &&
+    !opts.allowEmptyRosterWipe &&
+    Array.isArray(opts.removedDonorIds)
+  ) {
+    const keep = keepServerDonorsUnseenByReplace(
+      normalizeDonorsArray(incoming.donors),
+      normalizeDonorsArray(existing.donors),
+      opts.removedDonorIds
+    );
+    if (keep.kept.length > 0) {
+      console.info(
+        "[edge-state-store] replace kept server donors the browser had not received",
+        userId,
+        keep.kept.map((d) => `${d.id} ${d.name} ${d.amount}`).join(" | ")
+      );
+      incoming = { ...incoming, donors: keep.donors };
     }
   }
 
