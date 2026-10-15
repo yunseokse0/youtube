@@ -5699,7 +5699,7 @@ function AdminPageInner() {
     q.set("scalePct", String(scalePct));
     q.set("contentWidthPct", String(getBattleContentWidthPct()));
     return `${window.location.origin}/overlay/sig-match?${q.toString()}`;
-  }, [user?.id, battleScalePct, getBattleContentWidthPct]);
+  }, [overlayUserId, battleScalePct, getBattleContentWidthPct]);
   const buildMealMatchLiveUrl = useCallback((): string => {
     if (typeof window === "undefined") return "";
     const uid = overlayUserId;
@@ -5712,7 +5712,7 @@ function AdminPageInner() {
     q.set("scalePct", String(scalePct));
     q.set("contentWidthPct", String(getBattleContentWidthPct()));
     return `${window.location.origin}/overlay/meal-match?${q.toString()}`;
-  }, [user?.id, battleScalePct, getBattleContentWidthPct]);
+  }, [overlayUserId, battleScalePct, getBattleContentWidthPct]);
 
   const sigMatchPreviewUrlRef = useRef("");
   const [sigMatchPreviewIframeSrc, setSigMatchPreviewIframeSrc] = useState("");
@@ -5725,7 +5725,7 @@ function AdminPageInner() {
    * URL은 디바운스하고, key는 수동 새로고침에만 바꿔 미리보기를 유지한다.
    */
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !overlayUserId) return;
     const url = buildSigMatchLiveUrl();
     sigMatchPreviewUrlRef.current = url;
     const delay = sigMatchPreviewBootedRef.current ? 400 : 0;
@@ -5735,9 +5735,9 @@ function AdminPageInner() {
       setSigMatchPreviewIframeSrc((prev) => (prev === next ? prev : next));
     }, delay);
     return () => window.clearTimeout(t);
-  }, [buildSigMatchLiveUrl]);
+  }, [buildSigMatchLiveUrl, overlayUserId]);
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !overlayUserId) return;
     const url = buildMealMatchLiveUrl();
     mealMatchPreviewUrlRef.current = url;
     const delay = mealMatchPreviewBootedRef.current ? 400 : 0;
@@ -5747,7 +5747,7 @@ function AdminPageInner() {
       setMealMatchPreviewIframeSrc((prev) => (prev === next ? prev : next));
     }, delay);
     return () => window.clearTimeout(t);
-  }, [buildMealMatchLiveUrl]);
+  }, [buildMealMatchLiveUrl, overlayUserId]);
 
   const copyUrl = async (url: string, id: string, label = "URL") => {
     const clean = sanitizeBroadcastOverlayUrl(url);

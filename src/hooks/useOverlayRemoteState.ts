@@ -287,7 +287,8 @@ function bootstrapOverlayCache(
     const local = readLocalStateIfExists(userId);
     if (local && isOverlayStateViable(local, statePick)) return local;
   }
-  if (persistLastGood) {
+  /** u= 없음: last-good 키가 finalent 로 떨어져 타계정·옛 로스터가 고정 표시됨 */
+  if (persistLastGood && String(userId || "").trim()) {
     const lastGood = loadOverlayLastGood(userId, statePick);
     if (lastGood && isOverlayStateViable(lastGood, statePick)) return lastGood;
   }
