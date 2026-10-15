@@ -350,6 +350,11 @@ export type SigMatchSettings = {
    * - active=true + startedAt: 그 시각 이후 후원만 집계
    */
   donationLinks?: Record<string, { active: boolean; startedAt?: number }>;
+  /**
+   * 관리자가「현재 시간으로 초기화」·「이 시각부터 집계」로 정한 집계 시작(epoch ms).
+   * 설정되어 있으면 후원 행이 없는 멤버에 엑셀 합계를 대신 넣지 않는다.
+   */
+  donationCountFromAt?: number | null;
   /** 시그 대전 오버레이 카운트다운 총 시간(초). 0이면 타이머 숨김 */
   overlayTimerDurationSec?: number;
   /** 시그 대전 오버레이 타이머 종료 시각(epoch ms). null/0이면 정지 */

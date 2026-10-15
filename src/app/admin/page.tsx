@@ -282,11 +282,13 @@ import {
 } from "@/lib/meal-battle-donation";
 import {
   applyMealBattleDonationsFromTime,
+  commonSigMatchDonationStartAt,
   enableMealBattleDonationSync,
   formatMealBattleFromAtInput,
   parseMealBattleFromAtInput,
   recalculateMealParticipantScoresFromDonors,
   resetMealBattleDonationUi,
+  setSigMatchDonationCountFrom,
 } from "@/lib/battle-donation-sync";
 import { normalizeMealGaugeEffects } from "@/lib/meal-gauge-effects";
 import { getVisibleAdminNavItems, isAdminNavSectionVisible, resolveNavKeyFromTargetId, resolveAdminNavKey, LEGACY_TO_NEW_KEY, type AdminNavKey, type AdminNavSubItem } from "@/app/admin/admin-nav-config";
@@ -1497,6 +1499,7 @@ function AdminPageInner() {
   const [sigMatchPreviewIframeKey, setSigMatchPreviewIframeKey] = useState(0);
   const [mealMatchPreviewIframeKey, setMealMatchPreviewIframeKey] = useState(0);
   const [mealBattleFromAt, setMealBattleFromAt] = useState(() => formatMealBattleFromAtInput(Date.now()));
+  const [sigMatchFromAt, setSigMatchFromAt] = useState(() => formatMealBattleFromAtInput(Date.now()));
   const [mealBattleApplyMemberIds, setMealBattleApplyMemberIds] = useState<string[] | null>(null);
   const [battleScalePct, setBattleScalePct] = useState("100");
   /** 시그/식사 대전 오버레이 본문 max-width (%), URL contentWidthPct */
@@ -6565,6 +6568,64 @@ function AdminPageInner() {
       };
       persistSigMatchDonationLinksOnly(next);
       return next;
+    });
+  };
+
+  const sigMatchCountTargetIds = (s: AppState): string[] => {
+    const playable = s.members.filter((m) => !isOperatingSettlementMember(m, s.memberPositions));
+    const valid = new Set(playable.map((m) => m.id));
+    const ids = s.sigMatchSettings?.participantMemberIds ?? [];
+    return ids.length > 0 ? ids.filter((id) => valid.has(id)) : playable.map((m) => m.id);
+  };
+
+  /** 시그 대전 집계 시작 시각 변경 — 후원 목록·정산은 그대로, 점수만 그 시각 이후 후원으로 다시 집계 */
+  const applySigMatchCountFrom = (fromAt: number, opts?: { clearManualAdjust?: boolean }) => {
+    setState((prev: AppState) => {
+      const targets = sigMatchCountTargetIds(prev);
+      if (targets.length === 0) return prev;
+      const valid = new Set(prev.members.map((m) => m.id));
+      const settings = setSigMatchDonationCountFrom(prev.sigMatchSettings, targets, fromAt);
+      const next: AppState = {
+        ...prev,
+        donationSyncMode:
+          !prev.donationSyncMode || prev.donationSyncMode === "none" ? "sigMatch" : prev.donationSyncMode,
+        ...(opts?.clearManualAdjust ? { sigMatch: {} } : {}),
+        sigMatchSettings: {
+          ...settings,
+          donationLinks: normalizeSigMatchDonationLinks(settings.donationLinks, valid),
+        },
+        updatedAt: Date.now(),
+      };
+      stateRef.current = next;
+      persistState(next, { omitDonationFields: true });
+      return next;
+    });
+  };
+
+  const resetSigMatchCountToNow = () => {
+    if (
+      !window.confirm(
+        "시그 대전 점수를 0으로 돌리고 지금부터 들어오는 후원만 집계합니다. 수기 보정도 0으로 지웁니다. 정산표 후원 목록은 그대로 둡니다."
+      )
+    ) {
+      return;
+    }
+    const now = Date.now();
+    applySigMatchCountFrom(now, { clearManualAdjust: true });
+    setSigMatchFromAt(formatMealBattleFromAtInput(now));
+    showAppToast("시그 대전 집계를 현재 시각부터 다시 시작했습니다.", { variant: "success", durationMs: 2200 });
+  };
+
+  const applySigMatchCountFromChosenTime = () => {
+    const fromAt = parseMealBattleFromAtInput(sigMatchFromAt, 0);
+    if (fromAt <= 0) {
+      showAppToast("집계 시작 시각을 입력하세요.", { variant: "info", durationMs: 2800 });
+      return;
+    }
+    applySigMatchCountFrom(fromAt);
+    showAppToast("시그 대전 점수를 그 시각 이후 후원으로 다시 집계했습니다.", {
+      variant: "success",
+      durationMs: 2200,
     });
   };
 
@@ -12131,6 +12192,58 @@ function AdminPageInner() {
                   </button>
                 </div>
                 {renderBattleOverlayTimerControls({ id: "sig-battle-overlay-timer" })}
+                <div className="rounded-lg border border-amber-500/30 bg-amber-950/20 p-3 space-y-2">
+                  <div className="text-xs font-medium text-amber-100">후원 집계 시작</div>
+                  <p className="text-[11px] text-neutral-400">
+                    정한 시각 이후에 들어온 후원만 참가자 시그 점수에 넣습니다. 「현재 시간으로 초기화」는 점수와 수기 보정을 0으로 돌리고 지금부터 집계합니다. 정산표 후원 목록은 그대로 둡니다.
+                  </p>
+                  <div className="text-[11px] text-neutral-300">
+                    현재 집계 시작:{" "}
+                    <span className="font-semibold text-amber-200">
+                      {(() => {
+                        const at = commonSigMatchDonationStartAt(
+                          state.sigMatchSettings,
+                          sigMatchCountTargetIds(state)
+                        );
+                        return at
+                          ? new Date(at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
+                          : "멤버별로 다름(연동 버튼 기준)";
+                      })()}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <button
+                      type="button"
+                      className="rounded bg-amber-700 px-2 py-1 text-xs font-medium text-white hover:bg-amber-600"
+                      onClick={resetSigMatchCountToNow}
+                    >
+                      현재 시간으로 초기화
+                    </button>
+                    <label className="space-y-1 text-xs text-neutral-400">
+                      특정 시간 설정
+                      <input
+                        type="datetime-local"
+                        className="block rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-neutral-100"
+                        value={sigMatchFromAt}
+                        onChange={(e) => setSigMatchFromAt(e.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="rounded bg-neutral-700 px-2 py-1 text-xs text-neutral-200 hover:bg-neutral-600"
+                      onClick={() => setSigMatchFromAt(formatMealBattleFromAtInput(Date.now()))}
+                    >
+                      현재 시간 입력
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded bg-amber-700 px-2 py-1 text-xs font-medium text-white hover:bg-amber-600"
+                      onClick={applySigMatchCountFromChosenTime}
+                    >
+                      이 시각부터 집계
+                    </button>
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_140px] gap-2">
                   <input
                     className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"

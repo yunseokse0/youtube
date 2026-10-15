@@ -307,6 +307,11 @@ export function normalizeSigMatchDonationLinks(
   return out;
 }
 
+export function normalizeSigMatchDonationCountFromAt(raw: unknown): number | null {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+}
+
 export function normalizeRouletteState(raw: unknown): RouletteState {
   const def: RouletteState = {
     phase: "IDLE",
@@ -1992,6 +1997,9 @@ export function loadState(userId?: string | null): AppState {
       donationLinks: normalizeSigMatchDonationLinks(
         (data as AppState).sigMatchSettings?.donationLinks,
         validSigMemberIds
+      ),
+      donationCountFromAt: normalizeSigMatchDonationCountFromAt(
+        (data as AppState).sigMatchSettings?.donationCountFromAt
       ),
       overlayTimerDurationSec: Number.isFinite((data as AppState).sigMatchSettings?.overlayTimerDurationSec)
         ? Math.max(0, Math.min(24 * 60 * 60, Math.floor((data as AppState).sigMatchSettings!.overlayTimerDurationSec as number)))
@@ -4195,6 +4203,9 @@ async function doLoadStateFromApi(
         donationLinks: normalizeSigMatchDonationLinks(
           (data as AppState).sigMatchSettings?.donationLinks,
           validSigMemberIdsApi
+        ),
+        donationCountFromAt: normalizeSigMatchDonationCountFromAt(
+          (data as AppState).sigMatchSettings?.donationCountFromAt
         ),
         overlayTimerDurationSec: Number.isFinite((data as AppState).sigMatchSettings?.overlayTimerDurationSec)
           ? Math.max(0, Math.min(24 * 60 * 60, Math.floor((data as AppState).sigMatchSettings!.overlayTimerDurationSec as number)))

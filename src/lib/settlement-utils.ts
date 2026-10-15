@@ -326,7 +326,8 @@ export function getSigMatchRankings(
    * donors 가 OBS·폴링에 아직 없어도 members 합계(엑셀표)는 반영 — 연동 ON 멤버만.
    * donors 목록에 해당 멤버 행이 있으면(시작 전 제외 포함) startedAt 집계를 존중하고 fallback 생략.
    */
-  if (settings.scoringMode === "amount") {
+  const explicitCountFrom = Number(settings.donationCountFromAt || 0) > 0;
+  if (settings.scoringMode === "amount" && !explicitCountFrom) {
     const donorList = donors || [];
     for (const m of rankingMembers) {
       const link = resolveSigMatchDonationLink(settings, m.id);

@@ -1,4 +1,4 @@
-import type { AppState, MealBattleParticipant, MealBattleState } from "@/types";
+import type { AppState, MealBattleParticipant, MealBattleState, SigMatchSettings } from "@/types";
 import { dedupeDonorRows, isDonorExcludedFromDonationTotals } from "@/lib/donation/apply-donation-state";
 import {
   applyMealBattleDonationToParticipants,
@@ -95,6 +95,42 @@ export function activateSigMatchDonationSync(state: AppState): AppState {
     },
     updatedAt: Date.now(),
   };
+}
+
+/**
+ * 시그 대전 집계 시작 시각을 참가자 전원에게 맞춘다(연동 ON).
+ * 후원 목록·정산·수기 보정은 건드리지 않는다.
+ */
+export function setSigMatchDonationCountFrom(
+  settings: SigMatchSettings,
+  targetMemberIds: string[],
+  fromAt: number
+): SigMatchSettings {
+  const at = Math.max(0, Math.floor(Number(fromAt) || 0));
+  const donationLinks: Record<string, { active: boolean; startedAt?: number }> = {
+    ...(settings.donationLinks || {}),
+  };
+  for (const id of targetMemberIds) {
+    const key = String(id || "").trim();
+    if (key) donationLinks[key] = { active: true, startedAt: at };
+  }
+  return { ...settings, donationLinks, donationCountFromAt: at > 0 ? at : null };
+}
+
+/** 참가자들의 집계 시작 시각 — 모두 같으면 그 값, 다르면 null */
+export function commonSigMatchDonationStartAt(
+  settings: Pick<SigMatchSettings, "donationLinks"> | null | undefined,
+  targetMemberIds: string[]
+): number | null {
+  let common: number | null = null;
+  for (const id of targetMemberIds) {
+    const link = settings?.donationLinks?.[id];
+    const at = link?.active ? Math.max(0, Math.floor(Number(link.startedAt) || 0)) : -1;
+    if (at <= 0) return null;
+    if (common === null) common = at;
+    else if (common !== at) return null;
+  }
+  return common;
 }
 
 export function mealBattleDonationApplyOpts(mealBattle: MealBattleState | undefined) {

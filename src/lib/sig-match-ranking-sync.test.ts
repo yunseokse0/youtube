@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getSigMatchRankings } from "./settlement-utils";
+import { commonSigMatchDonationStartAt, setSigMatchDonationCountFrom } from "./battle-donation-sync";
 import type { Donor, Member, SigMatchSettings } from "@/types";
 
 const members: Member[] = [
@@ -139,6 +140,44 @@ describe("getSigMatchRankings countAllDonations", () => {
       {}
     );
     expect(rows.find((r) => r.memberId === "a")?.score).toBe(0);
+  });
+
+  it("does not fall back to excel totals after an explicit count start", () => {
+    const membersWithAmount: Member[] = [
+      { id: "a", name: "A", account: 10_000, toon: 0, contribution: 10_000 },
+    ];
+    const settings = setSigMatchDonationCountFrom(baseSettings, ["a"], 5_000);
+    const rows = getSigMatchRankings([], membersWithAmount, settings, {}, {});
+    expect(rows.find((r) => r.memberId === "a")?.score).toBe(0);
+  });
+
+  it("recounts from a chosen time, including earlier donations when moved back", () => {
+    const donors: Donor[] = [
+      { id: "d1", name: "fan", amount: 10_000, memberId: "a", at: 1_000, target: "toon" },
+      { id: "d2", name: "fan", amount: 20_000, memberId: "a", at: 3_000, target: "toon" },
+      { id: "d3", name: "fan", amount: 5_000, memberId: "b", at: 3_500, target: "toon" },
+    ];
+    const atNow = setSigMatchDonationCountFrom(
+      { ...baseSettings, donationLinks: { a: { active: true, startedAt: 4_000 } } },
+      ["a", "b"],
+      4_000
+    );
+    expect(getSigMatchRankings(donors, members, atNow, {}, {}).every((r) => r.score === 0)).toBe(true);
+    expect(commonSigMatchDonationStartAt(atNow, ["a", "b"])).toBe(4_000);
+
+    const earlier = setSigMatchDonationCountFrom(atNow, ["a", "b"], 2_000);
+    const rows = getSigMatchRankings(donors, members, earlier, {}, {});
+    expect(rows.find((r) => r.memberId === "a")?.score).toBe(20_000);
+    expect(rows.find((r) => r.memberId === "b")?.score).toBe(5_000);
+    expect(earlier.donationCountFromAt).toBe(2_000);
+  });
+
+  it("reports no common start when participants differ", () => {
+    const settings: SigMatchSettings = {
+      ...baseSettings,
+      donationLinks: { a: { active: true, startedAt: 1_000 }, b: { active: true, startedAt: 2_000 } },
+    };
+    expect(commonSigMatchDonationStartAt(settings, ["a", "b"])).toBeNull();
   });
 
   it("applies negative manual adjust as deduction from donation score", () => {
