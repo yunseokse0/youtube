@@ -18,6 +18,7 @@ import {
   formatSigMatchScoreLabel,
   formatSigMatchStat,
   getSigMatchRankings,
+  orderSigMatchEntriesByRoster,
   type SigMatchRankingItem,
 } from "@/lib/settlement-utils";
 import BattleRulesBox from "@/components/battle/BattleRulesBox";
@@ -507,13 +508,16 @@ export default function SigMatchDuelOverlay({
       fallbackLabel: string,
       teamLabel?: string
     ): SigMatchSide => {
-      const ids = [
-        ...new Set(
-          memberIds.filter(
-            (id) => Boolean(id) && playableIdSet.has(id) && !blockedMemberIds.has(id)
-          )
-        ),
-      ];
+      const ids = orderSigMatchEntriesByRoster(
+        [
+          ...new Set(
+            memberIds.filter(
+              (id) => Boolean(id) && playableIdSet.has(id) && !blockedMemberIds.has(id)
+            )
+          ),
+        ].map((memberId) => ({ memberId })),
+        overlayState?.members || []
+      ).map((x) => x.memberId);
       const label = ids.map((id) => memberMap.get(id) || id).join(" · ") || fallbackLabel;
       const score = ids.reduce((sum, id) => sum + (scoreMap.get(id) || 0), 0);
       return { ids, label, score, teamLabel };
@@ -537,7 +541,7 @@ export default function SigMatchDuelOverlay({
       };
     }
 
-    const list = ranking.filter(Boolean);
+    const list = orderSigMatchEntriesByRoster(ranking.filter(Boolean), overlayState?.members || []);
     if (list.length === 0) {
       return {
         mode: "dual",
@@ -570,7 +574,7 @@ export default function SigMatchDuelOverlay({
       ];
       return { mode: "triple", sides: triple };
     }
-    /** 4명 이상·풀 없음: 랭킹 순 절반 vs 절반 */
+    /** 4명 이상·풀 없음: 멤버 순서 앞 절반 vs 뒤 절반 */
     const mid = Math.ceil(list.length / 2);
     const leftList = list.slice(0, mid);
     const rightList = list.slice(mid);
@@ -581,7 +585,7 @@ export default function SigMatchDuelOverlay({
       teamLabel,
     });
     return { mode: "dual", left: pack(leftList, "A팀"), right: pack(rightList, "B팀") };
-  }, [ranking, overlayState?.sigMatchSettings?.sigMatchPools, memberMap, blockedMemberIds]);
+  }, [ranking, overlayState?.sigMatchSettings?.sigMatchPools, overlayState?.members, memberMap, blockedMemberIds]);
   /** 식사대전(/overlay/meal-match)과 동일하게 matchTimer + 서버 동기화(lastUpdated) 기준 */
   const timerState = overlayState?.matchTimer ?? overlayState?.generalTimer ?? null;
   const [, setTimerTick] = useState(0);

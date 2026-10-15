@@ -244,6 +244,19 @@ function findPoolForMember(memberId: string, pools: SigMatchPool[]): string[] | 
   return null;
 }
 
+/** 대전 좌우·칸 배치용 — 점수 순위가 아니라 멤버 보드(로스터) 순서로 고정 */
+export function orderSigMatchEntriesByRoster<T extends { memberId: string }>(
+  entries: T[],
+  members: Pick<Member, "id">[]
+): T[] {
+  const index = new Map((members || []).map((m, i) => [m.id, i]));
+  return [...(entries || [])].sort(
+    (a, b) =>
+      (index.get(a.memberId) ?? Number.MAX_SAFE_INTEGER) -
+      (index.get(b.memberId) ?? Number.MAX_SAFE_INTEGER)
+  );
+}
+
 export function getSigMatchRankings(
   donors: Donor[],
   members: Member[],

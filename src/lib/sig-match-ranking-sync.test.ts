@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getSigMatchRankings } from "./settlement-utils";
+import { getSigMatchRankings, orderSigMatchEntriesByRoster } from "./settlement-utils";
 import { commonSigMatchDonationStartAt, setSigMatchDonationCountFrom } from "./battle-donation-sync";
 import type { Donor, Member, SigMatchSettings } from "@/types";
 
@@ -178,6 +178,16 @@ describe("getSigMatchRankings countAllDonations", () => {
       donationLinks: { a: { active: true, startedAt: 1_000 }, b: { active: true, startedAt: 2_000 } },
     };
     expect(commonSigMatchDonationStartAt(settings, ["a", "b"])).toBeNull();
+  });
+
+  it("keeps duel sides in roster order even when the second member leads", () => {
+    const donors: Donor[] = [
+      { id: "d1", name: "fan", amount: 10_000, memberId: "a", at: Date.now(), target: "toon" },
+      { id: "d2", name: "fan", amount: 50_000, memberId: "b", at: Date.now(), target: "toon" },
+    ];
+    const rows = getSigMatchRankings(donors, members, baseSettings, {}, {});
+    expect(rows.map((r) => r.memberId)).toEqual(["b", "a"]);
+    expect(orderSigMatchEntriesByRoster(rows, members).map((r) => r.memberId)).toEqual(["a", "b"]);
   });
 
   it("applies negative manual adjust as deduction from donation score", () => {
