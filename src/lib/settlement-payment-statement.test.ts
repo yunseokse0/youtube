@@ -62,11 +62,21 @@ describe("computeMemberPaymentStatement (정산서.xlsx)", () => {
     expect(stmt.finalPayout).toBe(1_150_730);
   });
 
-  it("adds 10% output vat to final payout when tax invoice issued", () => {
+  it("tax invoice member: no withholding, tax = vat 10%, 입금액 = 지급액 + vat", () => {
     const stmt = computeMemberPaymentStatement(record({ taxInvoiceIssued: true }), member());
-    expect(stmt.payout).toBe(1_150_730);
-    expect(stmt.outputVat).toBe(115_073);
-    expect(stmt.finalPayout).toBe(1_265_803);
+    expect(stmt.taxInvoiceIssued).toBe(true);
+    expect(stmt.pretaxTotal).toBe(1_190_000);
+    expect(stmt.withholding).toBe(0);
+    expect(stmt.payout).toBe(1_190_000);
+    expect(stmt.outputVat).toBe(119_000);
+    expect(stmt.tax).toBe(119_000);
+    expect(stmt.finalPayout).toBe(1_309_000);
+  });
+
+  it("withholding member: tax = withholding", () => {
+    const stmt = computeMemberPaymentStatement(record(), member());
+    expect(stmt.taxInvoiceIssued).toBe(false);
+    expect(stmt.tax).toBe(39_270);
   });
 
   it("prefers per-member taxInvoiceIssued over record default", () => {
@@ -74,8 +84,9 @@ describe("computeMemberPaymentStatement (정산서.xlsx)", () => {
       record({ taxInvoiceIssued: false }),
       member({ taxInvoiceIssued: true })
     );
-    expect(withMemberOn.outputVat).toBe(115_073);
-    expect(withMemberOn.finalPayout).toBe(1_265_803);
+    expect(withMemberOn.withholding).toBe(0);
+    expect(withMemberOn.outputVat).toBe(119_000);
+    expect(withMemberOn.finalPayout).toBe(1_309_000);
 
     const withMemberOff = computeMemberPaymentStatement(
       record({ taxInvoiceIssued: true }),
@@ -180,6 +191,25 @@ describe("computeFullSettlementSummary (정산서.xlsx 전체 정산서)", () =>
     expect(computeFullSettlementSummary(rec).rows.map((r) => r.memberId)).toEqual(["m1"]);
   });
 
+  it("tax invoice row: 세금=부가세, 입금액=지급액+부가세, 원천세 총 합계에서 제외", () => {
+    const rec = record({
+      members: [
+        member({ memberId: "m1" }),
+        member({ memberId: "m2", name: "발행", taxInvoiceIssued: true }),
+      ],
+    });
+    const summary = computeFullSettlementSummary(rec);
+    const inv = summary.rows.find((r) => r.memberId === "m2")!;
+    expect(inv.withholding).toBe(0);
+    expect(inv.tax).toBe(119_000);
+    expect(inv.payout).toBe(1_309_000);
+    const wh = summary.rows.find((r) => r.memberId === "m1")!;
+    expect(wh.tax).toBe(39_270);
+    expect(wh.payout).toBe(1_150_730);
+    expect(summary.sumWithholding).toBe(39_270);
+    expect(summary.sumPayout).toBe(1_150_730 + 1_309_000);
+  });
+
   it("computeExcelWithholding uses ROUNDDOWN to tens", () => {
     expect(computeExcelWithholding(1_190_000)).toEqual({
       incomeTax: 35_700,
@@ -223,8 +253,12 @@ describe("buildMemberPaymentStatementHtml layout", () => {
 describe("buildFullSettlementHtml", () => {
   it("omits income/local tax columns and keeps table borders on blank footer cells", () => {
     const html = buildFullSettlementHtml(record());
-    expect(html).toContain("원천세");
-    expect(html).toContain("정산금의 30%");
+    expect(html).toContain("<th>지급액</th><th>세금</th><th>입금액</th>");
+    expect(html).toContain("<th>수익</th>");
+    expect(html).not.toContain("정산금의 70%");
+    expect(html).not.toContain("정산금의 30%");
+    expect(html).not.toContain(">매출<");
+    expect(html).toContain("원천세 총 합계");
     expect(html).not.toContain(">소득세<");
     expect(html).not.toContain(">지방소득세<");
     expect(html).toContain('class="foot-mini"');

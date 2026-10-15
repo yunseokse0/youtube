@@ -993,7 +993,7 @@ export default function SettlementDetailPage() {
             </div>
           </div>
           <div className="text-xs text-neutral-400">
-            · <span className="text-neutral-300">세금계산서 발행</span>: 원천세 차감 후 최종정산에 부가세 10%를 더해 입금액·PDF에 반영합니다.
+            · <span className="text-neutral-300">세금계산서 발행</span>: 원천세 없이 지급액에 세금(부가세 10%)을 더해 입금액·PDF에 반영합니다. 미발행 인원은 세금(원천세 3.3%)을 차감합니다.
             멤버별 지정은 아래 「멤버별 개별 비율」ON 후 체크하세요(공통 체크는 기본값).
             {" · "}
             <span className="text-neutral-300">운영비</span>: 국고 멤버 후원을 정산 합계에서 제외합니다.
@@ -1035,7 +1035,7 @@ export default function SettlementDetailPage() {
             />
             <input
               className="w-[120px] px-3 py-2 rounded bg-black/30 border border-white/10 text-sm"
-              placeholder="원천세 %"
+              placeholder="세금 %"
               value={taxRateInput}
               onChange={(e) => {
                 ratioUiDirtyRef.current = true;
@@ -1167,7 +1167,7 @@ export default function SettlementDetailPage() {
             </div>
           )}
           <div className="text-xs text-neutral-400">
-            후원 스냅샷은 유지하고 배분·원천세만 다시 계산합니다. 멤버별 세금계산서는 「멤버별 개별 비율」ON 후 체크하고 「비율 적용 · 재계산」으로 저장하세요.
+            후원 스냅샷은 유지하고 배분·세금만 다시 계산합니다. 멤버별 세금계산서는 「멤버별 개별 비율」ON 후 체크하고 「비율 적용 · 재계산」으로 저장하세요.
           </div>
         </div>
 
@@ -1233,7 +1233,7 @@ export default function SettlementDetailPage() {
                 <td className="p-2 text-right tabular-nums">
                   {exportMembers.reduce((s, m) => s + m.toonApplied, 0).toLocaleString()}
                 </td>
-                <td className="p-2 text-right tabular-nums text-rose-300">
+                <td className="p-2 text-right tabular-nums text-rose-300" title="원천세 인원 세금만 합산">
                   {viewRecord!.totalFee.toLocaleString()}
                 </td>
                 <td className="p-2 text-right tabular-nums text-emerald-300 text-base">
@@ -1283,8 +1283,8 @@ export default function SettlementDetailPage() {
             const issued = members.filter((m) =>
               typeof m.taxInvoiceIssued === "boolean" ? m.taxInvoiceIssued : Boolean(viewRecord!.taxInvoiceIssued)
             ).length;
-            if (issued === 0) return " · 세금계산서 미발행(원천세만)";
-            if (issued === members.length) return " · 세금계산서 발행(최종+부가세10%)";
+            if (issued === 0) return " · 세금계산서 미발행(세금=원천세)";
+            if (issued === members.length) return " · 세금계산서 발행(지급액+부가세10%, 원천세 없음)";
             return ` · 세금계산서 멤버별(${issued}/${members.length}명 발행)`;
           })()}
           <span className="text-neutral-500"> · 금액은 지급정산서(수수료·부가세 공제 후) 기준</span>
@@ -1383,7 +1383,7 @@ export default function SettlementDetailPage() {
               <tr className="font-semibold">
                 <td className="p-2" colSpan={9}>합계</td>
                 <td className="p-2 text-right">{viewRecord!.totalGross.toLocaleString()}</td>
-                <td className="p-2 text-right">{viewRecord!.totalFee.toLocaleString()}</td>
+                <td className="p-2 text-right" title="원천세 인원 세금만 합산">{viewRecord!.totalFee.toLocaleString()}</td>
                 <td className="p-2 text-right">{viewRecord!.totalNet.toLocaleString()}</td>
                 <td className="p-2" />
               </tr>

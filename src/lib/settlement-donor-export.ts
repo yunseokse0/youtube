@@ -105,6 +105,27 @@ function csvEscapeSafe(v: string | number): string {
   return csvEscape(sanitizeExportCell(v));
 }
 
+/** CSV 금액 칸 — 천 단위 쉼표 */
+function moneyText(v: number | string): string {
+  return Math.round(Number(v) || 0).toLocaleString("ko-KR");
+}
+
+/** XLSX 숫자 칸 — 값은 숫자 그대로(합계 가능), 표시만 천 단위 쉼표 */
+function sheetWithCommas(aoa: (string | number)[][]): XLSX.WorkSheet {
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  for (const key of Object.keys(ws)) {
+    if (key.startsWith("!")) continue;
+    const cell = ws[key] as XLSX.CellObject;
+    if (cell?.t === "n") cell.z = "#,##0";
+  }
+  return ws;
+}
+
+/** 후원 건별 — 멤버 구분 없이 시간 최신순 */
+function sortDonorsNewestFirst(donors: Donor[]): Donor[] {
+  return [...donors].sort((a, b) => donorAtEpochMs(b) - donorAtEpochMs(a));
+}
+
 /** 엑셀/CSV용 시각 — **한국 시각(KST) 고정**, Z(UTC 표시) 없음, EC2 TZ=UTC 에서도 KST 출력 보장 */
 export function formatExportDateTime(at: number | string | Date): string {
   return formatKstDateTime(at);
@@ -357,13 +378,7 @@ export function recordToMemberDonorsCsv(record: SettlementRecord, donors: Donor[
   const hasBase = Array.isArray(baseMembers) && baseMembers.length > 0;
   const createdAt = formatExportDateTime(record.createdAt);
   const detailHeader = ["정산제목", "정산시각", "멤버", "멤버실명", "후원자", "금액", "채널", "후원시각", "메시지"].map(csvEscapeSafe).join(",");
-  const detailRows = [...donors]
-    .sort((a, b) => {
-      const ma = nameById.get(normMemberId(a.memberId)) || normMemberId(a.memberId);
-      const mb = nameById.get(normMemberId(b.memberId)) || normMemberId(b.memberId);
-      if (ma !== mb) return ma.localeCompare(mb, "ko");
-      return b.at - a.at;
-    })
+  const detailRows = sortDonorsNewestFirst(donors)
     .map((d) =>
       [
         record.title,
@@ -371,7 +386,7 @@ export function recordToMemberDonorsCsv(record: SettlementRecord, donors: Donor[
         nameById.get(normMemberId(d.memberId)) || normMemberId(d.memberId),
         realById.get(normMemberId(d.memberId)) || "",
         (d.name || "무명").trim() || "무명",
-        String(Math.max(0, Number(d.amount) || 0)),
+        moneyText(Math.max(0, Number(d.amount) || 0)),
         donorTargetLabel(d.target),
         formatExportDateTime(d.at),
         String(d.message || "").trim(),
@@ -386,10 +401,10 @@ export function recordToMemberDonorsCsv(record: SettlementRecord, donors: Donor[
       row.memberName,
       row.memberRealName,
       row.donorName,
-      String(row.totalAmount),
+      moneyText(row.totalAmount),
       String(row.count),
-      String(row.accountAmount),
-      String(row.toonAmount),
+      moneyText(row.accountAmount),
+      moneyText(row.toonAmount),
     ]
       .map(csvEscapeSafe)
       .join(",")
@@ -413,17 +428,17 @@ export function recordToMemberDonorsCsv(record: SettlementRecord, donors: Donor[
     perMemberSections.push(["후원자", "합계금액", "후원횟수", "계좌합", "투네합"].map(csvEscapeSafe).join(","));
     for (const row of perDonor) {
       perMemberSections.push(
-        [row.donorName, String(row.totalAmount), String(row.count), String(row.accountAmount), String(row.toonAmount)]
+        [row.donorName, moneyText(row.totalAmount), String(row.count), moneyText(row.accountAmount), moneyText(row.toonAmount)]
           .map(csvEscapeSafe)
           .join(",")
       );
     }
     perMemberSections.push("", ["후원자", "금액", "채널", "후원시각", "메시지"].map(csvEscapeSafe).join(","));
-    for (const d of [...memberDonors].sort((a, b) => b.at - a.at)) {
+    for (const d of sortDonorsNewestFirst(memberDonors)) {
       perMemberSections.push(
         [
           (d.name || "무명").trim() || "무명",
-          String(Math.max(0, Number(d.amount) || 0)),
+          moneyText(Math.max(0, Number(d.amount) || 0)),
           donorTargetLabel(d.target),
           formatExportDateTime(d.at),
           String(d.message || "").trim(),
@@ -472,13 +487,7 @@ export function recordToMemberDonorsXlsxBlob(record: SettlementRecord, donors: D
 
   const detailAoA: (string | number)[][] = [
     ["정산제목", "정산시각", "멤버", "멤버실명", "후원자", "금액", "채널", "후원시각", "메시지"],
-    ...[...donors]
-      .sort((a, b) => {
-        const ma = nameById.get(normMemberId(a.memberId)) || normMemberId(a.memberId);
-        const mb = nameById.get(normMemberId(b.memberId)) || normMemberId(b.memberId);
-        if (ma !== mb) return ma.localeCompare(mb, "ko");
-        return b.at - a.at;
-      })
+    ...sortDonorsNewestFirst(donors)
       .map((d) => [
         sanitizeExportCell(record.title),
         sanitizeExportCell(createdAt),
@@ -491,7 +500,7 @@ export function recordToMemberDonorsXlsxBlob(record: SettlementRecord, donors: D
         sanitizeExportCell(String(d.message || "").trim()),
       ]),
   ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detailAoA), "건별내역");
+  XLSX.utils.book_append_sheet(wb, sheetWithCommas(detailAoA), "건별내역");
 
   const summaryAoA: (string | number)[][] = [
     ["멤버", "멤버실명", "후원자", "합계금액", "후원횟수", "계좌합", "투네합"],
@@ -505,7 +514,7 @@ export function recordToMemberDonorsXlsxBlob(record: SettlementRecord, donors: D
       row.toonAmount,
     ]),
   ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryAoA), "멤버별후원자합계");
+  XLSX.utils.book_append_sheet(wb, sheetWithCommas(summaryAoA), "멤버별후원자합계");
 
   const usedSheetNames = new Set<string>(["건별내역", "멤버별후원자합계"]);
   for (const m of memberList) {
@@ -524,8 +533,7 @@ export function recordToMemberDonorsXlsxBlob(record: SettlementRecord, donors: D
       ]),
       [],
       ["후원자", "금액", "채널", "후원시각", "메시지"],
-      ...memberDonors
-        .sort((a, b) => b.at - a.at)
+      ...sortDonorsNewestFirst(memberDonors)
         .map((d) => [
           sanitizeExportCell((d.name || "무명").trim() || "무명"),
           Math.max(0, Number(d.amount) || 0),
@@ -535,7 +543,7 @@ export function recordToMemberDonorsXlsxBlob(record: SettlementRecord, donors: D
         ]),
     ];
     const sheetName = sanitizeSheetName(m.name || mid, usedSheetNames);
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheetAoA), sheetName);
+    XLSX.utils.book_append_sheet(wb, sheetWithCommas(sheetAoA), sheetName);
   }
 
   const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
@@ -584,7 +592,7 @@ export function recordToDonorRankingsCsv(record: SettlementRecord, donors: Donor
     lines.push(["순위", "후원자", "합계금액", "후원횟수", "계좌합", "투네합"].map(csvEscapeSafe).join(","));
     for (const row of rows) {
       lines.push(
-        [row.rank, row.donorName, row.totalAmount, row.count, row.accountAmount, row.toonAmount]
+        [row.rank, row.donorName, moneyText(row.totalAmount), row.count, moneyText(row.accountAmount), moneyText(row.toonAmount)]
           .map(csvEscapeSafe)
           .join(",")
       );
@@ -597,7 +605,7 @@ export function recordToDonorRankingsCsv(record: SettlementRecord, donors: Donor
   for (let i = 0; i < globalList.length; i++) {
     const row = globalList[i];
     lines.push(
-      [i + 1, row.memberName, row.donorName, row.totalAmount, row.count, row.accountAmount, row.toonAmount]
+      [i + 1, row.memberName, row.donorName, moneyText(row.totalAmount), row.count, moneyText(row.accountAmount), moneyText(row.toonAmount)]
         .map(csvEscapeSafe)
         .join(",")
     );
@@ -616,7 +624,7 @@ export function recordToDonorRankingsXlsxBlob(record: SettlementRecord, donors: 
     ["순위", "멤버", "후원자", "합계금액", "후원횟수", "계좌합", "투네합"],
     ...globalRows.map((r, i) => [i + 1, sanitizeExportCell(r.memberName), sanitizeExportCell(r.donorName), r.totalAmount, r.count, r.accountAmount, r.toonAmount]),
   ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(globalAoA), "전체후원순위");
+  XLSX.utils.book_append_sheet(wb, sheetWithCommas(globalAoA), "전체후원순위");
   usedSheetNames.add("전체후원순위");
 
   const perSheetAoA: (string | number)[][] = [
@@ -641,7 +649,7 @@ export function recordToDonorRankingsXlsxBlob(record: SettlementRecord, donors: 
       ]);
     }
   }
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(perSheetAoA), "멤버별후원순위");
+  XLSX.utils.book_append_sheet(wb, sheetWithCommas(perSheetAoA), "멤버별후원순위");
   usedSheetNames.add("멤버별후원순위");
 
   for (const m of members) {
@@ -656,7 +664,7 @@ export function recordToDonorRankingsXlsxBlob(record: SettlementRecord, donors: 
       ["멤버 실명", sanitizeExportCell(m.realName || "")],
     ];
     const sheetName = sanitizeSheetName(`${m.name} 후원순위`, usedSheetNames);
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheetAoA), sheetName);
+    XLSX.utils.book_append_sheet(wb, sheetWithCommas(sheetAoA), sheetName);
   }
 
   const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
@@ -674,7 +682,7 @@ export function globalDonorTotalsByNameToCsv(rows: DonorTotalsByNameRow[]): stri
   const body = rows
     .filter((r) => r.total > 0 || r.count > 0)
     .map((r, i) =>
-      [i + 1, r.name, r.account, r.toon, r.total, r.count]
+      [i + 1, r.name, moneyText(r.account), moneyText(r.toon), moneyText(r.total), r.count]
         .map((v) => csvEscapeSafe(String(v)))
         .join(",")
     );
@@ -689,21 +697,21 @@ export function globalDonorTotalsByNameToXlsxBlob(rows: DonorTotalsByNameRow[]):
     ["순위", "후원자", "계좌 누적", "투네 누적", "총 누적", "건수"],
     ...valid.map((r, i) => [i + 1, sanitizeExportCell(r.name), r.account, r.toon, r.total, r.count]),
   ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(unifiedAoA), "전체후원순위");
+  XLSX.utils.book_append_sheet(wb, sheetWithCommas(unifiedAoA), "전체후원순위");
 
   const accountSorted = [...valid].sort((a, b) => b.account - a.account || a.name.localeCompare(b.name, "ko"));
   const accountAoA: (string | number)[][] = [
     ["순위", "후원자", "계좌 누적", "투네 누적", "총 누적", "건수"],
     ...accountSorted.map((r, i) => [i + 1, sanitizeExportCell(r.name), r.account, r.toon, r.total, r.count]),
   ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(accountAoA), "계좌후원순위");
+  XLSX.utils.book_append_sheet(wb, sheetWithCommas(accountAoA), "계좌후원순위");
 
   const toonSorted = [...valid].sort((a, b) => b.toon - a.toon || a.name.localeCompare(b.name, "ko"));
   const toonAoA: (string | number)[][] = [
     ["순위", "후원자", "계좌 누적", "투네 누적", "총 누적", "건수"],
     ...toonSorted.map((r, i) => [i + 1, sanitizeExportCell(r.name), r.account, r.toon, r.total, r.count]),
   ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(toonAoA), "투네후원순위");
+  XLSX.utils.book_append_sheet(wb, sheetWithCommas(toonAoA), "투네후원순위");
 
   const summaryAoA: (string | number)[][] = [
     ["통계", "값"],
@@ -713,7 +721,7 @@ export function globalDonorTotalsByNameToXlsxBlob(rows: DonorTotalsByNameRow[]):
     ["총 누적 합계", valid.reduce((s, r) => s + r.total, 0)],
     ["총 후원 건수", valid.reduce((s, r) => s + r.count, 0)],
   ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryAoA), "집계요약");
+  XLSX.utils.book_append_sheet(wb, sheetWithCommas(summaryAoA), "집계요약");
 
   const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   return new Blob([buf], {

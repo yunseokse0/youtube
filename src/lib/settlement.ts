@@ -1089,15 +1089,14 @@ export function toSettlementFormulaLine(record: SettlementRecord, m: SettlementM
   const accSrc = formatManThousand(stmt.accountGross);
   const toonSrc = formatManThousand(stmt.toonGross);
   if (settlementRowIsOperating(m, record.memberPositionsAtSettlement)) {
-    return `${m.name} 운영비 예외: 계좌${accSrc} + 투네${toonSrc} = ${stmt.pretaxTotal.toLocaleString()} (원천세 미적용)`;
+    return `${m.name} 운영비 예외: 계좌${accSrc} + 투네${toonSrc} = ${stmt.pretaxTotal.toLocaleString()} (세금 미적용)`;
   }
   const accRatio = Number(stmt.accountRatio.toFixed(3));
   const toonRatio = Number(stmt.toonRatio.toFixed(3));
-  return `${m.name} 계좌${accSrc}-공제→${stmt.accountNet.toLocaleString()}x${accRatio}=${stmt.accountStreamerShare.toLocaleString()} 투네${toonSrc}-공제→${stmt.toonNet.toLocaleString()}x${toonRatio}=${stmt.toonStreamerShare.toLocaleString()} A+B=${stmt.pretaxTotal.toLocaleString()}-원천세${stmt.withholding.toLocaleString()}=${stmt.payout.toLocaleString()}${
-    taxInvoiceIssued && stmt.outputVat > 0
-      ? `+부가세${stmt.outputVat.toLocaleString()}=${stmt.finalPayout.toLocaleString()}`
-      : ""
-  }`;
+  const head = `${m.name} 계좌${accSrc}-공제→${stmt.accountNet.toLocaleString()}x${accRatio}=${stmt.accountStreamerShare.toLocaleString()} 투네${toonSrc}-공제→${stmt.toonNet.toLocaleString()}x${toonRatio}=${stmt.toonStreamerShare.toLocaleString()} A+B=${stmt.pretaxTotal.toLocaleString()}`;
+  return taxInvoiceIssued
+    ? `${head}+세금(부가세)${stmt.outputVat.toLocaleString()}=${stmt.finalPayout.toLocaleString()}`
+    : `${head}-세금${stmt.withholding.toLocaleString()}=${stmt.payout.toLocaleString()}`;
 }
 
 /** 지급정산서 공식으로 반영·세금·최종액을 맞춘 멤버 행 */
@@ -1112,7 +1111,7 @@ export function applyPaymentStatementAmounts(
     accountApplied: stmt.accountStreamerShare,
     toonApplied: stmt.toonStreamerShare,
     gross: stmt.pretaxTotal,
-    fee: stmt.withholding,
+    fee: stmt.tax,
     net: taxInvoiceIssued ? stmt.finalPayout : stmt.payout,
   };
 }
@@ -1140,6 +1139,14 @@ export function getTreasuryMembersForExport(record: SettlementRecord): Settlemen
     .sort((a, b) => (b.net || 0) - (a.net || 0));
 }
 
+/** 세금 합계 = 원천세 인원 세금만 (세금계산서 부가세 제외) */
+function sumWithholdingFee(record: SettlementRecord, members: SettlementMemberResult[]): number {
+  return members.reduce(
+    (s, m) => s + (resolveMemberTaxInvoiceIssued(record, m) ? 0 : Number(m.fee || 0)),
+    0
+  );
+}
+
 /** 화면·합계용: 멤버 금액을 지급정산서 기준으로 맞춘 레코드 뷰 */
 export function toPaymentAlignedSettlement(record: SettlementRecord): SettlementRecord {
   const members = getMembersForExport(record);
@@ -1147,7 +1154,7 @@ export function toPaymentAlignedSettlement(record: SettlementRecord): Settlement
     ...record,
     members,
     totalGross: members.reduce((s, m) => s + m.gross, 0),
-    totalFee: members.reduce((s, m) => s + m.fee, 0),
+    totalFee: sumWithholdingFee(record, members),
     totalNet: members.reduce((s, m) => s + m.net, 0),
   };
 }
@@ -1175,7 +1182,7 @@ export function autoRepairSettlementZeroBug(record: SettlementRecord): Settlemen
     applyPaymentStatementAmounts(donorRec, m)
   );
   const totalGross = paidMembers.reduce((s, m) => s + Number(m.gross || 0), 0);
-  const totalFee = paidMembers.reduce((s, m) => s + Number(m.fee || 0), 0);
+  const totalFee = sumWithholdingFee(donorRec, paidMembers);
   const totalNet = paidMembers.reduce((s, m) => s + Number(m.net || 0), 0);
   return {
     ...donorRec,
@@ -1186,10 +1193,15 @@ export function autoRepairSettlementZeroBug(record: SettlementRecord): Settlemen
   };
 }
 
+/** CSV 금액 칸 — 천 단위 쉼표 */
+function wonComma(v: number | undefined): string {
+  return Math.round(Number(v) || 0).toLocaleString("ko-KR");
+}
+
 export function recordToCsv(record: SettlementRecord): string {
   const summaryHeader = ["요약", "닉네임", "실명", "최종정산"].join(",");
   const summaryRows = getMembersForExport(record).map((m) => {
-    const cells = ["최종 정산", m.name, m.realName || "", String(m.net)];
+    const cells = ["최종 정산", m.name, m.realName || "", wonComma(m.net)];
     return cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",");
   });
   const header = [
@@ -1218,13 +1230,13 @@ export function recordToCsv(record: SettlementRecord): string {
       m.bankName || "",
       m.bankAccount || "",
       m.accountHolder || "",
-      String(m.account),
-      String(m.toon),
-      String(m.accountApplied),
-      String(m.toonApplied),
-      String(m.gross),
-      String(m.fee),
-      String(m.net),
+      wonComma(m.account),
+      wonComma(m.toon),
+      wonComma(m.accountApplied),
+      wonComma(m.toonApplied),
+      wonComma(m.gross),
+      wonComma(m.fee),
+      wonComma(m.net),
       toSettlementFormulaLine(record, m),
     ];
     return cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",");
@@ -1253,6 +1265,8 @@ export type ReadableSettlementMember = {
   rawAmount?: number;
   shareRate?: number;
   taxRate?: number;
+  /** 세금계산서 발행 인원 — 원천세 대신 부가세 가산 */
+  invoiceVatRate?: number;
   sources?: ReadableSettlementSource[];
 };
 
@@ -1312,6 +1326,9 @@ export function recordToReadableInput(record: SettlementRecord): ReadableSettlem
         },
       ],
       taxRate,
+      ...(resolveMemberTaxInvoiceIssued(record, m)
+        ? { invoiceVatRate: record.taxInvoiceVatRate ?? 0.1 }
+        : {}),
     };
   });
   return { title: record.title, defaultTaxRate: taxRate, vatIncluded, vatRate, members };
@@ -1330,6 +1347,7 @@ export function generateReadableSettlement(data: ReadableSettlementInput): strin
   const summary: { name: string; net: number }[] = [];
   let sumApplied = 0;
   let sumTax = 0;
+  let sumInvoiceVat = 0;
   let sumNet = 0;
 
   for (const m of members) {
@@ -1359,14 +1377,22 @@ export function generateReadableSettlement(data: ReadableSettlementInput): strin
       }
     }
 
-    const tax = Math.round(applied * Math.max(0, taxRate || 0));
-    const net = Math.max(0, applied - tax);
-    lines.push(`${fmtWon(applied)} - 세금 ${fmtWon(tax)}(${fmtPct(Math.max(0, taxRate || 0))}) = 최종 ${fmtWon(net)}`);
+    let net: number;
+    if (typeof m.invoiceVatRate === "number") {
+      const vat = Math.round(applied * Math.max(0, m.invoiceVatRate));
+      net = applied + vat;
+      lines.push(`${fmtWon(applied)} + 세금(부가세) ${fmtWon(vat)}(${fmtPct(m.invoiceVatRate)}) = 최종 ${fmtWon(net)}`);
+      sumInvoiceVat += vat;
+    } else {
+      const tax = Math.round(applied * Math.max(0, taxRate || 0));
+      net = Math.max(0, applied - tax);
+      lines.push(`${fmtWon(applied)} - 세금 ${fmtWon(tax)}(${fmtPct(Math.max(0, taxRate || 0))}) = 최종 ${fmtWon(net)}`);
+      sumTax += tax;
+    }
 
     blocks.push(`┌ ${m.name}\n${lines.map((l) => `│ ${l}`).join("\n")}\n└`);
     summary.push({ name: m.name, net });
     sumApplied += applied;
-    sumTax += tax;
     sumNet += net;
   }
 
@@ -1383,7 +1409,8 @@ export function generateReadableSettlement(data: ReadableSettlementInput): strin
     "",
     "━━━ 3. 총합 및 세금 ━━━",
     `  수익배분 합계: ${fmtWon(sumApplied)}`,
-    `  세금 합계: -${fmtWon(sumTax)}`,
+    `  원천세 합계: -${fmtWon(sumTax)}`,
+    ...(sumInvoiceVat > 0 ? [`  부가세(세금계산서) 합계: +${fmtWon(sumInvoiceVat)}`] : []),
     `  최종 정산 합계: ${fmtWon(sumNet)}`,
   ].join("\n");
 

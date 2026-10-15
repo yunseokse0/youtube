@@ -47,6 +47,9 @@ export type MemberPaymentStatement = {
   outputVat: number;
   /** 세금계산서 발행 시 최종 입금(payout+outputVat), 미발행 시 payout */
   finalPayout: number;
+  taxInvoiceIssued: boolean;
+  /** 세금 칸 — 세금계산서 발행은 부가세, 그 외 원천세 */
+  tax: number;
   accountRatio: number;
   toonRatio: number;
 };
@@ -83,18 +86,20 @@ export function computeMemberPaymentStatement(
   const accountRatio = rate01(member.accountRatio, record.accountRatio);
   const toonRatio = rate01(member.toonRatio, record.toonRatio);
   const withholdingRate = Math.max(0, Number(record.feeRate) || 0);
+  const taxInvoiceIssued = resolveMemberTaxInvoiceIssued(record, member);
+  /** 세금계산서(부가세) 인원은 원천세 없음 */
   const b = computePaymentChannelBreakdown({
     accountGross,
     toonGross,
     accountRatio,
     toonRatio,
     feeRate: withholdingRate,
-    skipWithholding: Boolean(member.operating),
+    skipWithholding: Boolean(member.operating) || taxInvoiceIssued,
     rates,
   });
   const taxInvoice = computeTaxInvoiceFinalAmount(
     b.payout,
-    resolveMemberTaxInvoiceIssued(record, member),
+    taxInvoiceIssued,
     record.taxInvoiceVatRate
   );
 
@@ -118,6 +123,8 @@ export function computeMemberPaymentStatement(
     payout: b.payout,
     outputVat: taxInvoice.outputVat,
     finalPayout: taxInvoice.finalPayout,
+    taxInvoiceIssued,
+    tax: taxInvoiceIssued ? taxInvoice.outputVat : b.withholding,
     accountRatio,
     toonRatio,
   };
@@ -170,7 +177,9 @@ export function listPayableMembers(record: SettlementRecord): SettlementMemberRe
 export type FullSettlementRow = MemberPaymentStatement & {
   name: string;
   settlementTotal: number;
+  /** 지급액(정산금의 70% 칸) */
   streamerShare70: number;
+  /** 수익(정산금의 30% 칸) */
   studioShare30: number;
   incomeTax: number;
   localIncomeTax: number;
@@ -186,7 +195,7 @@ export type FullSettlementSummary = {
   sumVatTotal: number;
   sumWithholding: number;
   sumPayout: number;
-  /** 엑셀 N21 — 정산금의 30% 합계(= 매출) */
+  /** 엑셀 N21 — 정산금의 30% 합계(= 수익) */
   sumStudioShare: number;
   totalGrossDonation: number;
   taxGrandTotal: number;
@@ -208,7 +217,8 @@ export type FullSettlementSummary = {
  * - 정산금의 70% K = 멤버 배분 합(A+B) (비율 70%면 J×70%와 동일)
  * - 정산금의 30% N = J×30% (정산금 총액 기준, K×30% 아님)
  * - 소득세 O = ROUNDDOWN(K×3%, -1), 지방소득세 P = ROUNDDOWN(O×10%, -1)
- * - 원천세 L = O+P, 입금액 M = K−L
+ * - 세금 L: 원천세 인원 = O+P(입금액 M = K−L), 세금계산서 인원 = 부가세(입금액 M = K+L)
+ * - 원천세 총 합계는 원천세 인원 L 만 합산
  * - 제작진 = N합×50%, 국고 50%는 양식상 비움, 부가세 10%·총 송금은 합계 기준
  */
 export function computeFullSettlementSummary(
@@ -221,10 +231,14 @@ export function computeFullSettlementSummary(
     const settlementTotal = s.accountNet + s.toonNet;
     const streamerShare70 = s.pretaxTotal;
     const studioShare30 = roundWon(settlementTotal * 0.3);
-    const { incomeTax, localIncomeTax, withholding } = m.operating
-      ? { incomeTax: 0, localIncomeTax: 0, withholding: 0 }
-      : computeExcelWithholding(streamerShare70);
-    const payout = Math.max(0, streamerShare70 - withholding);
+    const { incomeTax, localIncomeTax, withholding } =
+      m.operating || s.taxInvoiceIssued
+        ? { incomeTax: 0, localIncomeTax: 0, withholding: 0 }
+        : computeExcelWithholding(streamerShare70);
+    const tax = s.taxInvoiceIssued ? s.outputVat : withholding;
+    const payout = s.taxInvoiceIssued
+      ? streamerShare70 + s.outputVat
+      : Math.max(0, streamerShare70 - withholding);
     return {
       ...s,
       name: m.name,
@@ -234,6 +248,7 @@ export function computeFullSettlementSummary(
       incomeTax,
       localIncomeTax,
       withholding,
+      tax,
       payout,
     };
   });
@@ -309,7 +324,7 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
       <td class="num">${moneyCell(r.toonNet)}</td>
       <td class="num">${moneyCell(r.settlementTotal)}</td>
       <td class="num">${moneyCell(r.streamerShare70)}</td>
-      <td class="num">${moneyCell(r.withholding)}</td>
+      <td class="num">${moneyCell(r.tax)}</td>
       <td class="num">${moneyCell(r.payout)}</td>
       <td class="num">${moneyCell(r.studioShare30)}</td>
     </tr>`
@@ -397,8 +412,8 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
       <tr>
         <th>#</th><th>이름</th><th>계좌후원</th><th>투네이션</th>
         <th>계좌 부가세</th><th>계좌정산금</th><th>투네수수료</th><th>투네부가세</th><th>투네정산금</th>
-        <th>정산금 총액</th><th>정산금의 70%</th><th>원천세</th><th>입금액</th>
-        <th>정산금의 30%</th>
+        <th>정산금 총액</th><th>지급액</th><th>세금</th><th>입금액</th>
+        <th>수익</th>
       </tr>
     </thead>
     <tbody>${bodyRows}</tbody>
@@ -416,8 +431,8 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
         <td class="blank">&nbsp;</td>
         <td class="lab">부가세 총 합계</td>
         <td class="lab">원천세 총 합계</td>
-        <td class="lab">총 지급액</td>
-        <td class="lab">매출</td>
+        <td class="lab">총 입금액</td>
+        <td class="lab">수익</td>
       </tr>
       <tr>
         <td class="blank">&nbsp;</td>
@@ -992,15 +1007,15 @@ export function buildMemberPaymentStatementHtml(
         taxInvoiceIssued
           ? `<tr>
         <td class="left" rowspan="4">총 정산 금액</td>
-        <td class="cap">(A+B) − 원천세 ${escapeHtml(withholdPct)}%</td>
+        <td class="cap">(A+B)</td>
       </tr>
       <tr>
-        <td class="amt">${moneyCell(s.payout)}</td>
+        <td class="amt">${moneyCell(s.pretaxTotal)}</td>
       </tr>
       <tr>
-        <td class="cap">세금계산서 부가세 ${escapeHtml(
+        <td class="cap">세금 (세금계산서 부가세 ${escapeHtml(
           ((record.taxInvoiceVatRate ?? 0.1) * 100).toFixed(0)
-        )}%</td>
+        )}%)</td>
       </tr>
       <tr>
         <td class="amt">${moneyCell(s.outputVat)}</td>
@@ -1011,7 +1026,7 @@ export function buildMemberPaymentStatementHtml(
       </tr>`
           : `<tr>
         <td class="left" rowspan="2">총 정산 금액</td>
-        <td class="cap">(A+B)-(원천세 ${escapeHtml(withholdPct)}%)</td>
+        <td class="cap">(A+B)-(세금 ${escapeHtml(withholdPct)}%)</td>
       </tr>
       <tr>
         <td class="amt">${moneyCell(s.payout)}</td>

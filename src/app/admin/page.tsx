@@ -21297,7 +21297,7 @@ function AdminPageInner() {
                   type="button"
                   className={`px-3 py-2.5 rounded-xl border text-sm font-bold whitespace-nowrap transition-all hover:-translate-y-0.5 ${taxInvoiceIssued ? "border-violet-500/50 bg-gradient-to-r from-violet-950/70 to-violet-900/40 text-violet-200 shadow-violet-500/10" : "border-white/10 bg-neutral-800/60 text-neutral-300"}`}
                   onClick={() => setTaxInvoiceIssued((v) => !v)}
-                  title="체크 시 최종정산에 부가세 10% 가산(세금계산서). 미체크 시 원천세만"
+                  title="체크 시 원천세 없이 지급액에 세금(부가세 10%) 가산(세금계산서). 미체크 시 세금(원천세) 차감"
                 >
                   🧾 세금계산서 {taxInvoiceIssued ? "ON" : "OFF"}
                 </button>

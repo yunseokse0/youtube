@@ -55,7 +55,7 @@ function parseDetailRows(aoa: unknown[][]): DetailRow[] {
     const r = aoa[i];
     if (!Array.isArray(r) || r.length < 8) continue;
     const memberName = String(r[2] || "").trim();
-    const amount = Math.max(0, Math.round(Number(r[5]) || 0));
+    const amount = Math.max(0, Math.round(Number(String(r[5] ?? "").replace(/[,\s원]/g, "")) || 0));
     if (!memberName || amount <= 0) continue;
     out.push({
       title: String(r[0] || "").trim() || "복구 정산",

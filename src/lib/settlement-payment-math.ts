@@ -137,7 +137,7 @@ export function resolveMemberTaxInvoiceIssued(
   return Boolean(record.taxInvoiceIssued);
 }
 
-/** 세금계산서 발행 시 원천세 차감 후 금액에 부가세 가산 */
+/** 세금계산서 발행 시 지급액(원천세 미적용)에 부가세 가산 */
 export function computeTaxInvoiceFinalAmount(
   payoutAfterWithholding: number,
   taxInvoiceIssued: boolean,

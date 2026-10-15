@@ -228,4 +228,18 @@ describe("recordToMemberDonorsCsv", () => {
     expect(csv).toContain("계좌 응원합니다");
     expect(csv).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.*Z/);
   });
+
+  it("sorts detail rows newest first across members and formats amounts with commas", () => {
+    const donors: Donor[] = [
+      { id: "a", name: "먼저", amount: 1000, memberId: "m1", at: Date.parse("2026-07-29T10:00:00.000Z"), target: "account" },
+      { id: "b", name: "중간", amount: 25000, memberId: "m2", at: Date.parse("2026-07-29T11:00:00.000Z"), target: "toon" },
+      { id: "c", name: "나중", amount: 1234567, memberId: "m1", at: Date.parse("2026-07-29T12:00:00.000Z"), target: "account" },
+    ];
+    const csv = recordToMemberDonorsCsv(baseRecord, donors);
+    const detail = csv.split("\r\n").slice(2, 5).join("\n");
+    expect(detail.indexOf("나중")).toBeLessThan(detail.indexOf("중간"));
+    expect(detail.indexOf("중간")).toBeLessThan(detail.indexOf("먼저"));
+    expect(csv).toContain('"1,234,567"');
+    expect(csv).toContain('"25,000"');
+  });
 });
