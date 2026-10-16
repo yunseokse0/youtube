@@ -2,9 +2,11 @@
  * BURST STRESS (50/500ms): 동일인 20건 + 타인 30건 총 50건을 500ms 윈도우 내 동시 인입
  * - Target: 개발서버 (기본 http://localhost:3001 · $BASE 로 오버라이드 가능)
  * - User  : $USER_ID 로 격리 (없으면 기본값 stress-burst-50-<date>)
+ * - 각 건에 unique donorKey + Strong ID(`bank:stress-…`) 부여
+ *   동일 닉·동일 멘트 연타가 weak id content-dedup 에 접히지 않게 한다
  * - Acceptance Criteria (5종):
  *   TC1 총 건수 저장률 ≥90% (≥45/50)
- *   TC2 동일 donor 20건 생존 ≥50% (≥10/20 — merge된 1건도 카운트시 보정)
+ *   TC2 동일 donor 20건 생존 ≥90% (≥18/20)
  *   TC3 복제 row ≤2% (≤2건)
  *   TC4 고유 ID 히트율 ≥80% (≥40/50)
  *   TC5 donors총액 ↔ members(account+toon)증가 일치율 ≥80%
@@ -115,7 +117,8 @@ function buildPayloads(members) {
   for (let i = 0; i < SAME_COUNT; i++) {
     const m = members[i % members.length];
     items.push({
-      id: `burst-A-${baseAt}-i${String(i).padStart(2, "0")}-${rnd8hex()}`,
+      id: `bank:stress-burst-A-${baseAt}-i${String(i).padStart(2, "0")}-${rnd8hex()}`,
+      donorKey: `dk-burst-A-${baseAt}-${i}-${rnd8hex()}`,
       donorName: SAME_DONOR_NAME,
       amount: SAME_AMOUNT,
       memberId: String(m.id),
@@ -131,7 +134,8 @@ function buildPayloads(members) {
     const amt = 1000 + ((i * 37) % 99) * 1000;
     const m = members[(i + 1) % members.length];
     items.push({
-      id: `burst-B-${baseAt}-i${String(i).padStart(2, "0")}-${rnd8hex()}`,
+      id: `bank:stress-burst-B-${baseAt}-i${String(i).padStart(2, "0")}-${rnd8hex()}`,
+      donorKey: `dk-burst-B-${baseAt}-${i}-${rnd8hex()}`,
       donorName: name,
       amount: amt,
       memberId: String(m.id),
@@ -239,9 +243,9 @@ async function phase3Verify(base, payloads, httpResults) {
   // 보정: 실제 merge가 생겨서 1건이라도 donorName 기준 1개라도 존재하면 생존으로 봐주는 안전망
   const groupAExist = donorsNow.some(d => !d.donationExcluded && String(d.name || d.donorName) === SAME_DONOR_NAME);
   const aSurviveCount = aUnique > 0 ? aUnique : (groupAExist ? 1 : 0);
-  const tc2 = { ok: aSurviveCount >= Math.ceil(SAME_COUNT * 0.5), actual: aSurviveCount, expected: SAME_COUNT, rawCount: aUnique, names: SAME_DONOR_NAME };
-  const mergeDesc = aUnique < SAME_COUNT ? ` (dedupe merge ${SAME_COUNT - aUnique}건 발생)` : " (dedupe merge 발생 안함)";
-  log(`  [TC2 동일 donor ${SAME_COUNT}건 50%+ 생존] ${tc2.ok?"[PASS]":"[FAIL]"} · ${tc2.actual}/${SAME_COUNT}건 생존${mergeDesc}`);
+  const tc2 = { ok: aSurviveCount >= Math.ceil(SAME_COUNT * 0.9), actual: aSurviveCount, expected: SAME_COUNT, rawCount: aUnique, names: SAME_DONOR_NAME };
+  const mergeDesc = aUnique < SAME_COUNT ? ` (dedupe merge ${SAME_COUNT - aUnique}건 발생)` : " (unique donorKey · merge 없음)";
+  log(`  [TC2 동일 donor ${SAME_COUNT}건 90%+ 생존] ${tc2.ok?"[PASS]":"[FAIL]"} · ${tc2.actual}/${SAME_COUNT}건 생존${mergeDesc}`);
   if (!tc2.ok) log(`      ⚠️ A그룹 donorName="${SAME_DONOR_NAME}" 검색결과 donors row=${aUnique}건 (ID 유실 추정)`);
 
   const idCnt = new Map();
