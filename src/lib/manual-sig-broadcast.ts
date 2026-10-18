@@ -35,6 +35,7 @@ import {
   findSigInventoryByName,
   findSigInventoryByNameAndPrice,
   hydrateSigItemFromInventory,
+  preferPositiveSigPrice,
   ONE_SHOT_SIG_ID,
 } from "@/lib/sig-roulette";
 import { stripBundledSigPlaceholderItems } from "@/lib/sig-placeholder";
@@ -242,11 +243,12 @@ export function findDisplaySigForManualDraftRow(
   if (!parsedRow?.name) return undefined;
   const nk = normalizeManualSigNameKey(parsedRow.name);
   const price = Math.floor(Number(parsedRow.price || 0));
-  return displayList.find(
-    (s) =>
-      normalizeManualSigNameKey(s.name) === nk &&
-      Math.floor(Number(s.price || 0)) === price
-  );
+  const nameHits = displayList.filter((s) => normalizeManualSigNameKey(s.name) === nk);
+  if (price > 0) {
+    const exact = nameHits.find((s) => Math.floor(Number(s.price || 0)) === price);
+    if (exact) return exact;
+  }
+  return nameHits[0];
 }
 
 function hasUsableManualSigImageUrl(url: string | undefined | null): boolean {
@@ -358,15 +360,26 @@ export function enrichManualDraftsWithInventoryImageUrls(
   if (!rows.length) return draft;
   const parsed = parseManualSigDraftRows(rows);
   const drafts = rows.map((row, idx) => {
+    const displayName = parsed[idx]?.name || row.name;
+    const sourceSigId = String(row.sourceSigId || "").trim();
+    const fromInv =
+      (sourceSigId && inventory?.find((x) => String(x.id || "").trim() === sourceSigId)) ||
+      findSigInventoryByNameAndPrice(inventory || [], displayName, parsed[idx]?.price || 0) ||
+      findSigInventoryByName(inventory || [], displayName);
+    const price = preferPositiveSigPrice(parsed[idx]?.price, fromInv?.price);
     const url = resolveManualSigStoredImageUrl({
-      name: parsed[idx]?.name || row.name,
-      price: parsed[idx]?.price || 0,
+      name: displayName,
+      price,
       sourceSigId: row.sourceSigId,
       draftImageUrl: row.imageUrl,
       inventory,
       userId,
     });
-    return url ? { ...row, imageUrl: url } : row;
+    const next = url ? { ...row, imageUrl: url } : row;
+    if (price > 0 && preferPositiveSigPrice(parsed[idx]?.price) <= 0) {
+      return { ...next, priceInput: String(price) };
+    }
+    return next;
   });
   return { ...draft, drafts };
 }
@@ -411,12 +424,12 @@ export function hydrateManualOverlaySigItem(
     ? findSigInventoryByNameAndPrice(inventory, item.name, item.price)?.imageUrl
     : "";
   const displayName = String(item.name || h.name || "").trim() || h.name;
-  const fromName = inventory?.length
-    ? findSigInventoryByName(inventory, displayName)?.imageUrl
-    : "";
+  const fromNameRow = inventory?.length ? findSigInventoryByName(inventory, displayName) : undefined;
+  const fromName = fromNameRow?.imageUrl || "";
+  const price = preferPositiveSigPrice(item.price, h.price, fromNameRow?.price);
   const imageUrl = resolveManualSigStoredImageUrl({
     name: displayName,
-    price: Math.max(0, Math.floor(Number(item.price ?? h.price ?? 0))),
+    price,
     itemImageUrl: pickBestManualSigStoredImageUrl(
       [fromSource, fromName, fromNamePrice, h.imageUrl, draftRow?.imageUrl, item.imageUrl],
       displayName
@@ -426,7 +439,7 @@ export function hydrateManualOverlaySigItem(
     inventory,
     userId,
   });
-  return { ...h, name: displayName, memberId: "", imageUrl };
+  return { ...h, name: displayName, memberId: "", imageUrl, price };
 }
 
 export function buildManualSigItemsFromDrafts(
@@ -455,7 +468,7 @@ export function buildManualSigItemsFromDrafts(
   });
 }
 
-/** 수동 리롤 — 풀에 2개 이상이면 설정 당첨 수(최대 20)까지 랜덤 */
+/** 수동 리롤 — 풀에 2개 이상이면 설정 당첨 수(최대 36)까지 랜덤 */
 export const MANUAL_REROLL_MIN_POOL = MIN_MANUAL_OVERLAY_SIGS;
 export function readManualSigPickCount(state: AppState | null | undefined): number {
   const os =
@@ -669,10 +682,9 @@ export function resolveManualOverlaySelectedSigs(
   const inv = state.sigInventory || [];
   const pickCount = readManualSigPickCount(state);
   const draftRaw = readManualSigDraftFromState(state);
-  const draft =
-    draftRaw && manualSigDraftsReady(draftRaw.drafts, pickCount)
-      ? enrichManualDraftsWithInventoryImageUrls(draftRaw, inv, userId)
-      : draftRaw;
+  const draft = draftRaw
+    ? enrichManualDraftsWithInventoryImageUrls(draftRaw, inv, userId)
+    : draftRaw;
   const draftRows = Array.isArray(draft?.drafts) ? draft!.drafts : [];
   const draftReady = Boolean(draft && manualSigDraftsReady(draft.drafts, pickCount));
   const draftItems = draftReady
@@ -722,6 +734,61 @@ export function resolveManualOverlaySelectedSigs(
     }
   }
   return items.slice(0, pickCount);
+}
+
+export type ManualPanelSaleRow = {
+  draftIdx: number;
+  name: string;
+  price: number;
+  imageUrl: string;
+};
+
+/** 관리자 그리드·합계 — 인벤에서 보강한 이미지·가격 */
+export function buildManualPanelSaleRows(
+  state: AppState | null | undefined,
+  userId: string
+): ManualPanelSaleRow[] {
+  const pickCount = readManualSigPickCount(state);
+  const displaySigs = resolveManualOverlaySelectedSigs(state, userId);
+  const draft = readManualSigDraftFromState(state);
+  const parsed = parseManualSigDraftRows(draft?.drafts || []);
+  const inv = state?.sigInventory || [];
+  const rows: ManualPanelSaleRow[] = [];
+  for (let i = 0; i < pickCount; i++) {
+    const parsedRow = parsed[i];
+    const draftRow = draft?.drafts?.[i];
+    const matched =
+      findDisplaySigForManualDraftRow(draftRow, parsedRow, displaySigs) || displaySigs[i];
+    const hydrated = matched
+      ? hydrateManualOverlaySigItem(matched, inv, userId, draftRow)
+      : parsedRow?.name
+        ? hydrateManualOverlaySigItem(
+            {
+              id: String(draftRow?.sourceSigId || `manual_slot_${i}`),
+              name: parsedRow.name,
+              price: parsedRow.price,
+              imageUrl: String(draftRow?.imageUrl || parsedRow.imageUrl || ""),
+              memberId: "",
+              maxCount: 1,
+              soldCount: 0,
+              isRolling: true,
+              isActive: true,
+            },
+            inv,
+            userId,
+            draftRow
+          )
+        : null;
+    const name = String(hydrated?.name || parsedRow?.name || "").trim();
+    if (!name) continue;
+    rows.push({
+      draftIdx: i,
+      name,
+      price: preferPositiveSigPrice(hydrated?.price, parsedRow?.price),
+      imageUrl: String(hydrated?.imageUrl || draftRow?.imageUrl || parsedRow?.imageUrl || "").trim(),
+    });
+  }
+  return rows;
 }
 
 /** 판매 확정·체크에 따라 한방 표시 금액(당첨 합계 − 판매분) */

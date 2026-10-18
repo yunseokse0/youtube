@@ -1704,9 +1704,18 @@ function preferSigItemStoredImageUrl(itemUrl: string, invUrl: string, userId?: s
   return inv || item;
 }
 
+/** 0·NaN은 미기입으로 보고, 뒤에 오는 양수 가격을 쓴다 */
+export function preferPositiveSigPrice(...vals: unknown[]): number {
+  for (const v of vals) {
+    const n = Math.max(0, Math.floor(Number(v) || 0));
+    if (n > 0) return n;
+  }
+  return 0;
+}
+
 /**
  * 방송 오버레이·휠은 재고 `sigInventory` 기준 이름/이미지를 쓰고, 당첨 배열은 API 스냅샷이라 불일치할 수 있음.
- * 동일 시그 id로 인벤 행을 합쳐 표시를 맞춘다(당첨 금액은 요청 항목 우선).
+ * 동일 시그 id로 인벤 행을 합쳐 표시를 맞춘다(당첨 금액은 양수 요청 항목 우선, 0이면 인벤).
  */
 export function hydrateSigItemFromInventory(
   item: SigItem,
@@ -1718,15 +1727,17 @@ export function hydrateSigItemFromInventory(
     const imageUrl = repairDiskUploadSigImagePath(String(item.imageUrl || ""), userId);
     return { ...item, id: canon, imageUrl: imageUrl || item.imageUrl };
   }
+  const itemPrice = preferPositiveSigPrice(item.price);
   const fromInv =
     inventory.find((x) => x.id === canon) ||
     inventory.find((x) => x.id === item.id) ||
-    findSigInventoryByNameAndPrice(inventory, item.name, item.price);
+    findSigInventoryByNameAndPrice(inventory, item.name, item.price) ||
+    (itemPrice <= 0 ? findSigInventoryByName(inventory, item.name) : undefined);
   if (!fromInv) {
     const imageUrl = repairDiskUploadSigImagePath(String(item.imageUrl || ""), userId);
     return { ...item, id: canon, imageUrl: imageUrl || item.imageUrl };
   }
-  const price = Math.max(0, Math.floor(Number(item.price ?? fromInv.price ?? 0)));
+  const price = preferPositiveSigPrice(item.price, fromInv.price);
   const displayName = String(item.name || fromInv.name || "").trim() || fromInv.name;
   const byName = findSigInventoryByName(inventory, displayName);
   const imageUrl = preferSigItemStoredImageUrl(

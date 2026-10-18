@@ -5,7 +5,8 @@ import type { SigItem } from "@/types";
 import SelectedSigs from "@/components/sig-sales/SelectedSigs";
 import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
 import { useImagePreload } from "@/hooks/useImagePreload";
-import { canonicalSigIdFromWheelSliceId, ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
+import { canonicalSigIdFromWheelSliceId, formatWon, ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
+import type { SigOverlayMediaOrientation } from "@/components/sig-sales/sig-overlay-card-size";
 
 type ResultOverlayProps = {
   visible: boolean;
@@ -30,6 +31,11 @@ type ResultOverlayProps = {
   cardScalePct?: number;
   /** 회전판 제거 후 당첨 카드 고정(이동·등장 연출 없음) */
   disableCardMotion?: boolean;
+  panelGridCols?: number;
+  panelOrientation?: SigOverlayMediaOrientation;
+  soldTotalAmount?: number;
+  showSoldTotal?: boolean;
+  programSkin?: boolean;
 };
 
 const EMPTY_SOLD_SET = new Set<string>();
@@ -51,6 +57,11 @@ export default function ResultOverlay({
   sigImageUserId,
   cardScalePct = 100,
   disableCardMotion = false,
+  panelGridCols,
+  panelOrientation,
+  soldTotalAmount = 0,
+  showSoldTotal = false,
+  programSkin = false,
 }: ResultOverlayProps) {
   const [imageLoaded, setImageLoaded] = useState(() => skipHanbangSignLoadingOverlay);
   useEffect(() => {
@@ -128,7 +139,7 @@ export default function ResultOverlay({
   }
 
   return (
-    <div className={`flex w-full max-w-full justify-center ${className}`.trim()}>
+    <div className={`flex w-full max-w-full flex-col items-center justify-center ${className}`.trim()}>
       <SelectedSigs
         items={selectedSigs}
         soldOutStampUrl={soldOutStampUrl}
@@ -148,7 +159,16 @@ export default function ResultOverlay({
         entranceOnlyLatest={entranceOnlyLatest}
         forceSoldAll={soldAllAtOnceForOneShot}
         sigImageUserId={sigImageUserId}
+        panelGridCols={panelGridCols}
+        panelOrientation={panelOrientation}
+        programSkin={programSkin}
       />
+      {showSoldTotal && !programSkin ? (
+        <div className="mt-2 w-full rounded-lg border border-yellow-300/50 bg-black/75 px-4 py-2 text-center">
+          <div className="text-[11px] font-semibold tracking-wide text-yellow-100/90">누적 판매 금액</div>
+          <div className="text-xl font-black tabular-nums text-yellow-200 sm:text-2xl">{formatWon(soldTotalAmount)}</div>
+        </div>
+      ) : null}
     </div>
   );
 }

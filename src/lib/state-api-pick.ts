@@ -6,12 +6,18 @@ import {
   readObsTextRegistryFromState,
 } from "@/lib/obs-text-overlay";
 import { slimSigInventoryForWire } from "@/lib/state-wire-slim";
+import {
+  MANUAL_SIG_DRAFT_STATE_KEY,
+  MANUAL_SIG_GRID_COLS_KEY,
+  MANUAL_SIG_GRID_ROWS_KEY,
+  MANUAL_SIG_PANEL_ORIENTATION_KEY,
+  MANUAL_SIG_PICK_COUNT_KEY,
+} from "@/lib/manual-sig-workbench";
 
 export const STATE_PICK_SIG_INVENTORY = "sigInventory";
 export const STATE_PICK_OVERLAY = "overlay";
 export const STATE_PICK_OVERLAY_DONORS = "overlay-donors";
 export const STATE_PICK_SIG_SALES = "sig-sales";
-const MANUAL_SIG_DRAFT_STATE_KEY = "sigSalesManualDraftV1";
 const MANUAL_SIG_BROADCAST_STATE_KEY = "sigSalesManualBroadcastV1";
 export const STATE_PICK_DONOR_RANKINGS = "donor-rankings";
 export const STATE_PICK_OBS_TEXT = "obs-text";
@@ -176,12 +182,24 @@ export function projectStateForGetPick(
     if (manualBroadcast && typeof manualBroadcast === "object") {
       overlayManual[MANUAL_SIG_BROADCAST_STATE_KEY] = manualBroadcast;
     }
+    if (os && typeof os === "object") {
+      const rec = os as Record<string, unknown>;
+      for (const key of [
+        MANUAL_SIG_PICK_COUNT_KEY,
+        MANUAL_SIG_GRID_ROWS_KEY,
+        MANUAL_SIG_GRID_COLS_KEY,
+        MANUAL_SIG_PANEL_ORIENTATION_KEY,
+      ]) {
+        if (rec[key] != null && rec[key] !== "") overlayManual[key] = rec[key];
+      }
+    }
     return {
       updatedAt: state.updatedAt,
       sigInventory: slimSigInventoryForWire(state.sigInventory, userId),
       sigSalesExcludedIds: state.sigSalesExcludedIds,
       sigSoldOutStampUrl: state.sigSoldOutStampUrl,
       sigRollingMeta: state.sigRollingMeta,
+      members: (state.members || []).map((m) => ({ id: m.id, name: String(m.name || "") })),
       /** 회전판 오버레이용 — 수동 방송과 분리 */
       rouletteState: rs,
       /** 수동 OBS: 초안·방송 상태(당첨·phase·nonce) */

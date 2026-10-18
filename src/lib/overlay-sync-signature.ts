@@ -62,6 +62,12 @@ export function buildSigSalesOverlaySyncSignature(state: AppState | null): strin
     /** selectedSigs.imageUrl — 리롤 후 URL만 바뀌어도 OBS가 갱신되게 */
     selImg: selected.map((s) => String(s.imageUrl || "").trim()).join("\u001f"),
     stamp: state.sigSoldOutStampUrl || "",
+    grid: [
+      Number((os as Record<string, unknown> | null)?.sigSalesManualGridRows || 0),
+      Number((os as Record<string, unknown> | null)?.sigSalesManualGridCols || 0),
+      String((os as Record<string, unknown> | null)?.sigSalesManualPanelOrientation || ""),
+    ],
+    mc: Array.isArray(state.members) ? state.members.length : 0,
   });
 }
 

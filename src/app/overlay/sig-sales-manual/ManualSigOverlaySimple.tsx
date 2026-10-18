@@ -3,7 +3,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
 import ResultOverlay from "@/components/sig-sales/ResultOverlay";
-import { layoutSigOverlayResultRow } from "@/components/sig-sales/sig-overlay-card-size";
+import { SigSalesPanelChrome } from "@/components/sig-sales/SigSalesPanelChrome";
+import { sigSalesPanelStatusLabel } from "@/lib/sig-sales-panel-ui";
+import { layoutSigOverlayResultGrid } from "@/components/sig-sales/sig-overlay-card-size";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import {
   buildManualOverlaySoldOverrideSet,
@@ -26,6 +28,12 @@ import {
 import { clearOverlayLastGood } from "@/lib/overlay-last-good";
 import { STATE_PICK_SIG_SALES } from "@/lib/state-api-pick";
 import { DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
+import {
+  computeManualSoldTotal,
+  readManualSigGridFromOverlaySettings,
+  readManualSigPanelOrientationFromOverlaySettings,
+} from "@/lib/manual-sig-workbench";
+import { canonicalSigIdFromWheelSliceId, ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 
 const MANUAL_OVERLAY_TERMINAL_PHASES = new Set([
   "LANDED",
@@ -169,15 +177,42 @@ export default function ManualSigOverlaySimple() {
     [state, selected]
   );
 
+  const overlayOs = useMemo(
+    () =>
+      state?.overlaySettings && typeof state.overlaySettings === "object"
+        ? (state.overlaySettings as Record<string, unknown>)
+        : null,
+    [state]
+  );
+  const panelGrid = useMemo(() => readManualSigGridFromOverlaySettings(overlayOs), [overlayOs]);
+  const panelOrientation = useMemo(
+    () => readManualSigPanelOrientationFromOverlaySettings(overlayOs),
+    [overlayOs]
+  );
+  const soldTotalAmount = useMemo(() => {
+    const prices = selected.map((item) => Math.max(0, Math.floor(Number(item.price) || 0)));
+    const flags = selected.map((item) => {
+      const canon = canonicalSigIdFromWheelSliceId(item.id);
+      return soldOverrideSet.has(item.id) || soldOverrideSet.has(canon);
+    });
+    const oneShotSold =
+      Boolean(oneShot) &&
+      (soldOverrideSet.has(ONE_SHOT_SIG_ID) ||
+        soldOverrideSet.has(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID)) ||
+        (selected.length > 0 && flags.every(Boolean)));
+    return computeManualSoldTotal(prices, flags, {
+      oneShotSold,
+      oneShotPrice: oneShot?.price,
+    });
+  }, [selected, soldOverrideSet, oneShot]);
   const resultRowLayout = useMemo(
     () =>
-      layoutSigOverlayResultRow({
-        cellCount: selected.length + (oneShot ? 1 : 0),
+      layoutSigOverlayResultGrid({
+        cols: panelGrid.cols,
         userScalePct: scalePct,
         allowOverflow: hostObs,
-        hasOneShot: Boolean(oneShot),
       }),
-    [scalePct, selected.length, oneShot, hostObs]
+    [scalePct, hostObs, panelGrid.cols]
   );
 
   const phase = manualSigBroadcastPhase(state);
@@ -240,21 +275,37 @@ export default function ManualSigOverlaySimple() {
           className="pointer-events-none flex w-full max-w-full justify-center overflow-visible px-3 pb-4 md:px-6"
           style={resultRowLayout.bandStyle}
         >
-          <ResultOverlay
-            visible
-            selectedSigs={selected}
-            soldOutStampUrl={soldOutStampUrl}
-            oneShot={oneShot}
-            signImageUrl={signImageUrl}
-            showOneShotReveal={Boolean(oneShot)}
-            cardScalePct={resultRowLayout.cardScalePct}
-            className="w-full max-w-full"
-            showConfirmedBadge={false}
-            disableCardMotion
-            soldOverrideSet={soldOverrideSet}
-            sigImageUserId={userId}
-            skipHanbangSignLoadingOverlay={hostObs}
-          />
+          <SigSalesPanelChrome
+            className="w-max max-w-full"
+            tags={[
+              `${panelGrid.rows}×${panelGrid.cols}`,
+              panelOrientation === "landscape" ? "가로형" : "세로형",
+              `${Array.isArray(state?.members) ? state.members.length : 0}인 참여`,
+              sigSalesPanelStatusLabel(phase),
+            ]}
+            totalAmount={soldTotalAmount}
+          >
+            <ResultOverlay
+              visible
+              selectedSigs={selected}
+              soldOutStampUrl={soldOutStampUrl}
+              oneShot={oneShot}
+              signImageUrl={signImageUrl}
+              showOneShotReveal={Boolean(oneShot)}
+              cardScalePct={resultRowLayout.cardScalePct}
+              className="w-full max-w-full"
+              showConfirmedBadge={false}
+              disableCardMotion
+              soldOverrideSet={soldOverrideSet}
+              sigImageUserId={userId}
+              skipHanbangSignLoadingOverlay={hostObs}
+              panelGridCols={panelGrid.cols}
+              panelOrientation={panelOrientation}
+              showSoldTotal={false}
+              soldTotalAmount={soldTotalAmount}
+              programSkin
+            />
+          </SigSalesPanelChrome>
         </div>
       </main>
     </>

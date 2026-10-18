@@ -14,7 +14,8 @@ import {
 } from "@/lib/state";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
 import { buildSigSalesManualOverlayUrl } from "@/lib/sig-sales-overlay-urls";
-import { DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE } from "@/lib/constants";
+import { DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE, resolveSigOverlayCardImageUrl } from "@/lib/constants";
+import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import SigSalesStampAndOneShotPanel from "@/components/admin/SigSalesStampAndOneShotPanel";
 import { listActiveManualSigPool } from "@/lib/manual-sig-active-pool";
 import { readManualSigBroadcastFromState } from "@/lib/manual-sig-broadcast-state";
@@ -28,22 +29,34 @@ import {
   readManualSigPickCount,
   resolveManualOneShotDisplayFromState,
   resolveManualOverlaySelectedSigs,
+  buildManualPanelSaleRows,
 } from "@/lib/manual-sig-broadcast";
 import { parseSigMetaFromFileName } from "@/lib/sig-filename-meta";
+import { SigSalesPanelChrome } from "@/components/sig-sales/SigSalesPanelChrome";
+import { formatSigSalesWon, sigSalesPanelStatusLabel } from "@/lib/sig-sales-panel-ui";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 import type { SigItem } from "@/types";
 import {
   MANUAL_SIG_DRAFT_STATE_KEY,
-  clampManualSigPickCount,
-  DEFAULT_MANUAL_SIG_PICK_COUNT,
+  computeManualSoldTotal,
   emptyManualSoldFlags,
+  MANUAL_SIG_GRID_COLS_KEY,
+  MANUAL_SIG_GRID_ROWS_KEY,
+  MANUAL_SIG_PANEL_ORIENTATION_KEY,
   MANUAL_SIG_PICK_COUNT_KEY,
+  MAX_MANUAL_SIG_GRID_COLS,
+  MAX_MANUAL_SIG_GRID_ROWS,
   MAX_MANUAL_SIG_PICK_COUNT,
+  MIN_MANUAL_SIG_GRID_COLS,
+  MIN_MANUAL_SIG_GRID_ROWS,
   MIN_MANUAL_SIG_PICK_COUNT,
   normalizeManualSigDraftPersist,
-  parseManualSigDraftRows,
+  normalizeManualSigGrid,
+  readManualSigGridFromOverlaySettings,
+  readManualSigPanelOrientationFromOverlaySettings,
   resizeManualDrafts,
   resizeManualSoldFlags,
+  type SigSalesPanelOrientation,
 } from "@/lib/manual-sig-workbench";
 
 const SIG_INVENTORY_IMPORTED_EVENT = "youtube-sig-inventory-imported";
@@ -58,6 +71,7 @@ export default function ManualSigSalesSimple() {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [defaultPrice, setDefaultPrice] = useState("10000");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const userId = user?.id || "finalent";
 
@@ -159,7 +173,19 @@ export default function ManualSigSalesSimple() {
         return b?.phase ?? "IDLE";
       })()
     : "IDLE";
-  const pickCount = useMemo(() => readManualSigPickCount(state), [state]);
+  const overlayOs = useMemo(
+    () =>
+      state?.overlaySettings && typeof state.overlaySettings === "object"
+        ? (state.overlaySettings as Record<string, unknown>)
+        : null,
+    [state]
+  );
+  const panelGrid = useMemo(() => readManualSigGridFromOverlaySettings(overlayOs), [overlayOs]);
+  const panelOrientation = useMemo(
+    () => readManualSigPanelOrientationFromOverlaySettings(overlayOs),
+    [overlayOs]
+  );
+  const pickCount = panelGrid.pickCount;
   const draft = useMemo(() => readManualSigDraftFromState(state), [state]);
   const displaySigs = useMemo(
     () => resolveManualOverlaySelectedSigs(state, userId),
@@ -172,26 +198,10 @@ export default function ManualSigSalesSimple() {
   }, [draft?.sigSoldFlags, pickCount]);
   const oneShotMarkSold = Boolean(draft?.oneShotMarkSold);
 
-  const saleRows = useMemo(() => {
-    const parsed = parseManualSigDraftRows(draft?.drafts || []);
-    const rows: Array<{ draftIdx: number; name: string; price: number }> = [];
-    for (let i = 0; i < pickCount; i++) {
-      const row = parsed[i];
-      if (row?.name && row.price > 0) {
-        rows.push({ draftIdx: i, name: row.name, price: row.price });
-        continue;
-      }
-      const sig = displaySigs[i];
-      if (sig?.name) {
-        rows.push({
-          draftIdx: i,
-          name: sig.name,
-          price: Number(sig.price || 0),
-        });
-      }
-    }
-    return rows;
-  }, [draft?.drafts, displaySigs, pickCount]);
+  const saleRows = useMemo(
+    () => buildManualPanelSaleRows(state, userId),
+    [state, userId]
+  );
   const needsRerollForPickCount =
     displaySigs.length > 0 && displaySigs.length < pickCount;
 
@@ -210,6 +220,21 @@ export default function ManualSigSalesSimple() {
   const hasAnySoldMark =
     soldFlags.some(Boolean) || oneShotMarkSold;
   const phase = String(currentPhase || "");
+  const soldTotal = useMemo(() => {
+    const prices = Array.from({ length: pickCount }, (_, i) => {
+      const row = saleRows.find((r) => r.draftIdx === i);
+      return row?.price || 0;
+    });
+    const oneShotPrice = (() => {
+      const resolved = resolveManualOneShotDisplayFromState(state, displaySigs, userId);
+      if (resolved) return resolved.price;
+      return Number(readManualSigBroadcastFromState(state)?.oneShotResult?.price || 0);
+    })();
+    return computeManualSoldTotal(prices, soldFlags, {
+      oneShotSold: oneShotMarkSold,
+      oneShotPrice,
+    });
+  }, [pickCount, saleRows, soldFlags, oneShotMarkSold, state, displaySigs, userId]);
 
   const persistState = useCallback(
     async (
@@ -292,10 +317,11 @@ export default function ManualSigSalesSimple() {
     }
   }, [state, canReroll, pool.length, userId, memberFilterId, persistState, pickCount]);
 
-  const onPickCountChange = useCallback(
-    async (raw: number) => {
+  const persistPanelLayout = useCallback(
+    async (rowsRaw: number, colsRaw: number, orientation: SigSalesPanelOrientation) => {
       if (!state) return;
-      const n = clampManualSigPickCount(raw);
+      const grid = normalizeManualSigGrid(rowsRaw, colsRaw);
+      const n = grid.pickCount;
       const prevOs =
         state.overlaySettings && typeof state.overlaySettings === "object"
           ? (state.overlaySettings as Record<string, unknown>)
@@ -314,13 +340,16 @@ export default function ManualSigSalesSimple() {
         overlaySettings: {
           ...prevOs,
           [MANUAL_SIG_PICK_COUNT_KEY]: n,
+          [MANUAL_SIG_GRID_ROWS_KEY]: grid.rows,
+          [MANUAL_SIG_GRID_COLS_KEY]: grid.cols,
+          [MANUAL_SIG_PANEL_ORIENTATION_KEY]: orientation,
           ...(nextDraft ? { [MANUAL_SIG_DRAFT_STATE_KEY]: nextDraft } : {}),
         } as AppState["overlaySettings"],
       };
       await persistState(
         next,
-        `당첨 시그 개수 ${n}개로 변경 · 「리롤」하면 OBS에 ${n}개 반영`,
-        "개수 설정 저장이 지연됩니다."
+        `${grid.rows}×${grid.cols} (${n}칸) · ${orientation === "portrait" ? "세로형" : "가로형"} · 리롤하면 OBS 반영`,
+        "판넬 설정 저장이 지연됩니다."
       );
     },
     [state, persistState]
@@ -672,24 +701,20 @@ export default function ManualSigSalesSimple() {
   );
 
   const members = state?.members || [];
+  const statusLabel = sigSalesPanelStatusLabel(phase);
+  const filterMember = members.find((m) => m.id === memberFilterId);
 
   return (
-    <main className="min-h-screen bg-neutral-950 p-6 text-white">
-      <div className="mx-auto max-w-2xl space-y-5">
-        <header>
-          <h1 className="text-2xl font-black text-sky-200">수동 시그 판매</h1>
-          <p className="mt-1 text-sm text-neutral-400">
-            판매 중 시그 랜덤(최대 {MAX_MANUAL_SIG_PICK_COUNT}개·한방 제외) → OBS 반영 · 체크 후 판매 확정
-          </p>
-          <div className="mt-2 flex flex-wrap gap-3 text-xs">
-            <Link href={`/admin?sigSales=inventory&u=${encodeURIComponent(userId)}`} className="text-yellow-300/90 underline">
-              시그 판매 관리(목록·가격·업로드)
-            </Link>
-            <Link href="/admin/sig-sales" className="text-yellow-300/90 underline">
-              회전판
-            </Link>
-          </div>
-        </header>
+    <main className="min-h-screen bg-[#07070c] p-4 text-white md:p-6">
+      <div className="mx-auto max-w-5xl space-y-4">
+        <div className="flex flex-wrap gap-3 text-xs">
+          <Link href={`/admin?sigSales=inventory&u=${encodeURIComponent(userId)}`} className="text-yellow-300/90 underline">
+            시그 판매 관리(목록·가격·업로드)
+          </Link>
+          <Link href="/admin/sig-sales" className="text-yellow-300/90 underline">
+            회전판
+          </Link>
+        </div>
 
         {inventoryCount === 0 ? (
           <p className="rounded-lg border border-amber-400/40 bg-amber-950/50 px-3 py-2 text-sm text-amber-100">
@@ -697,6 +722,20 @@ export default function ManualSigSalesSimple() {
           </p>
         ) : null}
 
+        <SigSalesPanelChrome
+          showGear
+          settingsOpen={settingsOpen}
+          onToggleSettings={() => setSettingsOpen((v) => !v)}
+          tags={[
+            `${panelGrid.rows}×${panelGrid.cols}`,
+            panelOrientation === "landscape" ? "가로형" : "세로형",
+            `${members.length}인 참여`,
+            filterMember ? `${filterMember.name || filterMember.id} 그룹` : "전체 그룹",
+            statusLabel,
+          ]}
+          totalAmount={soldTotal}
+          settingsPanel={
+            <div className="space-y-4 text-sm">
         <section className="rounded-xl border border-lime-400/25 bg-lime-950/20 p-4 space-y-3">
           <p className="text-sm font-semibold text-lime-100">시그 올리기</p>
           <p className="text-[11px] text-neutral-400">
@@ -756,18 +795,66 @@ export default function ManualSigSalesSimple() {
         />
 
         <section className="rounded-xl border border-white/10 bg-black/40 p-4 space-y-3">
-          <label className="block text-xs text-neutral-300">
-            당첨 시그 개수 ({MIN_MANUAL_SIG_PICK_COUNT}~{MAX_MANUAL_SIG_PICK_COUNT}, 기본 {DEFAULT_MANUAL_SIG_PICK_COUNT})
-            <input
-              type="number"
-              min={MIN_MANUAL_SIG_PICK_COUNT}
-              max={MAX_MANUAL_SIG_PICK_COUNT}
-              value={pickCount}
-              disabled={busy}
-              onChange={(e) => void onPickCountChange(Number(e.target.value))}
-              className="mt-1 w-full rounded bg-neutral-800 px-2 py-2 text-sm"
-            />
-          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block text-xs text-neutral-300">
+              행 ({MIN_MANUAL_SIG_GRID_ROWS}~{MAX_MANUAL_SIG_GRID_ROWS})
+              <input
+                type="number"
+                min={MIN_MANUAL_SIG_GRID_ROWS}
+                max={MAX_MANUAL_SIG_GRID_ROWS}
+                value={panelGrid.rows}
+                disabled={busy}
+                onChange={(e) =>
+                  void persistPanelLayout(Number(e.target.value), panelGrid.cols, panelOrientation)
+                }
+                className="mt-1 w-full rounded bg-neutral-800 px-2 py-2 text-sm"
+              />
+            </label>
+            <label className="block text-xs text-neutral-300">
+              열 ({MIN_MANUAL_SIG_GRID_COLS}~{MAX_MANUAL_SIG_GRID_COLS})
+              <input
+                type="number"
+                min={MIN_MANUAL_SIG_GRID_COLS}
+                max={MAX_MANUAL_SIG_GRID_COLS}
+                value={panelGrid.cols}
+                disabled={busy}
+                onChange={(e) =>
+                  void persistPanelLayout(panelGrid.rows, Number(e.target.value), panelOrientation)
+                }
+                className="mt-1 w-full rounded bg-neutral-800 px-2 py-2 text-sm"
+              />
+            </label>
+          </div>
+          <p className="text-[11px] text-neutral-400">
+            판넬 {panelGrid.rows}×{panelGrid.cols} · {pickCount}칸 (최소 {MIN_MANUAL_SIG_PICK_COUNT} · 최대 {MAX_MANUAL_SIG_PICK_COUNT})
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={busy || panelOrientation === "landscape"}
+              onClick={() => void persistPanelLayout(panelGrid.rows, panelGrid.cols, "landscape")}
+              className={`flex-1 rounded-lg px-3 py-2 text-sm font-bold disabled:opacity-50 ${
+                panelOrientation === "landscape"
+                  ? "bg-sky-700 text-white"
+                  : "border border-white/15 bg-neutral-800 text-neutral-300"
+              }`}
+            >
+              가로형 일괄
+            </button>
+            <button
+              type="button"
+              disabled={busy || panelOrientation === "portrait"}
+              onClick={() => void persistPanelLayout(panelGrid.rows, panelGrid.cols, "portrait")}
+              className={`flex-1 rounded-lg px-3 py-2 text-sm font-bold disabled:opacity-50 ${
+                panelOrientation === "portrait"
+                  ? "bg-sky-700 text-white"
+                  : "border border-white/15 bg-neutral-800 text-neutral-300"
+              }`}
+            >
+              세로형 일괄
+            </button>
+          </div>
+          <p className="text-[11px] text-neutral-500">한 판넬에서 가로·세로를 섞지 않습니다. 전 칸이 같은 방향입니다.</p>
           <label className="block text-xs text-neutral-300">
             멤버 (선택)
             <select
@@ -817,128 +904,146 @@ export default function ManualSigSalesSimple() {
               {oneShotLabel ? <p className="mt-1 text-sm text-yellow-200">+ {oneShotLabel}</p> : null}
               {needsRerollForPickCount ? (
                 <p className="mt-2 text-xs font-semibold text-amber-200/95">
-                  당첨 개수가 {pickCount}개입니다. 「리롤 → OBS」를 눌러 {pickCount}개를 새로 뽑아 주세요.
+                  당첨 개수가 {pickCount}개입니다. 「ROLL」을 눌러 {pickCount}개를 새로 뽑아 주세요.
                 </p>
               ) : null}
             </>
           ) : (
-            <p className="mt-2 text-sm text-neutral-500">아직 없음 — 리롤을 누르세요.</p>
+            <p className="mt-2 text-sm text-neutral-500">아직 없음 — ROLL을 누르세요.</p>
           )}
-        </section>
-
-        {saleRows.length > 0 ? (
-          <section className="rounded-xl border border-emerald-400/25 bg-emerald-950/20 p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold text-emerald-100">판매 처리</p>
-              {phase === "CONFIRMED" ? (
-                <span className="rounded bg-emerald-800/80 px-2 py-0.5 text-[10px] font-bold text-emerald-100">
-                  전체 확정됨
-                </span>
-              ) : soldFlags.some(Boolean) ? (
-                <span className="text-[10px] text-emerald-300/90">일부 확정됨 · 나머지 개별 확정 가능</span>
-              ) : (
-                <span className="text-[10px] text-neutral-500">체크 → OBS 스탬프 · 확정 시 회차 종료</span>
-              )}
-            </div>
-            {saleRows.map((row) => {
-              const rowConfirmed = Boolean(soldFlags[row.draftIdx]);
-              return (
-              <div
-                key={`sale_${row.draftIdx}_${row.name}`}
-                className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-2.5"
-              >
-                <label className="flex min-w-0 flex-1 items-center gap-3 text-base">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 shrink-0"
-                    checked={rowConfirmed}
-                    disabled={busy || rowConfirmed || phase === "CONFIRMED"}
-                    onChange={(e) => void onToggleSigSold(row.draftIdx, e.target.checked)}
-                  />
-                  <span className="min-w-0 text-neutral-100">
-                    <span className="font-bold">{row.name}</span>{" "}
-                    <span className="font-semibold tabular-nums text-yellow-200">
-                      {row.price.toLocaleString("ko-KR")}원
-                    </span>
-                    {rowConfirmed ? (
-                      <span className="ml-2 text-xs font-semibold text-emerald-300">확정됨</span>
-                    ) : null}
-                  </span>
-                </label>
-                <button
-                  type="button"
-                  disabled={busy || rowConfirmed || phase === "CONFIRMED"}
-                  onClick={() => void onConfirmSales({ onlyDraftIdx: row.draftIdx })}
-                  className="shrink-0 rounded-md bg-emerald-800 px-3 py-1.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  {rowConfirmed ? "확정 완료" : "이 시그만 확정"}
-                </button>
-              </div>
-            );
-            })}
-            {oneShotLabel ? (
-              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-yellow-400/30 bg-yellow-950/20 px-3 py-2.5">
-                <label className="flex min-w-0 flex-1 items-center gap-3 text-base">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 shrink-0"
-                    checked={oneShotMarkSold}
-                    disabled={busy || phase === "CONFIRMED"}
-                    onChange={(e) => void onToggleOneShotSold(e.target.checked)}
-                  />
-                  <span className="font-semibold text-yellow-100">
-                    한방 시그 판매완료 ({oneShotLabel})
-                  </span>
-                </label>
-              </div>
-            ) : null}
+          {oneShotLabel ? (
+            <label className="mt-3 flex items-center gap-2 text-sm text-yellow-100">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={oneShotMarkSold}
+                disabled={busy || phase === "CONFIRMED"}
+                onChange={(e) => void onToggleOneShotSold(e.target.checked)}
+              />
+              한방 시그 판매완료 ({oneShotLabel})
+            </label>
+          ) : null}
+          <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={!authReady || busy || phase === "CONFIRMED" || !hasAnySoldMark}
-              onClick={() => void onConfirmSales()}
-              className="w-full rounded-lg bg-emerald-700 px-4 py-3 text-base font-bold text-white hover:bg-emerald-600 disabled:opacity-50"
+              disabled={!overlayUrl}
+              className="rounded-lg border border-sky-400/50 bg-sky-900/50 px-3 py-2 text-xs font-semibold text-sky-100"
+              onClick={() => {
+                void copyTextToClipboard(overlayUrl).then((ok) =>
+                  setToast(ok ? "OBS URL 복사됨" : "복사 실패")
+                );
+              }}
             >
-              {busy ? "처리 중…" : "체크한 시그 일괄 확정"}
+              OBS URL 복사
             </button>
-          </section>
-        ) : null}
-
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={!authReady || !state || busy || !canReroll}
-            onClick={() => void onReroll()}
-            className="rounded-lg bg-fuchsia-700 px-5 py-3 text-sm font-bold hover:bg-fuchsia-600 disabled:opacity-50"
+            <button
+              type="button"
+              disabled={!overlayUrl}
+              className="rounded-lg bg-sky-700 px-3 py-2 text-xs font-bold"
+              onClick={() => window.open(overlayUrl, "_blank", "noopener,noreferrer")}
+            >
+              OBS 미리보기
+            </button>
+          </div>
+          {overlayUrl ? (
+            <code className="mt-2 block break-all text-[10px] text-neutral-500">{overlayUrl}</code>
+          ) : null}
+        </section>
+            </div>
+          }
+          controlBar={
+            <>
+              <button
+                type="button"
+                disabled={!authReady || !state || busy || !canReroll}
+                onClick={() => void onReroll()}
+                className="rounded-lg bg-yellow-400 px-5 py-2.5 text-sm font-black tracking-wide text-black shadow-[0_0_18px_rgba(250,204,21,0.45)] hover:bg-yellow-300 disabled:opacity-40"
+              >
+                {busy ? "처리 중…" : canReroll ? `ROLL  리롤 (${rerollPickCount})` : "ROLL 불가"}
+              </button>
+              <div
+                className={`rounded-full border px-3 py-1 text-xs font-bold ${
+                  statusLabel === "진행 중"
+                    ? "border-cyan-300/50 bg-cyan-400/15 text-cyan-100"
+                    : statusLabel === "판매 확정"
+                      ? "border-emerald-300/50 bg-emerald-400/15 text-emerald-100"
+                      : "border-white/20 bg-white/5 text-neutral-300"
+                }`}
+              >
+                STATUS: {statusLabel}
+              </div>
+              <button
+                type="button"
+                disabled={!authReady || busy || phase === "CONFIRMED" || !hasAnySoldMark}
+                onClick={() => void onConfirmSales()}
+                className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-black tracking-wide text-white shadow-[0_8px_20px_rgba(5,150,105,0.35)] hover:bg-emerald-500 disabled:opacity-40"
+              >
+                {busy ? "처리 중…" : "COMPLETE SALES"}
+              </button>
+            </>
+          }
+        >
+          <div
+            className="grid gap-1.5"
+            style={{ gridTemplateColumns: `repeat(${panelGrid.cols}, minmax(0, 1fr))` }}
           >
-            {busy ? "처리 중…" : canReroll ? `리롤 → OBS (${rerollPickCount}개)` : "리롤 불가"}
-          </button>
-          <button
-            type="button"
-            disabled={!overlayUrl}
-            className="rounded-lg border border-sky-400/50 bg-sky-900/50 px-3 py-3 text-xs font-semibold text-sky-100 hover:bg-sky-800/60"
-            onClick={() => {
-              void copyTextToClipboard(overlayUrl).then((ok) =>
-                setToast(ok ? "OBS URL 복사됨" : "복사 실패")
+            {Array.from({ length: pickCount }, (_, i) => {
+              const row = saleRows.find((r) => r.draftIdx === i);
+              const sold = Boolean(soldFlags[i]);
+              return (
+                <button
+                  key={`cell_${i}`}
+                  type="button"
+                  disabled={busy || !row || phase === "CONFIRMED"}
+                  onClick={() => {
+                    if (!row) return;
+                    void onToggleSigSold(i, !sold);
+                  }}
+                  className={`relative min-h-[8.5rem] overflow-hidden rounded-lg border text-left ${
+                    sold
+                      ? "border-rose-500/50 bg-[#0c0c10]"
+                      : "border-white/12 bg-[#121218] hover:border-fuchsia-400/40"
+                  }`}
+                  title={row ? "클릭하면 판매완료 전환" : "빈 칸 — ROLL로 채워 주세요"}
+                >
+                  <div className="relative h-[4.75rem] w-full bg-black/40">
+                    {row?.imageUrl ? (
+                      <SigSaleMedia
+                        src={resolveSigOverlayCardImageUrl(row.name, row.imageUrl, userId)}
+                        storedImageUrl={row.imageUrl}
+                        sigImageUserId={userId}
+                        alt={row.name}
+                        fill
+                        objectFit="contain"
+                        className="object-contain"
+                        sizes="160px"
+                      />
+                    ) : null}
+                  </div>
+                  <div className="px-2 py-1.5">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">SIG</div>
+                    <div className="line-clamp-2 text-sm font-bold text-white">{row?.name || "빈 칸"}</div>
+                    {row ? (
+                      <div className="mt-1 text-sm font-black tabular-nums text-yellow-300">
+                        {formatSigSalesWon(row.price)}
+                      </div>
+                    ) : null}
+                  </div>
+                  {sold ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/70">
+                      <span
+                        className="rotate-[-12deg] border-[3px] border-rose-500 px-2 py-0.5 text-sm font-black tracking-wider text-rose-400"
+                        style={{ textShadow: "0 0 12px rgba(244,63,94,0.8)" }}
+                      >
+                        SOLD OUT
+                      </span>
+                    </div>
+                  ) : null}
+                </button>
               );
-            }}
-          >
-            OBS URL 복사
-          </button>
-          <button
-            type="button"
-            disabled={!overlayUrl}
-            className="rounded-lg bg-sky-700 px-3 py-3 text-xs font-bold hover:bg-sky-600"
-            onClick={() => window.open(overlayUrl, "_blank", "noopener,noreferrer")}
-          >
-            OBS 미리보기
-          </button>
-        </div>
-
-        {overlayUrl ? (
-          <code className="block break-all rounded border border-white/10 bg-black/50 p-2 text-[10px] text-neutral-400">
-            {overlayUrl}
-          </code>
-        ) : null}
+            })}
+          </div>
+        </SigSalesPanelChrome>
 
         {toast ? (
           <p className="rounded-lg border border-amber-400/40 bg-amber-950/50 px-3 py-2 text-sm text-amber-100">

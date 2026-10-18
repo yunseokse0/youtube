@@ -104,7 +104,11 @@ describe("state-api-pick", () => {
   it("sig-sales pick is minimal", () => {
     const base = defaultState();
     const out = projectStateForGetPick(base, STATE_PICK_SIG_SALES) as Record<string, unknown>;
-    expect(out.members).toBeUndefined();
+    expect(out.members).toEqual(
+      (base.members || []).map((m) => ({ id: m.id, name: String(m.name || "") }))
+    );
+    expect(out.donors).toBeUndefined();
+    expect(out.contributionLogs).toBeUndefined();
     expect(out.sigInventory).toBeDefined();
     expect(out.rouletteState).toBeDefined();
   });

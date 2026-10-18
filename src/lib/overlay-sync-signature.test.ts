@@ -857,4 +857,25 @@ describe("buildSigSalesOverlaySyncSignature", () => {
     };
     expect(buildSigSalesOverlaySyncSignature(a)).not.toBe(buildSigSalesOverlaySyncSignature(b));
   });
+
+  it("changes when manual grid size or panel orientation changes", () => {
+    const base = defaultState();
+    const a = {
+      ...base,
+      overlaySettings: {
+        sigSalesManualGridRows: 2,
+        sigSalesManualGridCols: 4,
+        sigSalesManualPanelOrientation: "landscape",
+      },
+    };
+    const b = {
+      ...a,
+      overlaySettings: {
+        sigSalesManualGridRows: 3,
+        sigSalesManualGridCols: 3,
+        sigSalesManualPanelOrientation: "portrait",
+      },
+    };
+    expect(buildSigSalesOverlaySyncSignature(a)).not.toBe(buildSigSalesOverlaySyncSignature(b));
+  });
 });

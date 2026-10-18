@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildManualSigSalesConfirmState,
   buildManualSigSoldPersistState,
+  buildManualPanelSaleRows,
   enrichManualDraftsWithInventoryImageUrls,
   findDisplaySigForManualDraftRow,
   hydrateManualOverlaySigItem,
@@ -384,6 +385,130 @@ describe("resolveManualDraftRowForSigItem", () => {
       "finalent"
     );
     expect(out.drafts[0]?.imageUrl).toBe(uploadUrl);
+  });
+
+  it("enrichManualDraftsWithInventoryImageUrls fills empty priceInput from inventory", () => {
+    const uploadUrl = "/uploads/sigs/finalent/1730000000_abc12345.gif";
+    const out = enrichManualDraftsWithInventoryImageUrls(
+      {
+        drafts: [
+          { sourceSigId: "sig_a", name: "맛있쥬", priceInput: "", imageUrl: "" },
+          { sourceSigId: "", name: "B", priceInput: "10000", imageUrl: "" },
+          { sourceSigId: "", name: "C", priceInput: "11000", imageUrl: "" },
+          { sourceSigId: "", name: "D", priceInput: "12000", imageUrl: "" },
+          { sourceSigId: "", name: "E", priceInput: "13000", imageUrl: "" },
+        ],
+        oneShotName: "한방 시그",
+        oneShotPriceInput: "",
+        oneShotImageUrl: "",
+        sigSoldFlags: [],
+        oneShotMarkSold: false,
+      },
+      [
+        {
+          id: "sig_a",
+          name: "맛있쥬",
+          price: 18300,
+          imageUrl: uploadUrl,
+          memberId: "",
+          maxCount: 1,
+          soldCount: 0,
+          isRolling: true,
+          isActive: true,
+        },
+      ],
+      "finalent"
+    );
+    expect(out.drafts[0]?.priceInput).toBe("18300");
+    expect(out.drafts[0]?.imageUrl).toBe(uploadUrl);
+  });
+
+  it("buildManualPanelSaleRows hydrates image and price from inventory when draft is empty", () => {
+    const uploadUrl = "/uploads/sigs/finalent/1730000000_abc12345.gif";
+    const inventory: SigItem[] = [
+      {
+        id: "sig_a",
+        name: "맛있쥬",
+        price: 18300,
+        imageUrl: uploadUrl,
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+      {
+        id: "sig_b",
+        name: "솜사탕",
+        price: 26500,
+        imageUrl: "/images/sigs/from-drive/솜사탕.gif",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+    ];
+    const state = {
+      sigInventory: inventory,
+      overlaySettings: {
+        sigSalesManualGridRows: 1,
+        sigSalesManualGridCols: 2,
+        sigSalesManualPickCount: 2,
+        sigSalesManualDraftV1: {
+          drafts: [
+            { sourceSigId: "sig_a", name: "맛있쥬", priceInput: "", imageUrl: "" },
+            { sourceSigId: "sig_b", name: "솜사탕", priceInput: "0", imageUrl: "" },
+          ],
+          oneShotName: "한방 시그",
+          oneShotPriceInput: "",
+          oneShotImageUrl: "",
+          sigSoldFlags: [false, false],
+          oneShotMarkSold: false,
+        },
+        [MANUAL_SIG_BROADCAST_STATE_KEY]: {
+          phase: "LANDED",
+          startedAt: 1,
+          selectedSigs: [
+            {
+              id: "sig_a",
+              name: "맛있쥬",
+              price: 0,
+              imageUrl: "",
+              memberId: "",
+              maxCount: 1,
+              soldCount: 0,
+              isRolling: true,
+              isActive: true,
+            },
+            {
+              id: "sig_b",
+              name: "솜사탕",
+              price: 0,
+              imageUrl: "",
+              memberId: "",
+              maxCount: 1,
+              soldCount: 0,
+              isRolling: true,
+              isActive: true,
+            },
+          ],
+          overlayReloadNonce: 0,
+        },
+      },
+    } as unknown as AppState;
+    const rows = buildManualPanelSaleRows(state, "finalent");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ name: "맛있쥬", price: 18300, imageUrl: uploadUrl });
+    expect(rows[1]).toMatchObject({
+      name: "솜사탕",
+      price: 26500,
+      imageUrl: "/images/sigs/from-drive/솜사탕.gif",
+    });
+    const overlay = resolveManualOverlaySelectedSigs(state, "finalent");
+    expect(overlay[0]?.price).toBe(18300);
+    expect(overlay[0]?.imageUrl).toBe(uploadUrl);
+    expect(overlay[1]?.price).toBe(26500);
   });
 
   it("resolveManualOverlaySelectedSigs uses inventory upload when names match but server imageUrl is stale", () => {

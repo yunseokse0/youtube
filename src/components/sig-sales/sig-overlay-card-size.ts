@@ -329,3 +329,20 @@ export function layoutSigOverlayResultRow(opts: {
     bandStyle: sigOverlayResultBandStyle(cardScalePct),
   };
 }
+
+/** 행×열 판넬 — 열 수 기준으로 카드 폭을 뷰포트에 맞춘다. */
+export function layoutSigOverlayResultGrid(opts: {
+  cols: number;
+  userScalePct?: number;
+  maxRowWidthPx?: number;
+  allowOverflow?: boolean;
+}): { cardScalePct: number; bandStyle: CSSProperties } {
+  const cols = Math.max(1, Math.floor(opts.cols || 1));
+  return layoutSigOverlayResultRow({
+    cellCount: cols,
+    userScalePct: opts.userScalePct,
+    maxRowWidthPx: opts.maxRowWidthPx,
+    allowOverflow: opts.allowOverflow,
+    hasOneShot: false,
+  });
+}

@@ -59,6 +59,12 @@ type SelectedSigsProps = {
   disableCardMotion?: boolean;
   /** 한방 시그 판매 확정 시, 보이는 당첨 카드에 판매완료 연출을 동시에 적용 */
   forceSoldAll?: boolean;
+  /** 판넬 열 수. 있으면 한 줄 flex 대신 CSS 그리드 */
+  panelGridCols?: number;
+  /** 판 전체 가로/세로 일괄. 없으면 방송은 기존처럼 세로 */
+  panelOrientation?: SigOverlayMediaOrientation;
+  /** 시그판매 판넬 v2 플랫 스킨 */
+  programSkin?: boolean;
 };
 
 function SelectedSigCard({
@@ -79,6 +85,8 @@ function SelectedSigCard({
   gifDelayMultiplier,
   sigImageUserId,
   onToggleSold,
+  panelOrientation,
+  programSkin,
 }: {
   item: SigItem;
   idx: number;
@@ -97,12 +105,15 @@ function SelectedSigCard({
   gifDelayMultiplier: number;
   sigImageUserId?: string;
   onToggleSold: (id: string) => void;
+  panelOrientation?: SigOverlayMediaOrientation;
+  programSkin?: boolean;
 }) {
   const canonId = canonicalSigIdFromWheelSliceId(item.id);
   const [orientation, setOrientation] = useState<SigOverlayMediaOrientation>("landscape");
   const isNewest = idx === latestIdx;
-  /** 방송 결과 줄은 세로 시그 카드 비율로 통일(한방·일반 동일). 이미지는 contain. */
-  const frameOrientation: SigOverlayMediaOrientation = broadcastMatch ? "portrait" : orientation;
+  /** 판 설정이 있으면 전 칸 동일. 없으면 방송은 세로, 그 외는 원본 비율. */
+  const frameOrientation: SigOverlayMediaOrientation =
+    panelOrientation || (broadcastMatch ? "portrait" : orientation);
 
   const onNaturalSize = useCallback((w: number, h: number) => {
     setOrientation(classifySigRollingOrientation(w, h));
@@ -142,14 +153,24 @@ function SelectedSigCard({
       className={`relative overflow-hidden rounded-xl border bg-neutral-900/70 ${
         broadcastMatch ? "flex w-full max-w-full flex-col" : "min-w-0"
       } ${
-        broadcastMatch
-          ? SIG_OVERLAY_CARD_SHELL_CLASS
-          : compact
-            ? orientation === "portrait"
-              ? "w-full max-w-[140px] justify-self-start"
-              : "w-full max-w-[230px] justify-self-start"
-            : ""
-      } ${isLatestConfirmed ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" : broadcastMatch ? "" : "border-white/20"}`}
+        programSkin
+          ? "rounded-lg border-white/15 bg-[#121218] px-1 py-1 shadow-[0_0_16px_rgba(168,85,247,0.12)]"
+          : broadcastMatch
+            ? SIG_OVERLAY_CARD_SHELL_CLASS
+            : compact
+              ? frameOrientation === "portrait"
+                ? "w-full max-w-[140px] justify-self-start"
+                : "w-full max-w-[230px] justify-self-start"
+              : ""
+      } ${
+        isLatestConfirmed
+          ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]"
+          : programSkin
+            ? ""
+            : broadcastMatch
+              ? ""
+              : "border-white/20"
+      }`}
     >
       <div className={broadcastMatch ? "relative z-[2] flex flex-1 flex-col" : "relative z-[2]"}>
         {showConfirmedBadge ? (
@@ -170,7 +191,7 @@ function SelectedSigCard({
           className={`overflow-hidden rounded-lg border border-white/20 bg-black/40 ${
             broadcastMatch
               ? SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS
-              : `relative ${sigOverlayCardMediaBoxClass(orientation)}`
+              : `relative ${sigOverlayCardMediaBoxClass(frameOrientation)}`
           }`}
         >
           <SigSaleMedia
@@ -199,6 +220,7 @@ function SelectedSigCard({
             <SigSoldStampOverlay
               soldOutStampUrl={soldOutStampUrl}
               stampMaxClass={broadcastMatch ? SIG_SOLD_STAMP_IMG_CLASS_BROADCAST : undefined}
+              variant={programSkin ? "text" : "image"}
             />
           ) : null}
         </div>
@@ -244,7 +266,7 @@ function SelectedSigCard({
                   : sigOverlayCardPriceOutlineStyle(12)
             }
           >
-            {formatWon(item.price)}
+            {programSkin ? `₩ ${Math.max(0, Math.floor(Number(item.price) || 0)).toLocaleString("ko-KR")}` : formatWon(item.price)}
           </div>
           {showToggle ? (
             <button
@@ -283,15 +305,22 @@ export default function SelectedSigs({
   disableCardMotion = false,
   forceSoldAll = false,
   sigImageUserId,
+  panelGridCols,
+  panelOrientation,
+  programSkin = false,
 }: SelectedSigsProps) {
   /** 고정 5·6열은 카드가 적을 때도 빈 칸이 남아 미리 깔린 것처럼 보임 → 실제 개수만큼 열만 사용 */
   const trailingActive = Boolean(trailingSlot);
   const cellCount = items.length + (trailingActive ? 1 : 0);
-  const columnCount = Math.min(6, Math.max(1, cellCount));
+  const requestedCols = Math.floor(Number(panelGridCols) || 0);
+  const usePanelGrid = requestedCols > 0;
+  const columnCount = usePanelGrid
+    ? Math.max(1, requestedCols)
+    : Math.min(6, Math.max(1, cellCount));
   /** 방송 오버레이(compact·토글 숨김)는 한방 카드와 같은 폭·비율을 기본 적용 */
   const broadcastMatch = Boolean(compact && (matchOneShotCardSize || !showToggle));
-  /** 방송 오버레이: 당첨 카드 + 한방을 한 줄에 배치(줄바꿈 없음) */
-  const overlaySingleRow = broadcastMatch;
+  /** 방송 오버레이: 그리드가 아니면 당첨+한방을 한 줄에 배치 */
+  const overlaySingleRow = broadcastMatch && !usePanelGrid;
   /**
    * 오버레이(compact): 열을 auto → 카드 실제 너비만 차지해 순서대로 붙음(1fr면 행 전체를 나눠 간격만 벌어짐).
    * 관리 화면 등: 1fr로 균등 분할 유지.
@@ -314,11 +343,15 @@ export default function SelectedSigs({
           ? "justify-center"
           : "";
   const nowrapRow = overlaySingleRow ? "flex-nowrap overflow-visible" : "flex-wrap";
-  const sectionClass = overlaySingleRow
-    ? `flex min-w-0 max-w-full ${nowrapRow} items-end ${sigRowJustify || "justify-center"} gap-1 sm:gap-1 ${className}`.trim()
-    : broadcastMatch
-      ? `flex w-full min-w-0 max-w-full flex-wrap items-end justify-center gap-1 sm:gap-1 ${className}`.trim()
-      : `grid w-full min-w-0 max-w-full gap-1 ${justifyCompact} ${gridAlign} ${className}`.trim();
+  const sectionClass = usePanelGrid
+    ? "grid w-max max-w-full gap-1 justify-center"
+    : overlaySingleRow
+      ? `flex min-w-0 max-w-full ${nowrapRow} items-end ${sigRowJustify || "justify-center"} gap-1 sm:gap-1 ${className}`.trim()
+      : broadcastMatch
+        ? `flex w-full min-w-0 max-w-full flex-wrap items-end justify-center gap-1 sm:gap-1 ${className}`.trim()
+        : `grid w-full min-w-0 max-w-full gap-1 ${justifyCompact} ${gridAlign} ${className}`.trim();
+  const gridStyle =
+    usePanelGrid || !(overlaySingleRow || broadcastMatch) ? { gridTemplateColumns } : undefined;
 
   const latestIdx = items.length - 1;
   const sigCards = items.map((item, idx) => {
@@ -348,31 +381,46 @@ export default function SelectedSigs({
         gifDelayMultiplier={gifDelayMultiplier}
         sigImageUserId={sigImageUserId}
         onToggleSold={onToggleSold}
+        panelOrientation={panelOrientation}
+        programSkin={programSkin}
       />
     );
   });
 
+  const trailing = trailingSlot ? (
+    <div
+      style={
+        broadcastMatch && matchOneShotCardSize
+          ? sigOverlayBroadcastOneShotShellStyle(cardScalePct)
+          : undefined
+      }
+      className={
+        broadcastMatch && matchOneShotCardSize
+          ? "flex h-full min-h-0 shrink-0 flex-col self-end"
+          : broadcastMatch || compact
+            ? "flex min-h-0 shrink-0 self-end"
+            : "min-h-[280px]"
+      }
+    >
+      {trailingSlot}
+    </div>
+  ) : null;
+
+  if (usePanelGrid) {
+    return (
+      <div className={`flex w-max max-w-full flex-col items-center gap-2 ${className}`.trim()}>
+        <section className={sectionClass} style={gridStyle}>
+          {sigCards}
+        </section>
+        {trailing}
+      </div>
+    );
+  }
+
   return (
-    <section className={sectionClass} style={overlaySingleRow || broadcastMatch ? undefined : { gridTemplateColumns }}>
+    <section className={sectionClass} style={gridStyle}>
       {sigCards}
-      {trailingSlot ? (
-        <div
-          style={
-            broadcastMatch && matchOneShotCardSize
-              ? sigOverlayBroadcastOneShotShellStyle(cardScalePct)
-              : undefined
-          }
-          className={
-            broadcastMatch && matchOneShotCardSize
-              ? "flex h-full min-h-0 shrink-0 flex-col self-end"
-              : broadcastMatch || compact
-                ? "flex min-h-0 shrink-0 self-end"
-                : "min-h-[280px]"
-          }
-        >
-          {trailingSlot}
-        </div>
-      ) : null}
+      {trailing}
     </section>
   );
 }

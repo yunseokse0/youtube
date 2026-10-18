@@ -115,6 +115,8 @@ import { pickRandomManualSigDrafts } from "@/lib/manual-sig-random";
 import { listActiveManualSigPool } from "@/lib/manual-sig-active-pool";
 import {
   MANUAL_SIG_DRAFT_STATE_KEY,
+  MANUAL_SIG_GRID_COLS_KEY,
+  MANUAL_SIG_GRID_ROWS_KEY,
   MANUAL_SIG_PICK_COUNT_KEY,
   MANUAL_SIG_WORKBENCH_KEY,
   MAX_MANUAL_SIG_SLOTS,
@@ -576,6 +578,8 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
           overlaySettings: {
             ...prevOs,
             [MANUAL_SIG_PICK_COUNT_KEY]: n,
+            [MANUAL_SIG_GRID_ROWS_KEY]: 1,
+            [MANUAL_SIG_GRID_COLS_KEY]: n,
           } as AppState["overlaySettings"],
         };
         void saveSigSalesManualStateAsync(next, userId, { omitSigInventory: true }).then((saved) => {
@@ -803,6 +807,8 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         ...prevOverlaySettings,
         [MANUAL_SIG_WORKBENCH_KEY]: wb,
         [MANUAL_SIG_PICK_COUNT_KEY]: manualSigPickCount,
+        [MANUAL_SIG_GRID_ROWS_KEY]: 1,
+        [MANUAL_SIG_GRID_COLS_KEY]: manualSigPickCount,
         /** OBS 수동 모드: 현재 탭 초안을 서버에 미러(적용 전에도 카드·OBS 동기화) */
         ...(activeSlot ? { [MANUAL_SIG_DRAFT_STATE_KEY]: slotToDraftPersist(activeSlot) } : {}),
       };

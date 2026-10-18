@@ -27,18 +27,36 @@ type SigSoldStampOverlayProps = {
   soldOutStampUrl: string;
   /** SigBoardRolling 등 더 작은 칸 */
   stampMaxClass?: string;
+  /** text: 플랫 판넬용 붉은 SOLD OUT 스탬프 */
+  variant?: "image" | "text";
 };
 
 /** 판매 완료 연출: 시그 이미지 → 회색 딤 → 흰색 30%(GIF 전체) → 스탬프 */
 export default function SigSoldStampOverlay({
   soldOutStampUrl,
   stampMaxClass = SIG_SOLD_STAMP_IMG_CLASS,
+  variant = "image",
 }: SigSoldStampOverlayProps) {
   const primarySrc = resolveSigRollingStampUrl(soldOutStampUrl);
   const [stampSrc, setStampSrc] = useState(primarySrc);
   useEffect(() => {
     setStampSrc(primarySrc);
   }, [primarySrc]);
+  if (variant === "text") {
+    return (
+      <>
+        <div className="pointer-events-none absolute inset-0 z-[5] bg-black/70" aria-hidden />
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-1">
+          <span
+            className="rotate-[-14deg] rounded-sm border-[3px] border-rose-500 px-1.5 py-0.5 text-[clamp(11px,2.4vw,22px)] font-black leading-none tracking-wider text-rose-400"
+            style={{ textShadow: "0 0 14px rgba(244,63,94,0.85)" }}
+          >
+            SOLD OUT
+          </span>
+        </div>
+      </>
+    );
+  }
   return (
     <>
       <div className={SIG_SOLD_MEDIA_DIM_CLASS} aria-hidden />

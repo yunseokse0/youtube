@@ -40,18 +40,125 @@ export type ManualSigWorkbench = {
   activeSlotId: string;
   /** 마지막으로 OBS에 LANDED 적용한 탭 */
   broadcastSlotId?: string;
-  /** 당첨 시그 칸 수(2~20). 미설정 시 5 */
+  /** 당첨 시그 칸 수(2~36). 미설정 시 5 */
   pickCount?: number;
 };
 
 export const MAX_MANUAL_SIG_SLOTS = 8;
 export const DEFAULT_MANUAL_SLOT_COUNT = 3;
 
-/** 수동·랜덤 당첨 시그 개수 — 기본 5, 최소 2(한방), 최대 20(회전판과 동일) */
+/** 수동·랜덤 당첨 시그 개수 — 기본 5, 최소 2(한방), 최대 36(6×6 그리드) */
 export const MIN_MANUAL_SIG_PICK_COUNT = 2;
-export const MAX_MANUAL_SIG_PICK_COUNT = 20;
+export const MAX_MANUAL_SIG_PICK_COUNT = 36;
 export const DEFAULT_MANUAL_SIG_PICK_COUNT = 5;
 export const MANUAL_SIG_PICK_COUNT_KEY = "sigSalesManualPickCount";
+export const MANUAL_SIG_GRID_ROWS_KEY = "sigSalesManualGridRows";
+export const MANUAL_SIG_GRID_COLS_KEY = "sigSalesManualGridCols";
+export const MANUAL_SIG_PANEL_ORIENTATION_KEY = "sigSalesManualPanelOrientation";
+
+export const MIN_MANUAL_SIG_GRID_ROWS = 1;
+export const MAX_MANUAL_SIG_GRID_ROWS = 8;
+export const MIN_MANUAL_SIG_GRID_COLS = 1;
+export const MAX_MANUAL_SIG_GRID_COLS = 36;
+export const DEFAULT_MANUAL_SIG_GRID_ROWS = 1;
+export const DEFAULT_MANUAL_SIG_GRID_COLS = 5;
+
+export type SigSalesPanelOrientation = "landscape" | "portrait";
+
+export type ManualSigGrid = {
+  rows: number;
+  cols: number;
+  pickCount: number;
+};
+
+function clampInt(raw: unknown, min: number, max: number, fallback: number): number {
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
+export function normalizeManualSigPanelOrientation(raw: unknown): SigSalesPanelOrientation {
+  return raw === "portrait" ? "portrait" : "landscape";
+}
+
+/** 행×열. 칸 수는 2~36으로 맞춘다. */
+export function normalizeManualSigGrid(rowsRaw: unknown, colsRaw: unknown): ManualSigGrid {
+  let rows = clampInt(rowsRaw, MIN_MANUAL_SIG_GRID_ROWS, MAX_MANUAL_SIG_GRID_ROWS, DEFAULT_MANUAL_SIG_GRID_ROWS);
+  let cols = clampInt(colsRaw, MIN_MANUAL_SIG_GRID_COLS, MAX_MANUAL_SIG_GRID_COLS, DEFAULT_MANUAL_SIG_GRID_COLS);
+  let pickCount = rows * cols;
+  if (pickCount < MIN_MANUAL_SIG_PICK_COUNT) {
+    cols = Math.min(MAX_MANUAL_SIG_GRID_COLS, Math.max(cols, Math.ceil(MIN_MANUAL_SIG_PICK_COUNT / rows)));
+    pickCount = rows * cols;
+    if (pickCount < MIN_MANUAL_SIG_PICK_COUNT) {
+      rows = 1;
+      cols = MIN_MANUAL_SIG_PICK_COUNT;
+      pickCount = cols;
+    }
+  }
+  if (pickCount > MAX_MANUAL_SIG_PICK_COUNT) {
+    cols = Math.max(MIN_MANUAL_SIG_GRID_COLS, Math.floor(MAX_MANUAL_SIG_PICK_COUNT / rows));
+    pickCount = rows * cols;
+    if (pickCount < MIN_MANUAL_SIG_PICK_COUNT || pickCount > MAX_MANUAL_SIG_PICK_COUNT) {
+      rows = 1;
+      cols = MAX_MANUAL_SIG_PICK_COUNT;
+      pickCount = cols;
+    }
+  }
+  return { rows, cols, pickCount };
+}
+
+export function readManualSigPanelOrientationFromOverlaySettings(
+  os: Record<string, unknown> | undefined | null
+): SigSalesPanelOrientation {
+  if (!os || typeof os !== "object") return "portrait";
+  const raw = os[MANUAL_SIG_PANEL_ORIENTATION_KEY];
+  if (raw === "landscape" || raw === "portrait") return raw;
+  /** 기존 방송 결과 카드는 세로 프레임 */
+  return "portrait";
+}
+
+export function readManualSigGridFromOverlaySettings(
+  os: Record<string, unknown> | undefined | null
+): ManualSigGrid {
+  const pickFallback = (() => {
+    if (!os || typeof os !== "object") return DEFAULT_MANUAL_SIG_PICK_COUNT;
+    const direct = os[MANUAL_SIG_PICK_COUNT_KEY];
+    if (direct != null && direct !== "") return clampManualSigPickCount(direct);
+    const wb = os[MANUAL_SIG_WORKBENCH_KEY];
+    if (wb && typeof wb === "object") {
+      const fromWb = (wb as Record<string, unknown>).pickCount;
+      if (fromWb != null && fromWb !== "") return clampManualSigPickCount(fromWb);
+    }
+    return DEFAULT_MANUAL_SIG_PICK_COUNT;
+  })();
+  if (!os || typeof os !== "object") {
+    return normalizeManualSigGrid(DEFAULT_MANUAL_SIG_GRID_ROWS, pickFallback);
+  }
+  const rowsRaw = os[MANUAL_SIG_GRID_ROWS_KEY];
+  const colsRaw = os[MANUAL_SIG_GRID_COLS_KEY];
+  if (rowsRaw == null && colsRaw == null) {
+    return normalizeManualSigGrid(1, pickFallback);
+  }
+  return normalizeManualSigGrid(rowsRaw ?? 1, colsRaw ?? pickFallback);
+}
+
+/** 판매완료 칸 금액 합. 한방 완료면 한방 금액(칸 합산가)을 쓴다. */
+export function computeManualSoldTotal(
+  prices: number[],
+  soldFlags: boolean[],
+  opts?: { oneShotSold?: boolean; oneShotPrice?: number }
+): number {
+  let sum = 0;
+  const n = Math.min(prices.length, soldFlags.length);
+  for (let i = 0; i < n; i++) {
+    if (soldFlags[i]) sum += Math.max(0, Math.floor(Number(prices[i]) || 0));
+  }
+  if (opts?.oneShotSold) {
+    const shot = Math.max(0, Math.floor(Number(opts.oneShotPrice) || 0));
+    if (shot > 0) return shot;
+  }
+  return sum;
+}
 
 export function clampManualSigPickCount(raw: unknown): number {
   const n = Math.floor(Number(raw));
@@ -62,15 +169,7 @@ export function clampManualSigPickCount(raw: unknown): number {
 export function readManualSigPickCountFromOverlaySettings(
   os: Record<string, unknown> | undefined | null
 ): number {
-  if (!os || typeof os !== "object") return DEFAULT_MANUAL_SIG_PICK_COUNT;
-  const direct = os[MANUAL_SIG_PICK_COUNT_KEY];
-  if (direct != null && direct !== "") return clampManualSigPickCount(direct);
-  const wb = os[MANUAL_SIG_WORKBENCH_KEY];
-  if (wb && typeof wb === "object") {
-    const fromWb = (wb as Record<string, unknown>).pickCount;
-    if (fromWb != null && fromWb !== "") return clampManualSigPickCount(fromWb);
-  }
-  return DEFAULT_MANUAL_SIG_PICK_COUNT;
+  return readManualSigGridFromOverlaySettings(os).pickCount;
 }
 
 export function emptyManualSoldFlags(count = DEFAULT_MANUAL_SIG_PICK_COUNT): boolean[] {

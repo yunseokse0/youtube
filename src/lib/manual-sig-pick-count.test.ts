@@ -9,10 +9,11 @@ import {
 } from "@/lib/manual-sig-workbench";
 
 describe("manual sig pick count", () => {
-  it("clamps to 2~20", () => {
+  it("clamps to 2~36", () => {
     expect(clampManualSigPickCount(1)).toBe(MIN_MANUAL_SIG_PICK_COUNT);
     expect(clampManualSigPickCount(99)).toBe(MAX_MANUAL_SIG_PICK_COUNT);
     expect(clampManualSigPickCount(8)).toBe(8);
+    expect(MAX_MANUAL_SIG_PICK_COUNT).toBe(36);
   });
 
   it("resizes drafts and validates N filled rows", () => {
