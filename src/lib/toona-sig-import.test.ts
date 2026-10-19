@@ -68,6 +68,34 @@ describe("mapToonaSignaturesToSigItems", () => {
       isActive: false,
     });
   });
+
+  it("이미지 없는 시그는 toona 기본 이미지로 채운다", () => {
+    const items = mapToonaSignaturesToSigItems(
+      [
+        { id: "a", name: "애교", triggerAmount: 1000, imageUrl: "/uploads/own.gif" },
+        { id: "b", name: "댄스", triggerAmount: 2000, imageUrl: null },
+        { id: "c", name: "빈칸", triggerAmount: 3000, imageUrl: "  " },
+      ],
+      "http://localhost:4000",
+      "/uploads/k/default.gif"
+    );
+    expect(items.find((x) => x.name === "애교")?.imageUrl).toBe("http://localhost:4000/uploads/own.gif");
+    expect(items.find((x) => x.name === "댄스")?.imageUrl).toBe(
+      "http://localhost:4000/uploads/k/default.gif"
+    );
+    expect(items.find((x) => x.name === "빈칸")?.imageUrl).toBe(
+      "http://localhost:4000/uploads/k/default.gif"
+    );
+  });
+
+  it("기본 이미지도 없으면 imageUrl은 빈 문자열", () => {
+    const items = mapToonaSignaturesToSigItems(
+      [{ id: "a", name: "댄스", imageUrl: "" }],
+      "http://localhost:4000",
+      null
+    );
+    expect(items[0]?.imageUrl).toBe("");
+  });
 });
 
 describe("applyToonaSigItemsToInventory", () => {

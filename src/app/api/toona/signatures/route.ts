@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { resolveWriteUserId, writeUserIdErrorResponse } from "@/app/api/_shared/user-id";
 import { fetchToonaSignaturesViaHubSession } from "@/lib/toona-hub-client";
 import {
+  fetchToonaDefaultAlertImageUrl,
   mapToonaSignaturesToSigItems,
   normalizeToonaApiBaseUrl,
   type ToonaSignatureRow,
@@ -91,6 +92,7 @@ export async function POST(req: NextRequest) {
     token?: string;
     streamKey?: string | null;
     error?: string;
+    streamer?: { defaultAlertImageUrl?: string | null } | null;
   };
 
   if (!loginRes.ok || !loginJson.token) {
@@ -140,7 +142,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const items = mapToonaSignaturesToSigItems(sigJson.signatures || [], baseUrl);
+  const fromLogin = String(loginJson.streamer?.defaultAlertImageUrl || "").trim();
+  const defaultAlertImageUrl =
+    fromLogin ||
+    (await fetchToonaDefaultAlertImageUrl(baseUrl, streamKey, {
+      Authorization: `Bearer ${loginJson.token}`,
+    }));
+  const items = mapToonaSignaturesToSigItems(
+    sigJson.signatures || [],
+    baseUrl,
+    defaultAlertImageUrl
+  );
 
   return json({
     ok: true,

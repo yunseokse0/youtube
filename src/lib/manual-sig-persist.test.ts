@@ -5,7 +5,13 @@ import {
   mergeOverlaySettingsPreservingObsText,
   mergeSigSalesManualIntoLocalState,
 } from "@/lib/state";
-import { MANUAL_SIG_DRAFT_STATE_KEY } from "@/lib/manual-sig-workbench";
+import {
+  MANUAL_SIG_DRAFT_STATE_KEY,
+  MANUAL_SIG_GRID_COLS_KEY,
+  MANUAL_SIG_GRID_ROWS_KEY,
+  MANUAL_SIG_PANEL_ORIENTATION_KEY,
+  MANUAL_SIG_PICK_COUNT_KEY,
+} from "@/lib/manual-sig-workbench";
 import { OBS_TEXT_OVERLAY_STATE_KEY, defaultObsTextRegistry } from "@/lib/obs-text-overlay";
 import { MANUAL_OVERLAY_SESSION_ID } from "@/lib/sig-sales-manual-round";
 import type { AppState } from "@/types";
@@ -44,6 +50,35 @@ describe("buildSigSalesManualApiPatch", () => {
     expect(patch.overlayPresets).toBeUndefined();
     expect(Array.isArray(patch.sigInventory)).toBe(true);
     expect(patch.rouletteState).toBeUndefined();
+  });
+
+  it("includes pick count and panel grid keys in overlay patch", () => {
+    const base = defaultState();
+    const next: AppState = {
+      ...base,
+      overlaySettings: {
+        [MANUAL_SIG_PICK_COUNT_KEY]: 8,
+        [MANUAL_SIG_GRID_ROWS_KEY]: 2,
+        [MANUAL_SIG_GRID_COLS_KEY]: 4,
+        [MANUAL_SIG_PANEL_ORIENTATION_KEY]: "portrait",
+        [MANUAL_SIG_DRAFT_STATE_KEY]: {
+          inputMode: "inventory",
+          drafts: [],
+          oneShotName: "한방",
+          oneShotPriceInput: "100",
+          oneShotImageUrl: "",
+          sigSoldFlags: Array.from({ length: 8 }, () => false),
+          oneShotMarkSold: false,
+        },
+      },
+      updatedAt: 789,
+    };
+    const patch = buildSigSalesManualApiPatch(next, "finalent") as Record<string, unknown>;
+    const os = patch.overlaySettings as Record<string, unknown>;
+    expect(os[MANUAL_SIG_PICK_COUNT_KEY]).toBe(8);
+    expect(os[MANUAL_SIG_GRID_ROWS_KEY]).toBe(2);
+    expect(os[MANUAL_SIG_GRID_COLS_KEY]).toBe(4);
+    expect(os[MANUAL_SIG_PANEL_ORIENTATION_KEY]).toBe("portrait");
   });
 
   it("omitSigInventory skips inventory in patch", () => {

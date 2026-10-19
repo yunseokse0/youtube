@@ -1,4 +1,9 @@
-import { mapToonaSignaturesToSigItems, normalizeToonaApiBaseUrl, type ToonaSignatureRow } from "@/lib/toona-sig-import";
+import {
+  fetchToonaDefaultAlertImageUrl,
+  mapToonaSignaturesToSigItems,
+  normalizeToonaApiBaseUrl,
+  type ToonaSignatureRow,
+} from "@/lib/toona-sig-import";
 import { ingestErrorVisibleAfterLink } from "@/lib/toona-hub-ingest-error";
 import { getToonaApiBaseUrl, getYoutubePublicBaseUrl, normalizePublicBaseUrl } from "@/lib/toona-link";
 import { normalizeContributionFormula } from "@/lib/contribution-formula";
@@ -207,11 +212,14 @@ export async function fetchToonaSignaturesViaHubSession(
   const baseUrl = normalizeToonaApiBaseUrl(session.baseUrl) || session.baseUrl;
   const streamKey = session.streamKey;
   try {
-    const sigRes = await fetchToonaHubWithIngestRetry(
-      `${baseUrl}/api/signatures/${encodeURIComponent(streamKey)}`,
-      session,
-      25_000
-    );
+    const [sigRes, defaultAlertImageUrl] = await Promise.all([
+      fetchToonaHubWithIngestRetry(
+        `${baseUrl}/api/signatures/${encodeURIComponent(streamKey)}`,
+        session,
+        25_000
+      ),
+      fetchToonaDefaultAlertImageUrl(baseUrl, streamKey),
+    ]);
     const sigJson = (await sigRes.json().catch(() => ({}))) as {
       signatures?: ToonaSignatureRow[];
       error?: string;
@@ -222,7 +230,11 @@ export async function fetchToonaSignaturesViaHubSession(
         error: sigJson.error || `signatures_failed HTTP ${sigRes.status}`,
       };
     }
-    const items = mapToonaSignaturesToSigItems(sigJson.signatures || [], baseUrl);
+    const items = mapToonaSignaturesToSigItems(
+      sigJson.signatures || [],
+      baseUrl,
+      defaultAlertImageUrl
+    );
     return {
       ok: true,
       items,

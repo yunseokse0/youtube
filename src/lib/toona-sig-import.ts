@@ -38,9 +38,14 @@ export function normalizeToonaApiBaseUrl(raw: string): string | null {
   }
 }
 
+/**
+ * toona 시그 → youtube SigItem.
+ * @param defaultAlertImageUrl 스트리머 「기본 이미지」— 시그 imageUrl 비어 있을 때 사용
+ */
 export function mapToonaSignaturesToSigItems(
   signatures: ToonaSignatureRow[],
-  apiBaseUrl: string
+  apiBaseUrl: string,
+  defaultAlertImageUrl?: string | null
 ): SigItem[] {
   const sorted = [...(signatures || [])].sort(
     (a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0)
@@ -48,6 +53,7 @@ export function mapToonaSignaturesToSigItems(
   const out: SigItem[] = [];
   const seenNames = new Set<string>();
   const seenIds = new Set<string>();
+  const fallbackImage = resolveToonaAssetUrl(defaultAlertImageUrl, apiBaseUrl);
 
   for (const row of sorted) {
     const name = String(row.name || "").trim();
@@ -59,11 +65,12 @@ export function mapToonaSignaturesToSigItems(
     const id = rawId ? `toona_${rawId}` : `toona_${nameKey.slice(0, 40)}_${out.length}`;
     if (seenIds.has(id) || id === ONE_SHOT_SIG_ID) continue;
 
+    const ownImage = resolveToonaAssetUrl(row.imageUrl, apiBaseUrl);
     out.push({
       id,
       name,
       price: Math.max(0, Math.floor(Number(row.triggerAmount) || 0)),
-      imageUrl: resolveToonaAssetUrl(row.imageUrl, apiBaseUrl),
+      imageUrl: ownImage || fallbackImage,
       memberId: "",
       maxCount: 1,
       soldCount: 0,
@@ -75,6 +82,31 @@ export function mapToonaSignaturesToSigItems(
   }
 
   return out;
+}
+
+/** toona GET /api/streamers/:streamKey/meta 의 기본 알림 이미지 */
+export async function fetchToonaDefaultAlertImageUrl(
+  apiBaseUrl: string,
+  streamKey: string,
+  headers?: Record<string, string>
+): Promise<string> {
+  const base = String(apiBaseUrl || "")
+    .trim()
+    .replace(/\/$/, "");
+  const key = String(streamKey || "").trim();
+  if (!base || !key) return "";
+  try {
+    const res = await fetch(`${base}/api/streamers/${encodeURIComponent(key)}/meta`, {
+      method: "GET",
+      headers: { Accept: "application/json", ...(headers || {}) },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) return "";
+    const json = (await res.json().catch(() => ({}))) as { defaultAlertImageUrl?: string | null };
+    return String(json.defaultAlertImageUrl || "").trim();
+  } catch {
+    return "";
+  }
 }
 
 /**

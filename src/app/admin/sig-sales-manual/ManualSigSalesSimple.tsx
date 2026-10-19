@@ -18,7 +18,10 @@ import { DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE, resolveSigOverlayCardImageUrl } fro
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import SigSalesStampAndOneShotPanel from "@/components/admin/SigSalesStampAndOneShotPanel";
 import { listActiveManualSigPool } from "@/lib/manual-sig-active-pool";
-import { readManualSigBroadcastFromState } from "@/lib/manual-sig-broadcast-state";
+import {
+  mergeManualSigBroadcastIntoOverlaySettings,
+  readManualSigBroadcastFromState,
+} from "@/lib/manual-sig-broadcast-state";
 import {
   buildManualSigBroadcastState,
   buildManualSigSalesConfirmState,
@@ -26,7 +29,6 @@ import {
   MANUAL_REROLL_MIN_POOL,
   pickRandomManualSigBundle,
   readManualSigDraftFromState,
-  readManualSigPickCount,
   resolveManualOneShotDisplayFromState,
   resolveManualOverlaySelectedSigs,
   buildManualPanelSaleRows,
@@ -68,6 +70,11 @@ export default function ManualSigSalesSimple() {
   const [authReady, setAuthReady] = useState(false);
   const [state, setState] = useState<AppState | null>(null);
   const [memberFilterId, setMemberFilterId] = useState("");
+  /** 행·열·개수 입력 중 중간값이 바로 저장되어 기본 5로 튕기지 않게 로컬 초안 */
+  const [rowsDraft, setRowsDraft] = useState("1");
+  const [colsDraft, setColsDraft] = useState("5");
+  const [pickCountDraft, setPickCountDraft] = useState("5");
+  const [priceDraftByIdx, setPriceDraftByIdx] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [defaultPrice, setDefaultPrice] = useState("10000");
@@ -186,6 +193,11 @@ export default function ManualSigSalesSimple() {
     [overlayOs]
   );
   const pickCount = panelGrid.pickCount;
+  useEffect(() => {
+    setRowsDraft(String(panelGrid.rows));
+    setColsDraft(String(panelGrid.cols));
+    setPickCountDraft(String(panelGrid.pickCount));
+  }, [panelGrid.rows, panelGrid.cols, panelGrid.pickCount]);
   const draft = useMemo(() => readManualSigDraftFromState(state), [state]);
   const displaySigs = useMemo(
     () => resolveManualOverlaySelectedSigs(state, userId),
@@ -252,7 +264,30 @@ export default function ManualSigSalesSimple() {
           const inventory = isRicherSigInventory(remote.sigInventory, next.sigInventory)
             ? remote.sigInventory
             : next.sigInventory;
-          setState({ ...remote, sigInventory: inventory });
+          const nextOs =
+            next.overlaySettings && typeof next.overlaySettings === "object"
+              ? (next.overlaySettings as Record<string, unknown>)
+              : {};
+          const remoteOs =
+            remote.overlaySettings && typeof remote.overlaySettings === "object"
+              ? (remote.overlaySettings as Record<string, unknown>)
+              : {};
+          /** 개수·그리드 키가 GET에 아직 없으면 방금 저장값을 유지(기본 5 회귀 방지) */
+          const overlaySettings = {
+            ...remoteOs,
+            ...Object.fromEntries(
+              [
+                MANUAL_SIG_PICK_COUNT_KEY,
+                MANUAL_SIG_GRID_ROWS_KEY,
+                MANUAL_SIG_GRID_COLS_KEY,
+                MANUAL_SIG_PANEL_ORIENTATION_KEY,
+                MANUAL_SIG_DRAFT_STATE_KEY,
+              ]
+                .filter((k) => nextOs[k] != null && nextOs[k] !== "")
+                .map((k) => [k, nextOs[k]])
+            ),
+          } as AppState["overlaySettings"];
+          setState({ ...remote, sigInventory: inventory, overlaySettings });
         }
       }
       setToast(saved.ok ? okMsg : failMsg);
@@ -322,6 +357,9 @@ export default function ManualSigSalesSimple() {
       if (!state) return;
       const grid = normalizeManualSigGrid(rowsRaw, colsRaw);
       const n = grid.pickCount;
+      setRowsDraft(String(grid.rows));
+      setColsDraft(String(grid.cols));
+      setPickCountDraft(String(n));
       const prevOs =
         state.overlaySettings && typeof state.overlaySettings === "object"
           ? (state.overlaySettings as Record<string, unknown>)
@@ -353,6 +391,75 @@ export default function ManualSigSalesSimple() {
       );
     },
     [state, persistState]
+  );
+
+  /** 칸별 판매가 — 초안·OBS 당첨 금액 모두 갱신 */
+  const onCommitCellPrice = useCallback(
+    async (draftIdx: number, priceRaw: string) => {
+      if (!state || draftIdx < 0 || draftIdx >= pickCount) return;
+      const price = Math.max(0, Math.floor(Number(String(priceRaw).replace(/[^\d]/g, "")) || 0));
+      const row = saleRows.find((r) => r.draftIdx === draftIdx);
+      if (!row) return;
+      if (row.price === price) return;
+      const prevDraft = readManualSigDraftFromState(state);
+      const drafts = resizeManualDrafts(prevDraft?.drafts || [], pickCount);
+      const cur = drafts[draftIdx] || {
+        sourceSigId: "",
+        name: "",
+        priceInput: "",
+        imageUrl: "",
+      };
+      drafts[draftIdx] = {
+        ...cur,
+        name: cur.name || row.name,
+        imageUrl: cur.imageUrl || row.imageUrl,
+        priceInput: String(price),
+      };
+      const persistDrafts = normalizeManualSigDraftPersist(
+        {
+          inputMode: prevDraft?.inputMode || "inventory",
+          drafts,
+          oneShotName: prevDraft?.oneShotName || "한방 시그",
+          oneShotPriceInput: prevDraft?.oneShotPriceInput || "",
+          oneShotImageUrl: prevDraft?.oneShotImageUrl || DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
+          sigSoldFlags: soldFlags,
+          oneShotMarkSold,
+        },
+        pickCount
+      );
+      let next = buildManualSigSoldPersistState(state, {
+        sigSoldFlags: soldFlags,
+        oneShotMarkSold,
+        persistDrafts,
+        userId,
+      });
+      const broadcast = readManualSigBroadcastFromState(next);
+      if (broadcast?.selectedSigs?.length) {
+        const selectedSigs = broadcast.selectedSigs.map((s, i) =>
+          i === draftIdx ? { ...s, price } : s
+        );
+        next = {
+          ...next,
+          overlaySettings: mergeManualSigBroadcastIntoOverlaySettings(next, {
+            ...broadcast,
+            selectedSigs,
+          }),
+          updatedAt: Date.now(),
+        };
+      }
+      setBusy(true);
+      try {
+        await persistState(
+          next,
+          `${row.name} 가격 ${price.toLocaleString("ko-KR")}원`,
+          "가격 저장이 지연됩니다.",
+          { omitSigInventory: true }
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [state, pickCount, saleRows, soldFlags, oneShotMarkSold, userId, persistState]
   );
 
   const onConfirmSales = useCallback(
@@ -795,6 +902,29 @@ export default function ManualSigSalesSimple() {
         />
 
         <section className="rounded-xl border border-white/10 bg-black/40 p-4 space-y-3">
+          <label className="block text-xs text-neutral-300">
+            당첨 시그 개수 ({MIN_MANUAL_SIG_PICK_COUNT}~{MAX_MANUAL_SIG_PICK_COUNT}, 기본 5)
+            <input
+              type="number"
+              min={MIN_MANUAL_SIG_PICK_COUNT}
+              max={MAX_MANUAL_SIG_PICK_COUNT}
+              value={pickCountDraft}
+              disabled={busy}
+              onChange={(e) => setPickCountDraft(e.target.value)}
+              onBlur={() => {
+                const n = Math.floor(Number(pickCountDraft));
+                if (!Number.isFinite(n) || n === pickCount) {
+                  setPickCountDraft(String(pickCount));
+                  return;
+                }
+                void persistPanelLayout(1, n, panelOrientation);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+              className="mt-1 w-full rounded bg-neutral-800 px-2 py-2 text-sm"
+            />
+          </label>
           <div className="grid grid-cols-2 gap-2">
             <label className="block text-xs text-neutral-300">
               행 ({MIN_MANUAL_SIG_GRID_ROWS}~{MAX_MANUAL_SIG_GRID_ROWS})
@@ -802,11 +932,20 @@ export default function ManualSigSalesSimple() {
                 type="number"
                 min={MIN_MANUAL_SIG_GRID_ROWS}
                 max={MAX_MANUAL_SIG_GRID_ROWS}
-                value={panelGrid.rows}
+                value={rowsDraft}
                 disabled={busy}
-                onChange={(e) =>
-                  void persistPanelLayout(Number(e.target.value), panelGrid.cols, panelOrientation)
-                }
+                onChange={(e) => setRowsDraft(e.target.value)}
+                onBlur={() => {
+                  const r = Math.floor(Number(rowsDraft));
+                  if (!Number.isFinite(r) || r === panelGrid.rows) {
+                    setRowsDraft(String(panelGrid.rows));
+                    return;
+                  }
+                  void persistPanelLayout(r, panelGrid.cols, panelOrientation);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                }}
                 className="mt-1 w-full rounded bg-neutral-800 px-2 py-2 text-sm"
               />
             </label>
@@ -816,17 +955,26 @@ export default function ManualSigSalesSimple() {
                 type="number"
                 min={MIN_MANUAL_SIG_GRID_COLS}
                 max={MAX_MANUAL_SIG_GRID_COLS}
-                value={panelGrid.cols}
+                value={colsDraft}
                 disabled={busy}
-                onChange={(e) =>
-                  void persistPanelLayout(panelGrid.rows, Number(e.target.value), panelOrientation)
-                }
+                onChange={(e) => setColsDraft(e.target.value)}
+                onBlur={() => {
+                  const c = Math.floor(Number(colsDraft));
+                  if (!Number.isFinite(c) || c === panelGrid.cols) {
+                    setColsDraft(String(panelGrid.cols));
+                    return;
+                  }
+                  void persistPanelLayout(panelGrid.rows, c, panelOrientation);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                }}
                 className="mt-1 w-full rounded bg-neutral-800 px-2 py-2 text-sm"
               />
             </label>
           </div>
           <p className="text-[11px] text-neutral-400">
-            판넬 {panelGrid.rows}×{panelGrid.cols} · {pickCount}칸 (최소 {MIN_MANUAL_SIG_PICK_COUNT} · 최대 {MAX_MANUAL_SIG_PICK_COUNT})
+            판넬 {panelGrid.rows}×{panelGrid.cols} · {pickCount}칸 (최소 {MIN_MANUAL_SIG_PICK_COUNT} · 최대 {MAX_MANUAL_SIG_PICK_COUNT}). 개수·행·열은 입력 후 Enter/포커스 아웃 시 저장됩니다.
           </p>
           <div className="flex gap-2">
             <button
@@ -991,22 +1139,25 @@ export default function ManualSigSalesSimple() {
               const row = saleRows.find((r) => r.draftIdx === i);
               const sold = Boolean(soldFlags[i]);
               return (
-                <button
+                <div
                   key={`cell_${i}`}
-                  type="button"
-                  disabled={busy || !row || phase === "CONFIRMED"}
-                  onClick={() => {
-                    if (!row) return;
-                    void onToggleSigSold(i, !sold);
-                  }}
                   className={`relative min-h-[8.5rem] overflow-hidden rounded-lg border text-left ${
                     sold
                       ? "border-rose-500/50 bg-[#0c0c10]"
-                      : "border-white/12 bg-[#121218] hover:border-fuchsia-400/40"
+                      : "border-white/12 bg-[#121218]"
                   }`}
-                  title={row ? "클릭하면 판매완료 전환" : "빈 칸 — ROLL로 채워 주세요"}
+                  title={row ? undefined : "빈 칸 — ROLL로 채워 주세요"}
                 >
-                  <div className="relative h-[4.75rem] w-full bg-black/40">
+                  <button
+                    type="button"
+                    disabled={busy || !row || phase === "CONFIRMED"}
+                    onClick={() => {
+                      if (!row) return;
+                      void onToggleSigSold(i, !sold);
+                    }}
+                    className="relative block h-[4.75rem] w-full bg-black/40 disabled:opacity-60"
+                    title={row ? "클릭하면 판매완료 전환" : undefined}
+                  >
                     {row?.imageUrl ? (
                       <SigSaleMedia
                         src={resolveSigOverlayCardImageUrl(row.name, row.imageUrl, userId)}
@@ -1019,27 +1170,62 @@ export default function ManualSigSalesSimple() {
                         sizes="160px"
                       />
                     ) : null}
-                  </div>
+                  </button>
                   <div className="px-2 py-1.5">
                     <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">SIG</div>
                     <div className="line-clamp-2 text-sm font-bold text-white">{row?.name || "빈 칸"}</div>
                     {row ? (
-                      <div className="mt-1 text-sm font-black tabular-nums text-yellow-300">
-                        {formatSigSalesWon(row.price)}
-                      </div>
+                      <label className="mt-1 block">
+                        <span className="sr-only">칸 가격(원)</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          disabled={busy || phase === "CONFIRMED"}
+                          value={
+                            priceDraftByIdx[i] != null
+                              ? priceDraftByIdx[i]
+                              : String(row.price || "")
+                          }
+                          onChange={(e) =>
+                            setPriceDraftByIdx((prev) => ({ ...prev, [i]: e.target.value }))
+                          }
+                          onBlur={() => {
+                            const raw =
+                              priceDraftByIdx[i] != null ? priceDraftByIdx[i]! : String(row.price || "");
+                            void onCommitCellPrice(i, raw).then(() => {
+                              setPriceDraftByIdx((prev) => {
+                                const next = { ...prev };
+                                delete next[i];
+                                return next;
+                              });
+                            });
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          className="w-full rounded border border-yellow-400/30 bg-black/40 px-1.5 py-0.5 text-sm font-black tabular-nums text-yellow-300"
+                          title="칸별 판매가 (원)"
+                        />
+                      </label>
                     ) : null}
                   </div>
                   {sold ? (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/70">
+                    <button
+                      type="button"
+                      disabled={busy || phase === "CONFIRMED"}
+                      onClick={() => void onToggleSigSold(i, false)}
+                      className="absolute inset-0 flex items-center justify-center bg-black/70"
+                      title="클릭하면 판매완료 해제"
+                    >
                       <span
                         className="rotate-[-12deg] border-[3px] border-rose-500 px-2 py-0.5 text-sm font-black tracking-wider text-rose-400"
                         style={{ textShadow: "0 0 12px rgba(244,63,94,0.8)" }}
                       >
                         SOLD OUT
                       </span>
-                    </div>
+                    </button>
                   ) : null}
-                </button>
+                </div>
               );
             })}
           </div>

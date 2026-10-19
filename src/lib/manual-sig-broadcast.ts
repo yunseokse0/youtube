@@ -784,7 +784,8 @@ export function buildManualPanelSaleRows(
     rows.push({
       draftIdx: i,
       name,
-      price: preferPositiveSigPrice(hydrated?.price, parsedRow?.price),
+      /** 칸별 수동 가격(초안)을 인벤 기본가보다 우선 */
+      price: preferPositiveSigPrice(parsedRow?.price, hydrated?.price),
       imageUrl: String(hydrated?.imageUrl || draftRow?.imageUrl || parsedRow?.imageUrl || "").trim(),
     });
   }

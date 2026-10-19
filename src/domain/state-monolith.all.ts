@@ -81,7 +81,14 @@ import { mergeDonorRowFields, syncMemberTotalsFromDonors, syncAndRepairMemberTot
 import { guardMemberTotalsAgainstAccidentalZeroWipe, wouldAccidentallyZeroRemainingMembers } from "@/domain/guards/zero-wipe-guard";
 import { mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
 import { isGroupSplitDonorListMutation } from "@/lib/donation/group-split-donation";
-import { MANUAL_SIG_DRAFT_STATE_KEY } from "@/lib/manual-sig-workbench";
+import {
+  MANUAL_SIG_DRAFT_STATE_KEY,
+  MANUAL_SIG_GRID_COLS_KEY,
+  MANUAL_SIG_GRID_ROWS_KEY,
+  MANUAL_SIG_PANEL_ORIENTATION_KEY,
+  MANUAL_SIG_PICK_COUNT_KEY,
+  MANUAL_SIG_WORKBENCH_KEY,
+} from "@/lib/manual-sig-workbench";
 import { OBS_TEXT_OVERLAY_STATE_KEY, normalizeObsTextRegistry, type ObsTextOverlayRegistry } from "@/lib/obs-text-overlay";
 import { slimSigInventoryForWire } from "@/lib/state-wire-slim";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
@@ -3723,6 +3730,18 @@ export function buildSigSalesManualApiPatch(
   }
   if (manualBroadcast && typeof manualBroadcast === "object") {
     overlayPatch[MANUAL_SIG_BROADCAST_STATE_KEY] = manualBroadcast;
+  }
+  /** 당첨 개수·판넬 그리드 — 빠지면 저장 후 GET이 기본 5로 되돌림 */
+  for (const key of [
+    MANUAL_SIG_PICK_COUNT_KEY,
+    MANUAL_SIG_GRID_ROWS_KEY,
+    MANUAL_SIG_GRID_COLS_KEY,
+    MANUAL_SIG_PANEL_ORIENTATION_KEY,
+    MANUAL_SIG_WORKBENCH_KEY,
+  ] as const) {
+    if (os[key] != null && os[key] !== "") {
+      overlayPatch[key] = os[key];
+    }
   }
   if (Object.keys(overlayPatch).length > 0) {
     patch.overlaySettings = overlayPatch as AppState["overlaySettings"];
