@@ -264,10 +264,13 @@ export default function ManualSigSalesSimple() {
       if (resolved) return resolved.price;
       return Number(readManualSigBroadcastFromState(state)?.oneShotResult?.price || 0);
     })();
-    return computeManualSoldTotal(prices, soldFlags, {
+    const sold = computeManualSoldTotal(prices, soldFlags, {
       oneShotSold: oneShotMarkSold,
       oneShotPrice,
     });
+    /** 한방 카드 없이 하단 TOTAL에 금액 갈음(미판매 시 한방가) */
+    if (sold > 0) return sold;
+    return Math.max(0, Math.floor(oneShotPrice || 0));
   }, [pickCount, saleRows, soldFlags, oneShotMarkSold, state, displaySigs, userId]);
 
   const persistState = useCallback(

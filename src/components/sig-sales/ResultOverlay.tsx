@@ -99,7 +99,8 @@ export default function ResultOverlay({
       return soldOverrideSet.has(item.id) || soldOverrideSet.has(canon);
     });
   })();
-  const soldAllAtOnceForOneShot = Boolean(oneShot && showOneShotReveal && oneShotSold);
+  /** 한방 카드 숨김이어도 한방 판매완료면 당첨 칸 전부 SOLD 스탬프 */
+  const soldAllAtOnceForOneShot = Boolean(oneShot && oneShotSold);
 
   const oneShotTrailing =
     oneShot && showOneShotReveal ? (

@@ -205,6 +205,11 @@ export default function ManualSigOverlaySimple() {
       oneShotPrice: oneShot?.price,
     });
   }, [selected, soldOverrideSet, oneShot]);
+  /** 한방 카드 대신 하단 TOTAL에 금액 표시(미판매 시 한방가, 판매 후 누적) */
+  const panelTotalAmount = useMemo(() => {
+    if (soldTotalAmount > 0) return soldTotalAmount;
+    return Math.max(0, Math.floor(Number(oneShot?.price) || 0));
+  }, [soldTotalAmount, oneShot?.price]);
   const resultRowLayout = useMemo(
     () =>
       layoutSigOverlayResultGrid({
@@ -283,7 +288,7 @@ export default function ManualSigOverlaySimple() {
               `${Array.isArray(state?.members) ? state.members.length : 0}인 참여`,
               sigSalesPanelStatusLabel(phase),
             ]}
-            totalAmount={soldTotalAmount}
+            totalAmount={panelTotalAmount}
           >
             <ResultOverlay
               visible
@@ -291,7 +296,7 @@ export default function ManualSigOverlaySimple() {
               soldOutStampUrl={soldOutStampUrl}
               oneShot={oneShot}
               signImageUrl={signImageUrl}
-              showOneShotReveal={Boolean(oneShot)}
+              showOneShotReveal={false}
               cardScalePct={resultRowLayout.cardScalePct}
               className="w-full max-w-full"
               showConfirmedBadge={false}
@@ -302,7 +307,7 @@ export default function ManualSigOverlaySimple() {
               panelGridCols={panelGrid.cols}
               panelOrientation={panelOrientation}
               showSoldTotal={false}
-              soldTotalAmount={soldTotalAmount}
+              soldTotalAmount={panelTotalAmount}
               programSkin
             />
           </SigSalesPanelChrome>
