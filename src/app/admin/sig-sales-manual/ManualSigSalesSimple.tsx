@@ -393,14 +393,12 @@ export default function ManualSigSalesSimple() {
     [state, persistState]
   );
 
-  /** 칸별 판매가 — 초안·OBS 당첨 금액 모두 갱신 */
+  /** 칸별 판매가 — ROLL 전에도 초안에 저장, ROLL 후면 OBS 당첨 금액도 갱신 */
   const onCommitCellPrice = useCallback(
     async (draftIdx: number, priceRaw: string) => {
       if (!state || draftIdx < 0 || draftIdx >= pickCount) return;
       const price = Math.max(0, Math.floor(Number(String(priceRaw).replace(/[^\d]/g, "")) || 0));
       const row = saleRows.find((r) => r.draftIdx === draftIdx);
-      if (!row) return;
-      if (row.price === price) return;
       const prevDraft = readManualSigDraftFromState(state);
       const drafts = resizeManualDrafts(prevDraft?.drafts || [], pickCount);
       const cur = drafts[draftIdx] || {
@@ -409,10 +407,12 @@ export default function ManualSigSalesSimple() {
         priceInput: "",
         imageUrl: "",
       };
+      const prevPrice = Math.max(0, Math.floor(Number(String(cur.priceInput || "").replace(/[^\d]/g, "")) || 0));
+      if (prevPrice === price && (!row || row.price === price)) return;
       drafts[draftIdx] = {
         ...cur,
-        name: cur.name || row.name,
-        imageUrl: cur.imageUrl || row.imageUrl,
+        name: cur.name || row?.name || "",
+        imageUrl: cur.imageUrl || row?.imageUrl || "",
         priceInput: String(price),
       };
       const persistDrafts = normalizeManualSigDraftPersist(
@@ -449,9 +449,10 @@ export default function ManualSigSalesSimple() {
       }
       setBusy(true);
       try {
+        const label = row?.name || `${draftIdx + 1}칸`;
         await persistState(
           next,
-          `${row.name} 가격 ${price.toLocaleString("ko-KR")}원`,
+          `${label} 가격 ${price.toLocaleString("ko-KR")}원`,
           "가격 저장이 지연됩니다.",
           { omitSigInventory: true }
         );
@@ -1037,6 +1038,65 @@ export default function ManualSigSalesSimple() {
               <span className="text-amber-300/90"> · 리롤하려면 {MANUAL_REROLL_MIN_POOL}개 이상 필요</span>
             )}
           </p>
+        </section>
+
+        <section className="rounded-xl border border-amber-400/35 bg-amber-950/25 p-4 space-y-3">
+          <div>
+            <p className="text-sm font-semibold text-amber-100">칸별 시그 금액(원)</p>
+            <p className="mt-1 text-[11px] text-neutral-400">
+              당첨 칸마다 판매가를 지정합니다. ROLL 전에도 저장되며, ROLL 후에는 OBS 당첨 금액에도 반영됩니다. Enter/포커스 아웃 시 저장.
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {Array.from({ length: pickCount }, (_, i) => {
+              const row = saleRows.find((r) => r.draftIdx === i);
+              const draftRow = draft?.drafts?.[i];
+              const draftPrice = String(draftRow?.priceInput || "").replace(/[^\d]/g, "");
+              const shown =
+                priceDraftByIdx[i] != null
+                  ? priceDraftByIdx[i]!
+                  : draftPrice || (row ? String(row.price || "") : "");
+              return (
+                <label
+                  key={`slot-price-${i}`}
+                  className="flex flex-col gap-1 rounded-lg border border-amber-400/20 bg-black/30 px-2.5 py-2 text-xs text-neutral-300"
+                >
+                  <span className="font-semibold text-amber-50/95">
+                    {i + 1}칸
+                    {row?.name ? (
+                      <span className="ml-1 font-normal text-neutral-400">· {row.name}</span>
+                    ) : (
+                      <span className="ml-1 font-normal text-neutral-500">· (ROLL 전)</span>
+                    )}
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    disabled={busy || phase === "CONFIRMED"}
+                    value={shown}
+                    placeholder="예: 10000"
+                    onChange={(e) =>
+                      setPriceDraftByIdx((prev) => ({ ...prev, [i]: e.target.value }))
+                    }
+                    onBlur={() => {
+                      const raw = priceDraftByIdx[i] != null ? priceDraftByIdx[i]! : shown;
+                      void onCommitCellPrice(i, raw).then(() => {
+                        setPriceDraftByIdx((prev) => {
+                          const next = { ...prev };
+                          delete next[i];
+                          return next;
+                        });
+                      });
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    }}
+                    className="rounded border border-yellow-400/35 bg-neutral-900 px-2 py-1.5 text-sm font-bold tabular-nums text-yellow-200"
+                  />
+                </label>
+              );
+            })}
+          </div>
         </section>
 
         <section className="rounded-xl border border-sky-400/30 bg-sky-950/30 p-4">
