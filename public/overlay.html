@@ -254,6 +254,71 @@
         }
         html.preview .t-unit { font-size: 11px; }
         html.preview .member-info { gap: 6px; }
+        html.preview .territory-legend {
+            width: 100%;
+            gap: 6px 10px;
+            padding: 0 4px;
+        }
+        html.preview .legend-item {
+            gap: 5px;
+            padding: 2px 7px;
+            font-size: 11px;
+        }
+        html.preview .legend-swatch { width: 8px; height: 8px; }
+        html.preview .legend-cm { font-size: 10px; }
+
+        .territory-legend {
+            width: 1040px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 8px 14px;
+            padding: 0 8px;
+            pointer-events: none;
+        }
+        .legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 8px;
+            border-radius: 999px;
+            background: rgba(0, 0, 0, 0.42);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1.2;
+            color: rgba(255, 255, 255, 0.92);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+            white-space: nowrap;
+        }
+        .legend-swatch {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35), 0 0 6px var(--neon-color, #888);
+            background: var(--neon-color, #888);
+        }
+        .legend-name {
+            max-width: 7.5em;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .legend-cm {
+            font-family: 'Cinzel', serif;
+            font-size: 12px;
+            font-weight: 800;
+            color: rgba(255, 255, 255, 0.95);
+            opacity: 0.95;
+        }
+        .legend-cm .unit {
+            font-family: 'Pretendard', sans-serif;
+            font-size: 10px;
+            font-weight: 600;
+            margin-left: 2px;
+            opacity: 0.8;
+        }
     </style>
     <script>
         (function () {
@@ -275,11 +340,13 @@
             <div class="wall wall-right"><div class="wall-text">벽</div></div>
             <div class="fx-layer" id="fxLayer"></div>
         </div>
+        <div class="territory-legend" id="territoryLegend" aria-label="멤버별 영토"></div>
     </div>
 
     <script>
         const board = document.getElementById('gameBoard');
         const fxLayer = document.getElementById('fxLayer');
+        const legendEl = document.getElementById('territoryLegend');
         let lastDataString = "";
         let lastRoster = null;
         let lastMembers = {};
@@ -290,6 +357,28 @@
         function formatCm(n) {
             const s = (Math.max(0, Number(n) || 0)).toFixed(1);
             return s.endsWith('.0') ? s.slice(0, -2) : s;
+        }
+        function renderLegend(order, roster) {
+            if (!legendEl) return;
+            const frag = document.createDocumentFragment();
+            (order || []).forEach((id) => {
+                const m = roster && roster[id];
+                if (!m || (Number(m.cm) || 0) <= 0) return;
+                const color = m.color || '#888888';
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                item.style.setProperty('--neon-color', color);
+                item.innerHTML =
+                    '<span class="legend-swatch" aria-hidden="true"></span>' +
+                    '<span class="legend-name"></span>' +
+                    '<span class="legend-cm"><span class="val"></span><span class="unit">cm</span></span>';
+                const nameNode = item.querySelector('.legend-name');
+                if (nameNode) nameNode.textContent = m.name || id;
+                const valNode = item.querySelector('.legend-cm .val');
+                if (valNode) valNode.textContent = formatCm(Math.max(0, Number(m.cm) || 0));
+                frag.appendChild(item);
+            });
+            legendEl.replaceChildren(frag);
         }
         const labelFitObserver = new ResizeObserver(() => fitTerritoryLabels());
         const FX_TERR_CLASSES = ['fx-slide'];
@@ -542,6 +631,7 @@
             lastRoster = cmNow;
             lastMembers = roster;
             lastOrder = order;
+            renderLegend(order, roster);
         }
 
         window.addEventListener("storage", fetchGameState);
