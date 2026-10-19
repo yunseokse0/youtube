@@ -13,7 +13,10 @@ import {
   shouldPreferLocalSigInventoryOverIncoming,
 } from "@/lib/state";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
-import { buildSigSalesManualOverlayUrl } from "@/lib/sig-sales-overlay-urls";
+import {
+  buildSigMenuOverlayUrl,
+  buildSigSalesManualOverlayUrl,
+} from "@/lib/sig-sales-overlay-urls";
 import { DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE, resolveSigOverlayCardImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import SigSalesStampAndOneShotPanel from "@/components/admin/SigSalesStampAndOneShotPanel";
@@ -182,6 +185,12 @@ export default function ManualSigSalesSimple() {
     return buildSigSalesManualOverlayUrl(window.location.origin, userId, {
       memberId: memberFilterId || undefined,
       sigResultScalePct: 92,
+    });
+  }, [userId, memberFilterId]);
+  const menuOverlayUrl = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return buildSigMenuOverlayUrl(window.location.origin, userId, {
+      memberId: memberFilterId || undefined,
     });
   }, [userId, memberFilterId]);
 
@@ -1279,11 +1288,11 @@ export default function ManualSigSalesSimple() {
               className="rounded-lg border border-sky-400/50 bg-sky-900/50 px-3 py-2 text-xs font-semibold text-sky-100"
               onClick={() => {
                 void copyTextToClipboard(overlayUrl).then((ok) =>
-                  setToast(ok ? "OBS URL 복사됨" : "복사 실패")
+                  setToast(ok ? "당첨 OBS URL 복사됨" : "복사 실패")
                 );
               }}
             >
-              OBS URL 복사
+              당첨 OBS URL 복사
             </button>
             <button
               type="button"
@@ -1291,11 +1300,38 @@ export default function ManualSigSalesSimple() {
               className="rounded-lg bg-sky-700 px-3 py-2 text-xs font-bold"
               onClick={() => window.open(overlayUrl, "_blank", "noopener,noreferrer")}
             >
-              OBS 미리보기
+              당첨 미리보기
+            </button>
+            <button
+              type="button"
+              disabled={!menuOverlayUrl}
+              className="rounded-lg border border-fuchsia-400/50 bg-fuchsia-900/40 px-3 py-2 text-xs font-semibold text-fuchsia-100"
+              onClick={() => {
+                void copyTextToClipboard(menuOverlayUrl).then((ok) =>
+                  setToast(ok ? "시그 메뉴 OBS URL 복사됨" : "복사 실패")
+                );
+              }}
+            >
+              메뉴 OBS URL 복사
+            </button>
+            <button
+              type="button"
+              disabled={!menuOverlayUrl}
+              className="rounded-lg bg-fuchsia-700 px-3 py-2 text-xs font-bold"
+              onClick={() => window.open(menuOverlayUrl, "_blank", "noopener,noreferrer")}
+            >
+              메뉴 미리보기
             </button>
           </div>
           {overlayUrl ? (
-            <code className="mt-2 block break-all text-[10px] text-neutral-500">{overlayUrl}</code>
+            <code className="mt-2 block break-all text-[10px] text-neutral-500">
+              당첨: {overlayUrl}
+            </code>
+          ) : null}
+          {menuOverlayUrl ? (
+            <code className="mt-1 block break-all text-[10px] text-neutral-500">
+              메뉴: {menuOverlayUrl}
+            </code>
           ) : null}
         </section>
             </div>
