@@ -291,6 +291,11 @@ import {
   setSigMatchDonationCountFrom,
 } from "@/lib/battle-donation-sync";
 import { normalizeMealGaugeEffects } from "@/lib/meal-gauge-effects";
+import {
+  parseSigMatchGaugeThemeId,
+  SIG_MATCH_GAUGE_THEME_IDS,
+  SIG_MATCH_GAUGE_THEMES,
+} from "@/lib/sig-match-gauge-theme";
 import { getVisibleAdminNavItems, isAdminNavSectionVisible, resolveNavKeyFromTargetId, resolveAdminNavKey, LEGACY_TO_NEW_KEY, type AdminNavKey, type AdminNavSubItem } from "@/app/admin/admin-nav-config";
 import {
   appendObsTextInstance,
@@ -1504,6 +1509,8 @@ function AdminPageInner() {
   const [battleScalePct, setBattleScalePct] = useState("100");
   /** 시그/식사 대전 오버레이 본문 max-width (%), URL contentWidthPct */
   const [battleContentWidthPct, setBattleContentWidthPct] = useState("100");
+  /** 시그 대전 게이지 테마 (URL theme) */
+  const [battleGaugeTheme, setBattleGaugeTheme] = useState("neon-esports");
   const [sigSalesMenuCount, setSigSalesMenuCount] = useState("10");
   const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
   /** 정산 리셋·멤버 대규모 변경 시 모든 preset 미리보기 iframe 을 한번에 remount — stale 캐시 방지 */
@@ -5687,6 +5694,10 @@ function AdminPageInner() {
     if (!Number.isFinite(n)) return 100;
     return Math.max(40, Math.min(100, n));
   }, [battleContentWidthPct]);
+  const getBattleGaugeTheme = useCallback(
+    () => parseSigMatchGaugeThemeId(battleGaugeTheme),
+    [battleGaugeTheme]
+  );
   const buildSigMatchLiveUrl = useCallback((): string => {
     if (typeof window === "undefined") return "";
     const uid = overlayUserId;
@@ -5698,8 +5709,9 @@ function AdminPageInner() {
     q.set("host", "obs");
     q.set("scalePct", String(scalePct));
     q.set("contentWidthPct", String(getBattleContentWidthPct()));
+    q.set("theme", getBattleGaugeTheme());
     return `${window.location.origin}/overlay/sig-match?${q.toString()}`;
-  }, [overlayUserId, battleScalePct, getBattleContentWidthPct]);
+  }, [overlayUserId, battleScalePct, getBattleContentWidthPct, getBattleGaugeTheme]);
   const buildMealMatchLiveUrl = useCallback((): string => {
     if (typeof window === "undefined") return "";
     const uid = overlayUserId;
@@ -12694,10 +12706,43 @@ function AdminPageInner() {
                   <span className="text-[10px] text-neutral-600">(본문 너비 · 식사대전 URL 동일)</span>
                 </div>
                 <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+                  <span>게이지 테마:</span>
+                  <select
+                    className="rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs text-neutral-200"
+                    value={getBattleGaugeTheme()}
+                    onChange={(e) => setBattleGaugeTheme(parseSigMatchGaugeThemeId(e.target.value))}
+                  >
+                    {SIG_MATCH_GAUGE_THEME_IDS.map((id) => (
+                      <option key={id} value={id}>
+                        {SIG_MATCH_GAUGE_THEMES[id].label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex flex-wrap gap-1">
+                    {SIG_MATCH_GAUGE_THEME_IDS.map((id) => {
+                      const active = getBattleGaugeTheme() === id;
+                      return (
+                        <button
+                          key={`theme-chip-${id}`}
+                          type="button"
+                          className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                            active
+                              ? "border-amber-300/60 bg-amber-400/15 text-amber-100"
+                              : "border-white/15 bg-white/5 text-neutral-400 hover:border-white/30"
+                          }`}
+                          onClick={() => setBattleGaugeTheme(id)}
+                        >
+                          {SIG_MATCH_GAUGE_THEMES[id].label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                   <span>오버레이 URL:</span>
                   <code className="text-neutral-300 break-all">
                     /overlay/sig-match?u={overlayUserId}&host=obs&scalePct={getBattleScalePct()}&contentWidthPct=
-                    {getBattleContentWidthPct()}
+                    {getBattleContentWidthPct()}&theme={getBattleGaugeTheme()}
                   </code>
                   <button
                     type="button"
@@ -12728,7 +12773,8 @@ function AdminPageInner() {
                     <div className="flex flex-col gap-0.5">
                       <span className="text-xs font-medium text-neutral-300">오버레이 UI 미리보기</span>
                       <span className="text-[10px] text-neutral-500">
-                        scalePct={getBattleScalePct()} · contentWidthPct={getBattleContentWidthPct()} 반영 · 변경 시 자동 갱신
+                        scalePct={getBattleScalePct()} · contentWidthPct={getBattleContentWidthPct()} · theme=
+                        {getBattleGaugeTheme()} 반영 · 변경 시 자동 갱신
                       </span>
                     </div>
                     <button

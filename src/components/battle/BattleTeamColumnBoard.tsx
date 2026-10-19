@@ -3,6 +3,12 @@
 import type { CSSProperties, ReactNode } from "react";
 import BattleGaugeFitScore from "@/components/battle/BattleGaugeFitScore";
 import { VsCenterBadge } from "@/components/battle/VsCenterBadge";
+import {
+  clampSigMatchGaugeDisplayPct,
+  getSigMatchGaugeTheme,
+  type SigMatchGaugeThemeId,
+} from "@/lib/sig-match-gauge-theme";
+import { isGlowVsDesign, normalizeVsDesign } from "@/lib/vs-design";
 
 function scoreTextStyle(): CSSProperties {
   return {
@@ -24,8 +30,40 @@ function memberNameTextStyle(): CSSProperties {
   };
 }
 
+function ThemeVsBadge({
+  themeId,
+  compact,
+  vsDesign,
+}: {
+  themeId: SigMatchGaugeThemeId;
+  compact?: boolean;
+  vsDesign?: unknown;
+}) {
+  const design = normalizeVsDesign(vsDesign);
+  if (isGlowVsDesign(design)) {
+    return <VsCenterBadge design={vsDesign} compact={compact} />;
+  }
+  const theme = getSigMatchGaugeTheme(themeId);
+  const size = compact ? "h-9 w-9 text-xs" : "h-11 w-11 text-sm sm:h-12 sm:w-12 sm:text-base";
+  return (
+    <span
+      className={`flex shrink-0 items-center justify-center rounded-full font-black tracking-[0.14em] ${size}`}
+      style={{
+        background: theme.vsBg,
+        color: theme.vsText,
+        border: `2px solid ${theme.vsBorder}`,
+        boxShadow: theme.vsGlow,
+      }}
+      data-vs-design="theme-metal"
+      data-gauge-theme={theme.id}
+    >
+      VS
+    </span>
+  );
+}
+
 /**
- * 대전 합산 게이지 — 빨강|파랑 한 줄로 붙이고 중앙 VS.
+ * 대전 합산 게이지 — 테마별 네온/글래스 바 + 사선 경계 + 중앙 VS.
  * 타이머는 바 위, 선두 차액은 바 아래(0이어도 표시), 멤버명은 좌·우 하단.
  */
 export default function BattleTeamColumnBoard({
@@ -39,6 +77,7 @@ export default function BattleTeamColumnBoard({
   gapSuffix = "",
   timerSlot,
   vsDesign,
+  theme: themeRaw,
 }: {
   leftScore: number;
   rightScore: number;
@@ -53,17 +92,13 @@ export default function BattleTeamColumnBoard({
   gapSuffix?: string;
   timerSlot?: ReactNode;
   vsDesign?: unknown;
+  /** URL `theme` — 시각만 변경 */
+  theme?: unknown;
 }) {
+  const theme = getSigMatchGaugeTheme(themeRaw);
   const total = Math.max(0, leftScore) + Math.max(0, rightScore);
-  let leftPct = total > 0 ? (Math.max(0, leftScore) / total) * 100 : 50;
-  let rightPct = 100 - leftPct;
-  leftPct = Math.max(18, Math.min(82, leftPct));
-  rightPct = Math.max(18, Math.min(82, rightPct));
-  const sum = leftPct + rightPct;
-  if (sum > 0 && Math.abs(sum - 100) > 0.01) {
-    leftPct = (leftPct / sum) * 100;
-    rightPct = 100 - leftPct;
-  }
+  const rawLeftPct = total > 0 ? (Math.max(0, leftScore) / total) * 100 : 50;
+  const { leftPct, rightPct } = clampSigMatchGaugeDisplayPct(rawLeftPct);
 
   const scoreGap = Math.abs(leftScore - rightScore);
   const computedGap =
@@ -82,25 +117,40 @@ export default function BattleTeamColumnBoard({
   const rightLabel = formatScore(rightScore);
 
   return (
-    <div className="w-full overflow-visible bg-transparent p-0" data-battle-team-column-board="true" data-battle-vs-style="attached">
+    <div
+      className="w-full overflow-visible bg-transparent p-0"
+      data-battle-team-column-board="true"
+      data-battle-vs-style="attached"
+      data-gauge-theme={theme.id}
+    >
       {timerSlot ? <div className="mb-1 flex justify-center">{timerSlot}</div> : null}
 
       <div className="relative">
         <div
-          className={`relative flex w-full overflow-hidden rounded-studio shadow-glass ring-1 ring-white/12 backdrop-blur-studio ${barH}`}
+          className={`relative flex w-full overflow-hidden rounded-xl backdrop-blur-md ${barH}`}
           data-battle-vs-bar="true"
+          style={{
+            background: theme.trackBg,
+            border: `1px solid ${theme.trackBorder}`,
+            boxShadow: theme.trackShadow,
+          }}
         >
+          {/* 상단 하이라이트 */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-[2] h-[2px] bg-white/30" />
+
           <div
-            className={`relative h-full min-w-0 overflow-hidden transition-[width] duration-500 ease-out ${
+            className={`relative z-[1] h-full min-w-0 overflow-hidden transition-[width] duration-500 ease-out ${
               leftLeading ? "brightness-110" : "brightness-95"
             }`}
             style={{
               width: `${leftPct}%`,
-              background: "linear-gradient(180deg, #f87171 0%, #dc2626 48%, #b91c1c 100%)",
+              background: theme.leftFill,
+              clipPath: "polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%)",
+              marginRight: "-10px",
             }}
             data-battle-team-box="left"
           >
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/30 to-transparent" />
             <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-start pl-2.5 sm:pl-3">
               <BattleGaugeFitScore
                 label={leftLabel}
@@ -112,16 +162,17 @@ export default function BattleTeamColumnBoard({
           </div>
 
           <div
-            className={`relative h-full min-w-0 overflow-hidden transition-[width] duration-500 ease-out ${
+            className={`relative z-[1] h-full min-w-0 overflow-hidden transition-[width] duration-500 ease-out ${
               rightLeading ? "brightness-110" : "brightness-95"
             }`}
             style={{
               width: `${rightPct}%`,
-              background: "linear-gradient(180deg, #60a5fa 0%, #2563eb 48%, #1d4ed8 100%)",
+              background: theme.rightFill,
+              clipPath: "polygon(14px 0, 100% 0, 100% 100%, 0 100%)",
             }}
             data-battle-team-box="right"
           >
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/30 to-transparent" />
             <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-end pr-2.5 sm:pr-3">
               <BattleGaugeFitScore
                 label={rightLabel}
@@ -137,22 +188,28 @@ export default function BattleTeamColumnBoard({
           className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center"
           data-battle-vs-center="true"
         >
-          <VsCenterBadge design={vsDesign} compact={compact} />
+          <ThemeVsBadge themeId={theme.id} compact={compact} vsDesign={vsDesign} />
         </div>
       </div>
 
-      <div className="relative z-20 flex justify-center py-0.5" data-battle-team-gap-row="true">
+      <div className="relative z-20 flex justify-center py-1" data-battle-team-gap-row="true">
         <span
-          className={`rounded-md bg-neutral-950/90 px-1.5 py-0.5 font-black tabular-nums text-amber-100 ring-1 ring-amber-300/40 ${gapSize}`}
+          className={`inline-flex items-center rounded-full px-3 py-0.5 font-black tabular-nums shadow-md backdrop-blur-sm ${gapSize}`}
+          style={{
+            background: theme.gapBg,
+            color: theme.gapText,
+            border: `1px solid ${theme.gapBorder}`,
+            boxShadow: `0 0 12px ${theme.gapBorder}`,
+          }}
           data-battle-team-gap="true"
           title="선두 차액"
         >
-          +{computedGap}
-          {gapSuffix}
+          ! {computedGap}
+          {gapSuffix} !
         </span>
       </div>
 
-      <div className={`grid grid-cols-2 gap-2 px-0.5 mt-1`}>
+      <div className={`mt-1 grid grid-cols-2 gap-2 px-0.5`}>
         <div className="flex justify-start">
           {leftMemberLabel ? (
             <span

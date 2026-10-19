@@ -25,6 +25,10 @@ import BattleRulesBox from "@/components/battle/BattleRulesBox";
 import BattleTeamColumnBoard from "@/components/battle/BattleTeamColumnBoard";
 import BattleGaugeFitScore from "@/components/battle/BattleGaugeFitScore";
 import { VsCenterBadge } from "@/components/battle/VsCenterBadge";
+import {
+  getSigMatchGaugeTheme,
+  parseSigMatchGaugeThemeId,
+} from "@/lib/sig-match-gauge-theme";
 
 type SigMatchSide = { ids: string[]; label: string; score: number; teamLabel?: string };
 
@@ -224,6 +228,7 @@ function SigTeamMemberBox({
   borderClass = "",
   teamLeading = false,
   teamTint = "pink",
+  accentColor,
 }: {
   members: SigMemberScoreLine[];
   scoringMode: "count" | "amount";
@@ -233,18 +238,26 @@ function SigTeamMemberBox({
   borderClass?: string;
   teamLeading?: boolean;
   teamTint?: "pink" | "sky" | "amber";
+  /** 테마 좌/우 메인 컬러 — 테두리 포인트 */
+  accentColor?: string;
 }) {
   if (members.length === 0) return <div className="min-h-[2px]" aria-hidden />;
   const boxPos =
     align === "right" ? "ml-auto" : align === "center" ? "mx-auto" : "mr-auto";
   const rowDir = align === "right" ? "flex-row-reverse" : "flex-row";
   const rowJustify = align === "right" ? "justify-end" : "justify-between";
+  const accentStyle: CSSProperties | undefined = accentColor
+    ? {
+        boxShadow: `0 4px 16px rgba(0,0,0,0.45), 0 0 0 1px ${accentColor}99, inset 0 0 0 1px ${accentColor}33`,
+      }
+    : undefined;
 
   return (
     <div
       data-sig-team-box="true"
       data-sig-team-leading={teamLeading ? "true" : "false"}
       aria-label={teamLeading ? "선두 팀" : undefined}
+      style={accentStyle}
       className={`w-full min-w-[9.5rem] max-w-[15rem] rounded-lg bg-neutral-950/80 px-2 py-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.45)] ring-1 ring-white/20 backdrop-blur-sm sm:min-w-[10.5rem] sm:max-w-[16rem] sm:px-2.5 sm:py-2 ${borderClass} ${sigTeamBoxLeadingClasses(teamTint, teamLeading)} ${boxPos}`}
     >
       <ul className="flex flex-col gap-1.5 sm:gap-2">
@@ -410,6 +423,8 @@ export default function SigMatchDuelOverlay({
     }
     return clampBattleOverlayContentWidthPct(sp.get("contentWidthPct") || sp.get("maxWidthPct") || "100");
   })();
+  const gaugeThemeId = parseSigMatchGaugeThemeId(sp.get("theme"));
+  const gaugeTheme = getSigMatchGaugeTheme(gaugeThemeId);
   const overlayContainerStyle = buildBattleOverlayContainerStyle(overlayScalePct, contentWidthPct);
 
   const lockedSnapshot = useMemo(
@@ -870,16 +885,17 @@ export default function SigMatchDuelOverlay({
               ) : null}
               <div className="relative mt-0.5" data-sig-vs-bar="true">
                 <div
-                  className={`relative flex items-center justify-center overflow-hidden rounded-xl ring-1 ring-white/15 ${
+                  className={`relative flex items-center justify-center overflow-hidden rounded-xl backdrop-blur-md ${
                     compact ? "h-12 sm:h-14" : "h-14 sm:h-16"
                   }`}
                   style={{
                     background:
-                      soloDualSide === duelData.left
-                        ? "linear-gradient(180deg, #f87171 0%, #dc2626 48%, #b91c1c 100%)"
-                        : "linear-gradient(180deg, #60a5fa 0%, #2563eb 48%, #1d4ed8 100%)",
+                      soloDualSide === duelData.left ? gaugeTheme.leftFill : gaugeTheme.rightFill,
+                    border: `1px solid ${gaugeTheme.trackBorder}`,
+                    boxShadow: gaugeTheme.trackShadow,
                   }}
                 >
+                  <div className="pointer-events-none absolute inset-x-0 top-0 z-[2] h-[2px] bg-white/30" />
                   <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
                   <SigVsBarSegmentLabel
                     score={soloDualSide.score}
@@ -930,6 +946,7 @@ export default function SigMatchDuelOverlay({
                   compact={compact}
                   gapLabel={vsCenterGapLabel}
                   vsDesign={sigSettings.vsDesign}
+                  theme={gaugeThemeId}
                   formatScore={(n) => formatSigMatchScoreLabel(n, scoringMode)}
                   timerSlot={
                     timerVisible ? (
@@ -953,6 +970,7 @@ export default function SigMatchDuelOverlay({
                   scoreClass="text-amber-50"
                   teamLeading={Boolean(dualBar?.leftLeading)}
                   teamTint="pink"
+                  accentColor={gaugeTheme.leftAccent}
                 />
                 <SigTeamMemberBox
                   members={rightMemberLines}
@@ -962,6 +980,7 @@ export default function SigMatchDuelOverlay({
                   scoreClass="text-amber-50"
                   teamLeading={Boolean(dualBar?.rightLeading)}
                   teamTint="sky"
+                  accentColor={gaugeTheme.rightAccent}
                 />
               </div>
             </div>
