@@ -516,7 +516,8 @@ export function ensureSigOverlayDisplayStoredUrl(
 export function listSigOverlayImageFallbackUrls(
   name: string,
   imageUrl?: string,
-  userId?: string
+  userId?: string,
+  extraDefaults?: Array<string | null | undefined>
 ): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -540,6 +541,9 @@ export function listSigOverlayImageFallbackUrls(
   for (const base of snapshot) {
     add(toGithubRawSigAssetUrlForced(base));
   }
+  for (const extra of extraDefaults || []) add(extra);
+  /** 최종 — 404 연쇄 시 깨진 아이콘 대신 번들 기본 이미지 */
+  add(BUNDLED_SIG_PLACEHOLDER_URL);
   return out;
 }
 

@@ -2,7 +2,11 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listSigOverlayImageFallbackUrls, toSigOverlayAbsoluteAssetUrl } from "@/lib/constants";
+import {
+  BUNDLED_SIG_PLACEHOLDER_URL,
+  listSigOverlayImageFallbackUrls,
+  toSigOverlayAbsoluteAssetUrl,
+} from "@/lib/constants";
 import { isLikelyGifUrl } from "@/lib/sigGif";
 import SigSlowGif from "./SigSlowGif";
 
@@ -28,6 +32,8 @@ type SigSaleMediaProps = {
   /** 1차 404 시 저장 경로를 `/uploads/sigs/<user>/…` 로 재시도 */
   sigImageUserId?: string;
   storedImageUrl?: string;
+  /** toona 기본 이미지 등 — 후보 끝에 추가(번들 더미 직전) */
+  defaultImageUrl?: string;
 };
 
 function resolveObjectFit(
@@ -65,6 +71,7 @@ export default function SigSaleMedia({
   gifDelayMultiplier = 1,
   sigImageUserId,
   storedImageUrl,
+  defaultImageUrl,
 }: SigSaleMediaProps) {
   const [displaySrc, setDisplaySrc] = useState(src);
   const [gifFail, setGifFail] = useState(false);
@@ -78,13 +85,15 @@ export default function SigSaleMedia({
   const fit = resolveObjectFit(objectFit, className);
 
   useEffect(() => {
-    const fallbacks = sigImageUserId
-      ? listSigOverlayImageFallbackUrls(alt, storedImageUrl || src, sigImageUserId).map((u) =>
-          typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(u) : u
-        )
-      : [];
-    fallbackUrlsRef.current = fallbacks.length > 0 ? fallbacks : [src];
-    const next = fallbackUrlsRef.current[0] || src;
+    const extras = [defaultImageUrl, BUNDLED_SIG_PLACEHOLDER_URL];
+    const fallbacks = (
+      sigImageUserId
+        ? listSigOverlayImageFallbackUrls(alt, storedImageUrl || src, sigImageUserId, extras)
+        : [src, ...extras.filter(Boolean), BUNDLED_SIG_PLACEHOLDER_URL]
+    ).map((u) => (typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(String(u || "")) : String(u || "")));
+    const cleaned = fallbacks.filter(Boolean);
+    fallbackUrlsRef.current = cleaned.length > 0 ? cleaned : [BUNDLED_SIG_PLACEHOLDER_URL];
+    const next = fallbackUrlsRef.current[0] || BUNDLED_SIG_PLACEHOLDER_URL;
     setDisplaySrc((prev) => {
       const prevNorm =
         typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(prev) : prev;
@@ -94,7 +103,7 @@ export default function SigSaleMedia({
     setGifFail(false);
     retryStageRef.current = 0;
     readyFiredRef.current = false;
-  }, [src, alt, sigImageUserId, storedImageUrl]);
+  }, [src, alt, sigImageUserId, storedImageUrl, defaultImageUrl]);
 
   const notifyReady = useCallback(() => {
     if (readyFiredRef.current) return;
@@ -129,6 +138,14 @@ export default function SigSaleMedia({
           return;
         }
         idx += 1;
+      }
+      const placeholder =
+        typeof window !== "undefined"
+          ? toSigOverlayAbsoluteAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL)
+          : BUNDLED_SIG_PLACEHOLDER_URL;
+      if (displaySrc !== placeholder) {
+        setDisplaySrc(placeholder);
+        return;
       }
       onError?.(e);
     },

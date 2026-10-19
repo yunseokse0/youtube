@@ -55,6 +55,58 @@ export const MANUAL_SIG_PICK_COUNT_KEY = "sigSalesManualPickCount";
 export const MANUAL_SIG_GRID_ROWS_KEY = "sigSalesManualGridRows";
 export const MANUAL_SIG_GRID_COLS_KEY = "sigSalesManualGridCols";
 export const MANUAL_SIG_PANEL_ORIENTATION_KEY = "sigSalesManualPanelOrientation";
+/** 칸별 랜덤 금액대(min~max). 0이면 제한 없음 */
+export const MANUAL_SIG_SLOT_PRICE_BANDS_KEY = "sigSalesManualSlotPriceBands";
+/** toona 스트리머 기본 알림 이미지 — 시그 이미지 404·빈 URL 폴백 */
+export const TOONA_DEFAULT_ALERT_IMAGE_KEY = "toonaDefaultAlertImageUrl";
+
+export type ManualSigSlotPriceBand = {
+  min: number;
+  max: number;
+};
+
+export function normalizeManualSigSlotPriceBands(
+  raw: unknown,
+  pickCount = DEFAULT_MANUAL_SIG_PICK_COUNT
+): ManualSigSlotPriceBand[] {
+  const n = clampManualSigPickCount(pickCount);
+  const arr = Array.isArray(raw) ? raw : [];
+  return Array.from({ length: n }, (_, i) => {
+    const row = arr[i];
+    const o = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+    const min = Math.max(0, Math.floor(Number(o.min) || 0));
+    const max = Math.max(0, Math.floor(Number(o.max) || 0));
+    return {
+      min,
+      max: max > 0 && min > 0 && max < min ? min : max,
+    };
+  });
+}
+
+export function readManualSigSlotPriceBandsFromOverlaySettings(
+  os: Record<string, unknown> | undefined | null,
+  pickCount = DEFAULT_MANUAL_SIG_PICK_COUNT
+): ManualSigSlotPriceBand[] {
+  if (!os || typeof os !== "object") {
+    return normalizeManualSigSlotPriceBands(undefined, pickCount);
+  }
+  return normalizeManualSigSlotPriceBands(os[MANUAL_SIG_SLOT_PRICE_BANDS_KEY], pickCount);
+}
+
+export function priceMatchesManualSigSlotBand(price: number, band: ManualSigSlotPriceBand): boolean {
+  const p = Math.max(0, Math.floor(Number(price) || 0));
+  if (band.min <= 0 && band.max <= 0) return true;
+  if (band.min > 0 && p < band.min) return false;
+  if (band.max > 0 && p > band.max) return false;
+  return true;
+}
+
+export function readToonaDefaultAlertImageFromOverlaySettings(
+  os: Record<string, unknown> | undefined | null
+): string {
+  if (!os || typeof os !== "object") return "";
+  return String(os[TOONA_DEFAULT_ALERT_IMAGE_KEY] || "").trim();
+}
 
 export const MIN_MANUAL_SIG_GRID_ROWS = 1;
 export const MAX_MANUAL_SIG_GRID_ROWS = 8;

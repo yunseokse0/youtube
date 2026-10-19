@@ -55,7 +55,22 @@ async function importSigsAfterHubLogin(hubSessionUserId: string) {
     fetched.items,
     "merge"
   );
-  const next = { ...state, sigInventory: nextInventory, updatedAt: Date.now() };
+  const prevOs =
+    state.overlaySettings && typeof state.overlaySettings === "object"
+      ? (state.overlaySettings as Record<string, unknown>)
+      : {};
+  const { TOONA_DEFAULT_ALERT_IMAGE_KEY } = await import("@/lib/manual-sig-workbench");
+  const next = {
+    ...state,
+    sigInventory: nextInventory,
+    updatedAt: Date.now(),
+    overlaySettings: {
+      ...prevOs,
+      ...(fetched.defaultAlertImageUrl
+        ? { [TOONA_DEFAULT_ALERT_IMAGE_KEY]: fetched.defaultAlertImageUrl }
+        : {}),
+    } as typeof state.overlaySettings,
+  };
   const saved = await saveAppStateForRoulette(stateUserId, next, { donorsMode: "add" });
   if (!saved.ok) {
     return {

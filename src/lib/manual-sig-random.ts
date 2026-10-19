@@ -1,4 +1,5 @@
-import type { ManualSigDraft } from "@/lib/manual-sig-workbench";
+import type { ManualSigDraft, ManualSigSlotPriceBand } from "@/lib/manual-sig-workbench";
+import { priceMatchesManualSigSlotBand } from "@/lib/manual-sig-workbench";
 
 export type ManualSigRandomPoolItem = {
   id: string;
@@ -7,12 +8,7 @@ export type ManualSigRandomPoolItem = {
   imageUrl: string;
 };
 
-/** 재고 풀에서 중복 없이 count개 시그 초안 생성. 풀이 부족하면 null */
-export function pickRandomManualSigDrafts(
-  pool: ManualSigRandomPoolItem[],
-  count = 5
-): ManualSigDraft[] | null {
-  const need = Math.max(1, Math.floor(count));
+function uniqPoolItems(pool: ManualSigRandomPoolItem[]): ManualSigRandomPoolItem[] {
   const uniq = new Map<string, ManualSigRandomPoolItem>();
   for (const row of pool) {
     const id = String(row.id || "").trim();
@@ -28,7 +24,16 @@ export function pickRandomManualSigDrafts(
       imageUrl: String(row.imageUrl || "").trim(),
     });
   }
-  const arr = Array.from(uniq.values());
+  return Array.from(uniq.values());
+}
+
+/** 재고 풀에서 중복 없이 count개 시그 초안 생성. 풀이 부족하면 null */
+export function pickRandomManualSigDrafts(
+  pool: ManualSigRandomPoolItem[],
+  count = 5
+): ManualSigDraft[] | null {
+  const need = Math.max(1, Math.floor(count));
+  const arr = uniqPoolItems(pool);
   if (arr.length < need) return null;
   const shuffled = [...arr];
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -41,4 +46,32 @@ export function pickRandomManualSigDrafts(
     priceInput: String(p.price),
     imageUrl: p.imageUrl,
   }));
+}
+
+/** 칸별 금액대에 맞는 시그를 중복 없이 1칸씩 추첨. 부족하면 null */
+export function pickRandomManualSigDraftsBySlotBands(
+  pool: ManualSigRandomPoolItem[],
+  bands: ManualSigSlotPriceBand[]
+): ManualSigDraft[] | null {
+  const need = bands.length;
+  if (need < 1) return null;
+  const arr = uniqPoolItems(pool);
+  if (arr.length < need) return null;
+  const used = new Set<string>();
+  const out: ManualSigDraft[] = [];
+  for (const band of bands) {
+    const candidates = arr.filter(
+      (p) => !used.has(p.id) && priceMatchesManualSigSlotBand(p.price, band)
+    );
+    if (candidates.length === 0) return null;
+    const pick = candidates[Math.floor(Math.random() * candidates.length)]!;
+    used.add(pick.id);
+    out.push({
+      sourceSigId: pick.id,
+      name: pick.name,
+      priceInput: String(pick.price),
+      imageUrl: pick.imageUrl,
+    });
+  }
+  return out;
 }

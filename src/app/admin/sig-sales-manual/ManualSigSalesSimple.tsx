@@ -46,6 +46,7 @@ import {
   MANUAL_SIG_GRID_ROWS_KEY,
   MANUAL_SIG_PANEL_ORIENTATION_KEY,
   MANUAL_SIG_PICK_COUNT_KEY,
+  MANUAL_SIG_SLOT_PRICE_BANDS_KEY,
   MAX_MANUAL_SIG_GRID_COLS,
   MAX_MANUAL_SIG_GRID_ROWS,
   MAX_MANUAL_SIG_PICK_COUNT,
@@ -54,10 +55,14 @@ import {
   MIN_MANUAL_SIG_PICK_COUNT,
   normalizeManualSigDraftPersist,
   normalizeManualSigGrid,
+  normalizeManualSigSlotPriceBands,
   readManualSigGridFromOverlaySettings,
   readManualSigPanelOrientationFromOverlaySettings,
+  readManualSigSlotPriceBandsFromOverlaySettings,
+  readToonaDefaultAlertImageFromOverlaySettings,
   resizeManualDrafts,
   resizeManualSoldFlags,
+  type ManualSigSlotPriceBand,
   type SigSalesPanelOrientation,
 } from "@/lib/manual-sig-workbench";
 
@@ -75,12 +80,16 @@ export default function ManualSigSalesSimple() {
   const [colsDraft, setColsDraft] = useState("5");
   const [pickCountDraft, setPickCountDraft] = useState("5");
   const [priceDraftByIdx, setPriceDraftByIdx] = useState<Record<number, string>>({});
+  const [bandDraftByIdx, setBandDraftByIdx] = useState<Record<number, { min: string; max: string }>>(
+    {}
+  );
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [defaultPrice, setDefaultPrice] = useState("10000");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
-  const userId = user?.id || "finalent";
+  /** finalent 기본값 금지 — 로그인 전 타 계정 인벤을 불러오지 않음 */
+  const userId = String(user?.id || "").trim();
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -93,6 +102,7 @@ export default function ManualSigSalesSimple() {
   }, [router]);
 
   const loadRemote = useCallback(async () => {
+    if (!userId) return;
     const remote = await loadStateFromApi(userId, { forceFull: true });
     if (remote) {
       const local = loadState(userId);
@@ -119,12 +129,12 @@ export default function ManualSigSalesSimple() {
   }, [userId]);
 
   useEffect(() => {
-    if (!authReady) return;
+    if (!authReady || !userId) return;
     void loadRemote();
-  }, [authReady, loadRemote]);
+  }, [authReady, userId, loadRemote]);
 
   useEffect(() => {
-    if (!authReady) return;
+    if (!authReady || !userId) return;
     const onFocus = () => void loadRemote();
     const onImported = () => void loadRemote();
     window.addEventListener("focus", onFocus);
@@ -133,7 +143,7 @@ export default function ManualSigSalesSimple() {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener(SIG_INVENTORY_IMPORTED_EVENT, onImported);
     };
-  }, [authReady, loadRemote]);
+  }, [authReady, userId, loadRemote]);
 
   useEffect(() => {
     if (!toast) return;
@@ -152,8 +162,9 @@ export default function ManualSigSalesSimple() {
         memberFilterId: memberFilterId || undefined,
         sigSalesExcludedIds: state?.sigSalesExcludedIds,
         ignoreStock: true,
+        ownerUserId: userId || undefined,
       }),
-    [state?.sigInventory, state?.sigSalesExcludedIds, memberFilterId]
+    [state?.sigInventory, state?.sigSalesExcludedIds, memberFilterId, userId]
   );
 
   const priceExcludedCount = useMemo(() => {
@@ -193,11 +204,22 @@ export default function ManualSigSalesSimple() {
     [overlayOs]
   );
   const pickCount = panelGrid.pickCount;
+  const slotPriceBands = useMemo(
+    () => readManualSigSlotPriceBandsFromOverlaySettings(overlayOs, pickCount),
+    [overlayOs, pickCount]
+  );
+  const toonaDefaultImageUrl = useMemo(
+    () => readToonaDefaultAlertImageFromOverlaySettings(overlayOs),
+    [overlayOs]
+  );
   useEffect(() => {
     setRowsDraft(String(panelGrid.rows));
     setColsDraft(String(panelGrid.cols));
     setPickCountDraft(String(panelGrid.pickCount));
   }, [panelGrid.rows, panelGrid.cols, panelGrid.pickCount]);
+  useEffect(() => {
+    setBandDraftByIdx({});
+  }, [pickCount, slotPriceBands]);
   const draft = useMemo(() => readManualSigDraftFromState(state), [state]);
   const displaySigs = useMemo(
     () => resolveManualOverlaySelectedSigs(state, userId),
@@ -282,6 +304,7 @@ export default function ManualSigSalesSimple() {
                 MANUAL_SIG_GRID_COLS_KEY,
                 MANUAL_SIG_PANEL_ORIENTATION_KEY,
                 MANUAL_SIG_DRAFT_STATE_KEY,
+                MANUAL_SIG_SLOT_PRICE_BANDS_KEY,
               ]
                 .filter((k) => nextOs[k] != null && nextOs[k] !== "")
                 .map((k) => [k, nextOs[k]])
@@ -308,9 +331,15 @@ export default function ManualSigSalesSimple() {
     try {
       const bundle = pickRandomManualSigBundle(state, userId, {
         memberFilterId: memberFilterId || undefined,
+        pickCount,
       });
       if (!bundle) {
-        setToast("리롤 실패 — 판매 가능 시그를 확인하세요.");
+        const hasBand = slotPriceBands.some((b) => b.min > 0 || b.max > 0);
+        setToast(
+          hasBand
+            ? "리롤 실패: 칸별 금액대에 맞는 시그가 부족합니다. 금액대를 넓히거나 시그를 추가하세요."
+            : "리롤 실패 — 판매 가능 시그를 확인하세요."
+        );
         return;
       }
       const drafts = bundle.selected.map((s) => ({
@@ -350,7 +379,30 @@ export default function ManualSigSalesSimple() {
     } finally {
       setBusy(false);
     }
-  }, [state, canReroll, pool.length, userId, memberFilterId, persistState, pickCount]);
+  }, [state, canReroll, pool.length, userId, memberFilterId, persistState, pickCount, slotPriceBands]);
+
+  const persistSlotPriceBands = useCallback(
+    async (bands: ManualSigSlotPriceBand[]) => {
+      if (!state) return;
+      const normalized = normalizeManualSigSlotPriceBands(bands, pickCount);
+      const prevOs =
+        state.overlaySettings && typeof state.overlaySettings === "object"
+          ? (state.overlaySettings as Record<string, unknown>)
+          : {};
+      const next: AppState = {
+        ...state,
+        updatedAt: Date.now(),
+        overlaySettings: {
+          ...prevOs,
+          [MANUAL_SIG_SLOT_PRICE_BANDS_KEY]: normalized,
+        } as AppState["overlaySettings"],
+      };
+      await persistState(next, "칸별 금액대 저장됨", "금액대 저장이 지연됩니다.", {
+        omitSigInventory: true,
+      });
+    },
+    [state, pickCount, persistState]
+  );
 
   const persistPanelLayout = useCallback(
     async (rowsRaw: number, colsRaw: number, orientation: SigSalesPanelOrientation) => {
@@ -372,6 +424,10 @@ export default function ManualSigSalesSimple() {
             sigSoldFlags: resizeManualSoldFlags(prevDraft.sigSoldFlags || [], n),
           }
         : undefined;
+      const nextBands = normalizeManualSigSlotPriceBands(
+        prevOs[MANUAL_SIG_SLOT_PRICE_BANDS_KEY],
+        n
+      );
       const next: AppState = {
         ...state,
         updatedAt: Date.now(),
@@ -381,6 +437,7 @@ export default function ManualSigSalesSimple() {
           [MANUAL_SIG_GRID_ROWS_KEY]: grid.rows,
           [MANUAL_SIG_GRID_COLS_KEY]: grid.cols,
           [MANUAL_SIG_PANEL_ORIENTATION_KEY]: orientation,
+          [MANUAL_SIG_SLOT_PRICE_BANDS_KEY]: nextBands,
           ...(nextDraft ? { [MANUAL_SIG_DRAFT_STATE_KEY]: nextDraft } : {}),
         } as AppState["overlaySettings"],
       };
@@ -1042,9 +1099,89 @@ export default function ManualSigSalesSimple() {
 
         <section className="rounded-xl border border-amber-400/35 bg-amber-950/25 p-4 space-y-3">
           <div>
-            <p className="text-sm font-semibold text-amber-100">칸별 시그 금액(원)</p>
+            <p className="text-sm font-semibold text-amber-100">칸별 나올 시그 금액대</p>
             <p className="mt-1 text-[11px] text-neutral-400">
-              당첨 칸마다 판매가를 지정합니다. ROLL 전에도 저장되며, ROLL 후에는 OBS 당첨 금액에도 반영됩니다. Enter/포커스 아웃 시 저장.
+              ROLL 시 각 칸에 뽑힐 시그의 가격 범위입니다. 최소·최대 모두 0(비움)이면 제한 없음. Enter/포커스 아웃 시 저장.
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {Array.from({ length: pickCount }, (_, i) => {
+              const band = slotPriceBands[i] || { min: 0, max: 0 };
+              const draftBand = bandDraftByIdx[i];
+              const minVal = draftBand?.min != null ? draftBand.min : band.min > 0 ? String(band.min) : "";
+              const maxVal = draftBand?.max != null ? draftBand.max : band.max > 0 ? String(band.max) : "";
+              const commitBand = () => {
+                const nextBands = slotPriceBands.map((b, idx) => {
+                  if (idx !== i) return b;
+                  const d = bandDraftByIdx[i];
+                  const minRaw = d?.min != null ? d.min : minVal;
+                  const maxRaw = d?.max != null ? d.max : maxVal;
+                  return {
+                    min: Math.max(0, Math.floor(Number(String(minRaw).replace(/[^\d]/g, "")) || 0)),
+                    max: Math.max(0, Math.floor(Number(String(maxRaw).replace(/[^\d]/g, "")) || 0)),
+                  };
+                });
+                void persistSlotPriceBands(nextBands).then(() => {
+                  setBandDraftByIdx((prev) => {
+                    const n = { ...prev };
+                    delete n[i];
+                    return n;
+                  });
+                });
+              };
+              return (
+                <div
+                  key={`slot-band-${i}`}
+                  className="rounded-lg border border-amber-400/20 bg-black/30 px-2.5 py-2 text-xs text-neutral-300"
+                >
+                  <p className="mb-1.5 font-semibold text-amber-50/95">{i + 1}칸 금액대</p>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      disabled={busy}
+                      value={minVal}
+                      placeholder="최소"
+                      onChange={(e) =>
+                        setBandDraftByIdx((prev) => ({
+                          ...prev,
+                          [i]: { min: e.target.value, max: prev[i]?.max ?? maxVal },
+                        }))
+                      }
+                      onBlur={commitBand}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                      }}
+                      className="w-full rounded border border-amber-400/30 bg-neutral-900 px-2 py-1.5 text-sm tabular-nums text-amber-100"
+                    />
+                    <span className="text-neutral-500">~</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      disabled={busy}
+                      value={maxVal}
+                      placeholder="최대"
+                      onChange={(e) =>
+                        setBandDraftByIdx((prev) => ({
+                          ...prev,
+                          [i]: { min: prev[i]?.min ?? minVal, max: e.target.value },
+                        }))
+                      }
+                      onBlur={commitBand}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                      }}
+                      className="w-full rounded border border-amber-400/30 bg-neutral-900 px-2 py-1.5 text-sm tabular-nums text-amber-100"
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-amber-100">칸별 판매가(당첨 후)</p>
+            <p className="mt-1 text-[11px] text-neutral-400">
+              ROLL 후 당첨 시그의 판매가를 수정합니다. OBS·합산에도 반영됩니다.
             </p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -1072,13 +1209,14 @@ export default function ManualSigSalesSimple() {
                   <input
                     type="text"
                     inputMode="numeric"
-                    disabled={busy || phase === "CONFIRMED"}
+                    disabled={busy || phase === "CONFIRMED" || !row}
                     value={shown}
-                    placeholder="예: 10000"
+                    placeholder={row ? "예: 10000" : "ROLL 후 수정"}
                     onChange={(e) =>
                       setPriceDraftByIdx((prev) => ({ ...prev, [i]: e.target.value }))
                     }
                     onBlur={() => {
+                      if (!row) return;
                       const raw = priceDraftByIdx[i] != null ? priceDraftByIdx[i]! : shown;
                       void onCommitCellPrice(i, raw).then(() => {
                         setPriceDraftByIdx((prev) => {
@@ -1091,7 +1229,7 @@ export default function ManualSigSalesSimple() {
                     onKeyDown={(e) => {
                       if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                     }}
-                    className="rounded border border-yellow-400/35 bg-neutral-900 px-2 py-1.5 text-sm font-bold tabular-nums text-yellow-200"
+                    className="rounded border border-yellow-400/35 bg-neutral-900 px-2 py-1.5 text-sm font-bold tabular-nums text-yellow-200 disabled:opacity-40"
                   />
                 </label>
               );
@@ -1220,9 +1358,14 @@ export default function ManualSigSalesSimple() {
                   >
                     {row?.imageUrl ? (
                       <SigSaleMedia
-                        src={resolveSigOverlayCardImageUrl(row.name, row.imageUrl, userId)}
-                        storedImageUrl={row.imageUrl}
+                        src={resolveSigOverlayCardImageUrl(
+                          row.name,
+                          row.imageUrl || toonaDefaultImageUrl,
+                          userId
+                        )}
+                        storedImageUrl={row.imageUrl || toonaDefaultImageUrl}
                         sigImageUserId={userId}
+                        defaultImageUrl={toonaDefaultImageUrl || undefined}
                         alt={row.name}
                         fill
                         objectFit="contain"

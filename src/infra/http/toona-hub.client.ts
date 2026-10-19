@@ -2,6 +2,7 @@ import {
   fetchToonaDefaultAlertImageUrl,
   mapToonaSignaturesToSigItems,
   normalizeToonaApiBaseUrl,
+  resolveToonaAssetUrl,
   type ToonaSignatureRow,
 } from "@/lib/toona-sig-import";
 import { ingestErrorVisibleAfterLink } from "@/lib/toona-hub-ingest-error";
@@ -202,7 +203,14 @@ export async function syncContributionFormulaToToonaHub(
 export async function fetchToonaSignaturesViaHubSession(
   youtubeUserId: string
 ): Promise<
-  | { ok: true; items: SigItem[]; streamKey: string; baseUrl: string; count: number }
+  | {
+      ok: true;
+      items: SigItem[];
+      streamKey: string;
+      baseUrl: string;
+      count: number;
+      defaultAlertImageUrl: string;
+    }
   | { ok: false; error: string }
 > {
   const session = await readToonaHubSession(youtubeUserId);
@@ -212,7 +220,7 @@ export async function fetchToonaSignaturesViaHubSession(
   const baseUrl = normalizeToonaApiBaseUrl(session.baseUrl) || session.baseUrl;
   const streamKey = session.streamKey;
   try {
-    const [sigRes, defaultAlertImageUrl] = await Promise.all([
+    const [sigRes, defaultAlertImageUrlRaw] = await Promise.all([
       fetchToonaHubWithIngestRetry(
         `${baseUrl}/api/signatures/${encodeURIComponent(streamKey)}`,
         session,
@@ -220,6 +228,7 @@ export async function fetchToonaSignaturesViaHubSession(
       ),
       fetchToonaDefaultAlertImageUrl(baseUrl, streamKey),
     ]);
+    const defaultAlertImageUrl = resolveToonaAssetUrl(defaultAlertImageUrlRaw, baseUrl);
     const sigJson = (await sigRes.json().catch(() => ({}))) as {
       signatures?: ToonaSignatureRow[];
       error?: string;
@@ -241,6 +250,7 @@ export async function fetchToonaSignaturesViaHubSession(
       streamKey,
       baseUrl,
       count: items.length,
+      defaultAlertImageUrl,
     };
   } catch (err) {
     return {
@@ -598,7 +608,22 @@ async function fillInventoryFromHubIfEmpty(youtubeUserId: string): Promise<void>
       "merge"
     );
     if (added <= 0 && nextInventory.length <= (state.sigInventory || []).length) return;
-    const next = { ...state, sigInventory: nextInventory, updatedAt: Date.now() };
+    const prevOs =
+      state.overlaySettings && typeof state.overlaySettings === "object"
+        ? (state.overlaySettings as Record<string, unknown>)
+        : {};
+    const { TOONA_DEFAULT_ALERT_IMAGE_KEY } = await import("@/lib/manual-sig-workbench");
+    const next = {
+      ...state,
+      sigInventory: nextInventory,
+      updatedAt: Date.now(),
+      overlaySettings: {
+        ...prevOs,
+        ...(fetched.defaultAlertImageUrl
+          ? { [TOONA_DEFAULT_ALERT_IMAGE_KEY]: fetched.defaultAlertImageUrl }
+          : {}),
+      } as typeof state.overlaySettings,
+    };
     const saved = await saveAppStateForRoulette(uid, next, { donorsMode: "add" });
     if (saved.ok) {
       await publishSseEvent({ type: "state_updated", updatedAt: next.updatedAt });

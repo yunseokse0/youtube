@@ -9,7 +9,10 @@ import {
 } from "@/lib/constants";
 import { repairDiskUploadSigImagePath } from "@/lib/sig-image-mode";
 import { buildOneShotFromSelected, resolveOneShotDisplayPrice } from "@/lib/sig-one-shot-price";
-import { pickRandomManualSigDrafts } from "@/lib/manual-sig-random";
+import {
+  pickRandomManualSigDrafts,
+  pickRandomManualSigDraftsBySlotBands,
+} from "@/lib/manual-sig-random";
 import { listActiveManualSigPool } from "@/lib/manual-sig-active-pool";
 import {
   buildManualSigBroadcastLandPatch,
@@ -24,6 +27,7 @@ import {
   normalizeManualSigDraftPersist,
   parseManualSigDraftRows,
   readManualSigPickCountFromOverlaySettings,
+  readManualSigSlotPriceBandsFromOverlaySettings,
   MAX_MANUAL_SIG_PICK_COUNT,
   DEFAULT_MANUAL_SIG_PICK_COUNT,
   clampManualSigPickCount,
@@ -875,7 +879,7 @@ export function buildManualOverlaySoldOverrideSet(
   return next;
 }
 
-/** 재고에서 5개 랜덤 + 한방 합산 */
+/** 재고에서 N개 랜덤(+칸별 금액대) + 한방 합산 */
 export function pickRandomManualSigBundle(
   base: AppState,
   userId: string,
@@ -885,11 +889,20 @@ export function pickRandomManualSigBundle(
     memberFilterId: opts?.memberFilterId,
     sigSalesExcludedIds: base.sigSalesExcludedIds,
     ignoreStock: true,
+    ownerUserId: userId,
   });
   const pickCount = clampManualSigPickCount(opts?.pickCount ?? readManualSigPickCount(base));
   const actualPick = Math.min(pickCount, pool.length);
   if (actualPick < MANUAL_REROLL_MIN_POOL) return null;
-  const drafts = pickRandomManualSigDrafts(pool, actualPick);
+  const os =
+    base.overlaySettings && typeof base.overlaySettings === "object"
+      ? (base.overlaySettings as Record<string, unknown>)
+      : null;
+  const bands = readManualSigSlotPriceBandsFromOverlaySettings(os, actualPick);
+  const hasBandFilter = bands.some((b) => b.min > 0 || b.max > 0);
+  const drafts = hasBandFilter
+    ? pickRandomManualSigDraftsBySlotBands(pool, bands.slice(0, actualPick))
+    : pickRandomManualSigDrafts(pool, actualPick);
   if (!drafts) return null;
   const selected = buildManualSigItemsFromDrafts(drafts, base.sigInventory, userId);
   const oneShot = buildOneShotFromSelected(selected);
