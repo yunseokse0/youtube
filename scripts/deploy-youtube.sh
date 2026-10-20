@@ -131,7 +131,7 @@ check_env() {
 check_env "DATABASE_URL" "MySQL 접속 주소 (전혀 안되면 모든 state read/write 불가)" "error"
 check_env "TOONA_INGEST_SECRET" "DIN 허브→유튜브 ingest 공유키 (B모드에서 /api/donations/ingest 503 ingest_secret_not_configure 원인)" "error"
 check_env "NEXTAUTH_SECRET" "관리자 세션 암호화 키 (빠지면 /admin 로그인 불가)" "warn"
-check_env "NEXTAUTH_URL" "OAuth Callback URL (외부 소셜 로그인시 필수)" "warn"
+check_env "NEXTAUTH_URL" "공개 origin (https://excel.heyob.co.kr). http://IP:3000 금지" "warn"
 if [ "$ENV_WARN" -gt 0 ]; then
   echo ""
   echo "       💡 위 누락 env는 .env 파일에 아래 형식으로 작성하세요:"

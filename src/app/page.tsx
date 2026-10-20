@@ -35,6 +35,11 @@ export default async function Home() {
         <div className="mt-1 text-sm text-neutral-400">
           오버레이 설정 및 정산 관리는 로그인 후 관리자 페이지에서 진행하세요.
         </div>
+        <div className="mt-6 text-sm">
+          <a className="text-neutral-400 hover:text-white underline" href={process.env.NEXT_PUBLIC_HUB_URL || "https://heyob.co.kr"}>
+            HEYOB 허브
+          </a>
+        </div>
       </div>
     </main>
   );

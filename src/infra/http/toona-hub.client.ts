@@ -6,7 +6,12 @@ import {
   type ToonaSignatureRow,
 } from "@/lib/toona-sig-import";
 import { ingestErrorVisibleAfterLink } from "@/lib/toona-hub-ingest-error";
-import { getToonaApiBaseUrl, getYoutubePublicBaseUrl, normalizePublicBaseUrl } from "@/lib/toona-link";
+import {
+  getToonaApiBaseUrl,
+  getYoutubePublicBaseUrl,
+  normalizePublicBaseUrl,
+  readYoutubePublicBaseUrlFromEnv,
+} from "@/lib/toona-link";
 import { normalizeContributionFormula } from "@/lib/contribution-formula";
 import { persistContributionFormulaForUser } from "@/lib/contribution-formula-persist";
 import {
@@ -383,9 +388,7 @@ export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
       }
 
       /** toona에 저장된 youtube baseUrl 이 현재 env 값과 다르면 자가수복 (백틱/따옴포 오염 복구 등) */
-      const desiredBaseUrl = normalizePublicBaseUrl(
-        String(process.env.YOUTUBE_PUBLIC_BASE_URL || "")
-      );
+      const desiredBaseUrl = readYoutubePublicBaseUrlFromEnv();
       if (desiredBaseUrl) {
         const storedRaw = String(json.baseUrl || "").trim().replace(/\/$/, "");
         const storedNormalized = normalizePublicBaseUrl(storedRaw);

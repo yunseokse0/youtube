@@ -48,7 +48,7 @@ export async function register() {
      * ✅ 사용자 요약 정책 (2026-09-06 VERBATIM):
      *   A 모드 (투네 직접): Toonation WS 직접 후원만 받음 → 투네 브라우저/OBS WS 리스너 시작
      *   B 모드 (DIN 허브 연결):  DIN 허브 + 투나(Toona) 프로젝트 후원만 받음 → WS 리스너 시작 안함
-     *           오직 DIN 허브(13.125.221.195:4000) → /api/donations/ingest (TOONA_INGEST_SECRET) 1경로 유일 유입
+     *           오직 DIN 허브(https://heyob.co.kr) → /api/donations/ingest (TOONA_INGEST_SECRET) 1경로 유일 유입
      *  · Dual-Path 2행 중복 원천 봉쇄
      *  · 무한 reconnect loop CPU 97% 원천 차단 (B모드에서 WS start 하지 않음)
      */

@@ -26,8 +26,8 @@ export function getUserById(id: string): { id: string; companyName: string } | n
 
 /**
  * 로그인 쿠키 Secure 플래그.
- * - HTTP·IP(EC2) 배포: 미설정 또는 AUTH_COOKIE_SECURE=false (기본 Secure 끔)
- * - HTTPS(도메인) 배포: AUTH_COOKIE_SECURE=true
+ * - 로컬·HTTP: 미설정 또는 AUTH_COOKIE_SECURE=false (기본 Secure 끔)
+ * - 라이브 HTTPS(excel.heyob.co.kr): AUTH_COOKIE_SECURE=true. 공개 URL에 IP:3000 쓰지 말 것.
  */
 export function authCookieSecure(): boolean {
   const v = String(process.env.AUTH_COOKIE_SECURE ?? "").trim().toLowerCase();

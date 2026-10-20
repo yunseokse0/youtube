@@ -38,8 +38,16 @@ export function getToonaApiBaseUrl(): string | null {
   return normalizeToonaApiBaseUrl(raw);
 }
 
+/** ingest·허브 자가수복용 공개 origin. IP:3000 금지, HTTPS 도메인만. */
+export function readYoutubePublicBaseUrlFromEnv(): string | null {
+  return (
+    normalizePublicBaseUrl(String(process.env.YOUTUBE_PUBLIC_BASE_URL || "")) ||
+    normalizePublicBaseUrl(String(process.env.NEXTAUTH_URL || ""))
+  );
+}
+
 export function getYoutubePublicBaseUrl(req: Request): string {
-  const fromEnv = normalizePublicBaseUrl(String(process.env.YOUTUBE_PUBLIC_BASE_URL || ""));
+  const fromEnv = readYoutubePublicBaseUrlFromEnv();
   if (fromEnv) return fromEnv;
   const proto = req.headers.get("x-forwarded-proto") || "http";
   const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "";

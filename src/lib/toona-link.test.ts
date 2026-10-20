@@ -47,8 +47,16 @@ describe("toona-link", () => {
   });
 
   it("getYoutubePublicBaseUrl prefers env", () => {
-    process.env.YOUTUBE_PUBLIC_BASE_URL = "http://13.125.221.195:3000";
+    process.env.YOUTUBE_PUBLIC_BASE_URL = "https://excel.heyob.co.kr";
+    delete process.env.NEXTAUTH_URL;
     const req = new Request("http://localhost/login");
-    expect(getYoutubePublicBaseUrl(req)).toBe("http://13.125.221.195:3000");
+    expect(getYoutubePublicBaseUrl(req)).toBe("https://excel.heyob.co.kr");
+  });
+
+  it("getYoutubePublicBaseUrl falls back to NEXTAUTH_URL", () => {
+    delete process.env.YOUTUBE_PUBLIC_BASE_URL;
+    process.env.NEXTAUTH_URL = "https://excel.heyob.co.kr/";
+    const req = new Request("http://localhost/login");
+    expect(getYoutubePublicBaseUrl(req)).toBe("https://excel.heyob.co.kr");
   });
 });

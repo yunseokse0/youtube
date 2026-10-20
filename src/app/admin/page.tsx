@@ -11942,7 +11942,8 @@ function AdminPageInner() {
                       e.stopPropagation();
                       if (runtimeIntakeModeBusy) return;
                       try {
-                        window.open("http://13.125.221.195:4000/dashboard/history", "din-hub-login", "noopener,noreferrer,width=1280,height=840");
+                        const hubBase = String(process.env.NEXT_PUBLIC_HUB_URL || "https://heyob.co.kr").replace(/\/$/, "");
+                        window.open(`${hubBase}/dashboard/history`, "din-hub-login", "noopener,noreferrer,width=1280,height=840");
                       } catch (_) { /* noop */ }
                       setDinHubModalOpen(true);
                     }}

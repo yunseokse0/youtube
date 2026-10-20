@@ -83,6 +83,12 @@ AUTH_COOKIE_SECURE=false
 SIG_UPLOADS_DATA_DIR=/var/lib/DIN
 # MySQL은 bootstrap이 생성·기입 (또는 아래를 수동 설정)
 # DATABASE_URL=mysql://youtube_app:...@127.0.0.1:3306/youtube
+# 라이브 HTTPS (비밀값 없이 도메인만). IP:3000 금지. RDS DATABASE_URL은 건드리지 말 것.
+# AUTH_COOKIE_SECURE=true
+# NEXTAUTH_URL=https://excel.heyob.co.kr
+# YOUTUBE_PUBLIC_BASE_URL=https://excel.heyob.co.kr
+# NEXT_PUBLIC_HUB_URL=https://heyob.co.kr
+# NEXT_PUBLIC_TOONA_API_BASE_URL=https://sig.heyob.co.kr
 ```
 
 저장 후:
