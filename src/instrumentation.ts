@@ -99,49 +99,29 @@ export async function register() {
         })();
 
         /**
-         * 🔥 B-MODE POLLER · SINGLE STAGGERED JOB + FETCH COALESCE (B모드 단순화 P1 + Fix ⑥-3)
-         *  · 통합 전: 3종 독립 setInterval → 동시 fire → saveMutex 3중첩 블록
-         *  · 통합 후: 1개 setInterval(30s) + phase counter(0~1) + reentry lock
-         *    주기 RELAXED + 반응성 FIX:
-         *      ✅ drain(30s 항상, 큐 적체 방지)
-         *      ✅ refresh+fetch(**60초마다 = phase%2===0**, 이전 180초 → 사용자 "자동 안돼요" Bug Fix)
-         *        ↳ fetch 내부 DONATION_PULL_MIN_INTERVAL_MS=60s 가드와 정확히 맞물려서 중복 호출 0회 + 최대 응답성 60초
-         *        ↳ 기존 180초 fetch 주기: 후원 보내고 최대 3분 대기 → "수동 버튼만 돼요" 오해 유발 👎
-         *    실행 순서 직렬: drain → (phase0 일때 refresh→fetch)
+         * B-MODE POLLER — 계정 SKIP 없음.
+         *  setInterval 겹침 + reentry SKIP 이면 그 틱 후원이 빠지므로,
+         *  한 바퀴가 끝난 뒤에만 다음 틱을 시작한다(밀리면 간격만 늘어남).
+         *  같은 후원 ID 재적용 방지는 apply 쪽 유지.
          */
-        /** @type {Record<string, boolean>} */
-        const pollerLock: Record<string, boolean> = {};
-        let pollerPhase = 0; // 0 ~ 1 (2 phases = 60s full cycle · DIN 허브 1분 pull interval 과 일치)
+        let pollerPhase = 0;
         const HUB_POLLER_CONCURRENCY = Math.max(1, 4);
-        /**
-         * B-MODE POLLER: hubUserIds 전체를 concurrency=4 세마포어로 병렬 처리
-         *  · 기존: for-loop 순차 → 20명 유저시 20*saveMutex 대기열 연쇄
-         *  · 개선: Promise.allSettled N=4 chunk → saveMutex contention 을 4-way 분산
-         */
+        const HUB_POLLER_MIN_INTERVAL_MS = 30_000;
         async function runPollerTickForUsers(userIds: string[], phase: number): Promise<void> {
           const active: Array<Promise<void>> = [];
           for (let i = 0; i < userIds.length; i++) {
             const uid = userIds[i]!;
-            if (pollerLock[uid]) {
-              console.warn(`[b-mode] poller reentry SKIP user=${uid} (prev job still running >30s, saveMutex 밀로 예상)`);
-              continue;
-            }
-            pollerLock[uid] = true;
             const task = (async () => {
-              try {
-                await drainDonationQueueOnServer(uid).catch((e) =>
-                  console.warn(`[b-mode] drain fail uid=${uid}`, e?.message || e)
+              await drainDonationQueueOnServer(uid).catch((e) =>
+                console.warn(`[b-mode] drain fail uid=${uid}`, e?.message || e)
+              );
+              if (phase % 2 === 0) {
+                await refreshToonaHubStatus(uid).catch((e) =>
+                  console.warn(`[b-mode] refresh fail uid=${uid}`, e?.message || e)
                 );
-                if (phase % 2 === 0) {
-                  await refreshToonaHubStatus(uid).catch((e) =>
-                    console.warn(`[b-mode] refresh fail uid=${uid}`, e?.message || e)
-                  );
-                  await fetchToonaDonationsSinceLink(uid).catch((e) =>
-                    console.warn(`[b-mode] fetch fail uid=${uid}`, e?.message || e)
-                  );
-                }
-              } finally {
-                pollerLock[uid] = false;
+                await fetchToonaDonationsSinceLink(uid, { ignoreMinInterval: true }).catch((e) =>
+                  console.warn(`[b-mode] fetch fail uid=${uid}`, e?.message || e)
+                );
               }
             })();
             active.push(task);
@@ -151,17 +131,22 @@ export async function register() {
             }
           }
         }
-        setInterval(() => {
-          void (async () => {
+        void (async () => {
+          for (;;) {
+            const started = Date.now();
             try {
               await runPollerTickForUsers(hubUserIds, pollerPhase);
             } catch (topErr) {
-              console.warn(`[b-mode] poller tick failed phase=${pollerPhase}`, topErr instanceof Error ? topErr.message : String(topErr));
-            } finally {
-              pollerPhase = (pollerPhase + 1) % 2;
+              console.warn(
+                `[b-mode] poller tick failed phase=${pollerPhase}`,
+                topErr instanceof Error ? topErr.message : String(topErr)
+              );
             }
-          })();
-        }, 30_000);
+            pollerPhase = (pollerPhase + 1) % 2;
+            const wait = Math.max(0, HUB_POLLER_MIN_INTERVAL_MS - (Date.now() - started));
+            await new Promise((r) => setTimeout(r, wait));
+          }
+        })();
 
         /**
          * ✅ Single Source of Truth · cron-jobs.ts registerIntervalCronJobs(hubUserIds) 1줄로 통합!
