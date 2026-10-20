@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { cookies, headers } from "next/headers";
 import { AUTH_COOKIE } from "@/lib/auth";
-import { APP_SYSTEM_NAME } from "@/lib/app-branding";
+import { HeyobAuthChrome, HeyobAuthHero } from "@/components/heyob/HeyobAuthChrome";
 
 export default async function Home() {
   const cookieStore = await cookies();
@@ -25,22 +25,27 @@ export default async function Home() {
   if (userCookie) redirect("/admin");
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-[#1a1a1a]">
-      <div className="glass p-8 w-[92%] max-w-2xl text-center">
-        <h1 className="text-2xl font-bold mb-3">{APP_SYSTEM_NAME}</h1>
-        <p className="text-neutral-300 mb-6">로그인 후 사용하세요.</p>
-        <div className="flex gap-4 justify-center">
-          <Link className="px-4 py-2 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-white" href="/login">로그인</Link>
+    <HeyobAuthChrome>
+      <HeyobAuthHero />
+      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0d1524]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] tracking-[0.28em] text-white/35">DIN STUDIO</p>
+            <h2 className="mt-1 text-3xl font-black tracking-tight text-[#5ec8ff]">EXCEL</h2>
+            <p className="mt-1 text-sm text-white/50">멤버 엑셀 집계, 플레이어 시그 보드, 방송 오버레이와 정산을 한 화면에서.</p>
+          </div>
+          <span className="rounded-full border border-[#5ec8ff]/40 bg-[#5ec8ff]/10 px-2.5 py-0.5 text-[10px] font-semibold tracking-wide text-[#5ec8ff]">
+            EXCEL v1.0
+          </span>
         </div>
-        <div className="mt-1 text-sm text-neutral-400">
-          오버레이 설정 및 정산 관리는 로그인 후 관리자 페이지에서 진행하세요.
-        </div>
-        <div className="mt-6 text-sm">
-          <a className="text-neutral-400 hover:text-white underline" href={process.env.NEXT_PUBLIC_HUB_URL || "https://heyob.co.kr"}>
-            HEYOB 허브
-          </a>
-        </div>
+        <Link
+          className="mt-4 inline-flex w-full items-center justify-center rounded-xl bg-[#3aa4f0] py-2.5 text-sm font-bold tracking-wide text-[#071018] hover:bg-[#5ec8ff]"
+          href="/login"
+        >
+          로그인
+        </Link>
+        <p className="mt-3 text-center text-xs text-white/35">오버레이 설정 및 정산은 로그인 후 관리자에서 진행하세요.</p>
       </div>
-    </main>
+    </HeyobAuthChrome>
   );
 }

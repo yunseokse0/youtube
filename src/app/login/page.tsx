@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { APP_SYSTEM_NAME } from "@/lib/app-branding";
 import { useRouter, useSearchParams } from "next/navigation";
+import { HeyobAuthChrome, HeyobAuthHero } from "@/components/heyob/HeyobAuthChrome";
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -41,25 +42,37 @@ function LoginForm() {
     }
   };
 
+  const fieldClass =
+    "w-full rounded-xl border border-white/10 bg-[#0b1220] px-3 py-2.5 text-white placeholder-white/30 outline-none transition focus:border-[#5ec8ff]/70 focus:ring-2 focus:ring-[#5ec8ff]/20";
+
   return (
-    <main className="min-h-screen flex items-center justify-center bg-[#1a1a1a]">
-      <div className="w-[92%] max-w-sm rounded-xl border border-white/10 bg-[#252525] p-6 shadow-xl">
-        <h1 className="text-xl font-bold text-white mb-1">로그인</h1>
-        <p className="text-sm text-neutral-400 mb-6">{APP_SYSTEM_NAME}</p>
+    <HeyobAuthChrome>
+      <HeyobAuthHero />
+      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0d1524]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-sm">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] tracking-[0.28em] text-white/35">DIN STUDIO</p>
+            <h2 className="mt-1 text-3xl font-black tracking-tight text-[#5ec8ff]">EXCEL</h2>
+            <p className="mt-1 text-sm text-white/50">엑셀 방송 정산</p>
+          </div>
+          <span className="rounded-full border border-[#5ec8ff]/40 bg-[#5ec8ff]/10 px-2.5 py-0.5 text-[10px] font-semibold tracking-wide text-[#5ec8ff]">
+            EXCEL v1.0
+          </span>
+        </div>
         {sessionReason === "expired" ? (
           <div
             role="alert"
-            className="mb-4 rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-2.5 text-sm leading-snug text-amber-100"
+            className="mb-4 rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-2.5 text-sm leading-snug text-amber-100"
           >
             로그인 세션이 만료되었습니다. 다시 로그인해 주세요.
           </div>
         ) : null}
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs text-neutral-400 mb-1">아이디</label>
+            <label className="mb-1 block text-[11px] tracking-wide text-white/40">아이디</label>
             <input
               type="text"
-              className="w-full px-3 py-2 rounded-lg bg-neutral-900/80 border border-white/10 text-white placeholder-neutral-500"
+              className={fieldClass}
               placeholder="아이디"
               value={id}
               onChange={(e) => setId(e.target.value)}
@@ -67,27 +80,27 @@ function LoginForm() {
             />
           </div>
           <div>
-            <label className="block text-xs text-neutral-400 mb-1">비밀번호</label>
+            <label className="mb-1 block text-[11px] tracking-wide text-white/40">비밀번호</label>
             <input
               type="password"
-              className="w-full px-3 py-2 rounded-lg bg-neutral-900/80 border border-white/10 text-white placeholder-neutral-500"
+              className={fieldClass}
               placeholder="비밀번호"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
             />
           </div>
-          {error && <div className="text-sm text-red-400">{error}</div>}
+          {error && <div className="text-sm text-rose-400">{error}</div>}
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 rounded-lg bg-[#6366f1] hover:bg-[#4f46e5] text-white font-medium disabled:opacity-60"
+            className="w-full rounded-xl bg-[#3aa4f0] py-2.5 text-sm font-bold tracking-wide text-[#071018] transition hover:bg-[#5ec8ff] disabled:opacity-60"
           >
             {loading ? "로그인 중..." : "로그인"}
           </button>
         </form>
       </div>
-    </main>
+    </HeyobAuthChrome>
   );
 }
 
@@ -101,8 +114,9 @@ export default function LoginPage() {
 
 function LoginFallback() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#1a1a1a]">
-      <p className="text-sm text-neutral-400">로딩 중…</p>
-    </main>
+    <HeyobAuthChrome>
+      <HeyobAuthHero />
+      <p className="text-sm text-white/40">로딩 중…</p>
+    </HeyobAuthChrome>
   );
 }
