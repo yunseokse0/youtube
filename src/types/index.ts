@@ -307,6 +307,8 @@ export type DonationTableColumnsOptions = {
   showTableSumRow?: boolean;
   /** 총합 행 기여도 칸 표시(기여도 열 ON일 때) */
   showContributionSum?: boolean;
+  /** 순위 다음 커스텀 열(상벌금 등) 표시 — 기본 ON */
+  showCustomColumn?: boolean;
 };
 
 export type SigMatchSettings = {
@@ -653,6 +655,10 @@ export type AppState = {
    * - donation: 계좌+투네 금액 (기존)
    */
   memberRankingMetric?: "contribution" | "donation";
+  /** 엑셀표 커스텀 열(상벌금 등) — 멤버 id → 자유 텍스트 */
+  memberCustomCells?: Record<string, string>;
+  /** 커스텀 열 헤더 (기본 상벌금) */
+  memberCustomHeaderLabel?: string;
   /** 순위 연동 모드에서 사용할 직급 라벨(1위부터 순서대로) */
   rankPositionLabels: string[];
   /** 계좌/투네 후원 순위 오버레이 테마 */

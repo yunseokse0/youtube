@@ -6,6 +6,7 @@ export const EXCEL_MEMBER_THEME_IDS = [
   "excelSlate",
   "excelAmber",
   "excelGold",
+  "excelPongdang",
   "excelRose",
   "excelNavy",
   "excelTeal",
@@ -93,6 +94,18 @@ export const EXCEL_MEMBER_TABLE_ACCENT: Record<ExcelMemberThemeId, ExcelMemberTa
     rowEvenBg: "rgba(255, 255, 255, 0.08)",
     rowOddBg: "rgba(255, 255, 255, 0.16)",
     contributionColor: "#ffc107",
+  },
+  /** 퐁당퐁당 — 브라운 헤더 · 파랑/분홍 교차 행 */
+  excelPongdang: {
+    headerBg: "#8b6914",
+    headerText: "#fff8e7",
+    headerBorder: "#6b4f0e",
+    totalRowBorder: "rgba(212, 175, 55, 0.65)",
+    panelBorder: "#8b6914",
+    panelShadow: "none",
+    rowEvenBg: "rgba(186, 220, 255, 0.94)",
+    rowOddBg: "rgba(255, 200, 214, 0.94)",
+    contributionColor: "#1a1a1a",
   },
   excelRose: {
     headerBg: "rgba(225, 29, 72, 0.72)",

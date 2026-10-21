@@ -65,4 +65,13 @@ describe("excel-member-table-theme", () => {
     expect(contributionColumnBgFromColor("#ffc107", 0.22)).toBe("rgba(255, 193, 7, 0.22)");
     expect(EXCEL_GOLD_RANK_TEXT_COLORS).toEqual(["#ff5eb8", "#6ecbff", "#ffc107"]);
   });
+
+  it("excelPongdang has blue/pink zebra stripes", () => {
+    expect(isExcelMemberTableTheme("excelPongdang")).toBe(true);
+    const accent = resolveExcelMemberTableAccent("excelPongdang");
+    expect(accent?.headerBg).toBe("#8b6914");
+    expect(accent?.rowEvenBg).toContain("186, 220, 255");
+    expect(accent?.rowOddBg).toContain("255, 200, 214");
+    expect(EXCEL_MEMBER_THEME_IDS).toContain("excelPongdang");
+  });
 });

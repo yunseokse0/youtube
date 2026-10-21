@@ -264,6 +264,10 @@ export function mergePartialState(
     next.memberPositions = patch.memberPositions as AppState["memberPositions"];
   }
   if (!("memberPositionMode" in patch)) next.memberPositionMode = base.memberPositionMode;
+  if (!("memberCustomCells" in patch)) next.memberCustomCells = base.memberCustomCells;
+  if (!("memberCustomHeaderLabel" in patch)) {
+    next.memberCustomHeaderLabel = base.memberCustomHeaderLabel;
+  }
   if (!("rankPositionLabels" in patch)) next.rankPositionLabels = base.rankPositionLabels;
   if (!("donorRankingsTheme" in patch)) next.donorRankingsTheme = base.donorRankingsTheme;
   else if (

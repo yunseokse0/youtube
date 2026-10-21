@@ -347,6 +347,8 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
           memberPositions: good.memberPositions,
           memberPositionMode: good.memberPositionMode,
           memberRankingMetric: good.memberRankingMetric,
+          memberCustomCells: good.memberCustomCells,
+          memberCustomHeaderLabel: good.memberCustomHeaderLabel,
           rankPositionLabels: good.rankPositionLabels,
         };
       }
@@ -363,6 +365,8 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         memberPositions: good.memberPositions,
         memberPositionMode: good.memberPositionMode,
         memberRankingMetric: good.memberRankingMetric,
+        memberCustomCells: good.memberCustomCells,
+        memberCustomHeaderLabel: good.memberCustomHeaderLabel,
         rankPositionLabels: good.rankPositionLabels,
       };
     } else if (good && hasMeaningfulMemberRoster(good) && !remoteRosterChanged) {
@@ -1270,7 +1274,7 @@ function formatTimerText(elapsed: string | null, remainingSeconds?: number | nul
   return formatTimerClockText(totalSec, showHours);
 }
 
-type ThemeId = "default" | "excel" | "excelLive" | "excelBlue" | "excelSlate" | "excelAmber" | "excelGold" | "excelRose" | "excelNavy" | "excelTeal" | "excelPurple" | "excelEmerald" | "excelOrange" | "excelIndigo" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel" | "rainbow" | "sunset" | "ocean" | "forest" | "aurora" | "violet" | "coral" | "mint" | "lava" | "ice";
+type ThemeId = "default" | "excel" | "excelLive" | "excelBlue" | "excelSlate" | "excelAmber" | "excelGold" | "excelPongdang" | "excelRose" | "excelNavy" | "excelTeal" | "excelPurple" | "excelEmerald" | "excelOrange" | "excelIndigo" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel" | "rainbow" | "sunset" | "ocean" | "forest" | "aurora" | "violet" | "coral" | "mint" | "lava" | "ice";
 
 const TABLE_BG_RGB: Record<string, [number, number, number]> = {
   default: [15, 20, 30],
@@ -1279,6 +1283,7 @@ const TABLE_BG_RGB: Record<string, [number, number, number]> = {
   excelBlue: [15, 20, 30],
   excelAmber: [15, 20, 30],
   excelGold: [8, 8, 12],
+  excelPongdang: [20, 16, 10],
   excelRose: [15, 20, 30],
   excelTeal: [15, 20, 30],
   excelPurple: [15, 20, 30],
@@ -1502,6 +1507,24 @@ const THEMES: Record<ThemeId, {
     goalWrap: "border border-[#ffc107]/50 bg-transparent p-1 rounded-studio",
     tickerCls: "text-[#ffc107] font-mono font-bold",
     timerCls: "font-mono text-white bg-black/80 px-2 rounded-lg border border-[#ffc107]",
+  },
+  excelPongdang: {
+    label: "엑셀(퐁당퐁당)",
+    memberCls: "font-mono",
+    nameCls: "text-neutral-900 font-semibold",
+    accountCls: "text-neutral-900 font-semibold tabular-nums overflow-hidden",
+    toonCls: "text-neutral-900 font-semibold tabular-nums overflow-hidden",
+    totalCls: "font-bold text-neutral-900",
+    totalWrapCls: "bg-[#d4af37] border border-[#8b6914] px-2 py-1",
+    rowCls: "px-2 py-1 align-middle text-neutral-900",
+    tableCls: "bg-transparent border-collapse overflow-visible",
+    headerCls: "bg-[#8b6914] text-[#fff8e7] font-bold px-2 py-1 text-sm",
+    goalBarBg: "bg-amber-900/40",
+    goalBarFill: "bg-[#d4af37]",
+    goalText: "text-[#d4af37] font-mono font-bold",
+    goalWrap: "border border-[#8b6914]/60 bg-transparent p-1 rounded-studio",
+    tickerCls: "text-[#d4af37] font-mono font-bold",
+    timerCls: "font-mono text-white bg-black/80 px-2 rounded-lg border border-[#8b6914]",
   },
   excelRose: {
     label: "엑셀(로즈)",
@@ -2402,6 +2425,19 @@ function OverlayInner() {
         : "contribution",
     [ready, s]
   );
+  const memberCustomCellsMap = useMemo<Record<string, string>>(
+    () =>
+      ready && s && typeof (s as AppState).memberCustomCells === "object"
+        ? ((s as AppState).memberCustomCells || {})
+        : {},
+    [ready, s]
+  );
+  const memberCustomHeaderFromState = useMemo(
+    () =>
+      String((ready && s && (s as AppState).memberCustomHeaderLabel) || "")
+        .trim() || "상벌금",
+    [ready, s]
+  );
   const rankPositionLabels = useMemo<string[]>(
     () => ((ready && s && Array.isArray((s as AppState).rankPositionLabels)) ? (s as AppState).rankPositionLabels : []),
     [ready, s]
@@ -2577,7 +2613,7 @@ function OverlayInner() {
   const tickerBaseTheme = THEMES[tickerBaseThemeId];
   const missionTheme = THEMES[missionThemeId];
   const missionThemeVariant = (() => {
-    const excelThemes = ["excel", "excelLive", "excelBlue", "excelSlate", "excelAmber", "excelGold", "excelRose", "excelNavy", "excelTeal", "excelPurple", "excelEmerald", "excelOrange", "excelIndigo"];
+    const excelThemes = ["excel", "excelLive", "excelBlue", "excelSlate", "excelAmber", "excelGold", "excelPongdang", "excelRose", "excelNavy", "excelTeal", "excelPurple", "excelEmerald", "excelOrange", "excelIndigo"];
     return excelThemes.includes(missionThemeId) ? "excel" : (["rainbow", "sunset", "ocean", "forest", "aurora", "violet", "coral", "mint", "lava", "ice"].includes(missionThemeId) ? "neon" : missionThemeId);
   })() as "default" | "excel" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel";
 
@@ -2608,6 +2644,7 @@ function OverlayInner() {
   const showTotal = effectiveTableOnly ? true : (timerOnlyMode ? false : (sp.get("showTotal") !== "false"));
   const showCombinedColumn = resolvePresetBool("showCombinedColumn", true);
   const showContributionColumn = resolvePresetBool("showContributionColumn", true);
+  const showCustomColumn = resolvePresetBool("showCustomColumn", true);
   const showRestroomColumn = (() => {
     const url = (rawSp.get("showRestroomColumn") || "").toLowerCase();
     if (url === "false") {
@@ -2647,6 +2684,13 @@ function OverlayInner() {
     return showTotal;
   })();
   const accountHeaderLabel = resolvePresetLabel("accountHeaderLabel", "계좌");
+  const customHeaderLabel = (() => {
+    const fromUrl = (rawSp.get("customHeaderLabel") || "").trim();
+    if (fromUrl) return fromUrl;
+    const fromPreset = String((effectivePreset as { customHeaderLabel?: string } | null)?.customHeaderLabel || "").trim();
+    if (fromPreset) return fromPreset;
+    return memberCustomHeaderFromState;
+  })();
   const toonHeaderLabel = resolvePresetLabel("toonHeaderLabel", "투네");
   const restroomHeaderLabel = resolvePresetLabel("restroomHeaderLabel", "화장실");
   const showGoal = (() => {
@@ -3906,12 +3950,32 @@ function OverlayInner() {
         }, 5)
       )
     );
-    const cols = hasRoleColumn
-      ? `${rankColCh}|${roleColFit}|${nameColGridWidth}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}${showRestroomColumn ? `|${restroomCh}` : ""}`
-      : `${rankColCh}|${nameColGridWidth}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}${showRestroomColumn ? `|${restroomCh}` : ""}`;
+    const customFit = showCustomColumn
+      ? Math.max(
+          6,
+          Math.min(
+            14,
+            members.reduce((max, m) => {
+              const len = String(memberCustomCellsMap[m.id] || "").length;
+              return Math.max(max, len > 0 ? len + 2 : 6);
+            }, Math.max(6, customHeaderLabel.length + 1))
+          )
+        )
+      : 0;
+    const cols = [
+      rankColCh,
+      ...(showCustomColumn ? [customFit] : []),
+      ...(hasRoleColumn ? [roleColFit] : []),
+      nameColGridWidth,
+      bankCh,
+      toonCh,
+      totalCh,
+      contributionCh,
+      ...(showRestroomColumn ? [restroomCh] : []),
+    ].join("|");
     const rows = ranked
       .map(({ m }) =>
-        `${m.account}|${m.toon}|${getContributionValueForMember(m)}${showRestroomColumn ? `|${getRestroomValueForMember(m)}` : ""}`
+        `${showCustomColumn ? `${memberCustomCellsMap[m.id] || ""}|` : ""}${m.account}|${m.toon}|${getContributionValueForMember(m)}${showRestroomColumn ? `|${getRestroomValueForMember(m)}` : ""}`
       )
       .join(";");
     const pinRows = visiblePinned.map((m) => `${m.account}|${m.toon}|0`).join(";");
@@ -3920,6 +3984,9 @@ function OverlayInner() {
     ranked,
     visiblePinned,
     hasRoleColumn,
+    showCustomColumn,
+    memberCustomCellsMap,
+    customHeaderLabel,
     nameColGridWidth,
     bankCh,
     toonCh,
@@ -4301,8 +4368,19 @@ function OverlayInner() {
         }, 5)
       )
     );
+    const customColCh = Math.max(
+      6,
+      Math.min(
+        14,
+        members.reduce((max, m) => {
+          const len = String(memberCustomCellsMap[m.id] || "").length;
+          return Math.max(max, len > 0 ? len + 2 : 6);
+        }, Math.max(6, customHeaderLabel.length + 1))
+      )
+    );
     const excelGridCols = [
       `${rankColCh}ch`,
+      ...(showCustomColumn ? [`${customColCh}ch`] : []),
       ...(hasRoleColumn ? [`${roleColEm}em`] : []),
       `${nameColGridWidth}`,
       `${bankCh}ch`,
@@ -4313,7 +4391,8 @@ function OverlayInner() {
     ];
     /** 숫자 자리 증가로 표 전체가 밀려 나가지 않도록 너비 상한 고정 */
     const excelTableWidthCalc = excelGridCols.join(" + ");
-    const nameColIndex = hasRoleColumn ? 2 : 1;
+    const nameColIndex = 1 + (showCustomColumn ? 1 : 0) + (hasRoleColumn ? 1 : 0);
+    const totalLabelColSpan = 1 + (showCustomColumn ? 1 : 0) + (hasRoleColumn ? 1 : 0);
     const isExcelLiveTheme = membersThemeId === "excelLive";
     const isExcelGoldChrome = isExcelGoldTableTheme(membersThemeId);
     const tableHeaderLineColor =
@@ -5604,6 +5683,11 @@ function OverlayInner() {
                   <thead>
                     <tr>
                       <td className={`${effectiveHeaderCls} overlay-col-rank overlay-rank-cell text-center`}>순위</td>
+                      {showCustomColumn && (
+                        <td className={`${effectiveHeaderCls} overlay-col-custom text-center`} style={{ whiteSpace: "nowrap" }}>
+                          {customHeaderLabel}
+                        </td>
+                      )}
                       {hasRoleColumn && <td className={`${effectiveHeaderCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
                       <td className={`${effectiveHeaderCls} overlay-col-name text-center`}>이름</td>
                       <td className={`${effectiveHeaderCls} overlay-col-account text-center`}>{accountHeaderLabel}</td>
@@ -5639,6 +5723,13 @@ function OverlayInner() {
                                 {" "}
                               </span>
                             </td>
+                            {showCustomColumn && (
+                              <td className={`${effectiveRowCls} overlay-col-custom text-center`}>
+                                <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                  {" "}
+                                </span>
+                              </td>
+                            )}
                             {hasRoleColumn && (
                               <td className={`${effectiveRowCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>
                                 <span className="overlay-rank-mark">{" "}</span>
@@ -5719,6 +5810,19 @@ function OverlayInner() {
                               </span>
                             )}
                           </td>
+                          {showCustomColumn && (
+                            <td className={`${effectiveRowCls} overlay-col-custom text-center`}>
+                              {memberCustomCellsMap[m.id] ? (
+                                <span className="overlay-cell-text-inner font-semibold" style={overlayCellOutlineStyle}>
+                                  {memberCustomCellsMap[m.id]}
+                                </span>
+                              ) : (
+                                <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                  {" "}
+                                </span>
+                              )}
+                            </td>
+                          )}
                           {hasRoleColumn && (
                             <td
                               className={`${effectiveRowCls} overlay-col-role`}
@@ -5818,6 +5922,19 @@ function OverlayInner() {
                             {" "}
                           </span>
                         </td>
+                        {showCustomColumn && (
+                          <td className={`${effectiveRowCls} overlay-col-custom text-center`}>
+                            {memberCustomCellsMap[m.id] ? (
+                              <span className="overlay-cell-text-inner font-semibold" style={overlayCellOutlineStyle}>
+                                {memberCustomCellsMap[m.id]}
+                              </span>
+                            ) : (
+                              <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                {" "}
+                              </span>
+                            )}
+                          </td>
+                        )}
                         {hasRoleColumn && (
                           <td className={`${effectiveRowCls} overlay-col-role`}>
                             <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
@@ -5887,7 +6004,9 @@ function OverlayInner() {
                     )) : null}
                     {panel.includeTotal && showTableSumRow && ready && (
                       <tr className="overlay-total-row">
-                        <td className={`${overlayTotalRowCls} overlay-col-rank`} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
+                        <td className={`${overlayTotalRowCls} overlay-col-rank`} colSpan={totalLabelColSpan}>
+                          총합
+                        </td>
                         <td className={`${overlayTotalRowCls} overlay-col-name`} />
                         <td className={`${overlayTotalRowCls} overlay-col-account overlay-account-cell text-center`}>
                           <OverlayTableNumCell

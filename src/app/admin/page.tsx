@@ -400,6 +400,8 @@ type OverlayPreset = {
   showMembers: boolean; showTotal: boolean;
   totalMode?: "total" | "contribution";
   showCombinedColumn?: boolean;
+  showCustomColumn?: boolean;
+  customHeaderLabel?: string;
   showContributionColumn?: boolean;
   showRestroomColumn?: boolean;
   showContributionSum?: boolean;
@@ -1431,6 +1433,7 @@ function AdminPageInner() {
     { name: "엑셀표만", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true, showRestroomColumn: true } },
     { name: "방송 엑셀(계좌·투네)", preset: { theme: "excelLive", membersTheme: "excelLive", totalTheme: "excelLive", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: false, showContributionColumn: false, showRestroomColumn: true, accountHeaderLabel: "계좌", toonHeaderLabel: "투네이션", restroomHeaderLabel: "화장실", tableBgOpacity: "85", donorsFormat: "full", tableFree: true, tableX: "3", tableY: "88", anchor: "bl" } },
     { name: "웹후원 골드 엑셀", preset: { theme: "excelGold", membersTheme: "excelGold", totalTheme: "excelGold", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: true, showContributionColumn: true, showRestroomColumn: false, tableBgOpacity: "0", tableGridLines: false, tableVerticalLines: false, tableHeaderTextColor: "", tableTextColor: "", contributionColor: "", tablePanelBorderColor: "", accountHeaderLabel: "계좌", toonHeaderLabel: "투네", tableFree: true, tableX: "50", tableY: "50", anchor: "cc" } },
+    { name: "퐁당퐁당 엑셀", preset: { theme: "excelPongdang", membersTheme: "excelPongdang", totalTheme: "excelPongdang", showMembers: true, showTotal: true, tableOnly: true, showCustomColumn: true, showCombinedColumn: true, showContributionColumn: true, showRestroomColumn: false, tableBgOpacity: "0", tableGridLines: false, tableVerticalLines: false, accountHeaderLabel: "후원", toonHeaderLabel: "투네", customHeaderLabel: "상벌금", tableFree: true, tableX: "50", tableY: "50", anchor: "cc" } },
     { name: "전체 통합", preset: { showMembers: true, showTotal: true } },
     { name: "표만 (엑셀)", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true, showRestroomColumn: true } },
     { name: "멤버 목록만", preset: { showMembers: true, showTotal: false, showBottomDonors: false, tickerInMembers: false } },
@@ -1457,6 +1460,8 @@ function AdminPageInner() {
     showContributionColumn: true,
     showRestroomColumn: true,
     showContributionSum: true,
+    showCustomColumn: true,
+    customHeaderLabel: "",
     accountHeaderLabel: "",
     toonHeaderLabel: "",
     confettiMilestone: "",
@@ -1672,7 +1677,7 @@ function AdminPageInner() {
     if (keys.length === 0) return;
     setActiveNav((prev) => (keys.includes(prev) ? prev : keys[0]!));
   }, [navItems]);
-  const baseThemeChoices = ["default","excel","excelLive","excelBlue","excelSlate","excelAmber","excelGold","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","neon","neonExcel","retro","minimal","rpg","pastel","rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"];
+  const baseThemeChoices = ["default","excel","excelLive","excelBlue","excelSlate","excelAmber","excelGold","excelPongdang","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","neon","neonExcel","retro","minimal","rpg","pastel","rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"];
   const overlayThemeLabel = (id: string): string => {
     const map: Record<string, string> = {
       auto: "자동(프리셋 테마)",
@@ -1683,6 +1688,7 @@ function AdminPageInner() {
       excelSlate: "엑셀(슬레이트)",
       excelAmber: "엑셀(앰버)",
       excelGold: "엑셀(웹후원 골드)",
+      excelPongdang: "엑셀(퐁당퐁당)",
       excelRose: "엑셀(로즈)",
       excelNavy: "엑셀(네이비)",
       excelTeal: "엑셀(틸)",
@@ -1723,6 +1729,7 @@ function AdminPageInner() {
       excelSlate: { background: "linear-gradient(135deg,#0f172a,#334155)" },
       excelAmber: { background: "linear-gradient(135deg,#92400e,#f59e0b)" },
       excelGold: { background: "linear-gradient(135deg,#1a1408,#ffc107,#1a1408)" },
+      excelPongdang: { background: "linear-gradient(135deg,#8b6914,#badcff,#ffc8d6)" },
       excelRose: { background: "linear-gradient(135deg,#9f1239,#fb7185)" },
       excelNavy: { background: "linear-gradient(135deg,#0b132b,#1c2541)" },
       excelTeal: { background: "linear-gradient(135deg,#0f766e,#5eead4)" },
@@ -6479,6 +6486,29 @@ function AdminPageInner() {
         ...prev,
         memberRankingMetric: metric === "donation" ? "donation" : "contribution",
       };
+      persistState(next, { includeDonationFields: true });
+      return next;
+    });
+  };
+
+  const updateMemberCustomHeaderLabel = (label: string) => {
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        memberCustomHeaderLabel: String(label || "").trim() || "상벌금",
+      };
+      persistState(next, { includeDonationFields: true });
+      return next;
+    });
+  };
+
+  const updateMemberCustomCell = (memberId: string, value: string) => {
+    setState((prev: AppState) => {
+      const nextMap = { ...(prev.memberCustomCells || {}) };
+      const text = String(value || "").replace(/\s+/g, " ").trim().slice(0, 48);
+      if (text) nextMap[memberId] = text;
+      else delete nextMap[memberId];
+      const next: AppState = { ...prev, memberCustomCells: nextMap };
       persistState(next, { includeDonationFields: true });
       return next;
     });
@@ -12133,6 +12163,41 @@ function AdminPageInner() {
                       ? "계좌·투네 합(100원 단위)으로 순위를 매깁니다. 동점이면 멤버 생성순."
                       : "세션 누적 기여도로 순위를 매깁니다. 동점이면 금액 → 멤버 생성순."}
                   </p>
+                </div>
+                <div className="rounded border border-white/10 bg-black/20 p-2 space-y-2">
+                  <div className="text-xs text-neutral-400">커스텀 열 (순위 다음 · 상벌금 등)</div>
+                  <label className="grid grid-cols-1 md:grid-cols-[120px_1fr] items-center gap-2 text-xs text-neutral-300">
+                    <span>헤더 이름</span>
+                    <input
+                      className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
+                      value={state.memberCustomHeaderLabel ?? "상벌금"}
+                      onChange={(e) => updateMemberCustomHeaderLabel(e.target.value)}
+                      placeholder="상벌금"
+                    />
+                  </label>
+                  <p className="text-[11px] text-neutral-500">
+                    멤버별 자유 텍스트입니다. 표 옵션「커스텀 열」로 표시를 끌 수 있습니다. 테마「퐁당퐁당」과 함께 쓰면 파랑/분홍 교차 행이 됩니다.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {state.members.map((m) => (
+                      <label
+                        key={`custom-cell-${m.id}`}
+                        className="grid grid-cols-[1fr_1.2fr] items-center gap-2 text-xs text-neutral-300"
+                      >
+                        <span className="truncate">{m.name}</span>
+                        <input
+                          className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
+                          defaultValue={state.memberCustomCells?.[m.id] || ""}
+                          key={`custom-cell-input-${m.id}-${state.memberCustomCells?.[m.id] || ""}`}
+                          onBlur={(e) => updateMemberCustomCell(m.id, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="+100만원 / 메모"
+                        />
+                      </label>
+                    ))}
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {state.members.map((m) => (
@@ -21212,7 +21277,7 @@ function AdminPageInner() {
                                           fontSize={parseInt(p.missionFontSize || "18", 10)}
                                           themeVariant={(() => {
                                             const id = p.theme || "default";
-                                            const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
+                                            const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelGold","excelPongdang","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
                                             if (excelThemes.includes(id)) return "excel";
                                             if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
                                             return (id as any);
@@ -21233,7 +21298,7 @@ function AdminPageInner() {
                                           fontSize={parseInt(p.missionFontSize || "18", 10)}
                                           themeVariant={(() => {
                                             const id = p.theme || "default";
-                                            const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
+                                            const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelGold","excelPongdang","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
                                             if (excelThemes.includes(id)) return "excel";
                                             if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
                                             return (id as any);
@@ -21281,7 +21346,7 @@ function AdminPageInner() {
                                     fontSize={parseInt(p.missionFontSize || "24", 10)}
                                     themeVariant={(() => {
                                       const id = p.theme || "default";
-                                      const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
+                                      const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelGold","excelPongdang","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
                                       if (excelThemes.includes(id)) return "excel";
                                       if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
                                       return (id as any);
@@ -21302,7 +21367,7 @@ function AdminPageInner() {
                                     fontSize={parseInt(p.missionFontSize || "24", 10)}
                                     themeVariant={(() => {
                                       const id = p.theme || "default";
-                                      const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
+                                      const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelGold","excelPongdang","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
                                       if (excelThemes.includes(id)) return "excel";
                                       if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
                                       return (id as any);

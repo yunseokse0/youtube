@@ -204,6 +204,10 @@ export type OverlayPresetLike = {
   showRestroomColumn?: boolean;
   showContributionSum?: boolean;
   showTableSumRow?: boolean;
+  /** 순위 다음 커스텀 열(상벌금 등) — 기본 ON */
+  showCustomColumn?: boolean;
+  /** 커스텀 열 헤더 오버라이드(비우면 AppState.memberCustomHeaderLabel) */
+  customHeaderLabel?: string;
   accountHeaderLabel?: string;
   toonHeaderLabel?: string;
   restroomHeaderLabel?: string;
@@ -436,6 +440,10 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   else q.set("showRestroomColumn", "true");
   if (preset.showContributionSum === false) q.set("showContributionSum", "false");
   if (preset.showTableSumRow === false) q.set("showTableSumRow", "false");
+  if (preset.showCustomColumn === false) q.set("showCustomColumn", "false");
+  if (preset.customHeaderLabel && preset.customHeaderLabel.trim()) {
+    q.set("customHeaderLabel", preset.customHeaderLabel.trim());
+  }
   if (preset.accountHeaderLabel && preset.accountHeaderLabel.trim()) q.set("accountHeaderLabel", preset.accountHeaderLabel.trim());
   if (preset.toonHeaderLabel && preset.toonHeaderLabel.trim()) q.set("toonHeaderLabel", preset.toonHeaderLabel.trim());
   if (preset.restroomHeaderLabel && preset.restroomHeaderLabel.trim()) q.set("restroomHeaderLabel", preset.restroomHeaderLabel.trim());
@@ -504,6 +512,8 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "showRestroomColumn",
   "showContributionSum",
   "showTableSumRow",
+  "showCustomColumn",
+  "customHeaderLabel",
   "rankTop3Mode",
   "rankTop3Effect",
   "rankLabelFormat",
@@ -668,6 +678,8 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "showRestroomColumn",
   "showContributionSum",
   "showTableSumRow",
+  "showCustomColumn",
+  "customHeaderLabel",
   "rankTop3Mode",
   "rankTop3Effect",
   "rankLabelFormat",

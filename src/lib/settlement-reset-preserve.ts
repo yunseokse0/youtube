@@ -20,6 +20,8 @@ export function pickSettingsPreservedAcrossSettlementReset(
     overlaySettings: state.overlaySettings,
     rankPositionLabels: state.rankPositionLabels,
     memberPositionMode: state.memberPositionMode,
+    memberCustomCells: state.memberCustomCells,
+    memberCustomHeaderLabel: state.memberCustomHeaderLabel,
     sigInventory: state.sigInventory,
     sigSoldOutStampUrl: state.sigSoldOutStampUrl,
     sigSalesMemberPresets: state.sigSalesMemberPresets,

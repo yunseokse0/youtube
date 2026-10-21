@@ -1,5 +1,9 @@
 import { DEFAULT_MEAL_GAUGE_EFFECTS, normalizeMealGaugeEffects } from "@/lib/meal-gauge-effects";
 import { normalizeDonationTableColumnsOptions } from "@/lib/donation-table-options";
+import {
+  normalizeMemberCustomCells,
+  normalizeMemberCustomHeaderLabel,
+} from "@/lib/member-custom-cells";
 import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
 import {
   clampBrowserPersistOptionsForServerAuthority,
@@ -1229,6 +1233,8 @@ export function defaultState(): AppState {
     memberPositions: {},
     memberPositionMode: "fixed",
     memberRankingMetric: "contribution",
+    memberCustomCells: {},
+    memberCustomHeaderLabel: "상벌금",
     rankPositionLabels: fitRankPositionLabelsToMemberCount(["대표"], defaultMembers().length),
     donorRankingsTheme: { ...DEFAULT_DONOR_RANKINGS_THEME },
     donorRankingsFullTheme: { ...DEFAULT_DONOR_RANKINGS_FULL_THEME },
@@ -1894,6 +1900,10 @@ export function loadState(userId?: string | null): AppState {
     data.memberPositions = normalizeMemberPositions((data as AppState).memberPositions, data.members);
     data.memberPositionMode = normalizeMemberPositionMode((data as AppState).memberPositionMode);
     data.memberRankingMetric = normalizeMemberRankingMetric((data as AppState).memberRankingMetric);
+    data.memberCustomCells = normalizeMemberCustomCells((data as AppState).memberCustomCells);
+    data.memberCustomHeaderLabel = normalizeMemberCustomHeaderLabel(
+      (data as AppState).memberCustomHeaderLabel
+    );
     data.rankPositionLabels = fitRankPositionLabelsToMemberCount(
       (data as AppState).rankPositionLabels,
       data.members.length
@@ -4111,6 +4121,10 @@ async function doLoadStateFromApi(
       data.memberPositions = normalizeMemberPositions((data as AppState).memberPositions, data.members);
       data.memberPositionMode = normalizeMemberPositionMode((data as AppState).memberPositionMode);
       data.memberRankingMetric = normalizeMemberRankingMetric((data as AppState).memberRankingMetric);
+      data.memberCustomCells = normalizeMemberCustomCells((data as AppState).memberCustomCells);
+      data.memberCustomHeaderLabel = normalizeMemberCustomHeaderLabel(
+        (data as AppState).memberCustomHeaderLabel
+      );
       data.rankPositionLabels = fitRankPositionLabelsToMemberCount(
         (data as AppState).rankPositionLabels,
         data.members.length

@@ -6,6 +6,7 @@ export type ResolvedDonationTableColumnsOptions = {
   showRestroomColumn: boolean;
   showTableSumRow: boolean;
   showContributionSum: boolean;
+  showCustomColumn: boolean;
 };
 
 export const DEFAULT_DONATION_TABLE_COLUMNS: ResolvedDonationTableColumnsOptions = {
@@ -14,6 +15,7 @@ export const DEFAULT_DONATION_TABLE_COLUMNS: ResolvedDonationTableColumnsOptions
   showRestroomColumn: true,
   showTableSumRow: true,
   showContributionSum: true,
+  showCustomColumn: true,
 };
 
 export function resolveDonationTableColumnsOptions(
@@ -27,6 +29,7 @@ export function resolveDonationTableColumnsOptions(
     showRestroomColumn: opts?.showRestroomColumn ?? fb.showRestroomColumn,
     showTableSumRow: opts?.showTableSumRow ?? fb.showTableSumRow,
     showContributionSum: opts?.showContributionSum ?? fb.showContributionSum,
+    showCustomColumn: opts?.showCustomColumn ?? fb.showCustomColumn,
   };
 }
 
@@ -40,6 +43,7 @@ export function normalizeDonationTableColumnsOptions(
     showRestroomColumn: src.showRestroomColumn !== false,
     showTableSumRow: src.showTableSumRow !== false,
     showContributionSum: src.showContributionSum !== false,
+    showCustomColumn: src.showCustomColumn !== false,
   };
 }
 
@@ -56,6 +60,7 @@ export function mergeDonationTablePresetFields<
     showRestroomColumn: p.showRestroomColumn ?? f.showRestroomColumn,
     showTableSumRow: p.showTableSumRow ?? f.showTableSumRow,
     showContributionSum: p.showContributionSum ?? f.showContributionSum,
+    showCustomColumn: p.showCustomColumn ?? f.showCustomColumn,
   } as T;
 }
 
@@ -65,6 +70,7 @@ const DONATION_TABLE_BOOL_KEYS = new Set([
   "showRestroomColumn",
   "showTableSumRow",
   "showContributionSum",
+  "showCustomColumn",
 ]);
 
 export function isDonationTableBoolKey(key: string): boolean {
