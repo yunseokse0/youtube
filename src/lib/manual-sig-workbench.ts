@@ -5,6 +5,9 @@ export const MANUAL_SIG_DRAFT_STATE_KEY = "sigSalesManualDraftV1";
 
 export type ManualInputMode = "free" | "inventory";
 
+/** 칸별 판매 모드 — single: 단일멤버 / multi: 다른 멤버도 구매 가능(표시) */
+export type ManualSigSaleMode = "single" | "multi";
+
 export type ManualSigDraft = {
   sourceSigId?: string;
   name: string;
@@ -20,6 +23,10 @@ export type ManualSigDraftPersist = {
   oneShotImageUrl: string;
   sigSoldFlags: boolean[];
   oneShotMarkSold: boolean;
+  /** 칸별 판매 모드 (기본 single) */
+  sigSaleModes?: ManualSigSaleMode[];
+  /** 칸별 구매 멤버 id — sold=false면 null */
+  sigBuyerMemberIds?: (string | null)[];
 };
 
 export type ManualSigSlot = {
@@ -32,6 +39,8 @@ export type ManualSigSlot = {
   oneShotImageUrl: string;
   sigSoldFlags: boolean[];
   oneShotMarkSold: boolean;
+  sigSaleModes?: ManualSigSaleMode[];
+  sigBuyerMemberIds?: (string | null)[];
 };
 
 export type ManualSigWorkbench = {
@@ -229,6 +238,58 @@ export function emptyManualSoldFlags(count = DEFAULT_MANUAL_SIG_PICK_COUNT): boo
   return Array.from({ length: n }, () => false);
 }
 
+export function emptyManualSaleModes(count = DEFAULT_MANUAL_SIG_PICK_COUNT): ManualSigSaleMode[] {
+  const n = clampManualSigPickCount(count);
+  return Array.from({ length: n }, () => "single" as const);
+}
+
+export function emptyManualBuyerMemberIds(count = DEFAULT_MANUAL_SIG_PICK_COUNT): (string | null)[] {
+  const n = clampManualSigPickCount(count);
+  return Array.from({ length: n }, () => null);
+}
+
+export function normalizeManualSigSaleMode(raw: unknown): ManualSigSaleMode {
+  return raw === "multi" ? "multi" : "single";
+}
+
+export function normalizeManualSaleModes(
+  raw: unknown,
+  pickCount = DEFAULT_MANUAL_SIG_PICK_COUNT
+): ManualSigSaleMode[] {
+  const n = clampManualSigPickCount(pickCount);
+  const arr = Array.isArray(raw) ? raw : [];
+  return Array.from({ length: n }, (_, i) => normalizeManualSigSaleMode(arr[i]));
+}
+
+export function normalizeManualBuyerMemberIds(
+  raw: unknown,
+  soldFlags: boolean[],
+  pickCount = DEFAULT_MANUAL_SIG_PICK_COUNT
+): (string | null)[] {
+  const n = clampManualSigPickCount(pickCount);
+  const arr = Array.isArray(raw) ? raw : [];
+  return Array.from({ length: n }, (_, i) => {
+    if (!soldFlags[i]) return null;
+    const id = String(arr[i] ?? "").trim();
+    return id || null;
+  });
+}
+
+export function resizeManualSaleModes(
+  modes: ManualSigSaleMode[] | undefined,
+  count: number
+): ManualSigSaleMode[] {
+  return normalizeManualSaleModes(modes, count);
+}
+
+export function resizeManualBuyerMemberIds(
+  ids: (string | null)[] | undefined,
+  soldFlags: boolean[],
+  count: number
+): (string | null)[] {
+  return normalizeManualBuyerMemberIds(ids, soldFlags, count);
+}
+
 export function newManualSlotId(): string {
   return `mslot_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
@@ -293,6 +354,8 @@ export function createEmptyManualSlot(name: string, id?: string, pickCount = DEF
     oneShotImageUrl: "",
     sigSoldFlags: emptyManualSoldFlags(n),
     oneShotMarkSold: false,
+    sigSaleModes: emptyManualSaleModes(n),
+    sigBuyerMemberIds: emptyManualBuyerMemberIds(n),
   };
 }
 
@@ -323,6 +386,12 @@ function normalizeSlot(raw: unknown, idx: number, pickCount: number): ManualSigS
   const o = raw as Record<string, unknown>;
   const drafts = normalizeDrafts(o.drafts, pickCount);
   const sigSoldFlags = normalizeSoldFlags(o.sigSoldFlags, pickCount);
+  const sigSaleModes = normalizeManualSaleModes(o.sigSaleModes, pickCount);
+  const sigBuyerMemberIds = normalizeManualBuyerMemberIds(
+    o.sigBuyerMemberIds,
+    sigSoldFlags,
+    pickCount
+  );
   const inputMode = o.inputMode === "inventory" ? "inventory" : "free";
   return {
     id: String(o.id || `mslot-${idx + 1}`).trim() || `mslot-${idx + 1}`,
@@ -334,6 +403,8 @@ function normalizeSlot(raw: unknown, idx: number, pickCount: number): ManualSigS
     oneShotImageUrl: typeof o.oneShotImageUrl === "string" ? o.oneShotImageUrl : "",
     sigSoldFlags,
     oneShotMarkSold: Boolean(o.oneShotMarkSold),
+    sigSaleModes,
+    sigBuyerMemberIds,
   };
 }
 
@@ -345,26 +416,33 @@ export function normalizeManualSigDraftPersist(
   const o = raw as Record<string, unknown>;
   if (!Array.isArray(o.drafts)) return null;
   const n = clampManualSigPickCount(pickCount);
+  const sigSoldFlags = normalizeSoldFlags(o.sigSoldFlags, n);
   return {
     inputMode: o.inputMode === "inventory" ? "inventory" : "free",
     drafts: normalizeDrafts(o.drafts, n),
     oneShotName: typeof o.oneShotName === "string" ? o.oneShotName : "한방 시그",
     oneShotPriceInput: typeof o.oneShotPriceInput === "string" ? o.oneShotPriceInput : "",
     oneShotImageUrl: typeof o.oneShotImageUrl === "string" ? o.oneShotImageUrl : "",
-    sigSoldFlags: normalizeSoldFlags(o.sigSoldFlags, n),
+    sigSoldFlags,
     oneShotMarkSold: Boolean(o.oneShotMarkSold),
+    sigSaleModes: normalizeManualSaleModes(o.sigSaleModes, n),
+    sigBuyerMemberIds: normalizeManualBuyerMemberIds(o.sigBuyerMemberIds, sigSoldFlags, n),
   };
 }
 
 export function slotToDraftPersist(slot: ManualSigSlot): ManualSigDraftPersist {
+  const n = clampManualSigPickCount(slot.drafts?.length || DEFAULT_MANUAL_SIG_PICK_COUNT);
+  const sigSoldFlags = normalizeSoldFlags(slot.sigSoldFlags, n);
   return {
     inputMode: slot.inputMode,
     drafts: slot.drafts,
     oneShotName: slot.oneShotName,
     oneShotPriceInput: slot.oneShotPriceInput,
     oneShotImageUrl: slot.oneShotImageUrl,
-    sigSoldFlags: slot.sigSoldFlags,
+    sigSoldFlags,
     oneShotMarkSold: slot.oneShotMarkSold,
+    sigSaleModes: normalizeManualSaleModes(slot.sigSaleModes, n),
+    sigBuyerMemberIds: normalizeManualBuyerMemberIds(slot.sigBuyerMemberIds, sigSoldFlags, n),
   };
 }
 
@@ -375,6 +453,7 @@ export function draftPersistToSlot(
   pickCount = DEFAULT_MANUAL_SIG_PICK_COUNT
 ): ManualSigSlot {
   const n = clampManualSigPickCount(pickCount);
+  const sigSoldFlags = normalizeSoldFlags(persist.sigSoldFlags, n);
   return {
     id,
     name,
@@ -383,8 +462,10 @@ export function draftPersistToSlot(
     oneShotName: persist.oneShotName,
     oneShotPriceInput: persist.oneShotPriceInput,
     oneShotImageUrl: persist.oneShotImageUrl,
-    sigSoldFlags: normalizeSoldFlags(persist.sigSoldFlags, n),
+    sigSoldFlags,
     oneShotMarkSold: persist.oneShotMarkSold,
+    sigSaleModes: normalizeManualSaleModes(persist.sigSaleModes, n),
+    sigBuyerMemberIds: normalizeManualBuyerMemberIds(persist.sigBuyerMemberIds, sigSoldFlags, n),
   };
 }
 
@@ -451,10 +532,13 @@ export function captureManualFormToSlot(
     oneShotImageUrl: string;
     sigSoldFlags: boolean[];
     oneShotMarkSold: boolean;
+    sigSaleModes?: ManualSigSaleMode[];
+    sigBuyerMemberIds?: (string | null)[];
   },
   pickCount = DEFAULT_MANUAL_SIG_PICK_COUNT
 ): ManualSigSlot {
   const n = clampManualSigPickCount(pickCount);
+  const sigSoldFlags = normalizeSoldFlags(form.sigSoldFlags, n);
   return {
     id: slotId,
     name: slotName,
@@ -463,8 +547,10 @@ export function captureManualFormToSlot(
     oneShotName: form.oneShotName,
     oneShotPriceInput: form.oneShotPriceInput,
     oneShotImageUrl: form.oneShotImageUrl,
-    sigSoldFlags: normalizeSoldFlags(form.sigSoldFlags, n),
+    sigSoldFlags,
     oneShotMarkSold: form.oneShotMarkSold,
+    sigSaleModes: normalizeManualSaleModes(form.sigSaleModes, n),
+    sigBuyerMemberIds: normalizeManualBuyerMemberIds(form.sigBuyerMemberIds, sigSoldFlags, n),
   };
 }
 
@@ -479,16 +565,21 @@ export function applyManualSlotToForm(
   oneShotImageUrl: string;
   sigSoldFlags: boolean[];
   oneShotMarkSold: boolean;
+  sigSaleModes: ManualSigSaleMode[];
+  sigBuyerMemberIds: (string | null)[];
 } {
   const n = clampManualSigPickCount(pickCount);
+  const sigSoldFlags = normalizeSoldFlags(slot.sigSoldFlags, n);
   return {
     inputMode: slot.inputMode,
     drafts: normalizeDrafts(slot.drafts, n),
     oneShotName: slot.oneShotName,
     oneShotPriceInput: slot.oneShotPriceInput,
     oneShotImageUrl: slot.oneShotImageUrl,
-    sigSoldFlags: normalizeSoldFlags(slot.sigSoldFlags, n),
+    sigSoldFlags,
     oneShotMarkSold: slot.oneShotMarkSold,
+    sigSaleModes: normalizeManualSaleModes(slot.sigSaleModes, n),
+    sigBuyerMemberIds: normalizeManualBuyerMemberIds(slot.sigBuyerMemberIds, sigSoldFlags, n),
   };
 }
 

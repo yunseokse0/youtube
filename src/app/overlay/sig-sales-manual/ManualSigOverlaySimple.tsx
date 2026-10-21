@@ -8,6 +8,7 @@ import { sigSalesPanelStatusLabel } from "@/lib/sig-sales-panel-ui";
 import { layoutSigOverlayResultGrid } from "@/components/sig-sales/sig-overlay-card-size";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import {
+  buildManualOverlaySoldMetaBySigId,
   buildManualOverlaySoldOverrideSet,
   resolveManualOneShotDisplayFromState,
   resolveManualOneShotStoredImageUrl,
@@ -163,6 +164,10 @@ export default function ManualSigOverlaySimple() {
     () => buildManualOverlaySoldOverrideSet(state, selected, userId),
     [state, selected, userId]
   );
+  const soldMetaBySigId = useMemo(
+    () => buildManualOverlaySoldMetaBySigId(state, selected, userId),
+    [state, selected, userId]
+  );
 
   const oneShot = useMemo(() => {
     const resolved = resolveManualOneShotDisplayFromState(state, selected, userId);
@@ -302,6 +307,7 @@ export default function ManualSigOverlaySimple() {
               showConfirmedBadge={false}
               disableCardMotion
               soldOverrideSet={soldOverrideSet}
+              soldMetaBySigId={soldMetaBySigId}
               sigImageUserId={userId}
               skipHanbangSignLoadingOverlay={hostObs}
               panelGridCols={panelGrid.cols}

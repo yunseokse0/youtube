@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildManualOverlaySoldMetaBySigId,
   buildManualSigSalesConfirmState,
   buildManualSigSoldPersistState,
   buildManualPanelSaleRows,
@@ -19,6 +20,7 @@ import {
   MANUAL_SIG_BROADCAST_STATE_KEY,
   readManualSigBroadcastFromState,
 } from "@/lib/manual-sig-broadcast-state";
+import { MANUAL_SIG_DRAFT_STATE_KEY } from "@/lib/manual-sig-workbench";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 import type { AppState, SigItem } from "@/types";
 
@@ -1070,5 +1072,80 @@ describe("buildManualSigSalesConfirmState", () => {
     expect(broadcast?.oneShotResult?.price).toBe(50_000);
     const display = resolveManualOneShotDisplayFromState(next, selected, "finalent");
     expect(display?.price).toBe(50_000);
+  });
+
+  it("persists buyer member and sale mode with sold flags", () => {
+    const selected: SigItem[] = [
+      {
+        id: "sig_a",
+        name: "A",
+        price: 100_000,
+        imageUrl: "",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+      {
+        id: "sig_b",
+        name: "B",
+        price: 50_000,
+        imageUrl: "",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+    ];
+    const state = {
+      members: [
+        { id: "m1", name: "멤버A", account: 0, toon: 0 },
+        { id: "m2", name: "멤버B", account: 0, toon: 0 },
+      ],
+      overlaySettings: {
+        [MANUAL_SIG_DRAFT_STATE_KEY]: {
+          drafts: [
+            { sourceSigId: "sig_a", name: "A", priceInput: "100000", imageUrl: "" },
+            { sourceSigId: "sig_b", name: "B", priceInput: "50000", imageUrl: "" },
+          ],
+          oneShotName: "한방 시그",
+          oneShotPriceInput: "",
+          oneShotImageUrl: "",
+          sigSoldFlags: [false, false],
+          oneShotMarkSold: false,
+        },
+        [MANUAL_SIG_BROADCAST_STATE_KEY]: {
+          phase: "LANDED",
+          startedAt: 1,
+          selectedSigs: selected,
+          oneShotResult: { id: ONE_SHOT_SIG_ID, name: "한방 시그", price: 150_000 },
+          overlayReloadNonce: 0,
+        },
+      },
+    } as unknown as AppState;
+    const next = buildManualSigSoldPersistState(state, {
+      sigSoldFlags: [true, false],
+      oneShotMarkSold: false,
+      sigSaleModes: ["multi", "single"],
+      sigBuyerMemberIds: ["m1", null],
+      userId: "finalent",
+    });
+    const draft = (next.overlaySettings as Record<string, unknown>)[MANUAL_SIG_DRAFT_STATE_KEY] as {
+      sigSaleModes?: string[];
+      sigBuyerMemberIds?: (string | null)[];
+      sigSoldFlags?: boolean[];
+    };
+    expect(draft.sigSoldFlags?.[0]).toBe(true);
+    expect(draft.sigSaleModes?.[0]).toBe("multi");
+    expect(draft.sigBuyerMemberIds?.[0]).toBe("m1");
+    expect(draft.sigBuyerMemberIds?.[1]).toBeNull();
+
+    const meta = buildManualOverlaySoldMetaBySigId(next, selected, "finalent");
+    expect(meta.get("sig_a")?.buyerName).toBe("멤버A");
+    expect(meta.get("sig_a")?.saleMode).toBe("multi");
+    expect(meta.get("sig_a")?.buyerColor).toMatch(/^#[0-9a-fA-F]{6}$/);
+    expect(meta.has("sig_b")).toBe(false);
   });
 });

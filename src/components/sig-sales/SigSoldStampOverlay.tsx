@@ -29,13 +29,56 @@ type SigSoldStampOverlayProps = {
   stampMaxClass?: string;
   /** text: 플랫 판넬용 붉은 SOLD OUT 스탬프 */
   variant?: "image" | "text";
+  /** 구매 멤버 이름 (한 칸 1명) */
+  buyerName?: string;
+  /** 멤버 고유 색 (#rrggbb) */
+  buyerColor?: string;
+  /** multi면 「복수 가능」 배지 */
+  saleMode?: "single" | "multi";
 };
+
+function SoldBuyerCaption({
+  buyerName,
+  buyerColor,
+  saleMode,
+}: {
+  buyerName?: string;
+  buyerColor?: string;
+  saleMode?: "single" | "multi";
+}) {
+  const name = String(buyerName || "").trim();
+  if (!name && saleMode !== "multi") return null;
+  const color = String(buyerColor || "").trim() || "#ffffff";
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-1 z-[12] flex justify-center px-1">
+      <span
+        className="max-w-full truncate rounded px-1.5 py-0.5 text-center text-[clamp(9px,1.6vw,13px)] font-bold shadow"
+        style={{
+          color,
+          backgroundColor: "rgba(0,0,0,0.82)",
+          boxShadow: `inset 3px 0 0 0 ${color}`,
+          textShadow: "0 1px 2px rgba(0,0,0,0.9)",
+        }}
+      >
+        {name || null}
+        {saleMode === "multi" ? (
+          <span className="ml-1 text-[clamp(8px,1.3vw,11px)] font-semibold opacity-90">
+            · 복수 가능
+          </span>
+        ) : null}
+      </span>
+    </div>
+  );
+}
 
 /** 판매 완료 연출: 시그 이미지 → 회색 딤 → 흰색 30%(GIF 전체) → 스탬프 */
 export default function SigSoldStampOverlay({
   soldOutStampUrl,
   stampMaxClass = SIG_SOLD_STAMP_IMG_CLASS,
   variant = "image",
+  buyerName,
+  buyerColor,
+  saleMode,
 }: SigSoldStampOverlayProps) {
   const primarySrc = resolveSigRollingStampUrl(soldOutStampUrl);
   const [stampSrc, setStampSrc] = useState(primarySrc);
@@ -46,7 +89,7 @@ export default function SigSoldStampOverlay({
     return (
       <>
         <div className="pointer-events-none absolute inset-0 z-[5] bg-black/70" aria-hidden />
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-1">
+        <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 p-1">
           <span
             className="rotate-[-14deg] rounded-sm border-[3px] border-rose-500 px-1.5 py-0.5 text-[clamp(11px,2.4vw,22px)] font-black leading-none tracking-wider text-rose-400"
             style={{ textShadow: "0 0 14px rgba(244,63,94,0.85)" }}
@@ -54,6 +97,7 @@ export default function SigSoldStampOverlay({
             SOLD OUT
           </span>
         </div>
+        <SoldBuyerCaption buyerName={buyerName} buyerColor={buyerColor} saleMode={saleMode} />
       </>
     );
   }
@@ -77,6 +121,7 @@ export default function SigSoldStampOverlay({
           }}
         />
       </div>
+      <SoldBuyerCaption buyerName={buyerName} buyerColor={buyerColor} saleMode={saleMode} />
     </>
   );
 }

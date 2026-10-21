@@ -7,6 +7,7 @@ import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
 import { useImagePreload } from "@/hooks/useImagePreload";
 import { canonicalSigIdFromWheelSliceId, formatWon, ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 import type { SigOverlayMediaOrientation } from "@/components/sig-sales/sig-overlay-card-size";
+import type { ManualOverlaySoldMeta } from "@/lib/manual-sig-broadcast";
 
 type ResultOverlayProps = {
   visible: boolean;
@@ -19,6 +20,7 @@ type ResultOverlayProps = {
   gifDelayMultiplier?: number;
   /** 재고 완판 등: 해당 id면 판매 완료 스탬프(방송 오버레이용) */
   soldOverrideSet?: Set<string>;
+  soldMetaBySigId?: Map<string, ManualOverlaySoldMeta>;
   /** 순차 시그 공개: 새로 붙는 카드만 등장 연출 */
   entranceOnlyLatest?: boolean;
   /** true면 한방 영역 「이미지 로딩 중…」 게이트 없음(로컬 미리보기 등) */
@@ -50,6 +52,7 @@ export default function ResultOverlay({
   className = "",
   gifDelayMultiplier = 1,
   soldOverrideSet,
+  soldMetaBySigId,
   entranceOnlyLatest = false,
   skipHanbangSignLoadingOverlay = false,
   hanbangOnly = false,
@@ -146,6 +149,7 @@ export default function ResultOverlay({
         soldOutStampUrl={soldOutStampUrl}
         manualSoldSet={EMPTY_SOLD_SET}
         soldOverrideSet={soldOverrideSet}
+        soldMetaBySigId={soldMetaBySigId}
         onToggleSold={() => {}}
         showToggle={false}
         compact

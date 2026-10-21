@@ -26,6 +26,7 @@ import {
 import SigSoldStampOverlay, {
   SIG_SOLD_STAMP_IMG_CLASS_BROADCAST,
 } from "@/components/sig-sales/SigSoldStampOverlay";
+import type { ManualOverlaySoldMeta } from "@/lib/manual-sig-broadcast";
 
 type SelectedSigsProps = {
   items: SigItem[];
@@ -37,6 +38,8 @@ type SelectedSigsProps = {
   highlightId?: string | null;
   showToggle?: boolean;
   soldOverrideSet?: Set<string>;
+  /** 시그 id → 구매 멤버·판매 모드 (수동 판매 OBS) */
+  soldMetaBySigId?: Map<string, ManualOverlaySoldMeta>;
   compact?: boolean;
   /** 오버레이 등: 당첨 카드를 왼쪽 정렬 */
   compactGridJustify?: "center" | "start";
@@ -87,6 +90,7 @@ function SelectedSigCard({
   onToggleSold,
   panelOrientation,
   programSkin,
+  soldMeta,
 }: {
   item: SigItem;
   idx: number;
@@ -107,6 +111,7 @@ function SelectedSigCard({
   onToggleSold: (id: string) => void;
   panelOrientation?: SigOverlayMediaOrientation;
   programSkin?: boolean;
+  soldMeta?: ManualOverlaySoldMeta | null;
 }) {
   const canonId = canonicalSigIdFromWheelSliceId(item.id);
   const [orientation, setOrientation] = useState<SigOverlayMediaOrientation>("landscape");
@@ -221,6 +226,9 @@ function SelectedSigCard({
               soldOutStampUrl={soldOutStampUrl}
               stampMaxClass={broadcastMatch ? SIG_SOLD_STAMP_IMG_CLASS_BROADCAST : undefined}
               variant={programSkin ? "text" : "image"}
+              buyerName={soldMeta?.buyerName}
+              buyerColor={soldMeta?.buyerColor}
+              saleMode={soldMeta?.saleMode}
             />
           ) : null}
         </div>
@@ -294,6 +302,7 @@ export default function SelectedSigs({
   highlightId = null,
   showToggle = true,
   soldOverrideSet,
+  soldMetaBySigId,
   compact = false,
   compactGridJustify = "center",
   showConfirmedBadge = true,
@@ -361,6 +370,8 @@ export default function SelectedSigs({
       manualSoldSet.has(item.id) ||
       manualSoldSet.has(canonId) ||
       Boolean(soldOverrideSet?.has(item.id) || soldOverrideSet?.has(canonId));
+    const soldMeta =
+      soldMetaBySigId?.get(item.id) || soldMetaBySigId?.get(canonId) || null;
     return (
       <SelectedSigCard
         key={`${canonId}__slot_${idx}`}
@@ -383,6 +394,7 @@ export default function SelectedSigs({
         onToggleSold={onToggleSold}
         panelOrientation={panelOrientation}
         programSkin={programSkin}
+        soldMeta={soldMeta}
       />
     );
   });

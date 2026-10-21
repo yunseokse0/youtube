@@ -4,7 +4,9 @@ import {
   mergeManualSigBroadcastIntoOverlaySettings,
 } from "@/lib/manual-sig-broadcast-state";
 import {
+  emptyManualBuyerMemberIds,
   emptyManualDrafts,
+  emptyManualSaleModes,
   emptyManualSoldFlags,
   MANUAL_SIG_DRAFT_STATE_KEY,
   readManualSigPickCountFromOverlaySettings,
@@ -45,6 +47,8 @@ export function buildManualRoundResetPatch(base: AppState): Partial<AppState> {
       oneShotPriceInput: "",
       sigSoldFlags: emptyManualSoldFlags(pickCount),
       oneShotMarkSold: false,
+      sigSaleModes: emptyManualSaleModes(pickCount),
+      sigBuyerMemberIds: emptyManualBuyerMemberIds(pickCount),
     };
   }
   const broadcast = buildManualSigBroadcastIdleResetPatch(base);

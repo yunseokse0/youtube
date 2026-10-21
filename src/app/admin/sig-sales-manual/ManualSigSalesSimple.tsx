@@ -44,6 +44,8 @@ import type { SigItem } from "@/types";
 import {
   MANUAL_SIG_DRAFT_STATE_KEY,
   computeManualSoldTotal,
+  emptyManualBuyerMemberIds,
+  emptyManualSaleModes,
   emptyManualSoldFlags,
   MANUAL_SIG_GRID_COLS_KEY,
   MANUAL_SIG_GRID_ROWS_KEY,
@@ -56,6 +58,8 @@ import {
   MIN_MANUAL_SIG_GRID_COLS,
   MIN_MANUAL_SIG_GRID_ROWS,
   MIN_MANUAL_SIG_PICK_COUNT,
+  normalizeManualBuyerMemberIds,
+  normalizeManualSaleModes,
   normalizeManualSigDraftPersist,
   normalizeManualSigGrid,
   normalizeManualSigSlotPriceBands,
@@ -63,11 +67,15 @@ import {
   readManualSigPanelOrientationFromOverlaySettings,
   readManualSigSlotPriceBandsFromOverlaySettings,
   readToonaDefaultAlertImageFromOverlaySettings,
+  resizeManualBuyerMemberIds,
   resizeManualDrafts,
+  resizeManualSaleModes,
   resizeManualSoldFlags,
+  type ManualSigSaleMode,
   type ManualSigSlotPriceBand,
   type SigSalesPanelOrientation,
 } from "@/lib/manual-sig-workbench";
+import { resolveMemberDisplayColor } from "@/lib/member-display-color";
 
 const SIG_INVENTORY_IMPORTED_EVENT = "youtube-sig-inventory-imported";
 const MAX_SIG_UPLOAD_BYTES = 30 * 1024 * 1024;
@@ -86,6 +94,8 @@ export default function ManualSigSalesSimple() {
   const [bandDraftByIdx, setBandDraftByIdx] = useState<Record<number, { min: string; max: string }>>(
     {}
   );
+  /** 판매 전 칸별 구매 멤버 선택(sold 시 draft에 저장) */
+  const [pendingBuyerByIdx, setPendingBuyerByIdx] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [defaultPrice, setDefaultPrice] = useState("10000");
@@ -239,7 +249,27 @@ export default function ManualSigSalesSimple() {
     if (!Array.isArray(raw)) return emptyManualSoldFlags(pickCount);
     return resizeManualSoldFlags(raw, pickCount);
   }, [draft?.sigSoldFlags, pickCount]);
+  const saleModes = useMemo(
+    () => normalizeManualSaleModes(draft?.sigSaleModes, pickCount),
+    [draft?.sigSaleModes, pickCount]
+  );
+  const buyerMemberIds = useMemo(
+    () => normalizeManualBuyerMemberIds(draft?.sigBuyerMemberIds, soldFlags, pickCount),
+    [draft?.sigBuyerMemberIds, soldFlags, pickCount]
+  );
   const oneShotMarkSold = Boolean(draft?.oneShotMarkSold);
+  const buyerMembers = useMemo(
+    () => (state?.members || []).filter((m) => !m.operating && !/운영비/i.test(String(m.name || ""))),
+    [state?.members]
+  );
+  const memberColorOf = useCallback(
+    (memberId: string) =>
+      resolveMemberDisplayColor(memberId, {
+        colorByMemberId: state?.mealBattle?.memberGaugeColors,
+        memberIds: (state?.members || []).map((m) => m.id),
+      }),
+    [state?.mealBattle?.memberGaugeColors, state?.members]
+  );
 
   const saleRows = useMemo(
     () => buildManualPanelSaleRows(state, userId),
@@ -371,9 +401,12 @@ export default function ManualSigSalesSimple() {
             DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
           sigSoldFlags: emptyManualSoldFlags(pickCount),
           oneShotMarkSold: false,
+          sigSaleModes: emptyManualSaleModes(pickCount),
+          sigBuyerMemberIds: emptyManualBuyerMemberIds(pickCount),
         },
         pickCount
       );
+      setPendingBuyerByIdx({});
       const next = buildManualSigBroadcastState(
         state,
         bundle.selected,
@@ -429,11 +462,16 @@ export default function ManualSigSalesSimple() {
           ? (state.overlaySettings as Record<string, unknown>)
           : {};
       const prevDraft = readManualSigDraftFromState(state);
+      const nextSold = prevDraft
+        ? resizeManualSoldFlags(prevDraft.sigSoldFlags || [], n)
+        : emptyManualSoldFlags(n);
       const nextDraft = prevDraft
         ? {
             ...prevDraft,
             drafts: resizeManualDrafts(prevDraft.drafts || [], n),
-            sigSoldFlags: resizeManualSoldFlags(prevDraft.sigSoldFlags || [], n),
+            sigSoldFlags: nextSold,
+            sigSaleModes: resizeManualSaleModes(prevDraft.sigSaleModes, n),
+            sigBuyerMemberIds: resizeManualBuyerMemberIds(prevDraft.sigBuyerMemberIds, nextSold, n),
           }
         : undefined;
       const nextBands = normalizeManualSigSlotPriceBands(
@@ -493,13 +531,17 @@ export default function ManualSigSalesSimple() {
           oneShotImageUrl: prevDraft?.oneShotImageUrl || DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
           sigSoldFlags: soldFlags,
           oneShotMarkSold,
+          sigSaleModes: saleModes,
+          sigBuyerMemberIds: buyerMemberIds,
         },
         pickCount
       );
       let next = buildManualSigSoldPersistState(state, {
         sigSoldFlags: soldFlags,
         oneShotMarkSold,
-        persistDrafts,
+        sigSaleModes: saleModes,
+        sigBuyerMemberIds: buyerMemberIds,
+        persistDrafts: persistDrafts ?? undefined,
         userId,
       });
       const broadcast = readManualSigBroadcastFromState(next);
@@ -529,7 +571,7 @@ export default function ManualSigSalesSimple() {
         setBusy(false);
       }
     },
-    [state, pickCount, saleRows, soldFlags, oneShotMarkSold, userId, persistState]
+    [state, pickCount, saleRows, soldFlags, saleModes, buyerMemberIds, oneShotMarkSold, userId, persistState]
   );
 
   const onConfirmSales = useCallback(
@@ -570,6 +612,8 @@ export default function ManualSigSalesSimple() {
           selected: displaySigs,
           sigSoldFlags: flagsForConfirm,
           oneShotMarkSold: oneShotForConfirm,
+          sigSaleModes: saleModes,
+          sigBuyerMemberIds: buyerMemberIds,
           userId,
           previousSoldFlags: soldFlags,
           previousOneShotMarkSold: oneShotMarkSold,
@@ -597,6 +641,8 @@ export default function ManualSigSalesSimple() {
       state,
       displaySigs,
       soldFlags,
+      saleModes,
+      buyerMemberIds,
       oneShotMarkSold,
       oneShotLabel,
       saleRows,
@@ -606,24 +652,59 @@ export default function ManualSigSalesSimple() {
     ]
   );
 
+  const persistSoldMeta = useCallback(
+    async (
+      nextFlags: boolean[],
+      nextModes: ManualSigSaleMode[],
+      nextBuyers: (string | null)[],
+      nextOneShot: boolean,
+      okMsg: string
+    ) => {
+      if (!state) return;
+      const next = buildManualSigSoldPersistState(state, {
+        sigSoldFlags: nextFlags,
+        oneShotMarkSold: nextOneShot,
+        sigSaleModes: nextModes,
+        sigBuyerMemberIds: nextBuyers,
+        userId,
+      });
+      await persistState(
+        next,
+        okMsg,
+        "표시는 바뀌었지만 서버 저장이 지연됩니다. OBS 새로고침 후 확인하세요."
+      );
+    },
+    [state, userId, persistState]
+  );
+
   const onToggleSigSold = useCallback(
     async (idx: number, sold: boolean) => {
       if (!state || idx < 0 || idx >= pickCount) return;
       const nextFlags = [...soldFlags];
-      nextFlags[idx] = sold;
+      const nextBuyers = [...buyerMemberIds];
+      if (sold) {
+        const buyerId =
+          String(pendingBuyerByIdx[idx] || buyerMemberIds[idx] || "").trim() || "";
+        if (!buyerId) {
+          setToast("구매 멤버를 선택한 뒤 판매완료 하세요.");
+          return;
+        }
+        nextFlags[idx] = true;
+        nextBuyers[idx] = buyerId;
+      } else {
+        nextFlags[idx] = false;
+        nextBuyers[idx] = null;
+      }
       setBusy(true);
       try {
-        const next = buildManualSigSoldPersistState(state, {
-          sigSoldFlags: nextFlags,
-          oneShotMarkSold,
-          userId,
-        });
         const row = saleRows.find((r) => r.draftIdx === idx);
         const label = row?.name || `시그 ${idx + 1}`;
-        await persistState(
-          next,
-          sold ? `${label} 판매완료 · OBS 반영` : `${label} 판매완료 해제 · OBS 반영`,
-          "표시는 바뀌었지만 서버 저장이 지연됩니다. OBS 새로고침 후 확인하세요."
+        await persistSoldMeta(
+          nextFlags,
+          saleModes,
+          nextBuyers,
+          oneShotMarkSold,
+          sold ? `${label} 판매완료 · OBS 반영` : `${label} 판매완료 해제 · OBS 반영`
         );
       } catch (e) {
         setToast(`판매완료 처리 실패: ${String(e)}`);
@@ -631,7 +712,70 @@ export default function ManualSigSalesSimple() {
         setBusy(false);
       }
     },
-    [state, soldFlags, oneShotMarkSold, saleRows, persistState, pickCount]
+    [
+      state,
+      soldFlags,
+      buyerMemberIds,
+      saleModes,
+      pendingBuyerByIdx,
+      oneShotMarkSold,
+      saleRows,
+      persistSoldMeta,
+      pickCount,
+    ]
+  );
+
+  const onChangeSaleMode = useCallback(
+    async (idx: number, mode: ManualSigSaleMode) => {
+      if (!state || idx < 0 || idx >= pickCount) return;
+      const nextModes = [...saleModes];
+      nextModes[idx] = mode;
+      setBusy(true);
+      try {
+        await persistSoldMeta(
+          soldFlags,
+          nextModes,
+          buyerMemberIds,
+          oneShotMarkSold,
+          mode === "multi" ? "복수 판매 모드 · OBS 반영" : "단일 판매 모드 · OBS 반영"
+        );
+      } catch (e) {
+        setToast(`판매 모드 변경 실패: ${String(e)}`);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [state, pickCount, saleModes, soldFlags, buyerMemberIds, oneShotMarkSold, persistSoldMeta]
+  );
+
+  const onChangeBuyerMember = useCallback(
+    async (idx: number, memberId: string) => {
+      if (!state || idx < 0 || idx >= pickCount) return;
+      const id = String(memberId || "").trim();
+      setPendingBuyerByIdx((prev) => ({ ...prev, [idx]: id }));
+      if (!soldFlags[idx]) return;
+      if (!id) {
+        setToast("판매완료 상태에서는 구매 멤버가 필요합니다.");
+        return;
+      }
+      const nextBuyers = [...buyerMemberIds];
+      nextBuyers[idx] = id;
+      setBusy(true);
+      try {
+        await persistSoldMeta(
+          soldFlags,
+          saleModes,
+          nextBuyers,
+          oneShotMarkSold,
+          "구매 멤버 변경 · OBS 반영"
+        );
+      } catch (e) {
+        setToast(`구매 멤버 변경 실패: ${String(e)}`);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [state, pickCount, soldFlags, buyerMemberIds, saleModes, oneShotMarkSold, persistSoldMeta]
   );
 
   const onToggleOneShotSold = useCallback(
@@ -640,15 +784,12 @@ export default function ManualSigSalesSimple() {
       setBusy(true);
       try {
         const nextFlags = sold ? soldFlags.map(() => true) : [...soldFlags];
-        const next = buildManualSigSoldPersistState(state, {
-          sigSoldFlags: nextFlags,
-          oneShotMarkSold: sold,
-          userId,
-        });
-        await persistState(
-          next,
-          sold ? "한방 시그 판매완료 · OBS 반영" : "한방 판매완료 해제 · OBS 반영",
-          "표시는 바뀌었지만 서버 저장이 지연됩니다. OBS 새로고침 후 확인하세요."
+        await persistSoldMeta(
+          nextFlags,
+          saleModes,
+          buyerMemberIds,
+          sold,
+          sold ? "한방 시그 판매완료 · OBS 반영" : "한방 판매완료 해제 · OBS 반영"
         );
       } catch (e) {
         setToast(`한방 판매완료 처리 실패: ${String(e)}`);
@@ -656,7 +797,7 @@ export default function ManualSigSalesSimple() {
         setBusy(false);
       }
     },
-    [state, soldFlags, persistState]
+    [state, soldFlags, saleModes, buyerMemberIds, persistSoldMeta]
   );
 
   const uploadOneImage = useCallback(
@@ -1375,10 +1516,18 @@ export default function ManualSigSalesSimple() {
             {Array.from({ length: pickCount }, (_, i) => {
               const row = saleRows.find((r) => r.draftIdx === i);
               const sold = Boolean(soldFlags[i]);
+              const mode = saleModes[i] === "multi" ? "multi" : "single";
+              const buyerId =
+                (sold ? buyerMemberIds[i] : null) || pendingBuyerByIdx[i] || buyerMemberIds[i] || "";
+              const buyerName =
+                buyerMembers.find((m) => m.id === buyerId)?.name?.trim() ||
+                (state?.members || []).find((m) => m.id === buyerId)?.name?.trim() ||
+                "";
+              const buyerColor = buyerId ? memberColorOf(buyerId) : "#ffffff";
               return (
                 <div
                   key={`cell_${i}`}
-                  className={`relative min-h-[8.5rem] overflow-hidden rounded-lg border text-left ${
+                  className={`relative min-h-[10.5rem] overflow-hidden rounded-lg border text-left ${
                     sold
                       ? "border-rose-500/50 bg-[#0c0c10]"
                       : "border-white/12 bg-[#121218]"
@@ -1393,7 +1542,13 @@ export default function ManualSigSalesSimple() {
                       void onToggleSigSold(i, !sold);
                     }}
                     className="relative block h-[4.75rem] w-full bg-black/40 disabled:opacity-60"
-                    title={row ? "클릭하면 판매완료 전환" : undefined}
+                    title={
+                      row
+                        ? sold
+                          ? "클릭하면 판매완료 해제"
+                          : "구매 멤버 선택 후 클릭하면 판매완료"
+                        : undefined
+                    }
                   >
                     {row?.imageUrl ? (
                       <SigSaleMedia
@@ -1413,42 +1568,90 @@ export default function ManualSigSalesSimple() {
                       />
                     ) : null}
                   </button>
-                  <div className="px-2 py-1.5">
+                  <div className="relative z-[2] space-y-1 px-2 py-1.5">
                     <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">SIG</div>
                     <div className="line-clamp-2 text-sm font-bold text-white">{row?.name || "빈 칸"}</div>
                     {row ? (
-                      <label className="mt-1 block">
-                        <span className="sr-only">칸 가격(원)</span>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          disabled={busy || phase === "CONFIRMED"}
-                          value={
-                            priceDraftByIdx[i] != null
-                              ? priceDraftByIdx[i]
-                              : String(row.price || "")
-                          }
-                          onChange={(e) =>
-                            setPriceDraftByIdx((prev) => ({ ...prev, [i]: e.target.value }))
-                          }
-                          onBlur={() => {
-                            const raw =
-                              priceDraftByIdx[i] != null ? priceDraftByIdx[i]! : String(row.price || "");
-                            void onCommitCellPrice(i, raw).then(() => {
-                              setPriceDraftByIdx((prev) => {
-                                const next = { ...prev };
-                                delete next[i];
-                                return next;
+                      <>
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            disabled={busy || phase === "CONFIRMED"}
+                            onClick={() => void onChangeSaleMode(i, "single")}
+                            className={`flex-1 rounded px-1 py-0.5 text-[10px] font-bold ${
+                              mode === "single"
+                                ? "bg-emerald-700 text-white"
+                                : "bg-neutral-800 text-neutral-400"
+                            }`}
+                          >
+                            단일
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy || phase === "CONFIRMED"}
+                            onClick={() => void onChangeSaleMode(i, "multi")}
+                            className={`flex-1 rounded px-1 py-0.5 text-[10px] font-bold ${
+                              mode === "multi"
+                                ? "bg-sky-700 text-white"
+                                : "bg-neutral-800 text-neutral-400"
+                            }`}
+                          >
+                            복수
+                          </button>
+                        </div>
+                        <label className="block">
+                          <span className="sr-only">구매 멤버</span>
+                          <select
+                            className="w-full rounded border border-white/15 bg-black/50 px-1 py-0.5 text-[11px] font-semibold"
+                            style={buyerId ? { color: buyerColor, borderColor: `${buyerColor}66` } : undefined}
+                            disabled={busy || phase === "CONFIRMED"}
+                            value={buyerId}
+                            onChange={(e) => void onChangeBuyerMember(i, e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <option value="">구매 멤버</option>
+                            {buyerMembers.map((m) => (
+                              <option key={m.id} value={m.id} style={{ color: memberColorOf(m.id) }}>
+                                {m.name || m.id}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="block">
+                          <span className="sr-only">칸 가격(원)</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            disabled={busy || phase === "CONFIRMED"}
+                            value={
+                              priceDraftByIdx[i] != null
+                                ? priceDraftByIdx[i]
+                                : String(row.price || "")
+                            }
+                            onChange={(e) =>
+                              setPriceDraftByIdx((prev) => ({ ...prev, [i]: e.target.value }))
+                            }
+                            onBlur={() => {
+                              const raw =
+                                priceDraftByIdx[i] != null
+                                  ? priceDraftByIdx[i]!
+                                  : String(row.price || "");
+                              void onCommitCellPrice(i, raw).then(() => {
+                                setPriceDraftByIdx((prev) => {
+                                  const next = { ...prev };
+                                  delete next[i];
+                                  return next;
+                                });
                               });
-                            });
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          className="w-full rounded border border-yellow-400/30 bg-black/40 px-1.5 py-0.5 text-sm font-black tabular-nums text-yellow-300"
-                          title="칸별 판매가 (원)"
-                        />
-                      </label>
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                            }}
+                            className="w-full rounded border border-yellow-400/30 bg-black/40 px-1.5 py-0.5 text-sm font-black tabular-nums text-yellow-300"
+                            title="칸별 판매가 (원)"
+                          />
+                        </label>
+                      </>
                     ) : null}
                   </div>
                   {sold ? (
@@ -1456,7 +1659,7 @@ export default function ManualSigSalesSimple() {
                       type="button"
                       disabled={busy || phase === "CONFIRMED"}
                       onClick={() => void onToggleSigSold(i, false)}
-                      className="absolute inset-0 flex items-center justify-center bg-black/70"
+                      className="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-1 bg-black/70 pt-2"
                       title="클릭하면 판매완료 해제"
                     >
                       <span
@@ -1465,6 +1668,22 @@ export default function ManualSigSalesSimple() {
                       >
                         SOLD OUT
                       </span>
+                      {buyerName ? (
+                        <span
+                          className="rounded bg-black/80 px-2 py-0.5 text-xs font-bold"
+                          style={{
+                            color: buyerColor,
+                            boxShadow: `inset 3px 0 0 0 ${buyerColor}`,
+                          }}
+                        >
+                          {buyerName}
+                          {mode === "multi" ? (
+                            <span className="ml-1 text-[10px] font-semibold opacity-90">
+                              · 복수 가능
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : null}
                     </button>
                   ) : null}
                 </div>
