@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   getYoutubePublicBaseUrl,
+  isDisallowedPublicIngestHost,
+  normalizeYoutubeIngestBaseUrl,
+  readYoutubePublicBaseUrlFromEnv,
   resolveToonaLinkCredentials,
 } from "@/lib/toona-link";
 import type { StoredAccount } from "@/lib/accounts-storage";
@@ -58,5 +61,17 @@ describe("toona-link", () => {
     process.env.NEXTAUTH_URL = "https://excel.heyob.co.kr/";
     const req = new Request("http://localhost/login");
     expect(getYoutubePublicBaseUrl(req)).toBe("https://excel.heyob.co.kr");
+  });
+
+  it("blocks public IP as youtube ingest baseUrl", () => {
+    expect(isDisallowedPublicIngestHost("3.37.127.90")).toBe(true);
+    expect(isDisallowedPublicIngestHost("localhost")).toBe(false);
+    expect(normalizeYoutubeIngestBaseUrl("http://3.37.127.90:3000")).toBeNull();
+    expect(normalizeYoutubeIngestBaseUrl("https://excel.heyob.co.kr")).toBe(
+      "https://excel.heyob.co.kr"
+    );
+    process.env.YOUTUBE_PUBLIC_BASE_URL = "http://3.37.127.90:3000";
+    delete process.env.NEXTAUTH_URL;
+    expect(readYoutubePublicBaseUrlFromEnv()).toBeNull();
   });
 });

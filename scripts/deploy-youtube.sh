@@ -132,11 +132,25 @@ check_env "DATABASE_URL" "MySQL 접속 주소 (전혀 안되면 모든 state rea
 check_env "TOONA_INGEST_SECRET" "DIN 허브→유튜브 ingest 공유키 (B모드에서 /api/donations/ingest 503 ingest_secret_not_configure 원인)" "error"
 check_env "NEXTAUTH_SECRET" "관리자 세션 암호화 키 (빠지면 /admin 로그인 불가)" "warn"
 check_env "NEXTAUTH_URL" "공개 origin (https://excel.heyob.co.kr). http://IP:3000 금지" "warn"
+check_env "YOUTUBE_PUBLIC_BASE_URL" "허브 ingest 대상 (https://excel.heyob.co.kr). IP 금지" "warn"
+# 공개 IP가 ingest base로 남아 있으면 도메인 전환 후 후원 push 끊김
+for _k in YOUTUBE_PUBLIC_BASE_URL NEXTAUTH_URL; do
+  _v=$(grep -E "^${_k}=" .env 2>/dev/null | cut -d= -f2- | tr -d '\r' | xargs || true)
+  if echo "$_v" | grep -Eq 'https?://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
+    echo "       ❌ [도메인필수]  $_k=$_v  → https://excel.heyob.co.kr 로 바꾸세요 (IP ingest 금지)"
+    ENV_WARN=$((ENV_WARN+1))
+  fi
+done
 if [ "$ENV_WARN" -gt 0 ]; then
   echo ""
-  echo "       💡 위 누락 env는 .env 파일에 아래 형식으로 작성하세요:"
+  echo "       💡 위 누락·잘못된 env는 .env에 아래처럼 맞추세요:"
   echo "          DATABASE_URL='mysql://user:pass@host:3306/db?ssl={"rejectUnauthorized":true}'"
   echo "          TOONA_INGEST_SECRET='DIN허브 대시보드 > 프로젝트 > Ingest Secret에 적힌 값 그대로 복사'"
+  echo "          YOUTUBE_PUBLIC_BASE_URL=https://excel.heyob.co.kr"
+  echo "          NEXTAUTH_URL=https://excel.heyob.co.kr"
+  echo "          NEXT_PUBLIC_HUB_URL=https://heyob.co.kr"
+  echo "          NEXT_PUBLIC_TOONA_API_BASE_URL=https://sig.heyob.co.kr"
+  echo "          AUTH_COOKIE_SECURE=true"
   echo "          수정 후 → bash scripts/deploy-youtube.sh 다시 실행 또는 pm2 reload all"
   echo ""
 fi
@@ -217,7 +231,7 @@ echo "   빌드 결과..: exit $BUILD_EXIT  ·  ${BUILD_ELAPSED}s"
 echo "   Health.....: $( [ "$HEALTH_OK" -eq 1 ] && echo "✅ OK (HTTP 200)" || echo "❌ FAIL (5회 재시도 불통)" )"
 echo "   Node.js....: $(node -v 2>/dev/null || echo 'N/A')   npm: $(npm -v 2>/dev/null || echo 'N/A')"
 echo "   Runtime....: $( [ "$HAS_PM2" -eq 1 ] && echo "PM2" || echo "systemd" )"
-echo "   배포 대상..: http://3.37.127.90/  (admin: /admin · overlay: /overlay?u=din)"
+echo "   배포 대상..: https://excel.heyob.co.kr/  (admin: /admin · overlay: /overlay?u=din)"
 echo "================================================================================"
 if [ "$HEALTH_OK" -ne 1 ]; then
   echo "  ⚠️  Health check 실패 → 로그 확인: pm2 logs  |  journalctl -u youtube -n 50"

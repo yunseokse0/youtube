@@ -33,16 +33,39 @@ export function normalizePublicBaseUrl(raw: string): string | null {
   }
 }
 
+/** 허브 ingest 대상에 쓰면 안 되는 공개 IP(로컬 제외). 도메인 전환 후 IP:3000 push 방지. */
+export function isDisallowedPublicIngestHost(hostname: string): boolean {
+  const h = String(hostname || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
+  if (!h || h === "localhost" || h === "127.0.0.1" || h === "::1") return false;
+  return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(h);
+}
+
+/** ingest·연동용 baseUrl — 공개 IPv4면 null (허브에 IP를 다시 심지 않음) */
+export function normalizeYoutubeIngestBaseUrl(raw: string): string | null {
+  const normalized = normalizePublicBaseUrl(raw);
+  if (!normalized) return null;
+  try {
+    const host = new URL(normalized).hostname;
+    if (isDisallowedPublicIngestHost(host)) return null;
+  } catch {
+    return null;
+  }
+  return normalized;
+}
+
 export function getToonaApiBaseUrl(): string | null {
   const raw = stripWrappingQuotes(String(process.env.NEXT_PUBLIC_TOONA_API_BASE_URL || ""));
   return normalizeToonaApiBaseUrl(raw);
 }
 
-/** ingest·허브 자가수복용 공개 origin. IP:3000 금지, HTTPS 도메인만. */
+/** ingest·허브 자가수복용 공개 origin. 공개 IP·IP:3000 금지. */
 export function readYoutubePublicBaseUrlFromEnv(): string | null {
   return (
-    normalizePublicBaseUrl(String(process.env.YOUTUBE_PUBLIC_BASE_URL || "")) ||
-    normalizePublicBaseUrl(String(process.env.NEXTAUTH_URL || ""))
+    normalizeYoutubeIngestBaseUrl(String(process.env.YOUTUBE_PUBLIC_BASE_URL || "")) ||
+    normalizeYoutubeIngestBaseUrl(String(process.env.NEXTAUTH_URL || ""))
   );
 }
 
@@ -50,8 +73,13 @@ export function getYoutubePublicBaseUrl(req: Request): string {
   const fromEnv = readYoutubePublicBaseUrlFromEnv();
   if (fromEnv) return fromEnv;
   const proto = req.headers.get("x-forwarded-proto") || "http";
-  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "";
-  return `${proto}://${host}`.replace(/\/$/, "");
+  const hostHeader = req.headers.get("x-forwarded-host") || req.headers.get("host") || "";
+  const hostOnly = hostHeader.split(",")[0]?.trim().split(":")[0] || "";
+  if (isDisallowedPublicIngestHost(hostOnly)) {
+    /** env 미설정 + Host가 IP면 빈 문자열 대신 도메인 강제 유도 (연동 PATCH 스킵에 가깝게) */
+    return "";
+  }
+  return `${proto}://${hostHeader}`.replace(/\/$/, "");
 }
 
 export function resolveToonaLinkCredentials(
@@ -172,6 +200,12 @@ export function scheduleToonaLinkOnLogin(
   if (!creds) return;
 
   const youtubePublicBaseUrl = getYoutubePublicBaseUrl(req);
+  if (!youtubePublicBaseUrl || !normalizeYoutubeIngestBaseUrl(youtubePublicBaseUrl)) {
+    console.warn(
+      `[toona-link] skip youtube=${youtubeUserId}: set YOUTUBE_PUBLIC_BASE_URL=https://excel.heyob.co.kr (public IP ingest URL blocked)`
+    );
+    return;
+  }
   void linkToonaYoutubeGitOnLogin({
     youtubeUserId,
     ...creds,
