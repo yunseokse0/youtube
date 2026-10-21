@@ -1,6 +1,11 @@
 import type { Member } from "@/types";
 import { normalizeDonorsArray } from "@/lib/state";
-import { memberDonationRankingTotal } from "@/lib/utils";
+import {
+  memberContributionRankingTotal,
+  memberDonationRankingTotal,
+  normalizeMemberRankingMetric,
+  type MemberRankingMetric,
+} from "@/lib/utils";
 
 export type OverlayRankRow = { m: Member; rank: number | null };
 
@@ -67,12 +72,18 @@ export function detectRankImprovement(
   return best;
 }
 
-export function buildRankChangeSessionSnapshot(members: Member[], donors: unknown): RankChangeSessionSnapshot {
+export function buildRankChangeSessionSnapshot(
+  members: Member[],
+  donors: unknown,
+  rankingMetric: MemberRankingMetric = "contribution"
+): RankChangeSessionSnapshot {
+  const metric = normalizeMemberRankingMetric(rankingMetric);
   const memberTotals = new Map<string, number>();
   let totalCombined = 0;
   for (const m of members) {
     if (!m?.id) continue;
-    const t = memberDonationRankingTotal(m);
+    const t =
+      metric === "donation" ? memberDonationRankingTotal(m) : memberContributionRankingTotal(m);
     memberTotals.set(m.id, t);
     totalCombined += t;
   }

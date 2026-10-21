@@ -14,7 +14,8 @@ const m = (id: string, name: string, account = 0, toon = 0): Member => ({
   name,
   account,
   toon,
-  contribution: 0,
+  /** 순위 연출 세션 스냅샷은 누적 기여도 기준 */
+  contribution: Math.max(0, account) + Math.max(0, toon),
 });
 
 describe("excel-member-rank-change", () => {

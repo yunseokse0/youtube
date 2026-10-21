@@ -112,6 +112,7 @@ function overlayCoreFields(
     members: state.members,
     memberPositions: state.memberPositions,
     memberPositionMode: state.memberPositionMode,
+    memberRankingMetric: state.memberRankingMetric || "contribution",
     rankPositionLabels: state.rankPositionLabels,
     donorsFormat: state.donorsFormat,
     donorRankingsTheme: state.donorRankingsTheme,

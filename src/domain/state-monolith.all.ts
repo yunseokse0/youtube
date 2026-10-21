@@ -1069,6 +1069,12 @@ function normalizeMemberPositionMode(input: unknown): AppState["memberPositionMo
   return input === "rankLinked" ? "rankLinked" : "fixed";
 }
 
+export function normalizeMemberRankingMetric(
+  input: unknown
+): NonNullable<AppState["memberRankingMetric"]> {
+  return input === "donation" ? "donation" : "contribution";
+}
+
 /** 순위 연동 직급 라벨 상한(멤버 수 연동, 비정상 배열 방지) */
 export const MAX_RANK_POSITION_LABELS = 100;
 
@@ -1222,6 +1228,7 @@ export function defaultState(): AppState {
     members: defaultMembers(),
     memberPositions: {},
     memberPositionMode: "fixed",
+    memberRankingMetric: "contribution",
     rankPositionLabels: fitRankPositionLabelsToMemberCount(["대표"], defaultMembers().length),
     donorRankingsTheme: { ...DEFAULT_DONOR_RANKINGS_THEME },
     donorRankingsFullTheme: { ...DEFAULT_DONOR_RANKINGS_FULL_THEME },
@@ -1886,6 +1893,7 @@ export function loadState(userId?: string | null): AppState {
     data.members = (() => { const v = ensureMembers(data.members); return v.length > 0 ? v : defaultMembers().map(normalizeMember); })();
     data.memberPositions = normalizeMemberPositions((data as AppState).memberPositions, data.members);
     data.memberPositionMode = normalizeMemberPositionMode((data as AppState).memberPositionMode);
+    data.memberRankingMetric = normalizeMemberRankingMetric((data as AppState).memberRankingMetric);
     data.rankPositionLabels = fitRankPositionLabelsToMemberCount(
       (data as AppState).rankPositionLabels,
       data.members.length
@@ -4102,6 +4110,7 @@ async function doLoadStateFromApi(
       data.members = (() => { const v = ensureMembers(data.members); return v.length > 0 ? v : defaultMembers().map(normalizeMember); })();
       data.memberPositions = normalizeMemberPositions((data as AppState).memberPositions, data.members);
       data.memberPositionMode = normalizeMemberPositionMode((data as AppState).memberPositionMode);
+      data.memberRankingMetric = normalizeMemberRankingMetric((data as AppState).memberRankingMetric);
       data.rankPositionLabels = fitRankPositionLabelsToMemberCount(
         (data as AppState).rankPositionLabels,
         data.members.length

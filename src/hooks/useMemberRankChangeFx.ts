@@ -8,6 +8,7 @@ import {
   type RankImprovementEvent,
 } from "@/lib/excel-member-rank-change";
 import type { OverlayRankRow } from "@/lib/excel-member-rank-change";
+import type { MemberRankingMetric } from "@/lib/utils";
 import type { Donor, Member } from "@/types";
 
 /** 엑셀표·순위변동 전용 — 멤버 순위 상승 1건 감지(후원 삭제 셔플 제외) */
@@ -17,11 +18,12 @@ export function useMemberRankChangeFx(opts: {
   ranked: OverlayRankRow[];
   members: Member[];
   donors: Donor[] | unknown;
+  rankingMetric?: MemberRankingMetric;
 }): {
   event: RankImprovementEvent | null;
   clearEvent: () => void;
 } {
-  const { enabled, ready, ranked, members, donors } = opts;
+  const { enabled, ready, ranked, members, donors, rankingMetric = "contribution" } = opts;
   const [event, setEvent] = useState<RankImprovementEvent | null>(null);
   const prevRankSnapshotRef = useRef<ReturnType<typeof buildMemberRankSnapshot> | null>(null);
   const prevSessionRef = useRef<ReturnType<typeof buildRankChangeSessionSnapshot> | null>(null);
@@ -31,7 +33,7 @@ export function useMemberRankChangeFx(opts: {
   useEffect(() => {
     if (!enabled || !ready) return;
     const rankSnapshot = buildMemberRankSnapshot(ranked);
-    const session = buildRankChangeSessionSnapshot(members, donors);
+    const session = buildRankChangeSessionSnapshot(members, donors, rankingMetric);
     if (!bootstrappedRef.current) {
       bootstrappedRef.current = true;
       prevRankSnapshotRef.current = rankSnapshot;
@@ -53,7 +55,7 @@ export function useMemberRankChangeFx(opts: {
     if (now - cooldownRef.current < 5200) return;
     cooldownRef.current = now;
     setEvent(hit);
-  }, [enabled, ready, ranked, members, donors]);
+  }, [enabled, ready, ranked, members, donors, rankingMetric]);
 
   const clearEvent = useCallback(() => setEvent(null), []);
 

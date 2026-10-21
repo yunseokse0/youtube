@@ -135,7 +135,15 @@ import {
   subscribeOverlayPresetsLocalUpdated,
 } from "@/lib/broadcast-state-local-sync";
 import { shouldSuppressAutoRosterRestore } from "@/lib/intentional-donation-clear";
-import { buildOverlayRankedMembers, buildMemberCreationOrderIndex, compareMembersByDonationTotal, OVERLAY_EXCEL_COLUMN_SLOTS, splitOverlayListAtHalf } from "@/lib/utils";
+import {
+  buildOverlayRankedMembers,
+  buildMemberCreationOrderIndex,
+  compareMembersByRankingMetric,
+  normalizeMemberRankingMetric,
+  OVERLAY_EXCEL_COLUMN_SLOTS,
+  splitOverlayListAtHalf,
+  type MemberRankingMetric,
+} from "@/lib/utils";
 import {
   isDonationTableBoolKey,
   mergeDonationTablePresetFields,
@@ -338,6 +346,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
           members: good.members,
           memberPositions: good.memberPositions,
           memberPositionMode: good.memberPositionMode,
+          memberRankingMetric: good.memberRankingMetric,
           rankPositionLabels: good.rankPositionLabels,
         };
       }
@@ -353,6 +362,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         members: good.members,
         memberPositions: good.memberPositions,
         memberPositionMode: good.memberPositionMode,
+        memberRankingMetric: good.memberRankingMetric,
         rankPositionLabels: good.rankPositionLabels,
       };
     } else if (good && hasMeaningfulMemberRoster(good) && !remoteRosterChanged) {
@@ -2385,6 +2395,13 @@ function OverlayInner() {
     () => ((ready && s && (s as AppState).memberPositionMode === "rankLinked") ? "rankLinked" : "fixed"),
     [ready, s]
   );
+  const memberRankingMetric = useMemo<MemberRankingMetric>(
+    () =>
+      ready && s
+        ? normalizeMemberRankingMetric((s as AppState).memberRankingMetric)
+        : "contribution",
+    [ready, s]
+  );
   const rankPositionLabels = useMemo<string[]>(
     () => ((ready && s && Array.isArray((s as AppState).rankPositionLabels)) ? (s as AppState).rankPositionLabels : []),
     [ready, s]
@@ -3631,28 +3648,6 @@ function OverlayInner() {
     overlayPresets,
     skipPersist: !ready,
   });
-  const resolvedMemberRoles = useMemo<Record<string, string>>(() => {
-    if (memberPositionMode !== "rankLinked") return memberPositionsMap;
-    const roleMap: Record<string, string> = {};
-    const representative = members.find((m) => (memberPositionsMap[m.id] || "").trim() === "대표") || null;
-    const orderIndex = buildMemberCreationOrderIndex(members);
-    const others = members
-      .filter((m) => !representative || m.id !== representative.id)
-      .sort((a, b) => compareMembersByDonationTotal(a, b, orderIndex));
-    if (representative) roleMap[representative.id] = "대표";
-    const startIdx = representative ? 1 : 0;
-    others.forEach((m, idx) => {
-      const rankIdx = idx + startIdx;
-      const label = String(rankPositionLabels[rankIdx] || "").trim() || (rankIdx === 0 ? "대표" : "");
-      if (label) roleMap[m.id] = label;
-    });
-    return roleMap;
-  }, [memberPositionMode, memberPositionsMap, members, rankPositionLabels]);
-  const getMemberRole = useCallback((m: Member) => resolvedMemberRoles[m.id] || "", [resolvedMemberRoles]);
-  const pinnedFilter = useCallback(
-    (m: Member) => Boolean(m.operating) || /운영비/i.test(m.name) || /운영비/i.test(getMemberRole(m)),
-    [getMemberRole]
-  );
   /**
    * 기여도 숫자: donors contributionPoints + 기록부와 동일하게 계산.
    * donors가 있으면 저장값·계좌+투네 폴백 대신 공식 기반 합산을 우선(OBS pick에 기록부 없음).
@@ -3682,6 +3677,43 @@ function OverlayInner() {
     if (allowContributionTotalFallback && c === 0 && total > 0) return total;
     return c;
   }, [allowContributionTotalFallback, s?.donors, s?.contributionLogs, s?.contributionFormula]);
+  const resolvedMemberRoles = useMemo<Record<string, string>>(() => {
+    if (memberPositionMode !== "rankLinked") return memberPositionsMap;
+    const roleMap: Record<string, string> = {};
+    const representative = members.find((m) => (memberPositionsMap[m.id] || "").trim() === "대표") || null;
+    const orderIndex = buildMemberCreationOrderIndex(members);
+    const others = members
+      .filter((m) => !representative || m.id !== representative.id)
+      .sort((a, b) =>
+        compareMembersByRankingMetric(
+          a,
+          b,
+          memberRankingMetric,
+          orderIndex,
+          getContributionValueForMember
+        )
+      );
+    if (representative) roleMap[representative.id] = "대표";
+    const startIdx = representative ? 1 : 0;
+    others.forEach((m, idx) => {
+      const rankIdx = idx + startIdx;
+      const label = String(rankPositionLabels[rankIdx] || "").trim() || (rankIdx === 0 ? "대표" : "");
+      if (label) roleMap[m.id] = label;
+    });
+    return roleMap;
+  }, [
+    memberPositionMode,
+    memberPositionsMap,
+    members,
+    rankPositionLabels,
+    getContributionValueForMember,
+    memberRankingMetric,
+  ]);
+  const getMemberRole = useCallback((m: Member) => resolvedMemberRoles[m.id] || "", [resolvedMemberRoles]);
+  const pinnedFilter = useCallback(
+    (m: Member) => Boolean(m.operating) || /운영비/i.test(m.name) || /운영비/i.test(getMemberRole(m)),
+    [getMemberRole]
+  );
   const getRestroomValueForMember = useCallback((m: Member) => {
     return normalizeRestroomCount((m as Member & { restroom?: unknown }).restroom);
   }, []);
@@ -3782,8 +3814,23 @@ function OverlayInner() {
     [members, getMemberRole]
   );
   const ranked = useMemo(
-    () => buildOverlayRankedMembers(unpinned, memberPositionsMap, getMemberRole, members),
-    [unpinned, memberPositionsMap, getMemberRole, members]
+    () =>
+      buildOverlayRankedMembers(
+        unpinned,
+        memberPositionsMap,
+        getMemberRole,
+        members,
+        getContributionValueForMember,
+        memberRankingMetric
+      ),
+    [
+      unpinned,
+      memberPositionsMap,
+      getMemberRole,
+      members,
+      getContributionValueForMember,
+      memberRankingMetric,
+    ]
   );
   const donorsForRankFx = useMemo(() => {
     if (isAdminPreview && adminPreviewDonors !== undefined) {
@@ -3804,6 +3851,7 @@ function OverlayInner() {
     ranked,
     members,
     donors: donorsForRankFx,
+    rankingMetric: memberRankingMetric,
   });
   /**
    * 엑셀표 인원 변동:

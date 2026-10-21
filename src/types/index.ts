@@ -647,6 +647,12 @@ export type AppState = {
   memberPositions: Record<string, string>;
   /** 직급 표시 방식: 멤버 고정(fixed) / 순위 연동(rankLinked) */
   memberPositionMode: "fixed" | "rankLinked";
+  /**
+   * 엑셀표·순위 연동 정렬 기준
+   * - contribution: 세션 누적 기여도 (동점 시 금액)
+   * - donation: 계좌+투네 금액 (기존)
+   */
+  memberRankingMetric?: "contribution" | "donation";
   /** 순위 연동 모드에서 사용할 직급 라벨(1위부터 순서대로) */
   rankPositionLabels: string[];
   /** 계좌/투네 후원 순위 오버레이 테마 */

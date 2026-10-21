@@ -203,6 +203,7 @@ import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync
 import MemberExcelAccountReconcile from "@/components/settlement/MemberExcelAccountReconcile";
 import { mergeDonorsWithMissingAccount, type MemberExcelReconcileResult } from "@/lib/member-toonation-excel";
 import { formatSigMatchStat, formatSigMatchManualAdjustStepLabel, getSigMatchRankings, isOperatingSettlementMember, resolveSigMatchDonationLink, resolveSigMatchManualAdjustSteps } from "@/lib/settlement-utils";
+import { buildRankLinkedMemberPositions } from "@/lib/utils";
 import { buildDonorTotalsByNameFromDonors } from "@/lib/donor-rankings-aggregate";
 import { globalDonorTotalsByNameToCsv, globalDonorTotalsByNameToXlsxBlob } from "@/lib/settlement-donor-export";
 import { getEffectiveRemainingTime, mergeGeneralTimerPreferEffective, pauseTimer, resumeTimer } from "@/lib/timer-utils";
@@ -6440,6 +6441,21 @@ function AdminPageInner() {
 
   const updateMemberPositionMode = (mode: AppState["memberPositionMode"]) => {
     setState((prev: AppState) => {
+      /** 순위 연동 → 멤버 고정: 현재 순위 직급을 멤버에 저장(다음화용) */
+      if (mode === "fixed" && prev.memberPositionMode === "rankLinked") {
+        const next: AppState = {
+          ...prev,
+          memberPositionMode: "fixed",
+          memberPositions: buildRankLinkedMemberPositions(
+            prev.members,
+            prev.memberPositions,
+            prev.rankPositionLabels,
+            { rankingMetric: prev.memberRankingMetric }
+          ),
+        };
+        persistState(next, { includeDonationFields: true });
+        return next;
+      }
       const next: AppState = {
         ...prev,
         memberPositionMode: mode,
@@ -6451,6 +6467,17 @@ function AdminPageInner() {
               ),
             }
           : {}),
+      };
+      persistState(next, { includeDonationFields: true });
+      return next;
+    });
+  };
+
+  const updateMemberRankingMetric = (metric: NonNullable<AppState["memberRankingMetric"]>) => {
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        memberRankingMetric: metric === "donation" ? "donation" : "contribution",
       };
       persistState(next, { includeDonationFields: true });
       return next;
@@ -12071,7 +12098,40 @@ function AdminPageInner() {
                     </button>
                   </div>
                   <p className="mt-1 text-[11px] text-neutral-500">
-                    순위 연동 모드에서는 점수 순으로 정렬되며, 1위부터 직급 라벨이 이동하면서 붙습니다.
+                    첫화는「순위 연동」으로 직급이 순위에 따라 움직입니다. 다음화 전에「멤버 고정 직급」을 누르면
+                    현재 순위 직급이 멤버에 저장되고, 이후에는 멤버별로 고정됩니다.
+                  </p>
+                </div>
+                <div className="rounded border border-white/10 bg-black/20 p-2">
+                  <div className="text-xs text-neutral-400 mb-1">엑셀표 순위 기준</div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className={`px-2 py-1 rounded text-xs ${
+                        (state.memberRankingMetric || "contribution") !== "donation"
+                          ? "bg-emerald-700 hover:bg-emerald-600"
+                          : "bg-neutral-700 hover:bg-neutral-600"
+                      }`}
+                      onClick={() => updateMemberRankingMetric("contribution")}
+                    >
+                      누적 기여도
+                    </button>
+                    <button
+                      type="button"
+                      className={`px-2 py-1 rounded text-xs ${
+                        state.memberRankingMetric === "donation"
+                          ? "bg-emerald-700 hover:bg-emerald-600"
+                          : "bg-neutral-700 hover:bg-neutral-600"
+                      }`}
+                      onClick={() => updateMemberRankingMetric("donation")}
+                    >
+                      계좌+투네 금액
+                    </button>
+                  </div>
+                  <p className="mt-1 text-[11px] text-neutral-500">
+                    {(state.memberRankingMetric || "contribution") === "donation"
+                      ? "계좌·투네 합(100원 단위)으로 순위를 매깁니다. 동점이면 멤버 생성순."
+                      : "세션 누적 기여도로 순위를 매깁니다. 동점이면 금액 → 멤버 생성순."}
                   </p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">

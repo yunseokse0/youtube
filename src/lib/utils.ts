@@ -7,10 +7,21 @@ export type MemberRankingRow = {
   accountAmount: number;
   toonAmount: number;
   totalAmount: number;
+  /** 세션 누적 기여도 — 엑셀표 순위 기준 */
+  contributionAmount: number;
   isRepresentative: boolean;
 };
 
+export type MemberContributionGetter = (member: Member) => number;
+
 export type MemberPositionMode = "fixed" | "rankLinked";
+
+/** 엑셀표·순위 연동 정렬 기준 */
+export type MemberRankingMetric = "contribution" | "donation";
+
+export function normalizeMemberRankingMetric(input: unknown): MemberRankingMetric {
+  return input === "donation" ? "donation" : "contribution";
+}
 
 function safeAmount(value: unknown): number {
   const n = Number(value);
@@ -47,12 +58,24 @@ export function buildMemberCreationOrderIndex(members: Member[]): Map<string, nu
   return map;
 }
 
-/** 엑셀표·후원순위·순위 변동 연출 — 100원 단위 버림 후 account+toon 합 */
+/** 후원 분배·금액 참고 — 100원 단위 버림 후 account+toon 합 */
 export function memberDonationRankingTotal(member: Member): number {
   return floorToHundreds(safeAmount(member.account)) + floorToHundreds(safeAmount(member.toon));
 }
 
-/** 후원 총액 내림차순 → 동점(후원 없음 포함) 시 멤버 생성순 */
+/** 엑셀표 순위 — 세션 누적 기여도 (getter 없으면 member.contribution) */
+export function memberContributionRankingTotal(
+  member: Member,
+  getContribution?: MemberContributionGetter
+): number {
+  if (getContribution) {
+    return Math.max(0, Math.floor(Number(getContribution(member)) || 0));
+  }
+  const raw = (member as Member & { contribution?: unknown }).contribution;
+  return safeAmount(raw);
+}
+
+/** 후원 총액 내림차순 → 동점 시 멤버 생성순 (분배·레거시용) */
 export function compareMembersByDonationTotal(
   a: Member,
   b: Member,
@@ -69,16 +92,60 @@ export function compareMembersByDonationTotal(
   return String(a.id || "").localeCompare(String(b.id || ""));
 }
 
-function compareRankingRowsByTotalDesc(
+/**
+ * 엑셀표·순위 연동: 누적 기여도 내림차순 → 동점이면 금액 합 → 생성순
+ */
+export function compareMembersByContribution(
+  a: Member,
+  b: Member,
+  orderIndex?: Map<string, number>,
+  getContribution?: MemberContributionGetter
+): number {
+  const ca = memberContributionRankingTotal(a, getContribution);
+  const cb = memberContributionRankingTotal(b, getContribution);
+  if (cb !== ca) return cb - ca;
+  const ta = memberDonationRankingTotal(a);
+  const tb = memberDonationRankingTotal(b);
+  if (tb !== ta) return tb - ta;
+  if (orderIndex) {
+    const ia = orderIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+    const ib = orderIndex.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+    if (ia !== ib) return ia - ib;
+  }
+  return String(a.id || "").localeCompare(String(b.id || ""));
+}
+
+function compareRankingRowsByMetricDesc(
   a: MemberRankingRow,
   b: MemberRankingRow,
-  orderIndex: Map<string, number>
+  orderIndex: Map<string, number>,
+  metric: MemberRankingMetric
 ): number {
-  if (b.totalAmount !== a.totalAmount) return b.totalAmount - a.totalAmount;
+  if (metric === "donation") {
+    if (b.totalAmount !== a.totalAmount) return b.totalAmount - a.totalAmount;
+  } else {
+    if (b.contributionAmount !== a.contributionAmount) {
+      return b.contributionAmount - a.contributionAmount;
+    }
+    if (b.totalAmount !== a.totalAmount) return b.totalAmount - a.totalAmount;
+  }
   const ia = orderIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER;
   const ib = orderIndex.get(b.id) ?? Number.MAX_SAFE_INTEGER;
   if (ia !== ib) return ia - ib;
   return String(a.id).localeCompare(String(b.id));
+}
+
+export function compareMembersByRankingMetric(
+  a: Member,
+  b: Member,
+  metric: MemberRankingMetric,
+  orderIndex?: Map<string, number>,
+  getContribution?: MemberContributionGetter
+): number {
+  if (metric === "donation") {
+    return compareMembersByDonationTotal(a, b, orderIndex);
+  }
+  return compareMembersByContribution(a, b, orderIndex, getContribution);
 }
 
 export type OverlayRankedMember = { m: Member; rank: number | null };
@@ -106,33 +173,80 @@ export function splitOverlayListAtHalf<T>(
   };
 }
 
-/** 엑셀표 오버레이: 대표 최상단 고정 → 운영비 제외 멤버 순위 → 운영비(핀)는 호출측에서 하단 */
+/** 엑셀표 오버레이: 대표 최상단 고정 → metric 순위 → 운영비(핀)는 호출측에서 하단 */
 export function buildOverlayRankedMembers(
   unpinnedMembers: Member[],
   memberPositions?: Record<string, string>,
   getMemberRole?: (m: Member) => string,
-  allMembersForOrder?: Member[]
+  allMembersForOrder?: Member[],
+  getContribution?: MemberContributionGetter,
+  rankingMetric: MemberRankingMetric = "contribution"
 ): OverlayRankedMember[] {
+  const metric = normalizeMemberRankingMetric(rankingMetric);
   const orderIndex = buildMemberCreationOrderIndex(allMembersForOrder ?? unpinnedMembers);
   const roleOf = getMemberRole ?? ((m: Member) => normalizePosition(m, memberPositions));
   const isRep = (m: Member) =>
     isRepresentativeMember(m, memberPositions) || roleOf(m).trim().includes("대표");
   const representative = unpinnedMembers.find(isRep) || null;
   const rankable = unpinnedMembers.filter((m) => !isRep(m));
-  const sorted = [...rankable].sort((a, b) => compareMembersByDonationTotal(a, b, orderIndex));
+  const sorted = [...rankable].sort((a, b) =>
+    compareMembersByRankingMetric(a, b, metric, orderIndex, getContribution)
+  );
   let nextRank = 1;
   const others = sorted.map((m) => ({ m, rank: nextRank++ }));
   if (representative) return [{ m: representative, rank: null }, ...others];
   return others;
 }
 
-/** 대표는 항상 맨 위 고정, 나머지는 총합 내림차순 */
+/**
+ * 순위 연동 직급을 멤버별 고정 맵으로 스냅샷.
+ * 오버레이 `resolvedMemberRoles`와 동일: 대표 고정 → metric 순위 → rankPositionLabels.
+ */
+export function buildRankLinkedMemberPositions(
+  members: Member[],
+  memberPositions?: Record<string, string>,
+  rankPositionLabels?: string[],
+  options?: {
+    rankingMetric?: MemberRankingMetric;
+    getContribution?: MemberContributionGetter;
+  }
+): Record<string, string> {
+  const metric = normalizeMemberRankingMetric(options?.rankingMetric);
+  const labels = Array.isArray(rankPositionLabels) ? rankPositionLabels : [];
+  const roleMap: Record<string, string> = {};
+  const list = members || [];
+  const orderIndex = buildMemberCreationOrderIndex(list);
+  const representative =
+    list.find((m) => String(memberPositions?.[m.id] || "").trim() === "대표") || null;
+  const others = list
+    .filter((m) => !representative || m.id !== representative.id)
+    .sort((a, b) =>
+      compareMembersByRankingMetric(a, b, metric, orderIndex, options?.getContribution)
+    );
+  if (representative) roleMap[representative.id] = "대표";
+  const startIdx = representative ? 1 : 0;
+  others.forEach((m, idx) => {
+    const rankIdx = idx + startIdx;
+    const label = String(labels[rankIdx] || "").trim() || (rankIdx === 0 ? "대표" : "");
+    if (label) roleMap[m.id] = label;
+  });
+  return roleMap;
+}
+
+/** 대표는 항상 맨 위 고정, 나머지는 metric 순 (기여도 또는 금액) */
 export function sortMembersForRanking(
   members: Member[],
   memberPositions?: Record<string, string>,
-  options?: { mode?: MemberPositionMode; rankPositionLabels?: string[] }
+  options?: {
+    mode?: MemberPositionMode;
+    rankPositionLabels?: string[];
+    getContribution?: MemberContributionGetter;
+    rankingMetric?: MemberRankingMetric;
+  }
 ): MemberRankingRow[] {
   const mode = options?.mode || "fixed";
+  const metric = normalizeMemberRankingMetric(options?.rankingMetric);
+  const getContribution = options?.getContribution;
   const orderIndex = buildMemberCreationOrderIndex(members || []);
   const labelSrc = options?.rankPositionLabels || [];
   const rankLabelCount = Math.max(1, (members || []).length, labelSrc.length);
@@ -140,7 +254,6 @@ export function sortMembersForRanking(
     String(labelSrc[idx] || "").trim()
   );
   const rows: MemberRankingRow[] = (members || []).map((m) => {
-    // 엑셀표(멤버 랭킹 표)는 100원 단위 버림 기준으로 집계한다.
     const accountAmount = floorToHundreds(safeAmount(m.account));
     const toonAmount = floorToHundreds(safeAmount(m.toon));
     const basePosition = normalizePosition(m, memberPositions);
@@ -152,9 +265,13 @@ export function sortMembersForRanking(
       accountAmount,
       toonAmount,
       totalAmount: accountAmount + toonAmount,
+      contributionAmount: memberContributionRankingTotal(m, getContribution),
       isRepresentative: position === "대표",
     };
   });
+
+  const sortRows = (list: MemberRankingRow[]) =>
+    [...list].sort((a, b) => compareRankingRowsByMetricDesc(a, b, orderIndex, metric));
 
   if (mode === "rankLinked") {
     const representative = rows.find((x) => x.isRepresentative) || null;
@@ -163,9 +280,9 @@ export function sortMembersForRanking(
       return member ? isOperatingMember(member, memberPositions) : false;
     });
     const operatingIds = new Set(operating.map((x) => x.id));
-    const others = rows
-      .filter((x) => (!representative || x.id !== representative.id) && !operatingIds.has(x.id))
-      .sort((a, b) => compareRankingRowsByTotalDesc(a, b, orderIndex));
+    const others = sortRows(
+      rows.filter((x) => (!representative || x.id !== representative.id) && !operatingIds.has(x.id))
+    );
     const merged = [...(representative ? [representative] : []), ...others, ...operating];
     return merged.map((row, idx) => ({
       ...row,
@@ -180,9 +297,9 @@ export function sortMembersForRanking(
     return member ? isOperatingMember(member, memberPositions) : false;
   });
   const operatingIds = new Set(operating.map((x) => x.id));
-  const others = rows
-    .filter((x) => (!representative || x.id !== representative.id) && !operatingIds.has(x.id))
-    .sort((a, b) => compareRankingRowsByTotalDesc(a, b, orderIndex));
+  const others = sortRows(
+    rows.filter((x) => (!representative || x.id !== representative.id) && !operatingIds.has(x.id))
+  );
 
   const ordered = [...(representative ? [representative] : []), ...others, ...operating];
   return ordered;

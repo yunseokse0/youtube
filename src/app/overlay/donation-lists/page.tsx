@@ -91,8 +91,9 @@ export default function DonationListsOverlayPage() {
       sortMembersForRanking(state?.members || [], state?.memberPositions || {}, {
         mode: "fixed",
         rankPositionLabels: state?.rankPositionLabels || [],
+        rankingMetric: state?.memberRankingMetric || "contribution",
       }),
-    [state?.members, state?.memberPositions, state?.rankPositionLabels]
+    [state?.members, state?.memberPositions, state?.rankPositionLabels, state?.memberRankingMetric]
   );
 
   if (!ready) return null;

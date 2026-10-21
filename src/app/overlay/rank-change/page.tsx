@@ -14,7 +14,11 @@ import {
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
 import { overlayPresetsStorageKey, normalizeDonorsArray } from "@/lib/state";
-import { buildOverlayRankedMembers } from "@/lib/utils";
+import {
+  buildOverlayRankedMembers,
+  normalizeMemberRankingMetric,
+  type MemberRankingMetric,
+} from "@/lib/utils";
 import type { Member } from "@/types";
 
 function RankChangeOverlayInner() {
@@ -114,6 +118,14 @@ function RankChangeOverlayInner() {
     [ready, state?.memberPositions]
   );
 
+  const memberRankingMetric = useMemo<MemberRankingMetric>(
+    () =>
+      ready && state
+        ? normalizeMemberRankingMetric(state.memberRankingMetric)
+        : "contribution",
+    [ready, state]
+  );
+
   const getMemberRole = useCallback(
     (m: Member) => String(memberPositionsMap[m.id] || "").trim(),
     [memberPositionsMap]
@@ -127,8 +139,16 @@ function RankChangeOverlayInner() {
   const unpinned = useMemo(() => members.filter((m) => !pinnedFilter(m)), [members, pinnedFilter]);
 
   const ranked = useMemo(
-    () => buildOverlayRankedMembers(unpinned, memberPositionsMap, getMemberRole, members),
-    [unpinned, memberPositionsMap, getMemberRole, members]
+    () =>
+      buildOverlayRankedMembers(
+        unpinned,
+        memberPositionsMap,
+        getMemberRole,
+        members,
+        undefined,
+        memberRankingMetric
+      ),
+    [unpinned, memberPositionsMap, getMemberRole, members, memberRankingMetric]
   );
 
   const { event, clearEvent } = useMemberRankChangeFx({
@@ -137,6 +157,7 @@ function RankChangeOverlayInner() {
     ranked,
     members,
     donors: donorsForRankFx,
+    rankingMetric: memberRankingMetric,
   });
 
   return (
