@@ -25,6 +25,34 @@ export function resolveToonaDonationPullAfter(input: {
   return after;
 }
 
+/**
+ * AppState 리셋 stamp 와 저장된 커서를 합쳐 다음 pull 의 after·floor 결정.
+ * API fromMs 는 0 유지(전체 원장), 리셋 이후 건만 fold 폐기 필터로 걸러진다.
+ */
+export function resolveHubPullCursorAgainstSettlement(input: {
+  savedCursor?: { floorAt?: number; fromMs?: number; after?: string } | null;
+  settlementResetAt?: number;
+  intentionalDonationClearAt?: number;
+}): { after: string; cursorFloor: number } {
+  const resetFloor = Math.max(
+    0,
+    Math.floor(Number(input.settlementResetAt) || 0),
+    Math.floor(Number(input.intentionalDonationClearAt) || 0)
+  );
+  const savedFloor = Math.max(
+    0,
+    Math.floor(Number(input.savedCursor?.floorAt) || 0),
+    Math.floor(Number(input.savedCursor?.fromMs) || 0)
+  );
+  const cursorFloor = Math.max(resetFloor, savedFloor);
+  const after = resolveToonaDonationPullAfter({
+    fromMs: cursorFloor,
+    savedFromMs: savedFloor,
+    savedAfter: input.savedCursor?.after,
+  });
+  return { after, cursorFloor };
+}
+
 export function lastToonaDonationPullId(
   rows: Array<{ id?: string } | null | undefined>
 ): string {

@@ -4,6 +4,7 @@ import {
   collectToonaDonationsSequentially,
   lastToonaDonationPullId,
   nextToonaDonationPullAfter,
+  resolveHubPullCursorAgainstSettlement,
   resolveToonaDonationPullAfter,
   resolveToonaDonationPullFromMs,
   TOONA_DONATION_PULL_PAGE_SIZE,
@@ -28,6 +29,24 @@ describe("toona-hub-pull", () => {
     expect(resolveToonaDonationPullAfter({ fromMs: 200, savedFromMs: 100, savedAfter: "abc" })).toBe("");
     expect(resolveToonaDonationPullAfter({ fromMs: 100, savedFromMs: 100, savedAfter: "  " })).toBe("");
     expect(lastToonaDonationPullId([{ id: "a" }, { id: "" }, { id: "c" }])).toBe("c");
+  });
+
+  it("drops pull after when settlement reset raises the cursor floor", () => {
+    const stuck = resolveHubPullCursorAgainstSettlement({
+      savedCursor: { floorAt: 0, fromMs: 0, after: "old-end-id" },
+      settlementResetAt: 1_700_000_000_000,
+      intentionalDonationClearAt: 1_700_000_000_000,
+    });
+    expect(stuck.after).toBe("");
+    expect(stuck.cursorFloor).toBe(1_700_000_000_000);
+
+    const cont = resolveHubPullCursorAgainstSettlement({
+      savedCursor: { floorAt: 1_700_000_000_000, fromMs: 0, after: "post-reset-id" },
+      settlementResetAt: 1_700_000_000_000,
+      intentionalDonationClearAt: 1_700_000_000_000,
+    });
+    expect(cont.after).toBe("post-reset-id");
+    expect(cont.cursorFloor).toBe(1_700_000_000_000);
   });
 
   it("builds asc+fromMs+after URL instead of page=1&limit=50", () => {

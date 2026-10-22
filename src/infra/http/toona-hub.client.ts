@@ -38,7 +38,7 @@ import {
 import {
   buildToonaDonationsPullUrl,
   nextToonaDonationPullAfter,
-  resolveToonaDonationPullAfter,
+  resolveHubPullCursorAgainstSettlement,
   resolveToonaDonationPullFromMs,
   TOONA_DONATION_PULL_MAX_PAGES,
   TOONA_DONATION_PULL_PAGE_SIZE,
@@ -484,22 +484,41 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
    * 시나리오 B: toona 후원 ↔ youtube 정산표 1:1.
    * 시간창 없이 오래된 것부터 sort=asc + after 커서로 전부 읽는다.
    * 한 주기가 길면 커서를 남기고 다음 주기가 이어서 읽는다. 이미 있는 ID는 apply 가 스킵한다.
+   *
+   * 정산 리셋 후: floor(settlementResetAt/intentionalClearAt)가 커서 floor보다 높으면 after를 버린다.
+   * 허브 원장을 다시 읽되, fold 의 shouldDiscardIngestEventForReset 이 리셋 이전 건만 폐기한다.
+   * (리셋 뒤 표는 비었는데 커서만 끝단에 남아 신규·리셋이후 후원을 영구 못 가져오던 구멍 봉쇄)
    */
   const savedCursor = await readToonaHubPullCursor(uid).catch(() => null);
   const fromMs = resolveToonaDonationPullFromMs();
+  let settlementResetAt = 0;
+  let intentionalDonationClearAt = 0;
+  try {
+    const { loadAppStateForUserId } = await import("@/lib/app-state-server-load");
+    const { resolveScopedOverlayUserId } = await import("@/lib/overlay-params");
+    const stateUserId = resolveScopedOverlayUserId(uid, "finalent") || uid;
+    const st = await loadAppStateForUserId(stateUserId);
+    settlementResetAt = Math.floor(Number(st?.settlementResetAt) || 0);
+    intentionalDonationClearAt = Math.floor(
+      Number((st as { intentionalDonationClearAt?: number } | null)?.intentionalDonationClearAt) || 0
+    );
+  } catch {
+    /* state 로드 실패 시 커서 floor 0 유지 */
+  }
+  const { after: startAfter, cursorFloor } = resolveHubPullCursorAgainstSettlement({
+    savedCursor,
+    settlementResetAt,
+    intentionalDonationClearAt,
+  });
   let imported = 0;
   let applied = 0;
-  /**
-   * 재시작·강제 동기화도 저장된 커서부터 읽는다. 처음부터 다시 읽으면 리셋 뒤 지운 후원이 되살아나고
-   * 수동으로 넣은 건이 허브 원본과 이중으로 잡힌다. ignoreMinInterval 은 60초 대기만 건너뛴다.
-   */
-  let after = resolveToonaDonationPullAfter({
-    fromMs,
-    savedFromMs: savedCursor?.fromMs,
-    savedAfter: savedCursor?.after,
-  });
+  let after = startAfter;
   const persistCursor = async (nextAfter: string) => {
-    await writeToonaHubPullCursor(uid, { floorAt: fromMs, fromMs, after: nextAfter }).catch(() => {});
+    await writeToonaHubPullCursor(uid, {
+      floorAt: cursorFloor,
+      fromMs,
+      after: nextAfter,
+    }).catch(() => {});
   };
   const cycleStartedAt = Date.now();
   for (let page = 0; page < TOONA_DONATION_PULL_MAX_PAGES; page += 1) {

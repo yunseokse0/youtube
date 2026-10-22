@@ -131,6 +131,15 @@ export async function writeToonaHubPullCursor(
   pullCursorMemory.set(uid, next);
 }
 
+/** 정산 리셋 직후 — after 커서 폐기 + floor를 리셋 stamp로 올려 다음 pull이 원장을 다시 읽게 함 */
+export async function resetToonaHubPullCursorAfterSettlement(
+  userId: string,
+  resetAt: number
+): Promise<void> {
+  const floor = Math.max(0, Math.floor(Number(resetAt) || 0));
+  await writeToonaHubPullCursor(userId, { floorAt: floor, fromMs: 0, after: "" });
+}
+
 export async function clearToonaHubSession(userId: string): Promise<void> {
   const uid = String(userId || "").trim();
   if (!uid) return;

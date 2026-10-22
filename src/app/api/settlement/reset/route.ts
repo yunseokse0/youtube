@@ -25,6 +25,7 @@ import {
   readToonaHubSession,
   writeToonaHubSession,
   clearToonaHubDonationLogs,
+  resetToonaHubPullCursorAfterSettlement,
 } from "@/lib/toona-hub-session";
 // ==================== End FixB imports ====================
 
@@ -95,6 +96,7 @@ export async function POST(req: Request) {
   try {
     // DIN 허브 세션은 hubSessionUserId 기준 (auth 계정과 1:1 매칭 원칙 유지)
     await clearToonaHubDonationLogs(hubSessionUserId);
+    await resetToonaHubPullCursorAfterSettlement(hubSessionUserId, resetAt);
     const session = await readToonaHubSession(hubSessionUserId);
     if (session) {
       const FORWARD_RESET_MS = 1000; // 리셋 시각보다 1초 미래로 박아서 리셋 직후 들어온 후원(at=resetAt 정확히 같음)도 "리셋 이후" 로 안정적으로 필터
@@ -105,7 +107,7 @@ export async function POST(req: Request) {
         lastIngestError: null,
       } as const;
       await writeToonaHubSession(nextSession);
-      logger.info("settlement reset → toona hub session lastIngestAt advanced", {
+      logger.info("settlement reset → toona hub session lastIngestAt advanced + pull cursor cleared", {
         hubSessionUserId,
         stateUserId,
         resetAt,
@@ -113,7 +115,7 @@ export async function POST(req: Request) {
       });
     }
   } catch (err) {
-    logger.warn("settlement reset → toona hub logs/lastIngest clear failed (non-fatal, B모드 아닐시 스킵)", {
+    logger.warn("settlement reset → toona hub logs/lastIngest/cursor clear failed (non-fatal, B모드 아닐시 스킵)", {
       hubSessionUserId,
       stateUserId,
       err: err instanceof Error ? err.message : String(err),
