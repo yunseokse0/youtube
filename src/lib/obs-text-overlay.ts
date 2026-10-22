@@ -5,9 +5,9 @@ import {
   type ObsTextEffectId,
 } from "@/lib/obs-text-effects";
 import {
-  lineContainsYoutubeEmojiCode,
-  parseLineWithYoutubeEmojis,
-} from "@/lib/youtube-chat-emojis";
+  lineContainsObsTextInlineMedia,
+  parseObsTextLineWithInlineMedia,
+} from "@/lib/obs-text-inline-media";
 
 export const OBS_TEXT_OVERLAY_STATE_KEY = "obsTextOverlayV1";
 /** OBS 브라우저 소스 URL — 어떤 텍스트 오버레이 인스턴스인지 */
@@ -34,7 +34,7 @@ export type ObsTextOverlayRegistry = {
 export type ObsTextSegment = {
   text: string;
   color: string;
-  /** YouTube 라이브 채팅 이모티콘 이미지 (yt3.ggpht.com) */
+  /** 인라인 이미지(유튜브 채팅 이모지·은행 로고 등) */
   imageUrl?: string;
   /** 구간별 연출(없으면 블록 effect 상속) */
   effect?: ObsTextEffectId;
@@ -352,15 +352,15 @@ function normalizeBlock(raw: unknown, defaultColor: string, idx: number): ObsTex
   };
 }
 
-/** 저장·OBS 표시 직전 — :face-red-heart-shape: 등을 imageUrl 세그먼트로 변환 */
+/** 저장·OBS 표시 직전 — :face-red-heart-shape: · :bank-kb: 등을 imageUrl 세그먼트로 변환 */
 export function hydrateYoutubeEmojisInBlock(
   block: ObsTextBlock,
   defaultColor: string
 ): ObsTextBlock {
   const plain = segmentsToPlainText(block.segments).replace(/\u00a0/g, " ");
-  if (!lineContainsYoutubeEmojiCode(plain)) return block;
+  if (!lineContainsObsTextInlineMedia(plain)) return block;
   const color = block.segments.find((s) => s.color)?.color ?? defaultColor;
-  return { ...block, segments: parseLineWithYoutubeEmojis(plain, color) };
+  return { ...block, segments: parseObsTextLineWithInlineMedia(plain, color) };
 }
 
 /** textarea 초안과 blocks가 어긋날 때(IME 등) 저장·표시용 config 동기화 */
@@ -808,8 +808,8 @@ export function applyEffectRangeToBlocks(
 
 function createDefaultObsTextBlock(text: string, defaultColor: string): ObsTextBlock {
   const line = text.length === 0 ? " " : text;
-  const segments = lineContainsYoutubeEmojiCode(line)
-    ? parseLineWithYoutubeEmojis(line, defaultColor)
+  const segments = lineContainsObsTextInlineMedia(line)
+    ? parseObsTextLineWithInlineMedia(line, defaultColor)
     : [{ text: line, color: defaultColor }];
   return {
     id: createObsTextBlockId(),
@@ -837,11 +837,11 @@ export function blocksFromMultilineText(
     if (!prev) {
       return createDefaultObsTextBlock(normalized, defaultColor);
     }
-    if (lineContainsYoutubeEmojiCode(normalized)) {
+    if (lineContainsObsTextInlineMedia(normalized)) {
       const color = prev.segments[0]?.color ?? defaultColor;
       return {
         ...prev,
-        segments: parseLineWithYoutubeEmojis(normalized, color),
+        segments: parseObsTextLineWithInlineMedia(normalized, color),
       };
     }
     if (blockUsesRichSegments(prev)) {
@@ -892,9 +892,9 @@ export function mergeSegmentsFromPlainText(
   existing: ObsTextSegment[] | undefined,
   defaultColor: string
 ): ObsTextSegment[] {
-  if (lineContainsYoutubeEmojiCode(text)) {
+  if (lineContainsObsTextInlineMedia(text)) {
     const color = existing?.[0]?.color ?? defaultColor;
-    return parseLineWithYoutubeEmojis(text, color);
+    return parseObsTextLineWithInlineMedia(text, color);
   }
   const prev = existing && existing.length > 0 ? existing : undefined;
   if (!prev) return text ? [{ text, color: defaultColor }] : [{ text: " ", color: defaultColor }];

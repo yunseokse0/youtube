@@ -36,6 +36,7 @@ import {
 } from "@/lib/obs-text-overlay";
 import { OBS_TEXT_EFFECT_OPTIONS } from "@/lib/obs-text-effects";
 import { OBS_TEXT_YOUTUBE_EMOJI_PRESETS } from "@/lib/youtube-chat-emojis";
+import { OBS_TEXT_BANK_LOGO_PRESETS } from "@/lib/korean-bank-logos";
 import {
   loadState,
   loadStateFromApi,
@@ -940,6 +941,30 @@ export default function ObsTextOverlayEditor({
               </p>
               <div className="flex flex-wrap gap-2">
                 {OBS_TEXT_YOUTUBE_EMOJI_PRESETS.map((preset) => (
+                  <button
+                    key={preset.code}
+                    type="button"
+                    className="flex items-center gap-2 rounded-md bg-neutral-800 px-2 py-1.5 text-sm hover:bg-neutral-600"
+                    onMouseDown={keepTextareaFocus}
+                    onClick={() => insertEmoji(preset.code)}
+                    title={`${preset.label} (${preset.code})`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={preset.url}
+                      alt=""
+                      className="h-6 w-6 object-contain"
+                      draggable={false}
+                    />
+                    <span className="text-neutral-300">{preset.label}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="mb-1.5 mt-3 text-[11px] text-neutral-400">
+                1금융권 은행 로고 · OBS에 이미지로 표시 ({OBS_TEXT_BANK_LOGO_PRESETS.length}개)
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {OBS_TEXT_BANK_LOGO_PRESETS.map((preset) => (
                   <button
                     key={preset.code}
                     type="button"
