@@ -11063,6 +11063,15 @@ function AdminPageInner() {
             extraHint = "\n\n▣ 원인: 로그인 세션이 만료됐습니다. 로그아웃 후 재로그인 하십시오.";
           } else if (detail?.error === "confirm_required") {
             extraHint = "\n\n▣ 원인: 정산리셋 확인 문구를 다시 확인하십시오. (정확히 '정산리셋' 글자 입력 필요)";
+          } else if (
+            detail?.status === 503 ||
+            detail?.error === "persist_failed" ||
+            detail?.error === "persist_not_cleared" ||
+            detail?.error === "persist_verify_failed"
+          ) {
+            extraHint =
+              "\n\n▣ 원인: 서버 저장소에 리셋이 확실히 남지 않았습니다(가짜 성공 방지).\n" +
+              "→ 잠시 후 다시 「정산 리셋」을 시도하거나, EC2/MySQL·Redis 상태를 확인하세요.";
           }
           window.alert(
             `${reason}${extraHint}\n\n` +

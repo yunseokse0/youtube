@@ -12,8 +12,11 @@ import {
   type SettlementResetMode,
 } from "@/lib/settlement-reset-apply";
 import { isSettlementResetExplicitlyConfirmed } from "@/lib/settlement-reset-confirm";
-import { normalizeDonorsArray, totalCombined } from "@/lib/state";
 import { createModuleLogger } from "@/lib/logger";
+import {
+  settlementResetSavedStateStillDirty,
+  verifySettlementResetPersisted,
+} from "@/lib/settlement-reset-persist-verify";
 // ==================== FixB_settlement_reset_clear_bmode_logs (2026-09-08 hotfix-6-10-4) ====================
 // 정산 리셋 직후 B모드(DIN 허브) 로그·마지막 ingest 시각이 남아있어
 // 리셋 이전 과거 후원(쓰레기값 31.7 / 17건)이 다시 살아나는 Bug 원천 봉쇄.
@@ -134,6 +137,8 @@ export async function POST(req: Request) {
     });
   }
 
+  const beforeResetAt = Math.max(0, Math.floor(Number(current.settlementResetAt) || 0));
+
   // ✅ save 도 stateUserId(finalent) 기준 — admin/overlay overlayUserId=finalent 와 100% 일치
   const saved = await saveAppStateForRoulette(stateUserId, next, {
     donorsMode: "replace",
@@ -152,44 +157,74 @@ export async function POST(req: Request) {
     });
   }
 
-  const persisted = saved.state;
-  let donorsCount = normalizeDonorsArray(persisted.donors).length;
-  let total = totalCombined(persisted);
-  let finalState = persisted;
-  if (donorsCount > 0 || total > 0) {
+  let finalState = saved.state;
+  if (settlementResetSavedStateStillDirty(finalState)) {
     logger.warn("settlement reset first save did not clear roster — forcing fallback KV·memory overwrite", {
       hubSessionUserId,
       stateUserId,
       mode,
-      donorsCount,
-      total,
     });
     const forced = await saveAppStateForRoulette(stateUserId, next, {
       donorsMode: "replace",
       allowEmptyRosterWipe: true,
     });
-    if (forced.ok) {
-      finalState = forced.state;
-      donorsCount = normalizeDonorsArray(finalState.donors).length;
-      total = totalCombined(finalState);
-    }
-    if (!forced.ok || donorsCount > 0 || total > 0) {
-      logger.error("settlement reset fallback overwrite still has donors/total — returning ok anyway so client can refresh local state", {
+    if (!forced.ok || settlementResetSavedStateStillDirty(forced.state)) {
+      logger.error("settlement reset fallback overwrite still has donors/total — refusing fake ok", {
         hubSessionUserId,
         stateUserId,
         mode,
         forcedOk: forced.ok,
-        donorsCount,
-        total,
       });
-      finalState = {
-        ...next,
-        donors: [],
-        contributionLogs: [],
-        donorRankingsUpdatedAt: next.donorRankingsUpdatedAt ?? finalState.donorRankingsUpdatedAt,
-      };
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "persist_not_cleared",
+          detail: "KV still has donors or member totals after settlement reset overwrite",
+        }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+        }
+      );
     }
+    finalState = forced.state;
   }
+
+  /** 저장 직후 KV 재조회 — stamp↑·donors=[]·금액 0 이 실제로 남았는지 확인 */
+  const reloaded = await loadAppStateForUserId(stateUserId);
+  const verified = verifySettlementResetPersisted({
+    beforeResetAt,
+    expectedResetAt: resetAt,
+    reloaded,
+  });
+  if (!verified.ok || !reloaded) {
+    logger.error("settlement reset reload verify failed — refusing fake ok", {
+      hubSessionUserId,
+      stateUserId,
+      mode,
+      reason: verified.reason,
+      donorsCount: verified.donorsCount,
+      total: verified.total,
+      settlementResetAt: verified.settlementResetAt,
+      expectedResetAt: resetAt,
+      beforeResetAt,
+    });
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "persist_verify_failed",
+        detail: verified.reason || "reload_verify_failed",
+        donorsCount: verified.donorsCount,
+        total: verified.total,
+        settlementResetAt: verified.settlementResetAt,
+      }),
+      {
+        status: 503,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      }
+    );
+  }
+  finalState = reloaded;
 
   await publishSseEvent({
     type: "state_updated" as const,
