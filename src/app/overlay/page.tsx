@@ -14,6 +14,10 @@ import { mergeMemberRosterPreservingAmounts } from "@/lib/member-roster-merge";
 import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base";
 import { maxOverlayAmountDisplayLength } from "@/lib/overlay-amount-display";
 import {
+  membersWithOverlayDonationAggregate,
+  resolveOverlayContributionSource,
+} from "@/lib/overlay-donation-aggregate";
+import {
   formatRestroomDisplay,
   isRestroomUnlimited,
   normalizeRestroomCount,
@@ -45,6 +49,9 @@ import {
   resolveTableHeaderTextColor,
   resolveTableLineColor,
   resolveContributionColor,
+  resolveTableColumnTextColor,
+  resolveDonationAggregateFromAt,
+  resolveDay777Calc,
   resolveTableRowEvenBg,
   resolveTableRowOddBg,
   resolveTablePanelBorderColor,
@@ -2691,6 +2698,8 @@ function OverlayInner() {
     if (fromPreset) return fromPreset;
     return memberCustomHeaderFromState;
   })();
+  const donationAggregateFromAt = resolveDonationAggregateFromAt(rawSp, effectivePreset, { ready });
+  const day777Calc = resolveDay777Calc(rawSp, effectivePreset, { ready });
   const toonHeaderLabel = resolvePresetLabel("toonHeaderLabel", "투네");
   const restroomHeaderLabel = resolvePresetLabel("restroomHeaderLabel", "화장실");
   const showGoal = (() => {
@@ -3040,9 +3049,17 @@ function OverlayInner() {
   const donorsSize = Math.max(10, Math.min(60, parseInt(sp.get("donorsSize") || String(Math.round(memberSize * 0.9)), 10)));
   const donorsColor = sp.get("donorsColor") || undefined;
   const donorsBgColor = sp.get("donorsBgColor") || undefined;
-  const accountColor = sp.get("accountColor") || undefined;
-  const toonColor = sp.get("toonColor") || undefined;
+  const rankColumnColor = resolveTableColumnTextColor("rankColor", rawSp, effectivePreset, { ready });
+  const customColumnColor = resolveTableColumnTextColor("customColor", rawSp, effectivePreset, { ready });
+  const roleColumnColor = resolveTableColumnTextColor("roleColor", rawSp, effectivePreset, { ready });
+  const nameColumnColor = resolveTableColumnTextColor("nameColor", rawSp, effectivePreset, { ready });
+  const accountColor =
+    resolveTableColumnTextColor("accountColor", rawSp, effectivePreset, { ready }) || undefined;
+  const toonColor =
+    resolveTableColumnTextColor("toonColor", rawSp, effectivePreset, { ready }) || undefined;
+  const combinedColumnColor = resolveTableColumnTextColor("combinedColor", rawSp, effectivePreset, { ready });
   const contributionColorRaw = resolveContributionColor(rawSp, effectivePreset, { ready });
+  const restroomColumnColor = resolveTableColumnTextColor("restroomColor", rawSp, effectivePreset, { ready });
   const tableRowEvenBgRaw = resolveTableRowEvenBg(rawSp, effectivePreset, { ready });
   const tableRowOddBgRaw = resolveTableRowOddBg(rawSp, effectivePreset, { ready });
   const tablePanelBorderColorRaw = resolveTablePanelBorderColor(rawSp, effectivePreset, { ready });
@@ -3606,8 +3623,32 @@ function OverlayInner() {
       ] as Member[];
     }
     /** 미리보기 로딩 중 default 멤버1·2·3 폴백 금지 — 테마 변경 시 가짜 목록에 고착되던 원인 */
-    return membersRemote;
-  }, [demoMode, membersRemote]);
+    if ((!donationAggregateFromAt && !day777Calc) || !s) return membersRemote;
+    const donorsForAgg =
+      isAdminPreview && adminPreviewDonors !== undefined
+        ? (adminPreviewDonors as Donor[])
+        : ((s.donors || []) as Donor[]);
+    return ensureMembers(
+      membersWithOverlayDonationAggregate(
+        {
+          ...(s as AppState),
+          members: membersRemote,
+          donors: donorsForAgg,
+        },
+        membersRemote,
+        donationAggregateFromAt,
+        { day777Calc }
+      )
+    );
+  }, [
+    demoMode,
+    membersRemote,
+    donationAggregateFromAt,
+    day777Calc,
+    s,
+    isAdminPreview,
+    adminPreviewDonors,
+  ]);
   /** 총합 행: 화면에 그리는 `members` 기준(데모·스냅샷·API 불일치 시 0 방지) */
   const sumAccount = useMemo(
     () => members.reduce((sum, m) => sum + Math.max(0, Number(m.account || 0)), 0),
@@ -3698,9 +3739,16 @@ function OverlayInner() {
    * 기본 공식(100/100)이고 후원·기록부가 없을 때만 계좌+투네 합 레거시 폴백.
    */
   const allowContributionTotalFallback = isDefaultContributionFormula(s?.contributionFormula);
+  const overlayContributionSource = useMemo(() => {
+    if (!s) return { donors: [] as Donor[], contributionLogs: [] as AppState["contributionLogs"] };
+    return resolveOverlayContributionSource(s as AppState, {
+      fromAt: donationAggregateFromAt,
+      day777Calc,
+    });
+  }, [s, donationAggregateFromAt, day777Calc]);
   const getContributionValueForMember = useCallback((m: Member) => {
     const memberId = String(m.id || "").trim();
-    const donors = s?.donors || [];
+    const donors = overlayContributionSource.donors || [];
     const hasDonorRows =
       memberId &&
       donors.some(
@@ -3708,19 +3756,30 @@ function OverlayInner() {
       );
     if (hasDonorRows && s) {
       return resolveMemberContributionTotal(memberId, {
-        donors: s.donors,
-        contributionLogs: s.contributionLogs,
+        donors: overlayContributionSource.donors,
+        contributionLogs: overlayContributionSource.contributionLogs,
         contributionFormula: s.contributionFormula,
       });
     }
     const raw = (m as Member & { contribution?: unknown }).contribution;
     let parsed = typeof raw === "number" ? raw : Number(typeof raw === "string" ? String(raw).replace(/,/g, "").trim() : raw);
     const total = Math.max(0, Number(m.account || 0) + Number(m.toon || 0));
-    if (!Number.isFinite(parsed)) return allowContributionTotalFallback ? total : 0;
+    if (!Number.isFinite(parsed)) {
+      if (day777Calc) return 0;
+      return allowContributionTotalFallback ? total : 0;
+    }
     const c = Math.max(0, Math.floor(parsed));
+    if (day777Calc) return c;
     if (allowContributionTotalFallback && c === 0 && total > 0) return total;
     return c;
-  }, [allowContributionTotalFallback, s?.donors, s?.contributionLogs, s?.contributionFormula]);
+  }, [
+    allowContributionTotalFallback,
+    day777Calc,
+    overlayContributionSource.donors,
+    overlayContributionSource.contributionLogs,
+    s?.contributionFormula,
+    s,
+  ]);
   const resolvedMemberRoles = useMemo<Record<string, string>>(() => {
     if (memberPositionMode !== "rankLinked") return memberPositionsMap;
     const roleMap: Record<string, string> = {};
@@ -4737,21 +4796,41 @@ function OverlayInner() {
         .overlay-center-fixed table.overlay-elegant-table td { container-type: inline-size; white-space: nowrap !important; overflow: visible !important; }
       ` }} />
     ) : null;
-    const colorOverrideStyle =
-      !hasTableTextColorOverride && (accountColor || toonColor) ? (
-        <style
-          dangerouslySetInnerHTML={{
-            __html: [
-              accountColor &&
-                `.overlay-root tr:not(.overlay-total-row) .overlay-account-cell { color: ${accountColor} !important; }`,
-              toonColor &&
-                `.overlay-root tr:not(.overlay-total-row) .overlay-toon-cell { color: ${toonColor} !important; }`,
-            ]
-              .filter(Boolean)
-              .join("\n"),
-          }}
-        />
-      ) : null;
+    const columnTextColorRule = (colClass: string, color: string, opts?: { skipTop3?: boolean }) => {
+      const c = String(color || "").trim();
+      if (!c) return "";
+      const top3Skip = opts?.skipTop3
+        ? ":not(.overlay-rank-top3-text):not(.overlay-excel-rank-1):not(.overlay-excel-rank-2):not(.overlay-excel-rank-3)"
+        : "";
+      const rowSel = `.overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row):not(.overlay-excel-placeholder)${top3Skip}`;
+      return `
+        ${rowSel} td.${colClass},
+        ${rowSel} td.${colClass} span,
+        ${rowSel} td.${colClass} strong,
+        ${rowSel} td.${colClass} .overlay-cell-text-inner,
+        ${rowSel} td.${colClass} .overlay-num-cell-inner {
+          color: ${c} !important;
+          -webkit-text-fill-color: ${c} !important;
+        }`;
+    };
+    const colorOverrideStyle = (() => {
+      const css = [
+        columnTextColorRule("overlay-col-rank", rankColumnColor, { skipTop3: true }),
+        columnTextColorRule("overlay-col-custom", customColumnColor),
+        columnTextColorRule("overlay-col-role", roleColumnColor),
+        columnTextColorRule("overlay-col-name", nameColumnColor, { skipTop3: true }),
+        accountColor && columnTextColorRule("overlay-col-account", accountColor),
+        accountColor && columnTextColorRule("overlay-account-cell", accountColor),
+        toonColor && columnTextColorRule("overlay-col-toon", toonColor),
+        toonColor && columnTextColorRule("overlay-toon-cell", toonColor),
+        columnTextColorRule("overlay-col-total", combinedColumnColor),
+        columnTextColorRule("overlay-col-restroom", restroomColumnColor),
+      ]
+        .filter(Boolean)
+        .join("\n");
+      if (!css) return null;
+      return <style dangerouslySetInnerHTML={{ __html: css }} />;
+    })();
     const contributionColorStyle = contributionColorCss ? (
       <style
         dangerouslySetInnerHTML={{
@@ -5785,11 +5864,19 @@ function OverlayInner() {
                         shouldApplyExcelRankTop3Highlight(rank, donationTotal)
                           ? ` overlay-excel-rank-${rank}`
                           : "";
+                      const top3TextCls =
+                        top3Row.rankCellClass ||
+                        top3Row.nameCellClass ||
+                        top3Row.rankCellStyle ||
+                        top3Row.nameCellStyle ||
+                        top3Row.gradientText
+                          ? " overlay-rank-top3-text"
+                          : "";
                       return (
                         <tr
                           key={m.id}
                           ref={rowMotionEnabled ? setRowRef(m.id) : undefined}
-                          className={`overlay-row${excelGoldRankCls}${top3Row.rowBg ? " overlay-rank-rowbg" : ""} ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
+                          className={`overlay-row${excelGoldRankCls}${top3TextCls}${top3Row.rowBg ? " overlay-rank-rowbg" : ""} ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
                           style={top3Row.rowBg ? { ["--excel-rank-row-bg" as any]: top3Row.rowBg } as React.CSSProperties : undefined}
                         >
                           <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>

@@ -179,10 +179,18 @@ export type OverlayPresetLike = {
   /** 엑셀표 열 구분 세로선 (기본 true). tableGridLines=false 이면 무시 */
   tableVerticalLines?: boolean;
   vertical?: boolean;
+  /** 열별 본문 글자색(비우면 본문/테마 기본). 헤더 글자색과 별개 */
+  rankColor?: string;
+  customColor?: string;
+  roleColor?: string;
+  nameColor?: string;
   accountColor?: string;
   toonColor?: string;
+  /** 합계(계좌+투네) 열 글자색 */
+  combinedColor?: string;
   /** 기여도 열 글자색. 비우면 테마 기본 */
   contributionColor?: string;
+  restroomColor?: string;
   /** 멤버 행 줄무늬(짝/홀). 비우면 테마 기본 */
   tableRowEvenBg?: string;
   tableRowOddBg?: string;
@@ -208,6 +216,17 @@ export type OverlayPresetLike = {
   showCustomColumn?: boolean;
   /** 커스텀 열 헤더 오버라이드(비우면 AppState.memberCustomHeaderLabel) */
   customHeaderLabel?: string;
+  /**
+   * 엑셀표 후원 집계 시작 시각(epoch ms 문자열).
+   * 비우면 전체(정산 리셋 이후). 「지금」클릭 시 그 순간의 ms를 고정 저장.
+   * 원장·정산 리셋과 무관 — 오버레이 표시 재합산만.
+   */
+  donationAggregateFromAt?: string;
+  /**
+   * 777데이 계산 — 기여도 열만 「나온 시그」(랜덤 포함) 단가와 금액이 같은 후원으로 합산.
+   * 계좌/투네 열은 donationAggregateFromAt 규칙을 따름. 표시 전용.
+   */
+  day777Calc?: boolean;
   accountHeaderLabel?: string;
   toonHeaderLabel?: string;
   restroomHeaderLabel?: string;
@@ -400,8 +419,21 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.totalLineVisible) q.set("totalLineVisible", "true");
   if (preset.tableGridLines === false) q.set("tableGridLines", "false");
   if (preset.tableVerticalLines === false) q.set("tableVerticalLines", "false");
-  if (preset.accountColor && preset.accountColor.trim()) q.set("accountColor", preset.accountColor.trim());
-  if (preset.toonColor && preset.toonColor.trim()) q.set("toonColor", preset.toonColor.trim());
+  for (const key of [
+    "rankColor",
+    "customColor",
+    "roleColor",
+    "nameColor",
+    "accountColor",
+    "toonColor",
+    "combinedColor",
+    "restroomColor",
+  ] as const) {
+    const raw = String((preset as Record<string, unknown>)[key] ?? "").trim();
+    const hex = normalizeGoalHexColor(raw);
+    if (hex) q.set(key, hex);
+    else if (raw && /^rgba?\(/i.test(raw)) q.set(key, raw);
+  }
   const contributionColor = normalizeGoalHexColor((preset.contributionColor || "").trim());
   if (contributionColor) q.set("contributionColor", contributionColor);
   const tableRowEvenBg = (preset.tableRowEvenBg || "").trim();
@@ -444,6 +476,14 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.customHeaderLabel && preset.customHeaderLabel.trim()) {
     q.set("customHeaderLabel", preset.customHeaderLabel.trim());
   }
+  {
+    const fromAtRaw = String(preset.donationAggregateFromAt ?? "").trim();
+    const fromAtNum = Number(fromAtRaw);
+    if (fromAtRaw && Number.isFinite(fromAtNum) && fromAtNum > 0) {
+      q.set("donationAggregateFromAt", String(Math.floor(fromAtNum)));
+    }
+  }
+  if (preset.day777Calc === true) q.set("day777Calc", "true");
   if (preset.accountHeaderLabel && preset.accountHeaderLabel.trim()) q.set("accountHeaderLabel", preset.accountHeaderLabel.trim());
   if (preset.toonHeaderLabel && preset.toonHeaderLabel.trim()) q.set("toonHeaderLabel", preset.toonHeaderLabel.trim());
   if (preset.restroomHeaderLabel && preset.restroomHeaderLabel.trim()) q.set("restroomHeaderLabel", preset.restroomHeaderLabel.trim());
@@ -493,9 +533,15 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "accountHeaderLabel",
   "toonHeaderLabel",
   "restroomHeaderLabel",
+  "rankColor",
+  "customColor",
+  "roleColor",
+  "nameColor",
   "accountColor",
   "toonColor",
+  "combinedColor",
   "contributionColor",
+  "restroomColor",
   "tableRowEvenBg",
   "tableRowOddBg",
   "tablePanelBorderColor",
@@ -514,6 +560,8 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "showTableSumRow",
   "showCustomColumn",
   "customHeaderLabel",
+  "donationAggregateFromAt",
+  "day777Calc",
   "rankTop3Mode",
   "rankTop3Effect",
   "rankLabelFormat",
@@ -659,9 +707,15 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "accountHeaderLabel",
   "toonHeaderLabel",
   "restroomHeaderLabel",
+  "rankColor",
+  "customColor",
+  "roleColor",
+  "nameColor",
   "accountColor",
   "toonColor",
+  "combinedColor",
   "contributionColor",
+  "restroomColor",
   "tableRowEvenBg",
   "tableRowOddBg",
   "tablePanelBorderColor",
@@ -680,6 +734,8 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "showTableSumRow",
   "showCustomColumn",
   "customHeaderLabel",
+  "donationAggregateFromAt",
+  "day777Calc",
   "rankTop3Mode",
   "rankTop3Effect",
   "rankLabelFormat",
@@ -920,9 +976,15 @@ export function isDefaultLikeOverlayThemeFields(preset: unknown): boolean {
     "tableHeaderBgColor",
     "tableHeaderTextColor",
     "tableLineColor",
+    "rankColor",
+    "customColor",
+    "roleColor",
+    "nameColor",
     "accountColor",
     "toonColor",
+    "combinedColor",
     "contributionColor",
+    "restroomColor",
     "tableRowEvenBg",
     "tableRowOddBg",
     "tablePanelBorderColor",
@@ -945,9 +1007,15 @@ const OVERLAY_THEME_FALLBACK_KEYS = [
   "tableHeaderBgColor",
   "tableHeaderTextColor",
   "tableLineColor",
+  "rankColor",
+  "customColor",
+  "roleColor",
+  "nameColor",
   "accountColor",
   "toonColor",
+  "combinedColor",
   "contributionColor",
+  "restroomColor",
   "tableRowEvenBg",
   "tableRowOddBg",
   "tablePanelBorderColor",
@@ -1025,8 +1093,17 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "tableHeaderTextOutlineWidth",
   "tableFontWeight",
   "tableFontFamily",
+  "rankColor",
+  "customColor",
+  "roleColor",
+  "nameColor",
   "accountColor",
   "toonColor",
+  "combinedColor",
+  "contributionColor",
+  "restroomColor",
+  "donationAggregateFromAt",
+  "day777Calc",
   "tableBgOpacity",
   "tableBgGifOpacity",
   "tableBgGifBrightness",
@@ -1097,9 +1174,17 @@ const PRESET_EMPTY_USES_THEME_DEFAULT_KEYS = new Set([
   "tableHeaderTextOutlineColor",
   "tableHeaderTextOutlineWidth",
   "tableFontWeight",
+  "rankColor",
+  "customColor",
+  "roleColor",
+  "nameColor",
   "accountColor",
   "toonColor",
+  "combinedColor",
   "contributionColor",
+  "restroomColor",
+  "donationAggregateFromAt",
+  "day777Calc",
   "tableRowEvenBg",
   "tableRowOddBg",
   "tablePanelBorderColor",
@@ -1993,6 +2078,56 @@ export function resolveContributionColor(
   return resolveTableCssColorParam("contributionColor", rawSp, preset, opts);
 }
 
+/** 엑셀표 열별 본문 글자색 (비우면 "") */
+export function resolveTableColumnTextColor(
+  paramKey:
+    | "rankColor"
+    | "customColor"
+    | "roleColor"
+    | "nameColor"
+    | "accountColor"
+    | "toonColor"
+    | "combinedColor"
+    | "contributionColor"
+    | "restroomColor",
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  return resolveTableCssColorParam(paramKey, rawSp, preset, opts);
+}
+
+/** 엑셀표 후원 집계 시작 시각(epoch ms). null이면 전체 기간 */
+export function resolveDonationAggregateFromAt(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): number | null {
+  const merged = resolveLivePresetStyleParam(
+    "donationAggregateFromAt",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  const raw = (merged || "").trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.floor(n);
+}
+
+/** 777데이 계산(나온 시그 단가 = 기여도) */
+export function resolveDay777Calc(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): boolean {
+  const merged = resolveLivePresetStyleParam("day777Calc", rawSp, presetToParams(preset), opts);
+  if (merged === "true") return true;
+  if (merged === "false") return false;
+  return Boolean(preset?.day777Calc);
+}
+
 /** 멤버 행 줄무늬(짝) */
 export function resolveTableRowEvenBg(
   rawSp: SearchParamsLike,
@@ -2212,6 +2347,7 @@ export function donorRankingsThemeToSearchParams(theme: DonorRankingsTheme): URL
   if (theme.rankColor.trim()) q.set("rankColor", theme.rankColor.trim());
   if (theme.nameColor.trim()) q.set("nameColor", theme.nameColor.trim());
   if (theme.amountColor.trim()) q.set("amountColor", theme.amountColor.trim());
+  if (theme.amountUnitColor.trim()) q.set("amountUnitColor", theme.amountUnitColor.trim());
   if (theme.titleColor.trim()) q.set("titleColor", theme.titleColor.trim());
   if (theme.outlineColor.trim()) q.set("outline", theme.outlineColor.trim());
   if (theme.outlineWidth != null && Number.isFinite(theme.outlineWidth)) {

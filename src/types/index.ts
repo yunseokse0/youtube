@@ -401,6 +401,8 @@ export type DonorRankingsTheme = {
   rankColor: string;
   nameColor: string;
   amountColor: string;
+  /** 「원」/「만」 등 금액 단위 접미사 색. 비어 있으면 amountColor 사용 */
+  amountUnitColor: string;
   /** 칼럼 제목(헤더) 글자색 */
   titleColor: string;
   outlineColor: string;

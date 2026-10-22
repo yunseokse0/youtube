@@ -76,4 +76,14 @@ describe("isDefaultLikeDonorRankingsTheme", () => {
       })
     ).toBe(true);
   });
+
+  it("detects customized amountUnitColor", () => {
+    expect(DEFAULT_DONOR_RANKINGS_THEME.amountUnitColor).toBe("");
+    expect(
+      isDefaultLikeDonorRankingsTheme({
+        ...DEFAULT_DONOR_RANKINGS_THEME,
+        amountUnitColor: "#ffffff",
+      })
+    ).toBe(false);
+  });
 });

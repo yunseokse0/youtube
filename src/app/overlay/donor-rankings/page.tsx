@@ -375,6 +375,7 @@ function RankingRow({
   rankColor,
   nameColor,
   amountColor,
+  amountUnitColor,
   outlineColor,
   outlineWidthPx,
   rowEvenBg,
@@ -391,6 +392,7 @@ function RankingRow({
   rankColor: string;
   nameColor: string;
   amountColor: string;
+  amountUnitColor?: string;
   outlineColor: string;
   outlineWidthPx?: number;
   rowEvenBg?: string;
@@ -479,9 +481,24 @@ function RankingRow({
           ...rowOutline,
         }}
       >
-        {amountFormat === "short"
-          ? `${formatDonorsAmount(item.amount, "short")}만`
-          : `${formatDonorsAmount(item.amount, "full")}${suffix ? ` ${suffix}` : " 원"}`}
+        {(() => {
+          const unitColor = String(amountUnitColor || "").trim() || amountColor;
+          const amountText =
+            amountFormat === "short"
+              ? formatDonorsAmount(item.amount, "short")
+              : formatDonorsAmount(item.amount, "full");
+          const unitText =
+            amountFormat === "short" ? "만" : suffix ? ` ${suffix}` : " 원";
+          if (unitColor === amountColor) {
+            return `${amountText}${unitText}`;
+          }
+          return (
+            <>
+              {amountText}
+              <span style={{ color: unitColor }}>{unitText}</span>
+            </>
+          );
+        })()}
       </span>
     </>
   );
@@ -558,6 +575,7 @@ function RankingColumn({
   rankColor,
   nameColor,
   amountColor,
+  amountUnitColor,
   titleColor,
   outlineColor,
   outlineWidthPx,
@@ -586,6 +604,7 @@ function RankingColumn({
   rankColor: string;
   nameColor: string;
   amountColor: string;
+  amountUnitColor?: string;
   titleColor: string;
   outlineColor: string;
   outlineWidthPx?: number;
@@ -655,6 +674,7 @@ function RankingColumn({
             rankColor={rankColor}
             nameColor={nameColor}
             amountColor={amountColor}
+            amountUnitColor={amountUnitColor}
             outlineColor={outlineColor}
             outlineWidthPx={outlineWidthPx}
             rowEvenBg={rowEvenBg}
@@ -677,6 +697,7 @@ function RankingColumn({
               rankColor={rankColor}
               nameColor={nameColor}
               amountColor={amountColor}
+              amountUnitColor={amountUnitColor}
               outlineColor={outlineColor}
               outlineWidthPx={outlineWidthPx}
               rowEvenBg={rowEvenBg}
@@ -891,6 +912,14 @@ export default function DonorRankingsOverlayPage() {
   const rankColor = liveThemeColor(themeLive, useTest, savedTheme.rankColor, sp, "rankColor", "#ffffff");
   const nameColor = liveThemeColor(themeLive, useTest, savedTheme.nameColor, sp, "nameColor", "#ffc107");
   const amountColor = liveThemeColor(themeLive, useTest, savedTheme.amountColor, sp, "amountColor", "#ffc107");
+  const amountUnitColor = liveThemeColor(
+    themeLive,
+    useTest,
+    savedTheme.amountUnitColor,
+    sp,
+    "amountUnitColor",
+    ""
+  );
   const titleColor = liveThemeColor(themeLive, useTest, savedTheme.titleColor, sp, "titleColor", "#ffc107");
   const outlineColor = liveThemeColor(
     themeLive,
@@ -1191,6 +1220,7 @@ export default function DonorRankingsOverlayPage() {
                     rankColor={rankColor}
                     nameColor={nameColor}
                     amountColor={amountColor}
+                    amountUnitColor={amountUnitColor}
                     titleColor={titleColor}
                     outlineColor={outlineColor}
                     outlineWidthPx={outlineWidthPx}
@@ -1216,6 +1246,7 @@ export default function DonorRankingsOverlayPage() {
                     rankColor={rankColor}
                     nameColor={nameColor}
                     amountColor={amountColor}
+                    amountUnitColor={amountUnitColor}
                     titleColor={titleColor}
                     outlineColor={outlineColor}
                     outlineWidthPx={outlineWidthPx}
@@ -1244,6 +1275,7 @@ export default function DonorRankingsOverlayPage() {
               rankColor={rankColor}
               nameColor={nameColor}
               amountColor={amountColor}
+              amountUnitColor={amountUnitColor}
               titleColor={titleColor}
               outlineColor={outlineColor}
               outlineWidthPx={outlineWidthPx}

@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
-import { useEffect, useLayoutEffect, useMemo, useState, useRef, useCallback, memo, Suspense } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState, useRef, useCallback, memo, Suspense, Fragment } from "react";
 import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
 import DonationTableOptionCheckboxes from "@/components/admin/DonationTableOptionCheckboxes";
@@ -402,6 +402,10 @@ type OverlayPreset = {
   showCombinedColumn?: boolean;
   showCustomColumn?: boolean;
   customHeaderLabel?: string;
+  /** 엑셀표 후원 집계 시작(epoch ms 문자열). 비우면 전체 */
+  donationAggregateFromAt?: string;
+  /** 777데이 계산 — 나온 시그 단가 매칭 기여도 */
+  day777Calc?: boolean;
   showContributionColumn?: boolean;
   showRestroomColumn?: boolean;
   showContributionSum?: boolean;
@@ -421,7 +425,7 @@ type OverlayPreset = {
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerDesign?: string; timerFontFamily?: string; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerOutlineColor?: string; timerOutlineWidth?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableFrameEnabled?: boolean; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; tableGridLines?: boolean; tableVerticalLines?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; contributionColor?: string; tableRowEvenBg?: string; tableRowOddBg?: string; tablePanelBorderColor?: string; tableTextColor?: string; totalTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
+  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableFrameEnabled?: boolean; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; tableGridLines?: boolean; tableVerticalLines?: boolean; vertical?: boolean; rankColor?: string; customColor?: string; roleColor?: string; nameColor?: string; accountColor?: string; toonColor?: string; combinedColor?: string; contributionColor?: string; restroomColor?: string; tableRowEvenBg?: string; tableRowOddBg?: string; tablePanelBorderColor?: string; tableTextColor?: string; totalTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
   rankTop3Mode?: string; rankTop3Effect?: string; rankLabelFormat?: string; rank1Bg?: string; rank2Bg?: string; rank3Bg?: string; rank1Mark?: string; rank2Mark?: string; rank3Mark?: string; rank1Effect?: string; rank2Effect?: string; rank3Effect?: string; rank1TextColor?: string; rank2TextColor?: string; rank3TextColor?: string; rank1TextColorAlt?: string; rank2TextColorAlt?: string; rank3TextColorAlt?: string;
   memberRankChangeFx?: string; memberRankChangeNameSize?: string; memberRankChangeRankSize?: string; memberRankChangeIconSize?: string; memberRankChangeNameColor?: string; memberRankChangeRankColor?: string; memberRankChangeAccentColor?: string; memberRankChangeCardBg?: string; memberRankChangeCardBorder?: string; memberRankChangeConfettiColors?: string;
 };
@@ -1433,7 +1437,7 @@ function AdminPageInner() {
     { name: "엑셀표만", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true, showRestroomColumn: true } },
     { name: "방송 엑셀(계좌·투네)", preset: { theme: "excelLive", membersTheme: "excelLive", totalTheme: "excelLive", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: false, showContributionColumn: false, showRestroomColumn: true, accountHeaderLabel: "계좌", toonHeaderLabel: "투네이션", restroomHeaderLabel: "화장실", tableBgOpacity: "85", donorsFormat: "full", tableFree: true, tableX: "3", tableY: "88", anchor: "bl" } },
     { name: "웹후원 골드 엑셀", preset: { theme: "excelGold", membersTheme: "excelGold", totalTheme: "excelGold", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: true, showContributionColumn: true, showRestroomColumn: false, tableBgOpacity: "0", tableGridLines: false, tableVerticalLines: false, tableHeaderTextColor: "", tableTextColor: "", contributionColor: "", tablePanelBorderColor: "", accountHeaderLabel: "계좌", toonHeaderLabel: "투네", tableFree: true, tableX: "50", tableY: "50", anchor: "cc" } },
-    { name: "퐁당퐁당 엑셀", preset: { theme: "excelPongdang", membersTheme: "excelPongdang", totalTheme: "excelPongdang", showMembers: true, showTotal: true, tableOnly: true, showCustomColumn: true, showCombinedColumn: true, showContributionColumn: true, showRestroomColumn: false, tableBgOpacity: "0", tableGridLines: false, tableVerticalLines: false, accountHeaderLabel: "후원", toonHeaderLabel: "투네", customHeaderLabel: "상벌금", tableFree: true, tableX: "50", tableY: "50", anchor: "cc" } },
+    { name: "퐁당퐁당 엑셀", preset: { theme: "excelPongdang", membersTheme: "excelPongdang", totalTheme: "excelPongdang", showMembers: true, showTotal: true, tableOnly: true, showCustomColumn: true, showCombinedColumn: true, showContributionColumn: true, showRestroomColumn: false, day777Calc: true, tableBgOpacity: "0", tableGridLines: false, tableVerticalLines: false, accountHeaderLabel: "후원", toonHeaderLabel: "투네", customHeaderLabel: "상벌금", tableFree: true, tableX: "50", tableY: "50", anchor: "cc" } },
     { name: "전체 통합", preset: { showMembers: true, showTotal: true } },
     { name: "표만 (엑셀)", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true, showRestroomColumn: true } },
     { name: "멤버 목록만", preset: { showMembers: true, showTotal: false, showBottomDonors: false, tickerInMembers: false } },
@@ -1462,6 +1466,8 @@ function AdminPageInner() {
     showContributionSum: true,
     showCustomColumn: true,
     customHeaderLabel: "",
+    donationAggregateFromAt: "",
+    day777Calc: false,
     accountHeaderLabel: "",
     toonHeaderLabel: "",
     confettiMilestone: "",
@@ -1477,9 +1483,15 @@ function AdminPageInner() {
     tableHeaderTextColor: "",
     tableLineColor: "",
     tableFontFamily: "",
+    rankColor: "",
+    customColor: "",
+    roleColor: "",
+    nameColor: "",
     accountColor: "",
     toonColor: "",
+    combinedColor: "",
     contributionColor: "",
+    restroomColor: "",
     tableRowEvenBg: "",
     tableRowOddBg: "",
     tablePanelBorderColor: "",
@@ -5464,9 +5476,21 @@ function AdminPageInner() {
       const normalized = normalizeGoalHexColor(String(patch.tableLineColor || ""));
       mergedPatch.tableLineColor = normalized || "";
     }
-    if (patch.contributionColor !== undefined) {
-      const normalized = normalizeGoalHexColor(String(patch.contributionColor || ""));
-      mergedPatch.contributionColor = normalized || "";
+    for (const key of [
+      "rankColor",
+      "customColor",
+      "roleColor",
+      "nameColor",
+      "accountColor",
+      "toonColor",
+      "combinedColor",
+      "contributionColor",
+      "restroomColor",
+    ] as const) {
+      if (patch[key] !== undefined) {
+        const normalized = normalizeGoalHexColor(String(patch[key] || ""));
+        mergedPatch[key] = normalized || "";
+      }
     }
     if (patch.tablePanelBorderColor !== undefined) {
       const normalized = normalizeGoalHexColor(String(patch.tablePanelBorderColor || ""));
@@ -14370,6 +14394,8 @@ function AdminPageInner() {
 
                         ["amountColor", "금액 색"],
 
+                        ["amountUnitColor", "원 단위 색"],
+
                       ].map(([key, label]) => (
 
                         <label key={key} className="text-[11px] text-neutral-400 flex items-center justify-between gap-2 rounded border border-white/10 bg-black/20 px-2 py-1">
@@ -14380,7 +14406,16 @@ function AdminPageInner() {
 
                             type="color"
 
-                            value={toColorPickerValue(String((state.donorRankingsTheme as any)[key] ?? ""), "#ffffff")}
+                            value={toColorPickerValue(
+                              String(
+                                key === "amountUnitColor"
+                                  ? (state.donorRankingsTheme.amountUnitColor ||
+                                      state.donorRankingsTheme.amountColor ||
+                                      "")
+                                  : ((state.donorRankingsTheme as any)[key] ?? "")
+                              ),
+                              "#ffffff"
+                            )}
 
                             onChange={(e) => updateDonorRankingsTheme({ [key]: e.target.value } as Partial<AppState["donorRankingsTheme"]>)}
 
@@ -17951,6 +17986,7 @@ function AdminPageInner() {
                       ["rankColor", "순위 색"],
                       ["nameColor", "닉네임 색"],
                       ["amountColor", "금액 색"],
+                      ["amountUnitColor", "원 단위 색"],
                       ["headerAccountBg", "헤더 배경"],
                     ] as const
                   ).map(([key, label]) => (
@@ -17962,7 +17998,13 @@ function AdminPageInner() {
                       <input
                         type="color"
                         value={toColorPickerValue(
-                          String((state.donorRankingsTheme as any)[key] ?? ""),
+                          String(
+                            key === "amountUnitColor"
+                              ? (state.donorRankingsTheme.amountUnitColor ||
+                                  state.donorRankingsTheme.amountColor ||
+                                  "")
+                              : ((state.donorRankingsTheme as any)[key] ?? "")
+                          ),
                           "#ffffff"
                         )}
                         onChange={(e) =>
@@ -19311,27 +19353,62 @@ function AdminPageInner() {
                                         <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.totalTextColor || "테마 자동"}</span>
                                         <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { totalTextColor: "" })}>테마 자동</button>
                                       </div>
-                                      <label className="text-xs text-neutral-400">기여도 글자색</label>
-                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                        <input
-                                          type="color"
-                                          className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                                          value={toColorPickerValue(
-                                            p.contributionColor,
-                                            resolveTableThemeContributionPreviewHex(activeTableThemeId(p))
-                                          )}
-                                          onChange={(e) => {
-                                            const next = e.target.value;
-                                            const preview = resolveTableThemeContributionPreviewHex(activeTableThemeId(p));
-                                            if (!String(p.contributionColor || "").trim() && next.toLowerCase() === preview.toLowerCase()) {
-                                              return;
-                                            }
-                                            updatePreset(p.id, { contributionColor: next });
-                                          }}
-                                        />
-                                        <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.contributionColor || "테마 자동"}</span>
-                                        <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { contributionColor: "" })}>테마 자동</button>
-                                      </div>
+                                      <div className="col-span-full text-xs font-semibold text-sky-300/90 pt-1">열별 글자색</div>
+                                      <p className="col-span-full text-[10px] text-neutral-500 -mt-1">
+                                        비우면 본문/테마 색. 1~3위 강조 행의 순위·이름은 TOP3 색이 우선합니다.
+                                      </p>
+                                      {(
+                                        [
+                                          ["rankColor", "순위"],
+                                          ["customColor", "커스텀(상벌금)"],
+                                          ["roleColor", "직급"],
+                                          ["nameColor", "이름"],
+                                          ["accountColor", "계좌/후원"],
+                                          ["toonColor", "투네"],
+                                          ["combinedColor", "합계"],
+                                          ["contributionColor", "기여도"],
+                                          ["restroomColor", "화장실"],
+                                        ] as const
+                                      ).map(([key, label]) => {
+                                        const current = String((p as Record<string, unknown>)[key] ?? "");
+                                        const preview =
+                                          key === "contributionColor"
+                                            ? resolveTableThemeContributionPreviewHex(activeTableThemeId(p))
+                                            : "#ffffff";
+                                        return (
+                                          <Fragment key={key}>
+                                            <label className="text-xs text-neutral-400">{label}</label>
+                                            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                              <input
+                                                type="color"
+                                                className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                                value={toColorPickerValue(current, preview)}
+                                                onChange={(e) => {
+                                                  const next = e.target.value;
+                                                  if (
+                                                    key === "contributionColor" &&
+                                                    !current.trim() &&
+                                                    next.toLowerCase() === preview.toLowerCase()
+                                                  ) {
+                                                    return;
+                                                  }
+                                                  updatePreset(p.id, { [key]: next } as Partial<OverlayPreset>);
+                                                }}
+                                              />
+                                              <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">
+                                                {current.trim() || "테마 자동"}
+                                              </span>
+                                              <button
+                                                type="button"
+                                                className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                                                onClick={() => updatePreset(p.id, { [key]: "" } as Partial<OverlayPreset>)}
+                                              >
+                                                테마 자동
+                                              </button>
+                                            </div>
+                                          </Fragment>
+                                        );
+                                      })}
                                       <label className="text-xs text-neutral-400">행 알약(짝 행)</label>
                                       <div className="flex min-w-0 flex-wrap items-center gap-2">
                                         <input
@@ -20234,28 +20311,6 @@ function AdminPageInner() {
                                 </select>
                               </div>
                               <p className="text-[10px] text-neutral-500 col-span-full">헤더는 본문보다 한 단계 더 굵게(최대 900). 비우면 800.</p>
-                              <label className="text-xs text-neutral-400">계좌 글자 색상</label>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="color"
-                                  className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                                  value={toColorPickerValue(p.accountColor, "#ffffff")}
-                                  onChange={(e) => updatePreset(p.id, { accountColor: e.target.value })}
-                                />
-                                <span className="text-xs text-neutral-400 font-mono">{p.accountColor || "테마 기본"}</span>
-                                <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { accountColor: "" })}>자동</button>
-                              </div>
-                              <label className="text-xs text-neutral-400">투네 글자 색상</label>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="color"
-                                  className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                                  value={toColorPickerValue(p.toonColor, "#ffffff")}
-                                  onChange={(e) => updatePreset(p.id, { toonColor: e.target.value })}
-                                />
-                                <span className="text-xs text-neutral-400 font-mono">{p.toonColor || "테마 기본"}</span>
-                                <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { toonColor: "" })}>자동</button>
-                              </div>
                               {managePositionInPrism && (
                                 <>
                                   <label className="text-xs text-neutral-400">위치 설정(Prism에서)</label>
@@ -20296,9 +20351,83 @@ function AdminPageInner() {
                                       showRestroomColumn: p.showRestroomColumn,
                                       showTableSumRow: p.showTableSumRow,
                                       showContributionSum: p.showContributionSum,
+                                      showCustomColumn: p.showCustomColumn,
                                     }}
                                     onChange={(patch) => updatePreset(p.id, patch)}
                                   />
+                                </div>
+                                <div className="rounded border border-white/10 bg-black/20 p-2 space-y-2">
+                                  <div className="text-xs text-neutral-300 font-medium">후원 집계 시작</div>
+                                  <p className="text-[10px] text-neutral-500">
+                                    이 오버레이 표만 해당 시각 이후 후원으로 다시 합산합니다. 정산 리셋·원장과 무관합니다.
+                                  </p>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <button
+                                      type="button"
+                                      className={`px-2 py-0.5 rounded border text-xs ${
+                                        !String(p.donationAggregateFromAt || "").trim()
+                                          ? "border-emerald-500 text-emerald-300"
+                                          : "border-white/10 text-neutral-500"
+                                      }`}
+                                      onClick={() => updatePreset(p.id, { donationAggregateFromAt: "" })}
+                                    >
+                                      전체 기간
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="px-2 py-0.5 rounded border border-sky-500/60 text-xs text-sky-300 hover:bg-sky-500/10"
+                                      onClick={() =>
+                                        updatePreset(p.id, {
+                                          donationAggregateFromAt: String(Date.now()),
+                                        })
+                                      }
+                                    >
+                                      지금부터
+                                    </button>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <input
+                                      type="datetime-local"
+                                      className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-neutral-200"
+                                      value={
+                                        String(p.donationAggregateFromAt || "").trim()
+                                          ? formatMealBattleFromAtInput(
+                                              Number(p.donationAggregateFromAt) || Date.now()
+                                            )
+                                          : formatMealBattleFromAtInput(Date.now())
+                                      }
+                                      onChange={(e) => {
+                                        const ms = parseMealBattleFromAtInput(e.target.value, 0);
+                                        if (ms > 0) {
+                                          updatePreset(p.id, {
+                                            donationAggregateFromAt: String(ms),
+                                          });
+                                        }
+                                      }}
+                                    />
+                                    <span className="text-[10px] text-neutral-500 font-mono">
+                                      {String(p.donationAggregateFromAt || "").trim()
+                                        ? new Date(Number(p.donationAggregateFromAt)).toLocaleString("ko-KR")
+                                        : "전체(정산 리셋 이후)"}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
+                                    <label className="text-xs text-neutral-400">777데이 계산</label>
+                                    <button
+                                      type="button"
+                                      className={`px-2 py-0.5 rounded border text-xs ${
+                                        p.day777Calc
+                                          ? "border-amber-500 text-amber-300"
+                                          : "border-white/10 text-neutral-500"
+                                      }`}
+                                      onClick={() => updatePreset(p.id, { day777Calc: !p.day777Calc })}
+                                    >
+                                      {p.day777Calc ? "ON" : "OFF"}
+                                    </button>
+                                    <span className="text-[10px] text-neutral-500">
+                                      기여도만 나온 시그(랜덤 포함) 단가와 같은 후원으로 합산. 계좌/투네는 위 집계 시작 규칙을 따름.
+                                    </span>
+                                  </div>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
                                   <label className="text-xs text-neutral-400">계좌 헤더</label>

@@ -9,6 +9,9 @@ import {
   resolveOverlayTextSharpRender,
   shouldDefaultSharpRenderOnBroadcastHost,
   resolveTableBgColor,
+  resolveTableColumnTextColor,
+  resolveDonationAggregateFromAt,
+  resolveDay777Calc,
   resolveTableFontFamilyId,
   resolveTableVerticalLines,
   resolveTableGridLines,
@@ -758,5 +761,64 @@ describe("isOverlayServerAuthoritativeUrl", () => {
     });
     expect(isOverlayServerAuthoritativeUrl()).toBe(true);
     vi.unstubAllGlobals();
+  });
+});
+
+describe("table column text colors", () => {
+  it("serializes per-column colors into URL params", () => {
+    const q = presetToParams({
+      id: "ov_col",
+      showMembers: true,
+      customColor: "#ff6688",
+      rankColor: "#112233",
+      nameColor: "#abcdef",
+      combinedColor: "#00ff00",
+      restroomColor: "#999999",
+    });
+    expect(q.get("customColor")).toBe("#ff6688");
+    expect(q.get("rankColor")).toBe("#112233");
+    expect(q.get("nameColor")).toBe("#abcdef");
+    expect(q.get("combinedColor")).toBe("#00ff00");
+    expect(q.get("restroomColor")).toBe("#999999");
+  });
+
+  it("resolves customColor from preset when URL empty", () => {
+    const sp = new URLSearchParams();
+    expect(
+      resolveTableColumnTextColor(
+        "customColor",
+        sp,
+        { id: "ov_col", customColor: "#ff6688" },
+        { ready: true }
+      )
+    ).toBe("#ff6688");
+  });
+
+  it("serializes and resolves donationAggregateFromAt", () => {
+    const q = presetToParams({
+      id: "ov_agg",
+      showMembers: true,
+      donationAggregateFromAt: "1700000000123",
+    });
+    expect(q.get("donationAggregateFromAt")).toBe("1700000000123");
+    expect(
+      resolveDonationAggregateFromAt(new URLSearchParams(), { id: "ov_agg", donationAggregateFromAt: "1700000000123" }, {
+        ready: true,
+      })
+    ).toBe(1_700_000_000_123);
+    expect(
+      resolveDonationAggregateFromAt(new URLSearchParams(), { id: "ov_agg", donationAggregateFromAt: "" }, { ready: true })
+    ).toBeNull();
+  });
+
+  it("serializes and resolves day777Calc", () => {
+    const q = presetToParams({ id: "ov_777", showMembers: true, day777Calc: true });
+    expect(q.get("day777Calc")).toBe("true");
+    expect(resolveDay777Calc(new URLSearchParams(), { id: "ov_777", day777Calc: true }, { ready: true })).toBe(
+      true
+    );
+    expect(resolveDay777Calc(new URLSearchParams(), { id: "ov_777", day777Calc: false }, { ready: true })).toBe(
+      false
+    );
   });
 });

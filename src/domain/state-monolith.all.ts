@@ -503,6 +503,7 @@ export const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
   rankColor: "#ffffff",
   nameColor: "#ffc107",
   amountColor: "#ffc107",
+  amountUnitColor: "",
   titleColor: "#ffc107",
   outlineColor: "#000000",
   outlineWidth: 4,
@@ -536,6 +537,7 @@ export const BUILT_IN_DONOR_RANKINGS_PRESETS: DonorRankingsPreset[] = [
       rankColor: "#67e8f9",
       nameColor: "#e0f2fe",
       amountColor: "#f0abfc",
+      amountUnitColor: "",
       titleColor: "#22d3ee",
       outlineColor: "rgba(2, 6, 23, 0.95)",
       outlineWidth: 1.75,
@@ -562,6 +564,7 @@ export const BUILT_IN_DONOR_RANKINGS_PRESETS: DonorRankingsPreset[] = [
       rankColor: "#be185d",
       nameColor: "#831843",
       amountColor: "#b45309",
+      amountUnitColor: "",
       titleColor: "#9d174d",
       outlineColor: "rgba(255, 255, 255, 0.85)",
       outlineWidth: 1.25,
@@ -588,6 +591,7 @@ export const BUILT_IN_DONOR_RANKINGS_PRESETS: DonorRankingsPreset[] = [
       rankColor: "#f8fafc",
       nameColor: "#f1f5f9",
       amountColor: "#fde68a",
+      amountUnitColor: "",
       titleColor: "#f8fafc",
       outlineColor: "rgba(0, 0, 0, 0.88)",
       outlineWidth: 1.5,
@@ -614,6 +618,7 @@ export const BUILT_IN_DONOR_RANKINGS_PRESETS: DonorRankingsPreset[] = [
       rankColor: "#064e3b",
       nameColor: "#065f46",
       amountColor: "#b45309",
+      amountUnitColor: "",
       titleColor: "#064e3b",
       outlineColor: "rgba(255, 255, 255, 0.9)",
       outlineWidth: 1.35,
@@ -669,6 +674,7 @@ export const DEFAULT_DONOR_RANKINGS_FULL_THEME: DonorRankingsTheme = {
   rankColor: "#be185d",
   nameColor: "#831843",
   amountColor: "#b45309",
+  amountUnitColor: "",
   titleColor: "#9d174d",
   outlineColor: "rgba(255, 255, 255, 0.82)",
   outlineWidth: 1.25,
@@ -760,6 +766,13 @@ function normalizeDonorRankingsTheme(
     })(),
     nameColor: s(v.nameColor, defaults.nameColor),
     amountColor: s(v.amountColor, defaults.amountColor),
+    amountUnitColor: (() => {
+      /** 빈 문자열 = 금액 색 상속(레거시·미설정) */
+      if (v.amountUnitColor === undefined || v.amountUnitColor === null) {
+        return defaults.amountUnitColor;
+      }
+      return String(v.amountUnitColor).trim();
+    })(),
     titleColor: (() => {
       const c = s(v.titleColor, defaults.titleColor);
       if (compactTheme && /^#fff(?:fff)?$/i.test(c)) return defaults.titleColor;
@@ -855,6 +868,7 @@ export function isDefaultLikeDonorRankingsTheme(
     n.rankColor === d.rankColor &&
     n.nameColor === d.nameColor &&
     n.amountColor === d.amountColor &&
+    n.amountUnitColor === d.amountUnitColor &&
     n.titleColor === d.titleColor &&
     n.outlineColor === d.outlineColor &&
     n.outlineWidth === d.outlineWidth &&
