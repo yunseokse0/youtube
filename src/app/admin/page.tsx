@@ -10413,7 +10413,7 @@ function AdminPageInner() {
         }
         dinHubOpenForBModeRef.current = true;
         setIntakeModeModalOpen(false);
-        showAppToast("후원을 받으려면 DIN 허브 스트림 키로 먼저 연결해 주세요.", { variant: "info", durationMs: 4200 });
+        showAppToast("후원을 받으려면 DIN 허브 toona 로그인으로 먼저 연결해 주세요.", { variant: "info", durationMs: 4200 });
         window.setTimeout(() => setDinHubModalOpen(true), 120);
       } finally {
         setRuntimeIntakeModeBusy(false);
@@ -12071,7 +12071,7 @@ function AdminPageInner() {
                     className="mt-4 inline-flex items-center gap-2 rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-1.5 text-xs font-bold text-neutral-100 hover:bg-neutral-700 hover:border-neutral-500 select-none active:scale-[0.98] transition"
                   >
                     <span>🔐</span>
-                    <span>DIN 허브 스트림 키</span>
+                    <span>DIN 허브 로그인</span>
                   </div>
                 </button>
               </div>
@@ -17152,7 +17152,7 @@ function AdminPageInner() {
                 <div className="rounded border border-white/10 bg-black/25 px-3 py-2 space-y-2">
                   <div className="text-xs font-semibold text-violet-200">후원 수신은 DIN 허브만</div>
                   <p className="text-[11px] text-neutral-400 leading-relaxed">
-                    투네 직접 연동은 쓰지 않습니다. DIN 허브 스트림 키로 연결한 toona 후원만 정산표로 가져옵니다.
+                    투네 직접 연동은 쓰지 않습니다. DIN 허브 toona 로그인으로 연결한 후원만 정산표로 가져옵니다.
                   </p>
                 </div>
 

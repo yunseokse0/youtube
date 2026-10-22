@@ -58,12 +58,15 @@ function formatSigImport(sig: SigImportResult | undefined): string {
 }
 
 export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [streamKey, setStreamKey] = useState("");
   const [baseUrl, setBaseUrl] = useState(getToonaDashboardUrl());
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [session, setSession] = useState<HubSession | null>(null);
   const [logs, setLogs] = useState<HubLog[]>([]);
+  const [showStreamKeyFallback, setShowStreamKeyFallback] = useState(false);
 
   const applyPayload = useCallback((data: { session?: HubSession | null; logs?: HubLog[] }) => {
     setSession(data.session ?? null);
@@ -97,6 +100,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
           } as const;
         }
         applyPayload(data);
+        if (data.session?.email) setEmail(data.session.email);
         if (data.session?.streamKey) setStreamKey(data.session.streamKey);
         if (data.session?.baseUrl) setBaseUrl(data.session.baseUrl);
         if (data.error) setMessage(data.error);
@@ -178,15 +182,19 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
     }
   }, [youtubeUserId]);
 
-  const onLogin = async () => {
+  const onLogin = async (mode: "email" | "streamKey" = "email") => {
     setBusy(true);
     setMessage("");
     try {
+      const body =
+        mode === "streamKey"
+          ? { streamKey, baseUrl }
+          : { email, password, baseUrl };
       const res = await fetch("/api/toona/hub", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ streamKey, baseUrl }),
+        body: JSON.stringify(body),
         /** 서버 무응답·후처리 지연 시 「연결 중…」고착 방지 */
         signal: AbortSignal.timeout(TOONA_HUB_CLIENT_CONNECT_TIMEOUT_MS),
       });
@@ -200,9 +208,17 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
       if (!res.ok || !data.ok) {
         const recovered = await load(false);
         if (recovered.ok && recovered.session?.streamKey) {
-          setMessage("스트림 키로 DIN 허브 연결 완료");
+          setMessage(
+            mode === "streamKey"
+              ? "스트림 키로 DIN 허브 연결 완료"
+              : "toona 로그인·연동 완료"
+          );
           if (typeof onLoggedIn === "function") {
-            try { onLoggedIn(); } catch (_) { /* noop */ }
+            try {
+              onLoggedIn();
+            } catch (_) {
+              /* noop */
+            }
           }
           return;
         }
@@ -212,24 +228,32 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
             ? "관리자 로그인이 필요합니다. 다시 로그인해 주세요."
             : res.status === 502 || res.status === 504
               ? "서버가 응답하지 못했습니다(502/504). 잠시 후 다시 연결해 주세요."
-              : err || "연결 실패"
+              : err || (mode === "streamKey" ? "연결 실패" : "로그인 실패")
         );
         return;
       }
+      if (mode === "email") setPassword("");
       applyPayload(data);
       if (data.sigImport?.ok) {
         await syncLocalSigInventory();
       }
       const sigMsg = formatSigImport(data.sigImport);
+      const doneLabel = mode === "streamKey" ? "스트림 키 연결 완료" : "toona 로그인·연동 완료";
       setMessage(
         sigMsg
-          ? `스트림 키 연결 완료 · ${sigMsg}`
+          ? `${doneLabel} · ${sigMsg}`
           : data.sigImport?.error === "deferred"
-            ? "스트림 키 연결 완료 · 시그 가져오기는 백그라운드에서 진행 중"
-            : "스트림 키로 DIN 허브 연결 완료"
+            ? `${doneLabel} · 시그 가져오기는 백그라운드에서 진행 중`
+            : mode === "streamKey"
+              ? "스트림 키로 DIN 허브 연결 완료"
+              : "toona 로그인·youtubegit 연동 완료"
       );
       if (typeof onLoggedIn === "function") {
-        try { onLoggedIn(); } catch (_) { /* noop */ }
+        try {
+          onLoggedIn();
+        } catch (_) {
+          /* noop */
+        }
       }
     } catch (err) {
       const timedOut =
@@ -240,7 +264,9 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
           ? "연결 시간 초과 — youtube 서버(/api/toona/hub) 응답이 없습니다. EC2 상태를 확인하세요."
           : err instanceof Error
             ? err.message
-            : "연결 실패"
+            : mode === "streamKey"
+              ? "연결 실패"
+              : "로그인 실패"
       );
     } finally {
       setBusy(false);
@@ -255,6 +281,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
       setSession(null);
       setLogs([]);
       setStreamKey("");
+      setPassword("");
       setMessage("허브 연결을 해제했습니다.");
     } finally {
       setBusy(false);
@@ -363,32 +390,77 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
       {!session ? (
         <div className="space-y-2">
           <p className="text-[11px] text-neutral-300 leading-relaxed">
-            DIN 허브(toona) 스트림 키만 넣으면 후원 수신·정산표 반영이 연결됩니다. 투네 직접 연동은 쓰지
-            않습니다.
+            toona 계정으로 로그인하면 후원 1:1 엑셀 반영·시그 가져오기가 함께 됩니다. 비밀번호는 서버에서만
+            사용하며 저장하지 않습니다.
           </p>
-          <label className="block text-[11px] text-neutral-400">
-            스트림 키
-            <input
-              className="mt-0.5 w-full rounded bg-black/40 border border-white/15 px-2 py-1.5 text-sm font-mono text-neutral-100"
-              value={streamKey}
-              onChange={(e) => setStreamKey(e.target.value)}
-              placeholder="toona 스트림 키"
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <label className="block text-[11px] text-neutral-400">
+              이메일
+              <input
+                className="mt-0.5 w-full rounded bg-black/40 border border-white/15 px-2 py-1.5 text-sm text-neutral-100"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="username"
+              />
+            </label>
+            <label className="block text-[11px] text-neutral-400">
+              비밀번호
+              <input
+                type="password"
+                className="mt-0.5 w-full rounded bg-black/40 border border-white/15 px-2 py-1.5 text-sm text-neutral-100"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+            </label>
+          </div>
           <button
             type="button"
-            disabled={busy || !streamKey.trim()}
+            disabled={busy || !email.trim() || !password}
             className="px-3 py-1.5 rounded bg-violet-700 hover:bg-violet-600 text-xs font-semibold disabled:opacity-50"
-            onClick={() => void onLogin()}
+            onClick={() => void onLogin("email")}
           >
-            {busy ? "연결 중…" : "스트림 키로 연결"}
+            {busy ? "연결 중…" : "toona 로그인 · 연동"}
           </button>
+          <button
+            type="button"
+            className="block text-[10px] text-neutral-500 hover:text-neutral-300 underline-offset-2 hover:underline"
+            onClick={() => setShowStreamKeyFallback((v) => !v)}
+          >
+            {showStreamKeyFallback ? "스트림 키 연결 숨기기" : "스트림 키로 연결 (대체)"}
+          </button>
+          {showStreamKeyFallback ? (
+            <div className="space-y-2 rounded border border-white/10 bg-black/20 p-2">
+              <label className="block text-[11px] text-neutral-400">
+                스트림 키
+                <input
+                  className="mt-0.5 w-full rounded bg-black/40 border border-white/15 px-2 py-1.5 text-sm font-mono text-neutral-100"
+                  value={streamKey}
+                  onChange={(e) => setStreamKey(e.target.value)}
+                  placeholder="toona 스트림 키"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
+              <button
+                type="button"
+                disabled={busy || !streamKey.trim()}
+                className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-xs font-semibold disabled:opacity-50"
+                onClick={() => void onLogin("streamKey")}
+              >
+                {busy ? "연결 중…" : "스트림 키로 연결"}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="space-y-2">
           <div className="text-[11px] text-neutral-300 leading-relaxed space-y-0.5">
+            <div>
+              계정:{" "}
+              <span className="text-violet-100">{session.displayName || session.email || "스트림 키"}</span>
+              {session.email ? ` (${session.email})` : null}
+            </div>
             <div>
               스트림 키: <code className="text-violet-100">{session.streamKey}</code>
             </div>
