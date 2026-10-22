@@ -13,6 +13,7 @@ describe("donation-table-options", () => {
       showRestroomColumn: true,
       showTableSumRow: true,
       showContributionSum: true,
+      showCustomColumn: true,
     });
   });
 
@@ -21,11 +22,13 @@ describe("donation-table-options", () => {
       resolveDonationTableColumnsOptions({
         showCombinedColumn: false,
         showTableSumRow: false,
+        showCustomColumn: false,
       })
     ).toMatchObject({
       showCombinedColumn: false,
       showTableSumRow: false,
       showContributionColumn: true,
+      showCustomColumn: false,
     });
   });
 
@@ -36,6 +39,7 @@ describe("donation-table-options", () => {
       showRestroomColumn: true,
       showTableSumRow: true,
       showContributionSum: false,
+      showCustomColumn: true,
     });
   });
 

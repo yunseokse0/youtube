@@ -191,6 +191,16 @@ export type OverlayPresetLike = {
   /** 기여도 열 글자색. 비우면 테마 기본 */
   contributionColor?: string;
   restroomColor?: string;
+  /** 열별 본문 배경색(비우면 줄무늬/테마). 헤더 배경과 별개 */
+  rankBg?: string;
+  customBg?: string;
+  roleBg?: string;
+  nameBg?: string;
+  accountBg?: string;
+  toonBg?: string;
+  combinedBg?: string;
+  contributionBg?: string;
+  restroomBg?: string;
   /** 멤버 행 줄무늬(짝/홀). 비우면 테마 기본 */
   tableRowEvenBg?: string;
   tableRowOddBg?: string;
@@ -436,6 +446,23 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   }
   const contributionColor = normalizeGoalHexColor((preset.contributionColor || "").trim());
   if (contributionColor) q.set("contributionColor", contributionColor);
+  for (const key of [
+    "rankBg",
+    "customBg",
+    "roleBg",
+    "nameBg",
+    "accountBg",
+    "toonBg",
+    "combinedBg",
+    "contributionBg",
+    "restroomBg",
+  ] as const) {
+    const raw = String((preset as Record<string, unknown>)[key] ?? "").trim();
+    if (!raw) continue;
+    const hex = normalizeGoalHexColor(raw);
+    if (hex) q.set(key, hex);
+    else if (/^rgba?\(/i.test(raw)) q.set(key, raw);
+  }
   const tableRowEvenBg = (preset.tableRowEvenBg || "").trim();
   if (tableRowEvenBg) q.set("tableRowEvenBg", tableRowEvenBg);
   const tableRowOddBg = (preset.tableRowOddBg || "").trim();
@@ -542,6 +569,15 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "combinedColor",
   "contributionColor",
   "restroomColor",
+  "rankBg",
+  "customBg",
+  "roleBg",
+  "nameBg",
+  "accountBg",
+  "toonBg",
+  "combinedBg",
+  "contributionBg",
+  "restroomBg",
   "tableRowEvenBg",
   "tableRowOddBg",
   "tablePanelBorderColor",
@@ -716,6 +752,15 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "combinedColor",
   "contributionColor",
   "restroomColor",
+  "rankBg",
+  "customBg",
+  "roleBg",
+  "nameBg",
+  "accountBg",
+  "toonBg",
+  "combinedBg",
+  "contributionBg",
+  "restroomBg",
   "tableRowEvenBg",
   "tableRowOddBg",
   "tablePanelBorderColor",
@@ -976,21 +1021,30 @@ export function isDefaultLikeOverlayThemeFields(preset: unknown): boolean {
     "tableHeaderBgColor",
     "tableHeaderTextColor",
     "tableLineColor",
-    "rankColor",
-    "customColor",
-    "roleColor",
-    "nameColor",
-    "accountColor",
-    "toonColor",
-    "combinedColor",
-    "contributionColor",
-    "restroomColor",
-    "tableRowEvenBg",
-    "tableRowOddBg",
-    "tablePanelBorderColor",
-    "tableBgGifUrl",
-    "tableTextColor",
-    "tableTextOutlineColor",
+  "rankColor",
+  "customColor",
+  "roleColor",
+  "nameColor",
+  "accountColor",
+  "toonColor",
+  "combinedColor",
+  "contributionColor",
+  "restroomColor",
+  "rankBg",
+  "customBg",
+  "roleBg",
+  "nameBg",
+  "accountBg",
+  "toonBg",
+  "combinedBg",
+  "contributionBg",
+  "restroomBg",
+  "tableRowEvenBg",
+  "tableRowOddBg",
+  "tablePanelBorderColor",
+  "tableBgGifUrl",
+  "tableTextColor",
+  "tableTextOutlineColor",
   ];
   return !colorKeys.some((k) => typeof p[k] === "string" && String(p[k]).trim());
 }
@@ -1016,6 +1070,15 @@ const OVERLAY_THEME_FALLBACK_KEYS = [
   "combinedColor",
   "contributionColor",
   "restroomColor",
+  "rankBg",
+  "customBg",
+  "roleBg",
+  "nameBg",
+  "accountBg",
+  "toonBg",
+  "combinedBg",
+  "contributionBg",
+  "restroomBg",
   "tableRowEvenBg",
   "tableRowOddBg",
   "tablePanelBorderColor",
@@ -1102,6 +1165,15 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "combinedColor",
   "contributionColor",
   "restroomColor",
+  "rankBg",
+  "customBg",
+  "roleBg",
+  "nameBg",
+  "accountBg",
+  "toonBg",
+  "combinedBg",
+  "contributionBg",
+  "restroomBg",
   "donationAggregateFromAt",
   "day777Calc",
   "tableBgOpacity",
@@ -1183,6 +1255,15 @@ const PRESET_EMPTY_USES_THEME_DEFAULT_KEYS = new Set([
   "combinedColor",
   "contributionColor",
   "restroomColor",
+  "rankBg",
+  "customBg",
+  "roleBg",
+  "nameBg",
+  "accountBg",
+  "toonBg",
+  "combinedBg",
+  "contributionBg",
+  "restroomBg",
   "donationAggregateFromAt",
   "day777Calc",
   "tableRowEvenBg",
@@ -2090,6 +2171,25 @@ export function resolveTableColumnTextColor(
     | "combinedColor"
     | "contributionColor"
     | "restroomColor",
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  return resolveTableCssColorParam(paramKey, rawSp, preset, opts);
+}
+
+/** 엑셀표 열별 본문 배경색 (비우면 "") */
+export function resolveTableColumnBgColor(
+  paramKey:
+    | "rankBg"
+    | "customBg"
+    | "roleBg"
+    | "nameBg"
+    | "accountBg"
+    | "toonBg"
+    | "combinedBg"
+    | "contributionBg"
+    | "restroomBg",
   rawSp: SearchParamsLike,
   preset: OverlayPresetLike | null,
   opts: { ready: boolean }

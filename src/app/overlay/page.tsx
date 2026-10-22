@@ -49,6 +49,7 @@ import {
   resolveTableHeaderTextColor,
   resolveTableLineColor,
   resolveContributionColor,
+  resolveTableColumnBgColor,
   resolveTableColumnTextColor,
   resolveDonationAggregateFromAt,
   resolveDay777Calc,
@@ -149,6 +150,7 @@ import {
   normalizeMemberRankingMetric,
   OVERLAY_EXCEL_COLUMN_SLOTS,
   splitOverlayListAtHalf,
+  shouldEnableOverlayExcelSplit,
   type MemberRankingMetric,
 } from "@/lib/utils";
 import {
@@ -3060,6 +3062,15 @@ function OverlayInner() {
   const combinedColumnColor = resolveTableColumnTextColor("combinedColor", rawSp, effectivePreset, { ready });
   const contributionColorRaw = resolveContributionColor(rawSp, effectivePreset, { ready });
   const restroomColumnColor = resolveTableColumnTextColor("restroomColor", rawSp, effectivePreset, { ready });
+  const rankColumnBg = resolveTableColumnBgColor("rankBg", rawSp, effectivePreset, { ready });
+  const customColumnBg = resolveTableColumnBgColor("customBg", rawSp, effectivePreset, { ready });
+  const roleColumnBg = resolveTableColumnBgColor("roleBg", rawSp, effectivePreset, { ready });
+  const nameColumnBg = resolveTableColumnBgColor("nameBg", rawSp, effectivePreset, { ready });
+  const accountColumnBg = resolveTableColumnBgColor("accountBg", rawSp, effectivePreset, { ready });
+  const toonColumnBg = resolveTableColumnBgColor("toonBg", rawSp, effectivePreset, { ready });
+  const combinedColumnBg = resolveTableColumnBgColor("combinedBg", rawSp, effectivePreset, { ready });
+  const contributionColumnBg = resolveTableColumnBgColor("contributionBg", rawSp, effectivePreset, { ready });
+  const restroomColumnBg = resolveTableColumnBgColor("restroomBg", rawSp, effectivePreset, { ready });
   const tableRowEvenBgRaw = resolveTableRowEvenBg(rawSp, effectivePreset, { ready });
   const tableRowOddBgRaw = resolveTableRowOddBg(rawSp, effectivePreset, { ready });
   const tablePanelBorderColorRaw = resolveTablePanelBorderColor(rawSp, effectivePreset, { ready });
@@ -3960,9 +3971,14 @@ function OverlayInner() {
    * 엑셀표 인원 변동:
    * - 5명 이하: 왼쪽 단일 열만
    * - 6명 이상: 왼쪽 1–5 / 오른쪽 6–10 고정 슬롯(빈 칸은 placeholder)
+   * 관리자 미리보기(previewGuide): 좌우 분할을 끄고 단일 표로 둔다.
+   * (가운데 크롭 시 왼쪽「순위」가 잘리고 오른쪽 패널「순위」만 보여 순위가 맨 오른쪽으로 오해됨)
    */
   const excelSplit = splitOverlayListAtHalf(ranked);
-  const excelSplitEnabled = excelSplit.split;
+  const excelSplitEnabled = shouldEnableOverlayExcelSplit(excelSplit.split, {
+    adminPreview: isAdminPreview,
+    previewGuide: isPreviewGuide,
+  });
   const excelLeftCount = OVERLAY_EXCEL_COLUMN_SLOTS;
   const excelRightTargetCount = OVERLAY_EXCEL_COLUMN_SLOTS;
 
@@ -4470,14 +4486,21 @@ function OverlayInner() {
       : tableGridLines
         ? excelMemberAccent?.panelShadow ?? TABLE_BROADCAST_PANEL_SHADOW
         : "none";
-    const tableRowEvenBgCss = applyTableTintToCssColor(
-      tableRowEvenBgRaw || resolveTableThemeRowStripeCss(membersThemeId, "even"),
-      effectiveTableTintAlpha
+    /**
+     * 줄무늬(퐁당 파랑/분홍·골드 알약)는 테마 고유 알파를 유지한다.
+     * 표 배경 불투명도 0에 묶이면 줄무늬가 사라지고, 기여도 #1a1a1a 등이 검은 바탕에 묻힌다.
+     */
+    const rowStripeRawEven =
+      tableRowEvenBgRaw || resolveTableThemeRowStripeCss(membersThemeId, "even");
+    const rowStripeRawOdd =
+      tableRowOddBgRaw || resolveTableThemeRowStripeCss(membersThemeId, "odd");
+    const themeDefinesZebraStripes = Boolean(
+      String(tableRowEvenBgRaw || excelMemberAccent?.rowEvenBg || "").trim() ||
+        String(tableRowOddBgRaw || excelMemberAccent?.rowOddBg || "").trim()
     );
-    const tableRowOddBgCss = applyTableTintToCssColor(
-      tableRowOddBgRaw || resolveTableThemeRowStripeCss(membersThemeId, "odd"),
-      effectiveTableTintAlpha
-    );
+    const rowStripeTintAlpha = themeDefinesZebraStripes ? 1 : effectiveTableTintAlpha;
+    const tableRowEvenBgCss = applyTableTintToCssColor(rowStripeRawEven, rowStripeTintAlpha);
+    const tableRowOddBgCss = applyTableTintToCssColor(rowStripeRawOdd, rowStripeTintAlpha);
     const contributionColorCss =
       contributionColorRaw ||
       excelMemberAccent?.contributionColor ||
@@ -4813,6 +4836,18 @@ function OverlayInner() {
           -webkit-text-fill-color: ${c} !important;
         }`;
     };
+    const columnBgColorRule = (colClass: string, bg: string) => {
+      const b = String(bg || "").trim();
+      if (!b) return "";
+      const rowSel =
+        ".overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row):not(.overlay-excel-placeholder)";
+      return `
+        ${rowSel} td.${colClass} {
+          background: ${b} !important;
+          background-color: ${b} !important;
+          background-image: none !important;
+        }`;
+    };
     const colorOverrideStyle = (() => {
       const css = [
         columnTextColorRule("overlay-col-rank", rankColumnColor, { skipTop3: true }),
@@ -4825,6 +4860,17 @@ function OverlayInner() {
         toonColor && columnTextColorRule("overlay-toon-cell", toonColor),
         columnTextColorRule("overlay-col-total", combinedColumnColor),
         columnTextColorRule("overlay-col-restroom", restroomColumnColor),
+        columnBgColorRule("overlay-col-rank", rankColumnBg),
+        columnBgColorRule("overlay-col-custom", customColumnBg),
+        columnBgColorRule("overlay-col-role", roleColumnBg),
+        columnBgColorRule("overlay-col-name", nameColumnBg),
+        columnBgColorRule("overlay-col-account", accountColumnBg),
+        columnBgColorRule("overlay-account-cell", accountColumnBg),
+        columnBgColorRule("overlay-col-toon", toonColumnBg),
+        columnBgColorRule("overlay-toon-cell", toonColumnBg),
+        columnBgColorRule("overlay-col-total", combinedColumnBg),
+        columnBgColorRule("overlay-col-contribution", contributionColumnBg),
+        columnBgColorRule("overlay-col-restroom", restroomColumnBg),
       ]
         .filter(Boolean)
         .join("\n");
@@ -5730,6 +5776,7 @@ function OverlayInner() {
                     {memberTablePanels.map((panel, panelIdx) => (
                     <table
                       key={panel.key}
+                      dir="ltr"
                       className={`${effectiveTableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}${excelMemberTableClass}`}
                       style={{
                         fontSize: memberFontPx,
@@ -5738,6 +5785,7 @@ function OverlayInner() {
                         tableLayout: "fixed",
                         overflow: isExcelGoldChrome ? "visible" : undefined,
                         width: `calc(${excelTableWidthCalc})`,
+                        direction: "ltr",
                         ...(excelSplitEnabled && panelIdx === 0
                           ? {
                               borderRight: `1px solid ${
@@ -5761,6 +5809,7 @@ function OverlayInner() {
                   </colgroup>
                   <thead>
                     <tr>
+                      {/* 열 순서 고정: 순위 → 커스텀 → 직급 → 이름 → 후원 → 투네 → 합계 → 기여도 → 화장실 */}
                       <td className={`${effectiveHeaderCls} overlay-col-rank overlay-rank-cell text-center`}>순위</td>
                       {showCustomColumn && (
                         <td className={`${effectiveHeaderCls} overlay-col-custom text-center`} style={{ whiteSpace: "nowrap" }}>

@@ -173,6 +173,20 @@ export function splitOverlayListAtHalf<T>(
   };
 }
 
+/**
+ * 관리자 미리보기에서는 좌우 분할을 끈다.
+ * 가운데 크롭 시 왼쪽 패널「순위」가 잘리고 오른쪽 패널「순위」만 보여
+ * 순위 열이 표 맨 오른쪽으로 오해되는 것을 막는다.
+ */
+export function shouldEnableOverlayExcelSplit(
+  split: boolean,
+  opts?: { adminPreview?: boolean; previewGuide?: boolean }
+): boolean {
+  if (!split) return false;
+  if (opts?.adminPreview || opts?.previewGuide) return false;
+  return true;
+}
+
 /** 엑셀표 오버레이: 대표 최상단 고정 → metric 순위 → 운영비(핀)는 호출측에서 하단 */
 export function buildOverlayRankedMembers(
   unpinnedMembers: Member[],

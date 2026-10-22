@@ -47,7 +47,7 @@ export default function DonationTableOptionCheckboxes({
           checked={resolved.showCombinedColumn}
           onChange={(e) => onChange({ showCombinedColumn: e.target.checked })}
         />
-        후원합계 열
+        후원합계 열(계좌+투네)
       </label>
       <label className={labelClass}>
         <input
@@ -79,7 +79,7 @@ export default function DonationTableOptionCheckboxes({
           checked={resolved.showTableSumRow}
           onChange={(e) => onChange({ showTableSumRow: e.target.checked })}
         />
-        총합 행
+        총합 행(맨 아래)
       </label>
       <label className={`${labelClass}${!resolved.showContributionColumn ? " opacity-45" : ""}`}>
         <input

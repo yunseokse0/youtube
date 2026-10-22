@@ -4,6 +4,7 @@ import {
   buildOverlayRankedMembers,
   buildRankLinkedMemberPositions,
   compareMembersByContribution,
+  shouldEnableOverlayExcelSplit,
   sortMembersForRanking,
   splitOverlayListAtHalf,
 } from "./utils";
@@ -135,6 +136,18 @@ describe("splitOverlayListAtHalf", () => {
       right: [6, 7, 8, 9, 10],
       split: true,
     });
+  });
+});
+
+describe("shouldEnableOverlayExcelSplit", () => {
+  it("keeps broadcast split on, disables admin preview / previewGuide", () => {
+    expect(shouldEnableOverlayExcelSplit(true)).toBe(true);
+    expect(shouldEnableOverlayExcelSplit(false)).toBe(false);
+    expect(shouldEnableOverlayExcelSplit(true, { adminPreview: true })).toBe(false);
+    expect(shouldEnableOverlayExcelSplit(true, { previewGuide: true })).toBe(false);
+    expect(shouldEnableOverlayExcelSplit(true, { adminPreview: false, previewGuide: false })).toBe(
+      true
+    );
   });
 });
 

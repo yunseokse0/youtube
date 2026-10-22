@@ -425,7 +425,7 @@ type OverlayPreset = {
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerDesign?: string; timerFontFamily?: string; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerOutlineColor?: string; timerOutlineWidth?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableFrameEnabled?: boolean; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; tableGridLines?: boolean; tableVerticalLines?: boolean; vertical?: boolean; rankColor?: string; customColor?: string; roleColor?: string; nameColor?: string; accountColor?: string; toonColor?: string; combinedColor?: string; contributionColor?: string; restroomColor?: string; tableRowEvenBg?: string; tableRowOddBg?: string; tablePanelBorderColor?: string; tableTextColor?: string; totalTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
+  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableFrameEnabled?: boolean; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; tableGridLines?: boolean; tableVerticalLines?: boolean; vertical?: boolean; rankColor?: string; customColor?: string; roleColor?: string; nameColor?: string; accountColor?: string; toonColor?: string; combinedColor?: string; contributionColor?: string; restroomColor?: string; rankBg?: string; customBg?: string; roleBg?: string; nameBg?: string; accountBg?: string; toonBg?: string; combinedBg?: string; contributionBg?: string; restroomBg?: string; tableRowEvenBg?: string; tableRowOddBg?: string; tablePanelBorderColor?: string; tableTextColor?: string; totalTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
   rankTop3Mode?: string; rankTop3Effect?: string; rankLabelFormat?: string; rank1Bg?: string; rank2Bg?: string; rank3Bg?: string; rank1Mark?: string; rank2Mark?: string; rank3Mark?: string; rank1Effect?: string; rank2Effect?: string; rank3Effect?: string; rank1TextColor?: string; rank2TextColor?: string; rank3TextColor?: string; rank1TextColorAlt?: string; rank2TextColorAlt?: string; rank3TextColorAlt?: string;
   memberRankChangeFx?: string; memberRankChangeNameSize?: string; memberRankChangeRankSize?: string; memberRankChangeIconSize?: string; memberRankChangeNameColor?: string; memberRankChangeRankColor?: string; memberRankChangeAccentColor?: string; memberRankChangeCardBg?: string; memberRankChangeCardBorder?: string; memberRankChangeConfettiColors?: string;
 };
@@ -1492,6 +1492,15 @@ function AdminPageInner() {
     combinedColor: "",
     contributionColor: "",
     restroomColor: "",
+    rankBg: "",
+    customBg: "",
+    roleBg: "",
+    nameBg: "",
+    accountBg: "",
+    toonBg: "",
+    combinedBg: "",
+    contributionBg: "",
+    restroomBg: "",
     tableRowEvenBg: "",
     tableRowOddBg: "",
     tablePanelBorderColor: "",
@@ -5490,6 +5499,27 @@ function AdminPageInner() {
       if (patch[key] !== undefined) {
         const normalized = normalizeGoalHexColor(String(patch[key] || ""));
         mergedPatch[key] = normalized || "";
+      }
+    }
+    for (const key of [
+      "rankBg",
+      "customBg",
+      "roleBg",
+      "nameBg",
+      "accountBg",
+      "toonBg",
+      "combinedBg",
+      "contributionBg",
+      "restroomBg",
+    ] as const) {
+      if (patch[key] !== undefined) {
+        const raw = String(patch[key] || "").trim();
+        mergedPatch[key] =
+          !raw
+            ? ""
+            : /^rgba?\(/i.test(raw)
+              ? raw
+              : normalizeGoalHexColor(raw) || "";
       }
     }
     if (patch.tablePanelBorderColor !== undefined) {
@@ -19409,6 +19439,57 @@ function AdminPageInner() {
                                           </Fragment>
                                         );
                                       })}
+                                      <div className="col-span-full text-xs font-semibold text-sky-300/90 pt-1">열별 배경색(본문)</div>
+                                      <p className="col-span-full text-[10px] text-neutral-500 -mt-1">
+                                        헤더는「헤더 배경색」·본문 열만 여기. 비우면 행 알약(줄무늬)/테마.
+                                      </p>
+                                      {(
+                                        [
+                                          ["rankBg", "순위"],
+                                          ["customBg", "커스텀(상벌금)"],
+                                          ["roleBg", "직급"],
+                                          ["nameBg", "이름"],
+                                          ["accountBg", "계좌/후원"],
+                                          ["toonBg", "투네"],
+                                          ["combinedBg", "합계"],
+                                          ["contributionBg", "기여도"],
+                                          ["restroomBg", "화장실"],
+                                        ] as const
+                                      ).map(([key, label]) => {
+                                        const current = String((p as Record<string, unknown>)[key] ?? "");
+                                        return (
+                                          <Fragment key={key}>
+                                            <label className="text-xs text-neutral-400">{label}</label>
+                                            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                              <input
+                                                type="color"
+                                                className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                                value={toColorPickerValue(current, "#1e293b")}
+                                                onChange={(e) =>
+                                                  updatePreset(p.id, {
+                                                    [key]: tableRowStripeBgFromPickerHex(e.target.value, 0.55),
+                                                  } as Partial<OverlayPreset>)
+                                                }
+                                              />
+                                              <input
+                                                className="flex-1 min-w-0 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs font-mono"
+                                                value={current}
+                                                onChange={(e) =>
+                                                  updatePreset(p.id, { [key]: e.target.value } as Partial<OverlayPreset>)
+                                                }
+                                                placeholder="rgba(...) 또는 비우면 테마 자동"
+                                              />
+                                              <button
+                                                type="button"
+                                                className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                                                onClick={() => updatePreset(p.id, { [key]: "" } as Partial<OverlayPreset>)}
+                                              >
+                                                테마 자동
+                                              </button>
+                                            </div>
+                                          </Fragment>
+                                        );
+                                      })}
                                       <label className="text-xs text-neutral-400">행 알약(짝 행)</label>
                                       <div className="flex min-w-0 flex-wrap items-center gap-2">
                                         <input
@@ -20353,9 +20434,61 @@ function AdminPageInner() {
                                       showContributionSum: p.showContributionSum,
                                       showCustomColumn: p.showCustomColumn,
                                     }}
-                                    onChange={(patch) => updatePreset(p.id, patch)}
+                                    onChange={(patch) => {
+                                      updatePreset(p.id, patch);
+                                      /** 열 ON/OFF는 URL strip → LS 핫리로드; iframe remount로 미리보기 즉시 일치 */
+                                      setGlobalPreviewBump((n) => n + 1);
+                                    }}
                                   />
+                                  <p className="text-[10px] text-neutral-500">
+                                    열 순서: 순위 → 커스텀 → 이름 → 후원 → 투네 → (합계) → (기여도) → (화장실). 「후원합계」는 계좌+투네 합 열입니다.
+                                  </p>
                                 </div>
+                                {(p.showCustomColumn !== false) && (
+                                  <div className="rounded border border-white/10 bg-black/20 p-2 space-y-2">
+                                    <div className="text-xs text-neutral-300 font-medium">커스텀 열(상벌금 등)</div>
+                                    <label className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2 text-xs text-neutral-300">
+                                      <span>커스텀 헤더</span>
+                                      <input
+                                        className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
+                                        value={
+                                          (p.customHeaderLabel && String(p.customHeaderLabel).trim()) ||
+                                          state.memberCustomHeaderLabel ||
+                                          ""
+                                        }
+                                        placeholder="상벌금"
+                                        onChange={(e) => {
+                                          const v = e.target.value;
+                                          updatePreset(p.id, { customHeaderLabel: v });
+                                          updateMemberCustomHeaderLabel(v);
+                                        }}
+                                      />
+                                    </label>
+                                    <p className="text-[10px] text-neutral-500">
+                                      멤버별 자유 텍스트(순위 다음 열). 비우면 칸만 표시됩니다.
+                                    </p>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                      {state.members.map((m) => (
+                                        <label
+                                          key={`overlay-custom-cell-${p.id}-${m.id}`}
+                                          className="grid grid-cols-[1fr_1.2fr] items-center gap-2 text-xs text-neutral-300"
+                                        >
+                                          <span className="truncate">{m.name}</span>
+                                          <input
+                                            className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
+                                            defaultValue={state.memberCustomCells?.[m.id] || ""}
+                                            key={`overlay-custom-cell-input-${p.id}-${m.id}-${state.memberCustomCells?.[m.id] || ""}`}
+                                            onBlur={(e) => updateMemberCustomCell(m.id, e.target.value)}
+                                            onKeyDown={(e) => {
+                                              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                            }}
+                                            placeholder="+100만원 / 메모"
+                                          />
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                                 <div className="rounded border border-white/10 bg-black/20 p-2 space-y-2">
                                   <div className="text-xs text-neutral-300 font-medium">후원 집계 시작</div>
                                   <p className="text-[10px] text-neutral-500">
