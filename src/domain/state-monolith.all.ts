@@ -4008,8 +4008,10 @@ async function doLoadStateFromApi(
   try {
     const since = options?.forceFull ? 0 : Number(options?.ifUpdatedSince || 0);
     const q = new URLSearchParams();
+    /** since 조회에도 `_t` 를 붙여 Cloudflare/중간 캐시가 옛 304 를 재사용하지 않게 한다.
+     *  (후원자 리스트 창: 새로고침만 되고 자동 갱신이 안 되던 원인) */
+    q.set("_t", String(Date.now()));
     if (since > 0) q.set("since", String(Math.floor(since)));
-    else q.set("_t", String(Date.now()));
     if (userId) {
       q.set("user", userId);
       /** `/api/state` 가 `u` 만 받는 프록시·구버전 호환 */

@@ -18,13 +18,21 @@ import {
   mergeTerritoryLogsNeverShrink,
 } from "@/lib/territory-utils";
 import { mergeHighSocietySettingsPreferBaseline } from "@/lib/high-society";
-import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
+import {
+  notifyBroadcastStateLocalUpdated,
+  overlayUserIdsMatch,
+  subscribeBroadcastStateLocalUpdated,
+} from "@/lib/broadcast-state-local-sync";
 import {
   readSessionBroadcastState,
   writeSessionBroadcastState,
 } from "@/lib/server-authoritative-broadcast-state";
 import { useSSEConnection } from "@/lib/sse-client";
 import { resolveScopedOverlayUserId } from "@/lib/overlay-params";
+
+/** 후원자 리스트 창 — SSE가 끊겨도 체감 지연이 짧도록 짧게 폴링 */
+const POPUP_LIVE_POLL_MS_SSE = 5_000;
+const POPUP_LIVE_POLL_MS_NO_SSE = 2_500;
 
 export function useAdminPopupBroadcastState() {
   const router = useRouter();
@@ -262,6 +270,19 @@ export function useAdminPopupBroadcastState() {
     }
   });
 
+  /** 관리자 메인 탭이 받은 후원·저장을 BroadcastChannel 로 즉시 따라감 */
+  useEffect(() => {
+    if (!authReady || !scopedUserId) return;
+    return subscribeBroadcastStateLocalUpdated((detail) => {
+      if (persistInFlightRef.current > 0) return;
+      if (detail.userId != null && !overlayUserIdsMatch(scopedUserId, detail.userId)) return;
+      const remoteAt = Number(detail.updatedAt || 0);
+      const localAt = Number(stateRef.current?.updatedAt || 0);
+      if (remoteAt > 0 && remoteAt <= localAt) return;
+      void reload();
+    });
+  }, [authReady, scopedUserId, reload]);
+
   /** 후원자 리스트 창은 SSE만 기다리면, 연결이 끊긴 동안 들어온 후원은 새로고침 전까지 안 보인다. */
   useEffect(() => {
     if (!authReady || !scopedUserId) return;
@@ -270,7 +291,10 @@ export function useAdminPopupBroadcastState() {
       if (stopped || persistInFlightRef.current > 0 || reloadBusyRef.current) return;
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       const since = Number(stateRef.current?.updatedAt || 0);
-      if (since <= 0) return;
+      if (since <= 0) {
+        void reload();
+        return;
+      }
       const remote = await loadStateFromApi(scopedUserId, { ifUpdatedSince: since });
       if (stopped || !remote) return;
       if (Number(remote.updatedAt || 0) <= since) return;
@@ -278,7 +302,7 @@ export function useAdminPopupBroadcastState() {
     };
     const timer = window.setInterval(() => {
       void pullIfNewer();
-    }, sseConnected ? 8_000 : 4_000);
+    }, sseConnected ? POPUP_LIVE_POLL_MS_SSE : POPUP_LIVE_POLL_MS_NO_SSE);
     const onVisible = () => {
       if (document.visibilityState === "visible") void reload();
     };
@@ -377,5 +401,6 @@ export function useAdminPopupBroadcastState() {
     persistAppState,
     runExclusivePersist,
     accountMismatch,
+    sseConnected,
   };
 }

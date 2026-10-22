@@ -60,6 +60,8 @@ export default function AdminDonorListPopupPanel() {
     stateRef,
     accountMismatch,
     runExclusivePersist,
+    sseConnected,
+    reload,
   } = useAdminPopupBroadcastState();
 
   const [query, setQuery] = useState("");
@@ -282,7 +284,23 @@ export default function AdminDonorListPopupPanel() {
               <span className="font-bold text-emerald-200">{formatWon(pageAgg.sum)}</span>
             </div>
             <span className="text-slate-500">최신순</span>
-            <label className="ml-auto flex items-center gap-1.5 rounded border border-slate-700/50 bg-slate-900/60 px-2.5 py-1">
+            <button
+              type="button"
+              onClick={() => void reload()}
+              className={`ml-auto rounded border px-2 py-0.5 text-[10px] font-semibold ${
+                sseConnected
+                  ? "border-emerald-500/40 bg-emerald-950/40 text-emerald-200"
+                  : "border-amber-500/40 bg-amber-950/40 text-amber-100"
+              }`}
+              title={
+                sseConnected
+                  ? "실시간 접속 중 — 클릭하면 지금 서버에서 다시 가져옵니다"
+                  : "실시간 접속 끊김 — 폴링으로 갱신 중. 클릭하면 지금 다시 가져옵니다"
+              }
+            >
+              {sseConnected ? "접속 ON" : "접속 OFF"} · 새로고침
+            </button>
+            <label className="flex items-center gap-1.5 rounded border border-slate-700/50 bg-slate-900/60 px-2.5 py-1">
               <span className="text-slate-400">자동부여 멤버</span>
               <select
                 className="rounded border border-white/10 bg-neutral-900 px-1.5 py-0.5 text-slate-100"
