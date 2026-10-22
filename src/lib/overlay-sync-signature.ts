@@ -4,6 +4,7 @@ import { canonicalSigIdFromWheelSliceId } from "@/lib/sig-roulette";
 import { countableDonorTotal } from "@/lib/donation/apply-donation-state";
 import {
   hasMeaningfulMemberRoster,
+  isAccidentalEmptyRosterState,
   isIntentionalDonorListShrink,
   isMemberRosterStrictSuperset,
   membersDifferByIds,
@@ -418,6 +419,17 @@ export function shouldRejectPoorerDonationRemote(
   if (remoteReset > localReset) {
     /** stamp만 앞서고 멤버1·2…/빈 후원이면 강제 리셋으로 보지 않음 */
     if (shouldBlockAccidentalEmptyOverwrite(local, remote)) return true;
+    /**
+     * 관리자 정산 리셋(keep/init)은 intentionalDonationClearAt 이 있다.
+     * defaultState 에 stamp만 올린 사고성 플레이스홀더 덮어쓰기는 OBS last-good을 지운다.
+     */
+    if (
+      isAccidentalEmptyRosterState(remote) &&
+      hasMeaningfulMemberRoster(local) &&
+      Number(remote.intentionalDonationClearAt || 0) <= 0
+    ) {
+      return true;
+    }
     return false;
   }
 

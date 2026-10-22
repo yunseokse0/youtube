@@ -515,6 +515,27 @@ describe("shouldRejectPoorerDonationRemote", () => {
     expect(shouldRejectPoorerDonationRemote(local, wipeRemote)).toBe(true);
   });
 
+  it("allows placeholder init reset when intentionalDonationClearAt is set", async () => {
+    const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      settlementResetAt: 500,
+      donors: [
+        { id: "d1", name: "a", amount: 10000, memberId: "m1", at: 1, target: "account" as const },
+      ],
+      members: [{ id: "m1", name: "홍쓰", account: 10000, toon: 0, contribution: 10000 }],
+    };
+    const initRemote = {
+      ...defaultState(),
+      updatedAt: 2000,
+      settlementResetAt: 900,
+      intentionalDonationClearAt: 900,
+      donors: [] as typeof local.donors,
+    };
+    expect(shouldRejectPoorerDonationRemote(local, initRemote)).toBe(false);
+  });
+
   it("allows richer placeholder remote when local only renamed members", async () => {
     const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
     const local = {
