@@ -24,10 +24,11 @@ export function toonaHubDonationToEvent(
   opts?: { intentionalClearAtMs?: number; importFromMs?: number }
 ): DonationEvent | null {
   let atMs = parseKstLocalTimestampToMs(row.createdAt);
-  if (!Number.isFinite(atMs) || atMs <= 0) atMs = Date.now();
+  /** 시각이 없으면 now 로 채우지 않는다. now 로 채우면 정산 리셋 직후 구 원장이 전부 리셋 이후처럼 다시 들어온다. */
+  if (!Number.isFinite(atMs) || atMs <= 0) atMs = 0;
   /**
-   * 수집은 시간창·연동 시각·정산 리셋으로 자르지 않는다. 오래된 것부터 순차로 넣는다.
-   * 이미 표에 있는 고유 ID는 apply 에서 중복 스킵한다. 미래 1일 이상 시각만 막는다.
+   * 수집은 시간창·연동 시각으로 자르지 않는다. 오래된 것부터 순차로 넣는다.
+   * 리셋 이전 건은 fold/shouldDiscard 가 버린다. 이미 표에 있는 고유 ID는 apply 가 스킵한다.
    */
   void linkedAt;
   void opts;

@@ -11329,7 +11329,18 @@ function AdminPageInner() {
     if (localDonors.length === 0 && remoteDonors.length > 0) {
       /** 정산 리셋 이후 — 리셋 이전 서버 후원은 가져오지 않음 (확인창 없이 차단) */
       if (postResetEmpty) {
-        const surviving = filterDonorsAfterSettlementReset(remoteDonors, localReset);
+        const logEntry = pickDailyLogEntryForAutoRestore(
+          { ...loadDailyLog(overlayUserId), ...dailyLog },
+          broadcastDateKey()
+        );
+        const preResetIds = new Set(
+          (Array.isArray(logEntry?.donors) ? logEntry.donors : []).map((d) =>
+            String(d?.id || "").trim()
+          )
+        );
+        const surviving = filterDonorsAfterSettlementReset(remoteDonors, localReset).filter(
+          (d) => !preResetIds.has(String(d.id || "").trim())
+        );
         const resetStamp = Math.max(localReset, Number(remote.settlementResetAt || 0));
         const stripped = syncMemberTotalsFromDonors({
           ...remote,

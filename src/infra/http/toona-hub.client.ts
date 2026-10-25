@@ -30,6 +30,7 @@ import {
 } from "@/lib/toona-hub-session";
 import type { ContributionFormula, SigItem } from "@/types";
 import { offerDinExcelIngest, drainDinIngestQueue } from "@/lib/din-ingest-batch-queue";
+import { shouldDiscardIngestEventForReset } from "@/lib/din-ingest-batch-fold";
 import { isDinIngestPending } from "@/lib/din-ingest-pending";
 import {
   toonaHubDonationToEvent,
@@ -570,9 +571,21 @@ export async function fetchToonaDonationsSinceLink(youtubeUserId: string, opts?:
     const stateUserId = youtubeUserId;
     const offered: Array<{ rowId: string; event: ReturnType<typeof toonaHubDonationToEvent> }> = [];
     for (const row of rows) {
-      const event = toonaHubDonationToEvent(row, session.linkedAt);
+      const event = toonaHubDonationToEvent(row, session.linkedAt, {
+        intentionalClearAtMs: intentionalDonationClearAt,
+        importFromMs: cursorFloor,
+      });
       offered.push({ rowId: String(row?.id || "").trim(), event });
       if (!event) continue;
+      if (
+        shouldDiscardIngestEventForReset(
+          event,
+          settlementResetAt,
+          intentionalDonationClearAt
+        )
+      ) {
+        continue;
+      }
       const enq = offerDinExcelIngest(youtubeUserId, event);
       if (!enq.duplicateQueued) imported += 1;
     }

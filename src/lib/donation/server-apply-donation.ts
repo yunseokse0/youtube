@@ -15,6 +15,8 @@ import {
 import { enrichAppStateWithDonationRosterBackupFromKv, loadDonationRosterBackupFromKv } from "@/lib/donation-roster-backup-redis";
 import { unionAppStateDonorsFromBackupIfRicher } from "@/lib/donation-roster-backup-core";
 import { shouldDiscardIngestEventForReset } from "@/lib/din-ingest-batch-fold";
+import { shouldSuppressAutoRosterRestore } from "@/lib/intentional-donation-clear";
+import { isEmptyBroadcastDonationSession, totalCombined } from "@/lib/state";
 import { persistDonationApplyLikeToonation } from "@/lib/donation/persist-donation-like-toon";
 import { fetchToonaHubContributionFormula } from "@/lib/toona-hub-client";
 import { donationApplyInFlightKey } from "./donation-dedupe-keys";
@@ -135,12 +137,18 @@ export async function tryAutoApplyToonationDonationOnServer(
     }
     if (isDuplicateDonationEvent(freshState, event)) return "applied";
 
-    const { state: enrichedState } = await enrichAppStateWithDonationRosterBackupFromKv(
-      uid,
-      freshState
-    );
-    const backup = await loadDonationRosterBackupFromKv(uid);
-    const unionState = unionAppStateDonorsFromBackupIfRicher(enrichedState, backup);
+    const skipRosterHeal =
+      shouldSuppressAutoRosterRestore(freshState) ||
+      (Number(freshState.settlementResetAt || 0) > 0 &&
+        isEmptyBroadcastDonationSession(freshState) &&
+        totalCombined(freshState) <= 0);
+    const { state: enrichedState } = skipRosterHeal
+      ? { state: freshState }
+      : await enrichAppStateWithDonationRosterBackupFromKv(uid, freshState);
+    const backup = skipRosterHeal ? null : await loadDonationRosterBackupFromKv(uid);
+    const unionState = skipRosterHeal
+      ? freshState
+      : unionAppStateDonorsFromBackupIfRicher(enrichedState, backup);
     const hubFormula = await fetchToonaHubContributionFormula(uid);
     const stateForApply = mergeContributionFormulaIntoState(unionState, event, hubFormula);
     const aliases = await readDonationAliases(uid);

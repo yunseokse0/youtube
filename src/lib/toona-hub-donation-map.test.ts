@@ -82,6 +82,14 @@ describe("toonaHubDonationToEvent (scenario B 1:1)", () => {
     ).toMatchObject({ id: "toonation:din:old", amount: 1000 });
   });
 
+  it("does not stamp missing createdAt as now (reset would re-import the whole ledger)", () => {
+    const event = toonaHubDonationToEvent(
+      { id: "no-at", nickname: "a", amount: 1000, channel: "toon" },
+      linkedAt
+    );
+    expect(event?.at).toBe(new Date(0).toISOString());
+  });
+
   it("still maps donations even if a later settlement reset exists", () => {
     expect(
       toonaHubDonationToEvent(
