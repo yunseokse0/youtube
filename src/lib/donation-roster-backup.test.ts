@@ -40,6 +40,23 @@ describe("donation-roster-backup", () => {
     expect(shouldRestoreDonationRosterFromBackup(defaultState(), backup)).toBe(true);
   });
 
+  it("does not restore onto an empty keep session just because stamps match", () => {
+    const backup = buildDonationRosterBackupPayload(richState())!;
+    const resetAt = Date.now();
+    const cleared: AppState = {
+      ...defaultState(),
+      settlementResetAt: resetAt,
+      donors: [],
+      members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 }],
+    };
+    expect(
+      shouldRestoreDonationRosterFromBackup(cleared, {
+        ...backup,
+        settlementResetAt: resetAt,
+      })
+    ).toBe(false);
+  });
+
   it("does not restore after newer settlement reset cleared donations", () => {
     const backup = buildDonationRosterBackupPayload(richState())!;
     const cleared: AppState = {

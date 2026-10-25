@@ -1,7 +1,13 @@
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import { withIntentionalDonationClear } from "@/lib/intentional-donation-clear";
 import { pickSettingsPreservedAcrossSettlementReset } from "@/lib/settlement-reset-preserve";
-import { buildDefaultMembersCount, defaultState } from "@/lib/state";
+import {
+  buildDefaultMembersCount,
+  defaultState,
+  filterDonorsAfterSettlementReset,
+  isEmptyBroadcastDonationSession,
+  normalizeDonorsArray,
+} from "@/lib/state";
 import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import type { AppState, Member } from "@/types";
 
@@ -123,4 +129,25 @@ export function applySettlementResetToState(
     donorRankingsUpdatedAt: resetAt,
   };
   return syncMemberTotalsFromDonors(withIntentionalDonationClear(next, resetAt));
+}
+
+/**
+ * 정산 리셋 후 재접속: fast GET 이 빈 세션을 받은 뒤 forceFull 이
+ * 구 후원(백업·일일로그 enrich)을 다시 칠하지 않게 한다.
+ */
+export function resolveHydrateForceFullState(
+  current: Pick<AppState, "donors" | "members" | "settlementResetAt">,
+  full: AppState
+): AppState | null {
+  const incoming = normalizeDonorsArray(full.donors);
+  if (incoming.length === 0) return null;
+  const resetAt = Math.max(
+    Number(current.settlementResetAt || 0),
+    Number(full.settlementResetAt || 0)
+  );
+  if (resetAt <= 0) return full;
+  if (!isEmptyBroadcastDonationSession(current as AppState)) return full;
+  const surviving = filterDonorsAfterSettlementReset(incoming, resetAt);
+  if (surviving.length === 0) return null;
+  return syncMemberTotalsFromDonors({ ...full, donors: surviving });
 }

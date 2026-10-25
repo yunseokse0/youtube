@@ -21,7 +21,8 @@ export function shouldDiscardIngestEventForReset(
   const cutoff = Math.max(Number(settlementResetAt) || 0, Number(intentionalClearAt) || 0);
   if (cutoff <= 0) return false;
   const at = ingestEventTimeMs(event);
-  if (at <= 0) return false;
+  /** 리셋 이후에는 시각 없는 허브 건도 되살리지 않는다 */
+  if (at <= 0) return true;
   return at < cutoff - RESET_DISCARD_BUFFER_MS;
 }
 

@@ -14,7 +14,6 @@ import { shouldSuppressAutoRosterRestore } from "@/lib/intentional-donation-clea
 import { publishSseEvent } from "@/lib/sse-clients-hub";
 import {
   defaultState,
-  isDefaultPlaceholderMemberList,
   normalizeDonorsArray,
   totalCombined,
 } from "@/lib/state";
@@ -56,17 +55,17 @@ export async function POST(req: Request) {
     );
   }
 
-  const force =
-    isDefaultPlaceholderMemberList(current.members) ||
-    (normalizeDonorsArray(current.donors).length === 0 && totalCombined(current) === 0) ||
-    shouldRestoreDonationRosterFromBackup(current, backup);
+  const force = shouldRestoreDonationRosterFromBackup(current, backup);
 
   if (!force) {
+    const resetSkip = Number(current.settlementResetAt || 0) > 0;
     return new Response(
       JSON.stringify({
         ok: false,
-        skipped: "not_empty",
-        message: "현재 상태가 비어 있지 않습니다. 정산 리셋 후가 아니면 강제 복구하지 않습니다.",
+        skipped: resetSkip ? "settlement_reset" : "not_empty",
+        message: resetSkip
+          ? "정산 리셋 이후 세션입니다. 구 후원 백업을 되살리지 않습니다."
+          : "현재 상태가 비어 있지 않습니다. 정산 리셋 후가 아니면 강제 복구하지 않습니다.",
         donorsCount: normalizeDonorsArray(current.donors).length,
         total: totalCombined(current),
       }),
@@ -77,12 +76,7 @@ export async function POST(req: Request) {
     );
   }
 
-  let restored: AppState = applyDonationRosterBackupToState(current, backup);
-  if (normalizeDonorsArray(restored.donors).length === 0 && backup.donorsCount > 0) {
-    restored = applyDonationRosterBackupToState(current, backup, {
-      ignoreSettlementResetFilter: true,
-    });
-  }
+  const restored: AppState = applyDonationRosterBackupToState(current, backup);
   if (normalizeDonorsArray(restored.donors).length === 0 && totalCombined(restored) === 0) {
     return new Response(
       JSON.stringify({

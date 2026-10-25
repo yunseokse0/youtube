@@ -9,6 +9,7 @@ import {
   isShrunkToDefaultSigInventory,
   filterDonorsAfterSettlementReset,
   applySettlementResetDonorPipeline,
+  isEmptyBroadcastDonationSession,
 } from "@/lib/state";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
 import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
@@ -219,6 +220,16 @@ async function handleStateGetInner(req: Request): Promise<Response> {
         cached;
       if (hasWarmServerState(warm)) {
         let merged = applyDonationGoalPresetNormalization(syncMemberTotalsFromDonors(warm));
+        const warmResetAt = Number(merged.settlementResetAt || 0);
+        if (warmResetAt > 0) {
+          const after = applySettlementResetDonorPipeline(merged.donors, warmResetAt, {
+            allowFullWipe: false,
+            intentionalClearAt: Number(merged.intentionalDonationClearAt || 0),
+          });
+          if (after.length !== normalizeDonorsArray(merged.donors).length) {
+            merged = syncMemberTotalsFromDonors({ ...merged, donors: after });
+          }
+        }
         if (memFast !== warm) setServerMemoryAppState(userId, merged);
         seedAppStateKvCache(userId, merged);
         return new Response(JSON.stringify(bodyForPick(merged)), {
@@ -389,7 +400,11 @@ async function handleStateGetInner(req: Request): Promise<Response> {
       if (
         since === 0 &&
         normalizeDonorsArray(mergedForResponse.donors).length === 0 &&
-        !shouldSuppressAutoRosterRestore(mergedForResponse)
+        !shouldSuppressAutoRosterRestore(mergedForResponse) &&
+        !(
+          Number(mergedForResponse.settlementResetAt || 0) > 0 &&
+          isEmptyBroadcastDonationSession(mergedForResponse)
+        )
       ) {
         try {
           const dailyLog = await loadDailyLogForUserId(userId, {

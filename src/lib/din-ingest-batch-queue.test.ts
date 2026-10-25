@@ -80,6 +80,11 @@ describe("shouldDiscardIngestEventForReset", () => {
     const e = evt("bank:din:a", 1_000);
     expect(shouldDiscardIngestEventForReset(e, 2_000, 0)).toBe(true);
   });
+
+  it("discards events without a timestamp after reset", () => {
+    const e = evt("bank:din:a", 0);
+    expect(shouldDiscardIngestEventForReset(e, 2_000, 0)).toBe(true);
+  });
 });
 
 describe("foldIngestEventsIntoState", () => {

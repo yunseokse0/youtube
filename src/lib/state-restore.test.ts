@@ -55,7 +55,7 @@ describe("state-restore", () => {
       at: "2026-06-04T09:00:00.000Z",
       total: 5000,
       members: [{ id: "m1", name: "자기", account: 5000, toon: 0, contribution: 5000 }],
-      donors: [{ id: "d1", name: "후원", amount: 5000, memberId: "m1", at: 2 }],
+      donors: [{ id: "d1", name: "후원", amount: 5000, memberId: "m1", at: 2, target: "account" }],
     });
     expect(restored?.donors).toHaveLength(1);
     expect(restored?.members[0]?.account).toBe(5000);

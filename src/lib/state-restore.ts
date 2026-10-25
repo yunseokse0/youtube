@@ -442,6 +442,12 @@ export function enrichAppStateFromDailyLogWhenDonorsMissing(
 ): AppState {
   if (normalizeDonorsArray(snapshot.donors).length > 0) return snapshot;
   if (shouldSuppressAutoRosterRestore(snapshot)) return snapshot;
+  if (
+    Number(snapshot.settlementResetAt || 0) > 0 &&
+    totalCombined(snapshot) <= 0
+  ) {
+    return snapshot;
+  }
   const entry = pickDailyLogEntryForAutoRestore(log, broadcastDateKey());
   if (!entry) return snapshot;
   const donorCount = Array.isArray(entry.donors) ? entry.donors.length : 0;

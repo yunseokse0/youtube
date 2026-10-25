@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { applySettlementResetToState } from "@/lib/settlement-reset-apply";
+import {
+  applySettlementResetToState,
+  resolveHydrateForceFullState,
+} from "@/lib/settlement-reset-apply";
 import { defaultState, totalCombined } from "@/lib/state";
 import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import type { AppState } from "@/types";
@@ -99,5 +102,42 @@ describe("applySettlementResetToState", () => {
     );
     const synced = syncMemberTotalsFromDonors({ ...reset, members: staleTabMembers });
     expect(synced.members.every((m) => m.contribution === 0)).toBe(true);
+  });
+
+  it("reconnect forceFull does not restore pre-reset donors onto empty keep session", () => {
+    const reset = applySettlementResetToState(richState(), { mode: "keep", resetAt: 9000 });
+    const full = {
+      ...reset,
+      donors: [
+        {
+          id: "old",
+          name: "후원",
+          amount: 50000,
+          memberId: "m1",
+          at: 1500,
+          target: "account" as const,
+        },
+      ],
+    };
+    expect(resolveHydrateForceFullState(reset, full)).toBeNull();
+  });
+
+  it("reconnect forceFull keeps post-reset donations", () => {
+    const reset = applySettlementResetToState(richState(), { mode: "keep", resetAt: 9000 });
+    const full = {
+      ...reset,
+      donors: [
+        {
+          id: "new",
+          name: "후원",
+          amount: 1000,
+          memberId: "m1",
+          at: 12_000,
+          target: "account" as const,
+        },
+      ],
+    };
+    const next = resolveHydrateForceFullState(reset, full);
+    expect(next?.donors.map((d) => d.id)).toEqual(["new"]);
   });
 });

@@ -31,7 +31,20 @@ export function normalizeDonationRosterBackupPayload(
   if (!raw || typeof raw !== "object") return null;
   const donors = normalizeDonorsArray(raw.donors);
   const total = Math.max(0, Number(raw.total) || 0);
-  if (donors.length === 0 && total <= 0) return null;
+  const settlementResetAt = Number(raw.settlementResetAt || 0);
+  /** 정산 리셋으로 비운 백업(tombstone)은 버리지 않는다 — 구 디스크 실후원보다 우선 */
+  if (donors.length === 0 && total <= 0) {
+    if (settlementResetAt <= 0) return null;
+    return {
+      ...raw,
+      donors: [],
+      members: Array.isArray(raw.members) ? raw.members : [],
+      donorsCount: 0,
+      total: 0,
+      savedAt: Number(raw.savedAt) || 0,
+      settlementResetAt,
+    };
+  }
   return {
     ...raw,
     donors,
@@ -75,6 +88,10 @@ export function shouldRestoreDonationRosterFromBackup(
   const curTotal = current ? totalCombined(current as AppState) : 0;
   const curReset = Number(current?.settlementResetAt || 0);
   const backupReset = Number(backup.settlementResetAt || 0);
+  /** 정산 리셋으로 비운 세션 — stamp가 있으면 재접속 힐로 구 백업을 넣지 않음 */
+  if (curReset > 0 && curDonors.length === 0 && curTotal === 0) {
+    return false;
+  }
   /** 정산 리셋(멤버 유지·초기화) 이후 메인 stamp가 앞서면 구 백업 되살림 금지 */
   if (curReset > backupReset) {
     return false;
@@ -136,7 +153,11 @@ export function applyDonationRosterBackupToState(
   const rawDonors = normalizeDonorsArray(backup.donors);
   const donors =
     !opts?.ignoreSettlementResetFilter && resetAt > 0
-      ? rawDonors.filter((d) => (d.at || 0) >= resetAt - 3000)
+      ? rawDonors.filter((d) => {
+          const at = Number(d.at || 0);
+          if (!Number.isFinite(at) || at <= 0) return false;
+          return at >= resetAt - 3000;
+        })
       : rawDonors;
   const merged: AppState = {
     ...state,

@@ -59,6 +59,17 @@ describe("settlement reset guards", () => {
     expect(filtered.map((d) => d.id)).toEqual(["new"]);
   });
 
+  it("drops donors with missing timestamps after settlement reset", () => {
+    const filtered = filterDonorsAfterSettlementReset(
+      [
+        { id: "no-at", name: "tester", amount: 1000, memberId: "m1", target: "toon" },
+        donor("new", 2000, RESET_AT + MIN),
+      ],
+      RESET_AT
+    );
+    expect(filtered.map((d) => d.id)).toEqual(["new"]);
+  });
+
   it("keeps newer settlementResetAt when stale browser posts older value", () => {
     expect(
       coalesceSettlementResetAt({

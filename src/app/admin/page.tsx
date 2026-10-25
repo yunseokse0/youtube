@@ -255,7 +255,10 @@ import {
   resolveTableThemeRowStripePreviewHex,
   tableRowStripeBgFromPickerHex,
 } from "@/lib/excel-member-table-theme";
-import { applySettlementResetToState } from "@/lib/settlement-reset-apply";
+import {
+  applySettlementResetToState,
+  resolveHydrateForceFullState,
+} from "@/lib/settlement-reset-apply";
 import {
   SETTLEMENT_RESET_CONFIRM_PHRASE,
   normalizeSettlementResetConfirmPhrase,
@@ -4003,7 +4006,8 @@ function AdminPageInner() {
             setState(withPreset);
           }
           applySyncStatusAfterStateFetch(apiState, meta);
-          /** fast hydrate 후 donors 비었으면 백그라운드 full enrich */
+          /** fast hydrate 후 donors 비었으면 백그라운드 full enrich.
+           * 정산 리셋으로 비운 세션은 구 후원 forceFull 을 다시 칠하지 않음. */
           if (
             normalizeDonorsArray(apiState.donors).length === 0 &&
             totalCombined(apiState) === 0
@@ -4013,10 +4017,11 @@ function AdminPageInner() {
               void loadStateFromApiWithMeta(readUserId, { forceFull: true }).then(
                 ({ state: full, meta: fullMeta }) => {
                   if (cancelled || !full) return;
-                  if (normalizeDonorsArray(full.donors).length === 0) return;
-                  setState(full);
-                  stateRef.current = full;
-                  applySyncStatusAfterStateFetch(full, fullMeta);
+                  const next = resolveHydrateForceFullState(stateRef.current, full);
+                  if (!next) return;
+                  setState(next);
+                  stateRef.current = next;
+                  applySyncStatusAfterStateFetch(next, fullMeta);
                 }
               );
             }, 8_000);
@@ -4325,12 +4330,10 @@ function AdminPageInner() {
     }
     /** 로컬 정산 리셋으로 비운 뒤 — 서버 count 불일치만으로 구 후원 자동 복구 금지 */
     const localReset = Number(stateRef.current.settlementResetAt || 0);
-    const serverReset = Number(storageHealth?.mainState?.settlementResetAt || 0);
     if (
       localReset > 0 &&
       normalizeDonorsArray(state.donors).length === 0 &&
-      isEmptyBroadcastDonationSession(stateRef.current) &&
-      serverReset < localReset
+      isEmptyBroadcastDonationSession(stateRef.current)
     ) {
       return;
     }

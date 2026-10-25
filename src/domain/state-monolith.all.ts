@@ -4648,19 +4648,24 @@ const _resolveAtForSettlement = (d: { at?: number | string }): number => {
   return Number.isFinite(numericAt) && numericAt > 0 ? Math.floor(numericAt) : 0;
 };
 
-/** 정산 리셋 이후 구 탭·다른 PC가 실어낸 후원(at < reset) 제거 */
+/** 정산 리셋 이후 구 탭·다른 PC가 실어낸 후원(at < reset) 제거.
+ * 시각이 없거나 0 이면 리셋 이전으로 본다.
+ * normalizeDonorsArray 가 빈 at 에 Date.now() 를 넣기 전에 원본 at 으로 판정한다. */
 export function filterDonorsAfterSettlementReset(
   donors: Donor[] | undefined,
   settlementResetAt: number
 ): Donor[] {
   const resetAt = Number(settlementResetAt || 0);
-  if (!resetAt) return normalizeDonorsArray(donors);
+  const raw = Array.isArray(donors) ? donors : [];
+  if (!resetAt) return normalizeDonorsArray(raw);
   const threshold = resetAt - SETTLEMENT_RESET_DONOR_GRACE_MS;
-  return normalizeDonorsArray(donors).filter((d) => {
+  const kept = raw.filter((d) => {
+    if (!d || typeof d !== "object") return false;
     const at = _resolveAtForSettlement(d);
-    if (!Number.isFinite(at) || at <= 0) return true;
+    if (!Number.isFinite(at) || at <= 0) return false;
     return at >= threshold;
   });
+  return normalizeDonorsArray(kept);
 }
 
 /**
