@@ -16,6 +16,7 @@ import {
   normalizeSigMatchPools,
   normalizeSigRolling,
   ensureMissionItems,
+  filterDonorsAfterSettlementReset,
   rebumpDonorsPastSettlementReset,
   totalCombined,
   broadcastDateKey,
@@ -83,27 +84,23 @@ export function buildAppStateFromDailyLogRestore(
   if (shouldSuppressAutoRosterRestore(base)) return null;
   const resetAt = Number(base.settlementResetAt || 0);
   /**
-   * 정산 리셋으로 비운 세션에는 일일 로그를 절대 자동 되살리지 않는다.
-   * (리셋 이후처럼 보이는 surviving 필터 통과분·시각 없는 건이 다시 쌓이던 구멍 봉쇄.
-   *  수동 「일일 로그에서 복구」는 admin 전용 경로를 쓴다.)
+   * 정산 리셋으로 donors 가 비어 있으면 일일 로그를 자동 되살리지 않는다.
+   * orphan 멤버 합계(totalCombined>0)여도 동일 — rebump 로 구 후원이 리셋 이후로 보이던 구멍 봉쇄.
+   * 수동 「일일 로그에서 복구」는 admin 전용 경로를 쓴다.
    */
-  if (
-    resetAt > 0 &&
-    normalizeDonorsArray(base.donors).length === 0 &&
-    totalCombined(base) === 0
-  ) {
+  if (resetAt > 0 && normalizeDonorsArray(base.donors).length === 0) {
     return null;
   }
-  const rebumpedDonors = rebumpDonorsPastSettlementReset(
+  const filteredDonors = filterDonorsAfterSettlementReset(
     donorCount > 0 ? normalizeDonorsArray(entry.donors) : base.donors,
     resetAt
   );
-  if (donorCount > 0 && normalizeDonorsArray(rebumpedDonors).length === 0) return null;
+  if (donorCount > 0 && normalizeDonorsArray(filteredDonors).length === 0) return null;
   const now = Date.now();
   const next = syncMemberTotalsFromDonors({
     ...base,
     ...(memberCount > 0 ? { members: entry.members as Member[] } : {}),
-    donors: rebumpedDonors,
+    donors: filteredDonors,
     donorRankingsUpdatedAt: now,
     updatedAt: now,
   });

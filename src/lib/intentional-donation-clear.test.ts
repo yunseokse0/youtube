@@ -45,10 +45,10 @@ describe("intentionalDonationClearAt", () => {
     expect(shouldBlockAccidentalEmptyOverwrite(rich, init)).toBe(false);
   });
 
-  it("does not suppress restore for accidental placeholder wipe without marker", () => {
+  it("does not suppress restore for accidental placeholder wipe without reset stamp", () => {
     const wiped = {
       ...defaultState(),
-      settlementResetAt: 100,
+      settlementResetAt: 0,
       donors: [],
     };
     expect(isIntentionalDonationClearActive(wiped)).toBe(false);
@@ -65,12 +65,43 @@ describe("intentionalDonationClearAt", () => {
           target: "account" as const,
         },
       ],
-      settlementResetAt: 100,
+      settlementResetAt: 0,
       savedAt: 200,
       total: 50000,
       donorsCount: 1,
     };
     expect(shouldRestoreDonationRosterFromBackup(wiped, backup)).toBe(true);
+  });
+
+  it("suppresses restore when donors empty after settlement reset even with orphan member totals", () => {
+    const orphan = {
+      ...defaultState(),
+      settlementResetAt: 9000,
+      intentionalDonationClearAt: 9000,
+      donors: [],
+      members: [{ id: "m1", name: "헛치", account: 50000, toon: 0, contribution: 50000 }],
+    };
+    expect(isIntentionalDonationClearActive(orphan)).toBe(true);
+    expect(shouldSuppressAutoRosterRestore(orphan)).toBe(true);
+    expect(
+      shouldRestoreDonationRosterFromBackup(orphan, {
+        members: orphan.members,
+        donors: [
+          {
+            id: "d1",
+            name: "후원",
+            amount: 50000,
+            memberId: "m1",
+            at: 1000,
+            target: "account" as const,
+          },
+        ],
+        settlementResetAt: 100,
+        savedAt: 200,
+        total: 50000,
+        donorsCount: 1,
+      })
+    ).toBe(false);
   });
 
   it("suppresses backup restore while intentional clear is active", () => {

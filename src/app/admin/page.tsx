@@ -4622,9 +4622,17 @@ function AdminPageInner() {
         !shouldBlockAccidentalEmptyOverwrite(stateRef.current, remote)
       ) {
         const themeMerged = mergeIncomingStateSafely(remote, stateRef.current);
+        const authoritativeResetAt = Math.max(
+          Number(remote.settlementResetAt || 0),
+          Number(stateRef.current.settlementResetAt || 0),
+          Number(themeMerged.merged.settlementResetAt || 0)
+        );
         let next = syncMemberTotalsFromDonors({
           ...themeMerged.merged,
-          donors: normalizeDonorsArray(remote.donors),
+          donors: filterDonorsAfterSettlementReset(
+            normalizeDonorsArray(remote.donors),
+            authoritativeResetAt
+          ),
           members: Array.isArray(remote.members) && remote.members.length > 0
             ? remote.members
             : themeMerged.merged.members,

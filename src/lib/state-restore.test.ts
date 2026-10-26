@@ -136,7 +136,28 @@ describe("state-restore", () => {
     expect(Number(snap.donors[0]?.at)).toBeGreaterThanOrEqual(resetAt);
   });
 
-  it("enriches orphan snapshot from daily log", () => {
+  it("enriches orphan snapshot from daily log when no reset stamp", () => {
+    const orphan = {
+      ...defaultState(),
+      settlementResetAt: 0,
+      members: [{ id: "m1", name: "A", account: 1000, toon: 0, contribution: 1000 }],
+      donors: [],
+    };
+    const log = {
+      "2026-06-04": [
+        {
+          at: "2026-06-04T09:00:00.000Z",
+          total: 1000,
+          members: orphan.members,
+          donors: [{ id: "d1", name: "B", amount: 1000, memberId: "m1", at: 12_000, target: "account" as const }],
+        },
+      ],
+    };
+    const enriched = enrichSettlementSnapshotFromDailyLog(orphan, log, "2026-06-04");
+    expect(enriched.donors).toHaveLength(1);
+  });
+
+  it("does not enrich orphan snapshot from daily log after settlement reset", () => {
     const resetAt = 10_000;
     const orphan = {
       ...defaultState(),
@@ -155,7 +176,7 @@ describe("state-restore", () => {
       ],
     };
     const enriched = enrichSettlementSnapshotFromDailyLog(orphan, log, "2026-06-04");
-    expect(enriched.donors).toHaveLength(1);
+    expect(enriched.donors).toHaveLength(0);
   });
 
   it("enrichAppStateFromDailyLogWhenDonorsMissing restores when donors and totals are zero", () => {

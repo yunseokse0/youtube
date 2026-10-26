@@ -88,8 +88,8 @@ export function shouldRestoreDonationRosterFromBackup(
   const curTotal = current ? totalCombined(current as AppState) : 0;
   const curReset = Number(current?.settlementResetAt || 0);
   const backupReset = Number(backup.settlementResetAt || 0);
-  /** 정산 리셋으로 비운 세션 — stamp가 있으면 재접속 힐로 구 백업을 넣지 않음 */
-  if (curReset > 0 && curDonors.length === 0 && curTotal === 0) {
+  /** 정산 리셋으로 donors 비움 — orphan 멤버 합계가 남아 있어도 구 백업 힐 금지 */
+  if (curReset > 0 && curDonors.length === 0) {
     return false;
   }
   /** 정산 리셋(멤버 유지·초기화) 이후 메인 stamp가 앞서면 구 백업 되살림 금지 */

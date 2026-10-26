@@ -1,7 +1,6 @@
 import {
   isEmptyBroadcastDonationSession,
   normalizeDonorsArray,
-  totalCombined,
 } from "@/lib/state";
 import type { AppState } from "@/types";
 
@@ -18,14 +17,24 @@ export function isIntentionalDonationClearActive(
   if (!state) return false;
   const clearAt = Number(state.intentionalDonationClearAt || 0);
   if (clearAt <= 0) return false;
-  return isEmptyBroadcastDonationSession(state as AppState);
+  /** donors 가 비어 있으면 멤버 합계만 남은 orphan 이어도 의도적 비움으로 본다.
+   *  (totalCombined>0 이면 empty-session 가드가 풀려 일일로그/백업이 되살리던 구멍) */
+  if (normalizeDonorsArray(state.donors).length > 0) return false;
+  return true;
 }
 
 /** 자동 복구(백업·일일로그·orphan heal) 억제 — 의도적 비움 세션 */
 export function shouldSuppressAutoRosterRestore(
-  state: Pick<AppState, "intentionalDonationClearAt" | "donors" | "members"> | null | undefined
+  state:
+    | Pick<AppState, "intentionalDonationClearAt" | "donors" | "members" | "settlementResetAt">
+    | null
+    | undefined
 ): boolean {
-  return isIntentionalDonationClearActive(state);
+  if (isIntentionalDonationClearActive(state)) return true;
+  /** 리셋 stamp 이후 donors 비어 있으면 orphan 합계와 무관하게 자동 복구 금지 */
+  const resetAt = Number(state?.settlementResetAt || 0);
+  if (resetAt > 0 && normalizeDonorsArray(state?.donors).length === 0) return true;
+  return false;
 }
 
 export function withIntentionalDonationClear(state: AppState, clearAt: number): AppState {
@@ -47,10 +56,11 @@ export function markIntentionalDonationEmptySession(state: AppState): AppState {
   return { ...state, intentionalDonationClearAt: Date.now() };
 }
 
-/** 실후원이 들어오면 의도적 비움 마커 해제 (리셋 stamp 자체는 유지) */
+/** 실후원( donors 행)이 들어오면 의도적 비움 마커 해제 (리셋 stamp 자체는 유지).
+ *  멤버 합계만 남은 orphan 으로는 마커를 풀지 않는다. */
 export function clearIntentionalDonationClearIfHasDonations(state: AppState): AppState {
   if (!Number(state.intentionalDonationClearAt || 0)) return state;
-  if (normalizeDonorsArray(state.donors).length === 0 && totalCombined(state) === 0) {
+  if (normalizeDonorsArray(state.donors).length === 0) {
     return state;
   }
   const next = { ...state };
