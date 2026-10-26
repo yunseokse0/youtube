@@ -80,6 +80,18 @@ describe("sanitizeDonationEventFromIngestBody", () => {
     expect(sanitizeDonationEventFromIngestBody({ donorName: "a" })).toBeNull();
     expect(sanitizeDonationEventFromIngestBody({ donorName: "a", externalId: "x", amount: 0 })).toBeNull();
   });
+
+  it("does not stamp missing at as now (reset discard must see empty time)", () => {
+    const event = sanitizeDonationEventFromIngestBody({
+      externalId: "no-at-1",
+      donorName: "무시각",
+      amount: 1000,
+      provider: "bank",
+      target: "account",
+    });
+    expect(event).not.toBeNull();
+    expect(Date.parse(String(event!.at))).toBe(0);
+  });
 });
 
 describe("parseApplyExcelFromRequest", () => {

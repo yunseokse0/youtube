@@ -72,10 +72,15 @@ export function sanitizeDonationEventFromIngestBody(raw: unknown): DonationEvent
   let atIso = "";
   try {
     const ms = parseKstLocalTimestampToMs(atRaw);
-    const finalMs = Number.isFinite(ms) && ms > 0 ? ms : Date.now();
-    atIso = new Date(finalMs).toISOString();
+    /**
+     * 시각이 없으면 now 로 채우지 않는다.
+     * hub pull 패치(9dcc5224)와 동일 — now 로 채우면 정산 리셋 직후 구 원장 push 가
+     * shouldDiscardIngestEventForReset 을 통과해 표에 다시 쌓인다.
+     */
+    const finalMs = Number.isFinite(ms) && ms > 0 ? ms : 0;
+    atIso = new Date(finalMs > 0 ? finalMs : 0).toISOString();
   } catch {
-    atIso = new Date().toISOString();
+    atIso = new Date(0).toISOString();
   }
   const at = atIso;
 
