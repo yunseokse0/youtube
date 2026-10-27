@@ -3,9 +3,11 @@ import type { Donor, SettlementRecord } from "@/types";
 import {
   aggregateMemberDonors,
   buildDailyLogMinAtByDonorId,
+  buildDonorMessageFallbackMaps,
   formatExportDateTime,
   recordToMemberDonorsCsv,
   repairSettlementDonorTimestamps,
+  resolveDonorMessageFromMaps,
   resolveSettlementDonors,
 } from "@/lib/settlement-donor-export";
 
@@ -207,6 +209,54 @@ describe("formatExportDateTime", () => {
     expect(s).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
     expect(s).not.toContain("Z");
     expect(s).not.toContain("T");
+  });
+});
+
+describe("resolveDonorMessageFromMaps", () => {
+  it("does not copy toon message onto empty account row with same name+amount", () => {
+    const maps = buildDonorMessageFallbackMaps(undefined, [
+      {
+        id: "toon-1",
+        name: "박승우",
+        amount: 14_100,
+        memberId: "m1",
+        at: 1_700_000_000_000,
+        target: "toon",
+        message: "영실",
+      },
+    ]);
+    const accountEmpty: Donor = {
+      id: "acc-1",
+      name: "박승우",
+      amount: 14_100,
+      memberId: "m1",
+      at: 1_700_000_100_000,
+      target: "account",
+    };
+    expect(resolveDonorMessageFromMaps(accountEmpty, maps)).toBe("");
+  });
+
+  it("still restores empty message from same-target name+amount reference", () => {
+    const maps = buildDonorMessageFallbackMaps(undefined, [
+      {
+        id: "acc-ref",
+        name: "박승우",
+        amount: 14_100,
+        memberId: "m1",
+        at: 1_700_000_000_000,
+        target: "account",
+        message: "계좌메모",
+      },
+    ]);
+    const accountEmpty: Donor = {
+      id: "acc-other",
+      name: "박승우",
+      amount: 14_100,
+      memberId: "m1",
+      at: 1_700_000_100_000,
+      target: "account",
+    };
+    expect(resolveDonorMessageFromMaps(accountEmpty, maps)).toBe("계좌메모");
   });
 });
 

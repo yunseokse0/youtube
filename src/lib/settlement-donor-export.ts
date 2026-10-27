@@ -151,7 +151,7 @@ export function repairSettlementDonorTimestamps(
   return repairDonorTimestamps(donors, opts);
 }
 
-/** 엑셀/CSV 내보내기 직전 — 최신 daily log·후원 목록으로 시각 재보정 · donationExcluded 제외 + message 3중 fallback 복구 */
+/** 엑셀/CSV 내보내기 직전 — 최신 daily log·후원 목록으로 시각 재보정 · donationExcluded 제외 + message fallback 복구(id / 이름+금액+시각+target / 이름+금액+target) */
 export function donorsForSettlementExport(
   record: SettlementRecord,
   donors: Donor[],
@@ -181,6 +181,11 @@ export type DonorMessageFallbackMaps = {
   byNameAmount: Map<string, string>;
 };
 
+/** 메시지 fallback 키 — target 포함 (계좌↔투네 교차 오염 방지) */
+function donorMessageFallbackTargetKey(target?: DonorTarget | string | null): "account" | "toon" {
+  return donorTargetField(target as DonorTarget | undefined);
+}
+
 export function buildDonorMessageFallbackMaps(
   dailyLog: Record<string, DailyLogEntry[]> | undefined,
   referenceDonors: Donor[] | undefined
@@ -189,7 +194,14 @@ export function buildDonorMessageFallbackMaps(
   const byNameAmountAt = new Map<string, string>();
   const byNameAmount = new Map<string, string>();
 
-  const register = (d: { id?: string | number; name?: string; amount?: string | number; at?: string | number; message?: string }) => {
+  const register = (d: {
+    id?: string | number;
+    name?: string;
+    amount?: string | number;
+    at?: string | number;
+    message?: string;
+    target?: DonorTarget | string | null;
+  }) => {
     const msg = String(d.message || "").trim();
     if (!msg) return;
     const id = String(d.id || "").trim();
@@ -197,9 +209,10 @@ export function buildDonorMessageFallbackMaps(
     const name = String(d.name || "무명").replace(/\s+/g, "") || "무명";
     const amount = Math.max(0, Math.round(Number(d.amount) || 0));
     const at = donorAtEpochMs(d as Donor);
-    const naa = `${name}\0${amount}\0${at}`;
+    const target = donorMessageFallbackTargetKey(d.target);
+    const naa = `${name}\0${amount}\0${at}\0${target}`;
     if (!byNameAmountAt.has(naa)) byNameAmountAt.set(naa, msg);
-    const na = `${name}\0${amount}`;
+    const na = `${name}\0${amount}\0${target}`;
     if (!byNameAmount.has(na)) byNameAmount.set(na, msg);
   };
 
@@ -223,9 +236,10 @@ export function resolveDonorMessageFromMaps(d: Donor, maps: DonorMessageFallback
   const name = String(d.name || "무명").replace(/\s+/g, "") || "무명";
   const amount = Math.max(0, Math.round(Number(d.amount) || 0));
   const at = donorAtEpochMs(d);
-  const keyNaa = `${name}\0${amount}\0${at}`;
+  const target = donorMessageFallbackTargetKey(d.target);
+  const keyNaa = `${name}\0${amount}\0${at}\0${target}`;
   if (maps.byNameAmountAt.has(keyNaa)) return maps.byNameAmountAt.get(keyNaa)!;
-  const keyNa = `${name}\0${amount}`;
+  const keyNa = `${name}\0${amount}\0${target}`;
   if (maps.byNameAmount.has(keyNa)) return maps.byNameAmount.get(keyNa)!;
   return "";
 }
