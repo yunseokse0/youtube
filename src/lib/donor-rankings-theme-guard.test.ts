@@ -77,6 +77,17 @@ describe("isDefaultLikeDonorRankingsTheme", () => {
     ).toBe(true);
   });
 
+  it("treats missing hideAmount as shown (default-like)", () => {
+    const { hideAmount: _omit, ...withoutHide } = DEFAULT_DONOR_RANKINGS_THEME;
+    expect(isDefaultLikeDonorRankingsTheme(withoutHide)).toBe(true);
+    expect(
+      isDefaultLikeDonorRankingsTheme({
+        ...DEFAULT_DONOR_RANKINGS_THEME,
+        hideAmount: true,
+      })
+    ).toBe(false);
+  });
+
   it("detects customized amountUnitColor", () => {
     expect(DEFAULT_DONOR_RANKINGS_THEME.amountUnitColor).toBe("");
     expect(

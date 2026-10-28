@@ -23,6 +23,7 @@ export const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
   nameColor: "#ffc107",
   amountColor: "#ffc107",
   amountUnitColor: "",
+  hideAmount: false,
   titleColor: "#ffc107",
   outlineColor: "#000000",
   outlineWidth: 4,
@@ -282,6 +283,15 @@ function normalizeDonorRankingsTheme(
       }
       return String(v.amountUnitColor).trim();
     })(),
+    hideAmount: (() => {
+      const raw = v.hideAmount;
+      if (raw === true || raw === 1) return true;
+      if (raw === false || raw === 0) return false;
+      const s = String(raw ?? "").trim().toLowerCase();
+      if (s === "true" || s === "1" || s === "hide") return true;
+      if (s === "false" || s === "0" || s === "show") return false;
+      return Boolean(defaults.hideAmount);
+    })(),
     titleColor: (() => {
       const c = s(v.titleColor, defaults.titleColor);
       if (compactTheme && /^#fff(?:fff)?$/i.test(c)) return defaults.titleColor;
@@ -340,6 +350,7 @@ export function isDefaultLikeDonorRankingsTheme(
     n.nameColor === d.nameColor &&
     n.amountColor === d.amountColor &&
     n.amountUnitColor === d.amountUnitColor &&
+    Boolean(n.hideAmount) === Boolean(d.hideAmount) &&
     n.titleColor === d.titleColor &&
     n.outlineColor === d.outlineColor &&
     n.outlineWidth === d.outlineWidth &&

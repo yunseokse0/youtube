@@ -14437,6 +14437,40 @@ function AdminPageInner() {
 
                       </label>
 
+                      <label className="text-[11px] text-neutral-400 flex flex-col gap-1">
+
+                        금액 표시
+
+                        <button
+
+                          type="button"
+
+                          className={`mt-1 px-2 py-1 rounded border text-xs w-fit ${
+
+                            state.donorRankingsTheme.hideAmount
+
+                              ? "border-amber-500 text-amber-300"
+
+                              : "border-white/10 text-neutral-300"
+
+                          }`}
+
+                          onClick={() =>
+
+                            updateDonorRankingsTheme({ hideAmount: !state.donorRankingsTheme.hideAmount })
+
+                          }
+
+                        >
+
+                          {state.donorRankingsTheme.hideAmount ? "숨김" : "표시"}
+
+                        </button>
+
+                        <span className="text-[10px] text-neutral-500">순위·닉네임은 그대로, 금액만 가립니다.</span>
+
+                      </label>
+
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
@@ -18038,6 +18072,23 @@ function AdminPageInner() {
                       className="w-full"
                     />
                     <span className="text-xs text-neutral-300">{state.donorRankingsTheme.overlayOpacity}%</span>
+                  </label>
+                  <label className="text-[11px] text-neutral-400 flex flex-col gap-1">
+                    금액 표시
+                    <button
+                      type="button"
+                      className={`mt-1 px-2 py-1 rounded border text-xs w-fit ${
+                        state.donorRankingsTheme.hideAmount
+                          ? "border-amber-500 text-amber-300"
+                          : "border-white/10 text-neutral-300"
+                      }`}
+                      onClick={() =>
+                        updateDonorRankingsTheme({ hideAmount: !state.donorRankingsTheme.hideAmount })
+                      }
+                    >
+                      {state.donorRankingsTheme.hideAmount ? "숨김" : "표시"}
+                    </button>
+                    <span className="text-[10px] text-neutral-500">순위·닉네임은 그대로, 금액만 가립니다.</span>
                   </label>
                 </div>
                 <div className="grid grid-cols-2 gap-2 md:grid-cols-5">

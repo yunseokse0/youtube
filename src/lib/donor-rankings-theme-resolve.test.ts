@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  resolveDonorRankingsHideAmount,
   resolveDonorRankingsThemeColor,
   resolveDonorRankingsThemeNumber,
 } from "./donor-rankings-theme-resolve";
@@ -40,6 +41,18 @@ describe("resolveDonorRankingsThemeColor", () => {
       "transparent"
     );
     expect(resolveDonorRankingsThemeColor(false, true, null, "", broadcast)).toBe(broadcast);
+  });
+});
+
+describe("resolveDonorRankingsHideAmount", () => {
+  it("uses saved value in live mode and ignores URL", () => {
+    expect(resolveDonorRankingsHideAmount(true, false, "true", false)).toBe(false);
+    expect(resolveDonorRankingsHideAmount(true, false, "false", true)).toBe(true);
+  });
+
+  it("uses URL in test mode", () => {
+    expect(resolveDonorRankingsHideAmount(true, true, "true", false)).toBe(true);
+    expect(resolveDonorRankingsHideAmount(true, true, "show", true)).toBe(false);
   });
 });
 

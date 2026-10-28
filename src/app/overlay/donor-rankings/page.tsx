@@ -43,6 +43,7 @@ import {
 import { useOverlayViewportSize } from "@/hooks/useOverlayViewportSize";
 import { backgroundWithOpacityFrac, solidBackgroundWithOpacityFrac } from "@/lib/donor-rankings-opacity";
 import {
+  resolveDonorRankingsHideAmount,
   resolveDonorRankingsThemeColor,
   resolveDonorRankingsThemeNumber,
 } from "@/lib/donor-rankings-theme-resolve";
@@ -384,6 +385,7 @@ function RankingRow({
   amountFormat,
   suffix,
   disableMotion,
+  hideAmount,
 }: {
   item: DonorRow;
   idx: number;
@@ -402,6 +404,7 @@ function RankingRow({
   amountFormat: DonorsAmountFormat;
   suffix?: string;
   disableMotion?: boolean;
+  hideAmount?: boolean;
 }) {
   const resolvedOutlineColor = outlineColor.trim() || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
   const rankPx = Math.round(rankSize * 1.1);
@@ -472,6 +475,7 @@ function RankingRow({
       >
         {nameDisplay}
       </span>
+      {hideAmount ? null : (
       <span
         className="overlay-cell-text-inner shrink-0 pl-3 text-right font-bold whitespace-nowrap tabular-nums"
         style={{
@@ -500,6 +504,7 @@ function RankingRow({
           );
         })()}
       </span>
+      )}
     </>
   );
   const rowClass =
@@ -590,6 +595,7 @@ function RankingColumn({
   bodyImageBelowList,
   hideTitle,
   rankOffset = 0,
+  hideAmount,
 }: {
   title: string;
   items: DonorRow[];
@@ -623,6 +629,7 @@ function RankingColumn({
   bodyImageBelowList?: ReactNode;
   hideTitle?: boolean;
   rankOffset?: number;
+  hideAmount?: boolean;
 }) {
   const titleOutlineRaw = buildOverlayCellOutlineStyle({
     fontSizePx: titleSize,
@@ -683,6 +690,7 @@ function RankingColumn({
             amountFormat={amountFormat}
             suffix={suffix}
             disableMotion
+            hideAmount={hideAmount}
           />
         ))
       ) : (
@@ -705,6 +713,7 @@ function RankingColumn({
               rowOpacityFrac={Math.max(0, Math.min(1, panelOpacityFrac ?? 1))}
               amountFormat={amountFormat}
               suffix={suffix}
+              hideAmount={hideAmount}
             />
           ))}
         </AnimatePresence>
@@ -919,6 +928,12 @@ export default function DonorRankingsOverlayPage() {
     sp,
     "amountUnitColor",
     ""
+  );
+  const hideAmount = resolveDonorRankingsHideAmount(
+    themeLive,
+    useTest,
+    sp.get("hideAmount"),
+    savedTheme.hideAmount
   );
   const titleColor = liveThemeColor(themeLive, useTest, savedTheme.titleColor, sp, "titleColor", "#ffc107");
   const outlineColor = liveThemeColor(
@@ -1232,6 +1247,7 @@ export default function DonorRankingsOverlayPage() {
                     rowOddBg={rowOddBg}
                     disableMotion={hostObs}
                     hideTitle
+                    hideAmount={hideAmount}
                   />
                   <RankingColumn
                     title=""
@@ -1258,6 +1274,7 @@ export default function DonorRankingsOverlayPage() {
                     disableMotion={hostObs}
                     hideTitle
                     rankOffset={5}
+                    hideAmount={hideAmount}
                   />
                 </div>
               </div>
@@ -1287,6 +1304,7 @@ export default function DonorRankingsOverlayPage() {
               disableMotion={hostObs}
               bodyImageBelowTitle={bodyPos === "belowTitle" ? bodyImageEl : null}
               bodyImageBelowList={bodyPos === "belowList" ? bodyImageEl : null}
+              hideAmount={hideAmount}
             />
             )}
           </div>

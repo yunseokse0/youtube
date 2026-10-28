@@ -476,6 +476,15 @@ export function buildRouletteIdlePreserveSettings(
   };
 }
 
+export function parseDonorRankingsHideAmountFlag(raw: unknown, fallback = false): boolean {
+  if (raw === true || raw === 1) return true;
+  if (raw === false || raw === 0) return false;
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (s === "true" || s === "1" || s === "hide") return true;
+  if (s === "false" || s === "0" || s === "show") return false;
+  return fallback;
+}
+
 /** 기본 후원순위 오버레이 표시 상한 — 그 이상은 `/overlay/donor-rankings/full` */
 export const DONOR_RANKINGS_COMPACT_TOP_MAX = 10;
 /** 후원순위 글자 외곽선 두께 상한(px) — 참고샷의 두꺼운 검정 스트로크 */
@@ -504,6 +513,7 @@ export const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
   nameColor: "#ffc107",
   amountColor: "#ffc107",
   amountUnitColor: "",
+  hideAmount: false,
   titleColor: "#ffc107",
   outlineColor: "#000000",
   outlineWidth: 4,
@@ -538,6 +548,7 @@ export const BUILT_IN_DONOR_RANKINGS_PRESETS: DonorRankingsPreset[] = [
       nameColor: "#e0f2fe",
       amountColor: "#f0abfc",
       amountUnitColor: "",
+      hideAmount: false,
       titleColor: "#22d3ee",
       outlineColor: "rgba(2, 6, 23, 0.95)",
       outlineWidth: 1.75,
@@ -565,6 +576,7 @@ export const BUILT_IN_DONOR_RANKINGS_PRESETS: DonorRankingsPreset[] = [
       nameColor: "#831843",
       amountColor: "#b45309",
       amountUnitColor: "",
+      hideAmount: false,
       titleColor: "#9d174d",
       outlineColor: "rgba(255, 255, 255, 0.85)",
       outlineWidth: 1.25,
@@ -592,6 +604,7 @@ export const BUILT_IN_DONOR_RANKINGS_PRESETS: DonorRankingsPreset[] = [
       nameColor: "#f1f5f9",
       amountColor: "#fde68a",
       amountUnitColor: "",
+      hideAmount: false,
       titleColor: "#f8fafc",
       outlineColor: "rgba(0, 0, 0, 0.88)",
       outlineWidth: 1.5,
@@ -619,6 +632,7 @@ export const BUILT_IN_DONOR_RANKINGS_PRESETS: DonorRankingsPreset[] = [
       nameColor: "#065f46",
       amountColor: "#b45309",
       amountUnitColor: "",
+      hideAmount: false,
       titleColor: "#064e3b",
       outlineColor: "rgba(255, 255, 255, 0.9)",
       outlineWidth: 1.35,
@@ -675,6 +689,7 @@ export const DEFAULT_DONOR_RANKINGS_FULL_THEME: DonorRankingsTheme = {
   nameColor: "#831843",
   amountColor: "#b45309",
   amountUnitColor: "",
+  hideAmount: false,
   titleColor: "#9d174d",
   outlineColor: "rgba(255, 255, 255, 0.82)",
   outlineWidth: 1.25,
@@ -773,6 +788,7 @@ function normalizeDonorRankingsTheme(
       }
       return String(v.amountUnitColor).trim();
     })(),
+    hideAmount: parseDonorRankingsHideAmountFlag(v.hideAmount, Boolean(defaults.hideAmount)),
     titleColor: (() => {
       const c = s(v.titleColor, defaults.titleColor);
       if (compactTheme && /^#fff(?:fff)?$/i.test(c)) return defaults.titleColor;
@@ -869,6 +885,7 @@ export function isDefaultLikeDonorRankingsTheme(
     n.nameColor === d.nameColor &&
     n.amountColor === d.amountColor &&
     n.amountUnitColor === d.amountUnitColor &&
+    Boolean(n.hideAmount) === Boolean(d.hideAmount) &&
     n.titleColor === d.titleColor &&
     n.outlineColor === d.outlineColor &&
     n.outlineWidth === d.outlineWidth &&

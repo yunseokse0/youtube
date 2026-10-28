@@ -2467,6 +2467,7 @@ export function donorRankingsThemeToSearchParams(theme: DonorRankingsTheme): URL
   if (theme.nameColor.trim()) q.set("nameColor", theme.nameColor.trim());
   if (theme.amountColor.trim()) q.set("amountColor", theme.amountColor.trim());
   if (theme.amountUnitColor.trim()) q.set("amountUnitColor", theme.amountUnitColor.trim());
+  if (theme.hideAmount) q.set("hideAmount", "true");
   if (theme.titleColor.trim()) q.set("titleColor", theme.titleColor.trim());
   if (theme.outlineColor.trim()) q.set("outline", theme.outlineColor.trim());
   if (theme.outlineWidth != null && Number.isFinite(theme.outlineWidth)) {

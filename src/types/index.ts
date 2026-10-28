@@ -403,6 +403,8 @@ export type DonorRankingsTheme = {
   amountColor: string;
   /** 「원」/「만」 등 금액 단위 접미사 색. 비어 있으면 amountColor 사용 */
   amountUnitColor: string;
+  /** true면 순위·닉네임만 표시(금액 숨김). 미설정은 표시 */
+  hideAmount?: boolean;
   /** 칼럼 제목(헤더) 글자색 */
   titleColor: string;
   outlineColor: string;

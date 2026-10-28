@@ -23,6 +23,20 @@ export function resolveDonorRankingsThemeColor(
   return broadcastDefault;
 }
 
+export function resolveDonorRankingsHideAmount(
+  themeLive: boolean,
+  useTest: boolean,
+  urlValue: string | null | undefined,
+  saved: boolean | undefined
+): boolean {
+  if (!themeLive || useTest) {
+    const raw = String(urlValue ?? "").trim().toLowerCase();
+    if (raw === "true" || raw === "1" || raw === "hide") return true;
+    if (raw === "false" || raw === "0" || raw === "show") return false;
+  }
+  return Boolean(saved);
+}
+
 export function resolveDonorRankingsThemeNumber(
   themeLive: boolean,
   useTest: boolean,
