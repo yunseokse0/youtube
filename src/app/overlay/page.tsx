@@ -169,7 +169,7 @@ import {
   resolveTableThemeRowStripeCss,
   resolveTableThemeContributionColorCss,
 } from "@/lib/excel-member-table-theme";
-import { applyTableTintToCssColor } from "@/lib/table-tint-opacity";
+import { applyTableTintToCssColor, excelZebraChromeTintAlpha } from "@/lib/table-tint-opacity";
 import {
   overlayTableCellGridCss,
   overlayTableExcelOuterEdgeRestoreCss,
@@ -2701,7 +2701,8 @@ function OverlayInner() {
     return memberCustomHeaderFromState;
   })();
   const donationAggregateFromAt = resolveDonationAggregateFromAt(rawSp, effectivePreset, { ready });
-  const day777Calc = resolveDay777Calc(rawSp, effectivePreset, { ready });
+  const day777Calc =
+    membersThemeId === "excelPongdang" && resolveDay777Calc(rawSp, effectivePreset, { ready });
   const toonHeaderLabel = resolvePresetLabel("toonHeaderLabel", "투네");
   const restroomHeaderLabel = resolvePresetLabel("restroomHeaderLabel", "화장실");
   const showGoal = (() => {
@@ -3758,6 +3759,14 @@ function OverlayInner() {
     });
   }, [s, donationAggregateFromAt, day777Calc]);
   const getContributionValueForMember = useCallback((m: Member) => {
+    if (day777Calc) {
+      const raw = (m as Member & { contribution?: unknown }).contribution;
+      const parsed =
+        typeof raw === "number"
+          ? raw
+          : Number(typeof raw === "string" ? String(raw).replace(/,/g, "").trim() : raw);
+      return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
+    }
     const memberId = String(m.id || "").trim();
     const donors = overlayContributionSource.donors || [];
     const hasDonorRows =
@@ -4498,9 +4507,12 @@ function OverlayInner() {
       String(tableRowEvenBgRaw || excelMemberAccent?.rowEvenBg || "").trim() ||
         String(tableRowOddBgRaw || excelMemberAccent?.rowOddBg || "").trim()
     );
-    const rowStripeTintAlpha = themeDefinesZebraStripes ? 1 : effectiveTableTintAlpha;
-    const tableRowEvenBgCss = applyTableTintToCssColor(rowStripeRawEven, rowStripeTintAlpha);
-    const tableRowOddBgCss = applyTableTintToCssColor(rowStripeRawOdd, rowStripeTintAlpha);
+    const zebraChromeTintAlpha = excelZebraChromeTintAlpha(
+      effectiveTableTintAlpha,
+      themeDefinesZebraStripes
+    );
+    const tableRowEvenBgCss = applyTableTintToCssColor(rowStripeRawEven, zebraChromeTintAlpha);
+    const tableRowOddBgCss = applyTableTintToCssColor(rowStripeRawOdd, zebraChromeTintAlpha);
     const contributionColorCss =
       contributionColorRaw ||
       excelMemberAccent?.contributionColor ||
@@ -4533,8 +4545,8 @@ function OverlayInner() {
       : "";
     const themeAutoHeaderBgCss = resolveTableThemeHeaderBgCss(membersThemeId);
     const excelHeaderBgCss = hasTableHeaderBgColorOverride
-      ? applyTableTintToCssColor(tableHeaderBgColorRaw, effectiveTableTintAlpha)
-      : applyTableTintToCssColor(themeAutoHeaderBgCss, effectiveTableTintAlpha);
+      ? applyTableTintToCssColor(tableHeaderBgColorRaw, zebraChromeTintAlpha)
+      : applyTableTintToCssColor(themeAutoHeaderBgCss, zebraChromeTintAlpha);
     const excelHeaderTextCss =
       tableHeaderTextColorRaw ||
       excelMemberAccent?.headerText ||
@@ -5680,7 +5692,7 @@ function OverlayInner() {
         )}
         <div style={viewportInnerStyle} className="overlay-scale-target">
           <main className="transparent-bg no-select" style={{ ...scaledMainStyle, minHeight: FIT_H, width: FIT_W, background: "transparent" }}>
-        {showMembers && (ready || isPreviewGuide) && (
+        {showMembers && (ready || isPreviewGuide || demoMode) && (
           <div className={`absolute ${listPosClass}`} style={{ maxWidth: FIT_W, maxHeight: FIT_H, minWidth: 0, ...listPosStyle }}>
             <div ref={containerRef} className="flex min-w-0 items-start gap-3" style={{ width: "fit-content", maxWidth: FIT_W }}>
               {showSideDonors && donorsSide === "left" && (

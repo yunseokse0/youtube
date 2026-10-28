@@ -233,7 +233,7 @@ export type OverlayPresetLike = {
    */
   donationAggregateFromAt?: string;
   /**
-   * 777데이 계산 — 기여도 열만 「나온 시그」(랜덤 포함) 단가와 금액이 같은 후원으로 합산.
+   * 777데이 계산 — 퐁당퐁당 엑셀 기여도만 나온 시그 단가. 기존 엑셀표는 후원 금액=기여도.
    * 계좌/투네 열은 donationAggregateFromAt 규칙을 따름. 표시 전용.
    */
   day777Calc?: boolean;
@@ -2216,16 +2216,35 @@ export function resolveDonationAggregateFromAt(
   return Math.floor(n);
 }
 
-/** 777데이 계산(나온 시그 단가 = 기여도) */
+function overlayThemeIsExcelPongdang(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): boolean {
+  const membersTheme = resolveLivePresetStyleParam("membersTheme", rawSp, presetToParams(preset), opts);
+  const theme = resolveLivePresetStyleParam("theme", rawSp, presetToParams(preset), opts);
+  return (
+    membersTheme === "excelPongdang" ||
+    theme === "excelPongdang" ||
+    preset?.membersTheme === "excelPongdang" ||
+    preset?.theme === "excelPongdang"
+  );
+}
+
+/**
+ * 777데이 계산 — 퐁당퐁당 엑셀표만.
+ * 기존 엑셀(골드/일반 등)은 후원 금액 그대로 기여도. 777,000원도 포함.
+ */
 export function resolveDay777Calc(
   rawSp: SearchParamsLike,
   preset: OverlayPresetLike | null,
   opts: { ready: boolean }
 ): boolean {
+  if (!overlayThemeIsExcelPongdang(rawSp, preset, opts)) return false;
   const merged = resolveLivePresetStyleParam("day777Calc", rawSp, presetToParams(preset), opts);
-  if (merged === "true") return true;
   if (merged === "false") return false;
-  return Boolean(preset?.day777Calc);
+  if (merged === "true") return true;
+  return preset?.day777Calc !== false;
 }
 
 /** 멤버 행 줄무늬(짝) */

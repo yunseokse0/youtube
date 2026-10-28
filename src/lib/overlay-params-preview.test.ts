@@ -812,13 +812,44 @@ describe("table column text colors", () => {
   });
 
   it("serializes and resolves day777Calc", () => {
-    const q = presetToParams({ id: "ov_777", showMembers: true, day777Calc: true });
+    const q = presetToParams({
+      id: "ov_777",
+      showMembers: true,
+      day777Calc: true,
+      membersTheme: "excelPongdang",
+      theme: "excelPongdang",
+    });
     expect(q.get("day777Calc")).toBe("true");
-    expect(resolveDay777Calc(new URLSearchParams(), { id: "ov_777", day777Calc: true }, { ready: true })).toBe(
-      true
-    );
-    expect(resolveDay777Calc(new URLSearchParams(), { id: "ov_777", day777Calc: false }, { ready: true })).toBe(
-      false
-    );
+    expect(
+      resolveDay777Calc(
+        new URLSearchParams(),
+        { id: "ov_777", day777Calc: true, membersTheme: "excelPongdang", theme: "excelPongdang" },
+        { ready: true }
+      )
+    ).toBe(true);
+    expect(
+      resolveDay777Calc(
+        new URLSearchParams(),
+        { id: "ov_777", day777Calc: false, membersTheme: "excelPongdang", theme: "excelPongdang" },
+        { ready: true }
+      )
+    ).toBe(false);
+  });
+
+  it("never applies day777Calc to existing excel themes", () => {
+    expect(
+      resolveDay777Calc(
+        new URLSearchParams(),
+        { id: "ov_excel", day777Calc: true, membersTheme: "excel", theme: "excel" },
+        { ready: true }
+      )
+    ).toBe(false);
+    expect(
+      resolveDay777Calc(
+        new URLSearchParams(),
+        { id: "ov_gold", day777Calc: true, membersTheme: "excelGold", theme: "excelGold" },
+        { ready: true }
+      )
+    ).toBe(false);
   });
 });

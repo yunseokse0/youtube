@@ -107,6 +107,131 @@ export function collectAppearedSigPricesFromAppState(
   });
 }
 
+/** 777데이에 흔히 쏘는 금액 — 계좌/투네에는 남기고 기여도로는 쓰지 않는다 */
+export const DAY777_SHOT_AMOUNT = 777_000;
+
+function appearedSigUnitPrice(
+  sig: { id?: string; name?: string; price?: number } | null | undefined
+): number {
+  if (!sig || isOneShotBundleSig(sig)) return 0;
+  return Math.max(0, Math.floor(Number(sig.price) || 0));
+}
+
+type AppearedSigCredit = { price: number; memberId: string };
+
+function pushAppearedSigCredit(
+  out: AppearedSigCredit[],
+  sig: { id?: string; name?: string; price?: number; memberId?: string } | null | undefined,
+  buyerMemberId?: string | null
+) {
+  const price = appearedSigUnitPrice(sig);
+  if (price <= 0) return;
+  out.push({
+    price,
+    memberId: String(sig?.memberId || buyerMemberId || "").trim(),
+  });
+}
+
+function readManualBuyerMemberIds(state: AppState | null | undefined): (string | null)[] {
+  const os = state?.overlaySettings;
+  if (!os || typeof os !== "object") return [];
+  const draft = (os as Record<string, unknown>).sigSalesManualDraftV1;
+  if (!draft || typeof draft !== "object") return [];
+  const raw = (draft as { sigBuyerMemberIds?: unknown }).sigBuyerMemberIds;
+  if (!Array.isArray(raw)) return [];
+  return raw.map((id) => {
+    const s = String(id || "").trim();
+    return s ? s : null;
+  });
+}
+
+function collectAppearedSigCredits(opts: {
+  rouletteState?: RouletteState | null;
+  manualSelectedSigs?: Array<Pick<SigItem, "id" | "name" | "price" | "memberId">> | null;
+  manualBuyerMemberIds?: (string | null)[];
+  fromAt?: number | null;
+}): AppearedSigCredit[] {
+  const fromAt = normalizeDonationAggregateFromAt(opts.fromAt) ?? 0;
+  const out: AppearedSigCredit[] = [];
+  const rs = opts.rouletteState;
+  const buyers = opts.manualBuyerMemberIds || [];
+
+  if (rs) {
+    for (const log of rs.historyLogs || []) {
+      const phase = String(log.phase || "").toUpperCase();
+      if (phase === "CANCELLED") continue;
+      if (fromAt > 0 && Number(log.timestamp || 0) < fromAt) continue;
+      for (const s of log.selectedSigs || []) pushAppearedSigCredit(out, s);
+    }
+    const phase = String(rs.phase || "").toUpperCase();
+    const includeCurrent =
+      phase === "LANDED" ||
+      phase === "CONFIRMED" ||
+      phase === "CONFIRM_PENDING" ||
+      phase === "SPINNING" ||
+      (Array.isArray(rs.selectedSigs) && rs.selectedSigs.length > 0);
+    if (includeCurrent) {
+      for (const s of rs.selectedSigs || []) pushAppearedSigCredit(out, s);
+      for (const s of rs.results || []) pushAppearedSigCredit(out, s);
+      if (rs.result) pushAppearedSigCredit(out, rs.result);
+    }
+  }
+
+  (opts.manualSelectedSigs || []).forEach((s, i) => {
+    pushAppearedSigCredit(out, s, buyers[i] ?? null);
+  });
+  return out;
+}
+
+/** 777,000원 후원을 받은 멤버(가장 최근 건). 없으면 집계 창에 후원이 있는 유일한 멤버 */
+export function resolveDay777SigCreditFallbackMemberId(
+  donors: Donor[] | null | undefined,
+  fromAt?: number | null
+): string {
+  const t = normalizeDonationAggregateFromAt(fromAt);
+  const rows = t != null ? filterDonorsFromAggregateAt(donors, t) : Array.isArray(donors) ? donors : [];
+  let latestShot: Donor | null = null;
+  const memberIds = new Set<string>();
+  for (const d of rows) {
+    const mid = String(d.memberId || "").trim();
+    if (mid) memberIds.add(mid);
+    if (Math.max(0, Math.floor(Number(d.amount) || 0)) !== DAY777_SHOT_AMOUNT) continue;
+    if (!latestShot || Number(d.at || 0) >= Number(latestShot.at || 0)) latestShot = d;
+  }
+  const shotMember = String(latestShot?.memberId || "").trim();
+  if (shotMember) return shotMember;
+  if (memberIds.size === 1) return [...memberIds][0] || "";
+  return "";
+}
+
+/** 나온 시그 단가 → 멤버별 시그 기여도 (777,000원 후원 금액은 넣지 않음) */
+export function collectDay777SigContributionByMember(
+  state: AppState | null | undefined,
+  fromAt?: number | null
+): Map<string, number> {
+  const manual = readManualSigBroadcastFromState(state);
+  const manualSigs =
+    manual && (manual.phase === "LANDED" || manual.phase === "CONFIRMED")
+      ? manual.selectedSigs
+      : manual?.selectedSigs?.length
+        ? manual.selectedSigs
+        : [];
+  const credits = collectAppearedSigCredits({
+    rouletteState: state?.rouletteState,
+    manualSelectedSigs: manualSigs,
+    manualBuyerMemberIds: readManualBuyerMemberIds(state),
+    fromAt,
+  });
+  const fallback = resolveDay777SigCreditFallbackMemberId(state?.donors, fromAt);
+  const byMember = new Map<string, number>();
+  for (const row of credits) {
+    const memberId = row.memberId || fallback;
+    if (!memberId) continue;
+    byMember.set(memberId, (byMember.get(memberId) || 0) + row.price);
+  }
+  return byMember;
+}
+
 /** 나온 시그 단가와 금액이 일치하는 후원만 (777데이 기여도용) */
 export function filterDonorsForDay777Calc(
   donors: Donor[] | null | undefined,
@@ -122,14 +247,14 @@ export function filterDonorsForDay777Calc(
 
 export type OverlayDonationDisplayOpts = {
   fromAt?: number | null;
-  /** 나온 시그 단가와 같은 후원만 기여도에 반영 */
+  /** 퐁당퐁당 기여도 열만 나온 시그 단가(시그 기여도). 777,000원 후원 금액은 제외 */
   day777Calc?: boolean;
 };
 
 /**
  * 오버레이 표시용 재합산.
- * - fromAt: 계좌/투네/기여도 시간 창
- * - day777Calc: 기여도만 나온 시그 단가 매칭 (계좌/투네는 fromAt 규칙 유지)
+ * - fromAt: 계좌/투네 시간 창
+ * - day777Calc: 퐁당퐁당 기여도만 나온 시그 단가로 적립. 계좌/투네는 777,000원이어도 그대로.
  * 원장 저장·정산 리셋과 무관.
  */
 export function applyOverlayDonationDisplayTotals(
@@ -156,22 +281,13 @@ export function applyOverlayDonationDisplayTotals(
 
   if (!day777) return amountSynced;
 
-  const prices = collectAppearedSigPricesFromAppState(state, fromAt);
-  const day777Donors = filterDonorsForDay777Calc(state.donors, prices, fromAt);
-  const contribSynced = syncMemberTotalsFromDonors({
-    ...state,
-    donors: day777Donors,
-    contributionLogs: [],
-  });
-  const contribById = new Map(
-    (contribSynced.members || []).map((m) => [m.id, Math.max(0, Number(m.contribution) || 0)])
-  );
+  const sigById = collectDay777SigContributionByMember(state, fromAt);
 
   return {
     ...amountSynced,
     members: (amountSynced.members || []).map((m) => ({
       ...m,
-      contribution: contribById.get(m.id) ?? 0,
+      contribution: sigById.get(m.id) ?? 0,
     })),
   };
 }
@@ -212,11 +328,8 @@ export function resolveOverlayContributionSource(
     return { donors: state.donors, contributionLogs: state.contributionLogs };
   }
   if (day777) {
-    const prices = collectAppearedSigPricesFromAppState(state as AppState, fromAt);
-    return {
-      donors: filterDonorsForDay777Calc(state.donors, prices, fromAt),
-      contributionLogs: [],
-    };
+    /** 기여도는 멤버.contribution(나온 시그 단가)만 사용. 777,000원 후원 원장을 다시 합치지 않음 */
+    return { donors: [], contributionLogs: [] };
   }
   return {
     donors: filterDonorsFromAggregateAt(state.donors, fromAt!),

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { applySolidTableTintToCssColor, applyTableTintToCssColor } from "./table-tint-opacity";
+import {
+  applySolidTableTintToCssColor,
+  applyTableTintToCssColor,
+  excelZebraChromeTintAlpha,
+} from "./table-tint-opacity";
 
 describe("applyTableTintToCssColor", () => {
   it("returns transparent at 0%", () => {
@@ -22,6 +26,17 @@ describe("applyTableTintToCssColor", () => {
   it("applies solid tint to hex header colors", () => {
     expect(applyTableTintToCssColor("#ffc107", 0.5)).toBe("rgba(255, 193, 7, 0.5)");
     expect(applyTableTintToCssColor("#ffc107", 1)).toBe("rgb(255, 193, 7)");
+  });
+});
+
+describe("excelZebraChromeTintAlpha", () => {
+  it("keeps pongdang/gold chrome opaque when table background opacity is 0", () => {
+    expect(excelZebraChromeTintAlpha(0, true)).toBe(1);
+    expect(excelZebraChromeTintAlpha(0.4, true)).toBe(1);
+    expect(excelZebraChromeTintAlpha(0, false)).toBe(0);
+    expect(applyTableTintToCssColor("#8b6914", excelZebraChromeTintAlpha(0, true))).toBe(
+      "rgb(139, 105, 20)"
+    );
   });
 });
 

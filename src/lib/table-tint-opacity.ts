@@ -53,6 +53,17 @@ export function applySolidTableTintToCssColor(input: string, tintAlpha: number):
  * 헤더·줄무늬 등 — rgba는 기존 알파와 슬라이더를 곱함.
  * 100%일 때 줄무늬 rgba(…, 0.14)는 그대로 유지.
  */
+/**
+ * 퐁당퐁당·골드처럼 테마가 교차 행을 정의하면
+ * 표 배경 불투명도 0(OBS 크로마)이어도 헤더·줄무늬 원색을 유지한다.
+ */
+export function excelZebraChromeTintAlpha(
+  effectiveTintAlpha: number,
+  themeDefinesZebraStripes: boolean
+): number {
+  return themeDefinesZebraStripes ? 1 : effectiveTintAlpha;
+}
+
 export function applyTableTintToCssColor(input: string, tintAlpha: number): string {
   const t = (input || "").trim();
   if (!t || t.toLowerCase() === "transparent") return "transparent";

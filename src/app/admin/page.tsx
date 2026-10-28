@@ -407,7 +407,7 @@ type OverlayPreset = {
   customHeaderLabel?: string;
   /** 엑셀표 후원 집계 시작(epoch ms 문자열). 비우면 전체 */
   donationAggregateFromAt?: string;
-  /** 777데이 계산 — 나온 시그 단가 매칭 기여도 */
+  /** 777데이 계산 — 퐁당퐁당 엑셀만. 기존 엑셀은 후원 금액=기여도 */
   day777Calc?: boolean;
   showContributionColumn?: boolean;
   showRestroomColumn?: boolean;
@@ -20577,20 +20577,30 @@ function AdminPageInner() {
                                   </div>
                                   <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
                                     <label className="text-xs text-neutral-400">777데이 계산</label>
-                                    <button
-                                      type="button"
-                                      className={`px-2 py-0.5 rounded border text-xs ${
-                                        p.day777Calc
-                                          ? "border-amber-500 text-amber-300"
-                                          : "border-white/10 text-neutral-500"
-                                      }`}
-                                      onClick={() => updatePreset(p.id, { day777Calc: !p.day777Calc })}
-                                    >
-                                      {p.day777Calc ? "ON" : "OFF"}
-                                    </button>
-                                    <span className="text-[10px] text-neutral-500">
-                                      기여도만 나온 시그(랜덤 포함) 단가와 같은 후원으로 합산. 계좌/투네는 위 집계 시작 규칙을 따름.
-                                    </span>
+                                    {p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className={`px-2 py-0.5 rounded border text-xs ${
+                                            p.day777Calc !== false
+                                              ? "border-amber-500 text-amber-300"
+                                              : "border-white/10 text-neutral-500"
+                                          }`}
+                                          onClick={() =>
+                                            updatePreset(p.id, { day777Calc: p.day777Calc === false })
+                                          }
+                                        >
+                                          {p.day777Calc === false ? "OFF" : "ON"}
+                                        </button>
+                                        <span className="text-[10px] text-neutral-500">
+                                          퐁당퐁당만: 기여도는 나온 시그 단가. 777,000원 후원은 후원/투네에만 남음.
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span className="text-[10px] text-neutral-500">
+                                        기존 엑셀표는 후원 금액 그대로 기여도(777,000원 포함). 시그 단가 기여도는 퐁당퐁당 엑셀만.
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">

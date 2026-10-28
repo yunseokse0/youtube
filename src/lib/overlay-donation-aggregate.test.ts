@@ -191,6 +191,112 @@ describe("day777Calc", () => {
     expect(next.members[0]?.contribution).toBe(77_000 + 100_000);
   });
 
+  it("existing excel (day777 off) credits contribution from the donation amount including 777000", () => {
+    const state = {
+      members: [member({ id: "m1", name: "A" })],
+      donors: [donor({ id: "shot", memberId: "m1", amount: 777_000, at: 1_500, target: "account" })],
+      contributionLogs: [],
+      rouletteState: {
+        isRolling: false,
+        result: null,
+        spinCount: 0,
+        startedAt: 0,
+        phase: "LANDED",
+        selectedSigs: [
+          {
+            id: "s1",
+            name: "A",
+            price: 77_000,
+            imageUrl: "",
+            maxCount: 1,
+            soldCount: 0,
+            isRolling: false,
+            isActive: true,
+          },
+        ],
+        historyLogs: [],
+      },
+    } as AppState;
+
+    const next = applyOverlayDonationDisplayTotals(state, { fromAt: 1, day777Calc: false });
+    expect(next.members[0]?.account).toBe(777_000);
+    expect(next.members[0]?.contribution).toBe(777_000);
+  });
+
+  it("777000 donation stays on account/toon; contribution is appeared sig prices only", () => {
+    const donors: Donor[] = [
+      donor({ id: "shot", memberId: "m1", amount: 777_000, at: 1_500, target: "account" }),
+    ];
+    const state = {
+      members: [member({ id: "m1", name: "A" }), member({ id: "m2", name: "B" })],
+      donors,
+      contributionLogs: [],
+      rouletteState: {
+        isRolling: false,
+        result: null,
+        spinCount: 0,
+        startedAt: 0,
+        phase: "LANDED",
+        selectedSigs: [
+          {
+            id: "s1",
+            name: "A",
+            price: 77_000,
+            imageUrl: "",
+            maxCount: 1,
+            soldCount: 0,
+            isRolling: false,
+            isActive: true,
+          },
+        ],
+        historyLogs: [],
+      },
+    } as AppState;
+
+    const next = applyOverlayDonationDisplayTotals(state, { day777Calc: true });
+    expect(next.members[0]?.account).toBe(777_000);
+    expect(next.members[0]?.contribution).toBe(77_000);
+    expect(next.members[1]?.account).toBe(0);
+    expect(next.members[1]?.contribution).toBe(0);
+  });
+
+  it("credits appeared sig to the 777000 recipient when sig has no buyer", () => {
+    const donors: Donor[] = [
+      donor({ id: "shot", memberId: "m2", amount: 777_000, at: 2_000, target: "toon" }),
+    ];
+    const state = {
+      members: [member({ id: "m1", name: "A" }), member({ id: "m2", name: "B" })],
+      donors,
+      contributionLogs: [],
+      rouletteState: {
+        isRolling: false,
+        result: null,
+        spinCount: 0,
+        startedAt: 0,
+        phase: "LANDED",
+        selectedSigs: [
+          {
+            id: "s1",
+            name: "A",
+            price: 50_000,
+            imageUrl: "",
+            maxCount: 1,
+            soldCount: 0,
+            isRolling: false,
+            isActive: true,
+          },
+        ],
+        historyLogs: [],
+      },
+    } as AppState;
+
+    const next = applyOverlayDonationDisplayTotals(state, { day777Calc: true });
+    expect(next.members[0]?.toon).toBe(0);
+    expect(next.members[1]?.toon).toBe(777_000);
+    expect(next.members[0]?.contribution).toBe(0);
+    expect(next.members[1]?.contribution).toBe(50_000);
+  });
+
   it("filterDonorsForDay777Calc matches floor amount", () => {
     const prices = new Set([77_000]);
     const rows = filterDonorsForDay777Calc(
