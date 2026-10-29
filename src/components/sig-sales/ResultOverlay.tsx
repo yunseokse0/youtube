@@ -168,10 +168,12 @@ export default function ResultOverlay({
         panelOrientation={panelOrientation}
         programSkin={programSkin}
       />
-      {showSoldTotal && !programSkin ? (
-        <div className="mt-2 w-full rounded-lg border border-yellow-300/50 bg-black/75 px-4 py-2 text-center">
-          <div className="text-[11px] font-semibold tracking-wide text-yellow-100/90">누적 판매 금액</div>
-          <div className="text-xl font-black tabular-nums text-yellow-200 sm:text-2xl">{formatWon(soldTotalAmount)}</div>
+      {showSoldTotal ? (
+        <div className="mt-2 w-full rounded-lg border border-yellow-300/50 bg-black/80 px-4 py-2.5 text-center shadow-[0_0_16px_rgba(250,204,21,0.25)]">
+          <div className="text-[11px] font-bold tracking-[0.14em] text-yellow-100/90">TOTAL</div>
+          <div className="text-[clamp(22px,3vw,34px)] font-black tabular-nums leading-none text-yellow-200">
+            {formatWon(soldTotalAmount)}
+          </div>
         </div>
       ) : null}
     </div>

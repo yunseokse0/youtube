@@ -50,19 +50,19 @@ function SoldBuyerCaption({
   if (!name && saleMode !== "multi") return null;
   const color = String(buyerColor || "").trim() || "#ffffff";
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-1 z-[12] flex justify-center px-1">
+    <div className="pointer-events-none absolute inset-x-0 bottom-1.5 z-[12] flex justify-center px-1">
       <span
-        className="max-w-full truncate rounded px-1.5 py-0.5 text-center text-[clamp(9px,1.6vw,13px)] font-bold shadow"
+        className="max-w-full truncate rounded-md px-2 py-1 text-center text-[clamp(16px,2.8vw,28px)] font-black leading-tight shadow-lg"
         style={{
           color,
-          backgroundColor: "rgba(0,0,0,0.82)",
-          boxShadow: `inset 3px 0 0 0 ${color}`,
-          textShadow: "0 1px 2px rgba(0,0,0,0.9)",
+          backgroundColor: "rgba(0,0,0,0.88)",
+          boxShadow: `inset 4px 0 0 0 ${color}, 0 2px 10px rgba(0,0,0,0.55)`,
+          textShadow: "0 1px 3px rgba(0,0,0,0.95), -1px -1px 0 #000, 1px 1px 0 #000",
         }}
       >
         {name || null}
         {saleMode === "multi" ? (
-          <span className="ml-1 text-[clamp(8px,1.3vw,11px)] font-semibold opacity-90">
+          <span className="ml-1.5 text-[clamp(11px,1.8vw,16px)] font-bold opacity-90">
             · 복수 가능
           </span>
         ) : null}

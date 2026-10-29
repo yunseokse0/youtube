@@ -333,6 +333,7 @@ export default function ManualSigOverlaySimple() {
               sigSalesPanelStatusLabel(phase),
             ]}
             totalAmount={panelTotalAmount}
+            showTotalFooter={false}
           >
             <ResultOverlay
               visible
@@ -351,7 +352,7 @@ export default function ManualSigOverlaySimple() {
               skipHanbangSignLoadingOverlay={hostObs}
               panelGridCols={panelGrid.cols}
               panelOrientation={panelOrientation}
-              showSoldTotal={false}
+              showSoldTotal
               soldTotalAmount={panelTotalAmount}
               programSkin
             />

@@ -12,6 +12,7 @@ export function SigSalesPanelChrome({
   children,
   controlBar,
   totalAmount = 0,
+  showTotalFooter = true,
   className = "",
 }: {
   tags?: string[];
@@ -22,6 +23,8 @@ export function SigSalesPanelChrome({
   children: ReactNode;
   controlBar?: ReactNode;
   totalAmount?: number;
+  /** false면 하단 TOTAL 숨김(카드 아래 TOTAL만 쓸 때) */
+  showTotalFooter?: boolean;
   className?: string;
 }) {
   return (
@@ -68,12 +71,14 @@ export function SigSalesPanelChrome({
           {controlBar}
         </div>
       ) : null}
-      <footer className="flex w-full items-center justify-between gap-3 border-t border-yellow-300/35 bg-gradient-to-r from-black/80 via-[#1a1408] to-black/80 px-4 py-2.5">
-        <span className="text-[11px] font-bold tracking-[0.16em] text-yellow-100/85">TOTAL SIG SALES</span>
-        <span className="text-2xl font-black tabular-nums text-yellow-300 drop-shadow-[0_0_12px_rgba(250,204,21,0.45)] sm:text-3xl">
-          {formatSigSalesWon(totalAmount)}
-        </span>
-      </footer>
+      {showTotalFooter ? (
+        <footer className="flex w-full items-center justify-between gap-3 border-t border-yellow-300/35 bg-gradient-to-r from-black/80 via-[#1a1408] to-black/80 px-4 py-2.5">
+          <span className="text-[11px] font-bold tracking-[0.16em] text-yellow-100/85">TOTAL SIG SALES</span>
+          <span className="text-2xl font-black tabular-nums text-yellow-300 drop-shadow-[0_0_12px_rgba(250,204,21,0.45)] sm:text-3xl">
+            {formatSigSalesWon(totalAmount)}
+          </span>
+        </footer>
+      ) : null}
     </section>
   );
 }
