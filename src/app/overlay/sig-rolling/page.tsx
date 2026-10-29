@@ -26,16 +26,24 @@ import { resolveSigRollingHoldMs } from "@/lib/sig-rolling-duration";
 import { createObsSafeInterval } from "@/lib/obs-safe-interval";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import {
+  SIG_ROLLING_CAPTION_H_PX,
   sigRollingFixedPairLayoutPx,
   sigRollingFixedShellOuterPx,
 } from "@/lib/sig-rolling-orientation";
 import {
   SIG_ROLLING_HIGH_PRICE_MIN,
   nextSigRollingIndex,
+  normalizeSigRollingItemPrice,
   pickSigRollingAt,
   splitSigRollingByPriceBand,
   type SigRollingItemWithPrice,
 } from "@/lib/sig-rolling-price-bands";
+import { formatWon } from "@/lib/sig-roulette";
+import {
+  SIG_OVERLAY_CARD_FOOTER_BG,
+  sigOverlayCardNameOutlineStyle,
+  sigOverlayCardPriceOutlineStyle,
+} from "@/components/sig-sales/sig-overlay-card-size";
 
 /** 고정 가로 프레임(300×180) 안 object-contain — 셸 크기 불변 */
 const IMG_IN_FRAME =
@@ -149,6 +157,10 @@ function RollingCardColumn({
     maxHeight: FIXED_SHELL.mediaHeight,
   };
 
+  const captionLabel = String(current?.label || "").trim() || "\u00a0";
+  const captionPrice = normalizeSigRollingItemPrice(current?.price);
+  const captionPriceText = captionPrice > 0 ? formatWon(captionPrice) : "";
+
   return (
     <div
       className="shrink-0"
@@ -156,9 +168,15 @@ function RollingCardColumn({
     >
       <div
         className={shellClass}
-        style={{ width: FIXED_SHELL.outerWidth, height: FIXED_SHELL.outerHeight }}
+        style={{
+          width: FIXED_SHELL.outerWidth,
+          height: FIXED_SHELL.outerHeight,
+          display: "flex",
+          flexDirection: "column",
+          boxSizing: "border-box",
+        }}
       >
-        <div className="relative overflow-hidden rounded-2xl bg-transparent" style={frameStyle}>
+        <div className="relative overflow-hidden rounded-t-2xl bg-transparent" style={frameStyle}>
           {visibleSrc ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -171,6 +189,35 @@ function RollingCardColumn({
               decoding="async"
               onError={onVisibleError}
             />
+          ) : null}
+        </div>
+        <div
+          className="flex w-full shrink-0 flex-col items-center justify-center gap-0.5 px-2 text-center"
+          style={{
+            height: SIG_ROLLING_CAPTION_H_PX,
+            minHeight: SIG_ROLLING_CAPTION_H_PX,
+            maxHeight: SIG_ROLLING_CAPTION_H_PX,
+            backgroundColor: SIG_OVERLAY_CARD_FOOTER_BG,
+            borderTop: "1px solid rgba(255,255,255,0.22)",
+            borderBottomLeftRadius: pairSide === "right" ? 0 : 14,
+            borderBottomRightRadius: pairSide === "left" ? 0 : 14,
+            boxSizing: "border-box",
+          }}
+          title={captionPriceText ? `${captionLabel} · ${captionPriceText}` : captionLabel}
+        >
+          <div
+            className="w-full truncate text-[17px] font-black leading-tight"
+            style={sigOverlayCardNameOutlineStyle(17)}
+          >
+            {captionLabel}
+          </div>
+          {captionPriceText ? (
+            <div
+              className="w-full truncate text-[16px] font-black tabular-nums leading-tight"
+              style={sigOverlayCardPriceOutlineStyle(16)}
+            >
+              {captionPriceText}
+            </div>
           ) : null}
         </div>
       </div>

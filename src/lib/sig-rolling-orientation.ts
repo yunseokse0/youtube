@@ -50,17 +50,30 @@ export function sigRollingShellOuterPx(
   };
 }
 
+/** 시그 롤링 카드 하단 이름·금액 캡션 높이(px) — 시인성용 고정 슬롯 */
+export const SIG_ROLLING_CAPTION_H_PX = 54;
+
 /**
- * 롤링 카드 고정 셸 — 항상 가로 프레임(300×180).
- * 세로 이미지로 셸을 키우면 OBS에서 여백·어긋남이 생기므로 크기는 고정하고 object-contain 만 사용.
+ * 롤링 카드 고정 셸 — 항상 가로 프레임(300×180) + 하단 캡션.
+ * 세로 이미지로 셸을 키우면 OBS에서 여백·어긋남이 생기므로 미디어 크기는 고정하고 object-contain 만 사용.
  */
-export function sigRollingFixedShellOuterPx(shellPadPx = 6): {
+export function sigRollingFixedShellOuterPx(
+  shellPadPx = 6,
+  opts?: { withCaption?: boolean }
+): {
   outerWidth: number;
   outerHeight: number;
   mediaWidth: number;
   mediaHeight: number;
+  captionHeight: number;
 } {
-  return sigRollingShellOuterPx("landscape", shellPadPx);
+  const base = sigRollingShellOuterPx("landscape", shellPadPx);
+  const captionHeight = opts?.withCaption === false ? 0 : SIG_ROLLING_CAPTION_H_PX;
+  return {
+    ...base,
+    captionHeight,
+    outerHeight: base.outerHeight + captionHeight,
+  };
 }
 
 export function sigRollingPairLayoutPx(
@@ -77,11 +90,15 @@ export function sigRollingPairLayoutPx(
 }
 
 /** 좌·우 모두 고정 셸일 때 페어 레이아웃 */
-export function sigRollingFixedPairLayoutPx(shellPadPx = 6, cards = 2): {
+export function sigRollingFixedPairLayoutPx(
+  shellPadPx = 6,
+  cards = 2,
+  opts?: { withCaption?: boolean }
+): {
   totalOuterWidth: number;
   maxOuterHeight: number;
 } {
-  const s = sigRollingFixedShellOuterPx(shellPadPx);
+  const s = sigRollingFixedShellOuterPx(shellPadPx, opts);
   const n = Math.max(1, Math.min(2, Math.floor(cards) || 1));
   return {
     totalOuterWidth: s.outerWidth * n,

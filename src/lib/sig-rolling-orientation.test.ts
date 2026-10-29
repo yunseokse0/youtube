@@ -36,9 +36,16 @@ describe("sig-rolling-orientation", () => {
     expect(shell.mediaWidth).toBe(300);
     expect(shell.mediaHeight).toBe(180);
     expect(shell.outerWidth).toBe(312);
-    expect(shell.outerHeight).toBe(192);
+    expect(shell.captionHeight).toBe(54);
+    expect(shell.outerHeight).toBe(192 + 54);
     const pair = sigRollingFixedPairLayoutPx(6, 2);
     expect(pair.totalOuterWidth).toBe(312 * 2);
-    expect(pair.maxOuterHeight).toBe(192);
+    expect(pair.maxOuterHeight).toBe(192 + 54);
+  });
+
+  it("can omit caption slot for media-only shell", () => {
+    const shell = sigRollingFixedShellOuterPx(6, { withCaption: false });
+    expect(shell.captionHeight).toBe(0);
+    expect(shell.outerHeight).toBe(192);
   });
 });
