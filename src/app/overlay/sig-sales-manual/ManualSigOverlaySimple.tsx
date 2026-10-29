@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
 import ResultOverlay from "@/components/sig-sales/ResultOverlay";
+import SigNeonMenuBoard from "@/components/sig-sales/SigNeonMenuBoard";
 import { SigSalesPanelChrome } from "@/components/sig-sales/SigSalesPanelChrome";
 import { sigSalesPanelStatusLabel } from "@/lib/sig-sales-panel-ui";
 import { layoutSigOverlayResultGrid } from "@/components/sig-sales/sig-overlay-card-size";
@@ -14,7 +15,9 @@ import {
   resolveManualOneShotStoredImageUrl,
   resolveManualOverlaySelectedSigs,
 } from "@/lib/manual-sig-broadcast";
+import { listActiveManualSigPool } from "@/lib/manual-sig-active-pool";
 import {
+  getOverlayMemberFilterIdFromSearchParams,
   getOverlayUserIdFromSearchParams,
   isOverlayBroadcastHost,
 } from "@/lib/overlay-params";
@@ -34,6 +37,7 @@ import {
   readManualSigGridFromOverlaySettings,
   readManualSigPanelOrientationFromOverlaySettings,
 } from "@/lib/manual-sig-workbench";
+import { readManualSigOverlayThemeFromOverlaySettings } from "@/lib/sig-sales-overlay-urls";
 import { canonicalSigIdFromWheelSliceId, ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 
 const MANUAL_OVERLAY_TERMINAL_PHASES = new Set([
@@ -82,6 +86,7 @@ export default function ManualSigOverlaySimple() {
   const { params: sp, ready: spReady } = useClientOnlySearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
   const hostObs = isOverlayBroadcastHost(sp);
+  const memberFilterId = getOverlayMemberFilterIdFromSearchParams(sp);
 
   useLayoutEffect(() => {
     if (!spReady || !hostObs) return;
@@ -189,6 +194,28 @@ export default function ManualSigOverlaySimple() {
         : null,
     [state]
   );
+  const overlayTheme = useMemo(
+    () => readManualSigOverlayThemeFromOverlaySettings(overlayOs),
+    [overlayOs]
+  );
+  const menuItems = useMemo(() => {
+    if (overlayTheme !== "menu") return [];
+    const pool = listActiveManualSigPool(state?.sigInventory, {
+      ignoreStock: true,
+      sigSalesExcludedIds: state?.sigSalesExcludedIds,
+      memberFilterId: memberFilterId || undefined,
+      ownerUserId: userId,
+    });
+    return [...pool]
+      .sort((a, b) => a.price - b.price || a.name.localeCompare(b.name, "ko"))
+      .map((row) => ({ id: row.id, name: row.name, price: row.price }));
+  }, [
+    overlayTheme,
+    state?.sigInventory,
+    state?.sigSalesExcludedIds,
+    memberFilterId,
+    userId,
+  ]);
   const panelGrid = useMemo(() => readManualSigGridFromOverlaySettings(overlayOs), [overlayOs]);
   const panelOrientation = useMemo(
     () => readManualSigPanelOrientationFromOverlaySettings(overlayOs),
@@ -237,6 +264,23 @@ export default function ManualSigOverlaySimple() {
   /** SSR·클라 첫 페인트는 동일하게 비움. window.search 를 쓰면 React #418 */
   if (!spReady) {
     return null;
+  }
+
+  if (overlayTheme === "menu") {
+    const menuRootClass = hostObs
+      ? "pointer-events-none fixed inset-0 z-[200] flex flex-col items-center justify-start overflow-visible bg-transparent p-3 pt-4"
+      : "pointer-events-none fixed inset-0 z-[1] flex flex-col items-center justify-start bg-transparent p-4 pt-6";
+    if (!ready && !hostObs) {
+      return <ManualOverlayStatus hostObs={hostObs}>시그 메뉴 불러오는 중…</ManualOverlayStatus>;
+    }
+    if (!ready && hostObs && menuItems.length === 0) {
+      return null;
+    }
+    return (
+      <main className={menuRootClass}>
+        <SigNeonMenuBoard items={menuItems} className="w-full px-1" />
+      </main>
+    );
   }
 
   if (!ready && !hostObs) {

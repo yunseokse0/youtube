@@ -14,8 +14,13 @@ import {
 } from "@/lib/state";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
 import {
+  buildManualSigThemeOverlayUrl,
   buildSigMenuOverlayUrl,
-  buildSigSalesManualOverlayUrl,
+  MANUAL_SIG_OVERLAY_THEME_KEY,
+  manualSigOverlayThemeLabel,
+  normalizeManualSigOverlayTheme,
+  readManualSigOverlayThemeFromOverlaySettings,
+  type ManualSigOverlayTheme,
 } from "@/lib/sig-sales-overlay-urls";
 import { DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE, resolveSigOverlayCardImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
@@ -96,6 +101,8 @@ export default function ManualSigSalesSimple() {
   );
   /** 판매 전 칸별 구매 멤버 선택(sold 시 draft에 저장) */
   const [pendingBuyerByIdx, setPendingBuyerByIdx] = useState<Record<number, string>>({});
+  /** 멤버 없이 판매완료 시도한 칸 — select 강조 */
+  const [buyerRequiredIdx, setBuyerRequiredIdx] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [defaultPrice, setDefaultPrice] = useState("10000");
@@ -190,20 +197,6 @@ export default function ManualSigSalesSimple() {
     return n;
   }, [state?.sigInventory]);
 
-  const overlayUrl = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return buildSigSalesManualOverlayUrl(window.location.origin, userId, {
-      memberId: memberFilterId || undefined,
-      sigResultScalePct: 92,
-    });
-  }, [userId, memberFilterId]);
-  const menuOverlayUrl = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return buildSigMenuOverlayUrl(window.location.origin, userId, {
-      memberId: memberFilterId || undefined,
-    });
-  }, [userId, memberFilterId]);
-
   const currentPhase = state
     ? (() => {
         const b = readManualSigBroadcastFromState(state);
@@ -217,6 +210,23 @@ export default function ManualSigSalesSimple() {
         : null,
     [state]
   );
+  const overlayTheme = useMemo(
+    () => readManualSigOverlayThemeFromOverlaySettings(overlayOs),
+    [overlayOs]
+  );
+  const overlayUrl = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return buildManualSigThemeOverlayUrl(window.location.origin, userId, overlayTheme, {
+      memberId: memberFilterId || undefined,
+      sigResultScalePct: 92,
+    });
+  }, [userId, memberFilterId, overlayTheme]);
+  const menuOverlayUrl = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return buildSigMenuOverlayUrl(window.location.origin, userId, {
+      memberId: memberFilterId || undefined,
+    });
+  }, [userId, memberFilterId]);
   const panelGrid = useMemo(() => readManualSigGridFromOverlaySettings(overlayOs), [overlayOs]);
   const panelOrientation = useMemo(
     () => readManualSigPanelOrientationFromOverlaySettings(overlayOs),
@@ -345,6 +355,7 @@ export default function ManualSigSalesSimple() {
                 MANUAL_SIG_GRID_ROWS_KEY,
                 MANUAL_SIG_GRID_COLS_KEY,
                 MANUAL_SIG_PANEL_ORIENTATION_KEY,
+                MANUAL_SIG_OVERLAY_THEME_KEY,
                 MANUAL_SIG_DRAFT_STATE_KEY,
                 MANUAL_SIG_SLOT_PRICE_BANDS_KEY,
               ]
@@ -447,6 +458,33 @@ export default function ManualSigSalesSimple() {
       });
     },
     [state, pickCount, persistState]
+  );
+
+  const persistOverlayTheme = useCallback(
+    async (theme: ManualSigOverlayTheme) => {
+      if (!state) return;
+      const nextTheme = normalizeManualSigOverlayTheme(theme);
+      if (nextTheme === overlayTheme) return;
+      const prevOs =
+        state.overlaySettings && typeof state.overlaySettings === "object"
+          ? (state.overlaySettings as Record<string, unknown>)
+          : {};
+      const next: AppState = {
+        ...state,
+        updatedAt: Date.now(),
+        overlaySettings: {
+          ...prevOs,
+          [MANUAL_SIG_OVERLAY_THEME_KEY]: nextTheme,
+        } as AppState["overlaySettings"],
+      };
+      await persistState(
+        next,
+        `OBS 테마: ${manualSigOverlayThemeLabel(nextTheme)}`,
+        "테마 저장이 지연됩니다.",
+        { omitSigInventory: true }
+      );
+    },
+    [state, overlayTheme, persistState]
   );
 
   const persistPanelLayout = useCallback(
@@ -601,6 +639,19 @@ export default function ManualSigSalesSimple() {
         setToast("판매완료할 시그를 체크한 뒤 「판매 확정」을 누르세요.");
         return;
       }
+      const buyersForConfirm = Array.from({ length: pickCount }, (_, i) => {
+        const id =
+          String(buyerMemberIds[i] || pendingBuyerByIdx[i] || "").trim() || null;
+        return flagsForConfirm[i] ? id : null;
+      });
+      const missingBuyerIdx = flagsForConfirm.findIndex(
+        (sold, i) => sold && !buyersForConfirm[i]
+      );
+      if (missingBuyerIdx >= 0) {
+        setBuyerRequiredIdx(missingBuyerIdx);
+        setToast("판매완료 칸에 구매 멤버를 모두 선택한 뒤 확정하세요.");
+        return;
+      }
       const rowIndices = saleRows.map((r) => r.draftIdx);
       const allRowsConfirmed = rowIndices.every((i) => flagsForConfirm[i]);
       const oneShotRequired = Boolean(oneShotLabel);
@@ -613,7 +664,7 @@ export default function ManualSigSalesSimple() {
           sigSoldFlags: flagsForConfirm,
           oneShotMarkSold: oneShotForConfirm,
           sigSaleModes: saleModes,
-          sigBuyerMemberIds: buyerMemberIds,
+          sigBuyerMemberIds: buyersForConfirm,
           userId,
           previousSoldFlags: soldFlags,
           previousOneShotMarkSold: oneShotMarkSold,
@@ -643,6 +694,8 @@ export default function ManualSigSalesSimple() {
       soldFlags,
       saleModes,
       buyerMemberIds,
+      pendingBuyerByIdx,
+      pickCount,
       oneShotMarkSold,
       oneShotLabel,
       saleRows,
@@ -686,14 +739,22 @@ export default function ManualSigSalesSimple() {
         const buyerId =
           String(pendingBuyerByIdx[idx] || buyerMemberIds[idx] || "").trim() || "";
         if (!buyerId) {
+          setBuyerRequiredIdx(idx);
           setToast("구매 멤버를 선택한 뒤 판매완료 하세요.");
           return;
         }
         nextFlags[idx] = true;
         nextBuyers[idx] = buyerId;
+        setBuyerRequiredIdx(null);
       } else {
         nextFlags[idx] = false;
         nextBuyers[idx] = null;
+        setPendingBuyerByIdx((prev) => {
+          if (!(idx in prev)) return prev;
+          const next = { ...prev };
+          delete next[idx];
+          return next;
+        });
       }
       setBusy(true);
       try {
@@ -753,29 +814,51 @@ export default function ManualSigSalesSimple() {
       if (!state || idx < 0 || idx >= pickCount) return;
       const id = String(memberId || "").trim();
       setPendingBuyerByIdx((prev) => ({ ...prev, [idx]: id }));
-      if (!soldFlags[idx]) return;
       if (!id) {
-        setToast("판매완료 상태에서는 구매 멤버가 필요합니다.");
+        if (soldFlags[idx]) {
+          setBuyerRequiredIdx(idx);
+          setToast("판매완료 상태에서는 구매 멤버가 필요합니다.");
+        }
         return;
       }
+      setBuyerRequiredIdx(null);
+      /** 멤버 선택 = 해당 칸 판매완료 (추가 클릭 없이 처리) */
+      const nextFlags = [...soldFlags];
       const nextBuyers = [...buyerMemberIds];
+      nextFlags[idx] = true;
       nextBuyers[idx] = id;
+      const row = saleRows.find((r) => r.draftIdx === idx);
+      const label = row?.name || `시그 ${idx + 1}`;
+      const alreadySoldSameBuyer = soldFlags[idx] && buyerMemberIds[idx] === id;
+      if (alreadySoldSameBuyer) return;
       setBusy(true);
       try {
         await persistSoldMeta(
-          soldFlags,
+          nextFlags,
           saleModes,
           nextBuyers,
           oneShotMarkSold,
-          "구매 멤버 변경 · OBS 반영"
+          soldFlags[idx]
+            ? `${label} 구매 멤버 변경 · OBS 반영`
+            : `${label} → ${buyerMembers.find((m) => m.id === id)?.name || id} 판매완료 · OBS 반영`
         );
       } catch (e) {
-        setToast(`구매 멤버 변경 실패: ${String(e)}`);
+        setToast(`구매 멤버 판매 처리 실패: ${String(e)}`);
       } finally {
         setBusy(false);
       }
     },
-    [state, pickCount, soldFlags, buyerMemberIds, saleModes, oneShotMarkSold, persistSoldMeta]
+    [
+      state,
+      pickCount,
+      soldFlags,
+      buyerMemberIds,
+      saleModes,
+      oneShotMarkSold,
+      persistSoldMeta,
+      saleRows,
+      buyerMembers,
+    ]
   );
 
   const onToggleOneShotSold = useCallback(
@@ -1422,6 +1505,23 @@ export default function ManualSigSalesSimple() {
               한방 시그 판매완료 ({oneShotLabel})
             </label>
           ) : null}
+          <label className="mt-3 block text-xs text-neutral-300">
+            OBS 오버레이 테마
+            <select
+              className="mt-1 w-full max-w-md rounded bg-neutral-800 px-2 py-2 text-sm text-neutral-100"
+              value={overlayTheme}
+              disabled={busy || !state}
+              onChange={(e) =>
+                void persistOverlayTheme(normalizeManualSigOverlayTheme(e.target.value))
+              }
+            >
+              <option value="result">{manualSigOverlayThemeLabel("result")}</option>
+              <option value="menu">{manualSigOverlayThemeLabel("menu")}</option>
+            </select>
+            <span className="mt-1 block text-[11px] text-neutral-500">
+              OBS 브라우저는 아래 공통 URL 하나면 됩니다. 테마를 바꾸면 당첨 카드 ↔ 시그 메뉴가 전환됩니다.
+            </span>
+          </label>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
@@ -1429,11 +1529,11 @@ export default function ManualSigSalesSimple() {
               className="rounded-lg border border-sky-400/50 bg-sky-900/50 px-3 py-2 text-xs font-semibold text-sky-100"
               onClick={() => {
                 void copyTextToClipboard(overlayUrl).then((ok) =>
-                  setToast(ok ? "당첨 OBS URL 복사됨" : "복사 실패")
+                  setToast(ok ? "OBS URL 복사됨" : "복사 실패")
                 );
               }}
             >
-              당첨 OBS URL 복사
+              OBS URL 복사
             </button>
             <button
               type="button"
@@ -1441,37 +1541,24 @@ export default function ManualSigSalesSimple() {
               className="rounded-lg bg-sky-700 px-3 py-2 text-xs font-bold"
               onClick={() => window.open(overlayUrl, "_blank", "noopener,noreferrer")}
             >
-              당첨 미리보기
+              미리보기 ({manualSigOverlayThemeLabel(overlayTheme)})
             </button>
             <button
               type="button"
               disabled={!menuOverlayUrl}
-              className="rounded-lg border border-fuchsia-400/50 bg-fuchsia-900/40 px-3 py-2 text-xs font-semibold text-fuchsia-100"
+              className="rounded-lg border border-fuchsia-400/40 bg-fuchsia-950/30 px-3 py-2 text-xs font-semibold text-fuchsia-100/90"
               onClick={() => {
                 void copyTextToClipboard(menuOverlayUrl).then((ok) =>
-                  setToast(ok ? "시그 메뉴 OBS URL 복사됨" : "복사 실패")
+                  setToast(ok ? "메뉴 전용 OBS URL 복사됨" : "복사 실패")
                 );
               }}
             >
-              메뉴 OBS URL 복사
-            </button>
-            <button
-              type="button"
-              disabled={!menuOverlayUrl}
-              className="rounded-lg bg-fuchsia-700 px-3 py-2 text-xs font-bold"
-              onClick={() => window.open(menuOverlayUrl, "_blank", "noopener,noreferrer")}
-            >
-              메뉴 미리보기
+              메뉴 전용 URL
             </button>
           </div>
           {overlayUrl ? (
             <code className="mt-2 block break-all text-[10px] text-neutral-500">
-              당첨: {overlayUrl}
-            </code>
-          ) : null}
-          {menuOverlayUrl ? (
-            <code className="mt-1 block break-all text-[10px] text-neutral-500">
-              메뉴: {menuOverlayUrl}
+              OBS: {overlayUrl}
             </code>
           ) : null}
         </section>
@@ -1524,13 +1611,16 @@ export default function ManualSigSalesSimple() {
                 (state?.members || []).find((m) => m.id === buyerId)?.name?.trim() ||
                 "";
               const buyerColor = buyerId ? memberColorOf(buyerId) : "#ffffff";
+              const needsBuyer = Boolean(row) && (buyerRequiredIdx === i || (sold && !buyerId));
               return (
                 <div
                   key={`cell_${i}`}
                   className={`relative min-h-[10.5rem] overflow-hidden rounded-lg border text-left ${
                     sold
                       ? "border-rose-500/50 bg-[#0c0c10]"
-                      : "border-white/12 bg-[#121218]"
+                      : needsBuyer
+                        ? "border-rose-400/80 bg-rose-950/30"
+                        : "border-white/12 bg-[#121218]"
                   }`}
                   title={row ? undefined : "빈 칸 — ROLL로 채워 주세요"}
                 >
@@ -1602,14 +1692,28 @@ export default function ManualSigSalesSimple() {
                         <label className="block">
                           <span className="sr-only">구매 멤버</span>
                           <select
-                            className="w-full rounded border border-white/15 bg-black/50 px-1 py-0.5 text-[11px] font-semibold"
-                            style={buyerId ? { color: buyerColor, borderColor: `${buyerColor}66` } : undefined}
-                            disabled={busy || phase === "CONFIRMED"}
+                            className={`w-full rounded border px-1 py-0.5 text-[11px] font-semibold ${
+                              needsBuyer
+                                ? "border-rose-400 bg-rose-950/60 text-rose-100"
+                                : "border-white/15 bg-black/50"
+                            }`}
+                            style={
+                              buyerId && !needsBuyer
+                                ? { color: buyerColor, borderColor: `${buyerColor}66` }
+                                : undefined
+                            }
+                            disabled={busy || phase === "CONFIRMED" || buyerMembers.length === 0}
                             value={buyerId}
                             onChange={(e) => void onChangeBuyerMember(i, e.target.value)}
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <option value="">구매 멤버</option>
+                            <option value="">
+                              {buyerMembers.length === 0
+                                ? "멤버 없음"
+                                : needsBuyer
+                                  ? "선택 필요"
+                                  : "구매 멤버"}
+                            </option>
                             {buyerMembers.map((m) => (
                               <option key={m.id} value={m.id} style={{ color: memberColorOf(m.id) }}>
                                 {m.name || m.id}

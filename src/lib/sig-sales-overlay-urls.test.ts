@@ -1,8 +1,36 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildManualSigThemeOverlayUrl,
   buildSigMenuOverlayUrl,
+  buildSigSalesManualOverlayUrl,
+  normalizeManualSigOverlayTheme,
+  readManualSigOverlayThemeFromOverlaySettings,
   sigNeonMenuColumnCount,
 } from "@/lib/sig-sales-overlay-urls";
+
+describe("manual sig overlay theme", () => {
+  it("normalizes theme ids", () => {
+    expect(normalizeManualSigOverlayTheme("menu")).toBe("menu");
+    expect(normalizeManualSigOverlayTheme("sig-menu")).toBe("menu");
+    expect(normalizeManualSigOverlayTheme("result")).toBe("result");
+    expect(normalizeManualSigOverlayTheme("")).toBe("result");
+  });
+
+  it("reads theme from overlaySettings", () => {
+    expect(readManualSigOverlayThemeFromOverlaySettings(null)).toBe("result");
+    expect(
+      readManualSigOverlayThemeFromOverlaySettings({ sigSalesManualOverlayTheme: "menu" })
+    ).toBe("menu");
+  });
+
+  it("builds one stable obs url; theme is applied by the overlay from server state", () => {
+    const expected = buildSigSalesManualOverlayUrl("https://example.com", "din", {
+      sigResultScalePct: 92,
+    });
+    expect(buildManualSigThemeOverlayUrl("https://example.com", "din", "menu")).toBe(expected);
+    expect(buildManualSigThemeOverlayUrl("https://example.com", "din", "result")).toBe(expected);
+  });
+});
 
 describe("buildSigMenuOverlayUrl", () => {
   it("builds obs menu url with optional member filter", () => {

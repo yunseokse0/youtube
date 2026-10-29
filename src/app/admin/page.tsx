@@ -312,7 +312,13 @@ import {
   readObsTextRegistryFromState,
   removeObsTextInstance,
 } from "@/lib/obs-text-overlay";
-import { buildSigSalesManualOverlayUrl } from "@/lib/sig-sales-overlay-urls";
+import {
+  buildManualSigThemeOverlayUrl,
+  MANUAL_SIG_OVERLAY_THEME_KEY,
+  manualSigOverlayThemeLabel,
+  normalizeManualSigOverlayTheme,
+  readManualSigOverlayThemeFromOverlaySettings,
+} from "@/lib/sig-sales-overlay-urls";
 import {
   extractToonationLinkKey,
   fetchToonationListenerStatus,
@@ -18933,8 +18939,8 @@ function AdminPageInner() {
                     <h4 className="text-sm font-semibold text-sky-100">수동 시그 판매 오버레이</h4>
                     <p className="mt-1 text-[11px] text-neutral-400 leading-snug">
                       회전판(<code className="text-neutral-300">/overlay/sig-sales</code>)과{" "}
-                      <strong className="text-neutral-300">별도 OBS 브라우저 소스</strong>입니다. 시그 5개·한방 입력 후
-                      「수동 결과 적용」으로 방송 화면에 반영합니다.
+                      <strong className="text-neutral-300">별도 OBS 브라우저 소스</strong>입니다. 테마로 당첨 카드 /
+                      시그 메뉴를 고르면 같은 OBS URL이 전환됩니다.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2 shrink-0">
@@ -18950,10 +18956,13 @@ function AdminPageInner() {
                         copiedId === "dash-sig-sales-manual" ? "bg-emerald-600 text-white" : "bg-neutral-700 hover:bg-neutral-600 text-neutral-100"
                       }`}
                       onClick={() => {
+                        const theme = readManualSigOverlayThemeFromOverlaySettings(
+                          state.overlaySettings as Record<string, unknown> | undefined
+                        );
                         const u =
                           typeof window !== "undefined"
-                            ? buildSigSalesManualOverlayUrl(window.location.origin, overlayUserId)
-                            : buildSigSalesManualOverlayUrl("http://localhost:3000", overlayUserId);
+                            ? buildManualSigThemeOverlayUrl(window.location.origin, overlayUserId, theme)
+                            : buildManualSigThemeOverlayUrl("http://localhost:3000", overlayUserId, theme);
                         void copyUrl(u, "dash-sig-sales-manual");
                       }}
                     >
@@ -18963,9 +18972,13 @@ function AdminPageInner() {
                       type="button"
                       className="rounded-lg border border-sky-500/40 px-3 py-1.5 text-xs text-sky-200 hover:bg-sky-900/40"
                       onClick={() => {
-                        const u = buildSigSalesManualOverlayUrl(
+                        const theme = readManualSigOverlayThemeFromOverlaySettings(
+                          state.overlaySettings as Record<string, unknown> | undefined
+                        );
+                        const u = buildManualSigThemeOverlayUrl(
                           typeof window !== "undefined" ? window.location.origin : "http://localhost:3000",
-                          overlayUserId
+                          overlayUserId,
+                          theme
                         );
                         window.open(u, "_blank", "noopener,noreferrer");
                       }}
@@ -18974,8 +18987,47 @@ function AdminPageInner() {
                     </button>
                   </div>
                 </div>
+                <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
+                  <span className="shrink-0">테마</span>
+                  <select
+                    className="rounded bg-neutral-800 border border-white/10 px-2 py-1 text-xs text-neutral-100"
+                    value={readManualSigOverlayThemeFromOverlaySettings(
+                      state.overlaySettings as Record<string, unknown> | undefined
+                    )}
+                    onChange={(e) => {
+                      const theme = normalizeManualSigOverlayTheme(e.target.value);
+                      setState((prev) => {
+                        const prevOs =
+                          prev.overlaySettings && typeof prev.overlaySettings === "object"
+                            ? (prev.overlaySettings as Record<string, unknown>)
+                            : {};
+                        const next = {
+                          ...prev,
+                          updatedAt: Date.now(),
+                          overlaySettings: {
+                            ...prevOs,
+                            [MANUAL_SIG_OVERLAY_THEME_KEY]: theme,
+                          } as AppState["overlaySettings"],
+                        };
+                        void saveStateAsync(next, overlayUserId, { omitDonationFields: true });
+                        return next;
+                      });
+                    }}
+                  >
+                    <option value="result">{manualSigOverlayThemeLabel("result")}</option>
+                    <option value="menu">{manualSigOverlayThemeLabel("menu")}</option>
+                  </select>
+                  <span className="text-neutral-500">
+                    현재:{" "}
+                    {manualSigOverlayThemeLabel(
+                      readManualSigOverlayThemeFromOverlaySettings(
+                        state.overlaySettings as Record<string, unknown> | undefined
+                      )
+                    )}
+                  </span>
+                </label>
                 <code className="block break-all text-[11px] text-sky-100/90">
-                  /overlay/sig-sales-manual?u={overlayUserId}&hideSigBoard=1
+                  /overlay/sig-sales-manual?u={overlayUserId}&hideSigBoard=1&host=obs
                 </code>
               </div>
               <div className="mb-3">

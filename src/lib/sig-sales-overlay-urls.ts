@@ -1,5 +1,28 @@
 /** OBS 브라우저 소스용 시그 판매 오버레이 URL (회전판 / 수동 분리) */
 
+/** 수동 시그 OBS 테마 — 당첨 카드 vs 네온 메뉴 보드 */
+export const MANUAL_SIG_OVERLAY_THEME_KEY = "sigSalesManualOverlayTheme";
+export type ManualSigOverlayTheme = "result" | "menu";
+
+export function normalizeManualSigOverlayTheme(raw: unknown): ManualSigOverlayTheme {
+  const s = String(raw || "")
+    .trim()
+    .toLowerCase();
+  if (s === "menu" || s === "sig-menu" || s === "neon-menu") return "menu";
+  return "result";
+}
+
+export function readManualSigOverlayThemeFromOverlaySettings(
+  os: Record<string, unknown> | undefined | null
+): ManualSigOverlayTheme {
+  if (!os || typeof os !== "object") return "result";
+  return normalizeManualSigOverlayTheme(os[MANUAL_SIG_OVERLAY_THEME_KEY]);
+}
+
+export function manualSigOverlayThemeLabel(theme: ManualSigOverlayTheme): string {
+  return theme === "menu" ? "시그 메뉴(네온 보드)" : "당첨 결과 카드";
+}
+
 export function buildSigSalesWheelOverlayUrl(
   origin: string,
   userId: string,
@@ -51,6 +74,24 @@ export function buildSigMenuOverlayUrl(
   if (opts?.memberId) q.set("memberId", opts.memberId);
   q.set("host", "obs");
   return `${origin.replace(/\/$/, "")}/overlay/sig-menu?${q.toString()}`;
+}
+
+/**
+ * 수동 시그 OBS 공통 URL — 테마(당첨/메뉴)는 overlaySettings 에 저장되어
+ * `/overlay/sig-sales-manual` 이 서버 상태를 읽어 전환한다 (OBS URL 변경 불필요).
+ * 전용 메뉴 URL이 필요하면 `buildSigMenuOverlayUrl` 을 쓴다.
+ */
+export function buildManualSigThemeOverlayUrl(
+  origin: string,
+  userId: string,
+  _theme?: ManualSigOverlayTheme | unknown,
+  opts?: { memberId?: string; sigResultScalePct?: number }
+): string {
+  void _theme;
+  return buildSigSalesManualOverlayUrl(origin, userId, {
+    memberId: opts?.memberId,
+    sigResultScalePct: opts?.sigResultScalePct ?? 92,
+  });
 }
 
 /** 참고 메뉴(~21칸) 기준 7열. 적으면 칸 수에 맞춤 */

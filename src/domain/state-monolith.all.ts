@@ -95,6 +95,7 @@ import {
   MANUAL_SIG_WORKBENCH_KEY,
   TOONA_DEFAULT_ALERT_IMAGE_KEY,
 } from "@/lib/manual-sig-workbench";
+import { MANUAL_SIG_OVERLAY_THEME_KEY } from "@/lib/sig-sales-overlay-urls";
 import { OBS_TEXT_OVERLAY_STATE_KEY, normalizeObsTextRegistry, type ObsTextOverlayRegistry } from "@/lib/obs-text-overlay";
 import { slimSigInventoryForWire } from "@/lib/state-wire-slim";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
@@ -3791,6 +3792,7 @@ export function buildSigSalesManualApiPatch(
     MANUAL_SIG_WORKBENCH_KEY,
     MANUAL_SIG_SLOT_PRICE_BANDS_KEY,
     TOONA_DEFAULT_ALERT_IMAGE_KEY,
+    MANUAL_SIG_OVERLAY_THEME_KEY,
   ] as const) {
     if (os[key] != null && os[key] !== "") {
       overlayPatch[key] = os[key];
