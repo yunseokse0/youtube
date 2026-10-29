@@ -23,12 +23,14 @@ describe("manual sig overlay theme", () => {
     ).toBe("menu");
   });
 
-  it("builds one stable obs url; theme is applied by the overlay from server state", () => {
-    const expected = buildSigSalesManualOverlayUrl("https://example.com", "din", {
+  it("appends theme=menu for neon board preview while result stays default url", () => {
+    const resultUrl = buildSigSalesManualOverlayUrl("https://example.com", "din", {
       sigResultScalePct: 92,
     });
-    expect(buildManualSigThemeOverlayUrl("https://example.com", "din", "menu")).toBe(expected);
-    expect(buildManualSigThemeOverlayUrl("https://example.com", "din", "result")).toBe(expected);
+    expect(buildManualSigThemeOverlayUrl("https://example.com", "din", "result")).toBe(resultUrl);
+    expect(buildManualSigThemeOverlayUrl("https://example.com", "din", "menu")).toBe(
+      `${resultUrl}&theme=menu`
+    );
   });
 });
 

@@ -77,21 +77,25 @@ export function buildSigMenuOverlayUrl(
 }
 
 /**
- * 수동 시그 OBS 공통 URL — 테마(당첨/메뉴)는 overlaySettings 에 저장되어
- * `/overlay/sig-sales-manual` 이 서버 상태를 읽어 전환한다 (OBS URL 변경 불필요).
+ * 수동 시그 OBS 공통 URL — `/overlay/sig-sales-manual`.
+ * 테마는 overlaySettings + URL `theme=` 로 전달(미리보기·OBS pick 누락 대비).
  * 전용 메뉴 URL이 필요하면 `buildSigMenuOverlayUrl` 을 쓴다.
  */
 export function buildManualSigThemeOverlayUrl(
   origin: string,
   userId: string,
-  _theme?: ManualSigOverlayTheme | unknown,
+  theme?: ManualSigOverlayTheme | unknown,
   opts?: { memberId?: string; sigResultScalePct?: number }
 ): string {
-  void _theme;
-  return buildSigSalesManualOverlayUrl(origin, userId, {
+  const base = buildSigSalesManualOverlayUrl(origin, userId, {
     memberId: opts?.memberId,
     sigResultScalePct: opts?.sigResultScalePct ?? 92,
   });
+  const t = normalizeManualSigOverlayTheme(theme);
+  if (t !== "menu") return base;
+  const u = new URL(base);
+  u.searchParams.set("theme", "menu");
+  return u.toString();
 }
 
 /** 참고 메뉴(~21칸) 기준 7열. 적으면 칸 수에 맞춤 */

@@ -37,7 +37,10 @@ import {
   readManualSigGridFromOverlaySettings,
   readManualSigPanelOrientationFromOverlaySettings,
 } from "@/lib/manual-sig-workbench";
-import { readManualSigOverlayThemeFromOverlaySettings } from "@/lib/sig-sales-overlay-urls";
+import {
+  normalizeManualSigOverlayTheme,
+  readManualSigOverlayThemeFromOverlaySettings,
+} from "@/lib/sig-sales-overlay-urls";
 import { canonicalSigIdFromWheelSliceId, ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 
 const MANUAL_OVERLAY_TERMINAL_PHASES = new Set([
@@ -194,10 +197,14 @@ export default function ManualSigOverlaySimple() {
         : null,
     [state]
   );
-  const overlayTheme = useMemo(
-    () => readManualSigOverlayThemeFromOverlaySettings(overlayOs),
-    [overlayOs]
-  );
+  const overlayTheme = useMemo(() => {
+    const fromServer = readManualSigOverlayThemeFromOverlaySettings(overlayOs);
+    /** OBS(host=obs)는 서버 테마가 정본 — 관리자에서 바꾸면 URL 교체 없이 전환 */
+    if (hostObs) return fromServer;
+    /** 미리보기는 URL theme= 로 즉시 반영 */
+    if (sp.has("theme")) return normalizeManualSigOverlayTheme(sp.get("theme"));
+    return fromServer;
+  }, [sp, overlayOs, hostObs]);
   const menuItems = useMemo(() => {
     if (overlayTheme !== "menu") return [];
     const pool = listActiveManualSigPool(state?.sigInventory, {

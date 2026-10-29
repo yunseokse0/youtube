@@ -12,7 +12,9 @@ import {
   MANUAL_SIG_GRID_ROWS_KEY,
   MANUAL_SIG_PANEL_ORIENTATION_KEY,
   MANUAL_SIG_PICK_COUNT_KEY,
+  MANUAL_SIG_SLOT_PRICE_BANDS_KEY,
 } from "@/lib/manual-sig-workbench";
+import { MANUAL_SIG_OVERLAY_THEME_KEY } from "@/lib/sig-sales-overlay-urls";
 
 export const STATE_PICK_SIG_INVENTORY = "sigInventory";
 export const STATE_PICK_OVERLAY = "overlay";
@@ -192,6 +194,9 @@ export function projectStateForGetPick(
         MANUAL_SIG_GRID_ROWS_KEY,
         MANUAL_SIG_GRID_COLS_KEY,
         MANUAL_SIG_PANEL_ORIENTATION_KEY,
+        MANUAL_SIG_SLOT_PRICE_BANDS_KEY,
+        /** OBS 당첨/네온메뉴 테마 — 빠지면 항상 result 로 고정됨 */
+        MANUAL_SIG_OVERLAY_THEME_KEY,
       ]) {
         if (rec[key] != null && rec[key] !== "") overlayManual[key] = rec[key];
       }

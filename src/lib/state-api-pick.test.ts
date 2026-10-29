@@ -128,6 +128,18 @@ describe("state-api-pick", () => {
     expect(os?.sigSalesManualDraftV1).toBeTruthy();
   });
 
+  it("sig-sales pick includes overlay theme for neon menu vs result cards", () => {
+    const base = {
+      ...defaultState(),
+      overlaySettings: {
+        sigSalesManualOverlayTheme: "menu",
+      },
+    };
+    const out = projectStateForGetPick(base, STATE_PICK_SIG_SALES) as Record<string, unknown>;
+    const os = out.overlaySettings as Record<string, unknown>;
+    expect(os?.sigSalesManualOverlayTheme).toBe("menu");
+  });
+
   it("donor-rankings pick returns full donors and wire rankings", () => {
     const base = defaultState();
     const oldAt = 1;
