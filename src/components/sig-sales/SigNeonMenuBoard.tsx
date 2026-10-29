@@ -6,6 +6,8 @@ export type SigNeonMenuItem = {
   id: string;
   name: string;
   price: number;
+  sold?: boolean;
+  buyerName?: string;
 };
 
 const NEON_PALETTE = [
@@ -54,15 +56,16 @@ export default function SigNeonMenuBoard({
       style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
     >
       {items.map((item, idx) => {
-        const neon = neonColorAt(idx);
+        const neon = item.sold ? "#fb7185" : neonColorAt(idx);
         return (
           <div
             key={item.id}
             className="relative flex min-h-[5.5rem] flex-col items-center justify-center gap-1 overflow-hidden rounded-xl px-2 py-2.5 text-center"
             style={{
-              background: "rgba(8, 6, 16, 0.78)",
+              background: item.sold ? "rgba(40, 8, 16, 0.88)" : "rgba(8, 6, 16, 0.78)",
               border: `3px solid ${neon}`,
               boxShadow: `0 0 10px ${neon}99, 0 0 22px ${neon}55, inset 0 0 18px ${neon}22`,
+              opacity: item.sold ? 0.92 : 1,
             }}
           >
             <div
@@ -80,10 +83,26 @@ export default function SigNeonMenuBoard({
               style={{
                 color: "#fff",
                 textShadow: `-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 12px ${neon}, 0 0 4px #fff`,
+                textDecoration: item.sold ? "line-through" : undefined,
               }}
             >
               {formatMenuPrice(item.price)}
             </div>
+            {item.sold ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/55">
+                <span
+                  className="rotate-[-12deg] border-2 border-rose-400 px-1.5 py-0.5 text-[10px] font-black tracking-wider text-rose-300"
+                  style={{ textShadow: "0 0 8px rgba(251,113,133,0.9)" }}
+                >
+                  SOLD
+                </span>
+                {item.buyerName ? (
+                  <span className="rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                    {item.buyerName}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         );
       })}

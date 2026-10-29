@@ -15,12 +15,12 @@ import {
   resolveManualOneShotStoredImageUrl,
   resolveManualOverlaySelectedSigs,
 } from "@/lib/manual-sig-broadcast";
-import { listActiveManualSigPool } from "@/lib/manual-sig-active-pool";
 import {
   getOverlayMemberFilterIdFromSearchParams,
   getOverlayUserIdFromSearchParams,
   isOverlayBroadcastHost,
 } from "@/lib/overlay-params";
+import { resolveSigNeonMenuOverlayItems } from "@/lib/sig-neon-menu-items";
 import {
   readOverlayPollIntervalMs,
   readSigSalesManualOverlayPollMs,
@@ -207,22 +207,10 @@ export default function ManualSigOverlaySimple() {
   }, [sp, overlayOs, hostObs]);
   const menuItems = useMemo(() => {
     if (overlayTheme !== "menu") return [];
-    const pool = listActiveManualSigPool(state?.sigInventory, {
-      ignoreStock: true,
-      sigSalesExcludedIds: state?.sigSalesExcludedIds,
+    return resolveSigNeonMenuOverlayItems(state, userId, {
       memberFilterId: memberFilterId || undefined,
-      ownerUserId: userId,
     });
-    return [...pool]
-      .sort((a, b) => a.price - b.price || a.name.localeCompare(b.name, "ko"))
-      .map((row) => ({ id: row.id, name: row.name, price: row.price }));
-  }, [
-    overlayTheme,
-    state?.sigInventory,
-    state?.sigSalesExcludedIds,
-    memberFilterId,
-    userId,
-  ]);
+  }, [overlayTheme, state, userId, memberFilterId]);
   const panelGrid = useMemo(() => readManualSigGridFromOverlaySettings(overlayOs), [overlayOs]);
   const panelOrientation = useMemo(
     () => readManualSigPanelOrientationFromOverlaySettings(overlayOs),

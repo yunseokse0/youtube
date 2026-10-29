@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
 import SigNeonMenuBoard from "@/components/sig-sales/SigNeonMenuBoard";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
-import { listActiveManualSigPool } from "@/lib/manual-sig-active-pool";
 import {
   getOverlayMemberFilterIdFromSearchParams,
   getOverlayUserIdFromSearchParams,
@@ -16,6 +15,8 @@ import {
 } from "@/lib/overlay-pull-policy";
 import { clearOverlayLastGood } from "@/lib/overlay-last-good";
 import { STATE_PICK_SIG_SALES } from "@/lib/state-api-pick";
+import { resolveSigNeonMenuOverlayItems } from "@/lib/sig-neon-menu-items";
+import { manualSigBroadcastReloadNonce } from "@/lib/manual-sig-broadcast-state";
 
 function MenuOverlayStatus({
   hostObs,
@@ -58,6 +59,25 @@ export default function SigMenuOverlayClient() {
     sigSalesIncrementalPoll: false,
   });
 
+  const overlayReloadSeenRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const nonce = manualSigBroadcastReloadNonce(state);
+    if (!Number.isFinite(nonce)) return;
+    if (overlayReloadSeenRef.current == null) {
+      overlayReloadSeenRef.current = nonce;
+      return;
+    }
+    if (nonce !== overlayReloadSeenRef.current) {
+      overlayReloadSeenRef.current = nonce;
+      clearOverlayLastGood(userId, STATE_PICK_SIG_SALES);
+      void resync({ forceFull: true });
+      if (hostObs) {
+        window.setTimeout(() => void resync({ forceFull: true }), 600);
+      }
+    }
+  }, [state, resync, hostObs, userId]);
+
   useEffect(() => {
     if (!spReady || !hostObs) return;
     const t = window.setTimeout(() => void resync({ forceFull: true }), 1400);
@@ -80,17 +100,13 @@ export default function SigMenuOverlayClient() {
     };
   }, [hostObs, resync]);
 
-  const items = useMemo(() => {
-    const pool = listActiveManualSigPool(state?.sigInventory, {
-      ignoreStock: true,
-      sigSalesExcludedIds: state?.sigSalesExcludedIds,
-      memberFilterId: memberFilterId || undefined,
-      ownerUserId: userId,
-    });
-    return [...pool]
-      .sort((a, b) => a.price - b.price || a.name.localeCompare(b.name, "ko"))
-      .map((row) => ({ id: row.id, name: row.name, price: row.price }));
-  }, [state?.sigInventory, state?.sigSalesExcludedIds, memberFilterId, userId]);
+  const items = useMemo(
+    () =>
+      resolveSigNeonMenuOverlayItems(state, userId, {
+        memberFilterId: memberFilterId || undefined,
+      }),
+    [state, userId, memberFilterId]
+  );
 
   const rootClass = hostObs
     ? "pointer-events-none fixed inset-0 z-[200] flex flex-col items-center justify-start overflow-visible bg-transparent p-3 pt-4"
