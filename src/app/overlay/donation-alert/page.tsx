@@ -18,6 +18,7 @@ export default function DonationAlertOverlayPage() {
   const { params: sp, ready: spReady } = useClientOnlySearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
   const testMode = (sp.get("test") || "").toLowerCase() === "true";
+  const amountUnit = (sp.get("amountUnit") || "원").trim() || "원";
 
   const source = useMemo(() => {
     if (testMode || !userId) return null;
@@ -53,5 +54,5 @@ export default function DonationAlertOverlayPage() {
 
   if (!spReady) return null;
 
-  return <AnimatedDonationAlertOverlay current={current} />;
+  return <AnimatedDonationAlertOverlay current={current} cardProps={{ amountUnit }} />;
 }

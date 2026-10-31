@@ -776,6 +776,7 @@ function AdminPageInner() {
   const [overlayUserId, setOverlayUserId] = useState<string>(() =>
     resolveScopedOverlayUserId(urlUserIdRaw)
   );
+  const [overlayAmountUnit, setOverlayAmountUnit] = useState<string>("원");
   useEffect(() => {
     const fromUrl = (sp.get("u") || sp.get("user") || "").trim();
     if (user?.id) {
@@ -796,6 +797,14 @@ function AdminPageInner() {
   const [donorListQuery, setDonorListQuery] = useState<string>("");
   const donorListQueryRef = useRef<string>("");
   useEffect(() => { donorListQueryRef.current = donorListQuery; }, [donorListQuery]);
+  /** overlaySettings.amountUnit → 오버레이 금액 단위 설정 동기화 */
+  useEffect(() => {
+    const unit = String(
+      (state.overlaySettings as Record<string, unknown> | undefined)?.amountUnit ||
+        "원"
+    ).trim();
+    if (unit && unit !== overlayAmountUnit) setOverlayAmountUnit(unit);
+  }, [state.overlaySettings, overlayAmountUnit]);
   type DonorTimeFilterKey = "all" | "today" | "1h" | "30m" | "10m" | "5m";
   const [donorListTimeFilter, setDonorListTimeFilter] = useState<DonorTimeFilterKey>("all");
   const [donorListMinAmount, setDonorListMinAmount] = useState<number | "">("");
@@ -5261,6 +5270,38 @@ function AdminPageInner() {
       });
     },
     [user?.id]
+  );
+
+  /** 오버레이 후원 금액 단위(원/캐시) 저장 — overlaySettings.amountUnit에 영속 저장 */
+  const saveOverlayAmountUnit = useCallback(
+    async (unit: string) => {
+      if (!user?.id) return;
+      const now = Date.now();
+      lastLocalPersistAtRef.current = now;
+      stateUpdatedAtRef.current = Math.max(
+        stateUpdatedAtRef.current,
+        state.updatedAt || now,
+        now,
+      );
+      pendingUnsyncedRef.current = true;
+      saveOverlayPresetsPatchAsync(presets, user.id, {
+        foundation: state,
+        overlaySettingsPatch: { amountUnit: unit },
+      }).then((r) => {
+        if (r.ok) {
+          if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
+            stateUpdatedAtRef.current = r.serverUpdatedAt;
+            lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
+          }
+          pendingUnsyncedRef.current = false;
+          setSyncStatus(r.storageFallback ? "error" : "synced");
+        } else {
+          const offline = typeof navigator !== "undefined" && !navigator.onLine;
+          setSyncStatus(offline ? "local" : "error");
+        }
+      });
+    },
+    [user?.id, presets, state],
   );
 
   /** 후원순위·리스트 등 시각 옵션만 저장 — 후원 금액 필드 미포함 */
@@ -14814,10 +14855,25 @@ function AdminPageInner() {
 
                     <code className="text-neutral-300 break-all">
 
-                      /overlay/donation-alert?u={overlayUserId}&host=obs&overlayAllowSse=1
+                      /overlay/donation-alert?u={overlayUserId}&host=obs&overlayAllowSse=1&amountUnit={overlayAmountUnit}
 
                     </code>
 
+                    <label className="ml-2 flex items-center gap-1 text-xs">
+                      <span className="text-neutral-400">단위:</span>
+                      <select
+                        value={overlayAmountUnit}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setOverlayAmountUnit(v);
+                          void saveOverlayAmountUnit(v);
+                        }}
+                        className="text-xs rounded bg-neutral-800 border border-neutral-700 text-neutral-100 px-1 py-0.5 focus:ring-1 focus:ring-accent outline-none"
+                      >
+                        <option value="원">원</option>
+                        <option value="캐시">캐시</option>
+                      </select>
+                    </label>
                     <button
 
                       type="button"
@@ -14826,7 +14882,9 @@ function AdminPageInner() {
 
                       onClick={() => {
 
-                        const u = buildDonationAlertUrl(overlayUserId);
+                        const u = buildDonationAlertUrl(overlayUserId, {
+                          extraParams: { amountUnit: overlayAmountUnit },
+                        });
 
                         void copyUrl(u, "dash-donation-alert");
 

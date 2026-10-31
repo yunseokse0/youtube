@@ -1,0 +1,394 @@
+[
+  {
+    "excelLabel": "오류난하루",
+    "settleName": "하루",
+    "excelCount": 51,
+    "excelSum": 1622400,
+    "settleCount": 46,
+    "settleSum": 1722300,
+    "settleAccount": 241700,
+    "settleToon": 1480600,
+    "toonExcel": 1280700,
+    "accountExcel": 341700,
+    "matchedN": 41,
+    "missingN": 1,
+    "missingSum": 100000,
+    "otherMemberN": 8,
+    "otherMemberSum": 107000,
+    "missing": [
+      {
+        "name": "간지민수/하루",
+        "amount": 100000,
+        "message": "",
+        "at": "2026-09-23 18:10:36"
+      }
+    ],
+    "assignedOther": [
+      {
+        "name": "자키집쓰볼탱69",
+        "amount": 18000,
+        "message": "난 한놈만 패기때문에 탐색좀 할게 오류난컴온",
+        "assignedTo": "오하린",
+        "at": "2026-09-24 02:52:18"
+      },
+      {
+        "name": "츄석",
+        "amount": 15100,
+        "message": "홍어 먹지망 꽥",
+        "assignedTo": "나나",
+        "at": "2026-09-24 08:08:06"
+      },
+      {
+        "name": "자키집쓰볼탱69",
+        "amount": 14100,
+        "message": "오류난 화장지워",
+        "assignedTo": "자키",
+        "at": "2026-09-24 04:16:12"
+      },
+      {
+        "name": "자키집쓰볼탱69",
+        "amount": 14100,
+        "message": "내타갯 알아서 청양고추 들고 컴온",
+        "assignedTo": "자키",
+        "at": "2026-09-24 04:15:28"
+      },
+      {
+        "name": "귤동이",
+        "amount": 11900,
+        "message": "하루누나 나왔어요",
+        "assignedTo": "나나",
+        "at": "2026-09-24 03:06:22"
+      },
+      {
+        "name": "귤동이",
+        "amount": 11900,
+        "message": "하루누나 나왔어요",
+        "assignedTo": "나나",
+        "at": "2026-09-24 03:06:16"
+      },
+      {
+        "name": "귤동이",
+        "amount": 11900,
+        "message": "하루누나 나왔어요",
+        "assignedTo": "나나",
+        "at": "2026-09-24 03:05:14"
+      },
+      {
+        "name": "설향",
+        "amount": 10000,
+        "message": "팀분들도 하나씩",
+        "assignedTo": "나나",
+        "at": "2026-09-24 05:03:18"
+      }
+    ]
+  },
+  {
+    "excelLabel": "오하린",
+    "settleName": "오하린",
+    "excelCount": 68,
+    "excelSum": 2942700,
+    "settleCount": 60,
+    "settleSum": 2714700,
+    "settleAccount": 563100,
+    "settleToon": 2151600,
+    "toonExcel": 2351600,
+    "accountExcel": 591100,
+    "matchedN": 56,
+    "missingN": 1,
+    "missingSum": 65000,
+    "otherMemberN": 11,
+    "otherMemberSum": 330000,
+    "missing": [
+      {
+        "name": "단비윤 오하린 살아",
+        "amount": 65000,
+        "message": "",
+        "at": "2026-09-23 18:30:17"
+      }
+    ],
+    "assignedOther": [
+      {
+        "name": "실물깡패오하린",
+        "amount": 147000,
+        "message": "자키- 하린잘했나요 ? 하또챙기느라 고생했어요",
+        "assignedTo": "자키",
+        "at": "2026-09-24 09:22:49"
+      },
+      {
+        "name": "실물깡패오하린",
+        "amount": 22000,
+        "message": "나도 오래살게 욕해봐",
+        "assignedTo": "나나",
+        "at": "2026-09-24 09:31:21"
+      },
+      {
+        "name": "실물깡패오하린",
+        "amount": 22000,
+        "message": "자진모리함?",
+        "assignedTo": "자키",
+        "at": "2026-09-24 09:30:20"
+      },
+      {
+        "name": "자키집고양이",
+        "amount": 22000,
+        "message": "하린 월클하루부장에게 한마디",
+        "assignedTo": "하루",
+        "at": "2026-09-24 06:32:21"
+      },
+      {
+        "name": "Dark",
+        "amount": 22000,
+        "message": "Harin",
+        "assignedTo": "김라라",
+        "at": "2026-09-24 02:56:34"
+      },
+      {
+        "name": "리오",
+        "amount": 19000,
+        "message": "드라군 -",
+        "assignedTo": "나나",
+        "at": "2026-09-24 08:04:02"
+      },
+      {
+        "name": "리오",
+        "amount": 19000,
+        "message": "드라군 -",
+        "assignedTo": "나나",
+        "at": "2026-09-24 08:04:00"
+      },
+      {
+        "name": "Rui Yulmu",
+        "amount": 19000,
+        "message": "오라군",
+        "assignedTo": "김라라",
+        "at": "2026-09-24 07:17:32"
+      },
+      {
+        "name": "단비윤 오라군",
+        "amount": 19000,
+        "message": "",
+        "assignedTo": "김라라",
+        "at": "2026-09-23 22:17:34"
+      },
+      {
+        "name": "설향",
+        "amount": 10000,
+        "message": "팀분들도 하나씩",
+        "assignedTo": "나나",
+        "at": "2026-09-24 05:03:16"
+      },
+      {
+        "name": "잉-하린 이뿌다",
+        "amount": 9000,
+        "message": "",
+        "assignedTo": "진다율",
+        "at": "2026-09-23 17:56:23"
+      }
+    ]
+  },
+  {
+    "excelLabel": "다율",
+    "settleName": "진다율",
+    "excelCount": 93,
+    "excelSum": 11801600,
+    "settleCount": 90,
+    "settleSum": 10852400,
+    "settleAccount": 464600,
+    "settleToon": 10387800,
+    "toonExcel": 11285600,
+    "accountExcel": 516000,
+    "matchedN": 82,
+    "missingN": 2,
+    "missingSum": 70100,
+    "otherMemberN": 3,
+    "otherMemberSum": 44300,
+    "missing": [
+      {
+        "name": "구름 진다율",
+        "amount": 55000,
+        "message": "",
+        "at": "2026-09-23 18:23:47"
+      },
+      {
+        "name": "구름 진다율",
+        "amount": 15100,
+        "message": "",
+        "at": "2026-09-23 19:31:05"
+      }
+    ],
+    "assignedOther": [
+      {
+        "name": "힛트-다율실드",
+        "amount": 15100,
+        "message": "",
+        "assignedTo": "나나",
+        "at": "2026-09-23 22:16:48"
+      },
+      {
+        "name": "힛트-다율실드",
+        "amount": 15100,
+        "message": "",
+        "assignedTo": "나나",
+        "at": "2026-09-23 22:15:32"
+      },
+      {
+        "name": "힛트",
+        "amount": 14100,
+        "message": "로제찜닭 먹자",
+        "assignedTo": "나나",
+        "at": "2026-09-24 05:05:45"
+      }
+    ]
+  },
+  {
+    "excelLabel": "나나",
+    "settleName": "나나",
+    "excelCount": 132,
+    "excelSum": 13537400,
+    "settleCount": 177,
+    "settleSum": 15052300,
+    "settleAccount": 175100,
+    "settleToon": 14877200,
+    "toonExcel": 13477400,
+    "accountExcel": 60000,
+    "matchedN": 129,
+    "missingN": 0,
+    "missingSum": 0,
+    "otherMemberN": 2,
+    "otherMemberSum": 316100,
+    "missing": [],
+    "assignedOther": [
+      {
+        "name": "나머행",
+        "amount": 302000,
+        "message": "일단 쉴드 20개 리필~ 사라지면 한번은 먹어",
+        "assignedTo": "김라라",
+        "at": "2026-09-24 07:20:03"
+      },
+      {
+        "name": "써니",
+        "amount": 14100,
+        "message": "자키님 푸른주스한잔 나나머리지키자",
+        "assignedTo": "자키",
+        "at": "2026-09-24 05:50:03"
+      }
+    ]
+  },
+  {
+    "excelLabel": "자키",
+    "settleName": "자키",
+    "excelCount": 53,
+    "excelSum": 19520000,
+    "settleCount": 57,
+    "settleSum": 20556100,
+    "settleAccount": 9570000,
+    "settleToon": 10986100,
+    "toonExcel": 9850000,
+    "accountExcel": 9670000,
+    "matchedN": 46,
+    "missingN": 0,
+    "missingSum": 0,
+    "otherMemberN": 7,
+    "otherMemberSum": 331200,
+    "missing": [],
+    "assignedOther": [
+      {
+        "name": "꼬도리맘",
+        "amount": 151000,
+        "message": "자키업 양이횽업",
+        "assignedTo": "하루",
+        "at": "2026-09-24 08:16:38"
+      },
+      {
+        "name": "원주민",
+        "amount": 100000,
+        "message": "",
+        "assignedTo": "나나",
+        "at": "2026-09-23 18:47:12"
+      },
+      {
+        "name": "자키집안나",
+        "amount": 50000,
+        "message": "머리끈보냈다구 묶고 가발쓰라규",
+        "assignedTo": "진다율",
+        "at": "2026-09-24 04:14:20"
+      },
+      {
+        "name": "쩌엉",
+        "amount": 20000,
+        "message": "자자 라라 나나 화이팅",
+        "assignedTo": "나나",
+        "at": "2026-09-24 02:57:07"
+      },
+      {
+        "name": "리한",
+        "amount": 10000,
+        "message": "홀리몰리 -",
+        "assignedTo": "나나",
+        "at": "2026-09-24 04:38:27"
+      },
+      {
+        "name": "자키집딱기둘",
+        "amount": 100,
+        "message": "ㅇㅇ좋겠다 실드있어서",
+        "assignedTo": "진다율",
+        "at": "2026-09-24 06:30:54"
+      },
+      {
+        "name": "자키집딱기둘",
+        "amount": 100,
+        "message": "시그단가 적당히바꿔라",
+        "assignedTo": "김라라",
+        "at": "2026-09-24 02:35:21"
+      }
+    ]
+  },
+  {
+    "excelLabel": "김라라",
+    "settleName": "김라라",
+    "excelCount": 60,
+    "excelSum": 9727400,
+    "settleCount": 63,
+    "settleSum": 9081000,
+    "settleAccount": 15100,
+    "settleToon": 9065900,
+    "toonExcel": 9712300,
+    "accountExcel": 15100,
+    "matchedN": 55,
+    "missingN": 0,
+    "missingSum": 0,
+    "otherMemberN": 4,
+    "otherMemberSum": 79000,
+    "missing": [],
+    "assignedOther": [
+      {
+        "name": "나머행",
+        "amount": 28000,
+        "message": "나나 라라 자자 한번더",
+        "assignedTo": "나나",
+        "at": "2026-09-24 03:08:28"
+      },
+      {
+        "name": "나머행",
+        "amount": 28000,
+        "message": "나나 라라 자자 화이팅",
+        "assignedTo": "나나",
+        "at": "2026-09-24 03:08:25"
+      },
+      {
+        "name": "Andy",
+        "amount": 13000,
+        "message": "ym자랑 라부장 사마귀도보여주자",
+        "assignedTo": "자키",
+        "at": "2026-09-24 04:38:50"
+      },
+      {
+        "name": "자키집딱기둘",
+        "amount": 10000,
+        "message": "시그단가 적당히바꿔라 박자키 ㅋㅋ라라업",
+        "assignedTo": "자키",
+        "at": "2026-09-24 02:36:24"
+      }
+    ]
+  }
+]

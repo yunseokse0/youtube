@@ -1,0 +1,195 @@
+{
+  "tag": "mvaxmkgu",
+  "waves": [
+    {
+      "label": "A 단건×50",
+      "n": 50,
+      "saved": 50,
+      "rowPct": 100,
+      "httpOk": 50,
+      "httpFail": 0,
+      "statuses": {
+        "200": 50
+      },
+      "p50": 432,
+      "p95": 733,
+      "maxMs": 770,
+      "expectedAmt": 172500,
+      "actualAmt": 172500,
+      "amtOk": true,
+      "elapsedMs": 793,
+      "perSec": 63.1,
+      "pass": true,
+      "settleWaitMs": 22
+    },
+    {
+      "label": "A 단건×100",
+      "n": 100,
+      "saved": 100,
+      "rowPct": 100,
+      "httpOk": 100,
+      "httpFail": 0,
+      "statuses": {
+        "200": 100
+      },
+      "p50": 918,
+      "p95": 2631,
+      "maxMs": 2887,
+      "expectedAmt": 345000,
+      "actualAmt": 345000,
+      "amtOk": true,
+      "elapsedMs": 2905,
+      "perSec": 34.4,
+      "pass": true,
+      "settleWaitMs": 24
+    },
+    {
+      "label": "A 단건×200",
+      "n": 200,
+      "saved": 200,
+      "rowPct": 100,
+      "httpOk": 200,
+      "httpFail": 0,
+      "statuses": {
+        "200": 200
+      },
+      "p50": 3161,
+      "p95": 14388,
+      "maxMs": 16280,
+      "expectedAmt": 690000,
+      "actualAmt": 690000,
+      "amtOk": true,
+      "elapsedMs": 16315,
+      "perSec": 12.3,
+      "pass": true,
+      "settleWaitMs": 54
+    },
+    {
+      "label": "A 단건×400",
+      "n": 400,
+      "saved": 400,
+      "rowPct": 100,
+      "httpOk": 400,
+      "httpFail": 0,
+      "statuses": {
+        "200": 400
+      },
+      "p50": 16954,
+      "p95": 22052,
+      "maxMs": 22788,
+      "expectedAmt": 1380000,
+      "actualAmt": 1380000,
+      "amtOk": true,
+      "elapsedMs": 22850,
+      "perSec": 17.5,
+      "pass": true,
+      "settleWaitMs": 46
+    },
+    {
+      "label": "B 일괄×100",
+      "n": 100,
+      "saved": 100,
+      "rowPct": 100,
+      "httpOk": 1,
+      "httpFail": 0,
+      "statuses": {
+        "200": 1
+      },
+      "p50": 822,
+      "p95": 822,
+      "maxMs": 822,
+      "expectedAmt": 345000,
+      "actualAmt": 345000,
+      "amtOk": true,
+      "elapsedMs": 822,
+      "perSec": 121.7,
+      "pass": true,
+      "settleWaitMs": 23
+    },
+    {
+      "label": "B 일괄×200",
+      "n": 200,
+      "saved": 200,
+      "rowPct": 100,
+      "httpOk": 1,
+      "httpFail": 0,
+      "statuses": {
+        "200": 1
+      },
+      "p50": 5062,
+      "p95": 5062,
+      "maxMs": 5062,
+      "expectedAmt": 690000,
+      "actualAmt": 690000,
+      "amtOk": true,
+      "elapsedMs": 5063,
+      "perSec": 39.5,
+      "pass": true,
+      "settleWaitMs": 25
+    },
+    {
+      "label": "B 일괄×500",
+      "n": 500,
+      "saved": 500,
+      "rowPct": 100,
+      "httpOk": 1,
+      "httpFail": 0,
+      "statuses": {
+        "200": 1
+      },
+      "p50": 7452,
+      "p95": 7452,
+      "maxMs": 7452,
+      "expectedAmt": 1725000,
+      "actualAmt": 1725000,
+      "amtOk": true,
+      "elapsedMs": 7454,
+      "perSec": 67.1,
+      "pass": true,
+      "settleWaitMs": 41
+    },
+    {
+      "label": "B 일괄×1000",
+      "n": 1000,
+      "saved": 1000,
+      "rowPct": 100,
+      "httpOk": 1,
+      "httpFail": 0,
+      "statuses": {
+        "200": 1
+      },
+      "p50": 17214,
+      "p95": 17214,
+      "maxMs": 17214,
+      "expectedAmt": 3450000,
+      "actualAmt": 3450000,
+      "amtOk": true,
+      "elapsedMs": 17216,
+      "perSec": 58.1,
+      "pass": true,
+      "settleWaitMs": 44
+    },
+    {
+      "label": "C 4계정×80",
+      "n": 320,
+      "saved": 320,
+      "rowPct": 100,
+      "httpOk": 320,
+      "httpFail": 0,
+      "statuses": {
+        "200": 320
+      },
+      "p50": 2609,
+      "p95": 5806,
+      "maxMs": 6394,
+      "expectedAmt": 984000,
+      "actualAmt": 984000,
+      "amtOk": true,
+      "elapsedMs": 6427,
+      "perSec": 49.8,
+      "pass": true
+    }
+  ],
+  "aMax": 400,
+  "bMax": 1000
+}

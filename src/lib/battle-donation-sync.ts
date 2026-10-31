@@ -65,7 +65,7 @@ export function enableMealBattleDonationSync(
   const linked = (state.mealBattle?.participants || []).map((p) => ({
     ...p,
     donationLinkActive: true,
-    donationLinkStartedAt: p.donationLinkStartedAt ?? startedAt,
+    donationLinkStartedAt: startedAt,
   }));
   let mealBattle: MealBattleState = {
     ...state.mealBattle,

@@ -59,7 +59,8 @@ export function applyMealBattleDonationToParticipants(
   return participants.map((p) =>
     p.memberId === memberId &&
     p.donationLinkActive &&
-    (!p.donationLinkStartedAt || eventAt >= p.donationLinkStartedAt)
+    p.donationLinkStartedAt != null &&
+    eventAt >= p.donationLinkStartedAt
       ? { ...p, score: Math.max(0, (Number(p.score) || 0) + delta) }
       : p
   );

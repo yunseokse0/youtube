@@ -27,7 +27,8 @@ export default function PlayerDonationAlertCard({
   onClose,
   density = "default",
   highlighted = false,
-}: Props) {
+  amountUnit = "원",
+}: Props & { amountUnit?: string }) {
   const stack = density === "stack";
   const sigImageSrc = useMemo(() => {
     if (!alert.matchedSigName) return "";
@@ -111,7 +112,7 @@ export default function PlayerDonationAlertCard({
             <p className={`truncate ${stack ? "text-[11px]" : "text-xs"}`}>
               <span className="font-semibold text-white/90">{alert.donorName}</span>
               <span className="ml-1.5 tabular-nums font-semibold text-studio-coral">
-                {alert.amount.toLocaleString("ko-KR")}원
+                {alert.amount.toLocaleString("ko-KR")}{amountUnit}
               </span>
             </p>
             {alert.message ? (

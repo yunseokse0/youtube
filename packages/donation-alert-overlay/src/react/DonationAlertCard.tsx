@@ -9,6 +9,7 @@ export type DonationAlertCardProps = {
   className?: string;
   labels?: DonationAlertLabels;
   locale?: string;
+  amountUnit?: string;
 };
 
 /** OBS 후원 출력 — 후원자→멤버 / 금액 / 기여도 점수 */
@@ -17,8 +18,9 @@ export function DonationAlertCard({
   className = "",
   labels = DEFAULT_DONATION_ALERT_LABELS,
   locale = "ko-KR",
+  amountUnit = "원",
 }: DonationAlertCardProps) {
-  const amountLabel = alert.amount.toLocaleString(locale);
+  const amountLabel = `${alert.amount.toLocaleString(locale)}${amountUnit}`;
   const targetLabel = donationAlertTargetLabel(alert.target, labels);
   const isAccount = alert.target === "account";
 

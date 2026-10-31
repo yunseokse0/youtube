@@ -1,0 +1,157 @@
+{
+  "id": "st_1790178223693_kypb6",
+  "title": "0923상류사회",
+  "createdAt": 1790178223693,
+  "createdAtKst": "2026-09-23T15:43:43.693Z",
+  "accountRatio": 0.8,
+  "toonRatio": 0.8,
+  "feeRate": 0.033,
+  "totalGross": 39268800,
+  "totalNet": 37972990,
+  "donorCount": 493,
+  "memberCount": 6,
+  "members": [
+    {
+      "memberId": "m_1786625875510_lrkym",
+      "name": "자키",
+      "operating": false,
+      "account": 9570000,
+      "toon": 10986100,
+      "gross": 13921504,
+      "net": 13462104,
+      "fee": 459400
+    },
+    {
+      "memberId": "m_1788509337974_qi1mf",
+      "name": "나나",
+      "operating": false,
+      "account": 175100,
+      "toon": 14877200,
+      "gross": 9647480,
+      "net": 9329120,
+      "fee": 318360
+    },
+    {
+      "memberId": "m_1788514902308_4en73",
+      "name": "김라라",
+      "operating": false,
+      "account": 15100,
+      "toon": 9065900,
+      "gross": 5813048,
+      "net": 5621228,
+      "fee": 191820
+    },
+    {
+      "memberId": "m_1788514906147_ksf2p",
+      "name": "오하린",
+      "operating": false,
+      "account": 563100,
+      "toon": 2151600,
+      "gross": 1782456,
+      "net": 1723646,
+      "fee": 58810
+    },
+    {
+      "memberId": "m_1788514910671_plggw",
+      "name": "하루",
+      "operating": false,
+      "account": 241700,
+      "toon": 1480600,
+      "gross": 1121608,
+      "net": 1084608,
+      "fee": 37000
+    },
+    {
+      "memberId": "m_1790061731234_e3mue",
+      "name": "진다율",
+      "operating": false,
+      "account": 464600,
+      "toon": 10387800,
+      "gross": 6982704,
+      "net": 6752284,
+      "fee": 230420
+    }
+  ],
+  "donorSample": [
+    {
+      "id": "bank:sms:cmue9io4p01r45jdx8jyy62kn",
+      "name": "나머행",
+      "amount": 22000,
+      "memberId": "m_1788509337974_qi1mf",
+      "at": 1790177594281,
+      "donorName": "나머행",
+      "externalId": "toonation:ws:나머행:22000:1790177594268",
+      "provider": "bank",
+      "target": "toon",
+      "message": "나나야 왜또 혼자웃어?",
+      "hsTerritoryExcluded": true,
+      "contributionPoints": 2200
+    },
+    {
+      "id": "bank:sms:cmue9h2wx01qv5jdxfmqsmtju",
+      "name": "채원경",
+      "amount": 10000,
+      "memberId": "m_1786625875510_lrkym",
+      "at": 1790177520130,
+      "donorName": "채원경",
+      "externalId": "toonation:ws:채원경:10000:1790177520116",
+      "provider": "bank",
+      "target": "toon",
+      "memberAutoAssigned": true,
+      "hsTerritoryExcluded": true,
+      "contributionPoints": 1000
+    },
+    {
+      "id": "bank:sms:cmue9gahx01qm5jdxuj9h1u4j",
+      "name": "실물깡패오하린",
+      "amount": 22000,
+      "memberId": "m_1788509337974_qi1mf",
+      "at": 1790177483301,
+      "donorName": "실물깡패오하린",
+      "externalId": "toonation:ws:실물깡패오하린:22000:1790177483292",
+      "provider": "bank",
+      "target": "toon",
+      "message": "나도 오래살게 욕해봐",
+      "hsTerritoryExcluded": true,
+      "contributionPoints": 2200
+    }
+  ],
+  "donorsByMemberId": {
+    "m_1788509337974_qi1mf": {
+      "n": 177,
+      "sum": 15052300,
+      "account": 175100,
+      "toon": 14877200
+    },
+    "m_1786625875510_lrkym": {
+      "n": 57,
+      "sum": 20556100,
+      "account": 9570000,
+      "toon": 10986100
+    },
+    "m_1788514910671_plggw": {
+      "n": 46,
+      "sum": 1722300,
+      "account": 241700,
+      "toon": 1480600
+    },
+    "m_1790061731234_e3mue": {
+      "n": 90,
+      "sum": 10852400,
+      "account": 464600,
+      "toon": 10387800
+    },
+    "m_1788514906147_ksf2p": {
+      "n": 60,
+      "sum": 2714700,
+      "account": 563100,
+      "toon": 2151600
+    },
+    "m_1788514902308_4en73": {
+      "n": 63,
+      "sum": 9081000,
+      "account": 15100,
+      "toon": 9065900
+    }
+  }
+}
