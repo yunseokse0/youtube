@@ -66,6 +66,35 @@ export async function POST(req: Request) {
       });
       incomingState = guarded.state;
     }
+
+    /** [부활 방지] 서버 기준 단일 진실원:
+     *  클라이언트 요청 state 에 포함된 donor 중 서버에 이미 없는(다른 PC 에서 삭제된) 후원을
+     *  강제 제거. replace 모드에 한정해 신규 추가 후원( add 모드 )은 보호. */
+    if (mode === "replace" && server) {
+      const serverDonorIds = new Set(
+        normalizeDonorsArray(server.donors).map((d) => String(d.id || "")).filter(Boolean),
+      );
+      const incomingDonors = normalizeDonorsArray(incomingState.donors);
+      const keptDonors = incomingDonors.filter((d) => {
+        const id = String(d.id || "").trim();
+        return Boolean(id) && serverDonorIds.has(id);
+      });
+      if (keptDonors.length !== incomingDonors.length) {
+        incomingState = {
+          ...incomingState,
+          donors: keptDonors,
+          updatedAt: Date.now(),
+        };
+        logger.warn(
+          "dropped donors absent from server state (deleted on other PC) from browser persist",
+          {
+            userId,
+            dropped: incomingDonors.length - keptDonors.length,
+            kept: keptDonors.length,
+          },
+        );
+      }
+    }
   }
   const removedDonorIds = mode === "replace" ? sanitizeRemovedDonorIds(body.removedDonorIds) : undefined;
   const persisted = await persistDonationStateToServer(userId, incomingState, {

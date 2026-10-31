@@ -54,13 +54,14 @@ export function offerDinExcelIngest(
   return offerPendingIngest(hubUserId, stateUserId, event);
 }
 
-export function enqueueDinExcelIngest(
+export async function enqueueDinExcelIngest(
   hubUserId: string,
   event: DonationEvent
-): EnqueueDinIngestResult {
+): Promise<EnqueueDinIngestResult> {
   const result = offerDinExcelIngest(hubUserId, event);
   if (!result.duplicateQueued) {
-    void drainDinIngestQueue(resolveScopedOverlayUserId(hubUserId, "finalent") || hubUserId);
+    /** ingest ACK 전에 drain 을 기다려 브라우저 종료 시 후원 손실을 방지 */
+    await drainDinIngestQueue(resolveScopedOverlayUserId(hubUserId, "finalent") || hubUserId);
   }
   return result;
 }

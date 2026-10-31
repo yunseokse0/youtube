@@ -5,6 +5,7 @@ export const revalidate = 0;
 import { resolveWriteUserId, writeUserIdErrorResponse, getUserIdFromRequest } from "@/app/api/_shared/user-id";
 import {
   DONATION_INTAKE_MODE_B,
+  DONATION_INTAKE_MODE_BOTH,
   describeDonationIntakeModeShort,
   describeRuntimeDonationIntakeModeByMode,
   getRuntimeDonationIntakeMode,
@@ -57,15 +58,10 @@ export async function POST(req: Request) {
   try { body = (await req.json().catch(() => null)) as { mode?: unknown } | null; } catch { body = null; }
 
   const modeRaw = String(body?.mode ?? "").trim().toUpperCase();
-  if (modeRaw === "A") {
-    return json(
-      { error: "A모드는 사용하지 않습니다. 후원은 DIN 허브(B)로만 받습니다." },
-      400
-    );
-  }
   let mode: DonationIntakeMode;
   if (modeRaw === "B") mode = DONATION_INTAKE_MODE_B;
-  else return json({ error: "invalid_mode (must be 'B')" }, 400);
+  else if (modeRaw === "BOTH" || modeRaw === "ALL") mode = DONATION_INTAKE_MODE_BOTH;
+  else return json({ error: "invalid_mode (must be 'B' or 'BOTH')" }, 400);
 
   try {
     const saved = await setRuntimeDonationIntakeMode(userId, mode);

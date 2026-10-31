@@ -30,7 +30,58 @@ export async function applyRuntimeDonationIntakeMode(
   const steps: Array<{ step: string; ok: boolean; detail?: string }> = [];
 
   try {
-    const effectiveMode: DonationIntakeMode = targetMode === "A" ? "B" : targetMode;
+    const effectiveMode: DonationIntakeMode = targetMode;
+
+    if (effectiveMode === "BOTH") {
+      /** BOTH 모드: A(Toonation WS) + B(Hub poller) 양 경로 병행 */
+      /** B 모드 장비: Hub poller가 이미 동작 안하면 1회 즉시 drain+refresh+fetch 실행 */
+      if (!runtimeBPollerStartedForUsers.has(userId)) {
+        runtimeBPollerStartedForUsers.add(userId);
+        try {
+          const { drainDonationQueueOnServer } = await import("@/lib/donation/server-apply-donation");
+          const drained = await drainDonationQueueOnServer(userId).catch(() => 0);
+          steps.push({
+            step: "BOTH 모드 · 즉시 큐 드레인 1회 실행",
+            ok: true,
+            detail: `drained=${drained}`,
+          });
+        } catch (e) {
+          steps.push({
+            step: "BOTH 모드 · 즉시 큐 드레인",
+            ok: false,
+            detail: e instanceof Error ? e.message : String(e),
+          });
+        }
+        try {
+          const { refreshToonaHubStatus, fetchToonaDonationsSinceLink } = await import("@/lib/toona-hub-client");
+          await refreshToonaHubStatus(userId).catch(() => {});
+          const fetched = await fetchToonaDonationsSinceLink(userId, { ignoreMinInterval: true }).catch(() => null);
+          const imported =
+            fetched && typeof fetched === "object" && "imported" in fetched
+              ? Number((fetched as { imported?: unknown }).imported) || 0
+              : 0;
+          steps.push({
+            step: "BOTH 모드 · 즉시 허브 pull 1회 실행",
+            ok: true,
+            detail: `imported=${imported}`,
+          });
+        } catch (e) {
+          steps.push({
+            step: "BOTH 모드 · 즉시 허브 pull",
+            ok: false,
+            detail: e instanceof Error ? e.message : String(e),
+          });
+        }
+      } else {
+        steps.push({
+          step: "BOTH 모드 · Hub Poller 이미 기동",
+          ok: true,
+          detail: "A(Toonation WS) + B(Hub) 양 경로 병행",
+        });
+      }
+      return { ok: true, mode: "BOTH", steps };
+    }
+
     if (effectiveMode === "B") {
       /**
        * B 모드 (DIN 후원 시스템 · DIN 허브 연결)

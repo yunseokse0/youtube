@@ -67,7 +67,7 @@ export async function POST(req: Request) {
      * B모드 전용 라우트 — 허브가 applyExcel=false(시나리오 A 알림만)로 보내도 정산표에 넣는다.
      * ACK 후 계정당 워커가 메모리에서 처리하고, 끝난 뒤에만 AppState 저장 1회.
      */
-    const enq = enqueueDinExcelIngest(userId, event);
+    const enq = await enqueueDinExcelIngest(userId, event);
     return json({
       userId,
       applyExcel: true,

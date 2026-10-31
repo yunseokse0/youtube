@@ -19,8 +19,9 @@ export async function loadDonationRosterBackupFromKv(
 
 export async function enrichAppStateWithDonationRosterBackupFromKv(
   userId: string,
-  state: AppState
+  state: AppState,
+  opts?: { serverDonorIds?: Set<string> }
 ): Promise<{ state: AppState; restoredFromBackup: boolean }> {
   const backup = await loadDonationRosterBackupFromKv(userId);
-  return enrichAppStateWithDonationRosterBackupPayload(state, backup);
+  return enrichAppStateWithDonationRosterBackupPayload(state, backup, opts);
 }

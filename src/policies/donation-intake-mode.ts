@@ -9,10 +9,11 @@ export const DONATION_INTAKE_RUNTIME_KV_PREFIX = "din:runtime:intake-mode";
 type InMemoryModeRecord = { mode: DonationIntakeMode; updatedAt: number };
 const inMemoryRuntimeMode = new Map<string, InMemoryModeRecord>();
 
-export type DonationIntakeMode = "A" | "B";
+export type DonationIntakeMode = "A" | "B" | "BOTH";
 
 export const DONATION_INTAKE_MODE_A: DonationIntakeMode = "A";
 export const DONATION_INTAKE_MODE_B: DonationIntakeMode = "B";
+export const DONATION_INTAKE_MODE_BOTH: DonationIntakeMode = "BOTH";
 
 /**
  * ✅ 사용자 정의 모드 정리 (2026-09-06 VERBATIM)
@@ -41,38 +42,62 @@ export const DONATION_INTAKE_MODE_B: DonationIntakeMode = "B";
  *   din_only / din-hub-only / b-mode  →  B 모드로 해석
  *   toonation_only / a-mode / direct  →  A 모드로 해석
  */
-/**
- * 2026-10-09: A모드(투네 직접 WS)는 더 이상 쓰지 않는다.
- * env·KV에 A가 남아 있어도 후원 유입은 B(DIN 허브)만 연다.
- */
-export function getDonationIntakeEnvFallbackMode(): DonationIntakeMode {
+function normalizeRawMode(raw: string | undefined | null): DonationIntakeMode {
+  const m = String(raw || "").trim().toUpperCase();
+  if (m === "A") return DONATION_INTAKE_MODE_A;
+  if (m === "B") return DONATION_INTAKE_MODE_B;
+  if (m === "BOTH" || m === "ALL") return DONATION_INTAKE_MODE_BOTH;
+  if (m === "DIN_ONLY" || m === "DIN-HUB-ONLY" || m === "B-MODE") return DONATION_INTAKE_MODE_B;
+  if (m === "TOONATION_ONLY" || m === "A-MODE" || m === "DIRECT") return DONATION_INTAKE_MODE_A;
   return DONATION_INTAKE_MODE_B;
 }
 
-/** 하위 호환용 (사용처 전부 그대로 동작하지만, userId 넘길 수 있을때는 Runtime 함수 쓰세요) */
+/** env에서 모드 읽기 (KV 다운 시 fallback) */
+export function getDonationIntakeEnvFallbackMode(): DonationIntakeMode {
+  return normalizeRawMode(
+    process.env[DONATION_INTAKE_ENV_KEY] ?? process.env[DONATION_INTAKE_ENV_KEY_ALT]
+  );
+}
+
+/** 하위 호환용 */
 export function getDonationIntakeMode(): DonationIntakeMode {
   return getDonationIntakeEnvFallbackMode();
 }
 
-/** 후원 유입은 B만. 저장값·env가 A여도 B를 돌려준다. */
+/** 런타임 모드: KV → 인메모리 → env 순서로 읽음. userId가 없으면 env만 참조. */
 export async function getRuntimeDonationIntakeMode(
   _userId: string | null | undefined
 ): Promise<DonationIntakeMode> {
-  return DONATION_INTAKE_MODE_B;
+  try {
+    const { upstashGetJson } = await import("@/app/api/_shared/upstash");
+    const key = `${DONATION_INTAKE_RUNTIME_KV_PREFIX}:${String(_userId ?? "global")}`;
+    const kv = await upstashGetJson<{ mode: DonationIntakeMode; updatedAt: number }>(key);
+    if (kv?.mode) {
+      const normalized = normalizeRawMode(kv.mode);
+      if (normalized) return normalized;
+    }
+  } catch {
+    // KV 다운 → 아래 fallback
+  }
+
+  if (_userId) {
+    const memo = inMemoryRuntimeMode.get(String(_userId));
+    if (memo) return memo.mode;
+  }
+
+  return getDonationIntakeEnvFallbackMode();
 }
 
-/** user별 Runtime 모드 KV에 저장. 저장 성공 여부 boolean 리턴.
- *  Safety Net: 영구 저장소(KV) 실패해도 인메모리에는 반드시 저장 → 최소한 현 프로세스에서 적용은 보장
- */
+/** user별 Runtime 모드 KV에 저장. 저장 성공 여부 boolean 리턴. */
 export async function setRuntimeDonationIntakeMode(
   userId: string | null | undefined,
-  _mode: DonationIntakeMode
+  mode: DonationIntakeMode
 ): Promise<boolean> {
   if (!userId || !String(userId).trim()) return false;
-  const normalizedMode = DONATION_INTAKE_MODE_B;
+  const normalizedMode = normalizeRawMode(mode as string) ?? DONATION_INTAKE_MODE_B;
   const memoKey = `${String(userId).trim()}`;
   const nowTs = Date.now();
-  /** 인메모리에 먼저 저장 (영구 저장 실패해도 현 프로세스에서는 적용 보장) */
+
   inMemoryRuntimeMode.set(memoKey, { mode: normalizedMode, updatedAt: nowTs });
 
   const key = `${DONATION_INTAKE_RUNTIME_KV_PREFIX}:${memoKey}`;
@@ -83,49 +108,55 @@ export async function setRuntimeDonationIntakeMode(
   try {
     const { upstashSetJsonWithSetPath } = await import("@/app/api/_shared/upstash");
     const saved = await upstashSetJsonWithSetPath(key, payload);
-    return saved;
+    return saved !== false;
   } catch {
     return false;
   }
 }
 
 export function isDonationIntakeModeA(): boolean {
-  return getDonationIntakeMode() === DONATION_INTAKE_MODE_A;
+  const m = getDonationIntakeMode();
+  return m === DONATION_INTAKE_MODE_A || m === DONATION_INTAKE_MODE_BOTH;
 }
 
 export function isDonationIntakeModeB(): boolean {
-  return getDonationIntakeMode() === DONATION_INTAKE_MODE_B;
+  const m = getDonationIntakeMode();
+  return m === DONATION_INTAKE_MODE_B || m === DONATION_INTAKE_MODE_BOTH;
 }
 
 export async function isRuntimeDonationIntakeModeA(
   userId: string | null | undefined
 ): Promise<boolean> {
-  return (await getRuntimeDonationIntakeMode(userId)) === DONATION_INTAKE_MODE_A;
+  const m = await getRuntimeDonationIntakeMode(userId);
+  return m === DONATION_INTAKE_MODE_A || m === DONATION_INTAKE_MODE_BOTH;
 }
 
 export async function isRuntimeDonationIntakeModeB(
   userId: string | null | undefined
 ): Promise<boolean> {
-  return (await getRuntimeDonationIntakeMode(userId)) === DONATION_INTAKE_MODE_B;
+  const m = await getRuntimeDonationIntakeMode(userId);
+  return m === DONATION_INTAKE_MODE_B || m === DONATION_INTAKE_MODE_BOTH;
 }
 
 export function describeDonationIntakeMode(): string {
   const mode = getDonationIntakeMode();
-  if (mode === "A") {
-    return `A모드 (투네이션 자동 · Toonation WS Direct)`;
-  }
-  return `B모드 (DIN 허브 모드 · Toona Project Hub)`;
+  if (mode === "A") return "A모드 (투네이션 자동 · Toonation WS Direct)";
+  if (mode === "BOTH") return "A+B 모드 (양 경로 병행 · 중복 차단)";
+  return "B모드 (DIN 허브 모드 · Toona Project Hub)";
 }
 
 export function describeDonationIntakeModeShort(mode: DonationIntakeMode): string {
-  return mode === "A" ? "A · 투네이션 자동" : "B · DIN 허브 모드";
+  if (mode === "A") return "A · 투네이션 자동";
+  if (mode === "BOTH") return "A+B 병행";
+  return "B · DIN 허브 모드";
 }
 
 export function describeRuntimeDonationIntakeModeByMode(
   mode: DonationIntakeMode
 ): string {
-  if (mode === "A") {
-    return `A모드 (투네이션 직접 WebSocket 자동 연결 · 투네이션 링크만 넣으면 OK)`;
-  }
-  return `B모드 (DIN 허브 모드 · DIN 허브 로그인 후 30초/60초 자동 폴링)`;
+  if (mode === "A")
+    return "A모드 (투네이션 직접 WebSocket 자동 연결 · 투네이션 링크만 넣으면 OK)";
+  if (mode === "BOTH")
+    return "A+B 모드 (투네 WS + DIN 허브 양 경로 병행 · dedupHash 중복 차단)";
+  return "B모드 (DIN 허브 모드 · DIN 허브 로그인 후 30초/60초 자동 폴링)";
 }

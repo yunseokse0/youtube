@@ -137,7 +137,7 @@ export function shouldRestoreDonationRosterFromBackup(
 export function applyDonationRosterBackupToState(
   state: AppState,
   backup: DonationRosterBackupPayload,
-  opts?: { ignoreSettlementResetFilter?: boolean }
+  opts?: { ignoreSettlementResetFilter?: boolean; serverDonorIds?: Set<string> }
 ): AppState {
   const curDonors = normalizeDonorsArray(state.donors);
   const curTotal = totalCombined(state);
@@ -159,13 +159,23 @@ export function applyDonationRosterBackupToState(
           return at >= resetAt - 3000;
         })
       : rawDonors;
+
+  /** [부활 방지] 백업에 있지만 서버에 이미 없는(다른 PC 에서 삭제된) donor 는 복구 불가 */
+  const serverIds = opts?.serverDonorIds;
+  const finalDonors = serverIds
+    ? donors.filter((d) => {
+        const id = String(d.id || "").trim();
+        return Boolean(id) && serverIds.has(id);
+      })
+    : donors;
+
   const merged: AppState = {
     ...state,
     members:
       donorsLostWithMemberTotals || backup.members.length === 0
         ? state.members
         : backup.members,
-    donors,
+    donors: finalDonors,
     memberPositions: backup.memberPositions ?? state.memberPositions,
     settlementResetAt: placeholderWipe
       ? backup.settlementResetAt
@@ -177,12 +187,15 @@ export function applyDonationRosterBackupToState(
 
 export function enrichAppStateWithDonationRosterBackupPayload(
   state: AppState,
-  backup: DonationRosterBackupPayload | null | undefined
+  backup: DonationRosterBackupPayload | null | undefined,
+  opts?: { serverDonorIds?: Set<string> }
 ): { state: AppState; restoredFromBackup: boolean } {
   const normalized = normalizeDonationRosterBackupPayload(backup ?? null);
   if (normalized && shouldRestoreDonationRosterFromBackup(state, normalized)) {
     return {
-      state: applyDonationRosterBackupToState(state, normalized),
+      state: applyDonationRosterBackupToState(state, normalized, {
+        serverDonorIds: opts?.serverDonorIds,
+      }),
       restoredFromBackup: true,
     };
   }
@@ -195,7 +208,8 @@ export function enrichAppStateWithDonationRosterBackupPayload(
  */
 export function unionAppStateDonorsFromBackupIfRicher(
   state: AppState,
-  backup: DonationRosterBackupPayload | null | undefined
+  backup: DonationRosterBackupPayload | null | undefined,
+  opts?: { serverDonorIds?: Set<string> }
 ): AppState {
   const normalized = normalizeDonationRosterBackupPayload(backup ?? null);
   if (!normalized) return state;
@@ -228,7 +242,8 @@ export function unionAppStateDonorsFromBackupIfRicher(
   }
   const withBackup = applyDonationRosterBackupToState(
     { ...state, members: state.members },
-    normalized
+    normalized,
+    { serverDonorIds: opts?.serverDonorIds }
   );
   return mergeDonationApplyBase(state, withBackup) ?? state;
 }
