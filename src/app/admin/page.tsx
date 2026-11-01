@@ -5272,36 +5272,52 @@ function AdminPageInner() {
     [user?.id]
   );
 
-  /** 오버레이 후원 금액 단위(원/캐시) 저장 — overlaySettings.amountUnit에 영속 저장 */
+  /** 오버레이 후원 금액 단위(원/캐시) 저장 — React state + overlaySettings.amountUnit 영속 */
   const saveOverlayAmountUnit = useCallback(
-    async (unit: string) => {
+    (unit: string) => {
       if (!user?.id) return;
       const now = Date.now();
-      lastLocalPersistAtRef.current = now;
-      stateUpdatedAtRef.current = Math.max(
-        stateUpdatedAtRef.current,
-        state.updatedAt || now,
-        now,
-      );
-      pendingUnsyncedRef.current = true;
-      saveOverlayPresetsPatchAsync(presets, user.id, {
-        foundation: state,
-        overlaySettingsPatch: { amountUnit: unit },
-      }).then((r) => {
-        if (r.ok) {
-          if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
-            stateUpdatedAtRef.current = r.serverUpdatedAt;
-            lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
+      setOverlayAmountUnit(unit);
+      setState((prev) => {
+        const prevOs =
+          prev.overlaySettings && typeof prev.overlaySettings === "object"
+            ? (prev.overlaySettings as Record<string, unknown>)
+            : {};
+        const next: AppState = {
+          ...prev,
+          updatedAt: Math.max(Number(prev.updatedAt) || 0, now),
+          overlaySettings: {
+            ...prevOs,
+            amountUnit: unit,
+          } as AppState["overlaySettings"],
+        };
+        lastLocalPersistAtRef.current = now;
+        stateUpdatedAtRef.current = Math.max(
+          stateUpdatedAtRef.current,
+          next.updatedAt || now,
+          now
+        );
+        pendingUnsyncedRef.current = true;
+        saveOverlayPresetsPatchAsync(presets, user.id, {
+          foundation: next,
+          overlaySettingsPatch: { amountUnit: unit },
+        }).then((r) => {
+          if (r.ok) {
+            if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
+              stateUpdatedAtRef.current = r.serverUpdatedAt;
+              lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
+            }
+            pendingUnsyncedRef.current = false;
+            setSyncStatus(r.storageFallback ? "error" : "synced");
+          } else {
+            const offline = typeof navigator !== "undefined" && !navigator.onLine;
+            setSyncStatus(offline ? "local" : "error");
           }
-          pendingUnsyncedRef.current = false;
-          setSyncStatus(r.storageFallback ? "error" : "synced");
-        } else {
-          const offline = typeof navigator !== "undefined" && !navigator.onLine;
-          setSyncStatus(offline ? "local" : "error");
-        }
+        });
+        return next;
       });
     },
-    [user?.id, presets, state],
+    [user?.id, presets],
   );
 
   /** 후원순위·리스트 등 시각 옵션만 저장 — 후원 금액 필드 미포함 */
@@ -14855,7 +14871,7 @@ function AdminPageInner() {
 
                     <code className="text-neutral-300 break-all">
 
-                      /overlay/donation-alert?u={overlayUserId}&host=obs&overlayAllowSse=1&amountUnit={overlayAmountUnit}
+                      /overlay/donation-alert?u={overlayUserId}&host=obs&overlayAllowSse=1
 
                     </code>
 
@@ -14864,9 +14880,7 @@ function AdminPageInner() {
                       <select
                         value={overlayAmountUnit}
                         onChange={(e) => {
-                          const v = e.target.value;
-                          setOverlayAmountUnit(v);
-                          void saveOverlayAmountUnit(v);
+                          saveOverlayAmountUnit(e.target.value);
                         }}
                         className="text-xs rounded bg-neutral-800 border border-neutral-700 text-neutral-100 px-1 py-0.5 focus:ring-1 focus:ring-accent outline-none"
                       >
@@ -14882,6 +14896,7 @@ function AdminPageInner() {
 
                       onClick={() => {
 
+                        /** amountUnit은 서버 설정이 실반영 — URL은 첫 페인트용 bootstrap만 */
                         const u = buildDonationAlertUrl(overlayUserId, {
                           extraParams: { amountUnit: overlayAmountUnit },
                         });
@@ -14918,7 +14933,7 @@ function AdminPageInner() {
 
                     <span className="text-[10px] text-neutral-600 w-full">
 
-                      계좌·투네이션 후원 시 후원자→멤버 / 금액 / 기여도(원=점) 카드를 OBS에 표시합니다. 별도 브라우저 소스로 추가하세요.
+                      계좌·투네이션 후원 시 후원자→멤버 / 금액 / 기여도(원=점) 카드를 OBS에 표시합니다. 금액 단위(원/캐시)는 위 설정을 저장하면 OBS·플레이어 알림에 실시간 반영됩니다(URL 재복사 불필요).
 
                     </span>
 

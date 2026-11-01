@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PlayerDonationQueueSideStack from "@/components/donation/PlayerDonationQueueSideStack";
 import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
+import { useOverlayAmountUnit } from "@/hooks/useOverlayAmountUnit";
 import type { PlayerDonationAlertPayload } from "@/lib/donation/player-donation-alert";
 import {
   fetchPlayerDonationQueue,
@@ -24,6 +25,10 @@ export default function PlayerAlertWebPopupPage() {
   const { params: sp, ready: spReady } = useClientOnlySearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
   const previewMode = sp.get("preview") === "1" || sp.get("preview") === "true";
+  const { amountUnit, refreshAmountUnit } = useOverlayAmountUnit(
+    userId,
+    sp.get("amountUnit")
+  );
   const [queueItems, setQueueItems] = useState<PlayerDonationQueueItem[]>([]);
   const [liveIncoming, setLiveIncoming] = useState<Map<string, LiveIncomingEntry>>(() => new Map());
   const [liveTick, setLiveTick] = useState(0);
@@ -106,6 +111,9 @@ export default function PlayerAlertWebPopupPage() {
     (data: unknown) => {
       if (previewMode) return;
       const o = data as { type?: string; userId?: string };
+      if (o?.type === "state_updated") {
+        refreshAmountUnit();
+      }
       if (o?.type === "donation_queue_updated") {
         void fetchQueueRef.current?.();
         return;
@@ -121,7 +129,7 @@ export default function PlayerAlertWebPopupPage() {
       }
       void fetchQueueRef.current?.();
     },
-    [flashHighlight, previewMode, rememberLiveIncoming, userId]
+    [flashHighlight, previewMode, refreshAmountUnit, rememberLiveIncoming, userId]
   );
 
   const { connected } = useSSEConnection(onSseMessage);
@@ -165,6 +173,7 @@ export default function PlayerAlertWebPopupPage() {
         items={visibleStack}
         userId={userId}
         highlightedIds={highlightedIds}
+        amountUnit={amountUnit}
       />
     </main>
   );

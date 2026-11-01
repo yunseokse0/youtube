@@ -7,9 +7,15 @@ type Props = {
   items: PlayerDonationQueueItem[];
   userId: string;
   highlightedIds?: ReadonlySet<string>;
+  amountUnit?: string;
 };
 
-export default function PlayerDonationQueueSideStack({ items, userId, highlightedIds }: Props) {
+export default function PlayerDonationQueueSideStack({
+  items,
+  userId,
+  highlightedIds,
+  amountUnit,
+}: Props) {
   if (items.length === 0) return null;
 
   return (
@@ -25,6 +31,7 @@ export default function PlayerDonationQueueSideStack({ items, userId, highlighte
             userId={userId}
             density="stack"
             highlighted={highlightedIds?.has(item.id)}
+            amountUnit={amountUnit}
           />
         </div>
       ))}

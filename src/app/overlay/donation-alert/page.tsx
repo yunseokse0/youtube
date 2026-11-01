@@ -10,6 +10,7 @@ import {
   donationAlertFromAppliedHint,
 } from "@donation-alert-overlay/core";
 import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
+import { useOverlayAmountUnit } from "@/hooks/useOverlayAmountUnit";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { createYoutubeBroadcastDonationAlertSource } from "@/lib/donation-alert/youtube-broadcast-source";
 import { useSSEConnection } from "@/lib/sse-client";
@@ -18,7 +19,10 @@ export default function DonationAlertOverlayPage() {
   const { params: sp, ready: spReady } = useClientOnlySearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
   const testMode = (sp.get("test") || "").toLowerCase() === "true";
-  const amountUnit = (sp.get("amountUnit") || "원").trim() || "원";
+  const { amountUnit, refreshAmountUnit } = useOverlayAmountUnit(
+    userId,
+    sp.get("amountUnit")
+  );
 
   const source = useMemo(() => {
     if (testMode || !userId) return null;
@@ -43,7 +47,9 @@ export default function DonationAlertOverlayPage() {
       };
       updatedAt?: number;
     };
-    if (o?.type !== "state_updated" || !o.donationApplied) return;
+    if (o?.type !== "state_updated") return;
+    refreshAmountUnit();
+    if (!o.donationApplied) return;
     enqueueAlert(
       donationAlertFromAppliedHint(
         o.donationApplied,

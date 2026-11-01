@@ -19,6 +19,8 @@ type Props = {
   onClose?: () => void;
   density?: "default" | "stack";
   highlighted?: boolean;
+  /** overlaySettings.amountUnit — 기본 원 */
+  amountUnit?: string;
 };
 
 export default function PlayerDonationAlertCard({
@@ -28,7 +30,7 @@ export default function PlayerDonationAlertCard({
   density = "default",
   highlighted = false,
   amountUnit = "원",
-}: Props & { amountUnit?: string }) {
+}: Props) {
   const stack = density === "stack";
   const sigImageSrc = useMemo(() => {
     if (!alert.matchedSigName) return "";
