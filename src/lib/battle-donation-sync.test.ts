@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   applyMealBattleDonationsFromTime,
+  enableMealBattleDonationSync,
   formatMealBattleFromAtInput,
   parseMealBattleFromAtInput,
   recalculateMealParticipantScoresFromDonors,
   resetMealBattleDonationUi,
 } from "./battle-donation-sync";
-import type { Donor, MealBattleState } from "@/types";
+import type { AppState, Donor, MealBattleState } from "@/types";
+import { defaultState } from "@/lib/state";
 
 describe("recalculateMealParticipantScoresFromDonors", () => {
   it("sums raw donation amounts when team battle uses raw score", () => {
@@ -210,5 +212,34 @@ describe("recalculateMealParticipantScoresFromDonors", () => {
   it("round-trips the datetime-local input", () => {
     const ms = Date.parse("2026-10-07T09:26:00.000Z");
     expect(parseMealBattleFromAtInput(formatMealBattleFromAtInput(ms))).toBe(ms);
+  });
+});
+
+describe("enableMealBattleDonationSync", () => {
+  it("preserves existing donationLinkStartedAt on re-enable", () => {
+    const base = defaultState() as AppState;
+    const state: AppState = {
+      ...base,
+      mealBattle: {
+        ...base.mealBattle,
+        participants: [
+          {
+            memberId: "m1",
+            name: "A",
+            score: 10,
+            goal: 100,
+            color: "#f00",
+            donationLinkActive: true,
+            donationLinkStartedAt: 1_000,
+          },
+        ],
+      },
+      donors: [],
+    };
+    const out = enableMealBattleDonationSync(state, {
+      recalculateFromDonors: false,
+      startedAt: 9_999,
+    });
+    expect(out.mealBattle.participants[0]?.donationLinkStartedAt).toBe(1_000);
   });
 });

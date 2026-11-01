@@ -6,8 +6,7 @@ import { isValidUserId } from "@/app/api/_shared/user-id";
 import { verifyToonaIngestAuth } from "@/app/api/donations/_shared/toona-ingest-auth";
 import { sanitizeDonationEventFromIngestBody } from "@/lib/donation/din-ingest";
 import { enqueueDinExcelIngest } from "@/lib/din-ingest-batch-queue";
-import { loadBoardRoulette, saveBoardRoulette } from "@/lib/roulette-board-storage";
-import { calcAutoAddSlots, buildDonationSlotLabel } from "@/lib/roulette-board";
+import { maybeAutoAddRouletteSlotsFromDonation } from "@/lib/roulette-board-donation-auto-slot";
 import {
   describeDonationIntakeMode,
   isDonationIntakeModeB,
@@ -71,46 +70,14 @@ export async function POST(req: Request) {
      */
     const enq = await enqueueDinExcelIngest(userId, event);
 
-    /** 후원 시 룰렛 자동 칸 추가 (임계치 도달 시) */
-    try {
-      const board = await loadBoardRoulette(userId);
-      const cfg = board.config;
-      const amount = Number(event.amount || 0);
-      const add = calcAutoAddSlots(amount, {
-        enabled: cfg.enabled,
-        minAmount: cfg.minAmount ?? 0,
-        cutoffTimestamp: cfg.cutoffTimestamp ?? null,
-        thresholdAmount: cfg.thresholdAmount ?? null,
-        addSlotsPerThreshold: cfg.addSlotsPerThreshold ?? 1,
-      } as Pick<
-        typeof cfg,
-        | "enabled"
-        | "minAmount"
-        | "cutoffTimestamp"
-        | "thresholdAmount"
-        | "addSlotsPerThreshold"
-      >);
-      if (!add.skipped && add.addCount > 0) {
-        const nickname = String(event.donorName || "익명");
-        const newSlot = {
-          id: `slot_donation_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
-          rouletteId: `board_${userId}`,
-          label: buildDonationSlotLabel(nickname, amount),
-          count: add.addCount,
-          color: "#ef4444",
-          source: "donation" as const,
-          donationId: event.id,
-          createdAt: Date.now(),
-        };
-        await saveBoardRoulette(userId, {
-          ...board,
-          dynamicSlots: [...(board.dynamicSlots || []), newSlot],
-          updatedAt: Date.now(),
-        });
-      }
-    } catch (rouErr) {
-      console.error("[donations/ingest] roulette auto-slot failed:", rouErr);
-      /* 룰렛 추가 실패는 후원 수집에 영향을 주지 않음 */
+    /**
+     * 룰렛 자동 칸은 수집 ACK와 분리 — fire-and-forget.
+     * 실패·지연이 허브 ACK·후원 저장에 영향을 주지 않는다.
+     */
+    if (!enq.duplicateQueued) {
+      void maybeAutoAddRouletteSlotsFromDonation(userId, event).catch((rouErr) => {
+        console.error("[donations/ingest] roulette auto-slot failed:", rouErr);
+      });
     }
 
     return json({

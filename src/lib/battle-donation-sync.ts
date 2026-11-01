@@ -65,7 +65,8 @@ export function enableMealBattleDonationSync(
   const linked = (state.mealBattle?.participants || []).map((p) => ({
     ...p,
     donationLinkActive: true,
-    donationLinkStartedAt: startedAt,
+    /** 이미 연동 시작 시각이 있으면 유지 — 재활성화 시 점수 구간이 리셋되지 않게 */
+    donationLinkStartedAt: p.donationLinkStartedAt ?? startedAt,
   }));
   let mealBattle: MealBattleState = {
     ...state.mealBattle,

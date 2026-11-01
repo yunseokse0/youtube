@@ -48,4 +48,19 @@ describe("applyMealBattleDonationToParticipants", () => {
     const out = applyMealBattleDonationToParticipants(base, "m1", 10_000, 1, 500);
     expect(out.find((p) => p.memberId === "m1")?.score).toBe(2);
   });
+
+  it("applies when donationLinkStartedAt is missing but link is active", () => {
+    const noStamp = [
+      {
+        memberId: "m1",
+        name: "A",
+        score: 2,
+        goal: 100,
+        color: "#fff",
+        donationLinkActive: true,
+      },
+    ];
+    const out = applyMealBattleDonationToParticipants(noStamp, "m1", 10_000, 1, 500);
+    expect(out.find((p) => p.memberId === "m1")?.score).toBe(3);
+  });
 });

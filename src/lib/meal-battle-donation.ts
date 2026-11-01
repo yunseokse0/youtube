@@ -59,8 +59,8 @@ export function applyMealBattleDonationToParticipants(
   return participants.map((p) =>
     p.memberId === memberId &&
     p.donationLinkActive &&
-    p.donationLinkStartedAt != null &&
-    eventAt >= p.donationLinkStartedAt
+    /** startedAt 없으면 연동 ON만으로 반영(레거시·초기 참가자) */
+    (!p.donationLinkStartedAt || eventAt >= p.donationLinkStartedAt)
       ? { ...p, score: Math.max(0, (Number(p.score) || 0) + delta) }
       : p
   );
