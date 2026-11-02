@@ -18,6 +18,7 @@ import {
   obsTextEffectWaveCharDelaySec,
   type ObsTextEffectId,
 } from "@/lib/obs-text-effects";
+import { resolveKoreanBankLogoUrl } from "@/lib/korean-bank-logos";
 
 function ObsTextOverlayViewImpl({
   config,
@@ -285,8 +286,10 @@ function ObsTextFxWrap({
 }
 
 function YoutubeChatEmojiImg({ seg }: { seg: ObsTextSegment }) {
-  const url = (seg.imageUrl || "").trim();
-  if (!url) return null;
+  const raw = (seg.imageUrl || "").trim();
+  if (!raw) return null;
+  // 레거시 /assets/bank-logos/*.svg(깨진 파일·서버 500) → data URI
+  const url = resolveKoreanBankLogoUrl(raw);
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
