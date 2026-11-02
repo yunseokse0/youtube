@@ -169,6 +169,24 @@ describe("computeFullSettlementSummary (정산서.xlsx 전체 정산서)", () =>
     expect(summary.productionTransfer).toBe(280_500);
   });
 
+  it("studio and production share are 0 when member ratios are 100%", () => {
+    const summary = computeFullSettlementSummary(
+      record({
+        accountRatio: 1,
+        toonRatio: 1,
+        members: [member({ accountRatio: 1, toonRatio: 1 })],
+      })
+    );
+    const row = summary.rows[0]!;
+    expect(row.settlementTotal).toBe(1_700_000);
+    expect(row.streamerShare70).toBe(1_700_000);
+    expect(row.studioShare30).toBe(0);
+    expect(summary.sumStudioShare).toBe(0);
+    expect(summary.productionShare).toBe(0);
+    expect(summary.productionVat).toBe(0);
+    expect(summary.productionTransfer).toBe(0);
+  });
+
   it("includes treasury 50% when includeTreasuryInFullStatement is set", () => {
     const summary = computeFullSettlementSummary(
       record({ includeTreasuryInFullStatement: true })
