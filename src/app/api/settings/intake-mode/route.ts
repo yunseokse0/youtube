@@ -5,7 +5,6 @@ export const revalidate = 0;
 import { resolveWriteUserId, writeUserIdErrorResponse, getUserIdFromRequest } from "@/app/api/_shared/user-id";
 import {
   DONATION_INTAKE_MODE_B,
-  DONATION_INTAKE_MODE_BOTH,
   describeDonationIntakeModeShort,
   describeRuntimeDonationIntakeModeByMode,
   getRuntimeDonationIntakeMode,
@@ -27,7 +26,7 @@ function json(data: unknown, status = 200): Response {
  *     → 현재 KV 저장된 Runtime 모드 + env fallback 리턴
  *
  * POST /api/settings/intake-mode
- *     Body: { mode: "A" | "B" }
+ *     Body: { mode: "B" }  (운영은 B만 — A/BOTH 요청도 B로 정규화)
  *     → KV 저장 + 해당 유저 리스너/폴러 런타임 즉시 스위치 (재시작 필요 X)
  */
 
@@ -58,10 +57,11 @@ export async function POST(req: Request) {
   try { body = (await req.json().catch(() => null)) as { mode?: unknown } | null; } catch { body = null; }
 
   const modeRaw = String(body?.mode ?? "").trim().toUpperCase();
-  let mode: DonationIntakeMode;
-  if (modeRaw === "B") mode = DONATION_INTAKE_MODE_B;
-  else if (modeRaw === "BOTH" || modeRaw === "ALL") mode = DONATION_INTAKE_MODE_BOTH;
-  else return json({ error: "invalid_mode (must be 'B' or 'BOTH')" }, 400);
+  if (modeRaw && !["A", "B", "BOTH", "ALL"].includes(modeRaw)) {
+    return json({ error: "invalid_mode (must be 'B')" }, 400);
+  }
+  /** 운영 B전용 — A/BOTH/빈 값도 B로 수렴 (구 클라이언트 호환) */
+  const mode: DonationIntakeMode = DONATION_INTAKE_MODE_B;
 
   try {
     const saved = await setRuntimeDonationIntakeMode(userId, mode);

@@ -9,6 +9,7 @@ export const DONATION_INTAKE_RUNTIME_KV_PREFIX = "din:runtime:intake-mode";
 type InMemoryModeRecord = { mode: DonationIntakeMode; updatedAt: number };
 const inMemoryRuntimeMode = new Map<string, InMemoryModeRecord>();
 
+/** BOTH/A 타입은 하위 호환용 — 런타임은 항상 B만 사용 */
 export type DonationIntakeMode = "A" | "B" | "BOTH";
 
 export const DONATION_INTAKE_MODE_A: DonationIntakeMode = "A";
@@ -29,75 +30,44 @@ export const DONATION_INTAKE_MODE_BOTH: DonationIntakeMode = "BOTH";
  *             + instrumentation b-mode poller 가 hub 자동 폴&드레인
  *    - Toonation 직접 WS 리스너는 시작하지 않음
  *
- * .env 설정법 (최초 기본값 / 사용자가 런타임 설정 안했을때 fallback):
- *   TOONA_INTAKE_MODE=A    (A모드 · 투네 직접)
- *   TOONA_INTAKE_MODE=B    (B모드 · DIN 허브 투나 프로젝트)
- *
- * ★ 2026-09-16 런타임 오버라이드 (관리자 헤더 버튼으로 A/B 토글):
- *   관리자 헤더 모드 배지 클릭 → 팝업에서 A 또는 B 클릭 → KV에 user별 저장
- *   → getRuntimeDonationIntakeMode(userId) 가 항상 KV → env 순서로 읽음
- *   → 모든 경로(instrumentation·ingest route·poller)는 이 함수를 최우선 참조
- *
- * 과거 호환 별칭 (하위 호환 유지):
- *   din_only / din-hub-only / b-mode  →  B 모드로 해석
- *   toonation_only / a-mode / direct  →  A 모드로 해석
+ * ★ 2026-11-02: 운영은 B모드만 사용.
+ *   env·KV·요청에 A/BOTH가 남아 있어도 후원 유입은 B(DIN 허브)만 연다.
  */
-function normalizeRawMode(raw: string | undefined | null): DonationIntakeMode {
-  const m = String(raw || "").trim().toUpperCase();
-  if (m === "A") return DONATION_INTAKE_MODE_A;
-  if (m === "B") return DONATION_INTAKE_MODE_B;
-  if (m === "BOTH" || m === "ALL") return DONATION_INTAKE_MODE_BOTH;
-  if (m === "DIN_ONLY" || m === "DIN-HUB-ONLY" || m === "B-MODE") return DONATION_INTAKE_MODE_B;
-  if (m === "TOONATION_ONLY" || m === "A-MODE" || m === "DIRECT") return DONATION_INTAKE_MODE_A;
+
+/**
+ * 2026-11-02: A/BOTH(투네 직접·병행)는 쓰지 않는다.
+ * env·KV에 A/BOTH가 남아 있어도 후원 유입은 B(DIN 허브)만 연다.
+ */
+export function getDonationIntakeEnvFallbackMode(): DonationIntakeMode {
   return DONATION_INTAKE_MODE_B;
 }
 
-/** env에서 모드 읽기 (KV 다운 시 fallback) */
-export function getDonationIntakeEnvFallbackMode(): DonationIntakeMode {
-  return normalizeRawMode(
-    process.env[DONATION_INTAKE_ENV_KEY] ?? process.env[DONATION_INTAKE_ENV_KEY_ALT]
-  );
-}
-
-/** 하위 호환용 */
+/** 하위 호환용 (사용처 전부 그대로 동작하지만, userId 넘길 수 있을때는 Runtime 함수 쓰세요) */
 export function getDonationIntakeMode(): DonationIntakeMode {
   return getDonationIntakeEnvFallbackMode();
 }
 
-/** 런타임 모드: KV → 인메모리 → env 순서로 읽음. userId가 없으면 env만 참조. */
+/** 후원 유입은 B만. 저장값·env가 A/BOTH여도 B를 돌려준다. */
 export async function getRuntimeDonationIntakeMode(
   _userId: string | null | undefined
 ): Promise<DonationIntakeMode> {
-  try {
-    const { upstashGetJson } = await import("@/app/api/_shared/upstash");
-    const key = `${DONATION_INTAKE_RUNTIME_KV_PREFIX}:${String(_userId ?? "global")}`;
-    const kv = await upstashGetJson<{ mode: DonationIntakeMode; updatedAt: number }>(key);
-    if (kv?.mode) {
-      const normalized = normalizeRawMode(kv.mode);
-      if (normalized) return normalized;
-    }
-  } catch {
-    // KV 다운 → 아래 fallback
-  }
-
-  if (_userId) {
-    const memo = inMemoryRuntimeMode.get(String(_userId));
-    if (memo) return memo.mode;
-  }
-
-  return getDonationIntakeEnvFallbackMode();
+  return DONATION_INTAKE_MODE_B;
 }
 
-/** user별 Runtime 모드 KV에 저장. 저장 성공 여부 boolean 리턴. */
+/**
+ * user별 Runtime 모드 KV에 저장. 저장 성공 여부 boolean 리턴.
+ * Safety Net: 영구 저장소(KV) 실패해도 인메모리에는 반드시 저장 → 최소한 현 프로세스에서 적용은 보장
+ * ★ 항상 B로 정규화해 저장한다.
+ */
 export async function setRuntimeDonationIntakeMode(
   userId: string | null | undefined,
-  mode: DonationIntakeMode
+  _mode: DonationIntakeMode
 ): Promise<boolean> {
   if (!userId || !String(userId).trim()) return false;
-  const normalizedMode = normalizeRawMode(mode as string) ?? DONATION_INTAKE_MODE_B;
+  const normalizedMode = DONATION_INTAKE_MODE_B;
   const memoKey = `${String(userId).trim()}`;
   const nowTs = Date.now();
-
+  /** 인메모리에 먼저 저장 (영구 저장 실패해도 현 프로세스에서는 적용 보장) */
   inMemoryRuntimeMode.set(memoKey, { mode: normalizedMode, updatedAt: nowTs });
 
   const key = `${DONATION_INTAKE_RUNTIME_KV_PREFIX}:${memoKey}`;
@@ -115,34 +85,27 @@ export async function setRuntimeDonationIntakeMode(
 }
 
 export function isDonationIntakeModeA(): boolean {
-  const m = getDonationIntakeMode();
-  return m === DONATION_INTAKE_MODE_A || m === DONATION_INTAKE_MODE_BOTH;
+  return false;
 }
 
 export function isDonationIntakeModeB(): boolean {
-  const m = getDonationIntakeMode();
-  return m === DONATION_INTAKE_MODE_B || m === DONATION_INTAKE_MODE_BOTH;
+  return true;
 }
 
 export async function isRuntimeDonationIntakeModeA(
-  userId: string | null | undefined
+  _userId: string | null | undefined
 ): Promise<boolean> {
-  const m = await getRuntimeDonationIntakeMode(userId);
-  return m === DONATION_INTAKE_MODE_A || m === DONATION_INTAKE_MODE_BOTH;
+  return false;
 }
 
 export async function isRuntimeDonationIntakeModeB(
-  userId: string | null | undefined
+  _userId: string | null | undefined
 ): Promise<boolean> {
-  const m = await getRuntimeDonationIntakeMode(userId);
-  return m === DONATION_INTAKE_MODE_B || m === DONATION_INTAKE_MODE_BOTH;
+  return true;
 }
 
 export function describeDonationIntakeMode(): string {
-  const mode = getDonationIntakeMode();
-  if (mode === "A") return "A모드 (투네이션 자동 · Toonation WS Direct)";
-  if (mode === "BOTH") return "A+B 모드 (양 경로 병행 · 중복 차단)";
-  return "B모드 (DIN 허브 모드 · Toona Project Hub)";
+  return `B모드 (DIN 허브 모드 · Toona Project Hub)`;
 }
 
 export function describeDonationIntakeModeShort(mode: DonationIntakeMode): string {
@@ -154,9 +117,11 @@ export function describeDonationIntakeModeShort(mode: DonationIntakeMode): strin
 export function describeRuntimeDonationIntakeModeByMode(
   mode: DonationIntakeMode
 ): string {
-  if (mode === "A")
-    return "A모드 (투네이션 직접 WebSocket 자동 연결 · 투네이션 링크만 넣으면 OK)";
-  if (mode === "BOTH")
+  if (mode === "A") {
+    return `A모드 (투네이션 직접 WebSocket 자동 연결 · 투네이션 링크만 넣으면 OK)`;
+  }
+  if (mode === "BOTH") {
     return "A+B 모드 (투네 WS + DIN 허브 양 경로 병행 · dedupHash 중복 차단)";
-  return "B모드 (DIN 허브 모드 · DIN 허브 로그인 후 30초/60초 자동 폴링)";
+  }
+  return `B모드 (DIN 허브 모드 · DIN 허브 로그인 후 30초/60초 자동 폴링)`;
 }

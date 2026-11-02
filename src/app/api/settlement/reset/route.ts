@@ -87,12 +87,12 @@ export async function POST(req: Request) {
   await clearDonationRosterBackup(stateUserId, resetAt);
 
   // ==================== FixB_settlement_reset_clear_bmode_logs (L77-1) ====================
-  // 🔥 정산 리셋 직후 B모드 로그·lastIngest 초기화 실행 —
-  //    만약 이 부분을 빼먹으면 lastIngestAt=리셋이전 시각 으로 박혀있어서,
-  //    B모드 폴링이 "리셋 이전 과거 후원" 을 계속 가져와 totals 에 재누적 (쓰레기값 부활)
-  //    - clearToonaHubDonationLogs: B모드가 들고있던 후원 로그 80건 통째 삭제 (과거 후원 원본 제거)
-  //    - lastIngestAt=resetAt (or 미래 1초): "나 리셋 시각 이후 후원만 새로 가져올거야" 기준점 재설정
-  //    - lastIngestError=null + lastIngestOk=true: 구 에러 메시지 stale 제거
+  // 정산 리셋 직후 B모드 로그·lastIngest·pull 커서만 갱신 — 세션(email/token/streamKey)은 유지.
+  // 과거: 부활 때문에 클라이언트에서 hub DELETE(연결 해제)까지 했으나, 사용자는 끊지 않는 한 연결 유지가 원칙.
+  // 부활 봉쇄는 아래 세 가지로 충분하다.
+  //    - clearToonaHubDonationLogs: 허브 후원 로그 삭제
+  //    - resetToonaHubPullCursorAfterSettlement: after 커서 폐기 + floor=resetAt
+  //    - lastIngestAt=resetAt+1s: 리셋 이전 후원 재수집 금지
   try {
     // DIN 허브 세션은 hubSessionUserId 기준 (auth 계정과 1:1 매칭 원칙 유지)
     await clearToonaHubDonationLogs(hubSessionUserId);
@@ -106,6 +106,7 @@ export async function POST(req: Request) {
         lastIngestOk: true,
         lastIngestError: null,
       } as const;
+      /** clearToonaHubSession 금지 — 연결 유지 */
       await writeToonaHubSession(nextSession);
       logger.info("settlement reset → toona hub session lastIngestAt advanced + pull cursor cleared", {
         hubSessionUserId,

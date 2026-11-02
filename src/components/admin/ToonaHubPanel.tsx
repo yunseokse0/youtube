@@ -7,6 +7,8 @@ import { loadStateFromApi, saveState } from "@/lib/state";
 import { TOONA_HUB_CLIENT_CONNECT_TIMEOUT_MS } from "@/lib/toona-hub-login";
 
 const SIG_INVENTORY_IMPORTED_EVENT = "youtube-sig-inventory-imported";
+/** 정산 리셋 등 — 세션은 유지한 채 로그/커서만 바뀐 뒤 패널 재조회 */
+export const TOONA_HUB_REFRESH_EVENT = "youtube-toona-hub-refresh";
 
 type HubSession = {
   email: string;
@@ -122,6 +124,14 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
   useEffect(() => {
     void load(false);
   }, [load, youtubeUserId]);
+
+  useEffect(() => {
+    const onRefresh = () => {
+      void load(true);
+    };
+    window.addEventListener(TOONA_HUB_REFRESH_EVENT, onRefresh);
+    return () => window.removeEventListener(TOONA_HUB_REFRESH_EVENT, onRefresh);
+  }, [load]);
 
   useEffect(() => {
     if (!session) return;

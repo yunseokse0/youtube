@@ -31,7 +31,7 @@ import {
   type DonationIngestMode,
 } from "@/lib/donation-ingest-mode";
 import { sliceDonorListPage } from "@/lib/donor-list-pagination";
-import ToonaHubPanel from "@/components/admin/ToonaHubPanel";
+import ToonaHubPanel, { TOONA_HUB_REFRESH_EVENT } from "@/components/admin/ToonaHubPanel";
 import ContributionFormulaPanel from "@/components/admin/ContributionFormulaPanel";
 import {
   buildSettlementUiOptionsFromForm,
@@ -11306,14 +11306,21 @@ function AdminPageInner() {
         setSigMatchPreviewIframeKey((k) => k + 1);
         setMealMatchPreviewIframeKey((k) => k + 1);
         setObsTextPreviewIframeKey((k) => k + 1);
+        /**
+         * DIN 허브 세션은 유지한다 (사용자가 「연결 해제」할 때만 끊김).
+         * 과거 후원 부활 방지는 서버 리셋이 lastIngestAt·pull 커서·허브 로그만 갱신하는 쪽으로 처리한다.
+         * (예전에 리셋 때 DELETE 로 끊던 것은 부활 우회 조치였음)
+         */
         try {
-          await fetch("/api/toona/hub", { method: "DELETE", credentials: "include" });
+          window.dispatchEvent(new Event(TOONA_HUB_REFRESH_EVENT));
         } catch {}
-        showAppToast("정산 리셋 완료 · 서버 후원·금액이 비워졌습니다 · DIN허브 연결을 끊었습니다", {
+        showAppToast("정산 리셋 완료 · 서버 후원·금액이 비워졌습니다 · DIN허브 연결은 유지됩니다", {
           variant: "success",
           durationMs: 4500,
         });
-        setSigExcelResult("정산 리셋 완료 — 잠시(약 90초) 서버 후원 자동 복구를 막고 DIN허브 연결을 해제했습니다.");
+        setSigExcelResult(
+          "정산 리셋 완료 — 잠시(약 90초) 서버 후원 자동 복구를 막습니다. DIN허브 계정 연결은 유지됩니다."
+        );
       } catch {
         rollbackOptimisticReset(
           "정산 리셋 요청이 실패했습니다. 네트워크·서버(502)를 확인한 뒤 다시 시도하세요."
