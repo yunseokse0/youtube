@@ -840,24 +840,48 @@ function AdminPageInner() {
    *     콜백이 실행되는 엣지케이스에서 destroyed=true 이면 절대 잠금을 걸지 않음) */
   const adminBodyLockAppliedRef = useRef<{ body: string; html: string; bodyM: string; bodyP: string; htmlM: string; htmlP: string } | null>(null);
   const adminBodyLockDestroyedRef = useRef<number>(0);
-  const applyAdminBodyLock = useCallback((epoch: number) => {
-    if (adminBodyLockDestroyedRef.current !== epoch) return;
-    if (adminBodyLockAppliedRef.current) return;
-    adminBodyLockAppliedRef.current = {
-      body: document.body.style.overflow,
-      html: document.documentElement.style.overflow,
-      bodyM: document.body.style.margin,
-      bodyP: document.body.style.padding,
-      htmlM: document.documentElement.style.margin,
-      htmlP: document.documentElement.style.padding,
-    };
-    document.body.style.overflow = "hidden";
-    document.documentElement.style.overflow = "hidden";
-    document.body.style.margin = "0";
-    document.body.style.padding = "0";
-    document.documentElement.style.margin = "0";
-    document.documentElement.style.padding = "0";
+  const isAdminMobilePageScroll = useCallback(() => {
+    try {
+      return window.matchMedia("(max-width: 767px)").matches;
+    } catch {
+      return window.innerWidth <= 767;
+    }
   }, []);
+  const applyAdminBodyLock = useCallback(
+    (epoch: number) => {
+      if (adminBodyLockDestroyedRef.current !== epoch) return;
+      /** 모바일은 페이지 전체 스크롤 — body lock 하지 않음 */
+      if (isAdminMobilePageScroll()) {
+        const prev = adminBodyLockAppliedRef.current;
+        if (prev) {
+          document.body.style.overflow = prev.body;
+          document.documentElement.style.overflow = prev.html;
+          document.body.style.margin = prev.bodyM;
+          document.body.style.padding = prev.bodyP;
+          document.documentElement.style.margin = prev.htmlM;
+          document.documentElement.style.padding = prev.htmlP;
+          adminBodyLockAppliedRef.current = null;
+        }
+        return;
+      }
+      if (adminBodyLockAppliedRef.current) return;
+      adminBodyLockAppliedRef.current = {
+        body: document.body.style.overflow,
+        html: document.documentElement.style.overflow,
+        bodyM: document.body.style.margin,
+        bodyP: document.body.style.padding,
+        htmlM: document.documentElement.style.margin,
+        htmlP: document.documentElement.style.padding,
+      };
+      document.body.style.overflow = "hidden";
+      document.documentElement.style.overflow = "hidden";
+      document.body.style.margin = "0";
+      document.body.style.padding = "0";
+      document.documentElement.style.margin = "0";
+      document.documentElement.style.padding = "0";
+    },
+    [isAdminMobilePageScroll]
+  );
   const revertAdminBodyLock = useCallback(() => {
     const prev = adminBodyLockAppliedRef.current;
     if (!prev) return;
@@ -871,14 +895,27 @@ function AdminPageInner() {
   }, []);
   useLayoutEffect(() => {
     const epoch = ++adminBodyLockDestroyedRef.current;
-    applyAdminBodyLock(epoch);
-    const t0 = window.setTimeout(() => applyAdminBodyLock(epoch), 0);
-    const t100 = window.setTimeout(() => applyAdminBodyLock(epoch), 100);
-    const t500 = window.setTimeout(() => applyAdminBodyLock(epoch), 500);
+    const sync = () => applyAdminBodyLock(epoch);
+    sync();
+    const t0 = window.setTimeout(sync, 0);
+    const t100 = window.setTimeout(sync, 100);
+    const t500 = window.setTimeout(sync, 500);
+    let mq: MediaQueryList | null = null;
+    try {
+      mq = window.matchMedia("(max-width: 767px)");
+      mq.addEventListener("change", sync);
+    } catch {
+      /* noop */
+    }
     return () => {
       window.clearTimeout(t0);
       window.clearTimeout(t100);
       window.clearTimeout(t500);
+      try {
+        mq?.removeEventListener("change", sync);
+      } catch {
+        /* noop */
+      }
       ++adminBodyLockDestroyedRef.current;
       revertAdminBodyLock();
     };
@@ -11752,7 +11789,7 @@ function AdminPageInner() {
 
   return (
     <main
-      className="min-h-screen p-4 md:p-2 md:pr-3 lg:p-6 pb-32 md:pb-8 text-neutral-100 admin-page-root md:flex md:flex-row md:items-stretch md:gap-0 md:h-screen md:min-h-0 lg:flex lg:flex-row lg:items-stretch lg:gap-0 lg:h-screen lg:min-h-0 overflow-hidden"
+      className="admin-page-root min-h-[100dvh] overflow-visible p-3 pb-28 text-neutral-100 md:flex md:h-[100dvh] md:min-h-0 md:flex-row md:items-stretch md:gap-0 md:overflow-hidden md:p-2 md:pr-3 md:pb-8 lg:p-6"
       style={{ backgroundColor: "#070c1a" }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -11760,9 +11797,9 @@ function AdminPageInner() {
     >
       <Toast />
       <SigUploadProgressOverlay progress={sigUploadProgress} busy={sigBulkReuploadBusy} />
-      {/* ✅ DIN 허브 스타일 - 사이드바: 짙은 네이비 카드 + 유저 정보 헤더 + 아이콘 메뉴 */}
+      {/* 데스크톱 사이드바 — 모바일은 하단 탭만 사용(상단 56vh 사이드바가 본문을 가리던 문제 방지) */}
       <aside
-        className="static shrink-0 w-full md:w-[260px] lg:w-[280px] mb-4 md:mb-0 md:mr-4 lg:mb-0 lg:mr-6 rounded-[18px] md:h-full lg:h-full flex flex-col max-h-[56vh] md:max-h-none lg:max-h-none overflow-hidden"
+        className="mb-0 mr-0 hidden h-full w-[260px] shrink-0 flex-col overflow-hidden rounded-[18px] md:mr-4 md:flex lg:mr-6 lg:w-[280px]"
         style={{
           background: "#0e1528",
           border: "1px solid rgba(55, 75, 120, 0.35)",
@@ -11856,8 +11893,8 @@ function AdminPageInner() {
           {pullRefreshing ? "동기화 중..." : pullDistance >= 64 ? "놓아서 동기화" : "아래로 당겨 동기화"}
         </div>
       </div>
-      {/* ✅ 관리자 콘텐츠 영역: 원래 헤더 UI + DIN 허브 네이비 스타일 적용 */}
-      <div className="flex-1 min-w-0 min-h-0 h-full overflow-hidden mx-auto w-full max-w-[1420px] flex flex-col">
+      {/* ✅ 관리자 콘텐츠 영역: 모바일=페이지 스크롤, md+=내부 스크롤 */}
+      <div className="mx-auto flex w-full min-w-0 max-w-[1420px] flex-col md:h-full md:min-h-0 md:flex-1 md:overflow-hidden">
           {donorEditLock && (
             <div className="mb-4 rounded-xl border-2 border-rose-500/60 bg-rose-950/40 px-4 py-2.5 flex items-center gap-3 shadow-lg shadow-rose-950/40">
               <span className="text-xl leading-none">🔒</span>
@@ -12002,7 +12039,7 @@ function AdminPageInner() {
           id="admin-content-scroll"
           ref={contentScrollRef}
           data-nav-force-render={__navForceTick}
-          className="flex-1 min-h-0 max-h-[calc(100dvh-140px)] overflow-y-auto pr-2 pt-1"
+          className="overflow-visible pr-1 pt-1 md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-contain md:pr-2 md:[-webkit-overflow-scrolling:touch]"
           onScroll={(e) => {
             donorListLastScrollTopRef.current = (e.target as HTMLDivElement).scrollTop;
             donorListLastScrollHeightRef.current = (e.target as HTMLDivElement).scrollHeight;
@@ -17568,12 +17605,15 @@ function AdminPageInner() {
               </div>
 
 
-              <div className="rounded-xl border border-emerald-400/35 bg-emerald-950/25 p-5 space-y-3">
-                <div className="text-sm font-semibold text-emerald-100">후원자 리스트는 별도 창에서만 봅니다</div>
-                <p className="text-[12px] text-neutral-300 leading-relaxed">
-                  관리자 본문에는 표를 두지 않습니다. 페이지네이션(50 / 100 / 300건)으로
-                  넓게 보려면 아래 버튼으로 전용 창을 여세요. 현재{" "}
-                  <span className="font-semibold text-amber-200">{donorListRowsSorted.length.toLocaleString("ko-KR")}건</span>.
+              <div className="space-y-3 rounded-xl border border-emerald-400/35 bg-emerald-950/25 p-5">
+                <div className="text-sm font-semibold text-emerald-100">후원자 리스트는 전용 화면에서 봅니다</div>
+                <p className="text-[12px] leading-relaxed text-neutral-300">
+                  관리자 본문에는 표를 두지 않습니다. PC는 별도 창, 모바일은 같은 탭으로 엽니다.
+                  페이지네이션(50 / 100 / 300건). 현재{" "}
+                  <span className="font-semibold text-amber-200">
+                    {donorListRowsSorted.length.toLocaleString("ko-KR")}건
+                  </span>
+                  .
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
                   <button

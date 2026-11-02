@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AdminPopupShell from "@/components/admin/popup/AdminPopupShell";
 import DonorBulkToolbar from "@/components/admin/DonorBulkToolbar";
 import DonorCheckboxCell from "@/components/admin/DonorCheckboxCell";
@@ -69,6 +69,13 @@ export default function AdminDonorListPopupPanel() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<DonorPageSize>(50);
   const [dense, setDense] = useState(false);
+  useEffect(() => {
+    try {
+      if (window.matchMedia("(max-width: 768px)").matches) setDense(true);
+    } catch {
+      /* noop */
+    }
+  }, []);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [draftNames, setDraftNames] = useState<Record<string, string>>({});
   const [draftMessages, setDraftMessages] = useState<Record<string, string>>({});
@@ -269,8 +276,8 @@ export default function AdminDonorListPopupPanel() {
       loading={loading}
     >
       {!state ? null : (
-        <div className="flex min-h-0 flex-col gap-3" style={{ height: "calc(100dvh - 6.5rem)" }}>
-          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+        <div className="flex flex-col gap-2 sm:gap-3 md:h-full md:min-h-0">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 text-[11px]">
             <div className="flex items-center gap-1.5 rounded border border-slate-700/50 bg-slate-900/60 px-2.5 py-1">
               <span className="text-slate-400">전체 합계</span>
               <span className="font-semibold text-slate-100">{filteredAgg.count}건</span>
@@ -327,7 +334,7 @@ export default function AdminDonorListPopupPanel() {
             </label>
           </div>
 
-          <div className="flex flex-col gap-2 landscape:lg:flex-row landscape:lg:flex-wrap landscape:lg:items-center">
+          <div className="flex shrink-0 flex-col gap-2 landscape:lg:flex-row landscape:lg:flex-wrap landscape:lg:items-center">
             <input
               type="text"
               value={query}
@@ -370,17 +377,21 @@ export default function AdminDonorListPopupPanel() {
             </div>
           </div>
 
-          <DonorBulkToolbar
-            visibleCount={rowsVisible.length}
-            selectedCount={selectedIds.size}
-            hasAnySelection={selectedIds.size > 0}
-            onSelectAllVisible={() => toggleSelect(undefined, true)}
-            onClearAll={() => setSelectedIds(new Set())}
-            onBulkDelete={bulkDelete}
-          />
+          <div className="shrink-0">
+            <DonorBulkToolbar
+              visibleCount={rowsVisible.length}
+              selectedCount={selectedIds.size}
+              hasAnySelection={selectedIds.size > 0}
+              onSelectAllVisible={() => toggleSelect(undefined, true)}
+              onClearAll={() => setSelectedIds(new Set())}
+              onBulkDelete={bulkDelete}
+            />
+          </div>
 
-          <div className="min-h-0 flex-1 overflow-auto rounded border border-white/10">
-            <table className={`w-full table-fixed whitespace-nowrap ${dense ? "text-[12px]" : "text-sm"}`}>
+          <div className="overflow-x-auto rounded border border-white/10 [-webkit-overflow-scrolling:touch] md:min-h-0 md:flex-1 md:overflow-auto">
+            <table
+              className={`w-full min-w-[720px] whitespace-nowrap ${dense ? "text-[12px]" : "text-sm"} md:table-fixed`}
+            >
               <thead className="sticky top-0 z-10 bg-neutral-950/95">
                 <tr className="text-neutral-400">
                   <th className="w-10 p-1 text-left">

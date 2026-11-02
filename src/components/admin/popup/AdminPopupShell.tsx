@@ -25,10 +25,10 @@ export default function AdminPopupShell({
   children,
 }: AdminPopupShellProps) {
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <header className="sticky top-0 z-20 border-b border-white/10 bg-neutral-950/95 backdrop-blur px-4 py-3">
+    <div className="min-h-[100dvh] overflow-visible bg-neutral-950 text-neutral-100 md:flex md:h-[100dvh] md:min-h-0 md:flex-col md:overflow-hidden">
+      <header className="sticky top-0 z-20 shrink-0 border-b border-white/10 bg-neutral-950/95 px-3 py-2.5 backdrop-blur sm:px-4 sm:py-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
+          <div className="min-w-0">
             <h1 className="text-base font-semibold">{title}</h1>
             {subtitle ? <p className="mt-0.5 text-xs text-neutral-400">{subtitle}</p> : null}
           </div>
@@ -37,7 +37,7 @@ export default function AdminPopupShell({
               관리자 홈
             </Link>
             <span className="text-neutral-600">·</span>
-            <span className="text-neutral-500">u={userId}</span>
+            <span className="truncate text-neutral-500">u={userId}</span>
           </div>
         </div>
         {accountMismatch ? (
@@ -46,7 +46,7 @@ export default function AdminPopupShell({
           </p>
         ) : null}
       </header>
-      <main className="w-full max-w-none p-3">
+      <main className="w-full max-w-none overflow-visible p-2 pb-8 sm:p-3 md:min-h-0 md:flex-1 md:overflow-hidden md:pb-3">
         {loading ? (
           <div className="py-16 text-center text-sm text-neutral-400">불러오는 중…</div>
         ) : (
