@@ -218,11 +218,11 @@ function memberFloatX(
   return 50;
 }
 
-/** 팀 단위 한 박스 — 멤버 세로 나열 (선두만 얇은 링) */
+/** 팀 단위 한 박스 — 좌·우 동일(이름 | 금액), 그리드 칸 전체 폭 */
 function SigTeamMemberBox({
   members,
   scoringMode,
-  align,
+  align = "left",
   nameClass,
   scoreClass = "text-white/95",
   borderClass = "",
@@ -232,7 +232,8 @@ function SigTeamMemberBox({
 }: {
   members: SigMemberScoreLine[];
   scoringMode: "count" | "amount";
-  align: "left" | "center" | "right";
+  /** 하위 호환 — 행 배치는 좌우 동일하게 유지 */
+  align?: "left" | "center" | "right";
   nameClass: string;
   scoreClass?: string;
   borderClass?: string;
@@ -241,11 +242,8 @@ function SigTeamMemberBox({
   /** 테마 좌/우 메인 컬러 — 테두리 포인트 */
   accentColor?: string;
 }) {
-  if (members.length === 0) return <div className="min-h-[2px]" aria-hidden />;
-  const boxPos =
-    align === "right" ? "ml-auto" : align === "center" ? "mx-auto" : "mr-auto";
-  const rowDir = align === "right" ? "flex-row-reverse" : "flex-row";
-  const rowJustify = align === "right" ? "justify-end" : "justify-between";
+  void align;
+  if (members.length === 0) return <div className="min-h-[2px] w-full" aria-hidden />;
   const accentStyle: CSSProperties | undefined = accentColor
     ? {
         boxShadow: `0 4px 16px rgba(0,0,0,0.45), 0 0 0 1px ${accentColor}99, inset 0 0 0 1px ${accentColor}33`,
@@ -258,15 +256,15 @@ function SigTeamMemberBox({
       data-sig-team-leading={teamLeading ? "true" : "false"}
       aria-label={teamLeading ? "선두 팀" : undefined}
       style={accentStyle}
-      className={`w-full min-w-[9.5rem] max-w-[15rem] rounded-lg bg-neutral-950/80 px-2 py-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.45)] ring-1 ring-white/20 backdrop-blur-sm sm:min-w-[10.5rem] sm:max-w-[16rem] sm:px-2.5 sm:py-2 ${borderClass} ${sigTeamBoxLeadingClasses(teamTint, teamLeading)} ${boxPos}`}
+      className={`w-full min-w-0 rounded-lg bg-neutral-950/80 px-2 py-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.45)] ring-1 ring-white/20 backdrop-blur-sm sm:px-2.5 sm:py-2 ${borderClass} ${sigTeamBoxLeadingClasses(teamTint, teamLeading)}`}
     >
-      <ul className="flex flex-col gap-1.5 sm:gap-2">
+      <ul className="flex w-full flex-col gap-1.5 sm:gap-2">
         {members.map((m, idx) => {
           const amountLabel = formatSigMatchScoreLabel(m.score, scoringMode);
           return (
             <li
               key={m.memberId}
-              className={`flex min-w-0 ${rowDir} items-center gap-2.5 ${rowJustify} ${
+              className={`flex w-full min-w-0 flex-row items-center justify-between gap-2.5 ${
                 idx > 0 ? "border-t border-white/25 pt-1.5 sm:pt-2" : ""
               }`}
             >
@@ -961,27 +959,33 @@ export default function SigMatchDuelOverlay({
                 />
                 <SigFloatingScores bursts={floatingBursts} />
               </motion.div>
-              <div className={`mt-1 grid grid-cols-2 gap-2 px-0.5 sm:gap-3 ${compact ? "gap-1.5" : ""}`}>
-                <SigTeamMemberBox
-                  members={leftMemberLines}
-                  scoringMode={scoringMode}
-                  align="left"
-                  nameClass={dualBar?.leftLeading ? "text-emerald-100" : "text-rose-100"}
-                  scoreClass="text-amber-50"
-                  teamLeading={Boolean(dualBar?.leftLeading)}
-                  teamTint="pink"
-                  accentColor={gaugeTheme.leftAccent}
-                />
-                <SigTeamMemberBox
-                  members={rightMemberLines}
-                  scoringMode={scoringMode}
-                  align="right"
-                  nameClass={dualBar?.rightLeading ? "text-emerald-100" : "text-sky-100"}
-                  scoreClass="text-amber-50"
-                  teamLeading={Boolean(dualBar?.rightLeading)}
-                  teamTint="sky"
-                  accentColor={gaugeTheme.rightAccent}
-                />
+              <div
+                className={`mt-1 grid w-full grid-cols-2 items-start gap-2 px-0.5 sm:gap-3 ${compact ? "gap-1.5" : ""}`}
+              >
+                <div className="min-w-0">
+                  <SigTeamMemberBox
+                    members={leftMemberLines}
+                    scoringMode={scoringMode}
+                    align="left"
+                    nameClass={dualBar?.leftLeading ? "text-emerald-100" : "text-rose-100"}
+                    scoreClass="text-amber-50"
+                    teamLeading={Boolean(dualBar?.leftLeading)}
+                    teamTint="pink"
+                    accentColor={gaugeTheme.leftAccent}
+                  />
+                </div>
+                <div className="min-w-0">
+                  <SigTeamMemberBox
+                    members={rightMemberLines}
+                    scoringMode={scoringMode}
+                    align="left"
+                    nameClass={dualBar?.rightLeading ? "text-emerald-100" : "text-sky-100"}
+                    scoreClass="text-amber-50"
+                    teamLeading={Boolean(dualBar?.rightLeading)}
+                    teamTint="sky"
+                    accentColor={gaugeTheme.rightAccent}
+                  />
+                </div>
               </div>
             </div>
           ) : null}
