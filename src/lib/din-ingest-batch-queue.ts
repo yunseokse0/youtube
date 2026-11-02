@@ -15,6 +15,7 @@ import {
 import {
   forgetQueuedIds,
   getDinIngestStore,
+  ingestQueueIdentity,
   offerPendingIngest,
   requeueFront,
   resetDinIngestBatchQueueForTests as resetPendingForTests,
@@ -24,6 +25,11 @@ import {
 } from "@/lib/din-ingest-pending";
 import { resolveScopedOverlayUserId } from "@/lib/overlay-params";
 import { runExclusivePerUser } from "@/lib/per-user-mutex";
+import {
+  appendToonaHubDonationLogs,
+  readToonaHubSession,
+  type ToonaHubDonationLog,
+} from "@/lib/toona-hub-session";
 
 const DRAIN_MUTEX_MS = 60_000;
 /**
@@ -70,6 +76,68 @@ type FlushOutcome = { committed: boolean; retry: QueuedIngest[] };
 
 function rowKey(row: QueuedIngest): string {
   return String(row.event.id || "").trim();
+}
+
+function eventQueueKey(event: DonationEvent): string {
+  return ingestQueueIdentity(event) || String(event.id || event.externalId || "").trim();
+}
+
+/**
+ * B모드 배치 수집은 handleDinDonationIngest 를 거치지 않아
+ * 「연결 이후 후원 로그」가 비던 구멍 — 정산표 반영 후 hub 표시 로그에 남긴다.
+ */
+async function appendHubDisplayLogsForEvents(
+  rows: QueuedIngest[],
+  events: DonationEvent[],
+  applied: boolean
+): Promise<void> {
+  if (!events.length || !rows.length) return;
+  const hubByKey = new Map<string, string>();
+  for (const row of rows) {
+    const key = eventQueueKey(row.event);
+    if (key && row.hubUserId) hubByKey.set(key, String(row.hubUserId).trim());
+  }
+  const byHub = new Map<string, DonationEvent[]>();
+  for (const event of events) {
+    const key = eventQueueKey(event);
+    const hubUserId = (key && hubByKey.get(key)) || String(rows[0]?.hubUserId || "").trim();
+    if (!hubUserId) continue;
+    const list = byHub.get(hubUserId) || [];
+    list.push(event);
+    byHub.set(hubUserId, list);
+  }
+  await Promise.all(
+    [...byHub.entries()].map(async ([hubUserId, hubEvents]) => {
+      const session = await readToonaHubSession(hubUserId).catch(() => null);
+      if (!session) return;
+      const entries: ToonaHubDonationLog[] = [];
+      for (const event of hubEvents) {
+        const at = event.at ? new Date(event.at).getTime() : Date.now();
+        if (Number.isFinite(at) && at < session.linkedAt - 5_000) continue;
+        const idBase = String(event.id || event.externalId || "").trim() || `evt-${at}`;
+        entries.push({
+          id: `ingest:${idBase}`,
+          at: Number.isFinite(at) ? at : Date.now(),
+          donorName: String(event.donorName || "익명"),
+          amount: Math.max(0, Math.round(Number(event.amount) || 0)),
+          ...(event.playerName ? { playerName: String(event.playerName) } : {}),
+          ...(event.target === "account" || event.target === "toon" ? { target: event.target } : {}),
+          mode: "excel",
+          applied,
+          source: "ingest",
+          ...(event.message ? { message: String(event.message).slice(0, 120) } : {}),
+        });
+      }
+      if (!entries.length) return;
+      await appendToonaHubDonationLogs(hubUserId, entries).catch((err) => {
+        console.error(
+          "[din-ingest-batch-queue] hub display log append failed",
+          hubUserId,
+          err instanceof Error ? err.message : err
+        );
+      });
+    })
+  );
 }
 
 /** 관리자 매칭 대기열에 넣었거나 이미 있으면 true. 저장소 오류면 false. */
@@ -130,15 +198,26 @@ async function flushBatch(stateUserId: string, rows: QueuedIngest[]): Promise<Fl
   const handOverFailed = rows.filter((row) => handOverFailedKeys.has(rowKey(row)));
 
   let missing: QueuedIngest[] = [];
+  let appliedPersisted = false;
   if (folded.applied.length > 0) {
     const last = folded.applied[folded.applied.length - 1]!;
     const persisted = await persistDonationApplyLikeToonation(stateUserId, folded.state, last);
     if (!persisted.ok) return { committed: false, retry: rows };
+    appliedPersisted = true;
     const donors = persisted.state.donors || [];
     const appliedKeys = new Set(folded.applied.map((e) => String(e.id || "").trim()));
     missing = rows.filter(
       (row) => appliedKeys.has(rowKey(row)) && !eventMatchesDonorLedger(row.event, donors)
     );
+  }
+
+  if (appliedPersisted && folded.applied.length > 0) {
+    const missingKeys = new Set(missing.map((row) => eventQueueKey(row.event)));
+    const landed = folded.applied.filter((e) => !missingKeys.has(eventQueueKey(e)));
+    await appendHubDisplayLogsForEvents(rows, landed, true);
+  }
+  if (folded.unmatched.length > 0) {
+    await appendHubDisplayLogsForEvents(rows, folded.unmatched, false);
   }
 
   const missingRetry = await retryOrHandOverMissing(stateUserId, missing);
