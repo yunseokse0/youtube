@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 // 후원 장부를 주기적으로 읽기만 한다. 저장·정산 리셋·후원 반영은 하지 않는다.
+// 허브 표시 로그(최근 버퍼) ↔ 정산표 대조. toona 원장 전체 창 대조는:
+//   bash deploy/ec2-toona-gap-watch.sh
 //
 //   node deploy/donation-watch.mjs --u paeza
 //   node deploy/donation-watch.mjs --u din --base http://127.0.0.1:3000 --interval 5
