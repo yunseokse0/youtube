@@ -12,14 +12,11 @@ import {
   buildManualOverlaySoldMetaBySigId,
   buildManualOverlaySoldOverrideSet,
   buildManualPanelSaleRows,
+  readManualSigDraftFromState,
   resolveManualOneShotDisplayFromState,
   resolveManualOneShotStoredImageUrl,
   resolveManualOverlaySelectedSigs,
 } from "@/lib/manual-sig-broadcast";
-import {
-  readManualSigDraftFromState,
-  readManualSigPickCountFromOverlaySettings,
-} from "@/lib/manual-sig-workbench";
 import {
   getOverlayMemberFilterIdFromSearchParams,
   getOverlayUserIdFromSearchParams,
@@ -41,6 +38,7 @@ import {
   computeManualSoldTotal,
   readManualSigGridFromOverlaySettings,
   readManualSigPanelOrientationFromOverlaySettings,
+  readManualSigPickCountFromOverlaySettings,
 } from "@/lib/manual-sig-workbench";
 import {
   normalizeManualSigOverlayTheme,
