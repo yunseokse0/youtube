@@ -16,6 +16,8 @@ export type SigNeonMenuOverlayItem = {
   price: number;
   sold?: boolean;
   buyerName?: string;
+  /** 구매 멤버 id — OBS에서 멤버 고유 색 표시 */
+  buyerMemberId?: string;
 };
 
 /**
@@ -50,13 +52,17 @@ export function resolveSigNeonMenuOverlayItems(
   if (terminal && rolled.length >= 2) {
     const rows = buildManualPanelSaleRows(state, uid);
     if (rows.length >= 2) {
-      return rows.map((row) => ({
-        id: `roll_${row.draftIdx}_${row.name}`,
-        name: row.name,
-        price: row.price,
-        sold: Boolean(soldFlags[row.draftIdx]),
-        buyerName: nameOf(buyers[row.draftIdx]),
-      }));
+      return rows.map((row) => {
+        const buyerId = String(buyers[row.draftIdx] || "").trim();
+        return {
+          id: `roll_${row.draftIdx}_${row.name}`,
+          name: row.name,
+          price: row.price,
+          sold: Boolean(soldFlags[row.draftIdx]),
+          buyerName: nameOf(buyerId),
+          ...(buyerId ? { buyerMemberId: buyerId } : {}),
+        };
+      });
     }
   }
 

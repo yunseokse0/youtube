@@ -108,6 +108,7 @@ describe("resolveSigNeonMenuOverlayItems", () => {
     expect(items[0]?.price).toBe(22_200);
     expect(items[0]?.sold).toBe(true);
     expect(items[0]?.buyerName).toBe("수린");
+    expect(items[0]?.buyerMemberId).toBe("m1");
     expect(items[1]?.sold).toBe(false);
   });
 

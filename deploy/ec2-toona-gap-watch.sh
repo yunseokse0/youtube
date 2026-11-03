@@ -21,21 +21,53 @@ MAX_PAGES="${MAX_PAGES:-5}"
 INTERVAL="${INTERVAL:-30}"
 MODE="${MODE:-watch}"
 LOG="${LOG:-}"
+# pm2 reload 직후 Next 부팅 대기 (초). 재시도 간격은 RETRY_SLEEP
+READY_WAIT_SEC="${READY_WAIT_SEC:-90}"
+RETRY_SLEEP="${RETRY_SLEEP:-3}"
 
 TMP="$(mktemp -d 2>/dev/null || echo "/tmp/toona-gap-$$")"
 mkdir -p "$TMP"
 trap 'rm -rf "$TMP"' EXIT
 
-krw() {
-  local n="${1:-0}"
-  printf '%s원' "$(printf '%d' "$n" 2>/dev/null | sed ':a;s/\B[0-9]\{3\}\>/,&/;ta')"
+fetch_gap() {
+  local url="$1"
+  local dest="$2"
+  curl -sS --max-time 55 --connect-timeout 5 -o "$dest" -w '%{http_code}' -b "$COOKIE" "$url" 2>/dev/null || echo 000
+}
+
+# 000/502/503/504 이면 READY_WAIT_SEC 동안 재시도 (배포 직후 부팅 대기)
+fetch_gap_ready() {
+  local url="$1"
+  local dest="$2"
+  local deadline=$(( $(date +%s) + READY_WAIT_SEC ))
+  local http="000"
+  local attempt=0
+  while true; do
+    attempt=$((attempt + 1))
+    : > "$dest"
+    http="$(fetch_gap "$url" "$dest")"
+    case "$http" in
+      000|502|503|504)
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+          echo "$http"
+          return 0
+        fi
+        echo "대기 중… HTTP ${http} (시도 ${attempt}, 남은 $(( deadline - $(date +%s) ))초)" >&2
+        sleep "$RETRY_SLEEP"
+        ;;
+      *)
+        echo "$http"
+        return 0
+        ;;
+    esac
+  done
 }
 
 run_once() {
   local url="${BASE_URL}/api/toona/donation-gap?hours=${HOURS}&maxPages=${MAX_PAGES}&u=${TARGET_USER}"
   local dest="$TMP/gap.json"
   local http
-  http="$(curl -sS --max-time 55 --connect-timeout 5 -o "$dest" -w '%{http_code}' -b "$COOKIE" "$url" 2>/dev/null || echo 000)"
+  http="$(fetch_gap_ready "$url" "$dest")"
 
   local lines=""
   lines+="대상 ${TARGET_USER}  ${BASE_URL}  hours=${HOURS}  $(date '+%Y-%m-%d %H:%M:%S %Z')"$'\n'
@@ -43,18 +75,39 @@ run_once() {
 
   if [ ! -s "$dest" ] || [ "$http" = "000" ]; then
     lines+="판정: GAP_FAIL"$'\n'
-    lines+="API 응답 없음 — pm2/nginx/PORT 를 확인하세요."
+    lines+="API 응답 없음 — 앱이 아직 안 떴거나 PORT 가 다릅니다."$'\n'
+    lines+="확인: pm2 list && curl -sI ${BASE_URL}/api/health | head -n 5"$'\n'
+    lines+="앱 online 후 다시: MODE=once TARGET_USER=${TARGET_USER} bash deploy/ec2-toona-gap-watch.sh"
+    printf '%s\n' "$lines"
+    [ -n "$LOG" ] && printf '%s\n' "$lines" >> "$LOG"
+    return 2
+  fi
+
+  if [ "$http" = "404" ]; then
+    lines+="판정: GAP_FAIL"$'\n'
+    lines+="HTTP 404 — /api/toona/donation-gap 가 빌드에 없습니다."$'\n'
+    lines+="  bash deploy/deploy-on-ec2.sh"$'\n'
+    lines+="  MODE=once TARGET_USER=${TARGET_USER} bash deploy/ec2-toona-gap-watch.sh"
+    printf '%s\n' "$lines"
+    [ -n "$LOG" ] && printf '%s\n' "$lines" >> "$LOG"
+    return 2
+  fi
+
+  if [ "$http" = "502" ] || [ "$http" = "503" ] || [ "$http" = "504" ]; then
+    lines+="판정: GAP_FAIL"$'\n'
+    lines+="HTTP ${http} — 게이트웨이/앱 준비 안 됨. 잠시 후 재실행하세요."
     printf '%s\n' "$lines"
     [ -n "$LOG" ] && printf '%s\n' "$lines" >> "$LOG"
     return 2
   fi
 
   local pyout code
-  pyout="$(python3 - "$dest" <<'PY'
+  pyout="$(python3 - "$http" "$dest" <<'PY'
 import json, sys
 from datetime import datetime, timezone, timedelta
 
 KST = timezone(timedelta(hours=9))
+http_code = str(sys.argv[1] or "")
 
 def kst(ms):
     try:
@@ -71,13 +124,19 @@ def krw(n):
     except Exception:
         return "0원"
 
-path = sys.argv[1]
+path = sys.argv[2]
+raw = ""
 try:
     with open(path, "r", encoding="utf-8") as fh:
-        data = json.load(fh)
+        raw = fh.read()
+    data = json.loads(raw or "")
 except Exception as e:
     print("판정: GAP_FAIL")
     print("JSON 파싱 실패:", e)
+    if http_code == "404":
+        print("원인: 라우트가 빌드에 없음 — bash deploy/deploy-on-ec2.sh 후 재실행")
+    elif raw.strip().startswith("<"):
+        print("HTML 응답(비-JSON). 배포·nginx·포트 확인")
     sys.exit(2)
 
 if not isinstance(data, dict):

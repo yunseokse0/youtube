@@ -1,5 +1,6 @@
 "use client";
 
+import { resolveMemberDisplayColor } from "@/lib/member-display-color";
 import { sigNeonMenuColumnCount } from "@/lib/sig-sales-overlay-urls";
 import { formatSigSalesWon } from "@/lib/sig-sales-panel-ui";
 
@@ -9,6 +10,7 @@ export type SigNeonMenuItem = {
   price: number;
   sold?: boolean;
   buyerName?: string;
+  buyerMemberId?: string;
 };
 
 const NEON_PALETTE = [
@@ -32,7 +34,7 @@ function formatMenuPrice(price: number): string {
   return Math.max(0, Math.floor(Number(price) || 0)).toLocaleString("ko-KR");
 }
 
-function sumNeonBoardTotals(items: SigNeonMenuItem[]) {
+export function sumNeonBoardTotals(items: SigNeonMenuItem[]) {
   let boardTotal = 0;
   let soldTotal = 0;
   let soldCount = 0;
@@ -51,14 +53,32 @@ export default function SigNeonMenuBoard({
   items,
   className = "",
   showTotal = true,
+  /** 관리자「총 시그 판매」와 맞출 때 전달(한방 포함 등) */
+  soldTotalOverride,
+  memberColorById,
+  memberIds,
 }: {
   items: SigNeonMenuItem[];
   className?: string;
   /** 보드 하단 총액 바 (기본 on) */
   showTotal?: boolean;
+  soldTotalOverride?: number;
+  memberColorById?: Record<string, string> | null;
+  memberIds?: string[] | null;
 }) {
   const cols = sigNeonMenuColumnCount(items.length);
   const { boardTotal, soldTotal, soldCount } = sumNeonBoardTotals(items);
+  const soldPrimary = Math.max(
+    0,
+    Math.floor(
+      typeof soldTotalOverride === "number" && Number.isFinite(soldTotalOverride)
+        ? soldTotalOverride
+        : soldTotal
+    )
+  );
+  /** 판매분이 있으면 관리자와 동일하게 판매 합을 크게, 없으면 메뉴 전체 합 */
+  const displayTotal = soldCount > 0 || soldPrimary > 0 ? soldPrimary : boardTotal;
+  const showBoardSub = boardTotal > 0 && displayTotal !== boardTotal;
 
   if (items.length === 0) {
     return (
@@ -79,6 +99,10 @@ export default function SigNeonMenuBoard({
         {items.map((item, idx) => {
           const neon = item.sold ? "#fb7185" : neonColorAt(idx);
           const buyer = String(item.buyerName || "").trim();
+          const buyerColor = resolveMemberDisplayColor(item.buyerMemberId, {
+            colorByMemberId: memberColorById,
+            memberIds,
+          });
           return (
             <div
               key={item.id}
@@ -121,10 +145,13 @@ export default function SigNeonMenuBoard({
                   </span>
                   {buyer ? (
                     <span
-                      className="max-w-full truncate px-1 text-center text-[clamp(18px,2.8vw,32px)] font-black leading-none tracking-tight text-white"
+                      className="max-w-full truncate rounded px-1.5 py-0.5 text-center text-[clamp(18px,2.8vw,32px)] font-black leading-none tracking-tight"
                       style={{
+                        color: buyerColor,
+                        background: "rgba(0,0,0,0.72)",
+                        boxShadow: `inset 3px 0 0 0 ${buyerColor}`,
                         textShadow:
-                          "-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 14px rgba(255,255,255,0.55)",
+                          "-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 10px rgba(0,0,0,0.9)",
                       }}
                       title={buyer}
                     >
@@ -143,15 +170,22 @@ export default function SigNeonMenuBoard({
           style={{ boxShadow: "0 0 18px rgba(250,204,21,0.28)" }}
         >
           <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="text-[11px] font-bold tracking-[0.14em] text-yellow-100/90">TOTAL</span>
+            <span className="text-[11px] font-bold tracking-[0.14em] text-yellow-100/90">
+              {soldCount > 0 || soldPrimary > 0 ? "총 시그 판매" : "TOTAL"}
+            </span>
             {soldCount > 0 ? (
               <span className="text-[10px] font-semibold text-rose-200/90">
-                판매 {soldCount}칸 · {formatSigSalesWon(soldTotal)}
+                판매 {soldCount}칸
+                {showBoardSub ? ` · 메뉴합 ${formatSigSalesWon(boardTotal)}` : ""}
+              </span>
+            ) : showBoardSub ? (
+              <span className="text-[10px] font-semibold text-neutral-300/90">
+                메뉴합 {formatSigSalesWon(boardTotal)}
               </span>
             ) : null}
           </div>
           <span className="text-[clamp(22px,3.2vw,36px)] font-black tabular-nums leading-none text-yellow-300">
-            {formatSigSalesWon(boardTotal)}
+            {formatSigSalesWon(displayTotal)}
           </span>
         </div>
       ) : null}

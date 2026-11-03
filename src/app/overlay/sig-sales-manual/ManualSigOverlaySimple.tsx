@@ -11,10 +11,15 @@ import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import {
   buildManualOverlaySoldMetaBySigId,
   buildManualOverlaySoldOverrideSet,
+  buildManualPanelSaleRows,
   resolveManualOneShotDisplayFromState,
   resolveManualOneShotStoredImageUrl,
   resolveManualOverlaySelectedSigs,
 } from "@/lib/manual-sig-broadcast";
+import {
+  readManualSigDraftFromState,
+  readManualSigPickCountFromOverlaySettings,
+} from "@/lib/manual-sig-workbench";
 import {
   getOverlayMemberFilterIdFromSearchParams,
   getOverlayUserIdFromSearchParams,
@@ -211,6 +216,32 @@ export default function ManualSigOverlaySimple() {
       memberFilterId: memberFilterId || undefined,
     });
   }, [overlayTheme, state, userId, memberFilterId]);
+  /** 관리자「총 시그 판매」와 동일 산식 — 네온 TOTAL에 맞춤 */
+  const menuSoldTotalAmount = useMemo(() => {
+    if (overlayTheme !== "menu" || !state) return 0;
+    const saleRows = buildManualPanelSaleRows(state, userId);
+    const draft = readManualSigDraftFromState(state);
+    const pickCount = readManualSigPickCountFromOverlaySettings(overlayOs);
+    const soldFlags = Array.isArray(draft?.sigSoldFlags) ? draft!.sigSoldFlags : [];
+    const prices = Array.from({ length: pickCount }, (_, i) => {
+      const row = saleRows.find((r) => r.draftIdx === i);
+      return row?.price || 0;
+    });
+    const displaySigs = resolveManualOverlaySelectedSigs(state, userId);
+    const oneShotResolved = resolveManualOneShotDisplayFromState(state, displaySigs, userId);
+    const shotPrice = Math.max(0, Math.floor(Number(oneShotResolved?.price) || 0));
+    const sold = computeManualSoldTotal(prices, soldFlags, {
+      oneShotSold: Boolean(draft?.oneShotMarkSold),
+      oneShotPrice: shotPrice,
+    });
+    if (sold > 0) return sold;
+    return shotPrice;
+  }, [overlayTheme, state, userId, overlayOs]);
+  const memberRosterIds = useMemo(
+    () => (state?.members || []).map((m) => m.id),
+    [state?.members]
+  );
+  const memberGaugeColors = state?.mealBattle?.memberGaugeColors || null;
   const panelGrid = useMemo(() => readManualSigGridFromOverlaySettings(overlayOs), [overlayOs]);
   const panelOrientation = useMemo(
     () => readManualSigPanelOrientationFromOverlaySettings(overlayOs),
@@ -273,7 +304,13 @@ export default function ManualSigOverlaySimple() {
     }
     return (
       <main className={menuRootClass}>
-        <SigNeonMenuBoard items={menuItems} className="w-full px-1" />
+        <SigNeonMenuBoard
+          items={menuItems}
+          className="w-full px-1"
+          soldTotalOverride={menuSoldTotalAmount}
+          memberColorById={memberGaugeColors}
+          memberIds={memberRosterIds}
+        />
       </main>
     );
   }

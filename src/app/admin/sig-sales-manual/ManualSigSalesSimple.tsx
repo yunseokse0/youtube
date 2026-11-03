@@ -1691,35 +1691,50 @@ export default function ManualSigSalesSimple() {
                         </div>
                         <label className="block">
                           <span className="sr-only">구매 멤버</span>
-                          <select
-                            className={`w-full rounded border px-1 py-0.5 text-[11px] font-semibold ${
-                              needsBuyer
-                                ? "border-rose-400 bg-rose-950/60 text-rose-100"
-                                : "border-white/15 bg-black/50"
-                            }`}
-                            style={
-                              buyerId && !needsBuyer
-                                ? { color: buyerColor, borderColor: `${buyerColor}66` }
-                                : undefined
-                            }
-                            disabled={busy || phase === "CONFIRMED" || buyerMembers.length === 0}
-                            value={buyerId}
-                            onChange={(e) => void onChangeBuyerMember(i, e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <option value="">
-                              {buyerMembers.length === 0
-                                ? "멤버 없음"
-                                : needsBuyer
-                                  ? "선택 필요"
-                                  : "구매 멤버"}
-                            </option>
-                            {buyerMembers.map((m) => (
-                              <option key={m.id} value={m.id} style={{ color: memberColorOf(m.id) }}>
-                                {m.name || m.id}
+                          <div className="flex items-center gap-1">
+                            <span
+                              aria-hidden
+                              className="h-5 w-1.5 shrink-0 rounded-sm"
+                              style={{
+                                background: buyerId ? buyerColor : "rgba(255,255,255,0.2)",
+                                boxShadow: buyerId ? `0 0 8px ${buyerColor}` : undefined,
+                              }}
+                              title={buyerId ? `멤버 색 ${buyerColor}` : "멤버 미선택"}
+                            />
+                            <select
+                              className={`min-w-0 flex-1 rounded border px-1 py-0.5 text-[11px] font-semibold ${
+                                needsBuyer
+                                  ? "border-rose-400 bg-rose-950/60 text-rose-100"
+                                  : "border-white/15 bg-black/50"
+                              }`}
+                              style={
+                                buyerId && !needsBuyer
+                                  ? {
+                                      color: buyerColor,
+                                      borderColor: `${buyerColor}99`,
+                                      fontWeight: 800,
+                                    }
+                                  : undefined
+                              }
+                              disabled={busy || phase === "CONFIRMED" || buyerMembers.length === 0}
+                              value={buyerId}
+                              onChange={(e) => void onChangeBuyerMember(i, e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <option value="">
+                                {buyerMembers.length === 0
+                                  ? "멤버 없음"
+                                  : needsBuyer
+                                    ? "선택 필요"
+                                    : "구매 멤버"}
                               </option>
-                            ))}
-                          </select>
+                              {buyerMembers.map((m) => (
+                                <option key={m.id} value={m.id}>
+                                  {m.name || m.id}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </label>
                         <label className="block">
                           <span className="sr-only">칸 가격(원)</span>
