@@ -3754,21 +3754,26 @@ function AdminPageInner() {
         didPreserve = true;
       }
     }
-    /** 시그 롤링 표시 시간: 방금 저장한 로컬 값이 원격 기본/구값으로 덮이지 않게 */
+    /** 시그 롤링 표시 시간·캡션 크기: 방금 저장한 로컬 값이 원격 기본/구값으로 덮이지 않게 */
     {
-      const localHold = normalizeSigRolling(local.sigRolling).staticHoldMs;
-      const remoteHold = normalizeSigRolling(merged.sigRolling).staticHoldMs;
+      const localSr = normalizeSigRolling(local.sigRolling);
+      const remoteSr = normalizeSigRolling(merged.sigRolling);
+      const holdDiff = localSr.staticHoldMs > 0 && localSr.staticHoldMs !== remoteSr.staticHoldMs;
+      const captionDiff =
+        localSr.captionNamePx !== remoteSr.captionNamePx ||
+        localSr.captionPricePx !== remoteSr.captionPricePx;
       if (
-        localHold > 0 &&
-        localHold !== remoteHold &&
+        (holdDiff || captionDiff) &&
         (pendingUnsyncedRef.current || Date.now() - lastLocalPersistAtRef.current < 12000)
       ) {
         merged = {
           ...merged,
           sigRolling: {
-            ...normalizeSigRolling(merged.sigRolling),
-            staticHoldMs: localHold,
-            fadeMs: normalizeSigRolling(local.sigRolling).fadeMs,
+            ...remoteSr,
+            staticHoldMs: holdDiff ? localSr.staticHoldMs : remoteSr.staticHoldMs,
+            fadeMs: localSr.fadeMs,
+            captionNamePx: captionDiff ? localSr.captionNamePx : remoteSr.captionNamePx,
+            captionPricePx: captionDiff ? localSr.captionPricePx : remoteSr.captionPricePx,
           },
         };
         didPreserve = true;
@@ -8705,6 +8710,29 @@ function AdminPageInner() {
       const sr = normalizeSigRolling(prev.sigRolling);
       if (sr.staticHoldMs === ms) return prev;
       const next = { ...prev, sigRolling: { ...sr, staticHoldMs: ms } };
+      persistVisualSettings(next, { sigRolling: next.sigRolling });
+      return next;
+    });
+  };
+
+  const setSigRollingCaptionSizes = (partial: {
+    captionNamePx?: number;
+    captionPricePx?: number;
+  }) => {
+    setState((prev) => {
+      const sr = normalizeSigRolling(prev.sigRolling);
+      const nextSr = normalizeSigRolling({
+        ...sr,
+        ...(partial.captionNamePx !== undefined ? { captionNamePx: partial.captionNamePx } : {}),
+        ...(partial.captionPricePx !== undefined ? { captionPricePx: partial.captionPricePx } : {}),
+      });
+      if (
+        nextSr.captionNamePx === sr.captionNamePx &&
+        nextSr.captionPricePx === sr.captionPricePx
+      ) {
+        return prev;
+      }
+      const next = { ...prev, sigRolling: nextSr };
       persistVisualSettings(next, { sigRolling: next.sigRolling });
       return next;
     });
@@ -15890,6 +15918,133 @@ function AdminPageInner() {
                   <p className="text-[10px] text-neutral-500">
                     설정한 시간만큼 보여 준 뒤 다음 이미지로 바뀝니다. GIF도 동일합니다(재생 길이와 무관).
                   </p>
+                  <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
+                    <p className="text-xs font-medium text-neutral-200">이름·금액 글자 크기 (OBS)</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(
+                        [
+                          { id: "normal", label: "보통", name: 20, price: 22 },
+                          { id: "large", label: "크게", name: 24, price: 28 },
+                          { id: "xlarge", label: "더크게", name: 30, price: 36 },
+                          { id: "max", label: "최대", name: 36, price: 44 },
+                        ] as const
+                      ).map((preset) => {
+                        const sr = normalizeSigRolling(state.sigRolling);
+                        const active =
+                          sr.captionNamePx === preset.name && sr.captionPricePx === preset.price;
+                        return (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            className={`rounded px-2.5 py-1.5 text-xs ${
+                              active
+                                ? "bg-sky-600 text-white"
+                                : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
+                            }`}
+                            onClick={() =>
+                              setSigRollingCaptionSizes({
+                                captionNamePx: preset.name,
+                                captionPricePx: preset.price,
+                              })
+                            }
+                          >
+                            {preset.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex flex-wrap items-end gap-4">
+                      <label className="block text-xs text-neutral-300">
+                        이름
+                        <div className="mt-1 flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            className="h-8 w-8 rounded bg-neutral-700 text-sm hover:bg-neutral-600"
+                            onClick={() =>
+                              setSigRollingCaptionSizes({
+                                captionNamePx:
+                                  normalizeSigRolling(state.sigRolling).captionNamePx - 2,
+                              })
+                            }
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min={14}
+                            max={48}
+                            step={1}
+                            className="w-16 rounded border border-white/10 bg-neutral-950/80 px-2 py-1.5 text-center text-sm"
+                            value={normalizeSigRolling(state.sigRolling).captionNamePx}
+                            onChange={(e) =>
+                              setSigRollingCaptionSizes({
+                                captionNamePx: parseInt(e.target.value, 10) || 24,
+                              })
+                            }
+                          />
+                          <span className="text-sm text-neutral-400">px</span>
+                          <button
+                            type="button"
+                            className="h-8 w-8 rounded bg-neutral-700 text-sm hover:bg-neutral-600"
+                            onClick={() =>
+                              setSigRollingCaptionSizes({
+                                captionNamePx:
+                                  normalizeSigRolling(state.sigRolling).captionNamePx + 2,
+                              })
+                            }
+                          >
+                            +
+                          </button>
+                        </div>
+                      </label>
+                      <label className="block text-xs text-neutral-300">
+                        금액
+                        <div className="mt-1 flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            className="h-8 w-8 rounded bg-neutral-700 text-sm hover:bg-neutral-600"
+                            onClick={() =>
+                              setSigRollingCaptionSizes({
+                                captionPricePx:
+                                  normalizeSigRolling(state.sigRolling).captionPricePx - 2,
+                              })
+                            }
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min={14}
+                            max={56}
+                            step={1}
+                            className="w-16 rounded border border-white/10 bg-neutral-950/80 px-2 py-1.5 text-center text-sm"
+                            value={normalizeSigRolling(state.sigRolling).captionPricePx}
+                            onChange={(e) =>
+                              setSigRollingCaptionSizes({
+                                captionPricePx: parseInt(e.target.value, 10) || 28,
+                              })
+                            }
+                          />
+                          <span className="text-sm text-neutral-400">px</span>
+                          <button
+                            type="button"
+                            className="h-8 w-8 rounded bg-neutral-700 text-sm hover:bg-neutral-600"
+                            onClick={() =>
+                              setSigRollingCaptionSizes({
+                                captionPricePx:
+                                  normalizeSigRolling(state.sigRolling).captionPricePx + 2,
+                              })
+                            }
+                          >
+                            +
+                          </button>
+                        </div>
+                      </label>
+                    </div>
+                    <p className="text-[10px] text-neutral-500">
+                      기본은 「크게」(이름 24 · 금액 28). OBS에서 바로 반영됩니다.
+                    </p>
+                  </div>
                 </div>
                 <details open className="rounded border border-white/15 bg-black/25">
                   <summary className="cursor-pointer list-none px-2 py-2 text-xs font-medium text-neutral-300 hover:bg-white/5 [&::-webkit-details-marker]:hidden">

@@ -50,8 +50,46 @@ export function sigRollingShellOuterPx(
   };
 }
 
-/** 시그 롤링 카드 하단 이름·금액 캡션 높이(px) — 시인성용 고정 슬롯 */
-export const SIG_ROLLING_CAPTION_H_PX = 54;
+/** 이름·금액 기본 글자(이전 17/16 → OBS에서 더 잘 보이게 상향) */
+export const SIG_ROLLING_CAPTION_NAME_PX_DEFAULT = 24;
+export const SIG_ROLLING_CAPTION_PRICE_PX_DEFAULT = 28;
+export const SIG_ROLLING_CAPTION_NAME_PX_MIN = 14;
+export const SIG_ROLLING_CAPTION_NAME_PX_MAX = 48;
+export const SIG_ROLLING_CAPTION_PRICE_PX_MIN = 14;
+export const SIG_ROLLING_CAPTION_PRICE_PX_MAX = 56;
+
+export function clampSigRollingCaptionNamePx(raw: unknown): number {
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n)) return SIG_ROLLING_CAPTION_NAME_PX_DEFAULT;
+  return Math.max(
+    SIG_ROLLING_CAPTION_NAME_PX_MIN,
+    Math.min(SIG_ROLLING_CAPTION_NAME_PX_MAX, n)
+  );
+}
+
+export function clampSigRollingCaptionPricePx(raw: unknown): number {
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n)) return SIG_ROLLING_CAPTION_PRICE_PX_DEFAULT;
+  return Math.max(
+    SIG_ROLLING_CAPTION_PRICE_PX_MIN,
+    Math.min(SIG_ROLLING_CAPTION_PRICE_PX_MAX, n)
+  );
+}
+
+/** 패딩·줄간격 포함 캡션 슬롯 높이 */
+export function sigRollingCaptionHeightPx(
+  namePx = SIG_ROLLING_CAPTION_NAME_PX_DEFAULT,
+  pricePx = SIG_ROLLING_CAPTION_PRICE_PX_DEFAULT
+): number {
+  const name = clampSigRollingCaptionNamePx(namePx);
+  const price = clampSigRollingCaptionPricePx(pricePx);
+  const padY = 10;
+  const gap = 4;
+  return Math.ceil(padY + name * 1.2 + gap + price * 1.2 + padY);
+}
+
+/** @deprecated 기본 글자 기준 높이 — `sigRollingCaptionHeightPx()` 사용 권장 */
+export const SIG_ROLLING_CAPTION_H_PX = sigRollingCaptionHeightPx();
 
 /**
  * 롤링 카드 고정 셸 — 항상 가로 프레임(300×180) + 하단 캡션.
@@ -59,7 +97,7 @@ export const SIG_ROLLING_CAPTION_H_PX = 54;
  */
 export function sigRollingFixedShellOuterPx(
   shellPadPx = 6,
-  opts?: { withCaption?: boolean }
+  opts?: { withCaption?: boolean; captionHeight?: number }
 ): {
   outerWidth: number;
   outerHeight: number;
@@ -68,7 +106,12 @@ export function sigRollingFixedShellOuterPx(
   captionHeight: number;
 } {
   const base = sigRollingShellOuterPx("landscape", shellPadPx);
-  const captionHeight = opts?.withCaption === false ? 0 : SIG_ROLLING_CAPTION_H_PX;
+  const captionHeight =
+    opts?.withCaption === false
+      ? 0
+      : typeof opts?.captionHeight === "number" && Number.isFinite(opts.captionHeight)
+        ? Math.max(0, Math.floor(opts.captionHeight))
+        : SIG_ROLLING_CAPTION_H_PX;
   return {
     ...base,
     captionHeight,
@@ -93,7 +136,7 @@ export function sigRollingPairLayoutPx(
 export function sigRollingFixedPairLayoutPx(
   shellPadPx = 6,
   cards = 2,
-  opts?: { withCaption?: boolean }
+  opts?: { withCaption?: boolean; captionHeight?: number }
 ): {
   totalOuterWidth: number;
   maxOuterHeight: number;

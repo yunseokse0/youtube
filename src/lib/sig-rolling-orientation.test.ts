@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  SIG_ROLLING_CAPTION_H_PX,
   classifySigRollingOrientation,
+  clampSigRollingCaptionNamePx,
+  clampSigRollingCaptionPricePx,
+  sigRollingCaptionHeightPx,
   sigRollingFixedPairLayoutPx,
   sigRollingFixedShellOuterPx,
   sigRollingMediaFramePx,
@@ -36,16 +40,29 @@ describe("sig-rolling-orientation", () => {
     expect(shell.mediaWidth).toBe(300);
     expect(shell.mediaHeight).toBe(180);
     expect(shell.outerWidth).toBe(312);
-    expect(shell.captionHeight).toBe(54);
-    expect(shell.outerHeight).toBe(192 + 54);
+    expect(shell.captionHeight).toBe(SIG_ROLLING_CAPTION_H_PX);
+    expect(shell.outerHeight).toBe(192 + SIG_ROLLING_CAPTION_H_PX);
     const pair = sigRollingFixedPairLayoutPx(6, 2);
     expect(pair.totalOuterWidth).toBe(312 * 2);
-    expect(pair.maxOuterHeight).toBe(192 + 54);
+    expect(pair.maxOuterHeight).toBe(192 + SIG_ROLLING_CAPTION_H_PX);
   });
 
   it("can omit caption slot for media-only shell", () => {
     const shell = sigRollingFixedShellOuterPx(6, { withCaption: false });
     expect(shell.captionHeight).toBe(0);
     expect(shell.outerHeight).toBe(192);
+  });
+
+  it("grows caption slot with larger name/price fonts", () => {
+    expect(sigRollingCaptionHeightPx(24, 28)).toBe(SIG_ROLLING_CAPTION_H_PX);
+    expect(sigRollingCaptionHeightPx(36, 44)).toBeGreaterThan(SIG_ROLLING_CAPTION_H_PX);
+    expect(clampSigRollingCaptionNamePx(999)).toBe(48);
+    expect(clampSigRollingCaptionPricePx(3)).toBe(14);
+  });
+
+  it("accepts custom captionHeight on fixed shell", () => {
+    const shell = sigRollingFixedShellOuterPx(6, { captionHeight: 90 });
+    expect(shell.captionHeight).toBe(90);
+    expect(shell.outerHeight).toBe(192 + 90);
   });
 });

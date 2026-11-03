@@ -26,7 +26,11 @@ import { resolveSigRollingHoldMs } from "@/lib/sig-rolling-duration";
 import { createObsSafeInterval } from "@/lib/obs-safe-interval";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import {
-  SIG_ROLLING_CAPTION_H_PX,
+  SIG_ROLLING_CAPTION_NAME_PX_DEFAULT,
+  SIG_ROLLING_CAPTION_PRICE_PX_DEFAULT,
+  clampSigRollingCaptionNamePx,
+  clampSigRollingCaptionPricePx,
+  sigRollingCaptionHeightPx,
   sigRollingFixedPairLayoutPx,
   sigRollingFixedShellOuterPx,
 } from "@/lib/sig-rolling-orientation";
@@ -50,9 +54,6 @@ const IMG_IN_FRAME =
   "pointer-events-none select-none block h-full w-full max-h-full max-w-full object-contain object-center";
 
 const SHELL_PAD_PX = 6;
-const FIXED_SHELL = sigRollingFixedShellOuterPx(SHELL_PAD_PX);
-const TWO_CARD_LAYOUT = sigRollingFixedPairLayoutPx(SHELL_PAD_PX, 2);
-const ONE_CARD_LAYOUT = sigRollingFixedPairLayoutPx(SHELL_PAD_PX, 1);
 
 function bandScheduleToken(items: SigRollingItemWithPrice[]): string {
   return items
@@ -83,11 +84,19 @@ function RollingCardColumn({
   current,
   pairSide,
   overlayUserId,
+  captionNamePx = SIG_ROLLING_CAPTION_NAME_PX_DEFAULT,
+  captionPricePx = SIG_ROLLING_CAPTION_PRICE_PX_DEFAULT,
 }: {
   current: SigRollingItem | null;
   pairSide?: "left" | "right";
   overlayUserId?: string;
+  captionNamePx?: number;
+  captionPricePx?: number;
 }) {
+  const namePx = clampSigRollingCaptionNamePx(captionNamePx);
+  const pricePx = clampSigRollingCaptionPricePx(captionPricePx);
+  const captionH = sigRollingCaptionHeightPx(namePx, pricePx);
+  const FIXED_SHELL = sigRollingFixedShellOuterPx(SHELL_PAD_PX, { captionHeight: captionH });
   const targetSrc = resolveItemSrc(current, overlayUserId);
   const fallbackSrc = toSigOverlayAbsoluteAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL);
 
@@ -192,11 +201,11 @@ function RollingCardColumn({
           ) : null}
         </div>
         <div
-          className="flex w-full shrink-0 flex-col items-center justify-center gap-0.5 px-2 text-center"
+          className="flex w-full shrink-0 flex-col items-center justify-center gap-1 px-2 text-center"
           style={{
-            height: SIG_ROLLING_CAPTION_H_PX,
-            minHeight: SIG_ROLLING_CAPTION_H_PX,
-            maxHeight: SIG_ROLLING_CAPTION_H_PX,
+            height: captionH,
+            minHeight: captionH,
+            maxHeight: captionH,
             backgroundColor: SIG_OVERLAY_CARD_FOOTER_BG,
             borderTop: "1px solid rgba(255,255,255,0.22)",
             borderBottomLeftRadius: pairSide === "right" ? 0 : 14,
@@ -206,15 +215,15 @@ function RollingCardColumn({
           title={captionPriceText ? `${captionLabel} · ${captionPriceText}` : captionLabel}
         >
           <div
-            className="w-full truncate text-[17px] font-black leading-tight"
-            style={sigOverlayCardNameOutlineStyle(17)}
+            className="w-full truncate font-black leading-tight"
+            style={{ ...sigOverlayCardNameOutlineStyle(namePx), fontSize: namePx }}
           >
             {captionLabel}
           </div>
           {captionPriceText ? (
             <div
-              className="w-full truncate text-[16px] font-black tabular-nums leading-tight"
-              style={sigOverlayCardPriceOutlineStyle(16)}
+              className="w-full truncate font-black tabular-nums leading-tight"
+              style={{ ...sigOverlayCardPriceOutlineStyle(pricePx), fontSize: pricePx }}
             >
               {captionPriceText}
             </div>
@@ -263,6 +272,12 @@ function SigRollingOverlayInner() {
 
   const rolling = useMemo(() => normalizeSigRolling(state?.sigRolling), [state?.sigRolling]);
   const holdMs = resolveSigRollingHoldMs(rolling.staticHoldMs);
+  const captionNamePx = rolling.captionNamePx;
+  const captionPricePx = rolling.captionPricePx;
+  const captionH = useMemo(
+    () => sigRollingCaptionHeightPx(captionNamePx, captionPricePx),
+    [captionNamePx, captionPricePx]
+  );
   const items = useMemo(() => getUnifiedSigRollingItems(state, memberFilterId), [state, memberFilterId]);
   const { high: highItems, low: lowItems } = useMemo(
     () => splitSigRollingByPriceBand(items, highMin),
@@ -306,7 +321,13 @@ function SigRollingOverlayInner() {
     [state, memberFilterId, highMin]
   );
   const catalogKeyRef = useRef(catalogKey);
-  const pairLayout = stableShowPair ? TWO_CARD_LAYOUT : ONE_CARD_LAYOUT;
+  const pairLayout = useMemo(
+    () =>
+      sigRollingFixedPairLayoutPx(SHELL_PAD_PX, stableShowPair ? 2 : 1, {
+        captionHeight: captionH,
+      }),
+    [stableShowPair, captionH]
+  );
 
   const bandsRef = useRef({ high: stableHigh, low: stableLow, staticHoldMs: holdMs });
   bandsRef.current = { high: stableHigh, low: stableLow, staticHoldMs: holdMs };
@@ -336,14 +357,11 @@ function SigRollingOverlayInner() {
   const twoCardScale = useMemo(() => {
     if (!Number.isFinite(viewportW) || viewportW <= 0) return 1;
     const safeW = Math.max(260, viewportW - 8);
-    const baseW = Math.max(
-      pairLayout.totalOuterWidth,
-      stableShowPair ? TWO_CARD_LAYOUT.totalOuterWidth : pairLayout.totalOuterWidth
-    );
+    const baseW = Math.max(1, pairLayout.totalOuterWidth);
     const ratio = safeW / baseW;
     if (!Number.isFinite(ratio)) return 1;
     return Math.max(0.6, Math.min(1, ratio));
-  }, [viewportW, pairLayout.totalOuterWidth, stableShowPair]);
+  }, [viewportW, pairLayout.totalOuterWidth]);
 
   useEffect(() => {
     const update = () => setViewportW(window.innerWidth || 0);
@@ -469,6 +487,8 @@ function SigRollingOverlayInner() {
               current={leftCurrent}
               pairSide={stableShowPair ? "left" : undefined}
               overlayUserId={overlayUserId}
+              captionNamePx={captionNamePx}
+              captionPricePx={captionPricePx}
             />
           ) : null}
           {rightCurrent ? (
@@ -476,6 +496,8 @@ function SigRollingOverlayInner() {
               current={rightCurrent}
               pairSide={stableShowPair ? "right" : undefined}
               overlayUserId={overlayUserId}
+              captionNamePx={captionNamePx}
+              captionPricePx={captionPricePx}
             />
           ) : null}
         </div>

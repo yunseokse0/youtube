@@ -13,6 +13,10 @@ import {
 } from "@/lib/server-authoritative-broadcast-state";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import {
+  clampSigRollingCaptionNamePx,
+  clampSigRollingCaptionPricePx,
+} from "@/lib/sig-rolling-orientation";
+import {
   isSettlementResetExplicitlyConfirmed,
   stripUnconfirmedSettlementResetFromApiPayload,
 } from "@/lib/settlement-reset-confirm";
@@ -159,7 +163,13 @@ export function normalizeSigRolling(input: unknown): SigRollingSettings {
   const staticHoldMs = Number.isFinite(v.staticHoldMs)
     ? Math.max(1000, Math.min(120_000, Math.floor(Number(v.staticHoldMs))))
     : 5000;
-  return { items, fadeMs, staticHoldMs };
+  const captionNamePx = clampSigRollingCaptionNamePx(
+    (v as { captionNamePx?: unknown }).captionNamePx
+  );
+  const captionPricePx = clampSigRollingCaptionPricePx(
+    (v as { captionPricePx?: unknown }).captionPricePx
+  );
+  return { items, fadeMs, staticHoldMs, captionNamePx, captionPricePx };
 }
 
 function normalizeSigRollingMeta(input: unknown): Record<string, SigRollingMetaEntry> {

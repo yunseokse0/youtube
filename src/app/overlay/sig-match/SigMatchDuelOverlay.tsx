@@ -218,7 +218,7 @@ function memberFloatX(
   return 50;
 }
 
-/** 팀 단위 한 박스 — 좌·우 동일(이름 | 금액), 그리드 칸 전체 폭 */
+/** 팀 단위 한 박스 — 왼쪽: 이름|금액, 오른쪽: 금액|이름(대칭) */
 function SigTeamMemberBox({
   members,
   scoringMode,
@@ -232,7 +232,7 @@ function SigTeamMemberBox({
 }: {
   members: SigMemberScoreLine[];
   scoringMode: "count" | "amount";
-  /** 하위 호환 — 행 배치는 좌우 동일하게 유지 */
+  /** left/center = 이름|금액, right = 금액|이름 */
   align?: "left" | "center" | "right";
   nameClass: string;
   scoreClass?: string;
@@ -242,8 +242,8 @@ function SigTeamMemberBox({
   /** 테마 좌/우 메인 컬러 — 테두리 포인트 */
   accentColor?: string;
 }) {
-  void align;
   if (members.length === 0) return <div className="min-h-[2px] w-full" aria-hidden />;
+  const amountFirst = align === "right";
   const accentStyle: CSSProperties | undefined = accentColor
     ? {
         boxShadow: `0 4px 16px rgba(0,0,0,0.45), 0 0 0 1px ${accentColor}99, inset 0 0 0 1px ${accentColor}33`,
@@ -254,6 +254,7 @@ function SigTeamMemberBox({
     <div
       data-sig-team-box="true"
       data-sig-team-leading={teamLeading ? "true" : "false"}
+      data-sig-team-amount-first={amountFirst ? "true" : "false"}
       aria-label={teamLeading ? "선두 팀" : undefined}
       style={accentStyle}
       className={`w-full min-w-0 rounded-lg bg-neutral-950/80 px-2 py-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.45)] ring-1 ring-white/20 backdrop-blur-sm sm:px-2.5 sm:py-2 ${borderClass} ${sigTeamBoxLeadingClasses(teamTint, teamLeading)}`}
@@ -261,6 +262,24 @@ function SigTeamMemberBox({
       <ul className="flex w-full flex-col gap-1.5 sm:gap-2">
         {members.map((m, idx) => {
           const amountLabel = formatSigMatchScoreLabel(m.score, scoringMode);
+          const nameEl = (
+            <span
+              className={`min-w-0 flex-1 truncate text-lg font-black leading-snug tracking-tight sm:text-xl ${
+                amountFirst ? "text-right" : "text-left"
+              } ${nameClass}`}
+              style={sigMemberNameStyle}
+            >
+              {m.name}
+            </span>
+          );
+          const amountEl = (
+            <span
+              className={`max-w-[8rem] shrink-0 truncate whitespace-nowrap rounded-md bg-black/45 px-1.5 py-0.5 text-base font-black tabular-nums ring-1 ring-white/15 sm:max-w-[8.5rem] sm:text-lg ${scoreClass}`}
+              style={sigMemberAmountStyle}
+            >
+              {amountLabel}
+            </span>
+          );
           return (
             <li
               key={m.memberId}
@@ -268,18 +287,17 @@ function SigTeamMemberBox({
                 idx > 0 ? "border-t border-white/25 pt-1.5 sm:pt-2" : ""
               }`}
             >
-              <span
-                className={`min-w-0 flex-1 truncate text-lg font-black leading-snug tracking-tight sm:text-xl ${nameClass}`}
-                style={sigMemberNameStyle}
-              >
-                {m.name}
-              </span>
-              <span
-                className={`max-w-[8rem] shrink-0 truncate whitespace-nowrap rounded-md bg-black/45 px-1.5 py-0.5 text-base font-black tabular-nums ring-1 ring-white/15 sm:max-w-[8.5rem] sm:text-lg ${scoreClass}`}
-                style={sigMemberAmountStyle}
-              >
-                {amountLabel}
-              </span>
+              {amountFirst ? (
+                <>
+                  {amountEl}
+                  {nameEl}
+                </>
+              ) : (
+                <>
+                  {nameEl}
+                  {amountEl}
+                </>
+              )}
             </li>
           );
         })}
@@ -978,7 +996,7 @@ export default function SigMatchDuelOverlay({
                   <SigTeamMemberBox
                     members={rightMemberLines}
                     scoringMode={scoringMode}
-                    align="left"
+                    align="right"
                     nameClass={dualBar?.rightLeading ? "text-emerald-100" : "text-sky-100"}
                     scoreClass="text-amber-50"
                     teamLeading={Boolean(dualBar?.rightLeading)}

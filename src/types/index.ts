@@ -615,6 +615,10 @@ export type SigRollingSettings = {
   fadeMs: number;
   /** GIF가 아닌 정지 이미지·파싱 실패 시 한 장당 표시 시간(ms) */
   staticHoldMs: number;
+  /** 카드 하단 이름 글자 크기(px) */
+  captionNamePx: number;
+  /** 카드 하단 금액 글자 크기(px) */
+  captionPricePx: number;
 };
 
 /** 시그 롤링 메타(판매 리스트 기반 통합): 라벨/정렬 순서 */
