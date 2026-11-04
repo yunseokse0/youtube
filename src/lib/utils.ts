@@ -206,10 +206,14 @@ export function buildOverlayRankedMembers(
   const sorted = [...rankable].sort((a, b) =>
     compareMembersByRankingMetric(a, b, metric, orderIndex, getContribution)
   );
+  if (representative) {
+    let currentRank = 1;
+    const repRow: OverlayRankedMember = { m: representative, rank: currentRank++ };
+    const others = sorted.map((m) => ({ m, rank: currentRank++ }));
+    return [repRow, ...others];
+  }
   let nextRank = 1;
-  const others = sorted.map((m) => ({ m, rank: nextRank++ }));
-  if (representative) return [{ m: representative, rank: null }, ...others];
-  return others;
+  return sorted.map((m) => ({ m, rank: nextRank++ }));
 }
 
 /**

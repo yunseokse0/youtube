@@ -2451,6 +2451,10 @@ function OverlayInner() {
     () => ((ready && s && Array.isArray((s as AppState).rankPositionLabels)) ? (s as AppState).rankPositionLabels : []),
     [ready, s]
   );
+  const rankCustomCells = useMemo<string[]>(
+    () => ((ready && s && Array.isArray((s as AppState).rankCustomCells)) ? (s as AppState).rankCustomCells : []),
+    [ready, s]
+  );
   const presetId = (rawSp.get("p") || "").trim();
   const activePreset = useMemo(() => {
     if (presetId) return overlayPresets.find((x) => x.id === presetId) || null;
@@ -3933,8 +3937,12 @@ function OverlayInner() {
   /** 운영비 행은 순위·기여도 표시 규칙만 다르게 하고, URL/프리셋 옵션과 무관하게 항상 표에 포함한다. */
   const visiblePinned = pinned;
   const hasRoleColumn = useMemo(
-    () => members.some((m) => getMemberRole(m).trim().length > 0),
-    [members, getMemberRole]
+    () =>
+      members.some((m) => getMemberRole(m).trim().length > 0) ||
+      (memberPositionMode === "rankLinked" &&
+        Array.isArray(rankPositionLabels) &&
+        rankPositionLabels.some((l) => String(l || "").trim().length > 0)),
+    [members, getMemberRole, memberPositionMode, rankPositionLabels]
   );
   const ranked = useMemo(
     () =>
@@ -4058,9 +4066,12 @@ function OverlayInner() {
       ...(showRestroomColumn ? [restroomCh] : []),
     ].join("|");
     const rows = ranked
-      .map(({ m }) =>
-        `${showCustomColumn ? `${memberCustomCellsMap[m.id] || ""}|` : ""}${m.account}|${m.toon}|${getContributionValueForMember(m)}${showRestroomColumn ? `|${getRestroomValueForMember(m)}` : ""}`
-      )
+      .map(({ m, rank }) => {
+        const rowRank = rank != null ? rank : 1;
+        const rankVal = rankCustomCells[rowRank - 1];
+        const customVal = typeof rankVal === "string" && rankVal.trim().length > 0 ? rankVal : (memberCustomCellsMap[m.id] || "");
+        return `${showCustomColumn ? `${customVal}|` : ""}${m.account}|${m.toon}|${getContributionValueForMember(m)}${showRestroomColumn ? `|${getRestroomValueForMember(m)}` : ""}`;
+      })
       .join(";");
     const pinRows = visiblePinned.map((m) => `${m.account}|${m.toon}|0`).join(";");
     return `${cols}#${rows}~${pinRows}`;
@@ -4070,6 +4081,7 @@ function OverlayInner() {
     hasRoleColumn,
     showCustomColumn,
     memberCustomCellsMap,
+    rankCustomCells,
     customHeaderLabel,
     nameColGridWidth,
     bankCh,
@@ -5960,15 +5972,23 @@ function OverlayInner() {
                           </td>
                           {showCustomColumn && (
                             <td className={`${effectiveRowCls} overlay-col-custom text-center`}>
-                              {memberCustomCellsMap[m.id] ? (
-                                <span className="overlay-cell-text-inner font-semibold" style={overlayCellOutlineStyle}>
-                                  {memberCustomCellsMap[m.id]}
-                                </span>
-                              ) : (
-                                <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                  {" "}
-                                </span>
-                              )}
+                              {(() => {
+                                const rowRank = rank != null ? rank : 1;
+                                const rankVal = rankCustomCells[rowRank - 1];
+                                const cellText =
+                                  typeof rankVal === "string" && rankVal.trim().length > 0
+                                    ? rankVal
+                                    : memberCustomCellsMap[m.id] || "";
+                                return cellText ? (
+                                  <span className="overlay-cell-text-inner font-semibold" style={overlayCellOutlineStyle}>
+                                    {cellText}
+                                  </span>
+                                ) : (
+                                  <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                    {" "}
+                                  </span>
+                                );
+                              })()}
                             </td>
                           )}
                           {hasRoleColumn && (

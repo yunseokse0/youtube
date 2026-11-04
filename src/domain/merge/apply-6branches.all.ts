@@ -185,12 +185,16 @@ export function mergeDonationApplyBase(
       : (hint.donorRankingsFullTheme ?? fresh.donorRankingsFullTheme);
 
   const merged: AppState = {
-    ...fresh,
     ...hint,
+    ...fresh,
     members: rosterBase.members,
-    memberPositions: useHintRoster ? hint.memberPositions : fresh.memberPositions,
-    memberPositionMode: hint.memberPositionMode ?? fresh.memberPositionMode,
-    rankPositionLabels: hint.rankPositionLabels ?? fresh.rankPositionLabels,
+    memberPositions: fresh.memberPositions !== undefined ? fresh.memberPositions : (hint.memberPositions ?? {}),
+    memberPositionMode: fresh.memberPositionMode ?? hint.memberPositionMode,
+    rankPositionLabels: fresh.rankPositionLabels !== undefined ? fresh.rankPositionLabels : hint.rankPositionLabels,
+    memberCustomCells: fresh.memberCustomCells !== undefined ? fresh.memberCustomCells : hint.memberCustomCells,
+    memberCustomHeaderLabel: fresh.memberCustomHeaderLabel !== undefined ? fresh.memberCustomHeaderLabel : hint.memberCustomHeaderLabel,
+    rankCustomCells: fresh.rankCustomCells !== undefined ? fresh.rankCustomCells : hint.rankCustomCells,
+    memberRankingMetric: fresh.memberRankingMetric ?? hint.memberRankingMetric,
     donors: mergedDonors,
     mealBattle: hint.mealBattle ?? fresh.mealBattle,
     donationSyncMode: hint.donationSyncMode ?? fresh.donationSyncMode,

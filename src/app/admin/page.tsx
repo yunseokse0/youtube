@@ -6611,7 +6611,7 @@ function AdminPageInner() {
       if (cleaned) nextMap[memberId] = cleaned;
       else delete nextMap[memberId];
       const next: AppState = { ...prev, memberPositions: nextMap };
-      persistState(next, { includeDonationFields: true });
+      persistState(next, { omitDonationFields: true, membersAuthoritative: true });
       return next;
     });
   };
@@ -6630,7 +6630,7 @@ function AdminPageInner() {
             { rankingMetric: prev.memberRankingMetric }
           ),
         };
-        persistState(next, { includeDonationFields: true });
+        persistState(next, { omitDonationFields: true, membersAuthoritative: true });
         return next;
       }
       const next: AppState = {
@@ -6645,7 +6645,7 @@ function AdminPageInner() {
             }
           : {}),
       };
-      persistState(next, { includeDonationFields: true });
+      persistState(next, { omitDonationFields: true, membersAuthoritative: true });
       return next;
     });
   };
@@ -6656,7 +6656,7 @@ function AdminPageInner() {
         ...prev,
         memberRankingMetric: metric === "donation" ? "donation" : "contribution",
       };
-      persistState(next, { includeDonationFields: true });
+      persistState(next, { omitDonationFields: true, membersAuthoritative: true });
       return next;
     });
   };
@@ -6667,7 +6667,7 @@ function AdminPageInner() {
         ...prev,
         memberCustomHeaderLabel: String(label || "").trim() || "상벌금",
       };
-      persistState(next, { includeDonationFields: true });
+      persistState(next, { omitDonationFields: true, membersAuthoritative: true });
       return next;
     });
   };
@@ -6679,7 +6679,20 @@ function AdminPageInner() {
       if (text) nextMap[memberId] = text;
       else delete nextMap[memberId];
       const next: AppState = { ...prev, memberCustomCells: nextMap };
-      persistState(next, { includeDonationFields: true });
+      persistState(next, { omitDonationFields: true, membersAuthoritative: true });
+      return next;
+    });
+  };
+
+  const updateRankCustomCell = (index: number, value: string) => {
+    setState((prev: AppState) => {
+      const memberCount = Math.max(1, prev.members.length);
+      const current = Array.isArray(prev.rankCustomCells) ? [...prev.rankCustomCells] : [];
+      while (current.length < memberCount) current.push("");
+      const text = String(value || "").replace(/\s+/g, " ").trim().slice(0, 48);
+      current[index] = text;
+      const next: AppState = { ...prev, rankCustomCells: current };
+      persistState(next, { omitDonationFields: true, membersAuthoritative: true });
       return next;
     });
   };
@@ -6692,7 +6705,7 @@ function AdminPageInner() {
       }
       if (memberId) nextMap[memberId] = "대표";
       const next: AppState = { ...prev, memberPositions: nextMap };
-      persistState(next, { includeDonationFields: true });
+      persistState(next, { omitDonationFields: true, membersAuthoritative: true });
       return next;
     });
   };
@@ -6706,7 +6719,7 @@ function AdminPageInner() {
       if (index < 0 || index >= labels.length) return prev;
       labels[index] = value;
       const next: AppState = { ...prev, rankPositionLabels: labels };
-      persistState(next, { includeDonationFields: true });
+      persistState(next, { omitDonationFields: true, membersAuthoritative: true });
       return next;
     });
   };
@@ -12347,9 +12360,10 @@ function AdminPageInner() {
                       순위 연동 직급
                     </button>
                   </div>
-                  <p className="mt-1 text-[11px] text-neutral-500">
-                    첫화는「순위 연동」으로 직급이 순위에 따라 움직입니다. 다음화 전에「멤버 고정 직급」을 누르면
-                    현재 순위 직급이 멤버에 저장되고, 이후에는 멤버별로 고정됩니다.
+                  <p className="mt-1 text-[11px] text-neutral-400">
+                    {state.memberPositionMode === "rankLinked"
+                      ? "현재 [순위 연동 직급] 모드입니다. 직급이 실시간 순위에 따라 부여됩니다. 대표 멤버 지정 시 해당 멤버는 대표로 최상단 고정됩니다."
+                      : "현재 [멤버 고정 직급] 모드입니다. 각 멤버에게 설정된 직급이 유지되며, 직급이 '대표'인 멤버는 항상 최상단에 고정됩니다."}
                   </p>
                 </div>
                 <div className="rounded border border-white/10 bg-black/20 p-2">
@@ -12395,28 +12409,32 @@ function AdminPageInner() {
                       placeholder="상벌금"
                     />
                   </label>
-                  <p className="text-[11px] text-neutral-500">
-                    멤버별 자유 텍스트입니다. 표 옵션「커스텀 열」로 표시를 끌 수 있습니다. 테마「퐁당퐁당」과 함께 쓰면 파랑/분홍 교차 행이 됩니다.
+                  <p className="text-[11px] text-neutral-400">
+                    순위별(1위~{Math.max(1, state.members.length)}위 · 멤버 {state.members.length}명) 상벌금·메모입니다. 순위 변동 시 1위에게 1위 메모가 실시간으로 반영됩니다.
                   </p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {state.members.map((m) => (
-                      <label
-                        key={`custom-cell-${m.id}`}
-                        className="grid grid-cols-[1fr_1.2fr] items-center gap-2 text-xs text-neutral-300"
-                      >
-                        <span className="truncate">{m.name}</span>
-                        <input
-                          className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
-                          defaultValue={state.memberCustomCells?.[m.id] || ""}
-                          key={`custom-cell-input-${m.id}-${state.memberCustomCells?.[m.id] || ""}`}
-                          onBlur={(e) => updateMemberCustomCell(m.id, e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="+100만원 / 메모"
-                        />
-                      </label>
-                    ))}
+                    {Array.from({ length: Math.max(1, state.members.length) }).map((_, idx) => {
+                      const rankNum = idx + 1;
+                      const val = state.rankCustomCells?.[idx] || "";
+                      return (
+                        <label
+                          key={`rank-custom-cell-${rankNum}`}
+                          className="grid grid-cols-[80px_1fr] items-center gap-2 text-xs text-neutral-300 rounded border border-white/10 bg-black/20 px-2 py-1.5"
+                        >
+                          <span className="font-semibold text-amber-400">{rankNum}위</span>
+                          <input
+                            className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
+                            defaultValue={val}
+                            key={`rank-custom-cell-input-${rankNum}-${val}`}
+                            onBlur={(e) => updateRankCustomCell(idx, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                            }}
+                            placeholder="+100만원 / 메모"
+                          />
+                        </label>
+                      );
+                    })}
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -20873,28 +20891,32 @@ function AdminPageInner() {
                                         }}
                                       />
                                     </label>
-                                    <p className="text-[10px] text-neutral-500">
-                                      멤버별 자유 텍스트(순위 다음 열). 비우면 칸만 표시됩니다.
+                                    <p className="text-[10px] text-neutral-400">
+                                      순위별(1위~{Math.max(1, state.members.length)}위) 자유 텍스트(순위 다음 열). 순위 변동 시 실시간으로 순위 칸에 표시됩니다.
                                     </p>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                      {state.members.map((m) => (
-                                        <label
-                                          key={`overlay-custom-cell-${p.id}-${m.id}`}
-                                          className="grid grid-cols-[1fr_1.2fr] items-center gap-2 text-xs text-neutral-300"
-                                        >
-                                          <span className="truncate">{m.name}</span>
-                                          <input
-                                            className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
-                                            defaultValue={state.memberCustomCells?.[m.id] || ""}
-                                            key={`overlay-custom-cell-input-${p.id}-${m.id}-${state.memberCustomCells?.[m.id] || ""}`}
-                                            onBlur={(e) => updateMemberCustomCell(m.id, e.target.value)}
-                                            onKeyDown={(e) => {
-                                              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                                            }}
-                                            placeholder="+100만원 / 메모"
-                                          />
-                                        </label>
-                                      ))}
+                                      {Array.from({ length: Math.max(1, state.members.length) }).map((_, idx) => {
+                                        const rankNum = idx + 1;
+                                        const val = state.rankCustomCells?.[idx] || "";
+                                        return (
+                                          <label
+                                            key={`overlay-custom-rank-cell-${p.id}-${rankNum}`}
+                                            className="grid grid-cols-[60px_1fr] items-center gap-2 text-xs text-neutral-300 rounded border border-white/10 bg-black/20 px-2 py-1.5"
+                                          >
+                                            <span className="font-semibold text-amber-400">{rankNum}위</span>
+                                            <input
+                                              className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
+                                              defaultValue={val}
+                                              key={`overlay-custom-rank-input-${p.id}-${rankNum}-${val}`}
+                                              onBlur={(e) => updateRankCustomCell(idx, e.target.value)}
+                                              onKeyDown={(e) => {
+                                                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                              }}
+                                              placeholder="+100만원 / 메모"
+                                            />
+                                          </label>
+                                        );
+                                      })}
                                     </div>
                                   </div>
                                 )}

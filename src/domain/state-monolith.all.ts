@@ -1277,6 +1277,7 @@ export function defaultState(): AppState {
     memberRankingMetric: "contribution",
     memberCustomCells: {},
     memberCustomHeaderLabel: "상벌금",
+    rankCustomCells: [],
     rankPositionLabels: fitRankPositionLabelsToMemberCount(["대표"], defaultMembers().length),
     donorRankingsTheme: { ...DEFAULT_DONOR_RANKINGS_THEME },
     donorRankingsFullTheme: { ...DEFAULT_DONOR_RANKINGS_FULL_THEME },
@@ -1946,6 +1947,9 @@ export function loadState(userId?: string | null): AppState {
     data.memberCustomHeaderLabel = normalizeMemberCustomHeaderLabel(
       (data as AppState).memberCustomHeaderLabel
     );
+    data.rankCustomCells = Array.isArray((data as AppState).rankCustomCells)
+      ? (data as AppState).rankCustomCells.map((v) => String(v ?? ""))
+      : [];
     data.rankPositionLabels = fitRankPositionLabelsToMemberCount(
       (data as AppState).rankPositionLabels,
       data.members.length
@@ -2885,6 +2889,7 @@ export function appStatePayloadForApi(
         memberPositions: next.memberPositions,
         memberPositionMode: next.memberPositionMode,
         rankPositionLabels: next.rankPositionLabels,
+        rankCustomCells: next.rankCustomCells,
         membersRosterUpdatedAt: rosterAt,
         membersAuthoritative: true as const,
         sigMatch: next.sigMatch,
@@ -4170,6 +4175,9 @@ async function doLoadStateFromApi(
       data.memberCustomHeaderLabel = normalizeMemberCustomHeaderLabel(
         (data as AppState).memberCustomHeaderLabel
       );
+      data.rankCustomCells = Array.isArray((data as AppState).rankCustomCells)
+        ? (data as AppState).rankCustomCells.map((v) => String(v ?? ""))
+        : [];
       data.rankPositionLabels = fitRankPositionLabelsToMemberCount(
         (data as AppState).rankPositionLabels,
         data.members.length

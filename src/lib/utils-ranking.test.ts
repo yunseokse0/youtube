@@ -28,9 +28,9 @@ describe("buildOverlayRankedMembers", () => {
     const unpinned = members.filter((m) => !m.operating);
     const ranked = buildOverlayRankedMembers(unpinned, positions);
     expect(ranked.map((r) => r.m.id)).toEqual(["rep", "m2", "m1"]);
-    expect(ranked[0]?.rank).toBeNull();
-    expect(ranked[1]?.rank).toBe(1);
-    expect(ranked[2]?.rank).toBe(2);
+    expect(ranked[0]?.rank).toBe(1);
+    expect(ranked[1]?.rank).toBe(2);
+    expect(ranked[2]?.rank).toBe(3);
   });
 
   it("uses member creation order when all contributions are zero", () => {

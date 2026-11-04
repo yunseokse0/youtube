@@ -665,6 +665,7 @@ export type AppState = {
   memberRankingMetric?: "contribution" | "donation";
   /** 엑셀표 커스텀 열(상벌금 등) — 멤버 id → 자유 텍스트 */
   memberCustomCells?: Record<string, string>;
+  rankCustomCells?: string[];
   /** 커스텀 열 헤더 (기본 상벌금) */
   memberCustomHeaderLabel?: string;
   /** 순위 연동 모드에서 사용할 직급 라벨(1위부터 순서대로) */

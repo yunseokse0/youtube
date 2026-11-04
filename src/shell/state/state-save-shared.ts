@@ -259,16 +259,36 @@ export function mergePartialState(
       logger.info("members identity merged from patch", { userId });
     }
   }
-  if (!("memberPositions" in patch)) next.memberPositions = base.memberPositions;
-  else if (membersAuthoritative || patchSettlementReset) {
+  if ("memberPositions" in patch) {
     next.memberPositions = patch.memberPositions as AppState["memberPositions"];
+  } else {
+    next.memberPositions = base.memberPositions;
   }
-  if (!("memberPositionMode" in patch)) next.memberPositionMode = base.memberPositionMode;
-  if (!("memberCustomCells" in patch)) next.memberCustomCells = base.memberCustomCells;
-  if (!("memberCustomHeaderLabel" in patch)) {
+  if ("memberPositionMode" in patch) {
+    next.memberPositionMode = patch.memberPositionMode as AppState["memberPositionMode"];
+  } else {
+    next.memberPositionMode = base.memberPositionMode;
+  }
+  if ("memberCustomCells" in patch) {
+    next.memberCustomCells = patch.memberCustomCells as AppState["memberCustomCells"];
+  } else {
+    next.memberCustomCells = base.memberCustomCells;
+  }
+  if ("memberCustomHeaderLabel" in patch) {
+    next.memberCustomHeaderLabel = patch.memberCustomHeaderLabel as AppState["memberCustomHeaderLabel"];
+  } else {
     next.memberCustomHeaderLabel = base.memberCustomHeaderLabel;
   }
-  if (!("rankPositionLabels" in patch)) next.rankPositionLabels = base.rankPositionLabels;
+  if ("rankPositionLabels" in patch) {
+    next.rankPositionLabels = patch.rankPositionLabels as AppState["rankPositionLabels"];
+  } else {
+    next.rankPositionLabels = base.rankPositionLabels;
+  }
+  if ("rankCustomCells" in patch) {
+    next.rankCustomCells = patch.rankCustomCells as AppState["rankCustomCells"];
+  } else {
+    next.rankCustomCells = base.rankCustomCells;
+  }
   if (!("donorRankingsTheme" in patch)) next.donorRankingsTheme = base.donorRankingsTheme;
   else if (
     patch.donorRankingsTheme &&

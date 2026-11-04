@@ -118,6 +118,7 @@ function overlayCoreFields(
     memberCustomCells: state.memberCustomCells || {},
     memberCustomHeaderLabel: state.memberCustomHeaderLabel || "상벌금",
     rankPositionLabels: state.rankPositionLabels,
+    rankCustomCells: state.rankCustomCells || [],
     donorsFormat: state.donorsFormat,
     donorRankingsTheme: state.donorRankingsTheme,
     donorRankingsFullTheme: state.donorRankingsFullTheme,
