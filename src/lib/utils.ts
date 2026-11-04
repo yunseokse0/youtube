@@ -208,7 +208,7 @@ export function buildOverlayRankedMembers(
   );
   if (representative) {
     let currentRank = 1;
-    const repRow: OverlayRankedMember = { m: representative, rank: currentRank++ };
+    const repRow: OverlayRankedMember = { m: representative, rank: null };
     const others = sorted.map((m) => ({ m, rank: currentRank++ }));
     return [repRow, ...others];
   }

@@ -5967,7 +5967,9 @@ function OverlayInner() {
                           <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
                             {rank == null ? (
                               <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                {" "}
+                                {((memberPositionsMap[m.id] || "").trim() === "대표" || getMemberRole(m).trim().includes("대표"))
+                                  ? "대표"
+                                  : " "}
                               </span>
                             ) : (
                               <span
@@ -5985,8 +5987,9 @@ function OverlayInner() {
                           {showCustomColumn && (
                             <td className={`${effectiveRowCls} overlay-col-custom text-center`}>
                               {(() => {
-                                const rowRank = rank != null ? rank : 1;
-                                const rankVal = rankCustomCells[rowRank - 1];
+                                const rowRank = rank != null ? rank : null;
+                                const rankVal =
+                                  rowRank != null && rowRank >= 1 ? rankCustomCells[rowRank - 1] : undefined;
                                 const cellText =
                                   typeof rankVal === "string" && rankVal.trim().length > 0
                                     ? rankVal
