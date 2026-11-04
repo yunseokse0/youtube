@@ -28,6 +28,7 @@ import BattleTeamColumnBoard from "@/components/battle/BattleTeamColumnBoard";
 import BattleGaugeFitScore from "@/components/battle/BattleGaugeFitScore";
 import { mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
+import { recalculateMealParticipantScoresFromDonors } from "@/lib/battle-donation-sync";
 
 function outlineStyle(): React.CSSProperties {
   return { textShadow: "0 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 -1px 0 #000, 0 0 8px rgba(0,0,0,.55)" };
@@ -215,7 +216,18 @@ export default function MealMatchOverlayInner() {
       return mealDemoParticipants(demoMode);
     }
     const memberMap = new Map((state?.members || []).map((m) => [m.id, m]));
-    const configured = (state?.mealBattle?.participants || [])
+    const rawParticipants = state?.mealBattle?.participants || [];
+    const hasLinkedParticipant = rawParticipants.some((p) => p.donationLinkActive);
+    const resolvedMealBattle = hasLinkedParticipant && state?.donors
+      ? {
+          ...state.mealBattle,
+          participants: recalculateMealParticipantScoresFromDonors(
+            state.mealBattle,
+            state.donors
+          ),
+        }
+      : state?.mealBattle;
+    const configured = (resolvedMealBattle?.participants || [])
       .filter((p) => p.memberId && memberMap.has(p.memberId))
       .map((p) => {
         const syncedMember = memberMap.get(p.memberId);
@@ -237,7 +249,7 @@ export default function MealMatchOverlayInner() {
       goal: defaultGoal,
       color: fallbackColors[idx % fallbackColors.length],
     }));
-  }, [demoEnabled, demoMode, state?.mealBattle?.participants, state?.members, defaultGoal]);
+  }, [demoEnabled, demoMode, state?.mealBattle, state?.donors, state?.members, defaultGoal]);
 
   useEffect(() => {
     if (!gaugePreview) {
@@ -414,7 +426,33 @@ export default function MealMatchOverlayInner() {
     [coreMealParticipants, teamAIds, teamBIds]
   );
 
+  const isTwoMemberDuel = !fillGaugeMode && !teamBattleEnabled && coreMealParticipants.length === 2;
+  const useTeamSplitGauge = (teamBattleEnabled && !fillGaugeMode && hasTeamRoster) || isTwoMemberDuel;
+
+  const resolvedTeamAName = isTwoMemberDuel
+    ? coreMealParticipants[0]?.name || "1번"
+    : teamAName;
+  const resolvedTeamBName = isTwoMemberDuel
+    ? coreMealParticipants[1]?.name || "2번"
+    : teamBName;
+  const resolvedTeamAColor = isTwoMemberDuel
+    ? coreMealParticipants[0]?.color || teamAColor
+    : teamAColor;
+  const resolvedTeamBColor = isTwoMemberDuel
+    ? coreMealParticipants[1]?.color || teamBColor
+    : teamBColor;
+
   const teamAgg = useMemo(() => {
+    if (isTwoMemberDuel && coreMealParticipants.length === 2) {
+      const pA = coreMealParticipants[0]!;
+      const pB = coreMealParticipants[1]!;
+      return {
+        aScore: pA.score,
+        bScore: pB.score,
+        aGoal: Math.max(1, pA.goal),
+        bGoal: Math.max(1, pB.goal),
+      };
+    }
     let aScore = 0;
     let aGoal = 0;
     let bScore = 0;
@@ -431,27 +469,33 @@ export default function MealMatchOverlayInner() {
     const resolvedAGoal = teamAGoalSetting > 0 ? teamAGoalSetting : Math.max(1, aGoal);
     const resolvedBGoal = teamBGoalSetting > 0 ? teamBGoalSetting : Math.max(1, bGoal);
     return { aScore, bScore, aGoal: resolvedAGoal, bGoal: resolvedBGoal };
-  }, [coreMealParticipants, teamAIds, teamBIds, teamAGoalSetting, teamBGoalSetting]);
-
-  const useTeamSplitGauge = teamBattleEnabled && !fillGaugeMode && hasTeamRoster;
+  }, [coreMealParticipants, isTwoMemberDuel, teamAIds, teamBIds, teamAGoalSetting, teamBGoalSetting]);
 
   const teamAMemberLabel = useMemo(
-    () =>
-      coreMealParticipants
+    () => {
+      if (isTwoMemberDuel && coreMealParticipants.length === 2) {
+        return coreMealParticipants[0]?.name || "";
+      }
+      return coreMealParticipants
         .filter((p) => teamAIds.has(p.memberId))
         .map((p) => p.name)
         .filter(Boolean)
-        .join(","),
-    [coreMealParticipants, teamAIds]
+        .join(",");
+    },
+    [coreMealParticipants, isTwoMemberDuel, teamAIds]
   );
   const teamBMemberLabel = useMemo(
-    () =>
-      coreMealParticipants
+    () => {
+      if (isTwoMemberDuel && coreMealParticipants.length === 2) {
+        return coreMealParticipants[1]?.name || "";
+      }
+      return coreMealParticipants
         .filter((p) => teamBIds.has(p.memberId))
         .map((p) => p.name)
         .filter(Boolean)
-        .join(","),
-    [coreMealParticipants, teamBIds]
+        .join(",");
+    },
+    [coreMealParticipants, isTwoMemberDuel, teamBIds]
   );
   const mealBattleUseRawScore = mealBattleUsesRawDonationScore(mb);
 
@@ -466,19 +510,19 @@ export default function MealMatchOverlayInner() {
         return [
           {
             memberId: "__teamA",
-            name: teamAName,
+            name: resolvedTeamAName,
             score: teamAgg.aScore,
             goal: teamAgg.aGoal,
-            color: teamAColor,
+            color: resolvedTeamAColor,
             percent: 0,
             center: 25,
           },
           {
             memberId: "__teamB",
-            name: teamBName,
+            name: resolvedTeamBName,
             score: teamAgg.bScore,
             goal: teamAgg.bGoal,
-            color: teamBColor,
+            color: resolvedTeamBColor,
             percent: 0,
             center: 75,
           },
@@ -705,7 +749,10 @@ export default function MealMatchOverlayInner() {
                   leftMemberLabel={teamAMemberLabel}
                   rightMemberLabel={teamBMemberLabel}
                   compact={compact}
-                  gapSuffix={mealBattleUseRawScore ? "원" : ""}
+                  theme={sp.get("theme")}
+                  vsDesign={sp.get("vsDesign")}
+                  formatScore={(n) => mealBattleUseRawScore ? `${Math.round(n).toLocaleString("ko-KR")}원` : `${Math.round(n)}점`}
+                  gapSuffix={mealBattleUseRawScore ? "" : "점"}
                   timerSlot={
                     shouldRenderMealMatchTimer ? (
                       <div

@@ -104,6 +104,24 @@ describe("getSigMatchRankings countAllDonations", () => {
     expect(rows.find((r) => r.memberId === "a")?.score).toBe(10_000);
   });
 
+  it("ignores donations before donationLink startedAt when donor.at is ISO string", () => {
+    const donors: Donor[] = [
+      { id: "d1", name: "fan", amount: 10_000, memberId: "a", at: new Date(500).toISOString() as unknown as number, target: "toon" },
+      { id: "d2", name: "fan", amount: 20_000, memberId: "a", at: new Date(2_000).toISOString() as unknown as number, target: "toon" },
+    ];
+    const rows = getSigMatchRankings(
+      donors,
+      members,
+      {
+        ...baseSettings,
+        donationLinks: { a: { active: true, startedAt: 1_000 } },
+      },
+      {},
+      {}
+    );
+    expect(rows.find((r) => r.memberId === "a")?.score).toBe(20_000);
+  });
+
   it("ignores donations before donationLink startedAt", () => {
     const donors: Donor[] = [
       { id: "d1", name: "fan", amount: 10_000, memberId: "a", at: 500, target: "toon" },

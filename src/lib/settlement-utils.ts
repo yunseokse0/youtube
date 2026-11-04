@@ -19,6 +19,13 @@ function floorToHundreds(value: number): number {
   return Math.floor(Math.max(0, value) / 100) * 100;
 }
 
+/** 후원 생성 일시(epoch ms 또는 ISO 문자열)를 안전하게 epoch ms로 변환 */
+export function parseDonorAtMs(raw: unknown): number {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  const parsed = Date.parse(String(raw || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 /**
  * 시그 후원 연동 상태.
  * donationLinks에 항목이 없으면 하위호환으로 ON(전체 기간).
@@ -294,8 +301,8 @@ export function getSigMatchRankings(
     if (!byMember.has(memberId)) continue;
     const link = resolveSigMatchDonationLink(settings, memberId);
     if (!link.active) continue;
-    const donorAt = Number.isFinite(Number(d.at)) ? Math.max(0, Math.floor(Number(d.at))) : 0;
-    if (link.startedAt > 0 && donorAt > 0 && donorAt < link.startedAt) continue;
+    const donorAt = parseDonorAtMs(d.at);
+    if (link.startedAt > 0 && (donorAt <= 0 || donorAt < link.startedAt)) continue;
     const amount = Math.max(0, Number(d.amount || 0));
     /** 멤버별 후원 연동 ON 이면 해당 멤버 후원은 키워드 없이 집계 (연동 UI 의미) */
     const countAll =

@@ -48,7 +48,8 @@ export function recalculateMealParticipantScoresFromDonors(
     for (const d of rows) {
       if (isDonorExcludedFromDonationTotals(d)) continue;
       if (String(d.memberId || "") !== p.memberId) continue;
-      if (since > 0 && donorAtMs(d) < since) continue;
+      const at = donorAtMs(d);
+      if (since > 0 && (at <= 0 || at < since)) continue;
       const amount = Math.max(0, Math.round(Number(d.amount) || 0));
       score += raw ? amount : mealBattleDonationScoreDelta(amount);
     }
