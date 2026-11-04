@@ -37,7 +37,7 @@ function scopedStateUserIdOf(authUserId: string): string {
 }
 
 async function importSigsAfterHubLogin(hubSessionUserId: string) {
-  const [{ fetchToonaSignaturesViaHubSession }, { defaultState }, { loadAppStateForUserId }, { applyToonaSigItemsToInventory }, { saveAppStateForRoulette }, { publishSseEvent }] =
+  const [{ fetchToonaSignaturesViaHubSession }, { defaultState }, { loadAppStateForUserId }, { applyToonaSigItemsToInventory }, { saveAppStateForRoulette }, { publishSseEvent }, { patchToonaHubSession }] =
     await Promise.all([
       import("@/lib/toona-hub-client"),
       import("@/lib/state"),
@@ -45,11 +45,35 @@ async function importSigsAfterHubLogin(hubSessionUserId: string) {
       import("@/lib/toona-sig-import"),
       import("@/app/api/roulette/edge-state-store"),
       import("@/lib/sse-clients-hub"),
+      import("@/lib/toona-hub-session"),
     ]);
   const stateUserId = scopedStateUserIdOf(hubSessionUserId);
+  await patchToonaHubSession(hubSessionUserId, {
+    lastSigImport: {
+      at: Date.now(),
+      status: "running",
+      fetchedCount: 0,
+      addedCount: 0,
+      updatedCount: 0,
+      totalCount: 0,
+    },
+  });
   const fetched = await fetchToonaSignaturesViaHubSession(hubSessionUserId);
-  if (!fetched.ok) return { ok: false as const, count: 0, error: fetched.error };
   const state = (await loadAppStateForUserId(stateUserId)) ?? defaultState();
+  if (!fetched.ok) {
+    await patchToonaHubSession(hubSessionUserId, {
+      lastSigImport: {
+        at: Date.now(),
+        status: "failed",
+        fetchedCount: 0,
+        addedCount: 0,
+        updatedCount: 0,
+        totalCount: Array.isArray(state?.sigInventory) ? state.sigInventory.length : 0,
+        error: fetched.error || "fetch_failed",
+      },
+    });
+    return { ok: false as const, count: 0, error: fetched.error };
+  }
   const { nextInventory, added, updated } = applyToonaSigItemsToInventory(
     state.sigInventory || [],
     fetched.items,
@@ -73,6 +97,17 @@ async function importSigsAfterHubLogin(hubSessionUserId: string) {
   };
   const saved = await saveAppStateForRoulette(stateUserId, next, { donorsMode: "add" });
   if (!saved.ok) {
+    await patchToonaHubSession(hubSessionUserId, {
+      lastSigImport: {
+        at: Date.now(),
+        status: "failed",
+        fetchedCount: fetched.count,
+        addedCount: added,
+        updatedCount: updated,
+        totalCount: Array.isArray(state?.sigInventory) ? state.sigInventory.length : 0,
+        error: "sig_inventory_save_failed",
+      },
+    });
     return {
       ok: false as const,
       count: fetched.count,
@@ -83,6 +118,16 @@ async function importSigsAfterHubLogin(hubSessionUserId: string) {
       saved: false,
     };
   }
+  await patchToonaHubSession(hubSessionUserId, {
+    lastSigImport: {
+      at: Date.now(),
+      status: "completed",
+      fetchedCount: fetched.count,
+      addedCount: added,
+      updatedCount: updated,
+      totalCount: nextInventory.length,
+    },
+  });
   await publishSseEvent({ type: "state_updated", updatedAt: next.updatedAt });
   return {
     ok: true as const,
@@ -90,6 +135,7 @@ async function importSigsAfterHubLogin(hubSessionUserId: string) {
     added,
     updated,
     items: fetched.items,
+    totalCount: nextInventory.length,
     saved: true,
   };
 }
@@ -158,7 +204,10 @@ export async function GET(req: NextRequest) {
 
   const session = await readToonaHubSession(auth.userId);
   const logs = await readToonaHubDonationLogs(auth.userId);
-  return json({ ok: true, scenario, session: publicToonaHubSession(session), logs, donationLogs: logs });
+  const { loadAppStateForUserId } = await import("@/lib/app-state-server-load");
+  const state = await loadAppStateForUserId(scopedStateUserIdOf(auth.userId)).catch(() => null);
+  const currentSigCount = Array.isArray(state?.sigInventory) ? state.sigInventory.length : 0;
+  return json({ ok: true, scenario, session: publicToonaHubSession(session), logs, donationLogs: logs, currentSigCount });
 }
 
 export async function POST(req: NextRequest) {
@@ -245,6 +294,17 @@ export async function POST(req: NextRequest) {
      * 허브 시그 목록+저장을 이 요청에서 기다리면 EC2 nginx가 502를 내고
      * 같은 Node의 다른 API까지 막힌다. 연결 때와 같이 응답 후 백그라운드에서 가져온다.
      */
+    const { patchToonaHubSession } = await import("@/lib/toona-hub-session");
+    await patchToonaHubSession(auth.userId, {
+      lastSigImport: {
+        at: Date.now(),
+        status: "running",
+        fetchedCount: 0,
+        addedCount: 0,
+        updatedCount: 0,
+        totalCount: 0,
+      },
+    });
     setTimeout(() => {
       void importSigsAfterHubLogin(auth.userId).then((r) => {
         if (!r.ok) console.error("[toona-hub] sig import", r.error);

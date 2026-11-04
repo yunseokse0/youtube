@@ -5,6 +5,11 @@ import { getToonaDashboardUrl } from "@/lib/donation-ingest-mode";
 import { ingestErrorVisibleAfterLink } from "@/lib/toona-hub-ingest-error";
 import { loadStateFromApi, saveState } from "@/lib/state";
 import { TOONA_HUB_CLIENT_CONNECT_TIMEOUT_MS } from "@/lib/toona-hub-login";
+import {
+  triggerAndPollSigImport,
+  formatSigImportResultMessage,
+  type SigImportSummary,
+} from "@/lib/toona-sig-import-client";
 
 const SIG_INVENTORY_IMPORTED_EVENT = "youtube-sig-inventory-imported";
 /** 정산 리셋 등 — 세션은 유지한 채 로그/커서만 바뀐 뒤 패널 재조회 */
@@ -24,6 +29,7 @@ type HubSession = {
   lastIngestError?: string | null;
   youtubegitEnabled?: boolean | null;
   youtubeUserId?: string | null;
+  lastSigImport?: SigImportSummary | null;
 };
 
 type HubLog = {
@@ -65,15 +71,41 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
   const [streamKey, setStreamKey] = useState("");
   const [baseUrl, setBaseUrl] = useState(getToonaDashboardUrl());
   const [busy, setBusy] = useState(false);
+  const [sigImportBusy, setSigImportBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"info" | "success" | "error" | "running">("info");
   const [session, setSession] = useState<HubSession | null>(null);
   const [logs, setLogs] = useState<HubLog[]>([]);
   const [showStreamKeyFallback, setShowStreamKeyFallback] = useState(false);
+  const [currentSigCount, setCurrentSigCount] = useState<number | null>(null);
 
-  const applyPayload = useCallback((data: { session?: HubSession | null; logs?: HubLog[] }) => {
-    setSession(data.session ?? null);
-    setLogs(Array.isArray(data.logs) ? data.logs : []);
-  }, []);
+  // 로컬 저장소에서 현재 시그 개수 초기값 로드
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`youtube_state_${youtubeUserId}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed?.sigInventory)) {
+          setCurrentSigCount(parsed.sigInventory.length);
+        }
+      }
+    } catch {
+      /* noop */
+    }
+  }, [youtubeUserId]);
+
+  const applyPayload = useCallback(
+    (data: { session?: HubSession | null; logs?: HubLog[]; currentSigCount?: number }) => {
+      setSession(data.session ?? null);
+      setLogs(Array.isArray(data.logs) ? data.logs : []);
+      if (typeof data.currentSigCount === "number") {
+        setCurrentSigCount(data.currentSigCount);
+      } else if (data.session?.lastSigImport?.totalCount) {
+        setCurrentSigCount(data.session.lastSigImport.totalCount);
+      }
+    },
+    []
+  );
 
   const load = useCallback(
     async (refresh = false) => {
@@ -89,11 +121,13 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
           ok?: boolean;
           session?: HubSession | null;
           logs?: HubLog[];
+          currentSigCount?: number;
           error?: string;
           slow?: boolean;
         };
         if (!res.ok || data.ok === false) {
           setMessage(data.error || `상태 조회 실패 (HTTP ${res.status})`);
+          setMessageType("error");
           return {
             ok: false,
             slow: data.slow === true,
@@ -105,8 +139,12 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
         if (data.session?.email) setEmail(data.session.email);
         if (data.session?.streamKey) setStreamKey(data.session.streamKey);
         if (data.session?.baseUrl) setBaseUrl(data.session.baseUrl);
-        if (data.error) setMessage(data.error);
-        else if (!refresh) setMessage("");
+        if (data.error) {
+          setMessage(data.error);
+          setMessageType("error");
+        } else if (!refresh) {
+          // 메시지는 사용자가 조작 중인 결과 알림을 덮어쓰지 않도록 초기화하지 않음
+        }
         return { ok: true, slow: data.slow === true, status: res.status, session: data.session ?? null } as const;
       } catch (err) {
         window.clearTimeout(timeout);
@@ -115,6 +153,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
             ? "허브 폴링 타임아웃 (15초 초과)"
             : "네트워크 오류 — 잠시 후 재시도";
         setMessage(msg);
+        setMessageType("error");
         return { ok: false, slow: true, status: 0, session: null } as const;
       }
     },
@@ -181,6 +220,9 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
       const remote = await loadStateFromApi(youtubeUserId, { forceFull: true });
       if (remote) {
         saveState(remote, youtubeUserId);
+        if (Array.isArray(remote.sigInventory)) {
+          setCurrentSigCount(remote.sigInventory.length);
+        }
         window.dispatchEvent(
           new CustomEvent(SIG_INVENTORY_IMPORTED_EVENT, {
             detail: { userId: youtubeUserId },
@@ -195,6 +237,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
   const onLogin = async (mode: "email" | "streamKey" = "email") => {
     setBusy(true);
     setMessage("");
+    setMessageType("info");
     try {
       const body =
         mode === "streamKey"
@@ -223,6 +266,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
               ? "스트림 키로 DIN 허브 연결 완료"
               : "toona 로그인·연동 완료"
           );
+          setMessageType("success");
           if (typeof onLoggedIn === "function") {
             try {
               onLoggedIn();
@@ -240,6 +284,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
               ? "서버가 응답하지 못했습니다(502/504). 잠시 후 다시 연결해 주세요."
               : err || (mode === "streamKey" ? "연결 실패" : "로그인 실패")
         );
+        setMessageType("error");
         return;
       }
       if (mode === "email") setPassword("");
@@ -258,6 +303,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
               ? "스트림 키로 DIN 허브 연결 완료"
               : "toona 로그인·youtubegit 연동 완료"
       );
+      setMessageType("success");
       if (typeof onLoggedIn === "function") {
         try {
           onLoggedIn();
@@ -278,6 +324,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
               ? "연결 실패"
               : "로그인 실패"
       );
+      setMessageType("error");
     } finally {
       setBusy(false);
     }
@@ -286,6 +333,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
   const onLogout = async () => {
     setBusy(true);
     setMessage("");
+    setMessageType("info");
     try {
       await fetch("/api/toona/hub", { method: "DELETE", credentials: "include" });
       setSession(null);
@@ -293,6 +341,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
       setStreamKey("");
       setPassword("");
       setMessage("허브 연결을 해제했습니다.");
+      setMessageType("info");
     } finally {
       setBusy(false);
     }
@@ -301,6 +350,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
   const onSyncLogs = async () => {
     setBusy(true);
     setMessage("");
+    setMessageType("info");
     try {
       const res = await fetch("/api/toona/hub", {
         method: "POST",
@@ -318,53 +368,49 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
       };
       if (!res.ok || !data.ok) {
         setMessage(data.error || "후원 동기화 실패");
+        setMessageType("error");
         return;
       }
       applyPayload(data);
       setMessage(
         `toona 후원 ${data.imported ?? 0}건 확인 · 엑셀 신규 반영 ${data.applied ?? 0}건 (시나리오 B·1:1)`
       );
+      setMessageType("success");
     } finally {
       setBusy(false);
     }
   };
 
   const onImportSigs = async () => {
-    setBusy(true);
-    setMessage("");
+    setSigImportBusy(true);
+    setMessage("시그 가져오기 진행 중... (toona에서 시그 목록을 조회하고 엑셀 방송 시스템에 병합 중)");
+    setMessageType("running");
+
     try {
-      const res = await fetch("/api/toona/hub", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "import-signatures" }),
-        signal: AbortSignal.timeout(45_000),
+      const res = await triggerAndPollSigImport((stage) => {
+        setMessage(`시그 가져오기 진행 중... (${stage})`);
+        setMessageType("running");
       });
-      const data = (await res.json().catch(() => ({}))) as SigImportResult & {
-        ok?: boolean;
-        error?: string;
-        deferred?: boolean;
-        sigImport?: SigImportResult;
-      };
-      if (!res.ok || data.ok === false) {
-        setMessage(data.error || "시그 가져오기 실패");
-        return;
-      }
-      if (data.deferred || data.sigImport?.error === "deferred") {
-        setMessage("시그 가져오기는 백그라운드에서 진행 중. 잠시 후 시그 판매를 새로고침해 주세요.");
-        window.setTimeout(() => {
-          void syncLocalSigInventory();
-        }, 5000);
-        return;
-      }
+
       await syncLocalSigInventory();
-      setMessage(formatSigImport(data));
+
+      if (res.ok && res.summary) {
+        if (typeof res.summary.totalCount === "number") {
+          setCurrentSigCount(res.summary.totalCount);
+        }
+        setMessage(`✅ ${formatSigImportResultMessage(res.summary)}`);
+        setMessageType("success");
+        // 세션 정보도 최신화
+        void load(false);
+      } else {
+        setMessage(`❌ ${res.error || "시그 가져오기 실패"}`);
+        setMessageType("error");
+      }
     } catch (err) {
-      const timedOut =
-        err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
-      setMessage(timedOut ? "시그 가져오기 시간 초과 — 잠시 후 다시 시도해 주세요." : "시그 가져오기 실패");
+      setMessage(`❌ 시그 가져오기 오류: ${err instanceof Error ? err.message : "네트워크 오류"}`);
+      setMessageType("error");
     } finally {
-      setBusy(false);
+      setSigImportBusy(false);
     }
   };
 
@@ -464,7 +510,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
           ) : null}
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <div className="text-[11px] text-neutral-300 leading-relaxed space-y-0.5">
             <div>
               계정:{" "}
@@ -485,10 +531,61 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
               <div className="text-amber-200">ingest 오류: {ingestError}</div>
             ) : null}
           </div>
+
+          {/* 시그 등록 및 동기화 현황 정보 카드 */}
+          <div className="rounded border border-violet-500/30 bg-black/30 p-2.5 space-y-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-violet-200">🎨 등록된 시그 현황</span>
+                <span className="text-xs font-bold px-2 py-0.5 rounded bg-violet-900/60 text-violet-100 border border-violet-500/40 tabular-nums">
+                  총 {currentSigCount !== null ? `${currentSigCount}개` : "확인 중…"}
+                </span>
+                {sigImportBusy && (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] text-amber-300 font-semibold animate-pulse">
+                    <span className="inline-block w-2 h-2 rounded-full bg-amber-400" />
+                    가져오는 중…
+                  </span>
+                )}
+              </div>
+              {session.lastSigImport?.at ? (
+                <span className="text-[11px] text-neutral-400">
+                  마지막 동기화:{" "}
+                  {new Date(session.lastSigImport.at).toLocaleString("ko-KR", {
+                    month: "numeric",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  })}
+                </span>
+              ) : null}
+            </div>
+
+            {session.lastSigImport && (
+              <div className="text-[11px] text-neutral-300 flex flex-wrap items-center gap-x-2 gap-y-1 pt-0.5 border-t border-white/5">
+                {session.lastSigImport.status === "completed" ? (
+                  <>
+                    <span className="text-emerald-400 font-semibold">동기화 성공</span>
+                    <span className="text-neutral-500">·</span>
+                    <span>toona 확인: <strong className="text-white">{session.lastSigImport.fetchedCount}개</strong></span>
+                    <span className="text-neutral-500">·</span>
+                    <span>신규 추가: <strong className="text-emerald-300">+{session.lastSigImport.addedCount}개</strong></span>
+                    <span className="text-neutral-500">·</span>
+                    <span>기존 갱신: <strong className="text-cyan-300">{session.lastSigImport.updatedCount}개</strong></span>
+                  </>
+                ) : session.lastSigImport.status === "running" ? (
+                  <span className="text-amber-300">현재 백그라운드에서 시그 목록을 동기화 중입니다…</span>
+                ) : session.lastSigImport.status === "failed" ? (
+                  <span className="text-rose-400">마지막 가져오기 실패: {session.lastSigImport.error}</span>
+                ) : null}
+              </div>
+            )}
+          </div>
+
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || sigImportBusy}
               className="px-3 py-1.5 rounded bg-violet-700 hover:bg-violet-600 text-xs font-semibold disabled:opacity-50"
               onClick={() => void load(true)}
             >
@@ -496,15 +593,22 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
             </button>
             <button
               type="button"
-              disabled={busy}
-              className="px-3 py-1.5 rounded bg-violet-800/80 hover:bg-violet-700 text-xs font-semibold disabled:opacity-50"
+              disabled={busy || sigImportBusy}
+              className="px-3 py-1.5 rounded bg-violet-800 hover:bg-violet-700 text-xs font-semibold disabled:opacity-50 inline-flex items-center gap-1.5 shadow-sm"
               onClick={() => void onImportSigs()}
             >
-              시그 다시 가져오기
+              {sigImportBusy ? (
+                <>
+                  <span className="inline-block w-2.5 h-2.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>시그 가져오는 중…</span>
+                </>
+              ) : (
+                "시그 다시 가져오기"
+              )}
             </button>
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || sigImportBusy}
               className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-xs disabled:opacity-50"
               onClick={() => void onSyncLogs()}
             >
@@ -520,7 +624,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
             </a>
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || sigImportBusy}
               className="px-3 py-1.5 rounded bg-rose-900/70 hover:bg-rose-800 text-xs disabled:opacity-50"
               onClick={() => void onLogout()}
             >
@@ -566,7 +670,21 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
         </div>
       ) : null}
 
-      {message ? <p className="text-[11px] text-neutral-300">{message}</p> : null}
+      {message ? (
+        <div
+          className={`rounded border px-2.5 py-1.5 text-xs transition-colors ${
+            messageType === "success"
+              ? "border-emerald-500/40 bg-emerald-950/40 text-emerald-200"
+              : messageType === "error"
+                ? "border-rose-500/40 bg-rose-950/40 text-rose-200"
+                : messageType === "running"
+                  ? "border-amber-500/40 bg-amber-950/40 text-amber-200"
+                  : "border-white/10 bg-black/30 text-neutral-300"
+          }`}
+        >
+          {message}
+        </div>
+      ) : null}
     </div>
   );
 }

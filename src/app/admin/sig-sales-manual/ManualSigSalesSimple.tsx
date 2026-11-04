@@ -25,6 +25,10 @@ import {
 import { DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE, resolveSigOverlayCardImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import SigSalesStampAndOneShotPanel from "@/components/admin/SigSalesStampAndOneShotPanel";
+import {
+  triggerAndPollSigImport,
+  formatSigImportResultMessage,
+} from "@/lib/toona-sig-import-client";
 import { listActiveManualSigPool } from "@/lib/manual-sig-active-pool";
 import {
   mergeManualSigBroadcastIntoOverlaySettings,
@@ -981,31 +985,17 @@ export default function ManualSigSalesSimple() {
 
   const onImportFromHub = useCallback(async () => {
     setBusy(true);
+    setToast("toona 허브에서 시그 목록을 조회하고 있습니다…");
     try {
-      const res = await fetch("/api/toona/hub", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "import-signatures" }),
-        signal: AbortSignal.timeout(12_000),
+      const res = await triggerAndPollSigImport((stage) => {
+        setToast(`시그 가져오기 진행 중… (${stage})`);
       });
-      const data = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        error?: string;
-        deferred?: boolean;
-      };
-      if (!res.ok || data.ok === false) {
-        setToast(data.error || "시그 가져오기 실패");
-        return;
+      await loadRemote();
+      if (res.ok && res.summary) {
+        setToast(formatSigImportResultMessage(res.summary));
+      } else {
+        setToast(res.error || "시그 가져오기 실패 — 아래 PC 업로드를 사용해 주세요.");
       }
-      setToast(
-        data.deferred
-          ? "시그 가져오기는 백그라운드에서 진행 중. 잠시 후 이 페이지를 새로고침해 주세요."
-          : "시그를 가져왔습니다."
-      );
-      window.setTimeout(() => {
-        void loadRemote();
-      }, 5000);
     } catch {
       setToast("시그 가져오기 실패 — 아래 PC 업로드를 사용하거나 시그 판매 관리에서 올려 주세요.");
     } finally {

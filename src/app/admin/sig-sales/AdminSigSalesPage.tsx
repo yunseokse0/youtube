@@ -22,6 +22,10 @@ const RouletteWheel = dynamicImport(() => import("@/components/sig-sales/Roulett
 import SelectedSigs from "@/components/sig-sales/SelectedSigs";
 import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
 import { layoutSigOverlayResultRow } from "@/components/sig-sales/sig-overlay-card-size";
+import {
+  triggerAndPollSigImport,
+  formatSigImportResultMessage,
+} from "@/lib/toona-sig-import-client";
 import ConfirmationModal from "@/components/sig-sales/ConfirmationModal";
 import RouletteHistoryModal from "@/components/sig-sales/RouletteHistoryModal";
 import {
@@ -2540,31 +2544,17 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
 
   const onImportInventoryFromHub = useCallback(async () => {
     setInventoryUploadBusy(true);
+    setToast("toona 허브에서 시그 목록을 조회하고 있습니다…");
     try {
-      const res = await fetch("/api/toona/hub", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "import-signatures" }),
-        signal: AbortSignal.timeout(12_000),
+      const res = await triggerAndPollSigImport((stage) => {
+        setToast(`시그 가져오기 진행 중… (${stage})`);
       });
-      const data = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        error?: string;
-        deferred?: boolean;
-      };
-      if (!res.ok || data.ok === false) {
-        setToast(data.error || "시그 가져오기 실패");
-        return;
+      await loadRemote({ force: true });
+      if (res.ok && res.summary) {
+        setToast(formatSigImportResultMessage(res.summary));
+      } else {
+        setToast(res.error || "시그 가져오기 실패. PC에서 이미지를 직접 올려 주세요.");
       }
-      setToast(
-        data.deferred
-          ? "시그 가져오기는 백그라운드에서 진행 중. 잠시 후 새로고침해 주세요."
-          : "시그를 가져왔습니다."
-      );
-      window.setTimeout(() => {
-        void loadRemote({ force: true });
-      }, 5000);
     } catch {
       setToast("시그 가져오기 실패. PC에서 이미지를 올려 주세요.");
     } finally {

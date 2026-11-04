@@ -19,6 +19,18 @@ export type ToonaHubSession = {
   youtubeUserId?: string;
   /** scenario A→B 승격 시도 시각 — 폴링마다 PATCH 반복 방지 */
   scenarioBPromoteAt?: number;
+  /** 시그 가져오기 마지막 결과 현황 */
+  lastSigImport?: SigImportSummary | null;
+};
+
+export type SigImportSummary = {
+  at: number;
+  status: "idle" | "running" | "completed" | "failed";
+  fetchedCount: number;
+  addedCount: number;
+  updatedCount: number;
+  totalCount: number;
+  error?: string;
 };
 
 export type ToonaHubDonationLog = {
@@ -81,6 +93,19 @@ export async function readToonaHubSession(userId: string): Promise<ToonaHubSessi
     return row && typeof row === "object" && String(row.streamKey || "").trim() ? row : null;
   }
   return sessionMemory.get(uid) || null;
+}
+
+export async function patchToonaHubSession(
+  userId: string,
+  patch: Partial<ToonaHubSession>
+): Promise<ToonaHubSession | null> {
+  const uid = String(userId || "").trim();
+  if (!uid) return null;
+  const current = await readToonaHubSession(uid);
+  if (!current) return null;
+  const updated: ToonaHubSession = { ...current, ...patch };
+  await writeToonaHubSession(updated);
+  return updated;
 }
 
 export async function writeToonaHubSession(session: ToonaHubSession): Promise<void> {
@@ -553,5 +578,6 @@ export function publicToonaHubSession(session: ToonaHubSession | null) {
     lastIngestError: session.lastIngestError || null,
     youtubegitEnabled: session.youtubegitEnabled ?? null,
     youtubeUserId: session.youtubeUserId || null,
+    lastSigImport: session.lastSigImport || null,
   };
 }
