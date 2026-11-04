@@ -1,4 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="hana">
-  <rect width="64" height="64" rx="14" fill="#009591"/>
-  <text x="32" y="41" text-anchor="middle" font-family="Arial Black, Malgun Gothic, Apple SD Gothic Neo, sans-serif" font-size="16" font-weight="800" fill="#ffffff">하나</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="하나"><rect width="64" height="64" rx="14" fill="#009591"/><!-- 하나인 레드 원형 머리 --> <circle cx="32" cy="17" r="4.5" fill="#E93E30"/> <!-- 하나인 역동적인 양팔 & 몸체 곡선 --> <path d="M21 27 C24 24 28 23 32 24 C36 23 40 24 43 27 C41 29 38 28 35 28 C34 32 34 36 33 40 C32 40 31 36 30 28 C27 28 24 29 21 27 Z" fill="#FFFFFF"/> <path d="M25 29 C28 34 31 38 32 41 C31 36 29 32 27 29 Z" fill="#D4EBE7"/> <!-- 텍스트 --> <text x="32" y="55" text-anchor="middle" font-family="'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="12" font-weight="800" fill="#FFFFFF">하나은행</text></svg>

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import fs from "fs";
 import {
   OBS_TEXT_BANK_LOGO_PRESETS,
+  buildOfficialBankSvgString,
   koreanBankLogoUrlForCode,
   lineContainsKoreanBankLogoCode,
   resolveKoreanBankLogoUrl,
@@ -22,16 +24,29 @@ describe("korean-bank-logos", () => {
     const kb = koreanBankLogoUrlForCode(":bank-kb:");
     expect(kb).toMatch(/^data:image\/svg\+xml/);
     expect(koreanBankLogoUrlForCode(":국민은행:")).toBe(kb);
+    expect(koreanBankLogoUrlForCode(":국민:")).toBe(kb);
+    expect(koreanBankLogoUrlForCode(":신한:")).toMatch(/^data:image\/svg\+xml/);
     expect(koreanBankLogoUrlForCode(":카카오뱅크:")).toMatch(/^data:image\/svg\+xml/);
     expect(lineContainsKoreanBankLogoCode("입금 :bank-shinhan: 확인")).toBe(true);
+    expect(lineContainsKoreanBankLogoCode("입금 :신한: 확인")).toBe(true);
   });
 
   it("rewrites legacy public asset paths to data URIs", () => {
     const kb = koreanBankLogoUrlForCode(":bank-kb:");
     expect(resolveKoreanBankLogoUrl("/assets/bank-logos/kb.svg")).toBe(kb);
-    expect(resolveKoreanBankLogoUrl("https://excel.heynh.co.kr/assets/bank-logos/kb.svg")).toBe(
+    expect(resolveKoreanBankLogoUrl("https://excel.heynb.co.kr/assets/bank-logos/kb.svg")).toBe(
       kb
     );
+  });
+
+  it("generates and syncs official bank logo SVG assets", () => {
+    const stems = ["kb", "shinhan", "woori", "hana", "nh", "ibk", "sc", "kakao", "kbank", "toss"];
+    for (const stem of stems) {
+      const svg = buildOfficialBankSvgString(stem);
+      expect(svg).toContain("<svg");
+      expect(svg).toContain("viewBox=\"0 0 64 64\"");
+      fs.writeFileSync(`public/assets/bank-logos/${stem}.svg`, svg, "utf8");
+    }
   });
 });
 

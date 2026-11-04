@@ -1,4 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="woori">
-  <rect width="64" height="64" rx="14" fill="#0067AC"/>
-  <text x="32" y="41" text-anchor="middle" font-family="Arial Black, Malgun Gothic, Apple SD Gothic Neo, sans-serif" font-size="16" font-weight="800" fill="#ffffff">우리</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="우리"><rect width="64" height="64" rx="14" fill="#0067AC"/><!-- 우리은행 여명 링 --> <circle cx="32" cy="27" r="16" fill="none" stroke="#FFFFFF" stroke-width="3"/> <circle cx="32" cy="27" r="10" fill="#008BE3"/> <!-- 새벽 여명 빛줄기 V자 --> <path d="M24 23 L32 35 L40 23 L32 28 Z" fill="#FFFFFF"/> <circle cx="32" cy="21" r="3" fill="#FFFFFF"/> <!-- 텍스트 --> <text x="32" y="55" text-anchor="middle" font-family="'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="12" font-weight="800" fill="#FFFFFF">우리은행</text></svg>

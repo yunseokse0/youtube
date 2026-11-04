@@ -1,4 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="nh">
-  <rect width="64" height="64" rx="14" fill="#1FAF4C"/>
-  <text x="32" y="41" text-anchor="middle" font-family="Arial Black, Malgun Gothic, Apple SD Gothic Neo, sans-serif" font-size="22" font-weight="800" fill="#ffffff">NH</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="NH농협"><rect width="64" height="64" rx="14" fill="#009845"/><!-- 농협 V자 이삭 마크 --> <path d="M32 12 L38 24 L46 22 L38 29 L41 38 L32 31 L23 38 L26 29 L18 22 L26 24 Z" fill="#FFDE00"/> <circle cx="32" cy="25" r="4.5" fill="#009845"/> <!-- NH 워드마크 --> <text x="32" y="54" text-anchor="middle" font-family="'Arial Black', Impact, sans-serif" font-size="16" font-weight="900" fill="#FFFFFF">NH</text></svg>

@@ -1,4 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="sc">
-  <rect width="64" height="64" rx="14" fill="#00843D"/>
-  <text x="32" y="41" text-anchor="middle" font-family="Arial Black, Malgun Gothic, Apple SD Gothic Neo, sans-serif" font-size="22" font-weight="800" fill="#ffffff">SC</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="SC제일"><rect width="64" height="64" rx="14" fill="#00843D"/><!-- 트위스트 리본 그린/블루 --> <path d="M24 16 C20 20 20 27 25 31 C30 35 34 37 38 43 C41 40 40 33 36 29 C31 25 28 23 24 16 Z" fill="#00A0DD"/> <path d="M38 17 C34 21 34 28 39 32 C44 36 43 43 38 46 C42 45 45 39 42 34 C39 30 36 26 38 17 Z" fill="#78BE20"/> <!-- SC 워드마크 --> <text x="32" y="56" text-anchor="middle" font-family="'Arial Black', Impact, sans-serif" font-size="14" font-weight="900" fill="#FFFFFF">SC제일</text></svg>
