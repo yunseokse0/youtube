@@ -33,6 +33,20 @@ describe("buildOverlayRankedMembers", () => {
     expect(ranked[2]?.rank).toBe(2);
   });
 
+  it("does not treat '부대표' as representative and keeps them in ranking", () => {
+    const list: Member[] = [
+      { id: "m1", name: "Alpha", account: 1000, toon: 0, contribution: 1000 },
+      { id: "sub", name: "Beta", account: 2000, toon: 0, contribution: 2000 },
+      { id: "rep", name: "CEO", account: 500, toon: 0, contribution: 500 },
+    ];
+    const pos = { m1: "팀장", sub: "부대표", rep: "대표" };
+    const ranked = buildOverlayRankedMembers(list, pos);
+    expect(ranked.map((r) => r.m.id)).toEqual(["rep", "sub", "m1"]);
+    expect(ranked[0]?.rank).toBeNull();
+    expect(ranked[1]?.rank).toBe(1);
+    expect(ranked[2]?.rank).toBe(2);
+  });
+
   it("uses member creation order when all contributions are zero", () => {
     const zeroMembers: Member[] = [
       { id: "z3", name: "Charlie", account: 0, toon: 0, contribution: 0 },

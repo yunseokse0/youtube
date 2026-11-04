@@ -3809,7 +3809,13 @@ function OverlayInner() {
   const resolvedMemberRoles = useMemo<Record<string, string>>(() => {
     if (memberPositionMode !== "rankLinked") return memberPositionsMap;
     const roleMap: Record<string, string> = {};
-    const representative = members.find((m) => (memberPositionsMap[m.id] || "").trim() === "대표") || null;
+    const representative =
+      members.find((m) => {
+        const pos = (memberPositionsMap[m.id] || "").trim();
+        if (pos === "대표") return true;
+        if (pos.includes("부대표")) return false;
+        return pos.includes("대표");
+      }) || null;
     const orderIndex = buildMemberCreationOrderIndex(members);
     const others = members
       .filter((m) => !representative || m.id !== representative.id)
@@ -4069,8 +4075,7 @@ function OverlayInner() {
     ].join("|");
     const rows = ranked
       .map(({ m, rank }) => {
-        const rowRank = rank != null ? rank : 1;
-        const rankVal = rankCustomCells[rowRank - 1];
+        const rankVal = rank != null && rank >= 1 ? rankCustomCells[rank - 1] : undefined;
         const customVal = typeof rankVal === "string" && rankVal.trim().length > 0 ? rankVal : (memberCustomCellsMap[m.id] || "");
         return `${showCustomColumn ? `${customVal}|` : ""}${m.account}|${m.toon}|${getContributionValueForMember(m)}${showRestroomColumn ? `|${getRestroomValueForMember(m)}` : ""}`;
       })
@@ -5967,9 +5972,11 @@ function OverlayInner() {
                           <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
                             {rank == null ? (
                               <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                {((memberPositionsMap[m.id] || "").trim() === "대표" || getMemberRole(m).trim().includes("대표"))
-                                  ? "대표"
-                                  : " "}
+                                {(() => {
+                                  const role = (memberPositionsMap[m.id] || "").trim() || getMemberRole(m).trim();
+                                  const isRep = !role.includes("부대표") && role.includes("대표");
+                                  return isRep ? "대표" : " ";
+                                })()}
                               </span>
                             ) : (
                               <span

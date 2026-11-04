@@ -44,6 +44,9 @@ export default function MemberPositionInput({
           focusedRef.current = true;
         }}
         onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        }}
         onBlur={() => {
           focusedRef.current = false;
           const cleaned = draft.trim();

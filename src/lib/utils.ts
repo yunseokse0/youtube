@@ -199,10 +199,14 @@ export function buildOverlayRankedMembers(
   const metric = normalizeMemberRankingMetric(rankingMetric);
   const orderIndex = buildMemberCreationOrderIndex(allMembersForOrder ?? unpinnedMembers);
   const roleOf = getMemberRole ?? ((m: Member) => normalizePosition(m, memberPositions));
-  const isRep = (m: Member) =>
-    isRepresentativeMember(m, memberPositions) || roleOf(m).trim().includes("대표");
+  const isRep = (m: Member) => {
+    const role = roleOf(m).trim();
+    if (isRepresentativeMember(m, memberPositions)) return true;
+    if (role.includes("부대표")) return false;
+    return role.includes("대표");
+  };
   const representative = unpinnedMembers.find(isRep) || null;
-  const rankable = unpinnedMembers.filter((m) => !isRep(m));
+  const rankable = unpinnedMembers.filter((m) => !representative || m.id !== representative.id);
   const sorted = [...rankable].sort((a, b) =>
     compareMembersByRankingMetric(a, b, metric, orderIndex, getContribution)
   );
@@ -235,7 +239,12 @@ export function buildRankLinkedMemberPositions(
   const list = members || [];
   const orderIndex = buildMemberCreationOrderIndex(list);
   const representative =
-    list.find((m) => String(memberPositions?.[m.id] || "").trim() === "대표") || null;
+    list.find((m) => {
+      const pos = String(memberPositions?.[m.id] || "").trim();
+      if (pos === "대표") return true;
+      if (pos.includes("부대표")) return false;
+      return pos.includes("대표");
+    }) || null;
   const others = list
     .filter((m) => !representative || m.id !== representative.id)
     .sort((a, b) =>
