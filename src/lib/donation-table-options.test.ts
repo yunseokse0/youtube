@@ -8,6 +8,8 @@ import {
 describe("donation-table-options", () => {
   it("defaults all columns on when unset", () => {
     expect(resolveDonationTableColumnsOptions(null)).toEqual({
+      showAccountColumn: true,
+      showToonColumn: true,
       showCombinedColumn: true,
       showContributionColumn: true,
       showRestroomColumn: true,
@@ -34,6 +36,8 @@ describe("donation-table-options", () => {
 
   it("normalizeDonationTableColumnsOptions stores booleans", () => {
     expect(normalizeDonationTableColumnsOptions({ showContributionSum: false })).toEqual({
+      showAccountColumn: true,
+      showToonColumn: true,
       showCombinedColumn: true,
       showContributionColumn: true,
       showRestroomColumn: true,

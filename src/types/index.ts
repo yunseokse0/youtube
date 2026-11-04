@@ -297,6 +297,10 @@ export type SigMatchPool = {
 };
 
 export type DonationTableColumnsOptions = {
+  /** 계좌 열 표시 (기본 true) */
+  showAccountColumn?: boolean;
+  /** 투네 열 표시 (기본 true) */
+  showToonColumn?: boolean;
   /** 후원합계 열 표시 */
   showCombinedColumn?: boolean;
   /** 기여도 열 표시 */

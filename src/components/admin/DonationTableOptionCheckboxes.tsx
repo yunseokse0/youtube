@@ -35,6 +35,24 @@ export default function DonationTableOptionCheckboxes({
         <input
           type="checkbox"
           className="rounded border-white/20 bg-neutral-900"
+          checked={resolved.showAccountColumn}
+          onChange={(e) => onChange({ showAccountColumn: e.target.checked })}
+        />
+        계좌 열
+      </label>
+      <label className={labelClass}>
+        <input
+          type="checkbox"
+          className="rounded border-white/20 bg-neutral-900"
+          checked={resolved.showToonColumn}
+          onChange={(e) => onChange({ showToonColumn: e.target.checked })}
+        />
+        투네 열
+      </label>
+      <label className={labelClass}>
+        <input
+          type="checkbox"
+          className="rounded border-white/20 bg-neutral-900"
           checked={resolved.showCustomColumn}
           onChange={(e) => onChange({ showCustomColumn: e.target.checked })}
         />

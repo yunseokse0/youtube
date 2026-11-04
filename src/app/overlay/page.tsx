@@ -2655,6 +2655,8 @@ function OverlayInner() {
   const effectiveTableOnly = tableOnly && !showGoalRequested;
   const showMembers = effectiveTableOnly ? true : (timerOnlyMode ? false : (sp.get("showMembers") !== "false"));
   const showTotal = effectiveTableOnly ? true : (timerOnlyMode ? false : (sp.get("showTotal") !== "false"));
+  const showAccountColumn = resolvePresetBool("showAccountColumn", true);
+  const showToonColumn = resolvePresetBool("showToonColumn", true);
   const showCombinedColumn = resolvePresetBool("showCombinedColumn", true);
   const showContributionColumn = resolvePresetBool("showContributionColumn", true);
   const showCustomColumn = resolvePresetBool("showCustomColumn", true);
@@ -4059,10 +4061,10 @@ function OverlayInner() {
       ...(showCustomColumn ? [customFit] : []),
       ...(hasRoleColumn ? [roleColFit] : []),
       nameColGridWidth,
-      bankCh,
-      toonCh,
-      totalCh,
-      contributionCh,
+      ...(showAccountColumn ? [bankCh] : []),
+      ...(showToonColumn ? [toonCh] : []),
+      ...(showCombinedColumn ? [totalCh] : []),
+      ...(showContributionColumn ? [contributionCh] : []),
       ...(showRestroomColumn ? [restroomCh] : []),
     ].join("|");
     const rows = ranked
@@ -4080,6 +4082,8 @@ function OverlayInner() {
     visiblePinned,
     hasRoleColumn,
     showCustomColumn,
+    showAccountColumn,
+    showToonColumn,
     memberCustomCellsMap,
     rankCustomCells,
     customHeaderLabel,
@@ -4479,8 +4483,8 @@ function OverlayInner() {
       ...(showCustomColumn ? [`${customColCh}ch`] : []),
       ...(hasRoleColumn ? [`${roleColEm}em`] : []),
       `${nameColGridWidth}`,
-      `${bankCh}ch`,
-      `${toonCh}ch`,
+      ...(showAccountColumn ? [`${bankCh}ch`] : []),
+      ...(showToonColumn ? [`${toonCh}ch`] : []),
       ...(showCombinedColumn ? [`${totalCh}ch`] : []),
       ...(showContributionColumn ? [`${contributionCh}ch`] : []),
       ...(showRestroomColumn ? [`${restroomCh}ch`] : []),
@@ -5842,8 +5846,12 @@ function OverlayInner() {
                       )}
                       {hasRoleColumn && <td className={`${effectiveHeaderCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
                       <td className={`${effectiveHeaderCls} overlay-col-name text-center`}>이름</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-account text-center`}>{accountHeaderLabel}</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-toon text-center`}>{toonHeaderLabel}</td>
+                      {showAccountColumn && (
+                        <td className={`${effectiveHeaderCls} overlay-col-account text-center`}>{accountHeaderLabel}</td>
+                      )}
+                      {showToonColumn && (
+                        <td className={`${effectiveHeaderCls} overlay-col-toon text-center`}>{toonHeaderLabel}</td>
+                      )}
                       {showCombinedColumn && (
                         <td className={`${effectiveHeaderCls} overlay-col-total text-center`}>{totalHeaderLabel}</td>
                       )}
@@ -5892,16 +5900,20 @@ function OverlayInner() {
                                 {" "}
                               </span>
                             </td>
-                            <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-center`}>
-                              <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                {" "}
-                              </span>
-                            </td>
-                            <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-center`}>
-                              <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                {" "}
-                              </span>
-                            </td>
+                            {showAccountColumn && (
+                              <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-center`}>
+                                <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                  {" "}
+                                </span>
+                              </td>
+                            )}
+                            {showToonColumn && (
+                              <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-center`}>
+                                <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                  {" "}
+                                </span>
+                              </td>
+                            )}
                             {showCombinedColumn && (
                               <td className={`${effectiveRowCls} overlay-col-total text-center font-bold`}>
                                 <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
@@ -6019,24 +6031,28 @@ function OverlayInner() {
                               {m.name}
                             </span>
                           </td>
-                          <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-center`}>
-                            <OverlayTableNumCell
-                              value={m.account}
-                              format={fmt}
-                              animate={rowMotionEnabled}
-                              className="overlay-num-cell-inner overlay-cell-text-inner"
-                              style={overlayCellOutlineStyle}
-                            />
-                          </td>
-                          <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-center`}>
-                            <OverlayTableNumCell
-                              value={m.toon}
-                              format={fmt}
-                              animate={rowMotionEnabled}
-                              className="overlay-num-cell-inner overlay-cell-text-inner"
-                              style={overlayCellOutlineStyle}
-                            />
-                          </td>
+                          {showAccountColumn && (
+                            <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-center`}>
+                              <OverlayTableNumCell
+                                value={m.account}
+                                format={fmt}
+                                animate={rowMotionEnabled}
+                                className="overlay-num-cell-inner overlay-cell-text-inner"
+                                style={overlayCellOutlineStyle}
+                              />
+                            </td>
+                          )}
+                          {showToonColumn && (
+                            <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-center`}>
+                              <OverlayTableNumCell
+                                value={m.toon}
+                                format={fmt}
+                                animate={rowMotionEnabled}
+                                className="overlay-num-cell-inner overlay-cell-text-inner"
+                                style={overlayCellOutlineStyle}
+                              />
+                            </td>
+                          )}
                           {showCombinedColumn && (
                             <td className={`${effectiveRowCls} overlay-col-total text-center font-bold`}>
                               <OverlayTableNumCell
@@ -6115,24 +6131,28 @@ function OverlayInner() {
                             {m.name}
                           </span>
                         </td>
-                        <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-center`}>
-                          <OverlayTableNumCell
-                            value={m.account}
-                            format={fmt}
-                            animate={rowMotionEnabled}
-                            className="overlay-num-cell-inner overlay-cell-text-inner"
-                            style={overlayCellOutlineStyle}
-                          />
-                        </td>
-                        <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-center`}>
-                          <OverlayTableNumCell
-                            value={m.toon}
-                            format={fmt}
-                            animate={rowMotionEnabled}
-                            className="overlay-num-cell-inner overlay-cell-text-inner"
-                            style={overlayCellOutlineStyle}
-                          />
-                        </td>
+                        {showAccountColumn && (
+                          <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-center`}>
+                            <OverlayTableNumCell
+                              value={m.account}
+                              format={fmt}
+                              animate={rowMotionEnabled}
+                              className="overlay-num-cell-inner overlay-cell-text-inner"
+                              style={overlayCellOutlineStyle}
+                            />
+                          </td>
+                        )}
+                        {showToonColumn && (
+                          <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-center`}>
+                            <OverlayTableNumCell
+                              value={m.toon}
+                              format={fmt}
+                              animate={rowMotionEnabled}
+                              className="overlay-num-cell-inner overlay-cell-text-inner"
+                              style={overlayCellOutlineStyle}
+                            />
+                          </td>
+                        )}
                         {showCombinedColumn && (
                           <td className={`${effectiveRowCls} overlay-col-total text-center font-bold`}>
                             <OverlayTableNumCell
@@ -6176,24 +6196,28 @@ function OverlayInner() {
                           총합
                         </td>
                         <td className={`${overlayTotalRowCls} overlay-col-name`} />
-                        <td className={`${overlayTotalRowCls} overlay-col-account overlay-account-cell text-center`}>
-                          <OverlayTableNumCell
-                            value={sumAccount}
-                            format={fmt}
-                            animate={rowMotionEnabled}
-                            className="overlay-num-cell-inner overlay-cell-text-inner"
-                            style={overlayCellOutlineStyle}
-                          />
-                        </td>
-                        <td className={`${overlayTotalRowCls} overlay-col-toon overlay-toon-cell text-center`}>
-                          <OverlayTableNumCell
-                            value={sumToon}
-                            format={fmt}
-                            animate={rowMotionEnabled}
-                            className="overlay-num-cell-inner overlay-cell-text-inner"
-                            style={overlayCellOutlineStyle}
-                          />
-                        </td>
+                        {showAccountColumn && (
+                          <td className={`${overlayTotalRowCls} overlay-col-account overlay-account-cell text-center`}>
+                            <OverlayTableNumCell
+                              value={sumAccount}
+                              format={fmt}
+                              animate={rowMotionEnabled}
+                              className="overlay-num-cell-inner overlay-cell-text-inner"
+                              style={overlayCellOutlineStyle}
+                            />
+                          </td>
+                        )}
+                        {showToonColumn && (
+                          <td className={`${overlayTotalRowCls} overlay-col-toon overlay-toon-cell text-center`}>
+                            <OverlayTableNumCell
+                              value={sumToon}
+                              format={fmt}
+                              animate={rowMotionEnabled}
+                              className="overlay-num-cell-inner overlay-cell-text-inner"
+                              style={overlayCellOutlineStyle}
+                            />
+                          </td>
+                        )}
                         {showCombinedColumn && (
                           <td className={`${overlayTotalRowCls} overlay-col-total text-center`}>
                             <OverlayTableNumCell

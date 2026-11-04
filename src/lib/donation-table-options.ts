@@ -1,6 +1,8 @@
 import type { DonationTableColumnsOptions } from "@/types";
 
 export type ResolvedDonationTableColumnsOptions = {
+  showAccountColumn: boolean;
+  showToonColumn: boolean;
   showCombinedColumn: boolean;
   showContributionColumn: boolean;
   showRestroomColumn: boolean;
@@ -10,6 +12,8 @@ export type ResolvedDonationTableColumnsOptions = {
 };
 
 export const DEFAULT_DONATION_TABLE_COLUMNS: ResolvedDonationTableColumnsOptions = {
+  showAccountColumn: true,
+  showToonColumn: true,
   showCombinedColumn: true,
   showContributionColumn: true,
   showRestroomColumn: true,
@@ -24,6 +28,8 @@ export function resolveDonationTableColumnsOptions(
 ): ResolvedDonationTableColumnsOptions {
   const fb = { ...DEFAULT_DONATION_TABLE_COLUMNS, ...fallback };
   return {
+    showAccountColumn: opts?.showAccountColumn ?? fb.showAccountColumn,
+    showToonColumn: opts?.showToonColumn ?? fb.showToonColumn,
     showCombinedColumn: opts?.showCombinedColumn ?? fb.showCombinedColumn,
     showContributionColumn: opts?.showContributionColumn ?? fb.showContributionColumn,
     showRestroomColumn: opts?.showRestroomColumn ?? fb.showRestroomColumn,
@@ -38,6 +44,8 @@ export function normalizeDonationTableColumnsOptions(
 ): DonationTableColumnsOptions {
   const src = input && typeof input === "object" ? input : {};
   return {
+    showAccountColumn: src.showAccountColumn !== false,
+    showToonColumn: src.showToonColumn !== false,
     showCombinedColumn: src.showCombinedColumn !== false,
     showContributionColumn: src.showContributionColumn !== false,
     showRestroomColumn: src.showRestroomColumn !== false,
@@ -55,6 +63,8 @@ export function mergeDonationTablePresetFields<
   const f = (fallback && typeof fallback === "object" ? fallback : {}) as DonationTableColumnsOptions;
   return {
     ...(primary && typeof primary === "object" ? primary : {}),
+    showAccountColumn: p.showAccountColumn ?? f.showAccountColumn,
+    showToonColumn: p.showToonColumn ?? f.showToonColumn,
     showCombinedColumn: p.showCombinedColumn ?? f.showCombinedColumn,
     showContributionColumn: p.showContributionColumn ?? f.showContributionColumn,
     showRestroomColumn: p.showRestroomColumn ?? f.showRestroomColumn,
@@ -65,6 +75,8 @@ export function mergeDonationTablePresetFields<
 }
 
 const DONATION_TABLE_BOOL_KEYS = new Set([
+  "showAccountColumn",
+  "showToonColumn",
   "showCombinedColumn",
   "showContributionColumn",
   "showRestroomColumn",

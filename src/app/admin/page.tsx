@@ -408,6 +408,8 @@ type OverlayPreset = {
   missionWidth?: string; missionDuration?: string; missionBgOpacity?: string; missionBgColor?: string; missionItemColor?: string; missionTitleColor?: string; missionTitleText?: string; missionTitleEffect?: string; missionFontSize?: string; missionEffect?: string; missionEffectHotOnly?: string; missionDisplayMode?: string; missionVisibleCount?: string; missionSpeed?: string; missionGapSize?: string;
   showMembers: boolean; showTotal: boolean;
   totalMode?: "total" | "contribution";
+  showAccountColumn?: boolean;
+  showToonColumn?: boolean;
   showCombinedColumn?: boolean;
   showCustomColumn?: boolean;
   customHeaderLabel?: string;
@@ -1515,6 +1517,8 @@ function AdminPageInner() {
     missionWidth: "800", missionDuration: "25",
     membersTheme: "auto", totalTheme: "auto", goalTheme: "auto", tickerBaseTheme: "auto", timerTheme: "auto", missionTheme: "auto",
     showBottomDonors: false, donorsSize: "", donorsGap: "16", donorsSpeed: "60", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", donorsBgColor: "", donorsBgOpacity: "0", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
+    showAccountColumn: true,
+    showToonColumn: true,
     showCombinedColumn: true,
     showContributionColumn: true,
     showRestroomColumn: true,
@@ -20854,6 +20858,8 @@ function AdminPageInner() {
                                     compact
                                     sumRowFallback={Boolean(p.showTableSumRow ?? p.showTotal)}
                                     value={{
+                                      showAccountColumn: p.showAccountColumn,
+                                      showToonColumn: p.showToonColumn,
                                       showCombinedColumn: p.showCombinedColumn,
                                       showContributionColumn: p.showContributionColumn,
                                       showRestroomColumn: p.showRestroomColumn,
