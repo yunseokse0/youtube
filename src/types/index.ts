@@ -710,6 +710,10 @@ export type AppState = {
   /** 시그 회전판(서버 랜덤 결과 + 오버레이 애니메이션) */
   rouletteState: RouletteState;
   overlayPresets?: unknown[];
+  /** 퐁당퐁당 기여도 수동 입력 모드 (true: 수동 입력값 우선, false: 룰렛/시그 자동 집계) */
+  pongdangManualMode?: boolean;
+  /** 멤버별 수동 퐁당퐁당 기여도 (memberId -> 기여도 금액) */
+  pongdangManualContributions?: Record<string, number>;
   overlaySettings?: LegacyOverlaySettings;
   /** 멤버별 시그 매치 점수 */
   sigMatch: SigMatchState;

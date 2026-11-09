@@ -250,6 +250,15 @@ export function collectDay777SigContributionByMember(
       byMember.set(mid, (byMember.get(mid) || 0) + cp);
     }
   }
+  // 기여도 기록부(contributionLogs) 수동 가감 로그 합산
+  const logs = t != null ? filterContributionLogsFromAggregateAt(state?.contributionLogs, t) : state?.contributionLogs || [];
+  for (const log of logs) {
+    const mid = String(log.memberId || "").trim();
+    if (!mid) continue;
+    const delta = log.delta === -1 ? -1 : 1;
+    const amt = Math.max(0, Math.floor(Number(log.amount || 0)));
+    byMember.set(mid, Math.max(0, (byMember.get(mid) || 0) + delta * amt));
+  }
   return byMember;
 }
 
@@ -270,6 +279,8 @@ export type OverlayDonationDisplayOpts = {
   fromAt?: number | null;
   /** 퐁당퐁당 기여도 열만 나온 시그 단가(시그 기여도). 777,000원 후원 금액은 제외 */
   day777Calc?: boolean;
+  /** 퐁당퐁당 기여도 수동 입력 모드 (수동 입력값 적용) */
+  pongdangManualMode?: boolean;
 };
 
 /**
@@ -302,13 +313,19 @@ export function applyOverlayDonationDisplayTotals(
 
   if (!day777) return amountSynced;
 
+  const isManualMode = Boolean(opts.pongdangManualMode ?? state.pongdangManualMode);
+  const manualContribs = state.pongdangManualContributions || {};
+
   const sigById = collectDay777SigContributionByMember(state, fromAt);
 
   return {
     ...amountSynced,
     members: (amountSynced.members || []).map((m) => ({
       ...m,
-      contribution: sigById.get(m.id) ?? 0,
+      contribution:
+        isManualMode && manualContribs[m.id] !== undefined
+          ? Math.max(0, Math.floor(Number(manualContribs[m.id]) || 0))
+          : sigById.get(m.id) ?? 0,
     })),
   };
 }
@@ -325,7 +342,7 @@ export function membersWithOverlayDonationAggregate(
   state: AppState,
   members: Member[],
   fromAt: number | null | undefined,
-  opts?: { day777Calc?: boolean }
+  opts?: { day777Calc?: boolean; pongdangManualMode?: boolean }
 ): Member[] {
   const fromAtN = normalizeDonationAggregateFromAt(fromAt);
   const day777 = Boolean(opts?.day777Calc);
@@ -333,7 +350,7 @@ export function membersWithOverlayDonationAggregate(
   return (
     applyOverlayDonationDisplayTotals(
       { ...state, members },
-      { fromAt: fromAtN, day777Calc: day777 }
+      { fromAt: fromAtN, day777Calc: day777, pongdangManualMode: opts?.pongdangManualMode }
     ).members || members
   );
 }

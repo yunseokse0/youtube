@@ -53,6 +53,7 @@ import {
   resolveTableColumnTextColor,
   resolveDonationAggregateFromAt,
   resolveDay777Calc,
+  resolvePongdangManualMode,
   resolveTableRowEvenBg,
   resolveTableRowOddBg,
   resolveTablePanelBorderColor,
@@ -2709,6 +2710,8 @@ function OverlayInner() {
   const donationAggregateFromAt = resolveDonationAggregateFromAt(rawSp, effectivePreset, { ready });
   const day777Calc =
     membersThemeId === "excelPongdang" && resolveDay777Calc(rawSp, effectivePreset, { ready });
+  const pongdangManualMode =
+    day777Calc && resolvePongdangManualMode(rawSp, effectivePreset, { ready }, s as AppState);
   const toonHeaderLabel = resolvePresetLabel("toonHeaderLabel", "투네");
   const restroomHeaderLabel = resolvePresetLabel("restroomHeaderLabel", "화장실");
   const showGoal = (() => {
@@ -3655,7 +3658,7 @@ function OverlayInner() {
         },
         membersRemote,
         donationAggregateFromAt,
-        { day777Calc }
+        { day777Calc, pongdangManualMode }
       )
     );
   }, [
@@ -3663,6 +3666,7 @@ function OverlayInner() {
     membersRemote,
     donationAggregateFromAt,
     day777Calc,
+    pongdangManualMode,
     s,
     isAdminPreview,
     adminPreviewDonors,
@@ -3762,8 +3766,9 @@ function OverlayInner() {
     return resolveOverlayContributionSource(s as AppState, {
       fromAt: donationAggregateFromAt,
       day777Calc,
+      pongdangManualMode,
     });
-  }, [s, donationAggregateFromAt, day777Calc]);
+  }, [s, donationAggregateFromAt, day777Calc, pongdangManualMode]);
   const getContributionValueForMember = useCallback((m: Member) => {
     if (day777Calc) {
       const raw = (m as Member & { contribution?: unknown }).contribution;
@@ -3801,6 +3806,7 @@ function OverlayInner() {
   }, [
     allowContributionTotalFallback,
     day777Calc,
+    pongdangManualMode,
     overlayContributionSource.donors,
     overlayContributionSource.contributionLogs,
     s?.contributionFormula,

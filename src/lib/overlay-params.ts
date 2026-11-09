@@ -237,6 +237,8 @@ export type OverlayPresetLike = {
    * 계좌/투네 열은 donationAggregateFromAt 규칙을 따름. 표시 전용.
    */
   day777Calc?: boolean;
+  /** 퐁당퐁당 기여도 수동 입력 모드 */
+  pongdangManualMode?: boolean;
   accountHeaderLabel?: string;
   toonHeaderLabel?: string;
   restroomHeaderLabel?: string;
@@ -511,6 +513,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
     }
   }
   if (preset.day777Calc === true) q.set("day777Calc", "true");
+  if (preset.pongdangManualMode === true) q.set("pongdangManualMode", "true");
   if (preset.accountHeaderLabel && preset.accountHeaderLabel.trim()) q.set("accountHeaderLabel", preset.accountHeaderLabel.trim());
   if (preset.toonHeaderLabel && preset.toonHeaderLabel.trim()) q.set("toonHeaderLabel", preset.toonHeaderLabel.trim());
   if (preset.restroomHeaderLabel && preset.restroomHeaderLabel.trim()) q.set("restroomHeaderLabel", preset.restroomHeaderLabel.trim());
@@ -598,6 +601,7 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "customHeaderLabel",
   "donationAggregateFromAt",
   "day777Calc",
+  "pongdangManualMode",
   "rankTop3Mode",
   "rankTop3Effect",
   "rankLabelFormat",
@@ -781,6 +785,7 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "customHeaderLabel",
   "donationAggregateFromAt",
   "day777Calc",
+  "pongdangManualMode",
   "rankTop3Mode",
   "rankTop3Effect",
   "rankLabelFormat",
@@ -1176,6 +1181,7 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "restroomBg",
   "donationAggregateFromAt",
   "day777Calc",
+  "pongdangManualMode",
   "tableBgOpacity",
   "tableBgGifOpacity",
   "tableBgGifBrightness",
@@ -1266,6 +1272,7 @@ const PRESET_EMPTY_USES_THEME_DEFAULT_KEYS = new Set([
   "restroomBg",
   "donationAggregateFromAt",
   "day777Calc",
+  "pongdangManualMode",
   "tableRowEvenBg",
   "tableRowOddBg",
   "tablePanelBorderColor",
@@ -2245,6 +2252,25 @@ export function resolveDay777Calc(
   if (merged === "false") return false;
   if (merged === "true") return true;
   return preset?.day777Calc !== false;
+}
+
+/**
+ * 퐁당퐁당 수동 기여도 모드 — 퐁당퐁당 엑셀표만.
+ * 수동 모드 ON: 관리자 수동 입력 기여도 반영
+ * 수동 모드 OFF: 룰렛/Toona 당첨 시그 단가 자동 집계
+ */
+export function resolvePongdangManualMode(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean },
+  state?: { pongdangManualMode?: boolean } | null
+): boolean {
+  if (!overlayThemeIsExcelPongdang(rawSp, preset, opts)) return false;
+  const merged = resolveLivePresetStyleParam("pongdangManualMode", rawSp, presetToParams(preset), opts);
+  if (merged === "true") return true;
+  if (merged === "false") return false;
+  if (preset?.pongdangManualMode === true) return true;
+  return Boolean(state?.pongdangManualMode);
 }
 
 /** 멤버 행 줄무늬(짝) */

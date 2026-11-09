@@ -390,4 +390,75 @@ describe("day777Calc", () => {
     );
     expect(rows.map((d) => d.id)).toEqual(["a"]);
   });
+
+  it("applies pongdangManualContributions when pongdangManualMode is true", () => {
+    const state = {
+      members: [member({ id: "m1", name: "자키" }), member({ id: "m2", name: "수린" })],
+      donors: [
+        donor({
+          id: "d1",
+          memberId: "m1",
+          amount: 10_000,
+          at: 1_500,
+          target: "toon",
+          sigPrice: 50_000,
+          isSigCredit: true,
+        }),
+      ],
+      contributionLogs: [],
+      rouletteState: null,
+      pongdangManualMode: true,
+      pongdangManualContributions: {
+        m1: 770_000,
+        m2: 350_000,
+      },
+    } as unknown as AppState;
+
+    const nextManual = applyOverlayDonationDisplayTotals(state, {
+      fromAt: 1,
+      day777Calc: true,
+      pongdangManualMode: true,
+    });
+    expect(nextManual.members[0]?.contribution).toBe(770_000);
+    expect(nextManual.members[1]?.contribution).toBe(350_000);
+
+    const nextAuto = applyOverlayDonationDisplayTotals(state, {
+      fromAt: 1,
+      day777Calc: true,
+      pongdangManualMode: false,
+    });
+    expect(nextAuto.members[0]?.contribution).toBe(50_000);
+    expect(nextAuto.members[1]?.contribution).toBe(0);
+  });
+
+  it("includes contributionLogs in day777Calc when in auto mode", () => {
+    const state = {
+      members: [member({ id: "m1", name: "자키" })],
+      donors: [
+        donor({
+          id: "d1",
+          memberId: "m1",
+          amount: 10_000,
+          at: 1_500,
+          target: "toon",
+          sigPrice: 50_000,
+          isSigCredit: true,
+        }),
+      ],
+      contributionLogs: [
+        {
+          id: "cl_1",
+          memberId: "m1",
+          amount: 20_000,
+          delta: 1,
+          at: 1_600,
+        },
+      ],
+      rouletteState: null,
+      pongdangManualMode: false,
+    } as unknown as AppState;
+
+    const next = applyOverlayDonationDisplayTotals(state, { fromAt: 1, day777Calc: true });
+    expect(next.members[0]?.contribution).toBe(70_000);
+  });
 });

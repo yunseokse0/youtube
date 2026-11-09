@@ -294,6 +294,7 @@ import {
   resetMealBattleDonationUi,
   setSigMatchDonationCountFrom,
 } from "@/lib/battle-donation-sync";
+import { collectDay777SigContributionByMember } from "@/lib/overlay-donation-aggregate";
 import { normalizeMealGaugeEffects } from "@/lib/meal-gauge-effects";
 import {
   parseSigMatchGaugeThemeId,
@@ -417,6 +418,8 @@ type OverlayPreset = {
   donationAggregateFromAt?: string;
   /** 777데이 계산 — 퐁당퐁당 엑셀만. 기존 엑셀은 후원 금액=기여도 */
   day777Calc?: boolean;
+  day777ManualMode?: boolean;
+  pongdangManualMode?: boolean;
   showContributionColumn?: boolean;
   showRestroomColumn?: boolean;
   showContributionSum?: boolean;
@@ -10828,6 +10831,85 @@ function AdminPageInner() {
     setContributionNote("");
   };
 
+  const togglePongdangManualMode = useCallback((force?: boolean) => {
+    setState((prev: AppState) => {
+      const nextMode = typeof force === "boolean" ? force : !prev.pongdangManualMode;
+      const next: AppState = {
+        ...prev,
+        pongdangManualMode: nextMode,
+      };
+      persistState(next, { omitDonationFields: true });
+      return next;
+    });
+  }, [persistState]);
+
+  const updatePongdangManualContribution = useCallback((memberId: string, amount: number) => {
+    setState((prev: AppState) => {
+      const nextManual = {
+        ...(prev.pongdangManualContributions || {}),
+        [memberId]: Math.max(0, Math.floor(Number(amount) || 0)),
+      };
+      const next: AppState = {
+        ...prev,
+        pongdangManualContributions: nextManual,
+      };
+      persistState(next, { omitDonationFields: true });
+      return next;
+    });
+  }, [persistState]);
+
+  const adjustPongdangManualContribution = useCallback((memberId: string, delta: number) => {
+    setState((prev: AppState) => {
+      const current = prev.pongdangManualContributions?.[memberId] ?? 0;
+      const nextVal = Math.max(0, current + delta);
+      const nextManual = {
+        ...(prev.pongdangManualContributions || {}),
+        [memberId]: nextVal,
+      };
+      const next: AppState = {
+        ...prev,
+        pongdangManualContributions: nextManual,
+      };
+      persistState(next, { omitDonationFields: true });
+      return next;
+    });
+  }, [persistState]);
+
+  const syncPongdangManualWithAutoValues = useCallback(() => {
+    setState((prev: AppState) => {
+      const sigMap = collectDay777SigContributionByMember(prev);
+      const nextManual: Record<string, number> = {};
+      for (const m of prev.members) {
+        nextManual[m.id] = sigMap.get(m.id) || 0;
+      }
+      const next: AppState = {
+        ...prev,
+        pongdangManualContributions: nextManual,
+      };
+      persistState(next, { omitDonationFields: true });
+      return next;
+    });
+  }, [persistState]);
+
+  const resetAllPongdangManualContributions = useCallback(() => {
+    setState((prev: AppState) => {
+      const nextManual: Record<string, number> = {};
+      for (const m of prev.members) {
+        nextManual[m.id] = 0;
+      }
+      const next: AppState = {
+        ...prev,
+        pongdangManualContributions: nextManual,
+      };
+      persistState(next, { omitDonationFields: true });
+      return next;
+    });
+  }, [persistState]);
+
+  const autoSigContributionMap = useMemo(() => {
+    return collectDay777SigContributionByMember(state);
+  }, [state.donors, state.rouletteInventory, state.contributionLogs]);
+
   const applyRestroomChange = useCallback((
     memberId: string,
     delta: 1 | -1,
@@ -17597,6 +17679,139 @@ function AdminPageInner() {
                 </button>
               </div>
               <div className="text-sm text-neutral-400 mt-2">후원 입력과 동일하게 건별 로그를 남기며, 로그에서 되돌리기/삭제할 수 있습니다.</div>
+
+              {/* 퐁당퐁당 777데이 수동 기여도 관리 패널 */}
+              <div className="mt-6 pt-5 border-t border-white/10 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-amber-300 text-sm">퐁당퐁당 777데이 기여도 수동 관리</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950/70 border border-amber-500/40 text-amber-200 font-semibold">
+                        퐁당퐁당 엑셀표 전용
+                      </span>
+                    </div>
+                    <div className="text-xs text-neutral-400 mt-1">
+                      퐁당퐁당 엑셀표(777데이)에서 룰렛/시그 자동 집계 대신 수동으로 입력한 기여도를 오버레이에 직접 노출합니다.
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                        state.pongdangManualMode
+                          ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/40 ring-1 ring-emerald-400"
+                          : "bg-neutral-800 hover:bg-neutral-700 text-neutral-400 border border-white/10"
+                      }`}
+                      onClick={() => togglePongdangManualMode()}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${state.pongdangManualMode ? "bg-white animate-pulse" : "bg-neutral-500"}`} />
+                      {state.pongdangManualMode ? "수동 모드 활성 (ON)" : "수동 모드 꺼짐 (자동 OFF)"}
+                    </button>
+                    <button
+                      type="button"
+                      className="px-2.5 py-1.5 rounded bg-amber-900/60 hover:bg-amber-800 text-xs text-amber-200 border border-amber-500/30 font-medium"
+                      title="현재 시그 당첨 단가 및 가감 로그가 계산된 자동 집계값을 수동 입력값으로 복사해옵니다."
+                      onClick={syncPongdangManualWithAutoValues}
+                    >
+                      자동 집계값 불러오기
+                    </button>
+                    <button
+                      type="button"
+                      className="px-2.5 py-1.5 rounded bg-neutral-800 hover:bg-neutral-700 text-xs text-neutral-300 border border-white/10"
+                      onClick={resetAllPongdangManualContributions}
+                    >
+                      전체 0원 초기화
+                    </button>
+                  </div>
+                </div>
+
+                {state.pongdangManualMode && (
+                  <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/30 text-xs text-emerald-200 flex items-center gap-2">
+                    <span className="font-bold">✓ 수동 모드 작동 중:</span>
+                    <span>퐁당퐁당 엑셀표의 기여도 열에 아래 입력한 금액이 실시간으로 우선 반영됩니다. (메인 엑셀표는 영향 없음)</span>
+                  </div>
+                )}
+
+                <div className="overflow-x-auto rounded-lg border border-white/10 bg-neutral-900/60 p-2.5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {state.members.map((m) => {
+                      const manualVal = state.pongdangManualContributions?.[m.id] ?? 0;
+                      const autoVal = autoSigContributionMap.get(m.id) ?? 0;
+                      return (
+                        <div
+                          key={`pongdang-manual-${m.id}`}
+                          className="flex flex-col p-2.5 rounded-md bg-neutral-950/60 border border-white/10 gap-2"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-sm text-neutral-100">{m.name}</span>
+                            <span className="text-[11px] text-neutral-400">
+                              자동: <span className="font-mono text-amber-300">{autoVal.toLocaleString("ko-KR")}원</span>
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-neutral-400 whitespace-nowrap">수동값:</span>
+                            <input
+                              type="number"
+                              className="w-full px-2 py-1 rounded bg-neutral-900 border border-white/15 text-sm font-bold text-emerald-300 text-right focus:outline-none focus:border-emerald-500"
+                              value={manualVal || ""}
+                              placeholder="0"
+                              onChange={(e) => {
+                                const num = Math.max(0, parseInt(e.target.value.replace(/[^\d]/g, ""), 10) || 0);
+                                updatePongdangManualContribution(m.id, num);
+                              }}
+                            />
+                            <span className="text-xs text-neutral-400">원</span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1">
+                            <button
+                              type="button"
+                              className="px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[11px] text-neutral-300 border border-white/5"
+                              onClick={() => adjustPongdangManualContribution(m.id, 10000)}
+                            >
+                              +1만
+                            </button>
+                            <button
+                              type="button"
+                              className="px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[11px] text-neutral-300 border border-white/5"
+                              onClick={() => adjustPongdangManualContribution(m.id, 50000)}
+                            >
+                              +5만
+                            </button>
+                            <button
+                              type="button"
+                              className="px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[11px] text-amber-300 border border-amber-500/20"
+                              onClick={() => adjustPongdangManualContribution(m.id, 77000)}
+                            >
+                              +7.7만
+                            </button>
+                            <button
+                              type="button"
+                              className="px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[11px] text-neutral-300 border border-white/5"
+                              onClick={() => adjustPongdangManualContribution(m.id, 100000)}
+                            >
+                              +10만
+                            </button>
+                            <button
+                              type="button"
+                              className="px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[11px] text-rose-300 border border-rose-500/20"
+                              onClick={() => adjustPongdangManualContribution(m.id, -10000)}
+                            >
+                              -1만
+                            </button>
+                            <button
+                              type="button"
+                              className="ml-auto px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-rose-950 text-[11px] text-neutral-400 hover:text-rose-300 border border-white/5"
+                              onClick={() => updatePongdangManualContribution(m.id, 0)}
+                            >
+                              0원
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </AdminCollapsibleSection>
 
             <AdminCollapsibleSection
@@ -21008,6 +21223,27 @@ function AdminPageInner() {
                                       </span>
                                     )}
                                   </div>
+                                  {(p.membersTheme === "excelPongdang" || p.theme === "excelPongdang") && (
+                                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
+                                      <label className="text-xs text-neutral-400">수동 기여도 모드</label>
+                                      <button
+                                        type="button"
+                                        className={`px-2 py-0.5 rounded border text-xs ${
+                                          p.pongdangManualMode
+                                            ? "border-emerald-500 text-emerald-300 bg-emerald-950/40"
+                                            : "border-white/10 text-neutral-500"
+                                        }`}
+                                        onClick={() =>
+                                          updatePreset(p.id, { pongdangManualMode: !p.pongdangManualMode })
+                                        }
+                                      >
+                                        {p.pongdangManualMode ? "수동 ON" : "자동(OFF)"}
+                                      </button>
+                                      <span className="text-[10px] text-neutral-500">
+                                        ON: 기여도 기록부의 퐁당 수동 입력값 우선 반영 / OFF: 시그 단가 자동 집계
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
                                   <label className="text-xs text-neutral-400">계좌 헤더</label>
