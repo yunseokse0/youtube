@@ -68,7 +68,7 @@ export const SIG_MATCH_GAUGE_THEMES: Record<SigMatchGaugeThemeId, SigMatchGaugeT
   "gold-luxury": {
     id: "gold-luxury",
     label: "골드 럭셔리",
-    leftFill: "linear-gradient(180deg, #3a3a3a 0%, #1a1a1a 45%, #0a0a0a 100%)",
+    leftFill: "linear-gradient(180deg, #f8fafc 0%, #cbd5e1 45%, #64748b 100%)",
     rightFill: "linear-gradient(180deg, #f5e6c8 0%, #d4af37 45%, #8a6a1a 100%)",
     trackBg: "rgba(10, 10, 12, 0.72)",
     trackBorder: "rgba(212, 175, 55, 0.55)",
@@ -80,7 +80,7 @@ export const SIG_MATCH_GAUGE_THEMES: Record<SigMatchGaugeThemeId, SigMatchGaugeT
     gapBg: "rgba(12, 10, 6, 0.9)",
     gapBorder: "rgba(212, 175, 55, 0.55)",
     gapText: "#f5e6c8",
-    leftAccent: "#a3a3a3",
+    leftAccent: "#e2e8f0",
     rightAccent: "#d4af37",
   },
   "clean-minimal": {

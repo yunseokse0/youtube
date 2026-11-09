@@ -151,7 +151,7 @@ export default function BattleTeamColumnBoard({
             data-battle-team-box="left"
           >
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/30 to-transparent" />
-            <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-start pl-2.5 sm:pl-3">
+            <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-start pl-2.5 pr-7 sm:pl-3">
               <BattleGaugeFitScore
                 label={leftLabel}
                 maxFontPx={gaugeMaxFontPx}
@@ -173,7 +173,7 @@ export default function BattleTeamColumnBoard({
             data-battle-team-box="right"
           >
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/30 to-transparent" />
-            <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-end pr-2.5 sm:pr-3">
+            <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-end pl-7 pr-2.5 sm:pr-3">
               <BattleGaugeFitScore
                 label={rightLabel}
                 maxFontPx={gaugeMaxFontPx}
@@ -185,14 +185,23 @@ export default function BattleTeamColumnBoard({
         </div>
 
         <div
-          className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center"
+          className="pointer-events-none absolute top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center transition-[left] duration-500 ease-out"
+          style={{ left: `${leftPct}%` }}
           data-battle-vs-center="true"
         >
           <ThemeVsBadge themeId={theme.id} compact={compact} vsDesign={vsDesign} />
         </div>
       </div>
 
-      <div className="relative z-20 flex justify-center py-1" data-battle-team-gap-row="true">
+      <div
+        className="relative z-20 flex py-1 transition-[left] duration-500 ease-out"
+        style={{
+          left: `${Math.max(16, Math.min(84, leftPct))}%`,
+          transform: "translateX(-50%)",
+          width: "fit-content",
+        }}
+        data-battle-team-gap-row="true"
+      >
         <span
           className={`inline-flex items-center rounded-full px-3 py-0.5 font-black tabular-nums shadow-md backdrop-blur-sm ${gapSize}`}
           style={{

@@ -105,7 +105,15 @@ export default function BattleTeamScoreHeader({
 
   const gapRow =
     !centerSlot ? (
-      <div className="relative z-20 flex justify-center py-0.5" data-battle-vs-gap-row="true">
+      <div
+        className="relative z-20 flex py-0.5 transition-[left] duration-500 ease-out"
+        style={{
+          left: `${Math.max(16, Math.min(84, leftPct))}%`,
+          transform: "translateX(-50%)",
+          width: "fit-content",
+        }}
+        data-battle-vs-gap-row="true"
+      >
         <span
           className={`rounded-md bg-neutral-950/90 px-1.5 py-0.5 font-black tabular-nums text-amber-100 ring-1 ring-amber-300/40 ${gapSize}`}
           data-battle-vs-gap="true"
@@ -134,7 +142,7 @@ export default function BattleTeamScoreHeader({
             }}
           >
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
-            <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-start pl-2.5 sm:pl-3">
+            <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-start pl-2.5 pr-7 sm:pl-3">
               <BattleGaugeFitScore
                 label={leftLabel}
                 className="relative z-[1] max-w-[calc(100%-0.5rem)] px-1.5 font-black tabular-nums tracking-tight"
@@ -153,7 +161,7 @@ export default function BattleTeamScoreHeader({
             }}
           >
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
-            <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-end pr-2.5 sm:pr-3">
+            <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-end pl-7 pr-2.5 sm:pr-3">
               <BattleGaugeFitScore
                 label={rightLabel}
                 className="relative z-[1] max-w-[calc(100%-0.5rem)] px-1.5 text-right font-black tabular-nums tracking-tight"
@@ -163,7 +171,10 @@ export default function BattleTeamScoreHeader({
           </div>
         </div>
 
-        <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center">
+        <div
+          className="pointer-events-none absolute top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center transition-[left] duration-500 ease-out"
+          style={{ left: `${leftPct}%` }}
+        >
           {centerSlot ?? defaultCenter}
         </div>
       </div>
