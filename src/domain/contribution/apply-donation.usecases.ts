@@ -154,6 +154,11 @@ export function applyDonationToAppState(
     ...((evAny as { memberAutoAssigned?: boolean }).memberAutoAssigned
       ? { memberAutoAssigned: true as const }
       : {}),
+    ...(evAny.sigPrice !== undefined && Number(evAny.sigPrice) > 0
+      ? { sigPrice: Math.max(0, Math.floor(Number(evAny.sigPrice))) }
+      : {}),
+    ...(evAny.isSigCredit ? { isSigCredit: true as const }
+      : {}),
   };
   const atMs = toEpochMs(String(processedEvent.at || ""));
   const formulaState = mergeContributionFormulaIntoState(currentState, processedEvent);

@@ -76,6 +76,43 @@ describe("sanitizeDonationEventFromIngestBody", () => {
     });
   });
 
+  it("parses sigPrice and isSigCredit for random donation with appeared sig", () => {
+    const event = sanitizeDonationEventFromIngestBody({
+      externalId: "ext:sig:1",
+      donorName: "시그후원자",
+      amount: 10_000,
+      target: "toon",
+      sigPrice: 50_000,
+      sigName: "댄스시그",
+    });
+    expect(event).toMatchObject({
+      donorName: "시그후원자",
+      amount: 10_000,
+      target: "toon",
+      sigPrice: 50_000,
+      contributionPoints: 50_000,
+      isSigCredit: true,
+      matchedSigName: "댄스시그",
+    });
+  });
+
+  it("parses snake_case sig_price and contribution_points", () => {
+    const event = sanitizeDonationEventFromIngestBody({
+      externalId: "ext:sig:2",
+      donorName: "시그후원자2",
+      amount: 10_000,
+      target: "toon",
+      sig_price: 77_000,
+    });
+    expect(event).toMatchObject({
+      donorName: "시그후원자2",
+      amount: 10_000,
+      sigPrice: 77_000,
+      contributionPoints: 77_000,
+      isSigCredit: true,
+    });
+  });
+
   it("rejects missing required fields", () => {
     expect(sanitizeDonationEventFromIngestBody({ donorName: "a" })).toBeNull();
     expect(sanitizeDonationEventFromIngestBody({ donorName: "a", externalId: "x", amount: 0 })).toBeNull();

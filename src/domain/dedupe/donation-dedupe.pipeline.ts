@@ -400,6 +400,14 @@ export function mergeDonorRowFields<T extends MergeableDonor>(
   }
   const withAmount: any = { ...withPush, amount: mergedAmount };
   if (mergedCp > 0) withAmount.contributionPoints = mergedCp;
+  const mergedSp = Math.max(
+    Number((fallback as { sigPrice?: number }).sigPrice || 0),
+    Number((preferred as { sigPrice?: number }).sigPrice || 0)
+  );
+  if (mergedSp > 0) withAmount.sigPrice = mergedSp;
+  if ((fallback as { isSigCredit?: boolean }).isSigCredit || (preferred as { isSigCredit?: boolean }).isSigCredit) {
+    withAmount.isSigCredit = true;
+  }
   const ineligible = !isDonationAmountEligibleForHighSocietyTerritory(mergedAmount);
   /**
    * ✅ 2026-09-13 영토 Bug Fix: 우선순위 재정렬 (기존: 자동 > 이전 > 신규 / 신규: 신규 명시 > 이전 명시 > 자동)

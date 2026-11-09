@@ -108,7 +108,34 @@ export function sanitizeDonationEventFromIngestBody(raw: unknown): DonationEvent
   const memberId = String(body.memberId || "").trim();
   const manualAssignMemberId = String(body.manualAssignMemberId || "").trim();
 
-  const contributionPointsRaw = Math.round(Number(body.contributionPoints));
+  const rawSigPrice =
+    body.sigPrice ??
+    body.sig_price ??
+    body.appearedSigPrice ??
+    body.appeared_sig_price;
+  const sigPrice =
+    Number.isFinite(Number(rawSigPrice)) && Number(rawSigPrice) > 0
+      ? Math.max(0, Math.floor(Number(rawSigPrice)))
+      : undefined;
+
+  const rawCp =
+    body.contributionPoints ??
+    body.contribution_points ??
+    sigPrice;
+  const contributionPointsRaw = Math.round(Number(rawCp));
+  const isSigCredit = Boolean(
+    body.isSigCredit ??
+    body.is_sig_credit ??
+    (sigPrice !== undefined && sigPrice > 0) ??
+    (rawCp !== undefined && Math.round(Number(rawCp)) !== amount)
+  );
+
+  const matchedSigName = String(
+    body.matchedSigName ??
+    body.sigName ??
+    body.sig_name ??
+    ""
+  ).trim();
   const contributionPoints =
     Number.isFinite(contributionPointsRaw) && contributionPointsRaw >= 0
       ? contributionPointsRaw
@@ -143,6 +170,9 @@ export function sanitizeDonationEventFromIngestBody(raw: unknown): DonationEvent
     ...(memberId ? { memberId } : {}),
     ...(manualAssignMemberId ? { manualAssignMemberId } : {}),
     ...(contributionPoints !== undefined ? { contributionPoints } : {}),
+    ...(sigPrice !== undefined ? { sigPrice } : {}),
+    ...(isSigCredit ? { isSigCredit: true } : {}),
+    ...(matchedSigName ? { matchedSigName } : {}),
     ...(contributionFormula ? { contributionFormula } : {}),
     ...(aggregatedCount !== undefined ? { aggregatedCount } : {}),
     ...(aggregatedEventIdsRaw.length ? { aggregatedEventIds: aggregatedEventIdsRaw } : {}),

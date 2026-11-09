@@ -53,6 +53,10 @@ export type Donor = {
   hsPushDir?: "left" | "right" | "split";
   /** 적용 시점 기여도 점수(공식 변경 후에도 되돌리기용) */
   contributionPoints?: number;
+  /** toona 등 외부 룰렛/오버레이에서 당첨되어 나온 시그 단가 */
+  sigPrice?: number;
+  /** 나온 시그 단가로 기여도를 적립하는 이벤트/후원 플래그 */
+  isSigCredit?: boolean;
   /** 후원자명을 유저가 직접 수정한 타임스탬프(ms). SSE/폴링 동기화시 신규 판별 기준값 */
   donorNameEditAt?: number;
   /** 후원자명 수정 주체 = "user" (관리자 직접 수정) 또는 미지정(자동 유입) */

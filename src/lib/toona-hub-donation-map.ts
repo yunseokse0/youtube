@@ -13,6 +13,13 @@ export type ToonaHubDonationApiRow = {
   message?: string;
   createdAt?: string;
   contributionPoints?: number;
+  contribution_points?: number;
+  sigPrice?: number;
+  sig_price?: number;
+  appearedSigPrice?: number;
+  isSigCredit?: boolean;
+  is_sig_credit?: boolean;
+  sigName?: string;
   accountWeightPct?: number;
   toonWeightPct?: number;
 };
@@ -73,7 +80,35 @@ export function toonaHubDonationToEvent(
     (source === "sms" || source === "push");
   const isAccount = !isToonationChannel && isAccountChannel;
   const provider = isAccount ? "bank" : "toonation";
-  const contributionPointsRaw = Math.round(Number(row.contributionPoints));
+  const rowAny = row as Record<string, unknown>;
+  const rawSigPrice =
+    row.sigPrice ??
+    rowAny.sig_price ??
+    rowAny.appearedSigPrice ??
+    rowAny.appeared_sig_price;
+  const sigPrice =
+    Number.isFinite(Number(rawSigPrice)) && Number(rawSigPrice) > 0
+      ? Math.max(0, Math.floor(Number(rawSigPrice)))
+      : undefined;
+
+  const rawCp =
+    row.contributionPoints ??
+    rowAny.contribution_points ??
+    sigPrice;
+  const contributionPointsRaw = Math.round(Number(rawCp));
+  const isSigCredit = Boolean(
+    row.isSigCredit ??
+    rowAny.is_sig_credit ??
+    (sigPrice !== undefined && sigPrice > 0) ??
+    (rawCp !== undefined && Math.round(Number(rawCp)) !== amount)
+  );
+
+  const matchedSigName = String(
+    rowAny.matchedSigName ??
+    rowAny.sigName ??
+    rowAny.sig_name ??
+    ""
+  ).trim();
   const contributionPoints =
     Number.isFinite(contributionPointsRaw) && contributionPointsRaw >= 0
       ? contributionPointsRaw
@@ -91,6 +126,9 @@ export function toonaHubDonationToEvent(
     ...(row.playerName ? { playerName: String(row.playerName) } : {}),
     ...(row.message ? { message: String(row.message).slice(0, 500) } : {}),
     ...(contributionPoints !== undefined ? { contributionPoints } : {}),
+    ...(sigPrice !== undefined ? { sigPrice } : {}),
+    ...(isSigCredit ? { isSigCredit: true } : {}),
+    ...(matchedSigName ? { matchedSigName } : {}),
     ...(hasWeights
       ? {
           contributionFormula: normalizeContributionFormula({

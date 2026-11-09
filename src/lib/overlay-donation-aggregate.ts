@@ -229,6 +229,27 @@ export function collectDay777SigContributionByMember(
     if (!memberId) continue;
     byMember.set(memberId, (byMember.get(memberId) || 0) + row.price);
   }
+
+  // 외부(Toona 등 타 프로젝트)에서 전달된 나온 시그 기여도 (sigPrice 또는 isSigCredit / contributionPoints)
+  const t = normalizeDonationAggregateFromAt(fromAt);
+  const donorRows = t != null ? filterDonorsFromAggregateAt(state?.donors, t) : state?.donors || [];
+  for (const d of donorRows) {
+    const mid = String(d.memberId || fallback || "").trim();
+    if (!mid) continue;
+    const explicitSigPrice = Math.max(0, Math.floor(Number((d as { sigPrice?: number }).sigPrice || 0)));
+    const cp = Math.max(0, Math.floor(Number(d.contributionPoints || 0)));
+    const amt = Math.max(0, Math.floor(Number(d.amount || 0)));
+    const isCredit = Boolean((d as { isSigCredit?: boolean }).isSigCredit);
+
+    if (explicitSigPrice > 0) {
+      byMember.set(mid, (byMember.get(mid) || 0) + explicitSigPrice);
+    } else if (isCredit && cp > 0) {
+      byMember.set(mid, (byMember.get(mid) || 0) + cp);
+    } else if (cp > 0 && amt !== DAY777_SHOT_AMOUNT && cp !== amt) {
+      // 랜덤 후원 금액(amt)과 전달된 기여도(cp)가 다르면 나온 시그 단가로 간주
+      byMember.set(mid, (byMember.get(mid) || 0) + cp);
+    }
+  }
   return byMember;
 }
 

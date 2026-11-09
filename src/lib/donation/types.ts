@@ -23,6 +23,9 @@ export interface DonationEvent {
   recipientName?: string;
   amount: number;
   message?: string;
+  contributionPoints?: number;
+  sigPrice?: number;
+  isSigCredit?: boolean;
   at: string;
   target?: "account" | "toon";
   status: "queued" | "processed" | "failed" | "unmatched";
@@ -47,6 +50,10 @@ export interface DonationEvent {
   isAutoMatched?: boolean;
   /** toona ingest — 이미 계산된 기여도 점수(엑셀표·donors 저장용) */
   contributionPoints?: number;
+  /** toona 등 외부 룰렛/오버레이에서 당첨되어 나온 시그 단가 */
+  sigPrice?: number;
+  /** 나온 시그 단가로 기여도를 적립하는 이벤트 플래그 */
+  isSigCredit?: boolean;
   /** toona ingest — 기여도 가중치(상태 formula 갱신·apply 계산용) */
   contributionFormula?: ContributionFormula;
   /** Fix⑲: DIN 3초 Aggregator bucket 압축 해제용 메타데이터 — DB donors에는 Bucket Per Row로 1건만 적재하되 Alert 개별 발송은 N회 */
@@ -71,6 +78,9 @@ export interface Donor {
   at: string;
   target?: "account" | "toon";
   message?: string;
+  contributionPoints?: number;
+  sigPrice?: number;
+  isSigCredit?: boolean;
 }
 
 export interface DonorAlias {

@@ -297,6 +297,62 @@ describe("day777Calc", () => {
     expect(next.members[1]?.contribution).toBe(50_000);
   });
 
+  it("credits external toona sig credit with different random amount to member contribution in day777Calc", () => {
+    const state = {
+      members: [member({ id: "m1", name: "수린" })],
+      donors: [
+        donor({
+          id: "toona_random_draw",
+          memberId: "m1",
+          amount: 10_000,
+          at: 1_500,
+          target: "toon",
+          contributionPoints: 50_000,
+          sigPrice: 50_000,
+          isSigCredit: true,
+        }),
+      ],
+      contributionLogs: [],
+      rouletteState: null,
+    } as AppState;
+
+    const next = applyOverlayDonationDisplayTotals(state, { day777Calc: true });
+    expect(next.members[0]?.toon).toBe(10_000);
+    expect(next.members[0]?.contribution).toBe(50_000);
+  });
+
+  it("credits external toona sig credit with contributionPoints only when cp !== amount", () => {
+    const state = {
+      members: [member({ id: "m1", name: "수린" }), member({ id: "m2", name: "초화" })],
+      donors: [
+        donor({
+          id: "d1",
+          memberId: "m1",
+          amount: 10_000,
+          at: 1_500,
+          target: "toon",
+          contributionPoints: 30_000,
+        }),
+        donor({
+          id: "d2",
+          memberId: "m2",
+          amount: 10_000,
+          at: 1_600,
+          target: "toon",
+          contributionPoints: 10_000,
+        }),
+      ],
+      contributionLogs: [],
+      rouletteState: null,
+    } as AppState;
+
+    const next = applyOverlayDonationDisplayTotals(state, { day777Calc: true });
+    expect(next.members[0]?.toon).toBe(10_000);
+    expect(next.members[0]?.contribution).toBe(30_000);
+    expect(next.members[1]?.toon).toBe(10_000);
+    expect(next.members[1]?.contribution).toBe(0);
+  });
+
   it("filterDonorsForDay777Calc matches floor amount", () => {
     const prices = new Set([77_000]);
     const rows = filterDonorsForDay777Calc(
