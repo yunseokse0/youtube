@@ -14,6 +14,7 @@ import {
 } from "@/lib/goal-bar-style";
 import { sanitizeOverlayEmbedMediaUrl } from "@/lib/gif-url";
 import { MAX_OVERLAY_TEXT_OUTLINE_WIDTH_PX } from "@/lib/text-outline-style";
+import { normalizeMemberRankingMetric, type MemberRankingMetric } from "@/lib/utils";
 
 /** 프리셋 → URL 쿼리 변환. OBS 등 별도 컨텍스트에서 API 없이 동작하도록 URL에 설정 포함 */
 export type OverlayPresetLike = {
@@ -239,6 +240,9 @@ export type OverlayPresetLike = {
   day777Calc?: boolean;
   /** 퐁당퐁당 기여도 수동 입력 모드 */
   pongdangManualMode?: boolean;
+  /** 순위 산정 기준: contribution | donation | account | toon */
+  rankingMetric?: MemberRankingMetric;
+  memberRankingMetric?: MemberRankingMetric;
   accountHeaderLabel?: string;
   toonHeaderLabel?: string;
   restroomHeaderLabel?: string;
@@ -514,6 +518,10 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   }
   if (preset.day777Calc === true) q.set("day777Calc", "true");
   if (preset.pongdangManualMode === true) q.set("pongdangManualMode", "true");
+  const rankMetric = preset.rankingMetric || preset.memberRankingMetric;
+  if (rankMetric && rankMetric !== "contribution") {
+    q.set("rankingMetric", rankMetric);
+  }
   if (preset.accountHeaderLabel && preset.accountHeaderLabel.trim()) q.set("accountHeaderLabel", preset.accountHeaderLabel.trim());
   if (preset.toonHeaderLabel && preset.toonHeaderLabel.trim()) q.set("toonHeaderLabel", preset.toonHeaderLabel.trim());
   if (preset.restroomHeaderLabel && preset.restroomHeaderLabel.trim()) q.set("restroomHeaderLabel", preset.restroomHeaderLabel.trim());
@@ -602,6 +610,8 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "donationAggregateFromAt",
   "day777Calc",
   "pongdangManualMode",
+  "rankingMetric",
+  "memberRankingMetric",
   "rankTop3Mode",
   "rankTop3Effect",
   "rankLabelFormat",
@@ -786,6 +796,8 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "donationAggregateFromAt",
   "day777Calc",
   "pongdangManualMode",
+  "rankingMetric",
+  "memberRankingMetric",
   "rankTop3Mode",
   "rankTop3Effect",
   "rankLabelFormat",
@@ -1182,6 +1194,8 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "donationAggregateFromAt",
   "day777Calc",
   "pongdangManualMode",
+  "rankingMetric",
+  "memberRankingMetric",
   "tableBgOpacity",
   "tableBgGifOpacity",
   "tableBgGifBrightness",
@@ -1273,6 +1287,8 @@ const PRESET_EMPTY_USES_THEME_DEFAULT_KEYS = new Set([
   "donationAggregateFromAt",
   "day777Calc",
   "pongdangManualMode",
+  "rankingMetric",
+  "memberRankingMetric",
   "tableRowEvenBg",
   "tableRowOddBg",
   "tablePanelBorderColor",
@@ -2271,6 +2287,33 @@ export function resolvePongdangManualMode(
   if (merged === "false") return false;
   if (preset?.pongdangManualMode === true) return true;
   return Boolean(state?.pongdangManualMode);
+}
+
+/**
+ * 엑셀표·순위 연동 순위 산정 기준 (기여도 / 총 후원금 / 계좌만 / 투네만)
+ * 우선순위: URL 쿼리 → 프리셋 설정 → 전역 상태 → 기본값(contribution)
+ */
+export function resolveMemberRankingMetric(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean },
+  state?: { memberRankingMetric?: MemberRankingMetric } | null
+): MemberRankingMetric {
+  const merged = resolveLivePresetStyleParam("rankingMetric", rawSp, presetToParams(preset), opts);
+  if (merged === "donation" || merged === "contribution" || merged === "account" || merged === "toon") {
+    return merged;
+  }
+  const alt = resolveLivePresetStyleParam("memberRankingMetric", rawSp, presetToParams(preset), opts);
+  if (alt === "donation" || alt === "contribution" || alt === "account" || alt === "toon") {
+    return alt;
+  }
+  if (preset?.rankingMetric) {
+    return normalizeMemberRankingMetric(preset.rankingMetric);
+  }
+  if (preset?.memberRankingMetric) {
+    return normalizeMemberRankingMetric(preset.memberRankingMetric);
+  }
+  return normalizeMemberRankingMetric(state?.memberRankingMetric);
 }
 
 /** 멤버 행 줄무늬(짝) */

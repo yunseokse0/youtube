@@ -118,13 +118,11 @@ function RankChangeOverlayInner() {
     [ready, state?.memberPositions]
   );
 
-  const memberRankingMetric = useMemo<MemberRankingMetric>(
-    () =>
-      ready && state
-        ? normalizeMemberRankingMetric(state.memberRankingMetric)
-        : "contribution",
-    [ready, state]
-  );
+  const memberRankingMetric = useMemo<MemberRankingMetric>(() => {
+    const q = sp.get("rankingMetric") || sp.get("memberRankingMetric");
+    if (q) return normalizeMemberRankingMetric(q);
+    return ready && state ? normalizeMemberRankingMetric(state.memberRankingMetric) : "contribution";
+  }, [ready, state, sp]);
 
   const getMemberRole = useCallback(
     (m: Member) => String(memberPositionsMap[m.id] || "").trim(),

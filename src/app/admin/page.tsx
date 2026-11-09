@@ -203,7 +203,7 @@ import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync
 import MemberExcelAccountReconcile from "@/components/settlement/MemberExcelAccountReconcile";
 import { mergeDonorsWithMissingAccount, type MemberExcelReconcileResult } from "@/lib/member-toonation-excel";
 import { formatSigMatchStat, formatSigMatchManualAdjustStepLabel, getSigMatchRankings, isOperatingSettlementMember, resolveSigMatchDonationLink, resolveSigMatchManualAdjustSteps } from "@/lib/settlement-utils";
-import { buildRankLinkedMemberPositions } from "@/lib/utils";
+import { buildRankLinkedMemberPositions, type MemberRankingMetric } from "@/lib/utils";
 import { buildDonorTotalsByNameFromDonors } from "@/lib/donor-rankings-aggregate";
 import { globalDonorTotalsByNameToCsv, globalDonorTotalsByNameToXlsxBlob } from "@/lib/settlement-donor-export";
 import { getEffectiveRemainingTime, mergeGeneralTimerPreferEffective, pauseTimer, resumeTimer } from "@/lib/timer-utils";
@@ -420,6 +420,8 @@ type OverlayPreset = {
   day777Calc?: boolean;
   day777ManualMode?: boolean;
   pongdangManualMode?: boolean;
+  rankingMetric?: MemberRankingMetric;
+  memberRankingMetric?: MemberRankingMetric;
   showContributionColumn?: boolean;
   showRestroomColumn?: boolean;
   showContributionSum?: boolean;
@@ -6661,7 +6663,7 @@ function AdminPageInner() {
     setState((prev: AppState) => {
       const next: AppState = {
         ...prev,
-        memberRankingMetric: metric === "donation" ? "donation" : "contribution",
+        memberRankingMetric: metric,
       };
       persistState(next, { omitDonationFields: true, membersAuthoritative: true });
       return next;
@@ -12397,6 +12399,48 @@ function AdminPageInner() {
                   모든 멤버 금액 리셋
                 </button>
               </div>
+
+              {/* 순위 산정 기준 선택 바 */}
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3 mb-4 rounded-xl border border-white/10 bg-neutral-900/60">
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-amber-300">엑셀표 순위 산정 기준</span>
+                    <span className="text-[11px] px-2 py-0.5 rounded bg-white/10 text-neutral-300">
+                      실시간 1위~{state.members.length}위 순위 및 직급 정렬 기준
+                    </span>
+                  </div>
+                  <span className="text-xs text-neutral-400 mt-0.5">
+                    {(state.memberRankingMetric || "contribution") === "contribution" && "현재 [누적 기여도] 기준: 세션 누적 기여도(시그 단가/수동 기여도 포함) 순으로 정렬합니다."}
+                    {state.memberRankingMetric === "donation" && "현재 [총 후원금] 기준: 계좌 후원금 + 투네이션 후원금 합산 순으로 정렬합니다."}
+                    {state.memberRankingMetric === "account" && "현재 [계좌 금액만] 기준: 계좌(캐시) 후원금만으로 순위를 정렬합니다."}
+                    {state.memberRankingMetric === "toon" && "현재 [투네 금액만] 기준: 투네이션 후원금만으로 순위를 정렬합니다."}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[
+                    { id: "contribution", label: "누적 기여도 (기본)" },
+                    { id: "donation", label: "총 후원금 (계좌+투네)" },
+                    { id: "account", label: "계좌 금액만" },
+                    { id: "toon", label: "투네 금액만" },
+                  ].map((opt) => {
+                    const isSelected = (state.memberRankingMetric || "contribution") === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                          isSelected
+                            ? "bg-amber-600 text-white shadow-md shadow-amber-900/40 ring-1 ring-amber-400 font-bold"
+                            : "bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-white/10"
+                        }`}
+                        onClick={() => updateMemberRankingMetric(opt.id as MemberRankingMetric)}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
                 {syncStatus === "loading" && state.members.length === 0 ? (
                   <div className="lg:col-span-3 rounded-lg border border-white/10 bg-neutral-900/50 px-4 py-8 text-center text-sm text-neutral-400">
@@ -12455,33 +12499,35 @@ function AdminPageInner() {
                 <div className="rounded border border-white/10 bg-black/20 p-2">
                   <div className="text-xs text-neutral-400 mb-1">엑셀표 순위 기준</div>
                   <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className={`px-2 py-1 rounded text-xs ${
-                        (state.memberRankingMetric || "contribution") !== "donation"
-                          ? "bg-emerald-700 hover:bg-emerald-600"
-                          : "bg-neutral-700 hover:bg-neutral-600"
-                      }`}
-                      onClick={() => updateMemberRankingMetric("contribution")}
-                    >
-                      누적 기여도
-                    </button>
-                    <button
-                      type="button"
-                      className={`px-2 py-1 rounded text-xs ${
-                        state.memberRankingMetric === "donation"
-                          ? "bg-emerald-700 hover:bg-emerald-600"
-                          : "bg-neutral-700 hover:bg-neutral-600"
-                      }`}
-                      onClick={() => updateMemberRankingMetric("donation")}
-                    >
-                      계좌+투네 금액
-                    </button>
+                    {[
+                      { id: "contribution", label: "누적 기여도" },
+                      { id: "donation", label: "총 후원금 (계좌+투네)" },
+                      { id: "account", label: "계좌 금액만" },
+                      { id: "toon", label: "투네 금액만" },
+                    ].map((opt) => {
+                      const isSelected = (state.memberRankingMetric || "contribution") === opt.id;
+                      return (
+                        <button
+                          key={`pos-metric-${opt.id}`}
+                          type="button"
+                          className={`px-2 py-1 rounded text-xs transition ${
+                            isSelected ? "bg-emerald-700 hover:bg-emerald-600 font-bold text-white ring-1 ring-emerald-400" : "bg-neutral-700 hover:bg-neutral-600 text-neutral-300"
+                          }`}
+                          onClick={() => updateMemberRankingMetric(opt.id as MemberRankingMetric)}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
                   </div>
                   <p className="mt-1 text-[11px] text-neutral-500">
                     {(state.memberRankingMetric || "contribution") === "donation"
                       ? "계좌·투네 합(100원 단위)으로 순위를 매깁니다. 동점이면 멤버 생성순."
-                      : "세션 누적 기여도로 순위를 매깁니다. 동점이면 금액 → 멤버 생성순."}
+                      : state.memberRankingMetric === "account"
+                      ? "계좌 후원금으로만 순위를 매깁니다. 동점이면 투네 → 멤버 생성순."
+                      : state.memberRankingMetric === "toon"
+                      ? "투네이션 후원금으로만 순위를 매깁니다. 동점이면 계좌 → 멤버 생성순."
+                      : "세션 누적 기여도(시그 단가/수동 기여도 포함)로 순위를 매깁니다. 동점이면 금액 → 멤버 생성순."}
                   </p>
                 </div>
                 <div className="rounded border border-white/10 bg-black/20 p-2 space-y-2">
@@ -21244,6 +21290,42 @@ function AdminPageInner() {
                                       </span>
                                     </div>
                                   )}
+                                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
+                                    <label className="text-xs text-neutral-400">순위 산정 기준</label>
+                                    <div className="flex flex-wrap gap-1">
+                                      {[
+                                        { id: "contribution", label: "기여도 (기본)" },
+                                        { id: "donation", label: "총 후원금(계좌+투네)" },
+                                        { id: "account", label: "계좌만" },
+                                        { id: "toon", label: "투네만" },
+                                      ].map((opt) => {
+                                        const currentMetric = p.rankingMetric || p.memberRankingMetric || "contribution";
+                                        const isSelected = currentMetric === opt.id;
+                                        return (
+                                          <button
+                                            key={`preset-metric-${p.id}-${opt.id}`}
+                                            type="button"
+                                            className={`px-2 py-0.5 rounded border text-xs transition ${
+                                              isSelected
+                                                ? "border-amber-500 text-amber-300 bg-amber-950/40 font-bold"
+                                                : "border-white/10 text-neutral-400 hover:text-white"
+                                            }`}
+                                            onClick={() => {
+                                              updatePreset(p.id, {
+                                                rankingMetric: opt.id as MemberRankingMetric,
+                                                memberRankingMetric: opt.id as MemberRankingMetric,
+                                              });
+                                            }}
+                                          >
+                                            {opt.label}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                    <span className="text-[10px] text-neutral-500">
+                                      이 프리셋 오버레이의 순위(1위~N위) 및 직급 정렬 기준
+                                    </span>
+                                  </div>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
                                   <label className="text-xs text-neutral-400">계좌 헤더</label>

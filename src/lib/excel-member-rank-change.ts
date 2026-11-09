@@ -83,7 +83,13 @@ export function buildRankChangeSessionSnapshot(
   for (const m of members) {
     if (!m?.id) continue;
     const t =
-      metric === "donation" ? memberDonationRankingTotal(m) : memberContributionRankingTotal(m);
+      metric === "donation"
+        ? memberDonationRankingTotal(m)
+        : metric === "account"
+          ? Math.max(0, Math.floor(Number(m.account || 0)))
+          : metric === "toon"
+            ? Math.max(0, Math.floor(Number(m.toon || 0)))
+            : memberContributionRankingTotal(m);
     memberTotals.set(m.id, t);
     totalCombined += t;
   }

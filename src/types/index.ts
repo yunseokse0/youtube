@@ -668,9 +668,11 @@ export type AppState = {
   /**
    * 엑셀표·순위 연동 정렬 기준
    * - contribution: 세션 누적 기여도 (동점 시 금액)
-   * - donation: 계좌+투네 금액 (기존)
+   * - donation: 계좌+투네 금액
+   * - account: 계좌(캐시) 금액만
+   * - toon: 투네이션 금액만
    */
-  memberRankingMetric?: "contribution" | "donation";
+  memberRankingMetric?: "contribution" | "donation" | "account" | "toon";
   /** 엑셀표 커스텀 열(상벌금 등) — 멤버 id → 자유 텍스트 */
   memberCustomCells?: Record<string, string>;
   rankCustomCells?: string[];

@@ -17,10 +17,13 @@ export type MemberContributionGetter = (member: Member) => number;
 export type MemberPositionMode = "fixed" | "rankLinked";
 
 /** 엑셀표·순위 연동 정렬 기준 */
-export type MemberRankingMetric = "contribution" | "donation";
+export type MemberRankingMetric = "contribution" | "donation" | "account" | "toon";
 
 export function normalizeMemberRankingMetric(input: unknown): MemberRankingMetric {
-  return input === "donation" ? "donation" : "contribution";
+  if (input === "donation") return "donation";
+  if (input === "account") return "account";
+  if (input === "toon") return "toon";
+  return "contribution";
 }
 
 function safeAmount(value: unknown): number {
@@ -115,6 +118,46 @@ export function compareMembersByContribution(
   return String(a.id || "").localeCompare(String(b.id || ""));
 }
 
+/** 계좌(캐시) 후원금 내림차순 → 동점 시 투네 → 생성순 */
+export function compareMembersByAccount(
+  a: Member,
+  b: Member,
+  orderIndex?: Map<string, number>
+): number {
+  const aa = floorToHundreds(safeAmount(a.account));
+  const ab = floorToHundreds(safeAmount(b.account));
+  if (ab !== aa) return ab - aa;
+  const ta = floorToHundreds(safeAmount(a.toon));
+  const tb = floorToHundreds(safeAmount(b.toon));
+  if (tb !== ta) return tb - ta;
+  if (orderIndex) {
+    const ia = orderIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+    const ib = orderIndex.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+    if (ia !== ib) return ia - ib;
+  }
+  return String(a.id || "").localeCompare(String(b.id || ""));
+}
+
+/** 투네이션 후원금 내림차순 → 동점 시 계좌 → 생성순 */
+export function compareMembersByToon(
+  a: Member,
+  b: Member,
+  orderIndex?: Map<string, number>
+): number {
+  const ta = floorToHundreds(safeAmount(a.toon));
+  const tb = floorToHundreds(safeAmount(b.toon));
+  if (tb !== ta) return tb - ta;
+  const aa = floorToHundreds(safeAmount(a.account));
+  const ab = floorToHundreds(safeAmount(b.account));
+  if (ab !== aa) return ab - aa;
+  if (orderIndex) {
+    const ia = orderIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+    const ib = orderIndex.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+    if (ia !== ib) return ia - ib;
+  }
+  return String(a.id || "").localeCompare(String(b.id || ""));
+}
+
 function compareRankingRowsByMetricDesc(
   a: MemberRankingRow,
   b: MemberRankingRow,
@@ -123,6 +166,12 @@ function compareRankingRowsByMetricDesc(
 ): number {
   if (metric === "donation") {
     if (b.totalAmount !== a.totalAmount) return b.totalAmount - a.totalAmount;
+  } else if (metric === "account") {
+    if (b.accountAmount !== a.accountAmount) return b.accountAmount - a.accountAmount;
+    if (b.toonAmount !== a.toonAmount) return b.toonAmount - a.toonAmount;
+  } else if (metric === "toon") {
+    if (b.toonAmount !== a.toonAmount) return b.toonAmount - a.toonAmount;
+    if (b.accountAmount !== a.accountAmount) return b.accountAmount - a.accountAmount;
   } else {
     if (b.contributionAmount !== a.contributionAmount) {
       return b.contributionAmount - a.contributionAmount;
@@ -144,6 +193,12 @@ export function compareMembersByRankingMetric(
 ): number {
   if (metric === "donation") {
     return compareMembersByDonationTotal(a, b, orderIndex);
+  }
+  if (metric === "account") {
+    return compareMembersByAccount(a, b, orderIndex);
+  }
+  if (metric === "toon") {
+    return compareMembersByToon(a, b, orderIndex);
   }
   return compareMembersByContribution(a, b, orderIndex, getContribution);
 }

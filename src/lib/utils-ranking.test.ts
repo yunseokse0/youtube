@@ -205,4 +205,36 @@ describe("buildRankLinkedMemberPositions", () => {
     expect(snapped["low-c"]).toBe("1위직");
     expect(snapped["high-c"]).toBe("2위직");
   });
+
+  it("uses account totals when metric is account", () => {
+    const rows: Member[] = [
+      { id: "m-toon-rich", name: "투네부자", account: 1000, toon: 100000, contribution: 0 },
+      { id: "m-account-rich", name: "계좌부자", account: 50000, toon: 0, contribution: 0 },
+      { id: "rep", name: "대표", account: 0, toon: 0, contribution: 0 },
+    ];
+    const snapped = buildRankLinkedMemberPositions(
+      rows,
+      { rep: "대표" },
+      ["대표", "1위직", "2위직"],
+      { rankingMetric: "account" }
+    );
+    expect(snapped["m-account-rich"]).toBe("1위직");
+    expect(snapped["m-toon-rich"]).toBe("2위직");
+  });
+
+  it("uses toon totals when metric is toon", () => {
+    const rows: Member[] = [
+      { id: "m-toon-rich", name: "투네부자", account: 1000, toon: 100000, contribution: 0 },
+      { id: "m-account-rich", name: "계좌부자", account: 50000, toon: 0, contribution: 0 },
+      { id: "rep", name: "대표", account: 0, toon: 0, contribution: 0 },
+    ];
+    const snapped = buildRankLinkedMemberPositions(
+      rows,
+      { rep: "대표" },
+      ["대표", "1위직", "2위직"],
+      { rankingMetric: "toon" }
+    );
+    expect(snapped["m-toon-rich"]).toBe("1위직");
+    expect(snapped["m-account-rich"]).toBe("2위직");
+  });
 });

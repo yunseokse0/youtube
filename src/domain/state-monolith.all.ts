@@ -1118,7 +1118,10 @@ function normalizeMemberPositionMode(input: unknown): AppState["memberPositionMo
 export function normalizeMemberRankingMetric(
   input: unknown
 ): NonNullable<AppState["memberRankingMetric"]> {
-  return input === "donation" ? "donation" : "contribution";
+  if (input === "donation") return "donation";
+  if (input === "account") return "account";
+  if (input === "toon") return "toon";
+  return "contribution";
 }
 
 /** 순위 연동 직급 라벨 상한(멤버 수 연동, 비정상 배열 방지) */

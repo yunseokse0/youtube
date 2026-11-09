@@ -54,6 +54,7 @@ import {
   resolveDonationAggregateFromAt,
   resolveDay777Calc,
   resolvePongdangManualMode,
+  resolveMemberRankingMetric,
   resolveTableRowEvenBg,
   resolveTableRowOddBg,
   resolveTablePanelBorderColor,
@@ -2430,10 +2431,8 @@ function OverlayInner() {
   );
   const memberRankingMetric = useMemo<MemberRankingMetric>(
     () =>
-      ready && s
-        ? normalizeMemberRankingMetric((s as AppState).memberRankingMetric)
-        : "contribution",
-    [ready, s]
+      resolveMemberRankingMetric(rawSp, effectivePreset, { ready }, s as AppState),
+    [rawSp, effectivePreset, ready, s]
   );
   const memberCustomCellsMap = useMemo<Record<string, string>>(
     () =>
