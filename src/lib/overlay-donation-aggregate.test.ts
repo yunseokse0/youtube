@@ -321,6 +321,31 @@ describe("day777Calc", () => {
     expect(next.members[0]?.contribution).toBe(50_000);
   });
 
+  it("when day777Calc is false (main excel table), contribution uses donation amount, not sigPrice", () => {
+    const state = {
+      members: [member({ id: "m1", name: "수린" })],
+      donors: [
+        donor({
+          id: "toona_random_draw",
+          memberId: "m1",
+          amount: 10_000,
+          at: 1_500,
+          target: "toon",
+          contributionPoints: 10_000,
+          sigPrice: 50_000,
+          isSigCredit: true,
+        }),
+      ],
+      contributionLogs: [],
+      rouletteState: null,
+    } as AppState;
+
+    const next = applyOverlayDonationDisplayTotals(state, { fromAt: 1, day777Calc: false });
+    expect(next.members[0]?.toon).toBe(10_000);
+    // 메인 엑셀표(day777Calc: false)에서는 나온 시그(50,000)가 아닌 후원금(10,000) 기준으로 기여도 유지
+    expect(next.members[0]?.contribution).toBe(10_000);
+  });
+
   it("credits external toona sig credit with contributionPoints only when cp !== amount", () => {
     const state = {
       members: [member({ id: "m1", name: "수린" }), member({ id: "m2", name: "초화" })],

@@ -118,17 +118,22 @@ export function sanitizeDonationEventFromIngestBody(raw: unknown): DonationEvent
       ? Math.max(0, Math.floor(Number(rawSigPrice)))
       : undefined;
 
-  const rawCp =
-    body.contributionPoints ??
-    body.contribution_points ??
-    sigPrice;
-  const contributionPointsRaw = Math.round(Number(rawCp));
   const isSigCredit = Boolean(
     body.isSigCredit ??
     body.is_sig_credit ??
-    (sigPrice !== undefined && sigPrice > 0) ??
-    (rawCp !== undefined && Math.round(Number(rawCp)) !== amount)
+    (sigPrice !== undefined && sigPrice > 0)
   );
+
+  // 메인 엑셀표용 contributionPoints:
+  // 시그 당첨 건(isSigCredit)인 경우 메인 엑셀표는 후원금(amount) 기준으로만 기여도를 계산해야 하므로,
+  // 나온 시그 단가(sigPrice)가 메인 엑셀표의 contributionPoints로 오염되지 않도록 분리합니다.
+  const rawCp = body.contributionPoints ?? body.contribution_points;
+  const contributionPointsRaw =
+    rawCp !== undefined
+      ? isSigCredit && Math.round(Number(rawCp)) === sigPrice
+        ? undefined
+        : Math.round(Number(rawCp))
+      : undefined;
 
   const matchedSigName = String(
     body.matchedSigName ??

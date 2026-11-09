@@ -90,10 +90,11 @@ describe("sanitizeDonationEventFromIngestBody", () => {
       amount: 10_000,
       target: "toon",
       sigPrice: 50_000,
-      contributionPoints: 50_000,
       isSigCredit: true,
       matchedSigName: "댄스시그",
     });
+    // 메인 엑셀표용 contributionPoints는 오염되지 않고 amount 기준으로 산출되도록 undefined
+    expect(event?.contributionPoints).toBeUndefined();
   });
 
   it("parses snake_case sig_price and contribution_points", () => {
@@ -108,9 +109,9 @@ describe("sanitizeDonationEventFromIngestBody", () => {
       donorName: "시그후원자2",
       amount: 10_000,
       sigPrice: 77_000,
-      contributionPoints: 77_000,
       isSigCredit: true,
     });
+    expect(event?.contributionPoints).toBeUndefined();
   });
 
   it("rejects missing required fields", () => {

@@ -91,17 +91,19 @@ export function toonaHubDonationToEvent(
       ? Math.max(0, Math.floor(Number(rawSigPrice)))
       : undefined;
 
-  const rawCp =
-    row.contributionPoints ??
-    rowAny.contribution_points ??
-    sigPrice;
-  const contributionPointsRaw = Math.round(Number(rawCp));
   const isSigCredit = Boolean(
     row.isSigCredit ??
     rowAny.is_sig_credit ??
-    (sigPrice !== undefined && sigPrice > 0) ??
-    (rawCp !== undefined && Math.round(Number(rawCp)) !== amount)
+    (sigPrice !== undefined && sigPrice > 0)
   );
+
+  const rawCp = row.contributionPoints ?? rowAny.contribution_points;
+  const contributionPointsRaw =
+    rawCp !== undefined
+      ? isSigCredit && Math.round(Number(rawCp)) === sigPrice
+        ? undefined
+        : Math.round(Number(rawCp))
+      : undefined;
 
   const matchedSigName = String(
     rowAny.matchedSigName ??
