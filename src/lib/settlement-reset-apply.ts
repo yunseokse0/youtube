@@ -82,6 +82,17 @@ export function applySettlementResetToState(
       overlayPresets: resetPresets as AppState["overlayPresets"],
       highSocietySettings,
       missions: preserved.missions || state.missions || [],
+      pongdangResetAt: resetAt,
+      pongdangManualContributions: {},
+      rouletteState: state.rouletteState
+        ? {
+            ...state.rouletteState,
+            results: [],
+            result: null,
+            selectedSigs: [],
+            historyLogs: [],
+          }
+        : state.rouletteState,
       settlementResetAt: resetAt,
       intentionalDonationClearAt: resetAt,
       updatedAt: resetAt,

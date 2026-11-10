@@ -248,6 +248,54 @@ describe("전체 시스템 핵심 기능 및 정합성 점검 (System Inspection
 
       expect(result.members[0]?.contribution).toBe(50_000); // 순수 자동 집계값으로 표시
     });
+
+    it("퐁당퐁당 기여도 전체 초기화 (pongdangResetAt 설정) 시 과거 자동 집계 및 수동값이 모두 0원으로 깨끗하게 초기화됨", () => {
+      const stateWithHistory: AppState = {
+        ...defaultState(),
+        members: [{ id: "m1", name: "자키", account: 777_000, toon: 0, contribution: 3_507_250, goal: 500000 }],
+        donors: [
+          {
+            id: "shot1",
+            memberId: "m1",
+            amount: 777_000,
+            at: 1000,
+            target: "account",
+            donorName: "팬A",
+            isSigCredit: true,
+            sigPrice: 3_507_250,
+          } as Donor,
+        ],
+        rouletteState: {
+          phase: "IDLE",
+          historyLogs: [
+            {
+              id: "rlog_1",
+              timestamp: 1000,
+              phase: "CONFIRMED",
+              selectedSigs: [{ id: "sig_1", name: "대형시그", price: 3_507_250, memberId: "m1" }],
+            },
+          ],
+        } as any,
+        pongdangManualMode: true,
+        pongdangManualContributions: {
+          m1: 50_000,
+        },
+      };
+
+      // 리셋 전: 자동 집계 3,507,250원 + 수동 50,000원 = 3,557,250원
+      const beforeReset = applyOverlayDonationDisplayTotals(stateWithHistory, { day777Calc: true });
+      expect(beforeReset.members[0]?.contribution).toBeGreaterThan(3_500_000);
+
+      // 기여도 전체 0원 초기화 (pongdangResetAt: 2000, 수동값 0)
+      const afterResetState: AppState = {
+        ...stateWithHistory,
+        pongdangResetAt: 2000, // 리셋 시각 이후의 후원/룰렛만 계산
+        pongdangManualContributions: { m1: 0 },
+      };
+
+      const afterReset = applyOverlayDonationDisplayTotals(afterResetState, { day777Calc: true });
+      expect(afterReset.members[0]?.contribution).toBe(0); // 0원으로 완벽하게 초기화 완료!
+    });
   });
 
   // 4. 순위 산정 기준 (기여도, 총 후원금, 계좌만, 투네만) 정합성 점검

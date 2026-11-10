@@ -73,11 +73,12 @@ export function collectAppearedSigPrices(opts: {
     }
     const phase = String(rs.phase || "").toUpperCase();
     const includeCurrent =
-      phase === "LANDED" ||
-      phase === "CONFIRMED" ||
-      phase === "CONFIRM_PENDING" ||
-      phase === "SPINNING" ||
-      (Array.isArray(rs.selectedSigs) && rs.selectedSigs.length > 0);
+      (fromAt <= 0 || !rs.timestamp || Number(rs.timestamp || 0) >= fromAt) &&
+      (phase === "LANDED" ||
+        phase === "CONFIRMED" ||
+        phase === "CONFIRM_PENDING" ||
+        phase === "SPINNING" ||
+        (Array.isArray(rs.selectedSigs) && rs.selectedSigs.length > 0));
     if (includeCurrent) {
       for (const s of rs.selectedSigs || []) addAppearedSigPrice(prices, s);
       for (const s of rs.results || []) addAppearedSigPrice(prices, s);
@@ -209,6 +210,16 @@ export function collectDay777SigContributionByMember(
   state: AppState | null | undefined,
   fromAt?: number | null
 ): Map<string, number> {
+  const resetCutoff = Math.max(
+    0,
+    Number(state?.settlementResetAt || 0),
+    Number((state as { intentionalDonationClearAt?: number })?.intentionalDonationClearAt || 0),
+    Number(state?.pongdangResetAt || 0)
+  );
+  const rawFromAt = normalizeDonationAggregateFromAt(fromAt) ?? 0;
+  const effectiveFromAt = Math.max(rawFromAt, resetCutoff);
+  const effectiveFromAtOrNull = effectiveFromAt > 0 ? effectiveFromAt : null;
+
   const manual = readManualSigBroadcastFromState(state);
   const manualSigs =
     manual && (manual.phase === "LANDED" || manual.phase === "CONFIRMED")
@@ -220,9 +231,9 @@ export function collectDay777SigContributionByMember(
     rouletteState: state?.rouletteState,
     manualSelectedSigs: manualSigs,
     manualBuyerMemberIds: readManualBuyerMemberIds(state),
-    fromAt,
+    fromAt: effectiveFromAtOrNull,
   });
-  const fallback = resolveDay777SigCreditFallbackMemberId(state?.donors, fromAt);
+  const fallback = resolveDay777SigCreditFallbackMemberId(state?.donors, effectiveFromAtOrNull);
   const byMember = new Map<string, number>();
   for (const row of credits) {
     const memberId = row.memberId || fallback;
@@ -231,8 +242,7 @@ export function collectDay777SigContributionByMember(
   }
 
   // 외부(Toona 등 타 프로젝트)에서 전달된 나온 시그 기여도 (sigPrice 또는 isSigCredit / contributionPoints)
-  const t = normalizeDonationAggregateFromAt(fromAt);
-  const donorRows = t != null ? filterDonorsFromAggregateAt(state?.donors, t) : state?.donors || [];
+  const donorRows = effectiveFromAtOrNull != null ? filterDonorsFromAggregateAt(state?.donors, effectiveFromAtOrNull) : state?.donors || [];
   for (const d of donorRows) {
     const mid = String(d.memberId || fallback || "").trim();
     if (!mid) continue;
@@ -251,7 +261,7 @@ export function collectDay777SigContributionByMember(
     }
   }
   // 기여도 기록부(contributionLogs) 수동 가감 로그 합산
-  const logs = t != null ? filterContributionLogsFromAggregateAt(state?.contributionLogs, t) : state?.contributionLogs || [];
+  const logs = effectiveFromAtOrNull != null ? filterContributionLogsFromAggregateAt(state?.contributionLogs, effectiveFromAtOrNull) : state?.contributionLogs || [];
   for (const log of logs) {
     const mid = String(log.memberId || "").trim();
     if (!mid) continue;

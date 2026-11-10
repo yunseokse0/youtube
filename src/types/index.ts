@@ -716,6 +716,8 @@ export type AppState = {
   pongdangManualMode?: boolean;
   /** 멤버별 수동 퐁당퐁당 기여도 가감/보정 금액 (memberId -> 보정 금액, 자동 수집값에 실시간 합산됨) */
   pongdangManualContributions?: Record<string, number>;
+  /** 퐁당퐁당(777데이) 기여도 리셋 시각(epoch ms) — 이 시각 이전의 룰렛/시그 자동 집계 제외 */
+  pongdangResetAt?: number;
   overlaySettings?: LegacyOverlaySettings;
   /** 멤버별 시그 매치 점수 */
   sigMatch: SigMatchState;

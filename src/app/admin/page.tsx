@@ -11370,20 +11370,35 @@ function AdminPageInner() {
     });
   }, [persistState]);
 
-  const resetAllPongdangManualContributions = useCallback(() => {
+  const resetPongdangContributionsAll = useCallback(() => {
+    if (!window.confirm("퐁당퐁당 기여도(자동 집계 및 수동 보정)를 모두 0원으로 완전히 초기화하시겠습니까?")) return;
     setState((prev: AppState) => {
+      const now = Date.now();
       const nextManual: Record<string, number> = {};
       for (const m of prev.members) {
         nextManual[m.id] = 0;
       }
       const next: AppState = {
         ...prev,
+        pongdangResetAt: now,
         pongdangManualContributions: nextManual,
+        members: (prev.members || []).map((m: Member) => ({ ...m, contribution: 0 })),
+        rouletteState: prev.rouletteState
+          ? {
+              ...prev.rouletteState,
+              results: [],
+              result: null,
+              selectedSigs: [],
+              historyLogs: [],
+            }
+          : prev.rouletteState,
       };
       persistState(next, { omitDonationFields: true });
       return next;
     });
   }, [persistState]);
+
+  const resetAllPongdangManualContributions = resetPongdangContributionsAll;
 
   const autoSigContributionMap = useMemo(() => {
     return collectDay777SigContributionByMember(state);
@@ -18258,11 +18273,11 @@ function AdminPageInner() {
                     </button>
                     <button
                       type="button"
-                      className="px-2.5 py-1.5 rounded bg-neutral-800 hover:bg-rose-950 text-xs text-neutral-300 hover:text-rose-200 border border-white/10"
-                      title="모든 멤버의 수동 보정 금액을 0원으로 리셋하여 순수 자동 집계값으로 복원합니다."
-                      onClick={resetAllPongdangManualContributions}
+                      className="px-3 py-1.5 rounded bg-rose-950/80 hover:bg-rose-900 text-xs font-bold text-rose-200 border border-rose-500/50 shadow-md shadow-rose-950/40 flex items-center gap-1 transition"
+                      title="과거 룰렛/시그 자동 집계값과 수동 보정값을 모두 즉시 0원으로 완전히 초기화합니다."
+                      onClick={resetPongdangContributionsAll}
                     >
-                      수동 보정 전체 0원 초기화
+                      <span>🔄</span> 기여도 전체 0원 초기화
                     </button>
                   </div>
                 </div>
@@ -18375,15 +18390,23 @@ function AdminPageInner() {
 
                           <div className="flex items-center gap-1 pt-1 border-t border-white/5">
                             <span className="text-[10px] text-neutral-500 whitespace-nowrap">최종값 맞추기:</span>
-                            <div className="flex items-center gap-1 w-full">
-                              {[50000, 100000, 150000, 200000].map((t) => (
+                            <div className="flex items-center gap-1 w-full flex-wrap">
+                              <button
+                                type="button"
+                                className="px-1.5 py-0.5 rounded bg-rose-950/60 hover:bg-rose-900 text-[10px] text-rose-300 border border-rose-500/30 font-semibold"
+                                title="이 멤버의 기여도를 즉시 0원으로 세팅"
+                                onClick={() => setPongdangTargetContribution(m.id, 0)}
+                              >
+                                0원
+                              </button>
+                              {[10000, 50000, 77000, 100000, 200000].map((t) => (
                                 <button
                                   key={`target-${m.id}-${t}`}
                                   type="button"
                                   className="px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-neutral-800 text-[10px] text-neutral-400 hover:text-amber-200 border border-white/5"
                                   onClick={() => setPongdangTargetContribution(m.id, t)}
                                 >
-                                  {t / 10000}만
+                                  {t >= 10000 ? (t % 10000 === 0 ? `${t / 10000}만` : `${(t / 10000).toFixed(1)}만`) : `${t}원`}
                                 </button>
                               ))}
                             </div>
