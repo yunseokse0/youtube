@@ -13,6 +13,8 @@ import {
 import {
   resolveExcelMemberTableAccent,
   isExcelGoldTableTheme,
+  generateHarmoniousTablePalette,
+  emptyTableThemeAutoColorPatch,
 } from "./excel-member-table-theme";
 import {
   resolveExcelRankTop3RowStyle,
@@ -186,5 +188,19 @@ describe("Preset ov_1787825920607_03zw & user din overlay runtime verification",
 
     const top3_4 = resolveExcelRankTop3RowStyle(4, top3Style, { donationTotal: 100 });
     expect(top3_4).toBeDefined();
+  });
+
+  it("verifies smart harmony palette generation and empty patch restoration", () => {
+    const smartColor = "#ff294d";
+    const generated = generateHarmoniousTablePalette(smartColor);
+    expect(generated.tableHeaderBgColor).toBeDefined();
+    expect(generated.tablePanelBorderColor).toBeDefined();
+    expect(generated.tableBorderGlow).toBe("neon");
+    expect(generated.tableBorderRadius).toBe("12");
+
+    const emptyPatch = emptyTableThemeAutoColorPatch();
+    expect(emptyPatch.tableHeaderBgColor).toBe("");
+    expect(emptyPatch.tablePanelBorderColor).toBe("");
+    expect(emptyPatch.contributionColor).toBe("");
   });
 });

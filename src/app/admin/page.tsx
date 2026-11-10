@@ -3310,57 +3310,27 @@ function AdminPageInner() {
       p.tablePanelBorderColor || (activeThemeId === "excelViolet" ? "#a855f7" : "#06b6d4")
     );
 
-    // Live preview resolved colors
-    const previewHeaderBg =
-      p.tableHeaderBgColor || resolveTableThemeHeaderPreviewHex(activeThemeId);
-    const previewHeaderText =
-      p.tableHeaderTextColor || resolveTableThemeHeaderTextPreviewHex(activeThemeId);
-    const previewBorderColor =
-      p.tablePanelBorderColor || resolveTableThemePanelBorderPreviewHex(activeThemeId);
-    const previewBorderRadius =
-      p.tableBorderRadius !== undefined && String(p.tableBorderRadius).trim() !== ""
-        ? parseInt(String(p.tableBorderRadius), 10) || 0
-        : activeThemeId === "excelViolet" || activeThemeId === "excelGold"
-          ? 12
-          : 14;
-    const previewBorderWidth =
-      p.tablePanelBorderWidth !== undefined && String(p.tablePanelBorderWidth).trim() !== ""
-        ? parseFloat(String(p.tablePanelBorderWidth)) || 1.5
-        : 1.5;
-    const previewGlowMode =
-      p.tableBorderGlow && p.tableBorderGlow !== "none"
-        ? p.tableBorderGlow
-        : activeThemeId === "excelViolet"
-          ? "neon"
-          : "none";
-    const previewGlowColor =
-      p.tableBorderGlowColor || previewBorderColor || (activeThemeId === "excelViolet" ? "#a855f7" : "");
-    const previewGlowShadow = buildTableBorderGlowBoxShadow(
-      previewGlowColor,
-      previewGlowMode
-    );
-    const previewBodyBg = p.tableBgColor || "#120520";
-    const previewRowEvenBg =
-      p.tableRowEvenBg || resolveTableThemeRowStripePreviewHex(activeThemeId, "even");
-    const previewRowOddBg =
-      p.tableRowOddBg || resolveTableThemeRowStripePreviewHex(activeThemeId, "odd");
-    const previewTextColor = p.tableTextColor || "#ffffff";
-    const previewContributionColor =
-      p.contributionColor || resolveTableThemeContributionPreviewHex(activeThemeId);
-    const previewTotalTextColor = p.totalTextColor || "#ffffff";
+    const patchPresetWithBump = (patch: Partial<OverlayPreset>) => {
+      updatePreset(p.id, patch);
+      setGlobalPreviewBump((n) => n + 1);
+    };
 
     const handleApplyPalette = (pal: HarmonyThemePalette) => {
-      updatePreset(p.id, {
-        theme: pal.id === "violetLuxury" ? "excelViolet" : p.theme,
-        membersTheme: pal.id === "violetLuxury" ? "excelViolet" : p.membersTheme,
-        totalTheme: pal.id === "violetLuxury" ? "excelViolet" : p.totalTheme,
+      patchPresetWithBump({
+        theme: "excelViolet",
+        membersTheme: "excelViolet",
+        totalTheme: "excelViolet",
         ...pal.colors,
       });
     };
 
-    const handleApplySmartHarmony = () => {
-      const generated = generateHarmoniousTablePalette(smartColor);
-      updatePreset(p.id, {
+    const handleApplySmartHarmony = (colorOverride?: string) => {
+      const targetColor = colorOverride || smartColor;
+      const generated = generateHarmoniousTablePalette(targetColor);
+      patchPresetWithBump({
+        theme: "excelViolet",
+        membersTheme: "excelViolet",
+        totalTheme: "excelViolet",
         ...generated,
       });
     };
@@ -3396,121 +3366,11 @@ function AdminPageInner() {
           <button
             type="button"
             className="shrink-0 px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-white/10 text-xs text-neutral-300 transition-colors"
-            onClick={() => updatePreset(p.id, emptyTableThemeAutoColorPatch())}
+            onClick={() => patchPresetWithBump(emptyTableThemeAutoColorPatch())}
             title="수동 지정한 표 색을 모두 지우고 선택한 테마 기본 디자인으로 되돌립니다"
           >
             표 색 전부 테마 자동
           </button>
-        </div>
-
-        {/* 실시간 미니 엑셀표 미리보기 */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-purple-300 flex items-center gap-1.5">
-              <span>👁️</span> 실시간 미니 엑셀표 미리보기
-            </span>
-            <span className="text-[10px] text-neutral-400">
-              OBS 화면에 렌더링될 실제 표 모습 (실시간 0ms 반영)
-            </span>
-          </div>
-          <div className="p-3 rounded-lg bg-black/60 border border-white/10 flex justify-center">
-            <div
-              className="w-full max-w-md transition-all duration-150 overflow-hidden"
-              style={{
-                borderRadius: `${previewBorderRadius}px`,
-                border: `${previewBorderWidth}px solid ${previewBorderColor}`,
-                boxShadow: previewGlowShadow || "0 4px 20px rgba(0,0,0,0.5)",
-                backgroundColor: previewBodyBg,
-              }}
-            >
-              {/* Thead */}
-              <div
-                className="grid grid-cols-[2.8rem_1fr_4.8rem_3.8rem] items-center px-2.5 py-1.5 text-[11px] font-bold border-b select-none"
-                style={{
-                  backgroundColor: previewHeaderBg,
-                  color: previewHeaderText,
-                  borderBottomColor: `${previewBorderColor}55`,
-                }}
-              >
-                <span>순위</span>
-                <span>플레이어</span>
-                <span className="text-right">웹후원</span>
-                <span className="text-right">기여도</span>
-              </div>
-              {/* Rows */}
-              <div className="divide-y divide-white/5 select-none text-[11px]">
-                {/* Row 1 */}
-                <div
-                  className="grid grid-cols-[2.8rem_1fr_4.8rem_3.8rem] items-center px-2.5 py-1.5"
-                  style={{
-                    backgroundColor: previewRowEvenBg,
-                    color: previewTextColor,
-                  }}
-                >
-                  <span className="font-bold text-amber-300 flex items-center gap-0.5">
-                    👑 1
-                  </span>
-                  <span className="font-semibold truncate">리나</span>
-                  <span className="text-right font-mono tabular-nums opacity-90">1,375,300</span>
-                  <span
-                    className="text-right font-bold tabular-nums"
-                    style={{ color: previewContributionColor }}
-                  >
-                    148만
-                  </span>
-                </div>
-                {/* Row 2 */}
-                <div
-                  className="grid grid-cols-[2.8rem_1fr_4.8rem_3.8rem] items-center px-2.5 py-1.5"
-                  style={{
-                    backgroundColor: previewRowOddBg,
-                    color: previewTextColor,
-                  }}
-                >
-                  <span className="font-bold text-slate-300">2</span>
-                  <span className="font-semibold truncate">보미</span>
-                  <span className="text-right font-mono tabular-nums opacity-90">1,259,900</span>
-                  <span
-                    className="text-right font-bold tabular-nums"
-                    style={{ color: previewContributionColor }}
-                  >
-                    134만
-                  </span>
-                </div>
-                {/* Row 3 */}
-                <div
-                  className="grid grid-cols-[2.8rem_1fr_4.8rem_3.8rem] items-center px-2.5 py-1.5"
-                  style={{
-                    backgroundColor: previewRowEvenBg,
-                    color: previewTextColor,
-                  }}
-                >
-                  <span className="font-bold text-amber-600">3</span>
-                  <span className="font-semibold truncate">예리</span>
-                  <span className="text-right font-mono tabular-nums opacity-90">1,197,600</span>
-                  <span
-                    className="text-right font-bold tabular-nums"
-                    style={{ color: previewContributionColor }}
-                  >
-                    127만
-                  </span>
-                </div>
-              </div>
-              {/* Total Row */}
-              <div
-                className="grid grid-cols-[1fr_auto] items-center px-2.5 py-1 text-[11px] font-bold border-t bg-black/35 select-none"
-                style={{
-                  color: previewTotalTextColor,
-                  borderTopColor: `${previewBorderColor}66`,
-                }}
-              >
-                <span>TOTAL</span>
-                <span className="font-mono tabular-nums">
-                  3,832,800점 / <span style={{ color: previewContributionColor }}>409만</span>
-                </span>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* 6대 하모니 팔레트 프리셋 */}
@@ -3607,15 +3467,18 @@ function AdminPageInner() {
                   type="button"
                   className="h-6 w-6 rounded-full border border-white/20 transition-transform hover:scale-110"
                   style={{ backgroundColor: sw.color }}
-                  onClick={() => setSmartColor(sw.color)}
+                  onClick={() => {
+                    setSmartColor(sw.color);
+                    handleApplySmartHarmony(sw.color);
+                  }}
                   title={sw.label}
                 />
               ))}
             </div>
             <button
               type="button"
-              className="ml-auto px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-md hover:shadow-purple-500/30 transition-all flex items-center gap-1.5"
-              onClick={handleApplySmartHarmony}
+              className="ml-auto px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-md hover:shadow-purple-500/30 transition-all flex items-center gap-1.5 cursor-pointer"
+              onClick={() => handleApplySmartHarmony()}
             >
               <span>✨</span> 조화로운 테마 배색 자동 적용
             </button>
@@ -3646,7 +3509,7 @@ function AdminPageInner() {
                       ? "border-purple-400 bg-purple-900/60 text-purple-100 shadow-[0_0_8px_rgba(168,85,247,0.35)]"
                       : "border-white/10 bg-neutral-800 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700"
                   }`}
-                  onClick={() => updatePreset(p.id, { tableBorderGlow: opt.id })}
+                  onClick={() => patchPresetWithBump({ tableBorderGlow: opt.id })}
                 >
                   {opt.label}
                 </button>
@@ -3670,7 +3533,7 @@ function AdminPageInner() {
                       ? "border-purple-400 bg-purple-900/60 text-purple-100"
                       : "border-white/10 bg-neutral-800 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700"
                   }`}
-                  onClick={() => updatePreset(p.id, { tableBorderRadius: opt.id })}
+                  onClick={() => patchPresetWithBump({ tableBorderRadius: opt.id })}
                 >
                   {opt.label}
                 </button>
@@ -3694,7 +3557,7 @@ function AdminPageInner() {
                       ? "border-purple-400 bg-purple-900/60 text-purple-100"
                       : "border-white/10 bg-neutral-800 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700"
                   }`}
-                  onClick={() => updatePreset(p.id, { tablePanelBorderWidth: opt.id })}
+                  onClick={() => patchPresetWithBump({ tablePanelBorderWidth: opt.id })}
                 >
                   {opt.label}
                 </button>
@@ -3711,7 +3574,7 @@ function AdminPageInner() {
                   p.tableBorderGlowColor,
                   p.tablePanelBorderColor || "#a855f7"
                 )}
-                onChange={(e) => updatePreset(p.id, { tableBorderGlowColor: e.target.value })}
+                onChange={(e) => patchPresetWithBump({ tableBorderGlowColor: e.target.value })}
               />
               <span className="text-xs text-neutral-400 font-mono truncate">
                 {p.tableBorderGlowColor || "테두리색과 자동 일치"}
@@ -3720,7 +3583,7 @@ function AdminPageInner() {
                 <button
                   type="button"
                   className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs text-neutral-300"
-                  onClick={() => updatePreset(p.id, { tableBorderGlowColor: "" })}
+                  onClick={() => patchPresetWithBump({ tableBorderGlowColor: "" })}
                 >
                   자동 일치
                 </button>
@@ -5982,9 +5845,14 @@ function AdminPageInner() {
       if (patch.totalTheme === undefined) mergedPatch.totalTheme = nextTheme;
       /**
        * 수동 헤더/본문/선 색이 남아 있으면 테마(글래스·엑셀 액센트)가 안 바뀐 것처럼 보임.
-       * 테마 전환 시 「테마 자동」으로 되돌려 새 테마 크롬이 즉시 프리뷰에 반영되게 함.
+       * 테마 전환 시 「테마 자동」으로 되돌리되, patch 에 명시된 색상(하모니 일괄 적용 등)은 보존함.
        */
-      Object.assign(mergedPatch, emptyTableThemeAutoColorPatch());
+      const autoEmpty = emptyTableThemeAutoColorPatch();
+      for (const [key, emptyVal] of Object.entries(autoEmpty)) {
+        if (!Object.prototype.hasOwnProperty.call(patch, key)) {
+          (mergedPatch as Record<string, unknown>)[key] = emptyVal;
+        }
+      }
     }
     if (mergedPatch.accountHeaderLabel !== undefined) {
       const label = String(mergedPatch.accountHeaderLabel || "").trim();

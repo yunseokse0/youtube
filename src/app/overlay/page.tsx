@@ -5840,15 +5840,15 @@ function OverlayInner() {
                     borderRadius: effectiveBorderRadius,
                     border:
                       !showTableFrame &&
-                      !isExcelGoldChrome &&
                       tablePanelBorderCss &&
-                      tablePanelBorderWidthCustom > 0
+                      tablePanelBorderWidthCustom > 0 &&
+                      (!isExcelGoldChrome || Boolean(tablePanelBorderColorRaw))
                         ? `${tablePanelBorderWidthCustom}px solid ${tablePanelBorderCss}`
                         : "none",
                     boxShadow: combinedPanelShadowCss,
                     padding: isExcelGoldChrome && !showTableFrame ? "6px 0 8px" : 0,
-                    /** 웹후원 골드: 큰 패널 없음. 그 외 테마는 시트/글래스 배경에 불투명도 적용 */
-                    backgroundColor: isExcelGoldChrome
+                    /** 웹후원 골드: 큰 패널 없음. 그 외 테마 또는 수동 배경색 지정 시 시트/글래스 배경 적용 */
+                    backgroundColor: isExcelGoldChrome && !tableBgColorRaw
                       ? "transparent"
                       : effectiveTableTintAlpha <= 0
                         ? "transparent"
