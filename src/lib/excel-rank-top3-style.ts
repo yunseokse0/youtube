@@ -228,10 +228,10 @@ function readParam(sp: SearchParamsLike, key: string): string {
 export function resolveExcelRankTop3Style(
   rawSp: SearchParamsLike,
   preset: OverlayPresetLike | null | undefined,
-  opts: { ready: boolean }
+  opts?: { ready?: boolean }
 ): ExcelRankTop3Style {
   const fromPreset = excelRankTop3StyleFromPreset(preset);
-  if (opts.ready) return fromPreset;
+  if (opts?.ready) return fromPreset;
 
   const urlMode = readParam(rawSp, "rankTop3Mode");
   const mode = urlMode ? normalizeMode(urlMode) : fromPreset.mode;

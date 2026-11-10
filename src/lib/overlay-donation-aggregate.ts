@@ -303,8 +303,8 @@ export function applyOverlayDonationDisplayTotals(
   state: AppState,
   opts: OverlayDonationDisplayOpts = {}
 ): AppState {
-  const fromAt = normalizeDonationAggregateFromAt(opts.fromAt);
-  const day777 = Boolean(opts.day777Calc);
+  const fromAt = normalizeDonationAggregateFromAt(opts?.fromAt);
+  const day777 = Boolean(opts?.day777Calc);
 
   if (fromAt == null && !day777) return state;
 
@@ -323,7 +323,7 @@ export function applyOverlayDonationDisplayTotals(
 
   if (!day777) return amountSynced;
 
-  const isManualMode = Boolean(opts.pongdangManualMode ?? state.pongdangManualMode);
+  const isManualMode = Boolean(opts?.pongdangManualMode ?? state.pongdangManualMode);
   const manualContribs = state.pongdangManualContributions || {};
 
   const sigById = collectDay777SigContributionByMember(state, fromAt);
