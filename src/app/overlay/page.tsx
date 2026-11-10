@@ -2471,7 +2471,7 @@ function OverlayInner() {
     [ready, s]
   );
   const rankCustomCells = useMemo<string[]>(
-    () => ((ready && s && Array.isArray((s as AppState).rankCustomCells)) ? (s as AppState).rankCustomCells : []),
+    () => ((ready && s && Array.isArray((s as AppState).rankCustomCells)) ? ((s as AppState).rankCustomCells as string[]) : []),
     [ready, s]
   );
   const presetId = (rawSp.get("p") || "").trim();
@@ -2640,6 +2640,7 @@ function OverlayInner() {
     return "default";
   };
   const membersThemeId = resolveThemeId("membersTheme");
+  const isExcelPongdang = membersThemeId === "excelPongdang";
   const excelMemberAccent = resolveExcelMemberTableAccent(membersThemeId);
   const useBroadcastTableChrome = !isExcelMemberTableTheme(membersThemeId);
   const totalThemeId = resolveThemeId("totalTheme");
@@ -3692,10 +3693,11 @@ function OverlayInner() {
       ] as Member[];
     }
     const applyExclusion = (list: Member[]) => {
-      if (excludedMemberIdsSet.size === 0) return list;
+      if (!list || excludedMemberIdsSet.size === 0) return list;
       return list.filter((m) => {
-        if (isOperating(m)) return true;
-        return !excludedMemberIdsSet.has(m.id) && !excludedMemberIdsSet.has(m.name);
+        const id = String(m?.id || "").trim();
+        const name = String(m?.name || "").trim();
+        return !excludedMemberIdsSet.has(id) && !excludedMemberIdsSet.has(name);
       });
     };
     /** 미리보기 로딩 중 default 멤버1·2·3 폴백 금지 — 테마 변경 시 가짜 목록에 고착되던 원인 */
