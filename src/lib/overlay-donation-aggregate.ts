@@ -320,13 +320,14 @@ export function applyOverlayDonationDisplayTotals(
 
   return {
     ...amountSynced,
-    members: (amountSynced.members || []).map((m) => ({
-      ...m,
-      contribution:
-        isManualMode && manualContribs[m.id] !== undefined
-          ? Math.max(0, Math.floor(Number(manualContribs[m.id]) || 0))
-          : sigById.get(m.id) ?? 0,
-    })),
+    members: (amountSynced.members || []).map((m) => {
+      const autoVal = sigById.get(m.id) ?? 0;
+      const manualAdj = isManualMode ? Number(manualContribs[m.id]) || 0 : 0;
+      return {
+        ...m,
+        contribution: Math.max(0, autoVal + manualAdj),
+      };
+    }),
   };
 }
 

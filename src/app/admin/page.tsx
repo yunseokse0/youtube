@@ -11307,7 +11307,26 @@ function AdminPageInner() {
     setState((prev: AppState) => {
       const nextManual = {
         ...(prev.pongdangManualContributions || {}),
-        [memberId]: Math.max(0, Math.floor(Number(amount) || 0)),
+        [memberId]: Math.floor(Number(amount) || 0),
+      };
+      const next: AppState = {
+        ...prev,
+        pongdangManualContributions: nextManual,
+      };
+      persistState(next, { omitDonationFields: true });
+      return next;
+    });
+  }, [persistState]);
+
+  const setPongdangTargetContribution = useCallback((memberId: string, targetAmount: number) => {
+    setState((prev: AppState) => {
+      const sigMap = collectDay777SigContributionByMember(prev);
+      const autoVal = sigMap.get(memberId) || 0;
+      const target = Math.max(0, Math.floor(Number(targetAmount) || 0));
+      const delta = target - autoVal;
+      const nextManual = {
+        ...(prev.pongdangManualContributions || {}),
+        [memberId]: delta,
       };
       const next: AppState = {
         ...prev,
@@ -11321,7 +11340,7 @@ function AdminPageInner() {
   const adjustPongdangManualContribution = useCallback((memberId: string, delta: number) => {
     setState((prev: AppState) => {
       const current = prev.pongdangManualContributions?.[memberId] ?? 0;
-      const nextVal = Math.max(0, current + delta);
+      const nextVal = current + delta;
       const nextManual = {
         ...(prev.pongdangManualContributions || {}),
         [memberId]: nextVal,
@@ -18214,13 +18233,13 @@ function AdminPageInner() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-amber-300 text-sm">퐁당퐁당 777데이 기여도 수동 관리</span>
+                      <span className="font-bold text-amber-300 text-sm">퐁당퐁당 777데이 기여도 수동 입력·보정</span>
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950/70 border border-amber-500/40 text-amber-200 font-semibold">
                         퐁당퐁당 엑셀표 전용
                       </span>
                     </div>
-                    <div className="text-xs text-neutral-400 mt-1">
-                      퐁당퐁당 엑셀표(777데이)에서 룰렛/시그 자동 집계 대신 수동으로 입력한 기여도를 오버레이에 직접 노출합니다.
+                    <div className="text-xs text-neutral-300 mt-1">
+                      💡 <span className="text-amber-300 font-semibold">자동 수집(룰렛·시그 당첨, 후원 내역)은 상시 실시간으로 끊김 없이 누적</span>되며, 관리자가 수동으로 입력/가감한 금액이 자동 수집값에 실시간 합산되어 퐁당퐁당 엑셀표에 반영됩니다.
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -18232,40 +18251,41 @@ function AdminPageInner() {
                           : "bg-neutral-800 hover:bg-neutral-700 text-neutral-400 border border-white/10"
                       }`}
                       onClick={() => togglePongdangManualMode()}
+                      title="수동 입력값 합산 반영 여부를 토글합니다. (자동 수집은 항상 켜져 있음)"
                     >
-                      <span className={`w-2 h-2 rounded-full ${state.pongdangManualMode ? "bg-white animate-pulse" : "bg-neutral-500"}`} />
-                      {state.pongdangManualMode ? "수동 모드 활성 (ON)" : "수동 모드 꺼짐 (자동 OFF)"}
+                      <span className={`w-2 h-2 rounded-full ${state.pongdangManualMode ? "bg-white animate-pulse" : "bg-sky-400"}`} />
+                      {state.pongdangManualMode ? "수동 보정 반영 중 (자동 수집 지속)" : "순수 자동 집계 모드 (수동 보정 미반영)"}
                     </button>
                     <button
                       type="button"
-                      className="px-2.5 py-1.5 rounded bg-amber-900/60 hover:bg-amber-800 text-xs text-amber-200 border border-amber-500/30 font-medium"
-                      title="현재 시그 당첨 단가 및 가감 로그가 계산된 자동 집계값을 수동 입력값으로 복사해옵니다."
-                      onClick={syncPongdangManualWithAutoValues}
-                    >
-                      자동 집계값 불러오기
-                    </button>
-                    <button
-                      type="button"
-                      className="px-2.5 py-1.5 rounded bg-neutral-800 hover:bg-neutral-700 text-xs text-neutral-300 border border-white/10"
+                      className="px-2.5 py-1.5 rounded bg-neutral-800 hover:bg-rose-950 text-xs text-neutral-300 hover:text-rose-200 border border-white/10"
+                      title="모든 멤버의 수동 보정 금액을 0원으로 리셋하여 순수 자동 집계값으로 복원합니다."
                       onClick={resetAllPongdangManualContributions}
                     >
-                      전체 0원 초기화
+                      수동 보정 전체 0원 초기화
                     </button>
                   </div>
                 </div>
 
-                {state.pongdangManualMode && (
-                  <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/30 text-xs text-emerald-200 flex items-center gap-2">
-                    <span className="font-bold">✓ 수동 모드 작동 중:</span>
-                    <span>퐁당퐁당 엑셀표의 기여도 열에 아래 입력한 금액이 실시간으로 우선 반영됩니다. (메인 엑셀표는 영향 없음)</span>
-                  </div>
-                )}
+                <div className={`p-2.5 rounded-lg border text-xs flex items-center gap-2 ${
+                  state.pongdangManualMode
+                    ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-200"
+                    : "bg-neutral-900/60 border-white/10 text-neutral-400"
+                }`}>
+                  <span className="font-bold">{state.pongdangManualMode ? "✓ 수동 보정 반영 중:" : "ℹ 순수 자동 집계 모드:"}</span>
+                  <span>
+                    {state.pongdangManualMode
+                      ? "자동 수집된 시그 기여도에 수동 보정 금액이 합산되어 실시간으로 퐁당퐁당 엑셀표에 표출됩니다. (새로운 시그/후원 발생 시 자동 수집도 계속 누적됨)"
+                      : "관리자 수동 보정값을 제외하고 순수 룰렛·시그 자동 수집 기여도만 퐁당퐁당 엑셀표에 표출됩니다. (자동 수집은 계속 작동 중)"}
+                  </span>
+                </div>
 
                 <div className="overflow-x-auto rounded-lg border border-white/10 bg-neutral-900/60 p-2.5">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                     {state.members.map((m) => {
                       const manualVal = state.pongdangManualContributions?.[m.id] ?? 0;
                       const autoVal = autoSigContributionMap.get(m.id) ?? 0;
+                      const finalVal = state.pongdangManualMode ? Math.max(0, autoVal + manualVal) : autoVal;
                       return (
                         <div
                           key={`pongdang-manual-${m.id}`}
@@ -18273,24 +18293,41 @@ function AdminPageInner() {
                         >
                           <div className="flex items-center justify-between">
                             <span className="font-semibold text-sm text-neutral-100">{m.name}</span>
-                            <span className="text-[11px] text-neutral-400">
-                              자동: <span className="font-mono text-amber-300">{autoVal.toLocaleString("ko-KR")}원</span>
+                            <div className="flex items-center gap-2 text-[11px]">
+                              <span className="text-neutral-400">
+                                자동 수집: <span className="font-mono text-amber-300 font-semibold">{autoVal.toLocaleString("ko-KR")}원</span>
+                              </span>
+                              {manualVal !== 0 && (
+                                <span className={manualVal > 0 ? "text-emerald-400 font-mono font-semibold" : "text-rose-400 font-mono font-semibold"}>
+                                  {manualVal > 0 ? `+${manualVal.toLocaleString("ko-KR")}` : `${manualVal.toLocaleString("ko-KR")}`}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between bg-neutral-900/80 px-2 py-1.5 rounded border border-white/5 text-xs">
+                            <span className="text-neutral-400">오버레이 최종 표기:</span>
+                            <span className="font-bold text-sm font-mono text-amber-200">
+                              {finalVal.toLocaleString("ko-KR")}원
                             </span>
                           </div>
+
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs text-neutral-400 whitespace-nowrap">수동값:</span>
+                            <span className="text-xs text-neutral-400 whitespace-nowrap">수동 보정:</span>
                             <input
                               type="number"
                               className="w-full px-2 py-1 rounded bg-neutral-900 border border-white/15 text-sm font-bold text-emerald-300 text-right focus:outline-none focus:border-emerald-500"
                               value={manualVal || ""}
-                              placeholder="0"
+                              placeholder="0 (+/-)"
                               onChange={(e) => {
-                                const num = Math.max(0, parseInt(e.target.value.replace(/[^\d]/g, ""), 10) || 0);
+                                const raw = e.target.value.trim();
+                                const num = raw === "" ? 0 : parseInt(raw, 10) || 0;
                                 updatePongdangManualContribution(m.id, num);
                               }}
                             />
                             <span className="text-xs text-neutral-400">원</span>
                           </div>
+
                           <div className="flex flex-wrap items-center gap-1">
                             <button
                               type="button"
@@ -18334,6 +18371,22 @@ function AdminPageInner() {
                             >
                               0원
                             </button>
+                          </div>
+
+                          <div className="flex items-center gap-1 pt-1 border-t border-white/5">
+                            <span className="text-[10px] text-neutral-500 whitespace-nowrap">최종값 맞추기:</span>
+                            <div className="flex items-center gap-1 w-full">
+                              {[50000, 100000, 150000, 200000].map((t) => (
+                                <button
+                                  key={`target-${m.id}-${t}`}
+                                  type="button"
+                                  className="px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-neutral-800 text-[10px] text-neutral-400 hover:text-amber-200 border border-white/5"
+                                  onClick={() => setPongdangTargetContribution(m.id, t)}
+                                >
+                                  {t / 10000}만
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       );

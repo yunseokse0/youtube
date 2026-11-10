@@ -712,9 +712,9 @@ export type AppState = {
   /** 시그 회전판(서버 랜덤 결과 + 오버레이 애니메이션) */
   rouletteState: RouletteState;
   overlayPresets?: unknown[];
-  /** 퐁당퐁당 기여도 수동 입력 모드 (true: 수동 입력값 우선, false: 룰렛/시그 자동 집계) */
+  /** 퐁당퐁당 기여도 수동 보정 반영 모드 (true: 자동 수집값 + 수동 보정값 실시간 합산, false: 순수 자동 집계만 반영 / 자동 수집은 상시 지속) */
   pongdangManualMode?: boolean;
-  /** 멤버별 수동 퐁당퐁당 기여도 (memberId -> 기여도 금액) */
+  /** 멤버별 수동 퐁당퐁당 기여도 가감/보정 금액 (memberId -> 보정 금액, 자동 수집값에 실시간 합산됨) */
   pongdangManualContributions?: Record<string, number>;
   overlaySettings?: LegacyOverlaySettings;
   /** 멤버별 시그 매치 점수 */

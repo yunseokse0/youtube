@@ -162,27 +162,64 @@ describe("전체 시스템 핵심 기능 및 정합성 점검 (System Inspection
       expect(result.members[0]?.contribution).toBe(50_000); // 777,000원이 아닌 나온 시그 단가!
     });
 
-    it("퐁당퐁당 수동 모드 (pongdangManualMode: true) 활성화 시 수동 입력값이 최우선 적용됨", () => {
+    it("퐁당퐁당 수동 모드는 자동을 끄지 않고 계속 수집하며, 수동 보정값과 실시간 합산됨", () => {
+      // 1) 자동 시그 50,000원 + 수동 보정 70,000원 = 120,000원
       const manualState: AppState = {
         ...defaultState(),
         members: [{ id: "m1", name: "얼음", account: 777_000, toon: 0, contribution: 777_000, goal: 500000 }],
-        donors: [{ id: "shot1", memberId: "m1", amount: 777_000, at: 1000, target: "account", donorName: "큰손" } as Donor],
+        donors: [
+          {
+            id: "shot1",
+            memberId: "m1",
+            amount: 777_000,
+            at: 1000,
+            target: "account",
+            donorName: "큰손",
+            isSigCredit: true,
+            contributionPoints: 50_000,
+          } as Donor,
+        ],
         pongdangManualMode: true,
         pongdangManualContributions: {
-          m1: 120_000, // 수동으로 입력한 값
+          m1: 70_000, // 수동 보정값
         },
       };
 
-      const result = applyOverlayDonationDisplayTotals(manualState, {
+      const result1 = applyOverlayDonationDisplayTotals(manualState, {
         day777Calc: true,
         pongdangManualMode: true,
       });
 
-      expect(result.members[0]?.account).toBe(777_000);
-      expect(result.members[0]?.contribution).toBe(120_000); // 수동 입력값 120,000원 반영
+      expect(result1.members[0]?.account).toBe(777_000);
+      expect(result1.members[0]?.contribution).toBe(120_000); // 50,000 (자동) + 70,000 (수동 보정)
+
+      // 2) 방송 중 새로운 시그 당첨(20,000원) 발생 -> 자동 수집이 지속되어 140,000원으로 실시간 상승
+      const liveState: AppState = {
+        ...manualState,
+        donors: [
+          ...manualState.donors,
+          {
+            id: "shot2",
+            memberId: "m1",
+            amount: 777_000,
+            at: 2000,
+            target: "account",
+            donorName: "팬1",
+            isSigCredit: true,
+            contributionPoints: 20_000,
+          } as Donor,
+        ],
+      };
+
+      const result2 = applyOverlayDonationDisplayTotals(liveState, {
+        day777Calc: true,
+        pongdangManualMode: true,
+      });
+
+      expect(result2.members[0]?.contribution).toBe(140_000); // 70,000 (자동) + 70,000 (수동 보정) -> 자동수집 지속!
     });
 
-    it("퐁당퐁당 수동 모드가 꺼져있을 때는 자동 시그 집계값으로 복원됨", () => {
+    it("퐁당퐁당 순수 자동 모드(수동 미반영)일 때는 관리자 보정값을 제외한 자동 수집값만 표시됨", () => {
       const autoState: AppState = {
         ...defaultState(),
         members: [{ id: "m1", name: "얼음", account: 777_000, toon: 0, contribution: 777_000, goal: 500000 }],
@@ -200,7 +237,7 @@ describe("전체 시스템 핵심 기능 및 정합성 점검 (System Inspection
         ],
         pongdangManualMode: false,
         pongdangManualContributions: {
-          m1: 120_000,
+          m1: 70_000,
         },
       };
 
@@ -209,7 +246,7 @@ describe("전체 시스템 핵심 기능 및 정합성 점검 (System Inspection
         pongdangManualMode: false,
       });
 
-      expect(result.members[0]?.contribution).toBe(50_000); // 자동 집계값으로 복원
+      expect(result.members[0]?.contribution).toBe(50_000); // 순수 자동 집계값으로 표시
     });
   });
 

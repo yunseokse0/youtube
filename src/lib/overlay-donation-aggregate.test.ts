@@ -409,7 +409,7 @@ describe("day777Calc", () => {
       rouletteState: null,
       pongdangManualMode: true,
       pongdangManualContributions: {
-        m1: 770_000,
+        m1: 720_000,
         m2: 350_000,
       },
     } as unknown as AppState;
@@ -419,8 +419,8 @@ describe("day777Calc", () => {
       day777Calc: true,
       pongdangManualMode: true,
     });
-    expect(nextManual.members[0]?.contribution).toBe(770_000);
-    expect(nextManual.members[1]?.contribution).toBe(350_000);
+    expect(nextManual.members[0]?.contribution).toBe(770_000); // 50,000 (자동) + 720,000 (수동)
+    expect(nextManual.members[1]?.contribution).toBe(350_000); // 0 (자동) + 350,000 (수동)
 
     const nextAuto = applyOverlayDonationDisplayTotals(state, {
       fromAt: 1,
