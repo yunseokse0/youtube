@@ -13290,21 +13290,7 @@ function AdminPageInner() {
                     </span>
                   </div>
                 </label>
-                <div className="rounded-lg border border-white/10 bg-black/20 p-3 space-y-2">
-                  <span className="text-xs font-medium text-neutral-300">하단 후원 표 옵션</span>
-                  <DonationTableOptionCheckboxes
-                    compact
-                    value={state.sigMatchSettings?.donationTableOptions}
-                    onChange={(patch) =>
-                      updateSigMatchSettings({
-                        donationTableOptions: {
-                          ...state.sigMatchSettings?.donationTableOptions,
-                          ...patch,
-                        },
-                      })
-                    }
-                  />
-                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-2">
                   <input
                     className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
@@ -14123,35 +14109,7 @@ function AdminPageInner() {
 
                 </label>
 
-                <div className="rounded-lg border border-white/10 bg-black/20 p-3 space-y-2">
 
-                  <span className="text-xs font-medium text-neutral-300">하단 후원 표 옵션</span>
-
-                  <DonationTableOptionCheckboxes
-
-                    compact
-
-                    value={state.mealBattle?.donationTableOptions}
-
-                    onChange={(patch) =>
-
-                      updateMealBattle({
-
-                        donationTableOptions: {
-
-                          ...state.mealBattle?.donationTableOptions,
-
-                          ...patch,
-
-                        },
-
-                      })
-
-                    }
-
-                  />
-
-                </div>
 
                 <label className="block space-y-1 max-w-xl">
 
