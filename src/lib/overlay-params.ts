@@ -250,6 +250,8 @@ export type OverlayPresetLike = {
   day777Calc?: boolean;
   /** 퐁당퐁당 기여도 수동 입력 모드 */
   pongdangManualMode?: boolean;
+  /** 표에서 제외할 멤버 ID 목록 */
+  excludedMemberIds?: string[] | string;
   /** 순위 산정 기준: contribution | donation | account | toon */
   rankingMetric?: MemberRankingMetric;
   memberRankingMetric?: MemberRankingMetric;
@@ -534,6 +536,11 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   }
   if (preset.day777Calc === true) q.set("day777Calc", "true");
   if (preset.pongdangManualMode === true) q.set("pongdangManualMode", "true");
+  if (Array.isArray(preset.excludedMemberIds) && preset.excludedMemberIds.length > 0) {
+    q.set("excludedMemberIds", preset.excludedMemberIds.map((x) => String(x || "").trim()).filter(Boolean).join(","));
+  } else if (typeof preset.excludedMemberIds === "string" && preset.excludedMemberIds.trim()) {
+    q.set("excludedMemberIds", preset.excludedMemberIds.trim());
+  }
   const rankMetric = preset.rankingMetric || preset.memberRankingMetric;
   if (rankMetric && rankMetric !== "contribution") {
     q.set("rankingMetric", rankMetric);
@@ -631,6 +638,7 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "donationAggregateFromAt",
   "day777Calc",
   "pongdangManualMode",
+  "excludedMemberIds",
   "rankingMetric",
   "memberRankingMetric",
   "rankTop3Mode",
@@ -822,6 +830,7 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "donationAggregateFromAt",
   "day777Calc",
   "pongdangManualMode",
+  "excludedMemberIds",
   "rankingMetric",
   "memberRankingMetric",
   "rankTop3Mode",
@@ -1228,6 +1237,7 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "donationAggregateFromAt",
   "day777Calc",
   "pongdangManualMode",
+  "excludedMemberIds",
   "rankingMetric",
   "memberRankingMetric",
   "tableBgOpacity",
@@ -1321,6 +1331,7 @@ const PRESET_EMPTY_USES_THEME_DEFAULT_KEYS = new Set([
   "donationAggregateFromAt",
   "day777Calc",
   "pongdangManualMode",
+  "excludedMemberIds",
   "rankingMetric",
   "memberRankingMetric",
   "tableRowEvenBg",

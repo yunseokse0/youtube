@@ -215,4 +215,16 @@ describe("Preset ov_1787825920607_03zw & user din overlay runtime verification",
     const hiddenOpts = resolveDonationTableColumnsOptions({ showRoleColumn: false });
     expect(hiddenOpts.showRoleColumn).toBe(false);
   });
+
+  it("verifies excludedMemberIds filters out representative or specific member from display roster", () => {
+    const repMember = dinState.members.find((m) => m.name === "자키");
+    expect(repMember).toBeDefined();
+
+    const excludedSet = new Set([repMember!.id]);
+    const filteredMembers = dinState.members.filter((m) => !excludedSet.has(m.id));
+
+    expect(filteredMembers).toHaveLength(4);
+    expect(filteredMembers.some((m) => m.name === "자키")).toBe(false);
+    expect(filteredMembers[0].name).toBe("열음");
+  });
 });

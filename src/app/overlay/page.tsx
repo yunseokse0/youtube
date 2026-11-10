@@ -3663,6 +3663,26 @@ function OverlayInner() {
   const tSize = autoFont ? autoTotalSize : totalSize;
   const dSize = autoFont ? autoDonorSize : donorsSize;
 
+  const excludedMemberIdsSet = useMemo(() => {
+    const rawUrl = sp.get("excludedMemberIds") || "";
+    const rawPreset = (activePreset as OverlayPresetLike | null)?.excludedMemberIds;
+    const rawGlobal = (s as AppState | null)?.pongdangExcludedMemberIds;
+
+    const ids: string[] = [];
+    if (rawUrl) {
+      ids.push(...rawUrl.split(",").map((x) => x.trim()).filter(Boolean));
+    }
+    if (Array.isArray(rawPreset)) {
+      ids.push(...rawPreset.map((x) => String(x || "").trim()).filter(Boolean));
+    } else if (typeof rawPreset === "string" && rawPreset.trim()) {
+      ids.push(...rawPreset.split(",").map((x) => x.trim()).filter(Boolean));
+    }
+    if (Array.isArray(rawGlobal) && (isExcelPongdang || day777Calc)) {
+      ids.push(...rawGlobal.map((x) => String(x || "").trim()).filter(Boolean));
+    }
+    return new Set(ids);
+  }, [sp, activePreset, s, isExcelPongdang, day777Calc]);
+
   const members = useMemo(() => {
     if (demoMode) {
       return [
@@ -3671,22 +3691,31 @@ function OverlayInner() {
         { id: "demo-3", name: "멤버3", account: 170000, toon: 70000, contribution: 15000, goal: 500000, operating: false },
       ] as Member[];
     }
+    const applyExclusion = (list: Member[]) => {
+      if (excludedMemberIdsSet.size === 0) return list;
+      return list.filter((m) => {
+        if (isOperating(m)) return true;
+        return !excludedMemberIdsSet.has(m.id) && !excludedMemberIdsSet.has(m.name);
+      });
+    };
     /** 미리보기 로딩 중 default 멤버1·2·3 폴백 금지 — 테마 변경 시 가짜 목록에 고착되던 원인 */
-    if ((!donationAggregateFromAt && !day777Calc) || !s) return membersRemote;
+    if ((!donationAggregateFromAt && !day777Calc) || !s) return applyExclusion(membersRemote);
     const donorsForAgg =
       isAdminPreview && adminPreviewDonors !== undefined
         ? (adminPreviewDonors as Donor[])
         : ((s.donors || []) as Donor[]);
-    return ensureMembers(
-      membersWithOverlayDonationAggregate(
-        {
-          ...(s as AppState),
-          members: membersRemote,
-          donors: donorsForAgg,
-        },
-        membersRemote,
-        donationAggregateFromAt,
-        { day777Calc, pongdangManualMode }
+    return applyExclusion(
+      ensureMembers(
+        membersWithOverlayDonationAggregate(
+          {
+            ...(s as AppState),
+            members: membersRemote,
+            donors: donorsForAgg,
+          },
+          membersRemote,
+          donationAggregateFromAt,
+          { day777Calc, pongdangManualMode }
+        )
       )
     );
   }, [
@@ -3695,6 +3724,7 @@ function OverlayInner() {
     donationAggregateFromAt,
     day777Calc,
     pongdangManualMode,
+    excludedMemberIdsSet,
     s,
     isAdminPreview,
     adminPreviewDonors,

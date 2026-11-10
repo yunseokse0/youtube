@@ -426,6 +426,8 @@ type OverlayPreset = {
   day777Calc?: boolean;
   day777ManualMode?: boolean;
   pongdangManualMode?: boolean;
+  /** 표에서 제외할 멤버 ID 목록 */
+  excludedMemberIds?: string[];
   rankingMetric?: MemberRankingMetric;
   memberRankingMetric?: MemberRankingMetric;
   showContributionColumn?: boolean;
@@ -11269,6 +11271,22 @@ function AdminPageInner() {
 
   const resetAllPongdangManualContributions = resetPongdangContributionsAll;
 
+  const togglePongdangExcludedMember = useCallback((memberId: string) => {
+    setState((prev: AppState) => {
+      const current = prev.pongdangExcludedMemberIds || [];
+      const nextList = current.includes(memberId)
+        ? current.filter((id) => id !== memberId)
+        : [...current, memberId];
+      const next: AppState = {
+        ...prev,
+        pongdangExcludedMemberIds: nextList,
+      };
+      persistState(next, { omitDonationFields: true });
+      return next;
+    });
+    setGlobalPreviewBump((n) => n + 1);
+  }, [persistState]);
+
   const autoSigContributionMap = useMemo(() => {
     return collectDay777SigContributionByMember(state);
   }, [state.donors, state.rouletteInventory, state.contributionLogs]);
@@ -18164,6 +18182,41 @@ function AdminPageInner() {
                   </span>
                 </div>
 
+                <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-lg border border-white/10 bg-black/30 text-xs">
+                  <div className="flex items-center gap-1.5 text-neutral-300 font-semibold">
+                    <span>👥</span>
+                    <span>퐁당퐁당 엑셀표 표시 / 제외 멤버:</span>
+                    <span className="text-[10px] text-neutral-500 font-normal">
+                      (취소선/빨간색=표에서 숨김)
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {state.members
+                      .filter((m) => !isOperatingSettlementMember(m, state.memberPositions))
+                      .map((m) => {
+                        const isExcluded = (state.pongdangExcludedMemberIds || []).includes(m.id);
+                        const role = (state.memberPositions?.[m.id] || "").trim() || (m.role || "").trim();
+                        return (
+                          <button
+                            key={`pd-member-exclude-${m.id}`}
+                            type="button"
+                            onClick={() => togglePongdangExcludedMember(m.id)}
+                            className={`px-2.5 py-1 rounded text-xs font-medium border transition-all flex items-center gap-1 cursor-pointer ${
+                              isExcluded
+                                ? "bg-rose-950/50 border-rose-500/50 text-rose-300 line-through opacity-75 hover:opacity-100"
+                                : "bg-emerald-950/40 border-emerald-500/40 text-emerald-200 hover:bg-emerald-900/50"
+                            }`}
+                            title={isExcluded ? "클릭 시 표에 다시 표시" : "클릭 시 퐁당퐁당 표에서 제외"}
+                          >
+                            <span>{isExcluded ? "✕" : "✓"}</span>
+                            <span>{m.name}</span>
+                            {role && <span className="text-[10px] opacity-75">({role})</span>}
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+
                 <div className="overflow-x-auto rounded-lg border border-white/10 bg-neutral-900/60 p-2.5">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                     {state.members.map((m) => {
@@ -21720,6 +21773,97 @@ function AdminPageInner() {
                                       </span>
                                     </div>
                                   )}
+                                  <div className="space-y-1.5 pt-2 border-t border-white/5">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <label className="text-xs text-neutral-300 font-medium flex items-center gap-1.5">
+                                        <span>👥</span> 표 표시 / 제외 멤버 설정
+                                      </label>
+                                      <div className="flex items-center gap-1.5">
+                                        <button
+                                          type="button"
+                                          className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[11px] text-neutral-300 border border-white/10"
+                                          onClick={() => {
+                                            updatePreset(p.id, { excludedMemberIds: [] });
+                                            setGlobalPreviewBump((n) => n + 1);
+                                          }}
+                                        >
+                                          전원 표시
+                                        </button>
+                                        {state.members.some((m) => {
+                                          const role = (state.memberPositions?.[m.id] || "").trim() || (m.role || "").trim();
+                                          return !role.includes("부대표") && role.includes("대표");
+                                        }) && (
+                                          <button
+                                            type="button"
+                                            className="px-2 py-0.5 rounded bg-purple-900/60 hover:bg-purple-800 text-[11px] text-purple-200 border border-purple-500/30"
+                                            onClick={() => {
+                                              const rep = state.members.find((m) => {
+                                                const role = (state.memberPositions?.[m.id] || "").trim() || (m.role || "").trim();
+                                                return !role.includes("부대표") && role.includes("대표");
+                                              });
+                                              if (rep) {
+                                                const current = Array.isArray(p.excludedMemberIds)
+                                                  ? p.excludedMemberIds
+                                                  : [];
+                                                const isExcluded = current.includes(rep.id);
+                                                const next = isExcluded
+                                                  ? current.filter((id) => id !== rep.id)
+                                                  : [...current, rep.id];
+                                                updatePreset(p.id, { excludedMemberIds: next });
+                                                setGlobalPreviewBump((n) => n + 1);
+                                              }
+                                            }}
+                                          >
+                                            {(() => {
+                                              const rep = state.members.find((m) => {
+                                                const role = (state.memberPositions?.[m.id] || "").trim() || (m.role || "").trim();
+                                                return !role.includes("부대표") && role.includes("대표");
+                                              });
+                                              const isExcluded = rep && Array.isArray(p.excludedMemberIds) && p.excludedMemberIds.includes(rep.id);
+                                              return isExcluded ? "대표 복원" : "대표 제외";
+                                            })()}
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <p className="text-[10px] text-neutral-500">
+                                      클릭하여 엑셀표에서 특정 멤버를 제외(숨김)할 수 있습니다. (빨간색=제외됨, 녹색=표시됨)
+                                    </p>
+                                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                      {state.members
+                                        .filter((m) => !isOperatingSettlementMember(m, state.memberPositions))
+                                        .map((m) => {
+                                          const excludedList = Array.isArray(p.excludedMemberIds)
+                                            ? p.excludedMemberIds
+                                            : [];
+                                          const isExcluded = excludedList.includes(m.id);
+                                          const role = (state.memberPositions?.[m.id] || "").trim() || (m.role || "").trim();
+                                          return (
+                                            <button
+                                              key={`ov-member-toggle-${p.id}-${m.id}`}
+                                              type="button"
+                                              className={`px-2.5 py-1 rounded text-xs font-medium border transition-all flex items-center gap-1.5 cursor-pointer ${
+                                                isExcluded
+                                                  ? "bg-rose-950/40 border-rose-500/40 text-rose-300 line-through opacity-75 hover:opacity-100"
+                                                  : "bg-emerald-950/40 border-emerald-500/40 text-emerald-200 hover:bg-emerald-900/50"
+                                              }`}
+                                              onClick={() => {
+                                                const next = isExcluded
+                                                  ? excludedList.filter((id) => id !== m.id)
+                                                  : [...excludedList, m.id];
+                                                updatePreset(p.id, { excludedMemberIds: next });
+                                                setGlobalPreviewBump((n) => n + 1);
+                                              }}
+                                              title={isExcluded ? "클릭하여 표에 다시 표시" : "클릭하여 표에서 제외"}
+                                            >
+                                              <span>{isExcluded ? "✕" : "✓"}</span>
+                                              <span>{m.name}</span>
+                                              {role && <span className="text-[10px] opacity-75">({role})</span>}
+                                            </button>
+                                          );
+                                        })}
+                                    </div>
+                                  </div>
                                   <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
                                     <label className="text-xs text-neutral-400">순위 산정 기준</label>
                                     <div className="flex flex-wrap gap-1">
