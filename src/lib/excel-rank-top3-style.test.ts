@@ -6,13 +6,14 @@ import {
   resolveExcelRankTop3RowStyle,
   resolveExcelRankTop3Style,
   shouldApplyExcelRankTop3Highlight,
-} from "./excel-rank-top3-style";
+} from "@/lib/excel-rank-top3-style";
 
 describe("excel-rank-top3-style", () => {
   it("formats numeric ranks", () => {
+    expect(formatExcelRankLabel(1, "plain")).toBe("1");
+    expect(formatExcelRankLabel(2, "suffix")).toBe("2위");
+    expect(formatExcelRankLabel(3, "hash")).toBe("#3");
     expect(formatExcelRankLabel(4, "hash")).toBe("#4");
-    expect(formatExcelRankLabel(4, "plain")).toBe("4");
-    expect(formatExcelRankLabel(4, "suffix")).toBe("4위");
   });
 
   it("returns hash rank when mode is off", () => {
@@ -30,6 +31,7 @@ describe("excel-rank-top3-style", () => {
       {
         ...DEFAULT_EXCEL_RANK_TOP3_STYLE,
         mode: "text",
+        rankLabelFormat: "plain",
         rank1Effect: "colorShift",
       },
       { donationTotal: 0 }
@@ -115,7 +117,7 @@ describe("excel-rank-top3-style", () => {
     const style = resolveExcelRankTop3Style(new URLSearchParams("rankTop3Mode=emoji"), {
       rankTop3Mode: "bg",
     }, { ready: true });
-    expect(style.mode).toBe("text");
+    expect(style.mode).toBe("bg");
   });
 
   it("prefers URL when not ready", () => {
