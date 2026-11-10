@@ -254,6 +254,11 @@ import {
   resolveTableThemePanelBorderPreviewHex,
   resolveTableThemeRowStripePreviewHex,
   tableRowStripeBgFromPickerHex,
+  HARMONY_THEME_PALETTES,
+  generateHarmoniousTablePalette,
+  buildTableBorderGlowBoxShadow,
+  type HarmonyThemePalette,
+  type TableBorderGlowIntensity,
 } from "@/lib/excel-member-table-theme";
 import {
   applySettlementResetToState,
@@ -441,7 +446,7 @@ type OverlayPreset = {
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerDesign?: string; timerFontFamily?: string; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerOutlineColor?: string; timerOutlineWidth?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableFrameEnabled?: boolean; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; tableGridLines?: boolean; tableVerticalLines?: boolean; vertical?: boolean; rankColor?: string; customColor?: string; roleColor?: string; nameColor?: string; accountColor?: string; toonColor?: string; combinedColor?: string; contributionColor?: string; restroomColor?: string; rankBg?: string; customBg?: string; roleBg?: string; nameBg?: string; accountBg?: string; toonBg?: string; combinedBg?: string; contributionBg?: string; restroomBg?: string; tableRowEvenBg?: string; tableRowOddBg?: string; tablePanelBorderColor?: string; tableTextColor?: string; totalTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
+  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableFrameEnabled?: boolean; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; tableGridLines?: boolean; tableVerticalLines?: boolean; vertical?: boolean; rankColor?: string; customColor?: string; roleColor?: string; nameColor?: string; accountColor?: string; toonColor?: string; combinedColor?: string; contributionColor?: string; restroomColor?: string; rankBg?: string; customBg?: string; roleBg?: string; nameBg?: string; accountBg?: string; toonBg?: string; combinedBg?: string; contributionBg?: string; restroomBg?: string; tableRowEvenBg?: string; tableRowOddBg?: string; tablePanelBorderColor?: string; tableBorderGlow?: string; tableBorderRadius?: string; tablePanelBorderWidth?: string; tableBorderGlowColor?: string; tableTextColor?: string; totalTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
   rankTop3Mode?: string; rankTop3Effect?: string; rankLabelFormat?: string; rank1Bg?: string; rank2Bg?: string; rank3Bg?: string; rank1Mark?: string; rank2Mark?: string; rank3Mark?: string; rank1Effect?: string; rank2Effect?: string; rank3Effect?: string; rank1TextColor?: string; rank2TextColor?: string; rank3TextColor?: string; rank1TextColorAlt?: string; rank2TextColorAlt?: string; rank3TextColorAlt?: string;
   memberRankChangeFx?: string; memberRankChangeNameSize?: string; memberRankChangeRankSize?: string; memberRankChangeIconSize?: string; memberRankChangeNameColor?: string; memberRankChangeRankColor?: string; memberRankChangeAccentColor?: string; memberRankChangeCardBg?: string; memberRankChangeCardBorder?: string; memberRankChangeConfettiColors?: string;
 };
@@ -1496,6 +1501,7 @@ function AdminPageInner() {
     return v.length > 0 ? v : PLACEHOLDER_MISSIONS;
   }, [state.missions]);
   const PRESET_TEMPLATES: { name: string; preset: Partial<OverlayPreset> }[] = [
+    { name: "바이올렛 럭셔리 (xplay 스타일)", preset: { theme: "excelViolet", membersTheme: "excelViolet", totalTheme: "excelViolet", showMembers: true, showTotal: true, tableOnly: true, showCustomColumn: true, showCombinedColumn: false, showContributionColumn: true, showRestroomColumn: false, tableBgOpacity: "85", tableGridLines: true, tableVerticalLines: false, tableBorderGlow: "neon", tableBorderRadius: "12", tablePanelBorderWidth: "1.5", tablePanelBorderColor: "#a855f7", tableHeaderBgColor: "#2e0854", tableRowEvenBg: "rgba(42, 12, 70, 0.60)", tableRowOddBg: "rgba(22, 6, 38, 0.60)", contributionColor: "#c084fc", accountHeaderLabel: "계좌후원", toonHeaderLabel: "웹후원", customHeaderLabel: "상벌금", tableFree: true, tableX: "80", tableY: "20", anchor: "tr" } },
     { name: "엑셀표만", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true, showRestroomColumn: true } },
     { name: "방송 엑셀(계좌·투네)", preset: { theme: "excelLive", membersTheme: "excelLive", totalTheme: "excelLive", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: false, showContributionColumn: false, showRestroomColumn: true, accountHeaderLabel: "계좌", toonHeaderLabel: "투네이션", restroomHeaderLabel: "화장실", tableBgOpacity: "85", donorsFormat: "full", tableFree: true, tableX: "3", tableY: "88", anchor: "bl" } },
     { name: "웹후원 골드 엑셀", preset: { theme: "excelGold", membersTheme: "excelGold", totalTheme: "excelGold", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: true, showContributionColumn: true, showRestroomColumn: false, tableBgOpacity: "0", tableGridLines: false, tableVerticalLines: false, tableHeaderTextColor: "", tableTextColor: "", contributionColor: "", tablePanelBorderColor: "", accountHeaderLabel: "계좌", toonHeaderLabel: "투네", tableFree: true, tableX: "50", tableY: "50", anchor: "cc" } },
@@ -1568,6 +1574,10 @@ function AdminPageInner() {
     tableRowEvenBg: "",
     tableRowOddBg: "",
     tablePanelBorderColor: "",
+    tableBorderGlow: "none",
+    tableBorderRadius: "12",
+    tablePanelBorderWidth: "1.5",
+    tableBorderGlowColor: "",
     rankTop3Mode: "off",
     rankTop3Effect: "none",
     rankLabelFormat: "hash",
@@ -1762,7 +1772,7 @@ function AdminPageInner() {
     if (keys.length === 0) return;
     setActiveNav((prev) => (keys.includes(prev) ? prev : keys[0]!));
   }, [navItems]);
-  const baseThemeChoices = ["default","excel","excelLive","excelBlue","excelSlate","excelAmber","excelGold","excelPongdang","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","neon","neonExcel","retro","minimal","rpg","pastel","rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"];
+  const baseThemeChoices = ["default","excel","excelLive","excelBlue","excelSlate","excelAmber","excelGold","excelPongdang","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","excelViolet","neon","neonExcel","retro","minimal","rpg","pastel","rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"];
   const overlayThemeLabel = (id: string): string => {
     const map: Record<string, string> = {
       auto: "자동(프리셋 테마)",
@@ -1781,6 +1791,7 @@ function AdminPageInner() {
       excelEmerald: "엑셀(에메랄드)",
       excelOrange: "엑셀(오렌지)",
       excelIndigo: "엑셀(인디고)",
+      excelViolet: "엑셀(바이올렛 럭셔리)",
       neon: "네온",
       neonExcel: "네온 엑셀",
       retro: "레트로",
@@ -1822,6 +1833,7 @@ function AdminPageInner() {
       excelEmerald: { background: "linear-gradient(135deg,#064e3b,#10b981)" },
       excelOrange: { background: "linear-gradient(135deg,#7c2d12,#fb923c)" },
       excelIndigo: { background: "linear-gradient(135deg,#3730a3,#818cf8)" },
+      excelViolet: { background: "linear-gradient(135deg,#2e0854,#a855f7)" },
       neon: { background: "linear-gradient(135deg,#06b6d4,#a78bfa,#f472b6)" },
       neonExcel: { background: "linear-gradient(135deg,#10b981,#22d3ee,#f472b6)" },
       rainbow: { background: "linear-gradient(90deg,#ef4444,#f59e0b,#10b981,#3b82f6,#8b5cf6)" },
@@ -3286,6 +3298,439 @@ function AdminPageInner() {
         ? preset.membersTheme
         : preset.theme || "default"
     );
+
+  const TableHarmonyThemeSection = ({
+    p,
+    activeThemeId,
+  }: {
+    p: OverlayPreset;
+    activeThemeId: string;
+  }) => {
+    const [smartColor, setSmartColor] = useState<string>(
+      p.tablePanelBorderColor || (activeThemeId === "excelViolet" ? "#a855f7" : "#06b6d4")
+    );
+
+    // Live preview resolved colors
+    const previewHeaderBg =
+      p.tableHeaderBgColor || resolveTableThemeHeaderPreviewHex(activeThemeId);
+    const previewHeaderText =
+      p.tableHeaderTextColor || resolveTableThemeHeaderTextPreviewHex(activeThemeId);
+    const previewBorderColor =
+      p.tablePanelBorderColor || resolveTableThemePanelBorderPreviewHex(activeThemeId);
+    const previewBorderRadius =
+      p.tableBorderRadius !== undefined && String(p.tableBorderRadius).trim() !== ""
+        ? parseInt(String(p.tableBorderRadius), 10) || 0
+        : activeThemeId === "excelViolet" || activeThemeId === "excelGold"
+          ? 12
+          : 14;
+    const previewBorderWidth =
+      p.tablePanelBorderWidth !== undefined && String(p.tablePanelBorderWidth).trim() !== ""
+        ? parseFloat(String(p.tablePanelBorderWidth)) || 1.5
+        : 1.5;
+    const previewGlowMode =
+      p.tableBorderGlow && p.tableBorderGlow !== "none"
+        ? p.tableBorderGlow
+        : activeThemeId === "excelViolet"
+          ? "neon"
+          : "none";
+    const previewGlowColor =
+      p.tableBorderGlowColor || previewBorderColor || (activeThemeId === "excelViolet" ? "#a855f7" : "");
+    const previewGlowShadow = buildTableBorderGlowBoxShadow(
+      previewGlowColor,
+      previewGlowMode
+    );
+    const previewBodyBg = p.tableBgColor || "#120520";
+    const previewRowEvenBg =
+      p.tableRowEvenBg || resolveTableThemeRowStripePreviewHex(activeThemeId, "even");
+    const previewRowOddBg =
+      p.tableRowOddBg || resolveTableThemeRowStripePreviewHex(activeThemeId, "odd");
+    const previewTextColor = p.tableTextColor || "#ffffff";
+    const previewContributionColor =
+      p.contributionColor || resolveTableThemeContributionPreviewHex(activeThemeId);
+    const previewTotalTextColor = p.totalTextColor || "#ffffff";
+
+    const handleApplyPalette = (pal: HarmonyThemePalette) => {
+      updatePreset(p.id, {
+        theme: pal.id === "violetLuxury" ? "excelViolet" : p.theme,
+        membersTheme: pal.id === "violetLuxury" ? "excelViolet" : p.membersTheme,
+        totalTheme: pal.id === "violetLuxury" ? "excelViolet" : p.totalTheme,
+        ...pal.colors,
+      });
+    };
+
+    const handleApplySmartHarmony = () => {
+      const generated = generateHarmoniousTablePalette(smartColor);
+      updatePreset(p.id, {
+        ...generated,
+      });
+    };
+
+    const currentGlow =
+      p.tableBorderGlow || (activeThemeId === "excelViolet" ? "neon" : "none");
+    const currentRadius =
+      p.tableBorderRadius !== undefined && p.tableBorderRadius !== ""
+        ? String(p.tableBorderRadius)
+        : "12";
+    const currentWidth =
+      p.tablePanelBorderWidth !== undefined && p.tablePanelBorderWidth !== ""
+        ? String(p.tablePanelBorderWidth)
+        : "1.5";
+
+    return (
+      <div className="col-span-full space-y-4 rounded-xl border border-purple-500/30 bg-purple-950/20 p-3 sm:p-4 mb-2">
+        {/* Top Title & Info */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-purple-500/20 pb-2.5">
+          <div className="flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-600/30 text-purple-200 text-base shadow-sm">
+              ✨
+            </span>
+            <div>
+              <h4 className="text-xs sm:text-sm font-bold text-purple-200">
+                오버레이 테마 일관성 & 조화 배색
+              </h4>
+              <p className="text-[11px] text-purple-300/70">
+                어색하지 않은 컬러 조합과 네온 발광·둥근 모서리를 원클릭으로 일괄 적용합니다.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="shrink-0 px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-white/10 text-xs text-neutral-300 transition-colors"
+            onClick={() => updatePreset(p.id, emptyTableThemeAutoColorPatch())}
+            title="수동 지정한 표 색을 모두 지우고 선택한 테마 기본 디자인으로 되돌립니다"
+          >
+            표 색 전부 테마 자동
+          </button>
+        </div>
+
+        {/* 실시간 미니 엑셀표 미리보기 */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-purple-300 flex items-center gap-1.5">
+              <span>👁️</span> 실시간 미니 엑셀표 미리보기
+            </span>
+            <span className="text-[10px] text-neutral-400">
+              OBS 화면에 렌더링될 실제 표 모습 (실시간 0ms 반영)
+            </span>
+          </div>
+          <div className="p-3 rounded-lg bg-black/60 border border-white/10 flex justify-center">
+            <div
+              className="w-full max-w-md transition-all duration-150 overflow-hidden"
+              style={{
+                borderRadius: `${previewBorderRadius}px`,
+                border: `${previewBorderWidth}px solid ${previewBorderColor}`,
+                boxShadow: previewGlowShadow || "0 4px 20px rgba(0,0,0,0.5)",
+                backgroundColor: previewBodyBg,
+              }}
+            >
+              {/* Thead */}
+              <div
+                className="grid grid-cols-[2.8rem_1fr_4.8rem_3.8rem] items-center px-2.5 py-1.5 text-[11px] font-bold border-b select-none"
+                style={{
+                  backgroundColor: previewHeaderBg,
+                  color: previewHeaderText,
+                  borderBottomColor: `${previewBorderColor}55`,
+                }}
+              >
+                <span>순위</span>
+                <span>플레이어</span>
+                <span className="text-right">웹후원</span>
+                <span className="text-right">기여도</span>
+              </div>
+              {/* Rows */}
+              <div className="divide-y divide-white/5 select-none text-[11px]">
+                {/* Row 1 */}
+                <div
+                  className="grid grid-cols-[2.8rem_1fr_4.8rem_3.8rem] items-center px-2.5 py-1.5"
+                  style={{
+                    backgroundColor: previewRowEvenBg,
+                    color: previewTextColor,
+                  }}
+                >
+                  <span className="font-bold text-amber-300 flex items-center gap-0.5">
+                    👑 1
+                  </span>
+                  <span className="font-semibold truncate">리나</span>
+                  <span className="text-right font-mono tabular-nums opacity-90">1,375,300</span>
+                  <span
+                    className="text-right font-bold tabular-nums"
+                    style={{ color: previewContributionColor }}
+                  >
+                    148만
+                  </span>
+                </div>
+                {/* Row 2 */}
+                <div
+                  className="grid grid-cols-[2.8rem_1fr_4.8rem_3.8rem] items-center px-2.5 py-1.5"
+                  style={{
+                    backgroundColor: previewRowOddBg,
+                    color: previewTextColor,
+                  }}
+                >
+                  <span className="font-bold text-slate-300">2</span>
+                  <span className="font-semibold truncate">보미</span>
+                  <span className="text-right font-mono tabular-nums opacity-90">1,259,900</span>
+                  <span
+                    className="text-right font-bold tabular-nums"
+                    style={{ color: previewContributionColor }}
+                  >
+                    134만
+                  </span>
+                </div>
+                {/* Row 3 */}
+                <div
+                  className="grid grid-cols-[2.8rem_1fr_4.8rem_3.8rem] items-center px-2.5 py-1.5"
+                  style={{
+                    backgroundColor: previewRowEvenBg,
+                    color: previewTextColor,
+                  }}
+                >
+                  <span className="font-bold text-amber-600">3</span>
+                  <span className="font-semibold truncate">예리</span>
+                  <span className="text-right font-mono tabular-nums opacity-90">1,197,600</span>
+                  <span
+                    className="text-right font-bold tabular-nums"
+                    style={{ color: previewContributionColor }}
+                  >
+                    127만
+                  </span>
+                </div>
+              </div>
+              {/* Total Row */}
+              <div
+                className="grid grid-cols-[1fr_auto] items-center px-2.5 py-1 text-[11px] font-bold border-t bg-black/35 select-none"
+                style={{
+                  color: previewTotalTextColor,
+                  borderTopColor: `${previewBorderColor}66`,
+                }}
+              >
+                <span>TOTAL</span>
+                <span className="font-mono tabular-nums">
+                  3,832,800점 / <span style={{ color: previewContributionColor }}>409만</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 6대 하모니 팔레트 프리셋 */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-purple-300 flex items-center gap-1.5">
+            <span>🎨</span> 6대 테마 일관성 하모니 팔레트 (원클릭 일괄 적용)
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {HARMONY_THEME_PALETTES.map((pal) => (
+              <button
+                key={pal.id}
+                type="button"
+                onClick={() => handleApplyPalette(pal)}
+                className="group flex flex-col items-start p-2.5 rounded-lg border border-white/10 hover:border-purple-400/60 bg-neutral-900/70 hover:bg-neutral-800/80 transition-all text-left shadow-sm hover:shadow-[0_0_12px_rgba(168,85,247,0.25)]"
+              >
+                <div className="flex items-center gap-1.5 w-full">
+                  <span className="text-base">{pal.emoji}</span>
+                  <span className="text-xs font-bold text-white group-hover:text-purple-200 truncate">
+                    {pal.name}
+                  </span>
+                  {pal.id === "violetLuxury" && (
+                    <span className="ml-auto text-[9px] px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200 border border-purple-400/40">
+                      추천
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 mt-2 w-full">
+                  <div
+                    className="h-3 w-4 rounded-sm border border-white/20"
+                    style={{ backgroundColor: pal.colors.tableHeaderBgColor }}
+                    title="헤더 배경"
+                  />
+                  <div
+                    className="h-3 w-4 rounded-sm border border-white/20"
+                    style={{ backgroundColor: pal.colors.tableRowEvenBg }}
+                    title="행 줄무늬"
+                  />
+                  <div
+                    className="h-3 flex-1 rounded-sm border border-white/20"
+                    style={{ backgroundColor: pal.colors.tablePanelBorderColor }}
+                    title="테두리/글루"
+                  />
+                  <div
+                    className="h-3 w-4 rounded-sm border border-white/20"
+                    style={{ backgroundColor: pal.colors.contributionColor }}
+                    title="기여도"
+                  />
+                </div>
+                <span className="mt-1.5 text-[10px] text-neutral-400 line-clamp-1 group-hover:text-neutral-300">
+                  {pal.tagline}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 스마트 하모니 배색 생성기 */}
+        <div className="rounded-lg border border-white/10 bg-neutral-900/60 p-2.5 sm:p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold text-purple-200 flex items-center gap-1.5">
+              <span>🪄</span> 스마트 하모니 생성기 (대표 컬러 1개로 전체 자동 조화)
+            </label>
+            <span className="text-[10px] text-neutral-400">
+              헤더·테두리·줄무늬·기여도 자동 계산
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="color"
+              className="h-9 w-12 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+              value={toColorPickerValue(smartColor, "#a855f7")}
+              onChange={(e) => setSmartColor(e.target.value)}
+            />
+            <input
+              type="text"
+              className="w-24 px-2 py-1 rounded bg-neutral-900/90 border border-white/15 text-xs font-mono text-center text-white"
+              value={smartColor}
+              onChange={(e) => setSmartColor(e.target.value)}
+            />
+            {/* Quick recommendations */}
+            <div className="flex items-center gap-1">
+              {[
+                { label: "바이올렛", color: "#a855f7" },
+                { label: "골드", color: "#f59e0b" },
+                { label: "시안", color: "#06b6d4" },
+                { label: "로즈", color: "#f43f5e" },
+                { label: "에메랄드", color: "#10b981" },
+                { label: "슬레이트", color: "#94a3b8" },
+                { label: "오렌지", color: "#f97316" },
+                { label: "블루", color: "#3b82f6" },
+              ].map((sw) => (
+                <button
+                  key={sw.color}
+                  type="button"
+                  className="h-6 w-6 rounded-full border border-white/20 transition-transform hover:scale-110"
+                  style={{ backgroundColor: sw.color }}
+                  onClick={() => setSmartColor(sw.color)}
+                  title={sw.label}
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              className="ml-auto px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-md hover:shadow-purple-500/30 transition-all flex items-center gap-1.5"
+              onClick={handleApplySmartHarmony}
+            >
+              <span>✨</span> 조화로운 테마 배색 자동 적용
+            </button>
+          </div>
+        </div>
+
+        {/* 디테일 설정 (발광, 모서리, 두께) */}
+        <div className="rounded-lg border border-white/10 bg-neutral-900/60 p-2.5 sm:p-3 space-y-3">
+          <div className="text-xs font-semibold text-purple-200">
+            ⚙️ 어색하지 않은 컬러 디테일 설정
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-[8.5rem_minmax(0,1fr)] items-center gap-2">
+            {/* 테두리 네온 글루 */}
+            <label className="text-xs text-neutral-300">테두리 네온 글루(발광)</label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { id: "none", label: "발광 OFF" },
+                { id: "soft", label: "은은하게 (Soft)" },
+                { id: "neon", label: "네온 발광 (Neon)" },
+                { id: "vivid", label: "강렬하게 (Vivid)" },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+                    currentGlow === opt.id
+                      ? "border-purple-400 bg-purple-900/60 text-purple-100 shadow-[0_0_8px_rgba(168,85,247,0.35)]"
+                      : "border-white/10 bg-neutral-800 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700"
+                  }`}
+                  onClick={() => updatePreset(p.id, { tableBorderGlow: opt.id })}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {/* 모서리 둥글기 */}
+            <label className="text-xs text-neutral-300">모서리 둥글기 (Radius)</label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { id: "0", label: "직각 (0px)" },
+                { id: "8", label: "소프트 (8px)" },
+                { id: "12", label: "럭셔리 (12px)" },
+                { id: "16", label: "풀 라운드 (16px)" },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+                    currentRadius === opt.id
+                      ? "border-purple-400 bg-purple-900/60 text-purple-100"
+                      : "border-white/10 bg-neutral-800 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700"
+                  }`}
+                  onClick={() => updatePreset(p.id, { tableBorderRadius: opt.id })}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {/* 테두리 선 두께 */}
+            <label className="text-xs text-neutral-300">테두리 선 두께</label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { id: "1", label: "1px (슬림)" },
+                { id: "1.5", label: "1.5px (표준)" },
+                { id: "2", label: "2px (선명)" },
+                { id: "3", label: "3px (볼드)" },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+                    currentWidth === opt.id
+                      ? "border-purple-400 bg-purple-900/60 text-purple-100"
+                      : "border-white/10 bg-neutral-800 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700"
+                  }`}
+                  onClick={() => updatePreset(p.id, { tablePanelBorderWidth: opt.id })}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {/* 테두리 발광 색상 오버라이드 */}
+            <label className="text-xs text-neutral-300">발광(Glow) 전용 색</label>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <input
+                type="color"
+                className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                value={toColorPickerValue(
+                  p.tableBorderGlowColor,
+                  p.tablePanelBorderColor || "#a855f7"
+                )}
+                onChange={(e) => updatePreset(p.id, { tableBorderGlowColor: e.target.value })}
+              />
+              <span className="text-xs text-neutral-400 font-mono truncate">
+                {p.tableBorderGlowColor || "테두리색과 자동 일치"}
+              </span>
+              {p.tableBorderGlowColor && (
+                <button
+                  type="button"
+                  className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs text-neutral-300"
+                  onClick={() => updatePreset(p.id, { tableBorderGlowColor: "" })}
+                >
+                  자동 일치
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
   const requestConfirm = (title: string, desc: string, onConfirm: () => void, options?: { confirmText?: string; danger?: boolean }) => {
     if (typeof window === "undefined") return;
     const isMobile = window.matchMedia("(max-width: 1023px)").matches;
@@ -5650,6 +6095,18 @@ function AdminPageInner() {
     if (patch.tablePanelBorderColor !== undefined) {
       const normalized = normalizeGoalHexColor(String(patch.tablePanelBorderColor || ""));
       mergedPatch.tablePanelBorderColor = normalized || "";
+    }
+    if (patch.tableBorderGlow !== undefined) {
+      mergedPatch.tableBorderGlow = String(patch.tableBorderGlow || "").trim();
+    }
+    if (patch.tableBorderRadius !== undefined) {
+      mergedPatch.tableBorderRadius = String(patch.tableBorderRadius || "").trim();
+    }
+    if (patch.tablePanelBorderWidth !== undefined) {
+      mergedPatch.tablePanelBorderWidth = String(patch.tablePanelBorderWidth || "").trim();
+    }
+    if (patch.tableBorderGlowColor !== undefined) {
+      mergedPatch.tableBorderGlowColor = normalizeGoalHexColor(String(patch.tableBorderGlowColor || "")) || "";
     }
     if (patch.tableRowEvenBg !== undefined) {
       const raw = String(patch.tableRowEvenBg || "").trim();
@@ -19918,6 +20375,7 @@ function AdminPageInner() {
                                     <input className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })} />
                                     <span className="text-xs text-neutral-500">% (100=불투명)</span>
                                   </div>
+                                  <TableHarmonyThemeSection p={p} activeThemeId={activeTableThemeId(p)} />
                                   <div className="col-span-full space-y-2.5 rounded-lg border border-white/10 bg-neutral-950/50 p-2.5">
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                       <div className="text-xs font-semibold text-emerald-300/90">헤더(상단)</div>

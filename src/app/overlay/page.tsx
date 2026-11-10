@@ -58,6 +58,10 @@ import {
   resolveTableRowEvenBg,
   resolveTableRowOddBg,
   resolveTablePanelBorderColor,
+  resolveTableBorderGlow,
+  resolveTableBorderRadius,
+  resolveTablePanelBorderWidth,
+  resolveTableBorderGlowColor,
   resolveTableVerticalLines,
   resolveTableGridLines,
   resolveTableTextOutlineColor,
@@ -170,6 +174,7 @@ import {
   resolveTableThemeTotalBorderCss,
   resolveTableThemeRowStripeCss,
   resolveTableThemeContributionColorCss,
+  buildTableBorderGlowBoxShadow,
 } from "@/lib/excel-member-table-theme";
 import { applyTableTintToCssColor, excelZebraChromeTintAlpha } from "@/lib/table-tint-opacity";
 import {
@@ -1285,7 +1290,7 @@ function formatTimerText(elapsed: string | null, remainingSeconds?: number | nul
   return formatTimerClockText(totalSec, showHours);
 }
 
-type ThemeId = "default" | "excel" | "excelLive" | "excelBlue" | "excelSlate" | "excelAmber" | "excelGold" | "excelPongdang" | "excelRose" | "excelNavy" | "excelTeal" | "excelPurple" | "excelEmerald" | "excelOrange" | "excelIndigo" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel" | "rainbow" | "sunset" | "ocean" | "forest" | "aurora" | "violet" | "coral" | "mint" | "lava" | "ice";
+type ThemeId = "default" | "excel" | "excelLive" | "excelBlue" | "excelSlate" | "excelAmber" | "excelGold" | "excelPongdang" | "excelRose" | "excelNavy" | "excelTeal" | "excelPurple" | "excelEmerald" | "excelOrange" | "excelIndigo" | "excelViolet" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel" | "rainbow" | "sunset" | "ocean" | "forest" | "aurora" | "violet" | "coral" | "mint" | "lava" | "ice";
 
 const TABLE_BG_RGB: Record<string, [number, number, number]> = {
   default: [15, 20, 30],
@@ -1303,6 +1308,7 @@ const TABLE_BG_RGB: Record<string, [number, number, number]> = {
   excelIndigo: [15, 20, 30],
   excelSlate: [15, 20, 30],
   excelNavy: [15, 20, 30],
+  excelViolet: [18, 5, 32],
   pastel: [15, 20, 30],
   neonExcel: [15, 20, 30],
 };
@@ -1662,6 +1668,24 @@ const THEMES: Record<ThemeId, {
     goalWrap: "border border-white/12 bg-[rgba(15,20,30,0.55)] p-1 rounded-studio backdrop-blur-studio",
     tickerCls: "text-[#4f46e5] font-mono font-bold",
     timerCls: "font-mono text-white/80 bg-white/10 px-2 rounded-studio",
+  },
+  excelViolet: {
+    label: "엑셀(바이올렛 럭셔리)",
+    memberCls: "font-mono font-semibold",
+    nameCls: EXCEL_LIGHT_NAME_CLS,
+    accountCls: EXCEL_LIGHT_ACCOUNT_CLS,
+    toonCls: EXCEL_LIGHT_TOON_CLS,
+    totalCls: "font-bold text-white studio-text-shadow",
+    totalWrapCls: "bg-[rgba(46,8,84,0.85)] border border-purple-500/50 px-2 py-1 rounded-studio backdrop-blur-studio shadow-[0_0_12px_rgba(168,85,247,0.35)]",
+    rowCls: "px-2 py-1 align-middle",
+    tableCls: "bg-[rgba(18,5,32,0.85)] border border-purple-500/70 border-collapse backdrop-blur-studio shadow-[0_0_16px_rgba(168,85,247,0.45)] rounded-studio overflow-hidden",
+    headerCls: "bg-[rgba(46,8,84,0.92)] text-white font-bold px-2 py-1 text-sm border-b border-purple-500/40",
+    goalBarBg: "bg-purple-950/60",
+    goalBarFill: "bg-gradient-to-r from-purple-700 via-purple-500 to-fuchsia-400",
+    goalText: "text-white font-mono font-bold studio-text-shadow",
+    goalWrap: "border border-purple-500/50 bg-[rgba(18,5,32,0.75)] p-1 rounded-studio backdrop-blur-studio shadow-[0_0_12px_rgba(168,85,247,0.35)]",
+    tickerCls: "text-purple-300 font-mono font-bold",
+    timerCls: "font-mono text-purple-200 bg-purple-950/80 px-2 rounded-studio border border-purple-500/50 shadow-[0_0_10px_rgba(168,85,247,0.35)]",
   },
   neon: {
     label: "네온",
@@ -3083,6 +3107,10 @@ function OverlayInner() {
   const tableRowEvenBgRaw = resolveTableRowEvenBg(rawSp, effectivePreset, { ready });
   const tableRowOddBgRaw = resolveTableRowOddBg(rawSp, effectivePreset, { ready });
   const tablePanelBorderColorRaw = resolveTablePanelBorderColor(rawSp, effectivePreset, { ready });
+  const tableBorderGlow = resolveTableBorderGlow(rawSp, effectivePreset, { ready });
+  const tableBorderRadiusCustom = resolveTableBorderRadius(rawSp, effectivePreset, { ready });
+  const tablePanelBorderWidthCustom = resolveTablePanelBorderWidth(rawSp, effectivePreset, { ready });
+  const tableBorderGlowColorRaw = resolveTableBorderGlowColor(rawSp, effectivePreset, { ready });
   const tableTextColorRaw = resolveTableTextColor(rawSp, effectivePreset, { ready });
   const totalTextColorRaw = resolveTotalTextColor(rawSp, effectivePreset, { ready });
   const tableBgColorRaw = resolveTableBgColor(rawSp, effectivePreset, { ready });
@@ -4556,6 +4584,28 @@ function OverlayInner() {
     const tablePanelFrameColor = tableOuterFrameFromCellGrid
       ? tableGridLineColor
       : tablePanelBorderCss || (isExcelGoldChrome ? "#ffc107" : "");
+    const effectiveGlowColor =
+      tableBorderGlowColorRaw ||
+      tablePanelBorderCss ||
+      tablePanelFrameColor ||
+      (membersThemeId === "excelViolet" ? "#a855f7" : "");
+    const effectiveBorderGlow =
+      tableBorderGlow !== "none"
+        ? tableBorderGlow
+        : membersThemeId === "excelViolet"
+          ? "neon"
+          : "none";
+    const tableGlowShadowCss = buildTableBorderGlowBoxShadow(
+      effectiveGlowColor,
+      effectiveBorderGlow
+    );
+    const effectiveBorderRadius = showTableFrame
+      ? 0
+      : tableBorderRadiusCustom !== null
+        ? tableBorderRadiusCustom
+        : isExcelGoldChrome
+          ? 12
+          : 14;
     const tablePanelOuterFrameShadowCss =
       !showTableFrame && tablePanelFrameColor
         ? overlayTableOuterFrameShadow(
@@ -4563,6 +4613,15 @@ function OverlayInner() {
             tableOuterFrameFromCellGrid ? tableGridLineWidthPx : tablePanelFrameWidthPx
           )
         : undefined;
+    const combinedPanelShadowCss =
+      [
+        tableGlowShadowCss,
+        showTableFrame
+          ? ""
+          : tablePanelOuterFrameShadowCss || (isExcelGoldChrome ? "" : tablePanelShadow || ""),
+      ]
+        .filter(Boolean)
+        .join(", ") || (isExcelGoldChrome ? "none" : tablePanelShadow || "none");
     const excelZebraEnabled =
       Boolean(excelMemberAccent) &&
       Boolean(tableRowOddBgCss && tableRowOddBgCss !== "transparent");
@@ -5775,15 +5834,18 @@ function OverlayInner() {
                     />
                   ) : null}
                 <div
-                  className={`relative ${showTableFrame ? "" : isExcelGoldChrome ? "overflow-visible" : "overflow-visible"}`}
+                  className={`relative ${showTableFrame || isExcelGoldChrome ? "overflow-visible" : "overflow-hidden"}`}
                   style={{
                     zIndex: 2,
-                    borderRadius: showTableFrame ? 0 : isExcelGoldChrome ? 12 : 14,
-                    border: "none",
-                    boxShadow:
-                      showTableFrame
-                        ? "none"
-                        : tablePanelOuterFrameShadowCss || (isExcelGoldChrome ? "none" : tablePanelShadow || "none"),
+                    borderRadius: effectiveBorderRadius,
+                    border:
+                      !showTableFrame &&
+                      !isExcelGoldChrome &&
+                      tablePanelBorderCss &&
+                      tablePanelBorderWidthCustom > 0
+                        ? `${tablePanelBorderWidthCustom}px solid ${tablePanelBorderCss}`
+                        : "none",
+                    boxShadow: combinedPanelShadowCss,
                     padding: isExcelGoldChrome && !showTableFrame ? "6px 0 8px" : 0,
                     /** 웹후원 골드: 큰 패널 없음. 그 외 테마는 시트/글래스 배경에 불투명도 적용 */
                     backgroundColor: isExcelGoldChrome
@@ -5793,7 +5855,7 @@ function OverlayInner() {
                         : tableBodySheetBgCss || TABLE_BROADCAST_PANEL_BG,
                     backdropFilter: showTableFrame || isExcelGoldChrome ? undefined : "blur(14px)",
                     WebkitBackdropFilter: showTableFrame || isExcelGoldChrome ? undefined : "blur(14px)",
-                    overflow: "visible",
+                    overflow: showTableFrame || isExcelGoldChrome ? "visible" : "hidden",
                     /** translateZ(0) 는 OBS CEF에서 서브픽셀 블러를 유발 → 외부 호스트에서는 생략 */
                     ...(externalHost
                       ? {}

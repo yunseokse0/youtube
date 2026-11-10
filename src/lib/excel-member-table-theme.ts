@@ -14,6 +14,7 @@ export const EXCEL_MEMBER_THEME_IDS = [
   "excelEmerald",
   "excelOrange",
   "excelIndigo",
+  "excelViolet",
 ] as const;
 
 export type ExcelMemberThemeId = (typeof EXCEL_MEMBER_THEME_IDS)[number];
@@ -163,6 +164,20 @@ export const EXCEL_MEMBER_TABLE_ACCENT: Record<ExcelMemberThemeId, ExcelMemberTa
     panelBorder: STUDIO_EDGE,
     panelShadow: STUDIO_PANEL_SHADOW,
   },
+  /** 바이올렛 럭셔리 (xplay 스타일) — 딥 바이올렛 글래스 · 네온 퍼플 테두리 & 발광 글루 */
+  excelViolet: {
+    headerBg: "rgba(46, 8, 84, 0.92)",
+    headerText: "#ffffff",
+    headerBorder: "rgba(168, 85, 247, 0.45)",
+    totalRowBorder: "rgba(168, 85, 247, 0.55)",
+    panelBorder: "#a855f7",
+    panelShadow: "0 0 16px rgba(168, 85, 247, 0.40)",
+    rowEvenBg: "rgba(42, 12, 70, 0.60)",
+    rowOddBg: "rgba(22, 6, 38, 0.60)",
+    contributionColor: "#c084fc",
+    contributionColumnBg: "rgba(168, 85, 247, 0.15)",
+    contributionPillBg: "rgba(168, 85, 247, 0.25)",
+  },
 };
 
 export function isExcelMemberTableTheme(themeId: string): themeId is ExcelMemberThemeId {
@@ -197,6 +212,7 @@ const BROADCAST_THEME_HEADER_BG: Record<string, string> = {
   mint: "rgba(52, 211, 153, 0.72)",
   lava: "rgba(239, 68, 68, 0.72)",
   ice: "rgba(125, 211, 252, 0.72)",
+  excelViolet: "rgba(46, 8, 84, 0.92)",
 };
 
 const BROADCAST_THEME_TOTAL_BORDER: Record<string, string> = {
@@ -217,6 +233,7 @@ const BROADCAST_THEME_TOTAL_BORDER: Record<string, string> = {
   mint: "rgba(52, 211, 153, 0.45)",
   lava: "rgba(239, 68, 68, 0.45)",
   ice: "rgba(125, 211, 252, 0.45)",
+  excelViolet: "rgba(168, 85, 247, 0.55)",
 };
 
 const FALLBACK_HEADER_BG = "rgba(124, 58, 237, 0.72)";
@@ -402,5 +419,279 @@ export function emptyTableThemeAutoColorPatch(): Record<TableThemeAutoColorField
     tableRowEvenBg: "",
     tableRowOddBg: "",
     tablePanelBorderColor: "",
+  };
+}
+
+export type TableBorderGlowIntensity = "none" | "soft" | "neon" | "vivid";
+
+export type HarmonyThemePalette = {
+  id: string;
+  name: string;
+  emoji: string;
+  tagline: string;
+  badgeBg: string;
+  colors: {
+    tableHeaderBgColor: string;
+    tableHeaderTextColor: string;
+    tableBgColor: string;
+    tableLineColor: string;
+    tablePanelBorderColor: string;
+    tableBorderGlow: TableBorderGlowIntensity;
+    tableBorderRadius: string;
+    tableRowEvenBg: string;
+    tableRowOddBg: string;
+    tableTextColor: string;
+    contributionColor: string;
+    totalTextColor: string;
+  };
+};
+
+export const HARMONY_THEME_PALETTES: HarmonyThemePalette[] = [
+  {
+    id: "violetLuxury",
+    name: "바이올렛 럭셔리",
+    emoji: "🔮",
+    tagline: "xplay 방송풍 딥 바이올렛 글래스 + 네온 퍼플 테두리 & 발광 글루",
+    badgeBg: "linear-gradient(135deg, #2e0854, #a855f7)",
+    colors: {
+      tableHeaderBgColor: "#2e0854",
+      tableHeaderTextColor: "#ffffff",
+      tableBgColor: "#120520",
+      tableLineColor: "rgba(168, 85, 247, 0.35)",
+      tablePanelBorderColor: "#a855f7",
+      tableBorderGlow: "neon",
+      tableBorderRadius: "12",
+      tableRowEvenBg: "rgba(42, 12, 70, 0.60)",
+      tableRowOddBg: "rgba(22, 6, 38, 0.60)",
+      tableTextColor: "#f3e8ff",
+      contributionColor: "#c084fc",
+      totalTextColor: "#ffffff",
+    },
+  },
+  {
+    id: "goldLuxury",
+    name: "골드 럭셔리",
+    emoji: "👑",
+    tagline: "블랙 골드 글래스 + 황금빛 샴페인 앰버 테두리 & 소프트 글루",
+    badgeBg: "linear-gradient(135deg, #261a06, #f59e0b)",
+    colors: {
+      tableHeaderBgColor: "#261a06",
+      tableHeaderTextColor: "#fef3c7",
+      tableBgColor: "#0f0b04",
+      tableLineColor: "rgba(245, 158, 11, 0.35)",
+      tablePanelBorderColor: "#f59e0b",
+      tableBorderGlow: "soft",
+      tableBorderRadius: "12",
+      tableRowEvenBg: "rgba(45, 30, 8, 0.60)",
+      tableRowOddBg: "rgba(20, 14, 4, 0.60)",
+      tableTextColor: "#fffbeb",
+      contributionColor: "#fbbf24",
+      totalTextColor: "#fef3c7",
+    },
+  },
+  {
+    id: "cyberNeon",
+    name: "사이버 네온",
+    emoji: "💎",
+    tagline: "다크 나이트 블루 + 형광 사이안 테두리 & 네온 글루",
+    badgeBg: "linear-gradient(135deg, #082f49, #06b6d4)",
+    colors: {
+      tableHeaderBgColor: "#082f49",
+      tableHeaderTextColor: "#ffffff",
+      tableBgColor: "#031525",
+      tableLineColor: "rgba(6, 182, 212, 0.35)",
+      tablePanelBorderColor: "#06b6d4",
+      tableBorderGlow: "neon",
+      tableBorderRadius: "12",
+      tableRowEvenBg: "rgba(12, 44, 72, 0.60)",
+      tableRowOddBg: "rgba(4, 22, 38, 0.60)",
+      tableTextColor: "#ecfeff",
+      contributionColor: "#22d3ee",
+      totalTextColor: "#ffffff",
+    },
+  },
+  {
+    id: "roseVelvet",
+    name: "로즈 벨벳",
+    emoji: "🌹",
+    tagline: "버건디 와인 글래스 + 핫로즈 마젠타 테두리 & 네온 글루",
+    badgeBg: "linear-gradient(135deg, #4c0519, #f43f5e)",
+    colors: {
+      tableHeaderBgColor: "#4c0519",
+      tableHeaderTextColor: "#ffffff",
+      tableBgColor: "#1c0209",
+      tableLineColor: "rgba(244, 63, 94, 0.35)",
+      tablePanelBorderColor: "#f43f5e",
+      tableBorderGlow: "neon",
+      tableBorderRadius: "12",
+      tableRowEvenBg: "rgba(76, 10, 30, 0.60)",
+      tableRowOddBg: "rgba(35, 4, 14, 0.60)",
+      tableTextColor: "#fff1f2",
+      contributionColor: "#fb7185",
+      totalTextColor: "#ffffff",
+    },
+  },
+  {
+    id: "emeraldNight",
+    name: "에메랄드 나이트",
+    emoji: "🌲",
+    tagline: "딥 포레스트 그린 글래스 + 민트 에메랄드 테두리 & 네온 글루",
+    badgeBg: "linear-gradient(135deg, #064e3b, #10b981)",
+    colors: {
+      tableHeaderBgColor: "#064e3b",
+      tableHeaderTextColor: "#ffffff",
+      tableBgColor: "#02241b",
+      tableLineColor: "rgba(16, 185, 129, 0.35)",
+      tablePanelBorderColor: "#10b981",
+      tableBorderGlow: "neon",
+      tableBorderRadius: "12",
+      tableRowEvenBg: "rgba(10, 60, 48, 0.60)",
+      tableRowOddBg: "rgba(4, 30, 24, 0.60)",
+      tableTextColor: "#ecfdf5",
+      contributionColor: "#34d399",
+      totalTextColor: "#ffffff",
+    },
+  },
+  {
+    id: "modernSlate",
+    name: "모던 다크 슬레이트",
+    emoji: "🖤",
+    tagline: "깔끔한 무채색 미니멀 다크 글래스 + 실버 라인 & 소프트 글루",
+    badgeBg: "linear-gradient(135deg, #1e293b, #94a3b8)",
+    colors: {
+      tableHeaderBgColor: "#1e293b",
+      tableHeaderTextColor: "#ffffff",
+      tableBgColor: "#0f172a",
+      tableLineColor: "rgba(148, 163, 184, 0.30)",
+      tablePanelBorderColor: "#94a3b8",
+      tableBorderGlow: "soft",
+      tableBorderRadius: "12",
+      tableRowEvenBg: "rgba(30, 41, 59, 0.60)",
+      tableRowOddBg: "rgba(15, 23, 42, 0.60)",
+      tableTextColor: "#f8fafc",
+      contributionColor: "#38bdf8",
+      totalTextColor: "#ffffff",
+    },
+  },
+];
+
+export function parseColorToRgb(color: string): [number, number, number] | null {
+  if (!color) return null;
+  const c = color.trim();
+  const hexMatch = c.match(/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/i);
+  if (hexMatch) {
+    let hex = hexMatch[1];
+    if (hex.length === 3) {
+      hex = hex.split("").map((ch) => ch + ch).join("");
+    }
+    return [
+      parseInt(hex.slice(0, 2), 16),
+      parseInt(hex.slice(2, 4), 16),
+      parseInt(hex.slice(4, 6), 16),
+    ];
+  }
+  const rgbMatch = c.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (rgbMatch) {
+    return [
+      Math.max(0, Math.min(255, parseInt(rgbMatch[1], 10))),
+      Math.max(0, Math.min(255, parseInt(rgbMatch[2], 10))),
+      Math.max(0, Math.min(255, parseInt(rgbMatch[3], 10))),
+    ];
+  }
+  return null;
+}
+
+export function buildTableBorderGlowBoxShadow(
+  color: string,
+  glowMode: TableBorderGlowIntensity | string
+): string {
+  const mode = String(glowMode || "").trim().toLowerCase();
+  if (!mode || mode === "none" || mode === "off" || mode === "false") return "";
+  const rgb = parseColorToRgb(color);
+  if (!rgb) return "";
+  const [r, g, b] = rgb;
+  if (mode === "soft") {
+    return `0 0 10px rgba(${r}, ${g}, ${b}, 0.40)`;
+  }
+  if (mode === "neon") {
+    return `0 0 16px rgba(${r}, ${g}, ${b}, 0.55), 0 0 4px rgba(${r}, ${g}, ${b}, 0.85)`;
+  }
+  if (mode === "vivid") {
+    return `0 0 24px rgba(${r}, ${g}, ${b}, 0.70), 0 0 8px rgba(${r}, ${g}, ${b}, 0.95), 0 0 2px rgba(255, 255, 255, 0.75)`;
+  }
+  return "";
+}
+
+function hexToHsl(hex: string): { h: number; s: number; l: number } {
+  const rgb = parseColorToRgb(hex) || [168, 85, 247];
+  const r = rgb[0] / 255;
+  const g = rgb[1] / 255;
+  const b = rgb[2] / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h = Math.round(h * 60);
+  }
+  return { h, s: Math.round(s * 100), l: Math.round(l * 100) };
+}
+
+function hslToRgbValues(h: number, s: number, l: number): [number, number, number] {
+  h = ((h % 360) + 360) % 360;
+  s = Math.max(0, Math.min(100, s)) / 100;
+  l = Math.max(0, Math.min(100, l)) / 100;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if (h < 60) { r = c; g = x; b = 0; }
+  else if (h < 120) { r = x; g = c; b = 0; }
+  else if (h < 180) { r = 0; g = c; b = x; }
+  else if (h < 240) { r = 0; g = x; b = c; }
+  else if (h < 300) { r = x; g = 0; b = c; }
+  else { r = c; g = 0; b = x; }
+  return [
+    Math.round((r + m) * 255),
+    Math.round((g + m) * 255),
+    Math.round((b + m) * 255),
+  ];
+}
+
+function hslToHexStr(h: number, s: number, l: number): string {
+  const [r, g, b] = hslToRgbValues(h, s, l);
+  const toHex = (n: number) => n.toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function hslToRgbaStr(h: number, s: number, l: number, a: number): string {
+  const [r, g, b] = hslToRgbValues(h, s, l);
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
+export function generateHarmoniousTablePalette(accentHex: string) {
+  const { h, s } = hexToHsl(accentHex);
+  const sat = Math.max(40, s);
+  return {
+    tableHeaderBgColor: hslToHexStr(h, Math.min(80, sat + 10), 16),
+    tableHeaderTextColor: "#ffffff",
+    tableBgColor: hslToHexStr(h, Math.min(70, sat), 7),
+    tableLineColor: hslToRgbaStr(h, sat, 60, 0.35),
+    tablePanelBorderColor: hslToHexStr(h, Math.min(100, sat + 15), 58),
+    tableBorderGlow: "neon" as const,
+    tableBorderRadius: "12",
+    tableRowEvenBg: hslToRgbaStr(h, sat, 18, 0.60),
+    tableRowOddBg: hslToRgbaStr(h, sat, 9, 0.60),
+    tableTextColor: hslToHexStr(h, 20, 95),
+    contributionColor: hslToHexStr((h + 10) % 360, Math.min(100, sat + 20), 72),
+    totalTextColor: "#ffffff",
   };
 }

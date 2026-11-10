@@ -207,6 +207,14 @@ export type OverlayPresetLike = {
   tableRowOddBg?: string;
   /** 표 패널 외곽 테두리. 비우면 테마 panelBorder */
   tablePanelBorderColor?: string;
+  /** 표 테두리 발광(Glow): none | soft | neon | vivid */
+  tableBorderGlow?: string;
+  /** 표 모서리 둥글기(px): 0(각지게) | 8(소프트) | 12(럭셔리) | 16(풀라운드) */
+  tableBorderRadius?: string;
+  /** 표 외곽 테두리 선 두께(px): 1 | 1.5 | 2 | 3 */
+  tablePanelBorderWidth?: string;
+  /** 표 테두리 발광 색상(비우면 tablePanelBorderColor 또는 테마 테두리색) */
+  tableBorderGlowColor?: string;
   tableTextColor?: string;
   /** 엑셀표 맨 아래「총합」행 글자색. 비우면 테마 자동(본문색과 별도) */
   totalTextColor?: string;
@@ -475,6 +483,11 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (tableRowOddBg) q.set("tableRowOddBg", tableRowOddBg);
   const tablePanelBorderColor = normalizeGoalHexColor((preset.tablePanelBorderColor || "").trim());
   if (tablePanelBorderColor) q.set("tablePanelBorderColor", tablePanelBorderColor);
+  if (preset.tableBorderGlow && preset.tableBorderGlow.trim()) q.set("tableBorderGlow", preset.tableBorderGlow.trim());
+  if (preset.tableBorderRadius !== undefined && String(preset.tableBorderRadius).trim()) q.set("tableBorderRadius", String(preset.tableBorderRadius).trim());
+  if (preset.tablePanelBorderWidth !== undefined && String(preset.tablePanelBorderWidth).trim()) q.set("tablePanelBorderWidth", String(preset.tablePanelBorderWidth).trim());
+  const tableBorderGlowColor = normalizeGoalHexColor((preset.tableBorderGlowColor || "").trim());
+  if (tableBorderGlowColor) q.set("tableBorderGlowColor", tableBorderGlowColor);
   if (preset.tableTextColor && preset.tableTextColor.trim()) q.set("tableTextColor", preset.tableTextColor.trim());
   const totalTextColor = normalizeGoalHexColor((preset.totalTextColor || "").trim());
   if (totalTextColor) q.set("totalTextColor", totalTextColor);
@@ -592,6 +605,10 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "tableRowEvenBg",
   "tableRowOddBg",
   "tablePanelBorderColor",
+  "tableBorderGlow",
+  "tableBorderRadius",
+  "tablePanelBorderWidth",
+  "tableBorderGlowColor",
   "tableTextColor",
   "totalTextColor",
   "tableTextOutlineColor",
@@ -778,6 +795,10 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "tableRowEvenBg",
   "tableRowOddBg",
   "tablePanelBorderColor",
+  "tableBorderGlow",
+  "tableBorderRadius",
+  "tablePanelBorderWidth",
+  "tableBorderGlowColor",
   "tableTextColor",
   "totalTextColor",
   "tableTextOutlineColor",
@@ -1059,6 +1080,10 @@ export function isDefaultLikeOverlayThemeFields(preset: unknown): boolean {
   "tableRowEvenBg",
   "tableRowOddBg",
   "tablePanelBorderColor",
+  "tableBorderGlow",
+  "tableBorderRadius",
+  "tablePanelBorderWidth",
+  "tableBorderGlowColor",
   "tableBgGifUrl",
   "tableTextColor",
   "tableTextOutlineColor",
@@ -1099,6 +1124,10 @@ const OVERLAY_THEME_FALLBACK_KEYS = [
   "tableRowEvenBg",
   "tableRowOddBg",
   "tablePanelBorderColor",
+  "tableBorderGlow",
+  "tableBorderRadius",
+  "tablePanelBorderWidth",
+  "tableBorderGlowColor",
   "tableBgGifUrl",
   "tableTextColor",
   "tableBgOpacity",
@@ -1292,6 +1321,10 @@ const PRESET_EMPTY_USES_THEME_DEFAULT_KEYS = new Set([
   "tableRowEvenBg",
   "tableRowOddBg",
   "tablePanelBorderColor",
+  "tableBorderGlow",
+  "tableBorderRadius",
+  "tablePanelBorderWidth",
+  "tableBorderGlowColor",
   "membersTheme",
   "totalTheme",
   "goalTextColor",
@@ -2341,6 +2374,84 @@ export function resolveTablePanelBorderColor(
   opts: { ready: boolean }
 ): string {
   return resolveTableCssColorParam("tablePanelBorderColor", rawSp, preset, opts);
+}
+
+/** 표 테두리 발광(Glow) 효과 강도: none | soft | neon | vivid */
+export function resolveTableBorderGlow(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): "none" | "soft" | "neon" | "vivid" {
+  if (opts.ready && preset?.tableBorderGlow) {
+    const v = String(preset.tableBorderGlow).trim().toLowerCase();
+    if (v === "soft" || v === "neon" || v === "vivid") return v;
+    if (v === "none" || v === "off" || v === "false") return "none";
+  }
+  const merged = resolveLivePresetStyleParam(
+    "tableBorderGlow",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  const v = String(merged || "").trim().toLowerCase();
+  if (v === "soft" || v === "neon" || v === "vivid") return v;
+  if (v === "none" || v === "off" || v === "false") return "none";
+  return "none";
+}
+
+/** 표 패널 모서리 둥글기 (px, 수동 지정 시 0, 8, 12, 16 등) */
+export function resolveTableBorderRadius(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): number | null {
+  if (opts.ready && preset?.tableBorderRadius !== undefined && String(preset.tableBorderRadius).trim() !== "") {
+    const n = parseInt(String(preset.tableBorderRadius), 10);
+    if (Number.isFinite(n) && n >= 0) return Math.min(48, n);
+  }
+  const merged = resolveLivePresetStyleParam(
+    "tableBorderRadius",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  if (merged !== undefined && String(merged).trim() !== "") {
+    const n = parseInt(String(merged), 10);
+    if (Number.isFinite(n) && n >= 0) return Math.min(48, n);
+  }
+  return null;
+}
+
+/** 표 패널 외곽 테두리 두께 (px, 기본 1.5) */
+export function resolveTablePanelBorderWidth(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): number {
+  if (opts.ready && preset?.tablePanelBorderWidth !== undefined && String(preset.tablePanelBorderWidth).trim() !== "") {
+    const n = parseFloat(String(preset.tablePanelBorderWidth));
+    if (Number.isFinite(n) && n >= 0) return Math.min(8, Math.max(0, n));
+  }
+  const merged = resolveLivePresetStyleParam(
+    "tablePanelBorderWidth",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  if (merged !== undefined && String(merged).trim() !== "") {
+    const n = parseFloat(String(merged));
+    if (Number.isFinite(n) && n >= 0) return Math.min(8, Math.max(0, n));
+  }
+  return 1.5;
+}
+
+/** 표 테두리 발광 색상(비우면 tablePanelBorderColor 또는 테마 테두리색) */
+export function resolveTableBorderGlowColor(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  return resolveTableCssColorParam("tableBorderGlowColor", rawSp, preset, opts);
 }
 
 /** 엑셀표 선 전체(가로·세로·외곽) — 기본 ON. false/0/off 이면 전부 숨김 */
