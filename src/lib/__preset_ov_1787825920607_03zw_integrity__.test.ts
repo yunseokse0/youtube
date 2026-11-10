@@ -143,12 +143,24 @@ describe("Preset ov_1787825920607_03zw & user din overlay runtime verification",
     );
 
     expect(ranked).toHaveLength(5);
-    // Representative rank is null (rendered as "대표" badge in overlay)
+    // Representative rank is null (순위 표시 제외 / 빈칸 처리)
     expect(ranked[0].m.name).toBe("자키");
     expect(ranked[0].rank).toBeNull();
     // Subsequent members get rank 1, 2, ...
     expect(ranked[1].m.name).toBe("열음");
     expect(ranked[1].rank).toBe(1);
+
+    // 대표는 순위 열에서 텍스트("대표" 또는 숫자)를 표시하지 않고 빈칸이어야 함
+    const repRole = roleMap[ranked[0].m.id] || "";
+    const isRep = !repRole.includes("부대표") && repRole.includes("대표");
+    const repShouldHideRank = ranked[0].rank == null || isRep;
+    expect(repShouldHideRank).toBe(true);
+
+    // 일반 멤버(열음)는 순위가 정상 표시되어야 함
+    const memberRole = roleMap[ranked[1].m.id] || "";
+    const isMemberRep = !memberRole.includes("부대표") && memberRole.includes("대표");
+    const memberShouldHideRank = ranked[1].rank == null || isMemberRep;
+    expect(memberShouldHideRank).toBe(false);
   });
 
   it("verifies excelGold table styling with SearchParams", () => {

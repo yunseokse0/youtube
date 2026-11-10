@@ -6037,26 +6037,30 @@ function OverlayInner() {
                           style={top3Row.rowBg ? { ["--excel-rank-row-bg" as any]: top3Row.rowBg } as React.CSSProperties : undefined}
                         >
                           <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
-                            {rank == null ? (
-                              <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                {(() => {
-                                  const role = (memberPositionsMap[m.id] || "").trim() || getMemberRole(m).trim();
-                                  const isRep = !role.includes("부대표") && role.includes("대표");
-                                  return isRep ? "대표" : " ";
-                                })()}
-                              </span>
-                            ) : (
-                              <span
-                                className={`overlay-cell-text-inner ${top3Row.rankCellClass || ""}`}
-                                style={mergeRankTop3TextStyle(
-                                  overlayCellOutlineStyle,
-                                  top3Row.gradientText,
-                                  top3Row.rankCellStyle
-                                )}
-                              >
-                                {top3Row.rankLabel}
-                              </span>
-                            )}
+                            {(() => {
+                              const role = (memberPositionsMap[m.id] || "").trim() || getMemberRole(m).trim();
+                              const isRep = !role.includes("부대표") && role.includes("대표");
+                              const shouldHideRank = rank == null || isRep;
+                              if (shouldHideRank) {
+                                return (
+                                  <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                    {" "}
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span
+                                  className={`overlay-cell-text-inner ${top3Row.rankCellClass || ""}`}
+                                  style={mergeRankTop3TextStyle(
+                                    overlayCellOutlineStyle,
+                                    top3Row.gradientText,
+                                    top3Row.rankCellStyle
+                                  )}
+                                >
+                                  {top3Row.rankLabel}
+                                </span>
+                              );
+                            })()}
                           </td>
                           {showCustomColumn && (
                             <td className={`${effectiveRowCls} overlay-col-custom text-center`}>
