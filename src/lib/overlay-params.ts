@@ -233,6 +233,8 @@ export type OverlayPresetLike = {
   showTableSumRow?: boolean;
   /** 순위 다음 커스텀 열(상벌금 등) — 기본 ON */
   showCustomColumn?: boolean;
+  /** 직급 열 표시 — 기본 ON, false 시 직급 숨김 */
+  showRoleColumn?: boolean;
   /** 커스텀 열 헤더 오버라이드(비우면 AppState.memberCustomHeaderLabel) */
   customHeaderLabel?: string;
   /**
@@ -519,6 +521,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.showContributionSum === false) q.set("showContributionSum", "false");
   if (preset.showTableSumRow === false) q.set("showTableSumRow", "false");
   if (preset.showCustomColumn === false) q.set("showCustomColumn", "false");
+  if (preset.showRoleColumn === false) q.set("showRoleColumn", "false");
   if (preset.customHeaderLabel && preset.customHeaderLabel.trim()) {
     q.set("customHeaderLabel", preset.customHeaderLabel.trim());
   }
@@ -623,6 +626,7 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "showContributionSum",
   "showTableSumRow",
   "showCustomColumn",
+  "showRoleColumn",
   "customHeaderLabel",
   "donationAggregateFromAt",
   "day777Calc",
@@ -813,6 +817,7 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "showContributionSum",
   "showTableSumRow",
   "showCustomColumn",
+  "showRoleColumn",
   "customHeaderLabel",
   "donationAggregateFromAt",
   "day777Calc",

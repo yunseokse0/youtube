@@ -1,6 +1,7 @@
 import type { DonationTableColumnsOptions } from "@/types";
 
 export type ResolvedDonationTableColumnsOptions = {
+  showRoleColumn: boolean;
   showAccountColumn: boolean;
   showToonColumn: boolean;
   showCombinedColumn: boolean;
@@ -12,6 +13,7 @@ export type ResolvedDonationTableColumnsOptions = {
 };
 
 export const DEFAULT_DONATION_TABLE_COLUMNS: ResolvedDonationTableColumnsOptions = {
+  showRoleColumn: true,
   showAccountColumn: true,
   showToonColumn: true,
   showCombinedColumn: true,
@@ -28,6 +30,7 @@ export function resolveDonationTableColumnsOptions(
 ): ResolvedDonationTableColumnsOptions {
   const fb = { ...DEFAULT_DONATION_TABLE_COLUMNS, ...fallback };
   return {
+    showRoleColumn: opts?.showRoleColumn ?? fb.showRoleColumn,
     showAccountColumn: opts?.showAccountColumn ?? fb.showAccountColumn,
     showToonColumn: opts?.showToonColumn ?? fb.showToonColumn,
     showCombinedColumn: opts?.showCombinedColumn ?? fb.showCombinedColumn,
@@ -44,6 +47,7 @@ export function normalizeDonationTableColumnsOptions(
 ): DonationTableColumnsOptions {
   const src = input && typeof input === "object" ? input : {};
   return {
+    showRoleColumn: src.showRoleColumn !== false,
     showAccountColumn: src.showAccountColumn !== false,
     showToonColumn: src.showToonColumn !== false,
     showCombinedColumn: src.showCombinedColumn !== false,

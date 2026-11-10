@@ -62,6 +62,15 @@ export default function DonationTableOptionCheckboxes({
         <input
           type="checkbox"
           className="rounded border-white/20 bg-neutral-900"
+          checked={resolved.showRoleColumn}
+          onChange={(e) => onChange({ showRoleColumn: e.target.checked })}
+        />
+        직급 열
+      </label>
+      <label className={labelClass}>
+        <input
+          type="checkbox"
+          className="rounded border-white/20 bg-neutral-900"
           checked={resolved.showCombinedColumn}
           onChange={(e) => onChange({ showCombinedColumn: e.target.checked })}
         />

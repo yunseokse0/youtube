@@ -301,6 +301,8 @@ export type SigMatchPool = {
 };
 
 export type DonationTableColumnsOptions = {
+  /** 직급 열 표시 (기본 true, false 시 직급 숨김) */
+  showRoleColumn?: boolean;
   /** 계좌 열 표시 (기본 true) */
   showAccountColumn?: boolean;
   /** 투네 열 표시 (기본 true) */

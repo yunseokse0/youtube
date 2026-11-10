@@ -2684,6 +2684,7 @@ function OverlayInner() {
   const showCombinedColumn = resolvePresetBool("showCombinedColumn", true);
   const showContributionColumn = resolvePresetBool("showContributionColumn", true);
   const showCustomColumn = resolvePresetBool("showCustomColumn", true);
+  const showRoleColumn = resolvePresetBool("showRoleColumn", true);
   const showRestroomColumn = (() => {
     const url = (rawSp.get("showRestroomColumn") || "").toLowerCase();
     if (url === "false") {
@@ -3979,11 +3980,12 @@ function OverlayInner() {
   const visiblePinned = pinned;
   const hasRoleColumn = useMemo(
     () =>
-      members.some((m) => getMemberRole(m).trim().length > 0) ||
-      (memberPositionMode === "rankLinked" &&
-        Array.isArray(rankPositionLabels) &&
-        rankPositionLabels.some((l) => String(l || "").trim().length > 0)),
-    [members, getMemberRole, memberPositionMode, rankPositionLabels]
+      showRoleColumn &&
+      (members.some((m) => getMemberRole(m).trim().length > 0) ||
+        (memberPositionMode === "rankLinked" &&
+          Array.isArray(rankPositionLabels) &&
+          rankPositionLabels.some((l) => String(l || "").trim().length > 0))),
+    [showRoleColumn, members, getMemberRole, memberPositionMode, rankPositionLabels]
   );
   const ranked = useMemo(
     () =>

@@ -16,6 +16,7 @@ import {
   generateHarmoniousTablePalette,
   emptyTableThemeAutoColorPatch,
 } from "./excel-member-table-theme";
+import { resolveDonationTableColumnsOptions } from "./donation-table-options";
 import {
   resolveExcelRankTop3RowStyle,
   resolveExcelRankTop3Style,
@@ -202,5 +203,16 @@ describe("Preset ov_1787825920607_03zw & user din overlay runtime verification",
     expect(emptyPatch.tableHeaderBgColor).toBe("");
     expect(emptyPatch.tablePanelBorderColor).toBe("");
     expect(emptyPatch.contributionColor).toBe("");
+  });
+
+  it("verifies showRoleColumn option turns off role column even when roles exist", () => {
+    const rolesExist = dinState.members.some((m) => m.name === "자키");
+    expect(rolesExist).toBe(true);
+
+    const defaultOpts = resolveDonationTableColumnsOptions(null);
+    expect(defaultOpts.showRoleColumn).toBe(true);
+
+    const hiddenOpts = resolveDonationTableColumnsOptions({ showRoleColumn: false });
+    expect(hiddenOpts.showRoleColumn).toBe(false);
   });
 });

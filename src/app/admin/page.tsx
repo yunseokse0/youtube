@@ -418,6 +418,7 @@ type OverlayPreset = {
   showToonColumn?: boolean;
   showCombinedColumn?: boolean;
   showCustomColumn?: boolean;
+  showRoleColumn?: boolean;
   customHeaderLabel?: string;
   /** 엑셀표 후원 집계 시작(epoch ms 문자열). 비우면 전체 */
   donationAggregateFromAt?: string;
@@ -1505,7 +1506,7 @@ function AdminPageInner() {
     { name: "엑셀표만", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true, showRestroomColumn: true } },
     { name: "방송 엑셀(계좌·투네)", preset: { theme: "excelLive", membersTheme: "excelLive", totalTheme: "excelLive", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: false, showContributionColumn: false, showRestroomColumn: true, accountHeaderLabel: "계좌", toonHeaderLabel: "투네이션", restroomHeaderLabel: "화장실", tableBgOpacity: "85", donorsFormat: "full", tableFree: true, tableX: "3", tableY: "88", anchor: "bl" } },
     { name: "웹후원 골드 엑셀", preset: { theme: "excelGold", membersTheme: "excelGold", totalTheme: "excelGold", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: true, showContributionColumn: true, showRestroomColumn: false, tableBgOpacity: "0", tableGridLines: false, tableVerticalLines: false, tableHeaderTextColor: "", tableTextColor: "", contributionColor: "", tablePanelBorderColor: "", accountHeaderLabel: "계좌", toonHeaderLabel: "투네", tableFree: true, tableX: "50", tableY: "50", anchor: "cc" } },
-    { name: "퐁당퐁당 엑셀", preset: { theme: "excelPongdang", membersTheme: "excelPongdang", totalTheme: "excelPongdang", showMembers: true, showTotal: true, tableOnly: true, showCustomColumn: true, showCombinedColumn: true, showContributionColumn: true, showRestroomColumn: false, day777Calc: true, tableBgOpacity: "0", tableGridLines: false, tableVerticalLines: false, accountHeaderLabel: "후원", toonHeaderLabel: "투네", customHeaderLabel: "상벌금", tableFree: true, tableX: "50", tableY: "50", anchor: "cc" } },
+    { name: "퐁당퐁당 엑셀", preset: { theme: "excelPongdang", membersTheme: "excelPongdang", totalTheme: "excelPongdang", showMembers: true, showTotal: true, tableOnly: true, showRoleColumn: false, showCustomColumn: true, showCombinedColumn: true, showContributionColumn: true, showRestroomColumn: false, day777Calc: true, tableBgOpacity: "0", tableGridLines: false, tableVerticalLines: false, accountHeaderLabel: "후원", toonHeaderLabel: "투네", customHeaderLabel: "상벌금", tableFree: true, tableX: "50", tableY: "50", anchor: "cc" } },
     { name: "전체 통합", preset: { showMembers: true, showTotal: true } },
     { name: "표만 (엑셀)", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true, showRestroomColumn: true } },
     { name: "멤버 목록만", preset: { showMembers: true, showTotal: false, showBottomDonors: false, tickerInMembers: false } },
@@ -21547,6 +21548,7 @@ function AdminPageInner() {
                                     compact
                                     sumRowFallback={Boolean(p.showTableSumRow ?? p.showTotal)}
                                     value={{
+                                      showRoleColumn: p.showRoleColumn,
                                       showAccountColumn: p.showAccountColumn,
                                       showToonColumn: p.showToonColumn,
                                       showCombinedColumn: p.showCombinedColumn,
@@ -21563,7 +21565,7 @@ function AdminPageInner() {
                                     }}
                                   />
                                   <p className="text-[10px] text-neutral-500">
-                                    열 순서: 순위 → 커스텀 → 이름 → 후원 → 투네 → (합계) → (기여도) → (화장실). 「후원합계」는 계좌+투네 합 열입니다.
+                                    열 순서: 순위 → 커스텀 → 직급 → 이름 → 후원 → 투네 → (합계) → (기여도) → (화장실). 「후원합계」는 계좌+투네 합 열입니다.
                                   </p>
                                 </div>
                                 {(p.showCustomColumn !== false) && (
