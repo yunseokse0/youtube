@@ -29,25 +29,73 @@ import BattleGaugeFitScore from "@/components/battle/BattleGaugeFitScore";
 import { mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import { recalculateMealParticipantScoresFromDonors } from "@/lib/battle-donation-sync";
+import { getSigMatchGaugeTheme } from "@/lib/sig-match-gauge-theme";
 
 function outlineStyle(): React.CSSProperties {
   return { textShadow: "0 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 -1px 0 #000, 0 0 8px rgba(0,0,0,.55)" };
 }
 
-/** 게이지 막대 안 점수 — 글로우 없이 얇은 획으로만 대비 */
-function gaugeInBarScoreStyle(color: string): React.CSSProperties {
+/** 시그 대전과 통일된 esports 골드 글로우 & 스트로크 타이틀 */
+const sigMatchTitleStyle: React.CSSProperties = {
+  color: "#fffbeb",
+  textShadow:
+    "0 2px 10px rgba(0,0,0,0.95), 0 0 28px rgba(251,191,36,0.4), -1px 0 0 rgba(0,0,0,0.85), 1px 0 0 rgba(0,0,0,0.85)",
+};
+
+/** 멤버명 — 엑셀표 및 시그 대전과 동일한 굵은 외곽선 */
+const sigMemberNameStyle: React.CSSProperties = {
+  color: "#ffffff",
+  WebkitTextStroke: "0.85px rgba(0,0,0,0.98)",
+  paintOrder: "stroke fill",
+  textShadow:
+    "0 0 2px rgba(0,0,0,1), 0 2px 4px rgba(0,0,0,0.95), 1px 0 2px rgba(0,0,0,0.9), -1px 0 2px rgba(0,0,0,0.9), 0 -1px 2px rgba(0,0,0,0.9)",
+};
+
+const sigMemberAmountStyle: React.CSSProperties = {
+  color: "#ffffff",
+  WebkitTextStroke: "0.65px rgba(0,0,0,0.95)",
+  paintOrder: "stroke fill",
+  textShadow:
+    "0 0 2px rgba(0,0,0,1), 0 1px 4px rgba(0,0,0,0.95), 1px 0 2px rgba(0,0,0,0.85), -1px 0 2px rgba(0,0,0,0.85)",
+};
+
+function sigGaugeInBarScoreStyle(leading: boolean): React.CSSProperties {
   return {
-    color,
-    textShadow: "none",
-    WebkitTextStroke: "1px rgba(0,0,0,0.7)",
+    color: "#ffffff",
+    WebkitTextStroke: "0.65px rgba(0,0,0,0.95)",
     paintOrder: "stroke fill",
+    textShadow:
+      "0 0 2px rgba(0,0,0,1), 0 1px 4px rgba(0,0,0,0.95), 1px 0 2px rgba(0,0,0,0.85), -1px 0 2px rgba(0,0,0,0.85)",
+    ...(leading ? { filter: "brightness(1.08)" } : {}),
   };
 }
 
-function segmentBarStyle(seg: { memberId: string; color: string }): React.CSSProperties {
-  if (seg.memberId === "__teamA") return { backgroundColor: seg.color };
-  if (seg.memberId === "__teamB") return { backgroundColor: seg.color };
-  return { backgroundColor: seg.color };
+/** 시그 대전과 통일된 esports 다크 글래스 타이머 알약 */
+function SigCleanTimerPill({
+  timerPaused,
+  timerText,
+  compact,
+}: {
+  timerPaused: boolean;
+  timerText: string;
+  compact: boolean;
+}) {
+  return (
+    <div
+      className={`inline-flex items-center justify-center rounded-md px-2.5 py-0.5 font-black tabular-nums text-white ring-1 ring-white/15 ${
+        timerPaused ? "bg-neutral-700/90" : "bg-neutral-950/85"
+      } ${compact ? "text-base sm:text-lg" : "text-lg sm:text-xl"}`}
+      style={{
+        textShadow:
+          "-0.8px 0 0 rgba(6, 12, 24, 0.95), 0.8px 0 0 rgba(6, 12, 24, 0.95), 0 -0.8px 0 rgba(6, 12, 24, 0.95), 0 0.8px 0 rgba(6, 12, 24, 0.95), 0 0 1px rgba(6, 12, 24, 0.95)",
+        WebkitTextStroke: "0.8px rgba(6, 12, 24, 0.95)",
+        paintOrder: "stroke fill",
+      }}
+      data-sig-clean-timer="true"
+    >
+      <span suppressHydrationWarning>{timerText}</span>
+    </div>
+  );
 }
 
 type FloatingScoreBurst = {
@@ -158,6 +206,7 @@ export default function MealMatchOverlayInner() {
     () => (demoEnabled ? buildMealDemoFrozenState(demoMode, demoTimerSec) : null),
     [demoEnabled, demoMode, demoTimerSec]
   );
+
   const { state, ready } = useOverlayRemoteState(userId, {
     frozenState: demoFrozenState,
     enabled: !demoEnabled,
@@ -197,6 +246,9 @@ export default function MealMatchOverlayInner() {
   const timerText = `${String(Math.floor(Math.max(0, remaining) / 60)).padStart(2, "0")}:${String(Math.max(0, remaining) % 60).padStart(2, "0")}`;
   const showMealMatchTimer = state?.matchTimerEnabled?.match !== false;
   const timerSize = Math.max(16, Math.min(120, state?.mealBattle?.timerSize || 36));
+
+  const theme = useMemo(() => getSigMatchGaugeTheme(sp.get("theme")), [sp]);
+
   /** 데모·SSR 초기에는 URL만 사용 — localStorage 상태와 SSR searchParams 타이밍 차로 hydration 깨짐 방지 */
   const gaugeFx = useMemo(() => {
     const stateEffects =
@@ -337,8 +389,8 @@ export default function MealMatchOverlayInner() {
   const mb = state?.mealBattle;
   const missionBubbleBg = mb?.missionBubbleBg || "#db2777";
   const missionBubbleTextColor = mb?.missionBubbleTextColor || "#ffffff";
-  const gaugeTrackBg = mb?.gaugeTrackBg || "rgba(255,255,255,0.30)";
-  const gaugeFillColor = mb?.gaugeFillColor || "#f472b6";
+  const gaugeTrackBg = mb?.gaugeTrackBg || theme.trackBg;
+  const gaugeFillColor = mb?.gaugeFillColor || theme.leftAccent;
   const requestedFillGaugeMode = demoEnabled
     ? demoMode === "individual"
     : state?.mealMatchSettings?.mode === "individual";
@@ -392,16 +444,11 @@ export default function MealMatchOverlayInner() {
 
   const gaugeShadow = isCritical
     ? "0 0 35px 10px rgba(239, 68, 68, 0.55)"
-    : "0 10px 15px -3px rgb(0 0 0 / 0.25)";
+    : theme.trackShadow;
 
   const criticalFillBackground = isCritical
     ? `linear-gradient(90deg, ${gaugeFillColor}, #f87171, ${gaugeFillColor})`
     : gaugeFillColor;
-  const scoreTextColor = mb?.scoreTextColor || "#ffffff";
-  const showPanelBorder = Boolean(mb?.showPanelBorder);
-  const panelBorderColor = mb?.panelBorderColor || "rgba(255,255,255,0.25)";
-  const showGaugeTrackBorder = Boolean(mb?.showGaugeTrackBorder);
-  const gaugeTrackBorderColor = mb?.gaugeTrackBorderColor || "rgba(255,255,255,0.2)";
 
   const teamBattleEnabled = demoEnabled
     ? demoMode === "team"
@@ -410,8 +457,8 @@ export default function MealMatchOverlayInner() {
   const teamBName = mb?.teamBName?.trim() || "B팀";
   const teamAGoalSetting = Math.max(0, Math.floor(Number(mb?.teamAGoal || 0) || 0));
   const teamBGoalSetting = Math.max(0, Math.floor(Number(mb?.teamBGoal || 0) || 0));
-  const teamAColor = mb?.teamAColor || "#f472b6";
-  const teamBColor = mb?.teamBColor || "#fb7185";
+  const teamAColor = mb?.teamAColor || theme.leftAccent;
+  const teamBColor = mb?.teamBColor || theme.rightAccent;
   const teamAIds = useMemo(() => {
     if (demoEnabled && demoMode === "team") return new Set(["demo-a1", "demo-a2"]);
     return new Set(mb?.teamAMemberIds || []);
@@ -556,7 +603,6 @@ export default function MealMatchOverlayInner() {
       const fillPercent = Math.min(100, (p.score / Math.max(1, p.goal)) * 100);
       return {
         ...p,
-        // 멤버 슬롯은 고정(자리 유지), 슬롯 내부 채움만 점수에 따라 증가
         percent: slotPercent,
         fillPercent,
         center: ((idx + 0.5) / coreMealParticipants.length) * 100,
@@ -585,7 +631,6 @@ export default function MealMatchOverlayInner() {
   }, [useTeamSplitGauge, teamAgg.aScore, teamAgg.bScore, topMemberId]);
 
   const unassignedScore = Math.max(0, totalScore - teamAgg.aScore - teamAgg.bScore);
-  /** 운영비만 상대편인 1인 UI에서는 팀 색 띠 대신 단일 채움색 */
   const operatingExcludedSoloUi = Boolean(
     soloMealParticipant && participants.length > coreMealParticipants.length
   );
@@ -650,29 +695,33 @@ export default function MealMatchOverlayInner() {
       }`}
     >
       <div className="mx-auto w-full" style={overlayContainerStyle}>
-        <div className={`relative text-center ${compact ? "mb-0" : "mb-0"}`}>
+        <div className={`relative text-center ${compact ? "mb-0" : "mb-1"}`}>
           <BattleRulesBox
             text={overlayRulesText}
             compact={compact}
             fontSizePx={overlayRulesFontSize}
             className="right-0 top-0 max-sm:left-0 max-sm:right-0 max-sm:mx-auto sm:right-1"
           />
-          <div className="pastel-text-outline text-4xl font-black tracking-wide text-pink-100" style={outlineStyle()}>
+          {/* 시그 대전과 완벽히 통일된 방송용 골드 글로우 타이틀 */}
+          <div
+            className="text-center font-black tracking-wider text-2xl sm:text-3xl"
+            style={sigMatchTitleStyle}
+          >
             {overlayTitle}
           </div>
           {!demoEnabled && devHud ? (
-            <p className="mt-1 text-xs font-semibold text-pink-200/75">합산 목표 · 멤버별 채움 게이지</p>
+            <p className="mt-0.5 text-xs font-semibold text-neutral-400">합산 목표 · 멤버별 채움 게이지</p>
           ) : null}
           {devHud && demoEnabled && (
             <div className="mx-auto mt-1 flex flex-col items-center gap-0.5">
-              <div className="inline-flex rounded-full border border-pink-200/80 bg-pink-300/35 px-3 py-1 text-xs font-bold text-pink-100">
+              <div className="inline-flex rounded-full border border-amber-300/40 bg-amber-400/10 px-3 py-0.5 text-xs font-bold text-amber-200">
                 DEMO · {demoMode === "team" ? "팀 모드" : demoMode === "individual" ? "개인(단일게이지) 모드" : "개인 분할 모드"}
                 {gaugePreview ? " · 자동 연출" : ""}
                 {demoEnabled ? ` · ${MEAL_MATCH_OVERLAY_UI_REV}` : ""}
               </div>
               {overlayMounted &&
               (sp.get("fx") || sp.get("gaugeFx") || sp.get("gaugeAnim") || sp.get("timerTheme")) ? (
-                <div className="text-[10px] font-medium text-pink-200/90" suppressHydrationWarning>
+                <div className="text-[10px] font-medium text-amber-200/90" suppressHydrationWarning>
                   {sp.get("fx") || sp.get("gaugeFx") ? (
                     <>
                       fx:{" "}
@@ -703,30 +752,14 @@ export default function MealMatchOverlayInner() {
               ) : null}
             </div>
           )}
+          {/* 시그 대전과 완벽히 통일된 esports 다크 글래스 타이머 */}
           {shouldRenderMealMatchTimer && !useTeamSplitGauge ? (
-            <div
-              className={`${mealTimerShellClass(timerTheme, paused)} ${compact ? "!mt-0.5" : "!mt-1"}`}
-              style={mealTimerShellStyle(timerTheme)}
-            >
-              <motion.span
-                className={mealTimerTextClass(timerTheme, paused, timerLowTime)}
-                style={{ fontSize: `${timerSize}px`, lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}
-                animate={{
-                  scale:
-                    gaugeFx.timerTension && !paused && remaining > 0 && remaining <= 5
-                      ? [1, 1.14, 1]
-                      : 1,
-                }}
-                transition={{
-                  scale: {
-                    duration: 0.5,
-                    repeat: gaugeFx.timerTension && !paused && remaining > 0 && remaining <= 5 ? Infinity : 0,
-                    ease: "easeInOut",
-                  },
-                }}
-              >
-                <span suppressHydrationWarning>{timerText}</span>
-              </motion.span>
+            <div className="mt-1 flex justify-center">
+              <SigCleanTimerPill
+                timerPaused={paused}
+                timerText={timerText}
+                compact={compact}
+              />
             </div>
           ) : null}
         </div>
@@ -755,30 +788,11 @@ export default function MealMatchOverlayInner() {
                   gapSuffix={mealBattleUseRawScore ? "" : "점"}
                   timerSlot={
                     shouldRenderMealMatchTimer ? (
-                      <div
-                        className={`${mealTimerShellClass(timerTheme, paused)} !mt-0 inline-flex`}
-                        style={mealTimerShellStyle(timerTheme)}
-                      >
-                        <motion.span
-                          className={mealTimerTextClass(timerTheme, paused, timerLowTime)}
-                          style={{ fontSize: `${Math.max(16, Math.round(timerSize * 0.72))}px`, lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}
-                          animate={{
-                            scale:
-                              gaugeFx.timerTension && !paused && remaining > 0 && remaining <= 5
-                                ? [1, 1.14, 1]
-                                : 1,
-                          }}
-                          transition={{
-                            scale: {
-                              duration: 0.5,
-                              repeat: gaugeFx.timerTension && !paused && remaining > 0 && remaining <= 5 ? Infinity : 0,
-                              ease: "easeInOut",
-                            },
-                          }}
-                        >
-                          <span suppressHydrationWarning>{timerText}</span>
-                        </motion.span>
-                      </div>
+                      <SigCleanTimerPill
+                        timerPaused={paused}
+                        timerText={timerText}
+                        compact={compact}
+                      />
                     ) : null
                   }
                 />
@@ -786,278 +800,288 @@ export default function MealMatchOverlayInner() {
             ) : null}
             {devHud && !useTeamSplitGauge ? (
               <p
-                className="mb-2 text-center text-[9px] font-bold text-pink-200/90"
+                className="mb-1.5 text-center text-[9px] font-bold text-neutral-400"
                 data-meal-ui-features="score-in-bar-names-below"
               >
-                UI {MEAL_MATCH_OVERLAY_UI_REV} · 막대 안 점수 / 아래 이름
+                UI {MEAL_MATCH_OVERLAY_UI_REV} · 테마: {theme.label}
               </p>
             ) : null}
             {!useTeamSplitGauge ? (
             <div className="flex w-full flex-col">
+              {/* 테마가 적용된 세련된 e스포츠 네온/글래스 게이지 바 */}
               <div
-                className={`relative z-0 mb-0 w-full shrink-0 overflow-hidden rounded-full ${
-                  compact ? "h-14 sm:h-16" : "h-16 sm:h-[4.5rem]"
+                className={`relative z-0 mb-0 w-full shrink-0 overflow-hidden rounded-xl ring-1 ring-white/15 ${
+                  compact ? "h-12 sm:h-14" : "h-14 sm:h-16"
                 }`}
-                data-meal-gauge-bar="true"
-              >
-              <motion.div
-                className="h-full w-full"
-                animate={{
-                  scale: gaugeScaleAnim,
-                  boxShadow: isCritical
-                    ? [
-                        "0 0 30px 12px rgba(248, 113, 113, 0.65)",
-                        "0 0 40px 14px rgba(248, 113, 113, 0.85)",
-                        "0 0 30px 12px rgba(248, 113, 113, 0.65)",
-                      ]
-                    : gaugeShadow,
-                }}
-                transition={{
-                  scale: {
-                    duration: isCritical ? 0.7 : 0.42,
-                    repeat: isCritical ? Infinity : 0,
-                    repeatType: isCritical ? "reverse" : undefined,
-                  },
-                  boxShadow: { duration: 1.1, repeat: isCritical ? Infinity : 0 },
-                }}
-              >
-              <div
-                className={`relative h-full w-full overflow-hidden ${showGaugeTrackBorder ? "border border-inherit rounded-full" : ""}`}
                 style={{
-                  backgroundColor: gaugeTrackBg,
-                  ...(showGaugeTrackBorder ? { borderColor: gaugeTrackBorderColor } : {}),
+                  background: theme.trackBg,
+                  border: `1px solid ${theme.trackBorder}`,
+                  boxShadow: theme.trackShadow,
                 }}
+                data-meal-gauge-bar="true"
+                data-gauge-theme={theme.id}
               >
-                {fillGaugeMode ? (
-                  <>
-                    <motion.div
-                      className="absolute left-0 top-0 bottom-0 z-[1] rounded-full overflow-hidden"
-                      initial={false}
-                      animate={{ width: `${fillPercent}%` }}
-                      transition={{ type: "spring", stiffness: 115, damping: 22 }}
-                    >
-                      {showTeamStripeInFill ? (
-                        <div className="relative flex h-full w-full overflow-hidden">
-                          <div
-                            className="h-full shrink-0"
-                            style={{
-                              width: `${(teamAgg.aScore / Math.max(1, totalScore)) * 100}%`,
-                              backgroundColor: teamAColor,
-                            }}
-                          />
-                          <div
-                            className="h-full shrink-0"
-                            style={{
-                              width: `${(teamAgg.bScore / Math.max(1, totalScore)) * 100}%`,
-                              backgroundColor: teamBColor,
-                            }}
-                          />
-                          {unassignedScore > 0 ? (
-                            <div
-                              className="h-full min-w-0 flex-1"
-                              style={{ backgroundColor: "rgba(0,0,0,0.35)" }}
-                            />
-                          ) : null}
-                          {isCritical ? (
-                            <motion.div
-                              className="pointer-events-none absolute inset-0"
-                              style={{
-                                background:
-                                  "repeating-linear-gradient(90deg, transparent, transparent 40%, rgba(255,255,255,0.22) 40%, rgba(255,255,255,0.22) 60%)",
-                                backgroundSize: "80px 100%",
-                              }}
-                              animate={{ backgroundPositionX: ["0px", "80px"] }}
-                              transition={{ duration: 1.8, repeat: Infinity, ease: "linear" }}
-                              aria-hidden
-                            />
-                          ) : null}
-                        </div>
-                      ) : (
-                        <motion.div
-                          className="relative h-full w-full overflow-hidden"
-                          style={{
-                            background: criticalFillBackground,
-                            backgroundSize: isCritical ? "200% 100%" : undefined,
-                          }}
-                          animate={
-                            isCritical
-                              ? { backgroundPosition: ["0% 50%", "200% 50%"] }
-                              : { backgroundPosition: "0% 50%" }
-                          }
-                          transition={{
-                            backgroundPosition: {
-                              duration: 2.5,
-                              repeat: isCritical ? Infinity : 0,
-                              ease: "linear",
-                            },
-                          }}
-                        >
-                          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/25 to-transparent" />
-                          {showGaugeFillMotion ? (
-                            <MealGaugeFillMotion style={gaugeAnimStyle} />
-                          ) : null}
-                        </motion.div>
-                      )}
-                    </motion.div>
-                    <div
-                      className="absolute inset-0 z-[2] flex items-center justify-center pointer-events-none px-2"
-                      style={outlineStyle()}
-                    >
-                      <span className="text-base sm:text-lg font-black tabular-nums" style={{ color: scoreTextColor }}>
-                        {soloMealParticipant ? (
-                          <>
-                            {showLeaderCrown ? (
-                              <span className="mr-1 inline-block" aria-hidden>
-                                👑
-                              </span>
-                            ) : null}
-                            {soloMealParticipant.name} {Math.round(soloMealParticipant.score)} /{" "}
-                            {Math.round(soloMealParticipant.goal)}
-                          </>
-                        ) : (
-                          `${Math.round(totalScore)} / ${Math.round(totalGoalsSum)}`
-                        )}
-                      </span>
-                    </div>
-                  </>
-                ) : (
-                  <motion.div layout className="absolute inset-0 flex" transition={{ type: "spring", stiffness: 120, damping: 20 }}>
-                    {segments.map((seg) => {
-                      const fillW = Math.max(
-                        0,
-                        Math.min(100, (seg as { fillPercent?: number }).fillPercent ?? seg.percent)
-                      );
-                      return (
-                        <motion.div
-                          key={seg.memberId}
-                          layout
-                          animate={{ width: `${seg.percent}%` }}
-                          transition={{ type: "spring", stiffness: 120, damping: 20 }}
-                          className="relative h-full min-w-0"
-                        >
-                          <motion.div
-                            className="h-full overflow-hidden"
-                            animate={{ width: `${fillW}%` }}
-                            transition={{ type: "spring", stiffness: 120, damping: 20 }}
-                            style={segmentBarStyle(seg)}
-                          >
-                            {isCritical ? (
-                              <motion.div
-                                className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/20 to-transparent"
-                                animate={{ opacity: [0.35, 0.65, 0.35] }}
-                                transition={{ duration: 0.9, repeat: Infinity }}
-                                aria-hidden
-                              />
-                            ) : showGaugeFillMotion ? (
-                              <MealGaugeFillMotion style={gaugeAnimStyle} />
-                            ) : null}
-                          </motion.div>
-                        </motion.div>
-                      );
-                    })}
-                    <div className="pointer-events-none absolute left-0 right-0 top-0 z-[1] h-[20%] bg-white/20" />
-                  </motion.div>
-                )}
+                {/* 상단 은은한 글래스 하이라이트 광택 */}
+                <div className="pointer-events-none absolute inset-x-0 top-0 z-[15] h-1/2 bg-gradient-to-b from-white/20 to-transparent" />
 
-                {isCritical ? (
-                  <motion.div
-                    className="pointer-events-none absolute inset-0 z-[3] bg-gradient-to-r from-transparent via-white/35 to-transparent"
-                    animate={{ x: ["-120%", "220%"] }}
-                    transition={{ duration: 1.6, repeat: Infinity, ease: "linear" }}
-                    aria-hidden
-                  />
-                ) : null}
-
-                {!fillGaugeMode ? (
-                  <div className="pointer-events-none absolute inset-0 z-[30]" aria-hidden>
-                    {segments.map((seg) => {
-                      const label = `${Math.round(seg.score)} / ${Math.round(seg.goal)}`;
-                      const leftPct = Math.max(0, seg.center - seg.percent / 2);
-                      return (
-                        <div
-                          key={`gauge-score-${seg.memberId}`}
-                          className="absolute top-0 bottom-0 flex items-center justify-center px-0.5 text-center"
-                          style={{
-                            left: `${leftPct}%`,
-                            width: `${Math.max(1, seg.percent)}%`,
-                          }}
-                        >
-                          <BattleGaugeFitScore
-                            label={label}
-                            className="inline-block max-w-full whitespace-nowrap font-black tabular-nums"
-                            style={gaugeInBarScoreStyle(scoreTextColor)}
-                          >
-                            {Math.round(seg.score)}
-                            <span className="font-bold opacity-90"> / {Math.round(seg.goal)}</span>
-                          </BattleGaugeFitScore>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-              </motion.div>
-
-              {overlayMounted && gaugeFx.floatingScore ? (
-                <div
-                  className="pointer-events-none absolute inset-x-0 top-0 z-50 h-full overflow-visible"
-                  aria-hidden
+                <motion.div
+                  className="h-full w-full"
+                  animate={{
+                    scale: gaugeScaleAnim,
+                    boxShadow: isCritical
+                      ? [
+                          "0 0 30px 12px rgba(248, 113, 113, 0.65)",
+                          "0 0 40px 14px rgba(248, 113, 113, 0.85)",
+                          "0 0 30px 12px rgba(248, 113, 113, 0.65)",
+                        ]
+                      : undefined,
+                  }}
+                  transition={{
+                    scale: {
+                      duration: isCritical ? 0.7 : 0.42,
+                      repeat: isCritical ? Infinity : 0,
+                      repeatType: isCritical ? "reverse" : undefined,
+                    },
+                    boxShadow: { duration: 1.1, repeat: isCritical ? Infinity : 0 },
+                  }}
                 >
-                  {floatingScores.map((item) => (
-                    <motion.div
-                      key={item.id}
-                      className="absolute -translate-x-1/2 text-2xl font-black tabular-nums drop-shadow-[0_2px_10px_rgba(0,0,0,0.55)] sm:text-3xl"
-                      style={{
-                        left: `${item.x}%`,
-                        top: "35%",
-                        color: item.color,
-                        ...outlineStyle(),
-                      }}
-                      initial={{ opacity: 0, y: 0, scale: 0.55 }}
-                      animate={{
-                        opacity: [0, 1, 1, 0],
-                        y: [0, -48, -168],
-                        scale: [0.55, 1.18, 1.05],
-                      }}
-                      transition={{ duration: 1.5, ease: "easeOut", times: [0, 0.22, 1] }}
-                    >
-                      {item.value}
-                    </motion.div>
-                  ))}
-                </div>
-              ) : null}
+                  <div className="relative h-full w-full overflow-hidden">
+                    {fillGaugeMode ? (
+                      <>
+                        <motion.div
+                          className="absolute left-0 top-0 bottom-0 z-[1] rounded-xl overflow-hidden"
+                          initial={false}
+                          animate={{ width: `${fillPercent}%` }}
+                          transition={{ type: "spring", stiffness: 115, damping: 22 }}
+                        >
+                          {showTeamStripeInFill ? (
+                            <div className="relative flex h-full w-full overflow-hidden">
+                              <div
+                                className="h-full shrink-0"
+                                style={{
+                                  width: `${(teamAgg.aScore / Math.max(1, totalScore)) * 100}%`,
+                                  background: theme.leftFill,
+                                }}
+                              />
+                              <div
+                                className="h-full shrink-0"
+                                style={{
+                                  width: `${(teamAgg.bScore / Math.max(1, totalScore)) * 100}%`,
+                                  background: theme.rightFill,
+                                }}
+                              />
+                              {unassignedScore > 0 ? (
+                                <div
+                                  className="h-full min-w-0 flex-1"
+                                  style={{ backgroundColor: "rgba(0,0,0,0.35)" }}
+                                />
+                              ) : null}
+                              {isCritical ? (
+                                <motion.div
+                                  className="pointer-events-none absolute inset-0"
+                                  style={{
+                                    background:
+                                      "repeating-linear-gradient(90deg, transparent, transparent 40%, rgba(255,255,255,0.22) 40%, rgba(255,255,255,0.22) 60%)",
+                                    backgroundSize: "80px 100%",
+                                  }}
+                                  animate={{ backgroundPositionX: ["0px", "80px"] }}
+                                  transition={{ duration: 1.8, repeat: Infinity, ease: "linear" }}
+                                  aria-hidden
+                                />
+                              ) : null}
+                            </div>
+                          ) : (
+                            <motion.div
+                              className="relative h-full w-full overflow-hidden"
+                              style={{
+                                background: isCritical ? criticalFillBackground : theme.leftFill,
+                                backgroundSize: isCritical ? "200% 100%" : undefined,
+                              }}
+                              animate={
+                                isCritical
+                                  ? { backgroundPosition: ["0% 50%", "200% 50%"] }
+                                  : { backgroundPosition: "0% 50%" }
+                              }
+                              transition={{
+                                backgroundPosition: {
+                                  duration: 2.5,
+                                  repeat: isCritical ? Infinity : 0,
+                                  ease: "linear",
+                                },
+                              }}
+                            >
+                              <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/25 to-transparent" />
+                              {showGaugeFillMotion ? (
+                                <MealGaugeFillMotion style={gaugeAnimStyle} />
+                              ) : null}
+                            </motion.div>
+                          )}
+                        </motion.div>
+                        <div
+                          className="absolute inset-0 z-[2] flex items-center justify-center pointer-events-none px-2"
+                        >
+                          <span
+                            className="text-base sm:text-lg font-black tabular-nums"
+                            style={sigMemberAmountStyle}
+                          >
+                            {soloMealParticipant ? (
+                              <>
+                                {showLeaderCrown ? (
+                                  <span className="mr-1 inline-block" aria-hidden>
+                                    👑
+                                  </span>
+                                ) : null}
+                                {soloMealParticipant.name} {Math.round(soloMealParticipant.score).toLocaleString("ko-KR")} /{" "}
+                                {Math.round(soloMealParticipant.goal).toLocaleString("ko-KR")}
+                                <span className="ml-0.5 text-xs opacity-90">
+                                  {mealBattleUseRawScore ? "원" : "점"}
+                                </span>
+                              </>
+                            ) : (
+                              `${Math.round(totalScore).toLocaleString("ko-KR")} / ${Math.round(totalGoalsSum).toLocaleString("ko-KR")}${mealBattleUseRawScore ? "원" : "점"}`
+                            )}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <motion.div layout className="absolute inset-0 flex" transition={{ type: "spring", stiffness: 120, damping: 20 }}>
+                        {segments.map((seg, segIdx) => {
+                          const fillW = Math.max(
+                            0,
+                            Math.min(100, (seg as { fillPercent?: number }).fillPercent ?? seg.percent)
+                          );
+                          return (
+                            <motion.div
+                              key={seg.memberId}
+                              layout
+                              animate={{ width: `${seg.percent}%` }}
+                              transition={{ type: "spring", stiffness: 120, damping: 20 }}
+                              className={`relative h-full min-w-0 ${segIdx > 0 ? "border-l border-white/15" : ""}`}
+                            >
+                              {/* 슬롯 배경 — 반투명 글래스 */}
+                              <div className="absolute inset-0 bg-black/25" />
+                              <motion.div
+                                className="relative h-full overflow-hidden"
+                                animate={{ width: `${fillW}%` }}
+                                transition={{ type: "spring", stiffness: 120, damping: 20 }}
+                                style={{
+                                  background: seg.color
+                                    ? `linear-gradient(180deg, ${seg.color}ff 0%, ${seg.color} 50%, ${seg.color}cc 100%)`
+                                    : theme.leftFill,
+                                }}
+                              >
+                                <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
+                                {isCritical ? (
+                                  <motion.div
+                                    className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/20 to-transparent"
+                                    animate={{ opacity: [0.35, 0.65, 0.35] }}
+                                    transition={{ duration: 0.9, repeat: Infinity }}
+                                    aria-hidden
+                                  />
+                                ) : showGaugeFillMotion ? (
+                                  <MealGaugeFillMotion style={gaugeAnimStyle} />
+                                ) : null}
+                              </motion.div>
+                            </motion.div>
+                          );
+                        })}
+                      </motion.div>
+                    )}
+
+                    {isCritical ? (
+                      <motion.div
+                        className="pointer-events-none absolute inset-0 z-[16] bg-gradient-to-r from-transparent via-white/35 to-transparent"
+                        animate={{ x: ["-120%", "220%"] }}
+                        transition={{ duration: 1.6, repeat: Infinity, ease: "linear" }}
+                        aria-hidden
+                      />
+                    ) : null}
+
+                    {!fillGaugeMode ? (
+                      <div className="pointer-events-none absolute inset-0 z-[20]" aria-hidden>
+                        {segments.map((seg) => {
+                          const label = `${Math.round(seg.score).toLocaleString("ko-KR")} / ${Math.round(seg.goal).toLocaleString("ko-KR")}`;
+                          const leftPct = Math.max(0, seg.center - seg.percent / 2);
+                          const isLeader = showLeaderCrown && seg.memberId === leaderKey && seg.score > 0;
+                          return (
+                            <div
+                              key={`gauge-score-${seg.memberId}`}
+                              className="absolute top-0 bottom-0 flex items-center justify-center px-1 text-center"
+                              style={{
+                                left: `${leftPct}%`,
+                                width: `${Math.max(1, seg.percent)}%`,
+                              }}
+                            >
+                              <BattleGaugeFitScore
+                                label={label}
+                                className="inline-block max-w-full whitespace-nowrap font-black tabular-nums tracking-tight"
+                                style={sigGaugeInBarScoreStyle(isLeader)}
+                              >
+                                {Math.round(seg.score).toLocaleString("ko-KR")}
+                                <span className="font-bold opacity-80 text-[0.85em]"> / {Math.round(seg.goal).toLocaleString("ko-KR")}</span>
+                              </BattleGaugeFitScore>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                </motion.div>
               </div>
 
+              {/* 시그 대전과 통일된 하단 다크 글래스 멤버 카드 */}
               {!fillGaugeMode && segments.length > 0 ? (
                 <div
-                  className={`relative z-20 mt-16 w-full shrink-0 border-t-4 border-pink-400/70 bg-black/70 pt-5 sm:mt-20 ${
-                    compact ? "!mt-14" : ""
-                  }`}
+                  className={`relative z-20 mt-2.5 w-full shrink-0 ${compact ? "mt-1.5" : "sm:mt-3"}`}
                   data-meal-member-names="true"
                   data-meal-ui-rev={MEAL_MATCH_OVERLAY_UI_REV}
                   aria-label="멤버 이름"
                 >
                   <div
-                    className="grid w-full gap-2"
+                    className="grid w-full gap-1.5 sm:gap-2"
                     style={{ gridTemplateColumns: `repeat(${segments.length}, minmax(0, 1fr))` }}
                   >
-                    {segments.map((seg) => (
-                      <div key={`tag-${seg.memberId}`} className="flex justify-center px-1">
-                        <span
-                          className={`inline-flex max-w-full items-center whitespace-nowrap text-lg font-black pastel-text-outline sm:text-xl ${
-                            showLeaderCrown && seg.memberId === leaderKey ? "text-yellow-200" : "text-pink-100"
+                    {segments.map((seg) => {
+                      const isLeader = showLeaderCrown && seg.memberId === leaderKey && seg.score > 0;
+                      return (
+                        <div
+                          key={`tag-${seg.memberId}`}
+                          className={`flex flex-col items-center justify-center rounded-xl px-2 py-1.5 backdrop-blur-md transition-all ${
+                            isLeader
+                              ? "bg-amber-950/60 ring-1 ring-amber-400/70 shadow-[0_0_14px_rgba(251,191,36,0.3)]"
+                              : "bg-black/55 ring-1 ring-white/12 shadow-[0_4px_16px_rgba(0,0,0,0.45)]"
                           }`}
-                          style={outlineStyle()}
+                          style={
+                            isLeader
+                              ? { borderLeft: `3px solid ${seg.color || "#fbbf24"}` }
+                              : { borderLeft: `3px solid ${seg.color || "rgba(255,255,255,0.4)"}` }
+                          }
                         >
-                          {showLeaderCrown && seg.memberId === leaderKey ? (
-                            <span className="mr-1 inline-block leading-none" aria-hidden>
-                              👑
+                          <div className="flex items-center gap-1 max-w-full">
+                            {isLeader ? (
+                              <span className="text-xs sm:text-sm text-yellow-300 drop-shadow" aria-hidden>
+                                👑
+                              </span>
+                            ) : null}
+                            <span
+                              className="truncate text-xs sm:text-sm font-bold text-white tracking-wide"
+                              style={sigMemberNameStyle}
+                            >
+                              {seg.name}
                             </span>
-                          ) : null}
-                          {seg.name}
-                        </span>
-                      </div>
-                    ))}
+                          </div>
+                          <span
+                            className="text-xs sm:text-sm font-black tabular-nums text-white/95"
+                            style={sigMemberAmountStyle}
+                          >
+                            {Math.round(seg.score).toLocaleString("ko-KR")}
+                            <span className="text-[10px] sm:text-xs font-semibold text-neutral-300">
+                              {mealBattleUseRawScore ? "원" : "점"}
+                            </span>
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ) : null}
@@ -1070,4 +1094,3 @@ export default function MealMatchOverlayInner() {
     </main>
   );
 }
-

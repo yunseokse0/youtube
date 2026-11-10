@@ -1,11 +1,11 @@
 /**
- * 오버레이 UI 빌드 식별 — DEMO 뱃지·data-overlay-ui·iframe URL 캐시 무효화.
- * UI를 바꿀 때마다 해당 rev 문자열을 올리고 dev는 `npm run dev:clean` 권장.
+ * 오버레이 UI 빌드 식별 키 (DEMO 뱃지·data-overlay-ui·iframe URL 캐시 무효화)
+ * UI가 바뀔 때마다 해당 rev 문자열을 올리고 dev는 `npm run dev:clean` 권장.
  */
-export const SIG_MATCH_OVERLAY_UI_REV = "v29" as const;
-export const MEAL_MATCH_OVERLAY_UI_REV = "v10" as const;
+export const SIG_MATCH_OVERLAY_UI_REV = "v30" as const;
+export const MEAL_MATCH_OVERLAY_UI_REV = "v11" as const;
 
-/** iframe URL에 남은 구 rev·빌드 파라미터 제거 */
+/** iframe URL에 붙은 구 rev·빌드 파라미터 제거 */
 export function stripOverlayCacheParams(path: string): string {
   const qIdx = path.indexOf("?");
   if (qIdx < 0) return path;

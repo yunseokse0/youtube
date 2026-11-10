@@ -9,6 +9,8 @@ describe("sig-match-gauge-theme", () => {
   it("parses known themes and falls back to default", () => {
     expect(parseSigMatchGaugeThemeId("cyberpunk")).toBe("cyberpunk");
     expect(parseSigMatchGaugeThemeId("GOLD-LUXURY")).toBe("gold-luxury");
+    expect(parseSigMatchGaugeThemeId("violet-luxury")).toBe("violet-luxury");
+    expect(parseSigMatchGaugeThemeId("VIOLET-LUXURY")).toBe("violet-luxury");
     expect(parseSigMatchGaugeThemeId("nope")).toBe(DEFAULT_SIG_MATCH_GAUGE_THEME);
   });
 

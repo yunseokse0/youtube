@@ -6367,8 +6367,9 @@ function AdminPageInner() {
     q.set("host", "obs");
     q.set("scalePct", String(scalePct));
     q.set("contentWidthPct", String(getBattleContentWidthPct()));
+    q.set("theme", getBattleGaugeTheme());
     return `${window.location.origin}/overlay/meal-match?${q.toString()}`;
-  }, [overlayUserId, battleScalePct, getBattleContentWidthPct]);
+  }, [overlayUserId, battleScalePct, getBattleContentWidthPct, getBattleGaugeTheme]);
 
   const sigMatchPreviewUrlRef = useRef("");
   const [sigMatchPreviewIframeSrc, setSigMatchPreviewIframeSrc] = useState("");
@@ -7323,7 +7324,7 @@ function AdminPageInner() {
   const resetSigMatchCountToNow = () => {
     if (
       !window.confirm(
-        "시그 대전 점수를 0으로 돌리고 지금부터 들어오는 후원만 집계합니다. 수기 보정도 0으로 지웁니다. 정산표 후원 목록은 그대로 둡니다."
+        "시그 대전 점수를 0으로 초기화하고 지금부터 들어오는 후원만 집계합니다.\n(수기 보정도 0으로 초기화되며, 정산표 후원 목록과 식사 대전은 그대로 유지됩니다)"
       )
     ) {
       return;
@@ -7783,7 +7784,7 @@ function AdminPageInner() {
   const resetMealMatchScores = () => {
     if (
       !window.confirm(
-        "식사 대전 게이지 후원만 0으로 돌립니다. 멤버 정산과 후원 목록은 그대로 둡니다."
+        "식사 대전 게이지를 0으로 초기화하고 지금부터 들어오는 후원만 집계합니다.\n(멤버 정산표와 시그 대전 점수는 그대로 유지됩니다)"
       )
     ) {
       return;
@@ -13717,6 +13718,14 @@ function AdminPageInner() {
                   >
                     실시간 오버레이 열기
                   </button>
+                  <button
+                    type="button"
+                    className="rounded border border-rose-400/50 bg-rose-950/50 px-2 py-1 text-xs font-medium text-rose-100 hover:bg-rose-900/70 shrink-0"
+                    onClick={resetSigMatchCountToNow}
+                    title="시그 대전 점수를 0으로 초기화하고 지금부터 들어오는 후원만 집계합니다."
+                  >
+                    시그 대전 초기화
+                  </button>
                 </div>
                 <p className="text-[11px] text-neutral-500">
                   아래 오버레이 UI는 스냅샷이 아닌 실시간 URL을 그대로 표시합니다. 관리자 변경사항이 즉시 반영됩니다.
@@ -13791,13 +13800,31 @@ function AdminPageInner() {
 
                       type="button"
 
-                      className="px-2 py-1 rounded border border-rose-400/50 bg-rose-950/50 text-xs text-rose-100 hover:bg-rose-900/70"
+                      className="px-2 py-1 rounded border border-rose-400/50 bg-rose-950/50 text-xs text-rose-100 hover:bg-rose-900/70 font-medium"
 
                       onClick={resetMealMatchScores}
+                      title="식사 대전 게이지만 0으로 초기화합니다."
 
                     >
 
-                      대전 후원 초기화
+                      식사 대전 초기화
+
+                    </button>
+
+                    <button
+
+                      type="button"
+
+                      className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-meal-match" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+
+                      onClick={() => {
+                        const u = buildMealMatchLiveUrl();
+                        void copyUrl(u, "dash-meal-match");
+                      }}
+
+                    >
+
+                      {copiedId === "dash-meal-match" ? "복사됨!" : "URL 복사"}
 
                     </button>
 
@@ -13815,6 +13842,47 @@ function AdminPageInner() {
 
                   </div>
 
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
+                  <span className="text-xs text-neutral-400">게이지 테마</span>
+                  <select
+                    className="rounded border border-white/10 bg-neutral-900/90 px-2 py-1 text-xs text-neutral-100"
+                    value={getBattleGaugeTheme()}
+                    onChange={(e) => setBattleGaugeTheme(e.target.value)}
+                  >
+                    {SIG_MATCH_GAUGE_THEME_IDS.map((id) => (
+                      <option key={id} value={id}>
+                        {SIG_MATCH_GAUGE_THEMES[id].label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex flex-wrap gap-1">
+                    {SIG_MATCH_GAUGE_THEME_IDS.map((id) => {
+                      const active = getBattleGaugeTheme() === id;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                            active
+                              ? "border-amber-300/60 bg-amber-400/15 text-amber-100"
+                              : "border-white/15 bg-white/5 text-neutral-400 hover:border-white/30"
+                          }`}
+                          onClick={() => setBattleGaugeTheme(id)}
+                        >
+                          {SIG_MATCH_GAUGE_THEMES[id].label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+                  <span>오버레이 URL:</span>
+                  <code className="text-neutral-300 break-all">
+                    /overlay/meal-match?u={overlayUserId}&host=obs&scalePct={getBattleScalePct()}&contentWidthPct=
+                    {getBattleContentWidthPct()}&theme={getBattleGaugeTheme()}
+                  </code>
                 </div>
 
                 <div className="rounded-lg border border-amber-500/30 bg-amber-950/20 p-3 space-y-2">
@@ -13901,7 +13969,7 @@ function AdminPageInner() {
 
                       <span className="text-[10px] text-neutral-500">
 
-                        scalePct={getBattleScalePct()} · contentWidthPct={getBattleContentWidthPct()} 반영 · 변경 시 자동 갱신
+                        scalePct={getBattleScalePct()} · contentWidthPct={getBattleContentWidthPct()} · theme={getBattleGaugeTheme()} 반영 · 변경 시 자동 갱신
 
                       </span>
 

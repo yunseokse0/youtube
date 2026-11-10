@@ -5,6 +5,7 @@ export const SIG_MATCH_GAUGE_THEME_IDS = [
   "cyberpunk",
   "gold-luxury",
   "clean-minimal",
+  "violet-luxury",
 ] as const;
 
 export type SigMatchGaugeThemeId = (typeof SIG_MATCH_GAUGE_THEME_IDS)[number];
@@ -100,6 +101,24 @@ export const SIG_MATCH_GAUGE_THEMES: Record<SigMatchGaugeThemeId, SigMatchGaugeT
     gapText: "#f1f5f9",
     leftAccent: "#fb7185",
     rightAccent: "#818cf8",
+  },
+  "violet-luxury": {
+    id: "violet-luxury",
+    label: "바이올렛 럭셔리",
+    leftFill: "linear-gradient(180deg, #d8b4fe 0%, #a855f7 42%, #6b21a8 100%)",
+    rightFill: "linear-gradient(180deg, #c084fc 0%, #7e22ce 42%, #3b0764 100%)",
+    trackBg: "rgba(24, 10, 40, 0.65)",
+    trackBorder: "rgba(192, 132, 252, 0.55)",
+    trackShadow: "0 8px 28px rgba(107, 33, 168, 0.45), inset 0 0 0 1px rgba(192, 132, 252, 0.25)",
+    vsBg: "linear-gradient(145deg, #f3e8ff 0%, #c084fc 40%, #7e22ce 100%)",
+    vsBorder: "rgba(243, 232, 255, 0.9)",
+    vsGlow: "0 0 18px rgba(192, 132, 252, 0.85), 0 0 30px rgba(147, 51, 234, 0.4)",
+    vsText: "#1e0533",
+    gapBg: "rgba(24, 10, 40, 0.92)",
+    gapBorder: "rgba(192, 132, 252, 0.65)",
+    gapText: "#f3e8ff",
+    leftAccent: "#c084fc",
+    rightAccent: "#a855f7",
   },
 };
 
