@@ -2453,11 +2453,6 @@ function OverlayInner() {
     () => ((ready && s && (s as AppState).memberPositionMode === "rankLinked") ? "rankLinked" : "fixed"),
     [ready, s]
   );
-  const memberRankingMetric = useMemo<MemberRankingMetric>(
-    () =>
-      resolveMemberRankingMetric(rawSp, effectivePreset, { ready }, s as AppState),
-    [rawSp, effectivePreset, ready, s]
-  );
   const memberCustomCellsMap = useMemo<Record<string, string>>(
     () =>
       ready && s && typeof (s as AppState).memberCustomCells === "object"
@@ -2509,6 +2504,11 @@ function OverlayInner() {
         resolveLivePresetStyleParam(key, rawSp, presetParams, { ready }) ?? "",
     }),
     [rawSp, presetParams, ready]
+  );
+  const memberRankingMetric = useMemo<MemberRankingMetric>(
+    () =>
+      resolveMemberRankingMetric(rawSp, effectivePreset, { ready }, s as AppState),
+    [rawSp, effectivePreset, ready, s]
   );
   // OBS/Prism는 렌더러 특성상 텍스트·transform 미세 떨림이 발생하기 쉬워 기본 안전 모드 ON.
   const externalSafeMode = externalHost && (rawSp.get("externalSafe") || "true").toLowerCase() !== "false";
