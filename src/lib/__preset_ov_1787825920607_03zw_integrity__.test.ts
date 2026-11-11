@@ -227,4 +227,56 @@ describe("Preset ov_1787825920607_03zw & user din overlay runtime verification",
     expect(filteredMembers.some((m) => m.name === "자키")).toBe(false);
     expect(filteredMembers[0].name).toBe("열음");
   });
+
+  it("verifies contribution accumulates and is preserved until explicit reset", () => {
+    // 1) applyOverlayDonationDisplayTotals preserves accumulated contribution in day777 mode
+    const stateWithAccumulatedContrib: AppState = {
+      ...dinState,
+      members: [
+        { id: "m1", name: "자키", account: 165000, toon: 291000, contribution: 45600, restroom: 0, realName: "", operating: false },
+        { id: "m2", name: "열음", account: 0, toon: 17000, contribution: 1700, restroom: 0, realName: "", operating: false },
+      ],
+      donors: [
+        { id: "d1", memberId: "m1", amount: 165000, target: "account", contributionPoints: 16500, at: 1000 } as Donor,
+        { id: "d2", memberId: "m1", amount: 291000, target: "toon", contributionPoints: 29100, at: 2000 } as Donor,
+        { id: "d3", memberId: "m2", amount: 17000, target: "toon", contributionPoints: 1700, at: 3000 } as Donor,
+      ],
+    };
+
+    const displayResult = membersWithOverlayDonationAggregate(
+      stateWithAccumulatedContrib,
+      stateWithAccumulatedContrib.members,
+      null,
+      { day777Calc: true }
+    );
+
+    // 자키의 누적 기여도 45,600원 (4.56만 -> 4.6만) 및 열음 1,700원(0.2만)이 0원으로 날아가지 않고 유지되어야 함
+    const repDisplay = displayResult.find((m) => m.name === "자키");
+    expect(repDisplay?.contribution).toBeGreaterThanOrEqual(45600);
+    const memberDisplay = displayResult.find((m) => m.name === "열음");
+    expect(memberDisplay?.contribution).toBeGreaterThanOrEqual(1700);
+
+    // 2) pongdang preset defaults showRoleColumn to false
+    const pongdangCols = resolveDonationTableColumnsOptions({ day777Calc: true, name: "퐁당퐁당 엑셀" });
+    expect(pongdangCols.showRoleColumn).toBe(false);
+
+    // 3) explicit reset sets contribution to 0
+    const resetState: AppState = {
+      ...stateWithAccumulatedContrib,
+      pongdangResetAt: Date.now(),
+      members: [
+        { id: "m1", name: "자키", account: 165000, toon: 291000, contribution: 0, restroom: 0, realName: "", operating: false },
+        { id: "m2", name: "열음", account: 0, toon: 17000, contribution: 0, restroom: 0, realName: "", operating: false },
+      ],
+      donors: [],
+    };
+    const resetResult = membersWithOverlayDonationAggregate(
+      resetState,
+      resetState.members,
+      null,
+      { day777Calc: true }
+    );
+    expect(resetResult.find((m) => m.name === "자키")?.contribution).toBe(0);
+    expect(resetResult.find((m) => m.name === "열음")?.contribution).toBe(0);
+  });
 });

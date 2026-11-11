@@ -71,10 +71,14 @@ export function mergeMemberRosterPreservingAmounts(
     if (!baseM) return patchM;
     const patchAccount = Math.max(0, Number(patchM.account || 0));
     const patchToon = Math.max(0, Number(patchM.toon || 0));
+    const patchContrib = Math.max(0, Number(patchM.contribution || 0));
     const baseAccount = Math.max(0, Number(baseM.account || 0));
     const baseToon = Math.max(0, Number(baseM.toon || 0));
+    const baseContrib = Math.max(0, Number(baseM.contribution || 0));
     const patchEmpty = patchAccount + patchToon === 0;
     const baseHasAmt = baseAccount + baseToon > 0;
+    const patchContribEmpty = patchContrib === 0;
+    const baseContribHasAmt = baseContrib > 0;
     const patchName = String(patchM.name ?? "").trim();
     const baseName = String(baseM.name ?? "").trim();
     const placeholderPatch =
@@ -92,10 +96,10 @@ export function mergeMemberRosterPreservingAmounts(
       restroom: normalizeRestroomCount(
         patchM.restroom !== undefined ? patchM.restroom : baseM.restroom
       ),
-      contribution:
-        typeof patchM.contribution === "number" && Number.isFinite(patchM.contribution)
-          ? Math.max(0, Math.floor(patchM.contribution))
-          : Math.max(0, Math.floor(Number(baseM.contribution) || 0)),
+      contribution: Math.max(
+        0,
+        Math.floor(patchContribEmpty && baseContribHasAmt ? baseContrib : patchContrib)
+      ),
       operating: Boolean(patchM.operating),
     };
   });

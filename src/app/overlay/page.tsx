@@ -1,5 +1,5 @@
 "use client";
-import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, { Suspense, Component, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers, mergeLocalMemberIdentityOntoRemote, normalizeDonorsArray, membersDifferByIds, isMemberRosterStrictSuperset, mergeRemoteTimerDisplayStyles, isIntentionalDonorListShrink, totalCombined, resolveEffectiveDonorTarget } from "@/lib/state";
 import { isServerAuthoritativeBroadcastState, readSessionBroadcastState } from "@/lib/server-authoritative-broadcast-state";
@@ -2320,20 +2320,7 @@ function OverlayInner() {
   const { state: remoteState, ready: remoteReady } = useRemoteState(userId || undefined, !snap && Boolean(userId));
   const s = snap || remoteState;
   const ready = !!snap || remoteReady;
-  const [localPresets, setLocalPresets] = useState<OverlayPresetLike[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const perUserKey = overlayPresetsStorageKey(userId);
-      const raw =
-        window.localStorage.getItem(perUserKey) ||
-        window.localStorage.getItem("excel-broadcast-overlay-presets");
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? (parsed as OverlayPresetLike[]) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [localPresets, setLocalPresets] = useState<OverlayPresetLike[]>([]);
   const readLocalPresets = useCallback(() => {
     if (typeof window === "undefined") return;
     try {
@@ -2591,6 +2578,14 @@ function OverlayInner() {
     const fromUrl = rawSp.get(key);
     if (fromUrl === "true") return true;
     if (fromUrl === "false") return false;
+    const isPongdang =
+      Boolean(effectivePreset?.day777Calc) ||
+      String(effectivePreset?.name || "").includes("퐁당") ||
+      effectivePreset?.theme === "excelPongdang" ||
+      effectivePreset?.membersTheme === "excelPongdang";
+    if (key === "showRoleColumn" && isPongdang && effectivePreset?.showRoleColumn === undefined) {
+      return false;
+    }
     if (effectivePreset && isDonationTableBoolKey(key)) {
       const resolved = resolveDonationTableColumnsOptions(effectivePreset);
       return resolved[key as keyof typeof resolved] as boolean;
@@ -6150,6 +6145,18 @@ function OverlayInner() {
                               )}
                             >
                               {m.name}
+                              {(() => {
+                                const role = (memberPositionsMap[m.id] || "").trim() || getMemberRole(m).trim();
+                                const isRep = !role.includes("부대표") && role.includes("대표");
+                                if (isRep && !hasRoleColumn) {
+                                  return (
+                                    <span className="ml-1 text-[0.8em] font-bold text-amber-300 opacity-90">
+                                      (대표)
+                                    </span>
+                                  );
+                                }
+                                return null;
+                              })()}
                             </span>
                           </td>
                           {showAccountColumn && (
@@ -6540,11 +6547,56 @@ function OverlayInner() {
     );
   }
 
+class OverlayErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, errorInfo: any) {
+    // eslint-disable-next-line no-console
+    console.error("[overlay-boundary] caught overlay rendering error:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center p-4 bg-transparent text-neutral-300 text-xs text-center">
+          <p className="font-semibold text-neutral-200">오버레이 화면을 불러오는 중입니다...</p>
+          <button
+            type="button"
+            className="mt-2 px-3 py-1 rounded bg-white/10 hover:bg-white/20 text-xs text-neutral-200"
+            onClick={() => this.setState({ hasError: false, error: null })}
+          >
+            새로고침
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function OverlayPage() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return <div className="w-full h-full bg-transparent" />;
+  }
+
   return (
-    <Suspense>
-      <OverlayToonationRelayHost />
-      <OverlayInner />
-    </Suspense>
+    <OverlayErrorBoundary>
+      <Suspense fallback={<div className="w-full h-full bg-transparent" />}>
+        <OverlayToonationRelayHost />
+        <OverlayInner />
+      </Suspense>
+    </OverlayErrorBoundary>
   );
 }

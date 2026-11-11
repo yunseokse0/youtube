@@ -21638,6 +21638,7 @@ function AdminPageInner() {
                                     compact
                                     sumRowFallback={Boolean(p.showTableSumRow ?? p.showTotal)}
                                     value={{
+                                      ...p,
                                       showRoleColumn: p.showRoleColumn,
                                       showAccountColumn: p.showAccountColumn,
                                       showToonColumn: p.showToonColumn,

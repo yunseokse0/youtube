@@ -216,9 +216,8 @@ export function collectDay777SigContributionByMember(
     Number((state as { intentionalDonationClearAt?: number })?.intentionalDonationClearAt || 0),
     Number(state?.pongdangResetAt || 0)
   );
-  const rawFromAt = normalizeDonationAggregateFromAt(fromAt) ?? 0;
-  const effectiveFromAt = Math.max(rawFromAt, resetCutoff);
-  const effectiveFromAtOrNull = effectiveFromAt > 0 ? effectiveFromAt : null;
+  // 기여도는 리셋(pongdangResetAt / settlementResetAt) 전까지 누적되어야 하므로, 프리셋의 임의 시간창(fromAt)으로 차단하지 않고 리셋 시각 기준으로 누적 수집
+  const effectiveFromAtOrNull = resetCutoff > 0 ? resetCutoff : null;
 
   const manual = readManualSigBroadcastFromState(state);
   const manualSigs =

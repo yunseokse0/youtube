@@ -25,10 +25,16 @@ export const DEFAULT_DONATION_TABLE_COLUMNS: ResolvedDonationTableColumnsOptions
 };
 
 export function resolveDonationTableColumnsOptions(
-  opts?: DonationTableColumnsOptions | null,
+  opts?: (DonationTableColumnsOptions & { day777Calc?: boolean; name?: string; theme?: string; membersTheme?: string }) | null,
   fallback?: Partial<ResolvedDonationTableColumnsOptions>
 ): ResolvedDonationTableColumnsOptions {
-  const fb = { ...DEFAULT_DONATION_TABLE_COLUMNS, ...fallback };
+  const isPongdang =
+    Boolean(opts?.day777Calc) ||
+    String(opts?.name || "").includes("퐁당") ||
+    opts?.theme === "excelPongdang" ||
+    opts?.membersTheme === "excelPongdang";
+  const defaultRoleCol = isPongdang ? false : DEFAULT_DONATION_TABLE_COLUMNS.showRoleColumn;
+  const fb = { ...DEFAULT_DONATION_TABLE_COLUMNS, showRoleColumn: defaultRoleCol, ...fallback };
   return {
     showRoleColumn: opts?.showRoleColumn ?? fb.showRoleColumn,
     showAccountColumn: opts?.showAccountColumn ?? fb.showAccountColumn,
