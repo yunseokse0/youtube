@@ -651,6 +651,8 @@ export type SettlementUiOptions = {
   memberRatioInputs: Record<string, { account: string; toon: string; taxInvoice?: boolean }>;
   omitTreasuryFromSettlement: boolean;
   includeTreasuryInFullStatement: boolean;
+  /** 정산 시 회차 기여도 저장 여부 기본값 */
+  saveRoundContribution?: boolean;
 };
 
 /** YouTube 채팅·시청자 도구 클라이언트 설정 — 서버 AppState 정본 */
@@ -823,6 +825,8 @@ export type SettlementMemberResult = {
   accountHolder?: string;
   account: number;
   toon: number;
+  /** 정산 시점 해당 멤버의 기여도 스냅샷 (회차 기여도 저장 시) */
+  contribution?: number;
   /** 부가세 포함 원금(공급가 환산 전). 정산 기록·가독 텍스트용 */
   accountSource?: number;
   toonSource?: number;
@@ -865,6 +869,10 @@ export type SettlementRecord = {
   taxInvoiceIssued?: boolean;
   /** 세금계산서 부가세율(기본 10%). taxInvoiceIssued일 때만 사용 */
   taxInvoiceVatRate?: number;
+  /** 정산 시점 기여도 저장 여부 플래그 (true면 당시 기여도 스냅샷 보존) */
+  saveRoundContribution?: boolean;
+  /** 정산 시점 멤버별 기여도 스냅샷 (memberId -> contribution) */
+  roundContributionSnapshot?: Record<string, number>;
 };
 
 export type SettlementDeleteLog = {

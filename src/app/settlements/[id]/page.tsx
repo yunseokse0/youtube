@@ -18,7 +18,12 @@ import { showAppToast } from "@/lib/app-toast";
 import Toast from "@/components/Toast";
 import MemberExcelAccountReconcile from "@/components/settlement/MemberExcelAccountReconcile";
 import { mergeDonorsWithMissingAccount } from "@/lib/member-toonation-excel";
-import { loadDailyLog, loadDailyLogFromApi, loadState, loadStateFromApi, normalizeDonorsArray } from "@/lib/state";
+import { loadDailyLog, loadDailyLogFromApi, loadState, loadStateFromApi, normalizeDonorsArray, saveState, saveStateAsync } from "@/lib/state";
+import {
+  applyRoundContributionToState,
+  getRoundContributionSnapshot,
+  hasSavedRoundContribution,
+} from "@/lib/settlement-contribution-restore";
 import {
   defaultSettlementStatementText,
   deleteSettlementLogoFromApi,
@@ -762,6 +767,38 @@ export default function SettlementDetailPage() {
     }
   };
 
+  const onRestoreContributionToLive = async () => {
+    if (!record || !user) return;
+    const snapshot = getRoundContributionSnapshot(record);
+    const count = Object.keys(snapshot).length;
+    const total = Object.values(snapshot).reduce((a, b) => a + b, 0);
+
+    if (
+      !window.confirm(
+        `[${record.title}] 회차의 기여도를 현재 방송에 불러오시겠습니까?\n\n` +
+          `· 대상 멤버: ${count}명\n` +
+          `· 기여도 합계: ${total.toLocaleString("ko-KR")}원\n\n` +
+          `적용 시 현재 방송의 멤버별 기여도와 퐁당퐁당 표에 즉시 반영됩니다.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const currentState = (await loadStateFromApi(user.id)) || loadState(user.id);
+      if (!currentState) {
+        window.alert("현재 방송 상태를 불러올 수 없습니다.");
+        return;
+      }
+      const { nextState, restoredTotal } = applyRoundContributionToState(currentState, record);
+      saveState(nextState, user.id);
+      await saveStateAsync(nextState, user.id, { omitDonationFields: true });
+      showAppToast(`[${record.title}] 회차 기여도(${restoredTotal.toLocaleString("ko-KR")}원)를 현재 방송에 성공적으로 불러왔습니다.`);
+    } catch {
+      window.alert("기여도를 불러오는 중 오류가 발생했습니다.");
+    }
+  };
+
   if (records === null) {
     return (
       <main className="min-h-screen p-6">
@@ -860,6 +897,15 @@ export default function SettlementDetailPage() {
             >
               {fullPdfGenerating ? "전체정산서 생성 중..." : "전체 정산서 PDF"}
             </button>
+            {hasSavedRoundContribution(record) && (
+              <button
+                className="px-3 py-2 rounded bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 font-bold text-white whitespace-nowrap shadow-md shadow-indigo-900/40"
+                onClick={onRestoreContributionToLive}
+                title="이 정산 회차에 저장된 기여도를 현재 방송에 즉시 불러와 복원합니다."
+              >
+                🏆 현재 방송에 기여도 불러오기
+              </button>
+            )}
             <button className="px-3 py-2 rounded bg-red-800 hover:bg-red-700 whitespace-nowrap" onClick={onDeleteRecord}>
               삭제
             </button>
@@ -1168,76 +1214,110 @@ export default function SettlementDetailPage() {
         </div>
 
         <div className="rounded border border-white/10 bg-neutral-900/60 p-3 overflow-auto">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <div className="text-sm font-semibold">멤버별 최종 매출</div>
-            <div className="text-xs text-neutral-400">후원 유입(계좌·투네) + 배분 반영 · 세후 입금액(net)</div>
-          </div>
-          <table className="w-full text-sm whitespace-nowrap">
-            <thead>
-              <tr className="text-neutral-400 border-b border-white/10">
-                <th className="p-2 text-left">멤버</th>
-                <th className="p-2 text-right">계좌 후원</th>
-                <th className="p-2 text-right">투네 후원</th>
-                <th className="p-2 text-right">계좌 반영</th>
-                <th className="p-2 text-right">투네 반영</th>
-                <th className="p-2 text-right">세금</th>
-                <th className="p-2 text-right">최종 정산</th>
-              </tr>
-            </thead>
-            <tbody>
-              {exportMembers.map((m) => {
-                const badge = memberRoleBadge(m, record);
-                const accountInflow = settlementGrossAmount(m, "account");
-                const toonInflow = settlementGrossAmount(m, "toon");
-                return (
-                  <tr key={`sum-${m.memberId}`} className="border-b border-white/10">
-                    <td className="p-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="font-medium truncate">{m.name}</span>
-                        {m.realName ? <span className="text-neutral-500 truncate">({m.realName})</span> : null}
-                        {badge ? (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${badge.className}`}>
-                            {badge.label}
-                          </span>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="p-2 text-right tabular-nums text-sky-300">{accountInflow.toLocaleString()}</td>
-                    <td className="p-2 text-right tabular-nums text-violet-300">{toonInflow.toLocaleString()}</td>
-                    <td className="p-2 text-right tabular-nums">{m.accountApplied.toLocaleString()}</td>
-                    <td className="p-2 text-right tabular-nums">{m.toonApplied.toLocaleString()}</td>
-                    <td className="p-2 text-right tabular-nums text-rose-300">{m.fee.toLocaleString()}</td>
-                    <td className="p-2 text-right tabular-nums font-extrabold text-emerald-300">
-                      {m.net.toLocaleString()}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="font-semibold border-t border-white/10">
-                <td className="p-2">지급 합계</td>
-                <td className="p-2 text-right tabular-nums text-sky-300">
-                  {exportMembers.reduce((s, m) => s + settlementGrossAmount(m, "account"), 0).toLocaleString()}
-                </td>
-                <td className="p-2 text-right tabular-nums text-violet-300">
-                  {exportMembers.reduce((s, m) => s + settlementGrossAmount(m, "toon"), 0).toLocaleString()}
-                </td>
-                <td className="p-2 text-right tabular-nums">
-                  {exportMembers.reduce((s, m) => s + m.accountApplied, 0).toLocaleString()}
-                </td>
-                <td className="p-2 text-right tabular-nums">
-                  {exportMembers.reduce((s, m) => s + m.toonApplied, 0).toLocaleString()}
-                </td>
-                <td className="p-2 text-right tabular-nums text-rose-300" title="원천세 인원 세금만 합산">
-                  {viewRecord!.totalFee.toLocaleString()}
-                </td>
-                <td className="p-2 text-right tabular-nums text-emerald-300 text-base">
-                  {viewRecord!.totalNet.toLocaleString()}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+          {(() => {
+            const hasContribSnapshot = hasSavedRoundContribution(record);
+            const roundContribSnap = hasContribSnapshot ? getRoundContributionSnapshot(record) : {};
+
+            return (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <div className="text-sm font-semibold flex items-center gap-2">
+                    <span>멤버별 최종 매출</span>
+                    {hasContribSnapshot && (
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-950/70 border border-amber-500/40 text-amber-300">
+                        🏆 회차 기여도 포함
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-neutral-400">후원 유입(계좌·투네) + 배분 반영 · 세후 입금액(net)</div>
+                </div>
+                <table className="w-full text-sm whitespace-nowrap">
+                  <thead>
+                    <tr className="text-neutral-400 border-b border-white/10">
+                      <th className="p-2 text-left">멤버</th>
+                      {hasContribSnapshot && <th className="p-2 text-right text-amber-300">회차 기여도</th>}
+                      <th className="p-2 text-right">계좌 후원</th>
+                      <th className="p-2 text-right">투네 후원</th>
+                      <th className="p-2 text-right">계좌 반영</th>
+                      <th className="p-2 text-right">투네 반영</th>
+                      <th className="p-2 text-right">세금</th>
+                      <th className="p-2 text-right">최종 정산</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {exportMembers.map((m) => {
+                      const badge = memberRoleBadge(m, record);
+                      const accountInflow = settlementGrossAmount(m, "account");
+                      const toonInflow = settlementGrossAmount(m, "toon");
+                      const contribVal = roundContribSnap[m.memberId] ?? roundContribSnap[m.name] ?? m.contribution ?? 0;
+                      return (
+                        <tr key={`sum-${m.memberId}`} className="border-b border-white/10">
+                          <td className="p-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="font-medium truncate">{m.name}</span>
+                              {m.realName ? <span className="text-neutral-500 truncate">({m.realName})</span> : null}
+                              {badge ? (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${badge.className}`}>
+                                  {badge.label}
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                          {hasContribSnapshot && (
+                            <td className="p-2 text-right tabular-nums text-amber-300 font-bold">
+                              {contribVal.toLocaleString()}
+                            </td>
+                          )}
+                          <td className="p-2 text-right tabular-nums text-sky-300">{accountInflow.toLocaleString()}</td>
+                          <td className="p-2 text-right tabular-nums text-violet-300">{toonInflow.toLocaleString()}</td>
+                          <td className="p-2 text-right tabular-nums">{m.accountApplied.toLocaleString()}</td>
+                          <td className="p-2 text-right tabular-nums">{m.toonApplied.toLocaleString()}</td>
+                          <td className="p-2 text-right tabular-nums text-rose-300">{m.fee.toLocaleString()}</td>
+                          <td className="p-2 text-right tabular-nums font-extrabold text-emerald-300">
+                            {m.net.toLocaleString()}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="font-semibold border-t border-white/10">
+                      <td className="p-2">지급 합계</td>
+                      {hasContribSnapshot && (
+                        <td className="p-2 text-right tabular-nums text-amber-300 font-bold">
+                          {exportMembers
+                            .reduce(
+                              (s, m) =>
+                                s + (roundContribSnap[m.memberId] ?? roundContribSnap[m.name] ?? m.contribution ?? 0),
+                              0
+                            )
+                            .toLocaleString()}
+                        </td>
+                      )}
+                      <td className="p-2 text-right tabular-nums text-sky-300">
+                        {exportMembers.reduce((s, m) => s + settlementGrossAmount(m, "account"), 0).toLocaleString()}
+                      </td>
+                      <td className="p-2 text-right tabular-nums text-violet-300">
+                        {exportMembers.reduce((s, m) => s + settlementGrossAmount(m, "toon"), 0).toLocaleString()}
+                      </td>
+                      <td className="p-2 text-right tabular-nums">
+                        {exportMembers.reduce((s, m) => s + m.accountApplied, 0).toLocaleString()}
+                      </td>
+                      <td className="p-2 text-right tabular-nums">
+                        {exportMembers.reduce((s, m) => s + m.toonApplied, 0).toLocaleString()}
+                      </td>
+                      <td className="p-2 text-right tabular-nums text-rose-300" title="원천세 인원 세금만 합산">
+                        {viewRecord!.totalFee.toLocaleString()}
+                      </td>
+                      <td className="p-2 text-right tabular-nums text-emerald-300 text-base">
+                        {viewRecord!.totalNet.toLocaleString()}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </>
+            );
+          })()}
           {treasuryExcludedMembers.length > 0 && (
             <div className="mt-3 pt-3 border-t border-amber-500/20">
               <div className="text-xs font-medium text-amber-300 mb-2">운영비 (정산 제외 · 참고)</div>

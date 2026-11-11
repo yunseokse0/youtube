@@ -12,6 +12,7 @@ export function defaultSettlementUiOptions(): SettlementUiOptions {
     memberRatioInputs: {},
     omitTreasuryFromSettlement: false,
     includeTreasuryInFullStatement: false,
+    saveRoundContribution: true,
   };
 }
 
@@ -48,6 +49,7 @@ export function normalizeSettlementUiOptions(
     memberRatioInputs,
     omitTreasuryFromSettlement: Boolean(input?.omitTreasuryFromSettlement),
     includeTreasuryInFullStatement: Boolean(input?.includeTreasuryInFullStatement),
+    saveRoundContribution: input?.saveRoundContribution !== false,
   };
 }
 
@@ -78,6 +80,7 @@ export function buildSettlementUiOptionsFromForm(input: {
   memberRatioInputs: Record<string, { account: string; toon: string }>;
   omitTreasuryFromSettlement: boolean;
   includeTreasuryInFullStatement: boolean;
+  saveRoundContribution?: boolean;
 }): SettlementUiOptions {
   return normalizeSettlementUiOptions(input);
 }

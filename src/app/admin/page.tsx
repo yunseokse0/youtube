@@ -199,7 +199,12 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as XLSX from "xlsx";
-import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
+import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync, loadSettlementRecordsPreferApi, loadSettlementRecords, SettlementMemberRatioOverrides } from "@/lib/settlement";
+import {
+  applyRoundContributionToState,
+  getRoundContributionSnapshot,
+  hasSavedRoundContribution,
+} from "@/lib/settlement-contribution-restore";
 import MemberExcelAccountReconcile from "@/components/settlement/MemberExcelAccountReconcile";
 import { mergeDonorsWithMissingAccount, type MemberExcelReconcileResult } from "@/lib/member-toonation-excel";
 import { formatSigMatchStat, formatSigMatchManualAdjustStepLabel, getSigMatchRankings, isOperatingSettlementMember, resolveSigMatchDonationLink, resolveSigMatchManualAdjustSteps } from "@/lib/settlement-utils";
@@ -1492,6 +1497,10 @@ function AdminPageInner() {
   const [taxInvoiceIssued, setTaxInvoiceIssued] = useState(false);
   const [omitTreasuryFromSettlement, setOmitTreasuryFromSettlement] = useState(false);
   const [includeTreasuryInFullStatement, setIncludeTreasuryInFullStatement] = useState(false);
+  const [saveRoundContribution, setSaveRoundContribution] = useState(true);
+  const [contributionRestoreModalOpen, setContributionRestoreModalOpen] = useState(false);
+  const [restoreSettlementRecords, setRestoreSettlementRecords] = useState<import("@/types").SettlementRecord[]>([]);
+  const [selectedRestoreRecordId, setSelectedRestoreRecordId] = useState<string>("");
   const [useMemberRatioOverrides, setUseMemberRatioOverrides] = useState(false);
   const [memberRatioInputs, setMemberRatioInputs] = useState<
     Record<string, { account: string; toon: string; taxInvoice?: boolean }>
@@ -2081,6 +2090,7 @@ function AdminPageInner() {
       setMemberRatioInputs(normalized.memberRatioInputs);
       setOmitTreasuryFromSettlement(normalized.omitTreasuryFromSettlement);
       setIncludeTreasuryInFullStatement(normalized.includeTreasuryInFullStatement);
+      setSaveRoundContribution(normalized.saveRoundContribution !== false);
       lastPersistedSettlementUiRef.current = JSON.stringify(normalized);
       settlementUiHydratingRef.current = false;
     },
@@ -6558,6 +6568,7 @@ function AdminPageInner() {
       memberRatioInputs,
       omitTreasuryFromSettlement,
       includeTreasuryInFullStatement,
+      saveRoundContribution,
     });
     const serialized = JSON.stringify(settlementUiOptions);
     if (serialized === lastPersistedSettlementUiRef.current) return;
@@ -6581,6 +6592,7 @@ function AdminPageInner() {
     memberRatioInputs,
     omitTreasuryFromSettlement,
     includeTreasuryInFullStatement,
+    saveRoundContribution,
   ]);
 
   const updateMember = (m: Member) => {
@@ -11308,6 +11320,59 @@ function AdminPageInner() {
 
   const resetAllPongdangManualContributions = resetPongdangContributionsAll;
 
+  const openContributionRestoreModal = useCallback(async () => {
+    try {
+      const records = (await loadSettlementRecordsPreferApi(user?.id)) || loadSettlementRecords(user?.id);
+      const withContrib = (records || []).filter((r) => hasSavedRoundContribution(r));
+      setRestoreSettlementRecords(withContrib);
+      if (withContrib.length > 0) {
+        setSelectedRestoreRecordId(withContrib[0].id);
+      }
+      setContributionRestoreModalOpen(true);
+    } catch {
+      const fallback = loadSettlementRecords(user?.id);
+      const withContrib = (fallback || []).filter((r) => hasSavedRoundContribution(r));
+      setRestoreSettlementRecords(withContrib);
+      if (withContrib.length > 0) {
+        setSelectedRestoreRecordId(withContrib[0].id);
+      }
+      setContributionRestoreModalOpen(true);
+    }
+  }, [user?.id]);
+
+  const executeRoundContributionRestore = useCallback(() => {
+    const targetRec = restoreSettlementRecords.find((r) => r.id === selectedRestoreRecordId);
+    if (!targetRec) {
+      window.alert("불러올 정산 회차를 선택해주세요.");
+      return;
+    }
+
+    const { restoredCount, restoredTotal } = applyRoundContributionToState(stateRef.current, targetRec);
+    if (restoredCount === 0 || restoredTotal <= 0) {
+      if (!window.confirm(`선택한 회차 [${targetRec.title}]에 복원할 기여도 데이터가 없습니다. 계속 적용할까요?`)) {
+        return;
+      }
+    } else {
+      if (
+        !window.confirm(
+          `[${targetRec.title}] 회차의 기여도를 현재 방송에 불러오시겠습니까?\n\n` +
+            `· 대상 멤버: ${restoredCount}명\n` +
+            `· 복원 기여도 합계: ${restoredTotal.toLocaleString("ko-KR")}원\n\n` +
+            `적용 시 현재 멤버들의 기여도와 퐁당퐁당 엑셀표에 즉시 반영됩니다.`
+        )
+      ) {
+        return;
+      }
+    }
+
+    const result = applyRoundContributionToState(stateRef.current, targetRec);
+    stateRef.current = result.nextState;
+    setState(result.nextState);
+    persistState(result.nextState, { omitDonationFields: true });
+    setContributionRestoreModalOpen(false);
+    showAppToast(`[${targetRec.title}] 회차 기여도(${result.restoredTotal.toLocaleString("ko-KR")}원)를 성공적으로 불러왔습니다.`);
+  }, [restoreSettlementRecords, selectedRestoreRecordId, persistState]);
+
   const togglePongdangExcludedMember = useCallback((memberId: string) => {
     setState((prev: AppState) => {
       const current = prev.pongdangExcludedMemberIds || [];
@@ -12282,6 +12347,16 @@ function AdminPageInner() {
     } catch {}
     await persistDonationStateViaApi(overlayUserId, snapshot, "add");
     appendDailyLog(snapshot, overlayUserId);
+    const roundContribSnapshot: Record<string, number> = {};
+    for (const m of snapshot.members || []) {
+      const autoVal = autoSigContributionMap[m.id] || 0;
+      const manualVal = snapshot.pongdangManualContributions?.[m.id] || 0;
+      const pongdangTotal = autoVal + manualVal;
+      const baseContrib = Number(m.contribution) || 0;
+      const finalVal = Math.max(baseContrib, pongdangTotal);
+      roundContribSnapshot[m.id] = finalVal;
+    }
+
     const rec = await appendSettlementRecordAndSync(
       title,
       snapshot.members,
@@ -12297,6 +12372,8 @@ function AdminPageInner() {
         taxInvoiceIssued,
         omitTreasuryFromSettlement,
         includeTreasuryInFullStatement,
+        saveRoundContribution,
+        roundContributionSnapshot: roundContribSnapshot,
       }
     );
     router.push(`/settlements/${rec.id}`);
@@ -18203,6 +18280,14 @@ function AdminPageInner() {
                     >
                       <span>🔄</span> 기여도 전체 0원 초기화
                     </button>
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 rounded bg-indigo-950/80 hover:bg-indigo-900 text-xs font-bold text-indigo-200 border border-indigo-500/50 shadow-md shadow-indigo-950/40 flex items-center gap-1 transition"
+                      title="과거 정산 회차에서 저장해 둔 기여도를 선택하여 현재 방송 및 퐁당퐁당 표에 즉시 불러옵니다."
+                      onClick={openContributionRestoreModal}
+                    >
+                      <span>📂</span> 과거 회차 기여도 불러오기
+                    </button>
                   </div>
                 </div>
 
@@ -23138,6 +23223,22 @@ function AdminPageInner() {
                   📄 국고포함 {includeTreasuryInFullStatement ? "ON" : "OFF"}
                 </button>
                 <button
+                  type="button"
+                  className={`px-3 py-2.5 rounded-xl border text-sm font-bold whitespace-nowrap transition-all hover:-translate-y-0.5 ${saveRoundContribution ? "border-indigo-500/50 bg-gradient-to-r from-indigo-950/70 to-indigo-900/40 text-indigo-200 shadow-indigo-500/10" : "border-white/10 bg-neutral-800/60 text-neutral-300"}`}
+                  onClick={() => setSaveRoundContribution((v) => !v)}
+                  title="정산 시점의 멤버별 기여도를 정산서에 함께 저장하여, 정산 리셋 후에도 언제든 이 회차 기여도를 다시 불러올 수 있습니다"
+                >
+                  🏆 회차 기여도 저장 {saveRoundContribution ? "ON" : "OFF"}
+                </button>
+                <button
+                  type="button"
+                  className="px-3 py-2.5 rounded-xl border border-indigo-500/40 bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-200 text-sm font-bold whitespace-nowrap transition-all hover:-translate-y-0.5 shadow-md shadow-indigo-950/40"
+                  onClick={openContributionRestoreModal}
+                  title="과거에 저장된 정산 회차 기여도를 선택하여 현재 방송에 즉시 불러옵니다."
+                >
+                  📂 과거 기여도 불러오기
+                </button>
+                <button
                   className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 via-green-600 to-emerald-700 hover:from-emerald-400 hover:to-emerald-600 font-extrabold text-white whitespace-nowrap flex-none shadow-lg shadow-emerald-500/25 transition-all hover:-translate-y-0.5 active:translate-y-0"
                   onClick={onFinishBroadcastAndSettle}
                 >
@@ -23512,6 +23613,115 @@ function AdminPageInner() {
                 취소
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 과거 회차 기여도 불러오기 모달 */}
+      {contributionRestoreModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-lg rounded-2xl border border-indigo-500/30 bg-[#161a29] p-5 shadow-2xl text-neutral-100 space-y-4">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">📂</span>
+                <span className="font-bold text-base text-white">과거 회차 기여도 불러오기</span>
+              </div>
+              <button
+                type="button"
+                className="text-neutral-400 hover:text-white text-lg p-1"
+                onClick={() => setContributionRestoreModalOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-neutral-300 leading-relaxed">
+              정산 완료 및 리셋 후에도 과거 회차의 멤버별 기여도를 불러와 현재 방송과 퐁당퐁당 표에 그대로 이어갈 수 있습니다.
+            </p>
+
+            {restoreSettlementRecords.length === 0 ? (
+              <div className="py-8 text-center text-sm text-neutral-400 bg-black/20 rounded-xl border border-white/5 space-y-1">
+                <div>저장된 회차 기여도 기록이 없습니다.</div>
+                <div className="text-xs text-neutral-500">
+                  (방송 종료 정산 시 &apos;회차 기여도 저장 ON&apos;으로 정산하면 이곳에 기록됩니다)
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
+                    불러올 정산 회차 선택
+                  </label>
+                  <select
+                    className="w-full px-3 py-2 rounded-xl bg-neutral-900 border border-white/15 text-sm text-white focus:outline-none focus:border-indigo-400"
+                    value={selectedRestoreRecordId}
+                    onChange={(e) => setSelectedRestoreRecordId(e.target.value)}
+                  >
+                    {restoreSettlementRecords.map((r) => {
+                      const snapshot = getRoundContributionSnapshot(r);
+                      const total = Object.values(snapshot).reduce((a, b) => a + b, 0);
+                      const memberCount = Object.keys(snapshot).length;
+                      const dateStr = r.createdAt ? new Date(r.createdAt).toLocaleDateString("ko-KR") : "";
+                      return (
+                        <option key={r.id} value={r.id}>
+                          {r.title} ({dateStr}) — {memberCount}명, {total.toLocaleString("ko-KR")}원
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                {(() => {
+                  const selRec = restoreSettlementRecords.find((r) => r.id === selectedRestoreRecordId);
+                  if (!selRec) return null;
+                  const snapshot = getRoundContributionSnapshot(selRec);
+                  const entries = Object.entries(snapshot).filter(([, v]) => v > 0);
+                  const total = entries.reduce((s, [, v]) => s + v, 0);
+
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs text-neutral-300 px-1">
+                        <span>회차 기여도 미리보기 ({entries.length}명)</span>
+                        <span className="font-bold text-amber-300">
+                          합계: {total.toLocaleString("ko-KR")}원
+                        </span>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto rounded-xl border border-white/10 bg-black/30 p-2 text-xs divide-y divide-white/5">
+                        {entries.map(([key, val]) => {
+                          const mMatch = (state.members || []).find((m) => m.id === key || m.name === key);
+                          const name = mMatch ? mMatch.name : key;
+                          return (
+                            <div key={key} className="flex items-center justify-between py-1.5 px-2">
+                              <span className="font-medium text-neutral-200">{name}</span>
+                              <span className="font-bold text-cyan-300 font-mono">
+                                {val.toLocaleString("ko-KR")}원
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div className="pt-2 flex items-center justify-end gap-2 border-t border-white/10">
+                  <button
+                    type="button"
+                    className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-neutral-300 transition"
+                    onClick={() => setContributionRestoreModalOpen(false)}
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="button"
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-xs font-bold text-white shadow-lg shadow-indigo-900/40 transition active:scale-95"
+                    onClick={executeRoundContributionRestore}
+                  >
+                    현재 방송에 불러오기 (적용)
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

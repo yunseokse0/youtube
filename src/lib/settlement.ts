@@ -37,6 +37,10 @@ export type SettlementCreateOptions = {
   includeTreasuryInFullStatement?: boolean;
   taxInvoiceIssued?: boolean;
   taxInvoiceVatRate?: number;
+  /** 정산 시점 기여도 스냅샷을 정산 기록에 저장할지 여부 (기본 true) */
+  saveRoundContribution?: boolean;
+  /** 멤버별 실시간 기여도 스냅샷 (memberId -> contribution) */
+  roundContributionSnapshot?: Record<string, number>;
 };
 
 function pruneOlderThan3Years(records: SettlementRecord[]): SettlementRecord[] {
@@ -400,6 +404,45 @@ export function appendSettlementRecord(
       totalNet,
     };
   }
+
+  /** 회차 기여도 저장: saveRoundContribution !== false 일 때 당시 기여도 스냅샷 보존 */
+  const shouldSaveContribution = settlementOptions?.saveRoundContribution !== false;
+  let roundContributionSnapshot: Record<string, number> | undefined = undefined;
+  if (shouldSaveContribution) {
+    roundContributionSnapshot = {};
+    if (settlementOptions?.roundContributionSnapshot) {
+      for (const [k, v] of Object.entries(settlementOptions.roundContributionSnapshot)) {
+        roundContributionSnapshot[k] = Math.max(0, Number(v) || 0);
+      }
+    } else {
+      for (const m of members || []) {
+        const id = String(m.id || m.name || "").trim();
+        if (id) {
+          roundContributionSnapshot[id] = Math.max(0, Number(m.contribution) || 0);
+        }
+      }
+    }
+  }
+
+  const finalMembersWithContrib = finalRec.members.map((m) => {
+    const key = String(m.memberId || m.name || "").trim();
+    const origM = origMembersById.get(key);
+    const snapVal = roundContributionSnapshot
+      ? (roundContributionSnapshot[key] ?? roundContributionSnapshot[m.name] ?? (origM ? Number(origM.contribution || 0) : 0))
+      : undefined;
+    return {
+      ...m,
+      ...(shouldSaveContribution && snapVal !== undefined ? { contribution: snapVal } : {}),
+    };
+  });
+
+  finalRec = {
+    ...finalRec,
+    members: finalMembersWithContrib,
+    saveRoundContribution: shouldSaveContribution,
+    ...(shouldSaveContribution && roundContributionSnapshot ? { roundContributionSnapshot } : {}),
+  };
+
   const prev = loadSettlementRecords(userId);
   saveSettlementRecords([finalRec, ...prev], userId);
   return finalRec;
@@ -787,8 +830,10 @@ export function recomputeSettlementFromDonors(
 ): SettlementRecord {
   const positions = record.memberPositionsAtSettlement || {};
   const sums = donorAmountSums(donors);
+  const snapshot = record.roundContributionSnapshot || {};
   const membersInput: Member[] = (record.members || []).map((m) => {
     const s = sums.get(m.memberId) || { account: 0, toon: 0 };
+    const prevContrib = typeof m.contribution === "number" ? m.contribution : (snapshot[m.memberId] ?? snapshot[m.name] ?? 0);
     return {
       id: m.memberId,
       name: m.name,
@@ -796,7 +841,7 @@ export function recomputeSettlementFromDonors(
       operating: m.operating,
       account: s.account,
       toon: s.toon,
-      contribution: 0,
+      contribution: prevContrib,
     };
   });
 
@@ -830,9 +875,11 @@ export function recomputeSettlementFromDonors(
   const prevById = new Map((record.members || []).map((m) => [m.memberId, m]));
   const members = body.members.map((m) => {
     const prev = prevById.get(m.memberId);
-    if (!prev) return m;
+    const prevContrib = typeof prev?.contribution === "number" ? prev.contribution : (snapshot[m.memberId] ?? snapshot[m.name] ?? 0);
+    if (!prev) return { ...m, ...(typeof prevContrib === "number" ? { contribution: prevContrib } : {}) };
     return {
       ...m,
+      contribution: prevContrib,
       bankName: prev.bankName || m.bankName,
       bankAccount: prev.bankAccount || m.bankAccount,
       accountHolder: prev.accountHolder || m.accountHolder,
@@ -847,6 +894,12 @@ export function recomputeSettlementFromDonors(
     ...body,
     members,
     memberPositionsAtSettlement: positions,
+    ...(typeof record.saveRoundContribution === "boolean"
+      ? { saveRoundContribution: record.saveRoundContribution }
+      : {}),
+    ...(record.roundContributionSnapshot
+      ? { roundContributionSnapshot: record.roundContributionSnapshot }
+      : {}),
     donors: (donors || []).map((d) => {
       const message = String(d.message || "").trim();
       const ms = donorAtEpochMs(d);
@@ -993,16 +1046,20 @@ export function recomputeSettlementRecord(
     return recomputeSettlementFromDonors(withRatios, donors);
   }
 
+  const snapshot = withRatios.roundContributionSnapshot || {};
   const positions = withRatios.memberPositionsAtSettlement || {};
-  const membersInput: Member[] = (withRatios.members || []).map((m) => ({
-    id: m.memberId,
-    name: m.name,
-    realName: m.realName || "",
-    operating: m.operating,
-    account: m.account,
-    toon: m.toon,
-    contribution: 0,
-  }));
+  const membersInput: Member[] = (withRatios.members || []).map((m) => {
+    const prevContrib = typeof m.contribution === "number" ? m.contribution : (snapshot[m.memberId] ?? snapshot[m.name] ?? 0);
+    return {
+      id: m.memberId,
+      name: m.name,
+      realName: m.realName || "",
+      operating: m.operating,
+      account: m.account,
+      toon: m.toon,
+      contribution: prevContrib,
+    };
+  });
   const body = computeSettlement(
     membersInput,
     accountRatio,
@@ -1015,9 +1072,11 @@ export function recomputeSettlementRecord(
   const prevById = new Map((withRatios.members || []).map((m) => [m.memberId, m]));
   const members = body.members.map((m) => {
     const prev = prevById.get(m.memberId);
-    if (!prev) return m;
+    const prevContrib = typeof prev?.contribution === "number" ? prev.contribution : (snapshot[m.memberId] ?? snapshot[m.name] ?? 0);
+    if (!prev) return { ...m, ...(typeof prevContrib === "number" ? { contribution: prevContrib } : {}) };
     return {
       ...m,
+      contribution: prevContrib,
       bankName: prev.bankName || m.bankName,
       bankAccount: prev.bankAccount || m.bankAccount,
       accountHolder: prev.accountHolder || m.accountHolder,
@@ -1031,6 +1090,12 @@ export function recomputeSettlementRecord(
     ...body,
     members,
     memberPositionsAtSettlement: positions,
+    ...(typeof withRatios.saveRoundContribution === "boolean"
+      ? { saveRoundContribution: withRatios.saveRoundContribution }
+      : {}),
+    ...(withRatios.roundContributionSnapshot
+      ? { roundContributionSnapshot: withRatios.roundContributionSnapshot }
+      : {}),
   };
 }
 
