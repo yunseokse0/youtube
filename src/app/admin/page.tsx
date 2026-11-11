@@ -1555,42 +1555,6 @@ function AdminPageInner() {
     { name: "미션 전광판", preset: { showMembers: false, showTotal: false, showMission: true, missionAnchor: "bc" } },
   ];
   const managePositionInPrism = true;
-  const upgradePongdangPresetIfNeeded = (preset: OverlayPreset): OverlayPreset => {
-    const isPongdang =
-      preset.name?.includes("퐁당") ||
-      preset.theme === "excelPongdang" ||
-      preset.membersTheme === "excelPongdang" ||
-      Boolean(preset.day777Calc);
-    if (!isPongdang) return preset;
-
-    const isOldTheme = !preset.theme || preset.theme === "default" || preset.theme === "excelPongdang";
-    const needsColorPatch = !preset.tablePanelBorderColor && !preset.tableHeaderBgColor;
-
-    if (isOldTheme || needsColorPatch) {
-      return {
-        ...preset,
-        theme: isOldTheme ? "excelEmerald" : preset.theme,
-        membersTheme: isOldTheme ? "excelEmerald" : (preset.membersTheme || "excelEmerald"),
-        totalTheme: isOldTheme ? "excelEmerald" : (preset.totalTheme || "excelEmerald"),
-        tableBorderGlow: preset.tableBorderGlow || "neon",
-        tableBorderRadius: preset.tableBorderRadius || "12",
-        tablePanelBorderWidth: preset.tablePanelBorderWidth || "1.5",
-        tablePanelBorderColor: preset.tablePanelBorderColor || "#10b981",
-        tableHeaderBgColor: preset.tableHeaderBgColor || "#064e3b",
-        tableHeaderTextColor: preset.tableHeaderTextColor || "#ffffff",
-        tableRowEvenBg: preset.tableRowEvenBg || "rgba(10, 60, 48, 0.60)",
-        tableRowOddBg: preset.tableRowOddBg || "rgba(4, 30, 24, 0.60)",
-        contributionColor: preset.contributionColor || "#34d399",
-        tableTextColor: preset.tableTextColor || "#ecfdf5",
-        totalTextColor: preset.totalTextColor || "#ffffff",
-        day777Calc: preset.day777Calc !== false,
-        showRoleColumn: typeof preset.showRoleColumn === "boolean" ? preset.showRoleColumn : false,
-        showCustomColumn: typeof preset.showCustomColumn === "boolean" ? preset.showCustomColumn : true,
-        showContributionColumn: typeof preset.showContributionColumn === "boolean" ? preset.showContributionColumn : true,
-      };
-    }
-    return preset;
-  };
   const defaultPreset = (name: string, overrides: Partial<OverlayPreset> = {}): OverlayPreset => ({
     id: `ov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name,
     scale: "1.1", memberSize: "24", totalSize: "56", dense: true, anchor: "cc",
@@ -4447,7 +4411,7 @@ function AdminPageInner() {
             /* noop */
           }
           if (Array.isArray(toApply.overlayPresets) && toApply.overlayPresets.length > 0) {
-            setPresets((toApply.overlayPresets as OverlayPreset[]).map(upgradePongdangPresetIfNeeded));
+            setPresets(toApply.overlayPresets as OverlayPreset[]);
           } else {
             const first = defaultPreset("전체 통합", { showMembers: true, showTotal: true });
             const withPreset = { ...toApply, overlayPresets: [first] };
@@ -5545,7 +5509,7 @@ function AdminPageInner() {
         syncSettlementUiFormFromOptions(toApply.settlementUiOptions);
       }
       if (Array.isArray(toApply.overlayPresets)) {
-        const nextOverlayPresets = (toApply.overlayPresets as OverlayPreset[]).map(upgradePongdangPresetIfNeeded);
+        const nextOverlayPresets = toApply.overlayPresets as OverlayPreset[];
         setPresets(nextOverlayPresets);
         try {
           window.localStorage.setItem(presetStorageKey, JSON.stringify(nextOverlayPresets));
@@ -20454,13 +20418,13 @@ function AdminPageInner() {
                           <div className="space-y-2 lg:order-2">
                             <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
                               <label className="text-xs text-neutral-400">테마</label>
-                              <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.theme} onChange={(e) => updatePreset(p.id, { theme: e.target.value })}>
+                              <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.theme} onChange={(e) => { updatePreset(p.id, { theme: e.target.value }); setGlobalPreviewBump((n) => n + 1); }}>
                                 {baseThemeChoices.map((tid) => (
                                   <option key={tid} value={tid}>{overlayThemeLabel(tid)}</option>
                                 ))}
                               </select>
                               <div className="col-span-full">
-                                <ThemeThumbs value={p.theme} options={baseThemeChoices} onChange={(v) => updatePreset(p.id, { theme: v })} />
+                                <ThemeThumbs value={p.theme} options={baseThemeChoices} onChange={(v) => { updatePreset(p.id, { theme: v }); setGlobalPreviewBump((n) => n + 1); }} />
                               </div>
                               {/* Palette view removed per user preference; compact select retained */}
                               {/* 「멤버·총합 테마」UI 제거 — 상단「테마」가 membersTheme/totalTheme도 함께 맞춤. 저장값·현재 표 설정은 변경하지 않음 */}
@@ -21715,31 +21679,40 @@ function AdminPageInner() {
                                       />
                                     </label>
                                     <p className="text-[10px] text-neutral-400">
-                                      순위별(1위~{Math.max(1, state.members.length)}위) 자유 텍스트(순위 다음 열). 순위 변동 시 실시간으로 순위 칸에 표시됩니다.
+                                      각 멤버별 상벌금·메모입니다. 멤버를 제외하거나 순위가 바뀌어도 해당 멤버의 상벌금이 날아가지 않고 안전하게 유지됩니다.
                                     </p>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                      {Array.from({ length: Math.max(1, state.members.length) }).map((_, idx) => {
-                                        const rankNum = idx + 1;
-                                        const val = state.rankCustomCells?.[idx] || "";
-                                        return (
-                                          <label
-                                            key={`overlay-custom-rank-cell-${p.id}-${rankNum}`}
-                                            className="grid grid-cols-[60px_1fr] items-center gap-2 text-xs text-neutral-300 rounded border border-white/10 bg-black/20 px-2 py-1.5"
-                                          >
-                                            <span className="font-semibold text-amber-400">{rankNum}위</span>
-                                            <input
-                                              className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
-                                              defaultValue={val}
-                                              key={`overlay-custom-rank-input-${p.id}-${rankNum}-${val}`}
-                                              onBlur={(e) => updateRankCustomCell(idx, e.target.value)}
-                                              onKeyDown={(e) => {
-                                                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                                              }}
-                                              placeholder="+100만원 / 메모"
-                                            />
-                                          </label>
-                                        );
-                                      })}
+                                    <div className="space-y-2">
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        {state.members.map((m, idx) => {
+                                          const role = (state.memberPositions?.[m.id] || "").trim() || (m.role || "").trim();
+                                          const val = (state.memberCustomCells && state.memberCustomCells[m.id]) ?? state.rankCustomCells?.[idx] ?? "";
+                                          return (
+                                            <label
+                                              key={`overlay-custom-member-cell-${p.id}-${m.id}`}
+                                              className="grid grid-cols-[80px_1fr] items-center gap-2 text-xs text-neutral-300 rounded border border-white/10 bg-black/20 px-2 py-1.5"
+                                            >
+                                              <span className="font-semibold text-neutral-200 truncate" title={m.name}>
+                                                {m.name}{role ? `(${role})` : ""}
+                                              </span>
+                                              <input
+                                                className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1 text-xs"
+                                                defaultValue={val}
+                                                key={`overlay-custom-member-input-${p.id}-${m.id}-${val}`}
+                                                onBlur={(e) => {
+                                                  const v = e.target.value;
+                                                  updateMemberCustomCell(m.id, v);
+                                                  updateRankCustomCell(idx, v);
+                                                  setGlobalPreviewBump((n) => n + 1);
+                                                }}
+                                                onKeyDown={(e) => {
+                                                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                                }}
+                                                placeholder="+100만원 / 메모"
+                                              />
+                                            </label>
+                                          );
+                                        })}
+                                      </div>
                                     </div>
                                   </div>
                                 )}

@@ -4142,8 +4142,10 @@ function OverlayInner() {
     ].join("|");
     const rows = ranked
       .map(({ m, rank }) => {
-        const rankVal = rank != null && rank >= 1 ? rankCustomCells[rank - 1] : undefined;
-        const customVal = typeof rankVal === "string" && rankVal.trim().length > 0 ? rankVal : (memberCustomCellsMap[m.id] || "");
+        const memberVal = String(memberCustomCellsMap[m.id] || "").trim();
+        const rankVal = rank != null && rank >= 1 ? String(rankCustomCells[rank - 1] || "").trim() : "";
+        const repFallback = (!rank && Array.isArray(rankCustomCells) && rankCustomCells.length > 0) ? String(rankCustomCells[0] || "").trim() : "";
+        const customVal = memberVal || rankVal || repFallback;
         return `${showCustomColumn ? `${customVal}|` : ""}${m.account}|${m.toon}|${getContributionValueForMember(m)}${showRestroomColumn ? `|${getRestroomValueForMember(m)}` : ""}`;
       })
       .join(";");
@@ -4543,9 +4545,11 @@ function OverlayInner() {
     const customColCh = Math.max(
       6,
       Math.min(
-        14,
-        members.reduce((max, m) => {
-          const len = String(memberCustomCellsMap[m.id] || "").length;
+        20,
+        members.reduce((max, m, idx) => {
+          const memLen = String(memberCustomCellsMap[m.id] || "").length;
+          const rankLen = Array.isArray(rankCustomCells) ? String(rankCustomCells[idx] || "").length : 0;
+          const len = Math.max(memLen, rankLen);
           return Math.max(max, len > 0 ? len + 2 : 6);
         }, Math.max(6, customHeaderLabel.length + 1))
       )
@@ -6100,12 +6104,14 @@ function OverlayInner() {
                             <td className={`${effectiveRowCls} overlay-col-custom text-center`}>
                               {(() => {
                                 const rowRank = rank != null ? rank : null;
+                                const memberVal = String(memberCustomCellsMap[m.id] || "").trim();
                                 const rankVal =
-                                  rowRank != null && rowRank >= 1 ? rankCustomCells[rowRank - 1] : undefined;
-                                const cellText =
-                                  typeof rankVal === "string" && rankVal.trim().length > 0
-                                    ? rankVal
-                                    : memberCustomCellsMap[m.id] || "";
+                                  rowRank != null && rowRank >= 1 ? String(rankCustomCells[rowRank - 1] || "").trim() : "";
+                                const repFallback =
+                                  (!rowRank && Array.isArray(rankCustomCells) && rankCustomCells.length > 0)
+                                    ? String(rankCustomCells[0] || "").trim()
+                                    : "";
+                                const cellText = memberVal || rankVal || repFallback;
                                 return cellText ? (
                                   <span className="overlay-cell-text-inner font-semibold" style={overlayCellOutlineStyle}>
                                     {cellText}
