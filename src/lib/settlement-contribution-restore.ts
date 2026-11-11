@@ -49,9 +49,8 @@ export type RoundContributionRestoreResult = {
 };
 
 /**
- * 과거 정산 회차의 기여도 스냅샷을 현재 방송 상태(AppState)에 불러와 복원 적용합니다.
- * - 현재 로스터의 members[i].contribution 복원
- * - 퐁당퐁당 엑셀표(pongdangManualContributions, pongdangManualMode)에도 합산 반영
+ * 과거 정산 회차의 기여도 스냅샷을 현재 방송 상태(AppState)의 기존 엑셀표에만 불러와 복원 적용합니다.
+ * - 기존 엑셀표의 members[i].contribution만 복원 (퐁당퐁당 표는 독립 유지하여 언제든 개별 리셋/수집 가능)
  * - 기여도 기록부(contributionLogs)에 복원 추적 로그 기록
  */
 export function applyRoundContributionToState(
@@ -64,7 +63,6 @@ export function applyRoundContributionToState(
   let restoredTotal = 0;
   const memberDetails: Array<{ id: string; name: string; amount: number }> = [];
 
-  const nextManual = { ...(state.pongdangManualContributions || {}) };
   const newLogs: ContributionLog[] = [];
 
   const updatedMembers: Member[] = (state.members || []).map((m) => {
@@ -76,9 +74,6 @@ export function applyRoundContributionToState(
       restoredCount += 1;
       restoredTotal += targetVal;
       memberDetails.push({ id: m.id, name: m.name, amount: targetVal });
-
-      // 퐁당퐁당 수동 보정에도 동일하게 주입
-      nextManual[m.id] = targetVal;
 
       if (targetVal > 0) {
         newLogs.push({
@@ -103,8 +98,6 @@ export function applyRoundContributionToState(
   const nextState: AppState = {
     ...state,
     members: updatedMembers,
-    pongdangManualMode: true,
-    pongdangManualContributions: nextManual,
     contributionLogs: [...newLogs, ...(state.contributionLogs || [])].slice(0, 300),
     updatedAt: now,
   };

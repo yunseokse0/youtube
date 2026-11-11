@@ -11320,6 +11320,20 @@ function AdminPageInner() {
 
   const resetAllPongdangManualContributions = resetPongdangContributionsAll;
 
+  const resyncPongdangFromDonors = useCallback(() => {
+    if (!window.confirm("기존 후원 원장 및 룰렛 시그 기록에서 퐁당퐁당(777데이) 기여도를 다시 계산하여 불러올까요?")) return;
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        pongdangResetAt: 0,
+      };
+      persistState(next, { omitDonationFields: true });
+      return next;
+    });
+    setGlobalPreviewBump((n) => n + 1);
+    showAppToast("기존 후원 및 시그 기록에서 퐁당퐁당 기여도를 다시 불러왔습니다.");
+  }, [persistState]);
+
   const openContributionRestoreModal = useCallback(async () => {
     try {
       const records = (await loadSettlementRecordsPreferApi(user?.id)) || loadSettlementRecords(user?.id);
@@ -11358,7 +11372,7 @@ function AdminPageInner() {
           `[${targetRec.title}] 회차의 기여도를 현재 방송에 불러오시겠습니까?\n\n` +
             `· 대상 멤버: ${restoredCount}명\n` +
             `· 복원 기여도 합계: ${restoredTotal.toLocaleString("ko-KR")}원\n\n` +
-            `적용 시 현재 멤버들의 기여도와 퐁당퐁당 엑셀표에 즉시 반영됩니다.`
+            `적용 시 기존 엑셀표 멤버들의 기여도에 즉시 반영됩니다. (퐁당퐁당 표는 독립 유지)`
         )
       ) {
         return;
@@ -18282,11 +18296,19 @@ function AdminPageInner() {
                     </button>
                     <button
                       type="button"
+                      className="px-3 py-1.5 rounded bg-amber-950/80 hover:bg-amber-900 text-xs font-bold text-amber-200 border border-amber-500/50 shadow-md shadow-amber-950/40 flex items-center gap-1 transition"
+                      title="리셋 후에도 기존에 들어온 후원 원장 및 룰렛 시그 기록 전체에서 777데이 기여도를 다시 계산하여 불러옵니다."
+                      onClick={resyncPongdangFromDonors}
+                    >
+                      <span>⚡</span> 기존 후원에서 777 기여도 재집계
+                    </button>
+                    <button
+                      type="button"
                       className="px-3 py-1.5 rounded bg-indigo-950/80 hover:bg-indigo-900 text-xs font-bold text-indigo-200 border border-indigo-500/50 shadow-md shadow-indigo-950/40 flex items-center gap-1 transition"
-                      title="과거 정산 회차에서 저장해 둔 기여도를 선택하여 현재 방송 및 퐁당퐁당 표에 즉시 불러옵니다."
+                      title="과거 정산 회차에서 저장해 둔 기여도를 선택하여 기존 엑셀표에 즉시 불러옵니다."
                       onClick={openContributionRestoreModal}
                     >
-                      <span>📂</span> 과거 회차 기여도 불러오기
+                      <span>📂</span> 과거 회차 기여도 불러오기 (기존 엑셀표)
                     </button>
                   </div>
                 </div>
@@ -23636,7 +23658,7 @@ function AdminPageInner() {
             </div>
 
             <p className="text-xs text-neutral-300 leading-relaxed">
-              정산 완료 및 리셋 후에도 과거 회차의 멤버별 기여도를 불러와 현재 방송과 퐁당퐁당 표에 그대로 이어갈 수 있습니다.
+              정산 완료 및 리셋 후에도 과거 회차의 멤버별 기여도를 불러와 기존 엑셀표에 그대로 이어갈 수 있습니다. (퐁당퐁당 표는 독립 유지되어 언제든 개별 리셋 및 기존 후원에서 자동 재집계 가능)
             </p>
 
             {restoreSettlementRecords.length === 0 ? (

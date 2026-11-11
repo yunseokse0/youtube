@@ -778,7 +778,7 @@ export default function SettlementDetailPage() {
         `[${record.title}] 회차의 기여도를 현재 방송에 불러오시겠습니까?\n\n` +
           `· 대상 멤버: ${count}명\n` +
           `· 기여도 합계: ${total.toLocaleString("ko-KR")}원\n\n` +
-          `적용 시 현재 방송의 멤버별 기여도와 퐁당퐁당 표에 즉시 반영됩니다.`
+          `적용 시 현재 방송의 기존 엑셀표 멤버별 기여도에 즉시 반영됩니다. (퐁당퐁당 표는 독립 유지)`
       )
     ) {
       return;

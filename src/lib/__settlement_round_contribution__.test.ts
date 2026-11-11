@@ -128,11 +128,9 @@ describe("정산 회차 기여도 저장 및 리셋 후 불러오기 테스트",
     expect(m2?.contribution).toBe(20000);
     expect(m3?.contribution).toBe(15000);
 
-    // 퐁당퐁당 보정도 연동되어 복원되었는지 확인
-    expect(nextState.pongdangManualMode).toBe(true);
-    expect(nextState.pongdangManualContributions?.["m1"]).toBe(460000);
-    expect(nextState.pongdangManualContributions?.["m2"]).toBe(20000);
-    expect(nextState.pongdangManualContributions?.["m3"]).toBe(15000);
+    // 과거 회차 기여도는 기존 엑셀표(members[i].contribution)에만 저장되고 퐁당퐁당은 오염되지 않음
+    expect(nextState.pongdangManualMode).toBeUndefined();
+    expect(nextState.pongdangManualContributions).toBeUndefined();
 
     // 복원 로그가 생성되었는지 확인
     expect(nextState.contributionLogs.length).toBe(3);
