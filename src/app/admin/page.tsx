@@ -1508,7 +1508,44 @@ function AdminPageInner() {
     { name: "엑셀표만", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true, showRestroomColumn: true } },
     { name: "방송 엑셀(계좌·투네)", preset: { theme: "excelLive", membersTheme: "excelLive", totalTheme: "excelLive", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: false, showContributionColumn: false, showRestroomColumn: true, accountHeaderLabel: "계좌", toonHeaderLabel: "투네이션", restroomHeaderLabel: "화장실", tableBgOpacity: "85", donorsFormat: "full", tableFree: true, tableX: "3", tableY: "88", anchor: "bl" } },
     { name: "웹후원 골드 엑셀", preset: { theme: "excelGold", membersTheme: "excelGold", totalTheme: "excelGold", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: true, showContributionColumn: true, showRestroomColumn: false, tableBgOpacity: "0", tableGridLines: false, tableVerticalLines: false, tableHeaderTextColor: "", tableTextColor: "", contributionColor: "", tablePanelBorderColor: "", accountHeaderLabel: "계좌", toonHeaderLabel: "투네", tableFree: true, tableX: "50", tableY: "50", anchor: "cc" } },
-    { name: "퐁당퐁당 엑셀", preset: { theme: "excelPongdang", membersTheme: "excelPongdang", totalTheme: "excelPongdang", showMembers: true, showTotal: true, tableOnly: true, showRoleColumn: false, showCustomColumn: true, showCombinedColumn: true, showContributionColumn: true, showRestroomColumn: false, day777Calc: true, tableBgOpacity: "0", tableGridLines: false, tableVerticalLines: false, accountHeaderLabel: "후원", toonHeaderLabel: "투네", customHeaderLabel: "상벌금", tableFree: true, tableX: "50", tableY: "50", anchor: "cc" } },
+    {
+      name: "퐁당퐁당 엑셀",
+      preset: {
+        theme: "excelEmerald",
+        membersTheme: "excelEmerald",
+        totalTheme: "excelEmerald",
+        showMembers: true,
+        showTotal: true,
+        tableOnly: true,
+        showRoleColumn: false,
+        showCustomColumn: true,
+        showCombinedColumn: true,
+        showContributionColumn: true,
+        showRestroomColumn: false,
+        day777Calc: true,
+        tableBgOpacity: "0",
+        tableGridLines: false,
+        tableVerticalLines: false,
+        tableBorderGlow: "neon",
+        tableBorderRadius: "12",
+        tablePanelBorderWidth: "1.5",
+        tablePanelBorderColor: "#10b981",
+        tableHeaderBgColor: "#064e3b",
+        tableHeaderTextColor: "#ffffff",
+        tableRowEvenBg: "rgba(10, 60, 48, 0.60)",
+        tableRowOddBg: "rgba(4, 30, 24, 0.60)",
+        contributionColor: "#34d399",
+        tableTextColor: "#ecfdf5",
+        totalTextColor: "#ffffff",
+        accountHeaderLabel: "후원",
+        toonHeaderLabel: "투네",
+        customHeaderLabel: "상벌금",
+        tableFree: true,
+        tableX: "50",
+        tableY: "50",
+        anchor: "cc",
+      },
+    },
     { name: "전체 통합", preset: { showMembers: true, showTotal: true } },
     { name: "표만 (엑셀)", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true, showRestroomColumn: true } },
     { name: "멤버 목록만", preset: { showMembers: true, showTotal: false, showBottomDonors: false, tickerInMembers: false } },
@@ -1518,6 +1555,42 @@ function AdminPageInner() {
     { name: "미션 전광판", preset: { showMembers: false, showTotal: false, showMission: true, missionAnchor: "bc" } },
   ];
   const managePositionInPrism = true;
+  const upgradePongdangPresetIfNeeded = (preset: OverlayPreset): OverlayPreset => {
+    const isPongdang =
+      preset.name?.includes("퐁당") ||
+      preset.theme === "excelPongdang" ||
+      preset.membersTheme === "excelPongdang" ||
+      Boolean(preset.day777Calc);
+    if (!isPongdang) return preset;
+
+    const isOldTheme = !preset.theme || preset.theme === "default" || preset.theme === "excelPongdang";
+    const needsColorPatch = !preset.tablePanelBorderColor && !preset.tableHeaderBgColor;
+
+    if (isOldTheme || needsColorPatch) {
+      return {
+        ...preset,
+        theme: isOldTheme ? "excelEmerald" : preset.theme,
+        membersTheme: isOldTheme ? "excelEmerald" : (preset.membersTheme || "excelEmerald"),
+        totalTheme: isOldTheme ? "excelEmerald" : (preset.totalTheme || "excelEmerald"),
+        tableBorderGlow: preset.tableBorderGlow || "neon",
+        tableBorderRadius: preset.tableBorderRadius || "12",
+        tablePanelBorderWidth: preset.tablePanelBorderWidth || "1.5",
+        tablePanelBorderColor: preset.tablePanelBorderColor || "#10b981",
+        tableHeaderBgColor: preset.tableHeaderBgColor || "#064e3b",
+        tableHeaderTextColor: preset.tableHeaderTextColor || "#ffffff",
+        tableRowEvenBg: preset.tableRowEvenBg || "rgba(10, 60, 48, 0.60)",
+        tableRowOddBg: preset.tableRowOddBg || "rgba(4, 30, 24, 0.60)",
+        contributionColor: preset.contributionColor || "#34d399",
+        tableTextColor: preset.tableTextColor || "#ecfdf5",
+        totalTextColor: preset.totalTextColor || "#ffffff",
+        day777Calc: preset.day777Calc !== false,
+        showRoleColumn: typeof preset.showRoleColumn === "boolean" ? preset.showRoleColumn : false,
+        showCustomColumn: typeof preset.showCustomColumn === "boolean" ? preset.showCustomColumn : true,
+        showContributionColumn: typeof preset.showContributionColumn === "boolean" ? preset.showContributionColumn : true,
+      };
+    }
+    return preset;
+  };
   const defaultPreset = (name: string, overrides: Partial<OverlayPreset> = {}): OverlayPreset => ({
     id: `ov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name,
     scale: "1.1", memberSize: "24", totalSize: "56", dense: true, anchor: "cc",
@@ -1828,7 +1901,7 @@ function AdminPageInner() {
       excelSlate: { background: "linear-gradient(135deg,#0f172a,#334155)" },
       excelAmber: { background: "linear-gradient(135deg,#92400e,#f59e0b)" },
       excelGold: { background: "linear-gradient(135deg,#1a1408,#ffc107,#1a1408)" },
-      excelPongdang: { background: "linear-gradient(135deg,#8b6914,#badcff,#ffc8d6)" },
+      excelPongdang: { background: "linear-gradient(135deg,#064e3b,#10b981)" },
       excelRose: { background: "linear-gradient(135deg,#9f1239,#fb7185)" },
       excelNavy: { background: "linear-gradient(135deg,#0b132b,#1c2541)" },
       excelTeal: { background: "linear-gradient(135deg,#0f766e,#5eead4)" },
@@ -4374,7 +4447,7 @@ function AdminPageInner() {
             /* noop */
           }
           if (Array.isArray(toApply.overlayPresets) && toApply.overlayPresets.length > 0) {
-            setPresets(toApply.overlayPresets as OverlayPreset[]);
+            setPresets((toApply.overlayPresets as OverlayPreset[]).map(upgradePongdangPresetIfNeeded));
           } else {
             const first = defaultPreset("전체 통합", { showMembers: true, showTotal: true });
             const withPreset = { ...toApply, overlayPresets: [first] };
@@ -5472,7 +5545,7 @@ function AdminPageInner() {
         syncSettlementUiFormFromOptions(toApply.settlementUiOptions);
       }
       if (Array.isArray(toApply.overlayPresets)) {
-        const nextOverlayPresets = toApply.overlayPresets as OverlayPreset[];
+        const nextOverlayPresets = (toApply.overlayPresets as OverlayPreset[]).map(upgradePongdangPresetIfNeeded);
         setPresets(nextOverlayPresets);
         try {
           window.localStorage.setItem(presetStorageKey, JSON.stringify(nextOverlayPresets));
@@ -21727,7 +21800,7 @@ function AdminPageInner() {
                                   </div>
                                   <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
                                     <label className="text-xs text-neutral-400">777데이 계산</label>
-                                    {p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" ? (
+                                    {p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당") ? (
                                       <>
                                         <button
                                           type="button"
@@ -21743,7 +21816,7 @@ function AdminPageInner() {
                                           {p.day777Calc === false ? "OFF" : "ON"}
                                         </button>
                                         <span className="text-[10px] text-neutral-500">
-                                          퐁당퐁당만: 기여도는 나온 시그 단가. 777,000원 후원은 후원/투네에만 남음.
+                                          퐁당퐁당: 기여도는 나온 시그 단가. 777,000원 후원은 후원/투네에만 남음.
                                         </span>
                                       </>
                                     ) : (
@@ -21752,7 +21825,7 @@ function AdminPageInner() {
                                       </span>
                                     )}
                                   </div>
-                                  {(p.membersTheme === "excelPongdang" || p.theme === "excelPongdang") && (
+                                  {(p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당")) && (
                                     <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
                                       <label className="text-xs text-neutral-400">수동 기여도 모드</label>
                                       <button

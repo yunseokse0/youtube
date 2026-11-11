@@ -19,6 +19,7 @@ import { normalizeMemberRankingMetric, type MemberRankingMetric } from "@/lib/ut
 /** 프리셋 → URL 쿼리 변환. OBS 등 별도 컨텍스트에서 API 없이 동작하도록 URL에 설정 포함 */
 export type OverlayPresetLike = {
   id?: string;
+  name?: string;
   scale?: string;
   memberSize?: string;
   totalSize?: string;
@@ -2295,12 +2296,19 @@ function overlayThemeIsExcelPongdang(
 ): boolean {
   const membersTheme = resolveLivePresetStyleParam("membersTheme", rawSp, presetToParams(preset), opts);
   const theme = resolveLivePresetStyleParam("theme", rawSp, presetToParams(preset), opts);
-  return (
+  const isPongdangTheme = (
     membersTheme === "excelPongdang" ||
     theme === "excelPongdang" ||
     preset?.membersTheme === "excelPongdang" ||
     preset?.theme === "excelPongdang"
   );
+  if (isPongdangTheme) return true;
+  // 프리셋 이름에 "퐁당"이 들어가 있거나 URL에 명시적으로 day777Calc가 들어간 경우 (6대 테마 적용 퐁당퐁당 엑셀표 지원)
+  const pName = String(preset?.name || "").trim();
+  if (pName.includes("퐁당")) return true;
+  const rawDay777 = rawSp.get("day777Calc") || "";
+  if (rawDay777 === "true") return true;
+  return false;
 }
 
 /**

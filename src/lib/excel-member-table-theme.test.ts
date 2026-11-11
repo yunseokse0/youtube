@@ -73,10 +73,11 @@ describe("excel-member-table-theme", () => {
   it("excelPongdang has blue/pink zebra stripes and dark contribution text", () => {
     expect(isExcelMemberTableTheme("excelPongdang")).toBe(true);
     const accent = resolveExcelMemberTableAccent("excelPongdang");
-    expect(accent?.headerBg).toBe("#8b6914");
-    expect(accent?.rowEvenBg).toContain("186, 220, 255");
-    expect(accent?.rowOddBg).toContain("255, 200, 214");
-    expect(accent?.contributionColor).toBe("#1a1a1a");
+    expect(accent?.headerBg).toBe("#064e3b");
+    expect(accent?.rowEvenBg).toContain("10, 60, 48");
+    expect(accent?.rowOddBg).toContain("4, 30, 24");
+    expect(accent?.contributionColor).toBe("#34d399");
     expect(EXCEL_MEMBER_THEME_IDS).toContain("excelPongdang");
   });
 });
+

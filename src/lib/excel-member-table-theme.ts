@@ -96,17 +96,17 @@ export const EXCEL_MEMBER_TABLE_ACCENT: Record<ExcelMemberThemeId, ExcelMemberTa
     rowOddBg: "rgba(255, 255, 255, 0.16)",
     contributionColor: "#ffc107",
   },
-  /** 퐁당퐁당 — 브라운 헤더 · 파랑/분홍 교차 행 */
+  /** 퐁당퐁당 — 에메랄드 나이트 조화 배색 (다크 포레스트 그린 · 민트 네온 테두리) */
   excelPongdang: {
-    headerBg: "#8b6914",
-    headerText: "#fff8e7",
-    headerBorder: "#6b4f0e",
-    totalRowBorder: "rgba(212, 175, 55, 0.65)",
-    panelBorder: "#8b6914",
+    headerBg: "#064e3b",
+    headerText: "#ffffff",
+    headerBorder: "#10b981",
+    totalRowBorder: "rgba(16, 185, 129, 0.45)",
+    panelBorder: "#10b981",
     panelShadow: "none",
-    rowEvenBg: "rgba(186, 220, 255, 0.94)",
-    rowOddBg: "rgba(255, 200, 214, 0.94)",
-    contributionColor: "#1a1a1a",
+    rowEvenBg: "rgba(10, 60, 48, 0.60)",
+    rowOddBg: "rgba(4, 30, 24, 0.60)",
+    contributionColor: "#34d399",
   },
   excelRose: {
     headerBg: "rgba(225, 29, 72, 0.72)",

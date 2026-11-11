@@ -1528,20 +1528,20 @@ const THEMES: Record<ThemeId, {
   excelPongdang: {
     label: "엑셀(퐁당퐁당)",
     memberCls: "font-mono",
-    nameCls: "text-neutral-900 font-semibold",
-    accountCls: "text-neutral-900 font-semibold tabular-nums overflow-hidden",
-    toonCls: "text-neutral-900 font-semibold tabular-nums overflow-hidden",
-    totalCls: "font-bold text-neutral-900",
-    totalWrapCls: "bg-[#d4af37] border border-[#8b6914] px-2 py-1",
-    rowCls: "px-2 py-1 align-middle text-neutral-900",
+    nameCls: "text-emerald-100 font-semibold",
+    accountCls: "text-emerald-100 font-semibold tabular-nums overflow-hidden",
+    toonCls: "text-emerald-100 font-semibold tabular-nums overflow-hidden",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-[#064e3b] border border-[#10b981] px-2 py-1",
+    rowCls: "px-2 py-1 align-middle text-emerald-100",
     tableCls: "bg-transparent border-collapse overflow-visible",
-    headerCls: "bg-[#8b6914] text-[#fff8e7] font-bold px-2 py-1 text-sm",
-    goalBarBg: "bg-amber-900/40",
-    goalBarFill: "bg-[#d4af37]",
-    goalText: "text-[#d4af37] font-mono font-bold",
-    goalWrap: "border border-[#8b6914]/60 bg-transparent p-1 rounded-studio",
-    tickerCls: "text-[#d4af37] font-mono font-bold",
-    timerCls: "font-mono text-white bg-black/80 px-2 rounded-lg border border-[#8b6914]",
+    headerCls: "bg-[#064e3b] text-white font-bold px-2 py-1 text-sm",
+    goalBarBg: "bg-emerald-950/60",
+    goalBarFill: "bg-[#10b981]",
+    goalText: "text-[#34d399] font-mono font-bold",
+    goalWrap: "border border-[#10b981]/60 bg-transparent p-1 rounded-studio",
+    tickerCls: "text-[#34d399] font-mono font-bold",
+    timerCls: "font-mono text-white bg-black/80 px-2 rounded-lg border border-[#10b981]",
   },
   excelRose: {
     label: "엑셀(로즈)",
@@ -2734,7 +2734,7 @@ function OverlayInner() {
   })();
   const donationAggregateFromAt = resolveDonationAggregateFromAt(rawSp, effectivePreset, { ready });
   const day777Calc =
-    membersThemeId === "excelPongdang" && resolveDay777Calc(rawSp, effectivePreset, { ready });
+    resolveDay777Calc(rawSp, effectivePreset, { ready });
   const pongdangManualMode =
     day777Calc && resolvePongdangManualMode(rawSp, effectivePreset, { ready }, s as AppState);
   const toonHeaderLabel = resolvePresetLabel("toonHeaderLabel", "투네");
