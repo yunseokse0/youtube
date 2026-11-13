@@ -1192,8 +1192,9 @@ function OverlayTableNumCell({
 }
 
 function useElapsed(startTs: number | null) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(startTs || 0);
   useEffect(() => {
+    setNow(Date.now());
     if (!startTs) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
@@ -2533,9 +2534,7 @@ function OverlayInner() {
   const autoFont = !stableMode && (sp.get("autoFont") || "false").toLowerCase() === "true";
   const tight = (sp.get("tight") || "false").toLowerCase() === "true";
   const verticalParam = (sp.get("vertical") || "false").toLowerCase() === "true";
-  const [isVertical, setIsVertical] = useState(
-    () => verticalParam || (typeof window !== "undefined" && window.innerHeight > window.innerWidth)
-  );
+  const [isVertical, setIsVertical] = useState(verticalParam);
   useEffect(() => {
     if (verticalParam) { setIsVertical(true); return; }
     const check = () => setIsVertical(typeof window !== "undefined" && window.innerHeight > window.innerWidth);

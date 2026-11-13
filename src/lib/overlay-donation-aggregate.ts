@@ -216,8 +216,12 @@ export function collectDay777SigContributionByMember(
     Number((state as { intentionalDonationClearAt?: number })?.intentionalDonationClearAt || 0),
     Number(state?.pongdangResetAt || 0)
   );
-  // 기여도는 리셋(pongdangResetAt / settlementResetAt) 전까지 누적되어야 하므로, 프리셋의 임의 시간창(fromAt)으로 차단하지 않고 리셋 시각 기준으로 누적 수집
-  const effectiveFromAtOrNull = resetCutoff > 0 ? resetCutoff : null;
+  const explicitFromAt = normalizeDonationAggregateFromAt(fromAt);
+  // 사용자가 프리셋/오버레이에서 명시적으로 특정 시각(또는 지금부터)을 지정한 경우 해당 시점 이후로 집계.
+  // 미지정 시 리셋 시각(pongdangResetAt / settlementResetAt) 기준으로 누적 수집.
+  const effectiveFromAtOrNull = explicitFromAt != null
+    ? Math.max(explicitFromAt, resetCutoff)
+    : (resetCutoff > 0 ? resetCutoff : null);
 
   const manual = readManualSigBroadcastFromState(state);
   const manualSigs =
@@ -322,19 +326,29 @@ export function applyOverlayDonationDisplayTotals(
 
   if (!day777) return amountSynced;
 
+  const originalMemberMap = new Map((state.members || []).map((m) => [m.id, m]));
   const isManualMode = Boolean(opts?.pongdangManualMode ?? state.pongdangManualMode);
   const manualContribs = state.pongdangManualContributions || {};
 
   const sigById = collectDay777SigContributionByMember(state, fromAt);
+  const resetCutoff = Math.max(
+    0,
+    Number(state?.settlementResetAt || 0),
+    Number((state as { intentionalDonationClearAt?: number })?.intentionalDonationClearAt || 0),
+    Number(state?.pongdangResetAt || 0)
+  );
 
   return {
     ...amountSynced,
     members: (amountSynced.members || []).map((m) => {
+      const orig = originalMemberMap.get(m.id);
       const autoVal = sigById.get(m.id) ?? 0;
       const manualAdj = isManualMode ? Number(manualContribs[m.id]) || 0 : 0;
+      const currentContrib = Math.max(0, Math.floor(Number(orig?.contribution) || 0));
+      const baseVal = autoVal > 0 ? autoVal : (fromAt != null || resetCutoff > 0 ? 0 : currentContrib);
       return {
         ...m,
-        contribution: Math.max(0, autoVal + manualAdj),
+        contribution: Math.max(0, baseVal + manualAdj),
       };
     }),
   };

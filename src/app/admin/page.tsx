@@ -1653,8 +1653,12 @@ function AdminPageInner() {
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [sigMatchPreviewIframeKey, setSigMatchPreviewIframeKey] = useState(0);
   const [mealMatchPreviewIframeKey, setMealMatchPreviewIframeKey] = useState(0);
-  const [mealBattleFromAt, setMealBattleFromAt] = useState(() => formatMealBattleFromAtInput(Date.now()));
-  const [sigMatchFromAt, setSigMatchFromAt] = useState(() => formatMealBattleFromAtInput(Date.now()));
+  const [mealBattleFromAt, setMealBattleFromAt] = useState("");
+  const [sigMatchFromAt, setSigMatchFromAt] = useState("");
+  useEffect(() => {
+    setMealBattleFromAt((prev) => prev || formatMealBattleFromAtInput(Date.now()));
+    setSigMatchFromAt((prev) => prev || formatMealBattleFromAtInput(Date.now()));
+  }, []);
   const [mealBattleApplyMemberIds, setMealBattleApplyMemberIds] = useState<string[] | null>(null);
   const [battleScalePct, setBattleScalePct] = useState("100");
   /** 시그/식사 대전 오버레이 본문 max-width (%), URL contentWidthPct */
@@ -13238,6 +13242,7 @@ function AdminPageInner() {
                       특정 시간 설정
                       <input
                         type="datetime-local"
+                        suppressHydrationWarning
                         className="block rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-neutral-100"
                         value={sigMatchFromAt}
                         onChange={(e) => setSigMatchFromAt(e.target.value)}
@@ -13930,6 +13935,7 @@ function AdminPageInner() {
                       후원 반영 시작
                       <input
                         type="datetime-local"
+                        suppressHydrationWarning
                         className="block rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-neutral-100"
                         value={mealBattleFromAt}
                         onChange={(e) => setMealBattleFromAt(e.target.value)}
@@ -20523,6 +20529,114 @@ function AdminPageInner() {
                           </div>
                         <div className="px-3 pb-3 grid grid-cols-1 lg:grid-cols-2 gap-3 pt-3">
                           <div className="space-y-2 lg:order-2">
+                            {/* 후원 집계 기준 시점 (특정 일시부터 / 현재 시간부터 / 전체 기간) */}
+                            <div className="rounded-xl border border-sky-500/30 bg-sky-950/20 p-3 sm:p-3.5 space-y-2.5">
+                              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-500/20 pb-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-600/30 text-sky-200 text-sm shadow-sm">
+                                    ⏱️
+                                  </span>
+                                  <div>
+                                    <h4 className="text-xs sm:text-sm font-bold text-sky-200 flex items-center gap-1.5">
+                                      후원 집계 기준 시점
+                                      {String(p.donationAggregateFromAt || "").trim() ? (
+                                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-sky-500/30 text-sky-200 border border-sky-400/40">
+                                          필터 적용 중
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-400 border border-white/10">
+                                          전체 기간
+                                        </span>
+                                      )}
+                                    </h4>
+                                    <p className="text-[11px] text-sky-300/70">
+                                      특정 시각 이후의 후원만 집계하거나 「지금부터」 들어오는 후원만 집계할 수 있습니다. (정산 리셋·원장 보존)
+                                    </p>
+                                  </div>
+                                </div>
+                                {String(p.donationAggregateFromAt || "").trim() && (
+                                  <button
+                                    type="button"
+                                    className="px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-white/10 text-xs text-rose-300 hover:text-rose-200 transition-colors flex items-center gap-1"
+                                    onClick={() => {
+                                      updatePreset(p.id, { donationAggregateFromAt: "" });
+                                      setGlobalPreviewBump((n) => n + 1);
+                                    }}
+                                    title="시간 필터를 해제하고 정산 리셋 이후 전체 후원을 집계합니다"
+                                  >
+                                    <span>✕</span> 필터 해제 (전체 기간)
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                  type="button"
+                                  className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+                                    !String(p.donationAggregateFromAt || "").trim()
+                                      ? "border-emerald-500 bg-emerald-900/60 text-emerald-100 shadow-[0_0_8px_rgba(16,185,129,0.35)]"
+                                      : "border-white/15 bg-neutral-900/80 text-neutral-300 hover:bg-neutral-800"
+                                  }`}
+                                  onClick={() => {
+                                    updatePreset(p.id, { donationAggregateFromAt: "" });
+                                    setGlobalPreviewBump((n) => n + 1);
+                                  }}
+                                >
+                                  ✅ 전체 기간 (기본)
+                                </button>
+                                <button
+                                  type="button"
+                                  className="px-3 py-1.5 rounded-lg border border-sky-400 bg-sky-900/50 hover:bg-sky-800/60 text-sky-100 text-xs font-semibold shadow-sm hover:shadow-[0_0_10px_rgba(56,189,248,0.3)] transition-all flex items-center gap-1"
+                                  onClick={() => {
+                                    updatePreset(p.id, { donationAggregateFromAt: String(Date.now()) });
+                                    setGlobalPreviewBump((n) => n + 1);
+                                  }}
+                                  title="지금 이 순간 이후의 후원만 집계합니다"
+                                >
+                                  <span>⏱️</span> 현재 시간부터 (지금부터)
+                                </button>
+                                <div className="flex items-center gap-1.5 ml-auto">
+                                  <span className="text-xs text-neutral-400">📅 특정 일시:</span>
+                                  <input
+                                    type="datetime-local"
+                                    suppressHydrationWarning
+                                    className="px-2.5 py-1.5 rounded-lg bg-neutral-900 border border-white/20 text-xs text-white focus:border-sky-400 focus:outline-none"
+                                    value={
+                                      String(p.donationAggregateFromAt || "").trim()
+                                        ? formatMealBattleFromAtInput(Number(p.donationAggregateFromAt))
+                                        : ""
+                                    }
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      if (!val) {
+                                        updatePreset(p.id, { donationAggregateFromAt: "" });
+                                        setGlobalPreviewBump((n) => n + 1);
+                                        return;
+                                      }
+                                      const ms = parseMealBattleFromAtInput(val, 0);
+                                      if (ms > 0) {
+                                        updatePreset(p.id, { donationAggregateFromAt: String(ms) });
+                                        setGlobalPreviewBump((n) => n + 1);
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="text-[11px] font-mono text-neutral-400 bg-black/40 px-3 py-1.5 rounded border border-white/5 flex items-center justify-between">
+                                <span suppressHydrationWarning>
+                                  집계 범위: {String(p.donationAggregateFromAt || "").trim()
+                                    ? `⏱️ ${new Date(Number(p.donationAggregateFromAt)).toLocaleString("ko-KR")} 이후 후원만 집계 중`
+                                    : "✅ 정산 리셋 이후 전체 후원 집계 중 (기본값)"}
+                                </span>
+                                {String(p.donationAggregateFromAt || "").trim() && (
+                                  <span className="text-[10px] text-amber-300">
+                                    💡 OBS 브라우저 소스에도 동일하게 적용됩니다
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
                             <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
                               <label className="text-xs text-neutral-400">테마</label>
                               <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.theme} onChange={(e) => { updatePreset(p.id, { theme: e.target.value }); setGlobalPreviewBump((n) => n + 1); }}>
@@ -21825,61 +21939,7 @@ function AdminPageInner() {
                                   </div>
                                 )}
                                 <div className="rounded border border-white/10 bg-black/20 p-2 space-y-2">
-                                  <div className="text-xs text-neutral-300 font-medium">후원 집계 시작</div>
-                                  <p className="text-[10px] text-neutral-500">
-                                    이 오버레이 표만 해당 시각 이후 후원으로 다시 합산합니다. 정산 리셋·원장과 무관합니다.
-                                  </p>
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <button
-                                      type="button"
-                                      className={`px-2 py-0.5 rounded border text-xs ${
-                                        !String(p.donationAggregateFromAt || "").trim()
-                                          ? "border-emerald-500 text-emerald-300"
-                                          : "border-white/10 text-neutral-500"
-                                      }`}
-                                      onClick={() => updatePreset(p.id, { donationAggregateFromAt: "" })}
-                                    >
-                                      전체 기간
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="px-2 py-0.5 rounded border border-sky-500/60 text-xs text-sky-300 hover:bg-sky-500/10"
-                                      onClick={() =>
-                                        updatePreset(p.id, {
-                                          donationAggregateFromAt: String(Date.now()),
-                                        })
-                                      }
-                                    >
-                                      지금부터
-                                    </button>
-                                  </div>
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <input
-                                      type="datetime-local"
-                                      className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-neutral-200"
-                                      value={
-                                        String(p.donationAggregateFromAt || "").trim()
-                                          ? formatMealBattleFromAtInput(
-                                              Number(p.donationAggregateFromAt) || Date.now()
-                                            )
-                                          : formatMealBattleFromAtInput(Date.now())
-                                      }
-                                      onChange={(e) => {
-                                        const ms = parseMealBattleFromAtInput(e.target.value, 0);
-                                        if (ms > 0) {
-                                          updatePreset(p.id, {
-                                            donationAggregateFromAt: String(ms),
-                                          });
-                                        }
-                                      }}
-                                    />
-                                    <span className="text-[10px] text-neutral-500 font-mono">
-                                      {String(p.donationAggregateFromAt || "").trim()
-                                        ? new Date(Number(p.donationAggregateFromAt)).toLocaleString("ko-KR")
-                                        : "전체(정산 리셋 이후)"}
-                                    </span>
-                                  </div>
-                                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
                                     <label className="text-xs text-neutral-400">777데이 계산</label>
                                     {p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당") ? (
                                       <>
