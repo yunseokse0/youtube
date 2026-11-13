@@ -72,8 +72,9 @@ export function collectAppearedSigPrices(opts: {
       for (const s of log.selectedSigs || []) addAppearedSigPrice(prices, s);
     }
     const phase = String(rs.phase || "").toUpperCase();
+    const curTs = Number((rs as any).timestamp ?? rs.startedAt ?? 0);
     const includeCurrent =
-      (fromAt <= 0 || !rs.timestamp || Number(rs.timestamp || 0) >= fromAt) &&
+      (fromAt <= 0 || curTs <= 0 || curTs >= fromAt) &&
       (phase === "LANDED" ||
         phase === "CONFIRMED" ||
         phase === "CONFIRM_PENDING" ||
@@ -165,12 +166,14 @@ function collectAppearedSigCredits(opts: {
       for (const s of log.selectedSigs || []) pushAppearedSigCredit(out, s);
     }
     const phase = String(rs.phase || "").toUpperCase();
+    const curTs = Number((rs as any).timestamp ?? rs.startedAt ?? 0);
     const includeCurrent =
-      phase === "LANDED" ||
-      phase === "CONFIRMED" ||
-      phase === "CONFIRM_PENDING" ||
-      phase === "SPINNING" ||
-      (Array.isArray(rs.selectedSigs) && rs.selectedSigs.length > 0);
+      (fromAt <= 0 || curTs <= 0 || curTs >= fromAt) &&
+      (phase === "LANDED" ||
+        phase === "CONFIRMED" ||
+        phase === "CONFIRM_PENDING" ||
+        phase === "SPINNING" ||
+        (Array.isArray(rs.selectedSigs) && rs.selectedSigs.length > 0));
     if (includeCurrent) {
       for (const s of rs.selectedSigs || []) pushAppearedSigCredit(out, s);
       for (const s of rs.results || []) pushAppearedSigCredit(out, s);
@@ -330,13 +333,13 @@ export function applyOverlayDonationDisplayTotals(
   const isManualMode = Boolean(opts?.pongdangManualMode ?? state.pongdangManualMode);
   const manualContribs = state.pongdangManualContributions || {};
 
-  const sigById = collectDay777SigContributionByMember(state, fromAt);
-  const resetCutoff = Math.max(
+  const pongdangResetCutoff = Math.max(
     0,
-    Number(state?.settlementResetAt || 0),
-    Number((state as { intentionalDonationClearAt?: number })?.intentionalDonationClearAt || 0),
     Number(state?.pongdangResetAt || 0)
   );
+  const effectiveCutoff = fromAt != null ? fromAt : (pongdangResetCutoff > 0 ? pongdangResetCutoff : null);
+
+  const sigById = collectDay777SigContributionByMember(state, effectiveCutoff);
 
   return {
     ...amountSynced,
@@ -345,7 +348,7 @@ export function applyOverlayDonationDisplayTotals(
       const autoVal = sigById.get(m.id) ?? 0;
       const manualAdj = isManualMode ? Number(manualContribs[m.id]) || 0 : 0;
       const currentContrib = Math.max(0, Math.floor(Number(orig?.contribution) || 0));
-      const baseVal = autoVal > 0 ? autoVal : (fromAt != null || resetCutoff > 0 ? 0 : currentContrib);
+      const baseVal = autoVal > 0 ? autoVal : (effectiveCutoff != null ? 0 : currentContrib);
       return {
         ...m,
         contribution: Math.max(0, baseVal + manualAdj),

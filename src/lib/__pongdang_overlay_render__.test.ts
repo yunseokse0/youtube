@@ -122,6 +122,19 @@ describe("Pongdang overlay rendering pipeline test", () => {
     const rep = members.find((m) => m.name === "자키");
     expect(rep).toBeDefined();
     expect(rep?.contribution).toBe(45600);
+
+    const stateWithSettlementReset: AppState = {
+      ...dinState,
+      settlementResetAt: 1730000000000,
+    };
+    const membersWithReset = membersWithOverlayDonationAggregate(
+      stateWithSettlementReset,
+      stateWithSettlementReset.members,
+      null,
+      { day777Calc: true, pongdangManualMode: false }
+    );
+    const repWithReset = membersWithReset.find((m) => m.name === "자키");
+    expect(repWithReset?.contribution).toBe(45600);
   });
 
   it("tests ranking and top3 style calculation", () => {

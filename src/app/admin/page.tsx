@@ -747,6 +747,15 @@ function adminSyncFingerprint(s: AppState): string {
 }
 
 export default function AdminPage() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return <AdminPageSuspenseFallback />;
+  }
+
   return (
     <Suspense fallback={<AdminPageSuspenseFallback />}>
       <AdminSectionCollapseProvider>
@@ -11409,7 +11418,7 @@ function AdminPageInner() {
 
   const autoSigContributionMap = useMemo(() => {
     return collectDay777SigContributionByMember(state);
-  }, [state.donors, state.rouletteInventory, state.contributionLogs]);
+  }, [state.donors, state.sigInventory, state.rouletteState, state.contributionLogs]);
 
   const applyRestroomChange = useCallback((
     memberId: string,
@@ -12367,7 +12376,7 @@ function AdminPageInner() {
     appendDailyLog(snapshot, overlayUserId);
     const roundContribSnapshot: Record<string, number> = {};
     for (const m of snapshot.members || []) {
-      const autoVal = autoSigContributionMap[m.id] || 0;
+      const autoVal = autoSigContributionMap.get(m.id) || 0;
       const manualVal = snapshot.pongdangManualContributions?.[m.id] || 0;
       const pongdangTotal = autoVal + manualVal;
       const baseContrib = Number(m.contribution) || 0;
@@ -18345,7 +18354,7 @@ function AdminPageInner() {
                       .filter((m) => !isOperatingSettlementMember(m, state.memberPositions))
                       .map((m) => {
                         const isExcluded = (state.pongdangExcludedMemberIds || []).includes(m.id);
-                        const role = (state.memberPositions?.[m.id] || "").trim() || (m.role || "").trim();
+                        const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
                         return (
                           <button
                             key={`pd-member-exclude-${m.id}`}
@@ -20626,7 +20635,7 @@ function AdminPageInner() {
                               <div className="text-[11px] font-mono text-neutral-400 bg-black/40 px-3 py-1.5 rounded border border-white/5 flex items-center justify-between">
                                 <span suppressHydrationWarning>
                                   집계 범위: {String(p.donationAggregateFromAt || "").trim()
-                                    ? `⏱️ ${new Date(Number(p.donationAggregateFromAt)).toLocaleString("ko-KR")} 이후 후원만 집계 중`
+                                    ? `⏱️ ${new Date(Number(p.donationAggregateFromAt)).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} 이후 후원만 집계 중`
                                     : "✅ 정산 리셋 이후 전체 후원 집계 중 (기본값)"}
                                 </span>
                                 {String(p.donationAggregateFromAt || "").trim() && (
@@ -21906,7 +21915,7 @@ function AdminPageInner() {
                                     <div className="space-y-2">
                                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                         {state.members.map((m, idx) => {
-                                          const role = (state.memberPositions?.[m.id] || "").trim() || (m.role || "").trim();
+                                          const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
                                           const val = (state.memberCustomCells && state.memberCustomCells[m.id]) ?? state.rankCustomCells?.[idx] ?? "";
                                           return (
                                             <label
@@ -22004,7 +22013,7 @@ function AdminPageInner() {
                                           전원 표시
                                         </button>
                                         {state.members.some((m) => {
-                                          const role = (state.memberPositions?.[m.id] || "").trim() || (m.role || "").trim();
+                                          const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
                                           return !role.includes("부대표") && role.includes("대표");
                                         }) && (
                                           <button
@@ -22012,7 +22021,7 @@ function AdminPageInner() {
                                             className="px-2 py-0.5 rounded bg-purple-900/60 hover:bg-purple-800 text-[11px] text-purple-200 border border-purple-500/30"
                                             onClick={() => {
                                               const rep = state.members.find((m) => {
-                                                const role = (state.memberPositions?.[m.id] || "").trim() || (m.role || "").trim();
+                                                const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
                                                 return !role.includes("부대표") && role.includes("대표");
                                               });
                                               if (rep) {
@@ -22030,7 +22039,7 @@ function AdminPageInner() {
                                           >
                                             {(() => {
                                               const rep = state.members.find((m) => {
-                                                const role = (state.memberPositions?.[m.id] || "").trim() || (m.role || "").trim();
+                                                const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
                                                 return !role.includes("부대표") && role.includes("대표");
                                               });
                                               const isExcluded = rep && Array.isArray(p.excludedMemberIds) && p.excludedMemberIds.includes(rep.id);
@@ -22051,7 +22060,7 @@ function AdminPageInner() {
                                             ? p.excludedMemberIds
                                             : [];
                                           const isExcluded = excludedList.includes(m.id);
-                                          const role = (state.memberPositions?.[m.id] || "").trim() || (m.role || "").trim();
+                                          const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
                                           return (
                                             <button
                                               key={`ov-member-toggle-${p.id}-${m.id}`}

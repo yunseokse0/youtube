@@ -112,7 +112,7 @@ export function toonaHubDonationToEvent(
     ""
   ).trim();
   const contributionPoints =
-    Number.isFinite(contributionPointsRaw) && contributionPointsRaw >= 0
+    typeof contributionPointsRaw === "number" && Number.isFinite(contributionPointsRaw) && contributionPointsRaw >= 0
       ? contributionPointsRaw
       : undefined;
   const hasWeights = row.accountWeightPct !== undefined || row.toonWeightPct !== undefined;
