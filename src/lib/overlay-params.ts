@@ -536,7 +536,9 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
     }
   }
   if (preset.day777Calc === true) q.set("day777Calc", "true");
+  else if (preset.day777Calc === false) q.set("day777Calc", "false");
   if (preset.pongdangManualMode === true) q.set("pongdangManualMode", "true");
+  else if (preset.pongdangManualMode === false) q.set("pongdangManualMode", "false");
   if (Array.isArray(preset.excludedMemberIds) && preset.excludedMemberIds.length > 0) {
     q.set("excludedMemberIds", preset.excludedMemberIds.map((x) => String(x || "").trim()).filter(Boolean).join(","));
   } else if (typeof preset.excludedMemberIds === "string" && preset.excludedMemberIds.trim()) {
@@ -2316,6 +2318,7 @@ function overlayThemeIsExcelPongdang(
   if (pName.includes("퐁당")) return true;
   const rawDay777 = rawSp.get("day777Calc") || "";
   if (rawDay777 === "true") return true;
+  if (preset?.day777Calc === true) return true;
   return false;
 }
 
