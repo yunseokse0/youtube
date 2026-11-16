@@ -5,6 +5,7 @@ import {
   clearToonaHubDonationLogs,
   publicToonaHubSession,
   readToonaHubPullCursor,
+  readToonaHubSession,
   TOONA_HUB_S2S_TOKEN,
   toonaHubAuthHeaders,
   writeToonaHubPullCursor,
@@ -121,9 +122,16 @@ export async function loginAndLinkToonaHub(input: ToonaHubLoginInput): Promise<
   }
 
   const linkedAt = Date.now();
-  const existingCursor = await readToonaHubPullCursor(youtubeUserId).catch(() => null);
-  if (!existingCursor) {
+  const oldSession = await readToonaHubSession(youtubeUserId).catch(() => null);
+  const streamKeyChanged = !oldSession || oldSession.streamKey !== streamKey;
+  if (streamKeyChanged) {
     await writeToonaHubPullCursor(youtubeUserId, { floorAt: 0, fromMs: 0, after: "" }).catch(() => {});
+    void clearToonaHubDonationLogs(youtubeUserId).catch(() => {});
+  } else {
+    const existingCursor = await readToonaHubPullCursor(youtubeUserId).catch(() => null);
+    if (!existingCursor) {
+      await writeToonaHubPullCursor(youtubeUserId, { floorAt: 0, fromMs: 0, after: "" }).catch(() => {});
+    }
   }
   const session: ToonaHubSession = {
     userId: youtubeUserId,
@@ -235,6 +243,17 @@ export async function linkToonaHubByStreamKey(input: ToonaHubStreamKeyInput): Pr
   if (!ingestSecret) return { ok: false, error: "ingest_secret_not_configured" };
 
   const linkedAt = Date.now();
+  const oldSession = await readToonaHubSession(youtubeUserId).catch(() => null);
+  const streamKeyChanged = !oldSession || oldSession.streamKey !== streamKey;
+  if (streamKeyChanged) {
+    await writeToonaHubPullCursor(youtubeUserId, { floorAt: 0, fromMs: 0, after: "" }).catch(() => {});
+    void clearToonaHubDonationLogs(youtubeUserId).catch(() => {});
+  } else {
+    const existingCursor = await readToonaHubPullCursor(youtubeUserId).catch(() => null);
+    if (!existingCursor) {
+      await writeToonaHubPullCursor(youtubeUserId, { floorAt: 0, fromMs: 0, after: "" }).catch(() => {});
+    }
+  }
   const session: ToonaHubSession = {
     userId: youtubeUserId,
     baseUrl,

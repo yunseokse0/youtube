@@ -4,6 +4,7 @@ import { getYoutubePublicBaseUrl } from "@/lib/toona-link";
 import { linkToonaHubByStreamKey, loginAndLinkToonaHub } from "@/infra/http/toona-hub-login-link";
 import {
   clearToonaHubDonationLogs,
+  clearToonaHubPullCursor,
   clearToonaHubSession,
   publicToonaHubSession,
   readToonaHubDonationLogs,
@@ -378,5 +379,6 @@ export async function DELETE(req: NextRequest) {
   if (!auth.ok) return writeUserIdErrorResponse(auth);
   await clearToonaHubSession(auth.userId);
   await clearToonaHubDonationLogs(auth.userId);
+  await clearToonaHubPullCursor(auth.userId);
   return json({ ok: true });
 }

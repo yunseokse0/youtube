@@ -177,6 +177,18 @@ export async function clearToonaHubSession(userId: string): Promise<void> {
   }
 }
 
+export async function clearToonaHubPullCursor(userId: string): Promise<void> {
+  const uid = String(userId || "").trim();
+  if (!uid) return;
+  if (isPersistentKvConfigured()) {
+    const all = (await upstashGetJson<Record<string, ToonaHubPullCursor>>(PULL_CURSOR_KEY)) || {};
+    delete all[uid];
+    await upstashSetJsonWithPipeline(PULL_CURSOR_KEY, all);
+  } else {
+    pullCursorMemory.delete(uid);
+  }
+}
+
 export async function readToonaHubDonationLogs(userId: string): Promise<ToonaHubDonationLog[]> {
   const uid = String(userId || "").trim();
   if (!uid) return [];

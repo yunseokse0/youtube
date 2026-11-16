@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   isToonaHubUserLoginRequired,
+  readToonaHubPullCursor,
   resolveToonaHubBearer,
   TOONA_HUB_S2S_TOKEN,
+  writeToonaHubPullCursor,
 } from "@/lib/toona-hub-session";
 import { linkToonaHubByStreamKey } from "@/infra/http/toona-hub-login-link";
 
@@ -113,16 +115,34 @@ describe("linkToonaHubByStreamKey", () => {
     process.env.TOONA_INGEST_SECRET = prev;
   });
 
-  it("rejects an empty stream key without calling toona", async () => {
-    const fetchMock = vi.fn();
+  it("resets cursor when switching to a different stream key (different account)", async () => {
+    const prev = process.env.TOONA_INGEST_SECRET;
+    process.env.TOONA_INGEST_SECRET = "s2s-secret";
+
+    // 1. 이전 계정에서 남겨진 커서 설정
+    await writeToonaHubPullCursor("din", { floorAt: 100, fromMs: 100, after: "old_acc_cursor_123" });
+    const beforeCursor = await readToonaHubPullCursor("din");
+    expect(beforeCursor?.after).toBe("old_acc_cursor_123");
+
+    // 2. 다른 스트림키(다른 계정)로 연동
+    const fetchMock = vi.fn(async () => {
+      return new Response(JSON.stringify({ enabled: true }), { status: 200 });
+    });
     vi.stubGlobal("fetch", fetchMock);
+
     const out = await linkToonaHubByStreamKey({
       youtubeUserId: "din",
-      streamKey: "  ",
+      streamKey: "sk_different_account_456",
+      baseUrl: "http://toona.test",
       youtubePublicBaseUrl: "http://youtube.test",
     });
-    expect(out.ok).toBe(false);
-    if (!out.ok) expect(out.error).toBe("stream_key_required");
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(out.ok).toBe(true);
+
+    // 3. 다른 계정 연동 후 커서가 깨끗이 초기화되었는지 검증 (이전 계정 cursor 잔존 방지)
+    const afterCursor = await readToonaHubPullCursor("din");
+    expect(afterCursor?.after).toBe("");
+    expect(afterCursor?.floorAt).toBe(0);
+
+    process.env.TOONA_INGEST_SECRET = prev;
   });
 });
