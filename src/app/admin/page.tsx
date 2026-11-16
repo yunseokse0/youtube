@@ -1529,9 +1529,9 @@ function AdminPageInner() {
     {
       name: "퐁당퐁당 엑셀",
       preset: {
-        theme: "excelEmerald",
-        membersTheme: "excelEmerald",
-        totalTheme: "excelEmerald",
+        theme: "excelPongdang",
+        membersTheme: "excelPongdang",
+        totalTheme: "excelPongdang",
         showMembers: true,
         showTotal: true,
         tableOnly: true,
