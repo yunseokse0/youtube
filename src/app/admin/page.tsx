@@ -15372,37 +15372,32 @@ function AdminPageInner() {
                       </label>
 
                       <label className="text-[11px] text-neutral-400 flex flex-col gap-1">
-
-                        금액 표시
-
-                        <button
-
-                          type="button"
-
-                          className={`mt-1 px-2 py-1 rounded border text-xs w-fit ${
-
-                            state.donorRankingsTheme.hideAmount
-
-                              ? "border-amber-500 text-amber-300"
-
-                              : "border-white/10 text-neutral-300"
-
-                          }`}
-
-                          onClick={() =>
-
-                            updateDonorRankingsTheme({ hideAmount: !state.donorRankingsTheme.hideAmount })
-
-                          }
-
-                        >
-
-                          {state.donorRankingsTheme.hideAmount ? "숨김" : "표시"}
-
-                        </button>
-
+                        금액 표시 (ON/OFF)
+                        <div className="mt-1 flex items-center gap-1">
+                          <button
+                            type="button"
+                            className={`px-2.5 py-1 rounded text-xs font-bold transition-all shadow-sm ${
+                              !state.donorRankingsTheme.hideAmount
+                                ? "bg-emerald-600 text-white ring-1 ring-emerald-400"
+                                : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
+                            }`}
+                            onClick={() => updateDonorRankingsTheme({ hideAmount: false })}
+                          >
+                            ✓ ON (표시)
+                          </button>
+                          <button
+                            type="button"
+                            className={`px-2.5 py-1 rounded text-xs font-bold transition-all shadow-sm ${
+                              state.donorRankingsTheme.hideAmount
+                                ? "bg-rose-600 text-white ring-1 ring-rose-400"
+                                : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
+                            }`}
+                            onClick={() => updateDonorRankingsTheme({ hideAmount: true })}
+                          >
+                            ✕ OFF (숨김)
+                          </button>
+                        </div>
                         <span className="text-[10px] text-neutral-500">순위·닉네임은 그대로, 금액만 가립니다.</span>
-
                       </label>
 
                     </div>
@@ -19021,6 +19016,13 @@ function AdminPageInner() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
+                    type="button"
+                    className="px-3 py-1.5 rounded bg-fuchsia-800 hover:bg-fuchsia-700 text-xs font-semibold text-white whitespace-nowrap shadow-sm flex items-center gap-1"
+                    onClick={() => moveToSection("overlay", "donor-rankings-settings")}
+                  >
+                    <span>👑</span> 후원순위 오버레이 설정 (금액 ON/OFF)
+                  </button>
+                  <button
                     className="px-3 py-1.5 rounded bg-violet-800 hover:bg-violet-700 text-xs disabled:opacity-50 whitespace-nowrap"
                     disabled={donorTotalsByName.length === 0}
                     onClick={() => {
@@ -19334,14 +19336,70 @@ function AdminPageInner() {
                 <code className="text-neutral-300">/overlay</code>)에도 동일 연출이 포함됩니다. 아래 「엑셀표 · 순위
                 변동 연출」에서 색·크기를 설정하세요.
               </p>
-              <div className="mb-3 rounded border border-fuchsia-500/25 bg-fuchsia-950/20 p-3 space-y-3">
-                <div>
-                  <h4 className="text-sm font-semibold text-fuchsia-100">후원 순위 · 글자·색상</h4>
-                  <p className="mt-1 text-[11px] text-neutral-400 leading-snug">
-                    Prism/OBS 브라우저 소스는 <strong className="text-neutral-300">저장 즉시 반영</strong>됩니다(URL 재복사 불필요).
-                    후원 순위 테마·프리셋 상세는 <button type="button" className="text-sky-400 underline" onClick={() => document.getElementById("donor-management")?.scrollIntoView({ behavior: "smooth" })}>후원자</button> 탭에도 있습니다. 배경 GIF·본문 이미지는 아래 「오버레이 배경 · 본문 이미지」에서 설정하세요.
-                  </p>
+              <div id="donor-rankings-settings" className="mb-3 rounded-xl border border-fuchsia-500/35 bg-fuchsia-950/25 p-3.5 space-y-3 shadow-lg">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
+                  <div>
+                    <h4 className="text-sm font-bold text-fuchsia-100 flex items-center gap-1.5">
+                      <span>👑</span> 후원 순위 (웹후원 랭킹) 오버레이 설정
+                    </h4>
+                    <p className="mt-0.5 text-[11px] text-neutral-400 leading-snug">
+                      Prism/OBS 브라우저 소스는 <strong className="text-neutral-300">저장 즉시 반영</strong>됩니다 (URL 재입력 불필요).
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-semibold text-neutral-300">금액 노출 제어:</span>
+                    <button
+                      type="button"
+                      className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all shadow-sm ${
+                        !state.donorRankingsTheme.hideAmount
+                          ? "bg-emerald-600 text-white ring-2 ring-emerald-400/50"
+                          : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
+                      }`}
+                      onClick={() => updateDonorRankingsTheme({ hideAmount: false })}
+                    >
+                      ✓ 금액 ON (표시)
+                    </button>
+                    <button
+                      type="button"
+                      className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all shadow-sm ${
+                        state.donorRankingsTheme.hideAmount
+                          ? "bg-rose-600 text-white ring-2 ring-rose-400/50"
+                          : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
+                      }`}
+                      onClick={() => updateDonorRankingsTheme({ hideAmount: true })}
+                    >
+                      ✕ 금액 OFF (숨김)
+                    </button>
+                  </div>
                 </div>
+
+                {/* 하이라이트 금액 상태 배너 */}
+                <div className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2.5 text-xs ${
+                  state.donorRankingsTheme.hideAmount
+                    ? "border-amber-500/40 bg-amber-950/30 text-amber-200"
+                    : "border-emerald-500/40 bg-emerald-950/30 text-emerald-200"
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-block h-2.5 w-2.5 rounded-full ${state.donorRankingsTheme.hideAmount ? "bg-amber-400 animate-pulse" : "bg-emerald-400"}`} />
+                    <span className="font-semibold">
+                      {state.donorRankingsTheme.hideAmount
+                        ? "현재 오버레이 상태: 금액 숨김 (OFF) — 순위와 닉네임만 표시됩니다."
+                        : "현재 오버레이 상태: 금액 표시 (ON) — 후원 금액과 원 단위가 정상 표시됩니다."}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className={`px-3 py-1 rounded text-xs font-bold border transition-colors shadow-sm ${
+                      state.donorRankingsTheme.hideAmount
+                        ? "bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400"
+                        : "bg-rose-700 hover:bg-rose-600 text-white border-rose-500"
+                    }`}
+                    onClick={() => updateDonorRankingsTheme({ hideAmount: !state.donorRankingsTheme.hideAmount })}
+                  >
+                    {state.donorRankingsTheme.hideAmount ? "👉 금액 다시 켜기 (ON)" : "👉 금액 가리기 (OFF)"}
+                  </button>
+                </div>
+
                 <label className="text-[11px] text-neutral-400 flex flex-col gap-1 rounded border border-fuchsia-500/25 bg-black/25 px-2 py-2">
                   <span>제목 문구</span>
                   <input
@@ -19401,23 +19459,6 @@ function AdminPageInner() {
                       className="w-full"
                     />
                     <span className="text-xs text-neutral-300">{state.donorRankingsTheme.overlayOpacity}%</span>
-                  </label>
-                  <label className="text-[11px] text-neutral-400 flex flex-col gap-1">
-                    금액 표시
-                    <button
-                      type="button"
-                      className={`mt-1 px-2 py-1 rounded border text-xs w-fit ${
-                        state.donorRankingsTheme.hideAmount
-                          ? "border-amber-500 text-amber-300"
-                          : "border-white/10 text-neutral-300"
-                      }`}
-                      onClick={() =>
-                        updateDonorRankingsTheme({ hideAmount: !state.donorRankingsTheme.hideAmount })
-                      }
-                    >
-                      {state.donorRankingsTheme.hideAmount ? "숨김" : "표시"}
-                    </button>
-                    <span className="text-[10px] text-neutral-500">순위·닉네임은 그대로, 금액만 가립니다.</span>
                   </label>
                 </div>
                 <div className="grid grid-cols-2 gap-2 md:grid-cols-5">

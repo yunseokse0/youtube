@@ -85,6 +85,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
       { subKey: "dr-list", label: "후원자 리스트 (별도 창)", targetId: "donor-list", icon: "🧾" },
       { subKey: "dr-logs", label: "기여도 로그", targetId: "contribution-logs", icon: "📜" },
       { subKey: "dr-cumulative", label: "후원자별 누적 합계", targetId: "donor-cumulative-totals", icon: "💹" },
+      { subKey: "dr-rankings-overlay", label: "후원 순위 오버레이", targetId: "donor-rankings-settings", icon: "👑" },
       { subKey: "dr-mission", label: "미션 전광판", targetId: "mission-board", icon: "🎪" },
     ],
   },
@@ -96,6 +97,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     mobileShort: "오버레이",
     subItems: [
       { subKey: "ov-manage", label: "오버레이 관리 (다중)", targetId: "overlay-settings", icon: "🖼️" },
+      { subKey: "ov-donor-rankings", label: "후원 순위 오버레이", targetId: "donor-rankings-settings", icon: "👑" },
       { subKey: "ov-sig-inv", label: "시그 판매 관리", targetId: "sig-sales-inventory", icon: "🛒" },
       { subKey: "ov-sig", label: "수동 시그 판매", targetId: "sig-sales-manual-page", href: "/admin/sig-sales-manual", icon: "🎯" },
       { subKey: "ov-obs", label: "OBS 텍스트", targetId: "overlay-settings", icon: "📝" },
