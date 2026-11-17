@@ -123,9 +123,26 @@ export default function AdminTimerPopupPanel() {
         scalePercent: 100,
       },
     };
+    const normalizedPatch = { ...patch };
+    if (patch.design !== undefined) {
+      const nextDesign = normalizeTimerDesign(patch.design);
+      normalizedPatch.design = nextDesign;
+      if (nextDesign === "led-matrix") {
+        const curOp = patch.bgOpacity ?? base.general?.bgOpacity;
+        if (curOp === undefined || curOp === 40 || curOp === 0) {
+          normalizedPatch.bgOpacity = 100;
+        }
+        if (patch.bgColor === undefined && (!base.general?.bgColor || base.general?.bgColor === "#ffffff")) {
+          normalizedPatch.bgColor = "#000000";
+        }
+        if (patch.borderColor === undefined && (!base.general?.borderColor || base.general?.borderColor === "#ffffff")) {
+          normalizedPatch.borderColor = "#ef4444";
+        }
+      }
+    }
     const timerDisplayStyles = {
       ...base,
-      general: { ...base.general, ...patch },
+      general: { ...base.general, ...normalizedPatch },
     };
     const next = { ...state, timerDisplayStyles, updatedAt: Date.now() };
     setState(next);

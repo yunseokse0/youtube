@@ -740,6 +740,65 @@ describe("mergeRemoteTimerDisplayStyles", () => {
     expect(merged?.general.design).toBe("led-matrix");
     expect(merged?.general.fontColor).toBe("#ff00aa");
   });
+
+  it("resolves led-matrix with proper defaults and custom colors for OBS overlay", () => {
+    const rawSp = new URLSearchParams("u=din&timerType=general&host=obs");
+    const styleFromState = {
+      showHours: false,
+      design: "led-matrix",
+      fontFamily: "press-start",
+      fontColor: "#ff0000",
+      bgColor: "#000000",
+      borderColor: "#ff0000",
+      outlineColor: "#000000",
+      outlineWidth: 0.8,
+      bgOpacity: 100,
+      scalePercent: 100,
+    };
+    const presetFallback: OverlayPresetLike = {
+      id: "ov_1",
+      showTimer: true,
+      timerDesign: "pill",
+      timerFontFamily: "press-start",
+      timerFontColor: "#ff0000",
+      timerBgColor: "#000000",
+      timerBorderColor: "#ffffff",
+      timerBgOpacity: "40",
+    };
+    const resolvedWithPreset = resolveTimerOverlayStyle(rawSp, presetFallback, styleFromState, {
+      ready: true,
+      timerOnlyDefaultShowHours: true,
+    });
+    expect(resolvedWithPreset.design).toBe("led-matrix");
+    expect(resolvedWithPreset.fontColor).toBe("#ff0000");
+    expect(resolvedWithPreset.bgColor).toBe("#000000");
+    expect(resolvedWithPreset.borderColor).toBe("#ff0000");
+    expect(resolvedWithPreset.bgOpacity).toBe(100);
+
+    // Scenario 2: styleFromState only has design: "led-matrix", but empty colors (default colors)
+    // Legacy preset's white border (#ffffff) must NOT pollute LED matrix's red border!
+    const styleDefaultColors = {
+      showHours: false,
+      design: "led-matrix",
+      fontFamily: "press-start",
+      fontColor: "",
+      bgColor: "",
+      borderColor: "",
+      outlineColor: "",
+      outlineWidth: 0.8,
+      bgOpacity: 100,
+      scalePercent: 100,
+    };
+    const resolvedDefaultColors = resolveTimerOverlayStyle(rawSp, presetFallback, styleDefaultColors, {
+      ready: true,
+      timerOnlyDefaultShowHours: true,
+    });
+    expect(resolvedDefaultColors.design).toBe("led-matrix");
+    expect(resolvedDefaultColors.borderColor).toBe("#ef4444"); // LED border, not preset's #ffffff!
+    expect(resolvedDefaultColors.bgColor).toBe("#000000"); // LED panel black
+    expect(resolvedDefaultColors.fontColor).toBe("#ff0000"); // Font color from preset
+    expect(resolvedDefaultColors.bgOpacity).toBe(100);
+  });
 });
 
 describe("isOverlayServerAuthoritativeUrl", () => {

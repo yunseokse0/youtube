@@ -101,16 +101,23 @@ export function mergeRemoteTimerDisplayStyles(opts: {
   ): AppState["timerDisplayStyles"] => {
     const incomingDesign = incoming?.general?.design;
     if (!incomingDesign) return base;
-    if (normalizeTimerDesign(incomingDesign) === normalizeTimerDesign(base.general?.design)) {
-      return base;
-    }
+    const normIncoming = normalizeTimerDesign(incomingDesign);
+    const isIncomingLed = normIncoming === "led-matrix";
     return {
       general: {
         ...base.general,
-        design: normalizeTimerDesign(incomingDesign),
+        design: normIncoming,
         fontFamily: incoming?.general?.fontFamily || base.general.fontFamily,
         showHours: incoming?.general?.showHours ?? base.general.showHours,
         scalePercent: incoming?.general?.scalePercent ?? base.general.scalePercent,
+        bgOpacity:
+          isIncomingLed && (base.general.bgOpacity === undefined || base.general.bgOpacity < 100)
+            ? (incoming?.general?.bgOpacity ?? 100)
+            : (base.general.bgOpacity ?? incoming?.general?.bgOpacity ?? 40),
+        borderColor:
+          isIncomingLed && (base.general.borderColor === "#ffffff" || base.general.borderColor === "#fff")
+            ? (incoming?.general?.borderColor || "")
+            : (base.general.borderColor || incoming?.general?.borderColor || ""),
       },
     };
   };
@@ -119,13 +126,24 @@ export function mergeRemoteTimerDisplayStyles(opts: {
   }
   if (!opts.hasIncomingKey && last && !isHiddenTimerDisplayStyle(last.general)) return last;
   if (incoming && last && hasCustomTimerDisplayStyles(last)) {
+    const isIncomingLed = normalizeTimerDesign(incoming.general.design) === "led-matrix";
+    const sanitizedBorder =
+      isIncomingLed && (last.general.borderColor === "#ffffff" || last.general.borderColor === "#fff")
+        ? incoming.general.borderColor
+        : incoming.general.borderColor || last.general.borderColor;
+    const sanitizedBgOpacity =
+      isIncomingLed && (incoming.general.bgOpacity !== undefined || (last.general.bgOpacity ?? 0) < 100)
+        ? (incoming.general.bgOpacity ?? 100)
+        : incoming.general.bgOpacity ?? last.general.bgOpacity;
+
     return withIncomingDesign({
       general: {
         ...last.general,
         ...incoming.general,
         fontColor: incoming.general.fontColor || last.general.fontColor,
         bgColor: incoming.general.bgColor || last.general.bgColor,
-        borderColor: incoming.general.borderColor || last.general.borderColor,
+        borderColor: sanitizedBorder,
+        bgOpacity: sanitizedBgOpacity,
         outlineColor: incoming.general.outlineColor || last.general.outlineColor,
       },
     });

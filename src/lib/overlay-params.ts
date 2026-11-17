@@ -4,7 +4,7 @@ import { appendExcelRankTop3Params } from "@/lib/excel-rank-top3-style";
 import { mergeDonationTablePresetFields } from "@/lib/donation-table-options";
 import { normalizeTableFontFamily, type TableFontFamilyId } from "@/lib/table-font-style";
 import { isDefaultTimerFontFamily, normalizeTimerFontFamily } from "@/lib/timer-font-style";
-import { normalizeTimerDesign } from "@/lib/timer-design";
+import { LED_MATRIX_COLORS, normalizeTimerDesign } from "@/lib/timer-design";
 import {
   normalizeGoalBarAnimation,
   resolveGoalBarFillColor,
@@ -1464,6 +1464,7 @@ export function isDefaultLikeTimerColorFields(
 ): boolean {
   if (!style) return true;
   if (isHiddenTimerDisplayStyle(style)) return false;
+  if (style.design === "led-matrix") return false;
   return (
     !String(style.bgColor || "").trim() &&
     !String(style.borderColor || "").trim()
@@ -1556,30 +1557,54 @@ export function resolveTimerOverlayStyle(
   const stateBgRaw = (stateStyle?.bgColor ?? "").trim();
   const stateBorderRaw = (stateStyle?.borderColor ?? "").trim();
 
+  const stateDesign = (stateStyle?.design || "").trim();
+  const designRaw =
+    stateDesign ||
+    pickTimerPresetOrParam("timerDesign", "timerDesign", rawSp, preset, opts) ||
+    "pill";
+  const design = normalizeTimerDesign(designRaw);
+  const isLedMatrix = design === "led-matrix";
+
   const stateColorFieldsDefault = isDefaultLikeTimerColorFields(stateStyle);
   const presetBgOpacity = parsePresetTimerBgOpacity(preset, rawSp, opts);
 
-  const fontColor =
+  const rawFontColor =
     (stateStyle?.fontColor || "").trim() ||
     pickTimerPresetOrParam("timerFontColor", "timerFontColor", rawSp, preset, opts) ||
-    undefined;
+    "";
+  const fontColor = rawFontColor || (isLedMatrix ? LED_MATRIX_COLORS.digit : undefined);
+
   const bgColor = (() => {
     if (stateBgRaw) return stateBgRaw;
     if (stateBgOpacityDefined && stateBgOpacity === 0) return "transparent";
-    if (stateStyle && isTimerBackgroundHidden(stateBgRaw, stateBgOpacity ?? 40)) {
+    if (stateStyle && isTimerBackgroundHidden(stateBgRaw, stateBgOpacity ?? (isLedMatrix ? 100 : 40))) {
       return stateBgRaw || "transparent";
     }
-    return pickTimerPresetOrParam("timerBgColor", "timerBgColor", rawSp, preset, opts) || undefined;
+    const fromPreset = pickTimerPresetOrParam("timerBgColor", "timerBgColor", rawSp, preset, opts);
+    if (fromPreset && (!isLedMatrix || preset?.timerDesign === "led-matrix")) return fromPreset;
+    return isLedMatrix ? LED_MATRIX_COLORS.panel : undefined;
   })();
+
   const borderColor = (() => {
     if (stateBorderRaw) return stateBorderRaw;
-    const opacityForBorder = stateBgOpacity ?? 40;
+    const opacityForBorder = stateBgOpacity ?? (isLedMatrix ? 100 : 40);
     if (stateBgOpacityDefined && stateBgOpacity === 0) return "transparent";
     if (stateStyle && isTimerBackgroundHidden(stateBgRaw, opacityForBorder)) {
       return "transparent";
     }
-    return pickTimerPresetOrParam("timerBorderColor", "timerBorderColor", rawSp, preset, opts) || undefined;
+    const fromPreset = pickTimerPresetOrParam("timerBorderColor", "timerBorderColor", rawSp, preset, opts);
+    if (
+      fromPreset &&
+      (!isLedMatrix ||
+        (fromPreset !== "#ffffff" &&
+          fromPreset !== "rgba(255,255,255,0.4)" &&
+          fromPreset !== "rgba(255,255,255,1)"))
+    ) {
+      return fromPreset;
+    }
+    return isLedMatrix ? LED_MATRIX_COLORS.border : undefined;
   })();
+
   const outlineColor =
     (rawSp.get("timerOutlineColor") || "").trim() ||
     (stateStyle?.outlineColor || "").trim() ||
@@ -1597,21 +1622,21 @@ export function resolveTimerOverlayStyle(
     if (stateStyle && isHiddenTimerDisplayStyle(stateStyle) && stateBgOpacityDefined) {
       return stateBgOpacity as number;
     }
-    if (stateColorFieldsDefault && presetBgOpacity !== undefined) {
+    if (stateColorFieldsDefault && presetBgOpacity !== undefined && !isLedMatrix) {
       return presetBgOpacity;
     }
     if (stateBgOpacityDefined) {
       return stateBgOpacity as number;
     }
-    if (presetBgOpacity !== undefined) {
+    if (presetBgOpacity !== undefined && !isLedMatrix) {
       return presetBgOpacity;
     }
     const bgOpacityRaw = pickTimerPresetOrParam("timerBgOpacity", "timerBgOpacity", rawSp, preset, opts);
-    if (bgOpacityRaw) {
+    if (bgOpacityRaw && !isLedMatrix) {
       const n = parseInt(bgOpacityRaw, 10);
       if (Number.isFinite(n)) return Math.max(0, Math.min(100, n));
     }
-    return 40;
+    return isLedMatrix ? 100 : 40;
   })();
 
   const scalePercent =
@@ -1658,15 +1683,9 @@ export function resolveTimerOverlayStyle(
     stateFont ||
     "mono";
 
-  const stateDesign = (stateStyle?.design || "").trim();
-  const designRaw =
-    stateDesign ||
-    pickTimerPresetOrParam("timerDesign", "timerDesign", rawSp, preset, opts) ||
-    "pill";
-
   const resolved = applyHiddenTimerStyleFromState(
     {
-      design: normalizeTimerDesign(designRaw),
+      design,
       fontFamily: normalizeTimerFontFamily(fontFamilyRaw),
       fontColor,
       bgColor,
@@ -1679,7 +1698,7 @@ export function resolveTimerOverlayStyle(
     },
     stateStyle
   );
-  if (stateColorFieldsDefault) {
+  if (stateColorFieldsDefault && !isLedMatrix) {
     return applyHiddenTimerStyleFromPreset(resolved, preset, rawSp, opts);
   }
   return resolved;
@@ -1820,6 +1839,7 @@ export function restoreTimerBackgroundOpacity(
 
 export function timerOverlayStyleHasCustomColors(style: ResolvedTimerOverlayStyle): boolean {
   if (isHiddenTimerDisplayStyle(style)) return true;
+  if (style.design === "led-matrix") return true;
   return Boolean(
     style.fontColor ||
       style.bgColor ||

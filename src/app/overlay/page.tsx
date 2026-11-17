@@ -2898,6 +2898,11 @@ function OverlayInner() {
     }
     /** 다른 옵션 저장·동기화로 잠깐 기본색이 오면 색만 유지 — 글꼴·크기·시:분:초는 최신 반영 */
     if (lastStableTimerStyleRef.current) {
+      if (normalizeTimerDesign(next.design) !== normalizeTimerDesign(lastStableTimerStyleRef.current.design)) {
+        lastStableTimerStyleRef.current = next;
+        timerStyleEmptySinceRef.current = null;
+        return next;
+      }
       const now = Date.now();
       if (timerStyleEmptySinceRef.current == null) timerStyleEmptySinceRef.current = now;
       if (now - timerStyleEmptySinceRef.current < 2800) {

@@ -9820,6 +9820,22 @@ function AdminPageInner() {
         general: { showHours: false, design: "pill", fontFamily: "mono", fontColor: "", bgColor: "", borderColor: "", outlineColor: "", outlineWidth: 0.8, bgOpacity: 40, scalePercent: 100 },
       };
       const normalizedPatch = { ...patch };
+      if (patch.design !== undefined) {
+        const nextDesign = normalizeTimerDesign(patch.design);
+        normalizedPatch.design = nextDesign;
+        if (nextDesign === "led-matrix") {
+          const curOp = patch.bgOpacity ?? baseStyles[key]?.bgOpacity;
+          if (curOp === undefined || curOp === 40 || curOp === 0) {
+            normalizedPatch.bgOpacity = 100;
+          }
+          if (patch.bgColor === undefined && (!baseStyles[key]?.bgColor || baseStyles[key]?.bgColor === "#ffffff")) {
+            normalizedPatch.bgColor = "#000000";
+          }
+          if (patch.borderColor === undefined && (!baseStyles[key]?.borderColor || baseStyles[key]?.borderColor === "#ffffff")) {
+            normalizedPatch.borderColor = "#ef4444";
+          }
+        }
+      }
       if (patch.bgOpacity !== undefined) {
         const op = Math.max(0, Math.min(100, Math.round(Number(patch.bgOpacity))));
         normalizedPatch.bgOpacity = op;
@@ -9849,8 +9865,16 @@ function AdminPageInner() {
             ...p,
             ...(normalizedPatch.fontFamily !== undefined ? { timerFontFamily: String(normalizedPatch.fontFamily || "mono") } : {}),
             ...(normalizedPatch.fontColor !== undefined ? { timerFontColor: String(normalizedPatch.fontColor || "") } : {}),
-            ...(normalizedPatch.bgColor !== undefined ? { timerBgColor: String(normalizedPatch.bgColor || "") } : {}),
-            ...(normalizedPatch.borderColor !== undefined ? { timerBorderColor: String(normalizedPatch.borderColor || "") } : {}),
+            ...(normalizedPatch.design === "led-matrix" && normalizedPatch.bgColor === undefined && (!p.timerBgColor || p.timerBgColor === "#ffffff")
+              ? { timerBgColor: "#000000" }
+              : normalizedPatch.bgColor !== undefined
+                ? { timerBgColor: String(normalizedPatch.bgColor || "") }
+                : {}),
+            ...(normalizedPatch.design === "led-matrix" && normalizedPatch.borderColor === undefined && (!p.timerBorderColor || p.timerBorderColor === "#ffffff")
+              ? { timerBorderColor: "#ef4444" }
+              : normalizedPatch.borderColor !== undefined
+                ? { timerBorderColor: String(normalizedPatch.borderColor || "") }
+                : {}),
             ...(normalizedPatch.outlineColor !== undefined ? { timerOutlineColor: String(normalizedPatch.outlineColor || "") } : {}),
             ...(normalizedPatch.outlineWidth !== undefined ? { timerOutlineWidth: String(normalizedPatch.outlineWidth) } : {}),
             ...(normalizedPatch.bgOpacity !== undefined ? { timerBgOpacity: String(normalizedPatch.bgOpacity) } : {}),
@@ -17920,10 +17944,23 @@ function AdminPageInner() {
                           <input
                             type="color"
                             className="w-14 h-9 rounded bg-neutral-900/80 border border-white/10"
-                            value={toColorPickerValue(String(timerStyle.fontColor ?? ""), "#ffffff")}
+                            value={toColorPickerValue(
+                              String(timerStyle.fontColor ?? ""),
+                              timerDesignId === "led-matrix" ? "#ef4444" : "#ffffff"
+                            )}
                             onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { fontColor: e.target.value })}
                           />
-                          <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updateTimerDisplayStyle(timerDef.flag, { fontColor: "" })}>기본</button>
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                            onClick={() =>
+                              updateTimerDisplayStyle(timerDef.flag, {
+                                fontColor: timerDesignId === "led-matrix" ? "#ef4444" : "",
+                              })
+                            }
+                          >
+                            기본
+                          </button>
                         </div>
                         <label className="text-xs text-neutral-400">배경 색상</label>
                         <div className="flex items-center gap-2">
@@ -17984,7 +18021,17 @@ function AdminPageInner() {
                             )}
                             onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { borderColor: e.target.value })}
                           />
-                          <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updateTimerDisplayStyle(timerDef.flag, { borderColor: "" })}>기본</button>
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                            onClick={() =>
+                              updateTimerDisplayStyle(timerDef.flag, {
+                                borderColor: timerDesignId === "led-matrix" ? "#ef4444" : "",
+                              })
+                            }
+                          >
+                            기본
+                          </button>
                           <button
                             type="button"
                             className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
