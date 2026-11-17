@@ -18,8 +18,10 @@ describe("toona-sig-import-client", () => {
       addedCount: 5,
       updatedCount: 10,
       totalCount: 30,
+      activePresetName: "프리셋 1",
     };
     const msg = formatSigImportResultMessage(summary);
+    expect(msg).toContain("[프리셋 1]");
     expect(msg).toContain("총 25개 확인");
     expect(msg).toContain("신규 5개 추가");
     expect(msg).toContain("기존 10개 갱신");
@@ -123,5 +125,35 @@ describe("toona-sig-import-client", () => {
     expect(res.summary?.updatedCount).toBe(2);
     expect(res.summary?.totalCount).toBe(18);
     expect(progress.length).toBeGreaterThan(0);
+  });
+
+  it("triggerAndPollSigImport sends apply-preset action with presetId", async () => {
+    let capturedBody = "";
+    const fetchMock = vi.fn().mockImplementation(async (url: string, opts: any) => {
+      if (opts?.method === "POST") {
+        capturedBody = opts.body;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            count: 20,
+            added: 0,
+            updated: 20,
+            totalCount: 20,
+            deferred: false,
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await triggerAndPollSigImport(undefined, { action: "apply-preset", presetId: "preset_summer" });
+    expect(res.ok).toBe(true);
+    expect(JSON.parse(capturedBody)).toEqual({
+      action: "apply-preset",
+      presetId: "preset_summer",
+    });
   });
 });

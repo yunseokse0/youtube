@@ -127,6 +127,9 @@ async function importSigsAfterHubLogin(hubSessionUserId: string) {
       addedCount: added,
       updatedCount: updated,
       totalCount: nextInventory.length,
+      activePresetId: fetched.activePresetId,
+      activePresetName: fetched.activePresetName,
+      presets: fetched.presets,
     },
   });
   await publishSseEvent({ type: "state_updated", updatedAt: next.updatedAt });
@@ -312,6 +315,35 @@ export async function POST(req: NextRequest) {
       });
     }, 0);
     return json({ ok: true, deferred: true, sigImport: { error: "deferred" } });
+  }
+
+  if (body.action === "apply-preset") {
+    const presetId = String(body.presetId || "").trim();
+    if (!presetId) {
+      return json({ ok: false, error: "preset_id_required" }, 400);
+    }
+    const { applyToonaSignaturePresetViaHubSession } = await import("@/infra/http/toona-hub.client");
+    const applied = await applyToonaSignaturePresetViaHubSession(auth.userId, presetId);
+    if (!applied.ok) {
+      return json({ ok: false, error: applied.error }, 502);
+    }
+    const { patchToonaHubSession } = await import("@/lib/toona-hub-session");
+    await patchToonaHubSession(auth.userId, {
+      lastSigImport: {
+        at: Date.now(),
+        status: "running",
+        fetchedCount: 0,
+        addedCount: 0,
+        updatedCount: 0,
+        totalCount: 0,
+      },
+    });
+    setTimeout(() => {
+      void importSigsAfterHubLogin(auth.userId).then((r) => {
+        if (!r.ok) console.error("[toona-hub] sig import after preset apply", r.error);
+      });
+    }, 0);
+    return json({ ok: true, deferred: true, appliedPresetId: presetId });
   }
 
   const streamKey = String(body.streamKey || "").trim();

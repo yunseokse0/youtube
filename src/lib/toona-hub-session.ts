@@ -31,6 +31,9 @@ export type SigImportSummary = {
   updatedCount: number;
   totalCount: number;
   error?: string;
+  activePresetId?: string | null;
+  activePresetName?: string | null;
+  presets?: Array<{ id: string; name: string; count: number; isActive?: boolean }>;
 };
 
 export type ToonaHubDonationLog = {

@@ -216,6 +216,9 @@ export async function fetchToonaSignaturesViaHubSession(
       baseUrl: string;
       count: number;
       defaultAlertImageUrl: string;
+      activePresetId?: string | null;
+      activePresetName?: string | null;
+      presets?: Array<{ id: string; name: string; count: number; isActive?: boolean }>;
     }
   | { ok: false; error: string }
 > {
@@ -237,6 +240,9 @@ export async function fetchToonaSignaturesViaHubSession(
     const defaultAlertImageUrl = resolveToonaAssetUrl(defaultAlertImageUrlRaw, baseUrl);
     const sigJson = (await sigRes.json().catch(() => ({}))) as {
       signatures?: ToonaSignatureRow[];
+      presets?: Array<{ id: string; name: string; count: number; isActive?: boolean }>;
+      activePresetId?: string | null;
+      activePresetName?: string | null;
       error?: string;
     };
     if (!sigRes.ok) {
@@ -257,12 +263,50 @@ export async function fetchToonaSignaturesViaHubSession(
       baseUrl,
       count: items.length,
       defaultAlertImageUrl,
+      activePresetId: sigJson.activePresetId ?? null,
+      activePresetName: sigJson.activePresetName ?? null,
+      presets: Array.isArray(sigJson.presets) ? sigJson.presets : [],
     };
   } catch (err) {
     return {
       ok: false,
       error: `signatures_unreachable: ${err instanceof Error ? err.message : "fetch_failed"}`,
     };
+  }
+}
+
+/** toona 허브에서 특정 시그니처 프리셋 적용 */
+export async function applyToonaSignaturePresetViaHubSession(
+  youtubeUserId: string,
+  presetId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const session = await readToonaHubSession(youtubeUserId);
+  if (!session?.streamKey || !session?.baseUrl) {
+    return { ok: false, error: "hub_not_linked" };
+  }
+  const baseUrl = normalizeToonaApiBaseUrl(session.baseUrl) || session.baseUrl;
+  const streamKey = session.streamKey;
+  try {
+    const res = await fetch(
+      `${baseUrl}/api/signatures/${encodeURIComponent(streamKey)}/presets/${encodeURIComponent(presetId)}/apply`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...toonaHubAuthHeaders(session),
+        },
+        signal: AbortSignal.timeout(15_000),
+      }
+    );
+    if (!res.ok) {
+      const errJson = (await res.json().catch(() => ({}))) as { error?: string };
+      return { ok: false, error: errJson.error || `HTTP ${res.status}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "apply_failed" };
+  }
+}
   }
 }
 

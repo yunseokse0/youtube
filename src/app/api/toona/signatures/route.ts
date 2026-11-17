@@ -60,6 +60,9 @@ export async function POST(req: NextRequest) {
       baseUrl: result.baseUrl,
       count: result.count,
       items: result.items,
+      activePresetId: result.activePresetId,
+      activePresetName: result.activePresetName,
+      presets: result.presets,
       via: "hub_session",
     });
   }

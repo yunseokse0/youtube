@@ -14,10 +14,15 @@ export type SigImportPollResult = {
  * 백그라운드 완료될 때까지 상태를 폴링하여 최종 결과와 갯수 현황을 반환합니다.
  */
 export async function triggerAndPollSigImport(
-  onProgress?: (stageText: string) => void
+  onProgress?: (stageText: string) => void,
+  options?: { action?: "import-signatures" | "apply-preset"; presetId?: string }
 ): Promise<SigImportPollResult> {
   const startAt = Date.now();
-  onProgress?.("시그 가져오기 요청 중…");
+  onProgress?.(
+    options?.action === "apply-preset"
+      ? "프리셋 변경 및 시그 동기화 요청 중…"
+      : "시그 가져오기 요청 중…"
+  );
 
   let res: Response;
   try {
@@ -25,7 +30,10 @@ export async function triggerAndPollSigImport(
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "import-signatures" }),
+      body: JSON.stringify({
+        action: options?.action || "import-signatures",
+        ...(options?.presetId ? { presetId: options.presetId } : {}),
+      }),
       signal: AbortSignal.timeout(30_000),
     });
   } catch (err) {
@@ -120,6 +128,9 @@ export function formatSigImportResultMessage(summary: SigImportSummary): string 
     return `시그 가져오기 실패: ${summary.error || "알 수 없는 오류"}`;
   }
   const parts: string[] = [];
+  if (summary.activePresetName) {
+    parts.push(`[${summary.activePresetName}]`);
+  }
   parts.push(`총 ${summary.fetchedCount}개 확인`);
   if (summary.addedCount > 0) {
     parts.push(`신규 ${summary.addedCount}개 추가`);

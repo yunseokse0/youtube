@@ -78,6 +78,7 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
   const [logs, setLogs] = useState<HubLog[]>([]);
   const [showStreamKeyFallback, setShowStreamKeyFallback] = useState(false);
   const [currentSigCount, setCurrentSigCount] = useState<number | null>(null);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>("");
 
   // 로컬 저장소에서 현재 시그 개수 초기값 로드
   useEffect(() => {
@@ -414,6 +415,42 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
     }
   };
 
+  const onApplyPreset = async (presetId: string) => {
+    if (!presetId) return;
+    setSigImportBusy(true);
+    setMessage("toona 시그니처 프리셋 변경 및 동기화 진행 중...");
+    setMessageType("running");
+
+    try {
+      const res = await triggerAndPollSigImport(
+        (stage) => {
+          setMessage(`toona 프리셋 변경 진행 중... (${stage})`);
+          setMessageType("running");
+        },
+        { action: "apply-preset", presetId }
+      );
+
+      await syncLocalSigInventory();
+
+      if (res.ok && res.summary) {
+        if (typeof res.summary.totalCount === "number") {
+          setCurrentSigCount(res.summary.totalCount);
+        }
+        setMessage(`✅ ${formatSigImportResultMessage(res.summary)}`);
+        setMessageType("success");
+        void load(false);
+      } else {
+        setMessage(`❌ ${res.error || "프리셋 적용 실패"}`);
+        setMessageType("error");
+      }
+    } catch (err) {
+      setMessage(`❌ 프리셋 적용 오류: ${err instanceof Error ? err.message : "네트워크 오류"}`);
+      setMessageType("error");
+    } finally {
+      setSigImportBusy(false);
+    }
+  };
+
   const ingestError = session ? ingestErrorVisibleAfterLink(session) : null;
 
   const statusLabel = !session
@@ -566,6 +603,14 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
                 {session.lastSigImport.status === "completed" ? (
                   <>
                     <span className="text-emerald-400 font-semibold">동기화 성공</span>
+                    {session.lastSigImport.activePresetName && (
+                      <>
+                        <span className="text-neutral-500">·</span>
+                        <span className="px-1.5 py-0.5 rounded bg-sky-950/60 text-sky-200 border border-sky-500/30 text-[10px] font-semibold">
+                          🏷️ {session.lastSigImport.activePresetName}
+                        </span>
+                      </>
+                    )}
                     <span className="text-neutral-500">·</span>
                     <span>toona 확인: <strong className="text-white">{session.lastSigImport.fetchedCount}개</strong></span>
                     <span className="text-neutral-500">·</span>
@@ -578,6 +623,43 @@ export default function ToonaHubPanel({ youtubeUserId, onLoggedIn }: Props) {
                 ) : session.lastSigImport.status === "failed" ? (
                   <span className="text-rose-400">마지막 가져오기 실패: {session.lastSigImport.error}</span>
                 ) : null}
+              </div>
+            )}
+
+            {Array.isArray(session.lastSigImport?.presets) && session.lastSigImport.presets.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 pt-1.5 border-t border-white/5">
+                <span className="text-xs text-sky-300 font-medium">Toona 시그 프리셋:</span>
+                <select
+                  className="px-2 py-1 rounded bg-black/60 border border-white/20 text-xs text-white focus:outline-none focus:border-sky-400"
+                  value={selectedPresetId || session.lastSigImport?.activePresetId || session.lastSigImport.presets[0]?.id || ""}
+                  onChange={(e) => setSelectedPresetId(e.target.value)}
+                  disabled={sigImportBusy || busy}
+                >
+                  {session.lastSigImport.presets.map((p) => {
+                    const isCurrent = String(p.id) === String(session.lastSigImport?.activePresetId || "");
+                    return (
+                      <option key={`toona-preset-${p.id}`} value={p.id}>
+                        {p.name} ({p.count}개){isCurrent ? " ★ 현재 적용 중" : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+                <button
+                  type="button"
+                  disabled={
+                    sigImportBusy ||
+                    busy ||
+                    (Boolean(selectedPresetId) && String(selectedPresetId) === String(session.lastSigImport?.activePresetId))
+                  }
+                  className="px-2.5 py-1 rounded bg-sky-700 hover:bg-sky-600 text-xs font-semibold text-white shadow-sm disabled:opacity-40 transition-colors"
+                  onClick={() => {
+                    const targetId = selectedPresetId || session.lastSigImport?.presets?.[0]?.id;
+                    if (targetId) void onApplyPreset(targetId);
+                  }}
+                  title="Toona에서 선택한 프리셋을 활성화하고 해당 시그 목록을 엑셀 시스템으로 즉시 동기화합니다"
+                >
+                  {sigImportBusy ? "동기화 중…" : "선택 프리셋으로 변경 & 가져오기"}
+                </button>
               </div>
             )}
           </div>
