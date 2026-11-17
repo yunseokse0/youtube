@@ -307,8 +307,6 @@ export async function applyToonaSignaturePresetViaHubSession(
     return { ok: false, error: err instanceof Error ? err.message : "apply_failed" };
   }
 }
-  }
-}
 
 export async function refreshToonaHubStatus(youtubeUserId: string): Promise<{
   session: ReturnType<typeof publicToonaHubSession>;
