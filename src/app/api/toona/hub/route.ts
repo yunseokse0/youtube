@@ -243,6 +243,7 @@ export async function POST(req: NextRequest) {
     streamKey?: string;
     baseUrl?: string;
     action?: string;
+    presetId?: string;
     contributionFormula?: unknown;
   };
 
