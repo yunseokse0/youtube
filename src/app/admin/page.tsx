@@ -746,6 +746,403 @@ function adminSyncFingerprint(s: AppState): string {
   ].join("|");
 }
 
+/** `<input type="color">`는 #rrggbb만 허용 — transparent 등은 fallback으로 표시 */
+const toColorPickerValue = (raw?: string, fallback = "#ffffff") => {
+  const v = (raw || "").trim();
+  const lower = v.toLowerCase();
+  if (!v || lower === "transparent" || lower === "none") return fallback;
+  const m = v.match(/^#([0-9a-fA-F]{6})$/);
+  if (m) return `#${m[1].toLowerCase()}`;
+  const rgba = v.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (rgba) {
+    const toHex = (n: string) =>
+      Math.max(0, Math.min(255, parseInt(n, 10)))
+        .toString(16)
+        .padStart(2, "0");
+    return `#${toHex(rgba[1])}${toHex(rgba[2])}${toHex(rgba[3])}`;
+  }
+  return fallback;
+};
+
+const activeTableThemeId = (preset: OverlayPreset) =>
+  String(
+    preset.membersTheme && preset.membersTheme !== "auto"
+      ? preset.membersTheme
+      : preset.theme || "default"
+  );
+
+type TableHarmonyThemeSectionProps = {
+  p: OverlayPreset;
+  activeThemeId: string;
+  onUpdatePreset: (patch: Partial<OverlayPreset>) => void;
+};
+
+function TableHarmonyThemeSection({
+  p,
+  activeThemeId,
+  onUpdatePreset,
+}: TableHarmonyThemeSectionProps) {
+  const [smartColor, setSmartColor] = useState<string>(
+    p.tablePanelBorderColor || (activeThemeId === "excelViolet" ? "#a855f7" : "#06b6d4")
+  );
+
+  useEffect(() => {
+    if (p.tablePanelBorderColor) {
+      setSmartColor(p.tablePanelBorderColor);
+    }
+  }, [p.tablePanelBorderColor]);
+
+  const patchPresetWithBump = (patch: Partial<OverlayPreset>) => {
+    onUpdatePreset(patch);
+  };
+
+  const handleApplyPalette = (pal: HarmonyThemePalette) => {
+    patchPresetWithBump({
+      theme: "excelViolet",
+      membersTheme: "excelViolet",
+      totalTheme: "excelViolet",
+      ...pal.colors,
+    });
+  };
+
+  const handleApplySmartHarmony = (colorOverride?: string) => {
+    const targetColor = colorOverride || smartColor;
+    const generated = generateHarmoniousTablePalette(targetColor);
+    patchPresetWithBump({
+      theme: "excelViolet",
+      membersTheme: "excelViolet",
+      totalTheme: "excelViolet",
+      ...generated,
+    });
+  };
+
+  const currentGlow =
+    p.tableBorderGlow || (activeThemeId === "excelViolet" ? "neon" : "none");
+  const currentRadius =
+    p.tableBorderRadius !== undefined && p.tableBorderRadius !== ""
+      ? String(p.tableBorderRadius)
+      : "12";
+  const currentWidth =
+    p.tablePanelBorderWidth !== undefined && p.tablePanelBorderWidth !== ""
+      ? String(p.tablePanelBorderWidth)
+      : "1.5";
+
+  const showAccount = p.showAccountColumn ?? true;
+  const showToon = p.showToonColumn ?? true;
+  const showRole = p.showRoleColumn ?? true;
+  const showCombined = p.showCombinedColumn ?? true;
+
+  return (
+    <div className="col-span-full space-y-4 rounded-xl border border-purple-500/30 bg-purple-950/20 p-3 sm:p-4 mb-2">
+      {/* Top Title & Info */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-purple-500/20 pb-2.5">
+        <div className="flex items-center gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-600/30 text-purple-200 text-base shadow-sm">
+            ✨
+          </span>
+          <div>
+            <h4 className="text-xs sm:text-sm font-bold text-purple-200">
+              오버레이 테마 일관성 & 조화 배색
+            </h4>
+            <p className="text-[11px] text-purple-300/70">
+              어색하지 않은 컬러 조합과 네온 발광·둥근 모서리를 원클릭으로 일괄 적용합니다.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="shrink-0 px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-white/10 text-xs text-neutral-300 transition-colors"
+          onClick={() => patchPresetWithBump(emptyTableThemeAutoColorPatch())}
+          title="수동 지정한 표 색을 모두 지우고 선택한 테마 기본 디자인으로 되돌립니다"
+        >
+          표 색 전부 테마 자동
+        </button>
+      </div>
+
+      {/* 표 표시 열 간편 On/Off (열 숨김 / 표시 빠른 제어) */}
+      <div className="rounded-lg border border-purple-400/20 bg-neutral-900/60 p-2.5 space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-semibold text-purple-200 flex items-center gap-1.5">
+            <span>👁️</span> 표 표시 열 간편 제어 (계좌 · 투네 · 직급 숨김/표시)
+          </label>
+          <span className="text-[10px] text-neutral-400">클릭 즉시 오버레이에 반영됩니다</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => patchPresetWithBump({ showAccountColumn: !showAccount })}
+            className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors flex items-center gap-1.5 cursor-pointer ${
+              showAccount
+                ? "border-emerald-500/60 bg-emerald-950/70 text-emerald-200 shadow-sm"
+                : "border-red-500/40 bg-neutral-900 text-neutral-400 hover:text-neutral-200"
+            }`}
+          >
+            <span>{showAccount ? "✅" : "❌"}</span> 계좌 열 {showAccount ? "표시 중" : "숨김 (Hide)"}
+          </button>
+          <button
+            type="button"
+            onClick={() => patchPresetWithBump({ showToonColumn: !showToon })}
+            className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors flex items-center gap-1.5 cursor-pointer ${
+              showToon
+                ? "border-emerald-500/60 bg-emerald-950/70 text-emerald-200 shadow-sm"
+                : "border-red-500/40 bg-neutral-900 text-neutral-400 hover:text-neutral-200"
+            }`}
+          >
+            <span>{showToon ? "✅" : "❌"}</span> 투네 열 {showToon ? "표시 중" : "숨김 (Hide)"}
+          </button>
+          <button
+            type="button"
+            onClick={() => patchPresetWithBump({ showRoleColumn: !showRole })}
+            className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors flex items-center gap-1.5 cursor-pointer ${
+              showRole
+                ? "border-emerald-500/60 bg-emerald-950/70 text-emerald-200 shadow-sm"
+                : "border-red-500/40 bg-neutral-900 text-neutral-400 hover:text-neutral-200"
+            }`}
+          >
+            <span>{showRole ? "✅" : "❌"}</span> 직급 열 {showRole ? "표시 중" : "숨김"}
+          </button>
+          <button
+            type="button"
+            onClick={() => patchPresetWithBump({ showCombinedColumn: !showCombined })}
+            className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors flex items-center gap-1.5 cursor-pointer ${
+              showCombined
+                ? "border-emerald-500/60 bg-emerald-950/70 text-emerald-200 shadow-sm"
+                : "border-red-500/40 bg-neutral-900 text-neutral-400 hover:text-neutral-200"
+            }`}
+          >
+            <span>{showCombined ? "✅" : "❌"}</span> 합계 열 {showCombined ? "표시 중" : "숨김"}
+          </button>
+        </div>
+      </div>
+
+      {/* 6대 하모니 팔레트 프리셋 */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-purple-300 flex items-center gap-1.5">
+          <span>🎨</span> 6대 테마 일관성 하모니 팔레트 (원클릭 일괄 적용)
+        </label>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {HARMONY_THEME_PALETTES.map((pal) => (
+            <button
+              key={pal.id}
+              type="button"
+              onClick={() => handleApplyPalette(pal)}
+              className="group flex flex-col items-start p-2.5 rounded-lg border border-white/10 hover:border-purple-400/60 bg-neutral-900/70 hover:bg-neutral-800/80 transition-all text-left shadow-sm hover:shadow-[0_0_12px_rgba(168,85,247,0.25)]"
+            >
+              <div className="flex items-center gap-1.5 w-full">
+                <span className="text-base">{pal.emoji}</span>
+                <span className="text-xs font-bold text-white group-hover:text-purple-200 truncate">
+                  {pal.name}
+                </span>
+                {pal.id === "violetLuxury" && (
+                  <span className="ml-auto text-[9px] px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200 border border-purple-400/40">
+                    추천
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1 mt-2 w-full">
+                <div
+                  className="h-3 w-4 rounded-sm border border-white/20"
+                  style={{ backgroundColor: pal.colors.tableHeaderBgColor }}
+                  title="헤더 배경"
+                />
+                <div
+                  className="h-3 w-4 rounded-sm border border-white/20"
+                  style={{ backgroundColor: pal.colors.tableRowEvenBg }}
+                  title="행 줄무늬"
+                />
+                <div
+                  className="h-3 flex-1 rounded-sm border border-white/20"
+                  style={{ backgroundColor: pal.colors.tablePanelBorderColor }}
+                  title="테두리/글루"
+                />
+                <div
+                  className="h-3 w-4 rounded-sm border border-white/20"
+                  style={{ backgroundColor: pal.colors.contributionColor }}
+                  title="기여도"
+                />
+              </div>
+              <span className="mt-1.5 text-[10px] text-neutral-400 line-clamp-1 group-hover:text-neutral-300">
+                {pal.tagline}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 스마트 하모니 배색 생성기 */}
+      <div className="rounded-lg border border-white/10 bg-neutral-900/60 p-2.5 sm:p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-semibold text-purple-200 flex items-center gap-1.5">
+            <span>🪄</span> 스마트 하모니 생성기 (대표 컬러 1개로 전체 자동 조화)
+          </label>
+          <span className="text-[10px] text-neutral-400">
+            헤더·테두리·줄무늬·기여도 자동 계산
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="color"
+            key={`smart-color-${p.id}`}
+            className="h-9 w-12 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+            value={toColorPickerValue(smartColor, "#a855f7")}
+            onChange={(e) => setSmartColor(e.target.value)}
+          />
+          <input
+            type="text"
+            className="w-24 px-2 py-1 rounded bg-neutral-900/90 border border-white/15 text-xs font-mono text-center text-white"
+            value={smartColor}
+            onChange={(e) => setSmartColor(e.target.value)}
+          />
+          {/* Quick recommendations */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {[
+              { label: "바이올렛", color: "#a855f7" },
+              { label: "골드", color: "#f59e0b" },
+              { label: "시안/형광", color: "#06b6d4" },
+              { label: "로즈", color: "#f43f5e" },
+              { label: "에메랄드", color: "#10b981" },
+              { label: "슬레이트", color: "#94a3b8" },
+              { label: "오렌지", color: "#f97316" },
+              { label: "블루", color: "#3b82f6" },
+              { label: "핫핑크", color: "#ec4899" },
+              { label: "레드", color: "#ef4444" },
+              { label: "라임", color: "#84cc16" },
+              { label: "화이트", color: "#ffffff" },
+            ].map((sw) => (
+              <button
+                key={sw.color}
+                type="button"
+                className="h-6 w-6 rounded-full border border-white/20 transition-transform hover:scale-125 focus:ring-2 focus:ring-white/40 cursor-pointer"
+                style={{ backgroundColor: sw.color }}
+                onClick={() => {
+                  setSmartColor(sw.color);
+                  handleApplySmartHarmony(sw.color);
+                }}
+                title={sw.label}
+              />
+            ))}
+          </div>
+          <button
+            type="button"
+            className="ml-auto px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-md hover:shadow-purple-500/30 transition-all flex items-center gap-1.5 cursor-pointer"
+            onClick={() => handleApplySmartHarmony()}
+          >
+            <span>✨</span> 조화로운 테마 배색 자동 적용
+          </button>
+        </div>
+      </div>
+
+      {/* 디테일 설정 (발광, 모서리, 두께) */}
+      <div className="rounded-lg border border-white/10 bg-neutral-900/60 p-2.5 sm:p-3 space-y-3">
+        <div className="text-xs font-semibold text-purple-200">
+          ⚙️ 어색하지 않은 컬러 디테일 설정
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-[8.5rem_minmax(0,1fr)] items-center gap-2">
+          {/* 테두리 네온 글루 */}
+          <label className="text-xs text-neutral-300">테두리 네온 글루(발광)</label>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {[
+              { id: "none", label: "발광 OFF" },
+              { id: "soft", label: "은은하게 (Soft)" },
+              { id: "neon", label: "네온 발광 (Neon)" },
+              { id: "vivid", label: "강렬하게 (Vivid)" },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+                  currentGlow === opt.id
+                    ? "border-purple-400 bg-purple-900/60 text-purple-100 shadow-[0_0_8px_rgba(168,85,247,0.35)]"
+                    : "border-white/10 bg-neutral-800 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700"
+                }`}
+                onClick={() => patchPresetWithBump({ tableBorderGlow: opt.id })}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* 모서리 둥글기 */}
+          <label className="text-xs text-neutral-300">모서리 둥글기 (Radius)</label>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {[
+              { id: "0", label: "직각 (0px)" },
+              { id: "8", label: "소프트 (8px)" },
+              { id: "12", label: "럭셔리 (12px)" },
+              { id: "16", label: "풀 라운드 (16px)" },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+                  currentRadius === opt.id
+                    ? "border-purple-400 bg-purple-900/60 text-purple-100"
+                    : "border-white/10 bg-neutral-800 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700"
+                }`}
+                onClick={() => patchPresetWithBump({ tableBorderRadius: opt.id })}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* 테두리 선 두께 */}
+          <label className="text-xs text-neutral-300">테두리 선 두께</label>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {[
+              { id: "1", label: "1px (슬림)" },
+              { id: "1.5", label: "1.5px (표준)" },
+              { id: "2", label: "2px (선명)" },
+              { id: "3", label: "3px (볼드)" },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+                  currentWidth === opt.id
+                    ? "border-purple-400 bg-purple-900/60 text-purple-100"
+                    : "border-white/10 bg-neutral-800 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700"
+                }`}
+                onClick={() => patchPresetWithBump({ tablePanelBorderWidth: opt.id })}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* 테두리 발광 색상 오버라이드 */}
+          <label className="text-xs text-neutral-300">발광(Glow) 전용 색</label>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <input
+              type="color"
+              key={`glow-color-${p.id}`}
+              className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+              value={toColorPickerValue(
+                p.tableBorderGlowColor,
+                p.tablePanelBorderColor || "#a855f7"
+              )}
+              onChange={(e) => patchPresetWithBump({ tableBorderGlowColor: e.target.value })}
+            />
+            <span className="text-xs text-neutral-400 font-mono truncate">
+              {p.tableBorderGlowColor || "테두리색과 자동 일치"}
+            </span>
+            {p.tableBorderGlowColor && (
+              <button
+                type="button"
+                className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs text-neutral-300"
+                onClick={() => patchPresetWithBump({ tableBorderGlowColor: "" })}
+              >
+                자동 일치
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -3337,325 +3734,6 @@ function AdminPageInner() {
       window.setTimeout(() => forceScrollToSection("t3"), 280);
       window.setTimeout(() => forceScrollToSection("t4"), 700);
     }
-  };
-  /** `<input type="color">`는 #rrggbb만 허용 — transparent 등은 fallback으로 표시 */
-  const toColorPickerValue = (raw?: string, fallback = "#ffffff") => {
-    const v = (raw || "").trim();
-    const lower = v.toLowerCase();
-    if (!v || lower === "transparent" || lower === "none") return fallback;
-    const m = v.match(/^#([0-9a-fA-F]{6})$/);
-    if (m) return `#${m[1].toLowerCase()}`;
-    const rgba = v.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
-    if (rgba) {
-      const toHex = (n: string) =>
-        Math.max(0, Math.min(255, parseInt(n, 10)))
-          .toString(16)
-          .padStart(2, "0");
-      return `#${toHex(rgba[1])}${toHex(rgba[2])}${toHex(rgba[3])}`;
-    }
-    return fallback;
-  };
-  const activeTableThemeId = (preset: OverlayPreset) =>
-    String(
-      preset.membersTheme && preset.membersTheme !== "auto"
-        ? preset.membersTheme
-        : preset.theme || "default"
-    );
-
-  const TableHarmonyThemeSection = ({
-    p,
-    activeThemeId,
-  }: {
-    p: OverlayPreset;
-    activeThemeId: string;
-  }) => {
-    const [smartColor, setSmartColor] = useState<string>(
-      p.tablePanelBorderColor || (activeThemeId === "excelViolet" ? "#a855f7" : "#06b6d4")
-    );
-
-    const patchPresetWithBump = (patch: Partial<OverlayPreset>) => {
-      updatePreset(p.id, patch);
-      setGlobalPreviewBump((n) => n + 1);
-    };
-
-    const handleApplyPalette = (pal: HarmonyThemePalette) => {
-      patchPresetWithBump({
-        theme: "excelViolet",
-        membersTheme: "excelViolet",
-        totalTheme: "excelViolet",
-        ...pal.colors,
-      });
-    };
-
-    const handleApplySmartHarmony = (colorOverride?: string) => {
-      const targetColor = colorOverride || smartColor;
-      const generated = generateHarmoniousTablePalette(targetColor);
-      patchPresetWithBump({
-        theme: "excelViolet",
-        membersTheme: "excelViolet",
-        totalTheme: "excelViolet",
-        ...generated,
-      });
-    };
-
-    const currentGlow =
-      p.tableBorderGlow || (activeThemeId === "excelViolet" ? "neon" : "none");
-    const currentRadius =
-      p.tableBorderRadius !== undefined && p.tableBorderRadius !== ""
-        ? String(p.tableBorderRadius)
-        : "12";
-    const currentWidth =
-      p.tablePanelBorderWidth !== undefined && p.tablePanelBorderWidth !== ""
-        ? String(p.tablePanelBorderWidth)
-        : "1.5";
-
-    return (
-      <div className="col-span-full space-y-4 rounded-xl border border-purple-500/30 bg-purple-950/20 p-3 sm:p-4 mb-2">
-        {/* Top Title & Info */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-purple-500/20 pb-2.5">
-          <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-600/30 text-purple-200 text-base shadow-sm">
-              ✨
-            </span>
-            <div>
-              <h4 className="text-xs sm:text-sm font-bold text-purple-200">
-                오버레이 테마 일관성 & 조화 배색
-              </h4>
-              <p className="text-[11px] text-purple-300/70">
-                어색하지 않은 컬러 조합과 네온 발광·둥근 모서리를 원클릭으로 일괄 적용합니다.
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="shrink-0 px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-white/10 text-xs text-neutral-300 transition-colors"
-            onClick={() => patchPresetWithBump(emptyTableThemeAutoColorPatch())}
-            title="수동 지정한 표 색을 모두 지우고 선택한 테마 기본 디자인으로 되돌립니다"
-          >
-            표 색 전부 테마 자동
-          </button>
-        </div>
-
-        {/* 6대 하모니 팔레트 프리셋 */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-purple-300 flex items-center gap-1.5">
-            <span>🎨</span> 6대 테마 일관성 하모니 팔레트 (원클릭 일괄 적용)
-          </label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {HARMONY_THEME_PALETTES.map((pal) => (
-              <button
-                key={pal.id}
-                type="button"
-                onClick={() => handleApplyPalette(pal)}
-                className="group flex flex-col items-start p-2.5 rounded-lg border border-white/10 hover:border-purple-400/60 bg-neutral-900/70 hover:bg-neutral-800/80 transition-all text-left shadow-sm hover:shadow-[0_0_12px_rgba(168,85,247,0.25)]"
-              >
-                <div className="flex items-center gap-1.5 w-full">
-                  <span className="text-base">{pal.emoji}</span>
-                  <span className="text-xs font-bold text-white group-hover:text-purple-200 truncate">
-                    {pal.name}
-                  </span>
-                  {pal.id === "violetLuxury" && (
-                    <span className="ml-auto text-[9px] px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200 border border-purple-400/40">
-                      추천
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 mt-2 w-full">
-                  <div
-                    className="h-3 w-4 rounded-sm border border-white/20"
-                    style={{ backgroundColor: pal.colors.tableHeaderBgColor }}
-                    title="헤더 배경"
-                  />
-                  <div
-                    className="h-3 w-4 rounded-sm border border-white/20"
-                    style={{ backgroundColor: pal.colors.tableRowEvenBg }}
-                    title="행 줄무늬"
-                  />
-                  <div
-                    className="h-3 flex-1 rounded-sm border border-white/20"
-                    style={{ backgroundColor: pal.colors.tablePanelBorderColor }}
-                    title="테두리/글루"
-                  />
-                  <div
-                    className="h-3 w-4 rounded-sm border border-white/20"
-                    style={{ backgroundColor: pal.colors.contributionColor }}
-                    title="기여도"
-                  />
-                </div>
-                <span className="mt-1.5 text-[10px] text-neutral-400 line-clamp-1 group-hover:text-neutral-300">
-                  {pal.tagline}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 스마트 하모니 배색 생성기 */}
-        <div className="rounded-lg border border-white/10 bg-neutral-900/60 p-2.5 sm:p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold text-purple-200 flex items-center gap-1.5">
-              <span>🪄</span> 스마트 하모니 생성기 (대표 컬러 1개로 전체 자동 조화)
-            </label>
-            <span className="text-[10px] text-neutral-400">
-              헤더·테두리·줄무늬·기여도 자동 계산
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="color"
-              className="h-9 w-12 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-              value={toColorPickerValue(smartColor, "#a855f7")}
-              onChange={(e) => setSmartColor(e.target.value)}
-            />
-            <input
-              type="text"
-              className="w-24 px-2 py-1 rounded bg-neutral-900/90 border border-white/15 text-xs font-mono text-center text-white"
-              value={smartColor}
-              onChange={(e) => setSmartColor(e.target.value)}
-            />
-            {/* Quick recommendations */}
-            <div className="flex items-center gap-1">
-              {[
-                { label: "바이올렛", color: "#a855f7" },
-                { label: "골드", color: "#f59e0b" },
-                { label: "시안", color: "#06b6d4" },
-                { label: "로즈", color: "#f43f5e" },
-                { label: "에메랄드", color: "#10b981" },
-                { label: "슬레이트", color: "#94a3b8" },
-                { label: "오렌지", color: "#f97316" },
-                { label: "블루", color: "#3b82f6" },
-              ].map((sw) => (
-                <button
-                  key={sw.color}
-                  type="button"
-                  className="h-6 w-6 rounded-full border border-white/20 transition-transform hover:scale-110"
-                  style={{ backgroundColor: sw.color }}
-                  onClick={() => {
-                    setSmartColor(sw.color);
-                    handleApplySmartHarmony(sw.color);
-                  }}
-                  title={sw.label}
-                />
-              ))}
-            </div>
-            <button
-              type="button"
-              className="ml-auto px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-md hover:shadow-purple-500/30 transition-all flex items-center gap-1.5 cursor-pointer"
-              onClick={() => handleApplySmartHarmony()}
-            >
-              <span>✨</span> 조화로운 테마 배색 자동 적용
-            </button>
-          </div>
-        </div>
-
-        {/* 디테일 설정 (발광, 모서리, 두께) */}
-        <div className="rounded-lg border border-white/10 bg-neutral-900/60 p-2.5 sm:p-3 space-y-3">
-          <div className="text-xs font-semibold text-purple-200">
-            ⚙️ 어색하지 않은 컬러 디테일 설정
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-[8.5rem_minmax(0,1fr)] items-center gap-2">
-            {/* 테두리 네온 글루 */}
-            <label className="text-xs text-neutral-300">테두리 네온 글루(발광)</label>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {[
-                { id: "none", label: "발광 OFF" },
-                { id: "soft", label: "은은하게 (Soft)" },
-                { id: "neon", label: "네온 발광 (Neon)" },
-                { id: "vivid", label: "강렬하게 (Vivid)" },
-              ].map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
-                    currentGlow === opt.id
-                      ? "border-purple-400 bg-purple-900/60 text-purple-100 shadow-[0_0_8px_rgba(168,85,247,0.35)]"
-                      : "border-white/10 bg-neutral-800 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700"
-                  }`}
-                  onClick={() => patchPresetWithBump({ tableBorderGlow: opt.id })}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-
-            {/* 모서리 둥글기 */}
-            <label className="text-xs text-neutral-300">모서리 둥글기 (Radius)</label>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {[
-                { id: "0", label: "직각 (0px)" },
-                { id: "8", label: "소프트 (8px)" },
-                { id: "12", label: "럭셔리 (12px)" },
-                { id: "16", label: "풀 라운드 (16px)" },
-              ].map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
-                    currentRadius === opt.id
-                      ? "border-purple-400 bg-purple-900/60 text-purple-100"
-                      : "border-white/10 bg-neutral-800 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700"
-                  }`}
-                  onClick={() => patchPresetWithBump({ tableBorderRadius: opt.id })}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-
-            {/* 테두리 선 두께 */}
-            <label className="text-xs text-neutral-300">테두리 선 두께</label>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {[
-                { id: "1", label: "1px (슬림)" },
-                { id: "1.5", label: "1.5px (표준)" },
-                { id: "2", label: "2px (선명)" },
-                { id: "3", label: "3px (볼드)" },
-              ].map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
-                    currentWidth === opt.id
-                      ? "border-purple-400 bg-purple-900/60 text-purple-100"
-                      : "border-white/10 bg-neutral-800 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700"
-                  }`}
-                  onClick={() => patchPresetWithBump({ tablePanelBorderWidth: opt.id })}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-
-            {/* 테두리 발광 색상 오버라이드 */}
-            <label className="text-xs text-neutral-300">발광(Glow) 전용 색</label>
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <input
-                type="color"
-                className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                value={toColorPickerValue(
-                  p.tableBorderGlowColor,
-                  p.tablePanelBorderColor || "#a855f7"
-                )}
-                onChange={(e) => patchPresetWithBump({ tableBorderGlowColor: e.target.value })}
-              />
-              <span className="text-xs text-neutral-400 font-mono truncate">
-                {p.tableBorderGlowColor || "테두리색과 자동 일치"}
-              </span>
-              {p.tableBorderGlowColor && (
-                <button
-                  type="button"
-                  className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs text-neutral-300"
-                  onClick={() => patchPresetWithBump({ tableBorderGlowColor: "" })}
-                >
-                  자동 일치
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
   };
   const requestConfirm = (title: string, desc: string, onConfirm: () => void, options?: { confirmText?: string; danger?: boolean }) => {
     if (typeof window === "undefined") return;
@@ -20666,7 +20744,14 @@ function AdminPageInner() {
                                     <input className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })} />
                                     <span className="text-xs text-neutral-500">% (100=불투명)</span>
                                   </div>
-                                  <TableHarmonyThemeSection p={p} activeThemeId={activeTableThemeId(p)} />
+                                  <TableHarmonyThemeSection
+                                    p={p}
+                                    activeThemeId={activeTableThemeId(p)}
+                                    onUpdatePreset={(patch) => {
+                                      updatePreset(p.id, patch);
+                                      setGlobalPreviewBump((n) => n + 1);
+                                    }}
+                                  />
                                   <div className="col-span-full space-y-2.5 rounded-lg border border-white/10 bg-neutral-950/50 p-2.5">
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                       <div className="text-xs font-semibold text-emerald-300/90">헤더(상단)</div>

@@ -227,6 +227,8 @@ export type OverlayPresetLike = {
   tableFontWeight?: string;
   /** 엑셀표 글꼴: auto | mono | sans | pretendard | gothic | serif */
   tableFontFamily?: string;
+  showAccountColumn?: boolean;
+  showToonColumn?: boolean;
   showCombinedColumn?: boolean;
   showContributionColumn?: boolean;
   showRestroomColumn?: boolean;
@@ -517,6 +519,10 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   }
   const tableFontFamily = normalizeTableFontFamily((preset.tableFontFamily || "").trim());
   if (tableFontFamily !== "auto") q.set("tableFontFamily", tableFontFamily);
+  if (preset.showAccountColumn === false) q.set("showAccountColumn", "false");
+  else if (preset.showAccountColumn === true) q.set("showAccountColumn", "true");
+  if (preset.showToonColumn === false) q.set("showToonColumn", "false");
+  else if (preset.showToonColumn === true) q.set("showToonColumn", "true");
   if (preset.showCombinedColumn === false) q.set("showCombinedColumn", "false");
   if (preset.showContributionColumn === false) q.set("showContributionColumn", "false");
   if (preset.showRestroomColumn === false) q.set("showRestroomColumn", "false");
@@ -630,6 +636,8 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "tableHeaderTextOutlineWidth",
   "tableFontWeight",
   "tableFontFamily",
+  "showAccountColumn",
+  "showToonColumn",
   "showCombinedColumn",
   "showContributionColumn",
   "showRestroomColumn",
@@ -822,6 +830,8 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "tableHeaderTextOutlineWidth",
   "tableFontWeight",
   "tableFontFamily",
+  "showAccountColumn",
+  "showToonColumn",
   "showCombinedColumn",
   "showContributionColumn",
   "showRestroomColumn",

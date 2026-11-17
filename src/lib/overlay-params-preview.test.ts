@@ -836,20 +836,42 @@ describe("table column text colors", () => {
     ).toBe(false);
   });
 
-  it("never applies day777Calc to existing excel themes", () => {
+  it("does not apply day777Calc to standard excel themes when day777Calc is unset", () => {
     expect(
       resolveDay777Calc(
         new URLSearchParams(),
-        { id: "ov_excel", day777Calc: true, membersTheme: "excel", theme: "excel" },
+        { id: "ov_excel", membersTheme: "excel", theme: "excel" },
         { ready: true }
       )
     ).toBe(false);
     expect(
       resolveDay777Calc(
         new URLSearchParams(),
-        { id: "ov_gold", day777Calc: true, membersTheme: "excelGold", theme: "excelGold" },
+        { id: "ov_gold", membersTheme: "excelGold", theme: "excelGold" },
         { ready: true }
       )
     ).toBe(false);
+  });
+
+  it("serializes and strips showAccountColumn and showToonColumn for hot-reload and OBS", () => {
+    const q = presetToParams({
+      id: "ov_hide_cols",
+      showAccountColumn: false,
+      showToonColumn: false,
+    });
+    expect(q.get("showAccountColumn")).toBe("false");
+    expect(q.get("showToonColumn")).toBe("false");
+
+    const qShown = presetToParams({
+      id: "ov_shown_cols",
+      showAccountColumn: true,
+      showToonColumn: true,
+    });
+    expect(qShown.get("showAccountColumn")).toBe("true");
+    expect(qShown.get("showToonColumn")).toBe("true");
+
+    const stripped = stripAdminPreviewHotReloadParams(q);
+    expect(stripped.get("showAccountColumn")).toBeNull();
+    expect(stripped.get("showToonColumn")).toBeNull();
   });
 });
