@@ -127,7 +127,7 @@ export default function BattleTeamColumnBoard({
 
       <div className="relative">
         <div
-          className={`relative flex w-full overflow-hidden rounded-xl backdrop-blur-md ${barH}`}
+          className={`relative w-full overflow-hidden rounded-xl backdrop-blur-md ${barH}`}
           data-battle-vs-bar="true"
           style={{
             background: theme.trackBg,
@@ -139,14 +139,14 @@ export default function BattleTeamColumnBoard({
           <div className="pointer-events-none absolute inset-x-0 top-0 z-[2] h-[2px] bg-white/30" />
 
           <div
-            className={`relative z-[1] h-full min-w-0 overflow-hidden transition-[width] duration-500 ease-out ${
+            className={`absolute left-0 top-0 bottom-0 z-[1] overflow-hidden transition-[width] duration-500 ease-out ${
               leftLeading ? "brightness-110" : "brightness-95"
             }`}
             style={{
-              width: `${leftPct}%`,
+              width: `calc(${leftPct}% + 10px)`,
               background: theme.leftFill,
               clipPath: "polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%)",
-              marginRight: "-10px",
+
             }}
             data-battle-team-box="left"
           >
@@ -162,11 +162,11 @@ export default function BattleTeamColumnBoard({
           </div>
 
           <div
-            className={`relative z-[1] h-full min-w-0 overflow-hidden transition-[width] duration-500 ease-out ${
+            className={`absolute right-0 top-0 bottom-0 z-[1] overflow-hidden transition-[width] duration-500 ease-out ${
               rightLeading ? "brightness-110" : "brightness-95"
             }`}
             style={{
-              width: `${rightPct}%`,
+              width: `calc(${rightPct}% + 10px)`,
               background: theme.rightFill,
               clipPath: "polygon(14px 0, 100% 0, 100% 100%, 0 100%)",
             }}
