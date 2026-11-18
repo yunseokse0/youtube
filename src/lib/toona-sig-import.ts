@@ -66,6 +66,7 @@ export function mapToonaSignaturesToSigItems(
     if (seenIds.has(id) || id === ONE_SHOT_SIG_ID) continue;
 
     const ownImage = resolveToonaAssetUrl(row.imageUrl, apiBaseUrl);
+    const active = row.enabled !== false;
     out.push({
       id,
       name,
@@ -74,8 +75,8 @@ export function mapToonaSignaturesToSigItems(
       memberId: "",
       maxCount: 1,
       soldCount: 0,
-      isActive: row.enabled !== false,
-      isRolling: true,
+      isActive: active,
+      isRolling: active,
     });
     seenNames.add(nameKey);
     seenIds.add(id);
@@ -156,7 +157,7 @@ export function applyToonaSigItemsToInventory(
       price: incoming.price,
       imageUrl: incoming.imageUrl || prev.imageUrl,
       isActive: incoming.isActive,
-      isRolling: prev.isRolling,
+      isRolling: incoming.isActive ? (prev.isRolling !== false) : false,
     };
     updated += 1;
   }

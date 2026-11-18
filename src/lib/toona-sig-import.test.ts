@@ -134,4 +134,24 @@ describe("applyToonaSigItemsToInventory", () => {
     expect(aegyo.maxCount).toBe(5);
     expect(nextInventory.some((x) => x.name === "댄스")).toBe(true);
   });
+
+  it("비활성화된 시그 가져오기 시 isActive와 isRolling이 모두 false로 갱신된다", () => {
+    const current = [
+      item({ id: "toona_1", name: "시그1", isActive: true, isRolling: true }),
+      item({ id: "toona_2", name: "시그2", isActive: true, isRolling: true }),
+    ];
+    // 프리셋 등에서 시그1은 On(enabled), 시그2는 Off(disabled)
+    const imported = [
+      item({ id: "toona_1", name: "시그1", isActive: true, isRolling: true }),
+      item({ id: "toona_2", name: "시그2", isActive: false, isRolling: false }),
+    ];
+    const { nextInventory } = applyToonaSigItemsToInventory(current, imported, "merge");
+    const sig1 = nextInventory.find((x) => x.name === "시그1")!;
+    const sig2 = nextInventory.find((x) => x.name === "시그2")!;
+
+    expect(sig1.isActive).toBe(true);
+    expect(sig1.isRolling).toBe(true);
+    expect(sig2.isActive).toBe(false);
+    expect(sig2.isRolling).toBe(false);
+  });
 });

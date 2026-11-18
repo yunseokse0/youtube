@@ -240,9 +240,10 @@ export async function fetchToonaSignaturesViaHubSession(
     const defaultAlertImageUrl = resolveToonaAssetUrl(defaultAlertImageUrlRaw, baseUrl);
     const sigJson = (await sigRes.json().catch(() => ({}))) as {
       signatures?: ToonaSignatureRow[];
-      presets?: Array<{ id: string; name: string; count: number; isActive?: boolean }>;
+      presets?: Array<{ id: string; name: string; count: number; isActive?: boolean; enabledSignatureIds?: string[] }>;
       activePresetId?: string | null;
       activePresetName?: string | null;
+      activePresetEnabledSignatureIds?: string[] | null;
       error?: string;
     };
     if (!sigRes.ok) {
@@ -251,6 +252,29 @@ export async function fetchToonaSignaturesViaHubSession(
         error: sigJson.error || `signatures_failed HTTP ${sigRes.status}`,
       };
     }
+
+    // 활성 프리셋의 enabledSignatureIds가 있으면 해당 시그만 enabled: true로 보정
+    const activeEnabledIds =
+      (Array.isArray(sigJson.activePresetEnabledSignatureIds) && sigJson.activePresetEnabledSignatureIds.length > 0)
+        ? sigJson.activePresetEnabledSignatureIds
+        : (() => {
+            const currentPreset = (sigJson.presets || []).find(
+              (p) => String(p.id) === String(sigJson.activePresetId || "") || p.isActive
+            );
+            return Array.isArray(currentPreset?.enabledSignatureIds) && currentPreset.enabledSignatureIds.length > 0
+              ? currentPreset.enabledSignatureIds
+              : null;
+          })();
+
+    if (activeEnabledIds && activeEnabledIds.length > 0) {
+      const activeSet = new Set(activeEnabledIds.map(String));
+      for (const row of sigJson.signatures || []) {
+        if (row.id) {
+          row.enabled = activeSet.has(String(row.id));
+        }
+      }
+    }
+
     const items = mapToonaSignaturesToSigItems(
       sigJson.signatures || [],
       baseUrl,

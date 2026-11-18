@@ -87,4 +87,13 @@ describe("foreign user sig upload filter", () => {
     const pool = listActiveManualSigPool(inv, { ignoreStock: true, ownerUserId: "din" });
     expect(pool.map((x) => x.id)).toEqual(["mine"]);
   });
+
+  it("listActiveManualSigPool excludes inactive signatures (isActive: false)", () => {
+    const inv: SigItem[] = [
+      { id: "active_1", name: "활성시그", price: 10000, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isActive: true, isRolling: true },
+      { id: "inactive_1", name: "비활성시그", price: 20000, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isActive: false, isRolling: false },
+    ];
+    const pool = listActiveManualSigPool(inv);
+    expect(pool.map((x) => x.id)).toEqual(["active_1"]);
+  });
 });

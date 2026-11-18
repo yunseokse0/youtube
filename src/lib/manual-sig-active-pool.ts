@@ -37,11 +37,9 @@ export function listActiveManualSigPool(
     if (row.id === ONE_SHOT_SIG_ID) continue;
     if (excluded.has(row.id)) continue;
     if (isForeignUserSigUpload(String(row.imageUrl || ""), opts?.ownerUserId)) continue;
-    if (!SIG_SALES_TRACK_INVENTORY_STOCK) {
-      /* 재고 개념 없음 — isActive·soldCount 필터 생략 */
-    } else {
+    if (row.isActive === false) continue;
+    if (SIG_SALES_TRACK_INVENTORY_STOCK) {
       const ignoreStock = opts?.ignoreStock === true;
-      if (!ignoreStock && !row?.isActive) continue;
       if (!ignoreStock) {
         const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
         const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));

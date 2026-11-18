@@ -176,7 +176,7 @@ export default function ManualSigSalesSimple() {
   }, [toast]);
 
   const inventoryCount = useMemo(
-    () => (state?.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID).length,
+    () => (state?.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID && x.isActive !== false).length,
     [state?.sigInventory]
   );
 
@@ -303,7 +303,7 @@ export default function ManualSigSalesSimple() {
     return `${os.name} ${Number(os.price || 0).toLocaleString("ko-KR")}원`;
   }, [state, displaySigs, userId]);
   const rerollPickCount = Math.min(pickCount, pool.length);
-  const canReroll = pool.length >= pickCount;
+  const canReroll = pool.length >= Math.min(pickCount, MANUAL_REROLL_MIN_POOL);
   const hasAnySoldMark =
     soldFlags.some(Boolean) || oneShotMarkSold;
   const phase = String(currentPhase || "");
