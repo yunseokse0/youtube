@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useState, useRef, useCallback, mem
 import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
 import DonationTableOptionCheckboxes from "@/components/admin/DonationTableOptionCheckboxes";
+import { InfoTooltip } from "@/components/admin/InfoTooltip";
 import {
   MemberRankChangeFxPresetPanel,
   MemberRankChangeFxPresetPanelHeader,
@@ -2056,6 +2057,7 @@ function AdminPageInner() {
   const [presets, setPresets] = useState<OverlayPreset[]>([]);
   const [presetRev, setPresetRev] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [presetAdvancedOpen, setPresetAdvancedOpen] = useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [sigMatchPreviewIframeKey, setSigMatchPreviewIframeKey] = useState(0);
@@ -2122,6 +2124,7 @@ function AdminPageInner() {
   /** 정산「멤버 초기화」 시 생성할 멤버 슬롯 수(1~30) */
   const [resetMemberSlotCount, setResetMemberSlotCount] = useState(3);
   const [activeNav, setActiveNav] = useState<AdminNavKey>("dashboard");
+  const [goalEditPresetId, setGoalEditPresetId] = useState<string | null>(null);
   /** ✅ 탭 전환 강제 리렌더 트리거 (flushSync 탈락시 state 재 커밋 보장용) */
   const [__navForceTick, setNavForceTick] = useState<number>(0);
   /** ✅ 원래 6대 탭 기반 초기 진입: 정산 / 후원자 / 오버레이 그룹만 펼치기 */
@@ -2882,6 +2885,9 @@ function AdminPageInner() {
       setExpandedNavGroups((prev) => ({ ...prev, [key]: true, [finalActiveNav]: true }));
       setActiveSubTargetId(() => targetId);
       if (tick) { try { setNavForceTick((t) => t + 1); } catch (_noop) { /* noop */ } }
+      if (!opts?.fromSubItem && contentScrollRef.current) {
+        contentScrollRef.current.scrollTop = 0;
+      }
     };
     try {
       if (typeof flushSync === "function") {
@@ -9873,7 +9879,10 @@ function AdminPageInner() {
         className="rounded-lg border border-cyan-500/35 bg-cyan-950/25 p-3 space-y-2"
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-sm font-semibold text-cyan-100">대전 오버레이 타이머</div>
+          <div className="text-sm font-semibold text-cyan-100 flex items-center">
+            대전 오버레이 타이머
+            <InfoTooltip text="시그·식사 대전 OBS가 이 타이머(matchTimer)를 봅니다. 「타이머 제어」의 일반 타이머와 별개이며, 정지 중 입력 후 Enter/blur 하면 남은 시간도 맞춰집니다." />
+          </div>
           <div className="text-xs tabular-nums text-neutral-300">
             남은 {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")} ·{" "}
             <span className={running ? "text-emerald-300" : "text-neutral-400"}>
@@ -9936,9 +9945,6 @@ function AdminPageInner() {
             </a>
           </div>
         </div>
-        <p className="text-[11px] text-neutral-500">
-          시그·식사 대전 OBS가 이 타이머(matchTimer)를 봅니다. 「타이머 제어」의 일반 타이머와 별개입니다. 위 초는 리셋·새 시작 기준이며, 정지 중 입력 후 Enter/blur 하면 남은 시간도 맞춰집니다.
-        </p>
       </div>
     );
   };
@@ -12745,37 +12751,45 @@ function AdminPageInner() {
             </div>
           </div>
         </div>
-        {/* 메뉴 스크롤 영역 - pinnedBottom 제외 */}
-        <div className="p-2.5 space-y-0.5 overflow-y-auto flex-1 min-h-0 pr-1 pb-1">
-          {navItems.filter((i) => !i.pinnedBottom).map((item) => {
+        {/* 🌟 슬림 4대 핵심 메뉴 영역 */}
+        <div className="p-3 space-y-1.5 overflow-y-auto flex-1 min-h-0">
+          {navItems.map((item) => {
             const hasSubs = Array.isArray(item.subItems) && item.subItems.length > 0;
             const isGroupActive = activeNav === item.key;
             return (
-              <div key={item.key} className="ui-din-nav-group">
+              <div key={item.key} className="space-y-1">
                 <button
                   type="button"
                   onClick={() => moveToSection(item.key, item.targetId)}
-                  className={`ui-din-nav-item ${hasSubs ? "ui-din-nav-category" : ""} ${
-                    isGroupActive ? "ui-nav-active" : ""
+                  className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-bold transition-all text-left ${
+                    isGroupActive
+                      ? "bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/40"
+                      : "text-neutral-300 hover:text-white hover:bg-white/5 border border-transparent"
                   }`}
                 >
-                  <span className="text-base flex-shrink-0 leading-none">{item.icon}</span>
-                  <span className="flex-1">{item.label}</span>
+                  <span className="text-lg flex-shrink-0 leading-none">{item.icon}</span>
+                  <span className="flex-1 tracking-tight">{item.label}</span>
+                  {isGroupActive && (
+                    <span className="w-1.5 h-4 rounded-full bg-white/90 shrink-0" />
+                  )}
                 </button>
-                {hasSubs && item.subItems && (
-                  <div className="ui-din-nav-sublist ui-tab-fade-in">
+                {/* 활성화된 대분류에만 컴팩트 서브메뉴 노출 (사이드바 과밀 해소) */}
+                {isGroupActive && hasSubs && item.subItems && (
+                  <div className="pl-4 pr-1 py-1 space-y-0.5 border-l-2 border-indigo-500/30 ml-4 my-1">
                     {item.subItems.map((sub) => (
                       <button
                         key={sub.subKey}
                         type="button"
                         onClick={() => clickSubItem(sub)}
-                        className={`ui-din-nav-subitem ${
-                          activeSubTargetId === sub.targetId ? "ui-nav-sub-active" : ""
+                        className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-left transition-all ${
+                          activeSubTargetId === sub.targetId
+                            ? "bg-indigo-600/30 text-indigo-200 font-bold border border-indigo-500/30"
+                            : "text-neutral-400 hover:text-neutral-200 hover:bg-white/5"
                         }`}
                         title={sub.targetId}
                       >
                         {sub.icon && <span className="text-xs leading-none flex-shrink-0">{sub.icon}</span>}
-                        <span className="flex-1">{sub.label}</span>
+                        <span className="flex-1 truncate">{sub.label}</span>
                       </button>
                     ))}
                   </div>
@@ -12784,25 +12798,39 @@ function AdminPageInner() {
             );
           })}
         </div>
-        {/* pinnedBottom 하단 고정 그룹: 시스템 */}
-        {navItems.some((i) => i.pinnedBottom) && (
-          <div className="flex-shrink-0 border-t border-white/5 px-2.5 pt-2 pb-2.5 space-y-0.5">
-            {navItems.filter((i) => i.pinnedBottom).map((item) => {
-              const isGroupActive = activeNav === item.key;
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => moveToSection(item.key, item.targetId)}
-                  className={`ui-din-nav-item w-full ${isGroupActive ? "ui-nav-active" : ""}`}
-                >
-                  <span className="text-base flex-shrink-0 leading-none">{item.icon}</span>
-                  <span className="flex-1">{item.label}</span>
-                </button>
-              );
-            })}
+
+        {/* ⚡ 방송 퀵 액션 독 (하단 고정) */}
+        <div className="flex-shrink-0 border-t border-white/10 p-3 bg-black/40 space-y-2">
+          <div className="text-[11px] font-bold text-neutral-400 flex items-center gap-1.5 px-1">
+            <span>⚡</span> 방송 퀵 액션
           </div>
-        )}
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                const p = presets[0];
+                if (p) {
+                  const url = buildPrismOverlayUrl(p, !!p.vertical);
+                  void copyUrl(url, "sidebar-quick-overlay");
+                }
+              }}
+              className="px-2 py-1.5 rounded-lg bg-indigo-950/60 hover:bg-indigo-900 border border-indigo-500/30 text-[11px] font-semibold text-indigo-200 text-center truncate transition"
+              title="대표 오버레이 URL 복사"
+            >
+              {copiedId === "sidebar-quick-overlay" ? "✓ 복사됨" : "📺 오버레이 복사"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                moveToSection("settlement", "settlement-finalize");
+              }}
+              className="px-2 py-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-500/30 text-[11px] font-semibold text-emerald-200 text-center truncate transition"
+              title="방송 종료 정산으로 이동"
+            >
+              🏁 방송 종료 정산
+            </button>
+          </div>
+        </div>
       </aside>
       <div className="md:hidden fixed left-1/2 -translate-x-1/2 top-2 z-40 pointer-events-none">
         <div
@@ -12956,6 +12984,38 @@ function AdminPageInner() {
             </button>
           </div>
           </div>
+        {/* 🌟 상단 스마트 서브 탭 바 (SaaS 스타일 알약 탭) */}
+        {(() => {
+          const currentItem = navItems.find((i) => i.key === activeNav);
+          const subItems = currentItem?.subItems || [];
+          if (subItems.length <= 1) return null;
+          return (
+            <div className="mb-3 flex items-center gap-1.5 overflow-x-auto rounded-xl border border-white/10 bg-[#0e1528]/85 p-1.5 backdrop-blur-md no-scrollbar shadow-sm">
+              <span className="pl-2 pr-1 text-xs font-bold text-neutral-400 shrink-0 flex items-center gap-1">
+                <span>{currentItem?.icon}</span>
+                <span className="hidden sm:inline">{currentItem?.label}:</span>
+              </span>
+              {subItems.map((sub) => {
+                const isActive = activeSubTargetId === sub.targetId;
+                return (
+                  <button
+                    key={sub.subKey}
+                    type="button"
+                    onClick={() => clickSubItem(sub)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 ${
+                      isActive
+                        ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-indigo-500/25 border border-indigo-400/40"
+                        : "bg-white/5 hover:bg-white/10 text-neutral-300 hover:text-white border border-white/5"
+                    }`}
+                  >
+                    {sub.icon && <span className="text-xs leading-none">{sub.icon}</span>}
+                    <span>{sub.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })()}
         <div
           id="admin-content-scroll"
           ref={contentScrollRef}
@@ -13422,11 +13482,10 @@ function AdminPageInner() {
                 defaultOpen={false}
               >
                 <div className="rounded-lg border border-amber-300/30 bg-amber-500/10 p-3 space-y-2">
-                  <div className="text-sm font-semibold text-amber-200">후원 동기화 일괄 관리 (중복 방지)</div>
-                    <p className="text-xs text-neutral-300">
-                      후원 입력은 아래에서 선택한 대상에만 동기화됩니다. 시그/식사대전을 켜면 모드가 자동 전환됩니다.
-                      참가자별 「후원 연동 ON/OFF」로 엑셀에 배정된 후원이 해당 대전 점수에 반영될지 제어합니다.
-                    </p>
+                  <div className="text-sm font-semibold text-amber-200 flex items-center">
+                    후원 동기화 일괄 관리 (중복 방지)
+                    <InfoTooltip text="후원 입력은 아래에서 선택한 대상에만 동기화됩니다. 시그/식사대전을 켜면 모드가 자동 전환되며, 참가자별 「후원 연동 ON/OFF」로 엑셀에 배정된 후원이 해당 대전 점수에 반영될지 제어합니다." />
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     {([
                       ["mealBattle", "식사대전 동기화"],
@@ -13463,8 +13522,10 @@ function AdminPageInner() {
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <h3 className="text-base font-semibold">시그 대전 관리</h3>
-                    <p className="text-xs text-neutral-400">Redis donors를 기준으로 점수를 실시간 집계하고, 멤버별 추가·차감 보정을 합산합니다.</p>
+                    <h3 className="text-base font-semibold flex items-center">
+                      시그 대전 관리
+                      <InfoTooltip text="Redis donors를 기준으로 점수를 실시간 집계하고, 멤버별 추가·차감 보정을 합산합니다." />
+                    </h3>
                     <a
                       href="/overlay/battle-effects-demo"
                       target="_blank"
@@ -13493,10 +13554,10 @@ function AdminPageInner() {
                 </div>
                 {renderBattleOverlayTimerControls({ id: "sig-battle-overlay-timer" })}
                 <div className="rounded-lg border border-amber-500/30 bg-amber-950/20 p-3 space-y-2">
-                  <div className="text-xs font-medium text-amber-100">후원 집계 시작</div>
-                  <p className="text-[11px] text-neutral-400">
-                    정한 시각 이후에 들어온 후원만 참가자 시그 점수에 넣습니다. 「현재 시간으로 초기화」는 점수와 수기 보정을 0으로 돌리고 지금부터 집계합니다. 정산표 후원 목록은 그대로 둡니다.
-                  </p>
+                  <div className="text-xs font-semibold text-amber-100 flex items-center">
+                    후원 집계 시작
+                    <InfoTooltip text="정한 시각 이후에 들어온 후원만 참가자 시그 점수에 넣습니다. 「현재 시간으로 초기화」는 점수와 수기 보정을 0으로 돌리고 지금부터 집계합니다. 정산표 후원 목록은 그대로 둡니다." />
+                  </div>
                   <div className="rounded-lg border border-sky-500/30 bg-sky-950/20 p-3 space-y-2.5">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-500/20 pb-2">
                       <div className="flex items-center gap-2">
@@ -14151,21 +14212,12 @@ function AdminPageInner() {
               >
 
                 <div className="flex flex-wrap items-center justify-between gap-2">
-
                   <div>
-
-                    <h3 className="text-base font-semibold">식사 대전 관리</h3>
-
-                    <p className="text-xs text-neutral-400">
-
-                      참여 멤버별 게이지 색·점수·개인 목표, 상단 제목·미션 말풍선, 오버레이 색상을 실시간 제어합니다. &quot;팀대전&quot;을 켜고 멤버를 A/B에 넣으면 팀 합산 막대로 표시됩니다(팀 모드: 2분할, 개인 모드: 채움 안 색 분할). 식사 매치「개인」이면 (총점 ÷ 참가자 목표 합) 채움 막대입니다. 멤버 행에서 색을 먼저 고른 뒤 참가 체크하면 그 색이 적용됩니다.
-
-                      &quot;후원 연동 ON&quot;인 멤버에게만 후원 입력 시 식대전 점수가 오르고(만 원 단위 환산), 다른 멤버 후원은 멤버 금액·엑셀에만 반영됩니다.
-
-                    </p>
-
+                    <h3 className="text-base font-semibold flex items-center">
+                      식사 대전 관리
+                      <InfoTooltip text="참여 멤버별 게이지 색·점수·개인 목표 및 팀대전(A/B 분할)을 실시간 제어합니다. 후원 연동 ON인 멤버에게만 후원 시 식대전 점수가 오르며 다른 멤버 후원은 엑셀표에만 반영됩니다." />
+                    </h3>
                   </div>
-
                   <div className="flex flex-wrap items-center gap-2">
 
                     <button
@@ -19646,6 +19698,144 @@ function AdminPageInner() {
                 </div>
               }
             >
+              {/* 🌟 원클릭 방송 템플릿 스튜디오 */}
+              <div className="mb-4 p-3.5 rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950/40 via-purple-950/30 to-[#0b101d]/60 shadow-lg">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-indigo-600/40 text-indigo-300 text-xs shadow-sm">
+                        🌟
+                      </span>
+                      원클릭 방송 템플릿 스튜디오
+                      <InfoTooltip text="자주 쓰는 핵심 방송 테마를 원클릭으로 즉시 추가하고 최적의 상태로 방송을 시작하세요." />
+                    </h3>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                  {/* 1. 🎪 퐁당퐁당 777 엑셀 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const found = PRESET_TEMPLATES.find((t) => t.name === "퐁당퐁당 엑셀");
+                      if (found) {
+                        addPreset(found.name, found.preset);
+                      }
+                    }}
+                    className="p-3 rounded-xl border border-emerald-500/30 bg-gradient-to-br from-emerald-950/40 via-emerald-900/20 to-black/40 hover:border-emerald-400 hover:from-emerald-950/60 transition-all text-left group shadow-sm hover:shadow-emerald-500/10 cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xl">🎪</span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 group-hover:bg-emerald-500 group-hover:text-black transition">
+                        + 추가하기
+                      </span>
+                    </div>
+                    <div className="text-xs font-bold text-emerald-200 mt-2">퐁당퐁당 777 엑셀</div>
+                    <div className="text-[11px] text-neutral-400 mt-0.5 leading-snug">
+                      777데이 전용 · 시그 단가 기여도 분리 계산 기본 활성화
+                    </div>
+                  </button>
+
+                  {/* 2. 📊 일반 표준 엑셀표 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const found = PRESET_TEMPLATES.find((t) => t.name === "방송 엑셀(계좌·투네)") || PRESET_TEMPLATES.find((t) => t.name === "바이올렛 럭셔리 (xplay 스타일)");
+                      if (found) {
+                        addPreset(found.name, found.preset);
+                      }
+                    }}
+                    className="p-3 rounded-xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/40 via-indigo-900/20 to-black/40 hover:border-indigo-400 hover:from-indigo-950/60 transition-all text-left group shadow-sm hover:shadow-indigo-500/10 cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xl">📊</span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 group-hover:bg-indigo-500 group-hover:text-black transition">
+                        + 추가하기
+                      </span>
+                    </div>
+                    <div className="text-xs font-bold text-indigo-200 mt-2">일반 표준 엑셀표</div>
+                    <div className="text-[11px] text-neutral-400 mt-0.5 leading-snug">
+                      계좌 + 투네이션 + 화장실 기본 표시 깔끔한 방송 표준 엑셀
+                    </div>
+                  </button>
+
+                  {/* 3. 🍚⚔️ 식사 & 시그 대전 모드 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addPreset("식사/시그 대전 모드 (2열 분할)", {
+                        theme: "excelLive",
+                        membersTheme: "excelLive",
+                        totalTheme: "excelLive",
+                        showMembers: true,
+                        showTotal: true,
+                        tableOnly: true,
+                        tableSplit: true,
+                        accountHeaderLabel: "계좌",
+                        toonHeaderLabel: "투네",
+                        tableBgOpacity: "85",
+                      });
+                    }}
+                    className="p-3 rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-950/40 via-amber-900/20 to-black/40 hover:border-amber-400 hover:from-amber-950/60 transition-all text-left group shadow-sm hover:shadow-amber-500/10 cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xl">🍚⚔️</span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/30 group-hover:bg-amber-500 group-hover:text-black transition">
+                        + 추가하기
+                      </span>
+                    </div>
+                    <div className="text-xs font-bold text-amber-200 mt-2">식사 & 시그 대전 모드</div>
+                    <div className="text-[11px] text-neutral-400 mt-0.5 leading-snug">
+                      좌우 2열 분할 대전 배치 · 팀별 대전 방송 최적화
+                    </div>
+                  </button>
+
+                  {/* 4. 👑 후원 랭킹 오버레이 */}
+                  <div
+                    onClick={() => {
+                      const el = document.getElementById("donor-rankings-settings");
+                      if (el) {
+                        el.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }
+                    }}
+                    className="p-3 rounded-xl border border-fuchsia-500/30 bg-gradient-to-br from-fuchsia-950/40 via-fuchsia-900/20 to-black/40 hover:border-fuchsia-400 hover:from-fuchsia-950/60 transition-all text-left group shadow-sm hover:shadow-fuchsia-500/10 cursor-pointer flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xl">👑</span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-400/30 group-hover:bg-fuchsia-500 group-hover:text-black transition">
+                          설정 이동 ↓
+                        </span>
+                      </div>
+                      <div className="text-xs font-bold text-fuchsia-200 mt-2">후원 순위 랭킹</div>
+                      <div className="text-[11px] text-neutral-400 mt-0.5 leading-snug">
+                        상위 10위 후원자 랭킹 보드 & 세로 전광판
+                      </div>
+                    </div>
+                    <div className="mt-2 pt-1.5 border-t border-fuchsia-500/20 flex items-center justify-between text-[11px]">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void copyUrl(buildDonorRankingsUrl(), "dash-donor-rankings-card");
+                        }}
+                        className="text-fuchsia-300 hover:text-white"
+                      >
+                        {copiedId === "dash-donor-rankings-card" ? "✓ 복사됨" : "URL 복사"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.open(buildDonorRankingsUrl(), "_blank", "noopener,noreferrer");
+                        }}
+                        className="text-fuchsia-400 hover:text-white"
+                      >
+                        오버레이 열기 ↗
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <p className="text-xs text-neutral-400 mb-3">각 오버레이는 독립 URL을 가집니다. OBS/Prism에 브라우저 소스로 각각 추가하세요.</p>
               <p className="text-xs text-neutral-500 mb-3">
                 복사되는 URL은 <span className="text-neutral-300">서버(Redis)에 저장된 최신 상태</span>를 실시간으로 불러옵니다. 아래 프레임 미리보기만 편집 시점 스냅샷을 쓸 수 있습니다.
@@ -19732,10 +19922,8 @@ function AdminPageInner() {
                   <div>
                     <h4 className="text-sm font-bold text-fuchsia-100 flex items-center gap-1.5">
                       <span>👑</span> 후원 순위 (웹후원 랭킹) 오버레이 설정
+                      <InfoTooltip text="Prism/OBS 브라우저 소스는 저장 즉시 실시간 반영됩니다 (URL 재입력 불필요)." />
                     </h4>
-                    <p className="mt-0.5 text-[11px] text-neutral-400 leading-snug">
-                      Prism/OBS 브라우저 소스는 <strong className="text-neutral-300">저장 즉시 반영</strong>됩니다 (URL 재입력 불필요).
-                    </p>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-semibold text-neutral-300">금액 노출 제어:</span>
@@ -20061,11 +20249,157 @@ function AdminPageInner() {
                   </>
                 )}
               </div>
+
+              {/* 🎯 후원 목표바 (Goal Bar) 전용 설정 카드 */}
+              {(() => {
+                const currentGoalPreset = presets.find((pr) => pr.id === (goalEditPresetId || presets[0]?.id)) || presets[0];
+                return (
+                  <div id="overlay-goal-shortcut" className="mb-4 rounded-2xl border border-indigo-500/35 bg-gradient-to-r from-indigo-950/40 via-purple-950/30 to-[#0b101d]/60 p-4 shadow-lg space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+                      <div>
+                        <h4 className="text-sm font-bold text-indigo-100 flex items-center gap-1.5">
+                          <span>🎯</span> 후원 목표바 (Goal Bar) 전용 설정
+                          <InfoTooltip text="엑셀표 하단에 목표바를 표시하거나, 방송 송출용 독립 오버레이 URL(/overlay/goal)을 통해 원하는 위치에 후원 목표 프로그레스바를 단독으로 띄울 수 있습니다." />
+                        </h4>
+                        <p className="mt-0.5 text-[11px] text-neutral-400">
+                          목표 금액, 달성 증가폭, 라벨을 설정하고 독립 OBS 오버레이 URL을 복사하세요.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {currentGoalPreset && (
+                          <button
+                            type="button"
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-sm flex items-center gap-1.5 ${
+                              currentGoalPreset.showGoal
+                                ? "bg-emerald-600 text-white ring-2 ring-emerald-400/50"
+                                : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
+                            }`}
+                            onClick={() => {
+                              updatePreset(currentGoalPreset.id, { showGoal: !currentGoalPreset.showGoal });
+                            }}
+                          >
+                            {currentGoalPreset.showGoal ? "✓ 목표바 ON" : "✕ 목표바 OFF"}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="px-2.5 py-1.5 rounded-lg bg-indigo-600/50 hover:bg-indigo-600 text-xs font-semibold text-white border border-indigo-400/30 transition flex items-center gap-1"
+                          onClick={() => {
+                            if (!currentGoalPreset) return;
+                            const u = new URL(`${window.location.origin}/overlay/goal`);
+                            u.searchParams.set("u", overlayUserId);
+                            if (currentGoalPreset.id) u.searchParams.set("p", currentGoalPreset.id);
+                            void copyUrl(u.toString(), "goal-overlay-url");
+                          }}
+                        >
+                          {copiedId === "goal-overlay-url" ? "✓ 복사 완료!" : "🔗 목표바 URL 복사"}
+                        </button>
+                        <button
+                          type="button"
+                          className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold text-neutral-200 border border-white/10 transition"
+                          onClick={() => {
+                            if (!currentGoalPreset) return;
+                            const u = new URL(`${window.location.origin}/overlay/goal`);
+                            u.searchParams.set("u", overlayUserId);
+                            if (currentGoalPreset.id) u.searchParams.set("p", currentGoalPreset.id);
+                            window.open(u.toString(), "_blank", "noopener,noreferrer");
+                          }}
+                        >
+                          새 창 열기 ↗
+                        </button>
+                      </div>
+                    </div>
+
+                    {presets.length === 0 ? (
+                      <p className="text-xs text-neutral-500">오버레이 프리셋을 먼저 생성해 주세요.</p>
+                    ) : (
+                      <>
+                        {presets.length > 1 && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-neutral-400 font-medium">설정 적용 프리셋:</span>
+                            <select
+                              className="rounded-lg border border-white/15 bg-neutral-900/90 px-2.5 py-1 text-xs text-neutral-200"
+                              value={currentGoalPreset?.id || ""}
+                              onChange={(e) => setGoalEditPresetId(e.target.value)}
+                            >
+                              {presets.map((pr) => (
+                                <option key={pr.id} value={pr.id}>
+                                  {pr.name} ({pr.showGoal ? "목표바 ON" : "OFF"})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        {currentGoalPreset && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-semibold text-neutral-300 flex items-center">
+                                현재 목표 금액 (원)
+                                <InfoTooltip text="현재 방송에서 달성하고자 하는 목표 금액입니다." />
+                              </label>
+                              <input
+                                className="w-full px-2.5 py-1.5 rounded-lg bg-neutral-900/90 border border-white/15 text-sm font-bold text-indigo-200 focus:border-indigo-400 outline-none"
+                                type="number"
+                                min={0}
+                                step={10000}
+                                value={currentGoalPreset.goal || "0"}
+                                onChange={(e) => updatePreset(currentGoalPreset.id, { goal: e.target.value.replace(/[^\d]/g, "") })}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-semibold text-neutral-300 flex items-center">
+                                초기 기준 목표 (원)
+                                <InfoTooltip text="방송 시작 시의 1단계 기준 금액입니다." />
+                              </label>
+                              <input
+                                className="w-full px-2.5 py-1.5 rounded-lg bg-neutral-900/90 border border-white/15 text-sm text-neutral-200 focus:border-indigo-400 outline-none"
+                                type="number"
+                                min={0}
+                                step={10000}
+                                value={currentGoalPreset.goalBaseline || currentGoalPreset.goal || ""}
+                                onChange={(e) => updatePreset(currentGoalPreset.id, { goalBaseline: e.target.value.replace(/[^\d]/g, "") })}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-semibold text-neutral-300 flex items-center">
+                                달성 시 자동 증가폭 (원)
+                                <InfoTooltip text="목표 달성 시 다음 단계 목표로 자동 증가하는 단위 금액입니다." />
+                              </label>
+                              <input
+                                className="w-full px-2.5 py-1.5 rounded-lg bg-neutral-900/90 border border-white/15 text-sm text-neutral-200 focus:border-indigo-400 outline-none"
+                                type="number"
+                                min={0}
+                                step={10000}
+                                placeholder="예: 1000000"
+                                value={currentGoalPreset.goalIncreaseStep || ""}
+                                onChange={(e) => updatePreset(currentGoalPreset.id, { goalIncreaseStep: e.target.value.replace(/[^\d]/g, "") })}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-semibold text-neutral-300 flex items-center">
+                                목표 막대 라벨
+                                <InfoTooltip text="프로그레스바 앞에 표기될 텍스트입니다. (예: 후원, 미션, 식사 등)" />
+                              </label>
+                              <input
+                                className="w-full px-2.5 py-1.5 rounded-lg bg-neutral-900/90 border border-white/15 text-sm text-neutral-200 focus:border-indigo-400 outline-none"
+                                value={currentGoalPreset.goalLabel || "후원"}
+                                onChange={(e) => updatePreset(currentGoalPreset.id, { goalLabel: e.target.value })}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
+
               <div id="overlay-bg-media" className="mb-4 space-y-1">
-                <h3 className="text-sm font-semibold text-fuchsia-100">오버레이 배경 · 본문 이미지</h3>
-                <p className="text-[11px] text-neutral-400 leading-snug">
-                  후원 순위·엑셀표 오버레이의 GIF 배경·본문 이미지입니다. 각 URL과 연동되어 저장됩니다.
-                </p>
+                <h3 className="text-sm font-semibold text-fuchsia-100 flex items-center">
+                  오버레이 배경 · 본문 이미지
+                  <InfoTooltip text="후원 순위·엑셀표 오버레이의 GIF 배경·본문 이미지입니다. 각 URL과 연동되어 저장됩니다." />
+                </h3>
               </div>
               <div className="mt-3 rounded-2xl border border-fuchsia-400/35 bg-gradient-to-br from-fuchsia-950/55 via-rose-950/45 to-pink-950/40 p-4 shadow-[0_10px_36px_rgba(236,72,153,0.22)] backdrop-blur-md">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -21094,7 +21428,206 @@ function AdminPageInner() {
                             )}
                           </div>
                         <div className="px-3 pb-3 grid grid-cols-1 lg:grid-cols-2 gap-3 pt-3">
-                          <div className="space-y-2 lg:order-2">
+                          <div className="space-y-3 lg:order-2">
+                            {/* ⚡ 방송 핵심 퀵 컨트롤 (777데이 · 멤버 제외 · 2열 분할) */}
+                            <div className="rounded-xl border border-indigo-500/35 bg-gradient-to-b from-[#10172a] to-[#0c101c] p-3.5 space-y-3 shadow-md">
+                              <div className="flex items-center justify-between border-b border-indigo-500/20 pb-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-indigo-600/40 text-indigo-300 text-xs shadow-sm">
+                                    ⚡
+                                  </span>
+                                  <h4 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5">
+                                    방송 핵심 설정 <span className="text-[10px] font-normal text-indigo-300/80">(원클릭 제어)</span>
+                                  </h4>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    className={`px-2.5 py-1 rounded text-xs font-semibold transition ${copiedId === p.id ? "bg-emerald-600 text-white" : "bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-white/10"}`}
+                                    onClick={() => copyUrl(url, p.id)}
+                                  >
+                                    {copiedId === p.id ? "✓ 복사됨" : "URL 복사"}
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* 🎪 777데이 계산 & 수동 기여도 모드 */}
+                              <div className="rounded-lg border border-amber-500/30 bg-amber-950/20 p-2.5 space-y-2">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-base">🎪</span>
+                                    <span className="text-xs font-bold text-amber-200 flex items-center">
+                                      777데이 계산
+                                      <InfoTooltip text={
+                                        p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당")
+                                          ? "퐁당퐁당: 777,000원은 계좌/투네에 전액 남고, 기여도는 나온 시그 단가만 분리 반영됩니다."
+                                          : "일반 엑셀표는 후원 금액 그대로 기여도에 전액 합산됩니다."
+                                      } />
+                                    </span>
+                                    {p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당") ? (
+                                      <button
+                                        type="button"
+                                        className={`px-2.5 py-0.5 rounded text-xs font-bold transition border ${
+                                          p.day777Calc !== false
+                                            ? "border-amber-400 bg-amber-600 text-black shadow-sm"
+                                            : "border-white/10 bg-neutral-800 text-neutral-400"
+                                        }`}
+                                        onClick={() => updatePreset(p.id, { day777Calc: p.day777Calc === false })}
+                                      >
+                                        {p.day777Calc === false ? "OFF" : "ON"}
+                                      </button>
+                                    ) : (
+                                      <span className="text-[10px] text-neutral-400 font-medium">기존 엑셀 (전액 기여도 반영)</span>
+                                    )}
+                                  </div>
+
+                                  {(p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당")) && (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-xs text-neutral-400">수동 기여도:</span>
+                                      <button
+                                        type="button"
+                                        className={`px-2 py-0.5 rounded border text-xs font-semibold ${
+                                          p.pongdangManualMode
+                                            ? "border-emerald-500 text-emerald-200 bg-emerald-950/60"
+                                            : "border-white/10 text-neutral-400"
+                                        }`}
+                                        onClick={() => updatePreset(p.id, { pongdangManualMode: !p.pongdangManualMode })}
+                                      >
+                                        {p.pongdangManualMode ? "수동 ON" : "자동(OFF)"}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* 👥 표 표시 / 제외 멤버 설정 */}
+                              <div className="space-y-1.5 pt-2 border-t border-white/5">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <label className="text-xs text-neutral-300 font-bold flex items-center gap-1.5">
+                                    <span>👥</span> 표 표시 / 제외 멤버 설정
+                                  </label>
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[11px] text-neutral-300 border border-white/10"
+                                      onClick={() => {
+                                        updatePreset(p.id, { excludedMemberIds: [] });
+                                        setGlobalPreviewBump((n) => n + 1);
+                                      }}
+                                    >
+                                      전원 표시
+                                    </button>
+                                    {state.members.some((m) => {
+                                      const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                                      return !role.includes("부대표") && role.includes("대표");
+                                    }) && (
+                                      <button
+                                        type="button"
+                                        className="px-2 py-0.5 rounded bg-purple-900/60 hover:bg-purple-800 text-[11px] text-purple-200 border border-purple-500/30"
+                                        onClick={() => {
+                                          const rep = state.members.find((m) => {
+                                            const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                                            return !role.includes("부대표") && role.includes("대표");
+                                          });
+                                          if (rep) {
+                                            const current = Array.isArray(p.excludedMemberIds)
+                                              ? p.excludedMemberIds
+                                              : [];
+                                            const isExcluded = current.includes(rep.id);
+                                            const next = isExcluded
+                                              ? current.filter((id) => id !== rep.id)
+                                              : [...current, rep.id];
+                                            updatePreset(p.id, { excludedMemberIds: next });
+                                            setGlobalPreviewBump((n) => n + 1);
+                                          }
+                                        }}
+                                      >
+                                        {(() => {
+                                          const rep = state.members.find((m) => {
+                                            const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                                            return !role.includes("부대표") && role.includes("대표");
+                                          });
+                                          const isExcluded = rep && Array.isArray(p.excludedMemberIds) && p.excludedMemberIds.includes(rep.id);
+                                          return isExcluded ? "대표 복원" : "대표 제외";
+                                        })()}
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                                <p className="text-[10px] text-neutral-400">
+                                  클릭하여 엑셀표에서 특정 멤버를 제외(숨김)할 수 있습니다. (빨간색=제외됨, 녹색=표시됨)
+                                </p>
+                                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                  {state.members
+                                    .filter((m) => !isOperatingSettlementMember(m, state.memberPositions))
+                                    .map((m) => {
+                                      const excludedList = Array.isArray(p.excludedMemberIds)
+                                        ? p.excludedMemberIds
+                                        : [];
+                                      const isExcluded = excludedList.includes(m.id);
+                                      const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                                      return (
+                                        <button
+                                          key={`ov-member-toggle-top-${p.id}-${m.id}`}
+                                          type="button"
+                                          className={`px-2.5 py-1 rounded text-xs font-medium border transition-all flex items-center gap-1.5 cursor-pointer ${
+                                            isExcluded
+                                              ? "bg-rose-950/40 border-rose-500/40 text-rose-300 line-through opacity-75 hover:opacity-100"
+                                              : "bg-emerald-950/40 border-emerald-500/40 text-emerald-200 hover:bg-emerald-900/50"
+                                          }`}
+                                          onClick={() => {
+                                            const next = isExcluded
+                                              ? excludedList.filter((id) => id !== m.id)
+                                              : [...excludedList, m.id];
+                                            updatePreset(p.id, { excludedMemberIds: next });
+                                            setGlobalPreviewBump((n) => n + 1);
+                                          }}
+                                          title={isExcluded ? "클릭하여 표에 다시 표시" : "클릭하여 표에서 제외"}
+                                        >
+                                          <span>{isExcluded ? "✕" : "✓"}</span>
+                                          <span>{m.name}</span>
+                                          {role && <span className="text-[10px] opacity-75">({role})</span>}
+                                        </button>
+                                      );
+                                    })}
+                                </div>
+                              </div>
+
+                              {/* 📐 좌우 2열 분할 & 표만 모드 & 합계 선 */}
+                              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/5">
+                                <div className="flex items-center gap-1.5">
+                                  <label className="text-xs text-neutral-400">좌우 2열 분할</label>
+                                  <button
+                                    type="button"
+                                    className={`px-2 py-0.5 rounded border text-xs ${p.tableSplit !== false ? "border-amber-500 text-amber-300 font-bold bg-amber-950/30" : "border-white/10 text-neutral-400"}`}
+                                    onClick={() => updatePreset(p.id, { tableSplit: p.tableSplit === false ? true : false })}
+                                  >
+                                    {p.tableSplit !== false ? "2열 분할(기본)" : "단일 1열"}
+                                  </button>
+                                </div>
+                                <div className="flex items-center gap-1.5 ml-auto">
+                                  <label className="text-xs text-neutral-400">표만 모드</label>
+                                  <button
+                                    type="button"
+                                    className={`px-2 py-0.5 rounded border text-xs ${p.tableOnly ? "border-emerald-500 text-emerald-300 bg-emerald-950/30" : "border-white/10 text-neutral-500"}`}
+                                    onClick={() => updatePreset(p.id, { tableOnly: !p.tableOnly })}
+                                  >
+                                    {p.tableOnly ? "표만 ON" : "표만 OFF"}
+                                  </button>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <label className="text-xs text-neutral-400">합계 선</label>
+                                  <button
+                                    type="button"
+                                    className={`px-2 py-0.5 rounded border text-xs ${p.totalLineVisible ? "border-amber-500 text-amber-300" : "border-white/10 text-neutral-500"}`}
+                                    onClick={() => updatePreset(p.id, { totalLineVisible: !p.totalLineVisible })}
+                                  >
+                                    {p.totalLineVisible ? "선 ON" : "선 OFF"}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
                             {/* 후원 집계 기준 시점 (특정 일시부터 / 현재 시간부터 / 전체 기간) */}
                             <div className="rounded-xl border border-sky-500/30 bg-sky-950/20 p-3 sm:p-3.5 space-y-2.5">
                               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-500/20 pb-2">
@@ -21298,11 +21831,34 @@ function AdminPageInner() {
                               <div className="col-span-full">
                                 <ThemeThumbs value={p.theme} options={baseThemeChoices} onChange={(v) => { updatePreset(p.id, { theme: v }); setGlobalPreviewBump((n) => n + 1); }} />
                               </div>
-                              {/* Palette view removed per user preference; compact select retained */}
-                              {/* 「멤버·총합 테마」UI 제거 — 상단「테마」가 membersTheme/totalTheme도 함께 맞춤. 저장값·현재 표 설정은 변경하지 않음 */}
-                              {(p.showMembers || p.showTotal) && (
-                                <>
-                                  <label className="text-xs text-neutral-400">표 배경 불투명도</label>
+                            </div>
+
+                            {/* ⚙️ 상세 스타일 & 픽셀·색상 커스텀 (접기/펼치기 아코디언) */}
+                            <div className="rounded-xl border border-white/10 bg-neutral-900/40 overflow-hidden">
+                              <button
+                                type="button"
+                                onClick={() => setPresetAdvancedOpen((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}
+                                className="w-full flex items-center justify-between px-3.5 py-3 text-xs font-bold text-neutral-300 hover:text-white bg-white/5 hover:bg-white/10 transition"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm">🎨</span>
+                                  <span>상세 스타일 & 픽셀·색상 커스텀</span>
+                                  <span className="text-[10px] font-normal px-2 py-0.5 rounded bg-white/10 text-neutral-400">
+                                    40+ 세부 색상 · 하모니 테마 · 발광 · 줄무늬 · PNG 프레임
+                                  </span>
+                                </div>
+                                <span className="text-xs text-indigo-400 font-semibold">
+                                  {presetAdvancedOpen[p.id] ? "접기 ▲" : "펼치기 ▼"}
+                                </span>
+                              </button>
+                              {presetAdvancedOpen[p.id] && (
+                                <div className="p-3 border-t border-white/10 space-y-3">
+                                  <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
+                                    {/* Palette view removed per user preference; compact select retained */}
+                                    {/* 「멤버·총합 테마」UI 제거 — 상단「테마」가 membersTheme/totalTheme도 함께 맞춤. 저장값·현재 표 설정은 변경하지 않음 */}
+                                    {(p.showMembers || p.showTotal) && (
+                                      <>
+                                        <label className="text-xs text-neutral-400">표 배경 불투명도</label>
                                   <div className="flex items-center gap-2">
                                     <input type="range" min="0" max="100" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value })} className="flex-1 accent-emerald-500" />
                                     <input className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })} />
@@ -22489,10 +23045,13 @@ function AdminPageInner() {
                                 </>
                               )}
                             </div>
+                          </div>
+                        )}
+                      </div>
 
                             <div className="h-px bg-white/10 my-1" />
-                            <details className="rounded border border-white/10 bg-neutral-900/40" open>
-                              <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">표 옵션</summary>
+                            <details className="rounded border border-white/10 bg-neutral-900/40">
+                              <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">표 상세 옵션</summary>
                               <div className="p-3 space-y-2">
                                 <div className="flex items-center gap-2">
                                   <label className="text-xs text-neutral-400">표만 모드</label>
@@ -22952,7 +23511,7 @@ function AdminPageInner() {
                               ))}
                               {isAdminNavSectionVisible("goal") && (
                               <button
-                                id="overlay-goal-shortcut"
+                                id="overlay-goal-shortcut-preset-btn"
                                 className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
                                 onClick={() => {
                                   if (typeof window === "undefined") return;
@@ -24122,6 +24681,47 @@ function AdminPageInner() {
                   </span>
                 ) : null}
               </div>
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="p-3.5 rounded-xl border border-white/10 bg-black/30 shadow-sm">
+                  <div className="text-xs text-neutral-400 font-medium">현재 방송 총 후원금</div>
+                  <div className="text-xl font-extrabold text-emerald-400 mt-1">
+                    {(
+                      state.members.reduce((s, m) => s + (Number(m.account) || 0) + (Number(m.toon) || 0), 0)
+                    ).toLocaleString()}원
+                  </div>
+                  <div className="text-[11px] text-neutral-400 mt-1 flex items-center justify-between border-t border-white/5 pt-1.5">
+                    <span>계좌 {(state.members.reduce((s, m) => s + (Number(m.account) || 0), 0)).toLocaleString()}원</span>
+                    <span>투네 {(state.members.reduce((s, m) => s + (Number(m.toon) || 0), 0)).toLocaleString()}원</span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl border border-white/10 bg-black/30 shadow-sm">
+                  <div className="text-xs text-neutral-400 font-medium">정산 대상 인원</div>
+                  <div className="text-xl font-extrabold text-sky-400 mt-1">
+                    {state.members.filter((m) => !isOperatingSettlementMember(m, state.memberPositions)).length}명
+                  </div>
+                  <div className="text-[11px] text-neutral-400 mt-1 flex items-center justify-between border-t border-white/5 pt-1.5">
+                    <span>운영비/국고 {state.members.filter((m) => isOperatingSettlementMember(m, state.memberPositions)).length}명 별도</span>
+                    <span className="text-neutral-500">총 {state.members.length}명</span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl border border-white/10 bg-black/30 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <div className="text-xs text-neutral-400 font-medium">정산 기록 보관함</div>
+                    <div className="text-sm font-bold text-neutral-200 mt-1">
+                      과거 정산 내역 및 엑셀 다운로드
+                    </div>
+                  </div>
+                  <Link
+                    href="/settlements"
+                    prefetch={false}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-blue-400 hover:text-blue-300 mt-2 transition"
+                  >
+                    <span>📊 정산 기록 전체 페이지 열기 →</span>
+                  </Link>
+                </div>
+              </div>
             </AdminCollapsibleSection>
               </div>
             )}
@@ -24131,7 +24731,7 @@ function AdminPageInner() {
                 key="tab-logs"
                 data-admin-tab="logs"
                 className="ui-tab-fade-in"
-                style={{ display: activeNav === "logs" ? "" : "none" }}
+                style={{ display: (activeNav === "settlement" || activeNav === "logs") ? "" : "none" }}
               >
             <AdminCollapsibleSection
               id="logs-data"
