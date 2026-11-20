@@ -38,9 +38,32 @@ describe("normalizeDonationAggregateFromAt", () => {
     expect(normalizeDonationAggregateFromAt("1700000000000")).toBe(1_700_000_000_000);
     expect(normalizeDonationAggregateFromAt(1_700_000_000_000.9)).toBe(1_700_000_000_000);
   });
+
+  it("parses off / -1 as -1 for calculation OFF", () => {
+    expect(normalizeDonationAggregateFromAt("off")).toBe(-1);
+    expect(normalizeDonationAggregateFromAt("-1")).toBe(-1);
+    expect(normalizeDonationAggregateFromAt(-1)).toBe(-1);
+    expect(normalizeDonationAggregateFromAt("none")).toBe(-1);
+  });
 });
 
 describe("applyOverlayDonationDisplayTotals", () => {
+  it("sets all amounts and contributions to 0 when calculation is OFF (fromAt: -1)", () => {
+    const donors: Donor[] = [
+      donor({ id: "a", memberId: "m1", amount: 10_000, at: 500, target: "account" }),
+      donor({ id: "b", memberId: "m1", amount: 20_000, at: 1_500, target: "account" }),
+    ];
+    const state = {
+      members: [member({ id: "m1", name: "A", account: 30_000, toon: 10_000, contribution: 40_000 })],
+      donors,
+      contributionLogs: [],
+    } as AppState;
+
+    const next = applyOverlayDonationDisplayTotals(state, { fromAt: -1 as any });
+    expect(next.members[0]?.account).toBe(0);
+    expect(next.members[0]?.toon).toBe(0);
+    expect(next.members[0]?.contribution).toBe(0);
+  });
   it("does not mutate original donors and only sums after fromAt", () => {
     const fromAt = 1_000;
     const donors: Donor[] = [
@@ -319,6 +342,30 @@ describe("day777Calc", () => {
     const next = applyOverlayDonationDisplayTotals(state, { day777Calc: true });
     expect(next.members[0]?.toon).toBe(10_000);
     expect(next.members[0]?.contribution).toBe(50_000);
+  });
+
+  it("ignores donationExcluded rows when calculating external sig contribution in day777Calc", () => {
+    const state = {
+      members: [member({ id: "m1", name: "수린" })],
+      donors: [
+        donor({
+          id: "toona_excluded",
+          memberId: "m1",
+          amount: 777_000,
+          at: 1_500,
+          target: "account",
+          sigPrice: 50_000,
+          isSigCredit: true,
+          donationExcluded: true,
+        }),
+      ],
+      contributionLogs: [],
+      rouletteState: null,
+    } as AppState;
+
+    const next = applyOverlayDonationDisplayTotals(state, { day777Calc: true });
+    expect(next.members[0]?.account).toBe(0);
+    expect(next.members[0]?.contribution).toBe(0);
   });
 
   it("when day777Calc is false (main excel table), contribution uses donation amount, not sigPrice", () => {

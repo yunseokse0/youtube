@@ -2,10 +2,12 @@ import type { AppState, ContributionLog, Donor, Member, RouletteState, SigItem }
 import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import { readManualSigBroadcastFromState } from "@/lib/manual-sig-broadcast-state";
 
-/** 프리셋/URL 값 → epoch ms. 비활성(전체 기간)이면 null */
+/** 프리셋/URL 값 → epoch ms. 비활성(전체 기간)이면 null, 책정 OFF면 -1 */
 export function normalizeDonationAggregateFromAt(raw: unknown): number | null {
   if (raw === undefined || raw === null || raw === "") return null;
-  const n = typeof raw === "number" ? raw : Number(String(raw).trim());
+  const s = String(raw).trim().toLowerCase();
+  if (s === "off" || s === "-1" || s === "false" || s === "none") return -1;
+  const n = typeof raw === "number" ? raw : Number(s);
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.floor(n);
 }
@@ -14,6 +16,7 @@ export function filterDonorsFromAggregateAt(
   donors: Donor[] | null | undefined,
   fromAt: number
 ): Donor[] {
+  if (fromAt === -1) return [];
   const t = Math.floor(Number(fromAt) || 0);
   if (t <= 0) return Array.isArray(donors) ? donors.slice() : [];
   return (donors || []).filter((d) => {
@@ -26,6 +29,7 @@ export function filterContributionLogsFromAggregateAt(
   logs: ContributionLog[] | null | undefined,
   fromAt: number
 ): ContributionLog[] {
+  if (fromAt === -1) return [];
   const t = Math.floor(Number(fromAt) || 0);
   if (t <= 0) return Array.isArray(logs) ? logs.slice() : [];
   return (logs || []).filter((l) => {
@@ -154,6 +158,7 @@ function collectAppearedSigCredits(opts: {
   fromAt?: number | null;
 }): AppearedSigCredit[] {
   const fromAt = normalizeDonationAggregateFromAt(opts.fromAt) ?? 0;
+  if (fromAt === -1) return [];
   const out: AppearedSigCredit[] = [];
   const rs = opts.rouletteState;
   const buyers = opts.manualBuyerMemberIds || [];
@@ -197,6 +202,7 @@ export function resolveDay777SigCreditFallbackMemberId(
   let latestShot: Donor | null = null;
   const memberIds = new Set<string>();
   for (const d of rows) {
+    if (d.donationExcluded === true) continue;
     const mid = String(d.memberId || "").trim();
     if (mid) memberIds.add(mid);
     if (Math.max(0, Math.floor(Number(d.amount) || 0)) !== DAY777_SHOT_AMOUNT) continue;
@@ -213,13 +219,18 @@ export function collectDay777SigContributionByMember(
   state: AppState | null | undefined,
   fromAt?: number | null
 ): Map<string, number> {
+  const explicitFromAt = normalizeDonationAggregateFromAt(fromAt);
+  const isPongdangOff = Number(state?.pongdangResetAt || 0) === -1;
+  if (explicitFromAt === -1 || isPongdangOff) {
+    return new Map();
+  }
+
   const resetCutoff = Math.max(
     0,
     Number(state?.settlementResetAt || 0),
     Number((state as { intentionalDonationClearAt?: number })?.intentionalDonationClearAt || 0),
     Number(state?.pongdangResetAt || 0)
   );
-  const explicitFromAt = normalizeDonationAggregateFromAt(fromAt);
   // 사용자가 프리셋/오버레이에서 명시적으로 특정 시각(또는 지금부터)을 지정한 경우 해당 시점 이후로 집계.
   // 미지정 시 리셋 시각(pongdangResetAt / settlementResetAt) 기준으로 누적 수집.
   const effectiveFromAtOrNull = explicitFromAt != null
@@ -250,6 +261,7 @@ export function collectDay777SigContributionByMember(
   // 외부(Toona 등 타 프로젝트)에서 전달된 나온 시그 기여도 (sigPrice 또는 isSigCredit / contributionPoints)
   const donorRows = effectiveFromAtOrNull != null ? filterDonorsFromAggregateAt(state?.donors, effectiveFromAtOrNull) : state?.donors || [];
   for (const d of donorRows) {
+    if (d.donationExcluded === true) continue;
     const mid = String(d.memberId || fallback || "").trim();
     if (!mid) continue;
     const explicitSigPrice = Math.max(0, Math.floor(Number((d as { sigPrice?: number }).sigPrice || 0)));
@@ -312,6 +324,19 @@ export function applyOverlayDonationDisplayTotals(
   const fromAt = normalizeDonationAggregateFromAt(opts?.fromAt);
   const day777 = Boolean(opts?.day777Calc);
 
+  // 책정 OFF (-1): 전체 후원 및 기여도 0원 고정 표출
+  if (fromAt === -1) {
+    return {
+      ...state,
+      members: (state.members || []).map((m) => ({
+        ...m,
+        account: 0,
+        toon: 0,
+        contribution: 0,
+      })),
+    };
+  }
+
   if (fromAt == null && !day777) return state;
 
   const donorsForAmount =
@@ -348,7 +373,8 @@ export function applyOverlayDonationDisplayTotals(
       const autoVal = sigById.get(m.id) ?? 0;
       const manualAdj = isManualMode ? Number(manualContribs[m.id]) || 0 : 0;
       const currentContrib = Math.max(0, Math.floor(Number(orig?.contribution) || 0));
-      const baseVal = autoVal > 0 ? autoVal : (effectiveCutoff != null ? 0 : currentContrib);
+      const hasDonorsSource = Array.isArray(state?.donors) && state.donors.length > 0;
+      const baseVal = autoVal > 0 ? autoVal : (effectiveCutoff != null || hasDonorsSource ? 0 : currentContrib);
       return {
         ...m,
         contribution: Math.max(0, baseVal + manualAdj),
@@ -388,6 +414,9 @@ export function resolveOverlayContributionSource(
   opts: OverlayDonationDisplayOpts = {}
 ): Pick<AppState, "donors" | "contributionLogs"> {
   const fromAt = normalizeDonationAggregateFromAt(opts.fromAt);
+  if (fromAt === -1) {
+    return { donors: [], contributionLogs: [] };
+  }
   const day777 = Boolean(opts.day777Calc);
   if (!day777 && fromAt == null) {
     return { donors: state.donors, contributionLogs: state.contributionLogs };

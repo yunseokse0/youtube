@@ -319,6 +319,8 @@ export type DonationTableColumnsOptions = {
   showContributionSum?: boolean;
   /** 순위 다음 커스텀 열(상벌금 등) 표시 — 기본 ON */
   showCustomColumn?: boolean;
+  /** 6명 이상 시 좌우 2열 분할 표시 여부 (기본 false: 단일 1열 유지로 OBS 너비 2000+ 초과 방지) */
+  tableSplit?: boolean;
 };
 
 export type SigMatchSettings = {

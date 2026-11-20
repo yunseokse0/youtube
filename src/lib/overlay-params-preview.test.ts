@@ -868,6 +868,12 @@ describe("table column text colors", () => {
     expect(
       resolveDonationAggregateFromAt(new URLSearchParams(), { id: "ov_agg", donationAggregateFromAt: "" }, { ready: true })
     ).toBeNull();
+    expect(
+      resolveDonationAggregateFromAt(new URLSearchParams(), { id: "ov_agg", donationAggregateFromAt: "off" }, { ready: true })
+    ).toBe(-1);
+    expect(
+      resolveDonationAggregateFromAt(new URLSearchParams("donationAggregateFromAt=off"), null, { ready: false })
+    ).toBe(-1);
   });
 
   it("serializes and resolves day777Calc", () => {

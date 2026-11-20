@@ -180,6 +180,8 @@ export type OverlayPresetLike = {
   tableGridLines?: boolean;
   /** 엑셀표 열 구분 세로선 (기본 true). tableGridLines=false 이면 무시 */
   tableVerticalLines?: boolean;
+  /** 엑셀표 좌우 2열 분할(6명 이상). 기본 false (단일 1열 유지로 OBS 너비 2000+ 초과 방지) */
+  tableSplit?: boolean;
   vertical?: boolean;
   /** 열별 본문 글자색(비우면 본문/테마 기본). 헤더 글자색과 별개 */
   rankColor?: string;
@@ -450,6 +452,8 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.totalLineVisible) q.set("totalLineVisible", "true");
   if (preset.tableGridLines === false) q.set("tableGridLines", "false");
   if (preset.tableVerticalLines === false) q.set("tableVerticalLines", "false");
+  if (preset.tableSplit === true) q.set("tableSplit", "true");
+  else if (preset.tableSplit === false) q.set("tableSplit", "false");
   for (const key of [
     "rankColor",
     "customColor",
@@ -535,10 +539,14 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
     q.set("customHeaderLabel", preset.customHeaderLabel.trim());
   }
   {
-    const fromAtRaw = String(preset.donationAggregateFromAt ?? "").trim();
-    const fromAtNum = Number(fromAtRaw);
-    if (fromAtRaw && Number.isFinite(fromAtNum) && fromAtNum > 0) {
-      q.set("donationAggregateFromAt", String(Math.floor(fromAtNum)));
+    const fromAtRaw = String(preset.donationAggregateFromAt ?? "").trim().toLowerCase();
+    if (fromAtRaw === "off" || fromAtRaw === "-1" || fromAtRaw === "false") {
+      q.set("donationAggregateFromAt", "off");
+    } else {
+      const fromAtNum = Number(fromAtRaw);
+      if (fromAtRaw && Number.isFinite(fromAtNum) && fromAtNum > 0) {
+        q.set("donationAggregateFromAt", String(Math.floor(fromAtNum)));
+      }
     }
   }
   if (preset.day777Calc === true) q.set("day777Calc", "true");
@@ -645,6 +653,7 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "showTableSumRow",
   "showCustomColumn",
   "showRoleColumn",
+  "tableSplit",
   "customHeaderLabel",
   "donationAggregateFromAt",
   "day777Calc",
@@ -839,6 +848,7 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "showTableSumRow",
   "showCustomColumn",
   "showRoleColumn",
+  "tableSplit",
   "customHeaderLabel",
   "donationAggregateFromAt",
   "day777Calc",
@@ -2310,7 +2320,7 @@ export function resolveTableColumnBgColor(
   return resolveTableCssColorParam(paramKey, rawSp, preset, opts);
 }
 
-/** 엑셀표 후원 집계 시작 시각(epoch ms). null이면 전체 기간 */
+/** 엑셀표 후원 집계 시작 시각(epoch ms). null이면 전체 기간, -1이면 책정 OFF */
 export function resolveDonationAggregateFromAt(
   rawSp: SearchParamsLike,
   preset: OverlayPresetLike | null,
@@ -2322,8 +2332,9 @@ export function resolveDonationAggregateFromAt(
     presetToParams(preset),
     opts
   );
-  const raw = (merged || "").trim();
+  const raw = (merged || "").trim().toLowerCase();
   if (!raw) return null;
+  if (raw === "off" || raw === "-1" || raw === "false" || raw === "none") return -1;
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.floor(n);

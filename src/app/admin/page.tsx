@@ -439,6 +439,7 @@ type OverlayPreset = {
   showRestroomColumn?: boolean;
   showContributionSum?: boolean;
   showTableSumRow?: boolean;
+  tableSplit?: boolean;
   accountHeaderLabel?: string;
   toonHeaderLabel?: string;
   restroomHeaderLabel?: string;
@@ -2061,9 +2062,11 @@ function AdminPageInner() {
   const [mealMatchPreviewIframeKey, setMealMatchPreviewIframeKey] = useState(0);
   const [mealBattleFromAt, setMealBattleFromAt] = useState("");
   const [sigMatchFromAt, setSigMatchFromAt] = useState("");
+  const [pongdangFromAtInput, setPongdangFromAtInput] = useState("");
   useEffect(() => {
     setMealBattleFromAt((prev) => prev || formatMealBattleFromAtInput(Date.now()));
     setSigMatchFromAt((prev) => prev || formatMealBattleFromAtInput(Date.now()));
+    setPongdangFromAtInput((prev) => prev || formatMealBattleFromAtInput(Date.now()));
   }, []);
   const [mealBattleApplyMemberIds, setMealBattleApplyMemberIds] = useState<string[] | null>(null);
   const [battleScalePct, setBattleScalePct] = useState("100");
@@ -7359,6 +7362,41 @@ function AdminPageInner() {
     });
   };
 
+  const applySigMatchCountFromNow = () => {
+    const now = Date.now();
+    applySigMatchCountFrom(now);
+    setSigMatchFromAt(formatMealBattleFromAtInput(now));
+    showAppToast("지금부터 들어오는 후원만 시그 대전에 집계합니다.", { variant: "success", durationMs: 2200 });
+  };
+
+  const applySigMatchCountFromAll = () => {
+    applySigMatchCountFrom(0);
+    setSigMatchFromAt("");
+    showAppToast("시그 대전 후원을 전체 기간 기준으로 재집계합니다.", { variant: "success", durationMs: 2200 });
+  };
+
+  const turnOffSigMatchCalculation = () => {
+    setState((prev: AppState) => {
+      const links: Record<string, { active: boolean; startedAt?: number }> = {};
+      for (const m of prev.members) {
+        links[m.id] = { active: false, startedAt: 0 };
+      }
+      const next: AppState = {
+        ...prev,
+        donationSyncMode: prev.donationSyncMode === "sigMatch" ? "none" : prev.donationSyncMode,
+        sigMatchSettings: {
+          ...prev.sigMatchSettings,
+          donationLinks: links,
+        },
+        updatedAt: Date.now(),
+      };
+      stateRef.current = next;
+      persistState(next, { omitDonationFields: true });
+      return next;
+    });
+    showAppToast("시그 대전 후원 책정을 OFF했습니다. (새 후원이 대전에 미반영)", { variant: "info", durationMs: 2200 });
+  };
+
   const setSigMatchDraftEditing = (key: keyof typeof sigMatchNumericDraft, editing: boolean) => {
     sigMatchNumericEditingRef.current[key] = editing;
   };
@@ -7859,6 +7897,97 @@ function AdminPageInner() {
       variant: "success",
       durationMs: 2200,
     });
+  };
+
+  const applyMealBattleFromNow = () => {
+    const now = Date.now();
+    const fallbackIds = (state.mealBattle?.participants || []).map((p) => p.memberId);
+    const ids = (mealBattleApplyMemberIds ?? fallbackIds).filter(Boolean);
+    setState((prev: AppState) => {
+      let participants = prev.mealBattle?.participants || [];
+      for (const id of ids) {
+        const member = prev.members.find((m) => m.id === id);
+        if (!member || isOperatingSettlementMember(member, prev.memberPositions)) continue;
+        participants = ensureMealBattleParticipantRow(
+          { ...prev.mealBattle, participants },
+          member,
+          MEAL_PARTICIPANT_COLORS,
+          prev.memberPositions
+        );
+      }
+      const mealBattle = applyMealBattleDonationsFromTime(
+        { ...prev.mealBattle, participants },
+        prev.donors,
+        { fromAt: now, memberIds: ids }
+      );
+      const next: AppState = {
+        ...prev,
+        donationSyncMode: "mealBattle",
+        mealBattle,
+        updatedAt: Date.now(),
+      };
+      stateRef.current = next;
+      persistState(next);
+      return next;
+    });
+    setMealBattleFromAt(formatMealBattleFromAtInput(now));
+    showAppToast("지금부터 들어오는 후원만 식사 대전에 집계합니다.", { variant: "success", durationMs: 2200 });
+  };
+
+  const applyMealBattleFromAll = () => {
+    const fallbackIds = (state.mealBattle?.participants || []).map((p) => p.memberId);
+    const ids = (mealBattleApplyMemberIds ?? fallbackIds).filter(Boolean);
+    setState((prev: AppState) => {
+      let participants = prev.mealBattle?.participants || [];
+      for (const id of ids) {
+        const member = prev.members.find((m) => m.id === id);
+        if (!member || isOperatingSettlementMember(member, prev.memberPositions)) continue;
+        participants = ensureMealBattleParticipantRow(
+          { ...prev.mealBattle, participants },
+          member,
+          MEAL_PARTICIPANT_COLORS,
+          prev.memberPositions
+        );
+      }
+      const mealBattle = applyMealBattleDonationsFromTime(
+        { ...prev.mealBattle, participants },
+        prev.donors,
+        { fromAt: 0, memberIds: ids }
+      );
+      const next: AppState = {
+        ...prev,
+        donationSyncMode: "mealBattle",
+        mealBattle,
+        updatedAt: Date.now(),
+      };
+      stateRef.current = next;
+      persistState(next);
+      return next;
+    });
+    setMealBattleFromAt("");
+    showAppToast("식사 대전 후원을 전체 기간 기준으로 재집계합니다.", { variant: "success", durationMs: 2200 });
+  };
+
+  const turnOffMealBattleCalculation = () => {
+    setState((prev: AppState) => {
+      const participants = (prev.mealBattle?.participants || []).map((p) => ({
+        ...p,
+        donationLinkActive: false,
+      }));
+      const next: AppState = {
+        ...prev,
+        donationSyncMode: prev.donationSyncMode === "mealBattle" ? "none" : prev.donationSyncMode,
+        mealBattle: {
+          ...prev.mealBattle,
+          participants,
+        },
+        updatedAt: Date.now(),
+      };
+      stateRef.current = next;
+      persistState(next);
+      return next;
+    });
+    showAppToast("식사 대전 후원 책정을 OFF했습니다. (새 후원이 대전에 미반영)", { variant: "info", durationMs: 2200 });
   };
 
   const adjustSigMatchManual = (memberId: string, delta: number) => {
@@ -11449,6 +11578,47 @@ function AdminPageInner() {
     showAppToast("기존 후원 및 시그 기록에서 퐁당퐁당 기여도를 다시 불러왔습니다.");
   }, [persistState]);
 
+  const applyPongdangFromNow = useCallback(() => {
+    const now = Date.now();
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        pongdangResetAt: now,
+      };
+      persistState(next, { omitDonationFields: true });
+      return next;
+    });
+    setGlobalPreviewBump((n) => n + 1);
+    showAppToast("지금부터 들어오는 후원/룰렛만 퐁당퐁당 기여도에 책정합니다.", { variant: "success", durationMs: 2200 });
+  }, [persistState]);
+
+  const applyPongdangFromChosenTime = useCallback((timeMs: number) => {
+    if (!timeMs || timeMs <= 0) return;
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        pongdangResetAt: timeMs,
+      };
+      persistState(next, { omitDonationFields: true });
+      return next;
+    });
+    setGlobalPreviewBump((n) => n + 1);
+    showAppToast("지정된 일시 이후 후원/룰렛만 퐁당퐁당 기여도에 책정합니다.", { variant: "success", durationMs: 2200 });
+  }, [persistState]);
+
+  const turnOffPongdangCalculation = useCallback(() => {
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        pongdangResetAt: -1,
+      };
+      persistState(next, { omitDonationFields: true });
+      return next;
+    });
+    setGlobalPreviewBump((n) => n + 1);
+    showAppToast("퐁당퐁당 후원 책정을 OFF했습니다. (새로운 후원이 기여도에 미반영)", { variant: "info", durationMs: 2200 });
+  }, [persistState]);
+
   const openContributionRestoreModal = useCallback(async () => {
     try {
       const records = (await loadSettlementRecordsPreferApi(user?.id)) || loadSettlementRecords(user?.id);
@@ -13327,52 +13497,103 @@ function AdminPageInner() {
                   <p className="text-[11px] text-neutral-400">
                     정한 시각 이후에 들어온 후원만 참가자 시그 점수에 넣습니다. 「현재 시간으로 초기화」는 점수와 수기 보정을 0으로 돌리고 지금부터 집계합니다. 정산표 후원 목록은 그대로 둡니다.
                   </p>
-                  <div className="text-[11px] text-neutral-300">
-                    현재 집계 시작:{" "}
-                    <span className="font-semibold text-amber-200">
-                      {(() => {
-                        const at = commonSigMatchDonationStartAt(
-                          state.sigMatchSettings,
-                          sigMatchCountTargetIds(state)
-                        );
-                        return at
-                          ? new Date(at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
-                          : "멤버별로 다름(연동 버튼 기준)";
-                      })()}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-end gap-2">
-                    <button
-                      type="button"
-                      className="rounded bg-amber-700 px-2 py-1 text-xs font-medium text-white hover:bg-amber-600"
-                      onClick={resetSigMatchCountToNow}
-                    >
-                      현재 시간으로 초기화
-                    </button>
-                    <label className="space-y-1 text-xs text-neutral-400">
-                      특정 시간 설정
-                      <input
-                        type="datetime-local"
-                        suppressHydrationWarning
-                        className="block rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-neutral-100"
-                        value={sigMatchFromAt}
-                        onChange={(e) => setSigMatchFromAt(e.target.value)}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="rounded bg-neutral-700 px-2 py-1 text-xs text-neutral-200 hover:bg-neutral-600"
-                      onClick={() => setSigMatchFromAt(formatMealBattleFromAtInput(Date.now()))}
-                    >
-                      현재 시간 입력
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded bg-amber-700 px-2 py-1 text-xs font-medium text-white hover:bg-amber-600"
-                      onClick={applySigMatchCountFromChosenTime}
-                    >
-                      이 시각부터 집계
-                    </button>
+                  <div className="rounded-lg border border-sky-500/30 bg-sky-950/20 p-3 space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-500/20 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-600/30 text-sky-200 text-sm shadow-sm">
+                          ⏱️
+                        </span>
+                        <div>
+                          <h4 className="text-xs sm:text-sm font-bold text-sky-200 flex items-center gap-1.5">
+                            시그 대전 후원 책정 제어
+                            {(() => {
+                              const isOff =
+                                state.donationSyncMode !== "sigMatch" ||
+                                (state.sigMatchSettings.donationLinks &&
+                                  Object.values(state.sigMatchSettings.donationLinks).length > 0 &&
+                                  Object.values(state.sigMatchSettings.donationLinks).every((l) => !l.active));
+                              if (isOff) {
+                                return (
+                                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-rose-500/30 text-rose-200 border border-rose-400/40">
+                                    ⛔ 책정 OFF
+                                  </span>
+                                );
+                              }
+                              const at = commonSigMatchDonationStartAt(
+                                state.sigMatchSettings,
+                                sigMatchCountTargetIds(state)
+                              );
+                              if (at && at > 0) {
+                                return (
+                                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-sky-500/30 text-sky-200 border border-sky-400/40">
+                                    ⏱️ {new Date(at).toLocaleTimeString("ko-KR")} 이후 집계
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 border border-emerald-400/40">
+                                  ✅ 전체 기간
+                                </span>
+                              );
+                            })()}
+                          </h4>
+                          <p className="text-[11px] text-sky-300/70">
+                            시그 대전 점수에 반영될 후원의 집계 기준 시각을 설정하거나 책정을 일시 중단(OFF)합니다.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 rounded-lg border border-emerald-500/60 bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-100 text-xs font-semibold shadow-sm transition-all"
+                        onClick={applySigMatchCountFromAll}
+                      >
+                        ✅ 전체 기간
+                      </button>
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 rounded-lg border border-sky-400 bg-sky-900/50 hover:bg-sky-800/60 text-sky-100 text-xs font-semibold shadow-sm transition-all flex items-center gap-1"
+                        onClick={applySigMatchCountFromNow}
+                        title="지금 이 순간 이후의 후원만 시그 대전 점수로 책정합니다"
+                      >
+                        <span>⏱️</span> 현재 시간부터
+                      </button>
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 rounded-lg border border-amber-500/60 bg-amber-950/60 hover:bg-amber-900/70 text-amber-100 text-xs font-semibold shadow-sm transition-all flex items-center gap-1"
+                        onClick={resetSigMatchCountToNow}
+                        title="시그 대전 점수를 0으로 초기화하고 지금부터 새로 집계합니다"
+                      >
+                        <span>🔄</span> 대전 초기화
+                      </button>
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 rounded-lg border border-rose-500/60 bg-rose-950/60 hover:bg-rose-900/70 text-rose-200 text-xs font-semibold shadow-sm transition-all flex items-center gap-1"
+                        onClick={turnOffSigMatchCalculation}
+                        title="시그 대전 후원 책정을 중단합니다 (후원이 들어와도 점수 미반영)"
+                      >
+                        <span>⛔</span> 책정 OFF
+                      </button>
+                      <div className="flex items-center gap-1.5 ml-auto">
+                        <span className="text-xs text-neutral-400">📅 특정 일시:</span>
+                        <input
+                          type="datetime-local"
+                          suppressHydrationWarning
+                          className="px-2 py-1 rounded bg-neutral-900 border border-white/20 text-xs text-white focus:border-sky-400 focus:outline-none"
+                          value={sigMatchFromAt}
+                          onChange={(e) => setSigMatchFromAt(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="px-2.5 py-1 rounded bg-sky-700 hover:bg-sky-600 text-xs font-medium text-white shadow-sm"
+                          onClick={applySigMatchCountFromChosenTime}
+                        >
+                          이 시각부터 집계
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_140px] gap-2">
@@ -14036,32 +14257,107 @@ function AdminPageInner() {
                   </code>
                 </div>
 
-                <div className="rounded-lg border border-amber-500/30 bg-amber-950/20 p-3 space-y-2">
-                  <div className="text-xs font-medium text-amber-100">대전 UI 후원 반영</div>
-                  <p className="text-[11px] text-neutral-400">
-                    초기화는 게이지만 0으로 돌리고 지금부터 후원을 받습니다. 아래 시각을 고르면 그 시각 이후, 체크한 멤버에게 들어온 후원만 대전 게이지에 다시 넣습니다. 정산표 후원 목록은 그대로 둡니다.
-                  </p>
-                  <div className="flex flex-wrap items-end gap-2">
-                    <label className="space-y-1 text-xs text-neutral-400">
-                      후원 반영 시작
-                      <input
-                        type="datetime-local"
-                        suppressHydrationWarning
-                        className="block rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-neutral-100"
-                        value={mealBattleFromAt}
-                        onChange={(e) => setMealBattleFromAt(e.target.value)}
-                      />
-                    </label>
+                <div className="rounded-lg border border-sky-500/30 bg-sky-950/20 p-3 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-500/20 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-600/30 text-sky-200 text-sm shadow-sm">
+                        ⏱️
+                      </span>
+                      <div>
+                        <h4 className="text-xs sm:text-sm font-bold text-sky-200 flex items-center gap-1.5">
+                          식사 대전 후원 책정 제어
+                          {(() => {
+                            const isOff =
+                              state.donationSyncMode !== "mealBattle" ||
+                              (state.mealBattle?.participants || []).every((p) => !p.donationLinkActive);
+                            if (isOff) {
+                              return (
+                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-rose-500/30 text-rose-200 border border-rose-400/40">
+                                  ⛔ 책정 OFF
+                                </span>
+                              );
+                            }
+                            const startedAts = (state.mealBattle?.participants || [])
+                              .filter((p) => p.donationLinkActive && (p.donationLinkStartedAt || 0) > 0)
+                              .map((p) => p.donationLinkStartedAt || 0);
+                            const minStartedAt = startedAts.length > 0 ? Math.min(...startedAts) : 0;
+                            if (minStartedAt > 0) {
+                              return (
+                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-sky-500/30 text-sky-200 border border-sky-400/40">
+                                  ⏱️ {new Date(minStartedAt).toLocaleTimeString("ko-KR")} 이후 집계
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 border border-emerald-400/40">
+                                ✅ 전체 기간
+                              </span>
+                            );
+                          })()}
+                        </h4>
+                        <p className="text-[11px] text-sky-300/70">
+                          식사 대전 게이지에 반영될 후원의 집계 기준 시각을 설정하거나 책정을 일시 중단(OFF)합니다.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      className="rounded bg-amber-700 px-2 py-1 text-xs font-medium text-white hover:bg-amber-600"
-                      onClick={applyMealBattleFromChosenTime}
+                      className="px-3 py-1.5 rounded-lg border border-emerald-500/60 bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-100 text-xs font-semibold shadow-sm transition-all"
+                      onClick={applyMealBattleFromAll}
                     >
-                      이 시각부터 반영
+                      ✅ 전체 기간
                     </button>
                     <button
                       type="button"
-                      className="rounded bg-neutral-700 px-2 py-1 text-xs text-neutral-200 hover:bg-neutral-600"
+                      className="px-3 py-1.5 rounded-lg border border-sky-400 bg-sky-900/50 hover:bg-sky-800/60 text-sky-100 text-xs font-semibold shadow-sm transition-all flex items-center gap-1"
+                      onClick={applyMealBattleFromNow}
+                      title="지금 이 순간 이후의 후원만 식사 대전 게이지에 책정합니다"
+                    >
+                      <span>⏱️</span> 현재 시간부터
+                    </button>
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 rounded-lg border border-amber-500/60 bg-amber-950/60 hover:bg-amber-900/70 text-amber-100 text-xs font-semibold shadow-sm transition-all flex items-center gap-1"
+                      onClick={resetMealMatchScores}
+                      title="식사 대전 게이지를 0으로 초기화하고 지금부터 새로 집계합니다"
+                    >
+                      <span>🔄</span> 대전 초기화
+                    </button>
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 rounded-lg border border-rose-500/60 bg-rose-950/60 hover:bg-rose-900/70 text-rose-200 text-xs font-semibold shadow-sm transition-all flex items-center gap-1"
+                      onClick={turnOffMealBattleCalculation}
+                      title="식사 대전 후원 책정을 중단합니다 (후원이 들어와도 게이지 미반영)"
+                    >
+                      <span>⛔</span> 책정 OFF
+                    </button>
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      <span className="text-xs text-neutral-400">📅 특정 일시:</span>
+                      <input
+                        type="datetime-local"
+                        suppressHydrationWarning
+                        className="px-2 py-1 rounded bg-neutral-900 border border-white/20 text-xs text-white focus:border-sky-400 focus:outline-none"
+                        value={mealBattleFromAt}
+                        onChange={(e) => setMealBattleFromAt(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="px-2.5 py-1 rounded bg-sky-700 hover:bg-sky-600 text-xs font-medium text-white shadow-sm"
+                        onClick={applyMealBattleFromChosenTime}
+                      >
+                        이 시각부터 반영
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
+                    <span className="text-xs text-neutral-400">적용 대상 멤버:</span>
+                    <button
+                      type="button"
+                      className="px-2 py-0.5 rounded bg-neutral-700 hover:bg-neutral-600 text-[11px] text-neutral-200"
                       onClick={() =>
                         setMealBattleApplyMemberIds(mealBattleSelectableMembers.map((m) => m.id))
                       }
@@ -14070,7 +14366,7 @@ function AdminPageInner() {
                     </button>
                     <button
                       type="button"
-                      className="rounded bg-neutral-700 px-2 py-1 text-xs text-neutral-200 hover:bg-neutral-600"
+                      className="px-2 py-0.5 rounded bg-neutral-700 hover:bg-neutral-600 text-[11px] text-neutral-200"
                       onClick={() => setMealBattleApplyMemberIds([])}
                     >
                       선택 해제
@@ -18395,6 +18691,101 @@ function AdminPageInner() {
 
               {/* 퐁당퐁당 777데이 수동 기여도 관리 패널 */}
               <div className="mt-6 pt-5 border-t border-white/10 space-y-3">
+                {/* 퐁당퐁당 후원 책정 제어 박스 */}
+                <div className="rounded-xl border border-sky-500/30 bg-sky-950/20 p-3 sm:p-3.5 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-500/20 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-600/30 text-sky-200 text-sm shadow-sm">
+                        ⏱️
+                      </span>
+                      <div>
+                        <h4 className="text-xs sm:text-sm font-bold text-sky-200 flex items-center gap-1.5">
+                          퐁당퐁당 777데이 후원 책정 제어
+                          {(() => {
+                            if (state.pongdangResetAt === -1) {
+                              return (
+                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-rose-500/30 text-rose-200 border border-rose-400/40">
+                                  ⛔ 책정 OFF
+                                </span>
+                              );
+                            }
+                            if (state.pongdangResetAt && state.pongdangResetAt > 0) {
+                              return (
+                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-sky-500/30 text-sky-200 border border-sky-400/40">
+                                  ⏱️ {new Date(state.pongdangResetAt).toLocaleTimeString("ko-KR")} 이후 책정
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 border border-emerald-400/40">
+                                ✅ 전체 기간
+                              </span>
+                            );
+                          })()}
+                        </h4>
+                        <p className="text-[11px] text-sky-300/70">
+                          퐁당퐁당 엑셀표에 반영될 시그/후원의 집계 기준 시각을 설정하거나 책정을 일시 중단(OFF)합니다.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 rounded-lg border border-emerald-500/60 bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-100 text-xs font-semibold shadow-sm transition-all"
+                      onClick={resyncPongdangFromDonors}
+                    >
+                      ✅ 전체 기간 (기존 후원 재집계)
+                    </button>
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 rounded-lg border border-sky-400 bg-sky-900/50 hover:bg-sky-800/60 text-sky-100 text-xs font-semibold shadow-sm transition-all flex items-center gap-1"
+                      onClick={applyPongdangFromNow}
+                      title="지금 이 순간 이후의 룰렛/시그/후원만 퐁당퐁당 기여도로 책정합니다"
+                    >
+                      <span>⏱️</span> 현재 시간부터
+                    </button>
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 rounded-lg border border-amber-500/60 bg-amber-950/60 hover:bg-amber-900/70 text-amber-100 text-xs font-semibold shadow-sm transition-all flex items-center gap-1"
+                      onClick={resetPongdangContributionsAll}
+                      title="기여도를 모두 0원으로 완전히 초기화하고 지금부터 새로 집계합니다"
+                    >
+                      <span>🔄</span> 기여도 0원 초기화
+                    </button>
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 rounded-lg border border-rose-500/60 bg-rose-950/60 hover:bg-rose-900/70 text-rose-200 text-xs font-semibold shadow-sm transition-all flex items-center gap-1"
+                      onClick={turnOffPongdangCalculation}
+                      title="퐁당퐁당 후원 책정을 중단합니다 (후원/룰렛이 발생해도 기여도 미반영)"
+                    >
+                      <span>⛔</span> 책정 OFF
+                    </button>
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      <span className="text-xs text-neutral-400">📅 특정 일시:</span>
+                      <input
+                        type="datetime-local"
+                        suppressHydrationWarning
+                        className="px-2 py-1 rounded bg-neutral-900 border border-white/20 text-xs text-white focus:border-sky-400 focus:outline-none"
+                        value={pongdangFromAtInput}
+                        onChange={(e) => setPongdangFromAtInput(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="px-2.5 py-1 rounded bg-sky-700 hover:bg-sky-600 text-xs font-medium text-white shadow-sm"
+                        onClick={() =>
+                          applyPongdangFromChosenTime(
+                            parseMealBattleFromAtInput(pongdangFromAtInput, 0)
+                          )
+                        }
+                      >
+                        이 시각부터 책정
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
@@ -20714,15 +21105,28 @@ function AdminPageInner() {
                                   <div>
                                     <h4 className="text-xs sm:text-sm font-bold text-sky-200 flex items-center gap-1.5">
                                       후원 집계 기준 시점
-                                      {String(p.donationAggregateFromAt || "").trim() ? (
-                                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-sky-500/30 text-sky-200 border border-sky-400/40">
-                                          필터 적용 중
-                                        </span>
-                                      ) : (
-                                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-400 border border-white/10">
-                                          전체 기간
-                                        </span>
-                                      )}
+                                      {(() => {
+                                        const raw = String(p.donationAggregateFromAt || "").trim().toLowerCase();
+                                        if (raw === "off" || raw === "-1") {
+                                          return (
+                                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-rose-500/30 text-rose-200 border border-rose-400/40">
+                                              ⛔ 책정 OFF
+                                            </span>
+                                          );
+                                        }
+                                        if (raw && Number(raw) > 0) {
+                                          return (
+                                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-sky-500/30 text-sky-200 border border-sky-400/40">
+                                              필터 적용 중
+                                            </span>
+                                          );
+                                        }
+                                        return (
+                                          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-400 border border-white/10">
+                                            전체 기간
+                                          </span>
+                                        );
+                                      })()}
                                     </h4>
                                     <p className="text-[11px] text-sky-300/70">
                                       특정 시각 이후의 후원만 집계하거나 「지금부터」 들어오는 후원만 집계할 수 있습니다. (정산 리셋·원장 보존)
@@ -20770,6 +21174,58 @@ function AdminPageInner() {
                                 >
                                   <span>⏱️</span> 현재 시간부터 (지금부터)
                                 </button>
+                                <button
+                                  type="button"
+                                  className="px-3 py-1.5 rounded-lg border border-amber-500/60 bg-amber-950/60 hover:bg-amber-900/70 text-amber-100 text-xs font-semibold shadow-sm transition-all flex items-center gap-1"
+                                  onClick={() => {
+                                    const isPongdang =
+                                      p.membersTheme === "excelPongdang" ||
+                                      p.theme === "excelPongdang" ||
+                                      Boolean(p.day777Calc) ||
+                                      String(p.name || "").includes("퐁당");
+                                    if (
+                                      !window.confirm(
+                                        isPongdang
+                                          ? "퐁당퐁당 기여도를 0원으로 초기화하고 지금부터 새로 집계할까요?"
+                                          : "오버레이 표출을 0원으로 초기화하고 지금부터 새로 집계할까요?"
+                                      )
+                                    )
+                                      return;
+                                    const now = Date.now();
+                                    if (isPongdang) {
+                                      resetPongdangContributionsAll();
+                                    }
+                                    updatePreset(p.id, { donationAggregateFromAt: String(now) });
+                                    setGlobalPreviewBump((n) => n + 1);
+                                  }}
+                                  title="기여도/표출을 0원으로 초기화하고 지금부터 새로 집계합니다"
+                                >
+                                  <span>🔄</span> 초기화
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all flex items-center gap-1 ${
+                                    String(p.donationAggregateFromAt || "").trim().toLowerCase() === "off" ||
+                                    String(p.donationAggregateFromAt || "").trim() === "-1"
+                                      ? "border-rose-500 bg-rose-900/70 text-rose-100 shadow-[0_0_8px_rgba(244,63,94,0.4)]"
+                                      : "border-rose-500/40 bg-rose-950/40 text-rose-300 hover:bg-rose-900/50"
+                                  }`}
+                                  onClick={() => {
+                                    const isPongdang =
+                                      p.membersTheme === "excelPongdang" ||
+                                      p.theme === "excelPongdang" ||
+                                      Boolean(p.day777Calc) ||
+                                      String(p.name || "").includes("퐁당");
+                                    updatePreset(p.id, { donationAggregateFromAt: "off" });
+                                    if (isPongdang) {
+                                      turnOffPongdangCalculation();
+                                    }
+                                    setGlobalPreviewBump((n) => n + 1);
+                                  }}
+                                  title="후원 책정/집계를 완전히 끕니다 (0원 고정, 후원 미반영)"
+                                >
+                                  <span>⛔</span> 책정 OFF
+                                </button>
                                 <div className="flex items-center gap-1.5 ml-auto">
                                   <span className="text-xs text-neutral-400">📅 특정 일시:</span>
                                   <input
@@ -20777,7 +21233,8 @@ function AdminPageInner() {
                                     suppressHydrationWarning
                                     className="px-2.5 py-1.5 rounded-lg bg-neutral-900 border border-white/20 text-xs text-white focus:border-sky-400 focus:outline-none"
                                     value={
-                                      String(p.donationAggregateFromAt || "").trim()
+                                      String(p.donationAggregateFromAt || "").trim() &&
+                                      Number(p.donationAggregateFromAt) > 0
                                         ? formatMealBattleFromAtInput(Number(p.donationAggregateFromAt))
                                         : ""
                                     }
@@ -20800,9 +21257,28 @@ function AdminPageInner() {
 
                               <div className="text-[11px] font-mono text-neutral-400 bg-black/40 px-3 py-1.5 rounded border border-white/5 flex items-center justify-between">
                                 <span suppressHydrationWarning>
-                                  집계 범위: {String(p.donationAggregateFromAt || "").trim()
-                                    ? `⏱️ ${new Date(Number(p.donationAggregateFromAt)).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} 이후 후원만 집계 중`
-                                    : "✅ 정산 리셋 이후 전체 후원 집계 중 (기본값)"}
+                                  집계 상태: {(() => {
+                                    const raw = String(p.donationAggregateFromAt || "").trim().toLowerCase();
+                                    if (raw === "off" || raw === "-1") {
+                                      return (
+                                        <span className="text-rose-300 font-bold">
+                                          ⛔ 책정 OFF (후원 집계 중단됨)
+                                        </span>
+                                      );
+                                    }
+                                    if (raw && Number(raw) > 0) {
+                                      return (
+                                        <span className="text-sky-300 font-semibold">
+                                          ⏱️ {new Date(Number(raw)).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} 이후 후원만 집계 중
+                                        </span>
+                                      );
+                                    }
+                                    return (
+                                      <span className="text-emerald-300">
+                                        ✅ 정산 리셋 이후 전체 후원 집계 중 (기본값)
+                                      </span>
+                                    );
+                                  })()}
                                 </span>
                                 {String(p.donationAggregateFromAt || "").trim() && (
                                   <span className="text-[10px] text-amber-300">
@@ -22035,6 +22511,19 @@ function AdminPageInner() {
                                   </button>
                                   <span className="text-[10px] text-neutral-500">기본은 OFF(합계 컬럼/합계행 선 제거)</span>
                                 </div>
+                                <div className="flex items-center gap-2">
+                                  <label className="text-xs text-neutral-400">좌우 2열 분할</label>
+                                  <button
+                                    type="button"
+                                    className={`px-2 py-0.5 rounded border text-xs ${p.tableSplit !== false ? "border-amber-500 text-amber-300 font-bold" : "border-white/10 text-neutral-400"}`}
+                                    onClick={() => updatePreset(p.id, { tableSplit: p.tableSplit === false ? true : false })}
+                                  >
+                                    {p.tableSplit !== false ? "2열 분할(기본)" : "단일 1열"}
+                                  </button>
+                                  <span className="text-[10px] text-neutral-500">
+                                    {p.tableSplit !== false ? "6명 이상 시 좌우 2단 분할" : "6명 이상도 1열 세로 유지"}
+                                  </span>
+                                </div>
                                 <div className="space-y-2">
                                   <span className="text-xs text-neutral-400">표 열 · 총합</span>
                                   <DonationTableOptionCheckboxes
@@ -22051,6 +22540,7 @@ function AdminPageInner() {
                                       showTableSumRow: p.showTableSumRow,
                                       showContributionSum: p.showContributionSum,
                                       showCustomColumn: p.showCustomColumn,
+                                      tableSplit: p.tableSplit,
                                     }}
                                     onChange={(patch) => {
                                       updatePreset(p.id, patch);

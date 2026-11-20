@@ -10,6 +10,7 @@ export type ResolvedDonationTableColumnsOptions = {
   showTableSumRow: boolean;
   showContributionSum: boolean;
   showCustomColumn: boolean;
+  tableSplit: boolean;
 };
 
 export const DEFAULT_DONATION_TABLE_COLUMNS: ResolvedDonationTableColumnsOptions = {
@@ -22,6 +23,7 @@ export const DEFAULT_DONATION_TABLE_COLUMNS: ResolvedDonationTableColumnsOptions
   showTableSumRow: true,
   showContributionSum: true,
   showCustomColumn: true,
+  tableSplit: true,
 };
 
 export function resolveDonationTableColumnsOptions(
@@ -45,6 +47,7 @@ export function resolveDonationTableColumnsOptions(
     showTableSumRow: opts?.showTableSumRow ?? fb.showTableSumRow,
     showContributionSum: opts?.showContributionSum ?? fb.showContributionSum,
     showCustomColumn: opts?.showCustomColumn ?? fb.showCustomColumn,
+    tableSplit: opts?.tableSplit ?? fb.tableSplit,
   };
 }
 
@@ -62,6 +65,7 @@ export function normalizeDonationTableColumnsOptions(
     showTableSumRow: src.showTableSumRow !== false,
     showContributionSum: src.showContributionSum !== false,
     showCustomColumn: src.showCustomColumn !== false,
+    tableSplit: src.tableSplit !== false,
   };
 }
 
@@ -81,6 +85,7 @@ export function mergeDonationTablePresetFields<
     showTableSumRow: p.showTableSumRow ?? f.showTableSumRow,
     showContributionSum: p.showContributionSum ?? f.showContributionSum,
     showCustomColumn: p.showCustomColumn ?? f.showCustomColumn,
+    tableSplit: p.tableSplit ?? f.tableSplit,
   } as T;
 }
 
@@ -93,6 +98,7 @@ const DONATION_TABLE_BOOL_KEYS = new Set([
   "showTableSumRow",
   "showContributionSum",
   "showCustomColumn",
+  "tableSplit",
 ]);
 
 export function isDonationTableBoolKey(key: string): boolean {

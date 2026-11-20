@@ -3038,6 +3038,15 @@ function OverlayInner() {
       }
     }
     if (aNames.length === 0 && bNames.length === 0) return null;
+    if (donationAggregateFromAt === -1) {
+      return {
+        aScore: 0,
+        bScore: 0,
+        aNames: aNames.join(","),
+        bNames: bNames.join(","),
+        useRaw: mealBattleUsesRawDonationScore(mb),
+      };
+    }
     return {
       aScore,
       bScore,
@@ -3045,7 +3054,7 @@ function OverlayInner() {
       bNames: bNames.join(","),
       useRaw: mealBattleUsesRawDonationScore(mb),
     };
-  }, [s?.mealBattle, s?.members, s?.memberPositions, showTeamBattle]);
+  }, [s?.mealBattle, s?.members, s?.memberPositions, showTeamBattle, donationAggregateFromAt]);
 
   // 숫자 컬럼 가독성 우선: 이름 기본 폭을 확보하고 계좌·투네 열을 넓혀 백만원대 겹침을 줄인다(URL nameCh·bankCh·toonCh 로 조정 가능).
   const nameCh = Math.max(4, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "7" : (isVertical ? "11" : "7")), 10)));
@@ -4060,18 +4069,27 @@ function OverlayInner() {
   });
   /**
    * 엑셀표 인원 변동:
-   * - 5명 이하: 왼쪽 단일 열만
-   * - 6명 이상: 왼쪽 1–5 / 오른쪽 6–10 고정 슬롯(빈 칸은 placeholder)
-   * 관리자 미리보기(previewGuide): 좌우 분할을 끄고 단일 표로 둔다.
-   * (가운데 크롭 시 왼쪽「순위」가 잘리고 오른쪽 패널「순위」만 보여 순위가 맨 오른쪽으로 오해됨)
+   * - 기본값: 6명 이상 시 좌우 2열 분할 표시 (사용자 설정 tableSplit: false 시 단일 1열 유지)
+   * - 2열 분할 시 폰트 자동 스케일(autoFit)을 통해 일반 OBS 해상도(1920x1080 등)에서도 2000px 이상 확대 없이 자동 최적화
+   * - 관리자 미리보기(previewGuide): 항상 좌우 분할을 끄고 단일 표로 둔다.
    */
+  const rawTableSplit = rawSp.get("tableSplit") ?? rawSp.get("excelSplit");
+  const tableSplitFromUrl =
+    rawTableSplit !== null
+      ? rawTableSplit.toLowerCase() === "true" || rawTableSplit === "1"
+      : undefined;
+  const tableSplitFromPreset = activePreset?.tableSplit;
+  const resolvedTableSplit =
+    tableSplitFromUrl ?? tableSplitFromPreset ?? true;
+
   const excelSplit = splitOverlayListAtHalf(ranked);
   const excelSplitEnabled = shouldEnableOverlayExcelSplit(excelSplit.split, {
     adminPreview: isAdminPreview,
     previewGuide: isPreviewGuide,
+    tableSplit: resolvedTableSplit,
   });
-  const excelLeftCount = OVERLAY_EXCEL_COLUMN_SLOTS;
-  const excelRightTargetCount = OVERLAY_EXCEL_COLUMN_SLOTS;
+  const excelLeftCount = Math.max(OVERLAY_EXCEL_COLUMN_SLOTS, excelSplit.left.length);
+  const excelRightTargetCount = excelLeftCount;
 
   const excelPlaceholderMember: Member = { id: "__excel_placeholder__", name: "", account: 0, toon: 0, operating: false };
   const excelMakePlaceholderRows = (n: number) =>
@@ -4227,11 +4245,22 @@ function OverlayInner() {
       const padStyle = getComputedStyle(clampEl);
       const padX =
         (parseFloat(padStyle.paddingLeft) || 0) + (parseFloat(padStyle.paddingRight) || 0);
+      const winW = typeof window !== "undefined" && window.innerWidth > 0 ? window.innerWidth : BASE_W;
+      const boundW = Math.min(winW, BASE_W);
+      const sideDonorsW =
+        showSideDonors && (donorsSide === "left" || donorsSide === "right")
+          ? (donorsWidth + 12)
+          : 0;
       if (effectiveNameGrow) {
         const container = containerRef.current;
-        if (container) return Math.max(0, container.clientWidth - padX);
+        if (container) {
+          const avail = Math.min(container.clientWidth, boundW) - sideDonorsW - padX;
+          return Math.max(100, avail);
+        }
       }
-      return Math.max(0, clampEl.clientWidth - padX);
+      const clampW = clampEl.clientWidth > 0 ? clampEl.clientWidth : boundW;
+      const avail = Math.min(clampW, boundW) - sideDonorsW - padX;
+      return Math.max(100, avail);
     };
     const scheduleRun = (fn: () => void) => {
       if (rafId) cancelAnimationFrame(rafId);
@@ -4260,9 +4289,11 @@ function OverlayInner() {
             markMemberTableLayoutStable();
             return;
           }
+          const prevFit = memberTableFitPrevRef.current || 1;
+          const unscaledWidth = measured / prevFit;
           // 마지막 열 클리핑 방지를 위해 10px 안전 여유를 둔다.
-          const raw = (avail - 10) / measured;
-          const safeFitMin = mobileBroadcast ? 0.58 : 0.75;
+          const raw = (avail - 10) / unscaledWidth;
+          const safeFitMin = excelSplitEnabled ? 0.35 : (mobileBroadcast ? 0.58 : 0.70);
           const next = Math.max(safeFitMin, Math.min(1, Math.floor(raw * 100) / 100));
           if (Math.abs(next - memberTableFitPrevRef.current) < 0.012) {
             markMemberTableLayoutStable();
@@ -4296,58 +4327,31 @@ function OverlayInner() {
         markMemberTableLayoutStable();
         return;
       }
-      /** `maxWidth:100%`로 테이블이 눌리면 scrollWidth≈clientWidth가 되어 축소 탐색이 무력화됨 → 측정 중만 해제 */
       const prevMax = table.style.maxWidth;
       table.style.maxWidth = "none";
-      let lo = 0.08;
-      let hi = 1;
-      let best = lo;
-      const minPx = 4;
-      /** 헤더 text-stroke·그림자가 scrollWidth 밖으로 살짝 나가는 여유(마지막 열 잘림 방지) */
-      const widthMarginPx = 36;
+      const widthMarginPx = 24;
       const maxAvail = Math.max(4, avail - widthMarginPx);
-      const measureWidth = () => {
-        const rectW = table.getBoundingClientRect().width;
-        return Math.max(table.scrollWidth, rectW);
-      };
       try {
-        for (let i = 0; i < 22; i++) {
-          const mid = (lo + hi) / 2;
-          const fs = Math.max(minPx, Math.round(mSize * mid));
-          table.style.fontSize = `${fs}px`;
-          void table.offsetWidth;
-          if (measureWidth() <= maxAvail) {
-            best = mid;
-            lo = mid;
-          } else {
-            hi = mid;
-          }
+        const measured = Math.max(table.scrollWidth, table.getBoundingClientRect().width);
+        if (!Number.isFinite(measured) || measured <= 0) {
+          markMemberTableLayoutStable();
+          return;
         }
-        /**
-         * 이진 탐색 하한에서도 간헐적으로 1~2px 넘는 경우(브라우저 반올림/스트로크)에 대비한 최종 안전 보정.
-         * 범위 내 완전 포함을 우선한다.
-         */
-        let guard = 0;
-        while (guard < 8) {
-          const fs = Math.max(minPx, Math.floor(mSize * best));
-          table.style.fontSize = `${fs}px`;
-          void table.offsetWidth;
-          if (measureWidth() <= maxAvail) break;
-          best = Math.max(0.04, best - 0.02);
-          guard += 1;
+        const prevFit = memberTableFitPrevRef.current || 1;
+        const unscaledWidth = measured / prevFit;
+        const fitMin = excelSplitEnabled ? 0.35 : (mobileBroadcast ? 0.58 : 0.70);
+        const raw = maxAvail / unscaledWidth;
+        const best = Math.max(fitMin, Math.min(1, Math.floor(raw * 100) / 100));
+        if (Math.abs(best - prevFit) < 0.015) {
+          markMemberTableLayoutStable();
+          return;
         }
+        memberTableFitPrevRef.current = best;
+        setMemberTableFitFactor(best);
+        markMemberTableLayoutStable();
       } finally {
         table.style.maxWidth = prevMax;
-        table.style.removeProperty("font-size");
       }
-      const prevFit = memberTableFitPrevRef.current;
-      if (Math.abs(best - prevFit) < 0.015) {
-        markMemberTableLayoutStable();
-        return;
-      }
-      memberTableFitPrevRef.current = best;
-      setMemberTableFitFactor(best);
-      markMemberTableLayoutStable();
     };
 
     run();
@@ -4366,7 +4370,7 @@ function OverlayInner() {
         /* noop */
       }
     };
-  }, [showMembers, mSize, memberTableFitSig, externalSafeMode, lockMemberTableFontSize, mobileBroadcast, effectiveNameGrow, externalHost, markMemberTableLayoutStable]);
+  }, [showMembers, mSize, memberTableFitSig, externalSafeMode, lockMemberTableFontSize, mobileBroadcast, effectiveNameGrow, externalHost, excelSplitEnabled, markMemberTableLayoutStable]);
 
   const allOrderKeys = [...ranked.map(({ m }) => m.id), ...visiblePinned.map((m) => `${m.id}-p`)];
   const setRowRef = useFlip(allOrderKeys, 500, rowMotionEnabled);
@@ -5355,6 +5359,18 @@ function OverlayInner() {
           font-size: ${memberFontPx}px !important;
           line-height: 1.35 !important;
         }
+        .overlay-root table.overlay-split-table thead td,
+        .overlay-root table.overlay-split-table tbody tr.overlay-row td,
+        .overlay-root table.overlay-split-table tbody tr.overlay-excel-placeholder td,
+        .overlay-root table.overlay-split-table tbody tr.overlay-total-row td,
+        .overlay-root table.overlay-split-table .overlay-total-row td {
+          padding-left: 6px !important;
+          padding-right: 6px !important;
+          height: ${tableRowMinH}px !important;
+          min-height: ${tableRowMinH}px !important;
+          box-sizing: border-box !important;
+          white-space: nowrap !important;
+        }
         `
             : ""
         }
@@ -5905,16 +5921,29 @@ function OverlayInner() {
                 >
                     <div
                       ref={tableBoxRef as any}
-                      className="flex flex-row items-stretch"
+                      className={`flex flex-row items-stretch ${excelSplitEnabled ? "overlay-split-container" : ""}`}
                       style={{
-                        width: "fit-content",
+                        width: "max-content",
+                        maxWidth: "100%",
                       }}
                     >
                     {memberTablePanels.map((panel, panelIdx) => (
+                    <React.Fragment key={panel.key}>
+                    {excelSplitEnabled && panelIdx > 0 && (
+                      <div
+                        className="overlay-split-divider self-stretch shrink-0"
+                        style={{
+                          width: "1px",
+                          backgroundColor:
+                            tablePanelBorderCss ||
+                            excelMemberAccent?.panelBorder ||
+                            tableGridLineColor,
+                        }}
+                      />
+                    )}
                     <table
-                      key={panel.key}
                       dir="ltr"
-                      className={`${effectiveTableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}${excelMemberTableClass}`}
+                      className={`${effectiveTableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}${excelMemberTableClass}${excelSplitEnabled ? " overlay-split-table" : ""}`}
                       style={{
                         fontSize: memberFontPx,
                         borderSpacing: 0,
@@ -5922,16 +5951,8 @@ function OverlayInner() {
                         tableLayout: "fixed",
                         overflow: isExcelGoldChrome ? "visible" : undefined,
                         width: `calc(${excelTableWidthCalc})`,
+                        flex: "0 0 auto",
                         direction: "ltr",
-                        ...(excelSplitEnabled && panelIdx === 0
-                          ? {
-                              borderRight: `1px solid ${
-                                tablePanelBorderCss ||
-                                excelMemberAccent?.panelBorder ||
-                                tableGridLineColor
-                              }`,
-                            }
-                          : {}),
                         ...excelMemberTableStyle,
                       }}
                     >
@@ -5989,58 +6010,58 @@ function OverlayInner() {
                           >
                             <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
                               <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                {" "}
+                                {"\u00A0"}
                               </span>
                             </td>
                             {showCustomColumn && (
                               <td className={`${effectiveRowCls} overlay-col-custom text-center`}>
                                 <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                  {" "}
+                                  {"\u00A0"}
                                 </span>
                               </td>
                             )}
                             {hasRoleColumn && (
                               <td className={`${effectiveRowCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>
-                                <span className="overlay-rank-mark">{" "}</span>
+                                <span className="overlay-rank-mark">{"\u00A0"}</span>
                               </td>
                             )}
                             <td className={`${effectiveRowCls} overlay-col-name text-center ${effectiveNameCls} ${nameWrapCls}`}>
                               <span className={`overlay-cell-text-inner ${nameWrapCls}`} style={overlayCellOutlineStyle}>
-                                {" "}
+                                {"\u00A0"}
                               </span>
                             </td>
                             {showAccountColumn && (
                               <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-center`}>
                                 <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                  {" "}
+                                  {"\u00A0"}
                                 </span>
                               </td>
                             )}
                             {showToonColumn && (
                               <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-center`}>
                                 <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                  {" "}
+                                  {"\u00A0"}
                                 </span>
                               </td>
                             )}
                             {showCombinedColumn && (
                               <td className={`${effectiveRowCls} overlay-col-total text-center font-bold`}>
                                 <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                  {" "}
+                                  {"\u00A0"}
                                 </span>
                               </td>
                             )}
                             {showContributionColumn && (
                               <td className={`${effectiveRowCls} overlay-col-contribution text-center font-semibold`}>
                                 <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                  {" "}
+                                  {"\u00A0"}
                                 </span>
                               </td>
                             )}
                             {showRestroomColumn && (
                               <td className={`${effectiveRowCls} overlay-col-restroom text-center font-semibold`}>
                                 <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                  {" "}
+                                  {"\u00A0"}
                                 </span>
                               </td>
                             )}
@@ -6382,6 +6403,7 @@ function OverlayInner() {
                     )}
                   </tbody>
                 </table>
+                </React.Fragment>
                     ))}
                     </div>
                   </div>

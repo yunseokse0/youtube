@@ -151,6 +151,14 @@ describe("splitOverlayListAtHalf", () => {
       split: true,
     });
   });
+
+  it("splits 12 items into 6 + 6 without truncating", () => {
+    expect(splitOverlayListAtHalf([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])).toEqual({
+      left: [1, 2, 3, 4, 5, 6],
+      right: [7, 8, 9, 10, 11, 12],
+      split: true,
+    });
+  });
 });
 
 describe("shouldEnableOverlayExcelSplit", () => {
@@ -162,6 +170,12 @@ describe("shouldEnableOverlayExcelSplit", () => {
     expect(shouldEnableOverlayExcelSplit(true, { adminPreview: false, previewGuide: false })).toBe(
       true
     );
+  });
+
+  it("disables split when tableSplit or excelSplit is false", () => {
+    expect(shouldEnableOverlayExcelSplit(true, { tableSplit: false })).toBe(false);
+    expect(shouldEnableOverlayExcelSplit(true, { excelSplit: false })).toBe(false);
+    expect(shouldEnableOverlayExcelSplit(true, { tableSplit: true })).toBe(true);
   });
 });
 

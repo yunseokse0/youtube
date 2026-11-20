@@ -17,6 +17,7 @@ describe("donation-table-options", () => {
       showTableSumRow: true,
       showContributionSum: true,
       showCustomColumn: true,
+      tableSplit: true,
     });
   });
 
@@ -26,12 +27,14 @@ describe("donation-table-options", () => {
         showCombinedColumn: false,
         showTableSumRow: false,
         showCustomColumn: false,
+        tableSplit: false,
       })
     ).toMatchObject({
       showCombinedColumn: false,
       showTableSumRow: false,
       showContributionColumn: true,
       showCustomColumn: false,
+      tableSplit: false,
     });
   });
 
@@ -46,6 +49,7 @@ describe("donation-table-options", () => {
       showTableSumRow: true,
       showContributionSum: false,
       showCustomColumn: true,
+      tableSplit: true,
     });
   });
 

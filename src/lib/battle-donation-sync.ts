@@ -160,11 +160,15 @@ export function formatMealBattleFromAtInput(ms: number): string {
 export function applyMealBattleDonationsFromTime(
   mealBattle: MealBattleState | undefined,
   donors: AppState["donors"],
-  opts: { fromAt: number; memberIds: string[] }
+  opts: { fromAt: number; memberIds?: string[] }
 ): MealBattleState {
   const fromAt = Math.max(0, Math.floor(Number(opts.fromAt) || 0));
-  const want = new Set((opts.memberIds || []).map((id) => String(id || "").trim()).filter(Boolean));
   const base = (mealBattle || {}) as MealBattleState;
+  const rawIds =
+    opts.memberIds && opts.memberIds.length > 0
+      ? opts.memberIds
+      : (base.participants || []).map((p) => p.memberId);
+  const want = new Set(rawIds.map((id) => String(id || "").trim()).filter(Boolean));
   const participants = (base.participants || []).map((p) =>
     want.has(p.memberId)
       ? { ...p, donationLinkActive: true, donationLinkStartedAt: fromAt }

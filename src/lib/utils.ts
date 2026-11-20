@@ -211,7 +211,7 @@ export const OVERLAY_HALF_SPLIT_MIN_COUNT = 5;
 /** 스플릿 시 좌·우 각 열 고정 슬롯(1–5 / 6–10) */
 export const OVERLAY_EXCEL_COLUMN_SLOTS = 5;
 
-/** 5명 이하: 단일 열. 6명 이상: 왼쪽 5칸 + 오른쪽 5칸(최대 10명) */
+/** 5명 이하: 단일 열. 6명 이상: 최소 5칸 기준 균등 분할 (10명 초과 시에도 누락 없이 분할) */
 export function splitOverlayListAtHalf<T>(
   items: readonly T[],
   minCount = OVERLAY_HALF_SPLIT_MIN_COUNT
@@ -220,10 +220,10 @@ export function splitOverlayListAtHalf<T>(
   if (list.length <= minCount) {
     return { left: list, right: [], split: false };
   }
-  const slots = OVERLAY_EXCEL_COLUMN_SLOTS;
+  const slots = Math.max(OVERLAY_EXCEL_COLUMN_SLOTS, Math.ceil(list.length / 2));
   return {
     left: list.slice(0, slots),
-    right: list.slice(slots, slots * 2),
+    right: list.slice(slots),
     split: true,
   };
 }
@@ -232,13 +232,20 @@ export function splitOverlayListAtHalf<T>(
  * 관리자 미리보기에서는 좌우 분할을 끈다.
  * 가운데 크롭 시 왼쪽 패널「순위」가 잘리고 오른쪽 패널「순위」만 보여
  * 순위 열이 표 맨 오른쪽으로 오해되는 것을 막는다.
+ * tableSplit 또는 excelSplit이 명시적 false이면 6명 이상이어도 단일 1열 유지 (OBS 너비 2000+ 초과 방지)
  */
 export function shouldEnableOverlayExcelSplit(
   split: boolean,
-  opts?: { adminPreview?: boolean; previewGuide?: boolean }
+  opts?: {
+    adminPreview?: boolean;
+    previewGuide?: boolean;
+    tableSplit?: boolean;
+    excelSplit?: boolean;
+  }
 ): boolean {
   if (!split) return false;
   if (opts?.adminPreview || opts?.previewGuide) return false;
+  if (opts?.tableSplit === false || opts?.excelSplit === false) return false;
   return true;
 }
 
