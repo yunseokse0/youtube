@@ -2935,17 +2935,18 @@ function AdminPageInner() {
         if (primarySc && primarySc.scrollHeight > primarySc.clientHeight + 2) {
           try {
             const scRect = primarySc.getBoundingClientRect();
-            const scAbsTop = scRect.top + winY;
-            // 타겟 상대 offset = absDocTop - scAbsTop (container 내부에서 얼마나 떨어졌나)
-            const localTarget = Math.max(0, absDocTop - scAbsTop - 16);
-            primarySc.scrollTop = localTarget;
-            void primarySc.scrollTop;
-            applied = primarySc.scrollTop;
-            if (Math.abs(applied - localTarget) < 200 || applied > 0) {
-              chosen = primarySc; ok = true;
-            }
+            const currentScroll = primarySc.scrollTop;
+            const relativeOffset = rect.top - scRect.top;
+            const localTarget = Math.max(0, currentScroll + relativeOffset - 16);
+            primarySc.scrollTo({ top: localTarget, behavior: "smooth" });
+            applied = localTarget;
+            chosen = primarySc;
+            ok = true;
           } catch (_e0) { /* noop */ }
         }
+        try {
+          rawEl.scrollIntoView({ behavior: "smooth", block: "start" });
+        } catch (_noop) { /* noop */ }
         // 1순위: contentScrollRef 실패시 후보 재탐색
         if (!ok) {
           const cand: HTMLElement[] = [];
@@ -24735,7 +24736,8 @@ function AdminPageInner() {
               >
             <AdminCollapsibleSection
               id="logs-data"
-              title="데이터"
+              title="시스템 데이터 & 동기화"
+              defaultOpen={true}
               className={panelCardClass}
               headerAside={
                 <div className="flex gap-2">
