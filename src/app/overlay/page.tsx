@@ -2608,7 +2608,7 @@ function OverlayInner() {
     return merged;
   };
   const resolveThemeId = (key: string): ThemeId => {
-    const raw = (sp.get(key) || "auto").trim();
+    const raw = (sp.get(key) || sp.get("theme") || "auto").trim();
     if (raw === "auto" || !raw) {
       if (key === "membersTheme" || key === "totalTheme" || key === "tickerBaseTheme" || key === "missionTheme") {
         const fromPresetKey = String(
