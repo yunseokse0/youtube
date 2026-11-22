@@ -4888,6 +4888,7 @@ function OverlayInner() {
           } !important;
         }
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-custom,
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,
         .overlay-root .overlay-elegant-table thead td.overlay-col-name,
         .overlay-root .overlay-elegant-table thead td.overlay-col-account,
@@ -5202,7 +5203,7 @@ function OverlayInner() {
           -webkit-text-stroke: ${tableOutlineDisabled || obsStrokeDisabled ? "0" : tableStrokeCss} !important;
           paint-order: stroke fill !important;
         }
-        .overlay-root .overlay-elegant-table:not(.excel-zebra-table) td {
+        .overlay-root .overlay-elegant-table:not(.excel-zebra-table) tbody td {
           transition: ${externalHost || stableMode ? "none" : "filter 180ms ease, transform 180ms ease, background-size 220ms ease"};
           background: transparent !important;
           -webkit-font-smoothing: antialiased;
@@ -5269,6 +5270,7 @@ function OverlayInner() {
           } !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-rank,
+        .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-custom,
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-role,
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-name,
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-account,
@@ -5441,15 +5443,18 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table td.overlay-col-restroom .overlay-num-cell-inner {
           transform: ${externalSafeMode ? "translateX(0)" : "translateX(0)"};
         }
-        /* 순위·기여도·화장실 헤더: 고정 폭 칸에서 스트로크·굵은 글자가 칸 경계에서 잘리지 않도록 */
+        /* 순위·커스텀·기여도·화장실 헤더: 고정 폭 칸에서 스트로크·굵은 글자가 칸 경계에서 잘리지 않도록 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-custom,
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
         .overlay-root .overlay-elegant-table thead td.overlay-col-restroom {
           overflow: visible !important;
         }
-        /* 순위 헤더는 바디 셀과 좌우 위치가 일치해야 한다(텍스트가 칸 안에서 동일 위치). */
+        /* 순위·커스텀 헤더는 바디 셀과 좌우 위치가 일치해야 한다(텍스트가 칸 안에서 동일 위치). */
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
-        .overlay-root .overlay-elegant-table tbody td.overlay-col-rank {
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-rank,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-custom,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-custom {
           text-align: center !important;
         }
         /* 이름: 계좌·투네·합계와 동일하게 가운데 정렬 */
@@ -5457,10 +5462,12 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table tbody td.overlay-col-name {
           text-align: center !important;
         }
-        /* 좌측 텍스트 칸들(순위/직급/이름)이 너무 붙어 보이지 않도록 헤더·바디 모두 좌우 여유를 둔다.
+        /* 좌측 텍스트 칸들(순위/커스텀/직급/이름)이 너무 붙어 보이지 않도록 헤더·바디 모두 좌우 여유를 둔다.
            기본 셀 패딩(0.25em)으로는 글자가 서로 붙은 것처럼 보임 → 각 칸당 0.55em 확보. */
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-rank,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-custom,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-custom,
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-role,
         .overlay-root .overlay-elegant-table thead td.overlay-col-name,
