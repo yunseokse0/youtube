@@ -1111,6 +1111,17 @@ export function normalizeMemberPositions(
   return out;
 }
 
+export function normalizeFixedPositionMemberIds(
+  raw: unknown,
+  members: Member[]
+): string[] {
+  const validIds = new Set((members || []).map((m) => m.id));
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((x) => String(x || "").trim())
+    .filter((id) => id && validIds.has(id));
+}
+
 function normalizeMemberPositionMode(input: unknown): AppState["memberPositionMode"] {
   return input === "rankLinked" ? "rankLinked" : "fixed";
 }
@@ -1282,6 +1293,7 @@ export function defaultState(): AppState {
     memberCustomHeaderLabel: "상벌금",
     rankCustomCells: [],
     rankPositionLabels: fitRankPositionLabelsToMemberCount(["대표"], defaultMembers().length),
+    fixedPositionMemberIds: [],
     donorRankingsTheme: { ...DEFAULT_DONOR_RANKINGS_THEME },
     donorRankingsFullTheme: { ...DEFAULT_DONOR_RANKINGS_FULL_THEME },
     donorRankingsPresets: mergeBuiltInDonorRankingsPresets([]),
@@ -1974,6 +1986,10 @@ export function loadState(userId?: string | null): AppState {
     data.rankPositionLabels = fitRankPositionLabelsToMemberCount(
       (data as AppState).rankPositionLabels,
       data.members.length
+    );
+    data.fixedPositionMemberIds = normalizeFixedPositionMemberIds(
+      (data as AppState).fixedPositionMemberIds,
+      data.members
     );
     data.donorRankingsTheme = normalizeDonorRankingsTheme((data as AppState).donorRankingsTheme);
     data.donorRankingsFullTheme = normalizeDonorRankingsFullTheme((data as AppState).donorRankingsFullTheme);
@@ -4202,6 +4218,10 @@ async function doLoadStateFromApi(
       data.rankPositionLabels = fitRankPositionLabelsToMemberCount(
         (data as AppState).rankPositionLabels,
         data.members.length
+      );
+      data.fixedPositionMemberIds = normalizeFixedPositionMemberIds(
+        (data as AppState).fixedPositionMemberIds,
+        data.members
       );
       data.donorRankingsTheme = normalizeDonorRankingsTheme((data as AppState).donorRankingsTheme);
       data.donorRankingsFullTheme = normalizeDonorRankingsFullTheme((data as AppState).donorRankingsFullTheme);

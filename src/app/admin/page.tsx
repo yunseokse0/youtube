@@ -7198,6 +7198,20 @@ function AdminPageInner() {
     });
   };
 
+  const toggleFixedPositionMember = (memberId: string, force?: boolean) => {
+    setState((prev: AppState) => {
+      const currentList = prev.fixedPositionMemberIds || [];
+      const isCurrentlyFixed = currentList.includes(memberId);
+      const shouldFix = typeof force === "boolean" ? force : !isCurrentlyFixed;
+      const nextList = shouldFix
+        ? Array.from(new Set([...currentList, memberId]))
+        : currentList.filter((id) => id !== memberId);
+      const next: AppState = { ...prev, fixedPositionMemberIds: nextList };
+      persistState(next, { omitDonationFields: true, membersAuthoritative: true });
+      return next;
+    });
+  };
+
   const updateRankPositionLabel = (index: number, value: string) => {
     setState((prev: AppState) => {
       const labels = fitRankPositionLabelsToMemberCount(
@@ -13428,26 +13442,37 @@ function AdminPageInner() {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {state.members.map((m) => (
-                    <MemberPositionInput
-                      key={`pos-${m.id}`}
-                      memberId={m.id}
-                      memberName={m.name}
-                      savedValue={state.memberPositions?.[m.id] || ""}
-                      disabled={state.memberPositionMode === "rankLinked"}
-                      placeholder={
-                        state.memberPositionMode === "rankLinked"
-                          ? "순위 연동 모드에서는 아래 대표 멤버만 지정"
-                          : "직급 (예: 대표, 이사, 부장)"
-                      }
-                      onCommit={updateMemberPosition}
-                    />
-                  ))}
+                  {state.members.map((m) => {
+                    const isRep = state.memberPositions?.[m.id] === "대표";
+                    const isFixed = (state.fixedPositionMemberIds || []).includes(m.id);
+                    const isLockedByRank = state.memberPositionMode === "rankLinked" && !isRep && !isFixed;
+                    return (
+                      <MemberPositionInput
+                        key={`pos-${m.id}`}
+                        memberId={m.id}
+                        memberName={m.name}
+                        savedValue={state.memberPositions?.[m.id] || ""}
+                        disabled={isLockedByRank}
+                        placeholder={
+                          isRep
+                            ? "대표 (고정)"
+                            : isFixed
+                            ? "고정 직급 (예: 부대표, 이사)"
+                            : state.memberPositionMode === "rankLinked"
+                            ? "순위 연동 중 (아래에서 고정 가능)"
+                            : "직급 (예: 대표, 이사, 부장)"
+                        }
+                        onCommit={updateMemberPosition}
+                      />
+                    );
+                  })}
                 </div>
                 {state.memberPositionMode === "rankLinked" && (
-                  <div className="rounded border border-white/10 bg-black/20 p-2">
-                    <div className="mb-2 grid grid-cols-1 md:grid-cols-[120px_1fr] items-center gap-2">
-                      <label className="text-xs text-neutral-300">대표 멤버</label>
+                  <div className="rounded border border-white/10 bg-black/20 p-3 space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] items-center gap-2">
+                      <label className="text-xs text-neutral-300 font-semibold flex items-center gap-1">
+                        <span>👑</span> 대표 멤버
+                      </label>
                       <select
                         className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
                         value={state.members.find((m) => state.memberPositions?.[m.id] === "대표")?.id || ""}
@@ -13461,9 +13486,75 @@ function AdminPageInner() {
                         ))}
                       </select>
                     </div>
-                    <div className="text-xs text-neutral-400 mb-2">
+
+                    {/* 📌 대표 외 특정 멤버 직급 고정 영역 */}
+                    <div className="rounded-lg border border-indigo-500/30 bg-indigo-950/20 p-2.5 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-1.5">
+                        <div className="text-xs font-bold text-indigo-200 flex items-center gap-1.5">
+                          <span>📌</span> 대표 외 특정 멤버 직급 고정 (순위 연동 제외)
+                          <InfoTooltip text="순위 연동 직급 모드 중에도, 특정 멤버에게 원하는 직급(예: 부대표, 이사, 고문 등)을 순위와 무관하게 고정합니다." />
+                        </div>
+                        <span className="text-[11px] text-indigo-300/80">
+                          고정된 멤버는 순위 변동과 무관하게 지정한 직급이 방송 화면에 유지됩니다.
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
+                        {state.members
+                          .filter((m) => state.memberPositions?.[m.id] !== "대표")
+                          .map((m) => {
+                            const isFixed = (state.fixedPositionMemberIds || []).includes(m.id);
+                            const currentPos = state.memberPositions?.[m.id] || "";
+                            return (
+                              <div
+                                key={`fixed-pos-${m.id}`}
+                                className={`flex items-center gap-2 p-2 rounded-lg border transition ${
+                                  isFixed
+                                    ? "bg-indigo-950/60 border-indigo-500/50 shadow-sm"
+                                    : "bg-black/30 border-white/5 opacity-75 hover:opacity-100"
+                                }`}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => toggleFixedPositionMember(m.id)}
+                                  className={`px-2 py-1 rounded text-xs font-bold transition flex items-center gap-1 shrink-0 ${
+                                    isFixed
+                                      ? "bg-indigo-600 text-white shadow-sm"
+                                      : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white"
+                                  }`}
+                                  title={isFixed ? "직급 고정 해제 (순위 연동으로 복귀)" : "이 멤버의 직급을 고정합니다"}
+                                >
+                                  {isFixed ? "✓ 고정됨" : "+ 직급 고정"}
+                                </button>
+                                <span className="text-xs font-semibold text-neutral-200 w-16 truncate" title={m.name}>
+                                  {m.name}
+                                </span>
+                                <input
+                                  className={`flex-1 rounded border px-2 py-1 text-xs transition ${
+                                    isFixed
+                                      ? "bg-neutral-900 border-indigo-500/50 text-indigo-100 font-semibold focus:border-indigo-400"
+                                      : "bg-neutral-900/40 border-white/10 text-neutral-500 cursor-not-allowed"
+                                  }`}
+                                  placeholder={isFixed ? "고정 직급 입력 (예: 부대표, 이사)" : "순위 연동 중"}
+                                  disabled={!isFixed}
+                                  defaultValue={currentPos}
+                                  key={`fixed-input-${m.id}-${currentPos}`}
+                                  onBlur={(e) => {
+                                    const val = e.target.value.trim();
+                                    updateMemberPosition(m.id, val);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                  }}
+                                />
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-neutral-400 pt-1">
                       순위별 직급 라벨 (1위~{Math.max(1, state.members.length)}위 · 멤버 {state.members.length}명).
-                      대표 멤버를 지정하면 해당 멤버는 항상 대표로 고정됩니다.
+                      대표 및 직급 고정 멤버를 제외한 일반 멤버에게 순위 순서대로 부여됩니다.
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                       {Array.from({ length: Math.max(1, state.members.length) }).map((_, idx) => (

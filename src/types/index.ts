@@ -686,6 +686,8 @@ export type AppState = {
   memberCustomHeaderLabel?: string;
   /** 순위 연동 모드에서 사용할 직급 라벨(1위부터 순서대로) */
   rankPositionLabels: string[];
+  /** 순위 연동 모드에서도 직급을 고정할 멤버 ID 목록 (대표 외 고정 멤버) */
+  fixedPositionMemberIds?: string[];
   /** 계좌/투네 후원 순위 오버레이 테마 */
   donorRankingsTheme: DonorRankingsTheme;
   /** @deprecated 후원순위 전체(분홍) 제거 — 저장 호환용 */

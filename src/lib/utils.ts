@@ -293,10 +293,16 @@ export function buildRankLinkedMemberPositions(
   options?: {
     rankingMetric?: MemberRankingMetric;
     getContribution?: MemberContributionGetter;
+    fixedPositionMemberIds?: string[];
   }
 ): Record<string, string> {
   const metric = normalizeMemberRankingMetric(options?.rankingMetric);
   const labels = Array.isArray(rankPositionLabels) ? rankPositionLabels : [];
+  const fixedIds = new Set(
+    (options?.fixedPositionMemberIds || [])
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
+  );
   const roleMap: Record<string, string> = {};
   const list = members || [];
   const orderIndex = buildMemberCreationOrderIndex(list);
@@ -307,12 +313,31 @@ export function buildRankLinkedMemberPositions(
       if (pos.includes("부대표")) return false;
       return pos.includes("대표");
     }) || null;
+
+  const nonDynamicIds = new Set<string>();
+  if (representative) {
+    nonDynamicIds.add(representative.id);
+    roleMap[representative.id] = "대표";
+  }
+
+  // 대표 외 고정 직급 멤버 반영
+  for (const m of list) {
+    if (nonDynamicIds.has(m.id)) continue;
+    if (fixedIds.has(m.id)) {
+      const customPos = String(memberPositions?.[m.id] || "").trim();
+      if (customPos) {
+        nonDynamicIds.add(m.id);
+        roleMap[m.id] = customPos;
+      }
+    }
+  }
+
   const others = list
-    .filter((m) => !representative || m.id !== representative.id)
+    .filter((m) => !nonDynamicIds.has(m.id))
     .sort((a, b) =>
       compareMembersByRankingMetric(a, b, metric, orderIndex, options?.getContribution)
     );
-  if (representative) roleMap[representative.id] = "대표";
+
   const startIdx = representative ? 1 : 0;
   others.forEach((m, idx) => {
     const rankIdx = idx + startIdx;

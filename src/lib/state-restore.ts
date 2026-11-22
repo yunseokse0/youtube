@@ -11,6 +11,7 @@ import {
   normalizeDonorsArray,
   normalizeDonorsFormat,
   normalizeMemberPositions,
+  normalizeFixedPositionMemberIds,
   normalizeRouletteState,
   normalizeSigMatchParticipantIds,
   normalizeSigMatchPools,
@@ -162,6 +163,9 @@ export function buildAppStateFromRestoreJson(
       : {}),
     ...(asArray<string>(patch.rankPositionLabels)
       ? { rankPositionLabels: patch.rankPositionLabels as string[] }
+      : {}),
+    ...(asArray<string>(patch.fixedPositionMemberIds)
+      ? { fixedPositionMemberIds: normalizeFixedPositionMemberIds(patch.fixedPositionMemberIds, members) }
       : {}),
     ...(patch.donorRankingsTheme && typeof patch.donorRankingsTheme === "object"
       ? { donorRankingsTheme: { ...base.donorRankingsTheme, ...patch.donorRankingsTheme } as AppState["donorRankingsTheme"] }

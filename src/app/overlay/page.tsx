@@ -3883,6 +3883,11 @@ function OverlayInner() {
   const resolvedMemberRoles = useMemo<Record<string, string>>(() => {
     if (memberPositionMode !== "rankLinked") return memberPositionsMap;
     const roleMap: Record<string, string> = {};
+    const fixedIds = new Set(
+      ((s as AppState | null)?.fixedPositionMemberIds || [])
+        .map((x) => String(x || "").trim())
+        .filter(Boolean)
+    );
     const representative =
       members.find((m) => {
         const pos = (memberPositionsMap[m.id] || "").trim();
@@ -3890,9 +3895,28 @@ function OverlayInner() {
         if (pos.includes("부대표")) return false;
         return pos.includes("대표");
       }) || null;
+
+    const nonDynamicIds = new Set<string>();
+    if (representative) {
+      nonDynamicIds.add(representative.id);
+      roleMap[representative.id] = "대표";
+    }
+
+    // 대표 외 고정 직급 멤버 반영
+    for (const m of members) {
+      if (nonDynamicIds.has(m.id)) continue;
+      if (fixedIds.has(m.id)) {
+        const customPos = (memberPositionsMap[m.id] || "").trim();
+        if (customPos) {
+          nonDynamicIds.add(m.id);
+          roleMap[m.id] = customPos;
+        }
+      }
+    }
+
     const orderIndex = buildMemberCreationOrderIndex(members);
     const others = members
-      .filter((m) => !representative || m.id !== representative.id)
+      .filter((m) => !nonDynamicIds.has(m.id))
       .sort((a, b) =>
         compareMembersByRankingMetric(
           a,
@@ -3902,7 +3926,7 @@ function OverlayInner() {
           getContributionValueForMember
         )
       );
-    if (representative) roleMap[representative.id] = "대표";
+
     const startIdx = representative ? 1 : 0;
     others.forEach((m, idx) => {
       const rankIdx = idx + startIdx;
@@ -3917,6 +3941,7 @@ function OverlayInner() {
     rankPositionLabels,
     getContributionValueForMember,
     memberRankingMetric,
+    s,
   ]);
   const getMemberRole = useCallback((m: Member) => resolvedMemberRoles[m.id] || "", [resolvedMemberRoles]);
   const pinnedFilter = useCallback(
