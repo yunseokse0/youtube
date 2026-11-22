@@ -3960,6 +3960,16 @@ function OverlayInner() {
         .reduce((sum, m) => sum + getContributionValueForMember(m), 0),
     [members, pinnedFilter, getContributionValueForMember]
   );
+  const sumRestroom = useMemo(
+    () =>
+      members
+        .filter((m) => !pinnedFilter(m))
+        .reduce((sum, m) => {
+          const rv = getRestroomValueForMember(m);
+          return isRestroomUnlimited(rv) ? sum : sum + rv;
+        }, 0),
+    [members, pinnedFilter, getRestroomValueForMember]
+  );
   /** 실제 표시 문자열 길이에 맞춰 숫자 열 `ch` 하한을 올림(표 전체 폭은 고정·셀 overflow visible) */
   const amountDisplayMinCh = useMemo(() => {
     if (!showMembers) return 0;
@@ -4161,13 +4171,13 @@ function OverlayInner() {
     );
     const customFit = showCustomColumn
       ? Math.max(
-          6,
+          5.6,
           Math.min(
             14,
             members.reduce((max, m) => {
               const len = String(memberCustomCellsMap[m.id] || "").length;
-              return Math.max(max, len > 0 ? len + 2 : 6);
-            }, Math.max(6, customHeaderLabel.length + 1))
+              return Math.max(max, len > 0 ? len * 1.25 + 2.4 : 5.6);
+            }, Math.max(5.6, customHeaderLabel.length * 1.25 + 2.4))
           )
         )
       : 0;
@@ -4570,21 +4580,21 @@ function OverlayInner() {
         }, 5)
       )
     );
-    const customColCh = Math.max(
-      6,
+    const customColEm = Math.max(
+      5.6,
       Math.min(
-        20,
+        14,
         members.reduce((max, m, idx) => {
           const memLen = String(memberCustomCellsMap[m.id] || "").length;
           const rankLen = Array.isArray(rankCustomCells) ? String(rankCustomCells[idx] || "").length : 0;
           const len = Math.max(memLen, rankLen);
-          return Math.max(max, len > 0 ? len + 2 : 6);
-        }, Math.max(6, customHeaderLabel.length + 1))
+          return Math.max(max, len > 0 ? len * 1.25 + 2.4 : 5.6);
+        }, Math.max(5.6, customHeaderLabel.length * 1.25 + 2.4))
       )
     );
     const excelGridCols = [
       `${rankColCh}ch`,
-      ...(showCustomColumn ? [`${customColCh}ch`] : []),
+      ...(showCustomColumn ? [`${customColEm}em`] : []),
       ...(hasRoleColumn ? [`${roleColEm}em`] : []),
       `${nameColGridWidth}`,
       ...(showAccountColumn ? [`${bankCh}ch`] : []),
@@ -4596,7 +4606,7 @@ function OverlayInner() {
     /** 숫자 자리 증가로 표 전체가 밀려 나가지 않도록 너비 상한 고정 */
     const excelTableWidthCalc = excelGridCols.join(" + ");
     const nameColIndex = 1 + (showCustomColumn ? 1 : 0) + (hasRoleColumn ? 1 : 0);
-    const totalLabelColSpan = 1 + (showCustomColumn ? 1 : 0) + (hasRoleColumn ? 1 : 0);
+    const totalLabelColSpan = 1 + (showCustomColumn ? 1 : 0) + (hasRoleColumn ? 1 : 0) + 1;
     const isExcelLiveTheme = membersThemeId === "excelLive";
     const isExcelGoldChrome = isExcelGoldTableTheme(membersThemeId);
     const tableHeaderLineColor =
@@ -4722,10 +4732,10 @@ function OverlayInner() {
           effectiveTableTintAlpha
         )
       : applyTableTintToCssColor("rgb(15, 20, 30)", effectiveTableTintAlpha);
-    const excelGoldTotalRowBg = applyTableTintToCssColor(
-      "rgba(255, 193, 7, 0.18)",
-      effectiveTableTintAlpha
-    );
+    const excelGoldTotalRowBg =
+      effectiveTableTintAlpha <= 0
+        ? "rgba(255, 193, 7, 0.30)"
+        : applyTableTintToCssColor("rgba(255, 193, 7, 0.30)", effectiveTableTintAlpha);
     const broadcastTheadBg = hasTableHeaderBgColorOverride
       ? applyTableTintToCssColor(tableHeaderBgColorRaw, effectiveTableTintAlpha)
       : applyTableTintToCssColor(themeAutoHeaderBgCss, effectiveTableTintAlpha);
@@ -5418,7 +5428,7 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
           background: ${excelLiveTotalRowBg} !important;
         }
-        .overlay-root .overlay-elegant-table:not(.excel-live-table):not(.pastel-member-table) tbody tr.overlay-total-row td {
+        .overlay-root .overlay-elegant-table:not(.excel-live-table):not(.pastel-member-table):not(.excel-gold-table) tbody tr.overlay-total-row td {
           /* 방송 크롬: 헤더와 같은 분홍 띠 — 선은 흰 헤어라인으로 대비 */
           background: ${useBroadcastTableChrome ? broadcastTheadBg : tableBodySheetBgCss} !important;
         }
@@ -5777,6 +5787,9 @@ function OverlayInner() {
           min-width: 0 !important;
           box-shadow: none !important;
         }
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-excel-placeholder {
+          visibility: hidden !important;
+        }
         .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-excel-placeholder td .overlay-cell-text-inner,
         .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-excel-placeholder td .overlay-num-cell-inner {
           color: transparent !important;
@@ -5798,10 +5811,33 @@ function OverlayInner() {
               }).join("")
             : ""
         }
-        .overlay-root .overlay-elegant-table.excel-gold-table .overlay-total-row td {
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-total-row td,
+        .overlay-root .overlay-elegant-table.excel-gold-table .overlay-total-row td,
+        .overlay-root .overlay-elegant-table.excel-gold-table tr.overlay-total-row td,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-total-row td {
+          border-top: 3px solid transparent !important;
+          border-bottom: 3px solid transparent !important;
           background: ${excelGoldTotalRowBg} !important;
+          background-clip: padding-box !important;
           box-shadow: none !important;
-          border: none !important;
+          outline: none !important;
+          text-shadow: ${tableOutlineShadowCss} !important;
+          -webkit-text-stroke: ${tableOutlineDisabled || obsStrokeDisabled ? "0" : tableStrokeCss} !important;
+          paint-order: stroke fill !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-total-row td:first-child,
+        .overlay-root .overlay-elegant-table.excel-gold-table .overlay-total-row td:first-child,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-total-row td:first-child {
+          border-left: 10px solid transparent !important;
+          border-top-left-radius: 999px !important;
+          border-bottom-left-radius: 999px !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-total-row td:last-child,
+        .overlay-root .overlay-elegant-table.excel-gold-table .overlay-total-row td:last-child,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-total-row td:last-child {
+          border-right: 10px solid transparent !important;
+          border-top-right-radius: 999px !important;
+          border-bottom-right-radius: 999px !important;
         }
         `
             : ""
@@ -5953,7 +5989,7 @@ function OverlayInner() {
                 >
                     <div
                       ref={tableBoxRef as any}
-                      className={`flex flex-row items-stretch ${excelSplitEnabled ? "overlay-split-container" : ""}`}
+                      className={`flex flex-row items-stretch ${excelSplitEnabled ? "overlay-split-container" : ""} ${isExcelGoldChrome && excelSplitEnabled ? "gap-4" : ""}`}
                       style={{
                         width: "max-content",
                         maxWidth: "100%",
@@ -5961,7 +5997,7 @@ function OverlayInner() {
                     >
                     {memberTablePanels.map((panel, panelIdx) => (
                     <React.Fragment key={panel.key}>
-                    {excelSplitEnabled && panelIdx > 0 && (
+                    {excelSplitEnabled && !isExcelGoldChrome && panelIdx > 0 && (
                       <div
                         className="overlay-split-divider self-stretch shrink-0"
                         style={{
@@ -6380,7 +6416,6 @@ function OverlayInner() {
                         <td className={`${overlayTotalRowCls} overlay-col-rank`} colSpan={totalLabelColSpan}>
                           총합
                         </td>
-                        <td className={`${overlayTotalRowCls} overlay-col-name`} />
                         {showAccountColumn && (
                           <td className={`${overlayTotalRowCls} overlay-col-account overlay-account-cell text-center`}>
                             <OverlayTableNumCell
@@ -6429,7 +6464,15 @@ function OverlayInner() {
                           <td className={`${overlayTotalRowCls} overlay-col-contribution text-center`} />
                         )}
                         {showRestroomColumn && (
-                          <td className={`${overlayTotalRowCls} overlay-col-restroom text-center`} />
+                          <td className={`${overlayTotalRowCls} overlay-col-restroom text-center font-semibold`}>
+                            <OverlayTableNumCell
+                              value={sumRestroom}
+                              format={fmtRestroom}
+                              animate={rowMotionEnabled}
+                              className="overlay-num-cell-inner overlay-cell-text-inner"
+                              style={overlayCellOutlineStyle}
+                            />
+                          </td>
                         )}
                       </tr>
                     )}
