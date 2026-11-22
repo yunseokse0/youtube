@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { appendSettlementRecord } from "@/lib/settlement";
 import {
   applyRoundContributionToState,
+  applyLastResetContributionToState,
+  saveLastResetContributionSnapshot,
+  loadLastResetContributionSnapshot,
   getRoundContributionSnapshot,
   hasSavedRoundContribution,
 } from "@/lib/settlement-contribution-restore";
@@ -135,5 +138,97 @@ describe("정산 회차 기여도 저장 및 리셋 후 불러오기 테스트",
     // 복원 로그가 생성되었는지 확인
     expect(nextState.contributionLogs.length).toBe(3);
     expect(nextState.contributionLogs[0].note).toContain("회차 기여도 불러오기");
+  });
+
+  it("정산 리셋 직전 스냅샷을 저장하고 직전 기여도 복원 시 일반/퐁당퐁당 모두 정상 반영된다", () => {
+    const preResetState: AppState = {
+      members: [
+        { id: "m1", name: "자키", account: 100000, toon: 50000, contribution: 500000 },
+        { id: "m2", name: "열음", account: 20000, toon: 10000, contribution: 80000 },
+      ],
+      pongdangManualContributions: {
+        m1: 500000,
+        m2: 80000,
+      },
+    } as any;
+
+    // 1. Mock localStorage
+    const storage: Record<string, string> = {};
+    const origWindow = globalThis.window;
+    (globalThis as any).window = {
+      localStorage: {
+        getItem: (k: string) => storage[k] ?? null,
+        setItem: (k: string, v: string) => { storage[k] = v; },
+        removeItem: (k: string) => { delete storage[k]; },
+      },
+    };
+
+    try {
+      const snap = saveLastResetContributionSnapshot(preResetState, "user_abc");
+      expect(snap).toBeDefined();
+      expect(snap?.contributions["m1"]).toBe(500000);
+      expect(snap?.contributions["m2"]).toBe(80000);
+      expect(snap?.total).toBe(580000);
+
+      const loaded = loadLastResetContributionSnapshot("user_abc");
+      expect(loaded).toBeDefined();
+      expect(loaded?.contributions["m1"]).toBe(500000);
+
+      const clearedState: AppState = {
+        members: [
+          { id: "m1", name: "자키", account: 0, toon: 0, contribution: 0 },
+          { id: "m2", name: "열음", account: 0, toon: 0, contribution: 0 },
+        ],
+        pongdangManualContributions: {},
+      } as any;
+
+      const restored = applyLastResetContributionToState(clearedState, loaded!, {
+        applyToStandardExcel: true,
+        applyToPongdangExcel: true,
+      });
+
+      expect(restored.restoredCount).toBe(2);
+      expect(restored.restoredTotal).toBe(580000);
+      expect(restored.nextState.members[0].contribution).toBe(500000);
+      expect(restored.nextState.members[1].contribution).toBe(80000);
+      expect(restored.nextState.pongdangManualContributions?.["m1"]).toBe(500000);
+      expect(restored.nextState.pongdangManualContributions?.["m2"]).toBe(80000);
+      expect(restored.nextState.pongdangManualMode).toBe(true);
+      expect(restored.nextState.contributionLogs[0].note).toContain("정산 리셋 기여도 복원");
+    } finally {
+      (globalThis as any).window = origWindow;
+    }
+  });
+
+  it("applyRoundContributionToState 에서 applyToPongdangExcel: true 시 퐁당퐁당 표에도 함께 복원된다", () => {
+    const savedRec = appendSettlementRecord(
+      "퐁당퐁당 테스트 회차",
+      dummyMembers,
+      0.7,
+      0.6,
+      0.033,
+      undefined,
+      undefined,
+      "test_user",
+      undefined,
+      { saveRoundContribution: true }
+    );
+
+    const clearedState: AppState = {
+      members: [
+        { id: "m1", name: "자키", account: 0, toon: 0, contribution: 0 },
+        { id: "m2", name: "열음", account: 0, toon: 0, contribution: 0 },
+      ],
+      pongdangManualContributions: {},
+    } as any;
+
+    const restored = applyRoundContributionToState(clearedState, savedRec, {
+      applyToStandardExcel: true,
+      applyToPongdangExcel: true,
+    });
+
+    expect(restored.nextState.members[0].contribution).toBe(460000);
+    expect(restored.nextState.pongdangManualContributions?.["m1"]).toBe(460000);
+    expect(restored.nextState.pongdangManualMode).toBe(true);
   });
 });
