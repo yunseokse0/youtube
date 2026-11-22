@@ -2546,11 +2546,37 @@ function OverlayInner() {
   const fitMinMember = Math.max(8, Math.min(40, parseInt(sp.get("fitMinMember") || (isVertical ? "22" : "10"), 10)));
   const fitMaxMember = Math.max(fitMinMember, Math.min(80, parseInt(sp.get("fitMaxMember") || (isVertical ? "44" : "24"), 10)));
   // OBS/Prism도 프리셋 scale 핫리로드(`OVERLAY_LIVE_PRESET_STYLE_KEYS`) — 컴팩트 URL에 scale 없음
-  const scaleRaw = sp.get("scale");
+  const rawUrlScale = (rawSp.get("tableScale") || rawSp.get("scale") || "").trim();
+  const scaleRaw = rawUrlScale || sp.get("tableScale") || sp.get("scale");
   const parsedScale = Math.max(0.5, Math.min(4, parseFloat(scaleRaw || (isVertical ? "1" : (compact ? "0.9" : "1")))));
   const scale = stableMode ? 1 : parsedScale;
-  const hasExplicitScale = scaleRaw !== "";
-  const memberSize = Math.max(10, Math.min(80, parseInt(sp.get("memberSize") || (compact ? "16" : (isVertical ? "40" : "24")), 10)));
+  const hasExplicitScale = (scaleRaw || "") !== "";
+  const rawUrlMemberSize = (
+    rawSp.get("memberSize") ||
+    rawSp.get("fontSize") ||
+    rawSp.get("memberFontSize") ||
+    rawSp.get("tableFontSize") ||
+    rawSp.get("mSize") ||
+    ""
+  ).trim();
+  const rawMemberSize =
+    rawUrlMemberSize ||
+    sp.get("memberSize") ||
+    sp.get("fontSize") ||
+    sp.get("memberFontSize") ||
+    sp.get("tableFontSize") ||
+    sp.get("mSize") ||
+    "";
+  const memberSize = Math.max(
+    12,
+    Math.min(
+      80,
+      parseInt(
+        rawMemberSize || (compact ? "16" : (isVertical ? "40" : "24")),
+        10
+      )
+    )
+  );
   const totalSize = Math.max(14, Math.min(160, parseInt(sp.get("totalSize") || (isVertical ? "48" : "30"), 10)));
   const dense = (sp.get("dense") || "false").toLowerCase() === "true";
   const layoutMode = (sp.get("layout") || "center-fixed").toLowerCase();
@@ -4251,11 +4277,18 @@ function OverlayInner() {
       : true);
   const rowMotionEnabled = rowMotionRequested && unpinned.length > 1;
 
-  /** URL에 memberSize가 있거나 tableFit=off → 관리자가 지정한 px를 OBS에서도 그대로 쓰기 */
+  /** URL에 memberSize/fontSize/mSize/tableFontSize가 있거나 tableFit=off → 관리자가 지정한 px를 OBS에서도 그대로 쓰기 */
   const lockMemberTableFontSize = useMemo(() => {
     const fitRaw = (rawSp.get("tableFit") || "").trim().toLowerCase();
     if (fitRaw === "off" || fitRaw === "false" || fitRaw === "0") return true;
-    const ms = (rawSp.get("memberSize") || "").trim();
+    const ms = (
+      rawSp.get("memberSize") ||
+      rawSp.get("fontSize") ||
+      rawSp.get("memberFontSize") ||
+      rawSp.get("tableFontSize") ||
+      rawSp.get("mSize") ||
+      ""
+    ).trim();
     return ms.length > 0 && Number.isFinite(parseInt(ms, 10));
   }, [rawSp]);
 
@@ -4283,7 +4316,7 @@ function OverlayInner() {
         });
       });
     }
-    /** nameGrow 시 clamp는 콘텐츠 폭 — 뷰포트 상한(container)만 fit 기준 */
+    /** 가용 공간 측정: clampEl 자체는 표를 감싸는 자식이므로 자식 너비가 아닌 뷰포트/부모 상한을 측정해 축소 루프 방지 */
     const measureAvail = () => {
       const padStyle = getComputedStyle(clampEl);
       const padX =
@@ -4294,15 +4327,16 @@ function OverlayInner() {
         showSideDonors && (donorsSide === "left" || donorsSide === "right")
           ? (donorsWidth + 12)
           : 0;
+      const parentW = containerRef.current?.parentElement?.clientWidth;
+      const effectiveBoundW = parentW && parentW > 100 ? Math.min(parentW, boundW) : boundW;
       if (effectiveNameGrow) {
         const container = containerRef.current;
         if (container) {
-          const avail = Math.min(container.clientWidth, boundW) - sideDonorsW - padX;
+          const avail = Math.min(container.clientWidth || effectiveBoundW, boundW) - sideDonorsW - padX;
           return Math.max(100, avail);
         }
       }
-      const clampW = clampEl.clientWidth > 0 ? clampEl.clientWidth : boundW;
-      const avail = Math.min(clampW, boundW) - sideDonorsW - padX;
+      const avail = effectiveBoundW - sideDonorsW - padX;
       return Math.max(100, avail);
     };
     const scheduleRun = (fn: () => void) => {
@@ -4336,7 +4370,7 @@ function OverlayInner() {
           const unscaledWidth = measured / prevFit;
           // 마지막 열 클리핑 방지를 위해 10px 안전 여유를 둔다.
           const raw = (avail - 10) / unscaledWidth;
-          const safeFitMin = excelSplitEnabled ? 0.35 : (mobileBroadcast ? 0.58 : 0.70);
+          const safeFitMin = excelSplitEnabled ? 0.60 : (mobileBroadcast ? 0.58 : 0.70);
           const next = Math.max(safeFitMin, Math.min(1, Math.floor(raw * 100) / 100));
           if (Math.abs(next - memberTableFitPrevRef.current) < 0.012) {
             markMemberTableLayoutStable();
@@ -4382,7 +4416,7 @@ function OverlayInner() {
         }
         const prevFit = memberTableFitPrevRef.current || 1;
         const unscaledWidth = measured / prevFit;
-        const fitMin = excelSplitEnabled ? 0.35 : (mobileBroadcast ? 0.58 : 0.70);
+        const fitMin = excelSplitEnabled ? 0.60 : (mobileBroadcast ? 0.58 : 0.70);
         const raw = maxAvail / unscaledWidth;
         const best = Math.max(fitMin, Math.min(1, Math.floor(raw * 100) / 100));
         if (Math.abs(best - prevFit) < 0.015) {
@@ -4855,7 +4889,7 @@ function OverlayInner() {
       );
     const nameWrapCls = "";
     const tfTable = memberTableFitFactor;
-    const mobileMinFontPx = mobileBroadcast ? 17 : externalHost ? 15 : 8;
+    const mobileMinFontPx = mobileBroadcast ? 17 : 16;
     let memberFontPx = Math.max(mobileMinFontPx, Math.round(mSize * tfTable));
     if (mobileBroadcast && mobileCanvasFitScale < 0.999) {
       memberFontPx = ensureCanvasFontPx(memberFontPx, mobileCanvasFitScale, mobileMinFontPx);
@@ -5415,8 +5449,9 @@ function OverlayInner() {
           container-type: normal !important;
           font-size: ${memberFontPx}px !important;
           line-height: 1.35 !important;
+          font-weight: ${tableFontWeight} !important;
           -webkit-text-stroke: 0 !important;
-          text-shadow: none !important;
+          text-shadow: ${tableOutlineShadowCss !== "none" ? tableOutlineShadowCss : "0 1px 2px rgba(0,0,0,0.85)"} !important;
           text-rendering: geometricPrecision !important;
         }
         .overlay-root .overlay-elegant-table tbody td span:not(.overlay-rank-fx-colorShift):not(.overlay-rank-fx-rainbow):not(.overlay-rank-fx-glow):not(.overlay-rank-fx-sparkle),
