@@ -355,7 +355,11 @@ export function applyOverlayDonationDisplayTotals(
   if (!day777) return amountSynced;
 
   const originalMemberMap = new Map((state.members || []).map((m) => [m.id, m]));
-  const isManualMode = Boolean(opts?.pongdangManualMode ?? state.pongdangManualMode);
+  // 수동 기여도 보정값은 항시 반영 (명시적으로 false로 끈 경우가 아니면 기본 true로 자동 수집값과 실시간 합산)
+  const isManualMode =
+    opts?.pongdangManualMode !== undefined
+      ? Boolean(opts.pongdangManualMode)
+      : state.pongdangManualMode !== false;
   const manualContribs = state.pongdangManualContributions || {};
 
   const pongdangResetCutoff = Math.max(

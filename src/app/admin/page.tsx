@@ -11464,7 +11464,8 @@ function AdminPageInner() {
 
   const togglePongdangManualMode = useCallback((force?: boolean) => {
     setState((prev: AppState) => {
-      const nextMode = typeof force === "boolean" ? force : !prev.pongdangManualMode;
+      const currentActive = prev.pongdangManualMode !== false;
+      const nextMode = typeof force === "boolean" ? force : !currentActive;
       const next: AppState = {
         ...prev,
         pongdangManualMode: nextMode,
@@ -13321,12 +13322,19 @@ function AdminPageInner() {
                 id="block-member-positions"
                 title="직급 관리 (별도)"
                 className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-2"
+                headerAside={
+                  <InfoTooltip text="직급은 멤버 정보와 분리 저장되며, 설정된 직급 맵을 기준으로 정렬 및 오버레이에 표시됩니다." />
+                }
               >
-                  <p className="text-xs text-neutral-400">
-                    직급은 멤버 정보와 분리 저장됩니다. 정렬/오버레이 표시는 아래 직급 맵을 기준으로 동작합니다.
-                  </p>
                 <div className="rounded border border-white/10 bg-black/20 p-2">
-                  <div className="text-xs text-neutral-400 mb-1">직급 모드</div>
+                  <div className="text-xs text-neutral-400 mb-1 flex items-center gap-1.5">
+                    <span>직급 모드</span>
+                    <InfoTooltip text={
+                      state.memberPositionMode === "rankLinked"
+                        ? "순위 연동 직급: 실시간 순위에 따라 직급이 자동 부여됩니다 (대표 멤버는 최상단 고정)."
+                        : "멤버 고정 직급: 각 멤버에게 설정된 직급이 유지됩니다 (대표 직급 멤버는 항상 최상단 고정)."
+                    } />
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -13343,14 +13351,20 @@ function AdminPageInner() {
                       순위 연동 직급
                     </button>
                   </div>
-                  <p className="mt-1 text-[11px] text-neutral-400">
-                    {state.memberPositionMode === "rankLinked"
-                      ? "현재 [순위 연동 직급] 모드입니다. 직급이 실시간 순위에 따라 부여됩니다. 대표 멤버 지정 시 해당 멤버는 대표로 최상단 고정됩니다."
-                      : "현재 [멤버 고정 직급] 모드입니다. 각 멤버에게 설정된 직급이 유지되며, 직급이 '대표'인 멤버는 항상 최상단에 고정됩니다."}
-                  </p>
                 </div>
                 <div className="rounded border border-white/10 bg-black/20 p-2">
-                  <div className="text-xs text-neutral-400 mb-1">엑셀표 순위 기준</div>
+                  <div className="text-xs text-neutral-400 mb-1 flex items-center gap-1.5">
+                    <span>엑셀표 순위 기준</span>
+                    <InfoTooltip text={
+                      (state.memberRankingMetric || "contribution") === "donation"
+                        ? "계좌·투네 합(100원 단위)으로 순위를 매깁니다. 동점이면 멤버 생성순."
+                        : state.memberRankingMetric === "account"
+                        ? "계좌 후원금으로만 순위를 매깁니다. 동점이면 투네 → 멤버 생성순."
+                        : state.memberRankingMetric === "toon"
+                        ? "투네이션 후원금으로만 순위를 매깁니다. 동점이면 계좌 → 멤버 생성순."
+                        : "세션 누적 기여도(시그 단가/수동 기여도 포함)로 순위를 매깁니다. 동점이면 금액 → 멤버 생성순."
+                    } />
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     {[
                       { id: "contribution", label: "누적 기여도" },
@@ -13373,15 +13387,6 @@ function AdminPageInner() {
                       );
                     })}
                   </div>
-                  <p className="mt-1 text-[11px] text-neutral-500">
-                    {(state.memberRankingMetric || "contribution") === "donation"
-                      ? "계좌·투네 합(100원 단위)으로 순위를 매깁니다. 동점이면 멤버 생성순."
-                      : state.memberRankingMetric === "account"
-                      ? "계좌 후원금으로만 순위를 매깁니다. 동점이면 투네 → 멤버 생성순."
-                      : state.memberRankingMetric === "toon"
-                      ? "투네이션 후원금으로만 순위를 매깁니다. 동점이면 계좌 → 멤버 생성순."
-                      : "세션 누적 기여도(시그 단가/수동 기여도 포함)로 순위를 매깁니다. 동점이면 금액 → 멤버 생성순."}
-                  </p>
                 </div>
                 <div className="rounded border border-white/10 bg-black/20 p-2 space-y-2">
                   <div className="text-xs text-neutral-400">커스텀 열 (순위 다음 · 상벌금 등)</div>
@@ -14210,6 +14215,9 @@ function AdminPageInner() {
                 title="식사 대전 관리"
                 className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3"
                 defaultOpen={false}
+                headerAside={
+                  <InfoTooltip text="식사 대전: 「식사대전 동기화」모드 및 참가자 「후원 연동 ON」 시 게이지 점수에 실시간 반영됩니다 (운영비 멤버 제외)." />
+                }
               >
 
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -15336,12 +15344,6 @@ function AdminPageInner() {
 
                 </div>
 
-                <p className="text-[11px] text-amber-200/90">
-
-                  후원 연동: 「식사대전 동기화」모드 + 참가자 「후원 연동 ON」이어야 게이지 점수에 반영됩니다. 연동 ON 시 참가 체크가 없으면 자동으로 참가 처리됩니다. 운영비 멤버는 참가할 수 없습니다.
-
-                </p>
-
                 <div className="space-y-2">
 
                   {mealParticipants.map((row) => (
@@ -16467,15 +16469,10 @@ function AdminPageInner() {
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <h3 className="text-base font-semibold">시그 판매 및 회전판 추첨 관리</h3>
-                    <p className="text-xs text-neutral-400">
-                      회전판 당첨은 서버(<code className="text-neutral-300">/api/roulette/spin</code>)에서만 결정되어 Redis에 저장됩니다. 판매 ±는 기존과 동일하게 전체 상태로 동기화되며 후원(donors) 병합 로직과 충돌하지 않습니다.
-                    </p>
-                    <p className="mt-1 text-[11px] leading-snug text-amber-200/90">
-                      아래 숫자는 <strong className="text-amber-100">회전 횟수이며 곧 당첨 시그 개수</strong>입니다(회전 1회당 시그 1개). 예: 5면 휠이 5번 돌아가고 시그 5개가 나옵니다. 금액 칸을 비우면 해당 회차는{" "}
-                      <strong className="text-amber-100">전체 풀에서 무작위</strong>이며, 같은 버튼 한 번 안에서는{" "}
-                      <strong className="text-amber-100">시그가 서로 중복되지 않습니다</strong>. 서로 다른 시그 수가 부족하면 오류가 납니다.
-                    </p>
+                    <h3 className="text-base font-semibold flex items-center gap-1.5">
+                      <span>시그 판매 및 회전판 추첨 관리</span>
+                      <InfoTooltip text="회전 횟수는 곧 당첨 시그 개수입니다. 금액 칸을 비우면 전체 풀에서 무작위 추첨되며, 1회 추첨 내에서는 시그가 서로 중복되지 않습니다." />
+                    </h3>
                   </div>
                   <div className="flex flex-wrap items-end gap-2">
                     <label className="flex flex-col text-[11px] text-neutral-400">
@@ -18855,15 +18852,15 @@ function AdminPageInner() {
                     <button
                       type="button"
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                        state.pongdangManualMode
+                        state.pongdangManualMode !== false
                           ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/40 ring-1 ring-emerald-400"
                           : "bg-neutral-800 hover:bg-neutral-700 text-neutral-400 border border-white/10"
                       }`}
                       onClick={() => togglePongdangManualMode()}
-                      title="수동 입력값 합산 반영 여부를 토글합니다. (자동 수집은 항상 켜져 있음)"
+                      title="수동 보정값 실시간 합산 여부를 설정합니다. (자동 수집은 항상 지속됩니다)"
                     >
-                      <span className={`w-2 h-2 rounded-full ${state.pongdangManualMode ? "bg-white animate-pulse" : "bg-sky-400"}`} />
-                      {state.pongdangManualMode ? "수동 보정 반영 중 (자동 수집 지속)" : "순수 자동 집계 모드 (수동 보정 미반영)"}
+                      <span className={`w-2 h-2 rounded-full ${state.pongdangManualMode !== false ? "bg-white animate-pulse" : "bg-sky-400"}`} />
+                      {state.pongdangManualMode !== false ? "✓ 수동 보정 포함 (기본·상시 합산)" : "순수 자동만 반영 (수동 미포함)"}
                     </button>
                     <button
                       type="button"
@@ -18893,14 +18890,14 @@ function AdminPageInner() {
                 </div>
 
                 <div className={`p-2.5 rounded-lg border text-xs flex items-center gap-2 ${
-                  state.pongdangManualMode
+                  state.pongdangManualMode !== false
                     ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-200"
                     : "bg-neutral-900/60 border-white/10 text-neutral-400"
                 }`}>
-                  <span className="font-bold">{state.pongdangManualMode ? "✓ 수동 보정 반영 중:" : "ℹ 순수 자동 집계 모드:"}</span>
+                  <span className="font-bold">{state.pongdangManualMode !== false ? "✓ 자동 + 수동 상시 합산 (기본):" : "ℹ 순수 자동 집계 모드:"}</span>
                   <span>
-                    {state.pongdangManualMode
-                      ? "자동 수집된 시그 기여도에 수동 보정 금액이 합산되어 실시간으로 퐁당퐁당 엑셀표에 표출됩니다. (새로운 시그/후원 발생 시 자동 수집도 계속 누적됨)"
+                    {state.pongdangManualMode !== false
+                      ? "자동 수집된 시그 기여도에 수동 보정 금액이 상시 합산되어 실시간으로 퐁당퐁당 엑셀표에 표출됩니다. (자동 후원·시그 발생 시에도 100% 끊김 없이 실시간 반영)"
                       : "관리자 수동 보정값을 제외하고 순수 룰렛·시그 자동 수집 기여도만 퐁당퐁당 엑셀표에 표출됩니다. (자동 수집은 계속 작동 중)"}
                   </span>
                 </div>
@@ -18945,7 +18942,7 @@ function AdminPageInner() {
                     {state.members.map((m) => {
                       const manualVal = state.pongdangManualContributions?.[m.id] ?? 0;
                       const autoVal = autoSigContributionMap.get(m.id) ?? 0;
-                      const finalVal = state.pongdangManualMode ? Math.max(0, autoVal + manualVal) : autoVal;
+                      const finalVal = state.pongdangManualMode !== false ? Math.max(0, autoVal + manualVal) : autoVal;
                       return (
                         <div
                           key={`pongdang-manual-${m.id}`}
@@ -21488,14 +21485,16 @@ function AdminPageInner() {
                                       <button
                                         type="button"
                                         className={`px-2 py-0.5 rounded border text-xs font-semibold ${
-                                          p.pongdangManualMode
+                                          p.pongdangManualMode !== false
                                             ? "border-emerald-500 text-emerald-200 bg-emerald-950/60"
                                             : "border-white/10 text-neutral-400"
                                         }`}
-                                        onClick={() => updatePreset(p.id, { pongdangManualMode: !p.pongdangManualMode })}
+                                        onClick={() => updatePreset(p.id, { pongdangManualMode: p.pongdangManualMode === false ? true : false })}
+                                        title="자동 당첨 시그 단가와 수동 보정값을 상시 합산합니다."
                                       >
-                                        {p.pongdangManualMode ? "수동 ON" : "자동(OFF)"}
+                                        {p.pongdangManualMode !== false ? "✓ 수동 보정 포함" : "수동 미반영"}
                                       </button>
+                                      <InfoTooltip text="자동 후원/시그 수신은 항시 100% 정상 작동하며, 관리자 수동 보정값(+/-)이 실시간으로 상시 합산됩니다." />
                                     </div>
                                   )}
                                 </div>
@@ -23209,14 +23208,13 @@ function AdminPageInner() {
                                             : "border-white/10 text-neutral-500"
                                         }`}
                                         onClick={() =>
-                                          updatePreset(p.id, { pongdangManualMode: !p.pongdangManualMode })
+                                          updatePreset(p.id, { pongdangManualMode: p.pongdangManualMode === false ? true : false })
                                         }
+                                        title="자동 시그 단가와 수동 보정값을 상시 합산합니다."
                                       >
-                                        {p.pongdangManualMode ? "수동 ON" : "자동(OFF)"}
+                                        {p.pongdangManualMode !== false ? "✓ 수동 보정 포함 (기본)" : "수동 미반영"}
                                       </button>
-                                      <span className="text-[10px] text-neutral-500">
-                                        ON: 기여도 기록부의 퐁당 수동 입력값 우선 반영 / OFF: 시그 단가 자동 집계
-                                      </span>
+                                      <InfoTooltip text="자동 후원/시그 수신은 항시 100% 정상 작동하며, 관리자 수동 보정값(+/-)이 실시간으로 상시 합산됩니다." />
                                     </div>
                                   )}
                                   <div className="space-y-1.5 pt-2 border-t border-white/5">
@@ -23449,22 +23447,15 @@ function AdminPageInner() {
                               </div>
                             </details>
                             <details className="rounded border border-white/10 bg-neutral-900/40">
-                              <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">표시 요소</summary>
+                              <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300 flex items-center justify-between">
+                                <span>표시 요소</span>
+                                <InfoTooltip text="목표바 ON: 엑셀표 하단 후원 목표 막대 표시 / 팀 대전차: 식사 대전 팀 모드 시 상단 금액 및 차액 박스 표시" />
+                              </summary>
                               <div className="p-3 flex flex-wrap gap-1">
                                 {([["멤버 목록", "showMembers"], ["총합", "showTotal"], ["목표바", "showGoal"], ["팀 대전차", "showTeamBattle"], ["개인 골", "showPersonalGoal"], ["타이머", "showTimer"], ["미션 전광판", "showMission"]] as [string, keyof OverlayPreset][]).map(([label, key]) => (
                                   <button key={key} className={`px-2 py-0.5 rounded border text-xs ${p[key] ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { [key]: !p[key] })}>{label} {p[key] ? "ON" : "OFF"}</button>
                                 ))}
                               </div>
-                              {!p.showGoal ? (
-                                <p className="mt-2 text-[10px] text-amber-200/90 leading-snug">
-                                  엑셀표 아래 후원 목표 막대(0만원 / N만원)를 쓰려면 위에서 <strong className="font-semibold">목표바 ON</strong>을 켜 주세요.
-                                </p>
-                              ) : null}
-                              {p.showTeamBattle ? (
-                                <p className="mt-2 text-[10px] text-sky-200/90 leading-snug">
-                                  「팀 대전차」는 식사 대전 팀 모드(<strong className="font-semibold">teamBattleEnabled</strong>)가 켜져 있고 A/B 멤버가 배정되어 있을 때, 상단 중앙에 빨강·파랑 금액 + 타이머 + 차액 박스를 표시합니다.
-                                </p>
-                              ) : null}
                             </details>
 
                             <div className="h-px bg-white/10 my-1" />

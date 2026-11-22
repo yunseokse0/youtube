@@ -2381,8 +2381,8 @@ export function resolveDay777Calc(
 
 /**
  * 퐁당퐁당 수동 기여도 모드 — 퐁당퐁당 엑셀표만.
- * 수동 모드 ON: 관리자 수동 입력 기여도 반영
- * 수동 모드 OFF: 룰렛/Toona 당첨 시그 단가 자동 집계
+ * 수동 모드 ON (기본): 자동 당첨 시그 단가 + 관리자 수동 보정값 실시간 상시 합산
+ * 명시적으로 false로 껐을 때만 수동 보정 미반영(순수 자동만)
  */
 export function resolvePongdangManualMode(
   rawSp: SearchParamsLike,
@@ -2394,8 +2394,9 @@ export function resolvePongdangManualMode(
   const merged = resolveLivePresetStyleParam("pongdangManualMode", rawSp, presetToParams(preset), opts);
   if (merged === "true") return true;
   if (merged === "false") return false;
+  if (preset?.pongdangManualMode === false) return false;
   if (preset?.pongdangManualMode === true) return true;
-  return Boolean(state?.pongdangManualMode);
+  return state?.pongdangManualMode !== false;
 }
 
 /**
