@@ -182,6 +182,9 @@ export type OverlayPresetLike = {
   tableVerticalLines?: boolean;
   /** 엑셀표 좌우 2열 분할(6명 이상). 기본 false (단일 1열 유지로 OBS 너비 2000+ 초과 방지) */
   tableSplit?: boolean;
+  /** 엑셀표 행마다 둥근 알약(pill) 바 스타일 (모든 엑셀 테마 지원) */
+  tablePill?: boolean;
+  pillStyle?: boolean;
   vertical?: boolean;
   /** 열별 본문 글자색(비우면 본문/테마 기본). 헤더 글자색과 별개 */
   rankColor?: string;
@@ -454,6 +457,8 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.tableVerticalLines === false) q.set("tableVerticalLines", "false");
   if (preset.tableSplit === true) q.set("tableSplit", "true");
   else if (preset.tableSplit === false) q.set("tableSplit", "false");
+  if (preset.tablePill === true || preset.pillStyle === true) q.set("pillStyle", "true");
+  else if (preset.tablePill === false || preset.pillStyle === false) q.set("pillStyle", "false");
   for (const key of [
     "rankColor",
     "customColor",

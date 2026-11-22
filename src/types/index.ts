@@ -321,6 +321,9 @@ export type DonationTableColumnsOptions = {
   showCustomColumn?: boolean;
   /** 6명 이상 시 좌우 2열 분할 표시 여부 (기본 false: 단일 1열 유지로 OBS 너비 2000+ 초과 방지) */
   tableSplit?: boolean;
+  /** 엑셀표 행마다 둥근 알약(pill) 바 스타일 (모든 엑셀 테마 지원) */
+  tablePill?: boolean;
+  pillStyle?: boolean;
 };
 
 export type SigMatchSettings = {

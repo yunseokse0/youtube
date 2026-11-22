@@ -2608,6 +2608,14 @@ function OverlayInner() {
     return merged;
   };
   const resolveThemeId = (key: string): ThemeId => {
+    const directUrl = (rawSp.get(key) || rawSp.get("theme") || "").trim();
+    if (
+      directUrl &&
+      directUrl !== "auto" &&
+      Object.prototype.hasOwnProperty.call(THEMES, directUrl)
+    ) {
+      return directUrl as ThemeId;
+    }
     const raw = (sp.get(key) || sp.get("theme") || "auto").trim();
     if (raw === "auto" || !raw) {
       if (key === "membersTheme" || key === "totalTheme" || key === "tickerBaseTheme" || key === "missionTheme") {
@@ -4608,7 +4616,26 @@ function OverlayInner() {
     const nameColIndex = 1 + (showCustomColumn ? 1 : 0) + (hasRoleColumn ? 1 : 0);
     const totalLabelColSpan = 1 + (showCustomColumn ? 1 : 0) + (hasRoleColumn ? 1 : 0) + 1;
     const isExcelLiveTheme = membersThemeId === "excelLive";
+    const rawPillStyle =
+      rawSp.get("pillStyle") ??
+      rawSp.get("pill") ??
+      rawSp.get("tablePill") ??
+      rawSp.get("tableDesign");
+    const pillStyleFromUrl =
+      rawPillStyle !== null
+        ? rawPillStyle.toLowerCase() === "true" ||
+          rawPillStyle === "1" ||
+          rawPillStyle.toLowerCase() === "pill"
+        : undefined;
+    const pillStyleFromPreset =
+      activePreset?.tablePill ??
+      activePreset?.pillStyle ??
+      (activePreset?.tableDesign === "pill" ? true : undefined);
+    const isPillStyleExplicit = pillStyleFromUrl ?? pillStyleFromPreset;
+
     const isExcelGoldChrome = isExcelGoldTableTheme(membersThemeId);
+    const isPillTableChrome =
+      isPillStyleExplicit !== undefined ? isPillStyleExplicit : isExcelGoldChrome;
     const tableHeaderLineColor =
       tableLineColorRaw ||
       excelMemberAccent?.headerBorder ||
@@ -4620,7 +4647,7 @@ function OverlayInner() {
       resolveTableThemeTotalBorderCss(membersThemeId);
     const tableGridLineWidthPx = overlayTableGridLineWidthPx(Boolean(externalHost));
     const tableGridLineColor = tableLineColorRaw || tableHeaderLineColor;
-    const tablePanelShadow = isExcelGoldChrome
+    const tablePanelShadow = isPillTableChrome
       ? "none"
       : tableGridLines
         ? excelMemberAccent?.panelShadow ?? TABLE_BROADCAST_PANEL_SHADOW
@@ -4629,20 +4656,31 @@ function OverlayInner() {
      * 줄무늬(퐁당 파랑/분홍·골드 알약)는 테마 고유 알파를 유지한다.
      * 표 배경 불투명도 0에 묶이면 줄무늬가 사라지고, 기여도 #1a1a1a 등이 검은 바탕에 묻힌다.
      */
-    const rowStripeRawEven =
+    const rawStripeEvenResolved =
       tableRowEvenBgRaw || resolveTableThemeRowStripeCss(membersThemeId, "even");
-    const rowStripeRawOdd =
+    const rawStripeOddResolved =
       tableRowOddBgRaw || resolveTableThemeRowStripeCss(membersThemeId, "odd");
-    const themeDefinesZebraStripes = Boolean(
-      String(tableRowEvenBgRaw || excelMemberAccent?.rowEvenBg || "").trim() ||
-        String(tableRowOddBgRaw || excelMemberAccent?.rowOddBg || "").trim()
-    );
+
+    const rowStripeRawEven =
+      isPillTableChrome && (!rawStripeEvenResolved || rawStripeEvenResolved === "transparent")
+        ? "rgba(255, 255, 255, 0.08)"
+        : rawStripeEvenResolved;
+    const rowStripeRawOdd =
+      isPillTableChrome && (!rawStripeOddResolved || rawStripeOddResolved === "transparent")
+        ? "rgba(255, 255, 255, 0.16)"
+        : rawStripeOddResolved;
+    const themeDefinesZebraStripes =
+      isPillTableChrome ||
+      Boolean(
+        String(tableRowEvenBgRaw || excelMemberAccent?.rowEvenBg || "").trim() ||
+          String(tableRowOddBgRaw || excelMemberAccent?.rowOddBg || "").trim()
+      );
     const zebraChromeTintAlpha = excelZebraChromeTintAlpha(
       effectiveTableTintAlpha,
       themeDefinesZebraStripes
     );
-    const tableRowEvenBgCss = applyTableTintToCssColor(rowStripeRawEven, zebraChromeTintAlpha);
-    const tableRowOddBgCss = applyTableTintToCssColor(rowStripeRawOdd, zebraChromeTintAlpha);
+    const tableRowEvenBgCss = applyTableTintToCssColor(rowStripeRawEven, isPillTableChrome ? 1 : zebraChromeTintAlpha);
+    const tableRowOddBgCss = applyTableTintToCssColor(rowStripeRawOdd, isPillTableChrome ? 1 : zebraChromeTintAlpha);
     const contributionColorCss =
       contributionColorRaw ||
       excelMemberAccent?.contributionColor ||
@@ -4656,10 +4694,10 @@ function OverlayInner() {
       "";
     /** 셀 그리드·패널 inset shadow 로 외곽선을 그릴 때 CSS border 를 겹치지 않게 */
     const tableOuterFrameFromCellGrid = tableGridLines && !showTableFrame;
-    const tablePanelFrameWidthPx = isExcelGoldChrome ? 1 : tableGridLineWidthPx;
+    const tablePanelFrameWidthPx = isPillTableChrome ? 1 : tableGridLineWidthPx;
     const tablePanelFrameColor = tableOuterFrameFromCellGrid
       ? tableGridLineColor
-      : tablePanelBorderCss || (isExcelGoldChrome ? "#ffc107" : "");
+      : tablePanelBorderCss || (isPillTableChrome ? (excelHeaderBgCss || "#ffc107") : "");
     const effectiveGlowColor =
       tableBorderGlowColorRaw ||
       tablePanelBorderCss ||
@@ -4679,63 +4717,65 @@ function OverlayInner() {
       ? 0
       : tableBorderRadiusCustom !== null
         ? tableBorderRadiusCustom
-        : isExcelGoldChrome
+        : isPillTableChrome
           ? 12
           : 14;
     const tablePanelOuterFrameShadowCss =
-      !showTableFrame && tablePanelFrameColor
+      !showTableFrame && !isPillTableChrome && tablePanelFrameColor
         ? overlayTableOuterFrameShadow(
             tablePanelFrameColor,
             tableOuterFrameFromCellGrid ? tableGridLineWidthPx : tablePanelFrameWidthPx
           )
         : undefined;
-    const combinedPanelShadowCss =
-      [
-        tableGlowShadowCss,
-        showTableFrame
-          ? ""
-          : tablePanelOuterFrameShadowCss || (isExcelGoldChrome ? "" : tablePanelShadow || ""),
-      ]
-        .filter(Boolean)
-        .join(", ") || (isExcelGoldChrome ? "none" : tablePanelShadow || "none");
+    const combinedPanelShadowCss = isPillTableChrome
+      ? "none"
+      : [
+          tableGlowShadowCss,
+          showTableFrame
+            ? ""
+            : tablePanelOuterFrameShadowCss || tablePanelShadow || "",
+        ]
+          .filter(Boolean)
+          .join(", ") || "none";
     const excelZebraEnabled =
-      Boolean(excelMemberAccent) &&
-      Boolean(tableRowOddBgCss && tableRowOddBgCss !== "transparent");
+      isPillTableChrome ||
+      (Boolean(excelMemberAccent) &&
+        Boolean(tableRowOddBgCss && tableRowOddBgCss !== "transparent"));
     const excelMemberTableClass = excelMemberAccent
-      ? `${isExcelLiveTheme ? " excel-live-table" : " excel-member-table"}${isExcelGoldChrome ? " excel-gold-table" : ""}${excelZebraEnabled ? " excel-zebra-table" : ""}`
-      : "";
+      ? `${isExcelLiveTheme ? " excel-live-table" : " excel-member-table"}${isPillTableChrome ? " excel-gold-table" : ""}${excelZebraEnabled ? " excel-zebra-table" : ""}`
+      : (isPillTableChrome ? " excel-gold-table excel-zebra-table" : "");
     const themeAutoHeaderBgCss = resolveTableThemeHeaderBgCss(membersThemeId);
     const excelHeaderBgCss = hasTableHeaderBgColorOverride
-      ? applyTableTintToCssColor(tableHeaderBgColorRaw, zebraChromeTintAlpha)
-      : applyTableTintToCssColor(themeAutoHeaderBgCss, zebraChromeTintAlpha);
+      ? applyTableTintToCssColor(tableHeaderBgColorRaw, isPillTableChrome ? 1 : zebraChromeTintAlpha)
+      : applyTableTintToCssColor(themeAutoHeaderBgCss, isPillTableChrome ? 1 : zebraChromeTintAlpha);
     const excelHeaderTextCss =
       tableHeaderTextColorRaw ||
       excelMemberAccent?.headerText ||
       TABLE_BROADCAST_TEXT_AUTO;
-    const excelMemberTableStyle: React.CSSProperties | undefined = excelMemberAccent
-      ? {
-          ["--excel-header-bg" as string]: excelHeaderBgCss,
-          ["--excel-header-text" as string]: excelHeaderTextCss,
-          ["--excel-header-border" as string]: tableGridLineColor,
-          ["--excel-total-border" as string]: tableLineColorRaw || tableTotalLineColor,
-          ...(excelZebraEnabled
-            ? {
-                ["--excel-row-even" as string]: tableRowEvenBgCss,
-                ["--excel-row-odd" as string]: tableRowOddBgCss,
-              }
-            : {}),
-        }
-      : undefined;
+    const excelMemberTableStyle: React.CSSProperties | undefined =
+      excelMemberAccent || isPillTableChrome
+        ? {
+            ["--excel-header-bg" as string]: excelHeaderBgCss,
+            ["--excel-header-text" as string]: excelHeaderTextCss,
+            ["--excel-header-border" as string]: tableGridLineColor,
+            ["--excel-total-border" as string]: tableLineColorRaw || tableTotalLineColor,
+            ["--excel-row-even" as string]:
+              tableRowEvenBgCss || "rgba(255, 255, 255, 0.08)",
+            ["--excel-row-odd" as string]:
+              tableRowOddBgCss || "rgba(255, 255, 255, 0.16)",
+          }
+        : undefined;
     const excelLiveTotalRowBg = tableBgColorRaw
       ? applyTableTintToCssColor(
           `rgb(${tableSheetRgb.map((c) => Math.max(0, Math.min(255, Math.round(c * 0.97)))).join(", ")})`,
           effectiveTableTintAlpha
         )
       : applyTableTintToCssColor("rgb(15, 20, 30)", effectiveTableTintAlpha);
-    const excelGoldTotalRowBg =
-      effectiveTableTintAlpha <= 0
-        ? "rgba(255, 193, 7, 0.30)"
-        : applyTableTintToCssColor("rgba(255, 193, 7, 0.30)", effectiveTableTintAlpha);
+    const excelGoldTotalRowBg = isExcelGoldChrome
+      ? (effectiveTableTintAlpha <= 0
+          ? "rgba(255, 193, 7, 0.30)"
+          : applyTableTintToCssColor("rgba(255, 193, 7, 0.30)", effectiveTableTintAlpha))
+      : (excelHeaderBgCss || rowStripeRawOdd || "rgba(255, 255, 255, 0.20)");
     const broadcastTheadBg = hasTableHeaderBgColorOverride
       ? applyTableTintToCssColor(tableHeaderBgColorRaw, effectiveTableTintAlpha)
       : applyTableTintToCssColor(themeAutoHeaderBgCss, effectiveTableTintAlpha);
@@ -5635,7 +5675,7 @@ function OverlayInner() {
         }
         /* 헤더·본문·총합 셀 그리드(가로·세로). OBS 스케일에서도 선이 남도록 마지막에 적용 */
         ${
-          isExcelGoldChrome
+          isPillTableChrome
             ? ""
             : overlayTableCellGridCss({
                 lineColor: tableGridLineColor,
@@ -5650,7 +5690,7 @@ function OverlayInner() {
               })
         }
         ${
-          !tableGridLines || tableOuterFrameFromCellGrid
+          !tableGridLines || tableOuterFrameFromCellGrid || isPillTableChrome
             ? ""
             : overlayTableExcelOuterEdgeRestoreCss({
                 lineColor: tableGridLineColor,
@@ -5661,7 +5701,7 @@ function OverlayInner() {
               })
         }
         ${
-          isExcelGoldChrome
+          isPillTableChrome
             ? `
         .overlay-root .overlay-elegant-table.excel-gold-table {
           border-radius: 0 !important;
@@ -5676,7 +5716,7 @@ function OverlayInner() {
           background-clip: border-box !important;
           border-top: 3px solid transparent !important;
           border-bottom: 3px solid transparent !important;
-          ${tableGridLines ? "" : "box-shadow: none !important;"}
+          box-shadow: none !important;
           text-shadow: ${excelTheadTextShadow} !important;
           -webkit-text-stroke: ${excelTheadStroke} !important;
           paint-order: stroke fill;
@@ -5740,14 +5780,18 @@ function OverlayInner() {
           border-top-right-radius: 999px !important;
           border-bottom-right-radius: 999px !important;
         }
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row:nth-child(odd) td,
         .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(odd) td,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row:nth-child(odd) td,
         body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(odd) td {
           background: var(--excel-row-odd, rgba(255, 255, 255, 0.16)) !important;
           background-clip: padding-box !important;
           border-top: 3px solid transparent !important;
           border-bottom: 3px solid transparent !important;
         }
+        .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row:nth-child(even) td,
         .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(even) td,
+        body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table tbody tr.overlay-row:nth-child(even) td,
         body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table.excel-gold-table.excel-zebra-table tbody tr.overlay-row:nth-child(even) td {
           background: var(--excel-row-even, rgba(255, 255, 255, 0.08)) !important;
           background-clip: padding-box !important;
@@ -5955,7 +5999,7 @@ function OverlayInner() {
                     />
                   ) : null}
                 <div
-                  className={`relative ${showTableFrame || isExcelGoldChrome ? "overflow-visible" : "overflow-hidden"}`}
+                  className={`relative ${showTableFrame || isPillTableChrome ? "overflow-visible" : "overflow-hidden"}`}
                   style={{
                     zIndex: 2,
                     borderRadius: effectiveBorderRadius,
@@ -5963,20 +6007,20 @@ function OverlayInner() {
                       !showTableFrame &&
                       tablePanelBorderCss &&
                       tablePanelBorderWidthCustom > 0 &&
-                      (!isExcelGoldChrome || Boolean(tablePanelBorderColorRaw))
+                      (!isPillTableChrome || Boolean(tablePanelBorderColorRaw))
                         ? `${tablePanelBorderWidthCustom}px solid ${tablePanelBorderCss}`
                         : "none",
                     boxShadow: combinedPanelShadowCss,
-                    padding: isExcelGoldChrome && !showTableFrame ? "6px 0 8px" : 0,
-                    /** 웹후원 골드: 큰 패널 없음. 그 외 테마 또는 수동 배경색 지정 시 시트/글래스 배경 적용 */
-                    backgroundColor: isExcelGoldChrome && !tableBgColorRaw
+                    padding: isPillTableChrome && !showTableFrame ? "6px 0 8px" : 0,
+                    /** 알약 모드(골드/pillStyle): 큰 사각 패널 없음. 그 외 테마 또는 수동 배경색 지정 시 시트/글래스 배경 적용 */
+                    backgroundColor: isPillTableChrome && !tableBgColorRaw
                       ? "transparent"
                       : effectiveTableTintAlpha <= 0
                         ? "transparent"
                         : tableBodySheetBgCss || TABLE_BROADCAST_PANEL_BG,
-                    backdropFilter: showTableFrame || isExcelGoldChrome ? undefined : "blur(14px)",
-                    WebkitBackdropFilter: showTableFrame || isExcelGoldChrome ? undefined : "blur(14px)",
-                    overflow: showTableFrame || isExcelGoldChrome ? "visible" : "hidden",
+                    backdropFilter: showTableFrame || isPillTableChrome ? undefined : "blur(14px)",
+                    WebkitBackdropFilter: showTableFrame || isPillTableChrome ? undefined : "blur(14px)",
+                    overflow: showTableFrame || isPillTableChrome ? "visible" : "hidden",
                     /** translateZ(0) 는 OBS CEF에서 서브픽셀 블러를 유발 → 외부 호스트에서는 생략 */
                     ...(externalHost
                       ? {}
@@ -5989,7 +6033,7 @@ function OverlayInner() {
                 >
                     <div
                       ref={tableBoxRef as any}
-                      className={`flex flex-row items-stretch ${excelSplitEnabled ? "overlay-split-container" : ""} ${isExcelGoldChrome && excelSplitEnabled ? "gap-4" : ""}`}
+                      className={`flex flex-row items-stretch ${excelSplitEnabled ? "overlay-split-container" : ""} ${isPillTableChrome && excelSplitEnabled ? "gap-4" : ""}`}
                       style={{
                         width: "max-content",
                         maxWidth: "100%",
@@ -5997,7 +6041,7 @@ function OverlayInner() {
                     >
                     {memberTablePanels.map((panel, panelIdx) => (
                     <React.Fragment key={panel.key}>
-                    {excelSplitEnabled && !isExcelGoldChrome && panelIdx > 0 && (
+                    {excelSplitEnabled && !isPillTableChrome && panelIdx > 0 && (
                       <div
                         className="overlay-split-divider self-stretch shrink-0"
                         style={{
@@ -6017,7 +6061,7 @@ function OverlayInner() {
                         borderSpacing: 0,
                         borderCollapse: "separate",
                         tableLayout: "fixed",
-                        overflow: isExcelGoldChrome ? "visible" : undefined,
+                        overflow: isPillTableChrome ? "visible" : undefined,
                         width: `calc(${excelTableWidthCalc})`,
                         flex: "0 0 auto",
                         direction: "ltr",

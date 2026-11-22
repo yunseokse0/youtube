@@ -9,6 +9,8 @@ import {
 export type ExcelMemberPillBgPresetFields = {
   tableRowEvenBg?: string;
   tableRowOddBg?: string;
+  tablePill?: boolean;
+  pillStyle?: boolean;
   membersTheme?: string;
   theme?: string;
 };
@@ -34,6 +36,9 @@ export function isExcelMemberPillBgEnabled(
   preset: ExcelMemberPillBgPresetFields,
   themeId: string
 ): boolean {
+  if (preset.tablePill === true || preset.pillStyle === true) return true;
+  if (preset.tablePill === false || preset.pillStyle === false) return false;
+  if (themeId === "excelGold") return true;
   const even = String(preset.tableRowEvenBg || "").trim().toLowerCase();
   const odd = String(preset.tableRowOddBg || "").trim().toLowerCase();
   if (even === "transparent" || odd === "transparent") return false;
@@ -73,14 +78,14 @@ export function ExcelMemberPillBgPresetPanel({ preset, themeId, onChange }: Prop
           value={pillOn ? "on" : "off"}
           onChange={(e) => {
             if (e.target.value === "off") {
-              onChange({ tableRowEvenBg: "transparent", tableRowOddBg: "transparent" });
+              onChange({ tablePill: false, pillStyle: false, tableRowEvenBg: "transparent", tableRowOddBg: "transparent" });
             } else {
-              onChange({ tableRowEvenBg: "", tableRowOddBg: "" });
+              onChange({ tablePill: true, pillStyle: true, tableRowEvenBg: "", tableRowOddBg: "" });
             }
           }}
         >
-          <option value="on">ON (행마다 둥근 배경)</option>
-          <option value="off">OFF (투명 · 알약 없음)</option>
+          <option value="on">ON (행마다 둥근 알약 스타일)</option>
+          <option value="off">OFF (기본 엑셀표)</option>
         </select>
       </label>
       {pillOn ? (
