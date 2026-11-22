@@ -408,12 +408,58 @@ export type MapToMemberOptions = {
   preferredAutoAssignMemberId?: string | null;
 };
 
+export function matchMemberByNameStrict(
+  lookupName: string,
+  members: Member[],
+  aliases: DonorAlias[] = []
+): Member | undefined {
+  if (!lookupName) return undefined;
+  const normalized = normalizeName(lookupName);
+  const stripped = stripHonorificSuffix(lookupName);
+
+  const aliasMatch = aliases.find(
+    (a) =>
+      normalizeName(a.alias) === normalized ||
+      stripHonorificSuffix(a.alias) === stripped
+  );
+  if (aliasMatch) {
+    return members.find((m) => m.id === aliasMatch.memberId);
+  }
+
+  const exact = members.find((m) => m.name === lookupName || m.realName === lookupName);
+  if (exact) return exact;
+
+  const normalizedMatch = members.find((m) =>
+    memberNameCandidates(m).some(
+      (label) => normalizeName(label) === normalized || stripHonorificSuffix(label) === stripped
+    )
+  );
+  if (normalizedMatch) return normalizedMatch;
+
+  return undefined;
+}
+
 export function mapToMember(
   event: DonationEvent,
   members: Member[],
   aliases: DonorAlias[] = [],
   opts?: MapToMemberOptions
 ): DonationEvent {
+  // 1. 후원 대상자(playerName/recipientName)에 명시된 멤버명/별칭의 정확 일치 최우선 평가
+  const explicitPlayer = String(event.playerName || event.recipientName || "").trim();
+  if (explicitPlayer) {
+    const strictPlayerMatch = matchMemberByNameStrict(explicitPlayer, members, aliases);
+    if (strictPlayerMatch) {
+      return {
+        ...event,
+        memberId: strictPlayerMatch.id,
+        playerName: explicitPlayer,
+        status: "processed",
+      };
+    }
+  }
+
+  // 2. 메시지 본문에 멤버명이 정확히 포함된 경우 평가
   const messageMatched = matchMemberByMessageContains(event.message || "", members);
   if (messageMatched) {
     return {
@@ -423,6 +469,7 @@ export function mapToMember(
     };
   }
 
+  // 3. 메시지 본문 토큰 퍼지 매칭
   const messageFuzzyMatched = matchMemberByMessageFuzzy(event.message || "", members, aliases);
   if (messageFuzzyMatched) {
     return {
@@ -433,6 +480,7 @@ export function mapToMember(
     };
   }
 
+  // 4. 기타 후보군(입금자명 분리자 등) 매칭
   const candidates = resolveAllMemberLookupCandidates(event);
   for (const lookupName of candidates) {
     const matched = matchMemberByName(lookupName, members, aliases);
@@ -505,11 +553,13 @@ export function suggestMemberForDonationEvent(
   if (!Array.isArray(members) || members.length === 0) return undefined;
   const msgMatch = matchMemberByMessageContains(event.message || "", members);
   if (msgMatch) return msgMatch;
-  const msgFuzzy = matchMemberByMessageFuzzy(event.message || "", members, aliases);
-  if (msgFuzzy) return msgFuzzy;
   for (const lookupName of resolveAllMemberLookupCandidates(event)) {
     const exact = matchMemberByName(lookupName, members, aliases);
     if (exact) return exact;
+  }
+  const msgFuzzy = matchMemberByMessageFuzzy(event.message || "", members, aliases);
+  if (msgFuzzy) return msgFuzzy;
+  for (const lookupName of resolveAllMemberLookupCandidates(event)) {
     const relaxed = matchMemberByRelaxedFuzzy(lookupName, members, aliases);
     if (relaxed) return relaxed;
   }
