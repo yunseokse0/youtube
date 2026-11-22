@@ -13497,7 +13497,7 @@ function AdminPageInner() {
                       ["mealBattle", "식사대전 동기화"],
                       ["sigMatch", "시그대전 동기화"],
                       ["sigSales", "시그판매 동기화"],
-                      ["none", "동기화 안 함"],
+                      ["none", "일반 엑셀 전용 (대전 없음)"],
                     ] as Array<[AppState["donationSyncMode"], string]>).map(([mode, label]) => (
                       <button
                         key={`donation-sync-mode-${mode}`}
@@ -18941,8 +18941,12 @@ function AdminPageInner() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                     {state.members.map((m) => {
                       const manualVal = state.pongdangManualContributions?.[m.id] ?? 0;
+                      const logVal = (state.contributionLogs || [])
+                        .filter((l) => l.memberId === m.id)
+                        .reduce((acc, cur) => acc + (Number(cur.amount) || 0), 0);
+                      const totalManual = manualVal + logVal;
                       const autoVal = autoSigContributionMap.get(m.id) ?? 0;
-                      const finalVal = state.pongdangManualMode !== false ? Math.max(0, autoVal + manualVal) : autoVal;
+                      const finalVal = state.pongdangManualMode !== false ? Math.max(0, autoVal + totalManual) : autoVal;
                       return (
                         <div
                           key={`pongdang-manual-${m.id}`}
@@ -18954,9 +18958,9 @@ function AdminPageInner() {
                               <span className="text-neutral-400">
                                 자동 수집: <span className="font-mono text-amber-300 font-semibold">{autoVal.toLocaleString("ko-KR")}원</span>
                               </span>
-                              {manualVal !== 0 && (
-                                <span className={manualVal > 0 ? "text-emerald-400 font-mono font-semibold" : "text-rose-400 font-mono font-semibold"}>
-                                  {manualVal > 0 ? `+${manualVal.toLocaleString("ko-KR")}` : `${manualVal.toLocaleString("ko-KR")}`}
+                              {totalManual !== 0 && (
+                                <span className={totalManual > 0 ? "text-emerald-400 font-mono font-semibold" : "text-rose-400 font-mono font-semibold"}>
+                                  {totalManual > 0 ? `+${totalManual.toLocaleString("ko-KR")}` : `${totalManual.toLocaleString("ko-KR")}`}
                                 </span>
                               )}
                             </div>
@@ -21471,8 +21475,9 @@ function AdminPageInner() {
                                             : "border-white/10 bg-neutral-800 text-neutral-400"
                                         }`}
                                         onClick={() => updatePreset(p.id, { day777Calc: p.day777Calc === false })}
+                                        title="시그 분리: 777,000원은 계좌/투네에 남고 시그 단가만 기여도 반영 / 일반 합산: 777,000원 전액 기여도 반영"
                                       >
-                                        {p.day777Calc === false ? "OFF" : "ON"}
+                                        {p.day777Calc === false ? "일반 합산 (전액)" : "시그 분리 (기본)"}
                                       </button>
                                     ) : (
                                       <span className="text-[10px] text-neutral-400 font-medium">기존 엑셀 (전액 기여도 반영)</span>
@@ -23184,11 +23189,12 @@ function AdminPageInner() {
                                           onClick={() =>
                                             updatePreset(p.id, { day777Calc: p.day777Calc === false })
                                           }
+                                          title="시그 분리: 777,000원은 계좌/투네에 남고 시그 단가만 기여도 반영 / 일반 합산: 777,000원 전액 기여도 반영"
                                         >
-                                          {p.day777Calc === false ? "OFF" : "ON"}
+                                          {p.day777Calc === false ? "일반 합산 (전액)" : "시그 분리 (기본)"}
                                         </button>
                                         <span className="text-[10px] text-neutral-500">
-                                          퐁당퐁당: 기여도는 나온 시그 단가. 777,000원 후원은 후원/투네에만 남음.
+                                          퐁당퐁당: 시그 단가만 기여도 분리 반영 (777,000원은 계좌/투네에 보존)
                                         </span>
                                       </>
                                     ) : (
