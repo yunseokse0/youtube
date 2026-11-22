@@ -6390,6 +6390,17 @@ function AdminPageInner() {
     return `${window.location.origin}/overlay/meal-match?${q.toString()}`;
   }, [overlayUserId, battleScalePct, getBattleContentWidthPct, getBattleGaugeTheme]);
 
+  const buildBattleEffectsDemoUrl = useCallback((): string => {
+    if (typeof window === "undefined") return "/overlay/battle-effects-demo";
+    return `${window.location.origin}/overlay/battle-effects-demo`;
+  }, []);
+
+  const buildHighSocietyLiveUrl = useCallback((): string => {
+    if (typeof window === "undefined") return "/overlay/high-society";
+    const uid = overlayUserId || user?.id || "";
+    return `${window.location.origin}/overlay/high-society${uid ? `?u=${encodeURIComponent(uid)}` : ""}`;
+  }, [overlayUserId, user?.id]);
+
   const sigMatchPreviewUrlRef = useRef("");
   const [sigMatchPreviewIframeSrc, setSigMatchPreviewIframeSrc] = useState("");
   const mealMatchPreviewUrlRef = useRef("");
@@ -19926,6 +19937,262 @@ function AdminPageInner() {
                         오버레이 열기 ↗
                       </button>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ⚔️ 대전 오버레이 센터 (시그 대전 · 식사 대전 · 대전 연출 허브 · 상류사회) */}
+              <div
+                id="overlay-battle-suite"
+                className="mb-5 rounded-2xl border border-rose-500/40 bg-gradient-to-br from-rose-950/30 via-neutral-950/80 to-[#0b101d] p-4 shadow-xl shadow-rose-950/20"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-500/25 pb-3 mb-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-rose-600 to-amber-600 text-white text-base shadow-md">
+                      ⚔️
+                    </span>
+                    <div>
+                      <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                        대전 오버레이 센터 (Battle Overlays)
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-400/30">
+                          OBS / Prism 전용
+                        </span>
+                      </h3>
+                      <p className="text-[11px] text-neutral-400 mt-0.5">
+                        시그 대전, 식사 대전, 대전 연출 허브, 상류사회를 OBS 브라우저 소스로 등록하고 원클릭으로 송출하세요.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => moveToSection("dashboard", "block-donation-sync-sig-match")}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 text-xs font-semibold text-rose-200 transition cursor-pointer"
+                    >
+                      <span>⚙️</span> 대시보드 대전 점수/후원설정 이동 ↓
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* 1. ⚔️ 시그 대전 (Sig Match) */}
+                  <div className="rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-950/30 via-neutral-900/60 to-black/60 p-3.5 flex flex-col justify-between shadow-sm hover:border-amber-400/50 transition">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm font-bold text-amber-200 flex items-center gap-1.5">
+                          <span>⚔️</span> 시그 대전 오버레이
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30">
+                          실시간 펀딩 게이지
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 leading-snug mb-2.5">
+                        시그니처 및 후원 펀딩 대결 게이지입니다. 실시간 역전 컷씬 및 목표 달성 연출을 제공합니다.
+                      </p>
+                      <div className="rounded-lg border border-amber-500/20 bg-black/40 px-2.5 py-1.5 text-xs text-neutral-300 font-mono break-all mb-2.5 select-all">
+                        /overlay/sig-match?u={overlayUserId}&host=obs&theme={getBattleGaugeTheme()}
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t border-amber-500/20 flex flex-wrap items-center gap-1.5 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const u = buildSigMatchLiveUrl();
+                          void copyUrl(u, "dash-sig-match-center");
+                        }}
+                        className={`px-2.5 py-1 rounded font-semibold text-xs transition ${
+                          copiedId === "dash-sig-match-center" ? "bg-emerald-600 text-white" : "bg-amber-600 hover:bg-amber-500 text-black font-bold"
+                        }`}
+                      >
+                        {copiedId === "dash-sig-match-center" ? "✓ 복사됨!" : "📋 OBS URL 복사"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => window.open(buildSigMatchLiveUrl(), "_blank", "noopener,noreferrer")}
+                        className="px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs"
+                      >
+                        오버레이 열기 ↗
+                      </button>
+                      <a
+                        href="/overlay/sig-match/demo"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1 rounded bg-neutral-800/80 hover:bg-neutral-700 text-amber-300 text-xs"
+                      >
+                        데모 ↗
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => moveToSection("dashboard", "block-donation-sync-sig-match")}
+                        className="ml-auto text-[11px] text-amber-400 hover:underline"
+                      >
+                        대시보드 설정 ↓
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 2. 🍚 식사 대전 (Meal Battle) */}
+                  <div className="rounded-xl border border-sky-500/30 bg-gradient-to-br from-sky-950/30 via-neutral-900/60 to-black/60 p-3.5 flex flex-col justify-between shadow-sm hover:border-sky-400/50 transition">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm font-bold text-sky-200 flex items-center gap-1.5">
+                          <span>🍚</span> 식사 대전 오버레이
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-400/30">
+                          팀/개인전 배틀
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 leading-snug mb-2.5">
+                        밥값/식사 펀딩 배틀 게이지입니다. A/B 팀 대전 및 멤버별 숟가락/그릇 목표 시각화를 지원합니다.
+                      </p>
+                      <div className="rounded-lg border border-sky-500/20 bg-black/40 px-2.5 py-1.5 text-xs text-neutral-300 font-mono break-all mb-2.5 select-all">
+                        /overlay/meal-match?u={overlayUserId}&host=obs
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t border-sky-500/20 flex flex-wrap items-center gap-1.5 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const u = buildMealMatchLiveUrl();
+                          void copyUrl(u, "dash-meal-match-center");
+                        }}
+                        className={`px-2.5 py-1 rounded font-semibold text-xs transition ${
+                          copiedId === "dash-meal-match-center" ? "bg-emerald-600 text-white" : "bg-sky-600 hover:bg-sky-500 text-white font-bold"
+                        }`}
+                      >
+                        {copiedId === "dash-meal-match-center" ? "✓ 복사됨!" : "📋 OBS URL 복사"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => window.open(buildMealMatchLiveUrl(), "_blank", "noopener,noreferrer")}
+                        className="px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs"
+                      >
+                        오버레이 열기 ↗
+                      </button>
+                      <a
+                        href="/overlay/meal-match/gauge-demo"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1 rounded bg-neutral-800/80 hover:bg-neutral-700 text-sky-300 text-xs"
+                      >
+                        데모 ↗
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => moveToSection("dashboard", "block-meal-match")}
+                        className="ml-auto text-[11px] text-sky-400 hover:underline"
+                      >
+                        대시보드 설정 ↓
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 3. ⚡ 대전 연출 통합 허브 */}
+                  <div className="rounded-xl border border-violet-500/30 bg-gradient-to-br from-violet-950/30 via-neutral-900/60 to-black/60 p-3.5 flex flex-col justify-between shadow-sm hover:border-violet-400/50 transition">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm font-bold text-violet-200 flex items-center gap-1.5">
+                          <span>⚡</span> 대전 연출 통합 허브
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-400/30">
+                          이펙트 & 사운드
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 leading-snug mb-2.5">
+                        역전 이펙트, 필살기 컷씬, 사운드 효과 및 승리 연출을 실시간으로 테스트하고 송출합니다.
+                      </p>
+                      <div className="rounded-lg border border-violet-500/20 bg-black/40 px-2.5 py-1.5 text-xs text-neutral-300 font-mono break-all mb-2.5 select-all">
+                        /overlay/battle-effects-demo
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t border-violet-500/20 flex flex-wrap items-center gap-1.5 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const u = buildBattleEffectsDemoUrl();
+                          void copyUrl(u, "dash-battle-fx-center");
+                        }}
+                        className={`px-2.5 py-1 rounded font-semibold text-xs transition ${
+                          copiedId === "dash-battle-fx-center" ? "bg-emerald-600 text-white" : "bg-violet-600 hover:bg-violet-500 text-white font-bold"
+                        }`}
+                      >
+                        {copiedId === "dash-battle-fx-center" ? "✓ 복사됨!" : "📋 OBS URL 복사"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => window.open(buildBattleEffectsDemoUrl(), "_blank", "noopener,noreferrer")}
+                        className="px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs"
+                      >
+                        연출 허브 열기 ↗
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 4. 🏰 상류사회 대전 */}
+                  <div className="rounded-xl border border-emerald-500/30 bg-gradient-to-br from-emerald-950/30 via-neutral-900/60 to-black/60 p-3.5 flex flex-col justify-between shadow-sm hover:border-emerald-400/50 transition">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm font-bold text-emerald-200 flex items-center gap-1.5">
+                          <span>🏰</span> 상류사회 대전
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                          층수 상승 배틀
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 leading-snug mb-2.5">
+                        후원 펀딩에 따라 펜트하우스 층수를 높여 경쟁하는 상류사회 대전 오버레이입니다.
+                      </p>
+                      <div className="rounded-lg border border-emerald-500/20 bg-black/40 px-2.5 py-1.5 text-xs text-neutral-300 font-mono break-all mb-2.5 select-all">
+                        /overlay/high-society?u={overlayUserId}
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t border-emerald-500/20 flex flex-wrap items-center gap-1.5 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const u = buildHighSocietyLiveUrl();
+                          void copyUrl(u, "dash-high-society-center");
+                        }}
+                        className={`px-2.5 py-1 rounded font-semibold text-xs transition ${
+                          copiedId === "dash-high-society-center" ? "bg-emerald-600 text-white" : "bg-emerald-600 hover:bg-emerald-500 text-black font-bold"
+                        }`}
+                      >
+                        {copiedId === "dash-high-society-center" ? "✓ 복사됨!" : "📋 OBS URL 복사"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => window.open(buildHighSocietyLiveUrl(), "_blank", "noopener,noreferrer")}
+                        className="px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs"
+                      >
+                        오버레이 열기 ↗
+                      </button>
+                      <a
+                        href="/overlay/high-society/demo"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1 rounded bg-neutral-800/80 hover:bg-neutral-700 text-emerald-300 text-xs"
+                      >
+                        데모 ↗
+                      </a>
+                      <a
+                        href="/admin/high-society"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-auto text-[11px] text-emerald-400 hover:underline"
+                      >
+                        전용 관리자 ↗
+                      </a>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 💡 팁 배너 */}
+                <div className="mt-3.5 rounded-xl border border-white/10 bg-black/40 p-2.5 flex items-center justify-between text-xs text-neutral-400">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">💡</span>
+                    <span>
+                      <strong className="text-neutral-200">엑셀표 자체를 2열 분할 대전 구도로 송출</strong>하고 싶으신가요? 상단 원클릭 템플릿의 <strong className="text-amber-300">[식사 & 시그 대전 모드]</strong>를 추가하시거나 엑셀표 URL에 <code className="text-neutral-200">&tableSplit=true</code>를 붙여 사용하세요.
+                    </span>
                   </div>
                 </div>
               </div>

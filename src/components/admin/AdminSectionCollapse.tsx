@@ -283,6 +283,7 @@ export function AdminCollapseToolbar({ className = "" }: { className?: string })
 export const ADMIN_SECTION_EXPAND_PARENTS: Record<string, string> = {
   "overlay-goal-shortcut": "overlay-settings",
   "overlay-bg-media": "overlay-settings",
+  "overlay-battle-suite": "overlay-settings",
   "timer-control-section": "settlement-member-board",
   "block-member-positions": "settlement-member-board",
   "block-donation-sync": "settlement-member-board",

@@ -58,7 +58,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
       { subKey: "db-summary", label: "대시보드 요약", targetId: "dashboard-summary", icon: "📈" },
       { subKey: "db-board", label: "멤버 정산 보드", targetId: "settlement-member-board", icon: "📊" },
       { subKey: "db-positions", label: "직급 관리", targetId: "block-member-positions", icon: "🎖️" },
-      { subKey: "db-sync", label: "후원 동기화 · 시그 대전", targetId: "block-donation-sync-sig-match", icon: "🔗" },
+      { subKey: "db-sync", label: "후원 동기화 · 시그 대전", targetId: "block-donation-sync-sig-match", icon: "⚔️" },
       { subKey: "db-meal", label: "식사 대전 관리", targetId: "block-meal-match", icon: "🍚" },
       { subKey: "db-timer", label: "타이머 제어", targetId: "timer-control-section", icon: "⏱️" },
     ],
@@ -71,6 +71,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     mobileShort: "오버레이",
     subItems: [
       { subKey: "ov-manage", label: "오버레이 프리셋 설정", targetId: "overlay-settings", icon: "🖼️" },
+      { subKey: "ov-battle-suite", label: "⚔️ 대전 오버레이 센터", targetId: "overlay-battle-suite", icon: "⚔️" },
       { subKey: "ov-donor-rankings", label: "후원 순위 오버레이", targetId: "donor-rankings-settings", icon: "👑" },
       { subKey: "ov-goal", label: "후원 목표바", targetId: "overlay-goal-shortcut", icon: "🎯" },
       { subKey: "ov-sig-inv", label: "시그 판매 관리", targetId: "sig-sales-inventory", icon: "🛒" },
