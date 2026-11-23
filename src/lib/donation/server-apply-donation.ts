@@ -173,6 +173,11 @@ export async function tryAutoApplyToonationDonationOnServer(
     if (!isAggregatedBucket) {
       const enriched = await enrichDonationEventWithSigMatch(uid, result.event);
       await broadcastPlayerDonationAlert(uid, enriched);
+      void import("@/lib/zubzub/zubzub-engine").then(({ maybeProcessZubzubDonation }) => {
+        return maybeProcessZubzubDonation(uid, enriched);
+      }).catch((zubErr) => {
+        console.error("[server-apply-donation] zubzub hook failed:", zubErr);
+      });
     }
     return result.event.memberAutoAssigned ? "applied_needs_review" : "applied";
   } finally {

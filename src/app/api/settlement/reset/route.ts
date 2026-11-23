@@ -140,6 +140,20 @@ export async function POST(req: Request) {
     });
   }
 
+  try {
+    const { cancelAllWaitingZubzub } = await import("@/lib/zubzub/zubzub-repo");
+    await cancelAllWaitingZubzub(stateUserId);
+    if (hubSessionUserId && hubSessionUserId !== stateUserId) {
+      await cancelAllWaitingZubzub(hubSessionUserId);
+    }
+  } catch (err) {
+    logger.warn("zubzub waiting queue clear on settlement reset failed", {
+      hubSessionUserId,
+      stateUserId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   const beforeResetAt = Math.max(0, Math.floor(Number(current.settlementResetAt) || 0));
 
   // ✅ save 도 stateUserId(finalent) 기준 — admin/overlay overlayUserId=finalent 와 100% 일치

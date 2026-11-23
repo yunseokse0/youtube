@@ -97,6 +97,7 @@ export function applySettlementResetToState(
       intentionalDonationClearAt: resetAt,
       updatedAt: resetAt,
       donorRankingsUpdatedAt: resetAt,
+      zubzubWaitingItems: [],
     };
     return syncMemberTotalsFromDonors(withIntentionalDonationClear(next, resetAt));
   }
@@ -138,6 +139,7 @@ export function applySettlementResetToState(
     intentionalDonationClearAt: resetAt,
     updatedAt: resetAt,
     donorRankingsUpdatedAt: resetAt,
+    zubzubWaitingItems: [],
   };
   return syncMemberTotalsFromDonors(withIntentionalDonationClear(next, resetAt));
 }

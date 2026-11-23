@@ -128,6 +128,7 @@ import {
   DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR,
 } from "@/lib/text-outline-style";
 import { useSSEConnection } from "@/lib/sse-client";
+import { ZubzubOverlayBanner, type ZubzubClaimedEvent } from "@/components/overlay/ZubzubOverlayBanner";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
 import {
@@ -497,6 +498,21 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
   );
   const onSSE = useCallback((incoming: any) => {
     if (!incoming) return;
+    if (incoming.type === "zubzub_claimed") {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("zubzub_claimed", { detail: incoming }));
+      }
+      void syncOnceRef.current({ forceFull: true });
+      return;
+    }
+    if (
+      incoming.type === "zubzub_waiting" ||
+      incoming.type === "zubzub_canceled" ||
+      incoming.type === "zubzub_canceled_all"
+    ) {
+      void syncOnceRef.current({ forceFull: true });
+      return;
+    }
     if (incoming.type === "state_updated") {
       if (incoming.donationApplied) {
         void syncOnceRef.current({ forceFull: true });
@@ -2322,6 +2338,17 @@ function OverlayInner() {
   const s = snap || remoteState;
   const ready = !!snap || remoteReady;
   const [localPresets, setLocalPresets] = useState<OverlayPresetLike[]>([]);
+  const [zubzubClaimedEvent, setZubzubClaimedEvent] = useState<ZubzubClaimedEvent | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) setZubzubClaimedEvent(detail);
+    };
+    window.addEventListener("zubzub_claimed", handler);
+    return () => window.removeEventListener("zubzub_claimed", handler);
+  }, []);
   const readLocalPresets = useCallback(() => {
     if (typeof window === "undefined") return;
     try {
@@ -6724,6 +6751,11 @@ function OverlayInner() {
             style={memberRankChangeStyle}
           />
         ) : null}
+        <ZubzubOverlayBanner
+          waitingItems={s?.zubzubWaitingItems}
+          claimedEvent={zubzubClaimedEvent}
+          onClearClaimedEvent={() => setZubzubClaimedEvent(null)}
+        />
           </main>
         </div>
       </div>

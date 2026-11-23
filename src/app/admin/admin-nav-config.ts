@@ -58,6 +58,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
       { subKey: "db-summary", label: "대시보드 요약", targetId: "dashboard-summary", icon: "📈" },
       { subKey: "db-board", label: "멤버 정산 보드", targetId: "settlement-member-board", icon: "📊" },
       { subKey: "db-positions", label: "직급 관리", targetId: "block-member-positions", icon: "🎖️" },
+      { subKey: "db-zubzub", label: "대표 시그 줍줍", targetId: "block-zubzub-settings", icon: "🎁" },
       { subKey: "db-sync", label: "후원 동기화 · 시그 대전", targetId: "block-donation-sync-sig-match", icon: "⚔️" },
       { subKey: "db-meal", label: "식사 대전 관리", targetId: "block-meal-match", icon: "🍚" },
       { subKey: "db-timer", label: "타이머 제어", targetId: "timer-control-section", icon: "⏱️" },

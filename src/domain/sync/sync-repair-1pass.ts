@@ -35,7 +35,7 @@ export function aggregateContributionByMember(
     (state as { contributionFormula?: unknown }).contributionFormula
   );
   for (const donor of dedupedDonors) {
-    if (isDonorExcludedFromDonationTotals(donor)) continue;
+    if (isDonorExcludedFromDonationTotals(donor) && !donor.isZubzubBonus) continue;
     const mid = String(donor.memberId || "").trim();
     if (!mid) continue;
     let bucket = out.get(mid);

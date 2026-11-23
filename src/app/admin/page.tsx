@@ -33,6 +33,7 @@ import {
 } from "@/lib/donation-ingest-mode";
 import { sliceDonorListPage } from "@/lib/donor-list-pagination";
 import ToonaHubPanel, { TOONA_HUB_REFRESH_EVENT } from "@/components/admin/ToonaHubPanel";
+import { ZubzubAdminPanel } from "@/components/admin/ZubzubAdminPanel";
 import ContributionFormulaPanel from "@/components/admin/ContributionFormulaPanel";
 import {
   buildSettlementUiOptionsFromForm,
@@ -13778,6 +13779,24 @@ function AdminPageInner() {
                     })()}
                   </div>
                 )}
+              </AdminCollapsibleBlock>
+              <AdminCollapsibleBlock
+                id="block-zubzub-settings"
+                title="🎁 대표 시그 줍줍 설정 (복제형 · 무제한 타이머)"
+                className="mt-4 rounded-lg border border-indigo-500/30 bg-neutral-900/40 p-3 space-y-3"
+                defaultOpen={false}
+                headerAside={
+                  <InfoTooltip text="대표에게 시그가 터지면 줍줍 큐에 대기하고, 다음 멤버가 시그를 쏘면 그 점수를 그대로 복제 지급합니다. 현금 정산에는 전혀 들어가지 않고 랭킹 기여도에만 가산됩니다." />
+                }
+              >
+                <ZubzubAdminPanel
+                  state={state}
+                  onUpdateState={(next) => {
+                    setState(next);
+                    persistState(next, { omitDonationFields: true });
+                  }}
+                  userId={user?.id || ""}
+                />
               </AdminCollapsibleBlock>
               <AdminCollapsibleBlock
                 id="block-donation-sync-sig-match"

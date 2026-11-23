@@ -77,6 +77,34 @@ export type Donor = {
   rawId?: string;
   /** ✅ 2026-09-11 Hotfix P0: 컨텐츠 기반 signature 해시 (정규화 at / 이름 / 금액 / 메시지 → sha1 조각) — dedupe 버킷 충돌 방지용 */
   rawHash?: string;
+  /** 대표 시그 줍줍 보너스 원본 큐 ID */
+  zubzubQueueId?: string;
+  /** 대표 시그 줍줍 보너스 여부 */
+  isZubzubBonus?: boolean;
+};
+
+export type ZubZubQueueStatus = "WAITING" | "CLAIMED" | "CANCELED";
+
+export type ZubZubQueueItem = {
+  id: string;
+  userId: string;
+  triggerDonationId: string;
+  sigName: string;
+  sigImageUrl?: string;
+  bonusAmount: number;
+  status: ZubZubQueueStatus;
+  claimedByMemberId?: string;
+  claimedDonationId?: string;
+  createdAt: number;
+  claimedAt?: number;
+};
+
+export type ZubZubSettings = {
+  enabled: boolean;
+  minSigPrice: number;
+  priorityMode?: "fifo" | "highest";
+  representativeMemberId?: string;
+  autoExpireMinutes?: number;
 };
 
 /** 기여도 계산식 — 저장 이후 후원부터 적용 (소급 없음) */
@@ -811,6 +839,10 @@ export type AppState = {
   settlementUiOptions?: SettlementUiOptions;
   /** YouTube API·라이브챗·영상 URL — 계정별 서버 저장 */
   youtubeClientSettings?: YoutubeClientSettings;
+  /** 대표 시그 줍줍(복제형·무제한 타이머) 설정 */
+  zubzubSettings?: ZubZubSettings;
+  /** 현재 활성 줍줍 대기 큐 스냅샷 */
+  zubzubWaitingItems?: ZubZubQueueItem[];
 };
 
 export type SettlementMemberRatioOverrides = Record<
