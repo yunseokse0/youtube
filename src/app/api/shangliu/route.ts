@@ -112,7 +112,33 @@ function sanitizeState(raw: unknown): ShangliuState | null {
   };
 }
 
-async function loadState(userId: string): Promise<ShangliuState | null> {
+function createDefaultShangliuState(): ShangliuState {
+  const DEFAULT_COLORS = ["#ff007f", "#00f3ff", "#ffdf00", "#b700ff"];
+  const DEFAULT_NAMES = ["박자키", "갓정은", "왓컴퍼니", "꽃돼지"];
+  const members: Record<string, ShangliuMember> = {};
+  const activeOrder: string[] = ["A", "B", "C", "D"];
+  for (let i = 0; i < 4; i++) {
+    const id = activeOrder[i];
+    members[id] = {
+      name: DEFAULT_NAMES[i],
+      color: DEFAULT_COLORS[i],
+      cm: 100,
+    };
+  }
+  return {
+    mode: "individual",
+    members,
+    activeOrder,
+    stealFx: "slide",
+    stealSeq: 0,
+    stealDemo: false,
+    boardTotalCm: 400,
+    grantLog: [],
+    updatedAt: Date.now(),
+  };
+}
+
+async function loadState(userId: string): Promise<ShangliuState> {
   const fromKv = await upstashGetJson<ShangliuState>(shangliuKey(userId));
   if (fromKv && typeof fromKv === "object") {
     const cleaned = sanitizeState(fromKv);
@@ -122,7 +148,11 @@ async function loadState(userId: string): Promise<ShangliuState | null> {
       return cleaned;
     }
   }
-  return memStore.get(userId) || null;
+  const inMem = memStore.get(userId);
+  if (inMem) return inMem;
+  const def = createDefaultShangliuState();
+  memStore.set(userId, def);
+  return def;
 }
 
 export async function GET(req: Request) {
@@ -132,7 +162,7 @@ export async function GET(req: Request) {
   }
   const state = await loadState(userId);
   return NextResponse.json(
-    { ok: true, userId, state: state || null, updatedAt: state?.updatedAt || 0 },
+    { ok: true, userId, state, updatedAt: state.updatedAt },
     { headers: { "Cache-Control": "no-store" } }
   );
 }

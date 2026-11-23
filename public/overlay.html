@@ -334,7 +334,8 @@
     <script>
         (function () {
             try {
-                if (new URLSearchParams(location.search).get('preview') === '1') {
+                const sp = new URLSearchParams(location.search);
+                if (sp.get('preview') === '1' || sp.get('demo') === '1' || sp.get('demo') === 'true') {
                     document.documentElement.classList.add('preview');
                 }
             } catch (_e) {}
@@ -521,6 +522,23 @@
             return /^[a-zA-Z0-9_-]{1,64}$/.test(raw) ? raw : 'finalent';
         })();
 
+        const DEFAULT_SHANGLIU_STATE = {
+            mode: 'individual',
+            boardTotalCm: 400,
+            activeOrder: ['A', 'B', 'C', 'D'],
+            members: {
+                A: { name: '박자키', color: '#ff007f', cm: 100 },
+                B: { name: '갓정은', color: '#00f3ff', cm: 100 },
+                C: { name: '왓컴퍼니', color: '#ffdf00', cm: 100 },
+                D: { name: '꽃돼지', color: '#b700ff', cm: 100 },
+            },
+            stealFx: 'slide',
+            stealSeq: 0,
+            stealDemo: false,
+            grantLog: [],
+            updatedAt: Date.now(),
+        };
+
         function fetchGameState() {
             if (Date.now() < localStateLockUntil) return;
             const gen = ++fetchGen;
@@ -529,18 +547,41 @@
                 .then((j) => {
                     if (gen !== fetchGen) return;
                     if (Date.now() < localStateLockUntil) return;
-                    if (!j || !j.ok || !j.state) return;
-                    const dataStr = JSON.stringify(j.state);
+                    const effectiveState = (j && j.ok && j.state && j.state.members && Object.keys(j.state.members).length >= 2)
+                        ? j.state
+                        : null;
+                    if (!effectiveState) {
+                        const localStr = localStorage.getItem('shangliu_state');
+                        if (localStr) {
+                            try {
+                                const parsed = JSON.parse(localStr);
+                                if (parsed && parsed.members && Object.keys(parsed.members).length >= 2) {
+                                    render(parsed);
+                                    return;
+                                }
+                            } catch (_e) {}
+                        }
+                        render(DEFAULT_SHANGLIU_STATE);
+                        return;
+                    }
+                    const dataStr = JSON.stringify(effectiveState);
                     if (lastDataString === dataStr) return;
                     lastDataString = dataStr;
                     try { localStorage.setItem('shangliu_state', dataStr); } catch (_e) {}
-                    render(j.state);
+                    render(effectiveState);
                 })
                 .catch(() => {
                     const dataStr = localStorage.getItem('shangliu_state');
-                    if (!dataStr || lastDataString === dataStr) return;
-                    lastDataString = dataStr;
-                    render(JSON.parse(dataStr));
+                    if (dataStr) {
+                        try {
+                            const parsed = JSON.parse(dataStr);
+                            if (parsed && parsed.members && Object.keys(parsed.members).length >= 2) {
+                                render(parsed);
+                                return;
+                            }
+                        } catch (_e) {}
+                    }
+                    render(DEFAULT_SHANGLIU_STATE);
                 });
         }
 
