@@ -7251,13 +7251,42 @@ function AdminPageInner() {
 
   const updateRankPositionLabel = (index: number, value: string) => {
     setState((prev: AppState) => {
-      const labels = fitRankPositionLabelsToMemberCount(
-        prev.rankPositionLabels,
-        prev.members.length
+      const rep = (prev.members || []).find((m) => {
+        const pos = String(prev.memberPositions?.[m.id] || "").trim();
+        if (pos === "대표") return true;
+        if (pos.includes("부대표")) return false;
+        return pos.includes("대표");
+      });
+      const fixedSet = new Set(
+        (prev.fixedPositionMemberIds || [])
+          .map((x) => String(x || "").trim())
+          .filter(Boolean)
       );
-      if (index < 0 || index >= labels.length) return prev;
-      labels[index] = value;
-      const next: AppState = { ...prev, rankPositionLabels: labels };
+      const nonDyn = new Set<string>();
+      if (rep) nonDyn.add(rep.id);
+      for (const m of prev.members || []) {
+        if (nonDyn.has(m.id)) continue;
+        if (fixedSet.has(m.id)) {
+          const customPos = String(prev.memberPositions?.[m.id] || "").trim();
+          if (customPos) nonDyn.add(m.id);
+        }
+      }
+      const dynCount = Math.max(0, (prev.members || []).length - nonDyn.size);
+      if (index < 0 || index >= dynCount) return prev;
+
+      const raw = prev.rankPositionLabels || [];
+      const isLegacy = Boolean(
+        rep &&
+        raw.length > dynCount &&
+        (raw[0] === "대표" || raw[0] === "")
+      );
+
+      const nextLabels = Array.from({ length: dynCount }, (_, i) => {
+        if (i === index) return value;
+        return isLegacy ? String(raw[i + 1] || "").trim() : String(raw[i] || "").trim();
+      });
+
+      const next: AppState = { ...prev, rankPositionLabels: nextLabels };
       persistState(next, { omitDonationFields: true, membersAuthoritative: true });
       return next;
     });
@@ -13678,23 +13707,75 @@ function AdminPageInner() {
                       </div>
                     </div>
 
-                    <div className="text-xs text-neutral-400 pt-1">
-                      순위별 직급 라벨 (1위~{Math.max(1, state.members.length)}위 · 멤버 {state.members.length}명).
-                      대표 및 직급 고정 멤버를 제외한 일반 멤버에게 순위 순서대로 부여됩니다.
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                      {Array.from({ length: Math.max(1, state.members.length) }).map((_, idx) => (
-                        <label key={`rank-label-${idx}`} className="grid grid-cols-[46px_1fr] items-center gap-2 text-xs text-neutral-300">
-                          <span>{idx + 1}위</span>
-                          <input
-                            className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
-                            value={state.rankPositionLabels?.[idx] || ""}
-                            onChange={(e) => updateRankPositionLabel(idx, e.target.value)}
-                            placeholder={idx === 0 ? "대표(고정)" : `직급 ${idx + 1}`}
-                          />
-                        </label>
-                      ))}
-                    </div>
+                    {(() => {
+                      const rep = (state.members || []).find((m) => {
+                        const pos = String(state.memberPositions?.[m.id] || "").trim();
+                        if (pos === "대표") return true;
+                        if (pos.includes("부대표")) return false;
+                        return pos.includes("대표");
+                      });
+                      const fixedSet = new Set(
+                        (state.fixedPositionMemberIds || [])
+                          .map((x) => String(x || "").trim())
+                          .filter(Boolean)
+                      );
+                      const nonDyn = new Set<string>();
+                      if (rep) nonDyn.add(rep.id);
+                      for (const m of state.members || []) {
+                        if (nonDyn.has(m.id)) continue;
+                        if (fixedSet.has(m.id)) {
+                          const customPos = String(state.memberPositions?.[m.id] || "").trim();
+                          if (customPos) nonDyn.add(m.id);
+                        }
+                      }
+                      const dynCount = Math.max(0, (state.members || []).length - nonDyn.size);
+                      const rawLabels = state.rankPositionLabels || [];
+                      const hasLegacy = Boolean(
+                        rep &&
+                        rawLabels.length > dynCount &&
+                        (rawLabels[0] === "대표" || rawLabels[0] === "")
+                      );
+
+                      return (
+                        <>
+                          <div className="text-xs text-neutral-400 pt-1 flex items-center justify-between flex-wrap gap-1">
+                            <span>
+                              순위별 직급 라벨 ({dynCount > 0 ? `1위~${dynCount}위 · 순위 연동 멤버 ${dynCount}명` : "순위 연동 멤버 없음"}).
+                              대표 및 직급 고정 멤버({nonDyn.size}명)를 제외한 일반 멤버에게 순위 순서대로 부여됩니다.
+                            </span>
+                            {nonDyn.size > 0 && (
+                              <span className="text-[11px] text-indigo-300 font-medium">
+                                📌 {nonDyn.size}명 고정 제외됨 (대표 1{nonDyn.size > 1 ? ` · 직급고정 ${nonDyn.size - 1}` : ""})
+                              </span>
+                            )}
+                          </div>
+                          {dynCount === 0 ? (
+                            <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-2.5 text-xs text-amber-300">
+                              모든 멤버가 대표 또는 고정 직급으로 지정되어 순위 연동 멤버가 없습니다.
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                              {Array.from({ length: dynCount }).map((_, idx) => {
+                                const currentVal = hasLegacy
+                                  ? rawLabels[idx + 1] || ""
+                                  : rawLabels[idx] || "";
+                                return (
+                                  <label key={`rank-label-${idx}`} className="grid grid-cols-[46px_1fr] items-center gap-2 text-xs text-neutral-300">
+                                    <span>{idx + 1}위</span>
+                                    <input
+                                      className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
+                                      value={currentVal}
+                                      onChange={(e) => updateRankPositionLabel(idx, e.target.value)}
+                                      placeholder={`직급 ${idx + 1}`}
+                                    />
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
               </AdminCollapsibleBlock>

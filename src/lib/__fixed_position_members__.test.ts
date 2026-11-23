@@ -64,4 +64,45 @@ describe("대표 외 특정 멤버 직급 고정 (순위 연동 제외) 기능 �
     expect(roleMap["m_normal2"]).toBe("과장");   // 3위
     expect(roleMap["m_sub"]).toBe("사원");       // 4위
   });
+
+  it("직급 고정 인원을 제외한 순수 순위 연동 라벨(4개 등)이 직접 주어졌을 때 1위부터 순차 부여된다", () => {
+    // 6명 중 자키(대표), 제인(실장 고정), 나머지 4명(진아, 수린, 재영, 조화) 순위 연동
+    const sixMembers: Member[] = [
+      { id: "m_jaki", name: "자키", account: 0, toon: 0, contribution: 0 },
+      { id: "m_jane", name: "제인", account: 0, toon: 0, contribution: 0 },
+      { id: "m_jina", name: "진아", account: 4000, toon: 0, contribution: 4000 },
+      { id: "m_surin", name: "수린", account: 3000, toon: 0, contribution: 3000 },
+      { id: "m_jaeyoung", name: "재영", account: 2000, toon: 0, contribution: 2000 },
+      { id: "m_johwa", name: "조화", account: 1000, toon: 0, contribution: 1000 },
+    ];
+
+    const sixPositions: Record<string, string> = {
+      m_jaki: "대표",
+      m_jane: "실장",
+    };
+
+    // 순위 연동 멤버 4명에게 부여할 4개의 라벨
+    const fourDynamicLabels = ["부대표", "이사", "부장", "과장"];
+
+    const roleMap = buildRankLinkedMemberPositions(
+      sixMembers,
+      sixPositions,
+      fourDynamicLabels,
+      {
+        rankingMetric: "contribution",
+        fixedPositionMemberIds: ["m_jane"],
+      }
+    );
+
+    expect(roleMap["m_jaki"]).toBe("대표");
+    expect(roleMap["m_jane"]).toBe("실장");
+    // 기여도 순: 진아(4000) 1위 -> labels[0]("부대표")
+    expect(roleMap["m_jina"]).toBe("부대표");
+    // 수린(3000) 2위 -> labels[1]("이사")
+    expect(roleMap["m_surin"]).toBe("이사");
+    // 재영(2000) 3위 -> labels[2]("부장")
+    expect(roleMap["m_jaeyoung"]).toBe("부장");
+    // 조화(1000) 4위 -> labels[3]("과장")
+    expect(roleMap["m_johwa"]).toBe("과장");
+  });
 });

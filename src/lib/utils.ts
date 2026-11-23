@@ -338,10 +338,16 @@ export function buildRankLinkedMemberPositions(
       compareMembersByRankingMetric(a, b, metric, orderIndex, options?.getContribution)
     );
 
-  const startIdx = representative ? 1 : 0;
+  const hasLegacyRepInLabels = Boolean(
+    representative &&
+    labels.length > others.length &&
+    (labels[0] === "대표" || labels[0] === "")
+  );
+
   others.forEach((m, idx) => {
-    const rankIdx = idx + startIdx;
-    const label = String(labels[rankIdx] || "").trim() || (rankIdx === 0 ? "대표" : "");
+    const label = hasLegacyRepInLabels
+      ? String(labels[idx + 1] || "").trim()
+      : String(labels[idx] || "").trim();
     if (label) roleMap[m.id] = label;
   });
   return roleMap;

@@ -3962,10 +3962,16 @@ function OverlayInner() {
         )
       );
 
-    const startIdx = representative ? 1 : 0;
+    const hasLegacyRepInLabels = Boolean(
+      representative &&
+      rankPositionLabels.length > others.length &&
+      (rankPositionLabels[0] === "대표" || rankPositionLabels[0] === "")
+    );
+
     others.forEach((m, idx) => {
-      const rankIdx = idx + startIdx;
-      const label = String(rankPositionLabels[rankIdx] || "").trim() || (rankIdx === 0 ? "대표" : "");
+      const label = hasLegacyRepInLabels
+        ? String(rankPositionLabels[idx + 1] || "").trim()
+        : String(rankPositionLabels[idx] || "").trim();
       if (label) roleMap[m.id] = label;
     });
     return roleMap;
