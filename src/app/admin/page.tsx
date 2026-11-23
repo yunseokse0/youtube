@@ -23118,7 +23118,7 @@ function AdminPageInner() {
                                           </Fragment>
                                         );
                                       })}
-                                      <label className="text-xs text-neutral-400">행 알약(짝 행)</label>
+                                      <label className="text-xs text-neutral-400">행 컬러 / 알약 (짝수 행)</label>
                                       <div className="flex min-w-0 flex-wrap items-center gap-2">
                                         <input
                                           type="color"
@@ -23144,7 +23144,7 @@ function AdminPageInner() {
                                         />
                                         <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableRowEvenBg: "" })}>테마 자동</button>
                                       </div>
-                                      <label className="text-xs text-neutral-400">행 알약(홀 행)</label>
+                                      <label className="text-xs text-neutral-400">행 컬러 / 알약 (홀수 행)</label>
                                       <div className="flex min-w-0 flex-wrap items-center gap-2">
                                         <input
                                           type="color"

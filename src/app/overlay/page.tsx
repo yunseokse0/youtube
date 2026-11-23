@@ -4875,19 +4875,24 @@ function OverlayInner() {
         ]
           .filter(Boolean)
           .join(", ") || "none";
+    const hasCustomRowColors = Boolean(tableRowEvenBgRaw) || Boolean(tableRowOddBgRaw);
     const excelZebraEnabled =
       isPillTableChrome ||
+      hasCustomRowColors ||
       (Boolean(excelMemberAccent) &&
-        Boolean(tableRowOddBgCss && tableRowOddBgCss !== "transparent"));
-    const excelMemberTableClass = excelMemberAccent
+        Boolean(
+          (tableRowOddBgCss && tableRowOddBgCss !== "transparent") ||
+            (tableRowEvenBgCss && tableRowEvenBgCss !== "transparent")
+        ));
+    const excelMemberTableClass = excelMemberAccent || hasCustomRowColors
       ? `${isExcelLiveTheme ? " excel-live-table" : " excel-member-table"}${isPillTableChrome ? " excel-gold-table" : ""}${excelZebraEnabled ? " excel-zebra-table" : ""}`
-      : (isPillTableChrome ? " excel-gold-table excel-zebra-table" : "");
+      : (isPillTableChrome ? " excel-gold-table excel-zebra-table" : (excelZebraEnabled ? " excel-member-table excel-zebra-table" : ""));
     const excelHeaderTextCss =
       tableHeaderTextColorRaw ||
       excelMemberAccent?.headerText ||
       TABLE_BROADCAST_TEXT_AUTO;
     const excelMemberTableStyle: React.CSSProperties | undefined =
-      excelMemberAccent || isPillTableChrome
+      excelMemberAccent || isPillTableChrome || hasCustomRowColors
         ? {
             ["--excel-header-bg" as string]: excelHeaderBgCss,
             ["--excel-header-text" as string]: excelHeaderTextCss,
@@ -5461,17 +5466,21 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-restroom {
           background: var(--excel-header-bg) !important;
         }
-        .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(odd) td,
-        .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(even) td,
+        .overlay-root .overlay-elegant-table.excel-live-table:not(.excel-zebra-table) tbody tr.overlay-row:nth-child(odd) td,
+        .overlay-root .overlay-elegant-table.excel-live-table:not(.excel-zebra-table) tbody tr.overlay-row:nth-child(even) td,
         .overlay-root .overlay-elegant-table.excel-member-table:not(.excel-zebra-table) tbody tr.overlay-row td {
           background: transparent !important;
           border: none !important;
         }
-        .overlay-root .overlay-elegant-table.excel-member-table.excel-zebra-table tbody tr.overlay-row:nth-child(odd) td {
+        .overlay-root .overlay-elegant-table.excel-member-table.excel-zebra-table tbody tr.overlay-row:nth-child(odd) td,
+        .overlay-root .overlay-elegant-table.excel-live-table.excel-zebra-table tbody tr.overlay-row:nth-child(odd) td,
+        .overlay-root .overlay-elegant-table.excel-zebra-table tbody tr.overlay-row:nth-child(odd) td {
           background: var(--excel-row-odd, rgba(255, 255, 255, 0.14)) !important;
           border: none !important;
         }
-        .overlay-root .overlay-elegant-table.excel-member-table.excel-zebra-table tbody tr.overlay-row:nth-child(even) td {
+        .overlay-root .overlay-elegant-table.excel-member-table.excel-zebra-table tbody tr.overlay-row:nth-child(even) td,
+        .overlay-root .overlay-elegant-table.excel-live-table.excel-zebra-table tbody tr.overlay-row:nth-child(even) td,
+        .overlay-root .overlay-elegant-table.excel-zebra-table tbody tr.overlay-row:nth-child(even) td {
           background: var(--excel-row-even, rgba(255, 255, 255, 0.06)) !important;
           border: none !important;
         }
@@ -6421,30 +6430,6 @@ function OverlayInner() {
                               )}
                             >
                               {m.name}
-                              {(() => {
-                                const role = (memberPositionsMap[m.id] || "").trim() || getMemberRole(m).trim();
-                                const isRep = !role.includes("부대표") && role.includes("대표");
-                                if (!hasRoleColumn) {
-                                  if (isRep) {
-                                    return (
-                                      <span className="ml-1 text-[0.8em] font-bold text-amber-300 opacity-90">
-                                        (대표)
-                                      </span>
-                                    );
-                                  }
-                                  const isFixed =
-                                    role.includes("실장") ||
-                                    Boolean(((s as AppState | null)?.fixedPositionMemberIds || []).includes(m.id));
-                                  if (role && isFixed) {
-                                    return (
-                                      <span className="ml-1 text-[0.8em] font-semibold text-neutral-300 opacity-80">
-                                        ({role})
-                                      </span>
-                                    );
-                                  }
-                                }
-                                return null;
-                              })()}
                             </span>
                           </td>
                           {showAccountColumn && (

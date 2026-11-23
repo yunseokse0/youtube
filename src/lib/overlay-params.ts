@@ -1317,6 +1317,13 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "tableLineColor",
   "tableGridLines",
   "tableVerticalLines",
+  "tableRowEvenBg",
+  "tableRowOddBg",
+  "tablePanelBorderColor",
+  "tableBorderGlow",
+  "tableBorderRadius",
+  "tablePanelBorderWidth",
+  "tableBorderGlowColor",
   /** 타이머 색·스타일 — OBS URL 스테일 방지 */
   "timerFontFamily",
   "timerFontColor",
