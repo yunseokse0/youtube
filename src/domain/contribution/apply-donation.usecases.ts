@@ -408,40 +408,16 @@ export function reassignDonorMemberInAppState(
       : computeContributionPoints(amount, donor.target || "account", formula);
 
   const now = Date.now();
-  const logs: ContributionLog[] = [];
-  if (contributionPoints > 0 && !isDonorExcludedFromDonationTotals(donor)) {
-    const positions = currentState.memberPositions || null;
-    const isOperating = (mid: string) =>
-      isOperatingSettlementMember(
-        (currentState.members || []).find((m) => m.id === mid) || {
-          id: mid,
-          name: "",
-          operating: false,
-        },
-        positions
-      );
-    if (prevMemberId && !isOperating(prevMemberId)) {
-      logs.push({
-        id: `reassign:${donorId}:prev:${now}`,
-        memberId: prevMemberId,
-        amount: contributionPoints,
-        delta: -1 as const,
-        note: `reassign to ${targetMemberId}`,
-        at: now,
-      });
-    }
-    if (!isOperating(targetMemberId)) {
-      logs.push({
-        id: `reassign:${donorId}:next:${now}`,
-        memberId: targetMemberId,
-        amount: contributionPoints,
-        delta: 1 as const,
-        note: `reassign from ${prevMemberId || "none"}`,
-        at: now,
-      });
-    }
-  }
-  const nextContributionLogs = [...(currentState.contributionLogs || []), ...logs];
+  const idStr = String(donorId);
+  const directMatchRegex = new RegExp(
+    `:(?:apply|revert|reassign)(?::[^:]*)*:${idStr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?::|$)`
+  );
+  // syncMemberTotalsFromDonors 가 nextDonors 의 바뀐 memberId 를 기준으로 기여도를 자동 재계산하므로,
+  // contributionLogs 에 delta:+1/-1 을 중복 추가하면 기여도가 2배로 뻥튀기되는 버그 발생.
+  // 따라서 기존 reassign/apply 로그만 정리하고 donors 에 memberId 만 갱신하여 1회만 정확히 반영되도록 함.
+  const nextContributionLogs = (currentState.contributionLogs || []).filter(
+    (log) => !directMatchRegex.test(log.id)
+  );
 
   const nextDonors = (currentState.donors || []).map((d) =>
     d.id === donorId

@@ -118,8 +118,55 @@ describe("reassignDonorMemberInAppState", () => {
     expect(next!.donors[0]?.memberId).toBe("m2");
     expect(next!.members.find((m) => m.id === "m1")?.toon).toBe(0);
     expect(next!.members.find((m) => m.id === "m2")?.toon).toBe(50_000);
+    expect(next!.members.find((m) => m.id === "m1")?.contribution).toBe(0);
+    expect(next!.members.find((m) => m.id === "m2")?.contribution).toBe(50_000);
     expect(next!.donors[0]?.at).toBeGreaterThanOrEqual(state.donors[0]!.at);
     expect(next!.donors[0]?.memberAutoAssigned).toBe(false);
+  });
+
+  it("correctly moves contribution without double-counting when member has multiple donations", () => {
+    const state = {
+      ...defaultState(),
+      members: [
+        { id: "m1", name: "멤버1", account: 80_000, toon: 0, contribution: 80_000 },
+        { id: "m2", name: "멤버2", account: 0, toon: 0, contribution: 0 },
+      ],
+      donors: [
+        {
+          id: "donor_1",
+          name: "후원자1",
+          amount: 50_000,
+          memberId: "m1",
+          at: Date.now(),
+          target: "account" as const,
+          contributionPoints: 50_000,
+        },
+        {
+          id: "donor_2",
+          name: "후원자2",
+          amount: 30_000,
+          memberId: "m1",
+          at: Date.now() + 1000,
+          target: "account" as const,
+          contributionPoints: 30_000,
+        },
+      ],
+    };
+
+    // donor_1(50,000원)을 m1에서 m2로 재지정
+    const next = reassignDonorMemberInAppState(state, "donor_1", "m2");
+    expect(next).not.toBeNull();
+
+    const m1After = next!.members.find((m) => m.id === "m1");
+    const m2After = next!.members.find((m) => m.id === "m2");
+
+    // m1은 30,000원(donor_2)만 남아야 함 (현금 및 기여도 모두 30,000)
+    expect(m1After?.account).toBe(30_000);
+    expect(m1After?.contribution).toBe(30_000);
+
+    // m2는 50,000원(donor_1)만 정확히 가산되어야 함 (100,000원 2배 뻥튀기 아님!)
+    expect(m2After?.account).toBe(50_000);
+    expect(m2After?.contribution).toBe(50_000);
   });
 });
 
