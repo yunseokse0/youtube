@@ -1,6 +1,7 @@
 import type { SigMatchPool, SigRollingSettings, SigRollingMetaEntry, SigItem, AppState, SigRollingItem } from "@/types";
 import { normalizeSigImageUrlStored, normalizeSigInventory, DEFAULT_SIG_INVENTORY } from "@/lib/constants";
 import { ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
+import { repairMojibakeSigName } from "@/lib/sig-name-repair";
 import { isBundledSigPlaceholderItem } from "@/lib/sig-placeholder";
 
 export function normalizeSigRolling(input: unknown): SigRollingSettings {
@@ -87,44 +88,134 @@ export function filterSigInventoryForSalesDisplay(
   );
 }
 
+function normalizeSigMatchName(rawName?: string | null): string {
+  if (!rawName) return "";
+  const repaired = repairMojibakeSigName(String(rawName));
+  return repaired.replace(/\s+/g, "").toLowerCase();
+}
+
+function isUploadOrCustomSigUrl(url?: string | null): boolean {
+  if (!url) return false;
+  const s = String(url).trim().toLowerCase();
+  if (!s || s.includes("dummy-sig.svg") || s.includes("placeholder")) return false;
+  if (s.startsWith("/uploads/sigs/") || s.startsWith("uploads/sigs/") || s.startsWith("/api/uploads-sigs/")) return true;
+  if (s.startsWith("data:image/") || s.startsWith("blob:")) return true;
+  if (s.startsWith("http://") || s.startsWith("https://")) {
+    if (s.includes("raw.githubusercontent.com") && s.includes("/images/sigs/")) return false;
+    return true;
+  }
+  if (s.startsWith("/") && !s.startsWith("/images/sigs/") && !s.startsWith("/sig-crop/")) return true;
+  return false;
+}
+
+function extractUploadTimestamp(url?: string | null): number {
+  if (!url) return 0;
+  const match = String(url).match(/(?:[\/_?&=]|^)(\d{10,13})(?:[_\D]|$)/);
+  if (match && match[1]) {
+    const ts = parseInt(match[1], 10);
+    return ts < 10000000000 ? ts * 1000 : ts;
+  }
+  return 0;
+}
+
+export function resolveFresherSigImageUrl(urlA?: string | null, urlB?: string | null): string {
+  const cleanA = String(urlA || "").trim();
+  const cleanB = String(urlB || "").trim();
+  if (!cleanA && !cleanB) return "";
+  if (!cleanA) return cleanB;
+  if (!cleanB) return cleanA;
+  if (cleanA === cleanB) return cleanA;
+
+  const aIsCustom = isUploadOrCustomSigUrl(cleanA);
+  const bIsCustom = isUploadOrCustomSigUrl(cleanB);
+
+  if (aIsCustom && !bIsCustom) return cleanA;
+  if (!aIsCustom && bIsCustom) return cleanB;
+
+  if (aIsCustom && bIsCustom) {
+    const tsA = extractUploadTimestamp(cleanA);
+    const tsB = extractUploadTimestamp(cleanB);
+    if (tsA > 0 && tsB > 0 && tsA !== tsB) {
+      return tsA > tsB ? cleanA : cleanB;
+    }
+  }
+
+  if (!cleanA.toLowerCase().includes("dummy-sig")) return cleanA;
+  return cleanB;
+}
+
 export function getUnifiedSigRollingItems(
   state: Pick<AppState, "sigInventory" | "sigRolling" | "sigRollingMeta" | "sigSalesExcludedIds"> | null | undefined,
   memberFilterId?: string | null
 ): SigRollingItem[] {
   if (!state) return [];
   const meta = normalizeSigRollingMeta(state.sigRollingMeta);
+  const invAll = state.sigInventory || [];
+  const sr = normalizeSigRolling(state.sigRolling);
+  const legacyItems = sr.items || [];
+
+  const invById = new Map(invAll.map((x) => [x.id, x]));
+  const invByName = new Map<string, (typeof invAll)[0]>();
+  for (const x of invAll) {
+    const key = normalizeSigMatchName(x.name);
+    if (key && !invByName.has(key)) {
+      invByName.set(key, x);
+    }
+  }
+
+  const legacyById = new Map(legacyItems.map((x) => [x.id, x]));
+  const legacyByName = new Map<string, (typeof legacyItems)[0]>();
+  for (const x of legacyItems) {
+    const key = normalizeSigMatchName(x.label);
+    if (key && !legacyByName.has(key)) {
+      legacyByName.set(key, x);
+    }
+  }
+
   const invRows = filterSigInventoryForSalesDisplay(state, memberFilterId)
     .filter((x) => Boolean(x.isRolling))
     .filter((x) => !isBundledSigPlaceholderItem(x))
     .map((x, idx) => {
       const m = meta[x.id] || {};
+      const matchLegacy =
+        legacyById.get(x.id) || (x.name ? legacyByName.get(normalizeSigMatchName(x.name)) : undefined);
+      const rawInvUrl = normalizeSigImageUrlStored(x.imageUrl).trim();
+      const finalUrl = resolveFresherSigImageUrl(rawInvUrl, matchLegacy?.url);
       return {
         id: x.id,
-        url: normalizeSigImageUrlStored(x.imageUrl).trim(),
-        label: (m.label && String(m.label).trim()) || String(x.name || "").trim(),
+        url: finalUrl,
+        label: (m.label && String(m.label).trim()) || String(x.name || "").trim() || (matchLegacy?.label || ""),
         order: m.order ?? idx,
         price: Math.max(0, Math.floor(Number(x.price) || 0)),
       };
     })
     .filter((x) => x.url && !String(x.url).toLowerCase().includes("dummy-sig.svg"));
-  const invById = new Map((state.sigInventory || []).map((x) => [x.id, x]));
-  const legacy = normalizeSigRolling(state.sigRolling).items.filter((x) => {
+
+  const legacy = legacyItems.filter((x) => {
     if (x.id === ONE_SHOT_SIG_ID) return false;
     if (String(x.url || "").toLowerCase().includes("dummy-sig.svg")) return false;
     if (isBundledSigPlaceholderItem({ id: x.id, imageUrl: x.url })) return false;
-    const inv = invById.get(x.id);
-    if (inv) return Boolean(inv.isRolling) && !isBundledSigPlaceholderItem(inv);
+    const matchInv = invById.get(x.id) || (x.label ? invByName.get(normalizeSigMatchName(x.label)) : undefined);
+    if (matchInv) {
+      return Boolean(matchInv.isRolling) && !isBundledSigPlaceholderItem(matchInv);
+    }
     return true;
   });
+
   if (invRows.length === 0) {
     return legacy.map((x) => {
-      const inv = invById.get(x.id);
+      const matchInv = invById.get(x.id) || (x.label ? invByName.get(normalizeSigMatchName(x.label)) : undefined);
+      const invUrl = matchInv ? normalizeSigImageUrlStored(matchInv.imageUrl).trim() : "";
+      const finalUrl = resolveFresherSigImageUrl(invUrl, x.url);
       return {
         ...x,
-        price: Math.max(0, Math.floor(Number(inv?.price ?? x.price) || 0)),
+        url: finalUrl,
+        label: (x.label && String(x.label).trim()) || (matchInv?.name ? String(matchInv.name).trim() : ""),
+        price: Math.max(0, Math.floor(Number(matchInv?.price ?? x.price) || 0)),
       };
     });
   }
+
   return invRows
     .sort((a, b) => a.order - b.order)
     .map(({ id, url, label, price }) => ({ id, url, label, price }));

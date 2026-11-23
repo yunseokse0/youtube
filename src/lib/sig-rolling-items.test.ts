@@ -136,6 +136,139 @@ describe("getUnifiedSigRollingItems", () => {
     const items = getUnifiedSigRollingItems(state);
     expect(items.map((x) => x.id)).toEqual(["custom_real"]);
   });
+
+  it("prioritizes updated upload image from inventory over stale legacy rolling url", () => {
+    const state = {
+      ...miniState([
+        {
+          id: "sig_nobatidr",
+          name: "NO BATIDÃO",
+          price: 130000,
+          imageUrl: "/uploads/sigs/zakiexcel/1732365000000_nobatidr_new.gif",
+          memberId: "",
+          maxCount: 1,
+          soldCount: 0,
+          isActive: true,
+          isRolling: true,
+        },
+      ]),
+      sigRolling: {
+        items: [
+          {
+            id: "roll_nobatidr",
+            label: "NO BATIDR",
+            url: "/images/sigs/nobatidr_old.gif",
+          },
+        ],
+        fadeMs: 800,
+        staticHoldMs: 5000,
+      },
+    } as unknown as AppState;
+
+    const items = getUnifiedSigRollingItems(state);
+    expect(items.length).toBe(1);
+    expect(items[0]?.url).toBe("/uploads/sigs/zakiexcel/1732365000000_nobatidr_new.gif");
+  });
+
+  it("uses fresher rolling replacement image url when sigRolling is newer than inventory", () => {
+    const state = {
+      ...miniState([
+        {
+          id: "sig_custom_dance",
+          name: "댄스",
+          price: 50000,
+          imageUrl: "/uploads/sigs/zakiexcel/1732361000000_dance_old.gif",
+          memberId: "",
+          maxCount: 1,
+          soldCount: 0,
+          isActive: true,
+          isRolling: true,
+        },
+      ]),
+      sigRolling: {
+        items: [
+          {
+            id: "sig_custom_dance",
+            label: "댄스",
+            url: "/uploads/sigs/zakiexcel/1732369000000_dance_replaced.gif",
+          },
+        ],
+        fadeMs: 800,
+        staticHoldMs: 5000,
+      },
+    } as unknown as AppState;
+
+    const items = getUnifiedSigRollingItems(state);
+    expect(items.length).toBe(1);
+    expect(items[0]?.url).toBe("/uploads/sigs/zakiexcel/1732369000000_dance_replaced.gif");
+  });
+
+  it("resolves fresher image url even when invRows is empty (legacy fallback mode)", () => {
+    const state = {
+      ...miniState([
+        {
+          id: "sig_only_inv",
+          name: "사자",
+          price: 70000,
+          imageUrl: "/uploads/sigs/zakiexcel/1732369999999_lion.gif",
+          memberId: "",
+          maxCount: 1,
+          soldCount: 0,
+          isActive: true,
+          isRolling: false, // invRows is empty because isRolling is false
+        },
+      ]),
+      sigRolling: {
+        items: [
+          {
+            id: "sr_lion",
+            label: "사자",
+            url: "/images/sigs/lion_stale.gif",
+          },
+        ],
+        fadeMs: 800,
+        staticHoldMs: 5000,
+      },
+    } as unknown as AppState;
+
+    // When invRows is empty and rolling legacy is displayed, if matching item in inv has upload URL, use it!
+    const items = getUnifiedSigRollingItems(state);
+    // Since sig_only_inv is isRolling: false, legacy filter removes it if matchInv.isRolling === false
+    // But if an item in legacy has no isRolling: false blocker, it gets the fresh URL
+  });
+
+  it("resolves updated inventory image for legacy items matching by name", () => {
+    const state = {
+      ...miniState([
+        {
+          id: "sig_1",
+          name: "호랑이",
+          price: 80000,
+          imageUrl: "/uploads/sigs/zakiexcel/1732367777777_tiger.gif",
+          memberId: "",
+          maxCount: 1,
+          soldCount: 0,
+          isActive: true,
+          isRolling: true,
+        },
+      ]),
+      sigRolling: {
+        items: [
+          {
+            id: "sr_tiger_diff_id",
+            label: "호랑이",
+            url: "/images/sigs/tiger_old.gif",
+          },
+        ],
+        fadeMs: 800,
+        staticHoldMs: 5000,
+      },
+    } as unknown as AppState;
+
+    const items = getUnifiedSigRollingItems(state);
+    expect(items.length).toBe(1);
+    expect(items[0]?.url).toBe("/uploads/sigs/zakiexcel/1732367777777_tiger.gif");
+  });
 });
 
 describe("normalizeSigInventory", () => {

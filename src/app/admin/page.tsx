@@ -303,6 +303,12 @@ import {
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
 import { repairMojibakeSigName } from "@/lib/sig-name-repair";
+
+function normalizeSigMatchName(rawName?: string | null): string {
+  if (!rawName) return "";
+  const repaired = repairMojibakeSigName(String(rawName));
+  return repaired.replace(/\s+/g, "").toLowerCase();
+}
 import {
   applyMealBattleDonationToParticipants,
   ensureMealBattleParticipantRow,
@@ -8537,17 +8543,37 @@ function AdminPageInner() {
           ...basePatch,
           ...(basePatch.name ? { name: repairMojibakeSigName(basePatch.name) } : {}),
         };
+        const nextInventory = (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, ...sanitizedPatch } : x));
+        const targetItem = nextInventory.find((x) => x.id === id);
+        const targetNameKey = normalizeSigMatchName(targetItem?.name);
+
+        let nextRolling = prev.sigRolling;
+        if (sanitizedPatch.imageUrl && targetItem) {
+          const sr = normalizeSigRolling(prev.sigRolling);
+          nextRolling = {
+            ...sr,
+            items: sr.items.map((x) => {
+              const match = x.id === id || (targetNameKey && normalizeSigMatchName(x.label) === targetNameKey);
+              return match ? { ...x, url: sanitizedPatch.imageUrl! } : x;
+            }),
+          };
+        }
+
         const draft: AppState = {
           ...prev,
-          sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, ...sanitizedPatch } : x)),
+          sigInventory: nextInventory,
+          sigRolling: nextRolling,
           updatedAt: Date.now(),
         };
         const next = { ...syncOneShotSigItem(draft), updatedAt: draft.updatedAt };
         persistState(next);
+        if (sanitizedPatch.imageUrl) {
+          persistVisualSettings(next, { sigRolling: next.sigRolling });
+        }
         return next;
       });
     },
-    [persistState, syncOneShotSigItem]
+    [persistState, persistVisualSettings, syncOneShotSigItem]
   );
 
   const commitSigPriceDraft = (id: string, fallbackPrice: number) => {
@@ -9599,25 +9625,31 @@ function AdminPageInner() {
       const { url } = await uploadSigImageFile(file);
       if (!url) return;
       setState((prev) => {
-        const hasInventory = (prev.sigInventory || []).some((x) => x.id === id);
-        if (hasInventory) {
-          const next = {
-            ...prev,
-            sigInventory: (prev.sigInventory || []).map((x) =>
-              x.id === id ? { ...x, imageUrl: url, isRolling: true, isActive: true } : x
-            ),
-          };
-          persistState(next, { omitDonationFields: true });
-          return next;
-        }
         const sr = normalizeSigRolling(prev.sigRolling);
+        const legacyTarget = sr.items.find((x) => x.id === id);
+        const invTarget = (prev.sigInventory || []).find((x) => x.id === id);
+        const targetNameKey = normalizeSigMatchName(legacyTarget?.label || invTarget?.name);
+
+        const nextInventory = (prev.sigInventory || []).map((x) => {
+          const match = x.id === id || (targetNameKey && normalizeSigMatchName(x.name) === targetNameKey);
+          return match ? { ...x, imageUrl: url, isRolling: true, isActive: true } : x;
+        });
+
+        const nextRollingItems = sr.items.map((x) => {
+          const match = x.id === id || (targetNameKey && normalizeSigMatchName(x.label) === targetNameKey);
+          return match ? { ...x, url } : x;
+        });
+
         const next = {
           ...prev,
+          sigInventory: nextInventory,
           sigRolling: {
             ...sr,
-            items: sr.items.map((x) => (x.id === id ? { ...x, url } : x)),
+            items: nextRollingItems,
           },
+          updatedAt: Date.now(),
         };
+        persistState(next, { omitDonationFields: true });
         persistVisualSettings(next, { sigRolling: next.sigRolling });
         return next;
       });

@@ -11,6 +11,7 @@ import {
   saveState,
   isRicherSigInventory,
   shouldPreferLocalSigInventoryOverIncoming,
+  normalizeSigRolling,
 } from "@/lib/state";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
 import {
@@ -89,6 +90,12 @@ import { resolveMemberDisplayColor } from "@/lib/member-display-color";
 
 const SIG_INVENTORY_IMPORTED_EVENT = "youtube-sig-inventory-imported";
 const MAX_SIG_UPLOAD_BYTES = 30 * 1024 * 1024;
+
+function normalizeSigMatchName(rawName?: string | null): string {
+  if (!rawName) return "";
+  const repaired = repairMojibakeSigName(String(rawName));
+  return repaired.replace(/\s+/g, "").toLowerCase();
+}
 
 export default function ManualSigSalesSimple() {
   const router = useRouter();
@@ -1145,9 +1152,9 @@ export default function ManualSigSalesSimple() {
           const meta = parseSigMetaFromFileName(file.name);
           const name = meta.name.replace(/\s*시그\s*(세로|가로|영상)?\s*$/u, "").trim() || meta.name;
           const price = meta.priceFromFileName ? meta.price : fallbackPrice;
-          const nameKey = name.replace(/\s+/g, "").toLowerCase();
+          const nameKey = normalizeSigMatchName(name);
           const existing = nextInventory.find(
-            (x) => x.id !== ONE_SHOT_SIG_ID && (x.name || "").replace(/\s+/g, "").toLowerCase() === nameKey
+            (x) => x.id !== ONE_SHOT_SIG_ID && normalizeSigMatchName(x.name) === nameKey
           );
           if (existing) {
             existing.imageUrl = j.url;
@@ -1170,7 +1177,26 @@ export default function ManualSigSalesSimple() {
             added += 1;
           }
         }
-        const next: AppState = { ...state, sigInventory: nextInventory, updatedAt: Date.now() };
+        const sr = normalizeSigRolling(state.sigRolling);
+        const updatedRollingItems = sr.items.map((rItem) => {
+          const rKey = normalizeSigMatchName(rItem.label);
+          const matchedInv = nextInventory.find(
+            (inv) => inv.id === rItem.id || (rKey && normalizeSigMatchName(inv.name) === rKey)
+          );
+          if (matchedInv && matchedInv.imageUrl) {
+            return { ...rItem, url: matchedInv.imageUrl };
+          }
+          return rItem;
+        });
+        const next: AppState = {
+          ...state,
+          sigInventory: nextInventory,
+          sigRolling: {
+            ...sr,
+            items: updatedRollingItems,
+          },
+          updatedAt: Date.now(),
+        };
         const priced = nextInventory.filter(
           (x) => x.id !== ONE_SHOT_SIG_ID && Math.floor(Number(x.price || 0)) > 0
         ).length;
