@@ -31,4 +31,18 @@ describe("Per-preset Custom Column Linking", () => {
 
     expect(isDedicated).toBe(false);
   });
+
+  it("excludes custom column on main excel table when excludeMainTableCustomCell is enabled", () => {
+    const isMainTable = true;
+    const excludeMainTableCustomCell = true;
+    const showCustomColumn = isMainTable && excludeMainTableCustomCell ? false : true;
+    expect(showCustomColumn).toBe(false);
+  });
+
+  it("keeps custom column on sub excel tables when excludeMainTableCustomCell is enabled", () => {
+    const isMainTable = false;
+    const excludeMainTableCustomCell = true;
+    const showCustomColumn = isMainTable && excludeMainTableCustomCell ? false : true;
+    expect(showCustomColumn).toBe(true);
+  });
 });

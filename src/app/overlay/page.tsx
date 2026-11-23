@@ -2760,7 +2760,42 @@ function OverlayInner() {
   const showToonColumn = resolvePresetBool("showToonColumn", true);
   const showCombinedColumn = resolvePresetBool("showCombinedColumn", true);
   const showContributionColumn = resolvePresetBool("showContributionColumn", true);
-  const showCustomColumn = resolvePresetBool("showCustomColumn", true);
+  const showCustomColumn = (() => {
+    // 1. URL 파라미터 강제 지정 (?showCustomColumn=false, ?hideCustom=1, ?custom=0 등)
+    if (
+      rawSp.get("hideCustom") === "1" ||
+      rawSp.get("custom") === "0" ||
+      rawSp.get("showCustomColumn") === "false"
+    ) {
+      return false;
+    }
+    if (rawSp.get("showCustomColumn") === "true" || rawSp.get("custom") === "1") {
+      return true;
+    }
+
+    // 2. 현재 프리셋의 명시적 showCustomColumn 설정이 있으면 우선 반영
+    if (effectivePreset && typeof effectivePreset.showCustomColumn === "boolean") {
+      return effectivePreset.showCustomColumn;
+    }
+
+    // 3. 메인 엑셀표(첫 번째 프리셋 또는 p 파라미터 없는 기본 표) 커스텀 제외 판정
+    const isMainTable =
+      !presetId ||
+      presetId === "main" ||
+      (effectivePreset && overlayPresets[0]?.id === effectivePreset.id);
+
+    const excludeMainSetting =
+      (ready && s && (s as any).excludeMainTableCustomCell) ??
+      (ready && s && (s as any).overlaySettings?.excludeMainTableCustomCell);
+    // 기본값: 메인 엑셀표에는 커스텀 필드 사용 안 함 (true)
+    const excludeMain = excludeMainSetting !== false;
+
+    if (isMainTable && excludeMain) {
+      return false;
+    }
+
+    return resolvePresetBool("showCustomColumn", true);
+  })();
   const showRoleColumn = resolvePresetBool("showRoleColumn", true);
   const showRankColumn =
     resolvePresetBool("showRankColumn", true) &&

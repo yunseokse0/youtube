@@ -733,6 +733,8 @@ export type AppState = {
   rankCustomCells?: string[];
   /** 커스텀 열 헤더 (기본 상벌금) */
   memberCustomHeaderLabel?: string;
+  /** 메인 엑셀표(기본 표/전체 통합)에서 커스텀 열 제외 여부 (기본 true) */
+  excludeMainTableCustomCell?: boolean;
   /** 순위 연동 모드에서 사용할 직급 라벨(1위부터 순서대로) */
   rankPositionLabels: string[];
   /** 순위 연동 모드에서도 직급을 고정할 멤버 ID 목록 (대표 외 고정 멤버) */

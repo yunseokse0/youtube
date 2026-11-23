@@ -2010,7 +2010,7 @@ function AdminPageInner() {
     showContributionColumn: true,
     showRestroomColumn: true,
     showContributionSum: true,
-    showCustomColumn: true,
+    showCustomColumn: name === "전체 통합" || name === "메인" || name.includes("메인") ? false : true,
     customHeaderLabel: "",
     donationAggregateFromAt: "",
     day777Calc: false,
@@ -6302,6 +6302,54 @@ function AdminPageInner() {
       if (editingId === id) setEditingId(null);
     }, { confirmText: "삭제", danger: true });
   };
+
+  const excludeMainTableCustomCell = Boolean(
+    (state as any)?.excludeMainTableCustomCell ??
+    (state.overlaySettings as any)?.excludeMainTableCustomCell ??
+    true
+  );
+
+  const toggleExcludeMainTableCustomCell = useCallback(
+    (nextVal: boolean) => {
+      let updatedPresets = [...presets];
+      if (updatedPresets.length > 0) {
+        const mainIdx = updatedPresets.findIndex(
+          (p) => p.name === "전체 통합" || p.name.includes("메인")
+        );
+        const targetIdx = mainIdx >= 0 ? mainIdx : 0;
+        updatedPresets[targetIdx] = {
+          ...updatedPresets[targetIdx],
+          showCustomColumn: !nextVal,
+        };
+        const normalized = normalizeOverlayPresetLabels(updatedPresets);
+        setPresets(normalized);
+        try {
+          window.localStorage.setItem(presetStorageKey, JSON.stringify(normalized));
+          notifyOverlayPresetsLocalUpdated();
+        } catch {}
+      }
+      setState((prev: AppState) => {
+        const prevOs =
+          prev.overlaySettings && typeof prev.overlaySettings === "object"
+            ? (prev.overlaySettings as Record<string, unknown>)
+            : {};
+        const next: AppState = {
+          ...prev,
+          excludeMainTableCustomCell: nextVal,
+          overlaySettings: {
+            ...prevOs,
+            excludeMainTableCustomCell: nextVal,
+          } as AppState["overlaySettings"],
+          overlayPresets: updatedPresets.length > 0 ? updatedPresets : prev.overlayPresets,
+          updatedAt: Date.now(),
+        };
+        persistOverlayPresetsOnly(updatedPresets, next, { excludeMainTableCustomCell: nextVal });
+        return next;
+      });
+      setGlobalPreviewBump((n) => n + 1);
+    },
+    [presets, presetStorageKey, persistOverlayPresetsOnly]
+  );
   const memberRankChangeFxEditPreset = useMemo(() => {
     if (!presets.length) return null;
     if (memberRankChangeFxEditPresetId) {
@@ -13587,6 +13635,77 @@ function AdminPageInner() {
 
                   return (
                     <div className="rounded border border-white/10 bg-black/20 p-3 space-y-3">
+                      {/* 📌 메인 엑셀표 커스텀 열 제외 제어 */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 p-2.5 rounded-lg bg-neutral-900/90 border border-white/10">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">📌</span>
+                          <div>
+                            <div className="text-xs font-bold text-white flex items-center gap-2">
+                              <span>메인 엑셀표 커스텀 열 제외</span>
+                              {excludeMainTableCustomCell ? (
+                                <span className="text-[10px] bg-rose-950/70 text-rose-300 border border-rose-500/40 px-2 py-0.5 rounded font-bold">
+                                  🚫 메인 표 사용 안 함 (적용 중)
+                                </span>
+                              ) : (
+                                <span className="text-[10px] bg-neutral-800 text-neutral-400 border border-white/10 px-2 py-0.5 rounded">
+                                  메인 표 포함
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-neutral-400 mt-0.5">
+                              메인 엑셀표(전체 통합/기본 표)에는 커스텀 열(상벌금 등)을 숨기고, 서브 엑셀표에서만 커스텀 필드를 사용합니다.
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition border ${
+                            excludeMainTableCustomCell
+                              ? "bg-rose-900/50 text-rose-200 border-rose-400/50 hover:bg-rose-800/60 shadow-sm"
+                              : "bg-neutral-800 text-neutral-300 border-white/20 hover:bg-neutral-700"
+                          }`}
+                          onClick={() => {
+                            void toggleExcludeMainTableCustomCell(!excludeMainTableCustomCell);
+                          }}
+                        >
+                          {excludeMainTableCustomCell ? "🚫 메인 엑셀표 제외 중 (클릭 시 켜기)" : "메인 엑셀표에도 커스텀 표시하기"}
+                        </button>
+                      </div>
+
+                      {targetPreset && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded bg-neutral-900/60 border border-white/10">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-neutral-300 font-semibold">
+                              [{targetPreset.name}] 커스텀 열:
+                            </span>
+                            {targetPreset.showCustomColumn === false ? (
+                              <span className="text-[11px] text-rose-300 bg-rose-950/40 px-2 py-0.5 rounded border border-rose-500/30 font-medium">
+                                🚫 이 엑셀표는 커스텀 열이 꺼져 있어 오버레이에 미표시
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-emerald-300 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/30 font-medium">
+                                ✅ 오버레이에 커스텀 열 표시 중
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            className={`px-2.5 py-1 rounded text-xs font-bold transition border ${
+                              targetPreset.showCustomColumn !== false
+                                ? "bg-rose-950/60 text-rose-300 border-rose-500/40 hover:bg-rose-900/60"
+                                : "bg-emerald-950/60 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/60"
+                            }`}
+                            onClick={() => {
+                              const nextShow = targetPreset.showCustomColumn === false ? true : false;
+                              updatePreset(targetPreset.id, { showCustomColumn: nextShow });
+                              setGlobalPreviewBump((n) => n + 1);
+                            }}
+                          >
+                            {targetPreset.showCustomColumn !== false ? "🚫 이 엑셀표 커스텀 열 끄기" : "✅ 이 엑셀표 커스텀 열 켜기"}
+                          </button>
+                        </div>
+                      )}
+
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2.5">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-bold text-amber-300">📊 적용할 엑셀표 선택:</span>
