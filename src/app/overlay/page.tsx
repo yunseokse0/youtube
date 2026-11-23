@@ -2513,11 +2513,14 @@ function OverlayInner() {
   }, [ready, s, effectivePreset]);
 
   const memberCustomHeaderFromState = useMemo<string>(() => {
-    if (effectivePreset && (effectivePreset as any).customCellLinkMode !== "global") {
+    if (effectivePreset && (effectivePreset as any).customCellLinkMode === "preset") {
       const fromPreset = String((effectivePreset as any)?.customHeaderLabel || "").trim();
       if (fromPreset) return fromPreset;
     }
-    return String((ready && s && (s as AppState).memberCustomHeaderLabel) || "").trim() || "상벌금";
+    const fromState = String((ready && s && (s as AppState).memberCustomHeaderLabel) || "").trim();
+    if (fromState) return fromState;
+    const fromPreset = String((effectivePreset as any)?.customHeaderLabel || "").trim();
+    return fromPreset || "상벌금";
   }, [ready, s, effectivePreset]);
 
   const rankCustomCells = useMemo<string[]>(() => {
@@ -2842,11 +2845,28 @@ function OverlayInner() {
   })();
   const accountHeaderLabel = resolvePresetLabel("accountHeaderLabel", "계좌");
   const customHeaderLabel = (() => {
+    const isDedicatedMode =
+      effectivePreset &&
+      (effectivePreset as any).customCellLinkMode === "preset";
+    if (isDedicatedMode) {
+      const fromPreset = String(
+        (effectivePreset as { customHeaderLabel?: string } | null)
+          ?.customHeaderLabel || ""
+      ).trim();
+      if (fromPreset) return fromPreset;
+    }
+    const fromState = memberCustomHeaderFromState;
+    if (fromState) return fromState;
+    const fromLive = resolveLivePresetStyleParam(
+      "customHeaderLabel",
+      rawSp,
+      presetParams,
+      { ready }
+    );
+    if (fromLive) return fromLive;
     const fromUrl = (rawSp.get("customHeaderLabel") || "").trim();
     if (fromUrl) return fromUrl;
-    const fromPreset = String((effectivePreset as { customHeaderLabel?: string } | null)?.customHeaderLabel || "").trim();
-    if (fromPreset) return fromPreset;
-    return memberCustomHeaderFromState;
+    return "상벌금";
   })();
   const donationAggregateFromAt = resolveDonationAggregateFromAt(rawSp, effectivePreset, { ready });
   const day777Calc =

@@ -681,6 +681,43 @@ function ClientLocaleTime({
   return <span suppressHydrationWarning>{text}</span>;
 }
 
+function CustomHeaderLabelInput({
+  initialValue,
+  placeholder = "상벌금",
+  onSave,
+}: {
+  initialValue: string;
+  placeholder?: string;
+  onSave: (val: string) => void;
+}) {
+  const [val, setVal] = useState(initialValue);
+  useEffect(() => {
+    setVal(initialValue);
+  }, [initialValue]);
+
+  return (
+    <input
+      className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
+      value={val}
+      placeholder={placeholder}
+      onChange={(e) => setVal(e.target.value)}
+      onBlur={() => {
+        const text = val.replace(/\s+/g, " ").trim();
+        const next = text || placeholder;
+        setVal(next);
+        if (next !== initialValue) {
+          onSave(next);
+        }
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+    />
+  );
+}
+
 function isGoalOnlyOverlayPreset(p: OverlayPreset): boolean {
   return (
     Boolean(p.showGoal) &&
@@ -7242,12 +7279,24 @@ function AdminPageInner() {
   };
 
   const updateMemberCustomHeaderLabel = (label: string) => {
+    const nextLabel = String(label || "").trim() || "상벌금";
     setState((prev: AppState) => {
       const next: AppState = {
         ...prev,
-        memberCustomHeaderLabel: String(label || "").trim() || "상벌금",
+        memberCustomHeaderLabel: nextLabel,
       };
       persistState(next, { omitDonationFields: true, membersAuthoritative: true });
+      return next;
+    });
+    setPresets((prevPresets) => {
+      const next = prevPresets.map((p) => {
+        if (p.customCellLinkMode === "preset") return p;
+        return { ...p, customHeaderLabel: nextLabel };
+      });
+      try {
+        window.localStorage.setItem(presetStorageKey, JSON.stringify(next));
+        notifyOverlayPresetsLocalUpdated();
+      } catch {}
       return next;
     });
   };
@@ -13805,11 +13854,10 @@ function AdminPageInner() {
 
                       <label className="grid grid-cols-1 md:grid-cols-[120px_1fr] items-center gap-2 text-xs text-neutral-300">
                         <span>헤더 이름</span>
-                        <input
-                          className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
-                          value={activeHeaderLabel}
-                          onChange={(e) => {
-                            const val = e.target.value;
+                        <CustomHeaderLabelInput
+                          initialValue={activeHeaderLabel}
+                          placeholder="상벌금"
+                          onSave={(val) => {
                             if (targetPreset) {
                               updatePreset(targetPreset.id, {
                                 customCellLinkMode: "preset",
@@ -13818,8 +13866,8 @@ function AdminPageInner() {
                             } else {
                               updateMemberCustomHeaderLabel(val);
                             }
+                            setGlobalPreviewBump((n) => n + 1);
                           }}
-                          placeholder="상벌금"
                         />
                       </label>
                       <p className="text-[11px] text-neutral-400">
@@ -24207,15 +24255,13 @@ function AdminPageInner() {
 
                                       <label className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2 text-xs text-neutral-300">
                                         <span>커스텀 헤더</span>
-                                        <input
-                                          className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
-                                          value={effectiveHeader}
+                                        <CustomHeaderLabelInput
+                                          initialValue={effectiveHeader}
                                           placeholder="상벌금"
-                                          onChange={(e) => {
-                                            const v = e.target.value;
+                                          onSave={(val) => {
                                             updatePreset(p.id, {
                                               customCellLinkMode: "preset",
-                                              customHeaderLabel: v,
+                                              customHeaderLabel: val,
                                             });
                                             setGlobalPreviewBump((n) => n + 1);
                                           }}
