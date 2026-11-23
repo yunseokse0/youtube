@@ -249,8 +249,9 @@ export function shouldEnableOverlayExcelSplit(
   }
 ): boolean {
   if (!split) return false;
-  if (opts?.adminPreview || opts?.previewGuide) return false;
   if (opts?.tableSplit === false || opts?.excelSplit === false) return false;
+  if (opts?.tableSplit === true || opts?.excelSplit === true) return true;
+  if (opts?.adminPreview || opts?.previewGuide) return false;
   return true;
 }
 

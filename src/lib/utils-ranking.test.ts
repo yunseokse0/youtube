@@ -177,6 +177,12 @@ describe("shouldEnableOverlayExcelSplit", () => {
     expect(shouldEnableOverlayExcelSplit(true, { excelSplit: false })).toBe(false);
     expect(shouldEnableOverlayExcelSplit(true, { tableSplit: true })).toBe(true);
   });
+
+  it("enables split in admin preview when tableSplit is explicitly true", () => {
+    expect(shouldEnableOverlayExcelSplit(true, { previewGuide: true, tableSplit: true })).toBe(true);
+    expect(shouldEnableOverlayExcelSplit(true, { adminPreview: true, tableSplit: true })).toBe(true);
+    expect(shouldEnableOverlayExcelSplit(true, { previewGuide: true, tableSplit: false })).toBe(false);
+  });
 });
 
 describe("sortMembersForRanking", () => {

@@ -4246,9 +4246,24 @@ function OverlayInner() {
     rawTableSplit !== null
       ? rawTableSplit.toLowerCase() === "true" || rawTableSplit === "1"
       : undefined;
-  const tableSplitFromPreset = activePreset?.tableSplit;
+  const tableSplitFromPreset =
+    effectivePreset?.tableSplit ?? activePreset?.tableSplit;
+  const liveTableSplitRaw = resolveLivePresetStyleParam(
+    "tableSplit",
+    rawSp,
+    presetParams,
+    { ready }
+  );
+  const liveTableSplit =
+    liveTableSplitRaw !== null
+      ? liveTableSplitRaw === "true" || liveTableSplitRaw === "1"
+      : undefined;
   const resolvedTableSplit =
-    tableSplitFromUrl ?? tableSplitFromPreset ?? true;
+    liveTableSplit !== undefined
+      ? liveTableSplit
+      : typeof tableSplitFromPreset === "boolean"
+        ? tableSplitFromPreset
+        : (tableSplitFromUrl ?? true);
 
   const excelSplit = splitOverlayListAtHalf(ranked);
   const excelSplitEnabled = shouldEnableOverlayExcelSplit(excelSplit.split, {

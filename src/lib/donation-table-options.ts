@@ -86,6 +86,7 @@ export function mergeDonationTablePresetFields<
   return {
     ...(primary && typeof primary === "object" ? primary : {}),
     showRankColumn: p.showRankColumn ?? f.showRankColumn,
+    showRoleColumn: p.showRoleColumn ?? f.showRoleColumn,
     showAccountColumn: p.showAccountColumn ?? f.showAccountColumn,
     showToonColumn: p.showToonColumn ?? f.showToonColumn,
     showCombinedColumn: p.showCombinedColumn ?? f.showCombinedColumn,
