@@ -92,8 +92,15 @@ export default function DonationListsOverlayPage() {
         mode: "fixed",
         rankPositionLabels: state?.rankPositionLabels || [],
         rankingMetric: state?.memberRankingMetric || "contribution",
+        fixedPositionMemberIds: state?.fixedPositionMemberIds,
       }),
-    [state?.members, state?.memberPositions, state?.rankPositionLabels, state?.memberRankingMetric]
+    [
+      state?.members,
+      state?.memberPositions,
+      state?.rankPositionLabels,
+      state?.memberRankingMetric,
+      state?.fixedPositionMemberIds,
+    ]
   );
 
   if (!ready) return null;

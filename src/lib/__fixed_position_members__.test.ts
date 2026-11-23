@@ -1,108 +1,130 @@
 import { describe, expect, it } from "vitest";
-import { buildRankLinkedMemberPositions } from "./utils";
 import type { Member } from "@/types";
+import {
+  buildOverlayRankedMembers,
+  buildRankLinkedMemberPositions,
+  sortMembersForRanking,
+} from "./utils";
 
-describe("대표 외 특정 멤버 직급 고정 (순위 연동 제외) 기능 검증", () => {
+describe("Fixed position hierarchy and rank exclusion (대표 1번째, 실장 2번째, 순위 제외)", () => {
   const members: Member[] = [
-    { id: "m_rep", name: "자키", account: 0, toon: 0, contribution: 0 },
-    { id: "m_sub", name: "영시리", account: 1000, toon: 0, contribution: 1000 },
-    { id: "m_advisor", name: "초화", account: 5000, toon: 0, contribution: 5000 },
-    { id: "m_normal1", name: "은비", account: 3000, toon: 0, contribution: 3000 },
-    { id: "m_normal2", name: "루아", account: 2000, toon: 0, contribution: 2000 },
+    { id: "zakiexcel", name: "자키", account: 0, toon: 17600, contribution: 17.6 },
+    { id: "ina", name: "이나", account: 0, toon: 141200, contribution: 141.2 },
+    { id: "jina", name: "진아", account: 0, toon: 0, contribution: 0 },
+    { id: "chaerin", name: "채린", account: 0, toon: 0, contribution: 0 },
+    { id: "surin", name: "수린", account: 0, toon: 0, contribution: 0 },
+    { id: "chaeyoung", name: "채영", account: 0, toon: 0, contribution: 0 },
+    { id: "johwa", name: "조화", account: 0, toon: 0, contribution: 0 },
   ];
 
   const positions: Record<string, string> = {
-    m_rep: "대표",
-    m_sub: "부대표",
-    m_advisor: "상임고문",
-    m_normal1: "",
-    m_normal2: "",
+    zakiexcel: "대표",
+    chaerin: "실장",
+    ina: "",
+    jina: "",
+    surin: "",
+    chaeyoung: "",
+    johwa: "",
   };
 
-  const rankLabels = ["대표", "본부장", "팀장", "과장", "사원"];
-
-  it("순위 연동 모드에서 fixedPositionMemberIds에 지정된 멤버는 순위와 무관하게 고정 직급을 유지한다", () => {
-    const roleMap = buildRankLinkedMemberPositions(
+  it("buildOverlayRankedMembers places 대표 1st, 실장 2nd, and excludes both from ranking (rank: null)", () => {
+    const ranked = buildOverlayRankedMembers(
       members,
       positions,
-      rankLabels,
+      (m) => positions[m.id] || "",
+      members,
+      undefined,
+      "contribution",
       {
-        rankingMetric: "contribution",
-        fixedPositionMemberIds: ["m_sub", "m_advisor"],
+        fixedPositionMemberIds: ["chaerin"],
+        memberPositionMode: "rankLinked",
       }
     );
 
-    // 대표는 항상 대표
-    expect(roleMap["m_rep"]).toBe("대표");
+    // 1st: 대표 (자키), rank: null
+    expect(ranked[0].m.name).toBe("자키");
+    expect(ranked[0].rank).toBeNull();
+    expect(ranked[0].isRepresentative).toBe(true);
 
-    // 대표 외 고정 멤버는 순위와 무관하게 설정된 직급 유지
-    expect(roleMap["m_sub"]).toBe("부대표");
-    expect(roleMap["m_advisor"]).toBe("상임고문");
+    // 2nd: 실장 (채린), rank: null (순위에서 제외!)
+    expect(ranked[1].m.name).toBe("채린");
+    expect(ranked[1].rank).toBeNull();
+    expect(ranked[1].isFixedPosition).toBe(true);
 
-    // 나머지 일반 멤버(은비: 3000원 -> 1위 일반멤버, 루아: 2000원 -> 2위 일반멤버)는
-    // 순위에 따라 순차적으로 rankPositionLabels 직급을 부여받음
-    // startIdx = 1 (대표 다음) -> 1위 일반멤버는 labels[1] ("본부장"), 2위 일반멤버는 labels[2] ("팀장")
-    expect(roleMap["m_normal1"]).toBe("본부장");
-    expect(roleMap["m_normal2"]).toBe("팀장");
+    // 3rd: 이나 (기여도 141.2로 순위 경쟁 1위!)
+    expect(ranked[2].m.name).toBe("이나");
+    expect(ranked[2].rank).toBe(1);
+
+    // 4th+: 나머지 멤버들 기여도/생성순 2위부터
+    expect(ranked[3].m.name).toBe("진아");
+    expect(ranked[3].rank).toBe(2);
+
+    expect(ranked[4].m.name).toBe("수린");
+    expect(ranked[4].rank).toBe(3);
+
+    expect(ranked[5].m.name).toBe("채영");
+    expect(ranked[5].rank).toBe(4);
+
+    expect(ranked[6].m.name).toBe("조화");
+    expect(ranked[6].rank).toBe(5);
   });
 
-  it("fixedPositionMemberIds가 비어있으면 기존 순위 연동 로직과 100% 동일하게 동작한다", () => {
-    const roleMap = buildRankLinkedMemberPositions(
+  it("identifies '실장' as fixed position even without explicit fixedPositionMemberIds option", () => {
+    const ranked = buildOverlayRankedMembers(
       members,
       positions,
-      rankLabels,
-      {
-        rankingMetric: "contribution",
-        fixedPositionMemberIds: [],
-      }
+      (m) => positions[m.id] || "",
+      members,
+      undefined,
+      "contribution"
     );
 
-    expect(roleMap["m_rep"]).toBe("대표");
-    // 기여도 순: 초화(5000) > 은비(3000) > 루아(2000) > 영시리(1000)
-    expect(roleMap["m_advisor"]).toBe("본부장"); // 1위
-    expect(roleMap["m_normal1"]).toBe("팀장");   // 2위
-    expect(roleMap["m_normal2"]).toBe("과장");   // 3위
-    expect(roleMap["m_sub"]).toBe("사원");       // 4위
+    expect(ranked[0].m.name).toBe("자키");
+    expect(ranked[0].rank).toBeNull();
+
+    expect(ranked[1].m.name).toBe("채린");
+    expect(ranked[1].rank).toBeNull();
+
+    expect(ranked[2].m.name).toBe("이나");
+    expect(ranked[2].rank).toBe(1);
   });
 
-  it("직급 고정 인원을 제외한 순수 순위 연동 라벨(4개 등)이 직접 주어졌을 때 1위부터 순차 부여된다", () => {
-    // 6명 중 자키(대표), 제인(실장 고정), 나머지 4명(진아, 수린, 재영, 조화) 순위 연동
-    const sixMembers: Member[] = [
-      { id: "m_jaki", name: "자키", account: 0, toon: 0, contribution: 0 },
-      { id: "m_jane", name: "제인", account: 0, toon: 0, contribution: 0 },
-      { id: "m_jina", name: "진아", account: 4000, toon: 0, contribution: 4000 },
-      { id: "m_surin", name: "수린", account: 3000, toon: 0, contribution: 3000 },
-      { id: "m_jaeyoung", name: "재영", account: 2000, toon: 0, contribution: 2000 },
-      { id: "m_johwa", name: "조화", account: 1000, toon: 0, contribution: 1000 },
-    ];
+  it("sortMembersForRanking places 대표 1st, 실장 2nd and gives rank labels only to competing members in rankLinked mode", () => {
+    const rankLabels = ["에이스", "과장", "대리", "사원", "인턴"];
+    const rows = sortMembersForRanking(members, positions, {
+      mode: "rankLinked",
+      rankPositionLabels: rankLabels,
+      fixedPositionMemberIds: ["chaerin"],
+      rankingMetric: "contribution",
+    });
 
-    const sixPositions: Record<string, string> = {
-      m_jaki: "대표",
-      m_jane: "실장",
-    };
+    // 1st: 대표 (자키)
+    expect(rows[0].name).toBe("자키");
+    expect(rows[0].position).toBe("대표");
 
-    // 순위 연동 멤버 4명에게 부여할 4개의 라벨
-    const fourDynamicLabels = ["부대표", "이사", "부장", "과장"];
+    // 2nd: 실장 (채린)
+    expect(rows[1].name).toBe("채린");
+    expect(rows[1].position).toBe("실장");
 
-    const roleMap = buildRankLinkedMemberPositions(
-      sixMembers,
-      sixPositions,
-      fourDynamicLabels,
-      {
-        rankingMetric: "contribution",
-        fixedPositionMemberIds: ["m_jane"],
-      }
-    );
+    // 3rd: 이나 (1위 직급 라벨인 '에이스' 부여)
+    expect(rows[2].name).toBe("이나");
+    expect(rows[2].position).toBe("에이스");
 
-    expect(roleMap["m_jaki"]).toBe("대표");
-    expect(roleMap["m_jane"]).toBe("실장");
-    // 기여도 순: 진아(4000) 1위 -> labels[0]("부대표")
-    expect(roleMap["m_jina"]).toBe("부대표");
-    // 수린(3000) 2위 -> labels[1]("이사")
-    expect(roleMap["m_surin"]).toBe("이사");
-    // 재영(2000) 3위 -> labels[2]("부장")
-    expect(roleMap["m_jaeyoung"]).toBe("부장");
-    // 조화(1000) 4위 -> labels[3]("과장")
-    expect(roleMap["m_johwa"]).toBe("과장");
+    // 4th: 진아 (2위 직급 라벨인 '과장' 부여)
+    expect(rows[3].name).toBe("진아");
+    expect(rows[3].position).toBe("과장");
+  });
+
+  it("buildRankLinkedMemberPositions assigns dynamic labels only to competing members", () => {
+    const rankLabels = ["1등", "2등", "3등", "4등", "5등"];
+    const roleMap = buildRankLinkedMemberPositions(members, positions, rankLabels, {
+      fixedPositionMemberIds: ["chaerin"],
+      rankingMetric: "contribution",
+    });
+
+    expect(roleMap["zakiexcel"]).toBe("대표");
+    expect(roleMap["chaerin"]).toBe("실장");
+    expect(roleMap["ina"]).toBe("1등");
+    expect(roleMap["jina"]).toBe("2등");
   });
 });

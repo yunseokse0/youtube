@@ -4027,12 +4027,11 @@ function OverlayInner() {
     // 대표 외 고정 직급 멤버 반영
     for (const m of members) {
       if (nonDynamicIds.has(m.id)) continue;
-      if (fixedIds.has(m.id)) {
-        const customPos = (memberPositionsMap[m.id] || "").trim();
-        if (customPos) {
-          nonDynamicIds.add(m.id);
-          roleMap[m.id] = customPos;
-        }
+      const customPos = (memberPositionsMap[m.id] || "").trim();
+      const isFixed = fixedIds.has(m.id) || customPos.includes("실장");
+      if (isFixed && customPos) {
+        nonDynamicIds.add(m.id);
+        roleMap[m.id] = customPos;
       }
     }
 
@@ -4198,7 +4197,11 @@ function OverlayInner() {
         getMemberRole,
         members,
         getContributionValueForMember,
-        memberRankingMetric
+        memberRankingMetric,
+        {
+          fixedPositionMemberIds: (s as AppState | null)?.fixedPositionMemberIds,
+          memberPositionMode,
+        }
       ),
     [
       unpinned,
@@ -4207,6 +4210,8 @@ function OverlayInner() {
       members,
       getContributionValueForMember,
       memberRankingMetric,
+      (s as AppState | null)?.fixedPositionMemberIds,
+      memberPositionMode,
     ]
   );
   const donorsForRankFx = useMemo(() => {
@@ -6371,8 +6376,10 @@ function OverlayInner() {
                                 const memberVal = String(memberCustomCellsMap[m.id] || "").trim();
                                 const rankVal =
                                   rowRank != null && rowRank >= 1 ? String(rankCustomCells[rowRank - 1] || "").trim() : "";
+                                const role = (memberPositionsMap[m.id] || "").trim() || getMemberRole(m).trim();
+                                const isRep = !role.includes("부대표") && role.includes("대표");
                                 const repFallback =
-                                  (!rowRank && Array.isArray(rankCustomCells) && rankCustomCells.length > 0)
+                                  (!rowRank && isRep && Array.isArray(rankCustomCells) && rankCustomCells.length > 0)
                                     ? String(rankCustomCells[0] || "").trim()
                                     : "";
                                 const cellText = memberVal || rankVal || repFallback;
@@ -6417,12 +6424,24 @@ function OverlayInner() {
                               {(() => {
                                 const role = (memberPositionsMap[m.id] || "").trim() || getMemberRole(m).trim();
                                 const isRep = !role.includes("부대표") && role.includes("대표");
-                                if (isRep && !hasRoleColumn) {
-                                  return (
-                                    <span className="ml-1 text-[0.8em] font-bold text-amber-300 opacity-90">
-                                      (대표)
-                                    </span>
-                                  );
+                                if (!hasRoleColumn) {
+                                  if (isRep) {
+                                    return (
+                                      <span className="ml-1 text-[0.8em] font-bold text-amber-300 opacity-90">
+                                        (대표)
+                                      </span>
+                                    );
+                                  }
+                                  const isFixed =
+                                    role.includes("실장") ||
+                                    Boolean(((s as AppState | null)?.fixedPositionMemberIds || []).includes(m.id));
+                                  if (role && isFixed) {
+                                    return (
+                                      <span className="ml-1 text-[0.8em] font-semibold text-neutral-300 opacity-80">
+                                        ({role})
+                                      </span>
+                                    );
+                                  }
                                 }
                                 return null;
                               })()}

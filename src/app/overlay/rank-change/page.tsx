@@ -144,9 +144,21 @@ function RankChangeOverlayInner() {
         getMemberRole,
         members,
         undefined,
-        memberRankingMetric
+        memberRankingMetric,
+        {
+          fixedPositionMemberIds: (state as AppState | null)?.fixedPositionMemberIds,
+          memberPositionMode: (state as AppState | null)?.memberPositionMode,
+        }
       ),
-    [unpinned, memberPositionsMap, getMemberRole, members, memberRankingMetric]
+    [
+      unpinned,
+      memberPositionsMap,
+      getMemberRole,
+      members,
+      memberRankingMetric,
+      (state as AppState | null)?.fixedPositionMemberIds,
+      (state as AppState | null)?.memberPositionMode,
+    ]
   );
 
   const { event, clearEvent } = useMemberRankChangeFx({

@@ -203,7 +203,12 @@ export function compareMembersByRankingMetric(
   return compareMembersByContribution(a, b, orderIndex, getContribution);
 }
 
-export type OverlayRankedMember = { m: Member; rank: number | null };
+export type OverlayRankedMember = {
+  m: Member;
+  rank: number | null;
+  isRepresentative?: boolean;
+  isFixedPosition?: boolean;
+};
 
 /** 엑셀표·후원순위: 이 인원 초과(6명~)부터 좌우 스플릿 */
 export const OVERLAY_HALF_SPLIT_MIN_COUNT = 5;
@@ -249,14 +254,18 @@ export function shouldEnableOverlayExcelSplit(
   return true;
 }
 
-/** 엑셀표 오버레이: 대표 최상단 고정 → metric 순위 → 운영비(핀)는 호출측에서 하단 */
+/** 엑셀표 오버레이: 대표 최상단 고정 → 고정 직급(실장 등) 순위 제외 상단 → metric 순위 → 운영비(핀)는 호출측에서 하단 */
 export function buildOverlayRankedMembers(
   unpinnedMembers: Member[],
   memberPositions?: Record<string, string>,
   getMemberRole?: (m: Member) => string,
   allMembersForOrder?: Member[],
   getContribution?: MemberContributionGetter,
-  rankingMetric: MemberRankingMetric = "contribution"
+  rankingMetric: MemberRankingMetric = "contribution",
+  options?: {
+    fixedPositionMemberIds?: string[];
+    memberPositionMode?: MemberPositionMode;
+  }
 ): OverlayRankedMember[] {
   const metric = normalizeMemberRankingMetric(rankingMetric);
   const orderIndex = buildMemberCreationOrderIndex(allMembersForOrder ?? unpinnedMembers);
@@ -268,18 +277,74 @@ export function buildOverlayRankedMembers(
     return role.includes("대표");
   };
   const representative = unpinnedMembers.find(isRep) || null;
-  const rankable = unpinnedMembers.filter((m) => !representative || m.id !== representative.id);
+
+  const fixedIds = new Set(
+    (options?.fixedPositionMemberIds || [])
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
+  );
+
+  const getFixedRolePriority = (role: string): number => {
+    const r = role.trim();
+    if (r.includes("부대표")) return 1;
+    if (r.includes("총괄")) return 2;
+    if (r.includes("실장")) return 3;
+    if (r.includes("이사") || r.includes("상무") || r.includes("전무")) return 4;
+    if (r.includes("본부장") || r.includes("팀장") || r.includes("매니저")) return 5;
+    if (r.includes("고문")) return 6;
+    return 10;
+  };
+
+  // 대표 외 고정 직급 멤버 판별 (순위 연동 제외 및 상단 배치)
+  const isFixedMember = (m: Member): boolean => {
+    if (representative && m.id === representative.id) return false;
+    if (fixedIds.has(m.id)) return true;
+    const role = roleOf(m).trim();
+    if (role) {
+      if (role.includes("실장")) return true;
+      if (options?.memberPositionMode === "fixed" || !options?.memberPositionMode) {
+        // fixed 모드이거나 옵션 미지정 시, 일부 멤버만 직급이 있고 다른 멤버는 비어있으면 고정 직급으로 취급
+        const anyOtherEmpty = unpinnedMembers.some((x) => !isRep(x) && !roleOf(x).trim());
+        if (anyOtherEmpty) return true;
+      }
+    }
+    return false;
+  };
+
+  const fixedMembers = unpinnedMembers.filter(isFixedMember);
+  fixedMembers.sort((a, b) => {
+    const idxA = (options?.fixedPositionMemberIds || []).indexOf(a.id);
+    const idxB = (options?.fixedPositionMemberIds || []).indexOf(b.id);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    const pA = getFixedRolePriority(roleOf(a));
+    const pB = getFixedRolePriority(roleOf(b));
+    if (pA !== pB) return pA - pB;
+    return (orderIndex.get(a.id) ?? 999) - (orderIndex.get(b.id) ?? 999);
+  });
+
+  const nonRankableIds = new Set(fixedMembers.map((m) => m.id));
+  if (representative) nonRankableIds.add(representative.id);
+
+  const rankable = unpinnedMembers.filter((m) => !nonRankableIds.has(m.id));
   const sorted = [...rankable].sort((a, b) =>
     compareMembersByRankingMetric(a, b, metric, orderIndex, getContribution)
   );
-  if (representative) {
-    let currentRank = 1;
-    const repRow: OverlayRankedMember = { m: representative, rank: null };
-    const others = sorted.map((m) => ({ m, rank: currentRank++ }));
-    return [repRow, ...others];
-  }
-  let nextRank = 1;
-  return sorted.map((m) => ({ m, rank: nextRank++ }));
+
+  const repRow: OverlayRankedMember[] = representative
+    ? [{ m: representative, rank: null, isRepresentative: true }]
+    : [];
+
+  const fixedRows: OverlayRankedMember[] = fixedMembers.map((m) => ({
+    m,
+    rank: null,
+    isFixedPosition: true,
+  }));
+
+  let currentRank = 1;
+  const others = sorted.map((m) => ({ m, rank: currentRank++ }));
+  return [...repRow, ...fixedRows, ...others];
 }
 
 /**
@@ -323,8 +388,8 @@ export function buildRankLinkedMemberPositions(
   // 대표 외 고정 직급 멤버 반영
   for (const m of list) {
     if (nonDynamicIds.has(m.id)) continue;
-    if (fixedIds.has(m.id)) {
-      const customPos = String(memberPositions?.[m.id] || "").trim();
+    const customPos = String(memberPositions?.[m.id] || "").trim();
+    if (fixedIds.has(m.id) || customPos.includes("실장")) {
       if (customPos) {
         nonDynamicIds.add(m.id);
         roleMap[m.id] = customPos;
@@ -353,7 +418,7 @@ export function buildRankLinkedMemberPositions(
   return roleMap;
 }
 
-/** 대표는 항상 맨 위 고정, 나머지는 metric 순 (기여도 또는 금액) */
+/** 대표는 항상 맨 위 고정, 고정 직급(실장 등)은 순위 제외 상단 고정, 나머지는 metric 순 (기여도 또는 금액) */
 export function sortMembersForRanking(
   members: Member[],
   memberPositions?: Record<string, string>,
@@ -362,6 +427,7 @@ export function sortMembersForRanking(
     rankPositionLabels?: string[];
     getContribution?: MemberContributionGetter;
     rankingMetric?: MemberRankingMetric;
+    fixedPositionMemberIds?: string[];
   }
 ): MemberRankingRow[] {
   const mode = options?.mode || "fixed";
@@ -393,34 +459,80 @@ export function sortMembersForRanking(
   const sortRows = (list: MemberRankingRow[]) =>
     [...list].sort((a, b) => compareRankingRowsByMetricDesc(a, b, orderIndex, metric));
 
-  if (mode === "rankLinked") {
-    const representative = rows.find((x) => x.isRepresentative) || null;
-    const operating = rows.filter((row) => {
-      const member = (members || []).find((m) => m.id === row.id);
-      return member ? isOperatingMember(member, memberPositions) : false;
-    });
-    const operatingIds = new Set(operating.map((x) => x.id));
-    const others = sortRows(
-      rows.filter((x) => (!representative || x.id !== representative.id) && !operatingIds.has(x.id))
-    );
-    const merged = [...(representative ? [representative] : []), ...others, ...operating];
-    return merged.map((row, idx) => ({
-      ...row,
-      position: row.isRepresentative ? "대표" : rankLabels[idx] || (idx === 0 ? "대표" : ""),
-      isRepresentative: row.isRepresentative || idx === 0,
-    }));
-  }
-
   const representative = rows.find((x) => x.isRepresentative) || null;
   const operating = rows.filter((row) => {
     const member = (members || []).find((m) => m.id === row.id);
     return member ? isOperatingMember(member, memberPositions) : false;
   });
   const operatingIds = new Set(operating.map((x) => x.id));
-  const others = sortRows(
-    rows.filter((x) => (!representative || x.id !== representative.id) && !operatingIds.has(x.id))
+
+  const fixedIds = new Set(
+    (options?.fixedPositionMemberIds || [])
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
   );
 
-  const ordered = [...(representative ? [representative] : []), ...others, ...operating];
-  return ordered;
+  const getFixedRolePriority = (role: string): number => {
+    const r = role.trim();
+    if (r.includes("부대표")) return 1;
+    if (r.includes("총괄")) return 2;
+    if (r.includes("실장")) return 3;
+    if (r.includes("이사") || r.includes("상무") || r.includes("전무")) return 4;
+    if (r.includes("본부장") || r.includes("팀장") || r.includes("매니저")) return 5;
+    if (r.includes("고문")) return 6;
+    return 10;
+  };
+
+  const isFixedRow = (row: MemberRankingRow): boolean => {
+    if (representative && row.id === representative.id) return false;
+    if (operatingIds.has(row.id)) return false;
+    if (fixedIds.has(row.id)) return true;
+    const pos = (row.position || "").trim();
+    if (pos.includes("실장")) return true;
+    if (mode === "fixed" && pos && rows.some((r) => !r.isRepresentative && !operatingIds.has(r.id) && !r.position)) {
+      return true;
+    }
+    return false;
+  };
+
+  const fixedRows = rows.filter(isFixedRow);
+  fixedRows.sort((a, b) => {
+    const idxA = (options?.fixedPositionMemberIds || []).indexOf(a.id);
+    const idxB = (options?.fixedPositionMemberIds || []).indexOf(b.id);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    const pA = getFixedRolePriority(a.position || "");
+    const pB = getFixedRolePriority(b.position || "");
+    if (pA !== pB) return pA - pB;
+    return (orderIndex.get(a.id) ?? 999) - (orderIndex.get(b.id) ?? 999);
+  });
+
+  const nonDynamicIds = new Set(fixedRows.map((x) => x.id));
+  if (representative) nonDynamicIds.add(representative.id);
+
+  const others = sortRows(
+    rows.filter((x) => !nonDynamicIds.has(x.id) && !operatingIds.has(x.id))
+  );
+
+  if (mode === "rankLinked") {
+    const assignedOthers = others.map((row, idx) => ({
+      ...row,
+      position: rankLabels[idx] || "",
+      isRepresentative: false,
+    }));
+    return [
+      ...(representative ? [representative] : []),
+      ...fixedRows,
+      ...assignedOthers,
+      ...operating,
+    ];
+  }
+
+  return [
+    ...(representative ? [representative] : []),
+    ...fixedRows,
+    ...others,
+    ...operating,
+  ];
 }
