@@ -32,7 +32,10 @@ export function normalizeSigRolling(input: unknown): SigRollingSettings {
   const staticHoldMs = Number.isFinite(v.staticHoldMs)
     ? Math.max(1000, Math.min(120_000, Math.floor(Number(v.staticHoldMs))))
     : 5000;
-  return { items, fadeMs, staticHoldMs };
+  const captionNamePx = Number(v.captionNamePx) || 20;
+  const captionPricePx = Number(v.captionPricePx) || 22;
+  const theme = String(v.theme || "default").trim();
+  return { items, fadeMs, staticHoldMs, captionNamePx, captionPricePx, theme };
 }
 
 function normalizeSigRollingMeta(input: unknown): Record<string, SigRollingMetaEntry> {

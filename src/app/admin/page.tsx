@@ -292,6 +292,12 @@ import {
   sigInventoryToExcelRows,
 } from "@/lib/sig-inventory-excel";
 import { repairDiskUploadSigImagePath } from "@/lib/sig-image-mode";
+import {
+  SIG_ROLLING_THEMES,
+  SIG_ROLLING_THEME_IDS,
+  resolveSigRollingTheme,
+  type SigRollingThemeId,
+} from "@/lib/sig-rolling-theme";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
 import {
@@ -415,7 +421,7 @@ import SigSalesCompactCard from "@/components/admin/SigSalesCompactCard";
 import ToonaSigImportPanel from "@/components/admin/ToonaSigImportPanel";
 
 type OverlayPreset = {
-  id: string; name: string; scale: string; memberSize: string; totalSize: string;
+  id: string; name: string; scale: string; tableScale?: string; memberSize: string; totalSize: string;
   layout?: "center-fixed" | "center";
   zoomMode?: "follow" | "invert" | "neutral";
   dense: boolean; anchor: string; tableFree?: boolean; tableX?: string; tableY?: string; autoFont?: boolean; compact?: boolean; tight?: boolean; lockWidth?: boolean; nameGrow?: boolean; nameCh?: string; tableMarginTop?: string; tableMarginRight?: string; tableMarginBottom?: string; tableMarginLeft?: string; autoFit?: "none" | "width" | "height" | "contain" | "cover"; autoFitPin?: "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr"; box?: "full" | "tight"; noCrop?: boolean; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
@@ -4230,7 +4236,7 @@ function AdminPageInner() {
         didPreserve = true;
       }
     }
-    /** 시그 롤링 표시 시간·캡션 크기: 방금 저장한 로컬 값이 원격 기본/구값으로 덮이지 않게 */
+    /** 시그 롤링 표시 시간·캡션 크기·테마: 방금 저장한 로컬 값이 원격 기본/구값으로 덮이지 않게 */
     {
       const localSr = normalizeSigRolling(local.sigRolling);
       const remoteSr = normalizeSigRolling(merged.sigRolling);
@@ -4238,8 +4244,9 @@ function AdminPageInner() {
       const captionDiff =
         localSr.captionNamePx !== remoteSr.captionNamePx ||
         localSr.captionPricePx !== remoteSr.captionPricePx;
+      const themeDiff = Boolean(localSr.theme && localSr.theme !== remoteSr.theme);
       if (
-        (holdDiff || captionDiff) &&
+        (holdDiff || captionDiff || themeDiff) &&
         (pendingUnsyncedRef.current || Date.now() - lastLocalPersistAtRef.current < 12000)
       ) {
         merged = {
@@ -4250,6 +4257,7 @@ function AdminPageInner() {
             fadeMs: localSr.fadeMs,
             captionNamePx: captionDiff ? localSr.captionNamePx : remoteSr.captionNamePx,
             captionPricePx: captionDiff ? localSr.captionPricePx : remoteSr.captionPricePx,
+            theme: themeDiff ? localSr.theme : remoteSr.theme,
           },
         };
         didPreserve = true;
@@ -5997,6 +6005,16 @@ function AdminPageInner() {
   };
   const updatePreset = (id: string, patch: Partial<OverlayPreset>) => {
     const mergedPatch = { ...patch };
+    if (patch.scale !== undefined) {
+      mergedPatch.scale = String(patch.scale);
+      mergedPatch.tableScale = String(patch.scale);
+    }
+    if (patch.tableScale !== undefined) {
+      mergedPatch.tableScale = String(patch.tableScale);
+      if (mergedPatch.scale === undefined) {
+        mergedPatch.scale = String(patch.tableScale);
+      }
+    }
     /** 상단「테마」변경 시 표에 쓰는 멤버·총합 테마도 같이 맞춤(표만 theme만 바뀌고 엑셀 테마가 남는 문제 방지) */
     if (Object.prototype.hasOwnProperty.call(patch, "theme") && patch.theme !== undefined) {
       const nextTheme = String(patch.theme || "default");
@@ -9392,6 +9410,17 @@ function AdminPageInner() {
       ) {
         return prev;
       }
+      const next = { ...prev, sigRolling: nextSr };
+      persistVisualSettings(next, { sigRolling: next.sigRolling });
+      return next;
+    });
+  };
+
+  const setSigRollingTheme = (themeId: string) => {
+    setState((prev) => {
+      const sr = normalizeSigRolling(prev.sigRolling);
+      if (sr.theme === themeId) return prev;
+      const nextSr = normalizeSigRolling({ ...sr, theme: themeId });
       const next = { ...prev, sigRolling: nextSr };
       persistVisualSettings(next, { sigRolling: next.sigRolling });
       return next;
@@ -17373,6 +17402,91 @@ function AdminPageInner() {
                       기본은 「크게」(이름 24 · 금액 28). OBS에서 바로 반영됩니다.
                     </p>
                   </div>
+                  <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-neutral-200">🎨 카드 테마 디자인 (OBS)</span>
+                        <span className="inline-flex items-center gap-1 rounded bg-emerald-950/80 px-2 py-0.5 text-[10px] font-medium text-emerald-300 ring-1 ring-inset ring-emerald-500/30">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          실시간 반영
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-neutral-400">
+                        현재: <strong className="text-amber-300">{resolveSigRollingTheme(state.sigRolling?.theme).label}</strong>
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+                      {SIG_ROLLING_THEME_IDS.map((tid) => {
+                        const themeDef = SIG_ROLLING_THEMES[tid];
+                        const currentThemeId = (state.sigRolling?.theme || "default").trim().toLowerCase() || "default";
+                        const active = currentThemeId === tid;
+
+                        return (
+                          <button
+                            key={tid}
+                            type="button"
+                            onClick={() => setSigRollingTheme(tid)}
+                            className={`group relative flex flex-col items-start rounded-lg border p-2 text-left transition-all ${
+                              active
+                                ? "border-amber-400/90 bg-amber-950/30 shadow-[0_0_14px_rgba(251,191,36,0.22)] ring-1 ring-amber-400/80"
+                                : "border-white/10 bg-neutral-900/60 hover:border-white/25 hover:bg-neutral-800/80"
+                            }`}
+                          >
+                            <div className="flex w-full items-center justify-between gap-1 mb-1.5">
+                              <span className="text-xs font-bold text-neutral-100 group-hover:text-white">
+                                {themeDef.label}
+                              </span>
+                              {themeDef.badge ? (
+                                <span
+                                  className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
+                                    active
+                                      ? "bg-amber-400 text-black"
+                                      : "bg-white/10 text-neutral-300"
+                                  }`}
+                                >
+                                  {themeDef.badge}
+                                </span>
+                              ) : null}
+                            </div>
+
+                            <div
+                              className="w-full h-11 rounded border overflow-hidden flex flex-col justify-end p-1 transition-transform group-hover:scale-[1.02]"
+                              style={{
+                                background: themeDef.shellBg,
+                                borderColor: themeDef.shellBorder,
+                                boxShadow: themeDef.shellShadow,
+                              }}
+                            >
+                              <div
+                                className="w-full rounded px-1.5 py-0.5 flex items-center justify-between text-[10px] leading-tight"
+                                style={{
+                                  background: themeDef.footerBg,
+                                  borderTop: themeDef.footerBorderTop,
+                                }}
+                              >
+                                <span
+                                  className="truncate font-black"
+                                  style={{ color: themeDef.nameColor }}
+                                >
+                                  시그이름
+                                </span>
+                                <span
+                                  className="truncate font-black tabular-nums"
+                                  style={{ color: themeDef.priceColor }}
+                                >
+                                  50만
+                                </span>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[10px] text-neutral-500">
+                      💡 선택한 테마는 OBS 시그 롤링 오버레이(<code>/overlay/sig-rolling</code>)에 새로고침 없이 즉시 적용됩니다.
+                      URL에 <code>?theme=테마명</code>이 있는 경우 해당 URL 파라미터가 최우선됩니다.
+                    </p>
+                  </div>
                 </div>
                 <details open className="rounded border border-white/15 bg-black/25">
                   <summary className="cursor-pointer list-none px-2 py-2 text-xs font-medium text-neutral-300 hover:bg-white/5 [&::-webkit-details-marker]:hidden">
@@ -21766,8 +21880,11 @@ function AdminPageInner() {
                           onClick={(e) => e.stopPropagation()}
                         >
                           <div className="mb-1 flex items-center justify-between text-[11px] text-neutral-400">
-                            <span>엑셀표 스케일(빠른 조절)</span>
-                            <span className="text-neutral-200">{scalePct}%</span>
+                            <div className="flex items-center gap-1.5">
+                              <span>엑셀표 스케일(빠른 조절)</span>
+                              <span className="text-[10px] text-emerald-400 font-medium">⚡ 실시간 반영</span>
+                            </div>
+                            <span className="text-neutral-200 font-bold">{scalePct}%</span>
                           </div>
                           <div className="flex items-center gap-2">
                             <input
@@ -21792,6 +21909,29 @@ function AdminPageInner() {
                               }}
                             />
                             <span className="text-[11px] text-neutral-500">%</span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1 mt-1.5 pt-1 border-t border-white/5">
+                            {[75, 85, 90, 100, 110, 120, 130, 150].map((pct) => (
+                              <button
+                                key={pct}
+                                type="button"
+                                className={`px-1.5 py-0.5 rounded text-[10px] border transition-colors ${
+                                  scalePct === pct
+                                    ? "border-emerald-400 bg-emerald-800/70 text-emerald-100 font-bold"
+                                    : "border-white/10 bg-neutral-800/80 text-neutral-300 hover:bg-neutral-700"
+                                }`}
+                                onClick={() => updatePreset(p.id, { scale: String(pct / 100) })}
+                              >
+                                {pct}%
+                              </button>
+                            ))}
+                            <button
+                              type="button"
+                              className="px-1.5 py-0.5 rounded text-[10px] border border-white/10 bg-neutral-800/80 text-neutral-400 hover:text-white hover:bg-neutral-700"
+                              onClick={() => updatePreset(p.id, { scale: "1" })}
+                            >
+                              초기화
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -23133,7 +23273,13 @@ function AdminPageInner() {
                                   </div>
                                 </>
                               )}
-                              <label className="text-xs text-neutral-400">엑셀표 스케일(%)</label>
+                              <div className="flex items-center justify-between text-xs text-neutral-400">
+                                <div className="flex items-center gap-1.5">
+                                  <span>엑셀표 스케일(%)</span>
+                                  <span className="text-[10px] text-emerald-400 font-medium">⚡ OBS 실시간 반영</span>
+                                </div>
+                                <span className="text-neutral-200 font-bold">{scalePct}%</span>
+                              </div>
                               <div className="flex items-center gap-2">
                                 <input
                                   type="range"
@@ -23157,6 +23303,29 @@ function AdminPageInner() {
                                   }}
                                 />
                                 <span className="text-xs text-neutral-500">%</span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1 mt-1">
+                                {[75, 85, 90, 100, 110, 120, 130, 150].map((pct) => (
+                                  <button
+                                    key={pct}
+                                    type="button"
+                                    className={`px-2 py-0.5 rounded text-[11px] border transition-colors ${
+                                      scalePct === pct
+                                        ? "border-emerald-400 bg-emerald-800/70 text-emerald-100 font-bold"
+                                        : "border-white/10 bg-neutral-800/80 text-neutral-300 hover:bg-neutral-700"
+                                    }`}
+                                    onClick={() => updatePreset(p.id, { scale: String(pct / 100) })}
+                                  >
+                                    {pct}%
+                                  </button>
+                                ))}
+                                <button
+                                  type="button"
+                                  className="px-2 py-0.5 rounded text-[11px] border border-white/10 bg-neutral-800/80 text-neutral-400 hover:text-white hover:bg-neutral-700"
+                                  onClick={() => updatePreset(p.id, { scale: "1" })}
+                                >
+                                  100% 초기화
+                                </button>
                               </div>
                               <label className="text-xs text-neutral-400">표 글꼴</label>
                               <select

@@ -21,6 +21,8 @@ export type OverlayPresetLike = {
   id?: string;
   name?: string;
   scale?: string;
+  tableScale?: string;
+  tableDesign?: string;
   memberSize?: string;
   totalSize?: string;
   layout?: "center-fixed" | "center";
@@ -302,7 +304,9 @@ export type OverlayPresetLike = {
 export function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
   const q = new URLSearchParams();
   if (!preset) return q;
-  q.set("scale", preset.scale || "0.75");
+  const scaleVal = preset.tableScale || preset.scale || "0.75";
+  q.set("scale", scaleVal);
+  q.set("tableScale", scaleVal);
   q.set("memberSize", preset.memberSize || "18");
   q.set("totalSize", preset.totalSize || "40");
   if (preset.layout === "center-fixed" || preset.layout === "center") q.set("layout", "center-fixed");
@@ -594,7 +598,12 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "timerTheme",
   "missionTheme",
   "scale",
+  "tableScale",
+  "tableFit",
   "memberSize",
+  "fontSize",
+  "mSize",
+  "tableFontSize",
   "totalSize",
   "donorsSize",
   "tableBgOpacity",
@@ -789,7 +798,12 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "timerTheme",
   "missionTheme",
   "scale",
+  "tableScale",
+  "tableFit",
   "memberSize",
+  "fontSize",
+  "mSize",
+  "tableFontSize",
   "totalSize",
   "donorsSize",
   "tableBgOpacity",
@@ -1233,7 +1247,12 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "goalLabel",
   "goalWidth",
   "scale",
+  "tableScale",
+  "tableFit",
   "memberSize",
+  "fontSize",
+  "mSize",
+  "tableFontSize",
   "totalSize",
   "donorsFormat",
   "currencyLocale",

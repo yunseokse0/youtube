@@ -634,6 +634,8 @@ export type SigRollingSettings = {
   captionNamePx: number;
   /** 카드 하단 금액 글자 크기(px) */
   captionPricePx: number;
+  /** 시그 롤링 테마 (default, gold, neon-pink, cyber-blue, violet, emerald, amber-warm, glass, clean-white) */
+  theme?: string;
 };
 
 /** 시그 롤링 메타(판매 리스트 기반 통합): 라벨/정렬 순서 */

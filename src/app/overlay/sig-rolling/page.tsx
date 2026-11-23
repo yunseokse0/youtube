@@ -44,10 +44,10 @@ import {
 } from "@/lib/sig-rolling-price-bands";
 import { formatWon } from "@/lib/sig-roulette";
 import {
-  SIG_OVERLAY_CARD_FOOTER_BG,
-  sigOverlayCardNameOutlineStyle,
-  sigOverlayCardPriceOutlineStyle,
-} from "@/components/sig-sales/sig-overlay-card-size";
+  resolveSigRollingTheme,
+  sigRollingThemeTextOutlineStyle,
+  type SigRollingTheme,
+} from "@/lib/sig-rolling-theme";
 
 /** 고정 가로 프레임(300×180) 안 object-contain — 셸 크기 불변 */
 const IMG_IN_FRAME =
@@ -86,12 +86,14 @@ function RollingCardColumn({
   overlayUserId,
   captionNamePx = SIG_ROLLING_CAPTION_NAME_PX_DEFAULT,
   captionPricePx = SIG_ROLLING_CAPTION_PRICE_PX_DEFAULT,
+  theme,
 }: {
   current: SigRollingItem | null;
   pairSide?: "left" | "right";
   overlayUserId?: string;
   captionNamePx?: number;
   captionPricePx?: number;
+  theme: SigRollingTheme;
 }) {
   const namePx = clampSigRollingCaptionNamePx(captionNamePx);
   const pricePx = clampSigRollingCaptionPricePx(captionPricePx);
@@ -149,7 +151,7 @@ function RollingCardColumn({
   if (!visibleSrc && !targetSrc) return null;
 
   const shellBase =
-    "overflow-hidden shadow-lg border border-white/20 bg-white/35 [transform:translateZ(0)] [backface-visibility:hidden]";
+    "overflow-hidden [transform:translateZ(0)] [backface-visibility:hidden]";
   const shellClass =
     pairSide === "left"
       ? `${shellBase} rounded-l-3xl rounded-r-none p-1.5`
@@ -164,6 +166,7 @@ function RollingCardColumn({
     maxWidth: FIXED_SHELL.mediaWidth,
     minHeight: FIXED_SHELL.mediaHeight,
     maxHeight: FIXED_SHELL.mediaHeight,
+    background: theme.mediaBg,
   };
 
   const captionLabel = String(current?.label || "").trim() || "\u00a0";
@@ -183,9 +186,12 @@ function RollingCardColumn({
           display: "flex",
           flexDirection: "column",
           boxSizing: "border-box",
+          border: `1px solid ${theme.shellBorder}`,
+          background: theme.shellBg,
+          boxShadow: theme.shellShadow,
         }}
       >
-        <div className="relative overflow-hidden rounded-t-2xl bg-transparent" style={frameStyle}>
+        <div className="relative overflow-hidden rounded-t-2xl" style={frameStyle}>
           {visibleSrc ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -206,8 +212,8 @@ function RollingCardColumn({
             height: captionH,
             minHeight: captionH,
             maxHeight: captionH,
-            backgroundColor: SIG_OVERLAY_CARD_FOOTER_BG,
-            borderTop: "1px solid rgba(255,255,255,0.22)",
+            background: theme.footerBg,
+            borderTop: theme.footerBorderTop,
             borderBottomLeftRadius: pairSide === "right" ? 0 : 14,
             borderBottomRightRadius: pairSide === "left" ? 0 : 14,
             boxSizing: "border-box",
@@ -216,14 +222,20 @@ function RollingCardColumn({
         >
           <div
             className="w-full truncate font-black leading-tight"
-            style={{ ...sigOverlayCardNameOutlineStyle(namePx), fontSize: namePx }}
+            style={{
+              ...sigRollingThemeTextOutlineStyle(theme.nameColor, theme.nameOutlineColor, namePx),
+              fontSize: namePx,
+            }}
           >
             {captionLabel}
           </div>
           {captionPriceText ? (
             <div
               className="w-full truncate font-black tabular-nums leading-tight"
-              style={{ ...sigOverlayCardPriceOutlineStyle(pricePx), fontSize: pricePx }}
+              style={{
+                ...sigRollingThemeTextOutlineStyle(theme.priceColor, theme.priceOutlineColor, pricePx),
+                fontSize: pricePx,
+              }}
             >
               {captionPriceText}
             </div>
@@ -271,6 +283,9 @@ function SigRollingOverlayInner() {
   );
 
   const rolling = useMemo(() => normalizeSigRolling(state?.sigRolling), [state?.sigRolling]);
+  const themeParam = (sp.get("theme") || "").trim();
+  const themeId = themeParam || rolling.theme || "default";
+  const activeTheme = useMemo(() => resolveSigRollingTheme(themeId), [themeId]);
   const holdMs = resolveSigRollingHoldMs(rolling.staticHoldMs);
   const captionNamePx = rolling.captionNamePx;
   const captionPricePx = rolling.captionPricePx;
@@ -489,6 +504,7 @@ function SigRollingOverlayInner() {
               overlayUserId={overlayUserId}
               captionNamePx={captionNamePx}
               captionPricePx={captionPricePx}
+              theme={activeTheme}
             />
           ) : null}
           {rightCurrent ? (
@@ -498,6 +514,7 @@ function SigRollingOverlayInner() {
               overlayUserId={overlayUserId}
               captionNamePx={captionNamePx}
               captionPricePx={captionPricePx}
+              theme={activeTheme}
             />
           ) : null}
         </div>

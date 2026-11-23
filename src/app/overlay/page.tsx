@@ -2547,7 +2547,8 @@ function OverlayInner() {
   const fitMaxMember = Math.max(fitMinMember, Math.min(80, parseInt(sp.get("fitMaxMember") || (isVertical ? "44" : "24"), 10)));
   // OBS/Prism도 프리셋 scale 핫리로드(`OVERLAY_LIVE_PRESET_STYLE_KEYS`) — 컴팩트 URL에 scale 없음
   const rawUrlScale = (rawSp.get("tableScale") || rawSp.get("scale") || "").trim();
-  const scaleRaw = rawUrlScale || sp.get("tableScale") || sp.get("scale");
+  const livePresetScale = (sp.get("tableScale") || sp.get("scale") || "").trim();
+  const scaleRaw = livePresetScale || rawUrlScale;
   const parsedScale = Math.max(0.5, Math.min(4, parseFloat(scaleRaw || (isVertical ? "1" : (compact ? "0.9" : "1")))));
   const scale = stableMode ? 1 : parsedScale;
   const hasExplicitScale = (scaleRaw || "") !== "";
@@ -4721,6 +4722,10 @@ function OverlayInner() {
       resolveTableThemeContributionColorCss(membersThemeId);
     const excelGoldRankChrome =
       isExcelGoldChrome && !isExcelRankTop3TextMode(excelRankTop3Style.mode);
+    const themeAutoHeaderBgCss = resolveTableThemeHeaderBgCss(membersThemeId);
+    const excelHeaderBgCss = hasTableHeaderBgColorOverride
+      ? applyTableTintToCssColor(tableHeaderBgColorRaw, isPillTableChrome ? 1 : zebraChromeTintAlpha)
+      : applyTableTintToCssColor(themeAutoHeaderBgCss, isPillTableChrome ? 1 : zebraChromeTintAlpha);
     const tablePanelBorderCss =
       tablePanelBorderColorRaw ||
       excelMemberAccent?.panelBorder ||
@@ -4778,10 +4783,6 @@ function OverlayInner() {
     const excelMemberTableClass = excelMemberAccent
       ? `${isExcelLiveTheme ? " excel-live-table" : " excel-member-table"}${isPillTableChrome ? " excel-gold-table" : ""}${excelZebraEnabled ? " excel-zebra-table" : ""}`
       : (isPillTableChrome ? " excel-gold-table excel-zebra-table" : "");
-    const themeAutoHeaderBgCss = resolveTableThemeHeaderBgCss(membersThemeId);
-    const excelHeaderBgCss = hasTableHeaderBgColorOverride
-      ? applyTableTintToCssColor(tableHeaderBgColorRaw, isPillTableChrome ? 1 : zebraChromeTintAlpha)
-      : applyTableTintToCssColor(themeAutoHeaderBgCss, isPillTableChrome ? 1 : zebraChromeTintAlpha);
     const excelHeaderTextCss =
       tableHeaderTextColorRaw ||
       excelMemberAccent?.headerText ||
@@ -4866,10 +4867,7 @@ function OverlayInner() {
       "center center";
     const freezeScaleInExternalHost =
       mobileCanvasFitScale >= 0.999 &&
-      (externalSafeMode ||
-        (externalHost &&
-          !hasExplicitScale &&
-          Math.abs(effectiveScale - 1) < 0.02));
+      Math.abs(effectiveScale - 1) < 0.005;
     const scaleCss = Number.isFinite(effectiveScale)
       ? snapOverlayScaleForCrispLines(Number(effectiveScale))
       : 1;
@@ -5420,7 +5418,6 @@ function OverlayInner() {
           mobileBroadcast
             ? ""
             : `
-        .overlay-root .overlay-scale-target,
         .overlay-root .overlay-elegant-table,
         .overlay-root .overlay-elegant-table tr:not(.overlay-row),
         .overlay-root .overlay-elegant-table td,

@@ -129,6 +129,9 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
         items: (state.sigRolling.items || [])
           .map((x) => `${x.id}\u001f${x.url}`)
           .join("\u001e"),
+        namePx: Math.floor(Number(state.sigRolling.captionNamePx) || 0),
+        pricePx: Math.floor(Number(state.sigRolling.captionPricePx) || 0),
+        theme: String(state.sigRolling.theme || "default").trim(),
       }
     : null;
 

@@ -22,6 +22,7 @@ import {
   isTimerBorderVisuallyHidden,
   isHiddenTimerDisplayStyle,
   restoreTimerBackgroundOpacity,
+  resolveLivePresetStyleParam,
   TIMER_PILL_BORDER_PX,
   stripAdminPreviewHotReloadParams,
   type OverlayPresetLike,
@@ -938,5 +939,26 @@ describe("table column text colors", () => {
     const stripped = stripAdminPreviewHotReloadParams(q);
     expect(stripped.get("showAccountColumn")).toBeNull();
     expect(stripped.get("showToonColumn")).toBeNull();
+  });
+
+  it("handles real-time excel table scale hot-reload and live override", () => {
+    const preset: OverlayPresetLike = {
+      id: "ov_scale_test",
+      scale: "1.25",
+    };
+    const params = presetToParams(preset);
+    expect(params.get("scale")).toBe("1.25");
+    expect(params.get("tableScale")).toBe("1.25");
+
+    const stripped = stripAdminPreviewHotReloadParams(params);
+    expect(stripped.get("scale")).toBeNull();
+    expect(stripped.get("tableScale")).toBeNull();
+
+    // When ready is true, preset scale overrides stale URL scale
+    const rawSp = new URLSearchParams("scale=0.9&tableScale=0.9&host=prism");
+    const liveScale = resolveLivePresetStyleParam("scale", rawSp, params, { ready: true });
+    expect(liveScale).toBe("1.25");
+    const liveTableScale = resolveLivePresetStyleParam("tableScale", rawSp, params, { ready: true });
+    expect(liveTableScale).toBe("1.25");
   });
 });

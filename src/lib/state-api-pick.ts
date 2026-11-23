@@ -208,6 +208,7 @@ export function projectStateForGetPick(
       sigInventory: slimSigInventoryForWire(state.sigInventory, userId),
       sigSalesExcludedIds: state.sigSalesExcludedIds,
       sigSoldOutStampUrl: state.sigSoldOutStampUrl,
+      sigRolling: state.sigRolling,
       sigRollingMeta: state.sigRollingMeta,
       members: (state.members || []).map((m) => ({ id: m.id, name: String(m.name || "") })),
       /** 회전판 오버레이용 — 수동 방송과 분리 */

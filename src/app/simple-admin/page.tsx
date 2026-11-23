@@ -20,6 +20,7 @@ export type OverlayPreset = {
   id: string;
   name: string;
   scale: string;
+  tableScale?: string;
   memberSize: string;
   totalSize: string;
   dense: boolean;

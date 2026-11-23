@@ -169,7 +169,8 @@ export function normalizeSigRolling(input: unknown): SigRollingSettings {
   const captionPricePx = clampSigRollingCaptionPricePx(
     (v as { captionPricePx?: unknown }).captionPricePx
   );
-  return { items, fadeMs, staticHoldMs, captionNamePx, captionPricePx };
+  const theme = String((v as { theme?: unknown }).theme || "default").trim();
+  return { items, fadeMs, staticHoldMs, captionNamePx, captionPricePx, theme };
 }
 
 function normalizeSigRollingMeta(input: unknown): Record<string, SigRollingMetaEntry> {
