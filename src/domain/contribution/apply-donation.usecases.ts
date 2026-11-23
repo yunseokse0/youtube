@@ -10,7 +10,7 @@ import {
   resolveSystemMiddlePushDir,
 } from "@/lib/high-society";
 import { computeContributionPoints, normalizeContributionFormula } from "@/lib/contribution-formula";
-import { mapToMember } from "@/lib/donation/mapper";
+import { mapToMember, extractSeparatedDonorAndMember } from "@/lib/donation/mapper";
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
 import {
   dedupeDonorRows,
@@ -81,7 +81,21 @@ export function applyDonationToAppState(
         event: { ...rawEvent, status: "unmatched" },
       };
     }
-    processedEvent = { ...rawEvent, memberId: manualMemberId, status: "processed" };
+    const separated = extractSeparatedDonorAndMember(rawEvent.donorName || "", currentState.members || [], aliases);
+    const rawMsg = String(rawEvent.message || "").trim();
+    const assignedMember = (currentState.members || []).find((m) => m.id === manualMemberId);
+    processedEvent = {
+      ...rawEvent,
+      memberId: manualMemberId,
+      status: "processed",
+      ...(separated
+        ? {
+            donorName: separated.cleanDonorName,
+            displayName: separated.cleanDonorName,
+            ...(rawMsg ? {} : { message: assignedMember?.name || separated.member.name }),
+          }
+        : {}),
+    };
   } else {
     processedEvent = mapToMember(rawEvent, currentState.members || [], aliases, {
       autoAssignToonPlayer: true,

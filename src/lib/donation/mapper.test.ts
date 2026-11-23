@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mapToMember, pickDefaultToonationMember, pickTopRankedDonationMember } from "./mapper";
+import {
+  extractSeparatedDonorAndMember,
+  mapToMember,
+  pickDefaultToonationMember,
+  pickTopRankedDonationMember,
+} from "./mapper";
 import type { DonationEvent } from "./types";
 import type { Member } from "@/types";
 
@@ -639,5 +644,92 @@ describe("pickDefaultToonationMember", () => {
 
   it("returns undefined when no operating, representative, or treasury", () => {
     expect(pickDefaultToonationMember(members)).toBeUndefined();
+  });
+});
+
+describe("extractSeparatedDonorAndMember & mapToMember automatic donor/member separation", () => {
+  const broadcastMembers: Member[] = [
+    { id: "m1", name: "자키", account: 0, toon: 0, contribution: 0 },
+    { id: "m2", name: "열음", account: 0, toon: 0, contribution: 0 },
+    { id: "m3", name: "수린", account: 0, toon: 0, contribution: 0 },
+  ];
+
+  it("extracts member and cleans donor name from space delimiter: '댕기 수린'", () => {
+    const res = extractSeparatedDonorAndMember("댕기 수린", broadcastMembers);
+    expect(res).not.toBeNull();
+    expect(res?.cleanDonorName).toBe("댕기");
+    expect(res?.member.id).toBe("m3");
+    expect(res?.member.name).toBe("수린");
+  });
+
+  it("extracts member and cleans donor name from multi-word prefix: '대구 댕기 수린'", () => {
+    const res = extractSeparatedDonorAndMember("대구 댕기 수린", broadcastMembers);
+    expect(res).not.toBeNull();
+    expect(res?.cleanDonorName).toBe("대구 댕기");
+    expect(res?.member.name).toBe("수린");
+  });
+
+  it("extracts member from symbols delimiter: '댕기_수린', '댕기-수린', '댕기/수린'", () => {
+    expect(extractSeparatedDonorAndMember("댕기_수린", broadcastMembers)?.cleanDonorName).toBe("댕기");
+    expect(extractSeparatedDonorAndMember("댕기_수린", broadcastMembers)?.member.name).toBe("수린");
+    expect(extractSeparatedDonorAndMember("댕기-수린", broadcastMembers)?.cleanDonorName).toBe("댕기");
+    expect(extractSeparatedDonorAndMember("댕기/수린", broadcastMembers)?.cleanDonorName).toBe("댕기");
+    expect(extractSeparatedDonorAndMember("댕기->수린", broadcastMembers)?.cleanDonorName).toBe("댕기");
+    expect(extractSeparatedDonorAndMember("댕기@수린", broadcastMembers)?.cleanDonorName).toBe("댕기");
+  });
+
+  it("extracts member from bracket formats: '댕기(수린)', '[수린] 댕기'", () => {
+    expect(extractSeparatedDonorAndMember("댕기(수린)", broadcastMembers)?.cleanDonorName).toBe("댕기");
+    expect(extractSeparatedDonorAndMember("댕기(수린)", broadcastMembers)?.member.name).toBe("수린");
+    expect(extractSeparatedDonorAndMember("[수린] 댕기", broadcastMembers)?.cleanDonorName).toBe("댕기");
+    expect(extractSeparatedDonorAndMember("[수린] 댕기", broadcastMembers)?.member.name).toBe("수린");
+  });
+
+  it("does not split single word without delimiters: '수린바라기', '수린'", () => {
+    expect(extractSeparatedDonorAndMember("수린바라기", broadcastMembers)).toBeNull();
+    expect(extractSeparatedDonorAndMember("수린", broadcastMembers)).toBeNull();
+  });
+
+  it("mapToMember: '댕기 수린' with empty message sets donorName='댕기', memberId='m3', and message='수린'", () => {
+    const event: DonationEvent = {
+      id: "toon-1",
+      provider: "toonation",
+      externalId: "ext-1",
+      donorName: "댕기 수린",
+      amount: 160000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "toon",
+      message: "",
+    };
+
+    const mapped = mapToMember(event, broadcastMembers);
+    expect(mapped.memberId).toBe("m3");
+    expect(mapped.donorName).toBe("댕기");
+    expect(mapped.displayName).toBe("댕기");
+    expect(mapped.playerName).toBe("수린");
+    expect(mapped.message).toBe("수린");
+    expect(mapped.status).toBe("processed");
+  });
+
+  it("mapToMember: '댕기 수린' with existing message preserves user message", () => {
+    const event: DonationEvent = {
+      id: "toon-2",
+      provider: "toonation",
+      externalId: "ext-2",
+      donorName: "댕기 수린",
+      amount: 170000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "toon",
+      message: "수린이 힘내라!",
+    };
+
+    const mapped = mapToMember(event, broadcastMembers);
+    expect(mapped.memberId).toBe("m3");
+    expect(mapped.donorName).toBe("댕기");
+    expect(mapped.displayName).toBe("댕기");
+    expect(mapped.message).toBe("수린이 힘내라!");
+    expect(mapped.status).toBe("processed");
   });
 });

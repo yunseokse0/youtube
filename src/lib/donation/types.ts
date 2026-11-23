@@ -23,9 +23,6 @@ export interface DonationEvent {
   recipientName?: string;
   amount: number;
   message?: string;
-  contributionPoints?: number;
-  sigPrice?: number;
-  isSigCredit?: boolean;
   at: string;
   target?: "account" | "toon";
   status: "queued" | "processed" | "failed" | "unmatched";
@@ -78,8 +75,6 @@ export interface Donor {
   at: string;
   target?: "account" | "toon";
   message?: string;
-  contributionPoints?: number;
-  sigPrice?: number;
   isSigCredit?: boolean;
 }
 

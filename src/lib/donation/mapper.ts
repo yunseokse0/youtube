@@ -197,11 +197,117 @@ export function resolveDonorLookupCandidate(event: DonationEvent): string | unde
   return isUsefulDonorLookupName(donor) ? donor : undefined;
 }
 
+function isValidSplitDonorPrefix(prefix: string): boolean {
+  const p = prefix.trim();
+  if (p.length < 1) return false;
+  const norm = normalizeComparableName(p);
+  if (norm === "계좌" || norm === "계좌후원") return false;
+  return true;
+}
+
+export type SeparatedDonorMemberResult = {
+  cleanDonorName: string;
+  member: Member;
+  memberToken: string;
+};
+
+/**
+ * 후원자 닉네임에 멤버명이 함께 들어온 경우 자동 분리
+ * 예: "댕기 수린" → donor: "댕기", member: "수린"
+ *     "댕기_수린", "댕기/수린", "댕기-수린", "댕기(수린)", "[수린] 댕기", "댕기->수린", "댕기@수린"
+ */
+export function extractSeparatedDonorAndMember(
+  rawDonorName: string,
+  members: Member[],
+  aliases: DonorAlias[] = []
+): SeparatedDonorMemberResult | null {
+  const raw = String(rawDonorName || "").trim();
+  if (!raw || !Array.isArray(members) || members.length === 0) return null;
+
+  // 1. Bracket suffix: "댕기(수린)", "댕기 [수린]", "댕기<수린>"
+  const bracketSuffixMatch = raw.match(/^(.*?)\s*[\(\[\{<]\s*([^\)\]\}>]+)\s*[\)\]\}>]\s*$/);
+  if (bracketSuffixMatch) {
+    const prefix = bracketSuffixMatch[1]!.trim();
+    const candidate = bracketSuffixMatch[2]!.trim();
+    if (isValidSplitDonorPrefix(prefix) && candidate) {
+      const matched =
+        matchMemberByName(candidate, members, aliases) ||
+        matchMemberByRelaxedFuzzy(candidate, members, aliases);
+      if (matched) {
+        return {
+          cleanDonorName: prefix,
+          member: matched,
+          memberToken: candidate,
+        };
+      }
+    }
+  }
+
+  // Bracket prefix: "[수린] 댕기", "(수린) 댕기"
+  const bracketPrefixMatch = raw.match(/^\s*[\(\[\{<]\s*([^\)\]\}>]+)\s*[\)\]\}>]\s*(.+)$/);
+  if (bracketPrefixMatch) {
+    const candidate = bracketPrefixMatch[1]!.trim();
+    const suffix = bracketPrefixMatch[2]!.trim();
+    if (isValidSplitDonorPrefix(suffix) && candidate) {
+      const matched =
+        matchMemberByName(candidate, members, aliases) ||
+        matchMemberByRelaxedFuzzy(candidate, members, aliases);
+      if (matched) {
+        return {
+          cleanDonorName: suffix,
+          member: matched,
+          memberToken: candidate,
+        };
+      }
+    }
+  }
+
+  // 2. Explicit arrow / at: "댕기->수린", "댕기>수린", "댕기@수린"
+  const arrowMatch = raw.match(/^(.*?)\s*(?:->|>|@)\s*(.+)$/);
+  if (arrowMatch) {
+    const prefix = arrowMatch[1]!.trim();
+    const suffix = arrowMatch[2]!.trim();
+    if (isValidSplitDonorPrefix(prefix) && suffix) {
+      const matched =
+        matchMemberByName(suffix, members, aliases) ||
+        matchMemberByRelaxedFuzzy(suffix, members, aliases);
+      if (matched) {
+        return {
+          cleanDonorName: prefix,
+          member: matched,
+          memberToken: suffix,
+        };
+      }
+    }
+  }
+
+  // 3. Separator symbols and whitespace: "댕기 수린", "대구 댕기 수린", "댕기_수린", "댕기-수린", "댕기/수린"
+  const lastSepMatch = raw.match(/^(.*?)([\s_/\\,\-:~|]+)([^ \s_/\\,\-:~|]+)$/);
+  if (lastSepMatch) {
+    const prefix = lastSepMatch[1]!.trim().replace(/[\s_/\\,\-:~|]+$/, "").trim();
+    const suffix = lastSepMatch[3]!.trim();
+    if (isValidSplitDonorPrefix(prefix) && suffix) {
+      const matched =
+        matchMemberByName(suffix, members, aliases) ||
+        matchMemberByRelaxedFuzzy(suffix, members, aliases);
+      if (matched) {
+        return {
+          cleanDonorName: prefix,
+          member: matched,
+          memberToken: suffix,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
 /** 입금자명 `후원자_멤버` `후원자-멤버` `후원자/멤버` — 허브가 나누지 못하고 넘긴 멤버 부분 (`->` 제외) */
 function resolveDonorSeparatorCandidates(event: DonationEvent): string[] {
   const donor = String(event.donorName || "").trim();
   return donor
-    .split(/\s*(?:_+|\/|(?<!-)-(?!>))\s*/)
+    .split(/\s*(?:->|>|@|_+|\/|(?<!-)-(?!>)|~|\||:)\s*|\s+/)
     .map((part) => part.trim())
     .filter(Boolean)
     .slice(1);
@@ -445,6 +551,9 @@ export function mapToMember(
   aliases: DonorAlias[] = [],
   opts?: MapToMemberOptions
 ): DonationEvent {
+  const separated = extractSeparatedDonorAndMember(event.donorName || "", members, aliases);
+  const rawMsg = String(event.message || "").trim();
+
   // 1. 후원 대상자(playerName/recipientName)에 명시된 멤버명/별칭의 정확 일치 최우선 평가
   const explicitPlayer = String(event.playerName || event.recipientName || "").trim();
   if (explicitPlayer) {
@@ -454,28 +563,59 @@ export function mapToMember(
         ...event,
         memberId: strictPlayerMatch.id,
         playerName: explicitPlayer,
+        ...(separated
+          ? {
+              donorName: separated.cleanDonorName,
+              displayName: separated.cleanDonorName,
+            }
+          : {}),
         status: "processed",
       };
     }
   }
 
   // 2. 메시지 본문에 멤버명이 정확히 포함된 경우 평가
-  const messageMatched = matchMemberByMessageContains(event.message || "", members);
+  const messageMatched = matchMemberByMessageContains(rawMsg, members);
   if (messageMatched) {
     return {
       ...event,
       memberId: messageMatched.id,
+      ...(separated
+        ? {
+            donorName: separated.cleanDonorName,
+            displayName: separated.cleanDonorName,
+          }
+        : {}),
       status: "processed",
     };
   }
 
   // 3. 메시지 본문 토큰 퍼지 매칭
-  const messageFuzzyMatched = matchMemberByMessageFuzzy(event.message || "", members, aliases);
+  const messageFuzzyMatched = matchMemberByMessageFuzzy(rawMsg, members, aliases);
   if (messageFuzzyMatched) {
     return {
       ...event,
       memberId: messageFuzzyMatched.id,
       memberFuzzyMatched: true,
+      ...(separated
+        ? {
+            donorName: separated.cleanDonorName,
+            displayName: separated.cleanDonorName,
+          }
+        : {}),
+      status: "processed",
+    };
+  }
+
+  if (separated) {
+    return {
+      ...event,
+      memberId: separated.member.id,
+      donorName: separated.cleanDonorName,
+      displayName: separated.cleanDonorName,
+      playerName: event.playerName || separated.member.name,
+      recipientName: event.recipientName || separated.member.name,
+      message: rawMsg || separated.member.name,
       status: "processed",
     };
   }
@@ -553,6 +693,8 @@ export function suggestMemberForDonationEvent(
   if (!Array.isArray(members) || members.length === 0) return undefined;
   const msgMatch = matchMemberByMessageContains(event.message || "", members);
   if (msgMatch) return msgMatch;
+  const separated = extractSeparatedDonorAndMember(event.donorName || "", members, aliases);
+  if (separated) return separated.member;
   for (const lookupName of resolveAllMemberLookupCandidates(event)) {
     const exact = matchMemberByName(lookupName, members, aliases);
     if (exact) return exact;
