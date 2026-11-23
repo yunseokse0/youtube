@@ -34,6 +34,7 @@ import {
 import { sliceDonorListPage } from "@/lib/donor-list-pagination";
 import ToonaHubPanel, { TOONA_HUB_REFRESH_EVENT } from "@/components/admin/ToonaHubPanel";
 import { ZubzubAdminPanel } from "@/components/admin/ZubzubAdminPanel";
+import { TickerAdminPanel } from "@/components/admin/TickerAdminPanel";
 import ContributionFormulaPanel from "@/components/admin/ContributionFormulaPanel";
 import {
   buildSettlementUiOptionsFromForm,
@@ -13790,6 +13791,24 @@ function AdminPageInner() {
                 }
               >
                 <ZubzubAdminPanel
+                  state={state}
+                  onUpdateState={(next) => {
+                    setState(next);
+                    persistState(next, { omitDonationFields: true });
+                  }}
+                  userId={user?.id || ""}
+                />
+              </AdminCollapsibleBlock>
+              <AdminCollapsibleBlock
+                id="block-ticker-settings"
+                title="📢 하단 횡스크롤 전광판 (자막 티커)"
+                className="mt-4 rounded-lg border border-cyan-500/30 bg-neutral-900/40 p-3 space-y-3"
+                defaultOpen={false}
+                headerAside={
+                  <InfoTooltip text="화면 하단에 공지사항, 시그 목록, 룰 안내 등이 오른쪽에서 왼쪽으로 흐르는 실시간 텍스트 오버레이를 설정합니다." />
+                }
+              >
+                <TickerAdminPanel
                   state={state}
                   onUpdateState={(next) => {
                     setState(next);

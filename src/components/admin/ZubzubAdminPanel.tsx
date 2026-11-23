@@ -171,6 +171,41 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
         </button>
       </div>
 
+      {/* OBS 오버레이 연동 안내 & 단독 URL 복사 */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-indigo-500/30 bg-indigo-950/20 px-3 py-2.5 text-[11px]">
+        <div className="flex items-center gap-2 text-neutral-200">
+          <span className="text-base">📺</span>
+          <div>
+            <div className="font-bold text-indigo-300">독립 분리형 줍줍 오버레이 (`/overlay/zubzub`)</div>
+            <div className="text-[11px] text-neutral-400">
+              OBS 브라우저 소스로 등록하여 원하는 위치에 줍줍 배너를 단독으로 띄울 수 있습니다.
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              const origin = typeof window !== "undefined" ? window.location.origin : "";
+              const url = `${origin}/overlay/zubzub?u=${encodeURIComponent(userId)}&host=obs`;
+              navigator.clipboard.writeText(url);
+              alert(`독립 줍줍 오버레이 URL이 복사되었습니다:\n${url}`);
+            }}
+            className="rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 text-white font-bold text-[11px] shadow-sm flex items-center gap-1"
+          >
+            📋 줍줍 오버레이 URL 복사
+          </button>
+          <a
+            href={`/overlay/zubzub?u=${encodeURIComponent(userId)}&host=obs`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded bg-neutral-800 hover:bg-neutral-700 px-2.5 py-1.5 text-neutral-300 border border-white/10 text-[11px] font-medium"
+          >
+            ↗️ 오버레이 열기
+          </a>
+        </div>
+      </div>
+
       {/* 2. 세부 설정 그리드 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 rounded-lg border border-white/10 bg-neutral-950/40 p-3">
         {/* 대표 멤버 선택 */}

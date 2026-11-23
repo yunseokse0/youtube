@@ -31,6 +31,15 @@ export default function DonationTableOptionCheckboxes({
       className={`grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 ${className}`}
       data-donation-table-options="true"
     >
+      <label className={labelClass} title="순위(#1, #2, ...) 열을 표시합니다. 체크 해제 시 순위 열이 숨겨집니다.">
+        <input
+          type="checkbox"
+          className="rounded border-white/20 bg-neutral-900"
+          checked={resolved.showRankColumn}
+          onChange={(e) => onChange({ showRankColumn: e.target.checked })}
+        />
+        순위 열
+      </label>
       <label className={labelClass}>
         <input
           type="checkbox"
@@ -126,6 +135,15 @@ export default function DonationTableOptionCheckboxes({
           onChange={(e) => onChange({ tableSplit: e.target.checked })}
         />
         좌우 2열 분할(6명 이상)
+      </label>
+      <label className={labelClass} title="엑셀표 각 멤버 행을 둥근 알약(Pill Capsule) 카드 스타일로 렌더링합니다.">
+        <input
+          type="checkbox"
+          className="rounded border-white/20 bg-neutral-900"
+          checked={Boolean(resolved.tablePill)}
+          onChange={(e) => onChange({ tablePill: e.target.checked, pillStyle: e.target.checked })}
+        />
+        알약 형태 디자인(Pill)
       </label>
     </div>
   );

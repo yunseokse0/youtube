@@ -70,7 +70,7 @@ describe("대표 시그 줍줍(ZubZub) 엔진 및 원장 격리 테스트", () =
       sigInventory: [
         { id: "sig_1", name: "NO BATIDÃO", price: 130000 },
         { id: "sig_2", name: "러브다이브", price: 50000 },
-      ],
+      ] as any,
       zubzubSettings: {
         enabled: true,
         minSigPrice: 50000,
@@ -89,14 +89,14 @@ describe("대표 시그 줍줍(ZubZub) 엔진 및 원장 격리 테스트", () =
   });
 
   it("2. 대표 시그니처 후원 발생 시 줍줍 큐에 WAITING으로 적재된다", async () => {
-    const repSigEvent: DonationEvent = {
+    const repSigEvent = {
       id: "evt_rep_1",
       donorName: "팬클럽회장",
       amount: 130000,
       memberId: "m_rep",
       at: new Date().toISOString(),
       matchedSigName: "NO BATIDÃO",
-    };
+    } as any as DonationEvent;
 
     const result = await processZubzubDonationHook(userId, repSigEvent, baseState);
     expect(result.action).toBe("enqueued_waiting");
@@ -114,25 +114,25 @@ describe("대표 시그 줍줍(ZubZub) 엔진 및 원장 격리 테스트", () =
 
   it("3. 일반 멤버 시그 발생 시 대기 중인 줍줍 큐를 선착순(CLAIMED) 획득한다", async () => {
     // 1) 먼저 대표 시그로 큐에 적재
-    const repSigEvent: DonationEvent = {
+    const repSigEvent = {
       id: "evt_rep_1",
       donorName: "팬클럽회장",
       amount: 130000,
       memberId: "m_rep",
       at: new Date().toISOString(),
       matchedSigName: "NO BATIDÃO",
-    };
+    } as any as DonationEvent;
     await processZubzubDonationHook(userId, repSigEvent, baseState);
 
     // 2) 진아(memberA)에게 50,000원 시그 후원 발생
-    const memberSigEvent: DonationEvent = {
+    const memberSigEvent = {
       id: "evt_jina_1",
       donorName: "진아팬",
       amount: 50000,
       memberId: "m_jina",
       at: new Date().toISOString(),
       matchedSigName: "러브다이브",
-    };
+    } as any as DonationEvent;
 
     const claimResult = await processZubzubDonationHook(userId, memberSigEvent, baseState);
     expect(claimResult.action).toBe("claimed");
@@ -182,14 +182,14 @@ describe("대표 시그 줍줍(ZubZub) 엔진 및 원장 격리 테스트", () =
   });
 
   it("5. 큐에 대기 중인 대표 시그가 없을 때 일반 멤버 시그는 줍줍 스킵된다", async () => {
-    const memberSigEvent: DonationEvent = {
+    const memberSigEvent = {
       id: "evt_jina_2",
       donorName: "진아팬",
       amount: 50000,
       memberId: "m_jina",
       at: new Date().toISOString(),
       matchedSigName: "러브다이브",
-    };
+    } as any as DonationEvent;
 
     const result = await processZubzubDonationHook(userId, memberSigEvent, baseState);
     expect(result.action).toBe("skipped");
@@ -200,25 +200,25 @@ describe("대표 시그 줍줍(ZubZub) 엔진 및 원장 격리 테스트", () =
 
   it("6. 수동 취소(Rollback) 시 큐 상태가 CANCELED로 바뀌고 가상 도너가 제거된다", async () => {
     // 1) 큐 추가 및 획득
-    const repSigEvent: DonationEvent = {
+    const repSigEvent = {
       id: "evt_rep_1",
       donorName: "팬클럽회장",
       amount: 130000,
       memberId: "m_rep",
       at: new Date().toISOString(),
       matchedSigName: "NO BATIDÃO",
-    };
+    } as any as DonationEvent;
     const enq = await processZubzubDonationHook(userId, repSigEvent, baseState);
     const queueId = (enq as any).queueItem.id;
 
-    const memberSigEvent: DonationEvent = {
+    const memberSigEvent = {
       id: "evt_jina_1",
       donorName: "진아팬",
       amount: 50000,
       memberId: "m_jina",
       at: new Date().toISOString(),
       matchedSigName: "러브다이브",
-    };
+    } as any as DonationEvent;
     const claimedRes = await processZubzubDonationHook(userId, memberSigEvent, baseState);
     const bonusDonor = (claimedRes as any).bonusDonor;
 

@@ -284,7 +284,7 @@ function normalizeDonorRankingsTheme(
       return String(v.amountUnitColor).trim();
     })(),
     hideAmount: (() => {
-      const raw = v.hideAmount;
+      const raw = v.hideAmount as unknown;
       if (raw === true || raw === 1) return true;
       if (raw === false || raw === 0) return false;
       const s = String(raw ?? "").trim().toLowerCase();

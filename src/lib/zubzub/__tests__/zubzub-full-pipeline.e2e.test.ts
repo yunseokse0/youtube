@@ -76,7 +76,7 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
       sigInventory: [
         { id: "sig_1", name: "NO BATIDÃO", price: 130000 },
         { id: "sig_2", name: "러브다이브", price: 50000 },
-      ],
+      ] as any,
       zubzubSettings: {
         enabled: true,
         minSigPrice: 50000,
@@ -89,7 +89,7 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
 
   it("Step 1: 후원 유입 파이프라인 및 대표 시그 줍줍 대기(WAITING) 적재 시뮬레이션", async () => {
     // [후원 1] 대표(자키)에게 130,000원 'NO BATIDÃO' 시그 후원 인제스트 발생
-    const repDonationEvent: DonationEvent = {
+    const repDonationEvent = {
       id: "evt_rep_batidao",
       donorName: "자키회장",
       amount: 130000,
@@ -98,7 +98,7 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
       at: new Date().toISOString(),
       message: "자키 대표님 NO BATIDÃO 가자!",
       matchedSigName: "NO BATIDÃO",
-    };
+    } as any as DonationEvent;
 
     // 1. 기존 후원 적립 처리 (원장 반영)
     const applyRes = applyDonationToAppState(currentState, repDonationEvent);
@@ -130,7 +130,7 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
 
   it("Step 2: 일반 멤버 시그 후원 유입 → 선착순 줍줍(CLAIMED) 및 현금/기여도 원장 격리 검증", async () => {
     // 1) 선행 조건: 대표 시그 130,000원 대기열 적재
-    const repDonationEvent: DonationEvent = {
+    const repDonationEvent = {
       id: "evt_rep_batidao",
       donorName: "자키회장",
       amount: 130000,
@@ -138,13 +138,13 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
       target: "account",
       at: new Date().toISOString(),
       matchedSigName: "NO BATIDÃO",
-    };
+    } as any as DonationEvent;
     const repApply = applyDonationToAppState(currentState, repDonationEvent);
     if (repApply.ok) currentState = repApply.state;
     await processZubzubDonationHook(userId, repDonationEvent, currentState);
 
     // 2) 진아(m_jina)에게 50,000원 '러브다이브' 시그 후원 인제스트 발생
-    const jinaDonationEvent: DonationEvent = {
+    const jinaDonationEvent = {
       id: "evt_jina_lovedive",
       donorName: "진아수호대",
       amount: 50000,
@@ -153,7 +153,7 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
       at: new Date().toISOString(),
       message: "진아 러브다이브 가자!",
       matchedSigName: "러브다이브",
-    };
+    } as any as DonationEvent;
 
     // 진아의 실제 후원 적립
     const jinaApply = applyDonationToAppState(currentState, jinaDonationEvent);
@@ -201,7 +201,7 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
   it("Step 3: 큐 소진 후 다음 멤버 시그 발생 시 추가 보너스 없이 정상 스킵 검증", async () => {
     // 1) 진아가 이미 줍줍을 가져가서 큐가 비어있는 상태에서
     // 수린(m_surin)에게 50,000원 '러브다이브' 시그 후원 발생
-    const surinDonationEvent: DonationEvent = {
+    const surinDonationEvent = {
       id: "evt_surin_lovedive",
       donorName: "수린팬",
       amount: 50000,
@@ -209,7 +209,7 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
       target: "account",
       at: new Date().toISOString(),
       matchedSigName: "러브다이브",
-    };
+    } as any as DonationEvent;
 
     const surinApply = applyDonationToAppState(currentState, surinDonationEvent);
     if (surinApply.ok) currentState = surinApply.state;
@@ -229,23 +229,23 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
 
   it("Step 4: 관리자 수동 취소(Rollback) 시 가상 보너스 즉시 회수 검증", async () => {
     // 1) 큐 추가 및 진아 획득 시뮬레이션
-    const repEvt: DonationEvent = {
+    const repEvt = {
       id: "evt_rep_1",
       donorName: "팬",
       amount: 130000,
       memberId: "m_jaki",
       matchedSigName: "NO BATIDÃO",
-    };
+    } as any as DonationEvent;
     const enq = await processZubzubDonationHook(userId, repEvt, currentState);
     const queueId = (enq as any).queueItem.id;
 
-    const jinaEvt: DonationEvent = {
+    const jinaEvt = {
       id: "evt_jina_1",
       donorName: "팬2",
       amount: 50000,
       memberId: "m_jina",
       matchedSigName: "러브다이브",
-    };
+    } as any as DonationEvent;
     const claimedRes = await processZubzubDonationHook(userId, jinaEvt, currentState);
     const bonusDonor = (claimedRes as any).bonusDonor;
 
@@ -268,13 +268,13 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
 
   it("Step 5: 정산 리셋(Settlement Reset) 시 미수령 줍줍 대기열 일괄 자동 취소 검증", async () => {
     // 1) 대표 시그 130,000원 유입으로 큐에 1건 대기 중
-    const repEvt: DonationEvent = {
+    const repEvt = {
       id: "evt_rep_reset_test",
       donorName: "팬",
       amount: 130000,
       memberId: "m_jaki",
       matchedSigName: "NO BATIDÃO",
-    };
+    } as any as DonationEvent;
     await processZubzubDonationHook(userId, repEvt, currentState);
 
     let waitings = await listWaitingZubzubQueues(userId);

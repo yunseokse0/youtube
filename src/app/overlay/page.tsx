@@ -129,6 +129,7 @@ import {
 } from "@/lib/text-outline-style";
 import { useSSEConnection } from "@/lib/sse-client";
 import { ZubzubOverlayBanner, type ZubzubClaimedEvent } from "@/components/overlay/ZubzubOverlayBanner";
+import { MarqueeTickerOverlay } from "@/components/overlay/MarqueeTickerOverlay";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
 import {
@@ -2742,6 +2743,11 @@ function OverlayInner() {
   const showContributionColumn = resolvePresetBool("showContributionColumn", true);
   const showCustomColumn = resolvePresetBool("showCustomColumn", true);
   const showRoleColumn = resolvePresetBool("showRoleColumn", true);
+  const showRankColumn =
+    resolvePresetBool("showRankColumn", true) &&
+    rawSp.get("hideRank") !== "1" &&
+    rawSp.get("hideRank") !== "true" &&
+    rawSp.get("rank") !== "0";
   const showRestroomColumn = (() => {
     const url = (rawSp.get("showRestroomColumn") || "").toLowerCase();
     if (url === "false") {
@@ -4250,7 +4256,7 @@ function OverlayInner() {
         )
       : 0;
     const cols = [
-      rankColCh,
+      ...(showRankColumn ? [rankColCh] : []),
       ...(showCustomColumn ? [customFit] : []),
       ...(hasRoleColumn ? [roleColFit] : []),
       nameColGridWidth,
@@ -4288,6 +4294,7 @@ function OverlayInner() {
     contributionCh,
     restroomCh,
     showRestroomColumn,
+    showRankColumn,
     getRestroomValueForMember,
     rankColCh,
     members,
@@ -4669,7 +4676,7 @@ function OverlayInner() {
       )
     );
     const excelGridCols = [
-      `${rankColCh}ch`,
+      ...(showRankColumn ? [`${rankColCh}ch`] : []),
       ...(showCustomColumn ? [`${customColEm}em`] : []),
       ...(hasRoleColumn ? [`${roleColEm}em`] : []),
       `${nameColGridWidth}`,
@@ -4681,8 +4688,8 @@ function OverlayInner() {
     ];
     /** 숫자 자리 증가로 표 전체가 밀려 나가지 않도록 너비 상한 고정 */
     const excelTableWidthCalc = excelGridCols.join(" + ");
-    const nameColIndex = 1 + (showCustomColumn ? 1 : 0) + (hasRoleColumn ? 1 : 0);
-    const totalLabelColSpan = 1 + (showCustomColumn ? 1 : 0) + (hasRoleColumn ? 1 : 0) + 1;
+    const nameColIndex = (showRankColumn ? 1 : 0) + (showCustomColumn ? 1 : 0) + (hasRoleColumn ? 1 : 0);
+    const totalLabelColSpan = (showRankColumn ? 1 : 0) + (showCustomColumn ? 1 : 0) + (hasRoleColumn ? 1 : 0) + 1;
     const isExcelLiveTheme = membersThemeId === "excelLive";
     const rawPillStyle =
       rawSp.get("pillStyle") ??
@@ -6145,7 +6152,9 @@ function OverlayInner() {
                   <thead>
                     <tr>
                       {/* 열 순서 고정: 순위 → 커스텀 → 직급 → 이름 → 후원 → 투네 → 합계 → 기여도 → 화장실 */}
-                      <td className={`${effectiveHeaderCls} overlay-col-rank overlay-rank-cell text-center`}>순위</td>
+                      {showRankColumn && (
+                        <td className={`${effectiveHeaderCls} overlay-col-rank overlay-rank-cell text-center`}>순위</td>
+                      )}
                       {showCustomColumn && (
                         <td className={`${effectiveHeaderCls} overlay-col-custom text-center`} style={{ whiteSpace: "nowrap" }}>
                           {customHeaderLabel}
@@ -6185,11 +6194,13 @@ function OverlayInner() {
                             key={m.id}
                             className={`overlay-row overlay-excel-placeholder ${rowMotionEnabled ? "transition-transform will-change-transform" : ""}`}
                           >
-                            <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
-                              <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                {"\u00A0"}
-                              </span>
-                            </td>
+                            {showRankColumn && (
+                              <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
+                                <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                  {"\u00A0"}
+                                </span>
+                              </td>
+                            )}
                             {showCustomColumn && (
                               <td className={`${effectiveRowCls} overlay-col-custom text-center`}>
                                 <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
@@ -6271,32 +6282,34 @@ function OverlayInner() {
                           className={`overlay-row${excelGoldRankCls}${top3TextCls}${top3Row.rowBg ? " overlay-rank-rowbg" : ""} ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
                           style={top3Row.rowBg ? { ["--excel-rank-row-bg" as any]: top3Row.rowBg } as React.CSSProperties : undefined}
                         >
-                          <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
-                            {(() => {
-                              const role = (memberPositionsMap[m.id] || "").trim() || getMemberRole(m).trim();
-                              const isRep = !role.includes("부대표") && role.includes("대표");
-                              const shouldHideRank = rank == null || isRep;
-                              if (shouldHideRank) {
+                          {showRankColumn && (
+                            <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
+                              {(() => {
+                                const role = (memberPositionsMap[m.id] || "").trim() || getMemberRole(m).trim();
+                                const isRep = !role.includes("부대표") && role.includes("대표");
+                                const shouldHideRank = rank == null || isRep;
+                                if (shouldHideRank) {
+                                  return (
+                                    <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                      {" "}
+                                    </span>
+                                  );
+                                }
                                 return (
-                                  <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                    {" "}
+                                  <span
+                                    className={`overlay-cell-text-inner ${top3Row.rankCellClass || ""}`}
+                                    style={mergeRankTop3TextStyle(
+                                      overlayCellOutlineStyle,
+                                      top3Row.gradientText,
+                                      top3Row.rankCellStyle
+                                    )}
+                                  >
+                                    {top3Row.rankLabel}
                                   </span>
                                 );
-                              }
-                              return (
-                                <span
-                                  className={`overlay-cell-text-inner ${top3Row.rankCellClass || ""}`}
-                                  style={mergeRankTop3TextStyle(
-                                    overlayCellOutlineStyle,
-                                    top3Row.gradientText,
-                                    top3Row.rankCellStyle
-                                  )}
-                                >
-                                  {top3Row.rankLabel}
-                                </span>
-                              );
-                            })()}
-                          </td>
+                              })()}
+                            </td>
+                          )}
                           {showCustomColumn && (
                             <td className={`${effectiveRowCls} overlay-col-custom text-center`}>
                               {(() => {
@@ -6431,11 +6444,13 @@ function OverlayInner() {
                         ref={rowMotionEnabled ? setRowRef(m.id + "-p") : undefined}
                         className={`overlay-row ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
                       >
-                        <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
-                          <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                            {" "}
-                          </span>
-                        </td>
+                        {showRankColumn && (
+                          <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
+                            <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                              {" "}
+                            </span>
+                          </td>
+                        )}
                         {showCustomColumn && (
                           <td className={`${effectiveRowCls} overlay-col-custom text-center`}>
                             {memberCustomCellsMap[m.id] ? (
@@ -6751,11 +6766,16 @@ function OverlayInner() {
             style={memberRankChangeStyle}
           />
         ) : null}
-        <ZubzubOverlayBanner
-          waitingItems={s?.zubzubWaitingItems}
-          claimedEvent={zubzubClaimedEvent}
-          onClearClaimedEvent={() => setZubzubClaimedEvent(null)}
-        />
+        {(rawSp.get("zubzub") === "1" || Boolean(s?.zubzubSettings?.embedInMainOverlay)) ? (
+          <ZubzubOverlayBanner
+            waitingItems={s?.zubzubWaitingItems}
+            claimedEvent={zubzubClaimedEvent}
+            onClearClaimedEvent={() => setZubzubClaimedEvent(null)}
+          />
+        ) : null}
+        {(rawSp.get("ticker") === "1" || Boolean(s?.tickerSettings?.enabled)) ? (
+          <MarqueeTickerOverlay settings={s?.tickerSettings} />
+        ) : null}
           </main>
         </div>
       </div>

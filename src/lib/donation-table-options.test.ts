@@ -8,6 +8,7 @@ import {
 describe("donation-table-options", () => {
   it("defaults all columns on when unset", () => {
     expect(resolveDonationTableColumnsOptions(null)).toEqual({
+      showRankColumn: true,
       showRoleColumn: true,
       showAccountColumn: true,
       showToonColumn: true,
@@ -18,6 +19,7 @@ describe("donation-table-options", () => {
       showContributionSum: true,
       showCustomColumn: true,
       tableSplit: true,
+      tablePill: false,
     });
   });
 
@@ -40,6 +42,7 @@ describe("donation-table-options", () => {
 
   it("normalizeDonationTableColumnsOptions stores booleans", () => {
     expect(normalizeDonationTableColumnsOptions({ showContributionSum: false })).toEqual({
+      showRankColumn: true,
       showRoleColumn: true,
       showAccountColumn: true,
       showToonColumn: true,
@@ -50,6 +53,18 @@ describe("donation-table-options", () => {
       showContributionSum: false,
       showCustomColumn: true,
       tableSplit: true,
+      tablePill: false,
+    });
+  });
+
+  it("showRankColumn and tablePill can be toggled", () => {
+    expect(normalizeDonationTableColumnsOptions({ showRankColumn: false, tablePill: true })).toMatchObject({
+      showRankColumn: false,
+      tablePill: true,
+    });
+    expect(resolveDonationTableColumnsOptions({ showRankColumn: false, pillStyle: true })).toMatchObject({
+      showRankColumn: false,
+      tablePill: true,
     });
   });
 

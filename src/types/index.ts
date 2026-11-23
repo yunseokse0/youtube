@@ -105,6 +105,20 @@ export type ZubZubSettings = {
   priorityMode?: "fifo" | "highest";
   representativeMemberId?: string;
   autoExpireMinutes?: number;
+  embedInMainOverlay?: boolean;
+};
+
+export type TickerSettings = {
+  enabled: boolean;
+  badgeText: string;
+  badgeBgColor?: string;
+  badgeTextColor?: string;
+  text: string;
+  speedSec?: number;
+  fontSizePx?: number;
+  textColor?: string;
+  bgColor?: string;
+  bgOpacity?: number;
 };
 
 /** 기여도 계산식 — 저장 이후 후원부터 적용 (소급 없음) */
@@ -329,6 +343,8 @@ export type SigMatchPool = {
 };
 
 export type DonationTableColumnsOptions = {
+  /** 순위 열 표시 (기본 true, false 시 #1, #2 등 순위 숨김) */
+  showRankColumn?: boolean;
   /** 직급 열 표시 (기본 true, false 시 직급 숨김) */
   showRoleColumn?: boolean;
   /** 계좌 열 표시 (기본 true) */
@@ -843,6 +859,8 @@ export type AppState = {
   zubzubSettings?: ZubZubSettings;
   /** 현재 활성 줍줍 대기 큐 스냅샷 */
   zubzubWaitingItems?: ZubZubQueueItem[];
+  /** 화면 하단 횡스크롤 티커(전광판) 설정 */
+  tickerSettings?: TickerSettings;
 };
 
 export type SettlementMemberRatioOverrides = Record<

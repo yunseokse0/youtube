@@ -1,6 +1,7 @@
 import type { DonationTableColumnsOptions } from "@/types";
 
 export type ResolvedDonationTableColumnsOptions = {
+  showRankColumn: boolean;
   showRoleColumn: boolean;
   showAccountColumn: boolean;
   showToonColumn: boolean;
@@ -11,9 +12,11 @@ export type ResolvedDonationTableColumnsOptions = {
   showContributionSum: boolean;
   showCustomColumn: boolean;
   tableSplit: boolean;
+  tablePill: boolean;
 };
 
 export const DEFAULT_DONATION_TABLE_COLUMNS: ResolvedDonationTableColumnsOptions = {
+  showRankColumn: true,
   showRoleColumn: true,
   showAccountColumn: true,
   showToonColumn: true,
@@ -24,6 +27,7 @@ export const DEFAULT_DONATION_TABLE_COLUMNS: ResolvedDonationTableColumnsOptions
   showContributionSum: true,
   showCustomColumn: true,
   tableSplit: true,
+  tablePill: false,
 };
 
 export function resolveDonationTableColumnsOptions(
@@ -38,6 +42,7 @@ export function resolveDonationTableColumnsOptions(
   const defaultRoleCol = isPongdang ? false : DEFAULT_DONATION_TABLE_COLUMNS.showRoleColumn;
   const fb = { ...DEFAULT_DONATION_TABLE_COLUMNS, showRoleColumn: defaultRoleCol, ...fallback };
   return {
+    showRankColumn: opts?.showRankColumn ?? fb.showRankColumn,
     showRoleColumn: opts?.showRoleColumn ?? fb.showRoleColumn,
     showAccountColumn: opts?.showAccountColumn ?? fb.showAccountColumn,
     showToonColumn: opts?.showToonColumn ?? fb.showToonColumn,
@@ -48,6 +53,7 @@ export function resolveDonationTableColumnsOptions(
     showContributionSum: opts?.showContributionSum ?? fb.showContributionSum,
     showCustomColumn: opts?.showCustomColumn ?? fb.showCustomColumn,
     tableSplit: opts?.tableSplit ?? fb.tableSplit,
+    tablePill: (opts?.tablePill ?? opts?.pillStyle) ?? fb.tablePill,
   };
 }
 
@@ -56,6 +62,7 @@ export function normalizeDonationTableColumnsOptions(
 ): DonationTableColumnsOptions {
   const src = input && typeof input === "object" ? input : {};
   return {
+    showRankColumn: src.showRankColumn !== false,
     showRoleColumn: src.showRoleColumn !== false,
     showAccountColumn: src.showAccountColumn !== false,
     showToonColumn: src.showToonColumn !== false,
@@ -66,6 +73,7 @@ export function normalizeDonationTableColumnsOptions(
     showContributionSum: src.showContributionSum !== false,
     showCustomColumn: src.showCustomColumn !== false,
     tableSplit: src.tableSplit !== false,
+    tablePill: src.tablePill === true || src.pillStyle === true,
   };
 }
 
@@ -77,6 +85,7 @@ export function mergeDonationTablePresetFields<
   const f = (fallback && typeof fallback === "object" ? fallback : {}) as DonationTableColumnsOptions;
   return {
     ...(primary && typeof primary === "object" ? primary : {}),
+    showRankColumn: p.showRankColumn ?? f.showRankColumn,
     showAccountColumn: p.showAccountColumn ?? f.showAccountColumn,
     showToonColumn: p.showToonColumn ?? f.showToonColumn,
     showCombinedColumn: p.showCombinedColumn ?? f.showCombinedColumn,
@@ -86,10 +95,13 @@ export function mergeDonationTablePresetFields<
     showContributionSum: p.showContributionSum ?? f.showContributionSum,
     showCustomColumn: p.showCustomColumn ?? f.showCustomColumn,
     tableSplit: p.tableSplit ?? f.tableSplit,
+    tablePill: (p.tablePill ?? p.pillStyle) ?? (f.tablePill ?? f.pillStyle),
   } as T;
 }
 
 const DONATION_TABLE_BOOL_KEYS = new Set([
+  "showRankColumn",
+  "showRoleColumn",
   "showAccountColumn",
   "showToonColumn",
   "showCombinedColumn",
@@ -99,6 +111,8 @@ const DONATION_TABLE_BOOL_KEYS = new Set([
   "showContributionSum",
   "showCustomColumn",
   "tableSplit",
+  "tablePill",
+  "pillStyle",
 ]);
 
 export function isDonationTableBoolKey(key: string): boolean {
