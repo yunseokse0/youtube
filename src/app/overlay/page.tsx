@@ -2469,25 +2469,8 @@ function OverlayInner() {
     () => ((ready && s && (s as AppState).memberPositionMode === "rankLinked") ? "rankLinked" : "fixed"),
     [ready, s]
   );
-  const memberCustomCellsMap = useMemo<Record<string, string>>(
-    () =>
-      ready && s && typeof (s as AppState).memberCustomCells === "object"
-        ? ((s as AppState).memberCustomCells || {})
-        : {},
-    [ready, s]
-  );
-  const memberCustomHeaderFromState = useMemo(
-    () =>
-      String((ready && s && (s as AppState).memberCustomHeaderLabel) || "")
-        .trim() || "상벌금",
-    [ready, s]
-  );
   const rankPositionLabels = useMemo<string[]>(
     () => ((ready && s && Array.isArray((s as AppState).rankPositionLabels)) ? (s as AppState).rankPositionLabels : []),
-    [ready, s]
-  );
-  const rankCustomCells = useMemo<string[]>(
-    () => ((ready && s && Array.isArray((s as AppState).rankCustomCells)) ? ((s as AppState).rankCustomCells as string[]) : []),
     [ready, s]
   );
   const presetId = (rawSp.get("p") || "").trim();
@@ -2512,6 +2495,42 @@ function OverlayInner() {
   }
   const effectivePreset = activePreset || lastStablePresetRef.current;
   const presetParams = useMemo(() => presetToParams(effectivePreset), [effectivePreset]);
+
+  /** 엑셀표(프리셋)별 커스텀 열 연동 — 프리셋에 설정되어 있으면 프리셋 값 우선, 없으면 전역 state 연동 */
+  const memberCustomCellsMap = useMemo<Record<string, string>>(() => {
+    if (
+      effectivePreset &&
+      (effectivePreset as any).customCellLinkMode !== "global" &&
+      typeof (effectivePreset as any).memberCustomCells === "object" &&
+      (effectivePreset as any).memberCustomCells &&
+      Object.keys((effectivePreset as any).memberCustomCells).length > 0
+    ) {
+      return (effectivePreset as any).memberCustomCells;
+    }
+    return ready && s && typeof (s as AppState).memberCustomCells === "object"
+      ? ((s as AppState).memberCustomCells || {})
+      : {};
+  }, [ready, s, effectivePreset]);
+
+  const memberCustomHeaderFromState = useMemo<string>(() => {
+    if (effectivePreset && (effectivePreset as any).customCellLinkMode !== "global") {
+      const fromPreset = String((effectivePreset as any)?.customHeaderLabel || "").trim();
+      if (fromPreset) return fromPreset;
+    }
+    return String((ready && s && (s as AppState).memberCustomHeaderLabel) || "").trim() || "상벌금";
+  }, [ready, s, effectivePreset]);
+
+  const rankCustomCells = useMemo<string[]>(() => {
+    if (
+      effectivePreset &&
+      (effectivePreset as any).customCellLinkMode !== "global" &&
+      Array.isArray((effectivePreset as any).rankCustomCells) &&
+      (effectivePreset as any).rankCustomCells.length > 0
+    ) {
+      return (effectivePreset as any).rankCustomCells as string[];
+    }
+    return ((ready && s && Array.isArray((s as AppState).rankCustomCells)) ? ((s as AppState).rankCustomCells as string[]) : []);
+  }, [ready, s, effectivePreset]);
   const hostParam = (rawSp.get("host") || "").toLowerCase();
   const externalHost = hostParam === "prism" || hostParam === "obs" || hostParam === "external";
   const sp = useMemo(

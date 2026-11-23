@@ -438,6 +438,9 @@ type OverlayPreset = {
   showCustomColumn?: boolean;
   showRoleColumn?: boolean;
   customHeaderLabel?: string;
+  rankCustomCells?: string[];
+  memberCustomCells?: Record<string, string>;
+  customCellLinkMode?: "global" | "preset";
   /** 엑셀표 후원 집계 시작(epoch ms 문자열). 비우면 전체 */
   donationAggregateFromAt?: string;
   /** 777데이 계산 — 퐁당퐁당 엑셀만. 기존 엑셀은 후원 금액=기여도 */
@@ -2081,6 +2084,7 @@ function AdminPageInner() {
   const [mealBattleFromAt, setMealBattleFromAt] = useState("");
   const [sigMatchFromAt, setSigMatchFromAt] = useState("");
   const [pongdangFromAtInput, setPongdangFromAtInput] = useState("");
+  const [customCellTargetPresetId, setCustomCellTargetPresetId] = useState<string>("");
   useEffect(() => {
     setMealBattleFromAt((prev) => prev || formatMealBattleFromAtInput(Date.now()));
     setSigMatchFromAt((prev) => prev || formatMealBattleFromAtInput(Date.now()));
@@ -13559,45 +13563,191 @@ function AdminPageInner() {
                     })}
                   </div>
                 </div>
-                <div className="rounded border border-white/10 bg-black/20 p-2 space-y-2">
-                  <div className="text-xs text-neutral-400">커스텀 열 (순위 다음 · 상벌금 등)</div>
-                  <label className="grid grid-cols-1 md:grid-cols-[120px_1fr] items-center gap-2 text-xs text-neutral-300">
-                    <span>헤더 이름</span>
-                    <input
-                      className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
-                      value={state.memberCustomHeaderLabel ?? "상벌금"}
-                      onChange={(e) => updateMemberCustomHeaderLabel(e.target.value)}
-                      placeholder="상벌금"
-                    />
-                  </label>
-                  <p className="text-[11px] text-neutral-400">
-                    순위별(1위~{Math.max(1, state.members.length)}위 · 멤버 {state.members.length}명) 상벌금·메모입니다. 순위 변동 시 1위에게 1위 메모가 실시간으로 반영됩니다.
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {Array.from({ length: Math.max(1, state.members.length) }).map((_, idx) => {
-                      const rankNum = idx + 1;
-                      const val = state.rankCustomCells?.[idx] || "";
-                      return (
-                        <label
-                          key={`rank-custom-cell-${rankNum}`}
-                          className="grid grid-cols-[80px_1fr] items-center gap-2 text-xs text-neutral-300 rounded border border-white/10 bg-black/20 px-2 py-1.5"
-                        >
-                          <span className="font-semibold text-amber-400">{rankNum}위</span>
-                          <input
-                            className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
-                            defaultValue={val}
-                            key={`rank-custom-cell-input-${rankNum}-${val}`}
-                            onBlur={(e) => updateRankCustomCell(idx, e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                            }}
-                            placeholder="+100만원 / 메모"
-                          />
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
+                {/* 📌 커스텀 열 (순위 다음 · 상벌금 등) — 엑셀표별 개별 연동 및 공통 연동 지원 */}
+                {(() => {
+                  const targetPreset = customCellTargetPresetId
+                    ? presets.find((p) => p.id === customCellTargetPresetId)
+                    : null;
+                  const isDedicated = Boolean(
+                    targetPreset &&
+                      (targetPreset.customCellLinkMode === "preset" ||
+                        (Array.isArray(targetPreset.rankCustomCells) && targetPreset.rankCustomCells.length > 0) ||
+                        Boolean(targetPreset.customHeaderLabel))
+                  );
+                  const activeHeaderLabel = targetPreset
+                    ? isDedicated
+                      ? (targetPreset.customHeaderLabel ?? "상벌금")
+                      : (state.memberCustomHeaderLabel ?? "상벌금")
+                    : (state.memberCustomHeaderLabel ?? "상벌금");
+                  const activeRankCells = targetPreset
+                    ? isDedicated
+                      ? (targetPreset.rankCustomCells || [])
+                      : (state.rankCustomCells || [])
+                    : (state.rankCustomCells || []);
+
+                  return (
+                    <div className="rounded border border-white/10 bg-black/20 p-3 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-amber-300">📊 적용할 엑셀표 선택:</span>
+                          <select
+                            className="rounded bg-neutral-900 border border-white/20 px-2.5 py-1 text-xs text-white font-medium"
+                            value={customCellTargetPresetId}
+                            onChange={(e) => setCustomCellTargetPresetId(e.target.value)}
+                          >
+                            <option value="">🌐 전체 엑셀표 공통 연동 (기본값)</option>
+                            {presets.map((pr) => {
+                              const hasDedicated = Boolean(
+                                pr.customCellLinkMode === "preset" ||
+                                  (Array.isArray(pr.rankCustomCells) && pr.rankCustomCells.length > 0) ||
+                                  Boolean(pr.customHeaderLabel)
+                              );
+                              return (
+                                <option key={pr.id} value={pr.id}>
+                                  {pr.name} {hasDedicated ? "(⭐ 개별 설정됨)" : "(🔗 공통 연동)"}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
+
+                        {/* 연동 상태 배지 & 분리/동기화 버튼 */}
+                        <div className="flex items-center gap-2">
+                          {!targetPreset ? (
+                            <span className="text-[11px] text-neutral-400 bg-neutral-800/80 px-2.5 py-0.5 rounded border border-white/10">
+                              🌐 모든 엑셀표에 공통으로 적용됩니다.
+                            </span>
+                          ) : isDedicated ? (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[11px] text-amber-300 font-semibold bg-amber-950/40 px-2.5 py-0.5 rounded border border-amber-500/30">
+                                ⭐ [{targetPreset.name}] 전용 커스텀열
+                              </span>
+                              <button
+                                type="button"
+                                className="text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-2 py-0.5 rounded border border-white/10 transition"
+                                title="전체 공통 커스텀열 내용을 이 엑셀표로 덮어씁니다."
+                                onClick={() => {
+                                  if (confirm("전체 공통 커스텀열의 헤더명과 순위별 메모를 이 엑셀표로 복사하시겠습니까?")) {
+                                    updatePreset(targetPreset.id, {
+                                      customCellLinkMode: "preset",
+                                      customHeaderLabel: state.memberCustomHeaderLabel ?? "상벌금",
+                                      rankCustomCells: [...(state.rankCustomCells || [])],
+                                    });
+                                  }
+                                }}
+                              >
+                                🔄 공통 값 복사
+                              </button>
+                              <button
+                                type="button"
+                                className="text-[10px] bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 px-2 py-0.5 rounded border border-rose-500/30 transition"
+                                title="이 엑셀표의 개별 설정을 초기화하고 전체 공통 연동으로 되돌립니다."
+                                onClick={() => {
+                                  if (confirm(`[${targetPreset.name}]의 개별 커스텀열 설정을 삭제하고 전체 공통 연동으로 되돌리시겠습니까?`)) {
+                                    updatePreset(targetPreset.id, {
+                                      customCellLinkMode: "global",
+                                      customHeaderLabel: undefined,
+                                      rankCustomCells: undefined,
+                                      memberCustomCells: undefined,
+                                    });
+                                  }
+                                }}
+                              >
+                                🔗 전체 공통 연동으로 되돌리기
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] text-neutral-400 bg-neutral-800/80 px-2.5 py-0.5 rounded border border-white/10">
+                                🔗 전체 공통 연동 중
+                              </span>
+                              <button
+                                type="button"
+                                className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-2.5 py-0.5 rounded border border-indigo-400/40 transition shadow-sm"
+                                onClick={() => {
+                                  updatePreset(targetPreset.id, {
+                                    customCellLinkMode: "preset",
+                                    customHeaderLabel: state.memberCustomHeaderLabel ?? "상벌금",
+                                    rankCustomCells: [...(state.rankCustomCells || [])],
+                                  });
+                                }}
+                              >
+                                ✏️ 이 엑셀표 전용으로 개별 분리
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <label className="grid grid-cols-1 md:grid-cols-[120px_1fr] items-center gap-2 text-xs text-neutral-300">
+                        <span>헤더 이름</span>
+                        <input
+                          className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
+                          value={activeHeaderLabel}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (targetPreset) {
+                              updatePreset(targetPreset.id, {
+                                customCellLinkMode: "preset",
+                                customHeaderLabel: val,
+                              });
+                            } else {
+                              updateMemberCustomHeaderLabel(val);
+                            }
+                          }}
+                          placeholder="상벌금"
+                        />
+                      </label>
+                      <p className="text-[11px] text-neutral-400">
+                        {targetPreset
+                          ? isDedicated
+                            ? `[${targetPreset.name}] 엑셀표 전용 순위별(1위~${Math.max(1, state.members.length)}위) 상벌금·메모입니다. 순위 변동 시 1위에게 1위 메모가 실시간으로 반영됩니다.`
+                            : `현재 전체 공통 연동 중입니다. 아래 메모를 수정하면 [${targetPreset.name}] 전용 커스텀열로 자동 저장됩니다.`
+                          : `순위별(1위~${Math.max(1, state.members.length)}위 · 멤버 ${state.members.length}명) 상벌금·메모입니다. 순위 변동 시 1위에게 1위 메모가 실시간으로 반영됩니다.`}
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {Array.from({ length: Math.max(1, state.members.length) }).map((_, idx) => {
+                          const rankNum = idx + 1;
+                          const val = activeRankCells?.[idx] || "";
+                          return (
+                            <label
+                              key={`rank-custom-cell-${customCellTargetPresetId || "global"}-${rankNum}`}
+                              className="grid grid-cols-[80px_1fr] items-center gap-2 text-xs text-neutral-300 rounded border border-white/10 bg-black/20 px-2 py-1.5"
+                            >
+                              <span className="font-semibold text-amber-400">{rankNum}위</span>
+                              <input
+                                className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
+                                defaultValue={val}
+                                key={`rank-custom-cell-input-${customCellTargetPresetId || "global"}-${rankNum}-${val}`}
+                                onBlur={(e) => {
+                                  const text = String(e.target.value || "").replace(/\s+/g, " ").trim().slice(0, 48);
+                                  if (targetPreset) {
+                                    const memberCount = Math.max(1, state.members.length);
+                                    const current = Array.isArray(targetPreset.rankCustomCells)
+                                      ? [...targetPreset.rankCustomCells]
+                                      : [...(state.rankCustomCells || [])];
+                                    while (current.length < memberCount) current.push("");
+                                    current[idx] = text;
+                                    updatePreset(targetPreset.id, {
+                                      customCellLinkMode: "preset",
+                                      rankCustomCells: current,
+                                    });
+                                  } else {
+                                    updateRankCustomCell(idx, text);
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                }}
+                                placeholder="+100만원 / 메모"
+                              />
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {state.members.map((m) => {
                     const isRep = state.memberPositions?.[m.id] === "대표";
@@ -23848,64 +23998,164 @@ function AdminPageInner() {
                                     열 순서: 순위 → 커스텀 → 직급 → 이름 → 후원 → 투네 → (합계) → (기여도) → (화장실). 「후원합계」는 계좌+투네 합 열입니다.
                                   </p>
                                 </div>
-                                {(p.showCustomColumn !== false) && (
-                                  <div className="rounded border border-white/10 bg-black/20 p-2 space-y-2">
-                                    <div className="text-xs text-neutral-300 font-medium">커스텀 열(상벌금 등)</div>
-                                    <label className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2 text-xs text-neutral-300">
-                                      <span>커스텀 헤더</span>
-                                      <input
-                                        className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
-                                        value={
-                                          (p.customHeaderLabel && String(p.customHeaderLabel).trim()) ||
-                                          state.memberCustomHeaderLabel ||
-                                          ""
-                                        }
-                                        placeholder="상벌금"
-                                        onChange={(e) => {
-                                          const v = e.target.value;
-                                          updatePreset(p.id, { customHeaderLabel: v });
-                                          updateMemberCustomHeaderLabel(v);
-                                        }}
-                                      />
-                                    </label>
-                                    <p className="text-[10px] text-neutral-400">
-                                      각 멤버별 상벌금·메모입니다. 멤버를 제외하거나 순위가 바뀌어도 해당 멤버의 상벌금이 날아가지 않고 안전하게 유지됩니다.
-                                    </p>
-                                    <div className="space-y-2">
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                        {state.members.map((m, idx) => {
-                                          const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
-                                          const val = (state.memberCustomCells && state.memberCustomCells[m.id]) ?? state.rankCustomCells?.[idx] ?? "";
-                                          return (
-                                            <label
-                                              key={`overlay-custom-member-cell-${p.id}-${m.id}`}
-                                              className="grid grid-cols-[80px_1fr] items-center gap-2 text-xs text-neutral-300 rounded border border-white/10 bg-black/20 px-2 py-1.5"
+                                {(p.showCustomColumn !== false) && (() => {
+                                  const isPresetDedicated = Boolean(
+                                    p.customCellLinkMode === "preset" ||
+                                      (Array.isArray(p.rankCustomCells) && p.rankCustomCells.length > 0) ||
+                                      Boolean(p.customHeaderLabel)
+                                  );
+                                  const effectiveHeader = isPresetDedicated
+                                    ? (p.customHeaderLabel ?? "상벌금")
+                                    : (state.memberCustomHeaderLabel ?? "상벌금");
+
+                                  return (
+                                    <div className="rounded border border-white/10 bg-black/20 p-2.5 space-y-2.5">
+                                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
+                                        <div className="text-xs text-neutral-300 font-semibold flex items-center gap-1.5">
+                                          <span>커스텀 열(상벌금 등)</span>
+                                          {isPresetDedicated ? (
+                                            <span className="text-[10px] text-amber-300 bg-amber-950/40 px-2 py-0.5 rounded border border-amber-500/30 font-bold">
+                                              ⭐ 이 엑셀표 전용
+                                            </span>
+                                          ) : (
+                                            <span className="text-[10px] text-neutral-400 bg-neutral-800 px-2 py-0.5 rounded border border-white/10">
+                                              🔗 전체 공통 연동
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                          {isPresetDedicated ? (
+                                            <>
+                                              <button
+                                                type="button"
+                                                className="text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-2 py-0.5 rounded border border-white/10 transition"
+                                                onClick={() => {
+                                                  if (confirm("전체 공통 커스텀열 내용을 이 엑셀표로 복사하시겠습니까?")) {
+                                                    updatePreset(p.id, {
+                                                      customCellLinkMode: "preset",
+                                                      customHeaderLabel: state.memberCustomHeaderLabel ?? "상벌금",
+                                                      rankCustomCells: [...(state.rankCustomCells || [])],
+                                                      memberCustomCells: { ...(state.memberCustomCells || {}) },
+                                                    });
+                                                    setGlobalPreviewBump((n) => n + 1);
+                                                  }
+                                                }}
+                                              >
+                                                🔄 공통 값 복사
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="text-[10px] bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 px-2 py-0.5 rounded border border-rose-500/30 transition"
+                                                onClick={() => {
+                                                  if (confirm("이 엑셀표의 개별 설정을 삭제하고 전체 공통 연동으로 되돌리시겠습니까?")) {
+                                                    updatePreset(p.id, {
+                                                      customCellLinkMode: "global",
+                                                      customHeaderLabel: undefined,
+                                                      rankCustomCells: undefined,
+                                                      memberCustomCells: undefined,
+                                                    });
+                                                    setGlobalPreviewBump((n) => n + 1);
+                                                  }
+                                                }}
+                                              >
+                                                🔗 전체 공통 연동으로 복귀
+                                              </button>
+                                            </>
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-2.5 py-0.5 rounded border border-indigo-400/30 transition shadow-sm"
+                                              onClick={() => {
+                                                updatePreset(p.id, {
+                                                  customCellLinkMode: "preset",
+                                                  customHeaderLabel: state.memberCustomHeaderLabel ?? "상벌금",
+                                                  rankCustomCells: [...(state.rankCustomCells || [])],
+                                                  memberCustomCells: { ...(state.memberCustomCells || {}) },
+                                                });
+                                                setGlobalPreviewBump((n) => n + 1);
+                                              }}
                                             >
-                                              <span className="font-semibold text-neutral-200 truncate" title={m.name}>
-                                                {m.name}{role ? `(${role})` : ""}
-                                              </span>
-                                              <input
-                                                className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1 text-xs"
-                                                defaultValue={val}
-                                                key={`overlay-custom-member-input-${p.id}-${m.id}-${val}`}
-                                                onBlur={(e) => {
-                                                  const v = e.target.value;
-                                                  updateMemberCustomCell(m.id, v);
-                                                  updateRankCustomCell(idx, v);
-                                                  setGlobalPreviewBump((n) => n + 1);
-                                                }}
-                                                onKeyDown={(e) => {
-                                                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                                                }}
-                                                placeholder="+100만원 / 메모"
-                                              />
-                                            </label>
-                                          );
-                                        })}
+                                              ✏️ 이 엑셀표 전용으로 개별 설정
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <label className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2 text-xs text-neutral-300">
+                                        <span>커스텀 헤더</span>
+                                        <input
+                                          className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
+                                          value={effectiveHeader}
+                                          placeholder="상벌금"
+                                          onChange={(e) => {
+                                            const v = e.target.value;
+                                            updatePreset(p.id, {
+                                              customCellLinkMode: "preset",
+                                              customHeaderLabel: v,
+                                            });
+                                            setGlobalPreviewBump((n) => n + 1);
+                                          }}
+                                        />
+                                      </label>
+                                      <p className="text-[10px] text-neutral-400">
+                                        {isPresetDedicated
+                                          ? `[${p.name}] 엑셀표 전용 메모입니다. 아래를 수정하면 이 엑셀표에만 적용됩니다.`
+                                          : `현재 [전체 공통 연동] 상태입니다. 아래 메모를 수정하면 이 엑셀표 전용으로 자동 전환됩니다.`}
+                                      </p>
+                                      <div className="space-y-2">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                          {state.members.map((m, idx) => {
+                                            const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                                            const val = isPresetDedicated
+                                              ? ((p.memberCustomCells && p.memberCustomCells[m.id]) ?? p.rankCustomCells?.[idx] ?? "")
+                                              : ((state.memberCustomCells && state.memberCustomCells[m.id]) ?? state.rankCustomCells?.[idx] ?? "");
+                                            return (
+                                              <label
+                                                key={`overlay-custom-member-cell-${p.id}-${m.id}`}
+                                                className="grid grid-cols-[80px_1fr] items-center gap-2 text-xs text-neutral-300 rounded border border-white/10 bg-black/20 px-2 py-1.5"
+                                              >
+                                                <span className="font-semibold text-neutral-200 truncate" title={m.name}>
+                                                  {m.name}{role ? `(${role})` : ""}
+                                                </span>
+                                                <input
+                                                  className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1 text-xs"
+                                                  defaultValue={val}
+                                                  key={`overlay-custom-member-input-${p.id}-${m.id}-${val}-${isPresetDedicated}`}
+                                                  onBlur={(e) => {
+                                                    const v = String(e.target.value || "").replace(/\s+/g, " ").trim().slice(0, 48);
+                                                    const memberCount = Math.max(1, state.members.length);
+                                                    const currentRanks = Array.isArray(p.rankCustomCells)
+                                                      ? [...p.rankCustomCells]
+                                                      : [...(state.rankCustomCells || [])];
+                                                    while (currentRanks.length < memberCount) currentRanks.push("");
+                                                    currentRanks[idx] = v;
+
+                                                    const currentMembers = {
+                                                      ...(isPresetDedicated ? p.memberCustomCells : state.memberCustomCells || {}),
+                                                    };
+                                                    if (v) currentMembers[m.id] = v;
+                                                    else delete currentMembers[m.id];
+
+                                                    updatePreset(p.id, {
+                                                      customCellLinkMode: "preset",
+                                                      rankCustomCells: currentRanks,
+                                                      memberCustomCells: currentMembers,
+                                                    });
+                                                    setGlobalPreviewBump((n) => n + 1);
+                                                  }}
+                                                  onKeyDown={(e) => {
+                                                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                                  }}
+                                                  placeholder="+100만원 / 메모"
+                                                />
+                                              </label>
+                                            );
+                                          })}
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
-                                )}
+                                  );
+                                })()}
                                 <div className="rounded border border-white/10 bg-black/20 p-2 space-y-2">
                                   <div className="flex flex-wrap items-center gap-2">
                                     <label className="text-xs text-neutral-400">777데이 계산</label>

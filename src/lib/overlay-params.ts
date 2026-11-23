@@ -247,6 +247,12 @@ export type OverlayPresetLike = {
   showRoleColumn?: boolean;
   /** 커스텀 열 헤더 오버라이드(비우면 AppState.memberCustomHeaderLabel) */
   customHeaderLabel?: string;
+  /** 프리셋별 순위 커스텀 셀(상벌금 메모 등) 오버라이드 (1위부터 순서대로) */
+  rankCustomCells?: string[];
+  /** 프리셋별 멤버별 커스텀 셀(상벌금 메모 등) 오버라이드 (memberId -> 텍스트) */
+  memberCustomCells?: Record<string, string>;
+  /** 프리셋 커스텀열 연동 모드: "global"(공통 연동) | "preset"(이 엑셀표 전용) */
+  customCellLinkMode?: "global" | "preset";
   /**
    * 엑셀표 후원 집계 시작 시각(epoch ms 문자열).
    * 비우면 전체(정산 리셋 이후). 「지금」클릭 시 그 순간의 ms를 고정 저장.
@@ -669,6 +675,9 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "showRoleColumn",
   "tableSplit",
   "customHeaderLabel",
+  "rankCustomCells",
+  "memberCustomCells",
+  "customCellLinkMode",
   "donationAggregateFromAt",
   "day777Calc",
   "pongdangManualMode",
@@ -869,6 +878,9 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "showRoleColumn",
   "tableSplit",
   "customHeaderLabel",
+  "rankCustomCells",
+  "memberCustomCells",
+  "customCellLinkMode",
   "donationAggregateFromAt",
   "day777Calc",
   "pongdangManualMode",
@@ -1282,6 +1294,9 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "contributionBg",
   "restroomBg",
   "customHeaderLabel",
+  "rankCustomCells",
+  "memberCustomCells",
+  "customCellLinkMode",
   "accountHeaderLabel",
   "toonHeaderLabel",
   "restroomHeaderLabel",
@@ -1380,6 +1395,9 @@ const PRESET_EMPTY_USES_THEME_DEFAULT_KEYS = new Set([
   "contributionBg",
   "restroomBg",
   "customHeaderLabel",
+  "rankCustomCells",
+  "memberCustomCells",
+  "customCellLinkMode",
   "accountHeaderLabel",
   "toonHeaderLabel",
   "restroomHeaderLabel",
