@@ -261,11 +261,39 @@ export default function ManualSigOverlaySimple() {
       oneShotPrice: oneShot?.price,
     });
   }, [selected, soldOverrideSet, oneShot]);
-  /** 한방 카드 대신 하단 TOTAL에 금액 표시(미판매 시 한방가, 판매 후 누적) */
-  const panelTotalAmount = useMemo(() => {
-    if (soldTotalAmount > 0) return soldTotalAmount;
-    return Math.max(0, Math.floor(Number(oneShot?.price) || 0));
-  }, [soldTotalAmount, oneShot?.price]);
+
+  /** 전체 시그 판의 원본 총합 (전체 시그 가격의 합) */
+  const boardTotalAmount = useMemo(() => {
+    const sum = selected.reduce(
+      (acc, item) => acc + Math.max(0, Math.floor(Number(item.price) || 0)),
+      0
+    );
+    const draft = readManualSigDraftFromState(state);
+    const manualShotBase = Number.parseInt(
+      String(draft?.oneShotPriceInput || "").replace(/[^\d]/g, ""),
+      10
+    );
+    if (manualShotBase > 0) return manualShotBase;
+    return sum;
+  }, [selected, state]);
+
+  /** 판매된 시그 개수 */
+  const soldCount = useMemo(() => {
+    return selected.filter((item) => {
+      const canon = canonicalSigIdFromWheelSliceId(item.id);
+      return soldOverrideSet.has(item.id) || soldOverrideSet.has(canon);
+    }).length;
+  }, [selected, soldOverrideSet]);
+
+  const totalMode = useMemo(() => {
+    const raw = (sp.get("sigTotalMode") || sp.get("totalMode") || "").trim().toLowerCase();
+    if (raw === "sold" || raw === "remaining") return raw;
+    return "board" as const;
+  }, [sp]);
+
+  const hideTotalSub = sp.get("hideTotalSub") === "1";
+  const showHeader = sp.get("showHeader") === "1";
+
   const resultRowLayout = useMemo(
     () =>
       layoutSigOverlayResultGrid({
@@ -361,13 +389,14 @@ export default function ManualSigOverlaySimple() {
         >
           <SigSalesPanelChrome
             className="w-max max-w-full"
+            showHeader={showHeader}
             tags={[
               `${panelGrid.rows}×${panelGrid.cols}`,
               panelOrientation === "landscape" ? "가로형" : "세로형",
               `${Array.isArray(state?.members) ? state.members.length : 0}인 참여`,
               sigSalesPanelStatusLabel(phase),
             ]}
-            totalAmount={panelTotalAmount}
+            totalAmount={boardTotalAmount}
             showTotalFooter={false}
           >
             <ResultOverlay
@@ -388,7 +417,11 @@ export default function ManualSigOverlaySimple() {
               panelGridCols={panelGrid.cols}
               panelOrientation={panelOrientation}
               showSoldTotal
-              soldTotalAmount={panelTotalAmount}
+              boardTotalAmount={boardTotalAmount}
+              soldTotalAmount={soldTotalAmount}
+              soldCount={soldCount}
+              totalMode={totalMode}
+              hideTotalSub={hideTotalSub}
               programSkin
             />
           </SigSalesPanelChrome>

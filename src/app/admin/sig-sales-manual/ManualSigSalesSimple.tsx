@@ -326,6 +326,11 @@ export default function ManualSigSalesSimple() {
     return Math.max(0, Math.floor(oneShotPrice || 0));
   }, [pickCount, saleRows, soldFlags, oneShotMarkSold, state, displaySigs, userId]);
 
+  const grossBoardTotal = useMemo(() => {
+    return saleRows.reduce((sum, r) => sum + Math.max(0, Math.floor(Number(r.price) || 0)), 0);
+  }, [saleRows]);
+  const soldCardCount = soldFlags.filter(Boolean).length;
+
   const persistState = useCallback(
     async (
       next: AppState,
@@ -1124,7 +1129,17 @@ export default function ManualSigSalesSimple() {
             filterMember ? `${filterMember.name || filterMember.id} 그룹` : "전체 그룹",
             statusLabel,
           ]}
-          totalAmount={soldTotal}
+          totalLabel={hasAnySoldMark ? "TOTAL SIG SALES (총 판매액)" : "TOTAL (판 총액)"}
+          totalAmount={hasAnySoldMark ? soldTotal : grossBoardTotal || soldTotal}
+          totalSub={
+            hasAnySoldMark ? (
+              <span>
+                판 총액 {grossBoardTotal.toLocaleString("ko-KR")}원 ({soldCardCount}/{pickCount}칸 판매)
+              </span>
+            ) : (
+              <span>판매 대기 중 (0/{pickCount}칸)</span>
+            )
+          }
           settingsPanel={
             <div className="space-y-4 text-sm">
         <section className="rounded-xl border border-lime-400/25 bg-lime-950/20 p-4 space-y-3">

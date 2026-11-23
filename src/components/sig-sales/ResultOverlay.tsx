@@ -36,6 +36,10 @@ type ResultOverlayProps = {
   panelGridCols?: number;
   panelOrientation?: SigOverlayMediaOrientation;
   soldTotalAmount?: number;
+  boardTotalAmount?: number;
+  soldCount?: number;
+  totalMode?: "board" | "sold" | "remaining";
+  hideTotalSub?: boolean;
   showSoldTotal?: boolean;
   programSkin?: boolean;
 };
@@ -63,6 +67,10 @@ export default function ResultOverlay({
   panelGridCols,
   panelOrientation,
   soldTotalAmount = 0,
+  boardTotalAmount,
+  soldCount,
+  totalMode = "board",
+  hideTotalSub = false,
   showSoldTotal = false,
   programSkin = false,
 }: ResultOverlayProps) {
@@ -134,6 +142,80 @@ export default function ResultOverlay({
       </div>
     ) : undefined;
 
+  const grossFromSigs = selectedSigs.reduce(
+    (sum, item) => sum + Math.max(0, Math.floor(Number(item.price) || 0)),
+    0
+  );
+  const actualBoardTotal =
+    typeof boardTotalAmount === "number" && boardTotalAmount > 0
+      ? boardTotalAmount
+      : grossFromSigs;
+  const actualSoldTotal = Math.max(0, Math.floor(Number(soldTotalAmount || 0)));
+  const actualSoldCount =
+    typeof soldCount === "number"
+      ? soldCount
+      : selectedSigs.filter((item) => {
+          const canon = canonicalSigIdFromWheelSliceId(item.id);
+          return soldOverrideSet?.has(item.id) || soldOverrideSet?.has(canon);
+        }).length;
+  const actualRemaining = Math.max(0, actualBoardTotal - actualSoldTotal);
+
+  const totalDisplay = (() => {
+    if (totalMode === "sold") {
+      return {
+        label: "총 시그 판매",
+        amount: actualSoldTotal,
+        sub:
+          !hideTotalSub && selectedSigs.length > 0 ? (
+            <>
+              <span className="font-bold text-yellow-100/90">
+                판 총액 {formatWon(actualBoardTotal)} ({actualSoldCount}/{selectedSigs.length}칸 판매)
+              </span>
+              <span className="text-yellow-100/40">·</span>
+              <span className="text-amber-200/90">잔여 {formatWon(actualRemaining)}</span>
+            </>
+          ) : null,
+      };
+    }
+    if (totalMode === "remaining") {
+      return {
+        label: "잔여 한방",
+        amount: actualRemaining,
+        sub:
+          !hideTotalSub && selectedSigs.length > 0 ? (
+            <>
+              <span className="font-bold text-yellow-100/90">판 총액 {formatWon(actualBoardTotal)}</span>
+              <span className="text-yellow-100/40">·</span>
+              <span className="text-rose-300">
+                판매 {formatWon(actualSoldTotal)} ({actualSoldCount}/{selectedSigs.length}칸)
+              </span>
+            </>
+          ) : null,
+      };
+    }
+    // 기본 "board" (TOTAL = 판 전체 총합)
+    return {
+      label: "TOTAL",
+      amount: actualBoardTotal,
+      sub:
+        !hideTotalSub && actualSoldCount > 0 && selectedSigs.length > 0 ? (
+          actualSoldCount >= selectedSigs.length ? (
+            <span className="font-bold text-emerald-300">
+              전체 완판 ({actualSoldCount}/{selectedSigs.length}칸) · 판매 {formatWon(actualSoldTotal)}
+            </span>
+          ) : (
+            <>
+              <span className="text-rose-300">
+                판매 {formatWon(actualSoldTotal)} ({actualSoldCount}/{selectedSigs.length}칸)
+              </span>
+              <span className="text-yellow-100/40">·</span>
+              <span className="text-amber-200/90">잔여 {formatWon(actualRemaining)}</span>
+            </>
+          )
+        ) : null,
+    };
+  })();
+
   if (hanbangOnly) {
     return (
       <div className={`flex w-full flex-col items-center justify-center ${className}`.trim()}>
@@ -169,11 +251,16 @@ export default function ResultOverlay({
         programSkin={programSkin}
       />
       {showSoldTotal ? (
-        <div className="mt-2 w-full rounded-lg border border-yellow-300/50 bg-black/80 px-4 py-2.5 text-center shadow-[0_0_16px_rgba(250,204,21,0.25)]">
-          <div className="text-[11px] font-bold tracking-[0.14em] text-yellow-100/90">TOTAL</div>
-          <div className="text-[clamp(22px,3vw,34px)] font-black tabular-nums leading-none text-yellow-200">
-            {formatWon(soldTotalAmount)}
+        <div className="mt-2 w-full rounded-xl border border-yellow-300/50 bg-black/85 px-4 py-2.5 text-center shadow-[0_0_18px_rgba(250,204,21,0.25)]">
+          <div className="text-[11px] font-bold tracking-[0.16em] text-yellow-100/90">{totalDisplay.label}</div>
+          <div className="mt-0.5 text-[clamp(22px,3vw,34px)] font-black tabular-nums leading-none text-yellow-200">
+            {formatWon(totalDisplay.amount)}
           </div>
+          {totalDisplay.sub ? (
+            <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1.5 text-[11px] font-semibold sm:text-xs">
+              {totalDisplay.sub}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

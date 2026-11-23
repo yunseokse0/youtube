@@ -72,4 +72,21 @@ describe("manual sold total", () => {
       computeManualSoldTotal([1000, 2000], [true, false], { oneShotSold: true, oneShotPrice: 5000 })
     ).toBe(5000);
   });
+
+  it("calculates board total, sold total, and remaining correctly", () => {
+    const items = [
+      { id: "sig-1", price: 68000 },
+      { id: "sig-2", price: 160000 },
+      { id: "sig-3", price: 65000 },
+    ];
+    const boardTotal = items.reduce((sum, x) => sum + x.price, 0);
+    expect(boardTotal).toBe(293000);
+
+    const soldFlags = [true, false, false];
+    const soldTotal = computeManualSoldTotal(items.map((x) => x.price), soldFlags);
+    expect(soldTotal).toBe(68000);
+
+    const remaining = Math.max(0, boardTotal - soldTotal);
+    expect(remaining).toBe(225000);
+  });
 });
