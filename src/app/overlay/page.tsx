@@ -3834,6 +3834,36 @@ function OverlayInner() {
     return new Set(ids);
   }, [sp, activePreset, s, isExcelPongdang, day777Calc]);
 
+  const contributionExcludedMemberIdsSet = useMemo(() => {
+    const rawUrl = sp.get("contributionExcludedMemberIds") || "";
+    const rawPreset = (activePreset as OverlayPresetLike | null)?.contributionExcludedMemberIds;
+    const rawGlobal = (s as AppState | null)?.contributionExcludedMemberIds;
+
+    const ids: string[] = [];
+    if (rawUrl) {
+      ids.push(...rawUrl.split(",").map((x) => x.trim()).filter(Boolean));
+    }
+    if (Array.isArray(rawPreset)) {
+      ids.push(...rawPreset.map((x) => String(x || "").trim()).filter(Boolean));
+    } else if (typeof rawPreset === "string" && rawPreset.trim()) {
+      ids.push(...rawPreset.split(",").map((x) => x.trim()).filter(Boolean));
+    }
+    if (Array.isArray(rawGlobal)) {
+      ids.push(...rawGlobal.map((x) => String(x || "").trim()).filter(Boolean));
+    }
+    return new Set(ids);
+  }, [sp, activePreset, s?.contributionExcludedMemberIds]);
+
+  const isContributionExcluded = useCallback(
+    (m: Member | { id?: string; name?: string } | null | undefined) => {
+      if (!m || contributionExcludedMemberIdsSet.size === 0) return false;
+      const id = String(m.id || "").trim();
+      const name = String(m.name || "").trim();
+      return (Boolean(id) && contributionExcludedMemberIdsSet.has(id)) || (Boolean(name) && contributionExcludedMemberIdsSet.has(name));
+    },
+    [contributionExcludedMemberIdsSet]
+  );
+
   const members = useMemo(() => {
     if (demoMode) {
       return [
@@ -4099,13 +4129,13 @@ function OverlayInner() {
     return normalizeRestroomCount((m as Member & { restroom?: unknown }).restroom);
   }, []);
   const fmtRestroom = useCallback((n: number) => formatRestroomDisplay(n), []);
-  /** 운영비(핀) 제외 멤버 기여도 합 — 총합 행과 정산 분배 기준에 맞춤 */
+  /** 운영비(핀) 및 기여도 표시 제외 대상 제외 멤버 기여도 합 — 총합 행과 정산 분배 기준에 맞춤 */
   const sumContribution = useMemo(
     () =>
       members
-        .filter((m) => !pinnedFilter(m))
+        .filter((m) => !pinnedFilter(m) && !isContributionExcluded(m))
         .reduce((sum, m) => sum + getContributionValueForMember(m), 0),
-    [members, pinnedFilter, getContributionValueForMember]
+    [members, pinnedFilter, getContributionValueForMember, isContributionExcluded]
   );
   const sumRestroom = useMemo(
     () =>
@@ -4366,7 +4396,8 @@ function OverlayInner() {
         const rankVal = rank != null && rank >= 1 ? String(rankCustomCells[rank - 1] || "").trim() : "";
         const repFallback = (!rank && Array.isArray(rankCustomCells) && rankCustomCells.length > 0) ? String(rankCustomCells[0] || "").trim() : "";
         const customVal = memberVal || rankVal || repFallback;
-        return `${showCustomColumn ? `${customVal}|` : ""}${m.account}|${m.toon}|${getContributionValueForMember(m)}${showRestroomColumn ? `|${getRestroomValueForMember(m)}` : ""}`;
+        const contribVal = isContributionExcluded(m) ? "-" : String(getContributionValueForMember(m));
+        return `${showCustomColumn ? `${customVal}|` : ""}${m.account}|${m.toon}|${contribVal}${showRestroomColumn ? `|${getRestroomValueForMember(m)}` : ""}`;
       })
       .join(";");
     const pinRows = visiblePinned.map((m) => `${m.account}|${m.toon}|0`).join(";");
@@ -4394,6 +4425,7 @@ function OverlayInner() {
     members,
     getMemberRole,
     getContributionValueForMember,
+    isContributionExcluded,
   ]);
 
   /**
@@ -6502,13 +6534,19 @@ function OverlayInner() {
                           )}
                           {showContributionColumn && (
                             <td className={`${effectiveRowCls} overlay-col-contribution text-center font-semibold`}>
-                              <OverlayTableNumCell
-                                value={getContributionValueForMember(m)}
-                                format={fmt}
-                                animate={rowMotionEnabled}
-                                className="overlay-num-cell-inner overlay-cell-text-inner"
-                                style={overlayCellOutlineStyle}
-                              />
+                              {isContributionExcluded(m) ? (
+                                <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                  -
+                                </span>
+                              ) : (
+                                <OverlayTableNumCell
+                                  value={getContributionValueForMember(m)}
+                                  format={fmt}
+                                  animate={rowMotionEnabled}
+                                  className="overlay-num-cell-inner overlay-cell-text-inner"
+                                  style={overlayCellOutlineStyle}
+                                />
+                              )}
                             </td>
                           )}
                           {showRestroomColumn && (

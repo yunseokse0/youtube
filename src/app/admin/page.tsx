@@ -456,6 +456,8 @@ type OverlayPreset = {
   pongdangManualMode?: boolean;
   /** 표에서 제외할 멤버 ID 목록 */
   excludedMemberIds?: string[];
+  /** 기여도 표시 제외 멤버 ID 목록 (기여도를 - 로 표시) */
+  contributionExcludedMemberIds?: string[];
   rankingMetric?: MemberRankingMetric;
   memberRankingMetric?: MemberRankingMetric;
   showContributionColumn?: boolean;
@@ -7359,6 +7361,28 @@ function AdminPageInner() {
     });
   };
 
+  const toggleContributionExcludedMember = (memberId: string, force?: boolean) => {
+    setState((prev: AppState) => {
+      const currentList = prev.contributionExcludedMemberIds || [];
+      const isCurrentlyExcluded = currentList.includes(memberId);
+      const shouldExclude = typeof force === "boolean" ? force : !isCurrentlyExcluded;
+      const nextList = shouldExclude
+        ? Array.from(new Set([...currentList, memberId]))
+        : currentList.filter((id) => id !== memberId);
+      const next: AppState = { ...prev, contributionExcludedMemberIds: nextList };
+      persistState(next, { omitDonationFields: true, membersAuthoritative: true });
+      return next;
+    });
+  };
+
+  const setContributionExcludedMembers = (memberIds: string[]) => {
+    setState((prev: AppState) => {
+      const next: AppState = { ...prev, contributionExcludedMemberIds: memberIds };
+      persistState(next, { omitDonationFields: true, membersAuthoritative: true });
+      return next;
+    });
+  };
+
   const updateRankPositionLabel = (index: number, value: string) => {
     setState((prev: AppState) => {
       const rep = (prev.members || []).find((m) => {
@@ -14060,6 +14084,78 @@ function AdminPageInner() {
                               </div>
                             );
                           })}
+                      </div>
+                    </div>
+
+                    {/* 📌 기여도 표시 제외 대상 설정 (기여도를 - 로 표시) */}
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-950/20 p-2.5 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-1.5">
+                        <div className="text-xs font-bold text-amber-200 flex items-center gap-1.5">
+                          <span>🛡️</span> 기여도 표시 제외 대상 설정 (기여도를 - 로 대체)
+                          <InfoTooltip text="지정된 멤버는 엑셀표와 순위에는 정상 표시되지만, 방송 화면의 기여도 칸에는 금액 대신 '-' 로 대체 표기됩니다." />
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[11px] text-neutral-300 border border-white/10"
+                            onClick={() => setContributionExcludedMembers([])}
+                          >
+                            전원 표시
+                          </button>
+                          {state.members.some((m) => {
+                            const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                            return !role.includes("부대표") && role.includes("대표");
+                          }) && (
+                            <button
+                              type="button"
+                              className="px-2 py-0.5 rounded bg-amber-900/60 hover:bg-amber-800 text-[11px] text-amber-200 border border-amber-500/30"
+                              onClick={() => {
+                                const rep = state.members.find((m) => {
+                                  const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                                  return !role.includes("부대표") && role.includes("대표");
+                                });
+                                if (rep) {
+                                  toggleContributionExcludedMember(rep.id);
+                                }
+                              }}
+                            >
+                              {(() => {
+                                const rep = state.members.find((m) => {
+                                  const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                                  return !role.includes("부대표") && role.includes("대표");
+                                });
+                                const isEx = rep && (state.contributionExcludedMemberIds || []).includes(rep.id);
+                                return isEx ? "대표 기여도 복원" : "대표 기여도 제외(-)";
+                              })()}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-amber-300/80">
+                        클릭하여 특정 멤버의 기여도 표출을 제외하고 <code>-</code> 로 대체합니다. (주황색=제외됨[-], 회색=정상 표시)
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {state.members.map((m) => {
+                          const isExcluded = (state.contributionExcludedMemberIds || []).includes(m.id);
+                          const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                          return (
+                            <button
+                              key={`contrib-ex-${m.id}`}
+                              type="button"
+                              onClick={() => toggleContributionExcludedMember(m.id)}
+                              className={`px-2.5 py-1 rounded text-xs font-medium border transition-all flex items-center gap-1.5 cursor-pointer ${
+                                isExcluded
+                                  ? "bg-amber-950/70 border-amber-500/70 text-amber-200 font-bold shadow-sm"
+                                  : "bg-black/30 border-white/10 text-neutral-400 hover:text-white hover:border-white/30"
+                              }`}
+                              title={isExcluded ? "클릭 시 기여도 정상 숫자로 표시" : "클릭 시 기여도 표출 제외 및 '-' 로 대체"}
+                            >
+                              <span>{isExcluded ? "🚫 제외됨(-)" : "+ 표시 중"}</span>
+                              <span>{m.name}</span>
+                              {role && <span className="text-[10px] opacity-75">({role})</span>}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -22655,6 +22751,101 @@ function AdminPageInner() {
                                 </div>
                               </div>
 
+                              {/* 🛡️ 기여도 표시 제외 멤버 설정 (- 대체) */}
+                              <div className="space-y-1.5 pt-2 border-t border-white/5">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <label className="text-xs text-neutral-300 font-bold flex items-center gap-1.5">
+                                    <span>🛡️</span> 기여도 표시 제외 멤버 설정 (금액 대신 - 대체)
+                                  </label>
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[11px] text-neutral-300 border border-white/10"
+                                      onClick={() => {
+                                        updatePreset(p.id, { contributionExcludedMemberIds: [] });
+                                        setContributionExcludedMembers([]);
+                                        setGlobalPreviewBump((n) => n + 1);
+                                      }}
+                                    >
+                                      전원 표시
+                                    </button>
+                                    {state.members.some((m) => {
+                                      const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                                      return !role.includes("부대표") && role.includes("대표");
+                                    }) && (
+                                      <button
+                                        type="button"
+                                        className="px-2 py-0.5 rounded bg-amber-900/60 hover:bg-amber-800 text-[11px] text-amber-200 border border-amber-500/30"
+                                        onClick={() => {
+                                          const rep = state.members.find((m) => {
+                                            const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                                            return !role.includes("부대표") && role.includes("대표");
+                                          });
+                                          if (rep) {
+                                            const current: string[] = Array.isArray(p.contributionExcludedMemberIds)
+                                              ? p.contributionExcludedMemberIds
+                                              : (state.contributionExcludedMemberIds || []);
+                                            const isExcluded = current.includes(rep.id);
+                                            const next = isExcluded ? current.filter((id: string) => id !== rep.id) : [...current, rep.id];
+                                            updatePreset(p.id, { contributionExcludedMemberIds: next });
+                                            toggleContributionExcludedMember(rep.id);
+                                            setGlobalPreviewBump((n) => n + 1);
+                                          }
+                                        }}
+                                      >
+                                        {(() => {
+                                          const rep = state.members.find((m) => {
+                                            const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                                            return !role.includes("부대표") && role.includes("대표");
+                                          });
+                                          const current = Array.isArray(p.contributionExcludedMemberIds)
+                                            ? p.contributionExcludedMemberIds
+                                            : (state.contributionExcludedMemberIds || []);
+                                          const isExcluded = rep && current.includes(rep.id);
+                                          return isExcluded ? "대표 기여도 복원" : "대표 기여도 제외(-)";
+                                        })()}
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                                <p className="text-[10px] text-neutral-400">
+                                  클릭하여 엑셀표에서 특정 멤버의 기여도 숫자를 숨기고 <code>-</code> 로 표시합니다.
+                                </p>
+                                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                  {state.members
+                                    .filter((m) => !isOperatingSettlementMember(m, state.memberPositions))
+                                    .map((m) => {
+                                      const excludedList: string[] = Array.isArray(p.contributionExcludedMemberIds)
+                                        ? p.contributionExcludedMemberIds
+                                        : (state.contributionExcludedMemberIds || []);
+                                      const isExcluded = excludedList.includes(m.id);
+                                      const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                                      return (
+                                        <button
+                                          key={`ov-contrib-toggle-${p.id}-${m.id}`}
+                                          type="button"
+                                          className={`px-2.5 py-1 rounded text-xs font-medium border transition-all flex items-center gap-1.5 cursor-pointer ${
+                                            isExcluded
+                                              ? "bg-amber-950/50 border-amber-500/50 text-amber-200 font-bold shadow-sm"
+                                              : "bg-neutral-900 border-white/10 text-neutral-400 hover:text-white"
+                                          }`}
+                                          onClick={() => {
+                                            const next = isExcluded ? excludedList.filter((id: string) => id !== m.id) : [...excludedList, m.id];
+                                            updatePreset(p.id, { contributionExcludedMemberIds: next });
+                                            toggleContributionExcludedMember(m.id);
+                                            setGlobalPreviewBump((n) => n + 1);
+                                          }}
+                                          title={isExcluded ? "클릭하여 기여도 숫자로 복원" : "클릭하여 기여도 '-' 로 대체"}
+                                        >
+                                          <span>{isExcluded ? "🚫 제외됨(-)" : "✓ 표시"}</span>
+                                          <span>{m.name}</span>
+                                          {role && <span className="text-[10px] opacity-75">({role})</span>}
+                                        </button>
+                                      );
+                                    })}
+                                </div>
+                              </div>
+
                               {/* 📐 좌우 2열 분할 & 표만 모드 & 합계 선 */}
                               <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/5">
                                 <div className="flex items-center gap-1.5">
@@ -24491,6 +24682,101 @@ function AdminPageInner() {
                                               title={isExcluded ? "클릭하여 표에 다시 표시" : "클릭하여 표에서 제외"}
                                             >
                                               <span>{isExcluded ? "✕" : "✓"}</span>
+                                              <span>{m.name}</span>
+                                              {role && <span className="text-[10px] opacity-75">({role})</span>}
+                                            </button>
+                                          );
+                                        })}
+                                    </div>
+                                  </div>
+                                  {/* 📌 기여도 표시 제외 대상 설정 (기여도를 - 로 표시) */}
+                                  <div className="space-y-1.5 pt-2 border-t border-white/5">
+                                    <div className="flex flex-wrap items-center justify-between gap-1.5">
+                                      <div className="text-xs font-bold text-amber-200 flex items-center gap-1.5">
+                                        <span>🛡️</span> 기여도 표시 제외 대상 (기여도를 - 로 대체)
+                                        <InfoTooltip text="선택된 멤버는 엑셀표 순위 및 표에는 정상 표기되지만, 기여도 칸의 금액 대신 '-' 로 대체 표기됩니다." />
+                                      </div>
+                                      <div className="flex items-center gap-1.5">
+                                        <button
+                                          type="button"
+                                          className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[11px] text-neutral-300 border border-white/10"
+                                          onClick={() => {
+                                            updatePreset(p.id, { contributionExcludedMemberIds: [] });
+                                            setContributionExcludedMembers([]);
+                                            setGlobalPreviewBump((n) => n + 1);
+                                          }}
+                                        >
+                                          전원 표시
+                                        </button>
+                                        {state.members.some((m) => {
+                                          const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                                          return !role.includes("부대표") && role.includes("대표");
+                                        }) && (
+                                          <button
+                                            type="button"
+                                            className="px-2 py-0.5 rounded bg-amber-900/60 hover:bg-amber-800 text-[11px] text-amber-200 border border-amber-500/30"
+                                            onClick={() => {
+                                              const rep = state.members.find((m) => {
+                                                const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                                                return !role.includes("부대표") && role.includes("대표");
+                                              });
+                                              if (rep) {
+                                                const current: string[] = Array.isArray(p.contributionExcludedMemberIds)
+                                                  ? p.contributionExcludedMemberIds
+                                                  : (state.contributionExcludedMemberIds || []);
+                                                const isExcluded = current.includes(rep.id);
+                                                const next = isExcluded ? current.filter((id: string) => id !== rep.id) : [...current, rep.id];
+                                                updatePreset(p.id, { contributionExcludedMemberIds: next });
+                                                toggleContributionExcludedMember(rep.id);
+                                                setGlobalPreviewBump((n) => n + 1);
+                                              }
+                                            }}
+                                          >
+                                            {(() => {
+                                              const rep = state.members.find((m) => {
+                                                const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                                                return !role.includes("부대표") && role.includes("대표");
+                                              });
+                                              const current: string[] = Array.isArray(p.contributionExcludedMemberIds)
+                                                ? p.contributionExcludedMemberIds
+                                                : (state.contributionExcludedMemberIds || []);
+                                              const isExcluded = rep && current.includes(rep.id);
+                                              return isExcluded ? "대표 기여도 복원" : "대표 기여도 제외(-)";
+                                            })()}
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <p className="text-[10px] text-neutral-400">
+                                      클릭하여 엑셀표에서 특정 멤버의 기여도 숫자를 숨기고 <code>-</code> 로 표시합니다.
+                                    </p>
+                                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                      {state.members
+                                        .filter((m) => !isOperatingSettlementMember(m, state.memberPositions))
+                                        .map((m) => {
+                                          const excludedList: string[] = Array.isArray(p.contributionExcludedMemberIds)
+                                            ? p.contributionExcludedMemberIds
+                                            : (state.contributionExcludedMemberIds || []);
+                                          const isExcluded = excludedList.includes(m.id);
+                                          const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                                          return (
+                                            <button
+                                              key={`ov-contrib-toggle-det-${p.id}-${m.id}`}
+                                              type="button"
+                                              className={`px-2.5 py-1 rounded text-xs font-medium border transition-all flex items-center gap-1.5 cursor-pointer ${
+                                                isExcluded
+                                                  ? "bg-amber-950/50 border-amber-500/50 text-amber-200 font-bold shadow-sm"
+                                                  : "bg-neutral-900 border-white/10 text-neutral-400 hover:text-white"
+                                              }`}
+                                              onClick={() => {
+                                                const next = isExcluded ? excludedList.filter((id: string) => id !== m.id) : [...excludedList, m.id];
+                                                updatePreset(p.id, { contributionExcludedMemberIds: next });
+                                                toggleContributionExcludedMember(m.id);
+                                                setGlobalPreviewBump((n) => n + 1);
+                                              }}
+                                              title={isExcluded ? "클릭하여 기여도 숫자로 복원" : "클릭하여 기여도 '-' 로 대체"}
+                                            >
+                                              <span>{isExcluded ? "🚫 제외됨(-)" : "✓ 표시"}</span>
                                               <span>{m.name}</span>
                                               {role && <span className="text-[10px] opacity-75">({role})</span>}
                                             </button>

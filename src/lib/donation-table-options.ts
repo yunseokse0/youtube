@@ -13,6 +13,7 @@ export type ResolvedDonationTableColumnsOptions = {
   showCustomColumn: boolean;
   tableSplit: boolean;
   tablePill: boolean;
+  contributionExcludedMemberIds?: string[];
 };
 
 export const DEFAULT_DONATION_TABLE_COLUMNS: ResolvedDonationTableColumnsOptions = {
@@ -54,6 +55,11 @@ export function resolveDonationTableColumnsOptions(
     showCustomColumn: opts?.showCustomColumn ?? fb.showCustomColumn,
     tableSplit: opts?.tableSplit ?? fb.tableSplit,
     tablePill: (opts?.tablePill ?? opts?.pillStyle) ?? fb.tablePill,
+    contributionExcludedMemberIds: Array.isArray(opts?.contributionExcludedMemberIds)
+      ? opts.contributionExcludedMemberIds
+      : typeof opts?.contributionExcludedMemberIds === "string"
+      ? opts.contributionExcludedMemberIds.split(",").map((s) => s.trim()).filter(Boolean)
+      : fb.contributionExcludedMemberIds,
   };
 }
 
@@ -74,6 +80,11 @@ export function normalizeDonationTableColumnsOptions(
     showCustomColumn: src.showCustomColumn !== false,
     tableSplit: src.tableSplit !== false,
     tablePill: src.tablePill === true || src.pillStyle === true,
+    contributionExcludedMemberIds: Array.isArray(src.contributionExcludedMemberIds)
+      ? src.contributionExcludedMemberIds.map((x) => String(x || "").trim()).filter(Boolean)
+      : typeof src.contributionExcludedMemberIds === "string"
+      ? src.contributionExcludedMemberIds.split(",").map((s) => s.trim()).filter(Boolean)
+      : undefined,
   };
 }
 

@@ -1214,6 +1214,19 @@ export function normalizeFixedPositionMemberIds(
     .filter((id) => id && validIds.has(id));
 }
 
+export function normalizeContributionExcludedMemberIds(
+  raw: unknown,
+  members: Member[]
+): string[] {
+  const validIds = new Set((members || []).map((m) => m.id));
+  const list: string[] = Array.isArray(raw)
+    ? raw.map((x) => String(x || "").trim())
+    : typeof raw === "string"
+    ? raw.split(",").map((s) => s.trim())
+    : [];
+  return list.filter((id) => id && validIds.has(id));
+}
+
 function normalizeMemberPositionMode(input: unknown): AppState["memberPositionMode"] {
   return input === "rankLinked" ? "rankLinked" : "fixed";
 }
@@ -1386,6 +1399,7 @@ export function defaultState(): AppState {
     rankCustomCells: [],
     rankPositionLabels: fitRankPositionLabelsToMemberCount(["대표"], defaultMembers().length),
     fixedPositionMemberIds: [],
+    contributionExcludedMemberIds: [],
     donorRankingsTheme: { ...DEFAULT_DONOR_RANKINGS_THEME },
     donorRankingsFullTheme: { ...DEFAULT_DONOR_RANKINGS_FULL_THEME },
     donorRankingsPresets: mergeBuiltInDonorRankingsPresets([]),
@@ -2072,8 +2086,9 @@ export function loadState(userId?: string | null): AppState {
     data.memberCustomHeaderLabel = normalizeMemberCustomHeaderLabel(
       (data as AppState).memberCustomHeaderLabel
     );
-    data.rankCustomCells = Array.isArray((data as AppState).rankCustomCells)
-      ? (data as AppState).rankCustomCells.map((v) => String(v ?? ""))
+    const rawRankCustomCells = (data as AppState).rankCustomCells;
+    data.rankCustomCells = Array.isArray(rawRankCustomCells)
+      ? rawRankCustomCells.map((v) => String(v ?? ""))
       : [];
     data.rankPositionLabels = fitRankPositionLabelsToMemberCount(
       (data as AppState).rankPositionLabels,
@@ -2081,6 +2096,10 @@ export function loadState(userId?: string | null): AppState {
     );
     data.fixedPositionMemberIds = normalizeFixedPositionMemberIds(
       (data as AppState).fixedPositionMemberIds,
+      data.members
+    );
+    data.contributionExcludedMemberIds = normalizeContributionExcludedMemberIds(
+      (data as AppState).contributionExcludedMemberIds,
       data.members
     );
     data.donorRankingsTheme = normalizeDonorRankingsTheme((data as AppState).donorRankingsTheme);
@@ -4304,8 +4323,9 @@ async function doLoadStateFromApi(
       data.memberCustomHeaderLabel = normalizeMemberCustomHeaderLabel(
         (data as AppState).memberCustomHeaderLabel
       );
-      data.rankCustomCells = Array.isArray((data as AppState).rankCustomCells)
-        ? (data as AppState).rankCustomCells.map((v) => String(v ?? ""))
+      const rawRankCustomCells = (data as AppState).rankCustomCells;
+      data.rankCustomCells = Array.isArray(rawRankCustomCells)
+        ? rawRankCustomCells.map((v) => String(v ?? ""))
         : [];
       data.rankPositionLabels = fitRankPositionLabelsToMemberCount(
         (data as AppState).rankPositionLabels,
@@ -4313,6 +4333,10 @@ async function doLoadStateFromApi(
       );
       data.fixedPositionMemberIds = normalizeFixedPositionMemberIds(
         (data as AppState).fixedPositionMemberIds,
+        data.members
+      );
+      data.contributionExcludedMemberIds = normalizeContributionExcludedMemberIds(
+        (data as AppState).contributionExcludedMemberIds,
         data.members
       );
       data.donorRankingsTheme = normalizeDonorRankingsTheme((data as AppState).donorRankingsTheme);

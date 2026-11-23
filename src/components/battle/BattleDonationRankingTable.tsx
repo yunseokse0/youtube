@@ -28,6 +28,9 @@ export default function BattleDonationRankingTable({
 }: BattleDonationRankingTableProps) {
   if (rows.length === 0) return null;
   const opts = resolveDonationTableColumnsOptions(tableOptions);
+  const contribEx = new Set(
+    (opts.contributionExcludedMemberIds || []).map((x) => String(x || "").trim()).filter(Boolean)
+  );
   const totals = battleDonationRankingTotals(rows);
   const cellPad = compact ? "px-1.5 py-0.5" : "px-2 py-1";
   const fontSize = compact ? "text-[11px] sm:text-xs" : "text-xs sm:text-sm";
@@ -88,7 +91,9 @@ export default function BattleDonationRankingTable({
               ) : null}
               {opts.showContributionColumn ? (
                 <td className={`${cellPad} text-right tabular-nums`}>
-                  {formatBattleDonationAmount(row.contribution)}
+                  {contribEx.has(row.memberId) || contribEx.has(row.name)
+                    ? "-"
+                    : formatBattleDonationAmount(row.contribution)}
                 </td>
               ) : null}
             </tr>

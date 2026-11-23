@@ -268,6 +268,8 @@ export type OverlayPresetLike = {
   pongdangManualMode?: boolean;
   /** 표에서 제외할 멤버 ID 목록 */
   excludedMemberIds?: string[] | string;
+  /** 기여도 표시 제외 멤버 ID 목록 (기여도를 - 로 대체) */
+  contributionExcludedMemberIds?: string[] | string;
   /** 순위 산정 기준: contribution | donation | account | toon */
   rankingMetric?: MemberRankingMetric;
   memberRankingMetric?: MemberRankingMetric;
@@ -573,6 +575,11 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   } else if (typeof preset.excludedMemberIds === "string" && preset.excludedMemberIds.trim()) {
     q.set("excludedMemberIds", preset.excludedMemberIds.trim());
   }
+  if (Array.isArray(preset.contributionExcludedMemberIds) && preset.contributionExcludedMemberIds.length > 0) {
+    q.set("contributionExcludedMemberIds", preset.contributionExcludedMemberIds.map((x) => String(x || "").trim()).filter(Boolean).join(","));
+  } else if (typeof preset.contributionExcludedMemberIds === "string" && preset.contributionExcludedMemberIds.trim()) {
+    q.set("contributionExcludedMemberIds", preset.contributionExcludedMemberIds.trim());
+  }
   const rankMetric = preset.rankingMetric || preset.memberRankingMetric;
   if (rankMetric && rankMetric !== "contribution") {
     q.set("rankingMetric", rankMetric);
@@ -683,6 +690,7 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "day777Calc",
   "pongdangManualMode",
   "excludedMemberIds",
+  "contributionExcludedMemberIds",
   "rankingMetric",
   "memberRankingMetric",
   "rankTop3Mode",
@@ -887,6 +895,7 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "day777Calc",
   "pongdangManualMode",
   "excludedMemberIds",
+  "contributionExcludedMemberIds",
   "rankingMetric",
   "memberRankingMetric",
   "rankTop3Mode",
@@ -1308,6 +1317,7 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "day777Calc",
   "pongdangManualMode",
   "excludedMemberIds",
+  "contributionExcludedMemberIds",
   "rankingMetric",
   "memberRankingMetric",
   "tableBgOpacity",
@@ -1417,6 +1427,7 @@ const PRESET_EMPTY_USES_THEME_DEFAULT_KEYS = new Set([
   "day777Calc",
   "pongdangManualMode",
   "excludedMemberIds",
+  "contributionExcludedMemberIds",
   "rankingMetric",
   "memberRankingMetric",
   "tableRowEvenBg",
