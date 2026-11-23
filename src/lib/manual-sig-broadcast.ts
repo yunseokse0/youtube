@@ -1,4 +1,5 @@
 import type { AppState, SigItem } from "@/types";
+import { repairMojibakeSigName } from "@/lib/sig-name-repair";
 import {
   DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
   isDedicatedOneShotSigImageUrl,
@@ -452,7 +453,7 @@ export function hydrateManualOverlaySigItem(
   const fromNamePrice = inventory?.length
     ? findSigInventoryByNameAndPrice(inventory, item.name, item.price)?.imageUrl
     : "";
-  const displayName = String(item.name || h.name || "").trim() || h.name;
+  const displayName = repairMojibakeSigName(String(item.name || h.name || "").trim() || h.name);
   const fromNameRow = inventory?.length ? findSigInventoryByName(inventory, displayName) : undefined;
   const fromName = fromNameRow?.imageUrl || "";
   const price = preferPositiveSigPrice(item.price, h.price, fromNameRow?.price);
@@ -812,7 +813,7 @@ export function buildManualPanelSaleRows(
             draftRow
           )
         : null;
-    const name = String(hydrated?.name || parsedRow?.name || "").trim();
+    const name = repairMojibakeSigName(String(hydrated?.name || parsedRow?.name || "").trim());
     if (!name) continue;
     rows.push({
       draftIdx: i,

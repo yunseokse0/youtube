@@ -46,6 +46,7 @@ import {
   buildManualPanelSaleRows,
 } from "@/lib/manual-sig-broadcast";
 import { parseSigMetaFromFileName } from "@/lib/sig-filename-meta";
+import { repairMojibakeSigName } from "@/lib/sig-name-repair";
 import { SigSalesPanelChrome } from "@/components/sig-sales/SigSalesPanelChrome";
 import { formatSigSalesWon, sigSalesPanelStatusLabel } from "@/lib/sig-sales-panel-ui";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
@@ -100,6 +101,7 @@ export default function ManualSigSalesSimple() {
   const [colsDraft, setColsDraft] = useState("5");
   const [pickCountDraft, setPickCountDraft] = useState("5");
   const [priceDraftByIdx, setPriceDraftByIdx] = useState<Record<number, string>>({});
+  const [nameDraftByIdx, setNameDraftByIdx] = useState<Record<number, string>>({});
   const [bandDraftByIdx, setBandDraftByIdx] = useState<Record<number, { min: string; max: string }>>(
     {}
   );
@@ -613,6 +615,95 @@ export default function ManualSigSalesSimple() {
           `${label} 가격 ${price.toLocaleString("ko-KR")}원`,
           "가격 저장이 지연됩니다.",
           { omitSigInventory: true }
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [state, pickCount, saleRows, soldFlags, saleModes, buyerMemberIds, oneShotMarkSold, userId, persistState]
+  );
+
+  /** 칸별 시그 이름 — 초안·인벤·OBS 동시 반영 및 모지바케 복구 */
+  const onCommitCellName = useCallback(
+    async (draftIdx: number, nameRaw: string) => {
+      if (!state || draftIdx < 0 || draftIdx >= pickCount) return;
+      const nextName = repairMojibakeSigName(String(nameRaw || "").trim());
+      if (!nextName) return;
+      const row = saleRows.find((r) => r.draftIdx === draftIdx);
+      const prevDraft = readManualSigDraftFromState(state);
+      const drafts = resizeManualDrafts(prevDraft?.drafts || [], pickCount);
+      const cur = drafts[draftIdx] || {
+        sourceSigId: "",
+        name: "",
+        priceInput: "",
+        imageUrl: "",
+      };
+      if (cur.name === nextName && row?.name === nextName) return;
+      drafts[draftIdx] = {
+        ...cur,
+        name: nextName,
+        imageUrl: cur.imageUrl || row?.imageUrl || "",
+        priceInput: cur.priceInput || (row ? String(row.price || "") : ""),
+      };
+      const persistDrafts = normalizeManualSigDraftPersist(
+        {
+          inputMode: prevDraft?.inputMode || "inventory",
+          drafts,
+          oneShotName: prevDraft?.oneShotName || "한방 시그",
+          oneShotPriceInput: prevDraft?.oneShotPriceInput || "",
+          oneShotImageUrl: prevDraft?.oneShotImageUrl || DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
+          sigSoldFlags: soldFlags,
+          oneShotMarkSold,
+          sigSaleModes: saleModes,
+          sigBuyerMemberIds: buyerMemberIds,
+        },
+        pickCount
+      );
+      let next = buildManualSigSoldPersistState(state, {
+        sigSoldFlags: soldFlags,
+        oneShotMarkSold,
+        sigSaleModes: saleModes,
+        sigBuyerMemberIds: buyerMemberIds,
+        persistDrafts: persistDrafts ?? undefined,
+        userId,
+      });
+      const broadcast = readManualSigBroadcastFromState(next);
+      if (broadcast?.selectedSigs?.length) {
+        const selectedSigs = broadcast.selectedSigs.map((s, i) =>
+          i === draftIdx ? { ...s, name: nextName } : s
+        );
+        next = {
+          ...next,
+          overlaySettings: mergeManualSigBroadcastIntoOverlaySettings(next, {
+            ...broadcast,
+            selectedSigs,
+          }),
+          updatedAt: Date.now(),
+        };
+      }
+      if (row?.sourceSigId || row?.name) {
+        const inv = next.sigInventory || [];
+        const nextInv = inv.map((item) => {
+          if (row.sourceSigId && item.id === row.sourceSigId) {
+            return { ...item, name: nextName };
+          }
+          if (item.name === row.name) {
+            return { ...item, name: nextName };
+          }
+          return item;
+        });
+        next = {
+          ...next,
+          sigInventory: nextInv,
+          updatedAt: Date.now(),
+        };
+      }
+      setBusy(true);
+      try {
+        await persistState(
+          next,
+          `${nextName} 시그 이름 변경 · OBS 반영`,
+          "이름 저장이 지연됩니다."
         );
       } finally {
         setBusy(false);
@@ -1442,7 +1533,7 @@ export default function ManualSigSalesSimple() {
                   <span className="font-semibold text-amber-50/95">
                     {i + 1}칸
                     {row?.name ? (
-                      <span className="ml-1 font-normal text-neutral-400">· {row.name}</span>
+                      <span className="ml-1 font-normal text-neutral-400">· {repairMojibakeSigName(row.name)}</span>
                     ) : (
                       <span className="ml-1 font-normal text-neutral-500">· (ROLL 전)</span>
                     )}
@@ -1665,7 +1756,43 @@ export default function ManualSigSalesSimple() {
                   </button>
                   <div className="relative z-[2] space-y-1 px-2 py-1.5">
                     <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">SIG</div>
-                    <div className="line-clamp-2 text-sm font-bold text-white">{row?.name || "빈 칸"}</div>
+                    {row ? (
+                      <input
+                        type="text"
+                        disabled={busy || phase === "CONFIRMED"}
+                        className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-sm font-bold text-white hover:border-white/20 focus:border-indigo-400 focus:bg-black/60 focus:outline-none"
+                        value={
+                          nameDraftByIdx[i] != null
+                            ? nameDraftByIdx[i]
+                            : repairMojibakeSigName(row.name || "")
+                        }
+                        placeholder="시그 이름"
+                        title="클릭하여 시그 이름 수정"
+                        onChange={(e) =>
+                          setNameDraftByIdx((prev) => ({ ...prev, [i]: e.target.value }))
+                        }
+                        onBlur={() => {
+                          const raw =
+                            nameDraftByIdx[i] != null
+                              ? nameDraftByIdx[i]!
+                              : (row.name || "");
+                          void onCommitCellName(i, raw).then(() => {
+                            setNameDraftByIdx((prev) => {
+                              const next = { ...prev };
+                              delete next[i];
+                              return next;
+                            });
+                          });
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            (e.target as HTMLInputElement).blur();
+                          }
+                        }}
+                      />
+                    ) : (
+                      <div className="line-clamp-2 text-sm font-bold text-white">빈 칸</div>
+                    )}
                     {row ? (
                       <>
                         <div className="flex gap-1">

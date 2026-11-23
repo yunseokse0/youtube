@@ -1,3 +1,5 @@
+import { repairMojibakeSigName } from "@/lib/sig-name-repair";
+
 /**
  * 시그 파일명 규칙: `{금액}_{이름}.gif`
  * 예: `1,000,000_버터플라이.gif` → price 1000000, name `버터플라이`
@@ -49,19 +51,19 @@ export function parseSigMetaFromFileName(fileName: string): SigFileNameMeta {
 
   const us = baseName.indexOf("_");
   if (us <= 0) {
-    return { baseName, name: baseName, price: 0, priceFromFileName: false };
+    return { baseName, name: repairMojibakeSigName(baseName), price: 0, priceFromFileName: false };
   }
 
   const priceToken = baseName.slice(0, us);
   const rest = baseName.slice(us + 1).trim();
   const price = parseSigPriceToken(priceToken);
   if (price === null || !rest) {
-    return { baseName, name: baseName, price: 0, priceFromFileName: false };
+    return { baseName, name: repairMojibakeSigName(baseName), price: 0, priceFromFileName: false };
   }
 
   return {
     baseName,
-    name: rest,
+    name: repairMojibakeSigName(rest),
     price,
     priceFromFileName: true,
   };

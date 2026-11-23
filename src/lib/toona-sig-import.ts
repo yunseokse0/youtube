@@ -1,6 +1,7 @@
 import type { SigItem } from "@/types";
 import { normalizeSigDedupKeyName } from "@/lib/sig-inventory-dedup";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
+import { repairMojibakeSigName } from "@/lib/sig-name-repair";
 
 export type ToonaSignatureRow = {
   id?: string;
@@ -56,8 +57,9 @@ export function mapToonaSignaturesToSigItems(
   const fallbackImage = resolveToonaAssetUrl(defaultAlertImageUrl, apiBaseUrl);
 
   for (const row of sorted) {
-    const name = String(row.name || "").trim();
-    if (!name) continue;
+    const rawName = String(row.name || "").trim();
+    if (!rawName) continue;
+    const name = repairMojibakeSigName(rawName);
     const nameKey = normalizeSigDedupKeyName(name);
     if (seenNames.has(nameKey)) continue;
 

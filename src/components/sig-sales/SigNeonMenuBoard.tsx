@@ -3,6 +3,7 @@
 import { resolveMemberDisplayColor } from "@/lib/member-display-color";
 import { sigNeonMenuColumnCount } from "@/lib/sig-sales-overlay-urls";
 import { formatSigSalesWon } from "@/lib/sig-sales-panel-ui";
+import { repairMojibakeSigName } from "@/lib/sig-name-repair";
 
 export type SigNeonMenuItem = {
   id: string;
@@ -120,9 +121,9 @@ export default function SigNeonMenuBoard({
                   color: neon,
                   textShadow: `-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 10px ${neon}`,
                 }}
-                title={item.name}
+                title={repairMojibakeSigName(item.name)}
               >
-                {item.name}
+                {repairMojibakeSigName(item.name)}
               </div>
               <div
                 className="w-full truncate text-lg font-black tabular-nums leading-none sm:text-xl md:text-2xl"

@@ -302,6 +302,7 @@ import {
 } from "@/lib/sig-rolling-theme";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
+import { repairMojibakeSigName } from "@/lib/sig-name-repair";
 import {
   applyMealBattleDonationToParticipants,
   ensureMealBattleParticipantRow,
@@ -8472,7 +8473,7 @@ function AdminPageInner() {
   const updateSigItem = useCallback(
     (id: string, patch: Partial<AppState["sigInventory"][number]>) => {
       setState((prev: AppState) => {
-        const sanitizedPatch =
+        const basePatch =
           id === ONE_SHOT_SIG_ID
             ? {
                 ...patch,
@@ -8483,6 +8484,10 @@ function AdminPageInner() {
                 isRolling: undefined,
               }
             : patch;
+        const sanitizedPatch = {
+          ...basePatch,
+          ...(basePatch.name ? { name: repairMojibakeSigName(basePatch.name) } : {}),
+        };
         const draft: AppState = {
           ...prev,
           sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, ...sanitizedPatch } : x)),
@@ -18405,7 +18410,7 @@ function AdminPageInner() {
                               />
                               <span>{isOneShot ? "OBS 표시" : "판매 활성"}</span>
                             </label>
-                            <span className="font-semibold">{item.name}</span>
+                            <span className="font-semibold">{repairMojibakeSigName(item.name)}</span>
                             {isOneShot ? (
                               <span className="text-[10px] text-amber-200/80">한방 · 이름·이미지 편집 가능</span>
                             ) : null}

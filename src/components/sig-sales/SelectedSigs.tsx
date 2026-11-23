@@ -5,6 +5,7 @@ import { useCallback, useState, type ReactNode } from "react";
 import type { SigItem } from "@/types";
 import { canonicalSigIdFromWheelSliceId, formatWon } from "@/lib/sig-roulette";
 import { resolveSigOverlayCardImageUrl, resolveSigRollingImageUrl } from "@/lib/constants";
+import { repairMojibakeSigName } from "@/lib/sig-name-repair";
 import { classifySigRollingOrientation } from "@/lib/sig-rolling-orientation";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import {
@@ -202,12 +203,12 @@ function SelectedSigCard({
           <SigSaleMedia
             src={
               sigImageUserId
-                ? resolveSigOverlayCardImageUrl(item.name, item.imageUrl, sigImageUserId)
-                : resolveSigRollingImageUrl(item.name, item.imageUrl, sigImageUserId)
+                ? resolveSigOverlayCardImageUrl(repairMojibakeSigName(item.name), item.imageUrl, sigImageUserId)
+                : resolveSigRollingImageUrl(repairMojibakeSigName(item.name), item.imageUrl, sigImageUserId)
             }
             storedImageUrl={item.imageUrl}
             sigImageUserId={sigImageUserId}
-            alt={item.name}
+            alt={repairMojibakeSigName(item.name)}
             fill
             objectFit="contain"
             sizes={
@@ -256,7 +257,7 @@ function SelectedSigCard({
                   : sigOverlayCardNameOutlineStyle(14)
             }
           >
-            {item.name}
+            {repairMojibakeSigName(item.name)}
           </div>
           <div
             className={

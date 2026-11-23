@@ -12,6 +12,7 @@ import {
   shouldStripUntrustedExternalSigImageUrls,
 } from "@/lib/sig-image-mode";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
+import { repairMojibakeSigName } from "@/lib/sig-name-repair";
 
 /** 저장소에 미설정 시 완판 오버레이·관리 화면 기본 도장(`public/images/sigs/stamp.png`) */
 export const DEFAULT_SIG_SOLD_STAMP_URL = "/images/sigs/stamp.png";
@@ -374,7 +375,7 @@ export function normalizeSigInventory(input: unknown): SigItem[] {
       if (id === ONE_SHOT_SIG_ID) isRolling = false;
       return {
         id,
-        name: decodePercentEncodedText(x.name || "시그") || "시그",
+        name: repairMojibakeSigName(decodePercentEncodedText(x.name || "시그") || "시그"),
         price: Math.max(0, Math.floor(Number(x.price || 0) || 0)),
         imageUrl: normalizeSigImageUrlStored(x.imageUrl),
         memberId: String(x.memberId || ""),
@@ -419,6 +420,10 @@ export function sigBundledFromDriveFallbackPath(storedPath: string): string | nu
 /** 표시 이름 ↔ from-drive 파일명 불일치(오타·동음) */
 const SIG_FROM_DRIVE_NAME_ALIASES: Record<string, string> = {
   보그댄스: "복고댄스",
+  "NO BATIDR": "NO BATIDÃO",
+  "NO BATID했O": "NO BATIDÃO",
+  "NO BATID횄O": "NO BATIDÃO",
+  "NO BATID했다": "NO BATIDÃO",
 };
 
 /** 시그 이름으로 Git 번들 GIF 경로 (`public/images/sigs/from-drive/`) */
