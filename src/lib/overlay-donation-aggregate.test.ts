@@ -3,9 +3,13 @@ import type { AppState, Donor, Member, RouletteState } from "@/types";
 import {
   applyOverlayDonationDisplayTotals,
   collectAppearedSigPrices,
+  collectDay777SigContributionByMember,
   filterDonorsForDay777Calc,
   filterDonorsFromAggregateAt,
+  isRestoredContributionLog,
+  membersWithOverlayDonationAggregate,
   normalizeDonationAggregateFromAt,
+  parseOverlayContributionNumber,
 } from "./overlay-donation-aggregate";
 
 function member(partial: Partial<Member> & { id: string; name: string }): Member {
@@ -44,6 +48,21 @@ describe("normalizeDonationAggregateFromAt", () => {
     expect(normalizeDonationAggregateFromAt("-1")).toBe(-1);
     expect(normalizeDonationAggregateFromAt(-1)).toBe(-1);
     expect(normalizeDonationAggregateFromAt("none")).toBe(-1);
+  });
+});
+
+describe("overlay contribution parsing", () => {
+  it("parses negative amounts with commas and unicode minus signs", () => {
+    expect(parseOverlayContributionNumber("-12,345")).toBe(-12_345);
+    expect(parseOverlayContributionNumber("−12，345")).toBe(-12_345);
+    expect(parseOverlayContributionNumber("—250")).toBe(-250);
+    expect(parseOverlayContributionNumber("not-a-number")).toBe(0);
+  });
+
+  it("recognizes only contribution restore logs", () => {
+    expect(isRestoredContributionLog({ note: "[회차 기여도 불러오기: 1회차]" })).toBe(true);
+    expect(isRestoredContributionLog({ note: "[정산 리셋 기여도 복원]" })).toBe(true);
+    expect(isRestoredContributionLog({ note: "일반 기여도 조정" })).toBe(false);
   });
 });
 
@@ -93,9 +112,59 @@ describe("applyOverlayDonationDisplayTotals", () => {
     );
     expect(rows.map((d) => d.id)).toEqual(["b"]);
   });
+
+  it("keeps signed stored contribution on Pongdang tables, including when no time filter is set", () => {
+    const state = {
+      members: [member({ id: "m1", name: "A", contribution: "−12,345" as any })],
+      donors: [],
+      contributionLogs: [],
+    } as unknown as AppState;
+
+    const pongdang = membersWithOverlayDonationAggregate(state, state.members, null, {
+      isPongdangPopup: true,
+    });
+    const standard = membersWithOverlayDonationAggregate(state, state.members, null);
+
+    expect(pongdang[0]?.contribution).toBe(-12_345);
+    expect(standard[0]?.contribution).toBe(0);
+  });
 });
 
 describe("day777Calc", () => {
+  it("preserves negative contributionPoints and contribution-log amounts", () => {
+    const state = {
+      members: [member({ id: "m1", name: "A" })],
+      donors: [
+        donor({
+          id: "negative-donor",
+          memberId: "m1",
+          amount: 50_000,
+          at: 1_500,
+          target: "account",
+          contributionPoints: "−12,000" as any,
+        }),
+      ],
+      contributionLogs: [
+        {
+          id: "manual-negative",
+          memberId: "m1",
+          delta: 1,
+          amount: "-345",
+          note: "negative adjustment",
+          at: 1_600,
+        } as any,
+      ],
+    } as unknown as AppState;
+
+    expect(collectDay777SigContributionByMember(state).get("m1")).toBe(-12_345);
+    expect(
+      membersWithOverlayDonationAggregate(state, state.members, null, {
+        day777Calc: true,
+        isPongdangPopup: true,
+      })[0]?.contribution
+    ).toBe(-12_345);
+  });
+
   it("collects appeared sig prices from history and current, skips one-shot", () => {
     const rs: RouletteState = {
       isRolling: false,

@@ -35,6 +35,8 @@ export async function GET(req: NextRequest) {
         enabled: false,
         minSigPrice: 50000,
         priorityMode: "fifo",
+        overlayScale: 1,
+        maxVisibleItems: 3,
       },
       waitingItems: waitings,
     });
@@ -93,13 +95,32 @@ export async function POST(req: NextRequest) {
 
     // 3. 설정 업데이트
     if (action === "update_settings") {
-      const { enabled, minSigPrice, priorityMode, representativeMemberId, autoExpireMinutes, embedInMainOverlay, alwaysShowWaiting, applyContributionToPongdang } = body;
+      const {
+        enabled,
+        minSigPrice,
+        priorityMode,
+        representativeMemberId,
+        autoExpireMinutes,
+        embedInMainOverlay,
+        alwaysShowWaiting,
+        overlayScale,
+        maxVisibleItems,
+        applyContributionToPongdang,
+      } = body;
+      const parsedOverlayScale = Number(overlayScale);
+      const parsedMaxVisibleItems = Number(maxVisibleItems);
       const nextSettings = {
         enabled: Boolean(enabled),
         minSigPrice: Math.max(0, Math.round(Number(minSigPrice) || 0)),
         priorityMode: priorityMode === "highest" ? ("highest" as const) : ("fifo" as const),
         embedInMainOverlay: Boolean(embedInMainOverlay),
         alwaysShowWaiting: alwaysShowWaiting !== false,
+        overlayScale: Number.isFinite(parsedOverlayScale) && parsedOverlayScale > 0
+          ? Math.round(Math.min(4, Math.max(0.5, parsedOverlayScale)) * 100) / 100
+          : 1,
+        maxVisibleItems: Number.isFinite(parsedMaxVisibleItems)
+          ? Math.min(10, Math.max(1, Math.round(parsedMaxVisibleItems)))
+          : 3,
         applyContributionToPongdang: applyContributionToPongdang !== false,
         ...(representativeMemberId ? { representativeMemberId: String(representativeMemberId) } : {}),
         ...(autoExpireMinutes !== undefined ? { autoExpireMinutes: Math.max(0, Number(autoExpireMinutes) || 0) } : {}),

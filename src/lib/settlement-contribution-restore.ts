@@ -152,7 +152,7 @@ export function applyLastResetContributionToState(
       restoredTotal += targetVal;
       memberDetails.push({ id: m.id, name: m.name, amount: targetVal });
 
-      if (targetVal > 0) {
+      if (targetVal > 0 && applyStandard) {
         newLogs.push({
           id: `cl_rst_${now}_${Math.random().toString(36).slice(2, 7)}`,
           memberId: m.id,
@@ -234,7 +234,7 @@ export function applyRoundContributionToState(
       restoredTotal += targetVal;
       memberDetails.push({ id: m.id, name: m.name, amount: targetVal });
 
-      if (targetVal > 0) {
+      if (targetVal > 0 && applyStandard) {
         newLogs.push({
           id: `cl_rst_${now}_${Math.random().toString(36).slice(2, 7)}`,
           memberId: m.id,

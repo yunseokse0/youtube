@@ -4,6 +4,7 @@ import { defaultState } from "@/lib/state";
 import {
   applyDonationToAppState,
   dedupeDonorRows,
+  isDuplicateDonationEvent,
   mergeDonorRowFields,
   purgeDonorsForMemberRoster,
   reassignDonorMemberInAppState,
@@ -570,6 +571,34 @@ describe("applyDonationToAppState", () => {
       "bank:din:cmumcrpff03ql5jncq2dclks1",
       "toonation:din:cmumcrom203qg5jncr6t599j6",
     ]);
+  });
+
+  it("does not reject a distinct strong UID matching a legacy donor external-ID key", () => {
+    const state = {
+      ...defaultState(),
+      donors: [
+        {
+          id: "toonation:donation-99",
+          name: "익명",
+          amount: 1000,
+          memberId: "m1",
+          at: Date.now(),
+          target: "toon" as const,
+          provider: "toonation",
+          externalId: "donation-99",
+        },
+      ],
+    };
+
+    expect(
+      isDuplicateDonationEvent(state, {
+        id: "bank:sms:uid-distinct-002",
+        provider: "toonation",
+        externalId: "donation-99",
+        donorName: "익명",
+        amount: 1000,
+      })
+    ).toBe(false);
   });
 
   it("still rejects the same strong UID arriving again within one second", () => {
@@ -1251,6 +1280,46 @@ describe("dedupeDonorRows message preservation", () => {
       },
     ]);
     expect(rows).toHaveLength(1);
+  });
+
+  it("preserves different strong UIDs sharing external ID in the large-row path", () => {
+    const at = Date.now();
+    const rows = dedupeDonorRows([
+      {
+        id: "bank:sms:uid-first-001",
+        provider: "bank",
+        externalId: "reused-external",
+        name: "반복후원자",
+        amount: 1000,
+        memberId: "m1",
+        at,
+        target: "toon" as const,
+      },
+      {
+        id: "bank:sms:uid-second-002",
+        provider: "bank",
+        externalId: "reused-external",
+        name: "반복후원자",
+        amount: 1000,
+        memberId: "m1",
+        at: at + 1000,
+        target: "toon" as const,
+      },
+      ...Array.from({ length: 199 }, (_, i) => ({
+        id: `bank:sms:bulk-${i}`,
+        provider: "bank",
+        externalId: `bulk-ext-${i}`,
+        name: `후원자${i}`,
+        amount: 1000 + i,
+        memberId: "m1",
+        at: at + i + 2000,
+        target: "toon" as const,
+      })),
+    ] as any);
+
+    expect(rows).toHaveLength(201);
+    expect(rows.map((row) => row.id)).toContain("bank:sms:uid-first-001");
+    expect(rows.map((row) => row.id)).toContain("bank:sms:uid-second-002");
   });
 });
 

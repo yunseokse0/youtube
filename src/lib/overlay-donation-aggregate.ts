@@ -2,6 +2,25 @@ import type { AppState, ContributionLog, Donor, Member, RouletteState, SigItem }
 import { syncMemberTotalsFromDonors, isPongdangMinusContributionLog } from "@/lib/donation/apply-donation-state";
 import { readManualSigBroadcastFromState } from "@/lib/manual-sig-broadcast-state";
 
+export function parseOverlayContributionNumber(value: unknown): number {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const raw = String(value ?? "")
+    .trim()
+    .replace(/[,\s，]/g, "")
+    .replace(/[−–—]/g, "-");
+  if (!raw) return 0;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function isRestoredContributionLog(log: Pick<ContributionLog, "note">): boolean {
+  const note = String(log?.note || "");
+  return (
+    note.includes("[정산 리셋 기여도 복원]") ||
+    note.includes("[회차 기여도 불러오기:")
+  );
+}
+
 /** 프리셋/URL 값 → epoch ms. 비활성(전체 기간)이면 null, 책정 OFF면 -1 */
 export function normalizeDonationAggregateFromAt(raw: unknown): number | null {
   if (raw === undefined || raw === null || raw === "") return null;
@@ -260,16 +279,22 @@ export function collectDay777SigContributionByMember(
     manualBuyerMemberIds: readManualBuyerMemberIds(state),
     fromAt: effectiveFromAtOrNull,
   });
+  const donorRows = effectiveFromAtOrNull != null
+    ? filterDonorsFromAggregateAt(state?.donors, effectiveFromAtOrNull)
+    : state?.donors || [];
+  const fallbackMemberId = resolveDay777SigCreditFallbackMemberId(
+    donorRows,
+    effectiveFromAtOrNull
+  );
   const byMember = new Map<string, number>();
   for (const row of credits) {
-    // 특정 멤버에게 지정된 시그 판매 건만 반영 (미지정/불명확 건은 특정 멤버에게 임의 fallback 배정하지 않음)
-    const memberId = String(row.memberId || "").trim();
+    // 미지정 시그는 777,000원 수령자 또는 유일한 후원자에게만 귀속한다.
+    const memberId = String(row.memberId || fallbackMemberId).trim();
     if (!memberId) continue;
     byMember.set(memberId, (byMember.get(memberId) || 0) + row.price);
   }
 
   // 외부(Toona 등 타 프로젝트)에서 전달된 나온 시그 기여도 (sigPrice 또는 isSigCredit / contributionPoints)
-  const donorRows = effectiveFromAtOrNull != null ? filterDonorsFromAggregateAt(state?.donors, effectiveFromAtOrNull) : state?.donors || [];
   const ignoreMinus = Boolean(opts?.ignorePongdangMinus);
   /** 줍줍 보너스(가상 Donor)를 퐁당퐁당 기여도에 합산할지 — 옵션(기본 true) */
   const includeZubzubBonus = state?.zubzubSettings?.applyContributionToPongdang !== false;
@@ -279,15 +304,18 @@ export function collectDay777SigContributionByMember(
     if (d.memberAutoAssigned === true) continue;
     const mid = String(d.memberId || "").trim();
     if (!mid) continue;
-    const explicitSigPrice = Math.max(
-      0,
-      Math.floor(Number((d as { sigPrice?: number }).sigPrice || (d.isZubzubBonus ? (d.amount || d.contributionPoints) : 0) || 0))
-    );
-    const cp = Math.max(0, Math.floor(Number(d.contributionPoints || 0)));
-    const amt = Math.max(0, Math.floor(Number(d.amount || 0)));
+    const sigPriceSource =
+      (d as { sigPrice?: number }).sigPrice ??
+      (d.isZubzubBonus ? (d.amount ?? d.contributionPoints) : 0);
+    const parsedSigPrice = parseOverlayContributionNumber(sigPriceSource);
+    const parsedContributionPoints = parseOverlayContributionNumber(d.contributionPoints);
+    const explicitSigPrice = Math.floor(Math.abs(parsedSigPrice));
+    const cp = Math.floor(Math.abs(parsedContributionPoints));
+    const amt = Math.floor(Math.abs(parseOverlayContributionNumber(d.amount)));
     const isCredit = Boolean((d as { isSigCredit?: boolean }).isSigCredit || d.isZubzubBonus);
 
-    const mult = (!ignoreMinus && d.pongdangMinus) ? -1 : 1;
+    const isMinus = Boolean(d.pongdangMinus || parsedSigPrice < 0 || parsedContributionPoints < 0);
+    const mult = !ignoreMinus && isMinus ? -1 : 1;
     if (explicitSigPrice > 0) {
       byMember.set(mid, (byMember.get(mid) || 0) + mult * explicitSigPrice);
     } else if (isCredit && cp > 0) {
@@ -311,15 +339,18 @@ export function collectDay777SigContributionByMember(
     ) {
       continue;
     }
-    if (ignoreMinus && isPongdangMinusContributionLog(log)) {
+    const parsedAmount = parseOverlayContributionNumber(log.amount);
+    if (ignoreMinus && (isPongdangMinusContributionLog(log) || parsedAmount < 0)) {
       continue;
     }
-    const amt = Math.max(0, Math.floor(Number(log.amount || 0)));
+    const amt = Math.floor(Math.abs(parsedAmount));
     const delta = log.isZubzubBonus
-      ? (!ignoreMinus && log.pongdangMinus ? -1 : 1)
+      ? (!ignoreMinus && (log.pongdangMinus || parsedAmount < 0) ? -1 : 1)
       : log.delta === -1
         ? -1
-        : 1;
+        : parsedAmount < 0
+          ? -1
+          : 1;
     byMember.set(mid, (byMember.get(mid) || 0) + delta * amt);
   }
   return byMember;
@@ -381,8 +412,8 @@ export function applyOverlayDonationDisplayTotals(
       members: (state.members || []).map((m) => ({
         ...m,
         contribution: isPongdangPopup
-          ? Math.floor(Number(m.contribution) || 0)
-          : Math.max(0, Math.floor(Number(m.contribution) || 0)),
+          ? Math.floor(parseOverlayContributionNumber(m.contribution))
+          : Math.max(0, Math.floor(parseOverlayContributionNumber(m.contribution))),
       })),
     };
   }
@@ -433,8 +464,8 @@ export function applyOverlayDonationDisplayTotals(
     members: (amountSynced.members || []).map((m) => {
       const orig = originalMemberMap.get(m.id);
       const autoVal = sigById.get(m.id) ?? 0;
-      let manualAdj = isManualMode ? Number(manualContribs[m.id]) || 0 : 0;
-      const currentContrib = Math.floor(Number(orig?.contribution) || 0);
+      let manualAdj = isManualMode ? parseOverlayContributionNumber(manualContribs[m.id]) : 0;
+      const currentContrib = Math.floor(parseOverlayContributionNumber(orig?.contribution));
       const hasContributionSource =
         (Array.isArray(state?.donors) && state.donors.length > 0) ||
         (state?.contributionLogs || state?.zubzubContributionLogs || []).some(
@@ -474,8 +505,8 @@ export function membersWithOverlayDonationAggregate(
     return members.map((m) => ({
       ...m,
       contribution: isPongdangPopup
-        ? Math.floor(Number(m.contribution) || 0)
-        : Math.max(0, Math.floor(Number(m.contribution) || 0)),
+        ? Math.floor(parseOverlayContributionNumber(m.contribution))
+        : Math.max(0, Math.floor(parseOverlayContributionNumber(m.contribution))),
     }));
   }
   return (

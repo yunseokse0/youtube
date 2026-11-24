@@ -232,6 +232,39 @@ describe("정산 회차 기여도 저장 및 리셋 후 불러오기 테스트",
     expect(restored.nextState.pongdangManualMode).toBe(true);
   });
 
+  it("퐁당퐁당에만 복원하면 일반 기여도 복원 로그를 만들지 않는다", () => {
+    const savedRec = appendSettlementRecord(
+      "퐁당 전용 복원 회차",
+      dummyMembers,
+      0.7,
+      0.6,
+      0.033,
+      undefined,
+      undefined,
+      "test_user",
+      undefined,
+      { saveRoundContribution: true }
+    );
+    const clearedState = {
+      members: [
+        { id: "m1", name: "자키", account: 0, toon: 0, contribution: 0 },
+        { id: "m2", name: "열음", account: 0, toon: 0, contribution: 0 },
+        { id: "m3", name: "초화", account: 0, toon: 0, contribution: 0 },
+      ],
+      contributionLogs: [],
+      pongdangManualContributions: {},
+    } as unknown as AppState;
+
+    const restored = applyRoundContributionToState(clearedState, savedRec, {
+      applyToStandardExcel: false,
+      applyToPongdangExcel: true,
+    });
+
+    expect(restored.nextState.members[0]?.contribution).toBe(0);
+    expect(restored.nextState.pongdangManualContributions?.["m1"]).toBe(460_000);
+    expect(restored.nextState.contributionLogs).toEqual([]);
+  });
+
   it("실제 로컬 서버 API 연동 E2E: 정산 회차 저장 -> 초기화 -> 기여도 복원 -> 서버 상태 반영 확인", async () => {
     // 1. 현재 서버 상태 조회
     const stateRes = await fetch("http://localhost:3001/api/state?u=finalent");

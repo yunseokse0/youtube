@@ -27,6 +27,19 @@ export type ZubzubSimpleClaimedInfo = {
   bonusText: string;
 };
 
+export function limitZubzubWaitingItems(
+  items: ZubZubQueueItem[],
+  maxVisibleItems: number = 3
+): ZubZubQueueItem[] {
+  const limit = Math.min(
+    10,
+    Math.max(1, Math.round(Number(maxVisibleItems) || 3))
+  );
+  return [...items]
+    .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0))
+    .slice(0, limit);
+}
+
 /** 초간결 줍줍 대기 1줄 텍스트 포맷터 */
 export function formatZubzubSimpleWaiting(
   item: ZubZubQueueItem,
@@ -63,8 +76,10 @@ type Props = {
   /** 대기 중인 시그가 없을 때도 '🎁 대표 줍줍 : 대기 없음' 뱃지를 항상 화면에 표시 (기본 true) */
   alwaysShowWaiting?: boolean;
   emptyText?: string;
-  /** 배너 크기 배율 (1 = 원본). 독립 오버레이 URL의 `scale` 파라미터로 조절 */
+  /** 배너 크기 배율 (1 = 원본) */
   scale?: number;
+  /** 대기 목록에서 한 번에 표시할 최대 항목 수 */
+  maxVisibleItems?: number;
 };
 
 export function ZubzubOverlayBanner({
@@ -77,6 +92,7 @@ export function ZubzubOverlayBanner({
   alwaysShowWaiting = true,
   emptyText = "대기 없음",
   scale = 1,
+  maxVisibleItems = 3,
 }: Props) {
   const [activeClaim, setActiveClaim] = useState<ZubzubClaimedEvent | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -95,10 +111,8 @@ export function ZubzubOverlayBanner({
     };
   }, [claimedEvent, onClearClaimedEvent]);
 
-  const hasWaiting = waitingItems.length > 0;
-  const orderedWaitings = [...waitingItems].sort(
-    (a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0)
-  );
+  const orderedWaitings = limitZubzubWaitingItems(waitingItems, maxVisibleItems);
+  const hasWaiting = orderedWaitings.length > 0;
 
   // 위치 스타일 결정
   const posClass =

@@ -7,7 +7,7 @@ export type MemberRankingRow = {
   accountAmount: number;
   toonAmount: number;
   totalAmount: number;
-  /** 세션 누적 기여도 — 엑셀표 순위 기준 */
+  /** 기여도 기준 — 회차 복원분이 있으면 함께 합산 */
   contributionAmount: number;
   isRepresentative: boolean;
 };
@@ -18,7 +18,7 @@ export type MemberPositionMode = "fixed" | "rankLinked";
 
 /**
  * 엑셀표·순위 연동 정렬 기준
- * - contribution: 누적 기여도 (세션 + 저장·복원값 중 큰 값, 기본)
+ * - contribution: 현재 방송 기여도 (회차 복원분이 있을 때만 누적)
  * - sessionContribution: 이번 방송(세션)에서 새로 쌓인 기여도만 (저장·복원 누적값 제외)
  */
 export type MemberRankingMetric = "contribution" | "sessionContribution" | "donation" | "account" | "toon";
@@ -77,7 +77,7 @@ function safeContributionAmount(value: unknown): number {
   return Math.floor(n);
 }
 
-/** 엑셀표 순위 — 세션 누적 기여도 (getter 없으면 member.contribution, 음수 기여도 지원) */
+/** 엑셀표 순위 — 기여도 (getter 없으면 member.contribution, 음수 기여도 지원) */
 export function memberContributionRankingTotal(
   member: Member,
   getContribution?: MemberContributionGetter
@@ -108,7 +108,7 @@ export function compareMembersByDonationTotal(
 }
 
 /**
- * 엑셀표·순위 연동: 누적 기여도 내림차순 → 동점이면 금액 합 → 생성순
+ * 엑셀표·순위 연동: 기여도 내림차순 → 동점이면 금액 합 → 생성순
  */
 export function compareMembersByContribution(
   a: Member,

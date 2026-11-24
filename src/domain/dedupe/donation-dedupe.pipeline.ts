@@ -1,4 +1,5 @@
 import type { Donor } from "@/types";
+import { hasDistinctStrongDonationUids } from "@/domain/dedupe/donation-event-identity";
 import {
   extractReliableToonationExtFromDonorId,
 } from "@/lib/donation/toonation/parse-event";
@@ -590,6 +591,7 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
         const mDk = String(mAny.donorKey || "").trim().toLowerCase();
         const mExt = String(mAny.externalId || "").trim().toLowerCase();
         const mPk = String(mAny.primaryKey || "").trim().toLowerCase();
+        if (hasDistinctStrongDonationUids(cIdRaw, mIdRaw)) continue;
         /** ✅ 2026-09-13 C 카테고리 Fix: hasTwinInMerged Strong ID 불일치 early-exit 로직 개선
          *  기존: cIdNorm 과 mIdNorm 둘다 존재만 하면 글자 다를때 즉시 return false (절대 twin 아님)
          *  Problem: Weak ID (fp-a, fp-b 등 dual-apply 다른 임시 id) 도 둘다 id가 존재하고 글자가 다르다고
@@ -606,10 +608,7 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
         const relC = cIdRaw ? extractReliableToonationExtFromDonorId(cIdRaw) : null;
         const relM = mIdRaw ? extractReliableToonationExtFromDonorId(mIdRaw) : null;
         const sameReliable = relC && relM && relC.toLowerCase() === relM.toLowerCase();
-        // ✅ 2026-09-14 LIVE BUGFIX 박자키 12:59:53: SSE(toonation:din:UUID) + B-mode(bank:sms:UUID) SAME UUID dual path!
-        // id prefix만 다르고 (toonation:din: VS bank:sms:) 실제 UUID 뒷부분은 완전 일치하거나 externalId/donorKey/primaryKey 중 어느 하나라도 완전 일치하면
-        // BANK PROVIDER 에서 파생된 다른 prefix Strong ID라도 진짜 같은 후원이므로 twin으로 간주해 Strong early-exit 를 bypass 해야 함.
-        // (hasTwinInMerged가 return false 해버리면 그 뒤 allowMergeByIdOnly는 아예 호출도 안됨!)
+        // External keys may corroborate an identity, but cannot override the distinct-strong-UID guard above.
         let sameAnyStrongKey = false;
         if (cIdIsStrong && mIdIsStrong) {
           // 1) donorKey / externalId / primaryKey 완벽 일치 검사
@@ -987,9 +986,7 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
   function allowMergeByIdOnly(prev: MergeableDonor, incoming: MergeableDonor): boolean {
     const idA = String(prev.id || "").trim();
     const idB = String(incoming.id || "").trim();
-    // ✅ 2026-09-14 Bug 5/5 박자키 LIVE 중복 Fix: SAME UUID tail matching 을 hasRealDonorId 차단 블록 **앞**에서 선행 처리
-    //    (toonation:din:UUID ↔ bank:sms:UUID 는 둘다 Strong ID 라 hasRealDonorId=true 인데 normId 는 서로 달라서
-    //     hasRealDonorId 블록에서 return false 당하는 것을 막기 위해 UUID tail 일치 시 즉시 merge 허용을 가장 위로 올림)
+    // Canonical hub IDs and reliable Toonation IDs are checked before fallback tail matching.
     const idTailEq = (() => {
       const lastOf = (raw: string) => {
         const s = String(raw || "").trim();
@@ -1006,13 +1003,14 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
       const normB = cachedNormId(idB) || idB;
       if (normA === normB) return true;
     }
-    if (idTailEq) return true;
     const relPrev = idA ? extractReliableToonationExtFromDonorId(idA) : null;
     const relInc = idB ? extractReliableToonationExtFromDonorId(idB) : null;
     if (relPrev && relInc && relPrev.toLowerCase() === relInc.toLowerCase()) return true;
+    if (hasDistinctStrongDonationUids(idA, idB)) return false;
+    if (idTailEq) return true;
     if (hasRealDonorId(prev) || hasRealDonorId(incoming)) {
       if (idTailEq) {
-        // ✅ 2026-09-14 Bug 5/5: 양 Strong ID 이지만 real UUID tail 이 완벽 일치 = 실제 SAME 후원 SSE/Polling 이중 유입 → norm 불일치 차단 bypass
+        // A fallback tail match can bypass this only when the IDs are not two distinct strong UIDs.
       } else {
         const normA = (idA && cachedNormId(idA)) || idA;
         const normB = (idB && cachedNormId(idB)) || idB;
@@ -1128,26 +1126,34 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
       merged[idx] = mergeDonorRowFields(pref, oth);
     };
     const _find = (d: T): number => {
+      const findMergeable = (idx: number | undefined): number => {
+        if (idx === undefined) return -1;
+        return allowMergeByIdOnly(merged[idx]!, d as MergeableDonor) ? idx : -1;
+      };
       const rawId = String(d.id || "").trim();
       const nId = rawId ? cachedNormId(rawId) || rawId : "";
       if (nId && !isWeakToonationDonorId(rawId)) {
-        const h = byId.get(nId.toLowerCase());
-        if (h !== undefined) return merged.indexOf(h);
+        const idx = merged.indexOf(byId.get(nId.toLowerCase())!);
+        const found = findMergeable(idx >= 0 ? idx : undefined);
+        if (found >= 0) return found;
       }
       const ext = String(d.externalId || "").trim().toLowerCase();
       if (ext) {
-        const h = byExt.get(ext);
-        if (h !== undefined) return merged.indexOf(h);
+        const idx = merged.indexOf(byExt.get(ext)!);
+        const found = findMergeable(idx >= 0 ? idx : undefined);
+        if (found >= 0) return found;
       }
       const dk = String((d as unknown as { donorKey?: string | number }).donorKey || "").trim().toLowerCase();
       if (dk) {
-        const h = byDk.get(dk);
-        if (h !== undefined) return merged.indexOf(h);
+        const idx = merged.indexOf(byDk.get(dk)!);
+        const found = findMergeable(idx >= 0 ? idx : undefined);
+        if (found >= 0) return found;
       }
       const pk = String((d as unknown as { primaryKey?: string | number }).primaryKey || "").trim().toLowerCase();
       if (pk) {
-        const h = byPk.get(pk);
-        if (h !== undefined) return merged.indexOf(h);
+        const idx = merged.indexOf(byPk.get(pk)!);
+        const found = findMergeable(idx >= 0 ? idx : undefined);
+        if (found >= 0) return found;
       }
       return -1;
     };
@@ -1404,12 +1410,6 @@ export function isDuplicateDonationEvent(
     if (donorIdNorm && eventIdNorm && donorIdNorm === eventIdNorm) return true;
     if (donorId === eventId || donorId === baseId) return true;
     if (baseId && normalizeDonationEventId(donorId) === baseId) return true;
-    if (
-      externalDonorId &&
-      (donorId === externalDonorId || normalizeDonationEventId(donorId) === externalDonorId)
-    ) {
-      return true;
-    }
     /** ✅ 2026-09-13 B-2 Fix: "same toonation real id with ts skew / remapped message" reject 안됨
      *  donor.id 와 rawEvent.id 자체에서 `extractReliableToonationExtFromDonorId` 로 실제 투네 realId (toon-{uuid}-{ts} / uuid / din prefix 등) 를 추출한 뒤
      *  둘 다 reliable 추출 성공 + 추출된 realId 가 100% 같으면 ID ONLY 매칭 성공 → 중복 return true.
@@ -1418,6 +1418,13 @@ export function isDuplicateDonationEvent(
     const relDonor = donorId ? extractReliableToonationExtFromDonorId(donorId) : null;
     const relEvent = eventId ? extractReliableToonationExtFromDonorId(eventId) : null;
     if (relDonor && relEvent && relDonor.toLowerCase() === relEvent.toLowerCase()) return true;
+    if (hasDistinctStrongDonationUids(donorId, eventId)) return false;
+    if (
+      externalDonorId &&
+      (donorId === externalDonorId || normalizeDonationEventId(donorId) === externalDonorId)
+    ) {
+      return true;
+    }
     if (externalId) {
       const normDonor = normalizeDonationEventId(donorId);
       if (
@@ -1476,8 +1483,7 @@ export function isDuplicateDonationEvent(
      *  → 기존 로직은 이 케이스를 중복으로 오판해 3건 후원이 1건으로 줄어드는 False Positive 발생.
      */
     const ownerRemapHit = isOwnerRemapSplitDuplicate(d, rawEvent);
-    const distinctStrongUid =
-      dHasStrongId && evHasStrongId && Boolean(donorIdNorm) && Boolean(eventIdNorm) && donorIdNorm !== eventIdNorm;
+    const distinctStrongUid = dHasStrongId && evHasStrongId && hasDistinctStrongDonationUids(donorId, eventId);
     if (ownerRemapHit && !distinctStrongUid) {
       const tgtD = String((d as unknown as { target?: string }).target || "").trim().toLowerCase();
       const tgtEv = String(rawEvent.target || "").trim().toLowerCase();

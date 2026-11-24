@@ -15,6 +15,8 @@ import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base
 import { maxOverlayAmountDisplayLength } from "@/lib/overlay-amount-display";
 import {
   membersWithOverlayDonationAggregate,
+  isRestoredContributionLog,
+  parseOverlayContributionNumber,
   resolveOverlayContributionSource,
 } from "@/lib/overlay-donation-aggregate";
 import {
@@ -2906,14 +2908,35 @@ function OverlayInner() {
     day777Calc && resolvePongdangManualMode(rawSp, effectivePreset, { ready }, s as AppState);
   /** 퐁당퐁당 엑셀표(777데이 계산 또는 excelPongdang 테마): 마이너스 기여도를 음수 그대로 표기 */
   const isPongdangTable = day777Calc || isExcelPongdang;
+  const restoredContributionMemberIds = useMemo(
+    () =>
+      new Set(
+        (s?.contributionLogs || [])
+          .filter(isRestoredContributionLog)
+          .map((log) => String(log.memberId || "").trim())
+          .filter(Boolean)
+      ),
+    [s?.contributionLogs]
+  );
+  const hasRestoredStandardContribution = restoredContributionMemberIds.size > 0;
   const toonHeaderLabel = resolvePresetLabel("toonHeaderLabel", "투네");
   const contributionHeaderLabel = (() => {
-    const resolved = resolvePresetLabel(
-      "contributionHeaderLabel",
-      isPongdangTable ? "기여도" : "누적기여도"
-    );
-    /** 🔴 퐁당퐁당 엑셀표는 '기여도'로 표기 — 프리셋에 저장된 기본값 '누적기여도'가 남아 있어도 덮어쓴다 */
-    if (isPongdangTable && resolved === "누적기여도") return "기여도";
+    const defaultLabel =
+      !isPongdangTable && hasRestoredStandardContribution ? "누적기여도" : "기여도";
+    const resolved = resolvePresetLabel("contributionHeaderLabel", defaultLabel);
+    if (
+      (resolved === "기여도" || resolved === "누적기여도") &&
+      (isPongdangTable || !hasRestoredStandardContribution)
+    ) {
+      return "기여도";
+    }
+    if (
+      !isPongdangTable &&
+      hasRestoredStandardContribution &&
+      (resolved === "기여도" || resolved === "누적기여도")
+    ) {
+      return "누적기여도";
+    }
     return resolved;
   })();
   const restroomHeaderLabel = resolvePresetLabel("restroomHeaderLabel", "화장실");
@@ -3266,7 +3289,7 @@ function OverlayInner() {
   const totalChBase = Math.max(6, Math.min(22, defTotalCh));
   /** 순위 열: 헤더「순위」·「#12」 등이 잘리지 않도록 `ch` 하한 확보(URL `rankCh`) */
   const rankColCh = Math.max(6, Math.min(12, parseInt(sp.get("rankCh") || "6", 10)));
-  /** 누적기여도 열: 5글자 헤더(누적기여도) 및 숫자가 잘리지 않도록 최소폭 확보 */
+  /** 기여도 열: 복원 시 누적 헤더와 숫자가 잘리지 않도록 최소폭 확보 */
   const contributionChBase = Math.max(11, Math.min(20, defContributionCh));
   const restroomChParam = externalHost ? rawSp.get("restroomCh") : sp.get("restroomCh");
   const defRestroomCh =
@@ -3923,7 +3946,9 @@ function OverlayInner() {
       });
     };
     /** 미리보기 로딩 중 default 멤버1·2·3 폴백 금지 — 테마 변경 시 가짜 목록에 고착되던 원인 */
-    if ((!donationAggregateFromAt && !day777Calc) || !s) return applyExclusion(membersRemote);
+    if ((!donationAggregateFromAt && !day777Calc && !isExcelPongdang) || !s) {
+      return applyExclusion(membersRemote);
+    }
     const donorsForAgg =
       isAdminPreview && adminPreviewDonors !== undefined
         ? (adminPreviewDonors as Donor[])
@@ -4051,85 +4076,102 @@ function OverlayInner() {
    * donors가 있으면 저장값·계좌+투네 폴백 대신 공식 기반 합산을 우선(OBS pick에 기록부 없음).
    * 기본 공식(100/100)이고 후원·기록부가 없을 때만 계좌+투네 합 레거시 폴백.
    */
-  const allowContributionTotalFallback = isDefaultContributionFormula(s?.contributionFormula);
   const overlayContributionSource = useMemo(() => {
     if (!s) return { donors: [] as Donor[], contributionLogs: [] as AppState["contributionLogs"] };
     return resolveOverlayContributionSource(s as AppState, {
       fromAt: donationAggregateFromAt,
       day777Calc,
       pongdangManualMode,
+      isPongdangPopup: isPongdangTable,
     });
-  }, [s, donationAggregateFromAt, day777Calc, pongdangManualMode]);
-  const getContributionValueForMember = useCallback((m: Member) => {
-    if (day777Calc) {
-      const raw = (m as Member & { contribution?: unknown }).contribution;
-      const parsed =
-        typeof raw === "number"
-          ? raw
-          : Number(typeof raw === "string" ? String(raw).replace(/,/g, "").trim() : raw);
-      return Number.isFinite(parsed) ? Math.floor(parsed) : 0;
-    }
-    const memberId = String(m.id || "").trim();
-    const donors = overlayContributionSource.donors || [];
-    const hasDonorRows =
-      memberId &&
-      donors.some(
-        (d) => String(d.memberId || "").trim() === memberId && (Number(d.amount) || 0) > 0
-      );
-    const raw = (m as Member & { contribution?: unknown }).contribution;
-    let parsed = typeof raw === "number" ? raw : Number(typeof raw === "string" ? String(raw).replace(/,/g, "").trim() : raw);
-    const validBase = Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
-    if (hasDonorRows && s) {
-      const sessionTotal = resolveMemberContributionTotal(memberId, {
-        donors: overlayContributionSource.donors,
-        contributionLogs: overlayContributionSource.contributionLogs,
-        contributionFormula: s.contributionFormula,
-      });
-      return Math.max(sessionTotal, validBase);
-    }
-    const total = Math.max(0, Number(m.account || 0) + Number(m.toon || 0));
-    if (!Number.isFinite(parsed)) {
-      if (day777Calc) return 0;
-      return allowContributionTotalFallback ? total : 0;
-    }
-    const c = Math.floor(parsed);
-    if (day777Calc) return c;
-    if (allowContributionTotalFallback && !hasDonorRows && parsed === 0 && total > 0 && !s?.contributionFormula) return total;
-    return Math.max(0, c);
-  }, [
-    allowContributionTotalFallback,
-    day777Calc,
-    pongdangManualMode,
-    overlayContributionSource.donors,
-    overlayContributionSource.contributionLogs,
-    s?.contributionFormula,
-    s,
-  ]);
-  /**
-   * '기여도(세션)' 순위 기준: 누적·저장·복원값을 제외하고 이번 방송에서 새로 쌓인 기여도만 사용.
-   * 퐁당퐁당은 m.contribution 자체가 이번 방송 기여도이므로 그대로 사용한다.
-   */
+  }, [s, donationAggregateFromAt, day777Calc, pongdangManualMode, isPongdangTable]);
+  const currentSessionContributionLogs = useMemo(
+    () => (overlayContributionSource.contributionLogs || []).filter((log) => !isRestoredContributionLog(log)),
+    [overlayContributionSource.contributionLogs]
+  );
   const getSessionContributionValueForMember = useCallback((m: Member) => {
-    if (day777Calc) return getContributionValueForMember(m);
+    if (day777Calc) return parseOverlayContributionNumber(m.contribution);
     const memberId = String(m.id || "").trim();
     if (!memberId || !s) return 0;
     return resolveMemberContributionTotal(memberId, {
       donors: overlayContributionSource.donors,
-      contributionLogs: overlayContributionSource.contributionLogs,
+      contributionLogs: currentSessionContributionLogs,
       contributionFormula: s.contributionFormula,
     });
   }, [
     day777Calc,
-    getContributionValueForMember,
+    currentSessionContributionLogs,
+    overlayContributionSource.donors,
+    s?.contributionFormula,
+    s,
+  ]);
+  /**
+   * 기여도 숫자: donors contributionPoints + 기록부와 동일하게 계산.
+   * donors가 있으면 저장값·계좌+투네 폴백 대신 공식 기반 합산을 우선(OBS pick에 기록부 없음).
+   * 기본 공식(100/100)이고 후원·기록부가 없을 때만 계좌+투네 합 레거시 폴백.
+   */
+  const allowContributionTotalFallback = isDefaultContributionFormula(s?.contributionFormula);
+  const getContributionValueForMember = useCallback((m: Member) => {
+    const storedContribution = parseOverlayContributionNumber(m.contribution);
+    if (isPongdangTable) return Math.floor(storedContribution);
+    const memberId = String(m.id || "").trim();
+    const donors = overlayContributionSource.donors || [];
+    const hasContributionSource =
+      memberId &&
+      (donors.some((d) => String(d.memberId || "").trim() === memberId) ||
+        (overlayContributionSource.contributionLogs || []).some(
+          (log) => String(log.memberId || "").trim() === memberId
+        ));
+    if (memberId && s && hasRestoredStandardContribution) {
+      const cumulativeTotal = resolveMemberContributionTotal(memberId, {
+        donors,
+        contributionLogs: overlayContributionSource.contributionLogs,
+        contributionFormula: s.contributionFormula,
+      });
+      return restoredContributionMemberIds.has(memberId)
+        ? Math.max(cumulativeTotal, Math.max(0, Math.floor(storedContribution)))
+        : getSessionContributionValueForMember(m);
+    }
+    if (memberId && s && hasContributionSource) {
+      return getSessionContributionValueForMember(m);
+    }
+    const total = Math.max(0, Number(m.account || 0) + Number(m.toon || 0));
+    const rawStoredContribution = String(m.contribution ?? "")
+      .trim()
+      .replace(/[,\s，]/g, "")
+      .replace(/[−–—]/g, "-");
+    if (rawStoredContribution && !Number.isFinite(Number(rawStoredContribution))) {
+      return allowContributionTotalFallback ? total : 0;
+    }
+    if (
+      allowContributionTotalFallback &&
+      !hasContributionSource &&
+      storedContribution === 0 &&
+      total > 0 &&
+      !s?.contributionFormula
+    ) {
+      return total;
+    }
+    return Math.max(0, Math.floor(storedContribution));
+  }, [
+    allowContributionTotalFallback,
+    isPongdangTable,
+    hasRestoredStandardContribution,
+    restoredContributionMemberIds,
+    getSessionContributionValueForMember,
     overlayContributionSource.donors,
     overlayContributionSource.contributionLogs,
     s?.contributionFormula,
     s,
   ]);
+  const getDisplayedContributionValueForMember = useCallback(
+    (m: Member) => getContributionValueForMember(m),
+    [getContributionValueForMember]
+  );
   /** 순위 산정용 기여도 getter — '기여도(세션)'은 세션 기준, 그 외(누적)는 전체 기준 */
   const rankingContributionGetter = memberRankingMetric === "sessionContribution"
     ? getSessionContributionValueForMember
-    : getContributionValueForMember;
+    : getDisplayedContributionValueForMember;
   const resolvedMemberRoles = useMemo<Record<string, string>>(() => {
     if (memberPositionMode !== "rankLinked") return memberPositionsMap;
     const roleMap: Record<string, string> = {};
@@ -4212,8 +4254,8 @@ function OverlayInner() {
     () =>
       members
         .filter((m) => !pinnedFilter(m) && !isContributionExcluded(m))
-        .reduce((sum, m) => sum + getContributionValueForMember(m), 0),
-    [members, pinnedFilter, getContributionValueForMember, isContributionExcluded]
+        .reduce((sum, m) => sum + getDisplayedContributionValueForMember(m), 0),
+    [members, pinnedFilter, getDisplayedContributionValueForMember, isContributionExcluded]
   );
   const sumRestroom = useMemo(
     () =>
@@ -4234,7 +4276,7 @@ function OverlayInner() {
         Number(m.account || 0),
         Number(m.toon || 0),
         Number(m.account || 0) + Number(m.toon || 0),
-        getContributionValueForMember(m)
+        getDisplayedContributionValueForMember(m)
       );
       if (showRestroomColumn) {
         const rv = getRestroomValueForMember(m);
@@ -4259,7 +4301,7 @@ function OverlayInner() {
     sumToon,
     rounded,
     sumContribution,
-    getContributionValueForMember,
+    getDisplayedContributionValueForMember,
     getRestroomValueForMember,
     showRestroomColumn,
     tableTextOutlineWidthPx,
@@ -4486,7 +4528,7 @@ function OverlayInner() {
         const isRep = !role.includes("부대표") && role.includes("대표");
         const repFallback = (!rank && isRep && Array.isArray(rankCustomCells) && rankCustomCells.length > 0) ? String(rankCustomCells[0] || "").trim() : "";
         const customVal = isRankMode ? (rankVal || repFallback) : (memberVal || repFallback);
-        const contribVal = isContributionExcluded(m) ? "-" : String(getContributionValueForMember(m));
+        const contribVal = isContributionExcluded(m) ? "-" : String(getDisplayedContributionValueForMember(m));
         return `${showCustomColumn ? `${customVal}|` : ""}${m.account}|${m.toon}|${contribVal}${showRestroomColumn ? `|${getRestroomValueForMember(m)}` : ""}`;
       })
       .join(";");
@@ -6400,7 +6442,7 @@ function OverlayInner() {
                         <td
                           className={`${effectiveHeaderCls} overlay-col-contribution text-center`}
                           style={{ whiteSpace: "nowrap" }}
-                          title="세션 누적 기여도(후원·시그 단가·수동 기여도 포함) 기준. 운영비 행은 —, 총합은 운영비 제외."
+                          title="기여도 기준. 이전 회차 복원값이 있을 때만 합산됩니다. 운영비 행은 —, 총합은 운영비 제외."
                         >
                           {contributionHeaderLabel}
                         </td>
@@ -6653,7 +6695,7 @@ function OverlayInner() {
                                 </span>
                               ) : (
                                 <OverlayTableNumCell
-                                  value={getContributionValueForMember(m)}
+                                  value={getDisplayedContributionValueForMember(m)}
                                   format={fmt}
                                   animate={rowMotionEnabled}
                                   allowNegative={isPongdangTable}

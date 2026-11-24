@@ -2,11 +2,27 @@ import { describe, it, expect } from "vitest";
 import {
   formatZubzubSimpleWaiting,
   formatZubzubSimpleClaimed,
+  limitZubzubWaitingItems,
   type ZubzubClaimedEvent,
 } from "@/components/overlay/ZubzubOverlayBanner";
 import type { ZubZubQueueItem } from "@/types";
 
 describe("ZubzubOverlayBanner - 초간결 1줄 디자인 포맷터 검증", () => {
+  it("대기 항목은 오래된 순서로 정렬하고 설정한 최대 개수까지만 반환한다", () => {
+    const items: ZubZubQueueItem[] = [3, 1, 2].map((createdAt) => ({
+      id: `q${createdAt}`,
+      userId: "zakiexcel",
+      triggerDonationId: `t${createdAt}`,
+      sigName: `sig${createdAt}`,
+      bonusAmount: 50000,
+      status: "WAITING",
+      createdAt,
+    }));
+
+    expect(limitZubzubWaitingItems(items, 2).map((item) => item.id)).toEqual(["q1", "q2"]);
+    expect(limitZubzubWaitingItems(items, 20)).toHaveLength(3);
+  });
+
   it("대기 중인 줍줍이 있을 때 간결한 1줄 텍스트로 포맷팅하고 불필요한 미사여구를 배제한다", () => {
     const item: ZubZubQueueItem = {
       id: "q1",

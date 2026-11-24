@@ -13700,8 +13700,8 @@ function AdminPageInner() {
                     </span>
                   </div>
                   <span className="text-xs text-neutral-400 mt-0.5">
-                    {(state.memberRankingMetric || "contribution") === "contribution" && "현재 [누적 기여도] 기준: 세션 누적 기여도(시그 단가/수동 기여도 포함) 순으로 정렬합니다."}
-                    {state.memberRankingMetric === "sessionContribution" && "현재 [기여도] 기준: 누적·복원 저장값을 제외하고 이번 방송에서 새로 쌓인 기여도 순으로 정렬합니다."}
+                    {(state.memberRankingMetric || "contribution") === "contribution" && "현재 [기여도] 기준: 이번 방송 기여도로 정렬하며, 이전 회차 기여도를 불러온 경우에만 복원분이 합산됩니다."}
+                    {state.memberRankingMetric === "sessionContribution" && "현재 [기여도 (이번 방송만)] 기준: 이전 회차 복원값을 제외하고 이번 방송에서 새로 쌓인 기여도로 정렬합니다."}
                     {state.memberRankingMetric === "donation" && "현재 [총 후원금] 기준: 계좌 후원금 + 투네이션 후원금 합산 순으로 정렬합니다."}
                     {state.memberRankingMetric === "account" && "현재 [계좌 금액만] 기준: 계좌(캐시) 후원금만으로 순위를 정렬합니다."}
                     {state.memberRankingMetric === "toon" && "현재 [투네 금액만] 기준: 투네이션 후원금만으로 순위를 정렬합니다."}
@@ -13709,8 +13709,8 @@ function AdminPageInner() {
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {[
-                    { id: "contribution", label: "누적 기여도 (기본)" },
-                    { id: "sessionContribution", label: "기여도 (세션만)" },
+                    { id: "contribution", label: "기여도 (복원 시 누적)" },
+                    { id: "sessionContribution", label: "기여도 (이번 방송만)" },
                     { id: "donation", label: "총 후원금 (계좌+투네)" },
                     { id: "account", label: "계좌 금액만" },
                     { id: "toon", label: "투네 금액만" },
@@ -13824,13 +13824,13 @@ function AdminPageInner() {
                         ? "투네이션 후원금으로만 순위를 매깁니다. 동점이면 계좌 → 멤버 생성순."
                         : state.memberRankingMetric === "sessionContribution"
                         ? "누적·복원 저장값을 제외하고 이번 방송에서 새로 쌓인 기여도로 순위를 매깁니다. 동점이면 금액 → 멤버 생성순."
-                        : "세션 누적 기여도(시그 단가/수동 기여도 포함)로 순위를 매깁니다. 동점이면 금액 → 멤버 생성순."
+                        : "이번 방송 기여도에 이전 회차 불러오기 값이 있을 때만 복원분을 더해 순위를 매깁니다. 동점이면 금액 → 멤버 생성순."
                     } />
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {[
-                      { id: "contribution", label: "누적 기여도" },
-                      { id: "sessionContribution", label: "기여도 (세션만)" },
+                      { id: "contribution", label: "기여도 (복원 시 누적)" },
+                      { id: "sessionContribution", label: "기여도 (이번 방송만)" },
                       { id: "donation", label: "총 후원금 (계좌+투네)" },
                       { id: "account", label: "계좌 금액만" },
                       { id: "toon", label: "투네 금액만" },
@@ -25034,7 +25034,7 @@ function AdminPageInner() {
                                     }}
                                   />
                                   <p className="text-[10px] text-neutral-500">
-                                    열 순서: 순위 → 커스텀 → 직급 → 이름 → 후원 → 투네 → (후원합계) → (누적기여도) → (화장실). 「후원합계」는 계좌+투네 합 열입니다.
+                                    열 순서: 순위 → 커스텀 → 직급 → 이름 → 후원 → 투네 → (후원합계) → (기여도/복원 시 누적) → (화장실). 「후원합계」는 계좌+투네 합 열입니다.
                                   </p>
                                 </div>
                                 {/* 🌈 행마다 컬러 / 배경 스타일 조절 (줄무늬 · 알약 · 1위~3위 하이라이트) */}
@@ -26004,7 +26004,7 @@ function AdminPageInner() {
                                     <div className="flex flex-wrap gap-1">
                                       {[
                                         { id: "contribution", label: "기여도 (기본)" },
-                                        { id: "sessionContribution", label: "기여도 (세션만)" },
+                                        { id: "sessionContribution", label: "기여도 (이번 방송만)" },
                                         { id: "donation", label: "총 후원금(계좌+투네)" },
                                         { id: "account", label: "계좌만" },
                                         { id: "toon", label: "투네만" },
@@ -26056,10 +26056,10 @@ function AdminPageInner() {
                                     value={p.toonHeaderLabel || ""}
                                     onChange={(e) => updatePreset(p.id, { toonHeaderLabel: e.target.value })}
                                   />
-                                  <label className="text-xs text-neutral-400">누적기여도 헤더</label>
+                                  <label className="text-xs text-neutral-400">기여도 헤더</label>
                                   <input
                                     className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
-                                    placeholder="누적기여도 (기본)"
+                                    placeholder="기여도 (복원분이 있으면 누적기여도)"
                                     value={p.contributionHeaderLabel || ""}
                                     onChange={(e) => updatePreset(p.id, { contributionHeaderLabel: e.target.value })}
                                   />

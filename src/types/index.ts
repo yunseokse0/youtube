@@ -110,6 +110,10 @@ export type ZubZubSettings = {
   embedInMainOverlay?: boolean;
   /** 대기 중인 시그가 없을 때도 '🎁 대표 줍줍 : 대기 없음' 뱃지를 항상 화면에 표시 (기본 true) */
   alwaysShowWaiting?: boolean;
+  /** 독립 줍줍 오버레이 배너 크기 배율 (기본 1, 범위 0.5~4) */
+  overlayScale?: number;
+  /** 줍줍 오버레이에 한 번에 표시할 최대 대기 항목 수 (기본 3, 범위 1~10) */
+  maxVisibleItems?: number;
   /** 퐁당퐁당(777데이) 엑셀표 기여도에도 줍줍 보너스 점수를 합산할지 여부 (기본 true). false면 퐁당퐁당 기여도에서 줍줍 보너스 제외 */
   applyContributionToPongdang?: boolean;
 };

@@ -9,7 +9,7 @@ import {
   ZubzubOverlayBanner,
   type ZubzubClaimedEvent,
 } from "@/components/overlay/ZubzubOverlayBanner";
-import type { ZubZubQueueItem } from "@/types";
+import type { ZubZubQueueItem, ZubZubSettings } from "@/types";
 
 function ZubzubOverlayInner() {
   const sp = useSearchParams();
@@ -23,11 +23,6 @@ function ZubzubOverlayInner() {
   const alignParam = sp.get("align");
   const align: "center" | "left" | "right" =
     alignParam === "left" ? "left" : alignParam === "right" ? "right" : "center";
-
-  /** 배너 크기 배율 (URL `scale` 파라미터, 기본 1). 0.5~4.0 범위로 클램핑 */
-  const rawScale = Number(sp.get("scale"));
-  const bannerScale =
-    Number.isFinite(rawScale) && rawScale > 0 ? Math.min(4, Math.max(0.5, rawScale)) : 1;
 
   const isDemoParam = sp.get("demo") === "1" || sp.get("preview") === "1" || sp.get("test") === "1";
   const [localDemoWaiting, setLocalDemoWaiting] = useState(isDemoParam);
@@ -48,18 +43,24 @@ function ZubzubOverlayInner() {
   });
   const [zubzubClaimedEvent, setZubzubClaimedEvent] = useState<ZubzubClaimedEvent | null>(null);
   const [waitingItems, setWaitingItems] = useState<ZubZubQueueItem[]>([]);
+  const [overlaySettings, setOverlaySettings] = useState<ZubZubSettings | null>(null);
 
   // 1. 초기/원격 상태 동기화
   useEffect(() => {
     if (remoteState?.zubzubWaitingItems) {
       setWaitingItems(remoteState.zubzubWaitingItems);
     }
-  }, [remoteState?.zubzubWaitingItems]);
+    if (remoteState?.zubzubSettings) {
+      setOverlaySettings(remoteState.zubzubSettings);
+    }
+  }, [remoteState?.zubzubWaitingItems, remoteState?.zubzubSettings]);
 
   // 2. 실시간 SSE 이벤트 리스너
   const onSSE = useCallback((incoming: any) => {
     if (!incoming) return;
-    if (incoming.type === "zubzub_claimed") {
+    if (incoming.type === "zubzub_settings_updated" && incoming.settings) {
+      setOverlaySettings(incoming.settings as ZubZubSettings);
+    } else if (incoming.type === "zubzub_claimed") {
       setZubzubClaimedEvent(incoming);
       // 획득 시 대기열 갱신
       if (incoming.queueItem?.id) {
@@ -82,6 +83,18 @@ function ZubzubOverlayInner() {
   }, []);
 
   useSSEConnection(onSSE);
+
+  const configuredScale = Number(overlaySettings?.overlayScale ?? remoteState?.zubzubSettings?.overlayScale);
+  const bannerScale = Number.isFinite(configuredScale) && configuredScale > 0
+    ? Math.min(4, Math.max(0.5, configuredScale))
+    : 1;
+  const configuredMaxVisibleItems = Number(
+    overlaySettings?.maxVisibleItems ?? remoteState?.zubzubSettings?.maxVisibleItems
+  );
+  const maxVisibleItems = Number.isFinite(configuredMaxVisibleItems)
+    ? Math.min(10, Math.max(1, Math.round(configuredMaxVisibleItems)))
+    : 3;
+  const alwaysShowWaiting = overlaySettings?.alwaysShowWaiting !== false;
 
   // 데모 대기 아이템 (위치 조절 및 미리보기용)
   const demoWaitingItem: ZubZubQueueItem = {
@@ -131,8 +144,9 @@ function ZubzubOverlayInner() {
         onClearClaimedEvent={() => setZubzubClaimedEvent(null)}
         position={position}
         align={align}
-        alwaysShowWaiting={sp.get("always") !== "0" && sp.get("always") !== "false"}
+        alwaysShowWaiting={alwaysShowWaiting}
         scale={bannerScale}
+        maxVisibleItems={maxVisibleItems}
       />
 
       {/* 브라우저 직접 접속 테스트 전용 하단 툴바 (OBS 방송 브라우저 소스에서는 자동 숨김) */}

@@ -2496,7 +2496,7 @@ export function resolvePongdangManualMode(
 }
 
 /**
- * 엑셀표·순위 연동 순위 산정 기준 (누적 기여도 / 기여도(세션) / 총 후원금 / 계좌만 / 투네만)
+ * 엑셀표·순위 연동 순위 산정 기준 (기여도·복원분 포함 / 이번 방송만 / 총 후원금 / 계좌만 / 투네만)
  * 우선순위: URL 쿼리 → 프리셋 설정 → 전역 상태 → 기본값(contribution)
  */
 export function resolveMemberRankingMetric(
