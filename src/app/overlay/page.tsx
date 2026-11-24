@@ -3927,7 +3927,15 @@ function OverlayInner() {
           },
           membersRemote,
           donationAggregateFromAt,
-          { day777Calc, pongdangManualMode }
+          {
+            day777Calc,
+            pongdangManualMode,
+            /**
+             * 퐁당퐁당 엑셀표(day777Calc·excelPongdang)에서는 마이너스 처리한 기여도를
+             * 0으로 클램핑하지 않고 음수 그대로 표시한다. (관리창 팝업과 동일 동작)
+             */
+            isPongdangPopup: day777Calc || isExcelPongdang,
+          }
         )
       )
     );
@@ -3937,6 +3945,7 @@ function OverlayInner() {
     donationAggregateFromAt,
     day777Calc,
     pongdangManualMode,
+    isExcelPongdang,
     excludedMemberIdsSet,
     s,
     isAdminPreview,

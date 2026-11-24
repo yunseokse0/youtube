@@ -508,4 +508,36 @@ describe("day777Calc", () => {
     const next = applyOverlayDonationDisplayTotals(state, { fromAt: 1, day777Calc: true });
     expect(next.members[0]?.contribution).toBe(70_000);
   });
+
+  it("퐁당퐁당 마이너스 기여도: isPongdangPopup 이면 음수 그대로, 아니면 0으로 클램핑", () => {
+    const state = {
+      members: [member({ id: "m1", name: "진아" })],
+      donors: [
+        donor({
+          id: "d1",
+          memberId: "m1",
+          amount: 10_000,
+          at: 1_500,
+          target: "toon",
+          sigPrice: 50_000,
+          isSigCredit: true,
+          pongdangMinus: true,
+        }),
+      ],
+      contributionLogs: [],
+      rouletteState: null,
+    } as unknown as AppState;
+
+    // 일반 오버레이 엑셀표: 음수 → 0 클램핑
+    const clamped = applyOverlayDonationDisplayTotals(state, { fromAt: 1, day777Calc: true });
+    expect(clamped.members[0]?.contribution).toBe(0);
+
+    // 퐁당퐁당 엑셀표(popup): 음수 그대로 표시
+    const pongdang = applyOverlayDonationDisplayTotals(state, {
+      fromAt: 1,
+      day777Calc: true,
+      isPongdangPopup: true,
+    });
+    expect(pongdang.members[0]?.contribution).toBe(-50_000);
+  });
 });

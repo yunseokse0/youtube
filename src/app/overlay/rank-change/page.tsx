@@ -172,6 +172,12 @@ function RankChangeOverlayInner() {
           fromAt: tpFromAt,
           day777Calc: tpDay777,
           pongdangManualMode: tpPongdangManual,
+          // 퐁당퐁당 엑셀표에서는 마이너스 기여도를 0으로 클램핑하지 않고 음수 그대로 표시
+          isPongdangPopup:
+            tpDay777 ||
+            tp.theme === "excelPongdang" ||
+            tp.membersTheme === "excelPongdang" ||
+            String(tp.name || "").includes("퐁당"),
         }
       );
       const tpMembers = (tpSynced.members || (members as Member[])).filter((m) => !tpExcludedSet.has(m.id));
