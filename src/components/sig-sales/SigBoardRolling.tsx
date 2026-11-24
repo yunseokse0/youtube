@@ -88,7 +88,7 @@ function SigBoardCell({
         <div className="truncate text-sm font-bold pastel-text-outline">{item.name}</div>
         <div className="text-xs text-pastel-ink/80 pastel-text-outline">
           {isSingleSale ? (soldOut ? "완판" : "판매대기") : `${item.soldCount}/${item.maxCount}`} ·{" "}
-          {item.price.toLocaleString("ko-KR")}원
+          {item.price.toLocaleString("ko-KR")}
         </div>
         {!isSingleSale ? (
           <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-pastel-blue/50">

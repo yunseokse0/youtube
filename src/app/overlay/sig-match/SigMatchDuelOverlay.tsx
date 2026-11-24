@@ -788,7 +788,7 @@ export default function SigMatchDuelOverlay({
             ...b,
             {
               id: floatId,
-              value: `+${formatSigMatchStat(diff)}${scoringMode === "amount" ? "원" : ""}`,
+              value: `+${formatSigMatchStat(diff)}`,
               color,
               x: Math.max(6, Math.min(94, x)),
             },

@@ -160,6 +160,9 @@ export default function ResultOverlay({
         }).length;
   const actualRemaining = Math.max(0, actualBoardTotal - actualSoldTotal);
 
+  const formatNumberOnly = (value: number) =>
+    Math.max(0, Math.floor(Number(value) || 0)).toLocaleString("ko-KR");
+
   const totalDisplay = (() => {
     if (totalMode === "sold") {
       return {
@@ -169,10 +172,10 @@ export default function ResultOverlay({
           !hideTotalSub && selectedSigs.length > 0 ? (
             <>
               <span className="font-bold text-yellow-100/90">
-                판 총액 {formatWon(actualBoardTotal)} ({actualSoldCount}/{selectedSigs.length}칸 판매)
+                판 총액 {formatNumberOnly(actualBoardTotal)} ({actualSoldCount}/{selectedSigs.length}칸 판매)
               </span>
               <span className="text-yellow-100/40">·</span>
-              <span className="text-amber-200/90">잔여 {formatWon(actualRemaining)}</span>
+              <span className="text-amber-200/90">잔여 {formatNumberOnly(actualRemaining)}</span>
             </>
           ) : null,
       };
@@ -184,10 +187,10 @@ export default function ResultOverlay({
         sub:
           !hideTotalSub && selectedSigs.length > 0 ? (
             <>
-              <span className="font-bold text-yellow-100/90">판 총액 {formatWon(actualBoardTotal)}</span>
+              <span className="font-bold text-yellow-100/90">판 총액 {formatNumberOnly(actualBoardTotal)}</span>
               <span className="text-yellow-100/40">·</span>
               <span className="text-rose-300">
-                판매 {formatWon(actualSoldTotal)} ({actualSoldCount}/{selectedSigs.length}칸)
+                판매 {formatNumberOnly(actualSoldTotal)} ({actualSoldCount}/{selectedSigs.length}칸)
               </span>
             </>
           ) : null,
@@ -201,15 +204,15 @@ export default function ResultOverlay({
         !hideTotalSub && actualSoldCount > 0 && selectedSigs.length > 0 ? (
           actualSoldCount >= selectedSigs.length ? (
             <span className="font-bold text-emerald-300">
-              전체 완판 ({actualSoldCount}/{selectedSigs.length}칸) · 판매 {formatWon(actualSoldTotal)}
+              전체 완판 ({actualSoldCount}/{selectedSigs.length}칸) · 판매 {formatNumberOnly(actualSoldTotal)}
             </span>
           ) : (
             <>
               <span className="text-rose-300">
-                판매 {formatWon(actualSoldTotal)} ({actualSoldCount}/{selectedSigs.length}칸)
+                판매 {formatNumberOnly(actualSoldTotal)} ({actualSoldCount}/{selectedSigs.length}칸)
               </span>
               <span className="text-yellow-100/40">·</span>
-              <span className="text-amber-200/90">잔여 {formatWon(actualRemaining)}</span>
+              <span className="text-amber-200/90">잔여 {formatNumberOnly(actualRemaining)}</span>
             </>
           )
         ) : null,
@@ -254,7 +257,7 @@ export default function ResultOverlay({
         <div className="mt-2 w-full rounded-xl border border-yellow-300/50 bg-black/85 px-4 py-2.5 text-center shadow-[0_0_18px_rgba(250,204,21,0.25)]">
           <div className="text-[11px] font-bold tracking-[0.16em] text-yellow-100/90">{totalDisplay.label}</div>
           <div className="mt-0.5 text-[clamp(22px,3vw,34px)] font-black tabular-nums leading-none text-yellow-200">
-            {formatWon(totalDisplay.amount)}
+            {formatNumberOnly(totalDisplay.amount)}
           </div>
           {totalDisplay.sub ? (
             <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1.5 text-[11px] font-semibold sm:text-xs">

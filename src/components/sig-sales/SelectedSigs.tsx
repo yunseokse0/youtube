@@ -275,7 +275,7 @@ function SelectedSigCard({
                   : sigOverlayCardPriceOutlineStyle(12)
             }
           >
-            {programSkin ? `₩ ${Math.max(0, Math.floor(Number(item.price) || 0)).toLocaleString("ko-KR")}` : formatWon(item.price)}
+            {Math.max(0, Math.floor(Number(item.price) || 0)).toLocaleString("ko-KR")}
           </div>
           {showToggle ? (
             <button

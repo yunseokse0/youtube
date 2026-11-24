@@ -305,11 +305,11 @@ export default function ManualSigSalesSimple() {
   const oneShotLabel = useMemo(() => {
     const resolved = resolveManualOneShotDisplayFromState(state, displaySigs, userId);
     if (resolved) {
-      return `${resolved.name} ${resolved.price.toLocaleString("ko-KR")}원`;
+      return `${resolved.name} ${resolved.price.toLocaleString("ko-KR")}`;
     }
     const os = readManualSigBroadcastFromState(state)?.oneShotResult;
     if (!os) return null;
-    return `${os.name} ${Number(os.price || 0).toLocaleString("ko-KR")}원`;
+    return `${os.name} ${Number(os.price || 0).toLocaleString("ko-KR")}`;
   }, [state, displaySigs, userId]);
   const rerollPickCount = Math.min(pickCount, pool.length);
   const canReroll = pool.length >= Math.min(pickCount, MANUAL_REROLL_MIN_POOL);
@@ -1251,7 +1251,7 @@ export default function ManualSigSalesSimple() {
           totalSub={
             hasAnySoldMark ? (
               <span>
-                판 총액 {grossBoardTotal.toLocaleString("ko-KR")}원 ({soldCardCount}/{pickCount}칸 판매)
+                판 총액 {grossBoardTotal.toLocaleString("ko-KR")} ({soldCardCount}/{pickCount}칸 판매)
               </span>
             ) : (
               <span>판매 대기 중 (0/{pickCount}칸)</span>

@@ -171,7 +171,7 @@ export default function OneShotSigCard({
               {name}
             </div>
             <div className={SIG_OVERLAY_CARD_PRICE_CLASS} style={sigOverlayCardPriceOutlineStyle(21)}>
-              {formatWon(price)}
+              {Math.max(0, Math.floor(Number(price) || 0)).toLocaleString("ko-KR")}
             </div>
             {showToggle ? (
               <button
@@ -204,7 +204,7 @@ export default function OneShotSigCard({
             className={`${compact ? "text-base" : "text-2xl"} font-black tabular-nums`}
             style={sigOverlayCardPriceOutlineStyle(compact ? 16 : 24)}
           >
-            {formatWon(price)}
+            {Math.max(0, Math.floor(Number(price) || 0)).toLocaleString("ko-KR")}
           </div>
           {showToggle ? (
             <button

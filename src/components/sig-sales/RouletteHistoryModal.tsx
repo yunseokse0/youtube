@@ -78,8 +78,8 @@ export default function RouletteHistoryModal({ open, item, onClose, onLoadReadon
         </div>
         <div className="mt-3 rounded border border-white/10 bg-black/30 p-3 text-sm">
           <div>당첨 시그: {item.selectedSigs.map((s) => s.name).join(", ") || "-"}</div>
-          <div>한방 시그 금액: {item.oneShotPrice.toLocaleString("ko-KR")}원</div>
-          <div>총 금액: {item.totalPrice.toLocaleString("ko-KR")}원</div>
+          <div>한방 시그 금액: {item.oneShotPrice.toLocaleString("ko-KR")}</div>
+          <div>총 금액: {item.totalPrice.toLocaleString("ko-KR")}</div>
           <div>관리자: {item.adminId || "-"}</div>
           {item.reason ? <div>사유: {item.reason}</div> : null}
         </div>

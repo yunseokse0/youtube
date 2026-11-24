@@ -198,22 +198,22 @@ export function formatSigMatchStat(n: number): string {
   return rounded.toLocaleString("ko-KR", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
-/** 시그 대전 오버레이 — 개수/금액 모드에 맞는 표기 */
+/** 시그 대전 오버레이 — 개수/금액 모드에 맞는 표기 (통화/원 단위 제외, 숫자만 표시) */
 export function formatSigMatchScoreLabel(
   score: number,
   scoringMode: "count" | "amount"
 ): string {
   const n = formatSigMatchStat(score);
-  return scoringMode === "amount" ? `${n}원` : `${n} 시그`;
+  return scoringMode === "amount" ? n : `${n} 시그`;
 }
 
-/** VS 중앙 — 선두와의 점수·금액 차이 */
+/** VS 중앙 — 선두와의 점수·금액 차이 (통화/원 단위 제외, 숫자만 표시) */
 export function formatSigMatchGapLabel(
   gap: number,
   scoringMode: "count" | "amount"
 ): string {
   const n = formatSigMatchStat(Math.max(0, gap));
-  return scoringMode === "amount" ? `${n}원` : `${n} 시그`;
+  return scoringMode === "amount" ? n : `${n} 시그`;
 }
 
 /** 시그 대전 — 추가·차감 버튼 단위(설정 없으면 건수 1 / 금액 1만) */
@@ -240,7 +240,7 @@ export function formatSigMatchManualAdjustStepLabel(
   scoringMode: "count" | "amount"
 ): string {
   const n = formatSigMatchStat(step);
-  return scoringMode === "amount" ? `${n}원` : `${n}`;
+  return scoringMode === "amount" ? n : `${n}`;
 }
 
 function findPoolForMember(memberId: string, pools: SigMatchPool[]): string[] | null {
