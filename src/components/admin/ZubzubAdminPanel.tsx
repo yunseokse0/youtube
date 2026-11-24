@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import type { AppState, Member, ZubZubQueueItem, ZubZubSettings } from "@/types";
+import type { ZubzubClaimedEvent } from "@/components/overlay/ZubzubOverlayBanner";
 
 type Props = {
   state: AppState;
@@ -136,6 +137,49 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
     .slice(-10)
     .reverse();
 
+  const [testClaimActive, setTestClaimActive] = useState(false);
+
+  // 테스트 줍줍 성공 알림 발동 (시뮬레이션)
+  const triggerTestClaim = async () => {
+    const dummyClaim: ZubzubClaimedEvent = {
+      type: "zubzub_claimed",
+      queueItem: {
+        id: `test_${Date.now()}`,
+        userId,
+        triggerDonationId: "test_trigger",
+        sigName: "NO BATIDÃO",
+        bonusAmount: 130000,
+        status: "CLAIMED",
+        createdAt: Date.now(),
+      },
+      memberId: (state.members && state.members[1]?.id) || "m_test",
+      memberName: (state.members && state.members[1]?.name) || "진아",
+      bonusAmount: 130000,
+      timestamp: Date.now(),
+    };
+
+    setTestClaimActive(true);
+    setTimeout(() => setTestClaimActive(false), 4000);
+
+    // 1. 브라우저 이벤트 전파
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("zubzub_claimed", { detail: dummyClaim }));
+    }
+
+    // 2. 서버 SSE 전파 (OBS 오버레이 연동)
+    try {
+      await fetch("/api/zubzub", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          action: "test_claim",
+          event: dummyClaim,
+        }),
+      });
+    } catch {}
+  };
+
   return (
     <div className="space-y-4 text-xs text-neutral-300">
       {/* 1. 상단 마스터 스위치 및 상태 배지 */}
@@ -171,38 +215,90 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
         </button>
       </div>
 
-      {/* OBS 오버레이 연동 안내 & 단독 URL 복사 */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-indigo-500/30 bg-indigo-950/20 px-3 py-2.5 text-[11px]">
-        <div className="flex items-center gap-2 text-neutral-200">
-          <span className="text-base">📺</span>
-          <div>
-            <div className="font-bold text-indigo-300">독립 분리형 줍줍 오버레이 (`/overlay/zubzub`)</div>
-            <div className="text-[11px] text-neutral-400">
-              OBS 브라우저 소스로 등록하여 원하는 위치에 줍줍 배너를 단독으로 띄울 수 있습니다.
+      {/* OBS 오버레이 연동 옵션 & 단독 URL 복사 */}
+      <div className="rounded-lg border border-indigo-500/30 bg-indigo-950/20 p-3 space-y-2.5 text-[11px]">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-neutral-200">
+            <span className="text-base">📺</span>
+            <div>
+              <div className="font-bold text-indigo-300">독립 분리형 줍줍 오버레이 (`/overlay/zubzub`)</div>
+              <div className="text-[11px] text-neutral-400">
+                OBS 브라우저 소스로 등록하여 원하는 위치에 줍줍 배너를 단독으로 띄울 수 있습니다.
+              </div>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const origin = typeof window !== "undefined" ? window.location.origin : "";
+                const url = `${origin}/overlay/zubzub?u=${encodeURIComponent(userId)}&host=obs`;
+                navigator.clipboard.writeText(url);
+                alert(`독립 줍줍 오버레이 URL이 복사되었습니다:\n${url}`);
+              }}
+              className="rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 text-white font-bold text-[11px] shadow-sm flex items-center gap-1 cursor-pointer"
+            >
+              📋 줍줍 오버레이 URL 복사
+            </button>
+            <a
+              href={`/overlay/zubzub?u=${encodeURIComponent(userId)}&host=obs`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded bg-neutral-800 hover:bg-neutral-700 px-2.5 py-1.5 text-neutral-300 border border-white/10 text-[11px] font-medium"
+            >
+              ↗️ 오버레이 열기
+            </a>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* 메인 방송 오버레이 임베드 토글 */}
+        <label className="flex items-center gap-2 text-neutral-300 cursor-pointer pt-2 border-t border-white/5">
+          <input
+            type="checkbox"
+            className="rounded bg-neutral-900 border-white/20 text-indigo-500 focus:ring-0"
+            checked={Boolean(settings.embedInMainOverlay)}
+            onChange={(e) => updateSettings({ embedInMainOverlay: e.target.checked })}
+          />
+          <span className="font-semibold text-white">메인 엑셀 방송 화면(`/overlay`) 상단에도 줍줍 배너 함께 표시</span>
+          <span className="text-neutral-500 text-[10px]">(독립 브라우저 소스를 쓰지 않고 메인 오버레이 하나로 통일할 때 켭니다)</span>
+        </label>
+      </div>
+
+      {/* 💡 초간결 1줄 디자인 미리보기 & 테스트 */}
+      <div className="rounded-lg border border-amber-500/25 bg-neutral-900/60 p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="font-bold text-xs text-amber-300 flex items-center gap-1.5">
+            <span>✨</span> 간결한 줍줍 오버레이 표시 미리보기 (초간결 1줄 디자인)
+          </span>
           <button
             type="button"
-            onClick={() => {
-              const origin = typeof window !== "undefined" ? window.location.origin : "";
-              const url = `${origin}/overlay/zubzub?u=${encodeURIComponent(userId)}&host=obs`;
-              navigator.clipboard.writeText(url);
-              alert(`독립 줍줍 오버레이 URL이 복사되었습니다:\n${url}`);
-            }}
-            className="rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 text-white font-bold text-[11px] shadow-sm flex items-center gap-1"
+            onClick={triggerTestClaim}
+            className="rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 px-2.5 py-1 text-[11px] font-bold text-amber-200 transition flex items-center gap-1 cursor-pointer"
+            title="방송 화면 및 오버레이에 4초간 줍줍 성공 알림을 시뮬레이션합니다"
           >
-            📋 줍줍 오버레이 URL 복사
+            <span>🎉</span> 테스트 성공 알림 발동
           </button>
-          <a
-            href={`/overlay/zubzub?u=${encodeURIComponent(userId)}&host=obs`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded bg-neutral-800 hover:bg-neutral-700 px-2.5 py-1.5 text-neutral-300 border border-white/10 text-[11px] font-medium"
-          >
-            ↗️ 오버레이 열기
-          </a>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+          <div className="rounded border border-white/5 bg-black/60 p-2 space-y-1">
+            <div className="text-[10px] font-bold text-neutral-400">대기 중 화면 (초간결 1줄)</div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/60 bg-neutral-950/85 px-3 py-1 shadow-sm">
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-500/20 text-[10px]">🎁</span>
+              <span className="text-[10px] font-bold text-amber-300">줍줍 대기:</span>
+              <span className="text-[11px] font-bold text-white">[NO BATIDÃO]</span>
+              <span className="font-mono text-[11px] font-black text-emerald-400">+130,000</span>
+            </div>
+          </div>
+          <div className="rounded border border-white/5 bg-black/60 p-2 space-y-1">
+            <div className="text-[10px] font-bold text-neutral-400">성공 알림 화면 (초간결 1줄 / 4초)</div>
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/80 bg-neutral-950/90 px-3 py-1 shadow-sm">
+              <span className="text-xs">🎉</span>
+              <span className="text-[11px] font-black text-amber-300">진아</span>
+              <span className="text-[11px] font-bold text-white">줍줍 성공!</span>
+              <span className="text-[10px] font-bold text-neutral-300">[NO BATIDÃO]</span>
+              <span className="font-mono text-[11px] font-black text-emerald-400">+130,000</span>
+            </div>
+          </div>
         </div>
       </div>
 

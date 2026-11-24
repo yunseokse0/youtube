@@ -16,7 +16,17 @@ function ZubzubOverlayInner() {
   const rawUserId = (sp.get("u") || "").trim();
   const userId = resolveScopedOverlayUserId(rawUserId);
 
-  const { state: remoteState } = useOverlayRemoteState(userId || undefined, Boolean(userId));
+  const posParam = sp.get("pos");
+  const position: "top" | "bottom" | "center" =
+    posParam === "bottom" ? "bottom" : posParam === "center" ? "center" : "top";
+
+  const alignParam = sp.get("align");
+  const align: "center" | "left" | "right" =
+    alignParam === "left" ? "left" : alignParam === "right" ? "right" : "center";
+
+  const { state: remoteState } = useOverlayRemoteState(userId || undefined, {
+    enabled: Boolean(userId),
+  });
   const [zubzubClaimedEvent, setZubzubClaimedEvent] = useState<ZubzubClaimedEvent | null>(null);
   const [waitingItems, setWaitingItems] = useState<ZubZubQueueItem[]>([]);
 
@@ -55,11 +65,13 @@ function ZubzubOverlayInner() {
   useSSEConnection(onSSE);
 
   return (
-    <div className="w-full h-full min-h-screen bg-transparent overflow-hidden flex flex-col items-center justify-start p-4 select-none pointer-events-none">
+    <div className="w-full h-full min-h-screen bg-transparent overflow-hidden select-none pointer-events-none">
       <ZubzubOverlayBanner
         waitingItems={waitingItems}
         claimedEvent={zubzubClaimedEvent}
         onClearClaimedEvent={() => setZubzubClaimedEvent(null)}
+        position={position}
+        align={align}
       />
     </div>
   );

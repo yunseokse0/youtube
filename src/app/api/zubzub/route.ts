@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { isValidUserId, resolveWriteUserId } from "@/app/api/_shared/user-id";
+import { isValidUserId, resolveWriteUserId, writeUserIdErrorResponse } from "@/app/api/_shared/user-id";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import {
   cancelAllWaitingZubzub,
@@ -45,10 +45,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "invalid_body" }, { status: 400 });
     }
 
-    const userId = resolveWriteUserId(body.userId || body.u);
-    if (!userId || !isValidUserId(userId)) {
-      return NextResponse.json({ error: "invalid_user_id" }, { status: 400 });
+    const auth = resolveWriteUserId(req, { allowAnonymousUrlUser: true });
+    if (!auth.ok) {
+      return writeUserIdErrorResponse(auth);
     }
+    const userId = auth.userId;
 
     const action = String(body.action || "").trim();
     const state = await loadAppStateForUserId(userId);
@@ -86,11 +87,12 @@ export async function POST(req: NextRequest) {
 
     // 3. 설정 업데이트
     if (action === "update_settings") {
-      const { enabled, minSigPrice, priorityMode, representativeMemberId, autoExpireMinutes } = body;
+      const { enabled, minSigPrice, priorityMode, representativeMemberId, autoExpireMinutes, embedInMainOverlay } = body;
       const nextSettings = {
         enabled: Boolean(enabled),
         minSigPrice: Math.max(0, Math.round(Number(minSigPrice) || 0)),
         priorityMode: priorityMode === "highest" ? ("highest" as const) : ("fifo" as const),
+        embedInMainOverlay: Boolean(embedInMainOverlay),
         ...(representativeMemberId ? { representativeMemberId: String(representativeMemberId) } : {}),
         ...(autoExpireMinutes !== undefined ? { autoExpireMinutes: Math.max(0, Number(autoExpireMinutes) || 0) } : {}),
       };
@@ -108,6 +110,19 @@ export async function POST(req: NextRequest) {
         timestamp: Date.now(),
       });
       return NextResponse.json({ ok: true, settings: nextSettings });
+    }
+
+    // 4. 테스트 성공 알림 발동 (시뮬레이션)
+    if (action === "test_claim") {
+      const dummyEvent = body.event;
+      if (dummyEvent) {
+        await publishSseEvent({
+          ...dummyEvent,
+          userId,
+          timestamp: Date.now(),
+        });
+      }
+      return NextResponse.json({ ok: true });
     }
 
     return NextResponse.json({ error: "unknown_action" }, { status: 400 });
