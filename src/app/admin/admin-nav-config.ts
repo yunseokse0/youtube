@@ -73,6 +73,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     mobileShort: "오버레이",
     subItems: [
       { subKey: "ov-manage", label: "오버레이 프리셋 설정", targetId: "overlay-settings", icon: "🖼️" },
+      { subKey: "ov-zubzub", label: "줍줍 오버레이", targetId: "block-zubzub-settings", icon: "🎁" },
       { subKey: "ov-battle-suite", label: "⚔️ 대전 오버레이 센터", targetId: "overlay-battle-suite", icon: "⚔️" },
       { subKey: "ov-donor-rankings", label: "후원 순위 오버레이", targetId: "donor-rankings-settings", icon: "👑" },
       { subKey: "ov-goal", label: "후원 목표바", targetId: "overlay-goal-shortcut", icon: "🎯" },
