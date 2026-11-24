@@ -745,6 +745,10 @@ export type AppState = {
   rankPositionLabels: string[];
   /** 순위 연동 모드에서도 직급을 고정할 멤버 ID 목록 (대표 외 고정 멤버) */
   fixedPositionMemberIds?: string[];
+  /** 엑셀표 순위(#1, #2 등) 열 표시 여부 (기본 true, false 시 순위 열 숨김) */
+  showRankColumn?: boolean;
+  /** 엑셀표 직급 열 표시 여부 (기본 true, false 시 직급 열 숨김) */
+  showRoleColumn?: boolean;
   /** 기여도 표시 제외 멤버 ID 목록 (해당 인원은 기여도 열 표시에서 제외되고 '-' 로 대체) */
   contributionExcludedMemberIds?: string[];
   /** 계좌/투네 후원 순위 오버레이 테마 */

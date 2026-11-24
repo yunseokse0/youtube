@@ -7275,6 +7275,21 @@ function AdminPageInner() {
     });
   };
 
+  const updateShowRankColumn = (show: boolean) => {
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        showRankColumn: show,
+        donationTableOptions: {
+          ...(prev.donationTableOptions || {}),
+          showRankColumn: show,
+        },
+      };
+      persistState(next, { omitDonationFields: true, membersAuthoritative: true });
+      return next;
+    });
+  };
+
   const updateMemberRankingMetric = (metric: NonNullable<AppState["memberRankingMetric"]>) => {
     setState((prev: AppState) => {
       const next: AppState = {
@@ -13690,6 +13705,28 @@ function AdminPageInner() {
                       onClick={() => updateMemberPositionMode("rankLinked")}
                     >
                       순위 연동 직급
+                    </button>
+                  </div>
+                </div>
+                <div className="rounded border border-white/10 bg-black/20 p-2">
+                  <div className="text-xs text-neutral-400 mb-1 flex items-center gap-1.5">
+                    <span>순위 열 표시</span>
+                    <InfoTooltip text="방송 화면 엑셀표에서 순위(#1, #2, ...) 열의 노출 여부를 설정합니다. 숨김으로 설정해도 직급은 순위에 따라 정상 부여됩니다." />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className={`px-2 py-1 rounded text-xs transition ${state.showRankColumn !== false ? "bg-emerald-700 hover:bg-emerald-600 font-bold text-white ring-1 ring-emerald-400" : "bg-neutral-700 hover:bg-neutral-600 text-neutral-300"}`}
+                      onClick={() => updateShowRankColumn(true)}
+                    >
+                      순위 표시
+                    </button>
+                    <button
+                      type="button"
+                      className={`px-2 py-1 rounded text-xs transition ${state.showRankColumn === false ? "bg-amber-700 hover:bg-amber-600 font-bold text-white ring-1 ring-amber-400" : "bg-neutral-700 hover:bg-neutral-600 text-neutral-300"}`}
+                      onClick={() => updateShowRankColumn(false)}
+                    >
+                      순위 숨김
                     </button>
                   </div>
                 </div>

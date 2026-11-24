@@ -2663,11 +2663,33 @@ function OverlayInner() {
       return false;
     }
     if (effectivePreset && isDonationTableBoolKey(key)) {
+      const explicitVal = (effectivePreset as any)[key];
+      if (typeof explicitVal === "boolean") return explicitVal;
+      // State 레벨(프리셋 미사용 또는 프리셋 미지정 시 기본값) 연동
+      if (s) {
+        const stateTableOpts = (s as any).donationTableOptions;
+        if (stateTableOpts && typeof stateTableOpts[key] === "boolean") {
+          return stateTableOpts[key];
+        }
+        if (typeof (s as any)[key] === "boolean") {
+          return (s as any)[key];
+        }
+      }
       const resolved = resolveDonationTableColumnsOptions(effectivePreset);
       return resolved[key as keyof typeof resolved] as boolean;
     }
     if (effectivePreset && typeof (effectivePreset as Record<string, unknown>)[key] === "boolean") {
       return (effectivePreset as Record<string, boolean>)[key]!;
+    }
+    // State 레벨(프리셋 미사용 또는 기본 상태) 설정 연동
+    if (s && isDonationTableBoolKey(key)) {
+      const stateTableOpts = (s as any).donationTableOptions;
+      if (stateTableOpts && typeof stateTableOpts[key] === "boolean") {
+        return stateTableOpts[key];
+      }
+      if (typeof (s as any)[key] === "boolean") {
+        return (s as any)[key];
+      }
     }
     const fromPreset = presetParams.get(key);
     if (fromPreset === "true") return true;
@@ -2804,7 +2826,12 @@ function OverlayInner() {
     resolvePresetBool("showRankColumn", true) &&
     rawSp.get("hideRank") !== "1" &&
     rawSp.get("hideRank") !== "true" &&
-    rawSp.get("rank") !== "0";
+    rawSp.get("rank") !== "0" &&
+    rawSp.get("rank") !== "false" &&
+    rawSp.get("showRank") !== "0" &&
+    rawSp.get("showRank") !== "false" &&
+    rawSp.get("showRankColumn") !== "0" &&
+    rawSp.get("showRankColumn") !== "false";
   const showRestroomColumn = (() => {
     const url = (rawSp.get("showRestroomColumn") || "").toLowerCase();
     if (url === "false") {
