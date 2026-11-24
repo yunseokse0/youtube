@@ -444,6 +444,11 @@ export function mergeDonorRowFields<T extends MergeableDonor>(
     ...(preferred.groupSplitSource || fallback.groupSplitSource
       ? { groupSplitSource: true as const }
       : {}),
+    ...((preferred as any)?.isZubzubBonus || (fallback as any)?.isZubzubBonus ? { isZubzubBonus: true as const } : {}),
+    ...(((preferred as any)?.zubzubQueueId || (fallback as any)?.zubzubQueueId)
+      ? { zubzubQueueId: (preferred as any)?.zubzubQueueId || (fallback as any)?.zubzubQueueId }
+      : {}),
+    ...(((preferred as any)?.pongdangMinus || (fallback as any)?.pongdangMinus) ? { pongdangMinus: true as const } : {}),
   };
 }
 

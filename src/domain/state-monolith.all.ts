@@ -2031,6 +2031,10 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
       if (typeof x.sigPrice === "number" && Number.isFinite(x.sigPrice)) row.sigPrice = x.sigPrice;
       if (x.isSigCredit === true) row.isSigCredit = true;
       if (x.pongdangMinus === true) row.pongdangMinus = true;
+      if (x.isZubzubBonus === true) row.isZubzubBonus = true;
+      if (typeof x.zubzubQueueId === "string" && x.zubzubQueueId.trim()) {
+        row.zubzubQueueId = x.zubzubQueueId.trim();
+      }
       if (x.donorNameLastEditedBy === "user") row.donorNameLastEditedBy = "user";
       return row;
     });

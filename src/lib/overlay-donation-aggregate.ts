@@ -261,13 +261,16 @@ export function collectDay777SigContributionByMember(
   // 외부(Toona 등 타 프로젝트)에서 전달된 나온 시그 기여도 (sigPrice 또는 isSigCredit / contributionPoints)
   const donorRows = effectiveFromAtOrNull != null ? filterDonorsFromAggregateAt(state?.donors, effectiveFromAtOrNull) : state?.donors || [];
   for (const d of donorRows) {
-    if (d.donationExcluded === true) continue;
+    if (d.donationExcluded === true && !d.isZubzubBonus) continue;
     const mid = String(d.memberId || fallback || "").trim();
     if (!mid) continue;
-    const explicitSigPrice = Math.max(0, Math.floor(Number((d as { sigPrice?: number }).sigPrice || 0)));
+    const explicitSigPrice = Math.max(
+      0,
+      Math.floor(Number((d as { sigPrice?: number }).sigPrice || (d.isZubzubBonus ? (d.amount || d.contributionPoints) : 0) || 0))
+    );
     const cp = Math.max(0, Math.floor(Number(d.contributionPoints || 0)));
     const amt = Math.max(0, Math.floor(Number(d.amount || 0)));
-    const isCredit = Boolean((d as { isSigCredit?: boolean }).isSigCredit);
+    const isCredit = Boolean((d as { isSigCredit?: boolean }).isSigCredit || d.isZubzubBonus);
 
     const mult = d.pongdangMinus ? -1 : 1;
     if (explicitSigPrice > 0) {

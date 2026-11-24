@@ -57,15 +57,18 @@ export default function AdminPongdangPopupPanel() {
     const map = new Map<string, number>();
     if (!state) return map;
     const cutoff = Math.max(0, Number(state.pongdangResetAt || 0));
-    const donors = (state.donors || []).filter((d) => !d.donationExcluded);
+    const donors = (state.donors || []).filter((d) => !d.donationExcluded || d.isZubzubBonus);
     for (const d of donors) {
       if (cutoff > 0 && Number(d.at || 0) < cutoff) continue;
       const mid = String(d.memberId || "").trim();
       if (!mid) continue;
-      const sigPrice = Math.max(0, Math.floor(Number(d.sigPrice || 0)));
+      const sigPrice = Math.max(
+        0,
+        Math.floor(Number(d.sigPrice || (d.isZubzubBonus ? (d.amount || d.contributionPoints) : 0) || 0))
+      );
       const cp = Math.max(0, Math.floor(Number(d.contributionPoints || 0)));
       const amt = Math.max(0, Math.floor(Number(d.amount || 0)));
-      const isCredit = Boolean(d.isSigCredit);
+      const isCredit = Boolean(d.isSigCredit || d.isZubzubBonus);
       const mult = d.pongdangMinus ? -1 : 1;
       let val = 0;
       if (sigPrice > 0) val = sigPrice;
@@ -165,15 +168,18 @@ export default function AdminPongdangPopupPanel() {
 
     // A. 자동 후원/시그에서 발생한 건
     const cutoff = Math.max(0, Number(state.pongdangResetAt || 0));
-    const donors = (state.donors || []).filter((d) => !d.donationExcluded);
+    const donors = (state.donors || []).filter((d) => !d.donationExcluded || d.isZubzubBonus);
     for (const d of donors) {
       if (cutoff > 0 && Number(d.at || 0) < cutoff) continue;
       const mid = String(d.memberId || "").trim();
       if (!mid) continue;
-      const sigPrice = Math.max(0, Math.floor(Number(d.sigPrice || 0)));
+      const sigPrice = Math.max(
+        0,
+        Math.floor(Number(d.sigPrice || (d.isZubzubBonus ? (d.amount || d.contributionPoints) : 0) || 0))
+      );
       const cp = Math.max(0, Math.floor(Number(d.contributionPoints || 0)));
       const amt = Math.max(0, Math.floor(Number(d.amount || 0)));
-      const isCredit = Boolean(d.isSigCredit);
+      const isCredit = Boolean(d.isSigCredit || d.isZubzubBonus);
       let val = 0;
       if (sigPrice > 0) val = sigPrice;
       else if (isCredit && cp > 0) val = cp;
@@ -185,12 +191,14 @@ export default function AdminPongdangPopupPanel() {
           sourceType: "auto_sig",
           rawId: d.id,
           at: Number(d.at) || Date.now(),
-          donorName: d.donorName || d.name || "후원자",
+          donorName: d.isZubzubBonus ? (d.donorName || "대표 시그 줍줍") : (d.donorName || d.name || "후원자"),
           memberId: mid,
           memberName: memberNameMap.get(mid) || "미지정",
           amount: val,
           isMinus: Boolean(d.pongdangMinus),
-          reason: d.message ? `777 시그 후원 (${d.message})` : "777데이 룰렛·시그 당첨",
+          reason: d.isZubzubBonus
+            ? (d.message || "🎁 대표 시그 줍줍 보너스")
+            : (d.message ? `777 시그 후원 (${d.message})` : "777데이 룰렛·시그 당첨"),
           target: d.target || "account",
         });
       }

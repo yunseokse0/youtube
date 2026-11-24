@@ -4039,10 +4039,10 @@ function OverlayInner() {
       if (day777Calc) return 0;
       return allowContributionTotalFallback ? total : 0;
     }
-    const c = Math.max(0, Math.floor(parsed));
+    const c = Math.floor(parsed);
     if (day777Calc) return c;
     if (allowContributionTotalFallback && c === 0 && total > 0) return total;
-    return c;
+    return Math.max(0, c);
   }, [
     allowContributionTotalFallback,
     day777Calc,

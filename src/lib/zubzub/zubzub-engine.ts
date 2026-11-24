@@ -194,6 +194,7 @@ export async function processZubzubDonationHook(
       // 실정산 현금 합산 제외!
       donationExcluded: true,
       isSigCredit: true,
+      sigPrice: claimedQueue.bonusAmount,
       contributionPoints: claimedQueue.bonusAmount, // 랭킹 기여도 점수에만 100% 반영
       isZubzubBonus: true,
       zubzubQueueId: claimedQueue.id,
