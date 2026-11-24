@@ -50,12 +50,12 @@ describe("퐁당퐁당 엑셀 마이너스 기여도의 메인 엑셀표 영향 
     // syncMemberTotalsFromDonors도 0 이상 정상 합산
     expect(mainExcel.members.find((m) => m.id === "m1")?.contribution).toBeGreaterThanOrEqual(0);
 
-    // C. 오버레이 엑셀표 (day777Calc: true): 나온 시그 단가(+50,000)로 정상 적립되며 마이너스로 깎이지 않음!
+    // C. 오버레이 엑셀표 (day777Calc: true): 마이너스 처리된 건이 반영되어 기여도가 차감됨 (0 미만 음수는 0으로 클램핑)
     const overlayExcel = applyOverlayDonationDisplayTotals(state, {
       day777Calc: true,
       isPongdangPopup: false,
     });
-    expect(overlayExcel.members.find((m) => m.id === "m1")?.contribution).toBe(50000);
+    expect(overlayExcel.members.find((m) => m.id === "m1")?.contribution).toBe(0);
   });
 
   it("2. 퐁당퐁당 엑셀창에서 추가된 수동 마이너스 로그(delta: -1)가 메인 엑셀표 기여도를 깎지 않는다", () => {

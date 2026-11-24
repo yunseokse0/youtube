@@ -4044,7 +4044,7 @@ function OverlayInner() {
         typeof raw === "number"
           ? raw
           : Number(typeof raw === "string" ? String(raw).replace(/,/g, "").trim() : raw);
-      return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
+      return Number.isFinite(parsed) ? Math.floor(parsed) : 0;
     }
     const memberId = String(m.id || "").trim();
     const donors = overlayContributionSource.donors || [];

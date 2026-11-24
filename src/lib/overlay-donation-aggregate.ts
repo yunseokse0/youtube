@@ -210,7 +210,7 @@ export function resolveDay777SigCreditFallbackMemberId(
   }
   const shotMember = String(latestShot?.memberId || "").trim();
   if (shotMember) return shotMember;
-  if (memberIds.size === 1) return [...memberIds][0] || "";
+  // 777 후원이 명시적으로 없을 때는 임의 멤버에게 미지정 시그를 몰아주지 않음 (덤터기 방지)
   return "";
 }
 
@@ -399,10 +399,12 @@ export function applyOverlayDonationDisplayTotals(
     0,
     Number(state?.pongdangResetAt || 0)
   );
-  const effectiveCutoff = fromAt != null ? fromAt : (pongdangResetCutoff > 0 ? pongdangResetCutoff : null);
+  // 0원 초기화(pongdangResetAt)가 실행된 경우 초기화 시점을 최우선 반영하여 과거 후원 재합산 방지
+  const effectiveCutoff = Math.max(fromAt || 0, pongdangResetCutoff || 0) || null;
 
+  // 오버레이에서도 관리자가 마이너스 처리한 시그를 그대로 차감 반영
   const sigById = collectDay777SigContributionByMember(state, effectiveCutoff, {
-    ignorePongdangMinus: !isPongdangPopup,
+    ignorePongdangMinus: false,
   });
 
   return {
@@ -411,10 +413,6 @@ export function applyOverlayDonationDisplayTotals(
       const orig = originalMemberMap.get(m.id);
       const autoVal = sigById.get(m.id) ?? 0;
       let manualAdj = isManualMode ? Number(manualContribs[m.id]) || 0 : 0;
-      // 엑셀표(오버레이)에서는 퐁당퐁당 수동 음수 보정값이 기여도를 깎지 않도록 격리
-      if (!isPongdangPopup && manualAdj < 0) {
-        manualAdj = 0;
-      }
       const currentContrib = Math.floor(Number(orig?.contribution) || 0);
       const hasDonorsSource = Array.isArray(state?.donors) && state.donors.length > 0;
       const baseVal = autoVal !== 0 ? autoVal : (effectiveCutoff != null || hasDonorsSource ? 0 : currentContrib);
@@ -478,8 +476,7 @@ export function resolveOverlayContributionSource(
   const isPongdangPopup = Boolean(opts.isPongdangPopup);
   const filterMinusLogs = (logs: ContributionLog[] | undefined) => {
     if (!logs) return [];
-    if (isPongdangPopup) return logs;
-    return logs.filter((l) => !isPongdangMinusContributionLog(l));
+    return logs;
   };
   if (!day777 && fromAt == null) {
     return { donors: state.donors, contributionLogs: filterMinusLogs(state.contributionLogs) };
