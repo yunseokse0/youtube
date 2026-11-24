@@ -61,3 +61,87 @@ export function useMemberRankChangeFx(opts: {
 
   return { event, clearEvent };
 }
+
+export type MultiPresetRankTarget = {
+  id: string;
+  name?: string;
+  ranked: OverlayRankRow[];
+  members: Member[];
+  donors: Donor[] | unknown;
+  rankingMetric?: MemberRankingMetric;
+};
+
+/** 복수 엑셀표 프리셋 감지용 — 여러 엑셀표 중 어느 하나라도 순위 상승 시 동일 테마 연출 1건 감지 */
+export function useMultiPresetMemberRankChangeFx(opts: {
+  enabled: boolean;
+  ready: boolean;
+  targets: MultiPresetRankTarget[];
+}): {
+  event: RankImprovementEvent | null;
+  clearEvent: () => void;
+} {
+  const { enabled, ready, targets } = opts;
+  const [event, setEvent] = useState<RankImprovementEvent | null>(null);
+  const prevSnapshotsRef = useRef<
+    Map<
+      string,
+      {
+        rankSnapshot: ReturnType<typeof buildMemberRankSnapshot>;
+        session: ReturnType<typeof buildRankChangeSessionSnapshot>;
+      }
+    >
+  >(new Map());
+  const cooldownRef = useRef(0);
+  const bootstrappedRef = useRef(false);
+
+  useEffect(() => {
+    if (!enabled || !ready || targets.length === 0) return;
+    const now = Date.now();
+    let detectedHit: RankImprovementEvent | null = null;
+
+    if (!bootstrappedRef.current) {
+      bootstrappedRef.current = true;
+      const initialMap = new Map();
+      for (const t of targets) {
+        const rankSnapshot = buildMemberRankSnapshot(t.ranked);
+        const session = buildRankChangeSessionSnapshot(t.members, t.donors, t.rankingMetric || "contribution");
+        initialMap.set(t.id, { rankSnapshot, session });
+      }
+      prevSnapshotsRef.current = initialMap;
+      return;
+    }
+
+    const nextMap = new Map(prevSnapshotsRef.current);
+    for (const t of targets) {
+      const rankSnapshot = buildMemberRankSnapshot(t.ranked);
+      const session = buildRankChangeSessionSnapshot(t.members, t.donors, t.rankingMetric || "contribution");
+      const prev = prevSnapshotsRef.current.get(t.id);
+
+      if (prev) {
+        const membersById = new Map(t.members.map((m) => [m.id, m]));
+        const hit = detectRankImprovementForFx(
+          prev.rankSnapshot,
+          rankSnapshot,
+          membersById,
+          prev.session ?? session,
+          session
+        );
+        if (hit && !detectedHit && now - cooldownRef.current >= 5200) {
+          detectedHit = hit;
+        }
+      }
+      nextMap.set(t.id, { rankSnapshot, session });
+    }
+
+    prevSnapshotsRef.current = nextMap;
+
+    if (detectedHit) {
+      cooldownRef.current = now;
+      setEvent(detectedHit);
+    }
+  }, [enabled, ready, targets]);
+
+  const clearEvent = useCallback(() => setEvent(null), []);
+
+  return { event, clearEvent };
+}

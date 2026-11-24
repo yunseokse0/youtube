@@ -3,14 +3,22 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ExcelMemberRankChangeOverlay } from "@/components/overlay/ExcelMemberRankChangeOverlay";
-import { useMemberRankChangeFx } from "@/hooks/useMemberRankChangeFx";
+import {
+  useMemberRankChangeFx,
+  useMultiPresetMemberRankChangeFx,
+  type MultiPresetRankTarget,
+} from "@/hooks/useMemberRankChangeFx";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import { subscribeOverlayPresetsLocalUpdated } from "@/lib/broadcast-state-local-sync";
 import { isMemberRankChangeFxEnabled } from "@/lib/excel-member-rank-change";
 import { resolveExcelMemberRankChangeStyle } from "@/lib/excel-member-rank-change-style";
+import { applyOverlayDonationDisplayTotals } from "@/lib/overlay-donation-aggregate";
 import {
   getOverlayUserIdFromSearchParams,
   mergeOverlayPresetsForOverlayView,
+  resolveDonationAggregateFromAt,
+  resolveDay777Calc,
+  resolvePongdangManualMode,
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
 import { overlayPresetsStorageKey, normalizeDonorsArray } from "@/lib/state";
@@ -19,7 +27,7 @@ import {
   normalizeMemberRankingMetric,
   type MemberRankingMetric,
 } from "@/lib/utils";
-import type { Member } from "@/types";
+import type { AppState, Member } from "@/types";
 
 function RankChangeOverlayInner() {
   const sp = useSearchParams();
@@ -83,12 +91,24 @@ function RankChangeOverlayInner() {
 
   const activePreset = useMemo(() => {
     const pid = sp.get("p") || sp.get("preset");
-    if (pid) {
-      const hit = overlayPresets.find((p) => p.id === pid);
+    if (pid && pid !== "all") {
+      const firstId = pid.split(",")[0]?.trim();
+      const hit = overlayPresets.find((p) => p.id === firstId || p.id === pid);
       if (hit) return hit;
     }
     return overlayPresets.find((p) => p.showMembers !== false) ?? overlayPresets[0] ?? null;
   }, [overlayPresets, sp]);
+
+  const targetPresets = useMemo<OverlayPresetLike[]>(() => {
+    const pParam = (sp.get("p") || sp.get("preset") || "").trim();
+    if (!pParam || pParam === "all") {
+      const list = overlayPresets.filter((p) => p.showMembers !== false);
+      return list.length > 0 ? list : overlayPresets.slice(0, 1);
+    }
+    const ids = pParam.split(",").map((s) => s.trim()).filter(Boolean);
+    const found = overlayPresets.filter((p) => ids.includes(p.id || ""));
+    return found.length > 0 ? found : [activePreset].filter(Boolean);
+  }, [sp, overlayPresets, activePreset]);
 
   const memberRankChangeStyle = useMemo(
     () => resolveExcelMemberRankChangeStyle(sp, activePreset, { ready }),
@@ -96,12 +116,10 @@ function RankChangeOverlayInner() {
   );
 
   const fxEnabled = useMemo(() => {
-    const raw =
-      sp.get("memberRankChangeFx") ||
-      (activePreset as OverlayPresetLike | null)?.memberRankChangeFx ||
-      "";
-    return isMemberRankChangeFxEnabled(raw);
-  }, [sp, activePreset]);
+    const raw = sp.get("memberRankChangeFx");
+    if (raw) return isMemberRankChangeFxEnabled(raw);
+    return targetPresets.some((p) => isMemberRankChangeFxEnabled(p.memberRankChangeFx));
+  }, [sp, targetPresets]);
 
   const members = useMemo(
     () => (ready && state?.members?.length ? state.members : []) as Member[],
@@ -134,40 +152,69 @@ function RankChangeOverlayInner() {
     [getMemberRole]
   );
 
-  const unpinned = useMemo(() => members.filter((m) => !pinnedFilter(m)), [members, pinnedFilter]);
-
-  const ranked = useMemo(
-    () =>
-      buildOverlayRankedMembers(
-        unpinned,
+  const rankTargets = useMemo<MultiPresetRankTarget[]>(() => {
+    if (!ready || !state) return [];
+    return targetPresets.map((tp) => {
+      const tpDay777 = resolveDay777Calc(sp, tp, { ready });
+      const tpPongdangManual = resolvePongdangManualMode(sp, tp, { ready }, state as AppState);
+      const tpFromAt = resolveDonationAggregateFromAt(sp, tp, { ready });
+      const tpExcludedSet = new Set(
+        (Array.isArray(tp.excludedMemberIds)
+          ? tp.excludedMemberIds
+          : typeof tp.excludedMemberIds === "string"
+          ? String(tp.excludedMemberIds).split(",").map((s) => s.trim())
+          : []
+        ).concat(tpDay777 ? (state?.pongdangExcludedMemberIds || []) : [])
+      );
+      const tpSynced = applyOverlayDonationDisplayTotals(
+        state as AppState,
+        {
+          fromAt: tpFromAt,
+          day777Calc: tpDay777,
+          pongdangManualMode: tpPongdangManual,
+        }
+      );
+      const tpMembers = (tpSynced.members || (members as Member[])).filter((m) => !tpExcludedSet.has(m.id));
+      const tpUnpinned = tpMembers.filter((m) => !pinnedFilter(m));
+      const tpMetric = normalizeMemberRankingMetric(tp.rankingMetric || tp.memberRankingMetric || memberRankingMetric);
+      const tpRanked = buildOverlayRankedMembers(
+        tpUnpinned,
         memberPositionsMap,
         getMemberRole,
-        members,
+        tpMembers,
         undefined,
-        memberRankingMetric,
+        tpMetric,
         {
           fixedPositionMemberIds: (state as AppState | null)?.fixedPositionMemberIds,
           memberPositionMode: (state as AppState | null)?.memberPositionMode,
         }
-      ),
-    [
-      unpinned,
-      memberPositionsMap,
-      getMemberRole,
-      members,
-      memberRankingMetric,
-      (state as AppState | null)?.fixedPositionMemberIds,
-      (state as AppState | null)?.memberPositionMode,
-    ]
-  );
+      );
+      return {
+        id: tp.id || "default",
+        name: tp.name,
+        ranked: tpRanked,
+        members: tpMembers,
+        donors: donorsForRankFx,
+        rankingMetric: tpMetric,
+      };
+    });
+  }, [
+    ready,
+    state,
+    targetPresets,
+    sp,
+    members,
+    pinnedFilter,
+    memberPositionsMap,
+    getMemberRole,
+    memberRankingMetric,
+    donorsForRankFx,
+  ]);
 
-  const { event, clearEvent } = useMemberRankChangeFx({
+  const { event, clearEvent } = useMultiPresetMemberRankChangeFx({
     enabled: fxEnabled,
     ready,
-    ranked,
-    members,
-    donors: donorsForRankFx,
-    rankingMetric: memberRankingMetric,
+    targets: rankTargets,
   });
 
   return (

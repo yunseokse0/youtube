@@ -2157,6 +2157,8 @@ function AdminPageInner() {
   const [obsTextPreviewIframeKey, setObsTextPreviewIframeKey] = useState(0);
   const [obsTextPreviewInstanceId, setObsTextPreviewInstanceId] = useState<string | null>(null);
   const [memberRankChangeFxEditPresetId, setMemberRankChangeFxEditPresetId] = useState<string | null>(null);
+  const [selectedRankChangePresetIds, setSelectedRankChangePresetIds] = useState<string[]>([]);
+  const [rankChangeUrlMode, setRankChangeUrlMode] = useState<"all" | "selected" | "single">("all");
   const obsTextRegistry = useMemo(() => readObsTextRegistryFromState(state), [state]);
   const obsTextPreviewId =
     obsTextPreviewInstanceId ?? obsTextRegistry.instances[0]?.id ?? "default";
@@ -6410,6 +6412,33 @@ function AdminPageInner() {
     }
     return presets.find((p) => p.showMembers !== false) ?? presets[0];
   }, [presets, memberRankChangeFxEditPresetId]);
+
+  const effectiveSelectedRankChangePresetIds = useMemo(() => {
+    if (selectedRankChangePresetIds.length > 0) {
+      const valid = selectedRankChangePresetIds.filter((id) => presets.some((p) => p.id === id));
+      if (valid.length > 0) return valid;
+    }
+    return presets.map((p) => p.id);
+  }, [selectedRankChangePresetIds, presets]);
+
+  const copyRankChangeThemeToAll = useCallback((sourcePreset: OverlayPreset) => {
+    const patch: Partial<OverlayPreset> = {
+      memberRankChangeFx: sourcePreset.memberRankChangeFx,
+      memberRankChangeNameSize: sourcePreset.memberRankChangeNameSize,
+      memberRankChangeRankSize: sourcePreset.memberRankChangeRankSize,
+      memberRankChangeIconSize: sourcePreset.memberRankChangeIconSize,
+      memberRankChangeNameColor: sourcePreset.memberRankChangeNameColor,
+      memberRankChangeRankColor: sourcePreset.memberRankChangeRankColor,
+      memberRankChangeAccentColor: sourcePreset.memberRankChangeAccentColor,
+      memberRankChangeCardBg: sourcePreset.memberRankChangeCardBg,
+      memberRankChangeCardBorder: sourcePreset.memberRankChangeCardBorder,
+      memberRankChangeConfettiColors: sourcePreset.memberRankChangeConfettiColors,
+    };
+    presets.forEach((p) => {
+      updatePreset(p.id, patch);
+    });
+    showAppToast(`모든 엑셀표(${presets.length}개)에 순위변동 테마가 일괄 적용되었습니다.`, { variant: "success" });
+  }, [presets, updatePreset]);
   const buildOverlayUrl = (p: OverlayPreset): string => {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
@@ -6648,12 +6677,22 @@ function AdminPageInner() {
     });
     return `${window.location.origin}${path}?${q.toString()}`;
   };
-  const buildRankChangeOverlayUrl = (presetId?: string): string => {
+  const buildRankChangeOverlayUrl = (
+    presetId?: string,
+    mode: "all" | "selected" | "single" = rankChangeUrlMode,
+    selectedIds: string[] = effectiveSelectedRankChangePresetIds
+  ): string => {
     if (typeof window === "undefined") return "";
     const q = new URLSearchParams();
     q.set("u", overlayUserId);
     q.set("host", "obs");
-    if (presetId) q.set("p", presetId);
+    if (mode === "single" && presetId) {
+      q.set("p", presetId);
+    } else if (mode === "selected" && selectedIds.length > 0) {
+      q.set("p", selectedIds.join(","));
+    } else {
+      q.set("p", "all");
+    }
     return `${window.location.origin}/overlay/rank-change?${q.toString()}`;
   };
   const buildEmergencySnapshotUrl = (p: OverlayPreset): string => {
@@ -21344,37 +21383,83 @@ function AdminPageInner() {
               </div>
               <div id="member-rank-change-fx" className="mb-3 min-w-0 w-full rounded border border-amber-500/25 bg-amber-950/20 p-3 space-y-3">
                 <MemberRankChangeFxPresetPanelHeader />
-                <div className="rounded border border-amber-500/30 bg-black/25 p-2 text-xs text-neutral-400 flex flex-wrap items-center gap-2">
-                  <span className="text-amber-100/90 shrink-0">OBS URL:</span>
-                  <code className="text-neutral-300 break-all flex-1 min-w-[200px]">
-                    /overlay/rank-change?u={overlayUserId}&host=obs
-                    {memberRankChangeFxEditPreset?.id ? `&p=${memberRankChangeFxEditPreset.id}` : ""}
-                  </code>
-                  <button
-                    type="button"
-                    className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "member-rank-change-panel" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
-                    onClick={() => {
-                      void copyUrl(
-                        buildRankChangeOverlayUrl(memberRankChangeFxEditPreset?.id),
-                        "member-rank-change-panel"
-                      );
-                    }}
-                  >
-                    {copiedId === "member-rank-change-panel" ? "복사됨!" : "URL 복사"}
-                  </button>
-                  <button
-                    type="button"
-                    className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white shrink-0"
-                    onClick={() =>
-                      window.open(
-                        buildRankChangeOverlayUrl(memberRankChangeFxEditPreset?.id),
-                        "_blank",
-                        "noopener,noreferrer"
-                      )
-                    }
-                  >
-                    오버레이 열기
-                  </button>
+                <div className="rounded border border-amber-500/30 bg-black/25 p-2 text-xs text-neutral-400 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-amber-100/90 font-bold shrink-0">OBS 연동 모드:</span>
+                      <button
+                        type="button"
+                        className={`px-2 py-0.5 rounded text-xs font-semibold transition border ${
+                          rankChangeUrlMode === "all"
+                            ? "bg-amber-500 text-black border-amber-400 font-bold"
+                            : "bg-neutral-800 text-neutral-400 border-white/10 hover:text-white"
+                        }`}
+                        onClick={() => setRankChangeUrlMode("all")}
+                      >
+                        🌐 전체 엑셀표 통합 (추천)
+                      </button>
+                      <button
+                        type="button"
+                        className={`px-2 py-0.5 rounded text-xs font-semibold transition border ${
+                          rankChangeUrlMode === "selected"
+                            ? "bg-amber-500 text-black border-amber-400 font-bold"
+                            : "bg-neutral-800 text-neutral-400 border-white/10 hover:text-white"
+                        }`}
+                        onClick={() => setRankChangeUrlMode("selected")}
+                      >
+                        🔗 선택한 엑셀표만 ({effectiveSelectedRankChangePresetIds.length}개)
+                      </button>
+                      <button
+                        type="button"
+                        className={`px-2 py-0.5 rounded text-xs font-semibold transition border ${
+                          rankChangeUrlMode === "single"
+                            ? "bg-amber-500 text-black border-amber-400 font-bold"
+                            : "bg-neutral-800 text-neutral-400 border-white/10 hover:text-white"
+                        }`}
+                        onClick={() => setRankChangeUrlMode("single")}
+                      >
+                        📌 기준 엑셀표 전용 ({memberRankChangeFxEditPreset?.name || "선택"})
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
+                    <span className="text-amber-100/90 shrink-0 font-mono text-[11px]">OBS URL:</span>
+                    <code className="text-amber-200/90 break-all flex-1 min-w-[200px] font-mono text-[11px] bg-neutral-950/80 px-2 py-1 rounded border border-white/10">
+                      {buildRankChangeOverlayUrl(memberRankChangeFxEditPreset?.id, rankChangeUrlMode, effectiveSelectedRankChangePresetIds)}
+                    </code>
+                    <button
+                      type="button"
+                      className={`px-2.5 py-1 rounded text-xs font-bold shrink-0 transition ${
+                        copiedId === "member-rank-change-panel"
+                          ? "bg-emerald-600 text-white"
+                          : "bg-amber-500 hover:bg-amber-400 text-black"
+                      }`}
+                      onClick={() => {
+                        void copyUrl(
+                          buildRankChangeOverlayUrl(memberRankChangeFxEditPreset?.id, rankChangeUrlMode, effectiveSelectedRankChangePresetIds),
+                          "member-rank-change-panel"
+                        );
+                      }}
+                    >
+                      {copiedId === "member-rank-change-panel" ? "✓ 복사됨!" : "URL 복사"}
+                    </button>
+                    <button
+                      type="button"
+                      className="px-2.5 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs font-semibold text-white shrink-0"
+                      onClick={() =>
+                        window.open(
+                          buildRankChangeOverlayUrl(memberRankChangeFxEditPreset?.id, rankChangeUrlMode, effectiveSelectedRankChangePresetIds),
+                          "_blank",
+                          "noopener,noreferrer"
+                        )
+                      }
+                    >
+                      오버레이 열기
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-neutral-400 leading-relaxed">
+                    💡 <strong>전체 엑셀표 통합 모드</strong>를 사용하시면, 자키엑셀표든 퐁당퐁당이든 방송 화면의 어느 엑셀표에서 순위가 오르더라도 동일한 테마로 즉시 순위변동 축하 카드가 표출됩니다.
+                  </p>
                 </div>
                 {presets.length === 0 ? (
                   <p className="text-[11px] text-neutral-500">
@@ -21382,24 +21467,109 @@ function AdminPageInner() {
                   </p>
                 ) : (
                   <>
-                    <label className="flex max-w-md flex-col gap-1 text-[11px] text-neutral-400">
-                      적용 프리셋
-                      <select
-                        className="rounded border border-white/10 bg-neutral-900/80 px-2 py-1.5 text-sm"
-                        value={memberRankChangeFxEditPreset?.id ?? ""}
-                        onChange={(e) => setMemberRankChangeFxEditPresetId(e.target.value || null)}
-                      >
-                        {presets.map((presetOption) => (
-                          <option key={presetOption.id} value={presetOption.id}>
-                            {presetOption.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    {/* 🎨 동일 테마 적용 대상 엑셀표 다중 선택 바 */}
+                    <div className="rounded-lg border border-amber-500/30 bg-black/30 p-3 space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-amber-200">
+                              🎯 동일 테마 적용 대상 엑셀표 ({effectiveSelectedRankChangePresetIds.length}/{presets.length}개 적용 중)
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-neutral-400 mt-0.5">
+                            체크된 모든 엑셀표에 아래 테마 설정(색상, 글자 크기, 카드 배경 등)이 <strong>실시간으로 일괄 동시 적용</strong>됩니다.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded text-xs font-semibold bg-neutral-800 text-neutral-300 hover:text-white border border-white/10"
+                            onClick={() => setSelectedRankChangePresetIds(presets.map((p) => p.id))}
+                          >
+                            전체 선택
+                          </button>
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded text-xs font-semibold bg-neutral-800 text-neutral-300 hover:text-white border border-white/10"
+                            onClick={() => setSelectedRankChangePresetIds(memberRankChangeFxEditPreset ? [memberRankChangeFxEditPreset.id] : [])}
+                          >
+                            현재만 선택
+                          </button>
+                          {memberRankChangeFxEditPreset && (
+                            <button
+                              type="button"
+                              className="px-2.5 py-1 rounded text-xs font-bold bg-amber-500 hover:bg-amber-400 text-black transition shadow flex items-center gap-1 cursor-pointer"
+                              onClick={() => copyRankChangeThemeToAll(memberRankChangeFxEditPreset)}
+                              title="현재 편집 중인 순위변동 테마 설정을 모든 엑셀표에 일괄 복사 및 적용합니다."
+                            >
+                              <span>✨</span>
+                              <span>모든 엑셀표에 현재 테마 일괄 적용</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 엑셀표 프리셋 체크박스 알약 리스트 */}
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        {presets.map((presetOption) => {
+                          const isChecked = effectiveSelectedRankChangePresetIds.includes(presetOption.id);
+                          const isEditActive = memberRankChangeFxEditPreset?.id === presetOption.id;
+                          return (
+                            <div
+                              key={presetOption.id}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition border flex items-center gap-2 select-none ${
+                                isChecked
+                                  ? "bg-amber-950/70 text-amber-200 border-amber-400 shadow-sm"
+                                  : "bg-neutral-900/80 text-neutral-400 border-white/10 hover:border-white/25"
+                              } ${isEditActive ? "ring-2 ring-amber-400/60" : ""}`}
+                            >
+                              <label className="flex items-center gap-1.5 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  className="accent-amber-500 rounded cursor-pointer"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedRankChangePresetIds((prev) => Array.from(new Set([...prev, presetOption.id])));
+                                    } else {
+                                      setSelectedRankChangePresetIds((prev) => {
+                                        const current = prev.length > 0 ? prev : presets.map((p) => p.id);
+                                        const next = current.filter((id) => id !== presetOption.id);
+                                        return next.length > 0 ? next : [presetOption.id];
+                                      });
+                                    }
+                                  }}
+                                />
+                                <span>{presetOption.name}</span>
+                              </label>
+                              {isEditActive ? (
+                                <span className="text-[10px] text-amber-300 font-bold bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/30">
+                                  편집 기준
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="text-[10px] text-neutral-400 hover:text-amber-200 underline cursor-pointer"
+                                  onClick={() => setMemberRankChangeFxEditPresetId(presetOption.id)}
+                                >
+                                  기준 변경
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     {memberRankChangeFxEditPreset ? (
                       <MemberRankChangeFxPresetPanel
                         preset={memberRankChangeFxEditPreset}
-                        onChange={(patch) => updatePreset(memberRankChangeFxEditPreset.id, patch as Partial<OverlayPreset>)}
+                        onChange={(patch) => {
+                          const targetIds = effectiveSelectedRankChangePresetIds.length > 0
+                            ? effectiveSelectedRankChangePresetIds
+                            : [memberRankChangeFxEditPreset.id];
+                          targetIds.forEach((pid) => updatePreset(pid, patch as Partial<OverlayPreset>));
+                        }}
                       />
                     ) : null}
                   </>
@@ -24645,7 +24815,18 @@ function AdminPageInner() {
                                 )}
                               </div>
                               <div className="col-span-full min-w-0 w-full rounded border border-amber-400/20 bg-amber-950/20 p-3 space-y-2">
-                                <MemberRankChangeFxPresetPanelHeader compact />
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <MemberRankChangeFxPresetPanelHeader compact />
+                                  <button
+                                    type="button"
+                                    className="px-2.5 py-1 rounded text-xs font-bold bg-amber-500 hover:bg-amber-400 text-black transition shadow flex items-center gap-1 cursor-pointer"
+                                    onClick={() => copyRankChangeThemeToAll(p)}
+                                    title="이 엑셀표의 순위변동 테마 설정을 다른 모든 엑셀표에 일괄 복사 및 적용합니다."
+                                  >
+                                    <span>✨</span>
+                                    <span>모든 엑셀표에 이 테마 일괄 적용</span>
+                                  </button>
+                                </div>
                                 <p className="text-[10px] text-neutral-500">
                                   상단 「엑셀표 · 순위 변동 연출」에서도 동일하게 수정할 수 있습니다.
                                 </p>
