@@ -2028,6 +2028,9 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
       if (Number.isFinite(donorNameEditAtRaw) && donorNameEditAtRaw > 0) {
         row.donorNameEditAt = donorNameEditAtRaw;
       }
+      if (typeof x.sigPrice === "number" && Number.isFinite(x.sigPrice)) row.sigPrice = x.sigPrice;
+      if (x.isSigCredit === true) row.isSigCredit = true;
+      if (x.pongdangMinus === true) row.pongdangMinus = true;
       if (x.donorNameLastEditedBy === "user") row.donorNameLastEditedBy = "user";
       return row;
     });
@@ -2120,6 +2123,7 @@ export function loadState(userId?: string | null): AppState {
             amount: Math.max(0, Math.floor(Number((x as ContributionLog).amount || 0))),
             delta: (x as ContributionLog).delta === -1 ? -1 : 1,
             note: typeof (x as ContributionLog).note === "string" ? (x as ContributionLog).note : "",
+            donorName: typeof (x as any).donorName === "string" ? String((x as any).donorName).trim() : undefined,
             at: Number.isFinite(Number((x as ContributionLog).at)) ? Math.floor(Number((x as ContributionLog).at)) : Date.now(),
           }))
       : [];
@@ -4361,6 +4365,7 @@ async function doLoadStateFromApi(
               amount: Math.max(0, Math.floor(Number((x as ContributionLog).amount || 0))),
               delta: (x as ContributionLog).delta === -1 ? -1 : 1,
               note: typeof (x as ContributionLog).note === "string" ? (x as ContributionLog).note : "",
+              donorName: typeof (x as any).donorName === "string" ? String((x as any).donorName).trim() : undefined,
               at: Number.isFinite(Number((x as ContributionLog).at)) ? Math.floor(Number((x as ContributionLog).at)) : Date.now(),
             }))
         : [];
@@ -5516,16 +5521,19 @@ export function wouldShrinkDonationData(
 }
 
 export function formatManThousand(n: number): string {
-  const safe = Math.max(0, Math.round(n / 1000) * 1000);
+  const isNeg = n < 0;
+  const abs = Math.abs(n);
+  const safe = Math.round(abs / 1000) * 1000;
   const man = Math.floor(safe / 10000);
   const thousandDigit = Math.floor((safe % 10000) / 1000);
-  return thousandDigit ? `${man}.${thousandDigit}` : `${man}`;
+  const res = thousandDigit ? `${man}.${thousandDigit}` : `${man}`;
+  return isNeg && res !== "0" ? `-${res}` : res;
 }
 
 /** 원 단위 전 자리 표기(관리자 후원 목록·누적 등). 비음수 정수로 반올림 후 천 단위 구분 */
 export function formatWonFull(n: number): string {
-  const safe = Math.max(0, Math.round(Number(n) || 0));
-  return safe.toLocaleString("ko-KR");
+  const num = Math.round(Number(n) || 0);
+  return num.toLocaleString("ko-KR");
 }
 
 export function normalizeDonorsFormat(raw: unknown, fallback: DonorsAmountFormat = "full"): DonorsAmountFormat {
@@ -5537,9 +5545,9 @@ export function normalizeDonorsFormat(raw: unknown, fallback: DonorsAmountFormat
 
 /** 후원·오버레이 공통 금액 문자열 (full=원 단위 그대로 / short=만원 축약) */
 export function formatDonorsAmount(n: number, format: DonorsAmountFormat, locale = "ko-KR"): string {
-  const safe = Math.max(0, Math.round(Number(n) || 0));
-  if (format === "full") return safe.toLocaleString(locale);
-  return formatManThousand(safe);
+  const num = Math.round(Number(n) || 0);
+  if (format === "full") return num.toLocaleString(locale);
+  return formatManThousand(num);
 }
 
 export function formatChatLine(state: AppState): string {

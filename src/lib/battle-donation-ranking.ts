@@ -13,7 +13,7 @@ export type BattleDonationRankingRow = {
 };
 
 export function formatBattleDonationAmount(n: number): string {
-  return Math.max(0, Math.round(n)).toLocaleString("ko-KR");
+  return Math.round(n).toLocaleString("ko-KR");
 }
 
 export function buildBattleDonationRows(

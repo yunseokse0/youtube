@@ -1199,7 +1199,7 @@ function OverlayTableNumCell({
   className?: string;
   style?: React.CSSProperties;
 }) {
-  const safe = Math.max(0, Math.round(Number(value) || 0));
+  const safe = Math.round(Number(value) || 0);
   const display = useCountUp(safe, animate ? 600 : 0);
   return (
     <span className={className} style={style}>
@@ -4016,7 +4016,7 @@ function OverlayInner() {
         typeof raw === "number"
           ? raw
           : Number(typeof raw === "string" ? String(raw).replace(/,/g, "").trim() : raw);
-      return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
+      return Number.isFinite(parsed) ? Math.floor(parsed) : 0;
     }
     const memberId = String(m.id || "").trim();
     const donors = overlayContributionSource.donors || [];

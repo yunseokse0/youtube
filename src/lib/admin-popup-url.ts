@@ -1,4 +1,4 @@
-export type AdminPopupPanel = "timer" | "donors" | "high-society";
+export type AdminPopupPanel = "timer" | "donors" | "high-society" | "pongdang";
 
 const POPUP_FEATURES =
   "menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes";
@@ -74,4 +74,19 @@ export function openAdminDonorListPopup(userId?: string | null): Window | null {
   const width = Math.max(1280, Math.min(availW - 16, 1920));
   const height = Math.max(820, Math.min(availH - 40, 1200));
   return openAdminPanelUrl(url, "admin-donors-popup", `width=${width},height=${height},${POPUP_FEATURES}`);
+}
+
+export function buildAdminPongdangPopupUrl(userId?: string | null): string {
+  const uid = String(userId || "").trim();
+  return uid ? `/admin/pongdang?u=${encodeURIComponent(uid)}` : "/admin/pongdang";
+}
+
+export function openAdminPongdangPopup(userId?: string | null): Window | null {
+  if (typeof window === "undefined") return null;
+  const url = buildAdminPongdangPopupUrl(userId);
+  const availW = Number(window.screen?.availWidth) || 1440;
+  const availH = Number(window.screen?.availHeight) || 920;
+  const width = Math.max(1280, Math.min(availW - 16, 1920));
+  const height = Math.max(820, Math.min(availH - 40, 1200));
+  return openAdminPanelUrl(url, "admin-pongdang-popup", `width=${width},height=${height},${POPUP_FEATURES}`);
 }

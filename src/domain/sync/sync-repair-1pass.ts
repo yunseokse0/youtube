@@ -171,9 +171,8 @@ function buildMembersFromTotals(
       positions
     );
     const contribution = isOperating
-      ? Math.max(0, Number(member.contribution) || 0)
-      : Math.max(
-          0,
+      ? Math.floor(Number(member.contribution) || 0)
+      : Math.floor(
           (contribMap.get(member.id)?.donorPoints || 0) +
             (logMap.get(member.id)?.deltaSum || 0)
         );
@@ -229,9 +228,8 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
       positions
     );
     const contribution = isOperating
-      ? Math.max(0, Number(member.contribution) || 0)
-      : Math.max(
-          0,
+      ? Math.floor(Number(member.contribution) || 0)
+      : Math.floor(
           (contribMap.get(member.id)?.donorPoints || 0) +
             (logMap.get(member.id)?.deltaSum || 0)
         );

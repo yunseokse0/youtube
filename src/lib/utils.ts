@@ -66,16 +66,23 @@ export function memberDonationRankingTotal(member: Member): number {
   return floorToHundreds(safeAmount(member.account)) + floorToHundreds(safeAmount(member.toon));
 }
 
-/** 엑셀표 순위 — 세션 누적 기여도 (getter 없으면 member.contribution) */
+function safeContributionAmount(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.floor(n);
+}
+
+/** 엑셀표 순위 — 세션 누적 기여도 (getter 없으면 member.contribution, 음수 기여도 지원) */
 export function memberContributionRankingTotal(
   member: Member,
   getContribution?: MemberContributionGetter
 ): number {
   if (getContribution) {
-    return Math.max(0, Math.floor(Number(getContribution(member)) || 0));
+    const res = getContribution(member);
+    return Number.isFinite(res) ? Math.floor(Number(res)) : 0;
   }
   const raw = (member as Member & { contribution?: unknown }).contribution;
-  return safeAmount(raw);
+  return safeContributionAmount(raw);
 }
 
 /** 후원 총액 내림차순 → 동점 시 멤버 생성순 (분배·레거시용) */

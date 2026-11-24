@@ -57,6 +57,8 @@ export type Donor = {
   sigPrice?: number;
   /** 나온 시그 단가로 기여도를 적립하는 이벤트/후원 플래그 */
   isSigCredit?: boolean;
+  /** 퐁당퐁당(777데이) 엑셀에서 해당 기여도 마이너스(-) 처리 여부 */
+  pongdangMinus?: boolean;
   /** 후원자명을 유저가 직접 수정한 타임스탬프(ms). SSE/폴링 동기화시 신규 판별 기준값 */
   donorNameEditAt?: number;
   /** 후원자명 수정 주체 = "user" (관리자 직접 수정) 또는 미지정(자동 유입) */
@@ -136,6 +138,8 @@ export type ContributionLog = {
   /** 1=추가, -1=차감 */
   delta: 1 | -1;
   note?: string;
+  /** 후원자명 (기여도 기록용) */
+  donorName?: string;
   at: number;
 };
 

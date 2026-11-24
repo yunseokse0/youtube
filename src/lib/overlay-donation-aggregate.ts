@@ -269,13 +269,14 @@ export function collectDay777SigContributionByMember(
     const amt = Math.max(0, Math.floor(Number(d.amount || 0)));
     const isCredit = Boolean((d as { isSigCredit?: boolean }).isSigCredit);
 
+    const mult = d.pongdangMinus ? -1 : 1;
     if (explicitSigPrice > 0) {
-      byMember.set(mid, (byMember.get(mid) || 0) + explicitSigPrice);
+      byMember.set(mid, (byMember.get(mid) || 0) + mult * explicitSigPrice);
     } else if (isCredit && cp > 0) {
-      byMember.set(mid, (byMember.get(mid) || 0) + cp);
+      byMember.set(mid, (byMember.get(mid) || 0) + mult * cp);
     } else if (cp > 0 && amt !== DAY777_SHOT_AMOUNT && cp !== amt) {
       // 랜덤 후원 금액(amt)과 전달된 기여도(cp)가 다르면 나온 시그 단가로 간주
-      byMember.set(mid, (byMember.get(mid) || 0) + cp);
+      byMember.set(mid, (byMember.get(mid) || 0) + mult * cp);
     }
   }
   // 기여도 기록부(contributionLogs) 수동 가감 로그 합산
@@ -285,7 +286,7 @@ export function collectDay777SigContributionByMember(
     if (!mid) continue;
     const delta = log.delta === -1 ? -1 : 1;
     const amt = Math.max(0, Math.floor(Number(log.amount || 0)));
-    byMember.set(mid, Math.max(0, (byMember.get(mid) || 0) + delta * amt));
+    byMember.set(mid, (byMember.get(mid) || 0) + delta * amt);
   }
   return byMember;
 }
@@ -376,12 +377,12 @@ export function applyOverlayDonationDisplayTotals(
       const orig = originalMemberMap.get(m.id);
       const autoVal = sigById.get(m.id) ?? 0;
       const manualAdj = isManualMode ? Number(manualContribs[m.id]) || 0 : 0;
-      const currentContrib = Math.max(0, Math.floor(Number(orig?.contribution) || 0));
+      const currentContrib = Math.floor(Number(orig?.contribution) || 0);
       const hasDonorsSource = Array.isArray(state?.donors) && state.donors.length > 0;
-      const baseVal = autoVal > 0 ? autoVal : (effectiveCutoff != null || hasDonorsSource ? 0 : currentContrib);
+      const baseVal = autoVal !== 0 ? autoVal : (effectiveCutoff != null || hasDonorsSource ? 0 : currentContrib);
       return {
         ...m,
-        contribution: Math.max(0, baseVal + manualAdj),
+        contribution: baseVal + manualAdj,
       };
     }),
   };

@@ -415,7 +415,7 @@ import {
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
 import { buildPlayerAlertPopupUrl, openPlayerAlertPopup } from "@/lib/donation/player-alert-url";
 import { buildDonationAlertUrl } from "@/lib/donation/donation-alert-overlay";
-import { openAdminDonorListPopup, openAdminHighSocietyPopup, openAdminTimerPopup } from "@/lib/admin-popup-url";
+import { openAdminDonorListPopup, openAdminHighSocietyPopup, openAdminTimerPopup, openAdminPongdangPopup } from "@/lib/admin-popup-url";
 
 /** 후원 계열 오버레이 배경 GIF 프리셋 — 외부 URL은 방송망에서 차단될 수 있음 */
 const DONATION_LISTS_BG_GIF_PRESETS: { label: string; url: string }[] = [
@@ -13246,6 +13246,14 @@ function AdminPageInner() {
               </button>
               <button
                 type="button"
+                className="px-3 py-2 rounded-[10px] text-sm font-semibold text-amber-200 bg-[#1f1505] border border-amber-500/35 hover:bg-[#2c1e08] transition flex items-center gap-1.5"
+                onClick={() => openAdminPongdangPopup(overlayUserId || user?.id)}
+                title="퐁당퐁당 엑셀표 및 기여도를 별도 전용 창에서 관리합니다"
+              >
+                <span>🎪</span> 퐁당퐁당 엑셀
+              </button>
+              <button
+                type="button"
                 className="px-3.5 py-2 rounded-[10px] text-sm font-bold text-white transition"
                 style={{ background: "linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%)", boxShadow: "0 3px 12px rgba(37,99,235,0.3)", border: "1px solid rgba(96,165,250,0.5)" }}
                 onClick={onFetchLatestFromServer}
@@ -19722,6 +19730,14 @@ function AdminPageInner() {
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold text-amber-200 bg-amber-950/80 hover:bg-amber-900 border border-amber-500/50 shadow-md shadow-amber-950/50 transition flex items-center gap-1.5 cursor-pointer"
+                      onClick={() => openAdminPongdangPopup(overlayUserId || user?.id)}
+                      title="후원자별 기여도 표시 및 마이너스 처리가 가능한 전용 퐁당퐁당 엑셀창을 엽니다."
+                    >
+                      <span>🎪</span> ↗ 퐁당퐁당 전용 엑셀창 열기
+                    </button>
+                    <button
+                      type="button"
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
                         state.pongdangManualMode !== false
                           ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/40 ring-1 ring-emerald-400"
@@ -19817,7 +19833,7 @@ function AdminPageInner() {
                         .reduce((acc, cur) => acc + (Number(cur.amount) || 0), 0);
                       const totalManual = manualVal + logVal;
                       const autoVal = autoSigContributionMap.get(m.id) ?? 0;
-                      const finalVal = state.pongdangManualMode !== false ? Math.max(0, autoVal + totalManual) : autoVal;
+                      const finalVal = state.pongdangManualMode !== false ? autoVal + totalManual : autoVal;
                       return (
                         <div
                           key={`pongdang-manual-${m.id}`}
@@ -23121,7 +23137,7 @@ function AdminPageInner() {
                                     p={p}
                                     activeThemeId={activeTableThemeId(p)}
                                     onUpdatePreset={(patch) => {
-                                      updatePreset(p.id, patch);
+                                      updatePreset(p.id, patch as Partial<OverlayPreset>);
                                       setGlobalPreviewBump((n) => n + 1);
                                     }}
                                   />
@@ -24384,7 +24400,7 @@ function AdminPageInner() {
                                       tableSplit: p.tableSplit,
                                     }}
                                     onChange={(patch) => {
-                                      updatePreset(p.id, patch);
+                                      updatePreset(p.id, patch as Partial<OverlayPreset>);
                                       /** 열 ON/OFF는 URL strip → LS 핫리로드; iframe remount로 미리보기 즉시 일치 */
                                       setGlobalPreviewBump((n) => n + 1);
                                     }}
