@@ -21515,7 +21515,8 @@ function AdminPageInner() {
                         )}
 
                         {currentGoalPreset && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
+                          <>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
                             <div className="space-y-1">
                               <label className="text-[11px] font-semibold text-neutral-300 flex items-center">
                                 현재 목표 금액 (원)
@@ -21842,7 +21843,8 @@ function AdminPageInner() {
                               </div>
                             </div>
                           </div>
-                        )}
+                        </>
+                      )}
                       </>
                     )}
                   </div>
