@@ -2697,7 +2697,7 @@ function OverlayInner() {
     return defaultVal;
   };
   const resolvePresetLabel = (
-    key: "accountHeaderLabel" | "toonHeaderLabel" | "restroomHeaderLabel",
+    key: "accountHeaderLabel" | "toonHeaderLabel" | "restroomHeaderLabel" | "contributionHeaderLabel",
     fallback: string
   ): string => {
     const fromPreset = ready ? String((effectivePreset as Record<string, unknown> | null)?.[key] || "").trim() : "";
@@ -2901,6 +2901,7 @@ function OverlayInner() {
   const pongdangManualMode =
     day777Calc && resolvePongdangManualMode(rawSp, effectivePreset, { ready }, s as AppState);
   const toonHeaderLabel = resolvePresetLabel("toonHeaderLabel", "투네");
+  const contributionHeaderLabel = resolvePresetLabel("contributionHeaderLabel", "누적기여도");
   const restroomHeaderLabel = resolvePresetLabel("restroomHeaderLabel", "화장실");
   const showGoal = (() => {
     if (effectiveTableOnly) return false;
@@ -3245,14 +3246,14 @@ function OverlayInner() {
   const defTotalCh = (sp.get("totalCh") && parseInt(sp.get("totalCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 6 : 7));
   const contributionChParam = externalHost ? rawSp.get("contributionCh") : sp.get("contributionCh");
   const defContributionCh =
-    (contributionChParam && parseInt(contributionChParam, 10)) || (fullAmountMode ? (compact ? 10 : 11) : (compact ? 10 : 11));
+    (contributionChParam && parseInt(contributionChParam, 10)) || (fullAmountMode ? (compact ? 12 : 13) : (compact ? 11 : 12));
   const bankChBase = Math.max(8, Math.min(24, defBankCh));
   const toonChBase = Math.max(8, Math.min(24, defToonCh));
   const totalChBase = Math.max(6, Math.min(22, defTotalCh));
   /** 순위 열: 헤더「순위」·「#12」 등이 잘리지 않도록 `ch` 하한 확보(URL `rankCh`) */
   const rankColCh = Math.max(6, Math.min(12, parseInt(sp.get("rankCh") || "6", 10)));
-  /** 기여도 열: 우측 이격은 줄이되, 방송 합성 환경에서 마지막 열 잘림이 나지 않게 최소폭을 보장 */
-  const contributionChBase = Math.max(10, Math.min(18, defContributionCh));
+  /** 누적기여도 열: 5글자 헤더(누적기여도) 및 숫자가 잘리지 않도록 최소폭 확보 */
+  const contributionChBase = Math.max(11, Math.min(20, defContributionCh));
   const restroomChParam = externalHost ? rawSp.get("restroomCh") : sp.get("restroomCh");
   const defRestroomCh =
     (restroomChParam && parseInt(restroomChParam, 10)) || (compact ? 6 : 7);
@@ -4052,15 +4053,17 @@ function OverlayInner() {
       donors.some(
         (d) => String(d.memberId || "").trim() === memberId && (Number(d.amount) || 0) > 0
       );
+    const raw = (m as Member & { contribution?: unknown }).contribution;
+    let parsed = typeof raw === "number" ? raw : Number(typeof raw === "string" ? String(raw).replace(/,/g, "").trim() : raw);
+    const validBase = Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
     if (hasDonorRows && s) {
-      return resolveMemberContributionTotal(memberId, {
+      const sessionTotal = resolveMemberContributionTotal(memberId, {
         donors: overlayContributionSource.donors,
         contributionLogs: overlayContributionSource.contributionLogs,
         contributionFormula: s.contributionFormula,
       });
+      return Math.max(sessionTotal, validBase);
     }
-    const raw = (m as Member & { contribution?: unknown }).contribution;
-    let parsed = typeof raw === "number" ? raw : Number(typeof raw === "string" ? String(raw).replace(/,/g, "").trim() : raw);
     const total = Math.max(0, Number(m.account || 0) + Number(m.toon || 0));
     if (!Number.isFinite(parsed)) {
       if (day777Calc) return 0;
@@ -6334,8 +6337,12 @@ function OverlayInner() {
                         <td className={`${effectiveHeaderCls} overlay-col-total text-center`}>{totalHeaderLabel}</td>
                       )}
                       {showContributionColumn && (
-                        <td className={`${effectiveHeaderCls} overlay-col-contribution text-center`} title="후원 contributionPoints·기여도 기록부·계산식 기준. 기본 공식(100/100) 레거시만 계좌+투네 합 폴백. 운영비 행은 —, 총합은 운영비 제외.">
-                          기여도
+                        <td
+                          className={`${effectiveHeaderCls} overlay-col-contribution text-center`}
+                          style={{ whiteSpace: "nowrap" }}
+                          title="세션 누적 기여도(후원·시그 단가·수동 기여도 포함) 기준. 운영비 행은 —, 총합은 운영비 제외."
+                        >
+                          {contributionHeaderLabel}
                         </td>
                       )}
                       {showRestroomColumn && (

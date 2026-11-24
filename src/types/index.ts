@@ -374,6 +374,8 @@ export type DonationTableColumnsOptions = {
   /** 엑셀표 행마다 둥근 알약(pill) 바 스타일 (모든 엑셀 테마 지원) */
   tablePill?: boolean;
   pillStyle?: boolean;
+  /** 기여도(누적기여도) 열 헤더 명칭 (기본 '누적기여도') */
+  contributionHeaderLabel?: string;
 };
 
 export type SigMatchSettings = {

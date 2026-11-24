@@ -85,7 +85,7 @@ export default function DonationTableOptionCheckboxes({
         />
         후원합계 열(계좌+투네)
       </label>
-      <label className={labelClass}>
+      <label className={labelClass} title="엑셀표에 누적기여도 열을 표시합니다.">
         <input
           type="checkbox"
           className="rounded border-white/20 bg-neutral-900"
@@ -97,7 +97,7 @@ export default function DonationTableOptionCheckboxes({
             })
           }
         />
-        기여도 열
+        누적기여도 열
       </label>
       <label className={labelClass}>
         <input
@@ -125,7 +125,7 @@ export default function DonationTableOptionCheckboxes({
           disabled={!resolved.showContributionColumn}
           onChange={(e) => onChange({ showContributionSum: e.target.checked })}
         />
-        기여도 총합
+        누적기여도 총합
       </label>
       <label className={labelClass} title="6명 이상일 때 표를 좌우 2열로 분할합니다. 체크 해제 시 단일 1열 세로 표로 유지되어 OBS 너비 2000+ 초과를 방지합니다.">
         <input

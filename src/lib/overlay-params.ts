@@ -275,6 +275,7 @@ export type OverlayPresetLike = {
   memberRankingMetric?: MemberRankingMetric;
   accountHeaderLabel?: string;
   toonHeaderLabel?: string;
+  contributionHeaderLabel?: string;
   restroomHeaderLabel?: string;
   /** 엑셀표 1~3위 강조: off | emoji | bg | both */
   rankTop3Mode?: string;
@@ -586,6 +587,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   }
   if (preset.accountHeaderLabel && preset.accountHeaderLabel.trim()) q.set("accountHeaderLabel", preset.accountHeaderLabel.trim());
   if (preset.toonHeaderLabel && preset.toonHeaderLabel.trim()) q.set("toonHeaderLabel", preset.toonHeaderLabel.trim());
+  if (preset.contributionHeaderLabel && preset.contributionHeaderLabel.trim()) q.set("contributionHeaderLabel", preset.contributionHeaderLabel.trim());
   if (preset.restroomHeaderLabel && preset.restroomHeaderLabel.trim()) q.set("restroomHeaderLabel", preset.restroomHeaderLabel.trim());
   appendExcelRankTop3Params(q, preset);
   appendExcelMemberRankChangeStyleParams(q, preset);
@@ -637,6 +639,7 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "currencyLocale",
   "accountHeaderLabel",
   "toonHeaderLabel",
+  "contributionHeaderLabel",
   "restroomHeaderLabel",
   "rankColor",
   "customColor",
@@ -842,6 +845,7 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "currencyLocale",
   "accountHeaderLabel",
   "toonHeaderLabel",
+  "contributionHeaderLabel",
   "restroomHeaderLabel",
   "rankColor",
   "customColor",
@@ -1312,6 +1316,7 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "customCellLinkMode",
   "accountHeaderLabel",
   "toonHeaderLabel",
+  "contributionHeaderLabel",
   "restroomHeaderLabel",
   "donationAggregateFromAt",
   "day777Calc",
@@ -1422,6 +1427,7 @@ const PRESET_EMPTY_USES_THEME_DEFAULT_KEYS = new Set([
   "customCellLinkMode",
   "accountHeaderLabel",
   "toonHeaderLabel",
+  "contributionHeaderLabel",
   "restroomHeaderLabel",
   "donationAggregateFromAt",
   "day777Calc",

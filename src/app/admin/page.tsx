@@ -470,6 +470,7 @@ type OverlayPreset = {
   tableSplit?: boolean;
   accountHeaderLabel?: string;
   toonHeaderLabel?: string;
+  contributionHeaderLabel?: string;
   restroomHeaderLabel?: string;
   showGoal: boolean; goal: string;
   /** 후원 초기화 시 복원할 목표(수동 저장·첫 자동 상향 직전 스냅샷). 없으면 초기화 시 goal 숫자 유지 */
@@ -2065,6 +2066,7 @@ function AdminPageInner() {
     day777Calc: false,
     accountHeaderLabel: "",
     toonHeaderLabel: "",
+    contributionHeaderLabel: "",
     confettiMilestone: "",
     tableBgOpacity: "",
     totalLineVisible: false,
@@ -24756,7 +24758,7 @@ function AdminPageInner() {
                                     }}
                                   />
                                   <p className="text-[10px] text-neutral-500">
-                                    열 순서: 순위 → 커스텀 → 직급 → 이름 → 후원 → 투네 → (합계) → (기여도) → (화장실). 「후원합계」는 계좌+투네 합 열입니다.
+                                    열 순서: 순위 → 커스텀 → 직급 → 이름 → 후원 → 투네 → (후원합계) → (누적기여도) → (화장실). 「후원합계」는 계좌+투네 합 열입니다.
                                   </p>
                                 </div>
                                 {(p.showCustomColumn !== false) && (() => {
@@ -25205,6 +25207,13 @@ function AdminPageInner() {
                                     placeholder="투네 (기본)"
                                     value={p.toonHeaderLabel || ""}
                                     onChange={(e) => updatePreset(p.id, { toonHeaderLabel: e.target.value })}
+                                  />
+                                  <label className="text-xs text-neutral-400">누적기여도 헤더</label>
+                                  <input
+                                    className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                    placeholder="누적기여도 (기본)"
+                                    value={p.contributionHeaderLabel || ""}
+                                    onChange={(e) => updatePreset(p.id, { contributionHeaderLabel: e.target.value })}
                                   />
                                   <label className="text-xs text-neutral-400">화장실 헤더</label>
                                   <input
