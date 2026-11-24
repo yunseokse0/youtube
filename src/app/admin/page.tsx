@@ -2956,10 +2956,8 @@ function AdminPageInner() {
       }
     };
     try {
-      if (typeof flushSync === "function") {
-        try { flushSync(() => { commitState(true); }); } catch (_fsErr) { commitState(true); }
-      } else { commitState(true); }
-    } catch (_err) { try { commitState(true); } catch (_noop) { /* noop */ } }
+      commitState(true);
+    } catch (_err) { /* noop */ }
 
     /** ✅ 2026-09-21 forceScrollToElement v5
      *  - 0. 첫 라인: contentScrollRef.current **강제로** 직접 시도 (후보 탐색 X · 이게 가장 중요)
@@ -26954,7 +26952,7 @@ function VerticalPreview({ url, presetName, previewBump = 0 }: { url: string; pr
             <div className="text-sm text-neutral-400">프리뷰 로딩 중...</div>
           </div>
         )}
-        <iframe key={`${previewUrl}-${iframeKey}-${previewBump}`} src={previewUrl} title="vertical-preview" className="absolute inset-0 w-full h-full" style={{ background: "transparent" }} scrolling="no" onLoad={onLoad} onError={onError} />
+        <iframe key={`${previewUrl}-${iframeKey}-${previewBump}`} src={previewUrl} title="vertical-preview" className="absolute inset-0 w-full h-full pointer-events-none" style={{ background: "transparent" }} scrolling="no" onLoad={onLoad} onError={onError} />
         {err && (
           <div className="absolute top-2 right-2 z-[10000] px-2 py-1 rounded bg-rose-700 text-white text-xs">
             {err}
