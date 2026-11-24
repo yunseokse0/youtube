@@ -131,6 +131,10 @@ export async function POST(req: NextRequest) {
 
   const sigJson = (await sigRes.json().catch(() => ({}))) as {
     signatures?: ToonaSignatureRow[];
+    presets?: Array<{ id: string; name: string; count: number; isActive?: boolean; enabledSignatureIds?: string[] }>;
+    activePresetId?: string | null;
+    activePresetName?: string | null;
+    activePresetEnabledSignatureIds?: string[] | null;
     error?: string;
   };
 
@@ -151,8 +155,46 @@ export async function POST(req: NextRequest) {
     (await fetchToonaDefaultAlertImageUrl(baseUrl, streamKey, {
       Authorization: `Bearer ${loginJson.token}`,
     }));
+
+  const currentPreset = (sigJson.presets || []).find(
+    (p: any) => String(p.id) === String(sigJson.activePresetId || "") || p.isActive
+  );
+
+  const extractIdsFromPreset = (p: any): string[] | null => {
+    if (!p) return null;
+    if (Array.isArray(p.enabledSignatureIds) && p.enabledSignatureIds.length > 0) return p.enabledSignatureIds.map(String);
+    if (Array.isArray(p.signatureIds) && p.signatureIds.length > 0) return p.signatureIds.map(String);
+    if (Array.isArray(p.signature_ids) && p.signature_ids.length > 0) return p.signature_ids.map(String);
+    if (Array.isArray(p.signatures) && p.signatures.length > 0) return p.signatures.map((s: any) => String(s?.id || s));
+    return null;
+  };
+
+  const activeEnabledIds: string[] | null =
+    (Array.isArray(sigJson.activePresetEnabledSignatureIds) && sigJson.activePresetEnabledSignatureIds.length > 0)
+      ? sigJson.activePresetEnabledSignatureIds.map(String)
+      : (Array.isArray((sigJson as any).activePresetSignatureIds) && (sigJson as any).activePresetSignatureIds.length > 0)
+        ? (sigJson as any).activePresetSignatureIds.map(String)
+        : extractIdsFromPreset(currentPreset);
+
+  if (activeEnabledIds && activeEnabledIds.length > 0) {
+    const activeSet = new Set(activeEnabledIds.map(String));
+    for (const row of sigJson.signatures || []) {
+      if (row.id) {
+        row.enabled = activeSet.has(String(row.id));
+      }
+    }
+  }
+
+  const targetSignatures = (sigJson.signatures || []).filter((row) => {
+    if (activeEnabledIds && activeEnabledIds.length > 0) {
+      const activeSet = new Set(activeEnabledIds.map(String));
+      return row.id ? activeSet.has(String(row.id)) : row.enabled !== false;
+    }
+    return row.enabled !== false;
+  });
+
   const items = mapToonaSignaturesToSigItems(
-    sigJson.signatures || [],
+    targetSignatures,
     baseUrl,
     defaultAlertImageUrl
   );
@@ -163,6 +205,9 @@ export async function POST(req: NextRequest) {
     baseUrl,
     count: items.length,
     items,
+    activePresetId: sigJson.activePresetId ?? null,
+    activePresetName: sigJson.activePresetName ?? null,
+    presets: Array.isArray(sigJson.presets) ? sigJson.presets : [],
     via: "login",
   });
 }

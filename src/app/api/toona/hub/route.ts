@@ -37,7 +37,10 @@ function scopedStateUserIdOf(authUserId: string): string {
   return id || "finalent";
 }
 
-async function importSigsAfterHubLogin(hubSessionUserId: string) {
+async function importSigsAfterHubLogin(
+  hubSessionUserId: string,
+  options?: { mode?: "replace" | "merge" }
+) {
   const [{ fetchToonaSignaturesViaHubSession }, { defaultState }, { loadAppStateForUserId }, { applyToonaSigItemsToInventory }, { saveAppStateForRoulette }, { publishSseEvent }, { patchToonaHubSession }] =
     await Promise.all([
       import("@/lib/toona-hub-client"),
@@ -75,10 +78,11 @@ async function importSigsAfterHubLogin(hubSessionUserId: string) {
     });
     return { ok: false as const, count: 0, error: fetched.error };
   }
+  const importMode = options?.mode || (fetched.activePresetId ? "replace" : "merge");
   const { nextInventory, added, updated } = applyToonaSigItemsToInventory(
     state.sigInventory || [],
     fetched.items,
-    "merge"
+    importMode
   );
   const prevOs =
     state.overlaySettings && typeof state.overlaySettings === "object"
@@ -311,7 +315,9 @@ export async function POST(req: NextRequest) {
       },
     });
     setTimeout(() => {
-      void importSigsAfterHubLogin(auth.userId).then((r) => {
+      void importSigsAfterHubLogin(auth.userId, {
+        mode: (body as any).mode === "replace" ? "replace" : undefined,
+      }).then((r) => {
         if (!r.ok) console.error("[toona-hub] sig import", r.error);
       });
     }, 0);
@@ -340,7 +346,7 @@ export async function POST(req: NextRequest) {
       },
     });
     setTimeout(() => {
-      void importSigsAfterHubLogin(auth.userId).then((r) => {
+      void importSigsAfterHubLogin(auth.userId, { mode: "replace" }).then((r) => {
         if (!r.ok) console.error("[toona-hub] sig import after preset apply", r.error);
       });
     }, 0);

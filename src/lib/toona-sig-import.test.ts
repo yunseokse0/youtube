@@ -154,4 +154,55 @@ describe("applyToonaSigItemsToInventory", () => {
     expect(sig2.isActive).toBe(false);
     expect(sig2.isRolling).toBe(false);
   });
+
+  it("replace 모드 시 기존 멤버 매핑(memberId)과 수량을 보존하면서 프리셋 시그로 교체", () => {
+    const current = [
+      item({ id: ONE_SHOT_SIG_ID, name: "한방 시그", price: 10000 }),
+      item({ id: "toona_old1", name: "금연", price: 12000, memberId: "m_yuha", soldCount: 3, maxCount: 10 }),
+      item({ id: "toona_old2", name: "제외될시그", price: 5000, memberId: "m_jina" }),
+    ];
+    // 프리셋에는 '금연'(108개 중 하나)만 포함되어 있고 '제외될시그'는 미포함
+    const imported = [
+      item({ id: "toona_new1", name: "금연", price: 12100, memberId: "" }),
+      item({ id: "toona_new2", name: "디스코데기", price: 59000, memberId: "" }),
+    ];
+
+    const { nextInventory, added } = applyToonaSigItemsToInventory(current, imported, "replace");
+
+    expect(added).toBe(2);
+    expect(nextInventory.length).toBe(3); // oneShot(1) + imported(2)
+
+    const smoke = nextInventory.find((x) => x.name === "금연")!;
+    expect(smoke.price).toBe(12100);
+    // 기존 memberId "m_yuha"와 soldCount 3 보존 확인
+    expect(smoke.memberId).toBe("m_yuha");
+    expect(smoke.soldCount).toBe(3);
+    expect(smoke.maxCount).toBe(10);
+
+    // 프리셋에 없는 '제외될시그'는 목록에서 제거됨
+    expect(nextInventory.some((x) => x.name === "제외될시그")).toBe(false);
+  });
+
+  it("프리셋 필터링: 117개 전체 시그 중 활성화된 108개 프리셋만 가져오기", () => {
+    // 117개의 시그 생성 (108개 enabled: true, 9개 enabled: false)
+    const allSignatures = Array.from({ length: 117 }, (_, i) => ({
+      id: `sig_${i + 1}`,
+      name: `시그_${i + 1}`,
+      triggerAmount: (i + 1) * 1000,
+      enabled: i < 108, // 0~107번(108개)은 true, 108~116번(9개)은 false
+    }));
+
+    const activePresetEnabledIds = allSignatures.slice(0, 108).map((s) => s.id);
+    const activeSet = new Set(activePresetEnabledIds);
+
+    const filtered = allSignatures.filter((row) => activeSet.has(row.id) && row.enabled !== false);
+    expect(filtered).toHaveLength(108);
+
+    const items = mapToonaSignaturesToSigItems(filtered, "http://localhost:4000");
+    expect(items).toHaveLength(108);
+    expect(items[0].name).toBe("시그_1");
+    expect(items[107].name).toBe("시그_108");
+    // 109~117번 시그는 포함되지 않음
+    expect(items.some((x) => x.name === "시그_109")).toBe(false);
+  });
 });

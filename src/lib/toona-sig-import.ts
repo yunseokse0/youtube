@@ -46,7 +46,8 @@ export function normalizeToonaApiBaseUrl(raw: string): string | null {
 export function mapToonaSignaturesToSigItems(
   signatures: ToonaSignatureRow[],
   apiBaseUrl: string,
-  defaultAlertImageUrl?: string | null
+  defaultAlertImageUrl?: string | null,
+  options?: { onlyEnabled?: boolean }
 ): SigItem[] {
   const sorted = [...(signatures || [])].sort(
     (a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0)
@@ -57,6 +58,7 @@ export function mapToonaSignaturesToSigItems(
   const fallbackImage = resolveToonaAssetUrl(defaultAlertImageUrl, apiBaseUrl);
 
   for (const row of sorted) {
+    if (options?.onlyEnabled && row.enabled === false) continue;
     const rawName = String(row.name || "").trim();
     if (!rawName) continue;
     const name = repairMojibakeSigName(rawName);
@@ -124,16 +126,31 @@ export function applyToonaSigItemsToInventory(
 ): { nextInventory: SigItem[]; added: number; updated: number } {
   const oneShot = (current || []).filter((x) => x.id === ONE_SHOT_SIG_ID);
   const importedClean = (imported || []).filter((x) => x.id !== ONE_SHOT_SIG_ID);
+  const rest = (current || []).filter((x) => x.id !== ONE_SHOT_SIG_ID);
 
   if (mode === "replace") {
+    // 기존에 매핑되어 있던 memberId, maxCount, soldCount 보존
+    const prevByName = new Map<string, SigItem>();
+    for (const item of rest) {
+      prevByName.set(normalizeSigDedupKeyName(item.name), item);
+    }
+    const replaced = importedClean.map((incoming) => {
+      const prev = prevByName.get(normalizeSigDedupKeyName(incoming.name));
+      if (!prev) return incoming;
+      return {
+        ...incoming,
+        memberId: prev.memberId || incoming.memberId,
+        maxCount: prev.maxCount ?? incoming.maxCount,
+        soldCount: prev.soldCount ?? incoming.soldCount,
+      };
+    });
     return {
-      nextInventory: [...oneShot, ...importedClean],
-      added: importedClean.length,
+      nextInventory: [...oneShot, ...replaced],
+      added: replaced.length,
       updated: 0,
     };
   }
 
-  const rest = (current || []).filter((x) => x.id !== ONE_SHOT_SIG_ID);
   const byName = new Map<string, number>();
   rest.forEach((item, idx) => {
     byName.set(normalizeSigDedupKeyName(item.name), idx);
@@ -142,9 +159,11 @@ export function applyToonaSigItemsToInventory(
   let added = 0;
   let updated = 0;
   const next = [...rest];
+  const importedKeys = new Set<string>();
 
   for (const incoming of importedClean) {
     const key = normalizeSigDedupKeyName(incoming.name);
+    importedKeys.add(key);
     const idx = byName.get(key);
     if (idx == null) {
       byName.set(key, next.length);
@@ -162,6 +181,19 @@ export function applyToonaSigItemsToInventory(
       isRolling: incoming.isActive ? (prev.isRolling !== false) : false,
     };
     updated += 1;
+  }
+
+  // 프리셋에 포함되지 않은 기존 toona 시그는 비활성화 처리 (프리셋 동기화 일치)
+  for (let i = 0; i < next.length; i++) {
+    const item = next[i];
+    const key = normalizeSigDedupKeyName(item.name);
+    if (!importedKeys.has(key) && (item.id.startsWith("toona_") || (item as any).isToona)) {
+      next[i] = {
+        ...item,
+        isActive: false,
+        isRolling: false,
+      };
+    }
   }
 
   return { nextInventory: [...oneShot, ...next], added, updated };
