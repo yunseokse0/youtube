@@ -144,6 +144,58 @@ describe("[AUDIT] 줍줍 - 시그 후원 판정 경계값", () => {
     expect(res.isSig).toBe(true);
     expect(res.sigName).toBe("러브다이브");
   });
+
+  it("최소 금액 이상이어도 시그 정보가 없으면 메시지를 시그명으로 만들지 않는다", async () => {
+    const state = makeState({
+      sigInventory: [],
+      zubzubSettings: { enabled: true, minSigPrice: 10000, representativeMemberId: "m_rep" },
+    });
+    const event = makeEvent({
+      amount: 10000,
+      message: "미션: 10킬 달성",
+      matchedSigName: undefined,
+    });
+
+    expect(isEligibleSigDonation(event, state, 10000)).toEqual({
+      isSig: false,
+      sigName: "",
+    });
+    const result = await processZubzubDonationHook(userId, event, state);
+    expect(result).toMatchObject({ action: "skipped", reason: "not_a_sig_donation" });
+    expect(getInMemoryZubZubQueueForTests(userId)).toHaveLength(0);
+  });
+
+  it("isSigCredit만으로는 임의 메시지를 시그명으로 만들지 않는다", () => {
+    const state = makeState({ sigInventory: [] });
+    expect(
+      isEligibleSigDonation(
+        makeEvent({
+          amount: 10000,
+          message: "미션: 10킬 달성",
+          isSigCredit: true,
+          sigPrice: 10000,
+          matchedSigName: undefined,
+        }),
+        state,
+        0
+      )
+    ).toEqual({ isSig: false, sigName: "" });
+  });
+
+  it("같은 단가 시그가 여러 개면 메시지로 하나가 특정될 때만 인정한다", () => {
+    const state = makeState({
+      sigInventory: [
+        { id: "sig_a", name: "시그 A", price: 10000 },
+        { id: "sig_b", name: "시그 B", price: 10000 },
+      ] as any,
+    });
+    expect(
+      isEligibleSigDonation(makeEvent({ amount: 10000, message: "미션: 10킬 달성" }), state, 0)
+    ).toMatchObject({ isSig: false, sigName: "" });
+    expect(
+      isEligibleSigDonation(makeEvent({ amount: 10000, message: "시그 B 부탁" }), state, 0)
+    ).toMatchObject({ isSig: true, sigName: "시그 B" });
+  });
 });
 
 describe("[AUDIT] 줍줍 - FIFO 적재/획득 순서", () => {

@@ -441,9 +441,16 @@ describe("matchSigByAmountAndMessage", () => {
     });
   });
 
-  it("returns first price match without auto flag when text is ambiguous", () => {
+  it("does not choose a sig when multiple price matches are ambiguous", () => {
     expect(matchSigByAmountAndMessage(24900, "화이팅", pool)).toEqual({
-      sigName: "픽션",
+      sigName: undefined,
+      isAutoMatched: false,
+    });
+  });
+
+  it("does not invent a sig name from an unrelated donation message", () => {
+    expect(matchSigByAmountAndMessage(24900, "미션: 10킬 달성", pool)).toEqual({
+      sigName: undefined,
       isAutoMatched: false,
     });
   });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeHighSocietySettings } from "@/lib/high-society";
 import { defaultState } from "@/lib/state";
+import { collectDay777SigContributionByMember } from "@/lib/overlay-donation-aggregate";
 import {
   applyDonationToAppState,
   dedupeDonorRows,
@@ -1419,6 +1420,38 @@ describe("contribution formula (apply-from-now)", () => {
     expect(result.state.members[0]?.toon).toBe(10_000);
     expect(result.state.members[0]?.contribution).toBe(1_000 + 5_000);
     expect(result.state.donors[0]?.contributionPoints).toBe(5_000);
+    expect(result.state.donors[0]?.sigPrice).toBeUndefined();
+    expect(result.state.donors[0]?.isSigCredit).toBeUndefined();
+  });
+
+  it("persists a matched signature as Pongdang sig credit", () => {
+    const base = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "진아", account: 0, toon: 0, contribution: 0 }],
+      donors: [] as ReturnType<typeof defaultState>["donors"],
+    };
+    const event: DonationEvent = {
+      id: "e_sig_92000",
+      donorName: "마에스트라",
+      amount: 92_000,
+      at: new Date().toISOString(),
+      target: "toon",
+      playerName: "진아",
+      matchedSigName: "레츠고",
+      isAutoMatched: true,
+      status: "pending",
+    };
+
+    const result = applyDonationToAppState(base, event);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.donors[0]).toMatchObject({
+      memberId: "m1",
+      amount: 92_000,
+      sigPrice: 92_000,
+      isSigCredit: true,
+    });
+    expect(collectDay777SigContributionByMember(result.state).get("m1")).toBe(92_000);
   });
 
   it("ingest contributionPoints override and event formula persist to state", () => {

@@ -82,53 +82,61 @@ export function isEligibleSigDonation(
   }
 
   // 1. 이미 매칭된 시그명이 있는 경우 (player-donation-alert / enrichDonationEventWithSigMatch)
-  if (event.matchedSigName) {
+  const matchedSigName = String(event.matchedSigName || "").trim();
+  if (matchedSigName) {
     return {
       isSig: true,
-      sigName: String(event.matchedSigName).trim(),
+      sigName: matchedSigName,
       sigImageUrl: event.matchedSigImageUrl || undefined,
     };
   }
 
-  // 2. isSigCredit 플래그가 있는 경우
-  if ((event as { isSigCredit?: boolean }).isSigCredit && event.sigPrice) {
-    return {
-      isSig: true,
-      sigName: String(event.message || "시그니처").trim() || "시그니처",
-    };
-  }
-
-  // 3. sigInventory 목록과 금액 또는 메시지 대조
+  // 2. 시그 인벤토리와 금액·메시지 대조. 중복 단가는 이름이 특정될 때만 선택한다.
   const inv = state.sigInventory || [];
-  if (inv.length > 0) {
-    const msg = String(event.message || "").toLowerCase().replace(/\s+/g, "");
-    for (const sig of inv) {
-      if (!sig.name) continue;
-      const price = Math.max(0, Math.round(Number(sig.price) || 0));
-      const sigNorm = sig.name.toLowerCase().replace(/\s+/g, "");
-      if (price > 0 && price === amount) {
-        return {
-          isSig: true,
-          sigName: sig.name,
-          sigImageUrl: sig.imageUrl || undefined,
-        };
-      }
-      if (msg && msg.includes(sigNorm)) {
-        return {
-          isSig: true,
-          sigName: sig.name,
-          sigImageUrl: sig.imageUrl || undefined,
-        };
-      }
-    }
+  const msg = String(event.message || "").toLowerCase().replace(/\s+/g, "");
+  const resolveFromCandidates = (candidates: typeof inv) => {
+    const textMatches = candidates.filter((sig) => {
+      const name = String(sig.name || "").toLowerCase().replace(/\s+/g, "");
+      return name && msg.includes(name);
+    });
+    if (textMatches.length === 1) return textMatches[0];
+    if (candidates.length === 1 && textMatches.length === 0) return candidates[0];
+    return undefined;
+  };
+
+  // isSigCredit identifies a sig result, but its message is not necessarily the sig name.
+  if ((event as { isSigCredit?: boolean }).isSigCredit) {
+    const sigPrice = Math.max(0, Math.round(Number(event.sigPrice) || 0));
+    const sig = sigPrice > 0
+      ? resolveFromCandidates(
+          inv.filter((item) => Math.round(Number(item.price) || 0) === sigPrice)
+        )
+      : undefined;
+    return sig
+      ? { isSig: true, sigName: sig.name, sigImageUrl: sig.imageUrl || undefined }
+      : { isSig: false, sigName: "" };
   }
 
-  // 4. 최소 시그 금액 기준을 충족하고 단가 이상인 경우 기본 시그로 인정
-  if (minPrice > 0 && amount >= minPrice) {
-    return {
-      isSig: true,
-      sigName: String(event.message || "").trim() || "시그니처",
-    };
+  // 3. Match a unique price candidate, or disambiguate duplicate prices by message.
+  if (inv.length > 0) {
+    const priceMatches = amount > 0
+      ? inv.filter((sig) => Math.round(Number(sig.price) || 0) === amount)
+      : [];
+    let sig = resolveFromCandidates(priceMatches);
+    if (!sig && priceMatches.length === 0 && msg) {
+      const nameMatches = inv.filter((item) => {
+        const name = String(item.name || "").toLowerCase().replace(/\s+/g, "");
+        return name && msg.includes(name);
+      });
+      if (nameMatches.length === 1) sig = nameMatches[0];
+    }
+    if (sig) {
+      return {
+        isSig: true,
+        sigName: sig.name,
+        sigImageUrl: sig.imageUrl || undefined,
+      };
+    }
   }
 
   return { isSig: false, sigName: "" };

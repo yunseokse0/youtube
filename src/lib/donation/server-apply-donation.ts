@@ -91,6 +91,12 @@ export async function tryAutoApplyToonationDonationOnServer(
     return "not_applied";
   }
   inFlightApplyKeys.add(lockKey);
+  let claimedEvent: DonationEvent | null = null;
+  const releaseClaim = async () => {
+    if (!claimedEvent) return;
+    await releaseDonationApplyClaim(uid, claimedEvent);
+    claimedEvent = null;
+  };
   try {
     const listenerCfg = await readToonationListenerConfig(uid);
     const event = await resolveToonationDonationWithOwnerRemap(
@@ -98,6 +104,8 @@ export async function tryAutoApplyToonationDonationOnServer(
       rawEvent,
       listenerCfg?.ownerName
     );
+    const isAggregatedBucket =
+      typeof event.aggregatedCount === "number" && event.aggregatedCount > 1;
     const state = await loadAppStateForUserId(uid);
     if (!state) return "not_applied";
     if (
@@ -110,20 +118,23 @@ export async function tryAutoApplyToonationDonationOnServer(
       return "applied";
     }
     if (isDuplicateDonationEvent(state, event)) return "applied";
-    if (!(await tryClaimDonationApply(uid, event))) {
+    let claimAcquired = await tryClaimDonationApply(uid, event);
+    if (!claimAcquired) {
       const deferred = await resolveAlreadyAppliedOrDefer(userId, event);
       if (deferred !== "retry") return deferred;
       await sleep(80);
-      if (!(await tryClaimDonationApply(uid, event))) {
+      claimAcquired = await tryClaimDonationApply(uid, event);
+      if (!claimAcquired) {
         const again = await resolveAlreadyAppliedOrDefer(userId, event);
         if (again !== "retry") return again;
         return "not_applied";
       }
     }
+    claimedEvent = event;
 
     const freshState = await loadAppStateForUserId(uid);
     if (!freshState) {
-      await releaseDonationApplyClaim(uid, event);
+      await releaseClaim();
       return "not_applied";
     }
     if (
@@ -137,6 +148,10 @@ export async function tryAutoApplyToonationDonationOnServer(
     }
     if (isDuplicateDonationEvent(freshState, event)) return "applied";
 
+    // Match before creating the donor row so Pongdang receives its sig credit metadata.
+    const eventForApply = isAggregatedBucket
+      ? event
+      : await enrichDonationEventWithSigMatch(uid, event);
     const skipRosterHeal =
       shouldSuppressAutoRosterRestore(freshState) ||
       (Number(freshState.settlementResetAt || 0) > 0 &&
@@ -150,36 +165,43 @@ export async function tryAutoApplyToonationDonationOnServer(
       ? freshState
       : unionAppStateDonorsFromBackupIfRicher(enrichedState, backup);
     const hubFormula = await fetchToonaHubContributionFormula(uid);
-    const stateForApply = mergeContributionFormulaIntoState(unionState, event, hubFormula);
+    const stateForApply = mergeContributionFormulaIntoState(unionState, eventForApply, hubFormula);
     const aliases = await readDonationAliases(uid);
-    const result = applyDonationToAppState(stateForApply, event, aliases);
+    const result = applyDonationToAppState(stateForApply, eventForApply, aliases);
     if (!result.ok) {
       if (result.reason === "duplicate") return "applied";
       if (result.reason === "paused") {
-        await releaseDonationApplyClaim(uid, event);
+        await releaseClaim();
         return "not_applied";
       }
-      await releaseDonationApplyClaim(uid, event);
+      await releaseClaim();
       return "not_applied";
     }
     const persisted = await persistDonationApplyLikeToonation(uid, result.state, result.event);
     if (!persisted.ok) {
-      await releaseDonationApplyClaim(uid, event);
+      await releaseClaim();
       return "not_applied";
     }
     await purgeDonationQueueForEvent(uid, event);
-    const isAggregatedBucket =
-      typeof event.aggregatedCount === "number" && event.aggregatedCount > 1;
     if (!isAggregatedBucket) {
-      const enriched = await enrichDonationEventWithSigMatch(uid, result.event);
-      await broadcastPlayerDonationAlert(uid, enriched);
+      await broadcastPlayerDonationAlert(uid, result.event);
       void import("@/lib/zubzub/zubzub-engine").then(({ maybeProcessZubzubDonation }) => {
-        return maybeProcessZubzubDonation(uid, enriched);
+        return maybeProcessZubzubDonation(uid, result.event);
       }).catch((zubErr) => {
         console.error("[server-apply-donation] zubzub hook failed:", zubErr);
       });
     }
     return result.event.memberAutoAssigned ? "applied_needs_review" : "applied";
+  } catch (err) {
+    try {
+      await releaseClaim();
+    } catch (releaseErr) {
+      console.error(
+        "[server-apply-donation] failed to release apply claim after error",
+        releaseErr instanceof Error ? releaseErr.message : releaseErr
+      );
+    }
+    throw err;
   } finally {
     inFlightApplyKeys.delete(lockKey);
   }

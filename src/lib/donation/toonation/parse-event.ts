@@ -626,14 +626,17 @@ export function matchSigByAmountAndMessage(
     return { sigName: undefined, isAutoMatched: false };
   }
 
-  if (priceMatchedSigs.length === 1) {
+  const normalizedMessage = text.toLowerCase().replace(/\s+/g, "");
+  const textMatches = priceMatchedSigs.filter((sig) => {
+    const normalizedName = String(sig.name || "").toLowerCase().replace(/\s+/g, "");
+    return normalizedName && normalizedMessage.includes(normalizedName);
+  });
+  if (textMatches.length === 1) {
+    return { sigName: textMatches[0]!.name, isAutoMatched: true };
+  }
+  if (priceMatchedSigs.length === 1 && textMatches.length === 0) {
     return { sigName: priceMatchedSigs[0]!.name, isAutoMatched: true };
   }
 
-  const textMatchedSig = priceMatchedSigs.find((sig) => sig.name && text.includes(sig.name));
-  if (textMatchedSig) {
-    return { sigName: textMatchedSig.name, isAutoMatched: true };
-  }
-
-  return { sigName: priceMatchedSigs[0]!.name, isAutoMatched: false };
+  return { sigName: undefined, isAutoMatched: false };
 }

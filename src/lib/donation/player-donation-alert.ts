@@ -80,9 +80,18 @@ export async function enrichDonationEventWithSigMatch(
   const selected = readManualSigBroadcastFromState(state ?? undefined)?.selectedSigs || [];
 
   if (!finalAutoMatched) {
-    const roundSig = selected.find((s) => Math.round(Number(s.price || 0)) === event.amount);
-    if (roundSig?.name) {
-      matchedSigName = String(roundSig.name).trim();
+    const selectedSnapshot: QueueSigItem[] = selected
+      .map((sig, index) => ({
+        id: String(sig.id || `${index}:${sig.name || ""}`),
+        name: String(sig.name || "").trim(),
+        price: Math.max(0, Math.round(Number(sig.price || 0))),
+        isActive: true,
+        ...(sig.imageUrl ? { imageUrl: sig.imageUrl } : {}),
+      }))
+      .filter((sig) => sig.name.length > 0);
+    const roundMatch = matchSigByAmountAndMessage(event.amount, message, selectedSnapshot);
+    if (roundMatch.sigName) {
+      matchedSigName = roundMatch.sigName;
     }
   }
 
