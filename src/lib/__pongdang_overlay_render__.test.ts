@@ -200,4 +200,51 @@ describe("Pongdang overlay rendering pipeline test", () => {
     // 미래 시각 이후 시그가 없으므로 0원
     expect(futurePongdang.find((m) => m.name === "자키")?.contribution).toBe(0);
   });
+
+  it("handles pongdang minus and excludes auto-assigned donors without reverting to cumulative totals", () => {
+    const syhId = "m_syh";
+    const baseState: AppState = {
+      members: [
+        { id: syhId, name: "서유하", account: 0, toon: 0, contribution: 5000000 },
+      ],
+      donors: [
+        { id: "d_auto", memberId: syhId, amount: 1500000, sigPrice: 1500000, memberAutoAssigned: true, at: 100 },
+        { id: "d_real", memberId: syhId, amount: 92000, sigPrice: 92000, memberAutoAssigned: false, at: 200 },
+      ],
+    };
+
+    // 1) 92000점 반영 (d_auto는 autoAssigned이므로 제외되어 92000점만 반영)
+    const res1 = membersWithOverlayDonationAggregate(baseState, baseState.members, null, { day777Calc: true });
+    expect(res1.find((m) => m.id === syhId)?.contribution).toBe(92000);
+
+    // 2) 92000점 마이너스 처리 시 -92000점 (500만점으로 복귀되지 않음)
+    const minusState: AppState = {
+      ...baseState,
+      donors: [
+        { id: "d_auto", memberId: syhId, amount: 1500000, sigPrice: 1500000, memberAutoAssigned: true, at: 100 },
+        { id: "d_real", memberId: syhId, amount: 92000, sigPrice: 92000, memberAutoAssigned: false, pongdangMinus: true, at: 200 },
+      ],
+    };
+    const res2 = membersWithOverlayDonationAggregate(minusState, minusState.members, null, { day777Calc: true });
+    expect(res2.find((m) => m.id === syhId)?.contribution).toBe(-92000);
+  });
+
+  it("does not force day777Calc just because preset name contains 퐁당 if theme is not excelPongdang and option is not checked", () => {
+    const preset = {
+      id: "p_test",
+      name: "퐁당퐁당 엑셀 식사",
+      theme: "excelViolet",
+      membersTheme: "excelViolet",
+    };
+    const rawSp = new URLSearchParams();
+    const isDay777 = resolveDay777Calc(rawSp, preset, { ready: true });
+    expect(isDay777).toBe(false);
+
+    // 명시적으로 day777Calc: true를 켰을 때는 true
+    const presetWith777 = {
+      ...preset,
+      day777Calc: true,
+    };
+    expect(resolveDay777Calc(rawSp, presetWith777, { ready: true })).toBe(true);
+  });
 });

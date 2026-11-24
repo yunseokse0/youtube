@@ -2435,9 +2435,6 @@ function overlayThemeIsExcelPongdang(
     preset?.theme === "excelPongdang"
   );
   if (isPongdangTheme) return true;
-  // 프리셋 이름에 "퐁당"이 들어가 있거나 URL에 명시적으로 day777Calc가 들어간 경우 (6대 테마 적용 퐁당퐁당 엑셀표 지원)
-  const pName = String(preset?.name || "").trim();
-  if (pName.includes("퐁당")) return true;
   const rawDay777 = rawSp.get("day777Calc") || "";
   if (rawDay777 === "true") return true;
   if (preset?.day777Calc === true) return true;
@@ -2445,7 +2442,7 @@ function overlayThemeIsExcelPongdang(
 }
 
 /**
- * 777데이 계산 — 퐁당퐁당 엑셀표만.
+ * 777데이 계산 — 퐁당퐁당 엑셀표 또는 day777Calc 명시 활성 프리셋.
  * 기존 엑셀(골드/일반 등)은 후원 금액 그대로 기여도. 777,000원도 포함.
  */
 export function resolveDay777Calc(
@@ -2453,11 +2450,22 @@ export function resolveDay777Calc(
   preset: OverlayPresetLike | null,
   opts: { ready: boolean }
 ): boolean {
-  if (!overlayThemeIsExcelPongdang(rawSp, preset, opts)) return false;
   const merged = resolveLivePresetStyleParam("day777Calc", rawSp, presetToParams(preset), opts);
   if (merged === "false") return false;
   if (merged === "true") return true;
-  return preset?.day777Calc !== false;
+  if (preset?.day777Calc === false) return false;
+  if (preset?.day777Calc === true) return true;
+  const membersTheme = resolveLivePresetStyleParam("membersTheme", rawSp, presetToParams(preset), opts);
+  const theme = resolveLivePresetStyleParam("theme", rawSp, presetToParams(preset), opts);
+  if (
+    membersTheme === "excelPongdang" ||
+    theme === "excelPongdang" ||
+    preset?.membersTheme === "excelPongdang" ||
+    preset?.theme === "excelPongdang"
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**

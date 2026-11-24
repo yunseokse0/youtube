@@ -193,8 +193,25 @@ export async function POST(req: NextRequest) {
     return row.enabled !== false;
   });
 
+  let finalTargetSignatures = targetSignatures;
+  if (
+    currentPreset &&
+    typeof currentPreset.count === "number" &&
+    currentPreset.count > 0 &&
+    finalTargetSignatures.length > currentPreset.count
+  ) {
+    const strictlyEnabled = finalTargetSignatures.filter((s) => s.enabled === true);
+    if (strictlyEnabled.length === currentPreset.count) {
+      finalTargetSignatures = strictlyEnabled;
+    } else if (strictlyEnabled.length > 0 && strictlyEnabled.length <= currentPreset.count) {
+      finalTargetSignatures = strictlyEnabled;
+    } else {
+      finalTargetSignatures = finalTargetSignatures.slice(0, currentPreset.count);
+    }
+  }
+
   const items = mapToonaSignaturesToSigItems(
-    targetSignatures,
+    finalTargetSignatures,
     baseUrl,
     defaultAlertImageUrl
   );

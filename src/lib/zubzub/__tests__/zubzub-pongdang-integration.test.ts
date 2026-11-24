@@ -76,10 +76,10 @@ describe("Zubzub & Pongdang Integration Tests", () => {
     const claimMember = updated.members.find((m) => m.id === "m_claim");
     expect(claimMember?.contribution).toBe(-130000);
 
-    // 퐁당퐁당엑셀의 마이너스 기여가 엑셀표(오버레이)에는 영향을 주지 않음 (정상 기여도 유지)
+    // 퐁당퐁당 엑셀표(오버레이)에서도 관리자의 마이너스 처리가 동일하게 반영됨
     const overlayExcel = applyOverlayDonationDisplayTotals(minusState, { day777Calc: true });
     const overlayClaimMember = overlayExcel.members.find((m) => m.id === "m_claim");
-    expect(overlayClaimMember?.contribution).toBe(130000);
+    expect(overlayClaimMember?.contribution).toBe(-130000);
   });
 
   it("4. normalizeDonorsArray preserves isZubzubBonus, zubzubQueueId, and pongdangMinus", () => {

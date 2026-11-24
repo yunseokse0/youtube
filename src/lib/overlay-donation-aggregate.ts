@@ -260,11 +260,10 @@ export function collectDay777SigContributionByMember(
     manualBuyerMemberIds: readManualBuyerMemberIds(state),
     fromAt: effectiveFromAtOrNull,
   });
-  const fallback = resolveDay777SigCreditFallbackMemberId(state?.donors, effectiveFromAtOrNull);
   const byMember = new Map<string, number>();
   for (const row of credits) {
-    // 수동 시그 판매 건은 구매 멤버가 선택되지 않았을 경우 미판매 건이므로 fallback으로 임의 배정하지 않음
-    const memberId = row.memberId || (row.isManual ? "" : fallback);
+    // 특정 멤버에게 지정된 시그 판매 건만 반영 (미지정/불명확 건은 특정 멤버에게 임의 fallback 배정하지 않음)
+    const memberId = String(row.memberId || "").trim();
     if (!memberId) continue;
     byMember.set(memberId, (byMember.get(memberId) || 0) + row.price);
   }
@@ -276,7 +275,7 @@ export function collectDay777SigContributionByMember(
     if (d.donationExcluded === true && !d.isZubzubBonus) continue;
     // 멤버명이 불명확하여 자동 임의 배정(1위 등)된 후원은 백오피스에서 사용자가 지정하기 전까지 퐁당퐁당 기여도에 미반영
     if (d.memberAutoAssigned === true) continue;
-    const mid = String(d.memberId || fallback || "").trim();
+    const mid = String(d.memberId || "").trim();
     if (!mid) continue;
     const explicitSigPrice = Math.max(
       0,
@@ -426,7 +425,7 @@ export function applyOverlayDonationDisplayTotals(
       const rawTotal = baseVal + manualAdj;
       return {
         ...m,
-        contribution: isPongdangPopup ? rawTotal : Math.max(0, rawTotal),
+        contribution: rawTotal,
       };
     }),
   };

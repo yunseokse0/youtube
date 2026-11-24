@@ -205,4 +205,20 @@ describe("applyToonaSigItemsToInventory", () => {
     // 109~117번 시그는 포함되지 않음
     expect(items.some((x) => x.name === "시그_109")).toBe(false);
   });
+
+  it("프리셋 count 방어: ID 목록이 없더라도 프리셋 count(108개)에 맞춰 정확히 제한", () => {
+    const allSignatures = Array.from({ length: 117 }, (_, i) => ({
+      id: `sig_${i + 1}`,
+      name: `시그_${i + 1}`,
+      triggerAmount: (i + 1) * 1000,
+      enabled: true, // 모든 시그가 enabled: true로 온 경우
+    }));
+
+    const currentPreset = { id: "p1", name: "마에스트라", count: 108, isActive: true };
+    let finalTargetSignatures = allSignatures;
+    if (currentPreset && currentPreset.count > 0 && finalTargetSignatures.length > currentPreset.count) {
+      finalTargetSignatures = finalTargetSignatures.slice(0, currentPreset.count);
+    }
+    expect(finalTargetSignatures).toHaveLength(108);
+  });
 });

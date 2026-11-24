@@ -4071,7 +4071,7 @@ function OverlayInner() {
     }
     const c = Math.floor(parsed);
     if (day777Calc) return c;
-    if (allowContributionTotalFallback && c === 0 && total > 0) return total;
+    if (allowContributionTotalFallback && !hasDonorRows && parsed === 0 && total > 0 && !s?.contributionFormula) return total;
     return Math.max(0, c);
   }, [
     allowContributionTotalFallback,
