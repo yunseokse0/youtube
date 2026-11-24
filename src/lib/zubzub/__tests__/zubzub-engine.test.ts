@@ -112,7 +112,7 @@ describe("대표 시그 줍줍(ZubZub) 엔진 및 원장 격리 테스트", () =
     expect(waitings[0]?.status).toBe("WAITING");
   });
 
-  it("3. 일반 멤버 시그 발생 시 대기 중인 줍줍 큐를 선착순(CLAIMED) 획득한다", async () => {
+  it("3. 일반 멤버가 대표와 동일 금액(동일 시그) 후원 시 대기 중인 줍줍 큐를 획득한다", async () => {
     // 1) 먼저 대표 시그로 큐에 적재
     const repSigEvent = {
       id: "evt_rep_1",
@@ -124,14 +124,14 @@ describe("대표 시그 줍줍(ZubZub) 엔진 및 원장 격리 테스트", () =
     } as any as DonationEvent;
     await processZubzubDonationHook(userId, repSigEvent, baseState);
 
-    // 2) 진아(memberA)에게 50,000원 시그 후원 발생
+    // 2) 진아(memberA)에게 동일 금액 130,000원 시그 후원 발생
     const memberSigEvent = {
       id: "evt_jina_1",
       donorName: "진아팬",
-      amount: 50000,
+      amount: 130000,
       memberId: "m_jina",
       at: new Date().toISOString(),
-      matchedSigName: "러브다이브",
+      matchedSigName: "NO BATIDÃO",
     } as any as DonationEvent;
 
     const claimResult = await processZubzubDonationHook(userId, memberSigEvent, baseState);
@@ -150,6 +150,45 @@ describe("대표 시그 줍줍(ZubZub) 엔진 및 원장 격리 테스트", () =
       (x) => x.status === "WAITING"
     );
     expect(remainingWaitings.length).toBe(0);
+  });
+
+  it("3-1. 금액이 다른 일반 멤버 시그는 대기 건을 획득하지 못하고 그대로 남는다", async () => {
+    // 대표 130,000원 대기 적재
+    await processZubzubDonationHook(
+      userId,
+      {
+        id: "evt_rep_x",
+        donorName: "팬클럽회장",
+        amount: 130000,
+        memberId: "m_rep",
+        at: new Date().toISOString(),
+        matchedSigName: "NO BATIDÃO",
+      } as any as DonationEvent,
+      baseState
+    );
+
+    // 진아가 50,000원 시그 후원 → 금액 불일치로 미획득
+    const mismatch = await processZubzubDonationHook(
+      userId,
+      {
+        id: "evt_jina_x",
+        donorName: "진아팬",
+        amount: 50000,
+        memberId: "m_jina",
+        at: new Date().toISOString(),
+        matchedSigName: "러브다이브",
+      } as any as DonationEvent,
+      baseState
+    );
+    expect(mismatch.action).toBe("skipped");
+    if (mismatch.action === "skipped") expect(mismatch.reason).toBe("no_waiting_queue");
+
+    // 대기 건은 그대로 WAITING 유지
+    const waitings = getInMemoryZubZubQueueForTests(userId).filter(
+      (x) => x.status === "WAITING"
+    );
+    expect(waitings.length).toBe(1);
+    expect(waitings[0]?.bonusAmount).toBe(130000);
   });
 
   it("4. ⭐️ 중요: 복제 보너스는 현금 정산(account, toon)에 0원이며, 랭킹 기여도(contribution)에만 가산된다", () => {
@@ -214,10 +253,10 @@ describe("대표 시그 줍줍(ZubZub) 엔진 및 원장 격리 테스트", () =
     const memberSigEvent = {
       id: "evt_jina_1",
       donorName: "진아팬",
-      amount: 50000,
+      amount: 130000,
       memberId: "m_jina",
       at: new Date().toISOString(),
-      matchedSigName: "러브다이브",
+      matchedSigName: "NO BATIDÃO",
     } as any as DonationEvent;
     const claimedRes = await processZubzubDonationHook(userId, memberSigEvent, baseState);
     const bonusDonor = (claimedRes as any).bonusDonor;

@@ -101,12 +101,20 @@ export async function insertZubzubQueueItem(
   return queueItem;
 }
 
-/** 대기 중인 가장 오래된 줍줍 1건 선착순 획득 (SELECT ... FOR UPDATE) */
+/**
+ * 대기 중인 가장 오래된 줍줍 1건 선착순 획득 (SELECT ... FOR UPDATE).
+ * matchAmount 지정 시 대기 건의 bonusAmount(=대표 시그 단가)와 후원금액이 같은 건만 획득 대상 —
+ * "동일한 시그 = 동일한 후원금액" 규칙. 미지정 시 금액 무관 선착순.
+ */
 export async function claimEarliestWaitingZubzub(
   userId: string,
   claimingMemberId: string,
-  claimingDonationId: string
+  claimingDonationId: string,
+  matchAmount?: number
 ): Promise<ZubZubQueueItem | null> {
+  const amountFilter = Number.isFinite(matchAmount as number)
+    ? Math.max(0, Math.round(matchAmount as number))
+    : null;
   if (!isMysqlKvConfigured()) {
     let list = inMemoryZubZubQueue.get(userId);
     if (!list || list.length === 0 || !list.some((x) => x.status === "WAITING")) {
@@ -120,7 +128,11 @@ export async function claimEarliestWaitingZubzub(
       } catch {}
     }
     const target = (list || [])
-      .filter((x) => x.status === "WAITING")
+      .filter(
+        (x) =>
+          x.status === "WAITING" &&
+          (amountFilter === null || Math.round(Number(x.bonusAmount) || 0) === amountFilter)
+      )
       .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0))[0];
     if (!target) return null;
     target.status = "CLAIMED";
@@ -134,14 +146,15 @@ export async function claimEarliestWaitingZubzub(
     await ensureZubzubQueueTable(c);
     await c.beginTransaction();
     try {
+      const whereAmount = amountFilter === null ? "" : " AND bonus_amount = ?";
       const [rows] = await c.query<any[]>(
         `SELECT id, user_id, trigger_donation_id, sig_name, sig_image_url, bonus_amount, status, UNIX_TIMESTAMP(created_at) * 1000 AS created_at
          FROM zubzub_queue 
-         WHERE user_id = ? AND status = 'WAITING' 
+         WHERE user_id = ? AND status = 'WAITING'${whereAmount} 
          ORDER BY created_at ASC 
          LIMIT 1 
          FOR UPDATE`,
-        [userId]
+        amountFilter === null ? [userId] : [userId, amountFilter]
       );
 
       if (!rows || rows.length === 0) {

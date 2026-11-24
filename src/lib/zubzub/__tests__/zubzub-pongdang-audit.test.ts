@@ -230,18 +230,37 @@ describe("[AUDIT] 줍줍 - 전체 흐름 및 롤백 경계값", () => {
     );
     const claim1 = await processZubzubDonationHook(
       userId,
-      makeEvent({ id: "e2", memberId: "m_jina", amount: 50000, matchedSigName: "러브다이브" }),
+      makeEvent({ id: "e2", memberId: "m_jina", amount: 130000, matchedSigName: "NO BATIDÃO" }),
       makeState()
     );
     expect(claim1.action).toBe("claimed");
 
     const claim2 = await processZubzubDonationHook(
       userId,
-      makeEvent({ id: "e3", memberId: "m_surin", amount: 50000, matchedSigName: "러브다이브" }),
+      makeEvent({ id: "e3", memberId: "m_surin", amount: 130000, matchedSigName: "NO BATIDÃO" }),
       makeState()
     );
     expect(claim2.action).toBe("skipped");
     if (claim2.action === "skipped") expect(claim2.reason).toBe("no_waiting_queue");
+  });
+
+  it("금액이 다른 일반 멤버 시그는 대기 건을 획득하지 못한다", async () => {
+    await processZubzubDonationHook(
+      userId,
+      makeEvent({ id: "e1", memberId: "m_rep", amount: 130000, matchedSigName: "NO BATIDÃO" }),
+      makeState()
+    );
+    const mismatch = await processZubzubDonationHook(
+      userId,
+      makeEvent({ id: "e2", memberId: "m_jina", amount: 50000, matchedSigName: "러브다이브" }),
+      makeState()
+    );
+    expect(mismatch.action).toBe("skipped");
+    if (mismatch.action === "skipped") expect(mismatch.reason).toBe("no_waiting_queue");
+
+    const waitings = getInMemoryZubZubQueueForTests(userId).filter((x) => x.status === "WAITING");
+    expect(waitings.length).toBe(1);
+    expect(waitings[0]?.bonusAmount).toBe(130000);
   });
 });
 

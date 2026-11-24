@@ -20,7 +20,7 @@ describe("ZubzubOverlayBanner - 초간결 1줄 디자인 포맷터 검증", () =
 
     const res = formatZubzubSimpleWaiting(item, 1);
 
-    expect(res.badgeLabel).toBe("줍줍 대기:");
+    expect(res.badgeLabel).toBe("대표 줍줍 :");
     expect(res.sigName).toBe("[NO BATIDÃO]");
     expect(res.bonusText).toBe("+130,000");
     expect(res.extraCount).toBe(0);
@@ -83,13 +83,13 @@ describe("ZubzubOverlayBanner - 초간결 1줄 디자인 포맷터 검증", () =
     expect(fullText).not.toContain("대표 시그 줍줍 완료!");
   });
 
-  it("대기 중인 줍줍이 없을 때도 alwaysShowWaiting 기본 옵션(true)으로 '🎁 줍줍 대기: 대기 없음' 뱃지를 항상 유지한다", () => {
+  it("대기 중인 줍줍이 없을 때도 alwaysShowWaiting 기본 옵션(true)으로 '🎁 대표 줍줍 : 대기 없음' 뱃지를 항상 유지한다", () => {
     // 뱃지 라벨 및 기본 빈 상태 텍스트 검증
-    const badgeLabel = "줍줍 대기:";
+    const badgeLabel = "대표 줍줍 :";
     const emptyText = "대기 없음";
-    expect(badgeLabel).toBe("줍줍 대기:");
+    expect(badgeLabel).toBe("대표 줍줍 :");
     expect(emptyText).toBe("대기 없음");
     const fullEmptyBadgeText = `🎁 ${badgeLabel} ${emptyText}`;
-    expect(fullEmptyBadgeText).toBe("🎁 줍줍 대기: 대기 없음");
+    expect(fullEmptyBadgeText).toBe("🎁 대표 줍줍 : 대기 없음");
   });
 });

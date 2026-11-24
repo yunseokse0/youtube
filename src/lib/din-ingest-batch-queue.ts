@@ -173,6 +173,32 @@ async function retryOrHandOverMissing(
   return retry;
 }
 
+/**
+ * B모드 배치 반영 경로는 handleDinDonationIngest · tryAutoApplyToonationDonationOnServer 를
+ * 거치지 않아 줍줍 훅이 누락됐다 — 정산표에 랜딩된 후원에 대해 대표/일반 시그 판정을 이어서 수행한다.
+ * (랜딩된 건만 대상: 재시도로 같은 건이 두 번 적재되는 것을 막는다.)
+ * 훅 오류가 후원 반영 자체를 막지 않도록 삼킨다.
+ */
+async function runZubzubHooksForEvents(
+  stateUserId: string,
+  events: DonationEvent[]
+): Promise<void> {
+  const candidates = events.filter((event) => String(event.memberId || "").trim());
+  if (!candidates.length) return;
+  try {
+    const { maybeProcessZubzubDonation } = await import("@/lib/zubzub/zubzub-engine");
+    for (const event of candidates) {
+      await maybeProcessZubzubDonation(stateUserId, event);
+    }
+  } catch (err) {
+    console.error(
+      "[din-ingest-batch-queue] zubzub hook failed",
+      stateUserId,
+      err instanceof Error ? err.message : err
+    );
+  }
+}
+
 async function flushBatch(stateUserId: string, rows: QueuedIngest[]): Promise<FlushOutcome> {
   const state = await loadAppStateForUserId(stateUserId);
   if (!state) return { committed: false, retry: rows };
@@ -215,6 +241,7 @@ async function flushBatch(stateUserId: string, rows: QueuedIngest[]): Promise<Fl
     const missingKeys = new Set(missing.map((row) => eventQueueKey(row.event)));
     const landed = folded.applied.filter((e) => !missingKeys.has(eventQueueKey(e)));
     await appendHubDisplayLogsForEvents(rows, landed, true);
+    await runZubzubHooksForEvents(stateUserId, landed);
   }
   if (folded.unmatched.length > 0) {
     await appendHubDisplayLogsForEvents(rows, folded.unmatched, false);

@@ -78,11 +78,6 @@ export async function POST(req: Request) {
       void maybeAutoAddRouletteSlotsFromDonation(userId, event).catch((rouErr) => {
         console.error("[donations/ingest] roulette auto-slot failed:", rouErr);
       });
-      void import("@/lib/zubzub/zubzub-engine").then(({ maybeProcessZubzubDonation }) => {
-        return maybeProcessZubzubDonation(userId, event);
-      }).catch((zubErr) => {
-        console.error("[donations/ingest] zubzub hook failed:", zubErr);
-      });
     }
 
     return json({

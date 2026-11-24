@@ -158,7 +158,7 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
       if (data.ok) {
         setManualSigName("");
         await fetchWaitingItems();
-        alert(`[${sigName}] +${bonusAmount.toLocaleString()}점이 줍줍 대기열에 등록되었습니다!\n다음 시그를 쏘는 일반 멤버가 획득합니다.`);
+        alert(`[${sigName}] +${bonusAmount.toLocaleString()}점이 줍줍 대기열에 등록되었습니다!\n동일한 금액(시그 단가)의 시그를 쏘는 일반 멤버가 획득합니다.`);
       }
     } catch (err) {
       console.error("[ZubzubAdminPanel] manual enqueue error:", err);
@@ -309,7 +309,7 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
             </span>
           </div>
           <p className="text-[11px] text-neutral-400">
-            대표에게 시그니처가 터지면 대기열에 적재되고, 다음 일반 멤버에게 시그가 터지면 점수를 그대로 복제 지급합니다. (실정산 현금 0원, 랭킹 기여도만 반영)
+            대표에게 시그니처가 터지면 대기열에 적재되고, 다음 일반 멤버가 <b>동일한 시그(같은 후원금액)</b>를 쏘면 그 대기 건을 획득해 점수를 복제 지급합니다. (실정산 현금 0원, 랭킹 기여도만 반영)
           </p>
         </div>
 
@@ -383,7 +383,7 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
             onChange={(e) => updateSettings({ alwaysShowWaiting: e.target.checked })}
           />
           <span className="font-semibold text-white">🎁 줍줍 대기 뱃지 항상 표시</span>
-          <span className="text-neutral-500 text-[10px]">(대기 중인 시그가 없을 때도 방송에 '🎁 줍줍 대기: 대기 없음' 뱃지를 항상 유지합니다)</span>
+          <span className="text-neutral-500 text-[10px]">(대기 중인 시그가 없을 때도 방송에 '🎁 대표 줍줍 : 대기 없음' 뱃지를 항상 유지합니다)</span>
         </label>
       </div>
 
@@ -407,7 +407,7 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
             <div className="text-[10px] font-bold text-neutral-400">시그 대기 중 화면</div>
             <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/60 bg-neutral-950/85 px-3 py-1 shadow-sm">
               <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-500/20 text-[10px]">🎁</span>
-              <span className="text-[10px] font-bold text-amber-300">줍줍 대기:</span>
+              <span className="text-[10px] font-bold text-amber-300">대표 줍줍 :</span>
               <span className="text-[11px] font-bold text-white">[NO BATIDÃO]</span>
               <span className="font-mono text-[11px] font-black text-emerald-400">+130,000</span>
             </div>
@@ -416,7 +416,7 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
             <div className="text-[10px] font-bold text-neutral-400">대기 없을 때 (항상 표시)</div>
             <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/40 bg-neutral-950/80 px-3 py-1 shadow-sm">
               <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-500/15 text-[10px]">🎁</span>
-              <span className="text-[10px] font-bold text-amber-300/90">줍줍 대기:</span>
+              <span className="text-[10px] font-bold text-amber-300/90">대표 줍줍 :</span>
               <span className="text-[11px] font-semibold text-neutral-400">대기 없음</span>
             </div>
           </div>
@@ -582,7 +582,7 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
                 disabled={submittingManual}
                 onClick={handleManualEnqueue}
                 className="flex-1 rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm transition disabled:opacity-50 cursor-pointer"
-                title="다음 일반 멤버가 시그를 쏘면 가져갈 수 있도록 줍줍 대기열에 추가합니다"
+                title="동일한 금액(시그 단가)의 시그를 쏘는 일반 멤버가 가져갈 수 있도록 줍줍 대기열에 추가합니다"
               >
                 ➕ 대기열에 추가
               </button>

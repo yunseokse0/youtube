@@ -8,6 +8,7 @@ const persistApply = vi.fn<
   (uid: string, state: AppState, event: DonationEvent) => Promise<{ ok: true; state: AppState } | { ok: false }>
 >();
 const enqueueAdmin = vi.fn<(uid: string, event: DonationEvent) => Promise<boolean>>();
+const zubzubHook = vi.fn<(uid: string, event: DonationEvent) => Promise<unknown>>();
 
 vi.mock("@/app/api/donations/_shared/alias-store", () => ({
   readDonationAliases: vi.fn(async () => []),
@@ -24,6 +25,9 @@ vi.mock("@/lib/donation/toonation/enqueue-donation", () => ({
 }));
 vi.mock("@/lib/overlay-params", () => ({
   resolveScopedOverlayUserId: (uid: string) => uid,
+}));
+vi.mock("@/lib/zubzub/zubzub-engine", () => ({
+  maybeProcessZubzubDonation: (uid: string, event: DonationEvent) => zubzubHook(uid, event),
 }));
 
 import {
@@ -75,6 +79,8 @@ describe("drainDinIngestQueue", () => {
     persistApply.mockReset();
     enqueueAdmin.mockReset();
     enqueueAdmin.mockResolvedValue(true);
+    zubzubHook.mockReset();
+    zubzubHook.mockResolvedValue({ action: "enqueued_waiting" });
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
@@ -166,5 +172,44 @@ describe("drainDinIngestQueue", () => {
     );
     expect(landedFresh).toBe(true);
     expect(pullWouldAccept("cmfresh000001")).toBe(true);
+  });
+
+  it("B모드 배치 반영이 끝나면 랜딩된 후원으로 줍줍 훅을 호출한다", async () => {
+    loadState.mockResolvedValue(baseState());
+    persistApply.mockImplementation(async (_uid, state) => ({ ok: true, state }));
+
+    const event = hubEvent("cmzubzub0001", { amount: 52_000, message: "집집집" });
+    offerDinExcelIngest("din", event);
+    await drainDinIngestQueue("din");
+
+    expect(zubzubHook).toHaveBeenCalledTimes(1);
+    expect(zubzubHook).toHaveBeenCalledWith(
+      "din",
+      expect.objectContaining({ id: "bank:sms:cmzubzub0001", memberId: "m1" })
+    );
+  });
+
+  it("멤버가 붙지 않은 후원에는 줍줍 훅을 호출하지 않는다", async () => {
+    loadState.mockResolvedValue({ ...baseState(), members: [] });
+    persistApply.mockImplementation(async (_uid, state) => ({ ok: true, state }));
+
+    offerDinExcelIngest(
+      "din",
+      hubEvent("cmzubzub0002", { memberId: undefined, manualAssignMemberId: undefined })
+    );
+    await drainDinIngestQueue("din");
+
+    expect(zubzubHook).not.toHaveBeenCalled();
+  });
+
+  it("랜딩되지 못한 후원에는 줍줍 훅을 호출하지 않는다", async () => {
+    loadState.mockResolvedValue(baseState());
+    /** 저장은 ok 이지만 원장에 안 남는 경우 — 다음 라운드로 재시도되는 줄 */
+    persistApply.mockImplementation(async () => ({ ok: true, state: baseState() }));
+
+    offerDinExcelIngest("din", hubEvent("cmzubzub0003"));
+    await drainDinIngestQueue("din");
+
+    expect(zubzubHook).not.toHaveBeenCalled();
   });
 });

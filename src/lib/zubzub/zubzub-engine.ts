@@ -168,12 +168,16 @@ export async function processZubzubDonationHook(
     return { action: "enqueued_waiting", queueItem };
   } else {
     // -------------------------------------------------------------
-    // [Case B] 일반 멤버 시그 발생 ──▶ 대기 큐에서 선착순 획득 (CLAIMED)
+    // [Case B] 일반 멤버 시그 발생 ──▶ 대기 큐에서 획득 (CLAIMED)
+    //   획득 조건: "동일한 시그 = 동일한 후원금액".
+    //   후원금액(시그 단가)이 대기 건의 bonusAmount와 같은 건만 획득한다.
     // -------------------------------------------------------------
+    const claimAmount = Math.max(0, Math.round(Number(event.amount) || 0));
     const claimedQueue = await claimEarliestWaitingZubzub(
       userId,
       memberId,
-      String(event.id || event.externalId || "")
+      String(event.id || event.externalId || ""),
+      claimAmount
     );
 
     if (!claimedQueue) {

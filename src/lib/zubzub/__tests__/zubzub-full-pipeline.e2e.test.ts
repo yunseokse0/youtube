@@ -128,7 +128,7 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
     expect(waitings[0]?.bonusAmount).toBe(130000);
   });
 
-  it("Step 2: 일반 멤버 시그 후원 유입 → 선착순 줍줍(CLAIMED) 및 현금/기여도 원장 격리 검증", async () => {
+  it("Step 2: 일반 멤버 동일 금액(동일 시그) 후원 유입 → 줍줍(CLAIMED) 및 현금/기여도 원장 격리 검증", async () => {
     // 1) 선행 조건: 대표 시그 130,000원 대기열 적재
     const repDonationEvent = {
       id: "evt_rep_batidao",
@@ -143,16 +143,16 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
     if (repApply.ok) currentState = repApply.state;
     await processZubzubDonationHook(userId, repDonationEvent, currentState);
 
-    // 2) 진아(m_jina)에게 50,000원 '러브다이브' 시그 후원 인제스트 발생
+    // 2) 진아(m_jina)에게 130,000원 'NO BATIDÃO' 시그 후원 인제스트 발생 (동일 시그·동일 금액)
     const jinaDonationEvent = {
-      id: "evt_jina_lovedive",
+      id: "evt_jina_batidao",
       donorName: "진아수호대",
-      amount: 50000,
+      amount: 130000,
       memberId: "m_jina",
       target: "account",
       at: new Date().toISOString(),
-      message: "진아 러브다이브 가자!",
-      matchedSigName: "러브다이브",
+      message: "진아 NO BATIDÃO 가자!",
+      matchedSigName: "NO BATIDÃO",
     } as any as DonationEvent;
 
     // 진아의 실제 후원 적립
@@ -160,7 +160,7 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
     expect(jinaApply.ok).toBe(true);
     if (jinaApply.ok) currentState = jinaApply.state;
 
-    // 3) 줍줍 판정 훅 실행 (진아의 시그로 줍줍 매칭!)
+    // 3) 줍줍 판정 훅 실행 (진아의 동일 시그로 줍줍 매칭!)
     const claimRes = await processZubzubDonationHook(userId, jinaDonationEvent, currentState);
     expect(claimRes.action).toBe("claimed");
 
@@ -183,15 +183,15 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
 
     // 현금 정산(account):
     // - 자키: 130,000원 (본인 실제 입금액)
-    // - 진아: 50,000원 (본인 실제 입금액, 130,000원 줍줍은 가상이므로 현금 0원!)
+    // - 진아: 130,000원 (본인 실제 입금액, 130,000원 줍줍은 가상이므로 현금 추가 0원!)
     expect(jaki?.account).toBe(130000);
-    expect(jina?.account).toBe(50000);
+    expect(jina?.account).toBe(130000);
 
     // 랭킹 기여도(contribution):
     // - 자키: 130,000점
-    // - 진아: 180,000점 (50,000점 + 130,000점 줍줍 복제 보너스!)
+    // - 진아: 260,000점 (130,000점 + 130,000점 줍줍 복제 보너스!)
     expect(jaki?.contribution).toBe(130000);
-    expect(jina?.contribution).toBe(180000);
+    expect(jina?.contribution).toBe(260000);
 
     // 5. 큐 소진 확인: WAITING 큐가 0개여야 함
     const remainingWaitings = await listWaitingZubzubQueues(userId);
@@ -242,9 +242,9 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
     const jinaEvt = {
       id: "evt_jina_1",
       donorName: "팬2",
-      amount: 50000,
+      amount: 130000,
       memberId: "m_jina",
-      matchedSigName: "러브다이브",
+      matchedSigName: "NO BATIDÃO",
     } as any as DonationEvent;
     const claimedRes = await processZubzubDonationHook(userId, jinaEvt, currentState);
     const bonusDonor = (claimedRes as any).bonusDonor;

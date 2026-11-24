@@ -14361,7 +14361,7 @@ function AdminPageInner() {
                 className="mt-4 rounded-lg border border-indigo-500/30 bg-neutral-900/40 p-3 space-y-3"
                 defaultOpen={false}
                 headerAside={
-                  <InfoTooltip text="대표에게 시그가 터지면 줍줍 큐에 대기하고, 다음 멤버가 시그를 쏘면 그 점수를 그대로 복제 지급합니다. 현금 정산에는 전혀 들어가지 않고 랭킹 기여도에만 가산됩니다." />
+                  <InfoTooltip text="대표에게 시그가 터지면 줍줍 큐에 대기하고, 다음 멤버가 동일한 시그(같은 후원금액)를 쏘면 그 점수를 그대로 복제 지급합니다. 현금 정산에는 전혀 들어가지 않고 랭킹 기여도에만 가산됩니다." />
                 }
               >
                 <ZubzubAdminPanel
@@ -25007,6 +25007,7 @@ function AdminPageInner() {
                                   <DonationTableOptionCheckboxes
                                     compact
                                     sumRowFallback={Boolean(p.showTableSumRow ?? p.showTotal)}
+                                    isPongdang={Boolean(p.day777Calc) || String(p.name || "").includes("퐁당") || p.theme === "excelPongdang" || p.membersTheme === "excelPongdang"}
                                     value={{
                                       ...p,
                                       showRoleColumn: p.showRoleColumn,

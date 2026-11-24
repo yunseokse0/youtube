@@ -2901,7 +2901,10 @@ function OverlayInner() {
   const pongdangManualMode =
     day777Calc && resolvePongdangManualMode(rawSp, effectivePreset, { ready }, s as AppState);
   const toonHeaderLabel = resolvePresetLabel("toonHeaderLabel", "투네");
-  const contributionHeaderLabel = resolvePresetLabel("contributionHeaderLabel", "누적기여도");
+  const contributionHeaderLabel = resolvePresetLabel(
+    "contributionHeaderLabel",
+    day777Calc || isExcelPongdang ? "기여도" : "누적기여도"
+  );
   const restroomHeaderLabel = resolvePresetLabel("restroomHeaderLabel", "화장실");
   const showGoal = (() => {
     if (effectiveTableOnly) return false;

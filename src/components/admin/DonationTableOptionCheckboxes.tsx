@@ -8,6 +8,8 @@ type DonationTableOptionCheckboxesProps = {
   onChange: (patch: DonationTableColumnsOptions) => void;
   /** 프리셋: 총합 행 미설정 시 showTotal 폴백 */
   sumRowFallback?: boolean;
+  /** 퐁당퐁당 엑셀표: 해당 방송 기여도이므로 '기여도'로 표기 (기본 '누적기여도') */
+  isPongdang?: boolean;
   compact?: boolean;
   className?: string;
 };
@@ -16,12 +18,14 @@ export default function DonationTableOptionCheckboxes({
   value,
   onChange,
   sumRowFallback = true,
+  isPongdang = false,
   compact = false,
   className = "",
 }: DonationTableOptionCheckboxesProps) {
   const resolved = resolveDonationTableColumnsOptions(value, {
     showTableSumRow: sumRowFallback,
   });
+  const contributionLabel = isPongdang ? "기여도" : "누적기여도";
   const labelClass = compact
     ? "flex items-center gap-2 text-xs text-neutral-200 cursor-pointer select-none"
     : "flex items-center gap-2 text-sm text-neutral-200 cursor-pointer select-none";
@@ -85,7 +89,7 @@ export default function DonationTableOptionCheckboxes({
         />
         후원합계 열(계좌+투네)
       </label>
-      <label className={labelClass} title="엑셀표에 누적기여도 열을 표시합니다.">
+      <label className={labelClass} title={`엑셀표에 ${contributionLabel} 열을 표시합니다.`}>
         <input
           type="checkbox"
           className="rounded border-white/20 bg-neutral-900"
@@ -97,7 +101,7 @@ export default function DonationTableOptionCheckboxes({
             })
           }
         />
-        누적기여도 열
+        {contributionLabel} 열
       </label>
       <label className={labelClass}>
         <input
@@ -125,7 +129,7 @@ export default function DonationTableOptionCheckboxes({
           disabled={!resolved.showContributionColumn}
           onChange={(e) => onChange({ showContributionSum: e.target.checked })}
         />
-        누적기여도 총합
+        {contributionLabel} 총합
       </label>
       <label className={labelClass} title="6명 이상일 때 표를 좌우 2열로 분할합니다. 체크 해제 시 단일 1열 세로 표로 유지되어 OBS 너비 2000+ 초과를 방지합니다.">
         <input
