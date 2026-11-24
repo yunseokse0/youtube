@@ -102,6 +102,9 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
       /** 상류사회 확장 방향만 바꿔도 OBS 게이지가 갱신되게 */
       hsPushDir: d.hsPushDir || "",
       donationExcluded: Boolean(d.donationExcluded),
+      pongdangMinus: Boolean(d.pongdangMinus),
+      isZubzubBonus: Boolean(d.isZubzubBonus),
+      zubzubQueueId: d.zubzubQueueId || "",
       hsTerritoryExcluded:
         d.hsTerritoryExcluded === false ? "on" : d.hsTerritoryExcluded === true ? "off" : "",
     }))
@@ -173,6 +176,18 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
     donors,
     memberPositions: state.memberPositions || {},
     rankPositionLabels: state.rankPositionLabels || [],
+    fixedPositionMemberIds: state.fixedPositionMemberIds || [],
+    contributionExcludedMemberIds: state.contributionExcludedMemberIds || [],
+    zubzubSettings: state.zubzubSettings || {},
+    zubzubWaitingItems: (state.zubzubWaitingItems || []).map((z) => `${z.id}:${z.status}:${z.bonusAmount}:${z.sigName}`),
+    tableSplit: state.tableSplit,
+    customColumnName: state.customColumnName || "",
+    donorRankingsTheme: state.donorRankingsTheme || {},
+    donorRankingsPresets: state.donorRankingsPresets || [],
+    donorRankingsPresetId: state.donorRankingsPresetId || "",
+    pongdangResetAt: state.pongdangResetAt || 0,
+    pongdangManualMode: state.pongdangManualMode,
+    pongdangManualContributions: state.pongdangManualContributions || {},
     generalTimer,
     matchTimer,
     matchTimerEnabled: state.matchTimerEnabled || {},

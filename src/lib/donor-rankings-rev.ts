@@ -52,7 +52,20 @@ export function computeDonorRankingsUpdatedAt(
     "donorRankingsPresets" in patch ||
     "donorRankingsPresetId" in patch ||
     "donorRankingsOverlayConfig" in patch ||
-    "donorRankingsFullOverlayConfig" in patch
+    "donorRankingsFullOverlayConfig" in patch ||
+    "contributionExcludedMemberIds" in patch ||
+    "fixedPositionMemberIds" in patch ||
+    "memberPositions" in patch ||
+    "memberPositionMode" in patch ||
+    "zubzubSettings" in patch ||
+    "zubzubWaitingItems" in patch ||
+    "tableSplit" in patch ||
+    "customColumnName" in patch ||
+    "memberCustomCells" in patch ||
+    "memberCustomHeaderLabel" in patch ||
+    "pongdangResetAt" in patch ||
+    "pongdangManualMode" in patch ||
+    "pongdangManualContributions" in patch
   ) {
     changed = true;
   }

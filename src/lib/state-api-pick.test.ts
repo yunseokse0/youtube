@@ -206,4 +206,43 @@ describe("state-api-pick", () => {
     >;
     expect(out.deletedTerritoryLogIds).toEqual(["tl-gone"]);
   });
+
+  it("overlay-donors pick includes real-time options (contributionExcludedMemberIds, zubzubSettings, pongdang, tableSplit)", () => {
+    const state = {
+      ...defaultState(),
+      contributionExcludedMemberIds: ["m1", "m2"],
+      zubzubSettings: {
+        enabled: true,
+        minSigPrice: 50000,
+        priorityMode: "fifo" as const,
+        embedInMainOverlay: true,
+      },
+      zubzubWaitingItems: [
+        {
+          id: "q1",
+          userId: "u1",
+          sigName: "시그1",
+          bonusAmount: 10000,
+          representativeMemberId: "m1",
+          status: "WAITING" as const,
+          createdAt: 1000,
+        },
+      ],
+      tableSplit: "single" as const,
+      customColumnName: "상벌금",
+      pongdangResetAt: 5000,
+      pongdangManualMode: true,
+      pongdangManualContributions: { m1: 20000 },
+    };
+
+    const out = projectStateForGetPick(state, STATE_PICK_OVERLAY_DONORS) as Record<string, unknown>;
+    expect(out.contributionExcludedMemberIds).toEqual(["m1", "m2"]);
+    expect(out.zubzubSettings).toEqual(state.zubzubSettings);
+    expect(out.zubzubWaitingItems).toEqual(state.zubzubWaitingItems);
+    expect(out.tableSplit).toBe("single");
+    expect(out.customColumnName).toBe("상벌금");
+    expect(out.pongdangResetAt).toBe(5000);
+    expect(out.pongdangManualMode).toBe(true);
+    expect(out.pongdangManualContributions).toEqual({ m1: 20000 });
+  });
 });
