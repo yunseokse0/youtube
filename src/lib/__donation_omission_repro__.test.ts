@@ -223,6 +223,47 @@ describe("[REPRO] 후원 누락 재현 (실서버 21:55 스냅샷 복원 + 이�
     expect(dup.length).toBe(2);
   });
 
+  it("[TC11] 대표(m1) 195000 직후 같은 후원자명·같은 금액 수린 195000 이 와도 둘 다 남아야 한다", () => {
+    // 실서버: 마에스트라 195000 → m1(대표) enqueue, 30초 뒤 마에스트라 195000 → 수린 claim.
+    // 두 건은 externalId(test:base64(마에스트라:195000))와 금액이 완전히 동일하지만
+    // 서로 다른 강한 row-id(bank:sms:<cuid>)를 가진 별개 후원이다.
+    const rep = {
+      ...donor(
+        "bank:sms:cmwv186az003m5jqsouqlx1l3",
+        "마에스트라",
+        195000,
+        "m1",
+        1795545157355,
+        "대표자키"
+      ),
+      externalId: toonaExternalId("마에스트라", 195000),
+    };
+    const surin = {
+      ...donor(
+        "bank:sms:cmwv00000000000000000001",
+        "마에스트라",
+        195000,
+        "m_1795422063042_9sje4",
+        1795545187046,
+        "수린"
+      ),
+      externalId: toonaExternalId("마에스트라", 195000),
+    };
+
+    // 1) 배열 dedupe 단계
+    const merged = dedupeDonorRows([rep, surin]);
+    expect(merged.length).toBe(2);
+    expect(merged.filter((d) => d.memberId === "m_1795422063042_9sje4").length).toBe(1);
+
+    // 2) fold 단계 (대표 건이 이미 저장된 상태에서 수린 건 유입)
+    const result = foldIngestEventsIntoState(buildState([rep]), [pushEvent(surin)]);
+    expect(result.applied.length).toBe(1);
+    expect(result.state.donors.length).toBe(2);
+    expect(
+      result.state.donors.filter((d) => d.memberId === "m_1795422063042_9sje4").length
+    ).toBe(1);
+  });
+
   it("[TC4] 정산 리셋 이후 스냅샷 복원(rebump) 후 필터를 통과해야 한다", () => {
     const rebumped = rebumpDonorsPastSettlementReset(SNAPSHOT_32, RESET_AT);
     const surviving = filterDonorsAfterSettlementReset(rebumped, RESET_AT);

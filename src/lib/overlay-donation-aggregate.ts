@@ -271,8 +271,10 @@ export function collectDay777SigContributionByMember(
   // 외부(Toona 등 타 프로젝트)에서 전달된 나온 시그 기여도 (sigPrice 또는 isSigCredit / contributionPoints)
   const donorRows = effectiveFromAtOrNull != null ? filterDonorsFromAggregateAt(state?.donors, effectiveFromAtOrNull) : state?.donors || [];
   const ignoreMinus = Boolean(opts?.ignorePongdangMinus);
+  /** 줍줍 보너스(가상 Donor)를 퐁당퐁당 기여도에 합산할지 — 옵션(기본 true) */
+  const includeZubzubBonus = state?.zubzubSettings?.applyContributionToPongdang !== false;
   for (const d of donorRows) {
-    if (d.donationExcluded === true && !d.isZubzubBonus) continue;
+    if (d.donationExcluded === true && !(includeZubzubBonus && d.isZubzubBonus)) continue;
     // 멤버명이 불명확하여 자동 임의 배정(1위 등)된 후원은 백오피스에서 사용자가 지정하기 전까지 퐁당퐁당 기여도에 미반영
     if (d.memberAutoAssigned === true) continue;
     const mid = String(d.memberId || "").trim();

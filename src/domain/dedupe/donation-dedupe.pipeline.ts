@@ -884,7 +884,14 @@ export function dedupeDonorRows<T extends MergeableDonor>(donors: T[]): T[] {
         const only = bucket[0]!;
         if (merged.has(only)) return;
         const f = _findInSr(only);
-        if (f >= 0) {
+        /**
+         * 🔴 2026-11-25 후원 누락 Fix:
+         *  _findInSr 는 externalId(= toona 테스트 채널은 `test:base64(닉네임:금액)` 결정적 발급)로도
+         *  기존 sweepResult 행을 찾는다. 서로 다른 강한 row-id(`bank:sms:<cuid>`)를 가진 두 후원이
+         *  같은 externalId 를 가지면, 여기서 allowMergeByIdOnly 검증 없이 무조건 merge 되어 1건이 누락됐다.
+         *  → 반드시 allowMergeByIdOnly 로 실제 동일 후원인지 확인한 뒤 merge 한다.
+         */
+        if (f >= 0 && allowMergeByIdOnly(sweepResult[f]!, only as MergeableDonor)) {
           const nr = _merge2(sweepResult[f]!, only);
           sweepResult[f] = nr;
           _registerSr(nr, f);

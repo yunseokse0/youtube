@@ -147,4 +147,25 @@ describe("Zubzub & Pongdang Integration Tests", () => {
     expect(claimMember?.gross).toBe(0);
     expect(claimMember?.net).toBe(0);
   });
+
+  it("7. applyContributionToPongdang 옵션으로 퐁당퐁당 기여도 반영 여부를 제어한다", () => {
+    // 기본값(true): 퐁당퐁당 기여도에 줍줍 보너스 합산
+    const onState = {
+      ...baseState,
+      zubzubSettings: { enabled: true, minSigPrice: 0 },
+    } as unknown as AppState;
+    expect(collectDay777SigContributionByMember(onState).get("m_claim")).toBe(130000);
+
+    // 옵션 OFF: 퐁당퐁당 기여도에서 줍줍 보너스 제외
+    const offState = {
+      ...baseState,
+      zubzubSettings: { enabled: true, minSigPrice: 0, applyContributionToPongdang: false },
+    } as unknown as AppState;
+    expect(collectDay777SigContributionByMember(offState).get("m_claim")).toBeUndefined();
+    expect(
+      applyOverlayDonationDisplayTotals(offState, { day777Calc: true }).members.find(
+        (m) => m.id === "m_claim"
+      )?.contribution
+    ).toBe(0);
+  });
 });

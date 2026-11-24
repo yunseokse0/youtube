@@ -90,12 +90,14 @@ export async function POST(req: NextRequest) {
 
     // 3. 설정 업데이트
     if (action === "update_settings") {
-      const { enabled, minSigPrice, priorityMode, representativeMemberId, autoExpireMinutes, embedInMainOverlay } = body;
+      const { enabled, minSigPrice, priorityMode, representativeMemberId, autoExpireMinutes, embedInMainOverlay, alwaysShowWaiting, applyContributionToPongdang } = body;
       const nextSettings = {
         enabled: Boolean(enabled),
         minSigPrice: Math.max(0, Math.round(Number(minSigPrice) || 0)),
         priorityMode: priorityMode === "highest" ? ("highest" as const) : ("fifo" as const),
         embedInMainOverlay: Boolean(embedInMainOverlay),
+        alwaysShowWaiting: alwaysShowWaiting !== false,
+        applyContributionToPongdang: applyContributionToPongdang !== false,
         ...(representativeMemberId ? { representativeMemberId: String(representativeMemberId) } : {}),
         ...(autoExpireMinutes !== undefined ? { autoExpireMinutes: Math.max(0, Number(autoExpireMinutes) || 0) } : {}),
       };

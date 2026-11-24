@@ -23,6 +23,16 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
   );
   const [minPriceDraft, setMinPriceDraft] = useState(String(settings.minSigPrice || 50000));
 
+  /** 독립 줍줍 오버레이 배너 크기 배율 (URL `scale` 파라미터용, 저장하지 않는 로컬 값) */
+  const [overlayScale, setOverlayScale] = useState("1");
+  const zubzubScaleQuery = (() => {
+    const n = Number(overlayScale);
+    if (!Number.isFinite(n) || n <= 0) return "";
+    const clamped = Math.min(4, Math.max(0.5, n));
+    if (Math.abs(clamped - 1) < 0.001) return "";
+    return `&scale=${clamped}`;
+  })();
+
   // 수동 줍줍 추가 폼 상태
   const [manualSigName, setManualSigName] = useState("");
   const [manualBonusAmount, setManualBonusAmount] = useState("50000");
@@ -339,11 +349,24 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5" title="독립 줍줍 배너의 크기 배율입니다. URL의 scale 파라미터로 전달되며 0.5~4.0 범위입니다.">
+              <span className="text-[11px] text-neutral-400">배너 크기</span>
+              <input
+                type="number"
+                step="0.1"
+                min="0.5"
+                max="4"
+                value={overlayScale}
+                onChange={(e) => setOverlayScale(e.target.value)}
+                className="w-16 rounded bg-neutral-900 border border-white/10 px-2 py-1 text-[11px] text-white"
+              />
+              <span className="text-[10px] text-neutral-500">배</span>
+            </label>
             <button
               type="button"
               onClick={() => {
                 const origin = typeof window !== "undefined" ? window.location.origin : "";
-                const url = `${origin}/overlay/zubzub?u=${encodeURIComponent(userId)}&host=obs`;
+                const url = `${origin}/overlay/zubzub?u=${encodeURIComponent(userId)}&host=obs${zubzubScaleQuery}`;
                 navigator.clipboard.writeText(url);
                 alert(`독립 줍줍 오버레이 실방송용 URL이 복사되었습니다:\n${url}\n\n* 평소에는 방송 화면을 가리지 않게 투명 대기하며, 대표 시그가 터졌을 때와 멤버가 줍줍 성공 시에만 표출됩니다.`);
               }}
@@ -355,7 +378,7 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
               type="button"
               onClick={() => {
                 const origin = typeof window !== "undefined" ? window.location.origin : "";
-                const url = `${origin}/overlay/zubzub?u=${encodeURIComponent(userId)}&host=obs&demo=1`;
+                const url = `${origin}/overlay/zubzub?u=${encodeURIComponent(userId)}&host=obs&demo=1${zubzubScaleQuery}`;
                 navigator.clipboard.writeText(url);
                 alert(`OBS 위치/크기 조절용 미리보기 URL이 복사되었습니다:\n${url}\n\n* OBS 브라우저 소스에 넣으면 상시 배너가 표출되어 크기와 위치를 쉽게 맞출 수 있습니다.`);
               }}
@@ -364,7 +387,7 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
               👁️ OBS 위치 조절용 미리보기 URL 복사
             </button>
             <a
-              href={`/overlay/zubzub?u=${encodeURIComponent(userId)}&host=obs&demo=1`}
+              href={`/overlay/zubzub?u=${encodeURIComponent(userId)}&host=obs&demo=1${zubzubScaleQuery}`}
               target="_blank"
               rel="noopener noreferrer"
               className="rounded bg-neutral-800 hover:bg-neutral-700 px-2.5 py-1.5 text-neutral-300 border border-white/10 text-[11px] font-medium"
@@ -384,6 +407,18 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
           />
           <span className="font-semibold text-white">🎁 줍줍 대기 뱃지 항상 표시</span>
           <span className="text-neutral-500 text-[10px]">(대기 중인 시그가 없을 때도 방송에 '🎁 대표 줍줍 : 대기 없음' 뱃지를 항상 유지합니다)</span>
+        </label>
+
+        {/* 퐁당퐁당 기여도 반영 여부 토글 */}
+        <label className="flex items-center gap-2 text-neutral-300 cursor-pointer pt-2 border-t border-white/5">
+          <input
+            type="checkbox"
+            className="rounded bg-neutral-900 border-white/20 text-amber-500 focus:ring-0"
+            checked={settings.applyContributionToPongdang !== false}
+            onChange={(e) => updateSettings({ applyContributionToPongdang: e.target.checked })}
+          />
+          <span className="font-semibold text-white">🎪 퐁당퐁당 기여도에도 줍줍 반영</span>
+          <span className="text-neutral-500 text-[10px]">(끄면 퐁당퐁당 엑셀표 기여도에서 줍줍 보너스 점수가 제외됩니다)</span>
         </label>
       </div>
 

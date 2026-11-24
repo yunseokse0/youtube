@@ -63,6 +63,8 @@ type Props = {
   /** 대기 중인 시그가 없을 때도 '🎁 대표 줍줍 : 대기 없음' 뱃지를 항상 화면에 표시 (기본 true) */
   alwaysShowWaiting?: boolean;
   emptyText?: string;
+  /** 배너 크기 배율 (1 = 원본). 독립 오버레이 URL의 `scale` 파라미터로 조절 */
+  scale?: number;
 };
 
 export function ZubzubOverlayBanner({
@@ -74,6 +76,7 @@ export function ZubzubOverlayBanner({
   className = "",
   alwaysShowWaiting = true,
   emptyText = "대기 없음",
+  scale = 1,
 }: Props) {
   const [activeClaim, setActiveClaim] = useState<ZubzubClaimedEvent | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -117,6 +120,19 @@ export function ZubzubOverlayBanner({
   const columnAlignClass =
     align === "left" ? "items-start" : align === "right" ? "items-end" : "items-center";
 
+  // 크기 배율 (1 = 원본). 위치/정렬에 맞춰 변환 기준점을 잡아 화면 밖으로 밀리지 않게 한다.
+  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  const hOrigin = align === "left" ? "left" : align === "right" ? "right" : "center";
+  const vOrigin = position === "bottom" ? "bottom" : position === "center" ? "center" : "top";
+  const scaleStyle: React.CSSProperties =
+    Math.abs(safeScale - 1) > 0.001
+      ? {
+          transform: `scale(${safeScale})`,
+          transformOrigin: `${hOrigin} ${vOrigin}`,
+          transition: "transform 200ms ease-out",
+        }
+      : {};
+
   // 아무것도 표시할 내용이 없고 alwaysShowWaiting도 꺼져 있으면 렌더링 생략
   if (!activeClaim && !hasWaiting && !alwaysShowWaiting) {
     return null;
@@ -128,6 +144,7 @@ export function ZubzubOverlayBanner({
     <div
       className={`pointer-events-none fixed inset-x-0 ${posClass} z-[9999] flex items-center ${alignClass} select-none transition-all duration-300 ${className}`}
     >
+      <div className="inline-flex" style={scaleStyle}>
       {/* 1. 줍줍 성공 축하 알림 (간결한 1줄 뱃지) */}
       {claimInfo ? (
         <div className="inline-flex items-center gap-2 rounded-full border border-amber-300/80 bg-neutral-950/90 px-4 py-1.5 shadow-[0_4px_25px_rgba(245,158,11,0.45)] backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
@@ -185,6 +202,7 @@ export function ZubzubOverlayBanner({
           </span>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }

@@ -2901,10 +2901,16 @@ function OverlayInner() {
   const pongdangManualMode =
     day777Calc && resolvePongdangManualMode(rawSp, effectivePreset, { ready }, s as AppState);
   const toonHeaderLabel = resolvePresetLabel("toonHeaderLabel", "투네");
-  const contributionHeaderLabel = resolvePresetLabel(
-    "contributionHeaderLabel",
-    day777Calc || isExcelPongdang ? "기여도" : "누적기여도"
-  );
+  const contributionHeaderLabel = (() => {
+    const isPongdangTable = day777Calc || isExcelPongdang;
+    const resolved = resolvePresetLabel(
+      "contributionHeaderLabel",
+      isPongdangTable ? "기여도" : "누적기여도"
+    );
+    /** 🔴 퐁당퐁당 엑셀표는 '기여도'로 표기 — 프리셋에 저장된 기본값 '누적기여도'가 남아 있어도 덮어쓴다 */
+    if (isPongdangTable && resolved === "누적기여도") return "기여도";
+    return resolved;
+  })();
   const restroomHeaderLabel = resolvePresetLabel("restroomHeaderLabel", "화장실");
   const showGoal = (() => {
     if (effectiveTableOnly) return false;
