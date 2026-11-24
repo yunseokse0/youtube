@@ -10,7 +10,10 @@ import {
   listWaitingZubzubQueues,
   insertZubzubQueueItem,
 } from "@/lib/zubzub/zubzub-repo";
-import { revertOrCancelZubzubQueue } from "@/lib/zubzub/zubzub-engine";
+import {
+  createZubzubBonusContributionLog,
+  revertOrCancelZubzubQueue,
+} from "@/lib/zubzub/zubzub-engine";
 import { syncMemberTotalsFromDonors } from "@/domain/sync/sync-repair-1pass";
 import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
 import { publishSseEvent } from "@/lib/sse-clients-hub";
@@ -191,17 +194,25 @@ export async function POST(req: NextRequest) {
         provider: "zubzub_bonus",
         externalId: manualQueueId,
       };
+      const contributionLog = createZubzubBonusContributionLog(
+        manualQueueId,
+        targetMember.id,
+        bonusAmount,
+        sigName
+      );
 
-      const nextDonors = [...(state.donors || []), bonusDonor];
       const currentWaitings = await listWaitingZubzubQueues(userId);
-      const nextStateWithDonors: AppState = {
+      const nextStateWithContribution: AppState = {
         ...state,
-        donors: nextDonors,
+        contributionLogs: [
+          ...(state.contributionLogs || []).filter((log) => log.id !== contributionLog.id),
+          contributionLog,
+        ],
         zubzubWaitingItems: currentWaitings,
         updatedAt: Date.now(),
       };
 
-      const syncedState = syncMemberTotalsFromDonors(nextStateWithDonors);
+      const syncedState = syncMemberTotalsFromDonors(nextStateWithContribution);
       await saveAppStateForRoulette(userId, syncedState);
 
       await publishSseEvent({
@@ -220,11 +231,12 @@ export async function POST(req: NextRequest) {
         memberName: targetMember.name,
         bonusAmount,
         bonusDonor,
+        contributionLog,
         remainingWaitingCount: currentWaitings.length,
         timestamp: Date.now(),
       });
 
-      return NextResponse.json({ ok: true, bonusDonor, newState: syncedState });
+      return NextResponse.json({ ok: true, bonusDonor, contributionLog, newState: syncedState });
     }
 
     return NextResponse.json({ error: "unknown_action" }, { status: 400 });

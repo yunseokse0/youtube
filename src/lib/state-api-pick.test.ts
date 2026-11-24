@@ -248,4 +248,44 @@ describe("state-api-pick", () => {
     expect(out.pongdangManualMode).toBe(true);
     expect(out.pongdangManualContributions).toEqual({ m1: 20000 });
   });
+
+  it("overlay picks expose Zubzub contribution logs without sending bonus donors", () => {
+    const state = {
+      ...defaultState(),
+      donors: [
+        {
+          id: "zubzub_bonus_q1",
+          name: "[대표 줍줍] 시그",
+          amount: 50000,
+          memberId: "m1",
+          at: 1000,
+          isZubzubBonus: true,
+          zubzubQueueId: "q1",
+        },
+      ],
+      contributionLogs: [
+        {
+          id: "zubzub_bonus_q2",
+          memberId: "m2",
+          amount: 60000,
+          delta: 1 as const,
+          at: 2000,
+          isZubzubBonus: true,
+          zubzubQueueId: "q2",
+        },
+      ],
+    };
+
+    const out = projectStateForGetPick(state, STATE_PICK_OVERLAY_DONORS) as Record<
+      string,
+      unknown
+    >;
+    expect(out.donors).toEqual([]);
+    expect(out.zubzubContributionLogs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "zubzub_bonus_q1", amount: 50000 }),
+        expect.objectContaining({ id: "zubzub_bonus_q2", amount: 60000 }),
+      ])
+    );
+  });
 });

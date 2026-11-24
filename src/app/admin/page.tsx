@@ -2684,7 +2684,8 @@ function AdminPageInner() {
    */
   const donorListRows = useMemo(
     () =>
-      repairDonorTimestamps(normalizeDonorsArray(state.donors), { dailyLog: dailyLogRef.current }),
+      repairDonorTimestamps(normalizeDonorsArray(state.donors), { dailyLog: dailyLogRef.current })
+        .filter((donor) => !donor.isZubzubBonus && !String(donor.id || "").startsWith("zubzub_bonus_")),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [state.donors, dailyLogVersion]
   );
@@ -13700,6 +13701,7 @@ function AdminPageInner() {
                   </div>
                   <span className="text-xs text-neutral-400 mt-0.5">
                     {(state.memberRankingMetric || "contribution") === "contribution" && "현재 [누적 기여도] 기준: 세션 누적 기여도(시그 단가/수동 기여도 포함) 순으로 정렬합니다."}
+                    {state.memberRankingMetric === "sessionContribution" && "현재 [기여도] 기준: 누적·복원 저장값을 제외하고 이번 방송에서 새로 쌓인 기여도 순으로 정렬합니다."}
                     {state.memberRankingMetric === "donation" && "현재 [총 후원금] 기준: 계좌 후원금 + 투네이션 후원금 합산 순으로 정렬합니다."}
                     {state.memberRankingMetric === "account" && "현재 [계좌 금액만] 기준: 계좌(캐시) 후원금만으로 순위를 정렬합니다."}
                     {state.memberRankingMetric === "toon" && "현재 [투네 금액만] 기준: 투네이션 후원금만으로 순위를 정렬합니다."}
@@ -13708,6 +13710,7 @@ function AdminPageInner() {
                 <div className="flex flex-wrap items-center gap-1.5">
                   {[
                     { id: "contribution", label: "누적 기여도 (기본)" },
+                    { id: "sessionContribution", label: "기여도 (세션만)" },
                     { id: "donation", label: "총 후원금 (계좌+투네)" },
                     { id: "account", label: "계좌 금액만" },
                     { id: "toon", label: "투네 금액만" },
@@ -13819,12 +13822,15 @@ function AdminPageInner() {
                         ? "계좌 후원금으로만 순위를 매깁니다. 동점이면 투네 → 멤버 생성순."
                         : state.memberRankingMetric === "toon"
                         ? "투네이션 후원금으로만 순위를 매깁니다. 동점이면 계좌 → 멤버 생성순."
+                        : state.memberRankingMetric === "sessionContribution"
+                        ? "누적·복원 저장값을 제외하고 이번 방송에서 새로 쌓인 기여도로 순위를 매깁니다. 동점이면 금액 → 멤버 생성순."
                         : "세션 누적 기여도(시그 단가/수동 기여도 포함)로 순위를 매깁니다. 동점이면 금액 → 멤버 생성순."
                     } />
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {[
                       { id: "contribution", label: "누적 기여도" },
+                      { id: "sessionContribution", label: "기여도 (세션만)" },
                       { id: "donation", label: "총 후원금 (계좌+투네)" },
                       { id: "account", label: "계좌 금액만" },
                       { id: "toon", label: "투네 금액만" },
@@ -25998,6 +26004,7 @@ function AdminPageInner() {
                                     <div className="flex flex-wrap gap-1">
                                       {[
                                         { id: "contribution", label: "기여도 (기본)" },
+                                        { id: "sessionContribution", label: "기여도 (세션만)" },
                                         { id: "donation", label: "총 후원금(계좌+투네)" },
                                         { id: "account", label: "계좌만" },
                                         { id: "toon", label: "투네만" },

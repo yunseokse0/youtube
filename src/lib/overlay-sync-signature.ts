@@ -190,6 +190,9 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
     contributionExcludedMemberIds: state.contributionExcludedMemberIds || [],
     zubzubSettings: state.zubzubSettings || {},
     zubzubWaitingItems: (state.zubzubWaitingItems || []).map((z) => `${z.id}:${z.status}:${z.bonusAmount}:${z.sigName}`),
+    zubzubContributionLogs: (state.contributionLogs || [])
+      .filter((log) => log.isZubzubBonus)
+      .map((log) => `${log.id}:${log.memberId}:${log.amount}:${log.pongdangMinus ? 1 : 0}:${log.at}`),
     tableSplit: (state as unknown as Record<string, unknown>).tableSplit,
     customColumnName: (state as unknown as Record<string, unknown>).customColumnName || "",
     rankCustomCells: state.rankCustomCells || [],

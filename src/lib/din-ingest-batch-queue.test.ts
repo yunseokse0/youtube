@@ -68,6 +68,36 @@ describe("eventMatchesDonorLedger", () => {
       ])
     ).toBe(false);
   });
+
+  it("does not match a different strong UID just because deterministic external IDs collide", () => {
+    const sharedExternalId = "test:bWFlc3RybzpzaW1pbGFy";
+    const event = evt("bank:sms:unique-donation-b", 10_000, {
+      externalId: sharedExternalId,
+      amount: 195000,
+    });
+    expect(
+      eventMatchesDonorLedger(event, [
+        {
+          id: "bank:sms:unique-donation-a",
+          externalId: sharedExternalId,
+          amount: 195000,
+        },
+      ])
+    ).toBe(false);
+  });
+
+  it("still matches a legacy weak-ID row through its external ID", () => {
+    const sharedExternalId = "test:bWFlc3RybzpzaW1pbGFy";
+    const event = evt("bank:sms:unique-donation-b", 10_000, {
+      externalId: sharedExternalId,
+      amount: 195000,
+    });
+    expect(
+      eventMatchesDonorLedger(event, [
+        { id: "fp-195000-old", externalId: sharedExternalId, amount: 195000 },
+      ])
+    ).toBe(true);
+  });
 });
 
 describe("shouldDiscardIngestEventForReset", () => {

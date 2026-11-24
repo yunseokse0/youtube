@@ -16,10 +16,15 @@ export type MemberContributionGetter = (member: Member) => number;
 
 export type MemberPositionMode = "fixed" | "rankLinked";
 
-/** 엑셀표·순위 연동 정렬 기준 */
-export type MemberRankingMetric = "contribution" | "donation" | "account" | "toon";
+/**
+ * 엑셀표·순위 연동 정렬 기준
+ * - contribution: 누적 기여도 (세션 + 저장·복원값 중 큰 값, 기본)
+ * - sessionContribution: 이번 방송(세션)에서 새로 쌓인 기여도만 (저장·복원 누적값 제외)
+ */
+export type MemberRankingMetric = "contribution" | "sessionContribution" | "donation" | "account" | "toon";
 
 export function normalizeMemberRankingMetric(input: unknown): MemberRankingMetric {
+  if (input === "sessionContribution") return "sessionContribution";
   if (input === "donation") return "donation";
   if (input === "account") return "account";
   if (input === "toon") return "toon";
@@ -207,6 +212,7 @@ export function compareMembersByRankingMetric(
   if (metric === "toon") {
     return compareMembersByToon(a, b, orderIndex);
   }
+  /** contribution · sessionContribution — 모두 getContribution(누적/세션) 내림차순 비교 */
   return compareMembersByContribution(a, b, orderIndex, getContribution);
 }
 

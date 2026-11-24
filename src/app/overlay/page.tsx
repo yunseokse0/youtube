@@ -1192,14 +1192,18 @@ function OverlayTableNumCell({
   animate,
   className,
   style,
+  allowNegative = false,
 }: {
   value: number;
   format: (n: number) => string;
   animate: boolean;
   className?: string;
   style?: React.CSSProperties;
+  /** 퐁당퐁당 엑셀표처럼 마이너스 기여도를 음수 그대로 표기할 때 true */
+  allowNegative?: boolean;
 }) {
-  const safe = Math.max(0, Math.round(Number(value) || 0));
+  const rounded = Math.round(Number(value) || 0);
+  const safe = allowNegative ? rounded : Math.max(0, rounded);
   const display = useCountUp(safe, animate ? 600 : 0);
   return (
     <span className={className} style={style}>
@@ -2900,9 +2904,10 @@ function OverlayInner() {
     resolveDay777Calc(rawSp, effectivePreset, { ready });
   const pongdangManualMode =
     day777Calc && resolvePongdangManualMode(rawSp, effectivePreset, { ready }, s as AppState);
+  /** 퐁당퐁당 엑셀표(777데이 계산 또는 excelPongdang 테마): 마이너스 기여도를 음수 그대로 표기 */
+  const isPongdangTable = day777Calc || isExcelPongdang;
   const toonHeaderLabel = resolvePresetLabel("toonHeaderLabel", "투네");
   const contributionHeaderLabel = (() => {
-    const isPongdangTable = day777Calc || isExcelPongdang;
     const resolved = resolvePresetLabel(
       "contributionHeaderLabel",
       isPongdangTable ? "기여도" : "누적기여도"
@@ -4100,6 +4105,31 @@ function OverlayInner() {
     s?.contributionFormula,
     s,
   ]);
+  /**
+   * '기여도(세션)' 순위 기준: 누적·저장·복원값을 제외하고 이번 방송에서 새로 쌓인 기여도만 사용.
+   * 퐁당퐁당은 m.contribution 자체가 이번 방송 기여도이므로 그대로 사용한다.
+   */
+  const getSessionContributionValueForMember = useCallback((m: Member) => {
+    if (day777Calc) return getContributionValueForMember(m);
+    const memberId = String(m.id || "").trim();
+    if (!memberId || !s) return 0;
+    return resolveMemberContributionTotal(memberId, {
+      donors: overlayContributionSource.donors,
+      contributionLogs: overlayContributionSource.contributionLogs,
+      contributionFormula: s.contributionFormula,
+    });
+  }, [
+    day777Calc,
+    getContributionValueForMember,
+    overlayContributionSource.donors,
+    overlayContributionSource.contributionLogs,
+    s?.contributionFormula,
+    s,
+  ]);
+  /** 순위 산정용 기여도 getter — '기여도(세션)'은 세션 기준, 그 외(누적)는 전체 기준 */
+  const rankingContributionGetter = memberRankingMetric === "sessionContribution"
+    ? getSessionContributionValueForMember
+    : getContributionValueForMember;
   const resolvedMemberRoles = useMemo<Record<string, string>>(() => {
     if (memberPositionMode !== "rankLinked") return memberPositionsMap;
     const roleMap: Record<string, string> = {};
@@ -4142,7 +4172,7 @@ function OverlayInner() {
           b,
           memberRankingMetric,
           orderIndex,
-          getContributionValueForMember
+          rankingContributionGetter
         )
       );
 
@@ -4164,7 +4194,7 @@ function OverlayInner() {
     memberPositionsMap,
     members,
     rankPositionLabels,
-    getContributionValueForMember,
+    rankingContributionGetter,
     memberRankingMetric,
     s,
   ]);
@@ -4294,7 +4324,7 @@ function OverlayInner() {
         memberPositionsMap,
         getMemberRole,
         members,
-        getContributionValueForMember,
+        rankingContributionGetter,
         memberRankingMetric,
         {
           fixedPositionMemberIds: (s as AppState | null)?.fixedPositionMemberIds,
@@ -4306,7 +4336,7 @@ function OverlayInner() {
       memberPositionsMap,
       getMemberRole,
       members,
-      getContributionValueForMember,
+      rankingContributionGetter,
       memberRankingMetric,
       (s as AppState | null)?.fixedPositionMemberIds,
       memberPositionMode,
@@ -6626,6 +6656,7 @@ function OverlayInner() {
                                   value={getContributionValueForMember(m)}
                                   format={fmt}
                                   animate={rowMotionEnabled}
+                                  allowNegative={isPongdangTable}
                                   className="overlay-num-cell-inner overlay-cell-text-inner"
                                   style={overlayCellOutlineStyle}
                                 />
@@ -6793,6 +6824,7 @@ function OverlayInner() {
                               value={sumContribution}
                               format={fmt}
                               animate={rowMotionEnabled}
+                              allowNegative={isPongdangTable}
                               className="overlay-num-cell-inner overlay-cell-text-inner"
                               style={overlayCellOutlineStyle}
                             />

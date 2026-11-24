@@ -1,8 +1,17 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import type { AppState, Donor, Member, ZubZubQueueItem, ZubZubSettings } from "@/types";
+import type { AppState, Member, ZubZubQueueItem, ZubZubSettings } from "@/types";
 import type { ZubzubClaimedEvent } from "@/components/overlay/ZubzubOverlayBanner";
+
+type ZubzubBonusHistoryItem = {
+  id: string;
+  name: string;
+  amount: number;
+  memberId: string;
+  zubzubQueueId?: string;
+  at: number;
+};
 
 type Props = {
   state: AppState;
@@ -220,9 +229,9 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
   };
 
   // 이미 획득한 줍줍 보너스 회수/취소
-  const handleRevertBonus = async (donor: Donor) => {
-    const targetName = donor.name || "줍줍 보너스";
-    const targetAmount = Number(donor.amount || 0).toLocaleString();
+  const handleRevertBonus = async (bonus: ZubzubBonusHistoryItem) => {
+    const targetName = bonus.name || "줍줍 보너스";
+    const targetAmount = Number(bonus.amount || 0).toLocaleString();
     if (!confirm(`[${targetName}] (+${targetAmount}점) 줍줍 보너스를 회수하고 해당 멤버의 기여도를 차감하시겠습니까?`)) {
       return;
     }
@@ -235,8 +244,8 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
         body: JSON.stringify({
           userId,
           action: "revert_bonus",
-          donorId: donor.id,
-          queueId: donor.zubzubQueueId,
+          donorId: bonus.id,
+          queueId: bonus.zubzubQueueId,
         }),
       });
       const data = await res.json();
@@ -252,9 +261,35 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
     }
   };
 
-  // 최근 줍줍 보너스를 획득한 후원 목록 (donors 에서 isZubzubBonus=true 인 최근 10건)
-  const recentZubzubDonors = (state.donors || [])
-    .filter((d) => d.isZubzubBonus || d.id?.startsWith("zubzub_bonus_"))
+  // 줍줍 보너스는 기여도 로그에서만 조회하고, 구버전 후원 행도 회수 가능하도록 함께 표시한다.
+  const zubzubBonusHistory: ZubzubBonusHistoryItem[] = [
+    ...(state.contributionLogs || [])
+      .filter((log) => log.isZubzubBonus)
+      .map((log) => ({
+        id: log.id,
+        name: log.note || "대표 시그 줍줍",
+        amount: Number(log.amount) || 0,
+        memberId: log.memberId,
+        zubzubQueueId: log.zubzubQueueId,
+        at: Number(log.at) || 0,
+      })),
+    ...(state.donors || [])
+      .filter((donor) => donor.isZubzubBonus || donor.id?.startsWith("zubzub_bonus_"))
+      .map((donor) => ({
+        id: donor.id,
+        name: donor.message || donor.name || "대표 시그 줍줍",
+        amount: Number(donor.amount) || 0,
+        memberId: donor.memberId || "",
+        zubzubQueueId: donor.zubzubQueueId,
+        at: Number(donor.at) || 0,
+      })),
+  ];
+  const recentZubzubDonors = Array.from(
+    new Map(
+      zubzubBonusHistory.map((item) => [item.zubzubQueueId || item.id, item] as const)
+    ).values()
+  )
+    .sort((a, b) => a.at - b.at)
     .slice(-10)
     .reverse();
 
@@ -731,7 +766,7 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
                 <div key={d.id} className="py-1.5 flex items-center justify-between text-[11px]">
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-emerald-400">[{m?.name || "멤버"}]</span>
-                    <span className="text-neutral-200">{d.message || d.name}</span>
+                    <span className="text-neutral-200">{d.name}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="font-mono text-amber-300 font-semibold">

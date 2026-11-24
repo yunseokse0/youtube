@@ -213,13 +213,65 @@ function memberRosterIdSignature(members: Member[] | null | undefined): string {
 
 const syncMemoSelf = new WeakMap<object, AppState>();
 
+function migrateLegacyZubzubDonors(state: AppState): AppState {
+  const legacy = (state.donors || []).filter(
+    (donor) => donor.isZubzubBonus || String(donor.id || "").startsWith("zubzub_bonus_")
+  );
+  if (legacy.length === 0) return state;
+
+  const logs = [...(state.contributionLogs || [])];
+  const knownIds = new Set(logs.map((log) => log.id));
+  const knownQueueIds = new Set(
+    logs.map((log) => String(log.zubzubQueueId || "")).filter(Boolean)
+  );
+  const migratedDonors = new Set<Donor>();
+  for (const donor of legacy) {
+    const queueId =
+      String(donor.zubzubQueueId || "").trim() ||
+      String(donor.id || "").replace(/^zubzub_bonus_/, "").trim();
+    const id = `zubzub_bonus_${queueId || donor.id}`;
+    if (knownIds.has(id) || (queueId && knownQueueIds.has(queueId))) {
+      migratedDonors.add(donor);
+      continue;
+    }
+    const amount = Math.max(
+      0,
+      Math.round(Number(donor.sigPrice || donor.contributionPoints || donor.amount) || 0)
+    );
+    if (!donor.memberId || amount <= 0) continue;
+    logs.push({
+      id,
+      memberId: donor.memberId,
+      amount,
+      delta: 1,
+      donorName: donor.donorName || "대표 시그 줍줍",
+      note: donor.message || donor.name || "대표 시그 줍줍 보너스",
+      at: Number(donor.at) || Date.now(),
+      isZubzubBonus: true,
+      zubzubQueueId: queueId || undefined,
+      pongdangMinus: Boolean(donor.pongdangMinus),
+    });
+    knownIds.add(id);
+    if (queueId) knownQueueIds.add(queueId);
+    migratedDonors.add(donor);
+  }
+
+  if (migratedDonors.size === 0) return state;
+  return {
+    ...state,
+    donors: (state.donors || []).filter((donor) => !migratedDonors.has(donor)),
+    contributionLogs: logs,
+  };
+}
+
 export function syncMemberTotalsFromDonors(state: AppState): AppState {
   const selfCached = syncMemoSelf.get(state);
   if (selfCached) return selfCached;
 
-  const deduped = dedupeDonorRows(state.donors || []);
+  const source = migrateLegacyZubzubDonors(state);
+  const deduped = dedupeDonorRows(source.donors || []);
   const totals = new Map<string, { account: number; toon: number }>();
-  for (const member of state.members || []) {
+  for (const member of source.members || []) {
     totals.set(member.id, { account: 0, toon: 0 });
   }
   for (const donor of deduped) {
@@ -231,10 +283,10 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
     if ((donor.target || "account") === "toon") bucket.toon += amount;
     else bucket.account += amount;
   }
-  const contribMap = aggregateContributionByMember(state, deduped);
-  const logMap = aggregateContribLogsByMember(state.contributionLogs);
-  const positions = state.memberPositions || null;
-  const members = (state.members || []).map((member) => {
+  const contribMap = aggregateContributionByMember(source, deduped);
+  const logMap = aggregateContribLogsByMember(source.contributionLogs);
+  const positions = source.memberPositions || null;
+  const members = (source.members || []).map((member) => {
     const bucket = totals.get(member.id) || { account: 0, toon: 0 };
     const isOperating = isOperatingSettlementMember(
       {
@@ -261,7 +313,7 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
       contribution,
     };
   });
-  const result = { ...state, members };
+  const result = { ...source, members };
   syncMemoSelf.set(state, result);
   return result;
 }

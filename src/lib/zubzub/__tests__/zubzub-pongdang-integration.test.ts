@@ -6,6 +6,7 @@ import {
 } from "@/lib/overlay-donation-aggregate";
 import { normalizeDonorsArray } from "@/domain/state-monolith.all";
 import { mergeDonorRowFields } from "@/domain/dedupe/donation-dedupe.pipeline";
+import { syncMemberTotalsFromDonors } from "@/domain/sync/sync-repair-1pass";
 import { recomputeSettlementFromDonors } from "@/lib/settlement";
 
 describe("Zubzub & Pongdang Integration Tests", () => {
@@ -47,6 +48,68 @@ describe("Zubzub & Pongdang Integration Tests", () => {
     expect(sigMap.get("m_claim")).toBe(130000);
     expect(sigMap.get("m_leader")).toBeUndefined();
     expect(sigMap.get("m_other")).toBeUndefined();
+  });
+
+  it("stores new Zubzub bonus in contribution logs, not the donor ledger", () => {
+    const contributionLog = {
+      id: "zubzub_bonus_q456",
+      memberId: "m_claim",
+      amount: 130000,
+      delta: 1 as const,
+      donorName: "대표 시그 줍줍",
+      note: "[대표 시그 줍줍] 하트시그 (+130,000점)",
+      at: 1700000000000,
+      isZubzubBonus: true,
+      zubzubQueueId: "q456",
+    };
+    const state = {
+      ...baseState,
+      donors: [],
+      contributionLogs: [contributionLog],
+      zubzubSettings: { enabled: true, minSigPrice: 0 },
+    } as unknown as AppState;
+    const synced = syncMemberTotalsFromDonors(state);
+    const claimMember = synced.members.find((m) => m.id === "m_claim");
+
+    expect(synced.donors).toHaveLength(0);
+    expect(claimMember?.account).toBe(0);
+    expect(claimMember?.toon).toBe(0);
+    expect(claimMember?.contribution).toBe(130000);
+    expect(
+      applyOverlayDonationDisplayTotals(state, { day777Calc: true }).members.find(
+        (m) => m.id === "m_claim"
+      )?.contribution
+    ).toBe(130000);
+
+    const pongdangOff = {
+      ...state,
+      zubzubSettings: {
+        enabled: true,
+        minSigPrice: 0,
+        applyContributionToPongdang: false,
+      },
+    } as unknown as AppState;
+    expect(
+      applyOverlayDonationDisplayTotals(pongdangOff, { day777Calc: true }).members.find(
+        (m) => m.id === "m_claim"
+      )?.contribution
+    ).toBe(0);
+  });
+
+  it("migrates legacy Zubzub donor rows to contribution logs when totals sync", () => {
+    const migrated = syncMemberTotalsFromDonors(baseState);
+    expect(migrated.donors).toHaveLength(0);
+    expect(migrated.contributionLogs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "zubzub_bonus_q123",
+          memberId: "m_claim",
+          amount: 130000,
+          isZubzubBonus: true,
+        }),
+      ])
+    );
+    expect(migrated.members.find((m) => m.id === "m_claim")?.contribution).toBe(130000);
   });
 
   it("2. applyOverlayDonationDisplayTotals updates member contribution with zubzub bonus when day777Calc is true", () => {

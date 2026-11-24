@@ -145,6 +145,11 @@ export type ContributionLog = {
   /** 후원자명 (기여도 기록용) */
   donorName?: string;
   at: number;
+  /** 줍줍 시그 보너스는 후원 원장이 아닌 기여도에만 반영 */
+  isZubzubBonus?: boolean;
+  zubzubQueueId?: string;
+  /** 퐁당퐁당 전용 마이너스 처리. 일반 기여도 합계는 양수로 유지 */
+  pongdangMinus?: boolean;
 };
 
 /** 화장실 수동 기록(구조는 기여도와 동일, amount=횟수) */
@@ -740,12 +745,13 @@ export type AppState = {
   memberPositionMode: "fixed" | "rankLinked";
   /**
    * 엑셀표·순위 연동 정렬 기준
-   * - contribution: 세션 누적 기여도 (동점 시 금액)
+   * - contribution: 누적 기여도 (동점 시 금액)
+   * - sessionContribution: 이번 방송(세션) 기여도만 (저장·복원 누적값 제외)
    * - donation: 계좌+투네 금액
    * - account: 계좌(캐시) 금액만
    * - toon: 투네이션 금액만
    */
-  memberRankingMetric?: "contribution" | "donation" | "account" | "toon";
+  memberRankingMetric?: "contribution" | "sessionContribution" | "donation" | "account" | "toon";
   /** 엑셀표 커스텀 열(상벌금 등) — 멤버 id → 자유 텍스트 */
   memberCustomCells?: Record<string, string>;
   rankCustomCells?: string[];
@@ -779,6 +785,8 @@ export type AppState = {
   contributionFormula?: ContributionFormula;
   /** 기여도 수동 조정 로그 */
   contributionLogs: ContributionLog[];
+  /** overlay API pick에만 전달하는 최소 줍줍 기여도 로그 */
+  zubzubContributionLogs?: ContributionLog[];
   /** 화장실 수동 기록 로그 */
   restroomLogs: RestroomLog[];
   /** 상류사회 영토 수동 기록 로그 (후원 리스트 ON 과 별개) */

@@ -1,4 +1,4 @@
-import type { AppState, Donor, Member, ZubZubQueueItem } from "@/types";
+import type { AppState, ContributionLog, Donor, Member, ZubZubQueueItem } from "@/types";
 import type { DonationEvent } from "@/lib/donation/types";
 import { syncMemberTotalsFromDonors } from "@/domain/sync/sync-repair-1pass";
 import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
@@ -12,8 +12,34 @@ import {
 
 export type ZubzubHookResult =
   | { action: "enqueued_waiting"; queueItem: ZubZubQueueItem }
-  | { action: "claimed"; queueItem: ZubZubQueueItem; bonusDonor: Donor }
+  | {
+      action: "claimed";
+      queueItem: ZubZubQueueItem;
+      bonusDonor: Donor;
+      contributionLog: ContributionLog;
+    }
   | { action: "skipped"; reason: string };
+
+export function createZubzubBonusContributionLog(
+  queueId: string,
+  memberId: string,
+  amount: number,
+  sigName: string,
+  at = Date.now()
+): ContributionLog {
+  const normalizedAmount = Math.max(0, Math.round(Number(amount) || 0));
+  return {
+    id: `zubzub_bonus_${queueId}`,
+    memberId,
+    amount: normalizedAmount,
+    delta: 1,
+    donorName: "대표 시그 줍줍",
+    note: `[대표 시그 줍줍] ${sigName} (+${normalizedAmount.toLocaleString()}점)`,
+    at,
+    isZubzubBonus: true,
+    zubzubQueueId: queueId,
+  };
+}
 
 /** 줍줍이 켜져 있는데 발동하지 않을 때 원인을 서버 로그에서 바로 볼 수 있게 남긴다. */
 function logZubzubSkip(reason: string, detail?: Record<string, unknown>): ZubzubHookResult {
@@ -225,19 +251,27 @@ export async function processZubzubDonationHook(
       provider: "zubzub_bonus",
       externalId: claimedQueue.id,
     };
+    const contributionLog = createZubzubBonusContributionLog(
+      claimedQueue.id,
+      memberId,
+      claimedQueue.bonusAmount,
+      claimedQueue.sigName
+    );
 
-    // state.donors 에 보너스 추가 및 기여도 랭킹 재계산
-    const nextDonors = [...(state.donors || []), bonusDonor];
+    // 줍줍 금액은 후원 원장에 넣지 않고 기여도 기록부에만 남긴다.
     const currentWaitings = await listWaitingZubzubQueues(userId);
 
-    const nextStateWithDonors: AppState = {
+    const nextStateWithContribution: AppState = {
       ...state,
-      donors: nextDonors,
+      contributionLogs: [
+        ...(state.contributionLogs || []).filter((log) => log.id !== contributionLog.id),
+        contributionLog,
+      ],
       zubzubWaitingItems: currentWaitings,
       updatedAt: Date.now(),
     };
 
-    const syncedState = syncMemberTotalsFromDonors(nextStateWithDonors);
+    const syncedState = syncMemberTotalsFromDonors(nextStateWithContribution);
     await saveAppStateForRoulette(userId, syncedState);
 
     // 실시간 SSE 브로드캐스트
@@ -249,11 +283,12 @@ export async function processZubzubDonationHook(
       memberName,
       bonusAmount: claimedQueue.bonusAmount,
       bonusDonor,
+      contributionLog,
       remainingWaitingCount: currentWaitings.length,
       timestamp: Date.now(),
     });
 
-    return { action: "claimed", queueItem: claimedQueue, bonusDonor };
+    return { action: "claimed", queueItem: claimedQueue, bonusDonor, contributionLog };
   }
 }
 
@@ -270,9 +305,17 @@ export async function revertOrCancelZubzubQueue(
 
   // 이미 CLAIMED 되어 donors 에 들어간 경우 해당 bonus donor 제거
   const targetBonusId = `zubzub_bonus_${rawQueueId}`;
-  const hadBonus = (state.donors || []).some(
+  const hadLegacyBonus = (state.donors || []).some(
     (d) => d.id === targetBonusId || d.zubzubQueueId === rawQueueId || d.id === queueOrDonorId
   );
+  const hadContributionLog = (state.contributionLogs || []).some(
+    (log) =>
+      log.isZubzubBonus &&
+      (log.id === targetBonusId ||
+        log.zubzubQueueId === rawQueueId ||
+        log.id === queueOrDonorId)
+  );
+  const hadBonus = hadLegacyBonus || hadContributionLog;
 
   if (!queueSuccess && !hadBonus) return { ok: false };
 
@@ -281,9 +324,17 @@ export async function revertOrCancelZubzubQueue(
     const filteredDonors = (state.donors || []).filter(
       (d) => d.id !== targetBonusId && d.zubzubQueueId !== rawQueueId && d.id !== queueOrDonorId
     );
+    const filteredLogs = (state.contributionLogs || []).filter(
+      (log) =>
+        !log.isZubzubBonus ||
+        (log.id !== targetBonusId &&
+          log.zubzubQueueId !== rawQueueId &&
+          log.id !== queueOrDonorId)
+    );
     nextState = syncMemberTotalsFromDonors({
       ...state,
       donors: filteredDonors,
+      contributionLogs: filteredLogs,
       updatedAt: Date.now(),
     });
   }

@@ -1237,6 +1237,7 @@ function normalizeMemberPositionMode(input: unknown): AppState["memberPositionMo
 export function normalizeMemberRankingMetric(
   input: unknown
 ): NonNullable<AppState["memberRankingMetric"]> {
+  if (input === "sessionContribution") return "sessionContribution";
   if (input === "donation") return "donation";
   if (input === "account") return "account";
   if (input === "toon") return "toon";

@@ -170,10 +170,10 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
       expect(claimRes.bonusDonor.donationExcluded).toBe(true); // 현금 제외!
       expect(claimRes.bonusDonor.contributionPoints).toBe(130000); // 기여도 반영!
 
-      // 상태에 보너스 도너 반영 후 멤버 정산 동기화
+      // 줍줍 보너스는 후원 원장이 아닌 기여도 로그에만 반영
       currentState = syncMemberTotalsFromDonors({
         ...currentState,
-        donors: [...currentState.donors, claimRes.bonusDonor],
+        contributionLogs: [...currentState.contributionLogs, claimRes.contributionLog],
       });
     }
 

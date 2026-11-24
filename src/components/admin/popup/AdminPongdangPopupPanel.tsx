@@ -95,8 +95,22 @@ export default function AdminPongdangPopupPanel() {
     const map = new Map<string, number>();
     if (!state) return map;
     const cutoff = Math.max(0, Number(state.pongdangResetAt || 0));
-    const donors = (state.donors || []).filter((d) => !d.donationExcluded || d.isZubzubBonus);
+    const includeZubzubBonus = state.zubzubSettings?.applyContributionToPongdang !== false;
+    const zubzubLogKeys = new Set(
+      (state.contributionLogs || [])
+        .filter((log) => log.isZubzubBonus)
+        .map((log) => log.zubzubQueueId || log.id)
+    );
+    const donors = (state.donors || []).filter(
+      (d) => !d.donationExcluded || (includeZubzubBonus && d.isZubzubBonus)
+    );
     for (const d of donors) {
+      if (
+        d.isZubzubBonus &&
+        zubzubLogKeys.has(d.zubzubQueueId || d.id)
+      ) {
+        continue;
+      }
       if (cutoff > 0 && Number(d.at || 0) < cutoff) continue;
       // 멤버명이 불명확하여 자동 임의 배정(1위 등)된 후원은 백오피스에서 사용자가 지정하기 전까지 퐁당퐁당 기여도에 미반영
       if (d.memberAutoAssigned === true) continue;
@@ -118,6 +132,17 @@ export default function AdminPongdangPopupPanel() {
         map.set(mid, (map.get(mid) || 0) + mult * val);
       }
     }
+    if (includeZubzubBonus) {
+      for (const log of state.contributionLogs || []) {
+        if (!log.isZubzubBonus) continue;
+        const mid = String(log.memberId || "").trim();
+        if (!mid) continue;
+        if (cutoff > 0 && Number(log.at || 0) < cutoff) continue;
+        const amount = Math.max(0, Math.floor(Number(log.amount || 0)));
+        if (amount <= 0) continue;
+        map.set(mid, (map.get(mid) || 0) + (log.pongdangMinus ? -amount : amount));
+      }
+    }
     return map;
   }, [state]);
 
@@ -127,6 +152,7 @@ export default function AdminPongdangPopupPanel() {
     if (!state) return map;
     const logs = state.contributionLogs || [];
     for (const l of logs) {
+      if (l.isZubzubBonus) continue;
       const mid = String(l.memberId || "").trim();
       if (!mid) continue;
       const amt = Math.max(0, Math.floor(Number(l.amount || 0)));
@@ -198,6 +224,7 @@ export default function AdminPongdangPopupPanel() {
     target?: string;
     isAutoAssigned?: boolean;
     rawMemberId?: string;
+    isZubzubBonus?: boolean;
   };
 
   const itemRows = useMemo<PongdangItemRow[]>(() => {
@@ -210,8 +237,22 @@ export default function AdminPongdangPopupPanel() {
 
     // A. 자동 후원/시그에서 발생한 건
     const cutoff = Math.max(0, Number(state.pongdangResetAt || 0));
-    const donors = (state.donors || []).filter((d) => !d.donationExcluded || d.isZubzubBonus);
+    const includeZubzubBonus = state.zubzubSettings?.applyContributionToPongdang !== false;
+    const zubzubLogKeys = new Set(
+      (state.contributionLogs || [])
+        .filter((log) => log.isZubzubBonus)
+        .map((log) => log.zubzubQueueId || log.id)
+    );
+    const donors = (state.donors || []).filter(
+      (d) => !d.donationExcluded || (includeZubzubBonus && d.isZubzubBonus)
+    );
     for (const d of donors) {
+      if (
+        d.isZubzubBonus &&
+        zubzubLogKeys.has(d.zubzubQueueId || d.id)
+      ) {
+        continue;
+      }
       if (cutoff > 0 && Number(d.at || 0) < cutoff) continue;
       const isAutoAssigned = Boolean(d.memberAutoAssigned);
       const mid = String(d.memberId || "").trim();
@@ -253,6 +294,25 @@ export default function AdminPongdangPopupPanel() {
     // B. 수동 기여도 로그
     const logs = state.contributionLogs || [];
     for (const l of logs) {
+      if (l.isZubzubBonus) {
+        if (!includeZubzubBonus) continue;
+        const mid = String(l.memberId || "").trim();
+        if (mid && excludedMemberIdsSet.has(mid)) continue;
+        list.push({
+          key: `log_${l.id}`,
+          sourceType: "auto_sig",
+          rawId: l.id,
+          at: Number(l.at) || Date.now(),
+          donorName: l.donorName || "대표 시그 줍줍",
+          memberId: mid,
+          memberName: memberNameMap.get(mid) || "미지정",
+          amount: Math.max(0, Math.floor(Number(l.amount || 0))),
+          isMinus: Boolean(l.pongdangMinus),
+          reason: l.note || "🎁 대표 시그 줍줍 보너스",
+          isZubzubBonus: true,
+        });
+        continue;
+      }
       const mid = String(l.memberId || "").trim();
       if (mid && excludedMemberIdsSet.has(mid)) continue;
       const amt = Math.max(0, Math.floor(Number(l.amount || 0)));
@@ -330,6 +390,23 @@ export default function AdminPongdangPopupPanel() {
   const toggleRowMinus = useCallback(async (row: PongdangItemRow) => {
     if (!state) return;
     if (row.sourceType === "auto_sig") {
+      if (row.isZubzubBonus) {
+        const nextLogs = (state.contributionLogs || []).map((log) =>
+          log.id === row.rawId ? { ...log, pongdangMinus: !log.pongdangMinus } : log
+        );
+        const nextState: AppState = { ...state, contributionLogs: nextLogs };
+        setState(nextState);
+        const ok = await persistAppState(nextState);
+        if (ok) {
+          showAppToast(
+            row.isMinus
+              ? `[${row.memberName}] ${row.donorName} 기여도를 정상(+)으로 복원했습니다.`
+              : `[${row.memberName}] ${row.donorName} 기여도를 마이너스(-) 처리했습니다.`,
+            { variant: "success" }
+          );
+        }
+        return;
+      }
       // 자동 시그/후원 건 pongdangMinus 토글
       const nextDonors = (state.donors || []).map((d) => {
         if (String(d.id) === String(row.rawId)) {

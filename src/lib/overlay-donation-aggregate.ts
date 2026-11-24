@@ -298,15 +298,28 @@ export function collectDay777SigContributionByMember(
     }
   }
   // 기여도 기록부(contributionLogs) 수동 가감 로그 합산
-  const logs = effectiveFromAtOrNull != null ? filterContributionLogsFromAggregateAt(state?.contributionLogs, effectiveFromAtOrNull) : state?.contributionLogs || [];
+  const contributionLogs = state?.contributionLogs || state?.zubzubContributionLogs || [];
+  const logs = effectiveFromAtOrNull != null
+    ? filterContributionLogsFromAggregateAt(contributionLogs, effectiveFromAtOrNull)
+    : contributionLogs;
   for (const log of logs) {
     const mid = String(log.memberId || "").trim();
     if (!mid) continue;
+    if (
+      log.isZubzubBonus &&
+      state?.zubzubSettings?.applyContributionToPongdang === false
+    ) {
+      continue;
+    }
     if (ignoreMinus && isPongdangMinusContributionLog(log)) {
       continue;
     }
-    const delta = log.delta === -1 ? -1 : 1;
     const amt = Math.max(0, Math.floor(Number(log.amount || 0)));
+    const delta = log.isZubzubBonus
+      ? (!ignoreMinus && log.pongdangMinus ? -1 : 1)
+      : log.delta === -1
+        ? -1
+        : 1;
     byMember.set(mid, (byMember.get(mid) || 0) + delta * amt);
   }
   return byMember;
@@ -422,8 +435,15 @@ export function applyOverlayDonationDisplayTotals(
       const autoVal = sigById.get(m.id) ?? 0;
       let manualAdj = isManualMode ? Number(manualContribs[m.id]) || 0 : 0;
       const currentContrib = Math.floor(Number(orig?.contribution) || 0);
-      const hasDonorsSource = Array.isArray(state?.donors) && state.donors.length > 0;
-      const baseVal = autoVal !== 0 ? autoVal : (effectiveCutoff != null || hasDonorsSource ? 0 : currentContrib);
+      const hasContributionSource =
+        (Array.isArray(state?.donors) && state.donors.length > 0) ||
+        (state?.contributionLogs || state?.zubzubContributionLogs || []).some(
+          (log) => log.isZubzubBonus
+        );
+      const baseVal =
+        autoVal !== 0
+          ? autoVal
+          : (effectiveCutoff != null || hasContributionSource ? 0 : currentContrib);
       const rawTotal = baseVal + manualAdj;
       return {
         ...m,
@@ -473,7 +493,10 @@ export function membersWithOverlayDonationAggregate(
 
 /** 기여도 열/순위용 donors·logs 슬라이스 (표시 전용) */
 export function resolveOverlayContributionSource(
-  state: Pick<AppState, "donors" | "contributionLogs" | "rouletteState" | "overlaySettings">,
+  state: Pick<
+    AppState,
+    "donors" | "contributionLogs" | "zubzubContributionLogs" | "rouletteState" | "overlaySettings"
+  >,
   opts: OverlayDonationDisplayOpts = {}
 ): Pick<AppState, "donors" | "contributionLogs"> {
   const fromAt = normalizeDonationAggregateFromAt(opts.fromAt);
@@ -482,19 +505,20 @@ export function resolveOverlayContributionSource(
   }
   const day777 = Boolean(opts.day777Calc);
   const isPongdangPopup = Boolean(opts.isPongdangPopup);
+  const contributionLogs = state.contributionLogs || state.zubzubContributionLogs || [];
   const filterMinusLogs = (logs: ContributionLog[] | undefined) => {
     if (!logs) return [];
     return logs;
   };
   if (!day777 && fromAt == null) {
-    return { donors: state.donors, contributionLogs: filterMinusLogs(state.contributionLogs) };
+    return { donors: state.donors, contributionLogs: filterMinusLogs(contributionLogs) };
   }
   if (day777) {
     /** 기여도는 멤버.contribution(나온 시그 단가)만 사용. 777,000원 후원 원장을 다시 합치지 않음 */
-    return { donors: [], contributionLogs: [] };
+    return { donors: [], contributionLogs: filterMinusLogs(contributionLogs) };
   }
   return {
     donors: filterDonorsFromAggregateAt(state.donors, fromAt!),
-    contributionLogs: filterMinusLogs(filterContributionLogsFromAggregateAt(state.contributionLogs, fromAt!)),
+    contributionLogs: filterMinusLogs(filterContributionLogsFromAggregateAt(contributionLogs, fromAt!)),
   };
 }

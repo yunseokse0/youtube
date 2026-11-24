@@ -11,6 +11,7 @@ import {
   processZubzubDonationHook,
   revertOrCancelZubzubQueue,
 } from "../zubzub-engine";
+import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
 import {
   resetInMemoryZubZubQueueForTests,
   getInMemoryZubZubQueueForTests,
@@ -56,6 +57,7 @@ describe("대표 시그 줍줍(ZubZub) 엔진 및 원장 격리 테스트", () =
   let baseState: AppState;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     resetInMemoryZubZubQueueForTests();
     baseState = {
       members: [repMember, memberA, memberB],
@@ -143,7 +145,17 @@ describe("대표 시그 줍줍(ZubZub) 엔진 및 원장 격리 테스트", () =
       expect(claimResult.bonusDonor.amount).toBe(130000); // 대표 시그 금액 복제
       expect(claimResult.bonusDonor.donationExcluded).toBe(true); // 실정산 현금 제외!
       expect(claimResult.bonusDonor.contributionPoints).toBe(130000); // 기여도 점수 반영!
+      expect(claimResult.contributionLog).toMatchObject({
+        memberId: "m_jina",
+        amount: 130000,
+        isZubzubBonus: true,
+      });
     }
+    const savedState = vi.mocked(saveAppStateForRoulette).mock.lastCall?.[1];
+    expect(savedState?.donors).toHaveLength(0);
+    expect(savedState?.contributionLogs).toEqual(
+      expect.arrayContaining([expect.objectContaining({ isZubzubBonus: true, amount: 130000 })])
+    );
 
     // 3) 대기 큐 확인: 이제 WAITING 큐가 0개여야 함
     const remainingWaitings = getInMemoryZubZubQueueForTests(userId).filter(

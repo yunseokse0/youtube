@@ -107,6 +107,16 @@ describe("buildOverlayRankedMembers", () => {
     );
     expect(ranked.map((r) => r.m.id)).toEqual(["b", "a"]);
   });
+
+  it("ranks by session contribution getter when metric=sessionContribution", () => {
+    const rows: Member[] = [
+      { id: "acc-high", name: "누적높음", account: 0, toon: 0, contribution: 90000 },
+      { id: "sess-high", name: "세션높음", account: 0, toon: 0, contribution: 1000 },
+    ];
+    const sessionGetter = (m: Member) => (m.id === "sess-high" ? 50000 : 0);
+    const ranked = buildOverlayRankedMembers(rows, {}, undefined, rows, sessionGetter, "sessionContribution");
+    expect(ranked.map((r) => r.m.id)).toEqual(["sess-high", "acc-high"]);
+  });
 });
 
 describe("compareMembersByContribution", () => {
@@ -191,6 +201,20 @@ describe("sortMembersForRanking", () => {
     expect(rows.map((r) => r.id)).toEqual(["rep", "m2", "m1", "ops"]);
     expect(rows[0]?.position).toBe("대표");
     expect(rows[1]?.contributionAmount).toBe(5000);
+  });
+
+  it("sorts by session contribution getter when rankingMetric=sessionContribution", () => {
+    const rows: Member[] = [
+      { id: "acc-high", name: "누적높음", account: 0, toon: 0, contribution: 90000 },
+      { id: "sess-high", name: "세션높음", account: 0, toon: 0, contribution: 1000 },
+    ];
+    const sessionGetter = (m: Member) => (m.id === "sess-high" ? 50000 : 0);
+    const sorted = sortMembersForRanking(rows, {}, {
+      mode: "fixed",
+      rankingMetric: "sessionContribution",
+      getContribution: sessionGetter,
+    });
+    expect(sorted.map((r) => r.id)).toEqual(["sess-high", "acc-high"]);
   });
 });
 

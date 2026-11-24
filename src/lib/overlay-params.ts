@@ -2496,7 +2496,7 @@ export function resolvePongdangManualMode(
 }
 
 /**
- * 엑셀표·순위 연동 순위 산정 기준 (기여도 / 총 후원금 / 계좌만 / 투네만)
+ * 엑셀표·순위 연동 순위 산정 기준 (누적 기여도 / 기여도(세션) / 총 후원금 / 계좌만 / 투네만)
  * 우선순위: URL 쿼리 → 프리셋 설정 → 전역 상태 → 기본값(contribution)
  */
 export function resolveMemberRankingMetric(
@@ -2505,12 +2505,14 @@ export function resolveMemberRankingMetric(
   opts: { ready: boolean },
   state?: { memberRankingMetric?: MemberRankingMetric } | null
 ): MemberRankingMetric {
+  const isValid = (v: string | null): v is MemberRankingMetric =>
+    v === "donation" || v === "contribution" || v === "sessionContribution" || v === "account" || v === "toon";
   const merged = resolveLivePresetStyleParam("rankingMetric", rawSp, presetToParams(preset), opts);
-  if (merged === "donation" || merged === "contribution" || merged === "account" || merged === "toon") {
+  if (isValid(merged)) {
     return merged;
   }
   const alt = resolveLivePresetStyleParam("memberRankingMetric", rawSp, presetToParams(preset), opts);
-  if (alt === "donation" || alt === "contribution" || alt === "account" || alt === "toon") {
+  if (isValid(alt)) {
     return alt;
   }
   if (preset?.rankingMetric) {

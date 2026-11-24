@@ -1,4 +1,4 @@
-import type { AppState, RouletteState } from "@/types";
+import type { AppState, Donor, RouletteState } from "@/types";
 import { buildDonorRankingsFromDonors } from "@/lib/donor-rankings-aggregate";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import {
@@ -44,6 +44,50 @@ function overlayPickRevision(state: AppState): number {
     readDonorRankingsRevision(state),
     overlayTerritoryLogsRevision(state)
   );
+}
+
+function isZubzubBonusDonor(donor: Donor): boolean {
+  return Boolean(
+    donor.isZubzubBonus || String(donor.id || "").startsWith("zubzub_bonus_")
+  );
+}
+
+function overlayZubzubContributionLogs(state: AppState) {
+  const logs = (state.contributionLogs || [])
+    .filter((log) => log.isZubzubBonus)
+    .map((log) => ({ ...log }));
+  const knownIds = new Set(logs.map((log) => log.id));
+  const knownQueueIds = new Set(
+    logs.map((log) => String(log.zubzubQueueId || "")).filter(Boolean)
+  );
+  for (const donor of state.donors || []) {
+    if (!isZubzubBonusDonor(donor)) continue;
+    const queueId =
+      String(donor.zubzubQueueId || "").trim() ||
+      String(donor.id || "").replace(/^zubzub_bonus_/, "").trim();
+    const id = `zubzub_bonus_${queueId || donor.id}`;
+    if (knownIds.has(id) || (queueId && knownQueueIds.has(queueId))) continue;
+    const amount = Math.max(
+      0,
+      Math.round(Number(donor.sigPrice || donor.contributionPoints || donor.amount) || 0)
+    );
+    if (!donor.memberId || amount <= 0) continue;
+    logs.push({
+      id,
+      memberId: donor.memberId,
+      amount,
+      delta: 1 as const,
+      donorName: donor.donorName || "대표 시그 줍줍",
+      note: donor.message || donor.name || "대표 시그 줍줍 보너스",
+      at: Number(donor.at) || 0,
+      isZubzubBonus: true,
+      zubzubQueueId: queueId || undefined,
+      pongdangMinus: Boolean(donor.pongdangMinus),
+    });
+    knownIds.add(id);
+    if (queueId) knownQueueIds.add(queueId);
+  }
+  return logs;
 }
 
 export type StateApiPick =
@@ -125,6 +169,7 @@ function overlayCoreFields(
     contributionExcludedMemberIds: state.contributionExcludedMemberIds || [],
     zubzubSettings: state.zubzubSettings,
     zubzubWaitingItems: state.zubzubWaitingItems || [],
+    zubzubContributionLogs: overlayZubzubContributionLogs(state),
     pongdangResetAt: state.pongdangResetAt,
     pongdangManualMode: state.pongdangManualMode,
     pongdangManualContributions: state.pongdangManualContributions || {},
@@ -139,7 +184,9 @@ function overlayCoreFields(
     donorRankingsFullTheme: state.donorRankingsFullTheme,
     donorRankingsPresets: state.donorRankingsPresets,
     donorRankingsPresetId: state.donorRankingsPresetId,
-    ...(includeDonors ? { donors: state.donors || [] } : {}),
+    ...(includeDonors
+      ? { donors: (state.donors || []).filter((donor) => !isZubzubBonusDonor(donor)) }
+      : {}),
     missions: state.missions,
     sigInventory: slimSigInventoryForWire(state.sigInventory, userId),
     sigSoldOutStampUrl: state.sigSoldOutStampUrl,
@@ -240,15 +287,16 @@ export function projectStateForGetPick(
     };
   }
   if (pick === STATE_PICK_DONOR_RANKINGS) {
+    const realDonors = (state.donors || []).filter((donor) => !isZubzubBonusDonor(donor));
     const rankings = buildDonorRankingsFromDonors(
-      (state.donors || []) as Array<Record<string, unknown>>,
+      realDonors as Array<Record<string, unknown>>,
       0
     );
     return {
       updatedAt: state.updatedAt,
       settlementResetAt: state.settlementResetAt,
       donorRankingsUpdatedAt: revisionForStatePick(state, STATE_PICK_DONOR_RANKINGS),
-      donors: state.donors || [],
+      donors: realDonors,
       donorsFormat: state.donorsFormat,
       donorRankingsWire: {
         unifiedTop: rankings.unifiedTop,
