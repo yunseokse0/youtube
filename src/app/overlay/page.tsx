@@ -6972,6 +6972,7 @@ function OverlayInner() {
             waitingItems={s?.zubzubWaitingItems}
             claimedEvent={zubzubClaimedEvent}
             onClearClaimedEvent={() => setZubzubClaimedEvent(null)}
+            alwaysShowWaiting={s?.zubzubSettings?.alwaysShowWaiting !== false && rawSp.get("zubzubAlways") !== "0"}
           />
         ) : null}
       </div>

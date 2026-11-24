@@ -108,6 +108,8 @@ export type ZubZubSettings = {
   representativeMemberId?: string;
   autoExpireMinutes?: number;
   embedInMainOverlay?: boolean;
+  /** 대기 중인 시그가 없을 때도 '🎁 줍줍 대기: 대기 없음' 뱃지를 항상 화면에 표시 (기본 true) */
+  alwaysShowWaiting?: boolean;
 };
 
 export type TickerSettings = {

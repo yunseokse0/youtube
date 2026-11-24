@@ -374,16 +374,16 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
           </div>
         </div>
 
-        {/* 메인 방송 오버레이 임베드 토글 */}
+        {/* 항상 줍줍 대기 뱃지 표시 토글 */}
         <label className="flex items-center gap-2 text-neutral-300 cursor-pointer pt-2 border-t border-white/5">
           <input
             type="checkbox"
-            className="rounded bg-neutral-900 border-white/20 text-indigo-500 focus:ring-0"
-            checked={Boolean(settings.embedInMainOverlay)}
-            onChange={(e) => updateSettings({ embedInMainOverlay: e.target.checked })}
+            className="rounded bg-neutral-900 border-white/20 text-amber-500 focus:ring-0"
+            checked={settings.alwaysShowWaiting !== false}
+            onChange={(e) => updateSettings({ alwaysShowWaiting: e.target.checked })}
           />
-          <span className="font-semibold text-white">메인 엑셀 방송 화면(`/overlay`) 상단에도 줍줍 배너 함께 표시</span>
-          <span className="text-neutral-500 text-[10px]">(독립 브라우저 소스를 쓰지 않고 메인 오버레이 하나로 통일할 때 켭니다)</span>
+          <span className="font-semibold text-white">🎁 줍줍 대기 뱃지 항상 표시</span>
+          <span className="text-neutral-500 text-[10px]">(대기 중인 시그가 없을 때도 방송에 '🎁 줍줍 대기: 대기 없음' 뱃지를 항상 유지합니다)</span>
         </label>
       </div>
 
@@ -402,9 +402,9 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
             <span>🎉</span> 테스트 성공 알림 발동
           </button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
           <div className="rounded border border-white/5 bg-black/60 p-2 space-y-1">
-            <div className="text-[10px] font-bold text-neutral-400">대기 중 화면 (초간결 1줄)</div>
+            <div className="text-[10px] font-bold text-neutral-400">시그 대기 중 화면</div>
             <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/60 bg-neutral-950/85 px-3 py-1 shadow-sm">
               <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-500/20 text-[10px]">🎁</span>
               <span className="text-[10px] font-bold text-amber-300">줍줍 대기:</span>
@@ -413,7 +413,15 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
             </div>
           </div>
           <div className="rounded border border-white/5 bg-black/60 p-2 space-y-1">
-            <div className="text-[10px] font-bold text-neutral-400">성공 알림 화면 (초간결 1줄 / 4초)</div>
+            <div className="text-[10px] font-bold text-neutral-400">대기 없을 때 (항상 표시)</div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/40 bg-neutral-950/80 px-3 py-1 shadow-sm">
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-500/15 text-[10px]">🎁</span>
+              <span className="text-[10px] font-bold text-amber-300/90">줍줍 대기:</span>
+              <span className="text-[11px] font-semibold text-neutral-400">대기 없음</span>
+            </div>
+          </div>
+          <div className="rounded border border-white/5 bg-black/60 p-2 space-y-1">
+            <div className="text-[10px] font-bold text-neutral-400">성공 알림 화면 (4초)</div>
             <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/80 bg-neutral-950/90 px-3 py-1 shadow-sm">
               <span className="text-xs">🎉</span>
               <span className="text-[11px] font-black text-amber-300">진아</span>

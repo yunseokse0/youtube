@@ -60,6 +60,9 @@ type Props = {
   position?: "top" | "bottom" | "center";
   align?: "center" | "left" | "right";
   className?: string;
+  /** 대기 중인 시그가 없을 때도 '🎁 줍줍 대기: 대기 없음' 뱃지를 항상 화면에 표시 (기본 true) */
+  alwaysShowWaiting?: boolean;
+  emptyText?: string;
 };
 
 export function ZubzubOverlayBanner({
@@ -69,6 +72,8 @@ export function ZubzubOverlayBanner({
   position = "top",
   align = "center",
   className = "",
+  alwaysShowWaiting = true,
+  emptyText = "대기 없음",
 }: Props) {
   const [activeClaim, setActiveClaim] = useState<ZubzubClaimedEvent | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -106,8 +111,8 @@ export function ZubzubOverlayBanner({
         ? "justify-end pr-6"
         : "justify-center";
 
-  // 아무것도 표시할 내용이 없으면 렌더링 생략
-  if (!activeClaim && !hasWaiting) {
+  // 아무것도 표시할 내용이 없고 alwaysShowWaiting도 꺼져 있으면 렌더링 생략
+  if (!activeClaim && !hasWaiting && !alwaysShowWaiting) {
     return null;
   }
 
@@ -157,6 +162,19 @@ export function ZubzubOverlayBanner({
               +{waitingInfo.extraCount}
             </span>
           )}
+        </div>
+      ) : alwaysShowWaiting ? (
+        /* 3. 대기 중인 시그가 없을 때 방송에 항상 유지되는 뱃지 */
+        <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/40 bg-neutral-950/80 px-3.5 py-1.5 shadow-[0_2px_15px_rgba(0,0,0,0.5)] backdrop-blur-md">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500/15 text-xs">
+            🎁
+          </span>
+          <span className="text-[11px] font-bold text-amber-300/90">
+            줍줍 대기:
+          </span>
+          <span className="text-xs font-semibold text-neutral-400">
+            {emptyText}
+          </span>
         </div>
       ) : null}
     </div>

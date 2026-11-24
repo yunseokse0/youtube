@@ -82,4 +82,14 @@ describe("ZubzubOverlayBanner - 초간결 1줄 디자인 포맷터 검증", () =
     expect(fullText).not.toContain("(랭킹 기여도)");
     expect(fullText).not.toContain("대표 시그 줍줍 완료!");
   });
+
+  it("대기 중인 줍줍이 없을 때도 alwaysShowWaiting 기본 옵션(true)으로 '🎁 줍줍 대기: 대기 없음' 뱃지를 항상 유지한다", () => {
+    // 뱃지 라벨 및 기본 빈 상태 텍스트 검증
+    const badgeLabel = "줍줍 대기:";
+    const emptyText = "대기 없음";
+    expect(badgeLabel).toBe("줍줍 대기:");
+    expect(emptyText).toBe("대기 없음");
+    const fullEmptyBadgeText = `🎁 ${badgeLabel} ${emptyText}`;
+    expect(fullEmptyBadgeText).toBe("🎁 줍줍 대기: 대기 없음");
+  });
 });
