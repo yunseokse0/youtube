@@ -146,4 +146,69 @@ describe("Pongdang negative contribution and manual adjustment", () => {
     expect(ranked[2].m.id).toBe("m_neg");
     expect(ranked[3].m.id).toBe("m_deep_neg");
   });
+
+  it("excludes memberAutoAssigned donations from pongdang contribution until manually assigned", () => {
+    const donors: Donor[] = [
+      {
+        id: "d_auto",
+        name: "불명확후원자",
+        amount: 500000,
+        sigPrice: 500000,
+        memberId: "m1", // 임시 1위 자동 배정
+        memberAutoAssigned: true, // 자동 배정 플래그
+        platform: "toona",
+        createdAt: "2026-11-23T12:00:00.000Z",
+        isSigCredit: true,
+      },
+      {
+        id: "d_manual",
+        name: "정상후원자",
+        amount: 92000,
+        sigPrice: 92000,
+        memberId: "m1",
+        memberAutoAssigned: false,
+        platform: "toona",
+        createdAt: "2026-11-23T12:05:00.000Z",
+        isSigCredit: true,
+      },
+    ];
+
+    const mockState = { donors, members: [{ id: "m1", name: "서유하" }] } as unknown as AppState;
+    const result = collectDay777SigContributionByMember(mockState);
+    // d_auto(500,000)은 미지정 상태이므로 제외되고, d_manual(92,000)만 반영되어야 함!
+    expect(result.get("m1")).toBe(92000);
+  });
+
+  it("does not assign unassigned manual sig sales to single member via fallback", () => {
+    const mockState = {
+      donors: [
+        {
+          id: "d1",
+          name: "후원자",
+          amount: 92000,
+          sigPrice: 92000,
+          memberId: "m1",
+          platform: "toona",
+          createdAt: "2026-11-23T12:05:00.000Z",
+          isSigCredit: true,
+        },
+      ],
+      members: [{ id: "m1", name: "서유하" }],
+      manualSigSales: {
+        selectedSigs: [
+          { id: "sig1", name: "금연", price: 12100 },
+          { id: "sig2", name: "디스코데기", price: 59000 },
+        ],
+      },
+      overlaySettings: {
+        sigSalesManualDraftV1: {
+          sigBuyerMemberIds: [null, null], // 구매 멤버 미지정 (판매 대기 중)
+        },
+      },
+    } as unknown as AppState;
+
+    const result = collectDay777SigContributionByMember(mockState);
+    // 판매 대기 중인 수동 시그(12,100 + 59,000)가 서유하에게 덤터기 씌워지지 않고 92,000원만 나와야 함!
+    expect(result.get("m1")).toBe(92000);
+  });
 });

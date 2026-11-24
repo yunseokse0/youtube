@@ -22983,10 +22983,10 @@ function AdminPageInner() {
                                   <div className="flex items-center gap-2">
                                     <span className="text-base">🎪</span>
                                     <span className="text-xs font-bold text-amber-200 flex items-center">
-                                      777데이 계산
+                                      퐁당퐁당(시그 단가) 집계
                                       <InfoTooltip text={
                                         p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당")
-                                          ? "퐁당퐁당: 777,000원은 계좌/투네에 전액 남고, 기여도는 나온 시그 단가만 분리 반영됩니다."
+                                          ? "퐁당퐁당(777): 777,000원은 계좌/투네에 전액 남고, 기여도는 나온 시그 단가만 분리 반영됩니다."
                                           : "일반 엑셀표는 후원 금액 그대로 기여도에 전액 합산됩니다."
                                       } />
                                     </span>
@@ -25286,7 +25286,7 @@ function AdminPageInner() {
                                 })()}
                                 <div className="rounded border border-white/10 bg-black/20 p-2 space-y-2">
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <label className="text-xs text-neutral-400">777데이 계산</label>
+                                    <label className="text-xs text-neutral-400">퐁당퐁당(시그 단가) 집계</label>
                                     {p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당") ? (
                                       <>
                                         <button
@@ -25380,9 +25380,9 @@ function AdminPageInner() {
                                         const participating = state.members.filter((m) => !excludedSet.has(m.id));
                                         const activeMember = participating.find((m) => m.id === pongdangQuickMemberId) || participating[0];
                                         const activeMemberId = activeMember?.id || "";
+                                        const activeAutoVal = autoSigContributionMap.get(activeMemberId) ?? 0;
                                         const currentManualVal = state.pongdangManualContributions?.[activeMemberId] ?? 0;
-                                        const currentMemberContribution = activeMember?.contribution ?? 0;
-                                        const totalDisplay = currentManualVal + currentMemberContribution;
+                                        const totalDisplay = activeAutoVal + currentManualVal;
 
                                         return (
                                           <div className="space-y-2">
@@ -25395,7 +25395,8 @@ function AdminPageInner() {
                                               >
                                                 {participating.map((m) => {
                                                   const mManual = state.pongdangManualContributions?.[m.id] ?? 0;
-                                                  const mTotal = mManual + (m.contribution || 0);
+                                                  const mAuto = autoSigContributionMap.get(m.id) ?? 0;
+                                                  const mTotal = mManual + mAuto;
                                                   return (
                                                     <option key={m.id} value={m.id}>
                                                       {m.name} (현재: {mTotal.toLocaleString()}원)

@@ -123,18 +123,20 @@ function appearedSigUnitPrice(
   return Math.max(0, Math.floor(Number(sig.price) || 0));
 }
 
-type AppearedSigCredit = { price: number; memberId: string };
+type AppearedSigCredit = { price: number; memberId: string; isManual?: boolean };
 
 function pushAppearedSigCredit(
   out: AppearedSigCredit[],
   sig: { id?: string; name?: string; price?: number; memberId?: string } | null | undefined,
-  buyerMemberId?: string | null
+  buyerMemberId?: string | null,
+  isManual?: boolean
 ) {
   const price = appearedSigUnitPrice(sig);
   if (price <= 0) return;
   out.push({
     price,
     memberId: String(sig?.memberId || buyerMemberId || "").trim(),
+    isManual: Boolean(isManual),
   });
 }
 
@@ -187,7 +189,7 @@ function collectAppearedSigCredits(opts: {
   }
 
   (opts.manualSelectedSigs || []).forEach((s, i) => {
-    pushAppearedSigCredit(out, s, buyers[i] ?? null);
+    pushAppearedSigCredit(out, s, buyers[i] ?? null, true);
   });
   return out;
 }
@@ -203,6 +205,8 @@ export function resolveDay777SigCreditFallbackMemberId(
   const memberIds = new Set<string>();
   for (const d of rows) {
     if (d.donationExcluded === true) continue;
+    // 불명확하여 자동 임시배정된 후원은 배정 후보에서 제외
+    if (d.memberAutoAssigned === true) continue;
     const mid = String(d.memberId || "").trim();
     if (mid) memberIds.add(mid);
     if (Math.max(0, Math.floor(Number(d.amount) || 0)) !== DAY777_SHOT_AMOUNT) continue;
@@ -210,7 +214,7 @@ export function resolveDay777SigCreditFallbackMemberId(
   }
   const shotMember = String(latestShot?.memberId || "").trim();
   if (shotMember) return shotMember;
-  // 777 후원이 명시적으로 없을 때는 임의 멤버에게 미지정 시그를 몰아주지 않음 (덤터기 방지)
+  if (memberIds.size === 1) return [...memberIds][0];
   return "";
 }
 
@@ -259,7 +263,8 @@ export function collectDay777SigContributionByMember(
   const fallback = resolveDay777SigCreditFallbackMemberId(state?.donors, effectiveFromAtOrNull);
   const byMember = new Map<string, number>();
   for (const row of credits) {
-    const memberId = row.memberId || fallback;
+    // 수동 시그 판매 건은 구매 멤버가 선택되지 않았을 경우 미판매 건이므로 fallback으로 임의 배정하지 않음
+    const memberId = row.memberId || (row.isManual ? "" : fallback);
     if (!memberId) continue;
     byMember.set(memberId, (byMember.get(memberId) || 0) + row.price);
   }
@@ -269,6 +274,8 @@ export function collectDay777SigContributionByMember(
   const ignoreMinus = Boolean(opts?.ignorePongdangMinus);
   for (const d of donorRows) {
     if (d.donationExcluded === true && !d.isZubzubBonus) continue;
+    // 멤버명이 불명확하여 자동 임의 배정(1위 등)된 후원은 백오피스에서 사용자가 지정하기 전까지 퐁당퐁당 기여도에 미반영
+    if (d.memberAutoAssigned === true) continue;
     const mid = String(d.memberId || fallback || "").trim();
     if (!mid) continue;
     const explicitSigPrice = Math.max(

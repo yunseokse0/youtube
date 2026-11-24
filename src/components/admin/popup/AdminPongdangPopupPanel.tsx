@@ -5,6 +5,7 @@ import AdminPopupShell from "@/components/admin/popup/AdminPopupShell";
 import { useAdminPopupBroadcastState } from "@/hooks/useAdminPopupBroadcastState";
 import { showAppToast } from "@/lib/app-toast";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
+import { reassignDonorMemberInAppState } from "@/domain/contribution/apply-donation.usecases";
 import type { AppState, ContributionLog, Donor, Member } from "@/types";
 
 function formatAmount(n: number): string {
@@ -60,6 +61,8 @@ export default function AdminPongdangPopupPanel() {
     const donors = (state.donors || []).filter((d) => !d.donationExcluded || d.isZubzubBonus);
     for (const d of donors) {
       if (cutoff > 0 && Number(d.at || 0) < cutoff) continue;
+      // 멤버명이 불명확하여 자동 임의 배정(1위 등)된 후원은 백오피스에서 사용자가 지정하기 전까지 퐁당퐁당 기여도에 미반영
+      if (d.memberAutoAssigned === true) continue;
       const mid = String(d.memberId || "").trim();
       if (!mid) continue;
       const sigPrice = Math.max(
@@ -156,6 +159,8 @@ export default function AdminPongdangPopupPanel() {
     isMinus: boolean;
     reason: string;
     target?: string;
+    isAutoAssigned?: boolean;
+    rawMemberId?: string;
   };
 
   const itemRows = useMemo<PongdangItemRow[]>(() => {
@@ -171,8 +176,8 @@ export default function AdminPongdangPopupPanel() {
     const donors = (state.donors || []).filter((d) => !d.donationExcluded || d.isZubzubBonus);
     for (const d of donors) {
       if (cutoff > 0 && Number(d.at || 0) < cutoff) continue;
+      const isAutoAssigned = Boolean(d.memberAutoAssigned);
       const mid = String(d.memberId || "").trim();
-      if (!mid) continue;
       const sigPrice = Math.max(
         0,
         Math.floor(Number(d.sigPrice || (d.isZubzubBonus ? (d.amount || d.contributionPoints) : 0) || 0))
@@ -192,14 +197,16 @@ export default function AdminPongdangPopupPanel() {
           rawId: d.id,
           at: Number(d.at) || Date.now(),
           donorName: d.isZubzubBonus ? (d.donorName || "대표 시그 줍줍") : (d.donorName || d.name || "후원자"),
-          memberId: mid,
-          memberName: memberNameMap.get(mid) || "미지정",
+          memberId: isAutoAssigned ? "" : mid,
+          rawMemberId: mid,
+          memberName: isAutoAssigned ? "미지정 (자동지정 대기)" : (memberNameMap.get(mid) || "미지정"),
           amount: val,
           isMinus: Boolean(d.pongdangMinus),
           reason: d.isZubzubBonus
             ? (d.message || "🎁 대표 시그 줍줍 보너스")
             : (d.message ? `777 시그 후원 (${d.message})` : "777데이 룰렛·시그 당첨"),
           target: d.target || "account",
+          isAutoAssigned,
         });
       }
     }
@@ -304,6 +311,19 @@ export default function AdminPongdangPopupPanel() {
       showAppToast("수동 기여도 내역을 삭제했습니다.", { variant: "info" });
     }
   }, [state, setState, persistAppState]);
+
+  // 작업 핸들러: 자동 후원 건 대상 멤버 변경/지정 (미지정 상태 해제 및 기여도 즉시 반영)
+  const assignDonorMember = useCallback(async (donorId: string, memberId: string) => {
+    if (!state) return;
+    const next = reassignDonorMemberInAppState(state, donorId, memberId);
+    if (!next) return;
+    setState(next);
+    const ok = await persistAppState(next);
+    if (ok) {
+      const targetName = members.find((m) => m.id === memberId)?.name || memberId;
+      showAppToast(`[${targetName}] 멤버에게 배정 완료되었습니다 (퐁당퐁당 기여도 즉시 반영).`, { variant: "success" });
+    }
+  }, [state, setState, persistAppState, members]);
 
   // 작업 핸들러: 신규 수동 기여도 추가/마이너스 등록
   const submitNewManualContribution = useCallback(async (e: React.FormEvent) => {
@@ -841,9 +861,42 @@ export default function AdminPongdangPopupPanel() {
                           {r.donorName}
                         </td>
                         <td className="py-2 px-3 whitespace-nowrap">
-                          <span className="px-2 py-0.5 rounded bg-neutral-800 border border-white/10 font-bold text-neutral-300">
-                            {r.memberName}
-                          </span>
+                          {r.sourceType === "auto_sig" ? (
+                            <div className="flex items-center gap-1.5">
+                              <select
+                                className={`px-2 py-0.5 rounded text-xs font-bold cursor-pointer transition ${
+                                  r.isAutoAssigned
+                                    ? "bg-amber-950/80 border border-amber-400 text-amber-200 animate-pulse"
+                                    : "bg-neutral-900 border border-white/15 text-neutral-200 hover:border-white/30"
+                                }`}
+                                value={r.memberId}
+                                onChange={(e) => {
+                                  const newMid = e.target.value;
+                                  if (newMid) void assignDonorMember(r.rawId, newMid);
+                                }}
+                              >
+                                {r.isAutoAssigned ? (
+                                  <option value="" disabled>
+                                    ⚠️ 멤버 지정 필요 (선택)
+                                  </option>
+                                ) : null}
+                                {members.map((m) => (
+                                  <option key={`sel-m-${m.id}`} value={m.id}>
+                                    {m.name}
+                                  </option>
+                                ))}
+                              </select>
+                              {r.isAutoAssigned ? (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 whitespace-nowrap">
+                                  미반영
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded bg-neutral-800 border border-white/10 font-bold text-neutral-300">
+                              {r.memberName}
+                            </span>
+                          )}
                         </td>
                         <td className="py-2 px-3 text-neutral-300">
                           <div className="flex items-center gap-1.5">
