@@ -17,6 +17,7 @@ import {
   getInMemoryZubZubQueueForTests,
 } from "../zubzub-repo";
 import { syncMemberTotalsFromDonors } from "@/domain/sync/sync-repair-1pass";
+import { publishSseEvent } from "@/lib/sse-clients-hub";
 
 // Mock saveAppStateForRoulette and publishSseEvent
 vi.mock("@/app/api/roulette/edge-state-store", () => ({
@@ -136,7 +137,22 @@ describe("대표 시그 줍줍(ZubZub) 엔진 및 원장 격리 테스트", () =
       matchedSigName: "NO BATIDÃO",
     } as any as DonationEvent;
 
-    const claimResult = await processZubzubDonationHook(userId, memberSigEvent, baseState);
+    const claimState: AppState = {
+      ...baseState,
+      donors: [
+        {
+          id: memberSigEvent.id,
+          name: "진아팬",
+          donorName: "진아팬",
+          amount: 130000,
+          memberId: "m_jina",
+          target: "account",
+          contributionPoints: 130000,
+          at: Date.now(),
+        },
+      ],
+    };
+    const claimResult = await processZubzubDonationHook(userId, memberSigEvent, claimState);
     expect(claimResult.action).toBe("claimed");
 
     if (claimResult.action === "claimed") {
@@ -152,9 +168,21 @@ describe("대표 시그 줍줍(ZubZub) 엔진 및 원장 격리 테스트", () =
       });
     }
     const savedState = vi.mocked(saveAppStateForRoulette).mock.lastCall?.[1];
-    expect(savedState?.donors).toHaveLength(0);
+    expect(savedState?.donors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "evt_jina_1",
+          memberId: "m_jina",
+          amount: 130000,
+        }),
+      ])
+    );
     expect(savedState?.contributionLogs).toEqual(
       expect.arrayContaining([expect.objectContaining({ isZubzubBonus: true, amount: 130000 })])
+    );
+    expect(savedState?.members.find((member) => member.id === "m_jina")?.contribution).toBe(260000);
+    expect(vi.mocked(publishSseEvent)).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "state_updated", userId })
     );
 
     // 3) 대기 큐 확인: 이제 WAITING 큐가 0개여야 함

@@ -280,7 +280,12 @@ export async function processZubzubDonationHook(
     };
 
     const syncedState = syncMemberTotalsFromDonors(nextStateWithContribution);
-    await saveAppStateForRoulette(userId, syncedState);
+    const saved = await saveAppStateForRoulette(userId, syncedState);
+    await publishSseEvent({
+      type: "state_updated",
+      userId,
+      updatedAt: saved.state.updatedAt,
+    });
 
     // 실시간 SSE 브로드캐스트
     await publishSseEvent({

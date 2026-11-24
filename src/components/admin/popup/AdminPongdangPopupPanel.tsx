@@ -10,7 +10,9 @@ import { persistDonationStateViaApi } from "@/lib/donation/persist-donation-clie
 import { writeSessionBroadcastState } from "@/lib/server-authoritative-broadcast-state";
 import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
 import { syncMemberTotalsFromDonors } from "@/domain/sync/sync-repair-1pass";
-import type { AppState, ContributionLog, Donor, Member } from "@/types";
+import { parseOverlayContributionNumber } from "@/lib/overlay-donation-aggregate";
+import { collectPongdangPopupAutoContributionByMember } from "@/lib/pongdang-popup-contribution";
+import type { AppState, ContributionLog, Member } from "@/types";
 
 function formatAmount(n: number): string {
   const num = Math.round(Number(n) || 0);
@@ -92,71 +94,20 @@ export default function AdminPongdangPopupPanel() {
 
   // 1. 자동 수집된 777 시그 기여도 맵 (pongdangMinus 반영)
   const autoSigContributionMap = useMemo<Map<string, number>>(() => {
-    const map = new Map<string, number>();
-    if (!state) return map;
-    const cutoff = Math.max(0, Number(state.pongdangResetAt || 0));
-    const includeZubzubBonus = state.zubzubSettings?.applyContributionToPongdang !== false;
-    const zubzubLogKeys = new Set(
-      (state.contributionLogs || [])
-        .filter((log) => log.isZubzubBonus)
-        .map((log) => log.zubzubQueueId || log.id)
-    );
-    const donors = (state.donors || []).filter(
-      (d) => !d.donationExcluded || (includeZubzubBonus && d.isZubzubBonus)
-    );
-    for (const d of donors) {
-      if (
-        d.isZubzubBonus &&
-        zubzubLogKeys.has(d.zubzubQueueId || d.id)
-      ) {
-        continue;
-      }
-      if (cutoff > 0 && Number(d.at || 0) < cutoff) continue;
-      // 멤버명이 불명확하여 자동 임의 배정(1위 등)된 후원은 백오피스에서 사용자가 지정하기 전까지 퐁당퐁당 기여도에 미반영
-      if (d.memberAutoAssigned === true) continue;
-      const mid = String(d.memberId || "").trim();
-      if (!mid) continue;
-      const sigPrice = Math.max(
-        0,
-        Math.floor(Number(d.sigPrice || (d.isZubzubBonus ? (d.amount || d.contributionPoints) : 0) || 0))
-      );
-      const cp = Math.max(0, Math.floor(Number(d.contributionPoints || 0)));
-      const amt = Math.max(0, Math.floor(Number(d.amount || 0)));
-      const isCredit = Boolean(d.isSigCredit || d.isZubzubBonus);
-      const mult = d.pongdangMinus ? -1 : 1;
-      let val = 0;
-      if (sigPrice > 0) val = sigPrice;
-      else if (isCredit && cp > 0) val = cp;
-      else if (cp > 0 && amt !== 777000 && cp !== amt) val = cp;
-      if (val !== 0) {
-        map.set(mid, (map.get(mid) || 0) + mult * val);
-      }
-    }
-    if (includeZubzubBonus) {
-      for (const log of state.contributionLogs || []) {
-        if (!log.isZubzubBonus) continue;
-        const mid = String(log.memberId || "").trim();
-        if (!mid) continue;
-        if (cutoff > 0 && Number(log.at || 0) < cutoff) continue;
-        const amount = Math.max(0, Math.floor(Number(log.amount || 0)));
-        if (amount <= 0) continue;
-        map.set(mid, (map.get(mid) || 0) + (log.pongdangMinus ? -amount : amount));
-      }
-    }
-    return map;
+    return collectPongdangPopupAutoContributionByMember(state);
   }, [state]);
 
   // 2. 수동 기여도 로그 합산 맵 (delta = 1 or -1)
   const manualLogMap = useMemo<Map<string, number>>(() => {
     const map = new Map<string, number>();
-    if (!state) return map;
-    const logs = state.contributionLogs || [];
+    const logs = state?.contributionLogs || [];
     for (const l of logs) {
       if (l.isZubzubBonus) continue;
       const mid = String(l.memberId || "").trim();
       if (!mid) continue;
-      const amt = Math.max(0, Math.floor(Number(l.amount || 0)));
-      const delta = l.delta === -1 ? -1 : 1;
+      const rawAmount = parseOverlayContributionNumber(l.amount);
+      const amt = Math.floor(Math.abs(rawAmount));
+      const delta = l.delta === -1 || rawAmount < 0 ? -1 : 1;
       map.set(mid, (map.get(mid) || 0) + delta * amt);
     }
     return map;
@@ -171,7 +122,7 @@ export default function AdminPongdangPopupPanel() {
       const isOperating = isOperatingSettlementMember(m, memberPositions);
       const autoVal = autoSigContributionMap.get(m.id) ?? 0;
       const logVal = manualLogMap.get(m.id) ?? 0;
-      const directManualVal = Number(manualContribs[m.id]) || 0;
+      const directManualVal = parseOverlayContributionNumber(manualContribs[m.id]);
       const totalManual = logVal + directManualVal;
       // 음수 기여도 허용 (Math.max 제거)
       const finalContribution = isManualMode ? autoVal + totalManual : autoVal;
@@ -258,12 +209,13 @@ export default function AdminPongdangPopupPanel() {
       const mid = String(d.memberId || "").trim();
       // 제외된 멤버의 기여도 건은 퐁당퐁당 내역에서 제외 (단, 아직 미지정 상태인 건은 제외하지 않음)
       if (!isAutoAssigned && mid && excludedMemberIdsSet.has(mid)) continue;
-      const sigPrice = Math.max(
-        0,
-        Math.floor(Number(d.sigPrice || (d.isZubzubBonus ? (d.amount || d.contributionPoints) : 0) || 0))
+      const rawSigPrice = parseOverlayContributionNumber(
+        d.sigPrice || (d.isZubzubBonus ? (d.amount || d.contributionPoints) : 0)
       );
-      const cp = Math.max(0, Math.floor(Number(d.contributionPoints || 0)));
-      const amt = Math.max(0, Math.floor(Number(d.amount || 0)));
+      const sigPrice = Math.floor(Math.abs(rawSigPrice));
+      const rawContributionPoints = parseOverlayContributionNumber(d.contributionPoints);
+      const cp = Math.floor(Math.abs(rawContributionPoints));
+      const amt = Math.floor(Math.abs(parseOverlayContributionNumber(d.amount)));
       const isCredit = Boolean(d.isSigCredit || d.isZubzubBonus);
       let val = 0;
       if (sigPrice > 0) val = sigPrice;
@@ -281,7 +233,7 @@ export default function AdminPongdangPopupPanel() {
           rawMemberId: mid,
           memberName: isAutoAssigned ? "미지정 (자동지정 대기)" : (memberNameMap.get(mid) || "미지정"),
           amount: val,
-          isMinus: Boolean(d.pongdangMinus),
+          isMinus: Boolean(d.pongdangMinus) || rawSigPrice < 0 || rawContributionPoints < 0,
           reason: d.isZubzubBonus
             ? (d.message || "🎁 대표 시그 줍줍 보너스")
             : (d.message ? `777 시그 후원 (${d.message})` : "777데이 룰렛·시그 당첨"),
@@ -306,8 +258,8 @@ export default function AdminPongdangPopupPanel() {
           donorName: l.donorName || "대표 시그 줍줍",
           memberId: mid,
           memberName: memberNameMap.get(mid) || "미지정",
-          amount: Math.max(0, Math.floor(Number(l.amount || 0))),
-          isMinus: Boolean(l.pongdangMinus),
+          amount: Math.floor(Math.abs(parseOverlayContributionNumber(l.amount))),
+          isMinus: Boolean(l.pongdangMinus) || parseOverlayContributionNumber(l.amount) < 0,
           reason: l.note || "🎁 대표 시그 줍줍 보너스",
           isZubzubBonus: true,
         });
@@ -315,7 +267,8 @@ export default function AdminPongdangPopupPanel() {
       }
       const mid = String(l.memberId || "").trim();
       if (mid && excludedMemberIdsSet.has(mid)) continue;
-      const amt = Math.max(0, Math.floor(Number(l.amount || 0)));
+      const rawAmount = parseOverlayContributionNumber(l.amount);
+      const val = Math.floor(Math.abs(rawAmount));
       list.push({
         key: `log_${l.id}`,
         sourceType: "manual_log",
@@ -324,9 +277,9 @@ export default function AdminPongdangPopupPanel() {
         donorName: l.donorName || "관리자 수동",
         memberId: mid,
         memberName: memberNameMap.get(mid) || "미지정",
-        amount: amt,
-        isMinus: l.delta === -1,
-        reason: l.note || (l.delta === -1 ? "수동 기여도 차감" : "수동 기여도 추가"),
+        amount: val,
+        isMinus: l.delta === -1 || rawAmount < 0,
+        reason: l.note || (l.delta === -1 || rawAmount < 0 ? "수동 기여도 차감" : "수동 기여도 추가"),
       });
     }
 
@@ -558,7 +511,7 @@ export default function AdminPongdangPopupPanel() {
       setNewLogNote("");
       setNewLogDonorName("");
     }
-  }, [state, members, newLogMemberId, newLogAmount, newLogIsMinus, newLogDonorName, newLogNote, setState, persistAppState]);
+  }, [state, members, participatingMembers, newLogMemberId, newLogAmount, newLogIsMinus, newLogDonorName, newLogNote, setState, persistAppState]);
 
   // 작업 핸들러: 멤버별 직접 수동 보정 가감 (음수 가능)
   const adjustDirectManual = useCallback(async (memberId: string, deltaAmount: number) => {

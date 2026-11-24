@@ -234,7 +234,12 @@ export async function POST(req: NextRequest) {
       };
 
       const syncedState = syncMemberTotalsFromDonors(nextStateWithContribution);
-      await saveAppStateForRoulette(userId, syncedState);
+      const saved = await saveAppStateForRoulette(userId, syncedState);
+      await publishSseEvent({
+        type: "state_updated",
+        userId,
+        updatedAt: saved.state.updatedAt,
+      });
 
       await publishSseEvent({
         type: "zubzub_claimed",
