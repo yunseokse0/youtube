@@ -100,6 +100,21 @@ function isRepresentativeMember(
   return String(memberPositions?.[member.id] || "").trim() === "대표";
 }
 
+/**
+ * 미매칭(멤버명 불일치) 후원 자동배치 대상 — 대표 → 운영비 → 국고.
+ * 후원 순위 1위로의 임의 배치는 하지 않는다(사용자가 백오피스에서 수동 지정).
+ */
+export function pickUnmatchedAutoAssignMember(
+  members: Member[],
+  memberPositions?: Record<string, string> | null
+): Member | undefined {
+  if (!Array.isArray(members) || members.length === 0) return undefined;
+  const positions = memberPositions || null;
+  const representative = members.find((m) => m?.id && isRepresentativeMember(m, positions));
+  if (representative) return representative;
+  return pickDefaultToonationMember(members, { memberPositions: positions });
+}
+
 /** 후원자명만 있을 때 — 엑셀표 1등(대표·운영비 제외, 후원 총액 1위) */
 export function pickTopRankedDonationMember(
   members: Member[],
@@ -649,9 +664,9 @@ export function mapToMember(
   }
 
   /**
-   * 유사 일치로도 못 찾으면 자동 배치:
-   * - 소액(≤1천원): 운영비 → 없으면 후원 순위 1위
-   * - 그 외: 후원 순위 1위 → 없으면 운영비 → 대표 → 국고
+   * 유사 일치로도 못 찾으면(멤버명 불일치) 자동 배치:
+   * - 지정 인원(자동부여 멤버) → 대표 → 운영비 → 국고
+   * 후원 순위 1위로의 임의 배치는 하지 않는다(사용자가 백오피스에서 수동 지정).
    */
   if (opts?.autoAssignToonPlayer) {
     const preferredId = String(opts.preferredAutoAssignMemberId || "").trim();
@@ -664,12 +679,7 @@ export function mapToMember(
         status: "processed",
       };
     }
-    const fallback = isSmallDonationForOperating(event.amount)
-      ? pickSmallDonationAutoAssignMember(members, opts.memberPositions)
-      : pickTopRankedDonationMember(members, opts.memberPositions) ||
-        pickDefaultToonationMember(members, {
-          memberPositions: opts.memberPositions,
-        });
+    const fallback = pickUnmatchedAutoAssignMember(members, opts.memberPositions);
     if (fallback) {
       return {
         ...event,
@@ -705,11 +715,6 @@ export function suggestMemberForDonationEvent(
     const relaxed = matchMemberByRelaxedFuzzy(lookupName, members, aliases);
     if (relaxed) return relaxed;
   }
-  if (isSmallDonationForOperating(event.amount)) {
-    return pickSmallDonationAutoAssignMember(members, memberPositions);
-  }
-  return (
-    pickTopRankedDonationMember(members, memberPositions) ||
-    pickDefaultToonationMember(members, { memberPositions })
-  );
+  // 자동배치와 동일 규칙: 후원 순위 1위로는 제안하지 않는다(대표 → 운영비 → 국고).
+  return pickUnmatchedAutoAssignMember(members, memberPositions);
 }

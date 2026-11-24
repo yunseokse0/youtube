@@ -17,6 +17,7 @@ import { normalizeDonorsArray, totalCombined } from "@/lib/state";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import { dropRebumpedPreResetDonors } from "@/lib/settlement-rebump-guard";
 import { sanitizeRemovedDonorIds } from "@/lib/donation-replace-keep";
+import { runExclusivePerUser } from "@/lib/per-user-mutex";
 import { createModuleLogger } from "@/lib/logger";
 import type { AppState } from "@/types";
 
@@ -51,98 +52,106 @@ export async function POST(req: Request) {
     });
   }
 
-  const mode: DonorsPersistMode = body.mode === "add" ? "add" : "replace";
-  const returnState = body.returnState !== false;
-  let incomingState = body.state;
-  if (body.allowSettlementRestore !== true) {
-    const server = await loadAppStateForUserId(userId);
-    const guarded = dropRebumpedPreResetDonors(incomingState, server);
-    if (guarded.dropped > 0) {
-      logger.warn("dropped rebumped pre-reset donors from browser persist", {
-        userId,
-        mode,
-        dropped: guarded.dropped,
-        settlementResetAt: server?.settlementResetAt,
-      });
-      incomingState = guarded.state;
-    }
+  /** ✅ Per-User Mutex 직렬화: 수집 drain(din-ingest-batch-queue) 과 같은 사용자 락을 공유한다.
+   *  이게 없으면 브라우저 replace 저장(삭제)이 drain 의 load→persist 사이에 끼어들어
+   *  drain 이 stale 로드본에 배치를 fold 한 뒤 add(union) 로 저장 → 그 사이 지운 후원이 되살아나
+   *  금액이 어긋난다. apply/state-patch 경로와 동일한 관리. */
+  const requestedState = body.state;
+  return runExclusivePerUser(userId, async () => {
+    const mode: DonorsPersistMode = body.mode === "add" ? "add" : "replace";
+    const returnState = body.returnState !== false;
+    let incomingState = requestedState;
+    if (body.allowSettlementRestore !== true) {
+      const server = await loadAppStateForUserId(userId);
+      const guarded = dropRebumpedPreResetDonors(incomingState, server);
+      if (guarded.dropped > 0) {
+        logger.warn("dropped rebumped pre-reset donors from browser persist", {
+          userId,
+          mode,
+          dropped: guarded.dropped,
+          settlementResetAt: server?.settlementResetAt,
+        });
+        incomingState = guarded.state;
+      }
 
-    /** [부활 방지] 서버 기준 단일 진실원:
-     *  클라이언트 요청 state 에 포함된 donor 중 서버에 이미 없는(다른 PC 에서 삭제된) 후원을
-     *  강제 제거. replace 모드에 한정해 신규 추가 후원( add 모드 )은 보호. */
-    if (mode === "replace" && server) {
-      const serverDonorIds = new Set(
-        normalizeDonorsArray(server.donors).map((d) => String(d.id || "")).filter(Boolean),
-      );
-      const incomingDonors = normalizeDonorsArray(incomingState.donors);
-      const keptDonors = incomingDonors.filter((d) => {
-        const id = String(d.id || "").trim();
-        return Boolean(id) && serverDonorIds.has(id);
-      });
-      if (keptDonors.length !== incomingDonors.length) {
-        incomingState = {
-          ...incomingState,
-          donors: keptDonors,
-          updatedAt: Date.now(),
-        };
-        logger.warn(
-          "dropped donors absent from server state (deleted on other PC) from browser persist",
-          {
-            userId,
-            dropped: incomingDonors.length - keptDonors.length,
-            kept: keptDonors.length,
-          },
+      /** [부활 방지] 서버 기준 단일 진실원:
+       *  클라이언트 요청 state 에 포함된 donor 중 서버에 이미 없는(다른 PC 에서 삭제된) 후원을
+       *  강제 제거. replace 모드에 한정해 신규 추가 후원( add 모드 )은 보호. */
+      if (mode === "replace" && server) {
+        const serverDonorIds = new Set(
+          normalizeDonorsArray(server.donors).map((d) => String(d.id || "")).filter(Boolean),
         );
+        const incomingDonors = normalizeDonorsArray(incomingState.donors);
+        const keptDonors = incomingDonors.filter((d) => {
+          const id = String(d.id || "").trim();
+          return Boolean(id) && serverDonorIds.has(id);
+        });
+        if (keptDonors.length !== incomingDonors.length) {
+          incomingState = {
+            ...incomingState,
+            donors: keptDonors,
+            updatedAt: Date.now(),
+          };
+          logger.warn(
+            "dropped donors absent from server state (deleted on other PC) from browser persist",
+            {
+              userId,
+              dropped: incomingDonors.length - keptDonors.length,
+              kept: keptDonors.length,
+            },
+          );
+        }
       }
     }
-  }
-  const removedDonorIds = mode === "replace" ? sanitizeRemovedDonorIds(body.removedDonorIds) : undefined;
-  const persisted = await persistDonationStateToServer(userId, incomingState, {
-    mode,
-    ...(body.memberFieldsAuthoritative === true ? { preferIncomingMemberFields: true } : {}),
-    ...(removedDonorIds ? { removedDonorIds } : {}),
-  });
-  if (!persisted.ok) {
-    return new Response(JSON.stringify({ error: "persist_failed" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
+    const removedDonorIds =
+      mode === "replace" ? sanitizeRemovedDonorIds(body.removedDonorIds) : undefined;
+    const persisted = await persistDonationStateToServer(userId, incomingState, {
+      mode,
+      ...(body.memberFieldsAuthoritative === true ? { preferIncomingMemberFields: true } : {}),
+      ...(removedDonorIds ? { removedDonorIds } : {}),
     });
-  }
-
-  /** TR-7.1: 4단계 pipeline 경유 재링크 (실패시 fallback으로 legacy 호출 회귀0 방지 */
-  const assembleRes = await assembleStateAfterDonationEvent(persisted.state!, "persist", {
-    kind: "persist",
-    previousState: incomingState,
-    mode,
-  });
-  let repaired = isOk(assembleRes)
-    ? assembleRes.value
-    : syncAndRepairMemberTotals(persisted.state!, incomingState);
-  const donorsEmpty =
-    normalizeDonorsArray(repaired.donors).length === 0 && totalCombined(repaired) <= 0;
-  if (mode === "replace" && donorsEmpty) {
-    /** 일일 로그·백업 자동 heal 이 의도적 삭제를 되돌리지 않게 */
-    repaired = markIntentionalDonationEmptySession(repaired);
-    /** 마지막 후원 삭제 후 구 백업이 GET에서 되살리지 않게 */
-    void clearDonationRosterBackup(userId, repaired.settlementResetAt);
-  } else if (buildDonationRosterBackupPayload(repaired)) {
-    void saveDonationRosterBackup(userId, repaired);
-  }
-
-  return new Response(
-    JSON.stringify({
-      ok: true,
-      updatedAt: repaired.updatedAt,
-      donorRankingsUpdatedAt: repaired.donorRankingsUpdatedAt,
-      donorsCount: normalizeDonorsArray(repaired.donors).length,
-      ...(returnState ? { state: repaired } : {}),
-    }),
-    {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store, max-age=0",
-      },
+    if (!persisted.ok) {
+      return new Response(JSON.stringify({ error: "persist_failed" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
     }
-  );
+
+    /** TR-7.1: 4단계 pipeline 경유 재링크 (실패시 fallback으로 legacy 호출 회귀0 방지 */
+    const assembleRes = await assembleStateAfterDonationEvent(persisted.state!, "persist", {
+      kind: "persist",
+      previousState: incomingState,
+      mode,
+    });
+    let repaired = isOk(assembleRes)
+      ? assembleRes.value
+      : syncAndRepairMemberTotals(persisted.state!, incomingState);
+    const donorsEmpty =
+      normalizeDonorsArray(repaired.donors).length === 0 && totalCombined(repaired) <= 0;
+    if (mode === "replace" && donorsEmpty) {
+      /** 일일 로그·백업 자동 heal 이 의도적 삭제를 되돌리지 않게 */
+      repaired = markIntentionalDonationEmptySession(repaired);
+      /** 마지막 후원 삭제 후 구 백업이 GET에서 되살리지 않게 */
+      void clearDonationRosterBackup(userId, repaired.settlementResetAt);
+    } else if (buildDonationRosterBackupPayload(repaired)) {
+      void saveDonationRosterBackup(userId, repaired);
+    }
+
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        updatedAt: repaired.updatedAt,
+        donorRankingsUpdatedAt: repaired.donorRankingsUpdatedAt,
+        donorsCount: normalizeDonorsArray(repaired.donors).length,
+        ...(returnState ? { state: repaired } : {}),
+      }),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store, max-age=0",
+        },
+      }
+    );
+  });
 }

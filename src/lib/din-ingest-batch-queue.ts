@@ -184,7 +184,12 @@ async function runZubzubHooksForEvents(
   events: DonationEvent[]
 ): Promise<void> {
   const candidates = events.filter((event) => String(event.memberId || "").trim());
-  if (!candidates.length) return;
+  if (!candidates.length) {
+    if (events.length > 0) {
+      console.log("[zubzub] landed donations without memberId", stateUserId, events.length);
+    }
+    return;
+  }
   try {
     const { maybeProcessZubzubDonation } = await import("@/lib/zubzub/zubzub-engine");
     for (const event of candidates) {

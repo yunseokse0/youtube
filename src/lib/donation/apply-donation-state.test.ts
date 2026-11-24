@@ -1002,6 +1002,8 @@ describe("applyDonationToAppState", () => {
     let state = {
       ...defaultState(),
       members: [{ id: "m1", name: "쟈키", account: 0, toon: 0, contribution: 0 }],
+      // 자동배치는 「지정 인원 → 대표」만 대상이므로, 쟈키를 대표로 지정해 배치되게 한다.
+      memberPositions: { m1: "대표" },
       donors: [] as NonNullable<ReturnType<typeof defaultState>["donors"]>,
     };
     for (let i = 0; i < 6; i += 1) {

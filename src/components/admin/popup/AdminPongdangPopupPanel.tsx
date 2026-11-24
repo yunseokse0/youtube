@@ -308,6 +308,13 @@ export default function AdminPongdangPopupPanel() {
       const result = await runExclusivePersist(() =>
         persistDonationStateViaApi(scopedUserId, stamped, "replace", {
           returnState: false,
+          /**
+           * ✅ 이 패널은 후원을 「수정」만 한다 (마이너스 토글·멤버 재배정). 삭제가 없으므로 removedDonorIds=[].
+           *  이 값을 빼면 서버가 replace 로 장부를 통째 교체하면서, 이 탭이 아직 못 받은 신규 후원
+           *  (허브·toona 가 방금 넣은 건)까지 지워 「후원 유입 누락·금액 불일치」가 발생한다.
+           *  [] 를 보내면 서버가 이 탭이 못 본 후원을 남긴다(keepServerDonorsUnseenByReplace).
+           */
+          removedDonorIds: [],
         })
       );
       if (!result.ok) {

@@ -20,6 +20,18 @@ describe("keepServerDonorsUnseenByReplace", () => {
     expect(out.donors).toEqual([]);
   });
 
+  it("keeps every unseen server donor when the tab removed nothing (removedDonorIds=[])", () => {
+    /**
+     * 퐁당팝업(마이너스·멤버 재배정) 처럼 후원을 「수정」만 하는 화면의 replace 저장.
+     * removedDonorIds=[] 를 보내야 이 탭이 못 받은 신규 후원이 지워지지 않는다.
+     */
+    const existing = [donor("bank:sms:a"), donor("bank:sms:new1", 5_000), donor("bank:sms:new2", 7_000)];
+    const incoming = [donor("bank:sms:a")];
+    const out = keepServerDonorsUnseenByReplace(incoming, existing, []);
+    expect(out.donors.map((d) => d.id)).toEqual(["bank:sms:a", "bank:sms:new1", "bank:sms:new2"]);
+    expect(out.kept.map((d) => d.id)).toEqual(["bank:sms:new1", "bank:sms:new2"]);
+  });
+
   it("matches push and pull ids of the same hub donation", () => {
     const out = keepServerDonorsUnseenByReplace(
       [donor("bank:din:cmhub1")],

@@ -15,6 +15,12 @@ export type ZubzubHookResult =
   | { action: "claimed"; queueItem: ZubZubQueueItem; bonusDonor: Donor }
   | { action: "skipped"; reason: string };
 
+/** 줍줍이 켜져 있는데 발동하지 않을 때 원인을 서버 로그에서 바로 볼 수 있게 남긴다. */
+function logZubzubSkip(reason: string, detail?: Record<string, unknown>): ZubzubHookResult {
+  console.log(`[zubzub] skip=${reason}`, detail ?? "");
+  return { action: "skipped", reason };
+}
+
 /** 줍줍 활성화 여부 확인 */
 export function isZubzubEnabled(state: AppState): boolean {
   return Boolean(state?.zubzubSettings?.enabled);
@@ -116,18 +122,24 @@ export async function processZubzubDonationHook(
 
   const memberId = String(event.memberId || "").trim();
   if (!memberId) {
-    return { action: "skipped", reason: "no_member_id" };
+    return logZubzubSkip("no_member_id", { eventId: event.id, amount: event.amount });
   }
 
   const rep = findRepresentativeMember(state);
   if (!rep) {
-    return { action: "skipped", reason: "no_representative_found" };
+    return logZubzubSkip("no_representative_found");
   }
 
   const minPrice = Math.max(0, Number(state.zubzubSettings?.minSigPrice) || 0);
   const sigInfo = isEligibleSigDonation(event, state, minPrice);
   if (!sigInfo.isSig) {
-    return { action: "skipped", reason: "not_a_sig_donation" };
+    return logZubzubSkip("not_a_sig_donation", {
+      memberId,
+      repId: rep.id,
+      amount: Math.max(0, Math.round(Number(event.amount) || 0)),
+      minPrice,
+      matchedSigName: event.matchedSigName || "",
+    });
   }
 
   const isRepDonation = memberId === rep.id;
@@ -136,6 +148,12 @@ export async function processZubzubDonationHook(
     // -------------------------------------------------------------
     // [Case A] 대표 시그 발생 ──▶ 줍줍 큐(Queue)에 적재 (status: WAITING)
     // -------------------------------------------------------------
+    console.log("[zubzub] enqueued_waiting", {
+      memberId,
+      repId: rep.id,
+      sigName: sigInfo.sigName,
+      bonusAmount: Math.max(0, Math.round(Number(event.amount) || 0)),
+    });
     const queueId = `zb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const bonusAmount = Math.max(0, Math.round(Number(event.amount) || 0));
 
@@ -181,7 +199,7 @@ export async function processZubzubDonationHook(
     );
 
     if (!claimedQueue) {
-      return { action: "skipped", reason: "no_waiting_queue" };
+      return logZubzubSkip("no_waiting_queue", { memberId, amount: claimAmount });
     }
 
     // ⭐️ 복제 보너스 Donor 생성 (실정산 격리 보장!)
@@ -300,7 +318,17 @@ export async function maybeProcessZubzubDonation(
     const { loadAppStateForUserId } = await import("@/lib/app-state-server-load");
     const { enrichDonationEventWithSigMatch } = await import("@/lib/donation/player-donation-alert");
     const state = await loadAppStateForUserId(userId);
-    if (!state || !isZubzubEnabled(state)) return null;
+    if (!state) {
+      console.log("[zubzub] skip=no_state", { userId });
+      return null;
+    }
+    if (!isZubzubEnabled(state)) {
+      console.log("[zubzub] skip=disabled", {
+        userId,
+        hasSettings: Boolean(state.zubzubSettings),
+      });
+      return null;
+    }
     const enriched = await enrichDonationEventWithSigMatch(userId, event);
     return await processZubzubDonationHook(userId, enriched, state);
   } catch (err) {
