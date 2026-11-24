@@ -13,6 +13,10 @@ import {
   totalCombined,
 } from "@/lib/state";
 import { wouldAccidentallyZeroRemainingMembers } from "@/lib/donation/zero-wipe-guard";
+import {
+  MANUAL_SIG_OVERLAY_THEME_KEY,
+  MANUAL_SIG_THEME_PRESET_KEY,
+} from "@/lib/sig-sales-overlay-urls";
 
 const MANUAL_SIG_DRAFT_STATE_KEY = "sigSalesManualDraftV1";
 
@@ -68,6 +72,12 @@ export function buildSigSalesOverlaySyncSignature(state: AppState | null): strin
       Number((os as Record<string, unknown> | null)?.sigSalesManualGridCols || 0),
       String((os as Record<string, unknown> | null)?.sigSalesManualPanelOrientation || ""),
     ],
+    themeMode: String((os as Record<string, unknown> | null)?.[MANUAL_SIG_OVERLAY_THEME_KEY] || ""),
+    themePreset: String(
+      (os as Record<string, unknown> | null)?.[MANUAL_SIG_THEME_PRESET_KEY] ||
+      state.sigRolling?.theme ||
+      ""
+    ),
     mc: Array.isArray(state.members) ? state.members.length : 0,
   });
 }

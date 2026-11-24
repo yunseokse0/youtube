@@ -346,9 +346,11 @@ import {
 import {
   buildManualSigThemeOverlayUrl,
   MANUAL_SIG_OVERLAY_THEME_KEY,
+  MANUAL_SIG_THEME_PRESET_KEY,
   manualSigOverlayThemeLabel,
   normalizeManualSigOverlayTheme,
   readManualSigOverlayThemeFromOverlaySettings,
+  readManualSigThemePresetFromOverlaySettings,
 } from "@/lib/sig-sales-overlay-urls";
 import {
   extractToonationLinkKey,
@@ -22219,45 +22221,84 @@ function AdminPageInner() {
                     </button>
                   </div>
                 </div>
-                <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
-                  <span className="shrink-0">테마</span>
-                  <select
-                    className="rounded bg-neutral-800 border border-white/10 px-2 py-1 text-xs text-neutral-100"
-                    value={readManualSigOverlayThemeFromOverlaySettings(
-                      state.overlaySettings as Record<string, unknown> | undefined
-                    )}
-                    onChange={(e) => {
-                      const theme = normalizeManualSigOverlayTheme(e.target.value);
-                      setState((prev) => {
-                        const prevOs =
-                          prev.overlaySettings && typeof prev.overlaySettings === "object"
-                            ? (prev.overlaySettings as Record<string, unknown>)
-                            : {};
-                        const next = {
-                          ...prev,
-                          updatedAt: Date.now(),
-                          overlaySettings: {
-                            ...prevOs,
-                            [MANUAL_SIG_OVERLAY_THEME_KEY]: theme,
-                          } as AppState["overlaySettings"],
-                        };
-                        void saveStateAsync(next, overlayUserId, { omitDonationFields: true });
-                        return next;
-                      });
-                    }}
-                  >
-                    <option value="result">{manualSigOverlayThemeLabel("result")}</option>
-                    <option value="menu">{manualSigOverlayThemeLabel("menu")}</option>
-                  </select>
-                  <span className="text-neutral-500">
-                    현재:{" "}
-                    {manualSigOverlayThemeLabel(
-                      readManualSigOverlayThemeFromOverlaySettings(
+                <div className="flex flex-wrap items-center gap-4 text-[11px] text-neutral-300">
+                  <label className="flex items-center gap-2">
+                    <span className="shrink-0">표시 형식</span>
+                    <select
+                      className="rounded bg-neutral-800 border border-white/10 px-2 py-1 text-xs text-neutral-100"
+                      value={readManualSigOverlayThemeFromOverlaySettings(
                         state.overlaySettings as Record<string, unknown> | undefined
-                      )
-                    )}
-                  </span>
-                </label>
+                      )}
+                      onChange={(e) => {
+                        const theme = normalizeManualSigOverlayTheme(e.target.value);
+                        setState((prev) => {
+                          const prevOs =
+                            prev.overlaySettings && typeof prev.overlaySettings === "object"
+                              ? (prev.overlaySettings as Record<string, unknown>)
+                              : {};
+                          const next = {
+                            ...prev,
+                            updatedAt: Date.now(),
+                            overlaySettings: {
+                              ...prevOs,
+                              [MANUAL_SIG_OVERLAY_THEME_KEY]: theme,
+                            } as AppState["overlaySettings"],
+                          };
+                          void saveStateAsync(next, overlayUserId, { omitDonationFields: true });
+                          return next;
+                        });
+                      }}
+                    >
+                      <option value="result">{manualSigOverlayThemeLabel("result")}</option>
+                      <option value="menu">{manualSigOverlayThemeLabel("menu")}</option>
+                    </select>
+                  </label>
+
+                  <label className="flex items-center gap-2">
+                    <span className="shrink-0">🎨 디자인 테마</span>
+                    <select
+                      className="rounded bg-neutral-800 border border-white/10 px-2 py-1 text-xs text-neutral-100"
+                      value={readManualSigThemePresetFromOverlaySettings(
+                        state.overlaySettings as Record<string, unknown> | undefined,
+                        state.sigRolling?.theme
+                      )}
+                      onChange={(e) => {
+                        const preset = e.target.value as SigRollingThemeId;
+                        setState((prev) => {
+                          const prevOs =
+                            prev.overlaySettings && typeof prev.overlaySettings === "object"
+                              ? (prev.overlaySettings as Record<string, unknown>)
+                              : {};
+                          const prevSr = normalizeSigRolling(prev.sigRolling);
+                          const next = {
+                            ...prev,
+                            updatedAt: Date.now(),
+                            sigRolling: {
+                              ...prevSr,
+                              theme: preset,
+                            },
+                            overlaySettings: {
+                              ...prevOs,
+                              [MANUAL_SIG_THEME_PRESET_KEY]: preset,
+                            } as AppState["overlaySettings"],
+                          };
+                          void saveStateAsync(next, overlayUserId, { omitDonationFields: true });
+                          return next;
+                        });
+                      }}
+                    >
+                      {SIG_ROLLING_THEME_IDS.map((tid) => (
+                        <option key={tid} value={tid}>
+                          {SIG_ROLLING_THEMES[tid].label} {SIG_ROLLING_THEMES[tid].badge ? `(${SIG_ROLLING_THEMES[tid].badge})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="inline-flex items-center gap-1 rounded bg-emerald-950/80 px-1.5 py-0.5 text-[9px] font-medium text-emerald-300 ring-1 ring-inset ring-emerald-500/30">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      실시간
+                    </span>
+                  </label>
+                </div>
                 <code className="block break-all text-[11px] text-sky-100/90">
                   /overlay/sig-sales-manual?u={overlayUserId}&hideSigBoard=1&host=obs
                 </code>

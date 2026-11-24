@@ -4,6 +4,7 @@ import { resolveMemberDisplayColor } from "@/lib/member-display-color";
 import { sigNeonMenuColumnCount } from "@/lib/sig-sales-overlay-urls";
 import { formatSigSalesWon } from "@/lib/sig-sales-panel-ui";
 import { repairMojibakeSigName } from "@/lib/sig-name-repair";
+import type { SigRollingTheme } from "@/lib/sig-rolling-theme";
 
 export type SigNeonMenuItem = {
   id: string;
@@ -58,6 +59,7 @@ export default function SigNeonMenuBoard({
   soldTotalOverride,
   memberColorById,
   memberIds,
+  theme,
 }: {
   items: SigNeonMenuItem[];
   className?: string;
@@ -66,6 +68,7 @@ export default function SigNeonMenuBoard({
   soldTotalOverride?: number;
   memberColorById?: Record<string, string> | null;
   memberIds?: string[] | null;
+  theme?: SigRollingTheme;
 }) {
   const cols = sigNeonMenuColumnCount(items.length);
   const { boardTotal, soldTotal, soldCount } = sumNeonBoardTotals(items);
@@ -167,11 +170,18 @@ export default function SigNeonMenuBoard({
       </div>
       {showTotal ? (
         <div
-          className="flex w-full flex-wrap items-center justify-between gap-2 rounded-xl border border-yellow-300/45 bg-black/80 px-3 py-2.5 sm:px-4"
-          style={{ boxShadow: "0 0 18px rgba(250,204,21,0.28)" }}
+          className="flex w-full flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2.5 sm:px-4"
+          style={{
+            borderColor: theme ? theme.shellBorder : "rgba(253, 224, 71, 0.45)",
+            background: theme ? theme.footerBg : "rgba(0, 0, 0, 0.8)",
+            boxShadow: theme ? theme.shellShadow : "0 0 18px rgba(250, 204, 21, 0.28)",
+          }}
         >
           <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="text-[11px] font-bold tracking-[0.14em] text-yellow-100/90">
+            <span
+              className="text-[11px] font-bold tracking-[0.14em]"
+              style={{ color: theme ? theme.nameColor : "rgba(254, 240, 138, 0.9)" }}
+            >
               {soldCount > 0 || soldPrimary > 0 ? "총 시그 판매" : "TOTAL"}
             </span>
             {soldCount > 0 ? (
@@ -185,7 +195,13 @@ export default function SigNeonMenuBoard({
               </span>
             ) : null}
           </div>
-          <span className="text-[clamp(22px,3.2vw,36px)] font-black tabular-nums leading-none text-yellow-300">
+          <span
+            className="text-[clamp(22px,3.2vw,36px)] font-black tabular-nums leading-none"
+            style={{
+              color: theme ? theme.priceColor : "#fde047",
+              textShadow: theme?.glowColor ? `0 0 14px ${theme.glowColor}` : undefined,
+            }}
+          >
             {formatSigSalesWon(displayTotal)}
           </span>
         </div>

@@ -21,6 +21,10 @@ import {
 import SigSoldStampOverlay, {
   SIG_SOLD_STAMP_IMG_CLASS_BROADCAST,
 } from "@/components/sig-sales/SigSoldStampOverlay";
+import {
+  sigRollingThemeTextOutlineStyle,
+  type SigRollingTheme,
+} from "@/lib/sig-rolling-theme";
 
 type OneShotSigCardProps = {
   name: string;
@@ -45,6 +49,8 @@ type OneShotSigCardProps = {
   disableCardMotion?: boolean;
   /** ResultOverlay 등 부모가 셸 크기를 잡을 때 true */
   fillRowCell?: boolean;
+  /** 시그 롤링 호환 비주얼 테마 프리셋 */
+  theme?: SigRollingTheme;
 };
 
 export default function OneShotSigCard({
@@ -65,6 +71,7 @@ export default function OneShotSigCard({
   cardScalePct = 100,
   disableCardMotion = false,
   fillRowCell = false,
+  theme,
 }: OneShotSigCardProps) {
   /** 결과 줄: 개별 시그 카드와 동일 폭·미디어·셸 높이 */
   const useBroadcastSizing = Boolean(matchSigCardSize || (compact && !showToggle));
@@ -95,7 +102,16 @@ export default function OneShotSigCard({
         disableCardMotion ? undefined : { opacity: 1, y: 0, ...(useBroadcastSizing ? {} : { scale: 1 }) }
       }
       transition={disableCardMotion ? undefined : { duration: compact ? 0.32 : 0.45, ease: "easeOut" }}
-      style={shellStyle}
+      style={{
+        ...shellStyle,
+        ...(theme
+          ? {
+              background: theme.shellBg,
+              borderColor: theme.shellBorder,
+              boxShadow: theme.shellShadow,
+            }
+          : undefined),
+      }}
       className={
         useBroadcastSizing
           ? `${SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS} flex w-full max-w-full flex-col${fillRowCell ? " h-full min-h-full" : ""}`
@@ -107,7 +123,10 @@ export default function OneShotSigCard({
       <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.35),transparent_65%)]" />
       <div className={`relative z-[2] ${useBroadcastSizing ? "flex flex-1 flex-col" : ""}`}>
       <div
-        style={mediaBoxStyle}
+        style={{
+          ...mediaBoxStyle,
+          ...(theme ? { background: theme.mediaBg, borderColor: theme.shellBorder } : undefined),
+        }}
         className={`overflow-hidden rounded-lg border border-yellow-200/40 bg-gradient-to-b from-amber-950/55 via-neutral-950/75 to-black ${
           useBroadcastSizing
             ? SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS
@@ -159,18 +178,37 @@ export default function OneShotSigCard({
               ? `${SIG_OVERLAY_CARD_ONESHOT_FOOTER_CLASS} flex flex-col gap-0.5 py-1.5`
               : "relative flex flex-wrap items-center justify-between gap-3"
         }
-        style={useBroadcastSizing || compact ? sigOverlayOneShotFooterStyle() : undefined}
+        style={{
+          ...(useBroadcastSizing || compact ? sigOverlayOneShotFooterStyle() : undefined),
+          ...(theme
+            ? {
+                background: theme.footerBg,
+                borderTop: theme.footerBorderTop,
+              }
+            : undefined),
+        }}
       >
         {useBroadcastSizing ? (
           <>
             <div
               className={SIG_OVERLAY_CARD_NAME_CLASS}
-              style={sigOverlayCardNameOutlineStyle(21)}
+              style={
+                theme
+                  ? sigRollingThemeTextOutlineStyle(theme.nameColor, theme.nameOutlineColor, 21)
+                  : sigOverlayCardNameOutlineStyle(21)
+              }
               title={sumLine}
             >
               {name}
             </div>
-            <div className={SIG_OVERLAY_CARD_PRICE_CLASS} style={sigOverlayCardPriceOutlineStyle(21)}>
+            <div
+              className={SIG_OVERLAY_CARD_PRICE_CLASS}
+              style={
+                theme
+                  ? sigRollingThemeTextOutlineStyle(theme.priceColor, theme.priceOutlineColor, 21)
+                  : sigOverlayCardPriceOutlineStyle(21)
+              }
+            >
               {Math.max(0, Math.floor(Number(price) || 0)).toLocaleString("ko-KR")}
             </div>
             {showToggle ? (
@@ -189,7 +227,11 @@ export default function OneShotSigCard({
         <div>
           <h3
             className={`font-black ${compact ? "text-[12px]" : "text-lg"}`}
-            style={sigOverlayCardNameOutlineStyle(compact ? 12 : 18)}
+            style={
+              theme
+                ? sigRollingThemeTextOutlineStyle(theme.nameColor, theme.nameOutlineColor, compact ? 12 : 18)
+                : sigOverlayCardNameOutlineStyle(compact ? 12 : 18)
+            }
           >
             {name}
           </h3>
@@ -202,7 +244,11 @@ export default function OneShotSigCard({
         <div className={compact ? "" : "text-right"}>
           <div
             className={`${compact ? "text-base" : "text-2xl"} font-black tabular-nums`}
-            style={sigOverlayCardPriceOutlineStyle(compact ? 16 : 24)}
+            style={
+              theme
+                ? sigRollingThemeTextOutlineStyle(theme.priceColor, theme.priceOutlineColor, compact ? 16 : 24)
+                : sigOverlayCardPriceOutlineStyle(compact ? 16 : 24)
+            }
           >
             {Math.max(0, Math.floor(Number(price) || 0)).toLocaleString("ko-KR")}
           </div>

@@ -12,6 +12,7 @@ import {
   MANUAL_SIG_PANEL_ORIENTATION_KEY,
   MANUAL_SIG_PICK_COUNT_KEY,
 } from "@/lib/manual-sig-workbench";
+import { MANUAL_SIG_THEME_PRESET_KEY } from "@/lib/sig-sales-overlay-urls";
 import { OBS_TEXT_OVERLAY_STATE_KEY, defaultObsTextRegistry } from "@/lib/obs-text-overlay";
 import { MANUAL_OVERLAY_SESSION_ID } from "@/lib/sig-sales-manual-round";
 import type { AppState } from "@/types";
@@ -61,6 +62,7 @@ describe("buildSigSalesManualApiPatch", () => {
         [MANUAL_SIG_GRID_ROWS_KEY]: 2,
         [MANUAL_SIG_GRID_COLS_KEY]: 4,
         [MANUAL_SIG_PANEL_ORIENTATION_KEY]: "portrait",
+        [MANUAL_SIG_THEME_PRESET_KEY]: "gold",
         [MANUAL_SIG_DRAFT_STATE_KEY]: {
           inputMode: "inventory",
           drafts: [],
@@ -79,6 +81,8 @@ describe("buildSigSalesManualApiPatch", () => {
     expect(os[MANUAL_SIG_GRID_ROWS_KEY]).toBe(2);
     expect(os[MANUAL_SIG_GRID_COLS_KEY]).toBe(4);
     expect(os[MANUAL_SIG_PANEL_ORIENTATION_KEY]).toBe("portrait");
+    expect(os[MANUAL_SIG_THEME_PRESET_KEY]).toBe("gold");
+    expect(patch.sigRolling).toEqual(next.sigRolling);
   });
 
   it("omitSigInventory skips inventory in patch", () => {

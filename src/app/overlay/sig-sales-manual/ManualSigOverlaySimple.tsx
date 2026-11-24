@@ -43,7 +43,9 @@ import {
 import {
   normalizeManualSigOverlayTheme,
   readManualSigOverlayThemeFromOverlaySettings,
+  readManualSigThemePresetFromOverlaySettings,
 } from "@/lib/sig-sales-overlay-urls";
+import { resolveSigRollingTheme } from "@/lib/sig-rolling-theme";
 import { canonicalSigIdFromWheelSliceId, ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 
 const MANUAL_OVERLAY_TERMINAL_PHASES = new Set([
@@ -208,6 +210,14 @@ export default function ManualSigOverlaySimple() {
     if (sp.has("theme")) return normalizeManualSigOverlayTheme(sp.get("theme"));
     return fromServer;
   }, [sp, overlayOs, hostObs]);
+  const activeTheme = useMemo(() => {
+    const urlTheme =
+      sp.get("sigTheme") ||
+      (sp.get("theme") !== "menu" && sp.get("theme") !== "result" ? sp.get("theme") : null);
+    if (urlTheme) return resolveSigRollingTheme(urlTheme);
+    const preset = readManualSigThemePresetFromOverlaySettings(overlayOs, state?.sigRolling?.theme);
+    return resolveSigRollingTheme(preset);
+  }, [sp, overlayOs, state?.sigRolling?.theme]);
   const menuItems = useMemo(() => {
     if (overlayTheme !== "menu") return [];
     return resolveSigNeonMenuOverlayItems(state, userId, {
@@ -336,6 +346,7 @@ export default function ManualSigOverlaySimple() {
           soldTotalOverride={menuSoldTotalAmount}
           memberColorById={memberGaugeColors}
           memberIds={memberRosterIds}
+          theme={activeTheme}
         />
       </main>
     );
@@ -398,6 +409,7 @@ export default function ManualSigOverlaySimple() {
             ]}
             totalAmount={boardTotalAmount}
             showTotalFooter={false}
+            theme={activeTheme}
           >
             <ResultOverlay
               visible
@@ -423,6 +435,7 @@ export default function ManualSigOverlaySimple() {
               totalMode={totalMode}
               hideTotalSub={hideTotalSub}
               programSkin
+              theme={activeTheme}
             />
           </SigSalesPanelChrome>
         </div>

@@ -8,6 +8,7 @@ import { useImagePreload } from "@/hooks/useImagePreload";
 import { canonicalSigIdFromWheelSliceId, formatWon, ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 import type { SigOverlayMediaOrientation } from "@/components/sig-sales/sig-overlay-card-size";
 import type { ManualOverlaySoldMeta } from "@/lib/manual-sig-broadcast";
+import type { SigRollingTheme } from "@/lib/sig-rolling-theme";
 
 type ResultOverlayProps = {
   visible: boolean;
@@ -42,6 +43,7 @@ type ResultOverlayProps = {
   hideTotalSub?: boolean;
   showSoldTotal?: boolean;
   programSkin?: boolean;
+  theme?: SigRollingTheme;
 };
 
 const EMPTY_SOLD_SET = new Set<string>();
@@ -73,6 +75,7 @@ export default function ResultOverlay({
   hideTotalSub = false,
   showSoldTotal = false,
   programSkin = false,
+  theme,
 }: ResultOverlayProps) {
   const [imageLoaded, setImageLoaded] = useState(() => skipHanbangSignLoadingOverlay);
   useEffect(() => {
@@ -133,6 +136,7 @@ export default function ResultOverlay({
           gifDelayMultiplier={gifDelayMultiplier}
           sigImageUserId={sigImageUserId}
           onMediaReady={() => setImageLoaded(true)}
+          theme={theme}
         />
         {!skipHanbangSignLoadingOverlay && !imageLoaded ? (
           <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-xl bg-black/40 text-[10px] font-semibold text-neutral-100">
@@ -252,11 +256,30 @@ export default function ResultOverlay({
         panelGridCols={panelGridCols}
         panelOrientation={panelOrientation}
         programSkin={programSkin}
+        theme={theme}
       />
       {showSoldTotal ? (
-        <div className="mt-2 w-full rounded-xl border border-yellow-300/50 bg-black/85 px-4 py-2.5 text-center shadow-[0_0_18px_rgba(250,204,21,0.25)]">
-          <div className="text-[11px] font-bold tracking-[0.16em] text-yellow-100/90">{totalDisplay.label}</div>
-          <div className="mt-0.5 text-[clamp(22px,3vw,34px)] font-black tabular-nums leading-none text-yellow-200">
+        <div
+          className="mt-2 w-full rounded-xl border px-4 py-2.5 text-center transition-all"
+          style={{
+            borderColor: theme ? theme.shellBorder : "rgba(253, 224, 71, 0.5)",
+            background: theme ? theme.footerBg : "rgba(0, 0, 0, 0.85)",
+            boxShadow: theme ? theme.shellShadow : "0 0 18px rgba(250, 204, 21, 0.25)",
+          }}
+        >
+          <div
+            className="text-[11px] font-bold tracking-[0.16em]"
+            style={{ color: theme ? theme.nameColor : "rgba(254, 240, 138, 0.9)" }}
+          >
+            {totalDisplay.label}
+          </div>
+          <div
+            className="mt-0.5 text-[clamp(22px,3vw,34px)] font-black tabular-nums leading-none"
+            style={{
+              color: theme ? theme.priceColor : "#fef08a",
+              textShadow: theme?.glowColor ? `0 0 14px ${theme.glowColor}` : undefined,
+            }}
+          >
             {formatNumberOnly(totalDisplay.amount)}
           </div>
           {totalDisplay.sub ? (

@@ -28,6 +28,10 @@ import SigSoldStampOverlay, {
   SIG_SOLD_STAMP_IMG_CLASS_BROADCAST,
 } from "@/components/sig-sales/SigSoldStampOverlay";
 import type { ManualOverlaySoldMeta } from "@/lib/manual-sig-broadcast";
+import {
+  sigRollingThemeTextOutlineStyle,
+  type SigRollingTheme,
+} from "@/lib/sig-rolling-theme";
 
 type SelectedSigsProps = {
   items: SigItem[];
@@ -69,6 +73,8 @@ type SelectedSigsProps = {
   panelOrientation?: SigOverlayMediaOrientation;
   /** 시그판매 판넬 v2 플랫 스킨 */
   programSkin?: boolean;
+  /** 시그 롤링 호환 비주얼 테마 프리셋 */
+  theme?: SigRollingTheme;
 };
 
 function SelectedSigCard({
@@ -92,6 +98,7 @@ function SelectedSigCard({
   panelOrientation,
   programSkin,
   soldMeta,
+  theme,
 }: {
   item: SigItem;
   idx: number;
@@ -113,6 +120,7 @@ function SelectedSigCard({
   panelOrientation?: SigOverlayMediaOrientation;
   programSkin?: boolean;
   soldMeta?: ManualOverlaySoldMeta | null;
+  theme?: SigRollingTheme;
 }) {
   const canonId = canonicalSigIdFromWheelSliceId(item.id);
   const [orientation, setOrientation] = useState<SigOverlayMediaOrientation>("landscape");
@@ -148,14 +156,21 @@ function SelectedSigCard({
       initial={entrance.initial}
       animate={entrance.animate}
       transition={entrance.transition}
-      style={
-        broadcastMatch
+      style={{
+        ...(broadcastMatch
           ? sigOverlayBroadcastCardShellStyle(cardScalePct, {
               withToggle: showToggle,
               orientation: frameOrientation,
             })
-          : undefined
-      }
+          : undefined),
+        ...(theme
+          ? {
+              background: theme.shellBg,
+              borderColor: theme.shellBorder,
+              boxShadow: theme.shellShadow,
+            }
+          : undefined),
+      }}
       className={`relative overflow-hidden rounded-xl border bg-neutral-900/70 ${
         broadcastMatch ? "flex w-full max-w-full flex-col" : "min-w-0"
       } ${
@@ -193,7 +208,10 @@ function SelectedSigCard({
           />
         ) : null}
         <div
-          style={broadcastMatch ? sigOverlayBroadcastMediaBoxStyle(cardScalePct, frameOrientation) : undefined}
+          style={{
+            ...(broadcastMatch ? sigOverlayBroadcastMediaBoxStyle(cardScalePct, frameOrientation) : undefined),
+            ...(theme ? { background: theme.mediaBg, borderColor: theme.shellBorder } : undefined),
+          }}
           className={`overflow-hidden rounded-lg border border-white/20 bg-black/40 ${
             broadcastMatch
               ? SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS
@@ -241,7 +259,15 @@ function SelectedSigCard({
                 ? "space-y-0 p-1"
                 : "space-y-1 p-2"
           }
-          style={broadcastMatch ? sigOverlayBroadcastFooterStyle() : undefined}
+          style={{
+            ...(broadcastMatch ? sigOverlayBroadcastFooterStyle() : undefined),
+            ...(theme
+              ? {
+                  background: theme.footerBg,
+                  borderTop: theme.footerBorderTop,
+                }
+              : undefined),
+          }}
         >
           <div
             className={
@@ -250,11 +276,17 @@ function SelectedSigCard({
                 : `truncate font-bold ${compact ? "text-[10px]" : "text-sm"}`
             }
             style={
-              broadcastMatch
-                ? sigOverlayCardNameOutlineStyle(21)
-                : compact
-                  ? sigOverlayCardNameOutlineStyle(10)
-                  : sigOverlayCardNameOutlineStyle(14)
+              theme
+                ? sigRollingThemeTextOutlineStyle(
+                    theme.nameColor,
+                    theme.nameOutlineColor,
+                    broadcastMatch ? 21 : compact ? 10 : 14
+                  )
+                : broadcastMatch
+                  ? sigOverlayCardNameOutlineStyle(21)
+                  : compact
+                    ? sigOverlayCardNameOutlineStyle(10)
+                    : sigOverlayCardNameOutlineStyle(14)
             }
           >
             {repairMojibakeSigName(item.name)}
@@ -268,11 +300,17 @@ function SelectedSigCard({
                   : "text-xs font-semibold tabular-nums"
             }
             style={
-              broadcastMatch
-                ? sigOverlayCardPriceOutlineStyle(21)
-                : compact
-                  ? sigOverlayCardPriceOutlineStyle(9)
-                  : sigOverlayCardPriceOutlineStyle(12)
+              theme
+                ? sigRollingThemeTextOutlineStyle(
+                    theme.priceColor,
+                    theme.priceOutlineColor,
+                    broadcastMatch ? 21 : compact ? 9 : 12
+                  )
+                : broadcastMatch
+                  ? sigOverlayCardPriceOutlineStyle(21)
+                  : compact
+                    ? sigOverlayCardPriceOutlineStyle(9)
+                    : sigOverlayCardPriceOutlineStyle(12)
             }
           >
             {Math.max(0, Math.floor(Number(item.price) || 0)).toLocaleString("ko-KR")}
@@ -318,6 +356,7 @@ export default function SelectedSigs({
   panelGridCols,
   panelOrientation,
   programSkin = false,
+  theme,
 }: SelectedSigsProps) {
   /** 고정 5·6열은 카드가 적을 때도 빈 칸이 남아 미리 깔린 것처럼 보임 → 실제 개수만큼 열만 사용 */
   const trailingActive = Boolean(trailingSlot);
@@ -396,6 +435,7 @@ export default function SelectedSigs({
         panelOrientation={panelOrientation}
         programSkin={programSkin}
         soldMeta={soldMeta}
+        theme={theme}
       />
     );
   });

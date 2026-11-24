@@ -1,8 +1,16 @@
+import {
+  resolveSigRollingTheme,
+  type SigRollingThemeId,
+} from "@/lib/sig-rolling-theme";
+
 /** OBS 브라우저 소스용 시그 판매 오버레이 URL (회전판 / 수동 분리) */
 
 /** 수동 시그 OBS 테마 — 당첨 카드 vs 네온 메뉴 보드 */
 export const MANUAL_SIG_OVERLAY_THEME_KEY = "sigSalesManualOverlayTheme";
 export type ManualSigOverlayTheme = "result" | "menu";
+
+/** 수동 시그 비주얼 테마 프리셋 키 (다크 클래식, VIP 골드, 사이버 핑크 등) */
+export const MANUAL_SIG_THEME_PRESET_KEY = "sigSalesManualThemePreset";
 
 export function normalizeManualSigOverlayTheme(raw: unknown): ManualSigOverlayTheme {
   const s = String(raw || "")
@@ -17,6 +25,22 @@ export function readManualSigOverlayThemeFromOverlaySettings(
 ): ManualSigOverlayTheme {
   if (!os || typeof os !== "object") return "result";
   return normalizeManualSigOverlayTheme(os[MANUAL_SIG_OVERLAY_THEME_KEY]);
+}
+
+export function readManualSigThemePresetFromOverlaySettings(
+  os: Record<string, unknown> | undefined | null,
+  fallbackThemeId?: string | null
+): SigRollingThemeId {
+  if (os && typeof os === "object") {
+    const raw = os[MANUAL_SIG_THEME_PRESET_KEY] ?? os.sigSalesTheme;
+    if (typeof raw === "string" && raw.trim()) {
+      return resolveSigRollingTheme(raw).id;
+    }
+  }
+  if (fallbackThemeId && typeof fallbackThemeId === "string" && fallbackThemeId.trim()) {
+    return resolveSigRollingTheme(fallbackThemeId).id;
+  }
+  return "default";
 }
 
 export function manualSigOverlayThemeLabel(theme: ManualSigOverlayTheme): string {
@@ -50,13 +74,16 @@ export function buildSigSalesWheelOverlayUrl(
 export function buildSigSalesManualOverlayUrl(
   origin: string,
   userId: string,
-  opts?: { memberId?: string; sigResultScalePct?: number }
+  opts?: { memberId?: string; sigResultScalePct?: number; themePreset?: string }
 ): string {
   const q = new URLSearchParams();
   q.set("u", userId);
   if (opts?.memberId) q.set("memberId", opts.memberId);
   if (opts?.sigResultScalePct != null && Number.isFinite(opts.sigResultScalePct)) {
     q.set("sigResultScalePct", String(Math.floor(opts.sigResultScalePct)));
+  }
+  if (opts?.themePreset && opts.themePreset !== "default") {
+    q.set("sigTheme", opts.themePreset);
   }
   q.set("hideSigBoard", "1");
   q.set("host", "obs");
@@ -85,11 +112,12 @@ export function buildManualSigThemeOverlayUrl(
   origin: string,
   userId: string,
   theme?: ManualSigOverlayTheme | unknown,
-  opts?: { memberId?: string; sigResultScalePct?: number }
+  opts?: { memberId?: string; sigResultScalePct?: number; themePreset?: string }
 ): string {
   const base = buildSigSalesManualOverlayUrl(origin, userId, {
     memberId: opts?.memberId,
     sigResultScalePct: opts?.sigResultScalePct ?? 92,
+    themePreset: opts?.themePreset,
   });
   const t = normalizeManualSigOverlayTheme(theme);
   if (t !== "menu") return base;

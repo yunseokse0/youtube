@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { formatSigSalesWon } from "@/lib/sig-sales-panel-ui";
+import type { SigRollingTheme } from "@/lib/sig-rolling-theme";
 
 export function SigSalesPanelChrome({
   tags = [],
@@ -17,6 +18,7 @@ export function SigSalesPanelChrome({
   totalLabel = "TOTAL SIG SALES",
   totalSub,
   className = "",
+  theme,
 }: {
   tags?: string[];
   showGear?: boolean;
@@ -33,16 +35,35 @@ export function SigSalesPanelChrome({
   totalLabel?: string;
   totalSub?: ReactNode;
   className?: string;
+  theme?: SigRollingTheme;
 }) {
   return (
     <section
-      className={`flex w-full max-w-full flex-col overflow-hidden rounded-2xl border border-white/10 shadow-[0_0_40px_rgba(0,0,0,0.45)] ${className}`.trim()}
-      style={{ background: "rgba(20, 20, 25, 0.92)" }}
+      className={`flex w-full max-w-full flex-col overflow-hidden rounded-2xl border ${className}`.trim()}
+      style={{
+        background: theme ? theme.shellBg : "rgba(20, 20, 25, 0.92)",
+        borderColor: theme ? theme.shellBorder : "rgba(255, 255, 255, 0.1)",
+        boxShadow: theme ? theme.shellShadow : "0 0 40px rgba(0,0,0,0.45)",
+      }}
     >
       {showHeader ? (
-        <header className="flex flex-wrap items-center gap-2 border-b border-white/10 px-4 py-2.5">
+        <header
+          className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5"
+          style={{
+            borderColor: theme ? theme.shellBorder : "rgba(255, 255, 255, 0.1)",
+            background: theme ? theme.footerBg : undefined,
+          }}
+        >
           <div className="min-w-0 flex-1">
-            <div className="text-[11px] font-black tracking-[0.18em] text-fuchsia-300">SIG SALES PANEL v2.0</div>
+            <div
+              className="text-[11px] font-black tracking-[0.18em]"
+              style={{
+                color: theme ? theme.priceColor : "#f0abfc",
+                textShadow: theme?.glowColor ? `0 0 10px ${theme.glowColor}` : undefined,
+              }}
+            >
+              SIG SALES PANEL v2.0
+            </div>
             <div className="mt-1 flex flex-wrap gap-1.5">
               {tags.filter(Boolean).map((tag) => (
                 <span

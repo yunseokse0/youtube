@@ -38,6 +38,8 @@ import {
   resolveSigOverlayCardImageUrl,
   setSigImagePlaceholderOnlyForOverlay,
 } from "@/lib/constants";
+import { resolveSigRollingTheme } from "@/lib/sig-rolling-theme";
+import { readManualSigThemePresetFromOverlaySettings } from "@/lib/sig-sales-overlay-urls";
 import { buildOneShotFromSelected, resolveOneShotDisplayPrice } from "@/lib/sig-one-shot-price";
 import {
   ONE_SHOT_SIG_ID,
@@ -1726,6 +1728,18 @@ function SigSalesOverlayPageInner() {
       }),
     [resultCardCount, sigResultScalePct, resultRowWidthPx, oneShotForResultOverlay]
   );
+  const activeTheme = useMemo(() => {
+    const urlTheme =
+      sp.get("sigTheme") ||
+      (sp.get("theme") !== "menu" && sp.get("theme") !== "result" ? sp.get("theme") : null);
+    if (urlTheme) return resolveSigRollingTheme(urlTheme);
+    const os =
+      state?.overlaySettings && typeof state.overlaySettings === "object"
+        ? (state.overlaySettings as Record<string, unknown>)
+        : null;
+    const preset = readManualSigThemePresetFromOverlaySettings(os, state?.sigRolling?.theme);
+    return resolveSigRollingTheme(preset);
+  }, [sp, state?.overlaySettings, state?.sigRolling?.theme]);
   /** 저장 경로(인벤·수동 초안) — 카드에서 `resolveSigOverlayCardImageUrl`로 OBS용 URL 생성 */
   const oneShotStoredImageUrl = useMemo(() => {
     if (manualOverlayMode) {
@@ -2547,6 +2561,7 @@ function SigSalesOverlayPageInner() {
                         hanbangOnly={hanbangOnlyResultLayout}
                         showConfirmedBadge={machine.phase === "CONFIRMED"}
                         sigImageUserId={sigImageUserId}
+                        theme={activeTheme}
                       />
                     </div>
                   </motion.div>

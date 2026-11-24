@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
 import type { AppState } from "@/lib/state";
 import {
   loadState,
@@ -18,11 +19,19 @@ import {
   buildManualSigThemeOverlayUrl,
   buildSigMenuOverlayUrl,
   MANUAL_SIG_OVERLAY_THEME_KEY,
+  MANUAL_SIG_THEME_PRESET_KEY,
   manualSigOverlayThemeLabel,
   normalizeManualSigOverlayTheme,
   readManualSigOverlayThemeFromOverlaySettings,
+  readManualSigThemePresetFromOverlaySettings,
   type ManualSigOverlayTheme,
 } from "@/lib/sig-sales-overlay-urls";
+import {
+  SIG_ROLLING_THEMES,
+  SIG_ROLLING_THEME_IDS,
+  resolveSigRollingTheme,
+  type SigRollingThemeId,
+} from "@/lib/sig-rolling-theme";
 import { DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE, resolveSigOverlayCardImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import SigSalesStampAndOneShotPanel from "@/components/admin/SigSalesStampAndOneShotPanel";
@@ -121,8 +130,9 @@ export default function ManualSigSalesSimple() {
   const [defaultPrice, setDefaultPrice] = useState("10000");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
-  /** finalent 기본값 금지 — 로그인 전 타 계정 인벤을 불러오지 않음 */
-  const userId = String(user?.id || "").trim();
+  const { params: sp } = useClientOnlySearchParams();
+  const urlUserId = (sp.get("u") || sp.get("user") || "").trim();
+  const userId = urlUserId || String(user?.id || "").trim();
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -226,6 +236,10 @@ export default function ManualSigSalesSimple() {
   const overlayTheme = useMemo(
     () => readManualSigOverlayThemeFromOverlaySettings(overlayOs),
     [overlayOs]
+  );
+  const currentThemePreset = useMemo(
+    () => readManualSigThemePresetFromOverlaySettings(overlayOs, state?.sigRolling?.theme),
+    [overlayOs, state?.sigRolling?.theme]
   );
   const overlayUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
@@ -374,6 +388,7 @@ export default function ManualSigSalesSimple() {
                 MANUAL_SIG_GRID_COLS_KEY,
                 MANUAL_SIG_PANEL_ORIENTATION_KEY,
                 MANUAL_SIG_OVERLAY_THEME_KEY,
+                MANUAL_SIG_THEME_PRESET_KEY,
                 MANUAL_SIG_DRAFT_STATE_KEY,
                 MANUAL_SIG_SLOT_PRICE_BANDS_KEY,
               ]
@@ -503,6 +518,37 @@ export default function ManualSigSalesSimple() {
       );
     },
     [state, overlayTheme, persistState]
+  );
+
+  const persistThemePreset = useCallback(
+    async (presetId: SigRollingThemeId) => {
+      if (!state) return;
+      if (presetId === currentThemePreset) return;
+      const prevOs =
+        state.overlaySettings && typeof state.overlaySettings === "object"
+          ? (state.overlaySettings as Record<string, unknown>)
+          : {};
+      const prevSr = normalizeSigRolling(state.sigRolling);
+      const next: AppState = {
+        ...state,
+        updatedAt: Date.now(),
+        sigRolling: {
+          ...prevSr,
+          theme: presetId,
+        },
+        overlaySettings: {
+          ...prevOs,
+          [MANUAL_SIG_THEME_PRESET_KEY]: presetId,
+        } as AppState["overlaySettings"],
+      };
+      await persistState(
+        next,
+        `수동 시그 테마: ${resolveSigRollingTheme(presetId).label}`,
+        "테마 저장이 지연됩니다.",
+        { omitSigInventory: true }
+      );
+    },
+    [state, currentThemePreset, persistState]
   );
 
   const persistPanelLayout = useCallback(
@@ -1239,6 +1285,7 @@ export default function ManualSigSalesSimple() {
           showGear
           settingsOpen={settingsOpen}
           onToggleSettings={() => setSettingsOpen((v) => !v)}
+          theme={resolveSigRollingTheme(currentThemePreset)}
           tags={[
             `${panelGrid.rows}×${panelGrid.cols}`,
             panelOrientation === "landscape" ? "가로형" : "세로형",
@@ -1628,7 +1675,7 @@ export default function ManualSigSalesSimple() {
             </label>
           ) : null}
           <label className="mt-3 block text-xs text-neutral-300">
-            OBS 오버레이 테마
+            OBS 표시 형식
             <select
               className="mt-1 w-full max-w-md rounded bg-neutral-800 px-2 py-2 text-sm text-neutral-100"
               value={overlayTheme}
@@ -1641,9 +1688,94 @@ export default function ManualSigSalesSimple() {
               <option value="menu">{manualSigOverlayThemeLabel("menu")}</option>
             </select>
             <span className="mt-1 block text-[11px] text-neutral-500">
-              OBS 브라우저는 아래 공통 URL 하나면 됩니다. 테마를 바꾸면 당첨 카드 ↔ 시그 메뉴가 전환됩니다.
+              OBS 브라우저는 아래 공통 URL 하나면 됩니다. 표시 형식을 바꾸면 당첨 카드 ↔ 시그 메뉴가 전환됩니다.
             </span>
           </label>
+
+          <div className="mt-4 space-y-2 border-t border-white/10 pt-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-neutral-200">🎨 카드 테마 디자인 (OBS)</span>
+                <span className="inline-flex items-center gap-1 rounded bg-emerald-950/80 px-2 py-0.5 text-[10px] font-medium text-emerald-300 ring-1 ring-inset ring-emerald-500/30">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  실시간 반영
+                </span>
+              </div>
+              <span className="text-[11px] text-neutral-400">
+                현재: <strong className="text-amber-300">{resolveSigRollingTheme(currentThemePreset).label}</strong>
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+              {SIG_ROLLING_THEME_IDS.map((tid) => {
+                const themeDef = SIG_ROLLING_THEMES[tid];
+                const active = currentThemePreset === tid;
+
+                return (
+                  <button
+                    key={tid}
+                    type="button"
+                    disabled={busy || !state}
+                    onClick={() => void persistThemePreset(tid)}
+                    className={`group relative flex flex-col items-start rounded-lg border p-2 text-left transition-all ${
+                      active
+                        ? "border-amber-400/90 bg-amber-950/30 shadow-[0_0_14px_rgba(251,191,36,0.22)] ring-1 ring-amber-400/80"
+                        : "border-white/10 bg-neutral-900/60 hover:border-white/25 hover:bg-neutral-800/80"
+                    }`}
+                  >
+                    <div className="flex w-full items-center justify-between gap-1 mb-1.5">
+                      <span className="text-xs font-bold text-neutral-100 group-hover:text-white">
+                        {themeDef.label}
+                      </span>
+                      {themeDef.badge ? (
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
+                            active
+                              ? "bg-amber-400 text-black"
+                              : "bg-white/10 text-neutral-300"
+                          }`}
+                        >
+                          {themeDef.badge}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div
+                      className="w-full h-11 rounded border overflow-hidden flex flex-col justify-end p-1 transition-transform group-hover:scale-[1.02]"
+                      style={{
+                        background: themeDef.shellBg,
+                        borderColor: themeDef.shellBorder,
+                        boxShadow: themeDef.shellShadow,
+                      }}
+                    >
+                      <div
+                        className="w-full rounded px-1.5 py-0.5 flex items-center justify-between text-[10px] leading-tight"
+                        style={{
+                          background: themeDef.footerBg,
+                          borderTop: themeDef.footerBorderTop,
+                        }}
+                      >
+                        <span
+                          className="truncate font-black"
+                          style={{ color: themeDef.nameColor }}
+                        >
+                          시그이름
+                        </span>
+                        <span
+                          className="truncate font-black tabular-nums"
+                          style={{ color: themeDef.priceColor }}
+                        >
+                          50만
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-neutral-500">
+              💡 선택한 테마는 수동 시그 오버레이(<code>/overlay/sig-sales-manual</code>)에 새로고침 없이 즉시 적용됩니다.
+            </p>
+          </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"

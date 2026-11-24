@@ -14,7 +14,10 @@ import {
   MANUAL_SIG_PICK_COUNT_KEY,
   MANUAL_SIG_SLOT_PRICE_BANDS_KEY,
 } from "@/lib/manual-sig-workbench";
-import { MANUAL_SIG_OVERLAY_THEME_KEY } from "@/lib/sig-sales-overlay-urls";
+import {
+  MANUAL_SIG_OVERLAY_THEME_KEY,
+  MANUAL_SIG_THEME_PRESET_KEY,
+} from "@/lib/sig-sales-overlay-urls";
 
 export const STATE_PICK_SIG_INVENTORY = "sigInventory";
 export const STATE_PICK_OVERLAY = "overlay";
@@ -125,8 +128,8 @@ function overlayCoreFields(
     pongdangResetAt: state.pongdangResetAt,
     pongdangManualMode: state.pongdangManualMode,
     pongdangManualContributions: state.pongdangManualContributions || {},
-    tableSplit: state.tableSplit,
-    customColumnName: state.customColumnName,
+    tableSplit: (state as unknown as Record<string, unknown>).tableSplit,
+    customColumnName: (state as unknown as Record<string, unknown>).customColumnName,
     rankCustomCells: state.rankCustomCells || [],
     donorsFormat: state.donorsFormat,
     donorRankingsTheme: state.donorRankingsTheme,
@@ -207,6 +210,8 @@ export function projectStateForGetPick(
         MANUAL_SIG_SLOT_PRICE_BANDS_KEY,
         /** OBS 당첨/네온메뉴 테마 — 빠지면 항상 result 로 고정됨 */
         MANUAL_SIG_OVERLAY_THEME_KEY,
+        /** 수동 시그 비주얼 테마 프리셋 */
+        MANUAL_SIG_THEME_PRESET_KEY,
       ]) {
         if (rec[key] != null && rec[key] !== "") overlayManual[key] = rec[key];
       }

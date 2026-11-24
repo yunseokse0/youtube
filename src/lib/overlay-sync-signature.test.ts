@@ -899,4 +899,34 @@ describe("buildSigSalesOverlaySyncSignature", () => {
     };
     expect(buildSigSalesOverlaySyncSignature(a)).not.toBe(buildSigSalesOverlaySyncSignature(b));
   });
+
+  it("changes when manual sig theme preset changes", () => {
+    const base = defaultState();
+    const a = {
+      ...base,
+      overlaySettings: {
+        sigSalesManualThemePreset: "default",
+      },
+    };
+    const b = {
+      ...a,
+      overlaySettings: {
+        sigSalesManualThemePreset: "gold",
+      },
+    };
+    expect(buildSigSalesOverlaySyncSignature(a)).not.toBe(buildSigSalesOverlaySyncSignature(b));
+  });
+
+  it("changes when sigRolling theme fallback changes", () => {
+    const base = defaultState();
+    const a = {
+      ...base,
+      sigRolling: { ...base.sigRolling, theme: "default" },
+    };
+    const b = {
+      ...a,
+      sigRolling: { ...base.sigRolling, theme: "neon-pink" },
+    };
+    expect(buildSigSalesOverlaySyncSignature(a)).not.toBe(buildSigSalesOverlaySyncSignature(b));
+  });
 });

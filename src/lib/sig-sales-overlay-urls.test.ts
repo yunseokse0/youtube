@@ -4,7 +4,9 @@ import {
   buildSigMenuOverlayUrl,
   buildSigSalesManualOverlayUrl,
   normalizeManualSigOverlayTheme,
+  MANUAL_SIG_THEME_PRESET_KEY,
   readManualSigOverlayThemeFromOverlaySettings,
+  readManualSigThemePresetFromOverlaySettings,
   sigNeonMenuColumnCount,
 } from "@/lib/sig-sales-overlay-urls";
 
@@ -31,6 +33,19 @@ describe("manual sig overlay theme", () => {
     expect(buildManualSigThemeOverlayUrl("https://example.com", "din", "menu")).toBe(
       `${resultUrl}&theme=menu`
     );
+  });
+
+  it("reads visual theme preset from overlaySettings or fallback", () => {
+    expect(readManualSigThemePresetFromOverlaySettings(null)).toBe("default");
+    expect(
+      readManualSigThemePresetFromOverlaySettings({ [MANUAL_SIG_THEME_PRESET_KEY]: "gold" })
+    ).toBe("gold");
+    expect(
+      readManualSigThemePresetFromOverlaySettings({ sigSalesTheme: "cyber-blue" })
+    ).toBe("cyber-blue");
+    expect(
+      readManualSigThemePresetFromOverlaySettings(null, "violet")
+    ).toBe("violet");
   });
 });
 

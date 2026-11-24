@@ -128,16 +128,18 @@ describe("state-api-pick", () => {
     expect(os?.sigSalesManualDraftV1).toBeTruthy();
   });
 
-  it("sig-sales pick includes overlay theme for neon menu vs result cards", () => {
+  it("sig-sales pick includes overlay theme for neon menu vs result cards and theme preset", () => {
     const base = {
       ...defaultState(),
       overlaySettings: {
         sigSalesManualOverlayTheme: "menu",
+        sigSalesManualThemePreset: "gold",
       },
     };
     const out = projectStateForGetPick(base, STATE_PICK_SIG_SALES) as Record<string, unknown>;
     const os = out.overlaySettings as Record<string, unknown>;
     expect(os?.sigSalesManualOverlayTheme).toBe("menu");
+    expect(os?.sigSalesManualThemePreset).toBe("gold");
   });
 
   it("donor-rankings pick returns full donors and wire rankings", () => {
@@ -224,6 +226,7 @@ describe("state-api-pick", () => {
           sigName: "시그1",
           bonusAmount: 10000,
           representativeMemberId: "m1",
+          triggerDonationId: "d1",
           status: "WAITING" as const,
           createdAt: 1000,
         },
