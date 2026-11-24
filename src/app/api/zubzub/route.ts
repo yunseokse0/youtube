@@ -8,10 +8,13 @@ import {
   cancelAllWaitingZubzub,
   cancelZubzubQueueItem,
   listWaitingZubzubQueues,
+  insertZubzubQueueItem,
 } from "@/lib/zubzub/zubzub-repo";
 import { revertOrCancelZubzubQueue } from "@/lib/zubzub/zubzub-engine";
+import { syncMemberTotalsFromDonors } from "@/domain/sync/sync-repair-1pass";
 import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
 import { publishSseEvent } from "@/lib/sse-clients-hub";
+import type { AppState, Donor } from "@/types";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -57,14 +60,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "state_not_found" }, { status: 404 });
     }
 
-    // 1. 단건 줍줍 큐 취소 또는 회수
-    if (action === "cancel") {
-      const queueId = String(body.queueId || "").trim();
+    // 1. 단건 줍줍 큐 취소 또는 이미 획득한 보너스 회수
+    if (action === "cancel" || action === "revert_bonus") {
+      const queueId = String(body.queueId || body.donorId || "").trim();
       if (!queueId) {
-        return NextResponse.json({ error: "missing_queue_id" }, { status: 400 });
+        return NextResponse.json({ error: "missing_queue_id_or_donor_id" }, { status: 400 });
       }
       const res = await revertOrCancelZubzubQueue(userId, queueId, state);
-      return NextResponse.json({ ok: res.ok });
+      return NextResponse.json({ ok: res.ok, newState: res.newState });
     }
 
     // 2. 전체 대기열 일괄 취소
@@ -123,6 +126,103 @@ export async function POST(req: NextRequest) {
         });
       }
       return NextResponse.json({ ok: true });
+    }
+
+    // 5. 줍줍 대기열에 수동 추가
+    if (action === "enqueue_manual") {
+      const sigName = String(body.sigName || "").trim() || "대표 줍줍 시그";
+      const bonusAmount = Math.max(1000, Math.round(Number(body.bonusAmount) || 50000));
+      const sigImageUrl = typeof body.sigImageUrl === "string" ? body.sigImageUrl : undefined;
+
+      const queueId = `zubzub_manual_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const queueItem = await insertZubzubQueueItem(userId, {
+        id: queueId,
+        triggerDonationId: `manual_${Date.now()}`,
+        sigName,
+        sigImageUrl,
+        bonusAmount,
+      });
+
+      const currentWaitings = await listWaitingZubzubQueues(userId);
+      const nextState: AppState = {
+        ...state,
+        zubzubWaitingItems: currentWaitings,
+        updatedAt: Date.now(),
+      };
+      await saveAppStateForRoulette(userId, nextState);
+      await publishSseEvent({
+        type: "zubzub_enqueued",
+        userId,
+        queueItem,
+        waitingCount: currentWaitings.length,
+        timestamp: Date.now(),
+      });
+      return NextResponse.json({ ok: true, queueItem, waitingItems: currentWaitings });
+    }
+
+    // 6. 특정 멤버에게 줍줍 직접 수동 지급
+    if (action === "claim_manual") {
+      const memberId = String(body.memberId || "").trim();
+      const targetMember = (state.members || []).find((m) => m.id === memberId);
+      if (!targetMember) {
+        return NextResponse.json({ error: "member_not_found" }, { status: 400 });
+      }
+
+      const sigName = String(body.sigName || "").trim() || "대표 줍줍 시그";
+      const bonusAmount = Math.max(1000, Math.round(Number(body.bonusAmount) || 50000));
+      const manualQueueId = `zubzub_manual_claim_${Date.now()}`;
+
+      const bonusDonor: Donor = {
+        id: `zubzub_bonus_${manualQueueId}`,
+        name: `[대표 줍줍] ${sigName}`,
+        donorName: `대표 시그 줍줍(수동)`,
+        amount: bonusAmount,
+        memberId: targetMember.id,
+        at: Date.now(),
+        message: `[대표 시그 줍줍] ${sigName} (+${bonusAmount.toLocaleString()}점)`,
+        donationExcluded: true,
+        isSigCredit: true,
+        sigPrice: bonusAmount,
+        contributionPoints: bonusAmount,
+        isZubzubBonus: true,
+        zubzubQueueId: manualQueueId,
+        provider: "zubzub_bonus",
+        externalId: manualQueueId,
+      };
+
+      const nextDonors = [...(state.donors || []), bonusDonor];
+      const currentWaitings = await listWaitingZubzubQueues(userId);
+      const nextStateWithDonors: AppState = {
+        ...state,
+        donors: nextDonors,
+        zubzubWaitingItems: currentWaitings,
+        updatedAt: Date.now(),
+      };
+
+      const syncedState = syncMemberTotalsFromDonors(nextStateWithDonors);
+      await saveAppStateForRoulette(userId, syncedState);
+
+      await publishSseEvent({
+        type: "zubzub_claimed",
+        userId,
+        queueItem: {
+          id: manualQueueId,
+          userId,
+          triggerDonationId: `manual_${Date.now()}`,
+          sigName,
+          bonusAmount,
+          status: "CLAIMED",
+          createdAt: Date.now(),
+        },
+        memberId: targetMember.id,
+        memberName: targetMember.name,
+        bonusAmount,
+        bonusDonor,
+        remainingWaitingCount: currentWaitings.length,
+        timestamp: Date.now(),
+      });
+
+      return NextResponse.json({ ok: true, bonusDonor, newState: syncedState });
     }
 
     return NextResponse.json({ error: "unknown_action" }, { status: 400 });

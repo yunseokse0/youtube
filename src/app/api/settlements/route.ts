@@ -53,13 +53,16 @@ export async function GET(req: Request) {
         recent,
         bypassCache: url.searchParams.has("_t"),
       });
-    } else if (isLegacyMigrationTargetUserId(userId)) {
-      const legacy = await upstashGet<SettlementRecord[]>(STORAGE_KEY_LEGACY);
-      filtered = Array.isArray(legacy) ? legacy : [];
     } else {
-      filtered = Array.isArray(memoryRecords[userId])
-        ? (memoryRecords[userId] as SettlementRecord[])
-        : [];
+      let recs: SettlementRecord[] = [];
+      if (isLegacyMigrationTargetUserId(userId)) {
+        const legacy = await upstashGet<SettlementRecord[]>(STORAGE_KEY_LEGACY);
+        if (Array.isArray(legacy) && legacy.length > 0) recs = legacy;
+      }
+      if (recs.length === 0 && Array.isArray(memoryRecords[userId])) {
+        recs = memoryRecords[userId] as SettlementRecord[];
+      }
+      filtered = recs;
     }
 
     return new Response(JSON.stringify(filtered), {
@@ -79,7 +82,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const writeUid = resolveWriteUserId(req);
+    const writeUid = resolveWriteUserId(req, { allowAnonymousUrlUser: true });
     if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
     const userId = writeUid.userId;
     const rawText = await req.text();

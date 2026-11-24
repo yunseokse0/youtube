@@ -231,4 +231,97 @@ describe("정산 회차 기여도 저장 및 리셋 후 불러오기 테스트",
     expect(restored.nextState.pongdangManualContributions?.["m1"]).toBe(460000);
     expect(restored.nextState.pongdangManualMode).toBe(true);
   });
+
+  it("실제 로컬 서버 API 연동 E2E: 정산 회차 저장 -> 초기화 -> 기여도 복원 -> 서버 상태 반영 확인", async () => {
+    // 1. 현재 서버 상태 조회
+    const stateRes = await fetch("http://localhost:3001/api/state?u=finalent");
+    if (!stateRes.ok) return; // 서버 미구동 환경에서는 skip
+    const curState: AppState = await stateRes.json();
+
+    // 2. 기여도 스냅샷을 포함한 정산 회차 생성 및 서버 저장
+    const recId = `settle_e2e_${Date.now()}`;
+    const testRec: SettlementRecord = {
+      id: recId,
+      title: "11월 24일 회차 기여도 검증 회차",
+      createdAt: Date.now(),
+      saveRoundContribution: true,
+      roundContributionSnapshot: {
+        m1: 500000,
+        m2: 220000,
+        m3: 390000,
+      },
+      members: curState.members.map((m) => ({
+        memberId: m.id,
+        name: m.name,
+        contribution: m.id === "m1" ? 500000 : m.id === "m2" ? 220000 : 390000,
+        gross: 100000,
+        fee: 0,
+        net: 100000,
+        finalPayout: 100000,
+      })),
+    };
+
+    const postSettlementRes = await fetch("http://localhost:3001/api/settlements?u=finalent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([testRec]),
+    });
+    expect(postSettlementRes.ok).toBe(true);
+
+    // 3. 정산 API 에서 저장된 회차 및 스냅샷 조회 확인
+    const settlementsRes = await fetch("http://localhost:3001/api/settlements?u=finalent");
+    const settlements: SettlementRecord[] = await settlementsRes.json();
+    const savedRec = settlements.find((r) => r.id === recId);
+    expect(savedRec).toBeDefined();
+    expect(savedRec?.saveRoundContribution).toBe(true);
+    expect(savedRec?.roundContributionSnapshot?.["m1"]).toBe(500000);
+    expect(savedRec?.roundContributionSnapshot?.["m2"]).toBe(220000);
+    expect(savedRec?.roundContributionSnapshot?.["m3"]).toBe(390000);
+
+    // 4. 방송 정산 리셋 시뮬레이션 (기여도 0으로 초기화)
+    const resetMembers = curState.members.map((m) => ({ ...m, contribution: 0 }));
+    const resetState = {
+      ...curState,
+      members: resetMembers,
+      donors: [],
+      contributionLogs: [],
+      membersAuthoritative: true,
+    };
+    await fetch("http://localhost:3001/api/state?u=finalent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(resetState),
+    });
+
+    // 5. 기여도 복원 함수 실행
+    const restored = applyRoundContributionToState(resetState as any, savedRec!, {
+      applyToStandardExcel: true,
+      applyToPongdangExcel: true,
+    });
+    expect(restored.restoredCount).toBeGreaterThanOrEqual(3);
+
+    // 6. 복원된 상태를 서버에 저장 (membersAuthoritative: true)
+    const postRestoredRes = await fetch("http://localhost:3001/api/state?u=finalent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...restored.nextState,
+        membersAuthoritative: true,
+      }),
+    });
+    expect(postRestoredRes.ok).toBe(true);
+
+    // 7. 최종 서버 상태 검증
+    const finalStateRes = await fetch("http://localhost:3001/api/state?u=finalent");
+    const finalState: AppState = await finalStateRes.json();
+    const finalM1 = finalState.members.find((m) => m.id === "m1");
+    const finalM2 = finalState.members.find((m) => m.id === "m2");
+    const finalM3 = finalState.members.find((m) => m.id === "m3");
+
+    expect(finalM1?.contribution).toBe(500000);
+    expect(finalM2?.contribution).toBe(220000);
+    expect(finalM3?.contribution).toBe(390000);
+    expect(finalState.pongdangManualContributions?.["m1"]).toBe(500000);
+    expect(finalState.contributionLogs.length).toBeGreaterThanOrEqual(3);
+  });
 });

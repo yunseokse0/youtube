@@ -23,6 +23,12 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
   );
   const [minPriceDraft, setMinPriceDraft] = useState(String(settings.minSigPrice || 50000));
 
+  // 수동 줍줍 추가 폼 상태
+  const [manualSigName, setManualSigName] = useState("");
+  const [manualBonusAmount, setManualBonusAmount] = useState("50000");
+  const [manualTargetMemberId, setManualTargetMemberId] = useState("");
+  const [submittingManual, setSubmittingManual] = useState(false);
+
   // 대표 멤버 자동 탐색
   const autoRep = (state.members || []).find((m) => {
     const pos = String(state.memberPositions?.[m.id] || "").trim();
@@ -126,6 +132,111 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
       }
     } catch (err) {
       console.error("[ZubzubAdminPanel] cancel all error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 줍줍 대기열에 수동 추가
+  const handleManualEnqueue = async () => {
+    const sigName = manualSigName.trim() || "대표 줍줍 시그";
+    const bonusAmount = Math.max(1000, parseInt(manualBonusAmount, 10) || 50000);
+
+    setSubmittingManual(true);
+    try {
+      const res = await fetch("/api/zubzub", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          action: "enqueue_manual",
+          sigName,
+          bonusAmount,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setManualSigName("");
+        await fetchWaitingItems();
+        alert(`[${sigName}] +${bonusAmount.toLocaleString()}점이 줍줍 대기열에 등록되었습니다!\n다음 시그를 쏘는 일반 멤버가 획득합니다.`);
+      }
+    } catch (err) {
+      console.error("[ZubzubAdminPanel] manual enqueue error:", err);
+    } finally {
+      setSubmittingManual(false);
+    }
+  };
+
+  // 특정 멤버에게 줍줍 직접 수동 지급
+  const handleManualDirectClaim = async () => {
+    if (!manualTargetMemberId) {
+      alert("줍줍을 지급받을 멤버를 선택해주세요.");
+      return;
+    }
+    const targetMember = (state.members || []).find((m) => m.id === manualTargetMemberId);
+    const memberName = targetMember?.name || "멤버";
+    const sigName = manualSigName.trim() || "대표 줍줍 시그";
+    const bonusAmount = Math.max(1000, parseInt(manualBonusAmount, 10) || 50000);
+
+    if (!confirm(`[${memberName}] 멤버에게 [${sigName}] (+${bonusAmount.toLocaleString()}점) 줍줍 보너스를 즉시 지급하시겠습니까?`)) {
+      return;
+    }
+
+    setSubmittingManual(true);
+    try {
+      const res = await fetch("/api/zubzub", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          action: "claim_manual",
+          memberId: manualTargetMemberId,
+          sigName,
+          bonusAmount,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok && data.newState) {
+        onUpdateState(data.newState);
+        setManualSigName("");
+        await fetchWaitingItems();
+        alert(`[${memberName}] 멤버에게 +${bonusAmount.toLocaleString()}점 줍줍 보너스가 즉시 지급되었습니다.`);
+      }
+    } catch (err) {
+      console.error("[ZubzubAdminPanel] manual claim error:", err);
+    } finally {
+      setSubmittingManual(false);
+    }
+  };
+
+  // 이미 획득한 줍줍 보너스 회수/취소
+  const handleRevertBonus = async (donor: Donor) => {
+    const targetName = donor.name || "줍줍 보너스";
+    const targetAmount = Number(donor.amount || 0).toLocaleString();
+    if (!confirm(`[${targetName}] (+${targetAmount}점) 줍줍 보너스를 회수하고 해당 멤버의 기여도를 차감하시겠습니까?`)) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/zubzub", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          action: "revert_bonus",
+          donorId: donor.id,
+          queueId: donor.zubzubQueueId,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok && data.newState) {
+        onUpdateState(data.newState);
+        await fetchWaitingItems();
+        alert(`줍줍 보너스가 정상적으로 회수되었습니다.`);
+      }
+    } catch (err) {
+      console.error("[ZubzubAdminPanel] revert error:", err);
     } finally {
       setLoading(false);
     }
@@ -378,7 +489,113 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
         </div>
       </div>
 
-      {/* 3. 실시간 대기 큐 모니터링 카드 */}
+      {/* 3. 줍줍 수동 추가 및 멤버 직접 지급 카드 */}
+      <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/15 p-3 space-y-2.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 font-bold text-xs text-emerald-300">
+            <span>✨</span>
+            <span>줍줍 수동 추가 및 멤버 직접 지급</span>
+          </div>
+          <span className="text-[10px] text-neutral-400">
+            대표 후원 없이도 대기열을 바로 생성하거나, 특정 멤버에게 보너스를 즉시 줄 수 있습니다.
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-2 text-xs">
+          {/* 시그니처 이름 (직접 입력 또는 인벤토리 선택) */}
+          <div className="md:col-span-4 space-y-1">
+            <label className="text-[10px] font-semibold text-neutral-300 flex justify-between">
+              <span>시그니처명</span>
+              {(state.sigInventory || []).length > 0 && (
+                <span className="text-[10px] text-emerald-400 font-normal">인벤토리 연동 가능</span>
+              )}
+            </label>
+            <div className="flex gap-1">
+              <input
+                type="text"
+                list="zubzub-sig-inventory-list"
+                value={manualSigName}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setManualSigName(val);
+                  const matched = (state.sigInventory || []).find((s) => s.name === val);
+                  if (matched && matched.price) {
+                    setManualBonusAmount(String(matched.price));
+                  }
+                }}
+                placeholder="예: NO BATIDÃO / 시그A"
+                className="w-full rounded bg-neutral-900 border border-white/10 px-2 py-1.5 text-xs text-white placeholder-neutral-500"
+              />
+              <datalist id="zubzub-sig-inventory-list">
+                {(state.sigInventory || []).map((s, idx) => (
+                  <option key={`${s.name}_${idx}`} value={s.name}>
+                    {Number(s.price || 0).toLocaleString()}원
+                  </option>
+                ))}
+              </datalist>
+            </div>
+          </div>
+
+          {/* 보너스 점수 (금액) */}
+          <div className="md:col-span-3 space-y-1">
+            <label className="text-[10px] font-semibold text-neutral-300">
+              보너스 점수 (금액)
+            </label>
+            <input
+              type="number"
+              step="10000"
+              value={manualBonusAmount}
+              onChange={(e) => setManualBonusAmount(e.target.value)}
+              placeholder="50000"
+              className="w-full rounded bg-neutral-900 border border-white/10 px-2 py-1.5 text-xs text-white"
+            />
+          </div>
+
+          {/* 직접 지급 대상 멤버 (선택 사항) */}
+          <div className="md:col-span-5 space-y-1">
+            <label className="text-[10px] font-semibold text-neutral-300">
+              실행 방식 선택
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={submittingManual}
+                onClick={handleManualEnqueue}
+                className="flex-1 rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm transition disabled:opacity-50 cursor-pointer"
+                title="다음 일반 멤버가 시그를 쏘면 가져갈 수 있도록 줍줍 대기열에 추가합니다"
+              >
+                ➕ 대기열에 추가
+              </button>
+
+              <div className="flex items-center gap-1">
+                <select
+                  value={manualTargetMemberId}
+                  onChange={(e) => setManualTargetMemberId(e.target.value)}
+                  className="rounded bg-neutral-900 border border-white/10 px-2 py-1.5 text-[11px] text-white"
+                >
+                  <option value="">멤버 선택(직접 지급)</option>
+                  {(state.members || []).map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={submittingManual || !manualTargetMemberId}
+                  onClick={handleManualDirectClaim}
+                  className="rounded bg-emerald-600 hover:bg-emerald-500 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-sm transition disabled:opacity-50 cursor-pointer"
+                  title="선택한 멤버에게 줍줍 보너스를 즉시 지급합니다"
+                >
+                  🎁 즉시 지급
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 4. 실시간 대기 큐 모니터링 카드 */}
       <div className="rounded-lg border border-indigo-500/20 bg-indigo-950/10 p-3 space-y-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -461,8 +678,19 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
                     <span className="font-bold text-emerald-400">[{m?.name || "멤버"}]</span>
                     <span className="text-neutral-200">{d.message || d.name}</span>
                   </div>
-                  <div className="font-mono text-amber-300 font-semibold">
-                    +{d.amount.toLocaleString()}점
+                  <div className="flex items-center gap-2">
+                    <div className="font-mono text-amber-300 font-semibold">
+                      +{d.amount.toLocaleString()}점
+                    </div>
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => handleRevertBonus(d)}
+                      className="rounded bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/30 px-2 py-0.5 text-[10px] text-rose-300 transition-colors cursor-pointer"
+                      title="이 줍줍 보너스를 회수하고 해당 멤버의 기여도를 차감합니다"
+                    >
+                      회수/삭제
+                    </button>
                   </div>
                 </div>
               );

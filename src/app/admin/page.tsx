@@ -11964,7 +11964,7 @@ function AdminPageInner() {
     });
     stateRef.current = result.nextState;
     setState(result.nextState);
-    persistState(result.nextState, { omitDonationFields: true });
+    persistState(result.nextState, { omitDonationFields: true, membersAuthoritative: true });
     setContributionRestoreModalOpen(false);
     showAppToast(`정산 리셋 직전 기여도(${result.restoredTotal.toLocaleString("ko-KR")}원)를 성공적으로 복원했습니다.`);
   }, [lastResetSnapshot, restoreToStandardExcel, restoreToPongdangExcel, persistState]);
@@ -12015,7 +12015,7 @@ function AdminPageInner() {
     });
     stateRef.current = result.nextState;
     setState(result.nextState);
-    persistState(result.nextState, { omitDonationFields: true });
+    persistState(result.nextState, { omitDonationFields: true, membersAuthoritative: true });
     setContributionRestoreModalOpen(false);
     showAppToast(`[${targetRec.title}] 회차 기여도(${result.restoredTotal.toLocaleString("ko-KR")}원)를 성공적으로 불러왔습니다.`);
   }, [restoreSettlementRecords, selectedRestoreRecordId, restoreToStandardExcel, restoreToPongdangExcel, persistState]);

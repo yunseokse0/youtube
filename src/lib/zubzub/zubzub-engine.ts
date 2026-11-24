@@ -240,22 +240,24 @@ export async function processZubzubDonationHook(
  */
 export async function revertOrCancelZubzubQueue(
   userId: string,
-  queueId: string,
+  queueOrDonorId: string,
   state: AppState
 ): Promise<{ ok: boolean; newState?: AppState }> {
-  const success = await cancelZubzubQueueItem(userId, queueId);
-  if (!success) return { ok: false };
+  const rawQueueId = String(queueOrDonorId || "").replace(/^zubzub_bonus_/, "").trim();
+  const queueSuccess = await cancelZubzubQueueItem(userId, rawQueueId);
 
   // 이미 CLAIMED 되어 donors 에 들어간 경우 해당 bonus donor 제거
-  const targetBonusId = `zubzub_bonus_${queueId}`;
+  const targetBonusId = `zubzub_bonus_${rawQueueId}`;
   const hadBonus = (state.donors || []).some(
-    (d) => d.id === targetBonusId || d.zubzubQueueId === queueId
+    (d) => d.id === targetBonusId || d.zubzubQueueId === rawQueueId || d.id === queueOrDonorId
   );
+
+  if (!queueSuccess && !hadBonus) return { ok: false };
 
   let nextState = state;
   if (hadBonus) {
     const filteredDonors = (state.donors || []).filter(
-      (d) => d.id !== targetBonusId && d.zubzubQueueId !== queueId
+      (d) => d.id !== targetBonusId && d.zubzubQueueId !== rawQueueId && d.id !== queueOrDonorId
     );
     nextState = syncMemberTotalsFromDonors({
       ...state,
@@ -275,7 +277,7 @@ export async function revertOrCancelZubzubQueue(
   await publishSseEvent({
     type: "zubzub_canceled",
     userId,
-    queueId,
+    queueId: rawQueueId,
     waitingCount: currentWaitings.length,
     timestamp: Date.now(),
   });
