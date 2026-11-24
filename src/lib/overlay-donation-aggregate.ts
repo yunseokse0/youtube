@@ -478,7 +478,7 @@ export function applyOverlayDonationDisplayTotals(
       const rawTotal = baseVal + manualAdj;
       return {
         ...m,
-        contribution: isPongdangPopup ? rawTotal : Math.max(0, rawTotal),
+        contribution: isPongdangPopup || day777 ? rawTotal : Math.max(0, rawTotal),
       };
     }),
   };

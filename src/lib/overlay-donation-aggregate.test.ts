@@ -578,7 +578,7 @@ describe("day777Calc", () => {
     expect(next.members[0]?.contribution).toBe(70_000);
   });
 
-  it("퐁당퐁당 마이너스 기여도: isPongdangPopup 이면 음수 그대로, 아니면 0으로 클램핑", () => {
+  it("퐁당퐁당 마이너스 기여도는 팝업 옵션 없이도 음수 그대로 유지", () => {
     const state = {
       members: [member({ id: "m1", name: "진아" })],
       donors: [
@@ -597,11 +597,11 @@ describe("day777Calc", () => {
       rouletteState: null,
     } as unknown as AppState;
 
-    // 일반 오버레이 엑셀표: 음수 → 0 클램핑
-    const clamped = applyOverlayDonationDisplayTotals(state, { fromAt: 1, day777Calc: true });
-    expect(clamped.members[0]?.contribution).toBe(0);
+    // day777Calc 자체가 퐁당 엑셀 표시이므로 별도 팝업 옵션 없이도 음수 유지
+    const pongdangExcel = applyOverlayDonationDisplayTotals(state, { fromAt: 1, day777Calc: true });
+    expect(pongdangExcel.members[0]?.contribution).toBe(-50_000);
 
-    // 퐁당퐁당 엑셀표(popup): 음수 그대로 표시
+    // 팝업 옵션을 켜도 같은 음수 값을 표시
     const pongdang = applyOverlayDonationDisplayTotals(state, {
       fromAt: 1,
       day777Calc: true,

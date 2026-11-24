@@ -139,10 +139,10 @@ describe("Zubzub & Pongdang Integration Tests", () => {
     const claimMember = updated.members.find((m) => m.id === "m_claim");
     expect(claimMember?.contribution).toBe(-130000);
 
-    // 퐁당퐁당 엑셀표(오버레이)에서도 관리자의 마이너스 처리가 차감 반영됨 (0 미만 음수는 0으로 클램핑)
+    // 퐁당퐁당 엑셀표(오버레이)에서도 관리자의 마이너스 처리 결과를 음수로 표시
     const overlayExcel = applyOverlayDonationDisplayTotals(minusState, { day777Calc: true });
     const overlayClaimMember = overlayExcel.members.find((m) => m.id === "m_claim");
-    expect(overlayClaimMember?.contribution).toBe(0);
+    expect(overlayClaimMember?.contribution).toBe(-130000);
   });
 
   it("4. normalizeDonorsArray preserves isZubzubBonus, zubzubQueueId, and pongdangMinus", () => {

@@ -7,13 +7,13 @@ import {
 } from "./overlay-donation-aggregate";
 import { syncMemberTotalsFromDonors } from "@/domain/sync/sync-repair-1pass";
 
-describe("퐁당퐁당 엑셀 마이너스 기여도의 메인 엑셀표 영향 차단(격리) 검증", () => {
+describe("퐁당퐁당 엑셀 마이너스 기여도와 메인 엑셀 분리 검증", () => {
   const members: Member[] = [
     { id: "m1", name: "자키", account: 0, toon: 0, contribution: 50000, operating: false },
     { id: "m2", name: "이나", account: 0, toon: 0, contribution: 30000, operating: false },
   ];
 
-  it("1. 후원 건의 pongdangMinus: true 처리가 메인 엑셀표(오버레이) 기여도를 깎지 않는다", () => {
+  it("1. pongdangMinus는 퐁당 엑셀에 음수로 표시되고 메인 엑셀에는 영향을 주지 않는다", () => {
     const donors: Donor[] = [
       {
         id: "d1",
@@ -50,12 +50,12 @@ describe("퐁당퐁당 엑셀 마이너스 기여도의 메인 엑셀표 영향 
     // syncMemberTotalsFromDonors도 0 이상 정상 합산
     expect(mainExcel.members.find((m) => m.id === "m1")?.contribution).toBeGreaterThanOrEqual(0);
 
-    // C. 오버레이 엑셀표 (day777Calc: true): 마이너스 처리된 건이 반영되어 기여도가 차감됨 (0 미만 음수는 0으로 클램핑)
+    // C. 퐁당 엑셀표 (day777Calc: true): 마이너스 기여도를 음수 그대로 표시
     const overlayExcel = applyOverlayDonationDisplayTotals(state, {
       day777Calc: true,
       isPongdangPopup: false,
     });
-    expect(overlayExcel.members.find((m) => m.id === "m1")?.contribution).toBe(0);
+    expect(overlayExcel.members.find((m) => m.id === "m1")?.contribution).toBe(-50000);
   });
 
   it("2. 퐁당퐁당 엑셀창에서 추가된 수동 마이너스 로그(delta: -1)가 메인 엑셀표 기여도를 깎지 않는다", () => {
@@ -98,7 +98,7 @@ describe("퐁당퐁당 엑셀 마이너스 기여도의 메인 엑셀표 영향 
     expect(mainExcel.members.find((m) => m.id === "m1")?.contribution).toBe(50000);
   });
 
-  it("3. pongdangManualContributions 수동 음수 보정값(-30,000)이 메인 엑셀표에 영향을 주지 않는다", () => {
+  it("3. 수동 음수 보정은 퐁당 엑셀에 표시되고 일반 엑셀에는 영향을 주지 않는다", () => {
     const state: AppState = {
       members: [
         { id: "m1", name: "자키", account: 0, toon: 0, contribution: 0, operating: false },
@@ -119,17 +119,21 @@ describe("퐁당퐁당 엑셀 마이너스 기여도의 메인 엑셀표 영향 
     });
     expect(pdResult.members.find((m) => m.id === "m1")?.contribution).toBe(-30000);
 
-    // 메인 엑셀표(오버레이): 음수 보정값 영향 차단되어 0 미만으로 떨어지지 않음
+    // 퐁당 엑셀표(day777Calc=true): 음수 기여도 유지
     const overlayExcel = applyOverlayDonationDisplayTotals(state, {
       day777Calc: true,
       isPongdangPopup: false,
     });
-    expect(overlayExcel.members.find((m) => m.id === "m1")?.contribution).toBe(0);
+    expect(overlayExcel.members.find((m) => m.id === "m1")?.contribution).toBe(-30000);
 
-    // membersWithOverlayDonationAggregate 도 0 미만 음수 차단
+    // membersWithOverlayDonationAggregate 도 음수 유지
     const aggMembers = membersWithOverlayDonationAggregate(state, state.members, null, {
       day777Calc: true,
     });
-    expect(aggMembers.find((m) => m.id === "m1")?.contribution).toBe(0);
+    expect(aggMembers.find((m) => m.id === "m1")?.contribution).toBe(-30000);
+
+    // 일반 엑셀표(day777Calc=false)는 퐁당 수동 보정과 분리되어 0 이상
+    const mainExcel = applyOverlayDonationDisplayTotals(state, { day777Calc: false });
+    expect(mainExcel.members.find((m) => m.id === "m1")?.contribution).toBe(0);
   });
 });

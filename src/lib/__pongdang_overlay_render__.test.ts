@@ -219,7 +219,7 @@ describe("Pongdang overlay rendering pipeline test", () => {
     const res1 = membersWithOverlayDonationAggregate(baseState, baseState.members, null, { day777Calc: true });
     expect(res1.find((m) => m.id === syhId)?.contribution).toBe(92000);
 
-    // 2) 92000점 마이너스 처리 시 퐁당 팝업에서는 -92000점, 오버레이에서는 0점 (500만점으로 복귀되지 않음)
+    // 2) 92000점 마이너스 처리 시 팝업과 퐁당 오버레이 모두 -92000점
     const minusState: AppState = {
       ...baseState,
       donors: [
@@ -231,7 +231,7 @@ describe("Pongdang overlay rendering pipeline test", () => {
     expect(res2.find((m) => m.id === syhId)?.contribution).toBe(-92000);
 
     const resOverlay = membersWithOverlayDonationAggregate(minusState, minusState.members, null, { day777Calc: true, isPongdangPopup: false });
-    expect(resOverlay.find((m) => m.id === syhId)?.contribution).toBe(0);
+    expect(resOverlay.find((m) => m.id === syhId)?.contribution).toBe(-92000);
   });
 
   it("recognizes preset with 퐁당 in name as day777Calc unless explicitly disabled", () => {
