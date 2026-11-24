@@ -3754,6 +3754,20 @@ function AdminPageInner() {
       setActiveSubTargetId("donor-list");
       return;
     }
+    if (sub.targetId === "block-zubzub-settings") {
+      moveToSection("dashboard", "block-zubzub-settings", { fromSubItem: true });
+      try {
+        expandAdminSection("settlement-member-board");
+        expandAdminSection("block-zubzub-settings");
+      } catch {}
+      setActiveNav("dashboard");
+      setActiveSubTargetId("block-zubzub-settings");
+      setTimeout(() => {
+        const el = document.getElementById("block-zubzub-settings");
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 80);
+      return;
+    }
     const navKey = resolveNavKeyFromTargetId(sub.targetId);
     moveToSection(navKey, sub.targetId, { fromSubItem: true });
     if (typeof window !== "undefined") {
@@ -13314,6 +13328,26 @@ function AdminPageInner() {
               </button>
               <button
                 type="button"
+                className="px-3 py-2 rounded-[10px] text-sm font-semibold text-emerald-200 bg-[#071d15] border border-emerald-500/35 hover:bg-[#0c2f22] transition flex items-center gap-1.5"
+                onClick={() => {
+                  moveToSection("dashboard", "block-zubzub-settings", { fromSubItem: true });
+                  try {
+                    expandAdminSection("settlement-member-board");
+                    expandAdminSection("block-zubzub-settings");
+                  } catch {}
+                  setTimeout(() => {
+                    const el = document.getElementById("block-zubzub-settings");
+                    if (el) {
+                      el.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }
+                  }, 80);
+                }}
+                title="대표 시그 줍줍 설정 및 대기열을 관리합니다"
+              >
+                <span>🎁</span> 줍줍 관리
+              </button>
+              <button
+                type="button"
                 className="px-3.5 py-2 rounded-[10px] text-sm font-bold text-white transition"
                 style={{ background: "linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%)", boxShadow: "0 3px 12px rgba(37,99,235,0.3)", border: "1px solid rgba(96,165,250,0.5)" }}
                 onClick={onFetchLatestFromServer}
@@ -21144,6 +21178,57 @@ function AdminPageInner() {
                 <code className="text-neutral-300">/overlay</code>)에도 동일 연출이 포함됩니다. 아래 「엑셀표 · 순위
                 변동 연출」에서 색·크기를 설정하세요.
               </p>
+              <div id="zubzub-overlay-card" className="mb-3 rounded border border-amber-500/40 bg-amber-950/30 p-2.5 text-xs text-neutral-400 flex flex-wrap items-center justify-between gap-2 shadow-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-bold text-amber-300 flex items-center gap-1">
+                    <span>🎁</span> 대표 시그 줍줍 오버레이:
+                  </span>
+                  <code className="text-amber-100 bg-black/40 px-2 py-0.5 rounded border border-white/10 break-all">
+                    /overlay/zubzub?u={overlayUserId}&host=obs
+                  </code>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    className={`px-2 py-1 rounded text-xs shrink-0 font-medium ${copiedId === "dash-zubzub-inline" ? "bg-emerald-600 text-white" : "bg-neutral-700 hover:bg-neutral-600 text-neutral-200"}`}
+                    onClick={() => {
+                      void copyUrl(`/overlay/zubzub?u=${overlayUserId}&host=obs`, "dash-zubzub-inline");
+                    }}
+                  >
+                    {copiedId === "dash-zubzub-inline" ? "복사됨!" : "URL 복사"}
+                  </button>
+                  <button
+                    type="button"
+                    className="px-2.5 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs font-semibold text-white shadow-sm"
+                    onClick={() =>
+                      window.open(
+                        `/overlay/zubzub?u=${overlayUserId}&host=obs`,
+                        "_blank",
+                        "noopener,noreferrer"
+                      )
+                    }
+                  >
+                    오버레이 열기
+                  </button>
+                  <button
+                    type="button"
+                    className="px-2.5 py-1 rounded bg-amber-800 hover:bg-amber-700 text-xs font-semibold text-amber-100 border border-amber-500/40 shadow-sm"
+                    onClick={() => {
+                      moveToSection("dashboard", "block-zubzub-settings", { fromSubItem: true });
+                      try {
+                        expandAdminSection("settlement-member-board");
+                        expandAdminSection("block-zubzub-settings");
+                      } catch {}
+                      setTimeout(() => {
+                        const el = document.getElementById("block-zubzub-settings");
+                        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }, 80);
+                    }}
+                  >
+                    ⚙️ 줍줍 설정 바로가기
+                  </button>
+                </div>
+              </div>
               <div id="donor-rankings-settings" className="mb-3 rounded-xl border border-fuchsia-500/35 bg-fuchsia-950/25 p-3.5 space-y-3 shadow-lg">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
                   <div>
@@ -25358,25 +25443,19 @@ function AdminPageInner() {
                                                       const currentRanks = Array.isArray(p.rankCustomCells)
                                                         ? p.rankCustomCells
                                                         : (state.rankCustomCells || []);
-                                                      const currentMemberAtRank = participatingMembers[rankIdx];
-                                                      const memberFallback = currentMemberAtRank && p.memberCustomCells
-                                                        ? p.memberCustomCells[currentMemberAtRank.id] || ""
-                                                        : "";
-                                                      const val = currentRanks[rankIdx] !== undefined ? currentRanks[rankIdx] : memberFallback;
-                                                      return (
-                                                        <label
-                                                          key={`overlay-custom-rank-cell-${p.id}-${rankIdx}`}
-                                                          className="grid grid-cols-[92px_1fr] items-center gap-2 text-xs text-neutral-300 rounded border border-amber-500/25 bg-amber-950/20 px-2.5 py-1.5"
-                                                        >
-                                                          <span className="font-bold text-amber-300 truncate flex items-center gap-1" title={`${rankNum}위`}>
-                                                            <span>{rankNum === 1 ? "🥇" : rankNum === 2 ? "🥈" : rankNum === 3 ? "🥉" : "🎖️"}</span>
-                                                            {rankNum}위
-                                                            {currentMemberAtRank && (
-                                                              <span className="text-[10px] text-neutral-400 font-normal">
-                                                                ({currentMemberAtRank.name})
-                                                              </span>
-                                                            )}
-                                                          </span>
+                                                      const val = currentRanks[rankIdx] !== undefined ? currentRanks[rankIdx] : "";
+                                                       return (
+                                                         <label
+                                                           key={`overlay-custom-rank-cell-${p.id}-${rankIdx}`}
+                                                           className="grid grid-cols-[92px_1fr] items-center gap-2 text-xs text-neutral-300 rounded border border-amber-500/25 bg-amber-950/20 px-2.5 py-1.5"
+                                                         >
+                                                           <span className="font-bold text-amber-300 truncate flex items-center gap-1" title={`${rankNum}위 (순위 고정)`}>
+                                                             <span>{rankNum === 1 ? "🥇" : rankNum === 2 ? "🥈" : rankNum === 3 ? "🥉" : "🎖️"}</span>
+                                                             {rankNum}위
+                                                             <span className="text-[10px] text-amber-400/90 font-medium bg-amber-950/60 px-1 py-0.5 rounded border border-amber-500/30">
+                                                               [고정]
+                                                             </span>
+                                                           </span>
                                                           <input
                                                             className="w-full rounded bg-neutral-900/90 border border-white/15 px-2.5 py-1 text-xs text-white placeholder-neutral-500 font-medium"
                                                             defaultValue={val}

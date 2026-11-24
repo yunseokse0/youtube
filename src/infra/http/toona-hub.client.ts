@@ -258,7 +258,9 @@ export async function fetchToonaSignaturesViaHubSession(
         (sigJson.activePresetId && String(p.id) === String(sigJson.activePresetId)) ||
         ((sigJson as any).active_preset_id && String(p.id) === String((sigJson as any).active_preset_id)) ||
         Boolean(p.isActive || p.is_active || p.active) ||
-        (sigJson.activePresetName && String(p.name || "").trim() === String(sigJson.activePresetName).trim())
+        (session?.lastSigImport?.activePresetId && String(p.id) === String(session.lastSigImport.activePresetId)) ||
+        (sigJson.activePresetName && String(p.name || "").trim() === String(sigJson.activePresetName).trim()) ||
+        (session?.lastSigImport?.activePresetName && String(p.name || "").trim() === String(session.lastSigImport.activePresetName).trim())
     ) || ((sigJson.presets || []).length === 1 ? sigJson.presets![0] : undefined);
 
     const extractCountFromPreset = (p: any): number => {
@@ -270,7 +272,19 @@ export async function fetchToonaSignaturesViaHubSession(
       if (Number.isFinite(fromName) && fromName > 0) return fromName;
       return 0;
     };
-    const expectedPresetCount = extractCountFromPreset(currentPreset);
+    let expectedPresetCount = extractCountFromPreset(currentPreset);
+    if (expectedPresetCount === 0 && sigJson.activePresetName) {
+      const fromActiveName = parseInt(String(sigJson.activePresetName).match(/(\d+)\s*개/)?.[1] || "", 10);
+      if (Number.isFinite(fromActiveName) && fromActiveName > 0) {
+        expectedPresetCount = fromActiveName;
+      }
+    }
+    if (expectedPresetCount === 0 && session?.lastSigImport?.activePresetName) {
+      const fromSessionName = parseInt(String(session.lastSigImport.activePresetName).match(/(\d+)\s*개/)?.[1] || "", 10);
+      if (Number.isFinite(fromSessionName) && fromSessionName > 0) {
+        expectedPresetCount = fromSessionName;
+      }
+    }
 
     const extractIdsFromPreset = (p: any): string[] | null => {
       if (!p) return null;

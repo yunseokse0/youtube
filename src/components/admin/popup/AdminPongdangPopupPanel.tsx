@@ -7,11 +7,9 @@ import { showAppToast } from "@/lib/app-toast";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import { reassignDonorMemberInAppState } from "@/domain/contribution/apply-donation.usecases";
 import { persistDonationStateViaApi } from "@/lib/donation/persist-donation-client";
-import {
-  writeSessionBroadcastState,
-  notifyBroadcastStateLocalUpdated,
-} from "@/lib/server-authoritative-broadcast-state";
-import { syncMemberTotalsFromDonors } from "@/lib/state";
+import { writeSessionBroadcastState } from "@/lib/server-authoritative-broadcast-state";
+import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
+import { syncMemberTotalsFromDonors } from "@/domain/sync/sync-repair-1pass";
 import type { AppState, ContributionLog, Donor, Member } from "@/types";
 
 function formatAmount(n: number): string {
@@ -327,7 +325,7 @@ export default function AdminPongdangPopupPanel() {
     if (row.sourceType === "auto_sig") {
       // 자동 시그/후원 건 pongdangMinus 토글
       const nextDonors = (state.donors || []).map((d) => {
-        if (d.id === row.rawId) {
+        if (String(d.id) === String(row.rawId)) {
           const nextMinus = !d.pongdangMinus;
           return { ...d, pongdangMinus: nextMinus };
         }

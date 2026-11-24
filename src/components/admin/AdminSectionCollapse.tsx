@@ -292,4 +292,5 @@ export const ADMIN_SECTION_EXPAND_PARENTS: Record<string, string> = {
   "block-sig-sales": "settlement-member-board",
   "block-sig-rolling": "settlement-member-board",
   "block-sig-inventory": "settlement-member-board",
+  "block-zubzub-settings": "settlement-member-board",
 };
