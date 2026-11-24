@@ -871,6 +871,10 @@ export type AppState = {
   zubzubWaitingItems?: ZubZubQueueItem[];
   /** 화면 하단 횡스크롤 티커(전광판) 설정 */
   tickerSettings?: TickerSettings;
+  /** 오버레이 테이블 분할 설정 */
+  tableSplit?: any;
+  /** 오버레이 커스텀 열 이름 */
+  customColumnName?: string;
 };
 
 export type SettlementMemberRatioOverrides = Record<

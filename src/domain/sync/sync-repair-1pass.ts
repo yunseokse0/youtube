@@ -79,12 +79,27 @@ type DonationEventLike = {
   contributionPoints?: unknown;
 };
 
+export function isPongdangMinusContributionLog(log: ContributionLog | null | undefined): boolean {
+  if (!log) return false;
+  if (log.delta !== -1) return false;
+  if ((log as any).isPongdang === true) return true;
+  if (typeof log.id === "string" && (log.id.startsWith("plog_") || log.id.startsWith("cl_pd_"))) return true;
+  if (typeof log.note === "string" && log.note.includes("퐁당")) return true;
+  if (typeof (log as any).reason === "string" && (log as any).reason.includes("퐁당")) return true;
+  return false;
+}
+
 export function aggregateContribLogsByMember(
-  logs: ContributionLog[] | null | undefined
+  logs: ContributionLog[] | null | undefined,
+  opts?: { includePongdangMinus?: boolean }
 ): Map<string, { deltaSum: number; hasLogSource: boolean }> {
   const out = new Map<string, { deltaSum: number; hasLogSource: boolean }>();
   if (!logs || logs.length === 0) return out;
+  const includeMinus = Boolean(opts?.includePongdangMinus);
   for (const log of logs) {
+    if (!includeMinus && isPongdangMinusContributionLog(log)) {
+      continue;
+    }
     const mid = String(log.memberId || "").trim();
     if (!mid) continue;
     const amt = Math.max(0, Math.floor(Number(log.amount) || 0));
@@ -171,10 +186,13 @@ function buildMembersFromTotals(
       positions
     );
     const contribution = isOperating
-      ? Math.floor(Number(member.contribution) || 0)
-      : Math.floor(
-          (contribMap.get(member.id)?.donorPoints || 0) +
-            (logMap.get(member.id)?.deltaSum || 0)
+      ? Math.max(0, Math.floor(Number(member.contribution) || 0))
+      : Math.max(
+          0,
+          Math.floor(
+            (contribMap.get(member.id)?.donorPoints || 0) +
+              (logMap.get(member.id)?.deltaSum || 0)
+          )
         );
     return {
       ...member,
@@ -228,10 +246,13 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
       positions
     );
     const contribution = isOperating
-      ? Math.floor(Number(member.contribution) || 0)
-      : Math.floor(
-          (contribMap.get(member.id)?.donorPoints || 0) +
-            (logMap.get(member.id)?.deltaSum || 0)
+      ? Math.max(0, Math.floor(Number(member.contribution) || 0))
+      : Math.max(
+          0,
+          Math.floor(
+            (contribMap.get(member.id)?.donorPoints || 0) +
+              (logMap.get(member.id)?.deltaSum || 0)
+          )
         );
     return {
       ...member,

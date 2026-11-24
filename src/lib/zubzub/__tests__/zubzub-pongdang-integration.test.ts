@@ -71,9 +71,15 @@ describe("Zubzub & Pongdang Integration Tests", () => {
     const sigMap = collectDay777SigContributionByMember(minusState);
     expect(sigMap.get("m_claim")).toBe(-130000);
 
-    const updated = applyOverlayDonationDisplayTotals(minusState, { day777Calc: true });
+    // 퐁당퐁당 팝업창 모드에서는 마이너스 기여도 적용
+    const updated = applyOverlayDonationDisplayTotals(minusState, { day777Calc: true, isPongdangPopup: true });
     const claimMember = updated.members.find((m) => m.id === "m_claim");
     expect(claimMember?.contribution).toBe(-130000);
+
+    // 퐁당퐁당엑셀의 마이너스 기여가 엑셀표(오버레이)에는 영향을 주지 않음 (정상 기여도 유지)
+    const overlayExcel = applyOverlayDonationDisplayTotals(minusState, { day777Calc: true });
+    const overlayClaimMember = overlayExcel.members.find((m) => m.id === "m_claim");
+    expect(overlayClaimMember?.contribution).toBe(130000);
   });
 
   it("4. normalizeDonorsArray preserves isZubzubBonus, zubzubQueueId, and pongdangMinus", () => {

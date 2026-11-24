@@ -1,5 +1,5 @@
 import type { AppState, ContributionLog, Donor, Member, RouletteState, SigItem } from "@/types";
-import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
+import { syncMemberTotalsFromDonors, isPongdangMinusContributionLog } from "@/lib/donation/apply-donation-state";
 import { readManualSigBroadcastFromState } from "@/lib/manual-sig-broadcast-state";
 
 /** 프리셋/URL 값 → epoch ms. 비활성(전체 기간)이면 null, 책정 OFF면 -1 */
@@ -214,10 +214,16 @@ export function resolveDay777SigCreditFallbackMemberId(
   return "";
 }
 
+export type Day777SigContributionOpts = {
+  /** true면 d.pongdangMinus를 무시하고 정상(+) 단가로 합산 (메인 엑셀표/오버레이용) */
+  ignorePongdangMinus?: boolean;
+};
+
 /** 나온 시그 단가 → 멤버별 시그 기여도 (777,000원 후원 금액은 넣지 않음) */
 export function collectDay777SigContributionByMember(
   state: AppState | null | undefined,
-  fromAt?: number | null
+  fromAt?: number | null,
+  opts?: Day777SigContributionOpts
 ): Map<string, number> {
   const explicitFromAt = normalizeDonationAggregateFromAt(fromAt);
   const isPongdangOff = Number(state?.pongdangResetAt || 0) === -1;
@@ -260,6 +266,7 @@ export function collectDay777SigContributionByMember(
 
   // 외부(Toona 등 타 프로젝트)에서 전달된 나온 시그 기여도 (sigPrice 또는 isSigCredit / contributionPoints)
   const donorRows = effectiveFromAtOrNull != null ? filterDonorsFromAggregateAt(state?.donors, effectiveFromAtOrNull) : state?.donors || [];
+  const ignoreMinus = Boolean(opts?.ignorePongdangMinus);
   for (const d of donorRows) {
     if (d.donationExcluded === true && !d.isZubzubBonus) continue;
     const mid = String(d.memberId || fallback || "").trim();
@@ -272,7 +279,7 @@ export function collectDay777SigContributionByMember(
     const amt = Math.max(0, Math.floor(Number(d.amount || 0)));
     const isCredit = Boolean((d as { isSigCredit?: boolean }).isSigCredit || d.isZubzubBonus);
 
-    const mult = d.pongdangMinus ? -1 : 1;
+    const mult = (!ignoreMinus && d.pongdangMinus) ? -1 : 1;
     if (explicitSigPrice > 0) {
       byMember.set(mid, (byMember.get(mid) || 0) + mult * explicitSigPrice);
     } else if (isCredit && cp > 0) {
@@ -287,6 +294,9 @@ export function collectDay777SigContributionByMember(
   for (const log of logs) {
     const mid = String(log.memberId || "").trim();
     if (!mid) continue;
+    if (ignoreMinus && isPongdangMinusContributionLog(log)) {
+      continue;
+    }
     const delta = log.delta === -1 ? -1 : 1;
     const amt = Math.max(0, Math.floor(Number(log.amount || 0)));
     byMember.set(mid, (byMember.get(mid) || 0) + delta * amt);
@@ -313,6 +323,8 @@ export type OverlayDonationDisplayOpts = {
   day777Calc?: boolean;
   /** 퐁당퐁당 기여도 수동 입력 모드 (수동 입력값 적용) */
   pongdangManualMode?: boolean;
+  /** 퐁당퐁당 전용 팝업창 모드 (마이너스 기여도 및 음수 표시 허용). 오버레이 엑셀표는 기본 false */
+  isPongdangPopup?: boolean;
 };
 
 /**
@@ -327,6 +339,7 @@ export function applyOverlayDonationDisplayTotals(
 ): AppState {
   const fromAt = normalizeDonationAggregateFromAt(opts?.fromAt);
   const day777 = Boolean(opts?.day777Calc);
+  const isPongdangPopup = Boolean(opts?.isPongdangPopup);
 
   // 책정 OFF (-1): 전체 후원 및 기여도 0원 고정 표출
   if (fromAt === -1) {
@@ -341,7 +354,17 @@ export function applyOverlayDonationDisplayTotals(
     };
   }
 
-  if (fromAt == null && !day777) return state;
+  if (fromAt == null && !day777) {
+    return {
+      ...state,
+      members: (state.members || []).map((m) => ({
+        ...m,
+        contribution: isPongdangPopup
+          ? Math.floor(Number(m.contribution) || 0)
+          : Math.max(0, Math.floor(Number(m.contribution) || 0)),
+      })),
+    };
+  }
 
   const donorsForAmount =
     fromAt != null ? filterDonorsFromAggregateAt(state.donors, fromAt) : state.donors || [];
@@ -350,10 +373,16 @@ export function applyOverlayDonationDisplayTotals(
       ? filterContributionLogsFromAggregateAt(state.contributionLogs, fromAt)
       : state.contributionLogs || [];
 
+  // 엑셀표(오버레이)에서는 퐁당퐁당 마이너스 로그 제외
+  const filteredLogsForAmount = (logsForAmount || []).filter((l) => {
+    if (isPongdangPopup) return true;
+    return !isPongdangMinusContributionLog(l);
+  });
+
   const amountSynced = syncMemberTotalsFromDonors({
     ...state,
     donors: donorsForAmount,
-    contributionLogs: day777 ? [] : logsForAmount,
+    contributionLogs: day777 ? [] : filteredLogsForAmount,
   });
 
   if (!day777) return amountSynced;
@@ -372,20 +401,27 @@ export function applyOverlayDonationDisplayTotals(
   );
   const effectiveCutoff = fromAt != null ? fromAt : (pongdangResetCutoff > 0 ? pongdangResetCutoff : null);
 
-  const sigById = collectDay777SigContributionByMember(state, effectiveCutoff);
+  const sigById = collectDay777SigContributionByMember(state, effectiveCutoff, {
+    ignorePongdangMinus: !isPongdangPopup,
+  });
 
   return {
     ...amountSynced,
     members: (amountSynced.members || []).map((m) => {
       const orig = originalMemberMap.get(m.id);
       const autoVal = sigById.get(m.id) ?? 0;
-      const manualAdj = isManualMode ? Number(manualContribs[m.id]) || 0 : 0;
+      let manualAdj = isManualMode ? Number(manualContribs[m.id]) || 0 : 0;
+      // 엑셀표(오버레이)에서는 퐁당퐁당 수동 음수 보정값이 기여도를 깎지 않도록 격리
+      if (!isPongdangPopup && manualAdj < 0) {
+        manualAdj = 0;
+      }
       const currentContrib = Math.floor(Number(orig?.contribution) || 0);
       const hasDonorsSource = Array.isArray(state?.donors) && state.donors.length > 0;
       const baseVal = autoVal !== 0 ? autoVal : (effectiveCutoff != null || hasDonorsSource ? 0 : currentContrib);
+      const rawTotal = baseVal + manualAdj;
       return {
         ...m,
-        contribution: baseVal + manualAdj,
+        contribution: isPongdangPopup ? rawTotal : Math.max(0, rawTotal),
       };
     }),
   };
@@ -403,15 +439,28 @@ export function membersWithOverlayDonationAggregate(
   state: AppState,
   members: Member[],
   fromAt: number | null | undefined,
-  opts?: { day777Calc?: boolean; pongdangManualMode?: boolean }
+  opts?: { day777Calc?: boolean; pongdangManualMode?: boolean; isPongdangPopup?: boolean }
 ): Member[] {
   const fromAtN = normalizeDonationAggregateFromAt(fromAt);
   const day777 = Boolean(opts?.day777Calc);
-  if (fromAtN == null && !day777) return members;
+  const isPongdangPopup = Boolean(opts?.isPongdangPopup);
+  if (fromAtN == null && !day777) {
+    return members.map((m) => ({
+      ...m,
+      contribution: isPongdangPopup
+        ? Math.floor(Number(m.contribution) || 0)
+        : Math.max(0, Math.floor(Number(m.contribution) || 0)),
+    }));
+  }
   return (
     applyOverlayDonationDisplayTotals(
       { ...state, members },
-      { fromAt: fromAtN, day777Calc: day777, pongdangManualMode: opts?.pongdangManualMode }
+      {
+        fromAt: fromAtN,
+        day777Calc: day777,
+        pongdangManualMode: opts?.pongdangManualMode,
+        isPongdangPopup,
+      }
     ).members || members
   );
 }
@@ -426,8 +475,14 @@ export function resolveOverlayContributionSource(
     return { donors: [], contributionLogs: [] };
   }
   const day777 = Boolean(opts.day777Calc);
+  const isPongdangPopup = Boolean(opts.isPongdangPopup);
+  const filterMinusLogs = (logs: ContributionLog[] | undefined) => {
+    if (!logs) return [];
+    if (isPongdangPopup) return logs;
+    return logs.filter((l) => !isPongdangMinusContributionLog(l));
+  };
   if (!day777 && fromAt == null) {
-    return { donors: state.donors, contributionLogs: state.contributionLogs };
+    return { donors: state.donors, contributionLogs: filterMinusLogs(state.contributionLogs) };
   }
   if (day777) {
     /** 기여도는 멤버.contribution(나온 시그 단가)만 사용. 777,000원 후원 원장을 다시 합치지 않음 */
@@ -435,6 +490,6 @@ export function resolveOverlayContributionSource(
   }
   return {
     donors: filterDonorsFromAggregateAt(state.donors, fromAt!),
-    contributionLogs: filterContributionLogsFromAggregateAt(state.contributionLogs, fromAt!),
+    contributionLogs: filterMinusLogs(filterContributionLogsFromAggregateAt(state.contributionLogs, fromAt!)),
   };
 }

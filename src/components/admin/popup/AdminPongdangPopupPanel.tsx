@@ -274,7 +274,7 @@ export default function AdminPongdangPopupPanel() {
       const nextLogs = (state.contributionLogs || []).map((l) => {
         if (l.id === row.rawId) {
           const nextDelta: 1 | -1 = l.delta === -1 ? 1 : -1;
-          return { ...l, delta: nextDelta };
+          return { ...l, delta: nextDelta, isPongdang: true };
         }
         return l;
       });
@@ -327,8 +327,9 @@ export default function AdminPongdangPopupPanel() {
       donorName: newLogDonorName.trim() || undefined,
       amount: amt,
       delta: newLogIsMinus ? -1 : 1,
-      note: newLogNote.trim() || (newLogIsMinus ? "수동 기여도 차감" : "수동 기여도 추가"),
+      note: newLogNote.trim() || (newLogIsMinus ? "퐁당퐁당 수동 차감" : "퐁당퐁당 수동 추가"),
       at: Date.now(),
+      ...({ isPongdang: true } as any),
     };
 
     const nextLogs = [newLog, ...(state.contributionLogs || [])];

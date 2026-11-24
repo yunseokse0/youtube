@@ -104,8 +104,10 @@ describe("Pongdang negative contribution and manual adjustment", () => {
       contributionLogs: [],
     } as unknown as AppState;
 
+    // 퐁당퐁당 팝업창 모드에서는 음수 기여도 허용
     const updated = applyOverlayDonationDisplayTotals(mockState, {
       day777Calc: true,
+      isPongdangPopup: true,
     });
 
     const m1 = updated.members.find((m) => m.id === "m1");
@@ -113,6 +115,15 @@ describe("Pongdang negative contribution and manual adjustment", () => {
 
     expect(m1?.contribution).toBe(-50000);
     expect(m2?.contribution).toBe(30000);
+
+    // 방송 엑셀표(오버레이)에서는 퐁당퐁당 마이너스 보정값이 메인 엑셀표에 영향을 주지 않음 (0 미만 차감 방지)
+    const overlayExcel = applyOverlayDonationDisplayTotals(mockState, {
+      day777Calc: true,
+    });
+    const overlayM1 = overlayExcel.members.find((m) => m.id === "m1");
+    const overlayM2 = overlayExcel.members.find((m) => m.id === "m2");
+    expect(overlayM1?.contribution).toBe(0);
+    expect(overlayM2?.contribution).toBe(30000);
   });
 
   it("ranks negative contributions properly below 0 in memberContributionRankingTotal", () => {
