@@ -338,26 +338,38 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => {
                 const origin = typeof window !== "undefined" ? window.location.origin : "";
                 const url = `${origin}/overlay/zubzub?u=${encodeURIComponent(userId)}&host=obs`;
                 navigator.clipboard.writeText(url);
-                alert(`독립 줍줍 오버레이 URL이 복사되었습니다:\n${url}`);
+                alert(`독립 줍줍 오버레이 실방송용 URL이 복사되었습니다:\n${url}\n\n* 평소에는 방송 화면을 가리지 않게 투명 대기하며, 대표 시그가 터졌을 때와 멤버가 줍줍 성공 시에만 표출됩니다.`);
               }}
               className="rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 text-white font-bold text-[11px] shadow-sm flex items-center gap-1 cursor-pointer"
             >
-              📋 줍줍 오버레이 URL 복사
+              📋 실방송용 URL 복사
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const origin = typeof window !== "undefined" ? window.location.origin : "";
+                const url = `${origin}/overlay/zubzub?u=${encodeURIComponent(userId)}&host=obs&demo=1`;
+                navigator.clipboard.writeText(url);
+                alert(`OBS 위치/크기 조절용 미리보기 URL이 복사되었습니다:\n${url}\n\n* OBS 브라우저 소스에 넣으면 상시 배너가 표출되어 크기와 위치를 쉽게 맞출 수 있습니다.`);
+              }}
+              className="rounded bg-amber-600 hover:bg-amber-500 px-3 py-1.5 text-white font-bold text-[11px] shadow-sm flex items-center gap-1 cursor-pointer"
+            >
+              👁️ OBS 위치 조절용 미리보기 URL 복사
             </button>
             <a
-              href={`/overlay/zubzub?u=${encodeURIComponent(userId)}&host=obs`}
+              href={`/overlay/zubzub?u=${encodeURIComponent(userId)}&host=obs&demo=1`}
               target="_blank"
               rel="noopener noreferrer"
               className="rounded bg-neutral-800 hover:bg-neutral-700 px-2.5 py-1.5 text-neutral-300 border border-white/10 text-[11px] font-medium"
             >
-              ↗️ 오버레이 열기
+              ↗️ 미리보기 열기
             </a>
           </div>
         </div>
