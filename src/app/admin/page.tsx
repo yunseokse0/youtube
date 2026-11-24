@@ -35,6 +35,7 @@ import { sliceDonorListPage } from "@/lib/donor-list-pagination";
 import ToonaHubPanel, { TOONA_HUB_REFRESH_EVENT } from "@/components/admin/ToonaHubPanel";
 import { ZubzubAdminPanel } from "@/components/admin/ZubzubAdminPanel";
 import { TickerAdminPanel } from "@/components/admin/TickerAdminPanel";
+import { GoalBar } from "@/components/GoalBar";
 import ContributionFormulaPanel from "@/components/admin/ContributionFormulaPanel";
 import {
   buildSettlementUiOptionsFromForm,
@@ -21568,6 +21569,277 @@ function AdminPageInner() {
                                 value={currentGoalPreset.goalLabel || "후원"}
                                 onChange={(e) => updatePreset(currentGoalPreset.id, { goalLabel: e.target.value })}
                               />
+                            </div>
+                          </div>
+
+                          {/* 목표바 실시간 미리보기 (Live Preview) */}
+                          <div className="rounded-xl border border-white/10 bg-black/50 p-3 space-y-1.5 mt-2">
+                            <div className="flex items-center justify-between text-[11px] text-neutral-400 font-medium">
+                              <span className="flex items-center gap-1 font-semibold text-indigo-200">
+                                <span>👀</span> 목표바 실시간 미리보기
+                              </span>
+                              <span className="text-neutral-500 text-[10px]">설정 변경 시 즉시 미리보기에 반영됩니다</span>
+                            </div>
+                            <div className="flex justify-center overflow-x-auto py-2">
+                              <GoalBar
+                                current={Math.max(1, Math.round(Number(currentGoalPreset.goal || 10000000) * 0.42))}
+                                goal={Math.max(1, Number(currentGoalPreset.goal || 10000000))}
+                                label={currentGoalPreset.goalLabel || "후원"}
+                                width={Math.max(260, Math.min(1000, parseInt(currentGoalPreset.goalWidth || "560", 10) || 560))}
+                                textColor={currentGoalPreset.goalTextColor || "#6b2d4a"}
+                                fontSizePx={parseInt(currentGoalPreset.goalFontSize || "", 10) || undefined}
+                                fontWeight={currentGoalPreset.goalFontWeight || undefined}
+                                textOutlineColor={currentGoalPreset.goalTextOutlineColor || undefined}
+                                textOutlineWidthPx={parseFloat(currentGoalPreset.goalTextOutlineWidth || "") || undefined}
+                                barBgColor={currentGoalPreset.goalBarBgColor || undefined}
+                                barFillColor={currentGoalPreset.goalBarFillColor || undefined}
+                                fontFamilyCss={currentGoalPreset.goalFontFamily || undefined}
+                              />
+                            </div>
+                          </div>
+
+                          {/* 🎯 목표바 텍스트 및 외관 스타일 상세 조절 */}
+                          <div className="rounded-xl border border-indigo-500/20 bg-neutral-900/60 p-3 space-y-3 mt-2">
+                            <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                              <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+                                <span>🎨</span> 목표바 텍스트 & 디자인 조절
+                              </span>
+                              <span className="text-[10px] text-neutral-400">
+                                글자 크기, 글자 색, 외곽선, 막대 너비 및 배경/채움색을 직접 조절합니다.
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                              {/* 1. 글자 크기 (px) */}
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between text-[11px] text-neutral-300">
+                                  <label className="font-semibold">목표 글자 크기 (px)</label>
+                                  <span className="text-indigo-400 font-mono text-[10px]">
+                                    {currentGoalPreset.goalFontSize ? `${currentGoalPreset.goalFontSize}px` : "자동(기본)"}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="range"
+                                    min={10}
+                                    max={48}
+                                    value={(() => {
+                                      const n = parseInt(String(currentGoalPreset.goalFontSize || ""), 10);
+                                      return Number.isFinite(n) && n >= 10 ? Math.min(48, n) : 14;
+                                    })()}
+                                    onChange={(e) => updatePreset(currentGoalPreset.id, { goalFontSize: e.target.value })}
+                                    className="flex-1 accent-indigo-500"
+                                  />
+                                  <input
+                                    className="w-14 px-2 py-1 rounded bg-neutral-900 border border-white/15 text-xs text-right text-white font-mono"
+                                    type="number"
+                                    min={10}
+                                    max={48}
+                                    value={currentGoalPreset.goalFontSize || ""}
+                                    onChange={(e) =>
+                                      updatePreset(currentGoalPreset.id, {
+                                        goalFontSize: e.target.value.replace(/[^\d]/g, "").slice(0, 2),
+                                      })
+                                    }
+                                    placeholder="자동"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* 2. 글자 색 */}
+                              <div className="space-y-1">
+                                <label className="text-[11px] font-semibold text-neutral-300">목표 글자 색</label>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="color"
+                                    value={toColorPickerValue(currentGoalPreset.goalTextColor || "#6b2d4a", "#6b2d4a")}
+                                    onChange={(e) => updatePreset(currentGoalPreset.id, { goalTextColor: e.target.value })}
+                                    className="h-8 w-10 rounded border border-white/20 bg-transparent p-0.5 cursor-pointer"
+                                  />
+                                  <input
+                                    className="flex-1 px-2 py-1 rounded bg-neutral-900 border border-white/15 text-xs font-mono text-white"
+                                    value={currentGoalPreset.goalTextColor || ""}
+                                    onChange={(e) => updatePreset(currentGoalPreset.id, { goalTextColor: e.target.value })}
+                                    placeholder="#6b2d4a"
+                                  />
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded bg-neutral-800 hover:bg-neutral-700 px-2 py-1 text-[10px] text-neutral-300 border border-white/10"
+                                    onClick={() => updatePreset(currentGoalPreset.id, { goalTextColor: "" })}
+                                  >
+                                    기본
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* 3. 글자 굵기 */}
+                              <div className="space-y-1">
+                                <label className="text-[11px] font-semibold text-neutral-300">목표 글자 굵기</label>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="range"
+                                    min={400}
+                                    max={900}
+                                    step={100}
+                                    value={(() => {
+                                      const n = parseInt(String(currentGoalPreset.goalFontWeight ?? ""), 10);
+                                      return Number.isFinite(n) ? Math.min(900, Math.max(400, n)) : 900;
+                                    })()}
+                                    onChange={(e) => updatePreset(currentGoalPreset.id, { goalFontWeight: e.target.value })}
+                                    className="flex-1 accent-indigo-500"
+                                  />
+                                  <select
+                                    className="w-24 px-2 py-1 rounded bg-neutral-900 border border-white/15 text-xs text-white"
+                                    value={currentGoalPreset.goalFontWeight || ""}
+                                    onChange={(e) => updatePreset(currentGoalPreset.id, { goalFontWeight: e.target.value })}
+                                  >
+                                    <option value="">기본(900)</option>
+                                    <option value="400">400</option>
+                                    <option value="500">500</option>
+                                    <option value="600">600</option>
+                                    <option value="700">700</option>
+                                    <option value="800">800</option>
+                                    <option value="900">900</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              {/* 4. 막대 너비 (px) */}
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between text-[11px] text-neutral-300">
+                                  <label className="font-semibold">막대 너비 (px)</label>
+                                  <span className="text-indigo-400 font-mono text-[10px]">
+                                    {currentGoalPreset.goalWidth || "560"}px
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="range"
+                                    min={260}
+                                    max={1200}
+                                    step={10}
+                                    value={parseInt(currentGoalPreset.goalWidth || "560", 10) || 560}
+                                    onChange={(e) => updatePreset(currentGoalPreset.id, { goalWidth: e.target.value })}
+                                    className="flex-1 accent-indigo-500"
+                                  />
+                                  <input
+                                    className="w-16 px-2 py-1 rounded bg-neutral-900 border border-white/15 text-xs text-right text-white font-mono"
+                                    type="number"
+                                    min={260}
+                                    max={1200}
+                                    step={10}
+                                    value={currentGoalPreset.goalWidth || "560"}
+                                    onChange={(e) => updatePreset(currentGoalPreset.id, { goalWidth: e.target.value.replace(/[^\d]/g, "") })}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* 5. 외곽선 색상 */}
+                              <div className="space-y-1">
+                                <label className="text-[11px] font-semibold text-neutral-300">글자 외곽선(테두리) 색</label>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="color"
+                                    value={toColorPickerValue(currentGoalPreset.goalTextOutlineColor || "#060c18", "#060c18")}
+                                    onChange={(e) => updatePreset(currentGoalPreset.id, { goalTextOutlineColor: e.target.value })}
+                                    className="h-8 w-10 rounded border border-white/20 bg-transparent p-0.5 cursor-pointer"
+                                  />
+                                  <input
+                                    className="flex-1 px-2 py-1 rounded bg-neutral-900 border border-white/15 text-xs font-mono text-white"
+                                    value={currentGoalPreset.goalTextOutlineColor || ""}
+                                    onChange={(e) => updatePreset(currentGoalPreset.id, { goalTextOutlineColor: e.target.value })}
+                                    placeholder="#060c18"
+                                  />
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded bg-neutral-800 hover:bg-neutral-700 px-2 py-1 text-[10px] text-neutral-300 border border-white/10"
+                                    onClick={() => updatePreset(currentGoalPreset.id, { goalTextOutlineColor: "" })}
+                                  >
+                                    기본
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* 6. 외곽선 두께 */}
+                              <div className="space-y-1">
+                                <label className="text-[11px] font-semibold text-neutral-300">글자 외곽선 두께</label>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="range"
+                                    min={0}
+                                    max={3}
+                                    step={0.1}
+                                    value={(() => {
+                                      const n = parseFloat(String(currentGoalPreset.goalTextOutlineWidth ?? ""));
+                                      return Number.isFinite(n) ? Math.min(3, Math.max(0, n)) : 0.8;
+                                    })()}
+                                    onChange={(e) => updatePreset(currentGoalPreset.id, { goalTextOutlineWidth: e.target.value })}
+                                    className="flex-1 accent-indigo-500"
+                                  />
+                                  <input
+                                    className="w-14 px-2 py-1 rounded bg-neutral-900 border border-white/15 text-xs text-right text-white font-mono"
+                                    type="number"
+                                    min={0}
+                                    max={3}
+                                    step={0.1}
+                                    value={currentGoalPreset.goalTextOutlineWidth ?? ""}
+                                    onChange={(e) => updatePreset(currentGoalPreset.id, { goalTextOutlineWidth: e.target.value.replace(/[^\d.]/g, "").slice(0, 3) })}
+                                    placeholder="자동"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* 7. 막대 배경색 */}
+                              <div className="space-y-1">
+                                <label className="text-[11px] font-semibold text-neutral-300">막대 배경(트랙) 색</label>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="color"
+                                    value={toColorPickerValue(currentGoalPreset.goalBarBgColor || "#fde8f2", "#fde8f2")}
+                                    onChange={(e) => updatePreset(currentGoalPreset.id, { goalBarBgColor: e.target.value })}
+                                    className="h-8 w-10 rounded border border-white/20 bg-transparent p-0.5 cursor-pointer"
+                                  />
+                                  <input
+                                    className="flex-1 px-2 py-1 rounded bg-neutral-900 border border-white/15 text-xs font-mono text-white"
+                                    value={currentGoalPreset.goalBarBgColor || ""}
+                                    onChange={(e) => updatePreset(currentGoalPreset.id, { goalBarBgColor: e.target.value })}
+                                    placeholder="#fde8f2"
+                                  />
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded bg-neutral-800 hover:bg-neutral-700 px-2 py-1 text-[10px] text-neutral-300 border border-white/10"
+                                    onClick={() => updatePreset(currentGoalPreset.id, { goalBarBgColor: "" })}
+                                  >
+                                    기본
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* 8. 게이지(채움) 색 */}
+                              <div className="space-y-1">
+                                <label className="text-[11px] font-semibold text-neutral-300">게이지(채움) 색</label>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="color"
+                                    value={toColorPickerValue(currentGoalPreset.goalBarFillColor || "#ff6eb5", "#ff6eb5")}
+                                    onChange={(e) => updatePreset(currentGoalPreset.id, { goalBarFillColor: e.target.value })}
+                                    className="h-8 w-10 rounded border border-white/20 bg-transparent p-0.5 cursor-pointer"
+                                  />
+                                  <input
+                                    className="flex-1 px-2 py-1 rounded bg-neutral-900 border border-white/15 text-xs font-mono text-white"
+                                    value={currentGoalPreset.goalBarFillColor || ""}
+                                    onChange={(e) => updatePreset(currentGoalPreset.id, { goalBarFillColor: e.target.value })}
+                                    placeholder="#ff6eb5"
+                                  />
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded bg-neutral-800 hover:bg-neutral-700 px-2 py-1 text-[10px] text-neutral-300 border border-white/10"
+                                    onClick={() => updatePreset(currentGoalPreset.id, { goalBarFillColor: "" })}
+                                  >
+                                    기본
+                                  </button>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         )}
