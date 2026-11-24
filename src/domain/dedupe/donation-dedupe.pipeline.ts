@@ -1426,7 +1426,26 @@ export function isDuplicateDonationEvent(
       if (dExternal && dExternal.toLowerCase() === externalId.toLowerCase()) {
         const dAmount = Math.max(0, Math.round(Number(d.amount) || 0));
         const evAmount = Math.max(0, Math.round(Number(rawEvent.amount) || 0));
-        if (dAmount > 0 && evAmount > 0 && dAmount === evAmount) return true;
+        if (dAmount > 0 && evAmount > 0 && dAmount === evAmount) {
+          /**
+           * 🔴 2026-11-25 후원 누락 Fix: externalId+금액 일치만으로 중복 판정하지 않는다.
+           *  toona 테스트 채널은 externalId 를 `test:base64(닉네임:금액)` 로 **결정적으로** 발급한다.
+           *  → 같은 후원자가 같은 금액을 두 번 후원하면 externalId 가 100% 동일해진다.
+           *  하지만 각 후원은 고유한 강한 row-id(`bank:sms:<cuid>` / `bank:din:<cuid>`)를 가진다.
+           *  두 행이 서로 다른 강한 row-id 를 가지면 externalId 가 같아도 **별개 후원**이다.
+           *  (기존에는 이 체크가 distinctStrongUid 가드보다 앞에 있어서, 서로 다른 cuid 를 가진
+           *   정상적인 반복 후원이 externalId 충돌로 병합·누락되었다.)
+           */
+          const dHasStrongId = Boolean(donorId) && !isWeakToonationDonorId(donorId);
+          const evHasStrongId = Boolean(eventId) && !isWeakToonationDonorId(eventId);
+          const distinctStrongRows =
+            dHasStrongId &&
+            evHasStrongId &&
+            Boolean(donorIdNorm) &&
+            Boolean(eventIdNorm) &&
+            donorIdNorm !== eventIdNorm;
+          if (!distinctStrongRows) return true;
+        }
       }
     }
     const dDonorKey = String((d as unknown as { donorKey?: string | number }).donorKey || "").trim();
