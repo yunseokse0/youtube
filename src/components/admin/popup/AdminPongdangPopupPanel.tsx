@@ -53,6 +53,37 @@ export default function AdminPongdangPopupPanel() {
 
   const memberPositions = state?.memberPositions;
 
+  // 퐁당퐁당 엑셀표 및 백오피스에서 제외된 멤버 ID 집합
+  const excludedMemberIdsSet = useMemo(() => {
+    const ids = new Set<string>();
+    for (const id of state?.pongdangExcludedMemberIds || []) {
+      if (id) ids.add(String(id).trim());
+    }
+    const pongdangPresets = (state?.overlayPresets || []).filter(
+      (p: any) =>
+        p.day777Calc ||
+        p.theme === "excelPongdang" ||
+        p.membersTheme === "excelPongdang" ||
+        String(p.name || "").includes("퐁당")
+    );
+    for (const p of pongdangPresets) {
+      const pList = Array.isArray((p as any).excludedMemberIds)
+        ? (p as any).excludedMemberIds
+        : typeof (p as any).excludedMemberIds === "string"
+        ? String((p as any).excludedMemberIds).split(",")
+        : [];
+      for (const id of pList) {
+        if (id && String(id).trim()) ids.add(String(id).trim());
+      }
+    }
+    return ids;
+  }, [state?.pongdangExcludedMemberIds, state?.overlayPresets]);
+
+  // 퐁당퐁당 기여도 관리에 실제 참여하는 멤버들 (제외된 멤버 필터링)
+  const participatingMembers = useMemo(() => {
+    return members.filter((m) => !excludedMemberIdsSet.has(m.id));
+  }, [members, excludedMemberIdsSet]);
+
   // 1. 자동 수집된 777 시그 기여도 맵 (pongdangMinus 반영)
   const autoSigContributionMap = useMemo<Map<string, number>>(() => {
     const map = new Map<string, number>();
@@ -99,12 +130,12 @@ export default function AdminPongdangPopupPanel() {
     return map;
   }, [state?.contributionLogs]);
 
-  // 3. 멤버별 최종 퐁당퐁당 기여도 계산 (음수 가능)
+  // 3. 멤버별 최종 퐁당퐁당 기여도 계산 (제외된 멤버는 기여도 관리에 미포함)
   const memberSummaries = useMemo(() => {
     const isManualMode = state?.pongdangManualMode !== false;
     const manualContribs = state?.pongdangManualContributions || {};
 
-    return members.map((m) => {
+    return participatingMembers.map((m) => {
       const isOperating = isOperatingSettlementMember(m, memberPositions);
       const autoVal = autoSigContributionMap.get(m.id) ?? 0;
       const logVal = manualLogMap.get(m.id) ?? 0;
@@ -130,7 +161,7 @@ export default function AdminPongdangPopupPanel() {
       // 기여도 내림차순 정렬 (음수는 양수 아래로)
       return b.finalContribution - a.finalContribution;
     });
-  }, [members, memberPositions, autoSigContributionMap, manualLogMap, state?.pongdangManualMode, state?.pongdangManualContributions]);
+  }, [participatingMembers, memberPositions, autoSigContributionMap, manualLogMap, state?.pongdangManualMode, state?.pongdangManualContributions]);
 
   // 총합 계산 (음수 포함)
   const totals = useMemo(() => {
@@ -178,6 +209,8 @@ export default function AdminPongdangPopupPanel() {
       if (cutoff > 0 && Number(d.at || 0) < cutoff) continue;
       const isAutoAssigned = Boolean(d.memberAutoAssigned);
       const mid = String(d.memberId || "").trim();
+      // 제외된 멤버의 기여도 건은 퐁당퐁당 내역에서 제외 (단, 아직 미지정 상태인 건은 제외하지 않음)
+      if (!isAutoAssigned && mid && excludedMemberIdsSet.has(mid)) continue;
       const sigPrice = Math.max(
         0,
         Math.floor(Number(d.sigPrice || (d.isZubzubBonus ? (d.amount || d.contributionPoints) : 0) || 0))
@@ -215,6 +248,7 @@ export default function AdminPongdangPopupPanel() {
     const logs = state.contributionLogs || [];
     for (const l of logs) {
       const mid = String(l.memberId || "").trim();
+      if (mid && excludedMemberIdsSet.has(mid)) continue;
       const amt = Math.max(0, Math.floor(Number(l.amount || 0)));
       list.push({
         key: `log_${l.id}`,
@@ -232,7 +266,7 @@ export default function AdminPongdangPopupPanel() {
 
     // 최신순 정렬
     return list.sort((a, b) => b.at - a.at);
-  }, [state, members]);
+  }, [state, members, excludedMemberIdsSet]);
 
   // 필터링 적용된 행들
   const filteredRows = useMemo(() => {
@@ -325,11 +359,56 @@ export default function AdminPongdangPopupPanel() {
     }
   }, [state, setState, persistAppState, members]);
 
+  // 작업 핸들러: 퐁당퐁당 멤버 참여/제외 토글
+  const toggleMemberExclusion = useCallback(async (memberId: string) => {
+    if (!state) return;
+    const isCurrentlyExcluded = excludedMemberIdsSet.has(memberId);
+    const currentGlobal = state.pongdangExcludedMemberIds || [];
+    const nextGlobal = isCurrentlyExcluded
+      ? currentGlobal.filter((id) => id !== memberId)
+      : Array.from(new Set([...currentGlobal, memberId]));
+
+    const nextPresets = (state.overlayPresets || []).map((p: any) => {
+      const isPongdang =
+        p.day777Calc ||
+        p.theme === "excelPongdang" ||
+        p.membersTheme === "excelPongdang" ||
+        String(p.name || "").includes("퐁당");
+      if (!isPongdang) return p;
+      const pCurrent = Array.isArray(p.excludedMemberIds)
+        ? p.excludedMemberIds
+        : typeof p.excludedMemberIds === "string"
+        ? String(p.excludedMemberIds).split(",").map((s: string) => s.trim()).filter(Boolean)
+        : [];
+      const nextPList = isCurrentlyExcluded
+        ? pCurrent.filter((id: string) => id !== memberId)
+        : Array.from(new Set([...pCurrent, memberId]));
+      return { ...p, excludedMemberIds: nextPList };
+    });
+
+    const nextState: AppState = {
+      ...state,
+      pongdangExcludedMemberIds: nextGlobal,
+      overlayPresets: nextPresets,
+    };
+    setState(nextState);
+    const ok = await persistAppState(nextState);
+    if (ok) {
+      const mName = members.find((m) => m.id === memberId)?.name || memberId;
+      showAppToast(
+        isCurrentlyExcluded
+          ? `[${mName}] 멤버를 퐁당퐁당 기여도 관리에 포함했습니다.`
+          : `[${mName}] 멤버를 퐁당퐁당 기여도 관리에서 제외했습니다.`,
+        { variant: "info" }
+      );
+    }
+  }, [state, setState, persistAppState, excludedMemberIdsSet, members]);
+
   // 작업 핸들러: 신규 수동 기여도 추가/마이너스 등록
   const submitNewManualContribution = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!state) return;
-    const targetMid = newLogMemberId || members[0]?.id;
+    const targetMid = newLogMemberId || participatingMembers[0]?.id;
     if (!targetMid) {
       window.alert("대상 멤버를 선택해주세요.");
       return;
@@ -486,6 +565,44 @@ export default function AdminPongdangPopupPanel() {
             >
               새로고침
             </button>
+          </div>
+        </div>
+
+        {/* 👥 퐁당퐁당 참여/제외 멤버 설정 바 */}
+        <div className="rounded-xl border border-white/15 bg-neutral-900/80 p-3 shadow-lg">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2 mb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="text-base">👥</span>
+              <span className="text-xs font-bold text-neutral-200">
+                퐁당퐁당 엑셀표 참여 멤버 설정 ({participatingMembers.length}/{members.length}명 참여)
+              </span>
+            </div>
+            <span className="text-[11px] text-neutral-400">
+              클릭하여 제외(취소선/빨간색)하면 퐁당퐁당 순위표 및 기여도 관리에서 즉시 제외됩니다.
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {members.map((m) => {
+              const isExcluded = excludedMemberIdsSet.has(m.id);
+              const role = (memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+              return (
+                <button
+                  key={`pd-exclude-${m.id}`}
+                  type="button"
+                  onClick={() => toggleMemberExclusion(m.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 cursor-pointer ${
+                    isExcluded
+                      ? "bg-rose-950/60 border-rose-500/50 text-rose-300 line-through opacity-75 hover:opacity-100"
+                      : "bg-emerald-950/50 border-emerald-500/40 text-emerald-200 hover:bg-emerald-900/60 shadow-sm"
+                  }`}
+                  title={isExcluded ? "클릭 시 퐁당퐁당 기여도 관리에 포함" : "클릭 시 퐁당퐁당 기여도 관리에서 제외"}
+                >
+                  <span className="text-xs font-bold">{isExcluded ? "✕" : "✓"}</span>
+                  <span>{m.name}</span>
+                  {role && <span className="text-[10px] opacity-75">({role})</span>}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -666,10 +783,10 @@ export default function AdminPongdangPopupPanel() {
               <label className="block text-[11px] text-neutral-400 mb-1">대상 멤버</label>
               <select
                 className="w-full px-2.5 py-1.5 rounded-lg bg-neutral-950 border border-white/20 text-xs font-semibold text-neutral-200 focus:outline-none focus:border-amber-400"
-                value={newLogMemberId || members[0]?.id || ""}
+                value={participatingMembers.some((m) => m.id === newLogMemberId) ? newLogMemberId : (participatingMembers[0]?.id || "")}
                 onChange={(e) => setNewLogMemberId(e.target.value)}
               >
-                {members.map((m) => (
+                {participatingMembers.map((m) => (
                   <option key={`opt-m-${m.id}`} value={m.id}>
                     {m.name} {(memberPositions?.[m.id] ? `(${memberPositions[m.id]})` : "")}
                   </option>
@@ -814,8 +931,8 @@ export default function AdminPongdangPopupPanel() {
                 value={filterMemberId}
                 onChange={(e) => setFilterMemberId(e.target.value)}
               >
-                <option value="all">전체 멤버 보기</option>
-                {members.map((m) => (
+                <option value="all">전체 참여 멤버 보기</option>
+                {participatingMembers.map((m) => (
                   <option key={`f-m-${m.id}`} value={m.id}>
                     {m.name}
                   </option>
@@ -880,7 +997,7 @@ export default function AdminPongdangPopupPanel() {
                                     ⚠️ 멤버 지정 필요 (선택)
                                   </option>
                                 ) : null}
-                                {members.map((m) => (
+                                {participatingMembers.map((m) => (
                                   <option key={`sel-m-${m.id}`} value={m.id}>
                                     {m.name}
                                   </option>

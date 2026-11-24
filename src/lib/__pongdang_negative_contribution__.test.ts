@@ -211,4 +211,37 @@ describe("Pongdang negative contribution and manual adjustment", () => {
     // 판매 대기 중인 수동 시그(12,100 + 59,000)가 서유하에게 덤터기 씌워지지 않고 92,000원만 나와야 함!
     expect(result.get("m1")).toBe(92000);
   });
+
+  it("excludes excluded members from pongdang participating members and overlay display", () => {
+    const allMembers: Member[] = [
+      { id: "m_zaki", name: "자키 (대표)", account: 0, toon: 0, contribution: 0 },
+      { id: "m_jacking", name: "재킹 (실장)", account: 0, toon: 0, contribution: 0 },
+      { id: "m_yuha", name: "서유하", account: 0, toon: 0, contribution: 92000 },
+      { id: "m_jina", name: "진아", account: 0, toon: 0, contribution: 50000 },
+      { id: "m_surin", name: "수린", account: 0, toon: 0, contribution: 50000 },
+    ];
+
+    const pongdangExcludedMemberIds = ["m_zaki", "m_jacking"];
+    const excludedSet = new Set(pongdangExcludedMemberIds);
+
+    const participatingMembers = allMembers.filter((m) => !excludedSet.has(m.id));
+
+    // Participating members should only have 3 members: 서유하, 진아, 수린
+    expect(participatingMembers.map((m) => m.name)).toEqual(["서유하", "진아", "수린"]);
+    expect(participatingMembers.some((m) => m.id === "m_zaki")).toBe(false);
+    expect(participatingMembers.some((m) => m.id === "m_jacking")).toBe(false);
+
+    // Overlay ranking with excludedMemberIdsSet
+    const ranked = buildOverlayRankedMembers(
+      participatingMembers,
+      {},
+      undefined,
+      participatingMembers,
+      undefined,
+      "contribution"
+    );
+    expect(ranked.length).toBe(3);
+    expect(ranked[0].m.name).toBe("서유하");
+    expect(ranked[0].m.contribution).toBe(92000);
+  });
 });
