@@ -20,7 +20,7 @@ export function isZubzubEnabled(state: AppState): boolean {
   return Boolean(state?.zubzubSettings?.enabled);
 }
 
-/** 대표 멤버 식별 (설정값 우선, 없으면 직급 맵에서 대표 판정) */
+/** 대표 멤버 식별 (설정값 우선, 없으면 직급 맵에서 대표 판정, 없으면 첫 번째 멤버) */
 export function findRepresentativeMember(state: AppState): Member | undefined {
   if (state?.zubzubSettings?.representativeMemberId) {
     const specified = (state.members || []).find(
@@ -28,12 +28,14 @@ export function findRepresentativeMember(state: AppState): Member | undefined {
     );
     if (specified) return specified;
   }
-  return (state.members || []).find((m) => {
+  const fromPos = (state.members || []).find((m) => {
     const pos = String(state.memberPositions?.[m.id] || "").trim();
     if (pos === "대표") return true;
     if (pos.includes("부대표")) return false;
     return pos.includes("대표");
   });
+  if (fromPos) return fromPos;
+  return state.members?.[0];
 }
 
 /** 시그니처 후원 여부 및 정보 판별 */

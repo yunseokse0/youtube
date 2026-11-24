@@ -34,7 +34,11 @@ export async function ensureZubzubQueueTable(c: PoolConnection): Promise<void> {
 }
 
 // In-memory fallback for local dev or tests when MySQL is not configured
-const inMemoryZubZubQueue: Map<string, ZubZubQueueItem[]> = new Map();
+const globalForZubzub = globalThis as unknown as {
+  __zubzubQueueMap?: Map<string, ZubZubQueueItem[]>;
+};
+const inMemoryZubZubQueue: Map<string, ZubZubQueueItem[]> =
+  globalForZubzub.__zubzubQueueMap ?? (globalForZubzub.__zubzubQueueMap = new Map());
 
 export function getInMemoryZubZubQueueForTests(userId: string): ZubZubQueueItem[] {
   return inMemoryZubZubQueue.get(userId) || [];
@@ -104,9 +108,19 @@ export async function claimEarliestWaitingZubzub(
   claimingDonationId: string
 ): Promise<ZubZubQueueItem | null> {
   if (!isMysqlKvConfigured()) {
-    const list = inMemoryZubZubQueue.get(userId) || [];
-    const idx = list.findIndex((x) => x.status === "WAITING");
-    if (idx === -1) return null;
+    let list = inMemoryZubZubQueue.get(userId);
+    if (!list || list.length === 0 || !list.some((x) => x.status === "WAITING")) {
+      try {
+        const { loadAppStateForUserId } = await import("@/lib/app-state-server-load");
+        const s = await loadAppStateForUserId(userId);
+        if (s?.zubzubWaitingItems && s.zubzubWaitingItems.length > 0) {
+          list = [...s.zubzubWaitingItems];
+          inMemoryZubZubQueue.set(userId, list);
+        }
+      } catch {}
+    }
+    const idx = (list || []).findIndex((x) => x.status === "WAITING");
+    if (idx === -1 || !list) return null;
     const target = list[idx]!;
     target.status = "CLAIMED";
     target.claimedByMemberId = claimingMemberId;
@@ -172,8 +186,18 @@ export async function claimEarliestWaitingZubzub(
 /** 대기 중(WAITING)인 줍줍 목록 조회 */
 export async function listWaitingZubzubQueues(userId: string): Promise<ZubZubQueueItem[]> {
   if (!isMysqlKvConfigured()) {
-    const list = inMemoryZubZubQueue.get(userId) || [];
-    return list.filter((x) => x.status === "WAITING");
+    let list = inMemoryZubZubQueue.get(userId);
+    if (!list || list.length === 0 || !list.some((x) => x.status === "WAITING")) {
+      try {
+        const { loadAppStateForUserId } = await import("@/lib/app-state-server-load");
+        const s = await loadAppStateForUserId(userId);
+        if (s?.zubzubWaitingItems && s.zubzubWaitingItems.length > 0) {
+          list = [...s.zubzubWaitingItems];
+          inMemoryZubZubQueue.set(userId, list);
+        }
+      } catch {}
+    }
+    return (list || []).filter((x) => x.status === "WAITING");
   }
 
   return withMysqlBulkConn(async (c) => {

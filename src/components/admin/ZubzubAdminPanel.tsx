@@ -31,7 +31,7 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
     return pos.includes("대표");
   });
 
-  const repId = settings.representativeMemberId || autoRep?.id || "";
+  const repId = settings.representativeMemberId || autoRep?.id || state.members?.[0]?.id || "";
   const repName = (state.members || []).find((m) => m.id === repId)?.name || "대표 미지정";
 
   // 대기열 목록 불러오기

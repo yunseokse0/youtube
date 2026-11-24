@@ -131,7 +131,7 @@ export async function POST(req: Request) {
 }
 
 async function handleApplyPostInner(req: Request): Promise<Response> {
-  const writeUid = resolveWriteUserId(req);
+  const writeUid = resolveWriteUserId(req, { allowAnonymousUrlUser: true });
   if (!writeUid.ok) return writeUserIdErrorResponse(writeUid);
   const userId = writeUid.userId;
 
@@ -214,14 +214,36 @@ async function handleApplyPostInner(req: Request): Promise<Response> {
         });
       }
 
+      // 🎁 줍줍(Zubzub) 판정 훅 실행
+      let currentState = persisted.state!;
+      for (const evt of appliedEvents) {
+        try {
+          const { maybeProcessZubzubDonation } = await import("@/lib/zubzub/zubzub-engine");
+          const zubRes = await maybeProcessZubzubDonation(userId, evt);
+          if (zubRes?.action === "claimed" || zubRes?.action === "enqueued_waiting") {
+            const fresh = await loadAppStateForUserId(userId);
+            if (fresh) {
+              currentState = fresh;
+            }
+          }
+        } catch (zubErr) {
+          console.error("[donations/apply] zubzub hook failed:", zubErr);
+        }
+      }
+
       /** TR-7.1: 4단계 pipeline 경유 재링크 (실패시 fallback으로 legacy 호출 회귀0 방지 */
-      const assembleRes = await assembleStateAfterDonationEvent(persisted.state!, "apply", {
+      const assembleRes = await assembleStateAfterDonationEvent(currentState, "apply", {
         kind: "apply",
         previousState: state,
       });
       const repaired = isOk(assembleRes)
         ? assembleRes.value
-        : syncAndRepairMemberTotals(persisted.state!, state);
+        : syncAndRepairMemberTotals(currentState, state);
+
+      if (currentState !== persisted.state) {
+        const { saveAppStateForRoulette } = await import("@/app/api/roulette/edge-state-store");
+        await saveAppStateForRoulette(userId, repaired);
+      }
 
       return new Response(
         JSON.stringify({

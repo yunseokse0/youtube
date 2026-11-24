@@ -118,7 +118,7 @@ export function ZubzubOverlayBanner({
 
   return (
     <div
-      className={`pointer-events-none fixed inset-x-0 ${posClass} z-50 flex items-center ${alignClass} select-none transition-all duration-300 ${className}`}
+      className={`pointer-events-none fixed inset-x-0 ${posClass} z-[9999] flex items-center ${alignClass} select-none transition-all duration-300 ${className}`}
     >
       {/* 1. 줍줍 성공 축하 알림 (간결한 1줄 뱃지) */}
       {claimInfo ? (

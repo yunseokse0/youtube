@@ -6897,6 +6897,11 @@ function OverlayInner() {
             style={memberRankChangeStyle}
           />
         ) : null}
+        {(rawSp.get("ticker") === "1" || Boolean(s?.tickerSettings?.enabled)) ? (
+          <MarqueeTickerOverlay settings={s?.tickerSettings} />
+        ) : null}
+          </main>
+        </div>
         {(rawSp.get("zubzub") === "1" || Boolean(s?.zubzubSettings?.embedInMainOverlay)) ? (
           <ZubzubOverlayBanner
             waitingItems={s?.zubzubWaitingItems}
@@ -6904,11 +6909,6 @@ function OverlayInner() {
             onClearClaimedEvent={() => setZubzubClaimedEvent(null)}
           />
         ) : null}
-        {(rawSp.get("ticker") === "1" || Boolean(s?.tickerSettings?.enabled)) ? (
-          <MarqueeTickerOverlay settings={s?.tickerSettings} />
-        ) : null}
-          </main>
-        </div>
       </div>
     );
   }
