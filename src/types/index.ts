@@ -376,6 +376,8 @@ export type DonationTableColumnsOptions = {
   pillStyle?: boolean;
   /** 기여도(누적기여도) 열 헤더 명칭 (기본 '누적기여도') */
   contributionHeaderLabel?: string;
+  /** 커스텀 열 적용 기준: 'rank' (순위 1위~N위 고정) / 'member' (멤버별 고정) */
+  customCellMode?: "rank" | "member";
 };
 
 export type SigMatchSettings = {

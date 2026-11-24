@@ -451,6 +451,7 @@ type OverlayPreset = {
   rankCustomCells?: string[];
   memberCustomCells?: Record<string, string>;
   customCellLinkMode?: "global" | "preset";
+  customCellMode?: "rank" | "member";
   /** 엑셀표 후원 집계 시작(epoch ms 문자열). 비우면 전체 */
   donationAggregateFromAt?: string;
   /** 777데이 계산 — 퐁당퐁당 엑셀만. 기존 엑셀은 후원 금액=기여도 */
@@ -24864,55 +24865,194 @@ function AdminPageInner() {
                                           : `현재 [전체 공통 연동] 상태입니다. 아래 메모를 수정하면 이 엑셀표 전용으로 자동 전환됩니다.`}
                                       </p>
                                       <div className="space-y-2">
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                          {state.members.map((m, idx) => {
-                                            const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
-                                            const val = isPresetDedicated
-                                              ? ((p.memberCustomCells && p.memberCustomCells[m.id]) ?? p.rankCustomCells?.[idx] ?? "")
-                                              : ((state.memberCustomCells && state.memberCustomCells[m.id]) ?? state.rankCustomCells?.[idx] ?? "");
-                                            return (
-                                              <label
-                                                key={`overlay-custom-member-cell-${p.id}-${m.id}`}
-                                                className="grid grid-cols-[80px_1fr] items-center gap-2 text-xs text-neutral-300 rounded border border-white/10 bg-black/20 px-2 py-1.5"
-                                              >
-                                                <span className="font-semibold text-neutral-200 truncate" title={m.name}>
-                                                  {m.name}{role ? `(${role})` : ""}
+                                        {(() => {
+                                          const isRankMode =
+                                            p.customCellMode === "rank" ||
+                                            (p.customCellMode === undefined &&
+                                              (Boolean(p.day777Calc) ||
+                                                String(p.name || "").includes("퐁당") ||
+                                                p.theme === "excelPongdang" ||
+                                                p.membersTheme === "excelPongdang"));
+
+                                          const excludedSet = new Set(
+                                            (Array.isArray(p.excludedMemberIds)
+                                              ? p.excludedMemberIds
+                                              : typeof p.excludedMemberIds === "string"
+                                              ? String(p.excludedMemberIds).split(",").map((s) => s.trim())
+                                              : []
+                                            ).concat(p.day777Calc ? (state.pongdangExcludedMemberIds || []) : [])
+                                          );
+                                          const participatingMembers = state.members.filter((m) => !excludedSet.has(m.id));
+                                          const rankSlotCount = Math.max(participatingMembers.length, (p.rankCustomCells || []).length, 5);
+
+                                          return (
+                                            <div className="space-y-2.5">
+                                              {/* 모드 전환: 순위 기준 vs 멤버 기준 */}
+                                              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/10">
+                                                <span className="text-[11px] font-semibold text-neutral-300">커스텀 항목 적용 기준:</span>
+                                                <div className="inline-flex rounded-lg border border-white/15 bg-black/40 p-0.5">
+                                                  <button
+                                                    type="button"
+                                                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition flex items-center gap-1 ${
+                                                      isRankMode
+                                                        ? "bg-amber-600 text-white shadow-sm border border-amber-400/50"
+                                                        : "text-neutral-400 hover:text-white"
+                                                    }`}
+                                                    onClick={() => {
+                                                      updatePreset(p.id, {
+                                                        customCellLinkMode: "preset",
+                                                        customCellMode: "rank",
+                                                      });
+                                                      setGlobalPreviewBump((n) => n + 1);
+                                                    }}
+                                                  >
+                                                    <span>🏆</span> 순위 기준 (1위~N위 고정)
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition flex items-center gap-1 ${
+                                                      !isRankMode
+                                                        ? "bg-indigo-600 text-white shadow-sm border border-indigo-400/50"
+                                                        : "text-neutral-400 hover:text-white"
+                                                    }`}
+                                                    onClick={() => {
+                                                      updatePreset(p.id, {
+                                                        customCellLinkMode: "preset",
+                                                        customCellMode: "member",
+                                                      });
+                                                      setGlobalPreviewBump((n) => n + 1);
+                                                    }}
+                                                  >
+                                                    <span>👤</span> 멤버 기준 (멤버별 고정)
+                                                  </button>
+                                                </div>
+                                                <span className="text-[10px] text-neutral-400">
+                                                  {isRankMode
+                                                    ? "순위가 변동되어도 1위, 2위... 커스텀 항목은 고정되고 멤버가 기여도에 맞춰 배치됩니다 (퐁당퐁당·식사대전 추천)."
+                                                    : "기여도에 따라 멤버 순위가 바뀌어도 해당 멤버의 커스텀 메모가 함께 이동합니다."}
                                                 </span>
-                                                <input
-                                                  className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1 text-xs"
-                                                  defaultValue={val}
-                                                  key={`overlay-custom-member-input-${p.id}-${m.id}-${val}-${isPresetDedicated}`}
-                                                  onBlur={(e) => {
-                                                    const v = String(e.target.value || "").replace(/\s+/g, " ").trim().slice(0, 48);
-                                                    const memberCount = Math.max(1, state.members.length);
-                                                    const currentRanks = Array.isArray(p.rankCustomCells)
-                                                      ? [...p.rankCustomCells]
-                                                      : [...(state.rankCustomCells || [])];
-                                                    while (currentRanks.length < memberCount) currentRanks.push("");
-                                                    currentRanks[idx] = v;
+                                              </div>
 
-                                                    const currentMembers = {
-                                                      ...(isPresetDedicated ? p.memberCustomCells : state.memberCustomCells || {}),
-                                                    };
-                                                    if (v) currentMembers[m.id] = v;
-                                                    else delete currentMembers[m.id];
+                                              {/* 1) 순위 기준 (1위~N위) 입력 모드 */}
+                                              {isRankMode ? (
+                                                <div className="space-y-1.5">
+                                                  <div className="text-[11px] text-neutral-300 font-semibold flex items-center justify-between">
+                                                    <span className="flex items-center gap-1 text-amber-300">
+                                                      <span>🏆</span> 순위별 고정 항목 설정 ({participatingMembers.length}명 참여 표출)
+                                                    </span>
+                                                    <span className="text-[10px] text-neutral-400">
+                                                      기여도 순위에 따라 해당 등수의 항목이 자동 배정됩니다
+                                                    </span>
+                                                  </div>
+                                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                    {Array.from({ length: rankSlotCount }).map((_, rankIdx) => {
+                                                      const rankNum = rankIdx + 1;
+                                                      const currentRanks = Array.isArray(p.rankCustomCells)
+                                                        ? p.rankCustomCells
+                                                        : (state.rankCustomCells || []);
+                                                      const currentMemberAtRank = participatingMembers[rankIdx];
+                                                      const memberFallback = currentMemberAtRank && p.memberCustomCells
+                                                        ? p.memberCustomCells[currentMemberAtRank.id] || ""
+                                                        : "";
+                                                      const val = currentRanks[rankIdx] !== undefined ? currentRanks[rankIdx] : memberFallback;
+                                                      return (
+                                                        <label
+                                                          key={`overlay-custom-rank-cell-${p.id}-${rankIdx}`}
+                                                          className="grid grid-cols-[92px_1fr] items-center gap-2 text-xs text-neutral-300 rounded border border-amber-500/25 bg-amber-950/20 px-2.5 py-1.5"
+                                                        >
+                                                          <span className="font-bold text-amber-300 truncate flex items-center gap-1" title={`${rankNum}위`}>
+                                                            <span>{rankNum === 1 ? "🥇" : rankNum === 2 ? "🥈" : rankNum === 3 ? "🥉" : "🎖️"}</span>
+                                                            {rankNum}위
+                                                            {currentMemberAtRank && (
+                                                              <span className="text-[10px] text-neutral-400 font-normal">
+                                                                ({currentMemberAtRank.name})
+                                                              </span>
+                                                            )}
+                                                          </span>
+                                                          <input
+                                                            className="w-full rounded bg-neutral-900/90 border border-white/15 px-2.5 py-1 text-xs text-white placeholder-neutral-500 font-medium"
+                                                            defaultValue={val}
+                                                            key={`overlay-custom-rank-input-${p.id}-${rankIdx}-${val}-${isPresetDedicated}`}
+                                                            onBlur={(e) => {
+                                                              const v = String(e.target.value || "").replace(/\s+/g, " ").trim().slice(0, 48);
+                                                              const nextRanks = Array.isArray(p.rankCustomCells)
+                                                                ? [...p.rankCustomCells]
+                                                                : [...(state.rankCustomCells || [])];
+                                                              while (nextRanks.length < rankSlotCount) nextRanks.push("");
+                                                              nextRanks[rankIdx] = v;
+                                                              updatePreset(p.id, {
+                                                                customCellLinkMode: "preset",
+                                                                customCellMode: "rank",
+                                                                rankCustomCells: nextRanks,
+                                                              });
+                                                              setGlobalPreviewBump((n) => n + 1);
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                                            }}
+                                                            placeholder={`${rankNum}위 항목 (예: 식사 A, 1등 상품 등)`}
+                                                          />
+                                                        </label>
+                                                      );
+                                                    })}
+                                                  </div>
+                                                </div>
+                                              ) : (
+                                                /* 2) 멤버 기준 입력 모드 */
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                  {state.members.map((m, idx) => {
+                                                    const role = (state.memberPositions?.[m.id] || "").trim() || ((m as any).role || "").trim();
+                                                    const val = isPresetDedicated
+                                                      ? ((p.memberCustomCells && p.memberCustomCells[m.id]) ?? p.rankCustomCells?.[idx] ?? "")
+                                                      : ((state.memberCustomCells && state.memberCustomCells[m.id]) ?? state.rankCustomCells?.[idx] ?? "");
+                                                    return (
+                                                      <label
+                                                        key={`overlay-custom-member-cell-${p.id}-${m.id}`}
+                                                        className="grid grid-cols-[80px_1fr] items-center gap-2 text-xs text-neutral-300 rounded border border-white/10 bg-black/20 px-2 py-1.5"
+                                                      >
+                                                        <span className="font-semibold text-neutral-200 truncate" title={m.name}>
+                                                          {m.name}{role ? `(${role})` : ""}
+                                                        </span>
+                                                        <input
+                                                          className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1 text-xs"
+                                                          defaultValue={val}
+                                                          key={`overlay-custom-member-input-${p.id}-${m.id}-${val}-${isPresetDedicated}`}
+                                                          onBlur={(e) => {
+                                                            const v = String(e.target.value || "").replace(/\s+/g, " ").trim().slice(0, 48);
+                                                            const memberCount = Math.max(1, state.members.length);
+                                                            const currentRanks = Array.isArray(p.rankCustomCells)
+                                                              ? [...p.rankCustomCells]
+                                                              : [...(state.rankCustomCells || [])];
+                                                            while (currentRanks.length < memberCount) currentRanks.push("");
+                                                            currentRanks[idx] = v;
 
-                                                    updatePreset(p.id, {
-                                                      customCellLinkMode: "preset",
-                                                      rankCustomCells: currentRanks,
-                                                      memberCustomCells: currentMembers,
-                                                    });
-                                                    setGlobalPreviewBump((n) => n + 1);
-                                                  }}
-                                                  onKeyDown={(e) => {
-                                                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                                                  }}
-                                                  placeholder="+100만원 / 메모"
-                                                />
-                                              </label>
-                                            );
-                                          })}
-                                        </div>
+                                                            const currentMembers = {
+                                                              ...(isPresetDedicated ? p.memberCustomCells : state.memberCustomCells || {}),
+                                                            };
+                                                            if (v) currentMembers[m.id] = v;
+                                                            else delete currentMembers[m.id];
+
+                                                            updatePreset(p.id, {
+                                                              customCellLinkMode: "preset",
+                                                              customCellMode: "member",
+                                                              rankCustomCells: currentRanks,
+                                                              memberCustomCells: currentMembers,
+                                                            });
+                                                            setGlobalPreviewBump((n) => n + 1);
+                                                          }}
+                                                          onKeyDown={(e) => {
+                                                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                                          }}
+                                                          placeholder="+100만원 / 메모"
+                                                        />
+                                                      </label>
+                                                    );
+                                                  })}
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })()}
                                       </div>
                                     </div>
                                   );

@@ -6353,7 +6353,7 @@ function OverlayInner() {
                     </tr>
                   </thead>
                   <tbody>
-                    {panel.ranked.map((row: any) => {
+                    {panel.ranked.map((row: any, rowIdx: number) => {
                       const isPlaceholder = Boolean(row.__excelPlaceholder);
                       const m: Member = row.m;
                       const rank: number | null = row.rank;
@@ -6482,17 +6482,37 @@ function OverlayInner() {
                           {showCustomColumn && (
                             <td className={`${effectiveRowCls} overlay-col-custom text-center`}>
                               {(() => {
+                                const isRankMode =
+                                  (effectivePreset as any)?.customCellMode === "rank" ||
+                                  Boolean((effectivePreset as any)?.day777Calc) ||
+                                  String((effectivePreset as any)?.name || "").includes("퐁당") ||
+                                  (effectivePreset as any)?.theme === "excelPongdang" ||
+                                  (effectivePreset as any)?.membersTheme === "excelPongdang" ||
+                                  rawSp.get("customCellMode") === "rank" ||
+                                  (Array.isArray(rankCustomCells) &&
+                                    rankCustomCells.some((c) => String(c || "").trim().length > 0) &&
+                                    (effectivePreset as any)?.customCellMode !== "member" &&
+                                    rawSp.get("customCellMode") !== "member");
+
                                 const rowRank = rank != null ? rank : null;
+                                const effectiveRank =
+                                  rowRank != null && rowRank >= 1
+                                    ? rowRank
+                                    : panelIdx === 1
+                                    ? (excelSplit?.left?.length || 0) + rowIdx + 1
+                                    : rowIdx + 1;
+
+                                const rankVal = String(rankCustomCells[effectiveRank - 1] || "").trim();
                                 const memberVal = String(memberCustomCellsMap[m.id] || "").trim();
-                                const rankVal =
-                                  rowRank != null && rowRank >= 1 ? String(rankCustomCells[rowRank - 1] || "").trim() : "";
                                 const role = (memberPositionsMap[m.id] || "").trim() || getMemberRole(m).trim();
                                 const isRep = !role.includes("부대표") && role.includes("대표");
                                 const repFallback =
                                   (!rowRank && isRep && Array.isArray(rankCustomCells) && rankCustomCells.length > 0)
                                     ? String(rankCustomCells[0] || "").trim()
                                     : "";
-                                const cellText = memberVal || rankVal || repFallback;
+                                const cellText = isRankMode
+                                  ? (rankVal || memberVal || repFallback)
+                                  : (memberVal || rankVal || repFallback);
                                 return cellText ? (
                                   <span className="overlay-cell-text-inner font-semibold" style={overlayCellOutlineStyle}>
                                     {cellText}

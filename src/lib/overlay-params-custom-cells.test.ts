@@ -45,4 +45,19 @@ describe("Per-preset Custom Column Linking", () => {
     const showCustomColumn = isMainTable && excludeMainTableCustomCell ? false : true;
     expect(showCustomColumn).toBe(true);
   });
+
+  it("supports customCellMode: 'rank' vs 'member' in overlay preset serialization", async () => {
+    const { presetToParams } = await import("./overlay-params");
+    const rankPreset: OverlayPresetLike = {
+      id: "preset_pongdang",
+      name: "퐁당퐁당 엑셀표",
+      customHeaderLabel: "식사",
+      customCellMode: "rank",
+      rankCustomCells: ["소고기", "삼겹살", "치킨"],
+    };
+
+    const params = presetToParams(rankPreset);
+    expect(params.get("customCellMode")).toBe("rank");
+    expect(params.get("customHeaderLabel")).toBe("식사");
+  });
 });
