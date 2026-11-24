@@ -119,9 +119,10 @@ export async function claimEarliestWaitingZubzub(
         }
       } catch {}
     }
-    const idx = (list || []).findIndex((x) => x.status === "WAITING");
-    if (idx === -1 || !list) return null;
-    const target = list[idx]!;
+    const target = (list || [])
+      .filter((x) => x.status === "WAITING")
+      .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0))[0];
+    if (!target) return null;
     target.status = "CLAIMED";
     target.claimedByMemberId = claimingMemberId;
     target.claimedDonationId = claimingDonationId;
@@ -197,7 +198,9 @@ export async function listWaitingZubzubQueues(userId: string): Promise<ZubZubQue
         }
       } catch {}
     }
-    return (list || []).filter((x) => x.status === "WAITING");
+    return (list || [])
+      .filter((x) => x.status === "WAITING")
+      .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
   }
 
   return withMysqlBulkConn(async (c) => {

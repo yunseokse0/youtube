@@ -82,6 +82,7 @@ function ZubzubOverlayInner() {
   const demoWaitingItem: ZubZubQueueItem = {
     id: "demo_zubzub_preview",
     userId: userId || "zakiexcel",
+    triggerDonationId: "demo_trigger_preview",
     sigName: "NO BATIDÃO",
     bonusAmount: 130000,
     status: "WAITING",

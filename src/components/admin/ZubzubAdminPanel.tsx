@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import type { AppState, Member, ZubZubQueueItem, ZubZubSettings } from "@/types";
+import type { AppState, Donor, Member, ZubZubQueueItem, ZubZubSettings } from "@/types";
 import type { ZubzubClaimedEvent } from "@/components/overlay/ZubzubOverlayBanner";
 
 type Props = {
