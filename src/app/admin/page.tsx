@@ -1660,6 +1660,8 @@ function AdminPageInner() {
   const [contributionMemberId, setContributionMemberId] = useState<string | null>(null);
   const [contributionDelta, setContributionDelta] = useState<1 | -1>(1);
   const [contributionNote, setContributionNote] = useState("");
+  const [pongdangQuickMemberId, setPongdangQuickMemberId] = useState<string>("");
+  const [pongdangQuickAmount, setPongdangQuickAmount] = useState<string>("");
   const [restroomAmount, setRestroomAmount] = useState("");
   const [restroomMemberId, setRestroomMemberId] = useState<string | null>(null);
   /** plus | minus | unlimited */
@@ -24762,6 +24764,231 @@ function AdminPageInner() {
                                     열 순서: 순위 → 커스텀 → 직급 → 이름 → 후원 → 투네 → (후원합계) → (누적기여도) → (화장실). 「후원합계」는 계좌+투네 합 열입니다.
                                   </p>
                                 </div>
+                                {/* 🌈 행마다 컬러 / 배경 스타일 조절 (줄무늬 · 알약 · 1위~3위 하이라이트) */}
+                                <div className="rounded-xl border border-purple-500/30 bg-purple-950/20 p-3 space-y-2.5">
+                                  <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-purple-500/20 pb-2">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-base">🌈</span>
+                                      <span className="text-xs font-bold text-purple-200">행마다 컬러 / 배경 스타일 조절</span>
+                                      <span className="text-[10px] text-purple-300/70">
+                                        (줄무늬 · 알약 바 · 순위별 하이라이트)
+                                      </span>
+                                    </div>
+                                    {/* 원클릭 추천 배색 프리셋 */}
+                                    <div className="flex flex-wrap items-center gap-1">
+                                      <span className="text-[10px] text-neutral-400 mr-0.5">빠른 배색:</span>
+                                      <button
+                                        type="button"
+                                        className="px-2 py-0.5 rounded text-[10px] font-semibold bg-sky-900/60 hover:bg-sky-800 text-sky-200 border border-sky-400/40 transition shadow-sm"
+                                        onClick={() => {
+                                          updatePreset(p.id, {
+                                            tableRowEvenBg: "rgba(59, 130, 246, 0.40)",
+                                            tableRowOddBg: "rgba(236, 72, 153, 0.40)",
+                                            pillStyle: true,
+                                          });
+                                          setGlobalPreviewBump((n) => n + 1);
+                                        }}
+                                        title="파랑/분홍 교차 줄무늬 알약 바 (퐁당퐁당 추천)"
+                                      >
+                                        🎪 퐁당 기본
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="px-2 py-0.5 rounded text-[10px] font-semibold bg-purple-900/60 hover:bg-purple-800 text-purple-200 border border-purple-400/40 transition shadow-sm"
+                                        onClick={() => {
+                                          updatePreset(p.id, {
+                                            tableRowEvenBg: "rgba(42, 12, 70, 0.65)",
+                                            tableRowOddBg: "rgba(22, 6, 38, 0.65)",
+                                            pillStyle: true,
+                                          });
+                                          setGlobalPreviewBump((n) => n + 1);
+                                        }}
+                                        title="바이올렛 자주/보라 교차 알약"
+                                      >
+                                        💜 바이올렛
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-900/60 hover:bg-amber-800 text-amber-200 border border-amber-400/40 transition shadow-sm"
+                                        onClick={() => {
+                                          updatePreset(p.id, {
+                                            rankTop3Mode: "bg",
+                                            rank1Bg: "rgba(254, 240, 138, 0.45)",
+                                            rank2Bg: "rgba(226, 232, 240, 0.40)",
+                                            rank3Bg: "rgba(253, 186, 116, 0.40)",
+                                            tableRowEvenBg: "rgba(30, 41, 59, 0.50)",
+                                            tableRowOddBg: "rgba(15, 23, 42, 0.50)",
+                                            pillStyle: true,
+                                          });
+                                          setGlobalPreviewBump((n) => n + 1);
+                                        }}
+                                        title="1~3위 금/은/동 하이라이트 배경"
+                                      >
+                                        👑 골드/순위강조
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-900/60 hover:bg-emerald-800 text-emerald-200 border border-emerald-400/40 transition shadow-sm"
+                                        onClick={() => {
+                                          updatePreset(p.id, {
+                                            tableRowEvenBg: "rgba(10, 60, 48, 0.65)",
+                                            tableRowOddBg: "rgba(4, 30, 24, 0.65)",
+                                            pillStyle: true,
+                                          });
+                                          setGlobalPreviewBump((n) => n + 1);
+                                        }}
+                                        title="에메랄드 그린 알약"
+                                      >
+                                        🌿 에메랄드
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="px-2 py-0.5 rounded text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-white/10 transition"
+                                        onClick={() => {
+                                          updatePreset(p.id, {
+                                            tableRowEvenBg: "",
+                                            tableRowOddBg: "",
+                                            rankTop3Mode: "off",
+                                            rank1Bg: "",
+                                            rank2Bg: "",
+                                            rank3Bg: "",
+                                            pillStyle: false,
+                                          });
+                                          setGlobalPreviewBump((n) => n + 1);
+                                        }}
+                                        title="테마 기본값으로 복원"
+                                      >
+                                        ↩️ 테마 자동
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                    {/* 짝수 행 배경색 */}
+                                    <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5">
+                                      <span className="text-neutral-300 font-semibold shrink-0">짝수 행:</span>
+                                      <div className="flex items-center gap-1.5 min-w-0 flex-1 justify-end">
+                                        <input
+                                          type="color"
+                                          className="h-7 w-9 rounded border border-white/20 bg-neutral-900 cursor-pointer p-0.5 shrink-0"
+                                          value={toColorPickerValue(p.tableRowEvenBg, "#3b82f6")}
+                                          onChange={(e) => {
+                                            const hex = e.target.value.replace("#", "");
+                                            const r = parseInt(hex.slice(0, 2), 16) || 0;
+                                            const g = parseInt(hex.slice(2, 4), 16) || 0;
+                                            const b = parseInt(hex.slice(4, 6), 16) || 0;
+                                            updatePreset(p.id, { tableRowEvenBg: `rgba(${r}, ${g}, ${b}, 0.45)` });
+                                            setGlobalPreviewBump((n) => n + 1);
+                                          }}
+                                        />
+                                        <input
+                                          className="w-28 px-2 py-1 rounded bg-neutral-900 border border-white/10 text-xs font-mono text-white text-right"
+                                          value={p.tableRowEvenBg || ""}
+                                          onChange={(e) => {
+                                            updatePreset(p.id, { tableRowEvenBg: e.target.value });
+                                            setGlobalPreviewBump((n) => n + 1);
+                                          }}
+                                          placeholder="rgba(...) 또는 비움"
+                                        />
+                                        <button
+                                          type="button"
+                                          className="px-2 py-1 rounded bg-neutral-800 text-[11px] text-neutral-400 hover:text-white"
+                                          onClick={() => {
+                                            updatePreset(p.id, { tableRowEvenBg: "" });
+                                            setGlobalPreviewBump((n) => n + 1);
+                                          }}
+                                        >
+                                          자동
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* 홀수 행 배경색 */}
+                                    <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5">
+                                      <span className="text-neutral-300 font-semibold shrink-0">홀수 행:</span>
+                                      <div className="flex items-center gap-1.5 min-w-0 flex-1 justify-end">
+                                        <input
+                                          type="color"
+                                          className="h-7 w-9 rounded border border-white/20 bg-neutral-900 cursor-pointer p-0.5 shrink-0"
+                                          value={toColorPickerValue(p.tableRowOddBg, "#ec4899")}
+                                          onChange={(e) => {
+                                            const hex = e.target.value.replace("#", "");
+                                            const r = parseInt(hex.slice(0, 2), 16) || 0;
+                                            const g = parseInt(hex.slice(2, 4), 16) || 0;
+                                            const b = parseInt(hex.slice(4, 6), 16) || 0;
+                                            updatePreset(p.id, { tableRowOddBg: `rgba(${r}, ${g}, ${b}, 0.45)` });
+                                            setGlobalPreviewBump((n) => n + 1);
+                                          }}
+                                        />
+                                        <input
+                                          className="w-28 px-2 py-1 rounded bg-neutral-900 border border-white/10 text-xs font-mono text-white text-right"
+                                          value={p.tableRowOddBg || ""}
+                                          onChange={(e) => {
+                                            updatePreset(p.id, { tableRowOddBg: e.target.value });
+                                            setGlobalPreviewBump((n) => n + 1);
+                                          }}
+                                          placeholder="rgba(...) 또는 비움"
+                                        />
+                                        <button
+                                          type="button"
+                                          className="px-2 py-1 rounded bg-neutral-800 text-[11px] text-neutral-400 hover:text-white"
+                                          onClick={() => {
+                                            updatePreset(p.id, { tableRowOddBg: "" });
+                                            setGlobalPreviewBump((n) => n + 1);
+                                          }}
+                                        >
+                                          자동
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* 추가 행 스타일: 알약 바 ON/OFF & 1~3위 순위별 하이라이트 토글 */}
+                                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-white/10">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-neutral-300 font-medium">행 분리 알약(Pill) 바:</span>
+                                      <button
+                                        type="button"
+                                        className={`px-2.5 py-1 rounded text-xs font-bold border transition flex items-center gap-1 ${
+                                          p.pillStyle
+                                            ? "bg-purple-600 text-white border-purple-400 shadow-sm"
+                                            : "bg-neutral-800 text-neutral-400 border-white/10 hover:text-white"
+                                        }`}
+                                        onClick={() => {
+                                          updatePreset(p.id, { pillStyle: !p.pillStyle });
+                                          setGlobalPreviewBump((n) => n + 1);
+                                        }}
+                                      >
+                                        <span>💊</span> {p.pillStyle ? "알약 스타일 ON (권장)" : "알약 OFF (일반 행)"}
+                                      </button>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-neutral-300 font-medium">1~3위 순위별 하이라이트:</span>
+                                      <button
+                                        type="button"
+                                        className={`px-2.5 py-1 rounded text-xs font-bold border transition flex items-center gap-1 ${
+                                          p.rankTop3Mode === "bg" || p.rankTop3Mode === "both"
+                                            ? "bg-amber-600 text-white border-amber-400 shadow-sm"
+                                            : "bg-neutral-800 text-neutral-400 border-white/10 hover:text-white"
+                                        }`}
+                                        onClick={() => {
+                                          const next = (p.rankTop3Mode === "bg" || p.rankTop3Mode === "both") ? "off" : "bg";
+                                          updatePreset(p.id, {
+                                            rankTop3Mode: next,
+                                            rank1Bg: next === "bg" && !p.rank1Bg ? "rgba(254, 240, 138, 0.45)" : p.rank1Bg,
+                                            rank2Bg: next === "bg" && !p.rank2Bg ? "rgba(226, 232, 240, 0.40)" : p.rank2Bg,
+                                            rank3Bg: next === "bg" && !p.rank3Bg ? "rgba(253, 186, 116, 0.40)" : p.rank3Bg,
+                                          });
+                                          setGlobalPreviewBump((n) => n + 1);
+                                        }}
+                                      >
+                                        <span>🥇</span> {p.rankTop3Mode === "bg" || p.rankTop3Mode === "both" ? "순위별 배경 ON" : "순위별 배경 OFF"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+
                                 {(p.showCustomColumn !== false) && (() => {
                                   const isPresetDedicated = Boolean(
                                     p.customCellLinkMode === "preset" ||
@@ -25106,6 +25333,218 @@ function AdminPageInner() {
                                       <InfoTooltip text="자동 후원/시그 수신은 항시 100% 정상 작동하며, 관리자 수동 보정값(+/-)이 실시간으로 상시 합산됩니다." />
                                     </div>
                                   )}
+
+                                  {/* ⚡ 퐁당퐁당 기여도 빠른 처리 & 수동 가감 패널 */}
+                                  {(p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당")) && (
+                                    <div className="rounded-xl border border-sky-500/35 bg-sky-950/30 p-3 space-y-2.5">
+                                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-500/20 pb-2">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-base">⚡</span>
+                                          <span className="text-xs font-bold text-sky-200">퐁당퐁당 기여도 빠른 처리 (가감)</span>
+                                          <span className="text-[10px] text-sky-300/80">
+                                            오버레이 퐁당퐁당 표에 실시간 즉시 반영됩니다
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                          <button
+                                            type="button"
+                                            className="px-2 py-0.5 rounded text-[11px] font-semibold bg-sky-900/60 hover:bg-sky-800 text-sky-200 border border-sky-400/40 transition flex items-center gap-1 shadow-sm"
+                                            onClick={() => moveToSection("donor", "contribution-management")}
+                                            title="후원 원장 관리의 기여도 기록부 상세 섹션으로 이동"
+                                          >
+                                            <span>📋</span> 기여도 기록부 가기 ↗
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="px-2 py-0.5 rounded text-[11px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-white/10 transition flex items-center gap-1"
+                                            onClick={() => {
+                                              const uid = overlayUserId || user?.id || "default";
+                                              window.open(`/overlay?u=${encodeURIComponent(uid)}&preset=${encodeURIComponent(p.id)}&standalone=1`, "_blank");
+                                            }}
+                                            title="퐁당퐁당 표를 단독 새 창에서 엽니다"
+                                          >
+                                            <span>🎪</span> 표 새창 열기
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {(() => {
+                                        const excludedSet = new Set(
+                                          (Array.isArray(p.excludedMemberIds)
+                                            ? p.excludedMemberIds
+                                            : typeof p.excludedMemberIds === "string"
+                                            ? String(p.excludedMemberIds).split(",").map((s) => s.trim())
+                                            : []
+                                          ).concat(p.day777Calc ? (state.pongdangExcludedMemberIds || []) : [])
+                                        );
+                                        const participating = state.members.filter((m) => !excludedSet.has(m.id));
+                                        const activeMember = participating.find((m) => m.id === pongdangQuickMemberId) || participating[0];
+                                        const activeMemberId = activeMember?.id || "";
+                                        const currentManualVal = state.pongdangManualContributions?.[activeMemberId] ?? 0;
+                                        const currentMemberContribution = activeMember?.contribution ?? 0;
+                                        const totalDisplay = currentManualVal + currentMemberContribution;
+
+                                        return (
+                                          <div className="space-y-2">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                              <label className="text-xs text-neutral-300 font-semibold shrink-0">대상 멤버:</label>
+                                              <select
+                                                className="px-2.5 py-1 rounded bg-neutral-900 border border-white/20 text-xs font-bold text-sky-200"
+                                                value={activeMemberId}
+                                                onChange={(e) => setPongdangQuickMemberId(e.target.value)}
+                                              >
+                                                {participating.map((m) => {
+                                                  const mManual = state.pongdangManualContributions?.[m.id] ?? 0;
+                                                  const mTotal = mManual + (m.contribution || 0);
+                                                  return (
+                                                    <option key={m.id} value={m.id}>
+                                                      {m.name} (현재: {mTotal.toLocaleString()}원)
+                                                    </option>
+                                                  );
+                                                })}
+                                              </select>
+                                              {activeMember && (
+                                                <span className="text-xs text-neutral-300">
+                                                  현재 표출 기여도: <strong className="text-emerald-400 font-mono text-sm">{totalDisplay.toLocaleString()}원</strong>
+                                                  {currentManualVal !== 0 && (
+                                                    <span className="text-[10px] text-amber-300 ml-1.5">
+                                                      (수동보정 {currentManualVal > 0 ? `+${currentManualVal.toLocaleString()}` : currentManualVal.toLocaleString()}원)
+                                                    </span>
+                                                  )}
+                                                </span>
+                                              )}
+                                            </div>
+
+                                            {/* 빠른 금액 가감 버튼들 */}
+                                            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                              <span className="text-[11px] text-neutral-400 mr-0.5">빠른 가감:</span>
+                                              {[10000, 50000, 100000, 500000, 1000000].map((amt) => (
+                                                <button
+                                                  key={`quick-plus-${amt}`}
+                                                  type="button"
+                                                  className="px-2 py-0.5 rounded bg-emerald-950/70 hover:bg-emerald-900 text-emerald-300 border border-emerald-500/40 text-xs font-semibold transition"
+                                                  onClick={() => {
+                                                    if (!activeMemberId) return;
+                                                    adjustPongdangManualContribution(activeMemberId, amt);
+                                                    setGlobalPreviewBump((n) => n + 1);
+                                                    showAppToast(`${activeMember?.name || "멤버"} 기여도 +${amt.toLocaleString()}원 반영`, { variant: "success" });
+                                                  }}
+                                                >
+                                                  +{amt >= 10000 ? `${amt / 10000}만` : `${amt}`}
+                                                </button>
+                                              ))}
+                                              {[-10000, -50000, -100000].map((amt) => (
+                                                <button
+                                                  key={`quick-minus-${amt}`}
+                                                  type="button"
+                                                  className="px-2 py-0.5 rounded bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-500/40 text-xs font-semibold transition"
+                                                  onClick={() => {
+                                                    if (!activeMemberId) return;
+                                                    adjustPongdangManualContribution(activeMemberId, amt);
+                                                    setGlobalPreviewBump((n) => n + 1);
+                                                    showAppToast(`${activeMember?.name || "멤버"} 기여도 ${amt.toLocaleString()}원 반영`, { variant: "info" });
+                                                  }}
+                                                >
+                                                  {amt / 10000}만
+                                                </button>
+                                              ))}
+                                            </div>
+
+                                            {/* 직접 금액 입력 & 추가/차감/목표설정 */}
+                                            <div className="flex flex-wrap items-center gap-2 pt-1">
+                                              <input
+                                                className="w-32 px-2.5 py-1 rounded bg-neutral-900 border border-white/20 text-xs text-white font-mono placeholder-neutral-500 text-right font-medium"
+                                                placeholder="금액 직접 입력"
+                                                inputMode="numeric"
+                                                value={pongdangQuickAmount}
+                                                onChange={(e) => setPongdangQuickAmount(e.target.value.replace(/[^\d]/g, ""))}
+                                                onKeyDown={(e) => {
+                                                  if (e.key === "Enter") {
+                                                    const amt = parseInt(pongdangQuickAmount, 10);
+                                                    if (amt && activeMemberId) {
+                                                      adjustPongdangManualContribution(activeMemberId, amt);
+                                                      setPongdangQuickAmount("");
+                                                      setGlobalPreviewBump((n) => n + 1);
+                                                      showAppToast(`${activeMember?.name} 기여도 +${amt.toLocaleString()}원 반영`, { variant: "success" });
+                                                    }
+                                                  }
+                                                }}
+                                              />
+                                              <button
+                                                type="button"
+                                                className="px-2.5 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition flex items-center gap-1 shadow-sm"
+                                                onClick={() => {
+                                                  const amt = parseInt(pongdangQuickAmount, 10);
+                                                  if (!amt || !activeMemberId) return;
+                                                  adjustPongdangManualContribution(activeMemberId, amt);
+                                                  setPongdangQuickAmount("");
+                                                  setGlobalPreviewBump((n) => n + 1);
+                                                  showAppToast(`${activeMember?.name} 기여도 +${amt.toLocaleString()}원 반영`, { variant: "success" });
+                                                }}
+                                              >
+                                                <span>➕</span> 추가(+)
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition flex items-center gap-1 shadow-sm"
+                                                onClick={() => {
+                                                  const amt = parseInt(pongdangQuickAmount, 10);
+                                                  if (!amt || !activeMemberId) return;
+                                                  adjustPongdangManualContribution(activeMemberId, -amt);
+                                                  setPongdangQuickAmount("");
+                                                  setGlobalPreviewBump((n) => n + 1);
+                                                  showAppToast(`${activeMember?.name} 기여도 -${amt.toLocaleString()}원 반영`, { variant: "info" });
+                                                }}
+                                              >
+                                                <span>➖</span> 차감(-)
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition flex items-center gap-1 shadow-sm"
+                                                onClick={() => {
+                                                  const amt = parseInt(pongdangQuickAmount, 10);
+                                                  if (isNaN(amt) || !activeMemberId) return;
+                                                  setPongdangTargetContribution(activeMemberId, amt);
+                                                  setPongdangQuickAmount("");
+                                                  setGlobalPreviewBump((n) => n + 1);
+                                                  showAppToast(`${activeMember?.name} 기여도를 ${amt.toLocaleString()}원으로 설정 완료`, { variant: "success" });
+                                                }}
+                                                title="기존 값과 상관없이 입력한 금액으로 기여도를 딱 맞춥니다"
+                                              >
+                                                <span>🎯</span> 목표값으로 설정
+                                              </button>
+                                            </div>
+
+                                            {/* 퐁당퐁당 전체 초기화 / 다시 불러오기 */}
+                                            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-sky-500/20">
+                                              <span className="text-[10px] text-neutral-400">
+                                                새 회차 시작 또는 기존 후원/시그 기록 재계산:
+                                              </span>
+                                              <div className="flex items-center gap-1.5">
+                                                <button
+                                                  type="button"
+                                                  className="px-2.5 py-0.5 rounded bg-rose-950/70 hover:bg-rose-900 border border-rose-500/40 text-rose-200 text-[11px] font-semibold transition"
+                                                  onClick={resetPongdangContributionsAll}
+                                                  title="퐁당퐁당 기여도를 모두 0원으로 완전히 초기화"
+                                                >
+                                                  🔄 0원 초기화
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  className="px-2.5 py-0.5 rounded bg-sky-950/70 hover:bg-sky-900 border border-sky-500/40 text-sky-200 text-[11px] font-semibold transition"
+                                                  onClick={resyncPongdangFromDonors}
+                                                  title="기존 후원 및 시그 기록에서 퐁당퐁당 기여도 다시 계산"
+                                                >
+                                                  📥 기록에서 재계산
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
+                                  )}
+
                                   <div className="space-y-1.5 pt-2 border-t border-white/5">
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                       <label className="text-xs text-neutral-300 font-medium flex items-center gap-1.5">
