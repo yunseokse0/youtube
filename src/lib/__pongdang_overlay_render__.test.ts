@@ -36,6 +36,8 @@ import {
   resolveOverlayContributionSource,
   collectDay777SigContributionByMember,
 } from "./overlay-donation-aggregate";
+import { mergeDonorRowFields } from "../domain/dedupe/donation-dedupe.pipeline";
+import { normalizeDonorsArray } from "../domain/state-monolith.all";
 import {
   buildOverlayRankedMembers,
   buildMemberCreationOrderIndex,
@@ -217,7 +219,7 @@ describe("Pongdang overlay rendering pipeline test", () => {
     const res1 = membersWithOverlayDonationAggregate(baseState, baseState.members, null, { day777Calc: true });
     expect(res1.find((m) => m.id === syhId)?.contribution).toBe(92000);
 
-    // 2) 92000점 마이너스 처리 시 -92000점 (500만점으로 복귀되지 않음)
+    // 2) 92000점 마이너스 처리 시 퐁당 팝업에서는 -92000점, 오버레이에서는 0점 (500만점으로 복귀되지 않음)
     const minusState: AppState = {
       ...baseState,
       donors: [
@@ -225,26 +227,50 @@ describe("Pongdang overlay rendering pipeline test", () => {
         { id: "d_real", memberId: syhId, amount: 92000, sigPrice: 92000, memberAutoAssigned: false, pongdangMinus: true, at: 200 },
       ],
     };
-    const res2 = membersWithOverlayDonationAggregate(minusState, minusState.members, null, { day777Calc: true });
+    const res2 = membersWithOverlayDonationAggregate(minusState, minusState.members, null, { day777Calc: true, isPongdangPopup: true });
     expect(res2.find((m) => m.id === syhId)?.contribution).toBe(-92000);
+
+    const resOverlay = membersWithOverlayDonationAggregate(minusState, minusState.members, null, { day777Calc: true, isPongdangPopup: false });
+    expect(resOverlay.find((m) => m.id === syhId)?.contribution).toBe(0);
   });
 
-  it("does not force day777Calc just because preset name contains 퐁당 if theme is not excelPongdang and option is not checked", () => {
+  it("recognizes preset with 퐁당 in name as day777Calc unless explicitly disabled", () => {
     const preset = {
       id: "p_test",
-      name: "퐁당퐁당 엑셀 식사",
+      name: "자키엑셀 퐁당퐁당엑셀표",
       theme: "excelViolet",
       membersTheme: "excelViolet",
     };
     const rawSp = new URLSearchParams();
     const isDay777 = resolveDay777Calc(rawSp, preset, { ready: true });
-    expect(isDay777).toBe(false);
+    expect(isDay777).toBe(true);
 
-    // 명시적으로 day777Calc: true를 켰을 때는 true
-    const presetWith777 = {
+    // 명시적으로 day777Calc: false로 껐을 때는 false
+    const presetDisabled = {
       ...preset,
-      day777Calc: true,
+      day777Calc: false,
     };
-    expect(resolveDay777Calc(rawSp, presetWith777, { ready: true })).toBe(true);
+    expect(resolveDay777Calc(rawSp, presetDisabled, { ready: true })).toBe(false);
+
+    // URL에서 ?day777Calc=false로 껐을 때도 false
+    const spDisabled = new URLSearchParams("day777Calc=false");
+    expect(resolveDay777Calc(spDisabled, preset, { ready: true })).toBe(false);
+  });
+
+  it("mergeDonorRowFields correctly toggles pongdangMinus to true and back to normal(+) without resurrecting true", () => {
+    const d1 = { id: "d1", name: "마에스트라", amount: 26000, memberId: "m1", at: 100 };
+
+    // 1) 마이너스 처리: preferred에 pongdangMinus: true
+    const minus = mergeDonorRowFields({ ...d1, pongdangMinus: true }, d1);
+    expect(minus.pongdangMinus).toBe(true);
+
+    // 2) 정상(+) 복구: preferred에 pongdangMinus: false, fallback은 여전히 true (이전 DB 상태)
+    const restored = mergeDonorRowFields({ ...d1, pongdangMinus: false }, { ...d1, pongdangMinus: true });
+    expect(restored.pongdangMinus).toBeUndefined();
+
+    // 3) normalizeDonorsArray preserves explicit false/true
+    const norm = normalizeDonorsArray([{ ...d1, pongdangMinus: false }, { ...d1, id: "d2", pongdangMinus: true }]);
+    expect(norm[0].pongdangMinus).toBe(false);
+    expect(norm[1].pongdangMinus).toBe(true);
   });
 });

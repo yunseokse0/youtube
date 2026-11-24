@@ -2435,6 +2435,8 @@ function overlayThemeIsExcelPongdang(
     preset?.theme === "excelPongdang"
   );
   if (isPongdangTheme) return true;
+  const pName = String(preset?.name || "").trim().toLowerCase();
+  if (pName.includes("퐁당")) return true;
   const rawDay777 = rawSp.get("day777Calc") || "";
   if (rawDay777 === "true") return true;
   if (preset?.day777Calc === true) return true;
@@ -2450,11 +2452,16 @@ export function resolveDay777Calc(
   preset: OverlayPresetLike | null,
   opts: { ready: boolean }
 ): boolean {
+  const urlVal = rawSp.get("day777Calc");
+  if (urlVal === "false") return false;
+  if (urlVal === "true") return true;
   const merged = resolveLivePresetStyleParam("day777Calc", rawSp, presetToParams(preset), opts);
   if (merged === "false") return false;
   if (merged === "true") return true;
   if (preset?.day777Calc === false) return false;
   if (preset?.day777Calc === true) return true;
+  const pName = String(preset?.name || "").trim().toLowerCase();
+  if (pName.includes("퐁당")) return true;
   const membersTheme = resolveLivePresetStyleParam("membersTheme", rawSp, presetToParams(preset), opts);
   const theme = resolveLivePresetStyleParam("theme", rawSp, presetToParams(preset), opts);
   if (

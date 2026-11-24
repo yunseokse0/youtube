@@ -6,6 +6,12 @@ import { useAdminPopupBroadcastState } from "@/hooks/useAdminPopupBroadcastState
 import { showAppToast } from "@/lib/app-toast";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import { reassignDonorMemberInAppState } from "@/domain/contribution/apply-donation.usecases";
+import { persistDonationStateViaApi } from "@/lib/donation/persist-donation-client";
+import {
+  writeSessionBroadcastState,
+  notifyBroadcastStateLocalUpdated,
+} from "@/lib/server-authoritative-broadcast-state";
+import { syncMemberTotalsFromDonors } from "@/lib/state";
 import type { AppState, ContributionLog, Donor, Member } from "@/types";
 
 function formatAmount(n: number): string {
@@ -30,6 +36,8 @@ export default function AdminPongdangPopupPanel() {
     authReady,
     state,
     setState,
+    stateRef,
+    runExclusivePersist,
     accountMismatch,
     persistAppState,
     sseConnected,
@@ -287,6 +295,32 @@ export default function AdminPongdangPopupPanel() {
     });
   }, [itemRows, filterMemberId, filterType, query]);
 
+  // 후원(donors) 수정 시 서버 영구 반영 (마이너스 처리, 멤버 재배정)
+  const persistDonorsReplace = useCallback(
+    async (nextState: AppState): Promise<boolean> => {
+      const stamped = syncMemberTotalsFromDonors({
+        ...nextState,
+        updatedAt: Date.now(),
+        donorRankingsUpdatedAt: Date.now(),
+      });
+      setState(stamped);
+      stateRef.current = stamped;
+      writeSessionBroadcastState(stamped, scopedUserId);
+      notifyBroadcastStateLocalUpdated(scopedUserId, stamped.updatedAt);
+      const result = await runExclusivePersist(() =>
+        persistDonationStateViaApi(scopedUserId, stamped, "replace", {
+          returnState: false,
+        })
+      );
+      if (!result.ok) {
+        showAppToast("후원 변경사항 서버 저장 실패", { variant: "error" });
+        return false;
+      }
+      return true;
+    },
+    [runExclusivePersist, scopedUserId, setState, stateRef]
+  );
+
   // 작업 핸들러: 마이너스 처리 토글 (Donor 또는 ContributionLog)
   const toggleRowMinus = useCallback(async (row: PongdangItemRow) => {
     if (!state) return;
@@ -300,8 +334,7 @@ export default function AdminPongdangPopupPanel() {
         return d;
       });
       const nextState: AppState = { ...state, donors: nextDonors };
-      setState(nextState);
-      const ok = await persistAppState(nextState);
+      const ok = await persistDonorsReplace(nextState);
       if (ok) {
         showAppToast(
           row.isMinus
@@ -331,7 +364,7 @@ export default function AdminPongdangPopupPanel() {
         );
       }
     }
-  }, [state, setState, persistAppState]);
+  }, [state, persistDonorsReplace, persistAppState, setState]);
 
   // 작업 핸들러: 수동 로그 삭제
   const deleteManualLog = useCallback(async (logId: string) => {
@@ -351,13 +384,12 @@ export default function AdminPongdangPopupPanel() {
     if (!state) return;
     const next = reassignDonorMemberInAppState(state, donorId, memberId);
     if (!next) return;
-    setState(next);
-    const ok = await persistAppState(next);
+    const ok = await persistDonorsReplace(next);
     if (ok) {
       const targetName = members.find((m) => m.id === memberId)?.name || memberId;
       showAppToast(`[${targetName}] 멤버에게 배정 완료되었습니다 (퐁당퐁당 기여도 즉시 반영).`, { variant: "success" });
     }
-  }, [state, setState, persistAppState, members]);
+  }, [state, persistDonorsReplace, members]);
 
   // 작업 핸들러: 퐁당퐁당 멤버 참여/제외 토글
   const toggleMemberExclusion = useCallback(async (memberId: string) => {

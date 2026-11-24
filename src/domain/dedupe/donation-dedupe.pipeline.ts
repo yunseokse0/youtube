@@ -430,7 +430,7 @@ export function mergeDonorRowFields<T extends MergeableDonor>(
             : ineligible
               ? true
               : undefined;
-  return {
+  const res: any = {
     ...withAmount,
     ...(preferred.donationExcluded || fallback.donationExcluded
       ? { donationExcluded: true as const }
@@ -448,8 +448,19 @@ export function mergeDonorRowFields<T extends MergeableDonor>(
     ...(((preferred as any)?.zubzubQueueId || (fallback as any)?.zubzubQueueId)
       ? { zubzubQueueId: (preferred as any)?.zubzubQueueId || (fallback as any)?.zubzubQueueId }
       : {}),
-    ...(((preferred as any)?.pongdangMinus || (fallback as any)?.pongdangMinus) ? { pongdangMinus: true as const } : {}),
   };
+  const minusFlag =
+    typeof (preferred as any)?.pongdangMinus === "boolean"
+      ? (preferred as any).pongdangMinus
+      : typeof (fallback as any)?.pongdangMinus === "boolean"
+        ? (fallback as any).pongdangMinus
+        : undefined;
+  if (minusFlag === true) {
+    res.pongdangMinus = true;
+  } else {
+    delete res.pongdangMinus;
+  }
+  return res;
 }
 
 type DedupeCacheEntry<T> = { storedInputLen: number; result: T[] };
