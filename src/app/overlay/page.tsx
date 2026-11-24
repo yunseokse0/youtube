@@ -4422,10 +4422,22 @@ function OverlayInner() {
     ].join("|");
     const rows = ranked
       .map(({ m, rank }) => {
+        const explicitMode = (effectivePreset as any)?.customCellMode || rawSp.get("customCellMode");
+        const isRankMode = explicitMode
+          ? explicitMode === "rank"
+          : Boolean(
+              Boolean((effectivePreset as any)?.day777Calc) ||
+              String((effectivePreset as any)?.name || "").includes("퐁당") ||
+              (effectivePreset as any)?.theme === "excelPongdang" ||
+              (effectivePreset as any)?.membersTheme === "excelPongdang" ||
+              (Array.isArray(rankCustomCells) && rankCustomCells.some((c) => String(c || "").trim().length > 0))
+            );
         const memberVal = String(memberCustomCellsMap[m.id] || "").trim();
         const rankVal = rank != null && rank >= 1 ? String(rankCustomCells[rank - 1] || "").trim() : "";
-        const repFallback = (!rank && Array.isArray(rankCustomCells) && rankCustomCells.length > 0) ? String(rankCustomCells[0] || "").trim() : "";
-        const customVal = memberVal || rankVal || repFallback;
+        const role = (memberPositionsMap[m.id] || "").trim() || getMemberRole(m).trim();
+        const isRep = !role.includes("부대표") && role.includes("대표");
+        const repFallback = (!rank && isRep && Array.isArray(rankCustomCells) && rankCustomCells.length > 0) ? String(rankCustomCells[0] || "").trim() : "";
+        const customVal = isRankMode ? (rankVal || repFallback) : (memberVal || repFallback);
         const contribVal = isContributionExcluded(m) ? "-" : String(getContributionValueForMember(m));
         return `${showCustomColumn ? `${customVal}|` : ""}${m.account}|${m.toon}|${contribVal}${showRestroomColumn ? `|${getRestroomValueForMember(m)}` : ""}`;
       })
@@ -6482,17 +6494,16 @@ function OverlayInner() {
                           {showCustomColumn && (
                             <td className={`${effectiveRowCls} overlay-col-custom text-center`}>
                               {(() => {
-                                const isRankMode =
-                                  (effectivePreset as any)?.customCellMode === "rank" ||
-                                  Boolean((effectivePreset as any)?.day777Calc) ||
-                                  String((effectivePreset as any)?.name || "").includes("퐁당") ||
-                                  (effectivePreset as any)?.theme === "excelPongdang" ||
-                                  (effectivePreset as any)?.membersTheme === "excelPongdang" ||
-                                  rawSp.get("customCellMode") === "rank" ||
-                                  (Array.isArray(rankCustomCells) &&
-                                    rankCustomCells.some((c) => String(c || "").trim().length > 0) &&
-                                    (effectivePreset as any)?.customCellMode !== "member" &&
-                                    rawSp.get("customCellMode") !== "member");
+                                const explicitMode = (effectivePreset as any)?.customCellMode || rawSp.get("customCellMode");
+                                const isRankMode = explicitMode
+                                  ? explicitMode === "rank"
+                                  : Boolean(
+                                      Boolean((effectivePreset as any)?.day777Calc) ||
+                                      String((effectivePreset as any)?.name || "").includes("퐁당") ||
+                                      (effectivePreset as any)?.theme === "excelPongdang" ||
+                                      (effectivePreset as any)?.membersTheme === "excelPongdang" ||
+                                      (Array.isArray(rankCustomCells) && rankCustomCells.some((c) => String(c || "").trim().length > 0))
+                                    );
 
                                 const rowRank = rank != null ? rank : null;
                                 const effectiveRank =
@@ -6511,8 +6522,8 @@ function OverlayInner() {
                                     ? String(rankCustomCells[0] || "").trim()
                                     : "";
                                 const cellText = isRankMode
-                                  ? (rankVal || memberVal || repFallback)
-                                  : (memberVal || rankVal || repFallback);
+                                  ? (rankVal || repFallback)
+                                  : (memberVal || repFallback);
                                 return cellText ? (
                                   <span className="overlay-cell-text-inner font-semibold" style={overlayCellOutlineStyle}>
                                     {cellText}

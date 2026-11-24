@@ -108,6 +108,11 @@ export function mergeDonationTablePresetFields<
     showCustomColumn: p.showCustomColumn ?? f.showCustomColumn,
     tableSplit: p.tableSplit ?? f.tableSplit,
     tablePill: (p.tablePill ?? p.pillStyle) ?? (f.tablePill ?? f.pillStyle),
+    customCellMode: p.customCellMode ?? f.customCellMode,
+    customCellLinkMode: p.customCellLinkMode ?? f.customCellLinkMode,
+    customHeaderLabel: p.customHeaderLabel ?? f.customHeaderLabel,
+    rankCustomCells: p.rankCustomCells ?? f.rankCustomCells,
+    memberCustomCells: p.memberCustomCells ?? f.memberCustomCells,
   } as T;
 }
 

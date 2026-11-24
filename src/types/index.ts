@@ -378,6 +378,10 @@ export type DonationTableColumnsOptions = {
   contributionHeaderLabel?: string;
   /** 커스텀 열 적용 기준: 'rank' (순위 1위~N위 고정) / 'member' (멤버별 고정) */
   customCellMode?: "rank" | "member";
+  customCellLinkMode?: "global" | "preset";
+  customHeaderLabel?: string;
+  rankCustomCells?: string[];
+  memberCustomCells?: Record<string, string>;
 };
 
 export type SigMatchSettings = {

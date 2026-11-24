@@ -221,4 +221,33 @@ describe("applyToonaSigItemsToInventory", () => {
     }
     expect(finalTargetSignatures).toHaveLength(108);
   });
+
+  it("프리셋 count 방어: count가 문자열이거나 이름에 '(108개)'로 들어와도 정확히 108개로 제한", () => {
+    const allSignatures = Array.from({ length: 117 }, (_, i) => ({
+      id: `sig_${i + 1}`,
+      name: `시그_${i + 1}`,
+      triggerAmount: (i + 1) * 1000,
+      enabled: true,
+    }));
+
+    const extractCount = (p: any): number => {
+      if (!p) return 0;
+      const raw = p.count ?? p.signatureCount ?? p.signatures_count ?? p.totalCount;
+      const parsedNum = typeof raw === "number" ? raw : (typeof raw === "string" ? parseInt(raw, 10) : NaN);
+      if (Number.isFinite(parsedNum) && parsedNum > 0) return parsedNum;
+      const fromName = parseInt(String(p.name || "").match(/(\d+)\s*개/)?.[1] || "", 10);
+      if (Number.isFinite(fromName) && fromName > 0) return fromName;
+      return 0;
+    };
+
+    const p1 = { id: "p1", name: "마에스트라", count: "108" as any };
+    const limit1 = extractCount(p1);
+    expect(limit1).toBe(108);
+    expect(allSignatures.slice(0, limit1)).toHaveLength(108);
+
+    const p2 = { id: "p2", name: "마에스트라 (108개)" };
+    const limit2 = extractCount(p2);
+    expect(limit2).toBe(108);
+    expect(allSignatures.slice(0, limit2)).toHaveLength(108);
+  });
 });

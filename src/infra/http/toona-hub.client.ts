@@ -254,8 +254,23 @@ export async function fetchToonaSignaturesViaHubSession(
     }
 
     const currentPreset = (sigJson.presets || []).find(
-      (p: any) => String(p.id) === String(sigJson.activePresetId || "") || p.isActive
-    );
+      (p: any) =>
+        (sigJson.activePresetId && String(p.id) === String(sigJson.activePresetId)) ||
+        ((sigJson as any).active_preset_id && String(p.id) === String((sigJson as any).active_preset_id)) ||
+        Boolean(p.isActive || p.is_active || p.active) ||
+        (sigJson.activePresetName && String(p.name || "").trim() === String(sigJson.activePresetName).trim())
+    ) || ((sigJson.presets || []).length === 1 ? sigJson.presets![0] : undefined);
+
+    const extractCountFromPreset = (p: any): number => {
+      if (!p) return 0;
+      const raw = p.count ?? p.signatureCount ?? p.signatures_count ?? p.totalCount;
+      const parsedNum = typeof raw === "number" ? raw : (typeof raw === "string" ? parseInt(raw, 10) : NaN);
+      if (Number.isFinite(parsedNum) && parsedNum > 0) return parsedNum;
+      const fromName = parseInt(String(p.name || "").match(/(\d+)\s*개/)?.[1] || "", 10);
+      if (Number.isFinite(fromName) && fromName > 0) return fromName;
+      return 0;
+    };
+    const expectedPresetCount = extractCountFromPreset(currentPreset);
 
     const extractIdsFromPreset = (p: any): string[] | null => {
       if (!p) return null;
@@ -270,9 +285,11 @@ export async function fetchToonaSignaturesViaHubSession(
     const activeEnabledIds: string[] | null =
       (Array.isArray(sigJson.activePresetEnabledSignatureIds) && sigJson.activePresetEnabledSignatureIds.length > 0)
         ? sigJson.activePresetEnabledSignatureIds.map(String)
-        : (Array.isArray((sigJson as any).activePresetSignatureIds) && (sigJson as any).activePresetSignatureIds.length > 0)
-          ? (sigJson as any).activePresetSignatureIds.map(String)
-          : extractIdsFromPreset(currentPreset);
+        : (Array.isArray((sigJson as any).active_preset_enabled_signature_ids) && (sigJson as any).active_preset_enabled_signature_ids.length > 0)
+          ? (sigJson as any).active_preset_enabled_signature_ids.map(String)
+          : (Array.isArray((sigJson as any).activePresetSignatureIds) && (sigJson as any).activePresetSignatureIds.length > 0)
+            ? (sigJson as any).activePresetSignatureIds.map(String)
+            : extractIdsFromPreset(currentPreset);
 
     if (activeEnabledIds && activeEnabledIds.length > 0) {
       const activeSet = new Set(activeEnabledIds.map(String));
@@ -293,19 +310,14 @@ export async function fetchToonaSignaturesViaHubSession(
     });
 
     let finalTargetSignatures = targetSignatures;
-    if (
-      currentPreset &&
-      typeof currentPreset.count === "number" &&
-      currentPreset.count > 0 &&
-      finalTargetSignatures.length > currentPreset.count
-    ) {
+    if (expectedPresetCount > 0 && finalTargetSignatures.length > expectedPresetCount) {
       const strictlyEnabled = finalTargetSignatures.filter((s) => s.enabled === true);
-      if (strictlyEnabled.length === currentPreset.count) {
+      if (strictlyEnabled.length === expectedPresetCount) {
         finalTargetSignatures = strictlyEnabled;
-      } else if (strictlyEnabled.length > 0 && strictlyEnabled.length <= currentPreset.count) {
+      } else if (strictlyEnabled.length > 0 && strictlyEnabled.length <= expectedPresetCount) {
         finalTargetSignatures = strictlyEnabled;
       } else {
-        finalTargetSignatures = finalTargetSignatures.slice(0, currentPreset.count);
+        finalTargetSignatures = finalTargetSignatures.slice(0, expectedPresetCount);
       }
     }
 
@@ -321,8 +333,8 @@ export async function fetchToonaSignaturesViaHubSession(
       baseUrl,
       count: items.length,
       defaultAlertImageUrl,
-      activePresetId: sigJson.activePresetId ?? null,
-      activePresetName: sigJson.activePresetName ?? null,
+      activePresetId: sigJson.activePresetId ?? (sigJson as any).active_preset_id ?? currentPreset?.id ?? null,
+      activePresetName: sigJson.activePresetName ?? (sigJson as any).active_preset_name ?? currentPreset?.name ?? null,
       presets: Array.isArray(sigJson.presets) ? sigJson.presets : [],
     };
   } catch (err) {

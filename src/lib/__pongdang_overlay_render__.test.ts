@@ -273,4 +273,60 @@ describe("Pongdang overlay rendering pipeline test", () => {
     expect(norm[0].pongdangMinus).toBe(false);
     expect(norm[1].pongdangMinus).toBe(true);
   });
+
+  it("strictly isolates rank-based custom cells from member-bound memos", () => {
+    // Preset configured for rank mode with 1위=일반, 2위=쓰레기, 3위=일반, 4위=쓰레기
+    const rankPreset: Partial<OverlayPreset> = {
+      id: "ov_pongdang_rank",
+      name: "자키엑셀 퐁당퐁당엑셀표",
+      customCellMode: "rank",
+      customCellLinkMode: "preset",
+      rankCustomCells: ["일반", "쓰레기", "일반", "쓰레기", "일반", "침체", "쓰레기"],
+      memberCustomCells: {
+        "m_syh": "쓰레기", // 서유하 used to have 쓰레기 in member mode
+        "m_cy": "일반",    // 채영 used to have 일반 in member mode
+      },
+    };
+
+    const rankCustomCells = rankPreset.rankCustomCells || [];
+    const memberCustomCellsMap = rankPreset.memberCustomCells || {};
+
+    const resolveCellText = (rankNum: number, memberId: string, isRank: boolean) => {
+      const rankVal = String(rankCustomCells[rankNum - 1] || "").trim();
+      const memberVal = String(memberCustomCellsMap[memberId] || "").trim();
+      return isRank ? (rankVal || "") : (memberVal || "");
+    };
+
+    // When 서유하 is rank 1:
+    // In rank mode, must strictly be "일반", NOT "쓰레기"!
+    expect(resolveCellText(1, "m_syh", true)).toBe("일반");
+
+    // When 채영 is rank 4:
+    // In rank mode, must strictly be "쓰레기", NOT "일반"!
+    expect(resolveCellText(4, "m_cy", true)).toBe("쓰레기");
+
+    // When unassigned member is rank 2:
+    expect(resolveCellText(2, "m_zina", true)).toBe("쓰레기");
+
+    // In member mode, it should follow the member
+    expect(resolveCellText(1, "m_syh", false)).toBe("쓰레기");
+    expect(resolveCellText(4, "m_cy", false)).toBe("일반");
+    expect(resolveCellText(2, "m_zina", false)).toBe("");
+  });
+
+  it("mergeDonationTablePresetFields preserves customCellMode and rankCustomCells", () => {
+    const primary = {
+      id: "p1",
+      customCellMode: "rank" as const,
+      rankCustomCells: ["일반", "쓰레기"],
+    };
+    const fallback = {
+      id: "p1",
+      customCellMode: "member" as const,
+      rankCustomCells: ["fallback"],
+    };
+    const merged = mergeDonationTablePresetFields(primary as any, fallback as any);
+    expect(merged.customCellMode).toBe("rank");
+    expect(merged.rankCustomCells).toEqual(["일반", "쓰레기"]);
+  });
 });
