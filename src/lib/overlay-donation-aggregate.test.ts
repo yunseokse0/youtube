@@ -146,7 +146,7 @@ describe("day777Calc", () => {
       ],
       contributionLogs: [
         {
-          id: "manual-negative",
+          id: "cl_pd_manual-negative", isPongdang: true,
           memberId: "m1",
           delta: 1,
           amount: "-345",
@@ -563,7 +563,7 @@ describe("day777Calc", () => {
       ],
       contributionLogs: [
         {
-          id: "cl_1",
+          id: "cl_pd_1", isPongdang: true,
           memberId: "m1",
           amount: 20_000,
           delta: 1,

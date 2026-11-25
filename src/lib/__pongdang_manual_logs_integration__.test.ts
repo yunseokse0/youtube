@@ -21,13 +21,14 @@ describe("퐁당퐁당 엑셀표 - 기여도 기록부(수동 로그) 및 수동
         isSigCredit: true,
       },
     ],
-    // [기여도 기록부]에서 관리자가 수동으로 입력한 내역
+    // [기여도 기록부]에서 관리자가 수동으로 입력한 내역 (퐁당퐁당 전용 로그)
     contributionLogs: [
       {
-        id: "log1",
+        id: "cl_pd_log1",
         memberId: "m1",
         amount: 30000,
-        reason: "미션 달성 보너스",
+        reason: "퐁당 미션 달성 보너스",
+        isPongdang: true,
         at: 2000,
       } as ContributionLogItem,
     ],

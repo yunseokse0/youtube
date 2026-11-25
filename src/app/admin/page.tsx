@@ -11887,6 +11887,15 @@ function AdminPageInner() {
     });
   }, [persistState]);
 
+  const isPongdangPresetItem = (p: any) =>
+    Boolean(
+      p &&
+        (p.membersTheme === "excelPongdang" ||
+          p.theme === "excelPongdang" ||
+          Boolean(p.day777Calc) ||
+          String(p.name || "").includes("퐁당"))
+    );
+
   const resetPongdangContributionsAll = useCallback(() => {
     if (!window.confirm("퐁당퐁당 기여도(자동 집계 및 수동 보정)를 모두 0원으로 완전히 초기화하시겠습니까?")) return;
     setState((prev: AppState) => {
@@ -11895,10 +11904,14 @@ function AdminPageInner() {
       for (const m of prev.members) {
         nextManual[m.id] = 0;
       }
+      const nextPresets = (prev.overlayPresets || []).map((p) =>
+        isPongdangPresetItem(p) ? { ...p, donationAggregateFromAt: String(now) } : p
+      );
       const next: AppState = {
         ...prev,
         pongdangResetAt: now,
         pongdangManualContributions: nextManual,
+        overlayPresets: nextPresets,
         members: (prev.members || []).map((m: Member) => ({ ...m, contribution: 0 })),
         rouletteState: prev.rouletteState
           ? {
@@ -11920,9 +11933,13 @@ function AdminPageInner() {
   const resyncPongdangFromDonors = useCallback(() => {
     if (!window.confirm("기존 후원 원장 및 룰렛 시그 기록에서 퐁당퐁당(777데이) 기여도를 다시 계산하여 불러올까요?")) return;
     setState((prev: AppState) => {
+      const nextPresets = (prev.overlayPresets || []).map((p) =>
+        isPongdangPresetItem(p) ? { ...p, donationAggregateFromAt: "" } : p
+      );
       const next: AppState = {
         ...prev,
         pongdangResetAt: 0,
+        overlayPresets: nextPresets,
       };
       persistState(next, { omitDonationFields: true });
       return next;
@@ -11934,9 +11951,13 @@ function AdminPageInner() {
   const applyPongdangFromNow = useCallback(() => {
     const now = Date.now();
     setState((prev: AppState) => {
+      const nextPresets = (prev.overlayPresets || []).map((p) =>
+        isPongdangPresetItem(p) ? { ...p, donationAggregateFromAt: String(now) } : p
+      );
       const next: AppState = {
         ...prev,
         pongdangResetAt: now,
+        overlayPresets: nextPresets,
       };
       persistState(next, { omitDonationFields: true });
       return next;
@@ -11948,9 +11969,13 @@ function AdminPageInner() {
   const applyPongdangFromChosenTime = useCallback((timeMs: number) => {
     if (!timeMs || timeMs <= 0) return;
     setState((prev: AppState) => {
+      const nextPresets = (prev.overlayPresets || []).map((p) =>
+        isPongdangPresetItem(p) ? { ...p, donationAggregateFromAt: String(timeMs) } : p
+      );
       const next: AppState = {
         ...prev,
         pongdangResetAt: timeMs,
+        overlayPresets: nextPresets,
       };
       persistState(next, { omitDonationFields: true });
       return next;
@@ -11961,9 +11986,13 @@ function AdminPageInner() {
 
   const turnOffPongdangCalculation = useCallback(() => {
     setState((prev: AppState) => {
+      const nextPresets = (prev.overlayPresets || []).map((p) =>
+        isPongdangPresetItem(p) ? { ...p, donationAggregateFromAt: "off" } : p
+      );
       const next: AppState = {
         ...prev,
         pongdangResetAt: -1,
+        overlayPresets: nextPresets,
       };
       persistState(next, { omitDonationFields: true });
       return next;
@@ -12113,7 +12142,7 @@ function AdminPageInner() {
 
   const autoSigContributionMap = useMemo(() => {
     return collectDay777SigContributionByMember(state);
-  }, [state.donors, state.sigInventory, state.rouletteState, state.contributionLogs]);
+  }, [state.donors, state.sigInventory, state.rouletteState, state.contributionLogs, state.pongdangResetAt]);
 
   const applyRestroomChange = useCallback((
     memberId: string,
@@ -23686,14 +23715,29 @@ function AdminPageInner() {
                                     }
                                     onChange={(e) => {
                                       const val = e.target.value;
+                                      const isPongdang = isPongdangPresetItem(p);
                                       if (!val) {
                                         updatePreset(p.id, { donationAggregateFromAt: "" });
+                                        if (isPongdang) {
+                                          setState((prev: AppState) => {
+                                            const next = { ...prev, pongdangResetAt: 0 };
+                                            persistState(next, { omitDonationFields: true });
+                                            return next;
+                                          });
+                                        }
                                         setGlobalPreviewBump((n) => n + 1);
                                         return;
                                       }
                                       const ms = parseMealBattleFromAtInput(val, 0);
                                       if (ms > 0) {
                                         updatePreset(p.id, { donationAggregateFromAt: String(ms) });
+                                        if (isPongdang) {
+                                          setState((prev: AppState) => {
+                                            const next = { ...prev, pongdangResetAt: ms };
+                                            persistState(next, { omitDonationFields: true });
+                                            return next;
+                                          });
+                                        }
                                         setGlobalPreviewBump((n) => n + 1);
                                       }
                                     }}

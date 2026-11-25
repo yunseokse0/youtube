@@ -250,22 +250,31 @@ export function collectDay777SigContributionByMember(
   opts?: Day777SigContributionOpts
 ): Map<string, number> {
   const explicitFromAt = normalizeDonationAggregateFromAt(fromAt);
-  const isPongdangOff = Number(state?.pongdangResetAt || 0) === -1;
-  if (explicitFromAt === -1 || isPongdangOff) {
+  const pReset = state?.pongdangResetAt;
+  const hasPReset = pReset !== undefined && pReset !== null;
+  const pResetNum = Number(pReset);
+  const isPongdangOff = explicitFromAt === -1 || pResetNum === -1;
+  if (isPongdangOff) {
     return new Map();
   }
 
-  const resetCutoff = Math.max(
-    0,
-    Number(state?.settlementResetAt || 0),
-    Number((state as { intentionalDonationClearAt?: number })?.intentionalDonationClearAt || 0),
-    Number(state?.pongdangResetAt || 0)
-  );
-  // 사용자가 프리셋/오버레이에서 명시적으로 특정 시각(또는 지금부터)을 지정한 경우 해당 시점 이후로 집계.
-  // 미지정 시 리셋 시각(pongdangResetAt / settlementResetAt) 기준으로 누적 수집.
-  const effectiveFromAtOrNull = explicitFromAt != null
-    ? Math.max(explicitFromAt, resetCutoff)
-    : (resetCutoff > 0 ? resetCutoff : null);
+  // 퐁당퐁당(777데이) 기여도 계산 기준 시점:
+  // 1) 사용자가 프리셋이나 파라미터로 명시적인 시각(과거 시각 포함)을 지정한 경우 그 시점을 존중 (과거 시각 복원 지원)
+  // 2) fromAt이 없거나 0(전체 기간)인 경우: pongdangResetAt 반영 (0이면 전체 기간 null, >0이면 해당 시점 이후)
+  // 3) pongdangResetAt 필드가 없는 레거시 상태 호환용: settlementResetAt 사용
+  let effectiveFromAtOrNull: number | null = null;
+  if (explicitFromAt != null && explicitFromAt > 0) {
+    effectiveFromAtOrNull = explicitFromAt;
+  } else if (hasPReset) {
+    effectiveFromAtOrNull = pResetNum > 0 ? pResetNum : null;
+  } else {
+    const legacyCutoff = Math.max(
+      0,
+      Number(state?.settlementResetAt || 0),
+      Number((state as { intentionalDonationClearAt?: number })?.intentionalDonationClearAt || 0)
+    );
+    effectiveFromAtOrNull = legacyCutoff > 0 ? legacyCutoff : null;
+  }
 
   const manual = readManualSigBroadcastFromState(state);
   const manualSigs =
@@ -466,12 +475,27 @@ export function applyOverlayDonationDisplayTotals(
       : state.pongdangManualMode !== false;
   const manualContribs = state.pongdangManualContributions || {};
 
-  const pongdangResetCutoff = Math.max(
-    0,
-    Number(state?.pongdangResetAt || 0)
-  );
-  // 0원 초기화(pongdangResetAt)가 실행된 경우 초기화 시점을 최우선 반영하여 과거 후원 재합산 방지
-  const effectiveCutoff = Math.max(fromAt || 0, pongdangResetCutoff || 0) || null;
+  const pReset = state?.pongdangResetAt;
+  const hasPReset = pReset !== undefined && pReset !== null;
+  const pResetNum = Number(pReset);
+
+  let effectiveCutoff: number | null = null;
+  if (fromAt === -1 || pResetNum === -1) {
+    effectiveCutoff = -1;
+  } else if (fromAt != null && fromAt > 0) {
+    // 사용자가 프리셋/URL에서 명시적으로 특정 일시(과거 시각 포함)를 지정한 경우
+    if (hasPReset && pResetNum > 0 && pResetNum < fromAt) {
+      // pongdangResetAt이 더 과거 시각으로 명시 설정되었다면 더 넓은 과거 범위 존중
+      effectiveCutoff = pResetNum;
+    } else {
+      effectiveCutoff = fromAt;
+    }
+  } else if (hasPReset) {
+    // fromAt 미지정 시 pongdangResetAt 기준 (0이면 전체 기간 null, >0이면 해당 시각)
+    effectiveCutoff = pResetNum > 0 ? pResetNum : null;
+  } else {
+    effectiveCutoff = null;
+  }
 
   // 오버레이에서도 관리자가 마이너스 처리한 시그를 그대로 차감 반영
   const sigById = collectDay777SigContributionByMember(state, effectiveCutoff, {
@@ -508,12 +532,14 @@ export function applyOverlayDonationDisplayTotals(
     ...amountSynced,
     members: (amountSynced.members || []).map((m) => {
       const orig = originalMemberMap.get(m.id);
-      const autoVal = sigById.has(m.id)
+      const fromSig = sigById.has(m.id);
+      const autoVal = fromSig
         ? (sigById.get(m.id) ?? 0)
         : (popupAutoById.get(m.id) ?? 0);
       const logVal = manualLogMap.get(m.id) ?? 0;
       const directManualVal = isManualMode ? parseOverlayContributionNumber(manualContribs[m.id]) : 0;
-      const totalManual = logVal + directManualVal;
+      // sigById는 이미 contributionLogs를 자체 합산하므로 중복 합산 방지
+      const totalManual = fromSig ? directManualVal : logVal + directManualVal;
       const currentContrib = Math.floor(parseOverlayContributionNumber(orig?.contribution));
       let baseVal = 0;
       if (day777) {
@@ -531,10 +557,14 @@ export function applyOverlayDonationDisplayTotals(
           baseVal = Number(m.contribution) || 0;
         }
       }
-      const pongdangAuto = popupAutoById.get(m.id) ?? 0;
-      const rawTotal = isPongdangPopup || day777
-        ? (isManualMode ? pongdangAuto + totalManual : pongdangAuto)
-        : baseVal;
+      const pongdangAuto = autoVal !== 0
+        ? autoVal
+        : (popupAutoById.get(m.id) ?? (sigById.get(m.id) ?? 0));
+      const pongdangRaw = isManualMode ? pongdangAuto + totalManual : pongdangAuto;
+      const pongdangVal = pongdangRaw !== 0
+        ? pongdangRaw
+        : (currentContrib < 0 ? currentContrib : 0);
+      const rawTotal = isPongdangPopup || day777 ? pongdangVal : baseVal;
       return {
         ...m,
         contribution: isPongdangPopup || day777 ? rawTotal : Math.max(0, rawTotal),

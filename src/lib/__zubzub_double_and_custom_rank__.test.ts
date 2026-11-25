@@ -759,4 +759,80 @@ describe("줍줍 2배 기여도 및 퐁당퐁당 옵션 & 커스텀 열 순위 �
     expect(partialMerged.contributionLogs).toHaveLength(1);
     expect(partialMerged.contributionLogs?.[0].id).toBe("zubzub_bonus_1");
   });
+
+  it("24. 퐁당퐁당 엑셀표에서 이전 리셋 시각보다 더 과거 시간을 선택했을 때 기존 후원을 정상적으로 불러온다", async () => {
+    const { applyOverlayDonationDisplayTotals } = await import("@/lib/overlay-donation-aggregate");
+
+    // 후원 3건: 10:00 (5만), 12:00 (3만), 14:00 (4만)
+    const t10 = 10000;
+    const t12 = 12000;
+    const t14 = 14000;
+    const baseState: any = {
+      members: [{ id: "m_surin", name: "수린", contribution: 0 }],
+      donors: [
+        { id: "d1", name: "팬1", memberId: "m_surin", amount: 777000, at: t10, target: "account", sigPrice: 50000, isSigCredit: true },
+        { id: "d2", name: "팬2", memberId: "m_surin", amount: 777000, at: t12, target: "account", sigPrice: 30000, isSigCredit: true },
+        { id: "d3", name: "팬3", memberId: "m_surin", amount: 777000, at: t14, target: "account", sigPrice: 40000, isSigCredit: true },
+      ],
+      pongdangResetAt: 13000, // 이전에 13:00에 0원 초기화 실행됨
+    };
+
+    // 1) 이전 리셋 시점(13:00) 기준으로는 14:00의 40,000원 1건만 집계됨
+    const initialRes = applyOverlayDonationDisplayTotals(baseState, { day777Calc: true });
+    expect(initialRes.members.find((m: any) => m.id === "m_surin")?.contribution).toBe(40000);
+
+    // 2) 사용자가 과거 시간 11:00 (t=11000)을 선택:
+    // 이전 리셋 시각(13000)에 클램핑되지 않고 11:00 이후 후원인 12:00(3만) + 14:00(4만) = 70,000원을 성공적으로 불러와야 함!
+    const pastTimeRes = applyOverlayDonationDisplayTotals(
+      { ...baseState, pongdangResetAt: 11000 },
+      { day777Calc: true, fromAt: 11000 }
+    );
+    expect(pastTimeRes.members.find((m: any) => m.id === "m_surin")?.contribution).toBe(70000);
+
+    // 3) 프리셋에서만 fromAt을 과거 시각 11000으로 넘겼을 때도 동일하게 70,000원 반영
+    const presetPastRes = applyOverlayDonationDisplayTotals(baseState, { day777Calc: true, fromAt: 11000 });
+    expect(presetPastRes.members.find((m: any) => m.id === "m_surin")?.contribution).toBe(70000);
+  });
+
+  it("25. 퐁당퐁당 엑셀표에서 과거 시간 선택 시 메인 정산 settlementResetAt에 차단되지 않고 기존 후원을 온전히 불러온다", async () => {
+    const { applyOverlayDonationDisplayTotals } = await import("@/lib/overlay-donation-aggregate");
+
+    const t10 = 10000;
+    const t12 = 12000;
+    const t14 = 14000;
+    const baseState: any = {
+      members: [{ id: "m_ina", name: "이나", contribution: 0 }],
+      donors: [
+        { id: "d1", name: "팬1", memberId: "m_ina", amount: 777000, at: t10, target: "account", sigPrice: 52000, isSigCredit: true },
+        { id: "d2", name: "팬2", memberId: "m_ina", amount: 777000, at: t12, target: "account", sigPrice: 31000, isSigCredit: true },
+        { id: "d3", name: "팬3", memberId: "m_ina", amount: 777000, at: t14, target: "account", sigPrice: 52000, isSigCredit: true },
+      ],
+      settlementResetAt: 15000, // 메인 정산은 15:00에 리셋됨
+      intentionalDonationClearAt: 15000,
+      pongdangResetAt: 11000, // 사용자가 퐁당퐁당을 11:00부터 책정하도록 지정
+    };
+
+    // 메인 정산 리셋(15:00)에 차단되지 않고 11:00 이후 후원인 12:00(31,000) + 14:00(52,000) = 83,000원이 정상 집계됨
+    const res = applyOverlayDonationDisplayTotals(baseState, { day777Calc: true, fromAt: 11000 });
+    expect(res.members.find((m: any) => m.id === "m_ina")?.contribution).toBe(83000);
+  });
+
+  it("26. 퐁당퐁당 엑셀표에서 전체 기간(pongdangResetAt = 0) 선택 시 모든 과거 후원을 온전히 원복한다", async () => {
+    const { applyOverlayDonationDisplayTotals } = await import("@/lib/overlay-donation-aggregate");
+
+    const baseState: any = {
+      members: [{ id: "m_ina", name: "이나", contribution: 0 }],
+      donors: [
+        { id: "d1", name: "팬1", memberId: "m_ina", amount: 777000, at: 1000, target: "account", sigPrice: 52000, isSigCredit: true },
+        { id: "d2", name: "팬2", memberId: "m_ina", amount: 777000, at: 2000, target: "account", sigPrice: 31000, isSigCredit: true },
+        { id: "d3", name: "팬3", memberId: "m_ina", amount: 777000, at: 3000, target: "account", sigPrice: 52000, isSigCredit: true },
+      ],
+      settlementResetAt: 5000, // 메인 방송 리셋
+      pongdangResetAt: 0, // 전체 기간 선택
+    };
+
+    const res = applyOverlayDonationDisplayTotals(baseState, { day777Calc: true, fromAt: null });
+    // 전체 3건 (52000 + 31000 + 52000 = 135000원) 모두 복원
+    expect(res.members.find((m: any) => m.id === "m_ina")?.contribution).toBe(135000);
+  });
 });

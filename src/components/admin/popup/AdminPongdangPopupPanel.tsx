@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import AdminPopupShell from "@/components/admin/popup/AdminPopupShell";
 import { useAdminPopupBroadcastState } from "@/hooks/useAdminPopupBroadcastState";
 import { showAppToast } from "@/lib/app-toast";
@@ -12,6 +12,7 @@ import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sy
 import { isPongdangContributionLog, syncMemberTotalsFromDonors } from "@/domain/sync/sync-repair-1pass";
 import { parseOverlayContributionNumber } from "@/lib/overlay-donation-aggregate";
 import { collectPongdangPopupAutoContributionByMember } from "@/lib/pongdang-popup-contribution";
+import { formatMealBattleFromAtInput, parseMealBattleFromAtInput } from "@/lib/battle-donation-sync";
 import type { AppState, ContributionLog, Member } from "@/types";
 
 function formatAmount(n: number): string {
@@ -585,10 +586,83 @@ export default function AdminPongdangPopupPanel() {
     }
   }, [state, setState, persistAppState, stateRef]);
 
+  const [pongdangFromAtInput, setPongdangFromAtInput] = useState<string>("");
+
+  useEffect(() => {
+    if (state?.pongdangResetAt && state.pongdangResetAt > 0) {
+      setPongdangFromAtInput(formatMealBattleFromAtInput(state.pongdangResetAt));
+    } else {
+      setPongdangFromAtInput("");
+    }
+  }, [state?.pongdangResetAt]);
+
+  const applyChosenTime = useCallback(async (timeMs: number) => {
+    if (!state || !timeMs || timeMs <= 0) return;
+    const nextPresets = (state.overlayPresets || []).map((p: any) =>
+      p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당")
+        ? { ...p, donationAggregateFromAt: String(timeMs) }
+        : p
+    );
+    const nextState: AppState = {
+      ...state,
+      pongdangResetAt: timeMs,
+      overlayPresets: nextPresets,
+    };
+    setState(nextState);
+    stateRef.current = nextState;
+    const ok = await persistDonorsReplace(nextState);
+    if (ok) {
+      showAppToast("지정된 일시 이후 후원/시그 기록에서 퐁당퐁당 기여도를 책정합니다.", { variant: "success" });
+    }
+  }, [state, setState, persistDonorsReplace, stateRef]);
+
+  const applyAllTime = useCallback(async () => {
+    if (!state) return;
+    if (!window.confirm("기존 모든 후원 원장 및 룰렛 시그 기록에서 퐁당퐁당 기여도를 다시 계산하여 불러올까요?")) return;
+    const nextPresets = (state.overlayPresets || []).map((p: any) =>
+      p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당")
+        ? { ...p, donationAggregateFromAt: "" }
+        : p
+    );
+    const nextState: AppState = {
+      ...state,
+      pongdangResetAt: 0,
+      overlayPresets: nextPresets,
+    };
+    setState(nextState);
+    stateRef.current = nextState;
+    const ok = await persistDonorsReplace(nextState);
+    if (ok) {
+      showAppToast("전체 기간의 기존 후원/시그 기록에서 퐁당퐁당 기여도를 다시 불러왔습니다.", { variant: "success" });
+    }
+  }, [state, setState, persistDonorsReplace, stateRef]);
+
+  const applyFromNow = useCallback(async () => {
+    if (!state) return;
+    const now = Date.now();
+    const nextPresets = (state.overlayPresets || []).map((p: any) =>
+      p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당")
+        ? { ...p, donationAggregateFromAt: String(now) }
+        : p
+    );
+    const nextState: AppState = {
+      ...state,
+      pongdangResetAt: now,
+      overlayPresets: nextPresets,
+    };
+    setState(nextState);
+    stateRef.current = nextState;
+    const ok = await persistDonorsReplace(nextState);
+    if (ok) {
+      showAppToast("지금부터 들어오는 후원/시그만 퐁당퐁당 기여도에 책정합니다.", { variant: "success" });
+    }
+  }, [state, setState, persistDonorsReplace, stateRef]);
+
   // 작업 핸들러: 0원 전체 초기화
   const resetAllPongdang = useCallback(async () => {
     if (!state) return;
     if (!window.confirm("퐁당퐁당 기여도(자동 집계 및 수동 보정)를 모두 0원으로 완전히 초기화하시겠습니까?")) return;
+    const now = Date.now();
     const nextManual: Record<string, number> = {};
     for (const m of state.members || []) {
       nextManual[m.id] = 0;
@@ -597,10 +671,16 @@ export default function AdminPongdangPopupPanel() {
     const pongdangLogIds = pongdangLogs.map((l) => l.id);
     const nextLogs = (state.contributionLogs || []).filter((l) => !isPongdangContributionLog(l));
     const nextDeletedIds = Array.from(new Set([...(state.deletedContributionLogIds || []), ...pongdangLogIds]));
+    const nextPresets = (state.overlayPresets || []).map((p: any) =>
+      p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당")
+        ? { ...p, donationAggregateFromAt: String(now) }
+        : p
+    );
     const nextState: AppState = {
       ...state,
-      pongdangResetAt: Date.now(),
+      pongdangResetAt: now,
       pongdangManualContributions: nextManual,
+      overlayPresets: nextPresets,
       contributionLogs: nextLogs,
       deletedContributionLogIds: nextDeletedIds,
     };
@@ -670,6 +750,60 @@ export default function AdminPongdangPopupPanel() {
             >
               새로고침
             </button>
+          </div>
+        </div>
+
+        {/* ⏱️ 집계 기준 시각 제어 바 (과거 시간 선택 / 전체 기간 복원 지원) */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 rounded-xl border border-sky-500/35 bg-[#0a1826]/90 backdrop-blur shadow-md">
+          <div className="flex items-center gap-2">
+            <span className="text-sm">⏱️</span>
+            <span className="text-xs font-bold text-sky-200">집계 기준 시각:</span>
+            <span className="px-2 py-0.5 rounded bg-sky-950/90 border border-sky-400/40 font-mono text-xs text-sky-100 font-semibold shadow-inner">
+              {state?.pongdangResetAt === -1 ? (
+                <span className="text-rose-400 font-bold">⛔ 책정 OFF</span>
+              ) : state?.pongdangResetAt && state.pongdangResetAt > 0 ? (
+                <span className="text-sky-300">
+                  ⏱️ {new Date(state.pongdangResetAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} 이후 후원/시그 집계 중
+                </span>
+              ) : (
+                <span className="text-emerald-300 font-bold">✅ 전체 기간 (기존 모든 후원/시그 집계 중)</span>
+              )}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 ml-auto">
+            <button
+              type="button"
+              className="px-3 py-1.5 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 text-emerald-200 border border-emerald-500/50 text-xs font-bold shadow-sm transition flex items-center gap-1 cursor-pointer"
+              onClick={applyAllTime}
+              title="과거 모든 후원 원장 및 룰렛 시그 기록에서 퐁당퐁당 기여도를 온전히 다시 집계합니다"
+            >
+              <span>✅</span> 전체 기간 (기존 후원 재집계)
+            </button>
+            <button
+              type="button"
+              className="px-3 py-1.5 rounded-lg bg-sky-950/80 hover:bg-sky-900 text-sky-200 border border-sky-400/50 text-xs font-bold shadow-sm transition flex items-center gap-1 cursor-pointer"
+              onClick={applyFromNow}
+              title="지금 이 순간 이후의 룰렛/시그/후원만 퐁당퐁당 기여도로 책정합니다"
+            >
+              <span>⏱️</span> 현재 시간부터
+            </button>
+            <div className="flex items-center gap-1.5 pl-2 border-l border-white/10">
+              <span className="text-xs text-neutral-300">📅 특정 일시:</span>
+              <input
+                type="datetime-local"
+                className="px-2 py-1 rounded-lg bg-black/60 border border-white/20 text-xs text-white focus:border-sky-400 focus:outline-none font-mono"
+                value={pongdangFromAtInput}
+                onChange={(e) => setPongdangFromAtInput(e.target.value)}
+              />
+              <button
+                type="button"
+                className="px-2.5 py-1 rounded-lg bg-sky-700 hover:bg-sky-600 text-white text-xs font-bold shadow-sm transition cursor-pointer"
+                onClick={() => applyChosenTime(parseMealBattleFromAtInput(pongdangFromAtInput, 0))}
+              >
+                이 시각부터 책정
+              </button>
+            </div>
           </div>
         </div>
 
