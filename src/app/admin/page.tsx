@@ -11896,17 +11896,24 @@ function AdminPageInner() {
           String(p.name || "").includes("퐁당"))
     );
 
-  const resetPongdangContributionsAll = useCallback(() => {
-    if (!window.confirm("퐁당퐁당 기여도(자동 집계 및 수동 보정)를 모두 0원으로 완전히 초기화하시겠습니까?")) return;
+  const resetPongdangContributionsAll = useCallback((options?: { skipConfirm?: boolean }) => {
+    if (!options?.skipConfirm && !window.confirm("퐁당퐁당 기여도(자동 집계 및 수동 보정)를 모두 0원으로 완전히 초기화하시겠습니까?")) return;
+    const now = Date.now();
     setState((prev: AppState) => {
-      const now = Date.now();
       const nextManual: Record<string, number> = {};
       for (const m of prev.members) {
         nextManual[m.id] = 0;
       }
-      const nextPresets = (prev.overlayPresets || []).map((p) =>
-        isPongdangPresetItem(p) ? { ...p, donationAggregateFromAt: String(now) } : p
+      const nextPresets = normalizeOverlayPresetLabels(
+        (prev.overlayPresets || []).map((p) =>
+          isPongdangPresetItem(p) ? { ...p, donationAggregateFromAt: String(now) } : p
+        )
       );
+      setPresets(nextPresets);
+      try {
+        window.localStorage.setItem(presetStorageKey, JSON.stringify(nextPresets));
+        notifyOverlayPresetsLocalUpdated();
+      } catch {}
       const next: AppState = {
         ...prev,
         pongdangResetAt: now,
@@ -11922,11 +11929,16 @@ function AdminPageInner() {
               historyLogs: [],
             }
           : prev.rouletteState,
+        updatedAt: now,
       };
       persistState(next, { omitDonationFields: true });
+      notifyBroadcastStateLocalUpdated(user?.id, now);
+      notifyAdminPreviewDonorsUpdated(overlayUserId, next.donors || [], now);
       return next;
     });
-  }, [persistState]);
+    setGlobalPreviewBump((n) => n + 1);
+    setPresetRev((r) => r + 1);
+  }, [persistState, user?.id, overlayUserId]);
 
   const resetAllPongdangManualContributions = resetPongdangContributionsAll;
 
@@ -23613,8 +23625,36 @@ function AdminPageInner() {
                                     type="button"
                                     className="px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-white/10 text-xs text-rose-300 hover:text-rose-200 transition-colors flex items-center gap-1"
                                     onClick={() => {
-                                      updatePreset(p.id, { donationAggregateFromAt: "" });
+                                      const isPongdang = isPongdangPresetItem(p);
+                                      const now = Date.now();
+                                      setState((prev: AppState) => {
+                                        const nextPresets = normalizeOverlayPresetLabels(
+                                          (prev.overlayPresets || []).map((item) =>
+                                            item.id === p.id
+                                              ? { ...item, donationAggregateFromAt: "" }
+                                              : (isPongdang && isPongdangPresetItem(item)
+                                                  ? { ...item, donationAggregateFromAt: "" }
+                                                  : item)
+                                          )
+                                        );
+                                        setPresets(nextPresets);
+                                        try {
+                                          window.localStorage.setItem(presetStorageKey, JSON.stringify(nextPresets));
+                                          notifyOverlayPresetsLocalUpdated();
+                                        } catch {}
+                                        const next: AppState = {
+                                          ...prev,
+                                          overlayPresets: nextPresets,
+                                          ...(isPongdang ? { pongdangResetAt: 0 } : {}),
+                                          updatedAt: now,
+                                        };
+                                        persistState(next, { omitDonationFields: true });
+                                        notifyBroadcastStateLocalUpdated(user?.id, now);
+                                        notifyAdminPreviewDonorsUpdated(overlayUserId, next.donors || [], now);
+                                        return next;
+                                      });
                                       setGlobalPreviewBump((n) => n + 1);
+                                      setPresetRev((r) => r + 1);
                                     }}
                                     title="시간 필터를 해제하고 정산 리셋 이후 전체 후원을 집계합니다"
                                   >
@@ -23632,8 +23672,36 @@ function AdminPageInner() {
                                       : "border-white/15 bg-neutral-900/80 text-neutral-300 hover:bg-neutral-800"
                                   }`}
                                   onClick={() => {
-                                    updatePreset(p.id, { donationAggregateFromAt: "" });
+                                    const isPongdang = isPongdangPresetItem(p);
+                                    const now = Date.now();
+                                    setState((prev: AppState) => {
+                                      const nextPresets = normalizeOverlayPresetLabels(
+                                        (prev.overlayPresets || []).map((item) =>
+                                          item.id === p.id
+                                            ? { ...item, donationAggregateFromAt: "" }
+                                            : (isPongdang && isPongdangPresetItem(item)
+                                                ? { ...item, donationAggregateFromAt: "" }
+                                                : item)
+                                        )
+                                      );
+                                      setPresets(nextPresets);
+                                      try {
+                                        window.localStorage.setItem(presetStorageKey, JSON.stringify(nextPresets));
+                                        notifyOverlayPresetsLocalUpdated();
+                                      } catch {}
+                                      const next: AppState = {
+                                        ...prev,
+                                        overlayPresets: nextPresets,
+                                        ...(isPongdang ? { pongdangResetAt: 0 } : {}),
+                                        updatedAt: now,
+                                      };
+                                      persistState(next, { omitDonationFields: true });
+                                      notifyBroadcastStateLocalUpdated(user?.id, now);
+                                      notifyAdminPreviewDonorsUpdated(overlayUserId, next.donors || [], now);
+                                      return next;
+                                    });
                                     setGlobalPreviewBump((n) => n + 1);
+                                    setPresetRev((r) => r + 1);
                                   }}
                                 >
                                   ✅ 전체 기간 (기본)
@@ -23642,8 +23710,36 @@ function AdminPageInner() {
                                   type="button"
                                   className="px-3 py-1.5 rounded-lg border border-sky-400 bg-sky-900/50 hover:bg-sky-800/60 text-sky-100 text-xs font-semibold shadow-sm hover:shadow-[0_0_10px_rgba(56,189,248,0.3)] transition-all flex items-center gap-1"
                                   onClick={() => {
-                                    updatePreset(p.id, { donationAggregateFromAt: String(Date.now()) });
+                                    const isPongdang = isPongdangPresetItem(p);
+                                    const now = Date.now();
+                                    setState((prev: AppState) => {
+                                      const nextPresets = normalizeOverlayPresetLabels(
+                                        (prev.overlayPresets || []).map((item) =>
+                                          item.id === p.id
+                                            ? { ...item, donationAggregateFromAt: String(now) }
+                                            : (isPongdang && isPongdangPresetItem(item)
+                                                ? { ...item, donationAggregateFromAt: String(now) }
+                                                : item)
+                                        )
+                                      );
+                                      setPresets(nextPresets);
+                                      try {
+                                        window.localStorage.setItem(presetStorageKey, JSON.stringify(nextPresets));
+                                        notifyOverlayPresetsLocalUpdated();
+                                      } catch {}
+                                      const next: AppState = {
+                                        ...prev,
+                                        overlayPresets: nextPresets,
+                                        ...(isPongdang ? { pongdangResetAt: now } : {}),
+                                        updatedAt: now,
+                                      };
+                                      persistState(next, { omitDonationFields: true });
+                                      notifyBroadcastStateLocalUpdated(user?.id, now);
+                                      notifyAdminPreviewDonorsUpdated(overlayUserId, next.donors || [], now);
+                                      return next;
+                                    });
                                     setGlobalPreviewBump((n) => n + 1);
+                                    setPresetRev((r) => r + 1);
                                   }}
                                   title="지금 이 순간 이후의 후원만 집계합니다"
                                 >
@@ -23667,11 +23763,60 @@ function AdminPageInner() {
                                     )
                                       return;
                                     const now = Date.now();
-                                    if (isPongdang) {
-                                      resetPongdangContributionsAll();
-                                    }
-                                    updatePreset(p.id, { donationAggregateFromAt: String(now) });
+                                    setState((prev: AppState) => {
+                                      const nextPresets = normalizeOverlayPresetLabels(
+                                        (prev.overlayPresets || []).map((item) =>
+                                          item.id === p.id
+                                            ? { ...item, donationAggregateFromAt: String(now) }
+                                            : (isPongdang && isPongdangPresetItem(item)
+                                                ? { ...item, donationAggregateFromAt: String(now) }
+                                                : item)
+                                        )
+                                      );
+                                      setPresets(nextPresets);
+                                      try {
+                                        window.localStorage.setItem(presetStorageKey, JSON.stringify(nextPresets));
+                                        notifyOverlayPresetsLocalUpdated();
+                                      } catch {}
+
+                                      const nextManual = isPongdang
+                                        ? Object.fromEntries((prev.members || []).map((m) => [m.id, 0]))
+                                        : (prev.pongdangManualContributions || {});
+
+                                      const next: AppState = {
+                                        ...prev,
+                                        overlayPresets: nextPresets,
+                                        ...(isPongdang
+                                          ? {
+                                              pongdangResetAt: now,
+                                              pongdangManualContributions: nextManual,
+                                              members: (prev.members || []).map((m: Member) => ({ ...m, contribution: 0 })),
+                                              rouletteState: prev.rouletteState
+                                                ? {
+                                                    ...prev.rouletteState,
+                                                    results: [],
+                                                    result: null,
+                                                    selectedSigs: [],
+                                                    historyLogs: [],
+                                                  }
+                                                : prev.rouletteState,
+                                            }
+                                          : {}),
+                                        updatedAt: now,
+                                      };
+                                      persistState(next, { omitDonationFields: true });
+                                      notifyBroadcastStateLocalUpdated(user?.id, now);
+                                      notifyAdminPreviewDonorsUpdated(overlayUserId, next.donors || [], now);
+                                      return next;
+                                    });
                                     setGlobalPreviewBump((n) => n + 1);
+                                    setPresetRev((r) => r + 1);
+                                    showAppToast(
+                                      isPongdang
+                                        ? "퐁당퐁당 기여도 및 오버레이가 0원으로 초기화되었습니다."
+                                        : "오버레이 표출이 0원으로 초기화되었습니다.",
+                                      { variant: "success" }
+                                    );
                                   }}
                                   title="기여도/표출을 0원으로 초기화하고 지금부터 새로 집계합니다"
                                 >
@@ -23686,16 +23831,37 @@ function AdminPageInner() {
                                       : "border-rose-500/40 bg-rose-950/40 text-rose-300 hover:bg-rose-900/50"
                                   }`}
                                   onClick={() => {
-                                    const isPongdang =
-                                      p.membersTheme === "excelPongdang" ||
-                                      p.theme === "excelPongdang" ||
-                                      Boolean(p.day777Calc) ||
-                                      String(p.name || "").includes("퐁당");
-                                    updatePreset(p.id, { donationAggregateFromAt: "off" });
-                                    if (isPongdang) {
-                                      turnOffPongdangCalculation();
-                                    }
+                                    const isPongdang = isPongdangPresetItem(p);
+                                    const now = Date.now();
+                                    setState((prev: AppState) => {
+                                      const nextPresets = normalizeOverlayPresetLabels(
+                                        (prev.overlayPresets || []).map((item) =>
+                                          item.id === p.id
+                                            ? { ...item, donationAggregateFromAt: "off" }
+                                            : (isPongdang && isPongdangPresetItem(item)
+                                                ? { ...item, donationAggregateFromAt: "off" }
+                                                : item)
+                                        )
+                                      );
+                                      setPresets(nextPresets);
+                                      try {
+                                        window.localStorage.setItem(presetStorageKey, JSON.stringify(nextPresets));
+                                        notifyOverlayPresetsLocalUpdated();
+                                      } catch {}
+                                      const next: AppState = {
+                                        ...prev,
+                                        overlayPresets: nextPresets,
+                                        ...(isPongdang ? { pongdangResetAt: -1 } : {}),
+                                        updatedAt: now,
+                                      };
+                                      persistState(next, { omitDonationFields: true });
+                                      notifyBroadcastStateLocalUpdated(user?.id, now);
+                                      notifyAdminPreviewDonorsUpdated(overlayUserId, next.donors || [], now);
+                                      return next;
+                                    });
                                     setGlobalPreviewBump((n) => n + 1);
+                                    setPresetRev((r) => r + 1);
+                                    showAppToast("후원 집계가 중단되었습니다 (책정 OFF).", { variant: "info" });
                                   }}
                                   title="후원 책정/집계를 완전히 끕니다 (0원 고정, 후원 미반영)"
                                 >
@@ -23716,29 +23882,68 @@ function AdminPageInner() {
                                     onChange={(e) => {
                                       const val = e.target.value;
                                       const isPongdang = isPongdangPresetItem(p);
+                                      const now = Date.now();
                                       if (!val) {
-                                        updatePreset(p.id, { donationAggregateFromAt: "" });
-                                        if (isPongdang) {
-                                          setState((prev: AppState) => {
-                                            const next = { ...prev, pongdangResetAt: 0 };
-                                            persistState(next, { omitDonationFields: true });
-                                            return next;
-                                          });
-                                        }
+                                        setState((prev: AppState) => {
+                                          const nextPresets = normalizeOverlayPresetLabels(
+                                            (prev.overlayPresets || []).map((item) =>
+                                              item.id === p.id
+                                                ? { ...item, donationAggregateFromAt: "" }
+                                                : (isPongdang && isPongdangPresetItem(item)
+                                                    ? { ...item, donationAggregateFromAt: "" }
+                                                    : item)
+                                            )
+                                          );
+                                          setPresets(nextPresets);
+                                          try {
+                                            window.localStorage.setItem(presetStorageKey, JSON.stringify(nextPresets));
+                                            notifyOverlayPresetsLocalUpdated();
+                                          } catch {}
+                                          const next: AppState = {
+                                            ...prev,
+                                            overlayPresets: nextPresets,
+                                            ...(isPongdang ? { pongdangResetAt: 0 } : {}),
+                                            updatedAt: now,
+                                          };
+                                          persistState(next, { omitDonationFields: true });
+                                          notifyBroadcastStateLocalUpdated(user?.id, now);
+                                          notifyAdminPreviewDonorsUpdated(overlayUserId, next.donors || [], now);
+                                          return next;
+                                        });
                                         setGlobalPreviewBump((n) => n + 1);
+                                        setPresetRev((r) => r + 1);
                                         return;
                                       }
                                       const ms = parseMealBattleFromAtInput(val, 0);
                                       if (ms > 0) {
-                                        updatePreset(p.id, { donationAggregateFromAt: String(ms) });
-                                        if (isPongdang) {
-                                          setState((prev: AppState) => {
-                                            const next = { ...prev, pongdangResetAt: ms };
-                                            persistState(next, { omitDonationFields: true });
-                                            return next;
-                                          });
-                                        }
+                                        setState((prev: AppState) => {
+                                          const nextPresets = normalizeOverlayPresetLabels(
+                                            (prev.overlayPresets || []).map((item) =>
+                                              item.id === p.id
+                                                ? { ...item, donationAggregateFromAt: String(ms) }
+                                                : (isPongdang && isPongdangPresetItem(item)
+                                                    ? { ...item, donationAggregateFromAt: String(ms) }
+                                                    : item)
+                                            )
+                                          );
+                                          setPresets(nextPresets);
+                                          try {
+                                            window.localStorage.setItem(presetStorageKey, JSON.stringify(nextPresets));
+                                            notifyOverlayPresetsLocalUpdated();
+                                          } catch {}
+                                          const next: AppState = {
+                                            ...prev,
+                                            overlayPresets: nextPresets,
+                                            ...(isPongdang ? { pongdangResetAt: ms } : {}),
+                                            updatedAt: now,
+                                          };
+                                          persistState(next, { omitDonationFields: true });
+                                          notifyBroadcastStateLocalUpdated(user?.id, now);
+                                          notifyAdminPreviewDonorsUpdated(overlayUserId, next.donors || [], now);
+                                          return next;
+                                        });
                                         setGlobalPreviewBump((n) => n + 1);
+                                        setPresetRev((r) => r + 1);
                                       }
                                     }}
                                   />
@@ -27213,7 +27418,14 @@ function AdminPageInner() {
                             ) : (
                               /** Admin 부하 감소 FIX #2: 접힌 preset은 iframe을 아예 unmount → N개 preset 동시 렌더 → 열린 1개만 mount → CPU/RAM 부하 1/N */
                               isOpen ? (
-                                <ClientPreviewWrapper preset={p} buildUrl={buildStablePreviewUrl} previewBump={globalPreviewBump} />
+                                <ClientPreviewWrapper
+                                  preset={p}
+                                  buildUrl={buildStablePreviewUrl}
+                                  previewBump={globalPreviewBump}
+                                  donors={state.donors}
+                                  updatedAt={state.updatedAt}
+                                  overlayUserId={overlayUserId}
+                                />
                               ) : (
                                 <div className="h-[520px] flex items-center justify-center rounded border border-dashed border-white/10 text-xs text-neutral-500 bg-neutral-900/30">
                                   👆 제목줄을 클릭해 펼치면 프리뷰 iframe 이 로드됩니다 (부하 절약).
@@ -28043,16 +28255,53 @@ function AdminPageInner() {
   );
 }
 
-function ClientPreviewWrapper({ preset, buildUrl, previewBump }: { preset: OverlayPreset; buildUrl: (p: OverlayPreset) => string; previewBump?: number }) {
+function ClientPreviewWrapper({
+  preset,
+  buildUrl,
+  previewBump,
+  donors,
+  updatedAt,
+  overlayUserId,
+}: {
+  preset: OverlayPreset;
+  buildUrl: (p: OverlayPreset) => string;
+  previewBump?: number;
+  donors?: Donor[];
+  updatedAt?: number;
+  overlayUserId?: string;
+}) {
   /** SSR·클라 첫 페인트는 빈 URL — window origin 차이로 React #418/#422 방지 */
   const [url, setUrl] = useState("");
   useEffect(() => {
     setUrl(buildUrl(preset) || "");
   }, [preset, buildUrl]);
-  return <VerticalPreview url={url} presetName={preset.name || preset.id} previewBump={previewBump ?? 0} />;
+  return (
+    <VerticalPreview
+      url={url}
+      presetName={preset.name || preset.id}
+      previewBump={previewBump ?? 0}
+      donors={donors}
+      updatedAt={updatedAt}
+      overlayUserId={overlayUserId}
+    />
+  );
 }
 
-function VerticalPreview({ url, presetName, previewBump = 0 }: { url: string; presetName?: string; previewBump?: number }) {
+function VerticalPreview({
+  url,
+  presetName,
+  previewBump = 0,
+  donors,
+  updatedAt,
+  overlayUserId,
+}: {
+  url: string;
+  presetName?: string;
+  previewBump?: number;
+  donors?: Donor[];
+  updatedAt?: number;
+  overlayUserId?: string;
+}) {
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
   const [showFrame, setShowFrame] = useState(true);
   const [showGuides, setShowGuides] = useState(true);
@@ -28072,11 +28321,12 @@ function VerticalPreview({ url, presetName, previewBump = 0 }: { url: string; pr
       if (!u.searchParams.get("host")) u.searchParams.set("host", "prism");
       if (broadcastMatch) u.searchParams.set("broadcastMatch", "1");
       else u.searchParams.delete("broadcastMatch");
+      if (previewBump > 0) u.searchParams.set("_bump", String(previewBump));
       return appendAdminPreviewEmbedToOverlayUrl(u.toString());
     } catch {
       return appendAdminPreviewEmbedToOverlayUrl(url);
     }
-  }, [url, broadcastMatch]);
+  }, [url, broadcastMatch, previewBump]);
   useEffect(() => {
     if (loadTimeoutRef.current) {
       clearTimeout(loadTimeoutRef.current);
@@ -28106,6 +28356,19 @@ function VerticalPreview({ url, presetName, previewBump = 0 }: { url: string; pr
     }
     setLoading(false);
     try {
+      const uid = overlayUserId || (previewUrl && typeof window !== "undefined" ? new URL(previewUrl, window.location.origin).searchParams.get("u") : "") || "";
+      if (uid) {
+        if (Array.isArray(donors)) {
+          notifyAdminPreviewDonorsUpdated(uid, donors, updatedAt);
+        } else {
+          const local = readLocalBroadcastState(uid);
+          if (local && Array.isArray(local.donors)) {
+            notifyAdminPreviewDonorsUpdated(uid, local.donors, local.updatedAt);
+          }
+        }
+      }
+    } catch {}
+    try {
       const doc = e?.target?.contentDocument;
       if (!doc) { setErr(null); return; }
       const title = (doc.title || "").toLowerCase();
@@ -28115,7 +28378,7 @@ function VerticalPreview({ url, presetName, previewBump = 0 }: { url: string; pr
     } catch {
       setErr(null);
     }
-  }, []);
+  }, [previewUrl]);
   const onError = useCallback(() => {
     if (loadTimeoutRef.current) {
       clearTimeout(loadTimeoutRef.current);

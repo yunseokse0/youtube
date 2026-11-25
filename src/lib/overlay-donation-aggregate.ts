@@ -296,11 +296,19 @@ export function collectDay777SigContributionByMember(
     donorRows,
     effectiveFromAtOrNull
   );
+  // 멤버 id 정규화 맵 (id -> id, name -> id)
+  const memberIdNormalizeMap = new Map<string, string>();
+  for (const m of state?.members || []) {
+    if (m.id) memberIdNormalizeMap.set(String(m.id).trim(), String(m.id).trim());
+    if (m.name) memberIdNormalizeMap.set(String(m.name).trim(), String(m.id).trim());
+  }
+
   const byMember = new Map<string, number>();
   for (const row of credits) {
     // 미지정 시그는 777,000원 수령자 또는 유일한 후원자에게만 귀속한다.
-    const memberId = String(row.memberId || fallbackMemberId).trim();
-    if (!memberId) continue;
+    const rawMid = String(row.memberId || fallbackMemberId).trim();
+    if (!rawMid) continue;
+    const memberId = memberIdNormalizeMap.get(rawMid) || rawMid;
     byMember.set(memberId, (byMember.get(memberId) || 0) + row.price);
   }
 
@@ -314,8 +322,9 @@ export function collectDay777SigContributionByMember(
     if (d.donationExcluded === true && !(includeZubzubBonus && d.isZubzubBonus)) continue;
     // 멤버명이 불명확하여 자동 임의 배정(1위 등)된 후원은 백오피스에서 사용자가 지정하기 전까지 퐁당퐁당 기여도에 미반영
     if (d.memberAutoAssigned === true) continue;
-    const mid = String(d.memberId || "").trim();
-    if (!mid) continue;
+    const rawMid = String(d.memberId || "").trim();
+    if (!rawMid) continue;
+    const mid = memberIdNormalizeMap.get(rawMid) || rawMid;
     const sigPriceSource =
       (d as { sigPrice?: number }).sigPrice ??
       (d.isZubzubBonus
@@ -327,6 +336,7 @@ export function collectDay777SigContributionByMember(
     const cp = Math.floor(Math.abs(parsedContributionPoints));
     const amt = Math.floor(Math.abs(parseOverlayContributionNumber(d.amount)));
     const isCredit = Boolean((d as { isSigCredit?: boolean }).isSigCredit || d.isZubzubBonus);
+    const hasSigInMessage = typeof d.message === "string" && (d.message.includes("시그") || d.message.includes("777"));
 
     const isMinus = Boolean(d.pongdangMinus || parsedSigPrice < 0 || parsedContributionPoints < 0);
     const mult = !ignoreMinus && isMinus ? -1 : 1;
@@ -336,6 +346,8 @@ export function collectDay777SigContributionByMember(
       byMember.set(mid, (byMember.get(mid) || 0) + mult * cp);
     } else if (cp > 0 && amt !== DAY777_SHOT_AMOUNT && cp !== amt) {
       // 랜덤 후원 금액(amt)과 전달된 기여도(cp)가 다르면 나온 시그 단가로 간주
+      byMember.set(mid, (byMember.get(mid) || 0) + mult * cp);
+    } else if (cp > 0 && hasSigInMessage) {
       byMember.set(mid, (byMember.get(mid) || 0) + mult * cp);
     } else if (isMinus && amt > 0) {
       // 일반 후원 건도 pongdangMinus가 true면 음수로 차감
@@ -541,11 +553,19 @@ export function applyOverlayDonationDisplayTotals(
       // sigById는 이미 contributionLogs를 자체 합산하므로 중복 합산 방지
       const totalManual = fromSig ? directManualVal : logVal + directManualVal;
       const currentContrib = Math.floor(parseOverlayContributionNumber(orig?.contribution));
+      const hasContributionSource =
+        (Array.isArray(state?.donors) && state.donors.length > 0) ||
+        (state?.contributionLogs || (state as { zubzubContributionLogs?: ContributionLog[] }).zubzubContributionLogs || []).some(
+          (log: ContributionLog) => log.isZubzubBonus || log.memberId === m.id
+        );
       let baseVal = 0;
       if (day777) {
-        // 퐁당퐁당 엑셀표(오버레이): 순수 자동 시그 기여도에 퐁당퐁당 수동 보정값(manualLogMap + pongdangManualContributions)만 합산!
-        // 메인 엑셀표 기여도(currentContrib)를 절대 상속받지 않음
-        baseVal = isManualMode ? autoVal + totalManual : autoVal;
+        // 퐁당퐁당 엑셀표(오버레이): 순수 자동 시그 기여도에 퐁당퐁당 수동 보정값(manualLogMap + pongdangManualContributions) 합산
+        const pongdangCalculated = isManualMode ? autoVal + totalManual : autoVal;
+        baseVal =
+          pongdangCalculated !== 0
+            ? pongdangCalculated
+            : (effectiveCutoff != null || hasContributionSource ? 0 : currentContrib);
       } else {
         if (autoVal !== 0) {
           baseVal = autoVal;
@@ -563,7 +583,7 @@ export function applyOverlayDonationDisplayTotals(
       const pongdangRaw = isManualMode ? pongdangAuto + totalManual : pongdangAuto;
       const pongdangVal = pongdangRaw !== 0
         ? pongdangRaw
-        : (currentContrib < 0 ? currentContrib : 0);
+        : (currentContrib < 0 ? currentContrib : (effectiveCutoff != null || hasContributionSource ? 0 : currentContrib));
       const rawTotal = isPongdangPopup || day777 ? pongdangVal : baseVal;
       return {
         ...m,

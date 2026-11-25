@@ -8,7 +8,12 @@ import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import { reassignDonorMemberInAppState } from "@/domain/contribution/apply-donation.usecases";
 import { persistDonationStateViaApi } from "@/lib/donation/persist-donation-client";
 import { writeSessionBroadcastState } from "@/lib/server-authoritative-broadcast-state";
-import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
+import {
+  notifyBroadcastStateLocalUpdated,
+  notifyOverlayPresetsLocalUpdated,
+  notifyAdminPreviewDonorsUpdated,
+} from "@/lib/broadcast-state-local-sync";
+import { overlayPresetsStorageKey } from "@/lib/state";
 import { isPongdangContributionLog, syncMemberTotalsFromDonors } from "@/domain/sync/sync-repair-1pass";
 import { parseOverlayContributionNumber } from "@/lib/overlay-donation-aggregate";
 import { collectPongdangPopupAutoContributionByMember } from "@/lib/pongdang-popup-contribution";
@@ -101,22 +106,46 @@ export default function AdminPongdangPopupPanel() {
   // 2. 수동 기여도 로그 합산 맵 (delta = 1 or -1) — 퐁당퐁당 전용 로그만 합산 및 리셋 시점 적용
   const manualLogMap = useMemo<Map<string, number>>(() => {
     const map = new Map<string, number>();
-    const cutoff = Math.max(0, Number(state?.pongdangResetAt || 0));
+    const rawReset = Number(state?.pongdangResetAt || 0);
+    if (rawReset === -1) return map;
+    let cutoff = Math.max(0, rawReset);
+    if (cutoff === 0 && Array.isArray(state?.overlayPresets)) {
+      for (const p of state.overlayPresets) {
+        const isPd =
+          p.membersTheme === "excelPongdang" ||
+          p.theme === "excelPongdang" ||
+          Boolean(p.day777Calc) ||
+          String(p.name || "").includes("퐁당");
+        if (isPd && p.donationAggregateFromAt) {
+          const fromAtN = Number(p.donationAggregateFromAt);
+          if (Number.isFinite(fromAtN) && fromAtN > 0) {
+            cutoff = fromAtN;
+            break;
+          }
+        }
+      }
+    }
+    const memberIdNormalizeMap = new Map<string, string>();
+    for (const m of members) {
+      if (m.id) memberIdNormalizeMap.set(String(m.id).trim(), String(m.id).trim());
+      if (m.name) memberIdNormalizeMap.set(String(m.name).trim(), String(m.id).trim());
+    }
     const logs = state?.contributionLogs || [];
     for (const l of logs) {
       if (l.isZubzubBonus) continue;
       // ⭐️ 메인 엑셀표 수동 기여도는 퐁당퐁당에 절대 반영하지 않음 (퐁당 전용 로그만)
       if (!isPongdangContributionLog(l)) continue;
       if (cutoff > 0 && Number(l.at || 0) < cutoff) continue;
-      const mid = String(l.memberId || "").trim();
-      if (!mid) continue;
+      const rawMid = String(l.memberId || "").trim();
+      if (!rawMid) continue;
+      const mid = memberIdNormalizeMap.get(rawMid) || rawMid;
       const rawAmount = parseOverlayContributionNumber(l.amount);
       const amt = Math.floor(Math.abs(rawAmount));
       const delta = l.delta === -1 || rawAmount < 0 ? -1 : 1;
       map.set(mid, (map.get(mid) || 0) + delta * amt);
     }
     return map;
-  }, [state?.contributionLogs, state?.pongdangResetAt]);
+  }, [state?.contributionLogs, state?.pongdangResetAt, state?.overlayPresets, members]);
 
   // 3. 멤버별 최종 퐁당퐁당 기여도 계산 (제외된 멤버는 기여도 관리에 미포함)
   const memberSummaries = useMemo(() => {
@@ -199,7 +228,25 @@ export default function AdminPongdangPopupPanel() {
     }
 
     // A. 자동 후원/시그에서 발생한 건
-    const cutoff = Math.max(0, Number(state.pongdangResetAt || 0));
+    const rawReset = Number(state.pongdangResetAt || 0);
+    let cutoff = Math.max(0, rawReset);
+    if (cutoff === 0 && Array.isArray(state.overlayPresets)) {
+      for (const p of state.overlayPresets) {
+        const isPd =
+          p.membersTheme === "excelPongdang" ||
+          p.theme === "excelPongdang" ||
+          Boolean(p.day777Calc) ||
+          String(p.name || "").includes("퐁당");
+        if (isPd && p.donationAggregateFromAt) {
+          const fromAtN = Number(p.donationAggregateFromAt);
+          if (Number.isFinite(fromAtN) && fromAtN > 0) {
+            cutoff = fromAtN;
+            break;
+          }
+        }
+      }
+    }
+    const isTurnedOff = rawReset === -1;
     const includeZubzubBonus = state.zubzubSettings?.applyContributionToPongdang !== false;
     const applyDoubleToPongdang = state.zubzubSettings?.applyDoubleContributionToPongdang !== false;
     const zubzubLogKeys = new Set(
@@ -207,7 +254,7 @@ export default function AdminPongdangPopupPanel() {
         .filter((log) => log.isZubzubBonus)
         .map((log) => log.zubzubQueueId || log.id)
     );
-    const donors = (state.donors || []).filter(
+    const donors = isTurnedOff ? [] : (state.donors || []).filter(
       (d) => !d.donationExcluded || (includeZubzubBonus && d.isZubzubBonus)
     );
     for (const d of donors) {
@@ -230,10 +277,12 @@ export default function AdminPongdangPopupPanel() {
       const cp = Math.floor(Math.abs(rawContributionPoints));
       const amt = Math.floor(Math.abs(parseOverlayContributionNumber(d.amount)));
       const isCredit = Boolean(d.isSigCredit || d.isZubzubBonus);
+      const hasSigInMessage = typeof d.message === "string" && (d.message.includes("시그") || d.message.includes("777"));
       let val = 0;
       if (sigPrice > 0) val = sigPrice;
       else if (isCredit && cp > 0) val = cp;
       else if (cp > 0 && amt !== 777000 && cp !== amt) val = cp;
+      else if (cp > 0 && hasSigInMessage) val = cp;
 
       if (val > 0) {
         list.push({
@@ -338,6 +387,15 @@ export default function AdminPongdangPopupPanel() {
       stateRef.current = stamped;
       writeSessionBroadcastState(stamped, scopedUserId);
       notifyBroadcastStateLocalUpdated(scopedUserId, stamped.updatedAt);
+      if (Array.isArray(stamped.overlayPresets)) {
+        try {
+          const pKey = overlayPresetsStorageKey(scopedUserId);
+          window.localStorage.setItem(pKey, JSON.stringify(stamped.overlayPresets));
+          window.localStorage.setItem("excel-broadcast-overlay-presets", JSON.stringify(stamped.overlayPresets));
+          notifyOverlayPresetsLocalUpdated();
+        } catch {}
+      }
+      notifyAdminPreviewDonorsUpdated(scopedUserId, stamped.donors || [], stamped.updatedAt);
       const result = await runExclusivePersist(() =>
         persistDonationStateViaApi(scopedUserId, stamped, "replace", {
           returnState: false,

@@ -27,17 +27,23 @@ function scoreRosterAgainstMatchCounts(
 }
 
 export function aggregateContributionByMember(
-  state: Pick<AppState, "contributionFormula">,
+  state: Pick<AppState, "contributionFormula"> & { members?: Member[] },
   dedupedDonors: Donor[]
 ): Map<string, { donorPoints: number; hasDonorSource: boolean }> {
   const out = new Map<string, { donorPoints: number; hasDonorSource: boolean }>();
+  const memberIdNormalizeMap = new Map<string, string>();
+  for (const m of (state as { members?: Member[] }).members || []) {
+    if (m.id) memberIdNormalizeMap.set(String(m.id).trim(), String(m.id).trim());
+    if (m.name) memberIdNormalizeMap.set(String(m.name).trim(), String(m.id).trim());
+  }
   const formula = normalizeContributionFormula(
     (state as { contributionFormula?: unknown }).contributionFormula
   );
   for (const donor of dedupedDonors) {
     if (isDonorExcludedFromDonationTotals(donor) && !donor.isZubzubBonus) continue;
-    const mid = String(donor.memberId || "").trim();
-    if (!mid) continue;
+    const rawMid = String(donor.memberId || "").trim();
+    if (!rawMid) continue;
+    const mid = memberIdNormalizeMap.get(rawMid) || rawMid;
     let bucket = out.get(mid);
     if (!bucket) {
       bucket = { donorPoints: 0, hasDonorSource: false };
@@ -96,18 +102,24 @@ export function isPongdangMinusContributionLog(log: ContributionLog | null | und
 
 export function aggregateContribLogsByMember(
   logs: ContributionLog[] | null | undefined,
-  opts?: { includePongdangMinus?: boolean; includePongdangLogs?: boolean }
+  opts?: { includePongdangMinus?: boolean; includePongdangLogs?: boolean; members?: Member[] }
 ): Map<string, { deltaSum: number; hasLogSource: boolean }> {
   const out = new Map<string, { deltaSum: number; hasLogSource: boolean }>();
   if (!logs || logs.length === 0) return out;
+  const memberIdNormalizeMap = new Map<string, string>();
+  for (const m of opts?.members || []) {
+    if (m.id) memberIdNormalizeMap.set(String(m.id).trim(), String(m.id).trim());
+    if (m.name) memberIdNormalizeMap.set(String(m.name).trim(), String(m.id).trim());
+  }
   const includePongdang = Boolean(opts?.includePongdangLogs);
   for (const log of logs) {
     // 퐁당퐁당 기여도 로그는 메인 엑셀표 기여도 집계에서 완전히 제외 (별도 항목)
     if (!includePongdang && isPongdangContributionLog(log)) {
       continue;
     }
-    const mid = String(log.memberId || "").trim();
-    if (!mid) continue;
+    const rawMid = String(log.memberId || "").trim();
+    if (!rawMid) continue;
+    const mid = memberIdNormalizeMap.get(rawMid) || rawMid;
     const amt = Math.max(0, Math.floor(Number(log.amount) || 0));
     if (amt <= 0) continue;
     let bucket = out.get(mid);
@@ -293,13 +305,18 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
   const source = migrateLegacyZubzubDonors(state);
   const deduped = dedupeDonorRows(source.donors || []);
   const totals = new Map<string, { account: number; toon: number }>();
+  const memberIdNormalizeMap = new Map<string, string>();
   for (const member of source.members || []) {
     totals.set(member.id, { account: 0, toon: 0 });
+    if (member.id) memberIdNormalizeMap.set(String(member.id).trim(), String(member.id).trim());
+    if (member.name) memberIdNormalizeMap.set(String(member.name).trim(), String(member.id).trim());
   }
   for (const donor of deduped) {
     if (isDonorExcludedFromDonationTotals(donor)) continue;
-    const memberId = String(donor.memberId || "").trim();
-    if (!memberId || !totals.has(memberId)) continue;
+    const rawMid = String(donor.memberId || "").trim();
+    if (!rawMid) continue;
+    const memberId = memberIdNormalizeMap.get(rawMid) || rawMid;
+    if (!totals.has(memberId)) continue;
     const bucket = totals.get(memberId)!;
     const amount = Math.max(0, Math.round(Number(donor.amount) || 0));
     if ((donor.target || "account") === "toon") bucket.toon += amount;
@@ -307,7 +324,8 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
   }
   const contribMap = aggregateContributionByMember(source, deduped);
   const logMap = aggregateContribLogsByMember(
-    source.contributionLogs || (source as { zubzubContributionLogs?: ContributionLog[] }).zubzubContributionLogs
+    source.contributionLogs || (source as { zubzubContributionLogs?: ContributionLog[] }).zubzubContributionLogs,
+    { members: source.members }
   );
   const positions = source.memberPositions || null;
   const members = (source.members || []).map((member) => {

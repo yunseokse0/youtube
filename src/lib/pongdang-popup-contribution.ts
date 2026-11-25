@@ -8,10 +8,37 @@ export function collectPongdangPopupAutoContributionByMember(
   const map = new Map<string, number>();
   if (!state) return map;
 
-  const cutoff = Math.max(0, Number(state.pongdangResetAt || 0));
-  if (Number(state.pongdangResetAt || 0) === -1) {
+  const rawReset = Number(state.pongdangResetAt || 0);
+  if (rawReset === -1) {
     return map;
   }
+
+  // pongdangResetAt이 명시 설정되지 않았을 때 퐁당 프리셋의 donationAggregateFromAt을 fallback으로 활용
+  let cutoff = Math.max(0, rawReset);
+  if (cutoff === 0 && Array.isArray(state.overlayPresets)) {
+    for (const p of state.overlayPresets) {
+      const isPd =
+        p.membersTheme === "excelPongdang" ||
+        p.theme === "excelPongdang" ||
+        Boolean(p.day777Calc) ||
+        String(p.name || "").includes("퐁당");
+      if (isPd && p.donationAggregateFromAt) {
+        const fromAtN = Number(p.donationAggregateFromAt);
+        if (Number.isFinite(fromAtN) && fromAtN > 0) {
+          cutoff = fromAtN;
+          break;
+        }
+      }
+    }
+  }
+
+  // 멤버 id 정규화 맵 (id -> id, name -> id)
+  const memberIdNormalizeMap = new Map<string, string>();
+  for (const m of state.members || []) {
+    if (m.id) memberIdNormalizeMap.set(String(m.id).trim(), String(m.id).trim());
+    if (m.name) memberIdNormalizeMap.set(String(m.name).trim(), String(m.id).trim());
+  }
+
   const includeZubzubBonus =
     state.zubzubSettings?.applyContributionToPongdang !== false;
   const applyDoubleToPongdang = state.zubzubSettings?.applyDoubleContributionToPongdang !== false;
@@ -38,8 +65,9 @@ export function collectPongdangPopupAutoContributionByMember(
     if (cutoff > 0 && Number(donor.at || 0) < cutoff) continue;
     if (donor.memberAutoAssigned === true) continue;
 
-    const memberId = String(donor.memberId || "").trim();
-    if (!memberId) continue;
+    const rawMid = String(donor.memberId || "").trim();
+    if (!rawMid) continue;
+    const memberId = memberIdNormalizeMap.get(rawMid) || rawMid;
 
     const rawSigPrice = parseOverlayContributionNumber(donor.sigPrice);
     const sigPrice = rawSigPrice || (
@@ -54,6 +82,7 @@ export function collectPongdangPopupAutoContributionByMember(
     const contributionPoints = parseOverlayContributionNumber(donor.contributionPoints);
     const amount = parseOverlayContributionNumber(donor.amount);
     const isCredit = Boolean(donor.isSigCredit || donor.isZubzubBonus);
+    const hasSigInMessage = typeof donor.message === "string" && (donor.message.includes("시그") || donor.message.includes("777"));
     let value = 0;
     if (sigPrice !== 0) value = Math.floor(Math.abs(sigPrice));
     else if (isCredit && contributionPoints !== 0) {
@@ -63,6 +92,8 @@ export function collectPongdangPopupAutoContributionByMember(
       Math.abs(amount) !== 777000 &&
       Math.abs(contributionPoints) !== Math.abs(amount)
     ) {
+      value = Math.floor(Math.abs(contributionPoints));
+    } else if (contributionPoints !== 0 && hasSigInMessage) {
       value = Math.floor(Math.abs(contributionPoints));
     }
 
@@ -78,8 +109,9 @@ export function collectPongdangPopupAutoContributionByMember(
   if (includeZubzubBonus) {
     for (const log of rawLogs) {
       if (!log.isZubzubBonus) continue;
-      const memberId = String(log.memberId || "").trim();
-      if (!memberId) continue;
+      const rawMid = String(log.memberId || "").trim();
+      if (!rawMid) continue;
+      const memberId = memberIdNormalizeMap.get(rawMid) || rawMid;
       if (cutoff > 0 && Number(log.at || 0) < cutoff) continue;
 
       const effectiveAmount =
