@@ -630,4 +630,133 @@ describe("줍줍 2배 기여도 및 퐁당퐁당 옵션 & 커스텀 열 순위 �
     expect(branchedMerged.contributionLogs).toHaveLength(1);
     expect(branchedMerged.contributionLogs?.[0].id).toBe("cl_1");
   });
+
+  it("21. applyOverlayDonationDisplayTotals는 메인 수동 기여도를 퐁당퐁당(day777/popup) 기여도에 절대 포함하지 않는다", async () => {
+    const { applyOverlayDonationDisplayTotals } = await import("@/lib/overlay-donation-aggregate");
+
+    const stateWithMainManual: any = {
+      members: [
+        { id: "m_surin", name: "수린", contribution: 100000 },
+        { id: "m_jeking", name: "제킹", contribution: 50000 },
+      ],
+      donors: [],
+      contributionLogs: [
+        // 메인 수동 기여도: 제킹 50,000원
+        {
+          id: "cl_main_123",
+          memberId: "m_jeking",
+          amount: 50000,
+          delta: 1,
+          note: "메인 수동 추가",
+          at: 1000,
+        },
+        // 퐁당퐁당 수동 기여도: 수린 30,000원
+        {
+          id: "cl_pd_456",
+          memberId: "m_surin",
+          amount: 30000,
+          delta: 1,
+          note: "퐁당 수동 추가",
+          at: 2000,
+          isPongdang: true,
+        },
+      ],
+      pongdangManualContributions: {},
+      pongdangManualMode: true,
+    };
+
+    // 1) 퐁당퐁당 엑셀표 오버레이 (day777Calc: true)
+    const overlayRes = applyOverlayDonationDisplayTotals(stateWithMainManual, { day777Calc: true });
+    const jekingOverlay = overlayRes.members.find((m) => m.id === "m_jeking");
+    const surinOverlay = overlayRes.members.find((m) => m.id === "m_surin");
+    expect(jekingOverlay?.contribution).toBe(0); // 메인 수동 기여도가 퐁당퐁당에 전혀 합산되지 않음!
+    expect(surinOverlay?.contribution).toBe(30000); // 퐁당퐁당 수동 기여도만 정상 반영!
+
+    // 2) 퐁당퐁당 팝업창 모드 (isPongdangPopup: true)
+    const popupRes = applyOverlayDonationDisplayTotals(stateWithMainManual, { isPongdangPopup: true });
+    const jekingPopup = popupRes.members.find((m) => m.id === "m_jeking");
+    const surinPopup = popupRes.members.find((m) => m.id === "m_surin");
+    expect(jekingPopup?.contribution).toBe(0);
+    expect(surinPopup?.contribution).toBe(30000);
+  });
+
+  it("22. 마지막 남은 수동 기여도를 삭제하여 contributionLogs가 빈 배열([])이 되어도 부활하지 않는다", async () => {
+    const { mergePartialState } = await import("@/shell/state/state-save-shared");
+    const { mergeDonationApplyBase } = await import("@/domain/merge/apply-6branches.all");
+
+    const manualLog: ContributionLog = {
+      id: "cl_pd_single",
+      memberId: "m_surin",
+      amount: 31000,
+      delta: -1,
+      note: "수동 기여도 차감",
+      at: 1000,
+      isPongdang: true,
+    };
+
+    const baseState: any = {
+      members: [{ id: "m_surin", name: "수린", contribution: -31000 }],
+      contributionLogs: [manualLog],
+    };
+
+    // 유저가 마지막 남은 1건을 삭제함 -> patch.contributionLogs = []
+    const patchState: any = {
+      contributionLogs: [],
+      deletedContributionLogIds: ["cl_pd_single"],
+    };
+
+    const merged = mergePartialState(baseState, patchState, "zakiexcel");
+    expect(merged.contributionLogs).toEqual([]); // 빈 배열 유지! 부활 없음!
+
+    const branchedMerged = mergeDonationApplyBase(
+      { ...baseState, contributionLogs: [], deletedContributionLogIds: ["cl_pd_single"] },
+      baseState
+    );
+    expect(branchedMerged.contributionLogs).toEqual([]); // 빈 배열 유지!
+  });
+
+  it("23. 수동 로그 삭제 시 deletedContributionLogIds가 제공되면 hint/base에서 수동 로그를 절대 부활시키지 않고 서버 줍줍 보너스만 보존한다", async () => {
+    const { mergeDonationApplyBase } = await import("@/domain/merge/apply-6branches.all");
+    const { mergePartialState } = await import("@/shell/state/state-save-shared");
+
+    const manualLog: ContributionLog = {
+      id: "cl_pd_manual",
+      memberId: "m_surin",
+      amount: 50000,
+      delta: 1,
+      note: "수동 로그",
+      at: 1000,
+      isPongdang: true,
+    };
+    const zubzubLog: ContributionLog = {
+      id: "zubzub_bonus_1",
+      memberId: "m_jaki",
+      amount: 52000,
+      delta: 1,
+      at: 2000,
+      isZubzubBonus: true,
+    };
+
+    const serverHint: any = {
+      members: [{ id: "m_surin", name: "수린" }],
+      contributionLogs: [manualLog, zubzubLog],
+    };
+
+    // 클라이언트가 manualLog를 삭제하고 서버 보너스는 아직 모르는 상태:
+    const clientFresh: any = {
+      members: [{ id: "m_surin", name: "수린" }],
+      contributionLogs: [], // 클라이언트가 수동 로그를 삭제함
+      deletedContributionLogIds: ["cl_pd_manual"],
+    };
+
+    // 1) mergeDonationApplyBase: 삭제된 수동 로그는 부활하지 않고, 오직 서버 Zubzub 보너스만 합산됨!
+    const branchedMerged = mergeDonationApplyBase(clientFresh, serverHint);
+    expect(branchedMerged.contributionLogs).toHaveLength(1);
+    expect(branchedMerged.contributionLogs?.[0].id).toBe("zubzub_bonus_1");
+
+    // 2) mergePartialState: 수동 로그 부활 차단, Zubzub 보너스만 보존
+    const partialMerged = mergePartialState(serverHint, clientFresh, "zakiexcel");
+    expect(partialMerged.contributionLogs).toHaveLength(1);
+    expect(partialMerged.contributionLogs?.[0].id).toBe("zubzub_bonus_1");
+  });
 });

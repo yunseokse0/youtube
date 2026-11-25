@@ -540,44 +540,29 @@ export function mergePartialState(
 
   if (patchSettlementReset || isDonationInitGoalResetPatch(patch)) {
     next.contributionLogs = Array.isArray(patch.contributionLogs) ? patch.contributionLogs : [];
+  } else if (Array.isArray(patch.contributionLogs)) {
+    const patchLogs = patch.contributionLogs.filter((l) => l && l.id && !deletedLogIds.has(String(l.id)));
+    const patchLogIds = new Set(patchLogs.map((l) => String(l.id)));
+    const patchQueueIds = new Set(patchLogs.map((l) => String(l.zubzubQueueId || "")).filter(Boolean));
+    const isAccidentalEmptyWipe = patchLogs.length === 0 && deletedLogIds.size === 0;
+    const baseLogsToPreserve = (base.contributionLogs || []).filter((l) => {
+      if (!l || !l.id) return false;
+      if (deletedLogIds.has(String(l.id))) return false;
+      if (patchLogIds.has(String(l.id))) return false;
+      if (l.zubzubQueueId && patchQueueIds.has(String(l.zubzubQueueId))) return false;
+      // 1) 서버 생성 줍줍 보너스는 클라이언트가 아직 못 봤을 수 있으므로 보존
+      if (l.isZubzubBonus) return true;
+      // 2) 빈 배열 패치인데 삭제 ID도 없는 경우(단순 autosave 누락): 수동 로그도 보존
+      if (isAccidentalEmptyWipe) return true;
+      // 3) 그 외의 경우 (클라이언트가 특정 로그를 뺐거나 삭제함): 보존하지 않음
+      return false;
+    });
+    next.contributionLogs = [...patchLogs, ...baseLogsToPreserve];
   } else {
-    const baseSpecialLogs = (base.contributionLogs || []).filter(
-      (l) =>
-        !deletedLogIds.has(String(l.id)) &&
-        (l.isZubzubBonus ||
-          Boolean((l as any).isPongdang) ||
-          String(l.id || "").startsWith("cl_") ||
-          String(l.id || "").startsWith("plog_") ||
-          (typeof l.note === "string" && l.note.includes("퐁당")))
+    // patch에 contributionLogs가 아예 없는 부분 패치 (테마, 타이머 등):
+    next.contributionLogs = (base.contributionLogs || []).filter(
+      (l) => l && l.id && !deletedLogIds.has(String(l.id))
     );
-    if (baseSpecialLogs.length > 0) {
-      const patchLogs = Array.isArray(patch.contributionLogs)
-        ? patch.contributionLogs.filter((l) => !deletedLogIds.has(String(l.id)))
-        : (base.contributionLogs || []).filter((l) => !deletedLogIds.has(String(l.id)));
-      const patchLogIds = new Set(patchLogs.map((l) => l.id));
-      const patchQueueIds = new Set(
-        patchLogs.map((l) => String(l.zubzubQueueId || "")).filter(Boolean)
-      );
-      const preservedLogs = baseSpecialLogs.filter((l) => {
-        if (deletedLogIds.has(String(l.id))) return false;
-        if (patchLogIds.has(l.id)) return false;
-        if (l.zubzubQueueId && patchQueueIds.has(l.zubzubQueueId)) return false;
-        // 클라이언트 패치에 다른 로그들이 존재하면(patchLogs.length > 0),
-        // 패치에서 빠진 특정 로그는 유저가 삭제한 것이므로 부활시키지 않음!
-        if (patchLogs.length > 0) return false;
-        // patchLogs가 완전히 빈 배열([])인 경우는 autosave 빈값 누락이므로 보존!
-        return true;
-      });
-      next.contributionLogs = [...patchLogs, ...preservedLogs];
-    } else if (!("contributionLogs" in patch)) {
-      next.contributionLogs = (base.contributionLogs || []).filter(
-        (l) => !deletedLogIds.has(String(l.id))
-      );
-    } else {
-      next.contributionLogs = Array.isArray(patch.contributionLogs)
-        ? patch.contributionLogs.filter((l) => !deletedLogIds.has(String(l.id)))
-        : [];
-    }
   }
   if (deletedLogIds.size > 0) {
     next.deletedContributionLogIds = Array.from(deletedLogIds);

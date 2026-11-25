@@ -20464,7 +20464,8 @@ function AdminPageInner() {
                                           contributionLogs: (prev.contributionLogs || []).filter((x) => x.id !== log.id),
                                           deletedContributionLogIds: Array.from(new Set([...(prev.deletedContributionLogIds || []), log.id])),
                                         };
-                                        persistState(next, { includeDonationFields: true });
+                                        stateRef.current = next;
+                                        persistState(next, { includeDonationFields: true, donorsReplace: true });
                                         return next;
                                       });
                                     }, { confirmText: "삭제", danger: true });

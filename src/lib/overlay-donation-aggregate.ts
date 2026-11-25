@@ -491,6 +491,9 @@ export function applyOverlayDonationDisplayTotals(
     [];
   for (const l of allLogs) {
     if (l.isZubzubBonus) continue;
+    // ⭐️ 퐁당퐁당 수동 기여도 로그는 퐁당퐁당 전용 로그(cl_pd_, plog_, isPongdang 등)만 합산!
+    // 메인 엑셀표 일반 수동 기여도는 퐁당퐁당에 절대 합산되지 않도록 분리
+    if (!isPongdangContributionLog(l)) continue;
     const mid = String(l.memberId || "").trim();
     if (!mid) continue;
     if (effectiveCutoff != null && effectiveCutoff > 0 && Number(l.at || 0) < effectiveCutoff) continue;
@@ -512,17 +515,11 @@ export function applyOverlayDonationDisplayTotals(
       const directManualVal = isManualMode ? parseOverlayContributionNumber(manualContribs[m.id]) : 0;
       const totalManual = logVal + directManualVal;
       const currentContrib = Math.floor(parseOverlayContributionNumber(orig?.contribution));
-      const hasContributionSource =
-        (Array.isArray(state?.donors) && state.donors.length > 0) ||
-        (state?.contributionLogs || state?.zubzubContributionLogs || []).some(
-          (log) => log.isZubzubBonus || log.memberId === m.id
-        );
       let baseVal = 0;
       if (day777) {
-        baseVal =
-          autoVal !== 0
-            ? autoVal
-            : (effectiveCutoff != null || hasContributionSource ? 0 : currentContrib);
+        // 퐁당퐁당 엑셀표(오버레이): 순수 자동 시그 기여도에 퐁당퐁당 수동 보정값(manualLogMap + pongdangManualContributions)만 합산!
+        // 메인 엑셀표 기여도(currentContrib)를 절대 상속받지 않음
+        baseVal = isManualMode ? autoVal + totalManual : autoVal;
       } else {
         if (autoVal !== 0) {
           baseVal = autoVal;
@@ -535,7 +532,7 @@ export function applyOverlayDonationDisplayTotals(
         }
       }
       const pongdangAuto = popupAutoById.get(m.id) ?? 0;
-      const rawTotal = isPongdangPopup
+      const rawTotal = isPongdangPopup || day777
         ? (isManualMode ? pongdangAuto + totalManual : pongdangAuto)
         : baseVal;
       return {

@@ -368,7 +368,8 @@ export default function AdminPongdangPopupPanel() {
         );
         const nextState: AppState = { ...state, contributionLogs: nextLogs };
         setState(nextState);
-        const ok = await persistAppState(nextState);
+        stateRef.current = nextState;
+        const ok = await persistDonorsReplace(nextState);
         if (ok) {
           showAppToast(
             row.isMinus
@@ -408,7 +409,8 @@ export default function AdminPongdangPopupPanel() {
       });
       const nextState: AppState = { ...state, contributionLogs: nextLogs };
       setState(nextState);
-      const ok = await persistAppState(nextState);
+      stateRef.current = nextState;
+      const ok = await persistDonorsReplace(nextState);
       if (ok) {
         showAppToast(
           row.isMinus
@@ -418,7 +420,7 @@ export default function AdminPongdangPopupPanel() {
         );
       }
     }
-  }, [state, persistDonorsReplace, persistAppState, setState]);
+  }, [state, persistDonorsReplace, setState]);
 
   // 작업 핸들러: 수동 로그 삭제
   const deleteManualLog = useCallback(async (logId: string) => {
@@ -433,11 +435,11 @@ export default function AdminPongdangPopupPanel() {
     };
     setState(nextState);
     stateRef.current = nextState;
-    const ok = await persistAppState(nextState);
+    const ok = await persistDonorsReplace(nextState);
     if (ok) {
       showAppToast("수동 기여도 내역을 삭제했습니다.", { variant: "info" });
     }
-  }, [state, setState, persistAppState, stateRef]);
+  }, [state, setState, persistDonorsReplace, stateRef]);
 
   // 작업 핸들러: 자동 후원 건 대상 멤버 변경/지정 (미지정 상태 해제 및 기여도 즉시 반영)
   const assignDonorMember = useCallback(async (donorId: string, memberId: string) => {
@@ -526,7 +528,8 @@ export default function AdminPongdangPopupPanel() {
     const nextLogs = [newLog, ...(state.contributionLogs || [])];
     const nextState: AppState = { ...state, contributionLogs: nextLogs };
     setState(nextState);
-    const ok = await persistAppState(nextState);
+    stateRef.current = nextState;
+    const ok = await persistDonorsReplace(nextState);
     if (ok) {
       showAppToast(
         `[${targetMember?.name || "멤버"}] ${newLogIsMinus ? "마이너스 기여도 (-" : "기여도 (+"}${formatAmount(amt)}원) 등록 완료!`,
@@ -536,7 +539,7 @@ export default function AdminPongdangPopupPanel() {
       setNewLogNote("");
       setNewLogDonorName("");
     }
-  }, [state, members, participatingMembers, newLogMemberId, newLogAmount, newLogIsMinus, newLogDonorName, newLogNote, setState, persistAppState]);
+  }, [state, members, participatingMembers, newLogMemberId, newLogAmount, newLogIsMinus, newLogDonorName, newLogNote, setState, persistDonorsReplace, stateRef]);
 
   // 작업 핸들러: 멤버별 직접 수동 보정 가감 (음수 가능)
   const adjustDirectManual = useCallback(async (memberId: string, deltaAmount: number) => {
@@ -549,8 +552,9 @@ export default function AdminPongdangPopupPanel() {
     };
     const nextState: AppState = { ...state, pongdangManualContributions: nextManual };
     setState(nextState);
-    await persistAppState(nextState);
-  }, [state, setState, persistAppState]);
+    stateRef.current = nextState;
+    await persistDonorsReplace(nextState);
+  }, [state, setState, persistDonorsReplace, stateRef]);
 
   // 작업 핸들러: 멤버별 직접 수동 보정값 설정 (음수 가능)
   const setDirectManual = useCallback(async (memberId: string, value: number) => {
@@ -561,8 +565,9 @@ export default function AdminPongdangPopupPanel() {
     };
     const nextState: AppState = { ...state, pongdangManualContributions: nextManual };
     setState(nextState);
-    await persistAppState(nextState);
-  }, [state, setState, persistAppState]);
+    stateRef.current = nextState;
+    await persistDonorsReplace(nextState);
+  }, [state, setState, persistDonorsReplace, stateRef]);
 
   // 작업 핸들러: 퐁당퐁당 수동 보정 모드 토글
   const toggleManualMode = useCallback(async () => {
@@ -570,6 +575,7 @@ export default function AdminPongdangPopupPanel() {
     const nextMode = state.pongdangManualMode === false;
     const nextState: AppState = { ...state, pongdangManualMode: nextMode };
     setState(nextState);
+    stateRef.current = nextState;
     const ok = await persistAppState(nextState);
     if (ok) {
       showAppToast(
@@ -577,12 +583,12 @@ export default function AdminPongdangPopupPanel() {
         { variant: "info" }
       );
     }
-  }, [state, setState, persistAppState]);
+  }, [state, setState, persistAppState, stateRef]);
 
   // 작업 핸들러: 0원 전체 초기화
   const resetAllPongdang = useCallback(async () => {
     if (!state) return;
-    if (!window.confirm("퐁당퐁당 기여도(자동 집계 및 수동 보정)를 0원으로 초기화하시겠습니까?")) return;
+    if (!window.confirm("퐁당퐁당 기여도(자동 집계 및 수동 보정)를 모두 0원으로 완전히 초기화하시겠습니까?")) return;
     const nextManual: Record<string, number> = {};
     for (const m of state.members || []) {
       nextManual[m.id] = 0;
@@ -600,11 +606,11 @@ export default function AdminPongdangPopupPanel() {
     };
     setState(nextState);
     stateRef.current = nextState;
-    const ok = await persistAppState(nextState);
+    const ok = await persistDonorsReplace(nextState);
     if (ok) {
       showAppToast("퐁당퐁당 기여도를 0원으로 초기화했습니다.", { variant: "success" });
     }
-  }, [state, setState, persistAppState, stateRef]);
+  }, [state, setState, persistDonorsReplace, stateRef]);
 
   return (
     <AdminPopupShell

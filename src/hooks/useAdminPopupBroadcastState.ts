@@ -209,8 +209,20 @@ export function useAdminPopupBroadcastState() {
             remote.deletedTerritoryLogIds
           ),
         });
+        const mergedDeletedContribIds = Array.from(
+          new Set([
+            ...(Array.isArray(local?.deletedContributionLogIds) ? local.deletedContributionLogIds : []),
+            ...(Array.isArray(remote.deletedContributionLogIds) ? remote.deletedContributionLogIds : []),
+          ])
+        );
+        const deletedContribSet = new Set(mergedDeletedContribIds);
+        const filteredContribLogs = (remote.contributionLogs || []).filter(
+          (l) => l && l.id && !deletedContribSet.has(String(l.id))
+        );
         const next = {
           ...remote,
+          contributionLogs: filteredContribLogs,
+          deletedContributionLogIds: mergedDeletedContribIds,
           highSocietySettings:
             localResetAt > remoteResetAt && local?.highSocietySettings
               ? local.highSocietySettings
@@ -343,9 +355,22 @@ export function useAdminPopupBroadcastState() {
                 ),
               })
             : next.territoryLogs;
+        const localDeletedContrib = Array.isArray(live?.deletedContributionLogIds)
+          ? live.deletedContributionLogIds
+          : [];
+        const nextDeletedContrib = Array.isArray(next.deletedContributionLogIds)
+          ? next.deletedContributionLogIds
+          : [];
+        const mergedDeletedContrib = Array.from(new Set([...localDeletedContrib, ...nextDeletedContrib]));
+        const deletedContribSet = new Set(mergedDeletedContrib);
+        const filteredContribLogs = (next.contributionLogs || []).filter(
+          (l) => l && l.id && !deletedContribSet.has(String(l.id))
+        );
         const stamped = {
           ...mergeBroadcastSessionPreservingDonations(existingSession, {
             ...next,
+            contributionLogs: filteredContribLogs,
+            deletedContributionLogIds: mergedDeletedContrib,
             territoryLogs: logsForSave,
             updatedAt: Date.now(),
           }),

@@ -185,12 +185,12 @@ export function mergeDonationApplyBase(
       : (hint.donorRankingsFullTheme ?? fresh.donorRankingsFullTheme);
 
   const freshLogs = Array.isArray(fresh.contributionLogs) ? fresh.contributionLogs : [];
-  const hintLogs = Array.isArray(hint.contributionLogs) ? hint.contributionLogs : [];
+  const hintLogs = Array.isArray(hint?.contributionLogs) ? hint!.contributionLogs : [];
   const deletedLogIds = new Set<string>([
     ...(Array.isArray(fresh.deletedContributionLogIds) ? fresh.deletedContributionLogIds : []),
-    ...(Array.isArray(hint.deletedContributionLogIds) ? hint.deletedContributionLogIds : []),
+    ...(Array.isArray(hint?.deletedContributionLogIds) ? hint!.deletedContributionLogIds : []),
   ]);
-  let mergedContributionLogs = fresh.contributionLogs ?? hint.contributionLogs;
+  let mergedContributionLogs: (typeof hintLogs);
   if (hintLogs.length > 0 || freshLogs.length > 0) {
     const logMap = new Map<string, (typeof hintLogs)[number]>();
     for (const l of hintLogs) {
@@ -204,6 +204,8 @@ export function mergeDonationApplyBase(
       }
     }
     mergedContributionLogs = Array.from(logMap.values());
+  } else {
+    mergedContributionLogs = [];
   }
 
   const merged: AppState = {
