@@ -530,6 +530,32 @@ export function mergePartialState(
   if (!("sigRolling" in patch)) next.sigRolling = base.sigRolling ?? normalizeSigRolling(null);
   if (!("sigRollingMeta" in patch)) next.sigRollingMeta = base.sigRollingMeta ?? {};
 
+  // ==================== ContributionLogs Merge Guard ====================
+  // Client autosave/patch must never wipe server-side Zubzub bonus contribution logs
+  // unless this is an explicit settlement reset.
+  if (patchSettlementReset || isDonationInitGoalResetPatch(patch)) {
+    next.contributionLogs = Array.isArray(patch.contributionLogs) ? patch.contributionLogs : [];
+  } else {
+    const baseZubzubLogs = (base.contributionLogs || []).filter((l) => l.isZubzubBonus);
+    if (baseZubzubLogs.length > 0) {
+      const patchLogs = Array.isArray(patch.contributionLogs)
+        ? patch.contributionLogs
+        : (base.contributionLogs || []);
+      const patchLogIds = new Set(patchLogs.map((l) => l.id));
+      const patchQueueIds = new Set(
+        patchLogs.map((l) => String(l.zubzubQueueId || "")).filter(Boolean)
+      );
+      const preservedZubzubLogs = baseZubzubLogs.filter((l) => {
+        if (patchLogIds.has(l.id)) return false;
+        if (l.zubzubQueueId && patchQueueIds.has(l.zubzubQueueId)) return false;
+        return true;
+      });
+      next.contributionLogs = [...patchLogs, ...preservedZubzubLogs];
+    } else if (!("contributionLogs" in patch)) {
+      next.contributionLogs = base.contributionLogs;
+    }
+  }
+
   const patchRsEarly =
     patch.rouletteState != null && typeof patch.rouletteState === "object"
       ? (patch.rouletteState as Partial<RouletteState>)

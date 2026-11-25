@@ -430,10 +430,14 @@ export function applyOverlayDonationDisplayTotals(
 
   const donorsForAmount =
     fromAt != null ? filterDonorsFromAggregateAt(state.donors, fromAt) : state.donors || [];
+  const rawLogs =
+    state.contributionLogs ||
+    (state as { zubzubContributionLogs?: ContributionLog[] }).zubzubContributionLogs ||
+    [];
   const logsForAmount =
     fromAt != null
-      ? filterContributionLogsFromAggregateAt(state.contributionLogs, fromAt)
-      : state.contributionLogs || [];
+      ? filterContributionLogsFromAggregateAt(rawLogs, fromAt)
+      : rawLogs;
 
   // 엑셀표(오버레이)에서는 퐁당퐁당 마이너스 로그 제외
   const filteredLogsForAmount = (logsForAmount || []).filter((l) => {

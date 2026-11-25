@@ -170,6 +170,7 @@ function overlayCoreFields(
     zubzubSettings: state.zubzubSettings,
     zubzubWaitingItems: state.zubzubWaitingItems || [],
     zubzubContributionLogs: overlayZubzubContributionLogs(state),
+    contributionLogs: overlayZubzubContributionLogs(state),
     pongdangResetAt: state.pongdangResetAt,
     pongdangManualMode: state.pongdangManualMode,
     pongdangManualContributions: state.pongdangManualContributions || {},

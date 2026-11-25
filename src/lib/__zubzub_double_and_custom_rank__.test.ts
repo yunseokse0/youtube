@@ -156,4 +156,77 @@ describe("줍줍 2배 기여도 및 퐁당퐁당 옵션 & 커스텀 열 순위 �
     const merged = mergeDonationApplyBase(fresh, hint, []);
     expect(merged.customCellMode).toBe("rank");
   });
+
+  it("8. wire overlay payload에 contributionLogs가 없고 zubzubContributionLogs만 있어도 syncMemberTotalsFromDonors에서 기여도가 정상 반영된다", () => {
+    const log: ContributionLog = {
+      id: "zubzub_bonus_q_1",
+      memberId: "m_jina",
+      amount: 104000,
+      baseSigPrice: 52000,
+      multiplier: 2,
+      delta: 1,
+      isZubzubBonus: true,
+      at: Date.now(),
+    };
+    const wireState: any = {
+      members,
+      donors: [],
+      // contributionLogs는 와이어에서 생략됨
+      zubzubContributionLogs: [log],
+    };
+    const synced = syncMemberTotalsFromDonors(wireState);
+    const jina = synced.members.find((m) => m.id === "m_jina");
+    expect(jina?.contribution).toBe(104000);
+  });
+
+  it("9. wire overlay payload에서 zubzubContributionLogs만 있어도 퐁당퐁당 popupAuto에 정상 합산된다", () => {
+    const log: ContributionLog = {
+      id: "zubzub_bonus_q_1",
+      memberId: "m_jina",
+      amount: 104000,
+      baseSigPrice: 52000,
+      multiplier: 2,
+      delta: 1,
+      isZubzubBonus: true,
+      at: Date.now(),
+    };
+    const wireState: any = {
+      members,
+      donors: [],
+      zubzubContributionLogs: [log],
+      zubzubSettings: {
+        enabled: true,
+        applyContributionToPongdang: true,
+        applyDoubleContributionToPongdang: true,
+      },
+    };
+    const popupMap = collectPongdangPopupAutoContributionByMember(wireState);
+    expect(popupMap.get("m_jina")).toBe(104000);
+  });
+
+  it("10. mergePartialState는 패치에 빈 contributionLogs가 들어와도 base의 줍줍 보너스 로그를 보존한다", async () => {
+    const { mergePartialState } = await import("@/shell/state/state-save-shared");
+    const log: ContributionLog = {
+      id: "zubzub_bonus_q_1",
+      memberId: "m_jina",
+      amount: 104000,
+      baseSigPrice: 52000,
+      multiplier: 2,
+      delta: 1,
+      isZubzubBonus: true,
+      at: Date.now(),
+    };
+    const baseState: any = {
+      members,
+      donors: [],
+      contributionLogs: [log],
+    };
+    // 관리자 브라우저가 autosave 하면서 빈 contributionLogs [] 를 보냈을 때
+    const patch: any = {
+      contributionLogs: [],
+    };
+    const merged = mergePartialState(baseState, patch, "zakiexcel");
+    expect(merged.contributionLogs).toHaveLength(1);
+    expect(merged.contributionLogs?.[0].id).toBe("zubzub_bonus_q_1");
+  });
 });

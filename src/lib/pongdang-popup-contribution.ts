@@ -12,8 +12,12 @@ export function collectPongdangPopupAutoContributionByMember(
   const includeZubzubBonus =
     state.zubzubSettings?.applyContributionToPongdang !== false;
   const applyDoubleToPongdang = state.zubzubSettings?.applyDoubleContributionToPongdang !== false;
+  const rawLogs =
+    state.contributionLogs ||
+    (state as { zubzubContributionLogs?: typeof state.contributionLogs }).zubzubContributionLogs ||
+    [];
   const zubzubLogKeys = new Set(
-    (state.contributionLogs || [])
+    rawLogs
       .filter((log) => log.isZubzubBonus)
       .map((log) => log.zubzubQueueId || log.id)
   );
@@ -69,7 +73,7 @@ export function collectPongdangPopupAutoContributionByMember(
   }
 
   if (includeZubzubBonus) {
-    for (const log of state.contributionLogs || []) {
+    for (const log of rawLogs) {
       if (!log.isZubzubBonus) continue;
       const memberId = String(log.memberId || "").trim();
       if (!memberId) continue;

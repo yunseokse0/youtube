@@ -162,7 +162,9 @@ function computeMemberTotalsAndScores(state: AppState): {
     }
   }
   const contribMap = aggregateContributionByMember(state, deduped);
-  const logMap = aggregateContribLogsByMember(state.contributionLogs);
+  const logMap = aggregateContribLogsByMember(
+    state.contributionLogs || (state as { zubzubContributionLogs?: ContributionLog[] }).zubzubContributionLogs
+  );
   return { deduped, totals, matchCounts, contribMap, logMap, countable };
 }
 
@@ -219,7 +221,11 @@ function migrateLegacyZubzubDonors(state: AppState): AppState {
   );
   if (legacy.length === 0) return state;
 
-  const logs = [...(state.contributionLogs || [])];
+  const logs = [
+    ...(state.contributionLogs ||
+      (state as { zubzubContributionLogs?: ContributionLog[] }).zubzubContributionLogs ||
+      []),
+  ];
   const knownIds = new Set(logs.map((log) => log.id));
   const knownQueueIds = new Set(
     logs.map((log) => String(log.zubzubQueueId || "")).filter(Boolean)
@@ -286,7 +292,9 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
     else bucket.account += amount;
   }
   const contribMap = aggregateContributionByMember(source, deduped);
-  const logMap = aggregateContribLogsByMember(source.contributionLogs);
+  const logMap = aggregateContribLogsByMember(
+    source.contributionLogs || (source as { zubzubContributionLogs?: ContributionLog[] }).zubzubContributionLogs
+  );
   const positions = source.memberPositions || null;
   const members = (source.members || []).map((member) => {
     const bucket = totals.get(member.id) || { account: 0, toon: 0 };
@@ -463,7 +471,9 @@ export function resolveMemberContributionTotal(
   if (!id) return 0;
   const deduped = dedupeDonorRows(state.donors || []);
   const contribMap = aggregateContributionByMember(state, deduped);
-  const logMap = aggregateContribLogsByMember(state.contributionLogs);
+  const logMap = aggregateContribLogsByMember(
+    state.contributionLogs || (state as { zubzubContributionLogs?: ContributionLog[] }).zubzubContributionLogs
+  );
   const donorB = contribMap.get(id);
   const logB = logMap.get(id);
   return Math.max(0, (donorB?.donorPoints || 0) + (logB?.deltaSum || 0));

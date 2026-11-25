@@ -2389,7 +2389,10 @@ function OverlayInner() {
   const membersRemote = useMemo(() => {
     if (!ready || !s) return ensureMembers([]);
     const syncMembersFromDonors = (donors: Donor[]) => {
-      const base = { ...(s as AppState), donors };
+      const logs = (s.contributionLogs ||
+        (s as { zubzubContributionLogs?: ContributionLog[] }).zubzubContributionLogs ||
+        []) as ContributionLog[];
+      const base = { ...(s as AppState), donors, contributionLogs: logs };
       return ensureMembers(
         syncAndRepairMemberTotals(base).members
       );
