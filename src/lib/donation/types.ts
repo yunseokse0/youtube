@@ -51,6 +51,8 @@ export interface DonationEvent {
   sigPrice?: number;
   /** 나온 시그 단가로 기여도를 적립하는 이벤트 플래그 */
   isSigCredit?: boolean;
+  /** 플랫폼(투네이션 등) 시그니처 전용 후원 플래그 */
+  isSignature?: boolean;
   /** toona ingest — 기여도 가중치(상태 formula 갱신·apply 계산용) */
   contributionFormula?: ContributionFormula;
   /** Fix⑲: DIN 3초 Aggregator bucket 압축 해제용 메타데이터 — DB donors에는 Bucket Per Row로 1건만 적재하되 Alert 개별 발송은 N회 */

@@ -5102,7 +5102,22 @@ function AdminPageInner() {
     for (const l of prev) {
       if (l?.id != null) prevIds.add(String(l.id));
     }
-    const freshOnlyFromNext = next.filter((l) => l?.id == null ? false : !prevIds.has(String(l.id)));
+    const deletedIds = new Set<string>(
+      Array.isArray(stateRef.current?.deletedContributionLogIds)
+        ? stateRef.current.deletedContributionLogIds
+        : []
+    );
+    // next에서 새로 가져올 로그:
+    // 1) prev에 이미 있는 로그는 제외 (prev 버전 유지)
+    // 2) 유저가 삭제한 로그(deletedIds)는 절대 부활 금지!
+    // 3) 오직 서버에서 새로 발생한 Zubzub 보너스 로그만 허용 (수동 로그 부활 방지)
+    const freshOnlyFromNext = next.filter((l) => {
+      if (!l || l.id == null) return false;
+      const id = String(l.id);
+      if (prevIds.has(id)) return false;
+      if (deletedIds.has(id)) return false;
+      return Boolean(l.isZubzubBonus);
+    });
     return freshOnlyFromNext.length === 0 ? prev : [...prev, ...freshOnlyFromNext];
   };
 
@@ -20417,6 +20432,7 @@ function AdminPageInner() {
                                           members,
                                           donors: nextDonors,
                                           contributionLogs: (prev.contributionLogs || []).filter((x) => x.id !== log.id),
+                                          deletedContributionLogIds: Array.from(new Set([...(prev.deletedContributionLogIds || []), log.id])),
                                         };
                                         /** markAuthoritativeDonationSave 게이트를 거쳐서 제외 플래그 보존 + persist 1회 */
                                         const preserved = markAuthoritativeDonationSave(
@@ -20446,6 +20462,7 @@ function AdminPageInner() {
                                         const next: AppState = {
                                           ...prev,
                                           contributionLogs: (prev.contributionLogs || []).filter((x) => x.id !== log.id),
+                                          deletedContributionLogIds: Array.from(new Set([...(prev.deletedContributionLogIds || []), log.id])),
                                         };
                                         persistState(next, { includeDonationFields: true });
                                         return next;

@@ -9,7 +9,7 @@ import { reassignDonorMemberInAppState } from "@/domain/contribution/apply-donat
 import { persistDonationStateViaApi } from "@/lib/donation/persist-donation-client";
 import { writeSessionBroadcastState } from "@/lib/server-authoritative-broadcast-state";
 import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
-import { syncMemberTotalsFromDonors } from "@/domain/sync/sync-repair-1pass";
+import { isPongdangContributionLog, syncMemberTotalsFromDonors } from "@/domain/sync/sync-repair-1pass";
 import { parseOverlayContributionNumber } from "@/lib/overlay-donation-aggregate";
 import { collectPongdangPopupAutoContributionByMember } from "@/lib/pongdang-popup-contribution";
 import type { AppState, ContributionLog, Member } from "@/types";
@@ -97,12 +97,16 @@ export default function AdminPongdangPopupPanel() {
     return collectPongdangPopupAutoContributionByMember(state);
   }, [state]);
 
-  // 2. 수동 기여도 로그 합산 맵 (delta = 1 or -1)
+  // 2. 수동 기여도 로그 합산 맵 (delta = 1 or -1) — 퐁당퐁당 전용 로그만 합산 및 리셋 시점 적용
   const manualLogMap = useMemo<Map<string, number>>(() => {
     const map = new Map<string, number>();
+    const cutoff = Math.max(0, Number(state?.pongdangResetAt || 0));
     const logs = state?.contributionLogs || [];
     for (const l of logs) {
       if (l.isZubzubBonus) continue;
+      // ⭐️ 메인 엑셀표 수동 기여도는 퐁당퐁당에 절대 반영하지 않음 (퐁당 전용 로그만)
+      if (!isPongdangContributionLog(l)) continue;
+      if (cutoff > 0 && Number(l.at || 0) < cutoff) continue;
       const mid = String(l.memberId || "").trim();
       if (!mid) continue;
       const rawAmount = parseOverlayContributionNumber(l.amount);
@@ -111,7 +115,7 @@ export default function AdminPongdangPopupPanel() {
       map.set(mid, (map.get(mid) || 0) + delta * amt);
     }
     return map;
-  }, [state?.contributionLogs]);
+  }, [state?.contributionLogs, state?.pongdangResetAt]);
 
   // 3. 멤버별 최종 퐁당퐁당 기여도 계산 (제외된 멤버는 기여도 관리에 미포함)
   const memberSummaries = useMemo(() => {
@@ -277,6 +281,9 @@ export default function AdminPongdangPopupPanel() {
         });
         continue;
       }
+      // ⭐️ 메인 엑셀표 수동 기여도 로그는 퐁당퐁당 내역에 표시하지 않음 (퐁당 전용 로그만)
+      if (!isPongdangContributionLog(l)) continue;
+      if (cutoff > 0 && Number(l.at || 0) < cutoff) continue;
       const mid = String(l.memberId || "").trim();
       if (mid && excludedMemberIdsSet.has(mid)) continue;
       const rawAmount = parseOverlayContributionNumber(l.amount);
@@ -418,13 +425,19 @@ export default function AdminPongdangPopupPanel() {
     if (!state) return;
     if (!window.confirm("이 수동 기여도 내역을 완전히 삭제하시겠습니까?")) return;
     const nextLogs = (state.contributionLogs || []).filter((l) => l.id !== logId);
-    const nextState: AppState = { ...state, contributionLogs: nextLogs };
+    const nextDeletedIds = Array.from(new Set([...(state.deletedContributionLogIds || []), logId]));
+    const nextState: AppState = {
+      ...state,
+      contributionLogs: nextLogs,
+      deletedContributionLogIds: nextDeletedIds,
+    };
     setState(nextState);
+    stateRef.current = nextState;
     const ok = await persistAppState(nextState);
     if (ok) {
       showAppToast("수동 기여도 내역을 삭제했습니다.", { variant: "info" });
     }
-  }, [state, setState, persistAppState]);
+  }, [state, setState, persistAppState, stateRef]);
 
   // 작업 핸들러: 자동 후원 건 대상 멤버 변경/지정 (미지정 상태 해제 및 기여도 즉시 반영)
   const assignDonorMember = useCallback(async (donorId: string, memberId: string) => {
@@ -574,17 +587,24 @@ export default function AdminPongdangPopupPanel() {
     for (const m of state.members || []) {
       nextManual[m.id] = 0;
     }
+    const pongdangLogs = (state.contributionLogs || []).filter((l) => isPongdangContributionLog(l));
+    const pongdangLogIds = pongdangLogs.map((l) => l.id);
+    const nextLogs = (state.contributionLogs || []).filter((l) => !isPongdangContributionLog(l));
+    const nextDeletedIds = Array.from(new Set([...(state.deletedContributionLogIds || []), ...pongdangLogIds]));
     const nextState: AppState = {
       ...state,
       pongdangResetAt: Date.now(),
       pongdangManualContributions: nextManual,
+      contributionLogs: nextLogs,
+      deletedContributionLogIds: nextDeletedIds,
     };
     setState(nextState);
+    stateRef.current = nextState;
     const ok = await persistAppState(nextState);
     if (ok) {
       showAppToast("퐁당퐁당 기여도를 0원으로 초기화했습니다.", { variant: "success" });
     }
-  }, [state, setState, persistAppState]);
+  }, [state, setState, persistAppState, stateRef]);
 
   return (
     <AdminPopupShell

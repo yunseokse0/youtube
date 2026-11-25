@@ -425,4 +425,209 @@ describe("줍줍 2배 기여도 및 퐁당퐁당 옵션 & 커스텀 열 순위 �
     // totalManual = logVal (-31,000) + directManualVal (-31,000) = -62,000
     expect(pongdangSurin?.contribution).toBe(-62000);
   });
+
+  it("17. 단순 텍스트 후원(멤버명 또는 일반 메시지)은 줍줍 대상에서 제외되어 대기열 등록/획득이 되지 않는다", async () => {
+    const { isEligibleSigDonation, processZubzubDonationHook } = await import("@/lib/zubzub/zubzub-engine");
+    const { resetInMemoryZubZubQueueForTests, getInMemoryZubZubQueueForTests } = await import("@/lib/zubzub/zubzub-repo");
+    resetInMemoryZubZubQueueForTests();
+
+    const testState: any = {
+      members: [
+        { id: "m_jaki", name: "자키", contribution: 0 },
+        { id: "m_ina", name: "이나", contribution: 0 },
+      ],
+      memberPositions: { m_jaki: "대표", m_ina: "대리" },
+      sigInventory: [
+        { id: "sig_alive", name: "ALIVE", price: 52000 },
+      ],
+      zubzubSettings: {
+        enabled: true,
+        minSigPrice: 50000,
+        representativeMemberId: "m_jaki",
+      },
+      donors: [],
+    };
+
+    // 1) 대표에게 52,000원 후원 유입 - 메시지가 단순 텍스트 '자키' 또는 '대표자키'인 경우
+    const textEventRep = {
+      id: "evt_rep_text",
+      amount: 52000,
+      memberId: "m_jaki",
+      message: "자키",
+      matchedSigName: "ALIVE", // enrichDonationEventWithSigMatch에서 금액으로 자동 매칭된 경우
+      isAutoMatched: true,
+    } as any;
+
+    const repSigCheck = isEligibleSigDonation(textEventRep, testState, 50000);
+    expect(repSigCheck.isSig).toBe(false);
+
+    const repHookRes = await processZubzubDonationHook("zakiexcel", textEventRep, testState);
+    expect(repHookRes.action).toBe("skipped");
+    expect(getInMemoryZubZubQueueForTests("zakiexcel")).toHaveLength(0); // 큐에 등록되지 않음!
+
+    // 2) 멤버에게 52,000원 후원 유입 - 메시지가 단순 텍스트 '이나'인 경우
+    const textEventIna = {
+      id: "evt_ina_text",
+      amount: 52000,
+      memberId: "m_ina",
+      message: "이나",
+      matchedSigName: "ALIVE",
+      isAutoMatched: true,
+    } as any;
+
+    const inaSigCheck = isEligibleSigDonation(textEventIna, testState, 50000);
+    expect(inaSigCheck.isSig).toBe(false);
+
+    const inaHookRes = await processZubzubDonationHook("zakiexcel", textEventIna, testState);
+    expect(inaHookRes.action).toBe("skipped");
+  });
+
+  it("18. 메시지에 실제 시그명이 포함된 후원 또는 룰렛 시그 당첨은 줍줍으로 정상 처리된다", async () => {
+    const { isEligibleSigDonation, processZubzubDonationHook } = await import("@/lib/zubzub/zubzub-engine");
+    const { resetInMemoryZubZubQueueForTests, getInMemoryZubZubQueueForTests } = await import("@/lib/zubzub/zubzub-repo");
+    resetInMemoryZubZubQueueForTests();
+
+    const testState: any = {
+      members: [
+        { id: "m_jaki", name: "자키", contribution: 0 },
+        { id: "m_ina", name: "이나", contribution: 0 },
+      ],
+      memberPositions: { m_jaki: "대표", m_ina: "대리" },
+      sigInventory: [
+        { id: "sig_alive", name: "ALIVE", price: 52000 },
+      ],
+      zubzubSettings: {
+        enabled: true,
+        minSigPrice: 50000,
+        representativeMemberId: "m_jaki",
+        doubleContribution: true,
+      },
+      donors: [],
+    };
+
+    // 1) 대표에게 메시지에 시그명이 들어간 후원 발생 -> 줍줍 큐 적재
+    const realSigEventRep = {
+      id: "evt_rep_sig",
+      amount: 52000,
+      memberId: "m_jaki",
+      message: "자키 대표님 ALIVE",
+      matchedSigName: "ALIVE",
+    } as any;
+
+    const repSigCheck = isEligibleSigDonation(realSigEventRep, testState, 50000);
+    expect(repSigCheck.isSig).toBe(true);
+    expect(repSigCheck.sigName).toBe("ALIVE");
+
+    const repHookRes = await processZubzubDonationHook("zakiexcel", realSigEventRep, testState);
+    expect(repHookRes.action).toBe("enqueued_waiting");
+    expect(getInMemoryZubZubQueueForTests("zakiexcel")).toHaveLength(1);
+
+    // 2) 일반 멤버에게 메시지에 시그명이 들어간 후원 발생 -> 줍줍 획득 (CLAIMED)
+    const realSigEventIna = {
+      id: "evt_ina_sig",
+      amount: 52000,
+      memberId: "m_ina",
+      message: "이나 ALIVE 부탁드려요",
+      matchedSigName: "ALIVE",
+    } as any;
+
+    const inaSigCheck = isEligibleSigDonation(realSigEventIna, testState, 50000);
+    expect(inaSigCheck.isSig).toBe(true);
+
+    const inaHookRes = await processZubzubDonationHook("zakiexcel", realSigEventIna, testState);
+    expect(inaHookRes.action).toBe("claimed");
+    if (inaHookRes.action === "claimed") {
+      expect(inaHookRes.bonusDonor.contributionPoints).toBe(104000); // 52000 * 2 = 104,000점 (2배 보너스!)
+      expect(inaHookRes.contributionLog.amount).toBe(104000);
+    }
+  });
+
+  it("19. 메인 수동 기여도 추가는 퐁당퐁당 기여도에 절대 합산되지 않고 완전히 분리된다", async () => {
+    const { collectDay777SigContributionByMember } = await import("@/lib/overlay-donation-aggregate");
+    const { syncAndRepairMemberTotals } = await import("@/domain/sync/sync-repair-1pass");
+
+    // 메인 수동 기여도 로그 (+50,000원 추가)
+    const mainManualLog: ContributionLog = {
+      id: "cl_main_1795590003000",
+      memberId: "m3",
+      amount: 50000,
+      delta: 1,
+      note: "수동 추가",
+      at: Date.now(),
+    };
+
+    const testState: any = {
+      members: [
+        { id: "m3", name: "제킹", contribution: 0 },
+      ],
+      memberPositions: { m3: "실장" },
+      donors: [],
+      contributionLogs: [mainManualLog],
+    };
+
+    // 1) 메인 엑셀표 수동 기여도는 메인 표에 정상 반영 (+50,000원)
+    const repaired = syncAndRepairMemberTotals(testState);
+    const jeking = repaired.members.find((m: any) => m.id === "m3");
+    expect(jeking?.contribution).toBe(50000);
+
+    // 2) 그러나 퐁당퐁당(777데이) 기여도에는 일절 합산되지 않음 (0점 또는 undefined)
+    const pongdangMap = collectDay777SigContributionByMember(testState);
+    expect(pongdangMap.get("m3")).toBeUndefined();
+  });
+
+  it("20. 기여도 로그 삭제 시 deletedContributionLogIds에 기록되어 merge/autosave 시에도 다시 부활하지 않는다", async () => {
+    const { mergePartialState } = await import("@/shell/state/state-save-shared");
+    const { mergeDonationApplyBase } = await import("@/domain/merge/apply-6branches.all");
+
+    const manualLog1: ContributionLog = {
+      id: "cl_1",
+      memberId: "m_jaki",
+      amount: 50000,
+      delta: 1,
+      note: "수동 1",
+      at: 1000,
+    };
+    const manualLog2: ContributionLog = {
+      id: "cl_2",
+      memberId: "m_ina",
+      amount: 30000,
+      delta: 1,
+      note: "수동 2",
+      at: 2000,
+    };
+
+    const baseState: any = {
+      members: [
+        { id: "m_jaki", name: "자키", contribution: 50000 },
+        { id: "m_ina", name: "이나", contribution: 30000 },
+      ],
+      contributionLogs: [manualLog1, manualLog2],
+    };
+
+    // 1) 유저가 cl_2를 삭제함 -> contributionLogs에서 cl_2 제거, deletedContributionLogIds에 cl_2 추가
+    const patchState: any = {
+      contributionLogs: [manualLog1],
+      deletedContributionLogIds: ["cl_2"],
+    };
+
+    const merged = mergePartialState(baseState, patchState, "zakiexcel");
+    // cl_2가 부활하지 않고 cl_1만 유지됨!
+    expect(merged.contributionLogs).toHaveLength(1);
+    expect(merged.contributionLogs?.[0].id).toBe("cl_1");
+    expect(merged.deletedContributionLogIds).toContain("cl_2");
+
+    // 2) apply-6branches mergeDonationApplyBase 에서도 부활하지 않음
+    const baseWithDeleted: any = {
+      ...baseState,
+      contributionLogs: [manualLog1],
+      deletedContributionLogIds: ["cl_2"],
+    };
+    const incomingHint: any = {
+      ...baseState,
+      contributionLogs: [manualLog1, manualLog2], // 예전 서버 스냅샷
+    };
+    const branchedMerged = mergeDonationApplyBase(baseWithDeleted, incomingHint);
+    expect(branchedMerged.contributionLogs).toHaveLength(1);
+    expect(branchedMerged.contributionLogs?.[0].id).toBe("cl_1");
+  });
 });

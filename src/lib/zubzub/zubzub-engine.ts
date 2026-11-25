@@ -79,7 +79,7 @@ export function findRepresentativeMember(state: AppState): Member | undefined {
   return state.members?.[0];
 }
 
-/** 시그니처 후원 여부 및 정보 판별 */
+/** 시그니처 후원 여부 및 정보 판별 (줍줍 전용: 단순 텍스트 후원은 줍줍 출력 차단, 시그가 있는 것만 허용) */
 export function isEligibleSigDonation(
   event: DonationEvent,
   state: AppState,
@@ -90,9 +90,130 @@ export function isEligibleSigDonation(
     return { isSig: false, sigName: "" };
   }
 
-  // 1. 이미 매칭된 시그명이 있는 경우 (player-donation-alert / enrichDonationEventWithSigMatch)
+  const inv = state.sigInventory || [];
+  const msg = String(event.message || "").toLowerCase().replace(/\s+/g, "");
+
+  // 1. isSigCredit: 룰렛/크레딧 등 시스템에서 이미 확정된 시그니처 당첨 건
+  if ((event as { isSigCredit?: boolean }).isSigCredit) {
+    const sigPrice = Math.max(0, Math.round(Number(event.sigPrice) || 0));
+    const targetPrice = sigPrice > 0 ? sigPrice : amount;
+    const candidates = inv.filter((item) => Math.round(Number(item.price) || 0) === targetPrice);
+    const textMatches = candidates.filter((sig) => {
+      const name = String(sig.name || "").toLowerCase().replace(/\s+/g, "");
+      return name && msg.includes(name);
+    });
+    const sig =
+      textMatches.length === 1
+        ? textMatches[0]
+        : candidates.length === 1
+          ? candidates[0]
+          : undefined;
+    if (sig) {
+      return { isSig: true, sigName: sig.name, sigImageUrl: sig.imageUrl || undefined };
+    }
+    const matchedSigName = String(event.matchedSigName || "").trim();
+    if (matchedSigName) {
+      return {
+        isSig: true,
+        sigName: matchedSigName,
+        sigImageUrl: event.matchedSigImageUrl || undefined,
+      };
+    }
+    return { isSig: false, sigName: "" };
+  }
+
+  // 2. 명시적 시그니처 플랫폼 페이로드 (투네이션 시그니처 탭 후원 등)
+  if ((event as { isSignature?: boolean }).isSignature) {
+    const matchedSigName = String(event.matchedSigName || "").trim();
+    if (matchedSigName) {
+      return {
+        isSig: true,
+        sigName: matchedSigName,
+        sigImageUrl: event.matchedSigImageUrl || undefined,
+      };
+    }
+    const priceMatches = inv.filter((sig) => Math.round(Number(sig.price) || 0) === amount);
+    if (priceMatches.length === 1) {
+      return {
+        isSig: true,
+        sigName: priceMatches[0]!.name,
+        sigImageUrl: priceMatches[0]!.imageUrl || undefined,
+      };
+    }
+  }
+
+  // 3. 메시지에 실제 시그명이 포함되어 있는 경우 (시그 후원)
+  if (inv.length > 0 && msg) {
+    const textMatches = inv.filter((sig) => {
+      const rawName = String(sig.name || "");
+      const normName = rawName.toLowerCase().replace(/\s+/g, "");
+      if (normName && msg.includes(normName)) return true;
+      const stripped = normName
+        .replace(/시그(니처)?/g, "")
+        .replace(/\([^)]*\)/g, "")
+        .replace(/\[[^\]]*\]/g, "")
+        .trim();
+      if (stripped.length >= 2 && msg.includes(stripped)) return true;
+      return false;
+    });
+
+    if (textMatches.length > 0) {
+      // 금액과 일치하는 텍스트 매칭 시그 우선
+      const priceAndTextMatches = textMatches.filter(
+        (sig) => Math.round(Number(sig.price) || 0) === amount
+      );
+      if (priceAndTextMatches.length === 1) {
+        return {
+          isSig: true,
+          sigName: priceAndTextMatches[0]!.name,
+          sigImageUrl: priceAndTextMatches[0]!.imageUrl || undefined,
+        };
+      }
+      if (textMatches.length === 1) {
+        return {
+          isSig: true,
+          sigName: textMatches[0]!.name,
+          sigImageUrl: textMatches[0]!.imageUrl || undefined,
+        };
+      }
+    }
+  }
+
+  // 4. matchedSigName이 있는 경우:
   const matchedSigName = String(event.matchedSigName || "").trim();
   if (matchedSigName) {
+    const normMatched = matchedSigName.toLowerCase().replace(/\s+/g, "");
+    if (msg) {
+      // 메시지가 존재하는 경우: 메시지에 실제 matchedSigName이 포함되어 있어야 시그로 인정!
+      if (normMatched && msg.includes(normMatched)) {
+        return {
+          isSig: true,
+          sigName: matchedSigName,
+          sigImageUrl: event.matchedSigImageUrl || undefined,
+        };
+      }
+      const stripped = normMatched
+        .replace(/시그(니처)?/g, "")
+        .replace(/\([^)]*\)/g, "")
+        .replace(/\[[^\]]*\]/g, "")
+        .trim();
+      if (stripped.length >= 2 && msg.includes(stripped)) {
+        return {
+          isSig: true,
+          sigName: matchedSigName,
+          sigImageUrl: event.matchedSigImageUrl || undefined,
+        };
+      }
+      // 메시지가 존재하지만 시그명이 포함되어 있지 않음 (예: "자키", "이나", "화이팅" 등)
+      // -> 금액만으로 자동 추정된 단순 텍스트 후원이므로 줍줍 대상에서 제외!
+      return { isSig: false, sigName: "" };
+    }
+    // 메시지가 아예 없는 경우:
+    // 금액만으로 자동 추정(isAutoMatched)된 무메시지 후원이면 텍스트 후원이므로 제외!
+    if ((event as { isAutoMatched?: boolean }).isAutoMatched) {
+      return { isSig: false, sigName: "" };
+    }
+    // 테스트 등에서 mock 이벤트로 직접 matchedSigName을 부여한 경우 허용
     return {
       isSig: true,
       sigName: matchedSigName,
@@ -100,54 +221,7 @@ export function isEligibleSigDonation(
     };
   }
 
-  // 2. 시그 인벤토리와 금액·메시지 대조. 중복 단가는 이름이 특정될 때만 선택한다.
-  const inv = state.sigInventory || [];
-  const msg = String(event.message || "").toLowerCase().replace(/\s+/g, "");
-  const resolveFromCandidates = (candidates: typeof inv) => {
-    const textMatches = candidates.filter((sig) => {
-      const name = String(sig.name || "").toLowerCase().replace(/\s+/g, "");
-      return name && msg.includes(name);
-    });
-    if (textMatches.length === 1) return textMatches[0];
-    if (candidates.length === 1 && textMatches.length === 0) return candidates[0];
-    return undefined;
-  };
-
-  // isSigCredit identifies a sig result, but its message is not necessarily the sig name.
-  if ((event as { isSigCredit?: boolean }).isSigCredit) {
-    const sigPrice = Math.max(0, Math.round(Number(event.sigPrice) || 0));
-    const sig = sigPrice > 0
-      ? resolveFromCandidates(
-          inv.filter((item) => Math.round(Number(item.price) || 0) === sigPrice)
-        )
-      : undefined;
-    return sig
-      ? { isSig: true, sigName: sig.name, sigImageUrl: sig.imageUrl || undefined }
-      : { isSig: false, sigName: "" };
-  }
-
-  // 3. Match a unique price candidate, or disambiguate duplicate prices by message.
-  if (inv.length > 0) {
-    const priceMatches = amount > 0
-      ? inv.filter((sig) => Math.round(Number(sig.price) || 0) === amount)
-      : [];
-    let sig = resolveFromCandidates(priceMatches);
-    if (!sig && priceMatches.length === 0 && msg) {
-      const nameMatches = inv.filter((item) => {
-        const name = String(item.name || "").toLowerCase().replace(/\s+/g, "");
-        return name && msg.includes(name);
-      });
-      if (nameMatches.length === 1) sig = nameMatches[0];
-    }
-    if (sig) {
-      return {
-        isSig: true,
-        sigName: sig.name,
-        sigImageUrl: sig.imageUrl || undefined,
-      };
-    }
-  }
-
+  // 시그명이 전혀 없는 단순 텍스트/금액 후원은 줍줍 대상 제외
   return { isSig: false, sigName: "" };
 }
 

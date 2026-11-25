@@ -186,14 +186,22 @@ export function mergeDonationApplyBase(
 
   const freshLogs = Array.isArray(fresh.contributionLogs) ? fresh.contributionLogs : [];
   const hintLogs = Array.isArray(hint.contributionLogs) ? hint.contributionLogs : [];
+  const deletedLogIds = new Set<string>([
+    ...(Array.isArray(fresh.deletedContributionLogIds) ? fresh.deletedContributionLogIds : []),
+    ...(Array.isArray(hint.deletedContributionLogIds) ? hint.deletedContributionLogIds : []),
+  ]);
   let mergedContributionLogs = fresh.contributionLogs ?? hint.contributionLogs;
   if (hintLogs.length > 0 || freshLogs.length > 0) {
     const logMap = new Map<string, (typeof hintLogs)[number]>();
     for (const l of hintLogs) {
-      if (l && l.id) logMap.set(String(l.id), l);
+      if (l && l.id && !deletedLogIds.has(String(l.id))) {
+        logMap.set(String(l.id), l);
+      }
     }
     for (const l of freshLogs) {
-      if (l && l.id) logMap.set(String(l.id), l);
+      if (l && l.id && !deletedLogIds.has(String(l.id))) {
+        logMap.set(String(l.id), l);
+      }
     }
     mergedContributionLogs = Array.from(logMap.values());
   }
@@ -202,6 +210,7 @@ export function mergeDonationApplyBase(
     ...hint,
     ...fresh,
     contributionLogs: mergedContributionLogs,
+    deletedContributionLogIds: Array.from(deletedLogIds),
     members: rosterBase.members,
     memberPositions: fresh.memberPositions !== undefined ? fresh.memberPositions : (hint.memberPositions ?? {}),
     memberPositionMode: fresh.memberPositionMode ?? hint.memberPositionMode,

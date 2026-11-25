@@ -341,6 +341,11 @@ export function collectDay777SigContributionByMember(
   for (const log of logs) {
     const mid = String(log.memberId || "").trim();
     if (!mid) continue;
+    // ⭐️ 퐁당퐁당 기여도에는 줍줍 보너스 또는 퐁당퐁당 전용 로그(cl_pd_, plog_, isPongdang 등)만 합산!
+    // 메인 엑셀표 일반 수동 기여도 로그는 퐁당퐁당에 절대 합산되지 않도록 분리
+    if (!log.isZubzubBonus && !isPongdangContributionLog(log)) {
+      continue;
+    }
     if (
       log.isZubzubBonus &&
       state?.zubzubSettings?.applyContributionToPongdang === false

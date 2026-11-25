@@ -574,6 +574,23 @@ export function parseToonationDonationPayload(
   );
   const playerName = parsed.playerName || undefined;
 
+  const root = unwrapToonationPayload(data);
+  const code = Number(safeRead(envelope, "code") ?? safeRead(data, "code"));
+  const isSignature = Boolean(
+    code === 106 ||
+      safeRead(root, "is_signature") === true ||
+      safeRead(root, "isSignature") === true ||
+      safeRead(root, "signature_id") ||
+      safeRead(root, "signatureId")
+  );
+  const signatureName = String(
+    safeRead(root, "signature_name") ||
+      safeRead(root, "signatureName") ||
+      safeRead(root, "signature") ||
+      safeRead(root, "sig_name") ||
+      ""
+  ).trim();
+
   return {
     id: `toonation:${externalId}`,
     provider: "toonation",
@@ -587,6 +604,8 @@ export function parseToonationDonationPayload(
     at: resolveToonationDonationAtIso(data, envelope),
     target: parsed.target,
     status: "queued",
+    ...(isSignature ? { isSignature: true } : {}),
+    ...(signatureName ? { matchedSigName: signatureName } : {}),
   };
 }
 

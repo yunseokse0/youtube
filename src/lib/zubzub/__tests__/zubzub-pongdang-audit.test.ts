@@ -138,11 +138,38 @@ describe("[AUDIT] 줍줍 - 시그 후원 판정 경계값", () => {
     expect(res.isSig).toBe(false);
   });
 
-  it("시그 인벤토리 단가와 금액이 일치하면 시그로 인정한다", () => {
+  it("메시지에 시그명이 명시된 경우에만 시그로 인정하고, 단순 텍스트 후원은 줍줍에서 제외한다", () => {
     const state = makeState();
-    const res = isEligibleSigDonation(makeEvent({ amount: 50000 }), state, 0);
-    expect(res.isSig).toBe(true);
-    expect(res.sigName).toBe("러브다이브");
+    // 1) 메시지에 시그명이 명시된 경우 -> 시그 인정
+    const sigRes1 = isEligibleSigDonation(makeEvent({ amount: 50000, message: "러브다이브" }), state, 0);
+    expect(sigRes1.isSig).toBe(true);
+    expect(sigRes1.sigName).toBe("러브다이브");
+
+    const sigRes2 = isEligibleSigDonation(makeEvent({ amount: 50000, message: "러브다이브 신청합니다" }), state, 0);
+    expect(sigRes2.isSig).toBe(true);
+    expect(sigRes2.sigName).toBe("러브다이브");
+
+    // 2) 시그명이 없는 단순 텍스트/금액 후원 -> 줍줍 대상 제외 (false)
+    const textRes1 = isEligibleSigDonation(makeEvent({ amount: 50000 }), state, 0);
+    expect(textRes1.isSig).toBe(false);
+
+    const textRes2 = isEligibleSigDonation(makeEvent({ amount: 50000, message: "자키" }), state, 0);
+    expect(textRes2.isSig).toBe(false);
+
+    const textRes3 = isEligibleSigDonation(makeEvent({ amount: 50000, message: "이나" }), state, 0);
+    expect(textRes3.isSig).toBe(false);
+
+    const textRes4 = isEligibleSigDonation(makeEvent({ amount: 50000, message: "화이팅!" }), state, 0);
+    expect(textRes4.isSig).toBe(false);
+
+    // 3) isSigCredit 당첨 건 -> 시그 인정
+    const creditRes = isEligibleSigDonation(
+      makeEvent({ amount: 50000, isSigCredit: true, sigPrice: 50000 }),
+      state,
+      0
+    );
+    expect(creditRes.isSig).toBe(true);
+    expect(creditRes.sigName).toBe("러브다이브");
   });
 
   it("최소 금액 이상이어도 시그 정보가 없으면 메시지를 시그명으로 만들지 않는다", async () => {
