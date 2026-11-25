@@ -11,16 +11,16 @@ export function getRoundContributionSnapshot(
 
   if (record.roundContributionSnapshot && typeof record.roundContributionSnapshot === "object") {
     for (const [k, v] of Object.entries(record.roundContributionSnapshot)) {
-      const num = Math.max(0, Number(v) || 0);
-      if (num > 0) map[k] = num;
+      const num = Number(v) || 0;
+      if (num !== 0) map[k] = num;
     }
   }
 
   // members 배열의 contribution 필드도 보충
   for (const m of record.members || []) {
     const id = String(m.memberId || m.name || "").trim();
-    const contrib = Math.max(0, Number(m.contribution) || 0);
-    if (contrib > 0) {
+    const contrib = Number(m.contribution) || 0;
+    if (contrib !== 0) {
       if (id && map[id] == null) map[id] = contrib;
       if (m.name && map[m.name] == null) map[m.name] = contrib;
     }

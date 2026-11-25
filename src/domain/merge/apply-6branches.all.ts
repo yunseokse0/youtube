@@ -138,7 +138,7 @@ export function mergeDonationApplyBase(
     const d = hintDonors[ri];
     const k = donorStableMapKey(d, 1, ri);
     const prev = donorMap.get(k);
-    donorMap.set(k, prev ? mergeDonorRowFields(d, prev) : d);
+    donorMap.set(k, prev ? mergeDonorRowFields(prev, d) : d);
   }
   unionGroupSplitDonorsIntoMap(donorMap, freshDonors, hintDonors);
   const mergedDonors = dedupeDonorRows(Array.from(donorMap.values())).sort((a, b) => donorAtEpochMs_mini(b) - donorAtEpochMs_mini(a));

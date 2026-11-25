@@ -13063,18 +13063,28 @@ function AdminPageInner() {
     await persistDonationStateViaApi(overlayUserId, snapshot, "add");
     appendDailyLog(snapshot, overlayUserId);
     const roundContribSnapshot: Record<string, number> = {};
+    const isPongdangActive =
+      Boolean((state as any).day777Calc) ||
+      (state.overlayPresets || []).some((p) => p.day777Calc || String(p.name || "").includes("퐁당") || p.theme === "excelPongdang");
     for (const m of snapshot.members || []) {
       const autoVal = autoSigContributionMap.get(m.id) || 0;
       const manualVal = snapshot.pongdangManualContributions?.[m.id] || 0;
       const pongdangTotal = autoVal + manualVal;
       const baseContrib = Number(m.contribution) || 0;
-      const finalVal = Math.max(baseContrib, pongdangTotal);
+      const finalVal = isPongdangActive && (autoVal !== 0 || manualVal !== 0) ? pongdangTotal : Math.max(baseContrib, pongdangTotal);
       roundContribSnapshot[m.id] = finalVal;
     }
 
+    const settlementMembers = isPongdangActive
+      ? (snapshot.members || []).map((m) => ({
+          ...m,
+          contribution: roundContribSnapshot[m.id] !== undefined ? roundContribSnapshot[m.id] : m.contribution,
+        }))
+      : snapshot.members;
+
     const rec = await appendSettlementRecordAndSync(
       title,
-      snapshot.members,
+      settlementMembers,
       accountRatio,
       toonRatio,
       taxRate,

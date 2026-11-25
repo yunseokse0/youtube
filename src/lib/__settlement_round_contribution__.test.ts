@@ -267,9 +267,10 @@ describe("정산 회차 기여도 저장 및 리셋 후 불러오기 테스트",
 
   it("실제 로컬 서버 API 연동 E2E: 정산 회차 저장 -> 초기화 -> 기여도 복원 -> 서버 상태 반영 확인", async () => {
     // 1. 현재 서버 상태 조회
-    const stateRes = await fetch("http://localhost:3001/api/state?u=finalent");
-    if (!stateRes.ok) return; // 서버 미구동 환경에서는 skip
-    const curState: AppState = await stateRes.json();
+    const stateRes = await fetch("http://localhost:3001/api/state?u=finalent").catch(() => null);
+    if (!stateRes || !stateRes.ok) return; // 서버 미구동 환경에서는 skip
+    const curState: AppState = await stateRes.json().catch(() => null);
+    if (!curState) return;
 
     // 2. 기여도 스냅샷을 포함한 정산 회차 생성 및 서버 저장
     const recId = `settle_e2e_${Date.now()}`;

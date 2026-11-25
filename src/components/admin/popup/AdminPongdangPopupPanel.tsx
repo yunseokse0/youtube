@@ -118,7 +118,7 @@ export default function AdminPongdangPopupPanel() {
     const isManualMode = state?.pongdangManualMode !== false;
     const manualContribs = state?.pongdangManualContributions || {};
 
-    return participatingMembers.map((m) => {
+    const list = participatingMembers.map((m) => {
       const isOperating = isOperatingSettlementMember(m, memberPositions);
       const autoVal = autoSigContributionMap.get(m.id) ?? 0;
       const logVal = manualLogMap.get(m.id) ?? 0;
@@ -138,13 +138,20 @@ export default function AdminPongdangPopupPanel() {
         totalManual,
         finalContribution,
       };
-    }).sort((a, b) => {
+    });
+    const orderIndex = new Map(members.map((m, idx) => [m.id, idx]));
+    return list.sort((a, b) => {
       // 운영비는 맨 아래로
       if (a.isOperating !== b.isOperating) return a.isOperating ? 1 : -1;
       // 기여도 내림차순 정렬 (음수는 양수 아래로)
-      return b.finalContribution - a.finalContribution;
+      if (b.finalContribution !== a.finalContribution) {
+        return b.finalContribution - a.finalContribution;
+      }
+      const ia = orderIndex.get(a.member.id) ?? 999;
+      const ib = orderIndex.get(b.member.id) ?? 999;
+      return ia - ib;
     });
-  }, [participatingMembers, memberPositions, autoSigContributionMap, manualLogMap, state?.pongdangManualMode, state?.pongdangManualContributions]);
+  }, [participatingMembers, members, memberPositions, autoSigContributionMap, manualLogMap, state?.pongdangManualMode, state?.pongdangManualContributions]);
 
   // 총합 계산 (음수 포함)
   const totals = useMemo(() => {

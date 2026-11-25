@@ -244,4 +244,61 @@ describe("Pongdang negative contribution and manual adjustment", () => {
     expect(ranked[0].m.name).toBe("서유하");
     expect(ranked[0].m.contribution).toBe(92000);
   });
+  it("mergeDonationApplyBase preserves incoming pongdangMinus: true and false over stale server state", async () => {
+    const { mergeDonationApplyBase } = await import("@/domain/merge/apply-6branches.all");
+    const existingDonor: Donor = {
+      id: "d_toona_777",
+      name: "돌돌일",
+      amount: 777000,
+      sigPrice: 52000,
+      isSigCredit: true,
+      memberId: "m_jaki",
+      at: 1000,
+    };
+    const existingState: AppState = {
+      members: [{ id: "m_jaki", name: "자키", account: 0, toon: 0, contribution: 52000 }],
+      donors: [existingDonor],
+      updatedAt: 1000,
+    } as unknown as AppState;
+
+    // 1) 클라이언트에서 마이너스 처리: pongdangMinus: true
+    const incomingMinusState: AppState = {
+      ...existingState,
+      donors: [{ ...existingDonor, pongdangMinus: true }],
+      updatedAt: 2000,
+    };
+    const mergedMinus = mergeDonationApplyBase(incomingMinusState, existingState);
+    expect(mergedMinus?.donors?.[0]?.pongdangMinus).toBe(true);
+
+    // 2) 클라이언트에서 정상 복원: pongdangMinus: false
+    const incomingRestoreState: AppState = {
+      ...existingState,
+      donors: [{ ...existingDonor, pongdangMinus: false }],
+      updatedAt: 3000,
+    };
+    const mergedRestored = mergeDonationApplyBase(incomingRestoreState, mergedMinus);
+    expect(mergedRestored?.donors?.[0]?.pongdangMinus).toBeUndefined();
+  });
+
+  it("properly ranks members with positive, zero, and negative contributions with exact 1st..Nth ranks", () => {
+    const members: Member[] = [
+      { id: "m1", name: "자키", account: 0, toon: 0, contribution: 52000 },
+      { id: "m2", name: "서우적", account: 0, toon: 0, contribution: 26000 },
+      { id: "m3", name: "원더", account: 0, toon: 0, contribution: 0 },
+      { id: "m4", name: "지침", account: 0, toon: 0, contribution: 0 },
+      { id: "m5", name: "수빈", account: 0, toon: 0, contribution: -26000 },
+      { id: "m6", name: "미니", account: 0, toon: 0, contribution: -52000 },
+    ];
+
+    const ranked = buildOverlayRankedMembers(members, {}, undefined, members, undefined, "contribution");
+
+    expect(ranked.map((r) => ({ id: r.m.id, rank: r.rank, contrib: r.m.contribution }))).toEqual([
+      { id: "m1", rank: 1, contrib: 52000 },
+      { id: "m2", rank: 2, contrib: 26000 },
+      { id: "m3", rank: 3, contrib: 0 },
+      { id: "m4", rank: 4, contrib: 0 },
+      { id: "m5", rank: 5, contrib: -26000 },
+      { id: "m6", rank: 6, contrib: -52000 },
+    ]);
+  });
 });

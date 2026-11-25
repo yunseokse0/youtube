@@ -4090,7 +4090,7 @@ function OverlayInner() {
     [overlayContributionSource.contributionLogs]
   );
   const getSessionContributionValueForMember = useCallback((m: Member) => {
-    if (day777Calc) return parseOverlayContributionNumber(m.contribution);
+    if (isPongdangTable) return parseOverlayContributionNumber(m.contribution);
     const memberId = String(m.id || "").trim();
     if (!memberId || !s) return 0;
     return resolveMemberContributionTotal(memberId, {

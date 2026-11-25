@@ -72,9 +72,11 @@ export function memberDonationRankingTotal(member: Member): number {
 }
 
 function safeContributionAmount(value: unknown): number {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 0;
-  return Math.floor(n);
+  if (typeof value === 'number') return Number.isFinite(value) ? Math.floor(value) : 0;
+  const raw = String(value ?? '').trim().replace(/[,\s，]/g, '').replace(/[−–—]/g, '-');
+  if (!raw) return 0;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? Math.floor(parsed) : 0;
 }
 
 /** 엑셀표 순위 — 기여도 (getter 없으면 member.contribution, 음수 기여도 지원) */

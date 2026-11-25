@@ -399,7 +399,7 @@ describe("[AUDIT] 퐁당퐁당 - 마이너스 로그 및 자동배정 제외", (
     expect(collectDay777SigContributionByMember(state).get("m_jina")).toBeUndefined();
   });
 
-  it("오버레이는 음수 기여도를 0으로, 팝업창은 음수를 그대로 표시한다", () => {
+  it("퐁당퐁당 엑셀표와 팝업창 모두 마이너스 기여도를 음수(-)로 표시한다", () => {
     const donor: Donor = {
       id: "d_minus",
       name: "후원자",
@@ -412,7 +412,7 @@ describe("[AUDIT] 퐁당퐁당 - 마이너스 로그 및 자동배정 제외", (
     };
     const state = makeState({ donors: [donor] });
     const overlay = applyOverlayDonationDisplayTotals(state, { day777Calc: true });
-    expect(overlay.members.find((m) => m.id === "m_jina")?.contribution).toBe(0);
+    expect(overlay.members.find((m) => m.id === "m_jina")?.contribution).toBe(-50000);
 
     const popup = applyOverlayDonationDisplayTotals(state, {
       day777Calc: true,
