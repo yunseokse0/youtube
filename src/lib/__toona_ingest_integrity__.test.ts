@@ -40,7 +40,10 @@ describe("Toona 후원 수신 정합성 (누락 & 뻥튀기 방지) 검증", () 
     expect(event?.amount).toBe(50000);
     expect(event?.target).toBe("toon");
 
-    const baseState = createBaseState();
+    const baseState: AppState = {
+      ...createBaseState(),
+      memberPositions: { m1: "대표" },
+    };
     const foldResult = foldIngestEventsIntoState(baseState, [event!]);
 
     expect(foldResult.applied.length).toBe(1);
@@ -91,7 +94,10 @@ describe("Toona 후원 수신 정합성 (누락 & 뻥튀기 방지) 검증", () 
     expect(enq2.duplicateQueued).toBe(true); // 큐에서 중복 감지되어 스킵!
 
     // 상태 병합 레벨 중복 차단 검증
-    const baseState = createBaseState();
+    const baseState: AppState = {
+      ...createBaseState(),
+      memberPositions: { m1: "대표" },
+    };
     const foldResult = foldIngestEventsIntoState(baseState, [webhookEvent!, pollEvent!]);
 
     expect(foldResult.applied.length).toBe(1); // 1건만 성공
@@ -103,7 +109,10 @@ describe("Toona 후원 수신 정합성 (누락 & 뻥튀기 방지) 검증", () 
 
   // 3. 연타 후원 (동일 후원자 + 동일 금액 + 같은 시간) 정상 수신 (오탐 누락 방지)
   it("동일 후원자가 같은 금액을 연속으로 여러 번 쏜 연타 후원은 고유 ID가 다르므로 누락 없이 모두 반영된다", () => {
-    const baseState = createBaseState();
+    const baseState: AppState = {
+      ...createBaseState(),
+      memberPositions: { m1: "대표" },
+    };
 
     const event1 = sanitizeDonationEventFromIngestBody({
       id: "toonation:din:combo_1",
@@ -146,7 +155,10 @@ describe("Toona 후원 수신 정합성 (누락 & 뻥튀기 방지) 검증", () 
 
   // 4. 멤버 미지정 후원 자동 배정 및 완전 미매칭 시 증발 방지
   it("멤버 이름이 없거나 불일치할 때도 방송 룰(1위 멤버 또는 자동 배정)에 따라 안전하게 반영되거나 unmatched로 보존된다", () => {
-    const baseState = createBaseState();
+    const baseState: AppState = {
+      ...createBaseState(),
+      memberPositions: { m1: "대표" },
+    };
 
     // 1) 멤버 이름이 불일치해도 후원이 누락/증발되지 않고 1위 멤버/대표로 자동 반영
     const fallbackEvent = sanitizeDonationEventFromIngestBody({
@@ -191,7 +203,10 @@ describe("Toona 후원 수신 정합성 (누락 & 뻥튀기 방지) 검증", () 
     expect(sigEvent?.sigPrice).toBe(50000);
     expect(sigEvent?.isSigCredit).toBe(true);
 
-    const baseState = createBaseState();
+    const baseState: AppState = {
+      ...createBaseState(),
+      memberPositions: { m1: "대표" },
+    };
     const foldResult = foldIngestEventsIntoState(baseState, [sigEvent!]);
 
     // 메인 엑셀: 계좌 777,000원, 기여도 777,000원
