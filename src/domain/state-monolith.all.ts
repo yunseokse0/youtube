@@ -1145,6 +1145,19 @@ export function buildDefaultMembersCount(count: number): Member[] {
   });
 }
 
+function parseOptionalMoney(input: unknown): number | undefined {
+  if (input === undefined || input === null) return undefined;
+  if (typeof input === "number" && Number.isFinite(input)) return Math.floor(input);
+  if (typeof input === "string") {
+    const t = input.replace(/[,\s，]/g, "").replace(/[−–—]/g, "-").trim();
+    if (t === "") return undefined;
+    const n = Number(t);
+    if (!Number.isFinite(n)) return undefined;
+    return Math.floor(n);
+  }
+  return undefined;
+}
+
 /** Redis/API·엑셀 등에서 금액이 문자열·콤마 문자열로 올 때 복원 */
 function parseOptionalNonNegativeMoney(input: unknown): number | undefined {
   if (input === undefined || input === null) return undefined;
@@ -1163,7 +1176,7 @@ function normalizeMember(m: Member): Member {
   const rec = m as Record<string, unknown>;
   const goalParsed = parseOptionalNonNegativeMoney(rec.goal);
   const goal = goalParsed !== undefined ? goalParsed : undefined;
-  const contribution = parseOptionalNonNegativeMoney(rec.contribution) ?? 0;
+  const contribution = parseOptionalMoney(rec.contribution) ?? 0;
   const restroom = normalizeRestroomCount(rec.restroom);
   const account = parseOptionalNonNegativeMoney(rec.account) ?? 0;
   const toon = parseOptionalNonNegativeMoney(rec.toon) ?? 0;

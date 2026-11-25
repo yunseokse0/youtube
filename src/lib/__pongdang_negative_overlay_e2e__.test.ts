@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { AppState, Donor, Member, ContributionLog } from "@/types";
+import { ensureMembers } from "./state";
 import {
   applyOverlayDonationDisplayTotals,
   membersWithOverlayDonationAggregate,
@@ -127,5 +128,44 @@ describe("퐁당퐁당 엑셀표 음수 표시 및 랭킹 정합성 전수 검�
 
     expect(ranked[2]?.m.id).toBe("m3"); // 3위: 이유리 (-50,000)
     expect(ranked[2]?.rank).toBe(3);
+  });
+
+  it("5. ensureMembers가 음수 기여도를 0으로 클램핑하지 않고 그대로 보존한다", () => {
+    const rawList = [
+      { id: "m1", name: "수아", contribution: -50000, account: 100000, toon: 20000 },
+      { id: "m2", name: "조은", contribution: 30000, account: 0, toon: 0 },
+    ];
+    const normalized = ensureMembers(rawList);
+    expect(normalized[0]?.contribution).toBe(-50000);
+    expect(normalized[1]?.contribution).toBe(30000);
+  });
+
+  it("6. 프리셋 '퐁당퐁당 엑셀 식사'(theme: excelViolet, day777Calc: true) 파이프라인에서 음수가 온전히 표출된다", () => {
+    const testState: AppState = {
+      members,
+      donors: [
+        { id: "d1", memberId: "m1", amount: 100000, sigPrice: 100000, target: "account", at: 100 },
+        { id: "d2", memberId: "m3", amount: 50000, sigPrice: 50000, target: "account", at: 200, pongdangMinus: true },
+      ],
+      contributionLogs: [],
+      pongdangManualContributions: {},
+      rouletteState: null as any,
+    } as unknown as AppState;
+
+    const aggregated = membersWithOverlayDonationAggregate(
+      testState,
+      members,
+      null,
+      {
+        day777Calc: true,
+        isPongdangPopup: true,
+        pongdangManualMode: true,
+      }
+    );
+
+    // ensureMembers를 통과해도 음수가 0으로 증발하지 않음
+    const finalMembers = ensureMembers(aggregated);
+    const m3 = finalMembers.find((m: any) => m.id === "m3");
+    expect(m3?.contribution).toBe(-50000);
   });
 });

@@ -2751,9 +2751,11 @@ function OverlayInner() {
     membersThemeId === "excelPongdang" ||
     effectivePreset?.theme === "excelPongdang" ||
     effectivePreset?.membersTheme === "excelPongdang" ||
-    String(effectivePreset?.name || "").includes("퐁당") ||
+    String(effectivePreset?.name || "").replace(/\s+/g, "").includes("퐁당") ||
+    Boolean(effectivePreset?.day777Calc) ||
     rawSp.get("theme") === "excelPongdang" ||
-    rawSp.get("membersTheme") === "excelPongdang";
+    rawSp.get("membersTheme") === "excelPongdang" ||
+    rawSp.get("day777Calc") === "true";
   const excelMemberAccent = resolveExcelMemberTableAccent(membersThemeId);
   const useBroadcastTableChrome = !isExcelMemberTableTheme(membersThemeId);
   const totalThemeId = resolveThemeId("totalTheme");
@@ -2911,14 +2913,15 @@ function OverlayInner() {
   const day777Calc =
     resolveDay777Calc(rawSp, effectivePreset, { ready });
   const pongdangManualMode =
-    day777Calc && resolvePongdangManualMode(rawSp, effectivePreset, { ready }, s as AppState);
+    resolvePongdangManualMode(rawSp, effectivePreset, { ready }, s as AppState);
   /** 퐁당퐁당 엑셀표(777데이 계산 또는 excelPongdang 테마 또는 퐁당 프리셋): 마이너스 기여도를 음수 그대로 표기 */
   const isPongdangTable = Boolean(
     day777Calc ||
     isExcelPongdang ||
+    Boolean(effectivePreset?.day777Calc) ||
     effectivePreset?.theme === "excelPongdang" ||
     effectivePreset?.membersTheme === "excelPongdang" ||
-    String(effectivePreset?.name || "").includes("퐁당") ||
+    String(effectivePreset?.name || "").replace(/\s+/g, "").includes("퐁당") ||
     rawSp.get("theme") === "excelPongdang" ||
     rawSp.get("membersTheme") === "excelPongdang" ||
     rawSp.get("day777Calc") === "true"
@@ -3997,6 +4000,7 @@ function OverlayInner() {
     day777Calc,
     pongdangManualMode,
     isExcelPongdang,
+    isPongdangTable,
     excludedMemberIdsSet,
     s,
     isAdminPreview,
