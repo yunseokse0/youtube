@@ -398,9 +398,8 @@ export function applyOverlayDonationDisplayTotals(
   opts: OverlayDonationDisplayOpts = {}
 ): AppState {
   const fromAt = normalizeDonationAggregateFromAt(opts?.fromAt);
-  const isPongdang = Boolean(opts?.day777Calc || opts?.isPongdangPopup);
-  const day777 = isPongdang;
   const isPongdangPopup = Boolean(opts?.isPongdangPopup);
+  const day777 = Boolean(opts?.day777Calc);
 
   // 책정 OFF (-1): 전체 후원 및 기여도 0원 고정 표출
   if (fromAt === -1) {
@@ -508,9 +507,8 @@ export function membersWithOverlayDonationAggregate(
   opts?: { day777Calc?: boolean; pongdangManualMode?: boolean; isPongdangPopup?: boolean }
 ): Member[] {
   const fromAtN = normalizeDonationAggregateFromAt(fromAt);
-  const isPongdang = Boolean(opts?.day777Calc || opts?.isPongdangPopup);
-  const day777 = isPongdang;
   const isPongdangPopup = Boolean(opts?.isPongdangPopup);
+  const day777 = Boolean(opts?.day777Calc);
   if (fromAtN == null && !day777) {
     return members.map((m) => ({
       ...m,

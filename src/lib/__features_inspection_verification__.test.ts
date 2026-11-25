@@ -161,8 +161,8 @@ describe("순위 연동 직급, 멤버 고정 직급 및 777데이 옵션 종합
       // 3. 독립 OBS URL 파라미터 day777Calc=true 단독 적용 (프리셋 연동 전 ready: false)
       expect(resolveDay777Calc(new URLSearchParams({ day777Calc: "true" }), null, { ready: false })).toBe(true);
 
-      // 4. 퐁당퐁당 테마 기본값 -> day777Calc: true
-      expect(resolveDay777Calc(new URLSearchParams(), { theme: "excelPongdang" }, { ready: true })).toBe(true);
+      // 4. 퐁당퐁당 테마 기본값 -> 777데이 옵션 기본 OFF (day777Calc: false)
+      expect(resolveDay777Calc(new URLSearchParams(), { theme: "excelPongdang" }, { ready: true })).toBe(false);
     });
 
     it("777데이 ON일 때: 777,000원 후원금은 계좌에 보존되고, 기여도는 나온 시그 50,000원만 반영", () => {

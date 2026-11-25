@@ -2011,7 +2011,7 @@ function AdminPageInner() {
         showCombinedColumn: true,
         showContributionColumn: true,
         showRestroomColumn: false,
-        day777Calc: true,
+        day777Calc: false,
         tableBgOpacity: "0",
         tableGridLines: false,
         tableVerticalLines: false,
@@ -13065,7 +13065,7 @@ function AdminPageInner() {
     const roundContribSnapshot: Record<string, number> = {};
     const isPongdangActive =
       Boolean((state as any).day777Calc) ||
-      (state.overlayPresets || []).some((p) => p.day777Calc || String(p.name || "").includes("퐁당") || p.theme === "excelPongdang");
+      (state.overlayPresets || []).some((p) => Boolean(p.day777Calc));
     for (const m of snapshot.members || []) {
       const autoVal = autoSigContributionMap.get(m.id) || 0;
       const manualVal = snapshot.pongdangManualContributions?.[m.id] || 0;
@@ -23265,14 +23265,14 @@ function AdminPageInner() {
                                       <button
                                         type="button"
                                         className={`px-2.5 py-0.5 rounded text-xs font-bold transition border ${
-                                          p.day777Calc !== false
+                                          Boolean(p.day777Calc)
                                             ? "border-amber-400 bg-amber-600 text-black shadow-sm"
                                             : "border-white/10 bg-neutral-800 text-neutral-400"
                                         }`}
-                                        onClick={() => updatePreset(p.id, { day777Calc: p.day777Calc === false })}
+                                        onClick={() => updatePreset(p.id, { day777Calc: !p.day777Calc })}
                                         title="시그 분리: 777,000원은 계좌/투네에 남고 시그 단가만 기여도 반영 / 일반 합산: 777,000원 전액 기여도 반영"
                                       >
-                                        {p.day777Calc === false ? "일반 합산 (전액)" : "시그 분리 (기본)"}
+                                        {Boolean(p.day777Calc) ? "시그 분리 (777 ON)" : "일반 합산 (777 OFF 기본)"}
                                       </button>
                                     ) : (
                                       <span className="text-[10px] text-neutral-400 font-medium">기존 엑셀 (전액 기여도 반영)</span>
@@ -25584,19 +25584,21 @@ function AdminPageInner() {
                                         <button
                                           type="button"
                                           className={`px-2 py-0.5 rounded border text-xs ${
-                                            p.day777Calc !== false
-                                              ? "border-amber-500 text-amber-300"
+                                            Boolean(p.day777Calc)
+                                              ? "border-amber-500 text-amber-300 bg-amber-950/40"
                                               : "border-white/10 text-neutral-500"
                                           }`}
                                           onClick={() =>
-                                            updatePreset(p.id, { day777Calc: p.day777Calc === false })
+                                            updatePreset(p.id, { day777Calc: !p.day777Calc })
                                           }
                                           title="시그 분리: 777,000원은 계좌/투네에 남고 시그 단가만 기여도 반영 / 일반 합산: 777,000원 전액 기여도 반영"
                                         >
-                                          {p.day777Calc === false ? "일반 합산 (전액)" : "시그 분리 (기본)"}
+                                          {Boolean(p.day777Calc) ? "시그 분리 (777 ON)" : "일반 합산 (777 OFF 기본)"}
                                         </button>
                                         <span className="text-[10px] text-neutral-500">
-                                          퐁당퐁당: 시그 단가만 기여도 분리 반영 (777,000원은 계좌/투네에 보존)
+                                          {Boolean(p.day777Calc)
+                                            ? "퐁당퐁당: 시그 단가만 기여도 분리 반영 (777,000원은 계좌/투네에 보존)"
+                                            : "일반 합산: 후원금 전액 기여도 반영 (777데이 시그 분리 OFF)"}
                                         </span>
                                       </>
                                     ) : (

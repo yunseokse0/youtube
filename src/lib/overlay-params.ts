@@ -2458,20 +2458,9 @@ export function resolveDay777Calc(
   const merged = resolveLivePresetStyleParam("day777Calc", rawSp, presetToParams(preset), opts);
   if (merged === "false") return false;
   if (merged === "true") return true;
-  if (preset?.day777Calc === false) return false;
   if (preset?.day777Calc === true) return true;
-  const pName = String(preset?.name || "").trim().toLowerCase();
-  if (pName.includes("퐁당")) return true;
-  const membersTheme = resolveLivePresetStyleParam("membersTheme", rawSp, presetToParams(preset), opts);
-  const theme = resolveLivePresetStyleParam("theme", rawSp, presetToParams(preset), opts);
-  if (
-    membersTheme === "excelPongdang" ||
-    theme === "excelPongdang" ||
-    preset?.membersTheme === "excelPongdang" ||
-    preset?.theme === "excelPongdang"
-  ) {
-    return true;
-  }
+  if (preset?.day777Calc === false) return false;
+  // 777데이 옵션 기본 OFF: 명시적으로 켠 프리셋이나 URL 파라미터가 있을 때만 활성화
   return false;
 }
 
