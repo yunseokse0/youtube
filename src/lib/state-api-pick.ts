@@ -90,6 +90,20 @@ function overlayZubzubContributionLogs(state: AppState) {
   return logs;
 }
 
+function overlayAllContributionLogs(state: AppState) {
+  const baseLogs = Array.isArray(state.contributionLogs) ? state.contributionLogs : [];
+  const zubzubLogs = overlayZubzubContributionLogs(state);
+  const knownIds = new Set(baseLogs.map((l) => l.id));
+  const merged = [...baseLogs];
+  for (const zl of zubzubLogs) {
+    if (!knownIds.has(zl.id)) {
+      merged.push(zl);
+      knownIds.add(zl.id);
+    }
+  }
+  return merged;
+}
+
 export type StateApiPick =
   | typeof STATE_PICK_SIG_INVENTORY
   | typeof STATE_PICK_OVERLAY
@@ -170,7 +184,7 @@ function overlayCoreFields(
     zubzubSettings: state.zubzubSettings,
     zubzubWaitingItems: state.zubzubWaitingItems || [],
     zubzubContributionLogs: overlayZubzubContributionLogs(state),
-    contributionLogs: overlayZubzubContributionLogs(state),
+    contributionLogs: overlayAllContributionLogs(state),
     pongdangResetAt: state.pongdangResetAt,
     pongdangManualMode: state.pongdangManualMode,
     pongdangManualContributions: state.pongdangManualContributions || {},

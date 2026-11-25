@@ -406,7 +406,7 @@ export function applyOverlayDonationDisplayTotals(
   const day777 = Boolean(opts?.day777Calc);
 
   // 책정 OFF (-1): 전체 후원 및 기여도 0원 고정 표출
-  if (fromAt === -1) {
+  if (fromAt === -1 || (Number(state?.pongdangResetAt || 0) === -1 && (day777 || isPongdangPopup))) {
     return {
       ...state,
       members: (state.members || []).map((m) => ({
@@ -478,6 +478,24 @@ export function applyOverlayDonationDisplayTotals(
     pongdangResetAt: effectiveCutoff ?? 0,
   });
 
+  // 수동 기여도 가감 로그(cl_pd_, plog_, 수동 등록 등, 줍줍 보너스는 제외)
+  const manualLogMap = new Map<string, number>();
+  const allLogs =
+    state.contributionLogs ||
+    (state as { zubzubContributionLogs?: ContributionLog[] }).zubzubContributionLogs ||
+    [];
+  for (const l of allLogs) {
+    if (l.isZubzubBonus) continue;
+    const mid = String(l.memberId || "").trim();
+    if (!mid) continue;
+    if (effectiveCutoff != null && effectiveCutoff > 0 && Number(l.at || 0) < effectiveCutoff) continue;
+    const rawAmount = parseOverlayContributionNumber(l.amount);
+    if (rawAmount === 0) continue;
+    const amount = Math.floor(Math.abs(rawAmount));
+    const isMinus = l.delta === -1 || rawAmount < 0;
+    manualLogMap.set(mid, (manualLogMap.get(mid) || 0) + (isMinus ? -amount : amount));
+  }
+
   return {
     ...amountSynced,
     members: (amountSynced.members || []).map((m) => {
@@ -485,7 +503,9 @@ export function applyOverlayDonationDisplayTotals(
       const autoVal = sigById.has(m.id)
         ? (sigById.get(m.id) ?? 0)
         : (popupAutoById.get(m.id) ?? 0);
-      let manualAdj = isManualMode ? parseOverlayContributionNumber(manualContribs[m.id]) : 0;
+      const logVal = manualLogMap.get(m.id) ?? 0;
+      const directManualVal = isManualMode ? parseOverlayContributionNumber(manualContribs[m.id]) : 0;
+      const totalManual = logVal + directManualVal;
       const currentContrib = Math.floor(parseOverlayContributionNumber(orig?.contribution));
       const hasContributionSource =
         (Array.isArray(state?.donors) && state.donors.length > 0) ||
@@ -509,7 +529,10 @@ export function applyOverlayDonationDisplayTotals(
           baseVal = Number(m.contribution) || 0;
         }
       }
-      const rawTotal = baseVal + manualAdj;
+      const pongdangAuto = popupAutoById.get(m.id) ?? 0;
+      const rawTotal = isPongdangPopup
+        ? (isManualMode ? pongdangAuto + totalManual : pongdangAuto)
+        : baseVal + directManualVal;
       return {
         ...m,
         contribution: isPongdangPopup || day777 ? rawTotal : Math.max(0, rawTotal),

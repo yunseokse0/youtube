@@ -229,4 +229,54 @@ describe("줍줍 2배 기여도 및 퐁당퐁당 옵션 & 커스텀 열 순위 �
     expect(merged.contributionLogs).toHaveLength(1);
     expect(merged.contributionLogs?.[0].id).toBe("zubzub_bonus_q_1");
   });
+
+  it("11. applyOverlayDonationDisplayTotals는 퐁당퐁당 표에서 수동 기여도 추가/마이너스 로그(cl_pd_)를 정확히 반영한다", async () => {
+    const { applyOverlayDonationDisplayTotals } = await import("@/lib/overlay-donation-aggregate");
+    const manualLog: ContributionLog = {
+      id: "cl_pd_1795589000_test",
+      memberId: "m_jina",
+      amount: 50000,
+      delta: -1,
+      note: "게 미션 실패 벌금",
+      at: Date.now(),
+      isPongdang: true,
+    } as any;
+    const testState: any = {
+      members: [
+        { id: "m_jina", name: "진아", contribution: 0 },
+      ],
+      donors: [],
+      contributionLogs: [manualLog],
+      pongdangManualMode: true,
+      pongdangManualContributions: {},
+    };
+    const res = applyOverlayDonationDisplayTotals(testState, { isPongdangPopup: true });
+    const jina = res.members.find((m) => m.id === "m_jina");
+    expect(jina?.contribution).toBe(-50000);
+  });
+
+  it("12. overlay API pick은 수동 퐁당퐁당 기여도 로그를 contributionLogs에 포함하여 오버레이에 전달한다", async () => {
+    const { projectStateForGetPick, STATE_PICK_OVERLAY } = await import("@/lib/state-api-pick");
+    const manualLog: ContributionLog = {
+      id: "cl_pd_1795589000_test",
+      memberId: "m_jina",
+      amount: 50000,
+      delta: -1,
+      note: "게 미션 실패 벌금",
+      at: Date.now(),
+      isPongdang: true,
+    } as any;
+    const testState: any = {
+      members: [
+        { id: "m_jina", name: "진아", contribution: 0 },
+      ],
+      donors: [],
+      contributionLogs: [manualLog],
+    };
+    const projected: any = projectStateForGetPick(testState, STATE_PICK_OVERLAY);
+    expect(projected.contributionLogs).toHaveLength(1);
+    expect(projected.contributionLogs[0].id).toBe("cl_pd_1795589000_test");
+    expect(projected.contributionLogs[0].amount).toBe(50000);
+    expect(projected.contributionLogs[0].delta).toBe(-1);
+  });
 });

@@ -531,13 +531,20 @@ export function mergePartialState(
   if (!("sigRollingMeta" in patch)) next.sigRollingMeta = base.sigRollingMeta ?? {};
 
   // ==================== ContributionLogs Merge Guard ====================
-  // Client autosave/patch must never wipe server-side Zubzub bonus contribution logs
+  // Client autosave/patch must never wipe server-side Zubzub bonus or Pongdang manual contribution logs
   // unless this is an explicit settlement reset.
   if (patchSettlementReset || isDonationInitGoalResetPatch(patch)) {
     next.contributionLogs = Array.isArray(patch.contributionLogs) ? patch.contributionLogs : [];
   } else {
-    const baseZubzubLogs = (base.contributionLogs || []).filter((l) => l.isZubzubBonus);
-    if (baseZubzubLogs.length > 0) {
+    const baseSpecialLogs = (base.contributionLogs || []).filter(
+      (l) =>
+        l.isZubzubBonus ||
+        Boolean((l as any).isPongdang) ||
+        String(l.id || "").startsWith("cl_pd_") ||
+        String(l.id || "").startsWith("plog_") ||
+        (typeof l.note === "string" && l.note.includes("퐁당"))
+    );
+    if (baseSpecialLogs.length > 0) {
       const patchLogs = Array.isArray(patch.contributionLogs)
         ? patch.contributionLogs
         : (base.contributionLogs || []);
@@ -545,12 +552,12 @@ export function mergePartialState(
       const patchQueueIds = new Set(
         patchLogs.map((l) => String(l.zubzubQueueId || "")).filter(Boolean)
       );
-      const preservedZubzubLogs = baseZubzubLogs.filter((l) => {
+      const preservedLogs = baseSpecialLogs.filter((l) => {
         if (patchLogIds.has(l.id)) return false;
         if (l.zubzubQueueId && patchQueueIds.has(l.zubzubQueueId)) return false;
         return true;
       });
-      next.contributionLogs = [...patchLogs, ...preservedZubzubLogs];
+      next.contributionLogs = [...patchLogs, ...preservedLogs];
     } else if (!("contributionLogs" in patch)) {
       next.contributionLogs = base.contributionLogs;
     }

@@ -9,6 +9,9 @@ export function collectPongdangPopupAutoContributionByMember(
   if (!state) return map;
 
   const cutoff = Math.max(0, Number(state.pongdangResetAt || 0));
+  if (Number(state.pongdangResetAt || 0) === -1) {
+    return map;
+  }
   const includeZubzubBonus =
     state.zubzubSettings?.applyContributionToPongdang !== false;
   const applyDoubleToPongdang = state.zubzubSettings?.applyDoubleContributionToPongdang !== false;
