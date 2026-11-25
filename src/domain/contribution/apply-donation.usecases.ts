@@ -369,19 +369,30 @@ export function reassignDonorMemberInAppState(
   if (!(currentState.members || []).some((m) => m.id === targetMemberId)) return null;
 
   const donor = (currentState.donors || []).find((d) => d.id === donorId);
-  if (!donor) return null;
-  const prevMemberId = String(donor.memberId || "").trim();
+  const zubzubLog = !donor
+    ? (currentState.contributionLogs || []).find(
+        (l) =>
+          l.isZubzubBonus &&
+          (l.id === donorId ||
+            (l.zubzubQueueId && donorId.endsWith(l.zubzubQueueId)) ||
+            l.id === "zubzub_bonus_" + donorId)
+      )
+    : null;
+
+  if (!donor && !zubzubLog) return null;
+
+  const prevMemberId = String(donor ? donor.memberId : zubzubLog?.memberId || "").trim();
   if (prevMemberId === targetMemberId) return null;
 
-  const amount = Math.max(0, Math.round(Number(donor.amount) || 0));
-  const atMs = Number.isFinite(Number(donor.at))
+  const amount = donor ? Math.max(0, Math.round(Number(donor.amount) || 0)) : 0;
+  const atMs = donor && Number.isFinite(Number(donor.at))
     ? Math.max(0, Math.floor(Number(donor.at)))
     : Date.now();
   const syncMode = currentState.donationSyncMode || "mealBattle";
   const mealRaw = mealBattleUsesRawDonationScore(currentState.mealBattle);
   let mealParticipants = currentState.mealBattle?.participants || [];
 
-  if (syncMode === "mealBattle" && amount > 0 && !isDonorExcludedFromDonationTotals(donor)) {
+  if (donor && syncMode === "mealBattle" && amount > 0 && !isDonorExcludedFromDonationTotals(donor)) {
     if (prevMemberId) {
       mealParticipants = applyMealBattleDonationToParticipants(
         mealParticipants,
@@ -402,35 +413,120 @@ export function reassignDonorMemberInAppState(
     );
   }
 
-  const formula = normalizeContributionFormula(currentState.contributionFormula);
-  const storedPoints = Number(donor.contributionPoints);
-  const contributionPoints =
-    Number.isFinite(storedPoints) && storedPoints >= 0
-      ? Math.round(storedPoints)
-      : computeContributionPoints(amount, donor.target || "account", formula);
+  const linkedQueueIds = new Set();
+  const linkedLogIds = new Set();
+
+  if (donor) {
+    if (donor.claimedZubzubQueueId) linkedQueueIds.add(donor.claimedZubzubQueueId);
+    if (donor.zubzubQueueId) linkedQueueIds.add(donor.zubzubQueueId);
+    if (donor.id.startsWith("zubzub_bonus_")) {
+      const qId = donor.id.replace(/^zubzub_bonus_/, "").trim();
+      if (qId) linkedQueueIds.add(qId);
+    }
+    for (const item of currentState.zubzubWaitingItems || []) {
+      if (item.claimedDonationId === donor.id || item.triggerDonationId === donor.id) {
+        linkedQueueIds.add(item.id);
+      }
+    }
+    for (const log of currentState.contributionLogs || []) {
+      if (!log.isZubzubBonus) continue;
+      if (
+        log.claimedDonationId === donor.id ||
+        (donor.claimedZubzubQueueId && log.zubzubQueueId === donor.claimedZubzubQueueId) ||
+        (donor.zubzubQueueId && log.zubzubQueueId === donor.zubzubQueueId) ||
+        (log.zubzubQueueId && linkedQueueIds.has(log.zubzubQueueId)) ||
+        log.id === "zubzub_bonus_" + donor.id
+      ) {
+        linkedLogIds.add(log.id);
+        if (log.zubzubQueueId) linkedQueueIds.add(log.zubzubQueueId);
+      }
+    }
+    // Heuristic link for historical data without explicit claimedDonationId
+    if (linkedLogIds.size === 0 && amount > 0) {
+      const donorAt = Number(donor.at) || 0;
+      for (const log of currentState.contributionLogs || []) {
+        if (!log.isZubzubBonus) continue;
+        if (log.memberId !== prevMemberId) continue;
+        const matchesPrice =
+          log.baseSigPrice === amount ||
+          (log.multiplier && log.amount === amount * (log.multiplier - 1)) ||
+          log.amount === amount;
+        const matchesTime = donorAt > 0 && Math.abs((Number(log.at) || 0) - donorAt) < 180000;
+        if (matchesPrice && matchesTime) {
+          linkedLogIds.add(log.id);
+          if (log.zubzubQueueId) linkedQueueIds.add(log.zubzubQueueId);
+          break;
+        }
+      }
+    }
+  } else if (zubzubLog) {
+    linkedLogIds.add(zubzubLog.id);
+    if (zubzubLog.zubzubQueueId) linkedQueueIds.add(zubzubLog.zubzubQueueId);
+  }
 
   const now = Date.now();
   const idStr = String(donorId);
-  const directMatchRegex = new RegExp(
-    `:(?:apply|revert|reassign)(?::[^:]*)*:${idStr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?::|$)`
-  );
-  // syncMemberTotalsFromDonors 가 nextDonors 의 바뀐 memberId 를 기준으로 기여도를 자동 재계산하므로,
-  // contributionLogs 에 delta:+1/-1 을 중복 추가하면 기여도가 2배로 뻥튀기되는 버그 발생.
-  // 따라서 기존 reassign/apply 로그만 정리하고 donors 에 memberId 만 갱신하여 1회만 정확히 반영되도록 함.
-  const nextContributionLogs = (currentState.contributionLogs || []).filter(
-    (log) => !directMatchRegex.test(log.id)
-  );
+  const directMatchRegex = donor
+    ? new RegExp(
+        ":(?:apply|revert|reassign)(?::[^:]*)*:" + idStr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?::|$)"
+      )
+    : null;
 
-  const nextDonors = (currentState.donors || []).map((d) =>
-    d.id === donorId
-      ? { ...d, memberId: targetMemberId, memberAutoAssigned: false }
-      : d
-  );
+  const nextContributionLogs = (currentState.contributionLogs || [])
+    .filter((log) => !directMatchRegex || !directMatchRegex.test(log.id))
+    .map((log) => {
+      if (
+        log.isZubzubBonus &&
+        (linkedLogIds.has(log.id) ||
+          (log.zubzubQueueId && linkedQueueIds.has(log.zubzubQueueId)) ||
+          (donor && log.claimedDonationId === donor.id))
+      ) {
+        return {
+          ...log,
+          memberId: targetMemberId,
+          ...(donor ? { claimedDonationId: donor.id } : {}),
+        };
+      }
+      return log;
+    });
+
+  const nextDonors = (currentState.donors || []).map((d) => {
+    if (donor && d.id === donor.id) {
+      return {
+        ...d,
+        memberId: targetMemberId,
+        memberAutoAssigned: false,
+        ...(linkedQueueIds.size > 0 && !d.claimedZubzubQueueId
+          ? { claimedZubzubQueueId: [...linkedQueueIds][0] }
+          : {}),
+      };
+    }
+    if (
+      d.isZubzubBonus &&
+      (linkedLogIds.has(d.id) ||
+        (d.zubzubQueueId && linkedQueueIds.has(d.zubzubQueueId)) ||
+        (donor && d.claimedDonationId === donor.id))
+    ) {
+      return { ...d, memberId: targetMemberId };
+    }
+    return d;
+  });
+
+  const nextWaitingItems = (currentState.zubzubWaitingItems || []).map((item) => {
+    if (
+      linkedQueueIds.has(item.id) ||
+      (donor && (item.claimedDonationId === donor.id || item.triggerDonationId === donor.id))
+    ) {
+      return { ...item, claimedByMemberId: targetMemberId };
+    }
+    return item;
+  });
 
   return syncMemberTotalsFromDonors({
     ...currentState,
     contributionLogs: nextContributionLogs,
     donors: nextDonors,
+    zubzubWaitingItems: nextWaitingItems,
     mealBattle: {
       ...currentState.mealBattle,
       participants: mealParticipants,

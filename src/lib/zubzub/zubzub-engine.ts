@@ -31,6 +31,7 @@ export function createZubzubBonusContributionLog(
     multiplier?: number;
     baseSigPrice?: number;
     isManualClaim?: boolean;
+    claimedDonationId?: string;
   }
 ): ContributionLog {
   const basePrice = Math.max(0, Math.round(Number(options?.baseSigPrice ?? amount) || 0));
@@ -52,6 +53,7 @@ export function createZubzubBonusContributionLog(
     isZubzubBonus: true,
     zubzubQueueId: queueId,
     ...(options?.isManualClaim ? { isManualClaim: true } : {}),
+    ...(options?.claimedDonationId ? { claimedDonationId: options.claimedDonationId } : {}),
   };
 }
 
@@ -364,6 +366,7 @@ export async function processZubzubDonationHook(
       zubzubMultiplier: multiplier,
       isZubzubBonus: true,
       zubzubQueueId: claimedQueue.id,
+      claimedDonationId: String(event.id || event.externalId || ""),
       provider: "zubzub_bonus",
       externalId: claimedQueue.id,
     };
@@ -378,14 +381,23 @@ export async function processZubzubDonationHook(
         multiplier,
         baseSigPrice,
         isManualClaim: false,
+        claimedDonationId: String(event.id || event.externalId || ""),
       }
     );
 
     // 줍줍 금액은 후원 원장에 넣지 않고 기여도 기록부에만 남긴다.
     const currentWaitings = await listWaitingZubzubQueues(userId);
 
+    const triggerDonationId = String(event.id || event.externalId || "");
+    const nextDonors = (state.donors || []).map((d) =>
+      triggerDonationId && d.id === triggerDonationId
+        ? { ...d, claimedZubzubQueueId: claimedQueue.id }
+        : d
+    );
+
     const nextStateWithContribution: AppState = {
       ...state,
+      donors: nextDonors,
       contributionLogs: [
         ...(state.contributionLogs || []).filter((log) => log.id !== contributionLog.id),
         contributionLog,

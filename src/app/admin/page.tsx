@@ -6533,6 +6533,12 @@ function AdminPageInner() {
     if (isVertical) q.set("vertical", "true");
     q.set("renderWidth", isVertical ? "1080" : "1920");
     q.set("renderHeight", isVertical ? "1920" : "1080");
+    if (p.donationAggregateFromAt) {
+      q.set("donationAggregateFromAt", String(p.donationAggregateFromAt));
+    }
+    if (p.day777Calc !== undefined) {
+      q.set("day777Calc", String(p.day777Calc));
+    }
     return `${base}?${q.toString()}`;
   };
 

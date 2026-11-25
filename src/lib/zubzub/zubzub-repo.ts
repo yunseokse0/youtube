@@ -285,3 +285,41 @@ export async function cancelAllWaitingZubzub(userId: string): Promise<number> {
     return Number(result?.affectedRows || 0);
   });
 }
+
+/** 줍줍 획득 멤버 변경 (후원 멤버 재배치 시) */
+export async function updateZubzubQueueClaimedMember(
+  userId: string,
+  queueIdOrDonationId: string,
+  newMemberId: string
+): Promise<boolean> {
+  const targetId = String(queueIdOrDonationId || "").trim();
+  const nextMid = String(newMemberId || "").trim();
+  if (!targetId || !nextMid) return false;
+
+  let list = inMemoryZubZubQueue.get(userId);
+  if (list) {
+    for (const item of list) {
+      if (item.id === targetId || item.claimedDonationId === targetId || item.triggerDonationId === targetId) {
+        item.claimedByMemberId = nextMid;
+      }
+    }
+  }
+
+  if (!isMysqlKvConfigured()) return true;
+
+  try {
+    return await withMysqlBulkConn(async (c) => {
+      await ensureZubzubQueueTable(c);
+      await c.execute(
+        `UPDATE zubzub_queue 
+         SET claimed_by_member_id = ? 
+         WHERE user_id = ? AND (id = ? OR claimed_donation_id = ?)`,
+        [nextMid, userId, targetId, targetId]
+      );
+      return true;
+    });
+  } catch (err) {
+    console.error("[zubzub] update claimed member error:", err);
+    return false;
+  }
+}

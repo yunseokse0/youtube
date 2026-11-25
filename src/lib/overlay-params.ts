@@ -1438,7 +1438,6 @@ const PRESET_EMPTY_USES_THEME_DEFAULT_KEYS = new Set([
   "toonHeaderLabel",
   "contributionHeaderLabel",
   "restroomHeaderLabel",
-  "donationAggregateFromAt",
   "day777Calc",
   "pongdangManualMode",
   "excludedMemberIds",

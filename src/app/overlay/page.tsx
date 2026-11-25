@@ -4098,13 +4098,23 @@ function OverlayInner() {
    */
   const overlayContributionSource = useMemo(() => {
     if (!s) return { donors: [] as Donor[], contributionLogs: [] as AppState["contributionLogs"] };
-    return resolveOverlayContributionSource(s as AppState, {
-      fromAt: donationAggregateFromAt,
-      day777Calc,
-      pongdangManualMode,
-      isPongdangPopup: isPongdangTable,
-    });
-  }, [s, donationAggregateFromAt, day777Calc, pongdangManualMode, isPongdangTable]);
+    const donorsForSource =
+      isAdminPreview && adminPreviewDonors !== undefined
+        ? (adminPreviewDonors as Donor[])
+        : ((s.donors || []) as Donor[]);
+    return resolveOverlayContributionSource(
+      {
+        ...s,
+        donors: donorsForSource,
+      } as AppState,
+      {
+        fromAt: donationAggregateFromAt,
+        day777Calc,
+        pongdangManualMode,
+        isPongdangPopup: isPongdangTable,
+      }
+    );
+  }, [s, donationAggregateFromAt, day777Calc, pongdangManualMode, isPongdangTable, isAdminPreview, adminPreviewDonors]);
   const currentSessionContributionLogs = useMemo(
     () => (overlayContributionSource.contributionLogs || []).filter((log) => !isRestoredContributionLog(log)),
     [overlayContributionSource.contributionLogs]
@@ -4140,6 +4150,15 @@ function OverlayInner() {
     const storedContribution = parseOverlayContributionNumber(m.contribution);
     if (isPongdangTable) return Math.floor(storedContribution);
     const memberId = String(m.id || "").trim();
+
+    // ⏱️ 후원 집계 기준 시점(특정 시각 이후 / 현재부터 / 책정 OFF) 활성화 시:
+    // 해당 시점 이후에 들어온 후원/기여도만 계산하며, 해당 기간 후원이 없는 멤버는 0원이어야 함.
+    // (누적 저장 금액 storedContribution 이 과거 시간/초기화 뷰로 누출되는 현상 원천 차단)
+    if (donationAggregateFromAt != null) {
+      if (donationAggregateFromAt === -1) return 0;
+      return getSessionContributionValueForMember(m);
+    }
+
     const donors = overlayContributionSource.donors || [];
     const hasContributionSource =
       memberId &&
@@ -4188,6 +4207,7 @@ function OverlayInner() {
     overlayContributionSource.contributionLogs,
     s?.contributionFormula,
     s,
+    donationAggregateFromAt,
   ]);
   const getDisplayedContributionValueForMember = useCallback(
     (m: Member) => getContributionValueForMember(m),

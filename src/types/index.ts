@@ -81,10 +81,14 @@ export type Donor = {
   rawHash?: string;
   /** 대표 시그 줍줍 보너스 원본 큐 ID */
   zubzubQueueId?: string;
+  /** 해당 후원으로 획득한 대표 시그 줍줍 큐 ID */
+  claimedZubzubQueueId?: string;
   /** 대표 시그 줍줍 보너스 여부 */
   isZubzubBonus?: boolean;
   /** 대표 시그 줍줍 배율 (기본 2배) */
   zubzubMultiplier?: number;
+  /** 대표 시그 줍줍을 획득시킨 원본 후원 ID (보너스 Donor용) */
+  claimedDonationId?: string;
 };
 
 export type ZubZubQueueStatus = "WAITING" | "CLAIMED" | "CANCELED";
@@ -164,6 +168,8 @@ export type ContributionLog = {
   /** 줍줍 시그 보너스는 후원 원장이 아닌 기여도에만 반영 */
   isZubzubBonus?: boolean;
   zubzubQueueId?: string;
+  /** 해당 줍줍 보너스를 획득시킨 원본 후원 ID */
+  claimedDonationId?: string;
   /** 퐁당퐁당 전용 마이너스 처리. 일반 기여도 합계는 양수로 유지 */
   pongdangMinus?: boolean;
   /** 줍줍 원본 시그 단가 (1배 기준 금액) */

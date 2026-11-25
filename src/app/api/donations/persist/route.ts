@@ -19,6 +19,7 @@ import { dropRebumpedPreResetDonors } from "@/lib/settlement-rebump-guard";
 import { sanitizeRemovedDonorIds } from "@/lib/donation-replace-keep";
 import { runExclusivePerUser } from "@/lib/per-user-mutex";
 import { createModuleLogger } from "@/lib/logger";
+import { updateZubzubQueueClaimedMember } from "@/lib/zubzub/zubzub-repo";
 import type { AppState } from "@/types";
 
 const logger = createModuleLogger("api.donations.persist");
@@ -115,6 +116,14 @@ export async function POST(req: Request) {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
+    }
+
+    if (Array.isArray(incomingState.zubzubWaitingItems)) {
+      for (const item of incomingState.zubzubWaitingItems) {
+        if (item.claimedByMemberId) {
+          void updateZubzubQueueClaimedMember(userId, item.id, item.claimedByMemberId);
+        }
+      }
     }
 
     /** TR-7.1: 4단계 pipeline 경유 재링크 (실패시 fallback으로 legacy 호출 회귀0 방지 */

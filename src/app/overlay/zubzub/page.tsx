@@ -16,6 +16,17 @@ function ZubzubOverlayInner() {
   const rawUserId = (sp.get("u") || "").trim();
   const userId = resolveScopedOverlayUserId(rawUserId);
 
+  const { state: remoteState } = useOverlayRemoteState(userId || undefined, {
+    enabled: Boolean(userId),
+  });
+  const [zubzubClaimedEvent, setZubzubClaimedEvent] = useState<ZubzubClaimedEvent | null>(null);
+  const [waitingItems, setWaitingItems] = useState<ZubZubQueueItem[]>([]);
+  const [overlaySettings, setOverlaySettings] = useState<ZubZubSettings | null>(null);
+  const [isClient, setIsClient] = useState(false);
+
+  const isDemoParam = sp.get("demo") === "1" || sp.get("preview") === "1" || sp.get("test") === "1";
+  const [demoMode, setDemoMode] = useState<"none" | "single" | "twelve">(isDemoParam ? "twelve" : "none");
+
   const posParam = sp.get("pos");
   const position: "top" | "bottom" | "center" =
     posParam === "bottom" ? "bottom" : posParam === "center" ? "center" : "top";
@@ -30,10 +41,6 @@ function ZubzubOverlayInner() {
           ? "center"
           : (overlaySettings?.align || "left");
 
-  const isDemoParam = sp.get("demo") === "1" || sp.get("preview") === "1" || sp.get("test") === "1";
-  const [demoMode, setDemoMode] = useState<"none" | "single" | "twelve">(isDemoParam ? "twelve" : "none");
-  const [isClient, setIsClient] = useState(false);
-
   useEffect(() => {
     setIsClient(true);
   }, []);
@@ -42,13 +49,6 @@ function ZubzubOverlayInner() {
     isClient &&
     typeof window !== "undefined" &&
     (navigator.userAgent.includes("OBS/") || (sp.get("host") === "obs" && !window.location.search.includes("browser=1")));
-
-  const { state: remoteState } = useOverlayRemoteState(userId || undefined, {
-    enabled: Boolean(userId),
-  });
-  const [zubzubClaimedEvent, setZubzubClaimedEvent] = useState<ZubzubClaimedEvent | null>(null);
-  const [waitingItems, setWaitingItems] = useState<ZubZubQueueItem[]>([]);
-  const [overlaySettings, setOverlaySettings] = useState<ZubZubSettings | null>(null);
 
   // 1. 초기/원격 상태 동기화
   useEffect(() => {
