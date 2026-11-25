@@ -843,6 +843,8 @@ export type AppState = {
   pongdangResetAt?: number;
   /** 퐁당퐁당 엑셀표에서 제외할 멤버 ID 목록 */
   pongdangExcludedMemberIds?: string[];
+  /** 퐁당퐁당 엑셀표에 줍줍 기여도 반영 여부 (활성화 시 퐁당퐁당 엑셀표 및 순위 집계에 줍줍 기여도 합산) */
+  pongdangIncludeZubzub?: boolean;
   overlaySettings?: LegacyOverlaySettings;
   /** 멤버별 시그 매치 점수 */
   sigMatch: SigMatchState;

@@ -236,6 +236,7 @@ describe("state-api-pick", () => {
       pongdangResetAt: 5000,
       pongdangManualMode: true,
       pongdangManualContributions: { m1: 20000 },
+      pongdangIncludeZubzub: true,
     };
 
     const out = projectStateForGetPick(state, STATE_PICK_OVERLAY_DONORS) as Record<string, unknown>;
@@ -247,6 +248,7 @@ describe("state-api-pick", () => {
     expect(out.pongdangResetAt).toBe(5000);
     expect(out.pongdangManualMode).toBe(true);
     expect(out.pongdangManualContributions).toEqual({ m1: 20000 });
+    expect(out.pongdangIncludeZubzub).toBe(true);
   });
 
   it("overlay picks expose Zubzub contribution logs without sending bonus donors", () => {

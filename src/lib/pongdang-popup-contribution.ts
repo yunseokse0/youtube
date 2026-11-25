@@ -3,7 +3,8 @@ import { parseOverlayContributionNumber } from "@/lib/overlay-donation-aggregate
 
 /** Calculates the automatic contribution totals shown in the dedicated admin popup. */
 export function collectPongdangPopupAutoContributionByMember(
-  state: AppState | null | undefined
+  state: AppState | null | undefined,
+  opts?: { pongdangIncludeZubzub?: boolean }
 ): Map<string, number> {
   const map = new Map<string, number>();
   if (!state) return map;
@@ -40,7 +41,11 @@ export function collectPongdangPopupAutoContributionByMember(
   }
 
   const includeZubzubBonus =
-    state.zubzubSettings?.applyContributionToPongdang !== false;
+    opts?.pongdangIncludeZubzub !== undefined
+      ? Boolean(opts.pongdangIncludeZubzub)
+      : state.pongdangIncludeZubzub !== undefined
+      ? Boolean(state.pongdangIncludeZubzub)
+      : Boolean(state.zubzubSettings?.applyContributionToPongdang);
   const applyDoubleToPongdang = state.zubzubSettings?.applyDoubleContributionToPongdang !== false;
   const rawLogs =
     state.contributionLogs ||
@@ -52,10 +57,11 @@ export function collectPongdangPopupAutoContributionByMember(
       .map((log) => log.zubzubQueueId || log.id)
   );
   const donors = (state.donors || []).filter(
-    (donor) => !donor.donationExcluded || (includeZubzubBonus && donor.isZubzubBonus)
+    (donor) => (!donor.donationExcluded && !(donor.isZubzubBonus && !includeZubzubBonus)) || (includeZubzubBonus && donor.isZubzubBonus)
   );
 
   for (const donor of donors) {
+    if (donor.isZubzubBonus && !includeZubzubBonus) continue;
     if (
       donor.isZubzubBonus &&
       zubzubLogKeys.has(donor.zubzubQueueId || donor.id)

@@ -200,6 +200,7 @@ function overlayCoreFields(
     pongdangManualMode: state.pongdangManualMode,
     pongdangManualContributions: state.pongdangManualContributions || {},
     pongdangExcludedMemberIds: state.pongdangExcludedMemberIds || [],
+    pongdangIncludeZubzub: state.pongdangIncludeZubzub,
     tableSplit: (state as unknown as Record<string, unknown>).tableSplit,
     showRankColumn: state.showRankColumn,
     showRoleColumn: state.showRoleColumn,

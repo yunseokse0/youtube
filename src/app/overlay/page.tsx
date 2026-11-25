@@ -56,6 +56,7 @@ import {
   resolveDonationAggregateFromAt,
   resolveDay777Calc,
   resolvePongdangManualMode,
+  resolvePongdangIncludeZubzub,
   resolveMemberRankingMetric,
   resolveTableRowEvenBg,
   resolveTableRowOddBg,
@@ -511,7 +512,8 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
     if (
       incoming.type === "zubzub_waiting" ||
       incoming.type === "zubzub_canceled" ||
-      incoming.type === "zubzub_canceled_all"
+      incoming.type === "zubzub_canceled_all" ||
+      incoming.type === "zubzub_settings_updated"
     ) {
       void syncOnceRef.current({ forceFull: true });
       return;
@@ -2923,6 +2925,8 @@ function OverlayInner() {
     resolveDay777Calc(rawSp, effectivePreset, { ready });
   const pongdangManualMode =
     resolvePongdangManualMode(rawSp, effectivePreset, { ready }, s as AppState);
+  const pongdangIncludeZubzub =
+    resolvePongdangIncludeZubzub(rawSp, effectivePreset, { ready }, s as AppState);
   /** 퐁당퐁당 엑셀표(777데이 계산 또는 excelPongdang 테마 또는 퐁당 프리셋): 마이너스 기여도를 음수 그대로 표기 */
   const isPongdangTable = Boolean(
     day777Calc ||
@@ -3994,6 +3998,7 @@ function OverlayInner() {
         {
           day777Calc,
           pongdangManualMode,
+          pongdangIncludeZubzub,
           /**
            * 퐁당퐁당 엑셀표(day777Calc·excelPongdang)에서는 마이너스 처리한 기여도를
            * 0으로 클램핑하지 않고 음수 그대로 표시한다. (관리창 팝업과 동일 동작)
@@ -4008,6 +4013,7 @@ function OverlayInner() {
     donationAggregateFromAt,
     day777Calc,
     pongdangManualMode,
+    pongdangIncludeZubzub,
     isExcelPongdang,
     isPongdangTable,
     excludedMemberIdsSet,
@@ -4119,10 +4125,11 @@ function OverlayInner() {
         fromAt: donationAggregateFromAt,
         day777Calc,
         pongdangManualMode,
+        pongdangIncludeZubzub,
         isPongdangPopup: isPongdangTable,
       }
     );
-  }, [s, donationAggregateFromAt, day777Calc, pongdangManualMode, isPongdangTable, isAdminPreview, adminPreviewDonors]);
+  }, [s, donationAggregateFromAt, day777Calc, pongdangManualMode, pongdangIncludeZubzub, isPongdangTable, isAdminPreview, adminPreviewDonors]);
   const currentSessionContributionLogs = useMemo(
     () => (overlayContributionSource.contributionLogs || []).filter((log) => !isRestoredContributionLog(log)),
     [overlayContributionSource.contributionLogs]

@@ -146,6 +146,7 @@ export async function POST(req: NextRequest) {
 
       const nextState = {
         ...state,
+        pongdangIncludeZubzub: nextSettings.applyContributionToPongdang,
         zubzubSettings: nextSettings,
         updatedAt: Date.now(),
       };

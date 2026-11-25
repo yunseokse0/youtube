@@ -255,7 +255,10 @@ export default function AdminPongdangPopupPanel() {
       }
     }
     const isTurnedOff = rawReset === -1;
-    const includeZubzubBonus = state.zubzubSettings?.applyContributionToPongdang !== false;
+    const includeZubzubBonus =
+      state.pongdangIncludeZubzub !== undefined
+        ? Boolean(state.pongdangIncludeZubzub)
+        : Boolean(state.zubzubSettings?.applyContributionToPongdang);
     const applyDoubleToPongdang = state.zubzubSettings?.applyDoubleContributionToPongdang !== false;
     const zubzubLogKeys = new Set(
       (state.contributionLogs || [])
@@ -263,9 +266,10 @@ export default function AdminPongdangPopupPanel() {
         .map((log) => log.zubzubQueueId || log.id)
     );
     const donors = isTurnedOff ? [] : (state.donors || []).filter(
-      (d) => !d.donationExcluded || (includeZubzubBonus && d.isZubzubBonus)
+      (d) => (!d.donationExcluded && !(d.isZubzubBonus && !includeZubzubBonus)) || (includeZubzubBonus && d.isZubzubBonus)
     );
     for (const d of donors) {
+      if (!includeZubzubBonus && d.isZubzubBonus) continue;
       if (
         d.isZubzubBonus &&
         zubzubLogKeys.has(d.zubzubQueueId || d.id)
@@ -671,6 +675,44 @@ export default function AdminPongdangPopupPanel() {
     }
   }, [state, setState, persistAppState, stateRef]);
 
+  // 작업 핸들러: 퐁당퐁당 엑셀표에 줍줍 기여도 반영 여부 토글
+  const toggleZubzubBonus = useCallback(async () => {
+    if (!state) return;
+    const currentActive =
+      state.pongdangIncludeZubzub !== undefined
+        ? Boolean(state.pongdangIncludeZubzub)
+        : Boolean(state.zubzubSettings?.applyContributionToPongdang);
+    const nextVal = !currentActive;
+    const nextZubzubSettings = {
+      ...(state.zubzubSettings || { enabled: true, minSigPrice: 0 }),
+      applyContributionToPongdang: nextVal,
+    };
+    const nextPresets = (state.overlayPresets as any[] || []).map((p) => {
+      const isPd =
+        p.membersTheme === "excelPongdang" ||
+        p.theme === "excelPongdang" ||
+        Boolean(p.day777Calc) ||
+        String(p.name || "").includes("퐁당");
+      return isPd ? { ...p, pongdangIncludeZubzub: nextVal } : p;
+    });
+    const nextState: AppState = {
+      ...state,
+      pongdangIncludeZubzub: nextVal,
+      zubzubSettings: nextZubzubSettings,
+      overlayPresets: nextPresets,
+      updatedAt: Date.now(),
+    };
+    setState(nextState);
+    stateRef.current = nextState;
+    await persistDonorsReplace(nextState);
+    showAppToast(
+      nextVal
+        ? "퐁당퐁당 엑셀표에 줍줍 기여도를 반영합니다."
+        : "퐁당퐁당 엑셀표에서 줍줍 기여도를 제외했습니다.",
+      { variant: nextVal ? "success" : "info" }
+    );
+  }, [state, setState, persistDonorsReplace, stateRef]);
+
   const [pongdangFromAtInput, setPongdangFromAtInput] = useState<string>("");
 
   useEffect(() => {
@@ -825,6 +867,13 @@ export default function AdminPongdangPopupPanel() {
                 }`}>
                   {state?.pongdangManualMode !== false ? "✓ 자동+수동 합산 중" : "순수 자동만 반영 중"}
                 </span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  includeZubzubBonus
+                    ? "bg-amber-950/80 border border-amber-500/40 text-amber-300"
+                    : "bg-neutral-800 text-neutral-400"
+                }`}>
+                  {includeZubzubBonus ? "🎁 줍줍 반영 ON" : "줍줍 미반영"}
+                </span>
                 <span className={`w-2 h-2 rounded-full ${sseConnected ? "bg-emerald-400 animate-pulse" : "bg-neutral-500"}`} title={sseConnected ? "실시간 연동 완료" : "연결 대기"} />
               </div>
               <p className="text-xs text-neutral-400 mt-0.5">
@@ -833,6 +882,18 @@ export default function AdminPongdangPopupPanel() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                includeZubzubBonus
+                  ? "bg-amber-600 hover:bg-amber-500 text-white shadow shadow-amber-950/40"
+                  : "bg-neutral-800 hover:bg-neutral-700 text-neutral-400 border border-white/10"
+              }`}
+              onClick={toggleZubzubBonus}
+              title="활성화 시 퐁당퐁당 엑셀표에 줍줍 기여도를 합산합니다."
+            >
+              {includeZubzubBonus ? "✓ 🎁 줍줍 기여도 반영" : "🎁 줍줍 미반영"}
+            </button>
             <button
               type="button"
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${

@@ -260,6 +260,8 @@ export function resolveDay777SigCreditFallbackMemberId(
 export type Day777SigContributionOpts = {
   /** true면 d.pongdangMinus를 무시하고 정상(+) 단가로 합산 (메인 엑셀표/오버레이용) */
   ignorePongdangMinus?: boolean;
+  /** 퐁당퐁당에 줍줍 기여도 반영 여부 */
+  pongdangIncludeZubzub?: boolean;
 };
 
 /** 나온 시그 단가 → 멤버별 시그 기여도 (777,000원 후원 금액은 넣지 않음) */
@@ -335,12 +337,31 @@ export function collectDay777SigContributionByMember(
 
   // 외부(Toona 등 타 프로젝트)에서 전달된 나온 시그 기여도 (sigPrice 또는 isSigCredit / contributionPoints)
   const ignoreMinus = Boolean(opts?.ignorePongdangMinus);
-  /** 줍줍 보너스(가상 Donor)를 퐁당퐁당 기여도에 합산할지 — 옵션(기본 true) */
-  const includeZubzubBonus = state?.zubzubSettings?.applyContributionToPongdang !== false;
+  /** 줍줍 보너스를 퐁당퐁당 기여도에 합산할지 (활성화 시에만 반영) */
+  const includeZubzubBonus =
+    opts?.pongdangIncludeZubzub !== undefined
+      ? Boolean(opts.pongdangIncludeZubzub)
+      : state?.pongdangIncludeZubzub !== undefined
+      ? Boolean(state.pongdangIncludeZubzub)
+      : Boolean(state?.zubzubSettings?.applyContributionToPongdang);
   /** 퐁당퐁당 기여도에도 줍줍 2배 보너스를 적용할지 — 옵션(기본 true, false면 1배만 적용) */
   const applyDoubleToPongdang = state?.zubzubSettings?.applyDoubleContributionToPongdang !== false;
+  const rawLogsForKeys = state?.contributionLogs || state?.zubzubContributionLogs || [];
+  const zubzubLogKeys = new Set(
+    rawLogsForKeys
+      .filter((log) => log.isZubzubBonus)
+      .map((log) => log.zubzubQueueId || log.id)
+  );
   for (const d of donorRows) {
     if (d.donationExcluded === true && !(includeZubzubBonus && d.isZubzubBonus)) continue;
+    // ⭐️ 퐁당퐁당에 줍줍 미적용 시 줍줍 보너스 건 제외
+    if (!includeZubzubBonus && d.isZubzubBonus) continue;
+    if (
+      d.isZubzubBonus &&
+      zubzubLogKeys.has(d.zubzubQueueId || d.id)
+    ) {
+      continue;
+    }
     // 멤버명이 불명확하여 자동 임의 배정(1위 등)된 후원은 백오피스에서 사용자가 지정하기 전까지 퐁당퐁당 기여도에 미반영
     if (d.memberAutoAssigned === true) continue;
     const rawMid = String(d.memberId || "").trim();
@@ -391,7 +412,7 @@ export function collectDay777SigContributionByMember(
     }
     if (
       log.isZubzubBonus &&
-      state?.zubzubSettings?.applyContributionToPongdang === false
+      !includeZubzubBonus
     ) {
       continue;
     }
@@ -440,6 +461,8 @@ export type OverlayDonationDisplayOpts = {
   day777Calc?: boolean;
   /** 퐁당퐁당 기여도 수동 입력 모드 (수동 입력값 적용) */
   pongdangManualMode?: boolean;
+  /** 퐁당퐁당 엑셀표에 줍줍 기여도 반영 여부 */
+  pongdangIncludeZubzub?: boolean;
   /** 퐁당퐁당 전용 팝업창 모드 (마이너스 기여도 및 음수 표시 허용). 오버레이 엑셀표는 기본 false */
   isPongdangPopup?: boolean;
 };
@@ -544,12 +567,18 @@ export function applyOverlayDonationDisplayTotals(
   // 오버레이에서도 관리자가 마이너스 처리한 시그를 그대로 차감 반영
   const sigById = collectDay777SigContributionByMember(state, effectiveCutoff, {
     ignorePongdangMinus: false,
+    pongdangIncludeZubzub: opts?.pongdangIncludeZubzub,
   });
 
-  const popupAutoById = collectPongdangPopupAutoContributionByMember({
-    ...state,
-    pongdangResetAt: effectiveCutoff ?? 0,
-  });
+  const popupAutoById = collectPongdangPopupAutoContributionByMember(
+    {
+      ...state,
+      pongdangResetAt: effectiveCutoff ?? 0,
+    },
+    {
+      pongdangIncludeZubzub: opts?.pongdangIncludeZubzub,
+    }
+  );
 
   // 수동 기여도 가감 로그(cl_pd_, plog_, 수동 등록 등, 줍줍 보너스는 제외)
   const manualLogMap = new Map<string, number>();
@@ -638,7 +667,12 @@ export function membersWithOverlayDonationAggregate(
   state: AppState,
   members: Member[],
   fromAt: number | null | undefined,
-  opts?: { day777Calc?: boolean; pongdangManualMode?: boolean; isPongdangPopup?: boolean }
+  opts?: {
+    day777Calc?: boolean;
+    pongdangManualMode?: boolean;
+    pongdangIncludeZubzub?: boolean;
+    isPongdangPopup?: boolean;
+  }
 ): Member[] {
   const fromAtN = normalizeDonationAggregateFromAt(fromAt);
   const isPongdangPopup = Boolean(opts?.isPongdangPopup);
@@ -656,6 +690,7 @@ export function membersWithOverlayDonationAggregate(
         fromAt: fromAtN,
         day777Calc: day777,
         pongdangManualMode: opts?.pongdangManualMode,
+        pongdangIncludeZubzub: opts?.pongdangIncludeZubzub,
         isPongdangPopup,
       }
     ).members || members

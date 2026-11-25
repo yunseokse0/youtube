@@ -856,6 +856,16 @@ export function useOverlayRemoteState(
       donationApplied?: unknown;
     };
 
+    if (
+      o?.type === "zubzub_settings_updated" ||
+      o?.type === "zubzub_claimed" ||
+      o?.type === "zubzub_waiting" ||
+      o?.type === "zubzub_canceled"
+    ) {
+      void syncFromApiRef.current({ forceFull: true });
+      return;
+    }
+
     if (o?.type !== "state_updated") return;
 
     if (o.donationApplied) {

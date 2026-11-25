@@ -458,6 +458,8 @@ type OverlayPreset = {
   day777Calc?: boolean;
   day777ManualMode?: boolean;
   pongdangManualMode?: boolean;
+  /** 퐁당퐁당 엑셀표에 줍줍 기여도 반영 여부 */
+  pongdangIncludeZubzub?: boolean;
   /** 표에서 제외할 멤버 ID 목록 */
   excludedMemberIds?: string[];
   /** 기여도 표시 제외 멤버 ID 목록 (기여도를 - 로 표시) */
@@ -6541,6 +6543,9 @@ function AdminPageInner() {
     }
     if (p.pongdangManualMode !== undefined) {
       q.set("pongdangManualMode", String(p.pongdangManualMode));
+    }
+    if (p.pongdangIncludeZubzub !== undefined) {
+      q.set("pongdangIncludeZubzub", String(p.pongdangIncludeZubzub));
     }
     return `${base}?${q.toString()}`;
   };
@@ -23362,22 +23367,68 @@ function AdminPageInner() {
                                   </div>
 
                                   {(p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당") || p.pongdangManualMode !== undefined) && (
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="text-xs text-neutral-400">수동 기여도:</span>
-                                      <button
-                                        type="button"
-                                        className={`px-2 py-0.5 rounded border text-xs font-semibold ${
-                                          p.pongdangManualMode !== false
-                                            ? "border-emerald-500 text-emerald-200 bg-emerald-950/60"
-                                            : "border-white/10 text-neutral-400"
-                                        }`}
-                                        onClick={() => updatePreset(p.id, { pongdangManualMode: p.pongdangManualMode === false ? true : false })}
-                                        title="자동 당첨 시그 단가와 수동 보정값을 상시 합산합니다."
-                                      >
-                                        {p.pongdangManualMode !== false ? "✓ 수동 보정 포함" : "수동 미반영"}
-                                      </button>
-                                      <InfoTooltip text="자동 후원/시그 수신은 항시 100% 정상 작동하며, 관리자 수동 보정값(+/-)이 실시간으로 상시 합산됩니다." />
-                                    </div>
+                                    <>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-xs text-neutral-400">수동 기여도:</span>
+                                        <button
+                                          type="button"
+                                          className={`px-2 py-0.5 rounded border text-xs font-semibold ${
+                                            p.pongdangManualMode !== false
+                                              ? "border-emerald-500 text-emerald-200 bg-emerald-950/60"
+                                              : "border-white/10 text-neutral-400"
+                                          }`}
+                                          onClick={() => updatePreset(p.id, { pongdangManualMode: p.pongdangManualMode === false ? true : false })}
+                                          title="자동 당첨 시그 단가와 수동 보정값을 상시 합산합니다."
+                                        >
+                                          {p.pongdangManualMode !== false ? "✓ 수동 보정 포함" : "수동 미반영"}
+                                        </button>
+                                        <InfoTooltip text="자동 후원/시그 수신은 항시 100% 정상 작동하며, 관리자 수동 보정값(+/-)이 실시간으로 상시 합산됩니다." />
+                                      </div>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-xs text-neutral-400">줍줍 기여도:</span>
+                                        <button
+                                          type="button"
+                                          className={`px-2 py-0.5 rounded border text-xs font-semibold ${
+                                            (p.pongdangIncludeZubzub !== undefined
+                                              ? p.pongdangIncludeZubzub
+                                              : state.pongdangIncludeZubzub !== undefined
+                                              ? state.pongdangIncludeZubzub
+                                              : Boolean(state.zubzubSettings?.applyContributionToPongdang))
+                                              ? "border-amber-500 text-amber-200 bg-amber-950/60"
+                                              : "border-white/10 text-neutral-400"
+                                          }`}
+                                          onClick={() => {
+                                            const cur =
+                                              p.pongdangIncludeZubzub !== undefined
+                                                ? p.pongdangIncludeZubzub
+                                                : state.pongdangIncludeZubzub !== undefined
+                                                ? state.pongdangIncludeZubzub
+                                                : Boolean(state.zubzubSettings?.applyContributionToPongdang);
+                                            const nextVal = !cur;
+                                            updatePreset(p.id, { pongdangIncludeZubzub: nextVal });
+                                            persistState((prev) => ({
+                                              ...prev,
+                                              pongdangIncludeZubzub: nextVal,
+                                              zubzubSettings: {
+                                                ...(prev.zubzubSettings || { enabled: true, minSigPrice: 0 }),
+                                                applyContributionToPongdang: nextVal,
+                                              },
+                                              updatedAt: Date.now(),
+                                            }));
+                                          }}
+                                          title="활성화 시 퐁당퐁당 엑셀표에 줍줍 기여도를 합산합니다."
+                                        >
+                                          {(p.pongdangIncludeZubzub !== undefined
+                                            ? p.pongdangIncludeZubzub
+                                            : state.pongdangIncludeZubzub !== undefined
+                                            ? state.pongdangIncludeZubzub
+                                            : Boolean(state.zubzubSettings?.applyContributionToPongdang))
+                                            ? "✓ 퐁당에 줍줍 적용"
+                                            : "퐁당에 줍줍 미적용"}
+                                        </button>
+                                        <InfoTooltip text="활성화 시 퐁당퐁당 엑셀표 및 순위 집계에 줍줍 기여도가 합산됩니다." />
+                                      </div>
+                                    </>
                                   )}
                                 </div>
                               </div>
@@ -25912,24 +25963,70 @@ function AdminPageInner() {
                                     )}
                                   </div>
                                   {(p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당")) && (
-                                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
-                                      <label className="text-xs text-neutral-400">수동 기여도 모드</label>
-                                      <button
-                                        type="button"
-                                        className={`px-2 py-0.5 rounded border text-xs ${
-                                          p.pongdangManualMode
-                                            ? "border-emerald-500 text-emerald-300 bg-emerald-950/40"
-                                            : "border-white/10 text-neutral-500"
-                                        }`}
-                                        onClick={() =>
-                                          updatePreset(p.id, { pongdangManualMode: p.pongdangManualMode === false ? true : false })
-                                        }
-                                        title="자동 시그 단가와 수동 보정값을 상시 합산합니다."
-                                      >
-                                        {p.pongdangManualMode !== false ? "✓ 수동 보정 포함 (기본)" : "수동 미반영"}
-                                      </button>
-                                      <InfoTooltip text="자동 후원/시그 수신은 항시 100% 정상 작동하며, 관리자 수동 보정값(+/-)이 실시간으로 상시 합산됩니다." />
-                                    </div>
+                                    <>
+                                      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
+                                        <label className="text-xs text-neutral-400">수동 기여도 모드</label>
+                                        <button
+                                          type="button"
+                                          className={`px-2 py-0.5 rounded border text-xs ${
+                                            p.pongdangManualMode
+                                              ? "border-emerald-500 text-emerald-300 bg-emerald-950/40"
+                                              : "border-white/10 text-neutral-500"
+                                          }`}
+                                          onClick={() =>
+                                            updatePreset(p.id, { pongdangManualMode: p.pongdangManualMode === false ? true : false })
+                                          }
+                                          title="자동 시그 단가와 수동 보정값을 상시 합산합니다."
+                                        >
+                                          {p.pongdangManualMode !== false ? "✓ 수동 보정 포함 (기본)" : "수동 미반영"}
+                                        </button>
+                                        <InfoTooltip text="자동 후원/시그 수신은 항시 100% 정상 작동하며, 관리자 수동 보정값(+/-)이 실시간으로 상시 합산됩니다." />
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
+                                        <label className="text-xs text-neutral-400">줍줍 기여도 모드</label>
+                                        <button
+                                          type="button"
+                                          className={`px-2 py-0.5 rounded border text-xs ${
+                                            (p.pongdangIncludeZubzub !== undefined
+                                              ? p.pongdangIncludeZubzub
+                                              : state.pongdangIncludeZubzub !== undefined
+                                              ? state.pongdangIncludeZubzub
+                                              : Boolean(state.zubzubSettings?.applyContributionToPongdang))
+                                              ? "border-amber-500 text-amber-200 bg-amber-950/60"
+                                              : "border-white/10 text-neutral-400"
+                                          }`}
+                                          onClick={() => {
+                                            const cur =
+                                              p.pongdangIncludeZubzub !== undefined
+                                                ? p.pongdangIncludeZubzub
+                                                : state.pongdangIncludeZubzub !== undefined
+                                                ? state.pongdangIncludeZubzub
+                                                : Boolean(state.zubzubSettings?.applyContributionToPongdang);
+                                            const nextVal = !cur;
+                                            updatePreset(p.id, { pongdangIncludeZubzub: nextVal });
+                                            persistState((prev) => ({
+                                              ...prev,
+                                              pongdangIncludeZubzub: nextVal,
+                                              zubzubSettings: {
+                                                ...(prev.zubzubSettings || { enabled: true, minSigPrice: 0 }),
+                                                applyContributionToPongdang: nextVal,
+                                              },
+                                              updatedAt: Date.now(),
+                                            }));
+                                          }}
+                                          title="활성화 시 퐁당퐁당 엑셀표에 줍줍 기여도를 합산합니다."
+                                        >
+                                          {(p.pongdangIncludeZubzub !== undefined
+                                            ? p.pongdangIncludeZubzub
+                                            : state.pongdangIncludeZubzub !== undefined
+                                            ? state.pongdangIncludeZubzub
+                                            : Boolean(state.zubzubSettings?.applyContributionToPongdang))
+                                            ? "✓ 퐁당에 줍줍 적용"
+                                            : "퐁당에 줍줍 미적용"}
+                                        </button>
+                                        <InfoTooltip text="활성화 시 퐁당퐁당 엑셀표 및 순위 집계에 줍줍 기여도가 합산됩니다." />
+                                      </div>
+                                    </>
                                   )}
 
                                   {/* ⚡ 퐁당퐁당 기여도 빠른 처리 & 수동 가감 패널 */}

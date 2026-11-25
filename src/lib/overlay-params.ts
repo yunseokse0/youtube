@@ -2486,6 +2486,31 @@ export function resolvePongdangManualMode(
 }
 
 /**
+ * 퐁당퐁당 엑셀표에 줍줍 기여도 반영 여부
+ * 활성화 시(true) 퐁당퐁당 엑셀표 기여도에 줍줍 기여도 합산
+ * 비활성화 시(false) 퐁당퐁당 엑셀표에서 줍줍 기여도 제외
+ */
+export function resolvePongdangIncludeZubzub(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean },
+  state?: { pongdangIncludeZubzub?: boolean; zubzubSettings?: { applyContributionToPongdang?: boolean } } | null
+): boolean {
+  if (!overlayThemeIsExcelPongdang(rawSp, preset, opts)) return false;
+  const merged = resolveLivePresetStyleParam("pongdangIncludeZubzub", rawSp, presetToParams(preset), opts);
+  if (merged === "true") return true;
+  if (merged === "false") return false;
+  if (preset?.pongdangIncludeZubzub === true) return true;
+  if (preset?.pongdangIncludeZubzub === false) return false;
+  if (state?.pongdangIncludeZubzub === true) return true;
+  if (state?.pongdangIncludeZubzub === false) return false;
+  if (state?.zubzubSettings?.applyContributionToPongdang !== undefined) {
+    return Boolean(state.zubzubSettings.applyContributionToPongdang);
+  }
+  return false;
+}
+
+/**
  * 엑셀표·순위 연동 순위 산정 기준 (기여도·복원분 포함 / 이번 방송만 / 총 후원금 / 계좌만 / 투네만)
  * 우선순위: URL 쿼리 → 프리셋 설정 → 전역 상태 → 기본값(contribution)
  */
