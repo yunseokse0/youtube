@@ -11929,6 +11929,20 @@ function AdminPageInner() {
               historyLogs: [],
             }
           : prev.rouletteState,
+        overlaySettings: prev.overlaySettings
+          ? {
+              ...prev.overlaySettings,
+              sigSalesManualBroadcastV1: {
+                phase: "IDLE",
+                startedAt: 0,
+                selectedSigs: [],
+                oneShotResult: null,
+                overlayReloadNonce: (prev.overlaySettings as any)?.sigSalesManualBroadcastV1?.overlayReloadNonce
+                  ? (prev.overlaySettings as any).sigSalesManualBroadcastV1.overlayReloadNonce + 1
+                  : 1,
+              },
+            }
+          : prev.overlaySettings,
         updatedAt: now,
       };
       persistState(next, { omitDonationFields: true });
@@ -23800,6 +23814,20 @@ function AdminPageInner() {
                                                     historyLogs: [],
                                                   }
                                                 : prev.rouletteState,
+                                              overlaySettings: prev.overlaySettings
+                                                ? {
+                                                    ...prev.overlaySettings,
+                                                    sigSalesManualBroadcastV1: {
+                                                      phase: "IDLE",
+                                                      startedAt: 0,
+                                                      selectedSigs: [],
+                                                      oneShotResult: null,
+                                                      overlayReloadNonce: (prev.overlaySettings as any)?.sigSalesManualBroadcastV1?.overlayReloadNonce
+                                                        ? (prev.overlaySettings as any).sigSalesManualBroadcastV1.overlayReloadNonce + 1
+                                                        : 1,
+                                                    },
+                                                  }
+                                                : prev.overlaySettings,
                                             }
                                           : {}),
                                         updatedAt: now,

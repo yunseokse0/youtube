@@ -124,6 +124,10 @@ export type ZubZubSettings = {
   multiplier?: number;
   /** 퐁당퐁당(777데이) 엑셀표에도 줍줍 배율 보너스를 적용할지 여부 (기본 true). false면 퐁당퐁당에서는 1배만 적용 */
   applyDoubleContributionToPongdang?: boolean;
+  /** 줍줍 오버레이 정렬 위치 ('left' | 'center' | 'right', 기본 'left') */
+  align?: "left" | "center" | "right";
+  /** 10개 이상 대기 시 롤링 간격/속도 (초 단위, 기본 2.5초) */
+  rollIntervalSec?: number;
 };
 
 export type TickerSettings = {

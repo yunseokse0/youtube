@@ -131,6 +131,9 @@ export function guardMemberTotalsAgainstAccidentalZeroWipe(
   const resetAtState = Number((state as { settlementResetAt?: number }).settlementResetAt || 0);
   const resetAtBaseline = Number((baseline as { settlementResetAt?: number } | null)?.settlementResetAt || 0);
   if (resetAtState > 0 && resetAtState >= resetAtBaseline) return state;
+  const pResetAtState = Number((state as { pongdangResetAt?: number }).pongdangResetAt || 0);
+  const pResetAtBaseline = Number((baseline as { pongdangResetAt?: number } | null)?.pongdangResetAt || 0);
+  if (pResetAtState > 0 && pResetAtState >= pResetAtBaseline) return state;
   if (!baseline?.members?.length) return state;
 
   const ids = remainingMemberIds(state);

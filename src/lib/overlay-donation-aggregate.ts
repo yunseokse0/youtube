@@ -82,6 +82,7 @@ function addAppearedSigPrice(
 export function collectAppearedSigPrices(opts: {
   rouletteState?: RouletteState | null;
   manualSelectedSigs?: Array<Pick<SigItem, "id" | "name" | "price">> | null;
+  manualStartedAt?: number | null;
   fromAt?: number | null;
 }): Set<number> {
   const fromAt = normalizeDonationAggregateFromAt(opts.fromAt) ?? 0;
@@ -111,7 +112,11 @@ export function collectAppearedSigPrices(opts: {
     }
   }
 
-  for (const s of opts.manualSelectedSigs || []) addAppearedSigPrice(prices, s);
+  const manualTs = Number(opts.manualStartedAt || 0);
+  const includeManual = fromAt <= 0 || (manualTs > 0 && manualTs >= fromAt);
+  if (includeManual) {
+    for (const s of opts.manualSelectedSigs || []) addAppearedSigPrice(prices, s);
+  }
   return prices;
 }
 
@@ -129,6 +134,7 @@ export function collectAppearedSigPricesFromAppState(
   return collectAppearedSigPrices({
     rouletteState: state?.rouletteState,
     manualSelectedSigs: manualSigs,
+    manualStartedAt: manual?.startedAt,
     fromAt,
   });
 }
@@ -176,6 +182,7 @@ function readManualBuyerMemberIds(state: AppState | null | undefined): (string |
 function collectAppearedSigCredits(opts: {
   rouletteState?: RouletteState | null;
   manualSelectedSigs?: Array<Pick<SigItem, "id" | "name" | "price" | "memberId">> | null;
+  manualStartedAt?: number | null;
   manualBuyerMemberIds?: (string | null)[];
   fromAt?: number | null;
 }): AppearedSigCredit[] {
@@ -208,16 +215,21 @@ function collectAppearedSigCredits(opts: {
     }
   }
 
-  (opts.manualSelectedSigs || []).forEach((s, i) => {
-    pushAppearedSigCredit(out, s, buyers[i] ?? null, true);
-  });
+  const manualTs = Number(opts.manualStartedAt || 0);
+  const includeManual = fromAt <= 0 || (manualTs > 0 && manualTs >= fromAt);
+  if (includeManual) {
+    (opts.manualSelectedSigs || []).forEach((s, i) => {
+      pushAppearedSigCredit(out, s, buyers[i] ?? null, true);
+    });
+  }
   return out;
 }
 
-/** 777,000원 후원을 받은 멤버(가장 최근 건). 없으면 집계 창에 후원이 있는 유일한 멤버 */
+/** 777,000원 후원을 받은 멤버(가장 최근 건). 없으면 단일 멤버 방송 시에만 해당 멤버 (다인 방송 시 임의 몰아주기 차단) */
 export function resolveDay777SigCreditFallbackMemberId(
   donors: Donor[] | null | undefined,
-  fromAt?: number | null
+  fromAt?: number | null,
+  members?: Member[] | null
 ): string {
   const t = normalizeDonationAggregateFromAt(fromAt);
   const rows = t != null ? filterDonorsFromAggregateAt(donors, t) : Array.isArray(donors) ? donors : [];
@@ -234,7 +246,14 @@ export function resolveDay777SigCreditFallbackMemberId(
   }
   const shotMember = String(latestShot?.memberId || "").trim();
   if (shotMember) return shotMember;
+  // 777 후원이 없을 때: 다인 멤버 방송이면 특정 1인에게 임의 몰아주기 절대 금지.
+  // 멤버가 1명뿐인 단일 방송(또는 테스트)일 때만 유일한 멤버에게 귀속.
+  const activeMembers = (members || []).filter((m) => Boolean(String(m?.id || "").trim()));
+  if (activeMembers.length > 1) {
+    return "";
+  }
   if (memberIds.size === 1) return [...memberIds][0];
+  if (activeMembers.length === 1) return String(activeMembers[0].id).trim();
   return "";
 }
 
@@ -286,6 +305,7 @@ export function collectDay777SigContributionByMember(
   const credits = collectAppearedSigCredits({
     rouletteState: state?.rouletteState,
     manualSelectedSigs: manualSigs,
+    manualStartedAt: manual?.startedAt,
     manualBuyerMemberIds: readManualBuyerMemberIds(state),
     fromAt: effectiveFromAtOrNull,
   });
@@ -294,7 +314,8 @@ export function collectDay777SigContributionByMember(
     : state?.donors || [];
   const fallbackMemberId = resolveDay777SigCreditFallbackMemberId(
     donorRows,
-    effectiveFromAtOrNull
+    effectiveFromAtOrNull,
+    state?.members
   );
   // 멤버 id 정규화 맵 (id -> id, name -> id)
   const memberIdNormalizeMap = new Map<string, string>();
@@ -305,7 +326,7 @@ export function collectDay777SigContributionByMember(
 
   const byMember = new Map<string, number>();
   for (const row of credits) {
-    // 미지정 시그는 777,000원 수령자 또는 유일한 후원자에게만 귀속한다.
+    // 미지정 시그는 777,000원 수령자에게만 귀속한다.
     const rawMid = String(row.memberId || fallbackMemberId).trim();
     if (!rawMid) continue;
     const memberId = memberIdNormalizeMap.get(rawMid) || rawMid;

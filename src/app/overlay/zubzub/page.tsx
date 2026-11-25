@@ -22,11 +22,16 @@ function ZubzubOverlayInner() {
 
   const alignParam = sp.get("align");
   const align: "center" | "left" | "right" =
-    alignParam === "left" ? "left" : alignParam === "right" ? "right" : "center";
+    alignParam === "left"
+      ? "left"
+      : alignParam === "right"
+        ? "right"
+        : alignParam === "center"
+          ? "center"
+          : (overlaySettings?.align || "left");
 
   const isDemoParam = sp.get("demo") === "1" || sp.get("preview") === "1" || sp.get("test") === "1";
-  const [localDemoWaiting, setLocalDemoWaiting] = useState(isDemoParam);
-  const [dismissGuide, setDismissGuide] = useState(false);
+  const [demoMode, setDemoMode] = useState<"none" | "single" | "twelve">(isDemoParam ? "twelve" : "none");
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
@@ -96,9 +101,9 @@ function ZubzubOverlayInner() {
     : 3;
   const alwaysShowWaiting = overlaySettings?.alwaysShowWaiting !== false;
 
-  // 데모 대기 아이템 (위치 조절 및 미리보기용)
+  // 데모 대기 아이템 (위치 조절 및 롤링 테스트용)
   const demoWaitingItem: ZubZubQueueItem = {
-    id: "demo_zubzub_preview",
+    id: "demo_zubzub_preview_1",
     userId: userId || "zakiexcel",
     triggerDonationId: "demo_trigger_preview",
     sigName: "NO BATIDÃO",
@@ -107,11 +112,30 @@ function ZubzubOverlayInner() {
     createdAt: Date.now(),
   };
 
+  const demo12Items: ZubZubQueueItem[] = React.useMemo(() => [
+    { id: "dm_1", userId: "demo", triggerDonationId: "t1", sigName: "NO BATIDÃO", bonusAmount: 130000, status: "WAITING", createdAt: 100 },
+    { id: "dm_2", userId: "demo", triggerDonationId: "t2", sigName: "ALIVE", bonusAmount: 52000, status: "WAITING", createdAt: 200 },
+    { id: "dm_3", userId: "demo", triggerDonationId: "t3", sigName: "매드쉐이크", bonusAmount: 40300, status: "WAITING", createdAt: 300 },
+    { id: "dm_4", userId: "demo", triggerDonationId: "t4", sigName: "팬서비스", bonusAmount: 40700, status: "WAITING", createdAt: 400 },
+    { id: "dm_5", userId: "demo", triggerDonationId: "t5", sigName: "나의N이되어줘", bonusAmount: 50700, status: "WAITING", createdAt: 500 },
+    { id: "dm_6", userId: "demo", triggerDonationId: "t6", sigName: "첫만남은어려워", bonusAmount: 30500, status: "WAITING", createdAt: 600 },
+    { id: "dm_7", userId: "demo", triggerDonationId: "t7", sigName: "다시여기바닷가", bonusAmount: 70700, status: "WAITING", createdAt: 700 },
+    { id: "dm_8", userId: "demo", triggerDonationId: "t8", sigName: "캐치캐치", bonusAmount: 95900, status: "WAITING", createdAt: 800 },
+    { id: "dm_9", userId: "demo", triggerDonationId: "t9", sigName: "하나뿐인매드", bonusAmount: 150400, status: "WAITING", createdAt: 900 },
+    { id: "dm_10", userId: "demo", triggerDonationId: "t10", sigName: "슈퍼매드신호탄", bonusAmount: 1001300, status: "WAITING", createdAt: 1000 },
+    { id: "dm_11", userId: "demo", triggerDonationId: "t11", sigName: "골든벨", bonusAmount: 200000, status: "WAITING", createdAt: 1100 },
+    { id: "dm_12", userId: "demo", triggerDonationId: "t12", sigName: "피날레", bonusAmount: 300000, status: "WAITING", createdAt: 1200 },
+  ], []);
+
   const effectiveWaitingItems =
-    waitingItems.length > 0
-      ? waitingItems
-      : isDemoParam || localDemoWaiting
+    demoMode === "twelve"
+      ? demo12Items
+      : demoMode === "single"
       ? [demoWaitingItem]
+      : waitingItems.length > 0
+      ? waitingItems
+      : isDemoParam
+      ? demo12Items
       : [];
 
   const triggerTestClaim = () => {
@@ -135,6 +159,7 @@ function ZubzubOverlayInner() {
   };
 
   const isBrowserPreview = isClient && !isObs;
+  const rollIntervalSec = Number(overlaySettings?.rollIntervalSec || 2.5);
 
   return (
     <div className="w-full h-full min-h-screen bg-transparent overflow-hidden select-none">
@@ -147,20 +172,47 @@ function ZubzubOverlayInner() {
         alwaysShowWaiting={alwaysShowWaiting}
         scale={bannerScale}
         maxVisibleItems={maxVisibleItems}
+        rollIntervalSec={rollIntervalSec}
       />
 
       {/* 브라우저 직접 접속 테스트 전용 하단 툴바 (OBS 방송 브라우저 소스에서는 자동 숨김) */}
       {isBrowserPreview && (
-        <div className="pointer-events-auto fixed bottom-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-950/90 border border-white/20 text-xs text-neutral-300 shadow-2xl backdrop-blur-md">
+        <div className="pointer-events-auto fixed bottom-3 left-1/2 -translate-x-1/2 z-50 flex flex-wrap items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-950/90 border border-white/20 text-xs text-neutral-300 shadow-2xl backdrop-blur-md">
           <span className="text-amber-300 font-bold flex items-center gap-1">
             <span>🎁</span> 줍줍 테스트:
           </span>
           <button
             type="button"
-            onClick={() => setLocalDemoWaiting((prev) => !prev)}
-            className="px-2.5 py-0.5 rounded-md bg-neutral-800 hover:bg-neutral-700 text-[11px] font-semibold text-white border border-white/10 transition cursor-pointer"
+            onClick={() => setDemoMode("twelve")}
+            className={`px-2.5 py-0.5 rounded-md text-[11px] font-semibold border transition cursor-pointer ${
+              demoMode === "twelve"
+                ? "bg-amber-500 text-black font-black border-amber-400"
+                : "bg-neutral-800 hover:bg-neutral-700 text-white border-white/10"
+            }`}
           >
-            {localDemoWaiting ? "대기 비우기" : "대기 샘플 채우기"}
+            🌀 12개 대기 (롤링 테스트)
+          </button>
+          <button
+            type="button"
+            onClick={() => setDemoMode("single")}
+            className={`px-2.5 py-0.5 rounded-md text-[11px] font-semibold border transition cursor-pointer ${
+              demoMode === "single"
+                ? "bg-amber-500 text-black font-black border-amber-400"
+                : "bg-neutral-800 hover:bg-neutral-700 text-white border-white/10"
+            }`}
+          >
+            1개 대기
+          </button>
+          <button
+            type="button"
+            onClick={() => setDemoMode("none")}
+            className={`px-2.5 py-0.5 rounded-md text-[11px] font-semibold border transition cursor-pointer ${
+              demoMode === "none"
+                ? "bg-neutral-700 text-white border-white/30"
+                : "bg-neutral-800 hover:bg-neutral-700 text-neutral-400 border-white/10"
+            }`}
+          >
+            대기 비우기
           </button>
           <button
             type="button"

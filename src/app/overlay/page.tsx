@@ -4132,7 +4132,10 @@ function OverlayInner() {
    * donors가 있으면 저장값·계좌+투네 폴백 대신 공식 기반 합산을 우선(OBS pick에 기록부 없음).
    * 기본 공식(100/100)이고 후원·기록부가 없을 때만 계좌+투네 합 레거시 폴백.
    */
-  const allowContributionTotalFallback = isDefaultContributionFormula(s?.contributionFormula);
+  const allowContributionTotalFallback =
+    isDefaultContributionFormula(s?.contributionFormula) &&
+    donationAggregateFromAt == null &&
+    Number(s?.pongdangResetAt || 0) <= 0;
   const getContributionValueForMember = useCallback((m: Member) => {
     const storedContribution = parseOverlayContributionNumber(m.contribution);
     if (isPongdangTable) return Math.floor(storedContribution);

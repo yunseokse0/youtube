@@ -762,6 +762,29 @@ export default function AdminPongdangPopupPanel() {
       overlayPresets: nextPresets,
       contributionLogs: nextLogs,
       deletedContributionLogIds: nextDeletedIds,
+      rouletteState: state.rouletteState
+        ? {
+            ...state.rouletteState,
+            results: [],
+            result: null,
+            selectedSigs: [],
+            historyLogs: [],
+          }
+        : state.rouletteState,
+      overlaySettings: state.overlaySettings
+        ? {
+            ...state.overlaySettings,
+            sigSalesManualBroadcastV1: {
+              phase: "IDLE",
+              startedAt: 0,
+              selectedSigs: [],
+              oneShotResult: null,
+              overlayReloadNonce: (state.overlaySettings as any)?.sigSalesManualBroadcastV1?.overlayReloadNonce
+                ? (state.overlaySettings as any).sigSalesManualBroadcastV1.overlayReloadNonce + 1
+                : 1,
+            },
+          }
+        : state.overlaySettings,
     };
     setState(nextState);
     stateRef.current = nextState;

@@ -109,6 +109,8 @@ export async function POST(req: NextRequest) {
         doubleContribution,
         multiplier,
         applyDoubleContributionToPongdang,
+        align,
+        rollIntervalSec,
       } = body;
       const parsedOverlayScale = Number(overlayScale);
       const parsedMaxVisibleItems = Number(maxVisibleItems);
@@ -117,6 +119,9 @@ export async function POST(req: NextRequest) {
         1,
         Math.min(10, Math.round(Number(multiplier) || (isDouble ? 2 : 1)))
       );
+      const parsedRollInterval = Math.max(1, Math.min(10, Number(rollIntervalSec) || 2.5));
+      const parsedAlign: "left" | "center" | "right" =
+        align === "center" ? "center" : align === "right" ? "right" : "left";
       const nextSettings = {
         enabled: Boolean(enabled),
         minSigPrice: Math.max(0, Math.round(Number(minSigPrice) || 0)),
@@ -133,6 +138,8 @@ export async function POST(req: NextRequest) {
         doubleContribution: isDouble,
         multiplier: parsedMultiplier,
         applyDoubleContributionToPongdang: applyDoubleContributionToPongdang !== false,
+        align: parsedAlign,
+        rollIntervalSec: parsedRollInterval,
         ...(representativeMemberId ? { representativeMemberId: String(representativeMemberId) } : {}),
         ...(autoExpireMinutes !== undefined ? { autoExpireMinutes: Math.max(0, Number(autoExpireMinutes) || 0) } : {}),
       };
