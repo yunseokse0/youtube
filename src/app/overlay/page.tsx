@@ -2747,7 +2747,13 @@ function OverlayInner() {
     return "default";
   };
   const membersThemeId = resolveThemeId("membersTheme");
-  const isExcelPongdang = membersThemeId === "excelPongdang";
+  const isExcelPongdang =
+    membersThemeId === "excelPongdang" ||
+    effectivePreset?.theme === "excelPongdang" ||
+    effectivePreset?.membersTheme === "excelPongdang" ||
+    String(effectivePreset?.name || "").includes("퐁당") ||
+    rawSp.get("theme") === "excelPongdang" ||
+    rawSp.get("membersTheme") === "excelPongdang";
   const excelMemberAccent = resolveExcelMemberTableAccent(membersThemeId);
   const useBroadcastTableChrome = !isExcelMemberTableTheme(membersThemeId);
   const totalThemeId = resolveThemeId("totalTheme");
@@ -2906,8 +2912,17 @@ function OverlayInner() {
     resolveDay777Calc(rawSp, effectivePreset, { ready });
   const pongdangManualMode =
     day777Calc && resolvePongdangManualMode(rawSp, effectivePreset, { ready }, s as AppState);
-  /** 퐁당퐁당 엑셀표(777데이 계산 또는 excelPongdang 테마): 마이너스 기여도를 음수 그대로 표기 */
-  const isPongdangTable = day777Calc || isExcelPongdang;
+  /** 퐁당퐁당 엑셀표(777데이 계산 또는 excelPongdang 테마 또는 퐁당 프리셋): 마이너스 기여도를 음수 그대로 표기 */
+  const isPongdangTable = Boolean(
+    day777Calc ||
+    isExcelPongdang ||
+    effectivePreset?.theme === "excelPongdang" ||
+    effectivePreset?.membersTheme === "excelPongdang" ||
+    String(effectivePreset?.name || "").includes("퐁당") ||
+    rawSp.get("theme") === "excelPongdang" ||
+    rawSp.get("membersTheme") === "excelPongdang" ||
+    rawSp.get("day777Calc") === "true"
+  );
   const restoredContributionMemberIds = useMemo(
     () =>
       new Set(
@@ -3946,7 +3961,7 @@ function OverlayInner() {
       });
     };
     /** 미리보기 로딩 중 default 멤버1·2·3 폴백 금지 — 테마 변경 시 가짜 목록에 고착되던 원인 */
-    if ((!donationAggregateFromAt && !day777Calc && !isExcelPongdang) || !s) {
+    if ((!donationAggregateFromAt && !day777Calc && !isPongdangTable) || !s) {
       return applyExclusion(membersRemote);
     }
     const donorsForAgg =
@@ -3970,7 +3985,7 @@ function OverlayInner() {
              * 퐁당퐁당 엑셀표(day777Calc·excelPongdang)에서는 마이너스 처리한 기여도를
              * 0으로 클램핑하지 않고 음수 그대로 표시한다. (관리창 팝업과 동일 동작)
              */
-            isPongdangPopup: day777Calc || isExcelPongdang,
+            isPongdangPopup: isPongdangTable,
           }
         )
       )

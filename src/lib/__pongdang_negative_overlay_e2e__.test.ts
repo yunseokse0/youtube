@@ -1,0 +1,131 @@
+import { describe, it, expect } from "vitest";
+import type { AppState, Donor, Member, ContributionLog } from "@/types";
+import {
+  applyOverlayDonationDisplayTotals,
+  membersWithOverlayDonationAggregate,
+} from "./overlay-donation-aggregate";
+import { buildOverlayRankedMembers } from "./utils";
+
+describe("퐁당퐁당 엑셀표 음수 표시 및 랭킹 정합성 전수 검증 (User Case)", () => {
+  const members: Member[] = [
+    { id: "m1", name: "수아", account: 100000, toon: 0, contribution: 0, operating: false },
+    { id: "m2", name: "조은", account: 50000, toon: 0, contribution: 0, operating: false },
+    { id: "m3", name: "이유리", account: 0, toon: 0, contribution: 0, operating: false },
+  ];
+
+  it("1. 777데이 옵션이 OFF여도 퐁당퐁당 엑셀표(isPongdangPopup: true)에서는 마이너스 시그/후원이 음수로 표시된다", () => {
+    const donors: Donor[] = [
+      { id: "d1", memberId: "m1", amount: 100000, sigPrice: 100000, target: "account", at: 100 },
+      { id: "d2", memberId: "m2", amount: 50000, sigPrice: 50000, target: "account", at: 200 },
+      // 이유리: 50,000원 후원 후 퐁당퐁당 마이너스(-) 처리됨
+      { id: "d3", memberId: "m3", amount: 50000, sigPrice: 50000, target: "account", at: 300, pongdangMinus: true },
+    ];
+
+    const state: AppState = {
+      members,
+      donors,
+      contributionLogs: [],
+      pongdangManualContributions: {},
+      rouletteState: null as any,
+    } as unknown as AppState;
+
+    // 777데이 OFF(day777Calc: false) + 퐁당퐁당 엑셀(isPongdangPopup: true)
+    const result = applyOverlayDonationDisplayTotals(state, {
+      day777Calc: false,
+      isPongdangPopup: true,
+    });
+
+    const m1 = result.members.find((m) => m.id === "m1");
+    const m2 = result.members.find((m) => m.id === "m2");
+    const m3 = result.members.find((m) => m.id === "m3");
+
+    expect(m1?.contribution).toBe(100000);
+    expect(m2?.contribution).toBe(50000);
+    expect(m3?.contribution).toBe(-50000); // 음수 그대로 보존!
+  });
+
+  it("2. 퐁당 수동 입력값(pongdangManualContributions: -50,000)도 777데이 OFF 상태에서 음수로 표시된다", () => {
+    const state: AppState = {
+      members,
+      donors: [
+        { id: "d1", memberId: "m1", amount: 100000, target: "account", at: 100 },
+      ],
+      contributionLogs: [],
+      pongdangManualContributions: {
+        m3: -50000, // 이유리 수동 -50,000원
+      },
+      pongdangManualMode: true,
+      rouletteState: null as any,
+    } as unknown as AppState;
+
+    const result = membersWithOverlayDonationAggregate(
+      state,
+      members,
+      null, // fromAt = null
+      {
+        day777Calc: false,
+        isPongdangPopup: true,
+        pongdangManualMode: true,
+      }
+    );
+
+    const m3 = result.find((m) => m.id === "m3");
+    expect(m3?.contribution).toBe(-50000);
+  });
+
+  it("3. 수동 기여도 로그(delta: -1)도 777데이 OFF 상태에서 음수로 정확히 차감된다", () => {
+    const minusLog: ContributionLog = {
+      id: "cl_1",
+      memberId: "m3",
+      amount: 70000,
+      delta: -1,
+      at: 100,
+      donorName: "관리자",
+      note: "퐁당 마이너스",
+      isPongdang: true,
+    } as any;
+
+    const state: AppState = {
+      members,
+      donors: [],
+      contributionLogs: [minusLog],
+      pongdangManualContributions: {},
+      pongdangManualMode: true,
+      rouletteState: null as any,
+    } as unknown as AppState;
+
+    const result = applyOverlayDonationDisplayTotals(state, {
+      day777Calc: false,
+      isPongdangPopup: true,
+    });
+
+    const m3 = result.members.find((m) => m.id === "m3");
+    expect(m3?.contribution).toBe(-70000);
+  });
+
+  it("4. 음수 기여도 멤버는 랭킹 계산(buildOverlayRankedMembers) 시 0원 및 양수 멤버보다 아래 순위(최하위)로 정렬된다", () => {
+    const displayMembers: Member[] = [
+      { id: "m1", name: "수아", account: 0, toon: 0, contribution: 100000, operating: false },
+      { id: "m2", name: "조은", account: 0, toon: 0, contribution: 0, operating: false },
+      { id: "m3", name: "이유리", account: 0, toon: 0, contribution: -50000, operating: false },
+    ];
+
+    const ranked = buildOverlayRankedMembers(
+      displayMembers,
+      {},
+      undefined,
+      displayMembers,
+      (m) => Number(m.contribution) || 0,
+      "contribution"
+    );
+
+    expect(ranked[0]?.m.id).toBe("m1"); // 1위: 수아 (100,000)
+    expect(ranked[0]?.rank).toBe(1);
+
+    expect(ranked[1]?.m.id).toBe("m2"); // 2위: 조은 (0)
+    expect(ranked[1]?.rank).toBe(2);
+
+    expect(ranked[2]?.m.id).toBe("m3"); // 3위: 이유리 (-50,000)
+    expect(ranked[2]?.rank).toBe(3);
+  });
+});

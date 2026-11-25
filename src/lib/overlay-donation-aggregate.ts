@@ -1,6 +1,7 @@
 import type { AppState, ContributionLog, Donor, Member, RouletteState, SigItem } from "@/types";
 import { syncMemberTotalsFromDonors, isPongdangMinusContributionLog } from "@/lib/donation/apply-donation-state";
 import { readManualSigBroadcastFromState } from "@/lib/manual-sig-broadcast-state";
+import { collectPongdangPopupAutoContributionByMember } from "@/lib/pongdang-popup-contribution";
 
 export function parseOverlayContributionNumber(value: unknown): number {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
@@ -327,6 +328,9 @@ export function collectDay777SigContributionByMember(
     } else if (cp > 0 && amt !== DAY777_SHOT_AMOUNT && cp !== amt) {
       // 랜덤 후원 금액(amt)과 전달된 기여도(cp)가 다르면 나온 시그 단가로 간주
       byMember.set(mid, (byMember.get(mid) || 0) + mult * cp);
+    } else if (isMinus && amt > 0) {
+      // 일반 후원 건도 pongdangMinus가 true면 음수로 차감
+      byMember.set(mid, (byMember.get(mid) || 0) - amt);
     }
   }
   // 기여도 기록부(contributionLogs) 수동 가감 로그 합산
@@ -414,14 +418,12 @@ export function applyOverlayDonationDisplayTotals(
     };
   }
 
-  if (fromAt == null && !day777) {
+  if (fromAt == null && !day777 && !isPongdangPopup) {
     return {
       ...state,
       members: (state.members || []).map((m) => ({
         ...m,
-        contribution: isPongdangPopup
-          ? Math.floor(parseOverlayContributionNumber(m.contribution))
-          : Math.max(0, Math.floor(parseOverlayContributionNumber(m.contribution))),
+        contribution: Math.max(0, Math.floor(parseOverlayContributionNumber(m.contribution))),
       })),
     };
   }
@@ -445,7 +447,7 @@ export function applyOverlayDonationDisplayTotals(
     contributionLogs: day777 ? [] : filteredLogsForAmount,
   });
 
-  if (!day777) return amountSynced;
+  if (!day777 && !isPongdangPopup) return amountSynced;
 
   const originalMemberMap = new Map((state.members || []).map((m) => [m.id, m]));
   // 수동 기여도 보정값은 항시 반영 (명시적으로 false로 끈 경우가 아니면 기본 true로 자동 수집값과 실시간 합산)
@@ -467,22 +469,42 @@ export function applyOverlayDonationDisplayTotals(
     ignorePongdangMinus: false,
   });
 
+  const popupAutoById = collectPongdangPopupAutoContributionByMember({
+    ...state,
+    pongdangResetAt: effectiveCutoff ?? 0,
+  });
+
   return {
     ...amountSynced,
     members: (amountSynced.members || []).map((m) => {
       const orig = originalMemberMap.get(m.id);
-      const autoVal = sigById.get(m.id) ?? 0;
+      const autoVal = sigById.has(m.id)
+        ? (sigById.get(m.id) ?? 0)
+        : (popupAutoById.get(m.id) ?? 0);
       let manualAdj = isManualMode ? parseOverlayContributionNumber(manualContribs[m.id]) : 0;
       const currentContrib = Math.floor(parseOverlayContributionNumber(orig?.contribution));
       const hasContributionSource =
         (Array.isArray(state?.donors) && state.donors.length > 0) ||
         (state?.contributionLogs || state?.zubzubContributionLogs || []).some(
-          (log) => log.isZubzubBonus
+          (log) => log.isZubzubBonus || log.memberId === m.id
         );
-      const baseVal =
-        autoVal !== 0
-          ? autoVal
-          : (effectiveCutoff != null || hasContributionSource ? 0 : currentContrib);
+      let baseVal = 0;
+      if (day777) {
+        baseVal =
+          autoVal !== 0
+            ? autoVal
+            : (effectiveCutoff != null || hasContributionSource ? 0 : currentContrib);
+      } else {
+        if (autoVal !== 0) {
+          baseVal = autoVal;
+        } else if (popupAutoById.has(m.id) && popupAutoById.get(m.id) !== 0) {
+          baseVal = popupAutoById.get(m.id) || 0;
+        } else if (currentContrib !== 0) {
+          baseVal = currentContrib;
+        } else {
+          baseVal = Number(m.contribution) || 0;
+        }
+      }
       const rawTotal = baseVal + manualAdj;
       return {
         ...m,
@@ -509,12 +531,10 @@ export function membersWithOverlayDonationAggregate(
   const fromAtN = normalizeDonationAggregateFromAt(fromAt);
   const isPongdangPopup = Boolean(opts?.isPongdangPopup);
   const day777 = Boolean(opts?.day777Calc);
-  if (fromAtN == null && !day777) {
+  if (fromAtN == null && !day777 && !isPongdangPopup) {
     return members.map((m) => ({
       ...m,
-      contribution: isPongdangPopup
-        ? Math.floor(parseOverlayContributionNumber(m.contribution))
-        : Math.max(0, Math.floor(parseOverlayContributionNumber(m.contribution))),
+      contribution: Math.max(0, Math.floor(parseOverlayContributionNumber(m.contribution))),
     }));
   }
   return (
