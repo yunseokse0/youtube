@@ -168,7 +168,7 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
       expect(claimRes.queueItem.status).toBe("CLAIMED");
       expect(claimRes.queueItem.claimedByMemberId).toBe("m_jina");
       expect(claimRes.bonusDonor.donationExcluded).toBe(true); // 현금 제외!
-      expect(claimRes.bonusDonor.contributionPoints).toBe(260000); // 기여도 2배 반영!
+      expect(claimRes.bonusDonor.contributionPoints).toBe(130000); // 2배 배율: 본인 1배 + 보너스 1배 = 총 2배!
 
       // 줍줍 보너스는 후원 원장이 아닌 기여도 로그에만 반영
       currentState = syncMemberTotalsFromDonors({
@@ -189,9 +189,9 @@ describe("🚀 로컬 후원 파이프라인 연계 줍줍 E2E 종합 시뮬레�
 
     // 랭킹 기여도(contribution):
     // - 자키: 130,000점
-    // - 진아: 390,000점 (130,000점 + 260,000점 줍줍 2배 복제 보너스!)
+    // - 진아: 260,000점 (130,000점 본인 후원 + 130,000점 줍줍 2배 보너스 = 총 2배!)
     expect(jaki?.contribution).toBe(130000);
-    expect(jina?.contribution).toBe(390000);
+    expect(jina?.contribution).toBe(260000);
 
     // 5. 큐 소진 확인: WAITING 큐가 0개여야 함
     const remainingWaitings = await listWaitingZubzubQueues(userId);

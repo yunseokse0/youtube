@@ -114,10 +114,15 @@ export function collectPongdangPopupAutoContributionByMember(
       const memberId = memberIdNormalizeMap.get(rawMid) || rawMid;
       if (cutoff > 0 && Number(log.at || 0) < cutoff) continue;
 
-      const effectiveAmount =
-        !applyDoubleToPongdang && (log.baseSigPrice || log.multiplier === 2)
-          ? (log.baseSigPrice ?? Math.round(log.amount / 2))
-          : log.amount;
+      let effectiveAmount = log.amount;
+      if (!applyDoubleToPongdang) {
+        const isAutoClaim =
+          log.baseSigPrice &&
+          log.multiplier &&
+          log.multiplier > 1 &&
+          log.amount === log.baseSigPrice * (log.multiplier - 1);
+        effectiveAmount = isAutoClaim ? 0 : (log.baseSigPrice ?? 0);
+      }
       const rawAmount = parseOverlayContributionNumber(effectiveAmount);
       if (rawAmount === 0) continue;
       const amount = Math.floor(Math.abs(rawAmount));

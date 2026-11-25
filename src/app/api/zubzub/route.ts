@@ -106,9 +106,17 @@ export async function POST(req: NextRequest) {
         overlayScale,
         maxVisibleItems,
         applyContributionToPongdang,
+        doubleContribution,
+        multiplier,
+        applyDoubleContributionToPongdang,
       } = body;
       const parsedOverlayScale = Number(overlayScale);
       const parsedMaxVisibleItems = Number(maxVisibleItems);
+      const isDouble = doubleContribution !== false;
+      const parsedMultiplier = Math.max(
+        1,
+        Math.min(10, Math.round(Number(multiplier) || (isDouble ? 2 : 1)))
+      );
       const nextSettings = {
         enabled: Boolean(enabled),
         minSigPrice: Math.max(0, Math.round(Number(minSigPrice) || 0)),
@@ -122,6 +130,9 @@ export async function POST(req: NextRequest) {
           ? Math.min(10, Math.max(1, Math.round(parsedMaxVisibleItems)))
           : 3,
         applyContributionToPongdang: applyContributionToPongdang !== false,
+        doubleContribution: isDouble,
+        multiplier: parsedMultiplier,
+        applyDoubleContributionToPongdang: applyDoubleContributionToPongdang !== false,
         ...(representativeMemberId ? { representativeMemberId: String(representativeMemberId) } : {}),
         ...(autoExpireMinutes !== undefined ? { autoExpireMinutes: Math.max(0, Number(autoExpireMinutes) || 0) } : {}),
       };
@@ -197,8 +208,11 @@ export async function POST(req: NextRequest) {
       const sigName = String(body.sigName || "").trim() || "대표 줍줍 시그";
       const bonusAmount = Math.max(1000, Math.round(Number(body.bonusAmount) || 50000));
       const manualQueueId = `zubzub_manual_claim_${Date.now()}`;
-      const isDouble = state.zubzubSettings?.doubleContribution !== false;
-      const multiplier = isDouble ? 2 : 1;
+      const multiplier = Math.max(
+        1,
+        Math.min(10, Math.round(Number(state.zubzubSettings?.multiplier) || (state.zubzubSettings?.doubleContribution === false ? 1 : 2)))
+      );
+      const isDouble = multiplier > 1;
       const baseSigPrice = bonusAmount;
       const totalBonusPoints = baseSigPrice * multiplier;
 
@@ -209,7 +223,7 @@ export async function POST(req: NextRequest) {
         amount: bonusAmount,
         memberId: targetMember.id,
         at: Date.now(),
-        message: `[대표 시그 줍줍] ${sigName} (+${totalBonusPoints.toLocaleString()}점${multiplier > 1 ? " [2배 적용]" : ""})`,
+        message: `[대표 시그 줍줍] ${sigName} (+${totalBonusPoints.toLocaleString()}점${multiplier > 1 ? ` [${multiplier}배 적용]` : ""})`,
         donationExcluded: true,
         isSigCredit: true,
         sigPrice: baseSigPrice,
@@ -230,6 +244,7 @@ export async function POST(req: NextRequest) {
           doubleContribution: isDouble,
           multiplier,
           baseSigPrice,
+          isManualClaim: true,
         }
       );
 

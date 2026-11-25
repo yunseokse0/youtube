@@ -120,7 +120,9 @@ export type ZubZubSettings = {
   applyContributionToPongdang?: boolean;
   /** 줍줍 성공 시 기여도 2배(두배) 적용 여부 (기본 true). false면 1배 */
   doubleContribution?: boolean;
-  /** 퐁당퐁당(777데이) 엑셀표에도 줍줍 2배 보너스를 적용할지 여부 (기본 true). false면 퐁당퐁당에서는 1배만 적용 */
+  /** 줍줍 배율 설정 (기본 2배). 1배, 2배, 3배 등 자유 설정 가능 */
+  multiplier?: number;
+  /** 퐁당퐁당(777데이) 엑셀표에도 줍줍 배율 보너스를 적용할지 여부 (기본 true). false면 퐁당퐁당에서는 1배만 적용 */
   applyDoubleContributionToPongdang?: boolean;
 };
 
@@ -164,6 +166,8 @@ export type ContributionLog = {
   baseSigPrice?: number;
   /** 줍줍 적용 배율 (기본 2) */
   multiplier?: number;
+  /** 관리자에 의한 수동 줍줍 지급 여부 (후원 이벤트 없이 직접 지급된 건) */
+  isManualClaim?: boolean;
 };
 
 /** 화장실 수동 기록(구조는 기여도와 동일, amount=횟수) */

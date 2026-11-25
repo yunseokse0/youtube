@@ -16,31 +16,31 @@ describe("줍줍 2배 기여도 및 퐁당퐁당 옵션 & 커스텀 열 순위 �
     { id: "m_surin", name: "수린", account: 0, toon: 0, operating: false },
   ];
 
-  it("1. createZubzubBonusContributionLog는 doubleContribution 기본값(true)일 때 2배 기여도를 생성한다", () => {
+  it("1. createZubzubBonusContributionLog는 2배 배율일 때 1배 보너스(50,000)를 생성하여 본인 후원(50,000)과 함께 총 2배(100,000)가 되게 한다", () => {
     const log = createZubzubBonusContributionLog("q_1", "m_jina", 50000, "NO BATIDÃO", Date.now(), {
       doubleContribution: true,
       baseSigPrice: 50000,
       multiplier: 2,
     });
-    expect(log.amount).toBe(100000);
+    expect(log.amount).toBe(50000);
     expect(log.baseSigPrice).toBe(50000);
     expect(log.multiplier).toBe(2);
-    expect(log.note).toContain("100,000점 [2배 적용]");
+    expect(log.note).toContain("50,000점 [2배 적용]");
   });
 
-  it("2. createZubzubBonusContributionLog는 doubleContribution=false일 때 1배 기여도를 생성한다", () => {
-    const log = createZubzubBonusContributionLog("q_2", "m_jina", 50000, "NO BATIDÃO", Date.now(), {
+  it("2. createZubzubBonusContributionLog는 doubleContribution=false (1배)일 때 0원 보너스를 생성한다", () => {
+    const log = createZubzubBonusContributionLog("q_2", "m_jina", 0, "NO BATIDÃO", Date.now(), {
       doubleContribution: false,
       baseSigPrice: 50000,
       multiplier: 1,
     });
-    expect(log.amount).toBe(50000);
+    expect(log.amount).toBe(0);
     expect(log.baseSigPrice).toBe(50000);
     expect(log.multiplier).toBe(1);
     expect(log.note).not.toContain("[2배 적용]");
   });
 
-  it("3. 일반 엑셀표(syncMemberTotalsFromDonors)는 2배 보너스(100,000)를 멤버 기여도에 전액 반영한다", () => {
+  it("3. 일반 엑셀표(syncMemberTotalsFromDonors)는 본인 후원(50,000) + 줍줍 보너스(50,000)로 정확히 2배(100,000)를 반영한다 (3배 튀지 않음)", () => {
     const log = createZubzubBonusContributionLog("q_1", "m_jina", 50000, "NO BATIDÃO", Date.now(), {
       doubleContribution: true,
       baseSigPrice: 50000,
@@ -48,11 +48,20 @@ describe("줍줍 2배 기여도 및 퐁당퐁당 옵션 & 커스텀 열 순위 �
     });
     const state: AppState = {
       members,
-      donors: [],
+      donors: [
+        {
+          id: "d_jina_sig",
+          amount: 50000,
+          memberId: "m_jina",
+          target: "account",
+          contributionPoints: 50000,
+        } as any,
+      ],
       contributionLogs: [log],
     } as any;
     const synced = syncMemberTotalsFromDonors(state);
     const jina = synced.members.find((m) => m.id === "m_jina");
+    // 본인 후원 50,000 + 줍줍 보너스 50,000 = 정확히 100,000원 (2배!)
     expect(jina?.contribution).toBe(100000);
   });
 
@@ -537,8 +546,9 @@ describe("줍줍 2배 기여도 및 퐁당퐁당 옵션 & 커스텀 열 순위 �
     const inaHookRes = await processZubzubDonationHook("zakiexcel", realSigEventIna, testState);
     expect(inaHookRes.action).toBe("claimed");
     if (inaHookRes.action === "claimed") {
-      expect(inaHookRes.bonusDonor.contributionPoints).toBe(104000); // 52000 * 2 = 104,000점 (2배 보너스!)
-      expect(inaHookRes.contributionLog.amount).toBe(104000);
+      // 본인 후원 52000원에 대해 1배 추가 보너스(+52000)를 지급하여 총 104,000점 (정확히 2배!)
+      expect(inaHookRes.bonusDonor.contributionPoints).toBe(52000);
+      expect(inaHookRes.contributionLog.amount).toBe(52000);
     }
   });
 
@@ -834,5 +844,108 @@ describe("줍줍 2배 기여도 및 퐁당퐁당 옵션 & 커스텀 열 순위 �
     const res = applyOverlayDonationDisplayTotals(baseState, { day777Calc: true, fromAt: null });
     // 전체 3건 (52000 + 31000 + 52000 = 135000원) 모두 복원
     expect(res.members.find((m: any) => m.id === "m_ina")?.contribution).toBe(135000);
+  });
+
+  it("27. 줍줍 배율 조절(1배, 2배, 3배, 5배) 시 총 기여도가 정확히 배율만큼 계산되고 3배로 튀지 않는다", async () => {
+    const { processZubzubDonationHook } = await import("@/lib/zubzub/zubzub-engine");
+    const { syncMemberTotalsFromDonors } = await import("@/domain/sync/sync-repair-1pass");
+
+    // 대표 시그 50,000원 적재
+    const repEvent = {
+      id: "evt_rep_mult",
+      amount: 50000,
+      memberId: "m_rep",
+      message: "대표 ALIVE 시그",
+      matchedSigName: "ALIVE",
+    } as any;
+    const repState: any = {
+      members,
+      zubzubSettings: { enabled: true, minSigPrice: 50000, representativeMemberId: "m_rep", multiplier: 3 },
+      donors: [],
+      contributionLogs: [],
+    };
+    await processZubzubDonationHook("test_user_mult", repEvent, repState);
+
+    // 진아가 50,000원 시그 후원을 받아 3배 줍줍 성공
+    const jinaEvent = {
+      id: "evt_jina_mult",
+      amount: 50000,
+      memberId: "m_jina",
+      message: "진아 ALIVE 시그",
+      matchedSigName: "ALIVE",
+    } as any;
+    const claimState: any = {
+      ...repState,
+      donors: [
+        { id: "evt_jina_mult", memberId: "m_jina", amount: 50000, target: "account", contributionPoints: 50000, at: Date.now() },
+      ],
+    };
+    const claimRes = await processZubzubDonationHook("test_user_mult", jinaEvent, claimState);
+    expect(claimRes.action).toBe("claimed");
+    if (claimRes.action === "claimed") {
+      // 3배 설정 시: 본인 후원(50,000) + 줍줍 보너스(100,000, 2배) = 총 150,000 (정확히 3배!)
+      expect(claimRes.bonusDonor.contributionPoints).toBe(100000);
+      expect(claimRes.contributionLog.amount).toBe(100000);
+      expect(claimRes.contributionLog.multiplier).toBe(3);
+
+      const synced = syncMemberTotalsFromDonors({
+        ...claimState,
+        contributionLogs: [claimRes.contributionLog],
+      });
+      expect(synced.members.find((m: any) => m.id === "m_jina")?.contribution).toBe(150000);
+    }
+  });
+
+  it("28. 퐁당퐁당 기여도에 줍줍 보너스가 배율과 함께 정상 반영되며, 멤버명으로 기록된 로그도 정상 매칭된다", async () => {
+    const { collectDay777SigContributionByMember, applyOverlayDonationDisplayTotals } = await import("@/lib/overlay-donation-aggregate");
+    const { collectPongdangPopupAutoContributionByMember } = await import("@/lib/pongdang-popup-contribution");
+
+    const jinaLog: ContributionLog = {
+      id: "zubzub_bonus_q_kor",
+      memberId: "진아", // 멤버 ID가 아닌 한글 멤버명으로 저장된 경우
+      amount: 50000, // 2배 배율의 보너스 (+50,000)
+      baseSigPrice: 50000,
+      multiplier: 2,
+      delta: 1,
+      isZubzubBonus: true,
+      at: Date.now(),
+    };
+
+    const testState: any = {
+      members: [
+        { id: "m_jina", name: "진아", contribution: 0 },
+        { id: "m_surin", name: "수린", contribution: 0 },
+      ],
+      donors: [
+        {
+          id: "d_jina_sig",
+          memberId: "진아", // 한글 이름
+          amount: 50000,
+          sigPrice: 50000,
+          isSigCredit: true,
+          at: Date.now(),
+        },
+      ],
+      contributionLogs: [jinaLog],
+      zubzubSettings: {
+        enabled: true,
+        multiplier: 2,
+        applyContributionToPongdang: true,
+        applyDoubleContributionToPongdang: true,
+      },
+    };
+
+    // 1) 퐁당퐁당 오버레이 집계
+    const overlayMap = collectDay777SigContributionByMember(testState, null);
+    // 본인 시그 50,000 + 줍줍 보너스 50,000 = 총 100,000원!
+    expect(overlayMap.get("m_jina")).toBe(100000);
+
+    // 2) 퐁당퐁당 팝업 집계
+    const popupMap = collectPongdangPopupAutoContributionByMember(testState);
+    expect(popupMap.get("m_jina")).toBe(100000);
+
+    // 3) applyOverlayDonationDisplayTotals 전체 오버레이 반영
+    const applied = applyOverlayDonationDisplayTotals(testState, { day777Calc: true });
+    expect(applied.members.find((m: any) => m.id === "m_jina")?.contribution).toBe(100000);
   });
 });

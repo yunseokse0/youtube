@@ -223,8 +223,15 @@ export default function AdminPongdangPopupPanel() {
     if (!state) return [];
     const list: PongdangItemRow[] = [];
     const memberNameMap = new Map<string, string>();
+    const memberIdNormalizeMap = new Map<string, string>();
     for (const m of members) {
-      memberNameMap.set(m.id, m.name);
+      if (m.id) {
+        memberNameMap.set(String(m.id).trim(), m.name);
+        memberIdNormalizeMap.set(String(m.id).trim(), String(m.id).trim());
+      }
+      if (m.name) {
+        memberIdNormalizeMap.set(String(m.name).trim(), String(m.id).trim());
+      }
     }
 
     // A. 자동 후원/시그에서 발생한 건
@@ -266,7 +273,8 @@ export default function AdminPongdangPopupPanel() {
       }
       if (cutoff > 0 && Number(d.at || 0) < cutoff) continue;
       const isAutoAssigned = Boolean(d.memberAutoAssigned);
-      const mid = String(d.memberId || "").trim();
+      const rawMid = String(d.memberId || "").trim();
+      const mid = memberIdNormalizeMap.get(rawMid) || rawMid;
       // 제외된 멤버의 기여도 건은 퐁당퐁당 내역에서 제외 (단, 아직 미지정 상태인 건은 제외하지 않음)
       if (!isAutoAssigned && mid && excludedMemberIdsSet.has(mid)) continue;
       const rawSigPrice = parseOverlayContributionNumber(
@@ -310,8 +318,21 @@ export default function AdminPongdangPopupPanel() {
     for (const l of logs) {
       if (l.isZubzubBonus) {
         if (!includeZubzubBonus) continue;
-        const mid = String(l.memberId || "").trim();
+        if (cutoff > 0 && Number(l.at || 0) < cutoff) continue;
+        const rawMid = String(l.memberId || "").trim();
+        if (!rawMid) continue;
+        const mid = memberIdNormalizeMap.get(rawMid) || rawMid;
         if (mid && excludedMemberIdsSet.has(mid)) continue;
+        let effAmount = l.amount;
+        if (!applyDoubleToPongdang) {
+          const isAutoClaim =
+            l.baseSigPrice &&
+            l.multiplier &&
+            l.multiplier > 1 &&
+            l.amount === l.baseSigPrice * (l.multiplier - 1);
+          effAmount = isAutoClaim ? 0 : (l.baseSigPrice ?? 0);
+        }
+        const val = Math.floor(Math.abs(parseOverlayContributionNumber(effAmount)));
         list.push({
           key: `log_${l.id}`,
           sourceType: "auto_sig",
@@ -319,14 +340,11 @@ export default function AdminPongdangPopupPanel() {
           at: Number(l.at) || Date.now(),
           donorName: l.donorName || "대표 시그 줍줍",
           memberId: mid,
+          rawMemberId: mid,
           memberName: memberNameMap.get(mid) || "미지정",
-          amount: Math.floor(Math.abs(parseOverlayContributionNumber(
-            !applyDoubleToPongdang && (l.baseSigPrice || l.multiplier === 2)
-              ? (l.baseSigPrice ?? Math.round(l.amount / 2))
-              : l.amount
-          ))),
+          amount: val,
           isMinus: Boolean(l.pongdangMinus) || parseOverlayContributionNumber(l.amount) < 0,
-          reason: l.note || `🎁 대표 시그 줍줍 보너스${applyDoubleToPongdang ? " (2배)" : " (1배)"}`,
+          reason: l.note || `🎁 대표 시그 줍줍 보너스${l.multiplier ? ` (${l.multiplier}배)` : ""}`,
           isZubzubBonus: true,
         });
         continue;
@@ -334,7 +352,9 @@ export default function AdminPongdangPopupPanel() {
       // ⭐️ 메인 엑셀표 수동 기여도 로그는 퐁당퐁당 내역에 표시하지 않음 (퐁당 전용 로그만)
       if (!isPongdangContributionLog(l)) continue;
       if (cutoff > 0 && Number(l.at || 0) < cutoff) continue;
-      const mid = String(l.memberId || "").trim();
+      const rawMid = String(l.memberId || "").trim();
+      if (!rawMid) continue;
+      const mid = memberIdNormalizeMap.get(rawMid) || rawMid;
       if (mid && excludedMemberIdsSet.has(mid)) continue;
       const rawAmount = parseOverlayContributionNumber(l.amount);
       const val = Math.floor(Math.abs(rawAmount));
@@ -345,6 +365,7 @@ export default function AdminPongdangPopupPanel() {
         at: Number(l.at) || Date.now(),
         donorName: l.donorName || "관리자 수동",
         memberId: mid,
+        rawMemberId: mid,
         memberName: memberNameMap.get(mid) || "미지정",
         amount: val,
         isMinus: l.delta === -1 || rawAmount < 0,

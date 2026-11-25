@@ -470,43 +470,109 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
           <span className="text-neutral-500 text-[10px]">(대기 중인 시그가 없을 때도 방송에 '🎁 대표 줍줍 : 대기 없음' 뱃지를 항상 유지합니다)</span>
         </label>
 
-        {/* 줍줍 기여도 2배 적용 여부 토글 */}
-        <label className="flex items-center gap-2 text-neutral-300 cursor-pointer pt-2 border-t border-white/5">
-          <input
-            type="checkbox"
-            className="rounded bg-neutral-900 border-white/20 text-amber-500 focus:ring-0"
-            checked={settings.doubleContribution !== false}
-            onChange={(e) => updateSettings({ doubleContribution: e.target.checked })}
-          />
-          <span className="font-semibold text-white">🔥 줍줍 성공 시 기여도 2배(두배) 지급</span>
-          <span className="text-neutral-400 text-[10px]">(기본 ON · 대표 시그 줍줍 성공 시 2배 보너스 기여도가 지급됩니다)</span>
-        </label>
+        {/* 줍줍 배율 조절 및 기여도 지급 설정 */}
+        <div className="pt-2.5 border-t border-white/5 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-white">🔥 줍줍 기여도 배율 설정</span>
+              <span className="text-neutral-400 text-[10px]">
+                (대표 시그 줍줍 시 획득 멤버에게 지급되는 총 기여도 배율)
+              </span>
+            </div>
+            {/* 배율 프리셋 버튼 및 직접 입력 */}
+            <div className="flex items-center gap-1.5">
+              {[
+                { label: "1배 (기본)", val: 1 },
+                { label: "2배 (기본추천)", val: 2 },
+                { label: "3배", val: 3 },
+                { label: "4배", val: 4 },
+                { label: "5배", val: 5 },
+              ].map((p) => {
+                const currentMult = Math.max(1, Math.min(10, Math.round(Number(settings.multiplier) || (settings.doubleContribution === false ? 1 : 2))));
+                const isSelected = currentMult === p.val;
+                return (
+                  <button
+                    key={`mult-btn-${p.val}`}
+                    type="button"
+                    onClick={() => updateSettings({ multiplier: p.val, doubleContribution: p.val > 1 })}
+                    className={`px-2.5 py-1 rounded text-xs font-bold transition cursor-pointer ${
+                      isSelected
+                        ? "bg-amber-500 text-black shadow font-black"
+                        : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700 hover:text-white border border-white/10"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+              <div className="flex items-center gap-1 ml-1">
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  step="1"
+                  value={Math.max(1, Math.min(10, Math.round(Number(settings.multiplier) || (settings.doubleContribution === false ? 1 : 2))))}
+                  onChange={(e) => {
+                    const v = Math.max(1, Math.min(10, Math.round(Number(e.target.value) || 1)));
+                    updateSettings({ multiplier: v, doubleContribution: v > 1 });
+                  }}
+                  className="w-14 px-2 py-0.5 rounded bg-neutral-900 border border-white/20 text-center font-bold text-amber-300 focus:outline-none focus:border-amber-400"
+                />
+                <span className="text-neutral-400 font-bold text-xs">배</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 배율 계산식 실시간 친절 안내 */}
+          {(() => {
+            const currentMult = Math.max(1, Math.min(10, Math.round(Number(settings.multiplier) || (settings.doubleContribution === false ? 1 : 2))));
+            const sampleBase = 50000;
+            const sampleBonus = sampleBase * Math.max(0, currentMult - 1);
+            const sampleTotal = sampleBase * currentMult;
+            return (
+              <div className="p-2 rounded-lg bg-black/40 border border-amber-500/20 text-[11px] text-neutral-300 flex items-center justify-between">
+                <span>
+                  💡 <strong>예시 (50,000원 시그 줍줍 시):</strong> 본인 후원 50,000점 (1배) + 줍줍 보너스 {sampleBonus.toLocaleString()}점 ({currentMult - 1}배) = <strong className="text-amber-300 text-xs">총 {sampleTotal.toLocaleString()}점 ({currentMult}배)</strong> 기여도 적립
+                </span>
+                <span className="text-[10px] text-neutral-400 whitespace-nowrap ml-2">
+                  * 3배로 튀지 않고 정확히 <b>{currentMult}배</b>만 증가합니다
+                </span>
+              </div>
+            );
+          })()}
+        </div>
 
         {/* 퐁당퐁당 기여도 반영 여부 토글 */}
-        <label className="flex items-center gap-2 text-neutral-300 cursor-pointer pt-2 border-t border-white/5">
-          <input
-            type="checkbox"
-            className="rounded bg-neutral-900 border-white/20 text-amber-500 focus:ring-0"
-            checked={settings.applyContributionToPongdang !== false}
-            onChange={(e) => updateSettings({ applyContributionToPongdang: e.target.checked })}
-          />
-          <span className="font-semibold text-white">🎪 퐁당퐁당 기여도에도 줍줍 반영</span>
-          <span className="text-neutral-500 text-[10px]">(끄면 퐁당퐁당 엑셀표 기여도에서 줍줍 보너스 점수가 제외됩니다)</span>
-        </label>
-
-        {/* 퐁당퐁당 2배 적용 여부 토글 */}
-        {settings.applyContributionToPongdang !== false && (
-          <label className="flex items-center gap-2 text-neutral-300 cursor-pointer pl-6">
+        <div className="pt-2 border-t border-white/5 space-y-2">
+          <label className="flex items-center gap-2 text-neutral-300 cursor-pointer">
             <input
               type="checkbox"
               className="rounded bg-neutral-900 border-white/20 text-amber-500 focus:ring-0"
-              checked={settings.applyDoubleContributionToPongdang !== false}
-              onChange={(e) => updateSettings({ applyDoubleContributionToPongdang: e.target.checked })}
+              checked={settings.applyContributionToPongdang !== false}
+              onChange={(e) => updateSettings({ applyContributionToPongdang: e.target.checked })}
             />
-            <span className="font-semibold text-amber-200">🎪 퐁당퐁당 엑셀표에도 2배 적용</span>
-            <span className="text-neutral-400 text-[10px]">(체크 시 퐁당퐁당에서도 2배, 체크 해제 시 퐁당퐁당에서는 1배 단가만 적용됩니다)</span>
+            <span className="font-semibold text-white">🎪 퐁당퐁당(777데이) 기여도에도 줍줍 반영</span>
+            <span className="text-neutral-500 text-[10px]">(끄면 퐁당퐁당 엑셀표 기여도에서 줍줍 보너스 점수가 제외됩니다)</span>
           </label>
-        )}
+
+          {/* 퐁당퐁당 배율 적용 여부 토글 */}
+          {settings.applyContributionToPongdang !== false && (
+            <label className="flex items-center gap-2 text-neutral-300 cursor-pointer pl-6">
+              <input
+                type="checkbox"
+                className="rounded bg-neutral-900 border-white/20 text-amber-500 focus:ring-0"
+                checked={settings.applyDoubleContributionToPongdang !== false}
+                onChange={(e) => updateSettings({ applyDoubleContributionToPongdang: e.target.checked })}
+              />
+              <span className="font-semibold text-amber-200">
+                🎪 퐁당퐁당 엑셀표에도 {Math.max(1, Math.min(10, Math.round(Number(settings.multiplier) || (settings.doubleContribution === false ? 1 : 2))))}배 보너스 적용
+              </span>
+              <span className="text-neutral-400 text-[10px]">
+                (체크 시 퐁당퐁당에서도 {Math.max(1, Math.min(10, Math.round(Number(settings.multiplier) || (settings.doubleContribution === false ? 1 : 2))))}배, 체크 해제 시 기본 1배만 적용됩니다)
+              </span>
+            </label>
+          )}
+        </div>
       </div>
 
       {/* 💡 초간결 1줄 디자인 미리보기 & 테스트 */}

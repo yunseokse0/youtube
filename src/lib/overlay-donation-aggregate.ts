@@ -360,8 +360,9 @@ export function collectDay777SigContributionByMember(
     ? filterContributionLogsFromAggregateAt(contributionLogs, effectiveFromAtOrNull)
     : contributionLogs;
   for (const log of logs) {
-    const mid = String(log.memberId || "").trim();
-    if (!mid) continue;
+    const rawMid = String(log.memberId || "").trim();
+    if (!rawMid) continue;
+    const mid = memberIdNormalizeMap.get(rawMid) || rawMid;
     // ⭐️ 퐁당퐁당 기여도에는 줍줍 보너스 또는 퐁당퐁당 전용 로그(cl_pd_, plog_, isPongdang 등)만 합산!
     // 메인 엑셀표 일반 수동 기여도 로그는 퐁당퐁당에 절대 합산되지 않도록 분리
     if (!log.isZubzubBonus && !isPongdangContributionLog(log)) {
@@ -373,10 +374,15 @@ export function collectDay777SigContributionByMember(
     ) {
       continue;
     }
-    const logEffectiveAmount =
-      log.isZubzubBonus && !applyDoubleToPongdang && (log.baseSigPrice || log.multiplier === 2)
-        ? (log.baseSigPrice ?? Math.round(log.amount / 2))
-        : log.amount;
+    let logEffectiveAmount = log.amount;
+    if (log.isZubzubBonus && !applyDoubleToPongdang) {
+      const isAutoClaim =
+        log.baseSigPrice &&
+        log.multiplier &&
+        log.multiplier > 1 &&
+        log.amount === log.baseSigPrice * (log.multiplier - 1);
+      logEffectiveAmount = isAutoClaim ? 0 : (log.baseSigPrice ?? 0);
+    }
     const parsedAmount = parseOverlayContributionNumber(logEffectiveAmount);
     if (ignoreMinus && (isPongdangMinusContributionLog(log) || parsedAmount < 0)) {
       continue;
@@ -480,6 +486,11 @@ export function applyOverlayDonationDisplayTotals(
   if (!day777 && !isPongdangPopup) return amountSynced;
 
   const originalMemberMap = new Map((state.members || []).map((m) => [m.id, m]));
+  const memberIdNormalizeMap = new Map<string, string>();
+  for (const m of state.members || []) {
+    if (m.id) memberIdNormalizeMap.set(String(m.id).trim(), String(m.id).trim());
+    if (m.name) memberIdNormalizeMap.set(String(m.name).trim(), String(m.id).trim());
+  }
   // 수동 기여도 보정값은 항시 반영 (명시적으로 false로 끈 경우가 아니면 기본 true로 자동 수집값과 실시간 합산)
   const isManualMode =
     opts?.pongdangManualMode !== undefined
@@ -530,8 +541,9 @@ export function applyOverlayDonationDisplayTotals(
     // ⭐️ 퐁당퐁당 수동 기여도 로그는 퐁당퐁당 전용 로그(cl_pd_, plog_, isPongdang 등)만 합산!
     // 메인 엑셀표 일반 수동 기여도는 퐁당퐁당에 절대 합산되지 않도록 분리
     if (!isPongdangContributionLog(l)) continue;
-    const mid = String(l.memberId || "").trim();
-    if (!mid) continue;
+    const rawMid = String(l.memberId || "").trim();
+    if (!rawMid) continue;
+    const mid = memberIdNormalizeMap.get(rawMid) || rawMid;
     if (effectiveCutoff != null && effectiveCutoff > 0 && Number(l.at || 0) < effectiveCutoff) continue;
     const rawAmount = parseOverlayContributionNumber(l.amount);
     if (rawAmount === 0) continue;

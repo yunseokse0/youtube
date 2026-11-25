@@ -160,10 +160,10 @@ describe("대표 시그 줍줍(ZubZub) 엔진 및 원장 격리 테스트", () =
       expect(claimResult.queueItem.claimedByMemberId).toBe("m_jina");
       expect(claimResult.bonusDonor.amount).toBe(130000); // 대표 시그 금액 복제
       expect(claimResult.bonusDonor.donationExcluded).toBe(true); // 실정산 현금 제외!
-      expect(claimResult.bonusDonor.contributionPoints).toBe(260000); // 기여도 점수 2배 반영!
+      expect(claimResult.bonusDonor.contributionPoints).toBe(130000); // 2배 배율: 본인 1배 + 보너스 1배 = 총 2배
       expect(claimResult.contributionLog).toMatchObject({
         memberId: "m_jina",
-        amount: 260000,
+        amount: 130000,
         isZubzubBonus: true,
       });
     }
@@ -178,9 +178,9 @@ describe("대표 시그 줍줍(ZubZub) 엔진 및 원장 격리 테스트", () =
       ])
     );
     expect(savedState?.contributionLogs).toEqual(
-      expect.arrayContaining([expect.objectContaining({ isZubzubBonus: true, amount: 260000 })])
+      expect.arrayContaining([expect.objectContaining({ isZubzubBonus: true, amount: 130000 })])
     );
-    expect(savedState?.members.find((member) => member.id === "m_jina")?.contribution).toBe(390000); // 130000 + 260000(2배)
+    expect(savedState?.members.find((member) => member.id === "m_jina")?.contribution).toBe(260000); // 130000 + 130000 = 총 2배!
     expect(vi.mocked(publishSseEvent)).toHaveBeenCalledWith(
       expect.objectContaining({ type: "state_updated", userId })
     );
