@@ -168,4 +168,57 @@ describe("퐁당퐁당 엑셀표 음수 표시 및 랭킹 정합성 전수 검�
     const m3 = finalMembers.find((m: any) => m.id === "m3");
     expect(m3?.contribution).toBe(-50000);
   });
+
+  it("7. zakiexcel 실방송 데이터 시나리오: 음수 기여도가 크기순으로 올바르게 랭킹되고 표시된다", () => {
+    const zakieMembers: Member[] = [
+      { id: "m_surin", name: "수린", account: 0, toon: 685000, contribution: 295000, operating: false },
+      { id: "m_chaeyoung", name: "채영", account: 0, toon: 0, contribution: 0, operating: false },
+      { id: "m_seoyuha", name: "서유하", account: 80000, toon: 0, contribution: -20000, operating: false },
+      { id: "m_eena", name: "이나", account: 31000, toon: 0, contribution: -31000, operating: false },
+      { id: "m_chohwa", name: "초화", account: 0, toon: 104000, contribution: -104000, operating: false },
+      { id: "m_jina", name: "진아", account: 0, toon: 1213000, contribution: -1029000, operating: false },
+    ];
+
+    const isPongdangTable = true;
+    const getContributionValueForMember = (m: Member) => {
+      const stored = typeof m.contribution === "number" ? m.contribution : Number(m.contribution) || 0;
+      if (stored < 0 || isPongdangTable) return Math.floor(stored);
+      return Math.max(0, Math.floor(stored));
+    };
+
+    const ranked = buildOverlayRankedMembers(
+      zakieMembers,
+      {},
+      undefined,
+      zakieMembers,
+      getContributionValueForMember,
+      "contribution"
+    );
+
+    expect(ranked.map((r) => r.m.name)).toEqual([
+      "수린",
+      "채영",
+      "서유하",
+      "이나",
+      "초화",
+      "진아",
+    ]);
+    expect(ranked.map((r) => getContributionValueForMember(r.m))).toEqual([
+      295000,
+      0,
+      -20000,
+      -31000,
+      -104000,
+      -1029000,
+    ]);
+
+    // OverlayTableNumCell safe logic:
+    const numCellSafe = (val: number, allowNeg: boolean) => {
+      const rounded = Math.round(Number(val) || 0);
+      return allowNeg || rounded < 0 ? rounded : Math.max(0, rounded);
+    };
+    expect(numCellSafe(-1029000, false)).toBe(-1029000); // Defense-in-depth: negative is NEVER clamped to 0
+    expect(numCellSafe(-20000, true)).toBe(-20000);
+    expect(numCellSafe(295000, true)).toBe(295000);
+  });
 });

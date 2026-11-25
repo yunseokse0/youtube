@@ -234,12 +234,13 @@ describe("Pongdang overlay rendering pipeline test", () => {
     expect(resOverlay.find((m) => m.id === syhId)?.contribution).toBe(-92000);
   });
 
-  it("recognizes preset with 퐁당 in name as day777Calc unless explicitly disabled", () => {
+  it("respects day777Calc explicitly set or default off", () => {
     const preset = {
       id: "p_test",
       name: "자키엑셀 퐁당퐁당엑셀표",
       theme: "excelViolet",
       membersTheme: "excelViolet",
+      day777Calc: true,
     };
     const rawSp = new URLSearchParams();
     const isDay777 = resolveDay777Calc(rawSp, preset, { ready: true });

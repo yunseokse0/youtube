@@ -1205,7 +1205,7 @@ function OverlayTableNumCell({
   allowNegative?: boolean;
 }) {
   const rounded = Math.round(Number(value) || 0);
-  const safe = allowNegative ? rounded : Math.max(0, rounded);
+  const safe = allowNegative || rounded < 0 ? rounded : Math.max(0, rounded);
   const display = useCountUp(safe, animate ? 600 : 0);
   return (
     <span className={className} style={style}>
@@ -3972,25 +3972,23 @@ function OverlayInner() {
         ? (adminPreviewDonors as Donor[])
         : ((s.donors || []) as Donor[]);
     return applyExclusion(
-      ensureMembers(
-        membersWithOverlayDonationAggregate(
-          {
-            ...(s as AppState),
-            members: membersRemote,
-            donors: donorsForAgg,
-          },
-          membersRemote,
-          donationAggregateFromAt,
-          {
-            day777Calc,
-            pongdangManualMode,
-            /**
-             * 퐁당퐁당 엑셀표(day777Calc·excelPongdang)에서는 마이너스 처리한 기여도를
-             * 0으로 클램핑하지 않고 음수 그대로 표시한다. (관리창 팝업과 동일 동작)
-             */
-            isPongdangPopup: isPongdangTable,
-          }
-        )
+      membersWithOverlayDonationAggregate(
+        {
+          ...(s as AppState),
+          members: membersRemote,
+          donors: donorsForAgg,
+        },
+        membersRemote,
+        donationAggregateFromAt,
+        {
+          day777Calc,
+          pongdangManualMode,
+          /**
+           * 퐁당퐁당 엑셀표(day777Calc·excelPongdang)에서는 마이너스 처리한 기여도를
+           * 0으로 클램핑하지 않고 음수 그대로 표시한다. (관리창 팝업과 동일 동작)
+           */
+          isPongdangPopup: isPongdangTable,
+        }
       )
     );
   }, [
@@ -4109,7 +4107,8 @@ function OverlayInner() {
     [overlayContributionSource.contributionLogs]
   );
   const getSessionContributionValueForMember = useCallback((m: Member) => {
-    if (isPongdangTable) return parseOverlayContributionNumber(m.contribution);
+    const storedContribution = parseOverlayContributionNumber(m.contribution);
+    if (storedContribution < 0 || isPongdangTable) return storedContribution;
     const memberId = String(m.id || "").trim();
     if (!memberId || !s) return 0;
     return resolveMemberContributionTotal(memberId, {
@@ -4118,6 +4117,7 @@ function OverlayInner() {
       contributionFormula: s.contributionFormula,
     });
   }, [
+    isPongdangTable,
     day777Calc,
     currentSessionContributionLogs,
     overlayContributionSource.donors,
@@ -4132,7 +4132,7 @@ function OverlayInner() {
   const allowContributionTotalFallback = isDefaultContributionFormula(s?.contributionFormula);
   const getContributionValueForMember = useCallback((m: Member) => {
     const storedContribution = parseOverlayContributionNumber(m.contribution);
-    if (isPongdangTable) return Math.floor(storedContribution);
+    if (storedContribution < 0 || isPongdangTable) return Math.floor(storedContribution);
     const memberId = String(m.id || "").trim();
     const donors = overlayContributionSource.donors || [];
     const hasContributionSource =
