@@ -193,6 +193,9 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
     zubzubContributionLogs: (state.contributionLogs || [])
       .filter((log) => log.isZubzubBonus)
       .map((log) => `${log.id}:${log.memberId}:${log.amount}:${log.pongdangMinus ? 1 : 0}:${log.at}`),
+    contributionLogs: (state.contributionLogs || []).map(
+      (l) => `${l.id}:${l.memberId}:${l.amount}:${l.delta}:${l.pongdangMinus ? 1 : 0}:${l.at}`
+    ),
     tableSplit: (state as unknown as Record<string, unknown>).tableSplit,
     customColumnName: (state as unknown as Record<string, unknown>).customColumnName || "",
     rankCustomCells: state.rankCustomCells || [],
@@ -203,7 +206,10 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
     donorRankingsPresetId: state.donorRankingsPresetId || "",
     pongdangResetAt: state.pongdangResetAt || 0,
     pongdangManualMode: state.pongdangManualMode,
-    pongdangManualContributions: state.pongdangManualContributions || {},
+    pongdangManualContributions: Object.keys(state.pongdangManualContributions || {})
+      .sort()
+      .map((k) => `${k}:${state.pongdangManualContributions?.[k]}`),
+    pongdangExcludedMemberIds: state.pongdangExcludedMemberIds || [],
     generalTimer,
     matchTimer,
     matchTimerEnabled: state.matchTimerEnabled || {},

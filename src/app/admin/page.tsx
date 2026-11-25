@@ -6539,6 +6539,9 @@ function AdminPageInner() {
     if (p.day777Calc !== undefined) {
       q.set("day777Calc", String(p.day777Calc));
     }
+    if (p.pongdangManualMode !== undefined) {
+      q.set("pongdangManualMode", String(p.pongdangManualMode));
+    }
     return `${base}?${q.toString()}`;
   };
 
@@ -23340,7 +23343,7 @@ function AdminPageInner() {
                                           : "일반 엑셀표는 후원 금액 그대로 기여도에 전액 합산됩니다."
                                       } />
                                     </span>
-                                    {p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당") ? (
+                                    {p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당") || p.pongdangManualMode !== undefined ? (
                                       <button
                                         type="button"
                                         className={`px-2.5 py-0.5 rounded text-xs font-bold transition border ${
@@ -23358,7 +23361,7 @@ function AdminPageInner() {
                                     )}
                                   </div>
 
-                                  {(p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당")) && (
+                                  {(p.membersTheme === "excelPongdang" || p.theme === "excelPongdang" || Boolean(p.day777Calc) || String(p.name || "").includes("퐁당") || p.pongdangManualMode !== undefined) && (
                                     <div className="flex items-center gap-1.5">
                                       <span className="text-xs text-neutral-400">수동 기여도:</span>
                                       <button

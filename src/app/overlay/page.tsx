@@ -521,6 +521,12 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         void syncOnceRef.current({ forceFull: true });
         return;
       }
+      const pdAt = Number(incoming.pongdangUpdatedAt);
+      if (Number.isFinite(pdAt) && pdAt > 0) {
+        void syncOnceRef.current({ forceFull: true });
+        window.setTimeout(() => void syncOnceRef.current({ forceFull: true }), 450);
+        return;
+      }
       const membersRosterAt = Number(incoming.membersRosterUpdatedAt);
       if (Number.isFinite(membersRosterAt) && membersRosterAt > 0) {
         membersRosterSyncUntilRef.current = Date.now() + 45_000;
@@ -2922,12 +2928,14 @@ function OverlayInner() {
     day777Calc ||
     isExcelPongdang ||
     Boolean(effectivePreset?.day777Calc) ||
+    effectivePreset?.pongdangManualMode === true ||
     effectivePreset?.theme === "excelPongdang" ||
     effectivePreset?.membersTheme === "excelPongdang" ||
     String(effectivePreset?.name || "").replace(/\s+/g, "").includes("퐁당") ||
     rawSp.get("theme") === "excelPongdang" ||
     rawSp.get("membersTheme") === "excelPongdang" ||
-    rawSp.get("day777Calc") === "true"
+    rawSp.get("day777Calc") === "true" ||
+    rawSp.get("pongdangManualMode") === "true"
   );
   const restoredContributionMemberIds = useMemo(
     () =>

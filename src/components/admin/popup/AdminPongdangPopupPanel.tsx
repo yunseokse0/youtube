@@ -13,6 +13,7 @@ import {
   notifyOverlayPresetsLocalUpdated,
   notifyAdminPreviewDonorsUpdated,
 } from "@/lib/broadcast-state-local-sync";
+import { storageKey } from "@/lib/state";
 import { overlayPresetsStorageKey } from "@/lib/state";
 import { isPongdangContributionLog, syncMemberTotalsFromDonors } from "@/domain/sync/sync-repair-1pass";
 import { parseOverlayContributionNumber } from "@/lib/overlay-donation-aggregate";
@@ -407,6 +408,11 @@ export default function AdminPongdangPopupPanel() {
       setState(stamped);
       stateRef.current = stamped;
       writeSessionBroadcastState(stamped, scopedUserId);
+      try {
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(storageKey(scopedUserId), JSON.stringify(stamped));
+        }
+      } catch {}
       notifyBroadcastStateLocalUpdated(scopedUserId, stamped.updatedAt);
       if (Array.isArray(stamped.overlayPresets)) {
         try {

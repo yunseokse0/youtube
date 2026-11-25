@@ -2439,6 +2439,8 @@ function overlayThemeIsExcelPongdang(
   const rawDay777 = rawSp.get("day777Calc") || "";
   if (rawDay777 === "true") return true;
   if (preset?.day777Calc === true) return true;
+  if (preset?.pongdangManualMode === true) return true;
+  if (rawSp.get("pongdangManualMode") === "true") return true;
   return false;
 }
 

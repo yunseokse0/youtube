@@ -34,7 +34,7 @@ describe("state-api-pick", () => {
       },
     };
     const out = projectStateForGetPick(state, STATE_PICK_OVERLAY) as Record<string, unknown>;
-    expect(out.contributionLogs).toBeUndefined();
+    expect(out.contributionLogs).toBeDefined();
     expect(out.forbiddenWords).toBeUndefined();
     expect(out.sigSalesMemberPresets).toBeUndefined();
     const rs = out.rouletteState as Record<string, unknown>;

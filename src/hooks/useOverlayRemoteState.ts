@@ -863,6 +863,15 @@ export function useOverlayRemoteState(
       return;
     }
 
+    const pdAt = Number((o as { pongdangUpdatedAt?: unknown }).pongdangUpdatedAt);
+    if (Number.isFinite(pdAt) && pdAt > 0) {
+      if (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) {
+        void syncFromApiRef.current({ forceFull: true });
+        window.setTimeout(() => void syncFromApiRef.current({ forceFull: true }), 450);
+        return;
+      }
+    }
+
     const membersRosterAt = Number(
       (o as { membersRosterUpdatedAt?: unknown }).membersRosterUpdatedAt
     );

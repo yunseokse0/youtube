@@ -18,13 +18,17 @@ export type DonationAppliedSseHint = {
 async function broadcastDonationStateUpdated(
   updatedAt: number,
   donorRankingsUpdatedAt?: number,
-  donationApplied?: DonationAppliedSseHint
+  donationApplied?: DonationAppliedSseHint,
+  pongdangUpdatedAt?: number
 ): Promise<void> {
   await publishSseEvent({
     type: "state_updated" as const,
     updatedAt,
     ...(typeof donorRankingsUpdatedAt === "number" && donorRankingsUpdatedAt > 0
       ? { donorRankingsUpdatedAt }
+      : {}),
+    ...(typeof pongdangUpdatedAt === "number" && pongdangUpdatedAt > 0
+      ? { pongdangUpdatedAt }
       : {}),
     ...(donationApplied ? { donationApplied } : {}),
   });
@@ -76,7 +80,8 @@ export async function persistDonationStateToServer(
   await broadcastDonationStateUpdated(
     persisted.updatedAt,
     persisted.donorRankingsUpdatedAt,
-    opts?.donationApplied
+    opts?.donationApplied,
+    Date.now()
   );
   void maybeAppendDailyLogFromState(userId, persisted);
   return { ok: true, state: persisted };

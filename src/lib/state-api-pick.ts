@@ -37,12 +37,23 @@ function overlayTerritoryLogsRevision(state: AppState): number {
   return rev;
 }
 
+function overlayContributionLogsRevision(state: AppState): number {
+  const logs = Array.isArray(state.contributionLogs) ? state.contributionLogs : [];
+  let rev = logs.length;
+  for (const log of logs) {
+    rev = Math.max(rev, Number(log.at || 0));
+  }
+  return rev;
+}
+
 function overlayPickRevision(state: AppState): number {
   return Math.max(
     Number(state.updatedAt || 0),
     Number(state.membersRosterUpdatedAt || 0),
+    Number(state.pongdangResetAt || 0),
     readDonorRankingsRevision(state),
-    overlayTerritoryLogsRevision(state)
+    overlayTerritoryLogsRevision(state),
+    overlayContributionLogsRevision(state)
   );
 }
 
@@ -188,6 +199,7 @@ function overlayCoreFields(
     pongdangResetAt: state.pongdangResetAt,
     pongdangManualMode: state.pongdangManualMode,
     pongdangManualContributions: state.pongdangManualContributions || {},
+    pongdangExcludedMemberIds: state.pongdangExcludedMemberIds || [],
     tableSplit: (state as unknown as Record<string, unknown>).tableSplit,
     showRankColumn: state.showRankColumn,
     showRoleColumn: state.showRoleColumn,
