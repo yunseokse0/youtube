@@ -249,6 +249,8 @@ function migrateLegacyZubzubDonors(state: AppState): AppState {
       at: Number(donor.at) || Date.now(),
       isZubzubBonus: true,
       zubzubQueueId: queueId || undefined,
+      baseSigPrice: donor.sigPrice || Math.round(amount / (donor.zubzubMultiplier || 2)),
+      multiplier: donor.zubzubMultiplier || 2,
       pongdangMinus: Boolean(donor.pongdangMinus),
     });
     knownIds.add(id);

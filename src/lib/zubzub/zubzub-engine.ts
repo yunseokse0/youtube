@@ -25,16 +25,25 @@ export function createZubzubBonusContributionLog(
   memberId: string,
   amount: number,
   sigName: string,
-  at = Date.now()
+  at = Date.now(),
+  options?: {
+    doubleContribution?: boolean;
+    multiplier?: number;
+    baseSigPrice?: number;
+  }
 ): ContributionLog {
-  const normalizedAmount = Math.max(0, Math.round(Number(amount) || 0));
+  const basePrice = Math.max(0, Math.round(Number(options?.baseSigPrice ?? amount) || 0));
+  const mult = options?.doubleContribution === false ? 1 : Math.max(1, Number(options?.multiplier) || 2);
+  const totalAmount = options?.baseSigPrice !== undefined ? basePrice * mult : Math.max(0, Math.round(Number(amount) || 0));
   return {
     id: `zubzub_bonus_${queueId}`,
     memberId,
-    amount: normalizedAmount,
+    amount: totalAmount,
+    baseSigPrice: basePrice,
+    multiplier: mult,
     delta: 1,
     donorName: "대표 시그 줍줍",
-    note: `[대표 시그 줍줍] ${sigName} (+${normalizedAmount.toLocaleString()}점)`,
+    note: `[대표 시그 줍줍] ${sigName} (+${totalAmount.toLocaleString()}점${mult > 1 ? " [2배 적용]" : ""})`,
     at,
     isZubzubBonus: true,
     zubzubQueueId: queueId,
@@ -240,6 +249,11 @@ export async function processZubzubDonationHook(
     const claimingMember = (state.members || []).find((m) => m.id === memberId);
     const memberName = claimingMember?.name || "멤버";
 
+    const isDouble = state.zubzubSettings?.doubleContribution !== false;
+    const multiplier = isDouble ? 2 : 1;
+    const baseSigPrice = claimedQueue.bonusAmount;
+    const bonusPoints = baseSigPrice * multiplier;
+
     const bonusDonor: Donor = {
       id: `zubzub_bonus_${claimedQueue.id}`,
       name: `[대표 줍줍] ${claimedQueue.sigName}`,
@@ -247,13 +261,14 @@ export async function processZubzubDonationHook(
       amount: claimedQueue.bonusAmount,
       memberId,
       at: Date.now(),
-      message: `[대표 시그 줍줍] ${claimedQueue.sigName} (+${claimedQueue.bonusAmount.toLocaleString()}점)`,
+      message: `[대표 시그 줍줍] ${claimedQueue.sigName} (+${bonusPoints.toLocaleString()}점${multiplier > 1 ? " [2배 적용]" : ""})`,
       
       // 실정산 현금 합산 제외!
       donationExcluded: true,
       isSigCredit: true,
-      sigPrice: claimedQueue.bonusAmount,
-      contributionPoints: claimedQueue.bonusAmount, // 랭킹 기여도 점수에만 100% 반영
+      sigPrice: baseSigPrice,
+      contributionPoints: bonusPoints, // 랭킹 기여도 점수에 2배(기본) 반영
+      zubzubMultiplier: multiplier,
       isZubzubBonus: true,
       zubzubQueueId: claimedQueue.id,
       provider: "zubzub_bonus",
@@ -262,8 +277,14 @@ export async function processZubzubDonationHook(
     const contributionLog = createZubzubBonusContributionLog(
       claimedQueue.id,
       memberId,
-      claimedQueue.bonusAmount,
-      claimedQueue.sigName
+      bonusPoints,
+      claimedQueue.sigName,
+      Date.now(),
+      {
+        doubleContribution: isDouble,
+        multiplier,
+        baseSigPrice,
+      }
     );
 
     // 줍줍 금액은 후원 원장에 넣지 않고 기여도 기록부에만 남긴다.

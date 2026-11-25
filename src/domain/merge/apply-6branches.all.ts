@@ -194,6 +194,7 @@ export function mergeDonationApplyBase(
     memberCustomCells: fresh.memberCustomCells !== undefined ? fresh.memberCustomCells : hint.memberCustomCells,
     memberCustomHeaderLabel: fresh.memberCustomHeaderLabel !== undefined ? fresh.memberCustomHeaderLabel : hint.memberCustomHeaderLabel,
     rankCustomCells: fresh.rankCustomCells !== undefined ? fresh.rankCustomCells : hint.rankCustomCells,
+    customCellMode: fresh.customCellMode !== undefined ? fresh.customCellMode : hint.customCellMode,
     memberRankingMetric: fresh.memberRankingMetric ?? hint.memberRankingMetric,
     donors: mergedDonors,
     mealBattle: hint.mealBattle ?? fresh.mealBattle,

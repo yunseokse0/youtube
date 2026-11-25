@@ -197,6 +197,10 @@ export async function POST(req: NextRequest) {
       const sigName = String(body.sigName || "").trim() || "대표 줍줍 시그";
       const bonusAmount = Math.max(1000, Math.round(Number(body.bonusAmount) || 50000));
       const manualQueueId = `zubzub_manual_claim_${Date.now()}`;
+      const isDouble = state.zubzubSettings?.doubleContribution !== false;
+      const multiplier = isDouble ? 2 : 1;
+      const baseSigPrice = bonusAmount;
+      const totalBonusPoints = baseSigPrice * multiplier;
 
       const bonusDonor: Donor = {
         id: `zubzub_bonus_${manualQueueId}`,
@@ -205,11 +209,12 @@ export async function POST(req: NextRequest) {
         amount: bonusAmount,
         memberId: targetMember.id,
         at: Date.now(),
-        message: `[대표 시그 줍줍] ${sigName} (+${bonusAmount.toLocaleString()}점)`,
+        message: `[대표 시그 줍줍] ${sigName} (+${totalBonusPoints.toLocaleString()}점${multiplier > 1 ? " [2배 적용]" : ""})`,
         donationExcluded: true,
         isSigCredit: true,
-        sigPrice: bonusAmount,
-        contributionPoints: bonusAmount,
+        sigPrice: baseSigPrice,
+        contributionPoints: totalBonusPoints,
+        zubzubMultiplier: multiplier,
         isZubzubBonus: true,
         zubzubQueueId: manualQueueId,
         provider: "zubzub_bonus",
@@ -218,8 +223,14 @@ export async function POST(req: NextRequest) {
       const contributionLog = createZubzubBonusContributionLog(
         manualQueueId,
         targetMember.id,
-        bonusAmount,
-        sigName
+        totalBonusPoints,
+        sigName,
+        Date.now(),
+        {
+          doubleContribution: isDouble,
+          multiplier,
+          baseSigPrice,
+        }
       );
 
       const currentWaitings = await listWaitingZubzubQueues(userId);

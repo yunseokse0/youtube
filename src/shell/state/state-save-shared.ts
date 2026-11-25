@@ -289,6 +289,11 @@ export function mergePartialState(
   } else {
     next.rankCustomCells = base.rankCustomCells;
   }
+  if ("customCellMode" in patch) {
+    next.customCellMode = patch.customCellMode as AppState["customCellMode"];
+  } else {
+    next.customCellMode = base.customCellMode;
+  }
   if (!("donorRankingsTheme" in patch)) next.donorRankingsTheme = base.donorRankingsTheme;
   else if (
     patch.donorRankingsTheme &&

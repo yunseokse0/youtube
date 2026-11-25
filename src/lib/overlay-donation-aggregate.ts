@@ -298,6 +298,8 @@ export function collectDay777SigContributionByMember(
   const ignoreMinus = Boolean(opts?.ignorePongdangMinus);
   /** 줍줍 보너스(가상 Donor)를 퐁당퐁당 기여도에 합산할지 — 옵션(기본 true) */
   const includeZubzubBonus = state?.zubzubSettings?.applyContributionToPongdang !== false;
+  /** 퐁당퐁당 기여도에도 줍줍 2배 보너스를 적용할지 — 옵션(기본 true, false면 1배만 적용) */
+  const applyDoubleToPongdang = state?.zubzubSettings?.applyDoubleContributionToPongdang !== false;
   for (const d of donorRows) {
     if (d.donationExcluded === true && !(includeZubzubBonus && d.isZubzubBonus)) continue;
     // 멤버명이 불명확하여 자동 임의 배정(1위 등)된 후원은 백오피스에서 사용자가 지정하기 전까지 퐁당퐁당 기여도에 미반영
@@ -306,7 +308,9 @@ export function collectDay777SigContributionByMember(
     if (!mid) continue;
     const sigPriceSource =
       (d as { sigPrice?: number }).sigPrice ??
-      (d.isZubzubBonus ? (d.amount ?? d.contributionPoints) : 0);
+      (d.isZubzubBonus
+        ? (!applyDoubleToPongdang && d.sigPrice ? d.sigPrice : (d.contributionPoints ?? d.amount))
+        : 0);
     const parsedSigPrice = parseOverlayContributionNumber(sigPriceSource);
     const parsedContributionPoints = parseOverlayContributionNumber(d.contributionPoints);
     const explicitSigPrice = Math.floor(Math.abs(parsedSigPrice));
@@ -339,7 +343,11 @@ export function collectDay777SigContributionByMember(
     ) {
       continue;
     }
-    const parsedAmount = parseOverlayContributionNumber(log.amount);
+    const logEffectiveAmount =
+      log.isZubzubBonus && !applyDoubleToPongdang && (log.baseSigPrice || log.multiplier === 2)
+        ? (log.baseSigPrice ?? Math.round(log.amount / 2))
+        : log.amount;
+    const parsedAmount = parseOverlayContributionNumber(logEffectiveAmount);
     if (ignoreMinus && (isPongdangMinusContributionLog(log) || parsedAmount < 0)) {
       continue;
     }

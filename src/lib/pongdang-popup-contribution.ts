@@ -11,6 +11,7 @@ export function collectPongdangPopupAutoContributionByMember(
   const cutoff = Math.max(0, Number(state.pongdangResetAt || 0));
   const includeZubzubBonus =
     state.zubzubSettings?.applyContributionToPongdang !== false;
+  const applyDoubleToPongdang = state.zubzubSettings?.applyDoubleContributionToPongdang !== false;
   const zubzubLogKeys = new Set(
     (state.contributionLogs || [])
       .filter((log) => log.isZubzubBonus)
@@ -36,7 +37,11 @@ export function collectPongdangPopupAutoContributionByMember(
     const rawSigPrice = parseOverlayContributionNumber(donor.sigPrice);
     const sigPrice = rawSigPrice || (
       donor.isZubzubBonus
-        ? parseOverlayContributionNumber(donor.amount || donor.contributionPoints)
+        ? parseOverlayContributionNumber(
+            !applyDoubleToPongdang && donor.sigPrice
+              ? donor.sigPrice
+              : (donor.contributionPoints || donor.amount)
+          )
         : 0
     );
     const contributionPoints = parseOverlayContributionNumber(donor.contributionPoints);
@@ -70,7 +75,11 @@ export function collectPongdangPopupAutoContributionByMember(
       if (!memberId) continue;
       if (cutoff > 0 && Number(log.at || 0) < cutoff) continue;
 
-      const rawAmount = parseOverlayContributionNumber(log.amount);
+      const effectiveAmount =
+        !applyDoubleToPongdang && (log.baseSigPrice || log.multiplier === 2)
+          ? (log.baseSigPrice ?? Math.round(log.amount / 2))
+          : log.amount;
+      const rawAmount = parseOverlayContributionNumber(effectiveAmount);
       if (rawAmount === 0) continue;
       const amount = Math.floor(Math.abs(rawAmount));
       const isMinus = Boolean(log.pongdangMinus) || rawAmount < 0;

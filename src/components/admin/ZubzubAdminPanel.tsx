@@ -470,6 +470,18 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
           <span className="text-neutral-500 text-[10px]">(대기 중인 시그가 없을 때도 방송에 '🎁 대표 줍줍 : 대기 없음' 뱃지를 항상 유지합니다)</span>
         </label>
 
+        {/* 줍줍 기여도 2배 적용 여부 토글 */}
+        <label className="flex items-center gap-2 text-neutral-300 cursor-pointer pt-2 border-t border-white/5">
+          <input
+            type="checkbox"
+            className="rounded bg-neutral-900 border-white/20 text-amber-500 focus:ring-0"
+            checked={settings.doubleContribution !== false}
+            onChange={(e) => updateSettings({ doubleContribution: e.target.checked })}
+          />
+          <span className="font-semibold text-white">🔥 줍줍 성공 시 기여도 2배(두배) 지급</span>
+          <span className="text-neutral-400 text-[10px]">(기본 ON · 대표 시그 줍줍 성공 시 2배 보너스 기여도가 지급됩니다)</span>
+        </label>
+
         {/* 퐁당퐁당 기여도 반영 여부 토글 */}
         <label className="flex items-center gap-2 text-neutral-300 cursor-pointer pt-2 border-t border-white/5">
           <input
@@ -481,6 +493,20 @@ export function ZubzubAdminPanel({ state, onUpdateState, userId }: Props) {
           <span className="font-semibold text-white">🎪 퐁당퐁당 기여도에도 줍줍 반영</span>
           <span className="text-neutral-500 text-[10px]">(끄면 퐁당퐁당 엑셀표 기여도에서 줍줍 보너스 점수가 제외됩니다)</span>
         </label>
+
+        {/* 퐁당퐁당 2배 적용 여부 토글 */}
+        {settings.applyContributionToPongdang !== false && (
+          <label className="flex items-center gap-2 text-neutral-300 cursor-pointer pl-6">
+            <input
+              type="checkbox"
+              className="rounded bg-neutral-900 border-white/20 text-amber-500 focus:ring-0"
+              checked={settings.applyDoubleContributionToPongdang !== false}
+              onChange={(e) => updateSettings({ applyDoubleContributionToPongdang: e.target.checked })}
+            />
+            <span className="font-semibold text-amber-200">🎪 퐁당퐁당 엑셀표에도 2배 적용</span>
+            <span className="text-neutral-400 text-[10px]">(체크 시 퐁당퐁당에서도 2배, 체크 해제 시 퐁당퐁당에서는 1배 단가만 적용됩니다)</span>
+          </label>
+        )}
       </div>
 
       {/* 💡 초간결 1줄 디자인 미리보기 & 테스트 */}

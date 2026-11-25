@@ -83,6 +83,8 @@ export type Donor = {
   zubzubQueueId?: string;
   /** 대표 시그 줍줍 보너스 여부 */
   isZubzubBonus?: boolean;
+  /** 대표 시그 줍줍 배율 (기본 2배) */
+  zubzubMultiplier?: number;
 };
 
 export type ZubZubQueueStatus = "WAITING" | "CLAIMED" | "CANCELED";
@@ -116,6 +118,10 @@ export type ZubZubSettings = {
   maxVisibleItems?: number;
   /** 퐁당퐁당(777데이) 엑셀표 기여도에도 줍줍 보너스 점수를 합산할지 여부 (기본 true). false면 퐁당퐁당 기여도에서 줍줍 보너스 제외 */
   applyContributionToPongdang?: boolean;
+  /** 줍줍 성공 시 기여도 2배(두배) 적용 여부 (기본 true). false면 1배 */
+  doubleContribution?: boolean;
+  /** 퐁당퐁당(777데이) 엑셀표에도 줍줍 2배 보너스를 적용할지 여부 (기본 true). false면 퐁당퐁당에서는 1배만 적용 */
+  applyDoubleContributionToPongdang?: boolean;
 };
 
 export type TickerSettings = {
@@ -154,6 +160,10 @@ export type ContributionLog = {
   zubzubQueueId?: string;
   /** 퐁당퐁당 전용 마이너스 처리. 일반 기여도 합계는 양수로 유지 */
   pongdangMinus?: boolean;
+  /** 줍줍 원본 시그 단가 (1배 기준 금액) */
+  baseSigPrice?: number;
+  /** 줍줍 적용 배율 (기본 2) */
+  multiplier?: number;
 };
 
 /** 화장실 수동 기록(구조는 기여도와 동일, amount=횟수) */
@@ -759,6 +769,8 @@ export type AppState = {
   /** 엑셀표 커스텀 열(상벌금 등) — 멤버 id → 자유 텍스트 */
   memberCustomCells?: Record<string, string>;
   rankCustomCells?: string[];
+  /** 커스텀 열 적용 기준: "rank" (순위 1위~N위 고정) / "member" (멤버별 고정) */
+  customCellMode?: "rank" | "member";
   /** 커스텀 열 헤더 (기본 상벌금) */
   memberCustomHeaderLabel?: string;
   /** 메인 엑셀표(기본 표/전체 통합)에서 커스텀 열 제외 여부 (기본 true) */

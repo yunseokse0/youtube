@@ -2102,6 +2102,7 @@ export function loadState(userId?: string | null): AppState {
     data.rankCustomCells = Array.isArray(rawRankCustomCells)
       ? rawRankCustomCells.map((v) => String(v ?? ""))
       : [];
+    data.customCellMode = (data as AppState).customCellMode === "member" ? "member" : (data as AppState).customCellMode === "rank" ? "rank" : undefined;
     data.rankPositionLabels = fitRankPositionLabelsToMemberCount(
       (data as AppState).rankPositionLabels,
       data.members.length
@@ -3051,6 +3052,7 @@ export function appStatePayloadForApi(
         memberPositionMode: next.memberPositionMode,
         rankPositionLabels: next.rankPositionLabels,
         rankCustomCells: next.rankCustomCells,
+        customCellMode: next.customCellMode,
         membersRosterUpdatedAt: rosterAt,
         membersAuthoritative: true as const,
         sigMatch: next.sigMatch,
@@ -4343,6 +4345,7 @@ async function doLoadStateFromApi(
       data.rankCustomCells = Array.isArray(rawRankCustomCells)
         ? rawRankCustomCells.map((v) => String(v ?? ""))
         : [];
+      data.customCellMode = (data as AppState).customCellMode === "member" ? "member" : (data as AppState).customCellMode === "rank" ? "rank" : undefined;
       data.rankPositionLabels = fitRankPositionLabelsToMemberCount(
         (data as AppState).rankPositionLabels,
         data.members.length

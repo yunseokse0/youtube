@@ -4512,7 +4512,10 @@ function OverlayInner() {
     ].join("|");
     const rows = ranked
       .map(({ m, rank }) => {
-        const explicitMode = (effectivePreset as any)?.customCellMode || rawSp.get("customCellMode");
+        const explicitMode =
+          (effectivePreset as any)?.customCellMode ||
+          (ready && s && (s as AppState).customCellMode) ||
+          rawSp.get("customCellMode");
         const isRankMode = explicitMode
           ? explicitMode === "rank"
           : Boolean(
@@ -6584,7 +6587,10 @@ function OverlayInner() {
                           {showCustomColumn && (
                             <td className={`${effectiveRowCls} overlay-col-custom text-center`}>
                               {(() => {
-                                const explicitMode = (effectivePreset as any)?.customCellMode || rawSp.get("customCellMode");
+                                const explicitMode =
+                                  (effectivePreset as any)?.customCellMode ||
+                                  (ready && s && (s as AppState).customCellMode) ||
+                                  rawSp.get("customCellMode");
                                 const isRankMode = explicitMode
                                   ? explicitMode === "rank"
                                   : Boolean(
@@ -6740,15 +6746,33 @@ function OverlayInner() {
                         )}
                         {showCustomColumn && (
                           <td className={`${effectiveRowCls} overlay-col-custom text-center`}>
-                            {memberCustomCellsMap[m.id] ? (
-                              <span className="overlay-cell-text-inner font-semibold" style={overlayCellOutlineStyle}>
-                                {memberCustomCellsMap[m.id]}
-                              </span>
-                            ) : (
-                              <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                                {" "}
-                              </span>
-                            )}
+                            {(() => {
+                              const explicitMode =
+                                (effectivePreset as any)?.customCellMode ||
+                                (ready && s && (s as AppState).customCellMode) ||
+                                rawSp.get("customCellMode");
+                              const isRankMode = explicitMode
+                                ? explicitMode === "rank"
+                                : Boolean(
+                                    Boolean((effectivePreset as any)?.day777Calc) ||
+                                    String((effectivePreset as any)?.name || "").includes("퐁당") ||
+                                    (effectivePreset as any)?.theme === "excelPongdang" ||
+                                    (effectivePreset as any)?.membersTheme === "excelPongdang" ||
+                                    (Array.isArray(rankCustomCells) && rankCustomCells.some((c) => String(c || "").trim().length > 0))
+                                  );
+                              const repVal = Array.isArray(rankCustomCells) && rankCustomCells.length > 0 ? String(rankCustomCells[0] || "").trim() : "";
+                              const memberVal = String(memberCustomCellsMap[m.id] || "").trim();
+                              const val = isRankMode ? (repVal || memberVal) : (memberVal || repVal);
+                              return val ? (
+                                <span className="overlay-cell-text-inner font-semibold" style={overlayCellOutlineStyle}>
+                                  {val}
+                                </span>
+                              ) : (
+                                <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                  {" "}
+                                </span>
+                              );
+                            })()}
                           </td>
                         )}
                         {hasRoleColumn && (

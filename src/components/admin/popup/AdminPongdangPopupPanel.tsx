@@ -196,6 +196,7 @@ export default function AdminPongdangPopupPanel() {
     // A. 자동 후원/시그에서 발생한 건
     const cutoff = Math.max(0, Number(state.pongdangResetAt || 0));
     const includeZubzubBonus = state.zubzubSettings?.applyContributionToPongdang !== false;
+    const applyDoubleToPongdang = state.zubzubSettings?.applyDoubleContributionToPongdang !== false;
     const zubzubLogKeys = new Set(
       (state.contributionLogs || [])
         .filter((log) => log.isZubzubBonus)
@@ -217,7 +218,7 @@ export default function AdminPongdangPopupPanel() {
       // 제외된 멤버의 기여도 건은 퐁당퐁당 내역에서 제외 (단, 아직 미지정 상태인 건은 제외하지 않음)
       if (!isAutoAssigned && mid && excludedMemberIdsSet.has(mid)) continue;
       const rawSigPrice = parseOverlayContributionNumber(
-        d.sigPrice || (d.isZubzubBonus ? (d.amount || d.contributionPoints) : 0)
+        d.sigPrice || (d.isZubzubBonus ? (!applyDoubleToPongdang && d.sigPrice ? d.sigPrice : (d.contributionPoints || d.amount)) : 0)
       );
       const sigPrice = Math.floor(Math.abs(rawSigPrice));
       const rawContributionPoints = parseOverlayContributionNumber(d.contributionPoints);
@@ -265,9 +266,13 @@ export default function AdminPongdangPopupPanel() {
           donorName: l.donorName || "대표 시그 줍줍",
           memberId: mid,
           memberName: memberNameMap.get(mid) || "미지정",
-          amount: Math.floor(Math.abs(parseOverlayContributionNumber(l.amount))),
+          amount: Math.floor(Math.abs(parseOverlayContributionNumber(
+            !applyDoubleToPongdang && (l.baseSigPrice || l.multiplier === 2)
+              ? (l.baseSigPrice ?? Math.round(l.amount / 2))
+              : l.amount
+          ))),
           isMinus: Boolean(l.pongdangMinus) || parseOverlayContributionNumber(l.amount) < 0,
-          reason: l.note || "🎁 대표 시그 줍줍 보너스",
+          reason: l.note || `🎁 대표 시그 줍줍 보너스${applyDoubleToPongdang ? " (2배)" : " (1배)"}`,
           isZubzubBonus: true,
         });
         continue;

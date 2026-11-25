@@ -7403,7 +7403,7 @@ function AdminPageInner() {
       while (current.length < memberCount) current.push("");
       const text = String(value || "").replace(/\s+/g, " ").trim().slice(0, 48);
       current[index] = text;
-      const next: AppState = { ...prev, rankCustomCells: current };
+      const next: AppState = { ...prev, rankCustomCells: current, customCellMode: "rank" };
       persistState(next, { omitDonationFields: true, membersAuthoritative: true });
       return next;
     });
@@ -25413,6 +25413,11 @@ function AdminPageInner() {
                                                         customCellLinkMode: "preset",
                                                         customCellMode: "rank",
                                                       });
+                                                      setState((prev: AppState) => {
+                                                        const next: AppState = { ...prev, customCellMode: "rank" };
+                                                        persistState(next, { omitDonationFields: true, membersAuthoritative: true });
+                                                        return next;
+                                                      });
                                                       setGlobalPreviewBump((n) => n + 1);
                                                     }}
                                                   >
@@ -25429,6 +25434,11 @@ function AdminPageInner() {
                                                       updatePreset(p.id, {
                                                         customCellLinkMode: "preset",
                                                         customCellMode: "member",
+                                                      });
+                                                      setState((prev: AppState) => {
+                                                        const next: AppState = { ...prev, customCellMode: "member" };
+                                                        persistState(next, { omitDonationFields: true, membersAuthoritative: true });
+                                                        return next;
                                                       });
                                                       setGlobalPreviewBump((n) => n + 1);
                                                     }}
@@ -25488,6 +25498,11 @@ function AdminPageInner() {
                                                                 customCellLinkMode: "preset",
                                                                 customCellMode: "rank",
                                                                 rankCustomCells: nextRanks,
+                                                              });
+                                                              setState((prev: AppState) => {
+                                                                const next: AppState = { ...prev, customCellMode: "rank", rankCustomCells: nextRanks };
+                                                                persistState(next, { omitDonationFields: true, membersAuthoritative: true });
+                                                                return next;
                                                               });
                                                               setGlobalPreviewBump((n) => n + 1);
                                                             }}
