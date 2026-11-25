@@ -1,5 +1,5 @@
 import type { AppState, ContributionLog, Donor, Member, RouletteState, SigItem } from "@/types";
-import { syncMemberTotalsFromDonors, isPongdangMinusContributionLog } from "@/lib/donation/apply-donation-state";
+import { syncMemberTotalsFromDonors, isPongdangMinusContributionLog, isPongdangContributionLog } from "@/lib/donation/apply-donation-state";
 import { readManualSigBroadcastFromState } from "@/lib/manual-sig-broadcast-state";
 import { collectPongdangPopupAutoContributionByMember } from "@/lib/pongdang-popup-contribution";
 
@@ -439,10 +439,10 @@ export function applyOverlayDonationDisplayTotals(
       ? filterContributionLogsFromAggregateAt(rawLogs, fromAt)
       : rawLogs;
 
-  // 엑셀표(오버레이)에서는 퐁당퐁당 마이너스 로그 제외
+  // 메인 엑셀표(오버레이)에서는 퐁당퐁당 기여도 로그를 완전히 제외 (별도 항목)
   const filteredLogsForAmount = (logsForAmount || []).filter((l) => {
     if (isPongdangPopup) return true;
-    return !isPongdangMinusContributionLog(l);
+    return !isPongdangContributionLog(l);
   });
 
   const amountSynced = syncMemberTotalsFromDonors({
@@ -532,7 +532,7 @@ export function applyOverlayDonationDisplayTotals(
       const pongdangAuto = popupAutoById.get(m.id) ?? 0;
       const rawTotal = isPongdangPopup
         ? (isManualMode ? pongdangAuto + totalManual : pongdangAuto)
-        : baseVal + directManualVal;
+        : baseVal;
       return {
         ...m,
         contribution: isPongdangPopup || day777 ? rawTotal : Math.max(0, rawTotal),
@@ -591,7 +591,11 @@ export function resolveOverlayContributionSource(
   }
   const day777 = Boolean(opts.day777Calc);
   const isPongdangPopup = Boolean(opts.isPongdangPopup);
-  const contributionLogs = state.contributionLogs || state.zubzubContributionLogs || [];
+  const rawLogs = state.contributionLogs || state.zubzubContributionLogs || [];
+  // 퐁당퐁당 팝업/표가 아닌 일반 메인 엑셀표는 퐁당퐁당 기여도 로그를 완전히 제외 (별도 항목)
+  const contributionLogs = isPongdangPopup
+    ? rawLogs
+    : rawLogs.filter((l) => !isPongdangContributionLog(l));
   const filterMinusLogs = (logs: ContributionLog[] | undefined) => {
     if (!logs) return [];
     return logs;

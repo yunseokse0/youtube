@@ -79,9 +79,8 @@ type DonationEventLike = {
   contributionPoints?: unknown;
 };
 
-export function isPongdangMinusContributionLog(log: ContributionLog | null | undefined): boolean {
+export function isPongdangContributionLog(log: ContributionLog | null | undefined): boolean {
   if (!log) return false;
-  if (log.delta !== -1) return false;
   if ((log as any).isPongdang === true) return true;
   if (typeof log.id === "string" && (log.id.startsWith("plog_") || log.id.startsWith("cl_pd_"))) return true;
   if (typeof log.note === "string" && log.note.includes("퐁당")) return true;
@@ -89,15 +88,22 @@ export function isPongdangMinusContributionLog(log: ContributionLog | null | und
   return false;
 }
 
+export function isPongdangMinusContributionLog(log: ContributionLog | null | undefined): boolean {
+  if (!log) return false;
+  if (log.delta !== -1) return false;
+  return isPongdangContributionLog(log);
+}
+
 export function aggregateContribLogsByMember(
   logs: ContributionLog[] | null | undefined,
-  opts?: { includePongdangMinus?: boolean }
+  opts?: { includePongdangMinus?: boolean; includePongdangLogs?: boolean }
 ): Map<string, { deltaSum: number; hasLogSource: boolean }> {
   const out = new Map<string, { deltaSum: number; hasLogSource: boolean }>();
   if (!logs || logs.length === 0) return out;
-  const includeMinus = Boolean(opts?.includePongdangMinus);
+  const includePongdang = Boolean(opts?.includePongdangLogs);
   for (const log of logs) {
-    if (!includeMinus && isPongdangMinusContributionLog(log)) {
+    // 퐁당퐁당 기여도 로그는 메인 엑셀표 기여도 집계에서 완전히 제외 (별도 항목)
+    if (!includePongdang && isPongdangContributionLog(log)) {
       continue;
     }
     const mid = String(log.memberId || "").trim();
@@ -187,13 +193,21 @@ function buildMembersFromTotals(
       },
       positions
     );
+    const logInfo = logMap.get(member.id);
     const contribution = isOperating
-      ? Math.max(0, Math.floor(Number(member.contribution) || 0))
+      ? Math.max(
+          0,
+          Math.floor(
+            logInfo?.hasLogSource
+              ? Math.max(Number(member.contribution) || 0, logInfo.deltaSum)
+              : Number(member.contribution) || 0
+          )
+        )
       : Math.max(
           0,
           Math.floor(
             (contribMap.get(member.id)?.donorPoints || 0) +
-              (logMap.get(member.id)?.deltaSum || 0)
+              (logInfo?.deltaSum || 0)
           )
         );
     return {
@@ -307,13 +321,21 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
       },
       positions
     );
+    const logInfo = logMap.get(member.id);
     const contribution = isOperating
-      ? Math.max(0, Math.floor(Number(member.contribution) || 0))
+      ? Math.max(
+          0,
+          Math.floor(
+            logInfo?.hasLogSource
+              ? Math.max(Number(member.contribution) || 0, logInfo.deltaSum)
+              : Number(member.contribution) || 0
+          )
+        )
       : Math.max(
           0,
           Math.floor(
             (contribMap.get(member.id)?.donorPoints || 0) +
-              (logMap.get(member.id)?.deltaSum || 0)
+              (logInfo?.deltaSum || 0)
           )
         );
     return {

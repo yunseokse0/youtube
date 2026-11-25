@@ -540,7 +540,7 @@ export function mergePartialState(
       (l) =>
         l.isZubzubBonus ||
         Boolean((l as any).isPongdang) ||
-        String(l.id || "").startsWith("cl_pd_") ||
+        String(l.id || "").startsWith("cl_") ||
         String(l.id || "").startsWith("plog_") ||
         (typeof l.note === "string" && l.note.includes("퐁당"))
     );

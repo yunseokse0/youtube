@@ -4111,7 +4111,7 @@ function OverlayInner() {
   );
   const getSessionContributionValueForMember = useCallback((m: Member) => {
     const storedContribution = parseOverlayContributionNumber(m.contribution);
-    if (storedContribution < 0 || isPongdangTable) return storedContribution;
+    if (isPongdangTable) return storedContribution;
     const memberId = String(m.id || "").trim();
     if (!memberId || !s) return 0;
     return resolveMemberContributionTotal(memberId, {
@@ -4135,7 +4135,7 @@ function OverlayInner() {
   const allowContributionTotalFallback = isDefaultContributionFormula(s?.contributionFormula);
   const getContributionValueForMember = useCallback((m: Member) => {
     const storedContribution = parseOverlayContributionNumber(m.contribution);
-    if (storedContribution < 0 || isPongdangTable) return Math.floor(storedContribution);
+    if (isPongdangTable) return Math.floor(storedContribution);
     const memberId = String(m.id || "").trim();
     const donors = overlayContributionSource.donors || [];
     const hasContributionSource =

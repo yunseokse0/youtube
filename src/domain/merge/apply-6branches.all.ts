@@ -184,9 +184,24 @@ export function mergeDonationApplyBase(
       ? hint.donorRankingsFullTheme
       : (hint.donorRankingsFullTheme ?? fresh.donorRankingsFullTheme);
 
+  const freshLogs = Array.isArray(fresh.contributionLogs) ? fresh.contributionLogs : [];
+  const hintLogs = Array.isArray(hint.contributionLogs) ? hint.contributionLogs : [];
+  let mergedContributionLogs = fresh.contributionLogs ?? hint.contributionLogs;
+  if (hintLogs.length > 0 || freshLogs.length > 0) {
+    const logMap = new Map<string, (typeof hintLogs)[number]>();
+    for (const l of hintLogs) {
+      if (l && l.id) logMap.set(String(l.id), l);
+    }
+    for (const l of freshLogs) {
+      if (l && l.id) logMap.set(String(l.id), l);
+    }
+    mergedContributionLogs = Array.from(logMap.values());
+  }
+
   const merged: AppState = {
     ...hint,
     ...fresh,
+    contributionLogs: mergedContributionLogs,
     members: rosterBase.members,
     memberPositions: fresh.memberPositions !== undefined ? fresh.memberPositions : (hint.memberPositions ?? {}),
     memberPositionMode: fresh.memberPositionMode ?? hint.memberPositionMode,

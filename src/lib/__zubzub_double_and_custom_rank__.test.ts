@@ -279,4 +279,150 @@ describe("줍줍 2배 기여도 및 퐁당퐁당 옵션 & 커스텀 열 순위 �
     expect(projected.contributionLogs[0].amount).toBe(50000);
     expect(projected.contributionLogs[0].delta).toBe(-1);
   });
+
+  it("13. mergePartialState는 관리자 일반 수동 기여도 로그(cl_...)도 autosave 시 보존한다", async () => {
+    const { mergePartialState } = await import("@/shell/state/state-save-shared");
+    const manualLog: ContributionLog = {
+      id: "cl_1795590003000_abcd",
+      memberId: "m3",
+      amount: 50000,
+      delta: 1,
+      note: "수동 추가",
+      at: Date.now(),
+    };
+    const baseState: any = {
+      members,
+      donors: [],
+      contributionLogs: [manualLog],
+    };
+    const patch: any = {
+      contributionLogs: [],
+    };
+    const merged = mergePartialState(baseState, patch, "zakiexcel");
+    expect(merged.contributionLogs).toHaveLength(1);
+    expect(merged.contributionLogs?.[0].id).toBe("cl_1795590003000_abcd");
+    expect(merged.contributionLogs?.[0].amount).toBe(50000);
+  });
+
+  it("14. mergeDonationApplyBase는 existing(hint)에 존재하는 기여도 로그를 fresh(incoming)와 유니온 병합한다", async () => {
+    const { mergeDonationApplyBase } = await import("@/domain/merge/apply-6branches.all");
+    const hintLog: ContributionLog = {
+      id: "cl_1795590003000_abcd",
+      memberId: "m3",
+      amount: 50000,
+      delta: 1,
+      note: "수동 추가",
+      at: Date.now(),
+    };
+    const freshLog: ContributionLog = {
+      id: "cl_1795591256000_efgh",
+      memberId: "m_1795422063042_9sje4",
+      amount: 31000,
+      delta: 1,
+      note: "",
+      at: Date.now(),
+    };
+    const hint: any = {
+      members,
+      donors: [],
+      contributionLogs: [hintLog],
+    };
+    const fresh: any = {
+      members,
+      donors: [],
+      contributionLogs: [freshLog],
+    };
+    const merged = mergeDonationApplyBase(fresh, hint);
+    expect(merged.contributionLogs).toHaveLength(2);
+    const ids = merged.contributionLogs.map((l: any) => l.id);
+    expect(ids).toContain("cl_1795590003000_abcd");
+    expect(ids).toContain("cl_1795591256000_efgh");
+  });
+
+  it("15. syncAndRepairMemberTotals는 운영비/직급 멤버(실장/대표)에게 수동 기여도 로그가 추가되면 기여도를 반영한다", async () => {
+    const { syncAndRepairMemberTotals } = await import("@/domain/sync/sync-repair-1pass");
+    const manualLog: ContributionLog = {
+      id: "cl_1795590003000_abcd",
+      memberId: "m3",
+      amount: 50000,
+      delta: 1,
+      note: "수동 추가",
+      at: Date.now(),
+    };
+    const testState: any = {
+      members: [
+        { id: "m3", name: "제킹", contribution: 0 },
+      ],
+      memberPositions: { m3: "실장" },
+      donors: [],
+      contributionLogs: [manualLog],
+    };
+    const repaired = syncAndRepairMemberTotals(testState);
+    const jeking = repaired.members.find((m: any) => m.id === "m3");
+    expect(jeking?.contribution).toBe(50000);
+  });
+
+  it("16. 퐁당퐁당 수동 기여도 가감(cl_pd_, isPongdang) 및 pongdangManualContributions는 메인 엑셀표에 일절 영향을 주지 않는다", async () => {
+    const { applyOverlayDonationDisplayTotals, resolveOverlayContributionSource } = await import("@/lib/overlay-donation-aggregate");
+    const { resolveMemberContributionTotal, syncAndRepairMemberTotals } = await import("@/domain/sync/sync-repair-1pass");
+
+    // 퐁당퐁당 기여도 로그 (-31,000원 차감)
+    const pongdangMinusLog: ContributionLog = {
+      id: "cl_pd_1795592000_pd",
+      memberId: "m_surin",
+      amount: 31000,
+      delta: -1,
+      note: "퐁당퐁당 수동 차감",
+      at: Date.now(),
+      isPongdang: true,
+    } as any;
+
+    // 메인 정산표 후원 100,000원
+    const mainDonor: Donor = {
+      id: "d_1",
+      donorName: "후원자",
+      memberId: "m_surin",
+      amount: 100000,
+      target: "toon",
+      contributionPoints: 100000,
+      at: Date.now(),
+    };
+
+    const testState: any = {
+      members: [
+        { id: "m_surin", name: "수린", contribution: 100000, toon: 100000 },
+      ],
+      donors: [mainDonor],
+      contributionLogs: [pongdangMinusLog],
+      pongdangManualContributions: { m_surin: -31000 },
+      pongdangManualMode: true,
+    };
+
+    // 1) 메인 엑셀표 오버레이 파이프라인 (isPongdangPopup: false)
+    const mainOverlayState = applyOverlayDonationDisplayTotals(testState, { isPongdangPopup: false });
+    const mainSurin = mainOverlayState.members.find((m: any) => m.id === "m_surin");
+    expect(mainSurin?.contribution).toBe(100000); // 퐁당퐁당의 -31,000이나 pongdangManualContributions의 -31,000이 적용되지 않고 100,000 유지
+
+    // 2) resolveOverlayContributionSource에서도 메인 표는 퐁당 로그를 필터링
+    const mainSource = resolveOverlayContributionSource(testState, { isPongdangPopup: false });
+    expect(mainSource.contributionLogs).toHaveLength(0); // cl_pd_ 퐁당 로그는 메인 소스에서 제외
+
+    // 3) resolveMemberContributionTotal에서도 메인 표는 퐁당 로그를 무시
+    const mainTotal = resolveMemberContributionTotal("m_surin", {
+      donors: [mainDonor],
+      contributionLogs: [pongdangMinusLog],
+    });
+    expect(mainTotal).toBe(100000); // 100,000 유지
+
+    // 4) syncAndRepairMemberTotals 서버 동기화에서도 메인 멤버는 100,000 유지
+    const repaired = syncAndRepairMemberTotals(testState);
+    const repairedSurin = repaired.members.find((m: any) => m.id === "m_surin");
+    expect(repairedSurin?.contribution).toBe(100000);
+
+    // 5) 반면 퐁당퐁당 오버레이 (isPongdangPopup: true)에서는 정상적으로 퐁당 기여도 계산 적용
+    const pongdangOverlayState = applyOverlayDonationDisplayTotals(testState, { isPongdangPopup: true });
+    const pongdangSurin = pongdangOverlayState.members.find((m: any) => m.id === "m_surin");
+    // totalManual = logVal (-31,000) + directManualVal (-31,000) = -62,000
+    expect(pongdangSurin?.contribution).toBe(-62000);
+  });
 });
