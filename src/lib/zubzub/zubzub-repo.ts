@@ -313,8 +313,8 @@ export async function updateZubzubQueueClaimedMember(
       await c.execute(
         `UPDATE zubzub_queue 
          SET claimed_by_member_id = ? 
-         WHERE user_id = ? AND (id = ? OR claimed_donation_id = ?)`,
-        [nextMid, userId, targetId, targetId]
+         WHERE user_id = ? AND (id = ? OR claimed_donation_id = ? OR trigger_donation_id = ?)`,
+        [nextMid, userId, targetId, targetId, targetId]
       );
       return true;
     });

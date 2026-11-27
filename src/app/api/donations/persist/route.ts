@@ -125,6 +125,20 @@ export async function POST(req: Request) {
         }
       }
     }
+    if (Array.isArray(incomingState.contributionLogs)) {
+      for (const log of incomingState.contributionLogs) {
+        if (log.isZubzubBonus && log.zubzubQueueId && log.memberId) {
+          void updateZubzubQueueClaimedMember(userId, log.zubzubQueueId, log.memberId);
+        }
+      }
+    }
+    if (Array.isArray(incomingState.donors)) {
+      for (const d of incomingState.donors) {
+        if (d.claimedZubzubQueueId && d.memberId) {
+          void updateZubzubQueueClaimedMember(userId, d.claimedZubzubQueueId, d.memberId);
+        }
+      }
+    }
 
     /** TR-7.1: 4단계 pipeline 경유 재링크 (실패시 fallback으로 legacy 호출 회귀0 방지 */
     const assembleRes = await assembleStateAfterDonationEvent(persisted.state!, "persist", {

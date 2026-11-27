@@ -213,4 +213,139 @@ describe("줍줍 후원 멤버 교체 시 기여도 동시 이전 및 퐁당퐁�
     const updatedLog = reassigned.contributionLogs?.find((l) => l.id === "zubzub_bonus_legacy_queue");
     expect(updatedLog?.memberId).toBe("m_surin");
   });
+
+  it("4. 접두사가 다른 투네이션 후원(toonation:din:UUID vs raw UUID)도 정규화되어 줍줍 기여도까지 함께 이전된다", () => {
+    const prefixedDonation: Donor = {
+      id: "toonation:din:cmuf12345",
+      externalId: "cmuf12345",
+      name: "투네팬",
+      donorName: "투네팬",
+      amount: 50000,
+      memberId: "m_jina",
+      at: 4000000,
+      target: "toon",
+      sigPrice: 50000,
+      // 줍줍 당시 raw externalId로 저장된 상태
+    };
+
+    const zubzubLog: ContributionLog = {
+      id: "zubzub_bonus_queue_prefixed",
+      memberId: "m_jina",
+      amount: 50000,
+      baseSigPrice: 50000,
+      multiplier: 2,
+      delta: 1,
+      at: 4000010,
+      isZubzubBonus: true,
+      zubzubQueueId: "queue_prefixed",
+      claimedDonationId: "cmuf12345", // 접두사 없는 raw ID!
+    };
+
+    const baseState: AppState = {
+      members,
+      donors: [prefixedDonation],
+      contributionLogs: [zubzubLog],
+      zubzubWaitingItems: [
+        {
+          id: "queue_prefixed",
+          userId: "zakiexcel",
+          sigName: "5만 시그",
+          sigIndex: 4,
+          bonusAmount: 50000,
+          status: "CLAIMED",
+          claimedByMemberId: "m_jina",
+          claimedDonationId: "cmuf12345",
+          enqueuedAt: 3999900,
+          claimedAt: 4000010,
+        },
+      ],
+      zubzubSettings: {
+        enabled: true,
+        multiplier: 2,
+        applyContributionToPongdang: true,
+        applyDoubleContributionToPongdang: true,
+      },
+    };
+
+    // toonation:din:cmuf12345 후원 멤버를 수린으로 교체
+    const reassigned = reassignDonorMemberInAppState(baseState, "toonation:din:cmuf12345", "m_surin");
+    expect(reassigned).not.toBeNull();
+    if (!reassigned) return;
+
+    const updatedDonor = reassigned.donors?.find((d) => d.id === "toonation:din:cmuf12345");
+    expect(updatedDonor?.memberId).toBe("m_surin");
+
+    // 줍줍 기여도 로그도 수린으로 함께 이전됨!
+    const updatedLog = reassigned.contributionLogs?.find((l) => l.id === "zubzub_bonus_queue_prefixed");
+    expect(updatedLog?.memberId).toBe("m_surin");
+
+    // 퐁당퐁당 및 777 집계에서 수린에게 100,000점 반영
+    const popupMap = collectPongdangPopupAutoContributionByMember(reassigned);
+    expect(popupMap.get("m_surin")).toBe(100000);
+    expect(popupMap.get("m_jina")).toBeUndefined();
+
+    const day777Map = collectDay777SigContributionByMember(reassigned);
+    expect(day777Map.get("m_surin")).toBe(100000);
+    expect(day777Map.get("m_jina")).toBeUndefined();
+  });
+
+  it("5. 777데이 고액 후원(amount=777,000, sigPrice=50,000)에서 줍줍 받은 멤버 교체 시에도 기여도가 정상 이전된다", () => {
+    const day777Donation: Donor = {
+      id: "toonation:din:777_big_shot",
+      externalId: "777_big_shot",
+      name: "777열혈",
+      amount: 777000, // 고액 후원금
+      sigPrice: 50000, // 나온 시그 단가
+      memberId: "m_jina",
+      at: 5000000,
+      target: "account",
+      // ID 연동이 누락된 레거시 상태라도 휴리스틱(sigPrice)으로 매칭되어야 함
+    };
+
+    const zubzubLog: ContributionLog = {
+      id: "zubzub_bonus_queue_777_bonus",
+      memberId: "m_jina",
+      amount: 50000,
+      baseSigPrice: 50000,
+      multiplier: 2,
+      delta: 1,
+      at: 5000025,
+      isZubzubBonus: true,
+      zubzubQueueId: "queue_777_bonus",
+      // claimedDonationId 없음 (휴리스틱 검증)
+    };
+
+    const baseState: AppState = {
+      members,
+      donors: [day777Donation],
+      contributionLogs: [zubzubLog],
+      zubzubSettings: {
+        enabled: true,
+        multiplier: 2,
+        applyContributionToPongdang: true,
+        applyDoubleContributionToPongdang: true,
+      },
+    };
+
+    // 진아 -> 채영으로 교체
+    const reassigned = reassignDonorMemberInAppState(baseState, "toonation:din:777_big_shot", "m_chaeyoung");
+    expect(reassigned).not.toBeNull();
+    if (!reassigned) return;
+
+    const updatedDonor = reassigned.donors?.find((d) => d.id === "toonation:din:777_big_shot");
+    expect(updatedDonor?.memberId).toBe("m_chaeyoung");
+
+    // 777 후원의 sigPrice(50,000) 휴리스틱으로 줍줍 기여도 로그가 채영으로 이전됨
+    const updatedLog = reassigned.contributionLogs?.find((l) => l.id === "zubzub_bonus_queue_777_bonus");
+    expect(updatedLog?.memberId).toBe("m_chaeyoung");
+
+    // 퐁당퐁당 및 777 집계에서 채영에게 50,000(시그) + 50,000(줍줍) = 100,000점 반영
+    const popupMap = collectPongdangPopupAutoContributionByMember(reassigned);
+    expect(popupMap.get("m_chaeyoung")).toBe(100000);
+    expect(popupMap.get("m_jina")).toBeUndefined();
+
+    const day777Map = collectDay777SigContributionByMember(reassigned);
+    expect(day777Map.get("m_chaeyoung")).toBe(100000);
+    expect(day777Map.get("m_jina")).toBeUndefined();
+  });
 });

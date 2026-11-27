@@ -57,6 +57,7 @@ import {
   resolveDay777Calc,
   resolvePongdangManualMode,
   resolvePongdangIncludeZubzub,
+  resolvePongdangShowContributionExcluded,
   resolveMemberRankingMetric,
   resolveTableRowEvenBg,
   resolveTableRowOddBg,
@@ -2927,6 +2928,8 @@ function OverlayInner() {
     resolvePongdangManualMode(rawSp, effectivePreset, { ready }, s as AppState);
   const pongdangIncludeZubzub =
     resolvePongdangIncludeZubzub(rawSp, effectivePreset, { ready }, s as AppState);
+  const pongdangShowContributionExcluded =
+    resolvePongdangShowContributionExcluded(rawSp, effectivePreset, { ready }, s as AppState);
   /** 퐁당퐁당 엑셀표(777데이 계산 또는 excelPongdang 테마 또는 퐁당 프리셋): 마이너스 기여도를 음수 그대로 표기 */
   const isPongdangTable = Boolean(
     day777Calc ||
@@ -3954,12 +3957,15 @@ function OverlayInner() {
 
   const isContributionExcluded = useCallback(
     (m: Member | { id?: string; name?: string } | null | undefined) => {
-      if (!m || contributionExcludedMemberIdsSet.size === 0) return false;
+      if (!m) return false;
+      // 퐁당퐁당 엑셀표에서는 기여도 제외 멤버라도 기여도를 정상 표시
+      if (isPongdangTable && pongdangShowContributionExcluded) return false;
+      if (contributionExcludedMemberIdsSet.size === 0) return false;
       const id = String(m.id || "").trim();
       const name = String(m.name || "").trim();
       return (Boolean(id) && contributionExcludedMemberIdsSet.has(id)) || (Boolean(name) && contributionExcludedMemberIdsSet.has(name));
     },
-    [contributionExcludedMemberIdsSet]
+    [contributionExcludedMemberIdsSet, isPongdangTable, pongdangShowContributionExcluded]
   );
 
   const members = useMemo(() => {

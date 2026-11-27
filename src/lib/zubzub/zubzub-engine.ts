@@ -1,6 +1,7 @@
 import type { AppState, ContributionLog, Donor, Member, ZubZubQueueItem } from "@/types";
 import type { DonationEvent } from "@/lib/donation/types";
 import { syncMemberTotalsFromDonors } from "@/domain/sync/sync-repair-1pass";
+import { isDonorMatchingId } from "@/domain/contribution/apply-donation.usecases";
 import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
 import { publishSseEvent } from "@/lib/sse-clients-hub";
 import {
@@ -349,6 +350,12 @@ export async function processZubzubDonationHook(
     // (예: 1배 설정 시 +0배 보너스 → 본인 후원 1배 + 보너스 0배 = 총 1배!)
     const bonusPoints = baseSigPrice * Math.max(0, multiplier - 1);
 
+    const rawDonationId = String(event.id || event.externalId || "");
+    const matchingDonor = (state.donors || []).find((d) =>
+      rawDonationId ? isDonorMatchingId(d, rawDonationId) : false
+    );
+    const canonicalDonationId = matchingDonor?.id || rawDonationId;
+
     const bonusDonor: Donor = {
       id: `zubzub_bonus_${claimedQueue.id}`,
       name: `[대표 줍줍] ${claimedQueue.sigName}`,
@@ -366,7 +373,7 @@ export async function processZubzubDonationHook(
       zubzubMultiplier: multiplier,
       isZubzubBonus: true,
       zubzubQueueId: claimedQueue.id,
-      claimedDonationId: String(event.id || event.externalId || ""),
+      claimedDonationId: canonicalDonationId,
       provider: "zubzub_bonus",
       externalId: claimedQueue.id,
     };
@@ -381,16 +388,16 @@ export async function processZubzubDonationHook(
         multiplier,
         baseSigPrice,
         isManualClaim: false,
-        claimedDonationId: String(event.id || event.externalId || ""),
+        claimedDonationId: canonicalDonationId,
       }
     );
 
     // 줍줍 금액은 후원 원장에 넣지 않고 기여도 기록부에만 남긴다.
     const currentWaitings = await listWaitingZubzubQueues(userId);
 
-    const triggerDonationId = String(event.id || event.externalId || "");
+    const triggerDonationId = canonicalDonationId || rawDonationId;
     const nextDonors = (state.donors || []).map((d) =>
-      triggerDonationId && d.id === triggerDonationId
+      triggerDonationId && (d.id === triggerDonationId || isDonorMatchingId(d, triggerDonationId))
         ? { ...d, claimedZubzubQueueId: claimedQueue.id }
         : d
     );

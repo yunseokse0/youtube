@@ -272,6 +272,8 @@ export type OverlayPresetLike = {
   excludedMemberIds?: string[] | string;
   /** 기여도 표시 제외 멤버 ID 목록 (기여도를 - 로 대체) */
   contributionExcludedMemberIds?: string[] | string;
+  /** 퐁당퐁당 엑셀표에서 기여도 제외 멤버(대표 등)의 기여도 표시 여부 (기본 true: 퐁당에서는 기여도 표시) */
+  pongdangShowContributionExcluded?: boolean;
   /** 순위 산정 기준: contribution | donation | account | toon */
   rankingMetric?: MemberRankingMetric;
   memberRankingMetric?: MemberRankingMetric;
@@ -586,6 +588,8 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   } else if (typeof preset.contributionExcludedMemberIds === "string" && preset.contributionExcludedMemberIds.trim()) {
     q.set("contributionExcludedMemberIds", preset.contributionExcludedMemberIds.trim());
   }
+  if (preset.pongdangShowContributionExcluded === true) q.set("pongdangShowContributionExcluded", "true");
+  else if (preset.pongdangShowContributionExcluded === false) q.set("pongdangShowContributionExcluded", "false");
   const rankMetric = preset.rankingMetric || preset.memberRankingMetric;
   if (rankMetric && rankMetric !== "contribution") {
     q.set("rankingMetric", rankMetric);
@@ -700,6 +704,8 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "pongdangManualMode",
   "excludedMemberIds",
   "contributionExcludedMemberIds",
+  "pongdangIncludeZubzub",
+  "pongdangShowContributionExcluded",
   "rankingMetric",
   "memberRankingMetric",
   "rankTop3Mode",
@@ -907,6 +913,8 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "pongdangManualMode",
   "excludedMemberIds",
   "contributionExcludedMemberIds",
+  "pongdangIncludeZubzub",
+  "pongdangShowContributionExcluded",
   "rankingMetric",
   "memberRankingMetric",
   "rankTop3Mode",
@@ -1331,6 +1339,8 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "pongdangManualMode",
   "excludedMemberIds",
   "contributionExcludedMemberIds",
+  "pongdangIncludeZubzub",
+  "pongdangShowContributionExcluded",
   "rankingMetric",
   "memberRankingMetric",
   "tableBgOpacity",
@@ -1442,6 +1452,8 @@ const PRESET_EMPTY_USES_THEME_DEFAULT_KEYS = new Set([
   "pongdangManualMode",
   "excludedMemberIds",
   "contributionExcludedMemberIds",
+  "pongdangIncludeZubzub",
+  "pongdangShowContributionExcluded",
   "rankingMetric",
   "memberRankingMetric",
   "tableRowEvenBg",
@@ -2508,6 +2520,30 @@ export function resolvePongdangIncludeZubzub(
     return Boolean(state.zubzubSettings.applyContributionToPongdang);
   }
   return false;
+}
+
+/**
+ * 퐁당퐁당 엑셀표에서 기여도 제외 멤버(대표 등)의 기여도 표시 여부
+ * 활성화 시(true, 기본): 퐁당퐁당 엑셀표에서는 기여도 제외 멤버라도 기여도 숫자가 정상 표시되고 합계에 포함됨
+ * 비활성화 시(false): 퐁당퐁당 엑셀표에서도 기여도 칸이 '-' 로 대체되고 합계에서 제외됨
+ * 비-퐁당퐁당(일반 방송 엑셀표 등)에서는 항상 false (기여도 표시 제외 대상은 '-' 표기)
+ */
+export function resolvePongdangShowContributionExcluded(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean },
+  state?: { pongdangShowContributionExcluded?: boolean } | null
+): boolean {
+  if (!overlayThemeIsExcelPongdang(rawSp, preset, opts)) return false;
+  const merged = resolveLivePresetStyleParam("pongdangShowContributionExcluded", rawSp, presetToParams(preset), opts);
+  if (merged === "true") return true;
+  if (merged === "false") return false;
+  if (preset?.pongdangShowContributionExcluded === true) return true;
+  if (preset?.pongdangShowContributionExcluded === false) return false;
+  if (state?.pongdangShowContributionExcluded === true) return true;
+  if (state?.pongdangShowContributionExcluded === false) return false;
+  // 퐁당퐁당 엑셀표 기본값: true (기여도 제외 멤버도 기여도 정상 표시)
+  return true;
 }
 
 /**

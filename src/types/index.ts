@@ -398,6 +398,8 @@ export type DonationTableColumnsOptions = {
   showContributionColumn?: boolean;
   /** 기여도 표시 제외 멤버 ID 목록 (해당 인원은 기여도 열 표시 제외 및 '-' 대체) */
   contributionExcludedMemberIds?: string[] | string;
+  /** 퐁당퐁당 엑셀표에서 기여도 제외 멤버(대표 등)의 기여도 표시 여부 (기본 true: 퐁당에서는 기여도 표시) */
+  pongdangShowContributionExcluded?: boolean;
   /** 화장실 열 표시 */
   showRestroomColumn?: boolean;
   /** 하단 총합 행 표시 */
@@ -845,6 +847,8 @@ export type AppState = {
   pongdangExcludedMemberIds?: string[];
   /** 퐁당퐁당 엑셀표에 줍줍 기여도 반영 여부 (활성화 시 퐁당퐁당 엑셀표 및 순위 집계에 줍줍 기여도 합산) */
   pongdangIncludeZubzub?: boolean;
+  /** 퐁당퐁당 엑셀표에서 기여도 제외 멤버(대표 등)의 기여도 표시 여부 (기본 true: 퐁당에서는 기여도 표시) */
+  pongdangShowContributionExcluded?: boolean;
   overlaySettings?: LegacyOverlaySettings;
   /** 멤버별 시그 매치 점수 */
   sigMatch: SigMatchState;

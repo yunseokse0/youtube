@@ -460,6 +460,8 @@ type OverlayPreset = {
   pongdangManualMode?: boolean;
   /** 퐁당퐁당 엑셀표에 줍줍 기여도 반영 여부 */
   pongdangIncludeZubzub?: boolean;
+  /** 퐁당퐁당 엑셀표에서 기여도 제외 멤버(대표 등)의 기여도 표시 여부 */
+  pongdangShowContributionExcluded?: boolean;
   /** 표에서 제외할 멤버 ID 목록 */
   excludedMemberIds?: string[];
   /** 기여도 표시 제외 멤버 ID 목록 (기여도를 - 로 표시) */
@@ -6546,6 +6548,9 @@ function AdminPageInner() {
     }
     if (p.pongdangIncludeZubzub !== undefined) {
       q.set("pongdangIncludeZubzub", String(p.pongdangIncludeZubzub));
+    }
+    if (p.pongdangShowContributionExcluded !== undefined) {
+      q.set("pongdangShowContributionExcluded", String(p.pongdangShowContributionExcluded));
     }
     return `${base}?${q.toString()}`;
   };
@@ -14356,7 +14361,7 @@ function AdminPageInner() {
                         </div>
                       </div>
                       <p className="text-[11px] text-amber-300/80">
-                        클릭하여 특정 멤버의 기여도 표출을 제외하고 <code>-</code> 로 대체합니다. (주황색=제외됨[-], 회색=정상 표시)
+                        클릭하여 특정 멤버의 기여도 표출을 제외하고 <code>-</code> 로 대체합니다. (주황색=제외됨[-], 회색=정상 표시 / ※ 퐁당퐁당 엑셀표에서는 기여도 숫자가 정상 표출됩니다)
                       </p>
                       <div className="flex flex-wrap gap-1.5 pt-0.5">
                         {state.members.map((m) => {
@@ -20007,6 +20012,37 @@ function AdminPageInner() {
 
                 <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-lg border border-white/10 bg-black/30 text-xs">
                   <div className="flex items-center gap-1.5 text-neutral-300 font-semibold">
+                    <span>🛡️</span>
+                    <span>기여도 제외 멤버 퐁당 표시:</span>
+                    <span className="text-[10px] text-neutral-400 font-normal">
+                      (일반 엑셀표에서 기여도가 제외[-]된 멤버라도 퐁당퐁당 엑셀표에서는 기여도 숫자를 표시합니다)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      state.pongdangShowContributionExcluded !== false
+                        ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/40 ring-1 ring-emerald-400"
+                        : "bg-neutral-800 hover:bg-neutral-700 text-neutral-400 border border-white/10"
+                    }`}
+                    onClick={() => {
+                      const cur = state.pongdangShowContributionExcluded !== false;
+                      const next = !cur;
+                      persistState((prev) => ({
+                        ...prev,
+                        pongdangShowContributionExcluded: next,
+                        updatedAt: Date.now(),
+                      }));
+                      setGlobalPreviewBump((n) => n + 1);
+                    }}
+                    title="기여도 표시 제외 멤버(대표 등)의 퐁당퐁당 엑셀표 기여도 표시 여부를 토글합니다."
+                  >
+                    <span>{state.pongdangShowContributionExcluded !== false ? "✓ 퐁당에서 기여도 표시 (기본)" : "퐁당에서도 기여도 제외(-)"}</span>
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-lg border border-white/10 bg-black/30 text-xs">
+                  <div className="flex items-center gap-1.5 text-neutral-300 font-semibold">
                     <span>👥</span>
                     <span>퐁당퐁당 엑셀표 표시 / 제외 멤버:</span>
                     <span className="text-[10px] text-neutral-500 font-normal">
@@ -23428,6 +23464,42 @@ function AdminPageInner() {
                                         </button>
                                         <InfoTooltip text="활성화 시 퐁당퐁당 엑셀표 및 순위 집계에 줍줍 기여도가 합산됩니다." />
                                       </div>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-xs text-neutral-400">기여도 제외 멤버:</span>
+                                        <button
+                                          type="button"
+                                          className={`px-2 py-0.5 rounded border text-xs font-semibold ${
+                                            (p.pongdangShowContributionExcluded !== undefined
+                                              ? p.pongdangShowContributionExcluded
+                                              : state.pongdangShowContributionExcluded !== undefined
+                                              ? state.pongdangShowContributionExcluded
+                                              : true)
+                                              ? "border-emerald-500 text-emerald-200 bg-emerald-950/60"
+                                              : "border-white/10 text-neutral-400"
+                                          }`}
+                                          onClick={() => {
+                                            const cur =
+                                              p.pongdangShowContributionExcluded !== undefined
+                                                ? p.pongdangShowContributionExcluded
+                                                : state.pongdangShowContributionExcluded !== undefined
+                                                ? state.pongdangShowContributionExcluded
+                                                : true;
+                                            const nextVal = !cur;
+                                            updatePreset(p.id, { pongdangShowContributionExcluded: nextVal });
+                                            setGlobalPreviewBump((n) => n + 1);
+                                          }}
+                                          title="기여도 표시 제외 멤버(대표 등)를 퐁당퐁당 엑셀표에서는 기여도 숫자로 표시합니다."
+                                        >
+                                          {(p.pongdangShowContributionExcluded !== undefined
+                                            ? p.pongdangShowContributionExcluded
+                                            : state.pongdangShowContributionExcluded !== undefined
+                                            ? state.pongdangShowContributionExcluded
+                                            : true)
+                                            ? "✓ 퐁당에서 기여도 표시 (기본)"
+                                            : "퐁당에서도 제외(-)"}
+                                        </button>
+                                        <InfoTooltip text="일반 엑셀표에서 기여도가 제외(-)된 멤버라도, 퐁당퐁당 엑셀표에서는 기여도 숫자가 정상 표출되고 합계에 포함됩니다." />
+                                      </div>
                                     </>
                                   )}
                                 </div>
@@ -23584,7 +23656,7 @@ function AdminPageInner() {
                                   </div>
                                 </div>
                                 <p className="text-[10px] text-neutral-400">
-                                  클릭하여 엑셀표에서 특정 멤버의 기여도 숫자를 숨기고 <code>-</code> 로 표시합니다.
+                                  클릭하여 엑셀표에서 특정 멤버의 기여도 숫자를 숨기고 <code>-</code> 로 표시합니다. (※ 퐁당퐁당 엑셀표에서는 기여도 숫자가 정상 표시됩니다)
                                 </p>
                                 <div className="flex flex-wrap gap-1.5 pt-0.5">
                                   {state.members
@@ -26026,6 +26098,42 @@ function AdminPageInner() {
                                         </button>
                                         <InfoTooltip text="활성화 시 퐁당퐁당 엑셀표 및 순위 집계에 줍줍 기여도가 합산됩니다." />
                                       </div>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-xs text-neutral-400">기여도 제외 멤버:</span>
+                                        <button
+                                          type="button"
+                                          className={`px-2 py-0.5 rounded border text-xs font-semibold ${
+                                            (p.pongdangShowContributionExcluded !== undefined
+                                              ? p.pongdangShowContributionExcluded
+                                              : state.pongdangShowContributionExcluded !== undefined
+                                              ? state.pongdangShowContributionExcluded
+                                              : true)
+                                              ? "border-emerald-500 text-emerald-200 bg-emerald-950/60"
+                                              : "border-white/10 text-neutral-400"
+                                          }`}
+                                          onClick={() => {
+                                            const cur =
+                                              p.pongdangShowContributionExcluded !== undefined
+                                                ? p.pongdangShowContributionExcluded
+                                                : state.pongdangShowContributionExcluded !== undefined
+                                                ? state.pongdangShowContributionExcluded
+                                                : true;
+                                            const nextVal = !cur;
+                                            updatePreset(p.id, { pongdangShowContributionExcluded: nextVal });
+                                            setGlobalPreviewBump((n) => n + 1);
+                                          }}
+                                          title="기여도 표시 제외 멤버(대표 등)를 퐁당퐁당 엑셀표에서는 기여도 숫자로 표시합니다."
+                                        >
+                                          {(p.pongdangShowContributionExcluded !== undefined
+                                            ? p.pongdangShowContributionExcluded
+                                            : state.pongdangShowContributionExcluded !== undefined
+                                            ? state.pongdangShowContributionExcluded
+                                            : true)
+                                            ? "✓ 퐁당에서 기여도 표시 (기본)"
+                                            : "퐁당에서도 제외(-)"}
+                                        </button>
+                                        <InfoTooltip text="일반 엑셀표에서 기여도가 제외(-)된 멤버라도, 퐁당퐁당 엑셀표에서는 기여도 숫자가 정상 표출되고 합계에 포함됩니다." />
+                                      </div>
                                     </>
                                   )}
 
@@ -26391,7 +26499,7 @@ function AdminPageInner() {
                                       </div>
                                     </div>
                                     <p className="text-[10px] text-neutral-400">
-                                      클릭하여 엑셀표에서 특정 멤버의 기여도 숫자를 숨기고 <code>-</code> 로 표시합니다.
+                                      클릭하여 엑셀표에서 특정 멤버의 기여도 숫자를 숨기고 <code>-</code> 로 표시합니다. (※ 퐁당퐁당 엑셀표에서는 기여도 숫자가 정상 표시됩니다)
                                     </p>
                                     <div className="flex flex-wrap gap-1.5 pt-0.5">
                                       {state.members

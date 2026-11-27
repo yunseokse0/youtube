@@ -1,4 +1,10 @@
-import iconv from "iconv-lite";
+let iconv: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  iconv = require("iconv-lite");
+} catch {
+  // iconv-lite fallback
+}
 
 /**
  * 알려진 시그명 왜곡/오타/텔렉스 변환 매핑
@@ -20,7 +26,7 @@ export function tryRecoverCp949Mojibake(text: string): string {
   if (!str) return "";
 
   // 한글 음절(\uAC00-\uD7A3)이 없으면 CP949 모지바케 대상이 아님
-  if (!/[\uAC00-\uD7A3]/.test(str)) {
+  if (!iconv || !/[\uAC00-\uD7A3]/.test(str)) {
     return str;
   }
 

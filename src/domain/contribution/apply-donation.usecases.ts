@@ -1,4 +1,5 @@
 import type { AppState, Donor, ContributionFormula, ContributionLog } from "@/types";
+import { donationHubIdentity } from "@/domain/dedupe/donation-hub-identity";
 import { applyMealBattleDonationToParticipants, mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import { normalizeAnonymousDonorDisplayName } from "@/lib/donation/anonymous-donor-name";
@@ -359,6 +360,47 @@ export function revertDonationFromAppState(
   };
 }
 
+export function normalizeDonationId(raw?: string): string {
+  let id = String(raw || "").trim();
+  if (!id) return "";
+  let prev = "";
+  while (prev !== id) {
+    prev = id;
+    id = donationHubIdentity(id);
+    id = id
+      .replace(/^(ingest|toona|account|din|hub|poll|dinpush|push|din_ingest|din_hub):/i, "")
+      .replace(/^(toonation|bank|other|toon|투네):/i, "")
+      .replace(/^(din|hub|self|sms|ws|test|fp):/i, "")
+      .replace(/::[a-z0-9_-]+$/i, "");
+  }
+  return id;
+}
+
+export function isSameDonationId(a?: string, b?: string): boolean {
+  if (!a || !b) return false;
+  const strA = String(a).trim();
+  const strB = String(b).trim();
+  if (!strA || !strB) return false;
+  if (strA === strB) return true;
+  if (strA.toLowerCase() === strB.toLowerCase()) return true;
+  const normA = normalizeDonationId(strA).toLowerCase();
+  const normB = normalizeDonationId(strB).toLowerCase();
+  return Boolean(normA && normB && normA === normB);
+}
+
+export function isDonorMatchingId(
+  donor: { id: string; externalId?: string },
+  targetId: string
+): boolean {
+  if (!donor || !targetId) return false;
+  const tid = String(targetId).trim();
+  if (!tid) return false;
+  if (donor.id === tid || (donor.externalId && donor.externalId === tid)) return true;
+  if (isSameDonationId(donor.id, tid)) return true;
+  if (donor.externalId && isSameDonationId(donor.externalId, tid)) return true;
+  return false;
+}
+
 export function reassignDonorMemberInAppState(
   currentState: AppState,
   donorId: string,
@@ -368,14 +410,19 @@ export function reassignDonorMemberInAppState(
   if (!targetMemberId) return null;
   if (!(currentState.members || []).some((m) => m.id === targetMemberId)) return null;
 
-  const donor = (currentState.donors || []).find((d) => d.id === donorId);
+  const idStr = String(donorId || "").trim();
+  if (!idStr) return null;
+
+  const donor = (currentState.donors || []).find((d) => isDonorMatchingId(d, idStr));
   const zubzubLog = !donor
     ? (currentState.contributionLogs || []).find(
         (l) =>
           l.isZubzubBonus &&
-          (l.id === donorId ||
-            (l.zubzubQueueId && donorId.endsWith(l.zubzubQueueId)) ||
-            l.id === "zubzub_bonus_" + donorId)
+          (l.id === idStr ||
+            l.zubzubQueueId === idStr ||
+            (l.zubzubQueueId && idStr.endsWith(l.zubzubQueueId)) ||
+            l.id === "zubzub_bonus_" + idStr ||
+            (idStr.startsWith("zubzub_bonus_") && l.zubzubQueueId === idStr.replace(/^zubzub_bonus_/, "")))
       )
     : null;
 
@@ -385,6 +432,9 @@ export function reassignDonorMemberInAppState(
   if (prevMemberId === targetMemberId) return null;
 
   const amount = donor ? Math.max(0, Math.round(Number(donor.amount) || 0)) : 0;
+  const donorSigPrice = donor
+    ? Math.max(0, Math.round(Number(donor.sigPrice || donor.contributionPoints) || 0))
+    : 0;
   const atMs = donor && Number.isFinite(Number(donor.at))
     ? Math.max(0, Math.floor(Number(donor.at)))
     : Date.now();
@@ -413,8 +463,8 @@ export function reassignDonorMemberInAppState(
     );
   }
 
-  const linkedQueueIds = new Set();
-  const linkedLogIds = new Set();
+  const linkedQueueIds = new Set<string>();
+  const linkedLogIds = new Set<string>();
 
   if (donor) {
     if (donor.claimedZubzubQueueId) linkedQueueIds.add(donor.claimedZubzubQueueId);
@@ -424,39 +474,60 @@ export function reassignDonorMemberInAppState(
       if (qId) linkedQueueIds.add(qId);
     }
     for (const item of currentState.zubzubWaitingItems || []) {
-      if (item.claimedDonationId === donor.id || item.triggerDonationId === donor.id) {
+      if (
+        isDonorMatchingId(donor, String(item.claimedDonationId || "")) ||
+        isDonorMatchingId(donor, String(item.triggerDonationId || ""))
+      ) {
         linkedQueueIds.add(item.id);
       }
     }
     for (const log of currentState.contributionLogs || []) {
       if (!log.isZubzubBonus) continue;
-      if (
-        log.claimedDonationId === donor.id ||
+      const matchesExplicit =
+        (log.claimedDonationId && isDonorMatchingId(donor, log.claimedDonationId)) ||
         (donor.claimedZubzubQueueId && log.zubzubQueueId === donor.claimedZubzubQueueId) ||
         (donor.zubzubQueueId && log.zubzubQueueId === donor.zubzubQueueId) ||
         (log.zubzubQueueId && linkedQueueIds.has(log.zubzubQueueId)) ||
-        log.id === "zubzub_bonus_" + donor.id
-      ) {
+        log.id === "zubzub_bonus_" + donor.id ||
+        (donor.externalId && log.id === "zubzub_bonus_" + donor.externalId);
+
+      if (matchesExplicit) {
         linkedLogIds.add(log.id);
         if (log.zubzubQueueId) linkedQueueIds.add(log.zubzubQueueId);
       }
     }
     // Heuristic link for historical data without explicit claimedDonationId
-    if (linkedLogIds.size === 0 && amount > 0) {
+    if (linkedLogIds.size === 0 && (amount > 0 || donorSigPrice > 0)) {
       const donorAt = Number(donor.at) || 0;
+      let bestCandidate: ContributionLog | null = null;
+      let minDiff = Infinity;
       for (const log of currentState.contributionLogs || []) {
         if (!log.isZubzubBonus) continue;
         if (log.memberId !== prevMemberId) continue;
         const matchesPrice =
+          (donorSigPrice > 0 && (
+            log.baseSigPrice === donorSigPrice ||
+            log.amount === donorSigPrice ||
+            (log.multiplier && log.amount === donorSigPrice * (log.multiplier - 1))
+          )) ||
           log.baseSigPrice === amount ||
+          log.amount === amount ||
           (log.multiplier && log.amount === amount * (log.multiplier - 1)) ||
-          log.amount === amount;
-        const matchesTime = donorAt > 0 && Math.abs((Number(log.at) || 0) - donorAt) < 180000;
+          (log.baseSigPrice && amount > 0 && amount % log.baseSigPrice === 0);
+
+        const logAt = Number(log.at) || 0;
+        const diff = donorAt > 0 && logAt > 0 ? Math.abs(logAt - donorAt) : 0;
+        const matchesTime = donorAt === 0 || logAt === 0 || diff < 600000;
         if (matchesPrice && matchesTime) {
-          linkedLogIds.add(log.id);
-          if (log.zubzubQueueId) linkedQueueIds.add(log.zubzubQueueId);
-          break;
+          if (diff < minDiff) {
+            minDiff = diff;
+            bestCandidate = log;
+          }
         }
+      }
+      if (bestCandidate) {
+        linkedLogIds.add(bestCandidate.id);
+        if (bestCandidate.zubzubQueueId) linkedQueueIds.add(bestCandidate.zubzubQueueId);
       }
     }
   } else if (zubzubLog) {
@@ -465,7 +536,6 @@ export function reassignDonorMemberInAppState(
   }
 
   const now = Date.now();
-  const idStr = String(donorId);
   const directMatchRegex = donor
     ? new RegExp(
         ":(?:apply|revert|reassign)(?::[^:]*)*:" + idStr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?::|$)"
@@ -479,7 +549,10 @@ export function reassignDonorMemberInAppState(
         log.isZubzubBonus &&
         (linkedLogIds.has(log.id) ||
           (log.zubzubQueueId && linkedQueueIds.has(log.zubzubQueueId)) ||
-          (donor && log.claimedDonationId === donor.id))
+          (donor && (
+            (log.claimedDonationId && isDonorMatchingId(donor, log.claimedDonationId)) ||
+            (donor.claimedZubzubQueueId && log.zubzubQueueId === donor.claimedZubzubQueueId)
+          )))
       ) {
         return {
           ...log,
@@ -491,7 +564,7 @@ export function reassignDonorMemberInAppState(
     });
 
   const nextDonors = (currentState.donors || []).map((d) => {
-    if (donor && d.id === donor.id) {
+    if (donor && (d.id === donor.id || isDonorMatchingId(d, donor.id))) {
       return {
         ...d,
         memberId: targetMemberId,
@@ -505,7 +578,10 @@ export function reassignDonorMemberInAppState(
       d.isZubzubBonus &&
       (linkedLogIds.has(d.id) ||
         (d.zubzubQueueId && linkedQueueIds.has(d.zubzubQueueId)) ||
-        (donor && d.claimedDonationId === donor.id))
+        (donor && (
+          (d.claimedDonationId && isDonorMatchingId(donor, d.claimedDonationId)) ||
+          (donor.claimedZubzubQueueId && d.zubzubQueueId === donor.claimedZubzubQueueId)
+        )))
     ) {
       return { ...d, memberId: targetMemberId };
     }
@@ -515,7 +591,10 @@ export function reassignDonorMemberInAppState(
   const nextWaitingItems = (currentState.zubzubWaitingItems || []).map((item) => {
     if (
       linkedQueueIds.has(item.id) ||
-      (donor && (item.claimedDonationId === donor.id || item.triggerDonationId === donor.id))
+      (donor && (
+        isDonorMatchingId(donor, String(item.claimedDonationId || "")) ||
+        isDonorMatchingId(donor, String(item.triggerDonationId || ""))
+      ))
     ) {
       return { ...item, claimedByMemberId: targetMemberId };
     }

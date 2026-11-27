@@ -211,6 +211,7 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
       .map((k) => `${k}:${state.pongdangManualContributions?.[k]}`),
     pongdangExcludedMemberIds: state.pongdangExcludedMemberIds || [],
     pongdangIncludeZubzub: Boolean(state.pongdangIncludeZubzub ?? state.zubzubSettings?.applyContributionToPongdang),
+    pongdangShowContributionExcluded: Boolean(state.pongdangShowContributionExcluded !== false),
     generalTimer,
     matchTimer,
     matchTimerEnabled: state.matchTimerEnabled || {},
